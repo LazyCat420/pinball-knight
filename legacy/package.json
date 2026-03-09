@@ -21,7 +21,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
     "canvas": "^3.2.1",
-    "eslint": "^9.39.3",
+    "eslint": "^8.57.0",
     "eslint-config-next": "^16.1.6",
     "prettier": "^3.8.1"
   }
