@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -21,9 +22,12 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
+    "@stryker-mutator/core": "^9.6.0",
+    "@stryker-mutator/vitest-runner": "^9.6.0",
     "canvas": "^3.2.1",
     "eslint": "^8.57.0",
     "eslint-config-next": "^16.1.6",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "vitest": "^4.1.0"
   }
 }
