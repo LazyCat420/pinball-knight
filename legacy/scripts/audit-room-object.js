@@ -81,11 +81,15 @@ console.log(`  ℹ️  Detected type: ${fileType}`);
 // ── 4. JSDoc module header ──
 console.log(`\n${BOLD}📝 Code Conventions${RESET}`);
 const hasJSDoc = /^\/\*\*[\s\S]*?\*\//.test(src.trimStart());
-check("JSDoc module header at top of file", hasJSDoc, "Add a /** ... */ block describing the module");
+check(
+  "JSDoc module header at top of file",
+  hasJSDoc,
+  "Add a /** ... */ block describing the module",
+);
 
 // ── 5. ES Module imports ──
 const hasRequire = /require\s*\(/.test(src);
-check("Uses ES Modules (no require())", !hasRequire, 'Found require() — use import/export instead');
+check("Uses ES Modules (no require())", !hasRequire, "Found require() — use import/export instead");
 
 const hasThreeImport = /import\s+\*\s+as\s+THREE\s+from\s+["']three["']/.test(src);
 check('Imports THREE correctly (import * as THREE from "three")', hasThreeImport);
@@ -98,16 +102,30 @@ if (usesToonMaterial) {
 }
 
 // ── 7. Named exports ──
-const exports = [...src.matchAll(/export\s+(?:function|const|let|class|async\s+function)\s+(\w+)/g)].map((m) => m[1]);
+const exports = [
+  ...src.matchAll(/export\s+(?:function|const|let|class|async\s+function)\s+(\w+)/g),
+].map((m) => m[1]);
 if (isGame) {
   const hasLaunch = exports.some((e) => /^launch/.test(e));
-  check('Game exports a launch*() function', hasLaunch, `Found exports: ${exports.join(", ") || "none"}`);
+  check(
+    "Game exports a launch*() function",
+    hasLaunch,
+    `Found exports: ${exports.join(", ") || "none"}`,
+  );
 } else if (isRoom) {
   const hasCreate = exports.some((e) => /^create/.test(e));
-  check('Room exports a create*() function', hasCreate, `Found exports: ${exports.join(", ") || "none"}`);
+  check(
+    "Room exports a create*() function",
+    hasCreate,
+    `Found exports: ${exports.join(", ") || "none"}`,
+  );
 } else {
   const hasCreate = exports.some((e) => /^create/.test(e));
-  warn('Object exports a create*() function', hasCreate, `Found exports: ${exports.join(", ") || "none"}`);
+  warn(
+    "Object exports a create*() function",
+    hasCreate,
+    `Found exports: ${exports.join(", ") || "none"}`,
+  );
 }
 
 // ── 8. THREE.Group naming ──
@@ -117,25 +135,37 @@ if (groupCreations.length > 0) {
   check(
     "THREE.Group instances have .name set",
     groupNames.length > 0,
-    `Found ${groupCreations.length} Group(s) but ${groupNames.length} .name assignments`
+    `Found ${groupCreations.length} Group(s) but ${groupNames.length} .name assignments`,
   );
 }
 
 // ── 9. Constants convention ──
 const constDecls = [...src.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*=/g)].map((m) => m[1]);
 const hasScreamingConsts = constDecls.length > 0;
-warn("Uses SCREAMING_SNAKE_CASE constants", hasScreamingConsts, "Add top-level constants for dimensions, speeds, etc.");
+warn(
+  "Uses SCREAMING_SNAKE_CASE constants",
+  hasScreamingConsts,
+  "Add top-level constants for dimensions, speeds, etc.",
+);
 
 // ── 10. Dispose / cleanup ──
 console.log(`\n${BOLD}🧹 Cleanup & Memory${RESET}`);
 const hasDispose = /\.dispose\(\)/.test(src);
 const hasCleanup = /dispose|cleanup|teardown|destroy|exit/i.test(src);
-check("Has dispose/cleanup logic", hasDispose || hasCleanup, "Must dispose geometries and materials on exit");
+check(
+  "Has dispose/cleanup logic",
+  hasDispose || hasCleanup,
+  "Must dispose geometries and materials on exit",
+);
 
 if (isGame) {
   // Games should remove event listeners
   const hasRemoveListener = /removeEventListener/.test(src);
-  check("Removes event listeners on exit", hasRemoveListener, "Must clean up keydown/keyup/click listeners");
+  check(
+    "Removes event listeners on exit",
+    hasRemoveListener,
+    "Must clean up keydown/keyup/click listeners",
+  );
 
   // Games should remove HUD
   const hasHUDRemoval = /remove\(\)|removeChild|innerHTML\s*=\s*["']/.test(src);
@@ -154,21 +184,30 @@ if (hasAudio) {
   check("Audio wrapped in try/catch", hasTryCatch);
 
   const hasResumeCheck = /audioCtx\.state/.test(src);
-  check('Checks audioCtx.state before playing', hasResumeCheck);
+  check("Checks audioCtx.state before playing", hasResumeCheck);
 } else {
   console.log("  ℹ️  No AudioContext usage detected (OK)");
 }
 
 // ── 12. Performance ──
 console.log(`\n${BOLD}⚡ Performance${RESET}`);
-const getByNameInLoop = /(?:for|while|function\s+animate|function\s+update)[\s\S]{0,200}getObjectByName/;
+const getByNameInLoop =
+  /(?:for|while|function\s+animate|function\s+update)[\s\S]{0,200}getObjectByName/;
 const hasBadLookup = getByNameInLoop.test(src);
-warn("No getObjectByName() in hot loops (cache references)", !hasBadLookup, "Cache getObjectByName() results in module-level vars");
+warn(
+  "No getObjectByName() in hot loops (cache references)",
+  !hasBadLookup,
+  "Cache getObjectByName() results in module-level vars",
+);
 
 const instancedMeshUse = /InstancedMesh/.test(src);
 const manyIdentical = [...src.matchAll(/new\s+THREE\.Mesh\(/g)].length;
 if (manyIdentical > 20 && !instancedMeshUse) {
-  warn(`Consider InstancedMesh (${manyIdentical} Mesh instances found)`, false, "Use InstancedMesh for >20 identical objects");
+  warn(
+    `Consider InstancedMesh (${manyIdentical} Mesh instances found)`,
+    false,
+    "Use InstancedMesh for >20 identical objects",
+  );
 } else if (instancedMeshUse) {
   console.log(`  ${PASS}  Uses InstancedMesh for batched rendering`);
   passCount++;
@@ -185,20 +224,26 @@ if (standardMats.length > 0) {
   warn(
     "MeshStandardMaterial has roughness/metalness",
     missingRoughness === 0,
-    `${missingRoughness}/${standardMats.length} materials missing roughness`
+    `${missingRoughness}/${standardMats.length} materials missing roughness`,
   );
 }
 
 // ── Summary ──
 console.log(`\n${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}`);
-console.log(`${BOLD}Results:${RESET} ${passCount} passed, ${failCount} failed, ${warnCount} warnings`);
+console.log(
+  `${BOLD}Results:${RESET} ${passCount} passed, ${failCount} failed, ${warnCount} warnings`,
+);
 console.log(`${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n`);
 
 if (failCount > 0) {
-  console.log(`\x1b[31m${BOLD}ACTION REQUIRED: Fix ${failCount} failing check(s) before merging.${RESET}\n`);
+  console.log(
+    `\x1b[31m${BOLD}ACTION REQUIRED: Fix ${failCount} failing check(s) before merging.${RESET}\n`,
+  );
   process.exit(1);
 } else if (warnCount > 0) {
-  console.log(`\x1b[33m${BOLD}Review ${warnCount} warning(s) — these are recommendations.${RESET}\n`);
+  console.log(
+    `\x1b[33m${BOLD}Review ${warnCount} warning(s) — these are recommendations.${RESET}\n`,
+  );
   process.exit(0);
 } else {
   console.log(`\x1b[32m${BOLD}All checks passed! 🎉${RESET}\n`);
