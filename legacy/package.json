@@ -25,10 +25,13 @@
     "@eslint/eslintrc": "^3.3.4",
     "@stryker-mutator/core": "^9.6.0",
     "@stryker-mutator/vitest-runner": "^9.6.0",
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.2.17",
     "canvas": "^3.2.1",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.1.6",
     "prettier": "^3.8.1",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.0"
   }
 }
