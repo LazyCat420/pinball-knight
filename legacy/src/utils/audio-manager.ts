@@ -4,13 +4,37 @@
 let _audioCtx = null;
 
 export function getAudioCtx() {
+  if (typeof window === "undefined") return null;
   if (!_audioCtx) {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    _audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   }
   if (_audioCtx.state === "suspended") {
-    _audioCtx.resume();
+    _audioCtx.resume().catch(() => {});
   }
   return _audioCtx;
+}
+
+// Auto-unlock AudioContext on first user interaction
+if (typeof window !== "undefined") {
+  const unlock = () => {
+    try {
+      const ctx = getAudioCtx();
+      if (ctx) {
+        ctx.resume().then(() => {
+          if (ctx.state === "running") {
+            window.removeEventListener("click", unlock);
+            window.removeEventListener("keydown", unlock);
+            window.removeEventListener("touchstart", unlock);
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // Ignore
+    }
+  };
+  window.addEventListener("click", unlock);
+  window.addEventListener("keydown", unlock);
+  window.addEventListener("touchstart", unlock);
 }
 
 export function playOscillator({
@@ -270,6 +294,10 @@ export function playSfx(type) {
         break;
 
       case "shatter":
+        // Disconnect default oscillator & gain to avoid leaks and extra sound
+        osc.disconnect();
+        gain.disconnect();
+
         // High-pitched noise burst with sharp decay for shattering glass
         const shatterBufLen = ctx.sampleRate * 0.3;
         const shatterBuf = ctx.createBuffer(1, shatterBufLen, ctx.sampleRate);
@@ -287,7 +315,9 @@ export function playSfx(type) {
         shatterGain.gain.setValueAtTime(0.4, now);
         shatterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
         
-        shatterNoise.connect(filter).connect(shatterGain).connect(ctx.destination);
+        shatterNoise.connect(filter);
+        filter.connect(shatterGain);
+        shatterGain.connect(ctx.destination);
         shatterNoise.start(now);
         shatterNoise.stop(now + 0.3);
         break;
