@@ -18,44 +18,60 @@ const HISTORY_KEY = "lazycat_gold_history";
 const SEED_AMOUNT = 100;
 const MAX_HISTORY = 20;
 
+export interface WalletState {
+  balance: number;
+}
+
+export interface TransactionRecord {
+  amount: number;
+  source: string;
+  timestamp: number;
+}
+
 /**
  * Ensure the wallet exists in localStorage. Seeds with 100 gold if missing.
- * @returns {{ balance: number }}
  */
-function _loadWallet() {
-  const raw = localStorage.getItem(GOLD_WALLET_KEY);
-  if (raw !== null) {
+function _loadWallet(): WalletState {
+  if (typeof window === "undefined") {
+    return { balance: SEED_AMOUNT };
+  }
+  const rawWallet = localStorage.getItem(GOLD_WALLET_KEY);
+  if (rawWallet !== null) {
     try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.balance === "number") return parsed;
-    } catch (_e) {
+      const parsedWallet = JSON.parse(rawWallet);
+      if (typeof parsedWallet.balance === "number") {
+        return parsedWallet as WalletState;
+      }
+    } catch (error: unknown) {
       // Corrupted — reset
     }
   }
   // Seed new wallet
-  const wallet = { balance: SEED_AMOUNT };
+  const wallet: WalletState = { balance: SEED_AMOUNT };
   localStorage.setItem(GOLD_WALLET_KEY, JSON.stringify(wallet));
   return wallet;
 }
 
 /**
  * Save wallet state to localStorage.
- * @param {{ balance: number }} wallet
  */
-function _saveWallet(wallet) {
+function _saveWallet(wallet: WalletState): void {
+  if (typeof window === "undefined") return;
   wallet.balance = Math.max(0, Math.floor(wallet.balance));
   localStorage.setItem(GOLD_WALLET_KEY, JSON.stringify(wallet));
 }
 
 /**
  * Load transaction history from localStorage.
- * @returns {Array<{ amount: number, source: string, timestamp: number }>}
  */
-function _loadHistory() {
+function _loadHistory(): TransactionRecord[] {
+  if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (_e) {
+    const rawHistory = localStorage.getItem(HISTORY_KEY);
+    if (rawHistory) {
+      return JSON.parse(rawHistory) as TransactionRecord[];
+    }
+  } catch (error: unknown) {
     // Corrupted — reset
   }
   return [];
@@ -63,29 +79,25 @@ function _loadHistory() {
 
 /**
  * Save transaction history to localStorage.
- * @param {Array} history
  */
-function _saveHistory(history) {
+function _saveHistory(history: TransactionRecord[]): void {
+  if (typeof window === "undefined") return;
   // Keep only the last MAX_HISTORY entries
-  const trimmed = history.slice(-MAX_HISTORY);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+  const trimmedHistory = history.slice(-MAX_HISTORY);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmedHistory));
 }
 
 /**
  * Get the current gold balance.
- * @returns {number}
  */
-export function getBalance() {
+export function getBalance(): number {
   return _loadWallet().balance;
 }
 
 /**
  * Add gold to the wallet.
- * @param {number} amount — positive integer
- * @param {string} source — e.g. "raccoon-tornado", "pirate-chest"
- * @returns {number} new balance
  */
-export function addGold(amount, source) {
+export function addGold(amount: number, source: string): number {
   if (!amount || amount <= 0) return getBalance();
   const wallet = _loadWallet();
   wallet.balance += Math.floor(amount);
@@ -105,10 +117,8 @@ export function addGold(amount, source) {
 
 /**
  * Spend gold from the wallet.
- * @param {number} amount — positive integer
- * @returns {boolean} true if successful, false if insufficient balance
  */
-export function spendGold(amount) {
+export function spendGold(amount: number): boolean {
   if (!amount || amount <= 0) return true;
   const wallet = _loadWallet();
   if (wallet.balance < Math.floor(amount)) return false;
@@ -130,16 +140,16 @@ export function spendGold(amount) {
 
 /**
  * Get the last 20 transactions.
- * @returns {Array<{ amount: number, source: string, timestamp: number }>}
  */
-export function getHistory() {
+export function getHistory(): TransactionRecord[] {
   return _loadHistory();
 }
 
 /**
  * Reset the wallet — dev/debug only.
  */
-export function resetWallet() {
+export function resetWallet(): void {
+  if (typeof window === "undefined") return;
   localStorage.removeItem(GOLD_WALLET_KEY);
   localStorage.removeItem(HISTORY_KEY);
 }
