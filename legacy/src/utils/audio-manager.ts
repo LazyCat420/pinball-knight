@@ -138,6 +138,7 @@ export function playNoiseBurst({ duration = 0.1, vol = 0.1 }: any) {
 export function playSfx(type: string) {
   try {
     const ctx = getAudioCtx();
+    if (!ctx || ctx.state === "suspended") return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
