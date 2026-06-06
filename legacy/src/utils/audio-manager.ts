@@ -8,7 +8,7 @@ let _cachedLandBuf: any = null;
 
 function getCrackBuffer(ctx: any): any {
   if (_cachedCrackBuf) return _cachedCrackBuf;
-  const crackBufLen = ctx.sampleRate * 0.03;
+  const crackBufLen = Math.floor(ctx.sampleRate * 0.03);
   _cachedCrackBuf = ctx.createBuffer(1, crackBufLen, ctx.sampleRate);
   const crackData = _cachedCrackBuf.getChannelData(0);
   for (let i = 0; i < crackBufLen; i++) {
@@ -19,7 +19,7 @@ function getCrackBuffer(ctx: any): any {
 
 function getHissBuffer(ctx: any): any {
   if (_cachedHissBuf) return _cachedHissBuf;
-  const hissBufLen = ctx.sampleRate * 0.35;
+  const hissBufLen = Math.floor(ctx.sampleRate * 0.35);
   _cachedHissBuf = ctx.createBuffer(1, hissBufLen, ctx.sampleRate);
   const hissData = _cachedHissBuf.getChannelData(0);
   for (let i = 0; i < hissBufLen; i++) {
@@ -30,7 +30,7 @@ function getHissBuffer(ctx: any): any {
 
 function getLandBuffer(ctx: any): any {
   if (_cachedLandBuf) return _cachedLandBuf;
-  const bufLen = ctx.sampleRate * 0.05;
+  const bufLen = Math.floor(ctx.sampleRate * 0.05);
   _cachedLandBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
   const data = _cachedLandBuf.getChannelData(0);
   for (let i = 0; i < bufLen; i++) {
@@ -76,11 +76,11 @@ if (typeof window !== "undefined") {
 export function playOscillator({
   type = "sine",
   freqStart = 440,
-  freqEnd = null,
+  freqEnd = null as any,
   duration = 0.1,
   volStart = 0.1,
   volEnd = 0.001,
-}) {
+}: any) {
   try {
     const ctx = getAudioCtx();
     const now = ctx.currentTime;
@@ -111,7 +111,7 @@ export function playOscillator({
   }
 }
 
-export function playNoiseBurst({ duration = 0.1, vol = 0.1 }) {
+export function playNoiseBurst({ duration = 0.1, vol = 0.1 }: any) {
   try {
     const ctx = getAudioCtx();
     const now = ctx.currentTime;
@@ -135,7 +135,7 @@ export function playNoiseBurst({ duration = 0.1, vol = 0.1 }) {
   }
 }
 
-export function playSfx(type) {
+export function playSfx(type: string) {
   try {
     const ctx = getAudioCtx();
     const now = ctx.currentTime;
@@ -330,20 +330,33 @@ export function playSfx(type) {
         osc.disconnect();
         gain.disconnect();
 
+        // 0. Low Thud for physical impact
+        const thudOsc = ctx.createOscillator();
+        const thudGain = ctx.createGain();
+        thudOsc.type = "sine";
+        thudOsc.frequency.setValueAtTime(150, now);
+        thudOsc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+        thudGain.gain.setValueAtTime(0.4, now);
+        thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        thudOsc.connect(thudGain);
+        thudGain.connect(ctx.destination);
+        thudOsc.start(now);
+        thudOsc.stop(now + 0.15);
+
         // 1. Transient Impact Crack (Sharp Initial Bite) using cached buffer
         const crackSource = ctx.createBufferSource();
         crackSource.buffer = getCrackBuffer(ctx);
         const crackGain = ctx.createGain();
-        crackGain.gain.setValueAtTime(0.6, now);
-        crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+        crackGain.gain.setValueAtTime(1.0, now); // louder impact
+        crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1); // slightly longer crack
         crackSource.connect(crackGain);
         crackGain.connect(ctx.destination);
         crackSource.start(now);
-        crackSource.stop(now + 0.03);
+        crackSource.stop(now + 0.1);
 
         // 2. Main Glass Resonance (Metallic/Glassy Ringing)
         // High frequencies corresponding to natural resonant modes of a glass pane
-        const resonances = [1600, 2200, 3700, 4800, 6200];
+        const resonances = [1200, 1600, 2200, 3100, 3700, 4800, 6200, 8400];
         resonances.forEach((freq) => {
           const resOsc = ctx.createOscillator();
           const resGain = ctx.createGain();
@@ -351,10 +364,10 @@ export function playSfx(type) {
           resOsc.type = "sine";
           resOsc.frequency.setValueAtTime(freq, now);
           // Add a rapid downward pitch slide to simulate physical tension release
-          resOsc.frequency.exponentialRampToValueAtTime(freq * 0.85, now + 0.2);
+          resOsc.frequency.exponentialRampToValueAtTime(freq * 0.8, now + 0.25);
           
-          const duration = 0.15 + Math.random() * 0.15;
-          const vol = 0.12 / resonances.length;
+          const duration = 0.2 + Math.random() * 0.2;
+          const vol = 0.15 / resonances.length; // Normalize volume
           
           resGain.gain.setValueAtTime(vol, now);
           resGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
@@ -366,9 +379,9 @@ export function playSfx(type) {
         });
 
         // 3. Shard Tinkles (Scattered debris falling/tumble over time)
-        const tinkleCount = 8;
+        const tinkleCount = 20; // more debris
         for (let i = 0; i < tinkleCount; i++) {
-          const delay = 0.04 + Math.random() * 0.5;
+          const delay = 0.02 + Math.random() * 0.6;
           const tinkleTime = now + delay;
           
           const tinkleOsc = ctx.createOscillator();
@@ -376,12 +389,12 @@ export function playSfx(type) {
           
           tinkleOsc.type = "sine";
           // High-pitched glassy tinkles
-          const startFreq = 4000 + Math.random() * 4500;
+          const startFreq = 3500 + Math.random() * 5000;
           tinkleOsc.frequency.setValueAtTime(startFreq, tinkleTime);
-          tinkleOsc.frequency.exponentialRampToValueAtTime(startFreq * 0.9, tinkleTime + 0.08);
+          tinkleOsc.frequency.exponentialRampToValueAtTime(startFreq * 0.85, tinkleTime + 0.1);
           
-          const tinkleDur = 0.04 + Math.random() * 0.06;
-          const tinkleVol = 0.06 * (1 - delay / 0.6); // get quieter over time
+          const tinkleDur = 0.05 + Math.random() * 0.08;
+          const tinkleVol = 0.08 * (1 - delay / 0.8); // get quieter over time
           
           tinkleGain.gain.setValueAtTime(0, now); // silent until trigger
           tinkleGain.gain.setValueAtTime(tinkleVol, tinkleTime);
@@ -399,18 +412,18 @@ export function playSfx(type) {
         
         const hissFilter = ctx.createBiquadFilter();
         hissFilter.type = "bandpass";
-        hissFilter.frequency.value = 5000;
-        hissFilter.Q.value = 2.0; // resonant hiss
+        hissFilter.frequency.value = 4000;
+        hissFilter.Q.value = 1.5; // wider resonance
         
         const hissGain = ctx.createGain();
-        hissGain.gain.setValueAtTime(0.2, now);
-        hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        hissGain.gain.setValueAtTime(0.3, now);
+        hissGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
         
         hissSource.connect(hissFilter);
         hissFilter.connect(hissGain);
         hissGain.connect(ctx.destination);
         hissSource.start(now);
-        hissSource.stop(now + 0.35);
+        hissSource.stop(now + 0.45);
         break;
 
       default:
