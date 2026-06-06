@@ -269,6 +269,29 @@ export function playSfx(type) {
         osc.stop(now + 0.06);
         break;
 
+      case "shatter":
+        // High-pitched noise burst with sharp decay for shattering glass
+        const shatterBufLen = ctx.sampleRate * 0.3;
+        const shatterBuf = ctx.createBuffer(1, shatterBufLen, ctx.sampleRate);
+        const shatterData = shatterBuf.getChannelData(0);
+        for (let i = 0; i < shatterBufLen; i++) shatterData[i] = (Math.random() * 2 - 1) * 0.2;
+        const shatterNoise = ctx.createBufferSource();
+        shatterNoise.buffer = shatterBuf;
+        
+        // Highpass filter to make it sound "glassy" and sharp
+        const filter = ctx.createBiquadFilter();
+        filter.type = "highpass";
+        filter.frequency.value = 6000;
+        
+        const shatterGain = ctx.createGain();
+        shatterGain.gain.setValueAtTime(0.4, now);
+        shatterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        
+        shatterNoise.connect(filter).connect(shatterGain).connect(ctx.destination);
+        shatterNoise.start(now);
+        shatterNoise.stop(now + 0.3);
+        break;
+
       default:
         // Generic blip
         osc.type = "sine";
