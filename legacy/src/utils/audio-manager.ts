@@ -1,12 +1,48 @@
 // Global Audio Manager for WebAudio procedurally generated SFX
 // Reduces repetition across minigames and prevents exceeding AudioContext limits.
 
-let _audioCtx = null;
+let _audioCtx: any = null;
+let _cachedCrackBuf: any = null;
+let _cachedHissBuf: any = null;
+let _cachedLandBuf: any = null;
 
-export function getAudioCtx() {
+function getCrackBuffer(ctx: any): any {
+  if (_cachedCrackBuf) return _cachedCrackBuf;
+  const crackBufLen = ctx.sampleRate * 0.03;
+  _cachedCrackBuf = ctx.createBuffer(1, crackBufLen, ctx.sampleRate);
+  const crackData = _cachedCrackBuf.getChannelData(0);
+  for (let i = 0; i < crackBufLen; i++) {
+    crackData[i] = (Math.random() * 2 - 1) * 0.5 * (1 - i / crackBufLen);
+  }
+  return _cachedCrackBuf;
+}
+
+function getHissBuffer(ctx: any): any {
+  if (_cachedHissBuf) return _cachedHissBuf;
+  const hissBufLen = ctx.sampleRate * 0.35;
+  _cachedHissBuf = ctx.createBuffer(1, hissBufLen, ctx.sampleRate);
+  const hissData = _cachedHissBuf.getChannelData(0);
+  for (let i = 0; i < hissBufLen; i++) {
+    hissData[i] = (Math.random() * 2 - 1) * 0.18;
+  }
+  return _cachedHissBuf;
+}
+
+function getLandBuffer(ctx: any): any {
+  if (_cachedLandBuf) return _cachedLandBuf;
+  const bufLen = ctx.sampleRate * 0.05;
+  _cachedLandBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = _cachedLandBuf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) {
+    data[i] = (Math.random() * 2 - 1) * 0.06;
+  }
+  return _cachedLandBuf;
+}
+
+export function getAudioCtx(): any {
   if (typeof window === "undefined") return null;
   if (!_audioCtx) {
-    _audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    _audioCtx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
   }
   if (_audioCtx.state === "suspended") {
     _audioCtx.resume().catch(() => {});
@@ -151,13 +187,9 @@ export function playSfx(type) {
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
         osc.start(now);
         osc.stop(now + 0.12);
-        // Noise burst
-        const bufLen = ctx.sampleRate * 0.05;
-        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * 0.06;
+        // Noise burst using cached buffer
         const noise = ctx.createBufferSource();
-        noise.buffer = buf;
+        noise.buffer = getLandBuffer(ctx);
         const ng = ctx.createGain();
         ng.gain.setValueAtTime(0.08, now);
         ng.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
@@ -298,15 +330,9 @@ export function playSfx(type) {
         osc.disconnect();
         gain.disconnect();
 
-        // 1. Transient Impact Crack (Sharp Initial Bite)
-        const crackBufLen = ctx.sampleRate * 0.03;
-        const crackBuf = ctx.createBuffer(1, crackBufLen, ctx.sampleRate);
-        const crackData = crackBuf.getChannelData(0);
-        for (let i = 0; i < crackBufLen; i++) {
-          crackData[i] = (Math.random() * 2 - 1) * 0.5 * (1 - i / crackBufLen);
-        }
+        // 1. Transient Impact Crack (Sharp Initial Bite) using cached buffer
         const crackSource = ctx.createBufferSource();
-        crackSource.buffer = crackBuf;
+        crackSource.buffer = getCrackBuffer(ctx);
         const crackGain = ctx.createGain();
         crackGain.gain.setValueAtTime(0.6, now);
         crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
@@ -367,15 +393,9 @@ export function playSfx(type) {
           tinkleOsc.stop(tinkleTime + tinkleDur);
         }
 
-        // 4. Residual Noise Hiss (Friction/Breaking sound)
-        const hissBufLen = ctx.sampleRate * 0.35;
-        const hissBuf = ctx.createBuffer(1, hissBufLen, ctx.sampleRate);
-        const hissData = hissBuf.getChannelData(0);
-        for (let i = 0; i < hissBufLen; i++) {
-          hissData[i] = (Math.random() * 2 - 1) * 0.18;
-        }
+        // 4. Residual Noise Hiss (Friction/Breaking sound) using cached buffer
         const hissSource = ctx.createBufferSource();
-        hissSource.buffer = hissBuf;
+        hissSource.buffer = getHissBuffer(ctx);
         
         const hissFilter = ctx.createBiquadFilter();
         hissFilter.type = "bandpass";
