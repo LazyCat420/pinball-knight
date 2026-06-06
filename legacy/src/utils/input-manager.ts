@@ -10,7 +10,7 @@
  * On game exit, the game calls clearInputOwner() to release control.
  *
  * Usage:
- *   import { setInputOwner, clearInputOwner } from "../utils/input-manager.js";
+ *   import { setInputOwner, clearInputOwner } from "../utils/input-manager";
  *   // On game launch:
  *   setInputOwner("cosmic-pool");
  *   // On game exit:
