@@ -469,6 +469,28 @@ export function playSfx(type: string) {
         osc.stop(now + 0.2);
         break;
 
+      case "glass-clink":
+        // Proc-gen a sweet metallic/glassy clink
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(2800, now);
+        osc.frequency.exponentialRampToValueAtTime(1800, now + 0.12);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+
+      case "coffee-pour":
+        // Proc-gen a soft pouring/bubble trickle sound
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(450, now + 0.4);
+        gain.gain.setValueAtTime(0.05, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+        osc.start(now);
+        osc.stop(now + 0.4);
+        break;
+
       default:
         // Generic blip
         osc.type = "sine";
