@@ -427,6 +427,48 @@ export function playSfx(type: string) {
         hissSource.stop(now + 0.45);
         break;
 
+      case "toaster-lever":
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+
+      case "toaster-pop":
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(300, now + 0.08);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.1);
+        break;
+
+      case "door-open":
+        // Squeak (high pitch slide)
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(1200, now + 0.15);
+        gain.gain.setValueAtTime(0.04, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now);
+        osc.stop(now + 0.15);
+        break;
+
+      case "door-close":
+        // Heavy low thud
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(100, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+        break;
+
       default:
         // Generic blip
         osc.type = "sine";
@@ -439,5 +481,75 @@ export function playSfx(type: string) {
     }
   } catch (err) {
     // Audio unavailable or failed to initialize
+  }
+}
+
+let waterSource: any = null;
+let waterGain: any = null;
+
+export function startWaterSound() {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx || ctx.state === "suspended") return;
+    if (waterSource) return;
+
+    const now = ctx.currentTime;
+    const bufferSize = ctx.sampleRate * 2;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      output[i] = Math.random() * 2 - 1;
+    }
+
+    waterSource = ctx.createBufferSource();
+    waterSource.buffer = noiseBuffer;
+    waterSource.loop = true;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1200;
+    filter.Q.value = 0.5;
+
+    waterGain = ctx.createGain();
+    waterGain.gain.setValueAtTime(0, now);
+    waterGain.gain.linearRampToValueAtTime(0.08, now + 0.2);
+
+    waterSource.connect(filter);
+    filter.connect(waterGain);
+    waterGain.connect(ctx.destination);
+
+    waterSource.start(0);
+  } catch (e) {
+    console.error("Failed to play water sound", e);
+  }
+}
+
+export function stopWaterSound() {
+  try {
+    if (waterSource) {
+      const ctx = getAudioCtx();
+      const now = ctx?.currentTime || 0;
+      const currentGain = waterGain;
+      const currentSource = waterSource;
+
+      waterSource = null;
+      waterGain = null;
+
+      if (currentGain && ctx) {
+        currentGain.gain.setValueAtTime(currentGain.gain.value, now);
+        currentGain.gain.linearRampToValueAtTime(0, now + 0.2);
+        setTimeout(() => {
+          try {
+            currentSource.stop();
+            currentSource.disconnect();
+            currentGain.disconnect();
+          } catch (err) {}
+        }, 250);
+      } else if (currentSource) {
+        currentSource.stop();
+      }
+    }
+  } catch (e) {
+    // Ignore
   }
 }
