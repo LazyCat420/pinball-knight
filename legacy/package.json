@@ -14,8 +14,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "cannon-es": "^0.20.0",
     "gsap": "^3.12.7",
+    "manifold-3d": "^3.5.0",
     "next": "^16.1.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
