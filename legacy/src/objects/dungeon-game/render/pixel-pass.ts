@@ -42,10 +42,12 @@ const FRAG = /* glsl */ `
 precision highp float;
 
 uniform sampler2D tDiffuse;
+uniform sampler2D tDepth;
 uniform vec3  uPalette[${PALETTE_SIZE}];
 uniform float uQuantize;
 uniform float uDither;
 uniform float uScanline;
+uniform float uOutline;
 uniform vec2  uResolution;
 
 varying vec2 vUv;
@@ -68,8 +70,28 @@ float bayer4(vec2 a) {
   return bayer2(0.5 * a) * 0.25 + bayer2(a);
 }
 
+float depthAt(vec2 texelOffset) {
+  return texture2D(tDepth, vUv + texelOffset / uResolution).x;
+}
+
 void main() {
   vec3 col = linearToSRGB(texture2D(tDiffuse, vUv).rgb);
+
+  // Depth-discontinuity outline — the cel-shading move, straight from the
+  // playbook of three.js's RenderPixelatedPass. With an ORTHO camera the
+  // depth buffer is linear in eye space, so a fixed threshold works: any
+  // neighbour more than ~a third of a tile deeper/shallower draws a dark
+  // edge pixel. Wall tops, wall silhouettes and sprite cutouts all get a
+  // crisp 1px ink line, which the palette quantizer then snaps to the
+  // darkest stones.
+  if (uOutline > 0.5) {
+    float dc = depthAt(vec2(0.0));
+    float e = max(
+      max(abs(depthAt(vec2(1.0, 0.0)) - dc), abs(depthAt(vec2(-1.0, 0.0)) - dc)),
+      max(abs(depthAt(vec2(0.0, 1.0)) - dc), abs(depthAt(vec2(0.0, -1.0)) - dc))
+    );
+    if (e > ${(0.35 / 200).toFixed(6)}) col *= 0.45;
+  }
 
   // Nudge each pixel up or down the ramp before snapping. This is what buys back
   // apparent colour depth — without it, smooth gradients snap into hard bands,
@@ -117,16 +139,22 @@ export interface PixelPass {
   setQuantize(on: boolean): void;
   setDither(on: boolean): void;
   setScanline(on: boolean): void;
+  setOutline(on: boolean): void;
   dispose(): void;
 }
 
 export function createPixelPass(
   renderer: THREE.WebGLRenderer,
-  opts: { quantize: boolean; dither: boolean; scanline: boolean },
+  opts: { quantize: boolean; dither: boolean; scanline: boolean; outline: boolean },
 ): PixelPass {
   // We want fat honest pixels, so devicePixelRatio is deliberately ignored.
   renderer.setPixelRatio(1);
   renderer.toneMapping = THREE.NoToneMapping;
+
+  // The depth texture feeds the outline pass — edges are found where depth
+  // jumps between neighbouring texels.
+  const depthTexture = new THREE.DepthTexture(RENDER_W, RENDER_H);
+  depthTexture.type = THREE.UnsignedIntType;
 
   const target = new THREE.WebGLRenderTarget(RENDER_W, RENDER_H, {
     minFilter: THREE.NearestFilter,
@@ -134,14 +162,17 @@ export function createPixelPass(
     generateMipmaps: false,
     depthBuffer: true,
     stencilBuffer: false,
+    depthTexture,
   });
 
   const uniforms = {
     tDiffuse: { value: target.texture },
+    tDepth: { value: depthTexture },
     uPalette: { value: paletteToFloatArray() },
     uQuantize: { value: opts.quantize ? 1 : 0 },
     uDither: { value: opts.dither ? 1 : 0 },
     uScanline: { value: opts.scanline ? 1 : 0 },
+    uOutline: { value: opts.outline ? 1 : 0 },
     uResolution: { value: new THREE.Vector2(RENDER_W, RENDER_H) },
   };
 
@@ -213,7 +244,11 @@ export function createPixelPass(
     setScanline: (on) => {
       uniforms.uScanline.value = on ? 1 : 0;
     },
+    setOutline: (on) => {
+      uniforms.uOutline.value = on ? 1 : 0;
+    },
     dispose: () => {
+      depthTexture.dispose();
       target.dispose();
       quadGeo.dispose();
       quadMat.dispose();

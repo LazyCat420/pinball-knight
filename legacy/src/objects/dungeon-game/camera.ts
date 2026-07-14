@@ -1,17 +1,19 @@
 /**
- * Top-down camera, tilted ~35° — Diablo's actual angle, near enough.
+ * Isometric camera — orthographic, tilted ~38°, yawed 45° (true iso diamonds,
+ * two visible faces per wall — the Diablo look).
  *
  * ORTHOGRAPHIC, not perspective, and that's not a stylistic coin-flip: with a
- * perspective camera a sprite at the top of the screen covers a different number
- * of screen pixels than the same sprite at the bottom, so the art can't stay
- * pixel-aligned. Ortho keeps the pixel scale constant everywhere.
+ * perspective camera a sprite at the top of the screen covers a different
+ * number of screen pixels than the same sprite at the bottom, so the art
+ * can't stay pixel-aligned. Ortho keeps the pixel scale constant everywhere.
  *
- * A true 90° overhead would show only the tops of everyone's heads and throw
- * away all the sprite art; full isometric would fight the square grid. 35° is
- * the angle that lets you read a character's face AND the maze layout.
+ * PIXEL SNAPPING under yaw: world-axis snapping only works when world axes
+ * map to screen axes. With a 45° yaw they don't, so the camera position is
+ * snapped along its own RIGHT/UP basis vectors instead — the projected image
+ * shifts by whole texels regardless of orientation. Same cure, new anatomy.
  */
 import * as THREE from "three";
-import { VIEW_W, VIEW_H, CAMERA_TILT, CAMERA_DIST, PPU, CAM_DEADZONE, CAM_LERP } from "./constants";
+import { VIEW_W, VIEW_H, CAMERA_TILT, CAMERA_YAW, CAMERA_DIST, PPU, CAM_DEADZONE, CAM_LERP } from "./constants";
 import { state } from "./state";
 
 export function createDungeonCamera(): THREE.OrthographicCamera {
@@ -29,28 +31,68 @@ export function createDungeonCamera(): THREE.OrthographicCamera {
 
 /** The camera's offset from whatever it's looking at. Fixed for the whole game. */
 export function cameraOffset(): THREE.Vector3 {
+  const horiz = Math.cos(CAMERA_TILT) * CAMERA_DIST;
   return new THREE.Vector3(
-    0,
+    Math.sin(CAMERA_YAW) * horiz,
     Math.sin(CAMERA_TILT) * CAMERA_DIST,
-    Math.cos(CAMERA_TILT) * CAMERA_DIST,
+    Math.cos(CAMERA_YAW) * horiz,
   );
+}
+
+/**
+ * Ground-plane direction of "screen up" (away from the camera) and
+ * "screen right" — the input remap and facing logic key off these so WASD is
+ * always screen-relative, the way Diablo controls feel.
+ */
+export const SCREEN_UP_XZ = { x: -Math.sin(CAMERA_YAW), z: -Math.cos(CAMERA_YAW) };
+export const SCREEN_RIGHT_XZ = { x: Math.cos(CAMERA_YAW), z: -Math.sin(CAMERA_YAW) };
+
+/** Screen-space axis → world ground direction. */
+export function screenDirToWorld(sx: number, sz: number): { x: number; z: number } {
+  // +sz is screen-down (toward the camera).
+  return {
+    x: sx * SCREEN_RIGHT_XZ.x - sz * SCREEN_UP_XZ.x,
+    z: sx * SCREEN_RIGHT_XZ.z - sz * SCREEN_UP_XZ.z,
+  };
+}
+
+/** World ground direction → screen-space axis (for facing picks). */
+export function worldDirToScreen(wx: number, wz: number): { x: number; z: number } {
+  return {
+    x: wx * SCREEN_RIGHT_XZ.x + wz * SCREEN_RIGHT_XZ.z,
+    z: -(wx * SCREEN_UP_XZ.x + wz * SCREEN_UP_XZ.z),
+  };
 }
 
 const _offset = cameraOffset();
 const _target = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _upVec = new THREE.Vector3();
+const _fix = new THREE.Vector3();
 
 /**
- * Point the camera at a world position.
- *
- * The target is SNAPPED to the render-target's pixel grid first. Without this,
- * the camera slides by fractions of a pixel and every static wall in the scene
- * crawls and shimmers as you walk. It is the single most common reason 8-bit 3D
- * looks subtly wrong, and it is very hard to diagnose after the fact.
+ * Point the camera at a world position, snapped to the render-target's pixel
+ * grid in SCREEN space. Without this the camera slides by fractions of a
+ * pixel and every static wall crawls and shimmers as you walk — the single
+ * most common reason 8-bit 3D looks subtly wrong.
  */
 export function aimCamera(cam: THREE.OrthographicCamera, x: number, y: number, z: number): void {
-  _target.set(Math.round(x * PPU) / PPU, y, Math.round(z * PPU) / PPU);
+  _target.set(x, y, z);
   cam.position.copy(_target).add(_offset);
   cam.lookAt(_target);
+  cam.updateMatrixWorld();
+
+  // Snap along the camera's own right/up axes to whole texels (1/PPU units).
+  _right.setFromMatrixColumn(cam.matrixWorld, 0);
+  _upVec.setFromMatrixColumn(cam.matrixWorld, 1);
+  const dr = cam.position.dot(_right);
+  const du = cam.position.dot(_upVec);
+  const snap = (v: number) => Math.round(v * PPU) / PPU;
+  _fix
+    .copy(_right)
+    .multiplyScalar(snap(dr) - dr)
+    .addScaledVector(_upVec, snap(du) - du);
+  cam.position.add(_fix);
   cam.updateMatrixWorld();
 }
 

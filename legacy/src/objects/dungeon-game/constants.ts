@@ -44,16 +44,23 @@ export const INTEGER_SCALE = true;
  * so no angle can make a wall cover the corridor behind it.
  */
 export const CAMERA_TILT = (38 * Math.PI) / 180;
+/**
+ * Horizontal rotation — TRUE isometric. At 45° the grid renders as diamonds
+ * and every wall shows TWO faces (south + east), which is most of what makes
+ * Diablo read as 3D. The camera sits to the world's south-east.
+ */
+export const CAMERA_YAW = (45 * Math.PI) / 180;
 export const CAMERA_DIST = 24; // irrelevant to scale (ortho), just needs to clear geometry
 
 // ── Sprites ─────────────────────────────────────────────────────
 export const SPRITE_PX = 32; // native art size, px
 export const SPRITE_UNITS = SPRITE_PX / PPU; // 1.0 world units — 1:1 pixel mapping
 
-// ── Style toggles (hidden debug keys Q/F/K in-game) ─────────────
+// ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
 export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette
 export const DITHER_DEFAULT = true; // Bayer 4x4 ordered dither before the snap
 export const SCANLINE_DEFAULT = false; // subtle CRT scanlines
+export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
 
 // ── Animation ───────────────────────────────────────────────────
 export const FPS_IDLE = 3;

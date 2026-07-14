@@ -1,19 +1,12 @@
 /**
- * THE PIXEL ART — now at 32×32 ("16-bit" density; the 16px originals read as
- * too chunky in playtests).
+ * THE PIXEL ART — 32×32 ("16-bit" density).
  *
  * Frames are character grids. One char = one pixel. Edit these directly — you
  * don't need an art tool, and the diffs are readable.
  *
- * The knight is COMPOSED, not copy-pasted: a weaponless base per direction,
- * leg variants spliced in for the walk cycle, and sparse sword overlays laid
- * on top per pose. That keeps 27 frames of art down to a handful of authored
- * pieces, and means fixing the torso once fixes every frame.
- *
- * The zombie is the original hand-authored 16px art upscaled 2× at load
- * (scale2x). It stays deliberately chunkier than the knight — it's a shambling
- * rotten thing, the coarseness works for it. Redraw at true 32px if it ever
- * bothers anyone.
+ * Both actors are COMPOSED, not copy-pasted: a weaponless/neutral base per
+ * direction, leg variants spliced in for the walk cycle, and sparse overlays
+ * (sword poses) laid on top. Fixing a torso once fixes every frame.
  *
  * Rows are padded to width automatically, so trailing '.' are optional. A row
  * LONGER than the frame width is a mistake and throws loudly at load.
@@ -29,7 +22,7 @@ export const CHARS: Record<string, number> = {
   a: 19, // steel dark
   A: 20, // steel mid
   B: 21, // steel light
-  w: 22, // steel highlight (visor, blade)
+  w: 22, // steel highlight (visor, blade, bone)
   s: 23, // skin shadow
   S: 24, // skin
   h: 27, // leather dark
@@ -37,6 +30,7 @@ export const CHARS: Record<string, number> = {
   y: 16, // torch gold (hilt, buckle)
   r: 12, // blood / plume
   R: 13, // blood light
+  d: 10, // blood shadow (dried gore)
   g: 6, // rot shadow
   G: 8, // rot mid
   Y: 9, // rot light
@@ -61,20 +55,6 @@ function frame(rows: string[], size: number): Frame {
 }
 
 const f = (rows: string[]): Frame => frame(rows, SPRITE_PX);
-const f16 = (rows: string[]): Frame => frame(rows, 16);
-
-/** Nearest-neighbour 2× upscale: 16px art → 32px frames. */
-function scale2x(src: Frame): Frame {
-  const out: string[] = [];
-  for (const row of src) {
-    const doubled = row
-      .split("")
-      .map((c) => c + c)
-      .join("");
-    out.push(doubled, doubled);
-  }
-  return out;
-}
 
 /**
  * Lay a sparse patch over a base: every non-transparent patch pixel wins.
@@ -111,9 +91,15 @@ function settle(base: Frame, hipRow: number): Frame {
   return next;
 }
 
+/** Mirror a sparse overlay horizontally (N poses = S poses on the other hand). */
+function mirror(patch: Frame): Frame {
+  return patch.map((row) => row.split("").reverse().join(""));
+}
+
 // ══════════════════════════════════════════════════════════════════
 // KNIGHT — plumed helm, visor, pauldrons, greaves. Weaponless base;
-// the sword is an overlay per pose.
+// the sword is an overlay per pose. Legs sit close under the torso
+// (playtest: the old wide stance read as a wishbone).
 // ══════════════════════════════════════════════════════════════════
 
 // ── Facing SOUTH (toward the camera) ──
@@ -130,50 +116,51 @@ const K_S_BASE = f([
   "...........oaAAAAAAao...........",
   "............oAAAAAAo............",
   ".............oAAAAo.............",
-  ".......oooo.oAAAAAAAAo.oooo.....",
-  ".......oAAo.oAABBBBAAo.oAAo.....",
-  ".......oaaoooABBBBBBAoooaao.....",
-  "........oAo.oABBBBBBAo.oAo......",
-  "........oAo.oAABBBBAAo.oAo......",
-  "........oAo.oAABBBBAAo.oAo......",
-  "........oao.oaAABBAAao.oao......",
-  "...........ohhhhhhhho...........",
-  "...........ohhhyyhhho...........",
-  "...........oaAAAAAAao...........",
-  "...........oaAAooAAao...........",
-  "...........oAAo..oAAo...........",
+  "........oooooAAAAAAoooooo.......",
+  "........oAAooABBBBAAooAAo.......",
+  "........oaaooABBBBBAooaao.......",
+  "........oAo.oABBBBBAo.oAo.......",
+  "........oAo.oAABBBAAo.oAo.......",
+  "........oAo.oAABBBAAo.oAo.......",
+  "........oao.oaABBBAao.oao.......",
+  "............ohhhhhho............",
+  "............ohhyyhho............",
+  "............oaAAAAao............",
+  "............oaAAAAao............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oAwooAwo............",
+  "............oAAooAAo............",
+  "............oaaooaao............",
+  "...........oaaaooaaao...........",
+  "...........oaaaooaaao...........",
+  "............oooooooo............",
+]);
+
+// Contact frames: a stride, not a wishbone — feet stagger vertically (the
+// forward foot lands a row lower, the trailing heel lifts).
+const K_S_LEGS_A = [
+  "............oAAooAAo............",
   "...........oAAo..oAAo...........",
   "...........oAAo..oAAo...........",
   "...........oAwo..oAwo...........",
-  "...........oAAo..oAAo...........",
-  "...........oaao..oaao...........",
-  "..........oaaao..oaaao..........",
-  "..........oaaao..oaaao..........",
-  "...........oooo...oooo..........",
-]);
-
-// Contact frames: legs spread. A = left leg out, B = mirrored.
-const K_S_LEGS_A = [
-  "...........oAAo..oAAo...........",
-  "..........oAAo...oAAo...........",
-  ".........oAAo....oAAo...........",
-  ".........oAwo....oAwo...........",
-  "........oAAo.....oAAo...........",
-  "........oaao.....oaao...........",
-  ".......oaaao.....oaaao..........",
-  ".......oaaao.....oaaao..........",
-  "........oooo......oooo..........",
+  "..........oAAo....oAAo..........",
+  "..........oaao....oaao..........",
+  ".........oaaao....oaaao.........",
+  ".........oaaao.....oooo.........",
+  "..........oooo..................",
 ];
 const K_S_LEGS_B = [
+  "............oAAooAAo............",
   "...........oAAo..oAAo...........",
-  "...........oAAo...oAAo..........",
-  "...........oAAo....oAAo.........",
-  "...........oAwo....oAwo.........",
-  "...........oAAo.....oAAo........",
-  "...........oaao.....oaao........",
-  "..........oaaao.....oaaao.......",
-  "..........oaaao.....oaaao.......",
-  "...........oooo......oooo.......",
+  "...........oAAo..oAAo...........",
+  "...........oAwo..oAwo...........",
+  "..........oAAo....oAAo..........",
+  "..........oaao....oaao..........",
+  ".........oaaao....oaaao.........",
+  ".........oooo.....oaaao.........",
+  "...................oooo.........",
 ];
 
 // Sword poses, sparse overlays. Rest: blade upright in the right hand.
@@ -212,7 +199,6 @@ const SW_S_REST = f([
   "................................",
 ]);
 
-// Windup: blade high over the right shoulder.
 const SW_S_UP = f([
   "..........................ww....",
   ".........................ww.....",
@@ -248,7 +234,6 @@ const SW_S_UP = f([
   "................................",
 ]);
 
-// Swing: the active frame — blade horizontal across the body.
 const SW_S_SWING = f([
   "................................",
   "................................",
@@ -284,7 +269,6 @@ const SW_S_SWING = f([
   "................................",
 ]);
 
-// Recover: blade low, trailing down-right.
 const SW_S_LOW = f([
   "................................",
   "................................",
@@ -334,32 +318,27 @@ const K_N_BASE = f([
   "...........oaAAAAAAao...........",
   "............oAAAAAAo............",
   ".............oAAAAo.............",
-  ".......oooo.oAAAAAAAAo.oooo.....",
-  ".......oAAo.oAAAAAAAAo.oAAo.....",
-  ".......oaaoooAaaaaaaAoooaao.....",
-  "........oAo.oAAAAAAAAo.oAo......",
-  "........oAo.oAaaaaaaAo.oAo......",
-  "........oAo.oAAAAAAAAo.oAo......",
-  "........oao.oaAAAAAAao.oao......",
-  "...........ohhhhhhhho...........",
-  "...........ohhhhhhhho...........",
-  "...........oaAAAAAAao...........",
-  "...........oaAAooAAao...........",
-  "...........oAAo..oAAo...........",
-  "...........oAAo..oAAo...........",
-  "...........oAAo..oAAo...........",
-  "...........oAAo..oAAo...........",
-  "...........oAAo..oAAo...........",
-  "...........oaao..oaao...........",
-  "..........oaaao..oaaao..........",
-  "..........oaaao..oaaao..........",
-  "...........oooo...oooo..........",
+  "........oooooAAAAAAoooooo.......",
+  "........oAAooAAAAAAAooAAo.......",
+  "........oaaooAaaaaaAooaao.......",
+  "........oAo.oAAAAAAAo.oAo.......",
+  "........oAo.oAaaaaaAo.oAo.......",
+  "........oAo.oAAAAAAAo.oAo.......",
+  "........oao.oaAAAAAao.oao.......",
+  "............ohhhhhho............",
+  "............ohhhhhho............",
+  "............oaAAAAao............",
+  "............oaAAAAao............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oAAooAAo............",
+  "............oaaooaao............",
+  "...........oaaaooaaao...........",
+  "...........oaaaooaaao...........",
+  "............oooooooo............",
 ]);
-
-/** Mirror a sparse overlay horizontally (N poses = S poses on the other hand). */
-function mirror(patch: Frame): Frame {
-  return patch.map((row) => row.split("").reverse().join(""));
-}
 
 const SW_N_REST = mirror(SW_S_REST);
 const SW_N_UP = mirror(SW_S_UP);
@@ -396,37 +375,36 @@ const K_E_BASE = f([
   ".............oAAAAo.............",
   ".............oAwAwo.............",
   ".............oAAAAo.............",
-  ".............oaaaao.............",
-  "............oaaaaao.............",
-  "............oaaaaao.............",
-  ".............ooooo..............",
+  ".............oaaaaoo............",
+  "............oaaaaaao............",
+  "............oaaaaaao............",
+  ".............oooooo.............",
 ]);
 
-// Profile stride: A = right (near) leg forward, B = left leg forward.
+// Profile stride — a real scissor: front leg reaches, back heel lifts.
 const K_E_LEGS_A = [
   ".............oAAAAo.............",
-  "............oAAooAAo............",
-  "...........oAAo..oAAo...........",
+  "............oAAoAAoo............",
+  "...........oAAo.oAAo............",
   "...........oAwo..oAwo...........",
   "..........oAAo....oAAo..........",
-  "..........oaao....oaao..........",
-  ".........oaaao....oaaao.........",
-  ".........oaaao....oaaao.........",
-  "..........oooo.....oooo.........",
+  "..........oaao....oaaoo.........",
+  ".........oaaao....oaaaao........",
+  ".........oaaao.....oooo.........",
+  "..........oooo..................",
 ];
 const K_E_LEGS_B = [
   ".............oAAAAo.............",
-  "............oAAooAAo............",
-  "...........oAAo..oAAo...........",
+  "............ooAAoAAo............",
+  "............oAAo.oAAo...........",
   "...........oAwo..oAwo...........",
   "..........oAAo....oAAo..........",
-  "..........oaao....oaao..........",
-  ".........oaaao....oaaao.........",
-  ".........oaaao....oaaao.........",
-  ".........oooo......oooo.........",
-]
+  ".........ooaao....oaao..........",
+  "........oaaaao....oaaao.........",
+  ".........oooo.....oaaao.........",
+  "...................oooo.........",
+];
 
-// Rest: blade angled down-forward, ready.
 const SW_E_REST = f([
   "................................",
   "................................",
@@ -462,7 +440,6 @@ const SW_E_REST = f([
   "................................",
 ]);
 
-// Windup: blade raised behind the head.
 const SW_E_UP = f([
   ".......ww.......................",
   "........ww......................",
@@ -498,7 +475,6 @@ const SW_E_UP = f([
   "................................",
 ]);
 
-// Swing: full forward thrust — the reach frame.
 const SW_E_SWING = f([
   "................................",
   "................................",
@@ -534,7 +510,6 @@ const SW_E_SWING = f([
   "................................",
 ]);
 
-// Recover: blade swept low past the front foot.
 const SW_E_LOW = f([
   "................................",
   "................................",
@@ -574,376 +549,347 @@ const SW_E_LOW = f([
 const LEG_ROW = 23; // where the leg splices start
 const HIP_ROW = 21; // settle() boundary
 
-function knightClips(
+function actorClips(
   base: Frame,
   legsA: string[],
   legsB: string[],
-  sw: { rest: Frame; up: Frame; swing: Frame; low: Frame },
+  rest: Frame | null,
 ) {
-  const rest = (fr: Frame) => overlay(fr, sw.rest);
+  const dress = (fr: Frame) => (rest ? overlay(fr, rest) : fr);
   return {
-    idle: [rest(base), rest(settle(base, HIP_ROW))],
+    idle: [dress(base), dress(settle(base, HIP_ROW))],
     walk: [
-      rest(settle(spliceRows(base, LEG_ROW, legsA), HIP_ROW)),
-      rest(base),
-      rest(settle(spliceRows(base, LEG_ROW, legsB), HIP_ROW)),
-      rest(base),
+      dress(settle(spliceRows(base, LEG_ROW, legsA), HIP_ROW)),
+      dress(base),
+      dress(settle(spliceRows(base, LEG_ROW, legsB), HIP_ROW)),
+      dress(base),
     ],
-    attack: [overlay(base, sw.up), overlay(base, sw.swing), overlay(base, sw.low)],
   };
 }
 
 export type ActorFrames = Record<Dir, Partial<Record<ClipName, Frame[]>>>;
 
 export const PLAYER_FRAMES: ActorFrames = {
-  S: knightClips(K_S_BASE, K_S_LEGS_A, K_S_LEGS_B, {
-    rest: SW_S_REST,
-    up: SW_S_UP,
-    swing: SW_S_SWING,
-    low: SW_S_LOW,
-  }),
-  N: knightClips(K_N_BASE, K_S_LEGS_A, K_S_LEGS_B, {
-    rest: SW_N_REST,
-    up: SW_N_UP,
-    swing: SW_N_SWING,
-    low: SW_N_LOW,
-  }),
-  E: knightClips(K_E_BASE, K_E_LEGS_A, K_E_LEGS_B, {
-    rest: SW_E_REST,
-    up: SW_E_UP,
-    swing: SW_E_SWING,
-    low: SW_E_LOW,
-  }),
+  S: {
+    ...actorClips(K_S_BASE, K_S_LEGS_A, K_S_LEGS_B, SW_S_REST),
+    attack: [overlay(K_S_BASE, SW_S_UP), overlay(K_S_BASE, SW_S_SWING), overlay(K_S_BASE, SW_S_LOW)],
+  },
+  N: {
+    ...actorClips(K_N_BASE, K_S_LEGS_A, K_S_LEGS_B, SW_N_REST),
+    attack: [overlay(K_N_BASE, SW_N_UP), overlay(K_N_BASE, SW_N_SWING), overlay(K_N_BASE, SW_N_LOW)],
+  },
+  E: {
+    ...actorClips(K_E_BASE, K_E_LEGS_A, K_E_LEGS_B, SW_E_REST),
+    attack: [overlay(K_E_BASE, SW_E_UP), overlay(K_E_BASE, SW_E_SWING), overlay(K_E_BASE, SW_E_LOW)],
+  },
 };
 
 // ══════════════════════════════════════════════════════════════════
-// ZOMBIE — the original 16px art, upscaled 2×. Chunkier than the
-// knight on purpose; it suits the rot.
+// ZOMBIE — native 32px now (the scale2x'd 16px art read as a crab).
+// Hunched, lopsided, ribs bare, one arm reaching and one hanging.
 // ══════════════════════════════════════════════════════════════════
 
-const Z_S_IDLE_0 = f16([
-  "................",
-  ".....gggggg.....",
-  "....gGYYYYGg....",
-  "....gGrGGrGg....",
-  "....gGGGGGGg....",
-  "....gG.gg.Gg....",
-  ".....gGGGGg.....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG..GGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
+// ── Facing SOUTH ──
+const Z_S_BASE = f([
+  "................................",
+  "................................",
+  "............gggg................",
+  "..........ggGGGGgg..............",
+  ".........gGGYGGGGGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGorGGorGg.............",
+  ".........gGorGGorGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGGooooGGg.............",
+  "..........gGGGGGGg..............",
+  "...........ggGGgg...............",
+  ".......gggGGGGGGGggg............",
+  "......gGGGGGGGGGGGGGg...........",
+  ".....gGGgGGYYGGGGgGGGg..........",
+  "....gGGg.gGGGGYGGg.gGGg.........",
+  "....gGg..gYGGGGGGg..gGg.........",
+  "...gGGg..gGGYYGGGg..gGGg........",
+  "...gYGg..gGGGGGGGg..gYYg........",
+  "...gggg..gGGrrGGGg...ggg........",
+  ".........ghhhhhhhg..............",
+  ".........ghh..hhhg..............",
+  ".........ghh..hhhg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGgg.ggGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gggg.gggg..............",
+  "........gGGYg.gYGGg.............",
+  "........gGGGg.gGGGg.............",
+  ".........gggg..gggg.............",
 ]);
 
-const Z_S_IDLE_1 = f16([
-  "................",
-  "......gggggg....",
-  ".....gGYYYYGg...",
-  ".....gGrGGrGg...",
-  ".....gGGGGGGg...",
-  ".....gG.gg.Gg...",
-  "......gGGGGg....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG..GGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
+const Z_S_LEGS_A = [
+  ".........gGGg.gGGg..............",
+  "........gGGg...gGGg.............",
+  "........gGgg...ggGg.............",
+  "........gGGg...gGGg.............",
+  ".......gGGg.....gGGg............",
+  ".......gggg.....gggg............",
+  "......gGGYg.....gYGGg...........",
+  "......gGGGg......gggg...........",
+  ".......gggg.....................",
+];
+const Z_S_LEGS_B = [
+  ".........gGGg.gGGg..............",
+  ".........gGGg...gGGg............",
+  ".........gGgg...ggGg............",
+  ".........gGGg...gGGg............",
+  "........gGGg.....gGGg...........",
+  "........gggg.....gggg...........",
+  ".......gGGYg.....gYGGg..........",
+  ".......gggg......gGGGg..........",
+  ".................gggg...........",
+]
+
+// ── Facing NORTH — bald patchy scalp, spine, arms drooping out ──
+const Z_N_BASE = f([
+  "................................",
+  "................................",
+  "............gggg................",
+  "..........ggGGGGgg..............",
+  ".........gGGGGYGGGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGGYGGGGGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGGGGGGGGg.............",
+  "..........gGGGGGGg..............",
+  "...........ggGGgg...............",
+  ".......gggGGGgGGGGggg...........",
+  "......gGGGGGGgGGGGGGGg..........",
+  ".....gGGgGGGGgGGGGgGGGg.........",
+  "....gGGg.gGGGgGGGGg.gGGg........",
+  "....gGg..gGGGgGGGGg..gGg........",
+  "...gGGg..gGGGgGGGGg..gGGg.......",
+  "...gYGg..gGGGgGGGGg..gYYg.......",
+  "...gggg..gGGGgGGGGg...ggg.......",
+  ".........ghhhhhhhg..............",
+  ".........ghh..hhhg..............",
+  ".........ghh..hhhg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGgg.ggGg..............",
+  ".........gGGg.gGGg..............",
+  ".........gggg.gggg..............",
+  "........gGGYg.gYGGg.............",
+  "........gGGGg.gGGGg.............",
+  ".........gggg..gggg.............",
 ]);
 
-const Z_S_WALK_0 = f16([
-  "................",
-  ".....gggggg.....",
-  "....gGYYYYGg....",
-  "....gGrGGrGg....",
-  "....gGGGGGGg....",
-  "....gG.gg.Gg....",
-  ".....gGGGGg.....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "...gGG...GGg....",
-  "...gGG...GGg....",
-  "..ghh.....hhg...",
-  "..gg.......gg...",
+// ── Facing EAST — the classic profile: head thrust forward, both arms out ──
+const Z_E_BASE = f([
+  "................................",
+  "................................",
+  "..............gggg..............",
+  ".............gGGGGgg............",
+  "............gGYGGGGGg...........",
+  "............gGGGGGGGg...........",
+  "............gGGGorGGg...........",
+  "............gGGGGGGGg...........",
+  "............gGGoooGg............",
+  ".............gGGGGg.............",
+  "..............ggGg..............",
+  "............ggGGGgg.............",
+  "...........gGGGGGGGg............",
+  "..........gGGYYGGGGgggg.........",
+  "..........gGGGGGGGGGGGGg........",
+  "..........gGYGGGGGgggggg........",
+  "..........gGGGGGGGggg...........",
+  "..........gGGrrGGGGGGg..........",
+  "...........gGGGGGGgggg..........",
+  "...........ghhhhhhg.............",
+  "...........ghh.hhhg.............",
+  "...........ghh.hhhg.............",
+  "...........gGGg.gGg.............",
+  "...........gGGg.gGg.............",
+  "...........gGGg.gGg.............",
+  "...........gGgg.ggg.............",
+  "...........gGGg.gGg.............",
+  "...........gggg.ggg.............",
+  "..........gGGYgggYGg............",
+  "..........gGGGggGGGg............",
+  "...........gggg.gggg............",
+  "................................",
 ]);
 
-const Z_S_WALK_2 = f16([
-  "................",
-  "......gggggg....",
-  ".....gGYYYYGg...",
-  ".....gGrGGrGg...",
-  ".....gGGGGGGg...",
-  ".....gG.gg.Gg...",
-  "......gGGGGg....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG...GGg...",
-  "....gGG...GGg...",
-  "...ghh.....hhg..",
-  "...gg.......gg..",
+const Z_E_LEGS_A = [
+  "...........gGGg.gGg.............",
+  "..........gGGg...gGg............",
+  "..........gGgg...ggg............",
+  "..........gGGg...gGg............",
+  ".........gGGg.....gGg...........",
+  ".........gggg.....ggg...........",
+  "........gGGYgg....gYGg..........",
+  "........gGGGgg.....ggg..........",
+  ".........gggg...................",
+];
+const Z_E_LEGS_B = [
+  "...........gGGg.gGg.............",
+  "...........gGGg...gGg...........",
+  "...........gGgg...ggg...........",
+  "...........gGGg...gGg...........",
+  "..........gGGg.....gGg..........",
+  "..........gggg.....ggg..........",
+  ".........gGGYg.....gYGg.........",
+  ".........gggg......gGGg.........",
+  "...................gggg.........",
+]
+
+// ── Death — buckle → fold → collapse → a heap and a stain. 32px native. ──
+const Z_DEATH_0 = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "............gggg................",
+  "..........ggGGGGgg..............",
+  ".........gGGrrrrGGg.............",
+  ".........gGGRGGRGGg.............",
+  ".........gGGGGGGGGg.............",
+  ".........gGGooooGGg.............",
+  "..........gGGGGGGg..............",
+  "...........ggGGgg...............",
+  ".......gggGGGGGGGggg............",
+  "......gGGGGGGGGGGGGGg...........",
+  ".....gGGgGGYYGGGGgGGGg..........",
+  "....gGGg.gGGGGYGGg.gGGg.........",
+  "....gGg..gYGGGGGGg..gGg.........",
+  "...gGGg..gGGYYGGGg..gGGg........",
+  "...gYGg..gGGGGGGGg..gYYg........",
+  "...gggg..gGGrrGGGg...ggg........",
+  ".........ghhhhhhhg..............",
+  ".........ghh..hhhg..............",
+  ".........gGGg.gGGg..............",
+  ".........gGGgggGGg..............",
+  ".........ggggggggg..............",
+  "........gGGYggYGGg..............",
+  "........gGGGggGGGg..............",
+  ".........gggggggg...............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const Z_S_DEATH_0 = f16([
-  "................",
-  "................",
-  ".....gggggg.....",
-  "....gGrrrrGg....",
-  "....gGRGGRGg....",
-  "....gGGGGGGg....",
-  "....gG.gg.Gg....",
-  "...ggGGGGGGgg...",
-  ".gGGGGGGGGGGGGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG..GGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
-  "................",
+const Z_DEATH_1 = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "....gg......gggg................",
+  "....ggg...ggGGGGgg..............",
+  ".....ggg.gGGrrrrGGg.............",
+  "......gggGGRGGRGGGg.............",
+  "......ggGGGGGGGGGGg.............",
+  ".....gGGGGGGGGGGGgg.............",
+  "....gGGGGGGGGGGGGGGg............",
+  "....ggg.gGGYYGGGGggg............",
+  "........gGGGGYGGg...............",
+  ".......gGGGGGGGGGg..............",
+  ".......ghhhhhhhhg...............",
+  ".......ghh...hhhg...............",
+  ".......gGGg..gGGg...............",
+  ".......gGGgggGGg................",
+  "........gggggggg................",
+  ".......gGGYggYGGg...............",
+  ".......gGGGggGGGg...............",
+  "........gggggggg................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const Z_S_DEATH_1 = f16([
-  "................",
-  "................",
-  "................",
-  "................",
-  "..g...gggggg....",
-  "..gg.gGrrrrGg...",
-  "...ggGRGGRGg....",
-  "...ggGGGGGGg....",
-  "..gGGGGGGGGGg...",
-  "..gg.gGGGGg.gg..",
-  "....gGGGGGGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
-  "................",
-  "................",
+const Z_DEATH_2 = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "....gggg........................",
+  "...gGGGGgg....gggggg............",
+  "..gGGrrGGGggGGrrrrGGgg..........",
+  "..gGGGGGGGGGGGRGGRGGGGg.........",
+  "...gGGGGGGGGGGGGGGGGGGGg........",
+  "....ggGGYYGGGGGGGGGGGgg.........",
+  "......gGGGGGGGGGGGGgg...........",
+  ".......gghhhhhhhhgg.............",
+  ".........gggggggg...............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const Z_S_DEATH_2 = f16([
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "..gg............",
-  ".gGGgg..gggg....",
-  ".gGrGGgGrrrGg...",
-  "..gGGGGGRGGRGg..",
-  "..gGGGGGGGGGGg..",
-  "...ggGGGGGGgg...",
-  "....gghhhhgg....",
-  ".....gggggg.....",
-  "................",
+const Z_DEATH_3 = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "........r...........r...........",
+  "......rdRr...gggg..rr...........",
+  ".....rrdGGgggGGGGggdrr..........",
+  "....rdGGGGGGGGGGGGGGGdr.........",
+  "...rRdGGGGGGGGGGGGGGGGRr........",
+  "...rrdgGGGGGGGGGGGGGgdrr........",
+  "....rr..gggggggggggg..rr........",
+  ".....r....rrrrrrrr....r.........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const Z_S_DEATH_3 = f16([
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "................",
-  "....r......r....",
-  "...rRr..gg.rr...",
-  "..rrGGggGGgGrr..",
-  ".rRGGGGGGGGGGRr.",
-  ".rrgGGGGGGGGgrr.",
-  "..rr.gggggg.rr..",
-  "...r..rrrr..r...",
-]);
-
-const Z_N_IDLE_0 = f16([
-  "................",
-  ".....gggggg.....",
-  "....gGGGGGGg....",
-  "....gGGGGGGg....",
-  "....gGGGGGGg....",
-  "....gGgggGGg....",
-  ".....gGGGGg.....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG..GGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
-]);
-
-const Z_N_IDLE_1 = f16([
-  "................",
-  "......gggggg....",
-  ".....gGGGGGGg...",
-  ".....gGGGGGGg...",
-  ".....gGGGGGGg...",
-  ".....gGgggGGg...",
-  "......gGGGGg....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG..GGg....",
-  "....gGG..GGg....",
-  "....ghh..hhg....",
-  ".....gg..gg.....",
-]);
-
-const Z_N_WALK_0 = f16([
-  "................",
-  ".....gggggg.....",
-  "....gGGGGGGg....",
-  "....gGGGGGGg....",
-  "....gGGGGGGg....",
-  "....gGgggGGg....",
-  ".....gGGGGg.....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "...gGG...GGg....",
-  "...gGG...GGg....",
-  "..ghh.....hhg...",
-  "..gg.......gg...",
-]);
-
-const Z_N_WALK_2 = f16([
-  "................",
-  "......gggggg....",
-  ".....gGGGGGGg...",
-  ".....gGGGGGGg...",
-  ".....gGGGGGGg...",
-  ".....gGgggGGg...",
-  "......gGGGGg....",
-  "...ggGGGGGGgg...",
-  "..gGGGGGGGGGGg..",
-  ".gGg.gGGGGg.gGg.",
-  ".gg..gGGGGg..gg.",
-  ".....gGGGGg.....",
-  "....gGG...GGg...",
-  "....gGG...GGg...",
-  "...ghh.....hhg..",
-  "...gg.......gg..",
-]);
-
-const Z_E_IDLE_0 = f16([
-  "................",
-  ".....ggggg......",
-  "....gGYYYYg.....",
-  "....gGrGGGg.....",
-  "....gGGGGGg.....",
-  "....gG.ggGg.....",
-  ".....gGGGg......",
-  "...ggGGGGGgg....",
-  "..gGGGGGGGGGGGg.",
-  "..gGGGGGGGgg.gg.",
-  "...gGGGGGg......",
-  "....gGGGGg......",
-  "....gGG.GGg.....",
-  "....gGG.GGg.....",
-  "...ghh...hhg....",
-  "...gg.....gg....",
-]);
-
-const Z_E_IDLE_1 = f16([
-  "................",
-  "......ggggg.....",
-  ".....gGYYYYg....",
-  ".....gGrGGGg....",
-  ".....gGGGGGg....",
-  ".....gG.ggGg....",
-  "......gGGGg.....",
-  "...ggGGGGGgg....",
-  "..gGGGGGGGGGGGg.",
-  "..gGGGGGGGgg.gg.",
-  "...gGGGGGg......",
-  "....gGGGGg......",
-  "....gGG.GGg.....",
-  "....gGG.GGg.....",
-  "...ghh...hhg....",
-  "...gg.....gg....",
-]);
-
-const Z_E_WALK_0 = f16([
-  "................",
-  ".....ggggg......",
-  "....gGYYYYg.....",
-  "....gGrGGGg.....",
-  "....gGGGGGg.....",
-  "....gG.ggGg.....",
-  ".....gGGGg......",
-  "...ggGGGGGgg....",
-  "..gGGGGGGGGGGGg.",
-  "..gGGGGGGGgg.gg.",
-  "...gGGGGGg......",
-  "....gGGGGg......",
-  "...gGG..GGg.....",
-  "..gGG....GGg....",
-  "..ghh.....hhg...",
-  "..gg.......gg...",
-]);
-
-const Z_E_WALK_2 = f16([
-  "................",
-  "......ggggg.....",
-  ".....gGYYYYg....",
-  ".....gGrGGGg....",
-  ".....gGGGGGg....",
-  ".....gG.ggGg....",
-  "......gGGGg.....",
-  "...ggGGGGGgg....",
-  "..gGGGGGGGGGGGg.",
-  "..gGGGGGGGgg.gg.",
-  "...gGGGGGg......",
-  "....gGGGGg......",
-  "....gGG.GGg.....",
-  "....gGG..GGg....",
-  "...ghh....hhg...",
-  "...gg......gg...",
-]);
-
-const zDeath = [Z_S_DEATH_0, Z_S_DEATH_1, Z_S_DEATH_2, Z_S_DEATH_3].map(scale2x);
+const zDeath = [Z_DEATH_0, Z_DEATH_1, Z_DEATH_2, Z_DEATH_3];
 
 export const ZOMBIE_FRAMES: ActorFrames = {
-  S: {
-    idle: [Z_S_IDLE_0, Z_S_IDLE_1].map(scale2x),
-    walk: [Z_S_WALK_0, Z_S_IDLE_1, Z_S_WALK_2, Z_S_IDLE_0].map(scale2x),
-    death: zDeath,
-  },
-  N: {
-    idle: [Z_N_IDLE_0, Z_N_IDLE_1].map(scale2x),
-    walk: [Z_N_WALK_0, Z_N_IDLE_1, Z_N_WALK_2, Z_N_IDLE_0].map(scale2x),
-    // Death is direction-agnostic — you fall the same way whichever way you faced.
-    death: zDeath,
-  },
-  E: {
-    idle: [Z_E_IDLE_0, Z_E_IDLE_1].map(scale2x),
-    walk: [Z_E_WALK_0, Z_E_IDLE_1, Z_E_WALK_2, Z_E_IDLE_0].map(scale2x),
-    death: zDeath,
-  },
+  S: { ...actorClips(Z_S_BASE, Z_S_LEGS_A, Z_S_LEGS_B, null), death: zDeath },
+  N: { ...actorClips(Z_N_BASE, Z_S_LEGS_A, Z_S_LEGS_B, null), death: zDeath },
+  E: { ...actorClips(Z_E_BASE, Z_E_LEGS_A, Z_E_LEGS_B, null), death: zDeath },
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -1168,4 +1114,120 @@ export const ITEM_FRAMES: Record<string, Frame> = {
   helmet: HELMET_ITEM,
   armor: ARMOR_ITEM,
   boots: BOOTS_ITEM,
+};
+
+// ══════════════════════════════════════════════════════════════════
+// PROPS — walk-over set dressing. Drawn low so they hug the floor.
+// ══════════════════════════════════════════════════════════════════
+
+const BONES_PROP = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "......oo........................",
+  ".....owwoo...........oo.........",
+  "......oowwoo.......owwo.........",
+  "........oowwoo....owo...........",
+  "..........oowwo..owo............",
+  "....oo......oo..oo..............",
+  "...owwooooooooooo...............",
+  "....oooowwwwoo..oB..............",
+  "..........ooo...o...............",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const SKULL_PROP = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "...............oooo.............",
+  "..............owwwwo............",
+  ".............owwwwwwo...........",
+  ".............owowwowo...........",
+  ".............owwwwwwo...........",
+  "..............owwwwo............",
+  "..............owowow............",
+  "...............oooo.............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const RUBBLE_PROP = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..............oo................",
+  ".............oAAo..oo...........",
+  "........oo..oAABAo.oao..........",
+  ".......oaao.oAAAAooaaao.........",
+  "......oaaaaooaAAAaoaaao.........",
+  ".....oaaaaaaoaaaaaooooo.........",
+  "......ooooooooooooo.............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+/** Scenery art, keyed by PropSpot.kind. */
+export const PROP_FRAMES: Record<string, Frame> = {
+  bones: BONES_PROP,
+  skull: SKULL_PROP,
+  rubble: RUBBLE_PROP,
 };

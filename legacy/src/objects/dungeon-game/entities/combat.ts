@@ -16,24 +16,41 @@ import {
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
+import { screenDirToWorld } from "../camera";
 import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, degradeWeapon, absorbDamage } from "../items";
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
 import { showToast } from "../ui";
 
-export const FACING_VEC: Record<Facing, [number, number]> = {
-  N: [0, -1],
-  S: [0, 1],
-  E: [1, 0],
-  W: [-1, 0],
-};
+/**
+ * Facing → WORLD ground direction. Facings are SCREEN-relative (the art's "E"
+ * is screen-right), so under the isometric yaw each cardinal maps to a world
+ * diagonal. Attack arcs, knockback and steering all use these.
+ */
+export const FACING_VEC: Record<Facing, [number, number]> = (() => {
+  const v = (sx: number, sz: number): [number, number] => {
+    const w = screenDirToWorld(sx, sz);
+    return [w.x, w.z];
+  };
+  return { N: v(0, -1), S: v(0, 1), E: v(1, 0), W: v(-1, 0) };
+})();
 
 const FLASH_TIME = 0.12;
 
-/** Snap an actor's mesh to its logical position, on the render-target pixel
- * grid — unsnapped sprites shimmer as they move (BLUEPRINT §4.3). */
+const ISO = Math.SQRT1_2;
+
+/**
+ * Snap an actor's mesh to its logical position so its texels land on whole
+ * render-target pixels — unsnapped sprites shimmer as they move (BLUEPRINT
+ * §4.3). Under the 45° yaw, world axes no longer map to screen axes, so the
+ * snap happens on the camera-aligned diagonals (u = screen-x, v = depth).
+ */
 export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, y: number, z: number): void } } }; x: number; z: number }): void {
-  a.sprite.mesh.position.set(Math.round(a.x * PPU) / PPU, 0, Math.round(a.z * PPU) / PPU);
+  const u = (a.x - a.z) * ISO;
+  const v = (a.x + a.z) * ISO;
+  const su = Math.round(u * PPU) / PPU;
+  const sv = Math.round(v * PPU) / PPU;
+  a.sprite.mesh.position.set((sv + su) * ISO, 0, (sv - su) * ISO);
 }
 
 /**

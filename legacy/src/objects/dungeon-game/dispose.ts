@@ -22,6 +22,12 @@ export function disposeLevel(): void {
   });
   state.groundItems = [];
 
+  state.props.forEach((p) => {
+    state.scene?.remove(p.sprite.mesh);
+    p.sprite.dispose();
+  });
+  state.props = [];
+
   state.maze?.dispose();
   state.maze = null;
   state.grid = null;

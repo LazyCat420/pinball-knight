@@ -25,12 +25,20 @@ export interface ItemDrop extends TilePos {
   id: string;
 }
 
+export interface PropSpot extends TilePos {
+  /** Key into PROP_FRAMES — bones, skull, rubble. */
+  kind: string;
+}
+
 export interface LevelPlan {
   start: TilePos;
   stairs: TilePos;
   spawns: TilePos[];
   torches: Torch[];
   items: ItemDrop[];
+  /** Set dressing — walkable-over scenery. D2R's lesson: bare floors read as
+   * "too basic"; a skull every dozen tiles reads as a crypt. */
+  props: PropSpot[];
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -143,5 +151,18 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     items.push({ kind: def.kind, id: def.id, i: spot.i, j: spot.j });
   }
 
-  return { start, stairs, spawns, torches, items };
+  // ── Props: sparse scenery on plain floor, clear of the stairs and loot ──
+  const PROP_KINDS = ["bones", "skull", "rubble", "bones", "rubble"]; // bones/rubble weighted up
+  const props: PropSpot[] = [];
+  const propBudget = Math.floor(floors.length / 26);
+  for (const p of shuffled(floors, rng)) {
+    if (props.length >= propBudget) break;
+    if (p.i === stairs.i && p.j === stairs.j) continue;
+    if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 3) continue;
+    if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
+    if (props.some((q) => Math.abs(q.i - p.i) + Math.abs(q.j - p.j) < 3)) continue;
+    props.push({ i: p.i, j: p.j, kind: PROP_KINDS[Math.floor(rng() * PROP_KINDS.length)] });
+  }
+
+  return { start, stairs, spawns, torches, items, props };
 }

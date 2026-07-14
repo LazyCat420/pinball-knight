@@ -19,9 +19,16 @@ import {
 import { moveCircle } from "../collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
 import { flowStep } from "./ai";
-import { facingFromVelocity } from "../render/animator";
+import { facingFromVelocity, type Facing } from "../render/animator";
+import { worldDirToScreen } from "../camera";
 import { hitPlayer, syncActorMesh, updateFlash } from "./combat";
 import { sfxGroan } from "../audio";
+
+/** World velocity → the facing the ART thinks in (screen-relative). */
+function facingFromWorld(wx: number, wz: number, fallback: Facing): Facing {
+  const s = worldDirToScreen(wx, wz);
+  return facingFromVelocity(s.x, s.z, fallback);
+}
 
 /** Straight-line pursuit inside this range; flow field beyond it. */
 const DIRECT_STEER_RANGE = 1.6;
@@ -67,7 +74,7 @@ export function updateZombies(dt: number): void {
     // ── Bite windup: rooted, facing you, then the bite lands if you're still there ──
     if (z.mode === "windup") {
       z.windupT += dt;
-      z.anim.setFacing(facingFromVelocity(pdx, pdz, "S"));
+      z.anim.setFacing(facingFromWorld(pdx, pdz, "S"));
       z.anim.play("idle"); // the stillness IS the tell
       if (z.windupT >= ZOMBIE_ATTACK_WINDUP) {
         z.mode = "chase";
@@ -129,7 +136,7 @@ export function updateZombies(dt: number): void {
     }
 
     if (vx !== 0 || vz !== 0) {
-      z.anim.setFacing(facingFromVelocity(vx, vz, "S"));
+      z.anim.setFacing(facingFromWorld(vx, vz, "S"));
       z.anim.play("walk");
     } else {
       z.anim.play("idle");

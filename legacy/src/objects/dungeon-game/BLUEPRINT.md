@@ -39,9 +39,32 @@ Status: **Phases 0–3 built and playable**, plus the 2026-07-14 playtest round:
   durability), boots add speed. One of each per level; walk-over to equip.
   Left-side HUD shows hearts, weapon durability meter, all three gear slots.
 
+**2026-07-14 isometric round** (playtest: "more isometric, like Diablo 2 with
+updated graphics; fix knight legs/torso/walk; zombies more detailed"):
+
+- **True isometric camera** — 45° yaw: diamond grid, two visible faces per
+  wall. Pixel snapping moved to the camera's own right/up basis (world-axis
+  snapping only works axis-aligned). WASD is screen-relative (Diablo feel);
+  facings are screen-relative too, so art picks stay correct; attack arcs and
+  knockback use FACING_VEC world diagonals. The low-rim rule generalised to
+  north-OR-west floor (the camera sits south-east).
+- **Cel outline** — depth-discontinuity ink lines in the pixel pass (ortho
+  depth is linear, so a fixed threshold works). Debug toggle: O.
+- **Maze dressing** — per-tile floor variation (moss, cracks, sunken tiles)
+  over an 8-tile pattern, a mossy wall variant every ~4th tall wall, and
+  scattered props (bones/skull/rubble) from decorate. The D2R lesson:
+  variation + set dressing kill the "basic floor" read.
+- **Knight rebuilt** — solid torso, tight legs (the wide stance read as a
+  wishbone), staggered-feet stride. **Zombie redrawn at native 32px** —
+  hunched, lopsided, red-eyed; the scale2x version read as a crab.
+- **Asset research verdict** — CC0 packs (Kenney, DCSS tiles) are static-only;
+  fully-animated LPC sheets are 64px CC-BY-SA. Nothing drops into a 32px
+  4-dir walk/attack/death pipeline cheaper than drawing it, so the art stays
+  procedural. Revisit if we ever want 8-direction actors.
+
 Phase 4/5 still open: blood pixels, damage numbers, best-depth persistence,
-per-weapon held art on the knight, true-32px zombie redraw, alternate maze
-algorithms, more enemy types.
+per-weapon held art on the knight, alternate maze algorithms, more enemy
+types.
 
 ---
 

@@ -14,6 +14,7 @@ import {
 } from "../constants";
 import { moveCircle } from "../collision";
 import { facingFromVelocity } from "../render/animator";
+import { screenDirToWorld } from "../camera";
 import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, syncActorMesh, updateFlash } from "./combat";
@@ -43,17 +44,23 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   }
 
   // ── Movement (slowed mid-swing, facing locked to the swing) ──
+  // Input is SCREEN-relative (W = up the screen), converted to world ground
+  // directions here — under the isometric yaw those are diagonals. This is
+  // how Diablo controls feel: the stick/keys always mean what your eyes see.
   const a = input.axis();
   let speed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
   if (state.gear.boots !== undefined) speed *= BOOTS_SPEED_FACTOR;
   if (a.x !== 0 || a.z !== 0) {
-    const res = moveCircle(g, p.x, p.z, PLAYER_R, a.x * speed * dt, a.z * speed * dt);
+    const w = screenDirToWorld(a.x, a.z);
+    const res = moveCircle(g, p.x, p.z, PLAYER_R, w.x * speed * dt, w.z * speed * dt);
     p.x = res.x;
     p.z = res.z;
   }
 
   if (!attacking) {
     if (a.x !== 0 || a.z !== 0) {
+      // Facing picks from the SCREEN axis, so pressing D always shows the
+      // side-facing art regardless of camera yaw.
       p.facing = facingFromVelocity(a.x, a.z, p.facing);
       p.anim.setFacing(p.facing);
       p.anim.play("walk");

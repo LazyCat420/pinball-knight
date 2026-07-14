@@ -23,7 +23,7 @@ import { state, resetState, freshPlayerFields, type Zombie, type GroundItem } fr
 import { createPixelPass } from "./render/pixel-pass";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { PLAYER_FRAMES, ZOMBIE_FRAMES, ITEM_FRAMES } from "./render/sprite-data";
+import { PLAYER_FRAMES, ZOMBIE_FRAMES, ITEM_FRAMES, PROP_FRAMES } from "./render/sprite-data";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
@@ -85,6 +85,7 @@ export function launchDungeonGame(onExit?: () => void): void {
     quantize: state.quantize,
     dither: state.dither,
     scanline: state.scanline,
+    outline: state.outline,
   });
 
   // ── Scene ──
@@ -210,6 +211,15 @@ function startLevel(level: number): void {
     return { kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
   });
 
+  // ── Set dressing ──
+  state.props = plan.props.map((pr) => {
+    const sprite = createStaticSprite(PROP_FRAMES[pr.kind]);
+    const pos = tileCenter(grid, pr.i, pr.j);
+    sprite.mesh.position.set(pos.x, 0, pos.z);
+    state.scene!.add(sprite.mesh);
+    return { sprite };
+  });
+
   state.flowField = null;
   state.flowTimer = 0;
   snapCameraTo(startPos.x, startPos.z);
@@ -238,6 +248,10 @@ function handleKey(e: KeyboardEvent): void {
     case "k":
       state.scanline = !state.scanline;
       state.pixelPass?.setScanline(state.scanline);
+      break;
+    case "o":
+      state.outline = !state.outline;
+      state.pixelPass?.setOutline(state.outline);
       break;
   }
 }

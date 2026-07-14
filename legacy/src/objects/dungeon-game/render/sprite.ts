@@ -18,7 +18,20 @@
 import * as THREE from "three";
 import { CHARS, type ActorFrames, type Dir, type ClipName, type Frame } from "./sprite-data";
 import { paletteCss, PALETTE_HEX } from "./palette";
-import { SPRITE_PX, SPRITE_UNITS, CAMERA_TILT } from "../constants";
+import { SPRITE_PX, SPRITE_UNITS, CAMERA_TILT, CAMERA_YAW } from "../constants";
+
+/**
+ * Face the isometric camera exactly: yaw to the camera's heading, then tilt
+ * back by its elevation (rotation order YXZ makes the X tilt local). Because
+ * the camera is orthographic and the plane ends up perpendicular to the view
+ * ray, sprite texels stay 1:1 with screen pixels. Rotation pivots on the
+ * bottom-centre origin — the feet stay planted.
+ */
+function faceCamera(mesh: THREE.Mesh): void {
+  mesh.rotation.order = "YXZ";
+  mesh.rotation.y = CAMERA_YAW;
+  mesh.rotation.x = -CAMERA_TILT;
+}
 
 export interface SpriteSheet {
   texture: THREE.CanvasTexture;
@@ -126,12 +139,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     : new THREE.MeshBasicMaterial(matOpts);
 
   const mesh = new THREE.Mesh(geo, mat);
-
-  // Face the camera: rotating by -tilt about X points the plane's normal
-  // up-and-toward an elevated camera. Derivation: Rx(θ) maps the plane's
-  // default normal (0,0,1) to (0,-sinθ,cosθ); we want (0,sin·tilt,cos·tilt),
-  // so θ = -tilt.
-  mesh.rotation.x = -CAMERA_TILT;
+  faceCamera(mesh);
   mesh.renderOrder = 10;
 
   let flipped = false;
@@ -247,7 +255,7 @@ export function createStaticSprite(frame: Frame): { mesh: THREE.Mesh; dispose():
     side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.rotation.x = -CAMERA_TILT;
+  faceCamera(mesh);
   mesh.renderOrder = 5; // under actors, over the floor
 
   return {

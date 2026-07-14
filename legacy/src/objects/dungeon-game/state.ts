@@ -9,7 +9,7 @@ import type { Grid, TilePos } from "./maze/generator";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, GearState } from "./items";
-import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
+import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
 import { freshWeapon } from "./items";
 
 export interface Actor {
@@ -90,6 +90,8 @@ export const state = {
   stairs: null as TilePos | null,
   maze: null as MazeHandle | null,
   groundItems: [] as GroundItem[],
+  /** Non-interactive set dressing (bones, skulls, rubble). */
+  props: [] as Array<{ sprite: { mesh: THREE.Mesh; dispose(): void } }>,
 
   // Actors
   player: null as Player | null,
@@ -114,10 +116,11 @@ export const state = {
   lastTime: 0,
   elapsed: 0,
 
-  // Style toggles (hidden debug keys Q/F/K)
+  // Style toggles (hidden debug keys Q/F/K/O)
   quantize: QUANTIZE_DEFAULT,
   dither: DITHER_DEFAULT,
   scanline: SCANLINE_DEFAULT,
+  outline: OUTLINE_DEFAULT,
 
   // Listeners
   input: null as InputHandle | null,
@@ -159,6 +162,7 @@ export function resetState(): void {
   state.stairs = null;
   state.maze = null;
   state.groundItems = [];
+  state.props = [];
   state.player = null;
   state.zombies = [];
   state.playerSheet = null;
