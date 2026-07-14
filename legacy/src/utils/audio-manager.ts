@@ -427,6 +427,81 @@ export function playSfx(type: string) {
         hissSource.stop(now + 0.45);
         break;
 
+      case "flap": {
+        // Soft wing whoosh — short filtered noise puff
+        osc.disconnect();
+        gain.disconnect();
+        const flapSource = ctx.createBufferSource();
+        flapSource.buffer = getHissBuffer(ctx);
+        const flapFilter = ctx.createBiquadFilter();
+        flapFilter.type = "lowpass";
+        flapFilter.frequency.setValueAtTime(900, now);
+        flapFilter.frequency.exponentialRampToValueAtTime(250, now + 0.12);
+        const flapGain = ctx.createGain();
+        flapGain.gain.setValueAtTime(0.0001, now);
+        flapGain.gain.exponentialRampToValueAtTime(0.06, now + 0.03);
+        flapGain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        flapSource.connect(flapFilter).connect(flapGain).connect(ctx.destination);
+        flapSource.start(now);
+        flapSource.stop(now + 0.15);
+        break;
+      }
+
+      case "whoosh": {
+        // Longer wind rush (fast fly-by / dive)
+        osc.disconnect();
+        gain.disconnect();
+        const whooshSource = ctx.createBufferSource();
+        whooshSource.buffer = getHissBuffer(ctx);
+        whooshSource.loop = true;
+        const whooshFilter = ctx.createBiquadFilter();
+        whooshFilter.type = "bandpass";
+        whooshFilter.frequency.setValueAtTime(300, now);
+        whooshFilter.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+        whooshFilter.frequency.exponentialRampToValueAtTime(200, now + 0.7);
+        whooshFilter.Q.value = 0.8;
+        const whooshGain = ctx.createGain();
+        whooshGain.gain.setValueAtTime(0.0001, now);
+        whooshGain.gain.exponentialRampToValueAtTime(0.12, now + 0.15);
+        whooshGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+        whooshSource.connect(whooshFilter).connect(whooshGain).connect(ctx.destination);
+        whooshSource.start(now);
+        whooshSource.stop(now + 0.75);
+        break;
+      }
+
+      case "squawk": {
+        // Toucan croak — raspy descending two-tone
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(950, now);
+        osc.frequency.exponentialRampToValueAtTime(500, now + 0.09);
+        osc.frequency.setValueAtTime(820, now + 0.12);
+        osc.frequency.exponentialRampToValueAtTime(380, now + 0.24);
+        gain.gain.setValueAtTime(0.14, now);
+        gain.gain.setValueAtTime(0.02, now + 0.1);
+        gain.gain.setValueAtTime(0.14, now + 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+        osc.start(now);
+        osc.stop(now + 0.28);
+        break;
+      }
+
+      case "chirp": {
+        // Cheerful two-note chirp
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1800, now);
+        osc.frequency.exponentialRampToValueAtTime(2400, now + 0.06);
+        osc.frequency.setValueAtTime(2100, now + 0.1);
+        osc.frequency.exponentialRampToValueAtTime(2700, now + 0.16);
+        gain.gain.setValueAtTime(0.09, now);
+        gain.gain.setValueAtTime(0.001, now + 0.08);
+        gain.gain.setValueAtTime(0.09, now + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        osc.start(now);
+        osc.stop(now + 0.2);
+        break;
+      }
+
       case "toaster-lever":
         osc.type = "sine";
         osc.frequency.setValueAtTime(300, now);

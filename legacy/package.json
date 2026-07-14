@@ -14,16 +14,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dimforge/rapier3d": "^0.19.3",
     "@dimforge/rapier3d-compat": "^0.19.3",
     "cannon-es": "^0.20.0",
     "gsap": "^3.12.7",
-    "manifold-3d": "^3.5.1",
     "next": "^16.1.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "simplex-noise": "^4.0.3",
-    "three": "^0.184.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.4",
@@ -31,7 +29,7 @@
     "@stryker-mutator/vitest-runner": "^9.6.0",
     "@types/node": "^25.9.2",
     "@types/react": "^19.2.17",
-    "@types/three": "^0.184.0",
+    "@types/three": "^0.185.1",
     "canvas": "^3.2.1",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.1.6",
