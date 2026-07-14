@@ -36,14 +36,14 @@ export const INTEGER_SCALE = true;
 /**
  * Elevation above the horizon, radians.
  *
- * Raised from 35° after playtesting: a wall face covers WALL_H/tan(tilt)
- * tiles of the floor behind it, and at 35° with the old 1.4-high walls that
- * was TWO full tiles — corridors read as solid wall and actors vanished. At
- * 50° with 0.85-high walls the shadow of a wall face is ~0.7 tiles, so a
- * character is never more than partially covered (and the cutaway +
- * silhouette passes handle that remainder).
+ * The angle has been round-tripped by playtests: 35° buried actors behind
+ * uniformly tall walls; 50° fixed that but turned the maze into a flat
+ * floor-plan of wall TOPS. 38° is the Diablo-ish side view (D2 itself is 2:1
+ * dimetric, ~27°) — and it only works because wall height is now STRUCTURAL
+ * (see WALL_H/WALL_LOW): the camera-side rim of every corridor is knee-high,
+ * so no angle can make a wall cover the corridor behind it.
  */
-export const CAMERA_TILT = (50 * Math.PI) / 180;
+export const CAMERA_TILT = (38 * Math.PI) / 180;
 export const CAMERA_DIST = 24; // irrelevant to scale (ortho), just needs to clear geometry
 
 // ── Sprites ─────────────────────────────────────────────────────
@@ -63,8 +63,17 @@ export const FPS_DEATH = 6;
 
 // ── World ───────────────────────────────────────────────────────
 export const TILE = 1;
-/** Chest-high, on purpose — see the CAMERA_TILT note. Tall walls bury actors. */
-export const WALL_H = 0.85;
+/**
+ * THE DIABLO WALL TRICK (see BLUEPRINT + boristhebrave's Diablo 1 analysis):
+ * Diablo only builds walls on the BACK edges of tiles — the camera-side walls
+ * of a room are trimmed. Translated to our 3D maze: a wall tile with walkable
+ * floor directly NORTH of it is the south rim of that corridor and would
+ * cover it, so it renders KNEE-HIGH (WALL_LOW); everything else renders full
+ * (WALL_H) and shows the big south face that makes the scene read as 3D.
+ * Occlusion is impossible by construction — no dynamic cutaway needed.
+ */
+export const WALL_H = 1.1;
+export const WALL_LOW = 0.35;
 
 // ── Game loop ───────────────────────────────────────────────────
 /**
@@ -82,7 +91,7 @@ export const MAX_FRAME = 0.1;
  * real PointLight — dozens of live point lights melt a forward renderer, and
  * off-screen torches can't be seen lighting anything anyway.
  */
-export const TORCH_LIGHT_POOL = 10;
+export const TORCH_LIGHT_POOL = 12;
 
 // ── Player ──────────────────────────────────────────────────────
 export const PLAYER_SPEED = 4.2; // tiles/sec
@@ -143,17 +152,20 @@ export interface LevelConfig {
 
 export function levelConfig(level: number): LevelConfig {
   const l = Math.max(1, level);
-  // ~16× the area of the original build (level 1 is 65×45 tiles vs 17×11) —
-  // the small mazes played as single-screen rooms, not dungeons. Zombie count
-  // rides the maze area so density stays roughly constant as depth grows.
-  const cellsW = Math.min(30 + 2 * l, 44);
-  const cellsH = Math.min(20 + l, 29);
-  const floorTiles = cellsW * cellsH * 2; // ≈ walkable tiles in a braided maze
+  // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2 —
+  // level 1 is 66×46 tiles (≈16× the original build's 17×11), corridors 2
+  // wide, wall bands 2 thick. Zombie count rides walkable area so density
+  // stays roughly constant as depth grows.
+  const cellsW = Math.min(15 + l, 26);
+  const cellsH = Math.min(10 + Math.ceil(l / 2), 17);
+  const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
   return {
     cellsW,
     cellsH,
     zombies: Math.min(Math.round(floorTiles / 34) + 2 * (l - 1), 48),
     zombieSpeed: Math.min(1.25 + 0.08 * l, 2.2),
-    torches: Math.min(12 + 2 * l, 20),
+    // Torches ride the maze area too — sparse torches left whole regions
+    // pitch dark. Only TORCH_LIGHT_POOL of them are ever LIVE lights.
+    torches: Math.min(Math.round(floorTiles / 55) + 8, 36),
   };
 }

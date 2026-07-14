@@ -16,13 +16,18 @@ Status: **Phases 0–3 built and playable**, plus the 2026-07-14 playtest round:
   (PPU 32); the knight is true 32px art composed from a weaponless base +
   leg splices + sword-pose overlays (see sprite-data.ts), zombies are the 16px
   art scale2x'd for now.
-- **Visibility fixes** (walls were burying actors at 35°/1.4-tall walls):
-  camera raised to **50°**, walls lowered to **0.85** (a wall face now covers
-  ~0.7 tiles instead of ~2), the wall rows south of the player **cut away** to
-  ankle height (InstancedMesh matrix swap), and a **GreaterDepth silhouette
-  pass** draws the knight through anything that still occludes him. This is
-  the Diablo-II treatment (fade + outline), adapted for instanced walls.
-- **~16× maze** — level 1 is 65×45 tiles; zombie count rides floor area.
+- **Visibility geometry — the Diablo wall trick** (this took three playtest
+  rounds: 35°/tall walls buried actors; 50°/short walls read as a flat floor
+  plan): the maze is scaled 2× (thickenWalls — corridors 2 wide, wall bands 2
+  thick), and wall height is STRUCTURAL: a wall with corridor directly north
+  of it is that corridor's south rim and renders knee-high (WALL_LOW); back
+  walls render full (WALL_H) and show their big south face to the 38° camera.
+  Diablo 1/2 do exactly this — walls only exist on the back edges of tiles
+  (boristhebrave.com's Diablo 1 analysis). Occlusion is impossible by
+  construction, so there is NO dynamic cutaway; a GreaterDepth silhouette
+  pass remains as the safety net. Caps carry a per-tile bordered grid texture
+  (darker than the floor) so wall runs never fuse into anonymous rectangles.
+- **~16× maze** — level 1 is 66×46 tiles; zombie count rides floor area.
 - **Torch light pool** — every torch has a flame mesh, but only the
   TORCH_LIGHT_POOL nearest the player carry live PointLights (forward
   renderers die by point-light count, not torch count).

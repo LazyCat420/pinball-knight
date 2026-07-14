@@ -1,12 +1,15 @@
 /**
  * Maze grid → three.js geometry.
  *
- * Walls are ONE InstancedMesh — one draw call for the whole maze regardless of
- * size — with a CUTAWAY: the handle exposes cutaway(pi, pj), which shrinks the
- * wall instances just south of the player to ankle height so they can never
- * bury the knight (the Diablo II fade, done with matrices instead of alpha,
- * because per-instance transparency isn't a thing a single InstancedMesh can
- * do).
+ * WALL HEIGHT IS STRUCTURAL — the Diablo trick (see constants.ts): a wall
+ * tile with walkable floor directly NORTH of it is the camera-side rim of
+ * that corridor, so it renders knee-high; every other wall renders full
+ * height and shows its big south face. The dungeon reads as a 3D side view
+ * and yet no wall can ever cover an actor. Two InstancedMeshes (full + low)
+ * = two draw calls for every wall in the maze, no per-frame matrix churn.
+ *
+ * Every wall cap carries a per-tile bordered texture, so tops read as a
+ * clean square grid instead of runs of merged rectangles.
  *
  * Torches: every torch gets sconce + flame meshes, but only a small POOL of
  * PointLights exists (TORCH_LIGHT_POOL). core.ts parks the pool lights on the
@@ -15,7 +18,7 @@
  */
 import * as THREE from "three";
 import { PALETTE_HEX } from "../render/palette";
-import { WALL_H, PPU, TORCH_LIGHT_POOL } from "../constants";
+import { WALL_H, WALL_LOW, PPU, TORCH_LIGHT_POOL } from "../constants";
 import { type Grid, isWalkable, tileCenter } from "./generator";
 import type { LevelPlan } from "./decorate";
 
@@ -120,9 +123,53 @@ function makeWallTexture(repeatX: number, repeatY: number): THREE.CanvasTexture 
       ctx.fillRect(0, half, PPU, 1);
       ctx.fillRect(0, 0, 1, half);
       ctx.fillRect(half, half, 1, half);
+
+      // Contact shadow along the bottom of the face — grounds the wall on the
+      // floor and separates face from floor even under flat ambient.
+      ctx.fillStyle = css(0);
+      ctx.fillRect(0, PPU - 2, PPU, 2);
     },
     repeatX,
     repeatY,
+  );
+}
+
+/**
+ * Wall cap: ONE grid cell per tile — solid border, DARK stone fill (clearly
+ * darker than the floor, so corridors read as bright paths between dark wall
+ * bands), a subtle top-edge bevel. This is what stops rows of walls fusing
+ * into anonymous rectangle slabs: every wall tile reads as a square on the
+ * grid.
+ */
+function makeCapTexture(): THREE.CanvasTexture {
+  return pixelTexture(
+    PPU,
+    (ctx) => {
+      ctx.fillStyle = css(2);
+      ctx.fillRect(0, 0, PPU, PPU);
+
+      // sparse chips
+      for (let y = 2; y < PPU - 2; y++) {
+        for (let x = 2; x < PPU - 2; x++) {
+          if (noise(x, y, 13) > 0.96) {
+            ctx.fillStyle = css(3);
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+
+      // tile border — the grid line
+      ctx.fillStyle = css(1);
+      ctx.fillRect(0, 0, PPU, 1);
+      ctx.fillRect(0, PPU - 1, PPU, 1);
+      ctx.fillRect(0, 0, 1, PPU);
+      ctx.fillRect(PPU - 1, 0, 1, PPU);
+      // top bevel just inside the border (north edge catches the "light")
+      ctx.fillStyle = css(4);
+      ctx.fillRect(1, 1, PPU - 2, 1);
+    },
+    1,
+    1,
   );
 }
 
@@ -137,8 +184,6 @@ export interface MazeHandle {
   torchAnchors: TorchAnchor[];
   /** The shared PointLight pool — core parks these on the nearest anchors. */
   lightPool: THREE.PointLight[];
-  /** Shrink the walls just south of tile (pi, pj); pass NaN to restore all. */
-  cutaway(pi: number, pj: number): void;
   dispose(): void;
 }
 
@@ -159,11 +204,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   floor.rotation.x = -Math.PI / 2;
   group.add(floor);
 
-  // ── Walls — a single InstancedMesh ──
+  // ── Walls — sort into full (back) and low (camera-side rim) ──
   // Only wall tiles with at least one walkable neighbour (8-way) get an
   // instance: a wall buried inside a solid block can never be seen.
-  const wallCells: Array<{ x: number; z: number }> = [];
-  const wallIndexByTile = new Map<string, number>();
+  const fullCells: Array<{ x: number; z: number }> = [];
+  const lowCells: Array<{ x: number; z: number }> = [];
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
@@ -176,75 +221,36 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
           }
         }
       }
-      if (exposed) {
-        wallIndexByTile.set(`${i},${j}`, wallCells.length);
-        wallCells.push(tileCenter(grid, i, j));
-      }
+      if (!exposed) continue;
+      // The Diablo rule: floor directly north → this is a corridor's south
+      // rim, and full height would cover that corridor. Knee-high it goes.
+      (isWalkable(grid, i, j - 1) ? lowCells : fullCells).push(tileCenter(grid, i, j));
     }
   }
 
-  const wallTex = track(makeWallTexture(1, WALL_H));
-  const wallMat = track(new THREE.MeshLambertMaterial({ map: wallTex }));
-  const wallCapMat = track(new THREE.MeshLambertMaterial({ color: PALETTE_HEX[2] }));
-  const wallGeo = track(new THREE.BoxGeometry(1, WALL_H, 1));
-  // BoxGeometry material order: +x, -x, +y, -y, +z, -z — flat cap on top so the
-  // coursed texture doesn't smear across a horizontal face.
-  const walls = new THREE.InstancedMesh(
-    wallGeo,
-    [wallMat, wallMat, wallCapMat, wallCapMat, wallMat, wallMat],
-    wallCells.length,
-  );
-  const m = new THREE.Matrix4();
-  wallCells.forEach((c, k) => {
-    m.makeScale(1, 1, 1);
-    m.setPosition(c.x, WALL_H / 2, c.z);
-    walls.setMatrixAt(k, m);
-  });
-  walls.instanceMatrix.needsUpdate = true;
-  group.add(walls);
-  disposables.push({ dispose: () => walls.dispose() });
+  const capTex = track(makeCapTexture());
+  const capMat = track(new THREE.MeshLambertMaterial({ map: capTex }));
 
-  // ── Cutaway state ──
-  const CUT_SCALE = 0.18; // shrunk walls read as a floor plan, not a hole
-  let lowered: number[] = [];
+  const addWallMesh = (cells: Array<{ x: number; z: number }>, height: number): void => {
+    if (!cells.length) return;
+    const faceTex = track(makeWallTexture(1, height));
+    const faceMat = track(new THREE.MeshLambertMaterial({ map: faceTex }));
+    const geo = track(new THREE.BoxGeometry(1, height, 1));
+    // BoxGeometry material order: +x, -x, +y, -y, +z, -z — bordered grid cap
+    // on top so the coursed texture doesn't smear across a horizontal face.
+    const mesh = new THREE.InstancedMesh(geo, [faceMat, faceMat, capMat, capMat, faceMat, faceMat], cells.length);
+    const m = new THREE.Matrix4();
+    cells.forEach((c, k) => {
+      m.setPosition(c.x, height / 2, c.z);
+      mesh.setMatrixAt(k, m);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+    disposables.push({ dispose: () => mesh.dispose() });
+  };
 
-  function setWallHeight(index: number, scale: number): void {
-    const c = wallCells[index];
-    m.makeScale(1, scale, 1);
-    m.setPosition(c.x, (WALL_H * scale) / 2, c.z);
-    walls.setMatrixAt(index, m);
-  }
-
-  function cutaway(pi: number, pj: number): void {
-    const next: number[] = [];
-    if (Number.isFinite(pi)) {
-      // The two wall rows south of the player are the ones that can cover him.
-      for (let dj = 1; dj <= 2; dj++) {
-        for (let di = -2; di <= 2; di++) {
-          const idx = wallIndexByTile.get(`${pi + di},${pj + dj}`);
-          if (idx !== undefined) next.push(idx);
-        }
-      }
-    }
-    // Cheap set-diff: restore what left the zone, shrink what entered it.
-    const nextSet = new Set(next);
-    let dirty = false;
-    for (const idx of lowered) {
-      if (!nextSet.has(idx)) {
-        setWallHeight(idx, 1);
-        dirty = true;
-      }
-    }
-    const prevSet = new Set(lowered);
-    for (const idx of next) {
-      if (!prevSet.has(idx)) {
-        setWallHeight(idx, CUT_SCALE);
-        dirty = true;
-      }
-    }
-    lowered = next;
-    if (dirty) walls.instanceMatrix.needsUpdate = true;
-  }
+  addWallMesh(fullCells, WALL_H);
+  addWallMesh(lowCells, WALL_LOW);
 
   // ── Stairs down — a dark descending notch with an arcane glow ──
   const sc = tileCenter(grid, plan.stairs.i, plan.stairs.j);
@@ -279,15 +285,19 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   for (const t of plan.torches) {
     const c = tileCenter(grid, t.i, t.j);
     // Mount on the wall face: shifted almost half a tile toward the wall.
+    // Sconce height keys off the wall it hangs on — a sconce floating in the
+    // air above a knee-high rim wall would look unmoored.
+    const isLowWall = isWalkable(grid, t.i + t.di, t.j + t.dj - 1);
+    const wallH = isLowWall ? WALL_LOW + 0.25 : WALL_H;
     const x = c.x + t.di * 0.41;
     const z = c.z + t.dj * 0.41;
 
     const sconce = new THREE.Mesh(sconceGeo, sconceMat);
-    sconce.position.set(x, WALL_H * 0.62, z);
+    sconce.position.set(x, wallH * 0.62, z);
     group.add(sconce);
 
     const flame = new THREE.Mesh(flameGeo, flameMat);
-    flame.position.set(x, WALL_H * 0.62 + 0.26, z);
+    flame.position.set(x, wallH * 0.62 + 0.26, z);
     group.add(flame);
 
     torchAnchors.push({ x: x - t.di * 0.2, z: z - t.dj * 0.2 });
@@ -310,7 +320,6 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     group,
     torchAnchors,
     lightPool,
-    cutaway,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());

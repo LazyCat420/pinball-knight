@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateMaze, mulberry32, at, T_FLOOR, T_WALL, idx } from "./generator";
+import { generateMaze, thickenWalls, mulberry32, at, T_FLOOR, T_WALL, idx } from "./generator";
 import { bfsDistances } from "../entities/ai";
 
 describe("generateMaze", () => {
@@ -58,5 +58,52 @@ describe("generateMaze", () => {
 
   it("rejects degenerate sizes", () => {
     expect(() => generateMaze(1, 5, mulberry32(1))).toThrow();
+  });
+});
+
+describe("thickenWalls", () => {
+  it("doubles the grid: 2-wide corridors behind a 2-thick border", () => {
+    const g = thickenWalls(generateMaze(6, 5, mulberry32(9)));
+    expect(g.w).toBe((6 * 2 + 1) * 2);
+    expect(g.h).toBe((5 * 2 + 1) * 2);
+    // First corridor cell lands at (2,2)..(3,3) behind a 2-thick border.
+    expect(at(g, 0, 0)).toBe(T_WALL);
+    expect(at(g, 1, 1)).toBe(T_WALL);
+    expect(at(g, 2, 2)).toBe(T_FLOOR);
+    expect(at(g, 3, 3)).toBe(T_FLOOR);
+  });
+
+  it("preserves connectivity exactly — every floor tile still reachable", () => {
+    for (const seed of [3, 21, 77]) {
+      const g = thickenWalls(generateMaze(9, 7, mulberry32(seed)));
+      const dist = bfsDistances(g, 2, 2);
+      for (let j = 0; j < g.h; j++) {
+        for (let i = 0; i < g.w; i++) {
+          if (at(g, i, j) === T_FLOOR) {
+            expect(dist[idx(g, i, j)], `tile ${i},${j} seed ${seed}`).toBeGreaterThanOrEqual(0);
+          }
+        }
+      }
+    }
+  });
+
+  it("gives every corridor a 2-thick wall band to its south (the tall-back guarantee)", () => {
+    const g = thickenWalls(generateMaze(7, 6, mulberry32(4)));
+    for (let j = 0; j < g.h; j++) {
+      for (let i = 0; i < g.w; i++) {
+        if (at(g, i, j) !== T_FLOOR) continue;
+        // Directly south: either more corridor (an opening) or a wall whose
+        // own south neighbour is also wall — never a lone 1-thick wall row.
+        if (at(g, i, j + 1) === T_WALL) {
+          const southOfWall = at(g, i, j + 2);
+          expect(southOfWall === T_WALL || southOfWall === T_FLOOR).toBe(true);
+          if (southOfWall === T_FLOOR) {
+            // A 1-thick wall between two corridors can only be a braid tunnel
+            // mouth — which is vertical floor, not wall, so this can't happen.
+            expect.fail(`1-thick wall at ${i},${j + 1}`);
+          }
+        }
+      }
+    }
   });
 });

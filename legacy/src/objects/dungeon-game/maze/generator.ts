@@ -147,3 +147,35 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
 
   return g;
 }
+
+/**
+ * Uniform 2× upscale of the tile grid: corridors become 2 tiles wide, wall
+ * bands 2 tiles thick.
+ *
+ * Why: Diablo's "walls only on the back edge of a tile" trick needs THICK
+ * walls to work in 3D — with 1-tile walls, almost every east-west wall has a
+ * corridor to its north and would have to render knee-high, and the dungeon
+ * flattens back into a floor plan. With 2-tile bands, each band's north row
+ * is the corridor's knee-high south rim and its south row is a full-height
+ * back wall — depth everywhere, occlusion nowhere. And 2-wide corridors give
+ * the horde and the camera room to breathe; 1-wide slots read as a mosaic.
+ *
+ * Pure duplication: connectivity is preserved exactly, braid openings become
+ * 2×2 doorways.
+ */
+export function thickenWalls(g: Grid): Grid {
+  const w = g.w * 2;
+  const h = g.h * 2;
+  const out: Grid = { w, h, t: new Uint8Array(w * h) }; // all T_WALL
+  for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) {
+      const v = at(g, i, j);
+      if (v === T_WALL) continue;
+      setTile(out, i * 2, j * 2, v);
+      setTile(out, i * 2 + 1, j * 2, v);
+      setTile(out, i * 2, j * 2 + 1, v);
+      setTile(out, i * 2 + 1, j * 2 + 1, v);
+    }
+  }
+  return out;
+}

@@ -5,9 +5,11 @@
  * attack windows and AI feel identical on a 144Hz monitor and a struggling
  * laptop. Rendering happens once per RAF regardless.
  *
- * Visibility contract (playtest feedback: "walls cover the player"):
- *  - chest-high walls + a 50° camera keep wall faces under a tile of coverage
- *  - the wall rows just south of the knight cut away to ankle height
+ * Visibility contract (playtest rounds: "walls cover the player", then "too
+ * flat, want the Diablo side view"):
+ *  - wall height is STRUCTURAL (Diablo trick, see constants.ts): corridor
+ *    south rims are knee-high, back walls full height — a 38° side-view
+ *    camera with zero possible occlusion
  *  - a GreaterDepth silhouette pass draws the knight through anything that
  *    still manages to occlude him
  *
@@ -26,7 +28,7 @@ import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
-import { generateMaze, mulberry32, tileCenter, worldToTile, at, T_STAIRS } from "./maze/generator";
+import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, T_STAIRS } from "./maze/generator";
 import { decorateMaze } from "./maze/decorate";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
@@ -142,7 +144,9 @@ function startLevel(level: number): void {
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
   const rng = mulberry32((state.runSeed ^ (level * 0x9e3779b9)) >>> 0);
-  const grid = generateMaze(cfg.cellsW, cfg.cellsH, rng);
+  // Thick walls are what make the Diablo low-rim/tall-back trick work — see
+  // thickenWalls. Decoration runs on the thickened grid.
+  const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng));
   const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches);
 
   state.grid = grid;
@@ -352,10 +356,6 @@ function loop(now: number): void {
   }
 
   if (p && g && state.maze) {
-    // Cut away the wall rows south of the knight.
-    const pt = worldToTile(g, p.x, p.z);
-    state.maze.cutaway(pt.i, pt.j);
-
     // Park the pooled torch lights on the nearest torches. Sorting a handful
     // of anchors per frame is nothing; 20 live point lights would not be.
     const anchors = state.maze.torchAnchors

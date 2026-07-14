@@ -64,7 +64,17 @@ const LEVEL_ITEMS: Array<{ kind: "weapon" | "gear"; id: string }> = [
 
 /** Mutates the grid (stamps T_STAIRS) and returns the plan. */
 export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number): LevelPlan {
-  const start: TilePos = { i: 1, j: 1 };
+  // First walkable tile scanning from the top-left — (1,1) on a raw
+  // backtracker maze, (2,2) once the walls have been thickened.
+  let start: TilePos = { i: 1, j: 1 };
+  outer: for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) {
+      if (at(g, i, j) === T_FLOOR) {
+        start = { i, j };
+        break outer;
+      }
+    }
+  }
   const dist = bfsDistances(g, start.i, start.j);
 
   // ── Stairs: the farthest reachable tile ──
