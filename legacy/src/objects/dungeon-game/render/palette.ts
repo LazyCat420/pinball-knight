@@ -11,7 +11,7 @@
  * colour-manage them into linear space, since the quantize shader compares
  * against them in sRGB).
  *
- * Sprite art references these by index via the CHARS legend in sprite-data.ts.
+ * Sprite art references these by index via paletteCss() in cel-painter.ts.
  */
 
 export const PALETTE_HEX: number[] = [

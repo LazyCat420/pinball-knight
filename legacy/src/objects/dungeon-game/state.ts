@@ -8,7 +8,7 @@ import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
-import type { WeaponState, GearState } from "./items";
+import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
 import { freshWeapon } from "./items";
 
@@ -30,7 +30,7 @@ export interface Player extends Actor {
   iframes: number;
   flashT: number;
   /** Draws only where a wall covers the knight — you can never lose him. */
-  silhouette: { mesh: THREE.Mesh; dispose(): void } | null;
+  silhouette: { mesh: THREE.Mesh; syncMap(): void; dispose(): void } | null;
 }
 
 export type ZombieMode = "idle" | "chase" | "windup" | "dead";
@@ -44,6 +44,8 @@ export interface Zombie extends Actor {
   flashT: number;
   /** Zombies never de-aggro — a horde that gives up isn't a horde. */
   aggro: boolean;
+  /** Flame-puff immunity window — the cone burns in ticks, not per-puff. */
+  burnT: number;
 }
 
 export interface GroundItem {
@@ -53,7 +55,28 @@ export interface GroundItem {
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
   bobPhase: number;
+  /** Carried durability for weapons dropped in an exchange. Undefined = fresh. */
+  durability?: number;
+  /** Set on a just-dropped weapon: not grabbable until the player steps away. */
+  blockedUntilAway?: boolean;
 }
+
+export interface Projectile {
+  kind: ProjectileKind;
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  /** Seconds left before it just expires (range / speed). */
+  life: number;
+  maxLife: number;
+  damage: number;
+  mesh: THREE.Mesh;
+  dispose(): void;
+}
+
+/** How many weapons the knight can carry. */
+export const WEAPON_SLOTS = 2;
 
 export const state = {
   active: false,
@@ -81,8 +104,9 @@ export const state = {
   /** Seed for the whole run; each level derives its own stream from it. */
   runSeed: 0,
 
-  // Loadout
-  weapon: freshWeapon("sword") as WeaponState,
+  // Loadout — two weapon slots; an empty active slot fights as fists.
+  weaponSlots: [freshWeapon("sword"), null] as Array<WeaponState | null>,
+  activeSlot: 0,
   gear: {} as GearState,
 
   // The level
@@ -96,7 +120,11 @@ export const state = {
   // Actors
   player: null as Player | null,
   zombies: [] as Zombie[],
-  playerSheet: null as SpriteSheet | null,
+  projectiles: [] as Projectile[],
+  /** One knight atlas per weapon, built lazily — a swap is a texture switch. */
+  playerSheets: new Map<WeaponId, SpriteSheet>(),
+  /** Which weapon's art the player sprite currently shows. */
+  playerArtWeapon: null as WeaponId | null,
   zombieSheet: null as SpriteSheet | null,
 
   // AI
@@ -128,6 +156,11 @@ export const state = {
   onResize: null as (() => void) | null,
 };
 
+/** What's in the active hand right now. An empty slot fights as fists. */
+export function activeWeapon(): WeaponState {
+  return state.weaponSlots[state.activeSlot] ?? { id: "fists", durability: Infinity };
+}
+
 export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
   return {
     hp: PLAYER_MAX_HP,
@@ -156,7 +189,8 @@ export function resetState(): void {
   state.goldRun = 0;
   state.gameOver = false;
   state.runSeed = 0;
-  state.weapon = freshWeapon("sword");
+  state.weaponSlots = [freshWeapon("sword"), null];
+  state.activeSlot = 0;
   state.gear = {};
   state.grid = null;
   state.stairs = null;
@@ -165,7 +199,9 @@ export function resetState(): void {
   state.props = [];
   state.player = null;
   state.zombies = [];
-  state.playerSheet = null;
+  state.projectiles = [];
+  state.playerSheets = new Map();
+  state.playerArtWeapon = null;
   state.zombieSheet = null;
   state.flowField = null;
   state.flowTimer = 0;

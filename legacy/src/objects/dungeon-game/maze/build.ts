@@ -42,9 +42,12 @@ function pixelTexture(
   paint(ctx);
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  // Cel round: smooth filtering + mipmaps (all sizes here are powers of two).
+  // Nearest-filtered texels were half of what still read as "pixel art", and
+  // mipmapping kills the moiré the tilted camera used to make of the floor.
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;

@@ -5,7 +5,7 @@
  * the only place that knows this, so the rest of the game just says "face west".
  */
 import type { ActorSprite } from "./sprite";
-import type { Dir, ClipName } from "./sprite-data";
+import type { Dir, ClipName } from "./cel-painter";
 import { FPS_IDLE, FPS_WALK, FPS_ATTACK, FPS_DEATH } from "../constants";
 
 /** The four directions the game thinks in. */

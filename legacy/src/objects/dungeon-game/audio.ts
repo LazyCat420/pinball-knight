@@ -86,6 +86,31 @@ export function sfxSwing(): void {
   beep(c, { type: "square", f0: 330, f1: 140, dur: 0.08, vol: 0.05 });
 }
 
+/** Gunshot — a sharp crack with a low thump under it. */
+export function sfxGun(): void {
+  const c = ctx();
+  if (!c) return;
+  burst(c, 0.05, 0.3, "highpass", 2200);
+  burst(c, 0.12, 0.18, "lowpass", 600);
+  beep(c, { type: "square", f0: 220, f1: 60, dur: 0.09, vol: 0.12 });
+}
+
+/** Bowstring — a taut twang and the arrow's hiss. */
+export function sfxBow(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "triangle", f0: 480, f1: 180, dur: 0.12, vol: 0.14 });
+  burst(c, 0.14, 0.08, "bandpass", 3000, 0.02);
+}
+
+/** Flamethrower puff — a soft roar. Fired per trigger tick, so it's kept short and quiet. */
+export function sfxFlame(): void {
+  const c = ctx();
+  if (!c) return;
+  burst(c, 0.12, 0.07, "lowpass", 900);
+  burst(c, 0.09, 0.04, "bandpass", 1700, 0.01);
+}
+
 /** Blade connects with something rotten. */
 export function sfxHit(): void {
   const c = ctx();

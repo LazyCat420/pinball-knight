@@ -1,9 +1,15 @@
 /**
  * Weapons & gear — the item tables and the durability rules.
  *
- * Weapons: every swing that CONNECTS costs 1 durability; at 0 the weapon
- * breaks and you fight with your fists until you pick something else up.
- * Fists are the unbreakable floor of the system, not an item.
+ * Weapons come in two kinds:
+ *  - MELEE: every swing that CONNECTS costs 1 durability.
+ *  - RANGED: every SHOT costs 1 durability — durability IS the ammo/fuel.
+ * At 0 the weapon is gone. Fists are the unbreakable floor of the system,
+ * not an item: they're what an empty hand resolves to.
+ *
+ * The player carries up to TWO weapons (slots) and swaps between them; the
+ * slot logic itself lives in core.ts/state.ts — this file is just the tables
+ * and the pure durability math (tested).
  *
  * Gear (one of each slot per level, v1): helmet and armor are ablative — each
  * point of incoming damage consumes a point of that piece's durability before
@@ -12,31 +18,46 @@
  * DOM- and three-free: the durability math is tested.
  */
 
-export type WeaponId = "fists" | "sword" | "stick" | "mace" | "chair";
+export type WeaponId = "fists" | "sword" | "stick" | "mace" | "chair" | "gun" | "bow" | "flamethrower";
+
+export type WeaponKind = "melee" | "ranged";
+export type ProjectileKind = "bullet" | "arrow" | "flame";
 
 export interface WeaponDef {
   id: WeaponId;
   label: string;
   icon: string; // HUD emoji
+  kind: WeaponKind;
   damage: number;
+  /** Melee: swing reach. Ranged: max projectile travel, in tiles. */
   range: number;
-  /** cos of the half-arc — smaller means a wider swing. */
+  /** cos of the half-arc — smaller means a wider swing. Melee only. */
   arcCos: number;
   cooldown: number;
-  /** Swings-that-connect before it breaks. Infinity = unbreakable (fists). */
+  /** Uses before it's gone. Melee wears on hit, ranged spends per shot. Infinity = fists. */
   maxDurability: number;
+  /** Ranged only — what leaves the muzzle and how. */
+  projectile?: ProjectileKind;
+  projectileSpeed?: number;
+  /** Aim jitter, radians. The flamethrower's spray IS this. */
+  spread?: number;
+  /** Projectiles per trigger pull (the flamethrower spits a pair of puffs). */
+  pellets?: number;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  fists: { id: "fists", label: "Fists", icon: "✊", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity },
-  sword: { id: "sword", label: "Sword", icon: "🗡️", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30 },
-  stick: { id: "stick", label: "Stick", icon: "🪵", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15 },
-  mace: { id: "mace", label: "Mace", icon: "🔨", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45 },
-  chair: { id: "chair", label: "Chair", icon: "🪑", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10 },
+  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity },
+  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30 },
+  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15 },
+  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45 },
+  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10 },
+  gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04 },
+  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 16, projectile: "arrow", projectileSpeed: 11, spread: 0 },
+  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 110, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2 },
 };
 
 /** The weapons that spawn as maze pickups (you start with the sword). */
-export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair"];
+export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
 
 export interface WeaponState {
   id: WeaponId;
@@ -48,15 +69,16 @@ export function freshWeapon(id: WeaponId): WeaponState {
 }
 
 /**
- * A swing connected: wear the weapon down 1 point. Returns the next weapon
- * state and whether this swing broke it (the swing itself still lands —
- * things break ON use, not instead of use).
+ * One use of the weapon: a melee swing that connected, or a shot fired.
+ * Returns the worn state and whether that use finished it off (the use itself
+ * still lands — things break ON use, not instead of use). What happens to a
+ * broken weapon (the slot empties, the hand falls back to fists) is the
+ * caller's business — this is just the arithmetic.
  */
 export function degradeWeapon(w: WeaponState): { weapon: WeaponState; broke: boolean } {
   if (!Number.isFinite(w.durability)) return { weapon: w, broke: false };
   const durability = w.durability - 1;
-  if (durability <= 0) return { weapon: freshWeapon("fists"), broke: true };
-  return { weapon: { id: w.id, durability }, broke: false };
+  return { weapon: { id: w.id, durability }, broke: durability <= 0 };
 }
 
 // ── Gear ────────────────────────────────────────────────────────

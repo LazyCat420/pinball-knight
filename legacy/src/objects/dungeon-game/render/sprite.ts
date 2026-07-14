@@ -1,30 +1,33 @@
 /**
- * Pixel matrices → CanvasTexture atlas → billboarded sprite.
+ * Cel painters → CanvasTexture atlas → billboarded sprite.
  *
  * All of an actor's frames are painted into ONE horizontal strip canvas, so the
  * whole actor is a single texture and animating is just an offset of
  * `texture.offset.x`. No per-frame texture swaps, no extra draw calls.
  *
+ * Each frame is painted on its own scratch canvas first, then blitted into the
+ * strip — the cel-shading pass composites `source-atop` over "everything drawn
+ * so far", which on a shared strip would bleed onto neighbouring frames.
+ *
  * BILLBOARDING: the camera is a fixed-angle orthographic camera, so we do NOT
  * need true per-frame billboarding. We tilt each sprite plane once, by exactly
  * the camera's elevation, and it faces the camera forever. That's cheaper, and
- * — more importantly — it keeps sprites pixel-aligned. True billboarding would
- * introduce sub-pixel rotation and make the art shimmer.
+ * it keeps sprites aligned with the render target's texel grid.
  *
  * The geometry's origin is at the BOTTOM-CENTRE (not the centre), so a sprite
  * positioned at a floor point has its feet on that point, and tilting it back
  * to face the camera pivots around the feet rather than sliding them.
  */
 import * as THREE from "three";
-import { CHARS, type ActorFrames, type Dir, type ClipName, type Frame } from "./sprite-data";
-import { paletteCss, PALETTE_HEX } from "./palette";
+import type { ActorPaints, Dir, ClipName, FramePaint } from "./cel-painter";
+import { PALETTE_HEX } from "./palette";
 import { SPRITE_PX, SPRITE_UNITS, CAMERA_TILT, CAMERA_YAW } from "../constants";
 
 /**
  * Face the isometric camera exactly: yaw to the camera's heading, then tilt
  * back by its elevation (rotation order YXZ makes the X tilt local). Because
  * the camera is orthographic and the plane ends up perpendicular to the view
- * ray, sprite texels stay 1:1 with screen pixels. Rotation pivots on the
+ * ray, sprite texels stay square on screen. Rotation pivots on the
  * bottom-centre origin — the feet stay planted.
  */
 function faceCamera(mesh: THREE.Mesh): void {
@@ -40,31 +43,34 @@ export interface SpriteSheet {
   frameCount: number;
 }
 
-/** Paint one 16x16 frame into the strip canvas at slot `index`. */
-function paintFrame(ctx: CanvasRenderingContext2D, frame: Frame, index: number): void {
-  const x0 = index * SPRITE_PX;
-  for (let y = 0; y < SPRITE_PX; y++) {
-    const row = frame[y];
-    for (let x = 0; x < SPRITE_PX; x++) {
-      const ch = row[x];
-      const pal = CHARS[ch];
-      if (pal === undefined) {
-        throw new Error(`[dungeon] unknown sprite char "${ch}" — add it to CHARS in sprite-data.ts`);
-      }
-      if (pal < 0) continue; // transparent
-      ctx.fillStyle = paletteCss(pal);
-      ctx.fillRect(x0 + x, y, 1, 1);
-    }
-  }
+/** Smooth filtering — this is cel art now, not pixel art. */
+function celFilters(tex: THREE.CanvasTexture): void {
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+}
+
+/** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
+function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: number): void {
+  const scratch = document.createElement("canvas");
+  scratch.width = SPRITE_PX;
+  scratch.height = SPRITE_PX;
+  const ctx = scratch.getContext("2d");
+  if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite frame");
+  ctx.imageSmoothingEnabled = true;
+  paint(ctx);
+  strip.drawImage(scratch, index * SPRITE_PX, 0);
 }
 
 /**
  * Build one atlas for an actor. Frames are packed in a stable order and the
- * clip table records where each one landed.
+ * clip table records where each one landed. Every painter set with the same
+ * clip structure produces the SAME layout — which is what lets a weapon swap
+ * replace the texture without touching the animator.
  */
-export function buildSpriteSheet(frames: ActorFrames): SpriteSheet {
-  // Collect every frame across every direction and clip, in a stable order.
-  const flat: Frame[] = [];
+export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
+  const flat: FramePaint[] = [];
   const clips = new Map<string, number[]>();
 
   const dirs: Dir[] = ["S", "N", "E"];
@@ -72,12 +78,12 @@ export function buildSpriteSheet(frames: ActorFrames): SpriteSheet {
 
   for (const dir of dirs) {
     for (const clip of clipNames) {
-      const list = frames[dir][clip];
+      const list = paints[dir][clip];
       if (!list) continue;
       const indices: number[] = [];
-      for (const frame of list) {
+      for (const paint of list) {
         indices.push(flat.length);
-        flat.push(frame);
+        flat.push(paint);
       }
       clips.set(`${dir}:${clip}`, indices);
     }
@@ -88,15 +94,11 @@ export function buildSpriteSheet(frames: ActorFrames): SpriteSheet {
   canvas.height = SPRITE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite atlas");
-  ctx.imageSmoothingEnabled = false;
 
-  flat.forEach((frame, i) => paintFrame(ctx, frame, i));
+  flat.forEach((paint, i) => paintFrame(ctx, paint, i));
 
   const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
-  texture.colorSpace = THREE.SRGBColorSpace;
+  celFilters(texture);
   texture.wrapS = THREE.RepeatWrapping; // needed for the flip trick below
   texture.wrapT = THREE.ClampToEdgeWrapping;
   // Show exactly one frame at a time.
@@ -114,6 +116,12 @@ export interface ActorSprite {
   setFlipped(flipped: boolean): void;
   /** Multiply-tint the whole sprite (hit flash). Pass null to clear. */
   setTint(hex: number | null): void;
+  /**
+   * Swap to a different atlas with the SAME clip layout — this is how the
+   * knight's held weapon changes. The silhouette (if any) must be re-synced
+   * by the caller via its own syncMap().
+   */
+  setSheet(next: SpriteSheet): void;
   dispose(): void;
 }
 
@@ -124,13 +132,13 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
 
   // The texture is cloned per-sprite so two actors sharing a sheet can be on
   // different frames — the offset lives on the texture, not the material.
-  const tex = sheet.texture.clone();
+  let tex = sheet.texture.clone();
   tex.needsUpdate = true;
 
   const matOpts = {
     map: tex,
     transparent: true,
-    alphaTest: 0.5, // hard-edged cutout. No soft alpha — this is pixel art.
+    alphaTest: 0.5, // hard-edged cutout — keeps the depth-outline pass crisp
     side: THREE.DoubleSide,
   };
 
@@ -149,43 +157,50 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   // to anchor on the frame's RIGHT edge instead of its left. Get this wrong and
   // a flipped sprite shows the neighbouring frame.
   function applyFrame(): void {
-    tex.offset.x = flipped ? (currentFrame + 1) / sheet.frameCount : currentFrame / sheet.frameCount;
+    tex.offset.x = flipped ? (currentFrame + 1) / api.sheet.frameCount : currentFrame / api.sheet.frameCount;
   }
 
-  function setFrame(index: number): void {
-    if (index === currentFrame) return;
-    currentFrame = index;
-    applyFrame();
-  }
-
-  function setFlipped(next: boolean): void {
-    if (next === flipped) return;
-    flipped = next;
-    tex.repeat.x = (flipped ? -1 : 1) / sheet.frameCount;
-    applyFrame(); // repeat changed — the offset anchor moved with it
-  }
-
-  // The material colour MULTIPLIES the texture, so white is "no tint". A red
-  // tint darkens green/blue pixels toward red — reads as a blood flash even on
-  // the rot-green zombie palette.
-  function setTint(hex: number | null): void {
-    mat.color.setHex(hex ?? 0xffffff);
-  }
-
-  applyFrame();
-
-  return {
+  const api: ActorSprite = {
     mesh,
     sheet,
-    setFrame,
-    setFlipped,
-    setTint,
+    setFrame(index: number): void {
+      if (index === currentFrame) return;
+      currentFrame = index;
+      applyFrame();
+    },
+    setFlipped(next: boolean): void {
+      if (next === flipped) return;
+      flipped = next;
+      tex.repeat.x = (flipped ? -1 : 1) / api.sheet.frameCount;
+      applyFrame(); // repeat changed — the offset anchor moved with it
+    },
+    // The material colour MULTIPLIES the texture, so white is "no tint". A red
+    // tint darkens green/blue pixels toward red — reads as a blood flash even on
+    // the rot-green zombie palette.
+    setTint(hex: number | null): void {
+      mat.color.setHex(hex ?? 0xffffff);
+    },
+    setSheet(next: SpriteSheet): void {
+      if (next === api.sheet) return;
+      const old = tex;
+      tex = next.texture.clone();
+      tex.needsUpdate = true;
+      api.sheet = next;
+      mat.map = tex;
+      mat.needsUpdate = true;
+      tex.repeat.set((flipped ? -1 : 1) / next.frameCount, 1);
+      applyFrame();
+      old.dispose();
+    },
     dispose: () => {
       geo.dispose();
       mat.dispose();
       tex.dispose();
     },
   };
+
+  applyFrame();
+  return api;
 }
 
 /**
@@ -196,7 +211,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
  * see-through-occluder treatment for top-down crawlers, done without a
  * stencil buffer.
  */
-export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mesh; dispose(): void } {
+export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mesh; syncMap(): void; dispose(): void } {
   const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
   geo.translate(0, SPRITE_UNITS / 2, 0);
 
@@ -219,6 +234,11 @@ export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mes
 
   return {
     mesh,
+    /** Re-grab the actor's texture after a setSheet() weapon swap. */
+    syncMap: () => {
+      mat.map = (actor.mesh.material as THREE.MeshBasicMaterial).map;
+      mat.needsUpdate = true;
+    },
     dispose: () => {
       geo.dispose();
       mat.dispose(); // the map is the actor's — the actor disposes it
@@ -227,24 +247,21 @@ export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mes
 }
 
 /**
- * A single-frame ground sprite (weapon and gear pickups). Same billboarding
- * contract as actors: origin at the bottom-centre, tilted once toward the
- * fixed camera.
+ * A single-frame ground sprite (weapon and gear pickups, props). Same
+ * billboarding contract as actors: origin at the bottom-centre, tilted once
+ * toward the fixed camera.
  */
-export function createStaticSprite(frame: Frame): { mesh: THREE.Mesh; dispose(): void } {
+export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispose(): void } {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
-  ctx.imageSmoothingEnabled = false;
-  paintFrame(ctx, frame, 0);
+  ctx.imageSmoothingEnabled = true;
+  paint(ctx);
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.colorSpace = THREE.SRGBColorSpace;
+  celFilters(tex);
 
   const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
   geo.translate(0, SPRITE_UNITS / 2, 0);

@@ -48,6 +48,7 @@ export function updateZombies(dt: number): void {
     if (z.mode === "dead") continue; // the death clip plays out; the corpse stays
 
     z.cooldown = Math.max(0, z.cooldown - dt);
+    z.burnT = Math.max(0, z.burnT - dt); // flame-tick immunity window
 
     // ── Aggro ──
     if (!z.aggro && state.flowField) {

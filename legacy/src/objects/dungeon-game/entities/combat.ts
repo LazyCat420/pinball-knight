@@ -1,9 +1,9 @@
 /**
  * Hit resolution — damage, i-frames, knockback, durability and death all
- * resolve HERE, in one place, rather than being smeared across player.ts and
- * zombie.ts.
+ * resolve HERE, in one place, rather than being smeared across player.ts,
+ * zombie.ts and projectiles.ts.
  */
-import { state, type Zombie } from "../state";
+import { state, activeWeapon, type Zombie } from "../state";
 import {
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
@@ -25,7 +25,7 @@ import { showToast } from "../ui";
 /**
  * Facing → WORLD ground direction. Facings are SCREEN-relative (the art's "E"
  * is screen-right), so under the isometric yaw each cardinal maps to a world
- * diagonal. Attack arcs, knockback and steering all use these.
+ * diagonal. Attack arcs, projectile aim, knockback and steering all use these.
  */
 export const FACING_VEC: Record<Facing, [number, number]> = (() => {
   const v = (sx: number, sz: number): [number, number] => {
@@ -54,17 +54,79 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
 }
 
 /**
- * The player's swing lands, with whatever is in hand: range, arc and damage
- * come from the equipped weapon, and a swing that CONNECTS costs a point of
- * durability. Weapons break on use — the swing that breaks the chair still
- * hits with the chair.
+ * The one damage funnel for zombies — melee swings and every projectile end
+ * up here. (dirx,dirz) is the incoming hit direction (need not be unit);
+ * `push` scales the wall-aware knockback.
+ */
+export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: number, push: number): void {
+  const g = state.grid;
+  if (!g || z.mode === "dead") return;
+
+  z.hp -= damage;
+  z.aggro = true; // hitting a dormant zombie certainly wakes it
+  z.flashT = FLASH_TIME;
+  z.sprite.setTint(0xff6a6a);
+
+  if (push > 0) {
+    const d = Math.hypot(dirx, dirz);
+    if (d > 1e-4) {
+      const res = moveCircle(g, z.x, z.z, ZOMBIE_R, (dirx / d) * push, (dirz / d) * push);
+      z.x = res.x;
+      z.z = res.z;
+      syncActorMesh(z);
+    }
+  }
+
+  if (z.hp <= 0) {
+    killZombie(z);
+  } else {
+    sfxHit();
+  }
+}
+
+/**
+ * One use of the active weapon (a connected swing, or a shot leaving the
+ * barrel). Handles the whole break path: the slot empties, and if the OTHER
+ * slot still holds something we auto-switch to it — an empty hand with a
+ * loaded gun on your belt would just be annoying.
+ */
+export function wearActiveWeapon(): void {
+  const slot = state.weaponSlots[state.activeSlot];
+  if (!slot) return; // fists — nothing to wear down
+
+  const def = WEAPONS[slot.id];
+  const worn = degradeWeapon(slot);
+  if (!worn.broke) {
+    state.weaponSlots[state.activeSlot] = worn.weapon;
+    state.hudDirty = true;
+    return;
+  }
+
+  state.weaponSlots[state.activeSlot] = null;
+  sfxBreak();
+  const spent = def.kind === "ranged" ? "out of ammo" : "broke";
+  const other = 1 - state.activeSlot;
+  if (state.weaponSlots[other]) {
+    state.activeSlot = other;
+    showToast(`${def.icon} ${def.label.toUpperCase()} ${spent.toUpperCase()}`, `switched to ${WEAPONS[state.weaponSlots[other]!.id].label.toLowerCase()}`);
+  } else {
+    showToast(`${def.icon} ${def.label.toUpperCase()} ${spent.toUpperCase()}`, "fists it is");
+  }
+  state.hudDirty = true;
+}
+
+/**
+ * The player's melee swing lands, with whatever is in hand: range, arc and
+ * damage come from the equipped weapon, and a swing that CONNECTS costs a
+ * point of durability. Weapons break on use — the swing that breaks the chair
+ * still hits with the chair.
  */
 export function resolvePlayerAttack(): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g) return false;
 
-  const w = WEAPONS[state.weapon.id];
+  const w = WEAPONS[activeWeapon().id];
   const [fx, fz] = FACING_VEC[p.facing];
   let landed = false;
 
@@ -82,36 +144,12 @@ export function resolvePlayerAttack(): boolean {
     }
 
     landed = true;
-    z.hp -= w.damage;
-    z.aggro = true; // hitting a dormant zombie certainly wakes it
-    z.flashT = FLASH_TIME;
-    z.sprite.setTint(0xff6a6a);
-
     // Knockback along the swing, wall-aware. Heavier weapons shove harder.
     const push = KNOCKBACK_ZOMBIE * (1 + (w.damage - 1) * 0.35);
-    const kx = (d > 1e-4 ? dx / d : fx) * push;
-    const kz = (d > 1e-4 ? dz / d : fz) * push;
-    const res = moveCircle(g, z.x, z.z, ZOMBIE_R, kx, kz);
-    z.x = res.x;
-    z.z = res.z;
-    syncActorMesh(z);
-
-    if (z.hp <= 0) {
-      killZombie(z);
-    } else {
-      sfxHit();
-    }
+    damageZombie(z, w.damage, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
   }
 
-  if (landed) {
-    const worn = degradeWeapon(state.weapon);
-    state.weapon = worn.weapon;
-    if (worn.broke) {
-      sfxBreak();
-      showToast(`${w.icon} ${w.label.toUpperCase()} BROKE`, "fists it is");
-    }
-    state.hudDirty = true;
-  }
+  if (landed) wearActiveWeapon();
 
   return landed;
 }

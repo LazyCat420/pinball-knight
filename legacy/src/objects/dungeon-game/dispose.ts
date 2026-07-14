@@ -3,11 +3,12 @@
  * materials, textures, render targets, the WebGL context and the overlay div.
  */
 import { state } from "./state";
+import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
 
 /**
- * Tear down one depth: the maze geometry, the horde (including corpses) and
- * any loot still on the floor. The player actor survives level changes — only
- * its position resets.
+ * Tear down one depth: the maze geometry, the horde (including corpses), any
+ * loot still on the floor and anything mid-flight. The player actor survives
+ * level changes — only its position resets.
  */
 export function disposeLevel(): void {
   state.zombies.forEach((z) => {
@@ -15,6 +16,8 @@ export function disposeLevel(): void {
     z.sprite.dispose();
   });
   state.zombies = [];
+
+  clearProjectiles();
 
   state.groundItems.forEach((it) => {
     state.scene?.remove(it.sprite.mesh);
@@ -46,9 +49,13 @@ export function disposeAll(): void {
     state.player.sprite.dispose();
   }
 
-  // The shared atlases the per-actor textures were cloned from.
-  state.playerSheet?.texture.dispose();
+  // The shared atlases the per-actor textures were cloned from — one knight
+  // sheet per weapon the run has held, plus the zombie sheet.
+  state.playerSheets.forEach((sheet) => sheet.texture.dispose());
+  state.playerSheets.clear();
   state.zombieSheet?.texture.dispose();
+
+  disposeProjectileAssets();
 
   state.pixelPass?.dispose();
 

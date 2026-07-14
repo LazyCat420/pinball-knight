@@ -26,7 +26,7 @@ export interface ItemDrop extends TilePos {
 }
 
 export interface PropSpot extends TilePos {
-  /** Key into PROP_FRAMES — bones, skull, rubble. */
+  /** Key into PROP_PAINTS — bones, skull, rubble. */
   kind: string;
 }
 
@@ -58,17 +58,22 @@ const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
- * One of each pickup per level (v1 — "start with 1 version of each thing so
- * we test"): the three findable weapons and the three gear slots.
+ * The findable arsenal. Six weapons is too many to strew on every floor, so
+ * each level rolls THREE of them (rng-driven — every depth has a different
+ * armoury) plus one of each gear slot. Ids resolve against items.ts.
  */
-const LEVEL_ITEMS: Array<{ kind: "weapon" | "gear"; id: string }> = [
-  { kind: "weapon", id: "stick" },
-  { kind: "weapon", id: "mace" },
-  { kind: "weapon", id: "chair" },
-  { kind: "gear", id: "helmet" },
-  { kind: "gear", id: "armor" },
-  { kind: "gear", id: "boots" },
-];
+const WEAPON_POOL = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
+const WEAPONS_PER_LEVEL = 3;
+const GEAR_ITEMS = ["helmet", "armor", "boots"];
+
+function rollLevelItems(rng: () => number): Array<{ kind: "weapon" | "gear"; id: string }> {
+  return [
+    ...shuffled(WEAPON_POOL, rng)
+      .slice(0, WEAPONS_PER_LEVEL)
+      .map((id) => ({ kind: "weapon" as const, id })),
+    ...GEAR_ITEMS.map((id) => ({ kind: "gear" as const, id })),
+  ];
+}
 
 /** Mutates the grid (stamps T_STAIRS) and returns the plan. */
 export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number): LevelPlan {
@@ -133,7 +138,7 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     torches.push({ i: p.i, j: p.j, di: side[0], dj: side[1] });
   }
 
-  // ── Items: one of each, scattered on quieter floor tiles ──
+  // ── Items: this level's roll, scattered on quieter floor tiles ──
   // Not on the stairs, not on top of a zombie spawn, a few tiles out from the
   // start (finding your first pickup should take a moment of exploring), and
   // spread apart so one corridor doesn't hold the whole armoury.
@@ -145,7 +150,7 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     }),
     rng,
   );
-  for (const def of LEVEL_ITEMS) {
+  for (const def of rollLevelItems(rng)) {
     const spot = itemSpots.find((p) => !items.some((it) => Math.abs(it.i - p.i) + Math.abs(it.j - p.j) < 5));
     if (!spot) break; // a maze too small for all six — fine, place what fits
     items.push({ kind: def.kind, id: def.id, i: spot.i, j: spot.j });

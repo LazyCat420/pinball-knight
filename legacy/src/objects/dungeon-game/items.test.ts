@@ -13,12 +13,21 @@ describe("weapon durability", () => {
     }
   });
 
+  it("every ranged weapon fully describes its projectile", () => {
+    for (const w of Object.values(WEAPONS)) {
+      if (w.kind !== "ranged") continue;
+      expect(w.projectile, w.id).toBeTruthy();
+      expect(w.projectileSpeed, w.id).toBeGreaterThan(0);
+      expect(Number.isFinite(w.maxDurability), `${w.id} ammo must be finite`).toBe(true);
+    }
+  });
+
   it("pickup weapons never include fists or the starter sword", () => {
     expect(PICKUP_WEAPONS).not.toContain("fists");
     expect(PICKUP_WEAPONS).not.toContain("sword");
   });
 
-  it("wears down by one per connected swing and breaks to fists at zero", () => {
+  it("wears down by one per use and reports the breaking use", () => {
     let w = freshWeapon("chair"); // maxDurability 10
     for (let i = 0; i < 9; i++) {
       const r = degradeWeapon(w);
@@ -28,7 +37,10 @@ describe("weapon durability", () => {
     expect(w.durability).toBe(1);
     const last = degradeWeapon(w);
     expect(last.broke).toBe(true);
-    expect(last.weapon.id).toBe("fists");
+    // What replaces a broken weapon (empty slot → fists) is the slot logic's
+    // call — the math just reports the wear.
+    expect(last.weapon.id).toBe("chair");
+    expect(last.weapon.durability).toBe(0);
   });
 
   it("fists never break", () => {

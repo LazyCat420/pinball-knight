@@ -62,9 +62,45 @@ updated graphics; fix knight legs/torso/walk; zombies more detailed"):
   4-dir walk/attack/death pipeline cheaper than drawing it, so the art stays
   procedural. Revisit if we ever want 8-direction actors.
 
+**2026-07-14 cel-shading + arsenal round** (playtest: "make the sprites cel
+shaded instead of this pixel look; weapon pickups should change the held
+sword; 2 weapon slots; add gun, bow, flamethrower"):
+
+- **Cel art pipeline** — sprite-data.ts (pixel matrices) is GONE, replaced by
+  `render/cel-painter.ts`: every frame is a painter drawing smooth canvas-2D
+  paths — flat palette fills + ink outlines, then ONE hard-stop gradient
+  composited `source-atop` for abrupt highlight/shadow bands (hard stops =
+  cel, smooth ramp = airbrush). Screen quantizer + depth-edge ink outline stay
+  on — banded colour IS cel shading. Internal res is now **1280×720 @ PPU 64**
+  (the coarse grid was the other half of the "pixel look"), sprites painted at
+  128px, textures linear-filtered, INTEGER_SCALE off, dither off by default.
+  World canvas textures switched to linear+mipmaps (kills the floor moiré).
+- **Per-weapon held art** — the knight is parametric: one body painter per
+  facing posed by a small pose object, held weapon drawn from WEAPON_HELD at
+  the hand anchor. One sprite sheet per weapon, built lazily and cached
+  (`state.playerSheets`); a pickup/swap/break is just `ActorSprite.setSheet()`
+  (a texture switch — same clip layout in every sheet). The occlusion
+  silhouette re-syncs via `syncMap()`.
+- **Two weapon slots** — Tab / 1 / 2 to swap hands. Walk-over pickup fills an
+  empty slot; both full → EXCHANGES with the active hand, dropping the old
+  weapon where the new one lay, durability intact (`GroundItem.durability`),
+  inert until you step away (`blockedUntilAway` — else drop/pickup ping-pongs).
+  Empty active slot fights as fists. On break/out-of-ammo the slot empties and
+  the other slot auto-equips if armed.
+- **Ranged weapons** — gun (fast bullet), bow (slow heavy arrow), flamethrower
+  (spread pair of flame puffs per tick, hold-to-hose). Durability = ammo,
+  spent per SHOT (melee still wears per connected hit). Projectiles simulated
+  on the fixed step (`entities/projectiles.ts`), die on walls, funnel damage
+  through `combat.damageZombie` (one damage path for melee + projectiles).
+  Flame puffs pass through zombies; `Zombie.burnT` grants a short burn-tick
+  immunity so an overlapping cone reads as ~4/s burn, not instant delete.
+  Ranged fire is instant (no windup frame), doesn't lock facing, and can
+  re-fire mid-animation (the flamethrower needs that).
+- **Levels roll 3 of the 6 findable weapons** each depth (decorate.ts), plus
+  all three gear pieces. HUD shows both slots, ammo counts, active marker.
+
 Phase 4/5 still open: blood pixels, damage numbers, best-depth persistence,
-per-weapon held art on the knight, alternate maze algorithms, more enemy
-types.
+alternate maze algorithms, more enemy types.
 
 ---
 
@@ -305,9 +341,9 @@ src/objects/dungeon-game/
 ├── render/
 │   ├── palette.ts      # the 32-colour palette, as hex
 │   ├── pixel-pass.ts   # 320×180 render target + nearest upscale + quantize shader
-│   ├── sprite.ts       # pixel-matrix → CanvasTexture atlas → billboard sprite
+│   ├── sprite.ts       # painters → CanvasTexture atlas → billboard sprite
 │   ├── animator.ts     # frame timing, direction picking, clip state machine
-│   └── sprite-data.ts  # THE PIXEL ART: player + zombie frames as arrays
+│   └── cel-painter.ts  # THE ART: cel-shaded canvas-2D painters (was sprite-data.ts)
 │
 ├── maze/
 │   ├── generator.ts    # grid → maze. Pluggable algorithms (see §5)
@@ -365,7 +401,7 @@ quantize shader gets it as a `uniform vec3[32]`.
 Nearest-colour in **linear RGB with a luma weight** looks noticeably better than
 naive Euclidean distance in sRGB — worth the extra four lines.
 
-### 4.3 `sprite.ts` + `sprite-data.ts`
+### 4.3 `sprite.ts` + the art source *(2026-07-14: pixel matrices → cel painters, see cel-painter.ts)*
 
 - Each frame is an `N×N` array of palette indices (`0` = transparent).
 - On init, all frames for an actor are painted into one offscreen canvas laid out

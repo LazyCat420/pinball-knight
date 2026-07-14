@@ -4,9 +4,9 @@
  * These are DOM overlays, so they sit OUTSIDE the pixel pipeline and aren't
  * quantized. Styled to match the palette so they don't clash with the art.
  */
-import { state } from "./state";
+import { state, WEAPON_SLOTS } from "./state";
 import { PLAYER_MAX_HP } from "./constants";
-import { WEAPONS, GEAR, GEAR_SLOTS } from "./items";
+import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 
@@ -41,10 +41,23 @@ export function updateHUD(el: HTMLDivElement): void {
     `<span style="color:#d95763">${"♥".repeat(hp)}</span>` +
     `<span style="color:#2b303b">${"♥".repeat(Math.max(0, PLAYER_MAX_HP - hp))}</span>`;
 
-  const w = WEAPONS[state.weapon.id];
-  const weaponRow = Number.isFinite(w.maxDurability)
-    ? `${w.icon} ${w.label.padEnd(7)} ${meter(state.weapon.durability, w.maxDurability, "#f0a63c")}`
-    : `${w.icon} ${w.label.padEnd(7)} <span style="color:#6b7688">unbreakable</span>`;
+  // Two hand slots — the active one is arrowed and bright, ranged weapons
+  // show an ammo count instead of a wear meter.
+  const weaponRows = Array.from({ length: WEAPON_SLOTS }, (_, slot) => {
+    const held = state.weaponSlots[slot];
+    const active = slot === state.activeSlot;
+    const marker = active ? `<span style="color:#f0a63c">▶</span>` : `<span style="color:#2b303b">${slot + 1}</span>`;
+    if (!held) {
+      const label = active ? `✊ Fists <span style="color:#6b7688">unbreakable</span>` : `<span style="color:#454f5e">— empty —</span>`;
+      return `<div${active ? "" : ' style="color:#454f5e"'}>${marker} ${label}</div>`;
+    }
+    const w = WEAPONS[held.id as WeaponId];
+    const detail =
+      w.kind === "ranged"
+        ? `<span style="color:${active ? "#ffd98a" : "#6b7688"}">×${held.durability}</span> ${meter(held.durability, w.maxDurability, active ? "#f0a63c" : "#6b7688", 6)}`
+        : meter(held.durability, w.maxDurability, active ? "#f0a63c" : "#6b7688");
+    return `<div${active ? "" : ' style="color:#6b7688"'}>${marker} ${w.icon} ${w.label.padEnd(7)} ${detail}</div>`;
+  }).join("");
 
   const gearRows = GEAR_SLOTS.map((slot) => {
     const def = GEAR[slot];
@@ -61,7 +74,7 @@ export function updateHUD(el: HTMLDivElement): void {
 
   el.innerHTML = `
     <div style="font-size:16px;letter-spacing:2px">${hearts}</div>
-    <div style="margin-top:2px">${weaponRow}</div>
+    <div style="margin-top:2px">${weaponRows}</div>
     <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
     ${gearRows}
     <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
@@ -182,7 +195,7 @@ export function showControlsHint(container: HTMLElement): void {
     color: #6b7688; text-shadow: 1px 1px 0 #0b0d12;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SPACE ATTACK · WALK OVER ITEMS TO EQUIP · FIND THE STAIRS · ESC LEAVE";
+  el.textContent = "WASD MOVE · SPACE ATTACK · TAB SWAP WEAPON · WALK OVER ITEMS TO EQUIP · FIND THE STAIRS · ESC LEAVE";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";

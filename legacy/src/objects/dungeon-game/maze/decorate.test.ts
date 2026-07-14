@@ -43,9 +43,18 @@ describe("decorateMaze", () => {
     expect(at(g, 1, 1)).toBe(T_FLOOR);
   });
 
-  it("scatters one of each pickup on clear floor, away from spawns and stairs", () => {
+  it("scatters this level's roll — three distinct weapons + all gear — on clear floor", () => {
     const { g, dist, plan } = makeLevel(71);
-    expect(plan.items.map((it) => it.id).sort()).toEqual(["armor", "boots", "chair", "helmet", "mace", "stick"]);
+
+    const gear = plan.items.filter((it) => it.kind === "gear").map((it) => it.id);
+    expect(gear.sort()).toEqual(["armor", "boots", "helmet"]);
+
+    const weapons = plan.items.filter((it) => it.kind === "weapon").map((it) => it.id);
+    expect(weapons.length).toBe(3);
+    expect(new Set(weapons).size).toBe(3); // no duplicates in one level's roll
+    const pool = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
+    for (const id of weapons) expect(pool).toContain(id);
+
     for (const it of plan.items) {
       expect(at(g, it.i, it.j)).toBe(T_FLOOR);
       expect(dist[idx(g, it.i, it.j)]).toBeGreaterThanOrEqual(4);

@@ -13,17 +13,23 @@
  *  - a GreaterDepth silhouette pass draws the knight through anything that
  *    still manages to occlude him
  *
+ * Weapons: two slots (Tab / 1 / 2 to swap). Walking over a weapon fills an
+ * empty slot; with both hands full it EXCHANGES with the active hand — the
+ * old weapon drops right there, durability intact, and can't be re-grabbed
+ * until you step away. The knight's held art is per-weapon: each weapon has
+ * its own sprite sheet (built lazily, cached) and a swap is a texture switch.
+ *
  * Follows the same lifecycle contract as every other game here (see
  * mouse-game/core.ts): fullscreen overlay, its own renderer, setInputOwner on
  * the way in, clearInputOwner + full dispose on the way out.
  */
 import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, type Zombie, type GroundItem } from "./state";
+import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
-import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./render/sprite";
+import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { PLAYER_FRAMES, ZOMBIE_FRAMES, ITEM_FRAMES, PROP_FRAMES } from "./render/sprite-data";
+import { makeKnightPaints, ZOMBIE_PAINTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
@@ -34,6 +40,7 @@ import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
 import { updatePlayer } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
+import { updateProjectiles } from "./entities/projectiles";
 import { syncActorMesh } from "./entities/combat";
 import { createInput } from "./input";
 import {
@@ -44,15 +51,35 @@ import {
   FIXED_STEP,
   MAX_FRAME,
   PICKUP_RANGE,
+  DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, freshWeapon, type WeaponId, type GearSlot } from "./items";
+import { WEAPONS, GEAR, freshWeapon, type WeaponId, type WeaponState, type GearSlot } from "./items";
 import { sfxStairs, sfxGameOver, sfxPickup } from "./audio";
 
 export function isDungeonGameActive(): boolean {
   return state.active;
+}
+
+/** The knight's atlas for a given held weapon — built once, cached for the session. */
+function playerSheetFor(id: WeaponId): SpriteSheet {
+  let sheet = state.playerSheets.get(id);
+  if (!sheet) {
+    sheet = buildSpriteSheet(makeKnightPaints(id));
+    state.playerSheets.set(id, sheet);
+  }
+  return sheet;
+}
+
+/** Make the sprite match the active hand. Cheap no-op when nothing changed. */
+function applyWeaponArt(): void {
+  const id = activeWeapon().id;
+  if (id === state.playerArtWeapon || !state.player) return;
+  state.player.sprite.setSheet(playerSheetFor(id));
+  state.player.silhouette?.syncMap();
+  state.playerArtWeapon = id;
 }
 
 export function launchDungeonGame(onExit?: () => void): void {
@@ -75,8 +102,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   document.body.appendChild(state.container);
 
   // ── Renderer ──
-  // No antialiasing: it would smear the pixel edges we're working so hard to
-  // keep hard. Everything else about colour/tonemapping is set by createPixelPass.
+  // No MSAA: the quantize pass flattens colour anyway, and the depth-edge
+  // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
   state.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
   state.renderer.setClearColor(PALETTE_HEX[0]);
   state.container.appendChild(state.renderer.domElement);
@@ -107,9 +134,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.camera = createDungeonCamera();
   aimCamera(state.camera, 0, 0.5, 0);
 
-  // ── Sprite sheets (built once, shared by every actor of a kind) ──
-  state.playerSheet = buildSpriteSheet(PLAYER_FRAMES);
-  state.zombieSheet = buildSpriteSheet(ZOMBIE_FRAMES);
+  // ── Sprite sheets (zombies share one; the knight's is per-weapon) ──
+  state.zombieSheet = buildSpriteSheet(ZOMBIE_PAINTS);
 
   // ── HUD + input ──
   state.hudEl = createHUD(state.container);
@@ -123,7 +149,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   window.addEventListener("resize", state.onResize);
 
   // ── Level 1 ──
-  state.weapon = freshWeapon("sword");
+  state.weaponSlots = [freshWeapon("sword"), null];
+  state.activeSlot = 0;
   state.gear = {};
   startLevel(1);
 
@@ -157,7 +184,8 @@ function startLevel(level: number): void {
   // ── Player ──
   const startPos = tileCenter(grid, plan.start.i, plan.start.j);
   if (!state.player) {
-    const sprite = createActorSprite(state.playerSheet!, false);
+    const weaponId = activeWeapon().id;
+    const sprite = createActorSprite(playerSheetFor(weaponId), false);
     state.scene.add(sprite.mesh);
     const anim = new Animator(sprite);
     state.player = {
@@ -168,6 +196,7 @@ function startLevel(level: number): void {
       silhouette: createOcclusionSilhouette(sprite),
       ...freshPlayerFields(),
     };
+    state.playerArtWeapon = weaponId;
   } else {
     state.player.x = startPos.x;
     state.player.z = startPos.z;
@@ -197,6 +226,7 @@ function startLevel(level: number): void {
       cooldown: 0,
       flashT: 0,
       aggro: false,
+      burnT: 0,
     };
     syncActorMesh(z);
     return z;
@@ -204,7 +234,7 @@ function startLevel(level: number): void {
 
   // ── Loot on the floor ──
   state.groundItems = plan.items.map((it, k): GroundItem => {
-    const sprite = createStaticSprite(ITEM_FRAMES[it.id]);
+    const sprite = createStaticSprite(ITEM_PAINTS[it.id]);
     const pos = tileCenter(grid, it.i, it.j);
     sprite.mesh.position.set(pos.x, 0, pos.z);
     state.scene!.add(sprite.mesh);
@@ -213,7 +243,7 @@ function startLevel(level: number): void {
 
   // ── Set dressing ──
   state.props = plan.props.map((pr) => {
-    const sprite = createStaticSprite(PROP_FRAMES[pr.kind]);
+    const sprite = createStaticSprite(PROP_PAINTS[pr.kind]);
     const pos = tileCenter(grid, pr.i, pr.j);
     sprite.mesh.position.set(pos.x, 0, pos.z);
     state.scene!.add(sprite.mesh);
@@ -228,6 +258,15 @@ function startLevel(level: number): void {
   showToast(`DEPTH ${level}`, level === 1 ? "kill everything · find the stairs" : "");
 }
 
+/** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */
+function selectSlot(slot: number): void {
+  if (slot === state.activeSlot || state.gameOver) return;
+  state.activeSlot = slot;
+  const w = WEAPONS[activeWeapon().id];
+  showPickupNote(`${w.icon} ${w.label.toUpperCase()} in hand`);
+  state.hudDirty = true;
+}
+
 function handleKey(e: KeyboardEvent): void {
   if (!state.active) return;
 
@@ -235,6 +274,18 @@ function handleKey(e: KeyboardEvent): void {
     case "escape":
       exitDungeonGame();
       return;
+
+    // ── Weapon slots ──
+    case "tab":
+      e.preventDefault(); // don't let focus walk out of the game
+      selectSlot(1 - state.activeSlot);
+      break;
+    case "1":
+      selectSlot(0);
+      break;
+    case "2":
+      selectSlot(1);
+      break;
 
     // ── Hidden style-debug toggles (kept from the Phase 0 sandbox) ──
     case "q":
@@ -268,7 +319,8 @@ function onPlayerDeath(): void {
       state.gameOver = false;
       state.kills = 0;
       state.goldRun = 0;
-      state.weapon = freshWeapon("sword");
+      state.weaponSlots = [freshWeapon("sword"), null];
+      state.activeSlot = 0;
       state.gear = {};
       if (state.player) {
         Object.assign(state.player, freshPlayerFields());
@@ -287,18 +339,66 @@ function descend(): void {
   startLevel(state.level + 1);
 }
 
-/** Walk-over pickups: weapons swap into the hand, gear fills its slot. */
+/** Drop a carried weapon on the floor, durability intact, un-grabbable until you step away. */
+function dropWeapon(w: WeaponState, x: number, z: number): void {
+  if (!state.scene) return;
+  const sprite = createStaticSprite(ITEM_PAINTS[w.id]);
+  sprite.mesh.position.set(x, 0, z);
+  state.scene.add(sprite.mesh);
+  state.groundItems.push({
+    kind: "weapon",
+    id: w.id,
+    x,
+    z,
+    sprite,
+    bobPhase: Math.random() * Math.PI * 2,
+    durability: w.durability,
+    blockedUntilAway: true,
+  });
+}
+
+/**
+ * A weapon comes off the floor: into an empty slot if there is one, otherwise
+ * it EXCHANGES with the active hand (the old weapon drops where the new one
+ * lay). Either way the new weapon ends up in the active hand — picking a
+ * thing up and not holding it would feel like a misclick.
+ */
+function pickUpWeapon(it: GroundItem): void {
+  const id = it.id as WeaponId;
+  const incoming: WeaponState = { id, durability: it.durability ?? WEAPONS[id].maxDurability };
+
+  const empty = state.weaponSlots.findIndex((s) => s === null);
+  if (empty >= 0) {
+    state.weaponSlots[empty] = incoming;
+    state.activeSlot = empty;
+  } else {
+    const outgoing = state.weaponSlots[state.activeSlot]!;
+    state.weaponSlots[state.activeSlot] = incoming;
+    dropWeapon(outgoing, it.x, it.z);
+  }
+
+  const w = WEAPONS[id];
+  const detail = w.kind === "ranged" ? `ammo ${incoming.durability}` : `dmg ${w.damage}`;
+  showPickupNote(`${w.icon} ${w.label.toUpperCase()} — ${detail} · TAB swaps`);
+}
+
+/** Walk-over pickups: weapons fill/exchange the hand slots, gear fills its slot. */
 function checkPickups(): void {
   const p = state.player;
   if (!p) return;
   for (let k = state.groundItems.length - 1; k >= 0; k--) {
     const it = state.groundItems[k];
-    if (Math.hypot(it.x - p.x, it.z - p.z) > PICKUP_RANGE) continue;
+    const dist = Math.hypot(it.x - p.x, it.z - p.z);
+
+    // A weapon you just put down: inert until you actually leave the spot.
+    if (it.blockedUntilAway) {
+      if (dist > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
+      continue;
+    }
+    if (dist > PICKUP_RANGE) continue;
 
     if (it.kind === "weapon") {
-      state.weapon = freshWeapon(it.id as WeaponId);
-      const w = WEAPONS[state.weapon.id];
-      showPickupNote(`${w.icon} ${w.label.toUpperCase()} — dmg ${w.damage}`);
+      pickUpWeapon(it);
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -330,6 +430,7 @@ function simulate(dt: number): void {
 
   updatePlayer(dt, state.input);
   updateZombies(dt);
+  updateProjectiles(dt);
   checkPickups();
 
   // ── Stairs? ──
@@ -358,6 +459,10 @@ function loop(now: number): void {
 
   const p = state.player;
   const g = state.grid;
+
+  // The held art follows the active hand — pickup, swap, break, retry all
+  // funnel through this one check.
+  applyWeaponArt();
 
   // ── Presentation (per rendered frame) ──
   if (p) p.anim.update(frame);

@@ -2,35 +2,37 @@
  * Dungeon — every tuning number lives here.
  */
 
-// ── Pixel pipeline ──────────────────────────────────────────────
+// ── Render pipeline ─────────────────────────────────────────────
 /**
  * Internal render resolution. FIXED — never scales with the window.
  *
- * 640×360 is the "16-bit" step up from the original 320×180: same palette,
- * same quantize/dither pipeline, twice the detail per tile. Playtesting the
- * 320×180 build read as too chunky ("8-bit too granular" — 2026-07-14), and
- * doubling the grid keeps every downstream ratio identical: VIEW stays
- * 20×11.25 tiles, integer scale on a 1080p window is exactly 3×.
+ * 1280×720 is the CEL-SHADED round (2026-07-14 playtest: "make the sprites
+ * cel shaded instead of this pixel look"): the game is no longer pixel art —
+ * actors are smooth vector-drawn cels (see render/cel-painter.ts) and the
+ * chunky internal grid was the main thing still reading as "pixels". Every
+ * downstream ratio is unchanged: VIEW stays 20×11.25 tiles. The palette
+ * quantizer + depth-edge ink outline stay ON — flat banded colour with ink
+ * lines IS the cel look; only the resolution and the dither change.
  */
-export const RENDER_W = 640;
-export const RENDER_H = 360;
+export const RENDER_W = 1280;
+export const RENDER_H = 720;
 
 /**
  * Pixels per world unit. RENDER_H / PPU = the ortho frustum height.
- * At 32, one tile (1 world unit) is exactly 32 screen pixels, and a 32px
- * sprite maps 1:1 onto screen pixels — which is the whole point.
+ * At 64, one tile (1 world unit) is 64 render pixels.
  */
-export const PPU = 32;
+export const PPU = 64;
 
 export const VIEW_W = RENDER_W / PPU; // 20 tiles across
 export const VIEW_H = RENDER_H / PPU; // 11.25 tiles down
 
 /**
- * Only upscale by whole numbers. Fractional scaling makes some pixels 4px wide
- * and others 5px, which reads as blurry/shimmery and kills the illusion. The
- * cost is letterboxing, which is the correct retro trade.
+ * Cel art scales cleanly (it's smooth shapes, not a pixel grid), so fill the
+ * window instead of letterboxing to whole multiples. The snap-to-texel rules
+ * (camera + sprites) still apply — they prevent crawl against the fixed
+ * render target, which exists at any upscale factor.
  */
-export const INTEGER_SCALE = true;
+export const INTEGER_SCALE = false;
 
 // ── Camera ──────────────────────────────────────────────────────
 /**
@@ -53,12 +55,17 @@ export const CAMERA_YAW = (45 * Math.PI) / 180;
 export const CAMERA_DIST = 24; // irrelevant to scale (ortho), just needs to clear geometry
 
 // ── Sprites ─────────────────────────────────────────────────────
-export const SPRITE_PX = 32; // native art size, px
-export const SPRITE_UNITS = SPRITE_PX / PPU; // 1.0 world units — 1:1 pixel mapping
+/**
+ * Cel frames are painted at 128px and displayed at ~70px on the render
+ * target — the 2× supersample is what keeps curved outlines smooth after the
+ * downscale (drawn at display size they alias visibly).
+ */
+export const SPRITE_PX = 128; // painted art size per frame, px
+export const SPRITE_UNITS = 1.1; // actor plane size, world units (~1 tile tall)
 
 // ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
-export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette
-export const DITHER_DEFAULT = true; // Bayer 4x4 ordered dither before the snap
+export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading
+export const DITHER_DEFAULT = false; // Bayer dither is a pixel-art texture — off for clean cel bands
 export const SCANLINE_DEFAULT = false; // subtle CRT scanlines
 export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
 
@@ -122,6 +129,24 @@ export const BOOTS_SPEED_FACTOR = 1.18;
 
 /** Walking within this range of a ground item picks it up. */
 export const PICKUP_RANGE = 0.45;
+/**
+ * A weapon dropped in an exchange can't be re-grabbed until you've stepped
+ * this far away from it — otherwise the drop and the pickup ping-pong while
+ * you stand on the spot.
+ */
+export const DROP_CLEAR_RANGE = 0.9;
+
+// ── Projectiles (gun / bow / flamethrower) ──────────────────────
+/** Where projectiles fly, world Y — chest height on the actors. */
+export const PROJECTILE_Y = 0.55;
+/** Projectiles spawn this far in front of the player (outside their own body). */
+export const MUZZLE_OFFSET = 0.38;
+/**
+ * A zombie standing in the flame cone touches many puffs at once; after one
+ * burn tick it's immune for this long, so the cone reads as a steady ~4/s
+ * burn instead of instant incineration.
+ */
+export const FLAME_BURN_IMMUNITY = 0.24;
 
 // ── Zombies ─────────────────────────────────────────────────────
 export const ZOMBIE_R = 0.3;
