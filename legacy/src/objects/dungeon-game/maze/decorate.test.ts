@@ -42,4 +42,22 @@ describe("decorateMaze", () => {
     expect(plan.start).toEqual({ i: 1, j: 1 });
     expect(at(g, 1, 1)).toBe(T_FLOOR);
   });
+
+  it("scatters one of each pickup on clear floor, away from spawns and stairs", () => {
+    const { g, dist, plan } = makeLevel(71);
+    expect(plan.items.map((it) => it.id).sort()).toEqual(["armor", "boots", "chair", "helmet", "mace", "stick"]);
+    for (const it of plan.items) {
+      expect(at(g, it.i, it.j)).toBe(T_FLOOR);
+      expect(dist[idx(g, it.i, it.j)]).toBeGreaterThanOrEqual(4);
+      expect(plan.spawns.some((s) => s.i === it.i && s.j === it.j)).toBe(false);
+      expect(it.i === plan.stairs.i && it.j === plan.stairs.j).toBe(false);
+    }
+    // Spread out — no two pickups share a corridor cluster.
+    for (const a of plan.items) {
+      for (const b of plan.items) {
+        if (a === b) continue;
+        expect(Math.abs(a.i - b.i) + Math.abs(a.j - b.j)).toBeGreaterThanOrEqual(5);
+      }
+    }
+  });
 });

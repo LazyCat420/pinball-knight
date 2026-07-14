@@ -10,12 +10,33 @@ entry in the table's game-select overlay, plus the map.
 generated maze, and zombies. Kill everything, find the stairs, descend. Each level
 generates a different maze pattern.
 
-Status: **Phases 0–3 built and playable** — movement, collision, procedural
-maze with stairs-at-max-BFS-distance, zombie flow-field horde, combat, HUD,
-death/retry, procedural SFX, gold wired into the wallet. Phase 4 juice is
-partially in (hit flash, screen shake, knockback, SFX); the rest of Phase 4/5
-(blood pixels, damage numbers, best-depth persistence, alternate maze
-algorithms, more enemy types) is still open.
+Status: **Phases 0–3 built and playable**, plus the 2026-07-14 playtest round:
+
+- **"16-bit" upgrade** — internal target is now **640×360 with 32px sprites**
+  (PPU 32); the knight is true 32px art composed from a weaponless base +
+  leg splices + sword-pose overlays (see sprite-data.ts), zombies are the 16px
+  art scale2x'd for now.
+- **Visibility fixes** (walls were burying actors at 35°/1.4-tall walls):
+  camera raised to **50°**, walls lowered to **0.85** (a wall face now covers
+  ~0.7 tiles instead of ~2), the wall rows south of the player **cut away** to
+  ankle height (InstancedMesh matrix swap), and a **GreaterDepth silhouette
+  pass** draws the knight through anything that still occludes him. This is
+  the Diablo-II treatment (fade + outline), adapted for instanced walls.
+- **~16× maze** — level 1 is 65×45 tiles; zombie count rides floor area.
+- **Torch light pool** — every torch has a flame mesh, but only the
+  TORCH_LIGHT_POOL nearest the player carry live PointLights (forward
+  renderers die by point-light count, not torch count).
+- **Fixed 60Hz timestep** (accumulator) for all simulation.
+- **Weapons with durability** — sword (starter) / stick / mace / chair, one of
+  each findable per level; every landed swing costs 1 durability; at 0 the
+  weapon breaks to fists. Tables + math in items.ts (tested).
+- **Gear v1** — helmet & armor are ablative (absorb bites, helmet first, own
+  durability), boots add speed. One of each per level; walk-over to equip.
+  Left-side HUD shows hearts, weapon durability meter, all three gear slots.
+
+Phase 4/5 still open: blood pixels, damage numbers, best-depth persistence,
+per-weapon held art on the knight, true-32px zombie redraw, alternate maze
+algorithms, more enemy types.
 
 ---
 

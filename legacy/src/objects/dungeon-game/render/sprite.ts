@@ -17,7 +17,7 @@
  */
 import * as THREE from "three";
 import { CHARS, type ActorFrames, type Dir, type ClipName, type Frame } from "./sprite-data";
-import { paletteCss } from "./palette";
+import { paletteCss, PALETTE_HEX } from "./palette";
 import { SPRITE_PX, SPRITE_UNITS, CAMERA_TILT } from "../constants";
 
 export interface SpriteSheet {
@@ -172,6 +172,86 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     setFrame,
     setFlipped,
     setTint,
+    dispose: () => {
+      geo.dispose();
+      mat.dispose();
+      tex.dispose();
+    },
+  };
+}
+
+/**
+ * A silhouette pass for the player: an identical plane that draws ONLY where
+ * the sprite is hidden by geometry (depthFunc GreaterDepth = "behind what's
+ * already there"), as a flat arcane-blue cutout. Parent it to the actor's mesh
+ * and you can never lose your character behind a wall — the classic
+ * see-through-occluder treatment for top-down crawlers, done without a
+ * stencil buffer.
+ */
+export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mesh; dispose(): void } {
+  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
+  geo.translate(0, SPRITE_UNITS / 2, 0);
+
+  const srcMat = actor.mesh.material as THREE.MeshBasicMaterial;
+  const mat = new THREE.MeshBasicMaterial({
+    map: srcMat.map, // SHARED texture — follows the actor's frame/flip for free
+    transparent: true,
+    alphaTest: 0.5,
+    side: THREE.DoubleSide,
+    color: PALETTE_HEX[30], // arcane mid — reads as "you, behind the wall"
+    depthTest: true,
+    depthWrite: false,
+    depthFunc: THREE.GreaterDepth, // only draw where something occludes us
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 20; // after the world and the normal sprite pass
+  // Parented to the actor mesh, so no rotation/position of its own is needed.
+  actor.mesh.add(mesh);
+
+  return {
+    mesh,
+    dispose: () => {
+      geo.dispose();
+      mat.dispose(); // the map is the actor's — the actor disposes it
+    },
+  };
+}
+
+/**
+ * A single-frame ground sprite (weapon and gear pickups). Same billboarding
+ * contract as actors: origin at the bottom-centre, tilted once toward the
+ * fixed camera.
+ */
+export function createStaticSprite(frame: Frame): { mesh: THREE.Mesh; dispose(): void } {
+  const canvas = document.createElement("canvas");
+  canvas.width = SPRITE_PX;
+  canvas.height = SPRITE_PX;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
+  ctx.imageSmoothingEnabled = false;
+  paintFrame(ctx, frame, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
+  geo.translate(0, SPRITE_UNITS / 2, 0);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    alphaTest: 0.5,
+    side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -CAMERA_TILT;
+  mesh.renderOrder = 5; // under actors, over the floor
+
+  return {
+    mesh,
     dispose: () => {
       geo.dispose();
       mat.dispose();

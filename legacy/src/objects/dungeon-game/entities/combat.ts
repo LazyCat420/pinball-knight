@@ -1,12 +1,10 @@
 /**
- * Hit resolution — damage, i-frames, knockback and death all resolve HERE, in
- * one place, rather than being smeared across player.ts and zombie.ts.
+ * Hit resolution — damage, i-frames, knockback, durability and death all
+ * resolve HERE, in one place, rather than being smeared across player.ts and
+ * zombie.ts.
  */
 import { state, type Zombie } from "../state";
 import {
-  ATTACK_RANGE,
-  ATTACK_ARC_COS,
-  ATTACK_DAMAGE,
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
   PLAYER_IFRAMES,
@@ -19,7 +17,9 @@ import {
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { addGold } from "../../../utils/gold-wallet";
-import { sfxHit, sfxZombieDie, sfxHurt } from "../audio";
+import { WEAPONS, GEAR, degradeWeapon, absorbDamage } from "../items";
+import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
+import { showToast } from "../ui";
 
 export const FACING_VEC: Record<Facing, [number, number]> = {
   N: [0, -1],
@@ -37,15 +37,17 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
 }
 
 /**
- * The player's swing lands: everything living within ATTACK_RANGE and inside
- * the ±60° arc of the facing direction takes damage. Returns true if anything
- * was hit (used for hit-stop feel later, and it's honest telemetry).
+ * The player's swing lands, with whatever is in hand: range, arc and damage
+ * come from the equipped weapon, and a swing that CONNECTS costs a point of
+ * durability. Weapons break on use — the swing that breaks the chair still
+ * hits with the chair.
  */
 export function resolvePlayerAttack(): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g) return false;
 
+  const w = WEAPONS[state.weapon.id];
   const [fx, fz] = FACING_VEC[p.facing];
   let landed = false;
 
@@ -54,23 +56,24 @@ export function resolvePlayerAttack(): boolean {
     const dx = z.x - p.x;
     const dz = z.z - p.z;
     const d = Math.hypot(dx, dz);
-    if (d > ATTACK_RANGE) continue;
+    if (d > w.range) continue;
     // At point-blank range the arc test divides by ~0 — inside the bodies'
     // combined radius it's a hit no matter the angle.
     if (d > PLAYER_R + ZOMBIE_R) {
       const dot = (dx / d) * fx + (dz / d) * fz;
-      if (dot < ATTACK_ARC_COS) continue;
+      if (dot < w.arcCos) continue;
     }
 
     landed = true;
-    z.hp -= ATTACK_DAMAGE;
+    z.hp -= w.damage;
     z.aggro = true; // hitting a dormant zombie certainly wakes it
     z.flashT = FLASH_TIME;
     z.sprite.setTint(0xff6a6a);
 
-    // Knockback along the swing, wall-aware.
-    const kx = (d > 1e-4 ? dx / d : fx) * KNOCKBACK_ZOMBIE;
-    const kz = (d > 1e-4 ? dz / d : fz) * KNOCKBACK_ZOMBIE;
+    // Knockback along the swing, wall-aware. Heavier weapons shove harder.
+    const push = KNOCKBACK_ZOMBIE * (1 + (w.damage - 1) * 0.35);
+    const kx = (d > 1e-4 ? dx / d : fx) * push;
+    const kz = (d > 1e-4 ? dz / d : fz) * push;
     const res = moveCircle(g, z.x, z.z, ZOMBIE_R, kx, kz);
     z.x = res.x;
     z.z = res.z;
@@ -81,6 +84,16 @@ export function resolvePlayerAttack(): boolean {
     } else {
       sfxHit();
     }
+  }
+
+  if (landed) {
+    const worn = degradeWeapon(state.weapon);
+    state.weapon = worn.weapon;
+    if (worn.broke) {
+      sfxBreak();
+      showToast(`${w.icon} ${w.label.toUpperCase()} BROKE`, "fists it is");
+    }
+    state.hudDirty = true;
   }
 
   return landed;
@@ -96,18 +109,29 @@ function killZombie(z: Zombie): void {
   sfxZombieDie();
 }
 
-/** A zombie's bite connects. Respects i-frames; shoves the player back. */
+/**
+ * A zombie's bite connects. Damage routes through the armor (helmet first,
+ * then chest) before touching hearts; absorbing costs those pieces
+ * durability, and a piece worn to nothing is destroyed.
+ */
 export function hitPlayer(z: Zombie): void {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.hp <= 0) return;
   if (p.iframes > 0) return;
 
-  p.hp -= ZOMBIE_DAMAGE;
+  const absorbed = absorbDamage(state.gear, ZOMBIE_DAMAGE);
+  state.gear = absorbed.gear;
+  for (const slot of absorbed.destroyed) {
+    showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);
+    sfxBreak();
+  }
+  p.hp -= absorbed.hpDamage;
+
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0xff5555);
-  state.shakeT = 0.25;
+  state.shakeT = absorbed.hpDamage > 0 ? 0.25 : 0.12; // armor soaks the flinch too
   state.hudDirty = true;
   sfxHurt();
 

@@ -5,8 +5,9 @@
 import { state } from "./state";
 
 /**
- * Tear down one depth: the maze geometry and the horde (including corpses).
- * The player actor survives level changes — only its position resets.
+ * Tear down one depth: the maze geometry, the horde (including corpses) and
+ * any loot still on the floor. The player actor survives level changes — only
+ * its position resets.
  */
 export function disposeLevel(): void {
   state.zombies.forEach((z) => {
@@ -15,9 +16,14 @@ export function disposeLevel(): void {
   });
   state.zombies = [];
 
+  state.groundItems.forEach((it) => {
+    state.scene?.remove(it.sprite.mesh);
+    it.sprite.dispose();
+  });
+  state.groundItems = [];
+
   state.maze?.dispose();
   state.maze = null;
-  state.torchLights = [];
   state.grid = null;
   state.stairs = null;
   state.flowField = null;
@@ -29,6 +35,7 @@ export function disposeAll(): void {
   // Actors own cloned textures + their own geometry/material, so they must be
   // disposed individually — removing them from the scene isn't enough.
   if (state.player) {
+    state.player.silhouette?.dispose();
     state.scene?.remove(state.player.sprite.mesh);
     state.player.sprite.dispose();
   }

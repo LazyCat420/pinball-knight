@@ -118,6 +118,23 @@ export function sfxHurt(): void {
   beep(c, { type: "square", f0: 165, f1: 82, dur: 0.12, vol: 0.14, at: 0.07 });
 }
 
+/** Scooped something off the floor — a bright little blip. */
+export function sfxPickup(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "square", f0: 523, f1: 784, dur: 0.09, vol: 0.1 });
+  beep(c, { type: "square", f0: 784, dur: 0.08, vol: 0.08, at: 0.07 });
+}
+
+/** Something you owned just fell apart — a dry crack and clatter. */
+export function sfxBreak(): void {
+  const c = ctx();
+  if (!c) return;
+  burst(c, 0.08, 0.22, "highpass", 1800);
+  burst(c, 0.16, 0.12, "bandpass", 700, 0.05);
+  beep(c, { type: "square", f0: 140, f1: 60, dur: 0.12, vol: 0.1, at: 0.03 });
+}
+
 /** Found the stairs — a little ascending fanfare. */
 export function sfxStairs(): void {
   const c = ctx();

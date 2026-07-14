@@ -1,19 +1,24 @@
 /**
- * THE PIXEL ART.
+ * THE PIXEL ART — now at 32×32 ("16-bit" density; the 16px originals read as
+ * too chunky in playtests).
  *
- * Frames are 16x16 character grids. One char = one pixel. Edit these directly —
- * you don't need an art tool, and the diffs are readable.
+ * Frames are character grids. One char = one pixel. Edit these directly — you
+ * don't need an art tool, and the diffs are readable.
  *
- * This is not a workaround for having no artist: it's the house style. Almost
- * every texture in this codebase is already a runtime CanvasTexture drawn with
- * 2D canvas calls (fishtank/aquarium/textures.ts, record-shelf.ts, window.ts).
- * We're doing the same thing, just from a pixel-matrix source.
+ * The knight is COMPOSED, not copy-pasted: a weaponless base per direction,
+ * leg variants spliced in for the walk cycle, and sparse sword overlays laid
+ * on top per pose. That keeps 27 frames of art down to a handful of authored
+ * pieces, and means fixing the torso once fixes every frame.
  *
- * Rows are padded to 16 automatically, so trailing '.' are optional. A row
- * LONGER than 16 is a mistake and throws loudly at load.
+ * The zombie is the original hand-authored 16px art upscaled 2× at load
+ * (scale2x). It stays deliberately chunkier than the knight — it's a shambling
+ * rotten thing, the coarseness works for it. Redraw at true 32px if it ever
+ * bothers anyone.
  *
- * Only three directions are authored — W is E flipped horizontally at runtime,
- * which is a third of the art for no visible loss.
+ * Rows are padded to width automatically, so trailing '.' are optional. A row
+ * LONGER than the frame width is a mistake and throws loudly at load.
+ *
+ * Only three directions are authored — W is E flipped horizontally at runtime.
  */
 import { SPRITE_PX } from "../constants";
 
@@ -29,8 +34,8 @@ export const CHARS: Record<string, number> = {
   S: 24, // skin
   h: 27, // leather dark
   l: 28, // leather mid
-  y: 16, // torch gold (hilt)
-  r: 12, // blood
+  y: 16, // torch gold (hilt, buckle)
+  r: 12, // blood / plume
   R: 13, // blood light
   g: 6, // rot shadow
   G: 8, // rot mid
@@ -42,455 +47,581 @@ export type Frame = string[];
 export type Dir = "S" | "N" | "E";
 export type ClipName = "idle" | "walk" | "attack" | "death";
 
-/** Pad to SPRITE_PX and reject anything too wide/tall. */
-function f(rows: string[]): Frame {
-  if (rows.length !== SPRITE_PX) {
-    throw new Error(`[dungeon] frame must be ${SPRITE_PX} rows, got ${rows.length}`);
+/** Pad to `size` and reject anything too wide/tall. */
+function frame(rows: string[], size: number): Frame {
+  if (rows.length !== size) {
+    throw new Error(`[dungeon] frame must be ${size} rows, got ${rows.length}`);
   }
   return rows.map((r, i) => {
-    if (r.length > SPRITE_PX) {
-      throw new Error(`[dungeon] frame row ${i} is ${r.length} chars, max ${SPRITE_PX}: "${r}"`);
+    if (r.length > size) {
+      throw new Error(`[dungeon] frame row ${i} is ${r.length} chars, max ${size}: "${r}"`);
     }
-    return r.padEnd(SPRITE_PX, ".");
+    return r.padEnd(size, ".");
   });
 }
 
+const f = (rows: string[]): Frame => frame(rows, SPRITE_PX);
+const f16 = (rows: string[]): Frame => frame(rows, 16);
+
+/** Nearest-neighbour 2× upscale: 16px art → 32px frames. */
+function scale2x(src: Frame): Frame {
+  const out: string[] = [];
+  for (const row of src) {
+    const doubled = row
+      .split("")
+      .map((c) => c + c)
+      .join("");
+    out.push(doubled, doubled);
+  }
+  return out;
+}
+
+/**
+ * Lay a sparse patch over a base: every non-transparent patch pixel wins.
+ * This is how each sword pose lands on the weaponless knight.
+ */
+function overlay(base: Frame, patch: Frame): Frame {
+  return base.map((row, j) => {
+    const p = patch[j];
+    let out = "";
+    for (let i = 0; i < row.length; i++) {
+      out += p[i] !== "." ? p[i] : row[i];
+    }
+    return out;
+  });
+}
+
+/** Replace rows [start, start + rows.length) — the walk cycle's leg swaps. */
+function spliceRows(base: Frame, start: number, rows: string[]): Frame {
+  const next = base.slice();
+  rows.forEach((r, k) => {
+    next[start + k] = r.padEnd(SPRITE_PX, ".");
+  });
+  return next;
+}
+
+/**
+ * Breath/settle: shift everything above the hips down one pixel, keep the
+ * legs planted. The 1px seam at the boundary is invisible in motion.
+ */
+function settle(base: Frame, hipRow: number): Frame {
+  const next = base.slice();
+  for (let j = hipRow - 1; j > 0; j--) next[j] = base[j - 1];
+  next[0] = ".".repeat(SPRITE_PX);
+  return next;
+}
+
 // ══════════════════════════════════════════════════════════════════
-// PLAYER — an armoured hero with a sword
+// KNIGHT — plumed helm, visor, pauldrons, greaves. Weaponless base;
+// the sword is an overlay per pose.
 // ══════════════════════════════════════════════════════════════════
 
 // ── Facing SOUTH (toward the camera) ──
-//
-// Proportions matter more than detail at 16px. An earlier pass had a 10px-wide
-// body and a 4px band of near-white across the helmet, and it read as "a barrel
-// wearing a white hat". The fixes: narrow the torso to 8px, put a DARK visor
-// slit through the helmet so the head reads as a helmet and not a blank block,
-// and give him a visible sword at rest so the silhouette says "hero".
-const P_S_IDLE_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oABBAo..B..",
-  ".....oaooao..B..",
-  ".....oSSSSo..B..",
-  "......oSSo...y..",
-  "...hloAAAAolyh..",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....oAABBAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+const K_S_BASE = f([
+  "................................",
+  "..............rr................",
+  ".............rrr................",
+  "............oooooooo............",
+  "...........oABwwBAAAo...........",
+  "...........oABBBBBAAo...........",
+  "...........oAABBBBAAo...........",
+  "...........oaooooooao...........",
+  "...........oAABBBBAAo...........",
+  "...........oaAAAAAAao...........",
+  "............oAAAAAAo............",
+  ".............oAAAAo.............",
+  ".......oooo.oAAAAAAAAo.oooo.....",
+  ".......oAAo.oAABBBBAAo.oAAo.....",
+  ".......oaaoooABBBBBBAoooaao.....",
+  "........oAo.oABBBBBBAo.oAo......",
+  "........oAo.oAABBBBAAo.oAo......",
+  "........oAo.oAABBBBAAo.oAo......",
+  "........oao.oaAABBAAao.oao......",
+  "...........ohhhhhhhho...........",
+  "...........ohhhyyhhho...........",
+  "...........oaAAAAAAao...........",
+  "...........oaAAooAAao...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oAwo..oAwo...........",
+  "...........oAAo..oAAo...........",
+  "...........oaao..oaao...........",
+  "..........oaaao..oaaao..........",
+  "..........oaaao..oaaao..........",
+  "...........oooo...oooo..........",
 ]);
 
-// Breath: head and chest settle 1px. Subtle on purpose — an idle that moves too
-// much reads as a walk cycle.
-const P_S_IDLE_1 = f([
-  "................",
-  "................",
-  "......oooo...B..",
-  ".....oaAAao..B..",
-  ".....oABBAo..B..",
-  ".....oaooao..B..",
-  ".....oSSSSo..y..",
-  "......oSSo...y..",
-  "...hloAAAAolh...",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+// Contact frames: legs spread. A = left leg out, B = mirrored.
+const K_S_LEGS_A = [
+  "...........oAAo..oAAo...........",
+  "..........oAAo...oAAo...........",
+  ".........oAAo....oAAo...........",
+  ".........oAwo....oAwo...........",
+  "........oAAo.....oAAo...........",
+  "........oaao.....oaao...........",
+  ".......oaaao.....oaaao..........",
+  ".......oaaao.....oaaao..........",
+  "........oooo......oooo..........",
+];
+const K_S_LEGS_B = [
+  "...........oAAo..oAAo...........",
+  "...........oAAo...oAAo..........",
+  "...........oAAo....oAAo.........",
+  "...........oAwo....oAwo.........",
+  "...........oAAo.....oAAo........",
+  "...........oaao.....oaao........",
+  "..........oaaao.....oaaao.......",
+  "..........oaaao.....oaaao.......",
+  "...........oooo......oooo.......",
+];
+
+// Sword poses, sparse overlays. Rest: blade upright in the right hand.
+const SW_S_REST = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "........................w.......",
+  "........................w.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  ".......................Bw.......",
+  "......................yyyy......",
+  ".......................hh.......",
+  ".......................hh.......",
+  ".......................yy.......",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-// Walk: contact / pass / contact(opposite) / pass. At 16px the legs are only a
-// few pixels, so the read comes from the spread, not from fine leg articulation.
-const P_S_WALK_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oABBAo..B..",
-  ".....oaooao..B..",
-  ".....oSSSSo..B..",
-  "......oSSo...y..",
-  "...hloAAAAolyh..",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....oAABBAAo....",
-  "....ohhhhhho....",
-  "...oll...llo....",
-  "...oll...llo....",
-  "..ohh.....hho...",
-  "..oo.......oo...",
+// Windup: blade high over the right shoulder.
+const SW_S_UP = f([
+  "..........................ww....",
+  ".........................ww.....",
+  "........................ww......",
+  ".......................BB.......",
+  "......................BB........",
+  ".....................BB.........",
+  "....................yy..........",
+  "...................yhy..........",
+  "....................h...........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_S_WALK_1 = P_S_IDLE_0;
-
-const P_S_WALK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oABBAo..B..",
-  ".....oaooao..B..",
-  ".....oSSSSo..B..",
-  "......oSSo...y..",
-  "...hloAAAAolyh..",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....oAABBAAo....",
-  "....ohhhhhho....",
-  "....oll...llo...",
-  "....oll...llo...",
-  "...ohh.....hho..",
-  "...oo.......oo..",
+// Swing: the active frame — blade horizontal across the body.
+const SW_S_SWING = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..wwwwwwwwwwww..................",
+  "..BBBBBBBBBBBByy................",
+  "..............yy................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_S_WALK_3 = P_S_IDLE_0;
-
-// Attack: windup (blade high) → swing (blade across) → recover (blade low).
-// Three frames is enough to read, and it lets the hitbox agree with the art:
-// frame 1 is the only "active" frame.
-const P_S_ATTACK_0 = f([
-  "..........BBB...",
-  "..........BBB...",
-  "......oooo.By...",
-  ".....oaAAaoy....",
-  ".....oABBAo.....",
-  ".....oaooao.....",
-  ".....oSSSSo.....",
-  "...hloAAAAolh...",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....oAABBAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+// Recover: blade low, trailing down-right.
+const SW_S_LOW = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  ".......................yy.......",
+  "........................yBB.....",
+  ".........................BBw....",
+  "..........................Bww...",
+  "...........................ww...",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_S_ATTACK_1 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao.....",
-  ".....oABBAo.....",
-  ".....oaooao.....",
-  ".....oSSSSo.....",
-  "......oSSo......",
-  "...hloAAAAolh...",
-  "....oAABBAAo....",
-  ".BBBBBBByAAAo...",
-  "....oAABBAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+// ── Facing NORTH (away) — helmet back: no visor, a backplate ──
+const K_N_BASE = f([
+  "................................",
+  "..............rr................",
+  ".............rrr................",
+  "............oooooooo............",
+  "...........oABwwBAAAo...........",
+  "...........oABBBBBAAo...........",
+  "...........oAABBBBAAo...........",
+  "...........oAAABBAAAo...........",
+  "...........oAABBBBAAo...........",
+  "...........oaAAAAAAao...........",
+  "............oAAAAAAo............",
+  ".............oAAAAo.............",
+  ".......oooo.oAAAAAAAAo.oooo.....",
+  ".......oAAo.oAAAAAAAAo.oAAo.....",
+  ".......oaaoooAaaaaaaAoooaao.....",
+  "........oAo.oAAAAAAAAo.oAo......",
+  "........oAo.oAaaaaaaAo.oAo......",
+  "........oAo.oAAAAAAAAo.oAo......",
+  "........oao.oaAAAAAAao.oao......",
+  "...........ohhhhhhhho...........",
+  "...........ohhhhhhhho...........",
+  "...........oaAAAAAAao...........",
+  "...........oaAAooAAao...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oAAo..oAAo...........",
+  "...........oaao..oaao...........",
+  "..........oaaao..oaaao..........",
+  "..........oaaao..oaaao..........",
+  "...........oooo...oooo..........",
 ]);
 
-const P_S_ATTACK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao.....",
-  ".....oABBAo.....",
-  ".....oaooao.....",
-  ".....oSSSSo.....",
-  "......oSSo......",
-  "...hloAAAAolh...",
-  "....oAABBAAo....",
-  "....oABBBBAo....",
-  "....oAABBAAoy...",
-  "....ohhhhhhoyB..",
-  "....oll..llo.BB.",
-  "....oll..llo..B.",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+/** Mirror a sparse overlay horizontally (N poses = S poses on the other hand). */
+function mirror(patch: Frame): Frame {
+  return patch.map((row) => row.split("").reverse().join(""));
+}
+
+const SW_N_REST = mirror(SW_S_REST);
+const SW_N_UP = mirror(SW_S_UP);
+const SW_N_SWING = mirror(SW_S_SWING);
+const SW_N_LOW = mirror(SW_S_LOW);
+
+// ── Facing EAST (profile, right). W is this, flipped at runtime ──
+const K_E_BASE = f([
+  "................................",
+  "...........rr...................",
+  "..........rrr...................",
+  ".............oooooo.............",
+  "............oAABBBAo............",
+  "............oABBBBBo............",
+  "............oABBwwBo............",
+  "............oAAooooo............",
+  "............oABBBBAo............",
+  "............oaAAAAAo............",
+  ".............oAAAAo.............",
+  "..............oAAo..............",
+  "...........ooAAAAAAoo...........",
+  "..........oAAABBBBAAAo..........",
+  "..........oaAABBBBAAao..........",
+  "...........oAABBBBAAo...........",
+  "...........oAABBBBAAo...........",
+  "............oABBBBAo............",
+  "............oaABBAao............",
+  "............ohhhhhho............",
+  "............ohhyyhho............",
+  "............oaAAAAao............",
+  "............oaAAAAao............",
+  ".............oAAAAo.............",
+  ".............oAAAAo.............",
+  ".............oAAAAo.............",
+  ".............oAwAwo.............",
+  ".............oAAAAo.............",
+  ".............oaaaao.............",
+  "............oaaaaao.............",
+  "............oaaaaao.............",
+  ".............ooooo..............",
 ]);
 
-// ── Facing NORTH (away) — helmet back, no face, no visor ──
-const P_N_IDLE_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oAAAAo..B..",
-  ".....oAAAAo..B..",
-  ".....oaAAao..B..",
-  "......oaao...y..",
-  "...hloAAAAolyh..",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....oAAAAAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+// Profile stride: A = right (near) leg forward, B = left leg forward.
+const K_E_LEGS_A = [
+  ".............oAAAAo.............",
+  "............oAAooAAo............",
+  "...........oAAo..oAAo...........",
+  "...........oAwo..oAwo...........",
+  "..........oAAo....oAAo..........",
+  "..........oaao....oaao..........",
+  ".........oaaao....oaaao.........",
+  ".........oaaao....oaaao.........",
+  "..........oooo.....oooo.........",
+];
+const K_E_LEGS_B = [
+  ".............oAAAAo.............",
+  "............oAAooAAo............",
+  "...........oAAo..oAAo...........",
+  "...........oAwo..oAwo...........",
+  "..........oAAo....oAAo..........",
+  "..........oaao....oaao..........",
+  ".........oaaao....oaaao.........",
+  ".........oaaao....oaaao.........",
+  ".........oooo......oooo.........",
+]
+
+// Rest: blade angled down-forward, ready.
+const SW_E_REST = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "...................yy...........",
+  "....................hByy........",
+  ".....................yBBw.......",
+  "......................BBw.......",
+  ".......................Bww......",
+  "........................ww......",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_N_IDLE_1 = f([
-  "................",
-  "................",
-  "......oooo...B..",
-  ".....oaAAao..B..",
-  ".....oAAAAo..B..",
-  ".....oAAAAo..B..",
-  ".....oaAAao..y..",
-  "......oaao...y..",
-  "...hloAAAAolh...",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
+// Windup: blade raised behind the head.
+const SW_E_UP = f([
+  ".......ww.......................",
+  "........ww......................",
+  ".........BB.....................",
+  "..........BB....................",
+  "...........BB...................",
+  "............yy..................",
+  ".............h..................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_N_WALK_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oAAAAo..B..",
-  ".....oAAAAo..B..",
-  ".....oaAAao..B..",
-  "......oaao...y..",
-  "...hloAAAAolyh..",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....oAAAAAAo....",
-  "....ohhhhhho....",
-  "...oll...llo....",
-  "...oll...llo....",
-  "..ohh.....hho...",
-  "..oo.......oo...",
+// Swing: full forward thrust — the reach frame.
+const SW_E_SWING = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..................yywwwwwwwwwww.",
+  "..................yyBBBBBBBBBBB.",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_N_WALK_1 = P_N_IDLE_0;
-
-const P_N_WALK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao..B..",
-  ".....oAAAAo..B..",
-  ".....oAAAAo..B..",
-  ".....oaAAao..B..",
-  "......oaao...y..",
-  "...hloAAAAolyh..",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....oAAAAAAo....",
-  "....ohhhhhho....",
-  "....oll...llo...",
-  "....oll...llo...",
-  "...ohh.....hho..",
-  "...oo.......oo..",
+// Recover: blade swept low past the front foot.
+const SW_E_LOW = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..................yy............",
+  "...................yBB..........",
+  "....................BBw.........",
+  ".....................Bww........",
+  "......................ww........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
 ]);
 
-const P_N_WALK_3 = P_N_IDLE_0;
+// ── Assemble the knight's clips ──
+const LEG_ROW = 23; // where the leg splices start
+const HIP_ROW = 21; // settle() boundary
 
-const P_N_ATTACK_0 = f([
-  "..........BBB...",
-  "..........BBB...",
-  "......oooo.By...",
-  ".....oaAAaoy....",
-  ".....oAAAAo.....",
-  ".....oAAAAo.....",
-  ".....oaAAao.....",
-  "...hloAAAAolh...",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....oAAAAAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
-]);
+function knightClips(
+  base: Frame,
+  legsA: string[],
+  legsB: string[],
+  sw: { rest: Frame; up: Frame; swing: Frame; low: Frame },
+) {
+  const rest = (fr: Frame) => overlay(fr, sw.rest);
+  return {
+    idle: [rest(base), rest(settle(base, HIP_ROW))],
+    walk: [
+      rest(settle(spliceRows(base, LEG_ROW, legsA), HIP_ROW)),
+      rest(base),
+      rest(settle(spliceRows(base, LEG_ROW, legsB), HIP_ROW)),
+      rest(base),
+    ],
+    attack: [overlay(base, sw.up), overlay(base, sw.swing), overlay(base, sw.low)],
+  };
+}
 
-const P_N_ATTACK_1 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao.....",
-  ".....oAAAAo.....",
-  ".....oAAAAo.....",
-  ".....oaAAao.....",
-  "......oaao......",
-  "...hloAAAAolh...",
-  "....oAAAAAAo....",
-  ".BBBBBBByAAAo...",
-  "....oAAAAAAo....",
-  "....ohhhhhho....",
-  "....oll..llo....",
-  "....oll..llo....",
-  "....ohh..hho....",
-  ".....oo..oo.....",
-]);
+export type ActorFrames = Record<Dir, Partial<Record<ClipName, Frame[]>>>;
 
-const P_N_ATTACK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAao.....",
-  ".....oAAAAo.....",
-  ".....oAAAAo.....",
-  ".....oaAAao.....",
-  "......oaao......",
-  "...hloAAAAolh...",
-  "....oAAAAAAo....",
-  "....oAaaaaAo....",
-  "....oAAAAAAoy...",
-  "....ohhhhhhoyB..",
-  "....oll..llo.BB.",
-  "....oll..llo..B.",
-  "....ohh..hho....",
-  ".....oo..oo.....",
-]);
-
-// ── Facing EAST (profile, right) — W is this, flipped ──
-const P_E_IDLE_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol....",
-  "....oAABBAo.B...",
-  "....oABBBAo.B...",
-  "....oAABBAo.y...",
-  ".....ohhhho.....",
-  "....oll.llo.....",
-  "....oll.llo.....",
-  "...ohh...hho....",
-  "...oo.....oo....",
-]);
-
-const P_E_IDLE_1 = f([
-  "................",
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol.B..",
-  "....oAABBAo.B...",
-  "....oABBBAo.y...",
-  ".....ohhhho.....",
-  "....oll.llo.....",
-  "....oll.llo.....",
-  "...ohh...hho....",
-  "...oo.....oo....",
-]);
-
-const P_E_WALK_0 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol....",
-  "....oAABBAo.B...",
-  "....oABBBAo.B...",
-  "....oAABBAo.y...",
-  ".....ohhhho.....",
-  "...oll..llo.....",
-  "..oll....llo....",
-  "..ohh.....hho...",
-  "..oo.......oo...",
-]);
-
-const P_E_WALK_1 = P_E_IDLE_0;
-
-const P_E_WALK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol....",
-  "....oAABBAo.B...",
-  "....oABBBAo.B...",
-  "....oAABBAo.y...",
-  ".....ohhhho.....",
-  "....oll.llo.....",
-  "....oll..llo....",
-  "...ohh....hho...",
-  "...oo......oo...",
-]);
-
-const P_E_WALK_3 = P_E_IDLE_0;
-
-const P_E_ATTACK_0 = f([
-  "..........BBB...",
-  "..........BBB...",
-  "......oooo.By...",
-  ".....oaAAaoy....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "....hloAAAol....",
-  "....oAABBAo.....",
-  "....oABBBAo.....",
-  "....oAABBAo.....",
-  ".....ohhhho.....",
-  "....oll.llo.....",
-  "....oll.llo.....",
-  "...ohh...hho....",
-  "...oo.....oo....",
-]);
-
-const P_E_ATTACK_1 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol....",
-  "....oAABBAo.....",
-  "....oABBBAoyBBBB",
-  "....oAABBAo.BBBB",
-  ".....ohhhho.....",
-  "....oll.llo.....",
-  "....oll.llo.....",
-  "...ohh...hho....",
-  "...oo.....oo....",
-]);
-
-const P_E_ATTACK_2 = f([
-  "................",
-  "......oooo......",
-  ".....oaAAAo.....",
-  ".....oABBAo.....",
-  ".....oaooSo.....",
-  "......oSSSo.....",
-  "......oSSo......",
-  "....hloAAAol....",
-  "....oAABBAo.....",
-  "....oABBBAo.....",
-  "....oAABBAoy....",
-  ".....ohhhhoyB...",
-  "....oll.llo.BB..",
-  "....oll.llo..B..",
-  "...ohh...hho....",
-  "...oo.....oo....",
-]);
+export const PLAYER_FRAMES: ActorFrames = {
+  S: knightClips(K_S_BASE, K_S_LEGS_A, K_S_LEGS_B, {
+    rest: SW_S_REST,
+    up: SW_S_UP,
+    swing: SW_S_SWING,
+    low: SW_S_LOW,
+  }),
+  N: knightClips(K_N_BASE, K_S_LEGS_A, K_S_LEGS_B, {
+    rest: SW_N_REST,
+    up: SW_N_UP,
+    swing: SW_N_SWING,
+    low: SW_N_LOW,
+  }),
+  E: knightClips(K_E_BASE, K_E_LEGS_A, K_E_LEGS_B, {
+    rest: SW_E_REST,
+    up: SW_E_UP,
+    swing: SW_E_SWING,
+    low: SW_E_LOW,
+  }),
+};
 
 // ══════════════════════════════════════════════════════════════════
-// ZOMBIE — slow, rotten, arms out. Threatening in a group, trivial alone.
+// ZOMBIE — the original 16px art, upscaled 2×. Chunkier than the
+// knight on purpose; it suits the rot.
 // ══════════════════════════════════════════════════════════════════
 
-const Z_S_IDLE_0 = f([
+const Z_S_IDLE_0 = f16([
   "................",
   ".....gggggg.....",
   "....gGYYYYGg....",
@@ -509,8 +640,7 @@ const Z_S_IDLE_0 = f([
   ".....gg..gg.....",
 ]);
 
-// Sway: the whole rotten mass lolls 1px. Zombies should never look composed.
-const Z_S_IDLE_1 = f([
+const Z_S_IDLE_1 = f16([
   "................",
   "......gggggg....",
   ".....gGYYYYGg...",
@@ -529,7 +659,7 @@ const Z_S_IDLE_1 = f([
   ".....gg..gg.....",
 ]);
 
-const Z_S_WALK_0 = f([
+const Z_S_WALK_0 = f16([
   "................",
   ".....gggggg.....",
   "....gGYYYYGg....",
@@ -548,9 +678,7 @@ const Z_S_WALK_0 = f([
   "..gg.......gg...",
 ]);
 
-const Z_S_WALK_1 = Z_S_IDLE_1;
-
-const Z_S_WALK_2 = f([
+const Z_S_WALK_2 = f16([
   "................",
   "......gggggg....",
   ".....gGYYYYGg...",
@@ -569,10 +697,7 @@ const Z_S_WALK_2 = f([
   "...gg.......gg..",
 ]);
 
-const Z_S_WALK_3 = Z_S_IDLE_0;
-
-// Death: buckle → fold → collapse → a heap and a stain. Plays once, then despawn.
-const Z_S_DEATH_0 = f([
+const Z_S_DEATH_0 = f16([
   "................",
   "................",
   ".....gggggg.....",
@@ -591,7 +716,7 @@ const Z_S_DEATH_0 = f([
   "................",
 ]);
 
-const Z_S_DEATH_1 = f([
+const Z_S_DEATH_1 = f16([
   "................",
   "................",
   "................",
@@ -610,7 +735,7 @@ const Z_S_DEATH_1 = f([
   "................",
 ]);
 
-const Z_S_DEATH_2 = f([
+const Z_S_DEATH_2 = f16([
   "................",
   "................",
   "................",
@@ -629,7 +754,7 @@ const Z_S_DEATH_2 = f([
   "................",
 ]);
 
-const Z_S_DEATH_3 = f([
+const Z_S_DEATH_3 = f16([
   "................",
   "................",
   "................",
@@ -648,8 +773,7 @@ const Z_S_DEATH_3 = f([
   "...r..rrrr..r...",
 ]);
 
-// North zombie: no face, just a rotten back and a slumped head.
-const Z_N_IDLE_0 = f([
+const Z_N_IDLE_0 = f16([
   "................",
   ".....gggggg.....",
   "....gGGGGGGg....",
@@ -668,7 +792,7 @@ const Z_N_IDLE_0 = f([
   ".....gg..gg.....",
 ]);
 
-const Z_N_IDLE_1 = f([
+const Z_N_IDLE_1 = f16([
   "................",
   "......gggggg....",
   ".....gGGGGGGg...",
@@ -687,7 +811,7 @@ const Z_N_IDLE_1 = f([
   ".....gg..gg.....",
 ]);
 
-const Z_N_WALK_0 = f([
+const Z_N_WALK_0 = f16([
   "................",
   ".....gggggg.....",
   "....gGGGGGGg....",
@@ -706,9 +830,7 @@ const Z_N_WALK_0 = f([
   "..gg.......gg...",
 ]);
 
-const Z_N_WALK_1 = Z_N_IDLE_1;
-
-const Z_N_WALK_2 = f([
+const Z_N_WALK_2 = f16([
   "................",
   "......gggggg....",
   ".....gGGGGGGg...",
@@ -727,10 +849,7 @@ const Z_N_WALK_2 = f([
   "...gg.......gg..",
 ]);
 
-const Z_N_WALK_3 = Z_N_IDLE_0;
-
-// East zombie: profile, one arm reaching forward.
-const Z_E_IDLE_0 = f([
+const Z_E_IDLE_0 = f16([
   "................",
   ".....ggggg......",
   "....gGYYYYg.....",
@@ -749,7 +868,7 @@ const Z_E_IDLE_0 = f([
   "...gg.....gg....",
 ]);
 
-const Z_E_IDLE_1 = f([
+const Z_E_IDLE_1 = f16([
   "................",
   "......ggggg.....",
   ".....gGYYYYg....",
@@ -768,7 +887,7 @@ const Z_E_IDLE_1 = f([
   "...gg.....gg....",
 ]);
 
-const Z_E_WALK_0 = f([
+const Z_E_WALK_0 = f16([
   "................",
   ".....ggggg......",
   "....gGYYYYg.....",
@@ -787,9 +906,7 @@ const Z_E_WALK_0 = f([
   "..gg.......gg...",
 ]);
 
-const Z_E_WALK_1 = Z_E_IDLE_1;
-
-const Z_E_WALK_2 = f([
+const Z_E_WALK_2 = f16([
   "................",
   "......ggggg.....",
   ".....gGYYYYg....",
@@ -808,47 +925,247 @@ const Z_E_WALK_2 = f([
   "...gg......gg...",
 ]);
 
-const Z_E_WALK_3 = Z_E_IDLE_0;
-
-// ══════════════════════════════════════════════════════════════════
-// Clip tables
-// ══════════════════════════════════════════════════════════════════
-
-export type ActorFrames = Record<Dir, Partial<Record<ClipName, Frame[]>>>;
-
-export const PLAYER_FRAMES: ActorFrames = {
-  S: {
-    idle: [P_S_IDLE_0, P_S_IDLE_1],
-    walk: [P_S_WALK_0, P_S_WALK_1, P_S_WALK_2, P_S_WALK_3],
-    attack: [P_S_ATTACK_0, P_S_ATTACK_1, P_S_ATTACK_2],
-  },
-  N: {
-    idle: [P_N_IDLE_0, P_N_IDLE_1],
-    walk: [P_N_WALK_0, P_N_WALK_1, P_N_WALK_2, P_N_WALK_3],
-    attack: [P_N_ATTACK_0, P_N_ATTACK_1, P_N_ATTACK_2],
-  },
-  E: {
-    idle: [P_E_IDLE_0, P_E_IDLE_1],
-    walk: [P_E_WALK_0, P_E_WALK_1, P_E_WALK_2, P_E_WALK_3],
-    attack: [P_E_ATTACK_0, P_E_ATTACK_1, P_E_ATTACK_2],
-  },
-};
+const zDeath = [Z_S_DEATH_0, Z_S_DEATH_1, Z_S_DEATH_2, Z_S_DEATH_3].map(scale2x);
 
 export const ZOMBIE_FRAMES: ActorFrames = {
   S: {
-    idle: [Z_S_IDLE_0, Z_S_IDLE_1],
-    walk: [Z_S_WALK_0, Z_S_WALK_1, Z_S_WALK_2, Z_S_WALK_3],
-    death: [Z_S_DEATH_0, Z_S_DEATH_1, Z_S_DEATH_2, Z_S_DEATH_3],
+    idle: [Z_S_IDLE_0, Z_S_IDLE_1].map(scale2x),
+    walk: [Z_S_WALK_0, Z_S_IDLE_1, Z_S_WALK_2, Z_S_IDLE_0].map(scale2x),
+    death: zDeath,
   },
   N: {
-    idle: [Z_N_IDLE_0, Z_N_IDLE_1],
-    walk: [Z_N_WALK_0, Z_N_WALK_1, Z_N_WALK_2, Z_N_WALK_3],
+    idle: [Z_N_IDLE_0, Z_N_IDLE_1].map(scale2x),
+    walk: [Z_N_WALK_0, Z_N_IDLE_1, Z_N_WALK_2, Z_N_IDLE_0].map(scale2x),
     // Death is direction-agnostic — you fall the same way whichever way you faced.
-    death: [Z_S_DEATH_0, Z_S_DEATH_1, Z_S_DEATH_2, Z_S_DEATH_3],
+    death: zDeath,
   },
   E: {
-    idle: [Z_E_IDLE_0, Z_E_IDLE_1],
-    walk: [Z_E_WALK_0, Z_E_WALK_1, Z_E_WALK_2, Z_E_WALK_3],
-    death: [Z_S_DEATH_0, Z_S_DEATH_1, Z_S_DEATH_2, Z_S_DEATH_3],
+    idle: [Z_E_IDLE_0, Z_E_IDLE_1].map(scale2x),
+    walk: [Z_E_WALK_0, Z_E_IDLE_1, Z_E_WALK_2, Z_E_IDLE_0].map(scale2x),
+    death: zDeath,
   },
+};
+
+// ══════════════════════════════════════════════════════════════════
+// GROUND ITEMS — single static frames, drawn where they lie.
+// ══════════════════════════════════════════════════════════════════
+
+const MACE_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "...............o................",
+  ".............ooAoo..............",
+  "............oaAAAao.............",
+  "...........ooAABBAoo............",
+  "...........oAABBBBAo............",
+  "..........oAABBwwBBAo...........",
+  "..........oAABBwwBBAo...........",
+  "...........oAABBBBAo............",
+  "...........ooAABBAoo............",
+  "............oaAAAao.............",
+  ".............ooAoo..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............ohho..............",
+  "..............oyyo..............",
+  "...............oo...............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const STICK_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "......................oo........",
+  ".....................olho.......",
+  "....................olho........",
+  "...................olho.........",
+  "..................olho..........",
+  ".................olho...........",
+  "................ollho...........",
+  "...............ollho............",
+  "..............olhho.............",
+  ".............ollho..............",
+  "............ollho...............",
+  "...........ollho................",
+  "..........olhho.................",
+  ".........ollho..................",
+  "........ollho...................",
+  ".........oho....................",
+  "..........o.....................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const CHAIR_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..........ollo..................",
+  "..........olho..................",
+  "..........olho..................",
+  "..........olholllllo............",
+  "..........olho...olo............",
+  "..........olho...olo............",
+  "..........olholllllo............",
+  "..........olho...olo............",
+  "..........olho...olo............",
+  "..........ollllllllo............",
+  ".........olllllllllho...........",
+  ".........ohhhhhhhhhho...........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........ohho.....ohho..........",
+  "..........oo.......oo...........",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const HELMET_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..............rr................",
+  ".............rrr................",
+  "............oooooooo............",
+  "...........oABwwBAAAo...........",
+  "...........oABBBBBAAo...........",
+  "...........oAABBBBAAo...........",
+  "...........oaooooooao...........",
+  "...........oAABBBBAAo...........",
+  "...........oaAAAAAAao...........",
+  "............oaAAAAao............",
+  ".............oooooo.............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const ARMOR_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "........oooo......oooo..........",
+  ".......oAAAoooooooAAAo..........",
+  ".......oaAoAAAAAAAoAao..........",
+  "........ooAABBBBBBAoo...........",
+  "..........oABBBBBBAo............",
+  "..........oABBwwBBAo............",
+  "..........oABBwwBBAo............",
+  "..........oAABBBBAAo............",
+  "..........oAABBBBAAo............",
+  "..........oaAABBAAao............",
+  "..........oaAAAAAAao............",
+  "...........ooooooo..............",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+const BOOTS_ITEM = f([
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "..........oo.......oo...........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........olho.....olho..........",
+  ".........olhoo....olhoo.........",
+  ".........olhhho...olhhho........",
+  ".........ohhhhho..ohhhhho.......",
+  ".........ooooooo..ooooooo.......",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+  "................................",
+]);
+
+/** Ground-item art, keyed by weapon id / gear slot. */
+export const ITEM_FRAMES: Record<string, Frame> = {
+  mace: MACE_ITEM,
+  stick: STICK_ITEM,
+  chair: CHAIR_ITEM,
+  helmet: HELMET_ITEM,
+  armor: ARMOR_ITEM,
+  boots: BOOTS_ITEM,
 };

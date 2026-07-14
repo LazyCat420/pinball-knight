@@ -19,11 +19,18 @@ export interface Torch extends TilePos {
   dj: number;
 }
 
+export interface ItemDrop extends TilePos {
+  kind: "weapon" | "gear";
+  /** WeaponId for weapons, GearSlot for gear — resolved by core against items.ts. */
+  id: string;
+}
+
 export interface LevelPlan {
   start: TilePos;
   stairs: TilePos;
   spawns: TilePos[];
   torches: Torch[];
+  items: ItemDrop[];
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -40,6 +47,19 @@ const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
   [1, 0],
   [0, 1],
   [-1, 0],
+];
+
+/**
+ * One of each pickup per level (v1 — "start with 1 version of each thing so
+ * we test"): the three findable weapons and the three gear slots.
+ */
+const LEVEL_ITEMS: Array<{ kind: "weapon" | "gear"; id: string }> = [
+  { kind: "weapon", id: "stick" },
+  { kind: "weapon", id: "mace" },
+  { kind: "weapon", id: "chair" },
+  { kind: "gear", id: "helmet" },
+  { kind: "gear", id: "armor" },
+  { kind: "gear", id: "boots" },
 ];
 
 /** Mutates the grid (stamps T_STAIRS) and returns the plan. */
@@ -95,5 +115,23 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     torches.push({ i: p.i, j: p.j, di: side[0], dj: side[1] });
   }
 
-  return { start, stairs, spawns, torches };
+  // ── Items: one of each, scattered on quieter floor tiles ──
+  // Not on the stairs, not on top of a zombie spawn, a few tiles out from the
+  // start (finding your first pickup should take a moment of exploring), and
+  // spread apart so one corridor doesn't hold the whole armoury.
+  const items: ItemDrop[] = [];
+  const itemSpots = shuffled(
+    floors.filter((p) => {
+      const d = dist[idx(g, p.i, p.j)];
+      return d >= 4 && !(p.i === stairs.i && p.j === stairs.j) && !spawns.some((s) => s.i === p.i && s.j === p.j);
+    }),
+    rng,
+  );
+  for (const def of LEVEL_ITEMS) {
+    const spot = itemSpots.find((p) => !items.some((it) => Math.abs(it.i - p.i) + Math.abs(it.j - p.j) < 5));
+    if (!spot) break; // a maze too small for all six — fine, place what fits
+    items.push({ kind: def.kind, id: def.id, i: spot.i, j: spot.j });
+  }
+
+  return { start, stairs, spawns, torches, items };
 }

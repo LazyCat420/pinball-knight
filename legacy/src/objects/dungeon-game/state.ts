@@ -8,7 +8,9 @@ import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
+import type { WeaponState, GearState } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
+import { freshWeapon } from "./items";
 
 export interface Actor {
   sprite: ActorSprite;
@@ -27,6 +29,8 @@ export interface Player extends Actor {
   cooldown: number;
   iframes: number;
   flashT: number;
+  /** Draws only where a wall covers the knight — you can never lose him. */
+  silhouette: { mesh: THREE.Mesh; dispose(): void } | null;
 }
 
 export type ZombieMode = "idle" | "chase" | "windup" | "dead";
@@ -40,6 +44,15 @@ export interface Zombie extends Actor {
   flashT: number;
   /** Zombies never de-aggro — a horde that gives up isn't a horde. */
   aggro: boolean;
+}
+
+export interface GroundItem {
+  kind: "weapon" | "gear";
+  id: string; // WeaponId | GearSlot
+  x: number;
+  z: number;
+  sprite: { mesh: THREE.Mesh; dispose(): void };
+  bobPhase: number;
 }
 
 export const state = {
@@ -68,10 +81,15 @@ export const state = {
   /** Seed for the whole run; each level derives its own stream from it. */
   runSeed: 0,
 
+  // Loadout
+  weapon: freshWeapon("sword") as WeaponState,
+  gear: {} as GearState,
+
   // The level
   grid: null as Grid | null,
   stairs: null as TilePos | null,
   maze: null as MazeHandle | null,
+  groundItems: [] as GroundItem[],
 
   // Actors
   player: null as Player | null,
@@ -88,8 +106,8 @@ export const state = {
   camZ: 0,
   shakeT: 0,
 
-  // Torch flicker
-  torchLights: [] as THREE.PointLight[],
+  // Fixed-timestep accumulator
+  accumulator: 0,
 
   // Loop
   animFrameId: null as number | null,
@@ -107,7 +125,7 @@ export const state = {
   onResize: null as (() => void) | null,
 };
 
-export function freshPlayerFields(): Omit<Player, keyof Actor> {
+export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
   return {
     hp: PLAYER_MAX_HP,
     facing: "S",
@@ -135,9 +153,12 @@ export function resetState(): void {
   state.goldRun = 0;
   state.gameOver = false;
   state.runSeed = 0;
+  state.weapon = freshWeapon("sword");
+  state.gear = {};
   state.grid = null;
   state.stairs = null;
   state.maze = null;
+  state.groundItems = [];
   state.player = null;
   state.zombies = [];
   state.playerSheet = null;
@@ -147,7 +168,7 @@ export function resetState(): void {
   state.camX = 0;
   state.camZ = 0;
   state.shakeT = 0;
-  state.torchLights = [];
+  state.accumulator = 0;
   state.animFrameId = null;
   state.lastTime = 0;
   state.elapsed = 0;

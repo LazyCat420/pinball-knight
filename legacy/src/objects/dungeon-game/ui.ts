@@ -6,6 +6,7 @@
  */
 import { state } from "./state";
 import { PLAYER_MAX_HP } from "./constants";
+import { WEAPONS, GEAR, GEAR_SLOTS } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 
@@ -14,29 +15,63 @@ export function createHUD(container: HTMLElement): HTMLDivElement {
   el.id = "dungeon-hud";
   el.style.cssText = `
     position: fixed; left: 14px; top: 12px; z-index: 10001;
-    font: ${FONT}; line-height: 1.7; letter-spacing: 1px;
+    font: ${FONT}; line-height: 1.75; letter-spacing: 1px;
     color: #c8ccd4; text-shadow: 1px 1px 0 #0b0d12;
+    background: rgba(11, 13, 18, 0.62);
+    border: 1px solid #2b303b; border-radius: 3px;
+    padding: 10px 14px; min-width: 172px;
     pointer-events: none; user-select: none;
   `;
   container.appendChild(el);
   return el;
 }
 
+/** ▮▮▮▯▯-style durability meter. */
+function meter(value: number, max: number, color: string, blocks = 10): string {
+  const filled = Math.max(0, Math.min(blocks, Math.ceil((value / max) * blocks)));
+  return (
+    `<span style="color:${color}">${"▮".repeat(filled)}</span>` +
+    `<span style="color:#2b303b">${"▮".repeat(blocks - filled)}</span>`
+  );
+}
+
 export function updateHUD(el: HTMLDivElement): void {
   const hp = Math.max(0, state.player?.hp ?? 0);
   const hearts =
     `<span style="color:#d95763">${"♥".repeat(hp)}</span>` +
-    `<span style="color:#2b303b">${"♥".repeat(PLAYER_MAX_HP - hp)}</span>`;
+    `<span style="color:#2b303b">${"♥".repeat(Math.max(0, PLAYER_MAX_HP - hp))}</span>`;
+
+  const w = WEAPONS[state.weapon.id];
+  const weaponRow = Number.isFinite(w.maxDurability)
+    ? `${w.icon} ${w.label.padEnd(7)} ${meter(state.weapon.durability, w.maxDurability, "#f0a63c")}`
+    : `${w.icon} ${w.label.padEnd(7)} <span style="color:#6b7688">unbreakable</span>`;
+
+  const gearRows = GEAR_SLOTS.map((slot) => {
+    const def = GEAR[slot];
+    const dur = state.gear[slot];
+    if (dur === undefined) {
+      return `<div style="color:#454f5e">${def.icon} ${def.label.padEnd(7)} — none —</div>`;
+    }
+    const detail =
+      def.absorb > 0
+        ? meter(dur, def.absorb, "#8a94a6", def.absorb)
+        : `<span style="color:#8fc46b">+speed</span>`;
+    return `<div>${def.icon} ${def.label.padEnd(7)} ${detail}</div>`;
+  }).join("");
 
   el.innerHTML = `
-    <div style="font-size:16px">${hearts}</div>
+    <div style="font-size:16px;letter-spacing:2px">${hearts}</div>
+    <div style="margin-top:2px">${weaponRow}</div>
+    <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
+    ${gearRows}
+    <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
     <div><span style="color:#6b7688">DEPTH</span> <span style="color:#f0a63c">${state.level}</span>
-      &nbsp;<span style="color:#6b7688">KILLS</span> <span style="color:#8fc46b">${state.kills}</span>
-      &nbsp;<span style="color:#6b7688">GOLD</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
+      &nbsp;<span style="color:#6b7688">KILLS</span> <span style="color:#8fc46b">${state.kills}</span></div>
+    <div><span style="color:#6b7688">GOLD</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
   `;
 }
 
-/** Big centred text that fades out — "DEPTH 2", etc. */
+/** Big centred text that fades out — "DEPTH 2", "MACE BROKE", etc. */
 export function showToast(text: string, subtext = ""): void {
   if (!state.container) return;
   const el = document.createElement("div");
@@ -64,6 +99,28 @@ export function showToast(text: string, subtext = ""): void {
   }, 1400);
 }
 
+/** Small bottom-centre notice for pickups — quieter than a full toast. */
+export function showPickupNote(text: string): void {
+  if (!state.container) return;
+  const el = document.createElement("div");
+  el.style.cssText = `
+    position: fixed; bottom: 54px; left: 0; right: 0; z-index: 10001;
+    text-align: center; pointer-events: none; user-select: none;
+    font: 700 14px ui-monospace, Menlo, monospace; letter-spacing: 2px;
+    color: #ffd98a; text-shadow: 1px 1px 0 #0b0d12;
+    opacity: 0; transition: opacity 0.2s ease;
+  `;
+  el.textContent = text;
+  state.container.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.opacity = "1";
+  });
+  setTimeout(() => {
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 300);
+  }, 1100);
+}
+
 export function showGameOver(opts: { onRetry: () => void; onLeave: () => void }): HTMLDivElement {
   const el = document.createElement("div");
   el.style.cssText = `
@@ -74,7 +131,7 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
     color: #9aa4b4; letter-spacing: 2px; user-select: none;
   `;
 
-  const btn = (label: string, accent: string) => `
+  const btn = (accent: string) => `
     background: #171a22; color: ${accent};
     border: 2px solid ${accent}; border-radius: 2px;
     font: 700 14px ui-monospace, Menlo, monospace; letter-spacing: 2px;
@@ -91,7 +148,7 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
   `;
 
   const retry = document.createElement("button");
-  retry.style.cssText = btn("retry", "#f0a63c");
+  retry.style.cssText = btn("#f0a63c");
   retry.textContent = "⚔ DESCEND AGAIN";
   retry.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -99,7 +156,7 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
   });
 
   const leave = document.createElement("button");
-  leave.style.cssText = btn("leave", "#6b7688");
+  leave.style.cssText = btn("#6b7688");
   leave.textContent = "← CRAWL BACK OUT";
   leave.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -125,10 +182,10 @@ export function showControlsHint(container: HTMLElement): void {
     color: #6b7688; text-shadow: 1px 1px 0 #0b0d12;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SPACE ATTACK · FIND THE STAIRS · ESC LEAVE";
+  el.textContent = "WASD MOVE · SPACE ATTACK · WALK OVER ITEMS TO EQUIP · FIND THE STAIRS · ESC LEAVE";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";
     setTimeout(() => el.remove(), 1400);
-  }, 6000);
+  }, 7000);
 }

@@ -1,19 +1,21 @@
 /**
  * The hero — grid-free continuous movement, a 4-way facing, and a three-frame
  * sword swing whose hitbox agrees with its animation (the active window covers
- * exactly the middle "swing" frame).
+ * exactly the middle "swing" frame). Attack numbers come from whatever weapon
+ * is currently in hand; boots come from the gear slots.
  */
 import { state } from "../state";
 import {
   PLAYER_SPEED,
   PLAYER_R,
-  ATTACK_COOLDOWN,
   ATTACK_ACTIVE_START,
   ATTACK_ACTIVE_END,
+  BOOTS_SPEED_FACTOR,
 } from "../constants";
 import { moveCircle } from "../collision";
 import { facingFromVelocity } from "../render/animator";
 import type { InputHandle } from "../input";
+import { WEAPONS } from "../items";
 import { resolvePlayerAttack, syncActorMesh, updateFlash } from "./combat";
 import { sfxSwing } from "../audio";
 
@@ -42,7 +44,8 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   // ── Movement (slowed mid-swing, facing locked to the swing) ──
   const a = input.axis();
-  const speed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
+  let speed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
+  if (state.gear.boots !== undefined) speed *= BOOTS_SPEED_FACTOR;
   if (a.x !== 0 || a.z !== 0) {
     const res = moveCircle(g, p.x, p.z, PLAYER_R, a.x * speed * dt, a.z * speed * dt);
     p.x = res.x;
@@ -61,7 +64,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     if (input.consumeAttack() && p.cooldown <= 0) {
       p.attackT = 0;
       p.didHit = false;
-      p.cooldown = ATTACK_COOLDOWN;
+      p.cooldown = WEAPONS[state.weapon.id].cooldown;
       p.anim.play("attack", { force: true });
       sfxSwing();
     }

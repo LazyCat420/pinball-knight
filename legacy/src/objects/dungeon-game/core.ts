@@ -1,11 +1,15 @@
 /**
  * 🗡️ Maze Game (the dungeon) — lifecycle + the game loop.
  *
- * Phases 1-3 of the blueprint: WASD movement with grid collision, a
- * procedurally generated maze per level (stairs at max BFS distance), and a
- * zombie horde on a shared flow field with real combat, HUD, death and retry.
- * The Phase 0 pixel pipeline (320×180 target, palette quantize, dither) is
- * untouched underneath — the look was signed off in the style sandbox.
+ * Simulation runs on a FIXED 60Hz timestep (accumulator pattern): movement,
+ * attack windows and AI feel identical on a 144Hz monitor and a struggling
+ * laptop. Rendering happens once per RAF regardless.
+ *
+ * Visibility contract (playtest feedback: "walls cover the player"):
+ *  - chest-high walls + a 50° camera keep wall faces under a tile of coverage
+ *  - the wall rows just south of the knight cut away to ankle height
+ *  - a GreaterDepth silhouette pass draws the knight through anything that
+ *    still manages to occlude him
  *
  * Follows the same lifecycle contract as every other game here (see
  * mouse-game/core.ts): fullscreen overlay, its own renderer, setInputOwner on
@@ -13,13 +17,13 @@
  */
 import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, type Zombie } from "./state";
+import { state, resetState, freshPlayerFields, type Zombie, type GroundItem } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
-import { buildSpriteSheet, createActorSprite } from "./render/sprite";
+import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { PLAYER_FRAMES, ZOMBIE_FRAMES } from "./render/sprite-data";
+import { PLAYER_FRAMES, ZOMBIE_FRAMES, ITEM_FRAMES } from "./render/sprite-data";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { createHUD, updateHUD, showToast, showGameOver, showControlsHint } from "./ui";
+import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, mulberry32, tileCenter, worldToTile, at, T_STAIRS } from "./maze/generator";
@@ -30,9 +34,20 @@ import { updatePlayer } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { syncActorMesh } from "./entities/combat";
 import { createInput } from "./input";
-import { levelConfig, FLOW_INTERVAL, GOLD_PER_DESCENT, ZOMBIE_HP } from "./constants";
+import {
+  levelConfig,
+  FLOW_INTERVAL,
+  GOLD_PER_DESCENT,
+  ZOMBIE_HP,
+  FIXED_STEP,
+  MAX_FRAME,
+  PICKUP_RANGE,
+  PPU,
+  WALL_H,
+} from "./constants";
 import { addGold } from "../../utils/gold-wallet";
-import { sfxStairs, sfxGameOver } from "./audio";
+import { WEAPONS, GEAR, freshWeapon, type WeaponId, type GearSlot } from "./items";
+import { sfxStairs, sfxGameOver, sfxPickup } from "./audio";
 
 export function isDungeonGameActive(): boolean {
   return state.active;
@@ -105,6 +120,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   window.addEventListener("resize", state.onResize);
 
   // ── Level 1 ──
+  state.weapon = freshWeapon("sword");
+  state.gear = {};
   startLevel(1);
 
   console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
@@ -113,11 +130,11 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.animFrameId = requestAnimationFrame(loop);
 }
 
-/** Build (or rebuild) a depth: maze, decoration, geometry, actors. */
+/** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
 function startLevel(level: number): void {
   if (!state.scene) return;
 
-  disposeLevel(); // tears down the previous maze + horde, keeps the player
+  disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
 
   state.level = level;
   const cfg = levelConfig(level);
@@ -131,7 +148,6 @@ function startLevel(level: number): void {
   state.grid = grid;
   state.stairs = plan.stairs;
   state.maze = buildMaze(state.scene, grid, plan);
-  state.torchLights = state.maze.torchLights;
 
   // ── Player ──
   const startPos = tileCenter(grid, plan.start.i, plan.start.j);
@@ -139,7 +155,14 @@ function startLevel(level: number): void {
     const sprite = createActorSprite(state.playerSheet!, false);
     state.scene.add(sprite.mesh);
     const anim = new Animator(sprite);
-    state.player = { sprite, anim, x: startPos.x, z: startPos.z, ...freshPlayerFields() };
+    state.player = {
+      sprite,
+      anim,
+      x: startPos.x,
+      z: startPos.z,
+      silhouette: createOcclusionSilhouette(sprite),
+      ...freshPlayerFields(),
+    };
   } else {
     state.player.x = startPos.x;
     state.player.z = startPos.z;
@@ -172,6 +195,15 @@ function startLevel(level: number): void {
     };
     syncActorMesh(z);
     return z;
+  });
+
+  // ── Loot on the floor ──
+  state.groundItems = plan.items.map((it, k): GroundItem => {
+    const sprite = createStaticSprite(ITEM_FRAMES[it.id]);
+    const pos = tileCenter(grid, it.i, it.j);
+    sprite.mesh.position.set(pos.x, 0, pos.z);
+    state.scene!.add(sprite.mesh);
+    return { kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
   });
 
   state.flowField = null;
@@ -218,6 +250,8 @@ function onPlayerDeath(): void {
       state.gameOver = false;
       state.kills = 0;
       state.goldRun = 0;
+      state.weapon = freshWeapon("sword");
+      state.gear = {};
       if (state.player) {
         Object.assign(state.player, freshPlayerFields());
         state.player.sprite.setTint(null);
@@ -235,50 +269,109 @@ function descend(): void {
   startLevel(state.level + 1);
 }
 
+/** Walk-over pickups: weapons swap into the hand, gear fills its slot. */
+function checkPickups(): void {
+  const p = state.player;
+  if (!p) return;
+  for (let k = state.groundItems.length - 1; k >= 0; k--) {
+    const it = state.groundItems[k];
+    if (Math.hypot(it.x - p.x, it.z - p.z) > PICKUP_RANGE) continue;
+
+    if (it.kind === "weapon") {
+      state.weapon = freshWeapon(it.id as WeaponId);
+      const w = WEAPONS[state.weapon.id];
+      showPickupNote(`${w.icon} ${w.label.toUpperCase()} — dmg ${w.damage}`);
+    } else {
+      const slot = it.id as GearSlot;
+      const def = GEAR[slot];
+      state.gear = { ...state.gear, [slot]: def.absorb > 0 ? def.absorb : 1 };
+      showPickupNote(`${def.icon} ${def.label.toUpperCase()} equipped`);
+    }
+    sfxPickup();
+    state.hudDirty = true;
+
+    state.scene?.remove(it.sprite.mesh);
+    it.sprite.dispose();
+    state.groundItems.splice(k, 1);
+  }
+}
+
+/** One 60Hz simulation step. */
+function simulate(dt: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (state.gameOver || !p || !g || !state.input) return;
+
+  // ── Flow field — one BFS serves the whole horde, every FLOW_INTERVAL ──
+  state.flowTimer -= dt;
+  if (state.flowTimer <= 0) {
+    state.flowTimer = FLOW_INTERVAL;
+    const pt = worldToTile(g, p.x, p.z);
+    state.flowField = bfsDistances(g, pt.i, pt.j);
+  }
+
+  updatePlayer(dt, state.input);
+  updateZombies(dt);
+  checkPickups();
+
+  // ── Stairs? ──
+  const pt = worldToTile(g, p.x, p.z);
+  if (at(g, pt.i, pt.j) === T_STAIRS) {
+    descend();
+  } else if (p.hp <= 0) {
+    onPlayerDeath();
+  }
+}
+
 function loop(now: number): void {
   if (!state.active) return;
   state.animFrameId = requestAnimationFrame(loop);
 
-  const dt = Math.min((now - state.lastTime) / 1000, 0.1); // clamp — a tab-out shouldn't skip 40 frames
+  const frame = Math.min((now - state.lastTime) / 1000, MAX_FRAME); // tab-out protection
   state.lastTime = now;
-  state.elapsed += dt;
+  state.elapsed += frame;
+
+  // ── Fixed-timestep simulation ──
+  state.accumulator += frame;
+  while (state.accumulator >= FIXED_STEP) {
+    state.accumulator -= FIXED_STEP;
+    simulate(FIXED_STEP);
+  }
 
   const p = state.player;
   const g = state.grid;
 
-  if (!state.gameOver && p && g && state.input) {
-    // ── Flow field — one BFS serves the whole horde, every FLOW_INTERVAL ──
-    state.flowTimer -= dt;
-    if (state.flowTimer <= 0) {
-      state.flowTimer = FLOW_INTERVAL;
-      const pt = worldToTile(g, p.x, p.z);
-      state.flowField = bfsDistances(g, pt.i, pt.j);
-    }
+  // ── Presentation (per rendered frame) ──
+  if (p) p.anim.update(frame);
+  for (const z of state.zombies) z.anim.update(frame);
 
-    updatePlayer(dt, state.input);
-    updateZombies(dt);
-
-    // ── Stairs? ──
-    const pt = worldToTile(g, p.x, p.z);
-    if (at(g, pt.i, pt.j) === T_STAIRS) {
-      descend();
-    } else if (p.hp <= 0) {
-      onPlayerDeath();
-    }
+  // Loot bobs gently, snapped to the pixel grid so it doesn't shimmer.
+  for (const it of state.groundItems) {
+    const y = 0.06 + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.05;
+    it.sprite.mesh.position.y = Math.round(y * PPU) / PPU;
   }
 
-  // Animations tick even when dead / game over — death clips play out.
-  if (p) p.anim.update(dt);
-  for (const z of state.zombies) z.anim.update(dt);
+  if (p && g && state.maze) {
+    // Cut away the wall rows south of the knight.
+    const pt = worldToTile(g, p.x, p.z);
+    state.maze.cutaway(pt.i, pt.j);
 
-  // Torch flicker. Two out-of-phase sines rather than random noise: random
-  // flicker reads as a broken lightbulb, layered sines read as a flame.
-  state.torchLights.forEach((light, i) => {
-    const t = state.elapsed * 6 + i * 2.1;
-    light.intensity = 6 + Math.sin(t) * 0.7 + Math.sin(t * 2.7) * 0.4;
-  });
+    // Park the pooled torch lights on the nearest torches. Sorting a handful
+    // of anchors per frame is nothing; 20 live point lights would not be.
+    const anchors = state.maze.torchAnchors
+      .map((a) => ({ a, d: (a.x - p.x) * (a.x - p.x) + (a.z - p.z) * (a.z - p.z) }))
+      .sort((u, v) => u.d - v.d);
+    state.maze.lightPool.forEach((light, i) => {
+      const anchor = anchors[i]?.a;
+      if (anchor) light.position.set(anchor.x, WALL_H * 0.62 + 0.3, anchor.z);
+      // Torch flicker: two out-of-phase sines — random flicker reads as a
+      // broken lightbulb, layered sines read as a flame.
+      const t = state.elapsed * 6 + i * 2.1;
+      light.intensity = 6 + Math.sin(t) * 0.7 + Math.sin(t * 2.7) * 0.4;
+    });
+  }
 
-  if (p && state.camera) updateFollowCamera(state.camera, p.x, p.z, dt);
+  if (p && state.camera) updateFollowCamera(state.camera, p.x, p.z, frame);
 
   if (state.hudDirty && state.hudEl) {
     state.hudDirty = false;
