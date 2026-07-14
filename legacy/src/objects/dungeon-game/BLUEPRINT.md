@@ -1,13 +1,21 @@
 # 🗡️ Dungeon Crawler — Blueprint
 
-**Working title:** Crypt of the Braindead
+**Shipped name:** Maze Game *(was "Crypt of the Braindead"; renamed 2026-07-14 —
+the mouse room's cheese maze is called "Mouse Hunt" everywhere now, so the names
+don't collide)*
 **Route:** `/dungeon`
-**Entry point:** a sword propped in the back-left corner of the **mouse room**.
+**Entry point:** a sword leaning on the left wall of the **mouse room**, plus an
+entry in the table's game-select overlay, plus the map.
 **Pitch:** 8-bit, top-down, Diablo-2-flavoured maze crawler. A hero, a procedurally
 generated maze, and zombies. Kill everything, find the stairs, descend. Each level
 generates a different maze pattern.
 
-Status: **plan only — no code written yet.**
+Status: **Phases 0–3 built and playable** — movement, collision, procedural
+maze with stairs-at-max-BFS-distance, zombie flow-field horde, combat, HUD,
+death/retry, procedural SFX, gold wired into the wallet. Phase 4 juice is
+partially in (hit flash, screen shake, knockback, SFX); the rest of Phase 4/5
+(blood pixels, damage numbers, best-depth persistence, alternate maze
+algorithms, more enemy types) is still open.
 
 ---
 
@@ -152,12 +160,18 @@ That means it goes in the `if (!_zoomedIn)` branch of `_onClick()`
 (`mouse-room.ts:2533-2542`), alongside `tableHitbox` — *not* in the zoomed-in
 branch with the other games.
 
-**Placement:** back-left corner, leaning against the wall.
+**Placement:** ⚠️ **not** the literal corner — see below.
 
 ```
-position ≈ (-4.35, -0.35, -3.45)   // tucked into the corner, base on the floor
-rotation ≈ z: +0.28 rad, y: -0.79  // leaning into the corner, blade angled out
+position = (-4.5, -1.0, -1.9)      // against the left wall, base on the floor
+rotation = z: +0.28 rad, y: +0.5   // leaning on the wall, blade turned to camera
 ```
+
+The true back-left corner (-4.35, -1, -3.45) projects to *almost exactly* where
+the front-left chair sits, from the room's fixed camera at (0, 1.2, 5). A sword
+there renders perfectly and is completely invisible behind the chair back. It has
+to sit a little forward along the left wall — the nearest spot in open sight.
+Verify any change to this with a screenshot, not with coordinates.
 
 **Build:** a `THREE.Group` of primitives, matching how every other prop in this
 room is made (`_createPipeDoor()` at `mouse-room.ts:2320` is the cleanest
@@ -424,14 +438,41 @@ Camera position must also be **snapped to the pixel grid** (same reason as §4.3
 
 Each phase is independently reviewable and leaves the game in a runnable state.
 
-### Phase 0 — Style sandbox ⭐ *do this first, alone, and stop*
-Route `/dungeon` renders a **static scene**: a hand-placed 8×8 stone room, one
-torch, the player sprite standing in the middle, one zombie. No input, no AI, no
-maze. The full pixel pipeline (§4) is live.
+### Phase 0 — Style sandbox ✅ **BUILT** *(awaiting art review)*
+Route `/dungeon` renders a **static scene**: a hand-placed stone room, three
+torches, the player and three zombies. No input-driven movement, no AI, no maze.
+The full pixel pipeline (§4) is live, and every style knob is live-toggleable
+(see the on-screen HUD) so the look can be judged from screenshots.
 
 **Exit criteria: it looks right in a screenshot.** We iterate on palette, sprite
 scale, internal resolution, camera tilt, and lighting here — and *nowhere else*.
 Getting this wrong and discovering it in Phase 4 means redoing Phase 4.
+
+**What Phase 0 actually taught us** — these were all non-obvious, and they'll bite
+again in later phases if forgotten:
+
+1. **The palette can't fix the lighting.** The first build had torches at
+   intensity 18 / range 11, which lit the whole room warm — and the quantizer
+   then faithfully snapped every stone surface into the leather/ember browns. The
+   "cold crypt" came out looking like a cosy burrow. The palette was fine; the
+   lighting was wrong. Torches must be *tight pools* against a strong cold
+   ambient, or the cold identity is lost.
+2. **Ambient has to be much stronger than seems reasonable.** Lambert multiplies
+   light by albedo, and the stone albedo is *already* dark. Two dark values
+   multiplied bottom out, and the quantizer snaps the result to black. Tune this
+   by looking at the screen, not at the number.
+3. **Dither strength must be about one full palette step.** Below that, a torch's
+   radial falloff quantizes into concentric rings that look like ripples in a
+   pond rather than light.
+4. **Tile textures must span several tiles.** A one-tile texture repeats its noise
+   identically on every flagstone, and the floor reads as wallpaper rather than
+   stone.
+5. **Keep floor noise sparse.** The 35° camera squashes a 16px tile to ~9px tall,
+   so the texture is minified vertically — dense noise turns to shimmering moiré.
+6. **Proportion beats detail at 16px.** The first hero had a 10px-wide body and a
+   bright band across the helmet; he read as "a barrel in a white hat". Narrowing
+   the torso to 8px, cutting a *dark* visor slit, and giving him a visible sword
+   fixed the silhouette. Detail didn't; shape did.
 
 ### Phase 1 — It moves
 WASD input, collision against the grid, walk/idle animation with 4-way facing,

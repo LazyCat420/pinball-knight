@@ -1,10 +1,11 @@
 /**
- * 🗡️ Crypt of the Braindead — lifecycle + loop.
+ * 🗡️ Maze Game (the dungeon) — lifecycle + the game loop.
  *
- * PHASE 0: a style sandbox. Static room, two actors, full pixel pipeline, live
- * toggles for every style knob. No input-driven movement, no maze, no AI, no
- * combat — those are Phases 1-3. The point of this build is to look at it and
- * decide whether the 8-bit style is right BEFORE any gameplay gets built on it.
+ * Phases 1-3 of the blueprint: WASD movement with grid collision, a
+ * procedurally generated maze per level (stairs at max BFS distance), and a
+ * zombie horde on a shared flow field with real combat, HUD, death and retry.
+ * The Phase 0 pixel pipeline (320×180 target, palette quantize, dither) is
+ * untouched underneath — the look was signed off in the style sandbox.
  *
  * Follows the same lifecycle contract as every other game here (see
  * mouse-game/core.ts): fullscreen overlay, its own renderer, setInputOwner on
@@ -12,18 +13,26 @@
  */
 import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, type Actor } from "./state";
+import { state, resetState, freshPlayerFields, type Zombie } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { buildSpriteSheet, createActorSprite } from "./render/sprite";
-import { Animator, type Facing } from "./render/animator";
+import { Animator } from "./render/animator";
 import { PLAYER_FRAMES, ZOMBIE_FRAMES } from "./render/sprite-data";
-import { createDungeonCamera, aimCamera } from "./camera";
-import { buildSandbox, type Sandbox } from "./sandbox";
-import { createHUD, updateHUD } from "./ui";
+import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
+import { createHUD, updateHUD, showToast, showGameOver, showControlsHint } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
-import { disposeAll } from "./dispose";
-
-let sandbox: Sandbox | null = null;
+import { disposeAll, disposeLevel } from "./dispose";
+import { generateMaze, mulberry32, tileCenter, worldToTile, at, T_STAIRS } from "./maze/generator";
+import { decorateMaze } from "./maze/decorate";
+import { buildMaze } from "./maze/build";
+import { bfsDistances } from "./entities/ai";
+import { updatePlayer } from "./entities/player";
+import { updateZombies } from "./entities/zombie";
+import { syncActorMesh } from "./entities/combat";
+import { createInput } from "./input";
+import { levelConfig, FLOW_INTERVAL, GOLD_PER_DESCENT, ZOMBIE_HP } from "./constants";
+import { addGold } from "../../utils/gold-wallet";
+import { sfxStairs, sfxGameOver } from "./audio";
 
 export function isDungeonGameActive(): boolean {
   return state.active;
@@ -33,6 +42,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   if (state.active) return;
   state.active = true;
   state.onExitCallback = onExit ?? null;
+  state.runSeed = (Math.random() * 0x7fffffff) | 0;
   setInputOwner("dungeon-game");
 
   // ── Overlay ──
@@ -51,8 +61,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   // No antialiasing: it would smear the pixel edges we're working so hard to
   // keep hard. Everything else about colour/tonemapping is set by createPixelPass.
   state.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
-  state.renderer.shadowMap.enabled = true;
-  state.renderer.shadowMap.type = THREE.BasicShadowMap; // hard-edged — soft shadows fight the look
   state.renderer.setClearColor(PALETTE_HEX[0]);
   state.container.appendChild(state.renderer.domElement);
 
@@ -67,17 +75,13 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.scene.background = new THREE.Color(PALETTE_HEX[0]);
 
   // Cold slate fill. This is the colour the dungeon IS — torches are only
-  // accents on top of it.
-  //
-  // The intensity looks absurdly high, and it has to be: Lambert multiplies the
-  // light by the albedo, and the stone albedo is ALREADY dark (#454f5e). Two
-  // dark values multiplied bottom out, and the quantizer then snaps the result
-  // to black. Tune this by looking at the screen, not at the number.
+  // accents on top of it. The intensity looks absurdly high and has to be:
+  // Lambert multiplies light by an already-dark albedo, and the quantizer
+  // snaps the bottomed-out result to black (Phase 0 lesson #2).
   const ambient = new THREE.AmbientLight(0x6b7d99, 4.0);
   state.scene.add(ambient);
 
-  // A little vertical shape, so wall tops separate from wall faces instead of
-  // flattening into one silhouette.
+  // A little vertical shape, so wall tops separate from wall faces.
   const hemi = new THREE.HemisphereLight(0x8fa3bd, 0x1e2430, 1.2);
   state.scene.add(hemi);
 
@@ -85,79 +89,97 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.camera = createDungeonCamera();
   aimCamera(state.camera, 0, 0.5, 0);
 
-  // ── Room ──
-  sandbox = buildSandbox(state.scene);
-  state.torchLights = sandbox.torchLights;
+  // ── Sprite sheets (built once, shared by every actor of a kind) ──
+  state.playerSheet = buildSpriteSheet(PLAYER_FRAMES);
+  state.zombieSheet = buildSpriteSheet(ZOMBIE_FRAMES);
 
-  // ── Actors ──
-  buildActors();
-
-  // ── HUD ──
+  // ── HUD + input ──
   state.hudEl = createHUD(state.container);
-  updateHUD(state.hudEl);
+  state.input = createInput(state.container);
+  showControlsHint(state.container);
 
-  // ── Listeners ──
   state.onKeyDown = handleKey;
   window.addEventListener("keydown", state.onKeyDown);
 
   state.onResize = () => state.pixelPass?.resize();
   window.addEventListener("resize", state.onResize);
 
-  console.log("🗡️ Crypt: style sandbox running (phase 0)");
+  // ── Level 1 ──
+  startLevel(1);
+
+  console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
 
   state.lastTime = performance.now();
   state.animFrameId = requestAnimationFrame(loop);
 }
 
-/**
- * (Re)build the two actors. Called on launch, and again whenever the "lit
- * sprites" toggle flips — the lit/unlit choice is baked into the material, so
- * switching means new sprites.
- */
-function buildActors(): void {
+/** Build (or rebuild) a depth: maze, decoration, geometry, actors. */
+function startLevel(level: number): void {
   if (!state.scene) return;
 
-  // Tear down any existing actors first.
-  if (state.player) {
-    state.scene.remove(state.player.sprite.mesh);
-    state.player.sprite.dispose();
+  disposeLevel(); // tears down the previous maze + horde, keeps the player
+
+  state.level = level;
+  const cfg = levelConfig(level);
+
+  // One deterministic stream per (run, level): a refresh mid-run rerolls the
+  // run, but a single level is internally consistent and replayable.
+  const rng = mulberry32((state.runSeed ^ (level * 0x9e3779b9)) >>> 0);
+  const grid = generateMaze(cfg.cellsW, cfg.cellsH, rng);
+  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches);
+
+  state.grid = grid;
+  state.stairs = plan.stairs;
+  state.maze = buildMaze(state.scene, grid, plan);
+  state.torchLights = state.maze.torchLights;
+
+  // ── Player ──
+  const startPos = tileCenter(grid, plan.start.i, plan.start.j);
+  if (!state.player) {
+    const sprite = createActorSprite(state.playerSheet!, false);
+    state.scene.add(sprite.mesh);
+    const anim = new Animator(sprite);
+    state.player = { sprite, anim, x: startPos.x, z: startPos.z, ...freshPlayerFields() };
+  } else {
+    state.player.x = startPos.x;
+    state.player.z = startPos.z;
+    state.player.attackT = -1;
   }
-  state.zombies.forEach((z) => {
-    state.scene!.remove(z.sprite.mesh);
-    z.sprite.dispose();
-  });
-  state.zombies = [];
+  state.player.anim.setFacing("S");
+  state.player.anim.play("idle", { force: true });
+  syncActorMesh(state.player);
 
-  const playerSheet = buildSpriteSheet(PLAYER_FRAMES);
-  const zombieSheet = buildSpriteSheet(ZOMBIE_FRAMES);
-
-  const makeActor = (
-    sheet: ReturnType<typeof buildSpriteSheet>,
-    x: number,
-    z: number,
-    facing: Facing,
-  ): Actor => {
-    const sprite = createActorSprite(sheet, state.spritesLit);
-    sprite.mesh.position.set(x, 0, z);
+  // ── Horde ──
+  state.zombies = plan.spawns.map((s): Zombie => {
+    const sprite = createActorSprite(state.zombieSheet!, false);
+    const pos = tileCenter(grid, s.i, s.j);
     state.scene!.add(sprite.mesh);
     const anim = new Animator(sprite);
-    anim.setFacing(facing);
+    anim.setFacing("S");
     anim.play("idle");
-    return { sprite, anim, x, z };
-  };
+    const z: Zombie = {
+      sprite,
+      anim,
+      x: pos.x,
+      z: pos.z,
+      hp: ZOMBIE_HP,
+      mode: "idle",
+      speed: cfg.zombieSpeed,
+      windupT: 0,
+      cooldown: 0,
+      flashT: 0,
+      aggro: false,
+    };
+    syncActorMesh(z);
+    return z;
+  });
 
-  state.player = makeActor(playerSheet, 0, 1, "S");
+  state.flowField = null;
+  state.flowTimer = 0;
+  snapCameraTo(startPos.x, startPos.z);
+  state.hudDirty = true;
 
-  // Three zombies at different facings, so one screenshot shows all the
-  // authored directions at once — including the mirrored W.
-  state.zombies.push(makeActor(zombieSheet, -2.5, -1.5, "S"));
-  state.zombies.push(makeActor(zombieSheet, 2.5, -1.5, "E"));
-  state.zombies.push(makeActor(zombieSheet, 0, -3.5, "W"));
-}
-
-function eachActor(fn: (a: Actor) => void): void {
-  if (state.player) fn(state.player);
-  state.zombies.forEach(fn);
+  showToast(`DEPTH ${level}`, level === 1 ? "kill everything · find the stairs" : "");
 }
 
 function handleKey(e: KeyboardEvent): void {
@@ -168,35 +190,7 @@ function handleKey(e: KeyboardEvent): void {
       exitDungeonGame();
       return;
 
-    // ── Clip switching. Zombies play `death` where the player plays `attack`,
-    // since neither actor has both. Forced replay so you can retrigger a
-    // non-looping clip by hitting the key again.
-    case "1":
-      eachActor((a) => a.anim.play("idle", { force: true }));
-      break;
-    case "2":
-      eachActor((a) => a.anim.play("walk", { force: true }));
-      break;
-    case "3":
-      state.player?.anim.play("attack", { force: true });
-      state.zombies.forEach((z) => z.anim.play("death", { force: true }));
-      break;
-
-    // ── Facing ──
-    case "w":
-      eachActor((a) => a.anim.setFacing("N"));
-      break;
-    case "s":
-      eachActor((a) => a.anim.setFacing("S"));
-      break;
-    case "a":
-      eachActor((a) => a.anim.setFacing("W"));
-      break;
-    case "d":
-      eachActor((a) => a.anim.setFacing("E"));
-      break;
-
-    // ── Style toggles ──
+    // ── Hidden style-debug toggles (kept from the Phase 0 sandbox) ──
     case "q":
       state.quantize = !state.quantize;
       state.pixelPass?.setQuantize(state.quantize);
@@ -205,20 +199,40 @@ function handleKey(e: KeyboardEvent): void {
       state.dither = !state.dither;
       state.pixelPass?.setDither(state.dither);
       break;
-    case "l":
-      state.spritesLit = !state.spritesLit;
-      buildActors();
-      break;
     case "k":
       state.scanline = !state.scanline;
       state.pixelPass?.setScanline(state.scanline);
       break;
-
-    default:
-      return;
   }
+}
 
-  if (state.hudEl) updateHUD(state.hudEl);
+function onPlayerDeath(): void {
+  if (state.gameOver) return;
+  state.gameOver = true;
+  sfxGameOver();
+  state.player?.sprite.setTint(0x6b7688); // drained
+  state.gameOverEl = showGameOver({
+    onRetry: () => {
+      state.gameOverEl?.remove();
+      state.gameOverEl = null;
+      state.gameOver = false;
+      state.kills = 0;
+      state.goldRun = 0;
+      if (state.player) {
+        Object.assign(state.player, freshPlayerFields());
+        state.player.sprite.setTint(null);
+      }
+      startLevel(1); // roguelite: gold is banked, the run restarts
+    },
+    onLeave: () => exitDungeonGame(),
+  });
+}
+
+function descend(): void {
+  state.goldRun += GOLD_PER_DESCENT;
+  addGold(GOLD_PER_DESCENT, "dungeon-game");
+  sfxStairs();
+  startLevel(state.level + 1);
 }
 
 function loop(now: number): void {
@@ -229,14 +243,47 @@ function loop(now: number): void {
   state.lastTime = now;
   state.elapsed += dt;
 
-  eachActor((a) => a.anim.update(dt));
+  const p = state.player;
+  const g = state.grid;
+
+  if (!state.gameOver && p && g && state.input) {
+    // ── Flow field — one BFS serves the whole horde, every FLOW_INTERVAL ──
+    state.flowTimer -= dt;
+    if (state.flowTimer <= 0) {
+      state.flowTimer = FLOW_INTERVAL;
+      const pt = worldToTile(g, p.x, p.z);
+      state.flowField = bfsDistances(g, pt.i, pt.j);
+    }
+
+    updatePlayer(dt, state.input);
+    updateZombies(dt);
+
+    // ── Stairs? ──
+    const pt = worldToTile(g, p.x, p.z);
+    if (at(g, pt.i, pt.j) === T_STAIRS) {
+      descend();
+    } else if (p.hp <= 0) {
+      onPlayerDeath();
+    }
+  }
+
+  // Animations tick even when dead / game over — death clips play out.
+  if (p) p.anim.update(dt);
+  for (const z of state.zombies) z.anim.update(dt);
 
   // Torch flicker. Two out-of-phase sines rather than random noise: random
   // flicker reads as a broken lightbulb, layered sines read as a flame.
   state.torchLights.forEach((light, i) => {
     const t = state.elapsed * 6 + i * 2.1;
-    light.intensity = 18 + Math.sin(t) * 1.6 + Math.sin(t * 2.7) * 0.9;
+    light.intensity = 6 + Math.sin(t) * 0.7 + Math.sin(t * 2.7) * 0.4;
   });
+
+  if (p && state.camera) updateFollowCamera(state.camera, p.x, p.z, dt);
+
+  if (state.hudDirty && state.hudEl) {
+    state.hudDirty = false;
+    updateHUD(state.hudEl);
+  }
 
   if (state.scene && state.camera && state.pixelPass) {
     state.pixelPass.render(state.scene, state.camera);
@@ -251,13 +298,12 @@ export function exitDungeonGame(): void {
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);
   if (state.onResize) window.removeEventListener("resize", state.onResize);
+  state.input?.dispose();
 
-  disposeAll(sandbox);
-  sandbox = null;
-
+  disposeAll();
   clearInputOwner();
-  resetState();
 
-  console.log("🗡️ Crypt: exited");
+  console.log(`🗡️ Maze Game: exited at depth ${state.level} (${state.kills} kills, ${state.goldRun} gold)`);
+  resetState();
   onExit?.();
 }

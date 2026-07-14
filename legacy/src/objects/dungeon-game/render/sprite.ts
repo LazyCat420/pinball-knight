@@ -99,6 +99,8 @@ export interface ActorSprite {
   setFrame(index: number): void;
   /** Flip horizontally — this is how W is rendered from the E art. */
   setFlipped(flipped: boolean): void;
+  /** Multiply-tint the whole sprite (hit flash). Pass null to clear. */
+  setTint(hex: number | null): void;
   dispose(): void;
 }
 
@@ -155,6 +157,13 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     applyFrame(); // repeat changed — the offset anchor moved with it
   }
 
+  // The material colour MULTIPLIES the texture, so white is "no tint". A red
+  // tint darkens green/blue pixels toward red — reads as a blood flash even on
+  // the rot-green zombie palette.
+  function setTint(hex: number | null): void {
+    mat.color.setHex(hex ?? 0xffffff);
+  }
+
   applyFrame();
 
   return {
@@ -162,6 +171,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     sheet,
     setFrame,
     setFlipped,
+    setTint,
     dispose: () => {
       geo.dispose();
       mat.dispose();

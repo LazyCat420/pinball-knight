@@ -3,15 +3,43 @@
  */
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
-import type { ActorSprite } from "./render/sprite";
-import type { Animator } from "./render/animator";
-import { SPRITES_LIT_DEFAULT, QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT } from "./constants";
+import type { ActorSprite, SpriteSheet } from "./render/sprite";
+import type { Animator, Facing } from "./render/animator";
+import type { Grid, TilePos } from "./maze/generator";
+import type { MazeHandle } from "./maze/build";
+import type { InputHandle } from "./input";
+import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
 
 export interface Actor {
   sprite: ActorSprite;
   anim: Animator;
   x: number;
   z: number;
+}
+
+export interface Player extends Actor {
+  hp: number;
+  facing: Facing;
+  /** -1 when not attacking, else seconds since the swing started. */
+  attackT: number;
+  /** True once this swing's active window has connected — one swing, one hit roll. */
+  didHit: boolean;
+  cooldown: number;
+  iframes: number;
+  flashT: number;
+}
+
+export type ZombieMode = "idle" | "chase" | "windup" | "dead";
+
+export interface Zombie extends Actor {
+  hp: number;
+  mode: ZombieMode;
+  speed: number;
+  windupT: number;
+  cooldown: number;
+  flashT: number;
+  /** Zombies never de-aggro — a horde that gives up isn't a horde. */
+  aggro: boolean;
 }
 
 export const state = {
@@ -21,6 +49,9 @@ export const state = {
   // DOM
   container: null as HTMLDivElement | null,
   hudEl: null as HTMLDivElement | null,
+  gameOverEl: null as HTMLDivElement | null,
+  /** Set by anything that changes a HUD number; core repaints once per frame at most. */
+  hudDirty: true,
 
   // Three
   renderer: null as THREE.WebGLRenderer | null,
@@ -28,9 +59,34 @@ export const state = {
   camera: null as THREE.OrthographicCamera | null,
   pixelPass: null as PixelPass | null,
 
+  // Run state
+  level: 1,
+  kills: 0,
+  /** Gold earned THIS run — banked into the shared wallet as it's earned. */
+  goldRun: 0,
+  gameOver: false,
+  /** Seed for the whole run; each level derives its own stream from it. */
+  runSeed: 0,
+
+  // The level
+  grid: null as Grid | null,
+  stairs: null as TilePos | null,
+  maze: null as MazeHandle | null,
+
   // Actors
-  player: null as Actor | null,
-  zombies: [] as Actor[],
+  player: null as Player | null,
+  zombies: [] as Zombie[],
+  playerSheet: null as SpriteSheet | null,
+  zombieSheet: null as SpriteSheet | null,
+
+  // AI
+  flowField: null as Int32Array | null,
+  flowTimer: 0,
+
+  // Camera follow + screen shake
+  camX: 0,
+  camZ: 0,
+  shakeT: 0,
 
   // Torch flicker
   torchLights: [] as THREE.PointLight[],
@@ -40,32 +96,62 @@ export const state = {
   lastTime: 0,
   elapsed: 0,
 
-  // Style toggles — all live-switchable from the sandbox HUD
-  spritesLit: SPRITES_LIT_DEFAULT,
+  // Style toggles (hidden debug keys Q/F/K)
   quantize: QUANTIZE_DEFAULT,
   dither: DITHER_DEFAULT,
   scanline: SCANLINE_DEFAULT,
 
   // Listeners
+  input: null as InputHandle | null,
   onKeyDown: null as ((e: KeyboardEvent) => void) | null,
   onResize: null as (() => void) | null,
 };
+
+export function freshPlayerFields(): Omit<Player, keyof Actor> {
+  return {
+    hp: PLAYER_MAX_HP,
+    facing: "S",
+    attackT: -1,
+    didHit: false,
+    cooldown: 0,
+    iframes: 0,
+    flashT: 0,
+  };
+}
 
 export function resetState(): void {
   state.active = false;
   state.onExitCallback = null;
   state.container = null;
   state.hudEl = null;
+  state.gameOverEl = null;
+  state.hudDirty = true;
   state.renderer = null;
   state.scene = null;
   state.camera = null;
   state.pixelPass = null;
+  state.level = 1;
+  state.kills = 0;
+  state.goldRun = 0;
+  state.gameOver = false;
+  state.runSeed = 0;
+  state.grid = null;
+  state.stairs = null;
+  state.maze = null;
   state.player = null;
   state.zombies = [];
+  state.playerSheet = null;
+  state.zombieSheet = null;
+  state.flowField = null;
+  state.flowTimer = 0;
+  state.camX = 0;
+  state.camZ = 0;
+  state.shakeT = 0;
   state.torchLights = [];
   state.animFrameId = null;
   state.lastTime = 0;
   state.elapsed = 0;
+  state.input = null;
   state.onKeyDown = null;
   state.onResize = null;
 }
