@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import type { ActorPaints, Dir, ClipName, FramePaint } from "./cel-painter";
 import { PALETTE_HEX } from "./palette";
-import { SPRITE_PX, SPRITE_UNITS, CAMERA_TILT, CAMERA_YAW } from "../constants";
+import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW } from "../constants";
 
 /**
  * Face the isometric camera exactly: yaw to the camera's heading, then tilt
@@ -36,6 +36,58 @@ function faceCamera(mesh: THREE.Mesh): void {
   mesh.rotation.x = -CAMERA_TILT;
 }
 
+/**
+ * Soft round contact-shadow texture, built once and shared by every actor. A
+ * radial black-to-transparent gradient; the blob that carries it is tinted and
+ * laid flat on the floor under an actor's feet so the billboard reads as
+ * standing ON the ground rather than floating in front of it.
+ */
+let sharedBlobTexture: THREE.CanvasTexture | null = null;
+function blobTexture(): THREE.CanvasTexture {
+  if (sharedBlobTexture) return sharedBlobTexture;
+  const s = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = s;
+  canvas.height = s;
+  const ctx = canvas.getContext("2d")!;
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(0,0,0,0.6)");
+  g.addColorStop(0.55, "rgba(0,0,0,0.32)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  sharedBlobTexture = tex;
+  return tex;
+}
+
+/**
+ * Build the flat contact-shadow blob for an actor and parent it to the
+ * billboard. Because the orthographic camera never rotates, the billboard's
+ * rotation is a CONSTANT, so a single baked quaternion counter-rotates the
+ * blob to lie flat on the floor — no per-frame work, and it follows the actor
+ * automatically as a child.
+ */
+function makeContactBlob(parent: THREE.Mesh): THREE.Mesh {
+  const geo = new THREE.PlaneGeometry(SPRITE_UNITS * 0.62, SPRITE_UNITS * 0.62);
+  const mat = new THREE.MeshBasicMaterial({
+    map: blobTexture(),
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+  });
+  const blob = new THREE.Mesh(geo, mat);
+  blob.renderOrder = 6; // above the floor, below the actor (10)
+
+  const inv = parent.quaternion.clone().invert();
+  const flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+  blob.quaternion.copy(inv.clone().multiply(flat)); // net world orientation = flat on the ground
+  blob.position.copy(new THREE.Vector3(0, 0.02, 0).applyQuaternion(inv)); // 2cm above the feet
+  parent.add(blob);
+  return blob;
+}
+
 export interface SpriteSheet {
   texture: THREE.CanvasTexture;
   /** clipKey `${dir}:${clip}` → the frame indices in the atlas */
@@ -43,12 +95,67 @@ export interface SpriteSheet {
   frameCount: number;
 }
 
-/** Smooth filtering — this is cel art now, not pixel art. */
+/** Nearest filtering — authored pixels must stay square on screen. */
 function celFilters(tex: THREE.CanvasTexture): void {
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
+}
+
+// Palette as RGB triplets for the pixelate pass, with the same luma weighting
+// the screen-space quantizer uses.
+const PAL_RGB = PALETTE_HEX.map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+
+/**
+ * THE PIXELATE PASS (2026-07-14 Castlevania round): actor cels are painted as
+ * smooth 128px vector art, then crushed to a SPRITE_PIXEL_GRID pixel grid —
+ * area-downscale, hard alpha cutout, snap every pixel to the 32-colour
+ * palette, nearest-upscale back. Smooth curves become authored-looking pixel
+ * clusters; translucent painter effects either commit to a palette colour or
+ * disappear. This is what killed the "flash game" read.
+ */
+function pixelateCanvas(src: HTMLCanvasElement): void {
+  const g = SPRITE_PIXEL_GRID;
+  const small = document.createElement("canvas");
+  small.width = g;
+  small.height = g;
+  const sctx = small.getContext("2d")!;
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = "high";
+  sctx.drawImage(src, 0, 0, g, g);
+  const im = sctx.getImageData(0, 0, g, g);
+  const d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 110) {
+      d[i + 3] = 0;
+      continue;
+    }
+    let best = 0;
+    let bestDist = Infinity;
+    for (let p = 0; p < PAL_RGB.length; p++) {
+      const dr = (d[i] - PAL_RGB[p][0]) * 0.3;
+      const dg = (d[i + 1] - PAL_RGB[p][1]) * 0.59;
+      const db = (d[i + 2] - PAL_RGB[p][2]) * 0.11;
+      const dist = dr * dr + dg * dg + db * db;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = p;
+      }
+    }
+    d[i] = PAL_RGB[best][0];
+    d[i + 1] = PAL_RGB[best][1];
+    d[i + 2] = PAL_RGB[best][2];
+    d[i + 3] = 255;
+  }
+  sctx.putImageData(im, 0, 0);
+
+  const ctx = src.getContext("2d")!;
+  ctx.save();
+  ctx.clearRect(0, 0, src.width, src.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(small, 0, 0, src.width, src.height);
+  ctx.restore();
 }
 
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
@@ -60,6 +167,7 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: n
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite frame");
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
+  pixelateCanvas(scratch);
   strip.drawImage(scratch, index * SPRITE_PX, 0);
 }
 
@@ -150,6 +258,8 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   faceCamera(mesh);
   mesh.renderOrder = 10;
 
+  const blob = makeContactBlob(mesh);
+
   let flipped = false;
   let currentFrame = 0;
 
@@ -196,6 +306,8 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       geo.dispose();
       mat.dispose();
       tex.dispose();
+      (blob.geometry as THREE.BufferGeometry).dispose();
+      (blob.material as THREE.Material).dispose();
     },
   };
 
@@ -259,6 +371,7 @@ export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispo
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
+  pixelateCanvas(canvas);
 
   const tex = new THREE.CanvasTexture(canvas);
   celFilters(tex);

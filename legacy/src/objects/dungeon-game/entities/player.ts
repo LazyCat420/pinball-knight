@@ -31,6 +31,10 @@ import { sfxSwing, sfxGun, sfxBow, sfxFlame } from "../audio";
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
 
+/** Footstep-dust cadence — a puff kicks up this often while walking. */
+const STEP_DUST_INTERVAL = 0.26;
+let stepDustT = 0;
+
 function rangedSfx(id: string): void {
   if (id === "gun") sfxGun();
   else if (id === "bow") sfxBow();
@@ -76,6 +80,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     const res = moveCircle(g, p.x, p.z, PLAYER_R, wd.x * speed * dt, wd.z * speed * dt);
     p.x = res.x;
     p.z = res.z;
+    // Kick up a little floor dust at a walking cadence (not while rooted mid-swing).
+    stepDustT -= dt;
+    if (stepDustT <= 0 && !attacking) {
+      stepDustT = STEP_DUST_INTERVAL;
+      state.vfx?.dust(p.x, 0.05, p.z);
+    }
   }
 
   // Facing picks from the SCREEN axis, so pressing D always shows the
@@ -103,6 +113,9 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       wearActiveWeapon(); // ammo is spent on the shot, hit or miss
       rangedSfx(w.id);
     } else {
+      // Slash crescent swept in the facing direction, tinted to the weapon.
+      const [fx, fz] = FACING_VEC[p.facing];
+      state.vfx?.slash(p.x + fx * 0.5, 0.6, p.z + fz * 0.5, p.facing, w.slashColor ?? 0xdfe7f2);
       sfxSwing();
     }
   }

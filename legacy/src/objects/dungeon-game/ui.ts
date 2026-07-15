@@ -9,7 +9,14 @@ import { PLAYER_MAX_HP } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
+/** SOTN-style serif for headers/toasts — gothic games use serif, not mono. */
+const SERIF = `700 13px Georgia, "Times New Roman", serif`;
 
+/**
+ * The gothic frame (Phase 4): a carved-stone panel with a gold fillet line
+ * and diamond finials on the corners. All done with stacked box-shadows and
+ * four absolutely-positioned corner glyphs — no images, palette colours only.
+ */
 export function createHUD(container: HTMLElement): HTMLDivElement {
   const el = document.createElement("div");
   el.id = "dungeon-hud";
@@ -17,11 +24,32 @@ export function createHUD(container: HTMLElement): HTMLDivElement {
     position: fixed; left: 14px; top: 12px; z-index: 10001;
     font: ${FONT}; line-height: 1.75; letter-spacing: 1px;
     color: #c8ccd4; text-shadow: 1px 1px 0 #0b0d12;
-    background: rgba(11, 13, 18, 0.62);
-    border: 1px solid #2b303b; border-radius: 3px;
-    padding: 10px 14px; min-width: 172px;
+    background:
+      linear-gradient(160deg, rgba(43, 48, 59, 0.55), rgba(11, 13, 18, 0.82) 55%);
+    border: 1px solid #454f5e;
+    box-shadow:
+      inset 0 0 0 2px #0b0d12,
+      inset 0 0 0 3px #6b4a2e,
+      0 0 0 2px #0b0d12,
+      0 4px 14px rgba(0, 0, 0, 0.6);
+    padding: 12px 16px; min-width: 180px;
     pointer-events: none; user-select: none;
   `;
+  // Diamond finials pinned to the corners of the gold fillet.
+  for (const [cx, cy] of [["-5px", "-5px"], ["-5px", ""], ["", "-5px"], ["", ""]] as const) {
+    const pip = document.createElement("div");
+    pip.style.cssText = `
+      position: absolute; width: 8px; height: 8px;
+      ${cx ? `left:${cx}` : "right:-5px"}; ${cy ? `top:${cy}` : "bottom:-5px"};
+      background: #f0a63c; border: 1px solid #0b0d12;
+      transform: rotate(45deg);
+      box-shadow: inset 1px 1px 0 #ffd98a;
+    `;
+    el.appendChild(pip);
+  }
+  const body = document.createElement("div");
+  body.id = "dungeon-hud-body";
+  el.appendChild(body);
   container.appendChild(el);
   return el;
 }
@@ -72,15 +100,25 @@ export function updateHUD(el: HTMLDivElement): void {
     return `<div>${def.icon} ${def.label.padEnd(7)} ${detail}</div>`;
   }).join("");
 
-  el.innerHTML = `
-    <div style="font-size:16px;letter-spacing:2px">${hearts}</div>
-    <div style="margin-top:2px">${weaponRows}</div>
-    <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
+  // A carved rule with a diamond stud — the section divider.
+  const rule = `
+    <div style="display:flex;align-items:center;gap:6px;margin:7px 0 5px">
+      <span style="flex:1;height:1px;background:linear-gradient(90deg,transparent,#454f5e)"></span>
+      <span style="width:5px;height:5px;background:#6b4a2e;transform:rotate(45deg);box-shadow:inset 1px 1px 0 #f0a63c"></span>
+      <span style="flex:1;height:1px;background:linear-gradient(90deg,#454f5e,transparent)"></span>
+    </div>`;
+
+  const body = (el.querySelector("#dungeon-hud-body") as HTMLDivElement) ?? el;
+  body.innerHTML = `
+    <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
+    <div style="margin-top:3px">${weaponRows}</div>
+    ${rule}
     ${gearRows}
-    <div style="border-top:1px solid #2b303b;margin:6px 0 4px"></div>
-    <div><span style="color:#6b7688">DEPTH</span> <span style="color:#f0a63c">${state.level}</span>
-      &nbsp;<span style="color:#6b7688">KILLS</span> <span style="color:#8fc46b">${state.kills}</span></div>
-    <div><span style="color:#6b7688">GOLD</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
+    ${rule}
+    <div style="font:${SERIF};letter-spacing:2px">
+      <span style="color:#6b7688;font-variant:small-caps">Depth</span> <span style="color:#f0a63c">${state.level}</span>
+      &nbsp;<span style="color:#6b7688;font-variant:small-caps">Kills</span> <span style="color:#8fc46b">${state.kills}</span></div>
+    <div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Gold</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
   `;
 }
 
@@ -92,14 +130,23 @@ export function showToast(text: string, subtext = ""): void {
     position: fixed; inset: 0; z-index: 10001;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     pointer-events: none; user-select: none;
-    font: 700 34px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 6px;
-    color: #f0a63c; text-shadow: 2px 2px 0 #0b0d12;
+    font: 700 36px Georgia, "Times New Roman", serif; letter-spacing: 7px;
+    font-variant: small-caps;
+    color: #f0a63c; text-shadow: 0 0 18px rgba(240,166,60,0.45), 2px 2px 0 #0b0d12;
     opacity: 0; transition: opacity 0.25s ease;
   `;
+  const flourish = `
+    <div style="display:flex;align-items:center;gap:10px;width:280px;margin:6px 0">
+      <span style="flex:1;height:1px;background:linear-gradient(90deg,transparent,#f0a63c)"></span>
+      <span style="width:7px;height:7px;background:#f0a63c;transform:rotate(45deg)"></span>
+      <span style="flex:1;height:1px;background:linear-gradient(90deg,#f0a63c,transparent)"></span>
+    </div>`;
   el.innerHTML =
+    flourish +
     `<div>${text}</div>` +
+    flourish +
     (subtext
-      ? `<div style="font-size:13px;letter-spacing:2px;color:#9aa4b4;margin-top:10px">${subtext}</div>`
+      ? `<div style="font-size:13px;letter-spacing:2px;color:#9aa4b4;margin-top:6px;font-variant:normal">${subtext}</div>`
       : "");
   state.container.appendChild(el);
 

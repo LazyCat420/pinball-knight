@@ -65,9 +65,105 @@ export const SPRITE_UNITS = 1.1; // actor plane size, world units (~1 tile tall)
 
 // ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
 export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading
-export const DITHER_DEFAULT = false; // Bayer dither is a pixel-art texture — off for clean cel bands
+export const DITHER_DEFAULT = true; // ordered dither breaks AO/shadow banding before the quantizer (2026-07-14 3D pass)
 export const SCANLINE_DEFAULT = false; // subtle CRT scanlines
 export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
+
+// ── Lighting & depth (the "make the 3D read as 3D" pass) ────────
+/**
+ * The whole scene used to be lit by a single very-bright flat AmbientLight, so
+ * genuine box geometry read as a flat floor-plan: no surface has a light side
+ * and a dark side. This pass adds real shape back.
+ *
+ *  - Surfaces are MeshStandardMaterial with procedural NORMAL MAPS baked from
+ *    the same noise that paints the diffuse, so flagstone mortar and wall
+ *    courses become lit relief that reacts to the torches you walk past.
+ *  - One shadow-casting DirectionalLight (cold, high, raking) gives walls a
+ *    cast shadow into the corridors. Its ortho shadow frustum follows the
+ *    camera target so a small high-res map covers the whole visible area.
+ *  - Ambient drops from the old 4.0 to a level that still keeps unlit stone
+ *    off pure black (the quantizer crushes anything darker to void), but low
+ *    enough that the directional + torches actually model the geometry.
+ */
+export const AMBIENT_INTENSITY = 3.5; // readability floor: SOTN is dark in MOOD, never illegible — the quantizer crushes anything dimmer to void
+export const HEMI_INTENSITY = 1.1; // sky/ground tint
+export const DIR_INTENSITY = 1.5; // the raking cold key light that casts shadows and shapes the normal-mapped stone
+/**
+ * A dim personal lamp that follows the hero. Not diegetic — it's the
+ * Castlevania readability rule: whatever else is dark, the player and the
+ * tiles they're about to step on always read.
+ */
+export const PLAYER_LAMP_INTENSITY = 1.6;
+export const PLAYER_LAMP_RANGE = 4.5;
+export const DIR_HEIGHT = 14; // how high above the target the sun sits
+export const SHADOW_MAP_SIZE = 2048; // per-frame shadow render resolution
+/** Half-extent (world units) of the directional light's ortho shadow frustum. */
+export const SHADOW_AREA = 16;
+/** Shadow darkness: 0 = black shadows, 1 = invisible. Kept soft so it snaps to a stone step, not void. */
+export const SHADOW_OPACITY = 0.42;
+
+// ── Atmosphere / fog ────────────────────────────────────────────
+/**
+ * LINEAR fog in the void colour, keyed on distance-from-camera. It must be
+ * linear (near/far), not exponential: under an ortho camera every fragment
+ * sits in a narrow distance band (~CAMERA_DIST), so density-based fog would
+ * blanket the whole frame uniformly. near/far tuned just past the camera so
+ * only the far (upper) end of the view fades into the dark.
+ */
+export const FOG_NEAR = 30;
+export const FOG_FAR = 58;
+
+// ── Bloom (torches / arcane glow bleed light) ───────────────────
+/** Luminance above which a pixel is considered "emissive" and blooms. */
+export const BLOOM_THRESHOLD = 0.7;
+export const BLOOM_STRENGTH = 0.9;
+export const BLOOM_RADIUS = 2.2; // blur spread in half-res texels
+export const BLOOM_DEFAULT = true;
+
+// ── Screen-space ambient occlusion (folded into the final pass) ──
+/** AO sampling radius, in render-target texels. */
+export const AO_RADIUS = 14;
+export const AO_STRENGTH = 0.85; // how hard concave corners darken
+export const AO_DEFAULT = true;
+
+// ── Vignette (modern framing — darkens the screen corners) ──────
+export const VIGNETTE = 0.32; // pulled back from 0.5 — it was eating the corners' readability
+
+// ── Sprite pixelation (Phase 2 stopgap — kills the vector look) ──
+/**
+ * Actor cels are painted as smooth 128px vector art, then CRUSHED to this
+ * pixel grid (palette-mapped, nearest-neighbour) before hitting the atlas.
+ * That one step turns "flash game" curves into authored-looking pixel art
+ * while the sprite-forge pipeline waits for hand-made frames.
+ */
+export const SPRITE_PIXEL_GRID = 36;
+
+// ── Set dressing density (Phase 1) ──────────────────────────────
+/** ~1 in N eligible full-wall faces grows a pilaster / hangs a banner. */
+export const PILASTER_EVERY = 5;
+export const BANNER_EVERY = 7;
+/** ~1 in N eligible corner tiles gets a crate or barrel hugging the wall. */
+export const CLUTTER_EVERY = 6;
+
+// ── Torch flames (Phase 3) ──────────────────────────────────────
+export const FLAME_FRAMES = 4;
+export const FLAME_FPS = 9;
+
+/** Ambient dust motes per second drifting near the player. */
+export const MOTE_RATE = 2.2;
+
+// ── Combat juice (hitstop + shake) ──────────────────────────────
+/**
+ * Hit-freeze — the single biggest "game feel" trick. On a landed hit the whole
+ * fixed-step simulation pauses for a few frames (VFX and rendering keep going),
+ * so the impact reads as a crunch instead of a soft overlap. Kills freeze a
+ * touch longer for weight.
+ */
+export const HITSTOP_HIT = 0.05;
+export const HITSTOP_KILL = 0.09;
+/** Screen-shake timer set when the player LANDS a hit (taking a hit is separate). */
+export const SHAKE_ON_HIT = 0.1;
+export const SHAKE_ON_KILL = 0.2;
 
 // ── Animation ───────────────────────────────────────────────────
 export const FPS_IDLE = 3;

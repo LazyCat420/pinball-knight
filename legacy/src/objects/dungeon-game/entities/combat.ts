@@ -13,6 +13,10 @@ import {
   PLAYER_R,
   GOLD_PER_KILL,
   PPU,
+  HITSTOP_HIT,
+  HITSTOP_KILL,
+  SHAKE_ON_HIT,
+  SHAKE_ON_KILL,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
@@ -66,6 +70,13 @@ export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: numb
   z.aggro = true; // hitting a dormant zombie certainly wakes it
   z.flashT = FLASH_TIME;
   z.sprite.setTint(0xff6a6a);
+
+  // Impact juice: sparks along the blow, a spray of rot, a beat of hit-freeze
+  // and a small camera kick. Kills get the bigger version below.
+  state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 9);
+  state.vfx?.blood(z.x, 0.6, z.z, "green", 8);
+  state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
+  state.shakeT = Math.max(state.shakeT, SHAKE_ON_HIT);
 
   if (push > 0) {
     const d = Math.hypot(dirx, dirz);
@@ -157,6 +168,11 @@ export function resolvePlayerAttack(): boolean {
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
+  // A death pops a bigger gore burst, a longer freeze and a heavier kick.
+  state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
+  state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
+  state.hitstopT = Math.max(state.hitstopT, HITSTOP_KILL);
+  state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
   state.goldRun += GOLD_PER_KILL;
   addGold(GOLD_PER_KILL, "dungeon-game");
@@ -186,6 +202,8 @@ export function hitPlayer(z: Zombie): void {
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0xff5555);
+  if (absorbed.hpDamage > 0) state.vfx?.blood(p.x, 0.6, p.z, "red", 10);
+  state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
   state.shakeT = absorbed.hpDamage > 0 ? 0.25 : 0.12; // armor soaks the flinch too
   state.hudDirty = true;
   sfxHurt();

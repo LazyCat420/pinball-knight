@@ -27,6 +27,8 @@ import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
+import { createVfx } from "./render/vfx";
+import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { makeKnightPaints, ZOMBIE_PAINTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
@@ -54,10 +56,45 @@ import {
   DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
+  AMBIENT_INTENSITY,
+  HEMI_INTENSITY,
+  DIR_INTENSITY,
+  DIR_HEIGHT,
+  SHADOW_MAP_SIZE,
+  SHADOW_AREA,
+  SHADOW_OPACITY,
+  FOG_NEAR,
+  FOG_FAR,
+  BLOOM_DEFAULT,
+  AO_DEFAULT,
+  PLAYER_LAMP_INTENSITY,
+  PLAYER_LAMP_RANGE,
+  FLAME_FPS,
+  FLAME_FRAMES,
+  MOTE_RATE,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, freshWeapon, type WeaponId, type WeaponState, type GearSlot } from "./items";
 import { sfxStairs, sfxGameOver, sfxPickup } from "./audio";
+
+/**
+ * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
+ * launch. `sun` casts the shadows and follows the camera; `lamp` is the hero's
+ * personal readability light; ambient/hemi are kept so startLevel can re-tint
+ * them per depth (the FF dungeon trick: deeper floors shift palette).
+ */
+let sun: THREE.DirectionalLight | null = null;
+let lamp: THREE.PointLight | null = null;
+let ambient: THREE.AmbientLight | null = null;
+let hemi: THREE.HemisphereLight | null = null;
+
+/** Per-depth colour grading, cycling: cold slate → rot green → blood → arcane. */
+const DEPTH_TINTS = [
+  { amb: 0x6b7d99, sky: 0x8fa3bd, ground: 0x1e2430 },
+  { amb: 0x6d8a78, sky: 0x8fbda6, ground: 0x1e2a22 },
+  { amb: 0x8a6f74, sky: 0xbd949a, ground: 0x2a1e20 },
+  { amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
+];
 
 export function isDungeonGameActive(): boolean {
   return state.active;
@@ -106,6 +143,11 @@ export function launchDungeonGame(onExit?: () => void): void {
   // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
   state.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
   state.renderer.setClearColor(PALETTE_HEX[0]);
+  // One shadow-casting directional light needs the shadow map on. PCFSoft gives
+  // a slightly feathered edge that survives the palette quantizer as a soft
+  // band rather than a hard jagged step.
+  state.renderer.shadowMap.enabled = true;
+  state.renderer.shadowMap.type = THREE.PCFShadowMap;
   state.container.appendChild(state.renderer.domElement);
 
   state.pixelPass = createPixelPass(state.renderer, {
@@ -113,22 +155,57 @@ export function launchDungeonGame(onExit?: () => void): void {
     dither: state.dither,
     scanline: state.scanline,
     outline: state.outline,
+    bloom: BLOOM_DEFAULT,
+    ao: AO_DEFAULT,
   });
 
   // ── Scene ──
   state.scene = new THREE.Scene();
   state.scene.background = new THREE.Color(PALETTE_HEX[0]);
+  // Far (upper) corridors fade into the void — see FOG_NEAR/FOG_FAR.
+  state.scene.fog = new THREE.Fog(PALETTE_HEX[0], FOG_NEAR, FOG_FAR);
 
-  // Cold slate fill. This is the colour the dungeon IS — torches are only
-  // accents on top of it. The intensity looks absurdly high and has to be:
-  // Lambert multiplies light by an already-dark albedo, and the quantizer
-  // snaps the bottomed-out result to black (Phase 0 lesson #2).
-  const ambient = new THREE.AmbientLight(0x6b7d99, 4.0);
+  // Cold slate fill. This is the colour the dungeon IS — torches and the key
+  // light are accents on top of it. With real normal maps and a directional
+  // key doing the shaping, ambient's job is the READABILITY floor: it can't
+  // bottom out to pure black or the quantizer snaps stone to void.
+  // (Colours are re-tinted per depth in startLevel.)
+  ambient = new THREE.AmbientLight(DEPTH_TINTS[0].amb, AMBIENT_INTENSITY);
   state.scene.add(ambient);
 
   // A little vertical shape, so wall tops separate from wall faces.
-  const hemi = new THREE.HemisphereLight(0x8fa3bd, 0x1e2430, 1.2);
+  hemi = new THREE.HemisphereLight(DEPTH_TINTS[0].sky, DEPTH_TINTS[0].ground, HEMI_INTENSITY);
   state.scene.add(hemi);
+
+  // The hero's personal lamp — the Castlevania readability rule: whatever
+  // else is dark, the player and the tiles around them always read.
+  lamp = new THREE.PointLight(0xd9cba8, PLAYER_LAMP_INTENSITY, PLAYER_LAMP_RANGE, 2);
+  state.scene.add(lamp);
+
+  // The cold key light — a high, raking directional that casts the wall
+  // shadows into the corridors. Its ortho shadow frustum is small and follows
+  // the camera target each frame (see loop), so a 2k map stays crisp over the
+  // whole visible area instead of being stretched across the entire maze.
+  sun = new THREE.DirectionalLight(0xa7c0e0, DIR_INTENSITY);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = DIR_HEIGHT * 2.5;
+  sun.shadow.camera.left = -SHADOW_AREA;
+  sun.shadow.camera.right = SHADOW_AREA;
+  sun.shadow.camera.top = SHADOW_AREA;
+  sun.shadow.camera.bottom = -SHADOW_AREA;
+  sun.shadow.bias = -0.0009; // kill the shadow-acne the coursed normal maps would otherwise show
+  sun.shadow.normalBias = 0.04;
+  // Soften the shadow so it snaps to a stone step, not pure void.
+  sun.shadow.intensity = 1 - SHADOW_OPACITY;
+  state.scene.add(sun);
+  state.scene.add(sun.target); // target is moved in the loop; must be in the graph
+
+  // ── VFX (sparks / blood / embers / dust / slashes) ──
+  // Lives for the whole session (not per level); drawn into the scene so it
+  // gets pixelated, quantized and bloomed with everything else.
+  state.vfx = createVfx(state.scene);
 
   // ── Camera ──
   state.camera = createDungeonCamera();
@@ -136,6 +213,18 @@ export function launchDungeonGame(onExit?: () => void): void {
 
   // ── Sprite sheets (zombies share one; the knight's is per-weapon) ──
   state.zombieSheet = buildSpriteSheet(ZOMBIE_PAINTS);
+
+  // Hand-made pixel art overrides the procedural painters the moment it
+  // exists: drop sprite-forge output at public/dungeon/sprites/knight-<id>.*
+  // and the knight upgrades on next launch. Missing art = silent fallback.
+  void loadAtlasSheet("knight-sword").then((sheet) => {
+    if (!sheet || !state.active) return;
+    state.playerSheets.set("sword", sheet);
+    if (state.playerArtWeapon === "sword" && state.player) {
+      state.player.sprite.setSheet(sheet);
+      state.player.silhouette?.syncMap();
+    }
+  });
 
   // ── HUD + input ──
   state.hudEl = createHUD(state.container);
@@ -168,6 +257,14 @@ function startLevel(level: number): void {
 
   state.level = level;
   const cfg = levelConfig(level);
+
+  // Depth grading: each floor down shifts the fill palette a family over.
+  const tint = DEPTH_TINTS[(level - 1) % DEPTH_TINTS.length];
+  ambient?.color.setHex(tint.amb);
+  if (hemi) {
+    hemi.color.setHex(tint.sky);
+    hemi.groundColor.setHex(tint.ground);
+  }
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
@@ -451,10 +548,19 @@ function loop(now: number): void {
   state.elapsed += frame;
 
   // ── Fixed-timestep simulation ──
+  // Hit-freeze: while hitstopT is running the sim is paused so the impact reads
+  // as a crunch. VFX and rendering (below) keep running through the freeze. We
+  // clamp the accumulator so no time is banked — the world doesn't fast-forward
+  // to catch up the instant the freeze ends.
   state.accumulator += frame;
-  while (state.accumulator >= FIXED_STEP) {
-    state.accumulator -= FIXED_STEP;
-    simulate(FIXED_STEP);
+  if (state.hitstopT > 0) {
+    state.hitstopT = Math.max(0, state.hitstopT - frame);
+    state.accumulator = Math.min(state.accumulator, FIXED_STEP);
+  } else {
+    while (state.accumulator >= FIXED_STEP) {
+      state.accumulator -= FIXED_STEP;
+      simulate(FIXED_STEP);
+    }
   }
 
   const p = state.player;
@@ -465,6 +571,8 @@ function loop(now: number): void {
   applyWeaponArt();
 
   // ── Presentation (per rendered frame) ──
+  // VFX use REAL frame time so particles keep flying through a hit-freeze.
+  state.vfx?.update(frame);
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
 
@@ -472,6 +580,19 @@ function loop(now: number): void {
   for (const it of state.groundItems) {
     const y = 0.06 + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.05;
     it.sprite.mesh.position.y = Math.round(y * PPU) / PPU;
+  }
+
+  if (p && state.maze) {
+    // Flip-book flames — every torch, lit or not, licks at FLAME_FPS with its
+    // own phase so a corridor of torches never synchronizes.
+    for (const f of state.maze.flames) {
+      const idx = Math.floor(state.elapsed * FLAME_FPS + f.phase * FLAME_FRAMES) % FLAME_FRAMES;
+      f.tex.offset.x = idx / FLAME_FRAMES;
+    }
+    // Ambient dust motes drifting through the air near the player.
+    if (Math.random() < MOTE_RATE * frame) {
+      state.vfx?.mote(p.x + (Math.random() - 0.5) * 7, 0.15 + Math.random() * 0.9, p.z + (Math.random() - 0.5) * 5);
+    }
   }
 
   if (p && g && state.maze) {
@@ -487,10 +608,24 @@ function loop(now: number): void {
       // broken lightbulb, layered sines read as a flame.
       const t = state.elapsed * 6 + i * 2.1;
       light.intensity = 6 + Math.sin(t) * 0.7 + Math.sin(t * 2.7) * 0.4;
+      // Rising embers off the nearby lit torches (~7/sec each) — bright, so the
+      // bloom pass gives them a warm halo. Only the closest few are lit anyway.
+      if (anchor && Math.random() < 7 * frame) {
+        state.vfx?.ember(anchor.x, WALL_H * 0.62 + 0.34, anchor.z);
+      }
     });
   }
 
   if (p && state.camera) updateFollowCamera(state.camera, p.x, p.z, frame);
+
+  // Keep the key light's small shadow frustum centred on the player: the light
+  // rakes in from the world's north-west (opposite the south-east camera) so
+  // wall shadows fall toward the viewer, into the corridors, not away.
+  if (p && sun) {
+    sun.target.position.set(p.x, 0, p.z);
+    sun.position.set(p.x - DIR_HEIGHT * 0.55, DIR_HEIGHT, p.z - DIR_HEIGHT * 0.55);
+  }
+  if (p && lamp) lamp.position.set(p.x, 1.3, p.z);
 
   if (state.hudDirty && state.hudEl) {
     state.hudDirty = false;
@@ -513,6 +648,10 @@ export function exitDungeonGame(): void {
   state.input?.dispose();
 
   disposeAll();
+  sun = null; // the lights themselves are freed with the scene by disposeAll
+  lamp = null;
+  ambient = null;
+  hemi = null;
   clearInputOwner();
 
   console.log(`🗡️ Maze Game: exited at depth ${state.level} (${state.kills} kills, ${state.goldRun} gold)`);

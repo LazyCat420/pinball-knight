@@ -57,6 +57,9 @@ export function disposeAll(): void {
 
   disposeProjectileAssets();
 
+  state.vfx?.dispose();
+  state.vfx = null;
+
   state.pixelPass?.dispose();
 
   if (state.renderer) {

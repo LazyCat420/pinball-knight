@@ -1,36 +1,56 @@
 /**
- * The pixel pipeline — this is what makes 3D geometry read as 8-bit.
+ * The pixel/cel post pipeline — this is what makes 3D geometry read as a
+ * flat-banded, ink-outlined cel picture, now with real depth cues.
  *
- *   scene ──▶ WebGLRenderTarget (320x180, NearestFilter, linear colour)
- *                        │
- *                        ▼
- *          fullscreen quad, custom ShaderMaterial
- *          ├─ linear → sRGB (we do this by hand, see below)
- *          ├─ Bayer 4x4 ordered dither
- *          ├─ snap to nearest of 32 palette colours (luma-weighted)
- *          └─ optional scanlines
- *                        │
- *                        ▼
- *                  canvas (integer-scaled)
+ *   scene ──▶ sceneTarget (1280x720, Nearest, LINEAR colour, + depth texture)
+ *      │
+ *      ├──▶ bloom chain (half-res): bright-pass → blur H → blur V → bloomTarget
+ *      │
+ *      ▼
+ *   fullscreen quad, final ShaderMaterial (reads sceneTarget + bloom + depth)
+ *      ├─ screen-space AO from the depth buffer  (darkens concave corners)
+ *      ├─ + bloom                                (torches/arcane bleed light)
+ *      ├─ linear → sRGB (done by hand, see below)
+ *      ├─ depth-discontinuity ink outline
+ *      ├─ Bayer 4x4 ordered dither
+ *      ├─ snap to nearest of 32 palette colours (luma-weighted)
+ *      └─ optional scanlines
+ *      │
+ *      ▼
+ *   canvas (integer-scaled)
  *
  * COLOUR MANAGEMENT — read before touching this.
- * The render target uses the default (no) colour space, so three.js writes
- * LINEAR values into it. We convert linear→sRGB ourselves in the shader and
+ * sceneTarget uses the default (no) colour space, so three.js writes LINEAR
+ * values into it. AO and bloom are therefore applied in LINEAR (the physically
+ * right place), and we convert linear→sRGB ourselves in the final shader and
  * compare against the sRGB palette. We must NOT let three.js do an output
- * conversion on the quad too, or it'd double-encode — which it won't, because
- * a custom ShaderMaterial that doesn't `#include <colorspace_fragment>` gets no
- * injected conversion. Tone mapping is off (NoToneMapping): we want flat,
- * banded colour, not a filmic curve.
+ * conversion on any of these quads too, or it'd double-encode — which it won't,
+ * because a custom ShaderMaterial that doesn't `#include <colorspace_fragment>`
+ * gets no injected conversion. Tone mapping is off (NoToneMapping).
  *
- * PIXEL GRID — the render target is a FIXED 320x180 regardless of window size.
- * Only the upscale factor changes. If the internal resolution tracked the
- * window, the art would "breathe" as you resize and the illusion would die.
+ * WHY NOT EffectComposer / UnrealBloomPass / SSAOPass? Those own the colour
+ * pipeline and expect sRGB in/out; wiring them around this hand-managed linear
+ * target and the bespoke quantizer is more fragile than the ~3 tiny quads
+ * here. Everything stays under our control and in one file.
+ *
+ * PIXEL GRID — sceneTarget is a FIXED 1280x720 regardless of window size. Only
+ * the upscale factor changes, so the art never "breathes" as you resize.
  */
 import * as THREE from "three";
 import { PALETTE_SIZE, paletteToFloatArray } from "./palette";
-import { RENDER_W, RENDER_H, INTEGER_SCALE } from "../constants";
+import {
+  RENDER_W,
+  RENDER_H,
+  INTEGER_SCALE,
+  BLOOM_THRESHOLD,
+  BLOOM_STRENGTH,
+  BLOOM_RADIUS,
+  AO_RADIUS,
+  AO_STRENGTH,
+  VIGNETTE,
+} from "../constants";
 
-const VERT = /* glsl */ `
+const FULLSCREEN_VERT = /* glsl */ `
 varying vec2 vUv;
 void main() {
   vUv = uv;
@@ -38,16 +58,63 @@ void main() {
 }
 `;
 
-const FRAG = /* glsl */ `
+// ── Bloom: bright-pass ──────────────────────────────────────────
+// Keep only what's brighter than the threshold, softly. Runs in linear.
+const BRIGHT_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D tSrc;
+uniform float uThreshold;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(tSrc, vUv).rgb;
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  float k = clamp((l - uThreshold) / max(1.0 - uThreshold, 0.001), 0.0, 1.0);
+  gl_FragColor = vec4(c * k, 1.0);
+}
+`;
+
+// ── Bloom: separable 9-tap gaussian ─────────────────────────────
+const BLUR_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D tSrc;
+uniform vec2 uDir; // texel step * radius, along one axis
+varying vec2 vUv;
+void main() {
+  // Normalised gaussian weights (sigma ~2).
+  float w0 = 0.227027;
+  float w1 = 0.194595;
+  float w2 = 0.121622;
+  float w3 = 0.054054;
+  float w4 = 0.016216;
+  vec3 c = texture2D(tSrc, vUv).rgb * w0;
+  c += texture2D(tSrc, vUv + uDir * 1.0).rgb * w1;
+  c += texture2D(tSrc, vUv - uDir * 1.0).rgb * w1;
+  c += texture2D(tSrc, vUv + uDir * 2.0).rgb * w2;
+  c += texture2D(tSrc, vUv - uDir * 2.0).rgb * w2;
+  c += texture2D(tSrc, vUv + uDir * 3.0).rgb * w3;
+  c += texture2D(tSrc, vUv - uDir * 3.0).rgb * w3;
+  c += texture2D(tSrc, vUv + uDir * 4.0).rgb * w4;
+  c += texture2D(tSrc, vUv - uDir * 4.0).rgb * w4;
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
+
+// ── Final composite + cel quantize ──────────────────────────────
+const FINAL_FRAG = /* glsl */ `
 precision highp float;
 
 uniform sampler2D tDiffuse;
+uniform sampler2D tBloom;
 uniform sampler2D tDepth;
 uniform vec3  uPalette[${PALETTE_SIZE}];
 uniform float uQuantize;
 uniform float uDither;
 uniform float uScanline;
 uniform float uOutline;
+uniform float uBloom;      // bloom strength (0 = off)
+uniform float uAo;         // AO strength (0 = off)
+uniform float uAoRadius;   // AO ring radius in texels
+uniform float uVignette;   // corner darkening (0 = off)
 uniform vec2  uResolution;
 
 varying vec2 vUv;
@@ -60,8 +127,7 @@ vec3 linearToSRGB(vec3 c) {
   return mix(lo, hi, step(vec3(0.0031308), c));
 }
 
-// Compact Bayer 4x4 — returns [0,1). The classic recursive formulation:
-// bayer2 gives the 2x2 pattern, and bayer4 nests it at quarter weight.
+// Compact Bayer 4x4 — returns [0,1).
 float bayer2(vec2 a) {
   a = floor(a);
   return fract(a.x / 2.0 + a.y * a.y * 0.75);
@@ -74,16 +140,49 @@ float depthAt(vec2 texelOffset) {
   return texture2D(tDepth, vUv + texelOffset / uResolution).x;
 }
 
-void main() {
-  vec3 col = linearToSRGB(texture2D(tDiffuse, vUv).rgb);
+// Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner —
+// wall base meeting the floor — has neighbours that sit CLOSER to the camera
+// than the centre; we sample a ring at two radii and darken by how many
+// neighbours are moderately closer. Tiny diffs (flat ground) and huge diffs
+// (a silhouette against the void) are both excluded, so we get corner AO
+// without a halo around every sprite.
+float aoTerm() {
+  float c = depthAt(vec2(0.0));
+  if (c >= 0.999) return 0.0; // void / sky — nothing to occlude
+  float occ = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.7853981634; // 2π / 8
+    vec2 dir = vec2(cos(a), sin(a));
+    for (int r = 1; r <= 2; r++) {
+      float rad = uAoRadius * (r == 1 ? 0.5 : 1.0);
+      float diff = c - depthAt(dir * rad);
+      occ += step(0.00015, diff) * (1.0 - smoothstep(0.004, 0.02, diff));
+    }
+  }
+  return occ / 16.0;
+}
 
-  // Depth-discontinuity outline — the cel-shading move, straight from the
-  // playbook of three.js's RenderPixelatedPass. With an ORTHO camera the
-  // depth buffer is linear in eye space, so a fixed threshold works: any
-  // neighbour more than ~a third of a tile deeper/shallower draws a dark
-  // edge pixel. Wall tops, wall silhouettes and sprite cutouts all get a
-  // crisp 1px ink line, which the palette quantizer then snaps to the
-  // darkest stones.
+void main() {
+  vec3 col = texture2D(tDiffuse, vUv).rgb; // LINEAR scene
+
+  // AO in linear, before the sRGB curve.
+  if (uAo > 0.001) col *= 1.0 - aoTerm() * uAo;
+
+  // Add bloom in linear so bright torch cores bleed a warm halo.
+  if (uBloom > 0.001) col += texture2D(tBloom, vUv).rgb * uBloom;
+
+  col = linearToSRGB(col);
+
+  // Vignette — darken toward the corners for a framed, modern look. Applied
+  // before the quantizer so the falloff snaps to darker palette steps.
+  if (uVignette > 0.001) {
+    vec2 q = vUv - 0.5;
+    float vig = smoothstep(0.85, 0.32, dot(q, q) * 2.0); // 1 centre → 0 corners
+    col *= mix(1.0, vig, uVignette);
+  }
+
+  // Depth-discontinuity ink outline (the cel-shading move). With an ORTHO
+  // camera the depth buffer is linear in eye space, so a fixed threshold works.
   if (uOutline > 0.5) {
     float dc = depthAt(vec2(0.0));
     float e = max(
@@ -93,21 +192,15 @@ void main() {
     if (e > ${(0.35 / 200).toFixed(6)}) col *= 0.45;
   }
 
-  // Nudge each pixel up or down the ramp before snapping. This is what buys back
-  // apparent colour depth — without it, smooth gradients snap into hard bands,
-  // and a torch's radial falloff becomes a set of concentric rings on the floor
-  // that look like ripples in a pond rather than light.
-  //
-  // The magnitude needs to be around one palette step to actually break a band.
-  // Too low and the rings survive; too high and everything looks sandblasted.
+  // Nudge each pixel up/down the ramp before snapping — buys back apparent
+  // colour depth so smooth gradients (AO, bloom, torch falloff) don't snap into
+  // hard concentric bands.
   if (uDither > 0.5) {
     float b = bayer4(gl_FragCoord.xy) - 0.5;
     col += b * (2.0 / float(${PALETTE_SIZE}));
   }
 
-  // Snap to the nearest palette entry. Distance is luma-weighted rather than
-  // naive Euclidean — the eye is far more sensitive to green than to blue, and
-  // weighting for that noticeably improves which colour gets picked.
+  // Snap to the nearest palette entry, luma-weighted.
   if (uQuantize > 0.5) {
     vec3  best = uPalette[0];
     float bestDist = 1e9;
@@ -140,23 +233,31 @@ export interface PixelPass {
   setDither(on: boolean): void;
   setScanline(on: boolean): void;
   setOutline(on: boolean): void;
+  setBloom(on: boolean): void;
+  setAo(on: boolean): void;
   dispose(): void;
 }
 
 export function createPixelPass(
   renderer: THREE.WebGLRenderer,
-  opts: { quantize: boolean; dither: boolean; scanline: boolean; outline: boolean },
+  opts: {
+    quantize: boolean;
+    dither: boolean;
+    scanline: boolean;
+    outline: boolean;
+    bloom: boolean;
+    ao: boolean;
+  },
 ): PixelPass {
   // We want fat honest pixels, so devicePixelRatio is deliberately ignored.
   renderer.setPixelRatio(1);
   renderer.toneMapping = THREE.NoToneMapping;
 
-  // The depth texture feeds the outline pass — edges are found where depth
-  // jumps between neighbouring texels.
+  // The depth texture feeds the outline and AO passes.
   const depthTexture = new THREE.DepthTexture(RENDER_W, RENDER_H);
   depthTexture.type = THREE.UnsignedIntType;
 
-  const target = new THREE.WebGLRenderTarget(RENDER_W, RENDER_H, {
+  const sceneTarget = new THREE.WebGLRenderTarget(RENDER_W, RENDER_H, {
     minFilter: THREE.NearestFilter,
     magFilter: THREE.NearestFilter,
     generateMipmaps: false,
@@ -165,31 +266,77 @@ export function createPixelPass(
     depthTexture,
   });
 
-  const uniforms = {
-    tDiffuse: { value: target.texture },
+  // Bloom works at half resolution — cheaper, and a wider blur for free.
+  const BW = Math.floor(RENDER_W / 2);
+  const BH = Math.floor(RENDER_H / 2);
+  const bloomTargetOpts = {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    generateMipmaps: false,
+    depthBuffer: false,
+    stencilBuffer: false,
+  };
+  const bloomA = new THREE.WebGLRenderTarget(BW, BH, bloomTargetOpts);
+  const bloomB = new THREE.WebGLRenderTarget(BW, BH, bloomTargetOpts);
+
+  // ── Materials ──
+  const brightMat = new THREE.ShaderMaterial({
+    vertexShader: FULLSCREEN_VERT,
+    fragmentShader: BRIGHT_FRAG,
+    uniforms: {
+      tSrc: { value: sceneTarget.texture },
+      uThreshold: { value: BLOOM_THRESHOLD },
+    },
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const blurMat = new THREE.ShaderMaterial({
+    vertexShader: FULLSCREEN_VERT,
+    fragmentShader: BLUR_FRAG,
+    uniforms: {
+      tSrc: { value: null },
+      uDir: { value: new THREE.Vector2() },
+    },
+    depthTest: false,
+    depthWrite: false,
+  });
+
+  const finalUniforms = {
+    tDiffuse: { value: sceneTarget.texture },
+    tBloom: { value: bloomA.texture },
     tDepth: { value: depthTexture },
     uPalette: { value: paletteToFloatArray() },
     uQuantize: { value: opts.quantize ? 1 : 0 },
     uDither: { value: opts.dither ? 1 : 0 },
     uScanline: { value: opts.scanline ? 1 : 0 },
     uOutline: { value: opts.outline ? 1 : 0 },
+    uBloom: { value: opts.bloom ? BLOOM_STRENGTH : 0 },
+    uAo: { value: opts.ao ? AO_STRENGTH : 0 },
+    uAoRadius: { value: AO_RADIUS },
+    uVignette: { value: VIGNETTE },
     uResolution: { value: new THREE.Vector2(RENDER_W, RENDER_H) },
   };
-
-  const quadMat = new THREE.ShaderMaterial({
-    vertexShader: VERT,
-    fragmentShader: FRAG,
-    uniforms,
+  const finalMat = new THREE.ShaderMaterial({
+    vertexShader: FULLSCREEN_VERT,
+    fragmentShader: FINAL_FRAG,
+    uniforms: finalUniforms,
     depthTest: false,
     depthWrite: false,
   });
 
-  // A single triangle-pair in clip space. No EffectComposer dependency needed
-  // for one pass — this is the whole postprocessing stack.
+  // One reusable fullscreen quad; passes swap its material.
   const quadScene = new THREE.Scene();
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const quadGeo = new THREE.PlaneGeometry(2, 2);
-  quadScene.add(new THREE.Mesh(quadGeo, quadMat));
+  const quad: THREE.Mesh = new THREE.Mesh(quadGeo, finalMat);
+  quadScene.add(quad);
+
+  function blit(material: THREE.Material, dest: THREE.WebGLRenderTarget | null): void {
+    quad.material = material;
+    renderer.setRenderTarget(dest);
+    renderer.render(quadScene, quadCam);
+  }
 
   function resize(): void {
     const winW = window.innerWidth;
@@ -221,37 +368,62 @@ export function createPixelPass(
   }
 
   function render(scene: THREE.Scene, camera: THREE.Camera): void {
-    renderer.setRenderTarget(target);
+    // 1. Scene → linear target (+ depth).
+    renderer.setRenderTarget(sceneTarget);
     renderer.clear();
     renderer.render(scene, camera);
 
-    renderer.setRenderTarget(null);
-    renderer.render(quadScene, quadCam);
+    // 2. Bloom chain (skipped when strength is 0).
+    if (finalUniforms.uBloom.value > 0.001) {
+      brightMat.uniforms.tSrc.value = sceneTarget.texture;
+      blit(brightMat, bloomA);
+
+      blurMat.uniforms.tSrc.value = bloomA.texture;
+      blurMat.uniforms.uDir.value.set(BLOOM_RADIUS / BW, 0);
+      blit(blurMat, bloomB);
+
+      blurMat.uniforms.tSrc.value = bloomB.texture;
+      blurMat.uniforms.uDir.value.set(0, BLOOM_RADIUS / BH);
+      blit(blurMat, bloomA); // final blurred bloom lands back in bloomA
+    }
+
+    // 3. Composite + cel quantize → screen.
+    blit(finalMat, null);
   }
 
   resize();
 
   return {
-    target,
+    target: sceneTarget,
     render,
     resize,
     setQuantize: (on) => {
-      uniforms.uQuantize.value = on ? 1 : 0;
+      finalUniforms.uQuantize.value = on ? 1 : 0;
     },
     setDither: (on) => {
-      uniforms.uDither.value = on ? 1 : 0;
+      finalUniforms.uDither.value = on ? 1 : 0;
     },
     setScanline: (on) => {
-      uniforms.uScanline.value = on ? 1 : 0;
+      finalUniforms.uScanline.value = on ? 1 : 0;
     },
     setOutline: (on) => {
-      uniforms.uOutline.value = on ? 1 : 0;
+      finalUniforms.uOutline.value = on ? 1 : 0;
+    },
+    setBloom: (on) => {
+      finalUniforms.uBloom.value = on ? BLOOM_STRENGTH : 0;
+    },
+    setAo: (on) => {
+      finalUniforms.uAo.value = on ? AO_STRENGTH : 0;
     },
     dispose: () => {
       depthTexture.dispose();
-      target.dispose();
+      sceneTarget.dispose();
+      bloomA.dispose();
+      bloomB.dispose();
       quadGeo.dispose();
-      quadMat.dispose();
+      brightMat.dispose();
+      blurMat.dispose();
+      finalMat.dispose();
     },
   };
 }

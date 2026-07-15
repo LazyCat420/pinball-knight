@@ -3,6 +3,7 @@
  */
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
+import type { VfxSystem } from "./render/vfx";
 import type { ActorSprite, SpriteSheet } from "./render/sprite";
 import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
@@ -94,6 +95,7 @@ export const state = {
   scene: null as THREE.Scene | null,
   camera: null as THREE.OrthographicCamera | null,
   pixelPass: null as PixelPass | null,
+  vfx: null as VfxSystem | null,
 
   // Run state
   level: 1,
@@ -135,6 +137,8 @@ export const state = {
   camX: 0,
   camZ: 0,
   shakeT: 0,
+  /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going). */
+  hitstopT: 0,
 
   // Fixed-timestep accumulator
   accumulator: 0,
@@ -208,6 +212,8 @@ export function resetState(): void {
   state.camX = 0;
   state.camZ = 0;
   state.shakeT = 0;
+  state.hitstopT = 0;
+  state.vfx = null;
   state.accumulator = 0;
   state.animFrameId = null;
   state.lastTime = 0;

@@ -43,14 +43,16 @@ export interface WeaponDef {
   spread?: number;
   /** Projectiles per trigger pull (the flamethrower spits a pair of puffs). */
   pellets?: number;
+  /** Melee slash-arc VFX tint (sRGB hex). Defaults to a cold steel white. */
+  slashColor?: number;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity },
-  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30 },
-  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15 },
-  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45 },
-  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10 },
+  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity, slashColor: 0xc8ccd4 },
+  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5 },
+  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e },
+  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a },
+  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10, slashColor: 0x6b4a2e },
   gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04 },
   bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 16, projectile: "arrow", projectileSpeed: 11, spread: 0 },
   flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 110, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2 },

@@ -18,7 +18,18 @@
  */
 import * as THREE from "three";
 import { PALETTE_HEX } from "../render/palette";
-import { WALL_H, WALL_LOW, PPU, TORCH_LIGHT_POOL } from "../constants";
+import {
+  WALL_H,
+  WALL_LOW,
+  PPU,
+  TORCH_LIGHT_POOL,
+  PILASTER_EVERY,
+  BANNER_EVERY,
+  CLUTTER_EVERY,
+  FLAME_FRAMES,
+  CAMERA_YAW,
+  CAMERA_TILT,
+} from "../constants";
 import { type Grid, isWalkable, tileCenter } from "./generator";
 import type { LevelPlan } from "./decorate";
 
@@ -53,6 +64,92 @@ function pixelTexture(
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
   return tex;
+}
+
+/**
+ * Procedural NORMAL MAP baked from a height field, so the flat painted stone
+ * detail becomes lit relief under the directional key light and the torches.
+ *
+ * `heightFn(x, y) → [0,1]` should MIRROR the diffuse paint (grooves where the
+ * mortar seams are, domes where the blocks bulge). We Sobel-difference it into
+ * a tangent-space normal. The texture is raw data (NOT sRGB) — colour-managing
+ * a normal map would bend every surface normal toward the light and ruin it.
+ */
+function normalTexture(
+  size: number,
+  heightFn: (x: number, y: number) => number,
+  repeatX: number,
+  repeatY: number,
+  strength: number,
+): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(size, size);
+  const wrap = (v: number) => ((v % size) + size) % size;
+  const h = (x: number, y: number) => heightFn(wrap(x), wrap(y));
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (h(x - 1, y) - h(x + 1, y)) * strength;
+      const dy = (h(x, y - 1) - h(x, y + 1)) * strength;
+      const nz = 1.0;
+      const len = Math.hypot(dx, dy, nz) || 1;
+      const idx = (y * size + x) * 4;
+      img.data[idx] = ((dx / len) * 0.5 + 0.5) * 255;
+      img.data[idx + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+      img.data[idx + 2] = ((nz / len) * 0.5 + 0.5) * 255;
+      img.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.colorSpace = THREE.NoColorSpace; // raw normal data — never sRGB
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  return tex;
+}
+
+// ── Height fields (mirror the diffuse painters above) ────────────
+/** Flagstones: mortar seams are grooves, each stone domes gently to its centre. */
+function floorHeight(x: number, y: number): number {
+  const lx = x % PPU;
+  const ly = y % PPU;
+  const d = Math.min(lx, PPU - lx, ly, PPU - ly);
+  if (d < 1.5) return 0.12; // mortar groove
+  return 0.5 + (Math.min(d, 12) / 12) * 0.22; // dome toward the stone's middle
+}
+/** Wall face: mirrors the masonry layout — trim proud, mortar grooved, skirting recessed. */
+function wallHeight(x: number, y: number): number {
+  if (y >= PPU - 3) return 0.05; // contact shadow row — deepest
+  if (y >= 51) return 0.3; // skirting sits back
+  if (y < 7) {
+    // trim course: proud band with dentil grooves
+    const inNotch = (x - 3) % 8 < 2 && y >= 2 && y < 5;
+    return inNotch ? 0.35 : 0.75;
+  }
+  // block courses: mortar lines at 7 and 29 are grooves; block tops dome a little
+  if (Math.abs(y - 7) < 1.5 || Math.abs(y - 29) < 1.5 || Math.abs(y - 51) < 1.5) return 0.15;
+  const bx = (y < 29 ? x : x + 16) % 32; // vertical joints, offset per course
+  if (bx < 1.5) return 0.15;
+  return 0.55;
+}
+/** Wall cap: bordered square — the border is a groove, the interior sits proud,
+ * and the carved inner panel line reads as a shallow chisel cut. */
+function capHeight(x: number, y: number): number {
+  if (x < 2 || x > PPU - 2 || y < 2 || y > PPU - 2) return 0.15;
+  const onPanel =
+    (Math.abs(x - 10) < 1.5 || Math.abs(x - (PPU - 10)) < 1.5) && y >= 9 && y <= PPU - 9;
+  const onPanelH =
+    (Math.abs(y - 10) < 1.5 || Math.abs(y - (PPU - 10)) < 1.5) && x >= 9 && x <= PPU - 9;
+  if (onPanel || onPanelH) return 0.4;
+  return 0.6;
 }
 
 const css = (i: number) => `#${PALETTE_HEX[i].toString(16).padStart(6, "0")}`;
@@ -90,13 +187,54 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
         }
       }
 
-      // Per-tile character: some flagstones are mossy, a few are cracked,
-      // one or two are sunken (darker). Hash-keyed so the pattern is stable.
+      // Per-tile character: patchwork values, moss, cracks, sunken stones and
+      // the odd mosaic medallion. Hash-keyed so the pattern is stable.
       for (let tj = 0; tj < FLOOR_BLOCK; tj++) {
         for (let ti = 0; ti < FLOOR_BLOCK; ti++) {
           const h = noise(ti * 3.7, tj * 5.1, 42);
           const x0 = ti * PPU;
           const y0 = tj * PPU;
+
+          // Patchwork: some flagstones are simply a different cut of stone.
+          const patch = noise(ti * 7.3, tj * 2.9, 61);
+          if (patch < 0.14) {
+            ctx.fillStyle = css(2);
+            ctx.fillRect(x0 + 1, y0 + 1, PPU - 2, PPU - 2);
+          } else if (patch > 0.9) {
+            ctx.fillStyle = css(4);
+            ctx.fillRect(x0 + 1, y0 + 1, PPU - 2, PPU - 2);
+            for (let k = 0; k < 40; k++) {
+              const sx = x0 + 1 + Math.floor(noise(ti + k, tj, 63) * (PPU - 2));
+              const sy = y0 + 1 + Math.floor(noise(ti, tj + k, 65) * (PPU - 2));
+              ctx.fillStyle = css(3);
+              ctx.fillRect(sx, sy, 1, 1);
+            }
+          }
+
+          // Mosaic medallion — an inlaid arcane diamond, rare enough to be a
+          // landmark ("I've passed this one before").
+          if (h > 0.4 && h < 0.455) {
+            const cx = x0 + PPU / 2;
+            const cy = y0 + PPU / 2;
+            const ring = (r: number, col: string): void => {
+              ctx.strokeStyle = col;
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(cx, cy - r);
+              ctx.lineTo(cx + r, cy);
+              ctx.lineTo(cx, cy + r);
+              ctx.lineTo(cx - r, cy);
+              ctx.closePath();
+              ctx.stroke();
+            };
+            ring(24, css(29));
+            ring(17, css(30));
+            ring(10, css(19));
+            ctx.fillStyle = css(30);
+            ctx.fillRect(cx - 2, cy - 2, 4, 4);
+            continue; // a medallion tile doesn't also grow moss/cracks
+          }
+
           if (h > 0.82) {
             // moss creep — soft green mottling over the stone
             for (let y = 2; y < PPU - 2; y++) {
@@ -141,38 +279,105 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
   );
 }
 
-/** Wall face: coursed blocks, darker than the floor so silhouettes read.
- * `mossy` grows green up from the base — the variant that breaks up long runs. */
-function makeWallTexture(repeatX: number, repeatY: number, mossy = false): THREE.CanvasTexture {
-  const half = PPU / 2;
+/**
+ * Wall face — REAL masonry (the Castlevania pass). Vertical layout at 64px:
+ *
+ *     0.. 7  carved trim course (light band, dentil notches)
+ *     7..51  two block courses, 32px blocks, offset like real coursing;
+ *            every block gets its own value (hash), a bevel highlight on top
+ *            and a shadow on its base, plus sparse chips/cracks
+ *    51..61  skirting course (dark base band with a top highlight line)
+ *    61..64  contact shadow into the floor
+ *
+ * `mossy` grows damp rot up from the base. `low` paints the knee-wall variant
+ * (rim walls are 0.35 high — a full design would squash to stripes).
+ */
+function makeWallTexture(mossy = false, low = false): THREE.CanvasTexture {
   return pixelTexture(
     PPU,
     (ctx) => {
       ctx.fillStyle = css(2);
       ctx.fillRect(0, 0, PPU, PPU);
 
-      for (let y = 0; y < PPU; y++) {
-        for (let x = 0; x < PPU; x++) {
-          if (noise(x, y, 7) > 0.95) {
-            ctx.fillStyle = css(3);
-            ctx.fillRect(x, y, 1, 1);
-          }
-        }
+      if (low) {
+        // Knee wall: one course of small blocks + top highlight + base shadow.
+        ctx.fillStyle = css(1);
+        for (let bx = 0; bx <= PPU; bx += 22) ctx.fillRect(bx, 0, 1, PPU);
+        ctx.fillRect(0, 28, PPU, 1);
+        ctx.fillStyle = css(4);
+        ctx.fillRect(0, 0, PPU, 2); // top catch-light
+        ctx.fillStyle = css(0);
+        ctx.fillRect(0, PPU - 4, PPU, 4);
+        return;
       }
 
-      // Block courses — offset every other row so it looks laid, not printed.
+      const TRIM_H = 7;
+      const SKIRT_Y = 51;
+      const BLOCK_W = 32;
+      const courseTop = [TRIM_H, TRIM_H + 22];
+
+      // ── block courses, hash-valued per block ──
+      courseTop.forEach((cy, course) => {
+        const ch = course === 0 ? 22 : SKIRT_Y - cy;
+        const off = course % 2 === 0 ? 0 : BLOCK_W / 2;
+        for (let bx = -BLOCK_W; bx < PPU + BLOCK_W; bx += BLOCK_W) {
+          const x0 = bx + off;
+          const h = noise(x0, cy, mossy ? 31 : 17);
+          // block body — mostly dark stone, the odd lighter replacement block
+          ctx.fillStyle = h > 0.8 ? css(3) : css(2);
+          ctx.fillRect(x0 + 1, cy + 1, BLOCK_W - 2, ch - 2);
+          // bevel: catch-light on top, settled shadow on the base
+          ctx.fillStyle = h > 0.8 ? css(4) : css(3);
+          ctx.fillRect(x0 + 1, cy + 1, BLOCK_W - 2, 1);
+          ctx.fillStyle = css(1);
+          ctx.fillRect(x0 + 1, cy + ch - 1, BLOCK_W - 2, 1);
+          // chips + a hairline crack on some blocks
+          if (h < 0.22) {
+            let cx = x0 + 6 + Math.floor(noise(x0, cy, 5) * (BLOCK_W - 14));
+            for (let y = cy + 3; y < cy + ch - 2; y++) {
+              ctx.fillStyle = css(1);
+              ctx.fillRect(cx, y, 1, 1);
+              cx += noise(cx, y, 3) > 0.5 ? 1 : noise(cx, y, 4) > 0.5 ? -1 : 0;
+            }
+          }
+          for (let k = 0; k < 4; k++) {
+            const sx = x0 + 3 + Math.floor(noise(x0 + k, cy, 9) * (BLOCK_W - 6));
+            const sy = cy + 3 + Math.floor(noise(x0, cy + k, 13) * (ch - 6));
+            ctx.fillStyle = css(noise(sx, sy, 15) > 0.5 ? 3 : 1);
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+        }
+        // mortar line between courses
+        ctx.fillStyle = css(1);
+        ctx.fillRect(0, cy, PPU, 1);
+      });
+
+      // ── carved trim course along the top ──
+      ctx.fillStyle = css(3);
+      ctx.fillRect(0, 0, PPU, TRIM_H);
+      ctx.fillStyle = css(4);
+      ctx.fillRect(0, 0, PPU, 1); // top catch-light
       ctx.fillStyle = css(1);
-      ctx.fillRect(0, 0, PPU, 1);
-      ctx.fillRect(0, half, PPU, 1);
-      ctx.fillRect(0, 0, 1, half);
-      ctx.fillRect(half, half, 1, half);
+      ctx.fillRect(0, TRIM_H - 1, PPU, 1);
+      for (let dx = 3; dx < PPU; dx += 8) {
+        ctx.fillStyle = css(1);
+        ctx.fillRect(dx, 2, 2, TRIM_H - 4); // dentil notches
+      }
+
+      // ── skirting base course ──
+      ctx.fillStyle = css(1);
+      ctx.fillRect(0, SKIRT_Y, PPU, PPU - SKIRT_Y);
+      ctx.fillStyle = css(3);
+      ctx.fillRect(0, SKIRT_Y, PPU, 1); // ledge highlight
+      ctx.fillStyle = css(2);
+      for (let bx = 8; bx < PPU; bx += 16) ctx.fillRect(bx, SKIRT_Y + 3, 1, 6); // joints
 
       if (mossy) {
         // Damp rot climbing from the floor — denser at the bottom.
-        for (let y = half; y < PPU; y++) {
-          const density = (y - half) / half; // 0 at mid, 1 at base
+        for (let y = PPU / 2; y < PPU; y++) {
+          const density = (y - PPU / 2) / (PPU / 2);
           for (let x = 0; x < PPU; x++) {
-            if (noise(x, y, 21) < density * 0.55) {
+            if (noise(x, y, 21) < density * 0.5) {
               ctx.fillStyle = css(noise(x, y, 23) > 0.6 ? 7 : 6);
               ctx.fillRect(x, y, 1, 1);
             }
@@ -180,13 +385,12 @@ function makeWallTexture(repeatX: number, repeatY: number, mossy = false): THREE
         }
       }
 
-      // Contact shadow along the bottom of the face — grounds the wall on the
-      // floor and separates face from floor even under flat ambient.
+      // Contact shadow along the bottom of the face — grounds the wall.
       ctx.fillStyle = css(0);
-      ctx.fillRect(0, PPU - 2, PPU, 2);
+      ctx.fillRect(0, PPU - 3, PPU, 3);
     },
-    repeatX,
-    repeatY,
+    1,
+    1,
   );
 }
 
@@ -223,10 +427,177 @@ function makeCapTexture(): THREE.CanvasTexture {
       // top bevel just inside the border (north edge catches the "light")
       ctx.fillStyle = css(4);
       ctx.fillRect(1, 1, PPU - 2, 1);
+
+      // carved inner panel — an inset square with nicked corners, so caps
+      // read as dressed stone instead of blank slabs
+      ctx.strokeStyle = css(1);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(9.5, 9.5, PPU - 19, PPU - 19);
+      ctx.strokeStyle = css(3);
+      ctx.strokeRect(10.5, 10.5, PPU - 21, PPU - 21);
+      ctx.fillStyle = css(1);
+      for (const [cx, cy] of [[9, 9], [PPU - 11, 9], [9, PPU - 11], [PPU - 11, PPU - 11]] as const) {
+        ctx.fillRect(cx, cy, 2, 2);
+      }
     },
     1,
     1,
   );
+}
+
+/**
+ * Swallowtail wall banner, two liveries: blood (steel diamond emblem) and
+ * arcane (gold emblem). The swallowtail notch is cut via transparency.
+ */
+function makeBannerTexture(arcane: boolean): THREE.CanvasTexture {
+  const W = 32;
+  const H = 56;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = false;
+
+  const cloth = arcane ? css(29) : css(11);
+  const clothLit = arcane ? css(30) : css(12);
+  const emblem = arcane ? css(16) : css(21);
+
+  ctx.fillStyle = cloth;
+  ctx.fillRect(2, 4, W - 4, H - 4);
+  // hanging pole
+  ctx.fillStyle = css(27);
+  ctx.fillRect(0, 0, W, 4);
+  ctx.fillStyle = css(28);
+  ctx.fillRect(0, 0, W, 1);
+  // gold trim
+  ctx.fillStyle = css(16);
+  ctx.fillRect(2, 4, W - 4, 2);
+  ctx.fillRect(2, 4, 2, H - 4);
+  ctx.fillRect(W - 4, 4, 2, H - 4);
+  // cloth sheen down one side + fold shadows
+  ctx.fillStyle = clothLit;
+  ctx.fillRect(5, 8, 3, H - 16);
+  ctx.fillStyle = css(arcane ? 29 : 10);
+  ctx.fillRect(12, 8, 2, H - 14);
+  ctx.fillRect(22, 8, 2, H - 12);
+  // emblem diamond
+  ctx.fillStyle = emblem;
+  const cx = W / 2;
+  const cy = 24;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 7);
+  ctx.lineTo(cx + 6, cy);
+  ctx.lineTo(cx, cy + 7);
+  ctx.lineTo(cx - 6, cy);
+  ctx.closePath();
+  ctx.fill();
+  // swallowtail: cut a transparent notch from the bottom edge
+  ctx.clearRect(0, 0, 2, H);
+  ctx.clearRect(W - 2, 0, 2, H);
+  const g = ctx.getImageData(0, 0, W, H);
+  for (let y = H - 12; y < H; y++) {
+    const half = Math.floor(((y - (H - 12)) / 12) * (W / 2 - 3));
+    for (let x = cx - half - 1; x <= cx + half; x++) {
+      const p = (y * W + Math.max(0, Math.min(W - 1, x))) * 4;
+      g.data[p + 3] = 0;
+    }
+  }
+  ctx.putImageData(g, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Nailed plank crate face. */
+function makeCrateTexture(): THREE.CanvasTexture {
+  const S = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = css(27);
+  ctx.fillRect(0, 0, S, S);
+  // planks
+  ctx.fillStyle = css(26);
+  for (let y = 8; y < S; y += 8) ctx.fillRect(1, y, S - 2, 1);
+  ctx.fillStyle = css(28);
+  for (let y = 1; y < S; y += 8) ctx.fillRect(1, y, S - 2, 1);
+  // frame + nails
+  ctx.strokeStyle = css(26);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, S - 2, S - 2);
+  ctx.fillStyle = css(19);
+  for (const [nx, ny] of [[4, 4], [S - 6, 4], [4, S - 6], [S - 6, S - 6]] as const) ctx.fillRect(nx, ny, 2, 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Barrel staves with two steel hoops. */
+function makeBarrelTexture(): THREE.CanvasTexture {
+  const S = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = S;
+  canvas.height = S;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = css(27);
+  ctx.fillRect(0, 0, S, S);
+  ctx.fillStyle = css(26);
+  for (let x = 5; x < S; x += 6) ctx.fillRect(x, 0, 1, S); // stave joints
+  ctx.fillStyle = css(19);
+  ctx.fillRect(0, 6, S, 3); // hoops
+  ctx.fillRect(0, S - 9, S, 3);
+  ctx.fillStyle = css(20);
+  ctx.fillRect(0, 6, S, 1);
+  ctx.fillRect(0, S - 9, S, 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Torch flame flip-book: FLAME_FRAMES teardrop frames in one horizontal strip.
+ * Layered palette tongues (ember → core) with a per-frame lean and tip lick —
+ * the classic Castlevania wall-torch. Drawn bright so the bloom pass halos it.
+ */
+function makeFlameTexture(): THREE.CanvasTexture {
+  const F = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = F * FLAME_FRAMES;
+  canvas.height = F;
+  const ctx = canvas.getContext("2d")!;
+  const lean = [0, 2.5, 0.5, -2.5];
+  const lick = [0, 3, 1, 3];
+  for (let f = 0; f < FLAME_FRAMES; f++) {
+    const ox = f * F + F / 2;
+    const base = F - 4;
+    const tongue = (w: number, h: number, col: string, dx: number): void => {
+      ctx.beginPath();
+      ctx.moveTo(ox - w + dx * 0.3, base);
+      ctx.quadraticCurveTo(ox - w + dx * 0.6, base - h * 0.55, ox + dx, base - h);
+      ctx.quadraticCurveTo(ox + w + dx * 0.6, base - h * 0.55, ox + w + dx * 0.3, base);
+      ctx.closePath();
+      ctx.fillStyle = col;
+      ctx.fill();
+    };
+    const L = lean[f % lean.length];
+    tongue(8, 24 + lick[f % lick.length], css(15), L);
+    tongue(6, 18 + lick[(f + 1) % lick.length], css(16), L * 0.7);
+    tongue(4, 12, css(17), L * 0.45);
+    tongue(2, 7, css(18), L * 0.25);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
 }
 
 export interface TorchAnchor {
@@ -240,6 +611,8 @@ export interface MazeHandle {
   torchAnchors: TorchAnchor[];
   /** The shared PointLight pool — core parks these on the nearest anchors. */
   lightPool: THREE.PointLight[];
+  /** Flip-book flame textures — core advances their frame offset each frame. */
+  flames: Array<{ tex: THREE.Texture; phase: number }>;
   dispose(): void;
 }
 
@@ -254,10 +627,22 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
 
   // ── Floor — one plane under the whole grid ──
   const floorTex = track(makeFloorTexture(grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK));
-  const floorMat = track(new THREE.MeshLambertMaterial({ map: floorTex }));
+  const floorNorm = track(
+    normalTexture(PPU * FLOOR_BLOCK, floorHeight, grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK, 2.0),
+  );
+  const floorMat = track(
+    new THREE.MeshStandardMaterial({
+      map: floorTex,
+      normalMap: floorNorm,
+      normalScale: new THREE.Vector2(0.8, 0.8),
+      roughness: 0.95,
+      metalness: 0.0,
+    }),
+  );
   const floorGeo = track(new THREE.PlaneGeometry(grid.w, grid.h));
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
   group.add(floor);
 
   // ── Walls — sort into full (back) and low (camera-side rim) ──
@@ -266,6 +651,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   const fullCells: Array<{ x: number; z: number }> = [];
   const mossCells: Array<{ x: number; z: number }> = [];
   const lowCells: Array<{ x: number; z: number }> = [];
+  const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
@@ -291,20 +677,53 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
       } else {
         fullCells.push(c);
       }
+      // Tall walls with a corridor to their SOUTH show their big face to the
+      // camera — those faces are where the architecture hangs.
+      if (!rim && isWalkable(grid, i, j + 1)) southFaces.push({ x: c.x, z: c.z, i, j });
     }
   }
 
   const capTex = track(makeCapTexture());
-  const capMat = track(new THREE.MeshLambertMaterial({ map: capTex }));
+  const capNorm = track(normalTexture(PPU, capHeight, 1, 1, 2.5));
+  const capMat = track(
+    new THREE.MeshStandardMaterial({
+      map: capTex,
+      normalMap: capNorm,
+      normalScale: new THREE.Vector2(1.0, 1.0),
+      roughness: 0.95,
+      metalness: 0.0,
+    }),
+  );
 
   const addWallMesh = (cells: Array<{ x: number; z: number }>, height: number, mossy: boolean): void => {
     if (!cells.length) return;
-    const faceTex = track(makeWallTexture(1, height, mossy));
-    const faceMat = track(new THREE.MeshLambertMaterial({ map: faceTex }));
+    const low = height < 0.6;
+    // Faces stretch their square texture over the (slightly non-1) wall height
+    // rather than repeating — repetition would wrap the trim band into the
+    // skirting at the top of the wall. A ~10% stretch is invisible.
+    const faceTex = track(makeWallTexture(mossy, low));
+    const lowHeight = (x: number, y: number): number => {
+      if (y < 2) return 0.7; // top catch-light sits proud
+      if (y >= PPU - 4) return 0.1;
+      if (Math.abs(y - 28) < 1.5 || x % 22 < 1.5) return 0.2; // joints
+      return 0.5;
+    };
+    const faceNorm = track(normalTexture(PPU, low ? lowHeight : wallHeight, 1, 1, 2.5));
+    const faceMat = track(
+      new THREE.MeshStandardMaterial({
+        map: faceTex,
+        normalMap: faceNorm,
+        normalScale: new THREE.Vector2(1.0, 1.0),
+        roughness: 0.92,
+        metalness: 0.0,
+      }),
+    );
     const geo = track(new THREE.BoxGeometry(1, height, 1));
     // BoxGeometry material order: +x, -x, +y, -y, +z, -z — bordered grid cap
     // on top so the coursed texture doesn't smear across a horizontal face.
     const mesh = new THREE.InstancedMesh(geo, [faceMat, faceMat, capMat, capMat, faceMat, faceMat], cells.length);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     const m = new THREE.Matrix4();
     cells.forEach((c, k) => {
       m.setPosition(c.x, height / 2, c.z);
@@ -318,6 +737,113 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   addWallMesh(fullCells, WALL_H, false);
   addWallMesh(mossCells, WALL_H, true);
   addWallMesh(lowCells, WALL_LOW, false);
+
+  // ── Architecture (the Castlevania pass) ─────────────────────────
+  // Set-dressing density is what separates an authored dungeon from a tile
+  // grid. Everything below is hash-keyed off the tile coords, so a level
+  // dresses itself identically on every rebuild.
+
+  const stoneMat = track(new THREE.MeshStandardMaterial({ color: PALETTE_HEX[3], roughness: 0.9 }));
+
+  // Pilasters: engaged columns on tall south faces — shaft + capital + plinth.
+  const pilasterAt = southFaces.filter((f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY === 0);
+  if (pilasterAt.length) {
+    const shaftGeo = track(new THREE.BoxGeometry(0.16, WALL_H + 0.04, 0.12));
+    const capGeo = track(new THREE.BoxGeometry(0.26, 0.08, 0.18));
+    const m = new THREE.Matrix4();
+    const parts: Array<[THREE.BoxGeometry, (f: { x: number; z: number }) => THREE.Matrix4]> = [
+      [shaftGeo, (f) => m.identity().setPosition(f.x, (WALL_H + 0.04) / 2, f.z + 0.5 + 0.04)],
+      [capGeo, (f) => m.identity().setPosition(f.x, WALL_H - 0.02, f.z + 0.5 + 0.06)],
+      [capGeo, (f) => m.identity().setPosition(f.x, 0.05, f.z + 0.5 + 0.06)],
+    ];
+    for (const [geo, place] of parts) {
+      const mesh = new THREE.InstancedMesh(geo, stoneMat, pilasterAt.length);
+      mesh.castShadow = true;
+      pilasterAt.forEach((f, k) => mesh.setMatrixAt(k, place(f)));
+      mesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh);
+      disposables.push({ dispose: () => mesh.dispose() });
+    }
+  }
+
+  // Banners: swallowtail cloth on tall faces, two liveries. Skip pilaster tiles.
+  const bannerAt = southFaces.filter(
+    (f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY !== 0 && (f.i * 13 + f.j * 41) % BANNER_EVERY === 0,
+  );
+  if (bannerAt.length) {
+    const bannerGeo = track(new THREE.PlaneGeometry(0.46, 0.78));
+    for (const arcane of [false, true]) {
+      const cells = bannerAt.filter((f) => ((f.i + f.j) % 2 === 0) === arcane);
+      if (!cells.length) continue;
+      const tex = track(makeBannerTexture(arcane));
+      const mat = track(
+        new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 1 }),
+      );
+      const mesh = new THREE.InstancedMesh(bannerGeo, mat, cells.length);
+      const bm = new THREE.Matrix4();
+      cells.forEach((f, k) => {
+        bm.identity().setPosition(f.x, WALL_H * 0.52, f.z + 0.5 + 0.015);
+        mesh.setMatrixAt(k, bm);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh);
+      disposables.push({ dispose: () => mesh.dispose() });
+    }
+  }
+
+  // Clutter: crates and barrels hugging walls in corners and dead ends.
+  const torchTiles = new Set(plan.torches.map((t) => `${t.i},${t.j}`));
+  const crates: THREE.Matrix4[] = [];
+  const barrels: THREE.Matrix4[] = [];
+  for (let j = 0; j < grid.h; j++) {
+    for (let i = 0; i < grid.w; i++) {
+      if (!isWalkable(grid, i, j)) continue;
+      if (i === plan.stairs.i && j === plan.stairs.j) continue;
+      if (torchTiles.has(`${i},${j}`)) continue;
+      const wE = !isWalkable(grid, i + 1, j);
+      const wW = !isWalkable(grid, i - 1, j);
+      const wN = !isWalkable(grid, i, j - 1);
+      const wS = !isWalkable(grid, i, j + 1);
+      const wallCount = +wE + +wW + +wN + +wS;
+      if (wallCount < 2) continue;
+      const h = (i * 53 + j * 29) % CLUTTER_EVERY;
+      if (h !== 0) continue;
+      const c = tileCenter(grid, i, j);
+      // hug the corner: shove toward the walls so the walk path stays clear
+      const ox = wE ? 0.3 : wW ? -0.3 : 0;
+      const oz = wS ? 0.3 : wN ? -0.3 : 0;
+      const rot = (noise(i, j, 71) - 0.5) * 0.6;
+      const mtx = new THREE.Matrix4().makeRotationY(rot);
+      mtx.setPosition(c.x + ox, 0.15, c.z + oz);
+      if (noise(i, j, 73) > 0.5) crates.push(mtx);
+      else barrels.push(mtx);
+    }
+  }
+  if (crates.length) {
+    const crateGeo = track(new THREE.BoxGeometry(0.3, 0.3, 0.3));
+    const crateTex = track(makeCrateTexture());
+    const crateMat = track(new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.95 }));
+    const mesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length);
+    mesh.castShadow = true;
+    crates.forEach((mtx, k) => mesh.setMatrixAt(k, mtx));
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+    disposables.push({ dispose: () => mesh.dispose() });
+  }
+  if (barrels.length) {
+    const barrelGeo = track(new THREE.CylinderGeometry(0.13, 0.15, 0.36, 8));
+    const barrelTex = track(makeBarrelTexture());
+    const barrelMat = track(new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.9 }));
+    const mesh = new THREE.InstancedMesh(barrelGeo, barrelMat, barrels.length);
+    mesh.castShadow = true;
+    barrels.forEach((mtx, k) => {
+      mtx.setPosition(new THREE.Vector3().setFromMatrixPosition(mtx).setY(0.18));
+      mesh.setMatrixAt(k, mtx);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+    disposables.push({ dispose: () => mesh.dispose() });
+  }
 
   // ── Stairs down — a dark descending notch with an arcane glow ──
   const sc = tileCenter(grid, plan.stairs.i, plan.stairs.j);
@@ -343,10 +869,15 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
 
   // ── Torches — sconce + flame everywhere, lights from a pool ──
   const sconceGeo = track(new THREE.BoxGeometry(0.18, 0.3, 0.18));
-  const sconceMat = track(new THREE.MeshLambertMaterial({ color: PALETTE_HEX[19] }));
-  const flameGeo = track(new THREE.BoxGeometry(0.22, 0.3, 0.22));
-  // Basic (unlit) so a flame is always the brightest thing on screen, lit or not.
-  const flameMat = track(new THREE.MeshBasicMaterial({ color: PALETTE_HEX[17] }));
+  const sconceMat = track(
+    new THREE.MeshStandardMaterial({ color: PALETTE_HEX[19], roughness: 0.4, metalness: 0.6 }),
+  );
+  // Animated flip-book flame, billboarded to the fixed iso camera. Basic
+  // (unlit) so a flame is always the brightest thing on screen — the bloom
+  // pass turns that brightness into a halo.
+  const flameStrip = track(makeFlameTexture());
+  const flameGeo = track(new THREE.PlaneGeometry(0.3, 0.34));
+  const flames: Array<{ tex: THREE.Texture; phase: number }> = [];
 
   const torchAnchors: TorchAnchor[] = [];
   for (const t of plan.torches) {
@@ -361,11 +892,24 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
 
     const sconce = new THREE.Mesh(sconceGeo, sconceMat);
     sconce.position.set(x, wallH * 0.62, z);
+    sconce.castShadow = true;
     group.add(sconce);
 
+    // Each flame clones the strip so its flip-book frame is independent.
+    const tex = flameStrip.clone();
+    tex.needsUpdate = true;
+    tex.repeat.set(1 / FLAME_FRAMES, 1);
+    disposables.push(tex);
+    const flameMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+    disposables.push(flameMat);
     const flame = new THREE.Mesh(flameGeo, flameMat);
-    flame.position.set(x, wallH * 0.62 + 0.26, z);
+    flame.rotation.order = "YXZ";
+    flame.rotation.y = CAMERA_YAW;
+    flame.rotation.x = -CAMERA_TILT;
+    flame.position.set(x, wallH * 0.62 + 0.3, z);
+    flame.renderOrder = 8;
     group.add(flame);
+    flames.push({ tex, phase: noise(t.i, t.j, 91) });
 
     torchAnchors.push({ x: x - t.di * 0.2, z: z - t.dj * 0.2 });
   }
@@ -387,6 +931,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     group,
     torchAnchors,
     lightPool,
+    flames,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());
