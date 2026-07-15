@@ -25,31 +25,50 @@
  */
 import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem } from "./state";
+import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { makeKnightPaints, ZOMBIE_PAINTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote } from "./ui";
+import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
-import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, T_STAIRS } from "./maze/generator";
+import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { decorateMaze } from "./maze/decorate";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
 import { updatePlayer } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
-import { syncActorMesh } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler } from "./entities/combat";
 import { createInput } from "./input";
+import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import {
   levelConfig,
   FLOW_INTERVAL,
   GOLD_PER_DESCENT,
+  PLAYER_MAX_HP,
   ZOMBIE_HP,
+  SPIDER_HP,
+  SPIDER_SPEED_FACTOR,
+  SPIDER_RATIO,
+  SPIDER_FROM_LEVEL,
+  BRUTE_HP,
+  BRUTE_SPEED_FACTOR,
+  BRUTE_RATIO,
+  BRUTE_FROM_LEVEL,
+  SPITTER_HP,
+  SPITTER_SPEED_FACTOR,
+  SPITTER_RATIO,
+  SPITTER_FROM_LEVEL,
+  BOSS_EVERY,
+  BOSS_BASE_HP,
+  BOSS_HP_PER_TIER,
+  BOSS_SPEED_FACTOR,
+  BOSS_GOLD,
   FIXED_STEP,
   MAX_FRAME,
   PICKUP_RANGE,
@@ -74,7 +93,7 @@ import {
   MOTE_RATE,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, freshWeapon, type WeaponId, type WeaponState, type GearSlot } from "./items";
+import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { sfxStairs, sfxGameOver, sfxPickup } from "./audio";
 
 /**
@@ -88,13 +107,30 @@ let lamp: THREE.PointLight | null = null;
 let ambient: THREE.AmbientLight | null = null;
 let hemi: THREE.HemisphereLight | null = null;
 
-/** Per-depth colour grading, cycling: cold slate → rot green → blood → arcane. */
-const DEPTH_TINTS = [
-  { amb: 0x6b7d99, sky: 0x8fa3bd, ground: 0x1e2430 },
-  { amb: 0x6d8a78, sky: 0x8fbda6, ground: 0x1e2a22 },
-  { amb: 0x8a6f74, sky: 0xbd949a, ground: 0x2a1e20 },
-  { amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
+/**
+ * Named depth BIOMES — descending should feel like passing through distinct
+ * places, not the same maze re-tinted. Each biome carries a name + a one-line
+ * flavour (shown on descent) and its own colour grade. They cycle every 4
+ * floors, getting a fresh "chapter" feel as you go deeper.
+ */
+interface Biome {
+  name: string;
+  flavour: string;
+  amb: number;
+  sky: number;
+  ground: number;
+}
+const BIOMES: Biome[] = [
+  { name: "The Cold Crypt", flavour: "damp stone · the dead stir", amb: 0x6b7d99, sky: 0x8fa3bd, ground: 0x1e2430 },
+  { name: "The Rotting Warren", flavour: "moss and marrow · things breed here", amb: 0x6d8a78, sky: 0x8fbda6, ground: 0x1e2a22 },
+  { name: "The Bloodworks", flavour: "the walls weep red · tread carefully", amb: 0x8a6f74, sky: 0xbd949a, ground: 0x2a1e20 },
+  { name: "The Arcane Deep", flavour: "cold light · something old is awake", amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
 ];
+
+/** The biome for a given depth (cycles every BIOMES.length floors). */
+function biomeFor(level: number): Biome {
+  return BIOMES[(level - 1) % BIOMES.length];
+}
 
 export function isDungeonGameActive(): boolean {
   return state.active;
@@ -170,11 +206,11 @@ export function launchDungeonGame(onExit?: () => void): void {
   // key doing the shaping, ambient's job is the READABILITY floor: it can't
   // bottom out to pure black or the quantizer snaps stone to void.
   // (Colours are re-tinted per depth in startLevel.)
-  ambient = new THREE.AmbientLight(DEPTH_TINTS[0].amb, AMBIENT_INTENSITY);
+  ambient = new THREE.AmbientLight(BIOMES[0].amb, AMBIENT_INTENSITY);
   state.scene.add(ambient);
 
   // A little vertical shape, so wall tops separate from wall faces.
-  hemi = new THREE.HemisphereLight(DEPTH_TINTS[0].sky, DEPTH_TINTS[0].ground, HEMI_INTENSITY);
+  hemi = new THREE.HemisphereLight(BIOMES[0].sky, BIOMES[0].ground, HEMI_INTENSITY);
   state.scene.add(hemi);
 
   // The hero's personal lamp — the Castlevania readability rule: whatever
@@ -211,8 +247,46 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.camera = createDungeonCamera();
   aimCamera(state.camera, 0, 0.5, 0);
 
-  // ── Sprite sheets (zombies share one; the knight's is per-weapon) ──
-  state.zombieSheet = buildSpriteSheet(ZOMBIE_PAINTS);
+  // ── Sprite sheets (the knight's is per-weapon) ──
+  // A small pool of cosmetic zombie variants (ripped rags, gore, stumps, tone)
+  // so a horde doesn't read as clones. Each spawn picks one by seed. Built once
+  // per session — a handful of atlases is cheap.
+  state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => buildSpriteSheet(makeZombiePaints(v)));
+  state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
+  state.spiderSheet = buildSpriteSheet(makeSpiderPaints());
+  state.bruteSheet = buildSpriteSheet(makeBrutePaints());
+  state.spitterSheet = buildSpriteSheet(makeSpitterPaints());
+  state.bossSheet = buildSpriteSheet(makeBossPaints());
+
+  // Dev-only atlas preview hooks for headless art QA:
+  //   `__dungeonAtlas(which)` → data URL of that actor's full sprite strip
+  //   `__dungeonClips(which)` → the clip table ("S:idle"→[0,1], …) so a harness
+  //                             can slice + label individual named frames.
+  // `which` ∈ spider|brute|spitter|boss|knight|zombie.
+  if (typeof window !== "undefined") {
+    const sheetFor = (which: string): SpriteSheet | null =>
+      which === "spider" ? state.spiderSheet :
+      which === "brute" ? state.bruteSheet :
+      which === "spitter" ? state.spitterSheet :
+      which === "boss" ? state.bossSheet :
+      which === "knight" ? state.playerSheets.get("sword") ?? null :
+      state.zombieVariantSheets[0] ?? null;
+    (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
+      const img = sheetFor(which)?.texture.image as HTMLCanvasElement | undefined;
+      return img ? img.toDataURL("image/png") : null;
+    };
+    (window as unknown as { __dungeonClips?: (which: string) => Record<string, number[]> | null }).__dungeonClips = (which: string) => {
+      const sheet = sheetFor(which);
+      return sheet ? Object.fromEntries(sheet.clips) : null;
+    };
+    // Dev telemetry for headless behaviour QA.
+    (window as unknown as { __dungeonStats?: () => unknown }).__dungeonStats = () => ({
+      projectiles: state.projectiles.length,
+      hostileGlobs: state.projectiles.filter((pr) => pr.hostile).length,
+      enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp })),
+      playerHp: state.player?.hp,
+    });
+  }
 
   // Hand-made pixel art overrides the procedural painters the moment it
   // exists: drop sprite-forge output at public/dungeon/sprites/knight-<id>.*
@@ -228,11 +302,17 @@ export function launchDungeonGame(onExit?: () => void): void {
 
   // ── HUD + input ──
   state.hudEl = createHUD(state.container);
+  state.fpsOverlayEl = createFpsOverlay(state.container);
+  state.bossBarEl = createBossBar(state.container);
   state.input = createInput(state.container);
   showControlsHint(state.container);
 
   state.onKeyDown = handleKey;
   window.addEventListener("keydown", state.onKeyDown);
+
+  // A slain overlord drops its reward here (kept out of combat.ts to avoid a
+  // circular import).
+  setBossDefeatedHandler(dropBossReward);
 
   state.onResize = () => state.pixelPass?.resize();
   window.addEventListener("resize", state.onResize);
@@ -249,6 +329,75 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.animFrameId = requestAnimationFrame(loop);
 }
 
+/** Base HP per enemy family. */
+const HP_BY_KIND: Record<EnemyKind, number> = {
+  zombie: ZOMBIE_HP,
+  spider: SPIDER_HP,
+  brute: BRUTE_HP,
+  spitter: SPITTER_HP,
+};
+
+/**
+ * Spawn one enemy from a prebuilt sheet at a world point. Shared by the level
+ * horde, the debug spawner, and the giant-spider spawns — every enemy runs the
+ * same pathing/combat in updateZombies, differing only by `kind` + stats.
+ */
+function makeZombie(
+  sheet: SpriteSheet,
+  x: number,
+  z: number,
+  speed: number,
+  opts: { kind?: EnemyKind; hp?: number; boss?: boolean; maxHp?: number } = {},
+): Zombie {
+  const kind = opts.kind ?? "zombie";
+  const sprite = createActorSprite(sheet, false);
+  state.scene!.add(sprite.mesh);
+  const anim = new Animator(sprite);
+  anim.setFacing("S");
+  anim.play("idle");
+  const z2: Zombie = {
+    sprite,
+    anim,
+    x,
+    z,
+    kind,
+    hp: opts.hp ?? HP_BY_KIND[kind],
+    maxHp: opts.maxHp,
+    boss: opts.boss,
+    mode: "idle",
+    speed,
+    windupT: 0,
+    cooldown: 0,
+    flashT: 0,
+    aggro: false,
+    burnT: 0,
+  };
+  syncActorMesh(z2);
+  return z2;
+}
+
+/**
+ * Pick + spawn one horde member for a spawn tile, given its hash. The special
+ * families each own a residue class of the hash and only appear from their
+ * FROM_LEVEL, so shallow floors are pure zombies and deeper floors mix in
+ * spiders → brutes → spitters. Priority order matters (a spawn can only be one
+ * thing): tank/ranged specials are checked before falling back to a zombie.
+ */
+function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie {
+  if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0 && state.bruteSheet) {
+    return makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" });
+  }
+  if (level >= SPITTER_FROM_LEVEL && hash % SPITTER_RATIO === 1 && state.spitterSheet) {
+    return makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" });
+  }
+  if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2 && state.spiderSheet) {
+    return makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" });
+  }
+  const variantSheets = state.zombieVariantSheets;
+  const sheet = variantSheets[hash % variantSheets.length] ?? state.zombieSheet!;
+  return makeZombie(sheet, x, z, baseSpeed);
+}
+
 /** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
 function startLevel(level: number): void {
   if (!state.scene) return;
@@ -258,12 +407,12 @@ function startLevel(level: number): void {
   state.level = level;
   const cfg = levelConfig(level);
 
-  // Depth grading: each floor down shifts the fill palette a family over.
-  const tint = DEPTH_TINTS[(level - 1) % DEPTH_TINTS.length];
-  ambient?.color.setHex(tint.amb);
+  // Depth grading: each biome down shifts the fill palette a family over.
+  const biome = biomeFor(level);
+  ambient?.color.setHex(biome.amb);
   if (hemi) {
-    hemi.color.setHex(tint.sky);
-    hemi.groundColor.setHex(tint.ground);
+    hemi.color.setHex(biome.sky);
+    hemi.groundColor.setHex(biome.ground);
   }
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
@@ -271,7 +420,7 @@ function startLevel(level: number): void {
   const rng = mulberry32((state.runSeed ^ (level * 0x9e3779b9)) >>> 0);
   // Thick walls are what make the Diablo low-rim/tall-back trick work — see
   // thickenWalls. Decoration runs on the thickened grid.
-  const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng));
+  const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid));
   const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches);
 
   state.grid = grid;
@@ -303,31 +452,30 @@ function startLevel(level: number): void {
   state.player.anim.play("idle", { force: true });
   syncActorMesh(state.player);
 
-  // ── Horde ──
-  state.zombies = plan.spawns.map((s): Zombie => {
-    const sprite = createActorSprite(state.zombieSheet!, false);
+  // ── Horde: a shambling baseline mixed with the special families as depth
+  // grows — spiders (fast), brutes (tanks) and spitters (ranged). Each spawn
+  // deterministically rolls a kind by hash so a run+level is reproducible. ──
+  state.zombies = plan.spawns.map((s, si): Zombie => {
+    const hash = ((s.i * 73856093) ^ (s.j * 19349663) ^ (level * 83492791) ^ si) >>> 0;
     const pos = tileCenter(grid, s.i, s.j);
-    state.scene!.add(sprite.mesh);
-    const anim = new Animator(sprite);
-    anim.setFacing("S");
-    anim.play("idle");
-    const z: Zombie = {
-      sprite,
-      anim,
-      x: pos.x,
-      z: pos.z,
-      hp: ZOMBIE_HP,
-      mode: "idle",
-      speed: cfg.zombieSpeed,
-      windupT: 0,
-      cooldown: 0,
-      flashT: 0,
-      aggro: false,
-      burnT: 0,
-    };
-    syncActorMesh(z);
-    return z;
+    return spawnHordeMember(hash, pos.x, pos.z, cfg.zombieSpeed, level);
   });
+
+  // ── Mini-boss: an OVERLORD guards the stairs every BOSS_EVERY floors ──
+  if (level % BOSS_EVERY === 0 && state.bossSheet && state.stairs) {
+    const tier = level / BOSS_EVERY; // 1 at L5, 2 at L10, …
+    const bhp = BOSS_BASE_HP + BOSS_HP_PER_TIER * (tier - 1);
+    // Plant it a couple of tiles off the stairs so it's between you and the exit.
+    const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
+    const c = tileCenter(grid, spot.i, spot.j);
+    const boss = makeZombie(state.bossSheet, c.x, c.z, cfg.zombieSpeed * BOSS_SPEED_FACTOR, {
+      kind: "brute",
+      hp: bhp,
+      boss: true,
+      maxHp: bhp,
+    });
+    state.zombies.push(boss);
+  }
 
   // ── Loot on the floor ──
   state.groundItems = plan.items.map((it, k): GroundItem => {
@@ -352,7 +500,12 @@ function startLevel(level: number): void {
   snapCameraTo(startPos.x, startPos.z);
   state.hudDirty = true;
 
-  showToast(`DEPTH ${level}`, level === 1 ? "kill everything · find the stairs" : "");
+  // Announce the depth AND the biome — descending reads as entering a new place.
+  // A boss floor gets an ominous warning instead of the usual flavour line.
+  const cycle = Math.floor((level - 1) / BIOMES.length) + 1;
+  const suffix = cycle > 1 ? ` · deeper (${cycle})` : "";
+  const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${biome.flavour}${suffix}`;
+  showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}`, sub);
 }
 
 /** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */
@@ -384,6 +537,11 @@ function handleKey(e: KeyboardEvent): void {
       selectSlot(1);
       break;
 
+    // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
+    case "r":
+      if (canRampage()) enterRampage();
+      break;
+
     // ── Hidden style-debug toggles (kept from the Phase 0 sandbox) ──
     case "q":
       state.quantize = !state.quantize;
@@ -401,7 +559,132 @@ function handleKey(e: KeyboardEvent): void {
       state.outline = !state.outline;
       state.pixelPass?.setOutline(state.outline);
       break;
+
+    // ── Hidden dev spawner: ring every enemy look around the player (art QA) ──
+    case "p":
+      debugSpawnRing();
+      break;
+    // ── Hidden dev: instantly fill the rampage meter (FPS-mode QA) ──
+    case "u":
+      state.ultCharge = 1;
+      state.hudDirty = true;
+      break;
+    // ── Hidden dev: teleport next to the stairs (descent + beacon QA) ──
+    case "t":
+      debugTeleportToStairs();
+      break;
+    // ── Hidden dev: force-descend to the next level (biome + progression QA) ──
+    case "n":
+      if (!state.gameOver) descend();
+      break;
+    // ── Hidden dev: jump to the next BOSS level (mini-boss QA) ──
+    case "b":
+      if (!state.gameOver) {
+        const next = (Math.floor(state.level / BOSS_EVERY) + 1) * BOSS_EVERY;
+        startLevel(next);
+      }
+      break;
   }
+}
+
+/** Dev-only: warp the player a couple of tiles from the level exit. */
+function debugTeleportToStairs(): void {
+  const g = state.grid;
+  const p = state.player;
+  if (!g || !p || !state.stairs) return;
+  const c = tileCenter(g, state.stairs.i, state.stairs.j);
+  p.x = c.x;
+  p.z = c.z - 2; // stand a bit short of it so the beacon is in view
+  syncActorMesh(p);
+  snapCameraTo(p.x, p.z);
+}
+
+/**
+ * The n-th nearest walkable tile to (ci,cj) by a small BFS ring scan — used by
+ * the debug spawner so test enemies always land on real floor, never inside a
+ * wall band. Returns null if nothing walkable is close.
+ */
+function nearestOpenTile(g: Grid, ci: number, cj: number, n: number): TilePos | null {
+  const found: TilePos[] = [];
+  for (let r = 1; r <= 6 && found.length < n; r++) {
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; // ring shell only
+        const i = ci + di;
+        const j = cj + dj;
+        if (isWalkable(g, i, j)) found.push({ i, j });
+        if (found.length >= n) break;
+      }
+    }
+  }
+  return found[n - 1] ?? found[found.length - 1] ?? null;
+}
+
+/**
+ * Dev-only: drop one zombie of each cosmetic variant plus a giant spider in a
+ * ring around the player, so the horde's variety and the spider read at a
+ * glance without hunting the maze. Bound to the hidden `p` key.
+ */
+function debugSpawnRing(): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || !state.scene) return;
+  const sheets = [...state.zombieVariantSheets];
+  const specs: Array<{ sheet: SpriteSheet; kind: EnemyKind }> = sheets.map((sheet) => ({ sheet, kind: "zombie" as EnemyKind }));
+  if (state.spiderSheet) specs.push({ sheet: state.spiderSheet, kind: "spider" });
+  if (state.bruteSheet) specs.push({ sheet: state.bruteSheet, kind: "brute" });
+  if (state.spitterSheet) specs.push({ sheet: state.spitterSheet, kind: "spitter" });
+  // Place each enemy on the nearest WALKABLE tile stepping outward from the
+  // player (blind fixed offsets would bury them in a wall, and a spitter's glob
+  // would then die on that wall before reaching you). Speed 0 poses them for
+  // art QA; aggro=true so a spitter actually spits + a brute winds up.
+  const pt = worldToTile(g, p.x, p.z);
+  specs.forEach((spec, i) => {
+    const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
+    const c = tileCenter(g, spot.i, spot.j);
+    const zz = makeZombie(spec.sheet, c.x, c.z, 0, { kind: spec.kind });
+    zz.aggro = true;
+    zz.anim.setFacing("S");
+    zz.anim.play("walk", { force: true });
+    state.zombies.push(zz);
+  });
+  // Also scatter every potion in a tight ring right around the player, so a
+  // small wiggle picks them all up (pickup + effect QA) and the art is visible.
+  ["health", "rage", "haste", "shield", "gold"].forEach((id, i) => {
+    if (!state.scene) return;
+    const sprite = createStaticSprite(ITEM_PAINTS[id]);
+    const a = (i / 5) * Math.PI * 2;
+    const px = p.x + Math.cos(a) * 0.6;
+    const pz = p.z + Math.sin(a) * 0.6;
+    sprite.mesh.position.set(px, 0, pz);
+    state.scene.add(sprite.mesh);
+    state.groundItems.push({ kind: "potion", id, x: px, z: pz, sprite, bobPhase: i * 1.3 });
+  });
+}
+
+/**
+ * The overlord's reward: a chunk of bonus gold banked instantly, plus a health
+ * potion + a gold idol dropped on the floor where it died (so clearing the
+ * milestone visibly pays out). Registered with combat via setBossDefeatedHandler.
+ */
+function dropBossReward(x: number, z: number): void {
+  if (!state.scene) return;
+  state.goldRun += BOSS_GOLD;
+  addGold(BOSS_GOLD, "dungeon-game");
+  showToast("OVERLORD SLAIN", `+${BOSS_GOLD} gold · the way down is clear`);
+  const drops: Array<{ id: string; dx: number; dz: number }> = [
+    { id: "health", dx: -0.5, dz: 0 },
+    { id: "gold", dx: 0.5, dz: 0 },
+  ];
+  for (const d of drops) {
+    const sprite = createStaticSprite(ITEM_PAINTS[d.id]);
+    const px = x + d.dx;
+    const pz = z + d.dz;
+    sprite.mesh.position.set(px, 0, pz);
+    state.scene.add(sprite.mesh);
+    state.groundItems.push({ kind: "potion", id: d.id, x: px, z: pz, sprite, bobPhase: Math.random() * 6 });
+  }
+  state.hudDirty = true;
 }
 
 function onPlayerDeath(): void {
@@ -496,6 +779,8 @@ function checkPickups(): void {
 
     if (it.kind === "weapon") {
       pickUpWeapon(it);
+    } else if (it.kind === "potion") {
+      applyPotion(it.id as PotionId);
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -509,6 +794,35 @@ function checkPickups(): void {
     it.sprite.dispose();
     state.groundItems.splice(k, 1);
   }
+}
+
+/**
+ * Drink a potion on pickup: heal potions restore hearts instantly (capped at
+ * max); buff potions (re)start their timer. A quick tint pulse + toast sells it.
+ */
+function applyPotion(id: PotionId): void {
+  const p = state.player;
+  if (!p) return;
+  const def = POTIONS[id];
+  if (def.heal > 0) {
+    p.hp = Math.min(PLAYER_MAX_HP, p.hp + def.heal);
+    state.vfx?.blood(p.x, 0.6, p.z, "red", 6); // a little red sparkle for the heal
+  }
+  if (def.gold && def.gold > 0) {
+    // Greed idol: instant gold windfall, banked into the shared wallet.
+    state.goldRun += def.gold;
+    addGold(def.gold, "dungeon-game");
+    state.vfx?.sparks(p.x, 0.7, p.z, 0, 0, 8);
+  }
+  if (def.duration > 0) {
+    if (id === "rage") p.rageT = def.duration;
+    if (id === "haste") p.hasteT = def.duration;
+    if (id === "shield") p.shieldT = def.duration;
+  }
+  p.sprite.setTint(def.color);
+  p.flashT = 0.18; // brief pulse, cleared by updateFlash
+  showPickupNote(`${def.icon} ${def.label.toUpperCase()}${def.gold ? ` +${def.gold}g` : ""}`);
+  state.hudDirty = true;
 }
 
 /** One 60Hz simulation step. */
@@ -525,7 +839,23 @@ function simulate(dt: number): void {
     state.flowField = bfsDistances(g, pt.i, pt.j);
   }
 
-  updatePlayer(dt, state.input);
+  // ── Buff timers (rage / haste) tick down; HUD refreshes each whole second
+  // so the countdown reads live, plus once more when a buff ends. ──
+  for (const key of ["rageT", "hasteT", "shieldT"] as const) {
+    const before = p[key];
+    if (before <= 0) continue;
+    p[key] = Math.max(0, before - dt);
+    if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
+  }
+
+  // In RAMPAGE the FPS controller owns the player (look + move + hitscan) in
+  // place of the iso player update; the horde and pickups still tick so the
+  // world stays alive around you.
+  if (state.fpsActive) {
+    updateFps(dt, state.input);
+  } else {
+    updatePlayer(dt, state.input);
+  }
   updateZombies(dt);
   updateProjectiles(dt);
   checkPickups();
@@ -616,7 +946,15 @@ function loop(now: number): void {
     });
   }
 
-  if (p && state.camera) updateFollowCamera(state.camera, p.x, p.z, frame);
+  // Camera: the iso follow-cam normally; the first-person cam during rampage.
+  // (updateFps already re-aims the FPS camera each sim step; re-aim once more
+  // here so mouse-look stays smooth between fixed steps.)
+  if (state.fpsActive) {
+    aimFpsCamera();
+    billboardEnemiesToFps(); // keep enemy planes facing the FPS camera each frame
+  } else if (p && state.camera) {
+    updateFollowCamera(state.camera, p.x, p.z, frame);
+  }
 
   // Keep the key light's small shadow frustum centred on the player: the light
   // rakes in from the world's north-west (opposite the south-east camera) so
@@ -632,8 +970,13 @@ function loop(now: number): void {
     updateHUD(state.hudEl);
   }
 
-  if (state.scene && state.camera && state.pixelPass) {
-    state.pixelPass.render(state.scene, state.camera);
+  // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
+  const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");
+  updateBossBar(state.bossBarEl, boss ? boss.hp : null, boss ? boss.maxHp ?? null : null);
+
+  const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
+  if (state.scene && renderCam && state.pixelPass) {
+    state.pixelPass.render(state.scene, renderCam);
   }
 }
 

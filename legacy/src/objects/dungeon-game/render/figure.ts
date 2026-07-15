@@ -1,0 +1,394 @@
+/**
+ * FIGURE FOUNDATION — a systematic articulated-body rig for the crawler's
+ * actors (2026-07-15 "rebuild the sprites from scratch so they have a better
+ * base for animation").
+ *
+ * The old cel-painter drew every actor as soft overlapping ellipses/capsules at
+ * low internal contrast, then crushed the result to a 36px grid. Two things
+ * fell apart: the SILHOUETTE (near-value shapes merged into a blob under the
+ * crush) and the ANIMATION (limbs weren't anchored to joints, so the walk cycle
+ * barely moved). This module fixes both at the source.
+ *
+ *   1. Every part is drawn with a THREE-TONE selout treatment baked per-shape —
+ *      a cool core shadow, the flat fill, a warm rim light, and a darker
+ *      hue-shifted outline (palette.inkFor/shadeFor/highlightFor). High internal
+ *      contrast means the shape survives the downscale as a READABLE cluster
+ *      instead of mush, and it doesn't depend on the soft global celShade pass.
+ *
+ *   2. Bodies are posed by a small SKELETON of joint points (see Skeleton). A
+ *      pose is expressed as joint positions, so a limb drawn hip→knee→foot
+ *      genuinely swings when the pose changes. Walk/idle/attack are just
+ *      different skeletons fed to the same part painters.
+ *
+ * Coordinates live in the 128px cel box (SPRITE_PX); GROUND (feet line) matches
+ * cel-painter's constant so figures share the floor with the old props/items.
+ */
+import { paletteCss } from "./palette";
+
+const C = paletteCss;
+
+// ── MATERIAL RAMPS ──────────────────────────────────────────────
+//
+// Pixel art shades by stepping along a hand-picked RAMP, not by computing a
+// tint. Computed tints (the old shadeFor/highlightFor) pushed grey steel toward
+// arcane green-blue, which the 32-colour quantizer then snapped to scattered
+// rot-green specks — the "confetti" on the plate. Instead every material
+// declares [shadeIdx, midIdx, hiIdx] as real palette indices, so the shade and
+// highlight bands land EXACTLY on palette entries and quantize with zero noise.
+export type Ramp = readonly [shade: number, mid: number, hi: number];
+
+/** Steel plate ramp (dark → light). */
+export const R_STEEL: Ramp = [19, 20, 21];
+/** Dark steel (boots, under-suit). */
+export const R_STEEL_DK: Ramp = [19, 19, 20];
+/** Rot-green flesh ramp. */
+export const R_ROT: Ramp = [6, 7, 8];
+export const R_ROT_LT: Ramp = [7, 8, 9];
+/** Leather / cloth. */
+export const R_LEATHER: Ramp = [26, 27, 28];
+/** Blood / plume. */
+export const R_BLOOD: Ramp = [11, 12, 13];
+/** Bone / steel-highlight (skulls, spurs). */
+export const R_BONE: Ramp = [20, 21, 22];
+
+/** Feet line in the 128px cel — kept identical to cel-painter's GROUND. */
+export const GROUND = 118;
+/** Horizontal centre of the cel box. */
+export const CX = 64;
+
+/** A 2D point in the 128px cel box. */
+export type Pt = [number, number];
+
+// ══════════════════════════════════════════════════════════════════
+// THREE-TONE PART PAINTING
+//
+// Every solid part is: fill + a cool core-shadow crescent on the lower-right +
+// a warm rim on the upper-left + a selout outline. The light direction is fixed
+// in ART space (upper-left) to match cel-painter's celShade, so the two systems
+// agree and a flip for W facing stays "least wrong".
+// ══════════════════════════════════════════════════════════════════
+
+/** Outline width in cel px (parts are ~128px, crushed later — keep it bold). */
+const INK_W = 3.2;
+
+/**
+ * A material is EITHER a Ramp (3-tone shading) or a bare palette index (flat).
+ * Bare index → shade/hi both fall back to that index (flat fill), which keeps
+ * the ad-hoc single-colour calls terse.
+ */
+type Mat = Ramp | number;
+function matMid(m: Mat): number {
+  return typeof m === "number" ? m : m[1];
+}
+function matShade(m: Mat): number {
+  return typeof m === "number" ? m : m[0];
+}
+function matHi(m: Mat): number {
+  return typeof m === "number" ? m : m[2];
+}
+
+/**
+ * A capsule limb from a→b with rounded caps, shaded along the ramp. The shade
+ * band is a thinner capsule offset down-right and the highlight a thin capsule
+ * offset up-left — both filled with REAL palette indices so they quantize to
+ * clean bands (no confetti). Reads as a rounded tube after the crush.
+ */
+export function limbShaded(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, m: Mat, opts: { rim?: boolean } = {}): void {
+  ctx.lineCap = "round";
+  stroke(ctx, a, b, w + INK_W * 2, C(inkIdx(m))); // outline
+  stroke(ctx, [a[0] + 1.6, a[1] + 1.6], [b[0] + 1.6, b[1] + 1.6], w, C(matShade(m))); // shade underneath
+  stroke(ctx, a, b, w * 0.82, C(matMid(m))); // mid fill on top, shifted up-left
+  if (opts.rim !== false) {
+    stroke(ctx, [a[0] - 1.4, a[1] - 1.6], [b[0] - 1.4, b[1] - 1.6], w * 0.34, C(matHi(m))); // rim
+  }
+}
+
+/** Selout ink for a material: darker cool version of its shade tone. */
+function inkIdx(m: Mat): number {
+  const s = matShade(m);
+  // Steel/bone shade to 19; rot to 6; leather to 26; blood to 10 — one step
+  // below the ramp's own shade. Fall back to the global inkFor via a css escape
+  // hatch only for bare indices with no darker neighbour.
+  const below: Record<number, number> = { 20: 19, 19: 1, 21: 19, 8: 6, 7: 6, 9: 7, 12: 10, 11: 10, 13: 11, 27: 26, 28: 27, 26: 1, 22: 20 };
+  return below[s] ?? 1;
+}
+
+function stroke(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, color: string): void {
+  ctx.beginPath();
+  ctx.moveTo(a[0], a[1]);
+  ctx.lineTo(b[0], b[1]);
+  ctx.lineWidth = w;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+}
+
+/** A ramp-shaded ellipse: shade underneath, mid on top, warm rim arc, ink edge. */
+export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, m: Mat, rot = 0, opts: { ink?: number; rim?: boolean } = {}): void {
+  // shade base (full shape in the shade tone)
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+  ctx.fillStyle = C(matShade(m));
+  ctx.fill();
+  ctx.lineWidth = INK_W;
+  ctx.strokeStyle = opts.ink != null ? C(opts.ink) : C(inkIdx(m));
+  ctx.stroke();
+  // mid fill — a slightly smaller ellipse nudged up-left, so a shade crescent
+  // shows on the lower-right. Clean two-band read.
+  ctx.beginPath();
+  ctx.ellipse(x - rx * 0.14, y - ry * 0.16, rx * 0.9, ry * 0.9, rot, 0, Math.PI * 2);
+  ctx.fillStyle = C(matMid(m));
+  ctx.fill();
+  // warm rim (upper-left arc)
+  if (opts.rim !== false) {
+    ctx.beginPath();
+    ctx.ellipse(x - rx * 0.3, y - ry * 0.34, rx * 0.5, ry * 0.5, rot, 0, Math.PI * 2);
+    ctx.fillStyle = C(matHi(m));
+    ctx.fill();
+  }
+}
+
+/**
+ * A ramp-shaded convex polygon plate (torso, pauldron, skirt). Shade fills the
+ * whole plate, then a mid copy nudged up-left leaves a shade crescent on the
+ * lower-right, then a bright rim stroke on the upper-left silhouette. All real
+ * palette indices → clean bands.
+ */
+export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, opts: { ink?: number; rim?: boolean } = {}): void {
+  // shade base
+  path(ctx, pts);
+  ctx.fillStyle = C(matShade(m));
+  ctx.fill();
+  ctx.lineWidth = INK_W;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = opts.ink != null ? C(opts.ink) : C(inkIdx(m));
+  ctx.stroke();
+  // mid — nudge the plate up-left inside its own clip
+  ctx.save();
+  path(ctx, pts);
+  ctx.clip();
+  path(ctx, pts.map((p) => [p[0] - 3, p[1] - 4] as Pt));
+  ctx.fillStyle = C(matMid(m));
+  ctx.fill();
+  ctx.restore();
+  // warm rim — bright stroke along the upper-left silhouette
+  if (opts.rim !== false) {
+    const top = topLeftRun(pts);
+    if (top.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(top[0][0], top[0][1]);
+      for (let i = 1; i < top.length; i++) ctx.lineTo(top[i][0], top[i][1]);
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = C(matHi(m));
+      ctx.stroke();
+    }
+  }
+}
+
+function path(ctx: CanvasRenderingContext2D, pts: Pt[]): void {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+}
+
+/** The upper-left silhouette run of a polygon: vertices above+left of centroid. */
+function topLeftRun(pts: Pt[]): Pt[] {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts.filter((p) => p[1] <= cy || p[0] <= cx);
+}
+
+/** A rounded rect (belts, straps, blocky armour bits). Flat with a shade base. */
+export function rrectShaded(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, m: Mat, opts: { ink?: number } = {}): void {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fillStyle = C(matShade(m));
+  ctx.fill();
+  ctx.lineWidth = INK_W;
+  ctx.strokeStyle = opts.ink != null ? C(opts.ink) : C(inkIdx(m));
+  ctx.stroke();
+  // mid fill inset a touch from the lower-right so a shade edge shows
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.clip();
+  ctx.fillStyle = C(matMid(m));
+  ctx.fillRect(x, y, w - 1.5, h - 1.5);
+  ctx.restore();
+}
+
+/** An un-outlined detail line (seams, ribs, string). Accepts a Mat or bare index. */
+export function detail(ctx: CanvasRenderingContext2D, pts: Pt[], w: number, m: Mat): void {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.lineWidth = w;
+  ctx.strokeStyle = C(matMid(m));
+  ctx.stroke();
+}
+
+/** A hard-edged, unshaded glow dot (eyes) — no ink so it blooms cleanly. */
+export function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, coreIdx: number, hotIdx = 18): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
+  ctx.fillStyle = C(coreIdx);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.28, y - r * 0.28, r * 0.45, r * 0.45, 0, 0, Math.PI * 2);
+  ctx.fillStyle = C(hotIdx);
+  ctx.fill();
+}
+
+/** Soft contact shadow under the figure, drawn first. */
+export function groundShadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, rx * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(11, 13, 18, 0.4)";
+  ctx.fill();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BIPED SKELETON — the shared rig. A pose produces joint POINTS; the
+// actor painters draw parts anchored to those joints. Because a limb is
+// drawn hip→knee→foot from these points, changing the pose genuinely
+// swings the limb — the walk cycle MOVES.
+// ══════════════════════════════════════════════════════════════════
+
+export interface Skeleton {
+  /** Pelvis / hip centre. */
+  hip: Pt;
+  hipL: Pt;
+  hipR: Pt;
+  kneeL: Pt;
+  kneeR: Pt;
+  footL: Pt;
+  footR: Pt;
+  /** Chest / shoulder centre. */
+  chest: Pt;
+  shoulderL: Pt;
+  shoulderR: Pt;
+  elbowL: Pt;
+  elbowR: Pt;
+  handL: Pt;
+  handR: Pt;
+  /** Neck base + head centre. */
+  neck: Pt;
+  head: Pt;
+}
+
+/** Facing the rig is posed for. W is drawn as E flipped at runtime. */
+export type Dir3 = "S" | "N" | "E";
+
+/**
+ * Pose inputs, normalised so every actor drives the SAME rig:
+ *   bob     — vertical body bounce (px, adds down)
+ *   stride  — -1..1 leg scissor phase (0 = feet together)
+ *   lean    — forward lean radians (zombie shamble; 0 for the upright knight)
+ *   crouch  — 0..1 sink (attack windup / death)
+ */
+export interface Pose {
+  bob: number;
+  stride: number;
+  lean?: number;
+  crouch?: number;
+}
+
+/**
+ * Build a biped skeleton for a direction + pose. `cfg` lets each actor set its
+ * own proportions (limb reach, stance width, hunch) while sharing the maths, so
+ * the knight stands tall and the zombie hunches from ONE rig.
+ */
+export interface RigConfig {
+  /** Shoulder half-width, px. */
+  shoulderW: number;
+  /** Hip half-width, px. */
+  hipW: number;
+  /** Standing height from GROUND to shoulders, px. */
+  torsoTop: number;
+  /** Hip height above GROUND, px. */
+  hipY: number;
+  /** Head centre height above GROUND, px. */
+  headY: number;
+  /** How far a striding foot reaches forward in profile, px. */
+  step: number;
+  /** Knee-lift in the front view when a foot is raised, px. */
+  lift: number;
+}
+
+export function buildSkeleton(dir: Dir3, pose: Pose, cfg: RigConfig): Skeleton {
+  const bob = pose.bob;
+  const lean = pose.lean ?? 0;
+  const crouch = (pose.crouch ?? 0) * 10;
+  const hipY = GROUND - cfg.hipY + bob + crouch;
+  const chestY = GROUND - cfg.torsoTop + bob + crouch;
+  const headY = GROUND - cfg.headY + bob + crouch;
+
+  // Lean shifts the upper body forward (screen -x for E profile, up-ish for S/N)
+  const leanX = dir === "E" ? Math.sin(lean) * 22 : 0;
+  const leanUp = dir === "E" ? 0 : Math.sin(lean) * 10;
+
+  const hip: Pt = [CX, hipY];
+  const chest: Pt = [CX + leanX * 0.5, chestY - leanUp];
+  const neck: Pt = [CX + leanX * 0.8, chestY - 6 - leanUp];
+  const head: Pt = [CX + leanX, headY - leanUp];
+
+  const sk: Skeleton = {
+    hip,
+    hipL: [CX - cfg.hipW, hipY],
+    hipR: [CX + cfg.hipW, hipY],
+    kneeL: [CX - cfg.hipW, hipY + (GROUND - hipY) * 0.5],
+    kneeR: [CX + cfg.hipW, hipY + (GROUND - hipY) * 0.5],
+    footL: [CX - cfg.hipW, GROUND],
+    footR: [CX + cfg.hipW, GROUND],
+    chest,
+    shoulderL: [chest[0] - cfg.shoulderW, chest[1]],
+    shoulderR: [chest[0] + cfg.shoulderW, chest[1]],
+    elbowL: [chest[0] - cfg.shoulderW - 2, chest[1] + 16],
+    elbowR: [chest[0] + cfg.shoulderW + 2, chest[1] + 16],
+    handL: [chest[0] - cfg.shoulderW - 2, chest[1] + 30],
+    handR: [chest[0] + cfg.shoulderW + 2, chest[1] + 30],
+    neck,
+    head,
+  };
+
+  // ── legs: scissor by facing ──
+  if (dir === "E") {
+    // profile — real forward/back reach
+    const reach = pose.stride * cfg.step;
+    sk.footR = [CX + reach, GROUND - Math.abs(pose.stride) * 3];
+    sk.footL = [CX - reach, GROUND];
+    sk.kneeR = [CX + reach * 0.6, hipY + (GROUND - hipY) * 0.52 - Math.abs(pose.stride) * 3];
+    sk.kneeL = [CX - reach * 0.5, hipY + (GROUND - hipY) * 0.5];
+    sk.hipL = [CX - 3, hipY];
+    sk.hipR = [CX + 3, hipY];
+  } else {
+    // front/back — alternating knee lift reads as walking toward/away
+    const liftL = Math.max(0, pose.stride) * cfg.lift;
+    const liftR = Math.max(0, -pose.stride) * cfg.lift;
+    sk.footL = [CX - cfg.hipW, GROUND - liftL];
+    sk.footR = [CX + cfg.hipW, GROUND - liftR];
+    sk.kneeL = [CX - cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftL * 0.5];
+    sk.kneeR = [CX + cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftR * 0.5];
+  }
+
+  return sk;
+}
+
+/** Draw a two-segment leg hip→knee→foot with a shaded boot cap at the foot. */
+export function legShaded(ctx: CanvasRenderingContext2D, hip: Pt, knee: Pt, foot: Pt, w: number, leg: Ramp | number, boot: Ramp | number, dir: Dir3): void {
+  limbShaded(ctx, hip, knee, w, leg);
+  limbShaded(ctx, knee, foot, w * 0.92, leg);
+  // boot — an ellipse pointing in the walk direction
+  const bw = dir === "E" ? 9 : 8;
+  ellShaded(ctx, foot[0] + (dir === "E" ? 3 : 0), foot[1] - 2, bw, 5, boot);
+}
+
+/** Draw a two-segment arm shoulder→elbow→hand. Fist optional. */
+export function armShaded(ctx: CanvasRenderingContext2D, sh: Pt, el: Pt, hand: Pt, w: number, m: Ramp | number, fist?: Ramp | number): void {
+  limbShaded(ctx, sh, el, w, m);
+  limbShaded(ctx, el, hand, w * 0.9, m);
+  if (fist != null) ellShaded(ctx, hand[0], hand[1], w * 0.62, w * 0.62, fist);
+}

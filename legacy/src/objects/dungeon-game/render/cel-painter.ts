@@ -5,11 +5,13 @@
  * Every frame is a PAINTER: a function that draws one 128×128 cel with plain
  * canvas-2D paths. The style is classic cel shading, produced by three layers:
  *
- *   1. flat palette fills with dark ink outlines (fill + stroke per shape),
- *   2. one hard-stop gradient composited `source-atop` over the finished
- *      figure — an abrupt highlight band (upper-right) and shadow band
- *      (lower-left) across every shape at once. Hard stops = flat bands,
- *      which is what makes it read as cel rather than airbrush,
+ *   1. flat palette fills with SELOUT outlines — each shape's edge is a darker,
+ *      cool-shifted version of its own fill (inkFor), not pure black, so metal
+ *      edges cool-grey and leather edges cold-brown (see the draw helpers),
+ *   2. hard-stop gradient bands composited `source-atop` over the finished
+ *      figure: a WARM torch-tinted highlight (upper-left) and a COOL arcane
+ *      shadow (lower-right) — hue-shifted, not just light/dark. Hard stops =
+ *      flat bands, which is what makes it read as cel rather than airbrush,
  *   3. unshaded effects on top (muzzle flash, swing swoosh, flame).
  *
  * The screen-space palette quantizer then snaps the band blends to clean
@@ -22,9 +24,29 @@
  *
  * Only three directions are authored — W is E flipped horizontally at runtime.
  */
-import { paletteCss } from "./palette";
+import { paletteCss, inkFor } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
+import {
+  type Pt,
+  type Dir3,
+  type RigConfig,
+  type Skeleton,
+  type Ramp,
+  CX,
+  R_STEEL,
+  R_STEEL_DK,
+  R_BLOOD,
+  buildSkeleton,
+  legShaded,
+  armShaded,
+  limbShaded,
+  ellShaded,
+  plateShaded,
+  rrectShaded,
+  detail as figDetail,
+  glow as figGlow,
+} from "./figure";
 
 export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
 export type Dir = "S" | "N" | "E";
@@ -36,66 +58,95 @@ const C = paletteCss;
 const INK = C(1);
 const INK_W = 3;
 
-// ── Draw helpers — every solid shape gets an ink outline ────────
+/**
+ * Fill token for the selout draw helpers: pairs the css colour with its palette
+ * index so the outline can be derived from the fill (inkFor). Every shape fill
+ * below is written `F(n)` instead of `C(n)`; the helpers pull the selout ink
+ * from the index automatically.
+ */
+const F = (index: number): readonly [string, number] => [C(index), index];
 
-function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, fill: string, rot = 0): void {
+// ── Draw helpers — SELOUT outlines ──────────────────────────────
+//
+// Pixel-art rule: don't outline in pure black. Every solid shape's outline is a
+// darker, cool-shifted version of ITS OWN fill (via inkFor), so steel gets a
+// cool-grey edge, leather a cold-brown edge, rot a dark-green edge. Pure black
+// (INK) is reserved for the few places that read as true void: eye slits, the
+// visor, x-eyes. Pass an explicit `ink` to override (e.g. keep a hard black
+// slit), otherwise it's derived from the fill's palette index.
+//
+// Fills are passed as a [cssString, paletteIndex] pair so the helper can derive
+// the matching selout ink. A bare css string still works (falls back to INK)
+// for the handful of ad-hoc colours.
+
+type Fill = string | readonly [string, number];
+
+function fillCss(f: Fill): string {
+  return typeof f === "string" ? f : f[0];
+}
+function fillInk(f: Fill, override?: string): string {
+  if (override) return override;
+  return typeof f === "string" ? INK : inkFor(f[1]);
+}
+
+function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, fill: Fill, rot = 0, ink?: string): void {
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
-  ctx.fillStyle = fill;
+  ctx.fillStyle = fillCss(fill);
   ctx.fill();
   ctx.lineWidth = INK_W;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = fillInk(fill, ink);
   ctx.stroke();
 }
 
-function poly(ctx: CanvasRenderingContext2D, pts: Array<[number, number]>, fill: string): void {
+function poly(ctx: CanvasRenderingContext2D, pts: Array<[number, number]>, fill: Fill, ink?: string): void {
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
   ctx.closePath();
-  ctx.fillStyle = fill;
+  ctx.fillStyle = fillCss(fill);
   ctx.fill();
   ctx.lineWidth = INK_W;
   ctx.lineJoin = "round";
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = fillInk(fill, ink);
   ctx.stroke();
 }
 
-function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string): void {
+function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: Fill, ink?: string): void {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
-  ctx.fillStyle = fill;
+  ctx.fillStyle = fillCss(fill);
   ctx.fill();
   ctx.lineWidth = INK_W;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = fillInk(fill, ink);
   ctx.stroke();
 }
 
-/** An outlined capsule limb from (x1,y1) to (x2,y2). */
-function limb(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, w: number, fill: string): void {
+/** An outlined capsule limb from (x1,y1) to (x2,y2), selout edge from the fill. */
+function limb(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, w: number, fill: Fill, ink?: string): void {
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.lineWidth = w + INK_W * 2;
-  ctx.strokeStyle = INK;
+  ctx.strokeStyle = fillInk(fill, ink);
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.lineWidth = w;
-  ctx.strokeStyle = fill;
+  ctx.strokeStyle = fillCss(fill);
   ctx.stroke();
 }
 
-/** Un-outlined detail stroke (ribs, string, cracks). */
-function line(ctx: CanvasRenderingContext2D, pts: Array<[number, number]>, w: number, color: string): void {
+/** Un-outlined detail stroke (ribs, string, cracks). Accepts a Fill or css. */
+function line(ctx: CanvasRenderingContext2D, pts: Array<[number, number]>, w: number, color: Fill): void {
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(pts[0][0], pts[0][1]);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
   ctx.lineWidth = w;
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = fillCss(color);
   ctx.stroke();
 }
 
@@ -108,21 +159,44 @@ function groundShadow(ctx: CanvasRenderingContext2D, x: number, y: number, rx: n
 }
 
 /**
- * The cel-shading pass: one highlight band + one shadow band composited over
- * everything opaque so far. HARD gradient stops — a smooth ramp here would
- * read as airbrushing, and abrupt bands are the whole point of cel.
+ * The cel-shading pass: HUE-SHIFTED highlight + shade bands composited over
+ * everything opaque so far. HARD gradient stops — a smooth ramp would read as
+ * airbrushing; abrupt bands are the whole point of cel.
+ *
+ * The key upgrade over a plain light/dark band: the highlight is composited
+ * `overlay` in a WARM torch tint (the only warm light down here) and the shadow
+ * is a COOL arcane-blue multiplied over the dark side. That's hue shifting —
+ * lit steel goes warm-white, shadowed steel goes cold-blue, instead of a flat
+ * grey-to-black ramp. Three bands, not two: a bright rim, a mid, and a cool
+ * core shadow, so materials read as sculpted rather than pillow-lit.
+ *
+ * Direction is fixed in ART space (light from upper-left), NOT silhouette-
+ * following, so the band models a light source instead of tracing the outline
+ * (which is what pillow-shading does). Sprites can be flipped at runtime for W
+ * facing; upper-left is the least-wrong constant given the scene's cold key.
  */
 function celShade(ctx: CanvasRenderingContext2D): void {
+  // Warm highlight on the lit (upper-left) side — overlay so it tints, not paints.
   ctx.save();
   ctx.globalCompositeOperation = "source-atop";
-  const g = ctx.createLinearGradient(PX * 0.78, PX * 0.06, PX * 0.2, PX * 0.94);
-  g.addColorStop(0, "rgba(255, 243, 200, 0.17)");
-  g.addColorStop(0.36, "rgba(255, 243, 200, 0.17)");
-  g.addColorStop(0.361, "rgba(0, 0, 0, 0)");
-  g.addColorStop(0.63, "rgba(0, 0, 0, 0)");
-  g.addColorStop(0.631, "rgba(11, 13, 18, 0.3)");
-  g.addColorStop(1, "rgba(11, 13, 18, 0.3)");
-  ctx.fillStyle = g;
+  const hi = ctx.createLinearGradient(PX * 0.18, PX * 0.04, PX * 0.62, PX * 0.62);
+  hi.addColorStop(0, "rgba(255, 235, 178, 0.30)"); // torch-warm rim
+  hi.addColorStop(0.33, "rgba(255, 235, 178, 0.30)");
+  hi.addColorStop(0.331, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = hi;
+  ctx.fillRect(0, 0, PX, PX);
+  ctx.restore();
+
+  // Cool shade on the unlit (lower-right) side — two steps: mid then deep core.
+  ctx.save();
+  ctx.globalCompositeOperation = "source-atop";
+  const sh = ctx.createLinearGradient(PX * 0.82, PX * 0.96, PX * 0.34, PX * 0.34);
+  sh.addColorStop(0, "rgba(20, 42, 66, 0.42)"); // deep cool core (arcane-dark)
+  sh.addColorStop(0.32, "rgba(20, 42, 66, 0.42)");
+  sh.addColorStop(0.321, "rgba(28, 40, 60, 0.24)"); // cool mid
+  sh.addColorStop(0.6, "rgba(28, 40, 60, 0.24)");
+  sh.addColorStop(0.601, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = sh;
   ctx.fillRect(0, 0, PX, PX);
   ctx.restore();
 }
@@ -156,22 +230,22 @@ function flash(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): 
 }
 
 function drawSwordHeld(ctx: CanvasRenderingContext2D): void {
-  poly(ctx, [[-4, -14], [-4, -58], [0, -68], [4, -58], [4, -14]], C(21)); // blade
-  line(ctx, [[0, -18], [0, -60]], 1.5, C(22)); // fuller ridge
-  rrect(ctx, -12, -16, 24, 7, 3, C(16)); // crossguard
-  rrect(ctx, -3.5, -9, 7, 15, 3, C(27)); // grip
-  ell(ctx, 0, 9, 4.5, 4.5, C(16)); // pommel
+  poly(ctx, [[-4, -14], [-4, -58], [0, -68], [4, -58], [4, -14]], F(21)); // blade
+  line(ctx, [[0, -18], [0, -60]], 1.5, F(22)); // fuller ridge
+  rrect(ctx, -12, -16, 24, 7, 3, F(16)); // crossguard
+  rrect(ctx, -3.5, -9, 7, 15, 3, F(27)); // grip
+  ell(ctx, 0, 9, 4.5, 4.5, F(16)); // pommel
 }
 
 function drawStickHeld(ctx: CanvasRenderingContext2D): void {
-  limb(ctx, 0, 8, -3, -30, 9, C(28));
-  limb(ctx, -3, -30, 3, -56, 8, C(28));
-  ell(ctx, -2, -18, 2.5, 2, C(27)); // knots
-  ell(ctx, 1, -42, 2.5, 2, C(27));
+  limb(ctx, 0, 8, -3, -30, 9, F(28));
+  limb(ctx, -3, -30, 3, -56, 8, F(28));
+  ell(ctx, -2, -18, 2.5, 2, F(27)); // knots
+  ell(ctx, 1, -42, 2.5, 2, F(27));
 }
 
 function drawMaceHeld(ctx: CanvasRenderingContext2D): void {
-  limb(ctx, 0, 8, 0, -38, 7, C(27));
+  limb(ctx, 0, 8, 0, -38, 7, F(27));
   // spikes first so the ball's outline overlaps their bases
   for (let i = 0; i < 6; i++) {
     const a = -Math.PI / 2 + (i / 6) * Math.PI * 2;
@@ -181,30 +255,30 @@ function drawMaceHeld(ctx: CanvasRenderingContext2D): void {
       [sx * 11 - sy * 4, -48 + sy * 11 + sx * 4],
       [sx * 11 + sy * 4, -48 + sy * 11 - sx * 4],
       [sx * 19, -48 + sy * 19],
-    ], C(20));
+    ], F(20));
   }
-  ell(ctx, 0, -48, 12, 12, C(20));
-  ell(ctx, 0, -48, 5, 5, C(19));
-  rrect(ctx, -5, -12, 10, 5, 2, C(16)); // gold band
+  ell(ctx, 0, -48, 12, 12, F(20));
+  ell(ctx, 0, -48, 5, 5, F(19));
+  rrect(ctx, -5, -12, 10, 5, 2, F(16)); // gold band
 }
 
 function drawChairHeld(ctx: CanvasRenderingContext2D): void {
   // A little wooden chair brandished by one leg. Ridiculous on purpose.
-  limb(ctx, 0, 6, 0, -20, 7, C(28)); // the held leg
-  limb(ctx, 14, -20, 14, -2, 6, C(28)); // the other front leg
-  rrect(ctx, -6, -30, 28, 9, 3, C(28)); // seat
-  limb(ctx, -2, -30, -2, -54, 6, C(27)); // backrest posts
-  limb(ctx, 18, -30, 18, -54, 6, C(27));
-  rrect(ctx, -5, -56, 26, 8, 3, C(28)); // headrail
-  rrect(ctx, -3, -44, 22, 6, 2, C(27)); // slat
+  limb(ctx, 0, 6, 0, -20, 7, F(28)); // the held leg
+  limb(ctx, 14, -20, 14, -2, 6, F(28)); // the other front leg
+  rrect(ctx, -6, -30, 28, 9, 3, F(28)); // seat
+  limb(ctx, -2, -30, -2, -54, 6, F(27)); // backrest posts
+  limb(ctx, 18, -30, 18, -54, 6, F(27));
+  rrect(ctx, -5, -56, 26, 8, 3, F(28)); // headrail
+  rrect(ctx, -3, -44, 22, 6, 2, F(27)); // slat
 }
 
 function drawGunHeld(ctx: CanvasRenderingContext2D, o: { fire?: boolean }): void {
-  rrect(ctx, -5, -12, 10, 15, 3, C(27)); // grip
-  rrect(ctx, -6, -34, 12, 24, 3, C(19)); // body/slide
-  rrect(ctx, -3.5, -46, 7, 13, 2, C(19)); // barrel
-  line(ctx, [[-4, -30], [4, -30]], 2, C(20)); // slide catch
-  ell(ctx, 0, -14, 3, 3, C(16)); // hammer pin
+  rrect(ctx, -5, -12, 10, 15, 3, F(27)); // grip
+  rrect(ctx, -6, -34, 12, 24, 3, F(19)); // body/slide
+  rrect(ctx, -3.5, -46, 7, 13, 2, F(19)); // barrel
+  line(ctx, [[-4, -30], [4, -30]], 2, F(20)); // slide catch
+  ell(ctx, 0, -14, 3, 3, F(16)); // hammer pin
   if (o.fire) flash(ctx, 0, -54, 12);
 }
 
@@ -223,23 +297,23 @@ function drawBowHeld(ctx: CanvasRenderingContext2D, o: { fire?: boolean }): void
   ctx.lineWidth = 7;
   ctx.strokeStyle = C(28);
   ctx.stroke();
-  line(ctx, [[-4, -44], [-4, 44]], 2, C(21)); // string
-  rrect(ctx, 2, -7, 8, 14, 3, C(27)); // grip wrap
+  line(ctx, [[-4, -44], [-4, 44]], 2, F(21)); // string
+  rrect(ctx, 2, -7, 8, 14, 3, F(27)); // grip wrap
   if (o.fire) {
     // nocked arrow, an instant from release
-    line(ctx, [[0, 26], [0, -34]], 3, C(28));
-    poly(ctx, [[-4, -34], [4, -34], [0, -46]], C(21)); // head
-    poly(ctx, [[-1.5, 18], [-7, 28], [-1.5, 26]], C(12)); // fletching
-    poly(ctx, [[1.5, 18], [7, 28], [1.5, 26]], C(12));
+    line(ctx, [[0, 26], [0, -34]], 3, F(28));
+    poly(ctx, [[-4, -34], [4, -34], [0, -46]], F(21)); // head
+    poly(ctx, [[-1.5, 18], [-7, 28], [-1.5, 26]], F(12)); // fletching
+    poly(ctx, [[1.5, 18], [7, 28], [1.5, 26]], F(12));
   }
 }
 
 function drawFlamethrowerHeld(ctx: CanvasRenderingContext2D, o: { fire?: boolean }): void {
-  rrect(ctx, -9, -24, 18, 30, 5, C(14)); // fuel tank
-  line(ctx, [[-9, -14], [9, -14]], 2, C(15)); // tank seam
-  ell(ctx, 0, -2, 3.5, 3.5, C(16)); // valve
-  rrect(ctx, -4, -44, 8, 21, 2, C(19)); // nozzle
-  poly(ctx, [[-6, -44], [6, -44], [4, -52], [-4, -52]], C(20)); // muzzle bell
+  rrect(ctx, -9, -24, 18, 30, 5, F(14)); // fuel tank
+  line(ctx, [[-9, -14], [9, -14]], 2, F(15)); // tank seam
+  ell(ctx, 0, -2, 3.5, 3.5, F(16)); // valve
+  rrect(ctx, -4, -44, 8, 21, 2, F(19)); // nozzle
+  poly(ctx, [[-6, -44], [6, -44], [4, -52], [-4, -52]], F(20)); // muzzle bell
   // hose looping from tank base to nozzle
   ctx.beginPath();
   ctx.moveTo(8, 2);
@@ -249,11 +323,11 @@ function drawFlamethrowerHeld(ctx: CanvasRenderingContext2D, o: { fire?: boolean
   ctx.stroke();
   if (o.fire) {
     // cone of fire past the bell — three nested tongues
-    poly(ctx, [[-7, -52], [7, -52], [13, -86], [-13, -86]], C(15));
-    poly(ctx, [[-5, -54], [5, -54], [9, -82], [-9, -82]], C(16));
-    ell(ctx, 0, -70, 5, 11, C(17));
+    poly(ctx, [[-7, -52], [7, -52], [13, -86], [-13, -86]], F(15));
+    poly(ctx, [[-5, -54], [5, -54], [9, -82], [-9, -82]], F(16));
+    ell(ctx, 0, -70, 5, 11, F(17));
   } else {
-    ell(ctx, 0, -55, 2.5, 4, C(16)); // pilot light
+    ell(ctx, 0, -55, 2.5, 4, F(16)); // pilot light
   }
 }
 
@@ -345,89 +419,66 @@ function swoosh(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number
 
 const GROUND = 118;
 
-function knightLegsFront(ctx: CanvasRenderingContext2D, bob: number, stride: number): void {
-  // Facing the camera: the stride reads as alternating knee lifts.
-  const liftL = Math.max(0, stride) * 8;
-  const liftR = Math.max(0, -stride) * 8;
-  limb(ctx, 56, 86 + bob, 54, GROUND - liftL - 4, 13, C(20));
-  limb(ctx, 72, 86 + bob, 74, GROUND - liftR - 4, 13, C(20));
-  ell(ctx, 54, GROUND - liftL, 9, 5, C(19)); // sabatons
-  ell(ctx, 74, GROUND - liftR, 9, 5, C(19));
-}
+// Knight materials — RAMPS (shade/mid/hi palette indices) so every part shades
+// along the steel ramp and quantizes to clean bands. Gold trim + blood plume
+// are single accents.
+const K_PLATE: Ramp = R_STEEL; // [19,20,21] main armour
+const K_PLATE_DK: Ramp = R_STEEL_DK; // [19,19,20] under-plates / boots
+const K_STEEL_DK = 19; // deepest shadow metal (flat)
+const K_TRIM = 16; // flame/gold — buckle, trim glints
+const K_PLUME: Ramp = R_BLOOD; // [11,12,13] helmet crest
+const K_LEG: Ramp = R_STEEL; // legs (cuisses)
 
-function knightLegsProfile(ctx: CanvasRenderingContext2D, bob: number, stride: number): void {
-  // Profile: a real scissor — one foot reaches, the other trails.
-  const reach = stride * 12;
-  limb(ctx, 62, 86 + bob, 62 + reach, GROUND - Math.abs(stride) * 3 - 4, 13, C(20));
-  limb(ctx, 66, 86 + bob, 66 - reach, GROUND - 4, 13, C(19));
-  ell(ctx, 62 + reach + 3, GROUND - Math.abs(stride) * 3, 9, 5, C(19));
-  ell(ctx, 66 - reach + 3, GROUND, 9, 5, C(19));
-}
+/** Upright knight proportions — a real standing figure, not a barrel. */
+const KNIGHT_RIG: RigConfig = {
+  shoulderW: 17,
+  hipW: 9,
+  torsoTop: 62, // shoulders sit high
+  hipY: 34,
+  headY: 82,
+  step: 13,
+  lift: 9,
+};
 
-function knightTorso(ctx: CanvasRenderingContext2D, bob: number, profile: boolean): void {
-  if (profile) {
-    poly(ctx, [[52, 56 + bob], [78, 56 + bob], [76, 88 + bob], [54, 88 + bob]], C(21));
-    rrect(ctx, 52, 82 + bob, 25, 8, 3, C(27)); // belt
-    rrect(ctx, 61, 83 + bob, 7, 6, 1.5, C(16)); // buckle
-  } else {
-    poly(ctx, [[42, 56 + bob], [86, 56 + bob], [79, 88 + bob], [49, 88 + bob]], C(21));
-    line(ctx, [[64, 60 + bob], [64, 82 + bob]], 2, C(20)); // plackart seam
-    rrect(ctx, 48, 82 + bob, 32, 8, 3, C(27)); // belt
-    rrect(ctx, 60, 83 + bob, 8, 6, 1.5, C(16)); // buckle
-  }
-}
-
-function knightHead(ctx: CanvasRenderingContext2D, bob: number, dir: Dir): void {
-  const y = 38 + bob;
+/** The plumed great-helm, drawn at the head joint. Faces per direction. */
+function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3): void {
+  const [x, y] = head;
+  // Crest plume — a bold blood-red comb, drawn BEHIND the helm so it reads as a
+  // silhouette-topping shape, not an antenna. Two-tone for volume.
   if (dir === "E") {
-    // plume streams back off a profile helm with a nose guard
-    ctx.beginPath();
-    ctx.moveTo(58, y - 14);
-    ctx.quadraticCurveTo(40, y - 20, 34, y - 4);
-    ctx.quadraticCurveTo(46, y - 10, 58, y - 6);
-    ctx.closePath();
-    ctx.fillStyle = C(12);
-    ctx.fill();
-    ctx.lineWidth = INK_W;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-    ell(ctx, 66, y, 16, 15, C(21));
-    poly(ctx, [[78, y - 6], [84, y + 2], [78, y + 6]], C(20)); // nose guard
-    rrect(ctx, 66, y - 4, 13, 5, 2, C(1)); // eye slit
+    plateShaded(ctx, [[x - 2, y - 14], [x - 20, y - 22], [x - 26, y - 6], [x - 8, y - 4]], K_PLUME, { rim: false });
+    figDetail(ctx, [[x - 6, y - 12], [x - 22, y - 16]], 2, 11);
   } else {
-    // plume: a little crest flopping to one side
-    ctx.beginPath();
-    ctx.moveTo(60, y - 16);
-    ctx.quadraticCurveTo(56, y - 30, 44, y - 28);
-    ctx.quadraticCurveTo(54, y - 22, 56, y - 12);
-    ctx.closePath();
-    ctx.fillStyle = C(12);
-    ctx.fill();
-    ctx.lineWidth = INK_W;
-    ctx.strokeStyle = INK;
-    ctx.stroke();
-    ell(ctx, 64, y, 17, 16, C(21));
+    plateShaded(ctx, [[x - 3, y - 15], [x, y - 26], [x + 8, y - 27], [x + 4, y - 14]], K_PLUME, { rim: false });
+    figDetail(ctx, [[x + 1, y - 16], [x + 5, y - 24]], 2, 11);
+  }
+  // Helm dome — a rounded bucket, not a ball: flat-ish crown, jaw taper.
+  if (dir === "E") {
+    plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], K_PLATE);
+    // nose guard juts forward (+x)
+    plateShaded(ctx, [[x + 12, y - 4], [x + 19, y + 2], [x + 12, y + 8]], K_PLATE_DK);
+    // eye slit — hard black void, the only pure-INK on the figure
+    rrectShaded(ctx, x + 2, y - 3, 11, 4, 1.5, 1, { ink: 1 });
+  } else {
+    plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], K_PLATE);
     if (dir === "S") {
-      rrect(ctx, 52, y - 3, 24, 6, 3, C(1)); // visor slit
-      line(ctx, [[52, y + 8], [76, y + 8]], 2, C(20)); // chin plate seam
+      // T-visor: a vertical breath-slot meeting a horizontal eye-slit — the
+      // single most important readability feature. Hard black.
+      rrectShaded(ctx, x - 11, y - 3, 22, 4, 2, 1, { ink: 1 }); // eye slit
+      rrectShaded(ctx, x - 2.5, y - 1, 5, 12, 2, 1, { ink: 1 }); // breath slot
+      figDetail(ctx, [[x - 12, y + 9], [x + 12, y + 9]], 1.5, K_STEEL_DK); // chin seam
     } else {
-      line(ctx, [[64, y - 12], [64, y + 12]], 2, C(20)); // helm back ridge
+      // back of the helm — a central ridge + neck guard
+      figDetail(ctx, [[x, y - 12], [x, y + 12]], 2.5, K_STEEL_DK);
+      figDetail(ctx, [[x - 10, y + 9], [x + 10, y + 9]], 2, K_STEEL_DK);
     }
   }
 }
 
-function pauldrons(ctx: CanvasRenderingContext2D, bob: number, profile: boolean): void {
-  if (profile) {
-    ell(ctx, 74, 58 + bob, 12, 9, C(20));
-  } else {
-    ell(ctx, 42, 60 + bob, 11, 9, C(20));
-    ell(ctx, 86, 60 + bob, 11, 9, C(20));
-  }
-}
-
 /**
- * One knight frame. Draw order matters per facing: N hides the weapon behind
- * the body, S and E hold it in front.
+ * One knight frame, posed from the shared biped rig. Draw order is
+ * back-to-front so limbs overlap correctly; the held weapon rides the weapon
+ * hand from the HAND_* tables (kept — they encode good swing arcs).
  */
 function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId): void {
   const { bob, stride, atk } = pose;
@@ -435,49 +486,96 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   const hands = dir === "S" ? HAND_S : dir === "N" ? HAND_N : HAND_E;
   const hand = hands[atk ?? "rest"];
   const firing = atk === "fire" || (atk === "strike" && !ranged);
+  const d3 = dir as Dir3;
 
-  groundShadow(ctx, 64, GROUND + 3, 27);
+  const sk = buildSkeleton(d3, { bob, stride, crouch: atk === "windup" ? 0.3 : 0 }, KNIGHT_RIG);
+  const weaponHand: Pt = [hand.x, hand.y];
 
+  groundShadow(ctx, CX, GROUND + 3, 26);
+
+  // Which arm holds the weapon: S → right (screen +x), N → left, E → near arm.
   const weaponBehind = dir === "N";
   if (weaponBehind) drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
 
+  // ── BACK leg first, then front, so the near leg overlaps ──
   if (dir === "E") {
-    knightLegsProfile(ctx, bob, stride);
-    knightTorso(ctx, bob, true);
-    pauldrons(ctx, bob, true);
-    // far arm hint
-    limb(ctx, 58, 62 + bob, 54, 84 + bob, 8, C(19));
+    // profile: far leg (dimmer) behind, near leg in front
+    legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 11, K_STEEL_DK, K_STEEL_DK, d3);
+    legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
   } else {
-    knightLegsFront(ctx, bob, stride);
-    knightTorso(ctx, bob, false);
-    pauldrons(ctx, bob, false);
-    // off hand
-    const off = dir === "S" ? { sx: 42, hx: 38 } : { sx: 86, hx: 90 };
-    limb(ctx, off.sx, 62 + bob, off.hx, 86 + bob, 9, C(20));
-    ell(ctx, off.hx, 88 + bob, 5, 5, C(19)); // gauntlet
+    legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 12, K_LEG, K_PLATE_DK, d3);
+    legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
   }
 
-  // weapon arm: shoulder → hand anchor
-  const shoulder = dir === "S" ? { x: 86, y: 62 + bob } : dir === "N" ? { x: 42, y: 62 + bob } : { x: 74, y: 60 + bob };
-  limb(ctx, shoulder.x, shoulder.y, hand.x, hand.y, 9, C(20));
-  ell(ctx, hand.x, hand.y, 5.5, 5.5, C(19)); // gauntlet fist
+  // ── faulds (armoured skirt over the hips) ──
+  if (dir !== "E") {
+    plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 4, sk.hip[1] + 8], [sk.hipL[0] - 4, sk.hip[1] + 8]], K_PLATE_DK);
+  }
 
-  knightHead(ctx, bob, dir);
+  // ── torso: a tapered cuirass, wider at the chest ──
+  const t = knightTorsoPts(sk, dir);
+  plateShaded(ctx, t, K_PLATE);
+  // plackart V-seam + belt + gold buckle
+  if (dir === "S") {
+    figDetail(ctx, [[sk.chest[0], sk.chest[1] + 4], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK);
+    figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 6], [sk.chest[0], sk.chest[1] + 16], [sk.chest[0] + 12, sk.chest[1] + 6]], 1.5, K_STEEL_DK);
+  }
+  rrectShaded(ctx, sk.hipL[0] - 2, sk.hip[1] - 6, (sk.hipR[0] - sk.hipL[0]) + 4, 6, 2, 27); // belt
+  rrectShaded(ctx, sk.hip[0] - 4, sk.hip[1] - 6, 8, 6, 1.5, K_TRIM); // buckle
+
+  // ── off arm (non-weapon) ──
+  if (dir === "E") {
+    // far arm hint behind the torso
+    armShaded(ctx, [sk.chest[0] - 6, sk.chest[1] + 2], [sk.chest[0] - 8, sk.chest[1] + 16], [sk.chest[0] - 6, sk.chest[1] + 28], 7, K_STEEL_DK);
+  } else {
+    const off: Pt = dir === "S" ? sk.shoulderL : sk.shoulderR;
+    const offHand: Pt = dir === "S" ? [sk.shoulderL[0] - 2, sk.hip[1] + 2] : [sk.shoulderR[0] + 2, sk.hip[1] + 2];
+    armShaded(ctx, off, [off[0], (off[1] + offHand[1]) / 2], offHand, 8, K_LEG, K_PLATE_DK);
+  }
+
+  // ── pauldrons (shoulder cops) — angular layered plates that widen the
+  // shoulders. A rounded four-point plate reads as armour, not a button. ──
+  const pauldron = (px: number, py: number, flip: number): void => {
+    plateShaded(ctx, [[px - 10 * flip, py - 4], [px + 9 * flip, py - 7], [px + 11 * flip, py + 6], [px - 8 * flip, py + 9]], K_PLATE);
+    figDetail(ctx, [[px - 6 * flip, py + 2], [px + 8 * flip, py - 1]], 1.5, K_STEEL_DK); // lame ridge
+  };
+  if (dir === "E") {
+    pauldron(sk.shoulderR[0] + 3, sk.shoulderR[1], 1);
+  } else {
+    pauldron(sk.shoulderL[0], sk.shoulderL[1], -1);
+    pauldron(sk.shoulderR[0], sk.shoulderR[1], 1);
+  }
+
+  // ── weapon arm: shoulder → hand anchor ──
+  const wShoulder: Pt = dir === "S" ? sk.shoulderR : dir === "N" ? sk.shoulderL : sk.shoulderR;
+  armShaded(ctx, wShoulder, [(wShoulder[0] + weaponHand[0]) / 2, (wShoulder[1] + weaponHand[1]) / 2 - 3], weaponHand, 8, K_LEG, K_PLATE_DK);
+
+  // ── head / helm ──
+  knightHelm(ctx, sk.head, d3);
 
   if (!weaponBehind) drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
 
-  celShade(ctx);
-
-  // post-shade effects: full-brightness flash/swoosh
+  // post effects: full-brightness swing swoosh / punch flash (no global celShade
+  // — the parts are self-shaded now, so the soft gradient would only mush them)
   if (firing && !ranged && weapon !== "fists") {
     if (dir === "S") swoosh(ctx, 64, 74, 44, 0.55, 1.85);
     else if (dir === "N") swoosh(ctx, 64, 74, 44, Math.PI + 0.55, Math.PI + 1.85);
     else swoosh(ctx, 66, 62, 46, -0.75, 0.75);
   }
   if (firing && weapon === "fists") {
-    // a punch impact puff just past the fist
     flash(ctx, hand.x + (dir === "N" ? -10 : 10), hand.y - 4, 8);
   }
+}
+
+/** Cuirass outline points from the skeleton — a breastplate that tapers to the waist. */
+function knightTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
+  const c = sk.chest;
+  const hy = sk.hip[1] - 2;
+  if (dir === "E") {
+    return [[c[0] - 11, c[1] - 2], [c[0] + 12, c[1] - 2], [c[0] + 10, hy], [c[0] - 10, hy]];
+  }
+  const sw = 15;
+  return [[c[0] - sw, c[1] - 4], [c[0] + sw, c[1] - 4], [c[0] + sw - 2, c[1] + 14], [sk.hipR[0] + 2, hy], [sk.hipL[0] - 2, hy], [c[0] - sw + 2, c[1] + 14]];
 }
 
 /** Build the full painter set for the knight holding `weapon`. */
@@ -517,110 +615,238 @@ interface ZPose {
   dead?: boolean;
 }
 
-function zombieHead(ctx: CanvasRenderingContext2D, x: number, y: number, dir: Dir, dead: boolean): void {
-  const tilt = dir === "E" ? 0.35 : 0.18;
-  ell(ctx, x, y, 14, 13, C(8), tilt);
-  // mangy scalp patch
-  ell(ctx, x - 4, y - 9, 6, 3.5, C(7), tilt);
+// ── Zombie VARIETY ──────────────────────────────────────────────
+//
+// One shared sheet made every zombie identical. Now each zombie rolls a small
+// deterministic VARIANT (a few pre-built sheets, picked per-spawn by seed) that
+// changes: skin rot tone, torn-clothing patches, splashed blood, and a chance
+// of a lopped-off / bandaged limb. Purely cosmetic — the collision body and
+// clip layout are untouched, so a variant sheet drops into the same animator.
+
+export interface ZVariant {
+  /** Rot skin base index (6=shadow-green .. 9=light-green) — shifts the tone. */
+  skin: number;
+  /** Torn-cloth colour index for hanging rags on torso/legs. */
+  rag: number;
+  /** 0..3 — how much extra caked blood/gore to splatter on. */
+  gore: number;
+  /** Which arm is a stump (null = both intact). Reads as battle-worn. */
+  stump: "L" | "R" | null;
+  /** A soiled bandage wrap somewhere, adds silhouette noise. */
+  bandage: boolean;
+  /** Per-variant jitter seed for splatter placement. */
+  seed: number;
+}
+
+/** Deterministic 0..1 from an integer step — no Math.random (breaks resume). */
+function vrand(seed: number, step: number): number {
+  const x = Math.sin(seed * 127.1 + step * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/** The variant pool. A handful of distinct looks; zombies index in by seed. */
+export const ZOMBIE_VARIANTS: ZVariant[] = [
+  { skin: 7, rag: 26, gore: 1, stump: null, bandage: false, seed: 1 },
+  { skin: 8, rag: 27, gore: 2, stump: "L", bandage: false, seed: 2 },
+  { skin: 6, rag: 2, gore: 3, stump: null, bandage: true, seed: 3 },
+  { skin: 9, rag: 28, gore: 0, stump: "R", bandage: false, seed: 4 },
+  { skin: 7, rag: 29, gore: 2, stump: null, bandage: true, seed: 5 },
+];
+
+/** Caked-blood splatter for a gorier variant — post-fill, pre-shade. */
+function goreSplatter(ctx: CanvasRenderingContext2D, v: ZVariant, cx: number, cy: number): void {
+  const n = v.gore * 3;
+  for (let i = 0; i < n; i++) {
+    const a = vrand(v.seed, i * 2) * Math.PI * 2;
+    const r = 4 + vrand(v.seed, i * 2 + 1) * 16;
+    const rad = 1.6 + vrand(v.seed, i * 3) * 2.6;
+    ctx.beginPath();
+    ctx.ellipse(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7, rad, rad * 0.8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = i % 3 === 0 ? C(12) : C(11);
+    ctx.fill();
+  }
+}
+
+/** A few torn rags hanging off a limb/torso point — jagged triangles. */
+function rags(ctx: CanvasRenderingContext2D, v: ZVariant, x: number, y: number, count = 3): void {
+  for (let i = 0; i < count; i++) {
+    const dx = (i - count / 2) * 5 + vrand(v.seed, i + 40) * 3;
+    const len = 6 + vrand(v.seed, i + 50) * 8;
+    poly(ctx, [[x + dx - 3, y], [x + dx + 3, y], [x + dx + vrand(v.seed, i) * 3 - 1.5, y + len]], F(v.rag));
+  }
+}
+
+/** Zombie skin ramp from a variant's base index (shade→mid→light, clamped). */
+function zombieRamp(v: ZVariant): Ramp {
+  const s = v.skin; // 6..9
+  return [Math.max(6, s), Math.min(9, s + 1), Math.min(9, s + 2)] as const;
+}
+
+/** Hunched, sunken zombie proportions — head thrust forward, narrow shoulders. */
+const ZOMBIE_RIG: RigConfig = {
+  shoulderW: 13,
+  hipW: 8,
+  torsoTop: 52, // shoulders lower than the knight's (hunched)
+  hipY: 32,
+  headY: 66,
+  step: 11,
+  lift: 7,
+};
+
+/**
+ * The rotten head, drawn at the head joint. A gaunt skull-ish oval with a
+ * mangy scalp, mismatched GLOWING eyes (unshaded so they bloom), and a slack
+ * jaw. Faces per direction; N shows a weeping crater instead of a face.
+ */
+function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: boolean, v: ZVariant): void {
+  const [x, y] = head;
+  const skin = zombieRamp(v);
+  const tilt = dir === "E" ? 0.32 : 0.14;
+  // skull — a gaunt oval, jaw dropped
+  ellShaded(ctx, x, y, 12, 13, skin, tilt);
+  // mangy dark scalp patch
+  ellShaded(ctx, x - 3, y - 8, 6, 4, skin[0], tilt, { rim: false });
+
   if (dir === "N") {
-    // back of the skull: a weeping wound instead of a face
-    ell(ctx, x + 3, y - 2, 4, 5, C(11));
+    // back of the skull: a weeping wound + a couple of hair mats, no face
+    ellShaded(ctx, x + 2, y - 1, 4, 5, 11, 0, { rim: false });
+    figDetail(ctx, [[x - 6, y - 6], [x - 4, y + 4]], 2, skin[0]);
     return;
   }
-  const ex = dir === "E" ? x + 7 : x;
+
+  const ex = dir === "E" ? x + 5 : x;
   if (dead) {
-    line(ctx, [[ex - 7, y - 4], [ex - 2, y + 1]], 2.5, C(1));
-    line(ctx, [[ex - 2, y - 4], [ex - 7, y + 1]], 2.5, C(1));
+    // x-ed out eyes
+    figDetail(ctx, [[ex - 7, y - 4], [ex - 2, y + 1]], 2.5, 1);
+    figDetail(ctx, [[ex - 2, y - 4], [ex - 7, y + 1]], 2.5, 1);
     if (dir === "S") {
-      line(ctx, [[ex + 3, y - 4], [ex + 8, y + 1]], 2.5, C(1));
-      line(ctx, [[ex + 8, y - 4], [ex + 3, y + 1]], 2.5, C(1));
+      figDetail(ctx, [[ex + 3, y - 4], [ex + 8, y + 1]], 2.5, 1);
+      figDetail(ctx, [[ex + 8, y - 4], [ex + 3, y + 1]], 2.5, 1);
     }
   } else {
-    // mismatched glowing eyes — one big, one pinprick. No ink outline: they
-    // GLOW, and at game scale an outlined 4px eye is all outline.
-    ctx.beginPath();
-    ctx.ellipse(ex - 5, y - 2, 4.5, 4.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = C(13);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(ex - 6, y - 3, 1.8, 1.8, 0, 0, Math.PI * 2);
-    ctx.fillStyle = C(17);
-    ctx.fill();
+    // sunken eye SOCKETS (dark) with a glowing pupil inside — the socket gives
+    // the glow a rim so it doesn't float, and reads as a rotten face.
+    ellShaded(ctx, ex - 5, y - 1, 4, 4, 6, 0, { rim: false, ink: 1 });
+    figGlow(ctx, ex - 5, y - 1, 2.4, 16, 17);
     if (dir === "S") {
-      ctx.beginPath();
-      ctx.ellipse(ex + 5, y - 1, 2.8, 2.8, 0, 0, Math.PI * 2);
-      ctx.fillStyle = C(13);
-      ctx.fill();
+      ellShaded(ctx, ex + 5, y - 1, 3.4, 3.6, 6, 0, { rim: false, ink: 1 });
+      figGlow(ctx, ex + 5, y - 1, 1.8, 16, 17);
     }
   }
-  // slack jaw
-  const jx = dir === "E" ? x + 8 : x + 1;
-  ell(ctx, jx, y + 9, 5.5, 4, C(6), tilt);
-  line(ctx, [[jx - 3, y + 6.5], [jx + 3, y + 6.5]], 1.5, C(22)); // teeth glint
+  // slack jaw — a dark maw with a tooth glint
+  const jx = dir === "E" ? x + 5 : x + 1;
+  ellShaded(ctx, jx, y + 9, 5.5, 4.5, 6, tilt, { rim: false, ink: 1 });
+  figDetail(ctx, [[jx - 3, y + 7], [jx + 3, y + 7]], 1.5, 22); // teeth glint
 }
 
-function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose): void {
+/**
+ * The zombie's standing body, posed from the shared biped rig with a forward
+ * LEAN (the shamble). Signature preserved for the brute/spitter/boss overlays
+ * that scale this and draw on top. `lurch` becomes the lean angle.
+ */
+function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v: ZVariant): void {
   const { bob, stride, lurch, dead } = pose;
+  const d3 = dir as Dir3;
+  const skin = zombieRamp(v);
+  const dark = skin[0];
+  const flesh = skin[1];
+  const rag: Ramp = [Math.max(26, v.rag - 1), v.rag, Math.min(28, v.rag + 1)] as const;
+  const stumpL = v.stump === "L";
+  const stumpR = v.stump === "R";
 
-  ctx.save();
-  // the whole body lurches around the feet
-  ctx.translate(64, GROUND);
-  ctx.rotate(dir === "E" ? lurch : lurch * 0.4);
-  ctx.translate(-64, -GROUND);
+  // Lean the whole upper body forward around the feet (the shamble) — bigger in
+  // profile where it reads, subtle head-on.
+  const lean = (dir === "E" ? 1 : 0.45) * (0.5 + lurch * 4);
+  const sk = buildSkeleton(d3, { bob, stride, lean, crouch: dead ? 0.4 : 0 }, ZOMBIE_RIG);
 
-  // ── legs — tattered trousers, uneven stance ──
-  const reach = stride * (dir === "E" ? 11 : 0);
-  const liftL = dir === "E" ? 0 : Math.max(0, stride) * 7;
-  const liftR = dir === "E" ? 0 : Math.max(0, -stride) * 7;
-  limb(ctx, 58, 88 + bob, 54 + reach, GROUND - liftL - 3, 11, C(26));
-  limb(ctx, 70, 88 + bob, 74 - reach, GROUND - liftR - 3, 11, C(26));
-  ell(ctx, 54 + reach, GROUND - liftL, 8, 4.5, C(7)); // bare rotten feet
-  ell(ctx, 74 - reach, GROUND - liftR, 8, 4.5, C(7));
-
-  // ── torso — hunched, one shoulder high ──
-  const tx = dir === "E" ? 66 : 64;
-  ell(ctx, tx, 72 + bob, 20, 18, C(7), dir === "E" ? 0.5 : 0.15);
-  // exposed ribs
-  const rx = dir === "E" ? tx + 4 : tx - 6;
-  line(ctx, [[rx - 6, 64 + bob], [rx + 6, 66 + bob]], 2, C(9));
-  line(ctx, [[rx - 7, 70 + bob], [rx + 6, 72 + bob]], 2, C(9));
-  line(ctx, [[rx - 6, 76 + bob], [rx + 5, 78 + bob]], 2, C(8));
-  // gut wound
-  ell(ctx, tx + 6, 80 + bob, 5, 4, C(11));
-
-  // ── arms ──
+  // ── legs — bare rotten shanks in tattered trousers ──
   if (dir === "E") {
-    // both reaching forward, grasping
-    limb(ctx, 74, 62 + bob, 96, 70 + bob, 8, C(8));
-    limb(ctx, 70, 68 + bob, 92, 82 + bob, 8, C(7));
-    ell(ctx, 98, 71 + bob, 4.5, 4.5, C(9));
-    ell(ctx, 94, 84 + bob, 4.5, 4.5, C(8));
+    legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 9, skin[0], dark, d3);
+    legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 10, rag, flesh, d3);
+  } else {
+    legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 10, rag, dark, d3);
+    legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 10, rag, dark, d3);
+  }
+  if (dir !== "N") rags(ctx, v, CX - 2, sk.hip[1] + 8, 2); // trouser cuffs
+
+  // ── torso — a hunched ribcage barrel ──
+  const t = zombieTorsoPts(sk, dir);
+  plateShaded(ctx, t, skin);
+  // exposed ribs on the lit side (a few clean arcs, not noise)
+  if (dir !== "N") {
+    const rx = dir === "E" ? sk.chest[0] + 2 : sk.chest[0] - 7;
+    for (let i = 0; i < 3; i++) {
+      const ry = sk.chest[1] + 4 + i * 6;
+      figDetail(ctx, [[rx - 6, ry], [rx + 6, ry + 1]], 1.8, skin[2]);
+    }
+    // gut wound
+    ellShaded(ctx, sk.chest[0] + 5, sk.hip[1] - 6, 5, 4, 11, 0, { rim: false });
+  } else {
+    figDetail(ctx, [[sk.chest[0], sk.chest[1]], [sk.chest[0] - 1, sk.hip[1]]], 3, skin[0]); // spine
+  }
+  if (v.bandage) limbShaded(ctx, [sk.chest[0] - 13, sk.chest[1] + 2], [sk.chest[0] + 12, sk.chest[1] + 10], 5, rag);
+
+  // ── arms — reaching forward, grasping (the zombie shape) ──
+  const armReach = dir === "E" ? 26 : 16;
+  const armY = sk.chest[1] + 4;
+  if (dir === "E") {
+    // both arms out toward +x, one higher
+    zombieArm(ctx, [sk.chest[0] + 2, sk.chest[1]], [sk.chest[0] + armReach, armY - 6], skin, flesh, stumpR);
+    zombieArm(ctx, [sk.chest[0], sk.chest[1] + 4], [sk.chest[0] + armReach - 3, armY + 8], skin[0], flesh, stumpL);
   } else if (dir === "S") {
-    // one hangs dead, one half-raised
-    limb(ctx, 46, 64 + bob, 40, 94 + bob, 8, C(7));
-    limb(ctx, 82, 62 + bob, 92, 80 + bob, 8, C(8));
-    ell(ctx, 40, 97 + bob, 4.5, 4.5, C(9));
-    ell(ctx, 93, 83 + bob, 4.5, 4.5, C(9));
+    // reaching toward the camera: hands come DOWN and forward, big
+    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 4, armY + 22], skin, flesh, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 4, armY + 22], skin, flesh, stumpR);
   } else {
     // from behind: both droop outward
-    limb(ctx, 46, 64 + bob, 38, 90 + bob, 8, C(7));
-    limb(ctx, 82, 64 + bob, 90, 90 + bob, 8, C(7));
-    // spine knuckles up the back
-    line(ctx, [[64, 58 + bob], [63, 84 + bob]], 3, C(6));
+    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 8, armY + 24], skin[0], dark, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 8, armY + 24], skin[0], dark, stumpR);
   }
 
-  // ── head — thrust forward off the hunch ──
-  const hx = dir === "E" ? 78 : 70;
-  zombieHead(ctx, hx, 46 + bob, dir, !!dead);
+  // caked gore on the torso for the gorier variants (kept subtle after silhouette)
+  if (v.gore > 0 && !dead) goreSplatter(ctx, v, sk.chest[0], sk.chest[1] + 6);
 
-  ctx.restore();
+  // ── head — thrust forward off the hunch ──
+  zombieHead(ctx, sk.head, d3, !!dead, v);
 }
 
-function zombieFrame(dir: Dir, pose: ZPose): FramePaint {
+/** A zombie arm shoulder→hand with a grasping claw or a bleeding stump. */
+function zombieArm(ctx: CanvasRenderingContext2D, sh: Pt, hand: Pt, m: Ramp | number, handM: Ramp | number, stump: boolean): void {
+  if (stump) {
+    const mid: Pt = [(sh[0] + hand[0]) / 2, (sh[1] + hand[1]) / 2];
+    limbShaded(ctx, sh, mid, 8, m);
+    ellShaded(ctx, mid[0], mid[1], 5, 5, 11, 0, { rim: false }); // bleeding stump cap
+    return;
+  }
+  const elbow: Pt = [(sh[0] + hand[0]) / 2 + 1, (sh[1] + hand[1]) / 2 - 2];
+  limbShaded(ctx, sh, elbow, 8, m);
+  limbShaded(ctx, elbow, hand, 7, m);
+  // grasping claw — three splayed fingers
+  ellShaded(ctx, hand[0], hand[1], 4, 4, handM, 0, { rim: false });
+  const dir = Math.sign(hand[0] - sh[0]) || 1;
+  for (let i = -1; i <= 1; i++) {
+    figDetail(ctx, [[hand[0], hand[1]], [hand[0] + dir * 5, hand[1] + i * 4]], 1.6, typeof handM === "number" ? handM : handM[0]);
+  }
+}
+
+/** Hunched ribcage torso outline from the skeleton. */
+function zombieTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
+  const c = sk.chest;
+  const hy = sk.hip[1] + 2;
+  if (dir === "E") {
+    return [[c[0] - 8, c[1] - 6], [c[0] + 11, c[1] - 4], [c[0] + 9, hy], [c[0] - 9, hy - 2]];
+  }
+  const sw = 12;
+  return [[c[0] - sw, c[1] - 5], [c[0] + sw, c[1] - 5], [sk.hipR[0] + 3, hy], [sk.hipL[0] - 3, hy]];
+}
+
+function zombieFrame(dir: Dir, pose: ZPose, v: ZVariant): FramePaint {
   return (ctx) => {
     groundShadow(ctx, 64, GROUND + 3, 25);
-    zombieStanding(ctx, dir, pose);
-    celShade(ctx);
+    // No global celShade — the rig parts are self-shaded along their ramps, so
+    // the soft gradient would only muddy the clean bands (same call the knight
+    // dropped). celShade stays on the brute/spitter overlays that draw extra art.
+    zombieStanding(ctx, dir, pose, v);
   };
 }
 
@@ -636,80 +862,398 @@ function bloodPool(ctx: CanvasRenderingContext2D, rx: number): void {
   ctx.fill();
 }
 
-const ZOMBIE_DEATH: FramePaint[] = [
-  // buckle — knees give, eyes go out
-  (ctx) => {
-    groundShadow(ctx, 64, GROUND + 3, 25);
-    zombieStanding(ctx, "S", { bob: 8, stride: 0, lurch: 0.14, dead: true });
+function zombieDeath(v: ZVariant): FramePaint[] {
+  // A gorier variant leaves a bigger stain.
+  const pool = 16 + v.gore * 6;
+  return [
+    // buckle — knees give, eyes go out
+    (ctx) => {
+      groundShadow(ctx, 64, GROUND + 3, 25);
+      zombieStanding(ctx, "S", { bob: 8, stride: 0, lurch: 0.14, dead: true }, v);
+      celShade(ctx);
+    },
+    // fold — the whole figure pitches around the feet
+    (ctx) => {
+      groundShadow(ctx, 64, GROUND + 3, 25);
+      ctx.save();
+      ctx.translate(60, GROUND);
+      ctx.rotate(-0.62);
+      ctx.translate(-64, -GROUND);
+      zombieStanding(ctx, "S", { bob: 10, stride: 0, lurch: 0, dead: true }, v);
+      ctx.restore();
+      celShade(ctx);
+    },
+    // collapse — nearly flat, first blood
+    (ctx) => {
+      ctx.save();
+      ctx.translate(56, GROUND + 2);
+      ctx.rotate(-1.25);
+      ctx.translate(-64, -GROUND);
+      zombieStanding(ctx, "S", { bob: 12, stride: 0, lurch: 0, dead: true }, v);
+      ctx.restore();
+      celShade(ctx);
+      bloodPool(ctx, pool * 0.55);
+    },
+    // the heap and the stain
+    (ctx) => {
+      bloodPool(ctx, pool);
+      goreSplatter(ctx, v, 64, GROUND - 6);
+      ell(ctx, 58, GROUND - 8, 22, 9, F(v.skin), 0.08); // body mound
+      ell(ctx, 82, GROUND - 8, 9, 7, F(v.skin + 1), -0.2); // lolled head
+      line(ctx, [[86, GROUND - 10], [82, GROUND - 6]], 2.5, F(1)); // x eye
+      line(ctx, [[82, GROUND - 10], [86, GROUND - 6]], 2.5, F(1));
+      limb(ctx, 44, GROUND - 10, 34, GROUND - 4, 7, F(v.skin)); // outflung arm
+      line(ctx, [[50, GROUND - 12], [62, GROUND - 10]], 2, F(Math.min(9, v.skin + 2))); // rib glint
+      celShade(ctx);
+    },
+  ];
+}
+
+/** Build a full zombie painter set for one cosmetic variant. */
+export function makeZombiePaints(v: ZVariant): ActorPaints {
+  const dirClips = (dir: Dir, lurchBase: number, lurchWobble: number) => ({
+    idle: [
+      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase }, v),
+      zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase - lurchWobble }, v),
+    ],
+    walk: [
+      zombieFrame(dir, { bob: 2, stride: 1, lurch: lurchBase + 0.03 }, v),
+      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase - 0.02 }, v),
+      zombieFrame(dir, { bob: 2, stride: -1, lurch: lurchBase - 0.05 }, v),
+      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase - 0.02 }, v),
+    ],
+    death: zombieDeath(v),
+  });
+
+  return {
+    S: dirClips("S", 0.02, 0.04),
+    N: dirClips("N", 0.02, 0.04),
+    E: dirClips("E", 0.12, 0.02),
+  };
+}
+
+/** Back-compat default (variant 0) for any caller that wants one sheet. */
+export const ZOMBIE_PAINTS: ActorPaints = makeZombiePaints(ZOMBIE_VARIANTS[0]);
+
+// ══════════════════════════════════════════════════════════════════
+// GIANT SPIDER — a low, wide, many-legged skitterer. Reads totally
+// differently from the tall shambling zombie: bulbous abdomen, eight
+// jointed legs that scissor as it walks, a cluster of glowing eyes.
+// Sits LOW to the floor, so it's drawn in the lower half of the cel.
+// ══════════════════════════════════════════════════════════════════
+
+interface SPose {
+  /** Leg cycle phase, 0..1 — drives the scissor. */
+  step: number;
+  /** Body bob, px. */
+  bob: number;
+  dead?: boolean;
+}
+
+// Spider palette: chitinous dark — leather body, but legs are a LIGHTER steel
+// so the spidery silhouette reads against the dark floor. Blood-red eye cluster
+// and a rot-green back marking keep it in the Cold-Crypt ramps.
+const SP_BODY = 27; // leather dark — carapace (lifted from 26 so it's not pure void)
+const SP_BODY_HI = 28; // leather mid — the lit top of the abdomen
+const SP_JOINT = 20; // steel MID — legs catch light and read as spindly
+const SP_JOINT_HI = 21; // steel light — the lit femur segment
+const SP_EYE = 13; // blood light — eye cluster glow
+const SP_MARK = 8; // rot mid — a sickly marking on the back
+
+/**
+ * One jointed leg: hip → knee (raised) → foot (planted out). Two segments,
+ * the outer one lighter so the leg reads spindly against the floor; a dark
+ * foot tip taps the ground.
+ */
+function spiderLeg(ctx: CanvasRenderingContext2D, hx: number, hy: number, kx: number, ky: number, fx: number, fy: number, w: number): void {
+  limb(ctx, hx, hy, kx, ky, w, F(SP_JOINT)); // femur
+  limb(ctx, kx, ky, fx, fy, w * 0.7, F(SP_JOINT_HI)); // tibia (lit)
+  ell(ctx, fx, fy, w * 0.55, w * 0.45, F(1)); // foot tip
+}
+
+function spiderBody(ctx: CanvasRenderingContext2D, dir: Dir, pose: SPose): void {
+  const { step, bob, dead } = pose;
+  const cy = 92 + bob; // body sits low
+  // Leg scissor: front legs reach when back legs plant, and vice-versa.
+  const s = Math.sin(step * Math.PI * 2) * 6;
+  const s2 = Math.sin(step * Math.PI * 2 + Math.PI) * 6;
+
+  if (dead) {
+    // curled on its back: legs pulled inward over the belly
+    ell(ctx, 64, 104, 22, 11, F(SP_BODY)); // abdomen flat
+    for (let i = 0; i < 4; i++) {
+      const a = -0.5 + i * 0.35;
+      limb(ctx, 64, 100, 64 + Math.cos(a) * 20, 100 - Math.abs(Math.sin(a)) * 14, 5, F(SP_JOINT));
+      limb(ctx, 64, 100, 64 - Math.cos(a) * 20, 100 - Math.abs(Math.sin(a)) * 14, 5, F(SP_JOINT));
+    }
+    ell(ctx, 64, 100, 9, 8, F(SP_BODY_HI)); // upturned cephalothorax
+    return;
+  }
+
+  // ── eight legs, four per side, radiating from the cephalothorax ──
+  if (dir === "E") {
+    // profile: legs on the near side splay forward/back along the walk axis
+    const cx = 58;
+    for (let i = 0; i < 4; i++) {
+      const ph = i % 2 === 0 ? s : s2;
+      const fx = cx + 20 + i * 8;
+      spiderLeg(ctx, cx + 6, cy - 2, cx + 16 + i * 6, cy - 14, fx, GROUND - 2 + ph, 5);
+    }
+    // far-side legs, dimmer, behind the body
+    for (let i = 0; i < 3; i++) {
+      const fx = cx + 12 + i * 8;
+      limb(ctx, cx + 4, cy - 4, fx, GROUND - 6, 4, F(SP_BODY));
+    }
+    ell(ctx, cx + 30, cy, 22, 16, F(SP_BODY), 0.1); // abdomen (rear)
+    ell(ctx, cx + 30, cy - 4, 12, 8, F(SP_BODY_HI), 0.1); // lit back
+    ell(ctx, cx + 8, cy, 13, 11, F(SP_BODY_HI)); // cephalothorax (front)
+    // fangs + eyes face forward (+x)
+    ell(ctx, cx - 2, cy + 2, 5, 4, F(1));
+    for (let e = 0; e < 3; e++) glowDot(ctx, cx + 2 - e * 3, cy - 3 - (e % 2) * 3, 2.2);
+  } else {
+    // S/N: top-down-ish, symmetric splay left/right. Legs reach WIDE so the
+    // eight-legged silhouette is unmistakable against the dark floor.
+    const cx = 64;
+    const front = dir === "S"; // eyes toward camera on S, abdomen toward camera on N
+    for (let i = 0; i < 4; i++) {
+      const ph = i % 2 === 0 ? s : s2;
+      const spread = 26 + i * 11; // wider fan
+      const yy = cy - 18 + i * 12;
+      const kneeLift = 10; // knees ride high, feet plant far out
+      // left legs
+      spiderLeg(ctx, cx - 7, yy, cx - spread * 0.62, yy - kneeLift + ph, cx - spread, yy + 10 - ph, 4);
+      // right legs
+      spiderLeg(ctx, cx + 7, yy, cx + spread * 0.62, yy - kneeLift + ph, cx + spread, yy + 10 - ph, 4);
+    }
+    if (front) {
+      ell(ctx, cx, cy + 12, 20, 17, F(SP_BODY)); // abdomen behind
+      ell(ctx, cx, cy + 8, 11, 9, F(SP_BODY_HI)); // lit
+      line(ctx, [[cx, cy + 4], [cx, cy + 20]], 2, F(SP_MARK)); // marking
+      ell(ctx, cx, cy - 8, 14, 12, F(SP_BODY_HI)); // cephalothorax toward camera
+      ell(ctx, cx - 6, cy - 4, 4, 3.5, F(1)); // fang shadow
+      ell(ctx, cx + 6, cy - 4, 4, 3.5, F(1));
+      // eye cluster (glowing)
+      glowDot(ctx, cx - 5, cy - 12, 2.4);
+      glowDot(ctx, cx + 5, cy - 12, 2.4);
+      glowDot(ctx, cx - 2, cy - 9, 1.8);
+      glowDot(ctx, cx + 2, cy - 9, 1.8);
+    } else {
+      ell(ctx, cx, cy - 6, 14, 12, F(SP_BODY)); // cephalothorax (far)
+      ell(ctx, cx, cy + 12, 22, 18, F(SP_BODY)); // abdomen toward camera
+      ell(ctx, cx, cy + 8, 13, 10, F(SP_BODY_HI)); // lit hump
+      // spinnerets + marking on the back
+      line(ctx, [[cx - 4, cy + 6], [cx, cy + 22]], 2, F(SP_MARK));
+      line(ctx, [[cx + 4, cy + 6], [cx, cy + 22]], 2, F(SP_MARK));
+    }
+  }
+}
+
+/** A glowing eye dot — no outline, blooms through the pipeline. */
+function glowDot(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r, 0, 0, Math.PI * 2);
+  ctx.fillStyle = C(SP_EYE);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(x - r * 0.3, y - r * 0.3, r * 0.4, r * 0.4, 0, 0, Math.PI * 2);
+  ctx.fillStyle = C(17); // hot core
+  ctx.fill();
+}
+
+function spiderFrame(dir: Dir, pose: SPose): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, GROUND + 2, 30); // wide low shadow
+    spiderBody(ctx, dir, pose);
     celShade(ctx);
-  },
-  // fold — the whole figure pitches around the feet
+  };
+}
+
+const SPIDER_DEATH: FramePaint[] = [
+  (ctx) => { groundShadow(ctx, 64, GROUND + 2, 28); spiderBody(ctx, "S", { step: 0, bob: 4 }); celShade(ctx); },
+  (ctx) => { groundShadow(ctx, 64, GROUND + 2, 26); spiderBody(ctx, "S", { step: 0, bob: 8, dead: true }); celShade(ctx); },
   (ctx) => {
-    groundShadow(ctx, 64, GROUND + 3, 25);
-    ctx.save();
-    ctx.translate(60, GROUND);
-    ctx.rotate(-0.62);
-    ctx.translate(-64, -GROUND);
-    zombieStanding(ctx, "S", { bob: 10, stride: 0, lurch: 0, dead: true });
-    ctx.restore();
-    celShade(ctx);
-  },
-  // collapse — nearly flat, first blood
-  (ctx) => {
-    ctx.save();
-    ctx.translate(56, GROUND + 2);
-    ctx.rotate(-1.25);
-    ctx.translate(-64, -GROUND);
-    zombieStanding(ctx, "S", { bob: 12, stride: 0, lurch: 0, dead: true });
-    ctx.restore();
-    celShade(ctx);
-    bloodPool(ctx, 16);
-  },
-  // the heap and the stain
-  (ctx) => {
-    bloodPool(ctx, 34);
-    ell(ctx, 58, GROUND - 8, 22, 9, C(7), 0.08); // body mound
-    ell(ctx, 82, GROUND - 8, 9, 7, C(8), -0.2); // lolled head
-    line(ctx, [[86, GROUND - 10], [82, GROUND - 6]], 2.5, C(1)); // x eye
-    line(ctx, [[82, GROUND - 10], [86, GROUND - 6]], 2.5, C(1));
-    limb(ctx, 44, GROUND - 10, 34, GROUND - 4, 7, C(7)); // outflung arm
-    line(ctx, [[50, GROUND - 12], [62, GROUND - 10]], 2, C(9)); // rib glint
+    groundShadow(ctx, 64, GROUND + 2, 24);
+    spiderBody(ctx, "S", { step: 0, bob: 10, dead: true });
+    // a little ichor
+    ctx.beginPath(); ctx.ellipse(64, GROUND - 2, 16, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = C(7); ctx.fill();
     celShade(ctx);
   },
 ];
 
-export const ZOMBIE_PAINTS: ActorPaints = {
-  S: {
-    idle: [zombieFrame("S", { bob: 0, stride: 0, lurch: 0.02 }), zombieFrame("S", { bob: 2.5, stride: 0, lurch: -0.02 })],
+/** The giant-spider painter set. No variants (yet) — one menacing look. */
+export function makeSpiderPaints(): ActorPaints {
+  const dirClips = (dir: Dir) => ({
+    idle: [spiderFrame(dir, { step: 0, bob: 0 }), spiderFrame(dir, { step: 0.5, bob: 1 })],
     walk: [
-      zombieFrame("S", { bob: 2, stride: 1, lurch: 0.05 }),
-      zombieFrame("S", { bob: 0, stride: 0, lurch: 0 }),
-      zombieFrame("S", { bob: 2, stride: -1, lurch: -0.05 }),
-      zombieFrame("S", { bob: 0, stride: 0, lurch: 0 }),
+      spiderFrame(dir, { step: 0, bob: 0 }),
+      spiderFrame(dir, { step: 0.25, bob: 2 }),
+      spiderFrame(dir, { step: 0.5, bob: 0 }),
+      spiderFrame(dir, { step: 0.75, bob: 2 }),
     ],
-    death: ZOMBIE_DEATH,
-  },
-  N: {
-    idle: [zombieFrame("N", { bob: 0, stride: 0, lurch: 0.02 }), zombieFrame("N", { bob: 2.5, stride: 0, lurch: -0.02 })],
+    death: SPIDER_DEATH,
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BRUTE — the tank. It's a zombie body scaled up + bulked: a hulking
+// dark-green mass with slab shoulders, tiny head sunk between them, and
+// two massive fists. Built on top of zombieStanding (scaled about the
+// feet) so it animates + dies for free, with extra bulk drawn over it.
+// ══════════════════════════════════════════════════════════════════
+
+const BRUTE_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 2, stump: null, bandage: false, seed: 9 };
+// The overlord (boss) is the brute drawn even bigger, with a jagged bone crown
+// and blood-red glowing eyes so it reads as "the big one" at a glance.
+const BOSS_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 3, stump: null, bandage: false, seed: 13 };
+
+/** `scale` = body size multiplier; `crowned` adds boss horns/crown + red eyes. */
+function bruteFrame(dir: Dir, pose: ZPose, scale = 1.36, crowned = false): FramePaint {
+  const variant = crowned ? BOSS_VARIANT : BRUTE_VARIANT;
+  return (ctx) => {
+    groundShadow(ctx, 64, GROUND + 3, 34 * (scale / 1.36)); // wide heavy shadow
+    ctx.save();
+    // Scale the whole zombie up about the feet — a genuinely bigger body.
+    ctx.translate(64, GROUND);
+    ctx.scale(scale, scale);
+    ctx.translate(-64, -GROUND);
+    zombieStanding(ctx, dir, pose, variant);
+    // Slab pauldrons of grown-over muscle/bone on the shoulders.
+    const sy = 58 + pose.bob;
+    if (dir !== "N") {
+      ell(ctx, 44, sy, 13, 10, F(7));
+      ell(ctx, 84, sy, 13, 10, F(7));
+      // a bony spur off each shoulder
+      poly(ctx, [[40, sy - 6], [46, sy - 14], [50, sy - 4]], F(22));
+      poly(ctx, [[88, sy - 6], [82, sy - 14], [78, sy - 4]], F(22));
+    } else {
+      ell(ctx, 44, sy, 13, 10, F(7));
+      ell(ctx, 84, sy, 13, 10, F(7));
+      // spine ridge down the huge back
+      line(ctx, [[64, 54 + pose.bob], [64, 92 + pose.bob]], 4, F(22));
+    }
+    // Boss regalia: a jagged bone crown over the head + burning red eyes.
+    if (crowned && dir !== "N") {
+      const hy = 38 + pose.bob;
+      for (const [hx, tip] of [[54, 22], [62, 16], [70, 16], [78, 22]] as const) {
+        poly(ctx, [[hx - 3, hy - 6], [hx + 3, hy - 6], [hx, tip]], F(22)); // horn/crown spike
+      }
+      // red glowing eyes (unshaded so they bloom)
+      ctx.beginPath(); ctx.ellipse(58, hy, 3.2, 3.2, 0, 0, Math.PI * 2); ctx.fillStyle = C(13); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(70, hy, 3.2, 3.2, 0, 0, Math.PI * 2); ctx.fillStyle = C(13); ctx.fill();
+    }
+    ctx.restore();
+  };
+}
+
+const BRUTE_DEATH: FramePaint[] = zombieDeath(BRUTE_VARIANT).map((f) => (ctx) => {
+  // Same collapse, drawn bigger.
+  ctx.save();
+  ctx.translate(64, GROUND);
+  ctx.scale(1.3, 1.3);
+  ctx.translate(-64, -GROUND);
+  f(ctx);
+  ctx.restore();
+});
+
+export function makeBrutePaints(): ActorPaints {
+  const dirClips = (dir: Dir, lurch: number) => ({
+    idle: [
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }),
+      bruteFrame(dir, { bob: 3, stride: 0, lurch: lurch - 0.03 }),
+    ],
     walk: [
-      zombieFrame("N", { bob: 2, stride: 1, lurch: 0.05 }),
-      zombieFrame("N", { bob: 0, stride: 0, lurch: 0 }),
-      zombieFrame("N", { bob: 2, stride: -1, lurch: -0.05 }),
-      zombieFrame("N", { bob: 0, stride: 0, lurch: 0 }),
+      bruteFrame(dir, { bob: 3, stride: 1, lurch: lurch + 0.02 }),
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }),
+      bruteFrame(dir, { bob: 3, stride: -1, lurch: lurch - 0.04 }),
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }),
     ],
-    death: ZOMBIE_DEATH,
-  },
-  E: {
-    idle: [zombieFrame("E", { bob: 0, stride: 0, lurch: 0.1 }), zombieFrame("E", { bob: 2.5, stride: 0, lurch: 0.14 })],
+    death: BRUTE_DEATH,
+  });
+  return { S: dirClips("S", 0.04), N: dirClips("N", 0.04), E: dirClips("E", 0.14) };
+}
+
+// Bigger than a brute (1.36) but capped so the crowned head still fits the
+// 128px cel — the body scales about the feet (GROUND), so too much scale pushes
+// the head off the top of the frame.
+const BOSS_SCALE_ART = 1.6;
+const BOSS_DEATH: FramePaint[] = zombieDeath(BOSS_VARIANT).map((f) => (ctx) => {
+  ctx.save();
+  ctx.translate(64, GROUND);
+  ctx.scale(BOSS_SCALE_ART * 0.78, BOSS_SCALE_ART * 0.78);
+  ctx.translate(-64, -GROUND);
+  f(ctx);
+  ctx.restore();
+});
+
+/** The overlord: the brute even bigger, crowned, red-eyed. Guards the stairs. */
+export function makeBossPaints(): ActorPaints {
+  const dirClips = (dir: Dir, lurch: number) => ({
+    idle: [
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 4, stride: 0, lurch: lurch - 0.03 }, BOSS_SCALE_ART, true),
+    ],
     walk: [
-      zombieFrame("E", { bob: 2, stride: 1, lurch: 0.16 }),
-      zombieFrame("E", { bob: 0, stride: 0, lurch: 0.1 }),
-      zombieFrame("E", { bob: 2, stride: -1, lurch: 0.06 }),
-      zombieFrame("E", { bob: 0, stride: 0, lurch: 0.1 }),
+      bruteFrame(dir, { bob: 4, stride: 1, lurch: lurch + 0.02 }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 4, stride: -1, lurch: lurch - 0.04 }, BOSS_SCALE_ART, true),
+      bruteFrame(dir, { bob: 0, stride: 0, lurch }, BOSS_SCALE_ART, true),
     ],
-    death: ZOMBIE_DEATH,
-  },
-};
+    death: BOSS_DEATH,
+  });
+  return { S: dirClips("S", 0.03), N: dirClips("N", 0.03), E: dirClips("E", 0.1) };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SPITTER — the artillery. A bloated, sickly zombie with a swollen
+// acid sac for a belly that pulses; it rears back to gob at range. The
+// sac glows so you can read the threat across a room.
+// ══════════════════════════════════════════════════════════════════
+
+const SPITTER_VARIANT: ZVariant = { skin: 8, rag: 27, gore: 1, stump: null, bandage: false, seed: 11 };
+
+/** A spit-charge pose flag rides on ZPose.lurch magnitude — big lurch = rearing. */
+function spitterFrame(dir: Dir, pose: ZPose, charging = false): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, GROUND + 3, 26);
+    zombieStanding(ctx, dir, pose, SPITTER_VARIANT);
+    // Distended acid belly — a glowing green sac over the torso.
+    const by = 82 + pose.bob;
+    const pulse = charging ? 1.25 : 1;
+    ell(ctx, 64, by, 15 * pulse, 13 * pulse, F(8));
+    ell(ctx, 64, by, 9 * pulse, 8 * pulse, F(9));
+    // acid drip highlights
+    ell(ctx, 60, by + 8, 2.5, 3.5, F(9));
+    ell(ctx, 70, by + 6, 2, 3, F(9));
+    if (charging && dir !== "N") {
+      // a bright gob forming at the mouth just before release
+      const mx = dir === "E" ? 84 : 66;
+      ell(ctx, mx, 44 + pose.bob, 5, 5, F(9));
+      ell(ctx, mx, 44 + pose.bob, 2.5, 2.5, F(17));
+    }
+    celShade(ctx);
+  };
+}
+
+export function makeSpitterPaints(): ActorPaints {
+  // "attack" clip = the rear-back-and-spit; the AI plays it on windup.
+  const dirClips = (dir: Dir) => ({
+    idle: [spitterFrame(dir, { bob: 0, stride: 0, lurch: 0.02 }), spitterFrame(dir, { bob: 2, stride: 0, lurch: -0.02 })],
+    walk: [
+      spitterFrame(dir, { bob: 2, stride: 1, lurch: 0.04 }),
+      spitterFrame(dir, { bob: 0, stride: 0, lurch: 0 }),
+      spitterFrame(dir, { bob: 2, stride: -1, lurch: -0.04 }),
+      spitterFrame(dir, { bob: 0, stride: 0, lurch: 0 }),
+    ],
+    attack: [
+      spitterFrame(dir, { bob: 0, stride: 0, lurch: -0.12 }, true), // rear back
+      spitterFrame(dir, { bob: 1, stride: 0, lurch: 0.1 }, true), // lunge/spit
+    ],
+    death: zombieDeath(SPITTER_VARIANT),
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
 
 // ══════════════════════════════════════════════════════════════════
 // GROUND ITEMS — the held weapon art lying at an angle, plus gear.
@@ -740,33 +1284,93 @@ const HELMET_ITEM: FramePaint = (ctx) => {
   ctx.lineWidth = INK_W;
   ctx.strokeStyle = INK;
   ctx.stroke();
-  ell(ctx, 64, 82, 18, 17, C(21));
-  rrect(ctx, 51, 79, 26, 6, 3, C(1)); // visor
-  line(ctx, [[50, 92], [78, 92]], 2.5, C(20)); // rim
+  ell(ctx, 64, 82, 18, 17, F(21));
+  rrect(ctx, 51, 79, 26, 6, 3, F(1)); // visor
+  line(ctx, [[50, 92], [78, 92]], 2.5, F(20)); // rim
   celShade(ctx);
 };
 
 const ARMOR_ITEM: FramePaint = (ctx) => {
   groundShadow(ctx, 64, 104, 24);
-  poly(ctx, [[44, 62], [84, 62], [78, 98], [50, 98]], C(21)); // breastplate
-  ell(ctx, 46, 64, 8, 6, C(20)); // shoulder cops
-  ell(ctx, 82, 64, 8, 6, C(20));
-  line(ctx, [[64, 66], [64, 94]], 2, C(20)); // seam
-  line(ctx, [[52, 72], [58, 78]], 3, C(22)); // shine tick
+  poly(ctx, [[44, 62], [84, 62], [78, 98], [50, 98]], F(21)); // breastplate
+  ell(ctx, 46, 64, 8, 6, F(20)); // shoulder cops
+  ell(ctx, 82, 64, 8, 6, F(20));
+  line(ctx, [[64, 66], [64, 94]], 2, F(20)); // seam
+  line(ctx, [[52, 72], [58, 78]], 3, F(22)); // shine tick
   celShade(ctx);
 };
 
 const BOOTS_ITEM: FramePaint = (ctx) => {
   groundShadow(ctx, 64, 104, 22);
   for (const bx of [48, 74]) {
-    rrect(ctx, bx, 68, 12, 26, 4, C(27)); // shaft
-    poly(ctx, [[bx, 88], [bx + 12, 88], [bx + 20, 98], [bx, 98]], C(26)); // foot
-    line(ctx, [[bx + 2, 74], [bx + 10, 74]], 2, C(28)); // strap
+    rrect(ctx, bx, 68, 12, 26, 4, F(27)); // shaft
+    poly(ctx, [[bx, 88], [bx + 12, 88], [bx + 20, 98], [bx, 98]], F(26)); // foot
+    line(ctx, [[bx + 2, 74], [bx + 10, 74]], 2, F(28)); // strap
   }
   celShade(ctx);
 };
 
-/** Ground-item art, keyed by weapon id / gear slot. */
+/**
+ * A corked round-bottomed flask of glowing liquid. `liquid` is a raw css colour
+ * (the potion's own hue, which may sit outside the palette — the quantizer snaps
+ * it to the nearest ramp). A bright core sits on the liquid so it reads as
+ * magical and blooms through the pipeline.
+ */
+function potionItem(liquid: string): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 104, 18);
+    // neck + cork
+    rrect(ctx, 59, 60, 10, 12, 2, F(2)); // glass neck (dark stone-grey glass)
+    rrect(ctx, 58, 54, 12, 8, 2, F(27)); // cork
+    // round body
+    ell(ctx, 64, 88, 17, 17, F(2)); // glass
+    // liquid fills the lower body
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(64, 88, 13, 13, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = liquid;
+    ctx.fillRect(48, 84, 32, 20); // liquid line partway up
+    ctx.restore();
+    // magical core glow + surface glint
+    ctx.beginPath();
+    ctx.ellipse(64, 92, 5, 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = C(18); // hot core — blooms
+    ctx.globalAlpha = 0.7;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    line(ctx, [[56, 82], [60, 78]], 3, F(22)); // glass highlight
+    celShade(ctx);
+  };
+}
+
+/**
+ * The greed idol — a squat golden statuette on a coin pile, unmistakably
+ * "treasure" and not a flask. Warm gold (torch ramp) so it glints and blooms.
+ */
+function goldIdolItem(): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 106, 20);
+    // coin pile at the base
+    for (const [cx, cy] of [[52, 100], [60, 103], [70, 101], [64, 98], [76, 103]] as const) {
+      ell(ctx, cx, cy, 5, 3, F(16));
+    }
+    // idol body — a little tiki/totem
+    poly(ctx, [[56, 96], [72, 96], [70, 70], [58, 70]], F(16)); // trunk
+    ell(ctx, 64, 66, 12, 11, F(16)); // head
+    // face carvings (dark)
+    ell(ctx, 60, 64, 2.5, 3, F(14));
+    ell(ctx, 68, 64, 2.5, 3, F(14));
+    rrect(ctx, 59, 70, 10, 3, 1, F(14)); // mouth slot
+    // crown/glint highlights
+    poly(ctx, [[58, 58], [64, 50], [70, 58]], F(17)); // crown point
+    line(ctx, [[58, 80], [70, 80]], 2, F(17)); // belt glint
+    ell(ctx, 60, 62, 2, 2, F(18)); // hot glint — blooms
+    celShade(ctx);
+  };
+}
+
+/** Ground-item art, keyed by weapon id / gear slot / potion id. */
 export const ITEM_PAINTS: Record<string, FramePaint> = {
   sword: groundWeapon("sword"),
   stick: groundWeapon("stick"),
@@ -778,6 +1382,12 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   helmet: HELMET_ITEM,
   armor: ARMOR_ITEM,
   boots: BOOTS_ITEM,
+  // Potions — liquid colour comes from the POTION table.
+  health: potionItem("#d95763"),
+  rage: potionItem("#d97b29"),
+  haste: potionItem("#6fd0e8"),
+  shield: potionItem("#8fc46b"),
+  gold: goldIdolItem(),
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -785,31 +1395,31 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
 // ══════════════════════════════════════════════════════════════════
 
 const BONES_PROP: FramePaint = (ctx) => {
-  limb(ctx, 40, 100, 62, 108, 5, C(22)); // long bone
-  ell(ctx, 38, 99, 4, 4, C(21));
-  ell(ctx, 64, 109, 4, 4, C(21));
-  limb(ctx, 74, 94, 88, 104, 4, C(21)); // second bone
-  ell(ctx, 90, 105, 3.5, 3.5, C(22));
-  line(ctx, [[54, 92], [60, 96]], 3, C(20)); // shard
+  limb(ctx, 40, 100, 62, 108, 5, F(22)); // long bone
+  ell(ctx, 38, 99, 4, 4, F(21));
+  ell(ctx, 64, 109, 4, 4, F(21));
+  limb(ctx, 74, 94, 88, 104, 4, F(21)); // second bone
+  ell(ctx, 90, 105, 3.5, 3.5, F(22));
+  line(ctx, [[54, 92], [60, 96]], 3, F(20)); // shard
   celShade(ctx);
 };
 
 const SKULL_PROP: FramePaint = (ctx) => {
-  ell(ctx, 64, 98, 12, 11, C(22));
-  ell(ctx, 60, 96, 3, 3.5, C(1)); // sockets
-  ell(ctx, 69, 96, 3, 3.5, C(1));
-  poly(ctx, [[63, 101], [66, 101], [64.5, 104]], C(1)); // nose
-  rrect(ctx, 58, 106, 13, 5, 2, C(21)); // jaw
-  line(ctx, [[61, 106], [61, 110]], 1.5, C(1)); // teeth gaps
-  line(ctx, [[65, 106], [65, 110]], 1.5, C(1));
+  ell(ctx, 64, 98, 12, 11, F(22));
+  ell(ctx, 60, 96, 3, 3.5, F(1)); // sockets
+  ell(ctx, 69, 96, 3, 3.5, F(1));
+  poly(ctx, [[63, 101], [66, 101], [64.5, 104]], F(1)); // nose
+  rrect(ctx, 58, 106, 13, 5, 2, F(21)); // jaw
+  line(ctx, [[61, 106], [61, 110]], 1.5, F(1)); // teeth gaps
+  line(ctx, [[65, 106], [65, 110]], 1.5, F(1));
   celShade(ctx);
 };
 
 const RUBBLE_PROP: FramePaint = (ctx) => {
-  poly(ctx, [[42, 110], [50, 96], [62, 102], [58, 112]], C(3));
-  poly(ctx, [[60, 108], [70, 94], [84, 104], [80, 112]], C(4));
-  poly(ctx, [[80, 110], [88, 102], [96, 110]], C(3));
-  ell(ctx, 52, 112, 4, 2.5, C(2));
+  poly(ctx, [[42, 110], [50, 96], [62, 102], [58, 112]], F(3));
+  poly(ctx, [[60, 108], [70, 94], [84, 104], [80, 112]], F(4));
+  poly(ctx, [[80, 110], [88, 102], [96, 110]], F(3));
+  ell(ctx, 52, 112, 4, 2.5, F(2));
   celShade(ctx);
 };
 

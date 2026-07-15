@@ -136,7 +136,7 @@ export const VIGNETTE = 0.32; // pulled back from 0.5 — it was eating the corn
  * That one step turns "flash game" curves into authored-looking pixel art
  * while the sprite-forge pipeline waits for hand-made frames.
  */
-export const SPRITE_PIXEL_GRID = 36;
+export const SPRITE_PIXEL_GRID = 52;
 
 // ── Set dressing density (Phase 1) ──────────────────────────────
 /** ~1 in N eligible full-wall faces grows a pilaster / hangs a banner. */
@@ -260,6 +260,97 @@ export const SEPARATION_R = 0.55;
 /** The BFS flow field is recomputed on this cadence, not per frame — one BFS serves every zombie. */
 export const FLOW_INTERVAL = 0.25;
 
+// ── Giant spiders ───────────────────────────────────────────────
+/**
+ * A second enemy family. Fast and fragile: they SKITTER — quicker than a
+ * zombie, less HP, a shorter faster bite — so a room of spiders reads very
+ * differently from a shambling horde. Same pathing/combat pipeline as zombies
+ * (updateZombies handles kind === "spider"), only the numbers + art differ.
+ */
+export const SPIDER_HP = 2;
+export const SPIDER_R = 0.34;
+export const SPIDER_SPEED_FACTOR = 1.7; // multiplies the level's zombie speed
+export const SPIDER_CONTACT_RANGE = 0.66;
+export const SPIDER_ATTACK_WINDUP = 0.28; // snappier than a zombie's lunge
+export const SPIDER_ATTACK_COOLDOWN = 0.85;
+export const SPIDER_DAMAGE = 1;
+/** ~1 spider per this many zombies in the horde, from level SPIDER_FROM_LEVEL. */
+export const SPIDER_RATIO = 4;
+export const SPIDER_FROM_LEVEL = 2;
+
+// ── Brutes ──────────────────────────────────────────────────────
+/**
+ * The tank. Big, slow, soaks a lot of hits and lands a heavy bite that shoves
+ * you back hard — you can't just facetank it, you have to kite. Rare, so it's a
+ * "oh no, a big one" moment rather than a wall of them. Same pathing/combat as
+ * a zombie, just heavy numbers + a bigger body radius.
+ */
+export const BRUTE_HP = 9;
+export const BRUTE_R = 0.42;
+export const BRUTE_SPEED_FACTOR = 0.62; // slower than a normal zombie
+export const BRUTE_CONTACT_RANGE = 0.85;
+export const BRUTE_ATTACK_WINDUP = 0.6; // a slow, telegraphed haymaker
+export const BRUTE_ATTACK_COOLDOWN = 1.4;
+export const BRUTE_DAMAGE = 2;
+export const BRUTE_KNOCKBACK = 0.9; // shoves the player back hard
+export const BRUTE_RATIO = 7; // ~1 brute per this many horde slots
+export const BRUTE_FROM_LEVEL = 3;
+
+// ── Spitters ────────────────────────────────────────────────────
+/**
+ * The ranged threat. Instead of closing to bite, a spitter stops at range and
+ * lobs an acid glob at you (reuses the projectile system). It forces you to
+ * break line-of-fire or rush it down — a horde of these plus melee zombies is a
+ * real positioning problem. Fragile up close.
+ */
+export const SPITTER_HP = 3;
+export const SPITTER_R = 0.3;
+export const SPITTER_SPEED_FACTOR = 0.85;
+/** It stops and spits once within this many tiles, instead of closing to melee. */
+export const SPITTER_FIRE_RANGE = 6;
+/** Below this it panics and keeps its distance rather than getting cornered. */
+export const SPITTER_KITE_RANGE = 2.4;
+export const SPITTER_WINDUP = 0.55; // the gob is telegraphed — a rear-back
+export const SPITTER_COOLDOWN = 1.8;
+export const SPITTER_DAMAGE = 1;
+export const SPITTER_GLOB_SPEED = 7.5; // tiles/sec
+export const SPITTER_RATIO = 6;
+export const SPITTER_FROM_LEVEL = 4;
+
+// ── Overlord (the mini-boss) ────────────────────────────────────
+/**
+ * Every BOSS_EVERY floors an OVERLORD guards the stairs: a giant brute with a
+ * health bar, a big HP pool that scales with depth, and a guaranteed reward on
+ * death. It's the "milestone" — clearing it is how a run of descents feels like
+ * progress rather than an endless treadmill. Reuses the brute art (scaled) and
+ * the brute's heavy-hit AI.
+ */
+export const BOSS_EVERY = 5; // a boss on levels 5, 10, 15, …
+export const BOSS_BASE_HP = 40;
+export const BOSS_HP_PER_TIER = 25; // +this much per boss encounter (level/5)
+export const BOSS_SCALE = 1.5; // extra visual size over a normal brute
+export const BOSS_SPEED_FACTOR = 0.55;
+export const BOSS_GOLD = 50; // bonus gold on kill (on top of per-kill)
+
+// ── RAMPAGE (the FPS ultimate) ──────────────────────────────────
+/**
+ * The maze is REAL 3D, so the ultimate just swaps the ortho iso camera for a
+ * first-person perspective one at eye height and lets you blast down the
+ * corridors Doom-style. The pixel/quantize pass stays on, so it reads as a
+ * chunky DOS-era FPS. Charges from kills; ends on a timer.
+ */
+export const ULT_CHARGE_PER_KILL = 0.09; // ~11–12 kills to fill the meter
+export const ULT_DURATION = 12; // seconds of rampage per activation
+export const FPS_EYE_HEIGHT = 0.62; // camera height above the floor, world units
+export const FPS_FOV = 75; // degrees — wide, Wolfenstein-ish
+export const FPS_MOVE_SPEED = 5.6; // faster than the iso walk — you're a wrecking ball
+export const FPS_TURN_SPEED = 2.6; // radians/sec for keyboard turn (Q/E, arrows)
+export const FPS_MOUSE_SENS = 0.0026; // radians per pixel of mouse movement
+export const FPS_PITCH_LIMIT = 0.5; // radians up/down clamp
+export const FPS_SHOT_COOLDOWN = 0.14; // rapid-fire hitscan
+export const FPS_SHOT_DAMAGE = 3; // hitscan damage per shot
+export const FPS_SHOT_RANGE = 14; // tiles a hitscan shot reaches
+
 // ── Camera follow ───────────────────────────────────────────────
 export const CAM_DEADZONE = 0.7; // player can wander this far before the camera moves
 export const CAM_LERP = 6; // catch-up rate, 1/sec
@@ -276,24 +367,32 @@ export interface LevelConfig {
   zombies: number;
   zombieSpeed: number; // tiles/sec
   torches: number;
+  /** Wall-knock probability — higher = more loops/junctions = more complex. */
+  braid: number;
 }
 
 export function levelConfig(level: number): LevelConfig {
   const l = Math.max(1, level);
-  // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2 —
-  // level 1 is 66×46 tiles (≈16× the original build's 17×11), corridors 2
-  // wide, wall bands 2 thick. Zombie count rides walkable area so density
-  // stays roughly constant as depth grows.
-  const cellsW = Math.min(15 + l, 26);
-  const cellsH = Math.min(10 + Math.ceil(l / 2), 17);
+  // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2.
+  // Bigger + faster-growing than the first build so deeper floors are sprawling
+  // labyrinths, not the same small maze. Level 1 is ~72×52 tiles; the caps let
+  // late floors reach ~120×90.
+  const cellsW = Math.min(17 + Math.ceil(l * 1.4), 30);
+  const cellsH = Math.min(12 + l, 22);
   const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
   return {
     cellsW,
     cellsH,
-    zombies: Math.min(Math.round(floorTiles / 34) + 2 * (l - 1), 48),
-    zombieSpeed: Math.min(1.25 + 0.08 * l, 2.2),
+    zombies: Math.min(Math.round(floorTiles / 32) + 3 * (l - 1), 60),
+    // Faster horde overall, and it ramps harder with depth — a deep floor is a
+    // genuine sprint, not a shuffle. (Spiders multiply this again, see items.)
+    zombieSpeed: Math.min(1.5 + 0.12 * l, 2.8),
     // Torches ride the maze area too — sparse torches left whole regions
     // pitch dark. Only TORCH_LIGHT_POOL of them are ever LIVE lights.
-    torches: Math.min(Math.round(floorTiles / 55) + 8, 36),
+    torches: Math.min(Math.round(floorTiles / 55) + 8, 40),
+    // Braiding grows with depth: shallow floors are corridor duels (few loops),
+    // deep floors are open labyrinths full of flanking routes and dead-end
+    // ambush pockets. Capped so it never dissolves into an open room.
+    braid: Math.min(0.1 + 0.035 * l, 0.32),
   };
 }
