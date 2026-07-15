@@ -66,7 +66,7 @@ export const SPRITE_UNITS = 1.1; // actor plane size, world units (~1 tile tall)
 // ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
 export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading
 export const DITHER_DEFAULT = true; // ordered dither breaks AO/shadow banding before the quantizer (2026-07-14 3D pass)
-export const SCANLINE_DEFAULT = false; // subtle CRT scanlines
+export const SCANLINE_DEFAULT = true; // subtle CRT scanlines — 14% row darkening; A/B'd 2026-07-15, adds arcade-cabinet feel with no readability cost
 export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
 
 // ── Lighting & depth (the "make the 3D read as 3D" pass) ────────

@@ -21,7 +21,7 @@
 export type WeaponId = "fists" | "sword" | "stick" | "mace" | "chair" | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
-export type ProjectileKind = "bullet" | "arrow" | "flame";
+export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob";
 
 export interface WeaponDef {
   id: WeaponId;
@@ -102,6 +102,48 @@ export const GEAR: Record<GearSlot, GearDef> = {
 };
 
 export const GEAR_SLOTS: GearSlot[] = ["helmet", "armor", "boots"];
+
+// ── Potions — walk-over consumables ─────────────────────────────
+//
+// A third pickup family beside weapons and gear. Two flavours of effect:
+//  - INSTANT: healing, applied the moment you grab it (heal potion).
+//  - TIMED BUFF: rage (2× damage) and haste (faster move + swing) run for a
+//    duration, tracked on the player and ticked down each frame. Grabbing the
+//    same buff again refreshes its timer rather than stacking.
+
+export type PotionId = "health" | "rage" | "haste" | "shield" | "gold";
+
+export interface PotionDef {
+  id: PotionId;
+  label: string;
+  icon: string;
+  /** Sprite tint / liquid colour, sRGB hex — also the HUD swatch. */
+  color: number;
+  /** Instant hearts restored (0 for pure-buff potions). */
+  heal: number;
+  /** Timed-buff duration, seconds (0 for instant potions). */
+  duration: number;
+  /** Instant gold granted (the greed idol). 0 for everything else. */
+  gold?: number;
+}
+
+export const POTIONS: Record<PotionId, PotionDef> = {
+  health: { id: "health", label: "Health", icon: "❤️", color: 0xd95763, heal: 3, duration: 0 },
+  rage: { id: "rage", label: "Rage", icon: "💢", color: 0xd97b29, heal: 0, duration: 12 },
+  haste: { id: "haste", label: "Haste", icon: "⚡", color: 0x6fd0e8, heal: 0, duration: 12 },
+  // Shield: a bubble of invulnerability — walk through a horde untouched for a
+  // few seconds. The escape-hatch power-up.
+  shield: { id: "shield", label: "Shield", icon: "🛡️", color: 0x8fc46b, heal: 0, duration: 6 },
+  // Greed idol: not a liquid — an instant gold windfall. Reads as a golden flask.
+  gold: { id: "gold", label: "Idol", icon: "💰", color: 0xffd98a, heal: 0, duration: 0, gold: 25 },
+};
+
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold"];
+
+/** Multipliers applied while a buff is active. */
+export const RAGE_DAMAGE_MULT = 2;
+export const HASTE_SPEED_MULT = 1.45;
+export const HASTE_COOLDOWN_MULT = 0.6; // attacks come out faster too
 
 /** Remaining durability per equipped slot; absent key = nothing equipped. */
 export type GearState = Partial<Record<GearSlot, number>>;

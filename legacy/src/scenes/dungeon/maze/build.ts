@@ -845,7 +845,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     disposables.push({ dispose: () => mesh.dispose() });
   }
 
-  // ── Stairs down — a dark descending notch with an arcane glow ──
+  // ── Stairs down — THE EXIT. It has to be findable from across a big maze
+  // (finding it IS the level's objective), so it's not a subtle floor notch:
+  // a dark descending pit ringed by arcane pylons with a tall glowing beam
+  // shooting up out of it. Cold arcane blue — the only such light in the level,
+  // so it reads instantly as "that's the way down", uncanny not cosy. ──
   const sc = tileCenter(grid, plan.stairs.i, plan.stairs.j);
   const voidMat = track(new THREE.MeshBasicMaterial({ color: PALETTE_HEX[0] }));
   const stepMat = track(new THREE.MeshLambertMaterial({ color: PALETTE_HEX[2] }));
@@ -861,10 +865,37 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     step.scale.setScalar(1 - s * 0.18);
     group.add(step);
   }
-  // The only cold light in the level — descending should look uncanny, not
-  // cosy. Not part of the torch pool; it's always on.
-  const stairGlow = new THREE.PointLight(PALETTE_HEX[31], 2.5, 3.2, 2);
-  stairGlow.position.set(sc.x, 0.5, sc.z);
+  // Four short arcane pylons framing the pit, glowing-capped — a "gate" read.
+  const pylonGeo = track(new THREE.BoxGeometry(0.14, 0.7, 0.14));
+  const pylonMat = track(new THREE.MeshStandardMaterial({ color: PALETTE_HEX[29], roughness: 0.5, metalness: 0.5 }));
+  const capGeo = track(new THREE.BoxGeometry(0.2, 0.12, 0.2));
+  const arcaneMat = track(new THREE.MeshBasicMaterial({ color: PALETTE_HEX[31] })); // basic = blooms
+  for (const [ox, oz] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]] as const) {
+    const pylon = new THREE.Mesh(pylonGeo, pylonMat);
+    pylon.position.set(sc.x + ox, 0.35, sc.z + oz);
+    group.add(pylon);
+    const cap = new THREE.Mesh(capGeo, arcaneMat);
+    cap.position.set(sc.x + ox, 0.72, sc.z + oz);
+    group.add(cap);
+  }
+  // A tall translucent beam of arcane light rising out of the pit — the
+  // landmark you can see over the knee-high corridor rims from a distance.
+  const beamMat = track(new THREE.MeshBasicMaterial({
+    color: PALETTE_HEX[31],
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }));
+  const beamGeo = track(new THREE.CylinderGeometry(0.22, 0.34, 3.2, 8, 1, true));
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.set(sc.x, 1.6, sc.z);
+  beam.renderOrder = 3;
+  group.add(beam);
+  // The only cold light in the level, always on (not part of the torch pool),
+  // now brighter + reaching further so its glow spills into the approach.
+  const stairGlow = new THREE.PointLight(PALETTE_HEX[31], 4.0, 5.5, 2);
+  stairGlow.position.set(sc.x, 0.6, sc.z);
   group.add(stairGlow);
 
   // ── Torches — sconce + flame everywhere, lights from a pool ──

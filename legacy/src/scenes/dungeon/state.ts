@@ -30,14 +30,36 @@ export interface Player extends Actor {
   cooldown: number;
   iframes: number;
   flashT: number;
+  /** Seconds left on the rage buff (2× damage). 0 = inactive. */
+  rageT: number;
+  /** Seconds left on the haste buff (faster move + swing). 0 = inactive. */
+  hasteT: number;
+  /** Seconds left on the shield buff (invulnerable). 0 = inactive. */
+  shieldT: number;
   /** Draws only where a wall covers the knight — you can never lose him. */
   silhouette: { mesh: THREE.Mesh; syncMap(): void; dispose(): void } | null;
 }
 
 export type ZombieMode = "idle" | "chase" | "windup" | "dead";
 
+/**
+ * Enemy family — same AI/combat pipeline; stats, art and behaviour flags differ
+ * by kind:
+ *  - zombie:  the baseline shambler (5 cosmetic variants).
+ *  - spider:  fast, fragile, skittering.
+ *  - brute:   big, slow, high-HP; a heavy bite with hard knockback.
+ *  - spitter: hangs back and lobs an acid glob (ranged) instead of biting.
+ */
+export type EnemyKind = "zombie" | "spider" | "brute" | "spitter";
+
 export interface Zombie extends Actor {
+  /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
+  kind: EnemyKind;
   hp: number;
+  /** Full HP, for drawing a boss health bar (only set on the overlord). */
+  maxHp?: number;
+  /** True for the stairs-guarding mini-boss: health bar + reward on death. */
+  boss?: boolean;
   mode: ZombieMode;
   speed: number;
   windupT: number;
@@ -50,8 +72,8 @@ export interface Zombie extends Actor {
 }
 
 export interface GroundItem {
-  kind: "weapon" | "gear";
-  id: string; // WeaponId | GearSlot
+  kind: "weapon" | "gear" | "potion";
+  id: string; // WeaponId | GearSlot | PotionId
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -72,6 +94,8 @@ export interface Projectile {
   life: number;
   maxLife: number;
   damage: number;
+  /** True for enemy projectiles (the spitter's glob) — these hit the PLAYER, not zombies. */
+  hostile?: boolean;
   mesh: THREE.Mesh;
   dispose(): void;
 }
@@ -87,6 +111,10 @@ export const state = {
   container: null as HTMLDivElement | null,
   hudEl: null as HTMLDivElement | null,
   gameOverEl: null as HTMLDivElement | null,
+  /** The first-person rampage overlay (crosshair + gun + red vignette). */
+  fpsOverlayEl: null as HTMLDivElement | null,
+  /** The overlord boss health bar (top-centre, shown only when a boss lives). */
+  bossBarEl: null as HTMLDivElement | null,
   /** Set by anything that changes a HUD number; core repaints once per frame at most. */
   hudDirty: true,
 
@@ -128,6 +156,16 @@ export const state = {
   /** Which weapon's art the player sprite currently shows. */
   playerArtWeapon: null as WeaponId | null,
   zombieSheet: null as SpriteSheet | null,
+  /** A small pool of cosmetic zombie-variant sheets; each spawn picks one by seed. */
+  zombieVariantSheets: [] as SpriteSheet[],
+  /** The giant-spider atlas — one look, built once per session. */
+  spiderSheet: null as SpriteSheet | null,
+  /** The brute (tank) atlas. */
+  bruteSheet: null as SpriteSheet | null,
+  /** The spitter (ranged) atlas. */
+  spitterSheet: null as SpriteSheet | null,
+  /** The overlord (mini-boss) atlas. */
+  bossSheet: null as SpriteSheet | null,
 
   // AI
   flowField: null as Int32Array | null,
@@ -137,6 +175,32 @@ export const state = {
   camX: 0,
   camZ: 0,
   shakeT: 0,
+
+  // ── RAMPAGE: the FPS "ultimate" ──
+  // Charges from kills; when full the player can drop into a first-person
+  // Doom/Wolfenstein view for a limited time and blast through the maze.
+  /** 0..1 charge on the ultimate meter. */
+  ultCharge: 0,
+  /** True while the first-person rampage is active. */
+  fpsActive: false,
+  /** Seconds left in the current rampage. */
+  fpsTimer: 0,
+  /** Look yaw (radians) — where the FPS camera points on the ground plane. */
+  fpsYaw: 0,
+  /** Look pitch (radians), clamped — slight up/down freedom. */
+  fpsPitch: 0,
+  /** The perspective camera used only in rampage; built lazily. */
+  fpsCamera: null as THREE.PerspectiveCamera | null,
+  /** Shot cadence cooldown while in rampage. */
+  fpsShotCd: 0,
+  /** Muzzle-flash timer for the FPS gun overlay. */
+  fpsFlashT: 0,
+  /** Recoil: a transient upward pitch punch (radians) that decays each frame. */
+  fpsKick: 0,
+  /** Current kill-streak count during a rampage (resets if you go too long without a kill). */
+  fpsStreak: 0,
+  /** Seconds since the last rampage kill — the streak window. */
+  fpsStreakT: 0,
   /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going). */
   hitstopT: 0,
 
@@ -174,6 +238,9 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     cooldown: 0,
     iframes: 0,
     flashT: 0,
+    rageT: 0,
+    hasteT: 0,
+    shieldT: 0,
   };
 }
 
@@ -183,6 +250,8 @@ export function resetState(): void {
   state.container = null;
   state.hudEl = null;
   state.gameOverEl = null;
+  state.fpsOverlayEl = null;
+  state.bossBarEl = null;
   state.hudDirty = true;
   state.renderer = null;
   state.scene = null;
@@ -207,11 +276,27 @@ export function resetState(): void {
   state.playerSheets = new Map();
   state.playerArtWeapon = null;
   state.zombieSheet = null;
+  state.zombieVariantSheets = [];
+  state.spiderSheet = null;
+  state.bruteSheet = null;
+  state.spitterSheet = null;
+  state.bossSheet = null;
   state.flowField = null;
   state.flowTimer = 0;
   state.camX = 0;
   state.camZ = 0;
   state.shakeT = 0;
+  state.ultCharge = 0;
+  state.fpsActive = false;
+  state.fpsTimer = 0;
+  state.fpsYaw = 0;
+  state.fpsPitch = 0;
+  state.fpsCamera = null;
+  state.fpsShotCd = 0;
+  state.fpsFlashT = 0;
+  state.fpsKick = 0;
+  state.fpsStreak = 0;
+  state.fpsStreakT = 0;
   state.hitstopT = 0;
   state.vfx = null;
   state.accumulator = 0;

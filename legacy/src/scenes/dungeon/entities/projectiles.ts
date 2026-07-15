@@ -12,10 +12,19 @@
  */
 import * as THREE from "three";
 import { state, type Projectile } from "../state";
-import { PROJECTILE_Y, MUZZLE_OFFSET, FLAME_BURN_IMMUNITY, ZOMBIE_R } from "../constants";
+import {
+  PROJECTILE_Y,
+  MUZZLE_OFFSET,
+  FLAME_BURN_IMMUNITY,
+  ZOMBIE_R,
+  PLAYER_R,
+  SPITTER_GLOB_SPEED,
+  SPITTER_FIRE_RANGE,
+  SPITTER_DAMAGE,
+} from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
-import { damageZombie } from "./combat";
+import { damageZombie, playerDamage, hitPlayerRanged } from "./combat";
 import type { WeaponDef } from "../items";
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
@@ -44,13 +53,50 @@ function flameGeo(): THREE.SphereGeometry {
   return _flameGeo;
 }
 
+let _globGeo: THREE.SphereGeometry | null = null;
+let _globMat: THREE.MeshBasicMaterial | null = null;
+function globAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _globGeo ??= new THREE.SphereGeometry(0.14, 8, 6);
+  _globMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[9] }); // rot-light acid green
+  return { geo: _globGeo, mat: _globMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
   _arrowGeo?.dispose();
   _arrowMat?.dispose();
   _flameGeo?.dispose();
-  _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = null;
+  _globGeo?.dispose();
+  _globMat?.dispose();
+  _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
+}
+
+/**
+ * A spitter's hostile acid glob, launched from (x,z) along the unit ground
+ * direction (dx,dz). Flies like a bullet but hits the PLAYER, not zombies.
+ */
+export function spitGlob(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = globAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "glob",
+    x: sx,
+    z: sz,
+    vx: dx * SPITTER_GLOB_SPEED,
+    vz: dz * SPITTER_GLOB_SPEED,
+    life: SPITTER_FIRE_RANGE / SPITTER_GLOB_SPEED,
+    maxLife: SPITTER_FIRE_RANGE / SPITTER_GLOB_SPEED,
+    damage: SPITTER_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
+  });
 }
 
 /** Remove a projectile from the world (mesh + list entry by index). */
@@ -115,7 +161,7 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
       vz: dz * speed,
       life,
       maxLife: life,
-      damage: w.damage,
+      damage: playerDamage(w.damage), // rage buff doubles it, baked in at fire time
       mesh,
       dispose,
     });
@@ -145,6 +191,23 @@ export function updateProjectiles(dt: number): void {
     if (!isWalkable(g, t.i, t.j)) {
       despawn(i);
       continue;
+    }
+
+    // ── Hostile globs hit the PLAYER, not zombies ──
+    if (pr.hostile) {
+      const p = state.player;
+      if (p && p.hp > 0) {
+        const dx = p.x - pr.x;
+        const dz = p.z - pr.z;
+        if (dx * dx + dz * dz <= (PLAYER_R + HIT_R) * (PLAYER_R + HIT_R)) {
+          hitPlayerRanged(pr.damage, pr.x, pr.z);
+          state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
+          despawn(i);
+          continue;
+        }
+      }
+      pr.mesh.position.set(pr.x, PROJECTILE_Y, pr.z);
+      continue; // globs skip the zombie loop below
     }
 
     // ── Zombies ──

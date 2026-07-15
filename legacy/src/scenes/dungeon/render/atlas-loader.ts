@@ -2,7 +2,7 @@
  * sprite-forge atlas loader — the bridge between offline-made pixel art and
  * the in-game Animator.
  *
- * tools/sprite-forge/pack.mjs packs converted frames into a single horizontal
+ * ../tools/sprite-forge/pack.mjs packs converted frames into a single horizontal
  * strip PNG plus a manifest JSON, published under public/dungeon/sprites/.
  * This loader turns that pair into a SpriteSheet that is drop-in compatible
  * with the procedural sheets from buildSpriteSheet — same clip-key scheme

@@ -9,8 +9,15 @@ import { PLAYER_MAX_HP } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
-/** SOTN-style serif for headers/toasts — gothic games use serif, not mono. */
-const SERIF = `700 13px Georgia, "Times New Roman", serif`;
+/**
+ * Header/toast face. Was Georgia serif (SOTN-gothic); switched 2026-07-15 to the
+ * same heavily-tracked monospace the HUD uses so titles read "arcade cabinet"
+ * and stay self-contained (no Google-Fonts network dependency / load flash).
+ * Name kept as SERIF to avoid churning every call site.
+ */
+const SERIF = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
+/** Big display face for the depth-title toast — tracked mono, small-caps. */
+const DISPLAY = `900 34px ui-monospace, "SF Mono", Menlo, monospace`;
 
 /**
  * The gothic frame (Phase 4): a carved-stone panel with a gold fillet line
@@ -52,6 +59,157 @@ export function createHUD(container: HTMLElement): HTMLDivElement {
   el.appendChild(body);
   container.appendChild(el);
   return el;
+}
+
+/**
+ * The RAMPAGE overlay: a Doom-style crosshair and a chunky gun barrel jutting
+ * up from the bottom-centre, plus a red vignette so the whole screen reads
+ * "power mode". A DOM overlay (outside the pixel pass), shown only while the
+ * first-person rampage is active. Built once, toggled with setFpsOverlay.
+ */
+export function createFpsOverlay(container: HTMLElement): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = "dungeon-fps-overlay";
+  el.style.cssText = `
+    position: fixed; inset: 0; z-index: 10002; display: none;
+    pointer-events: none; user-select: none;
+    box-shadow: inset 0 0 220px 40px rgba(168, 50, 68, 0.35);
+  `;
+  el.innerHTML = `
+    <style>@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.35 } }</style>
+    <!-- crosshair -->
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+                width:26px;height:26px;">
+      <div style="position:absolute;left:12px;top:0;width:2px;height:9px;background:#ffd98a;box-shadow:0 0 3px #000"></div>
+      <div style="position:absolute;left:12px;bottom:0;width:2px;height:9px;background:#ffd98a;box-shadow:0 0 3px #000"></div>
+      <div style="position:absolute;top:12px;left:0;height:2px;width:9px;background:#ffd98a;box-shadow:0 0 3px #000"></div>
+      <div style="position:absolute;top:12px;right:0;height:2px;width:9px;background:#ffd98a;box-shadow:0 0 3px #000"></div>
+    </div>
+    <!-- gun barrel rising from the bottom, pixel-blocky -->
+    <div id="dungeon-fps-gun" style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+                width:120px;height:150px;transition:transform 0.09s ease-out;">
+      <div style="position:absolute;left:34px;bottom:0;width:52px;height:150px;
+                  background:linear-gradient(90deg,#2b303b,#6b7688 45%,#8a94a6 55%,#2b303b);
+                  border:3px solid #171a22;border-bottom:none;"></div>
+      <div style="position:absolute;left:44px;bottom:120px;width:32px;height:34px;
+                  background:linear-gradient(90deg,#171a22,#454f5e 50%,#171a22);
+                  border:3px solid #171a22;border-radius:4px 4px 0 0;"></div>
+      <!-- muzzle flash -->
+      <div id="dungeon-fps-flash" style="position:absolute;left:50%;bottom:150px;transform:translateX(-50%);
+                  width:46px;height:46px;display:none;
+                  background:radial-gradient(circle,#fff3c8,#f0a63c 45%,transparent 70%);"></div>
+    </div>
+    <!-- kill-streak combo readout, upper-right -->
+    <div id="dungeon-fps-streak" style="position:absolute;right:40px;top:90px;text-align:right;
+                display:none;font:900 38px ui-monospace, "SF Mono", Menlo, monospace;
+                color:#ffd98a;text-shadow:0 0 12px rgba(217,123,41,0.9),2px 2px 0 #0b0d12;
+                letter-spacing:1px;line-height:0.9;"></div>
+  `;
+  container.appendChild(el);
+  return el;
+}
+
+/** Ranks for the kill-streak readout — the higher you climb, the hotter it reads. */
+const STREAK_RANKS: Array<[number, string, string]> = [
+  [3, "TRIPLE", "#8fc46b"],
+  [5, "RAMPAGE", "#6fd0e8"],
+  [8, "CARNAGE", "#f0a63c"],
+  [12, "SLAUGHTER", "#d95763"],
+  [18, "GODLIKE", "#fff3c8"],
+];
+
+/**
+ * Update the on-screen combo readout for the current kill-streak. Hidden below
+ * 2; above that it shows "×N" plus a rank word that escalates. A quick scale
+ * pop each call (via inline transition) sells each fresh frag.
+ */
+export function updateFpsStreak(el: HTMLDivElement | null, streak: number): void {
+  if (!el) return;
+  const node = el.querySelector("#dungeon-fps-streak") as HTMLDivElement | null;
+  if (!node) return;
+  if (streak < 2) {
+    node.style.display = "none";
+    return;
+  }
+  let rank = "DOUBLE";
+  let color = "#c8ccd4";
+  for (const [n, word, c] of STREAK_RANKS) {
+    if (streak >= n) { rank = word; color = c; }
+  }
+  node.style.display = "block";
+  node.style.color = color;
+  node.innerHTML = `<div style="font-size:52px">×${streak}</div><div style="font-size:22px;letter-spacing:3px">${rank}</div>`;
+  // pop
+  node.style.transition = "none";
+  node.style.transform = "scale(1.35)";
+  requestAnimationFrame(() => {
+    node.style.transition = "transform 0.18s ease-out";
+    node.style.transform = "scale(1)";
+  });
+}
+
+/** Show/hide the rampage overlay. */
+export function setFpsOverlay(el: HTMLDivElement | null, on: boolean): void {
+  if (el) el.style.display = on ? "block" : "none";
+}
+
+/**
+ * The overlord boss bar: a classic wide health bar pinned to the top-centre of
+ * the screen, shown only while the mini-boss is alive. Built once, appended to
+ * the container; updateBossBar drives its fill + visibility each frame.
+ */
+export function createBossBar(container: HTMLElement): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = "dungeon-boss-bar";
+  el.style.cssText = `
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 10001; width: 420px; display: none;
+    pointer-events: none; user-select: none; text-align: center;
+  `;
+  el.innerHTML = `
+    <div style="font:900 14px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:3px;color:#d95763;
+                text-shadow:0 0 8px rgba(217,87,99,0.8),1px 1px 0 #0b0d12;margin-bottom:3px">
+      ☠ THE OVERLORD ☠
+    </div>
+    <div style="height:12px;background:#0b0d12;border:2px solid #6b1f2a;
+                box-shadow:0 0 8px rgba(217,87,99,0.5)">
+      <div id="dungeon-boss-fill" style="height:100%;width:100%;
+           background:linear-gradient(90deg,#6b1f2a,#a83244 50%,#d95763)"></div>
+    </div>`;
+  container.appendChild(el);
+  return el;
+}
+
+/** Drive the boss bar: pass the boss's hp/maxHp, or null when no boss is alive. */
+export function updateBossBar(el: HTMLDivElement | null, hp: number | null, maxHp: number | null): void {
+  if (!el) return;
+  if (hp === null || maxHp === null || hp <= 0) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "block";
+  const fill = el.querySelector("#dungeon-boss-fill") as HTMLDivElement | null;
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, (hp / maxHp) * 100))}%`;
+}
+
+/** Blip the muzzle flash + kick the gun barrel down for one shot's recoil. */
+export function flashFpsMuzzle(el: HTMLDivElement | null): void {
+  if (!el) return;
+  const f = el.querySelector("#dungeon-fps-flash") as HTMLDivElement | null;
+  const gun = el.querySelector("#dungeon-fps-gun") as HTMLDivElement | null;
+  if (f) {
+    f.style.display = "block";
+    window.setTimeout(() => { f.style.display = "none"; }, 55);
+  }
+  if (gun) {
+    // punch the barrel down + back, then it eases back up (recoil)
+    gun.style.transition = "none";
+    gun.style.transform = "translateX(-50%) translateY(14px) scale(0.97)";
+    requestAnimationFrame(() => {
+      gun.style.transition = "transform 0.11s ease-out";
+      gun.style.transform = "translateX(-50%) translateY(0) scale(1)";
+    });
+  }
 }
 
 /** ▮▮▮▯▯-style durability meter. */
@@ -100,6 +258,33 @@ export function updateHUD(el: HTMLDivElement): void {
     return `<div>${def.icon} ${def.label.padEnd(7)} ${detail}</div>`;
   }).join("");
 
+  // Active potion buffs, with a ticking seconds countdown. Only shown while
+  // one is running, so the HUD stays quiet the rest of the time.
+  const p = state.player;
+  const buffs: string[] = [];
+  if (p && p.rageT > 0) buffs.push(`<span style="color:#d97b29">💢 RAGE ${Math.ceil(p.rageT)}s</span>`);
+  if (p && p.hasteT > 0) buffs.push(`<span style="color:#6fd0e8">⚡ HASTE ${Math.ceil(p.hasteT)}s</span>`);
+  if (p && p.shieldT > 0) buffs.push(`<span style="color:#8fc46b">🛡️ SHIELD ${Math.ceil(p.shieldT)}s</span>`);
+  const buffRow = buffs.length
+    ? `<div style="font:${SERIF};letter-spacing:1px;margin-top:2px">${buffs.join("&nbsp;&nbsp;")}</div>`
+    : "";
+
+  // RAMPAGE meter: a charge bar that fills from kills. When full, a pulsing
+  // "READY" hint invites the R key; while active, a countdown.
+  const pct = Math.round(state.ultCharge * 100);
+  const full = state.ultCharge >= 1;
+  const ultLabel = state.fpsActive
+    ? `<span style="color:#d95763">🔫 RAMPAGE ${Math.ceil(state.fpsTimer)}s</span>`
+    : full
+      ? `<span style="color:#ffd98a;animation:pulse 0.8s infinite">🔫 RAMPAGE — press R</span>`
+      : `<span style="color:#6b7688;font-variant:small-caps">Rampage</span>`;
+  const ultBar = state.fpsActive
+    ? ""
+    : `<div style="height:5px;margin-top:2px;background:#2b303b;border:1px solid #454f5e">
+         <div style="height:100%;width:${pct}%;background:${full ? "#f0a63c" : "#a83244"}"></div>
+       </div>`;
+  const ultRow = `<div style="font:${SERIF};letter-spacing:1px;margin-top:3px">${ultLabel}</div>${ultBar}`;
+
   // A carved rule with a diamond stud — the section divider.
   const rule = `
     <div style="display:flex;align-items:center;gap:6px;margin:7px 0 5px">
@@ -119,6 +304,8 @@ export function updateHUD(el: HTMLDivElement): void {
       <span style="color:#6b7688;font-variant:small-caps">Depth</span> <span style="color:#f0a63c">${state.level}</span>
       &nbsp;<span style="color:#6b7688;font-variant:small-caps">Kills</span> <span style="color:#8fc46b">${state.kills}</span></div>
     <div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Gold</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
+    ${buffRow}
+    ${ultRow}
   `;
 }
 
@@ -130,7 +317,7 @@ export function showToast(text: string, subtext = ""): void {
     position: fixed; inset: 0; z-index: 10001;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     pointer-events: none; user-select: none;
-    font: 700 36px Georgia, "Times New Roman", serif; letter-spacing: 7px;
+    font: ${DISPLAY}; letter-spacing: 7px;
     font-variant: small-caps;
     color: #f0a63c; text-shadow: 0 0 18px rgba(240,166,60,0.45), 2px 2px 0 #0b0d12;
     opacity: 0; transition: opacity 0.25s ease;
@@ -242,7 +429,7 @@ export function showControlsHint(container: HTMLElement): void {
     color: #6b7688; text-shadow: 1px 1px 0 #0b0d12;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SPACE ATTACK · TAB SWAP WEAPON · WALK OVER ITEMS TO EQUIP · FIND THE STAIRS · ESC LEAVE";
+  el.textContent = "WASD MOVE · SPACE ATTACK · TAB SWAP · R RAMPAGE (WHEN CHARGED) · WALK OVER ITEMS · FIND THE STAIRS · ESC LEAVE";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";

@@ -17,14 +17,32 @@ import {
   HITSTOP_KILL,
   SHAKE_ON_HIT,
   SHAKE_ON_KILL,
+  ULT_CHARGE_PER_KILL,
+  BRUTE_DAMAGE,
+  BRUTE_KNOCKBACK,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
 import { addGold } from "../../../utils/gold-wallet";
-import { WEAPONS, GEAR, degradeWeapon, absorbDamage } from "../items";
+import { WEAPONS, GEAR, degradeWeapon, absorbDamage, RAGE_DAMAGE_MULT } from "../items";
+
+/** Player's outgoing damage after the rage buff (2× while active). */
+export function playerDamage(base: number): number {
+  return state.player && state.player.rageT > 0 ? base * RAGE_DAMAGE_MULT : base;
+}
+
+/**
+ * Callback invoked at (x,z) when a boss dies — core registers it to drop the
+ * reward (gold + a health potion). A callback rather than a direct import keeps
+ * combat.ts free of a circular dependency on core.ts.
+ */
+let onBossDefeated: ((x: number, z: number) => void) | null = null;
+export function setBossDefeatedHandler(fn: (x: number, z: number) => void): void {
+  onBossDefeated = fn;
+}
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
-import { showToast } from "../ui";
+import { showToast, updateFpsStreak } from "../ui";
 
 /**
  * Facing → WORLD ground direction. Facings are SCREEN-relative (the art's "E"
@@ -156,8 +174,9 @@ export function resolvePlayerAttack(): boolean {
 
     landed = true;
     // Knockback along the swing, wall-aware. Heavier weapons shove harder.
-    const push = KNOCKBACK_ZOMBIE * (1 + (w.damage - 1) * 0.35);
-    damageZombie(z, w.damage, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
+    const dmg = playerDamage(w.damage);
+    const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35);
+    damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
   }
 
   if (landed) wearActiveWeapon();
@@ -171,11 +190,41 @@ function killZombie(z: Zombie): void {
   // A death pops a bigger gore burst, a longer freeze and a heavier kick.
   state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
   state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
-  state.hitstopT = Math.max(state.hitstopT, HITSTOP_KILL);
+  // In first person you're right on top of the kill — double the gore with a
+  // second red splatter so a frag reads as a proper Doom-style gib.
+  if (state.fpsActive) {
+    state.vfx?.blood(z.x, 0.7, z.z, "red", 16);
+    state.vfx?.sparks(z.x, 0.7, z.z, 0, 0, 8);
+  }
+  // Killing the OVERLORD is the milestone: a huge gore blast, a bonus gold
+  // windfall and a guaranteed health-potion drop right where it fell.
+  if (z.boss) {
+    state.vfx?.blood(z.x, 0.9, z.z, "red", 40);
+    state.vfx?.blood(z.x, 0.6, z.z, "green", 40);
+    state.vfx?.sparks(z.x, 0.9, z.z, 0, 0, 24);
+    state.shakeT = Math.max(state.shakeT, 0.6);
+    onBossDefeated?.(z.x, z.z);
+  }
+  state.hitstopT = Math.max(state.hitstopT, z.boss ? HITSTOP_KILL * 2.5 : HITSTOP_KILL);
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
   state.goldRun += GOLD_PER_KILL;
   addGold(GOLD_PER_KILL, "dungeon-game");
+  if (state.fpsActive) {
+    // Rampage kills build a streak (reset by a lull, tracked in fps.ts) and
+    // punch the camera + extend the rampage a hair, so a hot streak feels like
+    // a rolling wrecking-ball. No ult-charge (can't refuel itself).
+    state.fpsStreak++;
+    state.fpsStreakT = 0;
+    state.fpsKick = Math.min(0.12, state.fpsKick + 0.05);
+    state.fpsTimer += 0.4; // small reward: a good streak lasts a touch longer
+    state.shakeT = Math.max(state.shakeT, 0.18);
+    state.hitstopT = Math.max(state.hitstopT, 0.03); // a crisp micro-freeze per frag
+    updateFpsStreak(state.fpsOverlayEl, state.fpsStreak);
+  } else {
+    // Charge the rampage ultimate from ordinary kills only.
+    state.ultCharge = Math.min(1, state.ultCharge + ULT_CHARGE_PER_KILL);
+  }
   state.hudDirty = true;
   sfxZombieDie();
 }
@@ -189,9 +238,13 @@ export function hitPlayer(z: Zombie): void {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.hp <= 0) return;
-  if (p.iframes > 0) return;
+  if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
-  const absorbed = absorbDamage(state.gear, ZOMBIE_DAMAGE);
+  // A brute's haymaker hits harder and shoves you further than a normal bite.
+  const damage = z.kind === "brute" ? BRUTE_DAMAGE : ZOMBIE_DAMAGE;
+  const knockback = z.kind === "brute" ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
+
+  const absorbed = absorbDamage(state.gear, damage);
   state.gear = absorbed.gear;
   for (const slot of absorbed.destroyed) {
     showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);
@@ -211,7 +264,44 @@ export function hitPlayer(z: Zombie): void {
   const dx = p.x - z.x;
   const dz = p.z - z.z;
   const d = Math.hypot(dx, dz) || 1;
-  const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * KNOCKBACK_PLAYER, (dz / d) * KNOCKBACK_PLAYER);
+  const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * knockback, (dz / d) * knockback);
+  p.x = res.x;
+  p.z = res.z;
+  syncActorMesh(p);
+  if (z.kind === "brute") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
+}
+
+/**
+ * A hostile projectile (the spitter's acid glob) lands on the player. Same
+ * armor/i-frame/flash funnel as a bite, but no knockback source — just a
+ * damage number and the impact point for the flinch direction.
+ */
+export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0 || p.iframes > 0 || p.shieldT > 0) return; // shield blocks globs too
+
+  const absorbed = absorbDamage(state.gear, damage);
+  state.gear = absorbed.gear;
+  for (const slot of absorbed.destroyed) {
+    showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);
+    sfxBreak();
+  }
+  p.hp -= absorbed.hpDamage;
+  p.iframes = PLAYER_IFRAMES;
+  p.flashT = FLASH_TIME;
+  p.sprite.setTint(0x8fc46b); // acid-green flash, not the usual red bite
+  if (absorbed.hpDamage > 0) state.vfx?.blood(p.x, 0.6, p.z, "green", 8);
+  state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
+  state.shakeT = Math.max(state.shakeT, absorbed.hpDamage > 0 ? 0.2 : 0.1);
+  state.hudDirty = true;
+  sfxHurt();
+
+  // A small shove away from where the glob came from.
+  const dx = p.x - srcX;
+  const dz = p.z - srcZ;
+  const d = Math.hypot(dx, dz) || 1;
+  const res = moveCircle(g, p.x, p.z, PLAYER_R, (dx / d) * (KNOCKBACK_PLAYER * 0.5), (dz / d) * (KNOCKBACK_PLAYER * 0.5));
   p.x = res.x;
   p.z = res.z;
   syncActorMesh(p);

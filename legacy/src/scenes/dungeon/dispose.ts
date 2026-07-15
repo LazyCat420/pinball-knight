@@ -50,10 +50,20 @@ export function disposeAll(): void {
   }
 
   // The shared atlases the per-actor textures were cloned from — one knight
-  // sheet per weapon the run has held, plus the zombie sheet.
+  // sheet per weapon the run has held, plus every zombie variant sheet.
   state.playerSheets.forEach((sheet) => sheet.texture.dispose());
   state.playerSheets.clear();
-  state.zombieSheet?.texture.dispose();
+  state.zombieVariantSheets.forEach((sheet) => sheet.texture.dispose());
+  state.zombieVariantSheets = [];
+  state.zombieSheet = null;
+  state.spiderSheet?.texture.dispose();
+  state.spiderSheet = null;
+  state.bruteSheet?.texture.dispose();
+  state.bruteSheet = null;
+  state.spitterSheet?.texture.dispose();
+  state.spitterSheet = null;
+  state.bossSheet?.texture.dispose();
+  state.bossSheet = null;
 
   disposeProjectileAssets();
 
@@ -72,5 +82,9 @@ export function disposeAll(): void {
 
   state.gameOverEl?.remove();
   state.hudEl?.remove();
+  state.fpsOverlayEl?.remove();
+  state.bossBarEl?.remove();
   state.container?.remove();
+  // The FPS perspective camera holds no GPU resources of its own — just drop it.
+  state.fpsCamera = null;
 }

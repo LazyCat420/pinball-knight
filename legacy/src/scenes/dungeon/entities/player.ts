@@ -19,6 +19,7 @@ import {
   ATTACK_ACTIVE_END,
   BOOTS_SPEED_FACTOR,
 } from "../constants";
+import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle } from "../collision";
 import { facingFromVelocity } from "../render/animator";
 import { screenDirToWorld } from "../camera";
@@ -75,6 +76,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   const moving = a.x !== 0 || a.z !== 0;
   let speed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
   if (state.gear.boots !== undefined) speed *= BOOTS_SPEED_FACTOR;
+  if (p.hasteT > 0) speed *= HASTE_SPEED_MULT; // haste potion: run faster
   if (moving) {
     const wd = screenDirToWorld(a.x, a.z);
     const res = moveCircle(g, p.x, p.z, PLAYER_R, wd.x * speed * dt, wd.z * speed * dt);
@@ -105,7 +107,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   if (input.consumeAttack() && p.cooldown <= 0 && (!attacking || ranged)) {
     p.attackT = 0;
     p.didHit = false;
-    p.cooldown = w.cooldown;
+    p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1); // haste: swing faster
     p.anim.play("attack", { force: true });
     if (ranged) {
       const [fx, fz] = FACING_VEC[p.facing];

@@ -20,8 +20,8 @@ export interface Torch extends TilePos {
 }
 
 export interface ItemDrop extends TilePos {
-  kind: "weapon" | "gear";
-  /** WeaponId for weapons, GearSlot for gear — resolved by core against items.ts. */
+  kind: "weapon" | "gear" | "potion";
+  /** WeaponId / GearSlot / PotionId — resolved by core against items.ts. */
   id: string;
 }
 
@@ -65,13 +65,22 @@ const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
 const WEAPON_POOL = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
 const WEAPONS_PER_LEVEL = 3;
 const GEAR_ITEMS = ["helmet", "armor", "boots"];
+// Potions strewn per floor: always a health flask, plus TWO random power-ups
+// from the pool (rage/haste/shield/gold). Health is guaranteed so the run stays
+// survivable; the rest add "do I chug it now?" decisions. Ids → POTIONS.
+const POTION_POOL = ["rage", "haste", "shield", "gold"];
+type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
-function rollLevelItems(rng: () => number): Array<{ kind: "weapon" | "gear"; id: string }> {
+function rollLevelItems(rng: () => number): RolledItem[] {
+  const buffs = shuffled(POTION_POOL, rng).slice(0, 2);
   return [
     ...shuffled(WEAPON_POOL, rng)
       .slice(0, WEAPONS_PER_LEVEL)
-      .map((id) => ({ kind: "weapon" as const, id })),
-    ...GEAR_ITEMS.map((id) => ({ kind: "gear" as const, id })),
+      .map((id): RolledItem => ({ kind: "weapon", id })),
+    ...GEAR_ITEMS.map((id): RolledItem => ({ kind: "gear", id })),
+    // one guaranteed heal + two random power-ups
+    { kind: "potion", id: "health" },
+    ...buffs.map((id): RolledItem => ({ kind: "potion", id })),
   ];
 }
 

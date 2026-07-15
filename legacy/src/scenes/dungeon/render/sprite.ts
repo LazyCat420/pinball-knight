@@ -29,11 +29,35 @@ import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW } f
  * the camera is orthographic and the plane ends up perpendicular to the view
  * ray, sprite texels stay square on screen. Rotation pivots on the
  * bottom-centre origin — the feet stay planted.
+ *
+ * This is the DEFAULT orientation — it's baked once (the iso camera never
+ * moves). The FPS ultimate temporarily overrides it per-frame (faceCameraYaw).
  */
 function faceCamera(mesh: THREE.Mesh): void {
   mesh.rotation.order = "YXZ";
   mesh.rotation.y = CAMERA_YAW;
   mesh.rotation.x = -CAMERA_TILT;
+}
+
+/**
+ * Billboard an actor plane UPRIGHT toward a camera position on the ground —
+ * yaw-only, no tilt, so the sprite stands vertical and faces the viewer square.
+ * Used only during the first-person rampage, where the camera can look any
+ * direction and the baked iso tilt would show the sprites edge-on / skewed.
+ * `mesh` already positioned at the actor; we rotate about its bottom-centre.
+ */
+export function faceCameraYaw(mesh: THREE.Mesh, camX: number, camZ: number): void {
+  const dx = camX - mesh.position.x;
+  const dz = camZ - mesh.position.z;
+  mesh.rotation.order = "YXZ";
+  mesh.rotation.x = 0; // upright
+  mesh.rotation.z = 0;
+  mesh.rotation.y = Math.atan2(dx, dz); // face the camera on the ground plane
+}
+
+/** Restore an actor plane to the baked iso orientation (leaving rampage). */
+export function faceCameraIso(mesh: THREE.Mesh): void {
+  faceCamera(mesh);
 }
 
 /**
@@ -230,6 +254,12 @@ export interface ActorSprite {
    * by the caller via its own syncMap().
    */
   setSheet(next: SpriteSheet): void;
+  /**
+   * Show/hide the flat contact-shadow blob. The blob's flat orientation is
+   * baked against the ISO camera; the FPS rampage yaw-billboards the sprite, so
+   * it hides the blob for the duration rather than let it stick up wrong.
+   */
+  setBlobVisible(v: boolean): void;
   dispose(): void;
 }
 
@@ -301,6 +331,9 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       tex.repeat.set((flipped ? -1 : 1) / next.frameCount, 1);
       applyFrame();
       old.dispose();
+    },
+    setBlobVisible(v: boolean): void {
+      blob.visible = v;
     },
     dispose: () => {
       geo.dispose();
