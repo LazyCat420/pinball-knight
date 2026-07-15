@@ -288,12 +288,21 @@ export type Dir3 = "S" | "N" | "E";
  *   stride  — -1..1 leg scissor phase (0 = feet together)
  *   lean    — forward lean radians (zombie shamble; 0 for the upright knight)
  *   crouch  — 0..1 sink (attack windup / death)
+ *   swing   — -1..1 arm swing phase; arms counter-swing the legs (contralateral
+ *             gait). Applied to the OFF arm and the carry arm so a walk reads as
+ *             a real stride, not a bob. 0 = arms at carry rest.
+ *   roll    — -1..1 lateral body roll; shifts shoulders/hips side-to-side and
+ *             tilts the head a touch, the half-cadence sway that sells weight.
+ *   twist   — -1..1 torso rotation toward/away (subtle chest turn on walk/attack)
  */
 export interface Pose {
   bob: number;
   stride: number;
   lean?: number;
   crouch?: number;
+  swing?: number;
+  roll?: number;
+  twist?: number;
 }
 
 /**
@@ -322,6 +331,8 @@ export function buildSkeleton(dir: Dir3, pose: Pose, cfg: RigConfig): Skeleton {
   const bob = pose.bob;
   const lean = pose.lean ?? 0;
   const crouch = (pose.crouch ?? 0) * 10;
+  const swing = pose.swing ?? 0;
+  const roll = pose.roll ?? 0;
   const hipY = GROUND - cfg.hipY + bob + crouch;
   const chestY = GROUND - cfg.torsoTop + bob + crouch;
   const headY = GROUND - cfg.headY + bob + crouch;
@@ -330,48 +341,62 @@ export function buildSkeleton(dir: Dir3, pose: Pose, cfg: RigConfig): Skeleton {
   const leanX = dir === "E" ? Math.sin(lean) * 22 : 0;
   const leanUp = dir === "E" ? 0 : Math.sin(lean) * 10;
 
-  const hip: Pt = [CX, hipY];
-  const chest: Pt = [CX + leanX * 0.5, chestY - leanUp];
-  const neck: Pt = [CX + leanX * 0.8, chestY - 6 - leanUp];
-  const head: Pt = [CX + leanX, headY - leanUp];
+  // Lateral roll: shoulders sway one way, hips the counter way (a shallow S),
+  // and the head tips slightly — the half-cadence weight-shift of a real gait.
+  const shoulderRoll = roll * 3;
+  const hipRoll = -roll * 1.6;
+  const headTip = roll * 1.4;
+
+  const hip: Pt = [CX + hipRoll, hipY];
+  const chest: Pt = [CX + leanX * 0.5 + shoulderRoll, chestY - leanUp];
+  const neck: Pt = [CX + leanX * 0.8 + shoulderRoll * 0.7, chestY - 6 - leanUp];
+  const head: Pt = [CX + leanX + headTip, headY - leanUp];
+
+  // Contralateral arm swing (profile has real fore/back reach; front/back views
+  // read it as a smaller in-plane sweep). The carry arm and off arm swing in
+  // opposition to their same-side leg.
+  const armReach = dir === "E" ? swing * 12 : swing * 5;
+  const armLift = Math.abs(swing) * 4;
 
   const sk: Skeleton = {
     hip,
-    hipL: [CX - cfg.hipW, hipY],
-    hipR: [CX + cfg.hipW, hipY],
-    kneeL: [CX - cfg.hipW, hipY + (GROUND - hipY) * 0.5],
-    kneeR: [CX + cfg.hipW, hipY + (GROUND - hipY) * 0.5],
-    footL: [CX - cfg.hipW, GROUND],
-    footR: [CX + cfg.hipW, GROUND],
+    hipL: [hip[0] - cfg.hipW, hipY],
+    hipR: [hip[0] + cfg.hipW, hipY],
+    kneeL: [hip[0] - cfg.hipW, hipY + (GROUND - hipY) * 0.5],
+    kneeR: [hip[0] + cfg.hipW, hipY + (GROUND - hipY) * 0.5],
+    footL: [hip[0] - cfg.hipW, GROUND],
+    footR: [hip[0] + cfg.hipW, GROUND],
     chest,
     shoulderL: [chest[0] - cfg.shoulderW, chest[1]],
     shoulderR: [chest[0] + cfg.shoulderW, chest[1]],
-    elbowL: [chest[0] - cfg.shoulderW - 2, chest[1] + 16],
-    elbowR: [chest[0] + cfg.shoulderW + 2, chest[1] + 16],
-    handL: [chest[0] - cfg.shoulderW - 2, chest[1] + 30],
-    handR: [chest[0] + cfg.shoulderW + 2, chest[1] + 30],
+    // elbow/hand carry the swing: left arm forward when swing>0, right arm back
+    elbowL: [chest[0] - cfg.shoulderW - 2 + armReach, chest[1] + 16 - armLift],
+    elbowR: [chest[0] + cfg.shoulderW + 2 - armReach, chest[1] + 16 - armLift],
+    handL: [chest[0] - cfg.shoulderW - 2 + armReach * 1.6, chest[1] + 30 - armLift * 1.4],
+    handR: [chest[0] + cfg.shoulderW + 2 - armReach * 1.6, chest[1] + 30 - armLift * 1.4],
     neck,
     head,
   };
 
-  // ── legs: scissor by facing ──
+  // ── legs: scissor by facing ── (feet track the rolled hip via hcx)
+  const hcx = hip[0];
   if (dir === "E") {
     // profile — real forward/back reach
     const reach = pose.stride * cfg.step;
-    sk.footR = [CX + reach, GROUND - Math.abs(pose.stride) * 3];
-    sk.footL = [CX - reach, GROUND];
-    sk.kneeR = [CX + reach * 0.6, hipY + (GROUND - hipY) * 0.52 - Math.abs(pose.stride) * 3];
-    sk.kneeL = [CX - reach * 0.5, hipY + (GROUND - hipY) * 0.5];
-    sk.hipL = [CX - 3, hipY];
-    sk.hipR = [CX + 3, hipY];
+    sk.footR = [hcx + reach, GROUND - Math.abs(pose.stride) * 3];
+    sk.footL = [hcx - reach, GROUND];
+    sk.kneeR = [hcx + reach * 0.6, hipY + (GROUND - hipY) * 0.52 - Math.abs(pose.stride) * 3];
+    sk.kneeL = [hcx - reach * 0.5, hipY + (GROUND - hipY) * 0.5];
+    sk.hipL = [hcx - 3, hipY];
+    sk.hipR = [hcx + 3, hipY];
   } else {
     // front/back — alternating knee lift reads as walking toward/away
     const liftL = Math.max(0, pose.stride) * cfg.lift;
     const liftR = Math.max(0, -pose.stride) * cfg.lift;
-    sk.footL = [CX - cfg.hipW, GROUND - liftL];
-    sk.footR = [CX + cfg.hipW, GROUND - liftR];
-    sk.kneeL = [CX - cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftL * 0.5];
-    sk.kneeR = [CX + cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftR * 0.5];
+    sk.footL = [hcx - cfg.hipW, GROUND - liftL];
+    sk.footR = [hcx + cfg.hipW, GROUND - liftR];
+    sk.kneeL = [hcx - cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftL * 0.5];
+    sk.kneeR = [hcx + cfg.hipW, hipY + (GROUND - hipY) * 0.5 - liftR * 0.5];
   }
 
   return sk;

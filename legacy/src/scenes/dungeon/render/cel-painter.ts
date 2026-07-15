@@ -362,6 +362,12 @@ interface KPose {
   bob: number;
   stride: number;
   atk?: MeleePhase | RangedPhase;
+  /** -1..1 contralateral arm swing (walk). */
+  swing?: number;
+  /** -1..1 lateral body roll (walk weight-shift). */
+  roll?: number;
+  /** px the crest trails behind head motion (overlapping action). */
+  plumeLag?: number;
 }
 
 /** Hand anchor + weapon rotation per facing per phase. `rest` is the carry pose. */
@@ -440,32 +446,48 @@ const KNIGHT_RIG: RigConfig = {
   lift: 9,
 };
 
-/** The plumed great-helm, drawn at the head joint. Faces per direction. */
-function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3): void {
+/**
+ * The plumed great-helm, drawn at the head joint. Faces per direction.
+ * `plumeLag` (px) trails the crest behind the head's motion — overlapping action
+ * so the plume flows on the walk/attack instead of moving rigidly with the helm.
+ */
+function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0): void {
   const [x, y] = head;
+  const pl = plumeLag; // +x trails right; the crest tip drags opposite motion
   // Crest plume — a bold blood-red comb, drawn BEHIND the helm so it reads as a
-  // silhouette-topping shape, not an antenna. Two-tone for volume.
+  // silhouette-topping shape, not an antenna. Multi-lobe for a flowing mane and a
+  // brighter front lobe for volume; the tip lobes carry the lag.
   if (dir === "E") {
-    plateShaded(ctx, [[x - 2, y - 14], [x - 20, y - 22], [x - 26, y - 6], [x - 8, y - 4]], K_PLUME, { rim: false });
-    figDetail(ctx, [[x - 6, y - 12], [x - 22, y - 16]], 2, 11);
+    // side profile — a long horsehair mane sweeping back off the crown
+    plateShaded(ctx, [[x - 1, y - 15], [x - 14, y - 24 + pl * 0.3], [x - 27, y - 16 + pl], [x - 30, y + 2 + pl * 1.2], [x - 20, y - 2], [x - 6, y - 5]], K_PLUME, { rim: false });
+    figDetail(ctx, [[x - 4, y - 13], [x - 18, y - 16 + pl * 0.6], [x - 27, y - 8 + pl]], 2, 13); // bright strand
+    figDetail(ctx, [[x - 6, y - 8], [x - 20, y - 6 + pl]], 1.5, 11); // dark strand
   } else {
-    plateShaded(ctx, [[x - 3, y - 15], [x, y - 26], [x + 8, y - 27], [x + 4, y - 14]], K_PLUME, { rim: false });
-    figDetail(ctx, [[x + 1, y - 16], [x + 5, y - 24]], 2, 11);
+    // front/back — a tall fanned crest rising off the crown, tip trailing on pl
+    plateShaded(ctx, [[x - 4, y - 14], [x - 2 + pl * 0.4, y - 27], [x + 6 + pl, y - 30], [x + 11 + pl * 1.2, y - 22], [x + 6, y - 14]], K_PLUME, { rim: false });
+    figDetail(ctx, [[x + 1, y - 15], [x + 3 + pl * 0.6, y - 25], [x + 8 + pl, y - 28]], 2, 13); // bright strand
+    figDetail(ctx, [[x + 2, y - 15], [x + 5 + pl, y - 23]], 1.5, 11); // dark strand
   }
   // Helm dome — a rounded bucket, not a ball: flat-ish crown, jaw taper.
   if (dir === "E") {
     plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], K_PLATE);
+    // brow ridge catches light — a bright band across the crown
+    figDetail(ctx, [[x - 10, y - 9], [x + 10, y - 9]], 1.5, 21);
     // nose guard juts forward (+x)
     plateShaded(ctx, [[x + 12, y - 4], [x + 19, y + 2], [x + 12, y + 8]], K_PLATE_DK);
     // eye slit — hard black void, the only pure-INK on the figure
     rrectShaded(ctx, x + 2, y - 3, 11, 4, 1.5, 1, { ink: 1 });
   } else {
     plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], K_PLATE);
+    // brow ridge highlight across the crown for a defined forehead
+    figDetail(ctx, [[x - 11, y - 9], [x + 11, y - 9]], 1.5, 21);
     if (dir === "S") {
       // T-visor: a vertical breath-slot meeting a horizontal eye-slit — the
       // single most important readability feature. Hard black.
       rrectShaded(ctx, x - 11, y - 3, 22, 4, 2, 1, { ink: 1 }); // eye slit
       rrectShaded(ctx, x - 2.5, y - 1, 5, 12, 2, 1, { ink: 1 }); // breath slot
+      figGlow(ctx, x - 6, y - 1, 1.6, 30, 18); // faint arcane eye-spark, left
+      figGlow(ctx, x + 6, y - 1, 1.6, 30, 18); // right
       figDetail(ctx, [[x - 12, y + 9], [x + 12, y + 9]], 1.5, K_STEEL_DK); // chin seam
     } else {
       // back of the helm — a central ridge + neck guard
@@ -476,19 +498,35 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3): void {
 }
 
 /**
+ * A greave — a shin plate over the lower leg + a sabaton toe cap. Drawn on top
+ * of the leg so the knight reads as fully armoured, not bare-legged in boots.
+ */
+function knightGreave(ctx: CanvasRenderingContext2D, knee: Pt, foot: Pt, m: Ramp): void {
+  // shin plate: a tapered plate from just below the knee to the ankle
+  const mx = (knee[0] + foot[0]) / 2;
+  plateShaded(ctx, [[knee[0] - 5, knee[1] + 2], [knee[0] + 5, knee[1] + 2], [mx + 4, foot[1] - 4], [mx - 4, foot[1] - 4]], m);
+  figDetail(ctx, [[knee[0], knee[1] + 3], [mx, foot[1] - 5]], 1.4, 21); // centre glint
+  // knee cop (poleyn) — a rounded disc over the knee
+  ellShaded(ctx, knee[0], knee[1], 4.5, 4.5, m);
+}
+
+/**
  * One knight frame, posed from the shared biped rig. Draw order is
  * back-to-front so limbs overlap correctly; the held weapon rides the weapon
  * hand from the HAND_* tables (kept — they encode good swing arcs).
  */
 function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId): void {
   const { bob, stride, atk } = pose;
+  const swing = pose.swing ?? 0;
+  const roll = pose.roll ?? 0;
+  const plumeLag = pose.plumeLag ?? 0;
   const ranged = WEAPONS[weapon].kind === "ranged";
   const hands = dir === "S" ? HAND_S : dir === "N" ? HAND_N : HAND_E;
   const hand = hands[atk ?? "rest"];
   const firing = atk === "fire" || (atk === "strike" && !ranged);
   const d3 = dir as Dir3;
 
-  const sk = buildSkeleton(d3, { bob, stride, crouch: atk === "windup" ? 0.3 : 0 }, KNIGHT_RIG);
+  const sk = buildSkeleton(d3, { bob, stride, swing, roll, crouch: atk === "windup" ? 0.3 : 0 }, KNIGHT_RIG);
   const weaponHand: Pt = [hand.x, hand.y];
 
   groundShadow(ctx, CX, GROUND + 3, 26);
@@ -501,43 +539,64 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   if (dir === "E") {
     // profile: far leg (dimmer) behind, near leg in front
     legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 11, K_STEEL_DK, K_STEEL_DK, d3);
+    knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE_DK); // far greave (dim)
     legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
+    knightGreave(ctx, sk.kneeR, sk.footR, K_PLATE); // near greave
   } else {
     legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 12, K_LEG, K_PLATE_DK, d3);
     legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
+    knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE);
+    knightGreave(ctx, sk.kneeR, sk.footR, K_PLATE);
   }
 
-  // ── faulds (armoured skirt over the hips) ──
+  // ── faulds + tassets (armoured skirt over the hips) ──
   if (dir !== "E") {
-    plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 4, sk.hip[1] + 8], [sk.hipL[0] - 4, sk.hip[1] + 8]], K_PLATE_DK);
+    // central fauld
+    plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 5, sk.hip[1] + 10], [sk.hipL[0] - 5, sk.hip[1] + 10]], K_PLATE_DK);
+    // two thigh tassets hanging over the legs — reads as layered plate armour
+    plateShaded(ctx, [[sk.hipL[0] - 4, sk.hip[1] + 2], [sk.hipL[0] + 4, sk.hip[1] + 2], [sk.hipL[0] + 3, sk.hip[1] + 15], [sk.hipL[0] - 5, sk.hip[1] + 14]], K_LEG);
+    plateShaded(ctx, [[sk.hipR[0] - 4, sk.hip[1] + 2], [sk.hipR[0] + 4, sk.hip[1] + 2], [sk.hipR[0] + 5, sk.hip[1] + 14], [sk.hipR[0] - 3, sk.hip[1] + 15]], K_LEG);
+  } else {
+    // profile: a single tasset over the near thigh
+    plateShaded(ctx, [[sk.hip[0] - 2, sk.hip[1] - 2], [sk.hip[0] + 9, sk.hip[1] - 2], [sk.hip[0] + 8, sk.hip[1] + 13], [sk.hip[0] - 2, sk.hip[1] + 12]], K_PLATE_DK);
   }
 
   // ── torso: a tapered cuirass, wider at the chest ──
   const t = knightTorsoPts(sk, dir);
   plateShaded(ctx, t, K_PLATE);
-  // plackart V-seam + belt + gold buckle
+  // plackart V-seam + fluting + belt + gold buckle
   if (dir === "S") {
-    figDetail(ctx, [[sk.chest[0], sk.chest[1] + 4], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK);
-    figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 6], [sk.chest[0], sk.chest[1] + 16], [sk.chest[0] + 12, sk.chest[1] + 6]], 1.5, K_STEEL_DK);
+    figDetail(ctx, [[sk.chest[0], sk.chest[1] + 2], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK); // central keel
+    figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 4], [sk.chest[0], sk.chest[1] + 15], [sk.chest[0] + 12, sk.chest[1] + 4]], 1.5, K_STEEL_DK); // plackart V
+    figDetail(ctx, [[sk.chest[0] - 9, sk.chest[1] - 1], [sk.chest[0] - 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight L
+    figDetail(ctx, [[sk.chest[0] + 9, sk.chest[1] - 1], [sk.chest[0] + 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight R
+    rrectShaded(ctx, sk.chest[0] - 3, sk.chest[1] - 2, 6, 5, 1.5, K_TRIM); // gorget-boss / gold stud
+  } else if (dir === "E") {
+    figDetail(ctx, [[sk.chest[0] + 8, sk.chest[1] - 1], [sk.chest[0] + 7, sk.hip[1] - 3]], 1.4, 21); // front-edge highlight
+    figDetail(ctx, [[sk.chest[0] - 6, sk.chest[1] + 3], [sk.chest[0] - 7, sk.hip[1] - 3]], 1.4, K_STEEL_DK); // back-edge shadow
   }
   rrectShaded(ctx, sk.hipL[0] - 2, sk.hip[1] - 6, (sk.hipR[0] - sk.hipL[0]) + 4, 6, 2, 27); // belt
   rrectShaded(ctx, sk.hip[0] - 4, sk.hip[1] - 6, 8, 6, 1.5, K_TRIM); // buckle
 
-  // ── off arm (non-weapon) ──
+  // ── off arm (non-weapon) — now driven by the rig joints so it SWINGS ──
   if (dir === "E") {
-    // far arm hint behind the torso
-    armShaded(ctx, [sk.chest[0] - 6, sk.chest[1] + 2], [sk.chest[0] - 8, sk.chest[1] + 16], [sk.chest[0] - 6, sk.chest[1] + 28], 7, K_STEEL_DK);
+    // far arm hint behind the torso (dim), tracks the swing subtly
+    armShaded(ctx, [sk.shoulderL[0] + 2, sk.shoulderL[1] + 2], sk.elbowL, sk.handL, 7, K_STEEL_DK, K_PLATE_DK);
   } else {
-    const off: Pt = dir === "S" ? sk.shoulderL : sk.shoulderR;
-    const offHand: Pt = dir === "S" ? [sk.shoulderL[0] - 2, sk.hip[1] + 2] : [sk.shoulderR[0] + 2, sk.hip[1] + 2];
-    armShaded(ctx, off, [off[0], (off[1] + offHand[1]) / 2], offHand, 8, K_LEG, K_PLATE_DK);
+    const offSh: Pt = dir === "S" ? sk.shoulderL : sk.shoulderR;
+    const offEl: Pt = dir === "S" ? sk.elbowL : sk.elbowR;
+    const offHand: Pt = dir === "S" ? sk.handL : sk.handR;
+    armShaded(ctx, offSh, offEl, offHand, 8, K_LEG, K_PLATE_DK);
   }
 
-  // ── pauldrons (shoulder cops) — angular layered plates that widen the
-  // shoulders. A rounded four-point plate reads as armour, not a button. ──
+  // ── pauldrons (shoulder cops) — angular LAYERED plates (two lames) that widen
+  // the shoulders. A rounded multi-point plate reads as armour, not a button. ──
   const pauldron = (px: number, py: number, flip: number): void => {
-    plateShaded(ctx, [[px - 10 * flip, py - 4], [px + 9 * flip, py - 7], [px + 11 * flip, py + 6], [px - 8 * flip, py + 9]], K_PLATE);
-    figDetail(ctx, [[px - 6 * flip, py + 2], [px + 8 * flip, py - 1]], 1.5, K_STEEL_DK); // lame ridge
+    // main cop
+    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], K_PLATE);
+    // lower lame (a second overlapping plate for depth)
+    plateShaded(ctx, [[px - 9 * flip, py + 5], [px + 11 * flip, py + 3], [px + 10 * flip, py + 11], [px - 7 * flip, py + 12]], K_PLATE_DK);
+    figDetail(ctx, [[px - 7 * flip, py - 1], [px + 9 * flip, py - 4]], 1.5, 21); // top-edge glint
   };
   if (dir === "E") {
     pauldron(sk.shoulderR[0] + 3, sk.shoulderR[1], 1);
@@ -549,9 +608,11 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // ── weapon arm: shoulder → hand anchor ──
   const wShoulder: Pt = dir === "S" ? sk.shoulderR : dir === "N" ? sk.shoulderL : sk.shoulderR;
   armShaded(ctx, wShoulder, [(wShoulder[0] + weaponHand[0]) / 2, (wShoulder[1] + weaponHand[1]) / 2 - 3], weaponHand, 8, K_LEG, K_PLATE_DK);
+  // gauntlet fist at the weapon hand
+  ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, K_PLATE);
 
-  // ── head / helm ──
-  knightHelm(ctx, sk.head, d3);
+  // ── head / helm (plume trails on plumeLag) ──
+  knightHelm(ctx, sk.head, d3, plumeLag);
 
   if (!weaponBehind) drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
 
@@ -581,22 +642,57 @@ function knightTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
 /** Build the full painter set for the knight holding `weapon`. */
 export function makeKnightPaints(weapon: WeaponId): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
-  const phases: Array<MeleePhase | RangedPhase> = ranged ? ["aim", "fire", "recover"] : ["windup", "strike", "low"];
+  const F = (dir: Dir, p: KPose) => (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, p, weapon);
 
   const dirClips = (dir: Dir) => ({
+    // ── IDLE: a 4-frame breathing loop. The chest rises (bob up) and settles,
+    // and the plume drifts a touch — a living stance, not a 2-frame twitch. ──
     idle: [
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 0, stride: 0 }, weapon),
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 2, stride: 0 }, weapon),
+      F(dir, { bob: 0, stride: 0, plumeLag: 0 }),
+      F(dir, { bob: -1, stride: 0, plumeLag: -0.6 }), // inhale, plume lifts
+      F(dir, { bob: 0.5, stride: 0, plumeLag: 0.4 }), // settle
+      F(dir, { bob: 1.5, stride: 0, plumeLag: 1 }), // exhale, plume drops
     ],
+
+    // ── WALK: an 8-frame cycle. Two contact→passing→push per stride, with
+    // contralateral arm SWING, half-cadence body ROLL, a vertical bob that peaks
+    // at passing, and the plume trailing the head. This reads as a real gait. ──
     walk: [
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 1.5, stride: 1 }, weapon),
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 0, stride: 0 }, weapon),
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 1.5, stride: -1 }, weapon),
-      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 0, stride: 0 }, weapon),
+      // right foot forward — contact
+      F(dir, { bob: 0, stride: 1, swing: -1, roll: 1, plumeLag: 1 }),
+      // passing (feet under, body lifts)
+      F(dir, { bob: -1.5, stride: 0.3, swing: -0.4, roll: 0.4, plumeLag: 0.3 }),
+      // left foot forward — contact
+      F(dir, { bob: 0.5, stride: -0.4, swing: 0.4, roll: -0.4, plumeLag: -0.4 }),
+      // push
+      F(dir, { bob: 1, stride: -1, swing: 1, roll: -1, plumeLag: -1 }),
+      // right foot forward again — mirror half of the cycle for a smooth loop
+      F(dir, { bob: 0, stride: -1, swing: 1, roll: -1, plumeLag: -1 }),
+      F(dir, { bob: -1.5, stride: -0.3, swing: 0.4, roll: -0.4, plumeLag: -0.3 }),
+      F(dir, { bob: 0.5, stride: 0.4, swing: -0.4, roll: 0.4, plumeLag: 0.4 }),
+      F(dir, { bob: 1, stride: 1, swing: -1, roll: 1, plumeLag: 1 }),
     ],
-    attack: phases.map(
-      (atk) => (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: atk === "strike" || atk === "fire" ? 1 : 0, stride: 0, atk }, weapon),
-    ),
+
+    // ── ATTACK: anticipation → STRIKE (index 1, the hit frame) → follow-through
+    // → recover. Fast into the strike, slow out — "speed communicates weight".
+    // The strike stays at index 1 so it lands in the ATTACK_ACTIVE time window. ──
+    attack: ranged
+      ? [
+          F(dir, { bob: 0, stride: 0, atk: "aim", plumeLag: -0.5 }),
+          F(dir, { bob: 1, stride: 0, atk: "fire", plumeLag: 1.5 }), // release recoil
+          F(dir, { bob: 0.5, stride: 0, atk: "recover", plumeLag: 0.6 }),
+          F(dir, { bob: 0, stride: 0, atk: "aim", plumeLag: 0 }), // settle back to aim
+        ]
+      : [
+          // anticipation — coil back, plume swings forward (opposing wind-up)
+          F(dir, { bob: -1, stride: 0, atk: "windup", roll: 0.6, plumeLag: -1.5 }),
+          // STRIKE (index 1) — full commit, body drops into it, plume whips back
+          F(dir, { bob: 1.5, stride: 0, atk: "strike", roll: -0.8, plumeLag: 2 }),
+          // follow-through — the swing overshoots low, weight carries through
+          F(dir, { bob: 1, stride: 0, atk: "low", roll: -0.5, plumeLag: 1 }),
+          // recover — ease back toward the carry rest
+          F(dir, { bob: 0.3, stride: 0, plumeLag: 0.3 }),
+        ],
   });
 
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
