@@ -64,6 +64,45 @@ export function worldDirToScreen(wx: number, wz: number): { x: number; z: number
   };
 }
 
+/**
+ * World aim direction from the mouse cursor for top-down ranged fire.
+ *
+ * Projects the player's world position to the canvas in pixels, measures the
+ * screen-space vector from the player to the cursor, and converts THAT to a
+ * world ground direction via screenDirToWorld — so the arrow flies toward
+ * wherever the cursor sits on screen. Returns a unit {x,z}, or null if it can't
+ * resolve (no camera / renderer, cursor on top of the player).
+ *
+ * `cursor` is in CLIENT pixels (viewport-relative, as from MouseEvent.clientX/Y).
+ */
+const _pWorld = new THREE.Vector3();
+export function mouseAimDirection(
+  px: number,
+  pz: number,
+  cursor: { x: number; y: number },
+): { x: number; z: number } | null {
+  const cam = state.camera;
+  const renderer = state.renderer;
+  if (!cam || !renderer) return null;
+
+  // Player world → NDC → canvas pixels.
+  _pWorld.set(px, 0.5, pz).project(cam);
+  const rect = renderer.domElement.getBoundingClientRect();
+  const playerPxX = rect.left + ((_pWorld.x + 1) / 2) * rect.width;
+  const playerPxY = rect.top + ((1 - _pWorld.y) / 2) * rect.height;
+
+  // Screen-space vector player → cursor (pixels). +x right, +y DOWN.
+  const dxPx = cursor.x - playerPxX;
+  const dyPx = cursor.y - playerPxY;
+  if (dxPx * dxPx + dyPx * dyPx < 1) return null; // cursor on the player
+
+  // screenDirToWorld takes (screen-right, screen-down). +y down = +sz.
+  const w = screenDirToWorld(dxPx, dyPx);
+  const len = Math.hypot(w.x, w.z);
+  if (len < 1e-6) return null;
+  return { x: w.x / len, z: w.z / len };
+}
+
 const _offset = cameraOffset();
 const _target = new THREE.Vector3();
 const _right = new THREE.Vector3();

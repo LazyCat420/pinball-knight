@@ -26,6 +26,12 @@ export interface InputHandle {
    * it — the FPS look integrates this. {dx, dy} in pixels.
    */
   consumeMouseDelta(): { dx: number; dy: number };
+  /**
+   * The last known cursor position in CLIENT pixels (viewport-relative), or null
+   * if the mouse has never moved over the page this session. Ranged aiming
+   * projects the player to screen and fires toward this point.
+   */
+  aimScreen(): { x: number; y: number } | null;
   dispose(): void;
 }
 
@@ -51,6 +57,9 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   let attackHeld = false;
   let mouseDx = 0;
   let mouseDy = 0;
+  let cursorX = -1;
+  let cursorY = -1;
+  let cursorSeen = false;
 
   const onKeyDown = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
@@ -69,15 +78,27 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   };
 
   const onMouseDown = (e: MouseEvent) => {
-    if (e.button === 0) attackQueued = true;
+    if (e.button === 0) {
+      attackQueued = true;
+      // capture the aim point on the click itself, so the very first shot
+      // fires toward the cursor even if the mouse hasn't moved yet
+      cursorX = e.clientX;
+      cursorY = e.clientY;
+      cursorSeen = true;
+    }
   };
 
   // Relative mouse movement drives FPS look. When the pointer is locked the
   // deltas come through movementX/Y; unlocked they still accumulate so mouse
   // aiming works even without a pointer-lock grant (headless included).
+  // Absolute clientX/Y drives top-down ranged AIMING (the bow points at the
+  // cursor). Both live on the same handler so one listener serves both modes.
   const onMouseMove = (e: MouseEvent) => {
     mouseDx += e.movementX || 0;
     mouseDy += e.movementY || 0;
+    cursorX = e.clientX;
+    cursorY = e.clientY;
+    cursorSeen = true;
   };
 
   // A tab-out mid-keypress would leave keys stuck down forever.
@@ -130,6 +151,9 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       mouseDx = 0;
       mouseDy = 0;
       return d;
+    },
+    aimScreen() {
+      return cursorSeen ? { x: cursorX, y: cursorY } : null;
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

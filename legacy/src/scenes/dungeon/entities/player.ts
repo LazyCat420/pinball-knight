@@ -21,8 +21,8 @@ import {
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle } from "../collision";
-import { facingFromVelocity } from "../render/animator";
-import { screenDirToWorld } from "../camera";
+import { facingFromVelocity, type Facing } from "../render/animator";
+import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC } from "./combat";
@@ -40,6 +40,19 @@ function rangedSfx(id: string): void {
   if (id === "gun") sfxGun();
   else if (id === "bow") sfxBow();
   else sfxFlame();
+}
+
+/**
+ * A WORLD ground aim direction → the 4-way sprite facing that best matches it.
+ * The aim is converted to SCREEN axes first (worldDirToScreen) because the art's
+ * facings are screen-relative — "E" is screen-right, "S" is screen-down. Ties
+ * break toward the vertical (N/S) axis, which reads better, matching
+ * facingFromVelocity.
+ */
+function facingFromAim(wx: number, wz: number): Facing {
+  const s = worldDirToScreen(wx, wz);
+  if (Math.abs(s.z) >= Math.abs(s.x)) return s.z > 0 ? "S" : "N";
+  return s.x > 0 ? "E" : "W";
 }
 
 export function updatePlayer(dt: number, input: InputHandle): void {
@@ -110,7 +123,22 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1); // haste: swing faster
     p.anim.play("attack", { force: true });
     if (ranged) {
-      const [fx, fz] = FACING_VEC[p.facing];
+      // AIM at the mouse cursor when we have one; the bow/gun/flamethrower fire
+      // toward the cursor's world position. Snap the sprite facing to the aim so
+      // the knight visibly points where he shoots. No cursor (keyboard-only or
+      // headless) → fall back to the movement facing.
+      const cursor = input.aimScreen();
+      const aim = cursor ? mouseAimDirection(p.x, p.z, cursor) : null;
+      let fx: number;
+      let fz: number;
+      if (aim) {
+        fx = aim.x;
+        fz = aim.z;
+        p.facing = facingFromAim(fx, fz);
+        p.anim.setFacing(p.facing);
+      } else {
+        [fx, fz] = FACING_VEC[p.facing];
+      }
       fireWeapon(w, p.x, p.z, fx, fz);
       wearActiveWeapon(); // ammo is spent on the shot, hit or miss
       rangedSfx(w.id);

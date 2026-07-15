@@ -286,6 +286,17 @@ export function launchDungeonGame(onExit?: () => void): void {
       enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp })),
       playerHp: state.player?.hp,
     });
+    // Dev: force a weapon into the active slot (QA the bow/gun/etc. without hunting
+    // for a pickup). `__dungeonGive('bow')`.
+    (window as unknown as { __dungeonGive?: (id: string) => boolean }).__dungeonGive = (id: string) => {
+      if (!(id in WEAPONS)) return false;
+      state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
+      return true;
+    };
+    // Dev: snapshot the live projectiles' velocities so a headless test can
+    // confirm the arrow flew toward the aim point, not the movement facing.
+    (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>
+      state.projectiles.map((pr) => ({ kind: pr.kind, vx: pr.vx, vz: pr.vz }));
   }
 
   // Hand-made pixel art overrides the procedural painters the moment it
