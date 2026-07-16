@@ -117,8 +117,11 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead";
  *  - bat:     a fast erratic flyer — weaves a sine wobble across its flight
  *             line, hard to line up, dies in one hit.
  *  - slime:   slow multiplying blob — splits into two fast minis on death.
+ *  - reaper:  the DEATH DEALER — spawns after REAPER_AFTER seconds on a floor,
+ *             phases through walls (ghost movement), accelerates forever and
+ *             is IMMUNE to all damage. The floor timer with a scythe.
  */
-export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime";
+export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "reaper";
 
 export interface Zombie extends Actor {
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
@@ -229,6 +232,20 @@ export const state = {
   gameOver: false,
   /** Seed for the whole run; each level derives its own stream from it. */
   runSeed: 0,
+
+  // ── Per-floor score ledger (reset by startLevel; graded by descend) ──
+  /** Seconds spent on the current floor — also the Death Dealer's fuse. */
+  levelT: 0,
+  /** state.kills as this floor started — the diff is this floor's carnage. */
+  levelStartKills: 0,
+  /** Horde size this floor spawned with (the carnage denominator). */
+  levelHordeSize: 0,
+  /** Best pinball bounce combo reached this floor (the style axis). */
+  levelBestCombo: 0,
+  /** True once this floor's Death Dealer has spawned (one per floor). */
+  reaperOut: false,
+  /** True once the pre-spawn warning toast has shown. */
+  reaperWarned: false,
 
   // Loadout — two weapon slots; an empty active slot fights as fists.
   weaponSlots: [freshWeapon("sword"), null] as Array<WeaponState | null>,
@@ -389,6 +406,12 @@ export function resetState(): void {
   state.goldRun = 0;
   state.gameOver = false;
   state.runSeed = 0;
+  state.levelT = 0;
+  state.levelStartKills = 0;
+  state.levelHordeSize = 0;
+  state.levelBestCombo = 0;
+  state.reaperOut = false;
+  state.reaperWarned = false;
   state.weaponSlots = [freshWeapon("sword"), null];
   state.activeSlot = 0;
   state.gear = {};

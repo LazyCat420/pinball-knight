@@ -20,6 +20,10 @@ import {
   ULT_CHARGE_PER_KILL,
   BRUTE_DAMAGE,
   BRUTE_KNOCKBACK,
+  REAPER_DAMAGE,
+  STYLE_KILL_BASE_GOLD,
+  STYLE_KILL_COMBO_GOLD,
+  STYLE_KILL_GOLD_MAX,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
@@ -53,7 +57,7 @@ export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) =
   onSlimeSplit = fn;
 }
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
-import { showToast, updateFpsStreak } from "../ui";
+import { showToast, showPickupNote, updateFpsStreak } from "../ui";
 
 /**
  * Facing → WORLD ground direction. Facings are SCREEN-relative (the art's "E"
@@ -94,6 +98,14 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
 export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: number, push: number): void {
   const g = state.grid;
   if (!g || z.mode === "dead") return;
+
+  // The DEATH DEALER cannot be harmed — steel passes through it with a puff of
+  // cold ectoplasm and nothing else. No damage, no knockback, no hitstop
+  // reward: the game is telling you to run, not to try harder.
+  if (z.kind === "reaper") {
+    state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 6);
+    return;
+  }
 
   z.hp -= damage;
   z.aggro = true; // hitting a dormant zombie certainly wakes it
@@ -263,6 +275,16 @@ function killZombie(z: Zombie): void {
   state.kills++;
   state.goldRun += GOLD_PER_KILL;
   addGold(GOLD_PER_KILL, "dungeon-game");
+  // STYLE KILL: a kill carried by pinball momentum (a ball ram, or any hit
+  // landed mid-ride) pays bonus gold that scales with the live bounce combo —
+  // the machine rewards playing like a ball, not walking up and stabbing.
+  const p = state.player;
+  if (p && p.momSpeed > 0) {
+    const bonus = Math.min(STYLE_KILL_GOLD_MAX, STYLE_KILL_BASE_GOLD + p.bounceCombo * STYLE_KILL_COMBO_GOLD);
+    state.goldRun += bonus;
+    addGold(bonus, "dungeon-game");
+    showPickupNote(`💥 STYLE KILL +${bonus}g${p.bounceCombo >= 3 ? ` · combo ×${p.bounceCombo}` : ""}`);
+  }
   if (state.fpsActive) {
     // Rampage kills build a streak (reset by a lull, tracked in fps.ts) and
     // punch the camera + extend the rampage a hair, so a hot streak feels like
@@ -293,9 +315,10 @@ export function hitPlayer(z: Zombie): void {
   if (!p || !g || p.hp <= 0) return;
   if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
-  // A brute's haymaker hits harder and shoves you further than a normal bite.
-  const damage = z.kind === "brute" ? BRUTE_DAMAGE : ZOMBIE_DAMAGE;
-  const knockback = z.kind === "brute" ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
+  // A brute's haymaker hits harder and shoves you further than a normal bite;
+  // the reaper's touch is worse — two hearts and a brute-class shove.
+  const damage = z.kind === "brute" ? BRUTE_DAMAGE : z.kind === "reaper" ? REAPER_DAMAGE : ZOMBIE_DAMAGE;
+  const knockback = z.kind === "brute" || z.kind === "reaper" ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
 
   const absorbed = absorbDamage(state.gear, damage);
   state.gear = absorbed.gear;

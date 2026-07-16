@@ -44,6 +44,12 @@ import {
   SLIME_CONTACT_RANGE,
   SLIME_ATTACK_WINDUP,
   SLIME_ATTACK_COOLDOWN,
+  REAPER_CONTACT_RANGE,
+  REAPER_ATTACK_WINDUP,
+  REAPER_ATTACK_COOLDOWN,
+  REAPER_SPEED_RAMP,
+  REAPER_SPEED_MAX,
+  REAPER_TINT,
   AGGRO_TILES,
   SEPARATION_R,
 } from "../constants";
@@ -72,6 +78,7 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   ghost: { bodyR: GHOST_R, contactRange: GHOST_CONTACT_RANGE, windup: GHOST_ATTACK_WINDUP, cooldown: GHOST_ATTACK_COOLDOWN, ranged: false },
   bat: { bodyR: BAT_R, contactRange: BAT_CONTACT_RANGE, windup: BAT_ATTACK_WINDUP, cooldown: BAT_ATTACK_COOLDOWN, ranged: false },
   slime: { bodyR: SLIME_R, contactRange: SLIME_CONTACT_RANGE, windup: SLIME_ATTACK_WINDUP, cooldown: SLIME_ATTACK_COOLDOWN, ranged: false },
+  reaper: { bodyR: GHOST_R, contactRange: REAPER_CONTACT_RANGE, windup: REAPER_ATTACK_WINDUP, cooldown: REAPER_ATTACK_COOLDOWN, ranged: false },
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -141,10 +148,12 @@ export function updateZombies(dt: number): void {
       continue;
     }
 
-    // ── GHOST ── floats STRAIGHT AT the player THROUGH walls (no flow field, no
-    // moveCircle, no separation), hovering with a bob. Its own self-contained
-    // update so none of the grounded steering applies. Still winds up + touches.
-    if (z.kind === "ghost") {
+    // ── GHOST / REAPER ── float STRAIGHT AT the player THROUGH walls (no flow
+    // field, no moveCircle, no separation), hovering with a bob. Their own
+    // self-contained update so none of the grounded steering applies. The
+    // REAPER additionally accelerates FOREVER — the floor timer closing in.
+    if (z.kind === "ghost" || z.kind === "reaper") {
+      if (z.kind === "reaper") z.speed = Math.min(REAPER_SPEED_MAX, z.speed + REAPER_SPEED_RAMP * dt);
       updateGhost(z, dt);
       continue;
     }
@@ -292,15 +301,19 @@ export function updateZombies(dt: number): void {
 }
 
 /**
- * The GHOST update: drift STRAIGHT toward the player through walls (no maze
- * pathing, no collision), hovering with a gentle bob. It still winds up and
- * lands a chilling touch in contact range, reusing the same telegraph pulse.
+ * The GHOST update (also the REAPER — same spectral drift, meaner numbers):
+ * drift STRAIGHT toward the player through walls (no maze pathing, no
+ * collision), hovering with a gentle bob. It still winds up and lands a
+ * chilling touch in contact range, reusing the same telegraph pulse.
  * Self-contained — called in place of all the grounded steering above.
  */
 function updateGhost(z: Zombie, dt: number): void {
   const p = state.player;
   if (!p) return;
-  const st = STATS.ghost;
+  const st = STATS[z.kind];
+  // The reaper's resting look is blood-red, not untinted — every place the
+  // ghost path clears its telegraph tint, the reaper re-dyes instead.
+  const baseTint = z.kind === "reaper" ? REAPER_TINT : null;
   const pdx = p.x - z.x;
   const pdz = p.z - z.z;
   const pdist = Math.hypot(pdx, pdz);
@@ -319,13 +332,13 @@ function updateGhost(z: Zombie, dt: number): void {
     if (z.windupT >= st.windup) {
       z.mode = "chase";
       z.cooldown = st.cooldown;
-      if (z.flashT <= 0) z.sprite.setTint(null);
+      if (z.flashT <= 0) z.sprite.setTint(baseTint);
       if (p.hp > 0 && pdist <= st.contactRange * 1.3) hitPlayer(z);
     }
     syncGhostMesh(z);
     return;
   }
-  if (z.flashT <= 0) z.sprite.setTint(null);
+  if (z.flashT <= 0) z.sprite.setTint(baseTint);
 
   // Enter windup in contact range; otherwise drift straight in (through walls).
   z.mode = "chase";

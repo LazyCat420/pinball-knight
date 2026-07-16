@@ -376,6 +376,81 @@ export const PARTS_BASE = 6; // parts on level 1
 export const PARTS_PER_LEVEL = 2; // extra parts per depth…
 export const PARTS_MAX = 26; // …capped
 
+// ── Rooms (named archetypes carved into the corridor maze) ──────
+/**
+ * The backtracker gives corridors; ROOMS give each floor its landmarks. A few
+ * rectangular chambers are carved over the maze (pre-thicken, so connectivity
+ * is preserved by construction — every cell under a room was already floor)
+ * and each is dealt an ARCHETYPE that decorateMaze furnishes:
+ *   bumper   → the Bumper Chamber: a cluster of pop bumpers to carom between.
+ *   speedway → a lane of dash ramps down the long axis — the launch corridor.
+ *   arena    → an open fight pit: extra horde spawns ringing a centre prize.
+ *   vault    → the treasure room: two prize items, guarded.
+ * Rooms/sizes are in maze CELLS (tiles ≈ cells·2, ×2 again after thickening).
+ */
+export const ROOM_MIN_CELLS = 2; // smallest room side, cells
+export const ROOM_MAX_CELLS = 4; // largest room side, cells
+export const ROOMS_BASE = 2; // rooms on level 1
+export const ROOMS_PER_LEVEL = 0.5; // +1 room every 2 depths…
+export const ROOMS_MAX = 5; // …capped
+
+// ── Secret walls (smash through at pinball speed) ───────────────
+/**
+ * A few wall bands per floor are CRACKED: solid to a walking knight, but hit
+ * one carrying pinball momentum ≥ SECRET_BREAK_SPEED and it SHATTERS — opening
+ * a shortcut and shaking loot out of the masonry. Every launcher clears the
+ * bar (bumper exit 9, ramp 13, spring 16), so any part can be the hammer; a
+ * plain walk or a light wall-bounce that has bled below the bar cannot.
+ * Cracked bands glint gold so an observant player can hunt them.
+ */
+export const SECRET_BREAK_SPEED = 7; // u/s of momentum needed to smash through
+export const SECRETS_BASE = 2; // cracked walls on level 1
+export const SECRETS_PER_LEVEL = 0.5;
+export const SECRETS_MAX = 5;
+
+// ── The Death Dealer (the floor timer) ──────────────────────────
+/**
+ * Linger too long on one floor and an unkillable REAPER comes for you — the
+ * Spelunky ghost, crypt edition. It phases through walls straight at you
+ * (ghost movement), accelerates forever, and weapons pass through it: the only
+ * answer is the stairs. Exists so the speed kit is eventually mandatory —
+ * the game's whole momentum toolbox becomes the escape plan.
+ */
+export const REAPER_AFTER = 110; // seconds on a floor before it spawns
+export const REAPER_WARNING = 15; // warning toast this long before the spawn
+export const REAPER_HP = 1; // never actually damaged — immune in combat.ts
+export const REAPER_SPEED_BASE = 2.4; // u/s at spawn — a patient drift
+export const REAPER_SPEED_RAMP = 0.035; // +u/s every second, forever…
+export const REAPER_SPEED_MAX = 6.2; // …capped above walk (4.2), under full sprint
+export const REAPER_DAMAGE = 2; // a touch of death, not a nibble
+export const REAPER_CONTACT_RANGE = 0.6;
+export const REAPER_ATTACK_WINDUP = 0.32;
+export const REAPER_ATTACK_COOLDOWN = 1.2;
+export const REAPER_SCALE = 1.4; // bigger than the sheet-ghost it reskins
+export const REAPER_TINT = 0xd94848; // the ghost sheet dyed blood-red
+
+// ── Floor grade + pinball style bonuses (the score glue) ────────
+/**
+ * Two rewards that make the machine WORTH playing like a machine:
+ *  - STYLE KILLS: a kill landed while carrying pinball momentum pays bonus
+ *    gold that scales with the live bounce combo — deflecting off a bumper
+ *    into a zombie beats walking up and stabbing it.
+ *  - FLOOR GRADE: each descent grades the floor on pace (time), carnage
+ *    (horde share killed) and style (best bounce combo), S/A/B/C/D, and pays
+ *    a gold bonus. The grade is the "play it again, but cooler" hook.
+ */
+export const STYLE_KILL_BASE_GOLD = 2; // pinball kill bonus before the combo
+export const STYLE_KILL_COMBO_GOLD = 1; // +gold per live bounce-combo step…
+export const STYLE_KILL_GOLD_MAX = 12; // …capped per kill
+export const GRADE_TIME_FAST = 75; // seconds — under this scores full pace marks
+export const GRADE_TIME_OK = 140;
+export const GRADE_KILLS_FULL = 0.6; // horde share for full carnage marks
+export const GRADE_KILLS_OK = 0.25;
+export const GRADE_COMBO_FULL = 8; // best bounce combo for full style marks
+export const GRADE_COMBO_OK = 4;
+/** Gold paid per grade on descent, S first. */
+export const GRADE_GOLD: Record<string, number> = { S: 40, A: 25, B: 15, C: 8, D: 0 };
+
 // ── Bats (fast erratic flyers) ──────────────────────────────────
 /**
  * The speed-check enemy: a cave bat that flits at you FAST on a weaving line
@@ -677,6 +752,10 @@ export interface LevelConfig {
   torches: number;
   /** Wall-knock probability — higher = more loops/junctions = more complex. */
   braid: number;
+  /** Archetype rooms carved over the corridors (bumper chamber / arena / …). */
+  rooms: number;
+  /** Cracked wall bands hiding shortcuts (smash at pinball speed). */
+  secrets: number;
 }
 
 export function levelConfig(level: number): LevelConfig {
@@ -702,5 +781,8 @@ export function levelConfig(level: number): LevelConfig {
     // deep floors are open labyrinths full of flanking routes and dead-end
     // ambush pockets. Capped so it never dissolves into an open room.
     braid: Math.min(0.1 + 0.035 * l, 0.32),
+    // Rooms + secrets ride depth too: deeper floors are busier theme parks.
+    rooms: Math.min(ROOMS_BASE + Math.floor((l - 1) * ROOMS_PER_LEVEL), ROOMS_MAX),
+    secrets: Math.min(SECRETS_BASE + Math.floor((l - 1) * SECRETS_PER_LEVEL), SECRETS_MAX),
   };
 }

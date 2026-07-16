@@ -15,6 +15,12 @@
 export const T_WALL = 0;
 export const T_FLOOR = 1;
 export const T_STAIRS = 2;
+/**
+ * A CRACKED wall — solid to collision like any wall, but pinball momentum past
+ * SECRET_BREAK_SPEED shatters it (see secrets.ts). Placed by crackSecretWalls
+ * on walls that separate two corridors, so every break opens a real shortcut.
+ */
+export const T_CRACKED = 3;
 
 export interface Grid {
   w: number;
@@ -146,6 +152,93 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
   }
 
   return g;
+}
+
+/**
+ * A rectangular ROOM carved over the corridor maze — tile coords, inclusive of
+ * (i0, j0), w×h tiles. Callers scale by 2 after thickenWalls.
+ */
+export interface Room {
+  i0: number;
+  j0: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Carve `count` rectangular rooms into a generated maze (BEFORE thickenWalls).
+ *
+ * Rooms are placed in CELL space — a (cw × ch)-cell room spans the tiles from
+ * one cell's tile to another's, walls between included — and clamped a cell
+ * off the border. Connectivity is preserved by CONSTRUCTION: every odd/odd
+ * tile inside the rect is a backtracker-carved cell, so the room is welded to
+ * the maze everywhere it overlaps; carving walls to floor only ever ADDS
+ * connectivity. Rooms don't overlap each other (one-tile mortar between).
+ */
+export function carveRooms(
+  g: Grid,
+  rng: () => number,
+  count: number,
+  minCells: number,
+  maxCells: number,
+): Room[] {
+  const cellsW = (g.w - 1) / 2;
+  const cellsH = (g.h - 1) / 2;
+  const rooms: Room[] = [];
+
+  for (let attempt = 0; attempt < count * 12 && rooms.length < count; attempt++) {
+    const cw = minCells + Math.floor(rng() * (maxCells - minCells + 1));
+    const ch = minCells + Math.floor(rng() * (maxCells - minCells + 1));
+    if (cw + 2 > cellsW || ch + 2 > cellsH) continue; // maze too small for it
+    const cx = 1 + Math.floor(rng() * (cellsW - cw - 1));
+    const cy = 1 + Math.floor(rng() * (cellsH - ch - 1));
+    // Cell rect → tile rect: first cell's tile to last cell's tile, inclusive.
+    const room: Room = { i0: cx * 2 + 1, j0: cy * 2 + 1, w: cw * 2 - 1, h: ch * 2 - 1 };
+    // Reject overlaps (with a 2-tile gap so two rooms keep a wall between them).
+    const clash = rooms.some(
+      (r) => room.i0 < r.i0 + r.w + 2 && r.i0 < room.i0 + room.w + 2 && room.j0 < r.j0 + r.h + 2 && r.j0 < room.j0 + room.h + 2,
+    );
+    if (clash) continue;
+    for (let j = room.j0; j < room.j0 + room.h; j++) {
+      for (let i = room.i0; i < room.i0 + room.w; i++) {
+        setTile(g, i, j, T_FLOOR);
+      }
+    }
+    rooms.push(room);
+  }
+  return rooms;
+}
+
+/**
+ * Mark `count` walls as CRACKED secrets (BEFORE thickenWalls). Candidates are
+ * exactly the braid candidates that stayed closed — a wall with floor on two
+ * opposite sides — so smashing one always opens a genuine shortcut between two
+ * corridors. Spaced out so a floor's secrets aren't bunched. Returns the raw
+ * positions (callers scale by 2 post-thicken; each becomes a 2×2 band).
+ */
+export function crackSecretWalls(g: Grid, rng: () => number, count: number): TilePos[] {
+  const candidates: TilePos[] = [];
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (at(g, i, j) !== T_WALL) continue;
+      const horizontal = at(g, i - 1, j) === T_FLOOR && at(g, i + 1, j) === T_FLOOR;
+      const vertical = at(g, i, j - 1) === T_FLOOR && at(g, i, j + 1) === T_FLOOR;
+      if (horizontal || vertical) candidates.push({ i, j });
+    }
+  }
+  // rng-shuffle, then greedily keep spaced picks.
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const picked: TilePos[] = [];
+  for (const c of candidates) {
+    if (picked.length >= count) break;
+    if (picked.some((p) => Math.abs(p.i - c.i) + Math.abs(p.j - c.j) < 8)) continue;
+    setTile(g, c.i, c.j, T_CRACKED);
+    picked.push(c);
+  }
+  return picked;
 }
 
 /**

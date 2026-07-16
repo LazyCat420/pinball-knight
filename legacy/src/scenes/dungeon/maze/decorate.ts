@@ -10,7 +10,7 @@
  *
  * DOM- and three-free: tested alongside the generator.
  */
-import { type Grid, type TilePos, T_STAIRS, at, T_FLOOR, idx, setTile } from "./generator";
+import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile } from "./generator";
 import { bfsDistances } from "../entities/ai";
 
 export interface Torch extends TilePos {
@@ -47,6 +47,16 @@ export interface PinballPartSpot extends TilePos {
   dir2J: number;
 }
 
+/**
+ * A carved room dealt an ARCHETYPE — the "named room" layer (the theme-park
+ * floor idea): each archetype furnishes its rect differently below.
+ */
+export type RoomArchetype = "bumper" | "speedway" | "arena" | "vault";
+
+export interface PlannedRoom extends Room {
+  kind: RoomArchetype;
+}
+
 export interface LevelPlan {
   start: TilePos;
   stairs: TilePos;
@@ -58,6 +68,10 @@ export interface LevelPlan {
   props: PropSpot[];
   /** The level's pinball components (bumpers/springs/ramps/deflectors). */
   parts: PinballPartSpot[];
+  /** The archetype rooms (already furnished into spawns/items/parts above). */
+  rooms: PlannedRoom[];
+  /** Top-left tile of every 2×2 CRACKED band (see crackSecretWalls/secrets.ts). */
+  secrets: TilePos[];
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -130,8 +144,93 @@ function classifyPartSpot(g: Grid, p: TilePos, rng: () => number): PinballPartSp
   return null;
 }
 
-/** Mutates the grid (stamps T_STAIRS) and returns the plan. */
-export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number, partBudget = 8): LevelPlan {
+/**
+ * Furnish the carved rooms. Each room is dealt an archetype (rng-shuffled,
+ * round-robin so every floor mixes kinds) and stocked accordingly:
+ *   bumper   → a quincunx of pop bumpers (the dice-five spread) to carom between.
+ *   speedway → a lane of dash ramps down the long axis, all aimed one way.
+ *   arena    → spawns in the corners ringing a centre prize potion — walk in
+ *              for the loot, fight the ring (demoted to bumpers near the start
+ *              so level entry stays calm).
+ *   vault    → two prizes (a weapon + the gold idol) with two corner guards.
+ */
+function furnishRooms(
+  rooms: Room[],
+  rng: () => number,
+  start: TilePos,
+): { rooms: PlannedRoom[]; spawns: TilePos[]; items: ItemDrop[]; parts: PinballPartSpot[] } {
+  const planned: PlannedRoom[] = [];
+  const spawns: TilePos[] = [];
+  const items: ItemDrop[] = [];
+  const parts: PinballPartSpot[] = [];
+  const deal = shuffled<RoomArchetype>(["bumper", "speedway", "arena", "vault"], rng);
+
+  rooms.forEach((room, k) => {
+    let kind = deal[k % deal.length];
+    const cx = room.i0 + Math.floor(room.w / 2);
+    const cy = room.j0 + Math.floor(room.h / 2);
+    // A fight/loot room on the doorstep would make level entry a coin flip.
+    if ((kind === "arena" || kind === "vault") && Math.abs(cx - start.i) + Math.abs(cy - start.j) < 10) {
+      kind = "bumper";
+    }
+    planned.push({ ...room, kind });
+
+    const part = (p: Omit<PinballPartSpot, "dir2I" | "dir2J">): void => {
+      parts.push({ dir2I: 0, dir2J: 0, ...p });
+    };
+
+    if (kind === "bumper") {
+      // Quincunx: corners-and-centre fractions of the rect, capped by area.
+      const n = Math.max(3, Math.min(5, Math.floor((room.w * room.h) / 14)));
+      const spots: Array<[number, number]> = [[0.25, 0.25], [0.75, 0.75], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]];
+      for (const [fx, fy] of spots.slice(0, n)) {
+        const i = room.i0 + Math.round(fx * (room.w - 1));
+        const j = room.j0 + Math.round(fy * (room.h - 1));
+        if (parts.some((q) => q.i === i && q.j === j)) continue; // tiny room folds
+        part({ kind: "bumper", i, j, dirI: 0, dirJ: 0 });
+      }
+    } else if (kind === "speedway") {
+      // Dash lane down the long axis, every ramp aimed the same way.
+      const alongW = room.w >= room.h;
+      const sign = rng() < 0.5 ? 1 : -1;
+      const len = alongW ? room.w : room.h;
+      const n = Math.max(2, Math.floor(len / 4));
+      for (let s = 0; s < n; s++) {
+        const t = Math.round(1 + (s * (len - 3)) / Math.max(1, n - 1));
+        const i = alongW ? room.i0 + t : cx;
+        const j = alongW ? cy : room.j0 + t;
+        if (parts.some((q) => q.i === i && q.j === j)) continue;
+        part({ kind: "ramp", i, j, dirI: alongW ? sign : 0, dirJ: alongW ? 0 : sign });
+      }
+    } else {
+      // arena + vault share the corner geometry.
+      const corners: TilePos[] = [
+        { i: room.i0 + 1, j: room.j0 + 1 },
+        { i: room.i0 + room.w - 2, j: room.j0 + room.h - 2 },
+        { i: room.i0 + room.w - 2, j: room.j0 + 1 },
+        { i: room.i0 + 1, j: room.j0 + room.h - 2 },
+      ].filter((c, idx2, arr) => arr.findIndex((o) => o.i === c.i && o.j === c.j) === idx2);
+      if (kind === "arena") {
+        spawns.push(...corners);
+        const prize = shuffled(["health", "gold", "rage", "haste", "shield"], rng)[0];
+        items.push({ kind: "potion", id: prize, i: cx, j: cy });
+      } else {
+        spawns.push(...corners.slice(0, 2));
+        items.push({ kind: "weapon", id: shuffled(WEAPON_POOL, rng)[0], i: cx, j: cy });
+        if (room.w > 2) items.push({ kind: "potion", id: "gold", i: cx - 1, j: cy });
+      }
+    }
+  });
+
+  return { rooms: planned, spawns, items, parts };
+}
+
+/**
+ * Mutates the grid (stamps T_STAIRS) and returns the plan. `rooms` are the
+ * carved archetype rects in THIS grid's coordinates (already ×2 if the maze
+ * was thickened).
+ */
+export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number, partBudget = 8, rooms: Room[] = []): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
   let start: TilePos = { i: 1, j: 1 };
@@ -162,13 +261,21 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
   }
   setTile(g, stairs.i, stairs.j, T_STAIRS);
 
+  // ── Rooms first: archetype content is SEEDED into the pools below, so all
+  // the general placement (and its spacing rules) works around it. General
+  // placement also stays OUT of room interiors — each room is its archetype's
+  // set piece, not another stretch of corridor. ──
+  const furnished = furnishRooms(rooms, rng, start);
+  const inRoom = (p: TilePos): boolean =>
+    rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
+
   // ── Zombie spawns: far-ish floor tiles, spread out, never near the start ──
   const minSpawnDist = Math.max(5, Math.floor(maxDist * 0.3));
-  const spawns: TilePos[] = [];
+  const spawns: TilePos[] = [...furnished.spawns];
   const candidates = shuffled(
     floors.filter((p) => {
       const d = dist[idx(g, p.i, p.j)];
-      return d >= minSpawnDist && !(p.i === stairs.i && p.j === stairs.j);
+      return d >= minSpawnDist && !(p.i === stairs.i && p.j === stairs.j) && !inRoom(p);
     }),
     rng,
   );
@@ -183,12 +290,13 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     if (spawns.length >= zombieCount) break;
   }
 
-  // ── Torches: floor tiles with an adjacent wall, spaced ≥4 tiles apart ──
+  // ── Torches: floor tiles with an adjacent SOLID wall, spaced ≥4 apart.
+  // Never a cracked band — its sconce would hang in mid-air after the smash. ──
   const torches: Torch[] = [];
   for (const p of shuffled(floors, rng)) {
     if (torches.length >= torchBudget) break;
     if (torches.some((t) => Math.abs(t.i - p.i) + Math.abs(t.j - p.j) < 4)) continue;
-    const side = WALL_SIDES.find(([di, dj]) => at(g, p.i + di, p.j + dj) !== T_FLOOR && at(g, p.i + di, p.j + dj) !== T_STAIRS);
+    const side = WALL_SIDES.find(([di, dj]) => at(g, p.i + di, p.j + dj) === T_WALL);
     if (!side) continue;
     torches.push({ i: p.i, j: p.j, di: side[0], dj: side[1] });
   }
@@ -197,11 +305,11 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
   // Not on the stairs, not on top of a zombie spawn, a few tiles out from the
   // start (finding your first pickup should take a moment of exploring), and
   // spread apart so one corridor doesn't hold the whole armoury.
-  const items: ItemDrop[] = [];
+  const items: ItemDrop[] = [...furnished.items];
   const itemSpots = shuffled(
     floors.filter((p) => {
       const d = dist[idx(g, p.i, p.j)];
-      return d >= 4 && !(p.i === stairs.i && p.j === stairs.j) && !spawns.some((s) => s.i === p.i && s.j === p.j);
+      return d >= 4 && !(p.i === stairs.i && p.j === stairs.j) && !spawns.some((s) => s.i === p.i && s.j === p.j) && !inRoom(p);
     }),
     rng,
   );
@@ -221,19 +329,24 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 3) continue;
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
     if (props.some((q) => Math.abs(q.i - p.i) + Math.abs(q.j - p.j) < 3)) continue;
+    if (inRoom(p)) continue; // rooms are their archetype's set piece, not a boneyard
     props.push({ i: p.i, j: p.j, kind: PROP_KINDS[Math.floor(rng() * PROP_KINDS.length)] });
   }
 
   // ── Pinball parts: classify every floor tile by topology, then draw a MIXED
   // hand from the candidates (interleaving kinds so one maze isn't all bumpers),
   // spaced out, clear of the start / stairs / loot. Budget scales with depth
-  // (the caller passes it), so deeper floors read as denser machines. ──
-  const parts: PinballPartSpot[] = [];
+  // (the caller passes it), so deeper floors read as denser machines. Room
+  // archetypes have already seeded their own parts (they don't count against
+  // the corridor budget — a bumper chamber shouldn't strip the maze bare). ──
+  const parts: PinballPartSpot[] = [...furnished.parts];
+  const corridorBudget = partBudget + furnished.parts.length;
   const byKind: Record<PinballPartSpot["kind"], PinballPartSpot[]> = { bumper: [], spring: [], ramp: [], deflector: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
     if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 4) continue; // calm start
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
+    if (inRoom(p)) continue;
     const spot = classifyPartSpot(g, p, rng);
     if (spot) byKind[spot.kind].push(spot);
   }
@@ -242,7 +355,7 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
   const deal: Array<PinballPartSpot["kind"]> = ["bumper", "ramp", "spring", "bumper", "deflector", "ramp"];
   let dealIdx = 0;
   let dry = 0;
-  while (parts.length < partBudget && dry < deal.length) {
+  while (parts.length < corridorBudget && dry < deal.length) {
     const kind = deal[dealIdx % deal.length];
     dealIdx++;
     const pool = byKind[kind];
@@ -257,5 +370,15 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     dry = placed ? 0 : dry + 1;
   }
 
-  return { start, stairs, spawns, torches, items, props, parts };
+  // ── Secrets: collect every CRACKED band stamped by crackSecretWalls. After
+  // thickenWalls a raw crack is a 2×2 band whose top-left tile has even coords
+  // — that top-left is the band's handle (build.ts + secrets.ts key off it). ──
+  const secrets: TilePos[] = [];
+  for (let j = 0; j < g.h - 1; j += 2) {
+    for (let i = 0; i < g.w - 1; i += 2) {
+      if (at(g, i, j) === T_CRACKED) secrets.push({ i, j });
+    }
+  }
+
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets };
 }

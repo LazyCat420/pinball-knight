@@ -30,7 +30,7 @@ import {
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
-import { type Grid, isWalkable, tileCenter } from "./generator";
+import { type Grid, isWalkable, tileCenter, at, T_CRACKED } from "./generator";
 import type { LevelPlan } from "./decorate";
 
 /** Deterministic hash-noise — no Math.random, so a level looks identical on rebuild. */
@@ -292,7 +292,36 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
  * `mossy` grows damp rot up from the base. `low` paints the knee-wall variant
  * (rim walls are 0.35 high — a full design would squash to stripes).
  */
-function makeWallTexture(mossy = false, low = false): THREE.CanvasTexture {
+function makeWallTexture(mossy = false, low = false, cracked = false): THREE.CanvasTexture {
+  /**
+   * The SECRET-WALL tell: a jagged dark fissure forking down the masonry with
+   * gold glints along its lips — bright enough to catch a sweeping eye, quiet
+   * enough that finding one still feels earned. Painted OVER the finished
+   * face; deterministic (hash noise) like everything else here.
+   */
+  const paintCrack = (ctx: CanvasRenderingContext2D): void => {
+    let cx = PPU / 2 - 3;
+    for (let y = 2; y < PPU - 2; y++) {
+      ctx.fillStyle = css(0);
+      ctx.fillRect(cx, y, 2, 1);
+      // a thin side-branch halfway down
+      if (y === Math.floor(PPU / 2)) {
+        let bx = cx;
+        for (let k = 0; k < 12; k++) {
+          bx += 1;
+          ctx.fillRect(bx, y - Math.floor(k / 2), 1, 1);
+        }
+      }
+      cx += noise(cx, y, 57) > 0.5 ? 1 : noise(cx, y, 58) > 0.5 ? -1 : 0;
+      cx = Math.max(6, Math.min(PPU - 8, cx));
+      // gold glints scattered along the crack lips
+      if (noise(cx, y, 59) > 0.82) {
+        ctx.fillStyle = css(16);
+        ctx.fillRect(cx + (noise(y, cx, 60) > 0.5 ? 2 : -1), y, 1, 1);
+      }
+    }
+  };
+
   return pixelTexture(
     PPU,
     (ctx) => {
@@ -308,6 +337,7 @@ function makeWallTexture(mossy = false, low = false): THREE.CanvasTexture {
         ctx.fillRect(0, 0, PPU, 2); // top catch-light
         ctx.fillStyle = css(0);
         ctx.fillRect(0, PPU - 4, PPU, 4);
+        if (cracked) paintCrack(ctx);
         return;
       }
 
@@ -388,6 +418,8 @@ function makeWallTexture(mossy = false, low = false): THREE.CanvasTexture {
       // Contact shadow along the bottom of the face — grounds the wall.
       ctx.fillStyle = css(0);
       ctx.fillRect(0, PPU - 3, PPU, 3);
+
+      if (cracked) paintCrack(ctx);
     },
     1,
     1,
@@ -613,6 +645,12 @@ export interface MazeHandle {
   lightPool: THREE.PointLight[];
   /** Flip-book flame textures — core advances their frame offset each frame. */
   flames: Array<{ tex: THREE.Texture; phase: number }>;
+  /**
+   * The still-intact secret bands: (i,j) = the 2×2 band's top-left tile, (x,z)
+   * its world centre, mesh the removable Group. secrets.ts splices entries as
+   * they're smashed; geometry/materials stay tracked for level disposal.
+   */
+  secrets: Array<{ i: number; j: number; x: number; z: number; mesh: THREE.Object3D }>;
   dispose(): void;
 }
 
@@ -655,6 +693,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
+      if (at(grid, i, j) === T_CRACKED) continue; // secret bands get their own removable meshes below
       let exposed = false;
       for (let dj = -1; dj <= 1 && !exposed; dj++) {
         for (let di = -1; di <= 1; di++) {
@@ -737,6 +776,52 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
   addWallMesh(fullCells, WALL_H, false);
   addWallMesh(mossCells, WALL_H, true);
   addWallMesh(lowCells, WALL_LOW, false);
+
+  // ── Secret CRACKED bands — the smash-through walls. Each 2×2 band is its
+  // own Group of per-tile boxes (NOT in the instanced walls) so a pinball
+  // impact can remove the whole band at runtime (secrets.ts). Same structural
+  // height rule as real walls: rim tiles knee-high, back tiles full — a broken
+  // low lip with a cracked tall face reads as crumbling masonry. ──
+  const secrets: MazeHandle["secrets"] = [];
+  if (plan.secrets.length) {
+    const crackMats = new Map<boolean, THREE.MeshStandardMaterial>();
+    for (const low of [false, true]) {
+      const tex = track(makeWallTexture(false, low, true));
+      const norm = track(normalTexture(PPU, low ? capHeight : wallHeight, 1, 1, 2.5));
+      crackMats.set(
+        low,
+        track(
+          new THREE.MeshStandardMaterial({
+            map: tex,
+            normalMap: norm,
+            normalScale: new THREE.Vector2(1.0, 1.0),
+            roughness: 0.92,
+            metalness: 0.0,
+          }),
+        ),
+      );
+    }
+    const fullGeo = track(new THREE.BoxGeometry(1, WALL_H, 1));
+    const lowGeo = track(new THREE.BoxGeometry(1, WALL_LOW, 1));
+    for (const s of plan.secrets) {
+      const band = new THREE.Group();
+      for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+        const i = s.i + di;
+        const j = s.j + dj;
+        const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
+        const faceMat = crackMats.get(rim)!;
+        const mesh = new THREE.Mesh(rim ? lowGeo : fullGeo, [faceMat, faceMat, capMat, capMat, faceMat, faceMat]);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        const c = tileCenter(grid, i, j);
+        mesh.position.set(c.x, (rim ? WALL_LOW : WALL_H) / 2, c.z);
+        band.add(mesh);
+      }
+      group.add(band);
+      const c0 = tileCenter(grid, s.i, s.j);
+      secrets.push({ i: s.i, j: s.j, x: c0.x + 0.5, z: c0.z + 0.5, mesh: band });
+    }
+  }
 
   // ── Architecture (the Castlevania pass) ─────────────────────────
   // Set-dressing density is what separates an authored dungeon from a tile
@@ -963,6 +1048,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     torchAnchors,
     lightPool,
     flames,
+    secrets,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());

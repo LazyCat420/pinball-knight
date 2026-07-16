@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateMaze, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, idx } from "./generator";
+import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx } from "./generator";
 import { decorateMaze } from "./decorate";
 import { bfsDistances } from "../entities/ai";
 
@@ -118,6 +118,68 @@ describe("decorateMaze", () => {
     for (const part of plan.parts) {
       expect(at(g, part.i, part.j)).toBe(T_FLOOR); // never on the stairs tile
       expect(Math.abs(part.i - plan.start.i) + Math.abs(part.j - plan.start.j)).toBeGreaterThanOrEqual(4);
+    }
+  });
+});
+
+/** The full pipeline a real level runs: rooms + cracks on the raw grid, then thicken. */
+function makeFullLevel(seed: number) {
+  const raw = generateMaze(14, 11, mulberry32(seed));
+  const rawRooms = carveRooms(raw, mulberry32(seed + 1), 3, 2, 4);
+  crackSecretWalls(raw, mulberry32(seed + 2), 3);
+  const g = thickenWalls(raw);
+  const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+  const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, rooms);
+  return { g, rooms, plan };
+}
+
+describe("decorateMaze — rooms + secrets", () => {
+  it("deals every carved room an archetype and furnishes it", () => {
+    const { rooms, plan } = makeFullLevel(7);
+    expect(plan.rooms.length).toBe(rooms.length);
+    for (const room of plan.rooms) {
+      const inside = (p: { i: number; j: number }): boolean =>
+        p.i >= room.i0 && p.i < room.i0 + room.w && p.j >= room.j0 && p.j < room.j0 + room.h;
+      if (room.kind === "bumper") {
+        const bumpers = plan.parts.filter((p) => p.kind === "bumper" && inside(p));
+        expect(bumpers.length).toBeGreaterThanOrEqual(3);
+      } else if (room.kind === "speedway") {
+        const ramps = plan.parts.filter((p) => p.kind === "ramp" && inside(p));
+        expect(ramps.length).toBeGreaterThanOrEqual(2);
+        // every ramp in the lane is aimed the SAME way
+        const dirs = new Set(ramps.map((r) => `${r.dirI},${r.dirJ}`));
+        expect(dirs.size).toBe(1);
+      } else if (room.kind === "arena") {
+        expect(plan.spawns.filter(inside).length).toBeGreaterThanOrEqual(3);
+        expect(plan.items.filter((it) => it.kind === "potion" && inside(it)).length).toBeGreaterThanOrEqual(1);
+      } else {
+        // vault: a weapon prize + guards
+        expect(plan.items.filter((it) => it.kind === "weapon" && inside(it)).length).toBe(1);
+        expect(plan.spawns.filter(inside).length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it("collects every cracked band's top-left handle into plan.secrets", () => {
+    const { g, plan } = makeFullLevel(41);
+    expect(plan.secrets.length).toBeGreaterThan(0);
+    for (const s of plan.secrets) {
+      expect(s.i % 2).toBe(0);
+      expect(s.j % 2).toBe(0);
+      for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        expect(at(g, s.i + di, s.j + dj)).toBe(T_CRACKED);
+      }
+    }
+    // Exactly the stamped bands, no double-counting.
+    let crackedTiles = 0;
+    for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (at(g, i, j) === T_CRACKED) crackedTiles++;
+    expect(plan.secrets.length * 4).toBe(crackedTiles);
+  });
+
+  it("never mounts a torch on a cracked band (the sconce would float after the smash)", () => {
+    const { g, plan } = makeFullLevel(97);
+    for (const t of plan.torches) {
+      expect(at(g, t.i + t.di, t.j + t.dj)).toBe(T_WALL);
     }
   });
 });

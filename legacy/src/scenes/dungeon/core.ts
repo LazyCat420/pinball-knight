@@ -37,7 +37,7 @@ import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
-import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
+import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { decorateMaze } from "./maze/decorate";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
@@ -83,6 +83,21 @@ import {
   PARTS_BASE,
   PARTS_PER_LEVEL,
   PARTS_MAX,
+  ROOM_MIN_CELLS,
+  ROOM_MAX_CELLS,
+  REAPER_AFTER,
+  REAPER_WARNING,
+  REAPER_HP,
+  REAPER_SPEED_BASE,
+  REAPER_SCALE,
+  REAPER_TINT,
+  GRADE_TIME_FAST,
+  GRADE_TIME_OK,
+  GRADE_KILLS_FULL,
+  GRADE_KILLS_OK,
+  GRADE_COMBO_FULL,
+  GRADE_COMBO_OK,
+  GRADE_GOLD,
   BOSS_EVERY,
   BOSS_BASE_HP,
   BOSS_HP_PER_TIER,
@@ -332,6 +347,27 @@ export function launchDungeonGame(onExit?: () => void): void {
     // test can navigate to a bumper/spring and verify the physics fire.
     (window as unknown as { __dungeonParts?: () => unknown }).__dungeonParts = () =>
       state.pinballParts.map((pt) => ({ kind: pt.kind, i: pt.i, j: pt.j, x: pt.x, z: pt.z, dirX: pt.dirX, dirZ: pt.dirZ, cooldownT: pt.cooldownT }));
+    // Dev: the still-intact secret bands + the floor ledger (secret/reaper/grade QA).
+    (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
+      state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
+    (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
+      levelT: state.levelT,
+      hordeSize: state.levelHordeSize,
+      killsThisFloor: state.kills - state.levelStartKills,
+      bestCombo: state.levelBestCombo,
+      reaperOut: state.reaperOut,
+    });
+    // Dev: hurl the player into a pinball ride (headless secret-wall/physics
+    // tests — spooling a real sprint with synthetic key events is flaky).
+    (window as unknown as { __dungeonLaunch?: (dirX: number, dirZ: number, speed: number) => boolean }).__dungeonLaunch = (dirX: number, dirZ: number, speed: number) => {
+      const p = state.player;
+      const len = Math.hypot(dirX, dirZ);
+      if (!p || len < 1e-4) return false;
+      p.momX = dirX / len;
+      p.momZ = dirZ / len;
+      p.momSpeed = speed;
+      return true;
+    };
     // Dev: teleport the player (headless part-physics tests — a maze walk to a
     // specific bumper is unreliable to script with keys alone).
     (window as unknown as { __dungeonWarp?: (x: number, z: number) => boolean }).__dungeonWarp = (x: number, z: number) => {
@@ -403,6 +439,7 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   ghost: GHOST_HP,
   bat: BAT_HP,
   slime: SLIME_HP,
+  reaper: REAPER_HP, // nominal — combat.ts makes it immune anyway
 };
 
 /**
@@ -447,9 +484,10 @@ function makeZombie(
   const sprite = createActorSprite(sheet, false);
   // A ghost is SPECTRAL: knock its material translucent + disable the hard alpha
   // cutout so the see-through drape reads (it also renders after opaque actors).
-  if (kind === "ghost") {
+  // The reaper shares the treatment, a shade more solid — it's a PRESENCE.
+  if (kind === "ghost" || kind === "reaper") {
     const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
-    mat.opacity = 0.62;
+    mat.opacity = kind === "reaper" ? 0.82 : 0.62;
     mat.alphaTest = 0.02;
     mat.depthWrite = false;
     sprite.mesh.renderOrder = 11;
@@ -531,12 +569,19 @@ function startLevel(level: number): void {
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
   const rng = mulberry32((state.runSeed ^ (level * 0x9e3779b9)) >>> 0);
-  // Thick walls are what make the Diablo low-rim/tall-back trick work — see
-  // thickenWalls. Decoration runs on the thickened grid.
-  const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid));
+  // Corridors, then ROOMS carved over them (bumper chamber / speedway / arena /
+  // vault), then a few CRACKED secret walls — all on the raw grid, all before
+  // thickening, so the wall-band structure survives. Thick walls are what make
+  // the Diablo low-rim/tall-back trick work — see thickenWalls. Decoration
+  // runs on the thickened grid, with room rects scaled to match.
+  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid);
+  const rawRooms = carveRooms(raw, rng, cfg.rooms, ROOM_MIN_CELLS, ROOM_MAX_CELLS);
+  crackSecretWalls(raw, rng, cfg.secrets);
+  const grid = thickenWalls(raw);
+  const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   // Pinball-machine density grows with depth: deeper floors are busier tables.
   const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
-  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget);
+  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget, rooms);
 
   state.grid = grid;
   state.stairs = plan.stairs;
@@ -619,6 +664,14 @@ function startLevel(level: number): void {
   state.flowTimer = 0;
   snapCameraTo(startPos.x, startPos.z);
   state.hudDirty = true;
+
+  // ── Per-floor score ledger + the Death Dealer's fuse ──
+  state.levelT = 0;
+  state.levelStartKills = state.kills;
+  state.levelHordeSize = state.zombies.length;
+  state.levelBestCombo = 0;
+  state.reaperOut = false;
+  state.reaperWarned = false;
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
@@ -718,6 +771,10 @@ function handleKey(e: KeyboardEvent): void {
         const next = (Math.floor(state.level / BOSS_EVERY) + 1) * BOSS_EVERY;
         startLevel(next);
       }
+      break;
+    // ── Hidden dev: summon the Death Dealer now (reaper QA) ──
+    case "m":
+      if (!state.gameOver && !state.reaperOut) spawnReaper();
       break;
   }
 }
@@ -851,10 +908,14 @@ function onPlayerDeath(): void {
 }
 
 function descend(): void {
-  state.goldRun += GOLD_PER_DESCENT;
-  addGold(GOLD_PER_DESCENT, "dungeon-game");
+  // Grade the floor being left BEFORE startLevel resets the ledger.
+  const { grade, gold } = gradeFloor();
+  state.goldRun += GOLD_PER_DESCENT + gold;
+  addGold(GOLD_PER_DESCENT + gold, "dungeon-game");
   sfxStairs();
   startLevel(state.level + 1);
+  // The pickup-note channel, so it doesn't fight the new depth's toast.
+  showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
 }
 
 /** Drop a carried weapon on the floor, durability intact, un-grabbable until you step away. */
@@ -963,11 +1024,60 @@ function applyPotion(id: PotionId): void {
   state.hudDirty = true;
 }
 
+/**
+ * Spawn the DEATH DEALER: an unkillable blood-red reaper that enters a dozen
+ * tiles out from the player (through the walls — it doesn't care) and drifts
+ * straight at them, accelerating forever. One per floor; the stairs erase it.
+ */
+function spawnReaper(): void {
+  const p = state.player;
+  if (!p || !state.ghostSheet) return;
+  state.reaperOut = true;
+  const a = Math.random() * Math.PI * 2;
+  const reaper = makeZombie(state.ghostSheet, p.x + Math.cos(a) * 12, p.z + Math.sin(a) * 12, REAPER_SPEED_BASE, {
+    kind: "reaper",
+    hp: REAPER_HP,
+  });
+  reaper.aggro = true;
+  reaper.sprite.setTint(REAPER_TINT);
+  reaper.sprite.mesh.scale.multiplyScalar(REAPER_SCALE);
+  state.zombies.push(reaper);
+  showToast("☠ THE DEATH DEALER ☠", "it cannot be slain — take the stairs");
+  state.shakeT = Math.max(state.shakeT, 0.3);
+}
+
+/**
+ * Grade the floor being left: pace (time), carnage (share of the horde
+ * killed) and style (best bounce combo), two marks each → S/A/B/C/D and a
+ * gold bonus. The "play it again, but cooler" hook.
+ */
+function gradeFloor(): { grade: string; gold: number } {
+  const kills = state.kills - state.levelStartKills;
+  const share = kills / Math.max(1, state.levelHordeSize);
+  let pts = 0;
+  pts += state.levelT <= GRADE_TIME_FAST ? 2 : state.levelT <= GRADE_TIME_OK ? 1 : 0;
+  pts += share >= GRADE_KILLS_FULL ? 2 : share >= GRADE_KILLS_OK ? 1 : 0;
+  pts += state.levelBestCombo >= GRADE_COMBO_FULL ? 2 : state.levelBestCombo >= GRADE_COMBO_OK ? 1 : 0;
+  const grade = pts >= 6 ? "S" : pts >= 5 ? "A" : pts >= 3 ? "B" : pts >= 2 ? "C" : "D";
+  return { grade, gold: GRADE_GOLD[grade] ?? 0 };
+}
+
 /** One 60Hz simulation step. */
 function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
   if (state.gameOver || !p || !g || !state.input) return;
+
+  // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
+  state.levelT += dt;
+  if (p.bounceCombo > state.levelBestCombo) state.levelBestCombo = p.bounceCombo;
+  if (!state.reaperWarned && state.levelT >= REAPER_AFTER - REAPER_WARNING) {
+    state.reaperWarned = true;
+    showToast("A COLD WIND RISES", "something is coming — find the stairs");
+  }
+  if (!state.reaperOut && state.levelT >= REAPER_AFTER) {
+    spawnReaper();
+  }
 
   // ── Flow field — one BFS serves the whole horde, every FLOW_INTERVAL ──
   state.flowTimer -= dt;

@@ -59,6 +59,7 @@ import {
   RAMP_COOLDOWN,
   RAMP_STEER_LOCK,
   DEFLECTOR_BOOST,
+  SECRET_BREAK_SPEED,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -87,6 +88,8 @@ import {
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle, wallContact } from "../collision";
+import { at, T_CRACKED, worldToTile, type Grid } from "../maze/generator";
+import { smashSecretAt } from "../secrets";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
@@ -523,6 +526,25 @@ function touchPinballParts(inMomentum: boolean): void {
 }
 
 /**
+ * If the wall just slammed (along the blocked axes, travelling (dirX, dirZ))
+ * is a CRACKED secret band, smash through it. Probes a hair past the body on
+ * each blocked axis — after moveCircle's clamp we sit flush against the tile
+ * that stopped us. Returns true if masonry actually broke (the caller then
+ * barrels THROUGH instead of reflecting).
+ */
+function trySmashAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number, blockedX: boolean, blockedZ: boolean): boolean {
+  if (blockedX) {
+    const t = worldToTile(g, x + Math.sign(dirX) * (PLAYER_R + 0.12), z);
+    if (at(g, t.i, t.j) === T_CRACKED && smashSecretAt(t.i, t.j)) return true;
+  }
+  if (blockedZ) {
+    const t = worldToTile(g, x, z + Math.sign(dirZ) * (PLAYER_R + 0.12));
+    if (at(g, t.i, t.j) === T_CRACKED && smashSecretAt(t.i, t.j)) return true;
+  }
+  return false;
+}
+
+/**
  * PINBALL PHYSICS — while p.momSpeed > 0 the knight carries real momentum and
  * bounces off walls instead of stopping. Owns the player (returns true) until
  * the momentum bleeds below PINBALL_EXIT_MULT·PLAYER_SPEED, then hands control
@@ -571,6 +593,16 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   p.z = res.z;
 
   if (blockedX || blockedZ) {
+    // SECRET WALL: enough momentum landing on a CRACKED band shatters it — the
+    // knight barrels straight through the new gap (no reflection), spending a
+    // slice of speed on the masonry. Still a combo tick: smashing IS style.
+    if (p.momSpeed >= SECRET_BREAK_SPEED && trySmashAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+      p.momSpeed *= 0.85;
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      syncActorMesh(p);
+      return true;
+    }
     // Axis-aligned reflection (grid walls are axis-aligned): flip the blocked
     // component. Clean pinball ricochet off a flat wall face.
     if (blockedX) p.momX = -p.momX;
@@ -838,6 +870,20 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     p.x = res.x;
     p.z = res.z;
     if (p.overcharge > 0 && blocked && wantSprint) {
+      // A CRACKED band hit at an overcharged sprint smashes open and the run
+      // continues THROUGH it as a momentum ride — "run through the secret
+      // wall" works exactly the way it looks like it should.
+      const wl2 = Math.hypot(wd.x, wd.z) || 1;
+      if (trySmashAhead(g, p.x, p.z, wd.x / wl2, wd.z / wl2, Math.abs(wd.x) > 1e-4, Math.abs(wd.z) > 1e-4)) {
+        p.momX = wd.x / wl2;
+        p.momZ = wd.z / wl2;
+        p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
+        p.ramT = 0;
+        p.bounceCombo = 1;
+        p.bounceComboT = PINBALL_COMBO_WINDOW;
+        syncActorMesh(p);
+        return;
+      }
       // Launch back along the incoming direction, reflected off the wall.
       const n = currentWallNormal();
       p.momX = n ? n.nx : -wd.x;
