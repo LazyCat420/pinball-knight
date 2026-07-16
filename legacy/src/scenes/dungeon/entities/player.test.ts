@@ -20,6 +20,17 @@ import {
   COMBO_WINDOW,
   CHARGE_TIME,
   HEAVY_COST,
+  SPRINT_RAMP_TIME,
+  SPRINT_DECAY_TIME,
+  SPRINT_RIDE_THRESHOLD,
+  SPRINT_SPEED_MULT,
+  WALLKICK,
+  WALLKICK_IFRAMES,
+  WALLKICK_DURATION,
+  WALLRIDE,
+  POUNCE,
+  POUNCE_IFRAMES,
+  POUNCE_DURATION,
 } from "../constants";
 
 /** A bare player stub — the fields spendStamina + the roll math read. */
@@ -116,5 +127,59 @@ describe("melee move timings", () => {
 
   it("charge threshold sits above a light's full duration (a tap can't accidentally heavy)", () => {
     expect(CHARGE_TIME).toBeGreaterThan(total(LIGHT_1));
+  });
+});
+
+describe("sprint ramp (the 3-second spool-up)", () => {
+  it("reaches full charge in ~SPRINT_RAMP_TIME and gates the wall-ride at halfway", () => {
+    // Charge integrates dt/RAMP each frame; after RAMP_TIME of holding it's full.
+    let c = 0;
+    const dt = 1 / 60;
+    for (let t = 0; t < SPRINT_RAMP_TIME; t += dt) c = Math.min(1, c + dt / SPRINT_RAMP_TIME);
+    expect(c).toBeCloseTo(1, 2);
+    // The 3s ask, and the >50% ride gate reached at ~half the ramp.
+    expect(SPRINT_RAMP_TIME).toBeCloseTo(3, 5);
+    expect(SPRINT_RIDE_THRESHOLD).toBe(0.5);
+  });
+
+  it("the ride threshold is crossed strictly before full sprint (ride ⊂ sprinting)", () => {
+    // At the threshold you are past walk but not yet at top speed — a real 'fast
+    // enough' gate rather than 'must be maxed'.
+    expect(SPRINT_RIDE_THRESHOLD).toBeGreaterThan(0);
+    expect(SPRINT_RIDE_THRESHOLD).toBeLessThan(1);
+    const speedAtRide = 1 + (SPRINT_SPEED_MULT - 1) * SPRINT_RIDE_THRESHOLD;
+    expect(speedAtRide).toBeGreaterThan(1); // faster than a walk
+    expect(speedAtRide).toBeLessThan(SPRINT_SPEED_MULT); // not yet full sprint
+  });
+
+  it("charge decays faster than it builds (a stumble kills sprint, a run must be earned)", () => {
+    expect(SPRINT_DECAY_TIME).toBeLessThan(SPRINT_RAMP_TIME);
+  });
+});
+
+describe("wall moves (Mortal-Kombat specials off a wall)", () => {
+  it("wall-kick i-frames cover only the front of the launch, never the whole hop", () => {
+    expect(WALLKICK_IFRAMES).toBeGreaterThan(0);
+    expect(WALLKICK_IFRAMES).toBeLessThan(WALLKICK_DURATION);
+    // ...and never longer than a damage-hit's i-frames (the no-double-stack rule).
+    expect(WALLKICK_IFRAMES).toBeLessThanOrEqual(PLAYER_IFRAMES);
+  });
+
+  it("pounce is airborne (untouchable) for most of its arc but is still finite", () => {
+    expect(POUNCE_IFRAMES).toBeGreaterThan(WALLKICK_IFRAMES); // a bigger commit, more invuln
+    expect(POUNCE_IFRAMES).toBeLessThanOrEqual(POUNCE_DURATION);
+    expect(POUNCE_IFRAMES).toBeLessThanOrEqual(PLAYER_IFRAMES);
+  });
+
+  it("every wall move is 'meaningful but costed': >1x damage AND a stamina price", () => {
+    for (const m of [WALLKICK, WALLRIDE, POUNCE]) {
+      expect(m.damageMul).toBeGreaterThan(1); // hits harder than a plain light
+      expect(m.staminaCost).toBeGreaterThan(0); // never free
+    }
+    // The pounce is the biggest hammer of the three.
+    expect(POUNCE.damageMul).toBeGreaterThan(WALLKICK.damageMul);
+    expect(POUNCE.damageMul).toBeGreaterThan(WALLRIDE.damageMul);
+    // The wall-ride sweeps the widest arc (it's the crowd-clearing slide).
+    expect(WALLRIDE.arcMul).toBeGreaterThan(WALLKICK.arcMul);
   });
 });

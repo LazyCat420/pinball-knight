@@ -50,6 +50,33 @@ export interface Player extends Actor {
   rollDirX: number;
   rollDirZ: number;
 
+  // ── Sprint charge (the 3-second spool-up; gates the wall-ride) ──
+  /**
+   * 0..1 sprint charge. Fills over SPRINT_RAMP_TIME while holding Shift + moving,
+   * bleeds back over SPRINT_DECAY_TIME when you stop. Lerps top speed from walk
+   * (1×) toward SPRINT_SPEED_MULT; past SPRINT_RIDE_THRESHOLD the wall-ride unlocks.
+   */
+  sprintCharge: number;
+
+  // ── Wall moves (Mortal-Kombat-style specials off a wall) ──
+  /**
+   * -1 when no launch move is airborne, else seconds into the current
+   * wall-kick / pounce arc (a scripted committed-direction launch, like the roll
+   * body but its own move so it can carry a strike and different i-frames).
+   */
+  wallMoveT: number;
+  /** Total duration of the active launch (WALLKICK_DURATION or POUNCE_DURATION). */
+  wallMoveDur: number;
+  /** i-frame window (front of the launch) for the active wall move. */
+  wallMoveIfr: number;
+  /** Distance the active launch covers, eased fast→slow. */
+  wallMoveDist: number;
+  /** WORLD launch direction, locked at kick-off. */
+  wallMoveDirX: number;
+  wallMoveDirZ: number;
+  /** "pounce" fires a radial AoE on landing; "kick" chains a lunging strike; null = none. */
+  wallMoveKind: "kick" | "pounce" | null;
+
   // ── Melee combo/heavy state ──
   /** Which move the current/next swing is: 0 = light-1, 1 = light-2, 2 = finisher. */
   comboStep: number;
@@ -272,6 +299,14 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rollT: -1,
     rollDirX: 0,
     rollDirZ: 0,
+    sprintCharge: 0,
+    wallMoveT: -1,
+    wallMoveDur: 0,
+    wallMoveIfr: 0,
+    wallMoveDist: 0,
+    wallMoveDirX: 0,
+    wallMoveDirZ: 0,
+    wallMoveKind: null,
     comboStep: 0,
     comboWindowT: 0,
     chargeT: -1,

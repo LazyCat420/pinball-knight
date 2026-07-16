@@ -40,7 +40,7 @@ import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, is
 import { decorateMaze } from "./maze/decorate";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
-import { updatePlayer, resetPlayerMotion, debugCurSpeed } from "./entities/player";
+import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
 import { syncActorMesh, setBossDefeatedHandler } from "./entities/combat";
@@ -308,7 +308,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills };
+      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal() };
     };
   }
 

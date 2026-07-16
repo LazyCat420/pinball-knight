@@ -230,14 +230,57 @@ export const HEAVY_COST = 22; // per heavy swing (light swings are free)
 // ── Sprint (hold Shift) ─────────────────────────────────────────
 export const SPRINT_SPEED_MULT = 1.5; // top speed multiplier while sprinting
 /**
- * Movement was instant-velocity (press = full speed that frame). A light
- * accel/friction ramp makes walk↔sprint read as a gear-change, not a teleport,
- * and gives the sprint a satisfying ~0.15s spool-up. Still feeds moveCircle.
+ * Walk accel/friction stays snappy (press ≈ full WALK speed almost at once) so
+ * ordinary movement is responsive. Sprint is layered on TOP via a separate
+ * "sprint charge" that ramps over SPRINT_RAMP_TIME (see below) — that's the
+ * gear you have to wind up, not the base walk.
  */
 export const MOVE_ACCEL = 22; // units/sec² toward the desired velocity
 export const MOVE_FRICTION = 26; // units/sec² decel when no input
 /** Camera leads a little further ahead while sprinting (no ortho FOV trick available). */
 export const SPRINT_DEADZONE_MULT = 1.4;
+/**
+ * Sprint is a COMMITMENT you spool up, not an instant toggle. Holding Shift while
+ * moving fills a 0→1 "sprint charge" over SPRINT_RAMP_TIME seconds; letting go
+ * (or stopping) drains it back over SPRINT_DECAY_TIME. The charge lerps the top
+ * speed from walk (1×) toward SPRINT_SPEED_MULT, so full sprint arrives only
+ * after a sustained run — and the flashy wall-ride unlocks once the charge is
+ * past SPRINT_RIDE_THRESHOLD (halfway up the ramp). Playtest-set to 3s per the
+ * "ramp up over 3 seconds to full sprint" request.
+ */
+export const SPRINT_RAMP_TIME = 3.0; // seconds of sustained run to reach full sprint
+export const SPRINT_DECAY_TIME = 0.8; // seconds for the charge to bleed back to 0 when you stop
+/** Sprint charge above this (halfway up the ramp, ~1.5s in) unlocks the wall-ride. */
+export const SPRINT_RIDE_THRESHOLD = 0.5;
+
+// ── Wall moves (Mortal-Kombat-style specials off a wall) ────────
+/**
+ * With no vertical axis in a top-down grid, "jump off the wall" becomes
+ * WALL-CONTACT specials: when the player is pressed against a wall, a short
+ * input unlocks a distinct move driven off the existing melee timeline +
+ * moveCircle. All are "meaningful but costed" — extra damage, brief i-frames on
+ * the launch, and a stamina price, so they're a tactical option near walls, not
+ * free flair. wallContact() (collision.ts) supplies the wall NORMAL (the way to
+ * kick off toward).
+ */
+/** How far past the body radius we probe for a wall to count as "wall-adjacent". */
+export const WALL_CONTACT_PROBE = 0.14;
+/** Wall-kick: dodge INTO a wall → rebound hop + a lunging light strike away from it. */
+export const WALLKICK_COST = 20; // stamina (cheaper than a full dodge)
+export const WALLKICK_DURATION = 0.3; // seconds of the launch hop
+export const WALLKICK_IFRAMES = 0.16; // invuln over the front of the hop
+export const WALLKICK_DISTANCE = 2.2; // tiles launched off the wall
+export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, staminaCost: WALLKICK_COST };
+/** Wall-ride: sprint-charged slide along a wall face + a wide sweeping slash. */
+export const WALLRIDE_COST = 16;
+export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, staminaCost: WALLRIDE_COST };
+/** Pounce slam: face wall + charge + release → leap arc off the wall to an AoE landing. */
+export const POUNCE_COST = 26;
+export const POUNCE_DURATION = 0.36; // arc travel time
+export const POUNCE_IFRAMES = 0.22; // airborne = untouchable most of the arc
+export const POUNCE_DISTANCE = 3.2; // tiles leapt off the wall
+export const POUNCE_AOE = 1.6; // radial hit radius on landing (tiles)
+export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, staminaCost: POUNCE_COST };
 
 // ── Dodge-roll (tap Space) ──────────────────────────────────────
 /**

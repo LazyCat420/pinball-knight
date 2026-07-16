@@ -86,12 +86,17 @@ export function sfxSwing(): void {
   beep(c, { type: "square", f0: 330, f1: 140, dur: 0.08, vol: 0.05 });
 }
 
-/** Dodge-roll — a low, quick body whoosh: filtered noise sweeping down. */
+/**
+ * Dodge-roll — a low, quick body whoosh: filtered noise sweeping down. The pitch
+ * is jittered ±8% per roll so a flurry of dodges doesn't machine-gun the exact
+ * same sample (research: randomise repeated action SFX to avoid fatigue).
+ */
 export function sfxRoll(): void {
   const c = ctx();
   if (!c) return;
-  burst(c, 0.16, 0.11, "lowpass", 700);
-  beep(c, { type: "sine", f0: 260, f1: 90, dur: 0.14, vol: 0.05 });
+  const p = 0.92 + Math.random() * 0.16; // 0.92..1.08
+  burst(c, 0.16, 0.11, "lowpass", 700 * p);
+  beep(c, { type: "sine", f0: 260 * p, f1: 90 * p, dur: 0.14, vol: 0.05 });
 }
 
 /** Heavy swing — a slower, weightier whoosh than a light swing. */

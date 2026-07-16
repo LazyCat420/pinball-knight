@@ -21,6 +21,9 @@ import {
   STAMINA_REGEN_DELAY,
   SPRINT_DRAIN,
   SPRINT_SPEED_MULT,
+  SPRINT_RAMP_TIME,
+  SPRINT_DECAY_TIME,
+  SPRINT_RIDE_THRESHOLD,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -35,15 +38,26 @@ import {
   COMBO_WINDOW,
   CHARGE_TIME,
   INPUT_BUFFER,
+  WALL_CONTACT_PROBE,
+  WALLKICK,
+  WALLKICK_DURATION,
+  WALLKICK_IFRAMES,
+  WALLKICK_DISTANCE,
+  WALLRIDE,
+  POUNCE,
+  POUNCE_DURATION,
+  POUNCE_IFRAMES,
+  POUNCE_DISTANCE,
+  POUNCE_AOE,
   type MoveTiming,
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
-import { moveCircle } from "../collision";
+import { moveCircle, wallContact } from "../collision";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
-import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC } from "./combat";
+import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage } from "./combat";
 import { fireWeapon } from "./projectiles";
 import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy } from "../audio";
 
@@ -65,11 +79,17 @@ let curSpeed = 0;
 export function resetPlayerMotion(): void {
   curSpeed = 0;
   stepDustT = 0;
+  if (state.player) state.player.sprintCharge = 0;
 }
 
 /** Dev telemetry: the smoothed movement speed (units/sec) for the QA hook. */
 export function debugCurSpeed(): number {
   return curSpeed;
+}
+
+/** Dev telemetry: the current wall normal (or null) for headless wall-move tests. */
+export function debugWallNormal(): { nx: number; nz: number } | null {
+  return currentWallNormal();
 }
 
 /**
@@ -144,6 +164,7 @@ function updateRoll(dt: number): boolean {
   const g = state.grid;
   if (!p || !g || p.rollT < 0) return false;
 
+  const prevRollT = p.rollT;
   p.rollT += dt;
 
   // Roll body: apply eased velocity. After ROLL_DURATION we're in recovery
@@ -164,6 +185,14 @@ function updateRoll(dt: number): boolean {
     state.vfx?.dust(p.x, 0.05, p.z);
   }
 
+  // The instant the roll body ends (before the recovery beat), stamp a landing
+  // puff — the touchdown "squash" that sells the roll ending (research: a landing
+  // dust puff reads the settle). Fires once, on the body→recovery boundary.
+  if (prevRollT < ROLL_DURATION && p.rollT >= ROLL_DURATION) {
+    state.vfx?.dust(p.x, 0.02, p.z);
+    state.vfx?.dust(p.x, 0.04, p.z);
+  }
+
   if (p.rollT >= ROLL_DURATION + ROLL_RECOVERY) {
     p.rollT = -1;
     p.anim.play("idle", { force: true });
@@ -171,6 +200,153 @@ function updateRoll(dt: number): boolean {
 
   syncActorMesh(p);
   return true;
+}
+
+// ── Wall moves (Mortal-Kombat-style specials off a wall) ───────────────────
+// "Jump off the wall" adapted to a top-down grid: when pressed against a wall,
+// wallContact() gives the outward normal and a short input launches a committed
+// arc that carries a strike. All run on moveCircle + the melee timeline.
+
+/** The wall normal the player is currently against, or null. Cached per frame. */
+function currentWallNormal(): { nx: number; nz: number } | null {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g) return null;
+  return wallContact(g, p.x, p.z, PLAYER_R, WALL_CONTACT_PROBE);
+}
+
+/**
+ * Begin a launch off a wall (wall-kick or pounce). Commits the launch direction
+ * (the wall normal, biased by input for the kick), spends stamina, and — for the
+ * kick — queues a lunging light strike that lands as the hop peaks. Returns true
+ * if it started.
+ */
+function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: number }, input: InputHandle): boolean {
+  const p = state.player;
+  if (!p) return false;
+  const move = kind === "kick" ? WALLKICK : POUNCE;
+  if (!spendStamina(move.staminaCost)) return false;
+
+  // Launch direction: straight off the wall for a pounce; for a wall-kick, blend
+  // the wall normal with any held input so you can angle the rebound.
+  let dx = normal.nx;
+  let dz = normal.nz;
+  if (kind === "kick") {
+    const a = input.axis();
+    if (a.x !== 0 || a.z !== 0) {
+      const wd = screenDirToWorld(a.x, a.z);
+      // Only accept the input component that points AWAY from the wall (dot>0),
+      // so you can steer along the launch but never back into the wall.
+      const dot = wd.x * normal.nx + wd.z * normal.nz;
+      if (dot > 0) {
+        dx = normal.nx + wd.x;
+        dz = normal.nz + wd.z;
+      }
+    }
+  }
+  const len = Math.hypot(dx, dz) || 1;
+  p.wallMoveDirX = dx / len;
+  p.wallMoveDirZ = dz / len;
+  p.wallMoveKind = kind;
+  p.wallMoveT = 0;
+  p.wallMoveDur = kind === "kick" ? WALLKICK_DURATION : POUNCE_DURATION;
+  p.wallMoveIfr = kind === "kick" ? WALLKICK_IFRAMES : POUNCE_IFRAMES;
+  p.wallMoveDist = kind === "kick" ? WALLKICK_DISTANCE : POUNCE_DISTANCE;
+
+  // Cancel any swing/roll/charge — the launch owns the player now.
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.didHit = false;
+
+  // Face the launch and play the tumble clip (reuse "roll" art for the airborne hop).
+  const s = worldDirToScreen(p.wallMoveDirX, p.wallMoveDirZ);
+  p.facing = facingFromVelocity(s.x, s.z, p.facing);
+  p.anim.setFacing(p.facing);
+  p.anim.play("roll", { force: true });
+  sfxRoll();
+  // A scuff of dust kicking off the wall.
+  state.vfx?.dust(p.x - p.wallMoveDirX * 0.3, 0.1, p.z - p.wallMoveDirZ * 0.3);
+  return true;
+}
+
+/**
+ * Advance an active wall launch. Eased fast→slow displacement (ease-out, matching
+ * the roll), front-loaded i-frames topped into the shared p.iframes guard. A KICK
+ * lands a lunging light strike once past its windup; a POUNCE detonates a radial
+ * AoE on landing. Returns true while the launch owns the player.
+ */
+function updateWallLaunch(dt: number): boolean {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.wallMoveT < 0) return false;
+
+  const move = p.wallMoveKind === "pounce" ? POUNCE : WALLKICK;
+  const v0 = (2 * p.wallMoveDist) / p.wallMoveDur;
+  const prevT = p.wallMoveT;
+  p.wallMoveT += dt;
+
+  // Eased displacement over the arc body.
+  if (prevT < p.wallMoveDur) {
+    const tau = Math.min(1, prevT / p.wallMoveDur);
+    const speed = v0 * (1 - tau);
+    const res = moveCircle(g, p.x, p.z, PLAYER_R, p.wallMoveDirX * speed * dt, p.wallMoveDirZ * speed * dt);
+    p.x = res.x;
+    p.z = res.z;
+    if (prevT < p.wallMoveIfr) p.iframes = Math.max(p.iframes, p.wallMoveIfr - prevT);
+    state.vfx?.dust(p.x, 0.05, p.z);
+  }
+
+  // A wall-KICK carries a lunging light strike: land it once past the move's windup.
+  if (p.wallMoveKind === "kick" && !p.didHit && p.wallMoveT >= move.windup) {
+    p.didHit = true;
+    resolvePlayerAttack({ damageMul: move.damageMul, arcMul: move.arcMul, rangeMul: move.rangeMul, knockbackMul: move.knockbackMul });
+    const w = WEAPONS[activeWeapon().id];
+    state.vfx?.slash(p.x + p.wallMoveDirX * 0.5, 0.6, p.z + p.wallMoveDirZ * 0.5, p.facing, w.slashColor ?? 0xdfe7f2);
+  }
+
+  // Landing: end the arc. A POUNCE detonates a radial slam at the landing spot.
+  if (p.wallMoveT >= p.wallMoveDur) {
+    if (p.wallMoveKind === "pounce" && !p.didHit) {
+      p.didHit = true;
+      pounceSlam(move);
+    }
+    p.wallMoveT = -1;
+    p.wallMoveKind = null;
+    p.anim.play("idle", { force: true });
+    // Landing puff (research: a squash puff sells the touchdown).
+    state.vfx?.dust(p.x, 0.02, p.z);
+    state.vfx?.dust(p.x, 0.02, p.z);
+  }
+
+  syncActorMesh(p);
+  return true;
+}
+
+/** A pounce landing: a radial AoE that hits every zombie inside POUNCE_AOE tiles. */
+function pounceSlam(move: MoveTiming): void {
+  const p = state.player;
+  if (!p) return;
+  const w = WEAPONS[activeWeapon().id];
+  const dmg = playerDamage(w.damage * move.damageMul);
+  const push = 0.6 * move.knockbackMul;
+  for (const z of state.zombies) {
+    if (z.mode === "dead") continue;
+    const dx = z.x - p.x;
+    const dz = z.z - p.z;
+    if (dx * dx + dz * dz > POUNCE_AOE * POUNCE_AOE) continue;
+    damageZombie(z, dmg, dx, dz, push);
+  }
+  if (state.zombies.some((z) => z.mode !== "dead")) wearActiveWeapon();
+  // Impact juice: a shockwave of dust + a hard shake.
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    state.vfx?.dust(p.x + Math.cos(ang) * POUNCE_AOE * 0.6, 0.05, p.z + Math.sin(ang) * POUNCE_AOE * 0.6);
+  }
+  state.shakeT = Math.max(state.shakeT, 0.3);
+  state.hitstopT = Math.max(state.hitstopT, 0.06);
+  sfxHeavy();
 }
 
 function rangedSfx(id: string): void {
@@ -202,10 +378,16 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   tickStamina(dt);
   updateFlash(p, dt);
 
+  // ── Wall launch (wall-kick / pounce) ── owns the player while airborne.
+  if (updateWallLaunch(dt)) return;
+
   // ── Dodge-roll ── it owns the player while active: no attack, no free
-  // movement, direction committed. A tap starts one; the roll then runs to
-  // completion (body + recovery) before normal control returns.
-  if (input.consumeDodge()) tryStartRoll(input);
+  // movement, direction committed. A tap starts one — but a dodge pressed while
+  // pressed AGAINST a wall becomes a WALL-KICK rebound off it instead of a roll.
+  if (input.consumeDodge()) {
+    const wall = currentWallNormal();
+    if (!wall || !startWallLaunch("kick", wall, input)) tryStartRoll(input);
+  }
   if (updateRoll(dt)) return;
 
   const w = WEAPONS[activeWeapon().id];
@@ -259,27 +441,30 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   const a = input.axis();
   const moving = a.x !== 0 || a.z !== 0;
 
-  // Sprint (hold Shift): a higher top speed that DRAINS stamina, gated only by
-  // the bar — no cooldown. Can't sprint mid-swing, with an empty bar, or while
-  // standing still. Draining here (not via spendStamina, which pauses regen for
-  // half a second) keeps sprint's stamina bleeding smooth, and the moment you
-  // stop sprinting the normal regen-delay applies from the last drain frame.
+  // Sprint (hold Shift) is a COMMITMENT that SPOOLS UP: holding it while moving
+  // fills p.sprintCharge (0→1) over SPRINT_RAMP_TIME (~3s) and lerps the top
+  // speed from walk toward SPRINT_SPEED_MULT; releasing or stopping bleeds the
+  // charge back over SPRINT_DECAY_TIME. Gated by stamina — an empty bar can't
+  // sprint. Stamina drains only while the charge is actually building/held.
   const wantSprint = input.sprintHeld() && moving && !attacking && p.stamina > 0;
   if (wantSprint) {
+    p.sprintCharge = Math.min(1, p.sprintCharge + dt / SPRINT_RAMP_TIME);
     p.stamina = Math.max(0, p.stamina - SPRINT_DRAIN * dt);
     // Suppress regen for the full delay while sprinting — otherwise tickStamina
     // (which ran earlier this frame) refills faster than the drain and the bar
     // never falls. Refreshing the delay each sprint frame keeps regen paused
     // until STAMINA_REGEN_DELAY after you STOP sprinting.
     p.staminaRegenDelay = STAMINA_REGEN_DELAY;
+  } else {
+    p.sprintCharge = Math.max(0, p.sprintCharge - dt / SPRINT_DECAY_TIME);
   }
 
-  // Target speed for this frame, then ramp the smoothed speed toward it so a
-  // sprint spools up over ~0.15s instead of snapping to full velocity.
+  // Target speed for this frame, then ramp the smoothed speed toward it. Walk is
+  // still snappy; the SPRINT bonus arrives only as sprintCharge fills (the 3s spool).
   let targetSpeed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
   if (state.gear.boots !== undefined) targetSpeed *= BOOTS_SPEED_FACTOR;
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
-  if (wantSprint) targetSpeed *= SPRINT_SPEED_MULT;
+  targetSpeed *= 1 + (SPRINT_SPEED_MULT - 1) * p.sprintCharge; // sprint charge lerps top speed
   if (!moving) targetSpeed = 0;
 
   const rate = (targetSpeed > curSpeed ? MOVE_ACCEL : MOVE_FRICTION) * dt;
@@ -375,9 +560,18 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
 
   // ── HEAVY fires the instant charge crosses the threshold (not on release), so
   // it's immune to release-timing jitter — you feel the heavy "go off" mid-hold.
+  // A heavy charged while FACING a wall becomes a POUNCE-SLAM (leap off the wall
+  // into a radial AoE) instead — the wall version of the big committed hit.
   if (held && p.chargeT >= CHARGE_TIME && canStartSwing) {
     p.chargeT = -1; // consumed; won't also fire a light on release
     p.attackBufferT = 0;
+    const wall = currentWallNormal();
+    // Facing INTO the wall = the facing dir points opposite the outward normal.
+    const [fx, fz] = FACING_VEC[p.facing];
+    const facingWall = wall !== null && fx * wall.nx + fz * wall.nz < -0.3;
+    if (facingWall && startWallLaunch("pounce", wall!, input)) {
+      return; // launched off the wall
+    }
     if (spendStamina(HEAVY.staminaCost)) {
       startMelee(HEAVY, 0, "heavy");
     } else {
@@ -395,6 +589,17 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
   if (!wantLight) return;
 
   p.attackBufferT = 0;
+
+  // ── WALL-RIDE ── attacking while sprint-charged past the threshold AND
+  // alongside a wall converts the light swing into a wide sweeping ride-slash
+  // (the "run fast enough → wall ride" ask). Gated by the 3s sprint spool so it
+  // only fires off a committed run, and by stamina. Falls through to the normal
+  // combo swing if not charged / no wall / no stamina.
+  if (p.sprintCharge >= SPRINT_RIDE_THRESHOLD && currentWallNormal() && spendStamina(WALLRIDE.staminaCost)) {
+    startMelee(WALLRIDE, 0, "heavy"); // "heavy" kind → the meatier swing sfx/vfx
+    return;
+  }
+
   const move = p.comboStep === 0 ? LIGHT_1 : p.comboStep === 1 ? LIGHT_2 : COMBO_FINISH;
   const nextStep = Math.min(2, p.comboStep + 1);
   startMelee(move, nextStep, "light");

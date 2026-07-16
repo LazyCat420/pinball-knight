@@ -38,6 +38,39 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
 }
 
 /**
+ * Which wall the circle is pressed against, and the direction to launch OFF it.
+ *
+ * Probes the four cardinal offsets a hair (`probe`) beyond the body radius: any
+ * that would overlap a solid tile is a touching wall. Returns the summed
+ * outward NORMAL (unit-ish, pointing AWAY from the wall — where a wall-kick
+ * hurls you), or null if the circle is in open floor. Feeds the wall-move
+ * system in player.ts; deliberately grid-only so it stays DOM/three-free and
+ * testable like the rest of collision.ts.
+ */
+export function wallContact(
+  g: Grid,
+  x: number,
+  z: number,
+  r: number,
+  probe: number,
+): { nx: number; nz: number } | null {
+  // A tiny probe circle sitting just past the body's leading edge on each
+  // cardinal: it overlaps a wall only when the body is (almost) touching it.
+  const edge = r + probe;
+  const pr = probe;
+  let nx = 0;
+  let nz = 0;
+  // East wall pushes you west, etc. A corner sums two normals into a diagonal.
+  if (circleCollides(g, x + edge, z, pr)) nx -= 1; // wall to the east → launch west
+  if (circleCollides(g, x - edge, z, pr)) nx += 1; // wall to the west → launch east
+  if (circleCollides(g, x, z + edge, pr)) nz -= 1; // wall to the south → launch north
+  if (circleCollides(g, x, z - edge, pr)) nz += 1; // wall to the north → launch south
+  if (nx === 0 && nz === 0) return null;
+  const len = Math.hypot(nx, nz) || 1;
+  return { nx: nx / len, nz: nz / len };
+}
+
+/**
  * Move a circle by (dx, dz), clamping against walls. Returns the resolved
  * world position. Assumes |dx|,|dz| < 1 - 2r per call (true at our speeds and
  * frame times by an order of magnitude), so no tunnelling checks needed.
