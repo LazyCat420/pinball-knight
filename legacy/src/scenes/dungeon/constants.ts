@@ -308,11 +308,19 @@ export const GRIND_SPARK_INTERVAL = 0.07; // seconds between spark bursts
  */
 export const OVERCHARGE_TIME = 1.4; // seconds of full-spool / bouncing to fill
 export const OVERCHARGE_DECAY = 1.0; // seconds to bleed overcharge once fully stopped
-/** Each wall bounce MULTIPLIES speed by this (>1 = accelerate, the Sonic feel). */
-export const PINBALL_RESTITUTION = 1.14;
-/** A flat speed kick added on each bounce too, so even a slow entry ramps up fast. */
-export const PINBALL_BOUNCE_ADD = 1.6; // u/s added per bounce
-/** Hard ceiling on pinball momentum — chained bounces climb to here, then hold. */
+/**
+ * SKILL-GATED ACCELERATION (2026-07-16, "it can't just infinite loop at max
+ * speed … it has to hit certain movements like the corners/physics to speed
+ * up"): a FLAT wall bounce PRESERVES speed (restitution just under 1 — you keep
+ * your line but never gain by ping-ponging two parallel walls), while a CORNER
+ * hit (both axes blocked in the same impact — a genuinely aimed diagonal slam)
+ * ACCELERATES you. The other accelerators are the pinball PARTS (bumpers,
+ * springs, ramps) — see the PART physics below.
+ */
+export const PINBALL_WALL_RESTITUTION = 0.94; // flat wall: keep most speed, gain nothing (real pinball walls are 0.1-0.5; this is already generous)
+export const PINBALL_CORNER_RESTITUTION = 1.12; // corner pocket: multiply up
+export const PINBALL_CORNER_ADD = 1.4; // + a flat kick per corner hit
+/** Hard ceiling on pinball momentum — chained corners/parts climb to here, then hold. */
 export const PINBALL_MAX_SPEED = 22; // u/s (≈5× walk) — genuinely fast, still steerable
 /** Momentum bleed while NOT bouncing — very gentle so a good line stays fast. */
 export const PINBALL_FRICTION = 0.9; // u/s² (was 2.0; Sonic keeps its speed)
@@ -326,6 +334,87 @@ export const BALL_RAM_COOLDOWN = 0.18; // seconds between ram hits on the horde
 export const BALL_RAM_KNOCKBACK = 1.1; // shove per ram (a wrecking ball, not a tap)
 /** Ball clip playback. */
 export const FPS_BALL = 14;
+
+// ── PINBALL PARTS (the maze/pinball-machine hybrid) ─────────────
+/**
+ * Modular pinball components stamped into the maze by decorateMaze, placed by
+ * tile TOPOLOGY so they land where they're useful, not as noise:
+ *   BUMPER    → junctions/open crossings: touch it and it KICKS you radially
+ *               away, adds speed + a combo tick (the pop bumper).
+ *   SPRING    → dead ends, aimed back out: step/roll on and it LAUNCHES you
+ *               along its direction at high speed (the plunger).
+ *   RAMP      → straight corridors: a dash pad — crossing it floors your speed
+ *               along its direction (the Sonic dash panel / slide).
+ *   DEFLECTOR → corners: a banked 45° curve — momentum entering the corner is
+ *               REDIRECTED around it with no speed loss (the rail/curve).
+ * Density scales with depth via PARTS_BASE + PARTS_PER_LEVEL (capped).
+ */
+// Deep-research 2026-07-16 (disassembly-verified): pop bumpers SET a fixed
+// radial velocity (Sonic: magnitude ≈1.2× the run cap, incoming speed ignored)
+// — they are NOT restitution>1 reflectors. We keep the incoming speed via a
+// flat ADDITIVE kick (never multiplicative — that's what allowed farming), so
+// bumper chains build speed linearly toward the cap. ±6° scatter is authentic
+// on ACTIVE parts only (plain walls stay mirror-perfect).
+export const BUMPER_RADIUS = 0.46; // trigger radius, world units (body-to-centre)
+export const BUMPER_KICK_MULT = 1.0; // never multiply the incoming speed…
+export const BUMPER_KICK_ADD = 3.2; // …just a flat radial kick per pop (u/s)
+export const BUMPER_MIN_EXIT = 9; // even a slow touch leaves at least this fast
+export const BUMPER_COOLDOWN = 0.25; // per-bumper re-trigger lockout (s)
+export const BUMPER_SCATTER = 0.1; // ±rad (~6°) exit-angle scatter — bumpers only
+// Springs are the STRONGEST launcher (research: plunger-class ≈ 2.5-3× top run
+// speed, an order of magnitude over a bumper tap in real tables).
+export const SPRING_SPEED = 16; // ≈3.8× walk — the big dead-end cannon
+export const SPRING_COOLDOWN = 0.6;
+// Dash panels follow Sonic's booster rule exactly (disassembly-verified): SET
+// the speed as a FLOOR (never slow a faster player) + a short steering lock.
+export const RAMP_SPEED = 13; // dash-pad speed floor along its direction
+export const RAMP_COOLDOWN = 0.35;
+export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (Sonic's 15 frames)
+/** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
+export const DEFLECTOR_BOOST = 1.03;
+export const PARTS_BASE = 6; // parts on level 1
+export const PARTS_PER_LEVEL = 2; // extra parts per depth…
+export const PARTS_MAX = 26; // …capped
+
+// ── Bats (fast erratic flyers) ──────────────────────────────────
+/**
+ * The speed-check enemy: a cave bat that flits at you FAST on a weaving line
+ * (sine wobble across its heading), so it's hard to line up but dies to one
+ * hit. Flies low through corridors (still wall-bound — it's a cave, not a
+ * ghost). Punishes standing still; rewards the spin/ram.
+ */
+export const BAT_HP = 1;
+export const BAT_R = 0.24;
+export const BAT_SPEED_FACTOR = 1.9; // fastest thing in the crypt
+export const BAT_CONTACT_RANGE = 0.5;
+export const BAT_ATTACK_WINDUP = 0.18; // barely a tell — but it only takes 1 hp
+export const BAT_ATTACK_COOLDOWN = 1.6; // long recovery after a nip
+export const BAT_DAMAGE = 1;
+/** Sine weave: amplitude (u) and frequency (rad/s) across the flight line. */
+export const BAT_WOBBLE_AMP = 1.6;
+export const BAT_WOBBLE_FREQ = 5.5;
+export const BAT_HOVER_Y = 0.5;
+export const BAT_RATIO = 4;
+export const BAT_FROM_LEVEL = 3;
+
+// ── Slimes (split on death) ─────────────────────────────────────
+/**
+ * The multiplying blob: slow, soaks hits, and on death SPLITS into two minis
+ * (fast, 1 HP, smaller). Kill the big one carelessly in a corridor and you've
+ * doubled your problem. Minis never split again.
+ */
+export const SLIME_HP = 4;
+export const SLIME_R = 0.34;
+export const SLIME_SPEED_FACTOR = 0.55;
+export const SLIME_CONTACT_RANGE = 0.66;
+export const SLIME_ATTACK_WINDUP = 0.5;
+export const SLIME_ATTACK_COOLDOWN = 1.2;
+export const SLIME_DAMAGE = 1;
+export const SLIME_MINI_HP = 1;
+export const SLIME_MINI_SPEED_MULT = 1.7; // minis are quick little panics
+export const SLIME_MINI_SCALE = 0.62; // sprite scale for the minis
+export const SLIME_RATIO = 6;
+export const SLIME_FROM_LEVEL = 3;
 
 // ── Wall moves (Mortal-Kombat-style specials off a wall) ────────
 /**

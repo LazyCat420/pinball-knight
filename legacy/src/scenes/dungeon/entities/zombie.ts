@@ -33,6 +33,17 @@ import {
   GHOST_HOVER_Y,
   GHOST_BOB_AMP,
   GHOST_BOB_SPEED,
+  BAT_R,
+  BAT_CONTACT_RANGE,
+  BAT_ATTACK_WINDUP,
+  BAT_ATTACK_COOLDOWN,
+  BAT_WOBBLE_AMP,
+  BAT_WOBBLE_FREQ,
+  BAT_HOVER_Y,
+  SLIME_R,
+  SLIME_CONTACT_RANGE,
+  SLIME_ATTACK_WINDUP,
+  SLIME_ATTACK_COOLDOWN,
   AGGRO_TILES,
   SEPARATION_R,
 } from "../constants";
@@ -59,6 +70,8 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   brute: { bodyR: BRUTE_R, contactRange: BRUTE_CONTACT_RANGE, windup: BRUTE_ATTACK_WINDUP, cooldown: BRUTE_ATTACK_COOLDOWN, ranged: false },
   spitter: { bodyR: SPITTER_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
   ghost: { bodyR: GHOST_R, contactRange: GHOST_CONTACT_RANGE, windup: GHOST_ATTACK_WINDUP, cooldown: GHOST_ATTACK_COOLDOWN, ranged: false },
+  bat: { bodyR: BAT_R, contactRange: BAT_CONTACT_RANGE, windup: BAT_ATTACK_WINDUP, cooldown: BAT_ATTACK_COOLDOWN, ranged: false },
+  slime: { bodyR: SLIME_R, contactRange: SLIME_CONTACT_RANGE, windup: SLIME_ATTACK_WINDUP, cooldown: SLIME_ATTACK_COOLDOWN, ranged: false },
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -242,6 +255,19 @@ export function updateZombies(dt: number): void {
       }
     }
 
+    // ── BAT wobble ── a sine weave ACROSS the flight line so it's hard to
+    // line up a swing on: perturb the steer direction with a perpendicular
+    // oscillation (still wall-bound via moveCircle — it flies the corridors).
+    if (z.kind === "bat" && (vx !== 0 || vz !== 0)) {
+      z.bobT = (z.bobT ?? 0) + dt;
+      const w = Math.sin(z.bobT * BAT_WOBBLE_FREQ) * BAT_WOBBLE_AMP;
+      const px = -vz * w;
+      const pz = vx * w;
+      const len = Math.hypot(vx + px, vz + pz) || 1;
+      vx = (vx + px) / len;
+      vz = (vz + pz) / len;
+    }
+
     const mx = (vx * z.speed + sx * 1.5) * dt;
     const mz = (vz * z.speed + sz * 1.5) * dt;
     if (mx !== 0 || mz !== 0) {
@@ -258,6 +284,10 @@ export function updateZombies(dt: number): void {
     }
 
     syncActorMesh(z);
+    // A bat FLIES: lift its billboard off the floor with a quick flutter-bob.
+    if (z.kind === "bat") {
+      z.sprite.mesh.position.y = BAT_HOVER_Y + Math.sin((z.bobT ?? 0) * 9) * 0.06;
+    }
   }
 }
 

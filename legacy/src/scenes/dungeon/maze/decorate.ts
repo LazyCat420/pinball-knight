@@ -30,6 +30,23 @@ export interface PropSpot extends TilePos {
   kind: string;
 }
 
+/**
+ * A pinball component stamped into the maze (the maze/pinball-machine hybrid).
+ * Placed by tile TOPOLOGY so each part lands where it plays well:
+ *   bumper    → junction (3-4 open neighbours) — an open crossing to carom off.
+ *   spring    → dead end (1 open neighbour) — aimed back OUT along (dirI,dirJ).
+ *   ramp      → straight corridor (2 opposite neighbours) — dash pad along it.
+ *   deflector → corner (2 perpendicular neighbours) — banks momentum from one
+ *               open leg to the other; both legs are (dirI,dirJ) and (dir2I,dir2J).
+ */
+export interface PinballPartSpot extends TilePos {
+  kind: "bumper" | "spring" | "ramp" | "deflector";
+  dirI: number;
+  dirJ: number;
+  dir2I: number;
+  dir2J: number;
+}
+
 export interface LevelPlan {
   start: TilePos;
   stairs: TilePos;
@@ -39,6 +56,8 @@ export interface LevelPlan {
   /** Set dressing — walkable-over scenery. D2R's lesson: bare floors read as
    * "too basic"; a skull every dozen tiles reads as a crypt. */
   props: PropSpot[];
+  /** The level's pinball components (bumpers/springs/ramps/deflectors). */
+  parts: PinballPartSpot[];
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -84,8 +103,35 @@ function rollLevelItems(rng: () => number): RolledItem[] {
   ];
 }
 
+/**
+ * Classify a floor tile's topology and propose the pinball part that fits it.
+ * Returns null for tiles that fit no part (e.g. open plazas with odd shapes).
+ */
+function classifyPartSpot(g: Grid, p: TilePos, rng: () => number): PinballPartSpot | null {
+  const open = WALL_SIDES.filter(([di, dj]) => at(g, p.i + di, p.j + dj) === T_FLOOR);
+  if (open.length === 1) {
+    // dead end — a spring aimed back out the single opening
+    return { ...p, kind: "spring", dirI: open[0][0], dirJ: open[0][1], dir2I: 0, dir2J: 0 };
+  }
+  if (open.length === 2) {
+    const [a, b] = open;
+    if (a[0] === -b[0] && a[1] === -b[1]) {
+      // straight corridor — a dash ramp along it (random of the two ways)
+      const d = rng() < 0.5 ? a : b;
+      return { ...p, kind: "ramp", dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };
+    }
+    // perpendicular pair — a corner: bank momentum between the two open legs
+    return { ...p, kind: "deflector", dirI: a[0], dirJ: a[1], dir2I: b[0], dir2J: b[1] };
+  }
+  if (open.length >= 3) {
+    // junction — a pop bumper in the crossing
+    return { ...p, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
+  }
+  return null;
+}
+
 /** Mutates the grid (stamps T_STAIRS) and returns the plan. */
-export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number): LevelPlan {
+export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number, partBudget = 8): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
   let start: TilePos = { i: 1, j: 1 };
@@ -178,5 +224,38 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     props.push({ i: p.i, j: p.j, kind: PROP_KINDS[Math.floor(rng() * PROP_KINDS.length)] });
   }
 
-  return { start, stairs, spawns, torches, items, props };
+  // ── Pinball parts: classify every floor tile by topology, then draw a MIXED
+  // hand from the candidates (interleaving kinds so one maze isn't all bumpers),
+  // spaced out, clear of the start / stairs / loot. Budget scales with depth
+  // (the caller passes it), so deeper floors read as denser machines. ──
+  const parts: PinballPartSpot[] = [];
+  const byKind: Record<PinballPartSpot["kind"], PinballPartSpot[]> = { bumper: [], spring: [], ramp: [], deflector: [] };
+  for (const p of shuffled(floors, rng)) {
+    if (p.i === stairs.i && p.j === stairs.j) continue;
+    if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 4) continue; // calm start
+    if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
+    const spot = classifyPartSpot(g, p, rng);
+    if (spot) byKind[spot.kind].push(spot);
+  }
+  // Deal kinds round-robin (bumpers weighted double — they're the signature
+  // part) until the budget is spent or every pool is dry.
+  const deal: Array<PinballPartSpot["kind"]> = ["bumper", "ramp", "spring", "bumper", "deflector", "ramp"];
+  let dealIdx = 0;
+  let dry = 0;
+  while (parts.length < partBudget && dry < deal.length) {
+    const kind = deal[dealIdx % deal.length];
+    dealIdx++;
+    const pool = byKind[kind];
+    let placed = false;
+    while (pool.length > 0) {
+      const cand = pool.pop()!;
+      if (parts.some((q) => Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue; // spacing
+      parts.push(cand);
+      placed = true;
+      break;
+    }
+    dry = placed ? 0 : dry + 1;
+  }
+
+  return { start, stairs, spawns, torches, items, props, parts };
 }

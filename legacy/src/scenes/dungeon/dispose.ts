@@ -4,6 +4,7 @@
  */
 import { state } from "./state";
 import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
+import { disposePinballParts } from "./render/pinball-parts";
 
 /**
  * Tear down one depth: the maze geometry, the horde (including corpses), any
@@ -30,6 +31,8 @@ export function disposeLevel(): void {
     p.sprite.dispose();
   });
   state.props = [];
+
+  disposePinballParts(state.scene);
 
   state.maze?.dispose();
   state.maze = null;
@@ -64,6 +67,10 @@ export function disposeAll(): void {
   state.spitterSheet = null;
   state.ghostSheet?.texture.dispose();
   state.ghostSheet = null;
+  state.batSheet?.texture.dispose();
+  state.batSheet = null;
+  state.slimeSheet?.texture.dispose();
+  state.slimeSheet = null;
   state.bossSheet?.texture.dispose();
   state.bossSheet = null;
 

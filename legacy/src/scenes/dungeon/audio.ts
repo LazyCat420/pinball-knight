@@ -99,6 +99,23 @@ export function sfxRoll(): void {
   beep(c, { type: "sine", f0: 260 * p, f1: 90 * p, dur: 0.14, vol: 0.05 });
 }
 
+/** Pop bumper — a bright arcade PING that rises with a slight random pitch. */
+export function sfxBumper(): void {
+  const c = ctx();
+  if (!c) return;
+  const p = 0.94 + Math.random() * 0.12;
+  beep(c, { type: "square", f0: 620 * p, f1: 980 * p, dur: 0.08, vol: 0.09 });
+  beep(c, { type: "sine", f0: 1240 * p, f1: 1240 * p, dur: 0.05, vol: 0.05 });
+}
+
+/** Spring/plunger — a rubbery BOING: a fast down-up pitch flick. */
+export function sfxSpring(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "triangle", f0: 180, f1: 640, dur: 0.16, vol: 0.1 });
+  beep(c, { type: "sine", f0: 90, f1: 320, dur: 0.12, vol: 0.06 });
+}
+
 /** Heavy swing — a slower, weightier whoosh than a light swing. */
 export function sfxHeavy(): void {
   const c = ctx();

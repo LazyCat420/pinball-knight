@@ -41,6 +41,17 @@ let onBossDefeated: ((x: number, z: number) => void) | null = null;
 export function setBossDefeatedHandler(fn: (x: number, z: number) => void): void {
   onBossDefeated = fn;
 }
+
+/**
+ * A big slime's death SPLITS it into two minis. Spawning lives in core (it owns
+ * makeZombie/sheets), and it must be DEFERRED to the end of the sim step —
+ * killZombie fires inside loops over state.zombies, and minis born mid-swing
+ * would be hit by the very blow that split their parent.
+ */
+let onSlimeSplit: ((x: number, z: number, speed: number) => void) | null = null;
+export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) => void): void {
+  onSlimeSplit = fn;
+}
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
 import { showToast, updateFpsStreak } from "../ui";
 
@@ -222,6 +233,8 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
+  // A big slime splits into two fast minis (minis never split again).
+  if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
   // A death pops a bigger burst, a longer freeze and a heavier kick. A GHOST
   // dissipates into a cold ectoplasm puff (a spray of blue sparks) — no gore.
   if (z.kind === "ghost") {

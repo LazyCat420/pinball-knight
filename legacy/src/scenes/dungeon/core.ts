@@ -28,10 +28,11 @@ import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
+import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
@@ -43,7 +44,7 @@ import { bfsDistances } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
-import { syncActorMesh, setBossDefeatedHandler } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler } from "./entities/combat";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import {
@@ -68,6 +69,20 @@ import {
   GHOST_SPEED_FACTOR,
   GHOST_RATIO,
   GHOST_FROM_LEVEL,
+  BAT_HP,
+  BAT_SPEED_FACTOR,
+  BAT_RATIO,
+  BAT_FROM_LEVEL,
+  SLIME_HP,
+  SLIME_SPEED_FACTOR,
+  SLIME_RATIO,
+  SLIME_FROM_LEVEL,
+  SLIME_MINI_HP,
+  SLIME_MINI_SPEED_MULT,
+  SLIME_MINI_SCALE,
+  PARTS_BASE,
+  PARTS_PER_LEVEL,
+  PARTS_MAX,
   BOSS_EVERY,
   BOSS_BASE_HP,
   BOSS_HP_PER_TIER,
@@ -264,6 +279,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.bruteSheet = buildSpriteSheet(makeBrutePaints());
   state.spitterSheet = buildSpriteSheet(makeSpitterPaints());
   state.ghostSheet = buildSpriteSheet(makeGhostPaints());
+  state.batSheet = buildSpriteSheet(makeBatPaints());
+  state.slimeSheet = buildSpriteSheet(makeSlimePaints());
   state.bossSheet = buildSpriteSheet(makeBossPaints());
 
   // Dev-only atlas preview hooks for headless art QA:
@@ -277,6 +294,8 @@ export function launchDungeonGame(onExit?: () => void): void {
       which === "brute" ? state.bruteSheet :
       which === "spitter" ? state.spitterSheet :
       which === "ghost" ? state.ghostSheet :
+      which === "bat" ? state.batSheet :
+      which === "slime" ? state.slimeSheet :
       which === "boss" ? state.bossSheet :
       which === "knight" ? state.playerSheets.get("sword") ?? null :
       state.zombieVariantSheets[0] ?? null;
@@ -309,6 +328,21 @@ export function launchDungeonGame(onExit?: () => void): void {
     // Dev: player movement/combat telemetry (sprint, roll, i-frames, position)
     // so a headless test can confirm sprint drains, a dodge rolls + grants
     // i-frames, and the roll covers ground.
+    // Dev: the level's pinball parts (kind/position/direction) so a headless
+    // test can navigate to a bumper/spring and verify the physics fire.
+    (window as unknown as { __dungeonParts?: () => unknown }).__dungeonParts = () =>
+      state.pinballParts.map((pt) => ({ kind: pt.kind, i: pt.i, j: pt.j, x: pt.x, z: pt.z, dirX: pt.dirX, dirZ: pt.dirZ, cooldownT: pt.cooldownT }));
+    // Dev: teleport the player (headless part-physics tests — a maze walk to a
+    // specific bumper is unreliable to script with keys alone).
+    (window as unknown as { __dungeonWarp?: (x: number, z: number) => boolean }).__dungeonWarp = (x: number, z: number) => {
+      const p = state.player;
+      if (!p) return false;
+      p.x = x;
+      p.z = z;
+      p.momSpeed = 0;
+      syncActorMesh(p);
+      return true;
+    };
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;
@@ -342,6 +376,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   // A slain overlord drops its reward here (kept out of combat.ts to avoid a
   // circular import).
   setBossDefeatedHandler(dropBossReward);
+  // A slain big slime queues two minis, spawned after combat resolution.
+  setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
 
   state.onResize = () => state.pixelPass?.resize();
   window.addEventListener("resize", state.onResize);
@@ -365,7 +401,35 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   brute: BRUTE_HP,
   spitter: SPITTER_HP,
   ghost: GHOST_HP,
+  bat: BAT_HP,
+  slime: SLIME_HP,
 };
+
+/**
+ * Slime minis spawned by a split, DEFERRED to the end of the sim step —
+ * killZombie fires inside loops over state.zombies, and minis born mid-swing
+ * would be clipped by the very blow that split their parent.
+ */
+const pendingMinis: Array<{ x: number; z: number; speed: number }> = [];
+
+function drainPendingMinis(): void {
+  if (!pendingMinis.length) return;
+  for (const spec of pendingMinis) {
+    if (!state.slimeSheet) break;
+    // Two minis scatter to either side of the corpse.
+    for (const side of [-1, 1]) {
+      const mini = makeZombie(state.slimeSheet, spec.x + side * 0.35, spec.z + (Math.random() - 0.5) * 0.3, spec.speed * SLIME_MINI_SPEED_MULT, {
+        kind: "slime",
+        hp: SLIME_MINI_HP,
+      });
+      mini.mini = true;
+      mini.aggro = true; // it just watched you kill its parent
+      mini.sprite.mesh.scale.multiplyScalar(SLIME_MINI_SCALE);
+      state.zombies.push(mini);
+    }
+  }
+  pendingMinis.length = 0;
+}
 
 /**
  * Spawn one enemy from a prebuilt sheet at a world point. Shared by the level
@@ -436,6 +500,12 @@ function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number,
   if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3 && state.ghostSheet) {
     return makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" });
   }
+  if (level >= BAT_FROM_LEVEL && hash % BAT_RATIO === 3 && state.batSheet) {
+    return makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" });
+  }
+  if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4 && state.slimeSheet) {
+    return makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
+  }
   const variantSheets = state.zombieVariantSheets;
   const sheet = variantSheets[hash % variantSheets.length] ?? state.zombieSheet!;
   return makeZombie(sheet, x, z, baseSpeed);
@@ -464,11 +534,14 @@ function startLevel(level: number): void {
   // Thick walls are what make the Diablo low-rim/tall-back trick work — see
   // thickenWalls. Decoration runs on the thickened grid.
   const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid));
-  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches);
+  // Pinball-machine density grows with depth: deeper floors are busier tables.
+  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
+  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget);
 
   state.grid = grid;
   state.stairs = plan.stairs;
   state.maze = buildMaze(state.scene, grid, plan);
+  createPinballParts(plan.parts, grid, state.scene);
 
   // ── Player ──
   const startPos = tileCenter(grid, plan.start.i, plan.start.j);
@@ -697,6 +770,8 @@ function debugSpawnRing(): void {
   if (state.bruteSheet) specs.push({ sheet: state.bruteSheet, kind: "brute" });
   if (state.spitterSheet) specs.push({ sheet: state.spitterSheet, kind: "spitter" });
   if (state.ghostSheet) specs.push({ sheet: state.ghostSheet, kind: "ghost" });
+  if (state.batSheet) specs.push({ sheet: state.batSheet, kind: "bat" });
+  if (state.slimeSheet) specs.push({ sheet: state.slimeSheet, kind: "slime" });
   // Place each enemy on the nearest WALKABLE tile stepping outward from the
   // player (blind fixed offsets would bury them in a wall, and a spitter's glob
   // would then die on that wall before reaching you). Speed 0 poses them for
@@ -933,6 +1008,7 @@ function simulate(dt: number): void {
   }
   updateZombies(dt);
   updateProjectiles(dt);
+  drainPendingMinis(); // slime splits deferred past all combat resolution
   checkPickups();
 
   // ── Stairs? ──
@@ -978,6 +1054,7 @@ function loop(now: number): void {
   // ── Presentation (per rendered frame) ──
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   state.vfx?.update(frame);
+  updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
 

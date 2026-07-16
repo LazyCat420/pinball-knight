@@ -34,12 +34,19 @@ import {
   PLAYER_SPEED,
   OVERCHARGE_TIME,
   OVERCHARGE_DECAY,
-  PINBALL_RESTITUTION,
-  PINBALL_BOUNCE_ADD,
+  PINBALL_WALL_RESTITUTION,
+  PINBALL_CORNER_RESTITUTION,
+  PINBALL_CORNER_ADD,
   PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
   PINBALL_EXIT_MULT,
   BALL_SPEED_MULT,
+  BUMPER_KICK_MULT,
+  BUMPER_KICK_ADD,
+  BUMPER_MIN_EXIT,
+  SPRING_SPEED,
+  RAMP_SPEED,
+  DEFLECTOR_BOOST,
 } from "../constants";
 
 /** A bare player stub — the fields the roll math reads. */
@@ -203,29 +210,45 @@ describe("pinball / Sonic momentum (run-fast-enough-and-it-bounces)", () => {
     expect(OVERCHARGE_DECAY).toBeLessThanOrEqual(OVERCHARGE_TIME);
   });
 
-  it("a bounce ACCELERATES you (Sonic): restitution > 1, plus a flat kick, capped", () => {
-    // The whole point of the rework: chaining wall hits speeds you UP, not down.
-    expect(PINBALL_RESTITUTION).toBeGreaterThan(1);
-    expect(PINBALL_BOUNCE_ADD).toBeGreaterThan(0);
-    expect(PINBALL_MAX_SPEED).toBeGreaterThan(PLAYER_SPEED * SPRINT_SPEED_MULT);
-    // Friction is gentle now — a good line keeps its speed.
-    expect(PINBALL_FRICTION).toBeGreaterThan(0);
-    expect(PINBALL_FRICTION).toBeLessThan(2);
+  it("SKILL-GATED: flat walls preserve speed but NEVER add it (no infinite loop)", () => {
+    // The exploit fix: ping-ponging two parallel walls must not gain speed.
+    expect(PINBALL_WALL_RESTITUTION).toBeLessThan(1);
+    expect(PINBALL_WALL_RESTITUTION).toBeGreaterThan(0.9); // …but you keep your line
+    // 20 flat bounces from the cap: speed only ever goes DOWN.
+    let speed = PINBALL_MAX_SPEED;
+    for (let i = 0; i < 20; i++) {
+      const next = speed * PINBALL_WALL_RESTITUTION;
+      expect(next).toBeLessThan(speed);
+      speed = next;
+    }
   });
 
-  it("chained bounces climb toward — and hold at — the speed cap", () => {
-    // Model the exact bounce update: speed = min(CAP, speed*R + ADD). From even a
-    // slow entry it should ramp UP over a few bounces and never exceed the cap.
-    let speed = PLAYER_SPEED; // a modest entry
-    const seen: number[] = [speed];
+  it("CORNER hits accelerate — chained corners climb to the cap", () => {
+    // The aimed diagonal slam is the skill move: multiply up + a kick, capped.
+    expect(PINBALL_CORNER_RESTITUTION).toBeGreaterThan(1);
+    expect(PINBALL_CORNER_ADD).toBeGreaterThan(0);
+    expect(PINBALL_MAX_SPEED).toBeGreaterThan(PLAYER_SPEED * SPRINT_SPEED_MULT);
+    let speed = PLAYER_SPEED; // modest entry
     for (let i = 0; i < 12; i++) {
-      speed = Math.min(PINBALL_MAX_SPEED, speed * PINBALL_RESTITUTION + PINBALL_BOUNCE_ADD);
-      seen.push(speed);
+      speed = Math.min(PINBALL_MAX_SPEED, speed * PINBALL_CORNER_RESTITUTION + PINBALL_CORNER_ADD);
     }
-    // Monotonic non-decreasing, ends at the cap, and genuinely faster than entry.
-    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1] - 1e-9);
-    expect(seen[seen.length - 1]).toBeCloseTo(PINBALL_MAX_SPEED, 5);
-    expect(seen[seen.length - 1]).toBeGreaterThan(PLAYER_SPEED * 2);
+    expect(speed).toBeCloseTo(PINBALL_MAX_SPEED, 5);
+  });
+
+  it("parts are the machine's accelerators: bumper > any flat bounce, springs/ramps set real floors", () => {
+    // A bumper touch always leaves you flying, even from a standstill…
+    expect(BUMPER_MIN_EXIT).toBeGreaterThan(PLAYER_SPEED * PINBALL_EXIT_MULT);
+    // …and a bumper hit at speed beats the same speed off a flat wall.
+    const v = 10;
+    expect(v * BUMPER_KICK_MULT + BUMPER_KICK_ADD).toBeGreaterThan(v * PINBALL_WALL_RESTITUTION);
+    // Springs and ramps launch above the momentum-exit gate (they START rides).
+    expect(SPRING_SPEED).toBeGreaterThan(PLAYER_SPEED * PINBALL_EXIT_MULT);
+    expect(RAMP_SPEED).toBeGreaterThan(PLAYER_SPEED * PINBALL_EXIT_MULT);
+    // A banked deflector keeps (slightly sweetens) your speed — never a tax.
+    expect(DEFLECTOR_BOOST).toBeGreaterThanOrEqual(1);
+    // Friction stays gentle — a good line keeps its speed.
+    expect(PINBALL_FRICTION).toBeGreaterThan(0);
+    expect(PINBALL_FRICTION).toBeLessThan(2);
   });
 
   it("momentum only exits once it has bled below a walk (never freezes mid-arena)", () => {

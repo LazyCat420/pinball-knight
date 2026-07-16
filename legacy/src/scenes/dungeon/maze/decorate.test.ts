@@ -3,12 +3,17 @@ import { generateMaze, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, idx } from "./
 import { decorateMaze } from "./decorate";
 import { bfsDistances } from "../entities/ai";
 
-function makeLevel(seed: number, zombies = 8, torches = 10) {
+function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
   const g = generateMaze(10, 8, mulberry32(seed));
   // Snapshot distances BEFORE decorate stamps the stairs tile.
   const dist = bfsDistances(g, 1, 1);
-  const plan = decorateMaze(g, mulberry32(seed + 1), zombies, torches);
+  const plan = decorateMaze(g, mulberry32(seed + 1), zombies, torches, parts);
   return { g, dist, plan };
+}
+
+/** Walkable cardinal neighbours of a tile (for part-topology assertions). */
+function openSides(g: ReturnType<typeof generateMaze>, i: number, j: number): Array<[number, number]> {
+  return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as Array<[number, number]>).filter(([di, dj]) => at(g, i + di, j + dj) === T_FLOOR);
 }
 
 describe("decorateMaze", () => {
@@ -67,6 +72,52 @@ describe("decorateMaze", () => {
         if (a === b) continue;
         expect(Math.abs(a.i - b.i) + Math.abs(a.j - b.j)).toBeGreaterThanOrEqual(5);
       }
+    }
+  });
+
+  it("places pinball parts whose kind MATCHES the tile's topology", () => {
+    const { g, plan } = makeLevel(97);
+    expect(plan.parts.length).toBeGreaterThan(0);
+    for (const part of plan.parts) {
+      const open = openSides(g, part.i, part.j);
+      if (part.kind === "spring") {
+        // dead end — one way out, and the spring aims along it
+        expect(open.length).toBe(1);
+        expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
+      } else if (part.kind === "ramp") {
+        // straight corridor — two OPPOSITE open sides, ramp along the lane
+        // (sum-to-zero sidesteps the -0 !== +0 Object.is quirk)
+        expect(open.length).toBe(2);
+        expect(open[0][0] + open[1][0]).toBe(0);
+        expect(open[0][1] + open[1][1]).toBe(0);
+        expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(true);
+      } else if (part.kind === "deflector") {
+        // corner — two PERPENDICULAR open legs, both recorded on the part
+        expect(open.length).toBe(2);
+        expect(open[0][0] === -open[1][0] && open[0][1] === -open[1][1]).toBe(false);
+        for (const [di, dj] of [[part.dirI, part.dirJ], [part.dir2I, part.dir2J]]) {
+          expect(open.some(([oi, oj]) => oi === di && oj === dj)).toBe(true);
+        }
+      } else {
+        // bumper — a junction (3+ ways out): an open crossing to carom around
+        expect(open.length).toBeGreaterThanOrEqual(3);
+      }
+    }
+    // Spacing: parts never bunch into one intersection.
+    for (const a of plan.parts) {
+      for (const b of plan.parts) {
+        if (a === b) continue;
+        expect(Math.abs(a.i - b.i) + Math.abs(a.j - b.j)).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("respects the part budget and keeps parts off the stairs + away from the start", () => {
+    const { g, plan } = makeLevel(113, 8, 10, 6);
+    expect(plan.parts.length).toBeLessThanOrEqual(6);
+    for (const part of plan.parts) {
+      expect(at(g, part.i, part.j)).toBe(T_FLOOR); // never on the stairs tile
+      expect(Math.abs(part.i - plan.start.i) + Math.abs(part.j - plan.start.j)).toBeGreaterThanOrEqual(4);
     }
   });
 });

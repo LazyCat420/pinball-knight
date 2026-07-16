@@ -37,6 +37,7 @@ import {
   R_STEEL,
   R_STEEL_DK,
   R_BLOOD,
+  R_LEATHER,
   buildSkeleton,
   legShaded,
   armShaded,
@@ -1663,6 +1664,108 @@ export function makeGhostPaints(): ActorPaints {
       ghostFrame(dir, { bob: 9, ripple: 5, dead: true }),
       ghostFrame(dir, { bob: 14, ripple: 7, dead: true }),
     ],
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BAT — a fast little flyer: dark furred body, big leathery membrane
+// wings that FLAP hard (2 extreme poses — pixel-scale flaps read best
+// as up/down, no inbetweens), long ears, red eyes, needle fangs.
+// Drawn small and HIGH in the cel (it flies; the mesh hovers too).
+// ══════════════════════════════════════════════════════════════════
+
+/** One bat frame. `flap` -1 (wings down) .. 1 (wings up). */
+function batFrame(dir: Dir, flap: number, dead = false): FramePaint {
+  return (ctx) => {
+    if (dead) {
+      // crumpled on the floor, one wing sticking up
+      groundShadow(ctx, 64, GROUND + 2, 14);
+      ellShaded(ctx, 64, GROUND - 6, 10, 6, R_LEATHER, 0.2);
+      poly(ctx, [[70, GROUND - 8], [84, GROUND - 26], [76, GROUND - 6]], F(26));
+      figDetail(ctx, [[58, GROUND - 8], [62, GROUND - 4]], 2, 1); // x eye
+      figDetail(ctx, [[62, GROUND - 8], [58, GROUND - 4]], 2, 1);
+      return;
+    }
+    const cy = 56; // flies high in the cel
+    const wingY = cy - flap * 10; // wingtip height swings with the flap
+    const wingSpread = 26 - Math.abs(flap) * 4;
+    // wings first (behind the body) — big webbed triangles with finger ribs
+    for (const side of [-1, 1]) {
+      const tipX = 64 + side * wingSpread;
+      plateShaded(ctx, [[64 + side * 6, cy], [tipX, wingY - 8], [64 + side * 12, cy + 8]], R_LEATHER, { rim: false });
+      figDetail(ctx, [[64 + side * 8, cy + 1], [tipX - side * 3, wingY - 6]], 1.4, 26); // rib
+    }
+    // body — a furry teardrop
+    ellShaded(ctx, 64, cy + 2, 9, 11, R_LEATHER);
+    // ears — two tall points
+    poly(ctx, [[58, cy - 7], [56, cy - 16], [62, cy - 9]], F(27));
+    poly(ctx, [[70, cy - 7], [72, cy - 16], [66, cy - 9]], F(27));
+    if (dir !== "N") {
+      // red glowing eyes + needle fangs
+      figGlow(ctx, 60, cy - 2, 1.8, 13, 13);
+      figGlow(ctx, 68, cy - 2, 1.8, 13, 13);
+      figDetail(ctx, [[61, cy + 6], [61, cy + 9]], 1.4, 22);
+      figDetail(ctx, [[67, cy + 6], [67, cy + 9]], 1.4, 22);
+    }
+    // tiny feet tucked under
+    figDetail(ctx, [[60, cy + 12], [59, cy + 15]], 1.6, 26);
+    figDetail(ctx, [[68, cy + 12], [69, cy + 15]], 1.6, 26);
+  };
+}
+
+/** Build the bat painter set — the flap IS the animation. */
+export function makeBatPaints(): ActorPaints {
+  const dirClips = (dir: Dir) => ({
+    idle: [batFrame(dir, 0.6), batFrame(dir, -0.6)],
+    walk: [batFrame(dir, 1), batFrame(dir, -1)], // full-power flap in flight
+    death: [batFrame(dir, 0.3), batFrame(dir, -0.8), batFrame(dir, 0, true), batFrame(dir, 0, true)],
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SLIME — a glossy arcane-teal blob (NOT rot-green — it must read as
+// its own family next to the zombies). Squash-and-stretch scoot for a
+// walk, two beady eyes, a wet highlight. Death melts it into a puddle
+// (the split minis pop from core, scaled-down copies of this sheet).
+// ══════════════════════════════════════════════════════════════════
+
+/** Arcane-teal slime ramp. */
+const R_SLIME: Ramp = [29, 30, 31];
+
+/** One slime frame. `squash` -1 (tall/gathered) .. 1 (flat/spread). */
+function slimeFrame(dir: Dir, squash: number, melt = 0): FramePaint {
+  return (ctx) => {
+    const spread = 20 + squash * 6 + melt * 14;
+    const height = 22 - squash * 6 - melt * 14;
+    const cy = GROUND - height * 0.55;
+    groundShadow(ctx, 64, GROUND + 2, spread * 0.9);
+    // the blob — a dome that squashes/spreads; melt sinks it into a puddle
+    ellShaded(ctx, 64, cy, spread, height, R_SLIME);
+    // dribble blobs at the base (goopier when squashed/melting)
+    if (squash > 0.2 || melt > 0) {
+      ellShaded(ctx, 64 - spread * 0.8, GROUND - 4, 4, 3, R_SLIME, 0, { rim: false });
+      ellShaded(ctx, 64 + spread * 0.75, GROUND - 3, 3, 2.5, R_SLIME, 0, { rim: false });
+    }
+    // wet highlight — the gloss that sells "gel"
+    ell(ctx, 64 - spread * 0.35, cy - height * 0.4, spread * 0.22, height * 0.2, F(31), -0.4);
+    if (melt < 0.6 && dir !== "N") {
+      // beady dark eyes suspended in the gel (drop as it melts)
+      const ey = cy - height * 0.15 + melt * 8;
+      ellShaded(ctx, 57, ey, 2.6, 3.2, 1, 0, { rim: false, ink: 1 });
+      ellShaded(ctx, 71, ey, 2.6, 3.2, 1, 0, { rim: false, ink: 1 });
+    }
+  };
+}
+
+/** Build the slime painter set — squash-stretch scoot, melt on death. */
+export function makeSlimePaints(): ActorPaints {
+  const dirClips = (dir: Dir) => ({
+    idle: [slimeFrame(dir, -0.2), slimeFrame(dir, 0.25)],
+    // the scoot: gather tall → spring flat → settle — a 4-beat squash cycle
+    walk: [slimeFrame(dir, -1), slimeFrame(dir, -0.2), slimeFrame(dir, 1), slimeFrame(dir, 0.3)],
+    death: [slimeFrame(dir, 0.6, 0.15), slimeFrame(dir, 0.8, 0.4), slimeFrame(dir, 1, 0.7), slimeFrame(dir, 1, 1)],
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
 }

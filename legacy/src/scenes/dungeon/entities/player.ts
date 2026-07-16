@@ -36,8 +36,9 @@ import {
   GRIND_SPARK_INTERVAL,
   OVERCHARGE_TIME,
   OVERCHARGE_DECAY,
-  PINBALL_RESTITUTION,
-  PINBALL_BOUNCE_ADD,
+  PINBALL_WALL_RESTITUTION,
+  PINBALL_CORNER_RESTITUTION,
+  PINBALL_CORNER_ADD,
   PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
   PINBALL_STEER,
@@ -46,6 +47,18 @@ import {
   BALL_SPEED_MULT,
   BALL_RAM_COOLDOWN,
   BALL_RAM_KNOCKBACK,
+  BUMPER_RADIUS,
+  BUMPER_KICK_MULT,
+  BUMPER_KICK_ADD,
+  BUMPER_MIN_EXIT,
+  BUMPER_COOLDOWN,
+  BUMPER_SCATTER,
+  SPRING_SPEED,
+  SPRING_COOLDOWN,
+  RAMP_SPEED,
+  RAMP_COOLDOWN,
+  RAMP_STEER_LOCK,
+  DEFLECTOR_BOOST,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -80,7 +93,7 @@ import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage } from "./combat";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring } from "../audio";
 
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
@@ -103,6 +116,9 @@ let sprintGraceT = 0;
 let auraT = 0;
 let grindT = 0;
 
+/** No-steer window after a dash panel (Sonic's booster move-lock). */
+let steerLockT = 0;
+
 /** Reset per-run movement smoothing so a fresh descent doesn't inherit momentum. */
 export function resetPlayerMotion(): void {
   curSpeed = 0;
@@ -110,6 +126,7 @@ export function resetPlayerMotion(): void {
   sprintGraceT = 0;
   auraT = 0;
   grindT = 0;
+  steerLockT = 0;
   if (state.player) {
     state.player.sprintCharge = 0;
     state.player.overcharge = 0;
@@ -403,6 +420,109 @@ function rangedSfx(id: string): void {
 }
 
 /**
+ * Interact with the level's PINBALL PARTS. Called from updatePinball (momentum
+ * live) AND from the normal movement path (walking) — every part can START a
+ * momentum ride, which is what makes the maze read as a machine: step on a
+ * spring or graze a bumper and you're flying, no overcharge required.
+ *
+ *   bumper    → radial kick away from its centre, speed multiplied + added,
+ *               combo tick. Even a walking touch launches at BUMPER_MIN_EXIT.
+ *   spring    → forced launch along the spring's direction at SPRING_SPEED.
+ *   ramp      → dash pad: forces your heading to its direction and floors your
+ *               speed at RAMP_SPEED (Sonic dash-panel rule: set, don't add).
+ *   deflector → banked curve, MOMENTUM ONLY: entering the corner redirects you
+ *               around it with all your speed (×DEFLECTOR_BOOST) — the reward
+ *               for taking the racing line instead of slamming the wall.
+ *
+ * Part cooldowns/hit animations are ticked by the parts renderer (one owner);
+ * this only consumes ready parts and stamps cooldownT/hitT.
+ */
+function touchPinballParts(inMomentum: boolean): void {
+  const p = state.player;
+  if (!p || state.pinballParts.length === 0) return;
+
+  for (const part of state.pinballParts) {
+    if (part.cooldownT > 0) continue;
+    const dx = p.x - part.x;
+    const dz = p.z - part.z;
+    const d2 = dx * dx + dz * dz;
+
+    if (part.kind === "bumper") {
+      const r = BUMPER_RADIUS + PLAYER_R * 0.5;
+      if (d2 > r * r) continue;
+      const d = Math.sqrt(d2) || 1;
+      // Radial exit with the authentic ±6° scatter (active parts only — plain
+      // walls stay mirror-perfect, per the research).
+      const scatter = (Math.random() * 2 - 1) * BUMPER_SCATTER;
+      const cs = Math.cos(scatter);
+      const sn = Math.sin(scatter);
+      const nx = dx / d;
+      const nz = dz / d;
+      p.momX = nx * cs - nz * sn;
+      p.momZ = nx * sn + nz * cs;
+      p.momSpeed = Math.min(
+        PINBALL_MAX_SPEED,
+        Math.max(p.momSpeed * BUMPER_KICK_MULT + BUMPER_KICK_ADD, BUMPER_MIN_EXIT),
+      );
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      part.cooldownT = BUMPER_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, 12);
+      state.shakeT = Math.max(state.shakeT, 0.16);
+      state.hitstopT = Math.max(state.hitstopT, 0.03);
+      sfxBumper();
+    } else if (part.kind === "spring") {
+      if (d2 > 0.42 * 0.42) continue;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      part.cooldownT = SPRING_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.dust(part.x, 0.1, part.z);
+      state.vfx?.sparks(part.x, 0.3, part.z, part.dirX, part.dirZ, 8);
+      state.shakeT = Math.max(state.shakeT, 0.14);
+      sfxSpring();
+    } else if (part.kind === "ramp") {
+      if (d2 > 0.42 * 0.42) continue;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      // Sonic's booster rule: a FLOOR, never a brake — plus a short steer lock
+      // so the panel actually carries you down its lane before you can bend it.
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, RAMP_SPEED));
+      steerLockT = RAMP_STEER_LOCK;
+      part.cooldownT = RAMP_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.dust(p.x, 0.06, p.z);
+      sfxRoll();
+    } else {
+      // deflector — banked corner, only meaningful while carrying momentum
+      if (!inMomentum || d2 > 0.5 * 0.5) continue;
+      // Which leg did we come IN along? Exit along the other, speed intact.
+      const inFrom1 = p.momX * -part.dirX + p.momZ * -part.dirZ; // heading INTO leg 1
+      const inFrom2 = p.momX * -part.dir2X + p.momZ * -part.dir2Z;
+      if (inFrom1 < 0.3 && inFrom2 < 0.3) continue; // grazing past, not cornering
+      if (inFrom1 >= inFrom2) {
+        p.momX = part.dir2X;
+        p.momZ = part.dir2Z;
+      } else {
+        p.momX = part.dirX;
+        p.momZ = part.dirZ;
+      }
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * DEFLECTOR_BOOST);
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      part.cooldownT = 0.3;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 6);
+      sfxRoll();
+    }
+  }
+}
+
+/**
  * PINBALL PHYSICS — while p.momSpeed > 0 the knight carries real momentum and
  * bounces off walls instead of stopping. Owns the player (returns true) until
  * the momentum bleeds below PINBALL_EXIT_MULT·PLAYER_SPEED, then hands control
@@ -425,8 +545,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   // Steer: held input gently BENDS the momentum direction (a nudge, not full
   // control — it's a physics roll, not a walk). Keeps it playable, not chaos.
+  // A dash panel locks steering briefly so its lane actually carries you.
+  steerLockT = Math.max(0, steerLockT - dt);
   const a = input.axis();
-  if (a.x !== 0 || a.z !== 0) {
+  if (steerLockT <= 0 && (a.x !== 0 || a.z !== 0)) {
     const wd = screenDirToWorld(a.x, a.z);
     const wl = Math.hypot(wd.x, wd.z) || 1;
     p.momX += (wd.x / wl) * PINBALL_STEER * dt;
@@ -453,21 +575,31 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // component. Clean pinball ricochet off a flat wall face.
     if (blockedX) p.momX = -p.momX;
     if (blockedZ) p.momZ = -p.momZ;
-    // SONIC ACCELERATION: a bounce ADDS speed (multiply + flat kick) up to the
-    // cap, so chaining wall hits ramps you up instead of bleeding out. Each hit
-    // also bumps the bounce COMBO (bigger combo → the aura + score reward).
-    p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * PINBALL_RESTITUTION + PINBALL_BOUNCE_ADD);
+    // SKILL-GATED ACCELERATION: a FLAT wall bounce PRESERVES your speed
+    // (restitution just under 1 — you can't farm two parallel walls forever),
+    // but a CORNER hit (both axes blocked in the same impact — an aimed
+    // diagonal slam into a pocket) MULTIPLIES it up plus a kick. Bumpers,
+    // springs and ramps (handled in touchPinballParts) are the other
+    // accelerators. Every bounce still ticks the combo chain.
+    const corner = blockedX && blockedZ;
+    p.momSpeed = corner
+      ? Math.min(PINBALL_MAX_SPEED, p.momSpeed * PINBALL_CORNER_RESTITUTION + PINBALL_CORNER_ADD)
+      : p.momSpeed * PINBALL_WALL_RESTITUTION;
     p.bounceCombo += 1;
     p.bounceComboT = PINBALL_COMBO_WINDOW;
-    // Bounce juice scales with the combo — a hot chain throws more sparks + kick.
+    // Bounce juice scales with the combo — a corner hit throws a bigger burst.
     const n = currentWallNormal();
     const sx = n ? n.nx : -p.momX;
     const sz = n ? n.nz : -p.momZ;
-    state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, 8 + Math.min(10, p.bounceCombo * 2));
-    state.shakeT = Math.max(state.shakeT, 0.12 + Math.min(0.12, p.bounceCombo * 0.02));
-    state.hitstopT = Math.max(state.hitstopT, 0.03);
+    state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, (corner ? 14 : 6) + Math.min(10, p.bounceCombo * 2));
+    state.shakeT = Math.max(state.shakeT, (corner ? 0.18 : 0.1) + Math.min(0.12, p.bounceCombo * 0.02));
+    state.hitstopT = Math.max(state.hitstopT, corner ? 0.05 : 0.02);
     sfxRoll();
   }
+
+  // Pinball PARTS: bumpers kick, springs launch, ramps floor your speed,
+  // deflectors bank you around corners. The real accelerators of the machine.
+  touchPinballParts(true);
 
   // Momentum bleeds ONLY when NOT bouncing (Sonic keeps its speed on a good
   // line) — very gently. The combo lapses if you go too long without a wall.
@@ -513,8 +645,11 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   }
   state.vfx?.dust(p.x, 0.05, p.z);
 
-  // Exit when the momentum has bled off — or immediately if overcharge is gone.
-  if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT || p.overcharge <= 0) {
+  // Exit only when the momentum has genuinely bled off. (Overcharge no longer
+  // gates the ride — bumpers/springs/ramps can launch momentum from a cold
+  // start, so the machine works without spooling first. Overcharge is purely
+  // the BALL-form gate now.)
+  if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) {
     p.momSpeed = 0;
     p.bounceCombo = 0;
     p.bounceComboT = 0;
@@ -727,6 +862,14 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       stepDustT = STEP_DUST_INTERVAL * (wantSprint ? 0.6 : 1);
       state.vfx?.dust(p.x, 0.05, p.z);
     }
+  }
+
+  // Pinball parts fire from a WALK too — step on a spring or graze a bumper
+  // and the machine launches you into a momentum ride, no overcharge needed.
+  touchPinballParts(false);
+  if (p.momSpeed > 0) {
+    syncActorMesh(p);
+    return; // a part just launched us — momentum owns the knight from next frame
   }
 
   // Facing picks from the SCREEN axis, so pressing D always shows the

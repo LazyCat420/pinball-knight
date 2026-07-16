@@ -114,8 +114,11 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead";
  *  - ghost:   a floating white sheet-ghost that PHASES THROUGH WALLS, drifting
  *             in a straight line at you (ignores the maze) — can't be kited by
  *             geometry. Fragile, translucent, silent.
+ *  - bat:     a fast erratic flyer — weaves a sine wobble across its flight
+ *             line, hard to line up, dies in one hit.
+ *  - slime:   slow multiplying blob — splits into two fast minis on death.
  */
-export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost";
+export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime";
 
 export interface Zombie extends Actor {
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
@@ -134,8 +137,34 @@ export interface Zombie extends Actor {
   aggro: boolean;
   /** Flame-puff immunity window — the cone burns in ticks, not per-puff. */
   burnT: number;
-  /** Ghost hover-bob phase accumulator (seconds); unused by grounded kinds. */
+  /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
+  /** True for a slime spawned by a split — minis never split again. */
+  mini?: boolean;
+}
+
+// ── Pinball parts (the maze/pinball-machine hybrid) ──────────────
+export type PinballPartKind = "bumper" | "spring" | "ramp" | "deflector";
+
+export interface PinballPart {
+  kind: PinballPartKind;
+  /** Tile coords (from the LevelPlan) + world-centre position. */
+  i: number;
+  j: number;
+  x: number;
+  z: number;
+  /** Unit direction: springs launch along it, ramps boost along it; a
+   * deflector's two open corner legs are (dirX,dirZ) and (dir2X,dir2Z). */
+  dirX: number;
+  dirZ: number;
+  dir2X: number;
+  dir2Z: number;
+  /** Re-trigger lockout so standing on a part doesn't machine-gun it. */
+  cooldownT: number;
+  /** Seconds since last hit, drives the pop/squash animation (-1 = never hit). */
+  hitT: number;
+  /** The part's mesh group in the scene (built by render/pinball-parts). */
+  mesh: THREE.Object3D;
 }
 
 export interface GroundItem {
@@ -218,6 +247,8 @@ export const state = {
   player: null as Player | null,
   zombies: [] as Zombie[],
   projectiles: [] as Projectile[],
+  /** The level's pinball components (bumpers/springs/ramps/deflectors). */
+  pinballParts: [] as PinballPart[],
   /** One knight atlas per weapon, built lazily — a swap is a texture switch. */
   playerSheets: new Map<WeaponId, SpriteSheet>(),
   /** Which weapon's art the player sprite currently shows. */
@@ -233,6 +264,10 @@ export const state = {
   spitterSheet: null as SpriteSheet | null,
   /** The floating sheet-ghost atlas. */
   ghostSheet: null as SpriteSheet | null,
+  /** The bat (fast flyer) atlas. */
+  batSheet: null as SpriteSheet | null,
+  /** The slime (splits on death) atlas. */
+  slimeSheet: null as SpriteSheet | null,
   /** The overlord (mini-boss) atlas. */
   bossSheet: null as SpriteSheet | null,
 
@@ -365,6 +400,7 @@ export function resetState(): void {
   state.player = null;
   state.zombies = [];
   state.projectiles = [];
+  state.pinballParts = [];
   state.playerSheets = new Map();
   state.playerArtWeapon = null;
   state.zombieSheet = null;
@@ -373,6 +409,8 @@ export function resetState(): void {
   state.bruteSheet = null;
   state.spitterSheet = null;
   state.ghostSheet = null;
+  state.batSheet = null;
+  state.slimeSheet = null;
   state.bossSheet = null;
   state.flowField = null;
   state.flowTimer = 0;
