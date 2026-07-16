@@ -153,7 +153,7 @@ export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, r
  * lower-right, then a bright rim stroke on the upper-left silhouette. All real
  * palette indices → clean bands.
  */
-export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, opts: { ink?: number; rim?: boolean } = {}): void {
+export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, opts: { ink?: number; rim?: boolean; backlight?: number } = {}): void {
   // shade base
   path(ctx, pts);
   ctx.fillStyle = C(matShade(m));
@@ -183,6 +183,22 @@ export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, op
       ctx.stroke();
     }
   }
+  // cool BACKLIGHT rim along the lower-right (shadow-side) silhouette — highly
+  // reflective metal picks up a second light opposite the key (research: metal
+  // reads with BOTH a specular hotspot AND a shadow-side rim). Opt-in per plate
+  // via a palette index so only armour gets it, not flesh or rags.
+  if (opts.backlight != null) {
+    const bot = bottomRightRun(pts);
+    if (bot.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(bot[0][0], bot[0][1]);
+      for (let i = 1; i < bot.length; i++) ctx.lineTo(bot[i][0], bot[i][1]);
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = C(opts.backlight);
+      ctx.stroke();
+    }
+  }
 }
 
 function path(ctx: CanvasRenderingContext2D, pts: Pt[]): void {
@@ -197,6 +213,13 @@ function topLeftRun(pts: Pt[]): Pt[] {
   const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
   const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   return pts.filter((p) => p[1] <= cy || p[0] <= cx);
+}
+
+/** The lower-right silhouette run — where a cool BACKLIGHT rim lands on metal. */
+function bottomRightRun(pts: Pt[]): Pt[] {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts.filter((p) => p[1] >= cy || p[0] >= cx);
 }
 
 /** A rounded rect (belts, straps, blocky armour bits). Flat with a shade base. */

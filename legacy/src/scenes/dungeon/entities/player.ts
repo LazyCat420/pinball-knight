@@ -21,8 +21,10 @@ import {
   STAMINA_REGEN_DELAY,
   SPRINT_DRAIN,
   SPRINT_SPEED_MULT,
+  SPRINT_BASE_MULT,
   SPRINT_RAMP_TIME,
   SPRINT_DECAY_TIME,
+  SPRINT_GRACE,
   SPRINT_RIDE_THRESHOLD,
   MOVE_ACCEL,
   MOVE_FRICTION,
@@ -75,10 +77,14 @@ let stepDustT = 0;
  */
 let curSpeed = 0;
 
+/** Countdown holding the sprint charge steady through a brief interruption. */
+let sprintGraceT = 0;
+
 /** Reset per-run movement smoothing so a fresh descent doesn't inherit momentum. */
 export function resetPlayerMotion(): void {
   curSpeed = 0;
   stepDustT = 0;
+  sprintGraceT = 0;
   if (state.player) state.player.sprintCharge = 0;
 }
 
@@ -159,7 +165,7 @@ function tryStartRoll(input: InputHandle): boolean {
  * stack two independent invuln windows (the double-i-frame fix). The back half
  * still moves you but is hittable. Returns true while the roll owns the player.
  */
-function updateRoll(dt: number): boolean {
+function updateRoll(dt: number, input: InputHandle): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.rollT < 0) return false;
@@ -175,6 +181,15 @@ function updateRoll(dt: number): boolean {
     const res = moveCircle(g, p.x, p.z, PLAYER_R, p.rollDirX * speed * dt, p.rollDirZ * speed * dt);
     p.x = res.x;
     p.z = res.z;
+
+    // Rolling INTO a wall converts to a WALL-KICK rebound mid-tumble — sprint
+    // at a wall, dodge, and the knight vaults straight off it. Free (the dodge
+    // already paid its stamina); only during the roll body, and only when the
+    // roll direction genuinely points at the wall we just hit.
+    const wall = wallContact(g, p.x, p.z, PLAYER_R, WALL_CONTACT_PROBE);
+    if (wall && p.rollDirX * wall.nx + p.rollDirZ * wall.nz < -0.5) {
+      if (startWallLaunch("kick", wall, input, true)) return true;
+    }
 
     // i-frames only for the front window — top up the shared guard so it never
     // stacks with a separate damage-i-frame window.
@@ -219,13 +234,14 @@ function currentWallNormal(): { nx: number; nz: number } | null {
  * Begin a launch off a wall (wall-kick or pounce). Commits the launch direction
  * (the wall normal, biased by input for the kick), spends stamina, and — for the
  * kick — queues a lunging light strike that lands as the hop peaks. Returns true
- * if it started.
+ * if it started. `free` skips the stamina price — used when a dodge-roll that
+ * already paid converts into a kick mid-tumble.
  */
-function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: number }, input: InputHandle): boolean {
+function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: number }, input: InputHandle, free = false): boolean {
   const p = state.player;
   if (!p) return false;
   const move = kind === "kick" ? WALLKICK : POUNCE;
-  if (!spendStamina(move.staminaCost)) return false;
+  if (!free && !spendStamina(move.staminaCost)) return false;
 
   // Launch direction: straight off the wall for a pounce; for a wall-kick, blend
   // the wall normal with any held input so you can angle the rebound.
@@ -266,8 +282,12 @@ function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: numb
   p.anim.setFacing(p.facing);
   p.anim.play("roll", { force: true });
   sfxRoll();
-  // A scuff of dust kicking off the wall.
-  state.vfx?.dust(p.x - p.wallMoveDirX * 0.3, 0.1, p.z - p.wallMoveDirZ * 0.3);
+  // Kick-off juice: a burst of dust at the wall plus a nudge of screen shake,
+  // so the launch reads as an EVENT, not just another roll frame.
+  for (let i = 0; i < 4; i++) {
+    state.vfx?.dust(p.x - p.wallMoveDirX * (0.2 + i * 0.12), 0.08 + i * 0.05, p.z - p.wallMoveDirZ * (0.2 + i * 0.12));
+  }
+  state.shakeT = Math.max(state.shakeT, 0.12);
   return true;
 }
 
@@ -301,7 +321,7 @@ function updateWallLaunch(dt: number): boolean {
   // A wall-KICK carries a lunging light strike: land it once past the move's windup.
   if (p.wallMoveKind === "kick" && !p.didHit && p.wallMoveT >= move.windup) {
     p.didHit = true;
-    resolvePlayerAttack({ damageMul: move.damageMul, arcMul: move.arcMul, rangeMul: move.rangeMul, knockbackMul: move.knockbackMul });
+    resolvePlayerAttack({ damageMul: move.damageMul, arcMul: move.arcMul, rangeMul: move.rangeMul, knockbackMul: move.knockbackMul, hitstopMul: move.hitstopMul });
     const w = WEAPONS[activeWeapon().id];
     state.vfx?.slash(p.x + p.wallMoveDirX * 0.5, 0.6, p.z + p.wallMoveDirZ * 0.5, p.facing, w.slashColor ?? 0xdfe7f2);
   }
@@ -388,7 +408,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     const wall = currentWallNormal();
     if (!wall || !startWallLaunch("kick", wall, input)) tryStartRoll(input);
   }
-  if (updateRoll(dt)) return;
+  if (updateRoll(dt, input)) return;
 
   const w = WEAPONS[activeWeapon().id];
   const ranged = w.kind === "ranged";
@@ -405,7 +425,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     const activeEnd = m.windup + m.active;
     if (!p.didHit && p.attackT >= activeStart && p.attackT <= activeEnd) {
       p.didHit = true;
-      resolvePlayerAttack({ damageMul: m.damageMul, arcMul: m.arcMul, rangeMul: m.rangeMul, knockbackMul: m.knockbackMul });
+      resolvePlayerAttack({ damageMul: m.damageMul, arcMul: m.arcMul, rangeMul: m.rangeMul, knockbackMul: m.knockbackMul, hitstopMul: m.hitstopMul });
     }
     // A combo can chain once the active window has passed (early recovery); the
     // window stays open COMBO_WINDOW after that so a follow-up press links.
@@ -441,30 +461,36 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   const a = input.axis();
   const moving = a.x !== 0 || a.z !== 0;
 
-  // Sprint (hold Shift) is a COMMITMENT that SPOOLS UP: holding it while moving
-  // fills p.sprintCharge (0→1) over SPRINT_RAMP_TIME (~3s) and lerps the top
-  // speed from walk toward SPRINT_SPEED_MULT; releasing or stopping bleeds the
-  // charge back over SPRINT_DECAY_TIME. Gated by stamina — an empty bar can't
+  // Sprint (hold Shift): the BASE gear kicks in the instant Shift is held (you
+  // feel it immediately), while p.sprintCharge (0→1 over SPRINT_RAMP_TIME) spools
+  // the top speed the rest of the way to SPRINT_SPEED_MULT — full sprint is
+  // earned by a sustained run. Interruptions (a swing, clipping a corner) HOLD
+  // the charge for SPRINT_GRACE before it starts bleeding over SPRINT_DECAY_TIME,
+  // so combat doesn't erase the spool. Gated by stamina — an empty bar can't
   // sprint. Stamina drains only while the charge is actually building/held.
   const wantSprint = input.sprintHeld() && moving && !attacking && p.stamina > 0;
   if (wantSprint) {
     p.sprintCharge = Math.min(1, p.sprintCharge + dt / SPRINT_RAMP_TIME);
+    sprintGraceT = SPRINT_GRACE;
     p.stamina = Math.max(0, p.stamina - SPRINT_DRAIN * dt);
     // Suppress regen for the full delay while sprinting — otherwise tickStamina
     // (which ran earlier this frame) refills faster than the drain and the bar
     // never falls. Refreshing the delay each sprint frame keeps regen paused
     // until STAMINA_REGEN_DELAY after you STOP sprinting.
     p.staminaRegenDelay = STAMINA_REGEN_DELAY;
+  } else if (sprintGraceT > 0) {
+    sprintGraceT = Math.max(0, sprintGraceT - dt); // hold the spool through the stumble
   } else {
     p.sprintCharge = Math.max(0, p.sprintCharge - dt / SPRINT_DECAY_TIME);
   }
 
   // Target speed for this frame, then ramp the smoothed speed toward it. Walk is
-  // still snappy; the SPRINT bonus arrives only as sprintCharge fills (the 3s spool).
+  // still snappy; Shift adds SPRINT_BASE_MULT at once and the spool lerps the
+  // rest of the way to SPRINT_SPEED_MULT.
   let targetSpeed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
   if (state.gear.boots !== undefined) targetSpeed *= BOOTS_SPEED_FACTOR;
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
-  targetSpeed *= 1 + (SPRINT_SPEED_MULT - 1) * p.sprintCharge; // sprint charge lerps top speed
+  targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;
 
   const rate = (targetSpeed > curSpeed ? MOVE_ACCEL : MOVE_FRICTION) * dt;

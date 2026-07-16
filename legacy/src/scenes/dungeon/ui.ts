@@ -5,7 +5,7 @@
  * quantized. Styled to match the palette so they don't clash with the art.
  */
 import { state, WEAPON_SLOTS } from "./state";
-import { PLAYER_MAX_HP, STAMINA_MAX } from "./constants";
+import { PLAYER_MAX_HP, STAMINA_MAX, SPRINT_RIDE_THRESHOLD } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
@@ -237,6 +237,20 @@ export function updateHUD(el: HTMLDivElement): void {
       <div style="height:100%;width:${stamPct}%;background:${stamColor};transition:width 0.08s linear"></div>
     </div>`;
 
+  // Sprint spool (the 3s Shift ramp) — a thin blue rail that turns gold once
+  // the charge passes the wall-ride threshold, so "the ride is armed" reads at
+  // a glance. Hidden entirely at zero charge to keep the HUD quiet when walking.
+  const spool = Math.max(0, Math.min(1, state.player?.sprintCharge ?? 0));
+  const spoolArmed = spool >= SPRINT_RIDE_THRESHOLD;
+  const spoolRow =
+    spool > 0.01
+      ? `
+    <div style="height:3px;margin-top:2px;background:#2b303b;border:1px solid #454f5e;position:relative">
+      <div style="height:100%;width:${spool * 100}%;background:${spoolArmed ? "#ffd23f" : "#5aa9e6"};transition:width 0.08s linear"></div>
+      <div style="position:absolute;left:${SPRINT_RIDE_THRESHOLD * 100}%;top:-1px;bottom:-1px;width:1px;background:#8a94a6"></div>
+    </div>`
+      : "";
+
   // Two hand slots — the active one is arrowed and bright, ranged weapons
   // show an ammo count instead of a wear meter.
   const weaponRows = Array.from({ length: WEAPON_SLOTS }, (_, slot) => {
@@ -307,6 +321,7 @@ export function updateHUD(el: HTMLDivElement): void {
   body.innerHTML = `
     <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
     ${stamRow}
+    ${spoolRow}
     <div style="margin-top:3px">${weaponRows}</div>
     ${rule}
     ${gearRows}

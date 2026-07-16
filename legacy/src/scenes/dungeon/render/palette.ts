@@ -43,7 +43,11 @@ export const PALETTE_HEX: number[] = [
   0xfff3c8, // 18 flame core
 
   // ── Steel (19-22) ──
-  0x4a5364, // 19 steel dark
+  // Metal ramp rule (deep-research 2026-07-15): the DARK end of a metal ramp
+  // leans WARMER and more saturated while the light end stays cold/desaturated —
+  // that opposite-temperature spread is what reads as steel instead of plastic.
+  // 19 carries a violet warmth; 21/22 stay icy.
+  0x544e63, // 19 steel dark (warm violet-slate)
   0x8a94a6, // 20 steel mid
   0xc8ccd4, // 21 steel light
   0xeef1f5, // 22 steel highlight

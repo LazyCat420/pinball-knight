@@ -228,7 +228,15 @@ export const DODGE_COST = 28; // per dodge-roll
 export const HEAVY_COST = 22; // per heavy swing (light swings are free)
 
 // ── Sprint (hold Shift) ─────────────────────────────────────────
-export const SPRINT_SPEED_MULT = 1.5; // top speed multiplier while sprinting
+/**
+ * Pressing Shift kicks in IMMEDIATELY at SPRINT_BASE_MULT (you feel the gear
+ * change the moment you press it — playtest 2026-07-15: a spool that starts at
+ * 1.0× read as "shift does nothing"), then the sprint CHARGE lerps you the rest
+ * of the way to SPRINT_SPEED_MULT over the 3s ramp. Top gear is dramatic on
+ * purpose — the payoff for a sustained run.
+ */
+export const SPRINT_BASE_MULT = 1.22; // instant multiplier the moment Shift is held
+export const SPRINT_SPEED_MULT = 1.85; // top speed multiplier at full sprint charge
 /**
  * Walk accel/friction stays snappy (press ≈ full WALK speed almost at once) so
  * ordinary movement is responsive. Sprint is layered on TOP via a separate
@@ -250,6 +258,13 @@ export const SPRINT_DEADZONE_MULT = 1.4;
  */
 export const SPRINT_RAMP_TIME = 3.0; // seconds of sustained run to reach full sprint
 export const SPRINT_DECAY_TIME = 0.8; // seconds for the charge to bleed back to 0 when you stop
+/**
+ * The charge HOLDS for this long before it starts decaying, so a light swing
+ * (~0.27s) or clipping a corner mid-run doesn't erase a 3-second spool.
+ * Without it, real combat-heavy play never kept any charge and the ramp — and
+ * the wall-ride it gates — read as broken (playtest 2026-07-15).
+ */
+export const SPRINT_GRACE = 0.6;
 /** Sprint charge above this (halfway up the ramp, ~1.5s in) unlocks the wall-ride. */
 export const SPRINT_RIDE_THRESHOLD = 0.5;
 
@@ -263,24 +278,28 @@ export const SPRINT_RIDE_THRESHOLD = 0.5;
  * free flair. wallContact() (collision.ts) supplies the wall NORMAL (the way to
  * kick off toward).
  */
-/** How far past the body radius we probe for a wall to count as "wall-adjacent". */
-export const WALL_CONTACT_PROBE = 0.14;
+/**
+ * How far past the body radius we probe for a wall to count as "wall-adjacent".
+ * Generous on purpose (playtest 2026-07-15: at 0.14 you had to be pixel-perfect
+ * against the wall for any wall move to arm, which read as "doesn't work").
+ */
+export const WALL_CONTACT_PROBE = 0.26;
 /** Wall-kick: dodge INTO a wall → rebound hop + a lunging light strike away from it. */
 export const WALLKICK_COST = 20; // stamina (cheaper than a full dodge)
 export const WALLKICK_DURATION = 0.3; // seconds of the launch hop
 export const WALLKICK_IFRAMES = 0.16; // invuln over the front of the hop
 export const WALLKICK_DISTANCE = 2.2; // tiles launched off the wall
-export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, staminaCost: WALLKICK_COST };
+export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, staminaCost: WALLKICK_COST, hitstopMul: 1.3 };
 /** Wall-ride: sprint-charged slide along a wall face + a wide sweeping slash. */
 export const WALLRIDE_COST = 16;
-export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, staminaCost: WALLRIDE_COST };
+export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, staminaCost: WALLRIDE_COST, hitstopMul: 1.5 };
 /** Pounce slam: face wall + charge + release → leap arc off the wall to an AoE landing. */
 export const POUNCE_COST = 26;
 export const POUNCE_DURATION = 0.36; // arc travel time
 export const POUNCE_IFRAMES = 0.22; // airborne = untouchable most of the arc
 export const POUNCE_DISTANCE = 3.2; // tiles leapt off the wall
 export const POUNCE_AOE = 1.6; // radial hit radius on landing (tiles)
-export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, staminaCost: POUNCE_COST };
+export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, staminaCost: POUNCE_COST, hitstopMul: 2 };
 
 // ── Dodge-roll (tap Space) ──────────────────────────────────────
 /**
@@ -314,11 +333,18 @@ export interface MoveTiming {
   rangeMul: number; // reach relative to the weapon
   knockbackMul: number;
   staminaCost: number;
+  /**
+   * Per-move hit-freeze multiplier over HITSTOP_HIT — the hand-tuned feel dial
+   * (deep-research 2026-07-15: Smash tunes hitstop per attack beyond the damage
+   * formula — heavies and sweet spots freeze longer, so weight reads on impact).
+   * Light ≈ 50ms stays the floor; the heavy lands at ~90ms.
+   */
+  hitstopMul: number;
 }
-export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0 };
-export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0 };
-export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, staminaCost: 0 };
-export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, staminaCost: HEAVY_COST };
+export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0, hitstopMul: 1 };
+export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0, hitstopMul: 1 };
+export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, staminaCost: 0, hitstopMul: 1.4 };
+export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, staminaCost: HEAVY_COST, hitstopMul: 1.8 };
 
 /** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
 export const COMBO_WINDOW = 0.34;

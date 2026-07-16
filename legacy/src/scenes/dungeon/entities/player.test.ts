@@ -22,8 +22,10 @@ import {
   HEAVY_COST,
   SPRINT_RAMP_TIME,
   SPRINT_DECAY_TIME,
+  SPRINT_GRACE,
   SPRINT_RIDE_THRESHOLD,
   SPRINT_SPEED_MULT,
+  SPRINT_BASE_MULT,
   WALLKICK,
   WALLKICK_IFRAMES,
   WALLKICK_DURATION,
@@ -147,13 +149,29 @@ describe("sprint ramp (the 3-second spool-up)", () => {
     // enough' gate rather than 'must be maxed'.
     expect(SPRINT_RIDE_THRESHOLD).toBeGreaterThan(0);
     expect(SPRINT_RIDE_THRESHOLD).toBeLessThan(1);
-    const speedAtRide = 1 + (SPRINT_SPEED_MULT - 1) * SPRINT_RIDE_THRESHOLD;
-    expect(speedAtRide).toBeGreaterThan(1); // faster than a walk
+    const speedAtRide = SPRINT_BASE_MULT + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * SPRINT_RIDE_THRESHOLD;
+    expect(speedAtRide).toBeGreaterThan(SPRINT_BASE_MULT); // faster than the instant gear
     expect(speedAtRide).toBeLessThan(SPRINT_SPEED_MULT); // not yet full sprint
+  });
+
+  it("Shift is felt IMMEDIATELY: the base gear beats a walk before any spool", () => {
+    // The 2026-07-15 playtest bug — a spool that starts at 1.0× reads as
+    // "shift does nothing". The instant gear must be a real, noticeable boost,
+    // but clearly below the spooled top speed so the ramp still matters.
+    expect(SPRINT_BASE_MULT).toBeGreaterThanOrEqual(1.15);
+    expect(SPRINT_BASE_MULT).toBeLessThan(SPRINT_SPEED_MULT - 0.3);
   });
 
   it("charge decays faster than it builds (a stumble kills sprint, a run must be earned)", () => {
     expect(SPRINT_DECAY_TIME).toBeLessThan(SPRINT_RAMP_TIME);
+  });
+
+  it("the grace window outlasts a light swing (combat doesn't erase the spool)", () => {
+    // A light is windup+active+recovery ≈ 0.27s; the charge must hold through
+    // it so attacking mid-run doesn't dump 3 seconds of spool.
+    expect(SPRINT_GRACE).toBeGreaterThan(LIGHT_1.windup + LIGHT_1.active + LIGHT_1.recovery);
+    // ...but not so long that sprint feels sticky after you genuinely stop.
+    expect(SPRINT_GRACE).toBeLessThan(1);
   });
 });
 

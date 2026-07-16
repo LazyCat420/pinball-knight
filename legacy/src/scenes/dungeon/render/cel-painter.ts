@@ -408,19 +408,42 @@ const HAND_E: Record<string, HandPose> = {
   recover: { x: 86, y: 72, rot: 1.34 },
 };
 
-/** The translucent arc that sells a melee strike frame. Post-shade. */
+/**
+ * The SMEAR that sells a melee strike frame — a filled crescent wedge along the
+ * swing path (Medeiros' smear rules, deep-research 2026-07-15), not a thin arc:
+ * the smear "connects" this frame to the previous one. Colour gradation inside
+ * the wedge does the work of extra inbetween frames: the trailing (a0) end is
+ * dark and fading, the leading (a1) edge — where the blade is NOW — is bright
+ * steel-highlight, and lighter colours bleed OVER darker ones (drawn last).
+ * A thin ghost arc trails behind the wedge (the "ghosted multiple").
+ */
 function swoosh(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, a0: number, a1: number): void {
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, a0, a1);
-  ctx.lineWidth = 8;
+  const wedge = (rOut: number, rIn: number, from: number, to: number, fill: string): void => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, rOut, from, to);
+    ctx.arc(cx, cy, rIn, to, from, true);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
+  // NB alphas stay ≥ 0.55: the pixel-crush pass hard-cuts alpha < 128, so a
+  // fainter layer simply VANISHES over transparent background. The smear is a
+  // SOLID wedge on purpose — Medeiros lists the solid filled wedge as the
+  // canonical smear shape, and solid is all that survives the cutout anyway.
+  const span = a1 - a0;
+  // ghosted multiple — a thin arc trailing BEHIND the wedge start
   ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(238, 241, 245, 0.55)";
-  ctx.stroke();
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 9, a0 + 0.12, a1 - 0.12);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(238, 241, 245, 0.3)";
+  ctx.arc(cx, cy, r - 4, a0 - span * 0.3, a0 + span * 0.15);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(138, 148, 166, 0.55)"; // steel-mid ghost
   ctx.stroke();
+  // trailing body — dark, fading (drawn first so lighter layers bleed over it)
+  wedge(r + 2, r - 13, a0, a1, "rgba(138, 148, 166, 0.6)");
+  // mid band — brighter, covers the leading 60%
+  wedge(r + 1, r - 10, a0 + span * 0.4, a1, "rgba(200, 204, 212, 0.75)");
+  // leading edge — near-white hot edge over the last 30%, bleeding over everything
+  wedge(r, r - 6, a0 + span * 0.7, a1, "rgba(238, 241, 245, 0.95)");
 }
 
 const GROUND = 118;
@@ -470,7 +493,7 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
   }
   // Helm dome — a rounded bucket, not a ball: flat-ish crown, jaw taper.
   if (dir === "E") {
-    plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], K_PLATE);
+    plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], K_PLATE, { backlight: 30 });
     // brow ridge catches light — a bright band across the crown
     figDetail(ctx, [[x - 10, y - 9], [x + 10, y - 9]], 1.5, 21);
     // nose guard juts forward (+x)
@@ -478,7 +501,7 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
     // eye slit — hard black void, the only pure-INK on the figure
     rrectShaded(ctx, x + 2, y - 3, 11, 4, 1.5, 1, { ink: 1 });
   } else {
-    plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], K_PLATE);
+    plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], K_PLATE, { backlight: 30 });
     // brow ridge highlight across the crown for a defined forehead
     figDetail(ctx, [[x - 11, y - 9], [x + 11, y - 9]], 1.5, 21);
     if (dir === "S") {
@@ -531,9 +554,24 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
 
   groundShadow(ctx, CX, GROUND + 3, 26);
 
+  // Ghosted weapon multiple on the strike frame (pose-to-pose + smear, not
+  // tweening): the weapon is drawn ONCE more at the halfway pose between windup
+  // and strike, faint, so the eye reads the swept path. Melee only.
+  const drawGhost = (): void => {
+    if (!(firing && !ranged && weapon !== "fists")) return;
+    const wu = hands.windup;
+    ctx.save();
+    ctx.globalAlpha = 0.55; // ≥0.55 or the crush pass's alpha cutout deletes it
+    drawHeld(ctx, weapon, (wu.x + hand.x) / 2, (wu.y + hand.y) / 2, wu.rot + (hand.rot - wu.rot) * 0.55);
+    ctx.restore();
+  };
+
   // Which arm holds the weapon: S → right (screen +x), N → left, E → near arm.
   const weaponBehind = dir === "N";
-  if (weaponBehind) drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
+  if (weaponBehind) {
+    drawGhost();
+    drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
+  }
 
   // ── BACK leg first, then front, so the near leg overlaps ──
   if (dir === "E") {
@@ -561,9 +599,10 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
     plateShaded(ctx, [[sk.hip[0] - 2, sk.hip[1] - 2], [sk.hip[0] + 9, sk.hip[1] - 2], [sk.hip[0] + 8, sk.hip[1] + 13], [sk.hip[0] - 2, sk.hip[1] + 12]], K_PLATE_DK);
   }
 
-  // ── torso: a tapered cuirass, wider at the chest ──
+  // ── torso: a tapered cuirass, wider at the chest ── (cool backlight rim on
+  // the shadow side — the second light that makes plate read as polished metal)
   const t = knightTorsoPts(sk, dir);
-  plateShaded(ctx, t, K_PLATE);
+  plateShaded(ctx, t, K_PLATE, { backlight: 30 });
   // plackart V-seam + fluting + belt + gold buckle
   if (dir === "S") {
     figDetail(ctx, [[sk.chest[0], sk.chest[1] + 2], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK); // central keel
@@ -593,7 +632,7 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // the shoulders. A rounded multi-point plate reads as armour, not a button. ──
   const pauldron = (px: number, py: number, flip: number): void => {
     // main cop
-    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], K_PLATE);
+    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], K_PLATE, { backlight: 30 });
     // lower lame (a second overlapping plate for depth)
     plateShaded(ctx, [[px - 9 * flip, py + 5], [px + 11 * flip, py + 3], [px + 10 * flip, py + 11], [px - 7 * flip, py + 12]], K_PLATE_DK);
     figDetail(ctx, [[px - 7 * flip, py - 1], [px + 9 * flip, py - 4]], 1.5, 21); // top-edge glint
@@ -614,9 +653,12 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // ── head / helm (plume trails on plumeLag) ──
   knightHelm(ctx, sk.head, d3, plumeLag);
 
-  if (!weaponBehind) drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
+  if (!weaponBehind) {
+    drawGhost();
+    drawHeld(ctx, weapon, hand.x, hand.y, hand.rot, atk === "fire");
+  }
 
-  // post effects: full-brightness swing swoosh / punch flash (no global celShade
+  // post effects: full-brightness swing smear / punch flash (no global celShade
   // — the parts are self-shaded now, so the soft gradient would only mush them)
   if (firing && !ranged && weapon !== "fists") {
     if (dir === "S") swoosh(ctx, 64, 74, 44, 0.55, 1.85);
@@ -624,7 +666,28 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
     else swoosh(ctx, 66, 62, 46, -0.75, 0.75);
   }
   if (firing && weapon === "fists") {
-    flash(ctx, hand.x + (dir === "N" ? -10 : 10), hand.y - 4, 8);
+    // Punch smear: a ghost fist + speed lines back along the punch path (from
+    // the windup hand pose to the strike), then the impact star at the fist.
+    const wu = hands.windup;
+    const gx = wu.x + (hand.x - wu.x) * 0.45;
+    const gy = wu.y + (hand.y - wu.y) * 0.45;
+    ctx.save();
+    ctx.globalAlpha = 0.55; // ≥0.55 or the crush pass's alpha cutout deletes it
+    ell(ctx, gx, gy, 5, 5, F(20)); // ghosted gauntlet multiple
+    ctx.restore();
+    for (let i = -1; i <= 1; i++) {
+      const t0 = 0.25 + Math.abs(i) * 0.12;
+      line(
+        ctx,
+        [
+          [wu.x + (hand.x - wu.x) * t0 + i * 5, wu.y + (hand.y - wu.y) * t0 - i * 4],
+          [wu.x + (hand.x - wu.x) * 0.85 + i * 3, wu.y + (hand.y - wu.y) * 0.85 - i * 2],
+        ],
+        2,
+        "rgba(238, 241, 245, 0.8)",
+      );
+    }
+    flash(ctx, hand.x + (dir === "N" ? -10 : 10), hand.y - 4, 10);
   }
 }
 
@@ -1047,11 +1110,20 @@ export function makeZombiePaints(v: ZVariant): ActorPaints {
       zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase }, v),
       zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase - lurchWobble }, v),
     ],
+    // ── WALK: an ASYMMETRIC step-drag limp (deep-research 2026-07-15: pose
+    // asymmetry is what makes a shamble read as undead, not a slowed man-walk).
+    // The good leg PLANTS in two quick frames; the bad leg spends four frames
+    // DRAGGING to catch up while the body pitches forward over it (lurch pulse)
+    // and sinks (bob) — a lopsided 6-beat instead of a metronome. ──
     walk: [
-      zombieFrame(dir, { bob: 2, stride: 1, lurch: lurchBase + 0.03 }, v),
-      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase - 0.02 }, v),
-      zombieFrame(dir, { bob: 2, stride: -1, lurch: lurchBase - 0.05 }, v),
-      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase - 0.02 }, v),
+      // good-leg step — quick, weight slams onto it
+      zombieFrame(dir, { bob: 3, stride: 1, lurch: lurchBase + 0.05 }, v),
+      zombieFrame(dir, { bob: 0.5, stride: 0.5, lurch: lurchBase }, v),
+      // bad-leg drag — slow, body pitches hard over the plant and sinks
+      zombieFrame(dir, { bob: 1.5, stride: 0.1, lurch: lurchBase + 0.08 }, v),
+      zombieFrame(dir, { bob: 3.5, stride: -0.3, lurch: lurchBase + 0.1 }, v),
+      zombieFrame(dir, { bob: 2.5, stride: -0.7, lurch: lurchBase + 0.04 }, v),
+      zombieFrame(dir, { bob: 1, stride: -1, lurch: lurchBase - 0.03 }, v),
     ],
     death: zombieDeath(v),
   });

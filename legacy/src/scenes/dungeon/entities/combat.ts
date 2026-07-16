@@ -155,6 +155,8 @@ export interface MeleeScale {
   arcMul: number;
   rangeMul: number;
   knockbackMul: number;
+  /** Extra hit-freeze over the base HITSTOP_HIT — heavies freeze longer (feel dial). */
+  hitstopMul?: number;
 }
 const UNIT_MELEE: MeleeScale = { damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1 };
 
@@ -199,7 +201,12 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
     damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
   }
 
-  if (landed) wearActiveWeapon();
+  if (landed) {
+    wearActiveWeapon();
+    // The move's own freeze on top of damageZombie's base beat — a heavy or a
+    // wall special CRUNCHES where a light taps (per-attack hitstop dial).
+    state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT * (scale.hitstopMul ?? 1));
+  }
 
   return landed;
 }
