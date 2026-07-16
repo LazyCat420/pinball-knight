@@ -145,18 +145,38 @@ export function wearActiveWeapon(): void {
 }
 
 /**
- * The player's melee swing lands, with whatever is in hand: range, arc and
- * damage come from the equipped weapon, and a swing that CONNECTS costs a
- * point of durability. Weapons break on use — the swing that breaks the chair
- * still hits with the chair.
+ * How a specific melee MOVE scales the equipped weapon on connect. A plain light
+ * swing passes 1× everything; a heavy or combo finisher widens the arc, extends
+ * reach, hits harder and shoves further. Defaults keep the old single-swing
+ * behaviour for any caller that doesn't pass one.
  */
-export function resolvePlayerAttack(): boolean {
+export interface MeleeScale {
+  damageMul: number;
+  arcMul: number;
+  rangeMul: number;
+  knockbackMul: number;
+}
+const UNIT_MELEE: MeleeScale = { damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1 };
+
+/**
+ * The player's melee swing lands, with whatever is in hand: range, arc and
+ * damage come from the equipped weapon SCALED by the current move (light /
+ * combo finisher / heavy). A swing that CONNECTS costs a point of durability.
+ * Weapons break on use — the swing that breaks the chair still hits with it.
+ *
+ * arcMul WIDENS the arc: since the gate is `dot >= arcCos`, a wider arc means a
+ * SMALLER cosine threshold, so we lerp arcCos toward -1 (full circle) by arcMul.
+ */
+export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g) return false;
 
   const w = WEAPONS[activeWeapon().id];
   const [fx, fz] = FACING_VEC[p.facing];
+  const range = w.range * scale.rangeMul;
+  // Widen the arc for heavy/finisher: pull the cosine gate toward -1.
+  const arcCos = w.arcCos - (w.arcCos - -1) * Math.min(1, Math.max(0, scale.arcMul - 1));
   let landed = false;
 
   for (const z of state.zombies) {
@@ -164,18 +184,18 @@ export function resolvePlayerAttack(): boolean {
     const dx = z.x - p.x;
     const dz = z.z - p.z;
     const d = Math.hypot(dx, dz);
-    if (d > w.range) continue;
+    if (d > range) continue;
     // At point-blank range the arc test divides by ~0 — inside the bodies'
     // combined radius it's a hit no matter the angle.
     if (d > PLAYER_R + ZOMBIE_R) {
       const dot = (dx / d) * fx + (dz / d) * fz;
-      if (dot < w.arcCos) continue;
+      if (dot < arcCos) continue;
     }
 
     landed = true;
-    // Knockback along the swing, wall-aware. Heavier weapons shove harder.
-    const dmg = playerDamage(w.damage);
-    const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35);
+    // Knockback along the swing, wall-aware. Heavier weapons + heavier moves shove harder.
+    const dmg = playerDamage(w.damage * scale.damageMul);
+    const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35) * scale.knockbackMul;
     damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
   }
 

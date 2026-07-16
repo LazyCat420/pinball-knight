@@ -40,7 +40,7 @@ import { generateMaze, thickenWalls, mulberry32, tileCenter, worldToTile, at, is
 import { decorateMaze } from "./maze/decorate";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
-import { updatePlayer } from "./entities/player";
+import { updatePlayer, resetPlayerMotion, debugCurSpeed } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
 import { syncActorMesh, setBossDefeatedHandler } from "./entities/combat";
@@ -91,6 +91,7 @@ import {
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
+  STAMINA_MAX,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -106,6 +107,9 @@ let sun: THREE.DirectionalLight | null = null;
 let lamp: THREE.PointLight | null = null;
 let ambient: THREE.AmbientLight | null = null;
 let hemi: THREE.HemisphereLight | null = null;
+
+/** Last stamina fill (in 20ths) the HUD painted — repaint only when it changes. */
+let staminaBlocksShown = -1;
 
 /**
  * Named depth BIOMES — descending should feel like passing through distinct
@@ -297,6 +301,15 @@ export function launchDungeonGame(onExit?: () => void): void {
     // confirm the arrow flew toward the aim point, not the movement facing.
     (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>
       state.projectiles.map((pr) => ({ kind: pr.kind, vx: pr.vx, vz: pr.vz }));
+    // Dev: player movement/combat telemetry (stamina, roll, i-frames, position)
+    // so a headless test can confirm sprint drains, a dodge rolls + grants
+    // i-frames, and the roll covers ground.
+    (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
+      const p = state.player;
+      if (!p) return null;
+      const ax = state.input?.axis() ?? { x: 0, z: 0 };
+      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills };
+    };
   }
 
   // Hand-made pixel art overrides the procedural painters the moment it
@@ -462,6 +475,10 @@ function startLevel(level: number): void {
   state.player.anim.setFacing("S");
   state.player.anim.play("idle", { force: true });
   syncActorMesh(state.player);
+  // Clear movement smoothing + HUD stamina cache so a new/re-entered level
+  // doesn't inherit sprint momentum or a stale stamina-bar block count.
+  resetPlayerMotion();
+  staminaBlocksShown = -1;
 
   // ── Horde: a shambling baseline mixed with the special families as depth
   // grows — spiders (fast), brutes (tanks) and spitters (ranged). Each spawn
@@ -857,6 +874,16 @@ function simulate(dt: number): void {
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
+  }
+  // Stamina drains/refills continuously; repaint the HUD only when the bar's
+  // 20-block fill actually changes (same block-boundary trick as the buffs
+  // above), so a smooth drain doesn't rebuild the HUD innerHTML every frame.
+  {
+    const blocks = Math.round((p.stamina / STAMINA_MAX) * 20);
+    if (blocks !== staminaBlocksShown) {
+      staminaBlocksShown = blocks;
+      state.hudDirty = true;
+    }
   }
 
   // In RAMPAGE the FPS controller owns the player (look + move + hitscan) in

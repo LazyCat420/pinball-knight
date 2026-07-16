@@ -132,6 +132,22 @@ function celFilters(tex: THREE.CanvasTexture): void {
 const PAL_RGB = PALETTE_HEX.map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
 
 /**
+ * 4×4 ordered (Bayer) dither matrix, centred to −0.5..+0.5. Nudging each pixel's
+ * colour by a per-position bias BEFORE the palette snap makes a smooth tonal
+ * ramp break into a stippled checker between two palette steps — the classic
+ * pixel-art tone blend — instead of a hard band or a smeared gradient. This is
+ * the biggest lever against the "flash-game airbrush" read on large surfaces.
+ */
+const BAYER4 = [
+  [0, 8, 2, 10],
+  [12, 4, 14, 6],
+  [3, 11, 1, 9],
+  [15, 7, 13, 5],
+].map((row) => row.map((v) => (v / 16 - 0.5)));
+/** Dither amplitude in 0-255 colour units — about one small palette step. */
+const DITHER_AMP = 26;
+
+/**
  * THE PIXELATE PASS (2026-07-14 Castlevania round): actor cels are painted as
  * smooth 128px vector art, then crushed to a SPRITE_PIXEL_GRID pixel grid —
  * area-downscale, hard alpha cutout, snap every pixel to the 32-colour
@@ -150,27 +166,39 @@ function pixelateCanvas(src: HTMLCanvasElement): void {
   sctx.drawImage(src, 0, 0, g, g);
   const im = sctx.getImageData(0, 0, g, g);
   const d = im.data;
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < 110) {
-      d[i + 3] = 0;
-      continue;
-    }
-    let best = 0;
-    let bestDist = Infinity;
-    for (let p = 0; p < PAL_RGB.length; p++) {
-      const dr = (d[i] - PAL_RGB[p][0]) * 0.3;
-      const dg = (d[i + 1] - PAL_RGB[p][1]) * 0.59;
-      const db = (d[i + 2] - PAL_RGB[p][2]) * 0.11;
-      const dist = dr * dr + dg * dg + db * db;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = p;
+  for (let py = 0; py < g; py++) {
+    for (let px = 0; px < g; px++) {
+      const i = (py * g + px) * 4;
+      // A HARD alpha edge (crisp silhouette, not a soft anti-aliased fringe) is
+      // half the "authored pixel art" read — raise the cutout so the outline
+      // lands on whole pixels instead of a smeared halo.
+      if (d[i + 3] < 128) {
+        d[i + 3] = 0;
+        continue;
       }
+      // Ordered-dither bias for this pixel position, applied before the snap so
+      // ramps stipple between two palette steps instead of banding/smearing.
+      const bias = BAYER4[py & 3][px & 3] * DITHER_AMP;
+      const cr = d[i] + bias;
+      const cg = d[i + 1] + bias;
+      const cb = d[i + 2] + bias;
+      let best = 0;
+      let bestDist = Infinity;
+      for (let p = 0; p < PAL_RGB.length; p++) {
+        const dr = (cr - PAL_RGB[p][0]) * 0.3;
+        const dg = (cg - PAL_RGB[p][1]) * 0.59;
+        const db = (cb - PAL_RGB[p][2]) * 0.11;
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = p;
+        }
+      }
+      d[i] = PAL_RGB[best][0];
+      d[i + 1] = PAL_RGB[best][1];
+      d[i + 2] = PAL_RGB[best][2];
+      d[i + 3] = 255;
     }
-    d[i] = PAL_RGB[best][0];
-    d[i + 1] = PAL_RGB[best][1];
-    d[i + 2] = PAL_RGB[best][2];
-    d[i + 3] = 255;
   }
   sctx.putImageData(im, 0, 0);
 
@@ -206,7 +234,10 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   const clips = new Map<string, number[]>();
 
   const dirs: Dir[] = ["S", "N", "E"];
-  const clipNames: ClipName[] = ["idle", "walk", "attack", "death"];
+  // Every clip an actor might author. `roll` is knight-only; actors that don't
+  // define a clip are skipped (the `if (!list) continue` below), so listing
+  // them all here is harmless and keeps new clips from silently vanishing.
+  const clipNames: ClipName[] = ["idle", "walk", "attack", "death", "roll"];
 
   for (const dir of dirs) {
     for (const clip of clipNames) {

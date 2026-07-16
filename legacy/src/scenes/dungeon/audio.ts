@@ -86,6 +86,22 @@ export function sfxSwing(): void {
   beep(c, { type: "square", f0: 330, f1: 140, dur: 0.08, vol: 0.05 });
 }
 
+/** Dodge-roll — a low, quick body whoosh: filtered noise sweeping down. */
+export function sfxRoll(): void {
+  const c = ctx();
+  if (!c) return;
+  burst(c, 0.16, 0.11, "lowpass", 700);
+  beep(c, { type: "sine", f0: 260, f1: 90, dur: 0.14, vol: 0.05 });
+}
+
+/** Heavy swing — a slower, weightier whoosh than a light swing. */
+export function sfxHeavy(): void {
+  const c = ctx();
+  if (!c) return;
+  burst(c, 0.16, 0.16, "bandpass", 1100);
+  beep(c, { type: "square", f0: 260, f1: 90, dur: 0.14, vol: 0.08 });
+}
+
 /** Gunshot — a sharp crack with a low thump under it. */
 export function sfxGun(): void {
   const c = ctx();

@@ -50,7 +50,7 @@ import {
 
 export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
 export type Dir = "S" | "N" | "E";
-export type ClipName = "idle" | "walk" | "attack" | "death";
+export type ClipName = "idle" | "walk" | "attack" | "death" | "roll";
 export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
 
 const PX = SPRITE_PX; // 128 — all coordinates below live in this box
@@ -639,6 +639,31 @@ function knightTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
   return [[c[0] - sw, c[1] - 4], [c[0] + sw, c[1] - 4], [c[0] + sw - 2, c[1] + 14], [sk.hipR[0] + 2, hy], [sk.hipL[0] - 2, hy], [c[0] - sw + 2, c[1] + 14]];
 }
 
+/**
+ * DODGE-ROLL frame: reuse the standing (idle) body but tuck it into a ball and
+ * spin it about the feet, the same trick the death collapse uses (rotate a
+ * finished figure around GROUND). `t` 0→1 across the roll: the knight ducks,
+ * spins a full turn, and pops back up — so the 4-frame clip reads as a
+ * forward tumble. Direction of spin follows facing so a westward roll turns
+ * the other way from an eastward one.
+ */
+function knightRollFrame(dir: Dir, t: number, weapon: WeaponId): FramePaint {
+  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 4, stride: 0, roll: 0.3 }, weapon);
+  const spinDir = dir === "N" ? -1 : 1; // N faces away → tumble reads reversed
+  const angle = spinDir * t * Math.PI * 2; // one full rotation across the roll
+  const tuck = 0.72 + 0.12 * Math.sin(t * Math.PI); // squash to a ball mid-roll
+  return (ctx) => {
+    ctx.save();
+    // pivot about the feet line, tuck (scale down), then spin
+    ctx.translate(CX, GROUND - 22);
+    ctx.rotate(angle);
+    ctx.scale(tuck, tuck);
+    ctx.translate(-CX, -(GROUND - 22));
+    base(ctx);
+    ctx.restore();
+  };
+}
+
 /** Build the full painter set for the knight holding `weapon`. */
 export function makeKnightPaints(weapon: WeaponId): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
@@ -693,6 +718,16 @@ export function makeKnightPaints(weapon: WeaponId): ActorPaints {
           // recover — ease back toward the carry rest
           F(dir, { bob: 0.3, stride: 0, plumeLag: 0.3 }),
         ],
+
+    // ── ROLL: a 4-frame forward tumble — duck, spin a full turn about the
+    // feet, pop back up. i-frames cover the front half (see player.ts); the
+    // spin is fastest through the middle two frames where the tuck is tightest. ──
+    roll: [
+      knightRollFrame(dir, 0.12, weapon),
+      knightRollFrame(dir, 0.4, weapon),
+      knightRollFrame(dir, 0.68, weapon),
+      knightRollFrame(dir, 0.92, weapon),
+    ],
   });
 
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };

@@ -59,6 +59,22 @@ function facingFromWorld(wx: number, wz: number, fallback: Facing): Facing {
   return facingFromVelocity(s.x, s.z, fallback);
 }
 
+// Attack-telegraph colours: melee bites flash hot red-orange (the "it's about to
+// bite" tell), the spitter's ranged gob flashes acid-green to match its glob.
+const TELL_MELEE = 0xff7a2a;
+const TELL_RANGED = 0x8fc46b;
+/** Blend white (no tint) → a warning colour by k∈0..1; k grows across the windup. */
+function lerpTint(target: number, k: number): number {
+  const tr = (target >> 16) & 0xff;
+  const tg = (target >> 8) & 0xff;
+  const tb = target & 0xff;
+  // start from white (0xffffff = unmodified) so the pulse eases IN from neutral
+  const r = Math.round(255 + (tr - 255) * k);
+  const gg = Math.round(255 + (tg - 255) * k);
+  const b = Math.round(255 + (tb - 255) * k);
+  return (r << 16) | (gg << 8) | b;
+}
+
 /** Straight-line pursuit inside this range; flow field beyond it. */
 const DIRECT_STEER_RANGE = 1.6;
 
@@ -114,9 +130,23 @@ export function updateZombies(dt: number): void {
       z.windupT += dt;
       z.anim.setFacing(facingFromWorld(pdx, pdz, "S"));
       z.anim.play(ranged ? "attack" : "idle"); // spitter shows its rear-back clip
+
+      // TELEGRAPH: pulse the body toward its attack colour across the windup, so
+      // the bite is READABLE and a well-timed dodge-roll's i-frames can pass
+      // through it (the "roll into the attack" skill). The pulse ramps up as the
+      // strike nears — a brute's slow haymaker glows longest, a spider's snappy
+      // bite barely flickers, matching each family's windup length. A live hit
+      // flash (flashT) owns the tint, so don't fight it.
+      if (z.flashT <= 0) {
+        const k = Math.min(1, z.windupT / Math.max(windup, 1e-4));
+        const warn = ranged ? TELL_RANGED : TELL_MELEE;
+        z.sprite.setTint(lerpTint(warn, k));
+      }
+
       if (z.windupT >= windup) {
         z.mode = "chase";
         z.cooldown = attackCooldown;
+        if (z.flashT <= 0) z.sprite.setTint(null); // drop the telegraph on release
         if (p.hp > 0) {
           if (ranged) {
             if (pdist > 1e-4) spitGlob(z.x, z.z, pdx / pdist, pdz / pdist);
@@ -127,6 +157,8 @@ export function updateZombies(dt: number): void {
       }
       continue;
     }
+    // Left windup without releasing (player fled out of range): clear any tell.
+    if (z.flashT <= 0) z.sprite.setTint(null);
 
     z.mode = "chase";
     // Melee bites in contact range; a spitter fires from anywhere in its long

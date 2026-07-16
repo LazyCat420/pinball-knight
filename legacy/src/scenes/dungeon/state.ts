@@ -10,7 +10,7 @@ import type { Grid, TilePos } from "./maze/generator";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
-import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
+import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, STAMINA_MAX } from "./constants";
 import { freshWeapon } from "./items";
 
 export interface Actor {
@@ -36,6 +36,32 @@ export interface Player extends Actor {
   hasteT: number;
   /** Seconds left on the shield buff (invulnerable). 0 = inactive. */
   shieldT: number;
+
+  // ── Stamina (shared by sprint + dodge) ──
+  /** Current stamina, 0..STAMINA_MAX. Sprinting drains it; dodge/heavy spend it. */
+  stamina: number;
+  /** Seconds until stamina regen resumes — set on every spend (Souls-style pause). */
+  staminaRegenDelay: number;
+
+  // ── Dodge-roll ──
+  /** -1 when not rolling, else seconds into the current roll (incl. recovery). */
+  rollT: number;
+  /** WORLD direction locked in at the start of the roll (input is ignored mid-roll). */
+  rollDirX: number;
+  rollDirZ: number;
+
+  // ── Melee combo/heavy state ──
+  /** Which move the current/next swing is: 0 = light-1, 1 = light-2, 2 = finisher. */
+  comboStep: number;
+  /** Seconds left in the window to chain the next combo step; 0 = closed. */
+  comboWindowT: number;
+  /** Seconds a heavy has been charging (trigger held); -1 = not charging. */
+  chargeT: number;
+  /** Buffered attack request (seconds left to honour it); 0 = none. */
+  attackBufferT: number;
+  /** The MoveTiming the current swing is running; null when idle. */
+  move: import("./constants").MoveTiming | null;
+
   /** Draws only where a wall covers the knight — you can never lose him. */
   silhouette: { mesh: THREE.Mesh; syncMap(): void; dispose(): void } | null;
 }
@@ -241,6 +267,16 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rageT: 0,
     hasteT: 0,
     shieldT: 0,
+    stamina: STAMINA_MAX,
+    staminaRegenDelay: 0,
+    rollT: -1,
+    rollDirX: 0,
+    rollDirZ: 0,
+    comboStep: 0,
+    comboWindowT: 0,
+    chargeT: -1,
+    attackBufferT: 0,
+    move: null,
   };
 }
 

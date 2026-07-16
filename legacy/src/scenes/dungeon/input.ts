@@ -15,6 +15,19 @@ export interface InputHandle {
    * as the cooldown allows.
    */
   consumeAttack(): boolean;
+  /** True while the attack key/button is HELD (drives heavy-attack charging). */
+  attackHeldNow(): boolean;
+  /**
+   * True once if the attack was freshly PRESSED since the last call — a discrete
+   * tap edge only, NOT the held state (unlike consumeAttack, which also returns
+   * true while held so ranged auto-fires). Melee charge logic needs the edge so
+   * a hold charges instead of spamming light swings.
+   */
+  consumeAttackTap(): boolean;
+  /** True while a movement modifier (Shift) is held — sprint. */
+  sprintHeld(): boolean;
+  /** True once if a dodge (Space) was tapped since the last call — a queued tap. */
+  consumeDodge(): boolean;
   /**
    * Keyboard turn axis for the FPS ultimate: -1 (turn left) .. +1 (turn right),
    * from Q/E and the left/right arrows. Lets rampage be driven with the keyboard
@@ -46,7 +59,10 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   arrowright: [1, 0],
 };
 
-const ATTACK_KEYS = new Set([" ", "j"]);
+// Attack = J or left-click. Space is now the DODGE key (freed from attack), so
+// the roll gets its own dedicated tap and attack stays on J / mouse.
+const ATTACK_KEYS = new Set(["j"]);
+const DODGE_KEYS = new Set([" "]);
 // FPS look-turn keys: q/e plus the left/right arrows (left = turn left).
 const TURN_LEFT = new Set(["q", "arrowleft"]);
 const TURN_RIGHT = new Set(["e", "arrowright"]);
@@ -55,6 +71,8 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   const down = new Set<string>();
   let attackQueued = false;
   let attackHeld = false;
+  let dodgeQueued = false;
+  let sprint = false;
   let mouseDx = 0;
   let mouseDy = 0;
   let cursorX = -1;
@@ -63,18 +81,21 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
 
   const onKeyDown = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
-    if (MOVE_KEYS[key] || ATTACK_KEYS.has(key) || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) e.preventDefault();
+    if (MOVE_KEYS[key] || ATTACK_KEYS.has(key) || DODGE_KEYS.has(key) || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) e.preventDefault();
     if (MOVE_KEYS[key] || TURN_LEFT.has(key) || TURN_RIGHT.has(key)) down.add(key);
     if (ATTACK_KEYS.has(key)) {
       if (!e.repeat) attackQueued = true;
       attackHeld = true;
     }
+    if (DODGE_KEYS.has(key) && !e.repeat) dodgeQueued = true;
+    if (e.key === "Shift") sprint = true;
   };
 
   const onKeyUp = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
     down.delete(key);
     if (ATTACK_KEYS.has(key)) attackHeld = false;
+    if (e.key === "Shift") sprint = false;
   };
 
   const onMouseDown = (e: MouseEvent) => {
@@ -105,6 +126,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   const onBlur = () => {
     down.clear();
     attackHeld = false;
+    sprint = false;
   };
 
   window.addEventListener("keydown", onKeyDown);
@@ -136,6 +158,22 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     consumeAttack() {
       const want = attackQueued || attackHeld;
       attackQueued = false;
+      return want;
+    },
+    consumeAttackTap() {
+      const want = attackQueued;
+      attackQueued = false;
+      return want;
+    },
+    attackHeldNow() {
+      return attackHeld;
+    },
+    sprintHeld() {
+      return sprint;
+    },
+    consumeDodge() {
+      const want = dodgeQueued;
+      dodgeQueued = false;
       return want;
     },
     turnAxis() {

@@ -170,6 +170,8 @@ export const FPS_IDLE = 3;
 export const FPS_WALK = 8;
 export const FPS_ATTACK = 12;
 export const FPS_DEATH = 6;
+/** Roll clip: 4 tuck/spin frames across ~ROLL_DURATION (0.42s) → ~10fps. */
+export const FPS_ROLL = 10;
 
 // ── World ───────────────────────────────────────────────────────
 export const TILE = 1;
@@ -209,6 +211,78 @@ export const PLAYER_R = 0.3; // collision circle radius
 export const PLAYER_MAX_HP = 6;
 /** After taking a hit you can't be hit again for this long. */
 export const PLAYER_IFRAMES = 0.9;
+
+// ── Stamina (the Souls/PoE resource: sprint + dodge both draw on it) ──
+/**
+ * One shared bar governs sprinting AND dodge-rolling, so you can't infinitely
+ * kite a horde — the classic Dark-Souls / Path-of-Exile tension. Regen pauses
+ * for a beat after any spend (so a panic-dodge doesn't instantly refund) then
+ * pours back. Numbers tuned so: a full bar sprints ~6s, or buys ~3 dodges, and
+ * refills from empty in ~2.4s of standing still.
+ */
+export const STAMINA_MAX = 100;
+export const STAMINA_REGEN = 42; // per second, once the delay has elapsed
+export const STAMINA_REGEN_DELAY = 0.5; // seconds of no-spend before regen resumes
+export const SPRINT_DRAIN = 16; // per second while sprinting
+export const DODGE_COST = 28; // per dodge-roll
+export const HEAVY_COST = 22; // per heavy swing (light swings are free)
+
+// ── Sprint (hold Shift) ─────────────────────────────────────────
+export const SPRINT_SPEED_MULT = 1.5; // top speed multiplier while sprinting
+/**
+ * Movement was instant-velocity (press = full speed that frame). A light
+ * accel/friction ramp makes walk↔sprint read as a gear-change, not a teleport,
+ * and gives the sprint a satisfying ~0.15s spool-up. Still feeds moveCircle.
+ */
+export const MOVE_ACCEL = 22; // units/sec² toward the desired velocity
+export const MOVE_FRICTION = 26; // units/sec² decel when no input
+/** Camera leads a little further ahead while sprinting (no ortho FOV trick available). */
+export const SPRINT_DEADZONE_MULT = 1.4;
+
+// ── Dodge-roll (tap Space) ──────────────────────────────────────
+/**
+ * The centrepiece defensive move. Gungeon's roll is ~0.7s with i-frames on the
+ * first ~50%; scaled tighter for a faster crawler. The roll COMMITS a direction
+ * at the start (input is ignored mid-roll) and i-frames cover only the first
+ * ~52% — the back half still moves you but you're hittable, so timing AND aim
+ * matter ("roll INTO the attack" to pass through it; roll away and its hitbox
+ * can catch you as your i-frames end). Reuses the existing p.iframes guard so a
+ * roll and a damage-hit never grant TWO overlapping invuln windows.
+ */
+export const ROLL_DURATION = 0.42; // seconds of roll body
+export const ROLL_IFRAMES = 0.22; // invulnerable window (~52% of the roll)
+export const ROLL_DISTANCE = 2.6; // tiles covered, eased fast→slow
+export const ROLL_RECOVERY = 0.1; // rooted, vulnerable whiff after the roll body
+
+// ── Attack timing model (windup → active → recovery), per melee move ──
+/**
+ * Every swing is three phases. Light is fast and free; the combo finisher and
+ * the heavy get progressively longer, more telegraphed windups (the "windup
+ * scales with weight" readability rule) and hit harder. Times are seconds;
+ * the animator plays the matching clip. Per-weapon damage/range/arc still come
+ * from items.ts — these are the shared timing anchors.
+ */
+export interface MoveTiming {
+  windup: number; // before the hitbox exists (the tell)
+  active: number; // hitbox live
+  recovery: number; // rooted after, until you can act
+  damageMul: number; // scales the equipped weapon's base damage
+  arcMul: number; // widens/narrows the equipped weapon's arc
+  rangeMul: number; // reach relative to the weapon
+  knockbackMul: number;
+  staminaCost: number;
+}
+export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0 };
+export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0 };
+export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, staminaCost: 0 };
+export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, staminaCost: HEAVY_COST };
+
+/** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
+export const COMBO_WINDOW = 0.34;
+/** A charge held past this releases the heavy at max power. */
+export const CHARGE_TIME = 0.6;
+/** Inputs landed this early still fire (action-game buffering courtesy). */
+export const INPUT_BUFFER = 0.13;
 
 // The attack is a short arc in front of the facing direction. The active window
 // is tied to the 3-frame 12fps attack clip so the hitbox agrees with the art:

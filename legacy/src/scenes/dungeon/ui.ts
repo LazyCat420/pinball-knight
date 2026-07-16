@@ -5,7 +5,7 @@
  * quantized. Styled to match the palette so they don't clash with the art.
  */
 import { state, WEAPON_SLOTS } from "./state";
-import { PLAYER_MAX_HP } from "./constants";
+import { PLAYER_MAX_HP, STAMINA_MAX } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
@@ -227,6 +227,16 @@ export function updateHUD(el: HTMLDivElement): void {
     `<span style="color:#d95763">${"♥".repeat(hp)}</span>` +
     `<span style="color:#2b303b">${"♥".repeat(Math.max(0, PLAYER_MAX_HP - hp))}</span>`;
 
+  // Stamina bar (sprint + dodge resource) — a thin green rail under the hearts,
+  // dimmed/amber when nearly empty so a "can't dodge" state reads at a glance.
+  const stam = Math.max(0, Math.min(STAMINA_MAX, state.player?.stamina ?? STAMINA_MAX));
+  const stamPct = (stam / STAMINA_MAX) * 100;
+  const stamColor = stamPct < 30 ? "#d97b29" : "#8fc46b";
+  const stamRow = `
+    <div style="height:5px;margin-top:3px;background:#2b303b;border:1px solid #454f5e">
+      <div style="height:100%;width:${stamPct}%;background:${stamColor};transition:width 0.08s linear"></div>
+    </div>`;
+
   // Two hand slots — the active one is arrowed and bright, ranged weapons
   // show an ammo count instead of a wear meter.
   const weaponRows = Array.from({ length: WEAPON_SLOTS }, (_, slot) => {
@@ -296,6 +306,7 @@ export function updateHUD(el: HTMLDivElement): void {
   const body = (el.querySelector("#dungeon-hud-body") as HTMLDivElement) ?? el;
   body.innerHTML = `
     <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
+    ${stamRow}
     <div style="margin-top:3px">${weaponRows}</div>
     ${rule}
     ${gearRows}
@@ -429,7 +440,7 @@ export function showControlsHint(container: HTMLElement): void {
     color: #6b7688; text-shadow: 1px 1px 0 #0b0d12;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SPACE ATTACK · TAB SWAP · R RAMPAGE (WHEN CHARGED) · WALK OVER ITEMS · FIND THE STAIRS · ESC LEAVE";
+  el.textContent = "WASD MOVE · SHIFT SPRINT · SPACE DODGE · J/CLICK ATTACK (HOLD=HEAVY) · TAB SWAP · R RAMPAGE · ESC LEAVE";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";
