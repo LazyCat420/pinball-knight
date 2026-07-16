@@ -21,10 +21,15 @@ import {
   SPITTER_GLOB_SPEED,
   SPITTER_FIRE_RANGE,
   SPITTER_DAMAGE,
+  WEB_GLOB_SPEED,
+  GOLEM_SHARDS,
+  GOLEM_SHARD_SPEED,
+  GOLEM_SHARD_DAMAGE,
+  GOLEM_SHARD_LIFE,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
-import { damageZombie, playerDamage, hitPlayerRanged } from "./combat";
+import { damageZombie, playerDamage, hitPlayerRanged, webPlayer } from "./combat";
 import type { WeaponDef } from "../items";
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
@@ -61,6 +66,20 @@ function globAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial
   return { geo: _globGeo, mat: _globMat };
 }
 
+let _webMat: THREE.MeshBasicMaterial | null = null;
+let _shardGeo: THREE.BoxGeometry | null = null;
+let _shardMat: THREE.MeshBasicMaterial | null = null;
+function webAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _globGeo ??= new THREE.SphereGeometry(0.14, 8, 6);
+  _webMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[22] }); // pale silk
+  return { geo: _globGeo, mat: _webMat };
+}
+function shardAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _shardGeo ??= new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  _shardMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[20] }); // stone chip
+  return { geo: _shardGeo, mat: _shardMat };
+}
+
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
   _bulletMat?.dispose();
@@ -69,7 +88,11 @@ export function disposeProjectileAssets(): void {
   _flameGeo?.dispose();
   _globGeo?.dispose();
   _globMat?.dispose();
+  _webMat?.dispose();
+  _shardGeo?.dispose();
+  _shardMat?.dispose();
   _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
+  _webMat = _shardGeo = _shardMat = null;
 }
 
 /**
@@ -97,6 +120,61 @@ export function spitGlob(x: number, z: number, dx: number, dz: number): void {
     mesh,
     dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
   });
+}
+
+/**
+ * The webspinner's silk shot: flies like a glob, but landing WEBS the player
+ * (a slow, no damage — see combat.webPlayer) instead of hurting them.
+ */
+export function spitWeb(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = webAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "web",
+    x: sx,
+    z: sz,
+    vx: dx * WEB_GLOB_SPEED,
+    vz: dz * WEB_GLOB_SPEED,
+    life: SPITTER_FIRE_RANGE / WEB_GLOB_SPEED,
+    maxLife: SPITTER_FIRE_RANGE / WEB_GLOB_SPEED,
+    damage: 0,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/**
+ * A shattered BRICK GOLEM's shard spray: stone chips that RICOCHET off walls
+ * until their fuse runs out, hurting any zombie they clip — the golem's death
+ * is a room-clearing event if you detonate it in a crowd.
+ */
+export function golemShards(x: number, z: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = shardAssets();
+  for (let n = 0; n < GOLEM_SHARDS; n++) {
+    const a = (n / GOLEM_SHARDS) * Math.PI * 2 + Math.random() * 0.5;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, PROJECTILE_Y, z);
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "shard",
+      x,
+      z,
+      vx: Math.cos(a) * GOLEM_SHARD_SPEED,
+      vz: Math.sin(a) * GOLEM_SHARD_SPEED,
+      life: GOLEM_SHARD_LIFE,
+      maxLife: GOLEM_SHARD_LIFE,
+      damage: GOLEM_SHARD_DAMAGE,
+      mesh,
+      dispose: () => {},
+    });
+  }
 }
 
 /** Remove a projectile from the world (mesh + list entry by index). */
@@ -183,31 +261,51 @@ export function updateProjectiles(dt: number): void {
       continue;
     }
 
-    pr.x += pr.vx * dt;
-    pr.z += pr.vz * dt;
+    // ── Shards RICOCHET: resolve each axis against the grid and reflect the
+    // blocked component (they die by fuse, not by wall). Everything else
+    // integrates straight and dies where it lands. ──
+    if (pr.kind === "shard") {
+      const nx = pr.x + pr.vx * dt;
+      const nz = pr.z + pr.vz * dt;
+      const tx = worldToTile(g, nx, pr.z);
+      if (!isWalkable(g, tx.i, tx.j)) pr.vx = -pr.vx;
+      else pr.x = nx;
+      const tz = worldToTile(g, pr.x, nz);
+      if (!isWalkable(g, tz.i, tz.j)) pr.vz = -pr.vz;
+      else pr.z = nz;
+      pr.mesh.rotation.y += dt * 12; // tumbling chip
+    } else {
+      pr.x += pr.vx * dt;
+      pr.z += pr.vz * dt;
 
-    // ── Walls ──
-    const t = worldToTile(g, pr.x, pr.z);
-    if (!isWalkable(g, t.i, t.j)) {
-      despawn(i);
-      continue;
+      // ── Walls ──
+      const t = worldToTile(g, pr.x, pr.z);
+      if (!isWalkable(g, t.i, t.j)) {
+        despawn(i);
+        continue;
+      }
     }
 
-    // ── Hostile globs hit the PLAYER, not zombies ──
+    // ── Hostile shots hit the PLAYER, not zombies (acid hurts, silk webs) ──
     if (pr.hostile) {
       const p = state.player;
       if (p && p.hp > 0) {
         const dx = p.x - pr.x;
         const dz = p.z - pr.z;
         if (dx * dx + dz * dz <= (PLAYER_R + HIT_R) * (PLAYER_R + HIT_R)) {
-          hitPlayerRanged(pr.damage, pr.x, pr.z);
-          state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
+          if (pr.kind === "web") {
+            if (p.iframes <= 0) webPlayer();
+            state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
+          } else {
+            hitPlayerRanged(pr.damage, pr.x, pr.z);
+            state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
+          }
           despawn(i);
           continue;
         }
       }
       pr.mesh.position.set(pr.x, PROJECTILE_Y, pr.z);
-      continue; // globs skip the zombie loop below
+      continue; // hostile shots skip the zombie loop below
     }
 
     // ── Zombies ──

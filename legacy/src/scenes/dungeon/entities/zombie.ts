@@ -49,18 +49,44 @@ import {
   REAPER_ATTACK_COOLDOWN,
   REAPER_SPEED_RAMP,
   REAPER_SPEED_MAX,
-  REAPER_TINT,
   AGGRO_TILES,
   SEPARATION_R,
+  GOBLIN_R,
+  GOBLIN_KICK_SPEED,
+  GOBLIN_KICK_COOLDOWN,
+  PIN_R,
+  PIN_SLIDE_DECAY,
+  PIN_CHAIN_SPEED,
+  GOLEM_R,
+  GOLEM_CONTACT_RANGE,
+  GOLEM_ATTACK_WINDUP,
+  GOLEM_ATTACK_COOLDOWN,
+  CHOMPER_R,
+  CHOMPER_CONTACT_RANGE,
+  CHOMPER_ATTACK_WINDUP,
+  CHOMPER_ATTACK_COOLDOWN,
+  MAGNET_R,
+  MAGNET_CONTACT_RANGE,
+  MAGNET_ATTACK_WINDUP,
+  MAGNET_ATTACK_COOLDOWN,
+  MAGNET_PULL_RANGE,
+  MAGNET_PULL,
+  MAGNET_BREAK_SPEED,
+  WEBSPIN_R,
+  GHOST_VULN_TIME,
+  PINBALL_MAX_SPEED,
+  PINBALL_COMBO_WINDOW,
+  PLAYER_R,
+  WALL_CONTACT_PROBE,
 } from "../constants";
-import { moveCircle } from "../collision";
+import { moveCircle, wallContact } from "../collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
 import { flowStep } from "./ai";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { worldDirToScreen } from "../camera";
-import { hitPlayer, syncActorMesh, updateFlash } from "./combat";
-import { spitGlob } from "./projectiles";
-import { sfxGroan } from "../audio";
+import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
+import { spitGlob, spitWeb } from "./projectiles";
+import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 interface EnemyStats {
@@ -79,6 +105,14 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   bat: { bodyR: BAT_R, contactRange: BAT_CONTACT_RANGE, windup: BAT_ATTACK_WINDUP, cooldown: BAT_ATTACK_COOLDOWN, ranged: false },
   slime: { bodyR: SLIME_R, contactRange: SLIME_CONTACT_RANGE, windup: SLIME_ATTACK_WINDUP, cooldown: SLIME_ATTACK_COOLDOWN, ranged: false },
   reaper: { bodyR: GHOST_R, contactRange: REAPER_CONTACT_RANGE, windup: REAPER_ATTACK_WINDUP, cooldown: REAPER_ATTACK_COOLDOWN, ranged: false },
+  // Wave-B roster (PINBALL_ROADMAP.md). Goblin/pin never bite (their contact
+  // behaviour is bespoke below); their windup numbers are unused placeholders.
+  goblin: { bodyR: GOBLIN_R, contactRange: 0.6, windup: 0.2, cooldown: GOBLIN_KICK_COOLDOWN, ranged: false },
+  pin: { bodyR: PIN_R, contactRange: 0, windup: 1, cooldown: 1, ranged: false },
+  golem: { bodyR: GOLEM_R, contactRange: GOLEM_CONTACT_RANGE, windup: GOLEM_ATTACK_WINDUP, cooldown: GOLEM_ATTACK_COOLDOWN, ranged: false },
+  chomper: { bodyR: CHOMPER_R, contactRange: CHOMPER_CONTACT_RANGE, windup: CHOMPER_ATTACK_WINDUP, cooldown: CHOMPER_ATTACK_COOLDOWN, ranged: false },
+  magnet: { bodyR: MAGNET_R, contactRange: MAGNET_CONTACT_RANGE, windup: MAGNET_ATTACK_WINDUP, cooldown: MAGNET_ATTACK_COOLDOWN, ranged: false },
+  webspinner: { bodyR: WEBSPIN_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -119,6 +153,30 @@ export function updateZombies(dt: number): void {
   for (const z of state.zombies) {
     updateFlash(z, dt);
     if (z.mode === "dead") continue; // the death clip plays out; the corpse stays
+
+    // ── FREEZE RAY ── the whole machine holds its breath. Enemies stop
+    // mid-stride, iced blue; timers don't tick, so nobody bites out of a thaw.
+    if (state.freezeT > 0) {
+      if (z.flashT <= 0) z.sprite.setTint(0xbfe8ff);
+      z.anim.play("idle");
+      continue;
+    }
+
+    // ── Ghost materialize window ── ticks down toward immunity.
+    if (z.kind === "ghost") {
+      z.vulnT = Math.max(0, (z.vulnT ?? 0) - dt);
+      // The tell: a materialized (vulnerable) ghost is nearly solid.
+      const mat = z.sprite.mesh.material as { opacity: number };
+      mat.opacity = z.vulnT > 0 || z.mode === "windup" ? 0.92 : 0.55;
+    }
+
+    // ── BOWLING PIN ── never chases, never bites. It stands in formation
+    // until something knocks it: then it SLIDES (velocity set by combat),
+    // chains into pins it hits, and a wall slam finishes it.
+    if (z.kind === "pin") {
+      updatePin(z, dt);
+      continue;
+    }
 
     // Per-family combat feel (bite range, windup, cooldown, body size, whether
     // it attacks at range) comes from the STATS table.
@@ -162,6 +220,48 @@ export function updateZombies(dt: number): void {
     const pdz = p.z - z.z;
     const pdist = Math.hypot(pdx, pdz);
 
+    // ── BUMPER GOBLIN ── it never bites: contact POPS the knight away like a
+    // bumper (combo tick and all), and the goblin recoils the other way. The
+    // annoyance is the point; momentum is the answer.
+    if (z.kind === "goblin") {
+      if (pdist <= GOBLIN_R + PLAYER_R + 0.12 && z.cooldown <= 0 && p.hp > 0) {
+        z.cooldown = GOBLIN_KICK_COOLDOWN;
+        const nx = pdist > 1e-4 ? pdx / pdist : 1;
+        const nz = pdist > 1e-4 ? pdz / pdist : 0;
+        p.momX = nx;
+        p.momZ = nz;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, GOBLIN_KICK_SPEED));
+        p.bounceCombo += 1;
+        p.bounceComboT = PINBALL_COMBO_WINDOW;
+        p.iframes = Math.max(p.iframes, 0.2);
+        // The goblin recoils too — rubber meets rubber.
+        const res = moveCircle(g, z.x, z.z, GOBLIN_R, -nx * 0.5, -nz * 0.5);
+        z.x = res.x;
+        z.z = res.z;
+        state.vfx?.sparks(z.x, 0.4, z.z, nx, nz, 10);
+        state.shakeT = Math.max(state.shakeT, 0.14);
+        sfxGoblin();
+      }
+      // fall through to normal chase steering below (it keeps bouncing after you)
+    }
+
+    // ── MAGNET CRAWLER ── drags the knight in while the field holds. Wall
+    // contact snaps the tether (the map is the counter); real momentum
+    // punches straight through it.
+    if (z.kind === "magnet" && p.hp > 0 && pdist < MAGNET_PULL_RANGE && pdist > 0.4) {
+      const riding = p.momSpeed >= MAGNET_BREAK_SPEED;
+      const grounded = wallContact(g, p.x, p.z, PLAYER_R, WALL_CONTACT_PROBE) !== null;
+      if (!riding && !grounded && p.rideT < 0) {
+        const k = 1 - pdist / MAGNET_PULL_RANGE; // stronger up close
+        const pull = MAGNET_PULL * k * dt;
+        // pdx points magnet→player, so the drag on the player is along -pdx.
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, (-pdx / pdist) * pull, (-pdz / pdist) * pull);
+        p.x = res.x;
+        p.z = res.z;
+        if (Math.random() < 6 * dt) state.vfx?.sparks(p.x - (pdx / pdist) * 0.4, 0.35, p.z - (pdz / pdist) * 0.4, -pdx, -pdz, 2);
+      }
+    }
+
     // ── Attack windup: rooted, facing you. A melee kind bites when the windup
     // completes; a spitter (ranged) launches an acid glob instead. ──
     if (z.mode === "windup") {
@@ -184,10 +284,14 @@ export function updateZombies(dt: number): void {
       if (z.windupT >= windup) {
         z.mode = "chase";
         z.cooldown = attackCooldown;
-        if (z.flashT <= 0) z.sprite.setTint(null); // drop the telegraph on release
+        if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null); // drop the telegraph on release
         if (p.hp > 0) {
           if (ranged) {
-            if (pdist > 1e-4) spitGlob(z.x, z.z, pdx / pdist, pdz / pdist);
+            // Webspinners shoot silk (a slow, cleansed by parts); spitters acid.
+            if (pdist > 1e-4) {
+              if (z.kind === "webspinner") spitWeb(z.x, z.z, pdx / pdist, pdz / pdist);
+              else spitGlob(z.x, z.z, pdx / pdist, pdz / pdist);
+            }
           } else if (pdist <= contactRange * 1.3) {
             hitPlayer(z);
           }
@@ -196,12 +300,13 @@ export function updateZombies(dt: number): void {
       continue;
     }
     // Left windup without releasing (player fled out of range): clear any tell.
-    if (z.flashT <= 0) z.sprite.setTint(null);
+    if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
 
     z.mode = "chase";
     // Melee bites in contact range; a spitter fires from anywhere in its long
-    // fire range (contactRange for it is SPITTER_FIRE_RANGE).
-    if (pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
+    // fire range (contactRange for it is SPITTER_FIRE_RANGE). The goblin never
+    // bites — its contact behaviour is the bumper kick above.
+    if (z.kind !== "goblin" && pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
       z.mode = "windup";
       z.windupT = 0;
       continue;
@@ -277,8 +382,11 @@ export function updateZombies(dt: number): void {
       vz = (vz + pz) / len;
     }
 
-    const mx = (vx * z.speed + sx * 1.5) * dt;
-    const mz = (vz * z.speed + sz * 1.5) * dt;
+    // Golems and chompers are FURNITURE WITH TEETH: rooted, never shoved by
+    // the horde's separation pass — they hold their chokepoint.
+    const rooted = z.kind === "golem" || z.kind === "chomper";
+    const mx = rooted ? 0 : (vx * z.speed + sx * 1.5) * dt;
+    const mz = rooted ? 0 : (vz * z.speed + sz * 1.5) * dt;
     if (mx !== 0 || mz !== 0) {
       const res = moveCircle(g, z.x, z.z, bodyR, mx, mz);
       z.x = res.x;
@@ -313,7 +421,7 @@ function updateGhost(z: Zombie, dt: number): void {
   const st = STATS[z.kind];
   // The reaper's resting look is blood-red, not untinted — every place the
   // ghost path clears its telegraph tint, the reaper re-dyes instead.
-  const baseTint = z.kind === "reaper" ? REAPER_TINT : null;
+  const baseTint = z.baseTint ?? null;
   const pdx = p.x - z.x;
   const pdz = p.z - z.z;
   const pdist = Math.hypot(pdx, pdz);
@@ -345,6 +453,9 @@ function updateGhost(z: Zombie, dt: number): void {
   if (pdist <= st.contactRange && z.cooldown <= 0 && p.hp > 0) {
     z.mode = "windup";
     z.windupT = 0;
+    // A ghost MATERIALIZES to strike — and stays touchable for the window
+    // after (the only time steel can find it). The reaper stays immune.
+    if (z.kind === "ghost") z.vulnT = GHOST_VULN_TIME;
     syncGhostMesh(z);
     return;
   }
@@ -371,3 +482,65 @@ function syncGhostMesh(z: Zombie): void {
   const bob = Math.sin((z.bobT ?? 0) * GHOST_BOB_SPEED) * GHOST_BOB_AMP;
   z.sprite.mesh.position.y = GHOST_HOVER_Y + bob;
 }
+
+/**
+ * The BOWLING PIN update: integrate the slide velocity a knockback handed it
+ * (combat.ts sets slideVX/VZ instead of an instant shove for pins), decaying
+ * with floor friction. A sliding pin that reaches another pin passes the hit
+ * on (the chain reaction — this is the whole bowling fantasy); a pin that
+ * slams a wall at speed goes down on the spot.
+ */
+function updatePin(z: Zombie, dt: number): void {
+  const g = state.grid;
+  if (!g) return;
+  const vx = z.slideVX ?? 0;
+  const vz = z.slideVZ ?? 0;
+  const speed = Math.hypot(vx, vz);
+  if (speed < 0.05) {
+    z.slideVX = 0;
+    z.slideVZ = 0;
+    z.anim.play("idle");
+    syncActorMesh(z);
+    return;
+  }
+
+  const res = moveCircle(g, z.x, z.z, PIN_R, vx * dt, vz * dt);
+  const blockedX = Math.abs(res.x - (z.x + vx * dt)) > 1e-3;
+  const blockedZ = Math.abs(res.z - (z.z + vz * dt)) > 1e-3;
+  z.x = res.x;
+  z.z = res.z;
+
+  // Wall slam: the pin goes down (damage routed through the shared funnel so
+  // strikes/kill bookkeeping all fire). Push 0 — it's already at the wall.
+  if ((blockedX || blockedZ) && speed >= PIN_CHAIN_SPEED) {
+    z.slideVX = 0;
+    z.slideVZ = 0;
+    state.vfx?.dust(z.x, 0.1, z.z);
+    damageZombie(z, 1, vx, vz, 0);
+    return;
+  }
+
+  // Chain: a fast pin reaching a standing pin knocks it onward.
+  if (speed >= PIN_CHAIN_SPEED) {
+    for (const other of state.zombies) {
+      if (other === z || other.kind !== "pin" || other.mode === "dead") continue;
+      const dx = other.x - z.x;
+      const dz = other.z - z.z;
+      if (dx * dx + dz * dz > (PIN_R * 2.2) * (PIN_R * 2.2)) continue;
+      damageZombie(other, 1, vx, vz, 0.9); // combat hands ITS pins a slide too
+      // This pin spends most of its speed on the impact.
+      z.slideVX = vx * 0.35;
+      z.slideVZ = vz * 0.35;
+      break;
+    }
+  }
+
+  // Floor friction.
+  const decel = PIN_SLIDE_DECAY * dt;
+  const ns = Math.max(0, speed - decel);
+  z.slideVX = (vx / speed) * ns;
+  z.slideVZ = (vz / speed) * ns;
+  z.anim.play("walk"); // the wobble clip doubles as the slide
+  syncActorMesh(z);
+}
+

@@ -1903,6 +1903,84 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   haste: potionItem("#6fd0e8"),
   shield: potionItem("#8fc46b"),
   gold: goldIdolItem(),
+  // The pinball power-ups (Wave F) — same flask, signature liquids.
+  ironcore: potionItem("#8a94a6"),
+  turbo: potionItem("#f0a63c"),
+  springlegs: potionItem("#8fc46b"),
+  freeze: potionItem("#bfe8ff"),
+  multiball: potionItem("#b06fe8"),
+};
+
+// ══════════════════════════════════════════════════════════════════
+// NPCs — the Magician, the Speed Witch, the Oracle Frog. Static-sprite
+// friendlies (bobbed by core), so one FramePaint each is the whole rig.
+// ══════════════════════════════════════════════════════════════════
+
+const MAGICIAN_NPC: FramePaint = (ctx) => {
+  groundShadow(ctx, 64, 112, 20);
+  // sweeping violet cloak
+  poly(ctx, [[48, 108], [52, 62], [76, 62], [80, 108]], F(29));
+  poly(ctx, [[48, 108], [56, 100], [72, 100], [80, 108]], F(28)); // hem shade
+  // pale face in the hood shadow + a knowing grin
+  ell(ctx, 64, 56, 8, 7, F(22));
+  line(ctx, [[60, 58], [68, 58]], 1.5, F(8)); // the grin
+  ell(ctx, 61, 53, 1.4, 1.6, F(1));
+  ell(ctx, 67, 53, 1.4, 1.6, F(1));
+  // the top hat — the whole act
+  rrect(ctx, 54, 26, 20, 22, 2, F(1));
+  rrect(ctx, 48, 44, 32, 5, 2, F(1));
+  line(ctx, [[54, 40], [74, 40]], 3, F(9)); // rot-green band
+  // white gloves mid-flourish
+  ell(ctx, 46, 78, 4, 4, F(23));
+  ell(ctx, 82, 72, 4, 4, F(23));
+  // a wand with a hot tip (blooms)
+  line(ctx, [[82, 72], [92, 60]], 2, F(1));
+  ell(ctx, 93, 58, 2.4, 2.4, F(18));
+  celShade(ctx);
+};
+
+const WITCH_NPC: FramePaint = (ctx) => {
+  groundShadow(ctx, 64, 112, 18);
+  // ragged arcane-blue robe
+  poly(ctx, [[50, 110], [54, 64], [74, 64], [78, 110]], F(30));
+  poly(ctx, [[50, 110], [58, 102], [70, 104], [78, 110]], F(5));
+  // green face, hooked nose, red eyes
+  ell(ctx, 64, 56, 8, 7, F(9));
+  poly(ctx, [[64, 54], [70, 60], [64, 60]], F(8)); // the nose
+  ell(ctx, 60, 53, 1.5, 1.5, F(13));
+  ell(ctx, 68, 53, 1.5, 1.5, F(13));
+  // pointed hat, wind-bent
+  poly(ctx, [[50, 48], [78, 48], [70, 20]], F(1));
+  line(ctx, [[52, 46], [76, 46]], 3, F(29));
+  // she offers the trade — a tiny gold flask in an open palm
+  ell(ctx, 84, 76, 4, 4, F(9));
+  rrect(ctx, 81, 66, 6, 9, 2, F(17));
+  celShade(ctx);
+};
+
+const FROG_NPC: FramePaint = (ctx) => {
+  groundShadow(ctx, 64, 110, 16);
+  // squat rot-green body, sitting
+  ell(ctx, 64, 96, 16, 12, F(9));
+  ell(ctx, 64, 102, 18, 7, F(8)); // haunches
+  // the oracle's eyes — huge, gold, unblinking
+  ell(ctx, 56, 84, 6, 6, F(9));
+  ell(ctx, 72, 84, 6, 6, F(9));
+  ell(ctx, 56, 84, 3.4, 3.4, F(17));
+  ell(ctx, 72, 84, 3.4, 3.4, F(17));
+  ell(ctx, 56, 84, 1.4, 1.4, F(1));
+  ell(ctx, 72, 84, 1.4, 1.4, F(1));
+  // wide mouth line + a belly patch
+  line(ctx, [[52, 96], [76, 96]], 2, F(8));
+  ell(ctx, 64, 101, 8, 4, F(10));
+  celShade(ctx);
+};
+
+/** NPC art, keyed by Npc.kind. */
+export const NPC_PAINTS: Record<string, FramePaint> = {
+  magician: MAGICIAN_NPC,
+  witch: WITCH_NPC,
+  frog: FROG_NPC,
 };
 
 // ══════════════════════════════════════════════════════════════════

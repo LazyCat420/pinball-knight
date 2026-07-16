@@ -24,6 +24,16 @@ import {
   STYLE_KILL_BASE_GOLD,
   STYLE_KILL_COMBO_GOLD,
   STYLE_KILL_GOLD_MAX,
+  SECRET_BREAK_SPEED,
+  GHOST_VULN_TIME,
+  GOLEM_DAMAGE,
+  CHOMPER_DAMAGE,
+  MAGNET_DAMAGE,
+  PIN_SLIDE_FROM_HIT,
+  PIN_STRIKE_WINDOW,
+  PIN_STRIKE_COUNT,
+  PIN_STRIKE_GOLD,
+  WEB_TIME,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
@@ -76,6 +86,33 @@ const FLASH_TIME = 0.12;
 
 const ISO = Math.SQRT1_2;
 
+/** One-shot toast for the momentum-gate lesson (goblin/golem clink). */
+let _gateHintShown = false;
+
+/** Rolling ledger for the bowling STRIKE bonus (3+ pins inside the window). */
+let _pinKills = 0;
+let _pinKillT = 0;
+let _strikePaid = false;
+
+/** Reset the per-run combat feel state (called by core on launch/retry). */
+export function resetCombatJuice(): void {
+  _gateHintShown = false;
+  _pinKills = 0;
+  _pinKillT = 0;
+  _strikePaid = false;
+}
+
+/** Tick the strike window (from core.simulate). */
+export function tickCombatTimers(dt: number): void {
+  if (_pinKills > 0) {
+    _pinKillT -= dt;
+    if (_pinKillT <= 0) {
+      _pinKills = 0;
+      _strikePaid = false;
+    }
+  }
+}
+
 /**
  * Snap an actor's mesh to its logical position so its texels land on whole
  * render-target pixels — unsnapped sprites shimmer as they move (BLUEPRINT
@@ -105,6 +142,43 @@ export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: numb
   if (z.kind === "reaper") {
     state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 6);
     return;
+  }
+
+  const p = state.player;
+  const momentum = p ? p.momSpeed : 0;
+
+  // ── The momentum gates (Wave B — "hit things fast" is a teachable rule) ──
+  // GHOST: immune while drifting — it only exists to steel while materialized
+  // (winding up its touch, or inside the window after it lands).
+  if (z.kind === "ghost" && (z.vulnT ?? 0) <= 0 && z.mode !== "windup") {
+    state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 5);
+    return;
+  }
+  // GOBLIN: rubber shrugs off a standing poke — only a hit carried on
+  // momentum lands. GOLEM: masonry — nothing below the smash-speed bar dents
+  // it. Both give the "wrong tool" clink so the rule reads.
+  if ((z.kind === "goblin" && momentum <= 0) || (z.kind === "golem" && momentum < SECRET_BREAK_SPEED)) {
+    state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
+    state.shakeT = Math.max(state.shakeT, 0.05);
+    if (!_gateHintShown) {
+      _gateHintShown = true;
+      showToast(z.kind === "golem" ? "🧱 IT SHRUGS OFF STEEL" : "🟢 IT BOUNCES OFF STEEL", "hit it at PINBALL SPEED");
+    }
+    sfxHit();
+    return;
+  }
+  // CHOMPER: a momentum hit doesn't just hurt it — it SHOVES the plant off
+  // its chokepoint (triple knockback), opening the road.
+  if (z.kind === "chomper" && momentum > 0) push *= 3;
+
+  // PIN: knockback becomes a SLIDE (integrated by zombie.updatePin, chaining
+  // into the crew) rather than an instant shove.
+  if (z.kind === "pin" && push > 0) {
+    const d = Math.hypot(dirx, dirz) || 1;
+    const slide = Math.max(PIN_SLIDE_FROM_HIT * Math.min(1, push), 2.4);
+    z.slideVX = (dirx / d) * slide;
+    z.slideVZ = (dirz / d) * slide;
+    push = 0; // the slide IS the knockback
   }
 
   z.hp -= damage;
@@ -242,11 +316,35 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
   return landed;
 }
 
+/**
+ * Callback for a shattered BRICK GOLEM — core spawns the ricocheting shard
+ * spray (it owns projectiles' scene access). Same handler pattern as the
+ * slime split, same reason (no circular import).
+ */
+let onGolemShatter: ((x: number, z: number) => void) | null = null;
+export function setGolemShatterHandler(fn: (x: number, z: number) => void): void {
+  onGolemShatter = fn;
+}
+
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
+  // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
+  if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
+  // Bowling ledger: pins downed close together are one STRIKE.
+  if (z.kind === "pin") {
+    _pinKills += 1;
+    _pinKillT = PIN_STRIKE_WINDOW;
+    if (_pinKills >= PIN_STRIKE_COUNT && !_strikePaid) {
+      _strikePaid = true;
+      state.goldRun += PIN_STRIKE_GOLD;
+      addGold(PIN_STRIKE_GOLD, "dungeon-game");
+      showToast("🎳 STRIKE!", `${_pinKills} pins down · +${PIN_STRIKE_GOLD}g`);
+      state.shakeT = Math.max(state.shakeT, 0.2);
+    }
+  }
   // A death pops a bigger burst, a longer freeze and a heavier kick. A GHOST
   // dissipates into a cold ectoplasm puff (a spray of blue sparks) — no gore.
   if (z.kind === "ghost") {
@@ -316,9 +414,20 @@ export function hitPlayer(z: Zombie): void {
   if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
   // A brute's haymaker hits harder and shoves you further than a normal bite;
-  // the reaper's touch is worse — two hearts and a brute-class shove.
-  const damage = z.kind === "brute" ? BRUTE_DAMAGE : z.kind === "reaper" ? REAPER_DAMAGE : ZOMBIE_DAMAGE;
-  const knockback = z.kind === "brute" || z.kind === "reaper" ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
+  // the reaper's touch is worse — two hearts and a brute-class shove. The
+  // Wave-B kinds have their own bite weights.
+  const DMG_BY_KIND: Partial<Record<Zombie["kind"], number>> = {
+    brute: BRUTE_DAMAGE,
+    reaper: REAPER_DAMAGE,
+    golem: GOLEM_DAMAGE,
+    chomper: CHOMPER_DAMAGE,
+    magnet: MAGNET_DAMAGE,
+  };
+  const damage = DMG_BY_KIND[z.kind] ?? ZOMBIE_DAMAGE;
+  const heavyHitter = z.kind === "brute" || z.kind === "reaper" || z.kind === "golem" || z.kind === "chomper";
+  const knockback = heavyHitter ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
+  // A ghost that just landed its touch stays MATERIALIZED — the punish window.
+  if (z.kind === "ghost") z.vulnT = GHOST_VULN_TIME;
 
   const absorbed = absorbDamage(state.gear, damage);
   state.gear = absorbed.gear;
@@ -383,9 +492,24 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   syncActorMesh(p);
 }
 
+/**
+ * The WEB SPINNER's silk lands: no damage, a hard slow. Any pinball-part
+ * touch shakes it off early (see player.onPartTrigger).
+ */
+export function webPlayer(): void {
+  const p = state.player;
+  if (!p || p.hp <= 0 || p.shieldT > 0) return;
+  p.webbedT = WEB_TIME;
+  p.sprite.setTint(0xdfe7f2);
+  p.flashT = 0.2;
+  showToast("🕸️ WEBBED", "slowed — touch any pinball part to shake it off");
+  state.hudDirty = true;
+}
+
 /** Tick a hit flash back toward untinted. Shared by player and zombies. */
-export function updateFlash(a: { flashT: number; sprite: { setTint(hex: number | null): void } }, dt: number): void {
+export function updateFlash(a: { flashT: number; sprite: { setTint(hex: number | null): void }; baseTint?: number | null }, dt: number): void {
   if (a.flashT <= 0) return;
   a.flashT -= dt;
-  if (a.flashT <= 0) a.sprite.setTint(null);
+  // Reskinned kinds (reaper, golem, goblin…) rest at a base tint, not white.
+  if (a.flashT <= 0) a.sprite.setTint(a.baseTint ?? null);
 }

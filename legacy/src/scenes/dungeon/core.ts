@@ -38,13 +38,16 @@ import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPi
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
-import { decorateMaze } from "./maze/decorate";
+import { decorateMaze, type PrefabAnchor } from "./maze/decorate";
+import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
-import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
+import { updatePlayer, resetPlayerMotion, updateMultiball, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
-import { updateProjectiles } from "./entities/projectiles";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler } from "./entities/combat";
+import { updateProjectiles, golemShards } from "./entities/projectiles";
+import { simulateHazards } from "./entities/hazards";
+import { updateNpcs, disposeNpcs, spawnFrog, rollMagicianClock } from "./entities/npc";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers } from "./entities/combat";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import {
@@ -80,6 +83,30 @@ import {
   SLIME_MINI_HP,
   SLIME_MINI_SPEED_MULT,
   SLIME_MINI_SCALE,
+  GOBLIN_HP,
+  GOBLIN_SPEED_FACTOR,
+  GOBLIN_RATIO,
+  GOBLIN_FROM_LEVEL,
+  PIN_HP,
+  PIN_CREW_SIZE,
+  PIN_FROM_LEVEL,
+  GOLEM_HP,
+  GOLEM_RATIO,
+  GOLEM_FROM_LEVEL,
+  CHOMPER_HP,
+  CHOMPER_RATIO,
+  CHOMPER_FROM_LEVEL,
+  MAGNET_HP,
+  MAGNET_SPEED_FACTOR,
+  MAGNET_RATIO,
+  MAGNET_FROM_LEVEL,
+  WEBSPIN_HP,
+  WEBSPIN_SPEED_FACTOR,
+  WEBSPIN_RATIO,
+  WEBSPIN_FROM_LEVEL,
+  TARGETS_PER_FLOOR,
+  TRAPDOORS_PER_FLOOR,
+  BONUS_ROOM_GRADES,
   PARTS_BASE,
   PARTS_PER_LEVEL,
   PARTS_MAX,
@@ -128,7 +155,7 @@ import {
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
-import { sfxStairs, sfxGameOver, sfxPickup } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze } from "./audio";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -356,6 +383,16 @@ export function launchDungeonGame(onExit?: () => void): void {
       killsThisFloor: state.kills - state.levelStartKills,
       bestCombo: state.levelBestCombo,
       reaperOut: state.reaperOut,
+      // Wave A/E/F floor state, exposed for the headless harness.
+      targets: `${state.targetsHit}/${state.targetsTotal}`,
+      freezeT: state.freezeT,
+      npcs: state.npcs.map((n) => n.kind),
+      magicianT: state.magicianT,
+      // Loop diagnostics (accumulator health for the harness).
+      accumulator: state.accumulator,
+      hitstopT: state.hitstopT,
+      elapsed: state.elapsed,
+      level: state.level,
     });
     // Dev: hurl the player into a pinball ride (headless secret-wall/physics
     // tests — spooling a real sprint with synthetic key events is flaky).
@@ -414,6 +451,9 @@ export function launchDungeonGame(onExit?: () => void): void {
   setBossDefeatedHandler(dropBossReward);
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
+  // A shattered brick golem sprays ricochet shards.
+  setGolemShatterHandler((x, z) => golemShards(x, z));
+  resetCombatJuice();
 
   state.onResize = () => state.pixelPass?.resize();
   window.addEventListener("resize", state.onResize);
@@ -440,7 +480,39 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   bat: BAT_HP,
   slime: SLIME_HP,
   reaper: REAPER_HP, // nominal — combat.ts makes it immune anyway
+  goblin: GOBLIN_HP,
+  pin: PIN_HP,
+  golem: GOLEM_HP,
+  chomper: CHOMPER_HP,
+  magnet: MAGNET_HP,
+  webspinner: WEBSPIN_HP,
 };
+
+/**
+ * The Wave-B roster ships on RESKINS (existing atlases + a resting tint and a
+ * scale) — behavioural identity first, bespoke cel-paints when the sprite
+ * forge gets to them. Sheet is resolved at spawn time from state.
+ */
+const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
+  goblin: { sheet: () => state.slimeSheet, tint: 0xffa04a, scale: 0.95 },
+  pin: { sheet: () => state.ghostSheet, tint: 0xffe9c9, scale: 0.7 },
+  golem: { sheet: () => state.bruteSheet, tint: 0x9aa4b5, scale: 1.12 },
+  chomper: { sheet: () => state.slimeSheet, tint: 0x4f8f3f, scale: 1.15 },
+  magnet: { sheet: () => state.spiderSheet, tint: 0x6fd0e8, scale: 0.95 },
+  webspinner: { sheet: () => state.spiderSheet, tint: 0xeef1f5, scale: 1.05 },
+};
+
+/** Spawn a reskinned Wave-B enemy; returns null if its base sheet isn't built. */
+function makeReskin(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
+  const skin = RESKIN[kind];
+  const sheet = skin?.sheet();
+  if (!skin || !sheet) return null;
+  const z2 = makeZombie(sheet, x, z, speed, { kind });
+  z2.baseTint = skin.tint;
+  z2.sprite.setTint(skin.tint);
+  z2.sprite.mesh.scale.multiplyScalar(skin.scale);
+  return z2;
+}
 
 /**
  * Slime minis spawned by a split, DEFERRED to the end of the sim step —
@@ -544,9 +616,58 @@ function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number,
   if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4 && state.slimeSheet) {
     return makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
   }
+  // ── The Wave-B pinball roster (reskins; see RESKIN) ──
+  if (level >= GOBLIN_FROM_LEVEL && hash % GOBLIN_RATIO === 1) {
+    const zb = makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= CHOMPER_FROM_LEVEL && hash % CHOMPER_RATIO === 5) {
+    const zb = makeReskin("chomper", x, z, 0); // rooted — it IS the chokepoint
+    if (zb) return zb;
+  }
+  if (level >= GOLEM_FROM_LEVEL && hash % GOLEM_RATIO === 5) {
+    const zb = makeReskin("golem", x, z, 0);
+    if (zb) return zb;
+  }
+  if (level >= MAGNET_FROM_LEVEL && hash % MAGNET_RATIO === 6) {
+    const zb = makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR);
+    if (zb) return zb;
+  }
+  if (level >= WEBSPIN_FROM_LEVEL && hash % WEBSPIN_RATIO === 2) {
+    const zb = makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR);
+    if (zb) return zb;
+  }
   const variantSheets = state.zombieVariantSheets;
   const sheet = variantSheets[hash % variantSheets.length] ?? state.zombieSheet!;
   return makeZombie(sheet, x, z, baseSpeed);
+}
+
+/**
+ * Drop a BOWLING PIN CREW: PIN_CREW_SIZE pins racked in triangle formation
+ * around a centre tile (offsets in world units, clamped to walkable tiles by
+ * nearestOpenTile fallback). They don't fight — they score.
+ */
+function spawnPinCrew(g: Grid, centre: TilePos): void {
+  const rack: Array<[number, number]> = [
+    [0, 0],
+    [0.55, -0.35],
+    [0.55, 0.35],
+    [1.1, -0.7],
+    [1.1, 0],
+    [1.1, 0.7],
+  ];
+  const c = tileCenter(g, centre.i, centre.j);
+  for (let k = 0; k < Math.min(PIN_CREW_SIZE, rack.length); k++) {
+    const px = c.x + rack[k][0];
+    const pz = c.z + rack[k][1];
+    const t = worldToTile(g, px, pz);
+    const spot = isWalkable(g, t.i, t.j) ? { x: px, z: pz } : (() => {
+      const open = nearestOpenTile(g, centre.i, centre.j, k + 1);
+      return open ? tileCenter(g, open.i, open.j) : c;
+    })();
+    const pin = makeReskin("pin", spot.x, spot.z, 0);
+    if (pin) state.zombies.push(pin);
+  }
 }
 
 /** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
@@ -574,14 +695,30 @@ function startLevel(level: number): void {
   // thickening, so the wall-band structure survives. Thick walls are what make
   // the Diablo low-rim/tall-back trick work — see thickenWalls. Decoration
   // runs on the thickened grid, with room rects scaled to match.
-  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid);
-  const rawRooms = carveRooms(raw, rng, cfg.rooms, ROOM_MIN_CELLS, ROOM_MAX_CELLS);
+  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid, cfg.windiness);
+  // A grade-S/A descent unlocked a BONUS room on this floor (Wave F glue).
+  const bonusRoom = state.bonusRoomNext;
+  state.bonusRoomNext = false;
+  const rawRooms = carveRooms(raw, rng, cfg.rooms + (bonusRoom ? 1 : 0), ROOM_MIN_CELLS, ROOM_MAX_CELLS);
+  // PREFAB STAMPS (Wave C): themed room/hallway shapes drawn from a seeded
+  // shuffle bag — Slalom, Gauntlet, Oilworks, the Magician's Parlor… Carved
+  // before the secret cracks so the cracks see the final wall set.
+  const theme = themeFor(level);
+  const prefabCount = Math.min(2 + Math.floor((level - 1) / 2), 4);
+  const stamped = stampPrefabs(raw, rng, prefabCount, theme);
   crackSecretWalls(raw, rng, cfg.secrets);
   const grid = thickenWalls(raw);
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+  // Prefab anchors ride the same ×2 into the thickened grid.
+  const anchors: PrefabAnchor[] = stamped.anchors.map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
   // Pinball-machine density grows with depth: deeper floors are busier tables.
   const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
-  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget, rooms);
+  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget, rooms, {
+    anchors,
+    deal: theme.deal,
+    targets: TARGETS_PER_FLOOR,
+    trapdoors: TRAPDOORS_PER_FLOOR,
+  });
 
   state.grid = grid;
   state.stairs = plan.stairs;
@@ -665,6 +802,29 @@ function startLevel(level: number): void {
   snapCameraTo(startPos.x, startPos.z);
   state.hudDirty = true;
 
+  // ── BOWLING PIN CREWS ── racked around far spawn tiles from PIN_FROM_LEVEL.
+  if (level >= PIN_FROM_LEVEL && plan.spawns.length > 0) {
+    const crews = 1 + (level >= 5 ? 1 : 0);
+    for (let c = 0; c < crews; c++) {
+      const centre = plan.spawns[Math.floor(rng() * plan.spawns.length)];
+      spawnPinCrew(grid, centre);
+    }
+  }
+
+  // ── BOSS ANTECHAMBER (lite) ── from depth 3, a brute pack guards the tiles
+  // before the stairs, so the run's last leg is always a fight or a flight.
+  if (level >= 3 && level % BOSS_EVERY !== 0 && state.bruteSheet && state.stairs) {
+    for (let n = 1; n <= 2; n++) {
+      const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, n + 1);
+      if (!spot) break;
+      const c = tileCenter(grid, spot.i, spot.j);
+      state.zombies.push(makeZombie(state.bruteSheet, c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }));
+    }
+  }
+
+  // ── The ORACLE FROG's dead-end perch ──
+  if (plan.frog) spawnFrog(plan.frog.i, plan.frog.j);
+
   // ── Per-floor score ledger + the Death Dealer's fuse ──
   state.levelT = 0;
   state.levelStartKills = state.kills;
@@ -672,6 +832,16 @@ function startLevel(level: number): void {
   state.levelBestCombo = 0;
   state.reaperOut = false;
   state.reaperWarned = false;
+  // Wave A/E/F floor state: the target objective, the frenzy meter, the
+  // Magician's visit clock, the once-per-floor witch.
+  state.targetsTotal = plan.parts.filter((pt) => pt.kind === "target").length;
+  state.targetsHit = 0;
+  state.partComboHits = 0;
+  state.frenzyPaid = false;
+  state.freezeT = 0;
+  state.magicianT = rollMagicianClock();
+  state.witchSpawned = false;
+  state.frogTrail = [];
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
@@ -679,6 +849,7 @@ function startLevel(level: number): void {
   const suffix = cycle > 1 ? ` · deeper (${cycle})` : "";
   const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${biome.flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}`, sub);
+  if (bonusRoom) showPickupNote("🏆 BONUS VAULT unlocked on this floor");
 }
 
 /** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */
@@ -829,6 +1000,12 @@ function debugSpawnRing(): void {
   if (state.ghostSheet) specs.push({ sheet: state.ghostSheet, kind: "ghost" });
   if (state.batSheet) specs.push({ sheet: state.batSheet, kind: "bat" });
   if (state.slimeSheet) specs.push({ sheet: state.slimeSheet, kind: "slime" });
+  // The Wave-B reskins, so the whole roster is inspectable in one ring.
+  for (const kind of ["goblin", "pin", "golem", "chomper", "magnet", "webspinner"] as EnemyKind[]) {
+    const skin = RESKIN[kind];
+    const sheet = skin?.sheet();
+    if (sheet) specs.push({ sheet, kind });
+  }
   // Place each enemy on the nearest WALKABLE tile stepping outward from the
   // player (blind fixed offsets would bury them in a wall, and a spitter's glob
   // would then die on that wall before reaching you). Speed 0 poses them for
@@ -838,6 +1015,12 @@ function debugSpawnRing(): void {
     const spot = nearestOpenTile(g, pt.i, pt.j, i + 1) ?? pt;
     const c = tileCenter(g, spot.i, spot.j);
     const zz = makeZombie(spec.sheet, c.x, c.z, 0, { kind: spec.kind });
+    const skin = RESKIN[spec.kind];
+    if (skin) {
+      zz.baseTint = skin.tint;
+      zz.sprite.setTint(skin.tint);
+      zz.sprite.mesh.scale.multiplyScalar(skin.scale);
+    }
     zz.aggro = true;
     zz.anim.setFacing("S");
     zz.anim.play("walk", { force: true });
@@ -845,10 +1028,10 @@ function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold"].forEach((id, i) => {
+  ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
-    const a = (i / 5) * Math.PI * 2;
+    const a = (i / arr.length) * Math.PI * 2;
     const px = p.x + Math.cos(a) * 0.6;
     const pz = p.z + Math.sin(a) * 0.6;
     sprite.mesh.position.set(px, 0, pz);
@@ -897,6 +1080,8 @@ function onPlayerDeath(): void {
       state.weaponSlots = [freshWeapon("sword"), null];
       state.activeSlot = 0;
       state.gear = {};
+      clearMultiballs();
+      resetCombatJuice();
       if (state.player) {
         Object.assign(state.player, freshPlayerFields());
         state.player.sprite.setTint(null);
@@ -912,10 +1097,50 @@ function descend(): void {
   const { grade, gold } = gradeFloor();
   state.goldRun += GOLD_PER_DESCENT + gold;
   addGold(GOLD_PER_DESCENT + gold, "dungeon-game");
+  // A great floor unlocks a BONUS vault room on the next one (Wave F glue).
+  state.bonusRoomNext = BONUS_ROOM_GRADES.includes(grade);
   sfxStairs();
   startLevel(state.level + 1);
   // The pickup-note channel, so it doesn't fight the new depth's toast.
   showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+}
+
+/** Tear down the Multi-Ball ghost knights (buff expiry / retry / exit). */
+function clearMultiballs(): void {
+  if (!state.multiMeshes) return;
+  for (const mesh of state.multiMeshes) {
+    state.scene?.remove(mesh);
+    (mesh.material as THREE.Material).dispose(); // geometry+texture are the player's, shared
+  }
+  state.multiMeshes = null;
+}
+
+/**
+ * Summon the Multi-Ball ghost knights: two tinted clones of the player's
+ * billboard sharing its geometry + atlas (zero GPU uploads — same trick as
+ * the vfx afterimages), positioned each step by player.updateMultiball.
+ */
+function summonMultiballs(): void {
+  const p = state.player;
+  if (!p || !state.scene) return;
+  clearMultiballs();
+  const src = p.sprite.mesh;
+  const meshes: THREE.Mesh[] = [];
+  for (let k = 0; k < 2; k++) {
+    const srcMat = src.material as THREE.MeshBasicMaterial;
+    const mat = srcMat.clone();
+    mat.color.setHex(0xb06fe8); // arcane violet
+    mat.opacity = 0.55;
+    mat.transparent = true;
+    mat.depthWrite = false;
+    const mesh = new THREE.Mesh(src.geometry, mat);
+    mesh.quaternion.copy(src.quaternion);
+    mesh.scale.copy(src.scale);
+    mesh.renderOrder = 9;
+    state.scene.add(mesh);
+    meshes.push(mesh);
+  }
+  state.multiMeshes = meshes;
 }
 
 /** Drop a carried weapon on the floor, durability intact, un-grabbable until you step away. */
@@ -1017,6 +1242,17 @@ function applyPotion(id: PotionId): void {
     if (id === "rage") p.rageT = def.duration;
     if (id === "haste") p.hasteT = def.duration;
     if (id === "shield") p.shieldT = def.duration;
+    if (id === "ironcore") p.ironT = def.duration;
+    if (id === "turbo") p.turboT = def.duration;
+    if (id === "springlegs") p.springT = def.duration;
+    if (id === "freeze") {
+      state.freezeT = def.duration;
+      sfxFreeze();
+    }
+    if (id === "multiball") {
+      p.multiT = def.duration;
+      summonMultiballs();
+    }
   }
   p.sprite.setTint(def.color);
   p.flashT = 0.18; // brief pulse, cleared by updateFlash
@@ -1039,6 +1275,7 @@ function spawnReaper(): void {
     hp: REAPER_HP,
   });
   reaper.aggro = true;
+  reaper.baseTint = REAPER_TINT; // telegraph/flash clears restore blood-red, not white
   reaper.sprite.setTint(REAPER_TINT);
   reaper.sprite.mesh.scale.multiplyScalar(REAPER_SCALE);
   state.zombies.push(reaper);
@@ -1087,13 +1324,20 @@ function simulate(dt: number): void {
     state.flowField = bfsDistances(g, pt.i, pt.j);
   }
 
-  // ── Buff timers (rage / haste) tick down; HUD refreshes each whole second
-  // so the countdown reads live, plus once more when a buff ends. ──
-  for (const key of ["rageT", "hasteT", "shieldT"] as const) {
+  // ── Buff timers tick down; HUD refreshes each whole second so the
+  // countdown reads live, plus once more when a buff ends. ──
+  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "multiT"] as const) {
     const before = p[key];
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
+  }
+  // Multi-Ball expiry: the ghost knights dissolve with the buff.
+  if (p.multiT <= 0 && state.multiMeshes) clearMultiballs();
+  // World freeze (freeze-ray potion) ticks here; zombies/gloves read it.
+  if (state.freezeT > 0) {
+    state.freezeT = Math.max(0, state.freezeT - dt);
+    if (state.freezeT === 0) state.hudDirty = true;
   }
   // The sprint spool + pinball overcharge rails change continuously; repaint the
   // HUD only when their combined 20-block fill actually changes (same
@@ -1118,6 +1362,10 @@ function simulate(dt: number): void {
   }
   updateZombies(dt);
   updateProjectiles(dt);
+  simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
+  updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
+  updateMultiball(dt); // ghost knights flank + ram while the buff runs
+  tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
   checkPickups();
 
@@ -1134,7 +1382,11 @@ function loop(now: number): void {
   if (!state.active) return;
   state.animFrameId = requestAnimationFrame(loop);
 
-  const frame = Math.min((now - state.lastTime) / 1000, MAX_FRAME); // tab-out protection
+  // Clamped BOTH ways: MAX_FRAME is tab-out protection, and the 0 floor guards
+  // against a first RAF timestamp that lags performance.now() (headless/pre-
+  // render quirk) — one negative delta would otherwise poison the accumulator
+  // and freeze the whole simulation for that long.
+  const frame = Math.min(Math.max(0, (now - state.lastTime) / 1000), MAX_FRAME);
   state.lastTime = now;
   state.elapsed += frame;
 

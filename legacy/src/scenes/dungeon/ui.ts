@@ -297,9 +297,21 @@ export function updateHUD(el: HTMLDivElement): void {
   if (p && p.rageT > 0) buffs.push(`<span style="color:#d97b29">💢 RAGE ${Math.ceil(p.rageT)}s</span>`);
   if (p && p.hasteT > 0) buffs.push(`<span style="color:#6fd0e8">⚡ HASTE ${Math.ceil(p.hasteT)}s</span>`);
   if (p && p.shieldT > 0) buffs.push(`<span style="color:#8fc46b">🛡️ SHIELD ${Math.ceil(p.shieldT)}s</span>`);
+  if (p && p.ironT > 0) buffs.push(`<span style="color:#8a94a6">🔩 IRON ${Math.ceil(p.ironT)}s</span>`);
+  if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🚀 TURBO ${Math.ceil(p.turboT)}s</span>`);
+  if (p && p.springT > 0) buffs.push(`<span style="color:#8fc46b">🦵 SPRING ${Math.ceil(p.springT)}s</span>`);
+  if (p && p.multiT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI ${Math.ceil(p.multiT)}s</span>`);
+  if (state.freezeT > 0) buffs.push(`<span style="color:#bfe8ff">❄️ FROZEN ${Math.ceil(state.freezeT)}s</span>`);
+  if (p && p.webbedT > 0) buffs.push(`<span style="color:#eef1f5">🕸️ WEBBED</span>`);
   const buffRow = buffs.length
     ? `<div style="font:${SERIF};letter-spacing:1px;margin-top:2px">${buffs.join("&nbsp;&nbsp;")}</div>`
     : "";
+
+  // The floor's target objective — only shown when the floor has targets.
+  const targetsRow =
+    state.targetsTotal > 0
+      ? `<div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Targets</span> <span style="color:${state.targetsHit >= state.targetsTotal ? "#8fc46b" : "#d95763"}">🎯 ${state.targetsHit}/${state.targetsTotal}</span></div>`
+      : "";
 
   // RAMPAGE meter: a charge bar that fills from kills. When full, a pulsing
   // "READY" hint invites the R key; while active, a countdown.
@@ -338,6 +350,7 @@ export function updateHUD(el: HTMLDivElement): void {
       <span style="color:#6b7688;font-variant:small-caps">Depth</span> <span style="color:#f0a63c">${state.level}</span>
       &nbsp;<span style="color:#6b7688;font-variant:small-caps">Kills</span> <span style="color:#8fc46b">${state.kills}</span></div>
     <div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Gold</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
+    ${targetsRow}
     ${buffRow}
     ${ultRow}
   `;

@@ -376,6 +376,74 @@ export const PARTS_BASE = 6; // parts on level 1
 export const PARTS_PER_LEVEL = 2; // extra parts per depth…
 export const PARTS_MAX = 26; // …capped
 
+// ── Wave-A parts (2026-07-16 pinball build-out — see PINBALL_ROADMAP.md) ──
+/**
+ * BOXING GLOVE — a wall-mounted piston that fires on its own clock, punching
+ * across the corridor. Anything in the lane when it fires gets launched: the
+ * PLAYER is flung into a momentum ride (it's a flipper, not a trap — no
+ * damage), ZOMBIES take a haymaker + hard knockback. Placed on straight
+ * corridor tiles, aimed off the wall it mounts.
+ */
+export const GLOVE_PERIOD = 2.4; // seconds between punches (jittered per part)
+export const GLOVE_ACTIVE = 0.22; // seconds the fist is extended + live
+export const GLOVE_LANE_LEN = 1.7; // how far the punch reaches, world units
+export const GLOVE_LANE_HALF = 0.55; // lane half-width
+export const GLOVE_SPEED = 12; // launch speed handed to the player
+export const GLOVE_DAMAGE = 2; // haymaker damage to zombies in the lane
+export const GLOVE_KNOCKBACK = 1.6; // and they FLY
+/**
+ * OIL SLICK — the floor booster: walk onto it while moving and your walk
+ * converts into a frictionless momentum slide along your heading; ride over
+ * it mid-pinball and it re-greases the ride (no friction, almost no steering)
+ * for OIL_SLICK_TIME. The cheap "wheee" part.
+ */
+export const OIL_RADIUS = 0.72; // slick footprint
+export const OIL_LAUNCH_SPEED = 7.5; // minimum slide speed off a walking touch
+export const OIL_LAUNCH_MULT = 1.35; // × current speed if that's faster
+export const OIL_SLICK_TIME = 0.55; // seconds of zero-friction after contact
+export const OIL_STEER_FACTOR = 0.18; // steering authority while slicked
+/**
+ * SPIN PAD — the slot machine: step on it and it flings you in a RANDOM
+ * direction at high speed. Junction furniture; chaos by design.
+ */
+export const SPINPAD_SPEED = 11;
+export const SPINPAD_COOLDOWN = 0.8;
+/**
+ * SLINGSHOT GATE — two posts with a band between them. Passing through with
+ * momentum PINGS you out (×mult + add, min exit); a walking touch launches you
+ * along the gate's axis. The double-speed lane.
+ */
+export const SLING_SPEED_MULT = 1.4;
+export const SLING_ADD = 2.2;
+export const SLING_MIN_EXIT = 10;
+export const SLING_COOLDOWN = 0.5;
+/**
+ * TARGET BULLSEYES — wall-mounted targets that break when you carry pinball
+ * momentum past them. Break ALL of a floor's targets and the machine pays out
+ * (gold + a prize dropped at your feet). The floor's objective layer.
+ */
+export const TARGET_HIT_SPEED = 5; // momentum needed to break one
+export const TARGET_RADIUS = 0.62; // trigger distance
+export const TARGET_GOLD = 4; // per target
+export const TARGET_CLEAR_GOLD = 30; // all-targets payout
+export const TARGETS_PER_FLOOR = 5;
+/**
+ * TRAPDOOR → ROLLERCOASTER — a floor hatch on dead ends: step on it and it
+ * drops you onto a rail ride — a spline flown OVER the maze walls, control
+ * locked, invulnerable — that launches you out at spring speed somewhere far.
+ * Mechanically a teleport with a ride, so it can't desync combat.
+ */
+export const TRAPDOOR_RIDE_SPEED = 9; // spline traversal speed, u/s
+export const TRAPDOOR_RIDE_MIN = 1.6; // ride duration clamp, seconds
+export const TRAPDOOR_RIDE_MAX = 3.4;
+export const TRAPDOOR_EXIT_SPEED = 14; // momentum handed over on landing
+export const TRAPDOOR_HEIGHT = 1.8; // peak flight height over the walls
+export const TRAPDOORS_PER_FLOOR = 2;
+export const TRAPDOOR_COOLDOWN = 2.5;
+/** Bounce-combo part-hits inside one live combo that trigger MULTIBALL FRENZY. */
+export const FRENZY_PART_HITS = 5;
+export const FRENZY_GOLD = 20;
+
 // ── Rooms (named archetypes carved into the corridor maze) ──────
 /**
  * The backtracker gives corridors; ROOMS give each floor its landmarks. A few
@@ -490,6 +558,105 @@ export const SLIME_MINI_SPEED_MULT = 1.7; // minis are quick little panics
 export const SLIME_MINI_SCALE = 0.62; // sprite scale for the minis
 export const SLIME_RATIO = 6;
 export const SLIME_FROM_LEVEL = 3;
+
+// ── Wave-B monsters (pinball-reactive roster — PINBALL_ROADMAP.md) ──
+/**
+ * BUMPER GOBLIN — round, rubbery, and it treats YOU as the ball: contact
+ * kicks the knight away like a pop bumper (no damage — annoyance, not harm).
+ * It only takes damage from MOMENTUM hits (ride/ram/ranged-while-riding), so
+ * it's the walking tutorial for "hit things fast".
+ */
+export const GOBLIN_HP = 2;
+export const GOBLIN_R = 0.3;
+export const GOBLIN_SPEED_FACTOR = 1.2;
+export const GOBLIN_KICK_SPEED = 9; // the bounce it hands the player
+export const GOBLIN_KICK_COOLDOWN = 0.6;
+export const GOBLIN_RATIO = 5;
+export const GOBLIN_FROM_LEVEL = 2;
+/**
+ * BOWLING PIN CREW — six 1-HP pins spawned in triangle formation. They don't
+ * chase; they're SCENERY THAT SCORES: knock one into the rest and the chain
+ * reaction takes them down (a shoved pin damages pins it slides into; a wall
+ * slam finishes it). 3+ downed inside the strike window = STRIKE bonus.
+ */
+export const PIN_HP = 1;
+export const PIN_R = 0.24;
+export const PIN_CREW_SIZE = 6;
+export const PIN_SLIDE_DECAY = 3.2; // u/s² friction on a sliding pin
+export const PIN_CHAIN_SPEED = 2.2; // sliding faster than this knocks the next pin
+export const PIN_SLIDE_FROM_HIT = 7; // slide speed a full knockback hit imparts
+export const PIN_STRIKE_WINDOW = 1.6; // seconds for kills to count as one strike
+export const PIN_STRIKE_COUNT = 3;
+export const PIN_STRIKE_GOLD = 12;
+export const PIN_FROM_LEVEL = 2;
+/**
+ * BRICK GOLEM — a wall with a temper. Stationary, blocks a corridor, slams
+ * anyone who walks close. It only takes damage from a hit carried at
+ * SECRET_BREAK_SPEED momentum (same bar as the cracked walls); shattering it
+ * sprays ricocheting shards that hurt the horde.
+ */
+export const GOLEM_HP = 6;
+export const GOLEM_R = 0.44;
+export const GOLEM_CONTACT_RANGE = 0.95;
+export const GOLEM_ATTACK_WINDUP = 0.7;
+export const GOLEM_ATTACK_COOLDOWN = 1.6;
+export const GOLEM_DAMAGE = 2;
+export const GOLEM_SHARDS = 5;
+export const GOLEM_SHARD_SPEED = 7;
+export const GOLEM_SHARD_DAMAGE = 1;
+export const GOLEM_SHARD_LIFE = 1.5; // seconds — shards RICOCHET off walls until this
+export const GOLEM_RATIO = 9;
+export const GOLEM_FROM_LEVEL = 3;
+/**
+ * CHOMPER PLANT — a corridor gate with teeth: stationary, snaps fast and hard
+ * when you come close. Killable normally, but a momentum hit SHOVES it aside
+ * (huge knockback) — speed opens the road without a fight.
+ */
+export const CHOMPER_HP = 5;
+export const CHOMPER_R = 0.36;
+export const CHOMPER_CONTACT_RANGE = 0.95;
+export const CHOMPER_ATTACK_WINDUP = 0.26; // barely a tell — respect the plant
+export const CHOMPER_ATTACK_COOLDOWN = 1.1;
+export const CHOMPER_DAMAGE = 2;
+export const CHOMPER_RATIO = 7;
+export const CHOMPER_FROM_LEVEL = 2;
+/**
+ * MAGNET CRAWLER — slowly drags the knight toward it. The tether SNAPS when
+ * you touch a wall (wall contact breaks the field) or carry real momentum —
+ * so the counters are the map itself and speed.
+ */
+export const MAGNET_HP = 3;
+export const MAGNET_R = 0.3;
+export const MAGNET_SPEED_FACTOR = 0.5;
+export const MAGNET_CONTACT_RANGE = 0.7;
+export const MAGNET_ATTACK_WINDUP = 0.45;
+export const MAGNET_ATTACK_COOLDOWN = 1.3;
+export const MAGNET_DAMAGE = 1;
+export const MAGNET_PULL_RANGE = 4.2; // tiles the field reaches
+export const MAGNET_PULL = 2.4; // pull velocity at close range, u/s
+export const MAGNET_BREAK_SPEED = 8; // momentum above this ignores the pull
+export const MAGNET_RATIO = 8;
+export const MAGNET_FROM_LEVEL = 3;
+/**
+ * WEB SPINNER — a spitter variant that shoots sticky WEB instead of acid: no
+ * damage, but you're slowed hard until it wears off — or until you touch any
+ * pinball part, which shakes the web loose (parts as the cleanse).
+ */
+export const WEBSPIN_HP = 2;
+export const WEBSPIN_R = 0.32;
+export const WEBSPIN_SPEED_FACTOR = 0.8;
+export const WEB_GLOB_SPEED = 6.5;
+export const WEB_SLOW_MULT = 0.45;
+export const WEB_TIME = 2.6; // seconds the slow lasts untreated
+export const WEBSPIN_RATIO = 7;
+export const WEBSPIN_FROM_LEVEL = 4;
+/**
+ * GHOST MATERIALIZE WINDOW — ghosts are now IMMUNE to damage while drifting
+ * (steel passes through ectoplasm); they materialize — and can be hurt —
+ * while winding up their touch and for this long after it lands. Fight it
+ * when it comes for you; you can't snipe it across the room.
+ */
+export const GHOST_VULN_TIME = 2.5;
 
 // ── Wall moves (Mortal-Kombat-style specials off a wall) ────────
 /**
@@ -744,6 +911,12 @@ export const GOLD_PER_DESCENT = 10;
 
 // ── Level scaling ───────────────────────────────────────────────
 // One tunable curve: maze size, horde size and zombie speed all step with depth.
+/**
+ * Growing-tree windiness per floor, cycled by depth so consecutive levels never
+ * share a maze shape (see generateMaze): 1.0 = winding backtracker corridors,
+ * 0.3 = bushy Prim's junctions, 0.65 = a mix. Level 1 stays 1.0 for continuity.
+ */
+export const WINDINESS_CYCLE = [1.0, 0.3, 0.65];
 export interface LevelConfig {
   cellsW: number; // maze CELLS (tile grid is 2*cells+1)
   cellsH: number;
@@ -752,6 +925,12 @@ export interface LevelConfig {
   torches: number;
   /** Wall-knock probability — higher = more loops/junctions = more complex. */
   braid: number;
+  /**
+   * Growing-tree bias in [0,1] fed to generateMaze: 1 = long winding corridors
+   * (recursive backtracker), 0 = bushy many-junction maze (Prim's). Varied by
+   * depth so consecutive floors read as structurally different mazes.
+   */
+  windiness: number;
   /** Archetype rooms carved over the corridors (bumper chamber / arena / …). */
   rooms: number;
   /** Cracked wall bands hiding shortcuts (smash at pinball speed). */
@@ -767,6 +946,11 @@ export function levelConfig(level: number): LevelConfig {
   const cellsW = Math.min(17 + Math.ceil(l * 1.4), 30);
   const cellsH = Math.min(12 + l, 22);
   const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
+  // Maze character cycles by depth so no two consecutive floors share a shape:
+  // level 1 stays the familiar winding backtracker (1.0), then a bushy
+  // junction-heavy floor (0.3), then a mixed one (0.65), repeating. Combined
+  // with the rising braid, deep bushy floors become true flanking labyrinths.
+  const windiness = WINDINESS_CYCLE[(l - 1) % WINDINESS_CYCLE.length];
   return {
     cellsW,
     cellsH,
@@ -781,8 +965,52 @@ export function levelConfig(level: number): LevelConfig {
     // deep floors are open labyrinths full of flanking routes and dead-end
     // ambush pockets. Capped so it never dissolves into an open room.
     braid: Math.min(0.1 + 0.035 * l, 0.32),
+    windiness,
     // Rooms + secrets ride depth too: deeper floors are busier theme parks.
     rooms: Math.min(ROOMS_BASE + Math.floor((l - 1) * ROOMS_PER_LEVEL), ROOMS_MAX),
     secrets: Math.min(SECRETS_BASE + Math.floor((l - 1) * SECRETS_PER_LEVEL), SECRETS_MAX),
   };
 }
+
+// ── NPCs (Wave E — PINBALL_ROADMAP.md) ──────────────────────────
+/**
+ * THE MAGICIAN 🎩 — appears on his own clock, bows, and teleports the KNIGHT
+ * to a random part of the floor (momentum preserved — landing at speed in a
+ * bumper chamber is the feature). Can't be killed, can't be stopped; he
+ * laughs every time. Suppressed while the Death Dealer is out — two
+ * uncontrollable actors at once reads as unfair, not chaotic.
+ */
+export const MAGICIAN_PERIOD = 45; // base seconds between visits
+export const MAGICIAN_JITTER = 12; // ± spread on the period
+export const MAGICIAN_FROM_LEVEL = 2;
+export const MAGICIAN_BOW = 1.2; // seconds between the entrance and the trick
+export const MAGICIAN_LINGER = 2.0; // seconds he savours the laugh before vanishing
+/**
+ * THE SPEED WITCH 🧙 — hides behind cracked walls (finally a reason to hunt
+ * them). One trade per floor: HALF your current hearts for a long
+ * turbo+spring-legs power window.
+ */
+export const WITCH_BUFF_TIME = 30;
+export const WITCH_CHANCE = 0.5; // chance a smashed secret reveals her (once per floor)
+/**
+ * THE ORACLE FROG 🐸 — sits in a dead end; touch it and it croaks out a
+ * trail of gold motes tracing the route to the stairs.
+ */
+export const FROG_COOLDOWN = 20; // seconds between consultations
+export const FROG_TRAIL_TILES = 30; // how far the mote trail traces
+export const FROG_TRAIL_STAGGER = 0.045; // seconds between trail motes
+
+// ── Wave-F power-ups + score glue ───────────────────────────────
+/** Iron Core: ram damage multiplier, and the ram works at ANY momentum. */
+export const IRONCORE_RAM_MULT = 3;
+/** Turbo Charge: no momentum friction, more steering, quicker feet. */
+export const TURBO_STEER_MULT = 1.5;
+export const TURBO_WALK_MULT = 1.25;
+/** Spring Legs: flat walls BOUNCE >1 while active (compound bouncing). */
+export const SPRINGLEGS_RESTITUTION = 1.05;
+/** Multi-Ball: two ghost knights mirror your run and ram what they touch. */
+export const MULTIBALL_OFFSET = 0.9; // tiles beside the player
+export const MULTIBALL_RAM_RANGE = 0.55;
+export const MULTIBALL_RAM_COOLDOWN = 0.3;
+/** Floor grade S/A unlocks a BONUS VAULT room on the next floor. */
+export const BONUS_ROOM_GRADES = ["S", "A"];

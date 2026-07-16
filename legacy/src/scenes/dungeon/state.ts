@@ -36,6 +36,26 @@ export interface Player extends Actor {
   hasteT: number;
   /** Seconds left on the shield buff (invulnerable). 0 = inactive. */
   shieldT: number;
+  /** Seconds left on Iron Core (ram damage ×3, ram at any momentum). */
+  ironT: number;
+  /** Seconds left on Turbo Charge (no momentum friction, extra steer). */
+  turboT: number;
+  /** Seconds left on Spring Legs (flat walls bounce >1). */
+  springT: number;
+  /** Seconds left on Multi-Ball (two ghost knights ram alongside). */
+  multiT: number;
+  /** Seconds of oil-slick grease left (no friction, dead steering). */
+  oilT: number;
+  /** Seconds of web-slow left (webspinner hit; any part touch clears it). */
+  webbedT: number;
+
+  // ── Trapdoor coaster ride ──
+  /** -1 when not riding, else seconds into the current rail ride. */
+  rideT: number;
+  /** Total ride duration (seconds). */
+  rideDur: number;
+  /** Catmull-Rom waypoints of the ride, ground coords. Empty when not riding. */
+  ridePts: Array<{ x: number; z: number }>;
 
   // ── Dodge-roll ──
   /** -1 when not rolling, else seconds into the current roll (incl. recovery). */
@@ -120,8 +140,34 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead";
  *  - reaper:  the DEATH DEALER — spawns after REAPER_AFTER seconds on a floor,
  *             phases through walls (ghost movement), accelerates forever and
  *             is IMMUNE to all damage. The floor timer with a scythe.
+ *  - goblin:  BUMPER GOBLIN — bounces the player away on contact like a pop
+ *             bumper; only momentum hits can hurt it.
+ *  - pin:     BOWLING PIN — 1 HP, doesn't chase; slides when hit and chains
+ *             into its crew (spawned in triangle formation).
+ *  - golem:   BRICK GOLEM — a stationary wall with a slam; only breaks to a
+ *             SECRET_BREAK_SPEED momentum hit, shatters into ricochet shards.
+ *  - chomper: CHOMPER PLANT — stationary corridor gate, fast nasty snap; a
+ *             momentum hit shoves it aside.
+ *  - magnet:  MAGNET CRAWLER — drags the player toward it; wall contact or
+ *             real momentum snaps the tether.
+ *  - webspinner: ranged web shot — no damage, hard slow; any pinball part
+ *             touch shakes the web off.
  */
-export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "reaper";
+export type EnemyKind =
+  | "zombie"
+  | "spider"
+  | "brute"
+  | "spitter"
+  | "ghost"
+  | "bat"
+  | "slime"
+  | "reaper"
+  | "goblin"
+  | "pin"
+  | "golem"
+  | "chomper"
+  | "magnet"
+  | "webspinner";
 
 export interface Zombie extends Actor {
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
@@ -144,10 +190,49 @@ export interface Zombie extends Actor {
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
   mini?: boolean;
+  /**
+   * Resting tint for reskinned kinds (reaper red, golem stone, magnet blue…).
+   * Everywhere a telegraph/flash clears its tint, it restores THIS, not null.
+   */
+  baseTint?: number | null;
+  /** PIN only: live slide velocity from a knockback (chains into the crew). */
+  slideVX?: number;
+  slideVZ?: number;
+  /** GHOST only: seconds left materialized (vulnerable). Immune while ≤ 0. */
+  vulnT?: number;
+}
+
+/**
+ * A friendly (or at least non-hostile) NPC on the floor — the Magician, the
+ * Speed Witch, the Oracle Frog. Static-sprite actors with a tiny state machine
+ * ticked by core.updateNpcs; never in the combat pipeline.
+ */
+export interface Npc {
+  kind: "magician" | "witch" | "frog";
+  x: number;
+  z: number;
+  sprite: { mesh: THREE.Mesh; dispose(): void };
+  bobPhase: number;
+  /** Seconds since spawn — drives the magician's bow → trick → vanish arc. */
+  t: number;
+  /** Frog: re-consultation cooldown. Witch: unused. Magician: unused. */
+  cooldownT: number;
+  /** Magician: which phase of the visit ("enter" | "trick" | "gone"). */
+  phase?: string;
 }
 
 // ── Pinball parts (the maze/pinball-machine hybrid) ──────────────
-export type PinballPartKind = "bumper" | "spring" | "ramp" | "deflector";
+export type PinballPartKind =
+  | "bumper"
+  | "spring"
+  | "ramp"
+  | "deflector"
+  | "glove"
+  | "oil"
+  | "spinpad"
+  | "slingshot"
+  | "target"
+  | "trapdoor";
 
 export interface PinballPart {
   kind: PinballPartKind;
@@ -166,6 +251,12 @@ export interface PinballPart {
   cooldownT: number;
   /** Seconds since last hit, drives the pop/squash animation (-1 = never hit). */
   hitT: number;
+  /** GLOVE only: countdown to the next punch (self-firing on its own clock). */
+  fireT?: number;
+  /** GLOVE only: true once this punch's lane damage has been dealt. */
+  punchSpent?: boolean;
+  /** TARGET only: true once broken — a dead target never re-arms. */
+  done?: boolean;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -246,6 +337,32 @@ export const state = {
   reaperOut: false,
   /** True once the pre-spawn warning toast has shown. */
   reaperWarned: false,
+
+  // ── Wave A/E/F floor state (targets, NPCs, frenzy, world freeze) ──
+  /** This floor's target-bullseye objective: total placed / broken so far. */
+  targetsTotal: 0,
+  targetsHit: 0,
+  /** Pinball-PART hits inside the current live bounce combo (frenzy meter). */
+  partComboHits: 0,
+  /** True once this combo already paid its MULTIBALL FRENZY bonus. */
+  frenzyPaid: false,
+  /** Seconds the world is frozen (freeze-ray potion) — enemies + gloves halt. */
+  freezeT: 0,
+  /** Grade S/A on descent arms one extra vault room on the next floor. */
+  bonusRoomNext: false,
+  /** The floor's friendly NPCs (magician / witch / frog). */
+  npcs: [] as Npc[],
+  /** Countdown to the Magician's next visit (per floor). */
+  magicianT: 0,
+  /** True once this floor's smashed-secret witch has appeared (one per floor). */
+  witchSpawned: false,
+  /** Multi-Ball ghost-knight meshes while the buff runs (else null). */
+  multiMeshes: null as THREE.Mesh[] | null,
+  /** Shared ram cooldown for the multi-ball ghosts. */
+  multiRamT: 0,
+  /** Queued oracle-frog trail tiles, consumed a mote at a time by the loop. */
+  frogTrail: [] as Array<{ x: number; z: number }>,
+  frogTrailT: 0,
 
   // Loadout — two weapon slots; an empty active slot fights as fists.
   weaponSlots: [freshWeapon("sword"), null] as Array<WeaponState | null>,
@@ -362,6 +479,15 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rageT: 0,
     hasteT: 0,
     shieldT: 0,
+    ironT: 0,
+    turboT: 0,
+    springT: 0,
+    multiT: 0,
+    oilT: 0,
+    webbedT: 0,
+    rideT: -1,
+    rideDur: 0,
+    ridePts: [],
     rollT: -1,
     rollDirX: 0,
     rollDirZ: 0,
@@ -412,6 +538,19 @@ export function resetState(): void {
   state.levelBestCombo = 0;
   state.reaperOut = false;
   state.reaperWarned = false;
+  state.targetsTotal = 0;
+  state.targetsHit = 0;
+  state.partComboHits = 0;
+  state.frenzyPaid = false;
+  state.freezeT = 0;
+  state.bonusRoomNext = false;
+  state.npcs = [];
+  state.magicianT = 0;
+  state.witchSpawned = false;
+  state.multiMeshes = null;
+  state.multiRamT = 0;
+  state.frogTrail = [];
+  state.frogTrailT = 0;
   state.weaponSlots = [freshWeapon("sword"), null];
   state.activeSlot = 0;
   state.gear = {};

@@ -21,7 +21,7 @@
 export type WeaponId = "fists" | "sword" | "stick" | "mace" | "chair" | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
-export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob";
+export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard";
 
 export interface WeaponDef {
   id: WeaponId;
@@ -111,7 +111,17 @@ export const GEAR_SLOTS: GearSlot[] = ["helmet", "armor", "boots"];
 //    duration, tracked on the player and ticked down each frame. Grabbing the
 //    same buff again refreshes its timer rather than stacking.
 
-export type PotionId = "health" | "rage" | "haste" | "shield" | "gold";
+export type PotionId =
+  | "health"
+  | "rage"
+  | "haste"
+  | "shield"
+  | "gold"
+  | "ironcore"
+  | "turbo"
+  | "springlegs"
+  | "freeze"
+  | "multiball";
 
 export interface PotionDef {
   id: PotionId;
@@ -136,9 +146,20 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   shield: { id: "shield", label: "Shield", icon: "🛡️", color: 0x8fc46b, heal: 0, duration: 6 },
   // Greed idol: not a liquid — an instant gold windfall. Reads as a golden flask.
   gold: { id: "gold", label: "Idol", icon: "💰", color: 0xffd98a, heal: 0, duration: 0, gold: 25 },
+  // ── The pinball power-ups (Wave F) ──
+  // Iron Core: pure ball mode — ramming at ANY momentum, at triple damage.
+  ironcore: { id: "ironcore", label: "Iron Core", icon: "🔩", color: 0x8a94a6, heal: 0, duration: 20 },
+  // Turbo Charge: the momentum never bleeds and the ball actually steers.
+  turbo: { id: "turbo", label: "Turbo", icon: "🚀", color: 0xf0a63c, heal: 0, duration: 10 },
+  // Spring Legs: every flat wall bounce GAINS speed — compound bouncing.
+  springlegs: { id: "springlegs", label: "Spring Legs", icon: "🦵", color: 0x8fc46b, heal: 0, duration: 15 },
+  // Freeze Ray: the whole machine holds its breath — thread the bumper room.
+  freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6 },
+  // Multi-Ball: two ghost knights mirror the run and ram what they touch.
+  multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", color: 0xb06fe8, heal: 0, duration: 12 },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

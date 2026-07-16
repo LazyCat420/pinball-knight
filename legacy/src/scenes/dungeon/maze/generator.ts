@@ -90,7 +90,25 @@ const DIRS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
- * Generate a maze.
+ * Generate a maze via the **growing-tree** algorithm — one function that spans
+ * a whole continuum of maze textures via `windiness`, so different floors can
+ * feel structurally different instead of every level being the same winding
+ * backtracker (the roadmap's "same pattern over and over" gap).
+ *
+ * At each step we hold a set of ACTIVE cells (carved but with maybe-unvisited
+ * neighbours) and extend from one of them:
+ *   - with probability `windiness`, from the NEWEST active cell → depth-first,
+ *     long winding corridors with few junctions (recursive backtracker);
+ *   - otherwise from a RANDOM active cell → breadth-ish frontier growth, bushy
+ *     mazes with many short dead ends and junctions (randomized Prim's).
+ * Intermediate values blend the two, so `windiness` 0.35 reads as "junction-y
+ * with the odd long hall" — a genuinely different floor.
+ *
+ * `windiness = 1` is bit-identical to the old recursive backtracker: the
+ * newest-cell path is exactly a stack, and the selection rng is only drawn when
+ * it can actually change the pick (>1 active cell AND windiness < 1), so the
+ * random stream — and therefore every downstream spawn/torch/room draw — is
+ * unchanged for existing floors.
  *
  * `braid` is the probability of knocking through a wall that separates two
  * already-carved floor tiles. A perfect maze (braid 0) has exactly one path
@@ -98,24 +116,34 @@ const DIRS: ReadonlyArray<readonly [number, number]> = [
  * a little braiding opens loops so you can flank and flee. Removing a wall
  * between two floors can only ADD connectivity, so reachability is preserved
  * by construction.
+ *
+ * Whatever `windiness` and `braid` are, the output keeps the odd/even
+ * cell-lattice discipline every downstream stage relies on (thickenWalls'
+ * tall-back guarantee, 2×2 secret bands, room carving): floor cells sit at
+ * (2c+1, 2c+1) and the only carved walls are the single tiles between two
+ * adjacent cells.
  */
-export function generateMaze(cellsW: number, cellsH: number, rng: () => number, braid = 0.12): Grid {
+export function generateMaze(cellsW: number, cellsH: number, rng: () => number, braid = 0.12, windiness = 1): Grid {
   if (cellsW < 2 || cellsH < 2) throw new Error(`[dungeon] maze needs ≥2 cells per side, got ${cellsW}x${cellsH}`);
 
   const w = cellsW * 2 + 1;
   const h = cellsH * 2 + 1;
   const g: Grid = { w, h, t: new Uint8Array(w * h) }; // all T_WALL
 
-  // Backtracker over cells. Cell (cx, cy) lives at tile (2cx+1, 2cy+1).
+  // Growing tree over cells. Cell (cx, cy) lives at tile (2cx+1, 2cy+1).
   const visited = new Uint8Array(cellsW * cellsH);
-  const stack: Array<[number, number]> = [[0, 0]];
+  const active: Array<[number, number]> = [[0, 0]];
   visited[0] = 1;
   setTile(g, 1, 1, T_FLOOR);
 
-  while (stack.length) {
-    const [cx, cy] = stack[stack.length - 1];
+  while (active.length) {
+    // Which active cell to grow from — newest (windy) vs random (bushy). Only
+    // spend an rng draw when the choice can actually differ, so windiness=1 and
+    // single-cell states leave the stream bit-identical to the backtracker.
+    const pick = active.length > 1 && windiness < 1 && rng() >= windiness ? Math.floor(rng() * active.length) : active.length - 1;
+    const [cx, cy] = active[pick];
 
-    // Unvisited neighbours, in a rng-shuffled order.
+    // Unvisited neighbours, in DIRS order (rng only picks among them).
     const options: Array<[number, number]> = [];
     for (const [dx, dy] of DIRS) {
       const nx = cx + dx;
@@ -125,7 +153,10 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
     }
 
     if (!options.length) {
-      stack.pop();
+      // Exhausted — drop it. Swap-remove keeps random picks O(1); the newest
+      // slot is the last element, so windiness=1 stays a true stack pop.
+      active[pick] = active[active.length - 1];
+      active.pop();
       continue;
     }
 
@@ -134,7 +165,7 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
     // Carve the neighbour cell and the wall between.
     setTile(g, nx * 2 + 1, ny * 2 + 1, T_FLOOR);
     setTile(g, cx + nx + 1, cy + ny + 1, T_FLOOR);
-    stack.push([nx, ny]);
+    active.push([nx, ny]);
   }
 
   // Braid: open some walls that sit between two floor tiles (never the border).

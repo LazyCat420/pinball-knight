@@ -4,6 +4,7 @@
  */
 import { state } from "./state";
 import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
+import { disposeNpcs } from "./entities/npc";
 import { disposePinballParts } from "./render/pinball-parts";
 
 /**
@@ -33,6 +34,17 @@ export function disposeLevel(): void {
   state.props = [];
 
   disposePinballParts(state.scene);
+  disposeNpcs();
+
+  // Multi-Ball ghost knights: their materials are clones, their geometry and
+  // atlas belong to the player — dispose only what's ours.
+  if (state.multiMeshes) {
+    for (const mesh of state.multiMeshes) {
+      state.scene?.remove(mesh);
+      (mesh.material as { dispose(): void }).dispose();
+    }
+    state.multiMeshes = null;
+  }
 
   state.maze?.dispose();
   state.maze = null;

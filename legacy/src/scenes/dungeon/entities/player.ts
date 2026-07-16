@@ -60,6 +60,34 @@ import {
   RAMP_STEER_LOCK,
   DEFLECTOR_BOOST,
   SECRET_BREAK_SPEED,
+  OIL_RADIUS,
+  OIL_LAUNCH_SPEED,
+  OIL_LAUNCH_MULT,
+  OIL_SLICK_TIME,
+  OIL_STEER_FACTOR,
+  SPINPAD_SPEED,
+  SPINPAD_COOLDOWN,
+  SLING_SPEED_MULT,
+  SLING_ADD,
+  SLING_MIN_EXIT,
+  SLING_COOLDOWN,
+  TARGET_HIT_SPEED,
+  TARGET_RADIUS,
+  TARGET_GOLD,
+  TARGET_CLEAR_GOLD,
+  TRAPDOOR_RIDE_SPEED,
+  TRAPDOOR_RIDE_MIN,
+  TRAPDOOR_RIDE_MAX,
+  TRAPDOOR_EXIT_SPEED,
+  TRAPDOOR_HEIGHT,
+  TRAPDOOR_COOLDOWN,
+  FRENZY_PART_HITS,
+  FRENZY_GOLD,
+  WEB_SLOW_MULT,
+  IRONCORE_RAM_MULT,
+  TURBO_STEER_MULT,
+  TURBO_WALK_MULT,
+  SPRINGLEGS_RESTITUTION,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -88,7 +116,9 @@ import {
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle, wallContact } from "../collision";
-import { at, T_CRACKED, worldToTile, type Grid } from "../maze/generator";
+import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
+import { addGold } from "../../../utils/gold-wallet";
+import { showPickupNote, showToast } from "../ui";
 import { smashSecretAt } from "../secrets";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
@@ -96,7 +126,7 @@ import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage } from "./combat";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxTrapdoor } from "../audio";
 
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
@@ -136,6 +166,11 @@ export function resetPlayerMotion(): void {
     state.player.momSpeed = 0;
     state.player.bounceCombo = 0;
     state.player.bounceComboT = 0;
+    state.player.oilT = 0;
+    state.player.webbedT = 0;
+    state.player.rideT = -1;
+    state.player.ridePts = [];
+    state.player.sprite.mesh.position.y = 0; // in case a level change caught a ride mid-flight
   }
 }
 
@@ -440,6 +475,30 @@ function rangedSfx(id: string): void {
  * Part cooldowns/hit animations are ticked by the parts renderer (one owner);
  * this only consumes ready parts and stamps cooldownT/hitT.
  */
+/**
+ * Bookkeeping every PART trigger shares: tick the bounce combo, shake a web
+ * off (parts are the webspinner's cleanse), count part-hits toward the
+ * MULTIBALL FRENZY bonus and pay it once per combo.
+ */
+function onPartTrigger(): void {
+  const p = state.player;
+  if (!p) return;
+  p.bounceCombo += 1;
+  p.bounceComboT = PINBALL_COMBO_WINDOW;
+  if (p.webbedT > 0) {
+    p.webbedT = 0;
+    showPickupNote("🕸️ web SHAKEN OFF");
+  }
+  state.partComboHits += 1;
+  if (!state.frenzyPaid && state.partComboHits >= FRENZY_PART_HITS) {
+    state.frenzyPaid = true;
+    state.goldRun += FRENZY_GOLD;
+    addGold(FRENZY_GOLD, "dungeon-game");
+    showToast("🪩 MULTIBALL FRENZY", `${state.partComboHits} parts in one chain · +${FRENZY_GOLD}g`);
+    state.shakeT = Math.max(state.shakeT, 0.25);
+  }
+}
+
 function touchPinballParts(inMomentum: boolean): void {
   const p = state.player;
   if (!p || state.pinballParts.length === 0) return;
@@ -467,8 +526,7 @@ function touchPinballParts(inMomentum: boolean): void {
         PINBALL_MAX_SPEED,
         Math.max(p.momSpeed * BUMPER_KICK_MULT + BUMPER_KICK_ADD, BUMPER_MIN_EXIT),
       );
-      p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      onPartTrigger();
       part.cooldownT = BUMPER_COOLDOWN;
       part.hitT = 0;
       state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, 12);
@@ -480,8 +538,7 @@ function touchPinballParts(inMomentum: boolean): void {
       p.momX = part.dirX;
       p.momZ = part.dirZ;
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
-      p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      onPartTrigger();
       part.cooldownT = SPRING_COOLDOWN;
       part.hitT = 0;
       state.vfx?.dust(part.x, 0.1, part.z);
@@ -500,6 +557,87 @@ function touchPinballParts(inMomentum: boolean): void {
       part.hitT = 0;
       state.vfx?.dust(p.x, 0.06, p.z);
       sfxRoll();
+    } else if (part.kind === "oil") {
+      // The slick: a WALKING touch converts your stride into a frictionless
+      // slide along your heading; riding over it re-greases the momentum.
+      if (d2 > OIL_RADIUS * OIL_RADIUS) continue;
+      if (inMomentum) {
+        p.oilT = OIL_SLICK_TIME; // keep the ride greased (no friction, dead steering)
+        continue; // no cooldown stamp — the slick is a zone, not a trigger
+      }
+      if (curSpeed < 0.5) continue; // standing on oil is just standing
+      const a = state.input?.axis() ?? { x: 0, z: 0 };
+      if (a.x === 0 && a.z === 0) continue;
+      const wd = screenDirToWorld(a.x, a.z);
+      const wl = Math.hypot(wd.x, wd.z) || 1;
+      p.momX = wd.x / wl;
+      p.momZ = wd.z / wl;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(curSpeed * OIL_LAUNCH_MULT, OIL_LAUNCH_SPEED));
+      p.oilT = OIL_SLICK_TIME;
+      part.cooldownT = 0.4;
+      part.hitT = 0;
+      state.vfx?.dust(p.x, 0.04, p.z);
+      sfxRoll();
+    } else if (part.kind === "spinpad") {
+      // The slot machine: a random-direction fling at speed.
+      if (d2 > 0.45 * 0.45) continue;
+      const ang = Math.random() * Math.PI * 2;
+      p.momX = Math.cos(ang);
+      p.momZ = Math.sin(ang);
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPINPAD_SPEED));
+      onPartTrigger();
+      part.cooldownT = SPINPAD_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 10);
+      state.shakeT = Math.max(state.shakeT, 0.14);
+      sfxSpin();
+    } else if (part.kind === "slingshot") {
+      if (d2 > 0.5 * 0.5) continue;
+      if (inMomentum) {
+        // Passing the gate with momentum PINGS you out along the lane —
+        // whichever way you were already mostly going.
+        const along = p.momX * part.dirX + p.momZ * part.dirZ >= 0 ? 1 : -1;
+        p.momX = part.dirX * along;
+        p.momZ = part.dirZ * along;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * SLING_SPEED_MULT + SLING_ADD, SLING_MIN_EXIT));
+      } else {
+        p.momX = part.dirX;
+        p.momZ = part.dirZ;
+        p.momSpeed = SLING_MIN_EXIT;
+      }
+      onPartTrigger();
+      part.cooldownT = SLING_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.35, part.z, p.momX, p.momZ, 9);
+      sfxSpring();
+    } else if (part.kind === "target") {
+      // Bullseyes break to MOMENTUM only — the floor's objective layer.
+      if (part.done || !inMomentum || p.momSpeed < TARGET_HIT_SPEED) continue;
+      if (d2 > TARGET_RADIUS * TARGET_RADIUS) continue;
+      part.done = true;
+      part.hitT = 0;
+      state.targetsHit += 1;
+      onPartTrigger();
+      state.goldRun += TARGET_GOLD;
+      addGold(TARGET_GOLD, "dungeon-game");
+      state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 14);
+      state.shakeT = Math.max(state.shakeT, 0.14);
+      sfxTarget();
+      if (state.targetsHit >= state.targetsTotal && state.targetsTotal > 0) {
+        state.goldRun += TARGET_CLEAR_GOLD;
+        addGold(TARGET_CLEAR_GOLD, "dungeon-game");
+        showToast("🎯 ALL TARGETS DOWN", `the machine pays out · +${TARGET_CLEAR_GOLD}g`);
+      } else {
+        showPickupNote(`🎯 TARGET ${state.targetsHit}/${state.targetsTotal} +${TARGET_GOLD}g`);
+      }
+      state.hudDirty = true;
+    } else if (part.kind === "trapdoor") {
+      // The hatch drops you onto the rollercoaster — see startRide.
+      if (d2 > 0.42 * 0.42) continue;
+      if (p.rideT >= 0) continue;
+      part.cooldownT = TRAPDOOR_COOLDOWN;
+      part.hitT = 0;
+      startRide();
     } else {
       // deflector — banked corner, only meaningful while carrying momentum
       if (!inMomentum || d2 > 0.5 * 0.5) continue;
@@ -515,8 +653,7 @@ function touchPinballParts(inMomentum: boolean): void {
         p.momZ = part.dirZ;
       }
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * DEFLECTOR_BOOST);
-      p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      onPartTrigger();
       part.cooldownT = 0.3;
       part.hitT = 0;
       state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 6);
@@ -542,6 +679,138 @@ function trySmashAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number
     if (at(g, t.i, t.j) === T_CRACKED && smashSecretAt(t.i, t.j)) return true;
   }
   return false;
+}
+
+// ── Trapdoor rollercoaster (Wave D) ─────────────────────────────────────────
+// A trapdoor doesn't teleport — it RIDES: a Catmull-Rom spline flown OVER the
+// maze walls (so no collision question exists), control locked, i-frames on,
+// exiting as a full-speed momentum launch somewhere far. All state mutation
+// happens at the endpoints, so it can never desync combat.
+
+/** Catmull-Rom interpolation across the ride's waypoint list at u ∈ 0..1. */
+function ridePoint(pts: Array<{ x: number; z: number }>, u: number): { x: number; z: number } {
+  const n = pts.length - 1;
+  const t = Math.min(0.9999, Math.max(0, u)) * n;
+  const k = Math.floor(t);
+  const f = t - k;
+  const p0 = pts[Math.max(0, k - 1)];
+  const p1 = pts[k];
+  const p2 = pts[Math.min(n, k + 1)];
+  const p3 = pts[Math.min(n, k + 2)];
+  const cr = (a: number, b: number, c: number, d: number): number =>
+    0.5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (3 * b - a - 3 * c + d) * f * f * f);
+  return { x: cr(p0.x, p1.x, p2.x, p3.x), z: cr(p0.z, p1.z, p2.z, p3.z) };
+}
+
+/** Pick where the coaster drops you: far tiles preferred, with a taste for trouble/treasure. */
+function pickRideExit(g: Grid): { x: number; z: number } {
+  const p = state.player!;
+  let best: { x: number; z: number } | null = null;
+  let bestScore = -1;
+  for (let n = 0; n < 40; n++) {
+    const i = 1 + Math.floor(Math.random() * (g.w - 2));
+    const j = 1 + Math.floor(Math.random() * (g.h - 2));
+    if (!isWalkable(g, i, j)) continue;
+    const c = tileCenter(g, i, j);
+    let score = Math.hypot(c.x - p.x, c.z - p.z); // farther is better
+    // A pinch of bias: landing near loot (fun) or near the stairs (progress).
+    if (state.groundItems.some((it) => Math.hypot(it.x - c.x, it.z - c.z) < 3)) score += 8;
+    if (state.stairs) {
+      const sc = tileCenter(g, state.stairs.i, state.stairs.j);
+      if (Math.hypot(sc.x - c.x, sc.z - c.z) < 5) score += 6;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best ?? { x: p.x, z: p.z };
+}
+
+/** The hatch opens: build the spline and hand the player to the rail. */
+function startRide(): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.rideT >= 0) return;
+  const exit = pickRideExit(g);
+  // Two mid waypoints bowed off the straight line make it a RIDE, not a zip.
+  const dx = exit.x - p.x;
+  const dz = exit.z - p.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const px = -dz / len; // perpendicular
+  const pz = dx / len;
+  const bow1 = (Math.random() - 0.5) * Math.min(10, len * 0.6);
+  const bow2 = (Math.random() - 0.5) * Math.min(10, len * 0.6);
+  p.ridePts = [
+    { x: p.x, z: p.z },
+    { x: p.x + dx * 0.33 + px * bow1, z: p.z + dz * 0.33 + pz * bow1 },
+    { x: p.x + dx * 0.66 + px * bow2, z: p.z + dz * 0.66 + pz * bow2 },
+    exit,
+  ];
+  p.rideT = 0;
+  p.rideDur = Math.min(TRAPDOOR_RIDE_MAX, Math.max(TRAPDOOR_RIDE_MIN, len / TRAPDOOR_RIDE_SPEED));
+  p.momSpeed = 0; // the rail owns the physics now
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.wallMoveT = -1;
+  p.anim.setRate(1.4);
+  p.anim.play("ball", { force: true });
+  state.shakeT = Math.max(state.shakeT, 0.2);
+  showToast("🎢 TRAPDOOR!", "hold on");
+  sfxTrapdoor();
+}
+
+/**
+ * Advance an active coaster ride. Owns the player completely: position comes
+ * off the spline, height arcs over the walls, i-frames the whole way. Landing
+ * hands the flight speed straight to the pinball system — the coaster IS a
+ * launcher.
+ */
+function updateRide(dt: number): boolean {
+  const p = state.player;
+  if (!p || p.rideT < 0) return false;
+  p.rideT += dt;
+  const u = Math.min(1, p.rideT / p.rideDur);
+  const pos = ridePoint(p.ridePts, u);
+  const ahead = ridePoint(p.ridePts, Math.min(1, u + 0.03));
+  p.x = pos.x;
+  p.z = pos.z;
+  p.iframes = Math.max(p.iframes, 0.1);
+  // Face along the rail; trail gold ghosts + rail sparks.
+  const s = worldDirToScreen(ahead.x - pos.x, ahead.z - pos.z);
+  if (s.x !== 0 || s.z !== 0) {
+    p.facing = facingFromVelocity(s.x, s.z, p.facing);
+    p.anim.setFacing(p.facing);
+  }
+  spawnAura(dt, 0.05, true, 0.3, 0.5);
+  if (Math.random() < 14 * dt) state.vfx?.sparks(p.x, 0.4, p.z, 0, 0, 3);
+
+  syncActorMesh(p);
+  // FLY over the walls: the arc that makes it a coaster. syncActorMesh pins
+  // y=0; lift after, like the ghosts do.
+  const h = Math.sin(Math.PI * u) * TRAPDOOR_HEIGHT;
+  p.sprite.mesh.position.y = h;
+
+  if (u >= 1) {
+    p.rideT = -1;
+    p.ridePts = [];
+    p.sprite.mesh.position.y = 0;
+    // Landing = a launch: the rail hands its speed to the pinball machine.
+    const dx = ahead.x - pos.x;
+    const dz = ahead.z - pos.z;
+    const dl = Math.hypot(dx, dz) || 1;
+    p.momX = dx / dl;
+    p.momZ = dz / dl;
+    p.momSpeed = TRAPDOOR_EXIT_SPEED;
+    p.ramT = 0;
+    onPartTrigger();
+    for (let k = 0; k < 3; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
+    state.shakeT = Math.max(state.shakeT, 0.25);
+    sfxHeavy();
+  }
+  return true;
 }
 
 /**
@@ -570,11 +839,13 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // A dash panel locks steering briefly so its lane actually carries you.
   steerLockT = Math.max(0, steerLockT - dt);
   const a = input.axis();
+  // Oil kills the steering (you're on a slick); turbo sharpens it.
+  const steerMul = p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1;
   if (steerLockT <= 0 && (a.x !== 0 || a.z !== 0)) {
     const wd = screenDirToWorld(a.x, a.z);
     const wl = Math.hypot(wd.x, wd.z) || 1;
-    p.momX += (wd.x / wl) * PINBALL_STEER * dt;
-    p.momZ += (wd.z / wl) * PINBALL_STEER * dt;
+    p.momX += (wd.x / wl) * PINBALL_STEER * steerMul * dt;
+    p.momZ += (wd.z / wl) * PINBALL_STEER * steerMul * dt;
     const ml = Math.hypot(p.momX, p.momZ) || 1;
     p.momX /= ml;
     p.momZ /= ml;
@@ -614,9 +885,11 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // springs and ramps (handled in touchPinballParts) are the other
     // accelerators. Every bounce still ticks the combo chain.
     const corner = blockedX && blockedZ;
+    // Spring Legs turns even flat walls into gainers — compound bouncing.
+    const flatRest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
     p.momSpeed = corner
       ? Math.min(PINBALL_MAX_SPEED, p.momSpeed * PINBALL_CORNER_RESTITUTION + PINBALL_CORNER_ADD)
-      : p.momSpeed * PINBALL_WALL_RESTITUTION;
+      : Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest);
     p.bounceCombo += 1;
     p.bounceComboT = PINBALL_COMBO_WINDOW;
     // Bounce juice scales with the combo — a corner hit throws a bigger burst.
@@ -634,16 +907,24 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   touchPinballParts(true);
 
   // Momentum bleeds ONLY when NOT bouncing (Sonic keeps its speed on a good
-  // line) — very gently. The combo lapses if you go too long without a wall.
-  p.momSpeed = Math.max(0, p.momSpeed - PINBALL_FRICTION * dt);
+  // line) — very gently. Oil grease and Turbo Charge kill the bleed outright.
+  // The combo lapses if you go too long without a wall.
+  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION;
+  p.momSpeed = Math.max(0, p.momSpeed - friction * dt);
   p.bounceComboT = Math.max(0, p.bounceComboT - dt);
-  if (p.bounceComboT <= 0) p.bounceCombo = 0;
+  if (p.bounceComboT <= 0) {
+    p.bounceCombo = 0;
+    state.partComboHits = 0;
+    state.frenzyPaid = false;
+  }
 
   // Ball form rams the horde: anything the ball touches gets smashed aside.
+  // IRON CORE makes the whole ride a ram — any momentum, triple damage.
   p.ramT = Math.max(0, p.ramT - dt);
-  if (isBall && p.ramT <= 0) {
+  const ramming = isBall || p.ironT > 0;
+  if (ramming && p.ramT <= 0) {
     const w = WEAPONS[activeWeapon().id];
-    const dmg = playerDamage(Math.max(2, w.damage * 1.5));
+    const dmg = playerDamage(Math.max(2, w.damage * 1.5) * (p.ironT > 0 ? IRONCORE_RAM_MULT : 1));
     let hit = false;
     for (const z of state.zombies) {
       if (z.mode === "dead") continue;
@@ -685,6 +966,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     p.momSpeed = 0;
     p.bounceCombo = 0;
     p.bounceComboT = 0;
+    state.partComboHits = 0;
+    state.frenzyPaid = false;
     p.overcharge = Math.min(p.overcharge, 0.999); // drop out of ball form
     p.anim.setRate(1);
     p.anim.play("idle", { force: true });
@@ -714,7 +997,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   p.cooldown = Math.max(0, p.cooldown - dt);
   p.iframes = Math.max(0, p.iframes - dt);
+  p.oilT = Math.max(0, p.oilT - dt);
+  p.webbedT = Math.max(0, p.webbedT - dt);
   updateFlash(p, dt);
+
+  // ── Trapdoor coaster ── the rail owns the player completely while riding.
+  if (updateRide(dt)) return;
 
   // ── Wall launch (wall-kick / pounce) ── owns the player while airborne.
   if (updateWallLaunch(dt)) return;
@@ -835,6 +1123,8 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   let targetSpeed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
   if (state.gear.boots !== undefined) targetSpeed *= BOOTS_SPEED_FACTOR;
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
+  if (p.turboT > 0) targetSpeed *= TURBO_WALK_MULT; // turbo: quicker feet too
+  if (p.webbedT > 0) targetSpeed *= WEB_SLOW_MULT; // webbed: wading through silk
   targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;
 
@@ -1067,4 +1357,48 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   const [fx, fz] = FACING_VEC[p.facing];
   const scale = move === HEAVY ? 1.5 : move === COMBO_FINISH ? 1.3 : 1;
   state.vfx?.slash(p.x + fx * 0.5 * scale, 0.6, p.z + fz * 0.5 * scale, p.facing, w.slashColor ?? 0xdfe7f2);
+}
+
+/**
+ * MULTI-BALL (Wave F): while the buff runs, two ghost knights flank the hero,
+ * mirroring the run, and RAM any zombie they overlap. Their meshes are owned
+ * by core (created on pickup, torn down on expiry); this owns the sim: place
+ * them beside the travel direction and deal the contact damage.
+ */
+export function updateMultiball(dt: number): void {
+  const p = state.player;
+  const meshes = state.multiMeshes;
+  if (!p || !meshes || meshes.length === 0) return;
+
+  // Flank perpendicular to travel (momentum if riding, facing otherwise).
+  let dx = p.momSpeed > 0 ? p.momX : FACING_VEC[p.facing][0];
+  let dz = p.momSpeed > 0 ? p.momZ : FACING_VEC[p.facing][1];
+  const dl = Math.hypot(dx, dz) || 1;
+  dx /= dl;
+  dz /= dl;
+  const offsets: Array<[number, number]> = [
+    [-dz * 0.9, dx * 0.9],
+    [dz * 0.9, -dx * 0.9],
+  ];
+  state.multiRamT = Math.max(0, state.multiRamT - dt);
+  const w = WEAPONS[activeWeapon().id];
+  meshes.forEach((mesh, k) => {
+    const gx = p.x + offsets[k][0];
+    const gz = p.z + offsets[k][1];
+    // Same iso pixel-snap as every actor, then hover a hair for the spectre read.
+    const fake = { sprite: { mesh: { position: mesh.position } }, x: gx, z: gz };
+    syncActorMesh(fake as Parameters<typeof syncActorMesh>[0]);
+    mesh.position.y = 0.06 + Math.sin(state.elapsed * 5 + k * Math.PI) * 0.04;
+    if (state.multiRamT <= 0) {
+      for (const z of state.zombies) {
+        if (z.mode === "dead") continue;
+        const zdx = z.x - gx;
+        const zdz = z.z - gz;
+        if (zdx * zdx + zdz * zdz > 0.55 * 0.55) continue;
+        damageZombie(z, playerDamage(Math.max(1, w.damage)), zdx, zdz, 0.6);
+        state.multiRamT = 0.3;
+        break;
+      }
+    }
+  });
 }

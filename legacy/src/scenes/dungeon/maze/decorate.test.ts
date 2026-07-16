@@ -80,17 +80,25 @@ describe("decorateMaze", () => {
     expect(plan.parts.length).toBeGreaterThan(0);
     for (const part of plan.parts) {
       const open = openSides(g, part.i, part.j);
-      if (part.kind === "spring") {
-        // dead end — one way out, and the spring aims along it
+      if (part.kind === "spring" || part.kind === "trapdoor") {
+        // dead end — one way out, and the launcher aims along it
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
-      } else if (part.kind === "ramp") {
-        // straight corridor — two OPPOSITE open sides, ramp along the lane
+      } else if (part.kind === "ramp" || part.kind === "oil" || part.kind === "slingshot") {
+        // straight corridor — two OPPOSITE open sides, lane parts along it
         // (sum-to-zero sidesteps the -0 !== +0 Object.is quirk)
         expect(open.length).toBe(2);
         expect(open[0][0] + open[1][0]).toBe(0);
         expect(open[0][1] + open[1][1]).toBe(0);
-        expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(true);
+        if (part.kind !== "oil") expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(true);
+      } else if (part.kind === "glove") {
+        // straight corridor — the glove punches ACROSS the lane, off a wall
+        expect(open.length).toBe(2);
+        expect(open[0][0] + open[1][0]).toBe(0);
+        expect(open[0][1] + open[1][1]).toBe(0);
+        // dir ⊥ corridor axis, and the mount side (-dir) is a solid wall
+        expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(false);
+        expect(at(g, part.i - part.dirI, part.j - part.dirJ)).not.toBe(T_FLOOR);
       } else if (part.kind === "deflector") {
         // corner — two PERPENDICULAR open legs, both recorded on the part
         expect(open.length).toBe(2);
@@ -98,14 +106,19 @@ describe("decorateMaze", () => {
         for (const [di, dj] of [[part.dirI, part.dirJ], [part.dir2I, part.dir2J]]) {
           expect(open.some(([oi, oj]) => oi === di && oj === dj)).toBe(true);
         }
+      } else if (part.kind === "target") {
+        // wall-mounted, like a torch: dir points at a solid wall
+        expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
       } else {
-        // bumper — a junction (3+ ways out): an open crossing to carom around
+        // bumper / spinpad — a junction (3+ ways out): an open crossing
         expect(open.length).toBeGreaterThanOrEqual(3);
       }
     }
-    // Spacing: parts never bunch into one intersection.
-    for (const a of plan.parts) {
-      for (const b of plan.parts) {
+    // Spacing: DEALT parts never bunch into one intersection (targets and
+    // trapdoors are separate layers with their own spacing rules).
+    const dealt = plan.parts.filter((p) => p.kind !== "target" && p.kind !== "trapdoor");
+    for (const a of dealt) {
+      for (const b of dealt) {
         if (a === b) continue;
         expect(Math.abs(a.i - b.i) + Math.abs(a.j - b.j)).toBeGreaterThanOrEqual(3);
       }
@@ -114,10 +127,27 @@ describe("decorateMaze", () => {
 
   it("respects the part budget and keeps parts off the stairs + away from the start", () => {
     const { g, plan } = makeLevel(113, 8, 10, 6);
-    expect(plan.parts.length).toBeLessThanOrEqual(6);
-    for (const part of plan.parts) {
+    // Targets + trapdoors are objective/traversal layers OVER the budget; the
+    // dealt machine parts themselves must stay inside it.
+    const dealt = plan.parts.filter((p) => p.kind !== "target" && p.kind !== "trapdoor");
+    expect(dealt.length).toBeLessThanOrEqual(6);
+    const targets = plan.parts.filter((p) => p.kind === "target");
+    expect(targets.length).toBeLessThanOrEqual(5);
+    for (const part of dealt) {
       expect(at(g, part.i, part.j)).toBe(T_FLOOR); // never on the stairs tile
       expect(Math.abs(part.i - plan.start.i) + Math.abs(part.j - plan.start.j)).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it("dead-end economics: trapdoors sit on dead ends, the frog gets a perch when one is spare", () => {
+    const { g, plan } = makeLevel(151, 8, 10, 12);
+    for (const td of plan.parts.filter((p) => p.kind === "trapdoor")) {
+      expect(openSides(g, td.i, td.j).length).toBe(1);
+    }
+    if (plan.frog) {
+      expect(openSides(g, plan.frog.i, plan.frog.j).length).toBe(1);
+      // never doubled onto a spring or trapdoor
+      expect(plan.parts.some((p) => p.i === plan.frog!.i && p.j === plan.frog!.j)).toBe(false);
     }
   });
 });

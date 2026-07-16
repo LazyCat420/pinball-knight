@@ -59,6 +59,62 @@ describe("generateMaze", () => {
   it("rejects degenerate sizes", () => {
     expect(() => generateMaze(1, 5, mulberry32(1))).toThrow();
   });
+
+  it("stays fully reachable across the whole windiness continuum", () => {
+    for (const windiness of [0, 0.3, 0.65, 1]) {
+      for (const seed of [1, 7, 42]) {
+        const g = generateMaze(12, 9, mulberry32(seed), 0.12, windiness);
+        const dist = bfsDistances(g, 1, 1);
+        for (let j = 0; j < g.h; j++) {
+          for (let i = 0; i < g.w; i++) {
+            if (at(g, i, j) === T_FLOOR) {
+              expect(dist[idx(g, i, j)], `w=${windiness} seed=${seed} tile ${i},${j}`).toBeGreaterThanOrEqual(0);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("windiness=1 is bit-identical to the default (the backtracker is preserved)", () => {
+    // Explicit windiness=1 must not perturb the rng stream vs the 4-arg default,
+    // or every downstream spawn/torch/room draw would shift for existing floors.
+    for (const seed of [3, 88, 2024]) {
+      const a = generateMaze(11, 8, mulberry32(seed));
+      const b = generateMaze(11, 8, mulberry32(seed), 0.12, 1);
+      expect(Array.from(b.t)).toEqual(Array.from(a.t));
+    }
+  });
+
+  it("bushy (low windiness) makes more dead ends than winding (high)", () => {
+    // A dead end is a floor cell with exactly one floor neighbour. Prim's-style
+    // growth (windiness 0) is bushy — measurably more dead ends than the
+    // depth-first backtracker (windiness 1) — which is the whole point of the
+    // per-floor variety. Averaged over seeds so it's not a coin-flip assertion.
+    const deadEnds = (windiness: number, seed: number): number => {
+      const g = generateMaze(16, 12, mulberry32(seed), 0, windiness); // braid 0: don't mask dead ends
+      let n = 0;
+      for (let cy = 0; cy < 12; cy++) {
+        for (let cx = 0; cx < 16; cx++) {
+          const i = cx * 2 + 1;
+          const j = cy * 2 + 1;
+          const nbrs = (at(g, i - 1, j) === T_FLOOR ? 1 : 0) + (at(g, i + 1, j) === T_FLOOR ? 1 : 0) + (at(g, i, j - 1) === T_FLOOR ? 1 : 0) + (at(g, i, j + 1) === T_FLOOR ? 1 : 0);
+          if (nbrs === 1) n++;
+        }
+      }
+      return n;
+    };
+    const seeds = [1, 2, 3, 4, 5];
+    const bushy = seeds.reduce((s, seed) => s + deadEnds(0, seed), 0) / seeds.length;
+    const windy = seeds.reduce((s, seed) => s + deadEnds(1, seed), 0) / seeds.length;
+    expect(bushy).toBeGreaterThan(windy);
+  });
+
+  it("is deterministic for a given seed at a non-default windiness", () => {
+    const a = generateMaze(9, 7, mulberry32(99), 0.12, 0.3);
+    const b = generateMaze(9, 7, mulberry32(99), 0.12, 0.3);
+    expect(Array.from(a.t)).toEqual(Array.from(b.t));
+  });
 });
 
 describe("carveRooms", () => {

@@ -207,6 +207,64 @@ export function sfxStairs(): void {
 }
 
 /** You died. */
+/** Spin pad — a rising slot-machine whirl. */
+export function sfxSpin(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "square", f0: 220, f1: 880, dur: 0.16, vol: 0.16 });
+  beep(c, { type: "square", f0: 330, f1: 1320, dur: 0.14, vol: 0.1, at: 0.05 });
+}
+
+/** Target bullseye — a bright double DING. */
+export function sfxTarget(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "triangle", f0: 1320, dur: 0.08, vol: 0.2 });
+  beep(c, { type: "triangle", f0: 1760, dur: 0.12, vol: 0.16, at: 0.07 });
+}
+
+/** Trapdoor — a wooden creak, then the drop whoosh. */
+export function sfxTrapdoor(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "sawtooth", f0: 140, f1: 70, dur: 0.18, vol: 0.14 });
+  burst(c, 0.35, 0.16, "lowpass", 500, 0.12);
+  beep(c, { type: "sine", f0: 500, f1: 90, dur: 0.4, vol: 0.12, at: 0.15 });
+}
+
+/** Bumper goblin — a rubbery BOING, lower and sillier than the bumper ping. */
+export function sfxGoblin(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "sine", f0: 180, f1: 420, dur: 0.1, vol: 0.2 });
+  beep(c, { type: "sine", f0: 420, f1: 240, dur: 0.14, vol: 0.14, at: 0.08 });
+}
+
+/** The Magician's cackle — a descending, delighted arpeggio. */
+export function sfxCackle(): void {
+  const c = ctx();
+  if (!c) return;
+  [880, 740, 620, 520, 440].forEach((f, k) => {
+    beep(c, { type: "square", f0: f, f1: f * 0.92, dur: 0.09, vol: 0.12, at: k * 0.07 });
+  });
+}
+
+/** Freeze ray — a crystalline downward shimmer. */
+export function sfxFreeze(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "triangle", f0: 1760, f1: 440, dur: 0.5, vol: 0.14 });
+  burst(c, 0.4, 0.06, "highpass", 3000, 0.05);
+}
+
+/** The Oracle Frog — a fat contented croak. */
+export function sfxRibbit(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "sawtooth", f0: 110, f1: 160, dur: 0.14, vol: 0.16 });
+  beep(c, { type: "sawtooth", f0: 90, f1: 140, dur: 0.18, vol: 0.14, at: 0.14 });
+}
+
 export function sfxGameOver(): void {
   const c = ctx();
   if (!c) return;

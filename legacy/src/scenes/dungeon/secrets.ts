@@ -15,6 +15,8 @@ import { createStaticSprite } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
 import { sfxBreak, sfxHeavy } from "./audio";
+import { WITCH_CHANCE } from "./constants";
+import { spawnWitch } from "./entities/npc";
 
 /** What tumbles out of the masonry: the gold idol plus one random power-up. */
 const RUBBLE_LOOT: ReadonlyArray<ReadonlyArray<string>> = [
@@ -70,6 +72,13 @@ export function smashSecretAt(i: number, j: number): boolean {
     state.scene.add(sprite.mesh);
     state.groundItems.push({ kind: "potion", id, x: c.x, z: c.z, sprite, bobPhase: Math.random() * Math.PI * 2 });
   });
+
+  // Sometimes the masonry hides more than loot: the SPEED WITCH steps out of
+  // the dust (once per floor) and offers her trade.
+  if (!state.witchSpawned && Math.random() < WITCH_CHANCE) {
+    const c = tileCenter(g, band.i, band.j + 1);
+    spawnWitch(c.x, c.z);
+  }
 
   showToast("SECRET WALL SMASHED", "the masonry pays out · a shortcut opens");
   return true;

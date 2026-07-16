@@ -39,12 +39,32 @@ export interface PropSpot extends TilePos {
  *   deflector → corner (2 perpendicular neighbours) — banks momentum from one
  *               open leg to the other; both legs are (dirI,dirJ) and (dir2I,dir2J).
  */
+export type PartSpotKind =
+  | "bumper"
+  | "spring"
+  | "ramp"
+  | "deflector"
+  | "glove"
+  | "oil"
+  | "spinpad"
+  | "slingshot"
+  | "target"
+  | "trapdoor";
+
 export interface PinballPartSpot extends TilePos {
-  kind: "bumper" | "spring" | "ramp" | "deflector";
+  kind: PartSpotKind;
   dirI: number;
   dirJ: number;
   dir2I: number;
   dir2J: number;
+}
+
+/**
+ * A prefab stamp anchor (maze/prefabs.ts), already scaled to the decorated
+ * grid's coordinates: a part to place, a horde spawn, or a prize drop.
+ */
+export interface PrefabAnchor extends TilePos {
+  kind: PartSpotKind | "spawn" | "prize";
 }
 
 /**
@@ -72,6 +92,8 @@ export interface LevelPlan {
   rooms: PlannedRoom[];
   /** Top-left tile of every 2×2 CRACKED band (see crackSecretWalls/secrets.ts). */
   secrets: TilePos[];
+  /** The Oracle Frog's dead-end perch, if this floor drew one. */
+  frog: TilePos | null;
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -98,14 +120,15 @@ const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
 const WEAPON_POOL = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
 const WEAPONS_PER_LEVEL = 3;
 const GEAR_ITEMS = ["helmet", "armor", "boots"];
-// Potions strewn per floor: always a health flask, plus TWO random power-ups
-// from the pool (rage/haste/shield/gold). Health is guaranteed so the run stays
-// survivable; the rest add "do I chug it now?" decisions. Ids → POTIONS.
-const POTION_POOL = ["rage", "haste", "shield", "gold"];
+// Potions strewn per floor: always a health flask, plus THREE random power-ups
+// from the pool. Health is guaranteed so the run stays survivable; the rest add
+// "do I chug it now?" decisions. Ids → POTIONS (incl. the Wave-F pinball kit:
+// iron core / turbo / spring legs / freeze / multi-ball).
+const POTION_POOL = ["rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {
-  const buffs = shuffled(POTION_POOL, rng).slice(0, 2);
+  const buffs = shuffled(POTION_POOL, rng).slice(0, 3);
   return [
     ...shuffled(WEAPON_POOL, rng)
       .slice(0, WEAPONS_PER_LEVEL)
@@ -117,31 +140,64 @@ function rollLevelItems(rng: () => number): RolledItem[] {
   ];
 }
 
+/** A tile's part-relevant topology, with the openings that define it. */
+type Topology = "deadend" | "straight" | "corner" | "junction";
+interface TopoSpot extends TilePos {
+  topo: Topology;
+  /** deadend: the way out. straight: one of the two along-directions. corner: leg 1. */
+  dirI: number;
+  dirJ: number;
+  /** corner only: leg 2. */
+  dir2I: number;
+  dir2J: number;
+}
+
 /**
- * Classify a floor tile's topology and propose the pinball part that fits it.
- * Returns null for tiles that fit no part (e.g. open plazas with odd shapes).
+ * Classify a floor tile's topology (dead end / straight run / corner /
+ * junction). Which PART lands there is decided by the deal below — several
+ * kinds share a topology (ramp/oil/glove/slingshot all want a straight run).
  */
-function classifyPartSpot(g: Grid, p: TilePos, rng: () => number): PinballPartSpot | null {
+function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | null {
   const open = WALL_SIDES.filter(([di, dj]) => at(g, p.i + di, p.j + dj) === T_FLOOR);
   if (open.length === 1) {
-    // dead end — a spring aimed back out the single opening
-    return { ...p, kind: "spring", dirI: open[0][0], dirJ: open[0][1], dir2I: 0, dir2J: 0 };
+    return { ...p, topo: "deadend", dirI: open[0][0], dirJ: open[0][1], dir2I: 0, dir2J: 0 };
   }
   if (open.length === 2) {
     const [a, b] = open;
     if (a[0] === -b[0] && a[1] === -b[1]) {
-      // straight corridor — a dash ramp along it (random of the two ways)
       const d = rng() < 0.5 ? a : b;
-      return { ...p, kind: "ramp", dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };
+      return { ...p, topo: "straight", dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };
     }
-    // perpendicular pair — a corner: bank momentum between the two open legs
-    return { ...p, kind: "deflector", dirI: a[0], dirJ: a[1], dir2I: b[0], dir2J: b[1] };
+    return { ...p, topo: "corner", dirI: a[0], dirJ: a[1], dir2I: b[0], dir2J: b[1] };
   }
   if (open.length >= 3) {
-    // junction — a pop bumper in the crossing
-    return { ...p, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
+    return { ...p, topo: "junction", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 };
   }
   return null;
+}
+
+/** Which topology pool each dealable part kind draws from. */
+const KIND_TOPOLOGY: Record<string, Topology> = {
+  bumper: "junction",
+  spinpad: "junction",
+  ramp: "straight",
+  oil: "straight",
+  slingshot: "straight",
+  glove: "straight",
+  spring: "deadend",
+  deflector: "corner",
+};
+
+/** Turn a topology candidate into a concrete part spot of the dealt kind. */
+function spotForKind(kind: PartSpotKind, c: TopoSpot, rng: () => number): PinballPartSpot {
+  if (kind === "glove") {
+    // The glove mounts on one of the corridor's side walls and punches ACROSS
+    // it: direction = the perpendicular of the corridor axis (both sides are
+    // wall by construction for a strict straight), random side.
+    const side = rng() < 0.5 ? 1 : -1;
+    return { i: c.i, j: c.j, kind, dirI: -c.dirJ * side, dirJ: c.dirI * side, dir2I: 0, dir2J: 0 };
+  }
+  return { i: c.i, j: c.j, kind, dirI: c.dirI, dirJ: c.dirJ, dir2I: c.dir2I, dir2J: c.dir2J };
 }
 
 /**
@@ -230,7 +286,15 @@ function furnishRooms(
  * carved archetype rects in THIS grid's coordinates (already ×2 if the maze
  * was thickened).
  */
-export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, torchBudget: number, partBudget = 8, rooms: Room[] = []): LevelPlan {
+export function decorateMaze(
+  g: Grid,
+  rng: () => number,
+  zombieCount: number,
+  torchBudget: number,
+  partBudget = 8,
+  rooms: Room[] = [],
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number } = {},
+): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
   let start: TilePos = { i: 1, j: 1 };
@@ -341,33 +405,83 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
   // the corridor budget — a bumper chamber shouldn't strip the maze bare). ──
   const parts: PinballPartSpot[] = [...furnished.parts];
   const corridorBudget = partBudget + furnished.parts.length;
-  const byKind: Record<PinballPartSpot["kind"], PinballPartSpot[]> = { bumper: [], spring: [], ramp: [], deflector: [] };
+  const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
     if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 4) continue; // calm start
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
     if (inRoom(p)) continue;
-    const spot = classifyPartSpot(g, p, rng);
-    if (spot) byKind[spot.kind].push(spot);
+    const spot = classifyTopology(g, p, rng);
+    if (spot) byTopo[spot.topo].push(spot);
   }
   // Deal kinds round-robin (bumpers weighted double — they're the signature
-  // part) until the budget is spent or every pool is dry.
-  const deal: Array<PinballPartSpot["kind"]> = ["bumper", "ramp", "spring", "bumper", "deflector", "ramp"];
+  // part; the Wave-A kinds are threaded through so every floor tastes them)
+  // until the budget is spent or every pool is dry. Themes may pass their own
+  // deal to bias the floor (a sewer floor deals oil twice, etc.).
+  const deal: PartSpotKind[] = extras.deal ?? ["bumper", "ramp", "spring", "glove", "bumper", "oil", "deflector", "spinpad", "ramp", "slingshot"];
   let dealIdx = 0;
   let dry = 0;
   while (parts.length < corridorBudget && dry < deal.length) {
     const kind = deal[dealIdx % deal.length];
     dealIdx++;
-    const pool = byKind[kind];
+    const pool = byTopo[KIND_TOPOLOGY[kind] ?? "junction"];
     let placed = false;
     while (pool.length > 0) {
       const cand = pool.pop()!;
       if (parts.some((q) => Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue; // spacing
-      parts.push(cand);
+      parts.push(spotForKind(kind, cand, rng));
       placed = true;
       break;
     }
     dry = placed ? 0 : dry + 1;
+  }
+
+  // ── Target bullseyes: wall-mounted like torches, spaced wide — the floor's
+  // "break them all" objective layer. Never counted against the part budget. ──
+  const targetBudget = extras.targets ?? 5;
+  let targetsPlaced = 0;
+  for (const p of shuffled(floors, rng)) {
+    if (targetsPlaced >= targetBudget) break;
+    if (p.i === stairs.i && p.j === stairs.j) continue;
+    if (inRoom(p)) continue;
+    if (parts.some((q) => Math.abs(q.i - p.i) + Math.abs(q.j - p.j) < 4)) continue;
+    if (torches.some((t) => t.i === p.i && t.j === p.j)) continue;
+    const side = WALL_SIDES.find(([di, dj]) => at(g, p.i + di, p.j + dj) === T_WALL);
+    if (!side) continue;
+    parts.push({ i: p.i, j: p.j, kind: "target", dirI: side[0], dirJ: side[1], dir2I: 0, dir2J: 0 });
+    targetsPlaced++;
+  }
+
+  // ── Dead-end economics: the leftovers of the deadend pool (springs took
+  // theirs) get trapdoors — the coaster hatches — and one Oracle Frog perch,
+  // so poking into a dead end always pays SOMETHING. ──
+  const deadEnds = byTopo.deadend.filter(
+    (d) => !parts.some((q) => q.i === d.i && q.j === d.j) && Math.abs(d.i - start.i) + Math.abs(d.j - start.j) >= 8,
+  );
+  const trapdoorBudget = extras.trapdoors ?? 2;
+  for (let k = 0; k < Math.min(trapdoorBudget, deadEnds.length); k++) {
+    const d = deadEnds[k];
+    parts.push({ i: d.i, j: d.j, kind: "trapdoor", dirI: d.dirI, dirJ: d.dirJ, dir2I: 0, dir2J: 0 });
+  }
+  const frogSpot = deadEnds[trapdoorBudget] ?? null;
+  const frog: TilePos | null = frogSpot ? { i: frogSpot.i, j: frogSpot.j } : null;
+
+  // ── Prefab anchors (maze/prefabs.ts stamps): parts drop in with their dirs
+  // derived from live topology; spawns/prizes feed the shared pools. ──
+  for (const a of extras.anchors ?? []) {
+    if (at(g, a.i, a.j) !== T_FLOOR) continue; // stairs stole the tile, etc.
+    if (a.kind === "spawn") {
+      spawns.push({ i: a.i, j: a.j });
+      continue;
+    }
+    if (a.kind === "prize") {
+      const prize = shuffled(["gold", "health", "rage", "haste", "shield"], rng)[0];
+      items.push({ kind: "potion", id: prize, i: a.i, j: a.j });
+      continue;
+    }
+    if (parts.some((q) => q.i === a.i && q.j === a.j)) continue;
+    const c = classifyTopology(g, a, rng) ?? { i: a.i, j: a.j, topo: "junction" as Topology, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 };
+    parts.push(spotForKind(a.kind, c, rng));
   }
 
   // ── Secrets: collect every CRACKED band stamped by crackSecretWalls. After
@@ -380,5 +494,5 @@ export function decorateMaze(g: Grid, rng: () => number, zombieCount: number, to
     }
   }
 
-  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets };
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog };
 }
