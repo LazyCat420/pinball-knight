@@ -15,6 +15,7 @@ import { state, activeWeapon } from "../state";
 import {
   PLAYER_SPEED,
   PLAYER_R,
+  ZOMBIE_R,
   BOOTS_SPEED_FACTOR,
   STAMINA_MAX,
   STAMINA_REGEN,
@@ -26,6 +27,26 @@ import {
   SPRINT_DECAY_TIME,
   SPRINT_GRACE,
   SPRINT_RIDE_THRESHOLD,
+  RUN_CLIP_THRESHOLD,
+  RUN_RATE_RAMP,
+  AURA_MIN_CHARGE,
+  AURA_INTERVAL,
+  AURA_LIFE,
+  AURA_OPACITY,
+  AURA_TINT_COOL,
+  AURA_TINT_HOT,
+  AURA_HOT_CHARGE,
+  WALLRIDE_SLIDE_BOOST,
+  GRIND_SPARK_INTERVAL,
+  OVERCHARGE_TIME,
+  OVERCHARGE_DECAY,
+  PINBALL_RESTITUTION,
+  PINBALL_FRICTION,
+  PINBALL_STEER,
+  PINBALL_EXIT_MULT,
+  BALL_SPEED_MULT,
+  BALL_RAM_COOLDOWN,
+  BALL_RAM_KNOCKBACK,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -80,12 +101,33 @@ let curSpeed = 0;
 /** Countdown holding the sprint charge steady through a brief interruption. */
 let sprintGraceT = 0;
 
+/** Cadence timers: speed-aura afterimages + wall-grind spark bursts. */
+let auraT = 0;
+let grindT = 0;
+
 /** Reset per-run movement smoothing so a fresh descent doesn't inherit momentum. */
 export function resetPlayerMotion(): void {
   curSpeed = 0;
   stepDustT = 0;
   sprintGraceT = 0;
+  auraT = 0;
+  grindT = 0;
   if (state.player) state.player.sprintCharge = 0;
+}
+
+/**
+ * Drop a fading afterimage of the knight — the speed aura. Cool arcane-blue
+ * while the sprint spools, GOLD at full charge / during wall tricks. Cadence
+ * is owned by the shared auraT timer so sprint, roll and wall launches all
+ * feed one trail instead of stacking three.
+ */
+function spawnAura(dt: number, interval: number, hot: boolean, life = AURA_LIFE, opacity = AURA_OPACITY): void {
+  const p = state.player;
+  if (!p) return;
+  auraT -= dt;
+  if (auraT > 0) return;
+  auraT = interval;
+  state.vfx?.ghost(p.sprite.mesh, hot ? AURA_TINT_HOT : AURA_TINT_COOL, life, opacity);
 }
 
 /** Dev telemetry: the smoothed movement speed (units/sec) for the QA hook. */
@@ -152,6 +194,7 @@ function tryStartRoll(input: InputHandle): boolean {
   // Face the roll direction and play the tumble.
   p.facing = facingFromVelocity(a.x || worldDirToScreen(p.rollDirX, p.rollDirZ).x, a.z || worldDirToScreen(p.rollDirX, p.rollDirZ).z, p.facing);
   p.anim.setFacing(p.facing);
+  p.anim.setRate(1); // run-gait rate is sticky — the tumble plays at clip speed
   p.anim.play("roll", { force: true });
   sfxRoll();
   return true;
@@ -196,8 +239,10 @@ function updateRoll(dt: number, input: InputHandle): boolean {
     if (p.rollT < ROLL_IFRAMES) {
       p.iframes = Math.max(p.iframes, ROLL_IFRAMES - p.rollT);
     }
-    // A little dust as the tumble scuffs the floor.
+    // A little dust as the tumble scuffs the floor, plus afterimages so the
+    // tumble leaves a trail (distance-spawned ghosts, per the roll research).
     state.vfx?.dust(p.x, 0.05, p.z);
+    spawnAura(dt, 0.08, false, 0.26, 0.35);
   }
 
   // The instant the roll body ends (before the recovery beat), stamp a landing
@@ -280,6 +325,7 @@ function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: numb
   const s = worldDirToScreen(p.wallMoveDirX, p.wallMoveDirZ);
   p.facing = facingFromVelocity(s.x, s.z, p.facing);
   p.anim.setFacing(p.facing);
+  p.anim.setRate(1.3); // the 4-frame tumble squeezed into the shorter launch arc
   p.anim.play("roll", { force: true });
   sfxRoll();
   // Kick-off juice: a burst of dust at the wall plus a nudge of screen shake,
@@ -316,6 +362,8 @@ function updateWallLaunch(dt: number): boolean {
     p.z = res.z;
     if (prevT < p.wallMoveIfr) p.iframes = Math.max(p.iframes, p.wallMoveIfr - prevT);
     state.vfx?.dust(p.x, 0.05, p.z);
+    // Wall tricks trail GOLD ghosts — the flashy moves earn the hot aura.
+    spawnAura(dt, 0.07, true, 0.28, 0.4);
   }
 
   // A wall-KICK carries a lunging light strike: land it once past the move's windup.
@@ -376,6 +424,132 @@ function rangedSfx(id: string): void {
 }
 
 /**
+ * PINBALL PHYSICS — while p.momSpeed > 0 the knight carries real momentum and
+ * bounces off walls instead of stopping. Owns the player (returns true) until
+ * the momentum bleeds below PINBALL_EXIT_MULT·PLAYER_SPEED, then hands control
+ * back. At FULL overcharge he's a BALL: faster, and he RAMS zombies on contact.
+ * A dodge tap bails out instantly (handled in updatePlayer before this runs).
+ */
+function updatePinball(dt: number, input: InputHandle): boolean {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.momSpeed <= 0) return false;
+
+  const isBall = p.overcharge >= 1;
+  const speedMul = isBall ? BALL_SPEED_MULT : 1;
+
+  // Steer: held input gently BENDS the momentum direction (a nudge, not full
+  // control — it's a physics roll, not a walk). Keeps it playable, not chaos.
+  const a = input.axis();
+  if (a.x !== 0 || a.z !== 0) {
+    const wd = screenDirToWorld(a.x, a.z);
+    const wl = Math.hypot(wd.x, wd.z) || 1;
+    p.momX += (wd.x / wl) * PINBALL_STEER * dt;
+    p.momZ += (wd.z / wl) * PINBALL_STEER * dt;
+    const ml = Math.hypot(p.momX, p.momZ) || 1;
+    p.momX /= ml;
+    p.momZ /= ml;
+  }
+
+  // Advance and detect a wall hit: try the full step; if moveCircle clamps us
+  // short of the intended landing spot, we hit something — REFLECT the momentum
+  // about the wall normal (wallContact at the pre-move point gives it).
+  const step = p.momSpeed * speedMul * dt;
+  const wantX = p.x + p.momX * step;
+  const wantZ = p.z + p.momZ * step;
+  const res = moveCircle(g, p.x, p.z, PLAYER_R, p.momX * step, p.momZ * step);
+  const blockedX = Math.abs(res.x - wantX) > 1e-3;
+  const blockedZ = Math.abs(res.z - wantZ) > 1e-3;
+  p.x = res.x;
+  p.z = res.z;
+
+  if (blockedX || blockedZ) {
+    // Axis-aligned reflection (grid walls are axis-aligned): flip the blocked
+    // component. This is a clean pinball ricochet off a flat wall face.
+    if (blockedX) p.momX = -p.momX;
+    if (blockedZ) p.momZ = -p.momZ;
+    p.momSpeed *= PINBALL_RESTITUTION;
+    // Bounce juice: sparks off the wall, a kick, a clack.
+    const n = currentWallNormal();
+    const sx = n ? n.nx : -p.momX;
+    const sz = n ? n.nz : -p.momZ;
+    state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, 8);
+    state.shakeT = Math.max(state.shakeT, 0.14);
+    state.hitstopT = Math.max(state.hitstopT, 0.03);
+    sfxRoll();
+  }
+
+  // Friction bleeds momentum every frame.
+  p.momSpeed = Math.max(0, p.momSpeed - PINBALL_FRICTION * dt);
+
+  // Ball form rams the horde: anything the ball touches gets smashed aside.
+  p.ramT = Math.max(0, p.ramT - dt);
+  if (isBall && p.ramT <= 0) {
+    const w = WEAPONS[activeWeapon().id];
+    const dmg = playerDamage(Math.max(2, w.damage * 1.5));
+    let hit = false;
+    for (const z of state.zombies) {
+      if (z.mode === "dead") continue;
+      const dx = z.x - p.x;
+      const dz = z.z - p.z;
+      if (dx * dx + dz * dz > (PLAYER_R + ZOMBIE_R + 0.15) * (PLAYER_R + ZOMBIE_R + 0.15)) continue;
+      damageZombie(z, dmg, p.momX, p.momZ, BALL_RAM_KNOCKBACK);
+      hit = true;
+    }
+    if (hit) {
+      p.ramT = BALL_RAM_COOLDOWN;
+      state.shakeT = Math.max(state.shakeT, 0.18);
+    }
+  }
+
+  // i-frames: the ball is a hurtling projectile — untouchable. Pinball proper
+  // (not yet a ball) gets brief top-ups so a bounce doesn't dump you into a bite.
+  p.iframes = Math.max(p.iframes, isBall ? 0.2 : 0.08);
+
+  // Aura + facing: gold ghosts, face the travel direction, spin the ball clip.
+  spawnAura(dt, isBall ? 0.05 : 0.07, true, 0.3, 0.45);
+  const s = worldDirToScreen(p.momX, p.momZ);
+  p.facing = facingFromVelocity(s.x, s.z, p.facing);
+  p.anim.setFacing(p.facing);
+  if (isBall) {
+    p.anim.setRate(1 + p.momSpeed * 0.1);
+    p.anim.play("ball");
+  } else {
+    p.anim.setRate(1.4);
+    p.anim.play("roll");
+  }
+  state.vfx?.dust(p.x, 0.05, p.z);
+
+  // Exit when the momentum has bled off — or immediately if overcharge is gone.
+  if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT || p.overcharge <= 0) {
+    p.momSpeed = 0;
+    p.overcharge = Math.min(p.overcharge, 0.999); // drop out of ball form
+    p.anim.setRate(1);
+    p.anim.play("idle", { force: true });
+  }
+
+  syncActorMesh(p);
+  return true;
+}
+
+/** Kick the knight into pinball mode with the current sprint velocity. */
+function enterPinball(): void {
+  const p = state.player;
+  if (!p || p.momSpeed > 0) return;
+  const dir = FACING_VEC[p.facing];
+  // Launch along the current facing (which tracks movement) at the sprint speed.
+  p.momX = dir[0];
+  p.momZ = dir[1];
+  const len = Math.hypot(p.momX, p.momZ) || 1;
+  p.momX /= len;
+  p.momZ /= len;
+  p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
+  p.ramT = 0;
+  state.shakeT = Math.max(state.shakeT, 0.2);
+  sfxHeavy();
+}
+
+/**
  * A WORLD ground aim direction → the 4-way sprite facing that best matches it.
  * The aim is converted to SCREEN axes first (worldDirToScreen) because the art's
  * facings are screen-relative — "E" is screen-right, "S" is screen-down. Ties
@@ -401,6 +575,17 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // ── Wall launch (wall-kick / pounce) ── owns the player while airborne.
   if (updateWallLaunch(dt)) return;
 
+  // ── Pinball ── while momentum is live the knight bounces off walls and owns
+  // the player. A dodge tap BAILS OUT of it (kill the momentum, then fall
+  // through so the same tap can start a roll off the exit).
+  if (p.momSpeed > 0) {
+    if (input.consumeDodge()) {
+      p.momSpeed = 0;
+    } else if (updatePinball(dt, input)) {
+      return;
+    }
+  }
+
   // ── Dodge-roll ── it owns the player while active: no attack, no free
   // movement, direction committed. A tap starts one — but a dodge pressed while
   // pressed AGAINST a wall becomes a WALL-KICK rebound off it instead of a roll.
@@ -417,6 +602,16 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // Ranged weapons keep their own instant-fire path below; only melee uses the
   // phase machine. The active window fires the hit ONCE, scaled by the move.
   let attacking = p.attackT >= 0;
+  // A weapon swap mid-swing can STRAND the attack state: a gun's fire animation
+  // interrupted by switching to a melee weapon leaves attackT >= 0 with no
+  // p.move, so neither timeline below would ever end it — the knight froze in
+  // the fire frame, rooted at attack speed (the "gun back to sword breaks the
+  // animation" bug). Clear the orphan and hand control back.
+  if (attacking && !ranged && !p.move) {
+    p.attackT = -1;
+    attacking = false;
+    p.anim.play("idle", { force: true });
+  }
   if (attacking && !ranged && p.move) {
     p.attackT += dt;
     p.comboWindowT = Math.max(0, p.comboWindowT - dt);
@@ -493,6 +688,22 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;
 
+  // ── WALL-RIDE grind ── a charged sprint hugging a wall is a RIDE: extra
+  // speed along the face and torch-sparks grinding off the contact edge.
+  // Attack mid-grind for the sweeping WALLRIDE slash; dodge to vault off.
+  if (wantSprint && p.sprintCharge >= SPRINT_RIDE_THRESHOLD) {
+    const wall = currentWallNormal();
+    if (wall) {
+      targetSpeed *= WALLRIDE_SLIDE_BOOST;
+      grindT -= dt;
+      if (grindT <= 0) {
+        grindT = GRIND_SPARK_INTERVAL;
+        // Sparks fly off the wall contact point, kicked back along the slide.
+        state.vfx?.sparks(p.x - wall.nx * (PLAYER_R + 0.08), 0.3, p.z - wall.nz * (PLAYER_R + 0.08), wall.nx, wall.nz, 4);
+      }
+    }
+  }
+
   const rate = (targetSpeed > curSpeed ? MOVE_ACCEL : MOVE_FRICTION) * dt;
   if (curSpeed < targetSpeed) curSpeed = Math.min(targetSpeed, curSpeed + rate);
   else curSpeed = Math.max(targetSpeed, curSpeed - rate);
@@ -519,7 +730,19 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     p.anim.setFacing(p.facing);
   }
   if (!attacking) {
-    p.anim.play(moving ? "walk" : "idle");
+    // Past the run threshold the gait swaps walk→RUN (leaning sprint clip) and
+    // the playback rate ramps with the charge — the animation IS the spool
+    // readout. Rate snaps back to 1 for every other clip.
+    const running = moving && p.sprintCharge > RUN_CLIP_THRESHOLD;
+    p.anim.play(moving ? (running ? "run" : "walk") : "idle");
+    p.anim.setRate(running ? 1 + RUN_RATE_RAMP * p.sprintCharge : 1);
+  }
+
+  // ── Speed aura ── past AURA_MIN_CHARGE the knight trails afterimages; the
+  // trail thickens as the spool fills and flips GOLD at full charge.
+  if (moving && p.sprintCharge >= AURA_MIN_CHARGE) {
+    const k = (p.sprintCharge - AURA_MIN_CHARGE) / (1 - AURA_MIN_CHARGE); // 0..1 over the aura band
+    spawnAura(dt, AURA_INTERVAL * (1.3 - 0.6 * k), p.sprintCharge >= AURA_HOT_CHARGE);
   }
 
   // ── Trigger ──
@@ -530,6 +753,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.attackT = 0;
       p.move = null;
       p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1);
+      p.anim.setRate(1); // never inherit the run gait's ramped rate
       p.anim.play("attack", { force: true });
       const cursor = input.aimScreen();
       const aim = cursor ? mouseAimDirection(p.x, p.z, cursor) : null;
@@ -641,6 +865,7 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   p.didHit = false;
   p.comboWindowT = 0;
   p.cooldown = 0; // the move's own recovery gates the next swing now
+  p.anim.setRate(1); // never inherit the run gait's ramped rate
   p.anim.play("attack", { force: true });
   if (kind === "heavy") sfxHeavy();
   else sfxSwing();

@@ -57,6 +57,17 @@ export interface Player extends Actor {
    * (1×) toward SPRINT_SPEED_MULT; past SPRINT_RIDE_THRESHOLD the wall-ride unlocks.
    */
   sprintCharge: number;
+  /**
+   * 0..1 PINBALL overcharge — builds only while sprinting at FULL sprintCharge
+   * (over OVERCHARGE_TIME). >0 arms bouncing wall physics; 1 = BALL form.
+   */
+  overcharge: number;
+  /** Pinball momentum: unit WORLD direction + speed. momSpeed 0 = not rolling. */
+  momX: number;
+  momZ: number;
+  momSpeed: number;
+  /** Cooldown between ball-form ram hits on zombies. */
+  ramT: number;
 
   // ── Wall moves (Mortal-Kombat-style specials off a wall) ──
   /**
@@ -300,6 +311,11 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rollDirX: 0,
     rollDirZ: 0,
     sprintCharge: 0,
+    overcharge: 0,
+    momX: 0,
+    momZ: 0,
+    momSpeed: 0,
+    ramT: 0,
     wallMoveT: -1,
     wallMoveDur: 0,
     wallMoveIfr: 0,

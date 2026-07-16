@@ -237,7 +237,7 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   // Every clip an actor might author. `roll` is knight-only; actors that don't
   // define a clip are skipped (the `if (!list) continue` below), so listing
   // them all here is harmless and keeps new clips from silently vanishing.
-  const clipNames: ClipName[] = ["idle", "walk", "attack", "death", "roll"];
+  const clipNames: ClipName[] = ["idle", "walk", "run", "attack", "death", "roll", "ball"];
 
   for (const dir of dirs) {
     for (const clip of clipNames) {

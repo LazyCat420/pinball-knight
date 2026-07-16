@@ -6,7 +6,7 @@
  */
 import type { ActorSprite } from "./sprite";
 import type { Dir, ClipName } from "./cel-painter";
-import { FPS_IDLE, FPS_WALK, FPS_ATTACK, FPS_DEATH, FPS_ROLL } from "../constants";
+import { FPS_IDLE, FPS_WALK, FPS_RUN, FPS_ATTACK, FPS_DEATH, FPS_ROLL, FPS_BALL } from "../constants";
 
 /** The four directions the game thinks in. */
 export type Facing = "S" | "N" | "E" | "W";
@@ -14,17 +14,21 @@ export type Facing = "S" | "N" | "E" | "W";
 const FPS: Record<ClipName, number> = {
   idle: FPS_IDLE,
   walk: FPS_WALK,
+  run: FPS_RUN,
   attack: FPS_ATTACK,
   death: FPS_DEATH,
   roll: FPS_ROLL,
+  ball: FPS_BALL,
 };
 
 const LOOPS: Record<ClipName, boolean> = {
   idle: true,
   walk: true,
+  run: true,
   attack: false,
   death: false,
   roll: false,
+  ball: true,
 };
 
 /** Facing → (authored direction, whether to mirror). */
@@ -41,6 +45,7 @@ export class Animator {
   private timer = 0;
   private finished = false;
   private onEnd: (() => void) | null = null;
+  private rate = 1;
 
   constructor(sprite: ActorSprite) {
     this.sprite = sprite;
@@ -73,13 +78,22 @@ export class Animator {
     return this.clip;
   }
 
+  /**
+   * Playback-rate multiplier over the clip's base FPS. The sprint gait ramps
+   * this with the sprint charge so the run visibly quickens as it spools.
+   * Sticky across play() calls — callers that care set it every frame.
+   */
+  setRate(rate: number): void {
+    this.rate = Math.max(0.1, rate);
+  }
+
   update(dt: number): void {
     const indices = this.indices();
     if (indices.length <= 1) return;
     if (this.finished) return;
 
     this.timer += dt;
-    const step = 1 / FPS[this.clip];
+    const step = 1 / (FPS[this.clip] * this.rate);
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;

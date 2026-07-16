@@ -50,7 +50,7 @@ import {
 
 export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
 export type Dir = "S" | "N" | "E";
-export type ClipName = "idle" | "walk" | "attack" | "death" | "roll";
+export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball";
 export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
 
 const PX = SPRITE_PX; // 128 — all coordinates below live in this box
@@ -368,6 +368,8 @@ interface KPose {
   roll?: number;
   /** px the crest trails behind head motion (overlapping action). */
   plumeLag?: number;
+  /** Forward lean radians — the sprint gait (0 for the upright walk). */
+  lean?: number;
 }
 
 /** Hand anchor + weapon rotation per facing per phase. `rest` is the carry pose. */
@@ -549,7 +551,7 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   const firing = atk === "fire" || (atk === "strike" && !ranged);
   const d3 = dir as Dir3;
 
-  const sk = buildSkeleton(d3, { bob, stride, swing, roll, crouch: atk === "windup" ? 0.3 : 0 }, KNIGHT_RIG);
+  const sk = buildSkeleton(d3, { bob, stride, swing, roll, lean: pose.lean ?? 0, crouch: atk === "windup" ? 0.3 : 0 }, KNIGHT_RIG);
   const weaponHand: Pt = [hand.x, hand.y];
 
   groundShadow(ctx, CX, GROUND + 3, 26);
@@ -727,6 +729,38 @@ function knightRollFrame(dir: Dir, t: number, weapon: WeaponId): FramePaint {
   };
 }
 
+/**
+ * BALL-FORM frame: the pinball overcharge ultimate — the knight tucked to a
+ * tight ball, spinning a quarter-turn per frame, with a bright speed ring
+ * chasing the spin so it reads as a blurring wheel even at 4 frames. Same
+ * rotate-a-finished-figure trick as the roll, just tighter and looping.
+ */
+function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId): FramePaint {
+  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 6, stride: 0, roll: 0.4 }, weapon);
+  return (ctx) => {
+    groundShadow(ctx, CX, GROUND + 3, 22);
+    ctx.save();
+    ctx.translate(CX, GROUND - 20);
+    ctx.rotate(spin);
+    ctx.scale(0.6, 0.6);
+    ctx.translate(-CX, -(GROUND - 20));
+    base(ctx);
+    ctx.restore();
+    // speed ring — an arc chasing the spin angle (alpha ≥0.55: crush cutout)
+    ctx.beginPath();
+    ctx.arc(CX, GROUND - 20, 27, spin, spin + 3.6);
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(238, 241, 245, 0.7)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(CX, GROUND - 20, 22, spin + 0.6, spin + 2.6);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(111, 208, 232, 0.6)"; // arcane streak inside
+    ctx.stroke();
+  };
+}
+
 /** Build the full painter set for the knight holding `weapon`. */
 export function makeKnightPaints(weapon: WeaponId): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
@@ -761,6 +795,21 @@ export function makeKnightPaints(weapon: WeaponId): ActorPaints {
       F(dir, { bob: 1, stride: 1, swing: -1, roll: 1, plumeLag: 1 }),
     ],
 
+    // ── RUN: the sprint gait — same 8-beat cycle as the walk but LEANING into
+    // it, with a deeper stride, harder arm pump and the plume streaming further.
+    // player.ts swaps walk→run as the sprint charge builds and ramps the
+    // playback rate with the charge, so the sprint visibly winds up. ──
+    run: [
+      F(dir, { bob: 0.5, stride: 1.4, swing: -1.4, roll: 1.2, plumeLag: 2, lean: 0.2 }),
+      F(dir, { bob: -2.5, stride: 0.4, swing: -0.6, roll: 0.5, plumeLag: 1, lean: 0.24 }),
+      F(dir, { bob: 0.8, stride: -0.6, swing: 0.6, roll: -0.5, plumeLag: -0.8, lean: 0.2 }),
+      F(dir, { bob: 1.8, stride: -1.4, swing: 1.4, roll: -1.2, plumeLag: -2, lean: 0.17 }),
+      F(dir, { bob: 0.5, stride: -1.4, swing: 1.4, roll: -1.2, plumeLag: -2, lean: 0.2 }),
+      F(dir, { bob: -2.5, stride: -0.4, swing: 0.6, roll: -0.5, plumeLag: -1, lean: 0.24 }),
+      F(dir, { bob: 0.8, stride: 0.6, swing: -0.6, roll: 0.5, plumeLag: 0.8, lean: 0.2 }),
+      F(dir, { bob: 1.8, stride: 1.4, swing: -1.4, roll: 1.2, plumeLag: 2, lean: 0.17 }),
+    ],
+
     // ── ATTACK: anticipation → STRIKE (index 1, the hit frame) → follow-through
     // → recover. Fast into the strike, slow out — "speed communicates weight".
     // The strike stays at index 1 so it lands in the ATTACK_ACTIVE time window. ──
@@ -790,6 +839,15 @@ export function makeKnightPaints(weapon: WeaponId): ActorPaints {
       knightRollFrame(dir, 0.4, weapon),
       knightRollFrame(dir, 0.68, weapon),
       knightRollFrame(dir, 0.92, weapon),
+    ],
+
+    // ── BALL: the pinball-overcharge form — a looping quarter-turn-per-frame
+    // spin of the tucked figure with a chasing speed ring. ──
+    ball: [
+      knightBallFrame(dir, 0, weapon),
+      knightBallFrame(dir, Math.PI / 2, weapon),
+      knightBallFrame(dir, Math.PI, weapon),
+      knightBallFrame(dir, (3 * Math.PI) / 2, weapon),
     ],
   });
 

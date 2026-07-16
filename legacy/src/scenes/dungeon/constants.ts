@@ -172,6 +172,13 @@ export const FPS_ATTACK = 12;
 export const FPS_DEATH = 6;
 /** Roll clip: 4 tuck/spin frames across ~ROLL_DURATION (0.42s) → ~10fps. */
 export const FPS_ROLL = 10;
+/**
+ * Run clip base rate — the sprint gait. The ANIMATOR's playback rate is then
+ * multiplied by (1 + RUN_RATE_RAMP·sprintCharge) in player.ts, so the run
+ * visibly quickens as the spool fills: the animation IS the ramp-up readout.
+ */
+export const FPS_RUN = 10;
+export const RUN_RATE_RAMP = 0.6; // full spool plays the run clip 1.6× faster
 
 // ── World ───────────────────────────────────────────────────────
 export const TILE = 1;
@@ -267,6 +274,56 @@ export const SPRINT_DECAY_TIME = 0.8; // seconds for the charge to bleed back to
 export const SPRINT_GRACE = 0.6;
 /** Sprint charge above this (halfway up the ramp, ~1.5s in) unlocks the wall-ride. */
 export const SPRINT_RIDE_THRESHOLD = 0.5;
+/** Above this charge the walk swaps to the leaning RUN clip. */
+export const RUN_CLIP_THRESHOLD = 0.12;
+
+// ── Speed aura (the "he's moving faster" signal) ────────────────
+/**
+ * A trail of fading AFTERIMAGE ghosts of the knight spawns once the sprint
+ * charge passes AURA_MIN_CHARGE — faint and blue at first, GOLD once the spool
+ * is full — and during every roll / wall launch. The ghost density scales with
+ * charge, so the aura literally thickens as you wind up.
+ */
+export const AURA_MIN_CHARGE = 0.35;
+export const AURA_INTERVAL = 0.11; // seconds between ghosts at minimum charge
+export const AURA_LIFE = 0.32; // seconds a ghost takes to fade out
+export const AURA_OPACITY = 0.4; // ghost starting opacity
+export const AURA_TINT_COOL = 0x6fd0e8; // arcane-blue ghosts while spooling
+export const AURA_TINT_HOT = 0xffd23f; // gold ghosts at full sprint
+/** Charge at/above this reads as "full" and flips the aura gold. */
+export const AURA_HOT_CHARGE = 0.95;
+
+// ── Wall-ride SLIDE (ridable wall, not just the slash) ──────────
+/**
+ * Sprinting past SPRINT_RIDE_THRESHOLD while hugging a wall is a GRIND: extra
+ * speed along the wall face and a spray of torch-coloured sparks off the
+ * contact edge. Attack mid-grind for the sweeping WALLRIDE slash; dodge to
+ * vault off. The boost only lives while wall contact + charge + Shift all hold.
+ */
+export const WALLRIDE_SLIDE_BOOST = 1.18; // speed multiplier while grinding
+export const GRIND_SPARK_INTERVAL = 0.07; // seconds between spark bursts
+
+// ── PINBALL overcharge (keep sprinting past full spool) ─────────
+/**
+ * Holding a FULL sprint spool keeps winding: an OVERCHARGE meter builds over
+ * OVERCHARGE_TIME. Any overcharge arms PINBALL PHYSICS — the knight carries
+ * real momentum and wall hits BOUNCE (reflect + restitution) instead of
+ * stopping, ricocheting until he bleeds back below walk-ish speed. At FULL
+ * overcharge he tucks into a BALL: faster still, harder bounces, and he RAMS
+ * zombies on contact like a wrecking ball. Dodge (Space) bails out instantly.
+ */
+export const OVERCHARGE_TIME = 2.0; // seconds of full-spool sprinting to fill
+export const OVERCHARGE_DECAY = 0.6; // seconds to bleed overcharge once broken
+export const PINBALL_RESTITUTION = 0.88; // speed kept per wall bounce
+export const PINBALL_FRICTION = 2.0; // u/s² momentum bleed while free-rolling
+export const PINBALL_STEER = 3.2; // how hard held input bends the momentum, 1/sec
+/** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
+export const PINBALL_EXIT_MULT = 1.05;
+export const BALL_SPEED_MULT = 1.35; // extra speed in ball form (on top of full sprint)
+export const BALL_RAM_COOLDOWN = 0.3; // seconds between ram hits on the horde
+export const BALL_RAM_KNOCKBACK = 0.9; // shove per ram (a wrecking ball, not a tap)
+/** Ball clip playback. */
+export const FPS_BALL = 14;
 
 // ── Wall moves (Mortal-Kombat-style specials off a wall) ────────
 /**

@@ -318,14 +318,33 @@ export interface VfxSystem {
   dust(x: number, y: number, z: number): void;
   /** A melee slash crescent in the facing direction. */
   slash(x: number, y: number, z: number, facing: string, color: number): void;
+  /**
+   * A fading AFTERIMAGE of an actor's billboard — the speed-aura ghost. Clones
+   * the source mesh's transform and SHARES its geometry + texture (zero GPU
+   * re-uploads; the ghost mirrors the actor's live frame, which reads fine for
+   * a trail), with its own tinted, fading material. `tint` multiplies the art.
+   */
+  ghost(src: THREE.Mesh, tint: number, life?: number, opacity?: number): void;
   update(dt: number): void;
   dispose(): void;
+}
+
+/** Max live afterimage ghosts — enough for a rich trail, bounded for the GPU. */
+const GHOST_CAP = 14;
+
+interface Ghost {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  t: number;
+  life: number;
+  o0: number;
 }
 
 export function createVfx(scene: THREE.Scene): VfxSystem {
   const additive = new ParticlePool(500, THREE.AdditiveBlending);
   const alpha = new ParticlePool(400, THREE.NormalBlending);
   const slashes = new SlashPool();
+  const ghosts: Ghost[] = [];
   scene.add(additive.points);
   scene.add(alpha.points);
   scene.add(slashes.group);
@@ -389,10 +408,41 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     slash(x, y, z, facing, color) {
       slashes.spawn(x, y, z, facing, color);
     },
+    ghost(src, tint, life = 0.32, opacity = 0.4) {
+      if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
+      const srcMat = src.material as THREE.MeshBasicMaterial;
+      const mat = new THREE.MeshBasicMaterial({
+        map: srcMat.map, // SHARED texture — offset updates keep the ghost on the live frame
+        transparent: true,
+        opacity,
+        alphaTest: 0.4,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        color: tint,
+      });
+      const mesh = new THREE.Mesh(src.geometry, mat); // shared geometry — never disposed here
+      mesh.position.copy(src.position);
+      mesh.quaternion.copy(src.quaternion);
+      mesh.scale.copy(src.scale);
+      mesh.renderOrder = 9; // just under the live actor
+      scene.add(mesh);
+      ghosts.push({ mesh, mat, t: 0, life, o0: opacity });
+    },
     update(dt) {
       additive.update(dt);
       alpha.update(dt);
       slashes.update(dt);
+      for (let i = ghosts.length - 1; i >= 0; i--) {
+        const g = ghosts[i];
+        g.t += dt;
+        if (g.t >= g.life) {
+          scene.remove(g.mesh);
+          g.mat.dispose(); // material only — geometry/texture belong to the actor
+          ghosts.splice(i, 1);
+        } else {
+          g.mat.opacity = g.o0 * (1 - g.t / g.life);
+        }
+      }
     },
     dispose() {
       scene.remove(additive.points);
@@ -401,6 +451,11 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
+      for (const g of ghosts) {
+        scene.remove(g.mesh);
+        g.mat.dispose();
+      }
+      ghosts.length = 0;
     },
   };
 }
