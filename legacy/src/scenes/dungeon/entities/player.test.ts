@@ -33,6 +33,13 @@ import {
   POUNCE,
   POUNCE_IFRAMES,
   POUNCE_DURATION,
+  PLAYER_SPEED,
+  OVERCHARGE_TIME,
+  OVERCHARGE_DECAY,
+  PINBALL_RESTITUTION,
+  PINBALL_FRICTION,
+  PINBALL_EXIT_MULT,
+  BALL_SPEED_MULT,
 } from "../constants";
 
 /** A bare player stub — the fields spendStamina + the roll math read. */
@@ -199,5 +206,48 @@ describe("wall moves (Mortal-Kombat specials off a wall)", () => {
     expect(POUNCE.damageMul).toBeGreaterThan(WALLRIDE.damageMul);
     // The wall-ride sweeps the widest arc (it's the crowd-clearing slide).
     expect(WALLRIDE.arcMul).toBeGreaterThan(WALLKICK.arcMul);
+  });
+});
+
+describe("pinball overcharge (run-fast-enough-and-it-bounces)", () => {
+  it("overcharge fills over OVERCHARGE_TIME while at full spool, decays faster", () => {
+    // Fills at dt/OVERCHARGE_TIME per frame: OVERCHARGE_TIME of full sprint = 1.
+    let o = 0;
+    const dt = 1 / 60;
+    for (let t = 0; t < OVERCHARGE_TIME; t += dt) o = Math.min(1, o + dt / OVERCHARGE_TIME);
+    expect(o).toBeCloseTo(1, 2);
+    // ...and it bleeds off faster than it builds, so it's a fleeting super-state.
+    expect(OVERCHARGE_DECAY).toBeLessThan(OVERCHARGE_TIME);
+  });
+
+  it("pinball momentum bleeds under friction and exits above a walk (never sticks)", () => {
+    // A bounce keeps PINBALL_RESTITUTION of the speed; friction then bleeds it.
+    // The exit gate is just above walk speed, so you always regain control while
+    // still moving — you never freeze mid-arena.
+    expect(PINBALL_RESTITUTION).toBeGreaterThan(0.5);
+    expect(PINBALL_RESTITUTION).toBeLessThan(1); // a bounce always loses energy
+    expect(PINBALL_FRICTION).toBeGreaterThan(0); // momentum always bleeds
+    expect(PINBALL_EXIT_MULT).toBeGreaterThan(1); // exit while still faster than a walk
+
+    // Sanity: from a full-sprint launch, friction alone brings it under the exit
+    // gate in finite, reasonable time (not an eternal roll).
+    let speed = PLAYER_SPEED * SPRINT_SPEED_MULT;
+    const exit = PLAYER_SPEED * PINBALL_EXIT_MULT;
+    let t = 0;
+    const dt = 1 / 60;
+    while (speed >= exit && t < 30) {
+      speed = Math.max(0, speed - PINBALL_FRICTION * dt);
+      t += dt;
+    }
+    expect(t).toBeGreaterThan(0.2); // long enough to feel like a ride
+    expect(t).toBeLessThan(10); // short enough that it always ends
+  });
+
+  it("ball form is faster than a full sprint (the payoff for maxing overcharge)", () => {
+    // Ball speed = full sprint × BALL_SPEED_MULT, so hitting max overcharge is a
+    // real speed jump, not just a cosmetic.
+    expect(BALL_SPEED_MULT).toBeGreaterThan(1);
+    const ballTop = PLAYER_SPEED * SPRINT_SPEED_MULT * BALL_SPEED_MULT;
+    expect(ballTop).toBeGreaterThan(PLAYER_SPEED * SPRINT_SPEED_MULT);
   });
 });

@@ -251,6 +251,18 @@ export function updateHUD(el: HTMLDivElement): void {
     </div>`
       : "";
 
+  // Overcharge (pinball) — appears only once the spool is full and overflowing.
+  // A hot orange→cyan rail; at 100% it pulses to read "BALL FORM ARMED".
+  const over = Math.max(0, Math.min(1, state.player?.overcharge ?? 0));
+  const overFull = over >= 0.999;
+  const overRow =
+    over > 0.01
+      ? `
+    <div style="height:3px;margin-top:1px;background:#2b303b;border:1px solid #6b1f2a;position:relative">
+      <div style="height:100%;width:${over * 100}%;background:${overFull ? "#6fd0e8" : "#f0a63c"};box-shadow:${overFull ? "0 0 5px #6fd0e8" : "none"};transition:width 0.08s linear"></div>
+    </div>${overFull ? `<div style="font-size:8px;letter-spacing:1px;color:#6fd0e8">◉ BALL READY</div>` : ""}`
+      : "";
+
   // Two hand slots — the active one is arrowed and bright, ranged weapons
   // show an ammo count instead of a wear meter.
   const weaponRows = Array.from({ length: WEAPON_SLOTS }, (_, slot) => {
@@ -322,6 +334,7 @@ export function updateHUD(el: HTMLDivElement): void {
     <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
     ${stamRow}
     ${spoolRow}
+    ${overRow}
     <div style="margin-top:3px">${weaponRows}</div>
     ${rule}
     ${gearRows}

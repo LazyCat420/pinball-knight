@@ -308,7 +308,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal() };
+      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed };
     };
   }
 
@@ -540,6 +540,21 @@ function startLevel(level: number): void {
 function selectSlot(slot: number): void {
   if (slot === state.activeSlot || state.gameOver) return;
   state.activeSlot = slot;
+  // Cancel any in-flight swing/charge on the swap. A ranged fire animation left
+  // running when you switch to a melee weapon would otherwise strand the attack
+  // timeline (melee path expects p.move) and freeze the knight in the fire
+  // frame — the "gun back to sword breaks the animation" bug. Reset to a clean
+  // idle so the new weapon starts fresh.
+  const p = state.player;
+  if (p) {
+    p.attackT = -1;
+    p.move = null;
+    p.chargeT = -1;
+    p.comboStep = 0;
+    p.comboWindowT = 0;
+    p.anim.setRate(1);
+    p.anim.play("idle", { force: true });
+  }
   const w = WEAPONS[activeWeapon().id];
   showPickupNote(`${w.icon} ${w.label.toUpperCase()} in hand`);
   state.hudDirty = true;

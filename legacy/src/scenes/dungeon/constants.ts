@@ -312,8 +312,8 @@ export const GRIND_SPARK_INTERVAL = 0.07; // seconds between spark bursts
  * overcharge he tucks into a BALL: faster still, harder bounces, and he RAMS
  * zombies on contact like a wrecking ball. Dodge (Space) bails out instantly.
  */
-export const OVERCHARGE_TIME = 2.0; // seconds of full-spool sprinting to fill
-export const OVERCHARGE_DECAY = 0.6; // seconds to bleed overcharge once broken
+export const OVERCHARGE_TIME = 1.4; // seconds of full-spool / bouncing to fill
+export const OVERCHARGE_DECAY = 1.0; // seconds to bleed overcharge once fully stopped
 export const PINBALL_RESTITUTION = 0.88; // speed kept per wall bounce
 export const PINBALL_FRICTION = 2.0; // u/s² momentum bleed while free-rolling
 export const PINBALL_STEER = 3.2; // how hard held input bends the momentum, 1/sec

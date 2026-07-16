@@ -112,7 +112,11 @@ export function resetPlayerMotion(): void {
   sprintGraceT = 0;
   auraT = 0;
   grindT = 0;
-  if (state.player) state.player.sprintCharge = 0;
+  if (state.player) {
+    state.player.sprintCharge = 0;
+    state.player.overcharge = 0;
+    state.player.momSpeed = 0;
+  }
 }
 
 /**
@@ -438,6 +442,12 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const isBall = p.overcharge >= 1;
   const speedMul = isBall ? BALL_SPEED_MULT : 1;
 
+  // Overcharge keeps building WHILE bouncing — you're obviously moving fast, so
+  // the ride itself charges toward ball form. Without this the first wall slam
+  // launches pinball and starves the ground-sprint that was building overcharge,
+  // making ball form effectively unreachable (caught by driving it).
+  p.overcharge = Math.min(1, p.overcharge + dt / OVERCHARGE_TIME);
+
   // Steer: held input gently BENDS the momentum direction (a nudge, not full
   // control — it's a physics roll, not a walk). Keeps it playable, not chaos.
   const a = input.axis();
@@ -530,23 +540,6 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   syncActorMesh(p);
   return true;
-}
-
-/** Kick the knight into pinball mode with the current sprint velocity. */
-function enterPinball(): void {
-  const p = state.player;
-  if (!p || p.momSpeed > 0) return;
-  const dir = FACING_VEC[p.facing];
-  // Launch along the current facing (which tracks movement) at the sprint speed.
-  p.momX = dir[0];
-  p.momZ = dir[1];
-  const len = Math.hypot(p.momX, p.momZ) || 1;
-  p.momX /= len;
-  p.momZ /= len;
-  p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
-  p.ramT = 0;
-  state.shakeT = Math.max(state.shakeT, 0.2);
-  sfxHeavy();
 }
 
 /**
@@ -679,6 +672,18 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     p.sprintCharge = Math.max(0, p.sprintCharge - dt / SPRINT_DECAY_TIME);
   }
 
+  // ── OVERCHARGE ── keep sprinting at a FULL spool and the charge overflows
+  // into an overcharge meter over OVERCHARGE_TIME; any overcharge ARMS pinball,
+  // a full meter is the BALL. It only bleeds when you've genuinely stopped
+  // (not full-spool AND no pinball momentum) — so a brief walk-frame between
+  // bounces doesn't dump it. updatePinball also feeds it while bouncing.
+  // Ticked here so the sprint HUD can show it.
+  if (wantSprint && p.sprintCharge >= 0.999) {
+    p.overcharge = Math.min(1, p.overcharge + dt / OVERCHARGE_TIME);
+  } else if (p.momSpeed <= 0) {
+    p.overcharge = Math.max(0, p.overcharge - dt / OVERCHARGE_DECAY);
+  }
+
   // Target speed for this frame, then ramp the smoothed speed toward it. Walk is
   // still snappy; Shift adds SPRINT_BASE_MULT at once and the spool lerps the
   // rest of the way to SPRINT_SPEED_MULT.
@@ -710,9 +715,31 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   if (moving && curSpeed > 1e-3) {
     const wd = screenDirToWorld(a.x, a.z);
-    const res = moveCircle(g, p.x, p.z, PLAYER_R, wd.x * curSpeed * dt, wd.z * curSpeed * dt);
+    const stepX = wd.x * curSpeed * dt;
+    const stepZ = wd.z * curSpeed * dt;
+    const res = moveCircle(g, p.x, p.z, PLAYER_R, stepX, stepZ);
+    // OVERCHARGED and slamming into a wall at speed → LAUNCH into pinball: the
+    // stored momentum takes over and the knight ricochets. This is the "run
+    // fast enough and it's a pinball machine" trigger.
+    const blocked = Math.abs(res.x - (p.x + stepX)) > 1e-3 || Math.abs(res.z - (p.z + stepZ)) > 1e-3;
     p.x = res.x;
     p.z = res.z;
+    if (p.overcharge > 0 && blocked && wantSprint) {
+      // Launch back along the incoming direction, reflected off the wall.
+      const n = currentWallNormal();
+      p.momX = n ? n.nx : -wd.x;
+      p.momZ = n ? n.nz : -wd.z;
+      const ml = Math.hypot(p.momX, p.momZ) || 1;
+      p.momX /= ml;
+      p.momZ /= ml;
+      p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
+      p.ramT = 0;
+      state.shakeT = Math.max(state.shakeT, 0.2);
+      state.vfx?.sparks(p.x + (n ? n.nx : 0) * PLAYER_R, 0.35, p.z + (n ? n.nz : 0) * PLAYER_R, p.momX, p.momZ, 10);
+      sfxHeavy();
+      syncActorMesh(p);
+      return; // pinball owns the knight from the next frame
+    }
     // Kick up floor dust at a walking cadence — faster while sprinting (not
     // while rooted mid-swing).
     stepDustT -= dt;
