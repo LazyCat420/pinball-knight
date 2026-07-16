@@ -31,7 +31,7 @@ import { createVfx } from "./render/vfx";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
 import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
@@ -64,6 +64,10 @@ import {
   SPITTER_SPEED_FACTOR,
   SPITTER_RATIO,
   SPITTER_FROM_LEVEL,
+  GHOST_HP,
+  GHOST_SPEED_FACTOR,
+  GHOST_RATIO,
+  GHOST_FROM_LEVEL,
   BOSS_EVERY,
   BOSS_BASE_HP,
   BOSS_HP_PER_TIER,
@@ -91,7 +95,6 @@ import {
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
-  STAMINA_MAX,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -108,8 +111,8 @@ let lamp: THREE.PointLight | null = null;
 let ambient: THREE.AmbientLight | null = null;
 let hemi: THREE.HemisphereLight | null = null;
 
-/** Last stamina fill (in 20ths) the HUD painted — repaint only when it changes. */
-let staminaBlocksShown = -1;
+/** Last sprint-spool+overcharge fill (in 20ths) the HUD painted — repaint only when it changes. */
+let meterBlocksShown = -1;
 
 /**
  * Named depth BIOMES — descending should feel like passing through distinct
@@ -260,18 +263,20 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.spiderSheet = buildSpriteSheet(makeSpiderPaints());
   state.bruteSheet = buildSpriteSheet(makeBrutePaints());
   state.spitterSheet = buildSpriteSheet(makeSpitterPaints());
+  state.ghostSheet = buildSpriteSheet(makeGhostPaints());
   state.bossSheet = buildSpriteSheet(makeBossPaints());
 
   // Dev-only atlas preview hooks for headless art QA:
   //   `__dungeonAtlas(which)` → data URL of that actor's full sprite strip
   //   `__dungeonClips(which)` → the clip table ("S:idle"→[0,1], …) so a harness
   //                             can slice + label individual named frames.
-  // `which` ∈ spider|brute|spitter|boss|knight|zombie.
+  // `which` ∈ spider|brute|spitter|ghost|boss|knight|zombie.
   if (typeof window !== "undefined") {
     const sheetFor = (which: string): SpriteSheet | null =>
       which === "spider" ? state.spiderSheet :
       which === "brute" ? state.bruteSheet :
       which === "spitter" ? state.spitterSheet :
+      which === "ghost" ? state.ghostSheet :
       which === "boss" ? state.bossSheet :
       which === "knight" ? state.playerSheets.get("sword") ?? null :
       state.zombieVariantSheets[0] ?? null;
@@ -301,14 +306,14 @@ export function launchDungeonGame(onExit?: () => void): void {
     // confirm the arrow flew toward the aim point, not the movement facing.
     (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>
       state.projectiles.map((pr) => ({ kind: pr.kind, vx: pr.vx, vz: pr.vz }));
-    // Dev: player movement/combat telemetry (stamina, roll, i-frames, position)
+    // Dev: player movement/combat telemetry (sprint, roll, i-frames, position)
     // so a headless test can confirm sprint drains, a dodge rolls + grants
     // i-frames, and the roll covers ground.
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, stamina: p.stamina, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed };
+      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo };
     };
   }
 
@@ -359,6 +364,7 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   spider: SPIDER_HP,
   brute: BRUTE_HP,
   spitter: SPITTER_HP,
+  ghost: GHOST_HP,
 };
 
 /**
@@ -375,6 +381,15 @@ function makeZombie(
 ): Zombie {
   const kind = opts.kind ?? "zombie";
   const sprite = createActorSprite(sheet, false);
+  // A ghost is SPECTRAL: knock its material translucent + disable the hard alpha
+  // cutout so the see-through drape reads (it also renders after opaque actors).
+  if (kind === "ghost") {
+    const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
+    mat.opacity = 0.62;
+    mat.alphaTest = 0.02;
+    mat.depthWrite = false;
+    sprite.mesh.renderOrder = 11;
+  }
   state.scene!.add(sprite.mesh);
   const anim = new Animator(sprite);
   anim.setFacing("S");
@@ -395,6 +410,7 @@ function makeZombie(
     flashT: 0,
     aggro: false,
     burnT: 0,
+    bobT: 0,
   };
   syncActorMesh(z2);
   return z2;
@@ -416,6 +432,9 @@ function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number,
   }
   if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2 && state.spiderSheet) {
     return makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" });
+  }
+  if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3 && state.ghostSheet) {
+    return makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" });
   }
   const variantSheets = state.zombieVariantSheets;
   const sheet = variantSheets[hash % variantSheets.length] ?? state.zombieSheet!;
@@ -475,10 +494,10 @@ function startLevel(level: number): void {
   state.player.anim.setFacing("S");
   state.player.anim.play("idle", { force: true });
   syncActorMesh(state.player);
-  // Clear movement smoothing + HUD stamina cache so a new/re-entered level
-  // doesn't inherit sprint momentum or a stale stamina-bar block count.
+  // Clear movement smoothing + HUD meter cache so a new/re-entered level
+  // doesn't inherit sprint momentum or a stale meter block count.
   resetPlayerMotion();
-  staminaBlocksShown = -1;
+  meterBlocksShown = -1;
 
   // ── Horde: a shambling baseline mixed with the special families as depth
   // grows — spiders (fast), brutes (tanks) and spitters (ranged). Each spawn
@@ -677,6 +696,7 @@ function debugSpawnRing(): void {
   if (state.spiderSheet) specs.push({ sheet: state.spiderSheet, kind: "spider" });
   if (state.bruteSheet) specs.push({ sheet: state.bruteSheet, kind: "brute" });
   if (state.spitterSheet) specs.push({ sheet: state.spitterSheet, kind: "spitter" });
+  if (state.ghostSheet) specs.push({ sheet: state.ghostSheet, kind: "ghost" });
   // Place each enemy on the nearest WALKABLE tile stepping outward from the
   // player (blind fixed offsets would bury them in a wall, and a spitter's glob
   // would then die on that wall before reaching you). Speed 0 poses them for
@@ -890,13 +910,15 @@ function simulate(dt: number): void {
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
   }
-  // Stamina drains/refills continuously; repaint the HUD only when the bar's
-  // 20-block fill actually changes (same block-boundary trick as the buffs
-  // above), so a smooth drain doesn't rebuild the HUD innerHTML every frame.
+  // The sprint spool + pinball overcharge rails change continuously; repaint the
+  // HUD only when their combined 20-block fill actually changes (same
+  // block-boundary trick as the buffs above), so a smooth ramp doesn't rebuild
+  // the HUD innerHTML every frame.
   {
-    const blocks = Math.round((p.stamina / STAMINA_MAX) * 20);
-    if (blocks !== staminaBlocksShown) {
-      staminaBlocksShown = blocks;
+    // + bounceCombo so the combo counter repaints on every bounce.
+    const blocks = Math.round((p.sprintCharge + p.overcharge) * 20) + p.bounceCombo * 100;
+    if (blocks !== meterBlocksShown) {
+      meterBlocksShown = blocks;
       state.hudDirty = true;
     }
   }

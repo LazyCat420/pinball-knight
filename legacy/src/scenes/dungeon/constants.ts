@@ -219,20 +219,10 @@ export const PLAYER_MAX_HP = 6;
 /** After taking a hit you can't be hit again for this long. */
 export const PLAYER_IFRAMES = 0.9;
 
-// ── Stamina (the Souls/PoE resource: sprint + dodge both draw on it) ──
-/**
- * One shared bar governs sprinting AND dodge-rolling, so you can't infinitely
- * kite a horde — the classic Dark-Souls / Path-of-Exile tension. Regen pauses
- * for a beat after any spend (so a panic-dodge doesn't instantly refund) then
- * pours back. Numbers tuned so: a full bar sprints ~6s, or buys ~3 dodges, and
- * refills from empty in ~2.4s of standing still.
- */
-export const STAMINA_MAX = 100;
-export const STAMINA_REGEN = 42; // per second, once the delay has elapsed
-export const STAMINA_REGEN_DELAY = 0.5; // seconds of no-spend before regen resumes
-export const SPRINT_DRAIN = 16; // per second while sprinting
-export const DODGE_COST = 28; // per dodge-roll
-export const HEAVY_COST = 22; // per heavy swing (light swings are free)
+// NB: STAMINA was removed 2026-07-16 ("i don't like that system … more like a
+// pinball/sonic system where we want to do crazy combos"). Every move — sprint,
+// dodge, wall-kick/ride/pounce, heavy — is now FREE and gated only by cooldowns
+// / the sprint spool. The MoveTiming rows below keep no cost field.
 
 // ── Sprint (hold Shift) ─────────────────────────────────────────
 /**
@@ -303,25 +293,37 @@ export const AURA_HOT_CHARGE = 0.95;
 export const WALLRIDE_SLIDE_BOOST = 1.18; // speed multiplier while grinding
 export const GRIND_SPARK_INTERVAL = 0.07; // seconds between spark bursts
 
-// ── PINBALL overcharge (keep sprinting past full spool) ─────────
+// ── PINBALL / SONIC momentum (keep sprinting past full spool) ───
 /**
  * Holding a FULL sprint spool keeps winding: an OVERCHARGE meter builds over
- * OVERCHARGE_TIME. Any overcharge arms PINBALL PHYSICS — the knight carries
- * real momentum and wall hits BOUNCE (reflect + restitution) instead of
- * stopping, ricocheting until he bleeds back below walk-ish speed. At FULL
- * overcharge he tucks into a BALL: faster still, harder bounces, and he RAMS
- * zombies on contact like a wrecking ball. Dodge (Space) bails out instantly.
+ * OVERCHARGE_TIME. Any overcharge arms PINBALL PHYSICS — the knight carries real
+ * momentum and wall hits BOUNCE.
+ *
+ * SONIC RULE (2026-07-16, "make it like Sonic … we want crazy combos"): a
+ * bounce ADDS speed (restitution > 1) up to PINBALL_MAX_SPEED, so chaining wall
+ * hits in a tight corridor ACCELERATES you instead of bleeding out. Momentum
+ * only decays (very gently) when you're NOT bouncing, and a bounce COMBO counter
+ * climbs per hit for score/damage. At full overcharge he tucks into a BALL:
+ * faster, and he RAMS zombies on contact. Dodge (Space) bails out instantly.
  */
 export const OVERCHARGE_TIME = 1.4; // seconds of full-spool / bouncing to fill
 export const OVERCHARGE_DECAY = 1.0; // seconds to bleed overcharge once fully stopped
-export const PINBALL_RESTITUTION = 0.88; // speed kept per wall bounce
-export const PINBALL_FRICTION = 2.0; // u/s² momentum bleed while free-rolling
-export const PINBALL_STEER = 3.2; // how hard held input bends the momentum, 1/sec
+/** Each wall bounce MULTIPLIES speed by this (>1 = accelerate, the Sonic feel). */
+export const PINBALL_RESTITUTION = 1.14;
+/** A flat speed kick added on each bounce too, so even a slow entry ramps up fast. */
+export const PINBALL_BOUNCE_ADD = 1.6; // u/s added per bounce
+/** Hard ceiling on pinball momentum — chained bounces climb to here, then hold. */
+export const PINBALL_MAX_SPEED = 22; // u/s (≈5× walk) — genuinely fast, still steerable
+/** Momentum bleed while NOT bouncing — very gentle so a good line stays fast. */
+export const PINBALL_FRICTION = 0.9; // u/s² (was 2.0; Sonic keeps its speed)
+export const PINBALL_STEER = 3.6; // how hard held input bends the momentum, 1/sec
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;
-export const BALL_SPEED_MULT = 1.35; // extra speed in ball form (on top of full sprint)
-export const BALL_RAM_COOLDOWN = 0.3; // seconds between ram hits on the horde
-export const BALL_RAM_KNOCKBACK = 0.9; // shove per ram (a wrecking ball, not a tap)
+/** Seconds without a bounce before the combo counter resets (keep the chain alive). */
+export const PINBALL_COMBO_WINDOW = 1.6;
+export const BALL_SPEED_MULT = 1.35; // extra speed in ball form (on top of momentum)
+export const BALL_RAM_COOLDOWN = 0.18; // seconds between ram hits on the horde
+export const BALL_RAM_KNOCKBACK = 1.1; // shove per ram (a wrecking ball, not a tap)
 /** Ball clip playback. */
 export const FPS_BALL = 14;
 
@@ -330,10 +332,9 @@ export const FPS_BALL = 14;
  * With no vertical axis in a top-down grid, "jump off the wall" becomes
  * WALL-CONTACT specials: when the player is pressed against a wall, a short
  * input unlocks a distinct move driven off the existing melee timeline +
- * moveCircle. All are "meaningful but costed" — extra damage, brief i-frames on
- * the launch, and a stamina price, so they're a tactical option near walls, not
- * free flair. wallContact() (collision.ts) supplies the wall NORMAL (the way to
- * kick off toward).
+ * moveCircle. All hit harder and grant brief i-frames on the launch, and are
+ * FREE (no stamina) — a tactical option near walls, always available.
+ * wallContact() (collision.ts) supplies the wall NORMAL (the way to kick toward).
  */
 /**
  * How far past the body radius we probe for a wall to count as "wall-adjacent".
@@ -342,21 +343,18 @@ export const FPS_BALL = 14;
  */
 export const WALL_CONTACT_PROBE = 0.26;
 /** Wall-kick: dodge INTO a wall → rebound hop + a lunging light strike away from it. */
-export const WALLKICK_COST = 20; // stamina (cheaper than a full dodge)
 export const WALLKICK_DURATION = 0.3; // seconds of the launch hop
 export const WALLKICK_IFRAMES = 0.16; // invuln over the front of the hop
 export const WALLKICK_DISTANCE = 2.2; // tiles launched off the wall
-export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, staminaCost: WALLKICK_COST, hitstopMul: 1.3 };
+export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, hitstopMul: 1.3 };
 /** Wall-ride: sprint-charged slide along a wall face + a wide sweeping slash. */
-export const WALLRIDE_COST = 16;
-export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, staminaCost: WALLRIDE_COST, hitstopMul: 1.5 };
+export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, hitstopMul: 1.5 };
 /** Pounce slam: face wall + charge + release → leap arc off the wall to an AoE landing. */
-export const POUNCE_COST = 26;
 export const POUNCE_DURATION = 0.36; // arc travel time
 export const POUNCE_IFRAMES = 0.22; // airborne = untouchable most of the arc
 export const POUNCE_DISTANCE = 3.2; // tiles leapt off the wall
 export const POUNCE_AOE = 1.6; // radial hit radius on landing (tiles)
-export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, staminaCost: POUNCE_COST, hitstopMul: 2 };
+export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, hitstopMul: 2 };
 
 // ── Dodge-roll (tap Space) ──────────────────────────────────────
 /**
@@ -389,7 +387,6 @@ export interface MoveTiming {
   arcMul: number; // widens/narrows the equipped weapon's arc
   rangeMul: number; // reach relative to the weapon
   knockbackMul: number;
-  staminaCost: number;
   /**
    * Per-move hit-freeze multiplier over HITSTOP_HIT — the hand-tuned feel dial
    * (deep-research 2026-07-15: Smash tunes hitstop per attack beyond the damage
@@ -398,10 +395,10 @@ export interface MoveTiming {
    */
   hitstopMul: number;
 }
-export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0, hitstopMul: 1 };
-export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, staminaCost: 0, hitstopMul: 1 };
-export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, staminaCost: 0, hitstopMul: 1.4 };
-export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, staminaCost: HEAVY_COST, hitstopMul: 1.8 };
+export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
+export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
+export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, hitstopMul: 1.4 };
+export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, hitstopMul: 1.8 };
 
 /** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
 export const COMBO_WINDOW = 0.34;
@@ -516,6 +513,28 @@ export const SPITTER_DAMAGE = 1;
 export const SPITTER_GLOB_SPEED = 7.5; // tiles/sec
 export const SPITTER_RATIO = 6;
 export const SPITTER_FROM_LEVEL = 4;
+
+// ── Ghosts (floating wall-phasers) ──────────────────────────────
+/**
+ * A white sheet-ghost that IGNORES the maze: it floats in a straight line
+ * toward the player THROUGH walls (its move never calls moveCircle), bobbing and
+ * translucent. You can't corner it or break line-of-sight with geometry — a
+ * different pressure than the shambling horde. Fragile (1-2 hits) and slow, so
+ * it's a positioning threat, not a bruiser. Silent — no groan.
+ */
+export const GHOST_HP = 2;
+export const GHOST_R = 0.32;
+export const GHOST_SPEED_FACTOR = 0.7; // slower than a zombie — a patient drift
+export const GHOST_CONTACT_RANGE = 0.68;
+export const GHOST_ATTACK_WINDUP = 0.4; // a slow reach-out before the chilling touch
+export const GHOST_ATTACK_COOLDOWN = 1.3;
+export const GHOST_DAMAGE = 1;
+/** How high the ghost hovers (world Y) and its bob amplitude/speed. */
+export const GHOST_HOVER_Y = 0.35;
+export const GHOST_BOB_AMP = 0.12;
+export const GHOST_BOB_SPEED = 2.2;
+export const GHOST_RATIO = 5; // ~1 ghost per this many horde slots
+export const GHOST_FROM_LEVEL = 2; // start haunting early
 
 // ── Overlord (the mini-boss) ────────────────────────────────────
 /**

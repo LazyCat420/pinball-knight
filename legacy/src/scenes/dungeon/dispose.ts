@@ -62,6 +62,8 @@ export function disposeAll(): void {
   state.bruteSheet = null;
   state.spitterSheet?.texture.dispose();
   state.spitterSheet = null;
+  state.ghostSheet?.texture.dispose();
+  state.ghostSheet = null;
   state.bossSheet?.texture.dispose();
   state.bossSheet = null;
 

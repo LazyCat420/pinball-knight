@@ -10,7 +10,7 @@ import type { Grid, TilePos } from "./maze/generator";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
-import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, STAMINA_MAX } from "./constants";
+import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
 import { freshWeapon } from "./items";
 
 export interface Actor {
@@ -37,12 +37,6 @@ export interface Player extends Actor {
   /** Seconds left on the shield buff (invulnerable). 0 = inactive. */
   shieldT: number;
 
-  // ── Stamina (shared by sprint + dodge) ──
-  /** Current stamina, 0..STAMINA_MAX. Sprinting drains it; dodge/heavy spend it. */
-  stamina: number;
-  /** Seconds until stamina regen resumes — set on every spend (Souls-style pause). */
-  staminaRegenDelay: number;
-
   // ── Dodge-roll ──
   /** -1 when not rolling, else seconds into the current roll (incl. recovery). */
   rollT: number;
@@ -68,6 +62,10 @@ export interface Player extends Actor {
   momSpeed: number;
   /** Cooldown between ball-form ram hits on zombies. */
   ramT: number;
+  /** Bounce COMBO: climbs per wall hit (Sonic combo), resets after PINBALL_COMBO_WINDOW. */
+  bounceCombo: number;
+  /** Seconds since the last bounce — resets bounceCombo when it lapses. */
+  bounceComboT: number;
 
   // ── Wall moves (Mortal-Kombat-style specials off a wall) ──
   /**
@@ -113,8 +111,11 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead";
  *  - spider:  fast, fragile, skittering.
  *  - brute:   big, slow, high-HP; a heavy bite with hard knockback.
  *  - spitter: hangs back and lobs an acid glob (ranged) instead of biting.
+ *  - ghost:   a floating white sheet-ghost that PHASES THROUGH WALLS, drifting
+ *             in a straight line at you (ignores the maze) — can't be kited by
+ *             geometry. Fragile, translucent, silent.
  */
-export type EnemyKind = "zombie" | "spider" | "brute" | "spitter";
+export type EnemyKind = "zombie" | "spider" | "brute" | "spitter" | "ghost";
 
 export interface Zombie extends Actor {
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
@@ -133,6 +134,8 @@ export interface Zombie extends Actor {
   aggro: boolean;
   /** Flame-puff immunity window — the cone burns in ticks, not per-puff. */
   burnT: number;
+  /** Ghost hover-bob phase accumulator (seconds); unused by grounded kinds. */
+  bobT?: number;
 }
 
 export interface GroundItem {
@@ -228,6 +231,8 @@ export const state = {
   bruteSheet: null as SpriteSheet | null,
   /** The spitter (ranged) atlas. */
   spitterSheet: null as SpriteSheet | null,
+  /** The floating sheet-ghost atlas. */
+  ghostSheet: null as SpriteSheet | null,
   /** The overlord (mini-boss) atlas. */
   bossSheet: null as SpriteSheet | null,
 
@@ -305,8 +310,6 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rageT: 0,
     hasteT: 0,
     shieldT: 0,
-    stamina: STAMINA_MAX,
-    staminaRegenDelay: 0,
     rollT: -1,
     rollDirX: 0,
     rollDirZ: 0,
@@ -316,6 +319,8 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     momZ: 0,
     momSpeed: 0,
     ramT: 0,
+    bounceCombo: 0,
+    bounceComboT: 0,
     wallMoveT: -1,
     wallMoveDur: 0,
     wallMoveIfr: 0,
@@ -367,6 +372,7 @@ export function resetState(): void {
   state.spiderSheet = null;
   state.bruteSheet = null;
   state.spitterSheet = null;
+  state.ghostSheet = null;
   state.bossSheet = null;
   state.flowField = null;
   state.flowTimer = 0;

@@ -17,10 +17,6 @@ import {
   PLAYER_R,
   ZOMBIE_R,
   BOOTS_SPEED_FACTOR,
-  STAMINA_MAX,
-  STAMINA_REGEN,
-  STAMINA_REGEN_DELAY,
-  SPRINT_DRAIN,
   SPRINT_SPEED_MULT,
   SPRINT_BASE_MULT,
   SPRINT_RAMP_TIME,
@@ -41,9 +37,12 @@ import {
   OVERCHARGE_TIME,
   OVERCHARGE_DECAY,
   PINBALL_RESTITUTION,
+  PINBALL_BOUNCE_ADD,
+  PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
+  PINBALL_COMBO_WINDOW,
   BALL_SPEED_MULT,
   BALL_RAM_COOLDOWN,
   BALL_RAM_KNOCKBACK,
@@ -53,7 +52,6 @@ import {
   ROLL_IFRAMES,
   ROLL_DISTANCE,
   ROLL_RECOVERY,
-  DODGE_COST,
   LIGHT_1,
   LIGHT_2,
   COMBO_FINISH,
@@ -116,6 +114,8 @@ export function resetPlayerMotion(): void {
     state.player.sprintCharge = 0;
     state.player.overcharge = 0;
     state.player.momSpeed = 0;
+    state.player.bounceCombo = 0;
+    state.player.bounceComboT = 0;
   }
 }
 
@@ -144,43 +144,20 @@ export function debugWallNormal(): { nx: number; nz: number } | null {
   return currentWallNormal();
 }
 
-/**
- * Drain/refill the stamina bar. Any spend (sprint tick, dodge, heavy) pushes the
- * regen delay out; once it elapses, stamina pours back. Returns nothing —
- * mutates the player. Spends are applied by the caller via spendStamina().
- */
-function tickStamina(dt: number): void {
-  const p = state.player;
-  if (!p) return;
-  p.staminaRegenDelay = Math.max(0, p.staminaRegenDelay - dt);
-  if (p.staminaRegenDelay <= 0 && p.stamina < STAMINA_MAX) {
-    p.stamina = Math.min(STAMINA_MAX, p.stamina + STAMINA_REGEN * dt);
-  }
-}
-
-/** Spend stamina and pause regen. Returns false (no spend) if there isn't enough. */
-export function spendStamina(amount: number): boolean {
-  const p = state.player;
-  if (!p) return false;
-  if (p.stamina < amount) return false;
-  p.stamina -= amount;
-  p.staminaRegenDelay = STAMINA_REGEN_DELAY;
-  return true;
-}
-
 /** Peak roll speed (units/sec). v(τ)=v0·(1−τ) integrates to ROLL_DISTANCE over ROLL_DURATION. */
 const ROLL_V0 = (2 * ROLL_DISTANCE) / ROLL_DURATION;
 
 /**
  * Begin a dodge-roll if allowed. Commits the current input direction (or the
  * facing if standing still) — it's LOCKED for the whole roll, which is what
- * makes timing + aim matter. Costs stamina. Returns true if the roll started.
+ * makes timing + aim matter. FREE (no stamina) — the game is a Sonic/pinball
+ * momentum sandbox now, so tricks are never resource-gated. Returns true if the
+ * roll started.
  */
 function tryStartRoll(input: InputHandle): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.rollT >= 0) return false; // already rolling
-  if (!spendStamina(DODGE_COST)) return false; // not enough stamina
 
   // Direction: the movement input if any, else the current facing's world dir.
   const a = input.axis();
@@ -231,11 +208,11 @@ function updateRoll(dt: number, input: InputHandle): boolean {
 
     // Rolling INTO a wall converts to a WALL-KICK rebound mid-tumble — sprint
     // at a wall, dodge, and the knight vaults straight off it. Free (the dodge
-    // already paid its stamina); only during the roll body, and only when the
+    // converts free mid-tumble); only during the roll body, and only when the
     // roll direction genuinely points at the wall we just hit.
     const wall = wallContact(g, p.x, p.z, PLAYER_R, WALL_CONTACT_PROBE);
     if (wall && p.rollDirX * wall.nx + p.rollDirZ * wall.nz < -0.5) {
-      if (startWallLaunch("kick", wall, input, true)) return true;
+      if (startWallLaunch("kick", wall, input)) return true;
     }
 
     // i-frames only for the front window — top up the shared guard so it never
@@ -281,16 +258,14 @@ function currentWallNormal(): { nx: number; nz: number } | null {
 
 /**
  * Begin a launch off a wall (wall-kick or pounce). Commits the launch direction
- * (the wall normal, biased by input for the kick), spends stamina, and — for the
- * kick — queues a lunging light strike that lands as the hop peaks. Returns true
- * if it started. `free` skips the stamina price — used when a dodge-roll that
- * already paid converts into a kick mid-tumble.
+ * (the wall normal, biased by input for the kick), and — for the kick — queues a
+ * lunging light strike that lands as the hop peaks. FREE (no stamina): wall
+ * tricks are always available in the momentum sandbox. Returns true if started.
  */
-function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: number }, input: InputHandle, free = false): boolean {
+function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: number }, input: InputHandle): boolean {
   const p = state.player;
   if (!p) return false;
   const move = kind === "kick" ? WALLKICK : POUNCE;
-  if (!free && !spendStamina(move.staminaCost)) return false;
 
   // Launch direction: straight off the wall for a pounce; for a wall-kick, blend
   // the wall normal with any held input so you can angle the rebound.
@@ -475,22 +450,30 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   if (blockedX || blockedZ) {
     // Axis-aligned reflection (grid walls are axis-aligned): flip the blocked
-    // component. This is a clean pinball ricochet off a flat wall face.
+    // component. Clean pinball ricochet off a flat wall face.
     if (blockedX) p.momX = -p.momX;
     if (blockedZ) p.momZ = -p.momZ;
-    p.momSpeed *= PINBALL_RESTITUTION;
-    // Bounce juice: sparks off the wall, a kick, a clack.
+    // SONIC ACCELERATION: a bounce ADDS speed (multiply + flat kick) up to the
+    // cap, so chaining wall hits ramps you up instead of bleeding out. Each hit
+    // also bumps the bounce COMBO (bigger combo → the aura + score reward).
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * PINBALL_RESTITUTION + PINBALL_BOUNCE_ADD);
+    p.bounceCombo += 1;
+    p.bounceComboT = PINBALL_COMBO_WINDOW;
+    // Bounce juice scales with the combo — a hot chain throws more sparks + kick.
     const n = currentWallNormal();
     const sx = n ? n.nx : -p.momX;
     const sz = n ? n.nz : -p.momZ;
-    state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, 8);
-    state.shakeT = Math.max(state.shakeT, 0.14);
+    state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, 8 + Math.min(10, p.bounceCombo * 2));
+    state.shakeT = Math.max(state.shakeT, 0.12 + Math.min(0.12, p.bounceCombo * 0.02));
     state.hitstopT = Math.max(state.hitstopT, 0.03);
     sfxRoll();
   }
 
-  // Friction bleeds momentum every frame.
+  // Momentum bleeds ONLY when NOT bouncing (Sonic keeps its speed on a good
+  // line) — very gently. The combo lapses if you go too long without a wall.
   p.momSpeed = Math.max(0, p.momSpeed - PINBALL_FRICTION * dt);
+  p.bounceComboT = Math.max(0, p.bounceComboT - dt);
+  if (p.bounceComboT <= 0) p.bounceCombo = 0;
 
   // Ball form rams the horde: anything the ball touches gets smashed aside.
   p.ramT = Math.max(0, p.ramT - dt);
@@ -533,6 +516,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // Exit when the momentum has bled off — or immediately if overcharge is gone.
   if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT || p.overcharge <= 0) {
     p.momSpeed = 0;
+    p.bounceCombo = 0;
+    p.bounceComboT = 0;
     p.overcharge = Math.min(p.overcharge, 0.999); // drop out of ball form
     p.anim.setRate(1);
     p.anim.play("idle", { force: true });
@@ -562,7 +547,6 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   p.cooldown = Math.max(0, p.cooldown - dt);
   p.iframes = Math.max(0, p.iframes - dt);
-  tickStamina(dt);
   updateFlash(p, dt);
 
   // ── Wall launch (wall-kick / pounce) ── owns the player while airborne.
@@ -654,18 +638,12 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // the top speed the rest of the way to SPRINT_SPEED_MULT — full sprint is
   // earned by a sustained run. Interruptions (a swing, clipping a corner) HOLD
   // the charge for SPRINT_GRACE before it starts bleeding over SPRINT_DECAY_TIME,
-  // so combat doesn't erase the spool. Gated by stamina — an empty bar can't
-  // sprint. Stamina drains only while the charge is actually building/held.
-  const wantSprint = input.sprintHeld() && moving && !attacking && p.stamina > 0;
+  // so combat doesn't erase the spool. FREE — no stamina in the momentum sandbox,
+  // so you can sprint forever and the fun is never rationed.
+  const wantSprint = input.sprintHeld() && moving && !attacking;
   if (wantSprint) {
     p.sprintCharge = Math.min(1, p.sprintCharge + dt / SPRINT_RAMP_TIME);
     sprintGraceT = SPRINT_GRACE;
-    p.stamina = Math.max(0, p.stamina - SPRINT_DRAIN * dt);
-    // Suppress regen for the full delay while sprinting — otherwise tickStamina
-    // (which ran earlier this frame) refills faster than the drain and the bar
-    // never falls. Refreshing the delay each sprint frame keeps regen paused
-    // until STAMINA_REGEN_DELAY after you STOP sprinting.
-    p.staminaRegenDelay = STAMINA_REGEN_DELAY;
   } else if (sprintGraceT > 0) {
     sprintGraceT = Math.max(0, sprintGraceT - dt); // hold the spool through the stumble
   } else {
@@ -734,6 +712,8 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.momZ /= ml;
       p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
       p.ramT = 0;
+      p.bounceCombo = 1; // the launch itself is the first bounce of the chain
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
       state.shakeT = Math.max(state.shakeT, 0.2);
       state.vfx?.sparks(p.x + (n ? n.nx : 0) * PLAYER_R, 0.35, p.z + (n ? n.nz : 0) * PLAYER_R, p.momX, p.momZ, 10);
       sfxHeavy();
@@ -807,7 +787,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
 /**
  * MELEE trigger + charge. A held attack CHARGES; releasing past CHARGE_TIME
- * launches a HEAVY (long telegraph, big arc, ~2× damage, costs stamina), a
+ * launches a HEAVY (long telegraph, big arc, ~2× damage), a
  * quick tap fires the next LIGHT in the combo chain (light-1 → light-2 →
  * finisher). A swing can't start until the previous one leaves its active/early
  * recovery — but a NEW light pressed inside the combo window links straight in.
@@ -849,11 +829,7 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
     if (facingWall && startWallLaunch("pounce", wall!, input)) {
       return; // launched off the wall
     }
-    if (spendStamina(HEAVY.staminaCost)) {
-      startMelee(HEAVY, 0, "heavy");
-    } else {
-      startMelee(LIGHT_1, 1, "light"); // empty bar → the press still swings light
-    }
+    startMelee(HEAVY, 0, "heavy"); // free — heavies aren't rationed anymore
     return;
   }
 
@@ -869,10 +845,10 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
 
   // ── WALL-RIDE ── attacking while sprint-charged past the threshold AND
   // alongside a wall converts the light swing into a wide sweeping ride-slash
-  // (the "run fast enough → wall ride" ask). Gated by the 3s sprint spool so it
-  // only fires off a committed run, and by stamina. Falls through to the normal
-  // combo swing if not charged / no wall / no stamina.
-  if (p.sprintCharge >= SPRINT_RIDE_THRESHOLD && currentWallNormal() && spendStamina(WALLRIDE.staminaCost)) {
+  // (the "run fast enough → wall ride" ask). Gated ONLY by the sprint spool now
+  // (free — no stamina). Falls through to the normal combo swing if not charged
+  // or no wall.
+  if (p.sprintCharge >= SPRINT_RIDE_THRESHOLD && currentWallNormal()) {
     startMelee(WALLRIDE, 0, "heavy"); // "heavy" kind → the meatier swing sfx/vfx
     return;
   }

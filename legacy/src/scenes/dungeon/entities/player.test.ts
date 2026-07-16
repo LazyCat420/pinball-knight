@@ -1,14 +1,13 @@
 /**
- * Pure-logic tests for the movement/combat additions: the stamina economy and
- * the dodge-roll's distance/i-frame math. Rendering is not tested (house rule) —
- * these cover the numbers that gameplay balance depends on.
+ * Pure-logic tests for the movement/combat additions: the dodge-roll's
+ * distance/i-frame math, the sprint spool, wall moves and the pinball/Sonic
+ * momentum. Rendering is not tested (house rule) — these cover the numbers that
+ * gameplay balance depends on. NB stamina was DELETED 2026-07-16 (Sonic/pinball
+ * rework), so every move is free — there is no resource economy to test.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields } from "../state";
-import { spendStamina } from "./player";
 import {
-  STAMINA_MAX,
-  DODGE_COST,
   ROLL_DISTANCE,
   ROLL_DURATION,
   ROLL_IFRAMES,
@@ -19,7 +18,6 @@ import {
   HEAVY,
   COMBO_WINDOW,
   CHARGE_TIME,
-  HEAVY_COST,
   SPRINT_RAMP_TIME,
   SPRINT_DECAY_TIME,
   SPRINT_GRACE,
@@ -37,41 +35,34 @@ import {
   OVERCHARGE_TIME,
   OVERCHARGE_DECAY,
   PINBALL_RESTITUTION,
+  PINBALL_BOUNCE_ADD,
+  PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
   PINBALL_EXIT_MULT,
   BALL_SPEED_MULT,
 } from "../constants";
 
-/** A bare player stub — the fields spendStamina + the roll math read. */
+/** A bare player stub — the fields the roll math reads. */
 function stubPlayer(): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   state.player = { x: 0, z: 0, ...freshPlayerFields() } as any;
 }
 
-describe("stamina", () => {
+describe("moves are free (no stamina)", () => {
   beforeEach(stubPlayer);
 
-  it("starts full", () => {
-    expect(state.player!.stamina).toBe(STAMINA_MAX);
+  it("the player state carries no stamina fields anymore", () => {
+    // Stamina was deleted in the Sonic/pinball rework — a fresh player has
+    // neither a stamina pool nor a regen-delay field.
+    const p = state.player as unknown as Record<string, unknown>;
+    expect("stamina" in p).toBe(false);
+    expect("staminaRegenDelay" in p).toBe(false);
   });
 
-  it("spend deducts and pauses regen, and refuses when short", () => {
-    expect(spendStamina(DODGE_COST)).toBe(true);
-    expect(state.player!.stamina).toBeCloseTo(STAMINA_MAX - DODGE_COST);
-    expect(state.player!.staminaRegenDelay).toBeGreaterThan(0);
-
-    // Drain to below one dodge, then a dodge must be refused (no partial spend).
-    state.player!.stamina = DODGE_COST - 1;
-    const before = state.player!.stamina;
-    expect(spendStamina(DODGE_COST)).toBe(false);
-    expect(state.player!.stamina).toBe(before); // unchanged on a refused spend
-  });
-
-  it("a full bar buys ~3 dodges but not 4", () => {
-    let dodges = 0;
-    while (spendStamina(DODGE_COST)) dodges++;
-    expect(dodges).toBe(Math.floor(STAMINA_MAX / DODGE_COST));
-    expect(dodges).toBe(3);
+  it("no melee move carries a stamina cost field", () => {
+    for (const m of [LIGHT_1, LIGHT_2, COMBO_FINISH, HEAVY]) {
+      expect("staminaCost" in (m as unknown as Record<string, unknown>)).toBe(false);
+    }
   });
 });
 
@@ -118,13 +109,6 @@ describe("melee move timings", () => {
     expect(LIGHT_1.damageMul).toBeLessThanOrEqual(LIGHT_2.damageMul);
     expect(LIGHT_2.damageMul).toBeLessThan(COMBO_FINISH.damageMul);
     expect(COMBO_FINISH.damageMul).toBeLessThan(HEAVY.damageMul);
-  });
-
-  it("only heavy costs stamina; light swings are free", () => {
-    expect(LIGHT_1.staminaCost).toBe(0);
-    expect(LIGHT_2.staminaCost).toBe(0);
-    expect(COMBO_FINISH.staminaCost).toBe(0);
-    expect(HEAVY.staminaCost).toBe(HEAVY_COST);
   });
 
   it("a light chain can link: the combo window outlasts a light's recovery", () => {
@@ -196,10 +180,9 @@ describe("wall moves (Mortal-Kombat specials off a wall)", () => {
     expect(POUNCE_IFRAMES).toBeLessThanOrEqual(PLAYER_IFRAMES);
   });
 
-  it("every wall move is 'meaningful but costed': >1x damage AND a stamina price", () => {
+  it("every wall move hits harder than a plain light (they're all free now)", () => {
     for (const m of [WALLKICK, WALLRIDE, POUNCE]) {
       expect(m.damageMul).toBeGreaterThan(1); // hits harder than a plain light
-      expect(m.staminaCost).toBeGreaterThan(0); // never free
     }
     // The pounce is the biggest hammer of the three.
     expect(POUNCE.damageMul).toBeGreaterThan(WALLKICK.damageMul);
@@ -209,45 +192,60 @@ describe("wall moves (Mortal-Kombat specials off a wall)", () => {
   });
 });
 
-describe("pinball overcharge (run-fast-enough-and-it-bounces)", () => {
-  it("overcharge fills over OVERCHARGE_TIME while at full spool, decays faster", () => {
+describe("pinball / Sonic momentum (run-fast-enough-and-it-bounces)", () => {
+  it("overcharge fills over OVERCHARGE_TIME and decays no slower than it fills", () => {
     // Fills at dt/OVERCHARGE_TIME per frame: OVERCHARGE_TIME of full sprint = 1.
     let o = 0;
     const dt = 1 / 60;
     for (let t = 0; t < OVERCHARGE_TIME; t += dt) o = Math.min(1, o + dt / OVERCHARGE_TIME);
     expect(o).toBeCloseTo(1, 2);
-    // ...and it bleeds off faster than it builds, so it's a fleeting super-state.
-    expect(OVERCHARGE_DECAY).toBeLessThan(OVERCHARGE_TIME);
+    // It bleeds in a comparable time once fully stopped (a fleeting super-state).
+    expect(OVERCHARGE_DECAY).toBeLessThanOrEqual(OVERCHARGE_TIME);
   });
 
-  it("pinball momentum bleeds under friction and exits above a walk (never sticks)", () => {
-    // A bounce keeps PINBALL_RESTITUTION of the speed; friction then bleeds it.
-    // The exit gate is just above walk speed, so you always regain control while
-    // still moving — you never freeze mid-arena.
-    expect(PINBALL_RESTITUTION).toBeGreaterThan(0.5);
-    expect(PINBALL_RESTITUTION).toBeLessThan(1); // a bounce always loses energy
-    expect(PINBALL_FRICTION).toBeGreaterThan(0); // momentum always bleeds
-    expect(PINBALL_EXIT_MULT).toBeGreaterThan(1); // exit while still faster than a walk
+  it("a bounce ACCELERATES you (Sonic): restitution > 1, plus a flat kick, capped", () => {
+    // The whole point of the rework: chaining wall hits speeds you UP, not down.
+    expect(PINBALL_RESTITUTION).toBeGreaterThan(1);
+    expect(PINBALL_BOUNCE_ADD).toBeGreaterThan(0);
+    expect(PINBALL_MAX_SPEED).toBeGreaterThan(PLAYER_SPEED * SPRINT_SPEED_MULT);
+    // Friction is gentle now — a good line keeps its speed.
+    expect(PINBALL_FRICTION).toBeGreaterThan(0);
+    expect(PINBALL_FRICTION).toBeLessThan(2);
+  });
 
-    // Sanity: from a full-sprint launch, friction alone brings it under the exit
-    // gate in finite, reasonable time (not an eternal roll).
-    let speed = PLAYER_SPEED * SPRINT_SPEED_MULT;
+  it("chained bounces climb toward — and hold at — the speed cap", () => {
+    // Model the exact bounce update: speed = min(CAP, speed*R + ADD). From even a
+    // slow entry it should ramp UP over a few bounces and never exceed the cap.
+    let speed = PLAYER_SPEED; // a modest entry
+    const seen: number[] = [speed];
+    for (let i = 0; i < 12; i++) {
+      speed = Math.min(PINBALL_MAX_SPEED, speed * PINBALL_RESTITUTION + PINBALL_BOUNCE_ADD);
+      seen.push(speed);
+    }
+    // Monotonic non-decreasing, ends at the cap, and genuinely faster than entry.
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1] - 1e-9);
+    expect(seen[seen.length - 1]).toBeCloseTo(PINBALL_MAX_SPEED, 5);
+    expect(seen[seen.length - 1]).toBeGreaterThan(PLAYER_SPEED * 2);
+  });
+
+  it("momentum only exits once it has bled below a walk (never freezes mid-arena)", () => {
+    // With NO bounces, gentle friction still eventually drops you under the exit
+    // gate — but it takes a while (you keep your speed on a good line).
+    expect(PINBALL_EXIT_MULT).toBeGreaterThan(1);
+    let speed = PINBALL_MAX_SPEED;
     const exit = PLAYER_SPEED * PINBALL_EXIT_MULT;
     let t = 0;
     const dt = 1 / 60;
-    while (speed >= exit && t < 30) {
+    while (speed >= exit && t < 60) {
       speed = Math.max(0, speed - PINBALL_FRICTION * dt);
       t += dt;
     }
-    expect(t).toBeGreaterThan(0.2); // long enough to feel like a ride
-    expect(t).toBeLessThan(10); // short enough that it always ends
+    expect(t).toBeGreaterThan(1); // Sonic coasts — a real ride, not an instant stop
+    expect(t).toBeLessThan(40); // but it does end if you stop bouncing
   });
 
-  it("ball form is faster than a full sprint (the payoff for maxing overcharge)", () => {
-    // Ball speed = full sprint × BALL_SPEED_MULT, so hitting max overcharge is a
-    // real speed jump, not just a cosmetic.
+  it("ball form is faster than the momentum cap (the payoff for maxing overcharge)", () => {
     expect(BALL_SPEED_MULT).toBeGreaterThan(1);
-    const ballTop = PLAYER_SPEED * SPRINT_SPEED_MULT * BALL_SPEED_MULT;
-    expect(ballTop).toBeGreaterThan(PLAYER_SPEED * SPRINT_SPEED_MULT);
+    expect(PINBALL_MAX_SPEED * BALL_SPEED_MULT).toBeGreaterThan(PINBALL_MAX_SPEED);
   });
 });

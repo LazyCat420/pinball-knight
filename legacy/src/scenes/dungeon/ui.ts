@@ -5,7 +5,7 @@
  * quantized. Styled to match the palette so they don't clash with the art.
  */
 import { state, WEAPON_SLOTS } from "./state";
-import { PLAYER_MAX_HP, STAMINA_MAX, SPRINT_RIDE_THRESHOLD } from "./constants";
+import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
@@ -227,16 +227,6 @@ export function updateHUD(el: HTMLDivElement): void {
     `<span style="color:#d95763">${"♥".repeat(hp)}</span>` +
     `<span style="color:#2b303b">${"♥".repeat(Math.max(0, PLAYER_MAX_HP - hp))}</span>`;
 
-  // Stamina bar (sprint + dodge resource) — a thin green rail under the hearts,
-  // dimmed/amber when nearly empty so a "can't dodge" state reads at a glance.
-  const stam = Math.max(0, Math.min(STAMINA_MAX, state.player?.stamina ?? STAMINA_MAX));
-  const stamPct = (stam / STAMINA_MAX) * 100;
-  const stamColor = stamPct < 30 ? "#d97b29" : "#8fc46b";
-  const stamRow = `
-    <div style="height:5px;margin-top:3px;background:#2b303b;border:1px solid #454f5e">
-      <div style="height:100%;width:${stamPct}%;background:${stamColor};transition:width 0.08s linear"></div>
-    </div>`;
-
   // Sprint spool (the 3s Shift ramp) — a thin blue rail that turns gold once
   // the charge passes the wall-ride threshold, so "the ride is armed" reads at
   // a glance. Hidden entirely at zero charge to keep the HUD quiet when walking.
@@ -252,16 +242,22 @@ export function updateHUD(el: HTMLDivElement): void {
       : "";
 
   // Overcharge (pinball) — appears only once the spool is full and overflowing.
-  // A hot orange→cyan rail; at 100% it pulses to read "BALL FORM ARMED".
+  // A hot orange→cyan rail; at 100% it pulses to read "BALL FORM ARMED". A live
+  // bounce COMBO count rides alongside it once you're ricocheting (the Sonic
+  // reward — chain wall hits, watch it climb).
   const over = Math.max(0, Math.min(1, state.player?.overcharge ?? 0));
   const overFull = over >= 0.999;
+  const combo = state.player?.bounceCombo ?? 0;
+  const comboTag = combo >= 2 ? ` <span style="color:#ffd23f;font-weight:900">×${combo} COMBO</span>` : "";
   const overRow =
     over > 0.01
       ? `
     <div style="height:3px;margin-top:1px;background:#2b303b;border:1px solid #6b1f2a;position:relative">
       <div style="height:100%;width:${over * 100}%;background:${overFull ? "#6fd0e8" : "#f0a63c"};box-shadow:${overFull ? "0 0 5px #6fd0e8" : "none"};transition:width 0.08s linear"></div>
-    </div>${overFull ? `<div style="font-size:8px;letter-spacing:1px;color:#6fd0e8">◉ BALL READY</div>` : ""}`
-      : "";
+    </div><div style="font-size:8px;letter-spacing:1px;color:#6fd0e8">${overFull ? "◉ BALL READY" : ""}${comboTag}</div>`
+      : combo >= 2
+        ? `<div style="font-size:9px;letter-spacing:1px;color:#ffd23f;font-weight:900">×${combo} BOUNCE COMBO</div>`
+        : "";
 
   // Two hand slots — the active one is arrowed and bright, ranged weapons
   // show an ammo count instead of a wear meter.
@@ -332,7 +328,6 @@ export function updateHUD(el: HTMLDivElement): void {
   const body = (el.querySelector("#dungeon-hud-body") as HTMLDivElement) ?? el;
   body.innerHTML = `
     <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
-    ${stamRow}
     ${spoolRow}
     ${overRow}
     <div style="margin-top:3px">${weaponRows}</div>

@@ -26,6 +26,13 @@ import {
   SPITTER_COOLDOWN,
   SPITTER_FIRE_RANGE,
   SPITTER_KITE_RANGE,
+  GHOST_R,
+  GHOST_CONTACT_RANGE,
+  GHOST_ATTACK_WINDUP,
+  GHOST_ATTACK_COOLDOWN,
+  GHOST_HOVER_Y,
+  GHOST_BOB_AMP,
+  GHOST_BOB_SPEED,
   AGGRO_TILES,
   SEPARATION_R,
 } from "../constants";
@@ -51,6 +58,7 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   spider: { bodyR: SPIDER_R, contactRange: SPIDER_CONTACT_RANGE, windup: SPIDER_ATTACK_WINDUP, cooldown: SPIDER_ATTACK_COOLDOWN, ranged: false },
   brute: { bodyR: BRUTE_R, contactRange: BRUTE_CONTACT_RANGE, windup: BRUTE_ATTACK_WINDUP, cooldown: BRUTE_ATTACK_COOLDOWN, ranged: false },
   spitter: { bodyR: SPITTER_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
+  ghost: { bodyR: GHOST_R, contactRange: GHOST_CONTACT_RANGE, windup: GHOST_ATTACK_WINDUP, cooldown: GHOST_ATTACK_COOLDOWN, ranged: false },
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -117,6 +125,14 @@ export function updateZombies(dt: number): void {
     if (!z.aggro) {
       z.mode = "idle";
       z.anim.play("idle");
+      continue;
+    }
+
+    // ── GHOST ── floats STRAIGHT AT the player THROUGH walls (no flow field, no
+    // moveCircle, no separation), hovering with a bob. Its own self-contained
+    // update so none of the grounded steering applies. Still winds up + touches.
+    if (z.kind === "ghost") {
+      updateGhost(z, dt);
       continue;
     }
 
@@ -243,4 +259,72 @@ export function updateZombies(dt: number): void {
 
     syncActorMesh(z);
   }
+}
+
+/**
+ * The GHOST update: drift STRAIGHT toward the player through walls (no maze
+ * pathing, no collision), hovering with a gentle bob. It still winds up and
+ * lands a chilling touch in contact range, reusing the same telegraph pulse.
+ * Self-contained — called in place of all the grounded steering above.
+ */
+function updateGhost(z: Zombie, dt: number): void {
+  const p = state.player;
+  if (!p) return;
+  const st = STATS.ghost;
+  const pdx = p.x - z.x;
+  const pdz = p.z - z.z;
+  const pdist = Math.hypot(pdx, pdz);
+
+  z.bobT = (z.bobT ?? 0) + dt;
+
+  // ── Windup: reach out, then the touch lands. Same telegraph as the melee kinds. ──
+  if (z.mode === "windup") {
+    z.windupT += dt;
+    z.anim.setFacing(facingFromWorld(pdx, pdz, "S"));
+    z.anim.play("idle");
+    if (z.flashT <= 0) {
+      const k = Math.min(1, z.windupT / Math.max(st.windup, 1e-4));
+      z.sprite.setTint(lerpTint(TELL_MELEE, k));
+    }
+    if (z.windupT >= st.windup) {
+      z.mode = "chase";
+      z.cooldown = st.cooldown;
+      if (z.flashT <= 0) z.sprite.setTint(null);
+      if (p.hp > 0 && pdist <= st.contactRange * 1.3) hitPlayer(z);
+    }
+    syncGhostMesh(z);
+    return;
+  }
+  if (z.flashT <= 0) z.sprite.setTint(null);
+
+  // Enter windup in contact range; otherwise drift straight in (through walls).
+  z.mode = "chase";
+  if (pdist <= st.contactRange && z.cooldown <= 0 && p.hp > 0) {
+    z.mode = "windup";
+    z.windupT = 0;
+    syncGhostMesh(z);
+    return;
+  }
+
+  if (pdist > 1e-4) {
+    const nx = pdx / pdist;
+    const nz = pdz / pdist;
+    // NO moveCircle — the ghost passes through walls. Just integrate position.
+    z.x += nx * z.speed * dt;
+    z.z += nz * z.speed * dt;
+    z.anim.setFacing(facingFromWorld(nx, nz, "S"));
+  }
+  z.anim.play("walk");
+  syncGhostMesh(z);
+}
+
+/**
+ * Position a ghost's billboard: the shared iso transform, then LIFT it off the
+ * floor to GHOST_HOVER_Y plus a sine bob so it visibly floats. syncActorMesh
+ * pins y=0; we override just the y after it runs.
+ */
+function syncGhostMesh(z: Zombie): void {
+  syncActorMesh(z);
+  const bob = Math.sin((z.bobT ?? 0) * GHOST_BOB_SPEED) * GHOST_BOB_AMP;
+  z.sprite.mesh.position.y = GHOST_HOVER_Y + bob;
 }

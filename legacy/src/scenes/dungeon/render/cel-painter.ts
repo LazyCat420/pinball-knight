@@ -1517,6 +1517,157 @@ export function makeSpitterPaints(): ActorPaints {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// GHOST — a floating white sheet-ghost. A rounded draped dome with a
+// wavy tattered hem, two hollow black eye-sockets and a small O of a
+// mouth. Near-white (stone-highlight ramp) with a faint cold underglow
+// so it reads as spectral, not paper. Hovers (drawn HIGH in the cel so
+// there's room to float); the material's own transparency makes it see-
+// through. No walk-cycle legs — it drifts, so "walk" is a hem-ripple.
+// ══════════════════════════════════════════════════════════════════
+
+// Ghost palette: stone-highlight body (near white), void eyes, a cold arcane
+// underlight so it glows spectrally rather than reading as a flat white blob.
+const GHOST_BODY = 5; // stone highlight (0x9aa4b4) — brightest cool grey
+const GHOST_BODY_HI = 22; // steel highlight (near white) for the lit crown
+const GHOST_SHADE = 4; // stone light — the shaded underside of the drape
+
+interface GPose {
+  /** Vertical drift bob, px (visual only — the real hover is world-space). */
+  bob: number;
+  /** Hem ripple phase, drives the wavy bottom edge. */
+  ripple: number;
+  dead?: boolean;
+}
+
+/** The wavy tattered hem of the sheet — a row of scallops whose depth ripples. */
+function ghostHem(ctx: CanvasRenderingContext2D, cx: number, topY: number, halfW: number, ripple: number): Pt[] {
+  const pts: Pt[] = [];
+  const lobes = 5;
+  const baseY = topY;
+  for (let i = 0; i <= lobes; i++) {
+    const t = i / lobes;
+    const x = cx - halfW + t * halfW * 2;
+    // alternate up/down scallop, animated by ripple so the hem flutters
+    const dip = (i % 2 === 0 ? 10 : 2) + Math.sin(ripple + i * 1.1) * 3;
+    pts.push([x, baseY + dip]);
+  }
+  return pts;
+}
+
+/** One ghost frame, posed from a GPose. cy is the drape crown height. */
+function ghostFrame(dir: Dir, pose: GPose): FramePaint {
+  return (ctx) => {
+    const cx = 64;
+    const crownY = 46 + pose.bob; // drawn high — it hovers, room below to float
+    const halfW = 22;
+    const hemY = 92 + pose.bob;
+
+    // faint spectral underglow (unshaded, blooms) so it reads as a spirit
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, (crownY + hemY) / 2, halfW + 4, (hemY - crownY) / 2 + 4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = C(30); // arcane mid — cold halo
+    ctx.fill();
+    ctx.restore();
+
+    // Body: a domed drape. Build the outline — rounded top, straight-ish sides,
+    // scalloped rippling hem — as one filled path so the silhouette is clean.
+    const hem = ghostHem(ctx, cx, hemY, halfW, pose.ripple);
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW, hemY);
+    // left side up to the crown
+    ctx.lineTo(cx - halfW, crownY + 14);
+    ctx.quadraticCurveTo(cx - halfW, crownY, cx, crownY); // round the top-left
+    ctx.quadraticCurveTo(cx + halfW, crownY, cx + halfW, crownY + 14); // top-right
+    ctx.lineTo(cx + halfW, hemY);
+    // scalloped hem back across (right→left)
+    for (let i = hem.length - 1; i >= 0; i--) {
+      const [hx, hy] = hem[i];
+      ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = C(GHOST_BODY);
+    ctx.fill();
+    ctx.lineWidth = INK_W;
+    ctx.strokeStyle = C(3); // soft cool-grey selout, not black
+    ctx.stroke();
+
+    // lit crown band (upper-left) — the highlight that gives the drape volume
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx - 5, crownY + 12, halfW - 5, 14, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.ellipse(cx - 8, crownY + 8, halfW - 8, 10, 0, 0, Math.PI * 2);
+    ctx.fillStyle = C(GHOST_BODY_HI);
+    ctx.fill();
+    ctx.restore();
+
+    // shaded lower drape (a cool underside band)
+    ctx.beginPath();
+    ctx.moveTo(cx - halfW + 3, hemY - 14);
+    ctx.lineTo(cx + halfW - 3, hemY - 14);
+    ctx.lineTo(cx + halfW - 3, hemY - 4);
+    ctx.lineTo(cx - halfW + 3, hemY - 4);
+    ctx.closePath();
+    ctx.fillStyle = C(GHOST_SHADE);
+    ctx.globalAlpha = 0.5;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Face: two hollow eyes + a small mouth. N (facing away) shows no face.
+    if (dir !== "N") {
+      const eyeY = crownY + 24;
+      const ex = dir === "E" ? cx + 3 : cx; // profile shifts the face forward
+      if (pose.dead) {
+        // spent: drooping x-eyes as it dissipates
+        line(ctx, [[ex - 12, eyeY - 3], [ex - 6, eyeY + 3]], 2.5, F(1));
+        line(ctx, [[ex - 6, eyeY - 3], [ex - 12, eyeY + 3]], 2.5, F(1));
+        line(ctx, [[ex + 6, eyeY - 3], [ex + 12, eyeY + 3]], 2.5, F(1));
+        line(ctx, [[ex + 12, eyeY - 3], [ex + 6, eyeY + 3]], 2.5, F(1));
+      } else {
+        // hollow black sockets with a faint cold spark deep inside
+        ell(ctx, ex - 8, eyeY, 4.5, 6, F(1), 0, C(1));
+        ell(ctx, ex + 8, eyeY, 4.5, 6, F(1), 0, C(1));
+        figGlow(ctx, ex - 8, eyeY + 1, 1.5, 30, 31); // cold spark, left
+        figGlow(ctx, ex + 8, eyeY + 1, 1.5, 30, 31);
+        // small O of a wailing mouth
+        ell(ctx, ex, eyeY + 12, 3, 4, F(1), 0, C(1));
+      }
+    }
+  };
+}
+
+/** Build the ghost painter set. Two-frame idle + a hem-rippling drift. */
+export function makeGhostPaints(): ActorPaints {
+  const dirClips = (dir: Dir) => ({
+    idle: [
+      ghostFrame(dir, { bob: 0, ripple: 0 }),
+      ghostFrame(dir, { bob: -2, ripple: 1.6 }),
+      ghostFrame(dir, { bob: 0, ripple: 3.1 }),
+      ghostFrame(dir, { bob: 2, ripple: 4.7 }),
+    ],
+    // "walk" is a drift — same bob, faster hem ripple so the sheet flutters.
+    walk: [
+      ghostFrame(dir, { bob: -1, ripple: 0 }),
+      ghostFrame(dir, { bob: 1, ripple: 2.1 }),
+      ghostFrame(dir, { bob: -1, ripple: 4.2 }),
+      ghostFrame(dir, { bob: 1, ripple: 6.3 }),
+    ],
+    // Death: fade-dissipate — the sheet crumples with x-eyes (opacity handled by
+    // the sprite material's flash; here we just show the spent pose).
+    death: [
+      ghostFrame(dir, { bob: 2, ripple: 1, dead: true }),
+      ghostFrame(dir, { bob: 5, ripple: 3, dead: true }),
+      ghostFrame(dir, { bob: 9, ripple: 5, dead: true }),
+      ghostFrame(dir, { bob: 14, ripple: 7, dead: true }),
+    ],
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
 // GROUND ITEMS — the held weapon art lying at an angle, plus gear.
 // ══════════════════════════════════════════════════════════════════
 

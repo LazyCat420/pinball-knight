@@ -89,19 +89,27 @@ export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: numb
   z.flashT = FLASH_TIME;
   z.sprite.setTint(0xff6a6a);
 
+  const ghost = z.kind === "ghost";
   // Impact juice: sparks along the blow, a spray of rot, a beat of hit-freeze
-  // and a small camera kick. Kills get the bigger version below.
-  state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 9);
-  state.vfx?.blood(z.x, 0.6, z.z, "green", 8);
+  // and a small camera kick. A GHOST sheds cold ECTOPLASM (blue sparks), not
+  // green gore. Kills get the bigger version below.
+  state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, ghost ? 12 : 9);
+  if (!ghost) state.vfx?.blood(z.x, 0.6, z.z, "green", 8);
   state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_HIT);
 
   if (push > 0) {
     const d = Math.hypot(dirx, dirz);
     if (d > 1e-4) {
-      const res = moveCircle(g, z.x, z.z, ZOMBIE_R, (dirx / d) * push, (dirz / d) * push);
-      z.x = res.x;
-      z.z = res.z;
+      if (ghost) {
+        // A ghost phases — shove it WITHOUT wall-clamping (it drifts through them).
+        z.x += (dirx / d) * push;
+        z.z += (dirz / d) * push;
+      } else {
+        const res = moveCircle(g, z.x, z.z, ZOMBIE_R, (dirx / d) * push, (dirz / d) * push);
+        z.x = res.x;
+        z.z = res.z;
+      }
       syncActorMesh(z);
     }
   }
@@ -214,9 +222,14 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
-  // A death pops a bigger gore burst, a longer freeze and a heavier kick.
-  state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
-  state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
+  // A death pops a bigger burst, a longer freeze and a heavier kick. A GHOST
+  // dissipates into a cold ectoplasm puff (a spray of blue sparks) — no gore.
+  if (z.kind === "ghost") {
+    state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 22);
+  } else {
+    state.vfx?.blood(z.x, 0.6, z.z, "green", 20);
+    state.vfx?.sparks(z.x, 0.6, z.z, 0, 0, 6);
+  }
   // In first person you're right on top of the kill — double the gore with a
   // second red splatter so a frag reads as a proper Doom-style gib.
   if (state.fpsActive) {
