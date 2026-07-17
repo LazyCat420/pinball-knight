@@ -128,9 +128,9 @@ const WEAPONS_PER_LEVEL = 3;
 const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // Potions strewn per floor: always a health flask, plus THREE random power-ups
 // from the pool. Health is guaranteed so the run stays survivable; the rest add
-// "do I chug it now?" decisions. Ids → POTIONS (incl. the Wave-F pinball kit:
-// iron core / turbo / spring legs / freeze / multi-ball).
-const POTION_POOL = ["rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"];
+// "do I chug it now?" decisions. Ids → POTIONS (the consolidated pinball kit:
+// ball form / freeze / multi-ball, alongside the combat buffs).
+const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {

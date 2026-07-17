@@ -41,6 +41,10 @@ export function setHUDMode(mode: "diablo" | "wolf"): void {
   const slide = (el: HTMLElement | null, on: boolean): void => {
     if (el) el.style.transform = on ? "translateY(0)" : "translateY(110%)";
   };
+  // The Wolf face-slot is anchored above the (parked) Wolf bar, so its empty
+  // frame pokes up over the Diablo face when parked. Only make it visible while
+  // the Wolf bar itself is on-screen.
+  if (wolfSlot) wolfSlot.style.visibility = mode === "wolf" ? "visible" : "hidden";
   if (mode === "wolf") {
     slide(diablo, false);
     slide(wolf, true);

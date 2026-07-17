@@ -2167,10 +2167,8 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   haste: potionItem("#6fd0e8"),
   shield: potionItem("#8fc46b"),
   gold: goldIdolItem(),
-  // The pinball power-ups (Wave F) — same flask, signature liquids.
-  ironcore: potionItem("#8a94a6"),
-  turbo: potionItem("#f0a63c"),
-  springlegs: potionItem("#8fc46b"),
+  // The pinball power-ups — same flask, signature liquids.
+  ballform: potionItem("#f0a63c"),
   freeze: potionItem("#bfe8ff"),
   multiball: potionItem("#b06fe8"),
   curveshot: potionItem("#6fd0e8"),

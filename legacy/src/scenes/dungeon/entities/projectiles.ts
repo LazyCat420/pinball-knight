@@ -279,13 +279,6 @@ export function updateProjectiles(dt: number): void {
       continue;
     }
 
-    // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
-    // heading so the art follows the arc.
-    if (pr.curveX || pr.curveZ) {
-      pr.vx += (pr.curveX ?? 0) * dt;
-      pr.vz += (pr.curveZ ?? 0) * dt;
-      pr.mesh.rotation.y = Math.atan2(pr.vx, pr.vz);
-    }
 
     // ── Shards RICOCHET: resolve each axis against the grid and reflect the
     // blocked component (they die by fuse, not by wall). Everything else
@@ -301,6 +294,13 @@ export function updateProjectiles(dt: number): void {
       else pr.z = nz;
       pr.mesh.rotation.y += dt * 12; // tumbling chip
     } else {
+      // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
+      // heading so the art follows the arc.
+      if (pr.curveX || pr.curveZ) {
+        pr.vx += (pr.curveX ?? 0) * dt;
+        pr.vz += (pr.curveZ ?? 0) * dt;
+        pr.mesh.rotation.y = Math.atan2(pr.vx, pr.vz);
+      }
       pr.x += pr.vx * dt;
       pr.z += pr.vz * dt;
 

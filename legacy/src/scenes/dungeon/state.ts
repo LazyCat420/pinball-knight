@@ -530,6 +530,14 @@ export const state = {
   scanline: SCANLINE_DEFAULT,
   outline: OUTLINE_DEFAULT,
 
+  // ── Debug/god-mode toggles (backtick panel, off by default) ──
+  /** God mode: the knight takes no damage (hitPlayer/hitPlayerRanged short-circuit). */
+  godMode: false,
+  /** Infinite mana: the Q/E pool is topped up every frame. */
+  infMana: false,
+  /** No cooldowns: ability cooldowns are zeroed every frame. */
+  noCooldown: false,
+
   // Listeners
   input: null as InputHandle | null,
   onKeyDown: null as ((e: KeyboardEvent) => void) | null,

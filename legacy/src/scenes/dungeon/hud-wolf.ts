@@ -31,10 +31,11 @@ export function createWolfHUD(container: HTMLElement): HTMLDivElement {
   // above the bar, independent of however tall updateHUD makes the bar.
   slot.style.cssText = `
     position:absolute; left:50%; bottom:calc(100% - 6px); transform:translateX(-50%);
-    width:54px; height:54px; border-radius:5px; overflow:hidden;
+    width:54px; height:54px; overflow:hidden;
     border:3px solid #8a94a6; background:#0b0c10;
     box-shadow:0 0 0 2px #171a22, 0 2px 8px rgba(0,0,0,0.7);
-    pointer-events:none;`;
+    pointer-events:none;
+    visibility:hidden;`; // parked hidden — the empty frame poked up over the Diablo face otherwise
   el.appendChild(slot);
 
   wolfEl = el;

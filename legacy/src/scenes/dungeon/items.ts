@@ -117,9 +117,7 @@ export type PotionId =
   | "haste"
   | "shield"
   | "gold"
-  | "ironcore"
-  | "turbo"
-  | "springlegs"
+  | "ballform"
   | "freeze"
   | "multiball"
   | "curveshot"
@@ -148,13 +146,12 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   shield: { id: "shield", label: "Shield", icon: "🛡️", color: 0x8fc46b, heal: 0, duration: 6 },
   // Greed idol: not a liquid — an instant gold windfall. Reads as a golden flask.
   gold: { id: "gold", label: "Idol", icon: "💰", color: 0xffd98a, heal: 0, duration: 0, gold: 25 },
-  // ── The pinball power-ups (Wave F) ──
-  // Iron Core: pure ball mode — ramming at ANY momentum, at triple damage.
-  ironcore: { id: "ironcore", label: "Iron Core", icon: "🔩", color: 0x8a94a6, heal: 0, duration: 20 },
-  // Turbo Charge: the momentum never bleeds and the ball actually steers.
-  turbo: { id: "turbo", label: "Turbo", icon: "🚀", color: 0xf0a63c, heal: 0, duration: 10 },
-  // Spring Legs: every flat wall bounce GAINS speed — compound bouncing.
-  springlegs: { id: "springlegs", label: "Spring Legs", icon: "🦵", color: 0x8fc46b, heal: 0, duration: 15 },
+  // ── The pinball power fantasy, in ONE potion (Wave F, consolidated) ──
+  // BALL FORM: you literally become the pinball. Momentum never bleeds AND
+  // steers (old Turbo), every ram lands at triple damage from any speed (old
+  // Iron Core), and flat walls kick you back FASTER (old Spring Legs). One
+  // strong, unmistakable button instead of three thin overlapping buffs.
+  ballform: { id: "ballform", label: "Ball Form", icon: "🪩", color: 0xf0a63c, heal: 0, duration: 14 },
   // Freeze Ray: the whole machine holds its breath — thread the bumper room.
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6 },
   // Multi-Ball: two ghost knights mirror the run and ram what they touch.
@@ -165,7 +162,7 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18 },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

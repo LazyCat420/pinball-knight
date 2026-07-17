@@ -417,6 +417,7 @@ export function hitPlayer(z: Zombie): void {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.hp <= 0) return;
+  if (state.godMode) return; // debug god mode: untouchable
   if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
   // A brute's haymaker hits harder and shoves you further than a normal bite;
@@ -471,7 +472,7 @@ export function hitPlayer(z: Zombie): void {
 export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): void {
   const p = state.player;
   const g = state.grid;
-  if (!p || !g || p.hp <= 0 || p.iframes > 0 || p.shieldT > 0) return; // shield blocks globs too
+  if (!p || !g || p.hp <= 0 || state.godMode || p.iframes > 0 || p.shieldT > 0) return; // godMode/shield: untouchable
 
   const absorbed = absorbDamage(state.gear, damage);
   state.gear = absorbed.gear;

@@ -137,6 +137,15 @@ export function tickAbilities(dt: number): void {
   const p = state.player;
   if (!p) return;
 
+  // Debug: keep the pool topped and the skills instantly re-castable.
+  if (state.infMana && p.mana < MANA_MAX) {
+    p.mana = MANA_MAX;
+    state.hudDirty = true;
+  }
+  if (state.noCooldown) {
+    for (const id of ABILITY_IDS) if ((state.abilityCd[id] ?? 0) > 0) state.abilityCd[id] = 0;
+  }
+
   // Passive mana regen.
   if (p.mana < MANA_MAX) {
     const before = p.mana;

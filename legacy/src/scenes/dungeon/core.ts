@@ -51,7 +51,8 @@ import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import { castAbility, tickAbilities } from "./abilities";
@@ -166,7 +167,7 @@ import {
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper } from "./audio";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -177,6 +178,7 @@ import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze } from "./audio";
 let sun: THREE.DirectionalLight | null = null;
 let lamp: THREE.PointLight | null = null;
 let ambient: THREE.AmbientLight | null = null;
+let debugPanelDispose: (() => void) | null = null;
 let hemi: THREE.HemisphereLight | null = null;
 
 /** Last sprint-spool+overcharge fill (in 20ths) the HUD painted — repaint only when it changes. */
@@ -490,6 +492,49 @@ export function launchDungeonGame(onExit?: () => void): void {
 
   state.onKeyDown = handleKey;
   window.addEventListener("keydown", state.onKeyDown);
+
+  // Debug/god-mode console (press ` to toggle). State toggles live on `state`;
+  // the one-shot actions route through core's private helpers here.
+  debugPanelDispose = createDebugPanel(state.container, {
+    heal: () => {
+      if (!state.player) return;
+      state.player.hp = PLAYER_MAX_HP;
+      faceOnHeal();
+      rippleGlobe("life");
+      state.hudDirty = true;
+    },
+    addGold: (n) => {
+      state.goldRun += n;
+      addGold(n, "dungeon-game");
+      state.hudDirty = true;
+    },
+    fillRampage: () => {
+      state.ultCharge = 1;
+      state.hudDirty = true;
+    },
+    killAll: debugKillAll,
+    clearEnemies: debugClearEnemies,
+    nextFloor: () => {
+      if (!state.gameOver) descend();
+    },
+    nextBoss: () => {
+      if (state.gameOver) return;
+      const next = (Math.floor(state.level / BOSS_EVERY) + 1) * BOSS_EVERY;
+      startLevel(next);
+    },
+    spawnReaper: () => {
+      if (!state.gameOver && !state.reaperOut) spawnReaper();
+    },
+    giveWeapon: (id) => {
+      if (!(id in WEAPONS)) return;
+      state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
+      state.hudDirty = true;
+    },
+    applyPotion: (id) => {
+      if (id in POTIONS) applyPotion(id as PotionId);
+    },
+    spawnEnemy: (kind) => debugSpawnEnemy(kind as EnemyKind),
+  });
 
   // A slain overlord drops its reward here (kept out of combat.ts to avoid a
   // circular import).
@@ -1193,7 +1238,7 @@ function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"].forEach((id, i, arr) => {
+  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
     const a = (i / arr.length) * Math.PI * 2;
@@ -1203,6 +1248,49 @@ function debugSpawnRing(): void {
     state.scene.add(sprite.mesh);
     state.groundItems.push({ kind: "potion", id, x: px, z: pz, sprite, bobPhase: i * 1.3 });
   });
+}
+
+// ── Debug-panel action helpers (used by the ` god-mode console) ──
+
+/** Spawn one enemy of any kind next to the player, bypassing the level gates. */
+function debugSpawnEnemy(kind: EnemyKind): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g) return;
+  const pt = worldToTile(g, p.x, p.z);
+  const spot = nearestOpenTile(g, pt.i, pt.j, 2) ?? pt;
+  const c = tileCenter(g, spot.i, spot.j);
+  const speed = levelConfig(state.level).zombieSpeed;
+  let zz: Zombie | null;
+  if (kind === "zombie") {
+    const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
+    zz = sheet ? makeZombie(sheet, c.x, c.z, speed, { kind: "zombie" }) : null;
+  } else if (kind === "reaper") {
+    if (!state.reaperOut) spawnReaper();
+    return;
+  } else if (RESKIN[kind]) {
+    zz = makeReskin(kind, c.x, c.z, speed);
+  } else {
+    zz = spawnKind(kind, c.x, c.z, speed, 99); // level 99 clears every FROM_LEVEL gate
+  }
+  if (zz) {
+    zz.aggro = true;
+    state.zombies.push(zz);
+  }
+}
+
+/** Kill every living enemy through the normal death path (FX + score fire). */
+function debugKillAll(): void {
+  for (const z of [...state.zombies]) {
+    if (z.mode !== "dead") damageZombie(z, 9999, 0, 0, 0);
+  }
+}
+
+/** Yank every enemy (and corpse) off the floor instantly — no FX, no score. */
+function debugClearEnemies(): void {
+  for (const z of state.zombies) state.scene?.remove(z.sprite.mesh);
+  state.zombies.length = 0;
+  state.reaperOut = false; // let the reaper be re-summoned after a clear
 }
 
 /**
@@ -1399,8 +1487,7 @@ function checkPickups(): void {
 const SHOP_STOCK: ShopEntry[] = [
   { id: "health", label: "Health", icon: "❤️", price: 12, detail: "+3 hearts" },
   { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: "6s invuln" },
-  { id: "ironcore", label: "Iron Core", icon: "🔩", price: 22, detail: "20s ram mode" },
-  { id: "turbo", label: "Turbo", icon: "🚀", price: 20, detail: "10s no-friction" },
+  { id: "ballform", label: "Ball Form", icon: "🪩", price: 24, detail: "14s pinball mode" },
   { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: "12s bending shots" },
   { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: "18s repel/launch" },
   { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: "12s ghost knights" },
@@ -1464,15 +1551,7 @@ function useBeltSlot(i: number): void {
   const slot = state.belt[i];
   if (!slot) return;
   const id = slot.id as PotionId;
-  const def = POTIONS[id];
-  applyPotion(id);
-  if (def.heal > 0) {
-    faceOnHeal();
-    rippleGlobe("life");
-  } else {
-    faceOnSpecial();
-    if (def.duration > 0 || def.gold) rippleGlobe("mana");
-  }
+  applyPotion(id); // effect + all feedback (face/globe/note) live in applyPotion
   slot.count--;
   if (slot.count <= 0) state.belt[i] = null;
   state.hudDirty = true;
@@ -1500,9 +1579,13 @@ function applyPotion(id: PotionId): void {
     if (id === "rage") p.rageT = def.duration;
     if (id === "haste") p.hasteT = def.duration;
     if (id === "shield") p.shieldT = def.duration;
-    if (id === "ironcore") p.ironT = def.duration;
-    if (id === "turbo") p.turboT = def.duration;
-    if (id === "springlegs") p.springT = def.duration;
+    if (id === "ballform") {
+      // The consolidated pinball buff drives all three ball systems at once:
+      // ram damage (iron), frictionless steering (turbo), springy walls.
+      p.ironT = p.turboT = p.springT = def.duration;
+      state.shakeT = Math.max(state.shakeT, 0.25);
+      sfxBumper();
+    }
     if (id === "freeze") {
       state.freezeT = def.duration;
       sfxFreeze();
@@ -1516,6 +1599,16 @@ function applyPotion(id: PotionId): void {
   }
   p.sprite.setTint(def.color);
   p.flashT = 0.18; // brief pulse, cleared by updateFlash
+  // Consistent pickup feedback for EVERY potion (single source of truth):
+  // heals get a relieved grin + red splash, everything else a wide grin + a
+  // blue splash; the persistent buff strip then carries the running timer.
+  if (def.heal > 0) {
+    faceOnHeal();
+    rippleGlobe("life");
+  } else {
+    faceOnSpecial();
+    if (def.duration > 0 || def.gold) rippleGlobe("mana");
+  }
   showPickupNote(`${def.icon} ${def.label.toUpperCase()}${def.gold ? ` +${def.gold}g` : ""}`);
   state.hudDirty = true;
 }
@@ -1777,6 +1870,8 @@ export function exitDungeonGame(): void {
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);
   if (state.onResize) window.removeEventListener("resize", state.onResize);
+  debugPanelDispose?.();
+  debugPanelDispose = null;
   state.input?.dispose();
 
   disposeAll();

@@ -28,7 +28,7 @@ const WOLF_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
 const WOLF_NUM = `'VT323', 'Courier New', ui-monospace, monospace`;
 
 let wolfFontsInjected = false;
-function ensureWolfFonts(): void {
+export function ensureWolfFonts(): void {
   if (wolfFontsInjected || typeof document === "undefined") return;
   wolfFontsInjected = true;
   const link = document.createElement("link");
@@ -361,9 +361,8 @@ export function updateHUD(el: HTMLDivElement): void {
   if (p && p.rageT > 0) buffs.push(`<span style="color:#d97b29">💢 RAGE ${Math.ceil(p.rageT)}s</span>`);
   if (p && p.hasteT > 0) buffs.push(`<span style="color:#6fd0e8">⚡ HASTE ${Math.ceil(p.hasteT)}s</span>`);
   if (p && p.shieldT > 0) buffs.push(`<span style="color:#8fc46b">🛡️ SHIELD ${Math.ceil(p.shieldT)}s</span>`);
-  if (p && p.ironT > 0) buffs.push(`<span style="color:#8a94a6">🔩 IRON ${Math.ceil(p.ironT)}s</span>`);
-  if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🚀 TURBO ${Math.ceil(p.turboT)}s</span>`);
-  if (p && p.springT > 0) buffs.push(`<span style="color:#8fc46b">🦵 SPRING ${Math.ceil(p.springT)}s</span>`);
+  // Ball Form drives iron/turbo/spring together — show it as one chip.
+  if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🪩 BALL FORM ${Math.ceil(p.turboT)}s</span>`);
   if (p && p.multiT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI ${Math.ceil(p.multiT)}s</span>`);
   if (p && p.curveT > 0) buffs.push(`<span style="color:#6fd0e8">🌀 CURVE ${Math.ceil(p.curveT)}s</span>`);
   if (p && p.magBootsT > 0) buffs.push(`<span style="color:#a83244">🧲 BOOTS ${Math.ceil(p.magBootsT)}s</span>`);

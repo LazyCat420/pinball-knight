@@ -109,9 +109,54 @@ Bounce-combo multiplier ✅ (window exists; no on-screen multiplier flash yet).
 - Seeded floor themes now also override the enemy ratio ✅(v3) (FloorTheme.enemies)
 
 **Power-ups & score glue** (cheap-medium):
-- [x] Iron Core ✅ · [x] Turbo Charge ✅ · [x] Spring Legs ✅ · [x] Freeze Ray ✅ · [x] Multi-Ball ghosts ✅ · [x] Curve Shot ✅ · [x] Magnet Boots ✅ · [x] MULTIBALL FRENZY streak bonus ✅
+- [x] Freeze Ray ✅ · [x] Multi-Ball ghosts ✅ · [x] Curve Shot ✅ · [x] Magnet Boots ✅ · [x] MULTIBALL FRENZY streak bonus ✅
+- [x] **Ball Form** ✅ (2026-07-17 consolidation) — Iron Core + Turbo Charge + Spring Legs were three thin, overlapping "you're the ball" buffs; MERGED into one strong `ballform` potion (🪩) that sets ironT/turboT/springT together = triple-ram + frictionless steer + springy walls in one pickup. Roster is now 10 potions (health/gold/rage/haste/shield/ballform/freeze/multiball/curveshot/magnetboots), each with a live tile on the unified HUD buff strip. Rationale: "make the power-ups better over having so many." (See [[dungeon-hud-pixel-overhaul]].)
 - [x] On-screen ×N multiplier flash ✅(v3) — a centred bounce-combo pop, escalating word + colour, fires once per combo step
 - [x] Floor score target → bonus room unlock ✅(v3) — grade S/A now guarantees a VAULT (forceVault). HONEST NOTE: still an extra *room*, not a literal locked door + key (that stays deferred as pure polish).
+
+---
+
+## 2.5 OPEN PLAYFIELD — the maze is too tight to bounce in (2026-07-17)
+
+> **Playtest ask:** "the pinball machine parts in the map need enough space for
+> the user to bounce around — we can't make the whole thing a narrow maze, it
+> gets boring. It needs more interesting shapes / curves / ramps." This is the
+> single biggest *feel* gap: the parts exist, but a 1-tile-wide backtracker
+> corridor gives momentum nowhere to go, so bumpers/deflectors/springs never get
+> to chain. The fix is GENERATION, not more parts.
+
+**The problem, concretely:** `generateMaze` is a perfect maze (1-wide corridors,
+`thickenWalls` just widens the walls, not the halls). `carveRooms` opens a few
+rectangles but most of a floor is still single-file. A ball needs *area* — a
+tile-and-a-half is a hallway, not a table.
+
+**Direction (proposed — not yet built):**
+- [ ] **Open-arena bias.** Raise the room budget hard on pinball floors: fewer,
+      BIGGER open chambers (5×5–9×9) linked by short wide necks, so most of the
+      floor is bounce-able area, not corridor. Target ≥ ~45% open tiles on a
+      "table" floor vs today's ~20%.
+- [ ] **Wide corridors as the default.** Carve connective halls at 2–3 tiles wide
+      (a second parallel carve pass, or widen the backtracker output) so even the
+      "hallway" between rooms banks a ball instead of pinching it.
+- [ ] **Table-shaped rooms, not boxes.** New prefab archetypes built for flow:
+      a **circular/oct bumper court**, a **teardrop return-lane** (curved outer
+      wall + centre island), **diagonal slingshot alleys**, a **ramp spiral**,
+      **funnel rooms** (wide top → chute). Lean on the curved-wall + deflector
+      systems that already exist so a ball sweeps the perimeter.
+- [ ] **Parts placed for CHAINS, not singletons.** `classifyPartSpot` should seed
+      clusters — a ring of bumpers around a court, paired slingshots across a gap,
+      a deflector feeding a ramp feeding a spring — so one launch triggers a
+      cascade (the actual pinball fantasy) instead of a lone thunk.
+- [ ] **Keep it solvable + not empty.** Big open floors still need cover/objectives
+      (pillars, hazard islands, target banks) so they read as arenas, not blank
+      rooms; the backtracker stays the connectivity guarantee underneath.
+- [ ] **Per-floor "openness" knob** on the theme table (crypt = tighter, sewer/
+      hellfire tables = wide-open) so variety survives and not every floor is a
+      stadium.
+*Tests:* `generator.test.ts` — openness ratio per theme within bounds; every
+table prefab preserves reachability; wide-corridor carve never severs the maze.
+*Verify feel:* drive a launch through a table floor headless and confirm a
+single spring launch chains ≥3 part hits before the ball settles.
 
 ---
 
@@ -293,3 +338,29 @@ the reward). Cracked secret walls keep their lower bar (7) + loot payout.
   arrow trail hooked to bow fire.
 
 Implementation order: verify+fix controls → UI bar → weapon HUD → arrow VFX.
+
+---
+
+## 6. HUD pixel overhaul + debug console (2026-07-17) — DONE
+
+Playtest asks addressed this pass (see [[dungeon-hud-pixel-overhaul]]):
+- **Diablo HUD pixel restyle** — Press Start 2P / VT323, hard edges, flat DOS
+  panels + bevels (matches the Wolf bar); killed the smooth/rounded look.
+- **"Box over the face" fixed** — the parked Wolf face-slot poked up over the
+  Diablo face; now visibility-toggled with the HUD mode (`hud.ts setHUDMode`).
+- **Consolidated width** — 940px centered grid console (orbs dead-centre) instead
+  of stretching edge-to-edge on wide screens.
+- **Unified buff strip** — one data-driven row (`hud-diablo.activeBuffs`) shows
+  EVERY active buff with icon + depleting bar + countdown (7 buffs used to be
+  invisible during iso play); + globe HP/mana numbers + expiry warning.
+- **Power-up consolidation** — Ball Form merge (see §2 power-ups).
+- **`debug-panel.ts` — a god-mode test console** (press ` / ~): toggles GOD MODE
+  / INF MANA / NO COOLDOWN (flags on `state`, read by combat.ts + abilities.ts);
+  one-shot actions Heal / +100g / Fill Rampage / Kill All / Clear / Next Floor /
+  Boss Level / Spawn Reaper; give-any-weapon, apply-any-potion, spawn-any-enemy
+  chip rows. Wired in `core.ts` (createDebugPanel after mountHUDs, disposed on
+  exit). This is the test harness for everything below — no more playing from
+  depth 1 to check a feature.
+
+**Still open / next:** the §2.5 OPEN PLAYFIELD generation work (the big one),
+and the §5.1 control-bug empirical verification.
