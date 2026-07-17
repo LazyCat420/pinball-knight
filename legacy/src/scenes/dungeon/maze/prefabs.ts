@@ -162,28 +162,28 @@ export interface FloorTheme {
 
 export const THEMES: FloorTheme[] = [
   {
-    // The Cold Crypt — the classic table: bumpers and lanes.
+    // The Cold Crypt — the classic table: bumpers, lanes, a flipper or two.
     name: "crypt",
     pool: ["slalom", "bullring", "pitstop", "slingway"],
-    deal: ["bumper", "ramp", "spring", "glove", "bumper", "deflector", "spinpad", "ramp", "slingshot", "oil"],
+    deal: ["bumper", "ramp", "spring", "glove", "flipper", "deflector", "spinpad", "mirror", "slingshot", "oil"],
   },
   {
     // The Rotting Warren — everything is slick and nothing brakes.
     name: "warren",
     pool: ["oilworks", "switchback", "gauntlet", "pitstop"],
-    deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "deflector", "spinpad", "ramp", "slingshot"],
+    deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "deflector", "flipper", "ramp", "slingshot"],
   },
   {
     // The Bloodworks — the punch factory.
     name: "bloodworks",
     pool: ["gauntlet", "bullring", "slingway", "switchback"],
-    deal: ["glove", "bumper", "ramp", "spring", "glove", "oil", "deflector", "bumper", "slingshot", "spinpad"],
+    deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "deflector", "bumper", "slingshot", "spinpad"],
   },
   {
-    // The Arcane Deep — the parlor floors: teleports and trick lanes.
+    // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
     name: "arcane",
     pool: ["parlor", "slalom", "oilworks", "bullring"],
-    deal: ["spinpad", "bumper", "ramp", "spring", "deflector", "oil", "glove", "bumper", "slingshot", "ramp"],
+    deal: ["spinpad", "bumper", "mirror", "spring", "deflector", "oil", "glove", "flipper", "slingshot", "mirror"],
   },
 ];
 

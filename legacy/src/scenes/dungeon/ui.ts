@@ -301,6 +301,8 @@ export function updateHUD(el: HTMLDivElement): void {
   if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🚀 TURBO ${Math.ceil(p.turboT)}s</span>`);
   if (p && p.springT > 0) buffs.push(`<span style="color:#8fc46b">🦵 SPRING ${Math.ceil(p.springT)}s</span>`);
   if (p && p.multiT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI ${Math.ceil(p.multiT)}s</span>`);
+  if (p && p.curveT > 0) buffs.push(`<span style="color:#6fd0e8">🌀 CURVE ${Math.ceil(p.curveT)}s</span>`);
+  if (p && p.magBootsT > 0) buffs.push(`<span style="color:#a83244">🧲 BOOTS ${Math.ceil(p.magBootsT)}s</span>`);
   if (state.freezeT > 0) buffs.push(`<span style="color:#bfe8ff">❄️ FROZEN ${Math.ceil(state.freezeT)}s</span>`);
   if (p && p.webbedT > 0) buffs.push(`<span style="color:#eef1f5">🕸️ WEBBED</span>`);
   const buffRow = buffs.length
@@ -464,6 +466,85 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
 
   state.container?.appendChild(el);
   return el;
+}
+
+export interface ShopEntry {
+  id: string;
+  label: string;
+  icon: string;
+  price: number;
+  detail: string;
+}
+
+/**
+ * The Rolling Cart Merchant's shop overlay: a list of wares with prices,
+ * bought by click or number key (routed from core.handleKey). Shows the live
+ * gold balance; `onBuy(index)` spends + applies, `onClose` dismisses. The sim
+ * is paused by core while this is open.
+ */
+export function openShopOverlay(container: HTMLElement, stock: ShopEntry[], balance: number, onBuy: (i: number) => void, onClose: () => void): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.cssText = `
+    position: fixed; inset: 0; z-index: 10002;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(11, 13, 18, 0.8);
+    font: 700 14px ui-monospace, "SF Mono", Menlo, monospace;
+    color: #9aa4b4; letter-spacing: 1px; user-select: none;
+  `;
+  el.addEventListener("click", (e) => e.stopPropagation());
+
+  const panel = document.createElement("div");
+  panel.style.cssText = `
+    background: #171a22; border: 2px solid #6b4a2e; border-radius: 4px;
+    padding: 20px 24px; min-width: 340px; box-shadow: 0 0 40px rgba(0,0,0,0.6);
+  `;
+  const render = (bal: number) => {
+    panel.innerHTML = `
+      <div style="font-size:20px;letter-spacing:3px;color:#ffd98a;text-align:center">🛒 ROLLING CART</div>
+      <div style="text-align:center;margin:4px 0 14px;color:#6b7688">“everything's for sale, friend”</div>
+      <div style="text-align:center;margin-bottom:12px">GOLD <span style="color:#ffd98a;font-size:16px">${bal}</span></div>
+    `;
+    stock.forEach((s, i) => {
+      const afford = bal >= s.price;
+      const rowEl = document.createElement("div");
+      rowEl.setAttribute("data-shop-row", String(i));
+      rowEl.style.cssText = `
+        display:flex;align-items:center;gap:10px;padding:7px 10px;margin:3px 0;border-radius:3px;
+        border:1px solid ${afford ? "#454f5e" : "#2b303b"};cursor:${afford ? "pointer" : "not-allowed"};
+        color:${afford ? "#c8ccd4" : "#454f5e"};background:${afford ? "#0b0d12" : "transparent"};
+      `;
+      rowEl.innerHTML = `
+        <span style="color:#6b7688;width:14px">${i + 1}</span>
+        <span style="font-size:16px">${s.icon}</span>
+        <span style="flex:1">${s.label} <span style="color:#6b7688;font-weight:400">${s.detail}</span></span>
+        <span style="color:${afford ? "#ffd98a" : "#6b1f2a"}">${s.price}g</span>
+      `;
+      if (afford)
+        rowEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onBuy(i);
+        });
+      panel.appendChild(rowEl);
+    });
+    const close = document.createElement("div");
+    close.style.cssText = `text-align:center;margin-top:14px;color:#6b7688;cursor:pointer`;
+    close.textContent = "ESC — LEAVE THE CART";
+    close.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClose();
+    });
+    panel.appendChild(close);
+  };
+  render(balance);
+  (el as unknown as { _render: (b: number) => void })._render = render;
+  el.appendChild(panel);
+  container.appendChild(el);
+  return el;
+}
+
+/** Repaint the shop's balance/afford states after a purchase. */
+export function refreshShopOverlay(el: HTMLDivElement | null, balance: number): void {
+  (el as unknown as { _render?: (b: number) => void })?._render?.(balance);
 }
 
 /** One-time controls hint, bottom of the screen, fades after a few seconds. */

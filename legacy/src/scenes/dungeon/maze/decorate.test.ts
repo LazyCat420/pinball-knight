@@ -92,13 +92,17 @@ describe("decorateMaze", () => {
         expect(open[0][1] + open[1][1]).toBe(0);
         if (part.kind !== "oil") expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(true);
       } else if (part.kind === "glove") {
-        // straight corridor — the glove punches ACROSS the lane, off a wall
+        // straight corridor — the glove punches ACROSS the lane, off a side wall
         expect(open.length).toBe(2);
         expect(open[0][0] + open[1][0]).toBe(0);
         expect(open[0][1] + open[1][1]).toBe(0);
-        // dir ⊥ corridor axis, and the mount side (-dir) is a solid wall
         expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(false);
         expect(at(g, part.i - part.dirI, part.j - part.dirJ)).not.toBe(T_FLOOR);
+      } else if (part.kind === "firevent") {
+        // wall-mounted (like a torch): the mount side (-dir) is a solid wall,
+        // and it jets INTO an open floor tile along dir.
+        expect(at(g, part.i - part.dirI, part.j - part.dirJ)).toBe(T_WALL);
+        expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_FLOOR);
       } else if (part.kind === "deflector") {
         // corner — two PERPENDICULAR open legs, both recorded on the part
         expect(open.length).toBe(2);
@@ -106,17 +110,30 @@ describe("decorateMaze", () => {
         for (const [di, dj] of [[part.dirI, part.dirJ], [part.dir2I, part.dir2J]]) {
           expect(open.some(([oi, oj]) => oi === di && oj === dj)).toBe(true);
         }
+      } else if (part.kind === "mirror") {
+        // corner — the surface line is the corner diagonal (both open legs sum)
+        expect(open.length).toBe(2);
+        expect(Math.abs(part.dirI)).toBe(1);
+        expect(Math.abs(part.dirJ)).toBe(1);
       } else if (part.kind === "target") {
         // wall-mounted, like a torch: dir points at a solid wall
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
+      } else if (part.kind === "flipper") {
+        // junction paddle: 3+ open ways, aimed down one open leg
+        expect(open.length).toBeGreaterThanOrEqual(3);
+        expect(open.some(([di, dj]) => di === part.dirI && dj === part.dirJ)).toBe(true);
+      } else if (part.kind === "pit" || part.kind === "electric" || part.kind === "magstrip") {
+        // floor hazards: sit on any open floor (junction OR straight)
+        expect(open.length).toBeGreaterThanOrEqual(2);
       } else {
         // bumper / spinpad — a junction (3+ ways out): an open crossing
         expect(open.length).toBeGreaterThanOrEqual(3);
       }
     }
-    // Spacing: DEALT parts never bunch into one intersection (targets and
-    // trapdoors are separate layers with their own spacing rules).
-    const dealt = plan.parts.filter((p) => p.kind !== "target" && p.kind !== "trapdoor");
+    // Spacing: DEALT machine parts never bunch into one intersection. Targets,
+    // trapdoors and floor hazards are separate layers with their own rules.
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip"]);
+    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
     for (const a of dealt) {
       for (const b of dealt) {
         if (a === b) continue;
@@ -127,12 +144,15 @@ describe("decorateMaze", () => {
 
   it("respects the part budget and keeps parts off the stairs + away from the start", () => {
     const { g, plan } = makeLevel(113, 8, 10, 6);
-    // Targets + trapdoors are objective/traversal layers OVER the budget; the
-    // dealt machine parts themselves must stay inside it.
-    const dealt = plan.parts.filter((p) => p.kind !== "target" && p.kind !== "trapdoor");
+    // Targets, trapdoors + hazards are objective/traversal layers OVER the
+    // budget; the dealt machine parts themselves must stay inside it.
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip"]);
+    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
     expect(dealt.length).toBeLessThanOrEqual(6);
     const targets = plan.parts.filter((p) => p.kind === "target");
     expect(targets.length).toBeLessThanOrEqual(5);
+    const hazards = plan.parts.filter((p) => p.kind === "pit" || p.kind === "electric" || p.kind === "firevent" || p.kind === "magstrip");
+    expect(hazards.length).toBeLessThanOrEqual(4);
     for (const part of dealt) {
       expect(at(g, part.i, part.j)).toBe(T_FLOOR); // never on the stairs tile
       expect(Math.abs(part.i - plan.start.i) + Math.abs(part.j - plan.start.j)).toBeGreaterThanOrEqual(4);

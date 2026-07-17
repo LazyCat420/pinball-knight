@@ -121,7 +121,9 @@ export type PotionId =
   | "turbo"
   | "springlegs"
   | "freeze"
-  | "multiball";
+  | "multiball"
+  | "curveshot"
+  | "magnetboots";
 
 export interface PotionDef {
   id: PotionId;
@@ -157,9 +159,13 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6 },
   // Multi-Ball: two ghost knights mirror the run and ram what they touch.
   multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", color: 0xb06fe8, heal: 0, duration: 12 },
+  // Curve Shot: your projectiles bend around corners along your sweep.
+  curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12 },
+  // Magnet Boots: repel the magnet crawlers, LAUNCH off the magnet strips.
+  magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18 },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

@@ -48,6 +48,10 @@ export interface Player extends Actor {
   oilT: number;
   /** Seconds of web-slow left (webspinner hit; any part touch clears it). */
   webbedT: number;
+  /** Seconds left on Curve Shot (projectiles bend around corners). */
+  curveT: number;
+  /** Seconds left on Magnet Boots (repel crawlers; strips LAUNCH not drag). */
+  magBootsT: number;
 
   // ── Trapdoor coaster ride ──
   /** -1 when not riding, else seconds into the current rail ride. */
@@ -208,7 +212,7 @@ export interface Zombie extends Actor {
  * ticked by core.updateNpcs; never in the combat pipeline.
  */
 export interface Npc {
-  kind: "magician" | "witch" | "frog";
+  kind: "magician" | "witch" | "frog" | "merchant";
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -219,6 +223,11 @@ export interface Npc {
   cooldownT: number;
   /** Magician: which phase of the visit ("enter" | "trick" | "gone"). */
   phase?: string;
+  /** MERCHANT only: current slide velocity (it flees when you close in). */
+  vx?: number;
+  vz?: number;
+  /** MERCHANT only: true once its shop has been opened this floor. */
+  shopped?: boolean;
 }
 
 // ── Pinball parts (the maze/pinball-machine hybrid) ──────────────
@@ -232,7 +241,15 @@ export type PinballPartKind =
   | "spinpad"
   | "slingshot"
   | "target"
-  | "trapdoor";
+  | "trapdoor"
+  // Wave-G parts
+  | "flipper"
+  | "mirror"
+  // Wave-H floor hazards (placed + animated like parts; no launch)
+  | "pit"
+  | "electric"
+  | "firevent"
+  | "magstrip";
 
 export interface PinballPart {
   kind: PinballPartKind;
@@ -251,12 +268,14 @@ export interface PinballPart {
   cooldownT: number;
   /** Seconds since last hit, drives the pop/squash animation (-1 = never hit). */
   hitT: number;
-  /** GLOVE only: countdown to the next punch (self-firing on its own clock). */
+  /** GLOVE / FIRE VENT: countdown to the next fire (self-firing on its clock). */
   fireT?: number;
-  /** GLOVE only: true once this punch's lane damage has been dealt. */
+  /** GLOVE / FIRE VENT: true once this fire's lane damage has been dealt. */
   punchSpent?: boolean;
   /** TARGET only: true once broken — a dead target never re-arms. */
   done?: boolean;
+  /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave. */
+  phase?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -286,6 +305,9 @@ export interface Projectile {
   damage: number;
   /** True for enemy projectiles (the spitter's glob) — these hit the PLAYER, not zombies. */
   hostile?: boolean;
+  /** CURVE SHOT: a constant lateral acceleration (u/s²) bending the flight. */
+  curveX?: number;
+  curveZ?: number;
   mesh: THREE.Mesh;
   dispose(): void;
 }
@@ -301,6 +323,8 @@ export const state = {
   container: null as HTMLDivElement | null,
   hudEl: null as HTMLDivElement | null,
   gameOverEl: null as HTMLDivElement | null,
+  /** The merchant's shop overlay while it's open (null = closed; sim pauses). */
+  shopEl: null as HTMLDivElement | null,
   /** The first-person rampage overlay (crosshair + gun + red vignette). */
   fpsOverlayEl: null as HTMLDivElement | null,
   /** The overlord boss health bar (top-centre, shown only when a boss lives). */
@@ -372,6 +396,8 @@ export const state = {
   // The level
   grid: null as Grid | null,
   stairs: null as TilePos | null,
+  /** The player's spawn point this floor (world coords) — where a pit spits you back. */
+  levelStart: { x: 0, z: 0 },
   maze: null as MazeHandle | null,
   groundItems: [] as GroundItem[],
   /** Non-interactive set dressing (bones, skulls, rubble). */
@@ -404,6 +430,13 @@ export const state = {
   slimeSheet: null as SpriteSheet | null,
   /** The overlord (mini-boss) atlas. */
   bossSheet: null as SpriteSheet | null,
+  /** Wave-B bespoke atlases (were tinted reskins). */
+  goblinSheet: null as SpriteSheet | null,
+  pinSheet: null as SpriteSheet | null,
+  golemSheet: null as SpriteSheet | null,
+  chomperSheet: null as SpriteSheet | null,
+  magnetSheet: null as SpriteSheet | null,
+  webspinnerSheet: null as SpriteSheet | null,
 
   // AI
   flowField: null as Int32Array | null,
@@ -485,6 +518,8 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     multiT: 0,
     oilT: 0,
     webbedT: 0,
+    curveT: 0,
+    magBootsT: 0,
     rideT: -1,
     rideDur: 0,
     ridePts: [],
@@ -520,6 +555,7 @@ export function resetState(): void {
   state.container = null;
   state.hudEl = null;
   state.gameOverEl = null;
+  state.shopEl = null;
   state.fpsOverlayEl = null;
   state.bossBarEl = null;
   state.hudDirty = true;
@@ -574,6 +610,12 @@ export function resetState(): void {
   state.batSheet = null;
   state.slimeSheet = null;
   state.bossSheet = null;
+  state.goblinSheet = null;
+  state.pinSheet = null;
+  state.golemSheet = null;
+  state.chomperSheet = null;
+  state.magnetSheet = null;
+  state.webspinnerSheet = null;
   state.flowField = null;
   state.flowTimer = 0;
   state.camX = 0;

@@ -49,7 +49,13 @@ export type PartSpotKind =
   | "spinpad"
   | "slingshot"
   | "target"
-  | "trapdoor";
+  | "trapdoor"
+  | "flipper"
+  | "mirror"
+  | "pit"
+  | "electric"
+  | "firevent"
+  | "magstrip";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
@@ -124,7 +130,7 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // from the pool. Health is guaranteed so the run stays survivable; the rest add
 // "do I chug it now?" decisions. Ids → POTIONS (incl. the Wave-F pinball kit:
 // iron core / turbo / spring legs / freeze / multi-ball).
-const POTION_POOL = ["rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"];
+const POTION_POOL = ["rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {
@@ -180,22 +186,37 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 const KIND_TOPOLOGY: Record<string, Topology> = {
   bumper: "junction",
   spinpad: "junction",
+  flipper: "junction",
   ramp: "straight",
   oil: "straight",
   slingshot: "straight",
   glove: "straight",
   spring: "deadend",
   deflector: "corner",
+  mirror: "corner",
 };
 
 /** Turn a topology candidate into a concrete part spot of the dealt kind. */
 function spotForKind(kind: PartSpotKind, c: TopoSpot, rng: () => number): PinballPartSpot {
-  if (kind === "glove") {
-    // The glove mounts on one of the corridor's side walls and punches ACROSS
+  if (kind === "glove" || kind === "firevent") {
+    // A glove/vent mounts on one of the corridor's side walls and fires ACROSS
     // it: direction = the perpendicular of the corridor axis (both sides are
     // wall by construction for a strict straight), random side.
     const side = rng() < 0.5 ? 1 : -1;
     return { i: c.i, j: c.j, kind, dirI: -c.dirJ * side, dirJ: c.dirI * side, dir2I: 0, dir2J: 0 };
+  }
+  if (kind === "flipper" && c.topo === "junction") {
+    // A junction has no axis — aim the paddle down any open leg so it launches
+    // you somewhere (falls back to +x for a degenerate/open-room stamp).
+    const legs: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const d = legs[Math.floor(rng() * legs.length)];
+    return { i: c.i, j: c.j, kind, dirI: d[0], dirJ: d[1], dir2I: 0, dir2J: 0 };
+  }
+  if (kind === "mirror" && c.topo === "corner") {
+    // Surface line = the corner's diagonal (sum of the two open legs), so the
+    // mirror banks a cardinal run into the perpendicular one. Stored unnormalized;
+    // the physics normalises the reflection normal.
+    return { i: c.i, j: c.j, kind, dirI: c.dirI + c.dir2I, dirJ: c.dirJ + c.dir2J, dir2I: 0, dir2J: 0 };
   }
   return { i: c.i, j: c.j, kind, dirI: c.dirI, dirJ: c.dirJ, dir2I: c.dir2I, dir2J: c.dir2J };
 }
@@ -293,7 +314,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -414,11 +435,16 @@ export function decorateMaze(
     const spot = classifyTopology(g, p, rng);
     if (spot) byTopo[spot.topo].push(spot);
   }
+  // Snapshot the hazard pools BEFORE the corridor deal below pops the topology
+  // lists dry — otherwise fire vents (which need a straight) can starve on a
+  // busy floor. The spacing check keeps hazards off the dealt parts anyway.
+  const hazPoolStraight = byTopo.straight.slice();
+  const hazPoolOpen = [...byTopo.junction, ...byTopo.straight];
   // Deal kinds round-robin (bumpers weighted double — they're the signature
   // part; the Wave-A kinds are threaded through so every floor tastes them)
   // until the budget is spent or every pool is dry. Themes may pass their own
   // deal to bias the floor (a sewer floor deals oil twice, etc.).
-  const deal: PartSpotKind[] = extras.deal ?? ["bumper", "ramp", "spring", "glove", "bumper", "oil", "deflector", "spinpad", "ramp", "slingshot"];
+  const deal: PartSpotKind[] = extras.deal ?? ["bumper", "ramp", "spring", "glove", "flipper", "oil", "deflector", "mirror", "spinpad", "slingshot"];
   let dealIdx = 0;
   let dry = 0;
   while (parts.length < corridorBudget && dry < deal.length) {
@@ -465,6 +491,55 @@ export function decorateMaze(
   }
   const frogSpot = deadEnds[trapdoorBudget] ?? null;
   const frog: TilePos | null = frogSpot ? { i: frogSpot.i, j: frogSpot.j } : null;
+
+  // ── Floor HAZARDS (pit / electric / fire vent / magnet strip) — their own
+  // layer over the part budget, dealt round-robin onto suitable topology:
+  // pits + plates + strips want open floor; vents mount on a corridor wall. ──
+  const hazardBudget = extras.hazards ?? 4;
+  const hazardDeal: PartSpotKind[] = ["pit", "firevent", "electric", "magstrip", "electric", "pit"];
+  let hazIdx = 0;
+  let hazDry = 0;
+  const hazStraights = hazPoolStraight;
+  const hazOpen = hazPoolOpen;
+  const HAZARD_KINDS = new Set(["pit", "firevent", "electric", "magstrip"]);
+  // Strict straights are almost nonexistent in 2-wide corridors, so a fire
+  // vent mounts wall-adjacent (like a torch) and jets INTO the open — its lane
+  // direction is AWAY from the wall it's bolted to. Suppress the snapshot ref.
+  void hazStraights;
+  let placedHaz = 0;
+  while (placedHaz < hazardBudget && hazDry < hazardDeal.length) {
+    const kind = hazardDeal[hazIdx % hazardDeal.length];
+    hazIdx++;
+    const pool = hazOpen;
+    let placed = false;
+    while (pool.length > 0) {
+      const cand = pool.pop()!;
+      // Hazards are their OWN layer: they may sit near a machine part (a vent
+      // by a ramp is fine) but never ON a part's tile, and stay spaced from
+      // each other so a floor isn't a minefield.
+      if (parts.some((q) => q.i === cand.i && q.j === cand.j)) continue;
+      if (parts.some((q) => HAZARD_KINDS.has(q.kind) && Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue;
+      if (Math.abs(cand.i - start.i) + Math.abs(cand.j - start.j) < 5) continue; // calm start
+      if (cand.i === stairs.i && cand.j === stairs.j) continue;
+      if (kind === "firevent") {
+        // needs a wall to bolt to whose OPPOSITE side is open floor — the jet
+        // (dir = away from the wall) has to fire into the corridor, not a wall.
+        const wall = WALL_SIDES.find(
+          ([di, dj]) => at(g, cand.i + di, cand.j + dj) === T_WALL && at(g, cand.i - di, cand.j - dj) === T_FLOOR,
+        );
+        if (!wall) continue;
+        parts.push({ i: cand.i, j: cand.j, kind: "firevent", dirI: -wall[0], dirJ: -wall[1], dir2I: 0, dir2J: 0 });
+        placed = true;
+        placedHaz++;
+        break;
+      }
+      parts.push(spotForKind(kind, cand, rng));
+      placed = true;
+      placedHaz++;
+      break;
+    }
+    hazDry = placed ? 0 : hazDry + 1;
+  }
 
   // ── Prefab anchors (maze/prefabs.ts stamps): parts drop in with their dirs
   // derived from live topology; spawns/prizes feed the shared pools. ──

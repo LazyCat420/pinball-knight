@@ -22,15 +22,27 @@ import {
   FROG_COOLDOWN,
   FROG_TRAIL_TILES,
   FROG_TRAIL_STAGGER,
+  MERCHANT_SPEED,
+  MERCHANT_FLEE_SPEED,
+  MERCHANT_FLEE_RANGE,
+  MERCHANT_CATCH_RANGE,
+  PLAYER_R,
   PPU,
 } from "../constants";
 import { tileCenter, worldToTile, isWalkable, idx } from "../maze/generator";
+import { moveCircle } from "../collision";
 import { bfsDistances, flowStep } from "./ai";
 import { createStaticSprite } from "../render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";
 import { sfxCackle, sfxRibbit, sfxPickup } from "../audio";
+
+/** Catching the merchant opens its shop — core registers the handler. */
+let onMerchantCaught: (() => void) | null = null;
+export function setMerchantCaughtHandler(fn: () => void): void {
+  onMerchantCaught = fn;
+}
 
 /** Roll the countdown to the Magician's next visit. */
 export function rollMagicianClock(): number {
@@ -62,6 +74,18 @@ export function spawnFrog(i: number, j: number): void {
   const frog = makeNpc("frog", c.x, c.z);
   frog.phase = "idle";
   state.npcs.push(frog);
+}
+
+/** The Rolling Cart Merchant — a shop on wheels that slides the floor. */
+export function spawnMerchant(i: number, j: number): void {
+  const g = state.grid;
+  if (!g) return;
+  const c = tileCenter(g, i, j);
+  const m = makeNpc("merchant", c.x, c.z);
+  m.phase = "roll";
+  m.vx = 0;
+  m.vz = 0;
+  state.npcs.push(m);
 }
 
 /** The Speed Witch steps out of the smashed masonry (secrets.ts hook). */
@@ -237,12 +261,60 @@ export function updateNpcs(dt: number): void {
       }
     } else if (n.kind === "frog" && dist <= 0.75 && n.cooldownT <= 0) {
       frogConsult(n);
+    } else if (n.kind === "merchant") {
+      updateMerchant(n, dist, dt);
     }
 
-    // Idle bob — NPCs breathe so they don't read as props.
-    const y = 0.03 + Math.sin(state.elapsed * 2.2 + n.bobPhase) * 0.03;
+    // Idle bob — NPCs breathe so they don't read as props. The rolling cart
+    // trundles (a faster wobble) rather than bobbing.
+    const amp = n.kind === "merchant" ? 0.02 : 0.03;
+    const spd = n.kind === "merchant" ? 5 : 2.2;
+    const y = 0.03 + Math.sin(state.elapsed * spd + n.bobPhase) * amp;
     n.sprite.mesh.position.y = Math.round(y * PPU) / PPU;
   }
+}
+
+/**
+ * The merchant slides the corridors and FLEES when you close in (you have to
+ * corner it). Catch it → its shop opens (core handler). Once shopped, it just
+ * mills about so you can find it again mid-floor.
+ */
+function updateMerchant(n: Npc, dist: number, dt: number): void {
+  const g = state.grid;
+  const p = state.player;
+  if (!g || !p) return;
+
+  if (dist <= MERCHANT_CATCH_RANGE && !state.shopEl && n.cooldownT <= 0) {
+    n.vx = 0;
+    n.vz = 0;
+    n.shopped = true;
+    n.cooldownT = 3; // don't re-open the instant you close it — step away first
+    onMerchantCaught?.();
+    return;
+  }
+
+  // Steer: flee from the player when near, otherwise amble along its heading.
+  let hx = n.vx ?? 0;
+  let hz = n.vz ?? 0;
+  const speed = dist < MERCHANT_FLEE_RANGE ? MERCHANT_FLEE_SPEED : MERCHANT_SPEED;
+  if (dist < MERCHANT_FLEE_RANGE && dist > 1e-3) {
+    hx = (n.x - p.x) / dist; // straight away from the player
+    hz = (n.z - p.z) / dist;
+  } else if (Math.hypot(hx, hz) < 0.1 || Math.random() < 0.6 * dt) {
+    const a = Math.random() * Math.PI * 2; // pick a new amble heading now and then
+    hx = Math.cos(a);
+    hz = Math.sin(a);
+  }
+  const hl = Math.hypot(hx, hz) || 1;
+  n.vx = hx / hl;
+  n.vz = hz / hl;
+  const res = moveCircle(g, n.x, n.z, PLAYER_R, n.vx * speed * dt, n.vz * speed * dt);
+  // Bounced off a wall — pick a fresh heading next frame.
+  if (Math.abs(res.x - (n.x + n.vx * speed * dt)) > 1e-3) n.vx = -(n.vx ?? 0);
+  if (Math.abs(res.z - (n.z + n.vz * speed * dt)) > 1e-3) n.vz = -(n.vz ?? 0);
+  n.x = res.x;
+  n.z = res.z;
+  syncActorMesh(n as unknown as Parameters<typeof syncActorMesh>[0]);
 }
 
 /** Per-level teardown (dispose.ts calls this via core's disposeLevel path). */

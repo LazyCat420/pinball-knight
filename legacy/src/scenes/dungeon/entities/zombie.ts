@@ -71,6 +71,7 @@ import {
   MAGNET_ATTACK_COOLDOWN,
   MAGNET_PULL_RANGE,
   MAGNET_PULL,
+  MAGBOOTS_REPEL,
   MAGNET_BREAK_SPEED,
   WEBSPIN_R,
   GHOST_VULN_TIME,
@@ -246,12 +247,22 @@ export function updateZombies(dt: number): void {
     }
 
     // ── MAGNET CRAWLER ── drags the knight in while the field holds. Wall
-    // contact snaps the tether (the map is the counter); real momentum
-    // punches straight through it.
+    // contact snaps the tether (the map is the counter); real momentum punches
+    // straight through it. MAGNET BOOTS invert the field to a REPEL — the
+    // crawlers become momentum ramps instead of traps.
     if (z.kind === "magnet" && p.hp > 0 && pdist < MAGNET_PULL_RANGE && pdist > 0.4) {
+      const boots = p.magBootsT > 0;
       const riding = p.momSpeed >= MAGNET_BREAK_SPEED;
       const grounded = wallContact(g, p.x, p.z, PLAYER_R, WALL_CONTACT_PROBE) !== null;
-      if (!riding && !grounded && p.rideT < 0) {
+      if (boots) {
+        // repel: shove the knight AWAY, harder the closer they are
+        const k = 1 - pdist / MAGNET_PULL_RANGE;
+        const push = MAGBOOTS_REPEL * k * dt;
+        const res = moveCircle(g, p.x, p.z, PLAYER_R, (pdx / pdist) * push, (pdz / pdist) * push);
+        p.x = res.x;
+        p.z = res.z;
+        if (Math.random() < 6 * dt) state.vfx?.sparks(p.x + (pdx / pdist) * 0.4, 0.35, p.z + (pdz / pdist) * 0.4, pdx, pdz, 2);
+      } else if (!riding && !grounded && p.rideT < 0) {
         const k = 1 - pdist / MAGNET_PULL_RANGE; // stronger up close
         const pull = MAGNET_PULL * k * dt;
         // pdx points magnet→player, so the drag on the player is along -pdx.

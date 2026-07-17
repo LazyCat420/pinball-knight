@@ -26,6 +26,7 @@ import {
   GOLEM_SHARD_SPEED,
   GOLEM_SHARD_DAMAGE,
   GOLEM_SHARD_LIFE,
+  CURVE_ACCEL,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
@@ -231,6 +232,21 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
     state.scene.add(mesh);
 
     const life = w.range / w.projectileSpeed;
+    // CURVE SHOT: bend the flight toward the side the player is sweeping. The
+    // curve accel is perpendicular to the shot heading, signed by the player's
+    // lateral velocity (a still player curves toward its facing-right).
+    let curveX = 0;
+    let curveZ = 0;
+    const pl = state.player;
+    if (pl && pl.curveT > 0) {
+      const perpX = -dz; // left-hand perpendicular to the heading
+      const perpZ = dx;
+      const vx2 = pl.momSpeed > 0 ? pl.momX : 0;
+      const vz2 = pl.momSpeed > 0 ? pl.momZ : 0;
+      const side = perpX * vx2 + perpZ * vz2 >= 0 ? 1 : -1;
+      curveX = perpX * CURVE_ACCEL * side;
+      curveZ = perpZ * CURVE_ACCEL * side;
+    }
     state.projectiles.push({
       kind: w.projectile,
       x,
@@ -240,6 +256,8 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
       life,
       maxLife: life,
       damage: playerDamage(w.damage), // rage buff doubles it, baked in at fire time
+      curveX,
+      curveZ,
       mesh,
       dispose,
     });
@@ -259,6 +277,14 @@ export function updateProjectiles(dt: number): void {
     if (pr.life <= 0) {
       despawn(i);
       continue;
+    }
+
+    // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
+    // heading so the art follows the arc.
+    if (pr.curveX || pr.curveZ) {
+      pr.vx += (pr.curveX ?? 0) * dt;
+      pr.vz += (pr.curveZ ?? 0) * dt;
+      pr.mesh.rotation.y = Math.atan2(pr.vx, pr.vz);
     }
 
     // ── Shards RICOCHET: resolve each axis against the grid and reflect the

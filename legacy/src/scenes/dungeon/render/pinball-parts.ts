@@ -21,7 +21,7 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -257,6 +257,106 @@ function buildTrapdoor(): THREE.Group {
   return gp;
 }
 
+// ── Wave-G parts + Wave-H hazards ───────────────────────────────
+
+function buildFlipper(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  // A pivoting paddle: a wide steel bat with a gold striking edge + a hub.
+  const paddle = new THREE.Group();
+  const bat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.24), std(C_STEEL, C_ARCANE, 0.2));
+  bat.position.x = 0.35;
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.26), std(C_GOLD, C_GOLD, 0.7));
+  edge.position.x = 0.78;
+  paddle.add(bat, edge);
+  paddle.position.y = 0.12;
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.14, 12), std(C_STEEL_DK));
+  hub.position.y = 0.07;
+  gp.add(hub, paddle);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.paddle = paddle;
+  return gp;
+}
+
+function buildMirror(mx: number, mz: number): THREE.Group {
+  const gp = new THREE.Group();
+  // A slim reflective slab standing along its surface line, glinting edge.
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.08), std(C_STEEL, C_ARCANE, 0.35));
+  slab.position.y = 0.28;
+  const glint = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.02), std(0xeef1f5, 0xeef1f5, 0.5));
+  glint.position.set(0, 0.28, 0.05);
+  const rail = new THREE.Group();
+  rail.add(slab, glint);
+  rail.rotation.y = yawFor(mx, mz);
+  gp.add(rail);
+  gp.userData.glint = glint.material;
+  return gp;
+}
+
+function buildPit(): THREE.Group {
+  const gp = new THREE.Group();
+  // A dark recessed hole with a jagged rim — reads as "do not fall in".
+  const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.5, 16), std(PALETTE_HEX[0], 0x000000, 0));
+  hole.position.y = -0.24; // sunk below the floor
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 8, 18), std(C_STEEL_DK));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.01;
+  gp.add(hole, rim);
+  return gp;
+}
+
+function buildElectric(): THREE.Group {
+  const gp = new THREE.Group();
+  // A floor plate with four prong nodes; the whole plate glows when live.
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.8), std(C_STEEL_DK, C_ARCANE, 0));
+  plate.position.y = 0.02;
+  const nodeMat = std(C_ARCANE, C_ARCANE, 0.2);
+  for (const [nx, nz] of [[-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]] as const) {
+    const node = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), nodeMat);
+    node.position.set(nx, 0.08, nz);
+    gp.add(node);
+  }
+  gp.add(plate);
+  gp.userData.plateMat = plate.material;
+  gp.userData.nodeMat = nodeMat;
+  return gp;
+}
+
+function buildFireVent(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  // A wall nozzle (mount side is -dir) with a stubby barrel aimed down the lane.
+  const mount = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.4), std(C_STEEL_DK));
+  mount.position.set(-0.3, 0.28, 0);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.3, 10), std(C_STEEL));
+  barrel.rotation.z = Math.PI / 2;
+  barrel.position.set(-0.1, 0.28, 0);
+  // the flame plume, scaled by the anim when it roars
+  const plume = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.0, 10), std(0xf0a63c, 0xf0a63c, 0.9));
+  plume.rotation.z = -Math.PI / 2;
+  plume.position.set(0.6, 0.28, 0);
+  plume.scale.setScalar(0.001);
+  gp.add(mount, barrel, plume);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.plume = plume;
+  gp.userData.plumeMat = plume.material;
+  return gp;
+}
+
+function buildMagStrip(): THREE.Group {
+  const gp = new THREE.Group();
+  // A wide charged band, two coil rails with a humming field line.
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.5), std(0x2e2438));
+  band.position.y = 0.02;
+  const railMat = std(0x2e6d8f, 0x2e6d8f, 0.4);
+  for (const rz of [-0.18, 0.18]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.06), railMat);
+    rail.position.set(0, 0.05, rz);
+    gp.add(rail);
+  }
+  gp.add(band);
+  gp.userData.railMat = railMat;
+  return gp;
+}
+
 /** Build every part mesh for a level plan and register them on state. */
 export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THREE.Scene): void {
   for (const s of spots) {
@@ -275,6 +375,12 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
     else if (s.kind === "slingshot") mesh = buildSlingshot(dirX, dirZ);
     else if (s.kind === "target") mesh = buildTarget(dirX, dirZ);
     else if (s.kind === "trapdoor") mesh = buildTrapdoor();
+    else if (s.kind === "flipper") mesh = buildFlipper(dirX, dirZ);
+    else if (s.kind === "mirror") mesh = buildMirror(dirX, dirZ);
+    else if (s.kind === "pit") mesh = buildPit();
+    else if (s.kind === "electric") mesh = buildElectric();
+    else if (s.kind === "firevent") mesh = buildFireVent(dirX, dirZ);
+    else if (s.kind === "magstrip") mesh = buildMagStrip();
     else mesh = buildDeflector(dirX, dirZ, dir2X, dir2Z);
     mesh.position.set(x, 0, z);
     scene.add(mesh);
@@ -290,11 +396,13 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       dir2Z,
       cooldownT: 0,
       hitT: -1,
-      // Gloves fire on their own clock — desynced per part so a gauntlet
-      // corridor punches in a wave, not a single broadside.
-      fireT: s.kind === "glove" ? 0.6 + Math.random() * 2.2 : undefined,
-      punchSpent: s.kind === "glove" ? true : undefined,
+      // Gloves + fire vents fire on their own clock — desynced per part so a
+      // gauntlet corridor punches in a wave, not a single broadside.
+      fireT: s.kind === "glove" ? 0.6 + Math.random() * 2.2 : s.kind === "firevent" ? 0.6 + Math.random() * 2.4 : undefined,
+      punchSpent: s.kind === "glove" || s.kind === "firevent" ? true : undefined,
       done: s.kind === "target" ? false : undefined,
+      // Electric plates share a clock but stagger phase so a room pulses as a wave.
+      phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : undefined,
       mesh,
     };
     state.pinballParts.push(part);
@@ -322,6 +430,16 @@ export function updatePinballParts(dt: number): void {
       part.fireT = (part.fireT ?? GLOVE_PERIOD) - dt;
       if (part.fireT <= 0) {
         part.fireT = GLOVE_PERIOD * (0.8 + Math.random() * 0.5);
+        part.hitT = 0;
+        part.punchSpent = false;
+      }
+    }
+    // FIRE VENT clock: same cadence, its own period; hitT drives the plume +
+    // the burn window read by hazards.ts. Frozen = no jet.
+    if (part.kind === "firevent" && !frozen) {
+      part.fireT = (part.fireT ?? VENT_PERIOD) - dt;
+      if (part.fireT <= 0) {
+        part.fireT = VENT_PERIOD * (0.8 + Math.random() * 0.5);
         part.hitT = 0;
         part.punchSpent = false;
       }
@@ -405,13 +523,51 @@ export function updatePinballParts(dt: number): void {
     } else if (part.kind === "oil") {
       const sheen = part.mesh.userData.sheen as THREE.MeshStandardMaterial | undefined;
       if (sheen) sheen.emissiveIntensity = 0.16 + 0.1 * Math.sin(animT * 1.7 + part.i * 2);
-    } else {
+    } else if (part.kind === "flipper") {
+      // the paddle SNAPS up on a hit, then eases back down
+      const paddle = part.mesh.userData.paddle as THREE.Group | undefined;
+      if (paddle) {
+        let up = 0;
+        if (part.hitT >= 0) {
+          const t = part.hitT;
+          up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
+        }
+        paddle.rotation.z = up * 0.9;
+      }
+    } else if (part.kind === "mirror") {
+      const glint = part.mesh.userData.glint as THREE.MeshStandardMaterial | undefined;
+      if (glint) glint.emissiveIntensity = 0.4 + 0.25 * Math.sin(animT * 2 + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+    } else if (part.kind === "electric") {
+      // pulse: dark for ELEC_OFF, glow for ELEC_ON — per-plate phase offset
+      const live = ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) < ELEC_ON;
+      const warn = !live && ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) > ELEC_OFF - 0.3; // about to fire
+      const plate = part.mesh.userData.plateMat as THREE.MeshStandardMaterial | undefined;
+      const node = part.mesh.userData.nodeMat as THREE.MeshStandardMaterial | undefined;
+      const glow = frozen ? 0 : live ? 1.6 + 0.4 * Math.sin(animT * 30) : warn ? 0.5 : 0.05;
+      if (plate) plate.emissiveIntensity = glow;
+      if (node) node.emissiveIntensity = glow + 0.2;
+    } else if (part.kind === "firevent") {
+      // the plume roars during the active window, sputters just before
+      const plume = part.mesh.userData.plume as THREE.Mesh | undefined;
+      const mat = part.mesh.userData.plumeMat as THREE.MeshStandardMaterial | undefined;
+      let scale = 0.001;
+      if (part.hitT >= 0) {
+        const t = part.hitT;
+        if (t < VENT_WARN) scale = 0.15 + 0.1 * Math.sin(t * 40); // sputter tell
+        else if (t < VENT_WARN + VENT_ACTIVE) scale = 1 + 0.15 * Math.sin(t * 25); // roar
+      }
+      if (plume) plume.scale.setScalar(scale);
+      if (mat) mat.emissiveIntensity = scale > 0.5 ? 1 : 0.3;
+    } else if (part.kind === "magstrip") {
+      const rail = part.mesh.userData.railMat as THREE.MeshStandardMaterial | undefined;
+      if (rail) rail.emissiveIntensity = frozen ? 0.1 : 0.4 + 0.35 * Math.sin(animT * 8 + part.i);
+    } else if (part.kind !== "pit") {
       // deflector: gold edge flashes on a hit
       const edge = part.mesh.userData.edge as THREE.MeshStandardMaterial | undefined;
       if (edge) edge.emissiveIntensity = 0.5 + (part.hitT >= 0 && part.hitT < 0.25 ? 1.4 * (1 - part.hitT / 0.25) : 0);
     }
 
-    if (part.hitT > (part.kind === "trapdoor" ? 2 : 0.6)) part.hitT = -1; // animation done
+    if (part.hitT > (part.kind === "trapdoor" ? 2 : part.kind === "firevent" ? VENT_WARN + VENT_ACTIVE + 0.1 : 0.6)) part.hitT = -1;
   }
 }
 

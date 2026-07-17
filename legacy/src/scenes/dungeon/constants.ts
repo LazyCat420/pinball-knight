@@ -444,6 +444,104 @@ export const TRAPDOOR_COOLDOWN = 2.5;
 export const FRENZY_PART_HITS = 5;
 export const FRENZY_GOLD = 20;
 
+// ── Wave-G parts: flipper + angle mirror (PINBALL_ROADMAP deferred set) ──
+/**
+ * FLIPPER — a big paddle that FLIPS on contact and launches you along its
+ * paddle arc at the strongest speed in the machine (the "real pinball
+ * flipper" ask). Placed in open rooms / junctions; the launch direction is
+ * the paddle's swing dir. Distinct from the spring (dead-end plunger) by
+ * being a room-scale, high-arc catapult with a rotating paddle.
+ */
+export const FLIPPER_SPEED = 18; // ≈4.3× walk — the hardest single launch
+export const FLIPPER_COOLDOWN = 0.7;
+export const FLIPPER_RADIUS = 0.6; // contact trigger radius
+export const FLIPPER_SWING = 0.22; // seconds the paddle takes to snap up
+/**
+ * ANGLE MIRROR — a fixed 45°/90° reflector: momentum entering it REFLECTS
+ * across the mirror's surface line (unlike the deflector, which banks around
+ * a corner). Turns a straight into a bank shot — the puzzle-ricochet piece.
+ * mirrorX/Z is the surface DIRECTION (the line the mirror lies along); the
+ * reflection normal is its perpendicular.
+ */
+export const MIRROR_RADIUS = 0.5;
+export const MIRROR_COOLDOWN = 0.18;
+export const MIRROR_BOOST = 1.02; // a whisper of speed for the clean bank
+
+// ── Wave-H floor hazards (pit / electric / fire vent / magnet strip) ──────
+/**
+ * PIT — a hole in the floor. Fall in (on foot OR mid-ride — you're not
+ * flying, the coaster is the only thing that clears a pit) and you're spat
+ * back at the level start, shaken, minus a little gold. The map's "oops".
+ */
+export const PIT_RADIUS = 0.5;
+export const PIT_GOLD_PENALTY = 8;
+export const PIT_DAMAGE = 1;
+/**
+ * ELECTRIC GRID — a floor plate that PULSES: dark and safe for ELEC_OFF
+ * seconds, then live and lethal-ish for ELEC_ON. Standing on a live plate
+ * zaps you (damage + a hard scatter). Rhythm dodge; the plates on one floor
+ * share a phase offset so a room reads as a wave.
+ */
+export const ELEC_RADIUS = 0.5;
+export const ELEC_ON = 1.0; // seconds live
+export const ELEC_OFF = 1.6; // seconds safe
+export const ELEC_DAMAGE = 1;
+export const ELEC_ZAP_COOLDOWN = 0.9; // per-plate re-zap lockout
+/**
+ * FIRE VENT — a wall nozzle that jets a flame LANE across the corridor on a
+ * cycle (like the glove, but fire). In the lane while it's roaring → burn.
+ * Telegraphed by a sputter before the jet.
+ */
+export const VENT_PERIOD = 2.6; // seconds between jets (jittered)
+export const VENT_WARN = 0.5; // sputter tell before the jet
+export const VENT_ACTIVE = 0.7; // seconds the jet roars
+export const VENT_LANE_LEN = 2.4; // reach across the corridor
+export const VENT_LANE_HALF = 0.5;
+export const VENT_DAMAGE = 1;
+export const VENT_BURN_COOLDOWN = 0.5; // player re-burn lockout in the jet
+/**
+ * MAGNET STRIP — a charged floor band that DRAGS on momentum: while you're
+ * over it your speed is capped low and steering goes heavy, so a fast line
+ * dies in it unless you power through. The anti-speed zone (a foil to oil).
+ */
+export const MAGSTRIP_RADIUS = 0.55;
+export const MAGSTRIP_SPEED_CAP = 3.2; // momentum clamped to this over the strip
+export const MAGSTRIP_WALK_MULT = 0.5; // and walking crawls too
+
+/** How many of each hazard a floor rolls (scales gently with depth in core). */
+export const HAZARDS_BASE = 3;
+export const HAZARDS_PER_LEVEL = 1;
+export const HAZARDS_MAX = 10;
+
+// ── Wave-K power-ups: Curve Shot + Magnet Boots ─────────────────
+/**
+ * CURVE SHOT — for its window, your projectiles CURVE: they bend toward the
+ * side your momentum/facing sweeps, arcing around corners. A lateral accel
+ * applied each tick perpendicular to the shot's heading.
+ */
+export const CURVE_TIME = 12;
+export const CURVE_ACCEL = 10; // u/s² lateral bend
+/**
+ * MAGNET BOOTS — inverts the Magnet Crawler's pull to a REPEL and, on a magnet
+ * strip, turns the drag into a LAUNCH: momentum tricks off the very things
+ * that used to trap you.
+ */
+export const MAGBOOTS_TIME = 18;
+export const MAGBOOTS_REPEL = 3.0; // push strength away from a crawler
+export const MAGBOOTS_STRIP_LAUNCH = 12; // speed a strip flings you at instead of dragging
+
+// ── Wave-J shop (Rolling Cart Merchant) ─────────────────────────
+/**
+ * The merchant is a CART that slides around the floor and SPEEDS UP as you
+ * close on it (you have to corner it). Catch it → a shop overlay opens; spend
+ * banked gold on the pinball kit. One cart per floor from MERCHANT_FROM_LEVEL.
+ */
+export const MERCHANT_FROM_LEVEL = 2;
+export const MERCHANT_SPEED = 2.2; // base drift
+export const MERCHANT_FLEE_SPEED = 4.6; // when you're within FLEE_RANGE
+export const MERCHANT_FLEE_RANGE = 4.0;
+export const MERCHANT_CATCH_RANGE = 0.7;
+
 // ── Rooms (named archetypes carved into the corridor maze) ──────
 /**
  * The backtracker gives corridors; ROOMS give each floor its landmarks. A few

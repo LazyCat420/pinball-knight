@@ -85,6 +85,8 @@ export function disposeAll(): void {
   state.slimeSheet = null;
   state.bossSheet?.texture.dispose();
   state.bossSheet = null;
+  for (const s of [state.goblinSheet, state.pinSheet, state.golemSheet, state.chomperSheet, state.magnetSheet, state.webspinnerSheet]) s?.texture.dispose();
+  state.goblinSheet = state.pinSheet = state.golemSheet = state.chomperSheet = state.magnetSheet = state.webspinnerSheet = null;
 
   disposeProjectileAssets();
 
@@ -102,6 +104,7 @@ export function disposeAll(): void {
   }
 
   state.gameOverEl?.remove();
+  state.shopEl?.remove();
   state.hudEl?.remove();
   state.fpsOverlayEl?.remove();
   state.bossBarEl?.remove();

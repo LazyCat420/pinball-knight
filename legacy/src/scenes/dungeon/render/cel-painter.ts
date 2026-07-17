@@ -1771,6 +1771,270 @@ export function makeSlimePaints(): ActorPaints {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// WAVE-B BESPOKE ART — the six pinball-reactive monsters get their own
+// silhouettes (they shipped as tinted reskins first). Same idle/walk/
+// death frame contract as the slime; the webspinner (ranged) also gets
+// an attack rear-back so its telegraph reads.
+// ══════════════════════════════════════════════════════════════════
+
+const R_GOBLIN: Ramp = [15, 16, 17]; // warm rubber amber
+const R_STONE: Ramp = [2, 3, 4]; // cold masonry
+const R_PIN: Ramp = [20, 21, 22]; // cream/steel
+const R_PLANT: Ramp = [7, 8, 9]; // rot-green stalk
+const R_SILK: Ramp = [4, 21, 22]; // pale spider
+
+/** BUMPER GOBLIN — a round rubbery amber imp; squash-stretch bounce. */
+function goblinFrame(dir: Dir, squash: number, dead = false): FramePaint {
+  return (ctx) => {
+    if (dead) {
+      groundShadow(ctx, 64, GROUND + 2, 20);
+      ellShaded(ctx, 64, GROUND - 6, 21, 8, R_GOBLIN); // splatted flat
+      figDetail(ctx, [[53, GROUND - 9], [59, GROUND - 4]], 2, 1);
+      figDetail(ctx, [[59, GROUND - 9], [53, GROUND - 4]], 2, 1);
+      figDetail(ctx, [[69, GROUND - 9], [75, GROUND - 4]], 2, 1);
+      figDetail(ctx, [[75, GROUND - 9], [69, GROUND - 4]], 2, 1);
+      return;
+    }
+    const w = 20 + squash * 5;
+    const h = 22 - squash * 5;
+    const cy = GROUND - h * 0.7;
+    groundShadow(ctx, 64, GROUND + 2, w * 0.85);
+    for (const s of [-1, 1]) limbShaded(ctx, [64 + s * 8, cy + h * 0.5], [64 + s * 10, GROUND], 4, R_GOBLIN);
+    ellShaded(ctx, 64, cy, w, h, R_GOBLIN); // round bouncy body
+    for (const s of [-1, 1]) limbShaded(ctx, [64 + s * w * 0.7, cy], [64 + s * (w + 6), cy + 2], 4, R_GOBLIN); // bumper arms
+    if (dir !== "N") {
+      ell(ctx, 57, cy - 3, 4, 4.5, F(22));
+      ell(ctx, 71, cy - 3, 4, 4.5, F(22));
+      ell(ctx, 57, cy - 2, 2, 2.5, F(1));
+      ell(ctx, 71, cy - 2, 2, 2.5, F(1));
+      ctx.beginPath();
+      ctx.moveTo(56, cy + 5);
+      ctx.quadraticCurveTo(64, cy + 12, 72, cy + 5);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = INK;
+      ctx.stroke();
+      figDetail(ctx, [[60, cy + 7], [60, cy + 10]], 1.4, 22);
+      figDetail(ctx, [[68, cy + 7], [68, cy + 10]], 1.4, 22);
+    }
+    ell(ctx, 64 - w * 0.4, cy - h * 0.4, w * 0.2, h * 0.18, F(18), -0.4); // rubber gloss
+  };
+}
+export function makeGoblinPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [goblinFrame(dir, -0.15), goblinFrame(dir, 0.2)],
+    walk: [goblinFrame(dir, -0.8), goblinFrame(dir, 0.1), goblinFrame(dir, 0.8), goblinFrame(dir, 0.1)],
+    death: [goblinFrame(dir, 0.9), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true), goblinFrame(dir, 0, true)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+/** BOWLING PIN — tall cream pin with red neck stripes; wobble + topple. */
+function pinFrame(dir: Dir, lean: number, dead = false): FramePaint {
+  return (ctx) => {
+    if (dead) {
+      groundShadow(ctx, 64, GROUND + 2, 22);
+      ctx.save();
+      ctx.translate(64, GROUND - 6);
+      ctx.rotate(1.3); // toppled on its side
+      ellShaded(ctx, 0, 0, 9, 26, R_PIN);
+      ctx.restore();
+      return;
+    }
+    groundShadow(ctx, 64, GROUND + 2, 12);
+    ctx.save();
+    ctx.translate(64, GROUND);
+    ctx.rotate(lean * 0.12);
+    // classic pin profile — a bulb base narrowing to a neck + head
+    plateShaded(ctx, [[-9, 0], [9, 0], [7, -18], [4, -26], [5, -34], [-5, -34], [-4, -26], [-7, -18]], R_PIN);
+    ellShaded(ctx, 0, -38, 6, 7, R_PIN); // head
+    // two red neck stripes
+    line(ctx, [[-6, -30], [6, -30]], 3, F(12));
+    line(ctx, [[-7, -25], [7, -25]], 3, F(12));
+    ctx.restore();
+  };
+}
+export function makePinPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [pinFrame(dir, -0.3), pinFrame(dir, 0.3)],
+    walk: [pinFrame(dir, -1), pinFrame(dir, 1)],
+    death: [pinFrame(dir, 1.4), pinFrame(dir, 0, true), pinFrame(dir, 0, true), pinFrame(dir, 0, true)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+/** BRICK GOLEM — a stacked-masonry brute with glowing arcane eyes; barely stirs. */
+function golemFrame(dir: Dir, breath: number, crumble = 0): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, GROUND + 2, 26 - crumble * 6);
+    const cy = 92 + breath;
+    if (crumble > 0) {
+      // shattering: scatter loose bricks
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        rrectShaded(ctx, 64 + Math.cos(a) * (10 + crumble * 22) - 5, cy + Math.sin(a) * (6 + crumble * 16) - 5, 10, 8, 1, R_STONE);
+      }
+      return;
+    }
+    for (const s of [-1, 1]) rrectShaded(ctx, 64 + s * 12 - 6, GROUND - 14, 12, 14, 2, R_STONE); // stubby legs
+    // brick torso — a coursed stack
+    rrectShaded(ctx, 44, cy - 22, 40, 34, 3, R_STONE);
+    for (const by of [cy - 14, cy - 4, cy + 6]) line(ctx, [[45, by], [83, by]], 1.5, F(2)); // mortar courses
+    line(ctx, [[64, cy - 22], [64, cy - 14]], 1.5, F(2));
+    line(ctx, [[54, cy - 4], [54, cy + 6]], 1.5, F(2));
+    line(ctx, [[74, cy - 4], [74, cy + 6]], 1.5, F(2));
+    // heavy arms
+    for (const s of [-1, 1]) rrectShaded(ctx, 64 + s * 26 - 6, cy - 16, 12, 24, 3, R_STONE);
+    // block head with glowing eyes
+    rrectShaded(ctx, 54, cy - 36, 20, 16, 2, R_STONE);
+    if (dir !== "N") {
+      figGlow(ctx, 59, cy - 28, 2.2, 31, 18);
+      figGlow(ctx, 69, cy - 28, 2.2, 31, 18);
+    }
+  };
+}
+export function makeGolemPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [golemFrame(dir, 0), golemFrame(dir, 1)],
+    walk: [golemFrame(dir, -1), golemFrame(dir, 0), golemFrame(dir, 1), golemFrame(dir, 0)],
+    death: [golemFrame(dir, 0, 0.3), golemFrame(dir, 0, 0.6), golemFrame(dir, 0, 0.85), golemFrame(dir, 0, 1)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+/** CHOMPER PLANT — a rooted stalk topped by a toothy maw that snaps. */
+function chomperFrame(dir: Dir, open: number, dead = false): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, GROUND + 2, 18);
+    if (dead) {
+      // wilted — the head flops over the base
+      limbShaded(ctx, [64, GROUND], [58, GROUND - 12], 8, R_PLANT);
+      ellShaded(ctx, 54, GROUND - 14, 12, 8, R_PLANT);
+      return;
+    }
+    // pot/root base
+    plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_PLANT);
+    // stalk
+    limbShaded(ctx, [64, GROUND - 10], [64, GROUND - 34], 7, R_PLANT);
+    // leaf pair
+    ellShaded(ctx, 52, GROUND - 24, 8, 4, R_PLANT, -0.5);
+    ellShaded(ctx, 76, GROUND - 24, 8, 4, R_PLANT, 0.5);
+    // the maw — two jaws hinged at the neck; `open` splits them
+    const jaw = open * 12;
+    const my = GROUND - 44;
+    // lower jaw
+    plateShaded(ctx, [[52, my + jaw], [76, my + jaw], [70, my + jaw + 12], [58, my + jaw + 12]], R_PLANT);
+    // upper jaw
+    plateShaded(ctx, [[52, my - jaw], [76, my - jaw], [70, my - jaw - 12], [58, my - jaw - 12]], R_PLANT);
+    // red gullet + white fangs when open
+    if (open > 0.15) {
+      ellShaded(ctx, 64, my, 9, jaw + 2, R_BLOOD, 0, { rim: false });
+      for (const fx of [56, 62, 68, 72]) {
+        figDetail(ctx, [[fx, my - jaw + 2], [fx, my - jaw + 6]], 1.6, 22);
+        figDetail(ctx, [[fx, my + jaw - 2], [fx, my + jaw - 6]], 1.6, 22);
+      }
+    }
+    if (dir !== "N") figGlow(ctx, 64, my, 1.6, 13, 18); // a red glint deep in the throat
+  };
+}
+export function makeChomperPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [chomperFrame(dir, 0.15), chomperFrame(dir, 0.32)],
+    walk: [chomperFrame(dir, 0.1), chomperFrame(dir, 0.4)], // it's rooted; the maw just breathes
+    attack: [chomperFrame(dir, 0.9), chomperFrame(dir, 1), chomperFrame(dir, 0.05)], // gape then SNAP
+    death: [chomperFrame(dir, 0.5), chomperFrame(dir, 0, true), chomperFrame(dir, 0, true), chomperFrame(dir, 0, true)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+/** MAGNET CRAWLER — a horseshoe magnet on skittering legs, poles arcing. */
+function magnetFrame(dir: Dir, step: number, dead = false): FramePaint {
+  return (ctx) => {
+    if (dead) {
+      groundShadow(ctx, 64, GROUND + 2, 16);
+      ctx.save();
+      ctx.translate(64, GROUND - 6);
+      ctx.rotate(0.8);
+      // the horseshoe on its side
+      plateShaded(ctx, [[-14, -10], [-6, -10], [-6, 8], [6, 8], [6, -10], [14, -10], [14, 14], [-14, 14]], R_STEEL);
+      ctx.restore();
+      return;
+    }
+    const cy = 90;
+    groundShadow(ctx, 64, GROUND + 2, 16);
+    // six little legs, alternating with `step`
+    for (const s of [-1, 1]) {
+      for (let l = 0; l < 3; l++) {
+        const lx = 64 + s * (8 + l * 4);
+        const ph = (l % 2 === 0 ? step : -step) * 3;
+        limbShaded(ctx, [lx, cy + 8], [lx + s * 4, GROUND + ph], 2.5, 1);
+      }
+    }
+    // the U-magnet body (opening downward)
+    plateShaded(ctx, [[50, cy - 12], [58, cy - 12], [58, cy + 8], [70, cy + 8], [70, cy - 12], [78, cy - 12], [78, cy + 16], [50, cy + 16]], R_STEEL);
+    // painted poles — one red, one blue — on the prongs
+    rrectShaded(ctx, 50, cy + 10, 8, 8, 1, R_BLOOD);
+    rrectShaded(ctx, 70, cy + 10, 8, 8, 1, [29, 30, 31]);
+    // an arcane arc crackling between the poles
+    figDetail(ctx, [[54, cy + 16], [60, cy + 12], [64, cy + 18], [68, cy + 12], [74, cy + 16]], 1.4, 31);
+    if (dir !== "N") {
+      figGlow(ctx, 58, cy - 4, 1.6, 31, 18);
+      figGlow(ctx, 70, cy - 4, 1.6, 31, 18);
+    }
+  };
+}
+export function makeMagnetPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [magnetFrame(dir, 0.3), magnetFrame(dir, -0.3)],
+    walk: [magnetFrame(dir, 1), magnetFrame(dir, -1)],
+    death: [magnetFrame(dir, 0.4), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+/** WEB SPINNER — a bloated pale spider with a silk-sac abdomen. */
+function webspinnerFrame(dir: Dir, legPh: number, rear = 0, dead = false): FramePaint {
+  return (ctx) => {
+    if (dead) {
+      groundShadow(ctx, 64, GROUND + 2, 18);
+      ellShaded(ctx, 64, GROUND - 5, 14, 7, R_SILK);
+      for (const s of [-1, 1]) for (let l = 0; l < 3; l++) figDetail(ctx, [[64, GROUND - 5], [64 + s * (12 + l * 4), GROUND - 2]], 1.6, 2);
+      return;
+    }
+    const cy = 92 - rear * 6;
+    groundShadow(ctx, 64, GROUND + 2, 20);
+    // eight legs, arched, alternating gait
+    for (const s of [-1, 1]) {
+      for (let l = 0; l < 4; l++) {
+        const bend = Math.sin(legPh + l) * 4;
+        const kx = 64 + s * (14 + l * 3);
+        const fx = 64 + s * (22 + l * 5);
+        figDetail(ctx, [[64, cy], [kx, cy - 8 - bend], [fx, GROUND]], 2, 1);
+      }
+    }
+    // bulbous silk-sac abdomen (behind), then the cephalothorax
+    ellShaded(ctx, 64, cy + 2, 16, 14, R_SILK);
+    ellShaded(ctx, 64, cy - 10, 10, 8, R_SILK);
+    // a wound-silk texture on the sac
+    for (const ry of [cy - 2, cy + 4, cy + 9]) ell(ctx, 64, ry, 12, 2, F(22));
+    if (dir !== "N") {
+      // cluster of red eyes + fangs
+      for (const [ex, ey] of [[60, cy - 12], [64, cy - 13], [68, cy - 12], [62, cy - 9], [66, cy - 9]] as const) figGlow(ctx, ex, ey, 1.3, 13, 18);
+      figDetail(ctx, [[61, cy - 6], [60, cy - 2]], 1.6, 22);
+      figDetail(ctx, [[67, cy - 6], [68, cy - 2]], 1.6, 22);
+    }
+  };
+}
+export function makeWebspinnerPaints(): ActorPaints {
+  const dc = (dir: Dir) => ({
+    idle: [webspinnerFrame(dir, 0), webspinnerFrame(dir, 1.6)],
+    walk: [webspinnerFrame(dir, 0), webspinnerFrame(dir, 1.6), webspinnerFrame(dir, 3.1), webspinnerFrame(dir, 4.7)],
+    attack: [webspinnerFrame(dir, 0, 0.5), webspinnerFrame(dir, 0, 1), webspinnerFrame(dir, 0, 0.2)], // rear back to spit silk
+    death: [webspinnerFrame(dir, 2, 0), webspinnerFrame(dir, 0, 0, true), webspinnerFrame(dir, 0, 0, true), webspinnerFrame(dir, 0, 0, true)],
+  });
+  return { S: dc("S"), N: dc("N"), E: dc("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
 // GROUND ITEMS — the held weapon art lying at an angle, plus gear.
 // ══════════════════════════════════════════════════════════════════
 
@@ -1909,6 +2173,8 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   springlegs: potionItem("#8fc46b"),
   freeze: potionItem("#bfe8ff"),
   multiball: potionItem("#b06fe8"),
+  curveshot: potionItem("#6fd0e8"),
+  magnetboots: potionItem("#a83244"),
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -1976,11 +2242,39 @@ const FROG_NPC: FramePaint = (ctx) => {
   celShade(ctx);
 };
 
+const MERCHANT_NPC: FramePaint = (ctx) => {
+  groundShadow(ctx, 64, 114, 24);
+  // a rolling market cart: two big spoked wheels
+  for (const wx of [48, 80]) {
+    ell(ctx, wx, 106, 9, 9, F(28));
+    ell(ctx, wx, 106, 4, 4, F(27));
+    for (const a of [0, 1.05, 2.1, 3.15, 4.2, 5.25]) line(ctx, [[wx, 106], [wx + Math.cos(a) * 8, 106 + Math.sin(a) * 8]], 1.2, F(26));
+  }
+  // the wagon box, piled with wares
+  rrect(ctx, 42, 78, 44, 24, 3, F(28));
+  line(ctx, [[42, 90], [86, 90]], 2, F(27));
+  // a striped awning over the top
+  for (let s = 0; s < 6; s++) rrect(ctx, 40 + s * 8, 62, 8, 12, 1, F(s % 2 === 0 ? 12 : 17));
+  poly(ctx, [[40, 62], [88, 62], [84, 58], [44, 58]], F(27)); // awning ridge
+  // gleaming wares on the counter (potions + a gold glint)
+  ell(ctx, 52, 82, 3, 4, F(31));
+  ell(ctx, 60, 82, 3, 4, F(13));
+  ell(ctx, 68, 82, 3, 4, F(9));
+  ell(ctx, 76, 82, 3.5, 4, F(17)); // gold — blooms
+  // the merchant himself, a hooded figure at the handle
+  ell(ctx, 32, 84, 7, 8, F(24)); // face
+  poly(ctx, [[24, 92], [40, 92], [36, 68], [28, 68]], F(30)); // cloak
+  ell(ctx, 32, 74, 8, 7, F(29)); // hood
+  line(ctx, [[29, 84], [35, 84]], 1.5, F(1)); // a knowing squint
+  celShade(ctx);
+};
+
 /** NPC art, keyed by Npc.kind. */
 export const NPC_PAINTS: Record<string, FramePaint> = {
   magician: MAGICIAN_NPC,
   witch: WITCH_NPC,
   frog: FROG_NPC,
+  merchant: MERCHANT_NPC,
 };
 
 // ══════════════════════════════════════════════════════════════════

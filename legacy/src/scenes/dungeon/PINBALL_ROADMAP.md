@@ -19,6 +19,25 @@ actually contains as of commit `bcd1271`.)*
 > Merchant (needs a shop), Curve Shot / Magnet Boots, real boss antechamber
 > prefab (shipped as a brute-guard pack at the stairs), and bespoke cel-paints
 > for the reskinned monsters (sprite-forge follow-up).
+>
+> **STATUS UPDATE 2 (2026-07-17): the ENTIRE deferred set above is now BUILT
+> (Waves G–L).** Flipper (`buildFlipper` + junction-launch physics) and angle
+> mirror (`buildMirror` + reflect-across-surface) parts; four floor hazards —
+> pit (fall→respawn+penalty), electric grid (phased zap plates), fire vent
+> (wall-mounted timed jet in `entities/hazards.ts`), magnet strip (momentum
+> cap / walk-drag); **bespoke cel-paint atlases** for goblin/pin/golem/chomper/
+> magnet/webspinner (`cel-painter.ts` `make*Paints`, wired into `core.RESKIN`,
+> no more tints); the **Rolling Cart Merchant** (`npc.ts` slide+flee) + a full
+> **shop overlay** (`ui.openShopOverlay`, sim pauses, gold via `spendGold`);
+> **Curve Shot** (projectile lateral accel) + **Magnet Boots** (repel crawlers,
+> launch off strips) potions; and a **real boss antechamber** — a bumper-ringed
+> carom arena + scaled brute pack + guaranteed prize around the stairs. Hazard
+> placement is its own layer over the part budget; fire vents mount wall-adjacent
+> (2-wide corridors have ~no strict-straight tiles). Verified headless: all 16
+> part/hazard kinds place across themed floors, the 6 bespoke atlases render,
+> flipper/pit/curve/boots/shop all fire, 257 tests pass, build clean.
+> NOW nothing from the original brainstorm remains deferred except pure taste
+> calls (extra prefab archetypes, 8-direction art).
 
 ---
 

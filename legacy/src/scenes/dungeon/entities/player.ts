@@ -88,6 +88,19 @@ import {
   TURBO_STEER_MULT,
   TURBO_WALK_MULT,
   SPRINGLEGS_RESTITUTION,
+  FLIPPER_SPEED,
+  FLIPPER_COOLDOWN,
+  FLIPPER_RADIUS,
+  MIRROR_RADIUS,
+  MIRROR_COOLDOWN,
+  MIRROR_BOOST,
+  MAGSTRIP_RADIUS,
+  MAGSTRIP_SPEED_CAP,
+  MAGSTRIP_WALK_MULT,
+  MAGBOOTS_STRIP_LAUNCH,
+  PIT_RADIUS,
+  PIT_GOLD_PENALTY,
+  PIT_DAMAGE,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -126,7 +139,8 @@ import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage } from "./combat";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxTrapdoor } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxTrapdoor, sfxHurt } from "../audio";
+import { spendGold } from "../../../utils/gold-wallet";
 
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
@@ -499,6 +513,48 @@ function onPartTrigger(): void {
   }
 }
 
+/** True if the player is standing over a magnet strip (walk-slow check). */
+function overMagStrip(): boolean {
+  const p = state.player;
+  if (!p) return false;
+  for (const part of state.pinballParts) {
+    if (part.kind !== "magstrip") continue;
+    const dx = p.x - part.x;
+    const dz = p.z - part.z;
+    if (dx * dx + dz * dz <= MAGSTRIP_RADIUS * MAGSTRIP_RADIUS) return true;
+  }
+  return false;
+}
+
+/**
+ * Fall into a PIT: spat back to the floor's start with a shake, a heart and a
+ * fistful of gold gone. Momentum/ride are killed. The map's "oops" tax.
+ */
+function fallInPit(): void {
+  const p = state.player;
+  if (!p) return;
+  p.momSpeed = 0;
+  p.rideT = -1;
+  p.ridePts = [];
+  p.x = state.levelStart.x;
+  p.z = state.levelStart.z;
+  p.sprite.mesh.position.y = 0;
+  if (p.iframes <= 0 && p.shieldT <= 0) {
+    p.hp = Math.max(0, p.hp - PIT_DAMAGE);
+    p.iframes = Math.max(p.iframes, 0.6);
+  }
+  const lost = Math.min(PIT_GOLD_PENALTY, state.goldRun);
+  if (lost > 0) {
+    state.goldRun -= lost;
+    spendGold(lost);
+  }
+  state.hudDirty = true;
+  state.shakeT = Math.max(state.shakeT, 0.4);
+  syncActorMesh(p);
+  showPickupNote(`🕳️ FELL IN A PIT — back to start${lost > 0 ? ` · −${lost}g` : ""}`);
+  sfxHurt();
+}
+
 function touchPinballParts(inMomentum: boolean): void {
   const p = state.player;
   if (!p || state.pinballParts.length === 0) return;
@@ -638,6 +694,61 @@ function touchPinballParts(inMomentum: boolean): void {
       part.cooldownT = TRAPDOOR_COOLDOWN;
       part.hitT = 0;
       startRide();
+    } else if (part.kind === "flipper") {
+      // The big paddle CATAPULTS you along its swing at the hardest speed in
+      // the machine (walking or riding — it flips either way).
+      if (d2 > FLIPPER_RADIUS * FLIPPER_RADIUS) continue;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, FLIPPER_SPEED));
+      onPartTrigger();
+      part.cooldownT = FLIPPER_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.4, part.z, part.dirX, part.dirZ, 12);
+      state.shakeT = Math.max(state.shakeT, 0.2);
+      sfxSpring();
+    } else if (part.kind === "mirror") {
+      // A bank shot: REFLECT the incoming momentum across the mirror's surface
+      // line (unlike the deflector's corner-bank). Momentum only.
+      if (!inMomentum || d2 > MIRROR_RADIUS * MIRROR_RADIUS) continue;
+      // surface dir = (part.dirX, part.dirZ) (may be a diagonal); normal = its
+      // perpendicular, normalised so the reflection preserves speed.
+      const nl = Math.hypot(part.dirX, part.dirZ) || 1;
+      const nx = -part.dirZ / nl;
+      const nz = part.dirX / nl;
+      const dot = p.momX * nx + p.momZ * nz;
+      if (Math.abs(dot) < 0.2) continue; // travelling along the mirror, nothing to bounce
+      p.momX -= 2 * dot * nx;
+      p.momZ -= 2 * dot * nz;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * MIRROR_BOOST);
+      onPartTrigger();
+      part.cooldownT = MIRROR_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.4, part.z, p.momX, p.momZ, 8);
+      sfxRoll();
+    } else if (part.kind === "magstrip") {
+      // The anti-speed zone: over it, momentum is DRAGGED to a crawl and
+      // steering goes heavy — unless Magnet Boots invert it into a LAUNCH.
+      if (d2 > MAGSTRIP_RADIUS * MAGSTRIP_RADIUS) continue;
+      if (p.magBootsT > 0) {
+        // boots: a strip flings you along your heading instead of trapping you
+        if (inMomentum && p.momSpeed < MAGBOOTS_STRIP_LAUNCH) {
+          p.momSpeed = MAGBOOTS_STRIP_LAUNCH;
+          onPartTrigger();
+          part.cooldownT = 0.4;
+          state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 8);
+        }
+        continue;
+      }
+      if (p.momSpeed > MAGSTRIP_SPEED_CAP) p.momSpeed = MAGSTRIP_SPEED_CAP;
+      if (Math.random() < 0.3) state.vfx?.sparks(part.x, 0.2, part.z, 0, 1, 2);
+    } else if (part.kind === "pit") {
+      // A hole: fall in unless the coaster is carrying you over it.
+      if (p.rideT >= 0 || d2 > PIT_RADIUS * PIT_RADIUS) continue;
+      fallInPit();
+      return; // the fall owns this frame
+    } else if (part.kind === "electric" || part.kind === "firevent") {
+      continue; // self-firing hazards do their damage from entities/hazards.ts
     } else {
       // deflector — banked corner, only meaningful while carrying momentum
       if (!inMomentum || d2 > 0.5 * 0.5) continue;
@@ -1135,6 +1246,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
   if (p.turboT > 0) targetSpeed *= TURBO_WALK_MULT; // turbo: quicker feet too
   if (p.webbedT > 0) targetSpeed *= WEB_SLOW_MULT; // webbed: wading through silk
+  if (p.magBootsT <= 0 && overMagStrip()) targetSpeed *= MAGSTRIP_WALK_MULT; // magnet strip drags
   targetSpeed *= (wantSprint ? SPRINT_BASE_MULT : 1) + (SPRINT_SPEED_MULT - SPRINT_BASE_MULT) * p.sprintCharge;
   if (!moving) targetSpeed = 0;
 

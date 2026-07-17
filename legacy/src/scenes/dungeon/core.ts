@@ -32,9 +32,9 @@ import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar } from "./ui";
+import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
@@ -46,7 +46,7 @@ import { updatePlayer, resetPlayerMotion, updateMultiball, debugCurSpeed, debugW
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
-import { updateNpcs, disposeNpcs, spawnFrog, rollMagicianClock } from "./entities/npc";
+import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
 import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers } from "./entities/combat";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -106,6 +106,10 @@ import {
   WEBSPIN_FROM_LEVEL,
   TARGETS_PER_FLOOR,
   TRAPDOORS_PER_FLOOR,
+  HAZARDS_BASE,
+  HAZARDS_PER_LEVEL,
+  HAZARDS_MAX,
+  MERCHANT_FROM_LEVEL,
   BONUS_ROOM_GRADES,
   PARTS_BASE,
   PARTS_PER_LEVEL,
@@ -153,7 +157,7 @@ import {
   FLAME_FRAMES,
   MOTE_RATE,
 } from "./constants";
-import { addGold } from "../../utils/gold-wallet";
+import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze } from "./audio";
 
@@ -324,6 +328,13 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.batSheet = buildSpriteSheet(makeBatPaints());
   state.slimeSheet = buildSpriteSheet(makeSlimePaints());
   state.bossSheet = buildSpriteSheet(makeBossPaints());
+  // Wave-B bespoke monster atlases (were tinted reskins).
+  state.goblinSheet = buildSpriteSheet(makeGoblinPaints());
+  state.pinSheet = buildSpriteSheet(makePinPaints());
+  state.golemSheet = buildSpriteSheet(makeGolemPaints());
+  state.chomperSheet = buildSpriteSheet(makeChomperPaints());
+  state.magnetSheet = buildSpriteSheet(makeMagnetPaints());
+  state.webspinnerSheet = buildSpriteSheet(makeWebspinnerPaints());
 
   // Dev-only atlas preview hooks for headless art QA:
   //   `__dungeonAtlas(which)` → data URL of that actor's full sprite strip
@@ -339,6 +350,12 @@ export function launchDungeonGame(onExit?: () => void): void {
       which === "bat" ? state.batSheet :
       which === "slime" ? state.slimeSheet :
       which === "boss" ? state.bossSheet :
+      which === "goblin" ? state.goblinSheet :
+      which === "pin" ? state.pinSheet :
+      which === "golem" ? state.golemSheet :
+      which === "chomper" ? state.chomperSheet :
+      which === "magnet" ? state.magnetSheet :
+      which === "webspinner" ? state.webspinnerSheet :
       which === "knight" ? state.playerSheets.get("sword") ?? null :
       state.zombieVariantSheets[0] ?? null;
     (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
@@ -381,6 +398,15 @@ export function launchDungeonGame(onExit?: () => void): void {
     // test can navigate to a bumper/spring and verify the physics fire.
     (window as unknown as { __dungeonParts?: () => unknown }).__dungeonParts = () =>
       state.pinballParts.map((pt) => ({ kind: pt.kind, i: pt.i, j: pt.j, x: pt.x, z: pt.z, dirX: pt.dirX, dirZ: pt.dirZ, cooldownT: pt.cooldownT }));
+    // Dev: NPC positions/kinds (merchant chase + shop QA).
+    (window as unknown as { __dungeonNpcs?: () => unknown }).__dungeonNpcs = () =>
+      state.npcs.map((n) => ({ kind: n.kind, x: n.x, z: n.z, shopped: !!n.shopped }));
+    // Dev: force the merchant's shop open, and buy row i (shop-flow QA).
+    (window as unknown as { __dungeonShop?: (buy?: number) => unknown }).__dungeonShop = (buy?: number) => {
+      if (buy === undefined) openShop();
+      else if (state.shopEl) (state.shopEl.querySelectorAll("[data-shop-row]")[buy] as HTMLElement | undefined)?.click();
+      return { open: !!state.shopEl };
+    };
     // Dev: the still-intact secret bands + the floor ledger (secret/reaper/grade QA).
     (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
@@ -394,6 +420,8 @@ export function launchDungeonGame(onExit?: () => void): void {
       targets: `${state.targetsHit}/${state.targetsTotal}`,
       freezeT: state.freezeT,
       npcs: state.npcs.map((n) => n.kind),
+      partKinds: Array.from(new Set(state.pinballParts.map((pt) => pt.kind))),
+      shopOpen: !!state.shopEl,
       magicianT: state.magicianT,
       // Loop diagnostics (accumulator health for the harness).
       accumulator: state.accumulator,
@@ -427,7 +455,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, rideT: p.rideT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, multiT: p.multiT, multiBalls: state.multiMeshes?.length ?? 0 };
+      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, rideT: p.rideT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, multiT: p.multiT, multiBalls: state.multiMeshes?.length ?? 0, curveT: p.curveT, magBootsT: p.magBootsT };
     };
   }
 
@@ -460,6 +488,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
   // A shattered brick golem sprays ricochet shards.
   setGolemShatterHandler((x, z) => golemShards(x, z));
+  // Catching the rolling merchant opens its shop.
+  setMerchantCaughtHandler(openShop);
   resetCombatJuice();
 
   state.onResize = () => state.pixelPass?.resize();
@@ -496,27 +526,25 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
 };
 
 /**
- * The Wave-B roster ships on RESKINS (existing atlases + a resting tint and a
- * scale) — behavioural identity first, bespoke cel-paints when the sprite
- * forge gets to them. Sheet is resolved at spawn time from state.
+ * The Wave-B roster now has BESPOKE atlases (was tinted reskins). Each maps to
+ * its own sheet + a display scale; no resting tint (the art carries identity).
+ * `RESKIN` keeps its name so the debug ring + spawn table read unchanged.
  */
-const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
-  goblin: { sheet: () => state.slimeSheet, tint: 0xffa04a, scale: 0.95 },
-  pin: { sheet: () => state.ghostSheet, tint: 0xffe9c9, scale: 0.7 },
-  golem: { sheet: () => state.bruteSheet, tint: 0x9aa4b5, scale: 1.12 },
-  chomper: { sheet: () => state.slimeSheet, tint: 0x4f8f3f, scale: 1.15 },
-  magnet: { sheet: () => state.spiderSheet, tint: 0x6fd0e8, scale: 0.95 },
-  webspinner: { sheet: () => state.spiderSheet, tint: 0xeef1f5, scale: 1.05 },
+const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; scale: number }>> = {
+  goblin: { sheet: () => state.goblinSheet, scale: 1.0 },
+  pin: { sheet: () => state.pinSheet, scale: 0.85 },
+  golem: { sheet: () => state.golemSheet, scale: 1.12 },
+  chomper: { sheet: () => state.chomperSheet, scale: 1.1 },
+  magnet: { sheet: () => state.magnetSheet, scale: 0.95 },
+  webspinner: { sheet: () => state.webspinnerSheet, scale: 1.05 },
 };
 
-/** Spawn a reskinned Wave-B enemy; returns null if its base sheet isn't built. */
+/** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
 function makeReskin(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
   const skin = RESKIN[kind];
   const sheet = skin?.sheet();
   if (!skin || !sheet) return null;
   const z2 = makeZombie(sheet, x, z, speed, { kind });
-  z2.baseTint = skin.tint;
-  z2.sprite.setTint(skin.tint);
   z2.sprite.mesh.scale.multiplyScalar(skin.scale);
   return z2;
 }
@@ -725,6 +753,7 @@ function startLevel(level: number): void {
     deal: theme.deal,
     targets: TARGETS_PER_FLOOR,
     trapdoors: TRAPDOORS_PER_FLOOR,
+    hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
   });
 
   state.grid = grid;
@@ -734,6 +763,7 @@ function startLevel(level: number): void {
 
   // ── Player ──
   const startPos = tileCenter(grid, plan.start.i, plan.start.j);
+  state.levelStart = { x: startPos.x, z: startPos.z }; // where a pit spits you back
   if (!state.player) {
     const weaponId = activeWeapon().id;
     const sprite = createActorSprite(playerSheetFor(weaponId), false);
@@ -818,19 +848,52 @@ function startLevel(level: number): void {
     }
   }
 
-  // ── BOSS ANTECHAMBER (lite) ── from depth 3, a brute pack guards the tiles
-  // before the stairs, so the run's last leg is always a fight or a flight.
-  if (level >= 3 && level % BOSS_EVERY !== 0 && state.bruteSheet && state.stairs) {
-    for (let n = 1; n <= 2; n++) {
-      const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, n + 1);
+  // ── BOSS ANTECHAMBER ── from depth 3 (non-boss floors), the stairs are a
+  // real set piece: a carom ARENA (bumpers ringed round the exit) guarded by a
+  // brute pack, with a guaranteed prize so clearing it pays. The run's last leg
+  // is always a fight-or-flight, and the bumpers make it a PINBALL fight.
+  if (level >= 3 && level % BOSS_EVERY !== 0 && state.bruteSheet && state.stairs && state.scene) {
+    const s = state.stairs;
+    // A ring of bumpers two tiles out from the exit — carom off them mid-brawl.
+    const ringSpots: Array<{ i: number; j: number }> = [];
+    for (const [di, dj] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2]] as const) {
+      if (isWalkable(grid, s.i + di, s.j + dj)) ringSpots.push({ i: s.i + di, j: s.j + dj });
+    }
+    createPinballParts(
+      ringSpots.map((r) => ({ i: r.i, j: r.j, kind: "bumper" as const, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 })),
+      grid,
+      state.scene,
+    );
+    // The brute guard — scales a touch with depth.
+    const guards = 2 + Math.floor((level - 3) / 3);
+    for (let n = 1; n <= guards; n++) {
+      const spot = nearestOpenTile(grid, s.i, s.j, n + 1);
       if (!spot) break;
       const c = tileCenter(grid, spot.i, spot.j);
       state.zombies.push(makeZombie(state.bruteSheet, c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }));
+    }
+    // A guaranteed prize on the exit's doorstep (gold idol + a heal).
+    const prizeSpot = nearestOpenTile(grid, s.i, s.j, 1);
+    if (prizeSpot) {
+      for (const [id, dx] of [["gold", -0.4], ["health", 0.4]] as const) {
+        const sprite = createStaticSprite(ITEM_PAINTS[id]);
+        const c = tileCenter(grid, prizeSpot.i, prizeSpot.j);
+        sprite.mesh.position.set(c.x + dx, 0, c.z);
+        state.scene.add(sprite.mesh);
+        state.groundItems.push({ kind: "potion", id, x: c.x + dx, z: c.z, sprite, bobPhase: Math.random() * 6 });
+      }
     }
   }
 
   // ── The ORACLE FROG's dead-end perch ──
   if (plan.frog) spawnFrog(plan.frog.i, plan.frog.j);
+
+  // ── The ROLLING CART MERCHANT — one per floor from its depth, parked a
+  // few tiles out from the start so you spot it early and give chase. ──
+  if (level >= MERCHANT_FROM_LEVEL) {
+    const spot = nearestOpenTile(grid, plan.start.i, plan.start.j, 6) ?? plan.start;
+    spawnMerchant(spot.i, spot.j);
+  }
 
   // ── Per-floor score ledger + the Death Dealer's fuse ──
   state.levelT = 0;
@@ -885,6 +948,18 @@ function selectSlot(slot: number): void {
 
 function handleKey(e: KeyboardEvent): void {
   if (!state.active) return;
+
+  // ── Shop is open: number keys buy, Escape/enter leaves; nothing else. ──
+  if (state.shopEl) {
+    if (e.key === "Escape") {
+      closeShop();
+    } else if (/^[1-9]$/.test(e.key)) {
+      const rows = state.shopEl.querySelectorAll("[data-shop-row]");
+      (rows[Number(e.key) - 1] as HTMLElement | undefined)?.click();
+    }
+    e.preventDefault();
+    return;
+  }
 
   switch (e.key.toLowerCase()) {
     case "escape":
@@ -1023,11 +1098,7 @@ function debugSpawnRing(): void {
     const c = tileCenter(g, spot.i, spot.j);
     const zz = makeZombie(spec.sheet, c.x, c.z, 0, { kind: spec.kind });
     const skin = RESKIN[spec.kind];
-    if (skin) {
-      zz.baseTint = skin.tint;
-      zz.sprite.setTint(skin.tint);
-      zz.sprite.mesh.scale.multiplyScalar(skin.scale);
-    }
+    if (skin) zz.sprite.mesh.scale.multiplyScalar(skin.scale);
     zz.aggro = true;
     zz.anim.setFacing("S");
     zz.anim.play("walk", { force: true });
@@ -1035,7 +1106,7 @@ function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball"].forEach((id, i, arr) => {
+  ["health", "rage", "haste", "shield", "gold", "ironcore", "turbo", "springlegs", "freeze", "multiball", "curveshot", "magnetboots"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
     const a = (i / arr.length) * Math.PI * 2;
@@ -1228,6 +1299,48 @@ function checkPickups(): void {
 }
 
 /**
+ * The Rolling Cart Merchant's wares. Prices are flat (gold is plentiful in a
+ * good run); everything routes through applyPotion / freshWeapon on buy.
+ */
+const SHOP_STOCK: ShopEntry[] = [
+  { id: "health", label: "Health", icon: "❤️", price: 12, detail: "+3 hearts" },
+  { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: "6s invuln" },
+  { id: "ironcore", label: "Iron Core", icon: "🔩", price: 22, detail: "20s ram mode" },
+  { id: "turbo", label: "Turbo", icon: "🚀", price: 20, detail: "10s no-friction" },
+  { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: "12s bending shots" },
+  { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: "18s repel/launch" },
+  { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: "12s ghost knights" },
+  { id: "mace", label: "Mace", icon: "🔨", price: 28, detail: "heavy melee" },
+  { id: "gun", label: "Gun", icon: "🔫", price: 30, detail: "30 ammo" },
+];
+
+/** Open the merchant's shop overlay and PAUSE the sim while it's up. */
+function openShop(): void {
+  if (state.shopEl || !state.container) return;
+  const buy = (i: number): void => {
+    const entry = SHOP_STOCK[i];
+    if (!entry || getBalance() < entry.price) return;
+    if (!spendGold(entry.price)) return;
+    state.goldRun = Math.max(0, state.goldRun - entry.price); // keep the run tally honest
+    if (entry.id in WEAPONS) {
+      state.weaponSlots[state.activeSlot] = freshWeapon(entry.id as WeaponId);
+      showPickupNote(`${entry.icon} ${entry.label.toUpperCase()} — bought`);
+    } else {
+      applyPotion(entry.id as PotionId);
+    }
+    state.hudDirty = true;
+    refreshShopOverlay(state.shopEl, getBalance());
+  };
+  state.shopEl = openShopOverlay(state.container, SHOP_STOCK, getBalance(), buy, closeShop);
+}
+
+/** Close the shop overlay and resume the sim. */
+function closeShop(): void {
+  state.shopEl?.remove();
+  state.shopEl = null;
+}
+
+/**
  * Drink a potion on pickup: heal potions restore hearts instantly (capped at
  * max); buff potions (re)start their timer. A quick tint pulse + toast sells it.
  */
@@ -1260,6 +1373,8 @@ function applyPotion(id: PotionId): void {
       p.multiT = def.duration;
       summonMultiballs();
     }
+    if (id === "curveshot") p.curveT = def.duration;
+    if (id === "magnetboots") p.magBootsT = def.duration;
   }
   p.sprite.setTint(def.color);
   p.flashT = 0.18; // brief pulse, cleared by updateFlash
@@ -1311,6 +1426,7 @@ function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
   if (state.gameOver || !p || !g || !state.input) return;
+  if (state.shopEl) return; // the shop pauses the world while you browse
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
@@ -1333,7 +1449,7 @@ function simulate(dt: number): void {
 
   // ── Buff timers tick down; HUD refreshes each whole second so the
   // countdown reads live, plus once more when a buff ends. ──
-  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "multiT"] as const) {
+  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "multiT", "curveT", "magBootsT"] as const) {
     const before = p[key];
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
