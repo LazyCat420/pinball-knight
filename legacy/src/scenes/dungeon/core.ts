@@ -525,6 +525,8 @@ export function launchDungeonGame(onExit?: () => void): void {
     spawnReaper: () => {
       if (!state.gameOver && !state.reaperOut) spawnReaper();
     },
+    teleportStairs: debugTeleportToStairs,
+    spawnRing: debugSpawnRing,
     giveWeapon: (id) => {
       if (!(id in WEAPONS)) return;
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
@@ -1087,80 +1089,27 @@ function handleKey(e: KeyboardEvent): void {
       e.preventDefault(); // don't let focus walk out of the game
       selectSlot(1 - state.activeSlot);
       break;
-    case "1":
-      if (e.shiftKey) useBeltSlot(0);
-      else selectSlot(0);
-      break;
-    case "2":
-      if (e.shiftKey) useBeltSlot(1);
-      else selectSlot(1);
-      break;
-    case "3":
-      if (e.shiftKey) useBeltSlot(2);
-      break;
-    case "4":
-      if (e.shiftKey) useBeltSlot(3);
-      break;
+    // ── Quick-use belt potions (plain 1..4) ──
+    case "1": useBeltSlot(0); break;
+    case "2": useBeltSlot(1); break;
+    case "3": useBeltSlot(2); break;
+    case "4": useBeltSlot(3); break;
 
     // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
     case "r":
       if (canRampage()) enterRampage();
       break;
 
-    // ── Q/E active skills (Diablo HUD). Shift+Q keeps the hidden quantize
-    // toggle; in rampage Q/E steer the FPS camera (input.ts), so skip casting. ──
+    // ── Q/E active skills (Diablo HUD). In rampage Q/E steer the FPS camera. ──
     case "q":
-      if (e.shiftKey) {
-        state.quantize = !state.quantize;
-        state.pixelPass?.setQuantize(state.quantize);
-      } else if (!state.fpsActive) {
-        castAbility(0);
-      }
+      if (!state.fpsActive) castAbility(0);
       break;
     case "e":
       if (!state.fpsActive) castAbility(1);
       break;
-    case "f":
-      state.dither = !state.dither;
-      state.pixelPass?.setDither(state.dither);
-      break;
-    case "k":
-      state.scanline = !state.scanline;
-      state.pixelPass?.setScanline(state.scanline);
-      break;
-    case "o":
-      state.outline = !state.outline;
-      state.pixelPass?.setOutline(state.outline);
-      break;
 
-    // ── Hidden dev spawner: ring every enemy look around the player (art QA) ──
-    case "p":
-      debugSpawnRing();
-      break;
-    // ── Hidden dev: instantly fill the rampage meter (FPS-mode QA) ──
-    case "u":
-      state.ultCharge = 1;
-      state.hudDirty = true;
-      break;
-    // ── Hidden dev: teleport next to the stairs (descent + beacon QA) ──
-    case "t":
-      debugTeleportToStairs();
-      break;
-    // ── Hidden dev: force-descend to the next level (biome + progression QA) ──
-    case "n":
-      if (!state.gameOver) descend();
-      break;
-    // ── Hidden dev: jump to the next BOSS level (mini-boss QA) ──
-    case "b":
-      if (!state.gameOver) {
-        const next = (Math.floor(state.level / BOSS_EVERY) + 1) * BOSS_EVERY;
-        startLevel(next);
-      }
-      break;
-    // ── Hidden dev: summon the Death Dealer now (reaper QA) ──
-    case "m":
-      if (!state.gameOver && !state.reaperOut) spawnReaper();
-      break;
+    // Everything else (spawn, descend, boss, reaper, FX toggles, fill-rampage,
+    // teleport) lives in the ` debug panel now — no more scattered letter keys.
   }
 }
 

@@ -1,9 +1,10 @@
 /**
  * Keyboard + mouse input for the dungeon.
  *
- * WASD / arrows to move, Space / J / left-click to attack. The room's own
- * input is already muted while we run (core calls setInputOwner), so listening
- * on window here is safe.
+ * WASD / arrows to move, LEFT-CLICK to attack (hold = heavy) toward the cursor,
+ * SPACE or right-click to dodge, Shift to sprint. The room's own input is
+ * already muted while we run (core calls setInputOwner), so listening on window
+ * here is safe.
  */
 
 export interface InputHandle {
@@ -59,9 +60,10 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   arrowright: [1, 0],
 };
 
-// Attack = J or left-click. Space is now the DODGE key (freed from attack), so
-// the roll gets its own dedicated tap and attack stays on J / mouse.
-const ATTACK_KEYS = new Set(["j"]);
+// Mouse-aim scheme: attack is LEFT-CLICK (hold = heavy) toward the cursor, dodge
+// is SPACE or right-click. No keyboard attack key (the old J is retired) — the
+// mouse owns aiming + attacking, which is what an iso ARPG wants.
+const ATTACK_KEYS = new Set<string>();
 const DODGE_KEYS = new Set([" "]);
 // FPS look-turn keys: q/e plus the left/right arrows (left = turn left).
 const TURN_LEFT = new Set(["q", "arrowleft"]);
@@ -101,13 +103,21 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   const onMouseDown = (e: MouseEvent) => {
     if (e.button === 0) {
       attackQueued = true;
+      attackHeld = true; // holding LMB charges a heavy attack (mouse = primary attack)
       // capture the aim point on the click itself, so the very first shot
       // fires toward the cursor even if the mouse hasn't moved yet
       cursorX = e.clientX;
       cursorY = e.clientY;
       cursorSeen = true;
+    } else if (e.button === 2) {
+      dodgeQueued = true; // right-click = dodge roll
     }
   };
+  const onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) attackHeld = false;
+  };
+  // Free the right mouse button for dodge (no browser context menu over the game).
+  const onContextMenu = (e: MouseEvent) => e.preventDefault();
 
   // Relative mouse movement drives FPS look. When the pointer is locked the
   // deltas come through movementX/Y; unlocked they still accumulate so mouse
@@ -133,6 +143,8 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
   attackSurface.addEventListener("mousedown", onMouseDown);
+  window.addEventListener("mouseup", onMouseUp);
+  attackSurface.addEventListener("contextmenu", onContextMenu);
   window.addEventListener("mousemove", onMouseMove);
 
   return {
@@ -198,6 +210,8 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       attackSurface.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+      attackSurface.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("mousemove", onMouseMove);
     },
   };

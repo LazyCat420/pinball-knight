@@ -641,7 +641,7 @@ export function showControlsHint(container: HTMLElement): void {
     padding: 5px 12px; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SHIFT SPRINT · SPACE DODGE · J/CLICK ATTACK · TAB SWAP · R RAMPAGE · ` DEBUG · ESC LEAVE";
+  el.textContent = "WASD MOVE · CLICK ATTACK (HOLD=HEAVY) · SPACE/RMB DODGE · SHIFT SPRINT · Q/E SKILLS · 1-4 POTIONS · TAB SWAP · R RAMPAGE · ` DEBUG · ESC";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";

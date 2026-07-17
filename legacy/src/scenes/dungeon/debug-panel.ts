@@ -24,6 +24,8 @@ export interface DebugActions {
   nextFloor(): void;
   nextBoss(): void;
   spawnReaper(): void;
+  teleportStairs(): void;
+  spawnRing(): void;
   giveWeapon(id: string): void;
   applyPotion(id: string): void;
   spawnEnemy(kind: string): void;
@@ -113,6 +115,15 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   gbtn("⬇️ Floor", actions.nextFloor);
   gbtn("👑 Boss Lv", actions.nextBoss);
   gbtn("☠ Reaper", actions.spawnReaper);
+  gbtn("⇩ Stairs", actions.teleportStairs);
+  gbtn("🎨 Ring", actions.spawnRing);
+
+  // ── Pixel FX toggles (moved off the old F/K/O keys) ──
+  section("PIXEL FX");
+  addToggle("QUANTIZE", () => state.quantize, (v) => { state.quantize = v; state.pixelPass?.setQuantize(v); });
+  addToggle("DITHER", () => state.dither, (v) => { state.dither = v; state.pixelPass?.setDither(v); });
+  addToggle("SCANLINE", () => state.scanline, (v) => { state.scanline = v; state.pixelPass?.setScanline(v); });
+  addToggle("OUTLINE", () => state.outline, (v) => { state.outline = v; state.pixelPass?.setOutline(v); });
 
   // ── Give weapon ──
   section("WEAPON");
