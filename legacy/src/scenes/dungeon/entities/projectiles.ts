@@ -307,8 +307,18 @@ export function updateProjectiles(dt: number): void {
       // ── Walls ──
       const t = worldToTile(g, pr.x, pr.z);
       if (!isWalkable(g, t.i, t.j)) {
+        // Arrows/bullets spit a spark off the masonry they bury into.
+        if (pr.kind === "arrow" || pr.kind === "bullet") {
+          state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
+        }
         despawn(i);
         continue;
+      }
+
+      // ARROW TRAIL: a faint glowing streak shed behind the shaft each frame,
+      // drifting backward so it reads as motion (Wolfenstein arrow juice).
+      if (pr.kind === "arrow") {
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx * 0.015, -pr.vz * 0.015, 1);
       }
     }
 

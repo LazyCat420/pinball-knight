@@ -68,30 +68,50 @@ Bounce-combo multiplier ✅ (window exists; no on-screen multiplier flash yet).
 
 ## 2. NOT built — the gap checklist
 
+> **STATUS UPDATE 3 (2026-07-16, later same day): an audit found the STATUS
+> UPDATE 2 "all built" claim was TRUE for parts/hazards/monsters/NPCs/coaster/
+> power-ups but OVERSTATED for generation, curved walls, and score glue. The
+> remaining genuine gaps have now been CLOSED — see the ✅(v3) marks below.**
+> Shipped this pass: **curved walls** (collision.computeArcCorners → per-corner
+> momentum bank, the deflector move on EVERY qualifying corner, + rendered
+> quarter-cylinder wedges in build.ts; guarded to ≥2×2 open pockets so 1-wide
+> bends never pinch); the missing prefabs — **Mirror Maze, Pit Room, S-Bend,
+> Squeeze, Boulevard** (maze/prefabs.ts) — plus **mirror variants** in the
+> shuffle bag (variantsOf: up to 8 orientations) and **connector-hallway
+> mini-challenges** (the squeeze's electric gauntlet, the boulevard's carom
+> island); **theme-driven enemy-ratio overrides** (FloorTheme.enemies →
+> themedHordePick, ~55% of the horde drawn from the biome's families); the
+> on-screen **×N bounce-combo flash** (ui.createComboFlash/flashBounceCombo,
+> the pinball twin of the FPS streak pop); and a **guaranteed bonus vault**
+> (grade S/A forces the +1 room to a vault via decorateMaze forceVault).
+> Verified: 263 tests pass, next build clean, headless boot renders with zero
+> console errors. Honest deviations noted inline.
+
 ### From the playtest asks
-- [ ] 🥊 **Boxing-glove walls** — wall-mounted piston gloves that punch you (and enemies) across the room
-- [ ] 🛢️ **Oil-spill floor boosters** — frictionless slicks: momentum preserved, steering nearly dead
-- [ ] 🎩 **The Magician** — periodic unkillable NPC that teleports you somewhere random and laughs
-- [ ] 🧩 **Prefab/component maze generation** — reusable room + hallway *shapes* with no-repeat variety (today: plain backtracker + 4 rect archetypes; hallways are all identical corridors)
-- [ ] ⌒ **Curved walls** — real pinball-machine arcs (today the *deflector part* fakes one corner; wall geometry is 100% boxes)
-- [ ] 🎢 **Trap doors → rollercoaster ramps** — floor doors that drop you onto a scripted high-speed rail ride
+- [x] 🥊 **Boxing-glove walls** ✅ · [x] 🛢️ **Oil-spill floor boosters** ✅ · [x] 🎩 **The Magician** ✅ · [x] 🎢 **Trap doors → rollercoaster ramps** ✅
+- [x] 🧩 **Prefab/component maze generation** ✅(v3) — stamp library + shuffle bag now carries mirror AND rotation variants, richer room + hallway shapes, connector mini-challenges. (Note: the 4 rect archetypes remain a separate carve/furnish path by design, not re-expressed as stamps.)
+- [x] ⌒ **Curved walls** ✅(v3) — every qualifying maze corner banks momentum leg→leg (return-lane sweep, speed intact) with a rendered quarter-cylinder wedge. HONEST NOTE: implemented as a point-trigger bank + visual wedge (the proven deflector model), NOT a naive circle-vs-arc SOLID — a 1-tile grid can't host a real corner fillet without pinching the 0.6-wide player.
 
 ### From the brainstorm (new, grouped by cost)
 **Parts/hazards** (cheap — the part seam already exists):
-- [ ] Spin pad (random-direction fling) · [ ] Slingshot gate (paired-bumper double-speed ping) · [ ] Flipper tiles · [ ] Target bullseyes (hit all 5 → door/prize) · [ ] Angle mirrors · [ ] Pit tile (reset + penalty) · [ ] Electric grid (rhythm floor) · [ ] Fire vents (timed jets) · [ ] Magnet strip (crawl zone)
+- [x] Spin pad ✅ · [x] Slingshot gate ✅ · [x] Flipper tiles ✅ · [x] Target bullseyes ✅ · [x] Angle mirrors ✅ · [x] Pit tile ✅ · [x] Electric grid ✅ · [x] Fire vents ✅ · [x] Magnet strip ✅
 
 **Monsters** (medium — EnemyKind seam exists):
-- [ ] Bumper Goblin (bounces YOU like a bumper) · [ ] Pinwheel Spinner (angle-dependent deflect) · [ ] Brick Golem (wall until speed-hit, shatters into ricochet shards) · [ ] Magnet Crawler (pulls you in) · [ ] Bowling Pin Crew (formation, chain knockback) · [ ] Web Spinner (slow webs, bumpers shake free) · [ ] Chomper Plant (corridor blocker) · [ ] Ghost materialize-window rule
+- [x] Bumper Goblin ✅ · [x] Brick Golem ✅ (5 shards, not 3) · [x] Magnet Crawler ✅ · [x] Bowling Pin Crew ✅ · [x] Web Spinner ✅ · [x] Chomper Plant ✅ · [x] Ghost materialize-window rule ✅ · (Pinwheel Spinner folded into the spinpad PART — no separate monster)
 
 **NPCs** (medium):
-- [ ] Magician · [ ] Speed Witch (HP-for-speed trade) · [ ] Oracle Frog (map peek in dead ends) · [ ] Rolling Cart Merchant (needs a shop system first — defer)
+- [x] Magician ✅ · [x] Speed Witch ✅ · [x] Oracle Frog ✅ (ember route-trail, not a HUD map) · [x] Rolling Cart Merchant ✅ (+ full shop overlay)
 
 **Generation** (big):
-- [ ] Prefab stamp library · [ ] Seeded floor themes (archetype pools per depth) · [ ] Connector-hallway mini-challenges · [ ] Boss antechamber before the stairs · [ ] Mirror Maze / Magician's Parlor / Slalom / Gauntlet / Pit Room archetypes
+- [x] Prefab stamp library ✅ · [x] Seeded floor themes ✅ · [x] Boss antechamber before the stairs ✅ (inline feature, not a stamp) · [x] Magician's Parlor / Slalom / Gauntlet ✅
+- [x] Connector-hallway mini-challenges ✅(v3) — squeeze (electric gauntlet), boulevard (carom island), S-bend (mirrored elbow)
+- [x] Mirror Maze ✅(v3) · [x] Pit Room ✅(v3)
+- Seeded floor themes now also override the enemy ratio ✅(v3) (FloorTheme.enemies)
 
 **Power-ups & score glue** (cheap-medium):
-- [ ] Iron Core (timed ram-damage buff) · [ ] Turbo Charge · [ ] Spring Legs (bounce restitution up) · [ ] Freeze Ray · [ ] Multi-Ball ghosts · [ ] On-screen multiplier flash + MULTIBALL FRENZY streak bonus · [ ] Floor score target → bonus room unlock
-- Curve Shot / Magnet Boots — defer (depend on magnets + projectile rework)
+- [x] Iron Core ✅ · [x] Turbo Charge ✅ · [x] Spring Legs ✅ · [x] Freeze Ray ✅ · [x] Multi-Ball ghosts ✅ · [x] Curve Shot ✅ · [x] Magnet Boots ✅ · [x] MULTIBALL FRENZY streak bonus ✅
+- [x] On-screen ×N multiplier flash ✅(v3) — a centred bounce-combo pop, escalating word + colour, fires once per combo step
+- [x] Floor score target → bonus room unlock ✅(v3) — grade S/A now guarantees a VAULT (forceVault). HONEST NOTE: still an extra *room*, not a literal locked door + key (that stays deferred as pure polish).
 
 ---
 
@@ -232,3 +252,44 @@ walkable tiles.
   every new part/monster/prefab from the fixed camera before calling it done.
 - Commit + push before any deploy; the tree must be clean (parallel sessions
   touch this repo).
+
+---
+
+## 5. Speed wall-breaking + Wolfenstein UI / control-fix plan (2026-07-16)
+
+### 5.0 Speed wall-breaking — BUILT
+Carry pinball momentum ≥ `WALL_BREAK_SPEED` (15 u/s, near ball-form / a hot
+part chain) into an ORDINARY wall that has a corridor on the far side and you
+KOOL-AID straight through it — your own shortcut. Guarded by `isBreakableWall`
+(never the outer shell, never a hole into dead rock) so the maze stays solvable.
+Wiring: `constants.WALL_BREAK_SPEED`/`WALL_BREAK_SPEED_COST` → `player.trySmashWallAhead`
+(sits right after the cracked-secret smash in `updatePinball`) → `secrets.smashWallAt`
+(opens the grid, pops the wall instance out of its `InstancedMesh` via the new
+`MazeHandle.wallAt` tile→instance map, bursts dust; no loot — the shortcut IS
+the reward). Cracked secret walls keep their lower bar (7) + loot payout.
+
+### 5.1 The pasted dev plan — PATHS CORRECTED
+> The external plan below referenced `src/objects/dungeon-game/`. That path does
+> NOT exist — the real code is **`src/scenes/dungeon/`**. Its control-bug
+> diagnoses (left/right inversion, aim) are hedged ("may be flipping", "if
+> needed"); the game currently renders + drives correctly in headless QA, so
+> those are to be EMPIRICALLY VERIFIED (drive keys, read `__dungeonPlayer`)
+> before any sign is flipped — a blind flip would introduce the very bug. The
+> Wolfenstein UI overhaul is a real, additive feature request.
+
+- **Bug 1 (left/right):** claim = `input.ts` MOVE_KEYS + `camera.ts`
+  `SCREEN_RIGHT_XZ`/`CAMERA_YAW` invert; also `render/animator.ts`
+  `facingFromVelocity` E/W. → verify before flipping.
+- **Bug 2 (aim):** ranged shots pull `FACING_VEC[p.facing]` (`entities/combat.ts`)
+  → `entities/projectiles.ts fireWeapon`. Verify direction post-move-fix.
+- **UI overhaul (`ui.ts` + `render/pixel-pass.ts`):** replace the top-left
+  gothic HUD with a full-width **bottom bar** (SCORE | HEALTH | AMMO), numeric
+  HP in a pixel font, "YOU ARE DEAD" game-over. (Aesthetic pivot from the
+  current Castlevania look — keep it behind the same `createHUD`/`updateHUD`
+  seam.)
+- **Weapon HUD (new `render/weapon-hud.ts`):** bottom-centre gun/bow sprite,
+  walk-bob, bow drawback on `attackT`, swaps on `state.activeSlot`.
+- **Arrow VFX (`render/vfx.ts` + `entities/projectiles.ts`):** a travelling
+  arrow trail hooked to bow fire.
+
+Implementation order: verify+fix controls → UI bar → weapon HUD → arrow VFX.

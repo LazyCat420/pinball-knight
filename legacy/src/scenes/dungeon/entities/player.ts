@@ -64,6 +64,8 @@ import {
   ARC_COOLDOWN,
   ARC_MIN_SPEED,
   SECRET_BREAK_SPEED,
+  WALL_BREAK_SPEED,
+  WALL_BREAK_SPEED_COST,
   OIL_RADIUS,
   OIL_LAUNCH_SPEED,
   OIL_LAUNCH_MULT,
@@ -136,7 +138,7 @@ import { moveCircle, wallContact } from "../collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { addGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
-import { smashSecretAt } from "../secrets";
+import { smashSecretAt, smashWallAt, isBreakableWall } from "../secrets";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
@@ -836,6 +838,26 @@ function trySmashAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number
   return false;
 }
 
+/**
+ * At TERMINAL speed (≥ WALL_BREAK_SPEED) an ordinary wall gives too — but only
+ * where there's a corridor on the far side (isBreakableWall), so you punch a
+ * shortcut, never a hole into dead rock or through the outer shell. Same probe
+ * as trySmashAhead. Returns true if a wall broke (caller barrels through).
+ */
+function trySmashWallAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number, blockedX: boolean, blockedZ: boolean): boolean {
+  if (blockedX) {
+    const ddx = Math.sign(dirX);
+    const t = worldToTile(g, x + ddx * (PLAYER_R + 0.12), z);
+    if (isBreakableWall(g, t.i, t.j, ddx, 0) && smashWallAt(t.i, t.j)) return true;
+  }
+  if (blockedZ) {
+    const ddz = Math.sign(dirZ);
+    const t = worldToTile(g, x, z + ddz * (PLAYER_R + 0.12));
+    if (isBreakableWall(g, t.i, t.j, 0, ddz) && smashWallAt(t.i, t.j)) return true;
+  }
+  return false;
+}
+
 // ── Trapdoor rollercoaster (Wave D) ─────────────────────────────────────────
 // A trapdoor doesn't teleport — it RIDES: a Catmull-Rom spline flown OVER the
 // maze walls (so no collision question exists), control locked, i-frames on,
@@ -1034,6 +1056,16 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // slice of speed on the masonry. Still a combo tick: smashing IS style.
     if (p.momSpeed >= SECRET_BREAK_SPEED && trySmashAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       p.momSpeed *= 0.85;
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      syncActorMesh(p);
+      return true;
+    }
+    // KOOL-AID: at terminal speed you punch through an ORDINARY wall into the
+    // corridor behind it — your own shortcut. Costs a big slice of speed so it
+    // can't chew a straight line across the whole floor.
+    if (p.momSpeed >= WALL_BREAK_SPEED && trySmashWallAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+      p.momSpeed *= WALL_BREAK_SPEED_COST;
       p.bounceCombo += 1;
       p.bounceComboT = PINBALL_COMBO_WINDOW;
       syncActorMesh(p);

@@ -9,8 +9,9 @@
  * masonry bursts, and the wall pays out loot. Kept out of player.ts so the
  * physics code stays physics.
  */
+import * as THREE from "three";
 import { state } from "./state";
-import { T_FLOOR, setTile, tileCenter } from "./maze/generator";
+import { type Grid, T_FLOOR, T_WALL, at, isWalkable, setTile, tileCenter } from "./maze/generator";
 import { createStaticSprite } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
@@ -81,5 +82,61 @@ export function smashSecretAt(i: number, j: number): boolean {
   }
 
   showToast("SECRET WALL SMASHED", "the masonry pays out · a shortcut opens");
+  return true;
+}
+
+// A hidden matrix: parked far below the floor + collapsed to nothing, so a
+// single wall instance vanishes from its InstancedMesh without a rebuild.
+const HIDDEN = new THREE.Matrix4().compose(
+  new THREE.Vector3(0, -1000, 0),
+  new THREE.Quaternion(),
+  new THREE.Vector3(0.0001, 0.0001, 0.0001),
+);
+
+/**
+ * True if tile (i,j) is an ordinary wall a fast enough player may KOOL-AID
+ * through: solid, not a border tile, not a cracked secret band (those have
+ * their own richer smash), and — travelling (ddx,ddz) — with FLOOR one tile
+ * beyond, so a smash always breaks INTO a corridor, never into dead rock or
+ * through the outer shell. This keeps the maze solvable + bounded.
+ */
+export function isBreakableWall(g: Grid, i: number, j: number, ddx: number, ddz: number): boolean {
+  if (i <= 0 || j <= 0 || i >= g.w - 1 || j >= g.h - 1) return false; // never the shell
+  if (at(g, i, j) !== T_WALL) return false; // floor/stairs/cracked handled elsewhere
+  return isWalkable(g, i + Math.sign(ddx), j + Math.sign(ddz)); // open space behind it
+}
+
+/**
+ * Smash an ordinary wall tile (i,j): open the grid, pop its wall instance out
+ * of the InstancedMesh, burst masonry dust. No loot (that's the secret wall's
+ * payoff) — the reward here is the shortcut itself. Returns true if it broke.
+ */
+export function smashWallAt(i: number, j: number): boolean {
+  const g = state.grid;
+  const maze = state.maze;
+  if (!g || !maze) return false;
+  if (at(g, i, j) !== T_WALL) return false;
+
+  setTile(g, i, j, T_FLOOR);
+  state.flowTimer = 0; // let the horde re-path through the new gap immediately
+
+  const inst = maze.wallAt.get(`${i},${j}`);
+  if (inst) {
+    inst.mesh.setMatrixAt(inst.index, HIDDEN);
+    inst.mesh.instanceMatrix.needsUpdate = true;
+    maze.wallAt.delete(`${i},${j}`);
+  }
+
+  const c = tileCenter(g, i, j);
+  for (let k = 0; k < 7; k++) {
+    const ox = (Math.random() - 0.5) * 1.4;
+    const oz = (Math.random() - 0.5) * 1.4;
+    state.vfx?.dust(c.x + ox, 0.1 + Math.random() * 0.6, c.z + oz);
+  }
+  state.vfx?.sparks(c.x, 0.5, c.z, 0, 0, 14);
+  state.shakeT = Math.max(state.shakeT, 0.28);
+  state.hitstopT = Math.max(state.hitstopT, 0.06);
+  sfxBreak();
+  sfxHeavy();
   return true;
 }

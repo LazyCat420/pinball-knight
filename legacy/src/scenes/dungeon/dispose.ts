@@ -107,6 +107,8 @@ export function disposeAll(): void {
   state.shopEl?.remove();
   state.hudEl?.remove();
   state.fpsOverlayEl?.remove();
+  state.comboFlashEl?.remove();
+  state.weaponHud?.dispose();
   state.bossBarEl?.remove();
   state.container?.remove();
   // The FPS perspective camera holds no GPU resources of its own — just drop it.

@@ -19,46 +19,67 @@ const SERIF = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 /** Big display face for the depth-title toast — tracked mono, small-caps. */
 const DISPLAY = `900 34px ui-monospace, "SF Mono", Menlo, monospace`;
 
+// ── Wolfenstein HUD faces (2026-07-16 overhaul) ──────────────────────────────
+// Blocky pixel labels + a tall pixel numeral face, both from Google Fonts with
+// a hard monospace fallback so an offline / NAS boot still reads cleanly (no
+// blank flash — the fallback shows immediately, the pixel font swaps in if it
+// loads). Injected once by ensureWolfFonts().
+const WOLF_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
+const WOLF_NUM = `'VT323', 'Courier New', ui-monospace, monospace`;
+
+let wolfFontsInjected = false;
+function ensureWolfFonts(): void {
+  if (wolfFontsInjected || typeof document === "undefined") return;
+  wolfFontsInjected = true;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap";
+  document.head.appendChild(link);
+}
+
+// Wolfenstein concrete palette — dark steel with a gold rivet line, sharp text.
+const WOLF_BG = "linear-gradient(180deg, #24262e 0%, #14151a 60%, #0b0c10 100%)";
+const WOLF_TOP = "linear-gradient(90deg,#3a3f4b,#8a94a6 50%,#3a3f4b)"; // rivet ridge
+
 /**
- * The gothic frame (Phase 4): a carved-stone panel with a gold fillet line
- * and diamond finials on the corners. All done with stacked box-shadows and
- * four absolutely-positioned corner glyphs — no images, palette colours only.
+ * The Wolfenstein status bar (2026-07-16 overhaul): a full-width dark-steel
+ * panel bolted to the bottom of the screen with a riveted top edge, holding
+ * SCORE · DEPTH/KILLS · HEALTH · AMMO · WEAPON in blocky pixel type. A thin
+ * strip above the columns carries the live gameplay rails (sprint spool,
+ * overcharge, buffs, rampage) that the gothic panel used to stack — nothing
+ * is dropped, it just lies flat. updateHUD fills #dungeon-hud-body each frame.
  */
 export function createHUD(container: HTMLElement): HTMLDivElement {
+  ensureWolfFonts();
   const el = document.createElement("div");
   el.id = "dungeon-hud";
   el.style.cssText = `
-    position: fixed; left: 14px; top: 12px; z-index: 10001;
-    font: ${FONT}; line-height: 1.75; letter-spacing: 1px;
-    color: #c8ccd4; text-shadow: 1px 1px 0 #0b0d12;
-    background:
-      linear-gradient(160deg, rgba(43, 48, 59, 0.55), rgba(11, 13, 18, 0.82) 55%);
-    border: 1px solid #454f5e;
-    box-shadow:
-      inset 0 0 0 2px #0b0d12,
-      inset 0 0 0 3px #6b4a2e,
-      0 0 0 2px #0b0d12,
-      0 4px 14px rgba(0, 0, 0, 0.6);
-    padding: 12px 16px; min-width: 180px;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10001;
+    font: ${WOLF_LABEL}; color: #e8ebf0;
+    background: ${WOLF_BG};
+    border-top: 3px solid transparent;
+    border-image: ${WOLF_TOP} 1;
+    box-shadow: 0 -2px 0 #0b0c10, 0 -6px 16px rgba(0,0,0,0.6), inset 0 3px 0 rgba(255,255,255,0.04);
     pointer-events: none; user-select: none;
   `;
-  // Diamond finials pinned to the corners of the gold fillet.
-  for (const [cx, cy] of [["-5px", "-5px"], ["-5px", ""], ["", "-5px"], ["", ""]] as const) {
-    const pip = document.createElement("div");
-    pip.style.cssText = `
-      position: absolute; width: 8px; height: 8px;
-      ${cx ? `left:${cx}` : "right:-5px"}; ${cy ? `top:${cy}` : "bottom:-5px"};
-      background: #f0a63c; border: 1px solid #0b0d12;
-      transform: rotate(45deg);
-      box-shadow: inset 1px 1px 0 #ffd98a;
-    `;
-    el.appendChild(pip);
-  }
+  // The gold rivet hairline just under the steel ridge.
+  const rivet = document.createElement("div");
+  rivet.style.cssText = `position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,#6b4a2e 20%,#f0a63c 50%,#6b4a2e 80%,transparent);`;
+  el.appendChild(rivet);
   const body = document.createElement("div");
   body.id = "dungeon-hud-body";
   el.appendChild(body);
   container.appendChild(el);
   return el;
+}
+
+/** A labelled Wolfenstein column: small pixel caption over a tall value. */
+function wolfCell(label: string, value: string, color: string): string {
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:0 4px">
+      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">${label}</div>
+      <div style="font:${WOLF_NUM};font-size:30px;line-height:0.8;color:${color};text-shadow:2px 2px 0 #0b0c10;white-space:nowrap">${value}</div>
+    </div>`;
 }
 
 /**
@@ -151,6 +172,59 @@ export function updateFpsStreak(el: HTMLDivElement | null, streak: number): void
 /** Show/hide the rampage overlay. */
 export function setFpsOverlay(el: HTMLDivElement | null, on: boolean): void {
   if (el) el.style.display = on ? "block" : "none";
+}
+
+/** Escalating word + colour for the on-screen bounce-combo flash. */
+const COMBO_RANKS: Array<[number, string, string]> = [
+  [2, "COMBO", "#ffd23f"],
+  [4, "NICE", "#8fc46b"],
+  [6, "SLICK", "#6fd0e8"],
+  [9, "WILD", "#f0a63c"],
+  [13, "INSANE", "#d95763"],
+];
+
+/**
+ * A centred "×N" flash that pops on every bounce-combo STEP (the pinball
+ * counterpart to the FPS kill-streak readout). Built once; flashBounceCombo
+ * pops + fades it. Kept separate from the HUD's static combo tag so each fresh
+ * bounce actually reads as an escalating hit, not a quiet number ticking up.
+ */
+export function createComboFlash(container: HTMLElement): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = "dungeon-combo-flash";
+  el.style.cssText = `
+    position: fixed; left: 50%; top: 122px; transform: translateX(-50%) scale(1);
+    z-index: 10001; text-align: center; opacity: 0; display: none;
+    pointer-events: none; user-select: none;
+    font: 900 46px ui-monospace, "SF Mono", Menlo, monospace;
+    text-shadow: 0 0 14px rgba(255,210,63,0.8), 2px 2px 0 #0b0d12; line-height: 0.9;
+  `;
+  container.appendChild(el);
+  return el;
+}
+
+let comboFlashTimer = 0;
+export function flashBounceCombo(el: HTMLDivElement | null, combo: number): void {
+  if (!el || combo < 2) return;
+  let word = "COMBO";
+  let color = "#ffd23f";
+  for (const [n, w, c] of COMBO_RANKS) {
+    if (combo >= n) { word = w; color = c; }
+  }
+  el.style.color = color;
+  el.innerHTML = `<div style="font-size:46px">×${combo}</div><div style="font-size:18px;letter-spacing:3px">${word}</div>`;
+  el.style.display = "block";
+  el.style.transition = "none";
+  el.style.opacity = "1";
+  el.style.transform = `translateX(-50%) scale(${Math.min(1.7, 1.25 + combo * 0.03)})`;
+  requestAnimationFrame(() => {
+    el.style.transition = "transform 0.16s ease-out, opacity 0.5s ease-out 0.22s";
+    el.style.transform = "translateX(-50%) scale(1)";
+    el.style.opacity = "0";
+  });
+  // Hide after the fade so a stale flash can't linger over the next floor.
+  window.clearTimeout(comboFlashTimer);
+  comboFlashTimer = window.setTimeout(() => { el.style.display = "none"; }, 800);
 }
 
 /**
@@ -259,36 +333,26 @@ export function updateHUD(el: HTMLDivElement): void {
         ? `<div style="font-size:9px;letter-spacing:1px;color:#ffd23f;font-weight:900">×${combo} BOUNCE COMBO</div>`
         : "";
 
-  // Two hand slots — the active one is arrowed and bright, ranged weapons
-  // show an ammo count instead of a wear meter.
-  const weaponRows = Array.from({ length: WEAPON_SLOTS }, (_, slot) => {
-    const held = state.weaponSlots[slot];
-    const active = slot === state.activeSlot;
-    const marker = active ? `<span style="color:#f0a63c">▶</span>` : `<span style="color:#2b303b">${slot + 1}</span>`;
-    if (!held) {
-      const label = active ? `✊ Fists <span style="color:#6b7688">unbreakable</span>` : `<span style="color:#454f5e">— empty —</span>`;
-      return `<div${active ? "" : ' style="color:#454f5e"'}>${marker} ${label}</div>`;
-    }
-    const w = WEAPONS[held.id as WeaponId];
-    const detail =
-      w.kind === "ranged"
-        ? `<span style="color:${active ? "#ffd98a" : "#6b7688"}">×${held.durability}</span> ${meter(held.durability, w.maxDurability, active ? "#f0a63c" : "#6b7688", 6)}`
-        : meter(held.durability, w.maxDurability, active ? "#f0a63c" : "#6b7688");
-    return `<div${active ? "" : ' style="color:#6b7688"'}>${marker} ${w.icon} ${w.label.padEnd(7)} ${detail}</div>`;
-  }).join("");
+  // The ACTIVE weapon → the AMMO + WEAPON columns. Ranged shows real ammo,
+  // melee shows remaining durability (its "shots"), fists are unbreakable (∞).
+  const activeHeld = state.weaponSlots[state.activeSlot];
+  const activeW = activeHeld ? WEAPONS[activeHeld.id as WeaponId] : null;
+  const ammoVal = activeHeld ? `${activeHeld.durability}` : "∞";
+  const ammoColor = !activeHeld ? "#8fc46b" : activeHeld.durability <= 3 ? "#d95763" : activeW?.kind === "ranged" ? "#ffd98a" : "#c8ccd4";
+  const weaponName = activeW ? `${activeW.icon} ${activeW.label.toUpperCase()}` : "✊ FISTS";
+  // The other slot, shown small so a swap (1/2) still reads.
+  const otherSlot = 1 - state.activeSlot;
+  const otherHeld = state.weaponSlots[otherSlot];
+  const otherW = otherHeld ? WEAPONS[otherHeld.id as WeaponId] : null;
+  const swapChip = `<span style="color:#5a6270">[${otherSlot + 1}] ${otherW ? otherW.icon + " " + otherW.label : "—"}</span>`;
 
-  const gearRows = GEAR_SLOTS.map((slot) => {
+  // Worn gear (helmet/armor/boots) → a compact icon strip in the WEAPON cell.
+  const gearChips = GEAR_SLOTS.map((slot) => {
     const def = GEAR[slot];
     const dur = state.gear[slot];
-    if (dur === undefined) {
-      return `<div style="color:#454f5e">${def.icon} ${def.label.padEnd(7)} — none —</div>`;
-    }
-    const detail =
-      def.absorb > 0
-        ? meter(dur, def.absorb, "#8a94a6", def.absorb)
-        : `<span style="color:#8fc46b">+speed</span>`;
-    return `<div>${def.icon} ${def.label.padEnd(7)} ${detail}</div>`;
-  }).join("");
+    if (dur === undefined) return "";
+    return def.absorb > 0 ? `${def.icon}${dur}` : `${def.icon}`;
+  }).filter(Boolean).join(" ");
 
   // Active potion buffs, with a ticking seconds countdown. Only shown while
   // one is running, so the HUD stays quiet the rest of the time.
@@ -315,46 +379,61 @@ export function updateHUD(el: HTMLDivElement): void {
       ? `<div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Targets</span> <span style="color:${state.targetsHit >= state.targetsTotal ? "#8fc46b" : "#d95763"}">🎯 ${state.targetsHit}/${state.targetsTotal}</span></div>`
       : "";
 
-  // RAMPAGE meter: a charge bar that fills from kills. When full, a pulsing
-  // "READY" hint invites the R key; while active, a countdown.
+  // RAMPAGE: a compact charge chip for the top strip (the old panel had a full
+  // bar; here it's one rail among many).
   const pct = Math.round(state.ultCharge * 100);
   const full = state.ultCharge >= 1;
-  const ultLabel = state.fpsActive
+  const ultChip = state.fpsActive
     ? `<span style="color:#d95763">🔫 RAMPAGE ${Math.ceil(state.fpsTimer)}s</span>`
     : full
-      ? `<span style="color:#ffd98a;animation:pulse 0.8s infinite">🔫 RAMPAGE — press R</span>`
-      : `<span style="color:#6b7688;font-variant:small-caps">Rampage</span>`;
-  const ultBar = state.fpsActive
-    ? ""
-    : `<div style="height:5px;margin-top:2px;background:#2b303b;border:1px solid #454f5e">
-         <div style="height:100%;width:${pct}%;background:${full ? "#f0a63c" : "#a83244"}"></div>
-       </div>`;
-  const ultRow = `<div style="font:${SERIF};letter-spacing:1px;margin-top:3px">${ultLabel}</div>${ultBar}`;
+      ? `<span style="color:#ffd98a;animation:pulse 0.8s infinite">🔫 RAMPAGE — R</span>`
+      : `<span style="color:#6b7688">🔫 ${pct}%</span>`;
 
-  // A carved rule with a diamond stud — the section divider.
-  const rule = `
-    <div style="display:flex;align-items:center;gap:6px;margin:7px 0 5px">
-      <span style="flex:1;height:1px;background:linear-gradient(90deg,transparent,#454f5e)"></span>
-      <span style="width:5px;height:5px;background:#6b4a2e;transform:rotate(45deg);box-shadow:inset 1px 1px 0 #f0a63c"></span>
-      <span style="flex:1;height:1px;background:linear-gradient(90deg,#454f5e,transparent)"></span>
+  // HEALTH cell: a big Wolfenstein numeric %, red at low HP, hearts beneath.
+  const hpPct = Math.round((hp / PLAYER_MAX_HP) * 100);
+  const hpColor = hp <= 1 ? "#d95763" : hp <= 2 ? "#f0a63c" : "#8fc46b";
+  const healthCell = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px">
+      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">HEALTH</div>
+      <div style="font:${WOLF_NUM};font-size:32px;line-height:0.7;color:${hpColor};text-shadow:2px 2px 0 #0b0c10">${hpPct}%</div>
+      <div style="font-size:11px;letter-spacing:1px;margin-top:3px">${hearts}</div>
     </div>`;
+
+  // WEAPON cell: icon + name, with the swap chip + worn gear beneath.
+  const weaponCell = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px">
+      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">WEAPON</div>
+      <div style="font:${WOLF_LABEL};font-size:11px;color:#e8ebf0;text-shadow:1px 1px 0 #0b0c10;white-space:nowrap">${weaponName}</div>
+      <div style="font:${SERIF};font-size:10px;margin-top:5px;color:#8a94a6">${swapChip}${gearChips ? `&nbsp;&nbsp;${gearChips}` : ""}</div>
+    </div>`;
+
+  const sep = `<div style="width:2px;align-self:stretch;margin:8px 0;background:linear-gradient(180deg,transparent,#3a3f4b 50%,transparent)"></div>`;
+  // Thin labelled rail wrapper for the strip (empty inner → nothing shown).
+  const railSeg = (label: string, inner: string): string =>
+    inner ? `<div style="min-width:78px"><span style="color:#5a6270;font-size:8px;letter-spacing:1px">${label}</span>${inner}</div>` : "";
 
   const body = (el.querySelector("#dungeon-hud-body") as HTMLDivElement) ?? el;
   body.innerHTML = `
-    <div style="font-size:17px;letter-spacing:3px;text-shadow:0 0 6px rgba(217,87,99,0.5),1px 1px 0 #0b0d12">${hearts}</div>
-    ${spoolRow}
-    ${overRow}
-    <div style="margin-top:3px">${weaponRows}</div>
-    ${rule}
-    ${gearRows}
-    ${rule}
-    <div style="font:${SERIF};letter-spacing:2px">
-      <span style="color:#6b7688;font-variant:small-caps">Depth</span> <span style="color:#f0a63c">${state.level}</span>
-      &nbsp;<span style="color:#6b7688;font-variant:small-caps">Kills</span> <span style="color:#8fc46b">${state.kills}</span></div>
-    <div style="font:${SERIF};letter-spacing:2px"><span style="color:#6b7688;font-variant:small-caps">Gold</span> <span style="color:#ffd98a">${state.goldRun}</span></div>
-    ${targetsRow}
-    ${buffRow}
-    ${ultRow}
+    <div style="display:flex;align-items:center;gap:14px;padding:5px 18px 0;min-height:16px;font:${SERIF};font-size:10px;letter-spacing:1px;color:#c8ccd4;overflow:hidden">
+      ${ultChip}
+      ${targetsRow}
+      ${buffRow}
+      <div style="flex:1"></div>
+      ${railSeg("SPRINT", spoolRow)}
+      ${railSeg("CHARGE", overRow)}
+    </div>
+    <div style="display:flex;align-items:stretch;justify-content:center;gap:4px;padding:4px 18px 10px;max-width:1120px;margin:0 auto">
+      ${wolfCell("SCORE", `${state.goldRun}`, "#ffd98a")}
+      ${sep}
+      ${wolfCell("DEPTH", `${state.level}`, "#f0a63c")}
+      ${wolfCell("KILLS", `${state.kills}`, "#8fc46b")}
+      ${sep}
+      ${healthCell}
+      ${sep}
+      ${wolfCell("AMMO", ammoVal, ammoColor)}
+      ${sep}
+      ${weaponCell}
+    </div>
   `;
 }
 
@@ -434,12 +513,13 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
     padding: 10px 26px; margin: 6px; cursor: pointer;
   `;
 
+  ensureWolfFonts();
   el.innerHTML = `
-    <div style="font-size:44px;letter-spacing:10px;color:#d95763;text-shadow:3px 3px 0 #0b0d12">YOU DIED</div>
-    <div style="margin:18px 0 26px">
+    <div style="font:${WOLF_LABEL};font-size:40px;line-height:1.3;color:#d95763;text-shadow:4px 4px 0 #0b0d12;text-align:center">YOU ARE<br>DEAD</div>
+    <div style="font:${WOLF_NUM};font-size:26px;letter-spacing:2px;margin:22px 0 26px;color:#c8ccd4">
       DEPTH <span style="color:#f0a63c">${state.level}</span>
       &nbsp;·&nbsp; KILLS <span style="color:#8fc46b">${state.kills}</span>
-      &nbsp;·&nbsp; GOLD KEPT <span style="color:#ffd98a">${state.goldRun}</span>
+      &nbsp;·&nbsp; GOLD <span style="color:#ffd98a">${state.goldRun}</span>
     </div>
   `;
 

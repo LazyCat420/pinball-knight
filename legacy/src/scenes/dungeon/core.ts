@@ -34,7 +34,8 @@ import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusio
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, flashBounceCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { createWeaponHud, updateWeaponHud } from "./render/weapon-hud";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
@@ -476,6 +477,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   // ── HUD + input ──
   state.hudEl = createHUD(state.container);
   state.fpsOverlayEl = createFpsOverlay(state.container);
+  state.comboFlashEl = createComboFlash(state.container);
+  state.weaponHud = createWeaponHud(state.container);
   state.bossBarEl = createBossBar(state.container);
   state.input = createInput(state.container);
   showControlsHint(state.container);
@@ -809,6 +812,7 @@ function startLevel(level: number): void {
     targets: TARGETS_PER_FLOOR,
     trapdoors: TRAPDOORS_PER_FLOOR,
     hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
+    forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
   });
 
   state.grid = grid;
@@ -1668,6 +1672,17 @@ function loop(now: number): void {
     state.hudDirty = false;
     updateHUD(state.hudEl);
   }
+
+  // Weapon view-model (bottom-centre): bob + attack pose. Real frame time so
+  // it keeps animating through a hit-freeze, like the other presentation.
+  if (state.weaponHud) updateWeaponHud(state.weaponHud, frame);
+
+  // Score glue: pop the centred ×N flash on every fresh bounce-combo STEP,
+  // wherever the increment came from (wall, part, arc, ram) — a rising count
+  // is the signal. It resets to 0 on lapse, which just arms the next flash.
+  const combo = p?.bounceCombo ?? 0;
+  if (combo > state.prevBounceCombo && combo >= 2) flashBounceCombo(state.comboFlashEl, combo);
+  state.prevBounceCombo = combo;
 
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");

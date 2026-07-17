@@ -582,6 +582,15 @@ export const ROOMS_MAX = 5; // …capped
  * Cracked bands glint gold so an observant player can hunt them.
  */
 export const SECRET_BREAK_SPEED = 7; // u/s of momentum needed to smash through
+/**
+ * ORDINARY walls also give at TERMINAL speed — carry ≥ this (near ball-form /
+ * a hot part chain) into any non-shell wall with a corridor behind it and you
+ * KOOL-AID straight through, opening your own shortcut. Set high so it's a
+ * reward for a great line, not the default way to travel; the smash costs a
+ * big slice of speed so you can't chew a straight line across the whole floor.
+ */
+export const WALL_BREAK_SPEED = 15;
+export const WALL_BREAK_SPEED_COST = 0.7; // momentum kept after punching masonry
 export const SECRETS_BASE = 2; // cracked walls on level 1
 export const SECRETS_PER_LEVEL = 0.5;
 export const SECRETS_MAX = 5;

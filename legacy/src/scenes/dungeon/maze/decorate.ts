@@ -235,12 +235,17 @@ function furnishRooms(
   rooms: Room[],
   rng: () => number,
   start: TilePos,
+  forceVault = false,
 ): { rooms: PlannedRoom[]; spawns: TilePos[]; items: ItemDrop[]; parts: PinballPartSpot[] } {
   const planned: PlannedRoom[] = [];
   const spawns: TilePos[] = [];
   const items: ItemDrop[] = [];
   const parts: PinballPartSpot[] = [];
   const deal = shuffled<RoomArchetype>(["bumper", "speedway", "arena", "vault"], rng);
+  // A bonus floor earns a GUARANTEED vault: the last-carved room (the +1 the
+  // grade unlocked in core.ts) is dealt vault outright, bypassing the deal and
+  // the doorstep demotion so the reward always actually shows up.
+  const vaultRoom = forceVault && rooms.length ? rooms.length - 1 : -1;
 
   rooms.forEach((room, k) => {
     let kind = deal[k % deal.length];
@@ -250,6 +255,7 @@ function furnishRooms(
     if ((kind === "arena" || kind === "vault") && Math.abs(cx - start.i) + Math.abs(cy - start.j) < 10) {
       kind = "bumper";
     }
+    if (k === vaultRoom) kind = "vault"; // the guaranteed bonus vault
     planned.push({ ...room, kind });
 
     const part = (p: Omit<PinballPartSpot, "dir2I" | "dir2J">): void => {
@@ -314,7 +320,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -350,7 +356,7 @@ export function decorateMaze(
   // the general placement (and its spacing rules) works around it. General
   // placement also stays OUT of room interiors — each room is its archetype's
   // set piece, not another stretch of corridor. ──
-  const furnished = furnishRooms(rooms, rng, start);
+  const furnished = furnishRooms(rooms, rng, start, extras.forceVault);
   const inRoom = (p: TilePos): boolean =>
     rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
 

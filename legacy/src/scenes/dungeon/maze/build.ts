@@ -653,6 +653,9 @@ export interface MazeHandle {
    * they're smashed; geometry/materials stay tracked for level disposal.
    */
   secrets: Array<{ i: number; j: number; x: number; z: number; mesh: THREE.Object3D }>;
+  /** Tile "i,j" → the wall InstancedMesh + instance index drawing it, so a
+   * high-speed smash can hide one wall at runtime (secrets.ts smashWallAt). */
+  wallAt: Map<string, { mesh: THREE.InstancedMesh; index: number }>;
   dispose(): void;
 }
 
@@ -688,9 +691,9 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // ── Walls — sort into full (back) and low (camera-side rim) ──
   // Only wall tiles with at least one walkable neighbour (8-way) get an
   // instance: a wall buried inside a solid block can never be seen.
-  const fullCells: Array<{ x: number; z: number }> = [];
-  const mossCells: Array<{ x: number; z: number }> = [];
-  const lowCells: Array<{ x: number; z: number }> = [];
+  const fullCells: Array<{ x: number; z: number; i: number; j: number }> = [];
+  const mossCells: Array<{ x: number; z: number; i: number; j: number }> = [];
+  const lowCells: Array<{ x: number; z: number; i: number; j: number }> = [];
   const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
@@ -710,7 +713,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       // south-east, so a wall occludes corridors to its NORTH and WEST. Floor
       // on either of those sides makes this a camera-side rim → knee-high.
       const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
-      const c = tileCenter(grid, i, j);
+      const cc = tileCenter(grid, i, j);
+      const c = { x: cc.x, z: cc.z, i, j };
       if (rim) {
         lowCells.push(c);
       } else if ((i * 7 + j * 13) % 4 === 0) {
@@ -736,7 +740,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     }),
   );
 
-  const addWallMesh = (cells: Array<{ x: number; z: number }>, height: number, mossy: boolean): void => {
+  // Tile → the wall instance drawing it, so a high-speed smash (secrets.ts
+  // smashWallAt) can pop a single wall out of its InstancedMesh at runtime.
+  const wallAt = new Map<string, { mesh: THREE.InstancedMesh; index: number }>();
+
+  const addWallMesh = (cells: Array<{ x: number; z: number; i: number; j: number }>, height: number, mossy: boolean): void => {
     if (!cells.length) return;
     const low = height < 0.6;
     // Faces stretch their square texture over the (slightly non-1) wall height
@@ -769,6 +777,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     cells.forEach((c, k) => {
       m.setPosition(c.x, height / 2, c.z);
       mesh.setMatrixAt(k, m);
+      wallAt.set(`${c.i},${c.j}`, { mesh, index: k });
     });
     mesh.instanceMatrix.needsUpdate = true;
     group.add(mesh);
@@ -1085,6 +1094,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     lightPool,
     flames,
     secrets,
+    wallAt,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());

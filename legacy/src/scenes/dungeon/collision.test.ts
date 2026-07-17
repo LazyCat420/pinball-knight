@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { type Grid, T_FLOOR, T_WALL, tileCenter } from "./maze/generator";
+import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable } from "./maze/generator";
+import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./collision";
 
 /** A 7x5 room: solid border, open interior, one pillar at (3,2). */
@@ -118,6 +119,29 @@ describe("computeArcCorners (curved walls)", () => {
       // The two legs are perpendicular (a genuine corner, not a straight).
       expect(Math.abs(a.d1x * a.d2x + a.d1z * a.d2z)).toBe(0);
     }
+  });
+});
+
+describe("computeArcCorners on real generated mazes", () => {
+  it("produces valid banks across depths (each on a floor tile with the right L)", () => {
+    let totalArcs = 0;
+    for (let level = 1; level <= 8; level++) {
+      const rng = mulberry32(level * 2654435761);
+      const raw = generateMaze(21, 15, rng);
+      stampPrefabs(raw, rng, 4, themeFor(level));
+      const g = thickenWalls(raw);
+      const arcs = computeArcCorners(g);
+      totalArcs += arcs.length;
+      for (const a of arcs) {
+        const i = Math.round(a.cx + g.w / 2 - 0.5);
+        const j = Math.round(a.cz + g.h / 2 - 0.5);
+        expect(isWalkable(g, i, j)).toBe(true); // the crook tile is floor
+        // Both open legs point to floor; both wall dirs point to wall.
+        expect(isWalkable(g, i + a.d1x, j + a.d1z)).toBe(true);
+        expect(isWalkable(g, i + a.d2x, j + a.d2z)).toBe(true);
+      }
+    }
+    expect(totalArcs).toBeGreaterThan(0); // the feature isn't dead on real maps
   });
 });
 
