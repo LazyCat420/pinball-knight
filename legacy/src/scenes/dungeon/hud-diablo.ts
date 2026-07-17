@@ -25,7 +25,7 @@ import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
 import { ensureWolfFonts } from "./ui";
 
-const GLOBE_PX = 84; // globe canvas backing size
+const GLOBE_PX = 30; // globe canvas backing size — small so it upscales to CHUNKY pixels
 
 // Pixel typography, shared with the Wolf bar.
 const PX_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
@@ -57,11 +57,12 @@ export function rippleGlobe(which: "life" | "mana"): void {
   else manaRippleT = 0.5;
 }
 
-// Flat DOS-steel, gold rivet line — matches the Wolf bar's palette.
-const STONE_BG = "linear-gradient(180deg,#24262e 0%,#16171d 60%,#0b0c10 100%)";
-const BRONZE = "linear-gradient(90deg,#3a2a18,#a97a3c 50%,#3a2a18)";
-// A hard pixel bevel: bright top-left, dark bottom-right, no blur.
-const BEVEL = "inset 2px 2px 0 rgba(255,220,150,0.14), inset -2px -2px 0 rgba(0,0,0,0.65)";
+// FLAT DOS-steel panel (no gradient — gradients read "flash game"), gold rivet.
+const STONE_BG = "#14151b";
+const CELL_BG = "#211d16"; // flat segment/tile fill
+const BRONZE = "linear-gradient(90deg,#3a2a18,#a97a3c 50%,#3a2a18)"; // top rivet only
+// A hard 2-tone pixel bevel: bright top-left edge, dark bottom-right edge.
+const BEVEL = "inset 2px 2px 0 rgba(230,200,140,0.22), inset -2px -2px 0 rgba(0,0,0,0.7)";
 
 /** Build the Diablo panel once and mount the shared face into its centre. */
 export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
@@ -199,8 +200,7 @@ function withLabel(label: string, inner: HTMLElement): HTMLDivElement {
 function segmentBox(inner: HTMLElement): HTMLDivElement {
   const box = document.createElement("div");
   box.style.cssText = `display:flex;align-items:center;justify-content:center;padding:5px 9px;
-    border:2px solid #5a4a2c;box-shadow:${BEVEL};
-    background:linear-gradient(180deg,rgba(38,34,26,0.5),rgba(13,11,9,0.55))`;
+    border:2px solid #5a4a2c;box-shadow:${BEVEL};background:${CELL_BG}`;
   box.appendChild(inner);
   return box;
 }
@@ -240,8 +240,7 @@ function makeFaceFrame(): HTMLDivElement {
 function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; wrap: HTMLDivElement } {
   const wrap = document.createElement("div");
   wrap.style.cssText = `position:relative;width:42px;height:42px;
-    background:linear-gradient(180deg,#26221c,#0d0b09);
-    border:2px solid #5a4a2c;box-shadow:${BEVEL}`;
+    background:#17140e;border:2px solid #5a4a2c;box-shadow:${BEVEL}`;
   const ring = document.createElement("canvas");
   ring.width = ring.height = 42;
   ring.style.cssText = `position:absolute;inset:0;image-rendering:pixelated`;
@@ -269,8 +268,7 @@ function makeBeltSlot(i: number): HTMLDivElement {
   const el = document.createElement("div");
   el.dataset.belt = String(i);
   el.style.cssText = `position:relative;width:38px;height:38px;
-    background:linear-gradient(180deg,#26221c,#0d0b09);
-    border:2px solid #5a4a2c;box-shadow:${BEVEL};
+    background:#17140e;border:2px solid #5a4a2c;box-shadow:${BEVEL};
     display:flex;align-items:center;justify-content:center;font-size:19px`;
   return el;
 }
@@ -342,64 +340,73 @@ export function renderDiablo(dt: number): void {
   renderFace(dt);
 }
 
+/**
+ * A FLAT, chunky-pixel liquid orb (Wolfenstein/VGA, not a glossy Flash sphere):
+ * a solid two-tone fill with a blocky wavy waterline, a hard pixel highlight,
+ * CRT scanlines and a hard 2px rim. Rendered at a tiny backing res so the CSS
+ * upscale (image-rendering:pixelated) makes every pixel read chunky.
+ */
 function drawGlobe(ctx: CanvasRenderingContext2D, level: number, phase: number, top: string, bot: string, critical: boolean, ripple = 0): void {
-  const S = GLOBE_PX;
+  const S = GLOBE_PX; // ~30
   const r = S / 2;
   ctx.clearRect(0, 0, S, S);
   ctx.save();
   ctx.beginPath();
-  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
+  ctx.arc(r, r, r - 1, 0, Math.PI * 2);
   ctx.clip();
 
+  // Empty glass (flat).
   ctx.fillStyle = "#0a0a10";
   ctx.fillRect(0, 0, S, S);
 
-  const amp = (critical ? 4.2 : 2.2) + ripple * 12;
+  const amp = (critical ? 2.0 : 1.1) + ripple * 5;
   const surfaceY = (1 - level) * S;
-  const grd = ctx.createLinearGradient(0, surfaceY, 0, S);
-  grd.addColorStop(0, top);
-  grd.addColorStop(1, bot);
-  ctx.fillStyle = grd;
+  // Liquid — a SOLID top colour with a blocky sine waterline (no gradient).
+  ctx.fillStyle = top;
   ctx.beginPath();
   ctx.moveTo(0, S);
-  for (let x = 0; x <= S; x += 3) {
-    const y = surfaceY + Math.sin(x * 0.16 + phase) * amp + Math.sin(x * 0.07 - phase * 0.6) * amp * 0.5;
+  for (let x = 0; x <= S; x += 2) {
+    const y = Math.round(surfaceY + Math.sin(x * 0.55 + phase) * amp);
     ctx.lineTo(x, y);
   }
   ctx.lineTo(S, S);
   ctx.closePath();
   ctx.fill();
+  // Darker flat band in the lower third (2-tone, reads retro).
+  ctx.fillStyle = bot;
+  ctx.fillRect(0, Math.max(Math.round(surfaceY), Math.round(S * 0.6)), S, S);
 
-  if (level > 0.02 && level < 0.99) {
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    for (let x = 0; x <= S; x += 3) {
-      const y = surfaceY + Math.sin(x * 0.16 + phase) * amp + Math.sin(x * 0.07 - phase * 0.6) * amp * 0.5;
-      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  // Bright blocky waterline.
+  if (level > 0.03 && level < 0.98) {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for (let x = 0; x <= S; x += 2) {
+      const y = Math.round(surfaceY + Math.sin(x * 0.55 + phase) * amp);
+      ctx.fillRect(x, y, 2, 1);
     }
-    ctx.stroke();
   }
-
-  ctx.fillStyle = "rgba(255,255,255,0.12)";
-  ctx.beginPath();
-  ctx.ellipse(r * 0.7, r * 0.62, r * 0.4, r * 0.22, -0.5, 0, Math.PI * 2);
-  ctx.fill();
+  // Hard pixel highlight glint (top-left), NOT a soft ellipse.
+  ctx.fillStyle = "rgba(255,255,255,0.20)";
+  ctx.fillRect(Math.round(r * 0.55), Math.round(r * 0.5), 3, 2);
+  // CRT scanlines.
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  for (let y = 0; y < S; y += 2) ctx.fillRect(0, y, S, 1);
+  // Splash flash.
   if (ripple > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${0.4 * (ripple / 0.5)})`;
+    ctx.fillStyle = `rgba(255,255,255,${0.35 * (ripple / 0.5)})`;
     ctx.fillRect(0, 0, S, S);
   }
   ctx.restore();
 
-  ctx.strokeStyle = "#a97a3c";
-  ctx.lineWidth = 3;
+  // Hard rim: 2px black + 1px bronze inner.
+  ctx.strokeStyle = "#0b0c10";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
+  ctx.arc(r, r, r - 1, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.strokeStyle = "rgba(0,0,0,0.6)";
+  ctx.strokeStyle = "#a97a3c";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(r, r, r - 4, 0, Math.PI * 2);
+  ctx.arc(r, r, r - 2.5, 0, Math.PI * 2);
   ctx.stroke();
 }
 
