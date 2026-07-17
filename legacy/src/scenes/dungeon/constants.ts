@@ -1019,6 +1019,23 @@ export const BOSS_GOLD = 50; // bonus gold on kill (on top of per-kill)
  */
 export const ULT_CHARGE_PER_KILL = 0.09; // ~11–12 kills to fill the meter
 export const ULT_DURATION = 12; // seconds of rampage per activation
+
+// ── MANA & ABILITIES (Diablo-HUD skill economy) ──────────────────
+// A SEPARATE resource from the rampage ult meter (deliberately un-aliased): the
+// ult is a kill-charged god-mode; mana is a steady spendable pool for the two
+// Q/E active skills. Regenerates over time and tops up a little per kill so the
+// skills stay in rotation without ever refuelling a rampage.
+export const MANA_MAX = 100;
+export const MANA_REGEN = 7; // per second, passive
+export const MANA_PER_KILL = 6; // small top-up on an ordinary kill
+export const ARCANE_PULSE_RADIUS = 3.4; // tiles — Arcane Pulse AoE reach
+export const ARCANE_PULSE_DAMAGE = 5;
+export const FLIPPER_LAUNCH_SPEED = 19; // momentum burst Flipper Charge injects
+export const MAGNET_AURA_PULL = 8; // tiles/sec ground items drift to you
+export const TIMECRAWL_FACTOR = 0.3; // enemy dt scale while Time Crawl runs
+export const BLADESTORM_RADIUS = 1.6; // tiles the orbiting blades reach
+export const BLADESTORM_DAMAGE = 2; // per tick
+export const BLADESTORM_TICK = 0.35; // seconds between blade hits
 export const FPS_EYE_HEIGHT = 0.62; // camera height above the floor, world units
 export const FPS_FOV = 75; // degrees — wide, Wolfenstein-ish
 export const FPS_MOVE_SPEED = 5.6; // faster than the iso walk — you're a wrecking ball

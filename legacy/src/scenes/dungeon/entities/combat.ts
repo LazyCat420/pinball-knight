@@ -18,6 +18,8 @@ import {
   SHAKE_ON_HIT,
   SHAKE_ON_KILL,
   ULT_CHARGE_PER_KILL,
+  MANA_MAX,
+  MANA_PER_KILL,
   BRUTE_DAMAGE,
   BRUTE_KNOCKBACK,
   REAPER_DAMAGE,
@@ -68,6 +70,7 @@ export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) =
 }
 import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
 import { showToast, showPickupNote, updateFpsStreak } from "../ui";
+import { faceOnDamage } from "../hud-face";
 
 /**
  * Facing → WORLD ground direction. Facings are SCREEN-relative (the art's "E"
@@ -397,6 +400,9 @@ function killZombie(z: Zombie): void {
   } else {
     // Charge the rampage ultimate from ordinary kills only.
     state.ultCharge = Math.min(1, state.ultCharge + ULT_CHARGE_PER_KILL);
+    // A small mana top-up too (see abilities.ts), so the Q/E skills stay in
+    // rotation. Inlined rather than imported to keep combat ↔ abilities acyclic.
+    if (p) p.mana = Math.min(MANA_MAX, p.mana + MANA_PER_KILL);
   }
   state.hudDirty = true;
   sfxZombieDie();
@@ -445,6 +451,7 @@ export function hitPlayer(z: Zombie): void {
   state.shakeT = absorbed.hpDamage > 0 ? 0.25 : 0.12; // armor soaks the flinch too
   state.hudDirty = true;
   sfxHurt();
+  faceOnDamage(Math.atan2(z.z - p.z, z.x - p.x)); // wince + glance toward the biter
 
   const dx = p.x - z.x;
   const dz = p.z - z.z;
@@ -481,6 +488,7 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   state.shakeT = Math.max(state.shakeT, absorbed.hpDamage > 0 ? 0.2 : 0.1);
   state.hudDirty = true;
   sfxHurt();
+  faceOnDamage(Math.atan2(srcZ - p.z, srcX - p.x)); // glance toward the glob's origin
 
   // A small shove away from where the glob came from.
   const dx = p.x - srcX;

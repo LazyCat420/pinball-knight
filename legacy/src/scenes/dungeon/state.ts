@@ -11,7 +11,18 @@ import type { ArcCorner } from "./collision";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
-import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP } from "./constants";
+import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, MANA_MAX } from "./constants";
+import type { AbilityId } from "./abilities";
+
+/** One quick-use belt slot: a stack of an identical usable (potion). */
+export interface BeltSlot {
+  /** PotionId of the stored usable. */
+  id: string;
+  /** Emoji shown on the belt tile. */
+  icon: string;
+  /** How many are stacked here. */
+  count: number;
+}
 import { freshWeapon } from "./items";
 
 export interface Actor {
@@ -53,6 +64,16 @@ export interface Player extends Actor {
   curveT: number;
   /** Seconds left on Magnet Boots (repel crawlers; strips LAUNCH not drag). */
   magBootsT: number;
+
+  // ── Active-skill economy (Diablo HUD) ──
+  /** Spendable mana pool for the Q/E abilities (0..MANA_MAX). Separate from ultCharge. */
+  mana: number;
+  /** Seconds left on Magnet Aura (ground items drift to you). 0 = inactive. */
+  magnetAuraT: number;
+  /** Seconds left on Blade Storm (orbiting blades bite nearby foes). 0 = inactive. */
+  bladeStormT: number;
+  /** Cadence timer between Blade Storm damage ticks. */
+  bladeStormTickT: number;
 
   // ── Trapdoor coaster ride ──
   /** -1 when not riding, else seconds into the current rail ride. */
@@ -483,6 +504,18 @@ export const state = {
   /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going). */
   hitstopT: 0,
 
+  // ── Active-skill economy + HUD mode ──
+  /** Which HUD is mounted: "diablo" is the iso strategy panel, "wolf" the rampage combat bar. */
+  hudMode: "diablo" as "diablo" | "wolf",
+  /** The two equipped skills — [Q, E]. */
+  abilitySlots: ["flippercharge", "arcanepulse"] as [AbilityId | null, AbilityId | null],
+  /** Per-ability cooldown remaining (seconds). */
+  abilityCd: {} as Record<AbilityId, number>,
+  /** Time Crawl: while > 0 the horde's dt is scaled down (slow-mo enemies). */
+  slowT: 0,
+  /** Diablo quick-use belt — 4 slots, keys Shift+1..4. Filled by potion pickups. */
+  belt: [null, null, null, null] as Array<BeltSlot | null>,
+
   // Fixed-timestep accumulator
   accumulator: 0,
 
@@ -528,6 +561,10 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     webbedT: 0,
     curveT: 0,
     magBootsT: 0,
+    mana: MANA_MAX,
+    magnetAuraT: 0,
+    bladeStormT: 0,
+    bladeStormTickT: 0,
     rideT: -1,
     rideDur: 0,
     ridePts: [],
@@ -589,6 +626,11 @@ export function resetState(): void {
   state.partComboHits = 0;
   state.frenzyPaid = false;
   state.freezeT = 0;
+  state.hudMode = "diablo";
+  state.abilitySlots = ["flippercharge", "arcanepulse"];
+  state.abilityCd = {} as Record<AbilityId, number>;
+  state.slowT = 0;
+  state.belt = [null, null, null, null];
   state.bonusRoomNext = false;
   state.npcs = [];
   state.magicianT = 0;

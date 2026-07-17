@@ -34,7 +34,10 @@ import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusio
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, flashBounceCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, flashBounceCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { mountHUDs, renderHUD, refreshHUD } from "./hud";
+import { rippleGlobe } from "./hud-diablo";
+import { faceOnHeal, faceOnSpecial } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
@@ -51,9 +54,11 @@ import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHan
 import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers } from "./entities/combat";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
+import { castAbility, tickAbilities } from "./abilities";
 import {
   levelConfig,
   FLOW_INTERVAL,
+  TIMECRAWL_FACTOR,
   GOLD_PER_DESCENT,
   PLAYER_MAX_HP,
   ZOMBIE_HP,
@@ -474,7 +479,9 @@ export function launchDungeonGame(onExit?: () => void): void {
   });
 
   // ── HUD + input ──
-  state.hudEl = createHUD(state.container);
+  // Dual HUD: the Diablo panel (iso) + the Wolfenstein bar (rampage). mountHUDs
+  // builds both, mounts the shared face, and sets state.hudEl to the wolf bar.
+  mountHUDs(state.container);
   state.fpsOverlayEl = createFpsOverlay(state.container);
   state.comboFlashEl = createComboFlash(state.container);
   state.bossBarEl = createBossBar(state.container);
@@ -1030,16 +1037,24 @@ function handleKey(e: KeyboardEvent): void {
       exitDungeonGame();
       return;
 
-    // ── Weapon slots ──
+    // ── Weapon slots (plain 1/2) · quick-use belt (Shift+1..4) ──
     case "tab":
       e.preventDefault(); // don't let focus walk out of the game
       selectSlot(1 - state.activeSlot);
       break;
     case "1":
-      selectSlot(0);
+      if (e.shiftKey) useBeltSlot(0);
+      else selectSlot(0);
       break;
     case "2":
-      selectSlot(1);
+      if (e.shiftKey) useBeltSlot(1);
+      else selectSlot(1);
+      break;
+    case "3":
+      if (e.shiftKey) useBeltSlot(2);
+      break;
+    case "4":
+      if (e.shiftKey) useBeltSlot(3);
       break;
 
     // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
@@ -1047,10 +1062,18 @@ function handleKey(e: KeyboardEvent): void {
       if (canRampage()) enterRampage();
       break;
 
-    // ── Hidden style-debug toggles (kept from the Phase 0 sandbox) ──
+    // ── Q/E active skills (Diablo HUD). Shift+Q keeps the hidden quantize
+    // toggle; in rampage Q/E steer the FPS camera (input.ts), so skip casting. ──
     case "q":
-      state.quantize = !state.quantize;
-      state.pixelPass?.setQuantize(state.quantize);
+      if (e.shiftKey) {
+        state.quantize = !state.quantize;
+        state.pixelPass?.setQuantize(state.quantize);
+      } else if (!state.fpsActive) {
+        castAbility(0);
+      }
+      break;
+    case "e":
+      if (!state.fpsActive) castAbility(1);
       break;
     case "f":
       state.dither = !state.dither;
@@ -1346,7 +1369,14 @@ function checkPickups(): void {
     if (it.kind === "weapon") {
       pickUpWeapon(it);
     } else if (it.kind === "potion") {
-      applyPotion(it.id as PotionId);
+      // Diablo model: potions are STOWED on the belt for manual use (Shift+1–4),
+      // not drunk on contact. If the belt is full, drink it now so it's not lost.
+      const pid = it.id as PotionId;
+      if (addToBelt(pid)) {
+        showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — belt`);
+      } else {
+        applyPotion(pid);
+      }
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -1405,7 +1435,51 @@ function closeShop(): void {
 }
 
 /**
- * Drink a potion on pickup: heal potions restore hearts instantly (capped at
+ * Stow a potion on the quick-use belt. Stacks onto a matching slot, else takes
+ * the first empty one. Returns false if the belt is full (caller drinks it).
+ */
+function addToBelt(id: PotionId): boolean {
+  for (const s of state.belt) {
+    if (s && s.id === id) {
+      s.count++;
+      state.hudDirty = true;
+      return true;
+    }
+  }
+  for (let i = 0; i < state.belt.length; i++) {
+    if (!state.belt[i]) {
+      state.belt[i] = { id, icon: POTIONS[id].icon, count: 1 };
+      state.hudDirty = true;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Use the belt slot at index i (Shift+1..4): drink one, apply its effect, and
+ * splash the matching globe + set the face reaction. Empty slots do nothing.
+ */
+function useBeltSlot(i: number): void {
+  const slot = state.belt[i];
+  if (!slot) return;
+  const id = slot.id as PotionId;
+  const def = POTIONS[id];
+  applyPotion(id);
+  if (def.heal > 0) {
+    faceOnHeal();
+    rippleGlobe("life");
+  } else {
+    faceOnSpecial();
+    if (def.duration > 0 || def.gold) rippleGlobe("mana");
+  }
+  slot.count--;
+  if (slot.count <= 0) state.belt[i] = null;
+  state.hudDirty = true;
+}
+
+/**
+ * Drink a potion: heal potions restore hearts instantly (capped at
  * max); buff potions (re)start their timer. A quick tint pulse + toast sells it.
  */
 function applyPotion(id: PotionId): void {
@@ -1519,6 +1593,8 @@ function simulate(dt: number): void {
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
   }
+  // Active skills: mana regen, cooldowns, magnet pull + blade-storm ticks.
+  tickAbilities(dt);
   // Multi-Ball expiry: the ghost knights dissolve with the buff.
   if (p.multiT <= 0 && state.multiMeshes) clearMultiballs();
   // World freeze (freeze-ray potion) ticks here; zombies/gloves read it.
@@ -1547,7 +1623,9 @@ function simulate(dt: number): void {
   } else {
     updatePlayer(dt, state.input);
   }
-  updateZombies(dt);
+  // TIME CRAWL: the ability scales the horde's dt so enemies move + wind up in
+  // slow-mo while the player runs at full speed. Everything else keeps real dt.
+  updateZombies(state.slowT > 0 ? dt * TIMECRAWL_FACTOR : dt);
   updateProjectiles(dt);
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
@@ -1666,10 +1744,13 @@ function loop(now: number): void {
   }
   if (p && lamp) lamp.position.set(p.x, 1.3, p.z);
 
-  if (state.hudDirty && state.hudEl) {
+  if (state.hudDirty) {
     state.hudDirty = false;
-    updateHUD(state.hudEl);
+    refreshHUD();
   }
+  // Per-frame HUD animation: liquid globes, cooldown rings, the face's blink/
+  // wince timers. Cheap even when a panel is slid off-screen.
+  renderHUD(frame);
 
   // Score glue: pop the centred ×N flash on every fresh bounce-combo STEP,
   // wherever the increment came from (wall, part, arc, ram) — a rising count

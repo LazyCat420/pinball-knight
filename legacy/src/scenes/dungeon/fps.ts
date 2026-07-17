@@ -37,6 +37,7 @@ import { faceCameraYaw, faceCameraIso } from "./render/sprite";
 import { damageZombie } from "./entities/combat";
 import type { InputHandle } from "./input";
 import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
+import { setHUDMode } from "./hud";
 import { sfxGun } from "./audio";
 
 /** How long a streak survives without a fresh kill before it resets, seconds. */
@@ -79,6 +80,9 @@ export function enterRampage(): void {
   for (const z of state.zombies) z.sprite.setBlobVisible(false);
   billboardEnemiesToFps();
   setFpsOverlay(state.fpsOverlayEl, true);
+  // Swap the Diablo strategy panel down and the Wolfenstein combat bar up; the
+  // shared face rides across into the wolf bar's socket.
+  setHUDMode("wolf");
   state.hudDirty = true;
 }
 
@@ -109,6 +113,8 @@ export function exitRampage(): void {
   updateFpsStreak(state.fpsOverlayEl, 0); // clear the combo readout
   state.fpsStreak = 0;
   setFpsOverlay(state.fpsOverlayEl, false);
+  // Slide the Wolfenstein bar back down and the Diablo panel back up.
+  setHUDMode("diablo");
   state.hudDirty = true;
 }
 

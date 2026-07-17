@@ -6,6 +6,7 @@ import { state } from "./state";
 import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
 import { disposeNpcs } from "./entities/npc";
 import { disposePinballParts } from "./render/pinball-parts";
+import { disposeHUDs } from "./hud";
 
 /**
  * Tear down one depth: the maze geometry, the horde (including corpses), any
@@ -105,7 +106,8 @@ export function disposeAll(): void {
 
   state.gameOverEl?.remove();
   state.shopEl?.remove();
-  state.hudEl?.remove();
+  disposeHUDs(); // removes the Diablo + Wolf panels and the shared face
+  state.hudEl = null;
   state.fpsOverlayEl?.remove();
   state.comboFlashEl?.remove();
   state.bossBarEl?.remove();
