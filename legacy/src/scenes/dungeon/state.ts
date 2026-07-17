@@ -296,6 +296,8 @@ export interface PinballPart {
   punchSpent?: boolean;
   /** TARGET only: true once broken — a dead target never re-arms. */
   done?: boolean;
+  /** BUMPER only: pops so far; at BUMPER_LIT_HITS it lights (Slice 5). */
+  hits?: number;
   /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave. */
   phase?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
@@ -396,6 +398,10 @@ export const state = {
   partComboHits: 0,
   /** True once this combo already paid its MULTIBALL FRENZY bonus. */
   frenzyPaid: false,
+  /** Slice 5 — jackpot: bumpers on this floor, how many are lit, jackpot flash. */
+  bumperTotal: 0,
+  bumpersLit: 0,
+  jackpotT: 0,
   /** Seconds the world is frozen (freeze-ray potion) — enemies + gloves halt. */
   freezeT: 0,
   /** Grade S/A on descent arms one extra vault room on the next floor. */
@@ -633,6 +639,9 @@ export function resetState(): void {
   state.targetsHit = 0;
   state.partComboHits = 0;
   state.frenzyPaid = false;
+  state.bumperTotal = 0;
+  state.bumpersLit = 0;
+  state.jackpotT = 0;
   state.freezeT = 0;
   state.hudMode = "diablo";
   state.abilitySlots = ["flippercharge", "arcanepulse"];

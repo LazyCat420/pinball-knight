@@ -21,7 +21,7 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -465,12 +465,16 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       fireT: s.kind === "glove" ? 0.6 + Math.random() * 2.2 : s.kind === "firevent" ? 0.6 + Math.random() * 2.4 : undefined,
       punchSpent: s.kind === "glove" || s.kind === "firevent" ? true : undefined,
       done: s.kind === "target" ? false : undefined,
+      hits: s.kind === "bumper" ? 0 : undefined,
       // Electric plates share a clock but stagger phase so a room pulses as a wave.
       phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : undefined,
       mesh,
     };
     state.pinballParts.push(part);
   }
+  // Slice 5 — jackpot bookkeeping: how many bumpers this floor has to light.
+  state.bumperTotal = state.pinballParts.filter((p) => p.kind === "bumper").length;
+  state.bumpersLit = 0;
 }
 
 /** Global idle-animation clock (safe to reset per level). */
@@ -482,6 +486,7 @@ let animT = 0;
  */
 export function updatePinballParts(dt: number): void {
   animT += dt;
+  if (state.jackpotT > 0) state.jackpotT = Math.max(0, state.jackpotT - dt); // Slice 5 flash window
   const frozen = state.freezeT > 0;
   for (const part of state.pinballParts) {
     part.cooldownT = Math.max(0, part.cooldownT - dt);
@@ -518,7 +523,14 @@ export function updatePinballParts(dt: number): void {
       }
       part.mesh.scale.set(s, 1, s);
       const dome = part.mesh.userData.dome as THREE.MeshStandardMaterial | undefined;
-      if (dome) dome.emissiveIntensity = 0.7 + 0.3 * Math.sin(animT * 3 + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+      // Slice 5 — a LIT bumper (or the whole floor during a jackpot) burns GOLD
+      // and brighter; an unlit one keeps the cool arcane breathe.
+      const lit = (part.hits ?? 0) >= BUMPER_LIT_HITS || state.jackpotT > 0;
+      if (dome) {
+        dome.emissive.setHex(lit ? C_GOLD : C_ARCANE);
+        const base = lit ? 1.5 : 0.7;
+        dome.emissiveIntensity = base + 0.3 * Math.sin(animT * (lit ? 6 : 3) + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+      }
     } else if (part.kind === "spring") {
       // hit: squash then overshoot along Y — the boing
       const coil = part.mesh.userData.coil as THREE.Group | undefined;

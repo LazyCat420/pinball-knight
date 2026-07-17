@@ -367,6 +367,16 @@ export const BUMPER_KICK_ADD = 3.2; // …just a flat radial kick per pop (u/s)
 export const BUMPER_MIN_EXIT = 9; // even a slow touch leaves at least this fast
 export const BUMPER_COOLDOWN = 0.25; // per-bumper re-trigger lockout (s)
 export const BUMPER_SCATTER = 0.1; // ±rad (~6°) exit-angle scatter — bumpers only
+// Slice 5 — lit bumpers + jackpot: each bumper counts hits; at BUMPER_LIT_HITS it
+// LIGHTS (gold, harder kick, bonus gold). Light JACKPOT_BUMPERS of them → a
+// jackpot: floor-wide burst damage + gold + flash, then every bumper resets to
+// re-light. The pinball scoring loop layered over the existing combo/frenzy glue.
+export const BUMPER_LIT_HITS = 3; // pops to light one bumper
+export const BUMPER_KICK_LIT = 5.6; // flat kick from a LIT bumper (vs 3.2 unlit)
+export const BUMPER_LIT_GOLD = 3; // gold per lit-bumper pop
+export const JACKPOT_BUMPERS = 5; // lit bumpers (or all, if fewer) to fire a jackpot
+export const JACKPOT_GOLD = 45;
+export const JACKPOT_DAMAGE = 6; // burst dealt to every enemy on the floor
 // Springs are the STRONGEST launcher (research: plunger-class ≈ 2.5-3× top run
 // speed, an order of magnitude over a bumper tap in real tables).
 export const SPRING_SPEED = 16; // ≈3.8× walk — the big dead-end cannon

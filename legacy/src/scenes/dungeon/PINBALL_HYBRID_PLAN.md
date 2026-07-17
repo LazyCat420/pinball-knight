@@ -84,7 +84,13 @@ zones can override per-zone. Verified: coasts slowly in the open, no errors.
   corridor = high (control). `constants.ts` bands + `player.ts` friction read.
 - Ties into Slice 9 zones (zone stamps the surface).
 
-## Slice 5 — Bumper lit/unlit + jackpot ⬜
+## Slice 5 — Bumper lit/unlit + jackpot ✅ (done 2026-07-17)
+Bumpers count `hits`; at BUMPER_LIT_HITS (3) one LIGHTS — burns gold, kicks
+harder (BUMPER_KICK_LIT 5.6 vs 3.2), pays BUMPER_LIT_GOLD. Light JACKPOT_BUMPERS
+(5, or all if fewer) → `fireJackpot`: floor-wide burst damage + JACKPOT_GOLD +
+flash + a 3s `jackpotT` glow window, then every bumper resets to re-light.
+`state.bumperTotal/bumpersLit/jackpotT`, `PinballPart.hits`; dome glows gold when
+lit (`pinball-parts.ts`). Verified headless: a rammed bumper turns gold.
 - Add `hits`/`lit` to the bumper `PinballPart` (`state.ts`). Unlit = small bounce;
   lit (3 hits or target-break) = big bounce + VFX + score mult. All bumpers in a
   room cluster lit → **jackpot**: a ~3s room-wide extra-damage window + flash.

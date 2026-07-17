@@ -53,6 +53,12 @@ import {
   BUMPER_RADIUS,
   BUMPER_KICK_MULT,
   BUMPER_KICK_ADD,
+  BUMPER_LIT_HITS,
+  BUMPER_KICK_LIT,
+  BUMPER_LIT_GOLD,
+  JACKPOT_BUMPERS,
+  JACKPOT_GOLD,
+  JACKPOT_DAMAGE,
   BUMPER_MIN_EXIT,
   BUMPER_COOLDOWN,
   BUMPER_SCATTER,
@@ -564,6 +570,30 @@ function fallInPit(): void {
   sfxHurt();
 }
 
+/**
+ * JACKPOT (Slice 5) — enough bumpers lit: a floor-wide burst of gold + damage +
+ * a flash, then every bumper resets so the light-em-up loop can run again.
+ */
+function fireJackpot(): void {
+  const p = state.player;
+  state.goldRun += JACKPOT_GOLD;
+  addGold(JACKPOT_GOLD, "dungeon-game");
+  showToast("🪩 JACKPOT!", `bumpers lit · +${JACKPOT_GOLD}g`);
+  state.shakeT = Math.max(state.shakeT, 0.4);
+  state.jackpotT = 3;
+  for (const z of state.zombies) {
+    if (z.mode === "dead") continue;
+    const dx = z.x - (p?.x ?? z.x);
+    const dz = z.z - (p?.z ?? z.z);
+    const dd = Math.hypot(dx, dz) || 1;
+    damageZombie(z, JACKPOT_DAMAGE, dx / dd, dz / dd, 4);
+  }
+  if (p) state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 30);
+  // reset every bumper so the floor can be re-lit for another jackpot
+  for (const part of state.pinballParts) if (part.kind === "bumper") part.hits = 0;
+  state.bumpersLit = 0;
+}
+
 function touchPinballParts(inMomentum: boolean): void {
   const p = state.player;
   if (!p || state.pinballParts.length === 0) return;
@@ -587,17 +617,31 @@ function touchPinballParts(inMomentum: boolean): void {
       const nz = dz / d;
       p.momX = nx * cs - nz * sn;
       p.momZ = nx * sn + nz * cs;
+      // Slice 5 — light the bumper on its BUMPER_LIT_HITS-th pop: a lit bumper
+      // kicks harder, pays gold, and counts toward the floor JACKPOT.
+      part.hits = (part.hits ?? 0) + 1;
+      const lit = part.hits >= BUMPER_LIT_HITS;
+      const nowLit = part.hits === BUMPER_LIT_HITS;
       p.momSpeed = Math.min(
         PINBALL_MAX_SPEED,
-        Math.max(p.momSpeed * BUMPER_KICK_MULT + BUMPER_KICK_ADD, BUMPER_MIN_EXIT),
+        Math.max(p.momSpeed * BUMPER_KICK_MULT + (lit ? BUMPER_KICK_LIT : BUMPER_KICK_ADD), BUMPER_MIN_EXIT),
       );
       onPartTrigger();
       part.cooldownT = BUMPER_COOLDOWN;
       part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, 12);
-      state.shakeT = Math.max(state.shakeT, 0.16);
+      state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, lit ? 18 : 12);
+      state.shakeT = Math.max(state.shakeT, lit ? 0.22 : 0.16);
       state.hitstopT = Math.max(state.hitstopT, 0.03);
       sfxBumper();
+      if (lit) {
+        state.goldRun += BUMPER_LIT_GOLD;
+        addGold(BUMPER_LIT_GOLD, "dungeon-game");
+      }
+      if (nowLit) {
+        state.bumpersLit += 1;
+        const need = Math.min(state.bumperTotal || JACKPOT_BUMPERS, JACKPOT_BUMPERS);
+        if (state.bumpersLit >= need) fireJackpot();
+      }
     } else if (part.kind === "spring") {
       if (d2 > 0.42 * 0.42) continue;
       p.momX = part.dirX;
