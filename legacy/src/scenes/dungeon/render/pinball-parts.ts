@@ -205,19 +205,22 @@ function buildOil(): THREE.Group {
 
 function buildSpinPad(): THREE.Group {
   const gp = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.05, 14), std(C_STEEL_DK));
-  pad.position.y = 0.025;
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 14), std(C_STEEL_DK));
+  pad.position.y = 0.04;
   gp.add(pad);
-  // Three chevrons on a rotor — the renderer spins it so the pad visibly whirls.
+  // A raised turbine rotor — three angled blades around a glowing gold hub cone,
+  // so the whirl reads with real height (was low flat chevrons on the floor).
   const rotor = new THREE.Group();
   for (let k = 0; k < 3; k++) {
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.2, 3), std(C_ARCANE, C_ARCANE, 0.7));
-    chev.rotation.z = -Math.PI / 2;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.13), std(C_ARCANE, C_ARCANE, 0.7));
     const a = (k / 3) * Math.PI * 2;
-    chev.position.set(Math.cos(a) * 0.24, 0.06, Math.sin(a) * 0.24);
-    chev.rotation.y = -a + Math.PI / 2;
-    rotor.add(chev);
+    blade.position.set(Math.cos(a) * 0.19, 0.17, Math.sin(a) * 0.19);
+    blade.rotation.y = -a;
+    rotor.add(blade);
   }
+  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 8), std(C_GOLD, C_GOLD, 0.7));
+  hub.position.y = 0.22;
+  rotor.add(hub);
   gp.add(rotor);
   gp.userData.rotor = rotor;
   return gp;
@@ -342,16 +345,23 @@ function buildPit(): THREE.Group {
 
 function buildElectric(): THREE.Group {
   const gp = new THREE.Group();
-  // A floor plate with four prong nodes; the whole plate glows when live.
+  // A floor plate with four TALL prong pylons + a central emitter rod, so the
+  // hazard has vertical presence and reads even when the plate is dark (was a
+  // near-flat plate with stubby nodes).
   const plate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.8), std(C_STEEL_DK, C_ARCANE, 0));
   plate.position.y = 0.02;
-  const nodeMat = std(C_ARCANE, C_ARCANE, 0.2);
-  for (const [nx, nz] of [[-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]] as const) {
-    const node = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 8), nodeMat);
-    node.position.set(nx, 0.08, nz);
-    gp.add(node);
-  }
   gp.add(plate);
+  const nodeMat = std(C_ARCANE, 0x9fe8ff, 0.2);
+  for (const [nx, nz] of [[-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]] as const) {
+    const node = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 8), nodeMat);
+    node.position.set(nx, 0.17, nz);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), nodeMat);
+    tip.position.set(nx, 0.32, nz);
+    gp.add(node, tip);
+  }
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 6), nodeMat);
+  core.position.set(0, 0.23, 0);
+  gp.add(core);
   gp.userData.plateMat = plate.material;
   gp.userData.nodeMat = nodeMat;
   return gp;
@@ -379,17 +389,35 @@ function buildFireVent(dirX: number, dirZ: number): THREE.Group {
 
 function buildMagStrip(): THREE.Group {
   const gp = new THREE.Group();
-  // A wide charged band, two coil rails with a humming field line.
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.5), std(0x2e2438));
+  // A charged SLOW-field: a dark band with two tall humming coil pylons at the
+  // ends and inward braking chevrons, so it reads "cross here and you get
+  // dragged to a crawl" at a glance (was a near-flat floor stripe).
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.6), std(0x241d2e));
   band.position.y = 0.02;
-  const railMat = std(0x2e6d8f, 0x2e6d8f, 0.4);
-  for (const rz of [-0.18, 0.18]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.06), railMat);
-    rail.position.set(0, 0.05, rz);
-    gp.add(rail);
-  }
   gp.add(band);
-  gp.userData.railMat = railMat;
+  const fieldMat = std(0x2e6d8f, 0x39b0d8, 0.5);
+  for (const cx of [-0.4, 0.4]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.44, 8), std(C_STEEL_DK));
+    post.position.set(cx, 0.22, 0);
+    gp.add(post);
+    for (let k = 0; k < 3; k++) {
+      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.025, 6, 12), fieldMat);
+      coil.rotation.x = Math.PI / 2;
+      coil.position.set(cx, 0.12 + k * 0.12, 0);
+      gp.add(coil);
+    }
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), fieldMat);
+    cap.position.set(cx, 0.46, 0);
+    gp.add(cap);
+  }
+  // braking chevrons on the band, pointing INWARD (the "you'll be slowed" read)
+  for (const [cx, sgn] of [[-0.2, 1], [0.2, -1]] as const) {
+    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 3), fieldMat);
+    chev.rotation.z = sgn > 0 ? -Math.PI / 2 : Math.PI / 2;
+    chev.position.set(cx, 0.06, 0);
+    gp.add(chev);
+  }
+  gp.userData.fieldMat = fieldMat;
   return gp;
 }
 
@@ -602,8 +630,8 @@ export function updatePinballParts(dt: number): void {
       if (plume) plume.scale.setScalar(scale);
       if (mat) mat.emissiveIntensity = scale > 0.5 ? 1 : 0.3;
     } else if (part.kind === "magstrip") {
-      const rail = part.mesh.userData.railMat as THREE.MeshStandardMaterial | undefined;
-      if (rail) rail.emissiveIntensity = frozen ? 0.1 : 0.4 + 0.35 * Math.sin(animT * 8 + part.i);
+      const field = part.mesh.userData.fieldMat as THREE.MeshStandardMaterial | undefined;
+      if (field) field.emissiveIntensity = frozen ? 0.1 : 0.45 + 0.4 * Math.sin(animT * 8 + part.i);
     } else if (part.kind !== "pit") {
       // deflector: gold edge flashes on a hit
       const edge = part.mesh.userData.edge as THREE.MeshStandardMaterial | undefined;
