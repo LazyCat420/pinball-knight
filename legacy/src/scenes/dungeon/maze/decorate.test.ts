@@ -142,6 +142,25 @@ describe("decorateMaze", () => {
     }
   });
 
+  it("no straight-corridor launch part is left firing into a wall (Slice 3 no-orphan)", () => {
+    const { g, plan } = makeLevel(129);
+    const runway = (i: number, j: number, di: number, dj: number): number => {
+      let n = 0;
+      for (let s = 1; s <= 8; s++) {
+        if (at(g, i + di * s, j + dj * s) !== T_FLOOR) break;
+        n++;
+      }
+      return n;
+    };
+    for (const p of plan.parts) {
+      if (p.kind !== "ramp" && p.kind !== "slingshot") continue;
+      const open = openSides(g, p.i, p.j);
+      // only true straight corridors (2 OPPOSITE open sides) — the dealt launch parts
+      if (open.length !== 2 || open[0][0] + open[1][0] !== 0 || open[0][1] + open[1][1] !== 0) continue;
+      expect(runway(p.i, p.j, p.dirI, p.dirJ), `${p.kind}@${p.i},${p.j} launches into a wall`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("respects the part budget and keeps parts off the stairs + away from the start", () => {
     const { g, plan } = makeLevel(113, 8, 10, 6);
     // Targets, trapdoors + hazards are objective/traversal layers OVER the

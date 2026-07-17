@@ -182,6 +182,20 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
   return null;
 }
 
+/** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
+const LAUNCH_KINDS = new Set<string>(["ramp", "spring", "slingshot", "flipper"]);
+const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
+
+/** Count consecutive open (floor) tiles stepping (di,dj) from (i,j), capped. */
+function launchRunway(g: Grid, i: number, j: number, di: number, dj: number): number {
+  let n = 0;
+  for (let s = 1; s <= 8; s++) {
+    if (at(g, i + di * s, j + dj * s) !== T_FLOOR) break;
+    n++;
+  }
+  return n;
+}
+
 /** Which topology pool each dealable part kind draws from. */
 const KIND_TOPOLOGY: Record<string, Topology> = {
   bumper: "junction",
@@ -461,7 +475,20 @@ export function decorateMaze(
     while (pool.length > 0) {
       const cand = pool.pop()!;
       if (parts.some((q) => Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue; // spacing
-      parts.push(spotForKind(kind, cand, rng));
+      let spot = spotForKind(kind, cand, rng);
+      // No-orphan (Slice 3): a launch part must have RUNWAY in its fire
+      // direction, or it just shoots you into a wall a tile away. Flip to the
+      // opposite (still-open) side if that has room; else skip this candidate.
+      if (LAUNCH_KINDS.has(kind) && (spot.dirI !== 0 || spot.dirJ !== 0)) {
+        if (launchRunway(g, spot.i, spot.j, spot.dirI, spot.dirJ) < MIN_RUNWAY) {
+          if (launchRunway(g, spot.i, spot.j, -spot.dirI, -spot.dirJ) >= MIN_RUNWAY) {
+            spot = { ...spot, dirI: -spot.dirI, dirJ: -spot.dirJ };
+          } else {
+            continue; // orphan — nothing to launch into either way
+          }
+        }
+      }
+      parts.push(spot);
       placed = true;
       break;
     }

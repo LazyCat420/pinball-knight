@@ -57,7 +57,14 @@ Momentum needs room to chain. Levers (no new maze algo needed):
   `maze/prefabs.ts` (theme openness). Tests: reachability stays green + a new
   openness-ratio assertion in `generator.test.ts`.
 
-## Slice 3 — Chain + no-orphan placement ⬜
+## Slice 3 — Chain + no-orphan placement ✅ (runway validation done 2026-07-17)
+Corridor-dealt LAUNCH parts (ramp/spring/slingshot/flipper) are validated at
+placement: need ≥3 open tiles of runway in the fire direction, else flip to the
+opposite open side, else skip the candidate — no more "launches into a wall a
+tile away" orphans. Inline in the deal loop so room/prefab parts stay intact
+(`decorate.ts launchRunway` + deal loop). New test in `decorate.test.ts`.
+(Positive clustering — parts that actively feed each other — folded into Slice 9
+zones, which places the launch→core→drain chain deliberately.)
 - **Chain validation pass** in `decorate.ts`: for each launch part (ramp/spring/
   slingshot/flipper), require something (bumper/part/target) within N tiles down
   its launch trajectory; else relocate or drop it.
