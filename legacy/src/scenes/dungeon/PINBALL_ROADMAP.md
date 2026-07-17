@@ -153,8 +153,26 @@ tile-and-a-half is a hallway, not a table.
 - [ ] **Per-floor "openness" knob** on the theme table (crypt = tighter, sewer/
       hellfire tables = wide-open) so variety survives and not every floor is a
       stadium.
+**Part legibility + chaining (from 2026-07-17 playtest — some done):**
+- [x] **Ramp redesign DONE** — was a flat grey slab that read as nothing + gave
+      no feedback; now a raised wedge with guide rails, three arrows crawling up
+      the slope, a gold kicker lip, and a spark-spray + whoosh + screen-kick on
+      trigger (`render/pinball-parts.ts buildRamp` + `player.ts` ramp branch).
+- [ ] **Every part must read its function at a glance** — audit spring/oil/
+      slingshot/target/magstrip the same way (raised silhouettes, bright emissive
+      arrows, clear idle animation). Flat floor stickers don't read in iso.
+- [ ] **No orphan parts** — generation cleanup: a part with nothing to interact
+      with in its trajectory (e.g. a ramp launching into a wall 1 tile away) gets
+      moved or removed. Every part reachable at speed from another.
+- [ ] **Chain placement** — parts seed in CLUSTERS that feed each other (ramp →
+      bumper court → slingshot → drain), not singletons. A slingshot requires ≥2
+      bumpers nearby; a ramp requires a target in its launch lane.
+- [ ] **Three-zone floors** (launch district → machine core → drain lane) with
+      per-zone corridor width + friction + enemy density, so momentum has a
+      build→spend→escape loop. (This is the shape §2.5's open-arena work should take.)
 *Tests:* `generator.test.ts` — openness ratio per theme within bounds; every
-table prefab preserves reachability; wide-corridor carve never severs the maze.
+table prefab preserves reachability; wide-corridor carve never severs the maze;
+no part left without a chain partner in range.
 *Verify feel:* drive a launch through a table floor headless and confirm a
 single spring launch chains ≥3 part hits before the ball settles.
 

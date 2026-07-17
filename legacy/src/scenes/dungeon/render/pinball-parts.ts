@@ -80,21 +80,57 @@ function buildSpring(dirX: number, dirZ: number): THREE.Group {
 }
 
 function buildRamp(dirX: number, dirZ: number): THREE.Group {
+  // A real INCLINED launch ramp (not a flat sticker): a wedge rising toward the
+  // launch direction, flanked by guide rails, with three big glowing arrows
+  // climbing the slope and a gold kicker lip at the top. Reads as "ride me →"
+  // at a glance in iso. Local +x is the launch direction (group is yawed).
   const gp = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.05, 0.52), std(C_STEEL_DK, 0x000000, 0));
-  pad.position.y = 0.025;
-  gp.add(pad);
+  const LEN = 0.86;
+  const H = 0.34;
+  const W = 0.56;
+  const slope = Math.atan2(H, LEN); // incline angle
+  const slopeY = (x: number): number => (H * (x + LEN / 2)) / LEN; // surface height at local x
+
+  // ── Wedge body (triangular prism) ──
+  const shape = new THREE.Shape();
+  shape.moveTo(-LEN / 2, 0);
+  shape.lineTo(LEN / 2, 0);
+  shape.lineTo(LEN / 2, H);
+  shape.closePath();
+  const wedgeGeo = new THREE.ExtrudeGeometry(shape, { depth: W, bevelEnabled: false });
+  wedgeGeo.translate(0, 0, -W / 2); // centre on z
+  gp.add(new THREE.Mesh(wedgeGeo, std(C_STEEL_DK)));
+
+  // ── Guide rails down each side (steel bars with a gold-lit top edge) ──
+  for (const zside of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(LEN * 1.02, 0.12, 0.06), std(C_STEEL, C_GOLD, 0.28));
+    rail.position.set(0, H / 2 + 0.05, (zside * W) / 2);
+    rail.rotation.z = slope; // lie along the rising slope
+    gp.add(rail);
+  }
+
+  // ── Three big arrows climbing the slope (the "GO this way" crawl) ──
   const chevMats: THREE.MeshStandardMaterial[] = [];
-  for (let k = 0; k < 2; k++) {
-    const m = std(C_ARCANE, C_ARCANE, 0.6);
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.24, 3), m);
-    chev.rotation.z = -Math.PI / 2; // point +x (rotated to dir by the group)
-    chev.position.set(-0.15 + k * 0.3, 0.06, 0);
+  for (let k = 0; k < 3; k++) {
+    const m = std(C_ARCANE, C_ARCANE, 0.8);
+    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.32, 3), m);
+    chev.rotation.z = -Math.PI / 2 + slope; // point up-slope, flush with the incline
+    const x = -0.24 + k * 0.24;
+    chev.position.set(x, slopeY(x) + 0.06, 0);
     chevMats.push(m);
     gp.add(chev);
   }
+
+  // ── Gold kicker lip at the top (the launch edge) ──
+  const lipMat = std(C_GOLD, C_GOLD, 0.7);
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, W + 0.06), lipMat);
+  lip.position.set(LEN / 2 - 0.02, H + 0.02, 0);
+  gp.add(lip);
+
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.chevMats = chevMats;
+  gp.userData.lipMat = lipMat;
+  gp.userData.lipMesh = lip;
   gp.userData.phase = Math.random() * Math.PI * 2;
   return gp;
 }
@@ -468,14 +504,21 @@ export function updatePinballParts(dt: number): void {
         coil.scale.y = sy;
       }
     } else if (part.kind === "ramp") {
-      // chevrons pulse in sequence — the "go this way" crawl
+      // A wave sweeps UP the three arrows (a clear directional "GO" crawl); on
+      // trigger the whole ramp flashes bright and the kicker lip pops.
       const mats = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+      const lipMat = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+      const lipMesh = part.mesh.userData.lipMesh as THREE.Mesh | undefined;
       const phase = (part.mesh.userData.phase as number) ?? 0;
+      const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
       if (mats) {
         mats.forEach((m, k) => {
-          m.emissiveIntensity = 0.45 + 0.55 * Math.max(0, Math.sin(animT * 4 + phase - k * 0.9));
+          const wave = Math.max(0, Math.sin(animT * 6 + phase - k * ((Math.PI * 2) / 3)));
+          m.emissiveIntensity = 0.3 + 0.9 * wave + flash * 2.6;
         });
       }
+      if (lipMat) lipMat.emissiveIntensity = 0.6 + 0.2 * Math.sin(animT * 4 + phase) + flash * 2.6;
+      if (lipMesh) lipMesh.scale.y = 1 + flash * 0.7; // spring compress→release
     } else if (part.kind === "glove") {
       // punch: the piston SNAPS out over the active window, eases back after
       const piston = part.mesh.userData.piston as THREE.Group | undefined;

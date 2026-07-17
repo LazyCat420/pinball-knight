@@ -617,8 +617,12 @@ function touchPinballParts(inMomentum: boolean): void {
       steerLockT = RAMP_STEER_LOCK;
       part.cooldownT = RAMP_COOLDOWN;
       part.hitT = 0;
+      // Loud, directional feedback: a spark spray up the launch lane + a kick +
+      // a distinct whoosh, so a ramp launch is unmistakable (not a silent shove).
       state.vfx?.dust(p.x, 0.06, p.z);
-      sfxRoll();
+      state.vfx?.sparks(part.x, 0.45, part.z, part.dirX, part.dirZ, 16);
+      state.shakeT = Math.max(state.shakeT, 0.12);
+      sfxSpin();
     } else if (part.kind === "oil") {
       // The slick: a WALKING touch converts your stride into a frictionless
       // slide along your heading; riding over it re-greases the momentum.
