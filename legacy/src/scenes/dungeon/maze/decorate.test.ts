@@ -168,13 +168,35 @@ describe("decorateMaze", () => {
     const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip"]);
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
     expect(dealt.length).toBeLessThanOrEqual(6);
-    const targets = plan.parts.filter((p) => p.kind === "target");
+    // Scattered break-them-all targets stay within budget; the Slice 6 drop-target
+    // BANK is a separate layer (bank !== undefined) and doesn't count against it.
+    const targets = plan.parts.filter((p) => p.kind === "target" && p.bank === undefined);
     expect(targets.length).toBeLessThanOrEqual(5);
     const hazards = plan.parts.filter((p) => p.kind === "pit" || p.kind === "electric" || p.kind === "firevent" || p.kind === "magstrip");
     expect(hazards.length).toBeLessThanOrEqual(4);
     for (const part of dealt) {
       expect(at(g, part.i, part.j)).toBe(T_FLOOR); // never on the stairs tile
       expect(Math.abs(part.i - plan.start.i) + Math.abs(part.j - plan.start.j)).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it("a target BANK (when placed) is 3 in-a-row, seq 0-1-2, all facing a wall (Slice 6)", () => {
+    // best-effort placement — scan seeds until one floor hosts a bank
+    let bank: ReturnType<typeof makeLevel>["plan"]["parts"] = [];
+    let g!: ReturnType<typeof makeLevel>["g"];
+    for (let seed = 200; seed < 240 && bank.length === 0; seed++) {
+      const lvl = makeLevel(seed);
+      const b = lvl.plan.parts.filter((p) => p.kind === "target" && p.bank !== undefined);
+      if (b.length) { bank = b; g = lvl.g; }
+    }
+    if (bank.length === 0) return; // no bank in the sampled seeds — acceptable
+    expect(bank.length).toBe(3);
+    expect(new Set(bank.map((p) => p.seq)).size).toBe(3); // distinct 0,1,2
+    for (const t of bank) expect(at(g, t.i + t.dirI, t.j + t.dirJ)).toBe(T_WALL); // faces a wall
+    // collinear + adjacent (a real "row")
+    const sorted = [...bank].sort((a, b2) => (a.seq ?? 0) - (b2.seq ?? 0));
+    for (let k = 1; k < sorted.length; k++) {
+      expect(Math.abs(sorted[k].i - sorted[k - 1].i) + Math.abs(sorted[k].j - sorted[k - 1].j)).toBe(1);
     }
   });
 

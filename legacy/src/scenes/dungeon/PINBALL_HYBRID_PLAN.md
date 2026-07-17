@@ -96,7 +96,13 @@ lit (`pinball-parts.ts`). Verified headless: a rammed bumper turns gold.
   room cluster lit → **jackpot**: a ~3s room-wide extra-damage window + flash.
 - `state.ts` + `player.ts` (bumper branch) + `pinball-parts.ts` (lit glow).
 
-## Slice 6 — Target sequence lock ⬜
+## Slice 6 — Target sequence lock ✅ (done 2026-07-17)
+Drop-target BANK: one row of 3 wall-mounted targets (`bank`/`seq`/`lit` on the
+part) placed on a shared wall run (`decorate.ts` best-effort). Hit them in 1-2-3
+order to LIGHT them (green); a wrong-order hit resets the whole bank (red);
+lighting all 3 pays BANK_CLEAR_GOLD + flash. Separate from the scattered
+break-them-all objective (excluded from targetsTotal). Render: banked eyes glow
+green-lit / red-armed. New bank-structure test; 105 pass.
 - Give a room's targets an ordered `sequence` index; hitting out of order resets.
   Completing 1-2-3 fires a reward (prize/door/jackpot assist).
 - `state.ts` (target `seq`) + `decorate.ts` (assign) + `player.ts` (hit logic).

@@ -298,6 +298,12 @@ export interface PinballPart {
   done?: boolean;
   /** BUMPER only: pops so far; at BUMPER_LIT_HITS it lights (Slice 5). */
   hits?: number;
+  /** TARGET BANK (Slice 6): which drop-target bank this belongs to + its order
+   * in it (0-based) + whether it's lit. Banked targets light in seq order and
+   * don't count toward the break-them-all objective. */
+  bank?: number;
+  seq?: number;
+  lit?: boolean;
   /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave. */
   phase?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */

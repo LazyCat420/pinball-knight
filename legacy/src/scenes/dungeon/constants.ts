@@ -454,6 +454,10 @@ export const TARGET_HIT_SPEED = 5; // momentum needed to break one
 export const TARGET_RADIUS = 0.62; // trigger distance
 export const TARGET_GOLD = 4; // per target
 export const TARGET_CLEAR_GOLD = 30; // all-targets payout
+// Slice 6 — drop-target BANK: a row of BANK_SIZE targets you must light in 1-2-3
+// order (a wrong-order hit resets the bank); completing it pays BANK_CLEAR_GOLD.
+export const BANK_SIZE = 3;
+export const BANK_CLEAR_GOLD = 25;
 export const TARGETS_PER_FLOOR = 5;
 /**
  * TRAPDOOR → ROLLERCOASTER — a floor hatch on dead ends: step on it and it

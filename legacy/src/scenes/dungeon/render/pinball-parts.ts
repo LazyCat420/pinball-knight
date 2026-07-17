@@ -466,6 +466,9 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       punchSpent: s.kind === "glove" || s.kind === "firevent" ? true : undefined,
       done: s.kind === "target" ? false : undefined,
       hits: s.kind === "bumper" ? 0 : undefined,
+      bank: s.bank,
+      seq: s.seq,
+      lit: s.bank !== undefined ? false : undefined,
       // Electric plates share a clock but stagger phase so a room pulses as a wave.
       phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : undefined,
       mesh,
@@ -589,6 +592,11 @@ export function updatePinballParts(dt: number): void {
         // broken: rings tip over, glow dies
         if (rings) rings.rotation.z = Math.min(Math.PI / 2.2, rings.rotation.z + dt * 6);
         if (mats) mats.forEach((m) => (m.emissiveIntensity = 0.02));
+      } else if (part.bank !== undefined && mats) {
+        // Slice 6 — banked drop-target: GREEN steady-bright once lit, else a
+        // dim red "armed" wink so the 1-2-3 progress reads at a glance.
+        mats[2].emissive.setHex(part.lit ? 0x6fe89a : 0xd95763);
+        mats[2].emissiveIntensity = part.lit ? 1.7 : 0.5 + 0.35 * Math.sin(animT * 4 + part.j);
       } else if (mats) {
         mats[2].emissiveIntensity = 0.7 + 0.5 * Math.sin(animT * 4 + part.j); // the eye winks
       }

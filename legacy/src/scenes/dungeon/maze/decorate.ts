@@ -63,6 +63,9 @@ export interface PinballPartSpot extends TilePos {
   dirJ: number;
   dir2I: number;
   dir2J: number;
+  /** TARGET BANK (Slice 6): a drop-target's bank id + its order in the bank. */
+  bank?: number;
+  seq?: number;
 }
 
 /**
@@ -509,6 +512,28 @@ export function decorateMaze(
     if (!side) continue;
     parts.push({ i: p.i, j: p.j, kind: "target", dirI: side[0], dirJ: side[1], dir2I: 0, dir2J: 0 });
     targetsPlaced++;
+  }
+
+  // ── Target BANK (Slice 6): one row of 3 drop-targets on a shared wall, to be
+  // lit in 1-2-3 order for a bonus. Find a straight-corridor run whose 3
+  // consecutive tiles share a wall on the SAME perpendicular side. Best-effort:
+  // some floors won't host one, which is fine (it's a bonus objective). ──
+  const bankAxes: Array<[number, number]> = [[1, 0], [0, 1]];
+  bankSearch: for (const p of shuffled(floors, rng)) {
+    if (inRoom(p) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 6) continue;
+    for (const [ai, aj] of bankAxes) {
+      const wi = -aj;
+      const wj = ai; // perpendicular = the candidate shared wall side
+      const runOk = [0, 1, 2].every(
+        (s) => at(g, p.i + ai * s, p.j + aj * s) === T_FLOOR && at(g, p.i + ai * s + wi, p.j + aj * s + wj) === T_WALL,
+      );
+      const clear = [0, 1, 2].every((s) => !parts.some((q) => q.i === p.i + ai * s && q.j === p.j + aj * s));
+      if (!runOk || !clear) continue;
+      for (let s = 0; s < 3; s++) {
+        parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "target", dirI: wi, dirJ: wj, dir2I: 0, dir2J: 0, bank: 0, seq: s });
+      }
+      break bankSearch; // one bank per floor
+    }
   }
 
   // ── Dead-end economics: the leftovers of the deadend pool (springs took

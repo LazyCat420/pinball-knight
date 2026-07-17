@@ -1024,7 +1024,7 @@ function startLevel(level: number): void {
   state.reaperWarned = false;
   // Wave A/E/F floor state: the target objective, the frenzy meter, the
   // Magician's visit clock, the once-per-floor witch.
-  state.targetsTotal = plan.parts.filter((pt) => pt.kind === "target").length;
+  state.targetsTotal = plan.parts.filter((pt) => pt.kind === "target" && pt.bank === undefined).length;
   state.targetsHit = 0;
   state.partComboHits = 0;
   state.frenzyPaid = false;

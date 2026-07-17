@@ -90,6 +90,7 @@ import {
   TARGET_RADIUS,
   TARGET_GOLD,
   TARGET_CLEAR_GOLD,
+  BANK_CLEAR_GOLD,
   TRAPDOOR_RIDE_SPEED,
   TRAPDOOR_RIDE_MIN,
   TRAPDOOR_RIDE_MAX,
@@ -724,6 +725,35 @@ function touchPinballParts(inMomentum: boolean): void {
       state.vfx?.sparks(part.x, 0.35, part.z, p.momX, p.momZ, 9);
       sfxSpring();
     } else if (part.kind === "target") {
+      if (part.bank !== undefined) {
+        // Slice 6 — drop-target BANK: light in 1-2-3 order; a wrong-order hit
+        // resets the whole bank; lighting all pays a bonus.
+        if (!inMomentum || p.momSpeed < TARGET_HIT_SPEED || part.lit) continue;
+        if (d2 > TARGET_RADIUS * TARGET_RADIUS) continue;
+        const bankParts = state.pinballParts.filter((q) => q.kind === "target" && q.bank === part.bank);
+        const expected = Math.min(...bankParts.filter((q) => !q.lit).map((q) => q.seq ?? 0));
+        part.hitT = 0;
+        onPartTrigger();
+        if (part.seq === expected) {
+          part.lit = true;
+          state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 10);
+          sfxTarget();
+          if (bankParts.every((q) => q.lit)) {
+            state.goldRun += BANK_CLEAR_GOLD;
+            addGold(BANK_CLEAR_GOLD, "dungeon-game");
+            showToast("🎯 TARGET BANK!", `1·2·3 lit · +${BANK_CLEAR_GOLD}g`);
+            state.shakeT = Math.max(state.shakeT, 0.3);
+          } else {
+            showPickupNote(`🎯 BANK ${(part.seq ?? 0) + 1}/${bankParts.length}`);
+          }
+        } else {
+          for (const q of bankParts) q.lit = false; // out of order → reset
+          sfxSpring();
+          showPickupNote("🎯 SEQUENCE RESET");
+        }
+        state.hudDirty = true;
+        continue;
+      }
       // Bullseyes break to MOMENTUM only — the floor's objective layer.
       if (part.done || !inMomentum || p.momSpeed < TARGET_HIT_SPEED) continue;
       if (d2 > TARGET_RADIUS * TARGET_RADIUS) continue;
