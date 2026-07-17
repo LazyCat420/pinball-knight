@@ -72,7 +72,13 @@ zones, which places the launch→core→drain chain deliberately.)
 - Bias corridor deal toward small clusters near junctions.
 - Test: `decorate.test.ts` — no launch part left aimed into a bare wall.
 
-## Slice 4 — Per-surface friction map ⬜
+## Slice 4 — Per-surface friction map ✅ (done 2026-07-17)
+`PINBALL_FRICTION` is now multiplied by the openness of the tile you're on:
+open room/junction (3-4 nbrs) = FRICTION_OPEN 0.35 (fast highway, holds speed),
+straight corridor (2) = 1.0, dead-end pocket (≤1) = FRICTION_TIGHT 2.1 (bleeds
+you for control). Derived at runtime from `isWalkable` neighbours in
+`updatePinball` (`constants.ts` bands + `player.ts`) — no new grid state; Slice 9
+zones can override per-zone. Verified: coasts slowly in the open, no errors.
 - Add a per-tile friction multiplier (a `Uint8`/`Float` grid overlay or a
   fast/slow tile-set) read in `updatePinball`. ramp/room = low (fast), tight
   corridor = high (control). `constants.ts` bands + `player.ts` friction read.

@@ -324,6 +324,12 @@ export const PINBALL_CORNER_ADD = 1.4; // + a flat kick per corner hit
 export const PINBALL_MAX_SPEED = 22; // u/s (≈5× walk) — genuinely fast, still steerable
 /** Momentum bleed while NOT bouncing — very gentle so a good line stays fast. */
 export const PINBALL_FRICTION = 0.9; // u/s² (was 2.0; Sonic keeps its speed)
+// Slice 4 — per-surface friction: PINBALL_FRICTION is multiplied by the openness
+// of the tile you're on, so OPEN bounce-arenas are a fast highway that holds
+// your speed and TIGHT corridors/pockets bleed it for control (speed pacing).
+export const FRICTION_OPEN = 0.35; // 3-4 open neighbours (room / junction) — fast
+export const FRICTION_CORRIDOR = 1.0; // 2 open (a straight run) — normal
+export const FRICTION_TIGHT = 2.1; // ≤1 open (dead-end pocket) — bleeds you down
 export const PINBALL_STEER = 3.6; // how hard held input bends the momentum, 1/sec
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;

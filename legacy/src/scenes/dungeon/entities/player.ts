@@ -41,6 +41,9 @@ import {
   PINBALL_CORNER_ADD,
   PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
+  FRICTION_OPEN,
+  FRICTION_CORRIDOR,
+  FRICTION_TIGHT,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
   PINBALL_COMBO_WINDOW,
@@ -1112,7 +1115,15 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // Momentum bleeds ONLY when NOT bouncing (Sonic keeps its speed on a good
   // line) — very gently. Oil grease and Turbo Charge kill the bleed outright.
   // The combo lapses if you go too long without a wall.
-  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION;
+  // Per-surface friction (Slice 4): an OPEN tile (room/junction) is a fast
+  // highway that holds speed; a TIGHT corridor/pocket bleeds it for control.
+  const tile = worldToTile(g, p.x, p.z);
+  let openN = 0;
+  for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    if (isWalkable(g, tile.i + di, tile.j + dj)) openN++;
+  }
+  const surfMul = openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT;
+  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul;
   p.momSpeed = Math.max(0, p.momSpeed - friction * dt);
   p.bounceComboT = Math.max(0, p.bounceComboT - dt);
   if (p.bounceComboT <= 0) {
