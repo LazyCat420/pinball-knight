@@ -481,6 +481,18 @@ export function decorateMaze(
     }
     if (parts.some((q) => q.i === a.i && q.j === a.j)) continue;
     const c = classifyTopology(g, a, rng) ?? { i: a.i, j: a.j, topo: "junction" as Topology, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 };
+    // A prefab drops its signature parts into an OPEN room, where a junction
+    // tile classifies with no axis (dirI=dirJ=0). A directional part
+    // (spring/ramp/glove/slingshot/trapdoor) with a zero axis fires nowhere —
+    // a spring that doesn't launch, a ramp that doesn't dash. Aim it down any
+    // open neighbour so a stamped part always actually does its thing.
+    if (c.dirI === 0 && c.dirJ === 0) {
+      const openDir = WALL_SIDES.find(([di, dj]) => at(g, a.i + di, a.j + dj) === T_FLOOR);
+      if (openDir) {
+        c.dirI = openDir[0];
+        c.dirJ = openDir[1];
+      }
+    }
     parts.push(spotForKind(a.kind, c, rng));
   }
 

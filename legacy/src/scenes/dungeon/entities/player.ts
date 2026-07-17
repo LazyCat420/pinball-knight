@@ -795,12 +795,22 @@ function updateRide(dt: number): boolean {
 
   if (u >= 1) {
     p.rideT = -1;
+    // Landing = a launch: the rail hands its speed to the pinball machine.
+    // Take the exit heading from the LAST spline segment (sampling at u=1 and
+    // u+0.03 both clamp to the endpoint → a zero vector that would bleed to a
+    // standstill), falling back toward the final control leg if it's tiny.
+    const tail = ridePoint(p.ridePts, 0.94);
+    let dx = pos.x - tail.x;
+    let dz = pos.z - tail.z;
+    if (Math.hypot(dx, dz) < 1e-3 && p.ridePts.length >= 2) {
+      const a = p.ridePts[p.ridePts.length - 2];
+      const b = p.ridePts[p.ridePts.length - 1];
+      dx = b.x - a.x;
+      dz = b.z - a.z;
+    }
+    const dl = Math.hypot(dx, dz) || 1;
     p.ridePts = [];
     p.sprite.mesh.position.y = 0;
-    // Landing = a launch: the rail hands its speed to the pinball machine.
-    const dx = ahead.x - pos.x;
-    const dz = ahead.z - pos.z;
-    const dl = Math.hypot(dx, dz) || 1;
     p.momX = dx / dl;
     p.momZ = dz / dl;
     p.momSpeed = TRAPDOOR_EXIT_SPEED;

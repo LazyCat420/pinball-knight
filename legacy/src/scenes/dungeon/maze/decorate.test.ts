@@ -213,3 +213,37 @@ describe("decorateMaze — rooms + secrets", () => {
     }
   });
 });
+
+describe("decorateMaze — prefab anchors always get a firing direction", () => {
+  // Prefab stamps (maze/prefabs.ts) drop their signature parts into OPEN rooms,
+  // where a tile classifies as a junction with no axis. A directional part with
+  // a zero axis fires nowhere — a spring that won't launch, a ramp that won't
+  // dash. The anchor handler must aim any such part down an open neighbour.
+  it("a directional anchor on an open (junction) tile never ends up with a zero axis", () => {
+    const g = thickenWalls(generateMaze(12, 9, mulberry32(7), 0.3));
+
+    // Collect a handful of junction floor tiles (3+ open neighbours), spaced so
+    // each anchor lands on its own tile rather than being folded by the dedup.
+    const junctions: Array<{ i: number; j: number }> = [];
+    for (let j = 1; j < g.h - 1 && junctions.length < 5; j++) {
+      for (let i = 1; i < g.w - 1 && junctions.length < 5; i++) {
+        if (at(g, i, j) !== T_FLOOR) continue;
+        const open = openSides(g, i, j).length;
+        if (open >= 3 && junctions.every((q) => Math.abs(q.i - i) + Math.abs(q.j - j) >= 2)) junctions.push({ i, j });
+      }
+    }
+    expect(junctions.length).toBeGreaterThan(0);
+
+    const kinds = ["spring", "ramp", "glove", "slingshot", "trapdoor"] as const;
+    const anchors = junctions.map((p, k) => ({ i: p.i, j: p.j, kind: kinds[k % kinds.length] }));
+    // No corridor parts / torches — the only directional parts are our anchors.
+    const plan = decorateMaze(g, mulberry32(8), 0, 0, 0, [], { anchors });
+
+    const directional = new Set<string>(kinds);
+    const placed = plan.parts.filter((p) => directional.has(p.kind));
+    expect(placed.length).toBeGreaterThan(0);
+    for (const p of placed) {
+      expect(p.dirI !== 0 || p.dirJ !== 0, `${p.kind} @ ${p.i},${p.j} fires nowhere`).toBe(true);
+    }
+  });
+});

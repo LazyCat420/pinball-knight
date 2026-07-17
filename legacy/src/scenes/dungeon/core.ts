@@ -363,6 +363,13 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
       return true;
     };
+    // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/multiball/…
+    // without hunting for a flask). `__dungeonPotion('freeze')`.
+    (window as unknown as { __dungeonPotion?: (id: string) => boolean }).__dungeonPotion = (id: string) => {
+      if (!(id in POTIONS)) return false;
+      applyPotion(id as PotionId);
+      return true;
+    };
     // Dev: snapshot the live projectiles' velocities so a headless test can
     // confirm the arrow flew toward the aim point, not the movement facing.
     (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>
@@ -420,7 +427,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo };
+      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, rideT: p.rideT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, multiT: p.multiT, multiBalls: state.multiMeshes?.length ?? 0 };
     };
   }
 
