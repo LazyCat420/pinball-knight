@@ -258,14 +258,23 @@ function furnishRooms(
   const spawns: TilePos[] = [];
   const items: ItemDrop[] = [];
   const parts: PinballPartSpot[] = [];
-  const deal = shuffled<RoomArchetype>(["bumper", "speedway", "arena", "vault"], rng);
+  // Slice 9 — THREE-ZONE floors: a room's archetype is chosen by how far it sits
+  // from the start (the stairs live at the far end), so a floor reads as a loop:
+  //   LAUNCH district (near start)  → speedway ramp lanes to build speed
+  //   MACHINE core   (the middle)   → bumper arenas to bounce + rack combo
+  //   DRAIN lane     (far, by stairs)→ arena/vault: the fight + the reward
+  // Corridor width/friction/enemy-density gradients already ride distance (Slices
+  // 2/4 + BFS spawn weighting), so this ties the spatial pacing together.
+  const roomDist = rooms.map((r) => Math.abs(r.i0 + Math.floor(r.w / 2) - start.i) + Math.abs(r.j0 + Math.floor(r.h / 2) - start.j));
+  const maxDist = Math.max(1, ...roomDist);
   // A bonus floor earns a GUARANTEED vault: the last-carved room (the +1 the
-  // grade unlocked in core.ts) is dealt vault outright, bypassing the deal and
-  // the doorstep demotion so the reward always actually shows up.
+  // grade unlocked in core.ts) is dealt vault outright, bypassing the doorstep
+  // demotion so the reward always actually shows up.
   const vaultRoom = forceVault && rooms.length ? rooms.length - 1 : -1;
 
   rooms.forEach((room, k) => {
-    let kind = deal[k % deal.length];
+    const frac = roomDist[k] / maxDist; // 0 = on the doorstep, 1 = by the stairs
+    let kind: RoomArchetype = frac < 0.34 ? "speedway" : frac < 0.68 ? "bumper" : rng() < 0.5 ? "arena" : "vault";
     const cx = room.i0 + Math.floor(room.w / 2);
     const cy = room.j0 + Math.floor(room.h / 2);
     // A fight/loot room on the doorstep would make level entry a coin flip.

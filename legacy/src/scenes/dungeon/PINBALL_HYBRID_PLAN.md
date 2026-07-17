@@ -133,7 +133,16 @@ apart, 3-4 long, that funnel a moving player to the centre and hold speed down
 the lane (center-channel feel). Placed as a lane, not singletons.
 - `decorate.ts` (lane placement) + `player.ts` (funnel force) + `pinball-parts.ts`.
 
-## Slice 9 — Three-zone floors ⬜ (the big structural loop)
+## Slice 9 — Three-zone floors ✅ (done 2026-07-17) — ALL SLICES COMPLETE
+A room's archetype is now chosen by its distance from the start (stairs sit at
+the far end), so every floor reads as a loop: LAUNCH district near start
+(speedway ramp lanes) → MACHINE core in the middle (bumper arenas to bounce +
+rack the jackpot) → DRAIN lane far by the stairs (arena/vault — the fight + the
+reward). The corridor-friction (Slice 4) and enemy-density (BFS) gradients
+already ride distance, so this ties the spatial pacing together — reachability
+untouched (only archetype selection changed). `decorate.ts furnishRooms` + a
+zoning test. Deferred (pure taste, not blocking): per-zone corridor WIDTH carve
++ making the core the single densest band.
 Partition each floor into **launch district → machine core → drain lane** by
 BFS-distance bands from start→stairs: launch = wide + ramps + low friction + few
 enemies; core = open bumper arena + dense enemies; drain = tight + flippers/

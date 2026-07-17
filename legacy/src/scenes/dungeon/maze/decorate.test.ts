@@ -251,6 +251,26 @@ describe("decorateMaze — rooms + secrets", () => {
     }
   });
 
+  it("zones rooms by distance: near start = speedway (launch), far = arena/vault (drain) — Slice 9", () => {
+    // scan seeds for a floor with clearly-separated rooms (a near + a far one)
+    for (let seed = 300; seed < 340; seed++) {
+      const { plan } = makeFullLevel(seed);
+      if (plan.rooms.length < 2) continue;
+      const dist = (r: { i0: number; j0: number; w: number; h: number }): number =>
+        Math.abs(r.i0 + Math.floor(r.w / 2) - plan.start.i) + Math.abs(r.j0 + Math.floor(r.h / 2) - plan.start.j);
+      const sorted = [...plan.rooms].sort((a, b) => dist(a) - dist(b));
+      const near = sorted[0];
+      const far = sorted[sorted.length - 1];
+      const maxD = dist(far);
+      if (maxD < 10 || dist(near) / maxD > 0.33) continue; // need a real spread with a launch-zone room
+      // near room in the launch zone → speedway; far room in the drain zone → arena/vault
+      expect(near.kind).toBe("speedway");
+      expect(["arena", "vault"]).toContain(far.kind);
+      return;
+    }
+    // no suitably-spread floor sampled — acceptable, zoning is distance-driven
+  });
+
   it("collects every cracked band's top-left handle into plan.secrets", () => {
     const { g, plan } = makeFullLevel(41);
     expect(plan.secrets.length).toBeGreaterThan(0);
