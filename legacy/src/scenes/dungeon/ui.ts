@@ -7,6 +7,7 @@
 import { state, WEAPON_SLOTS } from "./state";
 import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
+import { ensurePixelFonts } from "./pixel-fonts";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 /**
@@ -27,14 +28,10 @@ const DISPLAY = `900 34px ui-monospace, "SF Mono", Menlo, monospace`;
 const WOLF_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
 const WOLF_NUM = `'VT323', 'Courier New', ui-monospace, monospace`;
 
-let wolfFontsInjected = false;
+// The pixel fonts are self-hosted (base64 woff2, no network) — see pixel-fonts.ts.
+// Kept the ensureWolfFonts name so every existing call site still works.
 export function ensureWolfFonts(): void {
-  if (wolfFontsInjected || typeof document === "undefined") return;
-  wolfFontsInjected = true;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = "https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap";
-  document.head.appendChild(link);
+  ensurePixelFonts();
 }
 
 // Wolfenstein concrete palette — dark steel with a gold rivet line, sharp text.
@@ -55,7 +52,7 @@ export function createHUD(container: HTMLElement): HTMLDivElement {
   el.id = "dungeon-hud";
   el.style.cssText = `
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10001;
-    font: ${WOLF_LABEL}; color: #e8ebf0;
+    font-family: ${WOLF_LABEL}; color: #e8ebf0;
     background: ${WOLF_BG};
     border-top: 3px solid transparent;
     border-image: ${WOLF_TOP} 1;
@@ -77,8 +74,8 @@ export function createHUD(container: HTMLElement): HTMLDivElement {
 function wolfCell(label: string, value: string, color: string): string {
   return `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:0 4px">
-      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">${label}</div>
-      <div style="font:${WOLF_NUM};font-size:30px;line-height:0.8;color:${color};text-shadow:2px 2px 0 #0b0c10;white-space:nowrap">${value}</div>
+      <div style="font-family:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">${label}</div>
+      <div style="font-family:${WOLF_NUM};font-size:30px;line-height:0.8;color:${color};text-shadow:2px 2px 0 #0b0c10;white-space:nowrap">${value}</div>
     </div>`;
 }
 
@@ -197,7 +194,7 @@ export function createComboFlash(container: HTMLElement): HTMLDivElement {
     position: fixed; left: 50%; top: 120px; transform: translateX(-50%) scale(1);
     z-index: 10001; text-align: center; opacity: 0; display: none;
     pointer-events: none; user-select: none;
-    font: ${WOLF_NUM}; line-height: 0.9;
+    font-family: ${WOLF_NUM}; line-height: 0.9;
     text-shadow: 0 0 8px rgba(255,210,63,0.7), 2px 2px 0 #0b0d12;
   `;
   container.appendChild(el);
@@ -213,8 +210,8 @@ export function flashBounceCombo(el: HTMLDivElement | null, combo: number): void
     if (combo >= n) { word = w; color = c; }
   }
   el.style.color = color;
-  el.innerHTML = `<div style="font:${WOLF_NUM};font-size:26px">×${combo}</div>` +
-    `<div style="font:${WOLF_LABEL};font-size:9px;letter-spacing:2px;margin-top:2px">${word}</div>`;
+  el.innerHTML = `<div style="font-family:${WOLF_NUM};font-size:26px">×${combo}</div>` +
+    `<div style="font-family:${WOLF_LABEL};font-size:9px;letter-spacing:2px;margin-top:2px">${word}</div>`;
   el.style.display = "block";
   el.style.transition = "none";
   el.style.opacity = "1";
@@ -395,16 +392,16 @@ export function updateHUD(el: HTMLDivElement): void {
   const hpColor = hp <= 1 ? "#d95763" : hp <= 2 ? "#f0a63c" : "#8fc46b";
   const healthCell = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px">
-      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">HEALTH</div>
-      <div style="font:${WOLF_NUM};font-size:32px;line-height:0.7;color:${hpColor};text-shadow:2px 2px 0 #0b0c10">${hpPct}%</div>
+      <div style="font-family:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">HEALTH</div>
+      <div style="font-family:${WOLF_NUM};font-size:32px;line-height:0.7;color:${hpColor};text-shadow:2px 2px 0 #0b0c10">${hpPct}%</div>
       <div style="font-size:11px;letter-spacing:1px;margin-top:3px">${hearts}</div>
     </div>`;
 
   // WEAPON cell: icon + name, with the swap chip + worn gear beneath.
   const weaponCell = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px">
-      <div style="font:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">WEAPON</div>
-      <div style="font:${WOLF_LABEL};font-size:11px;color:#e8ebf0;text-shadow:1px 1px 0 #0b0c10;white-space:nowrap">${weaponName}</div>
+      <div style="font-family:${WOLF_LABEL};font-size:8px;letter-spacing:1px;color:#7a8496;margin-bottom:5px">WEAPON</div>
+      <div style="font-family:${WOLF_LABEL};font-size:11px;color:#e8ebf0;text-shadow:1px 1px 0 #0b0c10;white-space:nowrap">${weaponName}</div>
       <div style="font:${SERIF};font-size:10px;margin-top:5px;color:#8a94a6">${swapChip}${gearChips ? `&nbsp;&nbsp;${gearChips}` : ""}</div>
     </div>`;
 
@@ -516,8 +513,8 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
 
   ensureWolfFonts();
   el.innerHTML = `
-    <div style="font:${WOLF_LABEL};font-size:40px;line-height:1.3;color:#d95763;text-shadow:4px 4px 0 #0b0d12;text-align:center">YOU ARE<br>DEAD</div>
-    <div style="font:${WOLF_NUM};font-size:26px;letter-spacing:2px;margin:22px 0 26px;color:#c8ccd4">
+    <div style="font-family:${WOLF_LABEL};font-size:40px;line-height:1.3;color:#d95763;text-shadow:4px 4px 0 #0b0d12;text-align:center">YOU ARE<br>DEAD</div>
+    <div style="font-family:${WOLF_NUM};font-size:26px;letter-spacing:2px;margin:22px 0 26px;color:#c8ccd4">
       DEPTH <span style="color:#f0a63c">${state.level}</span>
       &nbsp;·&nbsp; KILLS <span style="color:#8fc46b">${state.kills}</span>
       &nbsp;·&nbsp; GOLD <span style="color:#ffd98a">${state.goldRun}</span>
@@ -630,15 +627,21 @@ export function refreshShopOverlay(el: HTMLDivElement | null, balance: number): 
 
 /** One-time controls hint, bottom of the screen, fades after a few seconds. */
 export function showControlsHint(container: HTMLElement): void {
+  ensureWolfFonts();
   const el = document.createElement("div");
+  // Sits ABOVE the HUD bar (its own centred pill) so it never overlaps the
+  // status console, and fades out after a few seconds.
   el.style.cssText = `
-    position: fixed; bottom: 18px; left: 0; right: 0; z-index: 10001;
+    position: fixed; bottom: 148px; left: 50%; transform: translateX(-50%); z-index: 10000;
     text-align: center; pointer-events: none; user-select: none;
-    font: 700 12px ui-monospace, Menlo, monospace; letter-spacing: 2px;
-    color: #6b7688; text-shadow: 1px 1px 0 #0b0d12;
+    font-family: ${WOLF_NUM}; font-size: 17px; letter-spacing: 1px; line-height: 1;
+    color: #9aa4b4; text-shadow: 1px 1px 0 #0b0d12;
+    background: rgba(11,12,16,0.72); border: 1px solid #2b303b;
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.05), 0 2px 0 rgba(0,0,0,0.5);
+    padding: 5px 12px; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     transition: opacity 1.2s ease;
   `;
-  el.textContent = "WASD MOVE · SHIFT SPRINT · SPACE DODGE · J/CLICK ATTACK (HOLD=HEAVY) · TAB SWAP · R RAMPAGE · ESC LEAVE";
+  el.textContent = "WASD MOVE · SHIFT SPRINT · SPACE DODGE · J/CLICK ATTACK · TAB SWAP · R RAMPAGE · ` DEBUG · ESC LEAVE";
   container.appendChild(el);
   setTimeout(() => {
     el.style.opacity = "0";

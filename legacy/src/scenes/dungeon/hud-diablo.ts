@@ -62,8 +62,6 @@ const STONE_BG = "linear-gradient(180deg,#24262e 0%,#16171d 60%,#0b0c10 100%)";
 const BRONZE = "linear-gradient(90deg,#3a2a18,#a97a3c 50%,#3a2a18)";
 // A hard pixel bevel: bright top-left, dark bottom-right, no blur.
 const BEVEL = "inset 2px 2px 0 rgba(255,220,150,0.14), inset -2px -2px 0 rgba(0,0,0,0.65)";
-// A vertical rivet divider between console segments.
-const DIVIDER = `width:2px;align-self:stretch;margin:2px 0;background:linear-gradient(180deg,transparent,#5a4a2c 45%,#a97a3c 50%,#5a4a2c 55%,transparent)`;
 
 /** Build the Diablo panel once and mount the shared face into its centre. */
 export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
@@ -72,7 +70,7 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   el.id = "dungeon-hud-diablo";
   el.style.cssText = `
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10001;
-    color: #e8e0cf; font: ${PX_NUM};
+    color: #e8e0cf; font-family: ${PX_NUM};
     background: ${STONE_BG};
     border-top: 3px solid transparent; border-image: ${BRONZE} 1;
     box-shadow: 0 -2px 0 #000, 0 -6px 0 rgba(0,0,0,0.55);
@@ -97,9 +95,9 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   header.appendChild(buffStripEl);
   console_.appendChild(header);
 
-  // ── MAIN ROW: a segmented Doom bar, centred as a block ──
+  // ── MAIN ROW: a segmented Doom bar of bordered cells, centred as a block ──
   const row = document.createElement("div");
-  row.style.cssText = `display:flex;align-items:center;justify-content:center;gap:12px;padding:2px 2px 8px`;
+  row.style.cssText = `display:flex;align-items:stretch;justify-content:center;gap:8px;padding:2px 2px 8px`;
   console_.appendChild(row);
 
   // Segment 1 — SKILLS (Q / E) + card socket.
@@ -110,14 +108,12 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   skills.appendChild(skillSlots[1].wrap);
   cardSlotEl = makeCardSlot();
   skills.appendChild(cardSlotEl);
-  row.appendChild(withLabel("SKILLS", skills));
-  row.appendChild(divider());
+  row.appendChild(segmentBox(withLabel("SKILLS", skills)));
 
   // Segment 2 — WEAPON + AMMO (Doom numeric cell).
   weaponEl = document.createElement("div");
-  weaponEl.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:70px;gap:1px`;
-  row.appendChild(weaponEl);
-  row.appendChild(divider());
+  weaponEl.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:66px;gap:1px`;
+  row.appendChild(segmentBox(weaponEl));
 
   // Segment 3 — LIFE globe | FACE | MANA globe (Diablo core).
   const center = document.createElement("div");
@@ -133,21 +129,19 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   center.appendChild(lifeGlobe.wrap);
   center.appendChild(faceFrame);
   center.appendChild(manaGlobe.wrap);
-  row.appendChild(center);
-  row.appendChild(divider());
+  row.appendChild(segmentBox(center));
 
   // Segment 4 — STATS (score / depth / kills / rampage) as Doom cells.
   statsEl = document.createElement("div");
   statsEl.style.cssText = `display:grid;grid-template-columns:auto auto;gap:2px 14px;align-items:center`;
-  row.appendChild(statsEl);
-  row.appendChild(divider());
+  row.appendChild(segmentBox(statsEl));
 
   // Segment 5 — BELT (4 quick-use slots, keys Shift+1..4).
   const belt = document.createElement("div");
   belt.style.cssText = `display:flex;gap:5px`;
   beltEls = [0, 1, 2, 3].map((i) => makeBeltSlot(i));
   beltEls.forEach((b) => belt.appendChild(b));
-  row.appendChild(withLabel("BELT · ⇧1-4", belt));
+  row.appendChild(segmentBox(withLabel("BELT · ⇧1-4", belt)));
 
   container.appendChild(el);
   panelEl = el;
@@ -195,16 +189,20 @@ function withLabel(label: string, inner: HTMLElement): HTMLDivElement {
   wrap.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:3px`;
   const cap = document.createElement("div");
   cap.textContent = label;
-  cap.style.cssText = `font:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
+  cap.style.cssText = `font-family:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
   wrap.appendChild(inner);
   wrap.appendChild(cap);
   return wrap;
 }
 
-function divider(): HTMLDivElement {
-  const d = document.createElement("div");
-  d.style.cssText = DIVIDER;
-  return d;
+/** A bordered, bevelled cell that frames a console segment (the Doom-bar boxes). */
+function segmentBox(inner: HTMLElement): HTMLDivElement {
+  const box = document.createElement("div");
+  box.style.cssText = `display:flex;align-items:center;justify-content:center;padding:5px 9px;
+    border:2px solid #5a4a2c;box-shadow:${BEVEL};
+    background:linear-gradient(180deg,rgba(38,34,26,0.5),rgba(13,11,9,0.55))`;
+  box.appendChild(inner);
+  return box;
 }
 
 function makeGlobe(label: string): { wrap: HTMLDivElement; ctx: CanvasRenderingContext2D; val: HTMLDivElement } {
@@ -217,12 +215,12 @@ function makeGlobe(label: string): { wrap: HTMLDivElement; ctx: CanvasRenderingC
   c.style.cssText = `width:56px;height:56px;image-rendering:pixelated;display:block`;
   const val = document.createElement("div");
   val.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    font:${PX_NUM};font-size:22px;color:#fff;text-shadow:1px 1px 0 #000,0 0 5px rgba(0,0,0,0.9);pointer-events:none`;
+    font-family:${PX_NUM};font-size:22px;color:#fff;text-shadow:1px 1px 0 #000,0 0 5px rgba(0,0,0,0.9);pointer-events:none`;
   box.appendChild(c);
   box.appendChild(val);
   const cap = document.createElement("div");
   cap.textContent = label;
-  cap.style.cssText = `font:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
+  cap.style.cssText = `font-family:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
   wrap.appendChild(box);
   wrap.appendChild(cap);
   return { wrap, ctx: c.getContext("2d")!, val };
@@ -251,9 +249,9 @@ function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTM
   icon.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:19px`;
   const keyBadge = document.createElement("div");
   keyBadge.textContent = key;
-  keyBadge.style.cssText = `position:absolute;left:2px;top:1px;font:${PX_LABEL};font-size:7px;color:#e8d9a8;text-shadow:1px 1px 0 #000`;
+  keyBadge.style.cssText = `position:absolute;left:2px;top:1px;font-family:${PX_LABEL};font-size:7px;color:#e8d9a8;text-shadow:1px 1px 0 #000`;
   const cost = document.createElement("div");
-  cost.style.cssText = `position:absolute;right:2px;bottom:0;font:${PX_NUM};font-size:14px;line-height:1;color:#6fd0e8;text-shadow:1px 1px 0 #000`;
+  cost.style.cssText = `position:absolute;right:2px;bottom:0;font-family:${PX_NUM};font-size:14px;line-height:1;color:#6fd0e8;text-shadow:1px 1px 0 #000`;
   wrap.append(ring, icon, keyBadge, cost);
   return { ring: ring.getContext("2d")!, icon, cost, wrap };
 }
@@ -280,14 +278,14 @@ function makeBeltSlot(i: number): HTMLDivElement {
 /** A Doom-style labelled numeric cell (caption over a big pixel value). */
 function statHTML(label: string, value: string, color: string): string {
   return `<div style="display:flex;flex-direction:column;align-items:center;line-height:1">
-      <div style="font:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">${label}</div>
-      <div style="font:${PX_NUM};font-size:19px;color:${color};text-shadow:1px 1px 0 #0b0c10">${value}</div>
+      <div style="font-family:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">${label}</div>
+      <div style="font-family:${PX_NUM};font-size:19px;color:${color};text-shadow:1px 1px 0 #0b0c10">${value}</div>
     </div>`;
 }
 
 /** A small bordered status pip (combo / ball-ready / targets). */
 function pillHTML(text: string, color: string): string {
-  return `<span style="font:${PX_LABEL};font-size:7px;letter-spacing:1px;padding:2px 4px;
+  return `<span style="font-family:${PX_LABEL};font-size:7px;letter-spacing:1px;padding:2px 4px;
     border:1px solid ${color};color:${color};background:rgba(0,0,0,0.35)">${text}</span>`;
 }
 
@@ -305,7 +303,7 @@ function buffTileHTML(b: BuffView): string {
       <div style="position:absolute;left:2px;right:2px;bottom:2px;height:3px;background:#000">
         <div style="height:100%;width:${frac * 100}%;background:${b.color}"></div>
       </div>
-      <div style="position:absolute;top:-1px;right:1px;font:${PX_NUM};font-size:13px;line-height:1;font-weight:${expiring ? 900 : 400};
+      <div style="position:absolute;top:-1px;right:1px;font-family:${PX_NUM};font-size:13px;line-height:1;font-weight:${expiring ? 900 : 400};
         color:${secColor};text-shadow:1px 1px 0 #000">${secs}</div>
     </div>`;
 }
@@ -502,9 +500,9 @@ function paintHeader(): void {
   lastHeaderSig = sig;
 
   weaponEl.innerHTML =
-    `<div style="font:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">AMMO</div>` +
-    `<div style="font:${PX_NUM};font-size:26px;line-height:0.8;color:${ammoColor};text-shadow:1px 1px 0 #0b0c10">${ammo}</div>` +
-    `<div style="font:${PX_LABEL};font-size:7px;color:#bfae86;white-space:nowrap;margin-top:2px">${wIcon} ${wName}</div>`;
+    `<div style="font-family:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">AMMO</div>` +
+    `<div style="font-family:${PX_NUM};font-size:26px;line-height:0.8;color:${ammoColor};text-shadow:1px 1px 0 #0b0c10">${ammo}</div>` +
+    `<div style="font-family:${PX_LABEL};font-size:7px;color:#bfae86;white-space:nowrap;margin-top:2px">${wIcon} ${wName}</div>`;
 
   statsEl.innerHTML =
     statHTML("SCORE", String(state.goldRun), "#ffd98a") +
@@ -549,7 +547,7 @@ export function refreshDiablo(): void {
       el.style.opacity = "0.5";
       const hint = document.createElement("span");
       hint.textContent = String(i + 1);
-      hint.style.cssText = `font:${PX_LABEL};font-size:8px;color:#4a4030`;
+      hint.style.cssText = `font-family:${PX_LABEL};font-size:8px;color:#4a4030`;
       el.appendChild(hint);
       continue;
     }
@@ -560,12 +558,12 @@ export function refreshDiablo(): void {
     if (slot.count > 1) {
       const badge = document.createElement("span");
       badge.textContent = String(slot.count);
-      badge.style.cssText = `position:absolute;right:1px;bottom:0;font:${PX_NUM};font-size:14px;line-height:1;color:#f0e6c8;text-shadow:1px 1px 0 #000`;
+      badge.style.cssText = `position:absolute;right:1px;bottom:0;font-family:${PX_NUM};font-size:14px;line-height:1;color:#f0e6c8;text-shadow:1px 1px 0 #000`;
       el.appendChild(badge);
     }
     const key = document.createElement("span");
     key.textContent = String(i + 1);
-    key.style.cssText = `position:absolute;left:2px;top:0;font:${PX_LABEL};font-size:7px;color:#8a7c5e`;
+    key.style.cssText = `position:absolute;left:2px;top:0;font-family:${PX_LABEL};font-size:7px;color:#8a7c5e`;
     el.appendChild(key);
   }
 }

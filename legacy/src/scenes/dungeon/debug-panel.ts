@@ -59,7 +59,7 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   el.style.cssText = `
     position: fixed; left: 10px; top: 10px; z-index: 10050; display: none;
     width: 230px; max-height: calc(100vh - 20px); overflow-y: auto;
-    padding: 8px; color: #d7f0ff; font: ${PX_NUM}; font-size: 15px; line-height: 1.15;
+    padding: 8px; color: #d7f0ff; font-family: ${PX_NUM}; font-size: 15px; line-height: 1.15;
     background: linear-gradient(180deg,#12161c,#0a0c10);
     border: 2px solid #2f6f8f; box-shadow: inset 2px 2px 0 rgba(120,200,255,0.12), inset -2px -2px 0 rgba(0,0,0,0.6), 0 4px 0 rgba(0,0,0,0.5);
     pointer-events: auto; user-select: none;`;
@@ -68,7 +68,7 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   el.addEventListener("click", (e) => e.stopPropagation());
 
   const title = document.createElement("div");
-  title.innerHTML = `<span style="font:${PX_LABEL};font-size:9px;color:#6fd0e8">DEBUG</span>
+  title.innerHTML = `<span style="font-family:${PX_LABEL};font-size:9px;color:#6fd0e8">DEBUG</span>
     <span style="font-size:12px;color:#5a7a8a"> &nbsp;\` to close</span>`;
   title.style.cssText = `padding-bottom:6px;border-bottom:1px solid #234; margin-bottom:6px`;
   el.appendChild(title);
@@ -133,7 +133,7 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   const hint = document.createElement("div");
   hint.id = "dungeon-debug-hint";
   hint.textContent = "` debug";
-  hint.style.cssText = `position:fixed;left:10px;top:10px;z-index:10049;font:${PX_LABEL};font-size:8px;
+  hint.style.cssText = `position:fixed;left:10px;top:10px;z-index:10049;font-family:${PX_LABEL};font-size:8px;
     color:#3a5a6a;pointer-events:none;user-select:none;opacity:0.6`;
   container.appendChild(hint);
 
@@ -153,12 +153,12 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   function section(label: string): void {
     const s = document.createElement("div");
     s.textContent = label;
-    s.style.cssText = `font:${PX_LABEL};font-size:8px;color:#5a7a8a;margin:8px 0 3px;letter-spacing:1px`;
+    s.style.cssText = `font-family:${PX_LABEL};font-size:8px;color:#5a7a8a;margin:8px 0 3px;letter-spacing:1px`;
     el.appendChild(s);
   }
 }
 
-const baseBtn = `font:${PX_NUM};font-size:14px;padding:3px 5px;border:2px solid;cursor:pointer;
+const baseBtn = `font-family:${PX_NUM};font-size:14px;padding:3px 5px;border:2px solid;cursor:pointer;
   box-shadow:inset 1px 1px 0 rgba(255,255,255,0.08),inset -1px -1px 0 rgba(0,0,0,0.5);line-height:1;`;
 
 /** A flow-wrapped row of small icon chips (weapons/potions/enemies). */
