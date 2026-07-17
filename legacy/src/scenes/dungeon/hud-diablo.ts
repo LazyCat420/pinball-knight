@@ -1,27 +1,28 @@
 /**
- * 🩸 THE DIABLO HUD — the isometric "strategy layer" panel (DOS pixel restyle).
+ * 🩸 THE DIABLO/DOOM HUD — a hybrid iso "strategy layer" status bar.
  *
- * A centred carved-steel console bolted to the bottom of the screen: two liquid
- * globes (LIFE left, MANA right) flanking the shared knight face, the two Q/E
- * skill slots with cooldown sweeps on the left, and the quick-use BELT on the
- * right. A thin header strip carries the status chips (rampage / targets /
- * combo) and the UNIFIED BUFF STRIP — one icon tile per active power-up with a
- * live countdown, so every buff reads at a glance instead of vanishing.
+ * A centred, segmented status bar bolted to the bottom of the screen, styled
+ * like a DOS shooter's console (Press Start 2P labels, VT323 numbers, hard pixel
+ * edges) but carrying the ARPG data an iso game needs. Left→right the segments
+ * are, separated by riveted dividers:
  *
- * The whole thing is styled to match the Wolfenstein bar (hud-wolf): Press
- * Start 2P labels, VT323 numbers, hard pixel edges (no rounded corners, no soft
- * glows) — the two HUDs read as one machine. The face canvas is the same DOM
- * element shared between them.
+ *   SKILLS (Q/E + card) │ WEAPON+AMMO │ LIFE-orb · FACE · MANA-orb │ STATS │ BELT
+ *
+ * — the Doom numeric cells (AMMO / SCORE / DEPTH / KILLS / RAMPAGE) flanking the
+ * Diablo life+mana globes and the shared knight face. A thin strip above carries
+ * the transient status pips (combo / ball-ready / targets) on the left and the
+ * unified BUFF STRIP (one tile per active power-up, with a countdown) on the
+ * right — no more loose floating text.
  *
  * Globes + cooldown rings are canvas, animated every frame by renderDiablo(dt);
- * the header chips/buff tiles rebuild in the same loop but only when their
- * content signature changes. The belt/skill tiles rebuild on state.hudDirty.
+ * the numeric cells + buff tiles + pips rebuild in the same loop but only when
+ * their content signature changes. Skill/belt tiles rebuild on state.hudDirty.
  */
 import { state } from "./state";
 import { createFace, renderFace, setFaceHealth } from "./hud-face";
 import { ABILITIES, type AbilityId } from "./abilities";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
-import { POTIONS } from "./items";
+import { POTIONS, WEAPONS, type WeaponId } from "./items";
 import { ensureWolfFonts } from "./ui";
 
 const GLOBE_PX = 84; // globe canvas backing size
@@ -36,8 +37,10 @@ let lifeCtx: CanvasRenderingContext2D | null = null;
 let manaCtx: CanvasRenderingContext2D | null = null;
 let lifeValEl: HTMLDivElement | null = null;
 let manaValEl: HTMLDivElement | null = null;
-let chipsEl: HTMLDivElement | null = null;
+let pipsEl: HTMLDivElement | null = null;
 let buffStripEl: HTMLDivElement | null = null;
+let weaponEl: HTMLDivElement | null = null;
+let statsEl: HTMLDivElement | null = null;
 let beltEls: HTMLDivElement[] = [];
 let skillSlots: Array<{ ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; wrap: HTMLDivElement }> = [];
 let cardSlotEl: HTMLDivElement | null = null;
@@ -46,7 +49,7 @@ let faceFrameEl: HTMLDivElement | null = null;
 let wavePhase = 0;
 let lifeRippleT = 0; // >0 = a potion just splashed the life globe
 let manaRippleT = 0;
-let lastHeaderSig = ""; // repaint guard for the chips + buff strip
+let lastHeaderSig = ""; // repaint guard for the numeric cells + buff strip + pips
 
 /** A potion/spell splash on a globe: a brief amplitude + brightness pulse. */
 export function rippleGlobe(which: "life" | "mana"): void {
@@ -59,6 +62,8 @@ const STONE_BG = "linear-gradient(180deg,#24262e 0%,#16171d 60%,#0b0c10 100%)";
 const BRONZE = "linear-gradient(90deg,#3a2a18,#a97a3c 50%,#3a2a18)";
 // A hard pixel bevel: bright top-left, dark bottom-right, no blur.
 const BEVEL = "inset 2px 2px 0 rgba(255,220,150,0.14), inset -2px -2px 0 rgba(0,0,0,0.65)";
+// A vertical rivet divider between console segments.
+const DIVIDER = `width:2px;align-self:stretch;margin:2px 0;background:linear-gradient(180deg,transparent,#5a4a2c 45%,#a97a3c 50%,#5a4a2c 55%,transparent)`;
 
 /** Build the Diablo panel once and mount the shared face into its centre. */
 export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
@@ -77,41 +82,46 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
 
   // Centred console so the HUD stops stretching edge-to-edge on wide screens.
   const console_ = document.createElement("div");
-  console_.style.cssText = `max-width: 940px; margin: 0 auto; padding: 0 14px`;
+  console_.style.cssText = `max-width: 1000px; margin: 0 auto; padding: 0 12px`;
   el.appendChild(console_);
 
-  // ── HEADER: status chips (left) + unified buff strip (right) ──
+  // ── TOP STRIP: transient pips (left) + unified buff strip (right) ──
   const header = document.createElement("div");
   header.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:12px;
-    min-height:22px;padding:5px 2px 2px`;
-  chipsEl = document.createElement("div");
-  chipsEl.style.cssText = `display:flex;gap:10px;align-items:center;font:${PX_LABEL};font-size:7px;
-    letter-spacing:1px;color:#c9bfa6;white-space:nowrap`;
+    min-height:20px;padding:4px 2px 2px`;
+  pipsEl = document.createElement("div");
+  pipsEl.style.cssText = `display:flex;gap:5px;align-items:center;flex-wrap:nowrap;overflow:hidden`;
   buffStripEl = document.createElement("div");
   buffStripEl.style.cssText = `display:flex;gap:5px;align-items:center;flex-wrap:nowrap;overflow:hidden`;
-  header.appendChild(chipsEl);
+  header.appendChild(pipsEl);
   header.appendChild(buffStripEl);
   console_.appendChild(header);
 
-  // 3-column grid (equal side columns) so the globes + face stay DEAD-CENTRE
-  // regardless of how wide the skill/belt clusters get.
+  // ── MAIN ROW: a segmented Doom bar, centred as a block ──
   const row = document.createElement("div");
-  row.style.cssText = `display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:2px 2px 8px`;
+  row.style.cssText = `display:flex;align-items:center;justify-content:center;gap:12px;padding:2px 2px 8px`;
   console_.appendChild(row);
 
-  // ── LEFT: skill slots (Q / E) + card socket ──
-  const left = document.createElement("div");
-  left.style.cssText = `display:flex;gap:7px;align-items:center;min-width:0;justify-self:start`;
+  // Segment 1 — SKILLS (Q / E) + card socket.
+  const skills = document.createElement("div");
+  skills.style.cssText = `display:flex;gap:6px;align-items:center`;
   skillSlots = [0, 1].map((i) => makeSkillSlot(i === 0 ? "Q" : "E"));
-  left.appendChild(skillSlots[0].wrap);
-  left.appendChild(skillSlots[1].wrap);
+  skills.appendChild(skillSlots[0].wrap);
+  skills.appendChild(skillSlots[1].wrap);
   cardSlotEl = makeCardSlot();
-  left.appendChild(cardSlotEl);
-  row.appendChild(left);
+  skills.appendChild(cardSlotEl);
+  row.appendChild(withLabel("SKILLS", skills));
+  row.appendChild(divider());
 
-  // ── CENTER: life globe | face | mana globe ──
+  // Segment 2 — WEAPON + AMMO (Doom numeric cell).
+  weaponEl = document.createElement("div");
+  weaponEl.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:70px;gap:1px`;
+  row.appendChild(weaponEl);
+  row.appendChild(divider());
+
+  // Segment 3 — LIFE globe | FACE | MANA globe (Diablo core).
   const center = document.createElement("div");
-  center.style.cssText = `display:flex;gap:12px;align-items:center;justify-content:center;justify-self:center`;
+  center.style.cssText = `display:flex;gap:12px;align-items:center;justify-content:center`;
   const lifeGlobe = makeGlobe("LIFE");
   const faceFrame = makeFaceFrame();
   faceFrameEl = faceFrame;
@@ -124,20 +134,20 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   center.appendChild(faceFrame);
   center.appendChild(manaGlobe.wrap);
   row.appendChild(center);
+  row.appendChild(divider());
 
-  // ── RIGHT: belt (4 quick-use slots, keys Shift+1..4) ──
-  const right = document.createElement("div");
-  right.style.cssText = `display:flex;flex-direction:column;gap:4px;align-items:flex-end;justify-self:end`;
-  const beltLabel = document.createElement("div");
-  beltLabel.textContent = "BELT · ⇧1-4";
-  beltLabel.style.cssText = `font:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
-  right.appendChild(beltLabel);
-  const beltRow = document.createElement("div");
-  beltRow.style.cssText = `display:flex;gap:5px`;
+  // Segment 4 — STATS (score / depth / kills / rampage) as Doom cells.
+  statsEl = document.createElement("div");
+  statsEl.style.cssText = `display:grid;grid-template-columns:auto auto;gap:2px 14px;align-items:center`;
+  row.appendChild(statsEl);
+  row.appendChild(divider());
+
+  // Segment 5 — BELT (4 quick-use slots, keys Shift+1..4).
+  const belt = document.createElement("div");
+  belt.style.cssText = `display:flex;gap:5px`;
   beltEls = [0, 1, 2, 3].map((i) => makeBeltSlot(i));
-  beltEls.forEach((b) => beltRow.appendChild(b));
-  right.appendChild(beltRow);
-  row.appendChild(right);
+  beltEls.forEach((b) => belt.appendChild(b));
+  row.appendChild(withLabel("BELT · ⇧1-4", belt));
 
   container.appendChild(el);
   panelEl = el;
@@ -165,8 +175,10 @@ export function disposeDiabloHUD(): void {
   panelEl = null;
   lifeCtx = manaCtx = null;
   lifeValEl = manaValEl = null;
-  chipsEl = null;
+  pipsEl = null;
   buffStripEl = null;
+  weaponEl = null;
+  statsEl = null;
   beltEls = [];
   skillSlots = [];
   cardSlotEl = null;
@@ -177,10 +189,27 @@ export function disposeDiabloHUD(): void {
 
 // ── builders ────────────────────────────────────────────────────
 
+/** A segment framed by a tiny caption underneath (Doom cell label). */
+function withLabel(label: string, inner: HTMLElement): HTMLDivElement {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:3px`;
+  const cap = document.createElement("div");
+  cap.textContent = label;
+  cap.style.cssText = `font:${PX_LABEL};font-size:7px;letter-spacing:1px;color:#8a7c5e`;
+  wrap.appendChild(inner);
+  wrap.appendChild(cap);
+  return wrap;
+}
+
+function divider(): HTMLDivElement {
+  const d = document.createElement("div");
+  d.style.cssText = DIVIDER;
+  return d;
+}
+
 function makeGlobe(label: string): { wrap: HTMLDivElement; ctx: CanvasRenderingContext2D; val: HTMLDivElement } {
   const wrap = document.createElement("div");
   wrap.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:3px`;
-  // relative box so the live value number sits centred over the liquid
   const box = document.createElement("div");
   box.style.cssText = `position:relative;width:56px;height:56px`;
   const c = document.createElement("canvas");
@@ -212,14 +241,14 @@ function makeFaceFrame(): HTMLDivElement {
 
 function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; wrap: HTMLDivElement } {
   const wrap = document.createElement("div");
-  wrap.style.cssText = `position:relative;width:44px;height:44px;
+  wrap.style.cssText = `position:relative;width:42px;height:42px;
     background:linear-gradient(180deg,#26221c,#0d0b09);
     border:2px solid #5a4a2c;box-shadow:${BEVEL}`;
   const ring = document.createElement("canvas");
-  ring.width = ring.height = 44;
+  ring.width = ring.height = 42;
   ring.style.cssText = `position:absolute;inset:0;image-rendering:pixelated`;
   const icon = document.createElement("div");
-  icon.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px`;
+  icon.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:19px`;
   const keyBadge = document.createElement("div");
   keyBadge.textContent = key;
   keyBadge.style.cssText = `position:absolute;left:2px;top:1px;font:${PX_LABEL};font-size:7px;color:#e8d9a8;text-shadow:1px 1px 0 #000`;
@@ -231,8 +260,8 @@ function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTM
 
 function makeCardSlot(): HTMLDivElement {
   const el = document.createElement("div");
-  el.style.cssText = `width:30px;height:44px;display:flex;align-items:center;justify-content:center;
-    font-size:16px;color:#4a4030;border:2px dashed #4a3c22;background:rgba(0,0,0,0.35)`;
+  el.style.cssText = `width:28px;height:42px;display:flex;align-items:center;justify-content:center;
+    font-size:15px;color:#4a4030;border:2px dashed #4a3c22;background:rgba(0,0,0,0.35)`;
   el.textContent = "◈"; // empty gem socket — the equipped-card seam (Phase 4)
   el.title = "Card socket";
   return el;
@@ -241,11 +270,25 @@ function makeCardSlot(): HTMLDivElement {
 function makeBeltSlot(i: number): HTMLDivElement {
   const el = document.createElement("div");
   el.dataset.belt = String(i);
-  el.style.cssText = `position:relative;width:40px;height:40px;
+  el.style.cssText = `position:relative;width:38px;height:38px;
     background:linear-gradient(180deg,#26221c,#0d0b09);
     border:2px solid #5a4a2c;box-shadow:${BEVEL};
-    display:flex;align-items:center;justify-content:center;font-size:20px`;
+    display:flex;align-items:center;justify-content:center;font-size:19px`;
   return el;
+}
+
+/** A Doom-style labelled numeric cell (caption over a big pixel value). */
+function statHTML(label: string, value: string, color: string): string {
+  return `<div style="display:flex;flex-direction:column;align-items:center;line-height:1">
+      <div style="font:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">${label}</div>
+      <div style="font:${PX_NUM};font-size:19px;color:${color};text-shadow:1px 1px 0 #0b0c10">${value}</div>
+    </div>`;
+}
+
+/** A small bordered status pip (combo / ball-ready / targets). */
+function pillHTML(text: string, color: string): string {
+  return `<span style="font:${PX_LABEL};font-size:7px;letter-spacing:1px;padding:2px 4px;
+    border:1px solid ${color};color:${color};background:rgba(0,0,0,0.35)">${text}</span>`;
 }
 
 /** One buff tile for the unified strip: icon + a thin depleting bar + seconds. */
@@ -306,16 +349,13 @@ function drawGlobe(ctx: CanvasRenderingContext2D, level: number, phase: number, 
   const r = S / 2;
   ctx.clearRect(0, 0, S, S);
   ctx.save();
-  // circular clip
   ctx.beginPath();
   ctx.arc(r, r, r - 2, 0, Math.PI * 2);
   ctx.clip();
 
-  // empty-glass backdrop
   ctx.fillStyle = "#0a0a10";
   ctx.fillRect(0, 0, S, S);
 
-  // liquid fill with a sine surface — a potion splash briefly cranks the wave.
   const amp = (critical ? 4.2 : 2.2) + ripple * 12;
   const surfaceY = (1 - level) * S;
   const grd = ctx.createLinearGradient(0, surfaceY, 0, S);
@@ -332,7 +372,6 @@ function drawGlobe(ctx: CanvasRenderingContext2D, level: number, phase: number, 
   ctx.closePath();
   ctx.fill();
 
-  // bright surface line
   if (level > 0.02 && level < 0.99) {
     ctx.strokeStyle = "rgba(255,255,255,0.35)";
     ctx.lineWidth = 1.5;
@@ -344,19 +383,16 @@ function drawGlobe(ctx: CanvasRenderingContext2D, level: number, phase: number, 
     ctx.stroke();
   }
 
-  // glass gloss
   ctx.fillStyle = "rgba(255,255,255,0.12)";
   ctx.beginPath();
   ctx.ellipse(r * 0.7, r * 0.62, r * 0.4, r * 0.22, -0.5, 0, Math.PI * 2);
   ctx.fill();
-  // potion-splash brightness flash
   if (ripple > 0) {
     ctx.fillStyle = `rgba(255,255,255,${0.4 * (ripple / 0.5)})`;
     ctx.fillRect(0, 0, S, S);
   }
   ctx.restore();
 
-  // stone rim
   ctx.strokeStyle = "#a97a3c";
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -370,19 +406,17 @@ function drawGlobe(ctx: CanvasRenderingContext2D, level: number, phase: number, 
 }
 
 function drawCooldownRing(ctx: CanvasRenderingContext2D, id: AbilityId | null): void {
-  const S = 44;
+  const S = 42;
   ctx.clearRect(0, 0, S, S);
   if (!id) return;
   const def = ABILITIES[id];
   const cd = state.abilityCd[id] ?? 0;
   const affordable = (state.player?.mana ?? 0) >= def.cost && cd <= 0;
 
-  // ready-glow border tinted by the ability colour (square, hard corners)
   ctx.strokeStyle = affordable ? def.color : "rgba(90,74,44,0.6)";
   ctx.lineWidth = 2;
   ctx.strokeRect(2, 2, S - 4, S - 4);
 
-  // cooldown wedge (dark, sweeping clockwise from top)
   if (cd > 0) {
     const frac = Math.min(1, cd / def.cooldown);
     ctx.fillStyle = "rgba(6,6,10,0.66)";
@@ -394,7 +428,7 @@ function drawCooldownRing(ctx: CanvasRenderingContext2D, id: AbilityId | null): 
   }
 }
 
-// ── header: status chips + unified buff strip (per-frame, sig-guarded) ──
+// ── header: pips + weapon/ammo + stats + buff strip (per-frame, sig-guarded) ──
 
 interface BuffView {
   key: string;
@@ -413,51 +447,72 @@ function activeBuffs(): BuffView[] {
   const add = (t: number, key: string, icon: string, color: string, max: number, label: string): void => {
     if (t > 0.05) out.push({ key, icon, color, t, max, label });
   };
-  // Combat potions.
   add(p.rageT, "rage", "💢", "#d97b29", POTIONS.rage.duration, "Rage · 2× damage");
   add(p.hasteT, "haste", "⚡", "#6fd0e8", POTIONS.haste.duration, "Haste · faster");
   add(p.shieldT, "shield", "🛡️", "#8fc46b", POTIONS.shield.duration, "Shield · invulnerable");
-  // Ball Form drives iron/turbo/spring together — one representative timer.
   add(p.turboT, "ball", "🪩", "#f0a63c", POTIONS.ballform.duration, "Ball Form · ram + steer + spring");
   add(p.multiT, "multi", "🔮", "#b06fe8", POTIONS.multiball.duration, "Multi-Ball · ghost knights");
   add(state.freezeT, "freeze", "❄️", "#bfe8ff", POTIONS.freeze.duration, "Freeze · the horde is stopped");
   add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, "Curve Shot · bending projectiles");
   add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, "Magnet Boots · repel + strip launch");
-  // Q/E abilities that leave a lingering effect.
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");
   add(p.bladeStormT, "blades", "🌪️", "#d95763", 5, "Blade Storm · orbiting blades");
   add(p.magnetAuraT, "aura", "🧲", "#6fd0e8", 4, "Magnet Aura · pulling loot");
-  // Debuff.
   add(p.webbedT, "webbed", "🕸️", "#eef1f5", 3, "Webbed · slowed");
   return out;
 }
 
-/** Repaint the header (status chips + buff strip) only when its content changes. */
+/** Repaint the header (pips + weapon/ammo + stats + buff strip) on change only. */
 function paintHeader(): void {
-  if (!chipsEl || !buffStripEl) return;
+  if (!weaponEl || !statsEl || !buffStripEl || !pipsEl) return;
   const p = state.player;
   const buffs = activeBuffs();
 
-  // Status chips: combo, ball-ready, rampage charge, targets.
-  const chips: string[] = [];
-  const combo = p?.bounceCombo ?? 0;
-  if (combo >= 2) chips.push(`<span style="color:#ffd23f">×${combo} COMBO</span>`);
-  if ((p?.overcharge ?? 0) >= 0.999) chips.push(`<span style="color:#6fd0e8">◉ BALL READY</span>`);
+  // WEAPON + AMMO (mirrors the Wolf bar's readout, iso-side).
+  const held = state.weaponSlots[state.activeSlot];
+  const w = held ? WEAPONS[held.id as WeaponId] : null;
+  const ammo = held ? String(held.durability) : "∞";
+  const ammoColor = !held ? "#8fc46b" : held.durability <= 3 ? "#d95763" : w?.kind === "ranged" ? "#ffd98a" : "#c8ccd4";
+  const wIcon = w ? w.icon : "✊";
+  const wName = w ? w.label.toUpperCase() : "FISTS";
+
+  // STATS (Doom numeric cells).
   const pct = Math.round(state.ultCharge * 100);
-  chips.push(state.ultCharge >= 1 ? `<span style="color:#ffd98a">🔫 RAMPAGE — R</span>` : `<span style="color:#6b7688">🔫 ${pct}%</span>`);
+  const rampage = state.ultCharge >= 1 ? "R!" : `${pct}%`;
+  const rampageColor = state.ultCharge >= 1 ? "#ffd98a" : "#6b7688";
+
+  // Transient pips (only when active, so the strip stays quiet otherwise).
+  const pips: string[] = [];
+  const combo = p?.bounceCombo ?? 0;
+  if (combo >= 2) pips.push(pillHTML(`×${combo} COMBO`, "#ffd23f"));
+  if ((p?.overcharge ?? 0) >= 0.999) pips.push(pillHTML("◉ BALL READY", "#6fd0e8"));
   if (state.targetsTotal > 0) {
     const done = state.targetsHit >= state.targetsTotal;
-    chips.push(`<span style="color:${done ? "#8fc46b" : "#d95763"}">🎯 ${state.targetsHit}/${state.targetsTotal}</span>`);
+    pips.push(pillHTML(`🎯 ${state.targetsHit}/${state.targetsTotal}`, done ? "#8fc46b" : "#d95763"));
   }
 
-  // Signature: rebuild the DOM only when something visible changed (ceil-seconds
-  // granularity for the buff timers, so it ticks once per second not per frame).
-  const sig =
-    chips.join("|") + "#" + buffs.map((b) => `${b.key}:${Math.ceil(b.t)}`).join(",");
+  // Rebuild only on a content change (ceil-seconds granularity for buff timers).
+  const sig = [
+    wIcon, wName, ammo,
+    state.goldRun, state.level, state.kills, rampage,
+    combo, (p?.overcharge ?? 0) >= 0.999 ? 1 : 0, state.targetsHit, state.targetsTotal,
+    buffs.map((b) => `${b.key}:${Math.ceil(b.t)}`).join(","),
+  ].join("|");
   if (sig === lastHeaderSig) return;
   lastHeaderSig = sig;
 
-  chipsEl.innerHTML = chips.join(`<span style="color:#4a4030">·</span>`);
+  weaponEl.innerHTML =
+    `<div style="font:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">AMMO</div>` +
+    `<div style="font:${PX_NUM};font-size:26px;line-height:0.8;color:${ammoColor};text-shadow:1px 1px 0 #0b0c10">${ammo}</div>` +
+    `<div style="font:${PX_LABEL};font-size:7px;color:#bfae86;white-space:nowrap;margin-top:2px">${wIcon} ${wName}</div>`;
+
+  statsEl.innerHTML =
+    statHTML("SCORE", String(state.goldRun), "#ffd98a") +
+    statHTML("DEPTH", String(state.level), "#f0a63c") +
+    statHTML("KILLS", String(state.kills), "#8fc46b") +
+    statHTML("RAMPAGE", rampage, rampageColor);
+
+  pipsEl.innerHTML = pips.join("");
   buffStripEl.innerHTML = buffs.map(buffTileHTML).join("");
 }
 
@@ -468,7 +523,6 @@ export function refreshDiablo(): void {
   if (!panelEl) return;
   const p = state.player;
 
-  // Skill slots: icon + cost + dim-when-unaffordable.
   for (let i = 0; i < skillSlots.length; i++) {
     const s = skillSlots[i];
     const id = state.abilitySlots[i];
@@ -487,7 +541,6 @@ export function refreshDiablo(): void {
     s.wrap.title = `${def.label} — ${def.detail} (${def.cost} mana)`;
   }
 
-  // Belt tiles.
   for (let i = 0; i < beltEls.length; i++) {
     const el = beltEls[i];
     const slot = state.belt[i];

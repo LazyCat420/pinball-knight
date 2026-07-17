@@ -192,12 +192,13 @@ const COMBO_RANKS: Array<[number, string, string]> = [
 export function createComboFlash(container: HTMLElement): HTMLDivElement {
   const el = document.createElement("div");
   el.id = "dungeon-combo-flash";
+  ensureWolfFonts();
   el.style.cssText = `
-    position: fixed; left: 50%; top: 122px; transform: translateX(-50%) scale(1);
+    position: fixed; left: 50%; top: 120px; transform: translateX(-50%) scale(1);
     z-index: 10001; text-align: center; opacity: 0; display: none;
     pointer-events: none; user-select: none;
-    font: 900 46px ui-monospace, "SF Mono", Menlo, monospace;
-    text-shadow: 0 0 14px rgba(255,210,63,0.8), 2px 2px 0 #0b0d12; line-height: 0.9;
+    font: ${WOLF_NUM}; line-height: 0.9;
+    text-shadow: 0 0 8px rgba(255,210,63,0.7), 2px 2px 0 #0b0d12;
   `;
   container.appendChild(el);
   return el;
@@ -212,11 +213,12 @@ export function flashBounceCombo(el: HTMLDivElement | null, combo: number): void
     if (combo >= n) { word = w; color = c; }
   }
   el.style.color = color;
-  el.innerHTML = `<div style="font-size:46px">×${combo}</div><div style="font-size:18px;letter-spacing:3px">${word}</div>`;
+  el.innerHTML = `<div style="font:${WOLF_NUM};font-size:26px">×${combo}</div>` +
+    `<div style="font:${WOLF_LABEL};font-size:9px;letter-spacing:2px;margin-top:2px">${word}</div>`;
   el.style.display = "block";
   el.style.transition = "none";
   el.style.opacity = "1";
-  el.style.transform = `translateX(-50%) scale(${Math.min(1.7, 1.25 + combo * 0.03)})`;
+  el.style.transform = `translateX(-50%) scale(${Math.min(1.25, 1.0 + combo * 0.015)})`;
   requestAnimationFrame(() => {
     el.style.transition = "transform 0.16s ease-out, opacity 0.5s ease-out 0.22s";
     el.style.transform = "translateX(-50%) scale(1)";
