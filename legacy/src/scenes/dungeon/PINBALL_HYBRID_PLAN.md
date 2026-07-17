@@ -119,7 +119,14 @@ approach** (aim-assist) + a clear pre-swing telegraph + a stronger snap. Only ad
 a key-activation if playtest wants it (candidate: hold RMB near a flipper).
 - `player.ts` flipper branch + `pinball-parts.ts` telegraph.
 
-## Slice 8 — Momentum lanes ⬜ (RECONCILE)
+## Slice 8 — Momentum lanes ✅ (done 2026-07-17) (RECONCILE)
+A new part kind touches dozens of enums/tests, and magstrip must keep slowing —
+so lanes are a PHYSICS glide instead: while railing fast and not steering, the
+player eases toward the walkable centre of the corridor cross-section (probe a
+wall on each perpendicular side; nudge away from the near one via moveCircle), so
+you rail down the middle like a pinball lane instead of scraping a wall. Only
+fires in corridors (wall on exactly one side), never rooms. `constants.LANE_CENTER_PULL`
++ `player.ts updatePinball`.
 Magstrip currently SLOWS (anti-speed) — don't repurpose it. Add lane behaviour as
 paired **guide strips** (or a new lightweight "channel" concept): two rails 1 tile
 apart, 3-4 long, that funnel a moving player to the centre and hold speed down

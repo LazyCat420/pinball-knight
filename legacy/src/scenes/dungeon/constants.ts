@@ -331,6 +331,10 @@ export const FRICTION_OPEN = 0.35; // 3-4 open neighbours (room / junction) — 
 export const FRICTION_CORRIDOR = 1.0; // 2 open (a straight run) — normal
 export const FRICTION_TIGHT = 2.1; // ≤1 open (dead-end pocket) — bleeds you down
 export const PINBALL_STEER = 3.6; // how hard held input bends the momentum, 1/sec
+// Slice 8 — lane glide: while railing fast and not steering, drift toward the
+// walkable centre of the corridor so you rail down the middle (pinball lane
+// feel) instead of grinding a wall. Lateral units/sec of the centring nudge.
+export const LANE_CENTER_PULL = 3.6;
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;
 /** Seconds without a bounce before the combo counter resets (keep the chain alive). */

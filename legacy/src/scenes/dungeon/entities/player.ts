@@ -44,6 +44,7 @@ import {
   FRICTION_OPEN,
   FRICTION_CORRIDOR,
   FRICTION_TIGHT,
+  LANE_CENTER_PULL,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
   PINBALL_COMBO_WINDOW,
@@ -1141,6 +1142,28 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const blockedZ = Math.abs(res.z - wantZ) > 1e-3;
   p.x = res.x;
   p.z = res.z;
+
+  // Slice 8 — LANE GLIDE: while railing fast and NOT actively steering, ease
+  // toward the walkable centre of the corridor cross-section, so you glide down
+  // the middle like a pinball lane instead of scraping a wall. Only nudges when
+  // a wall is near on exactly one perpendicular side (a corridor, not a room).
+  if (steerLockT <= 0 && a.x === 0 && a.z === 0 && p.momSpeed > PLAYER_SPEED) {
+    const alongX = Math.abs(p.momX) >= Math.abs(p.momZ);
+    const perpX = alongX ? 0 : 1;
+    const perpZ = alongX ? 1 : 0;
+    const probe = PLAYER_R + 0.55;
+    const tp = worldToTile(g, p.x + perpX * probe, p.z + perpZ * probe);
+    const tn = worldToTile(g, p.x - perpX * probe, p.z - perpZ * probe);
+    const wallPos = !isWalkable(g, tp.i, tp.j);
+    const wallNeg = !isWalkable(g, tn.i, tn.j);
+    const push = wallPos && !wallNeg ? -1 : wallNeg && !wallPos ? 1 : 0;
+    if (push !== 0) {
+      const nudge = LANE_CENTER_PULL * dt;
+      const r2 = moveCircle(g, p.x, p.z, PLAYER_R, perpX * push * nudge, perpZ * push * nudge);
+      p.x = r2.x;
+      p.z = r2.z;
+    }
+  }
 
   if (blockedX || blockedZ) {
     // SECRET WALL: enough momentum landing on a CRACKED band shatters it — the
