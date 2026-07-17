@@ -313,6 +313,7 @@ function buildFlipper(dirX: number, dirZ: number): THREE.Group {
   gp.add(hub, paddle);
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.paddle = paddle;
+  gp.userData.edgeMat = edge.material as THREE.MeshStandardMaterial;
   return gp;
 }
 
@@ -617,14 +618,18 @@ export function updatePinballParts(dt: number): void {
     } else if (part.kind === "flipper") {
       // the paddle SNAPS up on a hit, then eases back down
       const paddle = part.mesh.userData.paddle as THREE.Group | undefined;
+      let up = 0;
       if (paddle) {
-        let up = 0;
         if (part.hitT >= 0) {
           const t = part.hitT;
           up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
         }
         paddle.rotation.z = up * 0.9;
       }
+      // Slice 7 telegraph: the gold striking edge breathes so the flipper reads
+      // "live/ready", and flares bright the instant it swings.
+      const edge = part.mesh.userData.edgeMat as THREE.MeshStandardMaterial | undefined;
+      if (edge) edge.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 4 + part.i) + up * 1.8;
     } else if (part.kind === "mirror") {
       const glint = part.mesh.userData.glint as THREE.MeshStandardMaterial | undefined;
       if (glint) glint.emissiveIntensity = 0.4 + 0.25 * Math.sin(animT * 2 + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);

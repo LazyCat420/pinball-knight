@@ -107,7 +107,12 @@ green-lit / red-armed. New bank-structure test; 105 pass.
   Completing 1-2-3 fires a reward (prize/door/jackpot assist).
 - `state.ts` (target `seq`) + `decorate.ts` (assign) + `player.ts` (hit logic).
 
-## Slice 7 — Flipper telegraph + redirect ⬜ (RECONCILE)
+## Slice 7 — Flipper telegraph + redirect ✅ (done 2026-07-17) (RECONCILE)
+Flippers already auto-catapult, and Q/E are abilities, so NO key rebind. Instead:
+the flipper exit is now AIM-ASSISTED — the paddle angle BLENDED with your approach
+line (0.72 paddle / 0.38 approach, so a good entry aims the shot but it can't
+reverse you). Plus a telegraph: the gold striking edge breathes "live" and flares
+on swing (`player.ts` flipper branch + `pinball-parts.ts` edgeMat glow).
 Flippers already auto-catapult on contact. Q/E are abilities now, so DON'T
 rebind. Instead: make the flipper **redirect momentum along the paddle angle by
 approach** (aim-assist) + a clear pre-swing telegraph + a stronger snap. Only add

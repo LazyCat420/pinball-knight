@@ -782,17 +782,28 @@ function touchPinballParts(inMomentum: boolean): void {
       part.hitT = 0;
       startRide();
     } else if (part.kind === "flipper") {
-      // The big paddle CATAPULTS you along its swing at the hardest speed in
-      // the machine (walking or riding — it flips either way).
+      // The big paddle CATAPULTS you along its swing at the hardest speed in the
+      // machine (walking or riding). Slice 7 — AIM-ASSIST: the exit is the paddle
+      // angle BLENDED with your approach line, so a skilled entry angle lets you
+      // aim off the flipper (paddle still dominates, so it can't reverse you).
       if (d2 > FLIPPER_RADIUS * FLIPPER_RADIUS) continue;
-      p.momX = part.dirX;
-      p.momZ = part.dirZ;
+      let ex = part.dirX;
+      let ez = part.dirZ;
+      if (inMomentum && p.momSpeed > 0.5) {
+        const bx = part.dirX * 0.72 + p.momX * 0.38;
+        const bz = part.dirZ * 0.72 + p.momZ * 0.38;
+        const bl = Math.hypot(bx, bz) || 1;
+        ex = bx / bl;
+        ez = bz / bl;
+      }
+      p.momX = ex;
+      p.momZ = ez;
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, FLIPPER_SPEED));
       onPartTrigger();
       part.cooldownT = FLIPPER_COOLDOWN;
       part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.4, part.z, part.dirX, part.dirZ, 12);
-      state.shakeT = Math.max(state.shakeT, 0.2);
+      state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, 16);
+      state.shakeT = Math.max(state.shakeT, 0.22);
       sfxSpring();
     } else if (part.kind === "mirror") {
       // A bank shot: REFLECT the incoming momentum across the mirror's surface
