@@ -8,7 +8,6 @@ import type { ActorSprite, SpriteSheet } from "./render/sprite";
 import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { ArcCorner } from "./collision";
-import type { WeaponHud } from "./render/weapon-hud";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
@@ -331,8 +330,6 @@ export const state = {
   fpsOverlayEl: null as HTMLDivElement | null,
   /** The centred ×N bounce-combo flash (pinball score glue). */
   comboFlashEl: null as HTMLDivElement | null,
-  /** Bottom-centre weapon view-model (Wolfenstein overhaul). */
-  weaponHud: null as WeaponHud | null,
   /** Last frame's bounce combo, so a rise fires the flash exactly once per step. */
   prevBounceCombo: 0,
   /** The overlord boss health bar (top-centre, shown only when a boss lives). */
@@ -569,7 +566,6 @@ export function resetState(): void {
   state.shopEl = null;
   state.fpsOverlayEl = null;
   state.comboFlashEl = null;
-  state.weaponHud = null;
   state.prevBounceCombo = 0;
   state.bossBarEl = null;
   state.hudDirty = true;
