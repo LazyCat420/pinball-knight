@@ -849,7 +849,9 @@ function startLevel(level: number): void {
   // shuffle bag — Slalom, Gauntlet, Oilworks, the Magician's Parlor… Carved
   // before the secret cracks so the cracks see the final wall set.
   const theme = themeFor(level);
-  const prefabCount = Math.min(2 + Math.floor((level - 1) / 2), 4);
+  // More open-chamber prefabs per floor (Slice 2, open playfield) — the theme
+  // pools are mostly open tables/halls, so this adds bounce-able area.
+  const prefabCount = Math.min(3 + Math.floor((level - 1) / 2), 6);
   const stamped = stampPrefabs(raw, rng, prefabCount, theme);
   crackSecretWalls(raw, rng, cfg.secrets);
   const grid = thickenWalls(raw);

@@ -566,11 +566,15 @@ export const MERCHANT_CATCH_RANGE = 0.7;
  *   vault    → the treasure room: two prize items, guarded.
  * Rooms/sizes are in maze CELLS (tiles ≈ cells·2, ×2 again after thickening).
  */
-export const ROOM_MIN_CELLS = 2; // smallest room side, cells
-export const ROOM_MAX_CELLS = 4; // largest room side, cells
-export const ROOMS_BASE = 2; // rooms on level 1
-export const ROOMS_PER_LEVEL = 0.5; // +1 room every 2 depths…
-export const ROOMS_MAX = 5; // …capped
+// Rooms are the OPEN "pinball table" space (corridors are 2-wide transit that a
+// ball can't really bounce in). Slice 2 (open playfield) makes them bigger and
+// more numerous so momentum has room to chain — carveRooms preserves
+// connectivity by construction, so this stays solvable.
+export const ROOM_MIN_CELLS = 3; // smallest room side, cells (≥6 tiles post-thicken)
+export const ROOM_MAX_CELLS = 6; // largest room side, cells (up to 12 tiles — real arenas)
+export const ROOMS_BASE = 3; // rooms on level 1
+export const ROOMS_PER_LEVEL = 0.8; // +~1 room every ~1.25 depths…
+export const ROOMS_MAX = 8; // …capped
 
 // ── Secret walls (smash through at pinball speed) ───────────────
 /**
@@ -1109,7 +1113,7 @@ export function levelConfig(level: number): LevelConfig {
     // Braiding grows with depth: shallow floors are corridor duels (few loops),
     // deep floors are open labyrinths full of flanking routes and dead-end
     // ambush pockets. Capped so it never dissolves into an open room.
-    braid: Math.min(0.1 + 0.035 * l, 0.32),
+    braid: Math.min(0.14 + 0.04 * l, 0.4),
     windiness,
     // Rooms + secrets ride depth too: deeper floors are busier theme parks.
     rooms: Math.min(ROOMS_BASE + Math.floor((l - 1) * ROOMS_PER_LEVEL), ROOMS_MAX),

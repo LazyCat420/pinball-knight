@@ -42,7 +42,12 @@ them raised silhouettes + bright directional emissive + a clear idle animation.
   (oil slick, magstrip band, electric plate). Add rims/posts/arrows/glow.
 - Verify: headless `__dungeonParts()` + `__dungeonWarp` screenshot each kind.
 
-## Slice 2 — Open playfield ⬜ (the "too narrow to bounce" core fix)
+## Slice 2 — Open playfield ✅ (done 2026-07-17)
+Rooms are the bounce-able area; made them bigger + more numerous + more prefab
+chambers + more braid loops (all reachability-preserving, 104 tests still green):
+ROOM_MIN/MAX_CELLS 2/4→3/6, ROOMS 2·0.5·5→3·0.8·8, braid 0.1+.035·l→0.14+.04·l
+(cap .32→.4), prefabCount 2→3 base / 4→6 cap (`constants.ts`, `core.ts`). Deferred
+the risky corridor-widen pass — the wide "launch district" comes with Slice 9 zones.
 Momentum needs room to chain. Levers (no new maze algo needed):
 - Raise room budget + open-prefab count on pinball floors; raise `braid` (loops).
 - Add a **corridor-widen pass**: after thicken, widen chosen main runs to 3 tiles
