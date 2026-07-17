@@ -59,6 +59,10 @@ import {
   RAMP_COOLDOWN,
   RAMP_STEER_LOCK,
   DEFLECTOR_BOOST,
+  ARC_BANK_RADIUS,
+  ARC_BOOST,
+  ARC_COOLDOWN,
+  ARC_MIN_SPEED,
   SECRET_BREAK_SPEED,
   OIL_RADIUS,
   OIL_LAUNCH_SPEED,
@@ -774,6 +778,46 @@ function touchPinballParts(inMomentum: boolean): void {
 }
 
 /**
+ * CURVED WALLS — bank the player leg→leg through any auto-detected maze corner
+ * (collision.computeArcCorners), the deflector move applied to the whole maze.
+ * A fast entry along one open leg sweeps out the other with its speed intact;
+ * a slow walk just rounds the corner (the wedge is only a visual there). Ticks
+ * each corner's re-bank lockout so hugging one doesn't machine-gun the redirect.
+ */
+function bankArcCorners(dt: number): void {
+  const p = state.player;
+  if (!p) return;
+  for (const arc of state.arcCorners) {
+    if (arc.cooldownT > 0) {
+      arc.cooldownT = Math.max(0, arc.cooldownT - dt);
+      continue;
+    }
+    if (p.momSpeed < ARC_MIN_SPEED) continue;
+    const dx = p.x - arc.cx;
+    const dz = p.z - arc.cz;
+    if (dx * dx + dz * dz > ARC_BANK_RADIUS * ARC_BANK_RADIUS) continue;
+    // Which OPEN leg did we come in along? Exit along the OTHER, speed intact.
+    const inFrom1 = p.momX * -arc.d1x + p.momZ * -arc.d1z;
+    const inFrom2 = p.momX * -arc.d2x + p.momZ * -arc.d2z;
+    if (inFrom1 < 0.3 && inFrom2 < 0.3) continue; // grazing past, not cornering
+    if (inFrom1 >= inFrom2) {
+      p.momX = arc.d2x;
+      p.momZ = arc.d2z;
+    } else {
+      p.momX = arc.d1x;
+      p.momZ = arc.d1z;
+    }
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * ARC_BOOST);
+    arc.cooldownT = ARC_COOLDOWN;
+    arc.hitT = 0;
+    onPartTrigger(); // ticks the combo + frenzy chain, like a deflector
+    state.vfx?.sparks(arc.cx, 0.3, arc.cz, p.momX, p.momZ, 6);
+    sfxRoll();
+    break; // one bank per frame — you can't hit two corners at once
+  }
+}
+
+/**
  * If the wall just slammed (along the blocked axes, travelling (dirX, dirZ))
  * is a CRACKED secret band, smash through it. Probes a hair past the body on
  * each blocked axis — after moveCircle's clamp we sit flush against the tile
@@ -1026,6 +1070,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // Pinball PARTS: bumpers kick, springs launch, ramps floor your speed,
   // deflectors bank you around corners. The real accelerators of the machine.
   touchPinballParts(true);
+  // Curved walls: sweep momentum around every banked maze corner.
+  bankArcCorners(dt);
 
   // Momentum bleeds ONLY when NOT bouncing (Sonic keeps its speed on a good
   // line) — very gently. Oil grease and Turbo Charge kill the bleed outright.

@@ -71,6 +71,87 @@ export function wallContact(
 }
 
 /**
+ * CURVED WALLS — a banked corner arc auto-derived from maze topology.
+ *
+ * A grid this tight (player diameter 0.6 vs 1-tile cells) can't host a real
+ * circle-vs-arc SOLID without sealing 1-wide bends, so — exactly like the
+ * shipped deflector part — a curved corner is a POINT-TRIGGER momentum BANK
+ * plus a rendered quarter-cylinder wedge (maze/build.ts), not a new collider.
+ * The win over the deflector: these are detected on EVERY qualifying corner,
+ * so the whole maze banks, not just the handful of tiles a part landed on.
+ *
+ * `d1/d2` are the corner's two OPEN legs (a fast entry along one exits along
+ * the other, speed intact); `qi/qj` mark WHICH of the tile's four corners the
+ * wedge caps (0 or 1 on each axis, for the renderer). `cooldownT`/`hitT` are
+ * mutable per-frame scratch, reset when the arc list is rebuilt each level.
+ */
+export interface ArcCorner {
+  cx: number;
+  cz: number; // world centre of the crook tile
+  d1x: number;
+  d1z: number;
+  d2x: number;
+  d2z: number;
+  qi: number; // 0 → west edge, 1 → east edge of the tile
+  qj: number; // 0 → north edge, 1 → south edge of the tile
+  cooldownT: number;
+  hitT: number;
+}
+
+/**
+ * Every maze corner that reads as a banked curve: a floor tile with two
+ * PERPENDICULAR wall neighbours (a solid diagonal between them) whose two
+ * OPEN sides — and the far diagonal — are floor, i.e. it sits on the inner
+ * corner of a ≥2×2 open pocket. The open-neighbour + far-diagonal gate is
+ * what excludes 1-wide dogleg bends (whose far diagonal is wall), so a curve
+ * only lands where there's room to sweep and never pinches a corridor.
+ */
+export function computeArcCorners(g: Grid): ArcCorner[] {
+  const out: ArcCorner[] = [];
+  const ox = g.w / 2;
+  const oz = g.h / 2;
+  const floor = (i: number, j: number): boolean => isWalkable(g, i, j);
+  const wall = (i: number, j: number): boolean => !isWalkable(g, i, j);
+  // Per crook: two wall dirs, the solid diagonal, the two open legs, the far
+  // (open) diagonal, and which tile corner the wedge caps.
+  const crooks = [
+    { wa: [0, -1], wb: [1, 0], diag: [1, -1], opp: [-1, 1], l1: [-1, 0], l2: [0, 1], qi: 1, qj: 0 }, // NE
+    { wa: [0, -1], wb: [-1, 0], diag: [-1, -1], opp: [1, 1], l1: [1, 0], l2: [0, 1], qi: 0, qj: 0 }, // NW
+    { wa: [0, 1], wb: [1, 0], diag: [1, 1], opp: [-1, -1], l1: [-1, 0], l2: [0, -1], qi: 1, qj: 1 }, // SE
+    { wa: [0, 1], wb: [-1, 0], diag: [-1, 1], opp: [1, -1], l1: [1, 0], l2: [0, -1], qi: 0, qj: 1 }, // SW
+  ] as const;
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (!floor(i, j)) continue;
+      for (const c of crooks) {
+        if (
+          wall(i + c.wa[0], j + c.wa[1]) &&
+          wall(i + c.wb[0], j + c.wb[1]) &&
+          wall(i + c.diag[0], j + c.diag[1]) &&
+          floor(i + c.l1[0], j + c.l1[1]) &&
+          floor(i + c.l2[0], j + c.l2[1]) &&
+          floor(i + c.opp[0], j + c.opp[1])
+        ) {
+          out.push({
+            cx: i + 0.5 - ox,
+            cz: j + 0.5 - oz,
+            d1x: c.l1[0],
+            d1z: c.l1[1],
+            d2x: c.l2[0],
+            d2z: c.l2[1],
+            qi: c.qi,
+            qj: c.qj,
+            cooldownT: 0,
+            hitT: -1,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * Move a circle by (dx, dz), clamping against walls. Returns the resolved
  * world position. Assumes |dx|,|dz| < 1 - 2r per call (true at our speeds and
  * frame times by an order of magnitude), so no tunnelling checks needed.

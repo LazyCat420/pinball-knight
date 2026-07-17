@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, tileCenter } from "./maze/generator";
-import { circleCollides, moveCircle, wallContact } from "./collision";
+import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./collision";
 
 /** A 7x5 room: solid border, open interior, one pillar at (3,2). */
 function room(): Grid {
@@ -51,6 +51,73 @@ describe("collision", () => {
     const g = room();
     const p = tileCenter(g, 1, 1);
     expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z });
+  });
+});
+
+describe("computeArcCorners (curved walls)", () => {
+  /** Build a grid from an ASCII map ('.' floor, '#' wall). Row 0 is j=0. */
+  function fromAscii(rows: string[]): Grid {
+    const h = rows.length;
+    const w = rows[0].length;
+    const t = new Uint8Array(w * h).fill(T_WALL);
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) if (rows[j][i] === ".") t[j * w + i] = T_FLOOR;
+    }
+    return { w, h, t };
+  }
+
+  it("rounds all four inner corners of a 2×2 open pocket", () => {
+    // A lone 2×2 floor block: every one of its inner corners banks.
+    const g = fromAscii([
+      "#####",
+      "#####",
+      "#..##",
+      "#..##",
+      "#####",
+    ]);
+    const arcs = computeArcCorners(g);
+    expect(arcs.length).toBe(4);
+    // The NE crook sits on tile (2,2): open legs are West and South.
+    const ne = arcs.find((a) => a.qi === 1 && a.qj === 0);
+    expect(ne).toBeTruthy();
+    const legs = new Set([`${ne!.d1x},${ne!.d1z}`, `${ne!.d2x},${ne!.d2z}`]);
+    expect(legs.has("-1,0")).toBe(true); // west
+    expect(legs.has("0,1")).toBe(true); // south
+  });
+
+  it("never places a curve on a 1-wide dogleg bend (no pinch)", () => {
+    // An L-corridor one tile wide: the far diagonal is always wall, so the
+    // gate rejects every corner — corridors stay their full width.
+    const g = fromAscii([
+      "####",
+      "#.##",
+      "#..#",
+      "####",
+    ]);
+    expect(computeArcCorners(g)).toHaveLength(0);
+  });
+
+  it("finds the single inner corner where a corridor meets an open room", () => {
+    // A 3×3 room with a 1-wide corridor poking east out of its middle row;
+    // only genuine ≥2×2 inner corners qualify (the 4 room corners), never the
+    // corridor mouth.
+    const g = fromAscii([
+      "######",
+      "#...##",
+      "#....#",
+      "#...##",
+      "######",
+    ]);
+    const arcs = computeArcCorners(g);
+    // The room's four corners qualify; the corridor mouth tiles do not pinch.
+    expect(arcs.length).toBeGreaterThanOrEqual(2);
+    for (const a of arcs) {
+      // Every reported leg is a unit cardinal.
+      expect(Math.abs(a.d1x) + Math.abs(a.d1z)).toBe(1);
+      expect(Math.abs(a.d2x) + Math.abs(a.d2z)).toBe(1);
+      // The two legs are perpendicular (a genuine corner, not a straight).
+      expect(Math.abs(a.d1x * a.d2x + a.d1z * a.d2z)).toBe(0);
+    }
   });
 });
 

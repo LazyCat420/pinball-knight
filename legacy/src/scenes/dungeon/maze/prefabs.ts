@@ -17,12 +17,15 @@
  *   B  bumper        R  ramp (dash pad)   S  spring
  *   O  oil slick     G  boxing glove      P  spin pad
  *   L  slingshot     D  trapdoor          *  horde spawn
+ *   M  angle mirror  F  flipper           T  target bullseye
+ *   I  pit           E  electric grid     N  magnet strip
  *   $  prize drop
  *
  * DOM- and three-free: tested (prefabs.test.ts).
  */
 import { type Grid, type TilePos, T_FLOOR, T_WALL, at, setTile } from "./generator";
 import type { PrefabAnchor, PartSpotKind } from "./decorate";
+import type { EnemyKind } from "../state";
 
 export interface Prefab {
   name: string;
@@ -110,6 +113,58 @@ export const PREFABS: Prefab[] = [
       "##O.R",
     ],
   },
+  {
+    // The Mirror Maze — an angle-mirror lattice ringing a prize. Every lane
+    // ricochets; nothing goes where you point it.
+    name: "mirrormaze",
+    cells: [
+      "M.M.M",
+      ".....",
+      "M.T.M",
+      ".$.*.",
+      "M.M.M",
+    ],
+  },
+  {
+    // The Pit Room — a prize island threaded between drop-holes. Thread the
+    // gaps at a walk or launch clean across; a mis-step resets you.
+    name: "pitroom",
+    cells: [
+      ".....",
+      ".I.I.",
+      "...$.",
+      ".I.I.",
+      ".....",
+    ],
+  },
+  {
+    // The S-Bend — a connector elbow-lane with an angle mirror on each turn,
+    // so a fast entry banks around the Z instead of stopping dead.
+    name: "sbend",
+    cells: [
+      ".M#",
+      "#.#",
+      "#M.",
+    ],
+  },
+  {
+    // The Squeeze — a connector gauntlet: rhythm-timed electric plates down a
+    // straight. Walk it wrong and it bites; carry speed and skip the beats.
+    name: "squeeze",
+    cells: [
+      ".E..E.",
+    ],
+  },
+  {
+    // The Boulevard — a wide connector hall with a caromable centre island of
+    // bumpers and a flipper, a mini pinball table on the way through.
+    name: "boulevard",
+    cells: [
+      ".....",
+      ".BFB.",
+      ".....",
+    ],
+  },
 ];
 
 /** Rotate a stamp 90° clockwise. */
@@ -123,6 +178,31 @@ export function rotatePrefab(p: Prefab): Prefab {
     out.push(row);
   }
   return { name: p.name, cells: out };
+}
+
+/** Mirror a stamp left↔right. Doubles the variant pool for free — combined
+ * with the 4 rotations a stamp lands in up to 8 distinct orientations. */
+export function mirrorPrefab(p: Prefab): Prefab {
+  return { name: p.name, cells: p.cells.map((row) => row.split("").reverse().join("")) };
+}
+
+/** Every distinct orientation of a stamp: 4 rotations of it and of its mirror,
+ * de-duped (a symmetric shape yields fewer than 8). */
+export function variantsOf(p: Prefab): Prefab[] {
+  const out: Prefab[] = [];
+  const seen = new Set<string>();
+  for (const base of [p, mirrorPrefab(p)]) {
+    let v = base;
+    for (let r = 0; r < 4; r++) {
+      const key = v.cells.join("|");
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(v);
+      }
+      v = rotatePrefab(v);
+    }
+  }
+  return out;
 }
 
 /**
@@ -158,32 +238,40 @@ export interface FloorTheme {
   name: string;
   pool: string[]; // prefab names in this theme's bag
   deal: PartSpotKind[]; // corridor part deal bias
+  /** Horde-mix weight overrides for this biome. Kinds omitted keep their
+   * base weight; the horde roller (core.ts) reads this to skew the roster
+   * per floor — a Warren leans spider/slime, a Bloodworks leans brute/goblin. */
+  enemies?: Partial<Record<EnemyKind, number>>;
 }
 
 export const THEMES: FloorTheme[] = [
   {
     // The Cold Crypt — the classic table: bumpers, lanes, a flipper or two.
     name: "crypt",
-    pool: ["slalom", "bullring", "pitstop", "slingway"],
+    pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "deflector", "spinpad", "mirror", "slingshot", "oil"],
+    enemies: { zombie: 3, ghost: 2, bat: 2 },
   },
   {
     // The Rotting Warren — everything is slick and nothing brakes.
     name: "warren",
-    pool: ["oilworks", "switchback", "gauntlet", "pitstop"],
+    pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "deflector", "flipper", "ramp", "slingshot"],
+    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2 },
   },
   {
     // The Bloodworks — the punch factory.
     name: "bloodworks",
-    pool: ["gauntlet", "bullring", "slingway", "switchback"],
+    pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "deflector", "bumper", "slingshot", "spinpad"],
+    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2 },
   },
   {
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
     name: "arcane",
-    pool: ["parlor", "slalom", "oilworks", "bullring"],
+    pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
     deal: ["spinpad", "bumper", "mirror", "spring", "deflector", "oil", "glove", "flipper", "slingshot", "mirror"],
+    enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2 },
   },
 ];
 
@@ -200,6 +288,12 @@ const ANCHOR_KINDS: Record<string, PrefabAnchor["kind"]> = {
   P: "spinpad",
   L: "slingshot",
   D: "trapdoor",
+  M: "mirror",
+  F: "flipper",
+  T: "target",
+  I: "pit",
+  E: "electric",
+  N: "magstrip",
   "*": "spawn",
   $: "prize",
 };
@@ -222,12 +316,10 @@ export function stampPrefabs(
   const byName = new Map(PREFABS.map((p) => [p.name, p]));
   const variants: Prefab[] = [];
   for (const name of theme.pool) {
-    let p = byName.get(name);
+    const p = byName.get(name);
     if (!p) continue;
-    for (let r = 0; r < 4; r++) {
-      variants.push(p);
-      p = rotatePrefab(p);
-    }
+    // Rotations AND mirrors, so even a repeated shape lands a fresh way.
+    variants.push(...variantsOf(p));
   }
   if (variants.length === 0) return { anchors: [], stamped: [] };
 

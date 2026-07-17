@@ -7,6 +7,7 @@ import type { VfxSystem } from "./render/vfx";
 import type { ActorSprite, SpriteSheet } from "./render/sprite";
 import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
+import type { ArcCorner } from "./collision";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
@@ -409,6 +410,9 @@ export const state = {
   projectiles: [] as Projectile[],
   /** The level's pinball components (bumpers/springs/ramps/deflectors). */
   pinballParts: [] as PinballPart[],
+  /** Auto-derived banked corners (curved walls) — every qualifying maze corner
+   * sweeps momentum leg→leg like a return lane. See collision.computeArcCorners. */
+  arcCorners: [] as ArcCorner[],
   /** One knight atlas per weapon, built lazily — a swap is a texture switch. */
   playerSheets: new Map<WeaponId, SpriteSheet>(),
   /** Which weapon's art the player sprite currently shows. */
@@ -599,6 +603,7 @@ export function resetState(): void {
   state.zombies = [];
   state.projectiles = [];
   state.pinballParts = [];
+  state.arcCorners = [];
   state.playerSheets = new Map();
   state.playerArtWeapon = null;
   state.zombieSheet = null;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, T_FLOOR, T_WALL } from "./generator";
-import { PREFABS, THEMES, ShuffleBag, rotatePrefab, stampPrefabs, fullyReachable, themeFor } from "./prefabs";
+import { PREFABS, THEMES, ShuffleBag, rotatePrefab, mirrorPrefab, variantsOf, stampPrefabs, fullyReachable, themeFor } from "./prefabs";
 
 describe("prefab stamps", () => {
   it("every stamp preserves full reachability (floor-only carving)", () => {
@@ -44,6 +44,25 @@ describe("prefab stamps", () => {
     }
   });
 
+  it("mirrorPrefab ×2 is the identity and preserves footprint", () => {
+    for (const p of PREFABS) {
+      const m = mirrorPrefab(p);
+      expect(m.cells.length).toBe(p.cells.length);
+      expect(m.cells[0].length).toBe(p.cells[0].length);
+      expect(mirrorPrefab(m).cells).toEqual(p.cells);
+    }
+  });
+
+  it("variantsOf yields de-duped orientations (1..8)", () => {
+    for (const p of PREFABS) {
+      const vs = variantsOf(p);
+      expect(vs.length).toBeGreaterThanOrEqual(1);
+      expect(vs.length).toBeLessThanOrEqual(8);
+      const keys = new Set(vs.map((v) => v.cells.join("|")));
+      expect(keys.size).toBe(vs.length); // no duplicate orientation in the bag
+    }
+  });
+
   it("every theme pool references real prefabs", () => {
     const names = new Set(PREFABS.map((p) => p.name));
     for (const t of THEMES) {
@@ -83,7 +102,7 @@ describe("ShuffleBag", () => {
 
 describe("stamp legend sanity", () => {
   it("stamps only use known glyphs and are rectangular", () => {
-    const legal = new Set([".", "#", "B", "R", "S", "O", "G", "P", "L", "D", "*", "$"]);
+    const legal = new Set([".", "#", "B", "R", "S", "O", "G", "P", "L", "D", "M", "F", "T", "I", "E", "N", "*", "$"]);
     for (const p of PREFABS) {
       const w = p.cells[0].length;
       for (const row of p.cells) {

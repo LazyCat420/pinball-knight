@@ -372,6 +372,18 @@ export const RAMP_COOLDOWN = 0.35;
 export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (Sonic's 15 frames)
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;
+
+// ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
+/** How close to a corner's centre a fast entry banks (world units). */
+export const ARC_BANK_RADIUS = 0.62;
+/** A swept curve is a return lane, not a pocket: keep speed + a whisper. */
+export const ARC_BOOST = 1.03;
+/** Re-bank lockout so hugging a corner doesn't machine-gun the redirect. */
+export const ARC_COOLDOWN = 0.25;
+/** Below this you're just walking a corner — no bank, only the visual. */
+export const ARC_MIN_SPEED = 6;
+/** Radius of the rendered quarter-cylinder wedge that caps a banked corner. */
+export const ARC_WEDGE_R = 0.5;
 export const PARTS_BASE = 6; // parts on level 1
 export const PARTS_PER_LEVEL = 2; // extra parts per depth…
 export const PARTS_MAX = 26; // …capped
@@ -921,6 +933,15 @@ export const BRUTE_DAMAGE = 2;
 export const BRUTE_KNOCKBACK = 0.9; // shoves the player back hard
 export const BRUTE_RATIO = 7; // ~1 brute per this many horde slots
 export const BRUTE_FROM_LEVEL = 3;
+
+/**
+ * How much of a floor's horde is drawn from its BIOME's favoured families
+ * (maze/prefabs.ts THEMES.enemies) vs. the base depth cascade. ~55% themed
+ * gives each biome a distinct roster read (Warren swarms spiders/slimes,
+ * Bloodworks packs brutes/goblins) without erasing the depth-gated staples.
+ * A themed pick that's still level-locked just falls through to the cascade.
+ */
+export const THEME_HORDE_BIAS = 55; // percent, keyed off the spawn hash
 
 // ── Spitters ────────────────────────────────────────────────────
 /**

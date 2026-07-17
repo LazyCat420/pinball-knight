@@ -38,6 +38,7 @@ import { createHUD, updateHUD, showToast, showGameOver, showControlsHint, showPi
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
+import { computeArcCorners } from "./collision";
 import { decorateMaze, type PrefabAnchor } from "./maze/decorate";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { buildMaze } from "./maze/build";
@@ -64,6 +65,7 @@ import {
   BRUTE_SPEED_FACTOR,
   BRUTE_RATIO,
   BRUTE_FROM_LEVEL,
+  THEME_HORDE_BIAS,
   SPITTER_HP,
   SPITTER_SPEED_FACTOR,
   SPITTER_RATIO,
@@ -632,7 +634,60 @@ function makeZombie(
  * spiders → brutes → spitters. Priority order matters (a spawn can only be one
  * thing): tank/ranged specials are checked before falling back to a zombie.
  */
+/**
+ * Spawn ONE enemy of an explicit kind, honouring its depth gate and sheet
+ * availability — returns null if it's not unlocked yet or its art is missing,
+ * so a themed pick can cleanly fall through to the base cascade. Only the
+ * biome-favourable families are mapped; anything else returns null.
+ */
+function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
+  switch (kind) {
+    case "brute":
+      return level >= BRUTE_FROM_LEVEL && state.bruteSheet ? makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }) : null;
+    case "spitter":
+      return level >= SPITTER_FROM_LEVEL && state.spitterSheet ? makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" }) : null;
+    case "spider":
+      return level >= SPIDER_FROM_LEVEL && state.spiderSheet ? makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" }) : null;
+    case "ghost":
+      return level >= GHOST_FROM_LEVEL && state.ghostSheet ? makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" }) : null;
+    case "bat":
+      return level >= BAT_FROM_LEVEL && state.batSheet ? makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" }) : null;
+    case "slime":
+      return level >= SLIME_FROM_LEVEL && state.slimeSheet ? makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" }) : null;
+    case "goblin":
+      return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
+    case "chomper":
+      return level >= CHOMPER_FROM_LEVEL ? makeReskin("chomper", x, z, 0) : null;
+    case "golem":
+      return level >= GOLEM_FROM_LEVEL ? makeReskin("golem", x, z, 0) : null;
+    case "magnet":
+      return level >= MAGNET_FROM_LEVEL ? makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR) : null;
+    case "webspinner":
+      return level >= WEBSPIN_FROM_LEVEL ? makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
+    default:
+      return null; // zombie/pin/reaper aren't horde-rollable via theme bias
+  }
+}
+
+/** Weighted-pick a themed kind from the hash, or null if the biome sets none. */
+function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
+  const theme = themeFor(level);
+  if (!theme.enemies || hash % 100 >= THEME_HORDE_BIAS) return null;
+  const kinds = Object.keys(theme.enemies) as EnemyKind[];
+  let total = 0;
+  for (const k of kinds) total += theme.enemies[k]!;
+  if (total <= 0) return null;
+  let r = (hash >>> 8) % total;
+  for (const k of kinds) {
+    r -= theme.enemies[k]!;
+    if (r < 0) return spawnKind(k, x, z, baseSpeed, level);
+  }
+  return null;
+}
+
 function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie {
+  const themed = themedHordePick(hash, x, z, baseSpeed, level);
+  if (themed) return themed;
   if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0 && state.bruteSheet) {
     return makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" });
   }
@@ -758,7 +813,14 @@ function startLevel(level: number): void {
 
   state.grid = grid;
   state.stairs = plan.stairs;
-  state.maze = buildMaze(state.scene, grid, plan);
+  // Curved walls: bank every qualifying maze corner, minus tiles a pinball
+  // part already owns (a deflector there banks on its own — no double-dip).
+  const partTiles = new Set(plan.parts.map((q) => `${q.i},${q.j}`));
+  state.arcCorners = computeArcCorners(grid).filter((a) => {
+    const t = worldToTile(grid, a.cx, a.cz);
+    return !partTiles.has(`${t.i},${t.j}`);
+  });
+  state.maze = buildMaze(state.scene, grid, plan, state.arcCorners);
   createPinballParts(plan.parts, grid, state.scene);
 
   // ── Player ──

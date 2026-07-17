@@ -29,9 +29,11 @@ import {
   FLAME_FRAMES,
   CAMERA_YAW,
   CAMERA_TILT,
+  ARC_WEDGE_R,
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, T_CRACKED } from "./generator";
 import type { LevelPlan } from "./decorate";
+import type { ArcCorner } from "../collision";
 
 /** Deterministic hash-noise — no Math.random, so a level looks identical on rebuild. */
 function noise(x: number, y: number, seed: number): number {
@@ -654,7 +656,7 @@ export interface MazeHandle {
   dispose(): void;
 }
 
-export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): MazeHandle {
+export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
 
@@ -1039,6 +1041,40 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan): Maze
     light.position.set(a.x, WALL_H * 0.62 + 0.3, a.z);
     group.add(light);
     lightPool.push(light);
+  }
+
+  // ── Curved walls — a low quarter-cylinder wedge capping each banked corner
+  // (collision.computeArcCorners), so the maze reads as pinball return lanes,
+  // not right angles. Physics is the point-trigger bank in player.ts; this is
+  // the visual. One InstancedMesh, per-corner rotation from which corner it caps.
+  if (arcs.length) {
+    const wedgeH = WALL_LOW * 0.82;
+    // Quarter cylinder: axis = the corner's right angle, curved face bulging in.
+    const wedgeGeo = track(new THREE.CylinderGeometry(ARC_WEDGE_R, ARC_WEDGE_R + 0.05, wedgeH, 12, 1, false, 0, Math.PI / 2));
+    const wedgeTex = track(makeCapTexture());
+    const wedgeMat = track(new THREE.MeshStandardMaterial({ map: wedgeTex, color: PALETTE_HEX[4], roughness: 0.9, metalness: 0.0 }));
+    const wedge = new THREE.InstancedMesh(wedgeGeo, wedgeMat, arcs.length);
+    wedge.castShadow = true;
+    wedge.receiveShadow = true;
+    // The default quarter fills the (+x,+z) quadrant from its axis; rotate so it
+    // faces the OPEN interior of each corner (see collision.ts qi/qj).
+    const rotFor = (qi: number, qj: number): number =>
+      qi === 1 && qj === 0 ? -Math.PI / 2 : qi === 0 && qj === 0 ? 0 : qi === 1 && qj === 1 ? Math.PI : Math.PI / 2;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const pos = new THREE.Vector3();
+    const one = new THREE.Vector3(1, 1, 1);
+    arcs.forEach((a, k) => {
+      const cxr = a.cx + (a.qi === 1 ? 0.5 : -0.5); // the crook corner point
+      const czr = a.cz + (a.qj === 1 ? 0.5 : -0.5);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotFor(a.qi, a.qj));
+      pos.set(cxr, wedgeH / 2, czr);
+      m.compose(pos, q, one);
+      wedge.setMatrixAt(k, m);
+    });
+    wedge.instanceMatrix.needsUpdate = true;
+    group.add(wedge);
+    disposables.push({ dispose: () => wedge.dispose() });
   }
 
   scene.add(group);
