@@ -212,6 +212,12 @@ export interface Zombie extends Actor {
   aggro: boolean;
   /** Flame-puff immunity window — the cone burns in ticks, not per-puff. */
   burnT: number;
+  /** CARD status (cards.ts): CHILL slows movement while > 0. */
+  chillT?: number;
+  /** CARD status: BURN damage-over-time timer + per-tick damage. */
+  dotT?: number;
+  dotDmg?: number;
+  dotTickT?: number;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
@@ -257,6 +263,7 @@ export type PinballPartKind =
   | "bumper"
   | "spring"
   | "ramp"
+  | "booster"
   | "deflector"
   | "glove"
   | "oil"
@@ -311,8 +318,8 @@ export interface PinballPart {
 }
 
 export interface GroundItem {
-  kind: "weapon" | "gear" | "potion";
-  id: string; // WeaponId | GearSlot | PotionId
+  kind: "weapon" | "gear" | "potion" | "card";
+  id: string; // WeaponId | GearSlot | PotionId | CardId
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -355,6 +362,9 @@ export const state = {
   gameOverEl: null as HTMLDivElement | null,
   /** The merchant's shop overlay while it's open (null = closed; sim pauses). */
   shopEl: null as HTMLDivElement | null,
+  /** The between-floor TAVERN hub overlay while it's open (null = closed; sim
+   * pauses, exactly like the shop). See tavern.ts. */
+  tavernEl: null as HTMLDivElement | null,
   /** The first-person rampage overlay (crosshair + gun + red vignette). */
   fpsOverlayEl: null as HTMLDivElement | null,
   /** The centred ×N bounce-combo flash (pinball score glue). */
@@ -430,6 +440,11 @@ export const state = {
   weaponSlots: [freshWeapon("sword"), null] as Array<WeaponState | null>,
   activeSlot: 0,
   gear: {} as GearState,
+  /** RUN-persistent card stash — cards picked up but not yet socketed. Survives
+   * floor rebuilds (kept by disposeLevel); reset only on a full new run. Max 10. */
+  cardStash: [] as string[],
+  /** Per-run cap: at most one legendary card drops from the dungeon per run. */
+  legendaryDropped: false,
 
   // The level
   grid: null as Grid | null,
@@ -621,6 +636,8 @@ export function resetState(): void {
   state.hudEl = null;
   state.gameOverEl = null;
   state.shopEl = null;
+  state.tavernEl?.remove();
+  state.tavernEl = null;
   state.fpsOverlayEl = null;
   state.comboFlashEl = null;
   state.prevBounceCombo = 0;
@@ -665,6 +682,8 @@ export function resetState(): void {
   state.weaponSlots = [freshWeapon("sword"), null];
   state.activeSlot = 0;
   state.gear = {};
+  state.cardStash = [];
+  state.legendaryDropped = false;
   state.grid = null;
   state.stairs = null;
   state.maze = null;

@@ -27,6 +27,7 @@
 import { paletteCss, inkFor } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
+import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
 import {
   type Pt,
   type Dir3,
@@ -2150,7 +2151,32 @@ function goldIdolItem(): FramePaint {
 }
 
 /** Ground-item art, keyed by weapon id / gear slot / potion id. */
+/** A dropped CARD — a standing tarot-ish card with a rarity-coloured border
+ * and centre gem, so its rarity reads at a glance on the floor. */
+function cardItem(hex: string): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 106, 15);
+    rrect(ctx, 50, 42, 28, 46, 4, F(23)); // parchment card face
+    ctx.strokeStyle = hex;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(52, 44, 24, 42); // rarity border
+    ctx.fillStyle = hex; // rarity gem
+    ctx.beginPath();
+    ctx.ellipse(64, 65, 6, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(64, 65, 9, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    line(ctx, [[55, 48], [59, 52]], 2, F(22)); // glint
+    celShade(ctx);
+  };
+}
+
 export const ITEM_PAINTS: Record<string, FramePaint> = {
+  // Dropped modifier cards, one per CardId, tinted by rarity (see cards.ts).
+  ...Object.fromEntries(CARD_IDS.map((id) => [id, cardItem(RARITY_HEX[CARDS[id].rarity])])),
   sword: groundWeapon("sword"),
   stick: groundWeapon("stick"),
   mace: groundWeapon("mace"),

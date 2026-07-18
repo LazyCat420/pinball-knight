@@ -176,6 +176,13 @@ const C = {
   blood: "#9a1b29",
   bloodHi: "#d1313d",
   sweat: "#bcd4e6",
+  // OLD-MAN hair + beard — weathered greys/whites (shows as the helm breaks)
+  hairDk: "#565963",
+  hair: "#868a94",
+  hairHi: "#b8bcc6",
+  hairWhite: "#dde0e6",
+  scalp: "#c99a72", // bald-pate skin under the broken dome
+  scalpHi: "#e2b488",
 };
 
 /** Fill a rectangle in GRID cells. */
@@ -199,8 +206,13 @@ function paint(): void {
   cell(0, 0, GRID, GRID, C.bg);
   cell(6, 3, 12, 19, C.bgHi);
 
-  // ── Helmet: rounded dome, brim, gold crest, side cheek-guards ──
-  paintHelmet(tier);
+  // ── Head UNDER the helm (grey hair + bald pate) drawn first, so as the
+  // helmet plates shatter away (higher stages) the old man's head shows through.
+  const stage = helmetStageOf();
+  paintScalp(stage);
+  // ── Helmet: rounded dome, brim, gold crest, side cheek-guards — progressively
+  // BREAKS APART as the fight wears on (Doom status-face energy). ──
+  paintHelmet(stage);
 
   // ── Face skin base + sculpted shading ──
   // base mid tone, rounded corners under the brim / at the jaw
@@ -244,10 +256,12 @@ function paint(): void {
   px(10, 13, C.skinLo); // left nostril wing shadow
   px(13, 13, C.skinLo); // right nostril wing shadow
 
-  // ── Moustache/stubble shadow (a grizzled knight) ──
-  cell(9, 15, 6, 1, tier === "fresh" ? C.skinDk : C.skinLo);
+  // ── Old-man BEARD — a full grizzled grey beard framing the jaw (drawn before
+  // the mouth so the mouth reads through it). Gets more unkempt/whiter with age
+  // of the fight. ──
+  paintBeard(tier);
 
-  // ── Mouth by expression ──
+  // ── Mouth by expression (over the beard) ──
   paintMouth(expr);
 
   // ── Battle damage grows with the tier ──
@@ -259,17 +273,89 @@ function paint(): void {
   else if (specialT > 0) tint(`rgba(240,200,90,${0.2})`);
 }
 
-function paintHelmet(tier: Expr): void {
-  // Dome (stepped rounded top).
+/**
+ * Helmet damage stage 0-5 from the health tier: the plates chip, crack, shatter
+ * and finally fall away entirely, Doom-status-face style, so LOW HP literally
+ * reads as "the armour is gone and it's just his bloody face".
+ */
+function helmetStageOf(): number {
+  switch (tierOf()) {
+    case "fresh": return 0;
+    case "steady": return 1;
+    case "hurt": return 2;
+    case "bloodied": return 3;
+    case "dying": return 4;
+    default: return 5; // dead
+  }
+}
+
+/**
+ * The old knight's HEAD under the helm — a balding grey-haired pate. Fully
+ * hidden while the dome is intact; shows through the holes as it shatters, then
+ * is fully bared (wild bloody grey hair) once the helmet's gone.
+ */
+function paintScalp(stage: number): void {
+  // bald crown skin + a light rake
+  cell(8, 2, 8, 4, C.scalp);
+  cell(8, 2, 4, 1, C.scalpHi);
+  // grey hair fringe down the sides
+  cell(6, 3, 2, 3, C.hair);
+  cell(16, 3, 2, 3, C.hair);
+  cell(6, 3, 1, 3, C.hairDk);
+  px(9, 2, C.hairHi);
+  px(13, 2, C.hairWhite); // a white strand (age)
+  if (stage >= 4) {
+    // helm gone — disheveled grey hair sticking up, blood matting the pate
+    cell(7, 1, 10, 1, C.hair);
+    px(8, 0, C.hairHi); px(11, 0, C.hairWhite); px(14, 0, C.hair);
+    cell(6, 2, 1, 4, C.hairDk);
+    cell(17, 2, 1, 4, C.hairDk);
+    px(12, 2, C.blood); cell(9, 3, 2, 1, C.blood);
+    if (stage >= 5) { cell(11, 1, 3, 1, C.bloodHi); px(10, 2, C.blood); px(14, 2, C.blood); }
+  }
+}
+
+function paintHelmet(stage: number): void {
+  if (stage >= 5) {
+    // DEAD — helmet entirely gone; only a battered blood-streaked gorget left.
+    cell(6, 21, 12, 3, C.steelDk);
+    cell(6, 21, 12, 1, C.steel);
+    px(9, 22, C.blood);
+    return;
+  }
+
+  // ── Gorget (neck plate) — holds on until death ──
+  cell(6, 21, 12, 3, C.steel);
+  cell(6, 21, 12, 1, C.steelHi);
+  cell(6, 23, 12, 1, C.steelDk);
+  cell(11, 21, 2, 3, C.steelDk);
+
+  if (stage >= 4) {
+    // DYING — helm smashed off; only a bent remnant brow-plate clings on the
+    // left, plus a dangling cheek strap. The rest is bare (paintScalp shows).
+    cell(6, 4, 4, 2, C.steelDk);
+    cell(6, 4, 4, 1, C.steel);
+    cell(5, 6, 1, 5, C.steelDk); // dangling left cheek strap
+    px(6, 3, C.steelDk);
+    px(7, 4, C.blood);
+    return;
+  }
+
+  // ── Dome (stepped rounded top) ──
   cell(9, 0, 6, 1, C.steel);
   cell(7, 1, 10, 1, C.steel);
   cell(6, 2, 12, 1, C.steel);
   cell(6, 3, 12, 2, C.steel);
-  // upper-left highlight rake
-  cell(9, 0, 3, 1, C.steelBright);
-  cell(7, 1, 3, 1, C.steelHi);
-  cell(6, 2, 3, 1, C.steelHi);
-  cell(6, 3, 2, 1, C.steelBright);
+  // highlight rake — pristine only when fresh
+  if (stage === 0) {
+    cell(9, 0, 3, 1, C.steelBright);
+    cell(7, 1, 3, 1, C.steelHi);
+    cell(6, 2, 3, 1, C.steelHi);
+    cell(6, 3, 2, 1, C.steelBright);
+    px(7, 4, C.steelBright); px(16, 4, C.steelBright); // brim rivets
+  } else {
+    cell(7, 1, 2, 1, C.steelHi);
+  }
   // lower-right dome shadow
   px(14, 0, C.steelDk);
   cell(15, 1, 2, 1, C.steelDk);
@@ -277,32 +363,67 @@ function paintHelmet(tier: Expr): void {
   // brim shadow line under the helmet
   cell(6, 5, 11, 1, C.steelDk);
   px(7, 5, C.bg);
-  // brim rivets
-  px(7, 4, C.steelBright);
-  px(16, 4, C.steelBright);
-  // gold crest / nasal spine on the dome
-  cell(11, 0, 2, 5, C.gold);
-  cell(11, 0, 1, 5, C.goldHi);
 
-  // Side cheek-guards framing the face.
-  cell(5, 5, 2, 13, C.steel);
-  cell(5, 5, 1, 13, C.steelHi);
-  cell(17, 5, 2, 13, C.steel);
-  cell(18, 5, 1, 13, C.steelDk);
-  // guard rivets
-  px(6, 8, C.steelBright);
-  px(6, 14, C.steelBright);
-  px(17, 8, C.steelBright);
-  px(17, 14, C.steelBright);
-  // a scratch/ding that deepens with damage (the helm takes hits too)
-  if (tier !== "fresh") cell(16, 2, 1, 2, C.steelDk);
-  if (tier === "dying" || tier === "dead") px(8, 3, C.steelDk);
+  // ── Gold crest / nasal spine — knocked clean off at stage ≥ 2 ──
+  if (stage < 2) {
+    cell(11, 0, 2, 5, C.gold);
+    cell(11, 0, 1, 5, C.goldHi);
+  } else {
+    px(11, 4, C.gold); // torn stub
+    px(12, 3, C.steelDk);
+  }
 
-  // Gorget (neck plate) at the bottom.
-  cell(6, 21, 12, 3, C.steel);
-  cell(6, 21, 12, 1, C.steelHi);
-  cell(6, 23, 12, 1, C.steelDk);
-  cell(11, 21, 2, 3, C.steelDk); // throat shadow
+  // ── Cracks + punched-out holes (hair shows through), growing per stage ──
+  if (stage >= 1) {
+    cell(16, 2, 1, 2, C.steelDk); // first ding
+    px(9, 3, C.steelDk);
+  }
+  if (stage >= 2) {
+    // a crack forks across the dome
+    px(10, 2, C.steelDk); px(11, 3, C.steelDk); px(13, 2, C.steelDk);
+    cell(15, 3, 2, 1, C.steelDk);
+  }
+  if (stage >= 3) {
+    // SHATTERED — chunks punched out; the grey head shows through the gaps
+    px(8, 2, C.hair); px(9, 2, C.hair);
+    px(13, 3, C.hair); px(14, 3, C.hairHi);
+    px(15, 1, C.hair); px(7, 3, C.hairDk);
+    cell(11, 4, 2, 1, C.hair); // jagged brim bite
+    px(12, 2, C.blood);
+  }
+
+  // ── Cheek guards — the right one takes the worst of it ──
+  const leftBot = stage >= 3 ? 11 : stage >= 2 ? 15 : 18;
+  cell(5, 5, 2, leftBot - 5, C.steel);
+  cell(5, 5, 1, leftBot - 5, C.steelHi);
+  if (stage < 3) px(6, 8, C.steelBright);
+  if (stage >= 2) px(6, leftBot - 1, C.steelDk); // jagged break edge
+
+  const rightBot = stage >= 3 ? 9 : stage >= 2 ? 13 : 18;
+  cell(17, 5, 2, rightBot - 5, C.steel);
+  cell(18, 5, 1, rightBot - 5, C.steelDk);
+  if (stage < 2) { px(17, 8, C.steelBright); px(17, 14, C.steelBright); }
+  else px(17, rightBot - 1, C.steelDk);
+}
+
+/**
+ * A full grizzled GREY beard framing the jaw (drawn under the mouth). Whiter and
+ * more unkempt as the fight wears on — the old-man read.
+ */
+function paintBeard(tier: Expr): void {
+  const greye = tier === "fresh" || tier === "steady" ? C.hair : C.hairHi;
+  // moustache across the upper lip, split under the nose
+  cell(9, 14, 6, 1, C.hairDk);
+  cell(9, 15, 2, 1, greye);
+  cell(13, 15, 2, 1, greye);
+  // jaw sides + chin mass (the mouth is painted over this after)
+  cell(8, 16, 2, 4, C.hairDk);
+  cell(14, 16, 2, 4, C.hairDk);
+  cell(9, 18, 6, 2, greye);
+  cell(9, 20, 6, 1, C.hairDk);
+  cell(10, 18, 4, 1, C.hair);
+  // stray white strands (age)
+  px(9, 19, C.hairWhite); px(13, 19, C.hairHi); px(11, 20, C.hairWhite);
 }
 
 function paintEyes(expr: ReturnType<typeof exprNow>, tier: Expr): void {

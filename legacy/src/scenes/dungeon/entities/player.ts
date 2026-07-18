@@ -45,6 +45,7 @@ import {
   FRICTION_CORRIDOR,
   FRICTION_TIGHT,
   LANE_CENTER_PULL,
+  LANE_PROBE_MAX,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
   PINBALL_COMBO_WINDOW,
@@ -68,6 +69,10 @@ import {
   RAMP_SPEED,
   RAMP_COOLDOWN,
   RAMP_STEER_LOCK,
+  BOOSTER_SPEED,
+  BOOSTER_RADIUS,
+  BOOSTER_COOLDOWN,
+  BOOSTER_STEER_LOCK,
   DEFLECTOR_BOOST,
   ARC_BANK_RADIUS,
   ARC_BOOST,
@@ -154,7 +159,8 @@ import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
 import { WEAPONS } from "../items";
-import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage } from "./combat";
+import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
+import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
 import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxTrapdoor, sfxHurt } from "../audio";
 import { spendGold } from "../../../utils/gold-wallet";
@@ -470,6 +476,7 @@ function pounceSlam(move: MoveTiming): void {
     const dz = z.z - p.z;
     if (dx * dx + dz * dz > POUNCE_AOE * POUNCE_AOE) continue;
     damageZombie(z, dmg, dx, dz, push);
+    applyCardOnHit(z);
   }
   if (state.zombies.some((z) => z.mode !== "dead")) wearActiveWeapon();
   // Impact juice: a shockwave of dust + a hard shake.
@@ -671,6 +678,21 @@ function touchPinballParts(inMomentum: boolean): void {
       state.vfx?.dust(p.x, 0.06, p.z);
       state.vfx?.sparks(part.x, 0.45, part.z, part.dirX, part.dirZ, 16);
       state.shakeT = Math.max(state.shakeT, 0.12);
+      sfxSpin();
+    } else if (part.kind === "booster") {
+      // The moving-walkway pad: snap the heading to its arrow and FLOOR the
+      // speed (Sonic booster rule — set, don't slow). Fires from a cold walk
+      // too, so stepping onto a booster LANE launches you and each subsequent
+      // pad in the chain re-aims + tops you up, railing you down the lane.
+      if (d2 > BOOSTER_RADIUS * BOOSTER_RADIUS) continue;
+      p.momX = part.dirX;
+      p.momZ = part.dirZ;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, BOOSTER_SPEED));
+      steerLockT = Math.max(steerLockT, BOOSTER_STEER_LOCK);
+      onPartTrigger();
+      part.cooldownT = BOOSTER_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.sparks(part.x, 0.25, part.z, part.dirX, part.dirZ, 10);
       sfxSpin();
     } else if (part.kind === "oil") {
       // The slick: a WALKING touch converts your stride into a frictionless
@@ -1094,6 +1116,19 @@ function updateRide(dt: number): boolean {
 }
 
 /**
+ * Distance (world units) from (x,z) to the first non-walkable tile stepping out
+ * along (dirX,dirZ), capped at LANE_PROBE_MAX. Used by the lane glide to find
+ * how much corridor room is on each side so it can centre the ball.
+ */
+function wallClearance(g: Grid, x: number, z: number, dirX: number, dirZ: number): number {
+  for (let d = PLAYER_R; d <= LANE_PROBE_MAX; d += 0.12) {
+    const t = worldToTile(g, x + dirX * d, z + dirZ * d);
+    if (!isWalkable(g, t.i, t.j)) return d;
+  }
+  return LANE_PROBE_MAX;
+}
+
+/**
  * PINBALL PHYSICS — while p.momSpeed > 0 the knight carries real momentum and
  * bounces off walls instead of stopping. Owns the player (returns true) until
  * the momentum bleeds below PINBALL_EXIT_MULT·PLAYER_SPEED, then hands control
@@ -1143,23 +1178,29 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   p.x = res.x;
   p.z = res.z;
 
-  // Slice 8 — LANE GLIDE: while railing fast and NOT actively steering, ease
-  // toward the walkable centre of the corridor cross-section, so you glide down
-  // the middle like a pinball lane instead of scraping a wall. Only nudges when
-  // a wall is near on exactly one perpendicular side (a corridor, not a room).
-  if (steerLockT <= 0 && a.x === 0 && a.z === 0 && p.momSpeed > PLAYER_SPEED) {
+  // LANE GLIDE (rebuilt): while railing fast, actively CENTRE the ball in the
+  // corridor cross-section instead of letting it scrape a wall. Measure the
+  // clear distance to a wall on each perpendicular side and nudge toward the
+  // midpoint, proportional to how off-centre you are. It still fires while you
+  // gently steer (at reduced strength) so a nudge can't pin you to a wall — the
+  // fix for "it just rides against the wall". Skipped in true open rooms (no
+  // near wall on either perpendicular side within reach).
+  if (steerLockT <= 0 && p.momSpeed > PLAYER_SPEED) {
     const alongX = Math.abs(p.momX) >= Math.abs(p.momZ);
     const perpX = alongX ? 0 : 1;
     const perpZ = alongX ? 1 : 0;
-    const probe = PLAYER_R + 0.55;
-    const tp = worldToTile(g, p.x + perpX * probe, p.z + perpZ * probe);
-    const tn = worldToTile(g, p.x - perpX * probe, p.z - perpZ * probe);
-    const wallPos = !isWalkable(g, tp.i, tp.j);
-    const wallNeg = !isWalkable(g, tn.i, tn.j);
-    const push = wallPos && !wallNeg ? -1 : wallNeg && !wallPos ? 1 : 0;
-    if (push !== 0) {
-      const nudge = LANE_CENTER_PULL * dt;
-      const r2 = moveCircle(g, p.x, p.z, PLAYER_R, perpX * push * nudge, perpZ * push * nudge);
+    const cp = wallClearance(g, p.x, p.z, perpX, perpZ); // room on the + side
+    const cn = wallClearance(g, p.x, p.z, -perpX, -perpZ); // room on the − side
+    // Only centre when at least one side has a wall within reach (a lane, not a
+    // wide-open room where centring would fight the player's chosen line).
+    const nearWall = cp < LANE_PROBE_MAX || cn < LANE_PROBE_MAX;
+    const imbalance = cp - cn; // >0 → more room on + side, drift that way
+    if (nearWall && Math.abs(imbalance) > 0.12) {
+      const steering = a.x !== 0 || a.z !== 0;
+      const strength = steering ? 0.45 : 1;
+      const dir = Math.sign(imbalance);
+      const nudge = Math.min(Math.abs(imbalance) * 0.5, LANE_CENTER_PULL * dt) * strength;
+      const r2 = moveCircle(g, p.x, p.z, PLAYER_R, perpX * dir * nudge, perpZ * dir * nudge);
       p.x = r2.x;
       p.z = r2.z;
     }
@@ -1254,6 +1295,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       const dz = z.z - p.z;
       if (dx * dx + dz * dz > (PLAYER_R + ZOMBIE_R + 0.15) * (PLAYER_R + ZOMBIE_R + 0.15)) continue;
       damageZombie(z, dmg, p.momX, p.momZ, BALL_RAM_KNOCKBACK);
+      applyCardOnHit(z);
       hit = true;
     }
     if (hit) {
@@ -1561,7 +1603,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     if (input.consumeAttack() && p.cooldown <= 0) {
       p.attackT = 0;
       p.move = null;
-      p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1);
+      p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1) * aggregateCards(state.weaponSlots[state.activeSlot]?.cards).cooldownMult;
       p.anim.setRate(1); // never inherit the run gait's ramped rate
       p.anim.play("attack", { force: true });
       const cursor = input.aimScreen();

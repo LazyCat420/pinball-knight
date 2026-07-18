@@ -43,6 +43,7 @@ export type PartSpotKind =
   | "bumper"
   | "spring"
   | "ramp"
+  | "booster"
   | "deflector"
   | "glove"
   | "oil"
@@ -186,8 +187,90 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 }
 
 /** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
-const LAUNCH_KINDS = new Set<string>(["ramp", "spring", "slingshot", "flipper"]);
+const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
+
+/**
+ * CORRIDOR-WIDEN (the "launch highway" — kills the uniform 2-wide box-maze
+ * feel). Trace the main artery from the stairs back to the start along the BFS
+ * gradient and widen it to 3 tiles by carving ONE perpendicular wall neighbour
+ * per path tile. Carving wall→floor only ever ADDS connectivity, so
+ * reachability is preserved by construction. Mutates the grid in place; the
+ * caller reruns its floor scan + distances afterwards. Returns the widened tiles
+ * so downstream can treat the artery as open space.
+ */
+export function widenMainArtery(g: Grid): void {
+  // Find the start (first floor tile, top-left) + the farthest tile (the stairs
+  // end) — the same endpoints decorateMaze uses — then widen the path between.
+  let start: TilePos | null = null;
+  outer: for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) {
+      if (at(g, i, j) === T_FLOOR) {
+        start = { i, j };
+        break outer;
+      }
+    }
+  }
+  if (!start) return;
+  const dist = bfsDistances(g, start.i, start.j);
+  let stairs = start;
+  let maxDist = 0;
+  for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) {
+      if (at(g, i, j) !== T_FLOOR) continue;
+      const d = dist[idx(g, i, j)];
+      if (d > maxDist) {
+        maxDist = d;
+        stairs = { i, j };
+      }
+    }
+  }
+  if (maxDist <= 6) return; // too small to bother
+  widenArtery(g, start, stairs, dist);
+}
+
+function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): void {
+  // Walk the gradient stairs → start (each step drops the BFS distance by one).
+  let cur: TilePos = stairs;
+  let guard = 0;
+  const path: TilePos[] = [cur];
+  while (!(cur.i === start.i && cur.j === start.j) && guard++ < g.w * g.h) {
+    const dcur = dist[idx(g, cur.i, cur.j)];
+    let next: TilePos | null = null;
+    for (const [di, dj] of WALL_SIDES) {
+      const ni = cur.i + di;
+      const nj = cur.j + dj;
+      if (at(g, ni, nj) === T_WALL) continue;
+      if (dist[idx(g, ni, nj)] === dcur - 1) {
+        next = { i: ni, j: nj };
+        break;
+      }
+    }
+    if (!next) break; // gradient dead-ended (shouldn't on a connected maze)
+    cur = next;
+    path.push(cur);
+  }
+  // Widen each artery tile: carve one perpendicular wall neighbour (never the
+  // border). Perp is relative to the local travel direction along the path.
+  for (let k = 0; k < path.length; k++) {
+    const a = path[k];
+    const b = path[Math.min(path.length - 1, k + 1)];
+    const di = Math.sign(b.i - a.i);
+    const dj = Math.sign(b.j - a.j);
+    // Perpendicular candidates (both sides); carve the first that is an interior
+    // wall so the corridor fattens toward open space.
+    const perps: Array<[number, number]> = dj !== 0 || di !== 0 ? [[-dj, di], [dj, -di]] : [[1, 0], [-1, 0]];
+    for (const [pi, pj] of perps) {
+      const wi = a.i + pi;
+      const wj = a.j + pj;
+      if (wi <= 0 || wj <= 0 || wi >= g.w - 1 || wj >= g.h - 1) continue; // keep the border solid
+      if (at(g, wi, wj) === T_WALL) {
+        setTile(g, wi, wj, T_FLOOR);
+        break;
+      }
+    }
+  }
+}
 
 /** Count consecutive open (floor) tiles stepping (di,dj) from (i,j), capped. */
 function launchRunway(g: Grid, i: number, j: number, di: number, dj: number): number {
@@ -205,6 +288,7 @@ const KIND_TOPOLOGY: Record<string, Topology> = {
   spinpad: "junction",
   flipper: "junction",
   ramp: "straight",
+  booster: "straight",
   oil: "straight",
   slingshot: "straight",
   glove: "straight",
@@ -288,28 +372,46 @@ function furnishRooms(
       parts.push({ dir2I: 0, dir2J: 0, ...p });
     };
 
+    const clearAt = (i: number, j: number): boolean => !parts.some((q) => q.i === i && q.j === j);
+
     if (kind === "bumper") {
-      // Quincunx: corners-and-centre fractions of the rect, capped by area.
-      const n = Math.max(3, Math.min(5, Math.floor((room.w * room.h) / 14)));
-      const spots: Array<[number, number]> = [[0.25, 0.25], [0.75, 0.75], [0.5, 0.5], [0.75, 0.25], [0.25, 0.75]];
-      for (const [fx, fy] of spots.slice(0, n)) {
-        const i = room.i0 + Math.round(fx * (room.w - 1));
-        const j = room.j0 + Math.round(fy * (room.h - 1));
-        if (parts.some((q) => q.i === i && q.j === j)) continue; // tiny room folds
-        part({ kind: "bumper", i, j, dirI: 0, dirJ: 0 });
+      // FILL the chamber with a staggered GRID of bumpers (every ~3 tiles) so a
+      // big room is a real bumper FIELD, not five lonely pins in a bare hall.
+      // Alternate rows offset half a step for the diamond/quincunx read, and a
+      // few pins swap to slingshots for variety. Density scales with area.
+      const STEP = 3;
+      const m = 1; // margin from the walls
+      let row = 0;
+      for (let gy = room.j0 + m; gy <= room.j0 + room.h - 1 - m; gy += STEP, row++) {
+        const stag = row % 2 ? Math.floor(STEP / 2) : 0;
+        for (let gx = room.i0 + m + stag; gx <= room.i0 + room.w - 1 - m; gx += STEP) {
+          if (!clearAt(gx, gy)) continue;
+          // the four inner corners are reserved for the curved rails below
+          const atCorner = (gx === room.i0 + 1 || gx === room.i0 + room.w - 2) && (gy === room.j0 + 1 || gy === room.j0 + room.h - 2);
+          if (atCorner && room.w >= 6 && room.h >= 6) continue;
+          part({ kind: "bumper", i: gx, j: gy, dirI: 0, dirJ: 0 });
+        }
       }
     } else if (kind === "speedway") {
-      // Dash lane down the long axis, every ramp aimed the same way.
+      // PARALLEL accelerating lanes down the long axis (ramp → booster → ramp,
+      // all aimed the same way). A wide room gets 2-3 lanes across the short
+      // axis so the whole floor of the room is a launch bank, not one thin strip.
       const alongW = room.w >= room.h;
       const sign = rng() < 0.5 ? 1 : -1;
-      const len = alongW ? room.w : room.h;
-      const n = Math.max(2, Math.floor(len / 4));
-      for (let s = 0; s < n; s++) {
-        const t = Math.round(1 + (s * (len - 3)) / Math.max(1, n - 1));
-        const i = alongW ? room.i0 + t : cx;
-        const j = alongW ? cy : room.j0 + t;
-        if (parts.some((q) => q.i === i && q.j === j)) continue;
-        part({ kind: "ramp", i, j, dirI: alongW ? sign : 0, dirJ: alongW ? 0 : sign });
+      const longLen = alongW ? room.w : room.h;
+      const shortLen = alongW ? room.h : room.w;
+      const nLanes = Math.max(1, Math.min(3, Math.floor(shortLen / 3)));
+      const nPer = Math.max(3, Math.floor(longLen / 3));
+      for (let lane = 0; lane < nLanes; lane++) {
+        const off = Math.round(((lane + 1) / (nLanes + 1)) * (shortLen - 1));
+        for (let s = 0; s < nPer; s++) {
+          const t = Math.round(1 + (s * (longLen - 3)) / Math.max(1, nPer - 1));
+          const i = alongW ? room.i0 + t : room.i0 + off;
+          const j = alongW ? room.j0 + off : room.j0 + t;
+          if (!clearAt(i, j)) continue;
+          const pk: PartSpotKind = s % 2 === 0 ? "ramp" : "booster";
+          part({ kind: pk, i, j, dirI: alongW ? sign : 0, dirJ: alongW ? 0 : sign });
+        }
       }
     } else {
       // arena + vault share the corner geometry.
@@ -327,6 +429,40 @@ function furnishRooms(
         spawns.push(...corners.slice(0, 2));
         items.push({ kind: "weapon", id: shuffled(WEAPON_POOL, rng)[0], i: cx, j: cy });
         if (room.w > 2) items.push({ kind: "potion", id: "gold", i: cx - 1, j: cy });
+      }
+      // Even the fight/reward rooms get pinball furniture on their wall midpoints
+      // (bumpers) so a big arena/vault isn't a bare box — clear of the centre
+      // prize and the corner guards.
+      const mids: TilePos[] = [
+        { i: cx, j: room.j0 + 1 },
+        { i: cx, j: room.j0 + room.h - 2 },
+        { i: room.i0 + 1, j: cy },
+        { i: room.i0 + room.w - 2, j: cy },
+      ];
+      for (const md of mids) {
+        if (!clearAt(md.i, md.j)) continue;
+        if (Math.abs(md.i - cx) + Math.abs(md.j - cy) < 2) continue; // keep the prize clear
+        if (spawns.some((s) => s.i === md.i && s.j === md.j)) continue;
+        part({ kind: "bumper", i: md.i, j: md.j, dirI: 0, dirJ: 0 });
+      }
+    }
+
+    // CURVED PLAYFIELD PERIMETER — the "not a box" read: a big OPEN room
+    // (bumper/speedway) gets banked deflector rails in its four inner corners,
+    // legs pointing inward along the two walls. A ball railing along one wall
+    // banks around the corner and down the next, so the open room plays as a
+    // rounded pinball table edge — visible curved lanes, not square walls. Only
+    // for rooms with room to sweep, and never on top of an archetype part.
+    if ((kind === "bumper" || kind === "speedway") && room.w >= 6 && room.h >= 6) {
+      const rails: PinballPartSpot[] = [
+        { i: room.i0 + 1, j: room.j0 + 1, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: 1 }, // TL → E/S
+        { i: room.i0 + room.w - 2, j: room.j0 + 1, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: 1 }, // TR → W/S
+        { i: room.i0 + room.w - 2, j: room.j0 + room.h - 2, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: -1 }, // BR → W/N
+        { i: room.i0 + 1, j: room.j0 + room.h - 2, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: -1 }, // BL → E/N
+      ];
+      for (const r of rails) {
+        if (parts.some((q) => q.i === r.i && q.j === r.j)) continue;
+        parts.push(r);
       }
     }
   });
@@ -346,7 +482,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -505,6 +641,36 @@ export function decorateMaze(
       break;
     }
     dry = placed ? 0 : dry + 1;
+  }
+
+  // ── BOOSTER LANES (the accelerating "highway" layer): lay rows of 2-3 booster
+  // pads down a straight run, all aimed the same way, so a floor reads as a
+  // machine with real speed channels — not a maze with the odd dash pad. Its own
+  // layer over the part budget (like banks/hazards), so a lane never strips the
+  // corridor deal. Best-effort: place up to LANE_COUNT lanes on suitable runs. ──
+  const LANE_COUNT = extras.boosterLanes ?? 3;
+  const LANE_LEN = 3;
+  const laneAxes: Array<[number, number]> = [[1, 0], [0, 1]];
+  let lanesPlaced = 0;
+  laneSearch: for (const p of shuffled(floors, rng)) {
+    if (lanesPlaced >= LANE_COUNT) break;
+    if (inRoom(p) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 5) continue;
+    for (const [ai, aj] of shuffled(laneAxes, rng)) {
+      // A run of LANE_LEN+1 floor tiles along the axis (the pads + one tile of
+      // runway past the end) that stays out of rooms and clear of other parts,
+      // and isn't the stairs tile. Wide corridors are fine — the pads snap your
+      // heading to the axis, so the lane rails you straight down it regardless.
+      const runOk = Array.from({ length: LANE_LEN + 1 }, (_, s) => s).every(
+        (s) => at(g, p.i + ai * s, p.j + aj * s) === T_FLOOR && !(p.i + ai * s === stairs.i && p.j + aj * s === stairs.j),
+      );
+      const clear = [0, 1, 2].every((s) => !parts.some((q) => Math.abs(q.i - (p.i + ai * s)) + Math.abs(q.j - (p.j + aj * s)) < 2));
+      if (!runOk || !clear) continue;
+      for (let s = 0; s < LANE_LEN; s++) {
+        parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "booster", dirI: ai, dirJ: aj, dir2I: 0, dir2J: 0 });
+      }
+      lanesPlaced++;
+      continue laneSearch;
+    }
   }
 
   // ── Target bullseyes: wall-mounted like torches, spaced wide — the floor's

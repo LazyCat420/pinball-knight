@@ -103,6 +103,24 @@ export function mouseAimDirection(
   return { x: w.x / len, z: w.z / len };
 }
 
+/**
+ * Project a world position (at head height) to CLIENT pixel coordinates for DOM
+ * overlays (floating combo numbers, etc). Returns null if the camera/renderer
+ * aren't ready. Mirrors the player-projection math in mouseAimDirection.
+ */
+const _pScreen = new THREE.Vector3();
+export function worldToScreenPx(x: number, z: number, y = 0.6): { x: number; y: number } | null {
+  const cam = state.camera;
+  const renderer = state.renderer;
+  if (!cam || !renderer) return null;
+  _pScreen.set(x, y, z).project(cam);
+  const rect = renderer.domElement.getBoundingClientRect();
+  return {
+    x: rect.left + ((_pScreen.x + 1) / 2) * rect.width,
+    y: rect.top + ((1 - _pScreen.y) / 2) * rect.height,
+  };
+}
+
 const _offset = cameraOffset();
 const _target = new THREE.Vector3();
 const _right = new THREE.Vector3();

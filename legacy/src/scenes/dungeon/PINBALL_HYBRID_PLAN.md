@@ -151,5 +151,88 @@ friction surface, and enemy density.
 - `decorate.ts` + `generator.ts` + `core.ts`. The capstone that uses slices 2/4/5/8.
 
 ---
+
+## Wave 10 — "still a box maze" follow-up ✅ (2026-07-17)
+User feedback after Slices 1-9: open rooms still read boxy; ramps / booster lanes
+/ curved lanes not landing. Root causes were the deferred widen pass + no
+accelerating element + curves only as tiny corner wedges. Closed:
+
+- **Booster part (NEW kind `booster`)** — a Sonic speed-booster pad: snaps your
+  heading to its arrow + FLOORS your speed (works from a cold walk, starting a
+  ride). The genuinely-missing accelerator (magstrip only ever slowed). Enum +
+  `BOOSTER_*` constants + `buildBooster` (neon walkway pad, scrolling chevrons) +
+  physics branch + `sfxSpin`. Fires from both the momentum and walk paths.
+- **Booster LANES** — a dedicated layer (like target banks) lays rows of 3
+  adjacent pads down a straight run, all aimed the same way, so a floor has real
+  speed channels. ~3 lanes/floor (verified 60/60 seeds). Its own layer, off the
+  part budget. `decorate.ts` lane search + `boosterLanes` extra.
+- **Speedway = ramp→booster CHAIN** — speedway rooms now alternate ramp/booster
+  down the long axis (was ramps only), so the room rails you end-to-end.
+- **Curved playfield perimeter** — big open (bumper/speedway) rooms get banked
+  deflector rails in all four inner corners, so a fast ball sweeps the room edge
+  like a rounded pinball table instead of slamming square walls. Visible curved
+  lanes in the open rooms (verified ~1/floor). `furnishRooms`.
+- **Corridor-widen artery** (the deferred Slice 2/9 pass, finally done) —
+  `widenMainArtery` traces the start→stairs BFS gradient and widens it to 3 tiles
+  (carves wall→floor only, reachability-preserved). Kills the uniform 2-wide box
+  feel; every downstream stage (topology/parts/arc-corners/render) sees the wide
+  highway. Runs in `core.ts` after thicken, before decorate. New invariant test.
+- **Fix 1 — wall-break text overlap** — `showToast` now single-slots (evicts the
+  prior toast + cancels its timers) so chained "SECRET WALL SMASHED" messages no
+  longer pile up on top of each other.
+- **Fix 2 — Ragnarok floating combo numbers** — replaced the static centred ×N
+  flash with `spawnFloatingCombo`: a small bold ×N at the knight's SCREEN pos
+  (via new `camera.worldToScreenPx`) that floats up, shrinks, fades, waterfall-
+  stacks, tier-colours (white→yellow→orange→red/gold) + shakes on big chains.
+
+Verify: tsc clean (dungeon), 110 vitest pass, `next build` green. No WebGL
+screenshot harness in this repo — needs in-browser playtest.
+
+**DEFERRED (separate feature, not this wave):** the Card system + Tavern hub
+(pinball_knight_plan.md Part 2) — a whole new `src/scenes/tavern/` scene + card
+data model + persistent runState. Large enough to warrant its own build pass;
+untouched here to keep this wave focused on the "feels like a box maze" fix.
+
+---
+
+## Wave 11 — face, movement, big rooms, CARDS + TAVERN ✅ (2026-07-17)
+Second round of user feedback ("face better / old bearded man whose helmet breaks
+Doom-style; ride shouldn't scrape the wall; big rooms end up empty; now do
+pinball_knight_plan.md Part 2"). All shipped:
+
+- **Doom-style health face** (`hud-face.ts`) — the knight is now a grizzled OLD
+  man with a grey beard + bald pate under the helm. The helmet BREAKS in stages
+  as HP drops (crest knocked off → dome cracks → plates shatter showing grey hair
+  → helm gone, bare bloody face → dead). `helmetStageOf` / `paintScalp` /
+  `paintBeard` + a stage-driven `paintHelmet`.
+- **Lane centring rebuild** (`player.ts` + `LANE_PROBE_MAX`/`LANE_CENTER_PULL`) —
+  the ride actively CENTRES in the corridor cross-section (measures wall
+  clearance each side, nudges to the midpoint, works even while steering) instead
+  of scraping one wall. Fixes "it just rides against the wall".
+- **Big rooms filled** (`decorate.ts furnishRooms`) — bumper rooms now lay a
+  staggered GRID of bumpers scaled to area (a 12×12 room → ~20 pins, was 5);
+  speedway rooms lay 2-3 PARALLEL ramp→booster lanes; arena/vault get wall-mid
+  bumpers. No more empty chambers.
+- **CARD SYSTEM** (plan Part 1) — new `cards.ts` (16 cards, 4 rarities, stat /
+  on-hit / pinball-synergy modifiers). `WeaponDef.cardSlots` + `WeaponState.cards`
+  (`items.ts`). Cards DROP from kills (`rollCardDrop`, rarity-gated, one legendary
+  per run), render as rarity-tinted floor cards (`cel-painter cardItem`), and
+  pick up → auto-socket into the active weapon or stash. `playerDamage` runs every
+  hit through the socketed aggregate (percent → flat → pinball-synergy); on-hit
+  CHILL (slow) + BURN (DoT) via new `Zombie.chillT/dotT` in `zombie.ts`; cooldown
+  card speeds ranged fire. `cards.test.ts` (9 tests).
+- **TAVERN hub** (plan Part 2) — new `tavern.ts`: a between-floor overlay (pauses
+  the sim like the shop via `state.tavernEl`) opened on stair descent. Four
+  stations: ⚔ Armory (socket/un-socket stashed cards), 🍺 Bar (buy cards + reroll,
+  repair weapon, add a card slot), 🔨 Blacksmith (forge 2 commons→1 rare, reroll a
+  card, repair gear), 📜 Notice Board (run stats + DESCEND). Run-persistent
+  `state.cardStash` survives floor rebuilds; resets on a new run.
+
+Verify: tsc clean (dungeon), 119 vitest pass, `next build` green, face rendered to
+PNG. Tavern is DOM-verified via build/tsc (no jsdom in-repo — needs in-browser
+playtest); the plan named a 3D scene but a DOM overlay reuses the loadout state
+and pauses cleanly, matching the existing shop.
+
+---
 **Cadence:** one slice at a time → tsc + vitest + headless screenshot → commit +
 deploy → user tests → next slice. Update this file's ⬜/✅ as we go.

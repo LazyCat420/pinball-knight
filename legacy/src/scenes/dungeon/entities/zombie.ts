@@ -79,6 +79,9 @@ import {
   PINBALL_COMBO_WINDOW,
   PLAYER_R,
   WALL_CONTACT_PROBE,
+  CARD_CHILL_SLOW,
+  CARD_BURN_TICK,
+  CARD_BURN_DMG,
 } from "../constants";
 import { moveCircle, wallContact } from "../collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
@@ -188,6 +191,21 @@ export function updateZombies(dt: number): void {
 
     z.cooldown = Math.max(0, z.cooldown - dt);
     z.burnT = Math.max(0, z.burnT - dt); // flame-tick immunity window
+
+    // ── CARD statuses (cards.ts) ── CHILL slows this frame's movement; BURN
+    // ticks damage over time. Chill's factor is read at the grounded move below.
+    const chillMul = (z.chillT ?? 0) > 0 ? CARD_CHILL_SLOW : 1;
+    if (z.chillT) z.chillT = Math.max(0, z.chillT - dt);
+    if (z.dotT && z.dotT > 0) {
+      z.dotT -= dt;
+      z.dotTickT = (z.dotTickT ?? 0) - dt;
+      if (z.dotTickT <= 0) {
+        z.dotTickT = CARD_BURN_TICK;
+        state.vfx?.sparks(z.x, 0.5, z.z, 0, 1, 3);
+        damageZombie(z, z.dotDmg ?? CARD_BURN_DMG, 0, 0, 0);
+        if ((z.mode as string) === "dead") continue; // burn was the finishing blow (mutated in damageZombie)
+      }
+    }
 
     // ── Aggro ──
     if (!z.aggro && state.flowField) {
@@ -396,8 +414,8 @@ export function updateZombies(dt: number): void {
     // Golems and chompers are FURNITURE WITH TEETH: rooted, never shoved by
     // the horde's separation pass — they hold their chokepoint.
     const rooted = z.kind === "golem" || z.kind === "chomper";
-    const mx = rooted ? 0 : (vx * z.speed + sx * 1.5) * dt;
-    const mz = rooted ? 0 : (vz * z.speed + sz * 1.5) * dt;
+    const mx = rooted ? 0 : (vx * z.speed * chillMul + sx * 1.5) * dt;
+    const mz = rooted ? 0 : (vz * z.speed * chillMul + sz * 1.5) * dt;
     if (mx !== 0 || mz !== 0) {
       const res = moveCircle(g, z.x, z.z, bodyR, mx, mz);
       z.x = res.x;

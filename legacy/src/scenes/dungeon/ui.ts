@@ -226,6 +226,45 @@ export function flashBounceCombo(el: HTMLDivElement | null, combo: number): void
   comboFlashTimer = window.setTimeout(() => { el.style.display = "none"; }, 800);
 }
 
+// Fix 2 — RAGNAROK-style floating combo numbers. Instead of one static centred
+// counter, every fresh bounce spawns a small bold "×N" at the knight's SCREEN
+// position that floats up, shrinks and fades — and stacks with an upward
+// waterfall offset so a fast chain reads as a spray of rising numbers. Tier
+// colour escalates (white → yellow → orange → red/gold) with a brief screen
+// shake on the big ones. Caller passes the projected screen pixels (camera.ts
+// worldToScreenPx) so this module stays DOM-only.
+let floatComboActive = 0;
+export function spawnFloatingCombo(combo: number, sx: number, sy: number): void {
+  if (!state.container || combo < 2) return;
+  ensureWolfFonts();
+  const color = combo >= 10 ? "#ffcf3f" : combo >= 6 ? "#f0a63c" : combo >= 3 ? "#ffe066" : "#eef1f5";
+  const stack = floatComboActive; // waterfall: each live number starts higher
+  floatComboActive++;
+  const jitterX = (Math.random() * 2 - 1) * 8;
+  const startY = sy - stack * 12;
+  const size = 18 + Math.min(18, combo); // bigger chains punch bigger numbers
+  const el = document.createElement("div");
+  el.style.cssText = `
+    position: fixed; left: ${sx + jitterX}px; top: ${startY}px;
+    transform: translate(-50%,-50%) scale(1); z-index: 10001;
+    pointer-events: none; user-select: none; white-space: nowrap;
+    font-family: ${WOLF_NUM}; font-size: ${size}px; line-height: 1;
+    color: ${color}; text-shadow: 0 0 7px ${color}99, 2px 2px 0 #0b0d12;
+    opacity: 1; transition: transform 0.8s ease-out, opacity 0.8s ease-out;
+  `;
+  el.textContent = `×${combo}`;
+  state.container.appendChild(el);
+  requestAnimationFrame(() => {
+    el.style.transform = "translate(-50%,-50%) translateY(-40px) scale(0.7)";
+    el.style.opacity = "0";
+  });
+  window.setTimeout(() => {
+    el.remove();
+    floatComboActive = Math.max(0, floatComboActive - 1);
+  }, 820);
+  if (combo >= 6) state.shakeT = Math.max(state.shakeT, combo >= 10 ? 0.22 : 0.12);
+}
+
 /**
  * The overlord boss bar: a classic wide health bar pinned to the top-centre of
  * the screen, shown only while the mini-boss is alive. Built once, appended to
@@ -436,8 +475,23 @@ export function updateHUD(el: HTMLDivElement): void {
 }
 
 /** Big centred text that fades out — "DEPTH 2", "MACE BROKE", etc. */
+// Fix 1 — a SINGLE toast slot. Toasts are full-screen centred overlays, so two
+// alive at once render on top of each other (the "SECRET WALL SMASHED" pile-up
+// when you smash several walls in a chain). Keep exactly one: a new toast
+// evicts the old one first, cancelling its pending fade/remove timers.
+let activeToast: HTMLDivElement | null = null;
+let toastHideTimer = 0;
+let toastRemoveTimer = 0;
+
 export function showToast(text: string, subtext = ""): void {
   if (!state.container) return;
+  // Evict any live toast immediately so messages never stack/overlap.
+  if (activeToast) {
+    window.clearTimeout(toastHideTimer);
+    window.clearTimeout(toastRemoveTimer);
+    activeToast.remove();
+    activeToast = null;
+  }
   const el = document.createElement("div");
   el.style.cssText = `
     position: fixed; inset: 0; z-index: 10001;
@@ -462,13 +516,17 @@ export function showToast(text: string, subtext = ""): void {
       ? `<div style="font-size:13px;letter-spacing:2px;color:#9aa4b4;margin-top:6px;font-variant:normal">${subtext}</div>`
       : "");
   state.container.appendChild(el);
+  activeToast = el;
 
   requestAnimationFrame(() => {
     el.style.opacity = "1";
   });
-  setTimeout(() => {
+  toastHideTimer = window.setTimeout(() => {
     el.style.opacity = "0";
-    setTimeout(() => el.remove(), 400);
+    toastRemoveTimer = window.setTimeout(() => {
+      el.remove();
+      if (activeToast === el) activeToast = null;
+    }, 400);
   }, 1400);
 }
 

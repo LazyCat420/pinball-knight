@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx } from "./generator";
-import { decorateMaze } from "./decorate";
+import { decorateMaze, widenMainArtery } from "./decorate";
 import { bfsDistances } from "../entities/ai";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
@@ -125,6 +125,12 @@ describe("decorateMaze", () => {
       } else if (part.kind === "pit" || part.kind === "electric" || part.kind === "magstrip") {
         // floor hazards: sit on any open floor (junction OR straight)
         expect(open.length).toBeGreaterThanOrEqual(2);
+      } else if (part.kind === "booster") {
+        // booster LANE: on floor, aimed along a cardinal axis with runway ahead
+        // (its own layer — a row of adjacent pads, not a topology-classified part)
+        expect(at(g, part.i, part.j)).toBe(T_FLOOR);
+        expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
+        expect(at(g, part.i + part.dirI, part.j + part.dirJ)).not.toBe(T_WALL);
       } else {
         // bumper / spinpad — a junction (3+ ways out): an open crossing
         expect(open.length).toBeGreaterThanOrEqual(3);
@@ -132,7 +138,7 @@ describe("decorateMaze", () => {
     }
     // Spacing: DEALT machine parts never bunch into one intersection. Targets,
     // trapdoors and floor hazards are separate layers with their own rules.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
     for (const a of dealt) {
       for (const b of dealt) {
@@ -165,7 +171,7 @@ describe("decorateMaze", () => {
     const { g, plan } = makeLevel(113, 8, 10, 6);
     // Targets, trapdoors + hazards are objective/traversal layers OVER the
     // budget; the dealt machine parts themselves must stay inside it.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
     expect(dealt.length).toBeLessThanOrEqual(6);
     // Scattered break-them-all targets stay within budget; the Slice 6 drop-target
@@ -213,6 +219,26 @@ describe("decorateMaze", () => {
   });
 });
 
+describe("widenMainArtery", () => {
+  it("only carves wall→floor (reachability preserved) and widens the main path", () => {
+    for (const seed of [1, 7, 42, 99, 128]) {
+      const g = thickenWalls(generateMaze(10, 8, mulberry32(seed)));
+      const before = Array.from(g.t);
+      const floorBefore = before.filter((t) => t === T_FLOOR).length;
+      widenMainArtery(g);
+      let carved = 0;
+      for (let k = 0; k < g.t.length; k++) {
+        // never turns a floor into a wall — can only ADD floor
+        if (before[k] === T_FLOOR) expect(g.t[k]).toBe(T_FLOOR);
+        if (before[k] === T_WALL && g.t[k] === T_FLOOR) carved++;
+      }
+      const floorAfter = Array.from(g.t).filter((t) => t === T_FLOOR).length;
+      expect(floorAfter).toBe(floorBefore + carved);
+      expect(carved).toBeGreaterThan(0); // the artery actually got a wider lane
+    }
+  });
+});
+
 /** The full pipeline a real level runs: rooms + cracks on the raw grid, then thicken. */
 function makeFullLevel(seed: number) {
   const raw = generateMaze(14, 11, mulberry32(seed));
@@ -249,6 +275,40 @@ describe("decorateMaze — rooms + secrets", () => {
         expect(plan.spawns.filter(inside).length).toBeGreaterThanOrEqual(2);
       }
     }
+  });
+
+  it("lays booster LANES: rows of adjacent pads aimed the same way down a straight run", () => {
+    const { g, plan } = makeFullLevel(19);
+    const boosters = plan.parts.filter((p) => p.kind === "booster");
+    // corridor lane boosters (outside any room) come in aligned adjacent runs
+    const laneBoosters = boosters.filter((b) => !plan.rooms.some((r) => b.i >= r.i0 && b.i < r.i0 + r.w && b.j >= r.j0 && b.j < r.j0 + r.h));
+    expect(laneBoosters.length).toBeGreaterThanOrEqual(3);
+    for (const b of laneBoosters) {
+      // each pad is on floor, aimed along a cardinal axis, with runway ahead
+      expect(at(g, b.i, b.j)).toBe(T_FLOOR);
+      expect(Math.abs(b.dirI) + Math.abs(b.dirJ)).toBe(1);
+      expect(at(g, b.i + b.dirI, b.j + b.dirJ)).not.toBe(T_WALL);
+      // a lane-mate sits directly ahead OR behind along the shared axis
+      const neighbourInLane = laneBoosters.some(
+        (o) => o !== b && ((o.i === b.i + b.dirI && o.j === b.j + b.dirJ) || (o.i === b.i - b.dirI && o.j === b.j - b.dirJ)),
+      );
+      expect(neighbourInLane).toBe(true);
+    }
+  });
+
+  it("frames big open rooms with curved corner rails (deflectors) — the playfield read", () => {
+    // scan for a floor whose bumper/speedway room is big enough to be railed
+    for (let seed = 400; seed < 460; seed++) {
+      const { plan } = makeFullLevel(seed);
+      const railed = plan.rooms.find((r) => (r.kind === "bumper" || r.kind === "speedway") && r.w >= 6 && r.h >= 6);
+      if (!railed) continue;
+      const inside = (p: { i: number; j: number }): boolean =>
+        p.i >= railed.i0 && p.i < railed.i0 + railed.w && p.j >= railed.j0 && p.j < railed.j0 + railed.h;
+      const corners = plan.parts.filter((p) => p.kind === "deflector" && inside(p));
+      expect(corners.length).toBeGreaterThanOrEqual(1);
+      return;
+    }
+    // no big open room in the sample — acceptable (rail count is size-gated)
   });
 
   it("zones rooms by distance: near start = speedway (launch), far = arena/vault (drain) — Slice 9", () => {

@@ -30,7 +30,7 @@ import {
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
-import { damageZombie, playerDamage, hitPlayerRanged, webPlayer } from "./combat";
+import { damageZombie, playerDamage, hitPlayerRanged, webPlayer, applyCardOnHit } from "./combat";
 import type { WeaponDef } from "../items";
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
@@ -357,9 +357,11 @@ export function updateProjectiles(dt: number): void {
         if (z.burnT <= 0) {
           z.burnT = FLAME_BURN_IMMUNITY;
           damageZombie(z, pr.damage, pr.vx, pr.vz, 0.06);
+          applyCardOnHit(z);
         }
       } else {
         damageZombie(z, pr.damage, pr.vx, pr.vz, pr.kind === "arrow" ? 0.5 : 0.3);
+        applyCardOnHit(z);
         consumed = true;
         break;
       }

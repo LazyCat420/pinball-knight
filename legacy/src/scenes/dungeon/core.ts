@@ -33,8 +33,8 @@ import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
-import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera } from "./camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, flashBounceCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
+import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -42,7 +42,7 @@ import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./collision";
-import { decorateMaze, type PrefabAnchor } from "./maze/decorate";
+import { decorateMaze, widenMainArtery, type PrefabAnchor } from "./maze/decorate";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
@@ -51,7 +51,7 @@ import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -167,6 +167,8 @@ import {
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
+import { openTavern } from "./tavern";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper } from "./audio";
 
 /**
@@ -543,6 +545,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   setBossDefeatedHandler(dropBossReward);
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
+  setCardRollHandler(dropCardMaybe);
   // A shattered brick golem sprays ricochet shards.
   setGolemShatterHandler((x, z) => golemShards(x, z));
   // Catching the rolling merchant opens its shop.
@@ -855,6 +858,11 @@ function startLevel(level: number): void {
   const stamped = stampPrefabs(raw, rng, prefabCount, theme);
   crackSecretWalls(raw, rng, cfg.secrets);
   const grid = thickenWalls(raw);
+  // Widen the main start→stairs artery into a 3-wide "launch highway" so the
+  // floor plays as a machine and not a uniform 2-wide box maze. Reachability-
+  // preserving (only carves wall→floor); runs BEFORE decorate so every stage —
+  // topology/parts/arc-corners/render — sees the widened grid.
+  widenMainArtery(grid);
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   // Prefab anchors ride the same ×2 into the thickened grid.
   const anchors: PrefabAnchor[] = stamped.anchors.map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
@@ -1304,9 +1312,23 @@ function descend(): void {
   // A great floor unlocks a BONUS vault room on the next one (Wave F glue).
   state.bonusRoomNext = BONUS_ROOM_GRADES.includes(grade);
   sfxStairs();
-  startLevel(state.level + 1);
-  // The pickup-note channel, so it doesn't fight the new depth's toast.
-  showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+  const nextLevel = state.level + 1;
+  const kills = state.kills;
+  const bestCombo = state.levelBestCombo;
+  const floorCleared = state.level;
+  // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
+  if (state.container) {
+    openTavern(state.container, {
+      stats: { grade, floor: floorCleared, kills, bestCombo },
+      onDescend: () => {
+        startLevel(nextLevel);
+        showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+      },
+    });
+  } else {
+    startLevel(nextLevel);
+    showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+  }
 }
 
 /** Tear down the Multi-Ball ghost knights (buff expiry / retry / exit). */
@@ -1371,6 +1393,39 @@ function dropWeapon(w: WeaponState, x: number, z: number): void {
  * lay). Either way the new weapon ends up in the active hand — picking a
  * thing up and not holding it would feel like a misclick.
  */
+/** A kill rolled the dice — maybe spawn a modifier card on the floor. */
+function dropCardMaybe(x: number, z: number, boss: boolean): void {
+  if (!state.scene) return;
+  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped });
+  if (!id) return;
+  if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
+  const sprite = createStaticSprite(ITEM_PAINTS[id]);
+  sprite.mesh.position.set(x, 0, z);
+  state.scene.add(sprite.mesh);
+  state.groundItems.push({ kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });
+}
+
+/** Walk over a card: socket into the active weapon if it fits + has room, else
+ * stash it for the Tavern. Returns false (leave it) only if the stash is full. */
+function pickUpCard(it: GroundItem): boolean {
+  const id = it.id as CardId;
+  const def = CARDS[id];
+  if (!def) return true;
+  const active = state.weaponSlots[state.activeSlot];
+  if (active && socketCard(active, id)) {
+    faceOnSpecial();
+    showPickupNote(`${def.icon} ${def.label.toUpperCase()} SOCKETED — ${def.description}`);
+    return true;
+  }
+  if (state.cardStash.length < 10) {
+    state.cardStash.push(id);
+    showPickupNote(`${def.icon} ${def.label.toUpperCase()} — stashed for the Tavern`);
+    return true;
+  }
+  showPickupNote(`🃏 stash full — visit the Tavern`);
+  return false;
+}
+
 function pickUpWeapon(it: GroundItem): void {
   const id = it.id as WeaponId;
   const incoming: WeaponState = { id, durability: it.durability ?? WEAPONS[id].maxDurability };
@@ -1416,6 +1471,8 @@ function checkPickups(): void {
       } else {
         applyPotion(pid);
       }
+    } else if (it.kind === "card") {
+      if (!pickUpCard(it)) continue; // stash full — leave the card on the floor
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -1608,7 +1665,7 @@ function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
   if (state.gameOver || !p || !g || !state.input) return;
-  if (state.shopEl) return; // the shop pauses the world while you browse
+  if (state.shopEl || state.tavernEl) return; // shop + Tavern pause the world while open
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
@@ -1796,11 +1853,14 @@ function loop(now: number): void {
   // wince timers. Cheap even when a panel is slid off-screen.
   renderHUD(frame);
 
-  // Score glue: pop the centred ×N flash on every fresh bounce-combo STEP,
-  // wherever the increment came from (wall, part, arc, ram) — a rising count
-  // is the signal. It resets to 0 on lapse, which just arms the next flash.
+  // Score glue: spawn a Ragnarok-style floating ×N at the knight on every fresh
+  // bounce-combo STEP, wherever the increment came from (wall, part, arc, ram) —
+  // a rising count is the signal. It resets to 0 on lapse, arming the next spray.
   const combo = p?.bounceCombo ?? 0;
-  if (combo > state.prevBounceCombo && combo >= 2) flashBounceCombo(state.comboFlashEl, combo);
+  if (combo > state.prevBounceCombo && combo >= 2 && p) {
+    const sc = worldToScreenPx(p.x, p.z);
+    if (sc) spawnFloatingCombo(combo, sc.x, sc.y);
+  }
   state.prevBounceCombo = combo;
 
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.

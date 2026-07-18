@@ -106,6 +106,8 @@ export function disposeAll(): void {
 
   state.gameOverEl?.remove();
   state.shopEl?.remove();
+  state.tavernEl?.remove();
+  state.tavernEl = null;
   disposeHUDs(); // removes the Diablo + Wolf panels and the shared face
   state.hudEl = null;
   state.fpsOverlayEl?.remove();

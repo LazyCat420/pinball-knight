@@ -135,6 +135,46 @@ function buildRamp(dirX: number, dirZ: number): THREE.Group {
   return gp;
 }
 
+function buildBooster(dirX: number, dirZ: number): THREE.Group {
+  // A Sonic-style SPEED BOOSTER pad — a low neon "moving walkway" tile, meant to
+  // sit in a CHAIN so a row reads as one accelerating lane. Local +x is the
+  // launch direction. Two glowing side strips channel the eye down the lane and
+  // three big chevrons SCROLL along it (updatePinballParts) so it always says
+  // "step on → get flung this way". Flatter than a ramp on purpose: it's a lane
+  // surface, not a launch wedge.
+  const gp = new THREE.Group();
+  const LEN = 0.9;
+  const W = 0.56;
+  // ── Dark base plate (slightly recessed rim) ──
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(LEN, 0.05, W), std(0x1a1f2b));
+  plate.position.y = 0.025;
+  gp.add(plate);
+  // ── Two neon side strips running down the lane ──
+  const stripMats: THREE.MeshStandardMaterial[] = [];
+  for (const zside of [-1, 1]) {
+    const m = std(C_ARCANE, C_ARCANE, 0.8);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(LEN, 0.06, 0.06), m);
+    strip.position.set(0, 0.06, (zside * (W - 0.06)) / 2);
+    stripMats.push(m);
+    gp.add(strip);
+  }
+  // ── Three big forward chevrons (the scrolling "GO →" crawl) ──
+  const chevMats: THREE.MeshStandardMaterial[] = [];
+  for (let k = 0; k < 3; k++) {
+    const m = std(C_GOLD, C_GOLD, 0.9);
+    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 3), m);
+    chev.rotation.z = -Math.PI / 2; // point +x, flat on the pad
+    chev.position.set(-0.26 + k * 0.26, 0.075, 0);
+    chevMats.push(m);
+    gp.add(chev);
+  }
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.chevMats = chevMats;
+  gp.userData.stripMats = stripMats;
+  gp.userData.phase = Math.random() * Math.PI * 2;
+  return gp;
+}
+
 function buildDeflector(d1x: number, d1z: number, d2x: number, d2z: number): THREE.Group {
   const gp = new THREE.Group();
   // A genuinely CURVED banked rail (Wave D: "curved walls like a pinball
@@ -434,6 +474,7 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
     if (s.kind === "bumper") mesh = buildBumper();
     else if (s.kind === "spring") mesh = buildSpring(dirX, dirZ);
     else if (s.kind === "ramp") mesh = buildRamp(dirX, dirZ);
+    else if (s.kind === "booster") mesh = buildBooster(dirX, dirZ);
     else if (s.kind === "glove") mesh = buildGlove(dirX, dirZ);
     else if (s.kind === "oil") mesh = buildOil();
     else if (s.kind === "spinpad") mesh = buildSpinPad();
@@ -563,6 +604,20 @@ export function updatePinballParts(dt: number): void {
       }
       if (lipMat) lipMat.emissiveIntensity = 0.6 + 0.2 * Math.sin(animT * 4 + phase) + flash * 2.6;
       if (lipMesh) lipMesh.scale.y = 1 + flash * 0.7; // spring compress→release
+    } else if (part.kind === "booster") {
+      // A fast forward wave chases down the three chevrons (a clear directional
+      // "GO →"); the side strips pulse together; a trigger flashes the whole pad.
+      const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+      const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
+      const phase = (part.mesh.userData.phase as number) ?? 0;
+      const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
+      if (chevs) {
+        chevs.forEach((m, k) => {
+          const wave = Math.max(0, Math.sin(animT * 9 + phase - k * ((Math.PI * 2) / 3)));
+          m.emissiveIntensity = 0.35 + 1.0 * wave + flash * 2.4;
+        });
+      }
+      if (strips) strips.forEach((m) => (m.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 5 + phase) + flash * 2.0));
     } else if (part.kind === "glove") {
       // punch: the piston SNAPS out over the active window, eases back after
       const piston = part.mesh.userData.piston as THREE.Group | undefined;

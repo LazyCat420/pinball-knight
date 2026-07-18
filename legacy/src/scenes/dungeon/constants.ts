@@ -334,7 +334,10 @@ export const PINBALL_STEER = 3.6; // how hard held input bends the momentum, 1/s
 // Slice 8 — lane glide: while railing fast and not steering, drift toward the
 // walkable centre of the corridor so you rail down the middle (pinball lane
 // feel) instead of grinding a wall. Lateral units/sec of the centring nudge.
-export const LANE_CENTER_PULL = 3.6;
+export const LANE_CENTER_PULL = 5.0;
+/** How far out (world units) the lane-glide probes for a wall on each side —
+ * beyond this it's an open room, so centring backs off. */
+export const LANE_PROBE_MAX = 1.8;
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;
 /** Seconds without a bounce before the combo counter resets (keep the chain alive). */
@@ -393,6 +396,17 @@ export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;
 
+// ── Booster pad (Sonic's speed booster — the accelerating LANE element) ──
+// Unlike a ramp (a one-shot dash floor), boosters are placed in CHAINS down a
+// lane and each one SNAPS your heading to its arrow + floors your speed, so a
+// row of them reads as a single accelerating channel you rail down. Works from
+// a cold walk too (starts a momentum ride), which is what makes a booster lane
+// feel like stepping onto a moving walkway.
+export const BOOSTER_SPEED = 15; // speed floor along the arrow (a touch above a ramp)
+export const BOOSTER_RADIUS = 0.5; // trigger radius, world units
+export const BOOSTER_COOLDOWN = 0.18; // short — a chain must re-fire tile-to-tile
+export const BOOSTER_STEER_LOCK = 0.16; // brief lock so the arrow carries you to the next pad
+
 // ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
 /** How close to a corner's centre a fast entry banks (world units). */
 export const ARC_BANK_RADIUS = 0.62;
@@ -404,6 +418,14 @@ export const ARC_COOLDOWN = 0.25;
 export const ARC_MIN_SPEED = 6;
 /** Radius of the rendered quarter-cylinder wedge that caps a banked corner. */
 export const ARC_WEDGE_R = 0.5;
+// ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
+export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
+export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled
+export const CARD_CHILL_SLOW = 0.5; // movement multiplier while chilled
+export const CARD_BURN_TIME = 3.0; // seconds an enemy burns
+export const CARD_BURN_TICK = 0.5; // seconds between burn ticks
+export const CARD_BURN_DMG = 1; // damage per burn tick
+
 export const PARTS_BASE = 6; // parts on level 1
 export const PARTS_PER_LEVEL = 2; // extra parts per depth…
 export const PARTS_MAX = 26; // …capped

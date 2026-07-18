@@ -45,17 +45,23 @@ export interface WeaponDef {
   pellets?: number;
   /** Melee slash-arc VFX tint (sRGB hex). Defaults to a cold steel white. */
   slashColor?: number;
+  /** How many modifier CARDS this weapon can socket (see cards.ts). The Tavern
+   * blacksmith can raise it up to WEAPON_MAX_CARD_SLOTS. */
+  cardSlots: number;
 }
 
+/** Hard cap on socketed cards per weapon (blacksmith upgrades stop here). */
+export const WEAPON_MAX_CARD_SLOTS = 3;
+
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity, slashColor: 0xc8ccd4 },
-  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5 },
-  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e },
-  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a },
-  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10, slashColor: 0x6b4a2e },
-  gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04 },
-  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 16, projectile: "arrow", projectileSpeed: 11, spread: 0 },
-  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 110, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2 },
+  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity, slashColor: 0xc8ccd4, cardSlots: 0 },
+  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5, cardSlots: 1 },
+  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e, cardSlots: 1 },
+  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a, cardSlots: 2 },
+  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10, slashColor: 0x6b4a2e, cardSlots: 1 },
+  gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04, cardSlots: 2 },
+  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 16, projectile: "arrow", projectileSpeed: 11, spread: 0, cardSlots: 1 },
+  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 110, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2, cardSlots: 3 },
 };
 
 /** The weapons that spawn as maze pickups (you start with the sword). */
@@ -64,10 +70,20 @@ export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "gun", "bow
 export interface WeaponState {
   id: WeaponId;
   durability: number;
+  /** Socketed modifier cards (CardId[], max = WEAPONS[id].cardSlots + any
+   * blacksmith slot upgrades tracked in bonusSlots). See cards.ts. */
+  cards?: string[];
+  /** Extra card slots bought at the Tavern blacksmith (0 by default). */
+  bonusSlots?: number;
 }
 
 export function freshWeapon(id: WeaponId): WeaponState {
-  return { id, durability: WEAPONS[id].maxDurability };
+  return { id, durability: WEAPONS[id].maxDurability, cards: [], bonusSlots: 0 };
+}
+
+/** Total card slots a weapon has (base + blacksmith upgrades, capped). */
+export function weaponSlotCount(w: WeaponState): number {
+  return Math.min(WEAPON_MAX_CARD_SLOTS, WEAPONS[w.id].cardSlots + (w.bonusSlots ?? 0));
 }
 
 /**

@@ -36,16 +36,51 @@ import {
   PIN_STRIKE_COUNT,
   PIN_STRIKE_GOLD,
   WEB_TIME,
+  CARD_PINBALL_SPEED,
+  CARD_CHILL_TIME,
+  CARD_BURN_TIME,
+  CARD_BURN_DMG,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
 import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, degradeWeapon, absorbDamage, RAGE_DAMAGE_MULT } from "../items";
+import { aggregateCards } from "../cards";
 
-/** Player's outgoing damage after the rage buff (2× while active). */
+/**
+ * Player's outgoing damage: the base weapon damage run through the active
+ * weapon's socketed CARDS (percent then flat), the pinball-synergy bonus while
+ * riding momentum, and finally the rage buff. The one choke point every player
+ * hit (melee, ranged, ram) passes through, so a card lifts them all.
+ */
 export function playerDamage(base: number): number {
-  return state.player && state.player.rageT > 0 ? base * RAGE_DAMAGE_MULT : base;
+  const p = state.player;
+  let dmg = base;
+  const w = state.weaponSlots[state.activeSlot];
+  if (w && w.cards && w.cards.length) {
+    const agg = aggregateCards(w.cards);
+    dmg = dmg * agg.damageMult + agg.damageFlat;
+    if (agg.pinballMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= agg.pinballMult;
+  }
+  if (p && p.rageT > 0) dmg *= RAGE_DAMAGE_MULT;
+  return dmg;
+}
+
+/**
+ * Stamp the active weapon's ON-HIT card statuses (chill / burn) onto a struck
+ * enemy. Called at every player hit site after the damage lands.
+ */
+export function applyCardOnHit(z: Zombie): void {
+  const w = state.weaponSlots[state.activeSlot];
+  if (!w || !w.cards || !w.cards.length) return;
+  const agg = aggregateCards(w.cards);
+  if (agg.chill) z.chillT = CARD_CHILL_TIME;
+  if (agg.burn) {
+    z.dotT = CARD_BURN_TIME;
+    z.dotDmg = CARD_BURN_DMG;
+    z.dotTickT = 0;
+  }
 }
 
 /**
@@ -307,6 +342,7 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
     const dmg = playerDamage(w.damage * scale.damageMul);
     const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35) * scale.knockbackMul;
     damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
+    applyCardOnHit(z);
   }
 
   if (landed) {
@@ -327,6 +363,12 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
 let onGolemShatter: ((x: number, z: number) => void) | null = null;
 export function setGolemShatterHandler(fn: (x: number, z: number) => void): void {
   onGolemShatter = fn;
+}
+
+/** Card-drop roll on a kill — core owns the spawn (scene access + rng). */
+let onCardRoll: ((x: number, z: number, boss: boolean) => void) | null = null;
+export function setCardRollHandler(fn: (x: number, z: number, boss: boolean) => void): void {
+  onCardRoll = fn;
 }
 
 function killZombie(z: Zombie): void {
@@ -374,6 +416,7 @@ function killZombie(z: Zombie): void {
   state.hitstopT = Math.max(state.hitstopT, z.boss ? HITSTOP_KILL * 2.5 : HITSTOP_KILL);
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
+  onCardRoll?.(z.x, z.z, !!z.boss); // roll a modifier-card drop
   state.goldRun += GOLD_PER_KILL;
   addGold(GOLD_PER_KILL, "dungeon-game");
   // STYLE KILL: a kill carried by pinball momentum (a ball ram, or any hit
