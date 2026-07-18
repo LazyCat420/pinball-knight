@@ -23,6 +23,7 @@ import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
 import { renderPaintIcon } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { createTavernScene, type TavernScene } from "./tavern-scene";
+import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
 
 /** The game's actual pixel-art for a weapon/gear/potion id, as a DOM icon URL. */
 const _iconCache = new Map<string, string>();
@@ -161,45 +162,65 @@ function activeWeaponSlotIndex(): number {
 const TIER: Record<CardRarity, number> = { common: 0, rare: 1, epic: 2, legendary: 3, mythic: 4 };
 
 /** The card's element look, read off what its modifier actually DOES. */
-function cardArt(c: CardDef): { art: string; tag: string } {
-  const m = c.modifier;
-  if (m.onHit === "burn") return { art: "radial-gradient(circle at 50% 34%,#fb923c,#7c2d12 72%)", tag: "FIRE" };
-  if (m.onHit === "chill") return { art: "radial-gradient(circle at 50% 34%,#7dd3fc,#0c4a6e 72%)", tag: "ICE" };
-  if (m.pinballMult && m.pinballMult > 1) return { art: "radial-gradient(circle at 50% 34%,#fcd34d,#7c4a12 72%)", tag: "MOMENTUM" };
-  if (m.cooldownMult && m.cooldownMult < 1) return { art: "radial-gradient(circle at 50% 34%,#5eead4,#0f5c54 72%)", tag: "SWIFT" };
-  if (m.durabilityMult && m.durabilityMult > 1) return { art: "radial-gradient(circle at 50% 34%,#cbd5e1,#334155 72%)", tag: "GUARD" };
-  return { art: "radial-gradient(circle at 50% 34%,#f87171,#4c1010 72%)", tag: "POWER" };
-}
-
-/** A flavour "power" number (like a card's HP), summarising the modifier. */
-function cardPower(c: CardDef): number {
-  const m = c.modifier;
-  let p = 10;
-  if (m.damageFlat) p += m.damageFlat * 15;
-  if (m.damageMult) p += (m.damageMult - 1) * 100;
-  if (m.pinballMult) p += (m.pinballMult - 1) * 40;
-  if (m.cooldownMult) p += (1 - m.cooldownMult) * 80;
-  if (m.durabilityMult) p += (m.durabilityMult - 1) * 20;
-  if (m.onHit) p += 25;
-  return Math.max(10, Math.round(p / 5) * 5);
-}
+/** Max card tilt in degrees — the reference engine uses 0.33 rad (~19°). */
+const MAX_TILT_DEG = 12;
 
 function holoCard(id: CardId, opts: { act?: string; idx?: number; picked?: boolean; size?: "sm" | "md" | "lg" } = {}): string {
   const c = CARDS[id];
   if (!c) return "";
   const col = RARITY_HEX[c.rarity];
-  const tier = TIER[c.rarity];
-  const { art, tag } = cardArt(c);
+  const tier = cardTier(id);
   const attrs = opts.act ? `data-act="${opts.act}" data-idx="${opts.idx ?? ""}"` : "";
-  const cls = ["hcard", `hc-${opts.size ?? "md"}`, tier >= 3 ? "hcard-gold" : "", tier >= 4 ? "hcard-myth" : "", opts.picked ? "picked" : ""].filter(Boolean).join(" ");
-  const nameCol = tier >= 4 ? "#ffffff" : tier >= 3 ? "#fff3c0" : col;
-  return `<div ${attrs} class="${cls}" style="--rc:${col};--art:${art};cursor:${opts.act ? "pointer" : "default"}" title="${c.description}">
-    <div class="hc-top"><b class="hc-name" style="color:${nameCol}">${c.label}</b><span class="hc-pwr">${cardPower(c)}</span></div>
-    <div class="hc-art"><span class="hc-emoji">${c.icon}</span><span class="hc-tag">${tag}</span></div>
-    <div class="hc-fx">${c.description}</div>
-    <div class="hc-rar" style="color:${col}">${c.rarity.toUpperCase()}</div>
+  const cls = ["hcard", `hc-${opts.size ?? "md"}`, tier >= 3 ? "hcard-gold" : "", tier >= 4 ? "hcard-myth" : "", opts.picked ? "picked" : ""]
+    .filter(Boolean)
+    .join(" ");
+  // The face is PAINTED (render/holo-card.paintCard) onto this canvas by
+  // paintTavernCards() after the innerHTML lands — the whole card, foil passes
+  // and all, is one texture rather than a stack of DOM nodes. The shimmer and
+  // glare sit above it as the only two live layers.
+  return `<div ${attrs} class="${cls}" style="--rc:${col};cursor:${opts.act ? "pointer" : "default"}" title="${c.description}">
+    <canvas class="hc-face" data-card="${id}" width="${CARD_W}" height="${CARD_H}"></canvas>
+    <span class="hc-glare"></span>
     <span class="hcard-shimmer"></span>
   </div>`;
+}
+
+/**
+ * Paint every card canvas the last render emitted, and wire the pointer tilt.
+ *
+ * The reference engine swaps a shared three.js plane onto the hovered card for
+ * a GLSL tilt shader. This game already owns a WebGL context for the dungeon
+ * itself, so rather than fight it for a second one, the tilt is a CSS 3D
+ * transform and the glare is a pointer-tracked radial sheen — the same feel,
+ * none of the context-arbitration risk.
+ */
+function paintTavernCards(root: ParentNode): void {
+  root.querySelectorAll<HTMLCanvasElement>("canvas.hc-face").forEach((cv) => {
+    const id = cv.dataset.card;
+    if (!id || cv.dataset.painted === id) return;
+    paintCard(cv, id);
+    cv.dataset.painted = id;
+
+    const card = cv.parentElement as HTMLElement | null;
+    if (!card || card.dataset.tilt === "1") return;
+    card.dataset.tilt = "1";
+    const glare = card.querySelector<HTMLElement>(".hc-glare");
+    const tierScale = 0.5 + cardTier(id) * 0.16; // rarer cards throw more light
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const py = ((e.clientY - r.top) / r.height) * 2 - 1;
+      card.style.transform = `perspective(620px) rotateX(${(-py * MAX_TILT_DEG).toFixed(2)}deg) rotateY(${(px * MAX_TILT_DEG).toFixed(2)}deg) scale(1.06)`;
+      if (glare) {
+        glare.style.opacity = String(0.35 + 0.4 * tierScale);
+        glare.style.background = `radial-gradient(circle at ${(50 + px * 42).toFixed(1)}% ${(50 + py * 42).toFixed(1)}%, rgba(255,255,255,.55), rgba(190,240,255,.22) 34%, transparent 62%)`;
+      }
+    });
+    card.addEventListener("pointerleave", () => {
+      card.style.transform = "";
+      if (glare) glare.style.opacity = "0";
+    });
+  });
 }
 
 /** Inject the tavern's holo-card stylesheet once (idempotent). */
@@ -208,36 +229,34 @@ function injectTavernStyles(): void {
   const s = document.createElement("style");
   s.id = "tavern-holo-style";
   s.textContent = `
+    /* The face is a painted canvas (render/holo-card.ts), so the card itself is
+       just a positioned frame: no inner DOM anatomy, and the tilt applies to
+       the whole texture at once the way a real card catches light. */
     .hcard{position:relative;box-sizing:border-box;aspect-ratio:63/88;border-radius:8px;overflow:hidden;
-      border:2px solid var(--rc);background:linear-gradient(160deg,#241a10,#12100c);
-      box-shadow:0 3px 10px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.05);
-      display:flex;flex-direction:column;margin:3px;font-family:ui-monospace,Menlo,monospace;flex:0 0 auto;transition:transform .12s}
-    .hcard:hover{transform:translateY(-2px)}
+      background:#0b0c10;margin:3px;flex:0 0 auto;
+      box-shadow:0 6px 18px rgba(0,0,0,.55);
+      transform-style:preserve-3d;will-change:transform;
+      transition:transform .16s cubic-bezier(.2,.9,.3,1),box-shadow .16s}
+    .hcard:hover{box-shadow:0 12px 28px rgba(0,0,0,.65),0 0 18px var(--rc)}
+    .hc-face{display:block;width:100%;height:100%;border-radius:8px}
+    .hc-glare{position:absolute;inset:0;border-radius:8px;pointer-events:none;opacity:0;
+      mix-blend-mode:overlay;transition:opacity .18s}
     .hcard.picked{box-shadow:0 0 0 2px #f0a63c,0 0 14px var(--rc)}
-    .hc-sm{width:58px}.hc-md{width:90px}.hc-lg{width:118px}
+    /* Display sizes. The face is painted at 512x716, so a card shown much
+       under ~110px downscales its move text into mush — these are the sizes at
+       which the anatomy is actually readable. */
+    .hc-sm{width:74px}.hc-md{width:124px}.hc-lg{width:186px}
     .hcard-gold{border-color:#ffd76a;box-shadow:0 0 0 1px #fff3c0 inset,0 3px 12px rgba(0,0,0,.55),0 0 12px rgba(255,215,106,.35)}
     .hcard-myth{border:2px solid transparent;
       background:linear-gradient(#12100c,#12100c) padding-box,conic-gradient(from 0deg,#ff5edb,#7cf9ff,#f5f36e,#ff8a5e,#ff5edb) border-box;
       animation:hcard-rainbow 5s linear infinite}
     @keyframes hcard-rainbow{to{filter:hue-rotate(360deg)}}
-    .hc-top{display:flex;justify-content:space-between;align-items:center;gap:4px;padding:3px 5px 1px}
-    .hc-name{font-weight:800;font-size:8px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .hc-lg .hc-name{font-size:10px}
-    .hc-pwr{font-size:8px;color:#f0a63c;font-weight:800;flex:0 0 auto}
-    .hc-art{position:relative;flex:1;margin:0 4px;border-radius:4px;background:var(--art);
-      display:flex;align-items:center;justify-content:center;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
-    .hc-emoji{font-size:26px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.55))}
-    .hc-sm .hc-emoji{font-size:20px}.hc-lg .hc-emoji{font-size:34px}
-    .hc-tag{position:absolute;bottom:2px;right:3px;font-size:6px;letter-spacing:1px;color:rgba(255,255,255,.72)}
-    .hc-fx{padding:3px 5px 2px;font-size:7px;line-height:1.15;color:#d9cfb6;min-height:2.2em}
-    .hc-lg .hc-fx{font-size:8px}
-    .hc-rar{text-align:center;font-size:6px;letter-spacing:1.6px;padding-bottom:3px;font-weight:800}
     .hcard-shimmer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
     .hcard-shimmer::before{content:'';position:absolute;top:-40%;bottom:-40%;left:0;width:45%;
       background:linear-gradient(100deg,transparent,rgba(255,255,255,.10),rgba(120,220,255,.16),rgba(255,150,255,.12),transparent);
       transform:translateX(-160%) rotate(14deg);animation:hcard-sweep 3.4s ease-in-out infinite}
     @keyframes hcard-sweep{0%{transform:translateX(-160%) rotate(14deg)}60%,100%{transform:translateX(320%) rotate(14deg)}}
-    .tavern-slot{display:inline-flex;align-items:center;justify-content:center;width:58px;height:81px;margin:3px;
+    .tavern-slot{display:inline-flex;align-items:center;justify-content:center;width:74px;height:103px;margin:3px;
       border:1px dashed #6c5a3e;border-radius:8px;color:#6c5a3e;font-size:20px}
     .tv-icon{image-rendering:pixelated;object-fit:contain;vertical-align:middle;flex:0 0 auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
 
@@ -562,6 +581,7 @@ function render(): void {
     stopPlateTracking();
     stage.innerHTML = roomView() + (v ? vendorView(v) : "");
   }
+  paintTavernCards(stage); // fill in the card canvases this render just emitted
   const goldEl = el.querySelector("#tavern-gold");
   if (goldEl) goldEl.textContent = `${getBalance()}g`;
 }

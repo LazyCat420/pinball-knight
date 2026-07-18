@@ -340,6 +340,41 @@ Note: size is *not* the problem (brute/boss scale the same body fine), and the
 Waves 1–4 are cleanup and legibility: the game already has the content, it just
 doesn't *show* it. Waves 5–6 are the real design work.
 
+## Wave 14b — D2-D5 + the holo cards (SHIPPED)
+
+Everything deferred above is now built, plus a card-art overhaul.
+
+- **D2 ORBITS** — the four corner rails of a big room are now one tagged
+  CIRCUIT (`orbit` + `orbitSeq`), not four unrelated point-triggers. Railing
+  them in clockwise order without lapsing completes a LAP; laps ladder in value
+  across a floor. A partial ring has its tags stripped at generation, so an
+  un-completable circuit can never ship (unit-tested).
+- **D3 ROLLOVER LANES** — a new `rollover` part kind, dealt in PARALLEL banks
+  of 3 across a corridor with open floor on both sides so you roll *through*
+  them. Each lane has its own lamp; light them all to clear the bank. Tapping
+  dodge performs the classic LANE CHANGE, rotating which lanes are lit.
+- **D4 PLUNGER + SKILL SHOT** — every floor now OPENS by firing the knight into
+  play, aimed at a lit skill target. Hit it inside the window for a bonus. The
+  floor used to start with you standing still in a deliberately calm corner,
+  which is a maze's opening, not a machine's.
+- **D5 NAMED SHOTS** — every meaningful hit now records a shot IDENTITY
+  (ramp/orbit/bank/lane/target/skill/trapdoor) into the live combo chain, and
+  sequences are matched against a named-combo table (ORBIT RUNNER, THE CIRCUIT,
+  GRAND TOUR…). Each name pays once per floor so hearing it stays an event.
+  All of it lives in `shots.ts`, so player.ts stays physics.
+
+- **HOLO CARDS** — the tavern's cards are now painted with a port of the
+  congress/senate card engine (`trading-client/frontend/src/lib/holoCardEngine.js`),
+  in `render/holo-card.ts`. Same 63:88 ratio painted at 512×716 onto a canvas,
+  same anatomy (stage pill, name, PWR, energy emblem, bevelled art window,
+  plaque, moves box, stats strip, rarity + set footers), same stacked rarity
+  treatment (foil stripes → metallic wash → etched engraving → tiled
+  reverse-holo → one `overlay` foil pass), same seeded LCG so a card's speck
+  field never churns. The one deliberate divergence: the original swaps in a
+  shared three.js plane for a GLSL tilt shader, but this game already owns a
+  WebGL context, so the tilt is a CSS 3D transform plus a pointer-tracked glare
+  — same feel, no context arbitration.
+
 ## Open questions for the user
 
 1. **Cards (B3):** 14 cards with no visual is a lot of surface. Make them visible,

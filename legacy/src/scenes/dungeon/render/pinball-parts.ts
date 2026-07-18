@@ -312,6 +312,32 @@ function buildTarget(dirX: number, dirZ: number): THREE.Group {
   return gp;
 }
 
+function buildRollover(dirX: number, dirZ: number): THREE.Group {
+  // D3 — a ROLLOVER LANE: a shallow wire arch you roll THROUGH, with a lamp
+  // bead on top. The bead is the whole point — it's the per-lane light that
+  // tells you which lanes you still need, and which way the lane change moved
+  // them. Local +x is the travel direction.
+  const gp = new THREE.Group();
+  const railMat = std(C_STEEL, C_ARCANE, 0.2);
+  for (const zside of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.3, 6), railMat);
+    post.position.set(0, 0.15, zside * 0.22);
+    gp.add(post);
+  }
+  const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.035, 6, 12, Math.PI), railMat);
+  arch.rotation.y = Math.PI / 2;
+  arch.position.y = 0.3;
+  gp.add(arch);
+  // The lamp bead — unlit arcane, lit gold (set each frame from state.laneLit).
+  const lampMat = std(C_STEEL_DK, C_ARCANE, 0.5);
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), lampMat);
+  lamp.position.y = 0.53;
+  gp.add(lamp);
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.lamp = lampMat;
+  return gp;
+}
+
 function buildTrapdoor(): THREE.Group {
   const gp = new THREE.Group();
   // A wooden hatch flush with the floor: two planks, iron banding, a pull
@@ -489,6 +515,7 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
     else if (s.kind === "trapdoor") mesh = buildTrapdoor();
     else if (s.kind === "flipper") mesh = buildFlipper(dirX, dirZ);
     else if (s.kind === "mirror") mesh = buildMirror(dirX, dirZ);
+    else if (s.kind === "rollover") mesh = buildRollover(dirX, dirZ);
     else if (s.kind === "pit") mesh = buildPit();
     else if (s.kind === "electric") mesh = buildElectric();
     else if (s.kind === "firevent") mesh = buildFireVent(dirX, dirZ);
@@ -519,6 +546,10 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
       lit: s.bank !== undefined ? false : undefined,
       // Electric plates share a clock but stagger phase so a room pulses as a wave.
       phase: s.kind === "electric" ? Math.random() * (ELEC_ON + ELEC_OFF) : undefined,
+      orbit: s.orbit,
+      orbitSeq: s.orbitSeq,
+      lane: s.lane,
+      laneSeq: s.laneSeq,
       mesh,
     };
     state.pinballParts.push(part);
@@ -706,6 +737,14 @@ export function updatePinballParts(dt: number): void {
           }
         }
         door.rotation.z = Math.min(1.08, Math.max(0, open)) * 1.4;
+      }
+    } else if (part.kind === "rollover") {
+      // Lamp: gold + steady when this lane is lit, cool and breathing when not.
+      const lamp = part.mesh.userData.lamp as THREE.MeshStandardMaterial | undefined;
+      if (lamp) {
+        const lit = part.lane !== undefined && part.laneSeq !== undefined && !!state.laneLit[part.lane]?.[part.laneSeq];
+        lamp.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
+        lamp.emissiveIntensity = (lit ? 1.6 : 0.5) + (part.aimed ? 1.2 : 0) + 0.25 * Math.sin(animT * (lit ? 5 : 2.5) + part.i);
       }
     } else if (part.kind === "oil") {
       const sheen = part.mesh.userData.sheen as THREE.MeshStandardMaterial | undefined;

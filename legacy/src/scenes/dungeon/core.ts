@@ -29,6 +29,7 @@ import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type G
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
+import { updateShots, armSkillShot, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
@@ -115,6 +116,8 @@ import {
   TARGETS_PER_FLOOR,
   TRAPDOORS_PER_FLOOR,
   VAULT_RAMPS_PER_FLOOR,
+  PLUNGER_SPEED,
+  PLUNGER_SKILL_RANGE,
   BOOTS_SPEED_FACTOR,
   MAGICIAN_FROM_LEVEL,
   MERCHANT_SPAWN_MIN_RING,
@@ -176,7 +179,7 @@ import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { openTavern } from "./tavern";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -419,6 +422,39 @@ export function launchDungeonGame(onExit?: () => void): void {
     // Dev: NPC positions/kinds (merchant chase + shop QA).
     (window as unknown as { __dungeonNpcs?: () => unknown }).__dungeonNpcs = () =>
       state.npcs.map((n) => ({ kind: n.kind, x: n.x, z: n.z, phase: n.phase, shopped: !!n.shopped }));
+    // Dev: the shot-identity layer (orbits/lanes/skill/named combos) — the
+    // only way a headless harness can see whether a lap or a bank registered.
+    (window as unknown as { __dungeonShots?: () => unknown }).__dungeonShots = () => ({
+      orbitActive: state.orbitActive,
+      orbitCount: state.orbitCount,
+      orbitLaps: state.orbitLaps,
+      laneLit: state.laneLit,
+      lanesCleared: state.lanesCleared,
+      skillArmed: state.skillArmed,
+      skillT: Math.round(state.skillT * 10) / 10,
+      shotChain: state.shotChain,
+      namedPaid: Object.keys(state.namedPaid),
+    });
+    // Dev: light one lane of every bank, then rotate — proves the lane change
+    // actually moves the lit lanes rather than being a no-op key.
+    (window as unknown as { __dungeonLaneTest?: () => boolean }).__dungeonLaneTest = () => {
+      const banks = new Set(state.pinballParts.filter((q) => q.lane !== undefined).map((q) => q.lane as number));
+      if (banks.size === 0) return false;
+      for (const id of banks) state.laneLit[id] = [true, false, false];
+      const before = JSON.stringify(state.laneLit);
+      rotateLanes();
+      return JSON.stringify(state.laneLit) !== before;
+    };
+    // Dev: open the between-floor TAVERN without clearing a floor first — it's
+    // where the holo cards live, and QA'ing them shouldn't need a full run.
+    (window as unknown as { __dungeonTavern?: () => boolean }).__dungeonTavern = () => {
+      if (!state.container || state.tavernEl) return false;
+      openTavern(state.container, {
+        stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
+        onDescend: () => startLevel(state.level + 1),
+      });
+      return true;
+    };
     // Dev: jump straight to a depth. The merchant, the magician and the reaper
     // all gate on level, so a harness that can't change floors can't test them.
     (window as unknown as { __dungeonLevel?: (n: number) => boolean }).__dungeonLevel = (n: number) => {
@@ -957,6 +993,35 @@ function startLevel(level: number): void {
     return spawnHordeMember(hash, pos.x, pos.z, cfg.zombieSpeed, level);
   });
 
+  // ── D4 THE PLUNGER: every floor OPENS with a launch ──
+  // A pinball table starts by firing the ball into play; this floor used to
+  // start with you standing still in a deliberately calm corner, which is a
+  // maze's opening, not a machine's. Fire the knight down the widened artery
+  // and arm a SKILL SHOT on the nearest scoring part, so the very first thing
+  // that happens on a floor is a shot you can either make or miss.
+  {
+    const p = state.player;
+    const skillPart = state.pinballParts
+      .filter((q) => q.kind === "target" || q.kind === "bumper" || q.kind === "rollover")
+      .map((q) => ({ q, d: Math.hypot(q.x - startPos.x, q.z - startPos.z) }))
+      .filter((e) => e.d > 4 && e.d < PLUNGER_SKILL_RANGE)
+      .sort((a, b) => a.d - b.d)[0]?.q;
+    if (p && skillPart) {
+      // Aim the launch at the skill target so the shot is genuinely makeable —
+      // a plunger you can't convert is just a shove.
+      const dx = skillPart.x - p.x;
+      const dz = skillPart.z - p.z;
+      const dl = Math.hypot(dx, dz) || 1;
+      p.momX = dx / dl;
+      p.momZ = dz / dl;
+      p.momSpeed = PLUNGER_SPEED;
+      p.ramT = 0;
+      armSkillShot({ i: skillPart.i, j: skillPart.j });
+      sfxSpring();
+      state.shakeT = Math.max(state.shakeT, 0.25);
+    }
+  }
+
   // ── Mini-boss: an OVERLORD guards the stairs every BOSS_EVERY floors ──
   if (level % BOSS_EVERY === 0 && state.bossSheet && state.stairs) {
     const tier = level / BOSS_EVERY; // 1 at L5, 2 at L10, …
@@ -1072,6 +1137,21 @@ function startLevel(level: number): void {
   state.magicianT = rollMagicianClock();
   state.witchSpawned = false;
   state.frogTrail = [];
+  // D2-D5 per-floor table state: laps, lane banks, the skill shot and the
+  // named-combo ledger all belong to ONE floor.
+  state.orbitActive = -1;
+  state.orbitLast = -1;
+  state.orbitCount = 0;
+  state.orbitT = 0;
+  state.orbitLaps = 0;
+  state.laneLit = {};
+  state.lanesCleared = 0;
+  state.skillArmed = false;
+  state.skillT = 0;
+  state.skillTarget = null;
+  state.shotChain = [];
+  state.namedPaid = {};
+  state.crackHintShown = false;
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
@@ -1817,6 +1897,7 @@ function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   state.vfx?.update(frame);
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
+  updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
 

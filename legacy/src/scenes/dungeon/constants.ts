@@ -400,6 +400,48 @@ export const SHIELD_RING_INTERVAL = 0.13; // cadence of the orbiting bubble mote
 export const SHIELD_RING_MOTES = 3; // motes emitted per pulse around the ring
 export const SHIELD_RING_RADIUS = 0.55;
 
+/**
+ * SHOT IDENTITY (D2-D5) — the layer that turns motion into PLAY. The machine
+ * had parts, lights and a combo counter, but every hit was anonymous: five
+ * bumper taps scored exactly like ramp → orbit → target-bank. Named shots are
+ * what a real table is actually made of. See shots.ts.
+ */
+/** ROLLOVER lane trigger: generous radius — it's a switch you roll over. */
+export const ROLLOVER_RADIUS = 0.46;
+export const ROLLOVER_COOLDOWN = 0.5;
+/** ORBIT: seconds allowed between corners before a lap is abandoned. */
+export const ORBIT_WINDOW = 2.6;
+export const ORBIT_GOLD = 30; // a completed lap
+export const ORBIT_LAP_BONUS = 15; // each further lap this floor pays this much more
+/** ROLLOVER LANES: payout for lighting every lane in one bank. */
+export const LANE_CLEAR_GOLD = 25;
+/**
+ * THE PLUNGER (D4): every floor OPENS by firing the knight into play, aimed at
+ * the skill-shot target. A table starts by launching the ball; this floor used
+ * to start with you standing still in a deliberately calm corner.
+ */
+export const PLUNGER_SPEED = 13;
+export const PLUNGER_SKILL_RANGE = 26; // how far out a skill target may sit
+/** SKILL SHOT: the window off the floor's opening plunger launch. */
+export const SKILL_SHOT_WINDOW = 6;
+export const SKILL_SHOT_GOLD = 40;
+/** How many shot identities are remembered inside one live combo. */
+export const NAMED_CHAIN_MAX = 5;
+
+/**
+ * NAMED COMBOS — ordered LONGEST FIRST, so the biggest sequence a chain
+ * satisfies is the one that pays. Each pays once per floor, which is what
+ * keeps hearing its name an event rather than background noise.
+ */
+export const NAMED_COMBOS: ReadonlyArray<{ name: string; icon: string; shots: string[]; gold: number }> = [
+  { name: "GRAND TOUR", icon: "👑", shots: ["ramp", "orbit", "lanes", "bank"], gold: 120 },
+  { name: "THE CIRCUIT", icon: "🌀", shots: ["orbit", "orbit"], gold: 90 },
+  { name: "LANE RUNNER", icon: "⋯", shots: ["ramp", "lanes"], gold: 60 },
+  { name: "ORBIT RUNNER", icon: "↻", shots: ["ramp", "orbit"], gold: 70 },
+  { name: "SHARPSHOOTER", icon: "🎯", shots: ["skill", "target"], gold: 55 },
+  { name: "BANK JOB", icon: "🏦", shots: ["bank", "bank", "bank"], gold: 50 },
+];
+
 export const SHOT_LIGHT_MIN_SPEED = 5; // below this you're walking, not shooting
 export const SHOT_LIGHT_RANGE = 14; // world units the light reaches down a lane
 export const SHOT_LIGHT_COS = 0.94; // ~20° half-angle cone

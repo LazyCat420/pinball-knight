@@ -150,7 +150,7 @@ describe("decorateMaze", () => {
     }
     // Spacing: DEALT machine parts never bunch into one intersection. Targets,
     // trapdoors and floor hazards are separate layers with their own rules.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
     // Vault ramps are their own layer too (aimed across a band, off-budget).
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
     // Chain links are placed ON each other's shot lines on purpose, so the
@@ -186,11 +186,53 @@ describe("decorateMaze", () => {
     }
   });
 
+  it("D2: an ORBIT is a complete ring of four rails, seq 0-3, or it isn't tagged at all", () => {
+    // A partial ring can never be lapped, so decorate must strip the tags
+    // rather than ship a circuit the player can't finish.
+    for (const seed of [11, 23, 37, 53, 71, 97, 113, 129]) {
+      const { plan } = makeLevel(seed, 8, 10, 12);
+      const byOrbit = new Map<number, typeof plan.parts>();
+      for (const p of plan.parts) {
+        if (p.orbit === undefined) continue;
+        if (!byOrbit.has(p.orbit)) byOrbit.set(p.orbit, []);
+        byOrbit.get(p.orbit)!.push(p);
+      }
+      for (const [id, rails] of byOrbit) {
+        expect(rails.length, `orbit ${id} on seed ${seed} is a partial ring`).toBe(4);
+        expect(rails.every((r) => r.kind === "deflector")).toBe(true);
+        expect(rails.map((r) => r.orbitSeq).sort()).toEqual([0, 1, 2, 3]);
+      }
+    }
+  });
+
+  it("D3: rollover lanes form parallel banks you can roll THROUGH", () => {
+    for (const seed of [11, 37, 71, 129]) {
+      const { g, plan } = makeLevel(seed, 8, 10, 12);
+      const byLane = new Map<number, typeof plan.parts>();
+      for (const p of plan.parts) {
+        if (p.lane === undefined) continue;
+        if (!byLane.has(p.lane)) byLane.set(p.lane, []);
+        byLane.get(p.lane)!.push(p);
+      }
+      for (const [id, lanes] of byLane) {
+        expect(lanes.length, `lane bank ${id} on seed ${seed}`).toBeGreaterThanOrEqual(2);
+        expect(lanes.map((l) => l.laneSeq).sort()).toEqual(lanes.map((_, k) => k));
+        for (const l of lanes) {
+          expect(l.kind).toBe("rollover");
+          expect(at(g, l.i, l.j)).toBe(T_FLOOR);
+          // open floor on BOTH sides along travel — you roll through, not into.
+          expect(at(g, l.i + l.dirI, l.j + l.dirJ)).toBe(T_FLOOR);
+          expect(at(g, l.i - l.dirI, l.j - l.dirJ)).toBe(T_FLOOR);
+        }
+      }
+    }
+  });
+
   it("respects the part budget and keeps parts off the stairs + away from the start", () => {
     const { g, plan } = makeLevel(113, 8, 10, 6);
     // Targets, trapdoors + hazards are objective/traversal layers OVER the
     // budget; the dealt machine parts themselves must stay inside it.
-    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
+    const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
     // Vault ramps are their own layer too (aimed across a band, off-budget).
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
     expect(dealt.length).toBeLessThanOrEqual(6);

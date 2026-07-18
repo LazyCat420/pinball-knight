@@ -114,6 +114,8 @@ import {
   TRAPDOOR_EXIT_SPEED,
   TRAPDOOR_HEIGHT,
   TRAPDOOR_COOLDOWN,
+  ROLLOVER_RADIUS,
+  ROLLOVER_COOLDOWN,
   TRAPDOOR_OPEN,
   TRAPDOOR_DROP,
   TRAPDOOR_DROP_DEPTH,
@@ -171,6 +173,7 @@ import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from ".
 import { addGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
+import { recordShot, hitOrbitRail, hitRollover, rotateLanes, trySkillShot } from "../shots";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
@@ -753,6 +756,8 @@ function touchPinballParts(inMomentum: boolean): void {
       // Sonic's booster rule: a FLOOR, never a brake — plus a short steer lock
       // so the panel actually carries you down its lane before you can bend it.
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, RAMP_SPEED));
+      recordShot("ramp");
+      trySkillShot(part);
       steerLockT = RAMP_STEER_LOCK;
       part.cooldownT = RAMP_COOLDOWN;
       part.hitT = 0;
@@ -852,6 +857,7 @@ function touchPinballParts(inMomentum: boolean): void {
             state.goldRun += BANK_CLEAR_GOLD;
             addGold(BANK_CLEAR_GOLD, "dungeon-game");
             showToast("🎯 TARGET BANK!", `1·2·3 lit · +${BANK_CLEAR_GOLD}g`);
+            recordShot("bank");
             state.shakeT = Math.max(state.shakeT, 0.3);
           } else {
             showPickupNote(`🎯 BANK ${(part.seq ?? 0) + 1}/${bankParts.length}`);
@@ -871,6 +877,8 @@ function touchPinballParts(inMomentum: boolean): void {
       part.hitT = 0;
       state.targetsHit += 1;
       onPartTrigger();
+      recordShot("target");
+      trySkillShot(part);
       state.goldRun += TARGET_GOLD;
       addGold(TARGET_GOLD, "dungeon-game");
       state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 14);
@@ -891,6 +899,7 @@ function touchPinballParts(inMomentum: boolean): void {
       if (p.rideT >= 0 || p.dropT >= 0) continue;
       part.cooldownT = TRAPDOOR_COOLDOWN;
       part.hitT = 0; // drives the hinge-open animation in render/pinball-parts
+      recordShot("trapdoor");
       startDrop(part.x, part.z);
     } else if (part.kind === "flipper") {
       // The big paddle CATAPULTS you along its swing at the hardest speed in the
@@ -959,6 +968,16 @@ function touchPinballParts(inMomentum: boolean): void {
       part.cooldownT = PIT_CLIMB_COOLDOWN;
       fallInPit(part.x, part.z);
       return; // the fall owns this frame
+    } else if (part.kind === "rollover") {
+      // D3 — a lane trigger: rolling over it LIGHTS it. Walking counts too (a
+      // rollover is a switch, not a launcher), so a bank is something you can
+      // deliberately go and complete rather than only hit at speed.
+      if (d2 > ROLLOVER_RADIUS * ROLLOVER_RADIUS) continue;
+      part.cooldownT = ROLLOVER_COOLDOWN;
+      part.hitT = 0;
+      hitRollover(part);
+      trySkillShot(part);
+      state.vfx?.sparks(part.x, 0.3, part.z, 0, 0, 4);
     } else if (part.kind === "electric" || part.kind === "firevent") {
       continue; // self-firing hazards do their damage from entities/hazards.ts
     } else {
@@ -981,6 +1000,11 @@ function touchPinballParts(inMomentum: boolean): void {
       part.hitT = 0;
       state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 6);
       sfxRoll();
+      // D2 — if this rail is a corner of an ORBIT, it might have just advanced
+      // (or completed) a lap. hitOrbitRail owns that bookkeeping.
+      if (part.orbit !== undefined) hitOrbitRail(part);
+      else recordShot("bank");
+      trySkillShot(part);
     }
   }
 }
@@ -1679,6 +1703,10 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // through so the same tap can start a roll off the exit).
   if (p.momSpeed > 0) {
     if (input.consumeDodge()) {
+      // D3 — THE LANE CHANGE: a dodge tap also rotates which rollover lanes are
+      // lit, so the last lane you need is something you can line up (exactly
+      // what the flipper buttons do on a real table).
+      if (rotateLanes()) showPickupNote("⋯ LANE CHANGE");
       p.momSpeed = 0;
     } else if (updatePinball(dt, input)) {
       return;

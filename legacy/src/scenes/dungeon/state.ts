@@ -310,7 +310,8 @@ export type PinballPartKind =
   | "pit"
   | "electric"
   | "firevent"
-  | "magstrip";
+  | "magstrip"
+  | "rollover";
 
 export interface PinballPart {
   kind: PinballPartKind;
@@ -351,6 +352,12 @@ export interface PinballPart {
    * render/pinball-parts.updatePinballParts; never persisted.
    */
   aimed?: boolean;
+  /** ORBIT (D2): circuit id + this corner's clockwise order in the ring. */
+  orbit?: number;
+  orbitSeq?: number;
+  /** ROLLOVER LANE (D3): lane-array id + which lane across the array. */
+  lane?: number;
+  laneSeq?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -470,6 +477,38 @@ export const state = {
   witchSpawned: false,
   /** One-shot teach: shown the first time you bounce off a crack too slowly. */
   crackHintShown: false,
+
+  // ── D2 ORBITS: a lap round a room's four banked rails is a LOOP SHOT ──
+  /** Circuit id currently being railed, or -1. */
+  orbitActive: -1,
+  /** Corner seq of the last rail hit on the active circuit. */
+  orbitLast: -1,
+  /** How many corners of the active lap are done (4 = a full lap). */
+  orbitCount: 0,
+  /** Seconds left to keep the lap alive; a lapse abandons it. */
+  orbitT: 0,
+  /** Laps completed this floor — each one pays more (the ladder). */
+  orbitLaps: 0,
+
+  // ── D3 ROLLOVER LANES: light every lane in a bank; dodge rotates them ──
+  /** lit[arrayId] = array of booleans, one per lane across that bank. */
+  laneLit: {} as Record<number, boolean[]>,
+  /** Banks completed this floor. */
+  lanesCleared: 0,
+
+  // ── D4 SKILL SHOT: the plunger launch that opens every floor ──
+  /** True from the floor's plunger launch until the skill window lapses. */
+  skillArmed: false,
+  /** Seconds left to land the skill shot. */
+  skillT: 0,
+  /** The part the skill shot must hit (tile coords), or null. */
+  skillTarget: null as { i: number; j: number } | null,
+
+  // ── D5 NAMED SHOTS: the last few shot IDENTITIES inside the live combo ──
+  /** Shot kinds hit in order this combo (e.g. ["ramp","orbit","bank"]). */
+  shotChain: [] as string[],
+  /** Named combos already paid this floor — each pays once, so it stays special. */
+  namedPaid: {} as Record<string, boolean>,
   /** Queued oracle-frog trail tiles, consumed a mote at a time by the loop. */
   frogTrail: [] as Array<{ x: number; z: number }>,
   frogTrailT: 0,

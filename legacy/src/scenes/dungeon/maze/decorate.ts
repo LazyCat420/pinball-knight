@@ -56,7 +56,8 @@ export type PartSpotKind =
   | "pit"
   | "electric"
   | "firevent"
-  | "magstrip";
+  | "magstrip"
+  | "rollover";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;
@@ -80,6 +81,21 @@ export interface PinballPartSpot extends TilePos {
    * what make a floor a table instead of a scatter — see CHAIN_LINKS.
    */
   chain?: boolean;
+  /**
+   * ORBIT (D2): this banked rail is one corner of a closed CIRCUIT around a
+   * room. Railing all four in sequence completes the orbit — the loop shot a
+   * real table has. `orbit` is the circuit id, `orbitSeq` the corner's order
+   * going clockwise, so the game can tell a lap from four unrelated bank shots.
+   */
+  orbit?: number;
+  orbitSeq?: number;
+  /**
+   * ROLLOVER LANE (D3): one lane of a parallel array. `lane` is the array id,
+   * `laneSeq` which lane it is across the array (0..n-1). Lighting every lane
+   * pays out; the dodge key rotates which lane is lit (pinball lane change).
+   */
+  lane?: number;
+  laneSeq?: number;
 }
 
 /**
@@ -240,6 +256,9 @@ function runwayEnd(g: Grid, i: number, j: number, di: number, dj: number, max = 
 const VAULT_MAX_BAND = 2; // thickest wall band a vault aims across (thickened bands are 2)
 const VAULT_MAX_REACH = 4; // landing must sit inside this many tiles — under RAMP_HOP_MAX (4.75)
 const VAULT_RAMPS_DEFAULT = 3;
+/** D3 rollover lane arrays: how many banks per floor, and lanes per bank. */
+const ROLLOVER_ARRAYS_DEFAULT = 2;
+const ROLLOVER_LANES = 3;
 
 /**
  * Is there a wall BAND directly ahead of (i, j) that the ramp hop can clear —
@@ -552,6 +571,7 @@ function furnishRooms(
   const spawns: TilePos[] = [];
   const items: ItemDrop[] = [];
   const parts: PinballPartSpot[] = [];
+  let orbitNext = 0; // D2 — circuit ids, one per room that gets a full ring of rails
   // Slice 9 — THREE-ZONE floors: a room's archetype is chosen by how far it sits
   // from the start (the stairs live at the far end), so a floor reads as a loop:
   //   LAUNCH district (near start)  → speedway ramp lanes to build speed
@@ -665,15 +685,27 @@ function furnishRooms(
     // rounded pinball table edge — visible curved lanes, not square walls. Only
     // for rooms with room to sweep, and never on top of an archetype part.
     if ((kind === "bumper" || kind === "speedway") && room.w >= 6 && room.h >= 6) {
+      // D2 — these four rails are one ORBIT: a closed circuit. Railing them in
+      // clockwise order completes a LAP, which the game scores as a loop shot.
+      // Previously they were four unrelated point-triggers that happened to sit
+      // in a ring, so a lap felt like nothing.
+      const orbitId = orbitNext++;
       const rails: PinballPartSpot[] = [
-        { i: room.i0 + 1, j: room.j0 + 1, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: 1 }, // TL → E/S
-        { i: room.i0 + room.w - 2, j: room.j0 + 1, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: 1 }, // TR → W/S
-        { i: room.i0 + room.w - 2, j: room.j0 + room.h - 2, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: -1 }, // BR → W/N
-        { i: room.i0 + 1, j: room.j0 + room.h - 2, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: -1 }, // BL → E/N
+        { i: room.i0 + 1, j: room.j0 + 1, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: 1, orbit: orbitId, orbitSeq: 0 }, // TL → E/S
+        { i: room.i0 + room.w - 2, j: room.j0 + 1, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: 1, orbit: orbitId, orbitSeq: 1 }, // TR → W/S
+        { i: room.i0 + room.w - 2, j: room.j0 + room.h - 2, kind: "deflector", dirI: -1, dirJ: 0, dir2I: 0, dir2J: -1, orbit: orbitId, orbitSeq: 2 }, // BR → W/N
+        { i: room.i0 + 1, j: room.j0 + room.h - 2, kind: "deflector", dirI: 1, dirJ: 0, dir2I: 0, dir2J: -1, orbit: orbitId, orbitSeq: 3 }, // BL → E/N
       ];
+      let placedRails = 0;
       for (const r of rails) {
         if (parts.some((q) => q.i === r.i && q.j === r.j)) continue;
         parts.push(r);
+        placedRails++;
+      }
+      // A partial ring isn't a circuit — strip the tags rather than ship an
+      // orbit that can never be completed.
+      if (placedRails < 4) {
+        for (const q of parts) if (q.orbit === orbitId) { delete q.orbit; delete q.orbitSeq; }
       }
     }
   });
@@ -693,7 +725,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -1005,6 +1037,47 @@ export function decorateMaze(
       }
       lanesPlaced++;
       continue laneSearch;
+    }
+  }
+
+  // ── ROLLOVER LANE ARRAYS (D3) — the inlane/outlane bank every real table has.
+  //
+  // Booster lanes above are single-file rows of pads all aimed the same way.
+  // This is the other thing: N lanes running PARALLEL, side by side ACROSS a
+  // corridor, each with its own lit state. Roll over a lane to light it; light
+  // them all for a payout; tap dodge to ROTATE which lanes are lit so you can
+  // set up the last one you need (the classic lane change). Its own layer over
+  // the part budget, like banks and hazards. ──
+  const ROLLOVER_ARRAYS = extras.rolloverArrays ?? ROLLOVER_ARRAYS_DEFAULT;
+  let arraysPlaced = 0;
+  let laneNext = 0;
+  arraySearch: for (const p of shuffled(floors, rng)) {
+    if (arraysPlaced >= ROLLOVER_ARRAYS) break;
+    if (inRoom(p) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 5) continue;
+    // The array lies ACROSS the direction of travel: find an axis with a run of
+    // lanes side by side, and open floor on both sides along the travel axis so
+    // you can actually roll THROUGH the bank rather than into a wall.
+    for (const [ai, aj] of shuffled([[1, 0], [0, 1]] as Array<[number, number]>, rng)) {
+      const ti = aj; // travel axis = perpendicular to the array
+      const tj = ai;
+      const cells = Array.from({ length: ROLLOVER_LANES }, (_, s) => ({ i: p.i + ai * s, j: p.j + aj * s }));
+      const ok = cells.every(
+        (c) =>
+          at(g, c.i, c.j) === T_FLOOR &&
+          !(c.i === stairs.i && c.j === stairs.j) &&
+          at(g, c.i + ti, c.j + tj) === T_FLOOR && // you can roll in…
+          at(g, c.i - ti, c.j - tj) === T_FLOOR && // …and out the other side
+          !inRoom(c) &&
+          !items.some((it) => it.i === c.i && it.j === c.j) &&
+          !parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 2),
+      );
+      if (!ok) continue;
+      const arrayId = laneNext++;
+      cells.forEach((c, s) => {
+        parts.push({ kind: "rollover", i: c.i, j: c.j, dirI: ti, dirJ: tj, dir2I: 0, dir2J: 0, lane: arrayId, laneSeq: s });
+      });
+      arraysPlaced++;
+      continue arraySearch;
     }
   }
 
