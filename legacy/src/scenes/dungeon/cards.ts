@@ -14,7 +14,7 @@
  */
 import { WEAPONS, weaponSlotCount, type WeaponKind, type WeaponState } from "./items";
 
-export type CardRarity = "common" | "rare" | "epic" | "legendary";
+export type CardRarity = "common" | "rare" | "epic" | "legendary" | "mythic";
 export type CardId = string;
 
 /** What a card does. All fields optional — a card sets only what it changes. */
@@ -44,18 +44,20 @@ export interface CardDef {
   modifier: CardModifier;
 }
 
-/** sRGB hex glow per rarity (grey / blue / purple / gold). */
+/** sRGB hex glow per rarity (grey / blue / purple / gold / iridescent). */
 export const RARITY_COLOR: Record<CardRarity, number> = {
   common: 0x9aa4b4,
   rare: 0x4f8fdb,
   epic: 0xa46fe8,
   legendary: 0xf0a63c,
+  mythic: 0xff77e9, // rainbow secret-rare — the chase pull (rendered iridescent in the UI)
 };
 export const RARITY_HEX: Record<CardRarity, string> = {
   common: "#9aa4b4",
   rare: "#4f8fdb",
   epic: "#a46fe8",
   legendary: "#f0a63c",
+  mythic: "#ff77e9",
 };
 
 export const CARDS: Record<CardId, CardDef> = {
@@ -76,6 +78,9 @@ export const CARDS: Record<CardId, CardDef> = {
   // ── Legendary (gold) ──
   pinballwizard: { id: "pinballwizard", label: "Pinball Wizard", icon: "🎰", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, DOUBLE while riding momentum", modifier: { damageMult: 1.4, pinballMult: 2 } },
   soulreaver: { id: "soulreaver", label: "Soul Reaver", icon: "💀", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +50% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.5, onHit: "burn" } },
+  // ── Mythic (iridescent) — build-defining chase cards, sold only at the Tavern ──
+  worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
+  timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
 };
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
@@ -85,6 +90,7 @@ const BY_RARITY: Record<CardRarity, CardId[]> = {
   rare: CARD_IDS.filter((id) => CARDS[id].rarity === "rare"),
   epic: CARD_IDS.filter((id) => CARDS[id].rarity === "epic"),
   legendary: CARD_IDS.filter((id) => CARDS[id].rarity === "legendary"),
+  mythic: CARD_IDS.filter((id) => CARDS[id].rarity === "mythic"),
 };
 
 export function cardsOfRarity(r: CardRarity): CardId[] {
@@ -146,7 +152,7 @@ export function socketCard(w: WeaponState, id: CardId): boolean {
 
 /** One rarity tier lower (for the un-socket respec cost); null if already common. */
 export function lowerRarity(r: CardRarity): CardRarity | null {
-  return r === "legendary" ? "epic" : r === "epic" ? "rare" : r === "rare" ? "common" : null;
+  return r === "mythic" ? "legendary" : r === "legendary" ? "epic" : r === "epic" ? "rare" : r === "rare" ? "common" : null;
 }
 
 /**

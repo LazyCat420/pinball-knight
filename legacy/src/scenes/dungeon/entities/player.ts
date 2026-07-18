@@ -69,6 +69,10 @@ import {
   RAMP_SPEED,
   RAMP_COOLDOWN,
   RAMP_STEER_LOCK,
+  RAMP_HOP_HEIGHT,
+  RAMP_HOP_MIN,
+  RAMP_HOP_MAX,
+  RAMP_HOP_SPEED,
   BOOSTER_SPEED,
   BOOSTER_RADIUS,
   BOOSTER_COOLDOWN,
@@ -673,6 +677,10 @@ function touchPinballParts(inMomentum: boolean): void {
       steerLockT = RAMP_STEER_LOCK;
       part.cooldownT = RAMP_COOLDOWN;
       part.hitT = 0;
+      // A2 — the ramp LAUNCHES: an airborne arc that flies OVER wall bands and
+      // sets down on the far floor (collision bypassed mid-air). Falls back to
+      // the flat dash above if there's no clear landing ahead.
+      startRampHop(part.dirX, part.dirZ, p.momSpeed);
       // Loud, directional feedback: a spark spray up the launch lane + a kick +
       // a distinct whoosh, so a ramp launch is unmistakable (not a silent shove).
       state.vfx?.dust(p.x, 0.06, p.z);
@@ -1115,6 +1123,96 @@ function updateRide(dt: number): boolean {
   return true;
 }
 
+// ── A2 Ramp hop ─────────────────────────────────────────────────────────────
+// A ramp doesn't just floor your speed — it FLINGS you into a short ballistic
+// arc that clears wall bands (collision bypassed while airborne, like a smaller
+// trapdoor ride) and sets down on the far floor, handing the speed to the
+// pinball machine on landing (so you bounce if you set down against a wall).
+
+/**
+ * Begin a ramp hop along (dirX,dirZ). Scans for the FARTHEST walkable landing in
+ * [RAMP_HOP_MIN, RAMP_HOP_MAX] tiles ahead so the arc reaches over a 2-thick
+ * wall band and lands on the corridor beyond. If nothing walkable is in range
+ * (the ramp fires into deep rock), we skip the hop and keep the flat dash the
+ * caller already set. No-ops if a hop/ride already owns the player.
+ */
+function startRampHop(dirX: number, dirZ: number, speed: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hopT >= 0 || p.rideT >= 0) return;
+  const dl = Math.hypot(dirX, dirZ) || 1;
+  const ux = dirX / dl;
+  const uz = dirZ / dl;
+  let land: { x: number; z: number } | null = null;
+  for (let d = RAMP_HOP_MAX; d >= RAMP_HOP_MIN; d -= 0.25) {
+    const t = worldToTile(g, p.x + ux * d, p.z + uz * d);
+    if (isWalkable(g, t.i, t.j)) {
+      const c = tileCenter(g, t.i, t.j); // snap to the tile centre so we never set down in a wall corner
+      land = { x: c.x, z: c.z };
+      break;
+    }
+  }
+  if (!land) return; // nowhere clear to land — the flat dash stands
+  p.hopStartX = p.x;
+  p.hopStartZ = p.z;
+  p.hopLandX = land.x;
+  p.hopLandZ = land.z;
+  p.hopDirX = ux;
+  p.hopDirZ = uz;
+  p.hopSpeed = Math.max(speed, RAMP_SPEED);
+  p.hopDur = Math.max(0.22, Math.hypot(land.x - p.x, land.z - p.z) / RAMP_HOP_SPEED);
+  p.hopT = 0;
+  // The launch owns the player — cancel any swing/roll/charge, like the ride.
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.anim.setRate(1.3);
+  p.anim.play("roll", { force: true }); // reuse the tumble clip for the airborne hop
+  sfxRoll();
+  state.shakeT = Math.max(state.shakeT, 0.14);
+}
+
+/**
+ * Advance an active ramp hop. Owns the player: position lerps straight from
+ * launch to landing (walls bypassed), height arcs on a sine, i-frames span the
+ * flight. Landing feeds the speed into the pinball system along the hop heading,
+ * so the knight carries on — and bounces if the landing sat against a wall.
+ */
+function updateHop(dt: number): boolean {
+  const p = state.player;
+  if (!p || p.hopT < 0) return false;
+  p.hopT += dt;
+  const u = Math.min(1, p.hopT / p.hopDur);
+  p.x = p.hopStartX + (p.hopLandX - p.hopStartX) * u;
+  p.z = p.hopStartZ + (p.hopLandZ - p.hopStartZ) * u;
+  p.iframes = Math.max(p.iframes, 0.08);
+  const s = worldDirToScreen(p.hopDirX, p.hopDirZ);
+  if (s.x !== 0 || s.z !== 0) {
+    p.facing = facingFromVelocity(s.x, s.z, p.facing);
+    p.anim.setFacing(p.facing);
+  }
+  syncActorMesh(p); // pins y=0; lift after, like the ride
+  const hgt = Math.sin(Math.PI * u) * RAMP_HOP_HEIGHT;
+  p.sprite.mesh.position.y = hgt;
+  if (Math.random() < 12 * dt) state.vfx?.sparks(p.x, 0.3 + hgt, p.z, 0, 0, 2);
+
+  if (u >= 1) {
+    p.hopT = -1;
+    p.sprite.mesh.position.y = 0;
+    // Land into pinball momentum along the launch heading — the physics carries
+    // the speed onward and reflects it if we set down flush against a wall.
+    p.momX = p.hopDirX;
+    p.momZ = p.hopDirZ;
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.hopSpeed);
+    onPartTrigger();
+    for (let k = 0; k < 4; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
+    state.shakeT = Math.max(state.shakeT, 0.16);
+    sfxHeavy();
+  }
+  return true;
+}
+
 /**
  * Distance (world units) from (x,z) to the first non-walkable tile stepping out
  * along (dirX,dirZ), capped at LANE_PROBE_MAX. Used by the lane glide to find
@@ -1367,6 +1465,10 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   // ── Trapdoor coaster ── the rail owns the player completely while riding.
   if (updateRide(dt)) return;
+
+  // ── Ramp hop (A2) ── the airborne arc off a ramp owns the player mid-flight,
+  // flying over walls; on landing it hands speed to the pinball block below.
+  if (updateHop(dt)) return;
 
   // ── Wall launch (wall-kick / pounce) ── owns the player while airborne.
   if (updateWallLaunch(dt)) return;

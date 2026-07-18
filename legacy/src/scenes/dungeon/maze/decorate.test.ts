@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx } from "./generator";
-import { decorateMaze, widenMainArtery } from "./decorate";
+import { decorateMaze, widenMainArtery, openLaunchTargets } from "./decorate";
 import { bfsDistances } from "../entities/ai";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
@@ -351,6 +351,76 @@ describe("decorateMaze — rooms + secrets", () => {
     const { g, plan } = makeFullLevel(97);
     for (const t of plan.torches) {
       expect(at(g, t.i + t.di, t.j + t.dj)).toBe(T_WALL);
+    }
+  });
+});
+
+describe("openLaunchTargets (A1) — launch parts break through into new space", () => {
+  const T_FLOOR_V = 1;
+  /** All-wall grid; carve the listed floor tiles. */
+  function grid(w: number, h: number, floors: Array<[number, number]>) {
+    const g = { w, h, t: new Uint8Array(w * h) };
+    for (const [i, j] of floors) g.t[j * w + i] = T_FLOOR_V;
+    return g;
+  }
+  const band = [[0, 0], [1, 0], [0, 1], [1, 1]] as const;
+  // corridor A (cols 2,3) | 2-thick wall (cols 4,5) | corridor B (cols 6,7), rows 2-3
+  const twoCorridors = (): Array<[number, number]> => {
+    const f: Array<[number, number]> = [];
+    for (const j of [2, 3]) for (const i of [2, 3, 6, 7]) f.push([i, j]);
+    return f;
+  };
+
+  it("cracks an even-aligned 2×2 band when a corridor sits just beyond the struck wall", () => {
+    const g = grid(10, 8, twoCorridors());
+    const parts = [{ i: 3, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
+    const opened = openLaunchTargets(g, parts, [], mulberry32(1), 4);
+    expect(opened).toBe(1);
+    for (const [di, dj] of band) expect(at(g, 4 + di, 2 + dj)).toBe(T_CRACKED);
+    expect(4 % 2).toBe(0);
+    expect(2 % 2).toBe(0);
+  });
+
+  it("does NOT crack when there's only dead rock beyond the wall (stays bounded)", () => {
+    // drop corridor B — the wall now backs onto solid rock
+    const f = twoCorridors().filter(([i]) => i < 4);
+    const g = grid(10, 8, f);
+    const parts = [{ i: 3, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
+    expect(openLaunchTargets(g, parts, [], mulberry32(1), 4)).toBe(0);
+  });
+
+  it("never cracks a wall that carries a torch (the sconce would float)", () => {
+    const g = grid(10, 8, twoCorridors());
+    const parts = [{ i: 3, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
+    // a torch on corridor-A tile (3,2) mounted on the very wall the band would cover (4,2)
+    const torches = [{ i: 3, j: 2, di: 1, dj: 0 }];
+    expect(openLaunchTargets(g, parts, torches, mulberry32(1), 4)).toBe(0);
+  });
+
+  it("respects the budget", () => {
+    const g = grid(10, 8, twoCorridors());
+    const parts = [{ i: 3, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
+    expect(openLaunchTargets(g, parts, [], mulberry32(1), 0)).toBe(0);
+  });
+
+  it("integrated: every band (crack + break-through) stays even-aligned 2×2 off the shell", () => {
+    for (const seed of [7, 19, 41, 88, 129]) {
+      const raw = generateMaze(14, 11, mulberry32(seed));
+      crackSecretWalls(raw, mulberry32(seed + 2), 3);
+      const g = thickenWalls(raw);
+      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, [], { launchBreaks: 4 });
+      let cracked = 0;
+      for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (at(g, i, j) === T_CRACKED) cracked++;
+      // handle count × 4 == total cracked tiles → every band is a clean 2×2
+      expect(plan.secrets.length * 4).toBe(cracked);
+      for (const s of plan.secrets) {
+        expect(s.i % 2).toBe(0);
+        expect(s.j % 2).toBe(0);
+        expect(s.i).toBeGreaterThanOrEqual(2);
+        expect(s.j).toBeGreaterThanOrEqual(2);
+        expect(s.i + 1).toBeLessThanOrEqual(g.w - 2); // never the outer shell
+        expect(s.j + 1).toBeLessThanOrEqual(g.h - 2);
+      }
     }
   });
 });

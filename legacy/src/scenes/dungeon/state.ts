@@ -83,6 +83,22 @@ export interface Player extends Actor {
   /** Catmull-Rom waypoints of the ride, ground coords. Empty when not riding. */
   ridePts: Array<{ x: number; z: number }>;
 
+  // ── A2 Ramp hop (a short airborne arc off a ramp — flies OVER wall bands) ──
+  /** -1 when grounded, else seconds into the current ramp hop. */
+  hopT: number;
+  /** Total hop duration (seconds). */
+  hopDur: number;
+  /** Launch origin + landing target (ground coords), lerped straight across the arc. */
+  hopStartX: number;
+  hopStartZ: number;
+  hopLandX: number;
+  hopLandZ: number;
+  /** Unit WORLD heading of the hop (carried to momentum on landing). */
+  hopDirX: number;
+  hopDirZ: number;
+  /** Speed handed to the pinball system when the arc sets down. */
+  hopSpeed: number;
+
   // ── Dodge-roll ──
   /** -1 when not rolling, else seconds into the current roll (incl. recovery). */
   rollT: number;
@@ -603,6 +619,15 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     rideT: -1,
     rideDur: 0,
     ridePts: [],
+    hopT: -1,
+    hopDur: 0,
+    hopStartX: 0,
+    hopStartZ: 0,
+    hopLandX: 0,
+    hopLandZ: 0,
+    hopDirX: 0,
+    hopDirZ: 0,
+    hopSpeed: 0,
     rollT: -1,
     rollDirX: 0,
     rollDirZ: 0,

@@ -5,7 +5,7 @@ describe("cards", () => {
   it("every card has a valid rarity, kind and at least one effect", () => {
     for (const id of CARD_IDS) {
       const c = CARDS[id];
-      expect(["common", "rare", "epic", "legendary"]).toContain(c.rarity);
+      expect(["common", "rare", "epic", "legendary", "mythic"]).toContain(c.rarity);
       expect(["melee", "ranged", "both"]).toContain(c.weaponKinds);
       const m = c.modifier;
       const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult;
@@ -76,7 +76,7 @@ describe("cards", () => {
   });
 
   it("cardsOfRarity buckets are non-empty for every tier", () => {
-    for (const r of ["common", "rare", "epic", "legendary"] as const) {
+    for (const r of ["common", "rare", "epic", "legendary", "mythic"] as const) {
       expect(cardsOfRarity(r).length).toBeGreaterThan(0);
     }
   });

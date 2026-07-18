@@ -875,6 +875,7 @@ function startLevel(level: number): void {
     trapdoors: TRAPDOORS_PER_FLOOR,
     hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
     forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
+    launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
   });
 
   state.grid = grid;

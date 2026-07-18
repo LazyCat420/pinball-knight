@@ -393,6 +393,16 @@ export const SPRING_COOLDOWN = 0.6;
 export const RAMP_SPEED = 13; // dash-pad speed floor along its direction
 export const RAMP_COOLDOWN = 0.35;
 export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (Sonic's 15 frames)
+// ── A2 RAMP HOP — a ramp doesn't just floor your speed, it LAUNCHES you into a
+// short ballistic arc that flies OVER wall bands and sets down on the far floor
+// (collision bypassed while airborne, like the trapdoor coaster but bite-sized).
+// Landing hands the speed to the pinball system, so you bounce if you set down
+// against a wall. Walls are 2 tiles thick, so the arc must reach ≥3 tiles to
+// clear one — scan a landing in [MIN,MAX] tiles and take the farthest floor.
+export const RAMP_HOP_HEIGHT = 1.1; // peak arc height (world units) — reads as a jump in iso
+export const RAMP_HOP_MIN = 2.5; // nearest tiles ahead a hop will set down
+export const RAMP_HOP_MAX = 4.75; // farthest tiles ahead to look for a landing (clears a 2-thick band + a corridor)
+export const RAMP_HOP_SPEED = 16; // u/s the arc travels (governs airtime) — snappy, a touch above RAMP_SPEED
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;
 
@@ -1130,6 +1140,8 @@ export interface LevelConfig {
   rooms: number;
   /** Cracked wall bands hiding shortcuts (smash at pinball speed). */
   secrets: number;
+  /** A1 — extra break-through bands opened at launch-part runway ends (grow with depth). */
+  launchBreaks: number;
 }
 
 export function levelConfig(level: number): LevelConfig {
@@ -1137,9 +1149,10 @@ export function levelConfig(level: number): LevelConfig {
   // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2.
   // Bigger + faster-growing than the first build so deeper floors are sprawling
   // labyrinths, not the same small maze. Level 1 is ~72×52 tiles; the caps let
-  // late floors reach ~120×90.
-  const cellsW = Math.min(17 + Math.ceil(l * 1.4), 30);
-  const cellsH = Math.min(12 + l, 22);
+  // late floors reach ~134×102. (A3 — the caps rose with the A1 break-throughs:
+  // players now carve their own openness, so a floor can start bigger + denser.)
+  const cellsW = Math.min(17 + Math.ceil(l * 1.4), 33);
+  const cellsH = Math.min(12 + l, 25);
   const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
   // Maze character cycles by depth so no two consecutive floors share a shape:
   // level 1 stays the familiar winding backtracker (1.0), then a bushy
@@ -1164,6 +1177,9 @@ export function levelConfig(level: number): LevelConfig {
     // Rooms + secrets ride depth too: deeper floors are busier theme parks.
     rooms: Math.min(ROOMS_BASE + Math.floor((l - 1) * ROOMS_PER_LEVEL), ROOMS_MAX),
     secrets: Math.min(SECRETS_BASE + Math.floor((l - 1) * SECRETS_PER_LEVEL), SECRETS_MAX),
+    // A1 break-throughs grow with depth: deeper floors turn more launch-part
+    // runways into smashable shortcuts, so the reachable map expands as you go.
+    launchBreaks: Math.min(2 + Math.floor((l - 1) / 2), 6),
   };
 }
 

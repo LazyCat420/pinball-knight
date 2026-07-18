@@ -282,6 +282,96 @@ function launchRunway(g: Grid, i: number, j: number, di: number, dj: number): nu
   return n;
 }
 
+/**
+ * A1 — LAUNCH-TARGET BREAK-THROUGH. A launch part (ramp/booster/spring/…) whose
+ * fire direction ends at a wall is only fun if that wall PAYS OFF at speed —
+ * otherwise you rocket forward and just bounce off a dead face ("boring").
+ *
+ * Walk each launch part's runway to the first wall; if a genuine corridor sits
+ * just beyond it (a 2-thick band with FLOOR on the far side), CRACK that band so
+ * a fast player punches through into new space — the lane leads somewhere and
+ * the reachable floor GROWS as you smash outward. Where there's only shell/dead
+ * rock beyond, we leave the bounce (the maze stays bounded + solvable).
+ *
+ * Bands are even-aligned 2×2 blocks, exactly matching crackSecretWalls, so the
+ * existing secrets scan + smashSecretAt own them (a break-through pays out loot
+ * and opens collision/pathing at once). Spaced ≥8 from other bands, never over a
+ * wall that carries a torch/target/fire-vent. Mutates g; returns bands opened.
+ */
+export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: Torch[], rng: () => number, budget = 4): number {
+  if (budget <= 0) return 0;
+  // Wall tiles carrying furniture — cracking one would float a sconce/target/jet.
+  const occupied = new Set<number>();
+  for (const t of torches) occupied.add(idx(g, t.i + t.di, t.j + t.dj));
+  for (const p of parts) {
+    if (p.kind === "target") occupied.add(idx(g, p.i + p.dirI, p.j + p.dirJ));
+    if (p.kind === "firevent") occupied.add(idx(g, p.i - p.dirI, p.j - p.dirJ)); // vent mounts on -dir wall
+  }
+  // Existing band handles (even top-left), so new break-throughs stay spaced.
+  const bands: TilePos[] = [];
+  for (let j = 0; j < g.h - 1; j += 2) {
+    for (let i = 0; i < g.w - 1; i += 2) {
+      if (at(g, i, j) === T_CRACKED) bands.push({ i, j });
+    }
+  }
+
+  const launch = shuffled(
+    parts.filter((p) => LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
+    rng,
+  );
+  let opened = 0;
+  for (const p of launch) {
+    if (opened >= budget) break;
+    // Walk the runway to the FIRST wall along the fire direction (capped). Open
+    // floor/stairs continue the run; a cracked band already pays off (stop, skip).
+    let wi = -1;
+    let wj = -1;
+    for (let s = 1; s <= 6; s++) {
+      const ti = p.i + p.dirI * s;
+      const tj = p.j + p.dirJ * s;
+      const t = at(g, ti, tj);
+      if (t === T_FLOOR || t === T_STAIRS) continue;
+      if (t === T_WALL) {
+        wi = ti;
+        wj = tj;
+      }
+      break; // hit a wall (record it) or a cracked band (leave it) — done walking
+    }
+    if (wi < 0) continue; // lane runs into open space (or an existing crack) — already good
+
+    // Even-aligned 2×2 band covering the struck wall tile.
+    const bi = wi & ~1;
+    const bj = wj & ~1;
+    if (bi < 2 || bj < 2 || bi + 1 > g.w - 3 || bj + 1 > g.h - 3) continue; // keep the outer shell solid
+
+    // The whole band must be plain, unburdened wall (a clean 2-thick block).
+    let ok = true;
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+      if (at(g, bi + di, bj + dj) !== T_WALL || occupied.has(idx(g, bi + di, bj + dj))) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    // A real corridor must sit just past the band in the fire direction, or the
+    // smash opens into dead rock (no shortcut) and the floor grows unbounded.
+    let farFloor = false;
+    if (p.dirI > 0) farFloor = at(g, bi + 2, bj) === T_FLOOR || at(g, bi + 2, bj + 1) === T_FLOOR;
+    else if (p.dirI < 0) farFloor = at(g, bi - 1, bj) === T_FLOOR || at(g, bi - 1, bj + 1) === T_FLOOR;
+    else if (p.dirJ > 0) farFloor = at(g, bi, bj + 2) === T_FLOOR || at(g, bi + 1, bj + 2) === T_FLOOR;
+    else farFloor = at(g, bi, bj - 1) === T_FLOOR || at(g, bi + 1, bj - 1) === T_FLOOR;
+    if (!farFloor) continue;
+
+    if (bands.some((b) => Math.abs(b.i - bi) + Math.abs(b.j - bj) < 8)) continue; // spacing (matches crackSecretWalls)
+
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) setTile(g, bi + di, bj + dj, T_CRACKED);
+    bands.push({ i: bi, j: bj });
+    opened++;
+  }
+  return opened;
+}
+
 /** Which topology pool each dealable part kind draws from. */
 const KIND_TOPOLOGY: Record<string, Topology> = {
   bumper: "junction",
@@ -482,7 +572,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -803,6 +893,12 @@ export function decorateMaze(
     }
     parts.push(spotForKind(a.kind, c, rng));
   }
+
+  // ── A1 LAUNCH BREAK-THROUGHS: open a smashable band at the end of launch-part
+  // runways so a fast player punches through into new space (see fn). Runs AFTER
+  // all parts + torches so it can avoid furnished walls, and BEFORE the secrets
+  // scan below so its new bands are collected like any other crack. ──
+  openLaunchTargets(g, parts, torches, rng, extras.launchBreaks ?? 4);
 
   // ── Secrets: collect every CRACKED band stamped by crackSecretWalls. After
   // thickenWalls a raw crack is a 2×2 band whose top-left tile has even coords
