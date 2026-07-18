@@ -208,9 +208,3 @@ export function tickAbilities(dt: number): void {
   }
 }
 
-/** A small mana top-up on an ordinary kill (never during rampage). */
-export function manaOnKill(): void {
-  const p = state.player;
-  if (!p) return;
-  p.mana = Math.min(MANA_MAX, p.mana + MANA_PER_KILL);
-}

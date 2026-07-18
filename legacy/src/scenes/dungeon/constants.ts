@@ -243,7 +243,6 @@ export const SPRINT_SPEED_MULT = 1.85; // top speed multiplier at full sprint ch
 export const MOVE_ACCEL = 22; // units/sec² toward the desired velocity
 export const MOVE_FRICTION = 26; // units/sec² decel when no input
 /** Camera leads a little further ahead while sprinting (no ortho FOV trick available). */
-export const SPRINT_DEADZONE_MULT = 1.4;
 /**
  * Sprint is a COMMITMENT you spool up, not an instant toggle. Holding Shift while
  * moving fills a 0→1 "sprint charge" over SPRINT_RAMP_TIME seconds; letting go
@@ -480,6 +479,8 @@ export const VAULT_RAMPS_PER_FLOOR = 3;
 export const RAMP_HOP_SPEED = 16; // u/s the arc travels (governs airtime) — snappy, a touch above RAMP_SPEED
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;
+/** Re-trigger lockout after a bank, so one corner can't fire twice in a frame. */
+export const DEFLECTOR_COOLDOWN = 0.3;
 
 // ── Booster pad (Sonic's speed booster — the accelerating LANE element) ──
 // Unlike a ramp (a one-shot dash floor), boosters are placed in CHAINS down a
@@ -541,6 +542,7 @@ export const OIL_LAUNCH_SPEED = 7.5; // minimum slide speed off a walking touch
 export const OIL_LAUNCH_MULT = 1.35; // × current speed if that's faster
 export const OIL_SLICK_TIME = 0.55; // seconds of zero-friction after contact
 export const OIL_STEER_FACTOR = 0.18; // steering authority while slicked
+export const OIL_COOLDOWN = 0.4; // re-trigger lockout after a slick launch
 /**
  * SPIN PAD — the slot machine: step on it and it flings you in a RANDOM
  * direction at high speed. Junction furniture; chaos by design.
@@ -674,16 +676,18 @@ export const HAZARDS_MAX = 10;
  * side your momentum/facing sweeps, arcing around corners. A lateral accel
  * applied each tick perpendicular to the shot's heading.
  */
-export const CURVE_TIME = 12;
+// Duration lives on POTIONS.curveshot in items.ts (the owner of every potion's
+// duration) — it was duplicated here and the copy was wired to nothing.
 export const CURVE_ACCEL = 10; // u/s² lateral bend
 /**
  * MAGNET BOOTS — inverts the Magnet Crawler's pull to a REPEL and, on a magnet
  * strip, turns the drag into a LAUNCH: momentum tricks off the very things
  * that used to trap you.
  */
-export const MAGBOOTS_TIME = 18;
+// Duration lives on POTIONS.magnetboots in items.ts (see CURVE_ACCEL above).
 export const MAGBOOTS_REPEL = 3.0; // push strength away from a crawler
 export const MAGBOOTS_STRIP_LAUNCH = 12; // speed a strip flings you at instead of dragging
+export const MAGSTRIP_BOOTS_COOLDOWN = 0.4; // lockout after a boots-inverted strip launch
 
 // ── Wave-J shop (Rolling Cart Merchant) ─────────────────────────
 /**
@@ -1022,8 +1026,6 @@ export const INPUT_BUFFER = 0.13;
 // frame 0 is windup, frame 1 is the swing (active), frame 2 is recovery.
 // Per-weapon numbers (damage, range, arc, cooldown, durability) live in
 // items.ts — these are just the shared timing anchors.
-export const ATTACK_ACTIVE_START = 1 / FPS_ATTACK;
-export const ATTACK_ACTIVE_END = 2 / FPS_ATTACK;
 export const KNOCKBACK_ZOMBIE = 0.45; // how far a hit shoves a zombie
 export const KNOCKBACK_PLAYER = 0.35;
 
@@ -1170,7 +1172,6 @@ export const GHOST_FROM_LEVEL = 2; // start haunting early
 export const BOSS_EVERY = 5; // a boss on levels 5, 10, 15, …
 export const BOSS_BASE_HP = 40;
 export const BOSS_HP_PER_TIER = 25; // +this much per boss encounter (level/5)
-export const BOSS_SCALE = 1.5; // extra visual size over a normal brute
 export const BOSS_SPEED_FACTOR = 0.55;
 export const BOSS_GOLD = 50; // bonus gold on kill (on top of per-kill)
 

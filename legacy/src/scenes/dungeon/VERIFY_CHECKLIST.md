@@ -1,8 +1,15 @@
 # 🎮 Pinball Knight — Verification Checklist
 
-Things to confirm work in the live game after the 2026-07-17 HUD + power-up +
-debug pass. **Open the debug console with the `` ` `` (backtick) key** — it makes
-almost all of this testable without playing from depth 1.
+**Living manual-QA pass** — there is no E2E harness for the 3D game, so this is
+how a change gets confirmed in the real thing. Run it before shipping anything
+that touches the HUD, power-ups or parts. **Open the debug console with the
+`` ` `` (backtick) key** — it makes almost all of this testable without playing
+from depth 1.
+
+Keep it current: when a feature lands, add its check here rather than writing a
+new wave doc. (Three completed wave plans were retired 2026-07-18; the current
+forward-looking plan lives in `pinball_knight_plan.md` at the repo root, and the
+architecture in `BLUEPRINT.md` beside this file.)
 
 ## 0. Debug console itself
 - [ ] `` ` `` opens/closes the panel (top-left). A faint "` debug" hint shows when closed.

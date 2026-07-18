@@ -70,7 +70,7 @@ function lcg(seed: number): () => number {
 }
 
 /** The flavour "HP" — a single number summarising how strong the chip is. */
-export function cardPower(c: CardDef): number {
+function cardPower(c: CardDef): number {
   const m = c.modifier;
   let p = 10;
   if (m.damageFlat) p += m.damageFlat * 15;

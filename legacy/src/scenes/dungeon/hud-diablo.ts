@@ -160,11 +160,6 @@ export function getDiabloFaceFrame(): HTMLDivElement | null {
   return faceFrameEl;
 }
 
-/** Slide the panel off (down) / on (up) — used by the HUD swap on rampage. */
-export function showDiabloHUD(on: boolean): void {
-  if (panelEl) panelEl.style.transform = on ? "translateY(0)" : "translateY(110%)";
-}
-
 export function disposeDiabloHUD(): void {
   panelEl?.remove();
   panelEl = null;

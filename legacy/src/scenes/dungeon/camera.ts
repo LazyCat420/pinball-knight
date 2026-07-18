@@ -44,8 +44,8 @@ export function cameraOffset(): THREE.Vector3 {
  * "screen right" — the input remap and facing logic key off these so WASD is
  * always screen-relative, the way Diablo controls feel.
  */
-export const SCREEN_UP_XZ = { x: -Math.sin(CAMERA_YAW), z: -Math.cos(CAMERA_YAW) };
-export const SCREEN_RIGHT_XZ = { x: Math.cos(CAMERA_YAW), z: -Math.sin(CAMERA_YAW) };
+const SCREEN_UP_XZ = { x: -Math.sin(CAMERA_YAW), z: -Math.cos(CAMERA_YAW) };
+const SCREEN_RIGHT_XZ = { x: Math.cos(CAMERA_YAW), z: -Math.sin(CAMERA_YAW) };
 
 /** Screen-space axis → world ground direction. */
 export function screenDirToWorld(sx: number, sz: number): { x: number; z: number } {

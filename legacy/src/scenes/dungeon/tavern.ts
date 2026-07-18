@@ -811,7 +811,3 @@ export function closeTavern(): void {
   state.tavernEl = null;
   deps = null;
 }
-
-export function isTavernOpen(): boolean {
-  return !!state.tavernEl;
-}

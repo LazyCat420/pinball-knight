@@ -3,12 +3,16 @@
  * resolve HERE, in one place, rather than being smeared across player.ts,
  * zombie.ts and projectiles.ts.
  */
-import { state, activeWeapon, type Zombie } from "../state";
+import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
 import {
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
   PLAYER_IFRAMES,
   ZOMBIE_DAMAGE,
+  BAT_DAMAGE,
+  SLIME_DAMAGE,
+  SPIDER_DAMAGE,
+  GHOST_DAMAGE,
   ZOMBIE_R,
   PLAYER_R,
   GOLD_PER_KILL,
@@ -464,6 +468,40 @@ function killZombie(z: Zombie): void {
 }
 
 /**
+ * Bite damage per enemy family — the ONE source of truth, and EXHAUSTIVE by
+ * type so a new EnemyKind is a compile error here rather than silently
+ * inheriting a zombie's bite.
+ *
+ * It used to be a `Partial<>` listing five kinds with an `?? ZOMBIE_DAMAGE`
+ * fallback, which left BAT_/SLIME_/SPIDER_/GHOST_DAMAGE declared in constants.ts
+ * but wired to nothing — they happened to equal ZOMBIE_DAMAGE, so the numbers
+ * were right by coincidence and re-tuning any of them would have done nothing.
+ *
+ * A brute's haymaker hits harder and shoves you further than a normal bite; the
+ * reaper's touch is worse — two hearts and a brute-class shove. Kinds listed as
+ * ZOMBIE_DAMAGE bite for a plain hit by design (the spitter's SPITTER_DAMAGE is
+ * carried by its projectile, not its bite — see entities/projectiles.ts).
+ *
+ * Hoisted to module scope: it was being reallocated on every single player hit.
+ */
+const DMG_BY_KIND: Record<EnemyKind, number> = {
+  zombie: ZOMBIE_DAMAGE,
+  spider: SPIDER_DAMAGE,
+  brute: BRUTE_DAMAGE,
+  spitter: ZOMBIE_DAMAGE,
+  ghost: GHOST_DAMAGE,
+  bat: BAT_DAMAGE,
+  slime: SLIME_DAMAGE,
+  reaper: REAPER_DAMAGE,
+  goblin: ZOMBIE_DAMAGE,
+  pin: ZOMBIE_DAMAGE,
+  golem: GOLEM_DAMAGE,
+  chomper: CHOMPER_DAMAGE,
+  magnet: MAGNET_DAMAGE,
+  webspinner: ZOMBIE_DAMAGE,
+};
+
+/**
  * A zombie's bite connects. Damage routes through the armor (helmet first,
  * then chest) before touching hearts; absorbing costs those pieces
  * durability, and a piece worn to nothing is destroyed.
@@ -475,17 +513,7 @@ export function hitPlayer(z: Zombie): void {
   if (state.godMode) return; // debug god mode: untouchable
   if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
-  // A brute's haymaker hits harder and shoves you further than a normal bite;
-  // the reaper's touch is worse — two hearts and a brute-class shove. The
-  // Wave-B kinds have their own bite weights.
-  const DMG_BY_KIND: Partial<Record<Zombie["kind"], number>> = {
-    brute: BRUTE_DAMAGE,
-    reaper: REAPER_DAMAGE,
-    golem: GOLEM_DAMAGE,
-    chomper: CHOMPER_DAMAGE,
-    magnet: MAGNET_DAMAGE,
-  };
-  const damage = DMG_BY_KIND[z.kind] ?? ZOMBIE_DAMAGE;
+  const damage = DMG_BY_KIND[z.kind];
   const heavyHitter = z.kind === "brute" || z.kind === "reaper" || z.kind === "golem" || z.kind === "chomper";
   const knockback = heavyHitter ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
   // A ghost that just landed its touch stays MATERIALIZED — the punish window.

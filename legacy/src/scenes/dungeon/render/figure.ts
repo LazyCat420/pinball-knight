@@ -42,8 +42,6 @@ export const R_STEEL: Ramp = [19, 20, 21];
 /** Dark steel (boots, under-suit). */
 export const R_STEEL_DK: Ramp = [19, 19, 20];
 /** Rot-green flesh ramp. */
-export const R_ROT: Ramp = [6, 7, 8];
-export const R_ROT_LT: Ramp = [7, 8, 9];
 /** Leather / cloth. */
 export const R_LEATHER: Ramp = [26, 27, 28];
 /** Blood / plume. */

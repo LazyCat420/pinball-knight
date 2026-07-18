@@ -59,32 +59,11 @@ import {
   BALL_SPEED_MULT,
   BALL_RAM_COOLDOWN,
   BALL_RAM_KNOCKBACK,
-  BUMPER_RADIUS,
-  BUMPER_KICK_MULT,
-  BUMPER_KICK_ADD,
-  BUMPER_LIT_HITS,
-  BUMPER_KICK_LIT,
-  BUMPER_LIT_GOLD,
-  JACKPOT_BUMPERS,
-  JACKPOT_GOLD,
-  JACKPOT_DAMAGE,
-  BUMPER_MIN_EXIT,
-  BUMPER_COOLDOWN,
-  BUMPER_SCATTER,
-  SPRING_SPEED,
-  SPRING_COOLDOWN,
   RAMP_SPEED,
-  RAMP_COOLDOWN,
-  RAMP_STEER_LOCK,
   RAMP_HOP_HEIGHT,
   RAMP_HOP_MIN,
   RAMP_HOP_MAX,
   RAMP_HOP_SPEED,
-  BOOSTER_SPEED,
-  BOOSTER_RADIUS,
-  BOOSTER_COOLDOWN,
-  BOOSTER_STEER_LOCK,
-  DEFLECTOR_BOOST,
   ARC_BANK_RADIUS,
   ARC_BOOST,
   ARC_COOLDOWN,
@@ -92,55 +71,23 @@ import {
   SECRET_BREAK_SPEED,
   WALL_BREAK_SPEED,
   WALL_BREAK_SPEED_COST,
-  OIL_RADIUS,
-  OIL_LAUNCH_SPEED,
-  OIL_LAUNCH_MULT,
-  OIL_SLICK_TIME,
   OIL_STEER_FACTOR,
-  SPINPAD_SPEED,
-  SPINPAD_COOLDOWN,
-  SLING_SPEED_MULT,
-  SLING_ADD,
-  SLING_MIN_EXIT,
-  SLING_COOLDOWN,
-  TARGET_HIT_SPEED,
-  TARGET_RADIUS,
-  TARGET_GOLD,
-  TARGET_CLEAR_GOLD,
-  BANK_CLEAR_GOLD,
   TRAPDOOR_RIDE_SPEED,
   TRAPDOOR_RIDE_MIN,
   TRAPDOOR_RIDE_MAX,
   TRAPDOOR_EXIT_SPEED,
   TRAPDOOR_HEIGHT,
   TRAPDOOR_COOLDOWN,
-  ROLLOVER_RADIUS,
-  ROLLOVER_COOLDOWN,
   TRAPDOOR_OPEN,
   TRAPDOOR_DROP,
   TRAPDOOR_DROP_DEPTH,
   TRAPDOOR_RISE,
-  FRENZY_PART_HITS,
-  FRENZY_GOLD,
   WEB_SLOW_MULT,
   IRONCORE_RAM_MULT,
   TURBO_STEER_MULT,
   TURBO_WALK_MULT,
   SPRINGLEGS_RESTITUTION,
-  FLIPPER_SPEED,
-  FLIPPER_COOLDOWN,
-  FLIPPER_RADIUS,
-  MIRROR_RADIUS,
-  MIRROR_COOLDOWN,
-  MIRROR_BOOST,
-  MAGSTRIP_RADIUS,
-  MAGSTRIP_SPEED_CAP,
   MAGSTRIP_WALK_MULT,
-  MAGBOOTS_STRIP_LAUNCH,
-  PIT_RADIUS,
-  PIT_CLIMB_COOLDOWN,
-  PIT_GOLD_PENALTY,
-  PIT_DAMAGE,
   MOVE_ACCEL,
   MOVE_FRICTION,
   ROLL_DURATION,
@@ -170,19 +117,35 @@ import {
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle, wallContact } from "../collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
-import { addGold } from "../../../utils/gold-wallet";
+
 import { showPickupNote, showToast } from "../ui";
 import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
-import { recordShot, hitOrbitRail, hitRollover, rotateLanes, trySkillShot } from "../shots";
+import { rotateLanes } from "../shots";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
-import type { InputHandle } from "../input";
+import { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxTrapdoor, sfxHurt } from "../audio";
-import { spendGold } from "../../../utils/gold-wallet";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor } from "../audio";
+
+import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
+
+/**
+ * The player-owned behaviours a pinball part can trigger. Handed to the parts
+ * sweep so entities/pinball-collide.ts never has to import back into this file.
+ */
+const PINBALL_DEPS: PinballDeps = {
+  startRampHop: (dirX, dirZ, speed) => startRampHop(dirX, dirZ, speed),
+  startDrop: (x, z) => startDrop(x, z),
+  setSteerLock: (t) => {
+    steerLockT = t;
+  },
+  raiseSteerLock: (t) => {
+    steerLockT = Math.max(steerLockT, t);
+  },
+};
 
 /** Attacking roots you a little — swinging at a full sprint feels weightless. */
 const ATTACK_MOVE_FACTOR = 0.45;
@@ -556,457 +519,6 @@ function rangedSfx(id: string): void {
   if (id === "gun") sfxGun();
   else if (id === "bow") sfxBow();
   else sfxFlame();
-}
-
-/**
- * Interact with the level's PINBALL PARTS. Called from updatePinball (momentum
- * live) AND from the normal movement path (walking) — every part can START a
- * momentum ride, which is what makes the maze read as a machine: step on a
- * spring or graze a bumper and you're flying, no overcharge required.
- *
- *   bumper    → radial kick away from its centre, speed multiplied + added,
- *               combo tick. Even a walking touch launches at BUMPER_MIN_EXIT.
- *   spring    → forced launch along the spring's direction at SPRING_SPEED.
- *   ramp      → dash pad: forces your heading to its direction and floors your
- *               speed at RAMP_SPEED (Sonic dash-panel rule: set, don't add).
- *   deflector → banked curve, MOMENTUM ONLY: entering the corner redirects you
- *               around it with all your speed (×DEFLECTOR_BOOST) — the reward
- *               for taking the racing line instead of slamming the wall.
- *
- * Part cooldowns/hit animations are ticked by the parts renderer (one owner);
- * this only consumes ready parts and stamps cooldownT/hitT.
- */
-/**
- * Bookkeeping every PART trigger shares: tick the bounce combo, shake a web
- * off (parts are the webspinner's cleanse), count part-hits toward the
- * FRENZY bonus and pay it once per combo.
- */
-function onPartTrigger(): void {
-  const p = state.player;
-  if (!p) return;
-  p.bounceCombo += 1;
-  p.bounceComboT = PINBALL_COMBO_WINDOW;
-  if (p.webbedT > 0) {
-    p.webbedT = 0;
-    showPickupNote("🕸️ web SHAKEN OFF");
-  }
-  state.partComboHits += 1;
-  if (!state.frenzyPaid && state.partComboHits >= FRENZY_PART_HITS) {
-    state.frenzyPaid = true;
-    state.goldRun += FRENZY_GOLD;
-    addGold(FRENZY_GOLD, "dungeon-game");
-    showToast("🪩 FRENZY", `${state.partComboHits} parts in one chain · +${FRENZY_GOLD}g`);
-    state.shakeT = Math.max(state.shakeT, 0.25);
-  }
-}
-
-/** True if the player is standing over a magnet strip (walk-slow check). */
-function overMagStrip(): boolean {
-  const p = state.player;
-  if (!p) return false;
-  for (const part of state.pinballParts) {
-    if (part.kind !== "magstrip") continue;
-    const dx = p.x - part.x;
-    const dz = p.z - part.z;
-    if (dx * dx + dz * dz <= MAGSTRIP_RADIUS * MAGSTRIP_RADIUS) return true;
-  }
-  return false;
-}
-
-/**
- * Fall into a PIT: a heart, a fistful of gold and ALL your speed, then you
- * climb back out at the rim you went in at. Deliberately NOT a teleport — the
- * trapdoor is the only thing on the floor that relocates you.
- */
-function fallInPit(px: number, pz: number): void {
-  const p = state.player;
-  const g = state.grid;
-  if (!p) return;
-  p.momSpeed = 0;
-  p.rideT = -1;
-  p.ridePts = [];
-  // Haul out along the way you came in — the side of the rim nearest you.
-  // Dead-centre (a straight drop) has no "in" direction, so pick one.
-  let ox = p.x - px;
-  let oz = p.z - pz;
-  let ol = Math.hypot(ox, oz);
-  if (ol < 1e-3) {
-    const a = Math.random() * Math.PI * 2;
-    ox = Math.cos(a);
-    oz = Math.sin(a);
-    ol = 1;
-  }
-  const out = PIT_RADIUS + PLAYER_R + 0.14;
-  const tx = px + (ox / ol) * out;
-  const tz = pz + (oz / ol) * out;
-  if (g) {
-    // moveCircle so the climb-out can't post us inside a wall band.
-    const res = moveCircle(g, p.x, p.z, PLAYER_R, tx - p.x, tz - p.z);
-    p.x = res.x;
-    p.z = res.z;
-  } else {
-    p.x = tx;
-    p.z = tz;
-  }
-  p.sprite.mesh.position.y = 0;
-  if (p.iframes <= 0 && p.shieldT <= 0) {
-    p.hp = Math.max(0, p.hp - PIT_DAMAGE);
-    p.iframes = Math.max(p.iframes, 0.6);
-  }
-  const lost = Math.min(PIT_GOLD_PENALTY, state.goldRun);
-  if (lost > 0) {
-    state.goldRun -= lost;
-    spendGold(lost);
-  }
-  state.hudDirty = true;
-  state.shakeT = Math.max(state.shakeT, 0.4);
-  syncActorMesh(p);
-  showPickupNote(`🕳️ FELL IN A PIT — climbing out${lost > 0 ? ` · −${lost}g` : ""}`);
-  sfxHurt();
-}
-
-/**
- * JACKPOT (Slice 5) — enough bumpers lit: a floor-wide burst of gold + damage +
- * a flash, then every bumper resets so the light-em-up loop can run again.
- */
-function fireJackpot(): void {
-  const p = state.player;
-  state.goldRun += JACKPOT_GOLD;
-  addGold(JACKPOT_GOLD, "dungeon-game");
-  showToast("🪩 JACKPOT!", `bumpers lit · +${JACKPOT_GOLD}g`);
-  state.shakeT = Math.max(state.shakeT, 0.4);
-  state.jackpotT = 3;
-  for (const z of state.zombies) {
-    if (z.mode === "dead") continue;
-    const dx = z.x - (p?.x ?? z.x);
-    const dz = z.z - (p?.z ?? z.z);
-    const dd = Math.hypot(dx, dz) || 1;
-    damageZombie(z, JACKPOT_DAMAGE, dx / dd, dz / dd, 4);
-  }
-  if (p) state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 30);
-  // reset every bumper so the floor can be re-lit for another jackpot
-  for (const part of state.pinballParts) if (part.kind === "bumper") part.hits = 0;
-  state.bumpersLit = 0;
-}
-
-function touchPinballParts(inMomentum: boolean): void {
-  const p = state.player;
-  if (!p || state.pinballParts.length === 0) return;
-
-  for (const part of state.pinballParts) {
-    if (part.cooldownT > 0) continue;
-    const dx = p.x - part.x;
-    const dz = p.z - part.z;
-    const d2 = dx * dx + dz * dz;
-
-    if (part.kind === "bumper") {
-      const r = BUMPER_RADIUS + PLAYER_R * 0.5;
-      if (d2 > r * r) continue;
-      const d = Math.sqrt(d2) || 1;
-      // Radial exit with the authentic ±6° scatter (active parts only — plain
-      // walls stay mirror-perfect, per the research).
-      const scatter = (Math.random() * 2 - 1) * BUMPER_SCATTER;
-      const cs = Math.cos(scatter);
-      const sn = Math.sin(scatter);
-      const nx = dx / d;
-      const nz = dz / d;
-      p.momX = nx * cs - nz * sn;
-      p.momZ = nx * sn + nz * cs;
-      // Slice 5 — light the bumper on its BUMPER_LIT_HITS-th pop: a lit bumper
-      // kicks harder, pays gold, and counts toward the floor JACKPOT.
-      part.hits = (part.hits ?? 0) + 1;
-      const lit = part.hits >= BUMPER_LIT_HITS;
-      const nowLit = part.hits === BUMPER_LIT_HITS;
-      p.momSpeed = Math.min(
-        PINBALL_MAX_SPEED,
-        Math.max(p.momSpeed * BUMPER_KICK_MULT + (lit ? BUMPER_KICK_LIT : BUMPER_KICK_ADD), BUMPER_MIN_EXIT),
-      );
-      onPartTrigger();
-      part.cooldownT = BUMPER_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, lit ? 18 : 12);
-      state.shakeT = Math.max(state.shakeT, lit ? 0.22 : 0.16);
-      state.hitstopT = Math.max(state.hitstopT, 0.03);
-      sfxBumper();
-      if (lit) {
-        state.goldRun += BUMPER_LIT_GOLD;
-        addGold(BUMPER_LIT_GOLD, "dungeon-game");
-      }
-      if (nowLit) {
-        state.bumpersLit += 1;
-        const need = Math.min(state.bumperTotal || JACKPOT_BUMPERS, JACKPOT_BUMPERS);
-        if (state.bumpersLit >= need) fireJackpot();
-      }
-    } else if (part.kind === "spring") {
-      if (d2 > 0.42 * 0.42) continue;
-      p.momX = part.dirX;
-      p.momZ = part.dirZ;
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPRING_SPEED));
-      onPartTrigger();
-      part.cooldownT = SPRING_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.dust(part.x, 0.1, part.z);
-      state.vfx?.sparks(part.x, 0.3, part.z, part.dirX, part.dirZ, 8);
-      state.shakeT = Math.max(state.shakeT, 0.14);
-      sfxSpring();
-    } else if (part.kind === "ramp") {
-      if (d2 > 0.42 * 0.42) continue;
-      p.momX = part.dirX;
-      p.momZ = part.dirZ;
-      // Sonic's booster rule: a FLOOR, never a brake — plus a short steer lock
-      // so the panel actually carries you down its lane before you can bend it.
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, RAMP_SPEED));
-      recordShot("ramp");
-      trySkillShot(part);
-      steerLockT = RAMP_STEER_LOCK;
-      part.cooldownT = RAMP_COOLDOWN;
-      part.hitT = 0;
-      // A2 — the ramp LAUNCHES: an airborne arc that flies OVER wall bands and
-      // sets down on the far floor (collision bypassed mid-air). Falls back to
-      // the flat dash above if there's no clear landing ahead.
-      startRampHop(part.dirX, part.dirZ, p.momSpeed);
-      // Loud, directional feedback: a spark spray up the launch lane + a kick +
-      // a distinct whoosh, so a ramp launch is unmistakable (not a silent shove).
-      state.vfx?.dust(p.x, 0.06, p.z);
-      state.vfx?.sparks(part.x, 0.45, part.z, part.dirX, part.dirZ, 16);
-      state.shakeT = Math.max(state.shakeT, 0.12);
-      sfxSpin();
-    } else if (part.kind === "booster") {
-      // The moving-walkway pad: snap the heading to its arrow and FLOOR the
-      // speed (Sonic booster rule — set, don't slow). Fires from a cold walk
-      // too, so stepping onto a booster LANE launches you and each subsequent
-      // pad in the chain re-aims + tops you up, railing you down the lane.
-      if (d2 > BOOSTER_RADIUS * BOOSTER_RADIUS) continue;
-      p.momX = part.dirX;
-      p.momZ = part.dirZ;
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, BOOSTER_SPEED));
-      steerLockT = Math.max(steerLockT, BOOSTER_STEER_LOCK);
-      onPartTrigger();
-      part.cooldownT = BOOSTER_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.25, part.z, part.dirX, part.dirZ, 10);
-      sfxSpin();
-    } else if (part.kind === "oil") {
-      // The slick: a WALKING touch converts your stride into a frictionless
-      // slide along your heading; riding over it re-greases the momentum.
-      if (d2 > OIL_RADIUS * OIL_RADIUS) continue;
-      if (inMomentum) {
-        p.oilT = OIL_SLICK_TIME; // keep the ride greased (no friction, dead steering)
-        continue; // no cooldown stamp — the slick is a zone, not a trigger
-      }
-      if (curSpeed < 0.5) continue; // standing on oil is just standing
-      const a = state.input?.axis() ?? { x: 0, z: 0 };
-      if (a.x === 0 && a.z === 0) continue;
-      const wd = screenDirToWorld(a.x, a.z);
-      const wl = Math.hypot(wd.x, wd.z) || 1;
-      p.momX = wd.x / wl;
-      p.momZ = wd.z / wl;
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(curSpeed * OIL_LAUNCH_MULT, OIL_LAUNCH_SPEED));
-      p.oilT = OIL_SLICK_TIME;
-      part.cooldownT = 0.4;
-      part.hitT = 0;
-      state.vfx?.dust(p.x, 0.04, p.z);
-      sfxRoll();
-    } else if (part.kind === "spinpad") {
-      // The slot machine: a random-direction fling at speed.
-      if (d2 > 0.45 * 0.45) continue;
-      const ang = Math.random() * Math.PI * 2;
-      p.momX = Math.cos(ang);
-      p.momZ = Math.sin(ang);
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPINPAD_SPEED));
-      onPartTrigger();
-      part.cooldownT = SPINPAD_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 10);
-      state.shakeT = Math.max(state.shakeT, 0.14);
-      sfxSpin();
-    } else if (part.kind === "slingshot") {
-      if (d2 > 0.5 * 0.5) continue;
-      if (inMomentum) {
-        // Passing the gate with momentum PINGS you out along the lane —
-        // whichever way you were already mostly going.
-        const along = p.momX * part.dirX + p.momZ * part.dirZ >= 0 ? 1 : -1;
-        p.momX = part.dirX * along;
-        p.momZ = part.dirZ * along;
-        p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * SLING_SPEED_MULT + SLING_ADD, SLING_MIN_EXIT));
-      } else {
-        p.momX = part.dirX;
-        p.momZ = part.dirZ;
-        p.momSpeed = SLING_MIN_EXIT;
-      }
-      onPartTrigger();
-      part.cooldownT = SLING_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.35, part.z, p.momX, p.momZ, 9);
-      sfxSpring();
-    } else if (part.kind === "target") {
-      if (part.bank !== undefined) {
-        // Slice 6 — drop-target BANK: light in 1-2-3 order; a wrong-order hit
-        // resets the whole bank; lighting all pays a bonus.
-        if (!inMomentum || p.momSpeed < TARGET_HIT_SPEED || part.lit) continue;
-        if (d2 > TARGET_RADIUS * TARGET_RADIUS) continue;
-        const bankParts = state.pinballParts.filter((q) => q.kind === "target" && q.bank === part.bank);
-        const expected = Math.min(...bankParts.filter((q) => !q.lit).map((q) => q.seq ?? 0));
-        part.hitT = 0;
-        onPartTrigger();
-        if (part.seq === expected) {
-          part.lit = true;
-          state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 10);
-          sfxTarget();
-          if (bankParts.every((q) => q.lit)) {
-            state.goldRun += BANK_CLEAR_GOLD;
-            addGold(BANK_CLEAR_GOLD, "dungeon-game");
-            showToast("🎯 TARGET BANK!", `1·2·3 lit · +${BANK_CLEAR_GOLD}g`);
-            recordShot("bank");
-            state.shakeT = Math.max(state.shakeT, 0.3);
-          } else {
-            showPickupNote(`🎯 BANK ${(part.seq ?? 0) + 1}/${bankParts.length}`);
-          }
-        } else {
-          for (const q of bankParts) q.lit = false; // out of order → reset
-          sfxSpring();
-          showPickupNote("🎯 SEQUENCE RESET");
-        }
-        state.hudDirty = true;
-        continue;
-      }
-      // Bullseyes break to MOMENTUM only — the floor's objective layer.
-      if (part.done || !inMomentum || p.momSpeed < TARGET_HIT_SPEED) continue;
-      if (d2 > TARGET_RADIUS * TARGET_RADIUS) continue;
-      part.done = true;
-      part.hitT = 0;
-      state.targetsHit += 1;
-      onPartTrigger();
-      recordShot("target");
-      trySkillShot(part);
-      state.goldRun += TARGET_GOLD;
-      addGold(TARGET_GOLD, "dungeon-game");
-      state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 14);
-      state.shakeT = Math.max(state.shakeT, 0.14);
-      sfxTarget();
-      if (state.targetsHit >= state.targetsTotal && state.targetsTotal > 0) {
-        state.goldRun += TARGET_CLEAR_GOLD;
-        addGold(TARGET_CLEAR_GOLD, "dungeon-game");
-        showToast("🎯 ALL TARGETS DOWN", `the machine pays out · +${TARGET_CLEAR_GOLD}g`);
-      } else {
-        showPickupNote(`🎯 TARGET ${state.targetsHit}/${state.targetsTotal} +${TARGET_GOLD}g`);
-      }
-      state.hudDirty = true;
-    } else if (part.kind === "trapdoor") {
-      // The hatch swings open, swallows you, THEN the rollercoaster takes over
-      // — see startDrop → startRide. The floor's one and only teleport.
-      if (d2 > 0.42 * 0.42) continue;
-      if (p.rideT >= 0 || p.dropT >= 0) continue;
-      part.cooldownT = TRAPDOOR_COOLDOWN;
-      part.hitT = 0; // drives the hinge-open animation in render/pinball-parts
-      recordShot("trapdoor");
-      startDrop(part.x, part.z);
-    } else if (part.kind === "flipper") {
-      // The big paddle CATAPULTS you along its swing at the hardest speed in the
-      // machine (walking or riding). Slice 7 — AIM-ASSIST: the exit is the paddle
-      // angle BLENDED with your approach line, so a skilled entry angle lets you
-      // aim off the flipper (paddle still dominates, so it can't reverse you).
-      if (d2 > FLIPPER_RADIUS * FLIPPER_RADIUS) continue;
-      let ex = part.dirX;
-      let ez = part.dirZ;
-      if (inMomentum && p.momSpeed > 0.5) {
-        const bx = part.dirX * 0.72 + p.momX * 0.38;
-        const bz = part.dirZ * 0.72 + p.momZ * 0.38;
-        const bl = Math.hypot(bx, bz) || 1;
-        ex = bx / bl;
-        ez = bz / bl;
-      }
-      p.momX = ex;
-      p.momZ = ez;
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, FLIPPER_SPEED));
-      onPartTrigger();
-      part.cooldownT = FLIPPER_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, 16);
-      state.shakeT = Math.max(state.shakeT, 0.22);
-      sfxSpring();
-    } else if (part.kind === "mirror") {
-      // A bank shot: REFLECT the incoming momentum across the mirror's surface
-      // line (unlike the deflector's corner-bank). Momentum only.
-      if (!inMomentum || d2 > MIRROR_RADIUS * MIRROR_RADIUS) continue;
-      // surface dir = (part.dirX, part.dirZ) (may be a diagonal); normal = its
-      // perpendicular, normalised so the reflection preserves speed.
-      const nl = Math.hypot(part.dirX, part.dirZ) || 1;
-      const nx = -part.dirZ / nl;
-      const nz = part.dirX / nl;
-      const dot = p.momX * nx + p.momZ * nz;
-      if (Math.abs(dot) < 0.2) continue; // travelling along the mirror, nothing to bounce
-      p.momX -= 2 * dot * nx;
-      p.momZ -= 2 * dot * nz;
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * MIRROR_BOOST);
-      onPartTrigger();
-      part.cooldownT = MIRROR_COOLDOWN;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.4, part.z, p.momX, p.momZ, 8);
-      sfxRoll();
-    } else if (part.kind === "magstrip") {
-      // The anti-speed zone: over it, momentum is DRAGGED to a crawl and
-      // steering goes heavy — unless Magnet Boots invert it into a LAUNCH.
-      if (d2 > MAGSTRIP_RADIUS * MAGSTRIP_RADIUS) continue;
-      if (p.magBootsT > 0) {
-        // boots: a strip flings you along your heading instead of trapping you
-        if (inMomentum && p.momSpeed < MAGBOOTS_STRIP_LAUNCH) {
-          p.momSpeed = MAGBOOTS_STRIP_LAUNCH;
-          onPartTrigger();
-          part.cooldownT = 0.4;
-          state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 8);
-        }
-        continue;
-      }
-      if (p.momSpeed > MAGSTRIP_SPEED_CAP) p.momSpeed = MAGSTRIP_SPEED_CAP;
-      if (Math.random() < 0.3) state.vfx?.sparks(part.x, 0.2, part.z, 0, 1, 2);
-    } else if (part.kind === "pit") {
-      // A hole: fall in unless the coaster is carrying you over it. The climb
-      // out sets us on the rim, so lock the hole briefly — otherwise a bounce
-      // straight back in reads as the pit "grabbing" you.
-      if (p.rideT >= 0 || p.dropT >= 0 || d2 > PIT_RADIUS * PIT_RADIUS) continue;
-      part.cooldownT = PIT_CLIMB_COOLDOWN;
-      fallInPit(part.x, part.z);
-      return; // the fall owns this frame
-    } else if (part.kind === "rollover") {
-      // D3 — a lane trigger: rolling over it LIGHTS it. Walking counts too (a
-      // rollover is a switch, not a launcher), so a bank is something you can
-      // deliberately go and complete rather than only hit at speed.
-      if (d2 > ROLLOVER_RADIUS * ROLLOVER_RADIUS) continue;
-      part.cooldownT = ROLLOVER_COOLDOWN;
-      part.hitT = 0;
-      hitRollover(part);
-      trySkillShot(part);
-      state.vfx?.sparks(part.x, 0.3, part.z, 0, 0, 4);
-    } else if (part.kind === "electric" || part.kind === "firevent") {
-      continue; // self-firing hazards do their damage from entities/hazards.ts
-    } else {
-      // deflector — banked corner, only meaningful while carrying momentum
-      if (!inMomentum || d2 > 0.5 * 0.5) continue;
-      // Which leg did we come IN along? Exit along the other, speed intact.
-      const inFrom1 = p.momX * -part.dirX + p.momZ * -part.dirZ; // heading INTO leg 1
-      const inFrom2 = p.momX * -part.dir2X + p.momZ * -part.dir2Z;
-      if (inFrom1 < 0.3 && inFrom2 < 0.3) continue; // grazing past, not cornering
-      if (inFrom1 >= inFrom2) {
-        p.momX = part.dir2X;
-        p.momZ = part.dir2Z;
-      } else {
-        p.momX = part.dirX;
-        p.momZ = part.dirZ;
-      }
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * DEFLECTOR_BOOST);
-      onPartTrigger();
-      part.cooldownT = 0.3;
-      part.hitT = 0;
-      state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 6);
-      sfxRoll();
-      // D2 — if this rail is a corner of an ORBIT, it might have just advanced
-      // (or completed) a lap. hitOrbitRail owns that bookkeeping.
-      if (part.orbit !== undefined) hitOrbitRail(part);
-      else recordShot("bank");
-      trySkillShot(part);
-    }
-  }
 }
 
 /**
@@ -1577,7 +1089,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   // Pinball PARTS: bumpers kick, springs launch, ramps floor your speed,
   // deflectors bank you around corners. The real accelerators of the machine.
-  touchPinballParts(true);
+  touchPinballParts(true, curSpeed, PINBALL_DEPS);
   // Curved walls: sweep momentum around every banked maze corner.
   bankArcCorners(dt);
 
@@ -1898,7 +1410,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
 
   // Pinball parts fire from a WALK too — step on a spring or graze a bumper
   // and the machine launches you into a momentum ride, no overcharge needed.
-  touchPinballParts(false);
+  touchPinballParts(false, curSpeed, PINBALL_DEPS);
   if (p.momSpeed > 0) {
     syncActorMesh(p);
     return; // a part just launched us — momentum owns the knight from next frame

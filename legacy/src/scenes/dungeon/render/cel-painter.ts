@@ -1417,8 +1417,6 @@ export function makeZombiePaints(v: ZVariant): ActorPaints {
   };
 }
 
-/** Back-compat default (variant 0) for any caller that wants one sheet. */
-export const ZOMBIE_PAINTS: ActorPaints = makeZombiePaints(ZOMBIE_VARIANTS[0]);
 
 // ══════════════════════════════════════════════════════════════════
 // GIANT SPIDER — a low, wide, many-legged skitterer. Reads totally

@@ -51,10 +51,6 @@ export function createFace(): HTMLCanvasElement {
   return c;
 }
 
-export function getFaceCanvas(): HTMLCanvasElement | null {
-  return canvas;
-}
-
 export function disposeFace(): void {
   canvas = null;
   ctx = null;

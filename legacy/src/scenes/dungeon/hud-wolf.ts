@@ -43,18 +43,8 @@ export function createWolfHUD(container: HTMLElement): HTMLDivElement {
   return el;
 }
 
-/** The socket the swap controller drops the shared face canvas into. */
-export function getWolfFaceSlot(): HTMLDivElement | null {
-  return faceSlot;
-}
-
 export function getWolfEl(): HTMLDivElement | null {
   return wolfEl;
-}
-
-/** Slide the bar up (on) for a rampage, or down (off) back to the iso view. */
-export function showWolfHUD(on: boolean): void {
-  if (wolfEl) wolfEl.style.transform = on ? "translateY(0)" : "translateY(110%)";
 }
 
 /** Repaint the bar's live numbers (delegates to the ui.ts renderer). */

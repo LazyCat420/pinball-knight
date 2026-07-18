@@ -44,14 +44,6 @@ export interface CardDef {
   modifier: CardModifier;
 }
 
-/** sRGB hex glow per rarity (grey / blue / purple / gold / iridescent). */
-export const RARITY_COLOR: Record<CardRarity, number> = {
-  common: 0x9aa4b4,
-  rare: 0x4f8fdb,
-  epic: 0xa46fe8,
-  legendary: 0xf0a63c,
-  mythic: 0xff77e9, // rainbow secret-rare — the chase pull (rendered iridescent in the UI)
-};
 export const RARITY_HEX: Record<CardRarity, string> = {
   common: "#9aa4b4",
   rare: "#4f8fdb",

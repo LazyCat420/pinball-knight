@@ -14,8 +14,8 @@ Status: **Phases 0–3 built and playable**, plus the 2026-07-14 playtest round:
 
 - **"16-bit" upgrade** — internal target is now **640×360 with 32px sprites**
   (PPU 32); the knight is true 32px art composed from a weaponless base +
-  leg splices + sword-pose overlays (see sprite-data.ts), zombies are the 16px
-  art scale2x'd for now.
+  leg splices + sword-pose overlays (see `render/cel-painter.ts`
+  `makeKnightPaints`), zombies are the 16px art scale2x'd for now.
 - **Visibility geometry — the Diablo wall trick** (this took three playtest
   rounds: 35°/tall walls buried actors; 50°/short walls read as a flat floor
   plan): the maze is scaled 2× (thickenWalls — corridors 2 wide, wall bands 2
@@ -153,24 +153,36 @@ pure sprites would look like a SNES game.
 
 ### 1.3 Where the pixel art comes from
 
-There is no artist on this project and no sprite sheets in `public/`. So: **sprites
-are authored in code as pixel matrices**, the same way `mouse-room.ts` already
-defines its maze pattern as a nested array of `0`/`1`.
+There is no artist on this project and no sprite sheets in `public/`. So **sprites
+are authored in code**.
+
+The original design here was pixel matrices (nested `0`/`1` arrays, the way
+`mouse-room.ts` defines its maze). That was **superseded** — see §"Cel art
+pipeline" above. Frames are now *painter functions*, not data:
 
 ```ts
-// sprite-sheets.ts — a frame is rows of palette indices; 0 = transparent
-const ZOMBIE_WALK_S = [
-  [0,0,3,3,3,3,0,0],
-  [0,3,2,3,3,2,3,0],   // 2 = eye socket, 3 = rotten green
-  [0,3,3,3,3,3,3,0],
-  ...
-];
+// render/cel-painter.ts — a frame is a function that draws itself
+export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
+export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
 ```
 
+Each painter draws smooth canvas-2D paths (flat palette fills + ink outlines);
+the pixel look comes from a post-pass, not from hand-placed pixels — see
+`render/sprite.ts` `pixelateCanvas`, which downscales to a 52px grid, Bayer
+dithers, and snaps to the 32-colour Cold Crypt ramp in `render/palette.ts`.
+
 At load, each frame is painted into an offscreen `<canvas>` and packed into a
-single `CanvasTexture` atlas; the sprite billboard just offsets its UVs per frame.
-Zero binary assets, zero build step, fully diffable in git, and editable by anyone
-who can count squares.
+single `CanvasTexture` atlas (`render/sprite.ts` `buildSpriteSheet`); the sprite
+billboard just offsets its UVs per frame. Zero binary assets, zero build step,
+fully diffable in git.
+
+**Hand-authored art is also supported but unused.** `tools/sprite-forge/`
+(`pixelize.mjs` + `pack.mjs`) is an offline Node pipeline that turns arbitrary
+PNGs into palette-mapped strips + a JSON manifest under
+`public/dungeon/sprites/`, which `render/atlas-loader.ts` loads at runtime.
+Every failure path there returns `null` and the procedural painter takes over,
+so the game runs identically with no authored assets — and today there are
+none: `public/dungeon/sprites/` does not exist.
 
 This is not a workaround — it is **already the house style**. Almost every texture
 in this codebase is a runtime `THREE.CanvasTexture` drawn with 2D canvas calls
