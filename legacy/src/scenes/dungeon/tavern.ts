@@ -20,6 +20,26 @@ import { state } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, RARITY_HEX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
+import { renderPaintIcon } from "./render/sprite";
+import { ITEM_PAINTS } from "./render/cel-painter";
+import { createTavernScene, type TavernScene } from "./tavern-scene";
+
+/** The game's actual pixel-art for a weapon/gear/potion id, as a DOM icon URL. */
+const _iconCache = new Map<string, string>();
+function itemIcon(id: string): string {
+  let url = _iconCache.get(id);
+  if (url === undefined) {
+    const paint = ITEM_PAINTS[id];
+    url = paint ? renderPaintIcon(paint) : "";
+    _iconCache.set(id, url);
+  }
+  return url;
+}
+/** A pixel-art icon img (falls back to an emoji when no sprite exists). */
+function iconTag(id: string, emoji: string, px = 30): string {
+  const url = itemIcon(id);
+  return url ? `<img src="${url}" class="tv-icon" style="width:${px}px;height:${px}px" alt="">` : `<span style="font-size:${px - 6}px">${emoji}</span>`;
+}
 
 // ── Prices ── widened spread so the shop has genuinely expensive pulls, not
 // just cheap chips: a mythic costs a whole run's savings.
@@ -41,6 +61,9 @@ const BELT_MAX = 4;
 /** Which vendor's counter is open; null = the room view (walk the tavern). */
 type VendorId = "cards" | "weapons" | "armor" | "potions";
 let activeVendor: VendorId | null = null;
+/** The 3D iso scene (null = WebGL unavailable → flat DOM room fallback). */
+let scene3d: TavernScene | null = null;
+let plateRaf = 0;
 
 interface VendorDef {
   id: VendorId;
@@ -49,12 +72,16 @@ interface VendorDef {
   robe: string;
   prop: string;
   blurb: string;
+  /** NPC_PAINTS key for the 3D keeper sprite + its floor position in the scene. */
+  paintKey: string;
+  x: number;
+  z: number;
 }
 const VENDORS: VendorDef[] = [
-  { id: "potions", name: "Alchemist", icon: "🧪", robe: "#3f9d5a", prop: "⚗️", blurb: "potions for the belt" },
-  { id: "cards", name: "Card Dealer", icon: "🃏", robe: "#8b5cf6", prop: "🎴", blurb: "power cards & socketing" },
-  { id: "weapons", name: "Weaponsmith", icon: "🔨", robe: "#b45309", prop: "⚒️", blurb: "repairs, slots & forging" },
-  { id: "armor", name: "Armorer", icon: "🛡️", robe: "#5b86c4", prop: "🥋", blurb: "plate & repairs" },
+  { id: "potions", name: "Alchemist", icon: "🧪", robe: "#3f9d5a", prop: "⚗️", blurb: "potions for the belt", paintKey: "witch", x: -3, z: 1.4 },
+  { id: "cards", name: "Card Dealer", icon: "🃏", robe: "#8b5cf6", prop: "🎴", blurb: "power cards & socketing", paintKey: "magician", x: -1, z: 2.0 },
+  { id: "weapons", name: "Weaponsmith", icon: "🔨", robe: "#b45309", prop: "⚒️", blurb: "repairs, slots & forging", paintKey: "merchant", x: 1, z: 2.0 },
+  { id: "armor", name: "Armorer", icon: "🛡️", robe: "#5b86c4", prop: "🥋", blurb: "plate & repairs", paintKey: "frog", x: 3, z: 1.4 },
 ];
 
 const GOLD = "#f0a63c";
@@ -212,6 +239,7 @@ function injectTavernStyles(): void {
     @keyframes hcard-sweep{0%{transform:translateX(-160%) rotate(14deg)}60%,100%{transform:translateX(320%) rotate(14deg)}}
     .tavern-slot{display:inline-flex;align-items:center;justify-content:center;width:58px;height:81px;margin:3px;
       border:1px dashed #6c5a3e;border-radius:8px;color:#6c5a3e;font-size:20px}
+    .tv-icon{image-rendering:pixelated;object-fit:contain;vertical-align:middle;flex:0 0 auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
 
     /* ── The isometric tavern room ── */
     .tv-room{position:absolute;inset:0;overflow:hidden;
@@ -277,14 +305,23 @@ function injectTavernStyles(): void {
       font:900 15px ui-monospace,Menlo,monospace;letter-spacing:3px;box-shadow:0 4px 14px rgba(240,166,60,.4)}
     .tv-descend:hover{filter:brightness(1.08)}
     /* a vendor's open counter, over a dimmed room */
-    .tv-vendor{position:absolute;inset:0;background:rgba(6,4,3,.82);backdrop-filter:blur(2px);
-      display:flex;flex-direction:column;padding:14px;box-sizing:border-box;animation:tv-fade .18s ease}
+    .tv-vendor{position:fixed;inset:0;z-index:6;background:rgba(6,4,3,.86);backdrop-filter:blur(3px);
+      display:flex;flex-direction:column;align-items:center;padding:16px 16px 20px;box-sizing:border-box;animation:tv-fade .18s ease}
     @keyframes tv-fade{from{opacity:0}to{opacity:1}}
-    .tv-vendor-head{display:flex;align-items:center;gap:12px;border-bottom:1px solid #4a3d28;padding-bottom:8px;margin-bottom:10px}
+    .tv-vendor-head{width:100%;max-width:880px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #4a3d28;padding-bottom:8px;margin-bottom:10px}
     .tv-back{cursor:pointer;background:#171208;color:${GOLD};border:1px solid ${GOLD};border-radius:5px;
       padding:5px 10px;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.5px}
     .tv-back:hover{background:#241609}
-    .tv-vendor-body{overflow:auto;flex:1;min-height:0}`;
+    .tv-vendor-body{width:100%;max-width:880px;overflow:auto;flex:1;min-height:0}
+    /* ── 3D-room DOM overlays (name-plates parked over the rendered keepers) ── */
+    .tv-board3d{position:fixed;z-index:2;right:2%;top:74px}
+    .tv-hotspots{position:fixed;inset:0;z-index:2;pointer-events:none}
+    .tv-hotspot{position:fixed;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;gap:2px;
+      background:none;border:none;padding:0;cursor:pointer;pointer-events:auto;opacity:0;transition:opacity .2s;font-family:inherit}
+    .tv-talk3d{font-size:9px;letter-spacing:1px;color:${GOLD};opacity:0;transition:opacity .15s;text-shadow:0 0 6px rgba(240,166,60,.7)}
+    .tv-hotspot:hover .tv-talk3d{opacity:1}
+    .tv-hotspot:hover .tv-plate{border-color:${GOLD};box-shadow:0 0 10px rgba(240,166,60,.4)}
+    .tv-door3d{position:fixed;z-index:2;left:50%;bottom:3%;transform:translateX(-50%);width:220px;text-align:center}`;
   document.head.appendChild(s);
 }
 
@@ -306,7 +343,7 @@ function weaponPanel(w: WeaponState, slotIdx: number): string {
   const durTxt = Number.isFinite(w.durability) ? `${w.durability}/${def.maxDurability}` : "∞";
   return `<div style="border:1px solid ${isActive ? GOLD : "#4a3d28"};border-radius:7px;padding:8px;margin:5px 0;background:#00000033">
     <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
-      <span style="font-size:18px">${def.icon}</span>
+      ${iconTag(w.id, def.icon, 28)}
       <b style="color:#e8dcc0">${def.label}</b>
       <span style="color:#9a8f77;font-size:10px">${def.kind} · dur ${durTxt} · ${slots} slot${slots === 1 ? "" : "s"}</span>
       ${isActive ? `<span style="color:${GOLD};font-size:9px;border:1px solid ${GOLD};border-radius:3px;padding:1px 4px">EQUIPPED</span>` : ""}
@@ -375,7 +412,7 @@ function armorBody(): string {
     const owned = cur >= base;
     const soak = GEAR[s].absorb > 0 ? `soaks ${GEAR[s].absorb}` : "+move speed";
     return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
-      <span style="font-size:20px">${GEAR[s].icon}</span>
+      ${iconTag(s, GEAR[s].icon, 34)}
       <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${GEAR[s].label}</b><span style="color:#9a8f77;font-size:9px">${soak}${owned ? ` · equipped (${cur})` : ""}</span></span>
       <span style="flex:1"></span>
       ${owned ? `<span style="color:#5a7d4a;font-size:10px;letter-spacing:.5px">EQUIPPED</span>` : btn(`buygear:${s}`, "Buy", PRICE_GEAR[s])}
@@ -397,7 +434,7 @@ function potionsBody(): string {
     const price = PRICE_POTION[id] ?? 30;
     const eff = p.heal ? `heal ${p.heal}` : p.duration ? `${p.duration}s` : "instant";
     return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:5px 7px;background:#00000044;border:1px solid #4a3d28;border-radius:6px">
-      <span style="font-size:20px">${p.icon}</span>
+      ${iconTag(id, p.icon, 34)}
       <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${p.label}</b><span style="color:#9a8f77;font-size:9px">${eff}</span></span>
       <span style="flex:1"></span>
       ${btn(`buypotion:${id}`, "Buy", price, beltFull)}
@@ -447,6 +484,56 @@ function roomView(): string {
   </div>`;
 }
 
+/** The DOM overlays for the 3D room: notice board, floating keeper name-plates
+ * (positioned each frame over the rendered NPC sprites), and the descend door. */
+function roomView3d(): string {
+  if (!deps) return "";
+  const gearTxt = GEAR_SLOTS.map((s) => `${GEAR[s].icon} ${state.gear[s] ?? 0}`).join("  ");
+  const plates = VENDORS.map((v) => `<button data-act="vendor:${v.id}" class="tv-hotspot" id="tv-hs-${v.id}" title="${v.blurb}"><span class="tv-talk3d">▲ Talk</span><span class="tv-plate">${v.icon} ${v.name}</span></button>`).join("");
+  return `
+    <div class="tv-board tv-board3d">
+      <b style="color:${GOLD};letter-spacing:1px;font-size:11px">📜 NOTICE BOARD</b>
+      <div class="tv-board-row"><span>Floor cleared</span><b style="color:${GOLD}">${deps.stats.floor}</b></div>
+      <div class="tv-board-row"><span>Grade</span><b style="color:${GOLD}">${deps.stats.grade}</b></div>
+      <div class="tv-board-row"><span>Kills</span><b>${deps.stats.kills}</b></div>
+      <div class="tv-board-row"><span>Best combo</span><b>×${deps.stats.bestCombo}</b></div>
+      <div class="tv-board-row"><span>Gear</span><b>${gearTxt}</b></div>
+    </div>
+    <div class="tv-hotspots">${plates}</div>
+    <div class="tv-door tv-door3d">
+      <button data-act="descend" class="tv-descend">DESCEND ▼</button>
+      <div style="color:#9a8f77;font-size:9px;text-align:center;margin-top:3px">walk up to a keeper, then take the stairs</div>
+    </div>`;
+}
+
+/** Track the 3D keepers each frame and park each name-plate over its sprite. */
+function startPlateTracking(): void {
+  stopPlateTracking();
+  const step = (): void => {
+    const el = state.tavernEl;
+    if (!el || !scene3d || activeVendor) {
+      plateRaf = 0;
+      return;
+    }
+    for (const v of VENDORS) {
+      const hs = el.querySelector(`#tv-hs-${v.id}`) as HTMLElement | null;
+      if (!hs) continue;
+      const p = scene3d.projectNpc(v.id);
+      if (p) {
+        hs.style.left = `${Math.round(p.x)}px`;
+        hs.style.top = `${Math.round(p.y)}px`;
+        hs.style.opacity = "1";
+      }
+    }
+    plateRaf = requestAnimationFrame(step);
+  };
+  plateRaf = requestAnimationFrame(step);
+}
+function stopPlateTracking(): void {
+  if (plateRaf) cancelAnimationFrame(plateRaf);
+  plateRaf = 0;
+}
+
 /** A vendor's open counter, over a dimmed room. */
 function vendorView(v: VendorDef): string {
   return `<div class="tv-vendor">
@@ -466,7 +553,15 @@ function render(): void {
   const stage = el.querySelector("#tavern-grid");
   if (!stage) return;
   const v = activeVendor ? VENDORS.find((x) => x.id === activeVendor) : null;
-  stage.innerHTML = roomView() + (v ? vendorView(v) : "");
+  if (scene3d) {
+    // 3D room is the WebGL backdrop; the DOM only draws the overlays.
+    stage.innerHTML = (v ? "" : roomView3d()) + (v ? vendorView(v) : "");
+    if (v) stopPlateTracking();
+    else startPlateTracking();
+  } else {
+    stopPlateTracking();
+    stage.innerHTML = roomView() + (v ? vendorView(v) : "");
+  }
   const goldEl = el.querySelector("#tavern-gold");
   if (goldEl) goldEl.textContent = `${getBalance()}g`;
 }
@@ -661,12 +756,12 @@ export function openTavern(container: HTMLElement, d: TavernDeps): void {
     padding: 14px; box-sizing: border-box;
   `;
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
+    <div style="position:relative;z-index:3;display:flex;align-items:center;gap:14px;margin-bottom:6px">
       <b style="font:900 26px ui-monospace,Menlo,monospace;letter-spacing:6px;color:${GOLD};font-variant:small-caps;text-shadow:0 0 16px rgba(240,166,60,.4)">🍺 The Tavern</b>
       <span style="color:#c9c1ad;font-size:12px">purse <b id="tavern-gold" style="color:${GOLD}">${getBalance()}g</b></span>
     </div>
-    <div id="tavern-flash" style="height:16px;color:${GOLD};font-size:11px;letter-spacing:1px;opacity:0;transition:opacity .25s;margin-bottom:6px"></div>
-    <div id="tavern-grid" style="position:relative;width:min(940px,97vw);flex:1;min-height:0;border-radius:12px;overflow:hidden"></div>
+    <div id="tavern-flash" style="position:relative;z-index:3;height:16px;color:${GOLD};font-size:11px;letter-spacing:1px;opacity:0;transition:opacity .25s;margin-bottom:6px"></div>
+    <div id="tavern-grid" style="position:relative;z-index:1;width:min(940px,97vw);flex:1;min-height:0;border-radius:12px;overflow:hidden"></div>
   `;
   el.addEventListener("click", (e) => {
     const t = (e.target as HTMLElement).closest("[data-act]") as HTMLElement | null;
@@ -676,10 +771,22 @@ export function openTavern(container: HTMLElement, d: TavernDeps): void {
   });
   container.appendChild(el);
   state.tavernEl = el;
+
+  // Render the room in the game's iso pixel style (WebGL). If a context can't be
+  // had, scene3d stays null and render() draws the flat DOM room instead.
+  scene3d = createTavernScene(el, VENDORS.map((v) => ({ id: v.id, paintKey: v.paintKey, x: v.x, z: v.z })));
+  if (scene3d) {
+    scene3d.canvas.style.zIndex = "0"; // behind the DOM overlays
+    scene3d.canvas.style.pointerEvents = "none";
+    el.style.background = "#0b0d12"; // solid letterbox behind the pixel canvas
+  }
   render();
 }
 
 export function closeTavern(): void {
+  stopPlateTracking();
+  scene3d?.dispose();
+  scene3d = null;
   state.tavernEl?.remove();
   state.tavernEl = null;
   deps = null;

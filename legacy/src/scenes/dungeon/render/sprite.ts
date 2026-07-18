@@ -210,6 +210,25 @@ function pixelateCanvas(src: HTMLCanvasElement): void {
   ctx.restore();
 }
 
+/**
+ * Rasterize a single FramePaint to a pixel-art data-URL — the SAME palette-crush
+ * the in-world sprites get (pixelateCanvas: SPRITE_PIXEL_GRID snap + Bayer dither
+ * + nearest upscale). Used for DOM icons (the Tavern's buy-menu) so a shop item
+ * shows the game's actual pixel art instead of an emoji. Cache the result — the
+ * crush is not free.
+ */
+export function renderPaintIcon(paint: FramePaint): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = SPRITE_PX;
+  canvas.height = SPRITE_PX;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  ctx.imageSmoothingEnabled = true;
+  paint(ctx);
+  pixelateCanvas(canvas);
+  return canvas.toDataURL();
+}
+
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
 function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: number): void {
   const scratch = document.createElement("canvas");
