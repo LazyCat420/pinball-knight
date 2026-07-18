@@ -334,8 +334,8 @@ export interface PinballPart {
 }
 
 export interface GroundItem {
-  kind: "weapon" | "gear" | "potion" | "card";
-  id: string; // WeaponId | GearSlot | PotionId | CardId
+  kind: "weapon" | "gear" | "potion" | "card" | "coin";
+  id: string; // WeaponId | GearSlot | PotionId | CardId | "coin"
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -344,6 +344,8 @@ export interface GroundItem {
   durability?: number;
   /** Set on a just-dropped weapon: not grabbable until the player steps away. */
   blockedUntilAway?: boolean;
+  /** Gold a coin drop is worth (kind === "coin"). */
+  value?: number;
 }
 
 export interface Projectile {

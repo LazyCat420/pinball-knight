@@ -397,10 +397,25 @@ describe("openLaunchTargets (A1) — launch parts break through into new space",
     expect(openLaunchTargets(g, parts, torches, mulberry32(1), 4)).toBe(0);
   });
 
-  it("respects the budget", () => {
+  it("the invariant fix ignores the budget (a boost-into-wall is always resolved)", () => {
+    // budget 0 still cracks an offender's terminal — the invariant is not optional
     const g = grid(10, 8, twoCorridors());
     const parts = [{ i: 3, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
-    expect(openLaunchTargets(g, parts, [], mulberry32(1), 0)).toBe(0);
+    expect(openLaunchTargets(g, parts, [], mulberry32(1), 0)).toBe(1);
+    for (const [di, dj] of band) expect(at(g, 4 + di, 2 + dj)).toBe(T_CRACKED);
+  });
+
+  it("the budget caps the PAYOFF cracks on healthy launches", () => {
+    // corridor A cols 2-5 (runway) | wall cols 6,7 | corridor B cols 8,9 — a booster
+    // at (2,2) has runway 3 (healthy), so cracking its far terminal is pure payoff.
+    const healthy = (): Array<[number, number]> => {
+      const f: Array<[number, number]> = [];
+      for (const j of [2, 3]) for (const i of [2, 3, 4, 5, 8, 9]) f.push([i, j]);
+      return f;
+    };
+    const parts = () => [{ i: 2, j: 2, kind: "booster" as const, dirI: 1, dirJ: 0, dir2I: 0, dir2J: 0 }];
+    expect(openLaunchTargets(grid(12, 8, healthy()), parts(), [], mulberry32(1), 0)).toBe(0); // no payoff budget
+    expect(openLaunchTargets(grid(12, 8, healthy()), parts(), [], mulberry32(1), 1)).toBe(1); // one payoff crack
   });
 
   it("integrated: every band (crack + break-through) stays even-aligned 2×2 off the shell", () => {
@@ -408,7 +423,7 @@ describe("openLaunchTargets (A1) — launch parts break through into new space",
       const raw = generateMaze(14, 11, mulberry32(seed));
       crackSecretWalls(raw, mulberry32(seed + 2), 3);
       const g = thickenWalls(raw);
-      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, [], { launchBreaks: 4 });
+      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, [], { launchBreaks: 6 });
       let cracked = 0;
       for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (at(g, i, j) === T_CRACKED) cracked++;
       // handle count × 4 == total cracked tiles → every band is a clean 2×2
@@ -420,6 +435,32 @@ describe("openLaunchTargets (A1) — launch parts break through into new space",
         expect(s.j).toBeGreaterThanOrEqual(2);
         expect(s.i + 1).toBeLessThanOrEqual(g.w - 2); // never the outer shell
         expect(s.j + 1).toBeLessThanOrEqual(g.h - 2);
+      }
+    }
+  });
+
+  it("INVARIANT: no launch part ever fires into an unbreakable wall (open runway OR a cracked terminal)", () => {
+    const T_STAIRS_V = T_STAIRS;
+    const launchKinds = new Set(["ramp", "booster", "spring", "slingshot", "flipper"]);
+    for (const seed of [3, 7, 19, 33, 41, 88, 129, 200]) {
+      const raw = generateMaze(14, 11, mulberry32(seed));
+      crackSecretWalls(raw, mulberry32(seed + 2), 3);
+      const g = thickenWalls(raw);
+      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, [], { launchBreaks: 6 });
+      for (const p of plan.parts) {
+        if (!launchKinds.has(p.kind) || Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
+        // walk the fire direction: it must reach MIN_RUNWAY floor, or hit a
+        // BREAKABLE (cracked) wall — never a plain T_WALL up close.
+        let runway = 0;
+        let obstruction = T_FLOOR;
+        for (let s = 1; s <= 6; s++) {
+          const t = at(g, p.i + p.dirI * s, p.j + p.dirJ * s);
+          if (t === T_FLOOR || t === T_STAIRS_V) { runway++; continue; }
+          obstruction = t;
+          break;
+        }
+        const ok = runway >= 3 || obstruction === T_CRACKED || obstruction === T_FLOOR;
+        expect(ok, `${p.kind}@${p.i},${p.j} dir ${p.dirI},${p.dirJ} runway=${runway} hits ${obstruction} (0=wall)`).toBe(true);
       }
     }
   });

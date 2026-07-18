@@ -2150,6 +2150,21 @@ function goldIdolItem(): FramePaint {
   };
 }
 
+/** A little pile of gold coins — the kill drop. Warm gold (torch ramp) so it
+ * glints and blooms, distinct from the taller idol. */
+function coinItem(): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 98, 14);
+    ell(ctx, 66, 96, 5, 2.5, F(16)); // a spilled coin at the base
+    ell(ctx, 64, 94, 13, 6, F(16)); // lower coin edge (mid gold)
+    ell(ctx, 62, 86, 14, 7, F(16)); // upper coin edge
+    ell(ctx, 62, 85, 11, 5, F(18)); // upper coin face (hot gold)
+    line(ctx, [[57, 84], [63, 88]], 2, F(22)); // rim glint
+    ell(ctx, 60, 84, 1.6, 1.6, F(22)); // hot spark — blooms
+    celShade(ctx);
+  };
+}
+
 /** Ground-item art, keyed by weapon id / gear slot / potion id. */
 /** A dropped CARD — a standing tarot-ish card with a rarity-coloured border
  * and centre gem, so its rarity reads at a glance on the floor. */
@@ -2193,6 +2208,7 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   haste: potionItem("#6fd0e8"),
   shield: potionItem("#8fc46b"),
   gold: goldIdolItem(),
+  coin: coinItem(), // the per-kill coin drop
   // The pinball power-ups — same flask, signature liquids.
   ballform: potionItem("#f0a63c"),
   freeze: potionItem("#bfe8ff"),

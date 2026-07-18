@@ -51,7 +51,7 @@ import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, setCoinDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -145,6 +145,9 @@ import {
   FIXED_STEP,
   MAX_FRAME,
   PICKUP_RANGE,
+  COIN_MAGNET_RANGE,
+  COIN_MAGNET_PULL,
+  GOLD_PER_KILL,
   DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
@@ -546,6 +549,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
   setCardRollHandler(dropCardMaybe);
+  // Every kill drops magnet-collected coins on the floor.
+  setCoinDropHandler(spawnCoin);
   // A shattered brick golem sprays ricochet shards.
   setGolemShatterHandler((x, z) => golemShards(x, z));
   // Catching the rolling merchant opens its shop.
@@ -1406,6 +1411,24 @@ function dropCardMaybe(x: number, z: number, boss: boolean): void {
   state.groundItems.push({ kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });
 }
 
+/** A kill DROPS coins — a visible gold pop the player magnet-collects. Spawned
+ * with a small random scatter + a spark so it reads as loot bursting out. Falls
+ * back to an instant credit only when there's no scene (headless). */
+function spawnCoin(x: number, z: number, value: number): void {
+  if (!state.scene) {
+    state.goldRun += value;
+    addGold(value, "dungeon-game");
+    return;
+  }
+  const cx = x + (Math.random() - 0.5) * 0.4;
+  const cz = z + (Math.random() - 0.5) * 0.4;
+  const sprite = createStaticSprite(ITEM_PAINTS.coin);
+  sprite.mesh.position.set(cx, 0.06, cz);
+  state.scene.add(sprite.mesh);
+  state.groundItems.push({ kind: "coin", id: "coin", value, x: cx, z: cz, sprite, bobPhase: Math.random() * 6 });
+  state.vfx?.sparks(cx, 0.3, cz, 0, 0, 4);
+}
+
 /** Walk over a card: socket into the active weapon if it fits + has room, else
  * stash it for the Tavern. Returns false (leave it) only if the stash is full. */
 function pickUpCard(it: GroundItem): boolean {
@@ -1452,12 +1475,22 @@ function checkPickups(): void {
   if (!p) return;
   for (let k = state.groundItems.length - 1; k >= 0; k--) {
     const it = state.groundItems[k];
-    const dist = Math.hypot(it.x - p.x, it.z - p.z);
+    let dist = Math.hypot(it.x - p.x, it.z - p.z);
 
     // A weapon you just put down: inert until you actually leave the spot.
     if (it.blockedUntilAway) {
       if (dist > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
       continue;
+    }
+    // Coins are MAGNETIC — within range they fly to the player (satisfying, and
+    // so a kill's gold is never left behind). Move it, then re-measure so the
+    // same frame can collect it once it's close.
+    if (it.kind === "coin" && dist < COIN_MAGNET_RANGE && dist > PICKUP_RANGE) {
+      it.x += (p.x - it.x) * COIN_MAGNET_PULL;
+      it.z += (p.z - it.z) * COIN_MAGNET_PULL;
+      it.sprite.mesh.position.x = it.x;
+      it.sprite.mesh.position.z = it.z;
+      dist = Math.hypot(it.x - p.x, it.z - p.z);
     }
     if (dist > PICKUP_RANGE) continue;
 
@@ -1474,6 +1507,10 @@ function checkPickups(): void {
       }
     } else if (it.kind === "card") {
       if (!pickUpCard(it)) continue; // stash full — leave the card on the floor
+    } else if (it.kind === "coin") {
+      const v = it.value ?? GOLD_PER_KILL;
+      state.goldRun += v;
+      addGold(v, "dungeon-game");
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];

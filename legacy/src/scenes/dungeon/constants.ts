@@ -932,6 +932,10 @@ export const BOOTS_SPEED_FACTOR = 1.18;
 
 /** Walking within this range of a ground item picks it up. */
 export const PICKUP_RANGE = 0.45;
+/** Coins (kill drops) are magnetic — within this range they fly to the player, */
+export const COIN_MAGNET_RANGE = 2.6;
+/** ...easing this fraction of the remaining gap toward the player each frame. */
+export const COIN_MAGNET_PULL = 0.22;
 /**
  * A weapon dropped in an exchange can't be re-grabbed until you've stepped
  * this far away from it — otherwise the drop and the pickup ping-pong while
@@ -1177,9 +1181,10 @@ export function levelConfig(level: number): LevelConfig {
     // Rooms + secrets ride depth too: deeper floors are busier theme parks.
     rooms: Math.min(ROOMS_BASE + Math.floor((l - 1) * ROOMS_PER_LEVEL), ROOMS_MAX),
     secrets: Math.min(SECRETS_BASE + Math.floor((l - 1) * SECRETS_PER_LEVEL), SECRETS_MAX),
-    // A1 break-throughs grow with depth: deeper floors turn more launch-part
-    // runways into smashable shortcuts, so the reachable map expands as you go.
-    launchBreaks: Math.min(2 + Math.floor((l - 1) / 2), 6),
+    // A1 break-through budget: funds both the safety fixes (no boost into an
+    // unbreakable wall) and the payoff cracks (a lane that punches through).
+    // Grows with depth so deeper floors expand more as you smash outward.
+    launchBreaks: Math.min(5 + Math.floor((l - 1) / 2), 10),
   };
 }
 

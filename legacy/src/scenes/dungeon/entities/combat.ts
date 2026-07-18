@@ -371,6 +371,11 @@ export function setCardRollHandler(fn: (x: number, z: number, boss: boolean) => 
   onCardRoll = fn;
 }
 
+let onCoinDrop: ((x: number, z: number, value: number) => void) | null = null;
+export function setCoinDropHandler(fn: (x: number, z: number, value: number) => void): void {
+  onCoinDrop = fn;
+}
+
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
@@ -417,8 +422,15 @@ function killZombie(z: Zombie): void {
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
   onCardRoll?.(z.x, z.z, !!z.boss); // roll a modifier-card drop
-  state.goldRun += GOLD_PER_KILL;
-  addGold(GOLD_PER_KILL, "dungeon-game");
+  // Every kill DROPS coins on the floor (magnet-collected) rather than silently
+  // crediting the purse — a visible payout. Falls back to an instant credit if
+  // no drop handler is wired (e.g. a headless test harness).
+  if (onCoinDrop) {
+    onCoinDrop(z.x, z.z, GOLD_PER_KILL);
+  } else {
+    state.goldRun += GOLD_PER_KILL;
+    addGold(GOLD_PER_KILL, "dungeon-game");
+  }
   // STYLE KILL: a kill carried by pinball momentum (a ball ram, or any hit
   // landed mid-ride) pays bonus gold that scales with the live bounce combo —
   // the machine rewards playing like a ball, not walking up and stabbing.
