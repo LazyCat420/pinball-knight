@@ -20,6 +20,7 @@
  */
 import * as THREE from "three";
 import type { ActorPaints, Dir, ClipName, FramePaint } from "./cel-painter";
+import { makeReaperPaints } from "./cel-painter";
 import { PALETTE_HEX } from "./palette";
 import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW } from "../constants";
 
@@ -287,6 +288,22 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   texture.repeat.set(1 / flat.length, 1);
 
   return { texture, clips, frameCount: flat.length };
+}
+
+/**
+ * The reaper's atlas, built on FIRST USE and cached for the session.
+ *
+ * Every other actor's sheet is built up-front in core.ts's init, but the reaper
+ * appears at most once per floor and only after REAPER_AFTER seconds — most
+ * runs never see one. Building it lazily behind this accessor keeps the level
+ * boot cost unchanged and, more usefully here, means adding bespoke reaper art
+ * needs exactly one line changed at the call site instead of a new field
+ * threaded through state/init/dispose.
+ */
+let cachedReaperSheet: SpriteSheet | null = null;
+export function reaperSheet(): SpriteSheet {
+  if (!cachedReaperSheet) cachedReaperSheet = buildSpriteSheet(makeReaperPaints());
+  return cachedReaperSheet;
 }
 
 export interface ActorSprite {

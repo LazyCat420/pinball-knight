@@ -39,6 +39,7 @@ import {
   R_STEEL_DK,
   R_BLOOD,
   R_LEATHER,
+  R_BONE,
   buildSkeleton,
   legShaded,
   armShaded,
@@ -866,6 +867,17 @@ interface ZPose {
   stride: number;
   /** Extra forward lean, radians — the shamble. */
   lurch: number;
+  /**
+   * -1..1 arm swing phase. The zombie's arms used to be HARD-POSED by facing,
+   * so the walk cycle translated the body without articulating anything — a
+   * blob sliding across the floor. Feeding the rig's swing channel makes the
+   * reaching arms actually sweep; `droop` sags them further on the drag beats.
+   */
+  swing?: number;
+  /** -1..1 lateral weight-shift roll (half-cadence sway). */
+  roll?: number;
+  /** Extra downward sag on the hands, px — the dead-weight arm droop. */
+  droop?: number;
   dead?: boolean;
 }
 
@@ -888,6 +900,21 @@ export interface ZVariant {
   stump: "L" | "R" | null;
   /** A soiled bandage wrap somewhere, adds silhouette noise. */
   bandage: boolean;
+  /**
+   * Which shoulder has the BROKEN BLADE — a bone-white scapula/collarbone spur
+   * punched out through the flesh. Asymmetry is the single loudest "this thing
+   * is wrong" cue, and at ~7px wide it's one of the few details that survives
+   * the 128→52 crush. null = intact (rare; most variants get one).
+   */
+  spur: "L" | "R" | null;
+  /**
+   * Which bone-white mass is exposed. Every zombie tone lives in the 6-9 green
+   * band, so ALL of them mush into one value after the crush; a R_BONE element
+   * is the light note that separates torso from limbs from head.
+   */
+  bone: "ribs" | "spine" | "skull";
+  /** Length of the long rag trailing off the hip, px (0 = none). Drawn BEHIND. */
+  tatter: number;
   /** Per-variant jitter seed for splatter placement. */
   seed: number;
 }
@@ -898,13 +925,21 @@ function vrand(seed: number, step: number): number {
   return x - Math.floor(x);
 }
 
-/** The variant pool. A handful of distinct looks; zombies index in by seed. */
+/**
+ * The variant pool. A handful of distinct looks; zombies index in by seed.
+ *
+ * The old pool varied skin/rag INDEX and little else — and every one of those
+ * indices sits inside the same narrow rot-green band, so after the crush the
+ * five "variants" were five identical green blobs. The pool now varies the
+ * SILHOUETTE first (spur side, exposed-bone mass, trailing rag length, stump)
+ * and the hue second, so two zombies in a horde read apart at a glance.
+ */
 export const ZOMBIE_VARIANTS: ZVariant[] = [
-  { skin: 7, rag: 26, gore: 1, stump: null, bandage: false, seed: 1 },
-  { skin: 8, rag: 27, gore: 2, stump: "L", bandage: false, seed: 2 },
-  { skin: 6, rag: 2, gore: 3, stump: null, bandage: true, seed: 3 },
-  { skin: 9, rag: 28, gore: 0, stump: "R", bandage: false, seed: 4 },
-  { skin: 7, rag: 29, gore: 2, stump: null, bandage: true, seed: 5 },
+  { skin: 7, rag: 26, gore: 1, stump: null, bandage: false, spur: "R", bone: "ribs", tatter: 22, seed: 1 },
+  { skin: 8, rag: 27, gore: 2, stump: "L", bandage: false, spur: "R", bone: "skull", tatter: 0, seed: 2 },
+  { skin: 6, rag: 2, gore: 3, stump: null, bandage: true, spur: "L", bone: "spine", tatter: 30, seed: 3 },
+  { skin: 9, rag: 28, gore: 0, stump: "R", bandage: false, spur: "L", bone: "ribs", tatter: 14, seed: 4 },
+  { skin: 7, rag: 29, gore: 2, stump: null, bandage: true, spur: null, bone: "skull", tatter: 34, seed: 5 },
 ];
 
 /** Caked-blood splatter for a gorier variant — post-fill, pre-shade. */
@@ -930,17 +965,35 @@ function rags(ctx: CanvasRenderingContext2D, v: ZVariant, x: number, y: number, 
   }
 }
 
-/** Zombie skin ramp from a variant's base index (shade→mid→light, clamped). */
+/**
+ * Zombie skin ramp from a variant's base index.
+ *
+ * The old formula was `[s, s+1, s+2]` clamped to 9 — a THREE-WIDE window inside
+ * the four-entry rot band, which meant (a) very little internal contrast to
+ * survive the crush and (b) the skin:9 variant degenerating to [9,9,9], i.e. a
+ * literally flat, unshaded body. Now the ramp always spans the FULL rot band
+ * (6 → 9) and the variant only picks where the mid sits, so every zombie has
+ * real shade/light separation and the tone still differs between variants.
+ */
 function zombieRamp(v: ZVariant): Ramp {
-  const s = v.skin; // 6..9
-  return [Math.max(6, s), Math.min(9, s + 1), Math.min(9, s + 2)] as const;
+  const mid = Math.min(8, Math.max(7, v.skin)); // 7 or 8 — the variant's tone
+  return [6, mid, 9] as const;
 }
 
-/** Hunched, sunken zombie proportions — head thrust forward, narrow shoulders. */
+/**
+ * Hunched, sunken zombie proportions.
+ *
+ * Shoulders WIDENED (13→17) against a narrowed hip (8→7): the knight reads
+ * because its shoulder:hip ratio is ~1.9 and the pauldrons push it further,
+ * while the zombie's old 1.6 gave a straight-sided quad that crushed to a slab.
+ * At 17/7 the torso is a genuine wedge even at 52px. Everything else stays —
+ * in particular headY is NOT raised, because the boss scales this rig 1.6×
+ * about GROUND and a taller head would clip out of the 128px cel.
+ */
 const ZOMBIE_RIG: RigConfig = {
-  shoulderW: 13,
-  hipW: 8,
-  torsoTop: 52, // shoulders lower than the knight's (hunched)
+  shoulderW: 17,
+  hipW: 7,
+  torsoTop: 54, // shoulders lower than the knight's (hunched)
   hipY: 32,
   headY: 66,
   step: 11,
@@ -948,16 +1001,48 @@ const ZOMBIE_RIG: RigConfig = {
 };
 
 /**
- * The rotten head, drawn at the head joint. A gaunt skull-ish oval with a
- * mangy scalp, mismatched GLOWING eyes (unshaded so they bloom), and a slack
- * jaw. Faces per direction; N shows a weeping crater instead of a face.
+ * The rotten head, drawn at the head joint.
+ *
+ * REBUILT for the 128→52 crush (2026-07-18 "the zombie looks like a blob"). The
+ * old head was a plain oval plus a 4px socket and a 2.4px glow — roughly two
+ * dots of face survived the downscale, so the head read as a featureless egg.
+ * Three things fix it, all borrowed straight from the knight's helm, which is
+ * the most legible thing in the game:
+ *
+ *   1. A single HARD-BLACK VOID MASS (`{ ink: 1 }`, pure palette 1) spanning the
+ *      brow, both sockets and the open maw — ~20×16 cel px, so ~8×6 real pixels
+ *      after the crush. This is the knight's T-visor trick: one big committed
+ *      black shape beats any number of small dark features, because black
+ *      against rot-green is the highest-contrast edge on the figure. The
+ *      glowing pupils sit INSIDE it, so they read as lights in a hollow rather
+ *      than as two floating specks.
+ *   2. A HANGING SLACK JAW — a mandible plate unhinged well below the cranium.
+ *      It breaks the head's oval outline, which is what stops the silhouette
+ *      reading as "ball on a body".
+ *   3. `backlight: 30` on the cranium (the knight's helm has it) — a cool rim
+ *      on the shadow side that separates the head from the dark floor.
+ *
+ * Faces per direction; N shows a weeping crater instead of a face.
  */
 function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: boolean, v: ZVariant): void {
   const [x, y] = head;
   const skin = zombieRamp(v);
   const tilt = dir === "E" ? 0.32 : 0.14;
-  // skull — a gaunt oval, jaw dropped
-  ellShaded(ctx, x, y, 12, 13, skin, tilt);
+  // A "skull" variant wears its cranium bare — bone-white against the green
+  // body is the biggest value jump available in this palette, and it's the one
+  // light note that keeps the head from merging into the torso.
+  const cranium = v.bone === "skull" ? R_BONE : skin;
+
+  // ── hanging mandible, drawn FIRST so the cranium overlaps its hinge ──
+  // Offset forward and asymmetrically so it juts off the oval instead of
+  // sitting inside it. Slightly narrower than the cranium = reads as a jaw.
+  if (!dead) {
+    const jx = dir === "E" ? x + 6 : x + 2;
+    plateShaded(ctx, [[jx - 8, y + 4], [jx + 8, y + 4], [jx + 6, y + 18], [jx - 5, y + 20]], cranium, { backlight: 30 });
+  }
+
+  // skull — a gaunt oval
+  ellShaded(ctx, x, y, 12, 13, cranium, tilt);
   // mangy dark scalp patch
   ellShaded(ctx, x - 3, y - 8, 6, 4, skin[0], tilt, { rim: false });
 
@@ -968,7 +1053,7 @@ function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: bo
     return;
   }
 
-  const ex = dir === "E" ? x + 5 : x;
+  const ex = dir === "E" ? x + 4 : x;
   if (dead) {
     // x-ed out eyes
     figDetail(ctx, [[ex - 7, y - 4], [ex - 2, y + 1]], 2.5, 1);
@@ -977,20 +1062,27 @@ function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: bo
       figDetail(ctx, [[ex + 3, y - 4], [ex + 8, y + 1]], 2.5, 1);
       figDetail(ctx, [[ex + 8, y - 4], [ex + 3, y + 1]], 2.5, 1);
     }
-  } else {
-    // sunken eye SOCKETS (dark) with a glowing pupil inside — the socket gives
-    // the glow a rim so it doesn't float, and reads as a rotten face.
-    ellShaded(ctx, ex - 5, y - 1, 4, 4, 6, 0, { rim: false, ink: 1 });
-    figGlow(ctx, ex - 5, y - 1, 2.4, 16, 17);
-    if (dir === "S") {
-      ellShaded(ctx, ex + 5, y - 1, 3.4, 3.6, 6, 0, { rim: false, ink: 1 });
-      figGlow(ctx, ex + 5, y - 1, 1.8, 16, 17);
-    }
+    return;
   }
-  // slack jaw — a dark maw with a tooth glint
-  const jx = dir === "E" ? x + 5 : x + 1;
-  ellShaded(ctx, jx, y + 9, 5.5, 4.5, 6, tilt, { rim: false, ink: 1 });
-  figDetail(ctx, [[jx - 3, y + 7], [jx + 3, y + 7]], 1.5, 22); // teeth glint
+
+  // ── THE VOID MASS — sockets + maw as ONE pure-INK shape ──
+  // Profile shows a narrower slab (one socket, the cheek turned away); front
+  // shows the full skull-face plate. Both run brow→jawline in a single fill.
+  // Sized to leave a rim of rot-green (or bone) skull showing all the way
+  // round: a void that reaches the head's outline stops reading as a hollow
+  // face and starts reading as a bucket helm.
+  if (dir === "E") {
+    plateShaded(ctx, [[ex - 6, y - 5], [ex + 8, y - 4], [ex + 7, y + 7], [ex - 5, y + 6]], 1, { ink: 1, rim: false });
+  } else {
+    plateShaded(ctx, [[ex - 9, y - 6], [ex + 9, y - 6], [ex + 8, y + 8], [ex - 8, y + 8]], 1, { ink: 1, rim: false });
+  }
+  // Glowing pupils sunk INSIDE the void. Mismatched sizes — a symmetrical pair
+  // reads as a face, a mismatched pair reads as a ruined one.
+  figGlow(ctx, ex - 5, y - 1, 3, 16, 17);
+  if (dir === "S") figGlow(ctx, ex + 5, y - 1, 2.2, 16, 17);
+  // Upper tooth row along the void's lower lip — a solid BONE bar, not a hairline.
+  // (The old 1.5px "tooth glint" was invisible after the crush.)
+  figDetail(ctx, [[ex - 7, y + 7], [ex + 7, y + 7]], 3, R_BONE);
 }
 
 /**
@@ -1000,6 +1092,9 @@ function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: bo
  */
 function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v: ZVariant): void {
   const { bob, stride, lurch, dead } = pose;
+  const swing = pose.swing ?? 0;
+  const roll = pose.roll ?? 0;
+  const droop = pose.droop ?? 0;
   const d3 = dir as Dir3;
   const skin = zombieRamp(v);
   const dark = skin[0];
@@ -1011,7 +1106,32 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   // Lean the whole upper body forward around the feet (the shamble) — bigger in
   // profile where it reads, subtle head-on.
   const lean = (dir === "E" ? 1 : 0.45) * (0.5 + lurch * 4);
-  const sk = buildSkeleton(d3, { bob, stride, lean, crouch: dead ? 0.4 : 0 }, ZOMBIE_RIG);
+  const sk = buildSkeleton(d3, { bob, stride, lean, swing, roll, crouch: dead ? 0.4 : 0 }, ZOMBIE_RIG);
+
+  // ── the long trailing RAG, drawn BEHIND everything ──
+  // A silhouette break that costs nothing to read: a single wide strip of cloth
+  // dragging off the hip, well clear of the body outline. Deliberately ONE big
+  // tapering shape (~9px at the waist) rather than the little 5px scraps the
+  // `rags()` helper makes — those crush to nothing. It drags opposite the walk
+  // direction and lags the stride, so it also sells motion.
+  if (v.tatter > 0 && !dead) {
+    const back = dir === "E" ? -1 : 1; // profile trails behind (-x); front/back to the side
+    const len = v.tatter;
+    const sway = -stride * 4 * back; // cloth lags the leg swing
+    const hx = sk.hip[0] + back * 6;
+    const hy = sk.hip[1] - 4;
+    poly(
+      ctx,
+      [
+        [hx, hy],
+        [hx + back * 9, hy + 2],
+        [hx + back * 7 + sway, hy + len * 0.6],
+        [hx + back * 11 + sway * 1.4, hy + len],
+        [hx + back * 2 + sway, hy + len * 0.72],
+      ],
+      F(v.rag),
+    );
+  }
 
   // ── legs — bare rotten shanks in tattered trousers ──
   if (dir === "E") {
@@ -1024,37 +1144,79 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   if (dir !== "N") rags(ctx, v, CX - 2, sk.hip[1] + 8, 2); // trouser cuffs
 
   // ── torso — a hunched ribcage barrel ──
+  // `backlight: 30` (arcane mid) rims the shadow side, exactly as the knight's
+  // cuirass and helm do. It's nearly free and it's what stops the body fusing
+  // into the dark floor — a green mass on a near-black floor has almost no
+  // edge contrast without it.
   const t = zombieTorsoPts(sk, dir);
-  plateShaded(ctx, t, skin);
-  // exposed ribs on the lit side (a few clean arcs, not noise)
+  plateShaded(ctx, t, skin, { backlight: 30 });
+
+  // ── exposed BONE ──
+  // The old version drew ribs as three 1.8px arcs. At 128→52 that is 0.7 of a
+  // pixel: they vanished completely, which is a large part of why the torso
+  // crushed to a featureless quad. They're now SOLID bone-white masses in
+  // R_BONE [20,21,22] — a value family the zombie never used, and the only
+  // thing bright enough to separate the torso from the limbs after the crush.
+  zombieBone(ctx, sk, dir, v, skin);
   if (dir !== "N") {
-    const rx = dir === "E" ? sk.chest[0] + 2 : sk.chest[0] - 7;
-    for (let i = 0; i < 3; i++) {
-      const ry = sk.chest[1] + 4 + i * 6;
-      figDetail(ctx, [[rx - 6, ry], [rx + 6, ry + 1]], 1.8, skin[2]);
-    }
     // gut wound
     ellShaded(ctx, sk.chest[0] + 5, sk.hip[1] - 6, 5, 4, 11, 0, { rim: false });
-  } else {
-    figDetail(ctx, [[sk.chest[0], sk.chest[1]], [sk.chest[0] - 1, sk.hip[1]]], 3, skin[0]); // spine
   }
   if (v.bandage) limbShaded(ctx, [sk.chest[0] - 13, sk.chest[1] + 2], [sk.chest[0] + 12, sk.chest[1] + 10], 5, rag);
 
+
   // ── arms — reaching forward, grasping (the zombie shape) ──
-  const armReach = dir === "E" ? 26 : 16;
+  //
+  // These used to be pinned to hard constants per facing, which meant the walk
+  // cycle NEVER moved them: the zombie translated across the floor without
+  // articulating, the classic "sliding blob" read. They now counter-swing off
+  // the pose (`swing`, opposed left/right so it's a real contralateral gait)
+  // and sag on `droop` during the drag beats — dead weight on the end of a
+  // shoulder, not a mannequin's arms.
+  //
+  // Profile reach stays at 26: the boss scales this rig 1.6× about GROUND, and
+  // a longer forward reach pushes the claw past the right edge of the 128px
+  // cel. The front/back views have room, so they get the extra length there
+  // (16→21) plus a deeper hang, which is what breaks the torso outline head-on.
+  const armReach = dir === "E" ? 26 : 21;
   const armY = sk.chest[1] + 4;
+  const sw = swing * 7; // lead/trail offset in the swing plane
   if (dir === "E") {
-    // both arms out toward +x, one higher
-    zombieArm(ctx, [sk.chest[0] + 2, sk.chest[1]], [sk.chest[0] + armReach, armY - 6], skin, flesh, stumpR);
-    zombieArm(ctx, [sk.chest[0], sk.chest[1] + 4], [sk.chest[0] + armReach - 3, armY + 8], skin[0], flesh, stumpL);
+    // both arms out toward +x, one higher; they scissor fore/aft on the swing
+    zombieArm(ctx, [sk.chest[0] + 2, sk.chest[1]], [sk.chest[0] + armReach + sw, armY - 6 - swing * 3 + droop], skin, flesh, stumpR);
+    zombieArm(ctx, [sk.chest[0], sk.chest[1] + 4], [sk.chest[0] + armReach - 3 - sw, armY + 8 + swing * 3 + droop], skin[0], flesh, stumpL);
   } else if (dir === "S") {
     // reaching toward the camera: hands come DOWN and forward, big
-    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 4, armY + 22], skin, flesh, stumpL);
-    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 4, armY + 22], skin, flesh, stumpR);
+    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 4 - sw * 0.5, armY + 24 - sw + droop], skin, flesh, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 4 + sw * 0.5, armY + 24 + sw + droop], skin, flesh, stumpR);
   } else {
     // from behind: both droop outward
-    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 8, armY + 24], skin[0], dark, stumpL);
-    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 8, armY + 24], skin[0], dark, stumpR);
+    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 8 - sw * 0.5, armY + 26 - sw + droop], skin[0], dark, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 8 + sw * 0.5, armY + 26 + sw + droop], skin[0], dark, stumpR);
+  }
+
+  // ── the BROKEN BLADE — an asymmetric bone spur through one shoulder ──
+  //
+  // This is the single most valuable addition: it is (a) big enough to survive
+  // the crush, (b) bone-white against green, and (c) ASYMMETRIC, which is what
+  // the eye reads as "wrong" — a symmetrical figure reads as a person, a
+  // lopsided one as a corpse.
+  //
+  // Drawn AFTER the arms on purpose. Behind them it was occluded at the joint
+  // and only its outboard tip survived, which read as a little white axe head
+  // hovering next to the zombie rather than bone tearing out of a shoulder. It
+  // also overlaps well inboard of the shoulder joint for the same reason: a
+  // silhouette break has to stay visibly ATTACHED or it just looks like a prop.
+  if (v.spur && !dead && dir !== "N") {
+    // In profile the spur always goes on the BACK of the shoulder (-x). On the
+    // front side it collides with the forward-thrust head and the reaching
+    // arms; off the back it juts into empty cel where nothing competes.
+    const sd = dir === "E" ? -1 : v.spur === "L" ? -1 : 1;
+    const sx = (sd < 0 ? sk.shoulderL : sk.shoulderR)[0];
+    const sy = sk.shoulderL[1];
+    // the torn flesh it punched through — a dark blood collar at the base
+    ellShaded(ctx, sx + sd * 2, sy + 2, 7, 5, 11, 0, { rim: false });
+    plateShaded(ctx, [[sx - sd * 10, sy + 4], [sx - sd * 2, sy - 9], [sx + sd * 8, sy - 4], [sx + sd * 6, sy + 8]], R_BONE, { backlight: 30 });
   }
 
   // caked gore on the torso for the gorier variants (kept subtle after silhouette)
@@ -1062,6 +1224,49 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
 
   // ── head — thrust forward off the hunch ──
   zombieHead(ctx, sk.head, d3, !!dead, v);
+}
+
+/**
+ * The variant's exposed-bone mass on the torso — the light note in a figure
+ * that is otherwise entirely inside the rot-green 6-9 band.
+ *
+ * Every shape here is deliberately CHUNKY (>=4 cel px, mostly 6-10). Anything
+ * thinner than ~2.5 cel px is below one pixel of the 52px output grid and
+ * simply does not exist in the final sprite, which is what happened to the old
+ * 1.8px rib arcs. Three mutually-exclusive looks so variants read apart.
+ */
+function zombieBone(ctx: CanvasRenderingContext2D, sk: Skeleton, dir: Dir, v: ZVariant, skin: Ramp): void {
+  const c = sk.chest;
+  if (dir === "N") {
+    // From behind, all three variants show the spine — but "spine" shows it as
+    // a bared vertebral column in bone rather than a shaded groove.
+    if (v.bone === "spine") {
+      plateShaded(ctx, [[c[0] - 4, c[1] - 2], [c[0] + 4, c[1] - 2], [c[0] + 3, sk.hip[1]], [c[0] - 3, sk.hip[1]]], R_BONE);
+      for (let i = 0; i < 3; i++) figDetail(ctx, [[c[0] - 5, c[1] + 4 + i * 7], [c[0] + 5, c[1] + 4 + i * 7]], 2.4, skin[0]);
+    } else {
+      figDetail(ctx, [[c[0], c[1]], [c[0] - 1, sk.hip[1]]], 3, skin[0]);
+    }
+    return;
+  }
+
+  // Front / profile. Bone sits on the lit side so it catches the key light.
+  const bx = dir === "E" ? c[0] + 1 : c[0] - 6;
+  if (v.bone === "ribs") {
+    // A torn-open ribcage: one solid bone PLATE with dark gaps cut across it.
+    // Carving gaps out of a light mass survives the crush; drawing light lines
+    // on a dark mass does not (thin light strokes are the first thing to go).
+    plateShaded(ctx, [[bx - 9, c[1] + 1], [bx + 9, c[1] + 3], [bx + 7, c[1] + 21], [bx - 8, c[1] + 19]], R_BONE);
+    figDetail(ctx, [[bx - 9, c[1] + 8], [bx + 8, c[1] + 10]], 3.4, 6); // gap between ribs
+    figDetail(ctx, [[bx - 9, c[1] + 15], [bx + 8, c[1] + 17]], 3.4, 6);
+  } else if (v.bone === "spine") {
+    // A collarbone yoke — a broad bone band across the top of the chest.
+    plateShaded(ctx, [[c[0] - 14, c[1] - 2], [c[0] + 14, c[1] - 2], [c[0] + 11, c[1] + 7], [c[0] - 11, c[1] + 7]], R_BONE);
+    figDetail(ctx, [[c[0], c[1] - 2], [c[0], c[1] + 7]], 3, 6); // sternal notch
+  } else {
+    // "skull" variants carry their bone up top; the torso gets a bare sternum
+    // slab so there's still a light anchor at body height.
+    plateShaded(ctx, [[bx - 5, c[1] + 3], [bx + 5, c[1] + 3], [bx + 4, c[1] + 20], [bx - 4, c[1] + 20]], R_BONE);
+  }
 }
 
 /** A zombie arm shoulder→hand with a grasping claw or a bleeding stump. */
@@ -1075,23 +1280,33 @@ function zombieArm(ctx: CanvasRenderingContext2D, sh: Pt, hand: Pt, m: Ramp | nu
   const elbow: Pt = [(sh[0] + hand[0]) / 2 + 1, (sh[1] + hand[1]) / 2 - 2];
   limbShaded(ctx, sh, elbow, 8, m);
   limbShaded(ctx, elbow, hand, 7, m);
-  // grasping claw — three splayed fingers
-  ellShaded(ctx, hand[0], hand[1], 4, 4, handM, 0, { rim: false });
+  // Grasping claw — TWO fat splayed fingers, not three thin ones. At 1.6px the
+  // old fingers were well under one output pixel and the hand crushed to a
+  // featureless dot; at 3.6px they clear the grid and the claw actually reads
+  // as a claw. Fewer, bolder shapes is the whole lesson of the 128→52 crush.
+  ellShaded(ctx, hand[0], hand[1], 4.5, 4.5, handM, 0, { rim: false });
   const dir = Math.sign(hand[0] - sh[0]) || 1;
-  for (let i = -1; i <= 1; i++) {
-    figDetail(ctx, [[hand[0], hand[1]], [hand[0] + dir * 5, hand[1] + i * 4]], 1.6, typeof handM === "number" ? handM : handM[0]);
+  const clawInk = typeof handM === "number" ? handM : handM[0];
+  for (const i of [-1, 1]) {
+    figDetail(ctx, [[hand[0], hand[1]], [hand[0] + dir * 7, hand[1] + i * 5]], 3.6, clawInk);
   }
 }
 
-/** Hunched ribcage torso outline from the skeleton. */
+/**
+ * Hunched ribcage torso outline from the skeleton — a WEDGE, not a barrel.
+ * The old front outline was 12 half-width over a 8 half-width hip: near enough
+ * to a rectangle that it crushed to a featureless slab. Widened to 16 against
+ * the narrowed 7 hip it tapers hard, and a hard taper is legible at any
+ * resolution (it's the same trick the knight's cuirass plays at 15-over-9).
+ */
 function zombieTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
   const c = sk.chest;
   const hy = sk.hip[1] + 2;
   if (dir === "E") {
-    return [[c[0] - 8, c[1] - 6], [c[0] + 11, c[1] - 4], [c[0] + 9, hy], [c[0] - 9, hy - 2]];
+    return [[c[0] - 10, c[1] - 7], [c[0] + 13, c[1] - 4], [c[0] + 9, hy], [c[0] - 8, hy - 2]];
   }
-  const sw = 12;
-  return [[c[0] - sw, c[1] - 5], [c[0] + sw, c[1] - 5], [sk.hipR[0] + 3, hy], [sk.hipL[0] - 3, hy]];
+  const sw = 16;
+  return [[c[0] - sw, c[1] - 6], [c[0] + sw, c[1] - 6], [sk.hipR[0] + 3, hy], [sk.hipL[0] - 3, hy]];
 }
 
 function zombieFrame(dir: Dir, pose: ZPose, v: ZVariant): FramePaint {
@@ -1166,24 +1381,31 @@ function zombieDeath(v: ZVariant): FramePaint[] {
 /** Build a full zombie painter set for one cosmetic variant. */
 export function makeZombiePaints(v: ZVariant): ActorPaints {
   const dirClips = (dir: Dir, lurchBase: number, lurchWobble: number) => ({
+    // Idle breathes AND sags: the arms droop a little on the settle frame, so a
+    // standing zombie is never a completely static image.
     idle: [
-      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase }, v),
-      zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase - lurchWobble }, v),
+      zombieFrame(dir, { bob: 0, stride: 0, lurch: lurchBase, droop: 0 }, v),
+      zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase - lurchWobble, droop: 2 }, v),
     ],
     // ── WALK: an ASYMMETRIC step-drag limp (deep-research 2026-07-15: pose
     // asymmetry is what makes a shamble read as undead, not a slowed man-walk).
     // The good leg PLANTS in two quick frames; the bad leg spends four frames
     // DRAGGING to catch up while the body pitches forward over it (lurch pulse)
     // and sinks (bob) — a lopsided 6-beat instead of a metronome. ──
+    // The arms now ride the same beat: they COUNTER-swing the legs (swing is
+    // opposite in sign to stride) and DROOP hardest through the four drag
+    // frames, so the limp reads in the upper body too. Roll adds the lopsided
+    // half-cadence weight-shift onto the good leg.
     walk: [
       // good-leg step — quick, weight slams onto it
-      zombieFrame(dir, { bob: 3, stride: 1, lurch: lurchBase + 0.05 }, v),
-      zombieFrame(dir, { bob: 0.5, stride: 0.5, lurch: lurchBase }, v),
-      // bad-leg drag — slow, body pitches hard over the plant and sinks
-      zombieFrame(dir, { bob: 1.5, stride: 0.1, lurch: lurchBase + 0.08 }, v),
-      zombieFrame(dir, { bob: 3.5, stride: -0.3, lurch: lurchBase + 0.1 }, v),
-      zombieFrame(dir, { bob: 2.5, stride: -0.7, lurch: lurchBase + 0.04 }, v),
-      zombieFrame(dir, { bob: 1, stride: -1, lurch: lurchBase - 0.03 }, v),
+      zombieFrame(dir, { bob: 3, stride: 1, lurch: lurchBase + 0.05, swing: -1, roll: 1, droop: 0 }, v),
+      zombieFrame(dir, { bob: 0.5, stride: 0.5, lurch: lurchBase, swing: -0.5, roll: 0.5, droop: 1 }, v),
+      // bad-leg drag — slow, body pitches hard over the plant and sinks, and
+      // the arms hang progressively deader as the drag goes on
+      zombieFrame(dir, { bob: 1.5, stride: 0.1, lurch: lurchBase + 0.08, swing: 0.1, roll: -0.2, droop: 3 }, v),
+      zombieFrame(dir, { bob: 3.5, stride: -0.3, lurch: lurchBase + 0.1, swing: 0.45, roll: -0.6, droop: 4 }, v),
+      zombieFrame(dir, { bob: 2.5, stride: -0.7, lurch: lurchBase + 0.04, swing: 0.8, roll: -0.9, droop: 3 }, v),
+      zombieFrame(dir, { bob: 1, stride: -1, lurch: lurchBase - 0.03, swing: 1, roll: -0.5, droop: 1.5 }, v),
     ],
     death: zombieDeath(v),
   });
@@ -1366,10 +1588,13 @@ export function makeSpiderPaints(): ActorPaints {
 // feet) so it animates + dies for free, with extra bulk drawn over it.
 // ══════════════════════════════════════════════════════════════════
 
-const BRUTE_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 2, stump: null, bandage: false, seed: 9 };
+// spur: null — the brute draws its OWN bony shoulder spurs over the top of the
+// scaled body, and stacking the zombie's broken-blade under them just muddies
+// the shoulder line. It keeps the exposed ribcage, which reads huge at 1.36×.
+const BRUTE_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 2, stump: null, bandage: false, spur: null, bone: "ribs", tatter: 18, seed: 9 };
 // The overlord (boss) is the brute drawn even bigger, with a jagged bone crown
 // and blood-red glowing eyes so it reads as "the big one" at a glance.
-const BOSS_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 3, stump: null, bandage: false, seed: 13 };
+const BOSS_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 3, stump: null, bandage: false, spur: null, bone: "spine", tatter: 26, seed: 13 };
 
 /** `scale` = body size multiplier; `crowned` adds boss horns/crown + red eyes. */
 function bruteFrame(dir: Dir, pose: ZPose, scale = 1.36, crowned = false): FramePaint {
@@ -1474,7 +1699,9 @@ export function makeBossPaints(): ActorPaints {
 // sac glows so you can read the threat across a room.
 // ══════════════════════════════════════════════════════════════════
 
-const SPITTER_VARIANT: ZVariant = { skin: 8, rag: 27, gore: 1, stump: null, bandage: false, seed: 11 };
+// bone: "spine" — the collarbone yoke sits high on the chest, clear of the acid
+// sac that gets painted over the belly; an exposed ribcage would be hidden.
+const SPITTER_VARIANT: ZVariant = { skin: 8, rag: 27, gore: 1, stump: null, bandage: false, spur: "L", bone: "spine", tatter: 16, seed: 11 };
 
 /** A spit-charge pose flag rides on ZPose.lurch magnitude — big lurch = rearing. */
 function spitterFrame(dir: Dir, pose: ZPose, charging = false): FramePaint {
@@ -1664,6 +1891,162 @@ export function makeGhostPaints(): ActorPaints {
       ghostFrame(dir, { bob: 5, ripple: 3, dead: true }),
       ghostFrame(dir, { bob: 9, ripple: 5, dead: true }),
       ghostFrame(dir, { bob: 14, ripple: 7, dead: true }),
+    ],
+  });
+  return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
+}
+
+// ══════════════════════════════════════════════════════════════════
+// THE DEATH DEALER (reaper) — the last tint-only reskin. It used to be
+// the sheet-ghost dyed blood-red at REAPER_TINT and scaled up, which
+// meant the game's most dramatic beat ("it cannot be slain — take the
+// stairs") was announced by a red bedsheet.
+//
+// Bespoke now, and built around ONE silhouette idea: a tall hooded
+// column topped by a huge pale SCYTHE CRESCENT. The crescent is the
+// whole point — it's the only shape in the game that arcs across the
+// top of the cel, so the reaper is identifiable from across a room even
+// at 52px, in a way no amount of robe detail would be. The cowl carries
+// the same hard-INK void the knight's visor and the zombie's face use,
+// with two burning coals set inside it.
+//
+// Drifts rather than walks (no legs, hovering hem), so "walk" is a
+// faster hem ripple + a longer scythe sway, exactly like the ghost.
+// ══════════════════════════════════════════════════════════════════
+
+/** Robe ramp — blood shadow→mid. Darker than R_BLOOD so the crescent pops. */
+const REAPER_ROBE: Ramp = [10, 11, 12];
+
+interface RPose {
+  /** Vertical drift bob, px. */
+  bob: number;
+  /** Hem ripple phase. */
+  ripple: number;
+  /** -1..1 scythe sway — the haft rocks as it drifts. */
+  sway: number;
+  dead?: boolean;
+}
+
+/**
+ * The scythe. A long haft with a big pale crescent blade swept off the top.
+ * Drawn as two quadratics into one filled path so the crescent is a single
+ * clean shape — a stroked arc would thin out to nothing under the crush.
+ * `flip` mirrors the whole tool for the profile facing.
+ */
+function reaperScythe(ctx: CanvasRenderingContext2D, bob: number, sway: number, flip: number): void {
+  const bx = 64 + flip * 15; // haft top / blade root
+  const by = 26 + bob + sway * 3;
+  // haft — a long dark shaft running from the hem up past the shoulder
+  limbShaded(ctx, [64 + flip * 36, 114 + bob], [bx, by], 5, R_LEATHER, { rim: false });
+  // crescent blade — outer sweep out, inner sweep back, filled as one mass
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.quadraticCurveTo(bx - flip * 26, by - 22 + sway * 2, bx - flip * 52, by + 6 + sway * 3);
+  ctx.quadraticCurveTo(bx - flip * 22, by - 2 + sway, bx, by + 9);
+  ctx.closePath();
+  ctx.fillStyle = C(21); // steel light — the brightest thing on the figure
+  ctx.fill();
+  ctx.lineWidth = INK_W;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = C(19);
+  ctx.stroke();
+  // edge glint along the cutting side
+  figDetail(ctx, [[bx - flip * 6, by - 6], [bx - flip * 30, by - 8 + sway * 2], [bx - flip * 46, by + 4 + sway * 3]], 2.4, 22);
+}
+
+/** One reaper frame. */
+function reaperFrame(dir: Dir, pose: RPose): FramePaint {
+  return (ctx) => {
+    const cx = 64;
+    const crownY = 30 + pose.bob; // hovers — drawn high, room below to float
+    const shoulderY = crownY + 26;
+    const hemY = 106 + pose.bob;
+    const flip = dir === "E" ? -1 : 1; // profile carries the scythe on the far side
+
+    // Scythe first, BEHIND the robe — only the haft is occluded, and the
+    // crescent riding clear above the hood is the read we want.
+    if (!pose.dead) reaperScythe(ctx, pose.bob, pose.sway, flip);
+
+    // ── ROBE — a tall column that flares from a narrow cowl to a wide hem.
+    // The flare is the second silhouette cue: the ghost is a dome, this is a
+    // triangle, and the two never get confused even as 52px blobs.
+    const hem = ghostHem(ctx, cx, hemY, 30, pose.ripple);
+    ctx.beginPath();
+    ctx.moveTo(cx - 11, crownY + 4);
+    ctx.lineTo(cx - 21, shoulderY); // shoulder break
+    ctx.lineTo(cx - 30, hemY);
+    for (let i = hem.length - 1; i >= 0; i--) ctx.lineTo(hem[i][0], hem[i][1]);
+    ctx.lineTo(cx + 30, hemY);
+    ctx.lineTo(cx + 21, shoulderY);
+    ctx.lineTo(cx + 11, crownY + 4);
+    ctx.closePath();
+    ctx.fillStyle = C(REAPER_ROBE[0]);
+    ctx.fill();
+    ctx.lineWidth = INK_W;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = C(1);
+    ctx.stroke();
+    // lit front panel — a mid-tone slab down the left of the robe so the column
+    // has two values instead of reading as one flat cut-out
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx - 19, shoulderY);
+    ctx.lineTo(cx - 2, shoulderY + 2);
+    ctx.lineTo(cx - 4, hemY - 4);
+    ctx.lineTo(cx - 26, hemY - 2);
+    ctx.closePath();
+    ctx.fillStyle = C(REAPER_ROBE[1]);
+    ctx.fill();
+    ctx.restore();
+
+    // ── COWL — a pointed hood over a hard-INK void where a face isn't ──
+    plateShaded(ctx, [[cx - 13, crownY + 16], [cx - 9, crownY - 2], [cx, crownY - 8], [cx + 9, crownY - 2], [cx + 13, crownY + 16], [cx, crownY + 20]], REAPER_ROBE, { backlight: 30 });
+    // the void inside the hood — one committed black mass, ~20×14 cel px
+    plateShaded(ctx, [[cx - 10, crownY + 2], [cx + 10, crownY + 2], [cx + 8, crownY + 16], [cx - 8, crownY + 16]], 1, { ink: 1, rim: false });
+    if (dir !== "N" && !pose.dead) {
+      // two burning coals set deep in the cowl. Blood-light cores keep the
+      // "death dealer" read that REAPER_TINT used to carry for the whole sprite.
+      const ex = dir === "E" ? cx + 3 : cx;
+      figGlow(ctx, ex - 5, crownY + 9, 3, 12, 13);
+      figGlow(ctx, ex + 5, crownY + 9, 3, 12, 13);
+    }
+
+    // ── skeletal hand gripping the haft, drawn last so it reads as ON the shaft ──
+    if (!pose.dead) {
+      const hx = cx + flip * 24;
+      const hy = shoulderY + 16 + pose.sway * 2;
+      ellShaded(ctx, hx, hy, 5.5, 5.5, R_BONE, 0, { rim: false });
+      for (const i of [-1, 1]) figDetail(ctx, [[hx, hy], [hx + flip * 6, hy + i * 5]], 3.4, 20);
+    }
+  };
+}
+
+/**
+ * Build the reaper painter set. It is immune (combat.ts), so "death" only ever
+ * plays if something forces it — keep a spent, sinking pose so the clip exists
+ * and the animator never indexes an empty array.
+ */
+export function makeReaperPaints(): ActorPaints {
+  const dirClips = (dir: Dir) => ({
+    idle: [
+      reaperFrame(dir, { bob: 0, ripple: 0, sway: 0 }),
+      reaperFrame(dir, { bob: -2, ripple: 1.6, sway: 0.6 }),
+      reaperFrame(dir, { bob: 0, ripple: 3.1, sway: 0 }),
+      reaperFrame(dir, { bob: 2, ripple: 4.7, sway: -0.6 }),
+    ],
+    // "walk" is the advance — same hover, faster hem, harder scythe rock, so it
+    // reads as gliding at you rather than stepping.
+    walk: [
+      reaperFrame(dir, { bob: -1, ripple: 0, sway: 1 }),
+      reaperFrame(dir, { bob: 1, ripple: 2.1, sway: 0.2 }),
+      reaperFrame(dir, { bob: -1, ripple: 4.2, sway: -1 }),
+      reaperFrame(dir, { bob: 1, ripple: 6.3, sway: -0.2 }),
+    ],
+    death: [
+      reaperFrame(dir, { bob: 3, ripple: 1, sway: 0, dead: true }),
+      reaperFrame(dir, { bob: 7, ripple: 3, sway: 0, dead: true }),
+      reaperFrame(dir, { bob: 12, ripple: 5, sway: 0, dead: true }),
+      reaperFrame(dir, { bob: 18, ripple: 7, sway: 0, dead: true }),
     ],
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };

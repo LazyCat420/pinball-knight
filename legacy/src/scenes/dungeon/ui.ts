@@ -5,7 +5,7 @@
  * quantized. Styled to match the palette so they don't clash with the art.
  */
 import { state, WEAPON_SLOTS } from "./state";
-import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD } from "./constants";
+import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 import { ensurePixelFonts } from "./pixel-fonts";
 
@@ -389,7 +389,9 @@ export function updateHUD(el: HTMLDivElement): void {
     const def = GEAR[slot];
     const dur = state.gear[slot];
     if (dur === undefined) return "";
-    return def.absorb > 0 ? `${def.icon}${dur}` : `${def.icon}`;
+    // Soak gear shows its remaining durability; boots soak nothing, so show
+    // the speed bonus they actually grant instead of a bare, meaningless icon.
+    return def.absorb > 0 ? `${def.icon}${dur}` : `${def.icon}+${Math.round((BOOTS_SPEED_FACTOR - 1) * 100)}%`;
   }).filter(Boolean).join(" ");
 
   // Active potion buffs, with a ticking seconds countdown. Only shown while
@@ -401,7 +403,6 @@ export function updateHUD(el: HTMLDivElement): void {
   if (p && p.shieldT > 0) buffs.push(`<span style="color:#8fc46b">🛡️ SHIELD ${Math.ceil(p.shieldT)}s</span>`);
   // Ball Form drives iron/turbo/spring together — show it as one chip.
   if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🪩 BALL FORM ${Math.ceil(p.turboT)}s</span>`);
-  if (p && p.multiT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI ${Math.ceil(p.multiT)}s</span>`);
   if (p && p.curveT > 0) buffs.push(`<span style="color:#6fd0e8">🌀 CURVE ${Math.ceil(p.curveT)}s</span>`);
   if (p && p.magBootsT > 0) buffs.push(`<span style="color:#a83244">🧲 BOOTS ${Math.ceil(p.magBootsT)}s</span>`);
   if (state.freezeT > 0) buffs.push(`<span style="color:#bfe8ff">❄️ FROZEN ${Math.ceil(state.freezeT)}s</span>`);

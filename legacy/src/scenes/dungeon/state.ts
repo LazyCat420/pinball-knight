@@ -54,8 +54,6 @@ export interface Player extends Actor {
   turboT: number;
   /** Seconds left on Spring Legs (flat walls bounce >1). */
   springT: number;
-  /** Seconds left on Multi-Ball (two ghost knights ram alongside). */
-  multiT: number;
   /** Seconds of oil-slick grease left (no friction, dead steering). */
   oilT: number;
   /** Seconds of web-slow left (webspinner hit; any part touch clears it). */
@@ -74,6 +72,16 @@ export interface Player extends Actor {
   bladeStormT: number;
   /** Cadence timer between Blade Storm damage ticks. */
   bladeStormTickT: number;
+
+  // ── Trapdoor hatch drop ──
+  // The beat BEFORE the ride: the hatch swings wide, the knight is pulled onto
+  // it and falls through. Owns the player (like the ride) so the door animation
+  // is something you watch happen to you, not something you run out of.
+  /** -1 when not dropping, else seconds into the hatch drop. */
+  dropT: number;
+  /** Hatch centre the drop pulls toward and falls through. */
+  dropX: number;
+  dropZ: number;
 
   // ── Trapdoor coaster ride ──
   /** -1 when not riding, else seconds into the current rail ride. */
@@ -267,11 +275,19 @@ export interface Npc {
   cooldownT: number;
   /** Magician: which phase of the visit ("enter" | "trick" | "gone"). */
   phase?: string;
-  /** MERCHANT only: current slide velocity (it flees when you close in). */
+  /** MERCHANT only: current unit heading (it flees when you close in). */
   vx?: number;
   vz?: number;
   /** MERCHANT only: true once its shop has been opened this floor. */
   shopped?: boolean;
+  /**
+   * MERCHANT only: seconds left committed to the current heading after being
+   * blocked. Without this the flee vector is recomputed every tick, which
+   * overwrites the wall-bounce and makes the cart ride the wall forever.
+   */
+  dwellT?: number;
+  /** MERCHANT only: countdown to the next cart-bell ring, so it's findable. */
+  bellT?: number;
 }
 
 // ── Pinball parts (the maze/pinball-machine hybrid) ──────────────
@@ -329,6 +345,12 @@ export interface PinballPart {
   lit?: boolean;
   /** ELECTRIC only: per-plate phase offset (s) so a room pulses as a wave. */
   phase?: number;
+  /**
+   * LIT SHOT: true while the knight's momentum ray points at this part — the
+   * "shoot here now" light a real table has. Recomputed every frame by
+   * render/pinball-parts.updatePinballParts; never persisted.
+   */
+  aimed?: boolean;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }
@@ -430,7 +452,7 @@ export const state = {
   targetsHit: 0,
   /** Pinball-PART hits inside the current live bounce combo (frenzy meter). */
   partComboHits: 0,
-  /** True once this combo already paid its MULTIBALL FRENZY bonus. */
+  /** True once this combo already paid its FRENZY bonus. */
   frenzyPaid: false,
   /** Slice 5 — jackpot: bumpers on this floor, how many are lit, jackpot flash. */
   bumperTotal: 0,
@@ -446,10 +468,8 @@ export const state = {
   magicianT: 0,
   /** True once this floor's smashed-secret witch has appeared (one per floor). */
   witchSpawned: false,
-  /** Multi-Ball ghost-knight meshes while the buff runs (else null). */
-  multiMeshes: null as THREE.Mesh[] | null,
-  /** Shared ram cooldown for the multi-ball ghosts. */
-  multiRamT: 0,
+  /** One-shot teach: shown the first time you bounce off a crack too slowly. */
+  crackHintShown: false,
   /** Queued oracle-frog trail tiles, consumed a mote at a time by the loop. */
   frogTrail: [] as Array<{ x: number; z: number }>,
   frogTrailT: 0,
@@ -609,7 +629,6 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     ironT: 0,
     turboT: 0,
     springT: 0,
-    multiT: 0,
     oilT: 0,
     webbedT: 0,
     curveT: 0,
@@ -618,6 +637,9 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     magnetAuraT: 0,
     bladeStormT: 0,
     bladeStormTickT: 0,
+    dropT: -1,
+    dropX: 0,
+    dropZ: 0,
     rideT: -1,
     rideDur: 0,
     ridePts: [],
@@ -702,8 +724,6 @@ export function resetState(): void {
   state.npcs = [];
   state.magicianT = 0;
   state.witchSpawned = false;
-  state.multiMeshes = null;
-  state.multiRamT = 0;
   state.frogTrail = [];
   state.frogTrailT = 0;
   state.weaponSlots = [freshWeapon("sword"), null];

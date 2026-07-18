@@ -30,7 +30,7 @@ import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
 import { loadAtlasSheet } from "./render/atlas-loader";
-import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./render/sprite";
+import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
@@ -46,7 +46,7 @@ import { decorateMaze, widenMainArtery, type PrefabAnchor } from "./maze/decorat
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
-import { updatePlayer, resetPlayerMotion, updateMultiball, debugCurSpeed, debugWallNormal } from "./entities/player";
+import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
@@ -114,6 +114,10 @@ import {
   WEBSPIN_FROM_LEVEL,
   TARGETS_PER_FLOOR,
   TRAPDOORS_PER_FLOOR,
+  VAULT_RAMPS_PER_FLOOR,
+  BOOTS_SPEED_FACTOR,
+  MAGICIAN_FROM_LEVEL,
+  MERCHANT_SPAWN_MIN_RING,
   HAZARDS_BASE,
   HAZARDS_PER_LEVEL,
   HAZARDS_MAX,
@@ -394,7 +398,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
       return true;
     };
-    // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/multiball/…
+    // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/curveshot/…
     // without hunting for a flask). `__dungeonPotion('freeze')`.
     (window as unknown as { __dungeonPotion?: (id: string) => boolean }).__dungeonPotion = (id: string) => {
       if (!(id in POTIONS)) return false;
@@ -414,7 +418,22 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.pinballParts.map((pt) => ({ kind: pt.kind, i: pt.i, j: pt.j, x: pt.x, z: pt.z, dirX: pt.dirX, dirZ: pt.dirZ, cooldownT: pt.cooldownT }));
     // Dev: NPC positions/kinds (merchant chase + shop QA).
     (window as unknown as { __dungeonNpcs?: () => unknown }).__dungeonNpcs = () =>
-      state.npcs.map((n) => ({ kind: n.kind, x: n.x, z: n.z, shopped: !!n.shopped }));
+      state.npcs.map((n) => ({ kind: n.kind, x: n.x, z: n.z, phase: n.phase, shopped: !!n.shopped }));
+    // Dev: jump straight to a depth. The merchant, the magician and the reaper
+    // all gate on level, so a harness that can't change floors can't test them.
+    (window as unknown as { __dungeonLevel?: (n: number) => boolean }).__dungeonLevel = (n: number) => {
+      if (state.gameOver || !Number.isFinite(n) || n < 1) return false;
+      startLevel(Math.floor(n));
+      return true;
+    };
+    // Dev: summon the Magician NOW (his visit clock is 45s ± 12 — far too long
+    // to wait on to QA the room shuffle). He still bows before the trick.
+    (window as unknown as { __dungeonMagician?: () => boolean }).__dungeonMagician = () => {
+      if (state.npcs.some((n) => n.kind === "magician")) return false;
+      state.magicianT = 0;
+      state.level = Math.max(state.level, MAGICIAN_FROM_LEVEL);
+      return true;
+    };
     // Dev: force the merchant's shop open, and buy row i (shop-flow QA).
     (window as unknown as { __dungeonShop?: (buy?: number) => unknown }).__dungeonShop = (buy?: number) => {
       if (buy === undefined) openShop();
@@ -426,6 +445,9 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
     (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
       levelT: state.levelT,
+      // Where the floor began — a harness asserts NOTHING sends you back here.
+      startX: state.levelStart.x,
+      startZ: state.levelStart.z,
       hordeSize: state.levelHordeSize,
       killsThisFloor: state.kills - state.levelStartKills,
       bestCombo: state.levelBestCombo,
@@ -469,7 +491,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, rideT: p.rideT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, multiT: p.multiT, multiBalls: state.multiMeshes?.length ?? 0, curveT: p.curveT, magBootsT: p.magBootsT };
+      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, rideT: p.rideT, dropT: p.dropT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, curveT: p.curveT, magBootsT: p.magBootsT };
     };
   }
 
@@ -878,6 +900,7 @@ function startLevel(level: number): void {
     deal: theme.deal,
     targets: TARGETS_PER_FLOOR,
     trapdoors: TRAPDOORS_PER_FLOOR,
+    vaultRamps: VAULT_RAMPS_PER_FLOOR, // ramps aimed ACROSS a band, so the hop jumps the maze
     hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
     forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
     launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
@@ -1025,7 +1048,10 @@ function startLevel(level: number): void {
   // ── The ROLLING CART MERCHANT — one per floor from its depth, parked a
   // few tiles out from the start so you spot it early and give chase. ──
   if (level >= MERCHANT_FROM_LEVEL) {
-    const spot = nearestOpenTile(grid, plan.start.i, plan.start.j, 6) ?? plan.start;
+    // Genuinely out in the floor, not on the doorstep: spawning it a tile away
+    // put it inside MERCHANT_FLEE_RANGE at t=0, so it bolted before you ever
+    // saw it. Its bell (updateMerchant) is what leads you to it now.
+    const spot = nearestOpenTile(grid, plan.start.i, plan.start.j, 3, MERCHANT_SPAWN_MIN_RING) ?? plan.start;
     spawnMerchant(spot.i, spot.j);
   }
 
@@ -1146,9 +1172,17 @@ function debugTeleportToStairs(): void {
  * the debug spawner so test enemies always land on real floor, never inside a
  * wall band. Returns null if nothing walkable is close.
  */
-function nearestOpenTile(g: Grid, ci: number, cj: number, n: number): TilePos | null {
+/**
+ * The `n`-th walkable tile found scanning outward in ring shells from (ci, cj).
+ *
+ * NOTE the semantics: `n` is an ORDINAL, not a distance. Asking for n = 6 does
+ * NOT get you a tile 6 tiles out — it gets the 6th walkable tile found, which
+ * in an open area is still inside the r = 1 ring. Pass `minRing` when you
+ * actually mean "no closer than this".
+ */
+function nearestOpenTile(g: Grid, ci: number, cj: number, n: number, minRing = 1): TilePos | null {
   const found: TilePos[] = [];
-  for (let r = 1; r <= 6 && found.length < n; r++) {
+  for (let r = Math.max(1, minRing); r <= Math.max(6, minRing + 5) && found.length < n; r++) {
     for (let dj = -r; dj <= r; dj++) {
       for (let di = -r; di <= r; di++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; // ring shell only
@@ -1203,7 +1237,7 @@ function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"].forEach((id, i, arr) => {
+  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
     const a = (i / arr.length) * Math.PI * 2;
@@ -1298,7 +1332,6 @@ function onPlayerDeath(): void {
       state.weaponSlots = [freshWeapon("sword"), null];
       state.activeSlot = 0;
       state.gear = {};
-      clearMultiballs();
       resetCombatJuice();
       if (state.player) {
         Object.assign(state.player, freshPlayerFields());
@@ -1337,43 +1370,6 @@ function descend(): void {
   }
 }
 
-/** Tear down the Multi-Ball ghost knights (buff expiry / retry / exit). */
-function clearMultiballs(): void {
-  if (!state.multiMeshes) return;
-  for (const mesh of state.multiMeshes) {
-    state.scene?.remove(mesh);
-    (mesh.material as THREE.Material).dispose(); // geometry+texture are the player's, shared
-  }
-  state.multiMeshes = null;
-}
-
-/**
- * Summon the Multi-Ball ghost knights: two tinted clones of the player's
- * billboard sharing its geometry + atlas (zero GPU uploads — same trick as
- * the vfx afterimages), positioned each step by player.updateMultiball.
- */
-function summonMultiballs(): void {
-  const p = state.player;
-  if (!p || !state.scene) return;
-  clearMultiballs();
-  const src = p.sprite.mesh;
-  const meshes: THREE.Mesh[] = [];
-  for (let k = 0; k < 2; k++) {
-    const srcMat = src.material as THREE.MeshBasicMaterial;
-    const mat = srcMat.clone();
-    mat.color.setHex(0xb06fe8); // arcane violet
-    mat.opacity = 0.55;
-    mat.transparent = true;
-    mat.depthWrite = false;
-    const mesh = new THREE.Mesh(src.geometry, mat);
-    mesh.quaternion.copy(src.quaternion);
-    mesh.scale.copy(src.scale);
-    mesh.renderOrder = 9;
-    state.scene.add(mesh);
-    meshes.push(mesh);
-  }
-  state.multiMeshes = meshes;
-}
 
 /** Drop a carried weapon on the floor, durability intact, un-grabbable until you step away. */
 function dropWeapon(w: WeaponState, x: number, z: number): void {
@@ -1501,7 +1497,7 @@ function checkPickups(): void {
       // not drunk on contact. If the belt is full, drink it now so it's not lost.
       const pid = it.id as PotionId;
       if (addToBelt(pid)) {
-        showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — belt`);
+        showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — ${POTIONS[pid].description} · belt`);
       } else {
         applyPotion(pid);
       }
@@ -1515,7 +1511,10 @@ function checkPickups(): void {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
       state.gear = { ...state.gear, [slot]: def.absorb > 0 ? def.absorb : 1 };
-      showPickupNote(`${def.icon} ${def.label.toUpperCase()} equipped`);
+      // Say what it DOES: boots grant speed and soak nothing, so "equipped"
+      // alone made them look like a no-op item.
+      const gearNote = def.absorb > 0 ? `soaks ${def.absorb} damage` : `+${Math.round((BOOTS_SPEED_FACTOR - 1) * 100)}% move speed`;
+      showPickupNote(`${def.icon} ${def.label.toUpperCase()} — ${gearNote}`);
     }
     sfxPickup();
     state.hudDirty = true;
@@ -1531,12 +1530,12 @@ function checkPickups(): void {
  * good run); everything routes through applyPotion / freshWeapon on buy.
  */
 const SHOP_STOCK: ShopEntry[] = [
-  { id: "health", label: "Health", icon: "❤️", price: 12, detail: "+3 hearts" },
-  { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: "6s invuln" },
-  { id: "ballform", label: "Ball Form", icon: "🪩", price: 24, detail: "14s pinball mode" },
-  { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: "12s bending shots" },
-  { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: "18s repel/launch" },
-  { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: "12s ghost knights" },
+  // Potion rows take their blurb from POTIONS[].description — one source of truth.
+  { id: "health", label: "Health", icon: "❤️", price: 12, detail: POTIONS.health.description },
+  { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: `${POTIONS.shield.duration}s ${POTIONS.shield.description}` },
+  { id: "ballform", label: "Ball Form", icon: "🪩", price: 24, detail: `${POTIONS.ballform.duration}s ${POTIONS.ballform.description}` },
+  { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: `${POTIONS.curveshot.duration}s ${POTIONS.curveshot.description}` },
+  { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: `${POTIONS.magnetboots.duration}s ${POTIONS.magnetboots.description}` },
   { id: "mace", label: "Mace", icon: "🔨", price: 28, detail: "heavy melee" },
   { id: "gun", label: "Gun", icon: "🔫", price: 30, detail: "30 ammo" },
 ];
@@ -1636,10 +1635,6 @@ function applyPotion(id: PotionId): void {
       state.freezeT = def.duration;
       sfxFreeze();
     }
-    if (id === "multiball") {
-      p.multiT = def.duration;
-      summonMultiballs();
-    }
     if (id === "curveshot") p.curveT = def.duration;
     if (id === "magnetboots") p.magBootsT = def.duration;
   }
@@ -1655,7 +1650,7 @@ function applyPotion(id: PotionId): void {
     faceOnSpecial();
     if (def.duration > 0 || def.gold) rippleGlobe("mana");
   }
-  showPickupNote(`${def.icon} ${def.label.toUpperCase()}${def.gold ? ` +${def.gold}g` : ""}`);
+  showPickupNote(`${def.icon} ${def.label.toUpperCase()} — ${def.description}${def.gold ? ` +${def.gold}g` : ""}`);
   state.hudDirty = true;
 }
 
@@ -1666,15 +1661,19 @@ function applyPotion(id: PotionId): void {
  */
 function spawnReaper(): void {
   const p = state.player;
-  if (!p || !state.ghostSheet) return;
+  if (!p) return; // no longer gated on the ghost sheet — the reaper has its own
   state.reaperOut = true;
   const a = Math.random() * Math.PI * 2;
-  const reaper = makeZombie(state.ghostSheet, p.x + Math.cos(a) * 12, p.z + Math.sin(a) * 12, REAPER_SPEED_BASE, {
+  // Bespoke hooded-and-scythed art (was the ghost sheet dyed with REAPER_TINT).
+  const reaper = makeZombie(reaperSheet(), p.x + Math.cos(a) * 12, p.z + Math.sin(a) * 12, REAPER_SPEED_BASE, {
     kind: "reaper",
     hp: REAPER_HP,
   });
   reaper.aggro = true;
-  reaper.baseTint = REAPER_TINT; // telegraph/flash clears restore blood-red, not white
+  // The sheet is already painted blood-dark, so the tint is now only a faint
+  // wash — enough that telegraph/flash clears restore the reaper's colour
+  // rather than white, without washing the new art flat.
+  reaper.baseTint = REAPER_TINT;
   reaper.sprite.setTint(REAPER_TINT);
   reaper.sprite.mesh.scale.multiplyScalar(REAPER_SCALE);
   state.zombies.push(reaper);
@@ -1726,7 +1725,7 @@ function simulate(dt: number): void {
 
   // ── Buff timers tick down; HUD refreshes each whole second so the
   // countdown reads live, plus once more when a buff ends. ──
-  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "multiT", "curveT", "magBootsT"] as const) {
+  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "curveT", "magBootsT"] as const) {
     const before = p[key];
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
@@ -1734,8 +1733,6 @@ function simulate(dt: number): void {
   }
   // Active skills: mana regen, cooldowns, magnet pull + blade-storm ticks.
   tickAbilities(dt);
-  // Multi-Ball expiry: the ghost knights dissolve with the buff.
-  if (p.multiT <= 0 && state.multiMeshes) clearMultiballs();
   // World freeze (freeze-ray potion) ticks here; zombies/gloves read it.
   if (state.freezeT > 0) {
     state.freezeT = Math.max(0, state.freezeT - dt);
@@ -1768,7 +1765,6 @@ function simulate(dt: number): void {
   updateProjectiles(dt);
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
-  updateMultiball(dt); // ghost knights flank + ram while the buff runs
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
   checkPickups();

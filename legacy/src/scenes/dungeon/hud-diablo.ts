@@ -452,14 +452,18 @@ function activeBuffs(): BuffView[] {
   const add = (t: number, key: string, icon: string, color: string, max: number, label: string): void => {
     if (t > 0.05) out.push({ key, icon, color, t, max, label });
   };
-  add(p.rageT, "rage", "💢", "#d97b29", POTIONS.rage.duration, "Rage · 2× damage");
-  add(p.hasteT, "haste", "⚡", "#6fd0e8", POTIONS.haste.duration, "Haste · faster");
-  add(p.shieldT, "shield", "🛡️", "#8fc46b", POTIONS.shield.duration, "Shield · invulnerable");
-  add(p.turboT, "ball", "🪩", "#f0a63c", POTIONS.ballform.duration, "Ball Form · ram + steer + spring");
-  add(p.multiT, "multi", "🔮", "#b06fe8", POTIONS.multiball.duration, "Multi-Ball · ghost knights");
+  add(p.rageT, "rage", "💢", "#d97b29", POTIONS.rage.duration, `Rage · ${POTIONS.rage.description}`);
+  add(p.hasteT, "haste", "⚡", "#6fd0e8", POTIONS.haste.duration, `Haste · ${POTIONS.haste.description}`);
+  add(p.shieldT, "shield", "🛡️", "#8fc46b", POTIONS.shield.duration, `Shield · ${POTIONS.shield.description}`);
+  // Ball Form sets ironT+turboT+springT together, but the Speed Witch and the
+  // flipper-charge ability raise turboT ALONE — keying the tile off turboT
+  // labelled both of those "Ball Form". Require the ram core, and give the
+  // speed-only case its own honest tile.
+  add(p.ironT, "ball", "🪩", "#f0a63c", POTIONS.ballform.duration, `Ball Form · ${POTIONS.ballform.description}`);
+  if (p.ironT <= 0.05) add(p.turboT, "turbo", "💨", "#6fd0e8", POTIONS.ballform.duration, "Turbo · frictionless momentum");
   add(state.freezeT, "freeze", "❄️", "#bfe8ff", POTIONS.freeze.duration, "Freeze · the horde is stopped");
-  add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, "Curve Shot · bending projectiles");
-  add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, "Magnet Boots · repel + strip launch");
+  add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, `Curve Shot · ${POTIONS.curveshot.description}`);
+  add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, `Magnet Boots · ${POTIONS.magnetboots.description}`);
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");
   add(p.bladeStormT, "blades", "🌪️", "#d95763", 5, "Blade Storm · orbiting blades");
   add(p.magnetAuraT, "aura", "🧲", "#6fd0e8", 4, "Magnet Aura · pulling loot");

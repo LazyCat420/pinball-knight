@@ -265,6 +265,19 @@ export function sfxRibbit(): void {
   beep(c, { type: "sawtooth", f0: 90, f1: 140, dur: 0.18, vol: 0.14, at: 0.14 });
 }
 
+/**
+ * The rolling cart's bell — two bright struck tones. `near` is 0..1 by
+ * proximity, so a distant cart is a faint hint and a close one is a beacon;
+ * it's the only way to know the merchant is on the floor at all.
+ */
+export function sfxCartBell(near: number): void {
+  const c = ctx();
+  if (!c) return;
+  const vol = 0.03 + 0.11 * Math.max(0, Math.min(1, near));
+  beep(c, { type: "triangle", f0: 1568, f1: 1480, dur: 0.16, vol });
+  beep(c, { type: "triangle", f0: 2093, f1: 1976, dur: 0.22, vol: vol * 0.7, at: 0.11 });
+}
+
 export function sfxGameOver(): void {
   const c = ctx();
   if (!c) return;

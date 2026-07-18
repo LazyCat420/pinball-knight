@@ -67,6 +67,19 @@ export interface PinballPartSpot extends TilePos {
   /** TARGET BANK (Slice 6): a drop-target's bank id + its order in the bank. */
   bank?: number;
   seq?: number;
+  /**
+   * VAULT RAMP: this part is aimed at a wall BAND ON PURPOSE, to fling the
+   * knight over it into the corridor beyond. The launch-target invariant below
+   * must leave it alone — its "orphan" look (no runway, fires into rock) is
+   * exactly the feature.
+   */
+  vault?: boolean;
+  /**
+   * CHAIN LINK: placed BECAUSE another part's exit ray arrives here, so the
+   * anti-clustering spacing rule deliberately does not apply to it. Chains are
+   * what make a floor a table instead of a scatter — see CHAIN_LINKS.
+   */
+  chain?: boolean;
 }
 
 /**
@@ -134,7 +147,7 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // from the pool. Health is guaranteed so the run stays survivable; the rest add
 // "do I chug it now?" decisions. Ids → POTIONS (the consolidated pinball kit:
 // ball form / freeze / multi-ball, alongside the combat buffs).
-const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
+const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {
@@ -189,6 +202,63 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 /** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
 const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
+/**
+ * CHAIN SEEDING — the thing that makes a floor read as a pinball TABLE rather
+ * than a maze with parts sprinkled in it.
+ *
+ * The corridor deal below is spacing-driven: it rejects any candidate within
+ * Manhattan 3 of an existing part, and validates launchers only NEGATIVELY
+ * ("don't fire into rock"). Nothing was ever placed BECAUSE another part threw
+ * the knight at it — which is exactly backwards from a real table, where a
+ * slingshot exists to feed the ramp that feeds the orbit.
+ *
+ * A chain fixes that: place a launcher, follow its exit ray to where the
+ * knight would actually arrive, and put the next part THERE — then repeat from
+ * that part's own exit. Each link is chosen to match the topology it lands on
+ * (junction → bumper, corner → deflector, dead end → spring, straight → ramp),
+ * so chains satisfy exactly the same placement invariants everything else does;
+ * the only rule they're exempt from is the anti-clustering spacing, which is
+ * the whole point.
+ */
+const CHAIN_LINKS = 4; // parts per chain, including the seed launcher
+const CHAIN_TRIES = 40; // seed candidates to try before giving up on a chain
+const CHAINS_DEFAULT = 2; // shot chains seeded per floor, before the spacing deal fills in
+
+/** The last floor tile travelling (di,dj) from (i,j) before a wall stops you. */
+function runwayEnd(g: Grid, i: number, j: number, di: number, dj: number, max = 12): TilePos | null {
+  let last: TilePos | null = null;
+  for (let d = 1; d <= max; d++) {
+    const ni = i + di * d;
+    const nj = j + dj * d;
+    if (at(g, ni, nj) !== T_FLOOR) break;
+    last = { i: ni, j: nj };
+  }
+  return last;
+}
+
+/** Vault-ramp geometry (kept local like MIN_RUNWAY — this module takes no constants). */
+const VAULT_MAX_BAND = 2; // thickest wall band a vault aims across (thickened bands are 2)
+const VAULT_MAX_REACH = 4; // landing must sit inside this many tiles — under RAMP_HOP_MAX (4.75)
+const VAULT_RAMPS_DEFAULT = 3;
+
+/**
+ * Is there a wall BAND directly ahead of (i, j) that the ramp hop can clear —
+ * i.e. 1..VAULT_MAX_BAND wall tiles backed by real corridor floor, with the
+ * landing tile inside RAMP_HOP_MAX of the pad? This is the geometry a vault
+ * ramp needs, and the exact geometry the ordinary "straight" placement can
+ * never produce.
+ */
+function crossableBand(g: Grid, i: number, j: number, di: number, dj: number): boolean {
+  let d = 1;
+  // Walk to the near face of the band — the pad must be right up against it,
+  // or the knight lands short and eats the wall.
+  if (at(g, i + di, j + dj) !== T_WALL) return false;
+  while (d <= VAULT_MAX_BAND && at(g, i + di * d, j + dj * d) === T_WALL) d++;
+  if (d > VAULT_MAX_BAND) return false; // too thick to fly — that's a mountain
+  // One tile of genuine corridor past the band, and within the hop's reach.
+  if (d + 1 > VAULT_MAX_REACH) return false;
+  return at(g, i + di * d, j + dj * d) === T_FLOOR && at(g, i + di * (d + 1), j + dj * (d + 1)) === T_FLOOR;
+}
 
 /**
  * CORRIDOR-WIDEN (the "launch highway" — kills the uniform 2-wide box-maze
@@ -367,7 +437,7 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
   // Fix the offenders FIRST (short runway ending at a wall) so they win the crack
   // budget, then do the payoff cracks for the healthy ones. Two ordered passes.
   const launch = shuffled(
-    parts.filter((p) => LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
+    parts.filter((p) => !p.vault && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
     rng,
   );
   const remove = new Set<PinballPartSpot>();
@@ -517,8 +587,9 @@ function furnishRooms(
     if (kind === "bumper") {
       // FILL the chamber with a staggered GRID of bumpers (every ~3 tiles) so a
       // big room is a real bumper FIELD, not five lonely pins in a bare hall.
-      // Alternate rows offset half a step for the diamond/quincunx read, and a
-      // few pins swap to slingshots for variety. Density scales with area.
+      // Alternate rows offset half a step for the diamond/quincunx read.
+      // Density scales with area. (Bumpers only: a slingshot needs a straight
+      // corridor to fire along, and an open chamber tile has no such lane.)
       const STEP = 3;
       const m = 1; // margin from the walls
       let row = 0;
@@ -622,7 +693,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -748,6 +819,85 @@ export function decorateMaze(
   // busy floor. The spacing check keeps hazards off the dealt parts anyway.
   const hazPoolStraight = byTopo.straight.slice();
   const hazPoolOpen = [...byTopo.junction, ...byTopo.straight];
+  const chainCount = extras.chains ?? CHAINS_DEFAULT;
+  // ── CHAIN SEEDING (see the header above): lay down shot CHAINS first, so
+  // the floor has real "this feeds that" structure before the spacing-driven
+  // deal fills in around them. Chains draw on the same corridor budget, so a
+  // floor doesn't get busier — it gets more deliberate. ──
+  const chainOk = (c: TilePos): boolean =>
+    !(c.i === stairs.i && c.j === stairs.j) &&
+    Math.abs(c.i - start.i) + Math.abs(c.j - start.j) >= 4 &&
+    !items.some((it) => it.i === c.i && it.j === c.j) &&
+    !inRoom(c) &&
+    !parts.some((q) => q.i === c.i && q.j === c.j);
+
+  for (let chain = 0; chain < chainCount && parts.length < corridorBudget; chain++) {
+    // Seed on a straight run with genuine runway — the chain's opening shot.
+    let cur: TilePos | null = null;
+    let dir: { di: number; dj: number } | null = null;
+    for (let t = 0; t < CHAIN_TRIES && !cur; t++) {
+      const cand = byTopo.straight[Math.floor(rng() * byTopo.straight.length)];
+      if (!cand || !chainOk(cand)) continue;
+      for (const [di, dj] of shuffled([[cand.dirI, cand.dirJ], [-cand.dirI, -cand.dirJ]] as Array<[number, number]>, rng)) {
+        if (launchRunway(g, cand.i, cand.j, di, dj) >= MIN_RUNWAY) {
+          cur = { i: cand.i, j: cand.j };
+          dir = { di, dj };
+          break;
+        }
+      }
+    }
+    if (!cur || !dir) break; // this floor has no room for chains
+
+    // Non-null working copies: `dir` is reassigned each link, which loses TS's
+    // narrowing on the outer nullable.
+    let at_ = { i: cur.i, j: cur.j };
+    let di = dir.di;
+    let dj = dir.dj;
+    parts.push({ kind: "ramp", i: at_.i, j: at_.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, chain: true });
+
+    for (let link = 1; link < CHAIN_LINKS && parts.length < corridorBudget; link++) {
+      // Where does the knight actually ARRIVE? Put the next part THERE — that
+      // single question is the whole difference between a table and a scatter.
+      const land = runwayEnd(g, at_.i, at_.j, di, dj);
+      if (!land || !chainOk(land)) break;
+      const topo = classifyTopology(g, land, rng);
+      if (!topo) break;
+
+      if (topo.topo === "junction") {
+        // A crossing: a bumper to carom off, then leave down any other leg.
+        parts.push({ kind: "bumper", i: land.i, j: land.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, chain: true });
+        const legs = shuffled(
+          WALL_SIDES.filter(([li, lj]) => at(g, land.i + li, land.j + lj) === T_FLOOR && !(li === -di && lj === -dj)) as Array<[number, number]>,
+          rng,
+        );
+        if (legs.length === 0) break;
+        di = legs[0][0];
+        dj = legs[0][1];
+      } else if (topo.topo === "corner") {
+        // A bank shot: the deflector sweeps you round onto its other leg.
+        parts.push({ kind: "deflector", i: land.i, j: land.j, dirI: topo.dirI, dirJ: topo.dirJ, dir2I: topo.dir2I, dir2J: topo.dir2J, chain: true });
+        const backwards = topo.dirI === -di && topo.dirJ === -dj;
+        const outI = backwards ? topo.dir2I : topo.dirI;
+        const outJ = backwards ? topo.dir2J : topo.dirJ;
+        di = outI;
+        dj = outJ;
+      } else if (topo.topo === "deadend") {
+        // The chain terminates in a plunger that fires you back down it.
+        parts.push({ kind: "spring", i: land.i, j: land.j, dirI: topo.dirI, dirJ: topo.dirJ, dir2I: 0, dir2J: 0, chain: true });
+        break;
+      } else {
+        // A straight: a ramp keeps the run going down the same lane — but ONLY
+        // with genuine runway left. The landing tile is by definition the last
+        // floor before something stopped us, so aiming a launcher onward from
+        // it is exactly the orphan case the no-orphan invariant forbids.
+        if (!(topo.dirI === di && topo.dirJ === dj) && !(topo.dirI === -di && topo.dirJ === -dj)) break;
+        if (launchRunway(g, land.i, land.j, di, dj) < MIN_RUNWAY) break;
+        parts.push({ kind: "ramp", i: land.i, j: land.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, chain: true });
+      }
+      at_ = { i: land.i, j: land.j };
+    }
+  }
+
   // Deal kinds round-robin (bumpers weighted double — they're the signature
   // part; the Wave-A kinds are threaded through so every floor tastes them)
   // until the budget is spent or every pool is dry. Themes may pass their own
@@ -781,6 +931,51 @@ export function decorateMaze(
       break;
     }
     dry = placed ? 0 : dry + 1;
+  }
+
+  // ── VAULT RAMPS: the ramps that actually jump the maze.
+  //
+  // Every other ramp sits on a "straight" tile, which by definition aims ALONG
+  // the corridor — and the launch-target invariant then guarantees open runway
+  // on that exact ray. So the hop's landing scan always found floor on its first
+  // sample and set down in the same lane: the ramp could never clear a wall,
+  // because there was never a wall in front of it. These are dealt the opposite
+  // way — aimed square at a band with real corridor on the far side, close
+  // enough that RAMP_HOP_MAX reaches it. Marked `vault` so openLaunchTargets
+  // doesn't "repair" them back into ordinary dash pads. ──
+  const vaultRamps = extras.vaultRamps ?? VAULT_RAMPS_DEFAULT;
+  {
+    const vaultSpots = shuffled(floors, rng);
+    let placedVaults = 0;
+    for (const c of vaultSpots) {
+      if (placedVaults >= vaultRamps) break;
+      if (Math.abs(c.i - start.i) + Math.abs(c.j - start.j) < 4) continue;
+      if (c.i === stairs.i && c.j === stairs.j) continue;
+      if (inRoom(c)) continue;
+      if (parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 3)) continue;
+      // Aim at whichever cardinal has a crossable band. Shuffle so a floor
+      // doesn't end up with every vault pointing the same way.
+      const dirs = shuffled([...CARDINALS] as Array<readonly [number, number]>, rng);
+      let aimed: { di: number; dj: number } | null = null;
+      for (const [di, dj] of dirs) {
+        if (crossableBand(g, c.i, c.j, di, dj)) {
+          aimed = { di, dj };
+          break;
+        }
+      }
+      if (!aimed) continue;
+      parts.push({
+        kind: "ramp",
+        i: c.i,
+        j: c.j,
+        dirI: aimed.di,
+        dirJ: aimed.dj,
+        dir2I: 0,
+        dir2J: 0,
+        vault: true,
+      });
+      placedVaults++;
+    }
   }
 
   // ── BOOSTER LANES (the accelerating "highway" layer): lay rows of 2-3 booster

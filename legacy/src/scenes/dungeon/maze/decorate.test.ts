@@ -84,6 +84,18 @@ describe("decorateMaze", () => {
         // dead end — one way out, and the launcher aims along it
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
+      } else if (part.vault) {
+        // VAULT RAMP — the deliberate exception: aimed square at a wall BAND
+        // with real corridor on the far side, so the hop clears the maze.
+        // Every other ramp aims ALONG its lane, which is why the ramp hop
+        // could never jump a wall before these existed.
+        expect(part.kind).toBe("ramp");
+        expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
+        expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
+        // …and a landing exists within the hop's reach past the band.
+        let d = 1;
+        while (d <= 2 && at(g, part.i + part.dirI * d, part.j + part.dirJ * d) === T_WALL) d++;
+        expect(at(g, part.i + part.dirI * d, part.j + part.dirJ * d)).toBe(T_FLOOR);
       } else if (part.kind === "ramp" || part.kind === "oil" || part.kind === "slingshot") {
         // straight corridor — two OPPOSITE open sides, lane parts along it
         // (sum-to-zero sidesteps the -0 !== +0 Object.is quirk)
@@ -139,9 +151,13 @@ describe("decorateMaze", () => {
     // Spacing: DEALT machine parts never bunch into one intersection. Targets,
     // trapdoors and floor hazards are separate layers with their own rules.
     const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
-    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
-    for (const a of dealt) {
-      for (const b of dealt) {
+    // Vault ramps are their own layer too (aimed across a band, off-budget).
+    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
+    // Chain links are placed ON each other's shot lines on purpose, so the
+    // anti-clustering rule is exactly what they're exempt from.
+    const spaced = dealt.filter((p) => !p.chain);
+    for (const a of spaced) {
+      for (const b of spaced) {
         if (a === b) continue;
         expect(Math.abs(a.i - b.i) + Math.abs(a.j - b.j)).toBeGreaterThanOrEqual(3);
       }
@@ -160,6 +176,9 @@ describe("decorateMaze", () => {
     };
     for (const p of plan.parts) {
       if (p.kind !== "ramp" && p.kind !== "slingshot") continue;
+      // Vault ramps aim SQUARE AT a band on purpose (the hop carries you over
+      // it), so "no runway" is their defining feature, not an orphan bug.
+      if (p.vault) continue;
       const open = openSides(g, p.i, p.j);
       // only true straight corridors (2 OPPOSITE open sides) — the dealt launch parts
       if (open.length !== 2 || open[0][0] + open[1][0] !== 0 || open[0][1] + open[1][1] !== 0) continue;
@@ -172,7 +191,8 @@ describe("decorateMaze", () => {
     // Targets, trapdoors + hazards are objective/traversal layers OVER the
     // budget; the dealt machine parts themselves must stay inside it.
     const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster"]);
-    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind));
+    // Vault ramps are their own layer too (aimed across a band, off-budget).
+    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
     expect(dealt.length).toBeLessThanOrEqual(6);
     // Scattered break-them-all targets stay within budget; the Slice 6 drop-target
     // BANK is a separate layer (bank !== undefined) and doesn't count against it.

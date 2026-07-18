@@ -16,7 +16,7 @@ import { createStaticSprite } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
 import { sfxBreak, sfxHeavy } from "./audio";
-import { WITCH_CHANCE } from "./constants";
+import { WITCH_CHANCE, WALL_BREAK_DEPTH } from "./constants";
 import { spawnWitch } from "./entities/npc";
 
 /** What tumbles out of the masonry: the gold idol plus one random power-up. */
@@ -94,16 +94,36 @@ const HIDDEN = new THREE.Matrix4().compose(
 );
 
 /**
- * True if tile (i,j) is an ordinary wall a fast enough player may KOOL-AID
- * through: solid, not a border tile, not a cracked secret band (those have
- * their own richer smash), and — travelling (ddx,ddz) — with FLOOR one tile
- * beyond, so a smash always breaks INTO a corridor, never into dead rock or
- * through the outer shell. This keeps the maze solvable + bounded.
+ * How many consecutive ordinary wall tiles a KOOL-AID smash would have to open
+ * at (i,j) travelling (ddx,ddz) before hitting corridor — 0 if this isn't a
+ * legal smash at all.
+ *
+ * This used to probe exactly ONE tile beyond, which quietly made the whole
+ * mechanic unreachable: thickenWalls upscales every band to TWO tiles, so the
+ * tile past a wall is almost always more wall, and the check failed everywhere
+ * except where a band had already been thinned by room-carving or the artery
+ * widener. Probing the full band is what makes "smash through anything at full
+ * speed" a real move. Still never the shell, and still only INTO a corridor —
+ * the maze stays solvable and bounded.
  */
+export function wallRunDepth(g: Grid, i: number, j: number, ddx: number, ddz: number): number {
+  if (i <= 0 || j <= 0 || i >= g.w - 1 || j >= g.h - 1) return 0; // never the shell
+  if (at(g, i, j) !== T_WALL) return 0; // floor/stairs/cracked handled elsewhere
+  const si = Math.sign(ddx);
+  const sj = Math.sign(ddz);
+  for (let d = 1; d <= WALL_BREAK_DEPTH; d++) {
+    const ni = i + si * d;
+    const nj = j + sj * d;
+    if (ni <= 0 || nj <= 0 || ni >= g.w - 1 || nj >= g.h - 1) return 0; // would breach the shell
+    if (at(g, ni, nj) === T_WALL) continue; // still inside the band — keep looking
+    return isWalkable(g, ni, nj) ? d : 0; // corridor behind it → break the d tiles we crossed
+  }
+  return 0; // thicker than we're willing to punch through — that's bedrock
+}
+
+/** True if a fast enough player may KOOL-AID through the wall at (i,j). */
 export function isBreakableWall(g: Grid, i: number, j: number, ddx: number, ddz: number): boolean {
-  if (i <= 0 || j <= 0 || i >= g.w - 1 || j >= g.h - 1) return false; // never the shell
-  if (at(g, i, j) !== T_WALL) return false; // floor/stairs/cracked handled elsewhere
-  return isWalkable(g, i + Math.sign(ddx), j + Math.sign(ddz)); // open space behind it
+  return wallRunDepth(g, i, j, ddx, ddz) > 0;
 }
 
 /**

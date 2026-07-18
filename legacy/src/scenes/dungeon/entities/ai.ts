@@ -61,6 +61,33 @@ const STEPS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
+ * The UPHILL step from (i, j): the 4-neighbour with the largest distance
+ * strictly above this tile's — i.e. one step further from whatever the field
+ * was seeded on. This is how you retreat through a maze rather than away from
+ * a compass bearing: straight-line repulsion presses an agent into the nearest
+ * wall and slides it along, which is why the merchant used to ride the map's
+ * edge. Null when no neighbour is further (a dead end — you're cornered).
+ */
+export function flowAway(g: Grid, dist: Int32Array, i: number, j: number): TilePos | null {
+  const here = dist[idx(g, i, j)] ?? -1;
+  if (here < 0) return null;
+
+  let best: TilePos | null = null;
+  let bestD = here;
+  for (const [di, dj] of STEPS) {
+    const ni = i + di;
+    const nj = j + dj;
+    if (!isWalkable(g, ni, nj)) continue;
+    const d = dist[idx(g, ni, nj)];
+    if (d > bestD) {
+      bestD = d;
+      best = { i: ni, j: nj };
+    }
+  }
+  return best;
+}
+
+/**
  * The downhill step from (i, j): the 4-neighbour with the smallest distance
  * strictly below this tile's. Null at the player's own tile, on walls, and
  * anywhere unreachable. Ties break in fixed N/E/S/W order so movement is

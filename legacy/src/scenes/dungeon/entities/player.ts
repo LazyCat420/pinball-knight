@@ -32,6 +32,13 @@ import {
   AURA_TINT_COOL,
   AURA_TINT_HOT,
   AURA_HOT_CHARGE,
+  BUFF_TELL_INTERVAL,
+  TELL_TINT_RAGE,
+  TELL_TINT_HASTE,
+  TELL_TINT_SHIELD,
+  SHIELD_RING_INTERVAL,
+  SHIELD_RING_MOTES,
+  SHIELD_RING_RADIUS,
   WALLRIDE_SLIDE_BOOST,
   GRIND_SPARK_INTERVAL,
   OVERCHARGE_TIME,
@@ -107,6 +114,10 @@ import {
   TRAPDOOR_EXIT_SPEED,
   TRAPDOOR_HEIGHT,
   TRAPDOOR_COOLDOWN,
+  TRAPDOOR_OPEN,
+  TRAPDOOR_DROP,
+  TRAPDOOR_DROP_DEPTH,
+  TRAPDOOR_RISE,
   FRENZY_PART_HITS,
   FRENZY_GOLD,
   WEB_SLOW_MULT,
@@ -125,6 +136,7 @@ import {
   MAGSTRIP_WALK_MULT,
   MAGBOOTS_STRIP_LAUNCH,
   PIT_RADIUS,
+  PIT_CLIMB_COOLDOWN,
   PIT_GOLD_PENALTY,
   PIT_DAMAGE,
   MOVE_ACCEL,
@@ -158,7 +170,7 @@ import { moveCircle, wallContact } from "../collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { addGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
-import { smashSecretAt, smashWallAt, isBreakableWall } from "../secrets";
+import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import type { InputHandle } from "../input";
@@ -211,6 +223,7 @@ export function resetPlayerMotion(): void {
     state.player.webbedT = 0;
     state.player.rideT = -1;
     state.player.ridePts = [];
+    state.player.dropT = -1;
     state.player.sprite.mesh.position.y = 0; // in case a level change caught a ride mid-flight
   }
 }
@@ -228,6 +241,49 @@ function spawnAura(dt: number, interval: number, hot: boolean, life = AURA_LIFE,
   if (auraT > 0) return;
   auraT = interval;
   state.vfx?.ghost(p.sprite.mesh, hot ? AURA_TINT_HOT : AURA_TINT_COOL, life, opacity);
+}
+
+/** Cadence timers for the per-buff world tells (separate from the sprint aura). */
+let buffTellT = 0;
+let shieldRingT = 0;
+
+/**
+ * BUFF WORLD-TELLS — every timed buff gets a look, not just a HUD tile.
+ *
+ * Rage, Shield and Haste used to exist ONLY as a number in the corner: Rage was
+ * a bare damage multiply, Shield an early-return in the damage path (so it read
+ * as "the enemies keep missing"), Haste a speed you could feel but never see.
+ * Curve Shot is the good example to copy — it works because you WATCH the
+ * bullets bend. Each tell below is colour-coded to that buff's potion so the
+ * flask you drank and the aura you're wearing are obviously the same thing.
+ */
+function updateBuffTells(dt: number): void {
+  const p = state.player;
+  if (!p || !state.vfx) return;
+
+  buffTellT -= dt;
+  if (buffTellT <= 0) {
+    buffTellT = BUFF_TELL_INTERVAL;
+    // Afterimages tinted to the active buff. Rage wins over Haste when both
+    // run — the damage buff is the one you need to read at a glance.
+    if (p.rageT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_RAGE, 0.3, 0.42);
+    else if (p.hasteT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_HASTE, 0.26, 0.34);
+    if (p.shieldT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_SHIELD, 0.34, 0.3);
+  }
+
+  // The shield BUBBLE: a ring of motes orbiting the knight, so invulnerability
+  // is a thing you can see rather than an absence of damage.
+  if (p.shieldT > 0) {
+    shieldRingT -= dt;
+    if (shieldRingT <= 0) {
+      shieldRingT = SHIELD_RING_INTERVAL;
+      const spin = state.elapsed * 2.2;
+      for (let k = 0; k < SHIELD_RING_MOTES; k++) {
+        const a = spin + (k / SHIELD_RING_MOTES) * Math.PI * 2;
+        state.vfx.sparks(p.x + Math.cos(a) * SHIELD_RING_RADIUS, 0.42, p.z + Math.sin(a) * SHIELD_RING_RADIUS, 0, 0, 1);
+      }
+    }
+  }
 }
 
 /** Dev telemetry: the smoothed movement speed (units/sec) for the QA hook. */
@@ -520,7 +576,7 @@ function rangedSfx(id: string): void {
 /**
  * Bookkeeping every PART trigger shares: tick the bounce combo, shake a web
  * off (parts are the webspinner's cleanse), count part-hits toward the
- * MULTIBALL FRENZY bonus and pay it once per combo.
+ * FRENZY bonus and pay it once per combo.
  */
 function onPartTrigger(): void {
   const p = state.player;
@@ -536,7 +592,7 @@ function onPartTrigger(): void {
     state.frenzyPaid = true;
     state.goldRun += FRENZY_GOLD;
     addGold(FRENZY_GOLD, "dungeon-game");
-    showToast("🪩 MULTIBALL FRENZY", `${state.partComboHits} parts in one chain · +${FRENZY_GOLD}g`);
+    showToast("🪩 FRENZY", `${state.partComboHits} parts in one chain · +${FRENZY_GOLD}g`);
     state.shakeT = Math.max(state.shakeT, 0.25);
   }
 }
@@ -555,17 +611,40 @@ function overMagStrip(): boolean {
 }
 
 /**
- * Fall into a PIT: spat back to the floor's start with a shake, a heart and a
- * fistful of gold gone. Momentum/ride are killed. The map's "oops" tax.
+ * Fall into a PIT: a heart, a fistful of gold and ALL your speed, then you
+ * climb back out at the rim you went in at. Deliberately NOT a teleport — the
+ * trapdoor is the only thing on the floor that relocates you.
  */
-function fallInPit(): void {
+function fallInPit(px: number, pz: number): void {
   const p = state.player;
+  const g = state.grid;
   if (!p) return;
   p.momSpeed = 0;
   p.rideT = -1;
   p.ridePts = [];
-  p.x = state.levelStart.x;
-  p.z = state.levelStart.z;
+  // Haul out along the way you came in — the side of the rim nearest you.
+  // Dead-centre (a straight drop) has no "in" direction, so pick one.
+  let ox = p.x - px;
+  let oz = p.z - pz;
+  let ol = Math.hypot(ox, oz);
+  if (ol < 1e-3) {
+    const a = Math.random() * Math.PI * 2;
+    ox = Math.cos(a);
+    oz = Math.sin(a);
+    ol = 1;
+  }
+  const out = PIT_RADIUS + PLAYER_R + 0.14;
+  const tx = px + (ox / ol) * out;
+  const tz = pz + (oz / ol) * out;
+  if (g) {
+    // moveCircle so the climb-out can't post us inside a wall band.
+    const res = moveCircle(g, p.x, p.z, PLAYER_R, tx - p.x, tz - p.z);
+    p.x = res.x;
+    p.z = res.z;
+  } else {
+    p.x = tx;
+    p.z = tz;
+  }
   p.sprite.mesh.position.y = 0;
   if (p.iframes <= 0 && p.shieldT <= 0) {
     p.hp = Math.max(0, p.hp - PIT_DAMAGE);
@@ -579,7 +658,7 @@ function fallInPit(): void {
   state.hudDirty = true;
   state.shakeT = Math.max(state.shakeT, 0.4);
   syncActorMesh(p);
-  showPickupNote(`🕳️ FELL IN A PIT — back to start${lost > 0 ? ` · −${lost}g` : ""}`);
+  showPickupNote(`🕳️ FELL IN A PIT — climbing out${lost > 0 ? ` · −${lost}g` : ""}`);
   sfxHurt();
 }
 
@@ -806,12 +885,13 @@ function touchPinballParts(inMomentum: boolean): void {
       }
       state.hudDirty = true;
     } else if (part.kind === "trapdoor") {
-      // The hatch drops you onto the rollercoaster — see startRide.
+      // The hatch swings open, swallows you, THEN the rollercoaster takes over
+      // — see startDrop → startRide. The floor's one and only teleport.
       if (d2 > 0.42 * 0.42) continue;
-      if (p.rideT >= 0) continue;
+      if (p.rideT >= 0 || p.dropT >= 0) continue;
       part.cooldownT = TRAPDOOR_COOLDOWN;
-      part.hitT = 0;
-      startRide();
+      part.hitT = 0; // drives the hinge-open animation in render/pinball-parts
+      startDrop(part.x, part.z);
     } else if (part.kind === "flipper") {
       // The big paddle CATAPULTS you along its swing at the hardest speed in the
       // machine (walking or riding). Slice 7 — AIM-ASSIST: the exit is the paddle
@@ -872,9 +952,12 @@ function touchPinballParts(inMomentum: boolean): void {
       if (p.momSpeed > MAGSTRIP_SPEED_CAP) p.momSpeed = MAGSTRIP_SPEED_CAP;
       if (Math.random() < 0.3) state.vfx?.sparks(part.x, 0.2, part.z, 0, 1, 2);
     } else if (part.kind === "pit") {
-      // A hole: fall in unless the coaster is carrying you over it.
-      if (p.rideT >= 0 || d2 > PIT_RADIUS * PIT_RADIUS) continue;
-      fallInPit();
+      // A hole: fall in unless the coaster is carrying you over it. The climb
+      // out sets us on the rim, so lock the hole briefly — otherwise a bounce
+      // straight back in reads as the pit "grabbing" you.
+      if (p.rideT >= 0 || p.dropT >= 0 || d2 > PIT_RADIUS * PIT_RADIUS) continue;
+      part.cooldownT = PIT_CLIMB_COOLDOWN;
+      fallInPit(part.x, part.z);
       return; // the fall owns this frame
     } else if (part.kind === "electric" || part.kind === "firevent") {
       continue; // self-firing hazards do their damage from entities/hazards.ts
@@ -961,6 +1044,19 @@ function trySmashAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number
   return false;
 }
 
+/** Same probe as trySmashAhead, but asking only "was that a crack?" — the hint. */
+function crackedAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number, blockedX: boolean, blockedZ: boolean): boolean {
+  if (blockedX) {
+    const t = worldToTile(g, x + Math.sign(dirX) * (PLAYER_R + 0.12), z);
+    if (at(g, t.i, t.j) === T_CRACKED) return true;
+  }
+  if (blockedZ) {
+    const t = worldToTile(g, x, z + Math.sign(dirZ) * (PLAYER_R + 0.12));
+    if (at(g, t.i, t.j) === T_CRACKED) return true;
+  }
+  return false;
+}
+
 /**
  * At TERMINAL speed (≥ WALL_BREAK_SPEED) an ordinary wall gives too — but only
  * where there's a corridor on the far side (isBreakableWall), so you punch a
@@ -968,17 +1064,89 @@ function trySmashAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number
  * as trySmashAhead. Returns true if a wall broke (caller barrels through).
  */
 function trySmashWallAhead(g: Grid, x: number, z: number, dirX: number, dirZ: number, blockedX: boolean, blockedZ: boolean): boolean {
+  // Break the WHOLE band, not just its near face — bands are 2 tiles thick, so
+  // opening one tile would leave the knight embedded in the wall he just broke.
+  const punch = (i: number, j: number, ddx: number, ddz: number): boolean => {
+    const depth = wallRunDepth(g, i, j, ddx, ddz);
+    if (depth <= 0) return false;
+    let broke = false;
+    for (let d = 0; d < depth; d++) {
+      if (smashWallAt(i + Math.sign(ddx) * d, j + Math.sign(ddz) * d)) broke = true;
+    }
+    return broke;
+  };
   if (blockedX) {
     const ddx = Math.sign(dirX);
     const t = worldToTile(g, x + ddx * (PLAYER_R + 0.12), z);
-    if (isBreakableWall(g, t.i, t.j, ddx, 0) && smashWallAt(t.i, t.j)) return true;
+    if (punch(t.i, t.j, ddx, 0)) return true;
   }
   if (blockedZ) {
     const ddz = Math.sign(dirZ);
     const t = worldToTile(g, x, z + ddz * (PLAYER_R + 0.12));
-    if (isBreakableWall(g, t.i, t.j, 0, ddz) && smashWallAt(t.i, t.j)) return true;
+    if (punch(t.i, t.j, 0, ddz)) return true;
   }
   return false;
+}
+
+// ── Trapdoor hatch drop ─────────────────────────────────────────────────────
+// The beat the teleport was missing: the hatch BANGS open, the knight is drawn
+// onto it and drops through the floor, and only then does the rail take over.
+// It owns the player for its whole half-second so the door animation is
+// something you watch happen to you — you can't step off the hatch mid-swing.
+
+/** The hatch gives way: lock the player in, start the door animation's beat. */
+function startDrop(x: number, z: number): void {
+  const p = state.player;
+  if (!p || p.dropT >= 0 || p.rideT >= 0) return;
+  p.dropT = 0;
+  p.dropX = x;
+  p.dropZ = z;
+  p.momSpeed = 0; // the hatch owns the physics now
+  p.attackT = -1;
+  p.move = null;
+  p.chargeT = -1;
+  p.rollT = -1;
+  p.wallMoveT = -1;
+  p.iframes = Math.max(p.iframes, TRAPDOOR_DROP);
+  p.anim.setRate(1.4);
+  p.anim.play("ball", { force: true });
+  showToast("🎢 TRAPDOOR!", "the floor gives way — hold on");
+  sfxTrapdoor();
+}
+
+/**
+ * Advance the hatch drop. Two beats: the door swings (you're reeled onto the
+ * centre, feet scrabbling) then the floor is gone (you sink out of sight).
+ * Handing off to startRide at the bottom is what makes the trapdoor the single
+ * teleport in the game — everything else stays where it stands.
+ */
+function updateDrop(dt: number): boolean {
+  const p = state.player;
+  if (!p || p.dropT < 0) return false;
+  p.dropT += dt;
+  const t = p.dropT;
+
+  // Beat 1 — reeled onto the hatch centre while the door is still swinging.
+  const pull = Math.min(1, dt * 9);
+  p.x += (p.dropX - p.x) * pull;
+  p.z += (p.dropZ - p.z) * pull;
+  syncActorMesh(p);
+
+  // Beat 2 — the floor is open: sink, accelerating, until the rail catches you.
+  // syncActorMesh pins y=0, so the sink is applied after it (as the ride does).
+  const fall = Math.max(0, (t - TRAPDOOR_OPEN) / (TRAPDOOR_DROP - TRAPDOOR_OPEN));
+  p.sprite.mesh.position.y = -TRAPDOOR_DROP_DEPTH * fall * fall;
+  if (fall > 0) {
+    if (Math.random() < 20 * dt) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.6, 0.1, p.z + (Math.random() - 0.5) * 0.6);
+  } else if (Math.random() < 8 * dt) {
+    state.vfx?.sparks(p.dropX, 0.15, p.dropZ, 0, 0, 2); // the hinge complains
+  }
+
+  if (t >= TRAPDOOR_DROP) {
+    p.dropT = -1;
+    startRide(); // straight into the rail — no frame standing on an open hole
+  }
+  return true;
 }
 
 // ── Trapdoor rollercoaster (Wave D) ─────────────────────────────────────────
@@ -1012,6 +1180,10 @@ function pickRideExit(g: Grid): { x: number; z: number } {
     const j = 1 + Math.floor(Math.random() * (g.h - 2));
     if (!isWalkable(g, i, j)) continue;
     const c = tileCenter(g, i, j);
+    // Never set down on another hatch: a ride that ends on a trapdoor starts
+    // the next one, and the knight ping-pongs across the floor with no way to
+    // take control back. The one teleport must always hand you back the wheel.
+    if (state.pinballParts.some((q) => q.kind === "trapdoor" && Math.hypot(q.x - c.x, q.z - c.z) < 2)) continue;
     let score = Math.hypot(c.x - p.x, c.z - p.z); // farther is better
     // A pinch of bias: landing near loot (fun) or near the stairs (progress).
     if (state.groundItems.some((it) => Math.hypot(it.x - c.x, it.z - c.z) < 3)) score += 8;
@@ -1027,7 +1199,7 @@ function pickRideExit(g: Grid): { x: number; z: number } {
   return best ?? { x: p.x, z: p.z };
 }
 
-/** The hatch opens: build the spline and hand the player to the rail. */
+/** The hole has swallowed you: build the spline and hand the player to the rail. */
 function startRide(): void {
   const p = state.player;
   const g = state.grid;
@@ -1056,10 +1228,9 @@ function startRide(): void {
   p.rollT = -1;
   p.wallMoveT = -1;
   p.anim.setRate(1.4);
-  p.anim.play("ball", { force: true });
+  // The toast/sfx already fired when the hatch opened (startDrop) — the ride is
+  // the second half of one event, not a new one.
   state.shakeT = Math.max(state.shakeT, 0.2);
-  showToast("🎢 TRAPDOOR!", "hold on");
-  sfxTrapdoor();
 }
 
 /**
@@ -1090,8 +1261,12 @@ function updateRide(dt: number): boolean {
   syncActorMesh(p);
   // FLY over the walls: the arc that makes it a coaster. syncActorMesh pins
   // y=0; lift after, like the ghosts do.
+  // The rail picks you up UNDER the floor (where the hatch drop left you) and
+  // hauls you out over the first TRAPDOOR_RISE of the ride, so the hand-off
+  // from drop to ride is continuous instead of a pop back to floor level.
   const h = Math.sin(Math.PI * u) * TRAPDOOR_HEIGHT;
-  p.sprite.mesh.position.y = h;
+  const under = Math.max(0, 1 - u / TRAPDOOR_RISE);
+  p.sprite.mesh.position.y = h - TRAPDOOR_DROP_DEPTH * under * under;
 
   if (u >= 1) {
     p.rideT = -1;
@@ -1115,6 +1290,10 @@ function updateRide(dt: number): boolean {
     p.momZ = dz / dl;
     p.momSpeed = TRAPDOOR_EXIT_SPEED;
     p.ramT = 0;
+    // You land at launch speed and skid a long way — arm EVERY hatch's lockout,
+    // not just the one you fell through, so the skid can't be swallowed by a
+    // second trapdoor before you've had a single frame of control.
+    for (const q of state.pinballParts) if (q.kind === "trapdoor") q.cooldownT = Math.max(q.cooldownT, TRAPDOOR_COOLDOWN);
     onPartTrigger();
     for (let k = 0; k < 3; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
     state.shakeT = Math.max(state.shakeT, 0.25);
@@ -1143,16 +1322,29 @@ function startRampHop(dirX: number, dirZ: number, speed: number): void {
   const dl = Math.hypot(dirX, dirZ) || 1;
   const ux = dirX / dl;
   const uz = dirZ / dl;
+  // Prefer a landing on the FAR side of a wall — that's a vault, the whole
+  // point of the arc. Scanning far→near and taking the first walkable would
+  // otherwise just pick the end of an open lane and never cross anything.
   let land: { x: number; z: number } | null = null;
-  for (let d = RAMP_HOP_MAX; d >= RAMP_HOP_MIN; d -= 0.25) {
+  let vaultLand: { x: number; z: number } | null = null;
+  let crossedWall = false;
+  for (let d = RAMP_HOP_MIN; d <= RAMP_HOP_MAX; d += 0.25) {
     const t = worldToTile(g, p.x + ux * d, p.z + uz * d);
-    if (isWalkable(g, t.i, t.j)) {
-      const c = tileCenter(g, t.i, t.j); // snap to the tile centre so we never set down in a wall corner
-      land = { x: c.x, z: c.z };
-      break;
+    if (!isWalkable(g, t.i, t.j)) {
+      crossedWall = true; // a band lies between us and anything further out
+      continue;
     }
+    const c = tileCenter(g, t.i, t.j); // snap to the centre so we never set down in a wall corner
+    land = { x: c.x, z: c.z }; // farthest walkable wins, as before
+    if (crossedWall && !vaultLand) vaultLand = { x: c.x, z: c.z }; // first tile past the band
   }
-  if (!land) return; // nowhere clear to land — the flat dash stands
+  land = vaultLand ?? land;
+  if (!land) {
+    // Nowhere clear to land: the flat dash stands, but say so — a silent no-op
+    // reads as the ramp being broken.
+    showPickupNote("⛰️ NO LANDING — the ramp just shoves you");
+    return;
+  }
   p.hopStartX = p.x;
   p.hopStartZ = p.z;
   p.hopLandX = land.x;
@@ -1315,6 +1507,12 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       syncActorMesh(p);
       return true;
     }
+    // Bounced off a crack too slowly: nothing teaches that SPEED is the key
+    // (there's no button and no weapon for it), so say it once per floor.
+    if (p.momSpeed < SECRET_BREAK_SPEED && !state.crackHintShown && crackedAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+      state.crackHintShown = true;
+      showPickupNote("🧱 CRACKED WALL — hit it FASTER to break through");
+    }
     // KOOL-AID: at terminal speed you punch through an ORDINARY wall into the
     // corridor behind it — your own shortcut. Costs a big slice of speed so it
     // can't chew a straight line across the whole floor.
@@ -1462,8 +1660,11 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.oilT = Math.max(0, p.oilT - dt);
   p.webbedT = Math.max(0, p.webbedT - dt);
   updateFlash(p, dt);
+  updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
 
-  // ── Trapdoor coaster ── the rail owns the player completely while riding.
+  // ── Trapdoor ── the hatch owns the player while the door swings and you
+  // fall through, then the rail owns them for the whole ride.
+  if (updateDrop(dt)) return;
   if (updateRide(dt)) return;
 
   // ── Ramp hop (A2) ── the airborne arc off a ramp owns the player mid-flight,
@@ -1826,46 +2027,3 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   state.vfx?.slash(p.x + fx * 0.5 * scale, 0.6, p.z + fz * 0.5 * scale, p.facing, w.slashColor ?? 0xdfe7f2);
 }
 
-/**
- * MULTI-BALL (Wave F): while the buff runs, two ghost knights flank the hero,
- * mirroring the run, and RAM any zombie they overlap. Their meshes are owned
- * by core (created on pickup, torn down on expiry); this owns the sim: place
- * them beside the travel direction and deal the contact damage.
- */
-export function updateMultiball(dt: number): void {
-  const p = state.player;
-  const meshes = state.multiMeshes;
-  if (!p || !meshes || meshes.length === 0) return;
-
-  // Flank perpendicular to travel (momentum if riding, facing otherwise).
-  let dx = p.momSpeed > 0 ? p.momX : FACING_VEC[p.facing][0];
-  let dz = p.momSpeed > 0 ? p.momZ : FACING_VEC[p.facing][1];
-  const dl = Math.hypot(dx, dz) || 1;
-  dx /= dl;
-  dz /= dl;
-  const offsets: Array<[number, number]> = [
-    [-dz * 0.9, dx * 0.9],
-    [dz * 0.9, -dx * 0.9],
-  ];
-  state.multiRamT = Math.max(0, state.multiRamT - dt);
-  const w = WEAPONS[activeWeapon().id];
-  meshes.forEach((mesh, k) => {
-    const gx = p.x + offsets[k][0];
-    const gz = p.z + offsets[k][1];
-    // Same iso pixel-snap as every actor, then hover a hair for the spectre read.
-    const fake = { sprite: { mesh: { position: mesh.position } }, x: gx, z: gz };
-    syncActorMesh(fake as Parameters<typeof syncActorMesh>[0]);
-    mesh.position.y = 0.06 + Math.sin(state.elapsed * 5 + k * Math.PI) * 0.04;
-    if (state.multiRamT <= 0) {
-      for (const z of state.zombies) {
-        if (z.mode === "dead") continue;
-        const zdx = z.x - gx;
-        const zdz = z.z - gz;
-        if (zdx * zdx + zdz * zdz > 0.55 * 0.55) continue;
-        damageZombie(z, playerDamage(Math.max(1, w.damage)), zdx, zdz, 0.6);
-        state.multiRamT = 0.3;
-        break;
-      }
-    }
-  });
-}

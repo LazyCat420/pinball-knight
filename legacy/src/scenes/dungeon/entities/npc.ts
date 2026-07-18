@@ -3,9 +3,10 @@
  * static-sprite actors with tiny state machines, completely outside the
  * combat pipeline. Ticked from core.simulate on the fixed step.
  *
- *  🎩 MAGICIAN — visits on his own clock, bows, TELEPORTS the knight to a
- *     random part of the floor (momentum preserved!), laughs, vanishes.
- *     Unkillable, unstoppable, suppressed while the Death Dealer is out.
+ *  🎩 MAGICIAN — visits on his own clock, bows, SHUFFLES THE ROOM around the
+ *     knight (loot swaps seats, pinball furniture trades tiles), laughs,
+ *     vanishes. He never moves YOU — the trapdoor is the only teleport in the
+ *     game. Unkillable, unstoppable, suppressed while the Death Dealer is out.
  *  🧙 SPEED WITCH — revealed by smashing a cracked wall (once per floor).
  *     Touch her: half your hearts for a long turbo+spring-legs window.
  *  🐸 ORACLE FROG — waits in a dead end; touch it and a trail of embers
@@ -18,6 +19,10 @@ import {
   MAGICIAN_FROM_LEVEL,
   MAGICIAN_BOW,
   MAGICIAN_LINGER,
+  TRICK_RADIUS,
+  TRICK_SAFE_RADIUS,
+  TRICK_PART_SWAPS,
+  TRICK_FIXED_KINDS,
   WITCH_BUFF_TIME,
   FROG_COOLDOWN,
   FROG_TRAIL_TILES,
@@ -26,17 +31,20 @@ import {
   MERCHANT_FLEE_SPEED,
   MERCHANT_FLEE_RANGE,
   MERCHANT_CATCH_RANGE,
+  MERCHANT_BOUNCE_DWELL,
+  MERCHANT_BELL_PERIOD,
+  MERCHANT_BELL_RANGE,
   PLAYER_R,
   PPU,
 } from "../constants";
 import { tileCenter, worldToTile, isWalkable, idx } from "../maze/generator";
 import { moveCircle } from "../collision";
-import { bfsDistances, flowStep } from "./ai";
+import { bfsDistances, flowStep, flowAway } from "./ai";
 import { createStaticSprite } from "../render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";
-import { sfxCackle, sfxRibbit, sfxPickup } from "../audio";
+import { sfxCackle, sfxRibbit, sfxPickup, sfxCartBell } from "../audio";
 
 /** Catching the merchant opens its shop — core registers the handler. */
 let onMerchantCaught: (() => void) | null = null;
@@ -99,34 +107,14 @@ export function spawnWitch(x: number, z: number): void {
   showToast("🧙 THE SPEED WITCH", "she offers a trade — touch her to take it");
 }
 
-/** Pick a random walkable teleport destination, with the Magician's taste. */
-function pickTrickDestination(): { x: number; z: number } | null {
-  const g = state.grid;
-  const p = state.player;
-  if (!g || !p) return null;
-  const roll = Math.random();
-  // 25%: treasure-adjacent. 15%: into the thick of the horde. 60%: anywhere.
-  if (roll < 0.25 && state.groundItems.length > 0) {
-    const it = state.groundItems[Math.floor(Math.random() * state.groundItems.length)];
-    return { x: it.x, z: it.z };
+/** Fisher-Yates on a scratch array — the shuffle behind the Magician's shuffle. */
+function shuffled<T>(arr: T[]): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
   }
-  if (roll < 0.4) {
-    const live = state.zombies.filter((z) => z.mode !== "dead" && z.kind !== "reaper");
-    if (live.length > 0) {
-      const z = live[Math.floor(Math.random() * live.length)];
-      const t = worldToTile(g, z.x, z.z);
-      if (isWalkable(g, t.i, t.j)) return tileCenter(g, t.i, t.j);
-    }
-  }
-  for (let n = 0; n < 30; n++) {
-    const i = 1 + Math.floor(Math.random() * (g.w - 2));
-    const j = 1 + Math.floor(Math.random() * (g.h - 2));
-    if (!isWalkable(g, i, j)) continue;
-    const c = tileCenter(g, i, j);
-    if (Math.hypot(c.x - p.x, c.z - p.z) < 6) continue; // a trick, not a shuffle
-    return c;
-  }
-  return null;
+  return out;
 }
 
 /** The Magician appears at the edge of the view and begins his act. */
@@ -150,21 +138,67 @@ function spawnMagician(): void {
   showToast("🎩 THE MAGICIAN", "he bows…");
 }
 
-/** The trick itself: the knight vanishes here, reappears there. He laughs. */
+/**
+ * The trick itself — THE SHUFFLE. He never touches the knight (the trapdoor is
+ * the only thing on the floor that moves you); he moves the ROOM. Loot swaps
+ * places with loot, and the nearby pinball furniture swaps places with itself,
+ * so the lane you had memorised is not the lane you're standing in. Every
+ * destination was already a valid occupied spot, so nothing can land in a wall.
+ */
 function magicianTrick(m: Npc): void {
   const p = state.player;
   if (!p) return;
-  const dest = pickTrickDestination();
-  if (dest) {
-    poof(p.x, p.z, 12);
-    p.x = dest.x;
-    p.z = dest.z;
-    // Momentum is PRESERVED through the teleport — arriving at 20 u/s in a
-    // bumper chamber is the feature, not a bug.
-    syncActorMesh(p);
-    poof(p.x, p.z, 12);
+
+  // ── The loot shuffle: every ground item takes another's place ──
+  const items = state.groundItems.filter((it) => Math.hypot(it.x - p.x, it.z - p.z) <= TRICK_RADIUS);
+  let moved = 0;
+  if (items.length >= 2) {
+    const spots = shuffled(items.map((it) => ({ x: it.x, z: it.z })));
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
+      if (Math.hypot(spots[k].x - it.x, spots[k].z - it.z) < 0.05) continue; // drew its own seat
+      poof(it.x, it.z, 4);
+      it.x = spots[k].x;
+      it.z = spots[k].z;
+      it.sprite.mesh.position.x = it.x;
+      it.sprite.mesh.position.z = it.z;
+      poof(it.x, it.z, 4);
+      moved++;
+    }
+  }
+
+  // ── The furniture shuffle: nearby parts trade tiles in pairs ──
+  // HAZARDS ARE EXCLUDED. A pit or a fire vent materialising on the tile you're
+  // standing on isn't a trick, it's an ambush you couldn't have read.
+  const parts = shuffled(
+    state.pinballParts.filter((q) => {
+      if ((TRICK_FIXED_KINDS as readonly string[]).includes(q.kind)) return false;
+      const d = Math.hypot(q.x - p.x, q.z - p.z);
+      return d <= TRICK_RADIUS && d > TRICK_SAFE_RADIUS;
+    }),
+  ).slice(0, TRICK_PART_SWAPS * 2);
+  let swapped = 0;
+  for (let k = 0; k + 1 < parts.length; k += 2) {
+    const a = parts[k];
+    const b = parts[k + 1];
+    if (a.kind === b.kind) continue; // swapping two bumpers changes nothing
+    poof(a.x, a.z, 5);
+    poof(b.x, b.z, 5);
+    [a.i, b.i] = [b.i, a.i];
+    [a.j, b.j] = [b.j, a.j];
+    [a.x, b.x] = [b.x, a.x];
+    [a.z, b.z] = [b.z, a.z];
+    a.mesh.position.set(a.x, a.mesh.position.y, a.z);
+    b.mesh.position.set(b.x, b.mesh.position.y, b.z);
+    swapped++;
+  }
+
+  if (moved > 0 || swapped > 0) {
     state.shakeT = Math.max(state.shakeT, 0.2);
-    showToast("🎩 TA-DAAA!", "…you are somewhere else. he finds this hilarious");
+    const bits = [moved > 0 ? `${moved} treasures` : "", swapped > 0 ? `${swapped} lanes` : ""].filter(Boolean);
+    showToast("🎩 TA-DAAA!", `…${bits.join(" and ")} are not where you left them`);
+  } else {
+    showToast("🎩 …NOTHING UP HIS SLEEVE", "no props to work with. he is embarrassed");
   }
   sfxCackle();
   m.phase = "linger";
@@ -276,13 +310,29 @@ export function updateNpcs(dt: number): void {
 
 /**
  * The merchant slides the corridors and FLEES when you close in (you have to
- * corner it). Catch it → its shop opens (core handler). Once shopped, it just
- * mills about so you can find it again mid-floor.
+ * corner it). Catch it → its shop opens (core handler). Once shopped it stops
+ * running for good — it has your gold, it has no reason to keep sprinting —
+ * and just mills about so you can find it again mid-floor.
+ *
+ * It retreats along the zombie FLOW FIELD (uphill, away from you) rather than
+ * on a straight-line repulsion bearing. Repulsion steering in a maze always
+ * ends up in the perimeter corner furthest from the pursuer: the cart presses
+ * into the nearest wall, moveCircle converts the blocked component into pure
+ * tangential slide, and the slide's sign is stable while you stay on one side
+ * of it — so it rides that wall in one direction forever. That was the bug.
  */
 function updateMerchant(n: Npc, dist: number, dt: number): void {
   const g = state.grid;
   const p = state.player;
   if (!g || !p) return;
+
+  n.bellT = (n.bellT ?? 0) - dt;
+  if (n.bellT <= 0) {
+    // The cart-bell: it announces itself on a timer so it's something you can
+    // HUNT rather than something you happen to walk into. Quieter with range.
+    n.bellT = MERCHANT_BELL_PERIOD;
+    if (dist < MERCHANT_BELL_RANGE) sfxCartBell(1 - dist / MERCHANT_BELL_RANGE);
+  }
 
   if (dist <= MERCHANT_CATCH_RANGE && !state.shopEl && n.cooldownT <= 0) {
     n.vx = 0;
@@ -293,25 +343,53 @@ function updateMerchant(n: Npc, dist: number, dt: number): void {
     return;
   }
 
-  // Steer: flee from the player when near, otherwise amble along its heading.
+  // Once you've traded with it the chase is over — it ambles from then on.
+  const fleeing = !n.shopped && dist < MERCHANT_FLEE_RANGE;
+  const speed = fleeing ? MERCHANT_FLEE_SPEED : MERCHANT_SPEED;
+
   let hx = n.vx ?? 0;
   let hz = n.vz ?? 0;
-  const speed = dist < MERCHANT_FLEE_RANGE ? MERCHANT_FLEE_SPEED : MERCHANT_SPEED;
-  if (dist < MERCHANT_FLEE_RANGE && dist > 1e-3) {
-    hx = (n.x - p.x) / dist; // straight away from the player
-    hz = (n.z - p.z) / dist;
+  n.dwellT = Math.max(0, (n.dwellT ?? 0) - dt);
+
+  if (n.dwellT > 0) {
+    // Committed to the post-bounce heading. Flee mode may NOT overwrite it —
+    // that overwrite is precisely what made the wall-bounce dead code.
+  } else if (fleeing) {
+    // Retreat one tile uphill on the distance-to-player field: maze-aware, so
+    // it rounds corners instead of grinding along them. The field is the same
+    // one the horde uses, refreshed on core's FLOW_INTERVAL — free to read.
+    const here = worldToTile(g, n.x, n.z);
+    const away = state.flowField ? flowAway(g, state.flowField, here.i, here.j) : null;
+    if (away) {
+      const c = tileCenter(g, away.i, away.j);
+      hx = c.x - n.x;
+      hz = c.z - n.z;
+    } else if (dist > 1e-3) {
+      // Cornered (or the field is stale): fall back to raw repulsion.
+      hx = (n.x - p.x) / dist;
+      hz = (n.z - p.z) / dist;
+    }
   } else if (Math.hypot(hx, hz) < 0.1 || Math.random() < 0.6 * dt) {
     const a = Math.random() * Math.PI * 2; // pick a new amble heading now and then
     hx = Math.cos(a);
     hz = Math.sin(a);
   }
+
   const hl = Math.hypot(hx, hz) || 1;
   n.vx = hx / hl;
   n.vz = hz / hl;
-  const res = moveCircle(g, n.x, n.z, PLAYER_R, n.vx * speed * dt, n.vz * speed * dt);
-  // Bounced off a wall — pick a fresh heading next frame.
-  if (Math.abs(res.x - (n.x + n.vx * speed * dt)) > 1e-3) n.vx = -(n.vx ?? 0);
-  if (Math.abs(res.z - (n.z + n.vz * speed * dt)) > 1e-3) n.vz = -(n.vz ?? 0);
+  const stepX = n.vx * speed * dt;
+  const stepZ = n.vz * speed * dt;
+  const res = moveCircle(g, n.x, n.z, PLAYER_R, stepX, stepZ);
+  // Blocked: flip the blocked component and COMMIT to it for a beat, so the
+  // next tick's steering can't immediately undo the bounce.
+  const hitX = Math.abs(res.x - (n.x + stepX)) > 1e-3;
+  const hitZ = Math.abs(res.z - (n.z + stepZ)) > 1e-3;
+  if (hitX || hitZ) {
+    if (hitX) n.vx = -(n.vx ?? 0);
+    if (hitZ) n.vz = -(n.vz ?? 0);
+    n.dwellT = MERCHANT_BOUNCE_DWELL;
+  }
   n.x = res.x;
   n.z = res.z;
   syncActorMesh(n as unknown as Parameters<typeof syncActorMesh>[0]);

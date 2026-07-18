@@ -21,12 +21,13 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
 const C_ARCANE = PALETTE_HEX[31]; // 0x6fd0e8 — the machine's glow colour
 const C_GOLD = PALETTE_HEX[16]; // flame/gold accents
+const C_SHOT = PALETTE_HEX[21]; // the LIT-SHOT flare — the brightest thing on the table
 
 /** Yaw that rotates the +x axis onto the world direction (dx, dz). */
 function yawFor(dx: number, dz: number): number {
@@ -315,6 +316,11 @@ function buildTrapdoor(): THREE.Group {
   const gp = new THREE.Group();
   // A wooden hatch flush with the floor: two planks, iron banding, a pull
   // ring. The punch anim flips it open on a hinge.
+  // The SHAFT beneath it — sunk so it's invisible until the door swings wide,
+  // then it's the black hole the knight visibly falls into.
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.74, 1.6, 0.74), std(PALETTE_HEX[0], 0x000000, 0));
+  shaft.position.y = -0.81;
+  gp.add(shaft);
   const door = new THREE.Group();
   for (const side of [-1, 1]) {
     const plank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.05, 0.34), std(0x6b4a2e));
@@ -533,9 +539,28 @@ export function updatePinballParts(dt: number): void {
   animT += dt;
   if (state.jackpotT > 0) state.jackpotT = Math.max(0, state.jackpotT - dt); // Slice 5 flash window
   const frozen = state.freezeT > 0;
+  // ── LIT SHOT: while you're travelling under momentum, whatever you're
+  // actually aimed at lights up. A real table tells you where the shot IS —
+  // this floor had a light vocabulary (bumper gold, bank green/red) but no
+  // "shoot HERE now", so the machine never pointed anywhere. Recomputed per
+  // frame from the momentum ray; costs one dot product per part.
+  const pl = state.player;
+  const aiming = !!pl && pl.momSpeed >= SHOT_LIGHT_MIN_SPEED;
   for (const part of state.pinballParts) {
     part.cooldownT = Math.max(0, part.cooldownT - dt);
     if (part.hitT >= 0) part.hitT += dt;
+
+    part.aimed = false;
+    if (aiming && pl) {
+      const dx = part.x - pl.x;
+      const dz = part.z - pl.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.6 && dist <= SHOT_LIGHT_RANGE) {
+        // Inside the forward cone — tighter the further away, so the light
+        // resolves onto ONE part as you close rather than washing a whole room.
+        part.aimed = (pl.momX * dx + pl.momZ * dz) / dist >= SHOT_LIGHT_COS;
+      }
+    }
 
     // GLOVE clock: count down to the punch, throw it (hitT drives both the
     // piston anim and the live damage window read by entities/hazards.ts),
@@ -572,9 +597,12 @@ export function updatePinballParts(dt: number): void {
       // and brighter; an unlit one keeps the cool arcane breathe.
       const lit = (part.hits ?? 0) >= BUMPER_LIT_HITS || state.jackpotT > 0;
       if (dome) {
-        dome.emissive.setHex(lit ? C_GOLD : C_ARCANE);
-        const base = lit ? 1.5 : 0.7;
-        dome.emissiveIntensity = base + 0.3 * Math.sin(animT * (lit ? 6 : 3) + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+        // An AIMED bumper flares white-hot on top of whatever it already was —
+        // the shot you're lined up on should be the brightest thing on screen.
+        dome.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
+        const base = (lit ? 1.5 : 0.7) + (part.aimed ? 1.4 : 0);
+        const rate = part.aimed ? 11 : lit ? 6 : 3;
+        dome.emissiveIntensity = base + 0.3 * Math.sin(animT * rate + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
       }
     } else if (part.kind === "spring") {
       // hit: squash then overshoot along Y — the boing
@@ -657,15 +685,27 @@ export function updatePinballParts(dt: number): void {
         mats[2].emissiveIntensity = 0.7 + 0.5 * Math.sin(animT * 4 + part.j); // the eye winks
       }
     } else if (part.kind === "trapdoor") {
-      // hit: the hatch flips open on its hinge, then creaks shut
+      // The hatch BANGS open on its hinge, hangs there while the knight drops
+      // through (entities/player.startDrop owns that beat — the swing is timed
+      // to TRAPDOOR_OPEN so the floor is gone exactly when he falls), then
+      // creaks shut on an empty hole.
       const door = part.mesh.userData.door as THREE.Group | undefined;
       if (door) {
         let open = 0;
         if (part.hitT >= 0) {
           const t = part.hitT;
-          open = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 1.2) / 0.6);
+          if (t < TRAPDOOR_OPEN) {
+            // Slam: eased out hard, then a small overswing that settles back —
+            // a door thrown open, not a door lerped open.
+            const u = t / TRAPDOOR_OPEN;
+            open = 1 - (1 - u) * (1 - u) * (1 - u);
+          } else if (t < TRAPDOOR_DROP + 0.9) {
+            open = 1 + 0.06 * Math.sin((t - TRAPDOOR_OPEN) * 14) * Math.max(0, 1 - (t - TRAPDOOR_OPEN) * 2.5);
+          } else {
+            open = Math.max(0, 1 - (t - (TRAPDOOR_DROP + 0.9)) / 0.6); // creaks shut
+          }
         }
-        door.rotation.z = Math.min(1, Math.max(0, open)) * 1.4;
+        door.rotation.z = Math.min(1.08, Math.max(0, open)) * 1.4;
       }
     } else if (part.kind === "oil") {
       const sheen = part.mesh.userData.sheen as THREE.MeshStandardMaterial | undefined;
@@ -718,7 +758,7 @@ export function updatePinballParts(dt: number): void {
       if (edge) edge.emissiveIntensity = 0.5 + (part.hitT >= 0 && part.hitT < 0.25 ? 1.4 * (1 - part.hitT / 0.25) : 0);
     }
 
-    if (part.hitT > (part.kind === "trapdoor" ? 2 : part.kind === "firevent" ? VENT_WARN + VENT_ACTIVE + 0.1 : 0.6)) part.hitT = -1;
+    if (part.hitT > (part.kind === "trapdoor" ? TRAPDOOR_DROP + 1.6 : part.kind === "firevent" ? VENT_WARN + VENT_ACTIVE + 0.1 : 0.6)) part.hitT = -1;
   }
 }
 

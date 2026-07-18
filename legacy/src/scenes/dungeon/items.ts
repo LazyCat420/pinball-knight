@@ -135,7 +135,6 @@ export type PotionId =
   | "gold"
   | "ballform"
   | "freeze"
-  | "multiball"
   | "curveshot"
   | "magnetboots";
 
@@ -151,34 +150,38 @@ export interface PotionDef {
   duration: number;
   /** Instant gold granted (the greed idol). 0 for everything else. */
   gold?: number;
+  /**
+   * What it actually DOES, in a few words. The single source of truth for the
+   * mechanic text — the HUD tile, the shop row and the pickup toast all read
+   * this, instead of the three hand-maintained copies they used to carry.
+   */
+  description: string;
 }
 
 export const POTIONS: Record<PotionId, PotionDef> = {
-  health: { id: "health", label: "Health", icon: "❤️", color: 0xd95763, heal: 3, duration: 0 },
-  rage: { id: "rage", label: "Rage", icon: "💢", color: 0xd97b29, heal: 0, duration: 12 },
-  haste: { id: "haste", label: "Haste", icon: "⚡", color: 0x6fd0e8, heal: 0, duration: 12 },
+  health: { id: "health", label: "Health", icon: "❤️", color: 0xd95763, heal: 3, duration: 0, description: "restores 3 hearts" },
+  rage: { id: "rage", label: "Rage", icon: "💢", color: 0xd97b29, heal: 0, duration: 12, description: "double damage" },
+  haste: { id: "haste", label: "Haste", icon: "⚡", color: 0x6fd0e8, heal: 0, duration: 12, description: "faster moves + swings" },
   // Shield: a bubble of invulnerability — walk through a horde untouched for a
   // few seconds. The escape-hatch power-up.
-  shield: { id: "shield", label: "Shield", icon: "🛡️", color: 0x8fc46b, heal: 0, duration: 6 },
+  shield: { id: "shield", label: "Shield", icon: "🛡️", color: 0x8fc46b, heal: 0, duration: 6, description: "untouchable" },
   // Greed idol: not a liquid — an instant gold windfall. Reads as a golden flask.
-  gold: { id: "gold", label: "Idol", icon: "💰", color: 0xffd98a, heal: 0, duration: 0, gold: 25 },
+  gold: { id: "gold", label: "Idol", icon: "💰", color: 0xffd98a, heal: 0, duration: 0, gold: 25, description: "+25 gold, instantly" },
   // ── The pinball power fantasy, in ONE potion (Wave F, consolidated) ──
   // BALL FORM: you literally become the pinball. Momentum never bleeds AND
   // steers (old Turbo), every ram lands at triple damage from any speed (old
   // Iron Core), and flat walls kick you back FASTER (old Spring Legs). One
   // strong, unmistakable button instead of three thin overlapping buffs.
-  ballform: { id: "ballform", label: "Ball Form", icon: "🪩", color: 0xf0a63c, heal: 0, duration: 14 },
+  ballform: { id: "ballform", label: "Ball Form", icon: "🪩", color: 0xf0a63c, heal: 0, duration: 14, description: "you ARE the pinball" },
   // Freeze Ray: the whole machine holds its breath — thread the bumper room.
-  freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6 },
-  // Multi-Ball: two ghost knights mirror the run and ram what they touch.
-  multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", color: 0xb06fe8, heal: 0, duration: 12 },
+  freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6, description: "the floor holds its breath" },
   // Curve Shot: your projectiles bend around corners along your sweep.
-  curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12 },
+  curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12, description: "bending projectiles" },
   // Magnet Boots: repel the magnet crawlers, LAUNCH off the magnet strips.
-  magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18 },
+  magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18, description: "repel crawlers · strips LAUNCH" },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

@@ -382,6 +382,28 @@ export const BUMPER_LIT_HITS = 3; // pops to light one bumper
 export const BUMPER_KICK_LIT = 5.6; // flat kick from a LIT bumper (vs 3.2 unlit)
 export const BUMPER_LIT_GOLD = 3; // gold per lit-bumper pop
 export const JACKPOT_BUMPERS = 5; // lit bumpers (or all, if fewer) to fire a jackpot
+/**
+ * LIT SHOT — the "shoot here now" light. While you're carrying real momentum,
+ * parts inside a forward cone light up, so the table points at its own shots
+ * instead of being a uniformly-lit scatter.
+ */
+/**
+ * BUFF WORLD-TELLS — a buff with a timer must have a LOOK. Rage/Shield/Haste
+ * previously existed only as HUD tiles; these drive tinted afterimages and the
+ * shield's orbiting motes. Tints match each potion's flask colour.
+ */
+export const BUFF_TELL_INTERVAL = 0.1; // seconds between tinted afterimages
+export const TELL_TINT_RAGE = 0xd97b29;
+export const TELL_TINT_HASTE = 0x6fd0e8;
+export const TELL_TINT_SHIELD = 0x8fc46b;
+export const SHIELD_RING_INTERVAL = 0.13; // cadence of the orbiting bubble motes
+export const SHIELD_RING_MOTES = 3; // motes emitted per pulse around the ring
+export const SHIELD_RING_RADIUS = 0.55;
+
+export const SHOT_LIGHT_MIN_SPEED = 5; // below this you're walking, not shooting
+export const SHOT_LIGHT_RANGE = 14; // world units the light reaches down a lane
+export const SHOT_LIGHT_COS = 0.94; // ~20° half-angle cone
+
 export const JACKPOT_GOLD = 45;
 export const JACKPOT_DAMAGE = 6; // burst dealt to every enemy on the floor
 // Springs are the STRONGEST launcher (research: plunger-class ≈ 2.5-3× top run
@@ -399,9 +421,20 @@ export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (
 // Landing hands the speed to the pinball system, so you bounce if you set down
 // against a wall. Walls are 2 tiles thick, so the arc must reach ≥3 tiles to
 // clear one — scan a landing in [MIN,MAX] tiles and take the farthest floor.
-export const RAMP_HOP_HEIGHT = 1.1; // peak arc height (world units) — reads as a jump in iso
+/**
+ * Peak arc height. MUST clear WALL_H (1.1) with daylight to spare — at exactly
+ * wall height the knight only grazes the parapet, and only for the single
+ * instant at u = 0.5, so a vault read as a scuff. Compare TRAPDOOR_HEIGHT 1.8.
+ */
+export const RAMP_HOP_HEIGHT = 1.75;
 export const RAMP_HOP_MIN = 2.5; // nearest tiles ahead a hop will set down
 export const RAMP_HOP_MAX = 4.75; // farthest tiles ahead to look for a landing (clears a 2-thick band + a corridor)
+/**
+ * VAULT RAMPS — the ones deliberately aimed ACROSS a wall band rather than
+ * along the corridor, so the hop actually jumps the maze. Without these every
+ * ramp points down its own lane and the airborne arc has nothing to clear.
+ */
+export const VAULT_RAMPS_PER_FLOOR = 3;
 export const RAMP_HOP_SPEED = 16; // u/s the arc travels (governs airtime) — snappy, a touch above RAMP_SPEED
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;
@@ -496,11 +529,19 @@ export const BANK_SIZE = 3;
 export const BANK_CLEAR_GOLD = 25;
 export const TARGETS_PER_FLOOR = 5;
 /**
- * TRAPDOOR → ROLLERCOASTER — a floor hatch on dead ends: step on it and it
- * drops you onto a rail ride — a spline flown OVER the maze walls, control
- * locked, invulnerable — that launches you out at spring speed somewhere far.
- * Mechanically a teleport with a ride, so it can't desync combat.
+ * TRAPDOOR → ROLLERCOASTER — a floor hatch on dead ends, and the floor's ONE
+ * AND ONLY way to be moved somewhere you didn't walk to. Step on it: the hatch
+ * swings wide (TRAPDOOR_OPEN), you're pulled onto it and fall through
+ * (TRAPDOOR_DROP), then the rail takes over — a spline flown OVER the maze
+ * walls, control locked, invulnerable — launching you out at spring speed
+ * somewhere far. Mechanically a teleport with a ride, so it can't desync
+ * combat. Nothing else in the game relocates the knight: pits shove you clear
+ * of the rim, and the Magician shuffles the ROOM instead of you.
  */
+export const TRAPDOOR_OPEN = 0.22; // hatch swings fully open before the floor gives way
+export const TRAPDOOR_DROP = 0.58; // total hatch beat (open + fall through), seconds
+export const TRAPDOOR_DROP_DEPTH = 1.5; // how far below the floor you sink before the rail catches you
+export const TRAPDOOR_RISE = 0.14; // fraction of the ride spent climbing back out of the hole
 export const TRAPDOOR_RIDE_SPEED = 9; // spline traversal speed, u/s
 export const TRAPDOOR_RIDE_MIN = 1.6; // ride duration clamp, seconds
 export const TRAPDOOR_RIDE_MAX = 3.4;
@@ -508,7 +549,7 @@ export const TRAPDOOR_EXIT_SPEED = 14; // momentum handed over on landing
 export const TRAPDOOR_HEIGHT = 1.8; // peak flight height over the walls
 export const TRAPDOORS_PER_FLOOR = 2;
 export const TRAPDOOR_COOLDOWN = 2.5;
-/** Bounce-combo part-hits inside one live combo that trigger MULTIBALL FRENZY. */
+/** Bounce-combo part-hits inside one live combo that trigger FRENZY. */
 export const FRENZY_PART_HITS = 5;
 export const FRENZY_GOLD = 20;
 
@@ -537,13 +578,17 @@ export const MIRROR_BOOST = 1.02; // a whisper of speed for the clean bank
 
 // ── Wave-H floor hazards (pit / electric / fire vent / magnet strip) ──────
 /**
- * PIT — a hole in the floor. Fall in (on foot OR mid-ride — you're not
- * flying, the coaster is the only thing that clears a pit) and you're spat
- * back at the level start, shaken, minus a little gold. The map's "oops".
+ * PIT — a hole in the floor. Fall in (the coaster is the only thing that
+ * clears one) and it costs you a heart, a little gold and all your speed —
+ * then you HAUL YOURSELF OUT at the rim you fell in at. It does NOT send you
+ * back to the level start: losing the whole floor's progress to one bad bounce
+ * in a machine built on ricochets is a punishment, not a hazard. The map's
+ * "ouch", not its "start over".
  */
 export const PIT_RADIUS = 0.5;
 export const PIT_GOLD_PENALTY = 8;
 export const PIT_DAMAGE = 1;
+export const PIT_CLIMB_COOLDOWN = 1.2; // re-trigger lockout so a rim landing can't loop
 /**
  * ELECTRIC GRID — a floor plate that PULSES: dark and safe for ELEC_OFF
  * seconds, then live and lethal-ish for ELEC_ON. Standing on a live plate
@@ -609,6 +654,17 @@ export const MERCHANT_SPEED = 2.2; // base drift
 export const MERCHANT_FLEE_SPEED = 4.6; // when you're within FLEE_RANGE
 export const MERCHANT_FLEE_RANGE = 4.0;
 export const MERCHANT_CATCH_RANGE = 0.7;
+/**
+ * Seconds the cart commits to a heading after bouncing off a wall. Without a
+ * commitment window the flee steering recomputes every tick and overwrites the
+ * bounce, so the cart grinds along the wall it hit — the old edge-riding bug.
+ */
+export const MERCHANT_BOUNCE_DWELL = 0.45;
+/** Cart-bell cadence + audible radius, so the merchant is huntable not lucky. */
+export const MERCHANT_BELL_PERIOD = 3.5;
+export const MERCHANT_BELL_RANGE = 26;
+/** Rings out from the floor start, so you have to go LOOKING for the cart. */
+export const MERCHANT_SPAWN_MIN_RING = 5;
 
 // ── Rooms (named archetypes carved into the corridor maze) ──────
 /**
@@ -650,6 +706,8 @@ export const SECRET_BREAK_SPEED = 7; // u/s of momentum needed to smash through
  * big slice of speed so you can't chew a straight line across the whole floor.
  */
 export const WALL_BREAK_SPEED = 15;
+/** Wall tiles a terminal-speed smash punches through — bands are 2 thick. */
+export const WALL_BREAK_DEPTH = 2;
 export const WALL_BREAK_SPEED_COST = 0.7; // momentum kept after punching masonry
 export const SECRETS_BASE = 2; // cracked walls on level 1
 export const SECRETS_PER_LEVEL = 0.5;
@@ -1190,17 +1248,25 @@ export function levelConfig(level: number): LevelConfig {
 
 // ── NPCs (Wave E — PINBALL_ROADMAP.md) ──────────────────────────
 /**
- * THE MAGICIAN 🎩 — appears on his own clock, bows, and teleports the KNIGHT
- * to a random part of the floor (momentum preserved — landing at speed in a
- * bumper chamber is the feature). Can't be killed, can't be stopped; he
- * laughs every time. Suppressed while the Death Dealer is out — two
- * uncontrollable actors at once reads as unfair, not chaotic.
+ * THE MAGICIAN 🎩 — appears on his own clock, bows, and SHUFFLES THE ROOM:
+ * loot swaps places with loot and the pinball furniture swaps places with
+ * itself, so the lane you'd memorised isn't the lane you're standing in. He
+ * does NOT move the knight — the trapdoor is the floor's only teleport, and
+ * two systems yanking you around at once is disorienting rather than fun.
+ * Can't be killed, can't be stopped; he laughs every time. Suppressed while
+ * the Death Dealer is out — two uncontrollable actors at once reads as
+ * unfair, not chaotic.
  */
 export const MAGICIAN_PERIOD = 45; // base seconds between visits
 export const MAGICIAN_JITTER = 12; // ± spread on the period
 export const MAGICIAN_FROM_LEVEL = 2;
 export const MAGICIAN_BOW = 1.2; // seconds between the entrance and the trick
 export const MAGICIAN_LINGER = 2.0; // seconds he savours the laugh before vanishing
+export const TRICK_RADIUS = 16; // how far his sleight of hand reaches, world units
+export const TRICK_SAFE_RADIUS = 2.5; // furniture this close to the knight is left alone
+export const TRICK_PART_SWAPS = 4; // at most this many part PAIRS trade places
+/** Furniture the shuffle never touches: hazards, and the hatch the ride needs. */
+export const TRICK_FIXED_KINDS = ["pit", "electric", "firevent", "magstrip", "trapdoor"] as const;
 /**
  * THE SPEED WITCH 🧙 — hides behind cracked walls (finally a reason to hunt
  * them). One trade per floor: HALF your current hearts for a long
@@ -1224,9 +1290,5 @@ export const TURBO_STEER_MULT = 1.5;
 export const TURBO_WALK_MULT = 1.25;
 /** Spring Legs: flat walls BOUNCE >1 while active (compound bouncing). */
 export const SPRINGLEGS_RESTITUTION = 1.05;
-/** Multi-Ball: two ghost knights mirror your run and ram what they touch. */
-export const MULTIBALL_OFFSET = 0.9; // tiles beside the player
-export const MULTIBALL_RAM_RANGE = 0.55;
-export const MULTIBALL_RAM_COOLDOWN = 0.3;
 /** Floor grade S/A unlocks a BONUS VAULT room on the next floor. */
 export const BONUS_ROOM_GRADES = ["S", "A"];
