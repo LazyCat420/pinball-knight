@@ -28,6 +28,7 @@ import {
 } from "./table";
 import { createSlotsGame } from "./slots-game";
 import { createRouletteGame } from "./roulette-game";
+import { createDartsGame } from "./darts-game";
 
 const GOLD = "#f0c040";
 const COLD = "#6fd0e8";
@@ -81,6 +82,7 @@ let onClosed: (() => void) | null = null;
 const GAMES: Array<{ id: GameId; name: string; make: () => CasinoGame }> = [
   { id: "slots", name: "SLOTS", make: createSlotsGame },
   { id: "roulette", name: "ROULETTE", make: createRouletteGame },
+  { id: "darts", name: "DARTS", make: createDartsGame },
 ];
 
 export function isGamblerOpen(): boolean {

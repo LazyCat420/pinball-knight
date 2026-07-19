@@ -1934,6 +1934,14 @@ function loop(now: number): void {
     }
   }
 
+  // ── The tavern owns the screen ──
+  // It runs its own renderer and covers the dungeon completely, so everything
+  // below here is drawing a fully-hidden frame at full cost. Three renderers
+  // were competing (dungeon pixel pass, tavern pixel pass, casino canvas) and
+  // the panel canvas was getting ~4fps as a result. The rAF stays alive so the
+  // loop resumes the moment the player descends.
+  if (isTavernSceneOpen()) return;
+
   const p = state.player;
   const g = state.grid;
 
