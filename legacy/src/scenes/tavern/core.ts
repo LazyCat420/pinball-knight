@@ -199,6 +199,13 @@ function frame(now: number): void {
   }
   vfx?.update(dt);
 
+  // ── Render ──
+  // Skip the 3D pass entirely while a full-screen panel is up. The room is
+  // almost fully obscured by the overlay and the player is frozen, so it is
+  // redrawing a near-static image at full cost — and it was STARVING the panel:
+  // the casino cabinet's canvas ran at ~2fps behind the tavern's pixel pass,
+  // which turned a 2.6s wheel spin into 26 seconds of wall clock.
+  if (frozen) return;
   if (tavern.scene && tavern.camera) {
     if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
     else tavern.renderer?.render(tavern.scene, tavern.camera);

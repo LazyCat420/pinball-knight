@@ -27,6 +27,7 @@ import {
   type RoundResult,
 } from "./table";
 import { createSlotsGame } from "./slots-game";
+import { createRouletteGame } from "./roulette-game";
 
 const GOLD = "#f0c040";
 const COLD = "#6fd0e8";
@@ -49,6 +50,16 @@ export interface CasinoGame {
   busy(): boolean;
   /** Player pressed the primary action mid-round (e.g. stop a reel). */
   poke?(): void;
+  /**
+   * Game-specific controls, rendered as a row of buttons in the cabinet.
+   *
+   * Needed because some games have a choice to make BEFORE committing — the bet
+   * type in roulette, hit/stand in blackjack. The first attempt routed roulette's
+   * bet selection through `poke()`, which only fires while the game is BUSY, so
+   * the bet could never actually be changed.
+   */
+  controls?(): Array<{ id: string; label: string; on?: boolean; disabled?: boolean }>;
+  onControl?(id: string): void;
   dispose?(): void;
 }
 
@@ -66,9 +77,10 @@ let flash = "";
 let flashT = 0;
 let onClosed: (() => void) | null = null;
 
-/** The games on offer. Only slots is built so far. */
+/** The games on offer. */
 const GAMES: Array<{ id: GameId; name: string; make: () => CasinoGame }> = [
   { id: "slots", name: "SLOTS", make: createSlotsGame },
+  { id: "roulette", name: "ROULETTE", make: createRouletteGame },
 ];
 
 export function isGamblerOpen(): boolean {
@@ -111,6 +123,23 @@ function refreshChrome(): void {
   // Re-render the stake row so unaffordable steps drop out as the purse changes.
   const row = el.querySelector("#gb-stakes");
   if (row) row.innerHTML = stakeRow();
+  const ctrls = el.querySelector("#gb-controls");
+  if (ctrls) ctrls.innerHTML = controlRow();
+}
+
+/** The current game's own buttons, if it has any. */
+function controlRow(): string {
+  const list = game?.controls?.() ?? [];
+  if (list.length === 0) return "";
+  return list
+    .map(
+      (c) =>
+        `<button data-ctrl="${c.id}" ${c.disabled ? "disabled" : ""} style="font-family:'Press Start 2P',monospace;font-size:8px;padding:5px 7px;
+          cursor:${c.disabled ? "default" : "pointer"};opacity:${c.disabled ? 0.4 : 1};
+          background:${c.on ? COLD : "#12161f"};color:${c.on ? "#04141a" : "#c9c1ad"};
+          border:2px solid ${c.on ? COLD : "#544e63"}">${c.label}</button>`,
+    )
+    .join("");
 }
 
 function stakeRow(): string {
@@ -190,6 +219,10 @@ function selectGame(id: GameId): void {
     (b as HTMLElement).style.borderColor = on ? COLD : "#544e63";
     (b as HTMLElement).style.color = on ? COLD : "#8a8578";
   });
+  // Must refresh: the new game's own controls (roulette's bet buttons, and
+  // later blackjack's hit/stand) live in #gb-controls, which only refreshChrome
+  // populates. Without this the row stays empty and the game is unplayable.
+  refreshChrome();
 }
 
 export function openGambler(host: HTMLElement, onClose: () => void): void {
@@ -233,8 +266,10 @@ export function openGambler(host: HTMLElement, onClose: () => void): void {
 
       <div id="gb-flash" style="height:16px;margin:8px 0;font-family:'Press Start 2P',monospace;font-size:9px;color:${GOLD};letter-spacing:1px"></div>
 
+      <div id="gb-controls" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
+
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578;margin-right:4px">BET</span>
+        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578;margin-right:4px">STAKE</span>
         <span id="gb-stakes" style="display:flex;gap:6px">${stakeRow()}</span>
         <span style="flex:1"></span>
         <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578">ROUNDS</span>
@@ -253,7 +288,10 @@ export function openGambler(host: HTMLElement, onClose: () => void): void {
     </div>`;
 
   el.addEventListener("click", (e) => {
-    const t = (e.target as HTMLElement).closest("[data-act],[data-stake],[data-game]") as HTMLElement | null;
+    // NB: every clickable attribute must be listed here. `data-ctrl` was added to
+    // the handler below but not to this selector, so every game-control click
+    // (roulette's bet buttons) was silently dropped by closest() returning null.
+    const t = (e.target as HTMLElement).closest("[data-act],[data-stake],[data-game],[data-ctrl]") as HTMLElement | null;
     if (!t) return;
     if (t.dataset.stake) {
       stake = clampStake(Number(t.dataset.stake), getBalance());
@@ -262,6 +300,11 @@ export function openGambler(host: HTMLElement, onClose: () => void): void {
     }
     if (t.dataset.game) {
       selectGame(t.dataset.game as GameId);
+      return;
+    }
+    if (t.dataset.ctrl) {
+      game?.onControl?.(t.dataset.ctrl);
+      refreshChrome();
       return;
     }
     if (t.dataset.act === "play") startRound();
