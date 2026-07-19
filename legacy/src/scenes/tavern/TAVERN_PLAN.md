@@ -32,7 +32,8 @@ does not touch the economy; it gives it a room to live in.
 ## Architecture
 
 `src/scenes/tavern/`, sharing the dungeon's render primitives but owning its own
-renderer/scene/loop (as `tavern-scene.ts` already correctly did).
+renderer/scene/loop — two scenes must not share `state.renderer`/`state.scene`,
+which the dungeon tears down between floors.
 
 | File | Owns |
 |---|---|
@@ -43,7 +44,10 @@ renderer/scene/loop (as `tavern-scene.ts` already correctly did).
 | `props.ts` | Station props + the central pinball table. |
 | `stations.ts` | Proximity, focus, prompt, spotlight. |
 | `core.ts` | Fixed-step loop + scene bootstrap. |
-| `index.ts` | `openTavern` / `closeTavern`. |
+| `index.ts` | `enterTavern` / `closeTavern`, and the DOM fallback. |
+| `npcs.ts` | The four keepers and their idle loops. |
+| `audio.ts` | Room tone + anvil / focus / plunger one-shots. |
+| `ui.ts` | The run summary (every other panel is the existing vendor UI). |
 
 **Do NOT reuse `entities/player.ts`.** It is 1569 lines interleaved with pinball
 momentum, wall-launches, rides, rolls, melee combo state and grid smashing, and
@@ -148,5 +152,8 @@ and are asserted to be open floor.
 - Warm orange = forge/hearth/bar. Cold cyan = pinball hardware, card sockets,
   the descent gate. Gold = rewards only. Every interactable readable by shape +
   light colour, not by a permanent text label.
-- **Keep the DOM fallback.** `createTavernScene` returns null without WebGL and
-  the flat DOM room takes over; that path must keep working.
+- **Keep the DOM fallback.** `openTavernScene` returns false when a
+  WebGLRenderer can't be constructed, and `enterTavern` falls back to the flat
+  DOM room in `scenes/dungeon/tavern.ts`. That path must keep working — but note
+  it can no longer host any 3D of its own, which is exactly why the old hybrid
+  backdrop was deleted.
