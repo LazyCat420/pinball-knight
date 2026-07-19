@@ -2,12 +2,12 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `8b544f0`, service `dee17f0`, both on synology, both verified
+**Live:** client `a5fe2e8`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
 - 482 client tests, 28 service tests, production build clean.
-- Repo tsc errors ~5975.
+- Repo tsc errors ~5955.
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
 
@@ -34,7 +34,54 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
 
-**The jungle room (`/`) was relit and decluttered.** It used to be lit by six
+**Four rooms were reworked this pass. Three of the four had the same
+shape of bug: something that LOOKED like it was working contributed nothing.**
+
+**The pirate cabin (`/pirate`) rendered as a near-black frame.** The candles
+were the only real lights and they were `PointLight` at intensity **0.8** over
+distance 6. three.js lights are physical — intensity is candela with
+inverse-square falloff — so that is roughly 0.2 by the time it reaches the desk.
+The candle meshes and flames were drawn, so it looked like the lights were
+there. Now: candles at 11 candela over 7.5 units, moonlight through the porthole
+as the shadow-casting key (entering at the porthole's real position so it is
+motivated in-fiction), and a hanging deck lantern for the dead black ceiling.
+The chest's glow light had the identical problem (0.5 over 2), so the gold never
+glowed. **Candle flicker is now a FRACTION of base intensity** — it was an
+absolute ±0.33, which was a ~40% swing against a base of 0.8 and an invisible
+~3% against the base the candles actually need.
+
+**The kitchen's appliances were black because of `metalness`, not lighting.**
+The toaster, microwave, fridge, stove and sink were `MeshStandardMaterial` at
+metalness 0.85–0.95 and **the scene has no environment map** — a PBR metal with
+nothing to reflect renders pure black no matter how much light you add. All
+appliances are now ≤0.45. The counter was also bare quartz with one floating
+orange; it now has three prop clusters with deliberate gaps between them, and
+the cabinets have under-counter and toe-kick lighting.
+
+**The window's outdoor scene was BEHIND THE WALL.** The left wall is a solid
+plane with no cutout sitting 0.01 behind the window group, and local +z points
+into the room — so the sky, hills, trees and ground, all at negative local z,
+were silently occluded. Only the raccoon (at z≈0) survived, which is why it read
+as a smudge on blank glass. **The old tests encoded the bug as the expectation**
+(`expect(fakeSky.position.z).toBe(-0.1)`). They now assert the real invariant:
+every outdoor mesh clears the wall at every nesting depth, and depth ORDERING
+rather than magic numbers. `window.ts` also went 28 → 8 tsc errors while gaining
+423 lines.
+
+**The jungle room needed a value structure, not more relighting.** After the
+lighting was fixed it still read flat, because wall/floor/ceiling were
+`0xaebaa4`/`0xc0b6a2`/`0xafc0a6` — the same luminance and nearly the same hue. No
+relighting fixes surfaces that are genuinely the same colour. Now separated
+darkest-overhead to warmest-underfoot: ceiling `0x5c7159`, wall `0x93a88c`,
+floor `0xc4a878`.
+
+**Boot no longer freezes on START.** ~60 forest shaders are pre-compiled during
+the DOS loading bar via `compileAsync()` instead of on the first post-click
+frame. It waits for `signalSceneReady()` first — three.js keys shader programs
+on the scene's light configuration, so compiling before the room's lights exist
+produces programs that get expensively relinked anyway.
+
+**The jungle room was also relit in an earlier pass and decluttered.** It used to be lit by six
 sources at once — ambient, a spot, a hemi and four point lights — so every
 surface was reached by several of them, nothing was ever in shadow, and the room
 resolved to one flat mid-green. That is why previous passes kept lowering
@@ -161,6 +208,20 @@ Ordered by what I'd do first.
   centre.** The old chairs centred on the seat and floated 0.065 above the floor
   because the leg reach had to be computed by hand. Keep new props origin-at-base
   so `set(x, SEAT_FLOOR_Y, z)` is the only number that can be wrong.
+- **three.js lights are PHYSICAL: intensity is candela with inverse-square
+  falloff.** An intensity under ~1 over more than a couple of units lights
+  essentially nothing, and because the emitter mesh still renders it looks like
+  the light is working. This exact bug was found THREE times in one pass (pirate
+  candles, pirate chest glow, kitchen under-cabinet spacing). If a room is
+  mysteriously dark, print the light intensities before touching anything else.
+- **A PBR metal with no environment map renders BLACK.** `metalness` above ~0.5
+  with no `scene.environment` cannot be fixed by adding light — a metal has
+  nothing to reflect. That, not the lighting, is why the kitchen appliances were
+  featureless slabs. Keep `metalness` ≤0.45 in these scenes or set an env map.
+- **A test that pins a coordinate can encode a bug as the expectation.** The
+  window tests asserted the sky sat at exactly `-0.1`, which is *behind the
+  wall* — so the suite was green while the scene was invisible. Prefer
+  relational invariants (ordering, "clears the wall") over magic numbers.
 - **Shadow flags are read per-mesh at render time, and the jungle room mounts
   across several idle callbacks.** `enableRoomShadows()` therefore runs after the
   LAST mount batch — move it earlier and the late props silently never cast.
