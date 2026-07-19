@@ -2,12 +2,12 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `d9206ba`, service `577c6b7`, both on synology, both verified
+**Live:** client `8b544f0`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
 - 482 client tests, 28 service tests, production build clean.
-- Repo tsc errors 6053 → 5975.
+- Repo tsc errors ~5975.
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
 
@@ -43,6 +43,18 @@ nothing, the other five filled the gap. It is now ONE key light casting real
 shadows, a low ambient that only prevents crushed blacks, and two tight accents.
 The key is golden and the ambient/hemi are cool — that warm/cool split is what
 stops the room reading green-on-green.
+
+**The production leaderboard works now — it never did before.**
+`NEXT_PUBLIC_BACKEND_URL` was set nowhere, and `NEXT_PUBLIC_*` is inlined at
+BUILD time, so the deployed bundle told every visitor's browser to fetch
+`http://localhost:5175`. Every read and write fell through to the localStorage
+fallback — the one path designed to look like success — so the symptom was "the
+leaderboard is oddly empty", never an error. It is now a Docker **build arg**
+threaded Dockerfile → docker-compose → deploy.sh.
+
+**All four leaderboards go through the service.** Ski and Pirate Surf used to
+keep private localStorage boards with their own top-10 rule; they now post to
+`game_scores` with their extras in the `detail` column.
 
 **`src/services/` is now genuinely the single door to the backend.** Everything
 that talks to the service goes through it, and `src/services/api-config.ts` is
@@ -86,35 +98,31 @@ Ordered by what I'd do first.
    narrower than the directory globs suggest: `src/utils/**` and `src/scenes/**`
    are NOT globally at 0, only the specific files listed at the top are.
 
-7. **The service has no auth at all.** `/api/youtube-sync` and `/api/scores`
-   accept anything from any origin — `server.ts` uses bare `app.use(cors())` with
-   no origin restriction, and only the rate limiter stands in the way. The
-   `/admin` gate is a `useEffect` hostname check plus a Next redirect, which
-   protects the *page*, not the *endpoint*. Authorization belongs on the service;
-   the client check should become UX-only. This was surfaced by the audit, NOT
-   fixed — it changes deploy config, so it wants a deliberate pass.
+7. **The service still has no authentication.** Hardened but not authenticated:
+   the rate limiter is now genuinely per-IP (it used to `clear()` every IP at
+   once on a global 60s timer, and it trusted client-controlled
+   `x-forwarded-for`, so rotating that header defeated it entirely), CORS is an
+   allowlist, and the container binds to the LAN rather than every interface.
+   Nothing identifies a caller. Acceptable only because the service is marked
+   internal in vault `projects.json`, has no reverse proxy, and is not publicly
+   routed — if that ever changes, this becomes urgent the same day.
 
-8. **Two leaderboards never reach the service.** `objects/ski-game.ts` and
-   `room/pirate-surf-ui.ts` each have a full private leaderboard —
-   `getLeaderboard`/`saveScore`, own localStorage key, own `sort` + `slice(0,10)`
-   — that duplicates the ranking rule `score-service.ts` and the server's
-   `LIMIT 10` already own. Adding them to `GAME_IDS` and routing both through
-   `saveLeaderboardScore` deletes both copies.
+8. **Pirate Surf never asks for a player name.** It now posts to the shared
+   board, and the server defaults the name to `"???"`. Every surf entry will read
+   the same until someone adds a name prompt. Ski already collects one.
 
-9. **Gold-award helpers are unadopted.** `utils/gold-rates.ts` now exports
-   `awardForScore` and `awardIncremental`; the 11 call sites that hand-roll
-   `Math.min(Math.floor(score / RATE), CAP)` are all in legacy directories and
-   were left alone. One has already diverged (`cigarette-game.ts:746` adds a
-   floor of 1). The doc comment on each helper lists its call sites, so the
-   conversion is mechanical.
+9. **`SurfUI` declares no fields**, so every property access on it is a tsc
+   error — including the new `_scoreSaved`. That's the file's existing pattern,
+   not a new break; typing the class is its own change.
 
-10. **The client still hand-copies the service contract.** `GameId` in
-    `score-service.ts:17` mirrors `GAME_IDS` in the service by comment only; the
-    1–12 name-length rule, the 1–15 `maxResults` clamp and the YouTube ID regexes
-    each exist independently on both sides (the channel-ID pattern has already
-    drifted — client `[\w-]` vs server `[a-zA-Z0-9_-]`). Deliberate for now: the
-    call was to keep the contract per-repo rather than couple the two deploys.
-    Drift shows up as a runtime 400, never a type error.
+10. **The contract is still hand-copied across the two repos**, deliberately —
+    `GameId` in `score-service.ts` mirrors `GAME_IDS` in the service by comment,
+    and the 1–12 name rule exists on both sides. Keeping the repos decoupled was
+    the explicit call. Drift shows up as a runtime 400, never a type error, so
+    when you add a game remember it is TWO edits.
+
+11. **`render/pinball-parts.ts`** still has the two ~42-branch if/else chains
+    over `part.kind` (see item 2) — unchanged, still the same silent-miss hazard.
 
 ---
 
@@ -144,6 +152,15 @@ Ordered by what I'd do first.
   there. **The jungle room has no such test** and it bit again this pass: a fern
   sat inside the beer pong table's footprint and grew up through the table
   surface. If you touch `room/tropical-plants.ts` placement, screenshot it.
+- **`NEXT_PUBLIC_*` is inlined at BUILD time, so it must be a build ARG.**
+  Setting it in `docker-compose.yml` under `environment:` looks right and does
+  nothing — the bundle was already compiled. If the leaderboard ever goes quiet
+  again, grep `.next/static/chunks/` for `localhost:5175` before debugging
+  anything else; zero hits means the wiring is intact.
+- **The mouse den's seats put their local origin at their BASE, not their
+  centre.** The old chairs centred on the seat and floated 0.065 above the floor
+  because the leg reach had to be computed by hand. Keep new props origin-at-base
+  so `set(x, SEAT_FLOOR_Y, z)` is the only number that can be wrong.
 - **Shadow flags are read per-mesh at render time, and the jungle room mounts
   across several idle callbacks.** `enableRoomShadows()` therefore runs after the
   LAST mount batch — move it earlier and the late props silently never cast.
