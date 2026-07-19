@@ -60,8 +60,20 @@ const PRICE_GEAR: Record<GearSlot, number> = { helmet: 45, armor: 70, boots: 40 
 const BELT_MAX = 4;
 
 /** Which vendor's counter is open; null = the room view (walk the tavern). */
-type VendorId = "cards" | "weapons" | "armor" | "potions";
+export type VendorId = "cards" | "weapons" | "armor" | "potions";
 let activeVendor: VendorId | null = null;
+
+/**
+ * COUNTER MODE — set when the walkable tavern (`scenes/tavern/`) opened a single
+ * vendor by walking up to their station, rather than this module rendering its
+ * own room.
+ *
+ * In that mode there is no room view to go "back" to: the room is the real 3D
+ * scene behind us, so `← Tavern` hands control back to it instead. Everything
+ * else — prices, stock, socketing, forging — is the same code path, which is the
+ * point: the walkable hub reuses the economy rather than reimplementing it.
+ */
+let counterMode: { onClose: () => void } | null = null;
 /** The 3D iso scene (null = WebGL unavailable → flat DOM room fallback). */
 let scene3d: TavernScene | null = null;
 let plateRaf = 0;
@@ -572,6 +584,14 @@ function render(): void {
   const stage = el.querySelector("#tavern-grid");
   if (!stage) return;
   const v = activeVendor ? VENDORS.find((x) => x.id === activeVendor) : null;
+  if (counterMode) {
+    // One counter, no room view — the walkable tavern is the room.
+    stage.innerHTML = v ? vendorView(v) : "";
+    paintTavernCards(stage);
+    const g = el.querySelector("#tavern-gold");
+    if (g) g.textContent = `${getBalance()}g`;
+    return;
+  }
   if (scene3d) {
     // 3D room is the WebGL backdrop; the DOM only draws the overlays.
     stage.innerHTML = (v ? "" : roomView3d()) + (v ? vendorView(v) : "");
@@ -602,7 +622,21 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     render();
     return;
   }
-  if (act === "back") { activeVendor = null; selectedStash = -1; forgePick = []; render(); return; }
+  if (act === "back") {
+    selectedStash = -1;
+    forgePick = [];
+    if (counterMode) {
+      // There is no room view behind this counter — hand control back to the
+      // walkable scene rather than rendering an empty overlay.
+      const done = counterMode.onClose;
+      closeVendorCounter();
+      done();
+      return;
+    }
+    activeVendor = null;
+    render();
+    return;
+  }
 
   // ── Alchemist: buy a potion onto the belt (stacks / first empty slot) ──
   if (act === "buypotion") {
@@ -810,4 +844,60 @@ export function closeTavern(): void {
   state.tavernEl?.remove();
   state.tavernEl = null;
   deps = null;
+}
+
+/**
+ * Open ONE vendor's counter over the walkable tavern (`scenes/tavern/`).
+ *
+ * The walkable hub owns the room; this owns the commerce. Splitting it this way
+ * means the 3D scene never has to know what a card costs and this module never
+ * has to know where the forge is standing — and, more to the point, the whole
+ * tested economy (socketing, forging, rerolls, stock, prices) is reused rather
+ * than rebuilt against a new UI.
+ */
+export function openVendorCounter(container: HTMLElement, vendor: VendorId, stats: TavernStats, onClose: () => void): void {
+  if (state.tavernEl) return;
+  deps = { stats, onDescend: onClose };
+  counterMode = { onClose };
+  activeVendor = vendor;
+  selectedStash = -1;
+  forgePick = [];
+  injectTavernStyles();
+  if (barOffers.length === 0) rollBarOffers();
+
+  const el = document.createElement("div");
+  el.style.cssText = `
+    position: fixed; inset: 0; z-index: 10007;
+    background: rgba(8,6,4,0.82);
+    display: flex; flex-direction: column; align-items: center;
+    font: 400 13px ui-monospace, Menlo, monospace; color: #e8dcc0; user-select: none;
+    padding: 14px; box-sizing: border-box;
+  `;
+  el.innerHTML = `
+    <div id="tavern-flash" style="position:relative;z-index:3;height:16px;color:${GOLD};font-size:11px;letter-spacing:1px;opacity:0;transition:opacity .25s;margin-bottom:6px"></div>
+    <div id="tavern-grid" style="position:relative;z-index:1;width:min(940px,97vw);flex:1;min-height:0;border-radius:12px;overflow:hidden"></div>
+  `;
+  el.addEventListener("click", (e) => {
+    const t = (e.target as HTMLElement).closest("[data-act]") as HTMLElement | null;
+    if (!t) return;
+    const [name, suffix] = t.dataset.act!.split(":");
+    handle(name, { idx: t.dataset.idx ?? suffix, w: t.dataset.w });
+  });
+  container.appendChild(el);
+  state.tavernEl = el;
+  render();
+}
+
+/** Tear down a counter opened by `openVendorCounter`. */
+export function closeVendorCounter(): void {
+  counterMode = null;
+  activeVendor = null;
+  state.tavernEl?.remove();
+  state.tavernEl = null;
+  deps = null;
+}
+
+/** True while a vendor counter is up — the walkable scene freezes movement. */
+export function isVendorCounterOpen(): boolean {
+  return counterMode !== null;
 }

@@ -178,7 +178,7 @@ import {
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
-import { openTavern } from "./tavern";
+import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
 
 /**
@@ -448,8 +448,8 @@ export function launchDungeonGame(onExit?: () => void): void {
     // Dev: open the between-floor TAVERN without clearing a floor first — it's
     // where the holo cards live, and QA'ing them shouldn't need a full run.
     (window as unknown as { __dungeonTavern?: () => boolean }).__dungeonTavern = () => {
-      if (!state.container || state.tavernEl) return false;
-      openTavern(state.container, {
+      if (!state.container || state.tavernEl || isTavernSceneOpen()) return false;
+      enterTavern(state.container, {
         stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
         onDescend: () => startLevel(state.level + 1),
       });
@@ -1188,6 +1188,10 @@ function selectSlot(slot: number): void {
 
 function handleKey(e: KeyboardEvent): void {
   if (!state.active) return;
+  // The walkable tavern owns the keyboard while it is up. Without this the
+  // dungeon still fires abilities underneath it — `e` is Q/E ability here and
+  // the interact key there.
+  if (isTavernSceneOpen()) return;
 
   // ── Shop is open: number keys buy, Escape/enter leaves; nothing else. ──
   if (state.shopEl) {
@@ -1437,7 +1441,7 @@ function descend(): void {
   const floorCleared = state.level;
   // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
   if (state.container) {
-    openTavern(state.container, {
+    enterTavern(state.container, {
       stats: { grade, floor: floorCleared, kills, bestCombo },
       onDescend: () => {
         startLevel(nextLevel);
@@ -1782,7 +1786,8 @@ function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
   if (state.gameOver || !p || !g || !state.input) return;
-  if (state.shopEl || state.tavernEl) return; // shop + Tavern pause the world while open
+  // Shop, the DOM tavern, and the walkable tavern scene all pause the world.
+  if (state.shopEl || state.tavernEl || isTavernSceneOpen()) return;
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
