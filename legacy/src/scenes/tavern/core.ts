@@ -31,6 +31,7 @@ import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer } from "./p
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, type TavernStats } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
+import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
 import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxStationFocus, sfxPlunger } from "./audio";
@@ -75,7 +76,7 @@ function hideDungeonHud(hidden: boolean): void {
 
 /** True while any overlay owns the screen — movement and interaction freeze. */
 function panelOpen(): boolean {
-  return isVendorCounterOpen() || isRunSummaryOpen();
+  return isVendorCounterOpen() || isRunSummaryOpen() || isGamblerOpen();
 }
 
 /** Act on the focused station. */
@@ -96,6 +97,12 @@ function interact(): void {
   }
   if (s.action.kind === "summary") {
     showRunSummary(host, tavern.stats, () => {
+      tavern.openStation = null;
+    });
+    return;
+  }
+  if (s.action.kind === "gambler") {
+    openGambler(host, () => {
       tavern.openStation = null;
     });
     return;
@@ -261,6 +268,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   fx = createStationFx(scene);
   prompt = createStationPrompt(container);
 
+  resetGamblerVisit(); // the round limit is PER VISIT, so clear it on entry
   vfx = createVfx(scene);
   npcs = buildNpcs(scene);
   props.syncViceCards();
@@ -343,6 +351,7 @@ export function closeTavern(): void {
   onResize = null;
 
   closeRunSummary();
+  closeGambler();
   prompt?.dispose();
   fx?.dispose();
   props?.dispose();

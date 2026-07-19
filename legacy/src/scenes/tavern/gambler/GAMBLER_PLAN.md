@@ -222,13 +222,27 @@ chunky meters, darts sticking where they land and staying for the round.
 
 ## Build order
 
-1. **`table.ts` + the station + cabinet shell.** Stake selector, purse, round
-   limit, payout plumbing. Proves you can walk up, bet, and have gold move —
-   with no game attached yet.
-2. **Slots.** Simplest logic, and it exercises the whole shell end to end.
-3. **Roulette.** Reuses the shell; adds bet-type selection.
-4. **Darts.** The best mechanic, and the one worth the most polish.
-5. **Blackjack.** Last: most logic, and it needs the new card art.
+1. ✅ **`table.ts` + the station + cabinet shell.** Station at (3.0, 5.6) with an
+   arcade-cabinet prop; stake selector, purse, round counter, net, payout
+   plumbing. Browser-verified: walk up, bet, gold moves, limit closes the table.
+2. ✅ **Slots.** Weighted strip tuned to ~90% RTP by enumeration, hand-authored
+   pixel symbols, sequential reel stops.
+3. ⬜ **Roulette.** Reuses the shell; adds bet-type selection.
+4. ⬜ **Darts.** The best mechanic, and the one worth the most polish.
+5. ⬜ **Blackjack.** Last: most logic, and it needs the new card art.
+
+### Notes from building 1–2
+
+- **Compute the RTP; never eyeball it.** The first slots paytable read as
+  reasonable and enumerated to 13%.
+- **Unicode glyphs are not pixel art.** The first symbols were `●◉⌒◆★☠` in Press
+  Start 2P, which has none of them — every one silently fell back to a system
+  face and rendered smooth. Anything drawn in the cabinet must be hand-authored
+  pixel runs (`symbols.ts`) or it will quietly not match the game.
+- **Decide the outcome before the animation starts.** `slots-game.ts` rolls on
+  `play()`, so the reels can never land on something other than what was paid.
+- **A refused bet must SAY so.** The first shell computed refusal messages and
+  discarded them; a dead button reads as a broken one.
 
 Each game ships with its pure logic tested before its renderer exists — for the
 chance games that means a Monte-Carlo RTP assertion, which is the only way to

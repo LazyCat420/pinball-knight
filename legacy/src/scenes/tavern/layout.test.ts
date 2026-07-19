@@ -65,6 +65,20 @@ describe("floor plan sanity", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("no two stations' interaction radii overlap", () => {
+    // Overlapping radii make the prompt flicker between two counters as you
+    // stand still. stationAt() resolves to the nearest, but the right fix is
+    // for them not to overlap in the first place.
+    for (let i = 0; i < STATIONS.length; i++) {
+      for (let j = i + 1; j < STATIONS.length; j++) {
+        const a = STATIONS[i];
+        const b = STATIONS[j];
+        const d = Math.hypot(a.x - b.x, a.z - b.z);
+        expect(d, `"${a.id}" and "${b.id}" radii overlap`).toBeGreaterThan(a.radius + b.radius);
+      }
+    }
+  });
+
   it("covers every vendor the economy defines, exactly once", () => {
     // If a vendor loses its station it becomes unreachable content — the whole
     // point of the walkable hub is that every system has a physical home.
@@ -72,9 +86,10 @@ describe("floor plan sanity", () => {
     expect(vendors.sort()).toEqual(["armor", "cards", "potions", "weapons"]);
   });
 
-  it("has exactly one way down and one run summary", () => {
+  it("has exactly one way down, one run summary and one gambler", () => {
     expect(STATIONS.filter((s) => s.action.kind === "descend")).toHaveLength(1);
     expect(STATIONS.filter((s) => s.action.kind === "summary")).toHaveLength(1);
+    expect(STATIONS.filter((s) => s.action.kind === "gambler")).toHaveLength(1);
   });
 });
 

@@ -27,6 +27,8 @@ export type StationKind =
   | { kind: "vendor"; vendor: "cards" | "weapons" | "armor" | "potions" }
   /** The run summary on the central table. */
   | { kind: "summary" }
+  /** The casino corner — slots, roulette, blackjack, darts. */
+  | { kind: "gambler" }
   /** Commit the loadout and generate the next floor. */
   | { kind: "descend" };
 
@@ -140,6 +142,19 @@ export const STATIONS: Station[] = [
     radius: 1.6,
     accent: WARM,
     action: { kind: "vendor", vendor: "armor" },
+  },
+  {
+    id: "gambler",
+    // Beside the stair you ARRIVE on, not the exit. You land flush with the
+    // floor's gold and the shops sit between here and the way out, so losing
+    // has a visible cost — you can't afford the card you wanted.
+    label: "Risk Gold",
+    blurb: "slots · roulette · blackjack · darts",
+    x: 3.0,
+    z: 5.6,
+    radius: 1.5,
+    accent: GOLD,
+    action: { kind: "gambler" },
   },
 ];
 

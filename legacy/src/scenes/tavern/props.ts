@@ -13,7 +13,10 @@
  */
 import * as THREE from "three";
 import { PALETTE_HEX } from "../dungeon/render/palette";
-import { OBSTACLES, WARM, COLD, GOLD } from "./layout";
+import { OBSTACLES, ROOM, WARM, COLD, GOLD } from "./layout";
+
+/** Just inside the south wall — where the dartboard hangs. */
+const ROOM_MAX_Z_PROP = ROOM.maxZ - 0.2;
 import { CARDS, RARITY_HEX, type CardId, type CardRarity } from "../dungeon/cards";
 import { activeWeapon } from "../dungeon/state";
 
@@ -296,6 +299,35 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   lane.position.set(plungerX, 0.02, n.z + 1.6);
   group.add(lane);
   accent("board", COLD, n.x, 1.8, n.z + 0.8, 2.6);
+
+  // ══════════════════════════════════════════════════════════
+  // THE GAMBLER'S CORNER — southeast, beside the arrival stair.
+  // A broken-down arcade cabinet rather than a card table: this is a casino
+  // built out of the same machine internals as the rest of the room.
+  // ══════════════════════════════════════════════════════════
+  const gx = 3.9;
+  const gz = 5.9;
+  box(1.5, 1.5, 0.9, mat(TIMBER_DK), gx, 0.75, gz); // cabinet body
+  box(1.6, 0.16, 1.0, mat(TIMBER), gx, 1.56, gz); // top lip
+  // The screen — cold arcade glow, angled toward the player.
+  const screen = box(1.15, 0.8, 0.06, emissive(COLD, 0.55), gx, 1.15, gz + 0.44);
+  screen.rotation.x = 0.24;
+  // Three reel windows behind the glass, in gold.
+  for (let i = -1; i <= 1; i++) {
+    const r = box(0.24, 0.34, 0.03, emissive(GOLD, 0.5), gx + i * 0.3, 1.16, gz + 0.5);
+    r.rotation.x = 0.24;
+  }
+  // The lever: a chrome rod with a blood-red knob, unmistakably a slot machine.
+  const lever = cyl(0.05, 0.55, mat(STEEL, { metalness: 0.9, roughness: 0.2 }), gx + 0.92, 1.3, gz);
+  lever.rotation.z = -0.3;
+  cyl(0.11, 0.11, emissive(BLOOD, 0.9), gx + 1.06, 1.55, gz);
+  // A dartboard hung on the wall behind it — advertises the other games.
+  const boardZ = ROOM_MAX_Z_PROP;
+  for (let i = 0; i < 4; i++) {
+    const rad = 0.42 - i * 0.1;
+    cyl(rad, 0.03, mat(i % 2 === 0 ? 0x1a1410 : BLOOD), gx + 2.0, 1.9, boardZ).rotation.x = Math.PI / 2;
+  }
+  accent("gambler", GOLD, gx, 1.7, gz - 0.6, 2.4);
 
   // Bent rails and chrome bumpers mounted into the walls, so the tavern itself
   // looks built out of old machine internals (TAVERN_PLAN §Rules).

@@ -111,6 +111,18 @@ describe("the reel strip", () => {
   });
 });
 
+describe("symbol art", () => {
+  it("every symbol on the strip has pixel art", async () => {
+    // A missing painter throws at DRAW time — i.e. mid-spin, with the player's
+    // gold already taken. Cheap to assert here instead.
+    const { paintedSymbols } = await import("./symbols");
+    const painted = new Set(paintedSymbols());
+    for (const s of new Set(REEL_STRIP)) {
+      expect(painted.has(s), `"${s}" is on the reel but has no art`).toBe(true);
+    }
+  });
+});
+
 describe("spin", () => {
   it("only ever produces symbols from the strip", () => {
     const rand = seeded(7);
