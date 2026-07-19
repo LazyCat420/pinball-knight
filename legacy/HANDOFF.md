@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `a5fe2e8`, service `dee17f0`, both on synology, both verified
+**Live:** client `7f62935`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
