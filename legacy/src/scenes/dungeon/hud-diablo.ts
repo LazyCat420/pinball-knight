@@ -20,6 +20,7 @@
  */
 import { state } from "./state";
 import { createFace, renderFace, setFaceHealth } from "./hud-face";
+import { createMinimap, renderMinimap, disposeMinimap } from "./hud-minimap";
 import { ABILITIES, type AbilityId } from "./abilities";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
@@ -144,6 +145,13 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   beltEls.forEach((b) => belt.appendChild(b));
   row.appendChild(segmentBox(withLabel("BELT · ⇧1-4", belt)));
 
+  // Segment 6 — MINIMAP. Last in the row so the existing four segments keep
+  // their positions; the map is a reference, not something you act on.
+  const mapBox = document.createElement("div");
+  mapBox.style.cssText = `width:58px;height:58px`;
+  mapBox.appendChild(createMinimap());
+  row.appendChild(segmentBox(withLabel("MAP · M", mapBox)));
+
   container.appendChild(el);
   panelEl = el;
   lastHeaderSig = "";
@@ -161,6 +169,7 @@ export function getDiabloFaceFrame(): HTMLDivElement | null {
 }
 
 export function disposeDiabloHUD(): void {
+  disposeMinimap();
   panelEl?.remove();
   panelEl = null;
   lifeCtx = manaCtx = null;
@@ -306,6 +315,8 @@ function buffTileHTML(b: BuffView): string {
 /** Advance the liquid + cooldown animations and repaint the face + header. */
 export function renderDiablo(dt: number): void {
   if (!panelEl) return;
+  // Cheap: renderMinimap early-outs unless something it draws actually changed.
+  renderMinimap();
   wavePhase += dt * 3.4;
   const p = state.player;
 

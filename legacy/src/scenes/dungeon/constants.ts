@@ -476,6 +476,14 @@ export const RAMP_HOP_MAX = 4.75; // farthest tiles ahead to look for a landing 
  * ramp points down its own lane and the airborne arc has nothing to clear.
  */
 export const VAULT_RAMPS_PER_FLOOR = 3;
+/**
+ * Tiles the knight reveals around themselves on the floor map.
+ *
+ * Generous rather than a torch-radius: this is a navigation aid, not a stealth
+ * mechanic, and a stingy reveal on a ~134x102 deep floor means the map is empty
+ * exactly when it would be most useful.
+ */
+export const FOG_RADIUS = 6;
 export const RAMP_HOP_SPEED = 16; // u/s the arc travels (governs airtime) — snappy, a touch above RAMP_SPEED
 /** Banked curve keeps all your speed and adds a whisper (reward the clean line). */
 export const DEFLECTOR_BOOST = 1.03;

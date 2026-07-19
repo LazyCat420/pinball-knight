@@ -116,6 +116,7 @@ import {
   TARGETS_PER_FLOOR,
   TRAPDOORS_PER_FLOOR,
   VAULT_RAMPS_PER_FLOOR,
+  FOG_RADIUS,
   PLUNGER_SPEED,
   PLUNGER_SKILL_RANGE,
   BOOTS_SPEED_FACTOR,
@@ -179,6 +180,8 @@ import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
+import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
+import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
 
 /**
@@ -400,6 +403,21 @@ export function launchDungeonGame(onExit?: () => void): void {
       if (!(id in WEAPONS)) return false;
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
       return true;
+    };
+    // Dev: the floor map's exploration state — the only way a harness can see
+    // whether fog is actually being revealed (the minimap is a canvas).
+    (window as unknown as { __dungeonFog?: () => unknown }).__dungeonFog = () => {
+      const g = state.grid;
+      const f = state.fog;
+      if (!g || !f) return null;
+      return {
+        w: f.w,
+        h: f.h,
+        rev: f.rev,
+        seen: exploredCount(f),
+        pct: Math.round(exploredFraction(f, g) * 100),
+        mapOpen: isFloorMapOpen(),
+      };
     };
     // Dev: socket a card straight into the active weapon. `__dungeonSocket('ember')`.
     // Card drops are random and socketing is several clicks deep in the tavern,
@@ -953,6 +971,9 @@ function startLevel(level: number): void {
   });
 
   state.grid = grid;
+  // Fresh fog every floor — the grid's dimensions change with depth, and
+  // carrying exploration across a descent would be a spoiler.
+  state.fog = createFog(grid);
   state.stairs = plan.stairs;
   // Curved walls: bank every qualifying maze corner, minus tiles a pinball
   // part already owns (a deflector there banks on its own — no double-dip).
@@ -1202,6 +1223,13 @@ function handleKey(e: KeyboardEvent): void {
   // dungeon still fires abilities underneath it — `e` is Q/E ability here and
   // the interact key there.
   if (isTavernSceneOpen()) return;
+  // M — the floor map. Free inside the dungeon now that the site map yields the
+  // key for the run (see map/map-overlay.setMapSuppressed).
+  if (e.key === "m" || e.key === "M") {
+    e.preventDefault();
+    if (state.container) toggleFloorMap(state.container);
+    return;
+  }
 
   // ── Shop is open: number keys buy, Escape/enter leaves; nothing else. ──
   if (state.shopEl) {
@@ -1853,6 +1881,11 @@ function simulate(dt: number): void {
     updateFps(dt, state.input);
   } else {
     updatePlayer(dt, state.input);
+    // Paint the fog from wherever the knight ended up this step.
+    if (state.fog && state.grid && state.player) {
+      const ft = worldToTile(state.grid, state.player.x, state.player.z);
+      revealAround(state.fog, state.grid, ft.i, ft.j, FOG_RADIUS);
+    }
   }
   // TIME CRAWL: the ability scales the horde's dt so enemies move + wind up in
   // slow-mo while the player runs at full speed. Everything else keeps real dt.
@@ -2004,6 +2037,7 @@ function loop(now: number): void {
 }
 
 export function exitDungeonGame(): void {
+  closeFloorMap();
   if (!state.active) return;
 
   const onExit = state.onExitCallback;

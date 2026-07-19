@@ -7,6 +7,7 @@ import type { VfxSystem } from "./render/vfx";
 import type { ActorSprite, SpriteSheet } from "./render/sprite";
 import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
+import type { Fog } from "./fog";
 import type { ArcCorner } from "./collision";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
@@ -525,6 +526,12 @@ export const state = {
 
   // The level
   grid: null as Grid | null,
+  /**
+   * Which tiles of this floor have been seen. MUST be re-allocated per floor —
+   * levelConfig() changes the grid dimensions every level, so a fog buffer
+   * carried across a descent would be both wrongly sized and a spoiler.
+   */
+  fog: null as Fog | null,
   stairs: null as TilePos | null,
   /** The player's spawn point this floor (world coords) — where a pit spits you back. */
   levelStart: { x: 0, z: 0 },
@@ -771,6 +778,7 @@ export function resetState(): void {
   state.cardStash = [];
   state.legendaryDropped = false;
   state.grid = null;
+  state.fog = null;
   state.stairs = null;
   state.maze = null;
   state.groundItems = [];
