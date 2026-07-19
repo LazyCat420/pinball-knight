@@ -1,315 +1,310 @@
-# Pinball Knight — Consolidated Plan (Tavern + Cards + Map Gen)
+# Pinball Knight — Consolidated Plan
 
-_Rewritten 2026-07-17. Supersedes the old brainstorm. This doc is honest about
-what is ALREADY BUILT (so we don't redo it), what is NEW from this round of
-feedback, and what OUTSTANDING work is ported from the retired plans
-(`src/scenes/dungeon/PINBALL_HYBRID_PLAN.md`, `PINBALL_ROADMAP.md`,
-`BLUEPRINT.md`, `VERIFY_CHECKLIST.md`)._
+_Rewritten 2026-07-19. Every line below was re-verified against the source this
+round; the previous revision (2026-07-17) had gone badly stale — most of its
+planned work shipped in waves 12–14b, and it described a DOM-overlay tavern and
+tiny card chips that no longer exist._
 
-All file paths are under `braindeadbot-client/src/scenes/dungeon/` unless noted.
+_This supersedes the retired `PINBALL_HYBRID_PLAN.md` and `PINBALL_ROADMAP.md`
+(both deleted). It does NOT supersede `BLUEPRINT.md` (architecture),
+`VERIFY_CHECKLIST.md` (manual QA), `../tavern/TAVERN_PLAN.md`,
+`../tavern/gambler/GAMBLER_PLAN.md`, or `MAP_PLAN.md` (repo root) — it
+consolidates their **open items** and points back at them for reasoning._
 
----
-
-## 0. Status Ledger — Already Built (do NOT rebuild)
-
-Verified in code this round. These were the bulk of the old plan and they ship:
-
-| Feature | Where | State |
-|---|---|---|
-| Wall-bounce physics (reflect + restitution) | `entities/player.ts:1230-1245` | ✅ flat wall keeps speed (`PINBALL_WALL_RESTITUTION` 0.94), **corner hits accelerate** (`PINBALL_CORNER_RESTITUTION` 1.12 + `PINBALL_CORNER_ADD` 1.4) |
-| Break walls by going fast | `secrets.ts` + `player.ts:1213-1228` | ✅ cracked-secret bands smash at `SECRET_BREAK_SPEED` (7 u/s); **ordinary** walls punch through at `WALL_BREAK_SPEED` (15 u/s) if corridor behind |
-| Map size scales with floor | `constants.ts:1135-1142` `levelConfig()` | ✅ `cellsW = min(17+ceil(l*1.4),30)`, `cellsH = min(12+l,22)`; braid/rooms/secrets/torches scale too |
-| No-orphan launch validation | `maze/decorate.ts:276,630-665` | ✅ launch parts need `MIN_RUNWAY`=3 floor tiles ahead or they flip/cull |
-| Ramp visual (wedge, rails, arrows, lip) | `render/pinball-parts.ts:82-136` | ✅ real `ExtrudeGeometry` wedge, side rails, 3 glowing arrows, gold kicker lip, scroll anim |
-| Three-zone floors (launch→core→drain) | HYBRID Slice 9 | ✅ BFS-distance banding |
-| Lit bumpers + jackpot, drop-target sequence, flipper redirect, momentum lanes, per-surface friction | HYBRID Slices 4-8 | ✅ |
-| Card system (13 cards, 4 rarities, socketing, drops) | `cards.ts` + `cards.test.ts` | ✅ fully modeled + unit-tested |
-| **Card effects: attack-faster / +damage / ice / fire** | `cards.ts:21-34,105-120` | ✅ `cooldownMult` (faster), `damageFlat`/`damageMult`, `onHit:"chill"` (ice), `onHit:"burn"` (fire), `pinballMult` |
-| Tavern hub (Armory/Bar/Blacksmith/Notice Board) | `tavern.ts` | ✅ but as a **DOM overlay**, not isometric (see §B) |
-| Card price spread | `tavern.ts:24-31` | ✅ 20/45/90/180g — but no high-end (see §C2) |
-| Floating combo numbers, wall-break toast | HYBRID Wave 10 | ✅ |
-
-**Takeaway:** the card *mechanics* and pinball *physics* the user described are
-done. The real gaps this round are: (1) launch parts can still aim at a
-**dead** unbreakable wall; (2) ramps don't yet **jump over** walls; (3) the
-tavern is a flat DOM panel, not an isometric room with talkable NPCs; (4) cards
-render as tiny chips, not holo cards; (5) no truly expensive cards.
+All paths are under `braindeadbot-client/src/scenes/dungeon/` unless noted.
 
 ---
 
-## A. Pinball Map Generation — New Work
+## 0. Shipped — do NOT rebuild
 
-### A1. Launch parts never aim at a dead wall (promote-or-redirect)
+Verified in code 2026-07-19 with line numbers. The previous plan's entire A/B/C
+programme is essentially done.
 
-**Problem.** `decorate.ts` only guarantees `MIN_RUNWAY` (3) *floor* tiles ahead
-of a booster/ramp. After that runway the trajectory can terminate in an
-**unbreakable** wall — the player rockets forward, bounces, and the launch feels
-pointless. The user's rule: _"boosters are never pointed at a wall unless we can
-break that wall — if we go fast enough we can break the wall, otherwise it gets
-boring."_
+### Pinball physics and parts
 
-**Plan.** Add a **launch-target resolution pass** in `decorate.ts`, run after
-part placement, before render build:
-
-- For each `LAUNCH_KINDS` part (ramp, booster, spring, slingshot, flipper),
-  raycast along its fire direction across the grid until the first wall tile.
-- Classify the terminating wall:
-  - **Already breakable** (`T_CRACKED`, or `isBreakableWall()` true → corridor
-    behind it): leave it — the launch pays off by smashing through. This is the
-    desired "go fast → break → shortcut" loop.
-  - **Dead unbreakable wall** (border shell, or solid rock with no corridor
-    behind): fix it by, in priority order:
-    1. **Promote** that wall tile to `T_CRACKED` **if** there is floor two tiles
-       beyond (so the smash opens into real space, matching `crackSecretWalls`'s
-       existing invariant). This is the primary fix — it turns every launch into
-       a breakable target and directly enables "the map gets bigger/more complex
-       as you smash outward."
-    2. If promotion is impossible (nothing but shell beyond), **re-aim** the part
-       to an open direction (reuse the existing flip-to-opposite-side logic at
-       `decorate.ts:630-638`, generalized to 4 directions).
-    3. If neither works, **cull** the part (orphan).
-- Gate promotion so a launch can't chain-break the entire floor: only the FIRST
-  wall in the trajectory is promoted; require the part's launch speed
-  (`RAMP_SPEED` 13 / `BOOSTER_SPEED` 15) to clear the relevant break threshold
-  (`SECRET_BREAK_SPEED` 7 — both do), so the promise is always keepable.
-
-**Why this is the keystone.** It makes the user's mental model true everywhere:
-*a booster you can see is always either a clear lane or a breakable wall you'll
-punch through at speed.* No dead ricochets.
-
-### A2. Ramp jump-over-walls (airborne arc)
-
-**Problem.** Ramps (`player.ts:666`) and boosters (`player.ts:682`) only set a
-floor heading + speed; the player still collides with every wall. There is NO
-airborne state for launch parts. Airborne exists ONLY for the trapdoor
-rollercoaster (`player.ts:1063` `updateRide`, a Catmull-Rom spline flown at
-`TRAPDOOR_HEIGHT` 1.8 with collision bypassed) and wall-kick/pounce (which stay
-grid-clamped). The user wants: _"when we hit a ramp can we jump over certain
-walls, then physics so we hit a wall and bounce off it."_
-
-**Plan.** Give ramps (not boosters — keep boosters as flat ground-speed lanes so
-the two parts stay distinct) a real **launch arc**:
-
-- On ramp trigger, if incoming `momSpeed ≥ RAMP_LAUNCH_MIN` (new constant),
-  enter a new **`airborneT` state** on the player instead of the flat speed set.
-- Reuse the trapdoor arc math: raise `p.sprite.mesh.position.y` on a parabola
-  peaking ~`RAMP_HOP_HEIGHT` (≈1.2) over `RAMP_HOP_DIST` tiles (2-3 in the
-  ramp's direction), bypassing `moveCircle` wall collision for the arc — so the
-  knight **clears 1-2 walls** and lands beyond.
-- Landing rules (this is where existing physics takes over):
-  - Land on **floor** → resume `updatePinball` momentum in the ramp direction
-    (carry speed, keep combo). Spawn the landing puff + speed trail already in
-    `render/vfx.ts`.
-  - Land **inside/against a wall** → nudge back to the last valid tile and hand
-    to the normal pinball wall-bounce (§0) — reflect off it. This is exactly the
-    "jump over walls, then bounce when you hit one" the user described.
-- The ramp's **launch-target pass (A1)** should ensure the landing tile is floor
-  when possible; if the only landing spot is a breakable wall, that's fine — the
-  arc ends in a smash.
-- Telegraph: while airborne, the shadow decouples from the sprite (draw a ground
-  shadow at `y=0` under the arc) so the height reads in iso. Add a short i-frame
-  window over the apex (matches trapdoor).
-
-**Scope note:** this is the single genuinely-new *mechanic*. Everything it lands
-into (bounce, break, combo, VFX) already exists.
-
-### A3. Progressive size / complexity (extend, don't rebuild)
-
-Map size already scales (`levelConfig`). This round only tunes the *curve* so
-the smash-outward loop from A1 has room to grow:
-
-- Raise the `cellsW`/`cellsH` caps modestly on deep floors (e.g. 30→34, 22→26)
-  now that breakable launch-walls (A1) let the player expand the reachable area
-  themselves — the floor can start denser because the player carves openness.
-- Scale **launch-part density** and **cracked-wall budget** with depth in
-  `levelConfig` so later floors read as more machine-like (more ramps/boosters,
-  more breakable targets), delivering "gradually bigger / more complex."
-- Keep the render viewport fixed (`VIEW_W` 20) — camera already follows.
-
-### A4. Ported map-gen residue (from retired plans — optional / lower priority)
-
-Carried forward so nothing is lost; none block A1-A3:
-
-- **Kicker gates** and **multiball wells** as distinct part kinds — specced in
-  the original brainstprm (Fix 3A), never built. (Multiball exists only as a
-  potion power-up.) Nice-to-have.
-- **Per-zone corridor WIDTH carve** + making the core the single densest band —
-  explicitly deferred in HYBRID Slice 9 (taste, not blocking).
-- **Literal layered generator** (Chi/freeway drunkard's-walk skeleton →
-  slime-mold/Physarum branch fill → explicit Bagua 3×3 zone grid → Layer-4
-  sightline scoring + reveal corridors). The shipped generator uses
-  BFS-distance three-zone banding instead; the literal algorithm was never
-  built. Treat as a research spike, not committed work.
-- **Table-shaped prefab rooms** (circular/oct bumper court, teardrop return
-  lane, ramp spiral, funnel rooms) — partial arc-corner flow exists; these
-  specific prefabs don't.
-
----
-
-## B. Tavern — Isometric Room With Talkable NPCs
-
-**Current:** `tavern.ts` is a full-screen fixed DOM overlay (`z-index:10005`)
-with four styled panels (Armory ⚔ / Bar 🍺 / Blacksmith 🔨 / Notice Board 📜).
-No 3D, no fireplace, no characters — the "NPCs" are emoji in panel headers. The
-old plan itself flagged this deviation ("plan named a 3D scene but shipped a DOM
-overlay").
-
-**Target (user request):** an **isometric tavern** — a warm room with a
-**fireplace**, that you walk through, with **four distinct NPCs you talk to**:
-
-1. **Potion-seller** (Bar/Alchemist) — potions.
-2. **Armorer** — armor/gear.
-3. **Weaponsmith** — weapons + repairs + card-slot upgrades.
-4. **Card-dealer** — cards for sale (the holo cards, §C).
-
-### B1. Render the room in the existing iso pipeline
-
-- Build the tavern as an **iso scene reusing the dungeon renderer** (same
-  Three.js + cel/pixel pass in `render/`), NOT a from-scratch scene — this is
-  cheaper and keeps the art consistent. A single walled room tile-map (~9×7),
-  wood-plank floor palette, a back wall with a **fireplace**: an emissive
-  flickering ember mesh (reuse the torch flicker in the dungeon) + a warm point
-  light, a mantel, a chimney. Tables/stools/barrels as simple primitive props
-  (like `pinball-parts.ts` furniture).
-- The player sprite walks the room (reuse `entities/player.ts` movement, combat
-  disabled). Descend stairs / an exit door replaces the DESCEND button.
-- Camera: the dungeon iso camera, framed on the room.
-
-### B2. Four NPC vendors as figures you approach + talk to
-
-- Add tavern NPCs as `figure.ts`-rigged sprites (reuse the biped rig; recolor
-  per vendor). Each stands at a station: fireplace armchair (alchemist), armor
-  rack (armorer), forge/anvil (weaponsmith), a card table (dealer).
-- **Interaction:** walk within ~1.5 tiles → a floating prompt ("▲ Talk"); press
-  the interact key → open that vendor's panel. Reuse the existing `tavern.ts`
-  panel bodies (`station()` + `handle()` switch) as the *content* of each
-  vendor's dialogue overlay — so the shop logic is preserved, just re-fronted by
-  a character. This keeps the working buy/socket/forge/reroll code intact.
-- Split today's single "Bar" panel across the four vendors:
-  - Potion-seller ← potions.
-  - Weaponsmith ← weapon repair, add-card-slot, weapon stock. (Blacksmith's
-    repair/forge/reroll folds in here or stays a 5th anvil — TBD.)
-  - Armorer ← **new** gear/armor stock (gear already exists in `runState.gear`;
-    surface buyable armor pieces).
-  - Card-dealer ← card stock + reroll (the §C holo cards).
-- Notice-board stats stay as a readable board prop on the wall.
-
-**Keep the DOM overlay as the *dialogue* layer** (it works, it's tested-shaped)
-— the new part is the walkable iso room + NPC figures that trigger it. This is
-the pragmatic path vs. a full in-world 3D shop UI.
-
----
-
-## C. Cards — Holo Trading-Card Look (Pokémon-style)
-
-**Current:** cards render as tiny inline chips (`tavern.ts:80-94` `cardChip`) —
-a bordered pill with emoji + label + 8px description. Functional, but "very
-basic."
-
-**Reference (user-cited):** the Congress/Senate Pokémon cards in
-`trading-client/frontend/src/components/HoloCard.jsx` +
-`lib/holoCardEngine.js`. That system is a **512×716 canvas-painted card** with:
-- 5 rarity tiers (0 matte → 1 cosmic art box → 2 full-art metallic → 3 gold
-  etched → 4 rainbow secret rare), driven by `deriveCardData().tier`.
-- Painted frame, portrait art box, HP, two "moves" with power, a plaque, foil
-  **speckle** field, metallic sheen, gold edge, master-ball rarity icon.
-- A CSS **`.holo-shimmer`** overlay (globals.css:1421) — a diagonal
-  rainbow gradient sweep whose opacity scales with rarity.
-- Optional WebGL 3D tilt/holographic shader on hover (shared renderer).
-
-### C1. Port a card painter into the dungeon
-
-- New module `render/holo-card.ts` (a trimmed port of `holoCardEngine.js`'s
-  `paintCard`, minus the congress-specific data) that paints a `CardDef` to a
-  canvas: frame in the card's `RARITY_HEX` color, an **icon/art box** (use the
-  card's emoji large + a themed backdrop per element — red ember for burn, cyan
-  frost for chill, gold for pinball, steel for utility), the label, rarity
-  ribbon, the effect described as a "move" line (e.g. "Frost Chip — CHILL: slow
-  on hit"), and tier treatment (speckle foil + metallic sheen + gold edge for
-  epic/legendary).
-- Map the 4 card rarities to tiers: common→0, rare→1/2, epic→3, legendary→4
-  (rainbow secret-rare treatment for legendaries — Pinball Wizard / Soul Reaver
-  should feel like a chase pull).
-- Wrap it in a small element with the **`.holo-shimmer`** sweep (port the CSS
-  into the dungeon's stylesheet) so cards glint in the tavern.
-- Use these painted cards wherever cards show at meaningful size: the
-  card-dealer's stock, the Armory socketing view, the on-pickup preview modal.
-  Keep the tiny chip only for dense inline lists (weapon slot occupancy).
-- 3D tilt is optional polish (defer) — the painted canvas + shimmer already
-  reads far better than chips.
-
-### C2. Expensive cards (price ceiling + a top tier)
-
-User: _"cards should not just be cheap — there should be more expensive ones."_
-
-- Current prices key off rarity only: 20/45/90/180 (`tavern.ts:24-31`).
-- Raise the top and widen the spread: e.g. common 20 / rare 60 / epic 140 /
-  legendary 300, and add a **`mythic`** rarity (tier-4 rainbow, a couple of
-  build-defining cards) priced ~500-750g, sold rarely (dealer stock roll or
-  once-per-run chase). Add `mythic` to `RARITY_COLOR`/`RARITY_HEX` (`cards.ts`)
-  and the price map.
-- Optionally price a card off its *modifier strength* (a big `damageMult` costs
-  more than a small `damageFlat`) so a strong rare can out-price a weak epic —
-  makes the shop feel curated, not flat by tier.
-- Ensure the dealer's stock roll can surface expensive cards (weight by gold on
-  hand / floor depth) so late runs have something to spend on.
-
-### C3. Card effects — already done (confirm only)
-
-The four the user named already exist and are unit-tested (`cards.ts`,
-`cards.test.ts`): attack-faster = `cooldownMult` (<1), +damage =
-`damageFlat`/`damageMult`, ice = `onHit:"chill"`, fire = `onHit:"burn"`, plus
-`pinballMult` momentum synergy. **No new effect code needed** — just make sure
-each card's painted "move" line reads its effect clearly (§C1). If new
-expensive/mythic cards are added, they compose from the existing modifier
-fields.
-
----
-
-## D. Ported Outstanding (from retired plans — not this round's focus)
-
-Carried so nothing is dropped; schedule after A-C:
-
-- **BLUEPRINT Phase 4 juice not confirmed:** blood pixels, best-depth
-  `localStorage` persistence, gold-wallet wiring. (Damage/combo numbers ✅.)
-- **BLUEPRINT Phase 5:** leaderboard via `/api/scores`, Rapier physics,
-  alternate maze algorithms — long-horizon, optional.
-- **BLUEPRINT §11 open decisions:** perma-death vs checkpoints; do actor sprites
-  get lit by torches. Decide, then implement.
-- **§5.1 control-inversion empirical check** (flagged in ROADMAP §6 +
-  VERIFY_CHECKLIST §6): left/right movement + aim direction possible inversion —
-  never verified. Do a live playtest pass.
-- **VERIFY_CHECKLIST.md** is entirely unchecked — every item is a live in-browser
-  test (debug console, HUD, buff strip, power-ups, rampage swap, enemies/parts).
-  Wave 10/11 features (incl. the current tavern) were only build/tsc-verified,
-  never playtested. Run the checklist in-browser.
-
----
-
-## E. Files to Touch
-
-| Work | File(s) |
+| Feature | Where |
 |---|---|
-| A1 launch-target promote/redirect | `maze/decorate.ts` (new post-placement pass), `maze/generator.ts` (`T_CRACKED` promotion helper), `secrets.ts` (reuse `isBreakableWall`) |
-| A2 ramp airborne arc | `entities/player.ts` (new `airborneT` state; ramp trigger at ~`:666`; arc math ported from `updateRide` `:1063`), `constants.ts` (`RAMP_LAUNCH_MIN`, `RAMP_HOP_HEIGHT`, `RAMP_HOP_DIST`), `render/vfx.ts` (ground shadow + landing puff) |
-| A3 size/complexity curve | `constants.ts` `levelConfig()` |
-| B1 iso tavern room | new `scenes/tavern/room.ts` (or extend `tavern.ts`) reusing `render/*`; fireplace via torch-flicker + point light |
-| B2 vendor NPCs | `render/figure.ts` (vendor sprites), `entities/npc.ts` (interaction prompt), `tavern.ts` (re-front panels as per-vendor dialogue; add Armorer stock) |
-| C1 holo card painter | new `render/holo-card.ts` (port `trading-client/.../holoCardEngine.js` `paintCard`); port `.holo-shimmer` CSS; wire into `tavern.ts` card views + pickup modal |
-| C2 pricing + mythic | `cards.ts` (add `mythic` rarity + roster), `tavern.ts:24-31` (price map, stock roll weighting) |
-| D verification | live playtest against `VERIFY_CHECKLIST.md`; control-inversion check |
+| Wall bounce + **corner acceleration** | `entities/player.ts:1072-1086` |
+| Break walls at speed | `SECRET_BREAK_SPEED=7`, `WALL_BREAK_SPEED=15` (`constants.ts:754,762`); `player.ts:1039-1056`; `secrets.ts:34` |
+| Three-zone BFS banding (speedway/bumper/arena-vault) | `maze/decorate.ts:576-591,742` |
+| Lit bumpers + jackpot | `entities/pinball-collide.ts:276-296`, `fireJackpot:161-180` |
+| Drop-target sequence bank | `pinball-collide.ts:448-475` |
+| Flipper redirect | `pinball-collide.ts:514-539` |
+| Momentum lanes (centring glide) | `player.ts:1016-1030` |
+| Per-surface friction | `constants.ts:329-331`, applied `player.ts:1106` |
+| **Exhaustive collision dispatch** | `PART_HANDLERS: Record<PinballPartKind, PartHandler>` `pinball-collide.ts:262`; test `pinball-collide.test.ts:105` |
+| 18 part kinds | `state.ts:295-315` |
+| Orbits, rollover lanes, plunger + skill shot, named shots, shot chains | waves 14 / 14b |
+
+### A1 — launch-target invariant ✅
+
+`maze/decorate.ts:398` `openLaunchTargets()`. Raycasts each launch part
+(`runway():415`, `firstWall():425`), then a 4-step ladder: crack the wall to
+`T_CRACKED` (`tryCrack():435`, 2×2 band, corridor-beyond required, ≥4 Manhattan
+spacing, `HARD_CAP=28`) → re-aim to a cardinal with runway → re-aim + crack →
+cull the orphan. Wired at `:1220`, tested `maze/decorate.test.ts:420-481`.
+**The "a booster you can see is always a clear lane or a breakable wall" promise
+is kept.**
+
+### A2 — ramp hop ✅ (with two deliberate deviations)
+
+`player.ts:842-943`. The state field is **`hopT`**, not the planned `airborneT`
+(`startRampHop:854`, `updateHop:910`, driven at `:1208`). Parabolic
+`sin(π·u) · RAMP_HOP_HEIGHT`, collision bypassed, i-frames held, landing
+pre-snapped to a walkable tile past a crossed wall band (`:866-878`), momentum
+resumed along the hop heading on landing (`:931-934`).
+
+Constants are `RAMP_HOP_HEIGHT=1.75` / `RAMP_HOP_MIN=2.5` / `RAMP_HOP_MAX=4.75`
+/ `RAMP_HOP_SPEED=16` (`constants.ts:470-487`). `RAMP_LAUNCH_MIN` and
+`RAMP_HOP_DIST` were never created — don't go looking for them.
+
+Two things the old plan specced that were **designed out, not forgotten**:
+- **No "land against a wall → nudge back → bounce" branch.** Landings are
+  pre-snapped to walkable tiles; if none is in range the hop is skipped and the
+  flat dash stands (`:881`).
+- **Ramps only.** Boosters remain flat ground-speed lanes (`pinball-collide.ts:341`),
+  keeping the two parts distinct — as intended.
+
+### B — isometric tavern ✅
+
+An entire scene package at `../tavern/` (12 modules + gambler, ~5,575 lines) —
+not the `room.ts` the old plan imagined. Walkable iso room with its own player
+controller (`../tavern/player.ts`), hearth, anvil, bar shelf, armory vice
+showing your real weapon with lit rune plates, notice board, descend plunger.
+Room tone is real audio (`../tavern/audio.ts:43`). All placement is pure data in
+`../tavern/layout.ts:87-160` with tests asserting open floor.
+
+Four keepers with idle loops (`../tavern/npcs.ts:38-43,93-135`). Proximity focus
++ spotlight + `[E] LABEL` prompt (`../tavern/stations.ts:23-60,110`). Seven
+stations, each opening **its own** vendor counter — board (descend), forge
+(weapons), bar (potions), table (run summary), dealer (cards), armory (armor),
+gambler (casino).
+
+`dungeon/tavern.ts` (834 lines) survives deliberately as **the economy plus the
+dialogue layer**: `openVendorCounter():789` is what the 3D scene opens.
+`openTavern():737` — the old four-panel hub — is now only reachable when WebGL
+is unavailable. Armorer sells gear: `PRICE_GEAR` `tavern.ts:66`, buy `:601`.
+
+### C — holo cards ✅
+
+`render/holo-card.ts` (540 lines), 512×716. Rarity→tier is
+`common:0, rare:1, epic:2, legendary:3, mythic:4` (`:32`) — **not** the old
+plan's mapping; mythic took tier 4. Element theming derives from the modifier,
+not rarity (`:43-52`). Painted stack: gradient frame, tier≥1 rainbow foil
+stripes, tier≥2 metallic wash, tier≥3 etched engraving, tier-4 extra pass,
+cosmic art window with a speckle field, "moves" rows, star + rarity footer,
+tier-weighted gold edge. Specks use a seeded LCG (`:63-71`) so they don't
+shimmer between repaints.
+
+Shimmer shipped as **`.hcard-shimmer`** (`tavern.ts:266-271`), not
+`.holo-shimmer`, plus `.hcard-gold` and an animated conic border `.hcard-myth`
+for mythics. Painted cards are used at dealer stock, stash/socket picker, weapon
+slot occupancy, forge picker and reroll list. **`cardChip` was deleted** — there
+is no tiny-chip path left.
+
+Prices are `20 / 60 / 140 / 320 / 600` (`tavern.ts:54`); `mythic` is real
+(`cards.ts:17,49,73,151`) with two cards (`worldbreaker`, `timeripper`). Roster
+is **15** cards across 5 rarities, not 13. All effect fields intact
+(`damageFlat`, `damageMult`, `cooldownMult`, `durabilityMult`,
+`onHit: chill|burn`, `pinballMult` — `cards.ts:23-36`).
+
+### Postdating the old plan entirely
+
+- **The casino** — four games with tested RTP under `../tavern/gambler/`
+  (slots, roulette, blackjack, darts), shared stake/purse/round-limit settlement
+  in `table.ts`. See `GAMBLER_PLAN.md`; it lists nothing open.
+- **Maps** — both tracks shipped: pixel site map, plus dungeon fog of war,
+  HUD minimap and full floor map on **M**. See `MAP_PLAN.md`.
+- **Blood pixels** (`render/vfx.ts:373`) and **gold-wallet wiring**
+  (`addGold(n,"dungeon-game")` throughout).
+- **Alternate maze algorithms** — `maze/generator.ts:87-108` is a growing-tree
+  generator parameterised by `windiness` (spans Prim's ↔ recursive backtracker)
+  with a `braid` loop probability.
+- **Two §11 decisions are settled in code**: death is **roguelite** — banked
+  wallet gold persists, the run restarts at floor 1 (`core.ts:1462`); actor
+  sprites are **unlit** — `render/sprite.ts:350-352` supports lit, but every
+  caller passes `false` (`core.ts:742,993`), so that branch is dead code.
 
 ---
 
-## F. Suggested Order
+## 1. Open work
 
-1. **A1** (launch-target promote/redirect) — biggest gameplay win, unblocks the
-   "smash outward → bigger map" loop; pure generation code, low risk.
-2. **A2** (ramp airborne jump) — the one new mechanic; lands into existing physics.
-3. **C1 + C2** (holo cards + pricing) — high visual payoff, self-contained port.
-4. **B1 + B2** (iso tavern + NPCs) — largest surface; keep DOM panels as the
-   dialogue layer to de-risk.
-5. **A3** tuning, then **D** playtest verification.
+Ordered by value. Items 1–3 are the ones I'd actually do next.
 
-Each is independently shippable and testable (`npm test` + `npx tsc --noEmit`,
-then in-browser). Commit + push before any deploy.
+### 1. The dungeon still never submits a score 🔴
+
+The single biggest gap between "built" and "useful", and it has survived several
+rounds. The service is ready (`POST /api/scores`, `game: "pinball-knight"`, JSON
+`detail` blob) and `src/services/score-service.ts` is game-aware — but grepping
+`score-service|/api/scores|submitScore` across the repo returns only
+`objects/ski-game.ts`, `room/pirate-surf-ui.ts` and
+`objects/raccoon-tornado/core.ts`. **Zero hits under `scenes/dungeon/`.**
+Neither death (`core.ts:1442-1466`) nor descent (`core.ts:1468-1479`) posts
+anything; both only touch the gold wallet.
+
+Post on death and on descent: score, floor reached, best combo, kills, run time.
+`saveLeaderboardScore` is async and returns `Promise<boolean>` — **await it and
+surface failure**; the identical fire-and-forget bug in raccoon-tornado showed
+players a score that was silently rejected.
+
+### 2. `render/pinball-parts.ts` is the last silent-miss hazard 🔴
+
+Collision is exhaustive by construction, so adding a `PinballPartKind` without
+handling it is a compile error. The renderer is not:
+
+- **builder chain — 17 branches**, `pinball-parts.ts:506-522`, no final `else`
+- **animator chain — 16 branches**, `:618-794`, ending `else if (part.kind !== "pit")`
+- plus 2 pre-chain guards (`:599` glove, `:609` firevent), 5 inline `s.kind ===`
+  ternaries at `:540-548`, and 2 more at `:800`
+
+(The old plan's "~42 branches" was wrong — it's 33 across the two chains.)
+
+A new part kind therefore **type-checks, collides correctly, and renders
+nothing**. Convert both to `Record<PinballPartKind, …>` the same way collision
+was. This is exactly the bug class that silently applied wrong physics for
+months before `pinball-collide.ts` was converted.
+
+### 3. Arrow keys are double-bound — and this is probably the "control inversion" 🟠
+
+`ROADMAP §6` / `VERIFY_CHECKLIST §6` have carried a never-verified note about
+left/right movement vs aim inversion. Reading the code, **there is no sign error
+anywhere**: movement and mouse aim both route through `screenDirToWorld` with
+the same screen-down convention (`camera.ts:51-57,99-100`), iso movement at
+`player.ts:281`, and FPS negates `a.z` deliberately with a comment saying why
+(`fps.ts:189-191`).
+
+The real defect is different: `arrowleft`/`arrowright` are in **both**
+`MOVE_KEYS` (`input.ts:58,60`) and `TURN_LEFT`/`TURN_RIGHT` (`:69-70`), and
+`onKeyDown` registers both (`:86-87`). In FPS mode, holding Left arrow strafes
+left *and* rotates the camera left simultaneously — which would absolutely feel
+like inversion to a playtester. Pick one binding per key, then close the note.
+
+### 4. Ramp-hop polish
+
+- **The ground shadow rises with the knight.** `makeContactBlob` parents the
+  blob to the billboard mesh (`render/sprite.ts:90-97`) and `updateHop` lifts
+  `sprite.mesh.position.y` (`player.ts:925`), so height doesn't read in iso.
+  Decouple the blob and draw it at `y=0` under the arc. Also affects wall-kick
+  and pounce.
+- Consider whether boosters should hop too, or stay flat by design (currently
+  flat, deliberately).
+
+### 5. Map / floor-plan residue
+
+- **`LevelPlan.rooms` is dropped after `buildMaze`.** `plan` is a local const in
+  `startLevel` (`core.ts:962`) and never stashed on `state`; `plan.rooms`
+  (declared `maze/decorate.ts:135`) is read **nowhere**, so the floor map cannot
+  label speedway/bumper/arena/vault rooms. Stash the plan to enable it.
+  **Correction to earlier notes: `plan.frog` is NOT lost** — the frog survives as
+  an NPC (`core.ts:1142`, `state.npcs` kind `"frog"`, `state.ts:268,473`), so the
+  map can already locate it without the plan. Only `rooms` needs retaining.
+- **Minimap has no off-screen stairs indicator.** `hud-minimap.ts` (66 lines)
+  never mentions stairs; `map-render.ts:168-169` only draws them when already
+  discovered AND inside the 23×23 window (`WINDOW=11`). No edge clamp, no arrow.
+- **No legend on the HUD minimap.**
+
+### 6. Juice gaps (BLUEPRINT Phase 4)
+
+- **Damage numbers do not exist.** `vfx.ts:310-329` exports only
+  `sparks/blood/ember/mote/dust/slash/ghost`. Earlier notes claiming
+  "damage/combo floating numbers ✅" were wrong.
+- **Combo is a centred DOM `×N` flash** (`state.ts:419`, `core.ts:579`,
+  `ui.ts:205,226-227`), not floating world-space text.
+- **Best-depth persistence is unbuilt** — zero `localStorage` hits under
+  `scenes/dungeon/`. Cheap, and it gives a solo player a reason to push.
+
+### 7. Card economy tail
+
+- **On-pickup card preview modal** — `paintCard` is called in exactly one file
+  (`tavern.ts:213`). The dungeon pickup path is a silent `pickUpCard(it)`
+  (`core.ts:1627`) with no card visual. Showing the painted card on pickup is
+  the highest-value remaining use of a system that's already built.
+- **Stock roll ignores gold and depth.** `rollBarOffers` (`tavern.ts:119-130`)
+  uses flat fixed thresholds (`<0.5` common … else mythic). Weighting by
+  gold-on-hand or floor depth would give late runs something to spend on.
+- **Modifier-strength pricing** (a big `damageMult` costing more than a small
+  `damageFlat`) — still keys off rarity only.
+
+### 8. Tavern polish (see `../tavern/TAVERN_PLAN.md`)
+
+- Keepers don't react to being approached — nothing in `npcs.ts` reads player
+  position; no turn-to-face, no greeting.
+- **No keeper at the gambler station** — `KEEPER_SPOTS` (`layout.ts:199-203`)
+  omits it, so the casino is an unattended cabinet.
+- No camera zoom on station focus.
+- The central diorama animates on a timer rather than reflecting the real run
+  (lit bumpers should mean completed targets; the ball should move after a
+  strong floor).
+
+### 9. Never-playtested
+
+`VERIFY_CHECKLIST.md` is **40 items, zero checked**, across 7 sections (debug
+console, HUD layout, buff strip, power-ups, rampage swap, enemies & parts, known
+issues). Waves 10+ were only build/tsc-verified. There is no E2E harness for the
+3D game, so this checklist is the only way a change gets confirmed by hand.
+
+### 10. Research spikes — not committed work
+
+None of these block anything; recorded so they aren't silently lost.
+
+- **Kicker gates** and **multiball wells** as distinct part kinds. Neither
+  exists in `PinballPartKind` (`state.ts:295-315`); multiball exists only as a
+  potion power-up. ("kicker" appears solely as ramp *art*.)
+- **Per-zone corridor width carve.** Not built. The shipped analogue is the
+  runtime friction gradient (`constants.ts:329-331`, `player.ts:1106`) plus
+  `widenMainArtery` — not a per-zone width parameter.
+- **The literal layered generator** (drunkard's-walk skeleton → Physarum branch
+  fill → Bagua 3×3 zones → sightline scoring). Zero hits repo-wide. The shipped
+  generator uses BFS-distance banding instead. Treat as a spike, not a plan.
+- **Table-shaped prefab rooms** (circular/oct bumper court, teardrop return
+  lane, ramp spiral, funnel). `maze/prefabs.ts:40-169` has 13 *corridor-shape*
+  prefabs; none is a table shape. Closest is `bullring` (`:98`) and the bumper
+  quincunx grid (`decorate.ts:611-621`).
+- **Level size curve.** Caps are `cellsW ≤ 33`, `cellsH ≤ 25`
+  (`constants.ts:1267-1268`) — already raised from 30/22 and credited to A1 in
+  the comment. A previous plan asked for 34/26; the difference is not worth a
+  commit on its own. **Launch-part density does not scale with depth** (no
+  per-level part-count field in `LevelConfig:1239-1259`; counts come from room
+  archetypes) — that one is worth doing if later floors should read as more
+  machine-like. The cracked-wall budget *does* scale
+  (`launchBreaks: min(5 + ⌊(l-1)/2⌋, 10)`, `:1299`).
+- **Rapier physics.** In `package.json` but only imported by
+  `objects/dog-feeding-game.ts`. `BLUEPRINT §1.5` explicitly rejects it for v1 —
+  its absence is a decision, not a gap.
+
+---
+
+## 2. Stale statements in the other docs
+
+Found while verifying. Fix these when next touching each file, so the next
+reader isn't misled:
+
+| Doc | Line | Says | Truth |
+|---|---|---|---|
+| `BLUEPRINT.md` | 102 | blood pixels open | shipped (`vfx.ts:373`) |
+| `BLUEPRINT.md` | 102 | alternate maze algorithms open | shipped (growing-tree, `generator.ts:87-108`) |
+| `BLUEPRINT.md` | §11 | perma-death vs checkpoints undecided | decided: roguelite (`core.ts:1462`) |
+| `BLUEPRINT.md` | §11 | actor torch-lighting undecided | decided: unlit; lit branch is dead code |
+| `maze/generator.ts` | 10-11 | "v1 ships the backtracker only" | contradicted by the growing-tree impl 75 lines below |
+| `VERIFY_CHECKLIST.md` | 11 | cites `pinball_knight_plan.md` at repo root | it lives here, in `scenes/dungeon/` |
+| `../tavern/TAVERN_PLAN.md` | open list | "the gambler" open | shipped, four games |
+
+---
+
+## 3. Suggested order
+
+1. **Score submission** (§1.1) — closes the longest-standing real gap, small,
+   and the service side is already built and game-aware.
+2. **Exhaustive part rendering** (§1.2) — removes the last silent-miss hazard in
+   the part pipeline; mechanical, and the collision conversion is the template.
+3. **Arrow-key binding** (§1.3) — one-line class of fix that likely resolves a
+   note that has been open across three plans.
+4. **Pickup card preview** (§1.7) — highest-value remaining use of the holo card
+   system, which is already fully built.
+5. **Damage numbers + best-depth persistence** (§1.6) — cheap juice.
+6. **Ramp-hop shadow, minimap stairs, `LevelPlan.rooms`** (§1.4, §1.5).
+7. **Playtest against `VERIFY_CHECKLIST.md`** (§1.9) — do this before believing
+   any of the above is done.
+
+Each is independently shippable: `npm test` + `npx tsc --noEmit`, then
+in-browser. Commit and push before any deploy.

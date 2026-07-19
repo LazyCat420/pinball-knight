@@ -8,8 +8,8 @@ from depth 1.
 
 Keep it current: when a feature lands, add its check here rather than writing a
 new wave doc. (Three completed wave plans were retired 2026-07-18; the current
-forward-looking plan lives in `pinball_knight_plan.md` at the repo root, and the
-architecture in `BLUEPRINT.md` beside this file.)
+forward-looking plan is `PINBALL_KNIGHT_PLAN.md` **beside this file**, not at the
+repo root, and the architecture is in `BLUEPRINT.md` also beside this file.)
 
 ## 0. Debug console itself
 - [ ] `` ` `` opens/closes the panel (top-left). A faint "` debug" hint shows when closed.

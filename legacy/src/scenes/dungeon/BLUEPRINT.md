@@ -99,8 +99,11 @@ sword; 2 weapon slots; add gun, bow, flamethrower"):
 - **Levels roll 3 of the 6 findable weapons** each depth (decorate.ts), plus
   all three gear pieces. HUD shows both slots, ammo counts, active marker.
 
-Phase 4/5 still open: blood pixels, damage numbers, best-depth persistence,
-alternate maze algorithms, more enemy types.
+Phase 4/5 still open (re-verified 2026-07-19): damage numbers, best-depth
+persistence, more enemy types. **Blood pixels and alternate maze algorithms have
+since shipped** — see `render/vfx.ts:373` and the growing-tree generator at
+`maze/generator.ts:87-108`. Combo exists only as a centred DOM `×N` flash, not
+as floating world-space text. Full ledger in `PINBALL_KNIGHT_PLAN.md`.
 
 ---
 

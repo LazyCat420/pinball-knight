@@ -107,11 +107,15 @@ Stations map onto the vendors that already exist, so no economy is rewritten:
    procedural room tone (brown-noise hearth + machinery hum) plus anvil, station
    focus and plunger one-shots.
 6. 🔶 **NPCs** done — four keepers with distinct idle loops (the smith's hammer
-   is a real beat the sparks and sound hang off). **The gambler is not built.**
+   is a real beat the sparks and sound hang off).
+7. ✅ **The gambler** shipped — a casino cabinet with four playable games
+   (slots, roulette, blackjack, darts), each with a tested RTP. See
+   `gambler/GAMBLER_PLAN.md`.
 
 ### Also still open
 
-- **The gambler** — no wager station exists.
+- **No keeper at the gambler station.** `KEEPER_SPOTS` (`layout.ts:199-203`)
+  omits it, so the casino is an unattended cabinet.
 - **No camera zoom-in** on Armory/Blacksmith interaction (the wide hub framing
   holds through the panel).
 - **The diorama does not reflect the actual run** — bumper caps chase on a timer

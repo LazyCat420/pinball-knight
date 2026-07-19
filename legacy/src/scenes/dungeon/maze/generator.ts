@@ -8,8 +8,11 @@
  * the game's real test surface. Keep it pure.
  *
  * The algorithm is pluggable by design (Prim's, BSP rooms, caves — see
- * BLUEPRINT §5) but v1 ships the backtracker only: long winding corridors,
- * claustrophobic, exactly the feel we want for the first levels.
+ * BLUEPRINT §5). What ships now is a GROWING-TREE generator parameterised by
+ * `windiness`, which spans Prim's (pick a random frontier cell) through the
+ * recursive backtracker (always pick the newest) — so the old "v1 ships the
+ * backtracker only" note that used to sit here was wrong by the time you read
+ * the implementation 75 lines below it. `braid` then punches loops.
  */
 
 export const T_WALL = 0;
