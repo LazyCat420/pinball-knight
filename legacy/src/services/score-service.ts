@@ -16,7 +16,7 @@ export interface LeaderboardEntry {
 }
 
 /** Games with a server-side leaderboard. Must match GAME_IDS in the service. */
-export type GameId = "raccoon-tornado" | "pinball-knight";
+export type GameId = "raccoon-tornado" | "pinball-knight" | "ski-game" | "pirate-surf";
 
 const DEFAULT_GAME: GameId = "raccoon-tornado";
 
