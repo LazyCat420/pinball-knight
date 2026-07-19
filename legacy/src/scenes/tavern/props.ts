@@ -14,6 +14,14 @@
 import * as THREE from "three";
 import { PALETTE_HEX } from "../dungeon/render/palette";
 import { OBSTACLES, WARM, COLD, GOLD } from "./layout";
+import { CARDS, RARITY_HEX, type CardId, type CardRarity } from "../dungeon/cards";
+import { activeWeapon } from "../dungeon/state";
+
+/** Most socket plates the vice can show — matches the max weapon card slots. */
+const VICE_MAX_PLATES = 3;
+
+/** Rarity order, for picking the emitter's colour from the best card fitted. */
+const RARITY_ORDER: CardRarity[] = ["common", "rare", "epic", "legendary", "mythic"];
 
 const STONE = PALETTE_HEX[2];
 const TIMBER = PALETTE_HEX[26];
@@ -33,6 +41,16 @@ export interface BuiltProps {
   coals: THREE.Mesh | null;
   /** Per-station accent lights, keyed by station id, for the focus pulse. */
   accents: Map<string, THREE.PointLight>;
+  /**
+   * Re-read the active weapon's socketed cards onto the vice.
+   *
+   * Called when the tavern opens and again whenever a station panel closes,
+   * because socketing happens INSIDE those panels — the whole point is that you
+   * shut the counter and see the card now sitting on the blade.
+   */
+  syncViceCards(): void;
+  /** How many rune plates are currently lit on the vice (for QA/probes). */
+  plateCount(): number;
   dispose(): void;
 }
 
@@ -205,10 +223,43 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   for (const sx of [-1, 1]) {
     box(0.18, 0.88, a.d - 0.3, mat(TIMBER_DK), a.x + sx * (a.w / 2 - 0.2), 0.44, a.z);
   }
-  // A repair vice, and a weapon held in it — the physical home for upgrades.
+  // A repair vice, and YOUR weapon held in it — the physical home for upgrades.
+  // The rune plates on it are the socketed cards (see syncViceCards below), so a
+  // card is something you can SEE on the blade before you open any UI.
   box(0.3, 0.26, 0.3, mat(STEEL_DK, { metalness: 0.7 }), a.x + 0.7, 1.06, a.z - 0.4);
   const held = box(0.1, 0.9, 0.1, mat(STEEL, { metalness: 0.8, roughness: 0.3 }), a.x + 0.7, 1.55, a.z - 0.4);
   held.rotation.z = 0.22;
+
+  // Socket plates + the emitter at the hilt. Built once at max capacity and
+  // shown/hidden on sync, so socketing a card never allocates mid-scene.
+  const viceGroup = new THREE.Group();
+  viceGroup.position.set(a.x + 0.7, 0, a.z - 0.4);
+  group.add(viceGroup);
+  const vicePlates: THREE.Mesh[] = [];
+  for (let i = 0; i < VICE_MAX_PLATES; i++) {
+    const g = new THREE.BoxGeometry(0.17, 0.13, 0.05);
+    geos.push(g);
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.1, roughness: 0.4 });
+    mats.push(m);
+    const plate = new THREE.Mesh(g, m);
+    // Down the blade, following its lean.
+    plate.position.set(-0.055 - i * 0.03, 1.78 - i * 0.26, 0.06);
+    plate.rotation.z = 0.22;
+    plate.visible = false;
+    viceGroup.add(plate);
+    vicePlates.push(plate);
+  }
+  const emitterGeo = new THREE.SphereGeometry(0.075, 8, 6);
+  geos.push(emitterGeo);
+  const emitterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.3 });
+  mats.push(emitterMat);
+  const viceEmitter = new THREE.Mesh(emitterGeo, emitterMat);
+  viceEmitter.position.set(0.02, 1.14, 0.03);
+  viceEmitter.visible = false;
+  viceGroup.add(viceEmitter);
+  const viceLight = new THREE.PointLight(0xffffff, 0, 2.4, 2);
+  viceLight.position.set(a.x + 0.7, 1.5, a.z - 0.3);
+  group.add(viceLight);
   // Rack of plate behind, against the wall.
   box(0.3, 1.7, a.d, mat(TIMBER_DK), a.x - 1.0, 0.85, a.z);
   for (let i = 0; i < 3; i++) {
@@ -269,6 +320,40 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
     dioramaBall,
     coals,
     accents,
+    plateCount(): number {
+      return vicePlates.reduce((n, p) => n + (p.visible ? 1 : 0), 0);
+    },
+    syncViceCards(): void {
+      const w = activeWeapon();
+      const ids = (w?.cards ?? []) as CardId[];
+      let best = -1;
+
+      for (let i = 0; i < vicePlates.length; i++) {
+        const def = i < ids.length ? CARDS[ids[i]] : undefined;
+        const plate = vicePlates[i];
+        plate.visible = !!def;
+        if (!def) continue;
+        const hex = RARITY_HEX[def.rarity];
+        const m = plate.material as THREE.MeshStandardMaterial;
+        m.color.set(hex);
+        m.emissive.set(hex);
+        best = Math.max(best, RARITY_ORDER.indexOf(def.rarity));
+      }
+
+      // The emitter takes the BEST card's colour — one glance tells you the
+      // grade of what is fitted, without counting plates.
+      if (best >= 0) {
+        const hex = RARITY_HEX[RARITY_ORDER[best]];
+        emitterMat.color.set(hex);
+        emitterMat.emissive.set(hex);
+        viceEmitter.visible = true;
+        viceLight.color.set(hex);
+        viceLight.intensity = 1.6;
+      } else {
+        viceEmitter.visible = false;
+        viceLight.intensity = 0;
+      }
+    },
     dispose(): void {
       scene.remove(group);
       for (const g of geos) g.dispose();

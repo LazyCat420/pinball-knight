@@ -102,6 +102,8 @@ function interact(): void {
   }
   openVendorCounter(host, s.action.vendor, tavern.stats, () => {
     tavern.openStation = null;
+    // You socketed a card at that counter — put it on the blade in the vice.
+    props?.syncViceCards();
   });
 }
 
@@ -261,6 +263,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
   vfx = createVfx(scene);
   npcs = buildNpcs(scene);
+  props.syncViceCards();
   tavern.player = createTavernPlayer(scene);
   tavern.camX = tavern.player.x;
   tavern.camZ = tavern.player.z;
@@ -310,7 +313,17 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     focus: tavern.focus?.id ?? null,
     open: tavern.openStation?.id ?? null,
     panel: panelOpen(),
+    // Socketed-card display on the armory vice: how many rune plates are lit,
+    // so a harness can confirm the blade actually shows what is fitted.
+    vicePlates: props?.plateCount() ?? 0,
   });
+  // Dev/QA: leave the tavern without descending, so a harness can re-enter it
+  // after changing run state (e.g. socketing a card) and see the room rebuild.
+  (window as unknown as { __tavernClose?: () => boolean }).__tavernClose = () => {
+    if (!tavern.active) return false;
+    closeTavern();
+    return true;
+  };
 
   last = performance.now();
   raf = requestAnimationFrame(frame);

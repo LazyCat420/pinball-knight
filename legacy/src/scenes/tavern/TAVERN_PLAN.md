@@ -98,31 +98,46 @@ Stations map onto the vendors that already exist, so no economy is rewritten:
 4. ✅ **Station props** — forge + anvil + hood, bar + bottles, armory bench with
    vice, card table with engraved steel plates, notice board + plunger gate,
    wall-mounted rails and bumper caps.
-5. 🔶 **Lighting** done (warm forge/hearth vs cold machine glow, flicker).
-   **VFX and audio still missing** — no smoke, sparks, embers, no ambience.
-6. ⬜ **NPCs, then the gambler.** Not started. The room is currently empty of
-   people; the four existing vendor sprites are not placed in the new scene.
+5. ✅ **Lighting, VFX and audio.** Warm forge/hearth vs cold machine glow with
+   flicker; hearth/forge embers, dust motes, sparks on each hammer blow; a
+   procedural room tone (brown-noise hearth + machinery hum) plus anvil, station
+   focus and plunger one-shots.
+6. 🔶 **NPCs** done — four keepers with distinct idle loops (the smith's hammer
+   is a real beat the sparks and sound hang off). **The gambler is not built.**
 
 ### Also still open
 
-- **Cards remain invisible on weapons** — no emitter/rune plate on the held
-  weapon when a card is socketed. The armory vice was built to be that showcase.
+- **The gambler** — no wager station exists.
 - **No camera zoom-in** on Armory/Blacksmith interaction (the wide hub framing
   holds through the panel).
-- The old DOM tavern in `scenes/dungeon/tavern.ts` still owns the economy UI and
-  the no-WebGL fallback. That is deliberate, but its room view (`roomView`,
-  `roomView3d`, the name-plate tracker, `tavern-scene.ts`) is now dead on the
-  WebGL path and should be retired once the fallback is re-pointed.
+- **The diorama does not reflect the actual run** — bumper caps chase on a timer
+  rather than showing completed targets, and the ball laps constantly instead of
+  moving after a strong floor.
+- **Keepers do not react** to being approached (no turn-to-face, no greeting).
+
+### Retired
+
+The 3D-backdrop-plus-DOM-overlay hybrid (`tavern-scene.ts`, `roomView3d`, the
+name-plate tracker) is **deleted** — 351 lines. It was unreachable: the DOM
+tavern now runs only when a WebGLRenderer could not be constructed, and that
+backdrop needed one too, so its scene was always null on the only path that
+still reached it. `scenes/dungeon/tavern.ts` is now purely the economy plus a
+flat DOM fallback room.
 
 ### Verified
 
-`scratchpad/tavern-qa.mjs` drives a real browser: spawn → walk → focus a station
-→ prompt → [E] → panel → movement freezes → Escape → control returns → walk to a
-second station → open a real vendor counter → back → wall collision. 19/19.
+`scratchpad/tavern-qa.mjs` (19/19) drives a real browser: spawn → walk → focus a
+station → prompt → [E] → panel → movement freezes → Escape → control returns →
+walk to a second station → open a real vendor counter → back → wall collision.
+`scratchpad/vice-qa.mjs` (4/4) sockets cards via `__dungeonSocket` and asserts
+the rune plates appear on the blade in the vice.
 
-Two things that only showed up on screen, both fixed: ceiling beams projected as
-black bars across the middle of a fixed iso frame, and a straight copy of the
-dungeon's light levels rendered the room nearly black.
+Three things that only showed up on screen, all fixed: ceiling beams projected as
+black bars across a fixed iso frame; a straight copy of the dungeon's light
+levels rendered the room nearly black; and all four keepers were placed INSIDE
+their own counters, so every NPC rendered buried in furniture — silent, nothing
+threw, the room was just still empty. Keeper positions now live in `layout.ts`
+and are asserted to be open floor.
 
 ## Rules
 

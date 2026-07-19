@@ -401,6 +401,16 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
       return true;
     };
+    // Dev: socket a card straight into the active weapon. `__dungeonSocket('ember')`.
+    // Card drops are random and socketing is several clicks deep in the tavern,
+    // so without this there is no way for a harness to reach any state where a
+    // weapon actually HAS cards — which is what the armory vice displays.
+    (window as unknown as { __dungeonSocket?: (id: string) => boolean }).__dungeonSocket = (id: string) => {
+      const w = state.weaponSlots[state.activeSlot];
+      if (!w || !(id in CARDS)) return false;
+      w.cards = [...(w.cards ?? []), id];
+      return true;
+    };
     // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/curveshot/…
     // without hunting for a flask). `__dungeonPotion('freeze')`.
     (window as unknown as { __dungeonPotion?: (id: string) => boolean }).__dungeonPotion = (id: string) => {

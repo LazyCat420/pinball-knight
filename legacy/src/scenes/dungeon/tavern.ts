@@ -1,20 +1,28 @@
 /**
- * 🍺 THE TAVERN — the between-floor hub (plan Part 2).
+ * 🍺 THE TAVERN'S ECONOMY — the shop counters, and the no-WebGL fallback room.
  *
- * When you take the stairs, instead of dropping straight onto the next floor you
- * land in the Tavern: a paused DOM overlay (it pauses the sim exactly like the
- * merchant shop, via state.tavernEl) where you spend the run's gold and cards
- * before descending. Four stations, all reading/writing the RUN-persistent
- * state (weaponSlots, gear, cardStash, goldRun — none of which resetState wipes
- * between floors):
- *   ⚔ Armory     — socket stashed cards into a weapon's slots / un-socket.
- *   🍺 Bar        — buy cards (reroll the stock), repair the weapon, add a slot.
- *   🔨 Blacksmith — forge 2 commons → 1 rare, reroll a card, repair gear.
- *   📜 Notice Board — run stats + the DESCEND button.
+ * The walkable tavern lives in `scenes/tavern/`. THIS module owns the commerce
+ * that hub opens: prices, stock, socketing, forging, rerolls, and the holo-card
+ * renderer. The split is deliberate — the 3D scene never needs to know what a
+ * card costs, and this never needs to know where the forge is standing.
  *
- * Built as a DOM overlay (like the shop) rather than a separate 3D scene: it
- * reuses the loadout state directly and pauses cleanly, which is what makes it
- * shippable and testable. Styling is self-contained tavern gothic.
+ * Two entry points:
+ *   - `openVendorCounter()` — ONE vendor's counter, opened by walking up to that
+ *     station in the 3D room. This is the normal path.
+ *   - `openTavern()` — the whole thing as a flat DOM room, used ONLY when WebGL
+ *     is unavailable and the walkable scene can't start.
+ *
+ * All of it reads/writes RUN-persistent state (weaponSlots, gear, cardStash,
+ * goldRun), none of which `resetState` wipes between floors.
+ *
+ * Stations: ⚔ Armory (socket/un-socket) · 🍺 Alchemist (belt potions) ·
+ * 🔨 Weaponsmith (repair, add slot, forge, reroll) · 🛡️ Armorer (plate).
+ *
+ * NOTE: the old 3D-backdrop-plus-DOM-overlay hybrid (`tavern-scene.ts`,
+ * `roomView3d`, the name-plate tracker) was deleted. It was unreachable: the
+ * fallback only runs when a WebGLRenderer could not be constructed, and that
+ * backdrop needed one too — so its scene was always null on the only path that
+ * still reached it.
  */
 import { state } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -22,7 +30,6 @@ import { CARDS, RARITY_HEX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
 import { renderPaintIcon } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
-import { createTavernScene, type TavernScene } from "./tavern-scene";
 import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
 
 /** The game's actual pixel-art for a weapon/gear/potion id, as a DOM icon URL. */
@@ -74,9 +81,6 @@ let activeVendor: VendorId | null = null;
  * point: the walkable hub reuses the economy rather than reimplementing it.
  */
 let counterMode: { onClose: () => void } | null = null;
-/** The 3D iso scene (null = WebGL unavailable → flat DOM room fallback). */
-let scene3d: TavernScene | null = null;
-let plateRaf = 0;
 
 interface VendorDef {
   id: VendorId;
@@ -85,16 +89,12 @@ interface VendorDef {
   robe: string;
   prop: string;
   blurb: string;
-  /** NPC_PAINTS key for the 3D keeper sprite + its floor position in the scene. */
-  paintKey: string;
-  x: number;
-  z: number;
 }
 const VENDORS: VendorDef[] = [
-  { id: "potions", name: "Alchemist", icon: "🧪", robe: "#3f9d5a", prop: "⚗️", blurb: "potions for the belt", paintKey: "witch", x: -3, z: 1.4 },
-  { id: "cards", name: "Card Dealer", icon: "🃏", robe: "#8b5cf6", prop: "🎴", blurb: "power cards & socketing", paintKey: "magician", x: -1, z: 2.0 },
-  { id: "weapons", name: "Weaponsmith", icon: "🔨", robe: "#b45309", prop: "⚒️", blurb: "repairs, slots & forging", paintKey: "merchant", x: 1, z: 2.0 },
-  { id: "armor", name: "Armorer", icon: "🛡️", robe: "#5b86c4", prop: "🥋", blurb: "plate & repairs", paintKey: "frog", x: 3, z: 1.4 },
+  { id: "potions", name: "Alchemist", icon: "🧪", robe: "#3f9d5a", prop: "⚗️", blurb: "potions for the belt" },
+  { id: "cards", name: "Card Dealer", icon: "🃏", robe: "#8b5cf6", prop: "🎴", blurb: "power cards & socketing" },
+  { id: "weapons", name: "Weaponsmith", icon: "🔨", robe: "#b45309", prop: "⚒️", blurb: "repairs, slots & forging" },
+  { id: "armor", name: "Armorer", icon: "🛡️", robe: "#5b86c4", prop: "🥋", blurb: "plate & repairs" },
 ];
 
 const GOLD = "#f0a63c";
@@ -515,55 +515,6 @@ function roomView(): string {
   </div>`;
 }
 
-/** The DOM overlays for the 3D room: notice board, floating keeper name-plates
- * (positioned each frame over the rendered NPC sprites), and the descend door. */
-function roomView3d(): string {
-  if (!deps) return "";
-  const gearTxt = GEAR_SLOTS.map((s) => `${GEAR[s].icon} ${state.gear[s] ?? 0}`).join("  ");
-  const plates = VENDORS.map((v) => `<button data-act="vendor:${v.id}" class="tv-hotspot" id="tv-hs-${v.id}" title="${v.blurb}"><span class="tv-talk3d">▲ Talk</span><span class="tv-plate">${v.icon} ${v.name}</span></button>`).join("");
-  return `
-    <div class="tv-board tv-board3d">
-      <b style="color:${GOLD};letter-spacing:1px;font-size:11px">📜 NOTICE BOARD</b>
-      <div class="tv-board-row"><span>Floor cleared</span><b style="color:${GOLD}">${deps.stats.floor}</b></div>
-      <div class="tv-board-row"><span>Grade</span><b style="color:${GOLD}">${deps.stats.grade}</b></div>
-      <div class="tv-board-row"><span>Kills</span><b>${deps.stats.kills}</b></div>
-      <div class="tv-board-row"><span>Best combo</span><b>×${deps.stats.bestCombo}</b></div>
-      <div class="tv-board-row"><span>Gear</span><b>${gearTxt}</b></div>
-    </div>
-    <div class="tv-hotspots">${plates}</div>
-    <div class="tv-door tv-door3d">
-      <button data-act="descend" class="tv-descend">DESCEND ▼</button>
-      <div style="color:#9a8f77;font-size:9px;text-align:center;margin-top:3px">walk up to a keeper, then take the stairs</div>
-    </div>`;
-}
-
-/** Track the 3D keepers each frame and park each name-plate over its sprite. */
-function startPlateTracking(): void {
-  stopPlateTracking();
-  const step = (): void => {
-    const el = state.tavernEl;
-    if (!el || !scene3d || activeVendor) {
-      plateRaf = 0;
-      return;
-    }
-    for (const v of VENDORS) {
-      const hs = el.querySelector(`#tv-hs-${v.id}`) as HTMLElement | null;
-      if (!hs) continue;
-      const p = scene3d.projectNpc(v.id);
-      if (p) {
-        hs.style.left = `${Math.round(p.x)}px`;
-        hs.style.top = `${Math.round(p.y)}px`;
-        hs.style.opacity = "1";
-      }
-    }
-    plateRaf = requestAnimationFrame(step);
-  };
-  plateRaf = requestAnimationFrame(step);
-}
-function stopPlateTracking(): void {
-  if (plateRaf) cancelAnimationFrame(plateRaf);
-  plateRaf = 0;
-}
 
 /** A vendor's open counter, over a dimmed room. */
 function vendorView(v: VendorDef): string {
@@ -592,15 +543,7 @@ function render(): void {
     if (g) g.textContent = `${getBalance()}g`;
     return;
   }
-  if (scene3d) {
-    // 3D room is the WebGL backdrop; the DOM only draws the overlays.
-    stage.innerHTML = (v ? "" : roomView3d()) + (v ? vendorView(v) : "");
-    if (v) stopPlateTracking();
-    else startPlateTracking();
-  } else {
-    stopPlateTracking();
-    stage.innerHTML = roomView() + (v ? vendorView(v) : "");
-  }
+  stage.innerHTML = roomView() + (v ? vendorView(v) : "");
   paintTavernCards(stage); // fill in the card canvases this render just emitted
   const goldEl = el.querySelector("#tavern-gold");
   if (goldEl) goldEl.textContent = `${getBalance()}g`;
@@ -825,22 +768,10 @@ export function openTavern(container: HTMLElement, d: TavernDeps): void {
   });
   container.appendChild(el);
   state.tavernEl = el;
-
-  // Render the room in the game's iso pixel style (WebGL). If a context can't be
-  // had, scene3d stays null and render() draws the flat DOM room instead.
-  scene3d = createTavernScene(el, VENDORS.map((v) => ({ id: v.id, paintKey: v.paintKey, x: v.x, z: v.z })));
-  if (scene3d) {
-    scene3d.canvas.style.zIndex = "0"; // behind the DOM overlays
-    scene3d.canvas.style.pointerEvents = "none";
-    el.style.background = "#0b0d12"; // solid letterbox behind the pixel canvas
-  }
   render();
 }
 
 export function closeTavern(): void {
-  stopPlateTracking();
-  scene3d?.dispose();
-  scene3d = null;
   state.tavernEl?.remove();
   state.tavernEl = null;
   deps = null;
