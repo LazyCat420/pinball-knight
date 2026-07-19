@@ -2,11 +2,12 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `6e3469f`, service `577c6b7`, both on synology, both verified
+**Live:** client `d9206ba`, service `577c6b7`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
 - 482 client tests, 28 service tests, production build clean.
+- Repo tsc errors 6053 → 5975.
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
 
@@ -32,6 +33,20 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
+
+**The jungle room (`/`) was relit and decluttered.** It used to be lit by six
+sources at once — ambient, a spot, a hemi and four point lights — so every
+surface was reached by several of them, nothing was ever in shadow, and the room
+resolved to one flat mid-green. That is why previous passes kept lowering
+numbers without it ever looking less bright: turning any one light down did
+nothing, the other five filled the gap. It is now ONE key light casting real
+shadows, a low ambient that only prevents crushed blacks, and two tight accents.
+The key is golden and the ambient/hemi are cool — that warm/cool split is what
+stops the room reading green-on-green.
+
+**`src/services/` is now genuinely the single door to the backend.** Everything
+that talks to the service goes through it, and `src/services/api-config.ts` is
+the only place the backend URL is spelled.
 
 ---
 
@@ -64,10 +79,42 @@ Ordered by what I'd do first.
    bumpers should mean completed targets, the ball should move after a strong
    floor); keepers don't react to being approached.
 
-6. **Legacy type debt.** ~5969 repo-wide tsc errors, masked by
+6. **Legacy type debt.** ~5975 repo-wide tsc errors, masked by
    `ignoreBuildErrors: true` in `next.config.js`. They're concentrated in
-   `src/objects` (2633) and `src/room` (1914) — old JS renamed to `.ts`. Not
-   worth a sweep; just don't let the clean directories regress.
+   `src/objects` and `src/room` — old JS renamed to `.ts`. Not worth a sweep;
+   just don't let the clean directories regress. Note the "clean zone" is
+   narrower than the directory globs suggest: `src/utils/**` and `src/scenes/**`
+   are NOT globally at 0, only the specific files listed at the top are.
+
+7. **The service has no auth at all.** `/api/youtube-sync` and `/api/scores`
+   accept anything from any origin — `server.ts` uses bare `app.use(cors())` with
+   no origin restriction, and only the rate limiter stands in the way. The
+   `/admin` gate is a `useEffect` hostname check plus a Next redirect, which
+   protects the *page*, not the *endpoint*. Authorization belongs on the service;
+   the client check should become UX-only. This was surfaced by the audit, NOT
+   fixed — it changes deploy config, so it wants a deliberate pass.
+
+8. **Two leaderboards never reach the service.** `objects/ski-game.ts` and
+   `room/pirate-surf-ui.ts` each have a full private leaderboard —
+   `getLeaderboard`/`saveScore`, own localStorage key, own `sort` + `slice(0,10)`
+   — that duplicates the ranking rule `score-service.ts` and the server's
+   `LIMIT 10` already own. Adding them to `GAME_IDS` and routing both through
+   `saveLeaderboardScore` deletes both copies.
+
+9. **Gold-award helpers are unadopted.** `utils/gold-rates.ts` now exports
+   `awardForScore` and `awardIncremental`; the 11 call sites that hand-roll
+   `Math.min(Math.floor(score / RATE), CAP)` are all in legacy directories and
+   were left alone. One has already diverged (`cigarette-game.ts:746` adds a
+   floor of 1). The doc comment on each helper lists its call sites, so the
+   conversion is mechanical.
+
+10. **The client still hand-copies the service contract.** `GameId` in
+    `score-service.ts:17` mirrors `GAME_IDS` in the service by comment only; the
+    1–12 name-length rule, the 1–15 `maxResults` clamp and the YouTube ID regexes
+    each exist independently on both sides (the channel-ID pattern has already
+    drifted — client `[\w-]` vs server `[a-zA-Z0-9_-]`). Deliberate for now: the
+    call was to keep the contract per-repo rather than couple the two deploys.
+    Drift shows up as a runtime 400, never a type error.
 
 ---
 
@@ -90,11 +137,21 @@ Ordered by what I'd do first.
   uses `npm ci`, so they look inert — but deploy-kit's test gate runs `pnpm
   install`, and the workspace file carries the approved-native-build allowlist
   (client: canvas, sharp, unrs-resolver). Deleting them aborts every deploy.
-- **Placement bugs in a 3D scene are silent.** Twice this session something was
-  positioned inside geometry and simply never rendered — nothing threw, no test
-  failed, only a screenshot showed it. All tavern placement therefore lives in
+- **Placement bugs in a 3D scene are silent.** Something positioned inside
+  geometry simply never renders — nothing throws, no test fails, only a
+  screenshot shows it. All tavern placement therefore lives in
   `scenes/tavern/layout.ts` as pure data with assertions. Put new placement
-  there.
+  there. **The jungle room has no such test** and it bit again this pass: a fern
+  sat inside the beer pong table's footprint and grew up through the table
+  surface. If you touch `room/tropical-plants.ts` placement, screenshot it.
+- **Shadow flags are read per-mesh at render time, and the jungle room mounts
+  across several idle callbacks.** `enableRoomShadows()` therefore runs after the
+  LAST mount batch — move it earlier and the late props silently never cast.
+- **Ambient intensity is exported from `room/lights.ts`, not hardcoded.** The
+  zoom modes lift ambient for close-up viewing and restore it on exit. Those were
+  four magic numbers tuned against the old baseline, so every retune of
+  `lights.ts` silently desynced them and left the room brighter after a zoom than
+  it started. Use `AMBIENT_BASE` / `AMBIENT_ZOOM` / `AMBIENT_ZOOM_BRIGHT`.
 - **Unicode glyphs are not pixel art.** Press Start 2P has digits and A–Z but
   none of `●◉⌒◆★☠♠♥`, so those silently fall back to a smooth system font.
   Anything symbolic must be hand-authored pixel runs (`gambler/symbols.ts`,
