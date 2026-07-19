@@ -1,6 +1,7 @@
 # The Gambler — four pixel games in the tavern
 
-_Live plan. Delete when all four ship._
+_All four games SHIPPED. Kept as the design record — the reasoning behind the
+odds is worth more than the checklist was._
 
 A sixth tavern station at **(3.0, 5.6)** — beside the stair you arrive on, off
 the walking spine, clear of every other station's interaction radius (verified
@@ -41,7 +42,7 @@ it pays back — the same lesson the dungeon already teaches.
 |---|---|---|---|
 | Slots | none | ~90% | 10% |
 | Roulette | bet choice only | ~95% | 5% |
-| Blackjack | real decisions | ~98% | 2% |
+| Blackjack | real decisions | ~98% target → **99.5% measured** | 0.47% |
 | Darts | pure execution | player-determined | ~0% at perfect play |
 
 A player who only ever pulls the slot lever slowly bleeds gold. A player who
@@ -227,9 +228,22 @@ chunky meters, darts sticking where they land and staying for the round.
    plumbing. Browser-verified: walk up, bet, gold moves, limit closes the table.
 2. ✅ **Slots.** Weighted strip tuned to ~90% RTP by enumeration, hand-authored
    pixel symbols, sequential reel stops.
-3. ⬜ **Roulette.** Reuses the shell; adds bet-type selection.
-4. ⬜ **Darts.** The best mechanic, and the one worth the most polish.
-5. ⬜ **Blackjack.** Last: most logic, and it needs the new card art.
+3. ✅ **Roulette.** 19 pockets (0+1..18) — the size is DERIVED: N/(N+1) is every
+   bet's return, so 18 numbers lands on real roulette's 5.26% edge.
+4. ✅ **Darts.** Two-axis timing, sweep speed scaled by stake. Pure skill.
+5. ✅ **Blackjack.** Single deck reshuffled each hand, dealer stands on all 17,
+   3:2 naturals, hit/stand/double. Measured **99.5%** RTP under basic strategy —
+   better for the player than the 98% planned, and left there: the gradient
+   still holds and the edge is still negative.
+
+### On blackjack's measured RTP
+
+The plan targeted 98% and the rules as written deliver 99.5%. That was left
+alone rather than tuned down. The house edge is what matters (still negative,
+so it cannot become the optimal way to buy cards), the ordering is what the
+design asked for (90 < 94.7 < 99.5), and the six-round visit limit is the real
+cap on a skilled player. Nerfing the rules to hit a round number would have made
+the game worse for no economic gain.
 
 ### Notes from building 1–2
 
@@ -243,6 +257,15 @@ chunky meters, darts sticking where they land and staying for the round.
   `play()`, so the reels can never land on something other than what was paid.
 - **A refused bet must SAY so.** The first shell computed refusal messages and
   discarded them; a dead button reads as a broken one.
+- **Games with mid-round decisions need real controls.** Roulette's bet picker
+  was first routed through `poke()`, which only fires while the game is BUSY —
+  so the bet could never be changed. `controls()`/`onControl()` exist for this,
+  and blackjack's HIT/STAND/DOUBLE use the same path.
+- **Only ONE thing may move gold.** Blackjack's double needs a second stake, so
+  `table.raiseBet` was added rather than letting the game call the wallet — and
+  it deliberately does NOT consume another round, because a double is one hand.
+- **Don't let three renderers fight.** The dungeon and the tavern both kept
+  rendering fully-hidden 3D behind the cabinet; the panel canvas got ~4fps.
 
 Each game ships with its pure logic tested before its renderer exists — for the
 chance games that means a Monte-Carlo RTP assertion, which is the only way to

@@ -140,6 +140,23 @@ export function placeBet(table: TableState, deps: TableDeps, stake: number): Bet
 }
 
 /**
+ * Take an ADDITIONAL wager mid-round (blackjack's double-down).
+ *
+ * Separate from `placeBet` because it must NOT consume another round off the
+ * visit limit — a double is one hand, not two. It still goes through here rather
+ * than letting the game call the wallet, so the "games never touch gold" rule
+ * holds and a double can't dodge the purse check.
+ *
+ * Returns false if the player can't cover it; the game must then stay on the
+ * original stake rather than doubling for free.
+ */
+export function raiseBet(table: TableState, deps: TableDeps, extra: number): boolean {
+  if (extra <= 0) return false;
+  if (deps.getBalance() < extra) return false;
+  return deps.spendGold(extra);
+}
+
+/**
  * Pay out a resolved round and record it. Call AFTER the game resolves.
  *
  * `payout` includes the stake, so a push returns exactly what was taken. Only

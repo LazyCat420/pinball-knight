@@ -60,10 +60,10 @@ export function createRouletteGame(): CasinoGame {
       if (found) bet = found;
     },
 
-    play(stake, resolve): void {
+    play(stake, api): void {
       pocket = Math.floor(Math.random() * POCKETS);
       stakeNow = stake;
-      resolveFn = resolve;
+      resolveFn = api.resolve;
       spinning = true;
       t = 0;
       settleT = 0;

@@ -111,11 +111,11 @@ export function createSlotsGame(): CasinoGame {
       }
     },
 
-    play(stake, resolve): void {
+    play(stake, api): void {
       // Decide FIRST. The animation is then guaranteed to show what was paid.
       outcome = spin();
       stakeNow = stake;
-      resolveFn = resolve;
+      resolveFn = api.resolve;
       spinning = true;
       t = 0;
       settleT = 0;

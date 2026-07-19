@@ -20,6 +20,7 @@ import {
   clampStake,
   canBet,
   roundsLeft,
+  raiseBet,
   ROUNDS_PER_VISIT,
   type TableState,
   type TableDeps,
@@ -29,10 +30,22 @@ import {
 import { createSlotsGame } from "./slots-game";
 import { createRouletteGame } from "./roulette-game";
 import { createDartsGame } from "./darts-game";
+import { createBlackjackGame } from "./blackjack-game";
 
 const GOLD = "#f0c040";
 const COLD = "#6fd0e8";
 const INK = "#0d1018";
+
+/** What the shell hands a game when a round starts. */
+export interface PlayApi {
+  /** Finish the round. Must be called exactly once. */
+  resolve(r: RoundResult): void;
+  /**
+   * Take an extra wager mid-round (blackjack's double-down). Returns false if
+   * the player can't cover it. Does NOT consume another round off the limit.
+   */
+  raise(extra: number): boolean;
+}
 
 /** Every game implements this; the shell drives it. */
 export interface CasinoGame {
@@ -46,7 +59,7 @@ export interface CasinoGame {
    * Begin a round for `stake`. The game animates, then calls `resolve` exactly
    * once with the result — the shell settles the payout from that.
    */
-  play(stake: number, resolve: (r: RoundResult) => void): void;
+  play(stake: number, api: PlayApi): void;
   /** True while an animation is running — the shell locks the controls. */
   busy(): boolean;
   /** Player pressed the primary action mid-round (e.g. stop a reel). */
@@ -77,12 +90,15 @@ let stake = 10;
 let flash = "";
 let flashT = 0;
 let onClosed: (() => void) | null = null;
+/** Repaint guard for the game-control row — see the loop. */
+let lastControlSig = "";
 
 /** The games on offer. */
 const GAMES: Array<{ id: GameId; name: string; make: () => CasinoGame }> = [
   { id: "slots", name: "SLOTS", make: createSlotsGame },
   { id: "roulette", name: "ROULETTE", make: createRouletteGame },
   { id: "darts", name: "DARTS", make: createDartsGame },
+  { id: "blackjack", name: "BLACKJACK", make: createBlackjackGame },
 ];
 
 export function isGamblerOpen(): boolean {
@@ -174,6 +190,16 @@ function loop(now: number): void {
   }
 
   game?.render(ctx, canvas.width, canvas.height, dt);
+
+  // Blackjack's controls appear and disappear as the hand progresses (HIT/STAND
+  // only exist while it's your turn), so the row has to track the game rather
+  // than only refreshing on a click.
+  const sig = JSON.stringify(game?.controls?.() ?? []);
+  if (sig !== lastControlSig) {
+    lastControlSig = sig;
+    const ctrls = el.querySelector("#gb-controls");
+    if (ctrls) ctrls.innerHTML = controlRow();
+  }
 }
 
 function startRound(): void {
@@ -195,14 +221,21 @@ function startRound(): void {
 
   const staked = stake;
   let settled = false;
-  game.play(staked, (result) => {
-    // Guard against a game resolving twice: that would pay twice AND burn two
-    // rounds off the limit.
-    if (settled) return;
-    settled = true;
-    settle(table, wallet, result);
-    say(result.label + (result.payout > 0 ? ` · +${result.payout}g` : ""));
-    refreshChrome();
+  game.play(staked, {
+    resolve(result) {
+      // Guard against a game resolving twice: that would pay twice AND burn two
+      // rounds off the limit.
+      if (settled) return;
+      settled = true;
+      settle(table, wallet, result);
+      say(result.label + (result.payout > 0 ? ` · +${result.payout}g` : ""));
+      refreshChrome();
+    },
+    raise(extra) {
+      const ok = raiseBet(table, wallet, extra);
+      if (ok) refreshChrome(); // the extra gold must visibly leave, like the first
+      return ok;
+    },
   });
 }
 

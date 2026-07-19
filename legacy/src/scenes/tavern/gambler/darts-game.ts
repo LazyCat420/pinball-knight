@@ -101,9 +101,9 @@ export function createDartsGame(): CasinoGame {
       }
     },
 
-    play(stake, resolve): void {
+    play(stake, api): void {
       stakeNow = stake;
-      resolveFn = resolve;
+      resolveFn = api.resolve;
       speed = sweepSpeed(stake);
       thrown.length = 0;
       aimX = 0;
