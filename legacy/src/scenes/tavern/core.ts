@@ -31,6 +31,9 @@ import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer } from "./p
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, type TavernStats } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
+import { buildNpcs, type BuiltNpcs } from "./npcs";
+import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
+import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
 const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2;
@@ -50,6 +53,10 @@ let prompt: StationPrompt | null = null;
 let pixelPass: PixelPass | null = null;
 let onKey: ((e: KeyboardEvent) => void) | null = null;
 let onResize: (() => void) | null = null;
+let npcs: BuiltNpcs | null = null;
+let vfx: VfxSystem | null = null;
+/** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
+let moteT = 0;
 
 /**
  * Show/hide the dungeon's bottom HUD.
@@ -81,6 +88,7 @@ function interact(): void {
   prompt?.hide();
 
   if (s.action.kind === "descend") {
+    sfxPlunger();
     const go = tavern.onDescend;
     closeTavern();
     go?.();
@@ -114,8 +122,12 @@ function frame(now: number): void {
     const next: Station | null = frozen ? null : stationAt(p.x, p.z);
     if (refreshFocus(next)) {
       fx?.setFocus(next);
-      if (next) prompt?.show(next);
-      else prompt?.hide();
+      if (next) {
+        prompt?.show(next);
+        sfxStationFocus();
+      } else {
+        prompt?.hide();
+      }
     }
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
@@ -162,6 +174,21 @@ function frame(now: number): void {
     const orbit = tavern.time * 0.55;
     props.dioramaBall.position.set(Math.cos(orbit) * 0.85, 0.13, Math.sin(orbit) * 0.5 - 0.1);
   }
+
+  // ── Keepers ── the smith's hammer beat drives its own sparks and sound.
+  npcs?.update(tavern.time, vfx, () => sfxAnvil());
+
+  // ── Ambient particles ── embers off the hearth and the forge coals, plus dust
+  // drifting through the room. Emitted on a cadence rather than per-frame, so
+  // the density is the same whether the machine runs at 15fps or 144.
+  moteT -= dt;
+  if (moteT <= 0 && vfx) {
+    moteT = 0.14;
+    vfx.ember(-8.0, 0.55 + Math.random() * 0.4, 0.2 + (Math.random() - 0.5) * 1.6);
+    vfx.ember(-6.8, 1.5 + Math.random() * 0.3, -2.6 + (Math.random() - 0.5) * 0.9);
+    vfx.mote(ROOM.minX + Math.random() * (ROOM.maxX - ROOM.minX), 0.5 + Math.random() * 2.0, ROOM.minZ + Math.random() * (ROOM.maxZ - ROOM.minZ));
+  }
+  vfx?.update(dt);
 
   if (tavern.scene && tavern.camera) {
     if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
@@ -232,6 +259,8 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   fx = createStationFx(scene);
   prompt = createStationPrompt(container);
 
+  vfx = createVfx(scene);
+  npcs = buildNpcs(scene);
   tavern.player = createTavernPlayer(scene);
   tavern.camX = tavern.player.x;
   tavern.camZ = tavern.player.z;
@@ -239,6 +268,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
   input = createInput(canvas);
   hideDungeonHud(true);
+  startTavernAmbience();
 
   pixelPass = createPixelPass(renderer, {
     quantize: QUANTIZE_DEFAULT,
@@ -313,6 +343,11 @@ export function closeTavern(): void {
   tavern.renderer?.dispose();
 
   hideDungeonHud(false);
+  stopTavernAmbience();
+  npcs?.dispose();
+  vfx?.dispose();
+  npcs = null;
+  vfx = null;
   prompt = null;
   fx = null;
   props = null;

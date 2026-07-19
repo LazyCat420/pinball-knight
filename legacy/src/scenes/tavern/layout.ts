@@ -160,6 +160,32 @@ export const OBSTACLES: Rect[] = [
   { x: 0, z: -6.4, w: 4.2, d: 1.0 }, // notice board / plunger housing
 ];
 
+/**
+ * Where each keeper stands.
+ *
+ * Lives here, with the rest of the floor plan, because it is subject to exactly
+ * the same constraint as a station's stand-here spot: it must be OPEN FLOOR. The
+ * first pass put keepers "behind their counters" at coordinates that were inside
+ * them, and four invisible NPCs buried in furniture is not a bug you notice from
+ * a passing test — only from a screenshot. `layout.test.ts` now asserts it.
+ *
+ * They stand beside their station rather than behind it: the counters back onto
+ * walls, so the only open floor adjacent to each one is along its side.
+ */
+export interface KeeperSpot {
+  /** Matches the Station id it belongs to. */
+  id: string;
+  x: number;
+  z: number;
+}
+
+export const KEEPER_SPOTS: KeeperSpot[] = [
+  { id: "forge", x: -6.6, z: -0.7 },
+  { id: "bar", x: 6.6, z: -0.7 },
+  { id: "dealer", x: 6.6, z: 4.4 },
+  { id: "armory", x: -6.6, z: 4.4 },
+];
+
 /** The player's entry point — at the foot of the dungeon stair, facing in. */
 export const SPAWN = { x: 0, z: 5.4 } as const;
 

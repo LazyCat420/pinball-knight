@@ -5,7 +5,7 @@
  * amount of shader work fixes. Cheap to assert, so assert it.
  */
 import { describe, it, expect } from "vitest";
-import { ROOM, STATIONS, OBSTACLES, SPAWN, PLAYER_RADIUS, stationAt, moveInRoom, isOpen } from "./layout";
+import { ROOM, STATIONS, OBSTACLES, SPAWN, KEEPER_SPOTS, PLAYER_RADIUS, stationAt, moveInRoom, isOpen } from "./layout";
 
 describe("floor plan sanity", () => {
   it("every station's stand-here spot is inside the room", () => {
@@ -27,6 +27,37 @@ describe("floor plan sanity", () => {
 
   it("the spawn point is open floor", () => {
     expect(isOpen(SPAWN.x, SPAWN.z)).toBe(true);
+  });
+
+  it("every keeper stands on open floor, not inside their own counter", () => {
+    // The first pass buried all four keepers inside the furniture they belong
+    // to. Invisible NPCs are SILENT — nothing throws, nothing fails, the room is
+    // just empty, and only a screenshot shows it. This is the assertion that
+    // catches it.
+    for (const k of KEEPER_SPOTS) {
+      expect(isOpen(k.x, k.z), `keeper "${k.id}" is inside furniture`).toBe(true);
+    }
+  });
+
+  it("every keeper belongs to a real station", () => {
+    const ids = new Set(STATIONS.map((s) => s.id));
+    for (const k of KEEPER_SPOTS) expect(ids.has(k.id), `keeper "${k.id}" has no station`).toBe(true);
+  });
+
+  it("each keeper stands adjacent to the station they keep", () => {
+    // Far enough not to block the counter, close enough to read as its owner.
+    for (const k of KEEPER_SPOTS) {
+      const s = STATIONS.find((x) => x.id === k.id)!;
+      const d = Math.hypot(k.x - s.x, k.z - s.z);
+      expect(d, `keeper "${k.id}" is ${d.toFixed(1)} from its station`).toBeLessThan(4);
+    }
+  });
+
+  it("no keeper blocks a station's stand-here spot", () => {
+    for (const k of KEEPER_SPOTS) {
+      const s = STATIONS.find((x) => x.id === k.id)!;
+      expect(Math.hypot(k.x - s.x, k.z - s.z), `keeper "${k.id}" is standing on its own prompt`).toBeGreaterThan(0.8);
+    }
   });
 
   it("station ids are unique", () => {
