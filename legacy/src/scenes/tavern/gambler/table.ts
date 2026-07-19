@@ -10,6 +10,8 @@
  * can be exercised without a browser or a real purse.
  */
 
+import { clamp } from "../../../utils/math";
+
 /** Which game a round belongs to. Used for the round log and telemetry. */
 export type GameId = "slots" | "roulette" | "blackjack" | "darts";
 
@@ -41,14 +43,14 @@ export const MAX_STAKE_ABS = 100;
  */
 export function maxStake(purse: number): number {
   if (purse < MIN_STAKE) return 0;
-  return Math.max(MIN_STAKE, Math.min(MAX_STAKE_ABS, Math.floor(purse / 2)));
+  return clamp(Math.floor(purse / 2), MIN_STAKE, MAX_STAKE_ABS);
 }
 
 /** Clamp a requested stake into the legal band for this purse. */
 export function clampStake(requested: number, purse: number): number {
   const hi = maxStake(purse);
   if (hi === 0) return 0;
-  return Math.max(MIN_STAKE, Math.min(hi, Math.floor(requested)));
+  return clamp(Math.floor(requested), MIN_STAKE, hi);
 }
 
 /** The stake steps the UI offers, filtered to what this purse allows. */

@@ -8,6 +8,7 @@ import { state, WEAPON_SLOTS } from "./state";
 import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 import { ensurePixelFonts } from "./pixel-fonts";
+import { clamp, clamp01 } from "../../utils/math";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 /**
@@ -301,7 +302,7 @@ export function updateBossBar(el: HTMLDivElement | null, hp: number | null, maxH
   }
   el.style.display = "block";
   const fill = el.querySelector("#dungeon-boss-fill") as HTMLDivElement | null;
-  if (fill) fill.style.width = `${Math.max(0, Math.min(100, (hp / maxHp) * 100))}%`;
+  if (fill) fill.style.width = `${clamp((hp / maxHp) * 100, 0, 100)}%`;
 }
 
 /** Blip the muzzle flash + kick the gun barrel down for one shot's recoil. */
@@ -326,7 +327,7 @@ export function flashFpsMuzzle(el: HTMLDivElement | null): void {
 
 /** ▮▮▮▯▯-style durability meter. */
 function meter(value: number, max: number, color: string, blocks = 10): string {
-  const filled = Math.max(0, Math.min(blocks, Math.ceil((value / max) * blocks)));
+  const filled = clamp(Math.ceil((value / max) * blocks), 0, blocks);
   return (
     `<span style="color:${color}">${"▮".repeat(filled)}</span>` +
     `<span style="color:#2b303b">${"▮".repeat(blocks - filled)}</span>`
@@ -342,7 +343,7 @@ export function updateHUD(el: HTMLDivElement): void {
   // Sprint spool (the 3s Shift ramp) — a thin blue rail that turns gold once
   // the charge passes the wall-ride threshold, so "the ride is armed" reads at
   // a glance. Hidden entirely at zero charge to keep the HUD quiet when walking.
-  const spool = Math.max(0, Math.min(1, state.player?.sprintCharge ?? 0));
+  const spool = clamp01(state.player?.sprintCharge ?? 0);
   const spoolArmed = spool >= SPRINT_RIDE_THRESHOLD;
   const spoolRow =
     spool > 0.01
@@ -357,7 +358,7 @@ export function updateHUD(el: HTMLDivElement): void {
   // A hot orange→cyan rail; at 100% it pulses to read "BALL FORM ARMED". A live
   // bounce COMBO count rides alongside it once you're ricocheting (the Sonic
   // reward — chain wall hits, watch it climb).
-  const over = Math.max(0, Math.min(1, state.player?.overcharge ?? 0));
+  const over = clamp01(state.player?.overcharge ?? 0);
   const overFull = over >= 0.999;
   const combo = state.player?.bounceCombo ?? 0;
   const comboTag = combo >= 2 ? ` <span style="color:#ffd23f;font-weight:900">×${combo} COMBO</span>` : "";

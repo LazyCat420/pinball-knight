@@ -11,6 +11,8 @@
  * dungeon tile, so the player reads at the same scale in both scenes.
  */
 
+import { clamp } from "../../utils/math";
+
 /** An axis-aligned box on the floor. Used for both props and collision. */
 export interface Rect {
   /** Centre. */
@@ -254,8 +256,8 @@ export function moveInRoom(fromX: number, fromZ: number, toX: number, toZ: numbe
   let z = toZ;
 
   // Walls first, so furniture resolution can't shove us back through them.
-  x = Math.max(ROOM.minX + r, Math.min(ROOM.maxX - r, x));
-  z = Math.max(ROOM.minZ + r, Math.min(ROOM.maxZ - r, z));
+  x = clamp(x, ROOM.minX + r, ROOM.maxX - r);
+  z = clamp(z, ROOM.minZ + r, ROOM.maxZ - r);
 
   for (const o of OBSTACLES) {
     const hx = o.w / 2 + r;
@@ -291,8 +293,8 @@ export function moveInRoom(fromX: number, fromZ: number, toX: number, toZ: numbe
   }
 
   // A corner ejection can push us back into a wall; clamp once more.
-  x = Math.max(ROOM.minX + r, Math.min(ROOM.maxX - r, x));
-  z = Math.max(ROOM.minZ + r, Math.min(ROOM.maxZ - r, z));
+  x = clamp(x, ROOM.minX + r, ROOM.maxX - r);
+  z = clamp(z, ROOM.minZ + r, ROOM.maxZ - r);
   return { x, z };
 }
 

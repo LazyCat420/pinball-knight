@@ -21,19 +21,12 @@ import {
   basicStrategy,
   type Card,
 } from "./blackjack";
+import { mulberry32 } from "../../../utils/rng";
 
 const c = (rank: number, suit: Card["suit"] = "spades"): Card => ({ rank, suit });
 
-function seeded(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** Deterministic PRNG so a simulated shoe replays identically. */
+const seeded = mulberry32;
 
 describe("the deck", () => {
   it("has 52 unique cards", () => {

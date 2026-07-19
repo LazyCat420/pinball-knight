@@ -12,6 +12,7 @@
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile } from "./generator";
 import { bfsDistances } from "../entities/ai";
+import { clamp } from "../../../utils/math";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -631,7 +632,7 @@ function furnishRooms(
       const sign = rng() < 0.5 ? 1 : -1;
       const longLen = alongW ? room.w : room.h;
       const shortLen = alongW ? room.h : room.w;
-      const nLanes = Math.max(1, Math.min(3, Math.floor(shortLen / 3)));
+      const nLanes = clamp(Math.floor(shortLen / 3), 1, 3);
       const nPer = Math.max(3, Math.floor(longLen / 3));
       for (let lane = 0; lane < nLanes; lane++) {
         const off = Math.round(((lane + 1) / (nLanes + 1)) * (shortLen - 1));

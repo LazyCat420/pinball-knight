@@ -12,6 +12,7 @@
  * DOM- and three-free: tested.
  */
 import { type Grid, isWalkable } from "./maze/generator";
+import { clamp } from "../../utils/math";
 
 const EPS = 1e-4;
 
@@ -27,8 +28,8 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
     for (let i = i0; i <= i1; i++) {
       if (isWalkable(g, i, j)) continue;
       // Closest point on the tile AABB to the circle centre.
-      const cx = Math.max(i, Math.min(gx, i + 1));
-      const cz = Math.max(j, Math.min(gz, j + 1));
+      const cx = clamp(gx, i, i + 1);
+      const cz = clamp(gz, j, j + 1);
       const dx = gx - cx;
       const dz = gz - cz;
       if (dx * dx + dz * dz < r * r) return true;

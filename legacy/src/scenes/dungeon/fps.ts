@@ -39,6 +39,7 @@ import type { InputHandle } from "./input";
 import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
 import { setHUDMode } from "./hud";
 import { sfxGun } from "./audio";
+import { clamp } from "../../utils/math";
 
 /** How long a streak survives without a fresh kill before it resets, seconds. */
 const STREAK_WINDOW = 2.5;
@@ -134,7 +135,7 @@ function facingToYaw(): number {
 export function onFpsMouseMove(dx: number, dy: number): void {
   if (!state.fpsActive) return;
   state.fpsYaw -= dx * FPS_MOUSE_SENS;
-  state.fpsPitch = Math.max(-FPS_PITCH_LIMIT, Math.min(FPS_PITCH_LIMIT, state.fpsPitch - dy * FPS_MOUSE_SENS));
+  state.fpsPitch = clamp(state.fpsPitch - dy * FPS_MOUSE_SENS, -FPS_PITCH_LIMIT, FPS_PITCH_LIMIT);
 }
 
 /** Forward ground vector for the current yaw. */
@@ -213,7 +214,7 @@ export function aimFpsCamera(): void {
   cam.position.set(p.x, FPS_EYE_HEIGHT, p.z);
   const fwd = forwardXZ();
   // Recoil punches the aim UP by fpsKick; it springs back each frame.
-  const pitch = Math.max(-FPS_PITCH_LIMIT, Math.min(FPS_PITCH_LIMIT, state.fpsPitch + state.fpsKick));
+  const pitch = clamp(state.fpsPitch + state.fpsKick, -FPS_PITCH_LIMIT, FPS_PITCH_LIMIT);
   const cp = Math.cos(pitch);
   cam.lookAt(
     p.x + fwd.x * cp,

@@ -18,6 +18,7 @@ import { state } from "./state";
 import { at, worldToTile, T_WALL, T_STAIRS, T_CRACKED, type Grid } from "./maze/generator";
 import { fogAt, FOG_HIDDEN, FOG_DIM, type Fog } from "./fog";
 import { PALETTE_HEX } from "./render/palette";
+import { clamp } from "../../utils/math";
 
 /** `#rrggbb` for a Cold Crypt palette index. */
 function pal(i: number): string {
@@ -51,7 +52,7 @@ export interface FloorMapOptions {
 
 /** How big a tile can be drawn to fit `g` into `w × h` device pixels. */
 export function fitScale(g: Grid, w: number, h: number, max = 6): number {
-  return Math.max(1, Math.min(max, Math.floor(Math.min(w / g.w, h / g.h))));
+  return clamp(Math.floor(Math.min(w / g.w, h / g.h)), 1, max);
 }
 
 /**

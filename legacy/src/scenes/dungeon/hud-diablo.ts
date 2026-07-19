@@ -25,6 +25,7 @@ import { ABILITIES, type AbilityId } from "./abilities";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
 import { ensureWolfFonts } from "./ui";
+import { clamp, clamp01 } from "../../utils/math";
 
 const GLOBE_PX = 30; // globe canvas backing size — small so it upscales to CHUNKY pixels
 
@@ -293,7 +294,7 @@ function pillHTML(text: string, color: string): string {
 
 /** One buff tile for the unified strip: icon + a thin depleting bar + seconds. */
 function buffTileHTML(b: BuffView): string {
-  const frac = Math.max(0, Math.min(1, b.t / b.max));
+  const frac = clamp01(b.t / b.max);
   const secs = Math.ceil(b.t);
   const expiring = b.t <= 3; // about to run out — warn on the timer + border
   const border = expiring && secs % 2 === 1 ? "#ffd23f" : b.color; // blink amber near the end
@@ -323,7 +324,7 @@ export function renderDiablo(dt: number): void {
   lifeRippleT = Math.max(0, lifeRippleT - dt);
   manaRippleT = Math.max(0, manaRippleT - dt);
   const lifeLvl = p ? Math.max(0, p.hp) / PLAYER_MAX_HP : 0;
-  const manaLvl = p ? Math.max(0, Math.min(MANA_MAX, p.mana)) / MANA_MAX : 0;
+  const manaLvl = p ? clamp(p.mana, 0, MANA_MAX) / MANA_MAX : 0;
   if (lifeCtx) drawGlobe(lifeCtx, lifeLvl, wavePhase, "#e0455a", "#5a0e17", lifeLvl <= 0.25, lifeRippleT);
   if (manaCtx) drawGlobe(manaCtx, manaLvl, wavePhase * 0.85 + 2, "#5aa9e6", "#141a4a", manaLvl <= 0.15, manaRippleT);
   // Live numeric readouts over the globes (HP hearts, whole mana).

@@ -7,6 +7,7 @@
  * to break the game.
  */
 import { getAudioCtx } from "../../utils/audio-manager";
+import { clamp01 } from "../../utils/math";
 
 function ctx(): AudioContext | null {
   try {
@@ -273,7 +274,7 @@ export function sfxRibbit(): void {
 export function sfxCartBell(near: number): void {
   const c = ctx();
   if (!c) return;
-  const vol = 0.03 + 0.11 * Math.max(0, Math.min(1, near));
+  const vol = 0.03 + 0.11 * clamp01(near);
   beep(c, { type: "triangle", f0: 1568, f1: 1480, dur: 0.16, vol });
   beep(c, { type: "triangle", f0: 2093, f1: 1976, dur: 0.22, vol: vol * 0.7, at: 0.11 });
 }

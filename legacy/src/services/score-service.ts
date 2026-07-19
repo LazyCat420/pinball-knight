@@ -3,6 +3,8 @@
  * Handles server persistence with a localStorage fallback for offline or offline-mode play.
  */
 
+import { BACKEND_API_URL } from "./api-config";
+
 export interface LeaderboardEntry {
   name: string;
   score: number;
@@ -17,8 +19,6 @@ export interface LeaderboardEntry {
 export type GameId = "raccoon-tornado" | "pinball-knight";
 
 const DEFAULT_GAME: GameId = "raccoon-tornado";
-
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5175";
 
 /** Boards are per-game, so the local backup is keyed per-game too. */
 function storageKey(game: GameId): string {
@@ -61,11 +61,21 @@ export function getLeaderboard(game: GameId = DEFAULT_GAME): LeaderboardEntry[] 
   }
 }
 
+/**
+ * One row as the server projects it.
+ *
+ * Mirrors the SELECT list in braindeadbot-service (`tunnel_depth AS tunnelDepth`).
+ * `tunnelDepth` used to be missing here even though the client SENDS it on save
+ * and the server SELECTs it back, so the field was write-only: every read path
+ * silently dropped it and LeaderboardEntry.tunnelDepth was never populated.
+ * It is optional because rows written before the column existed return null.
+ */
 interface BackendScoreItem {
   name: string;
   score: number;
   altitude: number;
   meters: number;
+  tunnelDepth?: number | null;
   createdAt: string;
 }
 
@@ -84,6 +94,7 @@ export async function fetchLeaderboard(game: GameId = DEFAULT_GAME): Promise<Lea
         score: scoreItem.score,
         altitude: scoreItem.altitude,
         meters: scoreItem.meters,
+        tunnelDepth: scoreItem.tunnelDepth ?? 0,
         createdAt: scoreItem.createdAt,
       }));
       leaderboardCaches.set(game, entries);

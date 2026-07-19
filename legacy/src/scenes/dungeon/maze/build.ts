@@ -34,6 +34,7 @@ import {
 import { type Grid, isWalkable, tileCenter, at, T_CRACKED } from "./generator";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
+import { clamp } from "../../../utils/math";
 
 /** Deterministic hash-noise — no Math.random, so a level looks identical on rebuild. */
 function noise(x: number, y: number, seed: number): number {
@@ -255,7 +256,7 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
               ctx.fillStyle = css(1);
               ctx.fillRect(x0 + cx, y0 + y, 1, 1);
               cx += noise(cx, y0 + y, 11) > 0.5 ? 1 : noise(cx, y0 + y, 12) > 0.5 ? -1 : 0;
-              cx = Math.max(2, Math.min(PPU - 3, cx));
+              cx = clamp(cx, 2, PPU - 3);
             }
           } else if (h > 0.76) {
             // sunken tile — a shade darker, catches the eye like wear
@@ -315,7 +316,7 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
         }
       }
       cx += noise(cx, y, 57) > 0.5 ? 1 : noise(cx, y, 58) > 0.5 ? -1 : 0;
-      cx = Math.max(6, Math.min(PPU - 8, cx));
+      cx = clamp(cx, 6, PPU - 8);
       // gold glints scattered along the crack lips
       if (noise(cx, y, 59) > 0.82) {
         ctx.fillStyle = css(16);
@@ -532,7 +533,7 @@ function makeBannerTexture(arcane: boolean): THREE.CanvasTexture {
   for (let y = H - 12; y < H; y++) {
     const half = Math.floor(((y - (H - 12)) / 12) * (W / 2 - 3));
     for (let x = cx - half - 1; x <= cx + half; x++) {
-      const p = (y * W + Math.max(0, Math.min(W - 1, x))) * 4;
+      const p = (y * W + clamp(x, 0, W - 1)) * 4;
       g.data[p + 3] = 0;
     }
   }

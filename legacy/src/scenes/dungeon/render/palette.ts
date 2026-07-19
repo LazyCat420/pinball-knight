@@ -14,6 +14,8 @@
  * Sprite art references these by index via paletteCss() in cel-painter.ts.
  */
 
+import { clamp } from "../../../utils/math";
+
 export const PALETTE_HEX: number[] = [
   // ── Stone / void (0-5) ──
   0x0b0d12, // 0  void black
@@ -103,7 +105,7 @@ function rgb(index: number): [number, number, number] {
 }
 
 function css([r, g, b]: [number, number, number]): string {
-  const h = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  const h = (v: number) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, "0");
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 

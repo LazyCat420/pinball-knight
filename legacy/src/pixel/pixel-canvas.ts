@@ -16,6 +16,8 @@
  * standalone — the site map must not have to import the game to look like it.
  */
 
+import { clamp } from "../utils/math";
+
 /** A low-res drawing surface plus the integer scale it blits to the screen at. */
 export interface PixelSurface {
   /** The low-resolution canvas to draw into. Its ctx has smoothing OFF. */
@@ -79,7 +81,7 @@ export function computeFit(
 
   // Largest WHOLE scale at which the logical width still fits.
   const raw = Math.floor(targetW / logicalWidth);
-  const scale = Math.max(minScale, Math.min(maxScale, raw || 1));
+  const scale = clamp(raw || 1, minScale, maxScale);
 
   const width = Math.max(1, Math.round(logicalWidth));
   // Height follows from the space actually available at that scale, so the

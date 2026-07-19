@@ -16,6 +16,8 @@
  * boot, draw the cached canvas every frame.
  */
 
+import { clamp } from "../utils/math";
+
 /** A drawing function, given a context sized `size × size`. */
 export type IconPaint = (ctx: CanvasRenderingContext2D, size: number) => void;
 
@@ -158,7 +160,7 @@ export function rampFrom(hex: string, steps = 3): string[] {
     // -40% at the dark end through +40% at the light end.
     const t = steps === 1 ? 0 : (i / (steps - 1)) * 2 - 1;
     const f = 1 + t * 0.4;
-    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v * f)));
+    const c = (v: number) => clamp(Math.round(v * f), 0, 255);
     out.push(`#${((1 << 24) | (c(r) << 16) | (c(g) << 8) | c(b)).toString(16).slice(1)}`);
   }
   return out;
@@ -171,6 +173,6 @@ export function rampFrom(hex: string, steps = 3): string[] {
  */
 export function inkFrom(hex: string): string {
   const [r, g, b] = hexToRgb(hex);
-  const c = (v: number, shift: number) => Math.max(0, Math.min(255, Math.round(v * 0.35 + shift)));
+  const c = (v: number, shift: number) => clamp(Math.round(v * 0.35 + shift), 0, 255);
   return `#${((1 << 24) | (c(r, 0) << 16) | (c(g, 2) << 8) | c(b, 10)).toString(16).slice(1)}`;
 }

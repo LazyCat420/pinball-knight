@@ -38,17 +38,11 @@ export interface TilePos {
  * Deterministic PRNG (mulberry32). The maze, spawns and torches for a level are
  * all drawn from one seeded stream, so a level can be regenerated exactly —
  * and the generator tests can assert on real mazes instead of mocking random.
+ *
+ * Now lives in src/utils/rng.ts; re-exported here because the whole dungeon
+ * imports it from this module.
  */
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { mulberry32 } from "../../../utils/rng";
 
 export function idx(g: Grid, i: number, j: number): number {
   return j * g.w + i;

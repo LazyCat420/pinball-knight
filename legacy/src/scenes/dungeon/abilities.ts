@@ -25,6 +25,7 @@ import {
   BLADESTORM_TICK,
 } from "./constants";
 import { sfxSpin, sfxBumper, sfxFreeze, sfxSwing } from "./audio";
+import { clamp } from "../../utils/math";
 
 export type AbilityId = "flippercharge" | "arcanepulse" | "magnetaura" | "timecrawl" | "bladestorm";
 
@@ -54,7 +55,7 @@ export const ABILITY_IDS: AbilityId[] = ["flippercharge", "arcanepulse", "magnet
 
 /** Live mana, clamped. */
 export function getMana(): number {
-  return Math.max(0, Math.min(MANA_MAX, state.player?.mana ?? 0));
+  return clamp(state.player?.mana ?? 0, 0, MANA_MAX);
 }
 
 /** Can the ability in this skill slot fire right now (equipped, off cooldown, affordable)? */
