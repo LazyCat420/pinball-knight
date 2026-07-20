@@ -2,10 +2,10 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `121a3eb`, service `dee17f0`, both on synology.
+**Live:** client `95a7d50`, service `dee17f0`, both on synology.
 
 - Client — http://10.0.0.16:5174 (verified HTTP 200 after deploy) · Service — http://10.0.0.16:5175
-- 749 client tests, 28 service tests, production build clean.
+- 757 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
@@ -38,6 +38,24 @@ nothing changed SHAPE. Four layers now sit on top, all in `maze/`:
   differ. Budget multipliers ONLY — a modifier cannot touch connectivity.
 - **braid gradient** — braid ramps down with distance from spawn, so a floor
   opens flankable and tightens toward the stairs.
+
+**Exit placement.** `pickEndpoints(g, rng)` in `maze/decorate.ts` chooses START
+and STAIRS ONCE per floor; `startLevel` passes the result to BOTH
+`widenMainArtery` and `decorateMaze`. Do not let either derive its own again —
+that was the old bug: each independently used "start = first floor tile from the
+top-left, stairs = farthest tile from it", which pinned the exit to the
+bottom-right corner on 57 of 60 level-1 runs, and if you fix only one side the
+floor gets a widened launch highway leading somewhere that isn't the exit.
+Start is drawn from one of the four corners; stairs from the top BFS-distance
+band (`FAR_BAND` 0.82) rather than the strict argmax.
+
+**Audio.** 28 procedural stings in `audio.ts`, all wired. Before adding a new
+one, check it isn't already there — attack/roll/hit/death/hurt/pickup/coin/
+break/stairs all existed and were live. `beep()`/`burst()` run their bodies
+through `safely()`: the module's contract is that audio can NEVER break the
+game, and guarding only `ctx()` was not enough (a context that resolves then
+throws on `createOscillator` threw into the game loop). `audio.test.ts` pins
+this with a hostile-context case.
 
 **Invariants, and why they hold.** Every archetype is carve-only, so
 connectivity can only increase; `stitchCells` (union-find in `generator.ts`)
