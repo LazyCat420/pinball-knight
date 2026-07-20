@@ -143,7 +143,6 @@ unison. They get one material each now.
 
 ### Still open
 
-- The gambler's cabinet is **not in `OBSTACLES`** — you can walk through it.
 - Only four NPC paints exist and there are now five keepers, so the gambler's
   tout reuses the armory frog, tinted gold and placed across the room. A fifth
   paint would want `cel-painter.ts`, which belongs to the dungeon.

@@ -1,7 +1,7 @@
 # Pinball Knight — Consolidated Plan
 
-_Rewritten 2026-07-19. Every line below was re-verified against the source this
-round; the previous revision (2026-07-17) had gone badly stale — most of its
+_Rewritten 2026-07-19, then updated the same day once §1 was cleared. Every
+line below was re-verified against the source; the previous revision (2026-07-17) had gone badly stale — most of its
 planned work shipped in waves 12–14b, and it described a DOM-overlay tavern and
 tiny card chips that no longer exist._
 
@@ -108,6 +108,35 @@ is **15** cards across 5 rarities, not 13. All effect fields intact
 (`damageFlat`, `damageMult`, `cooldownMult`, `durabilityMult`,
 `onHit: chill|burn`, `pinballMult` — `cards.ts:23-36`).
 
+### Shipped 2026-07-19 — the whole previous open list
+
+| Feature | Where |
+|---|---|
+| **Leaderboard submission** (depth-dominant scoring) | `run-score.ts`, posted from `core.ts` on death; run-scoped ledger on `state` |
+| **Shared player name** (fixes Pirate Surf's `"???"` board too) | `../../services/player-name.ts`; editable on the death screen |
+| **Best-depth persistence** | `best-depth.ts`; record called out on game over |
+| **Exhaustive part RENDERING** | 3 × `Record<PinballPartKind, …>` in `render/pinball-parts.ts` — a missing kind is now a compile error, matching collision |
+| **Floating damage numbers** | `render/damage-text.ts`, pooled + iso-billboarded; hooked in `entities/combat.ts` `damageZombie`, the single funnel |
+| **Card pickup preview** | `card-popup.ts`, reuses `holo-card.ts`'s painter; never pauses the game |
+| **Airborne ground shadow** | `ActorSprite.setElevation()` pins the contact blob to the floor for ramp hops AND the trapdoor ride |
+| **Map labels archetype rooms** | `state.levelRooms` (stashed from `plan.rooms`); full map washes speedway/bumper/arena/vault over discovered floor only |
+| **Off-window stairs chevron** | `map-render.ts`, gated on the stairs being discovered |
+| **Arrow keys unbound from turning** | `input.ts` — see below |
+| **Tavern**: 5th keeper, approach reactions, focus zoom, live diorama | `../tavern/` |
+
+**The "control inversion" is solved, and it was not an inversion.**
+`arrowleft`/`arrowright` were bound in `MOVE_KEYS` *and* `TURN_LEFT`/`TURN_RIGHT`
+(`input.ts`), both read from the same held-key set, so in FPS mode Left strafed
+AND rotated on the same frame. Movement and aim share one code path
+(`screenDirToWorld`) with no sign error anywhere. Arrows are movement, q/e turn,
+and `input.test.ts` now forbids any key being bound to both. ROADMAP §6 /
+VERIFY_CHECKLIST §6 can be closed.
+
+Two bugs found while doing the above, both invisible without looking: the
+tavern's five bumper caps **shared one material instance**, so a chase rendered
+as five caps pulsing in unison; and the gambler's cabinet had **no collision
+rect**, so you could walk through it.
+
 ### Postdating the old plan entirely
 
 - **The casino** — four games with tested RTP under `../tavern/gambler/`
@@ -129,145 +158,74 @@ is **15** cards across 5 rarities, not 13. All effect fields intact
 
 ## 1. Open work
 
-Ordered by value. Items 1–3 are the ones I'd actually do next.
+Everything this section previously listed was cleared on 2026-07-19 (commit
+"Pinball Knight: clear the whole open list"). What shipped is folded into §0
+above; what remains is below, and it is genuinely short.
 
-### 1. The dungeon still never submits a score 🔴
-
-The single biggest gap between "built" and "useful", and it has survived several
-rounds. The service is ready (`POST /api/scores`, `game: "pinball-knight"`, JSON
-`detail` blob) and `src/services/score-service.ts` is game-aware — but grepping
-`score-service|/api/scores|submitScore` across the repo returns only
-`objects/ski-game.ts`, `room/pirate-surf-ui.ts` and
-`objects/raccoon-tornado/core.ts`. **Zero hits under `scenes/dungeon/`.**
-Neither death (`core.ts:1442-1466`) nor descent (`core.ts:1468-1479`) posts
-anything; both only touch the gold wallet.
-
-Post on death and on descent: score, floor reached, best combo, kills, run time.
-`saveLeaderboardScore` is async and returns `Promise<boolean>` — **await it and
-surface failure**; the identical fire-and-forget bug in raccoon-tornado showed
-players a score that was silently rejected.
-
-### 2. `render/pinball-parts.ts` is the last silent-miss hazard 🔴
-
-Collision is exhaustive by construction, so adding a `PinballPartKind` without
-handling it is a compile error. The renderer is not:
-
-- **builder chain — 17 branches**, `pinball-parts.ts:506-522`, no final `else`
-- **animator chain — 16 branches**, `:618-794`, ending `else if (part.kind !== "pit")`
-- plus 2 pre-chain guards (`:599` glove, `:609` firevent), 5 inline `s.kind ===`
-  ternaries at `:540-548`, and 2 more at `:800`
-
-(The old plan's "~42 branches" was wrong — it's 33 across the two chains.)
-
-A new part kind therefore **type-checks, collides correctly, and renders
-nothing**. Convert both to `Record<PinballPartKind, …>` the same way collision
-was. This is exactly the bug class that silently applied wrong physics for
-months before `pinball-collide.ts` was converted.
-
-### 3. Arrow keys are double-bound — and this is probably the "control inversion" 🟠
-
-`ROADMAP §6` / `VERIFY_CHECKLIST §6` have carried a never-verified note about
-left/right movement vs aim inversion. Reading the code, **there is no sign error
-anywhere**: movement and mouse aim both route through `screenDirToWorld` with
-the same screen-down convention (`camera.ts:51-57,99-100`), iso movement at
-`player.ts:281`, and FPS negates `a.z` deliberately with a comment saying why
-(`fps.ts:189-191`).
-
-The real defect is different: `arrowleft`/`arrowright` are in **both**
-`MOVE_KEYS` (`input.ts:58,60`) and `TURN_LEFT`/`TURN_RIGHT` (`:69-70`), and
-`onKeyDown` registers both (`:86-87`). In FPS mode, holding Left arrow strafes
-left *and* rotates the camera left simultaneously — which would absolutely feel
-like inversion to a playtester. Pick one binding per key, then close the note.
-
-### 4. Ramp-hop polish
-
-- **The ground shadow rises with the knight.** `makeContactBlob` parents the
-  blob to the billboard mesh (`render/sprite.ts:90-97`) and `updateHop` lifts
-  `sprite.mesh.position.y` (`player.ts:925`), so height doesn't read in iso.
-  Decouple the blob and draw it at `y=0` under the arc. Also affects wall-kick
-  and pounce.
-- Consider whether boosters should hop too, or stay flat by design (currently
-  flat, deliberately).
-
-### 5. Map / floor-plan residue
-
-- **`LevelPlan.rooms` is dropped after `buildMaze`.** `plan` is a local const in
-  `startLevel` (`core.ts:962`) and never stashed on `state`; `plan.rooms`
-  (declared `maze/decorate.ts:135`) is read **nowhere**, so the floor map cannot
-  label speedway/bumper/arena/vault rooms. Stash the plan to enable it.
-  **Correction to earlier notes: `plan.frog` is NOT lost** — the frog survives as
-  an NPC (`core.ts:1142`, `state.npcs` kind `"frog"`, `state.ts:268,473`), so the
-  map can already locate it without the plan. Only `rooms` needs retaining.
-- **Minimap has no off-screen stairs indicator.** `hud-minimap.ts` (66 lines)
-  never mentions stairs; `map-render.ts:168-169` only draws them when already
-  discovered AND inside the 23×23 window (`WINDOW=11`). No edge clamp, no arrow.
-- **No legend on the HUD minimap.**
-
-### 6. Juice gaps (BLUEPRINT Phase 4)
-
-- **Damage numbers do not exist.** `vfx.ts:310-329` exports only
-  `sparks/blood/ember/mote/dust/slash/ghost`. Earlier notes claiming
-  "damage/combo floating numbers ✅" were wrong.
-- **Combo is a centred DOM `×N` flash** (`state.ts:419`, `core.ts:579`,
-  `ui.ts:205,226-227`), not floating world-space text.
-- **Best-depth persistence is unbuilt** — zero `localStorage` hits under
-  `scenes/dungeon/`. Cheap, and it gives a solo player a reason to push.
-
-### 7. Card economy tail
-
-- **On-pickup card preview modal** — `paintCard` is called in exactly one file
-  (`tavern.ts:213`). The dungeon pickup path is a silent `pickUpCard(it)`
-  (`core.ts:1627`) with no card visual. Showing the painted card on pickup is
-  the highest-value remaining use of a system that's already built.
-- **Stock roll ignores gold and depth.** `rollBarOffers` (`tavern.ts:119-130`)
-  uses flat fixed thresholds (`<0.5` common … else mythic). Weighting by
-  gold-on-hand or floor depth would give late runs something to spend on.
-- **Modifier-strength pricing** (a big `damageMult` costing more than a small
-  `damageFlat`) — still keys off rarity only.
-
-### 8. Tavern polish (see `../tavern/TAVERN_PLAN.md`)
-
-- Keepers don't react to being approached — nothing in `npcs.ts` reads player
-  position; no turn-to-face, no greeting.
-- **No keeper at the gambler station** — `KEEPER_SPOTS` (`layout.ts:199-203`)
-  omits it, so the casino is an unattended cabinet.
-- No camera zoom on station focus.
-- The central diorama animates on a timer rather than reflecting the real run
-  (lit bumpers should mean completed targets; the ball should move after a
-  strong floor).
-
-### 9. Never-playtested
+### 1. Nobody has playtested it 🔴
 
 `VERIFY_CHECKLIST.md` is **40 items, zero checked**, across 7 sections (debug
 console, HUD layout, buff strip, power-ups, rampage swap, enemies & parts, known
-issues). Waves 10+ were only build/tsc-verified. There is no E2E harness for the
-3D game, so this checklist is the only way a change gets confirmed by hand.
+issues). Waves 10 onward were build- and tsc-verified only. There is no E2E
+harness for the 3D game, so that checklist is the only way a change gets
+confirmed by hand — and it is now the single largest source of unknown risk in
+the game, well ahead of any unbuilt feature.
 
-### 10. Research spikes — not committed work
+Headless QA can drive the dungeon (it boots, renders, and the map draws with no
+console errors — verified this round), but it runs at ~2-5fps under swiftshader
+and cannot judge feel. Feel is what the checklist is for.
 
-None of these block anything; recorded so they aren't silently lost.
+### 2. Card economy tail
 
-- **Kicker gates** and **multiball wells** as distinct part kinds. Neither
-  exists in `PinballPartKind` (`state.ts:295-315`); multiball exists only as a
-  potion power-up. ("kicker" appears solely as ramp *art*.)
-- **Per-zone corridor width carve.** Not built. The shipped analogue is the
-  runtime friction gradient (`constants.ts:329-331`, `player.ts:1106`) plus
-  `widenMainArtery` — not a per-zone width parameter.
-- **The literal layered generator** (drunkard's-walk skeleton → Physarum branch
-  fill → Bagua 3×3 zones → sightline scoring). Zero hits repo-wide. The shipped
-  generator uses BFS-distance banding instead. Treat as a spike, not a plan.
-- **Table-shaped prefab rooms** (circular/oct bumper court, teardrop return
-  lane, ramp spiral, funnel). `maze/prefabs.ts:40-169` has 13 *corridor-shape*
-  prefabs; none is a table shape. Closest is `bullring` (`:98`) and the bumper
-  quincunx grid (`decorate.ts:611-621`).
-- **Level size curve.** Caps are `cellsW ≤ 33`, `cellsH ≤ 25`
-  (`constants.ts:1267-1268`) — already raised from 30/22 and credited to A1 in
-  the comment. A previous plan asked for 34/26; the difference is not worth a
-  commit on its own. **Launch-part density does not scale with depth** (no
-  per-level part-count field in `LevelConfig:1239-1259`; counts come from room
-  archetypes) — that one is worth doing if later floors should read as more
-  machine-like. The cracked-wall budget *does* scale
-  (`launchBreaks: min(5 + ⌊(l-1)/2⌋, 10)`, `:1299`).
+Both are shop-tuning, not systems work:
+
+- **Stock roll ignores gold and depth.** `rollBarOffers` (`../dungeon/tavern.ts:119-130`)
+  uses flat fixed thresholds (`<0.5` common … else mythic), so a late run with a
+  full purse sees the same table as floor 1. Weighting by gold-on-hand or depth
+  would give deep runs something to spend on.
+- **Pricing keys off rarity only** — a big `damageMult` costs the same as a weak
+  one of the same tier. Pricing off modifier strength would make the shop feel
+  curated rather than flat.
+
+### 3. Tavern remainders (see `../tavern/TAVERN_PLAN.md`)
+
+- Only four NPC paints exist for five keepers, so the gambler's tout reuses the
+  armory frog tinted gold. A fifth paint needs `cel-painter.ts`, which belongs
+  to the dungeon.
+- `readDiorama` can only see grade/floor/kills/bestCombo. Per-target detail —
+  which bumpers a run actually hit — is not plumbed into `TavernStats`, so the
+  diorama reflects the run's SHAPE but not its specifics.
+
+### 4. Small deliberate gaps
+
+- **Boosters don't hop.** Ramps do; boosters stay flat ground-speed lanes so the
+  two parts read differently. Revisit only if they start feeling samey.
+- **Launch-part density doesn't scale with depth.** There is no per-level
+  part-count field in `LevelConfig` (`constants.ts:1239-1259`) — counts come from
+  room archetypes. The cracked-wall budget DOES scale
+  (`launchBreaks: min(5 + ⌊(l-1)/2⌋, 10)`). Worth doing if later floors should
+  read as more machine-like.
+- **Level size caps** are `cellsW ≤ 33` / `cellsH ≤ 25`, already raised from
+  30/22. An older plan asked for 34/26; not worth a commit on its own.
+- **No legend on the HUD minimap**, deliberately: the canvas is a 116px backing
+  store in a 58 CSS px box, so the smallest readable hand-authored glyph lands at
+  1.5×2.5 CSS px. Reasoning is in `hud-minimap.ts`. The full M map has a legend,
+  which is where there is room to teach the colours.
+
+### 5. Research spikes — not committed work
+
+Unchanged from the previous revision; none of these block anything.
+
+- **Kicker gates** and **multiball wells** as distinct part kinds. Neither exists
+  in `PinballPartKind` (`state.ts:295-315`); multiball is only a potion power-up.
+- **Per-zone corridor width carve.** The shipped analogue is the runtime friction
+  gradient (`constants.ts:329-331`, `player.ts:1106`) plus `widenMainArtery`.
+- **The literal layered generator** (drunkard's-walk → Physarum → Bagua 3×3 →
+  sightline scoring). Zero hits repo-wide; the shipped generator uses
+  BFS-distance banding. A spike, not a plan.
+- **Table-shaped prefab rooms** (circular/oct bumper court, teardrop return lane,
+  ramp spiral, funnel). `maze/prefabs.ts:40-169` has 13 CORRIDOR-shape prefabs;
+  none is a table shape.
 - **Rapier physics.** In `package.json` but only imported by
   `objects/dog-feeding-game.ts`. `BLUEPRINT §1.5` explicitly rejects it for v1 —
   its absence is a decision, not a gap.
@@ -293,18 +251,14 @@ reader isn't misled:
 
 ## 3. Suggested order
 
-1. **Score submission** (§1.1) — closes the longest-standing real gap, small,
-   and the service side is already built and game-aware.
-2. **Exhaustive part rendering** (§1.2) — removes the last silent-miss hazard in
-   the part pipeline; mechanical, and the collision conversion is the template.
-3. **Arrow-key binding** (§1.3) — one-line class of fix that likely resolves a
-   note that has been open across three plans.
-4. **Pickup card preview** (§1.7) — highest-value remaining use of the holo card
-   system, which is already fully built.
-5. **Damage numbers + best-depth persistence** (§1.6) — cheap juice.
-6. **Ramp-hop shadow, minimap stairs, `LevelPlan.rooms`** (§1.4, §1.5).
-7. **Playtest against `VERIFY_CHECKLIST.md`** (§1.9) — do this before believing
-   any of the above is done.
+1. **Playtest against `VERIFY_CHECKLIST.md`** (§1.1). Everything else here is
+   small; 40 unchecked items on a game nobody has sat down with is not. Do this
+   before building anything new.
+2. **Card economy tuning** (§1.2) — stock weighting and modifier-strength
+   pricing, both contained to `tavern.ts`.
+3. **Tavern remainders** (§1.3) if the fifth NPC paint feels worth a
+   `cel-painter.ts` trip.
+4. §1.4 only as taste dictates; §1.5 is not scheduled work.
 
 Each is independently shippable: `npm test` + `npx tsc --noEmit`, then
 in-browser. Commit and push before any deploy.
