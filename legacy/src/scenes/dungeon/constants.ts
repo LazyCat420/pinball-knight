@@ -4,35 +4,79 @@
 
 // ── Render pipeline ─────────────────────────────────────────────
 /**
- * Internal render resolution. FIXED — never scales with the window.
+ * The REFERENCE render resolution — the FLOOR, not a fixed size.
  *
  * 1280×720 is the CEL-SHADED round (2026-07-14 playtest: "make the sprites
- * cel shaded instead of this pixel look"): the game is no longer pixel art —
- * actors are smooth vector-drawn cels (see render/cel-painter.ts) and the
- * chunky internal grid was the main thing still reading as "pixels". Every
- * downstream ratio is unchanged: VIEW stays 20×11.25 tiles. The palette
- * quantizer + depth-edge ink outline stay ON — flat banded colour with ink
- * lines IS the cel look; only the resolution and the dither change.
+ * cel shaded instead of this pixel look"): actors are vector-drawn cels (see
+ * render/cel-painter.ts) crushed to a hard pixel grid, with the palette
+ * quantizer + depth-edge ink outline on top.
+ *
+ * WHAT CHANGED (2026-07-19). These used to be the LITERAL size of the render
+ * target, at every window size, with a FRACTIONAL upscale on top (see
+ * INTEGER_SCALE below, now deleted). That was the single biggest source of
+ * mush in the whole game: on a 1920×1080 window the upscale was ×1.5, so under
+ * `image-rendering: pixelated` every render pixel became alternately 1 or 2
+ * screen pixels — an irregular comb across the ENTIRE frame, every sprite,
+ * prop and tile at once. The old comment justified it with "cel art scales
+ * cleanly (it's smooth shapes, not a pixel grid)"; that premise died when the
+ * pipeline started crushing everything to a pixel grid.
+ *
+ * Now `computeRenderSizing()` in render/pixel-pass.ts DERIVES the render
+ * target from the window each resize so the upscale is always a whole number
+ * AND the image still fills the screen: it picks the integer zoom from THIS
+ * reference, then grows the target to cover the window. So the player never
+ * sees LESS than 1280×720 worth of level — but on a window that isn't an exact
+ * multiple they do see somewhat MORE (a 1920×1080 window renders 1920×1080 at
+ * ×1, i.e. 30×16.875 tiles instead of 20×11.25). That is the deliberate price
+ * of "integer scale AND no letterbox AND fixed PPU" — you cannot have all
+ * three plus a constant field of view.
  */
 export const RENDER_W = 1280;
 export const RENDER_H = 720;
 
 /**
- * Pixels per world unit. RENDER_H / PPU = the ortho frustum height.
- * At 64, one tile (1 world unit) is 64 render pixels.
+ * Ceiling on the derived render target. This is a FIELD-OF-VIEW clamp first and
+ * an allocation guard second.
+ *
+ * Integer scale, a full-screen fill, and a fixed field of view are mutually
+ * exclusive — you can have any two. We gave up fixed FOV (see INTEGER_SCALE
+ * below), but unbounded that trade is worse than it sounds: PPU is pinned at
+ * 64, so the render width IS the field of view. A 1920-wide target shows 30
+ * tiles where the game was designed around 20, which makes every sprite
+ * physically SMALLER on screen — the opposite of the fidelity this whole change
+ * was chasing, even though each pixel is now perfectly square.
+ *
+ * 1600×900 caps the drift at +25% (20 → 25 tiles). Past that the integer scale
+ * is KEPT and the canvas letterboxes: crispness is the thing we refuse to
+ * trade, and modest bars beat a level that silently zooms out on a big monitor.
+ * It also still does the original job — a 7680×1080 ultrawide pins the scale at
+ * 1 and would otherwise ask for a 7680-wide target.
+ *
+ * Raising this re-opens the FOV question; it is not a free "use more of the
+ * screen" dial. Must stay EVEN (see the even-size rule in pixel-pass.ts).
+ */
+export const MAX_RENDER_W = 1600;
+export const MAX_RENDER_H = 900;
+
+/**
+ * Pixels per world unit. FIXED at 64 — one tile (1 world unit) is always
+ * exactly 64 render pixels, at every window size.
+ *
+ * This is load-bearing and must NOT be made adaptive: sprite crispness depends
+ * on `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` (asserted in
+ * render/sprite-scale.test.ts), which is what maps one stored art pixel onto
+ * one render pixel. The ortho frustum is what flexes with the window instead —
+ * pixel-pass.ts resizes it to renderW/PPU × renderH/PPU on every resize.
  */
 export const PPU = 64;
 
+/**
+ * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
+ * frustum is re-derived from the current render size by pixel-pass.ts, so
+ * treat these as the floor (20×11.25 tiles), not as the running value.
+ */
 export const VIEW_W = RENDER_W / PPU; // 20 tiles across
 export const VIEW_H = RENDER_H / PPU; // 11.25 tiles down
-
-/**
- * Cel art scales cleanly (it's smooth shapes, not a pixel grid), so fill the
- * window instead of letterboxing to whole multiples. The snap-to-texel rules
- * (camera + sprites) still apply — they prevent crawl against the fixed
- * render target, which exists at any upscale factor.
- */
-export const INTEGER_SCALE = false;
 
 // ── Camera ──────────────────────────────────────────────────────
 /**
@@ -56,12 +100,54 @@ export const CAMERA_DIST = 24; // irrelevant to scale (ortho), just needs to cle
 
 // ── Sprites ─────────────────────────────────────────────────────
 /**
- * Cel frames are painted at 128px and displayed at ~70px on the render
- * target — the 2× supersample is what keeps curved outlines smooth after the
- * downscale (drawn at display size they alias visibly).
+ * The AUTHORING box. Cel frames are painted at 128px — `cel-painter.ts` and
+ * `figure.ts` place every coordinate in this space, so it is a coordinate
+ * system, not a resolution, and changing it would move all the art.
+ *
+ * It is NOT the size the art is stored or displayed at. The paint is crushed
+ * once to SPRITE_PIXEL_GRID and the atlas holds it at that size; see
+ * `sprite.ts`. The 128px supersample still earns its keep — painting at ~2×
+ * the grid is what keeps a curved outline from aliasing when it is downscaled.
  */
 export const SPRITE_PX = 128; // painted art size per frame, px
-export const SPRITE_UNITS = 1.1; // actor plane size, world units (~1 tile tall)
+
+/**
+ * The STORED art resolution — the atlas cell size, and the real fidelity dial.
+ *
+ * The 128px paint is area-downscaled to this grid ONCE, dithered, palette-
+ * snapped, and written to the atlas at this size. It is not upscaled back.
+ *
+ * The old pipeline crushed to 52 and then nearest-upscaled back into a 128px
+ * cell (128/52 = 2.46, so the "pixels" were unevenly 2 and 3 px wide inside
+ * the texture), which the GPU then minified to ~70px on screen. Three
+ * resamplings, two at non-integer ratios, to show 52 pixels of art. Now it is
+ * one resample, and 72 texels map 1:1 to 72 screen pixels.
+ *
+ * 72 rather than 52 is also a real fidelity jump: ~52px is the awkward middle
+ * where a face is 2-3 px and reads as mush, while ~72px supports actual facial
+ * features, distinct hands and 4-5 shade ramps that hold up. It is the
+ * resolution where characters stop looking low-res and start looking
+ * deliberately pixel-art. Must stay an integer multiple of PPU's reciprocal —
+ * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
+ */
+export const SPRITE_PIXEL_GRID = 72;
+
+/**
+ * Actor plane size, world units.
+ *
+ * MUST equal SPRITE_PIXEL_GRID / PPU. That identity is the whole ballgame for
+ * sprite crispness: it makes one stored art pixel land on exactly one render
+ * pixel (72 / 64 = 1.125 units → 1.125 × 64 = 72 px on screen for 72 texels).
+ *
+ * It used to be 1.1 against a 52px grid, which spanned 70.4 render pixels —
+ * a ratio of 1.354. With NearestFilter that means art pixels covering one
+ * screen pixel in some places and two in others, in an irregular pattern that
+ * shifts as the actor walks. That is what "blurry"/"muddy" actually was: not
+ * a soft filter (filtering was already NEAREST) but uneven pixel sizes and
+ * destructive undersampling. `sprite.test.ts` asserts the identity so a future
+ * edit to either number has to keep it.
+ */
+export const SPRITE_UNITS = SPRITE_PIXEL_GRID / PPU; // 1.125
 
 // ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
 export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading
@@ -129,14 +215,8 @@ export const AO_DEFAULT = true;
 // ── Vignette (modern framing — darkens the screen corners) ──────
 export const VIGNETTE = 0.32; // pulled back from 0.5 — it was eating the corners' readability
 
-// ── Sprite pixelation (Phase 2 stopgap — kills the vector look) ──
-/**
- * Actor cels are painted as smooth 128px vector art, then CRUSHED to this
- * pixel grid (palette-mapped, nearest-neighbour) before hitting the atlas.
- * That one step turns "flash game" curves into authored-looking pixel art
- * while the sprite-forge pipeline waits for hand-made frames.
- */
-export const SPRITE_PIXEL_GRID = 52;
+// (SPRITE_PIXEL_GRID moved up into the Sprites block — SPRITE_UNITS is now
+// derived from it, so it has to be declared first.)
 
 // ── Set dressing density (Phase 1) ──────────────────────────────
 /** ~1 in N eligible full-wall faces grows a pilaster / hangs a banner. */

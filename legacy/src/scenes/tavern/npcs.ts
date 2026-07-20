@@ -10,6 +10,13 @@
  * That constraint is worth respecting rather than fighting. A hammer that lands
  * on a beat, throws sparks and makes a noise reads as a blacksmith working far
  * more convincingly than a smoothly-tweened sprite would, and costs no new art.
+ *
+ * The OTHER old constraint is gone: there used to be four paints for five
+ * keepers, so the tout was a gold-tinted copy of the armory keeper's frog. He
+ * now has his own `tout` paint in `cel-painter.ts`, which matters more than it
+ * sounds — the two share no station, but they did share a body, and a tinted
+ * duplicate is exactly the kind of thing a player notices and can't unsee.
+ * Every keeper is now a distinct silhouette.
  */
 import * as THREE from "three";
 import { createStaticSprite } from "../dungeon/render/sprite";
@@ -53,10 +60,10 @@ export interface KeeperSpec {
    */
   home: 1 | -1;
   /**
-   * Optional tint multiplied over the art. There are only four NPC paints and
-   * five keepers, and `cel-painter.ts` lives in the dungeon (which this scene
-   * does not own), so the fifth reuses one — tinted, and placed at the opposite
-   * end of the room from its twin, so it reads as a different person.
+   * Optional tint multiplied over the art, for when a paint has to be reused.
+   * Nothing sets it today — every keeper has their own painter — but it stays
+   * as the escape hatch the moment a sixth station lands before its art does,
+   * and `npcs.test.ts` still enforces that any SHARED paint is tinted.
    */
   tint?: number;
 }
@@ -68,8 +75,9 @@ const KEEPER_ROLES: Record<string, Omit<KeeperSpec, "id" | "x" | "z">> = {
   dealer: { paintKey: "magician", idle: "deal", home: 1 }, // card table east
   armory: { paintKey: "frog", idle: "bob", home: -1 }, // bench west
   // The tout at the casino cabinet, throwing darts at the wall board while he
-  // waits for someone to take a bet. Gold-tinted; his twin is across the room.
-  gambler: { paintKey: "frog", idle: "dart", home: 1, tint: 0xffd27a },
+  // waits for someone to take a bet. He has his OWN art now (see the header) —
+  // the dart cocked in his raised hand is the one his idle loop throws.
+  gambler: { paintKey: "tout", idle: "dart", home: 1 },
 };
 
 /**

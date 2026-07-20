@@ -139,12 +139,23 @@ export function aimCamera(cam: THREE.OrthographicCamera, x: number, y: number, z
   cam.lookAt(_target);
   cam.updateMatrixWorld();
 
-  // Snap along the camera's own right/up axes to whole texels (1/PPU units).
+  // Snap along the camera's own right/up axes to whole RENDER PIXELS.
+  //
+  // A render pixel is 1/(PPU * zoom) world units, not 1/PPU. Getting that wrong
+  // doesn't disable the snap, it makes it snap to the WRONG lattice, which is
+  // strictly worse than not snapping — you still get quantised motion, it just
+  // no longer lands on pixel boundaries.
+  //
+  // The dungeon never touches `zoom`, so 1/PPU was right there and this went
+  // unnoticed. The TAVERN runs at 0.78, easing to 0.92 on station focus, so the
+  // hub was snapping to 0.78 of a pixel and every wall crawled as you walked —
+  // the exact artifact this function exists to prevent.
   _right.setFromMatrixColumn(cam.matrixWorld, 0);
   _upVec.setFromMatrixColumn(cam.matrixWorld, 1);
   const dr = cam.position.dot(_right);
   const du = cam.position.dot(_upVec);
-  const snap = (v: number) => Math.round(v * PPU) / PPU;
+  const pxPerUnit = PPU * (cam.zoom || 1);
+  const snap = (v: number) => Math.round(v * pxPerUnit) / pxPerUnit;
   _fix
     .copy(_right)
     .multiplyScalar(snap(dr) - dr)

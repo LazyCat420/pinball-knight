@@ -24,7 +24,7 @@
  *
  * Only three directions are authored — W is E flipped horizontally at runtime.
  */
-import { paletteCss, inkFor } from "./palette";
+import { paletteCss, inkFor, shadeFor, highlightFor } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
@@ -68,6 +68,22 @@ const INK_W = 3;
  * from the index automatically.
  */
 const F = (index: number): readonly [string, number] => [C(index), index];
+
+/**
+ * The two other steps of a palette entry's RAMP.
+ *
+ * `SH` is a shade that steps COOLER and more saturated (toward arcane blue),
+ * `HI` a highlight that steps WARMER and paler (toward torch light) — roughly a
+ * 15-25° hue rotation per step rather than a slide along the same hue toward
+ * black or white. Shading by lightness alone is the single biggest cause of a
+ * sprite reading as muddy, and muddy at sprite resolution reads as BLURRY.
+ *
+ * Both keep the base index, so the selout helpers still derive the outline from
+ * the material rather than from the shaded value: a shadow and its highlight
+ * share one edge colour, which is what holds a form together.
+ */
+const SH = (index: number, amt = 0.45): readonly [string, number] => [shadeFor(index, amt), index];
+const HI = (index: number, amt = 0.4): readonly [string, number] => [highlightFor(index, amt), index];
 
 // ── Draw helpers — SELOUT outlines ──────────────────────────────
 //
@@ -2599,94 +2615,256 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
 };
 
 // ══════════════════════════════════════════════════════════════════
-// NPCs — the Magician, the Speed Witch, the Oracle Frog. Static-sprite
-// friendlies (bobbed by core), so one FramePaint each is the whole rig.
+// NPCs — the Magician, the Speed Witch, the Oracle Frog, the Merchant
+// and the Tout. Static-sprite friendlies (bobbed by core), so one
+// FramePaint each is the whole rig.
+//
+// These five are the only characters the player ever stands still and LOOKS
+// at — they staff the tavern's counters (`scenes/tavern/npcs.ts`) — so they
+// carry more shape than the dungeon's enemies do. Four rules, applied to all
+// of them:
+//
+//  1. SHADE BY HUE, NOT BY LIGHTNESS. Every material is a 3-4 step ramp built
+//     from SH()/HI(): shadows step cooler and more saturated, highlights step
+//     warmer and paler. Sliding one hue toward black is what makes a sprite
+//     read muddy, and muddy at this resolution reads as BLURRY.
+//  2. COLOURED OUTLINES. The selout helpers already derive each edge from its
+//     own fill; pure INK is spent only on the DOWN-facing contour (boots,
+//     hems, haunches, hat brims) where the body meets the tavern floor, so the
+//     silhouette survives against the boards without looking stickered on.
+//  3. SILHOUETTE FIRST. Filled solid black these must still be four different
+//     people, so each one's defining feature is exaggerated past realism: the
+//     smith's shoulders and apron, the barkeep's hat and tankard, the dealer's
+//     stovepipe and fan of cards, the armorer's squat width, the tout's flat
+//     visor peak.
+//  4. NO DITHERING. At sprite size a checker reads as noise and crawls between
+//     frames — every transition here is a hard band or a ramp step.
+//
+// Light is the same upper-left key celShade() bakes in, so highlights sit on
+// the upper-left of every form and shade on the lower-right. Ramps are shared
+// ACROSS the cast (one leather, one steel, one linen) so the five read as one
+// scene rather than five separate drawings.
 // ══════════════════════════════════════════════════════════════════
 
+/**
+ * A fan of playing cards held in a hand — the dealer's tell and the tout's.
+ *
+ * Alternating linen/steel faces rather than one flat colour, because a fan of
+ * identical rectangles reads as a single blob once it is downsampled; the pip
+ * is what stops each one reading as a roof tile.
+ */
+function cardFan(ctx: CanvasRenderingContext2D, x: number, y: number, rot: number, n = 4): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  for (let i = 0; i < n; i++) {
+    ctx.save();
+    ctx.rotate((i - (n - 1) / 2) * 0.3);
+    rrect(ctx, -5.5, -26, 11, 26, 2, i % 2 === 0 ? F(22) : HI(21, 0.25));
+    ell(ctx, 0, -18, 2, 2.4, F(12));
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 const MAGICIAN_NPC: FramePaint = (ctx) => {
-  groundShadow(ctx, 64, 112, 20);
-  // sweeping violet cloak
-  poly(ctx, [[48, 108], [52, 62], [76, 62], [80, 108]], F(29));
-  poly(ctx, [[48, 108], [56, 100], [72, 100], [80, 108]], F(28)); // hem shade
-  // pale face in the hood shadow + a knowing grin
-  ell(ctx, 64, 56, 8, 7, F(22));
-  line(ctx, [[60, 58], [68, 58]], 1.5, F(8)); // the grin
-  ell(ctx, 61, 53, 1.4, 1.6, F(1));
-  ell(ctx, 67, 53, 1.4, 1.6, F(1));
-  // the top hat — the whole act
-  rrect(ctx, 54, 26, 20, 22, 2, F(1));
-  rrect(ctx, 48, 44, 32, 5, 2, F(1));
-  line(ctx, [[54, 40], [74, 40]], 3, F(9)); // rot-green band
-  // white gloves mid-flourish
-  ell(ctx, 46, 78, 4, 4, F(23));
-  ell(ctx, 82, 72, 4, 4, F(23));
-  // a wand with a hot tip (blooms)
-  line(ctx, [[82, 72], [92, 60]], 2, F(1));
-  ell(ctx, 93, 58, 2.4, 2.4, F(18));
+  groundShadow(ctx, 64, 114, 22);
+  // Tailcoat in three ramp steps — lit edge, body, cool core.
+  poly(ctx, [[46, 112], [52, 56], [78, 56], [84, 112]], F(29));
+  poly(ctx, [[68, 56], [78, 56], [84, 112], [70, 112]], SH(29, 0.4));
+  poly(ctx, [[52, 56], [59, 56], [54, 112], [46, 112]], HI(29, 0.25));
+  poly(ctx, [[46, 112], [56, 100], [74, 100], [84, 112]], F(29), INK); // hem on the floor
+  // The croupier's uniform under it: shirt, waistcoat, studs, bow tie.
+  poly(ctx, [[57, 56], [73, 56], [71, 96], [59, 96]], F(22));
+  poly(ctx, [[58, 62], [72, 62], [70, 94], [60, 94]], F(11));
+  for (const by of [70, 78, 86]) ell(ctx, 65, by, 1.7, 1.7, F(16));
+  poly(ctx, [[57, 55], [65, 60], [57, 64]], F(12));
+  poly(ctx, [[73, 55], [65, 60], [73, 64]], SH(12, 0.3));
+  // Arms mid-flourish, white gloves.
+  limb(ctx, 54, 62, 38, 80, 10, F(29));
+  limb(ctx, 76, 62, 92, 70, 10, SH(29, 0.3));
+  ell(ctx, 36, 84, 6.5, 6.5, F(22));
+  ell(ctx, 94, 68, 6.5, 6.5, SH(22, 0.25));
+  cardFan(ctx, 33, 84, -0.55); // the hand you actually watch
+  line(ctx, [[94, 68], [107, 53]], 2.5, F(27)); // wand, hot tip (blooms)
+  ell(ctx, 108, 51, 3, 3, F(18));
+  // Pale face under the brim, moustache, knowing grin.
+  ell(ctx, 64, 46, 9, 8.5, F(22));
+  ell(ctx, 60, 42, 3.5, 3, HI(22, 0.3));
+  ell(ctx, 60, 44, 1.6, 1.8, F(1));
+  ell(ctx, 69, 44, 1.6, 1.8, F(1));
+  line(ctx, [[58, 50], [63, 51]], 2, SH(27, 0.3)); // waxed moustache — brown, not
+  line(ctx, [[67, 51], [72, 50]], 2, SH(27, 0.3)); // black, or it eats the eyes
+  line(ctx, [[60, 54], [69, 54]], 1.6, F(8)); // the grin
+  // The stovepipe hat — taller and wider-brimmed than a real one, because it
+  // IS this character's silhouette from across the room.
+  rrect(ctx, 49, 8, 30, 27, 2, F(29));
+  rrect(ctx, 49, 8, 9, 27, 2, HI(29, 0.22));
+  rrect(ctx, 40, 31, 48, 6, 2, F(29), INK);
+  line(ctx, [[50, 29], [78, 29]], 4, F(9)); // rot-green band
   celShade(ctx);
 };
 
 const WITCH_NPC: FramePaint = (ctx) => {
-  groundShadow(ctx, 64, 112, 18);
-  // ragged arcane-blue robe
-  poly(ctx, [[50, 110], [54, 64], [74, 64], [78, 110]], F(30));
-  poly(ctx, [[50, 110], [58, 102], [70, 104], [78, 110]], F(5));
-  // green face, hooked nose, red eyes
-  ell(ctx, 64, 56, 8, 7, F(9));
-  poly(ctx, [[64, 54], [70, 60], [64, 60]], F(8)); // the nose
-  ell(ctx, 60, 53, 1.5, 1.5, F(13));
-  ell(ctx, 68, 53, 1.5, 1.5, F(13));
-  // pointed hat, wind-bent
-  poly(ctx, [[50, 48], [78, 48], [70, 20]], F(1));
-  line(ctx, [[52, 46], [76, 46]], 3, F(29));
-  // she offers the trade — a tiny gold flask in an open palm
-  ell(ctx, 84, 76, 4, 4, F(9));
-  rrect(ctx, 81, 66, 6, 9, 2, F(17));
+  groundShadow(ctx, 64, 114, 22);
+  // Ragged arcane-blue robe, three steps plus a genuinely dark hem.
+  poly(ctx, [[48, 112], [54, 56], [76, 56], [84, 112]], F(30));
+  poly(ctx, [[66, 56], [76, 56], [84, 112], [68, 112]], SH(30, 0.4));
+  poly(ctx, [[54, 56], [61, 56], [56, 112], [48, 112]], HI(30, 0.28));
+  poly(ctx, [[48, 112], [58, 104], [72, 106], [84, 112]], F(29), INK);
+  rrect(ctx, 50, 78, 30, 8, 2, F(27)); // belt
+  rrect(ctx, 60, 79, 9, 6, 1, F(16)); // buckle
+  // Arms: the rag in one hand, a tankard in the other. She is the BARKEEP as
+  // much as the potion-seller, and both hands say so.
+  limb(ctx, 56, 62, 40, 84, 10, F(30));
+  limb(ctx, 74, 62, 90, 72, 10, SH(30, 0.3));
+  ell(ctx, 38, 87, 6, 6, F(9));
+  ell(ctx, 92, 70, 6, 6, SH(9, 0.3));
+  rrect(ctx, 24, 80, 18, 14, 5, F(22)); // the polishing cloth
+  line(ctx, [[27, 87], [39, 85]], 2, SH(22, 0.35));
+  rrect(ctx, 84, 54, 16, 18, 3, F(20)); // tankard
+  rrect(ctx, 84, 54, 5, 18, 3, HI(20, 0.35));
+  line(ctx, [[100, 58], [105, 63], [100, 68]], 3, F(19)); // handle
+  ell(ctx, 92, 53, 8, 4, F(22)); // foam over the lip
+  // Green face, hooked nose, red eyes.
+  ell(ctx, 64, 48, 10, 9, F(9));
+  ell(ctx, 60, 44, 4, 3, HI(9, 0.3));
+  poly(ctx, [[64, 46], [73, 54], [64, 54]], F(8)); // the nose
+  ell(ctx, 60, 45, 1.8, 1.8, F(13));
+  ell(ctx, 69, 45, 1.8, 1.8, F(13));
+  line(ctx, [[59, 53], [69, 51]], 1.8, SH(8, 0.4)); // wry mouth
+  ell(ctx, 72, 50, 1.6, 1.4, SH(9, 0.3)); // wart
+  // Pointed hat — dark, but arcane-dark, never black.
+  poly(ctx, [[44, 38], [84, 38], [80, 44], [48, 44]], F(29), INK); // brim
+  poly(ctx, [[50, 40], [78, 40], [66, 10]], F(29));
+  poly(ctx, [[70, 40], [78, 40], [66, 10]], SH(29, 0.35));
+  poly(ctx, [[50, 40], [56, 40], [66, 10]], HI(29, 0.2));
+  line(ctx, [[51, 38], [77, 38]], 4, F(31)); // arcane band
   celShade(ctx);
 };
 
 const FROG_NPC: FramePaint = (ctx) => {
-  groundShadow(ctx, 64, 110, 16);
-  // squat rot-green body, sitting
-  ell(ctx, 64, 96, 16, 12, F(9));
-  ell(ctx, 64, 102, 18, 7, F(8)); // haunches
-  // the oracle's eyes — huge, gold, unblinking
-  ell(ctx, 56, 84, 6, 6, F(9));
-  ell(ctx, 72, 84, 6, 6, F(9));
-  ell(ctx, 56, 84, 3.4, 3.4, F(17));
-  ell(ctx, 72, 84, 3.4, 3.4, F(17));
-  ell(ctx, 56, 84, 1.4, 1.4, F(1));
-  ell(ctx, 72, 84, 1.4, 1.4, F(1));
-  // wide mouth line + a belly patch
-  line(ctx, [[52, 96], [76, 96]], 2, F(8));
-  ell(ctx, 64, 101, 8, 4, F(10));
+  groundShadow(ctx, 64, 112, 24);
+  // Squat, and now BULKY — the armory keeper is a wide low mass, which is the
+  // only silhouette in the cast with no head-and-shoulders taper at all.
+  ell(ctx, 40, 104, 13, 7, F(8), 0, INK); // splayed feet, dark on the floor
+  ell(ctx, 88, 104, 13, 7, F(8), 0, INK);
+  ell(ctx, 64, 90, 25, 21, F(9));
+  ell(ctx, 48, 82, 10, 9, HI(9, 0.3)); // lit shoulder
+  ell(ctx, 82, 96, 13, 11, SH(9, 0.35)); // cool flank
+  ell(ctx, 64, 98, 17, 11, HI(9, 0.2)); // pale belly plate
+  line(ctx, [[52, 96], [76, 96]], 2, SH(9, 0.35)); // belly bands
+  line(ctx, [[54, 102], [74, 102]], 2, SH(9, 0.35));
+  // Arms folded over the gut — a doorman's posture, and it widens him further.
+  limb(ctx, 44, 86, 63, 94, 10, F(8));
+  limb(ctx, 84, 86, 66, 99, 10, SH(8, 0.3));
+  // A warty ridge instead of dithering: readable lumps, not noise.
+  for (const [wx, wy] of [[46, 78], [55, 72], [73, 72], [82, 78]]) ell(ctx, wx, wy, 3.5, 3, SH(9, 0.25));
+  // The oracle's eyes — huge, gold, unblinking, with an upper-left catch-light.
+  for (const ex of [54, 74]) {
+    ell(ctx, ex, 68, 9, 9, F(9));
+    ell(ctx, ex, 68, 5, 5, F(17));
+    ell(ctx, ex, 69, 2, 3.6, F(1));
+    ell(ctx, ex - 2.5, 65, 1.8, 1.6, F(18));
+  }
+  line(ctx, [[48, 82], [80, 82]], 2.5, SH(8, 0.4)); // wide mouth
+  ell(ctx, 64, 86, 9, 5, SH(9, 0.22)); // throat sac
   celShade(ctx);
 };
 
 const MERCHANT_NPC: FramePaint = (ctx) => {
-  groundShadow(ctx, 64, 114, 24);
-  // a rolling market cart: two big spoked wheels
-  for (const wx of [48, 80]) {
-    ell(ctx, wx, 106, 9, 9, F(28));
-    ell(ctx, wx, 106, 4, 4, F(27));
-    for (const a of [0, 1.05, 2.1, 3.15, 4.2, 5.25]) line(ctx, [[wx, 106], [wx + Math.cos(a) * 8, 106 + Math.sin(a) * 8]], 1.2, F(26));
+  groundShadow(ctx, 64, 116, 26);
+  // The cart is BACKDROP now rather than the subject: shrunk and pushed back
+  // and right, so the trader's own shoulders own the silhouette. (He staffs the
+  // forge in the tavern, where a wagon read as a parked vehicle, not a person.)
+  for (const wx of [80, 106]) {
+    ell(ctx, wx, 102, 7, 7, SH(28, 0.3));
+    ell(ctx, wx, 102, 3, 3, F(27));
+    for (const a of [0, 1.05, 2.1, 3.15, 4.2, 5.25]) line(ctx, [[wx, 102], [wx + Math.cos(a) * 6, 102 + Math.sin(a) * 6]], 1.2, F(26));
   }
-  // the wagon box, piled with wares
-  rrect(ctx, 42, 78, 44, 24, 3, F(28));
-  line(ctx, [[42, 90], [86, 90]], 2, F(27));
-  // a striped awning over the top
-  for (let s = 0; s < 6; s++) rrect(ctx, 40 + s * 8, 62, 8, 12, 1, F(s % 2 === 0 ? 12 : 17));
-  poly(ctx, [[40, 62], [88, 62], [84, 58], [44, 58]], F(27)); // awning ridge
-  // gleaming wares on the counter (potions + a gold glint)
-  ell(ctx, 52, 82, 3, 4, F(31));
-  ell(ctx, 60, 82, 3, 4, F(13));
-  ell(ctx, 68, 82, 3, 4, F(9));
-  ell(ctx, 76, 82, 3.5, 4, F(17)); // gold — blooms
-  // the merchant himself, a hooded figure at the handle
-  ell(ctx, 32, 84, 7, 8, F(24)); // face
-  poly(ctx, [[24, 92], [40, 92], [36, 68], [28, 68]], F(30)); // cloak
-  ell(ctx, 32, 74, 8, 7, F(29)); // hood
-  line(ctx, [[29, 84], [35, 84]], 1.5, F(1)); // a knowing squint
+  rrect(ctx, 74, 78, 40, 20, 3, F(28));
+  line(ctx, [[74, 88], [114, 88]], 2, SH(28, 0.4)); // plank seam
+  for (let s = 0; s < 5; s++) rrect(ctx, 72 + s * 8, 62, 8, 12, 1, F(s % 2 === 0 ? 12 : 17)); // awning
+  poly(ctx, [[72, 62], [114, 62], [110, 57], [76, 57]], F(27));
+  ell(ctx, 82, 82, 3, 4, F(31)); // wares catching the light
+  ell(ctx, 92, 82, 3, 4, F(13));
+  ell(ctx, 102, 82, 3.5, 4, F(17)); // gold — blooms
+  // ── THE TRADER — heavy legs, then a slab of shoulder, then the apron.
+  limb(ctx, 48, 92, 46, 108, 12, SH(27, 0.35));
+  limb(ctx, 64, 92, 66, 108, 12, F(27));
+  rrect(ctx, 36, 103, 22, 11, 3, F(26), INK); // boots
+  rrect(ctx, 56, 103, 22, 11, 3, F(26), INK);
+  rrect(ctx, 32, 44, 48, 30, 11, F(27)); // torso, deliberately too wide
+  ell(ctx, 34, 52, 11, 10, HI(27, 0.3)); // lit shoulder
+  ell(ctx, 78, 52, 11, 10, SH(27, 0.35)); // cool shoulder
+  poly(ctx, [[38, 62], [76, 62], [82, 106], [32, 106]], F(28)); // the apron
+  poly(ctx, [[42, 64], [70, 64], [73, 92], [39, 92]], HI(28, 0.28)); // bleached bib
+  line(ctx, [[46, 63], [56, 50]], 3, F(26)); // straps over the shoulders
+  line(ctx, [[68, 63], [60, 50]], 3, F(26));
+  rrect(ctx, 40, 88, 34, 8, 2, SH(28, 0.45)); // waist tie
+  limb(ctx, 38, 54, 26, 84, 13, F(27)); // forearms, thick
+  limb(ctx, 76, 54, 92, 74, 13, SH(27, 0.3));
+  ell(ctx, 24, 88, 7, 7, F(24));
+  ell(ctx, 94, 76, 7, 7, SH(24, 0.3));
+  // Head: iron-grey beard and a flat cap, so the head still reads at 72px
+  // when the face itself is barely three pixels wide.
+  ell(ctx, 56, 33, 14, 13, HI(24, 0.22)); // lit a step up: the face is the one
+  ell(ctx, 62, 36, 8, 9, F(24)); // place a dark hole would kill the character
+  ell(ctx, 50, 28, 5, 4, HI(24, 0.4));
+  line(ctx, [[48, 33], [54, 33]], 2.4, F(23)); // squint
+  line(ctx, [[60, 33], [66, 33]], 2.4, F(23));
+  poly(ctx, [[46, 39], [68, 39], [63, 58], [51, 58]], F(4)); // iron-grey beard
+  poly(ctx, [[46, 39], [54, 39], [53, 56], [51, 56]], HI(4, 0.3)); // lit edge of it
+  line(ctx, [[58, 42], [58, 56]], 2, SH(4, 0.4)); // strands
+  rrect(ctx, 41, 10, 30, 14, 5, F(26)); // flat cap, lifted clear of the eyes
+  rrect(ctx, 37, 21, 39, 5, 2, F(26), INK); // brim
+  // The hammer he keeps in the near hand — the forge read, in silhouette.
+  limb(ctx, 24, 90, 22, 66, 6, F(28));
+  rrect(ctx, 11, 55, 21, 12, 2, F(20));
+  rrect(ctx, 11, 55, 6, 12, 2, SH(20, 0.4));
+  celShade(ctx);
+};
+
+/**
+ * The casino tout — a shifty gambler in shirtsleeves.
+ *
+ * Deliberately built to NOT collide with the magician, who is the other
+ * card-handling body in the room: no tall hat (a flat visor peak instead), no
+ * tailcoat (rolled sleeves and an arm garter), and a dart cocked back in the
+ * far hand, which is what his idle loop in `tavern/npcs.ts` actually throws.
+ */
+const TOUT_NPC: FramePaint = (ctx) => {
+  groundShadow(ctx, 64, 114, 20);
+  limb(ctx, 58, 88, 52, 108, 11, F(2)); // narrow trousers — a slighter build
+  limb(ctx, 70, 88, 76, 108, 11, SH(2, 0.35));
+  rrect(ctx, 43, 103, 20, 10, 3, F(1), INK); // shoes
+  rrect(ctx, 67, 103, 20, 10, 3, F(1), INK);
+  poly(ctx, [[54, 54], [76, 54], [78, 92], [52, 92]], F(22)); // shirt
+  poly(ctx, [[54, 54], [64, 58], [62, 92], [52, 92]], F(11)); // waistcoat, open
+  poly(ctx, [[76, 54], [64, 58], [66, 92], [78, 92]], SH(11, 0.3));
+  for (const by of [68, 76, 84]) ell(ctx, 63, by, 1.7, 1.7, F(16)); // gold buttons
+  rrect(ctx, 50, 88, 30, 7, 2, F(27), INK); // low-slung belt
+  // One arm fans cards, the other is cocked back with a dart.
+  limb(ctx, 54, 60, 36, 74, 8, F(22));
+  limb(ctx, 76, 60, 96, 50, 8, HI(22, 0.2));
+  rrect(ctx, 86, 47, 8, 10, 2, F(12)); // arm garter
+  ell(ctx, 34, 78, 6, 6, F(24));
+  ell(ctx, 99, 47, 6, 6, F(24));
+  cardFan(ctx, 32, 80, -0.75, 3);
+  line(ctx, [[98, 45], [113, 32]], 3, F(20)); // the dart
+  poly(ctx, [[113, 32], [120, 26], [116, 35]], F(21)); // point
+  poly(ctx, [[98, 45], [91, 46], [95, 52]], F(13)); // flight
+  // Sharp face, sidelong smirk.
+  ell(ctx, 64, 47, 9.5, 9, F(25));
+  ell(ctx, 60, 43, 4, 3, HI(25, 0.3));
+  ell(ctx, 60, 47, 1.6, 1.8, F(1));
+  ell(ctx, 69, 47, 1.6, 1.8, F(1));
+  line(ctx, [[59, 53], [70, 51]], 2, SH(23, 0.35));
+  // The green dealer's visor. Nothing else in the cast has a flat horizontal
+  // peak, so this alone tells him from the magician at a glance.
+  rrect(ctx, 50, 27, 28, 9, 3, F(8));
+  line(ctx, [[52, 31], [76, 31]], 2, HI(8, 0.3));
+  poly(ctx, [[42, 35], [86, 32], [84, 41], [44, 43]], F(7), INK);
   celShade(ctx);
 };
 
@@ -2696,6 +2874,7 @@ export const NPC_PAINTS: Record<string, FramePaint> = {
   witch: WITCH_NPC,
   frog: FROG_NPC,
   merchant: MERCHANT_NPC,
+  tout: TOUT_NPC,
 };
 
 // ══════════════════════════════════════════════════════════════════

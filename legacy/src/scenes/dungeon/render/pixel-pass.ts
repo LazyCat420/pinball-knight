@@ -2,7 +2,7 @@
  * The pixel/cel post pipeline — this is what makes 3D geometry read as a
  * flat-banded, ink-outlined cel picture, now with real depth cues.
  *
- *   scene ──▶ sceneTarget (1280x720, Nearest, LINEAR colour, + depth texture)
+ *   scene ──▶ sceneTarget (adaptive size, Nearest, LINEAR colour, + depth tex)
  *      │
  *      ├──▶ bloom chain (half-res): bright-pass → blur H → blur V → bloomTarget
  *      │
@@ -33,15 +33,18 @@
  * target and the bespoke quantizer is more fragile than the ~3 tiny quads
  * here. Everything stays under our control and in one file.
  *
- * PIXEL GRID — sceneTarget is a FIXED 1280x720 regardless of window size. Only
- * the upscale factor changes, so the art never "breathes" as you resize.
+ * PIXEL GRID — ADAPTIVE INTEGER RENDER SIZE (2026-07-19). See
+ * `computeRenderSizing` below for the rule and for what the old fixed-target /
+ * fractional-upscale scheme got wrong.
  */
 import * as THREE from "three";
 import { PALETTE_SIZE, paletteToFloatArray } from "./palette";
 import {
   RENDER_W,
   RENDER_H,
-  INTEGER_SCALE,
+  MAX_RENDER_W,
+  MAX_RENDER_H,
+  PPU,
   BLOOM_THRESHOLD,
   BLOOM_STRENGTH,
   BLOOM_RADIUS,
@@ -224,10 +227,100 @@ void main() {
 }
 `;
 
+/** The result of one sizing pass. Pure data — safe to compute without a GL context. */
+export interface RenderSizing {
+  /** Whole-number upscale: one render pixel is exactly this many screen pixels square. */
+  scale: number;
+  /** Render-target width, always EVEN. */
+  renderW: number;
+  /** Render-target height, always EVEN. */
+  renderH: number;
+  /** Canvas CSS width  = renderW * scale. */
+  outW: number;
+  /** Canvas CSS height = renderH * scale. */
+  outH: number;
+  /** True when MAX_RENDER_* clamped the target, so outW/outH no longer cover the window. */
+  capped: boolean;
+}
+
+/** Round UP to the next even number. */
+function evenCeil(v: number): number {
+  return 2 * Math.ceil(v / 2);
+}
+
+/**
+ * ADAPTIVE INTEGER RENDER SIZE — the fix for the game-wide mush.
+ *
+ * WHAT IT USED TO DO. The render target was a fixed 1280x720 and `resize()`
+ * blitted it at a FRACTIONAL scale (`INTEGER_SCALE = false`):
+ *   scale = min(winW / 1280, winH / 720);  outW = round(1280 * scale)
+ * On a 1920x1080 window that is x1.5. With nearest-neighbour display (which is
+ * what `image-rendering: pixelated` gives you) a x1.5 upscale makes every
+ * render pixel alternately 1 or 2 screen pixels wide, in a fixed comb across
+ * the whole screen. Every sprite, prop and tile inherits it simultaneously,
+ * which is why it read as "the game is blurry" rather than as a bug in any one
+ * asset. The comment that justified it — "cel art scales cleanly (it's smooth
+ * shapes, not a pixel grid)" — was stale: the pipeline now crushes everything
+ * to a hard pixel grid, so the premise no longer held.
+ *
+ * WHAT IT DOES NOW. Instead of a fixed target scaled by a fraction, we derive
+ * the target from the window so the upscale is always a WHOLE number and the
+ * image still fills the screen with no letterbox bars:
+ *   scale   = max(1, floor(min(winW / RENDER_W, winH / RENDER_H)))
+ *   renderW = evenCeil(winW / scale)   ⇒  renderW * scale >= winW
+ * RENDER_W/RENDER_H are the reference FLOOR: the zoom is chosen against them,
+ * so the player never sees less of the level than 1280x720 was showing. They
+ * may see somewhat more (see the constants.ts note) — that is the unavoidable
+ * cost of integer scale + no letterbox + fixed PPU.
+ *
+ * WHY EVEN. An ODD render width puts the orthographic frustum's centre on a
+ * half-texel: `left = -renderW / (2 * PPU)` is then a half-pixel offset, and
+ * EVERY sprite in the scene inherits that half-pixel shift and samples between
+ * texels. Rounding up to even costs at most one render pixel and keeps the
+ * frustum centre exactly on the grid.
+ *
+ * WHY A CAP. renderW ≈ winW / floor(winW / 1280) is mostly self-limiting, but
+ * a very wide, short window pins scale at 1 while the width runs away
+ * (7680x1080 would ask for a 7680-wide target). When MAX_RENDER_* bites we
+ * KEEP the integer scale and letterbox instead — crispness is the invariant.
+ */
+export function computeRenderSizing(winW: number, winH: number): RenderSizing {
+  const w = Math.max(1, Math.floor(winW));
+  const h = Math.max(1, Math.floor(winH));
+
+  const scale = Math.max(1, Math.floor(Math.min(w / RENDER_W, h / RENDER_H)));
+
+  const wantW = evenCeil(w / scale);
+  const wantH = evenCeil(h / scale);
+
+  // FLOOR at the reference. A window smaller than 1280x720 would otherwise
+  // shrink the render target and hand the player a cropped view of the level —
+  // the minimum logical resolution is a design guarantee, not an optimisation.
+  // Below the floor the canvas is LARGER than the window and overflows (the
+  // container clips it), which keeps the intended field of view intact.
+  // CEILING at MAX_RENDER_*; only that clamp counts as `capped`, because it is
+  // the only one that stops us covering the window.
+  const renderW = Math.min(Math.max(wantW, RENDER_W), MAX_RENDER_W);
+  const renderH = Math.min(Math.max(wantH, RENDER_H), MAX_RENDER_H);
+
+  return {
+    scale,
+    renderW,
+    renderH,
+    outW: renderW * scale,
+    outH: renderH * scale,
+    capped: renderW < wantW || renderH < wantH,
+  };
+}
+
 export interface PixelPass {
   target: THREE.WebGLRenderTarget;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
-  /** Recompute the canvas size for a new window size. Never changes the RT. */
+  /**
+   * Re-derive the render size for a new window size. Unlike the old fixed-RT
+   * version this CAN reallocate the render targets, so it guards on the
+   * computed size and does nothing expensive when that is unchanged.
+   */
   resize(): void;
   setQuantize(on: boolean): void;
   setDither(on: boolean): void;
@@ -253,11 +346,17 @@ export function createPixelPass(
   renderer.setPixelRatio(1);
   renderer.toneMapping = THREE.NoToneMapping;
 
-  // The depth texture feeds the outline and AO passes.
-  const depthTexture = new THREE.DepthTexture(RENDER_W, RENDER_H);
+  // Everything below is sized from THIS, and re-sized from it on every resize.
+  let sizing = computeRenderSizing(window.innerWidth, window.innerHeight);
+
+  // The depth texture feeds the outline and AO passes. We never call setSize on
+  // it directly: three re-syncs `depthTexture.image` to the render target's
+  // dimensions (and flags needsUpdate) inside setupDepthTexture, and doing it
+  // by hand would defeat that dirty check.
+  const depthTexture = new THREE.DepthTexture(sizing.renderW, sizing.renderH);
   depthTexture.type = THREE.UnsignedIntType;
 
-  const sceneTarget = new THREE.WebGLRenderTarget(RENDER_W, RENDER_H, {
+  const sceneTarget = new THREE.WebGLRenderTarget(sizing.renderW, sizing.renderH, {
     minFilter: THREE.NearestFilter,
     magFilter: THREE.NearestFilter,
     generateMipmaps: false,
@@ -266,9 +365,11 @@ export function createPixelPass(
     depthTexture,
   });
 
-  // Bloom works at half resolution — cheaper, and a wider blur for free.
-  const BW = Math.floor(RENDER_W / 2);
-  const BH = Math.floor(RENDER_H / 2);
+  // Bloom works at half resolution — cheaper, and a wider blur for free. These
+  // track the render size (exactly half, since renderW/H are guaranteed even)
+  // and are read live in render(), because the blur step is 1/BW texels.
+  let BW = sizing.renderW / 2;
+  let BH = sizing.renderH / 2;
   const bloomTargetOpts = {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
@@ -315,7 +416,10 @@ export function createPixelPass(
     uAo: { value: opts.ao ? AO_STRENGTH : 0 },
     uAoRadius: { value: AO_RADIUS },
     uVignette: { value: VIGNETTE },
-    uResolution: { value: new THREE.Vector2(RENDER_W, RENDER_H) },
+    // MUST track the render target. A stale uResolution silently misaligns the
+    // AO ring, the outline's neighbour taps and the scanline rows — it looks
+    // like a completely different bug, so it is updated in resize() below.
+    uResolution: { value: new THREE.Vector2(sizing.renderW, sizing.renderH) },
   };
   const finalMat = new THREE.ShaderMaterial({
     vertexShader: FULLSCREEN_VERT,
@@ -341,33 +445,89 @@ export function createPixelPass(
   function resize(): void {
     const winW = window.innerWidth;
     const winH = window.innerHeight;
+    const next = computeRenderSizing(winW, winH);
 
-    let outW: number;
-    let outH: number;
-
-    if (INTEGER_SCALE) {
-      const scale = Math.max(1, Math.floor(Math.min(winW / RENDER_W, winH / RENDER_H)));
-      outW = RENDER_W * scale;
-      outH = RENDER_H * scale;
-    } else {
-      const scale = Math.min(winW / RENDER_W, winH / RENDER_H);
-      outW = Math.round(RENDER_W * scale);
-      outH = Math.round(RENDER_H * scale);
+    // GUARD: resize() now reallocates GPU memory, and browsers fire resize
+    // events in bursts while a window is dragged. Only pay for it when the
+    // derived target size actually moved — the canvas CSS below is cheap and
+    // can be redone unconditionally.
+    if (next.renderW !== sizing.renderW || next.renderH !== sizing.renderH) {
+      // setSize() disposes the RT's GL resources but keeps the SAME texture
+      // objects, so every uniform pointing at sceneTarget.texture / depthTexture
+      // / bloomA.texture stays valid without re-pointing.
+      sceneTarget.setSize(next.renderW, next.renderH);
+      BW = next.renderW / 2;
+      BH = next.renderH / 2;
+      bloomA.setSize(BW, BH);
+      bloomB.setSize(BW, BH);
+      finalUniforms.uResolution.value.set(next.renderW, next.renderH);
     }
+    sizing = next;
 
-    renderer.setSize(outW, outH, false);
+    renderer.setSize(sizing.outW, sizing.outH, false);
 
-    // Centre the canvas; the black container shows through as letterbox bars.
+    // Centre the canvas. Normally outW/outH cover the window exactly (the whole
+    // point of the adaptive size); bars only appear in the capped case.
     const el = renderer.domElement;
-    el.style.width = `${outW}px`;
-    el.style.height = `${outH}px`;
+    el.style.width = `${sizing.outW}px`;
+    el.style.height = `${sizing.outH}px`;
     el.style.position = "absolute";
-    el.style.left = `${Math.floor((winW - outW) / 2)}px`;
-    el.style.top = `${Math.floor((winH - outH) / 2)}px`;
+    el.style.left = `${Math.floor((winW - sizing.outW) / 2)}px`;
+    el.style.top = `${Math.floor((winH - sizing.outH) / 2)}px`;
     el.style.imageRendering = "pixelated";
   }
 
+  /**
+   * Keep the scene camera's frustum matched to the CURRENT render size.
+   *
+   * This is the half of the change that is easy to miss and fatal to skip. The
+   * ortho frustum is derived from the render resolution (constants.ts:
+   * VIEW_W = RENDER_W / PPU) but is baked in once by createDungeonCamera().
+   * With a fixed 1280x720 target that was fine. Now the target grows with the
+   * window, so a frustum left at 20x11.25 tiles would be stretched across a
+   * 1920-wide target — 96 px per world unit instead of 64. PPU would silently
+   * stop being 64, and the sprite identity SPRITE_UNITS * PPU ===
+   * SPRITE_PIXEL_GRID (72 texels → 72 render pixels) would break, reintroducing
+   * exactly the uneven sprite-pixel sizes this whole change exists to kill.
+   *
+   * So: PPU stays pinned at 64 and the FRUSTUM flexes. Because renderW/renderH
+   * are even, the half-extents land on whole texels and the frustum centre
+   * stays on the pixel grid.
+   *
+   * Done here rather than in resize() because this is where we are handed the
+   * camera; it is a cheap identity check on every frame and a real update only
+   * when something moved. `zoom` is untouched (the tavern rides on it) — three
+   * applies it on top of left/right/top/bottom.
+   */
+  function syncCameraFrustum(camera: THREE.Camera): void {
+    const ortho = camera as THREE.OrthographicCamera;
+    if (ortho.isOrthographicCamera) {
+      const halfW = sizing.renderW / (2 * PPU);
+      const halfH = sizing.renderH / (2 * PPU);
+      if (ortho.right !== halfW || ortho.top !== halfH) {
+        ortho.left = -halfW;
+        ortho.right = halfW;
+        ortho.top = halfH;
+        ortho.bottom = -halfH;
+        ortho.updateProjectionMatrix();
+      }
+      return;
+    }
+    // The rampage FPS camera is perspective (fps.ts) — it has no PPU contract,
+    // it just must not be stretched by a non-16:9 target.
+    const persp = camera as THREE.PerspectiveCamera;
+    if (persp.isPerspectiveCamera) {
+      const aspect = sizing.renderW / sizing.renderH;
+      if (persp.aspect !== aspect) {
+        persp.aspect = aspect;
+        persp.updateProjectionMatrix();
+      }
+    }
+  }
+
   function render(scene: THREE.Scene, camera: THREE.Camera): void {
+    syncCameraFrustum(camera);
+
     // 1. Scene → linear target (+ depth).
     renderer.setRenderTarget(sceneTarget);
     renderer.clear();

@@ -7,6 +7,77 @@
 import { describe, it, expect } from "vitest";
 import { ROOM, STATIONS, OBSTACLES, SPAWN, KEEPER_SPOTS, PLAYER_RADIUS, stationAt, moveInRoom, isOpen } from "./layout";
 
+/**
+ * Grid resolution for the reachability flood fill, in world units.
+ *
+ * 0.25 is comfortably finer than the narrowest gap the room has (the 3.3-unit
+ * corridor between the central table and the notice board) and than
+ * PLAYER_RADIUS, so a cell can't "jump" a wall that a player couldn't walk
+ * through. Cheap enough to run every suite: the room is 18x14, so ~4k cells.
+ */
+const FILL_STEP = 0.25;
+
+/**
+ * Every floor cell you can actually WALK to from SPAWN.
+ *
+ * `isOpen` on its own only proves a point is not inside furniture — it says
+ * nothing about whether the player can get there. Those are different bugs: a
+ * spot walled off behind the counters would pass every existing assertion and
+ * still be a station you can never use. A flood fill is the only honest answer,
+ * and at this room size it is nearly free.
+ *
+ * Returns the reached cells keyed by their grid indices.
+ */
+function reachableFromSpawn(): Set<string> {
+  const gx = (x: number): number => Math.round((x - ROOM.minX) / FILL_STEP);
+  const gz = (z: number): number => Math.round((z - ROOM.minZ) / FILL_STEP);
+  const wx = (i: number): number => ROOM.minX + i * FILL_STEP;
+  const wz = (j: number): number => ROOM.minZ + j * FILL_STEP;
+  const cols = Math.ceil((ROOM.maxX - ROOM.minX) / FILL_STEP);
+  const rows = Math.ceil((ROOM.maxZ - ROOM.minZ) / FILL_STEP);
+
+  const seen = new Set<string>();
+  const start: [number, number] = [gx(SPAWN.x), gz(SPAWN.z)];
+  const queue: Array<[number, number]> = [start];
+  seen.add(start.join(","));
+
+  while (queue.length) {
+    const [i, j] = queue.pop()!;
+    for (const [di, dj] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const ni = i + di;
+      const nj = j + dj;
+      if (ni < 0 || nj < 0 || ni > cols || nj > rows) continue;
+      const key = `${ni},${nj}`;
+      if (seen.has(key)) continue;
+      if (!isOpen(wx(ni), wz(nj))) continue;
+      seen.add(key);
+      queue.push([ni, nj]);
+    }
+  }
+  return seen;
+}
+
+/** True if the flood fill reached any cell within `tol` of (x, z). */
+function reached(fill: Set<string>, x: number, z: number, tol = 0.4): boolean {
+  const span = Math.ceil(tol / FILL_STEP);
+  const i0 = Math.round((x - ROOM.minX) / FILL_STEP);
+  const j0 = Math.round((z - ROOM.minZ) / FILL_STEP);
+  for (let i = i0 - span; i <= i0 + span; i++) {
+    for (let j = j0 - span; j <= j0 + span; j++) {
+      if (!fill.has(`${i},${j}`)) continue;
+      const cx = ROOM.minX + i * FILL_STEP;
+      const cz = ROOM.minZ + j * FILL_STEP;
+      if (Math.hypot(cx - x, cz - z) <= tol) return true;
+    }
+  }
+  return false;
+}
+
 describe("floor plan sanity", () => {
   it("every station's stand-here spot is inside the room", () => {
     for (const s of STATIONS) {
@@ -27,6 +98,61 @@ describe("floor plan sanity", () => {
 
   it("the spawn point is open floor", () => {
     expect(isOpen(SPAWN.x, SPAWN.z)).toBe(true);
+  });
+
+  it("you can WALK from the spawn to every station, not just stand there", () => {
+    // `isOpen` proves a spot isn't inside a counter. It does not prove you can
+    // get to it — a pocket of floor sealed off by furniture passes that check
+    // and is still a station nobody can ever use. Flood-fill from where the
+    // player actually arrives and require every stand spot to be in the
+    // connected region.
+    const fill = reachableFromSpawn();
+    for (const s of STATIONS) {
+      expect(isOpen(s.x, s.z), `station "${s.id}" is inside furniture`).toBe(true);
+      expect(reached(fill, s.x, s.z), `station "${s.id}" is walled off from the spawn`).toBe(true);
+    }
+  });
+
+  it("every keeper stands somewhere the player could also walk", () => {
+    // A keeper in a sealed pocket is a keeper you can never reach the counter
+    // of — the same failure as an unreachable station, one step removed.
+    const fill = reachableFromSpawn();
+    for (const k of KEEPER_SPOTS) {
+      expect(reached(fill, k.x, k.z), `keeper "${k.id}" is walled off from the spawn`).toBe(true);
+    }
+  });
+
+  it("no station's stand-here spot falls inside another station's radius", () => {
+    // Stricter than the circle-overlap check below, and it is the one the PLAYER
+    // feels: if you stand exactly where station A tells you to and you are also
+    // inside B's radius, then whichever is nearer wins and A's prompt may never
+    // appear at all. `stationAt` picking the nearest hides this rather than
+    // fixing it.
+    for (const a of STATIONS) {
+      for (const b of STATIONS) {
+        if (a.id === b.id) continue;
+        const d = Math.hypot(a.x - b.x, a.z - b.z);
+        expect(d, `"${a.id}"'s stand spot is inside "${b.id}"'s radius`).toBeGreaterThan(b.radius);
+      }
+    }
+  });
+
+  it("every station's stand spot has room to stand IN, not just ON", () => {
+    // The bug this catches: a spot that clears `isOpen` by a few hundredths
+    // (the run-summary station sat 0.08 off the central table's collision face)
+    // is one the player is permanently pinned against, and the focus spotlight
+    // stations.ts draws there is mostly buried under the prop. Require real
+    // clearance — a ring of floor around the spot, not a single legal point.
+    for (const s of STATIONS) {
+      for (const [dx, dz] of [
+        [0.35, 0],
+        [-0.35, 0],
+        [0, 0.35],
+        [0, -0.35],
+      ]) {
+        expect(isOpen(s.x + dx, s.z + dz), `station "${s.id}" is pinned against furniture toward (${dx},${dz})`).toBe(true);
+      }
+    }
   });
 
   it("every keeper stands on open floor, not inside their own counter", () => {

@@ -83,6 +83,26 @@ export const GOLD = 0xf0c040;
  * The plan deliberately puts DESCEND at the north wall behind the central table:
  * the player crosses the room's middle to reach it and passes the run summary on
  * the way, which is the readiness check the pacing wants.
+ *
+ * STAND SPOTS ARE PULLED OFF THEIR COUNTERS (2026-07-19). Every spot used to sit
+ * ~0.38 from the face of its own obstacle — i.e. as close as PLAYER_RADIUS lets
+ * you get. Two things followed, and both of them were the "I have to hunt for
+ * the spot" complaint:
+ *
+ *  - Roughly HALF of each interaction circle was inside the furniture, so the
+ *    reachable part of a 1.6 radius was ~1.2 deep, all of it on one side. You
+ *    were effectively aiming at a half-disc whose centre you could not occupy.
+ *  - `stations.ts` draws the focus spotlight (radius 1.15) centred on the stand
+ *    spot, so most of the disc was buried under the prop. The one visual cue for
+ *    "stand here" was mostly not on the floor.
+ *
+ * Each spot now sits ~0.7 clear of its counter, which centres the circle on
+ * floor you can actually stand on and puts the whole spotlight where you can see
+ * it, and the vendor radii went 1.6 -> 1.7 (TAVERN_PLAN: walking to a station is
+ * pacing, but "must never feel cumbersome" — prefer generous). The room is big
+ * enough that this costs nothing: `layout.test.ts` still asserts no two circles
+ * touch, and the tightest pair after the move is gambler/dealer at 3.75 against
+ * a 3.3 sum.
  */
 export const STATIONS: Station[] = [
   {
@@ -90,8 +110,14 @@ export const STATIONS: Station[] = [
     label: "Descend",
     blurb: "commit your loadout and drop into the next floor",
     x: 0,
-    z: -5.2,
-    radius: 1.5,
+    // Was z -5.2, which is 0.38 off the notice board's collision face (z -5.9,
+    // plus PLAYER_RADIUS). You approach this one head-on from the south, so the
+    // entire southern half of the circle was the only usable part. Pulled to
+    // -4.9 and widened to 1.6: the trigger band is now z -5.58..-3.3, which is
+    // the corridor between the board and the central table, so simply walking
+    // north out of the room's spine arms the plunger.
+    z: -4.9,
+    radius: 1.6,
     accent: COLD,
     action: { kind: "descend" },
   },
@@ -99,9 +125,12 @@ export const STATIONS: Station[] = [
     id: "forge",
     label: "Forge / Repair",
     blurb: "repair, add a socket, forge and reroll cards",
-    x: -5.2,
+    // The four vendor counters back onto the east/west walls, so you always
+    // arrive from the room's centre. -5.2 -> -4.8 puts the spot 0.78 clear of
+    // the forge's face instead of 0.38, so the circle straddles open floor.
+    x: -4.8,
     z: -2.6,
-    radius: 1.6,
+    radius: 1.7,
     accent: WARM,
     action: { kind: "vendor", vendor: "weapons" },
   },
@@ -109,9 +138,9 @@ export const STATIONS: Station[] = [
     id: "bar",
     label: "Trade",
     blurb: "potions for the belt",
-    x: 5.2,
+    x: 4.8, // mirror of the forge — see the note there
     z: -2.6,
-    radius: 1.6,
+    radius: 1.7,
     accent: WARM,
     action: { kind: "vendor", vendor: "potions" },
   },
@@ -120,7 +149,13 @@ export const STATIONS: Station[] = [
     label: "Review Run",
     blurb: "the floor you just cleared",
     x: 0,
-    z: -0.2,
+    // Was z -0.2. The central table's collision face is at z -0.6, and with
+    // PLAYER_RADIUS the closest you can stand is -0.28 — so the nominal stand
+    // spot sat EIGHT HUNDREDTHS of a unit inside the only place you were allowed
+    // to be. `isOpen` passed, so no test caught it, but in practice you were
+    // permanently pinned against the table with the spotlight disc half under
+    // it. 0.4 is 0.68 clear, on the south side you actually walk in from.
+    z: 0.4,
     radius: 1.9,
     accent: COLD,
     action: { kind: "summary" },
@@ -129,9 +164,9 @@ export const STATIONS: Station[] = [
     id: "dealer",
     label: "Cards",
     blurb: "buy power cards and socket them",
-    x: 5.2,
+    x: 4.8, // mirror of the forge — see the note there
     z: 2.8,
-    radius: 1.6,
+    radius: 1.7,
     accent: COLD,
     action: { kind: "vendor", vendor: "cards" },
   },
@@ -139,9 +174,9 @@ export const STATIONS: Station[] = [
     id: "armory",
     label: "Manage Loadout",
     blurb: "plate, helms and repairs",
-    x: -5.2,
+    x: -4.8, // mirror of the forge — see the note there
     z: 2.8,
-    radius: 1.6,
+    radius: 1.7,
     accent: WARM,
     action: { kind: "vendor", vendor: "armor" },
   },
@@ -158,9 +193,24 @@ export const STATIONS: Station[] = [
     // PLAYER_RADIUS 0.32), so the station became unreachable. `layout.test.ts`
     // caught it immediately, which is the whole reason placement lives here as
     // data rather than scattered through the prop builders.
-    x: 2.5,
-    z: 5.6,
-    radius: 1.5,
+    //
+    // Standing BESIDE an arcade cabinet reads oddly, and the obvious fix — put
+    // the spot in front of the screen — does not exist here: props.ts angles the
+    // screen toward +z (the camera) at z 6.34, and the south wall leaves no
+    // floor there. North of the cabinet is the other candidate and it collides
+    // with the card dealer: (3.9, 4.6) is 2.22 from the dealer's spot against a
+    // 3.3 radius sum, so the two prompts would fight.
+    //
+    // So west it stays — which is in fact the natural approach anyway, because
+    // SPAWN is at (0, 5.4) and you walk east along the south wall straight into
+    // it. 2.5 -> 2.2 doubles the clearance from the cabinet (0.28 -> 0.58) and
+    // buys back the dealer margin (3.75 against 3.3), and the radius goes to 1.6
+    // so the walk east arms it a step earlier. Kept clear of SPAWN itself
+    // (2.2 away, outside the radius): the prompt firing the instant you arrive
+    // in the room would read as the tavern nagging you to gamble.
+    x: 2.2,
+    z: 5.5,
+    radius: 1.6,
     accent: GOLD,
     action: { kind: "gambler" },
   },
@@ -180,7 +230,14 @@ export const OBSTACLES: Rect[] = [
   { x: 7.2, z: -2.6, w: 2.6, d: 2.2 }, // bar counter
   { x: 7.2, z: 2.8, w: 2.6, d: 2.0 }, // card dealer's table
   { x: -7.2, z: 2.8, w: 2.6, d: 2.0 }, // armory bench
-  { x: 0, z: -6.4, w: 4.2, d: 1.0 }, // notice board / plunger housing
+  { x: 0, z: -6.4, w: 4.2, d: 1.0 }, // notice board
+  // The DESCENT PLUNGER housing. Named in the rect above's old comment but
+  // never actually covered by it: props.ts builds the housing at x 2.6 (the
+  // board's east edge + 0.5), so it stood entirely outside the 4.2-wide board
+  // rect and you could walk through the thing that launches you into the next
+  // floor. Found by an AABB-vs-walkable audit, not by playing — it is in the
+  // corner you only visit on the way out.
+  { x: 2.6, z: -6.4, w: 0.6, d: 0.6 },
   // The gambler's arcade cabinet. Sized to its TOP LIP (1.6 x 1.0, the widest
   // part) rather than the body, so you can't clip a corner. Every other station
   // had a rect from the start; this one shipped without one and you could walk
@@ -213,12 +270,17 @@ export const KEEPER_SPOTS: KeeperSpot[] = [
   { id: "dealer", x: 6.6, z: 4.4 },
   { id: "armory", x: -6.6, z: 4.4 },
   // The gambler's tout. NOT behind the cabinet (x 3.15..4.65, z 5.45..6.35 in
-  // props.ts) and NOT on the stand-here spot at (3.0, 5.6) — east of the machine
-  // and a step into the room, in the throwing line of the wall dartboard at
-  // (5.9, 6.8). Also kept clear of the card dealer's radius: at z 4.4 this spot
-  // lands EXACTLY on it (1.60 from a 1.60 radius), which is the kind of
-  // boundary that resolves differently on a float rounding change.
-  { id: "gambler", x: 5.2, z: 4.6 },
+  // props.ts) and NOT on the stand-here spot — east of the machine and a step
+  // into the room, in the throwing line of the wall dartboard at (5.9, 6.6).
+  //
+  // The card dealer's radius is the constraint that keeps moving this one. At
+  // (5.2, 4.4) it landed EXACTLY on the old 1.60 radius; (5.2, 4.6) cleared it
+  // by 0.68. Pulling the dealer's own spot in to x 4.8 and widening it to 1.7
+  // ate almost all of that back (down to 0.14), so the tout moves south with it:
+  // (5.4, 5.0) is 2.28 from the dealer against a 1.7 radius, a 0.58 margin, and
+  // 1.5 clear of the cabinet. Tucking him nearer the machine he is touting for
+  // is the right direction anyway.
+  { id: "gambler", x: 5.4, z: 5.0 },
 ];
 
 /** The player's entry point — at the foot of the dungeon stair, facing in. */

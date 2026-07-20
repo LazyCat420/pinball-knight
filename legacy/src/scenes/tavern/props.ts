@@ -163,6 +163,42 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   // with the descent gate.
   box(0.12, 0.1, 0.5, mat(STEEL), t.w / 2 - 0.32, 0.1, t.d / 2 - 0.3, field);
 
+  // ── The bits that make it a PINBALL playfield rather than a lit table ──
+  // Lane guides, a ramp, a spinner and drop targets: the four shapes anybody
+  // who has stood in front of a real machine reads instantly. All of it lives
+  // inside the cabinet footprint, so the walkable rect in layout.ts is untouched.
+  const guideMat = mat(STEEL, { metalness: 0.75, roughness: 0.3 });
+  // Curved outlanes: a wire each side sweeping from the top arch down to the
+  // flippers, which is what gives the field its funnel shape from above.
+  const guideGeo = new THREE.TorusGeometry(0.62, 0.025, 6, 12, Math.PI * 0.75);
+  geos.push(guideGeo);
+  for (const sx of [-1, 1]) {
+    const guide = new THREE.Mesh(guideGeo, guideMat);
+    guide.position.set(sx * (t.w / 2 - 0.5), 0.09, -0.1);
+    guide.rotation.set(-Math.PI / 2, 0, sx > 0 ? -Math.PI * 0.62 : Math.PI * 0.62 - Math.PI * 0.75);
+    field.add(guide);
+  }
+  // A habitrail ramp climbing from mid-field to the back arch — the one piece
+  // with real height on it, so the field reads as three-dimensional.
+  const rampMat = mat(0x2a4a5c, { metalness: 0.4, roughness: 0.45 });
+  const ramp = box(0.28, 0.05, 1.1, rampMat, -0.55, 0.22, -0.15, field);
+  ramp.rotation.x = 0.3;
+  for (const rz of [-0.55, 0.3]) box(0.05, 0.3, 0.05, guideMat, -0.55, 0.14, rz, field);
+  // Drop-target bank: three thin blades standing in a row, cold-lit.
+  const targetMat = emissive(COLD, 0.4);
+  for (let i = -1; i <= 1; i++) box(0.16, 0.13, 0.03, targetMat, 0.55 + i * 0.005, 0.11, -0.15 + i * 0.2, field);
+  // The spinner — a blade on a wire across a lane. Static, but the silhouette
+  // (a flat card hung edge-on between two posts) is the recognisable part.
+  for (const sx of [-1, 1]) box(0.04, 0.2, 0.04, guideMat, 0.12 + sx * 0.13, 0.14, 0.55, field);
+  const spinner = box(0.24, 0.16, 0.015, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), 0.12, 0.16, 0.55, field);
+  spinner.rotation.x = 0.35;
+  // Slingshot kickers above the flippers, angled in toward the drain.
+  const slingMat = mat(BLOOD, { roughness: 0.6 });
+  for (const sx of [-1, 1]) {
+    const s = box(0.34, 0.1, 0.07, slingMat, sx * 0.78, 0.1, t.d / 2 - 0.62, field);
+    s.rotation.y = sx * -0.7;
+  }
+
   // Backglass: a distressed jackpot sign, half-broken. Gold is reserved for
   // rewards, so this is the one place it appears in the room's furniture.
   const glass = box(t.w - 0.4, 0.9, 0.12, mat(0x1a1410), t.x, tableTop + 0.45, t.z - t.d / 2 + 0.1);
@@ -184,6 +220,51 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   box(0.62, 0.2, 0.3, mat(STEEL_DK, { metalness: 0.75, roughness: 0.35 }), f.x + 1.0, 0.5, f.z + 1.3);
   // Chimney hood.
   box(1.6, 1.1, 1.6, mat(STEEL_DK, { metalness: 0.5 }), f.x + 0.2, 2.5, f.z);
+
+  // ── What makes it read FORGE and not "lit fireplace" ──
+  // Everything here sits either on top of the hearth block (which fills the
+  // whole obstacle rect, so nothing can be walked into) or hangs under the hood
+  // above head height. The rect in layout.ts is untouched.
+  const ironMat = mat(STEEL_DK, { metalness: 0.7, roughness: 0.4 });
+  const hotMat = emissive(WARM, 1.2);
+  // Mantel lip along the front edge, so the block has a top rather than a face.
+  box(f.w, 0.14, 0.18, mat(STONE), f.x, 1.36, f.z + f.d / 2 - 0.12);
+  // The bellows — a fat wedge on the hearth's far side with a nozzle into the
+  // coals. Two stacked boxes read as the leather concertina at this distance.
+  box(0.62, 0.3, 0.5, mat(TIMBER_DK), f.x - 0.85, 1.62, f.z - 0.15);
+  box(0.5, 0.18, 0.38, mat(BLOOD, { roughness: 0.95 }), f.x - 0.85, 1.42, f.z - 0.15);
+  const nozzle = cyl(0.05, 0.55, ironMat, f.x - 0.4, 1.4, f.z - 0.05);
+  nozzle.rotation.z = Math.PI / 2;
+  box(0.1, 0.34, 0.1, mat(TIMBER), f.x - 1.05, 1.92, f.z - 0.15); // bellows handle
+  // Tool bar under the hood: tongs, a hammer and a poker hanging in a row.
+  box(1.5, 0.05, 0.05, ironMat, f.x + 0.2, 1.92, f.z + 0.3);
+  for (const [tx, len] of [
+    [-0.42, 0.42],
+    [0.1, 0.3],
+    [0.62, 0.5],
+  ]) {
+    box(0.05, len, 0.05, ironMat, f.x + 0.2 + tx, 1.9 - len / 2, f.z + 0.3);
+  }
+  box(0.2, 0.1, 0.09, ironMat, f.x + 0.3, 1.6, f.z + 0.3); // that one's a hammer
+  box(0.16, 0.05, 0.16, ironMat, f.x - 0.22, 1.5, f.z + 0.3); // and that one's tongs
+  // Quench trough sunk into the hearth top — the still dark water beside the
+  // coals is the whole reason a smithy looks like a smithy.
+  box(0.52, 0.24, 0.72, mat(0x0e1418), f.x - 0.75, 1.4, f.z + 0.45);
+  box(0.42, 0.02, 0.62, mat(0x1b3a48, { roughness: 0.25, metalness: 0.3 }), f.x - 0.75, 1.51, f.z + 0.45);
+  // Stock on the lip: two horseshoes and a couple of glowing billets pulled
+  // half out of the fire.
+  const shoeGeo = new THREE.TorusGeometry(0.1, 0.028, 5, 9, Math.PI * 1.45);
+  geos.push(shoeGeo);
+  for (const hz of [-0.75, -0.45]) {
+    const shoe = new THREE.Mesh(shoeGeo, ironMat);
+    shoe.position.set(f.x - 0.6, 1.38, f.z + hz);
+    shoe.rotation.x = -Math.PI / 2;
+    group.add(shoe);
+  }
+  box(0.5, 0.06, 0.08, hotMat, f.x + 0.95, 1.4, f.z - 0.25); // billet, still orange
+  box(0.4, 0.06, 0.08, ironMat, f.x + 0.95, 1.4, f.z + 0.05); // and one gone cold
+  // Embers on the anvil face, so the strike beat has somewhere to land.
+  box(0.3, 0.03, 0.16, hotMat, f.x + 1.0, 0.61, f.z + 1.3);
   accent("forge", WARM, f.x + 0.8, 1.5, f.z + 0.6, 3.2);
 
   // ══════════════════════════════════════════════════════════
@@ -198,6 +279,46 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const bottleMats = [emissive(0x3f9d5a, 0.35), emissive(BLOOD, 0.3), emissive(COLD, 0.3)];
   for (let i = 0; i < 7; i++) {
     cyl(0.07, 0.34, bottleMats[i % 3], b.x + 0.85, 1.15 + (i % 2) * 0.55, b.z - 0.8 + i * 0.26);
+  }
+
+  // ── What makes it read BAR and not "long table" ──
+  // Taps are the single most legible bar shape there is, so they get the front
+  // edge of the counter where nothing occludes them. Everything sits on the
+  // counter top (1.2) or hangs above it, inside the existing obstacle rect.
+  const brassMat = mat(BRASS, { metalness: 0.8, roughness: 0.3 });
+  const pewterMat = mat(0x9aa4b4, { metalness: 0.5, roughness: 0.5 });
+  box(0.14, 0.2, 1.1, brassMat, b.x - 0.35, 1.3, b.z - 0.1); // tap manifold
+  for (let i = 0; i < 3; i++) {
+    const tz = b.z - 0.55 + i * 0.45;
+    cyl(0.035, 0.34, brassMat, b.x - 0.35, 1.55, tz); // tap column
+    const spout = cyl(0.03, 0.26, brassMat, b.x - 0.47, 1.66, tz);
+    spout.rotation.z = Math.PI / 2.6;
+    cyl(0.055, 0.1, mat(TIMBER_DK), b.x - 0.35, 1.76, tz); // pull handle
+  }
+  // Tankards waiting to be filled, and one knocked over.
+  for (const [tx, tz] of [
+    [0.18, -0.7],
+    [0.3, -0.42],
+    [0.16, 0.5],
+  ]) {
+    cyl(0.075, 0.17, pewterMat, b.x + tx, 1.29, b.z + tz);
+  }
+  const spilled = cyl(0.075, 0.17, pewterMat, b.x + 0.05, 1.24, b.z + 0.85);
+  spilled.rotation.z = Math.PI / 2;
+  box(0.24, 0.01, 0.3, mat(0x2c2418, { roughness: 0.3 }), b.x + 0.12, 1.21, b.z + 0.85); // the spill
+  box(0.2, 0.03, 0.16, mat(0x6d6350), b.x - 0.1, 1.23, b.z + 0.62); // and the rag
+  // A keg on its side at the back of the counter — the other unmistakable shape.
+  const keg = cyl(0.26, 0.6, mat(TIMBER_DK), b.x + 0.35, 1.46, b.z - 0.85);
+  keg.rotation.z = Math.PI / 2;
+  for (const kx of [-0.18, 0.18]) {
+    const hoop = cyl(0.275, 0.05, brassMat, b.x + 0.35 + kx, 1.46, b.z - 0.85);
+    hoop.rotation.z = Math.PI / 2;
+  }
+  // Glasses hanging stem-down from a rack over the counter — above head height,
+  // so it hangs in the walk-up sightline without being in the way.
+  box(0.5, 0.06, 1.6, mat(TIMBER_DK), b.x - 0.1, 2.16, b.z);
+  for (let i = 0; i < 5; i++) {
+    cyl(0.05, 0.16, pewterMat, b.x - 0.22 + (i % 2) * 0.24, 2.03, b.z - 0.62 + i * 0.31);
   }
   accent("bar", WARM, b.x - 0.6, 1.7, b.z, 2.6);
 
@@ -219,6 +340,41 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
     c.rotation.z = (i - 1) * 0.09;
     c.rotation.x = -0.22;
   }
+
+  // ── What makes it read CARD TABLE and not "desk" ──
+  // A dealing shoe, chip stacks and cards face-down on the felt. All of it on
+  // the table top, inside the existing rect.
+  const shoe = box(0.3, 0.24, 0.42, mat(TIMBER_DK), d.x + 0.9, 1.02, d.z + 0.35);
+  shoe.rotation.x = -0.3;
+  box(0.24, 0.02, 0.3, mat(STEEL, { metalness: 0.7, roughness: 0.35 }), d.x + 0.9, 1.14, d.z + 0.42);
+  // Chip stacks, in the run's own rarity colours so the table shares a language
+  // with the cards it sells. Short cylinders in a cluster read as chips even
+  // when each one is barely a dozen pixels.
+  const chipMats = [mat(0x9aa4b4), mat(BLOOD), mat(0x2e6d8f)];
+  for (const [cx, cz, tall, tone] of [
+    [-0.85, 0.45, 4, 0],
+    [-0.72, 0.62, 3, 1],
+    [-0.55, 0.4, 5, 2],
+    [0.35, 0.55, 2, 1],
+  ] as Array<[number, number, number, number]>) {
+    for (let s = 0; s < tall; s++) cyl(0.075, 0.03, chipMats[tone], d.x + cx, 0.94 + s * 0.032, d.z + cz);
+  }
+  // A dealt hand scattered face-down across the felt.
+  const faceDown = mat(0x1b2a3a, { roughness: 0.7 });
+  for (const [cx, cz, rot] of [
+    [-0.2, 0.1, 0.4],
+    [0.05, 0.22, -0.9],
+    [0.28, 0.05, 0.15],
+  ]) {
+    const card = box(0.17, 0.012, 0.24, faceDown, d.x + cx, 0.93, d.z + cz);
+    card.rotation.y = rot;
+  }
+  // A lamp hung LOW over the table — the pool of light is what says "game in
+  // progress". Hangs above the table footprint, which is solid, so it is never
+  // in the player's way.
+  box(0.06, 0.9, 0.06, mat(STEEL_DK), d.x, 2.25, d.z);
+  cyl(0.34, 0.26, mat(0x241a12, { roughness: 0.9 }), d.x, 1.72, d.z);
+  cyl(0.28, 0.04, emissive(COLD, 1.1), d.x, 1.6, d.z);
   accent("dealer", COLD, d.x, 1.5, d.z + 0.5, 2.4);
 
   // ══════════════════════════════════════════════════════════
@@ -271,6 +427,43 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   for (let i = 0; i < 3; i++) {
     box(0.14, 0.44, 0.36, mat(STEEL_DK, { metalness: 0.6 }), a.x - 0.8, 1.5 - i * 0.5, a.z - 0.5 + i * 0.5);
   }
+
+  // ── What makes it read ARMORY and not "workbench" ──
+  // A helmet on a stand is the one silhouette nobody misreads, so it gets the
+  // clearest corner of the bench. Everything else sits on the bench top or
+  // hangs on the wall above the rack, inside the existing obstacle rect.
+  const plateMatArm = mat(STEEL, { metalness: 0.7, roughness: 0.35 });
+  const darkPlate = mat(STEEL_DK, { metalness: 0.65, roughness: 0.45 });
+  cyl(0.06, 0.3, mat(TIMBER_DK), a.x + 0.15, 1.11, a.z + 0.6); // helm stand post
+  cyl(0.16, 0.05, mat(TIMBER_DK), a.x + 0.15, 0.98, a.z + 0.6); // its base
+  const helmGeo = new THREE.SphereGeometry(0.17, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  geos.push(helmGeo);
+  const helm = new THREE.Mesh(helmGeo, plateMatArm);
+  helm.position.set(a.x + 0.15, 1.28, a.z + 0.6);
+  helm.castShadow = true;
+  group.add(helm);
+  box(0.3, 0.07, 0.05, darkPlate, a.x + 0.15, 1.25, a.z + 0.76); // visor slit
+  box(0.06, 0.16, 0.06, mat(BLOOD), a.x + 0.15, 1.46, a.z + 0.6); // a stub of crest
+  // A shield leaning against the end of the bench.
+  const shield = box(0.55, 0.68, 0.07, darkPlate, a.x + 1.05, 0.36, a.z + 0.7);
+  shield.rotation.set(0.22, 0, 0.15);
+  box(0.14, 0.5, 0.03, plateMatArm, a.x + 1.05, 0.4, a.z + 0.74); // boss band
+  // Gauntlets, a whetstone and a scatter of rivets on the bench top.
+  for (const gz of [-0.62, -0.4]) box(0.16, 0.1, 0.2, darkPlate, a.x - 0.2, 1.01, a.z + gz);
+  const stone = box(0.26, 0.08, 0.12, mat(0x555a63, { roughness: 1 }), a.x + 0.05, 1.0, a.z - 0.05);
+  stone.rotation.y = 0.4;
+  box(0.16, 0.03, 0.16, mat(BRASS, { metalness: 0.7, roughness: 0.5 }), a.x - 0.5, 0.98, a.z + 0.3);
+  // Pegboard of tools on the wall above the rack — above head height.
+  box(0.06, 0.85, 1.5, mat(TIMBER_DK), a.x - 1.24, 2.25, a.z);
+  for (const [ty, tz, th] of [
+    [2.4, -0.5, 0.4],
+    [2.35, -0.1, 0.5],
+    [2.42, 0.35, 0.36],
+    [2.3, 0.66, 0.55],
+  ]) {
+    box(0.05, th, 0.05, darkPlate, a.x - 1.16, ty - th / 2, a.z + tz);
+  }
+  box(0.06, 0.09, 0.22, darkPlate, a.x - 1.16, 2.14, a.z - 0.1); // a hammer head on one
   accent("armory", WARM, a.x + 0.6, 1.6, a.z + 0.5, 2.4);
 
   // ══════════════════════════════════════════════════════════
@@ -279,11 +472,21 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const n = OBSTACLES[5]; // { x: 0, z: -6.4 }
   box(n.w, 2.2, 0.3, mat(TIMBER_DK), n.x, 1.1, n.z - 0.2); // board backing
   box(n.w - 0.3, 1.7, 0.06, mat(0x241a12), n.x, 1.25, n.z - 0.02); // cork face
-  // Pinned notices — pale scraps, deliberately uneven.
-  for (let i = 0; i < 5; i++) {
-    const p = box(0.42, 0.5, 0.02, mat(0xb9ae94), n.x - 1.3 + i * 0.66, 1.3 + ((i * 37) % 3) * 0.12, n.z + 0.02);
-    p.rotation.z = (((i * 53) % 7) - 3) * 0.04;
+  // Pinned notices — pale scraps, deliberately uneven in SIZE and tone as well
+  // as angle. A grid of identical rectangles reads as a texture, not as paper
+  // somebody pinned up one at a time.
+  const paperMats = [mat(0xb9ae94), mat(0xa39779), mat(0xc9c0a8)];
+  for (let i = 0; i < 8; i++) {
+    const w = 0.3 + ((i * 29) % 4) * 0.06;
+    const h = 0.3 + ((i * 17) % 5) * 0.07;
+    const p = box(w, h, 0.02, paperMats[i % 3], n.x - 1.5 + (i % 4) * 0.8, 1.05 + Math.floor(i / 4) * 0.62 + ((i * 37) % 3) * 0.06, n.z + 0.02);
+    p.rotation.z = (((i * 53) % 7) - 3) * 0.05;
+    box(0.05, 0.05, 0.04, mat(BLOOD), p.position.x, p.position.y + h / 2 - 0.05, n.z + 0.04); // the pin
   }
+  // A hooded lantern on the board's post, so the notices are lit from somewhere.
+  box(0.09, 0.34, 0.09, mat(STEEL_DK), n.x - 2.0, 2.35, n.z + 0.1);
+  box(0.18, 0.2, 0.18, emissive(WARM, 1.3), n.x - 2.0, 2.12, n.z + 0.1);
+  box(0.24, 0.06, 0.24, mat(STEEL_DK), n.x - 2.0, 2.24, n.z + 0.1); // the hood
   // THE PLUNGER — a real launcher housing set into the wall beside the board.
   // Pulling it sends you back into the machine.
   const plungerX = n.x + n.w / 2 + 0.5;
@@ -291,6 +494,24 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const rod = cyl(0.06, 0.8, mat(STEEL, { metalness: 0.9, roughness: 0.2 }), plungerX, 1.3, n.z);
   rod.rotation.x = 0;
   cyl(0.16, 0.16, emissive(BLOOD, 0.9), plungerX, 1.75, n.z); // the knob
+  // The SPRING. A plunger without a visible coil is just a rod with a lid on
+  // it; the stack of rings is the entire "this is a launcher" read, and it is
+  // the shape the pinball table's own plunger lane rhymes with.
+  const springMat = mat(STEEL_DK, { metalness: 0.85, roughness: 0.3 });
+  const coilGeo = new THREE.TorusGeometry(0.11, 0.022, 5, 10);
+  geos.push(coilGeo);
+  for (let i = 0; i < 7; i++) {
+    const coil = new THREE.Mesh(coilGeo, springMat);
+    coil.position.set(plungerX, 1.08 + i * 0.075, n.z);
+    coil.rotation.x = Math.PI / 2;
+    group.add(coil);
+  }
+  // A scored gauge plate beside it — pull depth, which is how a machine tells
+  // you a control has a RANGE rather than an on/off.
+  const gauge = box(0.04, 0.7, 0.16, mat(0x2a2f39, { metalness: 0.4 }), plungerX + 0.2, 1.35, n.z);
+  gauge.rotation.y = 0.1;
+  const tickMat = emissive(COLD, 0.7);
+  for (let i = 0; i < 5; i++) box(0.02, 0.025, 0.11, tickMat, plungerX + 0.22, 1.08 + i * 0.14, n.z);
   // A cold lane of light on the floor pointing at the plunger — the "way down"
   // reading, without a label.
   const laneGeo = new THREE.PlaneGeometry(0.8, 2.4);
@@ -324,6 +545,27 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const lever = cyl(0.05, 0.55, mat(STEEL, { metalness: 0.9, roughness: 0.2 }), gx + 0.92, 1.3, gz);
   lever.rotation.z = -0.3;
   cyl(0.11, 0.11, emissive(BLOOD, 0.9), gx + 1.06, 1.55, gz);
+
+  // ── What makes it read ARCADE CABINET and not "lit box" ──
+  // A marquee, a coin slot, a button panel and a speaker grille. The marquee
+  // sits above head height and everything else is flush with the body's front
+  // face or on the top lip, so nothing extends past the cabinet's obstacle rect.
+  // The marquee is COLD, not GOLD: gold stays reserved for the jackpot sign and
+  // for the reels behind the glass, which are the actual reward read here.
+  box(1.5, 0.4, 0.24, mat(TIMBER_DK), gx, 1.94, gz + 0.3); // marquee housing
+  box(1.3, 0.28, 0.04, emissive(COLD, 0.9), gx, 1.94, gz + 0.42); // its lit face
+  for (const bx of [-0.45, 0.45]) box(0.06, 0.36, 0.28, mat(TIMBER), gx + bx, 1.94, gz + 0.28); // side posts
+  // Speaker grille above the screen — four slats, the cheapest possible tell.
+  for (let i = 0; i < 4; i++) box(0.7, 0.04, 0.03, mat(0x14181f), gx, 1.66 + i * 0.07, gz + 0.42);
+  // Coin slot and return, low on the front face where a real one lives.
+  box(0.26, 0.3, 0.05, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), gx + 0.42, 0.72, gz + 0.43);
+  box(0.11, 0.02, 0.03, mat(0x0b0d12), gx + 0.42, 0.8, gz + 0.46); // the slot itself
+  box(0.2, 0.12, 0.04, mat(0x14181f), gx + 0.42, 0.58, gz + 0.44); // coin return cup
+  // Button panel on the top lip, angled toward whoever is standing at it.
+  const panel = box(0.9, 0.05, 0.32, mat(0x14181f), gx - 0.2, 1.68, gz + 0.18);
+  panel.rotation.x = 0.2;
+  const buttonMats = [emissive(BLOOD, 0.9), emissive(COLD, 0.9), emissive(WARM, 0.9)];
+  for (let i = 0; i < 3; i++) cyl(0.07, 0.05, buttonMats[i], gx - 0.44 + i * 0.24, 1.73, gz + 0.16);
   // A dartboard hung on the wall behind it — advertises the other games.
   const boardZ = ROOM_MAX_Z_PROP;
   for (let i = 0; i < 4; i++) {

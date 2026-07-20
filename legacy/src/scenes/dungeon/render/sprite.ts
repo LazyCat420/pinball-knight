@@ -145,18 +145,42 @@ const BAYER4 = [
   [3, 11, 1, 9],
   [15, 7, 13, 5],
 ].map((row) => row.map((v) => (v / 16 - 0.5)));
-/** Dither amplitude in 0-255 colour units — about one small palette step. */
-const DITHER_AMP = 26;
+/**
+ * Dither amplitude in 0-255 colour units.
+ *
+ * Pulled back from 26 (2026-07-19). Ordered dither earns its keep on large
+ * flat surfaces, but on a small ANIMATED character it mostly reads as noise —
+ * and worse, the pattern crawls between frames, which is exactly the "muddy"
+ * artifact it was supposed to prevent. At the old 52px grid it was also doing
+ * work the resolution couldn't support. Kept, gently, to break banding on the
+ * broad shaded areas; dropped low enough that it no longer stipples a face.
+ */
+const DITHER_AMP = 10;
+
+/** Whole-number upscale for DOM shop icons — see `renderPaintIcon`. */
+const ICON_UPSCALE = 3;
 
 /**
- * THE PIXELATE PASS (2026-07-14 Castlevania round): actor cels are painted as
- * smooth 128px vector art, then crushed to a SPRITE_PIXEL_GRID pixel grid —
- * area-downscale, hard alpha cutout, snap every pixel to the 32-colour
- * palette, nearest-upscale back. Smooth curves become authored-looking pixel
- * clusters; translucent painter effects either commit to a palette colour or
- * disappear. This is what killed the "flash game" read.
+ * THE CRUSH PASS (2026-07-14 Castlevania round; reworked 2026-07-19).
+ *
+ * Actor cels are painted as smooth 128px vector art, then crushed ONCE to a
+ * SPRITE_PIXEL_GRID canvas — area-downscale, hard alpha cutout, ordered
+ * dither, snap every pixel to the 32-colour palette. Smooth curves become
+ * authored-looking pixel clusters; translucent painter effects either commit
+ * to a palette colour or disappear. This is what killed the "flash game" read.
+ *
+ * Returns the SMALL canvas. It used to nearest-upscale the result back into
+ * the 128px source and hand THAT to the GPU, which then minified it to ~70px
+ * on screen. Three resamplings — 128→52 (0.41×), 52→128 (2.46×, so the stored
+ * "pixels" were unevenly 2 and 3 texels wide), then 128→70.4 (0.55×) — to
+ * display 52 pixels of art. The middle step added no information and the last
+ * one threw away 45% of the texels by point-sampling, differently every frame
+ * the actor moved. That was the muddiness, and the crawl under motion.
+ *
+ * Now the art IS the texture: one resample, at the grid the art was authored
+ * for, mapped 1:1 to screen pixels via SPRITE_UNITS.
  */
-function pixelateCanvas(src: HTMLCanvasElement): void {
+function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   const small = document.createElement("canvas");
   small.width = g;
@@ -202,18 +226,12 @@ function pixelateCanvas(src: HTMLCanvasElement): void {
     }
   }
   sctx.putImageData(im, 0, 0);
-
-  const ctx = src.getContext("2d")!;
-  ctx.save();
-  ctx.clearRect(0, 0, src.width, src.height);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(small, 0, 0, src.width, src.height);
-  ctx.restore();
+  return small;
 }
 
 /**
  * Rasterize a single FramePaint to a pixel-art data-URL — the SAME palette-crush
- * the in-world sprites get (pixelateCanvas: SPRITE_PIXEL_GRID snap + Bayer dither
+ * the in-world sprites get (crushToGrid: SPRITE_PIXEL_GRID snap + Bayer dither
  * + nearest upscale). Used for DOM icons (the Tavern's buy-menu) so a shop item
  * shows the game's actual pixel art instead of an emoji. Cache the result — the
  * crush is not free.
@@ -226,8 +244,19 @@ export function renderPaintIcon(paint: FramePaint): string {
   if (!ctx) return "";
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
-  pixelateCanvas(canvas);
-  return canvas.toDataURL();
+  const small = crushToGrid(canvas);
+
+  // The icon goes into an <img> in the shop DOM, where SPRITE_PIXEL_GRID px
+  // would be tiny. Upscale by a WHOLE number so the art stays square — the
+  // consumer still needs `image-rendering: pixelated` to keep it that way.
+  const out = document.createElement("canvas");
+  out.width = SPRITE_PIXEL_GRID * ICON_UPSCALE;
+  out.height = SPRITE_PIXEL_GRID * ICON_UPSCALE;
+  const octx = out.getContext("2d");
+  if (!octx) return "";
+  octx.imageSmoothingEnabled = false;
+  octx.drawImage(small, 0, 0, out.width, out.height);
+  return out.toDataURL();
 }
 
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
@@ -239,8 +268,9 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: n
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite frame");
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
-  pixelateCanvas(scratch);
-  strip.drawImage(scratch, index * SPRITE_PX, 0);
+  // The strip cell is the GRID, not the paint box — the crushed art goes in at
+  // its native size and is never scaled again between here and the screen.
+  strip.drawImage(crushToGrid(scratch), index * SPRITE_PIXEL_GRID, 0);
 }
 
 /**
@@ -273,8 +303,8 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   }
 
   const canvas = document.createElement("canvas");
-  canvas.width = flat.length * SPRITE_PX;
-  canvas.height = SPRITE_PX;
+  canvas.width = flat.length * SPRITE_PIXEL_GRID;
+  canvas.height = SPRITE_PIXEL_GRID;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite atlas");
 
@@ -491,9 +521,11 @@ export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispo
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
-  pixelateCanvas(canvas);
 
-  const tex = new THREE.CanvasTexture(canvas);
+  // Upload the CRUSHED canvas, not the 128px paint box — same 1:1 texel rule
+  // as the actor atlas. The tavern keepers come through here, so this is the
+  // path that decides whether the people you talk to look crisp.
+  const tex = new THREE.CanvasTexture(crushToGrid(canvas));
   celFilters(tex);
 
   const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
