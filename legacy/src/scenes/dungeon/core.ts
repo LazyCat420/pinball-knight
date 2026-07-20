@@ -201,7 +201,7 @@ import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxSpring, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
 import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
@@ -1327,8 +1327,15 @@ function startLevel(level: number): void {
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
   const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
+  // Arrival sting. Paired with the toast rather than the geometry build so the
+  // sound and the card land together.
+  sfxLevelStart();
+  if (level % BOSS_EVERY === 0) sfxBossReveal();
   // A modifier MUST be announced — an unannounced one reads as a bug, not a twist.
-  if (modifier.id !== "none") showPickupNote(`⚠ ${modifier.label.toUpperCase()} — ${modifier.flavour}`);
+  if (modifier.id !== "none") {
+    showPickupNote(`⚠ ${modifier.label.toUpperCase()} — ${modifier.flavour}`);
+    sfxModifier();
+  }
   if (bonusRoom) showPickupNote("🏆 BONUS VAULT unlocked on this floor");
 }
 

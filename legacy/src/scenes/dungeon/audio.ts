@@ -29,29 +29,50 @@ interface Beep {
   at?: number; // start offset, seconds
 }
 
+/**
+ * Node creation is guarded, not just context acquisition.
+ *
+ * The module contract is "fail-silent — audio must never be able to break the
+ * game", but only ctx() used to be wrapped. A context that resolves and then
+ * throws on createOscillator/createBuffer (an exhausted context, a hostile or
+ * partial implementation, a browser that has torn the context down mid-frame)
+ * would throw straight into the game loop from whatever was mid-swing. Every
+ * sting runs its body through here so the promise actually holds.
+ */
+function safely(fn: () => void): void {
+  try {
+    fn();
+  } catch (_e) {
+    // Silence is the correct failure mode for a sound effect.
+  }
+}
+
 function beep(c: AudioContext, { type, f0, f1, dur, vol, at = 0 }: Beep): void {
-  const t = c.currentTime + at;
-  const osc = c.createOscillator();
-  osc.type = type;
-  osc.frequency.setValueAtTime(f0, t);
-  if (f1 !== undefined) osc.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
+  safely(() => {
+    const t = c.currentTime + at;
+    const osc = c.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    if (f1 !== undefined) osc.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
 
-  const g = c.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
-  osc.connect(g);
-  g.connect(c.destination);
-  osc.start(t);
-  osc.stop(t + dur + 0.02);
-  osc.onended = () => {
-    osc.disconnect();
-    g.disconnect();
-  };
+    osc.connect(g);
+    g.connect(c.destination);
+    osc.start(t);
+    osc.stop(t + dur + 0.02);
+    osc.onended = () => {
+      osc.disconnect();
+      g.disconnect();
+    };
+  });
 }
 
 function burst(c: AudioContext, dur: number, vol: number, filterType: BiquadFilterType, freq: number, at = 0): void {
+  safely(() => {
   const t = c.currentTime + at;
   const len = Math.max(1, Math.floor(c.sampleRate * dur));
   const buf = c.createBuffer(1, len, c.sampleRate);
@@ -70,13 +91,14 @@ function burst(c: AudioContext, dur: number, vol: number, filterType: BiquadFilt
   src.connect(filter);
   filter.connect(g);
   g.connect(c.destination);
-  src.start(t);
-  src.stop(t + dur);
-  src.onended = () => {
-    src.disconnect();
-    filter.disconnect();
-    g.disconnect();
-  };
+    src.start(t);
+    src.stop(t + dur);
+    src.onended = () => {
+      src.disconnect();
+      filter.disconnect();
+      g.disconnect();
+    };
+  });
 }
 
 /** Sword swing — a fast air whoosh. */
@@ -234,6 +256,59 @@ export function sfxBreak(): void {
   burst(c, 0.08, 0.22, "highpass", 1800);
   burst(c, 0.16, 0.12, "bandpass", 700, 0.05);
   beep(c, { type: "square", f0: 140, f1: 60, dur: 0.12, vol: 0.1, at: 0.03 });
+}
+
+/**
+ * ARRIVAL on a new floor — a low gate-swing that opens into a two-note chord.
+ *
+ * Deliberately the mirror of sfxStairs: that one ASCENDS (you're leaving, going
+ * down), this one settles onto a held root (you've arrived, this is the place
+ * now). They fire within a second or so of each other across a descent, so if
+ * both rose they'd read as one long confusing run.
+ *
+ * Kept under the plunger BOING that fires a beat later in startLevel — the
+ * launch is the moment the player acts on, and an arrival sting that buries it
+ * would be worse than no arrival sting.
+ */
+export function sfxLevelStart(): void {
+  const c = ctx();
+  if (!c) return;
+  // Stone gate grinding open.
+  burst(c, 0.34, 0.09, "lowpass", 420);
+  beep(c, { type: "sawtooth", f0: 78, f1: 62, dur: 0.3, vol: 0.09 });
+  // …settling onto a root + fifth.
+  beep(c, { type: "triangle", f0: 196, dur: 0.34, vol: 0.09, at: 0.16 });
+  beep(c, { type: "triangle", f0: 294, dur: 0.3, vol: 0.06, at: 0.22 });
+}
+
+/**
+ * A floor MODIFIER is in play — an ominous two-note drop under the toast.
+ * Modifiers are announced in text; a floor that is quietly half-lit or crawling
+ * reads as a bug unless something marks the moment. Scheduled a little late so
+ * it lands after the arrival sting rather than on top of it.
+ */
+export function sfxModifier(): void {
+  const c = ctx();
+  if (!c) return;
+  beep(c, { type: "sawtooth", f0: 233, f1: 220, dur: 0.26, vol: 0.1, at: 0.45 });
+  beep(c, { type: "sawtooth", f0: 156, f1: 147, dur: 0.42, vol: 0.11, at: 0.62 });
+  burst(c, 0.5, 0.05, "lowpass", 320, 0.62);
+}
+
+/**
+ * An OVERLORD is on this floor — a low brass-ish swell. Louder and longer than
+ * the modifier sting: a boss floor is the biggest thing the descent card can
+ * tell you, and it previously said it in text only.
+ */
+export function sfxBossReveal(): void {
+  const c = ctx();
+  if (!c) return;
+  [
+    [98, 0],
+    [123, 0.1],
+    [147, 0.2],
+  ].forEach(([f, at]) => beep(c, { type: "sawtooth", f0: f, dur: 0.75 - at, vol: 0.1, at: at + 0.3 }));
+  burst(c, 0.7, 0.08, "lowpass", 260, 0.35);
 }
 
 /** Found the stairs — a little ascending fanfare. */
