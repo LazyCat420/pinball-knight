@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `f920f1b`, service `dee17f0`, both on synology, both verified
+**Live:** client `28ebd69`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
@@ -42,6 +42,31 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
+
+## HOW TO SEE THE TAVERN (do this before touching it)
+
+The room was worked on BLIND for several passes and it showed. There is now a
+harness; use it, and Read the PNGs.
+
+```
+npm run dev                                    # port 5174
+python tavern.py <outdir>                      # scratchpad/tavern.py
+```
+It routes to `/dungeon`, calls the `window.__dungeonTavern()` dev hook, polls
+for the canvas, and shoots at 1920x1080. `window.__tavernProbe()` returns the
+player's `{x,z,facing,speed,focus}` when you need positional truth rather than
+pixels — that is how the control fix was verified (world delta converted through
+the game's own screen basis, all four keys correct).
+
+Headless WebGL runs at 2-5fps under swiftshader, so POLL for state changes;
+never `waitForTimeout` and assume. A full run is 3-6 minutes.
+
+**Three bugs that had survived multiple code-reading passes and died instantly
+to one screenshot:** the pinball table was landscape (a sofa footprint), its
+rake was inverted relative to its own comment, and its gold marquee was
+occluded by its own backglass so it had never rendered a single pixel. A fourth:
+the room was dark because of FOG (18/42 against CAMERA_DIST 24 — the camera's
+own target sat 25% faded), not the light rig everyone kept adjusting.
 
 ## This pass — an adversarial audit of the two passes below
 
