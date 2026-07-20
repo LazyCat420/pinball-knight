@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, idx, T_FLOOR, T_STAIRS } from "./generator";
-import { decorateMaze, widenMainArtery } from "./decorate";
+import { decorateMaze, widenMainArtery, pickEndpoints } from "./decorate";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./prefabs";
 import { archetypeFor } from "./archetypes";
 import { rollModifier } from "./modifiers";
@@ -44,7 +44,8 @@ function buildFloor(level: number, runSeed: number) {
   const stamped = stampPrefabs(raw, rng, prefabCount, theme, landmark.claimed, focus);
   crackSecretWalls(raw, rng, 4);
   const grid = thickenWalls(raw);
-  widenMainArtery(grid);
+  const endpoints = pickEndpoints(grid, rng);
+  if (endpoints) widenMainArtery(grid, endpoints);
 
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   const anchors = [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
@@ -59,8 +60,9 @@ function buildFloor(level: number, runSeed: number) {
     trapdoors: Math.round(2 * modifier.trapdoorMult),
     hazards: Math.round(6 * modifier.hazardMult),
     bonusItems: modifier.bonusItems,
+    endpoints: endpoints ?? undefined,
   });
-  return { grid, plan, arch, modifier, theme, landmark, stamped };
+  return { grid, plan, arch, modifier, theme, landmark, stamped, endpoints };
 }
 
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 17, 20, 21, 25, 30, 40];
@@ -128,6 +130,62 @@ describe("whole-floor pipeline", () => {
       expect(a.plan.spawns.length).toBe(b.plan.spawns.length);
       expect(a.modifier.id).toBe(b.modifier.id);
       expect(a.landmark.stamped).toEqual(b.landmark.stamped);
+    }
+  });
+
+  it("the exit is not pinned to one corner", () => {
+    // The reported bug: level 1's stairs were ALWAYS bottom-right. Not an rng
+    // failure — start was "first floor tile from the top-left" and stairs was
+    // the single farthest tile from it, which on a rectangular grid is always
+    // the opposite corner. The rng was never consulted for either.
+    const quadrantOf = (p: { i: number; j: number }, w: number, h: number): string =>
+      `${p.i < w / 2 ? "L" : "R"}${p.j < h / 2 ? "T" : "B"}`;
+
+    // Level 1 specifically, across many runs — this is what the player saw.
+    const seen = new Map<string, number>();
+    for (let runSeed = 1; runSeed <= 40; runSeed++) {
+      const { grid, plan } = buildFloor(1, runSeed * 7919);
+      const q = quadrantOf(plan.stairs, grid.w, grid.h);
+      seen.set(q, (seen.get(q) ?? 0) + 1);
+    }
+    // All four quadrants should show up, and none should dominate outright.
+    expect(seen.size, `level 1 exit quadrants: ${JSON.stringify([...seen])}`).toBe(4);
+    for (const [q, n] of seen) {
+      expect(n, `quadrant ${q} dominates: ${JSON.stringify([...seen])}`).toBeLessThan(30);
+    }
+  });
+
+  it("the exit is still a genuine trek from the spawn", () => {
+    // Randomising the exit must not turn it into "the stairs are 3 tiles away".
+    for (const runSeed of RUN_SEEDS) {
+      for (const level of LEVELS) {
+        const { grid, plan } = buildFloor(level, runSeed);
+        const dist = bfsDistances(grid, plan.start.i, plan.start.j);
+        let maxDist = 0;
+        for (let j = 0; j < grid.h; j++) {
+          for (let i = 0; i < grid.w; i++) {
+            if (at(grid, i, j) === T_FLOOR || at(grid, i, j) === T_STAIRS) {
+              maxDist = Math.max(maxDist, dist[idx(grid, i, j)]);
+            }
+          }
+        }
+        const d = dist[idx(grid, plan.stairs.i, plan.stairs.j)];
+        expect(d, `L${level} run ${runSeed}: exit too close (${d} of ${maxDist})`).toBeGreaterThanOrEqual(maxDist * 0.7);
+      }
+    }
+  });
+
+  it("the widened artery leads to the REAL exit", () => {
+    // widenMainArtery and decorateMaze used to derive start/stairs
+    // independently. If they ever disagree the floor gets a launch highway to
+    // somewhere that isn't the exit, which is invisible in a screenshot.
+    for (const runSeed of RUN_SEEDS) {
+      for (const level of [1, 5, 9, 14, 22]) {
+        const { grid, plan, endpoints } = buildFloor(level, runSeed);
+        expect(endpoints, `L${level}: no endpoints`).not.toBeNull();
+        expect(plan.start).toEqual(endpoints!.start);
+        expect(plan.stairs).toEqual(endpoints!.stairs);
+      }
     }
   });
 

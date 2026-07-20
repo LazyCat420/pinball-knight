@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx } from "./generator";
-import { decorateMaze, widenMainArtery, openLaunchTargets } from "./decorate";
+import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints } from "./decorate";
 import { bfsDistances } from "../entities/ai";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
@@ -287,7 +287,8 @@ describe("widenMainArtery", () => {
       const g = thickenWalls(generateMaze(10, 8, mulberry32(seed)));
       const before = Array.from(g.t);
       const floorBefore = before.filter((t) => t === T_FLOOR).length;
-      widenMainArtery(g);
+      const ends = pickEndpoints(g, mulberry32(seed + 500))!;
+      widenMainArtery(g, ends);
       let carved = 0;
       for (let k = 0; k < g.t.length; k++) {
         // never turns a floor into a wall — can only ADD floor

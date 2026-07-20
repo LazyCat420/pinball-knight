@@ -44,7 +44,7 @@ import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./collision";
-import { decorateMaze, widenMainArtery, type PrefabAnchor } from "./maze/decorate";
+import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./maze/prefabs";
 import { archetypeFor } from "./maze/archetypes";
 import { rollModifier } from "./maze/modifiers";
@@ -1060,7 +1060,12 @@ function startLevel(level: number): void {
   // floor plays as a machine and not a uniform 2-wide box maze. Reachability-
   // preserving (only carves wall→floor); runs BEFORE decorate so every stage —
   // topology/parts/arc-corners/render — sees the widened grid.
-  widenMainArtery(grid);
+  // START + STAIRS are chosen ONCE here and shared by both the artery widener
+  // and decorateMaze. Both used to derive them independently with the same
+  // "top-left tile → farthest tile" rule, which put the exit in the
+  // bottom-right corner of every floor; see pickEndpoints.
+  const endpoints = pickEndpoints(grid, rng);
+  if (endpoints) widenMainArtery(grid, endpoints);
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   // Prefab anchors ride the same ×2 into the thickened grid — the landmark's
   // first, so its set-piece furniture wins any tile the regular stamps also want.
@@ -1088,6 +1093,7 @@ function startLevel(level: number): void {
       forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
       launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
       bonusItems: modifier.bonusItems,
+      endpoints: endpoints ?? undefined,
     },
   );
 

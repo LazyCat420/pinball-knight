@@ -280,43 +280,100 @@ function crossableBand(g: Grid, i: number, j: number, di: number, dj: number): b
   return at(g, i + di * d, j + dj * d) === T_FLOOR && at(g, i + di * (d + 1), j + dj * (d + 1)) === T_FLOOR;
 }
 
+/** Where a floor begins and ends. Picked ONCE per floor, shared by every stage. */
+export interface Endpoints {
+  start: TilePos;
+  stairs: TilePos;
+}
+
+/** Distance from the tile to a grid corner, in tiles. */
+function cornerDist(p: TilePos, cx: number, cy: number): number {
+  return Math.abs(p.i - cx) + Math.abs(p.j - cy);
+}
+
+/**
+ * Pick a floor's START and STAIRS.
+ *
+ * This used to be "start = first floor tile scanning from the top-left, stairs =
+ * the single farthest tile by BFS from it", computed independently here and in
+ * decorateMaze. That is deterministic twice over: you always began in the
+ * top-left corner, and on a roughly rectangular grid the farthest point from the
+ * top-left corner is essentially always the bottom-right one — so the exit sat
+ * in the same corner every single run. It looked like the rng was broken; it was
+ * never consulted.
+ *
+ * Now: the start is drawn from one of the FOUR corners, and the stairs are drawn
+ * from the tiles in the top band of BFS distance rather than the strict argmax.
+ * The design intent — a floor is a long journey from one end to the other — is
+ * preserved (the stairs are still among the farthest tiles from the start), but
+ * which end that is now varies per floor.
+ *
+ * Call this ONCE per floor and pass the result to both widenMainArtery and
+ * decorateMaze. Recomputing it per stage is what let the two drift apart.
+ */
+export function pickEndpoints(g: Grid, rng: () => number): Endpoints | null {
+  const floors: TilePos[] = [];
+  for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) if (at(g, i, j) === T_FLOOR) floors.push({ i, j });
+  }
+  if (!floors.length) return null;
+
+  // Start: the floor tile nearest a randomly chosen corner.
+  const corners: ReadonlyArray<readonly [number, number]> = [
+    [0, 0],
+    [g.w - 1, 0],
+    [0, g.h - 1],
+    [g.w - 1, g.h - 1],
+  ];
+  const [cx, cy] = corners[Math.floor(rng() * corners.length)];
+  let start = floors[0];
+  let bestCorner = Infinity;
+  for (const p of floors) {
+    const d = cornerDist(p, cx, cy);
+    if (d < bestCorner) {
+      bestCorner = d;
+      start = p;
+    }
+  }
+
+  // Stairs: a random pick from the far band, not the strict argmax — so two
+  // floors that happen to share a start corner still put the exit in
+  // different places.
+  const dist = bfsDistances(g, start.i, start.j);
+  let maxDist = 0;
+  for (const p of floors) maxDist = Math.max(maxDist, dist[idx(g, p.i, p.j)]);
+  const cutoff = Math.max(1, maxDist * FAR_BAND);
+  const far = floors.filter((p) => {
+    const d = dist[idx(g, p.i, p.j)];
+    return d >= cutoff && !(p.i === start.i && p.j === start.j);
+  });
+  const stairs = far.length ? far[Math.floor(rng() * far.length)] : start;
+  return { start, stairs };
+}
+
+/**
+ * How close to the farthest reachable tile the stairs must be, as a fraction of
+ * the floor's max BFS distance. High enough that the exit is still a genuine
+ * trek from the spawn; loose enough that there are many candidates to choose
+ * between, which is what breaks the always-the-same-corner determinism.
+ */
+const FAR_BAND = 0.82;
+
 /**
  * CORRIDOR-WIDEN (the "launch highway" — kills the uniform 2-wide box-maze
  * feel). Trace the main artery from the stairs back to the start along the BFS
  * gradient and widen it to 3 tiles by carving ONE perpendicular wall neighbour
  * per path tile. Carving wall→floor only ever ADDS connectivity, so
  * reachability is preserved by construction. Mutates the grid in place; the
- * caller reruns its floor scan + distances afterwards. Returns the widened tiles
- * so downstream can treat the artery as open space.
+ * caller reruns its floor scan + distances afterwards.
+ *
+ * `ends` MUST be the same endpoints decorateMaze is given, or the floor gets a
+ * widened highway to somewhere that isn't the exit.
  */
-export function widenMainArtery(g: Grid): void {
-  // Find the start (first floor tile, top-left) + the farthest tile (the stairs
-  // end) — the same endpoints decorateMaze uses — then widen the path between.
-  let start: TilePos | null = null;
-  outer: for (let j = 0; j < g.h; j++) {
-    for (let i = 0; i < g.w; i++) {
-      if (at(g, i, j) === T_FLOOR) {
-        start = { i, j };
-        break outer;
-      }
-    }
-  }
-  if (!start) return;
-  const dist = bfsDistances(g, start.i, start.j);
-  let stairs = start;
-  let maxDist = 0;
-  for (let j = 0; j < g.h; j++) {
-    for (let i = 0; i < g.w; i++) {
-      if (at(g, i, j) !== T_FLOOR) continue;
-      const d = dist[idx(g, i, j)];
-      if (d > maxDist) {
-        maxDist = d;
-        stairs = { i, j };
-      }
-    }
-  }
-  if (maxDist <= 6) return; // too small to bother
-  widenArtery(g, start, stairs, dist);
+export function widenMainArtery(g: Grid, ends: Endpoints): void {
+  const dist = bfsDistances(g, ends.start.i, ends.start.j);
+  if (dist[idx(g, ends.stairs.i, ends.stairs.j)] <= 6) return; // too small to bother
+  widenArtery(g, ends.start, ends.stairs, dist);
 }
 
 function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): void {
@@ -726,25 +783,32 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints } = {},
 ): LevelPlan {
-  // First walkable tile scanning from the top-left — (1,1) on a raw
-  // backtracker maze, (2,2) once the walls have been thickened.
+  // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
+  // shares with widenMainArtery so the widened highway leads to the real exit.
+  // The fallback (no endpoints passed) is the old top-left/farthest rule, kept
+  // only so a caller that predates this can't crash — it is the rule that
+  // pinned every floor's exit to the bottom-right corner, so prefer the real
+  // picker. See pickEndpoints for why.
   let start: TilePos = { i: 1, j: 1 };
-  outer: for (let j = 0; j < g.h; j++) {
-    for (let i = 0; i < g.w; i++) {
-      if (at(g, i, j) === T_FLOOR) {
-        start = { i, j };
-        break outer;
+  if (extras.endpoints) {
+    start = extras.endpoints.start;
+  } else {
+    outer: for (let j = 0; j < g.h; j++) {
+      for (let i = 0; i < g.w; i++) {
+        if (at(g, i, j) === T_FLOOR) {
+          start = { i, j };
+          break outer;
+        }
       }
     }
   }
   const dist = bfsDistances(g, start.i, start.j);
 
-  // ── Stairs: the farthest reachable tile ──
-  let stairs: TilePos = start;
-  let maxDist = 0;
   const floors: TilePos[] = [];
+  let maxDist = 0;
+  let farthest: TilePos = start;
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
       if (at(g, i, j) !== T_FLOOR) continue;
@@ -752,10 +816,11 @@ export function decorateMaze(
       const d = dist[idx(g, i, j)];
       if (d > maxDist) {
         maxDist = d;
-        stairs = { i, j };
+        farthest = { i, j };
       }
     }
   }
+  const stairs: TilePos = extras.endpoints?.stairs ?? farthest;
   setTile(g, stairs.i, stairs.j, T_STAIRS);
 
   // ── Rooms first: archetype content is SEEDED into the pools below, so all
