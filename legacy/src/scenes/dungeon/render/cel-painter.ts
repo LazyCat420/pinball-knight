@@ -2559,47 +2559,54 @@ function goldIdolItem(): FramePaint {
  * light). Shading gold by lightness alone reads as muddy brown, and muddy at
  * sprite resolution reads as blurry.
  */
-function coinFace(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
-  ell(ctx, cx, cy + 5 * s, 27 * s, 20 * s, SH(15, 0.4)); // thickness slab (cool, in shadow)
-  // Rim is palette 17 STRAIGHT: pushing it up a highlight step lands on white,
-  // and a white-rimmed gold coin reads as silver. Bright must stay gold.
-  ell(ctx, cx, cy, 27 * s, 20 * s, F(17)); // raised rim — the brightest ring
-  ell(ctx, cx, cy, 19 * s, 13.5 * s, F(16)); // recessed face, a step down from the rim
-  // Stamped mark: a fat diamond. A blobby sigil turns to mush at 72px; four
-  // straight edges survive the crush and still say "minted".
-  poly(
-    ctx,
-    [
-      [cx, cy - 8 * s],
-      [cx + 7 * s, cy],
-      [cx, cy + 8 * s],
-      [cx - 7 * s, cy],
-    ],
-    F(17),
-  );
-  line(ctx, [[cx - 20 * s, cy - 8 * s], [cx - 10 * s, cy - 12 * s]], 3 * s, F(18)); // rim glint
-  // Specular stays on the TORCH ramp (18, warm white), not the steel ramp — a
-  // steel-white spark stippled cold blue against the gold under the dither.
-  ell(ctx, cx - 15 * s, cy - 11 * s, 2.4 * s, 2 * s, F(18));
+/**
+ * One TINY coin for a heap. Diablo-style dropped gold is a scatter of little
+ * discs, not one minted token — so this skips the diamond stamp (mush at 72px
+ * on something this small) and paints just a shadowed rim, a face and a pin
+ * glint. `r` is the coin's screen radius (heaps mix a few sizes for texture).
+ */
+function tinyCoin(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number): void {
+  ell(ctx, cx, cy + r * 0.22, r, r * 0.72, SH(15, 0.4)); // thin shadow slab under it
+  ell(ctx, cx, cy, r, r * 0.72, F(17)); // rim — the brightest gold ring
+  ell(ctx, cx, cy, r * 0.58, r * 0.42, F(16)); // recessed face
+  ell(ctx, cx - r * 0.4, cy - r * 0.32, r * 0.18, r * 0.14, F(18)); // pin glint
 }
 
+/**
+ * Paint a heap of tiny coins from a [cx, cy, r] list. The list must run
+ * back-to-front (ascending cy) so the near, lower coins overprint the ones
+ * behind — that overlap is what reads as a loose PILE rather than a flat spray.
+ */
+function coinHeap(ctx: CanvasRenderingContext2D, heap: Array<[number, number, number]>): void {
+  for (const [cx, cy, r] of heap) tinyCoin(ctx, cx, cy, r);
+}
+
+/** The per-kill drop — a small DUST PILE of loose gold, Diablo-style. */
 function coinItem(): FramePaint {
   return (ctx) => {
-    groundShadow(ctx, 64, 96, 22);
-    coinFace(ctx, 64, 74, 1);
+    groundShadow(ctx, 64, 98, 30);
+    coinHeap(ctx, [
+      [56, 82, 6], [65, 81, 6], [73, 84, 5], // crest (back)
+      [50, 89, 7], [61, 88, 7], [70, 89, 6], [78, 91, 6],
+      [63, 93, 7],
+      [47, 97, 7], [58, 98, 8], [69, 98, 7], [79, 97, 7], // base (front), the biggest
+    ]);
     celShade(ctx);
   };
 }
 
-/** A STACK of coins — the big-drop tier (boss windfalls, style kills). Same
- * anatomy, three deep, so a fat payout is legible as fat at a glance. */
+/** A big windfall — the same loose gold, just a taller/wider mound so a fat
+ *  payout reads as fat at a glance (boss drops, style kills; COIN_STACK_VALUE+). */
 function coinStackItem(): FramePaint {
   return (ctx) => {
-    groundShadow(ctx, 64, 100, 26);
-    coinFace(ctx, 38, 90, 0.6); // a coin spilled beside the stack, drawn first (behind)
-    coinFace(ctx, 70, 88, 0.82); // bottom of the stack
-    coinFace(ctx, 67, 71, 0.88); // middle
-    coinFace(ctx, 64, 53, 0.95); // top — biggest, catches the light
+    groundShadow(ctx, 64, 103, 38);
+    coinHeap(ctx, [
+      [64, 58, 6], // peak
+      [56, 67, 7], [66, 66, 6], [74, 70, 6],
+      [49, 77, 7], [60, 76, 8], [71, 77, 7], [80, 80, 6],
+      [45, 87, 8], [57, 87, 8], [68, 88, 8], [79, 88, 7],
+      [41, 98, 8], [53, 99, 9], [65, 99, 9], [77, 98, 8], [88, 99, 7], // wide base
+    ]);
     celShade(ctx);
   };
 }

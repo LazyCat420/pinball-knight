@@ -1222,8 +1222,8 @@ export const COIN_STACK_VALUE = 5;
  * quad and every other item stay full size. Stacks get a hair more presence
  * than singles so the high-value drop still stands out.
  */
-export const COIN_DROP_SCALE = 0.4;
-export const COIN_STACK_DROP_SCALE = 0.5;
+export const COIN_DROP_SCALE = 0.34;
+export const COIN_STACK_DROP_SCALE = 0.44;
 /**
  * A weapon dropped in an exchange can't be re-grabbed until you've stepped
  * this far away from it — otherwise the drop and the pickup ping-pong while
