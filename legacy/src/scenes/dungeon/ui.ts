@@ -12,23 +12,34 @@ import { clamp, clamp01 } from "../../utils/math";
 import { loadBestDepth } from "./best-depth";
 import { getPlayerName, setPlayerName, NAME_MAX } from "../../services/player-name";
 
-const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
+/**
+ * !! SINGLE QUOTES, DELIBERATELY !!
+ *
+ * These are interpolated into inline `style="..."` attributes. A family name in
+ * DOUBLE quotes ("SF Mono") closes the attribute early, so the browser parses
+ * `style="font:700 13px ui-monospace, "` and silently discards EVERY declaration
+ * after the font shorthand. That is what hid the buff row's white-space:nowrap
+ * for two rounds of "fixing" it — the rule was in the source and never reached
+ * the element. Keep font-family names single-quoted anywhere they can end up in
+ * an attribute.
+ */
+const FONT = `700 13px ui-monospace, 'SF Mono', Menlo, monospace`;
 /**
  * Header/toast face. Was Georgia serif (SOTN-gothic); switched 2026-07-15 to the
  * same heavily-tracked monospace the HUD uses so titles read "arcade cabinet"
  * and stay self-contained (no Google-Fonts network dependency / load flash).
  * Name kept as SERIF to avoid churning every call site.
  */
-const SERIF = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
+const SERIF = `700 13px ui-monospace, 'SF Mono', Menlo, monospace`;
 /** Big display face for the depth-title toast — tracked mono, small-caps. */
-const DISPLAY = `900 34px ui-monospace, "SF Mono", Menlo, monospace`;
+const DISPLAY = `900 34px ui-monospace, 'SF Mono', Menlo, monospace`;
 
 // ── Wolfenstein HUD faces (2026-07-16 overhaul) ──────────────────────────────
 // Blocky pixel labels + a tall pixel numeral face, both from Google Fonts with
 // a hard monospace fallback so an offline / NAS boot still reads cleanly (no
 // blank flash — the fallback shows immediately, the pixel font swaps in if it
 // loads). Injected once by ensureWolfFonts().
-const WOLF_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
+const WOLF_LABEL = `'Press Start 2P', ui-monospace, 'SF Mono', monospace`;
 const WOLF_NUM = `'VT323', 'Courier New', ui-monospace, monospace`;
 
 // The pixel fonts are self-hosted (base64 woff2, no network) — see pixel-fonts.ts.
@@ -122,7 +133,7 @@ export function createFpsOverlay(container: HTMLElement): HTMLDivElement {
     </div>
     <!-- kill-streak combo readout, upper-right -->
     <div id="dungeon-fps-streak" style="position:absolute;right:40px;top:90px;text-align:right;
-                display:none;font:900 38px ui-monospace, "SF Mono", Menlo, monospace;
+                display:none;font:900 38px ui-monospace, 'SF Mono', Menlo, monospace;
                 color:#ffd98a;text-shadow:0 0 12px rgba(217,123,41,0.9),2px 2px 0 #0b0d12;
                 letter-spacing:1px;line-height:0.9;"></div>
   `;
@@ -474,8 +485,16 @@ export function updateHUD(el: HTMLDivElement): void {
     inner ? `<div style="min-width:78px"><span style="color:#5a6270;font-size:8px;letter-spacing:1px">${label}</span>${inner}</div>` : "";
 
   const body = (el.querySelector("#dungeon-hud-body") as HTMLDivElement) ?? el;
+  // NOTE: the top strip carries white-space:nowrap on the STRIP, not on
+  // individual rows. It is a flex row, so when its contents outgrow the width
+  // every item is squeezed and each wraps its own TEXT onto a second line. That
+  // grew the strip past its min-height and pushed it down through the Targets
+  // row and the SCORE/DEPTH/KILLS cells below, so the rampage HUD rendered with
+  // its own text sliced through. Setting nowrap on just the buff row fixed only
+  // that row — Targets still broke into "ARGETS" / "/5". Inheriting from the
+  // parent covers every child, and overflow:hidden clips the tail cleanly.
   body.innerHTML = `
-    <div style="display:flex;align-items:center;gap:14px;padding:5px 18px 0;min-height:16px;font:${SERIF};font-size:10px;letter-spacing:1px;color:#c8ccd4;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:14px;padding:5px 18px 0;min-height:16px;font:${SERIF};font-size:10px;letter-spacing:1px;color:#c8ccd4;overflow:hidden;white-space:nowrap">
       ${ultChip}
       ${targetsRow}
       ${buffRow}

@@ -1477,6 +1477,11 @@ function debugKillAll(): void {
   for (const z of [...state.zombies]) {
     if (z.mode !== "dead") damageZombie(z, 9999, 0, 0, 0, true); // force: bypass the momentum gates
   }
+  // Kill All can now actually kill the Death Dealer (it is immune to everything
+  // else by design), so the one-per-floor latch has to be released or the Reaper
+  // button silently does nothing for the rest of the floor. debugClearEnemies
+  // already did this; forcing the gates made Kill All need it too.
+  state.reaperOut = false;
 }
 
 /** Yank every enemy (and corpse) off the floor instantly — no FX, no score. */

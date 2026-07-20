@@ -30,7 +30,12 @@ import { clamp, clamp01 } from "../../utils/math";
 const GLOBE_PX = 30; // globe canvas backing size — small so it upscales to CHUNKY pixels
 
 // Pixel typography, shared with the Wolf bar.
-const PX_LABEL = `'Press Start 2P', ui-monospace, "SF Mono", monospace`;
+// SINGLE quotes: this is interpolated into inline `style="..."` attributes, and
+// a double-quoted family name closes the attribute early — every declaration
+// after `font-family` is then silently dropped by the parser. See the same note
+// in ui.ts; it cost two rounds of "fixing" a rule that was never reaching the
+// element.
+const PX_LABEL = `'Press Start 2P', ui-monospace, 'SF Mono', monospace`;
 const PX_NUM = `'VT323', 'Courier New', ui-monospace, monospace`;
 
 // ── module-held element refs (built once) ──
