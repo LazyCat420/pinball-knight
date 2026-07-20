@@ -186,6 +186,41 @@ describe("decorateMaze", () => {
     }
   });
 
+  it("PATH-FIRST: speed parts fire DOWN-FLOW (toward the exit), not back the way you came", () => {
+    // The reported bug: "you'll just speed up into a booster that just sends you
+    // back." Speed parts (ramp/slingshot/booster) should point down the
+    // dist-from-start gradient — onward — with only a small kickback minority.
+    // Measured on the REAL pipeline (thickened + widened artery + endpoints),
+    // which is the floor the player actually gets and where forward runway
+    // exists — a raw un-thickened maze has corridors too short to launch down.
+    let forward = 0;
+    let backward = 0;
+    for (let seed = 500; seed < 545; seed++) {
+      const raw = generateMaze(14, 11, mulberry32(seed));
+      const rooms0 = carveRooms(raw, mulberry32(seed + 1), 3, 2, 4);
+      crackSecretWalls(raw, mulberry32(seed + 2), 3);
+      const g = thickenWalls(raw);
+      const rooms = rooms0.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+      const ends = pickEndpoints(g, mulberry32(seed + 5));
+      if (!ends) continue;
+      widenMainArtery(g, ends);
+      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 12, rooms, { endpoints: ends });
+      const dist = bfsDistances(g, ends.start.i, ends.start.j);
+      for (const part of plan.parts) {
+        if (part.kind !== "ramp" && part.kind !== "slingshot" && part.kind !== "booster") continue;
+        if (part.vault) continue; // vault ramps aim AT a wall on purpose
+        if (part.dirI === 0 && part.dirJ === 0) continue;
+        const fwd = dist[idx(g, part.i + part.dirI, part.j + part.dirJ)]; // tile it fires into
+        const bwd = dist[idx(g, part.i - part.dirI, part.j - part.dirJ)]; // behind it
+        if (fwd > bwd) forward++;
+        else if (bwd > fwd) backward++;
+      }
+    }
+    expect(forward + backward, "not enough speed parts sampled").toBeGreaterThan(30);
+    // The great majority lead onward; a kickback/runway-forced minority is fine.
+    expect(forward, `only ${forward}/${forward + backward} speed parts point onward`).toBeGreaterThan(backward * 3);
+  });
+
   it("D2: an ORBIT is a complete ring of four rails, seq 0-3, or it isn't tagged at all", () => {
     // A partial ring can never be lapped, so decorate must strip the tags
     // rather than ship a circuit the player can't finish.

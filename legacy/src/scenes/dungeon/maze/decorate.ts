@@ -219,6 +219,20 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 /** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
 const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
+
+/**
+ * PATH-FIRST flow: the "speed up" parts must shove you ONWARD toward the exit,
+ * not back the way you came (the "booster that just sends you back" bug). We
+ * orient these down the dist-from-start gradient. `spring` (a dead-end plunger,
+ * aims out the one opening) and `flipper` (a redirect) are deliberately NOT here
+ * — their direction is already meaningful.
+ */
+const FORWARD_FLOW_KINDS = new Set<string>(["ramp", "slingshot"]);
+/**
+ * …but a table needs the odd rebound, so leave this fraction of speed parts as
+ * a deliberate kickback rather than a pure conveyor belt toward the stairs.
+ */
+const KICKBACK_CHANCE = 0.15;
 /**
  * CHAIN SEEDING — the thing that makes a floor read as a pinball TABLE rather
  * than a maze with parts sprinkled in it.
@@ -417,6 +431,12 @@ function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array)
       }
     }
   }
+}
+
+/** dist-from-start at a tile, or -1 out of bounds (the flow-field lookup). */
+function distAt(g: Grid, dist: Int32Array, i: number, j: number): number {
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return -1;
+  return dist[idx(g, i, j)];
 }
 
 /** Count consecutive open (floor) tiles stepping (di,dj) from (i,j), capped. */
@@ -623,6 +643,8 @@ function furnishRooms(
   rooms: Room[],
   rng: () => number,
   start: TilePos,
+  g: Grid,
+  dist: Int32Array,
   forceVault = false,
 ): { rooms: PlannedRoom[]; spawns: TilePos[]; items: ItemDrop[]; parts: PinballPartSpot[] } {
   const planned: PlannedRoom[] = [];
@@ -686,7 +708,15 @@ function furnishRooms(
       // all aimed the same way). A wide room gets 2-3 lanes across the short
       // axis so the whole floor of the room is a launch bank, not one thin strip.
       const alongW = room.w >= room.h;
-      const sign = rng() < 0.5 ? 1 : -1;
+      // PATH-FIRST: aim the whole lane DOWN-FLOW (toward the exit), not a coin
+      // flip — a speedway that launches you back at the door is the "speed up
+      // that sends you back" bug at room scale. Compare dist-from-start at the
+      // two ends of the long axis; a small kickback chance keeps some variety.
+      const midShort = alongW ? room.j0 + Math.floor(room.h / 2) : room.i0 + Math.floor(room.w / 2);
+      const dLo = alongW ? distAt(g, dist, room.i0 + 1, midShort) : distAt(g, dist, midShort, room.j0 + 1);
+      const dHi = alongW ? distAt(g, dist, room.i0 + room.w - 2, midShort) : distAt(g, dist, midShort, room.j0 + room.h - 2);
+      let sign = dHi >= dLo ? 1 : -1;
+      if (rng() < KICKBACK_CHANCE) sign = -sign;
       const longLen = alongW ? room.w : room.h;
       const shortLen = alongW ? room.h : room.w;
       const nLanes = clamp(Math.floor(shortLen / 3), 1, 3);
@@ -827,7 +857,7 @@ export function decorateMaze(
   // the general placement (and its spacing rules) works around it. General
   // placement also stays OUT of room interiors — each room is its archetype's
   // set piece, not another stretch of corridor. ──
-  const furnished = furnishRooms(rooms, rng, start, extras.forceVault);
+  const furnished = furnishRooms(rooms, rng, start, g, dist, extras.forceVault);
   const inRoom = (p: TilePos): boolean =>
     rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
 
@@ -1024,11 +1054,24 @@ export function decorateMaze(
       const cand = pool.pop()!;
       if (parts.some((q) => Math.abs(q.i - cand.i) + Math.abs(q.j - cand.j) < 3)) continue; // spacing
       let spot = spotForKind(kind, cand, rng);
+      // PATH-FIRST flow: point a "speed up" part DOWN-FLOW (toward the exit /
+      // higher dist-from-start), so it launches you onward instead of back the
+      // way you came. `dist` is the BFS-from-start field, already reflecting the
+      // widened artery. Occasionally leave it as a deliberate kickback.
+      if (FORWARD_FLOW_KINDS.has(kind) && (spot.dirI !== 0 || spot.dirJ !== 0)) {
+        const fwd = distAt(g, dist, spot.i + spot.dirI, spot.j + spot.dirJ);
+        const bwd = distAt(g, dist, spot.i - spot.dirI, spot.j - spot.dirJ);
+        if (bwd > fwd && rng() > KICKBACK_CHANCE) spot = { ...spot, dirI: -spot.dirI, dirJ: -spot.dirJ };
+      }
       // No-orphan (Slice 3): a launch part must have RUNWAY in its fire
       // direction, or it just shoots you into a wall a tile away. Flip to the
       // opposite (still-open) side if that has room; else skip this candidate.
       if (LAUNCH_KINDS.has(kind) && (spot.dirI !== 0 || spot.dirJ !== 0)) {
         if (launchRunway(g, spot.i, spot.j, spot.dirI, spot.dirJ) < MIN_RUNWAY) {
+          // A forward-flow part must NOT be flipped backward just to find runway
+          // — that's exactly how a ramp ends up pointing home. Skip this spot and
+          // let the deal try a tile where onward IS open (there are plenty).
+          if (FORWARD_FLOW_KINDS.has(kind)) continue;
           if (launchRunway(g, spot.i, spot.j, -spot.dirI, -spot.dirJ) >= MIN_RUNWAY) {
             spot = { ...spot, dirI: -spot.dirI, dirJ: -spot.dirJ };
           } else {
@@ -1101,17 +1144,30 @@ export function decorateMaze(
     if (lanesPlaced >= LANE_COUNT) break;
     if (inRoom(p) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 5) continue;
     for (const [ai, aj] of shuffled(laneAxes, rng)) {
-      // A run of LANE_LEN+1 floor tiles along the axis (the pads + one tile of
-      // runway past the end) that stays out of rooms and clear of other parts,
-      // and isn't the stairs tile. Wide corridors are fine — the pads snap your
-      // heading to the axis, so the lane rails you straight down it regardless.
-      const runOk = Array.from({ length: LANE_LEN + 1 }, (_, s) => s).every(
+      // The LANE_LEN pad tiles must be floor, clear of other parts, not stairs.
+      // Wide corridors are fine — the pads snap your heading to the axis, so the
+      // lane rails you straight down it regardless.
+      const padsOk = [0, 1, 2].every(
         (s) => at(g, p.i + ai * s, p.j + aj * s) === T_FLOOR && !(p.i + ai * s === stairs.i && p.j + aj * s === stairs.j),
       );
       const clear = [0, 1, 2].every((s) => !parts.some((q) => Math.abs(q.i - (p.i + ai * s)) + Math.abs(q.j - (p.j + aj * s)) < 2));
-      if (!runOk || !clear) continue;
+      if (!padsOk || !clear) continue;
+      // PATH-FIRST: a speed lane must fire DOWN-FLOW (toward the exit), never
+      // back the way you came — the old code hardcoded +x/+z, so half of them
+      // shoved you backward. Look at the open exit past each end of the pad
+      // cluster and point the pads toward whichever is further from the start.
+      const fwdI = p.i + ai * LANE_LEN;
+      const fwdJ = p.j + aj * LANE_LEN; // one past the last pad
+      const bwdI = p.i - ai;
+      const bwdJ = p.j - aj; // one before the first pad
+      const fwdOpen = at(g, fwdI, fwdJ) === T_FLOOR && !(fwdI === stairs.i && fwdJ === stairs.j);
+      const bwdOpen = at(g, bwdI, bwdJ) === T_FLOOR && !(bwdI === stairs.i && bwdJ === stairs.j);
+      if (!fwdOpen && !bwdOpen) continue; // no runway either way — not a real lane
+      const fwdD = fwdOpen ? distAt(g, dist, fwdI, fwdJ) : -Infinity;
+      const bwdD = bwdOpen ? distAt(g, dist, bwdI, bwdJ) : -Infinity;
+      const sign = fwdD >= bwdD ? 1 : -1; // point toward the higher dist-from-start
       for (let s = 0; s < LANE_LEN; s++) {
-        parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "booster", dirI: ai, dirJ: aj, dir2I: 0, dir2J: 0 });
+        parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "booster", dirI: ai * sign, dirJ: aj * sign, dir2I: 0, dir2J: 0 });
       }
       lanesPlaced++;
       continue laneSearch;
