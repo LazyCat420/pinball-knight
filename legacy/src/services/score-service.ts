@@ -3,7 +3,7 @@
  * Handles server persistence with a localStorage fallback for offline or offline-mode play.
  */
 
-import { BACKEND_API_URL } from "./api-config";
+import { BACKEND_API_URL, isRemoteBackendEnabled } from "./api-config";
 
 export interface LeaderboardEntry {
   name: string;
@@ -83,6 +83,9 @@ interface BackendScoreItem {
  * Fetch the leaderboard from the backend service. Falls back to cached local storage.
  */
 export async function fetchLeaderboard(game: GameId = DEFAULT_GAME): Promise<LeaderboardEntry[]> {
+  // Skip the network entirely when the backend isn't reachable from this origin
+  // (public site pointed at a private LAN backend) — use the local board.
+  if (!isRemoteBackendEnabled()) return getLeaderboard(game);
   try {
     const response = await fetch(`${BACKEND_API_URL}/api/scores?game=${encodeURIComponent(game)}`);
     if (response.ok) {
@@ -154,6 +157,10 @@ export async function saveLeaderboardScore(
   } catch (error) {
     console.error("[ScoreService] Error saving leaderboard locally:", error);
   }
+
+  // Local board is already saved above; only push to the server when it's
+  // actually reachable from here, otherwise we'd just spam failed requests.
+  if (!isRemoteBackendEnabled()) return false;
 
   try {
     const response = await fetch(`${BACKEND_API_URL}/api/scores`, {

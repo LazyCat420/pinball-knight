@@ -174,6 +174,8 @@ import {
   COIN_MAX_PER_DROP,
   COIN_LIVE_CAP,
   COIN_STACK_VALUE,
+  COIN_DROP_SCALE,
+  COIN_STACK_DROP_SCALE,
   GOLD_PER_KILL,
   DROP_CLEAR_RANGE,
   PPU,
@@ -1855,8 +1857,11 @@ function spawnCoin(x: number, z: number, value: number): void {
     // instead of clumping — an even ring reads as "it burst out of the thing".
     const ang = (i / n) * Math.PI * 2 + Math.random() * 0.9;
     const spd = COIN_BURST_SPREAD * (0.45 + Math.random() * 0.75);
-    const paint = parts[i] >= COIN_STACK_VALUE ? ITEM_PAINTS.coinStack : ITEM_PAINTS.coin;
+    const isStack = parts[i] >= COIN_STACK_VALUE;
+    const paint = isStack ? ITEM_PAINTS.coinStack : ITEM_PAINTS.coin;
     const sprite = createStaticSprite(paint);
+    // Shrink the dropped token to a Diablo-style pile — see COIN_DROP_SCALE.
+    sprite.mesh.scale.multiplyScalar(isStack ? COIN_STACK_DROP_SCALE : COIN_DROP_SCALE);
     sprite.mesh.position.set(x, COIN_SPAWN_Y, z);
     state.scene.add(sprite.mesh);
     state.groundItems.push({

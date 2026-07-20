@@ -5,7 +5,7 @@
  * URLs, do not call fetch, and do not cast the response to `any[]`.
  */
 
-import { BACKEND_API_URL } from "./api-config";
+import { BACKEND_API_URL, isRemoteBackendEnabled } from "./api-config";
 
 /**
  * Request/response shapes.
@@ -59,6 +59,10 @@ export class YouTubeSyncError extends Error {
  * underlying error if the request never completed.
  */
 export async function syncChannels(channels: ChannelRequest[]): Promise<ResultObj> {
+  // Don't fire at a backend we can't reach from this origin (public site → LAN).
+  if (!isRemoteBackendEnabled()) {
+    throw new YouTubeSyncError("Backend not reachable from this origin", 0);
+  }
   const response = await fetch(`${BACKEND_API_URL}/api/youtube-sync`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

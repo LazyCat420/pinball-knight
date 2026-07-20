@@ -330,8 +330,12 @@ export const SPRINT_SPEED_MULT = 1.85; // top speed multiplier at full sprint ch
  * "sprint charge" that ramps over SPRINT_RAMP_TIME (see below) — that's the
  * gear you have to wind up, not the base walk.
  */
-export const MOVE_ACCEL = 22; // units/sec² toward the desired velocity
-export const MOVE_FRICTION = 26; // units/sec² decel when no input
+// Tuned up 2026-07-20: at 22/26 there was a ~0.19s spool-up to full walk speed
+// on every keypress and a ~0.16s glide on release, which read as "slightly
+// sluggish". At 55/42 the ramp is ~0.08s start / ~0.10s stop — taps feel
+// immediate while still avoiding the jitter of a hard instant-velocity snap.
+export const MOVE_ACCEL = 55; // units/sec² toward the desired velocity
+export const MOVE_FRICTION = 42; // units/sec² decel when no input
 /** Camera leads a little further ahead while sprinting (no ortho FOV trick available). */
 /**
  * Sprint is a COMMITMENT you spool up, not an instant toggle. Holding Shift while
@@ -1194,6 +1198,15 @@ export const COIN_MAX_PER_DROP = 6;
 export const COIN_LIVE_CAP = 28;
 /** A coin worth at least this much paints as a STACK rather than a single token. */
 export const COIN_STACK_VALUE = 5;
+/**
+ * Dropped coins render at a fraction of the full sprite footprint so a burst
+ * reads as a Diablo-style PILE of tiny tokens on the floor, not a scatter of
+ * dinner-plate discs. Applied to the mesh scale at spawn — the shared sprite
+ * quad and every other item stay full size. Stacks get a hair more presence
+ * than singles so the high-value drop still stands out.
+ */
+export const COIN_DROP_SCALE = 0.4;
+export const COIN_STACK_DROP_SCALE = 0.5;
 /**
  * A weapon dropped in an exchange can't be re-grabbed until you've stepped
  * this far away from it — otherwise the drop and the pickup ping-pong while
