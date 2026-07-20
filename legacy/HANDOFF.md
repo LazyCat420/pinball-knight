@@ -2,12 +2,12 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `7f62935`, service `dee17f0`, both on synology, both verified
+**Live:** client `64c7184`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
-- 482 client tests, 28 service tests, production build clean.
-- Repo tsc errors ~5955.
+- 556 client tests, 28 service tests, production build clean.
+- Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
 
@@ -109,34 +109,44 @@ the only place the backend URL is spelled.
 
 ---
 
+## Pinball Knight — the plan's open list is cleared
+
+`src/scenes/dungeon/PINBALL_KNIGHT_PLAN.md` was rewritten against the actual
+code (the 2026-07-17 revision had gone stale — most of its A/B/C programme
+shipped in waves 12-14b), then its whole §1 was built. Highlights:
+
+- **The dungeon submits scores.** It never had. `run-score.ts` grades a run
+  DEPTH-DOMINANT: one floor deeper beats any amount of farming the floor above,
+  because death restarts at floor 1 and a board rewarding a safe early floor
+  would fight the Death Dealer. The run-scoped ledger is separate from the
+  per-floor one `startLevel` wipes — without that the board would only ever see
+  the FINAL floor's combo.
+- **`services/player-name.ts` is shared across every game.** Pirate Surf posted
+  to the shared board without ever asking for a name, so every row rendered as
+  the server's `"???"`. A name belongs to the player, not one game.
+- **Damage numbers, card-pickup previews, best-depth persistence**, an
+  off-window stairs chevron, archetype room washes on the full map, and a
+  ground shadow that stays on the ground while you're airborne.
+- **`render/pinball-parts.ts` is exhaustive now.** A new `PinballPartKind` used
+  to typecheck, collide correctly, and render nothing.
+
+**The "control inversion" is solved and it was never an inversion.** Movement
+and aim share one code path with no sign error anywhere. `arrowleft`/`arrowright`
+were bound in `MOVE_KEYS` *and* `TURN_LEFT`/`TURN_RIGHT`, both read from the same
+held-key set, so in FPS mode Left strafed AND rotated on the same frame.
+`input.test.ts` now forbids double-binding. ROADMAP §6 / VERIFY_CHECKLIST §6 can
+be closed.
+
+**The biggest remaining risk is that nobody has playtested the game.**
+`VERIFY_CHECKLIST.md` is 40 items with zero checked. That outranks every unbuilt
+feature left in the plan.
+
+---
+
 ## Open items
 
-Ordered by what I'd do first.
-
-1. **The dungeon never submits scores.** The service is ready (`POST
-   /api/scores` with `game: "pinball-knight"` and a JSON `detail` blob) and
-   `src/services/score-service.ts` is game-aware, but nothing in
-   `scenes/dungeon/` calls it. Death or descent should post score/floor/combo.
-   This is the biggest gap between "built" and "useful".
-
-2. **`render/pinball-parts.ts` still has the old shape.** Two if/else chains
-   (~42 branches) over `part.kind` for mesh building and animation. Collision was
-   converted to an exhaustive record precisely because a missing branch there
-   was silently applying the wrong physics for months; these two are the same
-   hazard, unconverted.
-
-3. **`LevelPlan` is dropped after `buildMaze`.** `LevelPlan.rooms` carries room
-   archetypes (speedway / bumper / arena / vault) and `LevelPlan.frog`, but only
-   the `state.maze` handle survives `startLevel`. Stash the plan on `state` and
-   the floor map can label rooms.
-
-4. **Minimap has no off-screen stairs indicator.** Once the stairs are outside
-   the 23×23 window there's no hint which way to go.
-
-5. **Tavern polish:** no camera zoom on station focus; the central pinball
-   diorama animates on a timer rather than reflecting the actual run (lit
-   bumpers should mean completed targets, the ball should move after a strong
-   floor); keepers don't react to being approached.
+Ordered by what I'd do first. (Numbering is not contiguous — resolved items
+are deleted rather than renumbered, per the note at the top of this file.)
 
 6. **Legacy type debt.** ~5975 repo-wide tsc errors, masked by
    `ignoreBuildErrors: true` in `next.config.js`. They're concentrated in
@@ -154,9 +164,11 @@ Ordered by what I'd do first.
    internal in vault `projects.json`, has no reverse proxy, and is not publicly
    routed — if that ever changes, this becomes urgent the same day.
 
-8. **Pirate Surf never asks for a player name.** It now posts to the shared
-   board, and the server defaults the name to `"???"`. Every surf entry will read
-   the same until someone adds a name prompt. Ski already collects one.
+8. **Pirate Surf still doesn't ask for a player name**, but the hard part is
+   done: `src/services/player-name.ts` now exists, is shared across games, and
+   defaults to `KNIGHT` rather than the server's `"???"`. Surf just needs to
+   call `getPlayerName()` instead of passing nothing. Ski already collects one
+   of its own and could migrate to the shared module too.
 
 9. **`SurfUI` declares no fields**, so every property access on it is a tsc
    error — including the new `_scoreSaved`. That's the file's existing pattern,
@@ -167,9 +179,6 @@ Ordered by what I'd do first.
     and the 1–12 name rule exists on both sides. Keeping the repos decoupled was
     the explicit call. Drift shows up as a runtime 400, never a type error, so
     when you add a game remember it is TWO edits.
-
-11. **`render/pinball-parts.ts`** still has the two ~42-branch if/else chains
-    over `part.kind` (see item 2) — unchanged, still the same silent-miss hazard.
 
 ---
 
@@ -199,6 +208,13 @@ Ordered by what I'd do first.
   there. **The jungle room has no such test** and it bit again this pass: a fern
   sat inside the beer pong table's footprint and grew up through the table
   surface. If you touch `room/tropical-plants.ts` placement, screenshot it.
+- **`deploy.sh` builds with `COPY . .` — the WORKING TREE, not git HEAD.** With
+  another session mid-edit in this repo, deploying straight from the shared
+  checkout ships their uncommitted work. Deploy from a clean worktree instead:
+  `git worktree add <dir> HEAD`, symlink `deploy-kit` **beside** it (the script
+  resolves `../deploy-kit/lib.sh` relative to the repo root), run `bash
+  deploy.sh` there, then `git worktree remove <dir> --force`. Verified this
+  session; the banner reads `HEAD@<sha>` rather than `main@<sha>`.
 - **`NEXT_PUBLIC_*` is inlined at BUILD time, so it must be a build ARG.**
   Setting it in `docker-compose.yml` under `environment:` looks right and does
   nothing — the bundle was already compiled. If the leaderboard ever goes quiet
