@@ -529,11 +529,18 @@ export const ORBIT_LAP_BONUS = 15; // each further lap this floor pays this much
 /** ROLLOVER LANES: payout for lighting every lane in one bank. */
 export const LANE_CLEAR_GOLD = 25;
 /**
- * THE PLUNGER (D4): every floor OPENS by firing the knight into play, aimed at
- * the skill-shot target. A table starts by launching the ball; this floor used
- * to start with you standing still in a deliberately calm corner.
+ * THE PLUNGER (D4): every floor OPENS parked in a launch chute the player pulls,
+ * exactly like a real pinball machine. Hold the dodge key (Space / right-click)
+ * to draw the plunger back — power fills over PLUNGER_CHARGE_TIME — while ←/→
+ * steer the launch line up to PLUNGER_AIM_MAX off the base lane; release to fire.
+ * Launch speed scales from PLUNGER_MIN_SPEED (a soft tap) to PLUNGER_SPEED (a
+ * full pull), and a full pull down the base lane lands the SKILL SHOT.
  */
-export const PLUNGER_SPEED = 13;
+export const PLUNGER_SPEED = 13; // launch speed at full pull (≈3× walk — a cannon)
+export const PLUNGER_MIN_SPEED = 6; // a soft tap still fires you into play (≈1.4× walk)
+export const PLUNGER_CHARGE_TIME = 0.85; // seconds of full pull to reach max power
+export const PLUNGER_AIM_MAX = Math.PI / 6; // ±30° of launch steer off the base lane
+export const PLUNGER_AIM_RATE = 1.7; // radians/sec the launch line swings under ←/→
 export const PLUNGER_SKILL_RANGE = 26; // how far out a skill target may sit
 /** SKILL SHOT: the window off the floor's opening plunger launch. */
 export const SKILL_SHOT_WINDOW = 6;
@@ -1106,6 +1113,14 @@ export const ROLL_DURATION = 0.42; // seconds of roll body
 export const ROLL_IFRAMES = 0.22; // invulnerable window (~52% of the roll)
 export const ROLL_DISTANCE = 2.6; // tiles covered, eased fast→slow
 export const ROLL_RECOVERY = 0.1; // rooted, vulnerable whiff after the roll body
+/**
+ * A roll is a MOMENTUM move now: you must already be moving at least this fast
+ * (smoothed walk speed, units/sec) to convert into a tumble. Rolling from a dead
+ * stop is out — you can't dodge-cannon the instant a floor's plunger parks you,
+ * you have to get the knight rolling first. ~0.6× PLAYER_SPEED, so a beat of
+ * running arms it; standing still or barely nudging does not.
+ */
+export const ROLL_MIN_SPEED = 2.5;
 
 // ── Attack timing model (windup → active → recovery), per melee move ──
 /**

@@ -94,6 +94,12 @@ import {
   ROLL_IFRAMES,
   ROLL_DISTANCE,
   ROLL_RECOVERY,
+  ROLL_MIN_SPEED,
+  PLUNGER_SPEED,
+  PLUNGER_MIN_SPEED,
+  PLUNGER_CHARGE_TIME,
+  PLUNGER_AIM_MAX,
+  PLUNGER_AIM_RATE,
   LIGHT_1,
   LIGHT_2,
   COMBO_FINISH,
@@ -120,7 +126,7 @@ import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from ".
 
 import { showPickupNote, showToast } from "../ui";
 import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
-import { rotateLanes } from "../shots";
+import { rotateLanes, armSkillShot } from "../shots";
 import { facingFromVelocity, type Facing } from "../render/animator";
 import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
 import { InputHandle } from "../input";
@@ -128,7 +134,7 @@ import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring } from "../audio";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
 
@@ -276,6 +282,10 @@ function tryStartRoll(input: InputHandle): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g || p.rollT >= 0) return false; // already rolling
+
+  // Momentum gate: a roll is a running move, not a standing one. You have to
+  // have built up speed first — no dodge-cannon straight off the plunger park.
+  if (curSpeed < ROLL_MIN_SPEED) return false;
 
   // Direction: the movement input if any, else the current facing's world dir.
   const a = input.axis();
@@ -1198,6 +1208,77 @@ function facingFromAim(wx: number, wz: number): Facing {
   return s.x > 0 ? "E" : "W";
 }
 
+/**
+ * The current launch line as a unit WORLD direction. Steering happens in SCREEN
+ * space (so ←/→ rotate the line the way the player sees it on the iso floor),
+ * then converts back to world.
+ */
+function plungerDir(): { x: number; z: number } {
+  const s = worldDirToScreen(state.plungerBaseX, state.plungerBaseZ);
+  const base = Math.atan2(s.z, s.x);
+  const ang = base + state.plungerAim;
+  const w = screenDirToWorld(Math.cos(ang), Math.sin(ang));
+  const l = Math.hypot(w.x, w.z) || 1;
+  return { x: w.x / l, z: w.z / l };
+}
+
+/**
+ * THE PLUNGER — a floor opens PARKED in the launch chute. Hold the dodge key
+ * (Space / right-click) to pull the plunger back: power fills over
+ * PLUNGER_CHARGE_TIME. ←/→ steer the launch line ±PLUNGER_AIM_MAX off the base
+ * lane. Release to FIRE — launch speed scales with the pull, and the skill shot
+ * arms the instant the ball is away. Owns the player (returns true) until fired.
+ */
+export function updatePlunger(dt: number, input: InputHandle): boolean {
+  const p = state.player;
+  if (!p || !state.plungerArmed) return false;
+
+  // Safe in the chute — no cheap hit before the ball is even in play.
+  p.iframes = Math.max(p.iframes, dt + 0.05);
+
+  // Drain any queued dodge TAP so releasing the plunger (key up) can't leak
+  // straight into a roll the instant control is handed back.
+  input.consumeDodge();
+
+  // Steer the launch line while parked — whether or not you're pulling yet.
+  const a = input.axis();
+  if (a.x !== 0) {
+    state.plungerAim = Math.max(-PLUNGER_AIM_MAX, Math.min(PLUNGER_AIM_MAX, state.plungerAim + a.x * PLUNGER_AIM_RATE * dt));
+  }
+
+  // Keep the parked knight facing down the current (steered) launch line.
+  const dir = plungerDir();
+  p.facing = facingFromAim(dir.x, dir.z);
+  p.anim.setFacing(p.facing);
+
+  if (input.dodgeHeld()) {
+    state.plungerCharging = true;
+    state.plungerPower = Math.min(1, state.plungerPower + dt / PLUNGER_CHARGE_TIME);
+    syncActorMesh(p);
+    return true;
+  }
+
+  // Released after a real pull → FIRE the knight into play.
+  if (state.plungerCharging && state.plungerPower > 0) {
+    p.momX = dir.x;
+    p.momZ = dir.z;
+    p.momSpeed = PLUNGER_MIN_SPEED + (PLUNGER_SPEED - PLUNGER_MIN_SPEED) * state.plungerPower;
+    p.ramT = 0;
+    if (state.plungerSkill) armSkillShot(state.plungerSkill);
+    sfxSpring();
+    state.shakeT = Math.max(state.shakeT, 0.14 + 0.22 * state.plungerPower);
+    state.vfx?.sparks(p.x, 0.4, p.z, -dir.x, -dir.z, 6);
+    state.plungerArmed = false;
+    state.plungerCharging = false;
+    state.plungerPower = 0;
+    return true;
+  }
+
+  // Parked, not yet pulled — hold position and wait for the player.
+  syncActorMesh(p);
+  return true;
+}
+
 export function updatePlayer(dt: number, input: InputHandle): void {
   const p = state.player;
   const g = state.grid;
@@ -1209,6 +1290,10 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.webbedT = Math.max(0, p.webbedT - dt);
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
+
+  // ── Plunger ── the floor opens parked in the launch chute; the pull/release
+  // owns the player until the ball is fired into play.
+  if (updatePlunger(dt, input)) return;
 
   // ── Trapdoor ── the hatch owns the player while the door swings and you
   // fall through, then the rail owns them for the whole ride.

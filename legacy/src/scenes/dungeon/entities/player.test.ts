@@ -7,10 +7,16 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields } from "../state";
+import { updatePlunger } from "./player";
+import type { InputHandle } from "../input";
 import {
   ROLL_DISTANCE,
   ROLL_DURATION,
   ROLL_IFRAMES,
+  ROLL_MIN_SPEED,
+  PLUNGER_SPEED,
+  PLUNGER_MIN_SPEED,
+  PLUNGER_AIM_MAX,
   PLAYER_IFRAMES,
   LIGHT_1,
   LIGHT_2,
@@ -127,6 +133,95 @@ describe("melee move timings", () => {
 
   it("charge threshold sits above a light's full duration (a tap can't accidentally heavy)", () => {
     expect(CHARGE_TIME).toBeGreaterThan(total(LIGHT_1));
+  });
+});
+
+describe("the plunger launch (a floor opens PARKED in the chute)", () => {
+  function armPlunger(): void {
+    state.player = {
+      x: 0,
+      z: 0,
+      facing: "S",
+      anim: { setFacing() {}, play() {}, setRate() {} },
+      sprite: { mesh: { position: { set() {} } } },
+      ...freshPlayerFields(),
+    } as unknown as typeof state.player;
+    state.plungerArmed = true;
+    state.plungerCharging = false;
+    state.plungerPower = 0;
+    state.plungerAim = 0;
+    state.plungerBaseX = 1; // base launch line = world +x
+    state.plungerBaseZ = 0;
+    state.plungerSkill = null;
+    state.shakeT = 0;
+    state.vfx = null as unknown as typeof state.vfx;
+  }
+
+  /** A fake input: `held` drives the plunger pull, `ax` the ←/→ aim steer. */
+  function input(held: boolean, ax = 0): InputHandle {
+    return {
+      axis: () => ({ x: ax, z: 0 }),
+      consumeAttack: () => false,
+      attackHeldNow: () => false,
+      consumeAttackTap: () => false,
+      sprintHeld: () => false,
+      consumeDodge: () => false,
+      dodgeHeld: () => held,
+      turnAxis: () => 0,
+      consumeMouseDelta: () => ({ dx: 0, dy: 0 }),
+      aimScreen: () => null,
+      dispose: () => {},
+    };
+  }
+
+  beforeEach(armPlunger);
+
+  it("keeps the ball parked and unfired until the plunger is actually pulled", () => {
+    // Two full seconds of NOT touching the plunger — it must just wait, never
+    // auto-launch and never soft-lock the floor.
+    for (let i = 0; i < 120; i++) updatePlunger(1 / 60, input(false));
+    expect(state.plungerArmed).toBe(true);
+    expect(state.plungerPower).toBe(0);
+    expect(state.player!.momSpeed).toBe(0);
+  });
+
+  it("charges while held, then FIRES on release into pinball momentum", () => {
+    for (let i = 0; i < 300; i++) updatePlunger(1 / 60, input(true));
+    expect(state.plungerCharging).toBe(true);
+    expect(state.plungerPower).toBe(1); // a long hold tops out at full power
+    updatePlunger(1 / 60, input(false)); // release → launch
+    const p = state.player!;
+    expect(state.plungerArmed).toBe(false);
+    expect(p.momSpeed).toBeCloseTo(PLUNGER_SPEED, 5); // full pull = max launch
+    expect(Math.hypot(p.momX, p.momZ)).toBeCloseTo(1, 5); // a real unit heading
+  });
+
+  it("launch speed scales with the pull — a tap is soft, a full draw is a cannon", () => {
+    updatePlunger(1 / 60, input(true)); // a one-frame tap…
+    updatePlunger(1 / 60, input(false)); // …then release
+    const soft = state.player!.momSpeed;
+    expect(soft).toBeGreaterThanOrEqual(PLUNGER_MIN_SPEED);
+    expect(soft).toBeLessThan(PLUNGER_SPEED);
+    armPlunger();
+    for (let i = 0; i < 300; i++) updatePlunger(1 / 60, input(true)); // a full draw
+    updatePlunger(1 / 60, input(false));
+    expect(state.player!.momSpeed).toBeGreaterThan(soft);
+  });
+
+  it("←/→ steer the launch line but stay clamped to ±PLUNGER_AIM_MAX", () => {
+    for (let i = 0; i < 600; i++) updatePlunger(1 / 60, input(false, 1)); // hold right
+    expect(state.plungerAim).toBeGreaterThan(0);
+    expect(state.plungerAim).toBeLessThanOrEqual(PLUNGER_AIM_MAX + 1e-9);
+    expect(state.plungerArmed).toBe(true); // steering never fires the ball
+  });
+});
+
+describe("the dodge-roll is a momentum move", () => {
+  it("the roll min-speed gate sits in (0, walk speed): running arms it, standing does not", () => {
+    // You can't dodge-cannon from a dead stop (e.g. straight off the plunger
+    // park), but a beat of running clears the gate.
+    expect(ROLL_MIN_SPEED).toBeGreaterThan(0);
+    expect(ROLL_MIN_SPEED).toBeLessThan(PLAYER_SPEED);
   });
 });
 

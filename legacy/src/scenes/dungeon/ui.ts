@@ -318,6 +318,51 @@ export function updateBossBar(el: HTMLDivElement | null, hp: number | null, maxH
   if (fill) fill.style.width = `${clamp((hp / maxHp) * 100, 0, 100)}%`;
 }
 
+/**
+ * THE PLUNGER meter — shown while the floor is parked awaiting launch. A prompt
+ * teaches the pull, and a power bar fills as the player draws the plunger back.
+ */
+export function createPlungerMeter(container: HTMLElement): HTMLDivElement {
+  const el = document.createElement("div");
+  el.id = "dungeon-plunger";
+  el.style.cssText = `
+    position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%);
+    z-index: 10001; width: 300px; display: none;
+    pointer-events: none; user-select: none; text-align: center;
+  `;
+  el.innerHTML = `
+    <div id="dungeon-plunger-prompt"
+         style="font:900 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ffd23f;
+                text-shadow:0 0 8px rgba(255,210,63,0.7),1px 1px 0 #0b0d12;margin-bottom:5px;white-space:nowrap">
+      HOLD [SPACE] — PULL BACK, RELEASE TO LAUNCH · ←/→ AIM
+    </div>
+    <div style="height:14px;background:#0b0d12;border:2px solid #7a5a12;
+                box-shadow:0 0 8px rgba(255,210,63,0.4)">
+      <div id="dungeon-plunger-fill" style="height:100%;width:0%;
+           background:linear-gradient(90deg,#7a5a12,#e0a020 55%,#ffe27a)"></div>
+    </div>`;
+  container.appendChild(el);
+  return el;
+}
+
+/** Drive the plunger meter from the live state each frame. */
+export function updatePlungerMeter(el: HTMLDivElement | null): void {
+  if (!el) return;
+  if (!state.plungerArmed) {
+    el.style.display = "none";
+    return;
+  }
+  el.style.display = "block";
+  const fill = el.querySelector("#dungeon-plunger-fill") as HTMLDivElement | null;
+  if (fill) fill.style.width = `${clamp(state.plungerPower * 100, 0, 100)}%`;
+  const prompt = el.querySelector("#dungeon-plunger-prompt") as HTMLDivElement | null;
+  if (prompt) {
+    prompt.textContent = state.plungerCharging
+      ? "RELEASE [SPACE] TO LAUNCH · ←/→ AIM"
+      : "HOLD [SPACE] — PULL BACK, RELEASE TO LAUNCH · ←/→ AIM";
+  }
+}
+
 /** Blip the muzzle flash + kick the gun barrel down for one shot's recoil. */
 export function flashFpsMuzzle(el: HTMLDivElement | null): void {
   if (!el) return;

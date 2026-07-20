@@ -107,6 +107,7 @@ export function disposeAll(): void {
   state.fpsOverlayEl?.remove();
   state.comboFlashEl?.remove();
   state.bossBarEl?.remove();
+  state.plungerMeterEl?.remove();
   state.container?.remove();
   // The FPS perspective camera holds no GPU resources of its own — just drop it.
   state.fpsCamera = null;

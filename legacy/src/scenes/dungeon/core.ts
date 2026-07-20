@@ -29,13 +29,13 @@ import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type G
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
-import { updateShots, armSkillShot, rotateLanes } from "./shots";
+import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { showCardPickup } from "./card-popup";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
@@ -121,7 +121,6 @@ import {
   TRAPDOORS_PER_FLOOR,
   VAULT_RAMPS_PER_FLOOR,
   FOG_RADIUS,
-  PLUNGER_SPEED,
   PLUNGER_SKILL_RANGE,
   BOOTS_SPEED_FACTOR,
   MAGICIAN_FROM_LEVEL,
@@ -203,7 +202,7 @@ import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxSpring, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
 import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
@@ -660,6 +659,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.fpsOverlayEl = createFpsOverlay(state.container);
   state.comboFlashEl = createComboFlash(state.container);
   state.bossBarEl = createBossBar(state.container);
+  state.plungerMeterEl = createPlungerMeter(state.container);
   state.input = createInput(state.container);
   showControlsHint(state.container);
 
@@ -1157,12 +1157,13 @@ function startLevel(level: number): void {
     return spawnHordeMember(hash, pos.x, pos.z, cfg.zombieSpeed, level);
   });
 
-  // ── D4 THE PLUNGER: every floor OPENS with a launch ──
-  // A pinball table starts by firing the ball into play; this floor used to
-  // start with you standing still in a deliberately calm corner, which is a
-  // maze's opening, not a machine's. Fire the knight down the widened artery
-  // and arm a SKILL SHOT on the nearest scoring part, so the very first thing
-  // that happens on a floor is a shot you can either make or miss.
+  // ── D4 THE PLUNGER: every floor OPENS parked in a launch chute you PULL ──
+  // A real pinball machine starts by drawing the plunger back and firing the
+  // ball into play. The knight is parked; the player holds the dodge key to pull
+  // back (power builds), ←/→ steer the launch line ±30°, release fires. We only
+  // ARM it here (base aim + skill target); the pull/release + launch live in the
+  // player update (updatePlunger). Aim the base line at the nearest scoring part
+  // so a full pull straight down the lane lands a SKILL SHOT.
   {
     const p = state.player;
     const skillPart = state.pinballParts
@@ -1170,19 +1171,28 @@ function startLevel(level: number): void {
       .map((q) => ({ q, d: Math.hypot(q.x - startPos.x, q.z - startPos.z) }))
       .filter((e) => e.d > 4 && e.d < PLUNGER_SKILL_RANGE)
       .sort((a, b) => a.d - b.d)[0]?.q;
-    if (p && skillPart) {
-      // Aim the launch at the skill target so the shot is genuinely makeable —
-      // a plunger you can't convert is just a shove.
-      const dx = skillPart.x - p.x;
-      const dz = skillPart.z - p.z;
+    if (p) {
+      // Base launch line: toward the skill part if there is one, else straight
+      // down the widened artery toward the stairs.
+      let dx = 0;
+      let dz = 1;
+      if (skillPart) {
+        dx = skillPart.x - p.x;
+        dz = skillPart.z - p.z;
+      } else if (state.stairs) {
+        const c = tileCenter(grid, state.stairs.i, state.stairs.j);
+        dx = c.x - p.x;
+        dz = c.z - p.z;
+      }
       const dl = Math.hypot(dx, dz) || 1;
-      p.momX = dx / dl;
-      p.momZ = dz / dl;
-      p.momSpeed = PLUNGER_SPEED;
-      p.ramT = 0;
-      armSkillShot({ i: skillPart.i, j: skillPart.j });
-      sfxSpring();
-      state.shakeT = Math.max(state.shakeT, 0.25);
+      state.plungerBaseX = dx / dl;
+      state.plungerBaseZ = dz / dl;
+      state.plungerSkill = skillPart ? { i: skillPart.i, j: skillPart.j } : null;
+      state.plungerArmed = true;
+      state.plungerCharging = false;
+      state.plungerPower = 0;
+      state.plungerAim = 0;
+      p.momSpeed = 0;
     }
   }
 
@@ -2483,6 +2493,7 @@ function loop(now: number): void {
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");
   updateBossBar(state.bossBarEl, boss ? boss.hp : null, boss ? boss.maxHp ?? null : null);
+  updatePlungerMeter(state.plungerMeterEl);
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
   if (state.scene && renderCam && state.pixelPass) {

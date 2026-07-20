@@ -448,6 +448,8 @@ export const state = {
   prevBounceCombo: 0,
   /** The overlord boss health bar (top-centre, shown only when a boss lives). */
   bossBarEl: null as HTMLDivElement | null,
+  /** The plunger power meter (bottom-centre, shown only while parked to launch). */
+  plungerMeterEl: null as HTMLDivElement | null,
   /** Set by anything that changes a HUD number; core repaints once per frame at most. */
   hudDirty: true,
 
@@ -536,6 +538,21 @@ export const state = {
   laneLit: {} as Record<number, boolean[]>,
   /** Banks completed this floor. */
   lanesCleared: 0,
+
+  // ── D4 THE PLUNGER: the floor opens PARKED in a launch chute you pull ──
+  /** True while the knight is parked awaiting the player's plunger launch. */
+  plungerArmed: false,
+  /** True once the player has grabbed the plunger (held the dodge key ≥1 frame). */
+  plungerCharging: false,
+  /** 0..1 pull amount → launch speed on release. */
+  plungerPower: 0,
+  /** Screen-space aim offset (radians), steered ←/→, clamped ±PLUNGER_AIM_MAX. */
+  plungerAim: 0,
+  /** Base launch direction (unit WORLD vector), down the lane toward the parts. */
+  plungerBaseX: 0,
+  plungerBaseZ: 0,
+  /** Skill-shot target to arm the instant the ball is fired, or null. */
+  plungerSkill: null as { i: number; j: number } | null,
 
   // ── D4 SKILL SHOT: the plunger launch that opens every floor ──
   /** True from the floor's plunger launch until the skill window lapses. */
@@ -790,6 +807,7 @@ export function resetState(): void {
   state.comboFlashEl = null;
   state.prevBounceCombo = 0;
   state.bossBarEl = null;
+  state.plungerMeterEl = null;
   state.hudDirty = true;
   state.renderer = null;
   state.scene = null;

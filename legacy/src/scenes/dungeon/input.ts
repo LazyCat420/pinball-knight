@@ -29,6 +29,8 @@ export interface InputHandle {
   sprintHeld(): boolean;
   /** True once if a dodge (Space) was tapped since the last call — a queued tap. */
   consumeDodge(): boolean;
+  /** True while the dodge key/button (Space / right-click) is HELD — the plunger pull. */
+  dodgeHeld(): boolean;
   /**
    * Keyboard turn axis for the FPS ultimate: -1 (turn left) .. +1 (turn right),
    * from Q/E and the left/right arrows. Lets rampage be driven with the keyboard
@@ -90,6 +92,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   let attackQueued = false;
   let attackHeld = false;
   let dodgeQueued = false;
+  let dodgeDown = false; // held state of Space / right-click (the plunger pull)
   let sprint = false;
   let mouseDx = 0;
   let mouseDy = 0;
@@ -105,7 +108,10 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       if (!e.repeat) attackQueued = true;
       attackHeld = true;
     }
-    if (DODGE_KEYS.has(key) && !e.repeat) dodgeQueued = true;
+    if (DODGE_KEYS.has(key)) {
+      if (!e.repeat) dodgeQueued = true;
+      dodgeDown = true; // held → the plunger pull
+    }
     if (e.key === "Shift") sprint = true;
   };
 
@@ -113,6 +119,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     const key = e.key.toLowerCase();
     down.delete(key);
     if (ATTACK_KEYS.has(key)) attackHeld = false;
+    if (DODGE_KEYS.has(key)) dodgeDown = false;
     if (e.key === "Shift") sprint = false;
   };
 
@@ -127,10 +134,12 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       cursorSeen = true;
     } else if (e.button === 2) {
       dodgeQueued = true; // right-click = dodge roll
+      dodgeDown = true; // held right-click also pulls the plunger
     }
   };
   const onMouseUp = (e: MouseEvent) => {
     if (e.button === 0) attackHeld = false;
+    if (e.button === 2) dodgeDown = false;
   };
   // Free the right mouse button for dodge (no browser context menu over the game).
   const onContextMenu = (e: MouseEvent) => e.preventDefault();
@@ -152,6 +161,7 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
   const onBlur = () => {
     down.clear();
     attackHeld = false;
+    dodgeDown = false;
     sprint = false;
   };
 
@@ -203,6 +213,9 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
       const want = dodgeQueued;
       dodgeQueued = false;
       return want;
+    },
+    dodgeHeld() {
+      return dodgeDown;
     },
     turnAxis() {
       let t = 0;
