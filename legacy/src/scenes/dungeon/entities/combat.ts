@@ -470,8 +470,15 @@ function killZombie(z: Zombie): void {
   const p = state.player;
   if (p && p.momSpeed > 0) {
     const bonus = Math.min(STYLE_KILL_GOLD_MAX, STYLE_KILL_BASE_GOLD + p.bounceCombo * STYLE_KILL_COMBO_GOLD);
-    state.goldRun += bonus;
-    addGold(bonus, "dungeon-game");
+    // Routed through the coin drop too: a style kill is a bigger physical payout
+    // at the same corpse, so it should visibly drop MORE coins than a plain kill
+    // rather than silently bumping a counter next to a 2-coin pop.
+    if (onCoinDrop) {
+      onCoinDrop(z.x, z.z, bonus);
+    } else {
+      state.goldRun += bonus;
+      addGold(bonus, "dungeon-game");
+    }
     showPickupNote(`💥 STYLE KILL +${bonus}g${p.bounceCombo >= 3 ? ` · combo ×${p.bounceCombo}` : ""}`);
   }
   if (state.fpsActive) {

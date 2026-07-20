@@ -2547,17 +2547,59 @@ function goldIdolItem(): FramePaint {
   };
 }
 
-/** A little pile of gold coins — the kill drop. Warm gold (torch ramp) so it
- * glints and blooms, distinct from the taller idol. */
+/**
+ * ONE struck gold coin — the kill drop. Sprites now render at the 72px grid 1:1
+ * to screen pixels, so this can carry real coin anatomy instead of the old
+ * three-blob pile: a THICKNESS slab under the face (it's an object, not a
+ * decal), a bright raised RIM, a darker recessed FACE so the rim reads as a
+ * lip, a stamped mark, and one hot specular that the bloom pass picks up.
+ *
+ * The ramp is hue-shifted, not lightness-only: the thickness uses SH (cooler,
+ * more saturated toward arcane blue) and the rim HI (warmer, paler toward torch
+ * light). Shading gold by lightness alone reads as muddy brown, and muddy at
+ * sprite resolution reads as blurry.
+ */
+function coinFace(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
+  ell(ctx, cx, cy + 5 * s, 27 * s, 20 * s, SH(15, 0.4)); // thickness slab (cool, in shadow)
+  // Rim is palette 17 STRAIGHT: pushing it up a highlight step lands on white,
+  // and a white-rimmed gold coin reads as silver. Bright must stay gold.
+  ell(ctx, cx, cy, 27 * s, 20 * s, F(17)); // raised rim — the brightest ring
+  ell(ctx, cx, cy, 19 * s, 13.5 * s, F(16)); // recessed face, a step down from the rim
+  // Stamped mark: a fat diamond. A blobby sigil turns to mush at 72px; four
+  // straight edges survive the crush and still say "minted".
+  poly(
+    ctx,
+    [
+      [cx, cy - 8 * s],
+      [cx + 7 * s, cy],
+      [cx, cy + 8 * s],
+      [cx - 7 * s, cy],
+    ],
+    F(17),
+  );
+  line(ctx, [[cx - 20 * s, cy - 8 * s], [cx - 10 * s, cy - 12 * s]], 3 * s, F(18)); // rim glint
+  // Specular stays on the TORCH ramp (18, warm white), not the steel ramp — a
+  // steel-white spark stippled cold blue against the gold under the dither.
+  ell(ctx, cx - 15 * s, cy - 11 * s, 2.4 * s, 2 * s, F(18));
+}
+
 function coinItem(): FramePaint {
   return (ctx) => {
-    groundShadow(ctx, 64, 98, 14);
-    ell(ctx, 66, 96, 5, 2.5, F(16)); // a spilled coin at the base
-    ell(ctx, 64, 94, 13, 6, F(16)); // lower coin edge (mid gold)
-    ell(ctx, 62, 86, 14, 7, F(16)); // upper coin edge
-    ell(ctx, 62, 85, 11, 5, F(18)); // upper coin face (hot gold)
-    line(ctx, [[57, 84], [63, 88]], 2, F(22)); // rim glint
-    ell(ctx, 60, 84, 1.6, 1.6, F(22)); // hot spark — blooms
+    groundShadow(ctx, 64, 96, 22);
+    coinFace(ctx, 64, 74, 1);
+    celShade(ctx);
+  };
+}
+
+/** A STACK of coins — the big-drop tier (boss windfalls, style kills). Same
+ * anatomy, three deep, so a fat payout is legible as fat at a glance. */
+function coinStackItem(): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 100, 26);
+    coinFace(ctx, 38, 90, 0.6); // a coin spilled beside the stack, drawn first (behind)
+    coinFace(ctx, 70, 88, 0.82); // bottom of the stack
+    coinFace(ctx, 67, 71, 0.88); // middle
+    coinFace(ctx, 64, 53, 0.95); // top — biggest, catches the light
     celShade(ctx);
   };
 }
@@ -2606,6 +2648,7 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   shield: potionItem("#8fc46b"),
   gold: goldIdolItem(),
   coin: coinItem(), // the per-kill coin drop
+  coinStack: coinStackItem(), // the high-value tier (COIN_STACK_VALUE and up)
   // The pinball power-ups — same flask, signature liquids.
   ballform: potionItem("#f0a63c"),
   freeze: potionItem("#bfe8ff"),

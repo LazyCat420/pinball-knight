@@ -16,6 +16,7 @@ import { buildSpriteSheet, createActorSprite } from "../dungeon/render/sprite";
 import { makeKnightPaints } from "../dungeon/render/cel-painter";
 import { Animator, facingFromVelocity, type Facing } from "../dungeon/render/animator";
 import { PPU } from "../dungeon/constants";
+import { screenDirToWorld } from "../dungeon/camera";
 import type { InputHandle } from "../dungeon/input";
 import { moveInRoom, SPAWN } from "./layout";
 import { tavern, type TavernPlayer } from "./state";
@@ -158,8 +159,17 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
       // The input axis is SCREEN-relative; under the isometric yaw, screen-up is
       // a world diagonal. Rotating here is what makes "W" walk away from the
       // camera instead of off to one side.
-      const wx = (a.x - a.z) * ISO;
-      const wz = (a.x + a.z) * ISO;
+      //
+      // This MUST go through the same `screenDirToWorld` the dungeon uses. It
+      // used to hand-roll the rotation as `(a.x - a.z, a.x + a.z) * ISO`, which
+      // is the correct basis turned exactly 90°: W walked screen-RIGHT, A
+      // walked screen-UP, S screen-LEFT, D screen-DOWN. The dungeon was fine
+      // because it always called the shared helper — the tavern was the only
+      // place with a second copy of the maths, and a second copy is the whole
+      // reason the two could disagree. `movement.test.ts` now pins them equal.
+      const w = screenDirToWorld(a.x, a.z);
+      const wx = w.x;
+      const wz = w.z;
       const len = Math.hypot(wx, wz) || 1;
       const speed = WALK_SPEED * (input.sprintHeld() ? HURRY_MULT : 1);
       tx = (wx / len) * speed;

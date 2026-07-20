@@ -1,58 +1,102 @@
 /**
- * ROULETTE — the playable wheel. Pricing lives in `roulette.ts`.
+ * ROULETTE — the playable wheel. Pricing lives in `roulette.ts`, the ball's
+ * physics in `roulette-physics.ts`, the rasteriser in `roulette-art.ts`.
  *
- * Same contract as slots: the pocket is drawn the instant you commit, and the
- * animation is then steered to land on it. A wheel that spins "honestly" and
- * pays whatever it happens to hit sounds purer, but it means the payout can
- * disagree with the visual on any rounding error — and here it would also make
- * the deceleration curve part of the odds, which is not something you can test.
+ * ── THE INVARIANT ───────────────────────────────────────────────────────────
+ * Same contract as slots: the pocket is drawn the INSTANT you commit, before a
+ * single frame is rendered, and the animation is then obliged to show it. An
+ * animation that lands somewhere and pays something else is the worst bug a
+ * gambling game can have, and here it would also make the deceleration curve
+ * part of the odds — which is not something a test can pin down.
  *
- * The ball rides the outer rail, bleeds speed, then drops in — a pinball orbit,
- * which is the whole reason this reads as belonging in the tavern.
+ * What makes this version different from the usual way of honouring that rule
+ * is that the ball is NOT steered. `planSpin` runs the full physical model over
+ * a sweep of physically plausible launch speeds and returns the first
+ * trajectory that lands in the pocket already drawn. So the ball really does
+ * orbit, really does fall off the track when centripetal support gives out,
+ * really does scatter off a diamond and rattle across the frets — and it was
+ * always going to end up where the game had already decided. The croupier's
+ * launch is the free variable, exactly as it is at a real table.
+ *
+ * The trajectory is BAKED at plan time into fixed-rate frames and then replayed
+ * against wall-clock time. That matters for the invariant too: a variable frame
+ * rate cannot integrate a chaotic system reproducibly, so replaying a baked
+ * trajectory is the only way the picture is guaranteed to match the payout on a
+ * slow machine as well as a fast one.
+ *
+ * Sound is wired to the SAME baked frames via `hitsBetween`, so a dropped
+ * animation frame can never drop a fret click, and the audio can never drift
+ * out of sync with the picture.
  */
-import { POCKETS, colorOf, settleBet, BETS, type BetDef } from "./roulette";
+import { POCKETS, settleBet, BETS, type BetDef } from "./roulette";
+import { planSpin, frameAt, hitsBetween, type Spin, type BallFrame } from "./roulette-physics";
+import { drawWheel, drawPanel, clearTable } from "./roulette-art";
+import {
+  sfxWheelSpin,
+  sfxBallLaunch,
+  sfxBallDrop,
+  sfxDeflector,
+  sfxFret,
+  sfxSeat,
+  sfxRouletteWin,
+  sfxRouletteLose,
+  type RouletteSound,
+} from "./roulette-audio";
 import type { CasinoGame } from "./index";
 import type { RoundResult } from "./table";
 
-/** Seconds of orbit before the ball drops. */
-const SPIN_TIME = 2.6;
 /** Seconds the result holds before controls unlock. */
-const SETTLE_HOLD = 1.0;
+const SETTLE_HOLD = 1.9;
+/** Flashes per second on the winning pocket. */
+const FLASH_HZ = 5;
+/** Pockets kept on the history board. */
+const HISTORY = 8;
 
-const C_RED = "#a8323c";
-const C_BLACK = "#1e222c";
-const C_GREEN = "#2e7d4f";
-const C_RIM = "#544e63";
-const C_BALL = "#e8eef7";
-const C_WIN = "#f0c040";
-const C_TEXT = "#c9d1e0";
-
-const POCKET_FILL: Record<string, string> = { red: C_RED, black: C_BLACK, green: C_GREEN };
+/** The wheel's resting state, so the idle screen is still a turning wheel. */
+function idleFrame(rotor: number): BallFrame {
+  return { theta: 0, rotor, radius: 1, height: 1, omega: 0, phase: "seated", hit: "none" };
+}
 
 export function createRouletteGame(): CasinoGame {
-  let t = 0;
   let spinning = false;
   let settleT = 0;
   let pocket = 0;
   let stakeNow = 0;
   let resolveFn: ((r: RoundResult) => void) | null = null;
-  /** Which bet the player has selected. Defaults to the simplest one. */
   let bet: BetDef = BETS[0];
-  /** Ball angle in radians, integrated so deceleration reads as real. */
-  let angle = 0;
-  let landedAngle = 0;
 
-  /** Angle of a pocket's centre. Pocket 0 sits at the top. */
-  const pocketAngle = (n: number): number => (n / POCKETS) * Math.PI * 2 - Math.PI / 2;
+  /** The baked trajectory, and how far into it we are. */
+  let spin: Spin | null = null;
+  let t = 0;
+
+  /** Idle rotor angle, so the wheel is never a still photograph. */
+  let idleRotor = 0;
+  let sound: RouletteSound | null = null;
+  let fretCount = 0;
+  let lastResult: { pocket: number; won: boolean; text: string } | null = null;
+  const history: number[] = [];
+
+  /** Kill the bed. Called from every exit path, including a mid-spin unmount. */
+  const hush = (): void => {
+    if (sound) {
+      sound.stop();
+      sound = null;
+    }
+  };
 
   return {
     id: "roulette",
     name: "ROULETTE",
     blurb: "0-18, single zero · colour/parity/half pay 2x · thirds 3x · a number 18x",
 
-    busy: () => spinning,
+    busy: () => spinning || settleT > 0,
 
     controls: () => BETS.map((b) => ({ id: b.id, label: b.label, on: b.id === bet.id, disabled: spinning })),
+
+    /** Leaving the cabinet mid-spin must not leave the wheel humming. */
+    dispose(): void {
+      hush();
+    },
 
     onControl(id): void {
       if (spinning) return;
@@ -61,115 +105,110 @@ export function createRouletteGame(): CasinoGame {
     },
 
     play(stake, api): void {
+      // ── The outcome, decided here and nowhere else. ──
       pocket = Math.floor(Math.random() * POCKETS);
+      // ...and a trajectory that genuinely arrives at it.
+      spin = planSpin(pocket);
+
       stakeNow = stake;
       resolveFn = api.resolve;
       spinning = true;
-      t = 0;
       settleT = 0;
-      angle = 0;
-      // Land exactly on the drawn pocket after a whole number of laps, so the
-      // deceleration is cosmetic and can never change the result.
-      landedAngle = Math.PI * 2 * 5 + (pocketAngle(pocket) + Math.PI / 2);
+      t = 0;
+      fretCount = 0;
+      lastResult = null;
+      hush();
+      sound = sfxWheelSpin();
+      sfxBallLaunch();
     },
 
     render(ctx, w, h, dt): void {
-      t += dt;
+      // Clamp: a backgrounded tab hands back a huge dt, and stepping the whole
+      // spin in one frame would skip the entire animation the invariant exists
+      // to protect.
+      const step = Math.min(dt, 0.1);
 
-      if (spinning) {
-        // Ease-out cubic: fast orbit, long tail, drops in at the very end.
-        const u = Math.min(1, t / SPIN_TIME);
-        const eased = 1 - Math.pow(1 - u, 3);
-        angle = landedAngle * eased;
-        if (u >= 1) {
+      let frame: BallFrame;
+      if (spinning && spin) {
+        const prev = t;
+        t += step;
+
+        // Audio off the baked frames, so nothing is lost to a dropped frame.
+        for (const hit of hitsBetween(spin, prev, t)) {
+          if (hit === "deflector") sfxDeflector();
+          else if (hit === "fret") sfxFret(fretCount++);
+          else if (hit === "seat") sfxSeat();
+        }
+        if (prev < dropTime(spin) && t >= dropTime(spin)) sfxBallDrop();
+
+        frame = frameAt(spin, t);
+        if (sound) {
+          const revs = Math.abs(frame.omega) / (Math.PI * 2);
+          sound.setBall(revs, Math.min(1, Math.abs(frame.omega) / 18));
+        }
+
+        if (t >= spin.duration) {
           spinning = false;
           settleT = SETTLE_HOLD;
+          hush();
+          history.unshift(pocket);
+          if (history.length > HISTORY) history.pop();
+          const out = settleBet(bet, pocket);
+          const payout = Math.round(stakeNow * out.multiplier);
+          lastResult = {
+            pocket,
+            won: out.multiplier > 0,
+            text: out.multiplier > 0 ? `${bet.label} PAYS ${payout}` : `${bet.label} LOSES`,
+          };
+          if (out.multiplier > 0) sfxRouletteWin(out.multiplier);
+          else sfxRouletteLose();
           if (resolveFn) {
-            const out = settleBet(bet, pocket);
-            resolveFn({
-              game: "roulette",
-              stake: stakeNow,
-              payout: Math.round(stakeNow * out.multiplier),
-              label: out.label,
-            });
+            resolveFn({ game: "roulette", stake: stakeNow, payout, label: out.label });
             resolveFn = null;
           }
         }
-      } else if (settleT > 0) {
-        settleT -= dt;
+      } else if (settleT > 0 && spin) {
+        settleT -= step;
+        // Hold on the last baked frame — the rotor stops with it, which is what
+        // lets the player read the pocket the ball is sitting in.
+        frame = frameAt(spin, spin.duration);
+        if (settleT <= 0) spin = null;
+      } else {
+        // Idle: the wheel turns slowly with no ball on it, the way a real one is
+        // left between spins.
+        idleRotor -= 0.35 * step;
+        frame = idleFrame(idleRotor);
       }
 
-      ctx.fillStyle = "#05070b";
-      ctx.fillRect(0, 0, w, h);
+      clearTable(ctx, w, h);
 
-      const cx = Math.round(w * 0.32);
-      const cy = Math.round(h / 2);
-      const rOuter = Math.min(h * 0.42, w * 0.22);
-      const rInner = rOuter * 0.62;
+      const settling = !spinning && settleT > 0;
+      drawWheel(ctx, {
+        frame,
+        highlight: settling ? pocket : -1,
+        flash: settling ? (Math.floor(settleT * FLASH_HZ * 2) % 2 === 0 ? 1 : 0.4) : 0,
+        showBall: spinning || settling,
+      });
 
-      // ── Pockets ── drawn as wedges, in whole-pixel steps.
-      for (let n = 0; n < POCKETS; n++) {
-        const a0 = pocketAngle(n) - Math.PI / POCKETS;
-        const a1 = pocketAngle(n) + Math.PI / POCKETS;
-        const isWin = !spinning && settleT > 0 && n === pocket;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, rOuter, a0, a1);
-        ctx.closePath();
-        ctx.fillStyle = isWin ? C_WIN : POCKET_FILL[colorOf(n)];
-        ctx.fill();
-      }
-
-      // Hub, so the wedges read as a wheel rather than a pie chart.
-      ctx.beginPath();
-      ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
-      ctx.fillStyle = "#0d1018";
-      ctx.fill();
-      ctx.strokeStyle = C_RIM;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Rim
-      ctx.beginPath();
-      ctx.arc(cx, cy, rOuter, 0, Math.PI * 2);
-      ctx.strokeStyle = C_RIM;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // ── The ball ── a single bright block riding the rail.
-      const ballR = rOuter * 0.86;
-      const ba = angle - Math.PI / 2;
-      const bx = Math.round(cx + Math.cos(ba) * ballR);
-      const by = Math.round(cy + Math.sin(ba) * ballR);
-      ctx.fillStyle = C_BALL;
-      ctx.fillRect(bx - 3, by - 3, 6, 6);
-
-      // Result in the hub, once it settles.
-      if (!spinning && settleT > 0) {
-        ctx.font = "14px 'Press Start 2P', monospace";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = pocket === 0 ? C_GREEN : colorOf(pocket) === "red" ? C_RED : C_TEXT;
-        ctx.fillText(String(pocket), cx, cy);
-      }
-
-      // ── Bet panel ── the current selection, and how to change it.
-      const px = Math.round(w * 0.58);
-      ctx.font = "9px 'Press Start 2P', monospace";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillStyle = "#8a8578";
-      ctx.fillText("YOUR BET", px, 26);
-      ctx.font = "14px 'Press Start 2P', monospace";
-      ctx.fillStyle = C_WIN;
-      ctx.fillText(bet.label, px, 44);
-      ctx.font = "9px 'Press Start 2P', monospace";
-      ctx.fillStyle = C_TEXT;
-      ctx.fillText(`PAYS ${bet.pays}x`, px, 68);
-      if (!spinning) {
-        ctx.fillStyle = "#8a8578";
-        ctx.fillText("PICK A BET ABOVE", px, 96);
-      }
+      drawPanel(ctx, {
+        bets: BETS.map((b) => ({ id: b.id, label: b.label, selected: b.id === bet.id })),
+        pays: bet.pays,
+        stake: stakeNow,
+        history,
+        result: settling ? lastResult : null,
+        spinning,
+      });
     },
   };
+}
+
+/** Time the ball leaves the track, cached on the spin the first time it is asked. */
+const DROP_AT = new WeakMap<Spin, number>();
+function dropTime(spin: Spin): number {
+  const hit = DROP_AT.get(spin);
+  if (hit !== undefined) return hit;
+  const i = spin.frames.findIndex((f) => f.phase !== "track");
+  const at = i < 0 ? spin.duration : (i / spin.frames.length) * spin.duration;
+  DROP_AT.set(spin, at);
+  return at;
 }

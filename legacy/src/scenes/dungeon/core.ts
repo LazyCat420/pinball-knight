@@ -156,7 +156,22 @@ import {
   MAX_FRAME,
   PICKUP_RANGE,
   COIN_MAGNET_RANGE,
-  COIN_MAGNET_PULL,
+  COIN_AURA_RANGE_MULT,
+  COIN_MAGNET_TIME,
+  COIN_CHEST_Y,
+  COIN_MAGNET_ARC,
+  COIN_BURST_VY,
+  COIN_GRAVITY,
+  COIN_BOUNCE,
+  COIN_BURST_SPREAD,
+  COIN_BURST_DRAG,
+  COIN_SETTLE_VY,
+  COIN_ARM_TIME,
+  COIN_REST_Y,
+  COIN_SPAWN_Y,
+  COIN_MAX_PER_DROP,
+  COIN_LIVE_CAP,
+  COIN_STACK_VALUE,
   GOLD_PER_KILL,
   DROP_CLEAR_RANGE,
   PPU,
@@ -184,7 +199,7 @@ import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
 import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
@@ -977,6 +992,10 @@ function spawnPinCrew(g: Grid, centre: TilePos): void {
 function startLevel(level: number): void {
   if (!state.scene) return;
 
+  // Bank any coins still on the old floor BEFORE it's torn down — disposeLevel
+  // deletes ground items outright, and a coin deleted before absorb is gold the
+  // player earned and never received.
+  sweepCoins();
   disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
 
   state.level = level;
@@ -1497,9 +1516,12 @@ function debugClearEnemies(): void {
  * milestone visibly pays out). Registered with combat via setBossDefeatedHandler.
  */
 function dropBossReward(x: number, z: number): void {
+  // The windfall drops as a FISTFUL of coins (spawnCoin caps the count and
+  // self-credits when headless) — the milestone should be something you watch
+  // fly into you, not a number that appears. Deliberately ahead of the scene
+  // guard: the gold must land even in a headless harness.
+  spawnCoin(x, z, BOSS_GOLD);
   if (!state.scene) return;
-  state.goldRun += BOSS_GOLD;
-  addGold(BOSS_GOLD, "dungeon-game");
   showToast("OVERLORD SLAIN", `+${BOSS_GOLD} gold · the way down is clear`);
   const drops: Array<{ id: string; dx: number; dz: number }> = [
     { id: "health", dx: -0.5, dz: 0 },
@@ -1575,6 +1597,9 @@ async function submitRunScore(): Promise<void> {
 function onPlayerDeath(): void {
   if (state.gameOver) return;
   state.gameOver = true;
+  // Bank the loose change before the run is scored — the run tally on the death
+  // screen should include coins that were still mid-flight when you died.
+  sweepCoins();
   // Fire-and-forget at the call site is fine ONLY because submitRunScore itself
   // awaits and logs; the death screen must not wait on the network to appear.
   void submitRunScore();
@@ -1666,23 +1691,219 @@ function dropCardMaybe(x: number, z: number, boss: boolean): void {
   state.groundItems.push({ kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });
 }
 
-/** A kill DROPS coins — a visible gold pop the player magnet-collects. Spawned
- * with a small random scatter + a spark so it reads as loot bursting out. Falls
- * back to an instant credit only when there's no scene (headless). */
+/**
+ * THE ONE PLACE a coin's value reaches the wallet. Absorb, cull and sweep all
+ * funnel through here, which is what makes "never lose and never duplicate
+ * gold" checkable rather than hopeful.
+ */
+function creditGold(v: number): void {
+  if (v <= 0) return;
+  state.goldRun += v;
+  addGold(v, "dungeon-game");
+  state.hudDirty = true;
+}
+
+/** Pull a ground item out of the world: unparent, free its GPU resources, drop
+ * it from the list. Everything that removes an item goes through this. */
+function removeGroundItem(k: number): void {
+  const it = state.groundItems[k];
+  if (!it) return;
+  state.scene?.remove(it.sprite.mesh);
+  it.sprite.dispose();
+  state.groundItems.splice(k, 1);
+}
+
+/**
+ * How many physical coins a drop of `total` gold mints. One coin reads as a
+ * bug; a handful reads as loot. Capped so a boss windfall is a satisfying
+ * fistful and not a coin fountain.
+ */
+export function coinCountFor(total: number): number {
+  return Math.max(1, Math.min(Math.floor(total), COIN_MAX_PER_DROP));
+}
+
+/**
+ * Split `total` gold across `n` coins with ZERO drift: each coin gets the floor
+ * share and the first `remainder` coins get one extra unit, so the values sum to
+ * exactly `total` for every input. (Rounding `total / n` per coin — the obvious
+ * version — either invents gold or eats it, and both are unacceptable when the
+ * split sits between the kill and the wallet.)
+ */
+export function splitCoinValue(total: number, n: number): number[] {
+  const base = Math.floor(total / n);
+  let rem = total - base * n;
+  return Array.from({ length: n }, () => base + (rem-- > 0 ? 1 : 0));
+}
+
+/**
+ * Too many coins on the floor is a frame-rate problem, so the excess is
+ * FORCE-CREDITED (oldest first) rather than left lying around or binned. The
+ * player still gets every unit — they just don't get to watch it fly.
+ */
+function enforceCoinCap(): void {
+  let live = 0;
+  for (const it of state.groundItems) if (it.kind === "coin") live++;
+  for (let k = 0; k < state.groundItems.length && live > COIN_LIVE_CAP; k++) {
+    if (state.groundItems[k].kind !== "coin") continue;
+    creditGold(state.groundItems[k].value ?? 0);
+    removeGroundItem(k);
+    k--;
+    live--;
+  }
+}
+
+/**
+ * The floor is about to be torn down (descend, death, exit): every coin still
+ * lying on it is CREDITED, not binned. Gold earned by killing a thing is the
+ * player's whether or not they walked back over the drop — and disposeLevel
+ * would otherwise silently delete it.
+ */
+export function sweepCoins(): void {
+  for (let k = state.groundItems.length - 1; k >= 0; k--) {
+    if (state.groundItems[k].kind !== "coin") continue;
+    creditGold(state.groundItems[k].value ?? 0);
+    removeGroundItem(k);
+  }
+}
+
+/**
+ * A kill DROPS coins: the payout splits into a small burst of physical tokens
+ * that pop out of the corpse, land, and get magnet-collected. Falls back to an
+ * instant credit only when there's no scene (headless harness).
+ */
 function spawnCoin(x: number, z: number, value: number): void {
+  const total = Math.floor(value);
+  if (total <= 0) return;
   if (!state.scene) {
-    state.goldRun += value;
-    addGold(value, "dungeon-game");
+    creditGold(total);
     return;
   }
-  const cx = x + (Math.random() - 0.5) * 0.4;
-  const cz = z + (Math.random() - 0.5) * 0.4;
-  const sprite = createStaticSprite(ITEM_PAINTS.coin);
-  sprite.mesh.position.set(cx, 0.06, cz);
-  state.scene.add(sprite.mesh);
-  state.groundItems.push({ kind: "coin", id: "coin", value, x: cx, z: cz, sprite, bobPhase: Math.random() * 6 });
-  state.vfx?.sparks(cx, 0.3, cz, 0, 0, 4);
+  const n = coinCountFor(total);
+  const parts = splitCoinValue(total, n);
+  for (let i = 0; i < n; i++) {
+    // Fan the coins evenly around the corpse (plus jitter) so a burst spreads
+    // instead of clumping — an even ring reads as "it burst out of the thing".
+    const ang = (i / n) * Math.PI * 2 + Math.random() * 0.9;
+    const spd = COIN_BURST_SPREAD * (0.45 + Math.random() * 0.75);
+    const paint = parts[i] >= COIN_STACK_VALUE ? ITEM_PAINTS.coinStack : ITEM_PAINTS.coin;
+    const sprite = createStaticSprite(paint);
+    sprite.mesh.position.set(x, COIN_SPAWN_Y, z);
+    state.scene.add(sprite.mesh);
+    state.groundItems.push({
+      kind: "coin",
+      id: "coin",
+      value: parts[i],
+      x,
+      z,
+      sprite,
+      bobPhase: Math.random() * Math.PI * 2,
+      coin: {
+        phase: "burst",
+        y: COIN_SPAWN_Y,
+        vx: Math.cos(ang) * spd,
+        vy: COIN_BURST_VY * (0.85 + Math.random() * 0.3),
+        vz: Math.sin(ang) * spd,
+        age: 0,
+        magT: 0,
+        fromX: x,
+        fromY: COIN_REST_Y,
+        fromZ: z,
+      },
+    });
+  }
+  state.vfx?.sparks(x, COIN_SPAWN_Y, z, 0, 0, 5);
+  enforceCoinCap();
 }
+
+/**
+ * Coin physics — burst, rest, magnet.
+ *
+ * THE OLD BUG, because it is a bug class worth naming: the magnet was
+ * `it.x += (p.x - it.x) * 0.22`, applied once per RENDERED FRAME. That is
+ * exponential approach with the *frame* as its time unit, and it fails twice.
+ * (1) It's far too fast to see: closing 2.6 → 0.45 units takes
+ * log(0.45 / 2.6) / log(1 - 0.22) ≈ 7.1 frames — 118ms — so the coin existed
+ * but nothing about it registered, which is exactly the "it's just the numbers"
+ * complaint. (2) It's frame-rate dependent: the same coin took 118ms at 60Hz
+ * and 49ms at 144Hz, because a per-frame fraction is not a speed, it's a speed
+ * multiplied by whatever the display happens to refresh at.
+ *
+ * The fix is to stop smoothing and start INTEGRATING against `dt`. The burst is
+ * ordinary projectile motion; the magnet is parametrized on ELAPSED TIME
+ * (u = magT / COIN_MAGNET_TIME), so the flight lasts COIN_MAGNET_TIME seconds
+ * at any refresh rate, exactly, and the arc is trivially shapeable. (Where you
+ * genuinely do want exponential smoothing, the frame-rate-correct form is
+ * `1 - Math.pow(1 - rate, dt * 60)` — but a fixed-duration flight is the better
+ * fit for something the player is meant to watch land.)
+ */
+function updateCoins(dt: number): void {
+  const p = state.player;
+  // Magnet Aura widens the coin's OWN capture range rather than dragging the
+  // coin itself (abilities.ts skips coins) — two systems writing one position in
+  // the same frame is how you get jitter and double-speed pickups.
+  const range = COIN_MAGNET_RANGE * (p && p.magnetAuraT > 0 ? COIN_AURA_RANGE_MULT : 1);
+
+  for (const it of state.groundItems) {
+    const c = it.coin;
+    if (!c) continue;
+    c.age += dt;
+
+    if (c.phase === "burst") {
+      c.vy -= COIN_GRAVITY * dt;
+      c.y += c.vy * dt;
+      it.x += c.vx * dt;
+      it.z += c.vz * dt;
+      // Bleed the outward scatter so coins land in a tight ring around the
+      // corpse instead of skating off across the room.
+      const drag = Math.max(0, 1 - COIN_BURST_DRAG * dt);
+      c.vx *= drag;
+      c.vz *= drag;
+      if (c.y <= COIN_REST_Y) {
+        c.y = COIN_REST_Y;
+        if (-c.vy > COIN_SETTLE_VY) {
+          c.vy = -c.vy * COIN_BOUNCE; // one or two diminishing bounces, then still
+        } else {
+          c.phase = "rest";
+          c.vx = c.vy = c.vz = 0;
+        }
+      }
+    } else if (c.phase === "rest") {
+      // Deliberately the SAME bob the other ground items use, so a coin on the
+      // floor reads as part of the same loot system as a potion or a card.
+      c.y = COIN_REST_Y + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.05;
+      if (p && c.age >= COIN_ARM_TIME && Math.hypot(it.x - p.x, it.z - p.z) < range) {
+        c.phase = "magnet";
+        c.magT = 0;
+        c.fromX = it.x;
+        c.fromY = c.y;
+        c.fromZ = it.z;
+      }
+    } else if (p) {
+      // MAGNET: ease-IN toward the LIVE player position (so it keeps homing if
+      // they run) along an arc that RISES to chest height. u² starts slow and
+      // accelerates hard into the body — that acceleration is what reads as
+      // magnetic; a linear slide reads as being dragged on a string.
+      c.magT += dt;
+      const u = Math.min(1, c.magT / COIN_MAGNET_TIME);
+      const e = u * u;
+      it.x = c.fromX + (p.x - c.fromX) * e;
+      it.z = c.fromZ + (p.z - c.fromZ) * e;
+      c.y = c.fromY + (COIN_CHEST_Y - c.fromY) * e + Math.sin(Math.PI * u) * COIN_MAGNET_ARC;
+    }
+
+    // Snap to the pixel grid like the rest of the loot so it doesn't shimmer.
+    it.sprite.mesh.position.set(it.x, Math.round(c.y * PPU) / PPU, it.z);
+  }
+}
+
+/**
+ * Test seam for the coin systems. These are internal to the level loop and need
+ * neither WebGL nor a scene to be meaningful — the invariants worth pinning
+ * (gold never drifts across a split, the flight lasts the same wall-clock time
+ * at any refresh rate, a culled coin is still paid) are all pure enough to
+ * drive headlessly. Not referenced by the game itself.
+ */
+export const __coinInternals = { updateCoins, checkPickups, enforceCoinCap, creditGold };
 
 /** Walk over a card: socket into the active weapon if it fits + has room, else
  * stash it for the Tavern. Returns false (leave it) only if the stash is full. */
@@ -1727,27 +1948,31 @@ function pickUpWeapon(it: GroundItem): void {
 }
 
 /** Walk-over pickups: weapons fill/exchange the hand slots, gear fills its slot. */
-function checkPickups(): void {
+function checkPickups(dt: number): void {
   const p = state.player;
   if (!p) return;
+  updateCoins(dt);
+
   for (let k = state.groundItems.length - 1; k >= 0; k--) {
     const it = state.groundItems[k];
-    let dist = Math.hypot(it.x - p.x, it.z - p.z);
+    const dist = Math.hypot(it.x - p.x, it.z - p.z);
 
     // A weapon you just put down: inert until you actually leave the spot.
     if (it.blockedUntilAway) {
       if (dist > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
       continue;
     }
-    // Coins are MAGNETIC — within range they fly to the player (satisfying, and
-    // so a kill's gold is never left behind). Move it, then re-measure so the
-    // same frame can collect it once it's close.
-    if (it.kind === "coin" && dist < COIN_MAGNET_RANGE && dist > PICKUP_RANGE) {
-      it.x += (p.x - it.x) * COIN_MAGNET_PULL;
-      it.z += (p.z - it.z) * COIN_MAGNET_PULL;
-      it.sprite.mesh.position.x = it.x;
-      it.sprite.mesh.position.z = it.z;
-      dist = Math.hypot(it.x - p.x, it.z - p.z);
+    // A coin is absorbed when its magnet flight ARRIVES, not on proximity: the
+    // flight IS the animation, and cutting it short by walking into the coin
+    // would put us straight back to a number appearing out of nowhere.
+    if (it.kind === "coin") {
+      const c = it.coin;
+      if (c && c.magT < COIN_MAGNET_TIME) continue; // still bursting / resting / flying
+      creditGold(it.value ?? GOLD_PER_KILL);
+      state.vfx?.sparks(it.x, COIN_CHEST_Y, it.z, 0, 0, 7); // absorb flash at the chest
+      sfxCoin();
+      removeGroundItem(k);
+      continue;
     }
     if (dist > PICKUP_RANGE) continue;
 
@@ -1764,10 +1989,6 @@ function checkPickups(): void {
       }
     } else if (it.kind === "card") {
       if (!pickUpCard(it)) continue; // stash full — leave the card on the floor
-    } else if (it.kind === "coin") {
-      const v = it.value ?? GOLD_PER_KILL;
-      state.goldRun += v;
-      addGold(v, "dungeon-game");
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -1779,10 +2000,7 @@ function checkPickups(): void {
     }
     sfxPickup();
     state.hudDirty = true;
-
-    state.scene?.remove(it.sprite.mesh);
-    it.sprite.dispose();
-    state.groundItems.splice(k, 1);
+    removeGroundItem(k);
   }
 }
 
@@ -2045,7 +2263,7 @@ function simulate(dt: number): void {
   updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
-  checkPickups();
+  checkPickups(dt);
 
   // ── Stairs? ──
   const pt = worldToTile(g, p.x, p.z);
@@ -2107,8 +2325,11 @@ function loop(now: number): void {
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
 
-  // Loot bobs gently, snapped to the pixel grid so it doesn't shimmer.
+  // Loot bobs gently, snapped to the pixel grid so it doesn't shimmer. Coins are
+  // skipped: they own their own Y across burst/rest/magnet (updateCoins), and
+  // two writers on one position is a fight, not a bob.
   for (const it of state.groundItems) {
+    if (it.coin) continue;
     const y = 0.06 + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.05;
     it.sprite.mesh.position.y = Math.round(y * PPU) / PPU;
   }
@@ -2199,6 +2420,12 @@ export function exitDungeonGame(): void {
   if (!state.active) return;
 
   const onExit = state.onExitCallback;
+
+  // Leaving mid-run: bank whatever is still rolling around on the floor before
+  // disposeAll deletes it. Every exit from a level now passes through a sweep
+  // (startLevel, onPlayerDeath, here), which is what makes "a coin is credited
+  // exactly once, and never zero times" true for the whole lifecycle.
+  sweepCoins();
 
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);

@@ -1142,10 +1142,48 @@ export const BOOTS_SPEED_FACTOR = 1.18;
 
 /** Walking within this range of a ground item picks it up. */
 export const PICKUP_RANGE = 0.45;
-/** Coins (kill drops) are magnetic — within this range they fly to the player, */
+
+// ── Coin drops — the kill payout ────────────────────────────────
+/**
+ * A dropped coin lives THREE phases: BURST (pops up and out of the corpse under
+ * gravity, lands, bounces), REST (bobs on the floor with the rest of the loot),
+ * MAGNET (arcs up into the knight's chest and is absorbed).
+ *
+ * It used to be one phase: a per-frame `x += (px - x) * 0.22` easing, which ran
+ * spawn-to-collected in ~7 frames (118ms). The coin was genuinely on screen and
+ * genuinely invisible — the player only ever saw the number go up. Every
+ * constant below exists to give the payout enough time on screen to READ as a
+ * physical object coming out of a corpse and into the knight.
+ */
+/** Coins are magnetic — inside this range a resting coin commits to the flight. */
 export const COIN_MAGNET_RANGE = 2.6;
-/** ...easing this fraction of the remaining gap toward the player each frame. */
-export const COIN_MAGNET_PULL = 0.22;
+/** Magnet Aura widens the coin's own capture range rather than dragging coins. */
+export const COIN_AURA_RANGE_MULT = 3;
+/** Seconds the magnet flight takes, capture to absorb. Wall-clock, not frames. */
+export const COIN_MAGNET_TIME = 0.42;
+/** World Y the coin homes on: the knight's CHEST, not the floor it started on. */
+export const COIN_CHEST_Y = 0.62;
+/** Extra lift at the midpoint of the magnet arc, so it floats in, not slides. */
+export const COIN_MAGNET_ARC = 0.34;
+/** Burst launch: up-speed, gravity, restitution, outward scatter speed, drag. */
+export const COIN_BURST_VY = 2.4;
+export const COIN_GRAVITY = 13;
+export const COIN_BOUNCE = 0.42;
+export const COIN_BURST_SPREAD = 1.25;
+export const COIN_BURST_DRAG = 3.2;
+/** Below this landing speed the coin stops bouncing and settles into REST. */
+export const COIN_SETTLE_VY = 0.5;
+/** A coin can't be magnet-captured for this long — the burst must be SEEN. */
+export const COIN_ARM_TIME = 0.3;
+/** Resting height above the floor (matches the other ground items' bob centre). */
+export const COIN_REST_Y = 0.06;
+/** Height a coin is born at, just above the corpse. */
+export const COIN_SPAWN_Y = 0.35;
+/** Coins minted per drop (a drop is split across these), and the live-floor cap. */
+export const COIN_MAX_PER_DROP = 6;
+export const COIN_LIVE_CAP = 28;
+/** A coin worth at least this much paints as a STACK rather than a single token. */
+export const COIN_STACK_VALUE = 5;
 /**
  * A weapon dropped in an exchange can't be re-grabbed until you've stepped
  * this far away from it — otherwise the drop and the pickup ping-pong while

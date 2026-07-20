@@ -190,6 +190,43 @@ export function sfxPickup(): void {
   beep(c, { type: "square", f0: 784, dur: 0.08, vol: 0.08, at: 0.07 });
 }
 
+// ── Coin absorb ─────────────────────────────────────────────────
+/**
+ * A pentatonic ladder, a stagger and a voice cap. One kill mints 2-6 coins that
+ * land within a few hundred ms of each other, so the naive thing — fire the same
+ * chime per coin — produces a buzz (identical partials stacking in phase), not a
+ * jingle. Instead each coin in a cluster takes the NEXT rung of the ladder and is
+ * scheduled COIN_STEP later than the one before, which turns a burst into a
+ * rising arpeggio. The ladder resets after a quiet gap so a lone coin is always
+ * the low, warm root note.
+ */
+const COIN_LADDER = [1046.5, 1174.7, 1396.9, 1568.0, 1864.7, 2093.0];
+/** Hard ceiling on chimes per cluster — the rest bank silently. */
+const COIN_VOICES = 5;
+const COIN_STEP = 0.055; // seconds between successive coins in one cluster
+const COIN_RESET = 0.35; // silence this long starts a fresh ladder
+let coinIdx = 0;
+let coinClusterAt = -1;
+
+/** A coin absorbed into the knight — a bright struck chime with an octave tail. */
+export function sfxCoin(): void {
+  const c = ctx();
+  if (!c) return;
+  const now = c.currentTime;
+  if (now - coinClusterAt > COIN_RESET) {
+    coinIdx = 0;
+    coinClusterAt = now;
+  }
+  if (coinIdx >= COIN_VOICES) return; // cluster full — adding more only muddies it
+  // Schedule relative to the cluster's start so coins arriving in the SAME frame
+  // still come out spaced, then detune a hair so no two are bit-identical.
+  const at = Math.max(0, coinClusterAt + coinIdx * COIN_STEP - now);
+  const f = COIN_LADDER[Math.min(coinIdx, COIN_LADDER.length - 1)] * (0.99 + Math.random() * 0.02);
+  coinIdx++;
+  beep(c, { type: "triangle", f0: f, dur: 0.07, vol: 0.07, at });
+  beep(c, { type: "triangle", f0: f * 2, dur: 0.1, vol: 0.04, at: at + 0.045 });
+}
+
 /** Something you owned just fell apart — a dry crack and clatter. */
 export function sfxBreak(): void {
   const c = ctx();

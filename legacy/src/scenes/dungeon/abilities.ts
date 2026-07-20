@@ -174,6 +174,11 @@ export function tickAbilities(dt: number): void {
     p.magnetAuraT = Math.max(0, p.magnetAuraT - dt);
     for (const it of state.groundItems) {
       if (it.blockedUntilAway) continue;
+      // Coins are NOT dragged here. They run their own burst/rest/magnet flight
+      // (core.updateCoins) and the aura widens that flight's capture range
+      // instead — letting both systems write one coin's position in the same
+      // frame would double its speed and fight the arc.
+      if (it.kind === "coin") continue;
       const dx = p.x - it.x;
       const dz = p.z - it.z;
       const d = Math.hypot(dx, dz) || 1;

@@ -365,6 +365,29 @@ export interface PinballPart {
   mesh: THREE.Object3D;
 }
 
+/**
+ * Live flight state for a dropped coin (`kind === "coin"`). While this exists
+ * the coin OWNS its sprite's world Y for its whole life — the shared ground-item
+ * bob in the render loop skips any item carrying one, so there is exactly one
+ * writer for a coin's height.
+ */
+export interface CoinFlight {
+  phase: "burst" | "rest" | "magnet";
+  /** Height above the floor, world units. */
+  y: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  /** Seconds since the coin was minted — arms the magnet (see COIN_ARM_TIME). */
+  age: number;
+  /** Seconds into the magnet flight; absorb fires at COIN_MAGNET_TIME. */
+  magT: number;
+  /** Where the magnet flight began, so the arc is a clean parametric lerp. */
+  fromX: number;
+  fromY: number;
+  fromZ: number;
+}
+
 export interface GroundItem {
   kind: "weapon" | "gear" | "potion" | "card" | "coin";
   id: string; // WeaponId | GearSlot | PotionId | CardId | "coin"
@@ -378,6 +401,8 @@ export interface GroundItem {
   blockedUntilAway?: boolean;
   /** Gold a coin drop is worth (kind === "coin"). */
   value?: number;
+  /** Burst/rest/magnet flight state (kind === "coin"). See CoinFlight. */
+  coin?: CoinFlight;
 }
 
 export interface Projectile {
