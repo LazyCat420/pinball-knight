@@ -2,11 +2,10 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `28ebd69`, service `dee17f0`, both on synology, both verified
-against the running containers (not dev).
+**Live:** client `121a3eb`, service `dee17f0`, both on synology.
 
-- Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
-- 708 client tests, 28 service tests, production build clean.
+- Client — http://10.0.0.16:5174 (verified HTTP 200 after deploy) · Service — http://10.0.0.16:5175
+- 749 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
@@ -19,6 +18,56 @@ against the running containers (not dev).
 part collision moved to `entities/pinball-collide.ts` as an exhaustive
 `Record<PinballPartKind, handler>`, so adding a part kind is a compile error
 until it's handled.
+
+### Level generation — FLOOR ARCHETYPES (new, `121a3eb`)
+
+Floors used to be one object re-tinted: a uniform-density growing-tree maze with
+rects sprinkled over it. Themes changed furniture, biomes changed colour, but
+nothing changed SHAPE. Four layers now sit on top, all in `maze/`:
+
+- **`archetypes.ts`** — Warrens / Spine / Great Hall / Cavern / Ring Keep.
+  Each returns CELL SEEDS that `generateMaze` pre-carves and grows out of
+  (`MazeOpts.seeds`). Cycles every 5 against the biome's 4 → the pair repeats
+  every 20 floors, not 4. Announced on the descent card.
+- **`prefabs.ts` LANDMARKS** — a 7-11 cell set-piece tier above the furniture
+  stamps (Tilt Table, Pachinko Drop, Grinder, Observatory, Nest). Exactly one
+  per floor via `stampLandmark`, placed FIRST with a wider mortar; regular
+  stamps then fill in around it via `pickFocusCells` hot-zone clustering.
+- **`modifiers.ts`** — Flooded / Blackout / Overcharged / Gilded / Collapsing,
+  rolled from the floor's own seed (not a cycle) so two runs at the same depth
+  differ. Budget multipliers ONLY — a modifier cannot touch connectivity.
+- **braid gradient** — braid ramps down with distance from spawn, so a floor
+  opens flankable and tightens toward the stairs.
+
+**Invariants, and why they hold.** Every archetype is carve-only, so
+connectivity can only increase; `stitchCells` (union-find in `generator.ts`)
+welds any seed shape that came out in pieces, so a seed set need NOT be
+connected. `maze/floor-pipeline.test.ts` mirrors `startLevel`'s exact build
+order over 17 depths × 4 run seeds and asserts start→stairs solvability with no
+stranded tiles — run it after touching any generation stage.
+
+**Defaults are bit-identical.** Absent `seeds` and `braidGradient: 0` leave the
+rng stream and output untouched, so existing floors do not reroll. There are
+tests pinning this; don't let them rot.
+
+**Gotchas found the hard way (all fixed, all have regression tests):**
+- The shuffle bag held ORIENTATIONS, so no-repeat was per-VARIANT — a floor
+  could land four rotations of the Switchback and read as the same room ×4. The
+  bag holds SHAPES now; orientation is drawn after.
+- Hot-zone bias scored candidates BEFORE testing mortar clash. Once stamps
+  clustered, every later draw hit an occupied spot and failed, so only the
+  smallest shape in the pool ever fit — and repeated. Clash test now happens
+  inside the candidate loop. `FOCUS_TRIES` was measured, not guessed: 5
+  collapsed clustering, 10 was break-even, it sits at 12.
+- Welding adjacent seeds opens the walls between cells but LEAVES the even/even
+  corner pillar standing, so the "Great Hall" was really a hypostyle hall — a
+  2×2 column every four tiles after thickening. `MazeOpts.solidSeeds` knocks
+  them out (as `carveRooms` has always done for its rects); it's on for
+  greathall/cavern/ringkeep and a no-op for the 1-cell-wide Spine.
+
+None of these three were caught by the invariant tests — they were all found by
+RENDERING the floors to ASCII and looking at them. Do that when changing
+generation; a floor can be perfectly solvable and still be bad.
 
 **The Tavern (`src/scenes/tavern/`)** — a walkable isometric room between
 floors, not a menu. Five stations plus a descend gate plus a casino corner. Five
