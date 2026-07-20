@@ -29,7 +29,7 @@
  * symbols like ●◆★, which would silently fall back and break the aesthetic.
  */
 import * as THREE from "three";
-import { CAMERA_YAW, CAMERA_TILT, PPU } from "../constants";
+import { CAMERA_YAW, CAMERA_TILT, PPU, SPRITE_PX, SPRITE_UNITS } from "../constants";
 import { awaitPixelFonts, labelFont } from "../pixel-fonts";
 
 /**
@@ -53,6 +53,45 @@ const QUAD_H = TEX_H / PPU;
 
 /** Glyph cell size for the label face (Press Start 2P wants multiples of 8). */
 const FONT_PX = 24;
+
+/**
+ * ── How big a damage number is allowed to be ──────────────────────────────
+ *
+ * The reference is the knight's head: a number must read SMALLER than it, so it
+ * annotates the fight instead of covering it. Everything below is derived rather
+ * than hand-tuned, so if the sprite scale or the font cell ever changes the cap
+ * follows instead of silently drifting.
+ *
+ * The helm dome spans y-13..y+13 in the 128px cel box (see knightHelm in
+ * cel-painter.ts), and the actor plane is SPRITE_UNITS world units tall.
+ */
+/**
+ * Punch-in overshoot applied by damageTextFrame on the first beat. The ceiling
+ * below MUST account for it: the number is at its biggest the instant it spawns,
+ * which is also the moment you are most likely to be looking at it.
+ */
+export const POP_PEAK = 1.45;
+
+const HEAD_PX = 26;
+const HEAD_WORLD_H = (HEAD_PX / SPRITE_PX) * SPRITE_UNITS;
+
+/** Glyph height at scale 1: FONT_PX of a TEX_H-tall texture on a QUAD_H quad. */
+const GLYPH_WORLD_H = (FONT_PX / TEX_H) * QUAD_H;
+
+/**
+ * Ceiling for the LARGEST number in the game (a saturated crit): 85% of head
+ * height AT ITS POP PEAK, so even the biggest hit on its punchiest frame is
+ * clearly smaller than the helm.
+ *
+ * For reference, the previous hand-picked scales ran from 0.85 to 2.2, i.e.
+ * between 1.4x and 3.7x the head — which is why numbers were swallowing the
+ * fight.
+ */
+const MAX_SCALE = (HEAD_WORLD_H * 0.85) / GLYPH_WORLD_H / POP_PEAK;
+
+/** Band helper: a fraction of the ceiling, ramped by magnitude. */
+const band = (lo: number, hi: number, mag: number): number =>
+  MAX_SCALE * (lo + (hi - lo) * mag);
 
 export interface DamageTextStyle {
   /** sRGB tint multiplied over the white glyphs (the outline stays black). */
@@ -86,16 +125,23 @@ export function damageTextStyle(amount: number, kind: DamageTextKind): DamageTex
   // spread sits in the low numbers where most hits actually land.
   const mag = Math.min(1, Math.max(0, Math.log2(Math.max(1, amount)) / 4.6));
   if (kind === "in") {
-    // Damage TAKEN. Always legible, always red — you must never miss this one.
-    return { color: 0xff5563, scale: 1.15 + mag * 0.55, life: 0.95 };
+    // Damage TAKEN. Always legible, always red — you must never miss this one,
+    // so it sits above ordinary outgoing damage in the band.
+    return { color: 0xff5563, scale: band(0.64, 0.84, mag), life: 0.95 };
   }
   if (kind === "crit") {
-    // Amplified hit (rage / pinball synergy): bigger, hotter, hangs longer.
-    return { color: 0xffd24a, scale: 1.5 + mag * 0.7, life: 1.05 };
+    // Amplified hit (rage / pinball synergy): bigger, hotter, hangs longer. Tops
+    // out AT the ceiling, so a saturated crit is the largest number in the game
+    // and still smaller than the knight's head.
+    return { color: 0xffd24a, scale: band(0.76, 1.0, mag), life: 1.05 };
   }
   // Ordinary outgoing damage: near-white for chip, warming toward gold as it
   // climbs, so a big number also reads as a HOT number.
-  return { color: mag > 0.55 ? 0xfff3c8 : 0xffffff, scale: 0.85 + mag * 0.55, life: 0.8 };
+  return {
+    color: mag > 0.55 ? 0xfff3c8 : 0xffffff,
+    scale: band(0.52, 0.72, mag),
+    life: 0.8,
+  };
 }
 
 /**
@@ -111,7 +157,7 @@ export function damageTextStyle(amount: number, kind: DamageTextKind): DamageTex
  */
 export function damageTextFrame(age: number, life: number): { alpha: number; scale: number; rise: number } {
   const t = life > 0 ? Math.min(1, Math.max(0, age / life)) : 1;
-  const pop = t < 0.16 ? 1 + 0.45 * (1 - t / 0.16) : 1;
+  const pop = t < 0.16 ? 1 + (POP_PEAK - 1) * (1 - t / 0.16) : 1;
   const rise = 0.95 * (1 - (1 - t) * (1 - t)); // ease-out: fast then settling
   const alpha = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
   return { alpha, scale: pop, rise };

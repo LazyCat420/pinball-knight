@@ -49,6 +49,29 @@ describe("damageTextStyle", () => {
     expect(damageTextStyle(20, "in").scale).toBeGreaterThan(damageTextStyle(2, "in").scale);
   });
 
+  it("keeps every number smaller than the knight's head", () => {
+    // The head is the reference: a damage number annotates the fight, it does
+    // not cover it. Derived the same way the renderer derives it — helm dome is
+    // 26px in the 128px cel box, on a 1.1 world-unit actor plane; the glyph is
+    // FONT_PX 24 of a 64px texture on a 64/PPU quad.
+    const HEAD_WORLD_H = (26 / 128) * 1.1;
+    const GLYPH_WORLD_H = (24 / 64) * (64 / 64);
+
+    // Sweep the whole damage range including absurd values, every kind — and
+    // measure at the POP PEAK, because a number is at its biggest the instant it
+    // spawns. Checking the settled size only would let the punch-in frame blow
+    // straight past the head.
+    const peak = damageTextFrame(0, 1).scale;
+    expect(peak).toBeGreaterThan(1); // guard: the overshoot is real
+
+    for (const kind of ["out", "in", "crit"] as const) {
+      for (const amount of [1, 2, 5, 12, 24, 100, 9999, 1e9]) {
+        const h = damageTextStyle(amount, kind).scale * GLYPH_WORLD_H * peak;
+        expect(h).toBeLessThan(HEAD_WORLD_H);
+      }
+    }
+  });
+
   it("saturates rather than growing without bound on absurd damage", () => {
     // the debug nuke passes 9999 — it must not produce a screen-filling glyph
     expect(damageTextStyle(9999, "out").scale).toBeLessThan(2);
