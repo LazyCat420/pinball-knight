@@ -551,6 +551,10 @@ export const state = {
   /** Base launch direction (unit WORLD vector), down the lane toward the parts. */
   plungerBaseX: 0,
   plungerBaseZ: 0,
+  /** Live launch direction (base + steer), set each frame while armed — the
+   *  visible plunger rig reads this to orient and the launch fires along it. */
+  plungerDirX: 0,
+  plungerDirZ: 1,
   /** Skill-shot target to arm the instant the ball is fired, or null. */
   plungerSkill: null as { i: number; j: number } | null,
 

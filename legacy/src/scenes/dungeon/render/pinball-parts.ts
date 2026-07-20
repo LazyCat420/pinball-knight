@@ -930,7 +930,71 @@ export function updatePinballParts(dt: number): void {
 }
 
 /** Remove + dispose every part mesh (per-level teardown). */
+// ── THE PLUNGER RIG — the visible launcher, "the thing that hits the marble".
+// Shown only while a floor is parked awaiting launch (state.plungerArmed): a
+// chute that hugs the knight plus a gold striker head that draws back with the
+// charge and would whack the knight into play on release. Local +X is the
+// launch direction; the rig yaws to the live launch line and rides the player. ──
+let plungerRig: THREE.Group | null = null;
+
+function buildPlungerRig(): THREE.Group {
+  const g = new THREE.Group();
+  // Two chute rails hugging the launch line, so the knight reads as "in the lane".
+  const railMat = std(C_STEEL_DK);
+  for (const zside of [-0.5, 0.5]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 0.1), railMat);
+    rail.position.set(-0.65, 0.09, zside);
+    g.add(rail);
+  }
+  // The back stop the striker rests against at full pull.
+  const stop = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 1.12), std(C_STEEL));
+  stop.position.set(-1.78, 0.25, 0);
+  g.add(stop);
+  // The STRIKER: a gold head + shaft behind the knight that pulls back with the
+  // charge (its x is driven in updatePlungerRig) and faces the launch.
+  const striker = new THREE.Group();
+  striker.name = "striker";
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.44, 0.72), std(C_GOLD, C_GOLD, 0.4));
+  head.position.set(0, 0.3, 0);
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.13, 0.13), std(C_STEEL));
+  shaft.position.set(-0.36, 0.3, 0);
+  striker.add(head, shaft);
+  striker.position.set(-0.8, 0, 0);
+  g.add(striker);
+  return g;
+}
+
+/** Show/position the plunger rig each frame; a no-op unless a floor is parked. */
+export function updatePlungerRig(): void {
+  const p = state.player;
+  const armed = state.plungerArmed && !!p && !!state.scene;
+  if (!plungerRig) {
+    if (!armed) return;
+    plungerRig = buildPlungerRig();
+    state.scene!.add(plungerRig);
+  }
+  plungerRig.visible = !!armed;
+  if (!armed || !p) return;
+  plungerRig.position.set(p.x, 0, p.z);
+  // local +X → world launch dir: rotation.y θ maps +X to (cosθ, 0, -sinθ).
+  plungerRig.rotation.y = Math.atan2(-state.plungerDirZ, state.plungerDirX);
+  const striker = plungerRig.getObjectByName("striker");
+  if (striker) striker.position.x = -(0.8 + state.plungerPower * 0.95); // draw back with charge
+}
+
+function disposePlungerRig(scene: THREE.Scene | null): void {
+  if (!plungerRig) return;
+  scene?.remove(plungerRig);
+  plungerRig.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    (m.material as THREE.Material | undefined)?.dispose?.();
+  });
+  plungerRig = null;
+}
+
 export function disposePinballParts(scene: THREE.Scene | null): void {
+  disposePlungerRig(scene); // rebuilt with the current scene on the next armed floor
   for (const part of state.pinballParts) {
     scene?.remove(part.mesh);
     part.mesh.traverse((o) => {

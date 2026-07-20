@@ -1053,16 +1053,18 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     lightPool.push(light);
   }
 
-  // ── Curved walls — a quarter-cylinder wedge capping each banked corner
-  // (collision.computeArcCorners), so the maze reads as pinball RETURN LANES,
-  // not right angles. Physics is the point-trigger bank in player.ts; this is
-  // the visual, and every one of these sits on a genuinely sweepable corner (a
-  // ≥2×2 open pocket), NOT the random dogleg the old deflector part scattered.
-  // Two InstancedMeshes share the per-corner matrix: the cylinder body + an
-  // emissive-gold rim rail along the top edge that sells the banked-rail read
-  // (emissive, so it glows without the env map a metal material would need).
+  // ── Curved walls — a FULL-HEIGHT quarter-cylinder that rounds each banked
+  // corner (collision.computeArcCorners), so the concave corner where two walls
+  // meet reads as a swept pinball return lane instead of a right angle. Physics
+  // is the point-trigger bank in player.ts; this is the visual, and every one
+  // sits on a genuinely sweepable corner (a ≥2×2 open pocket).
+  //
+  // NB (2026-07-20): an earlier pass drew this half-height with an emissive-gold
+  // rim torus riding the top — the wedge got buried by the full-height walls and
+  // only the rim showed, as a gold arc FLOATING in mid-air with nothing under
+  // it. Full-height + wall material + no floating rim = it reads as a wall.
   if (arcs.length) {
-    const wedgeH = WALL_H * 0.5; // was WALL_LOW*0.82 (~0.29) — buried; now clearly a curve
+    const wedgeH = WALL_H; // full wall height — the rounded corner IS the wall here
     // Quarter cylinder: axis = the corner's right angle, curved face bulging in.
     const wedgeGeo = track(new THREE.CylinderGeometry(ARC_WEDGE_R, ARC_WEDGE_R + 0.06, wedgeH, 14, 1, false, 0, Math.PI / 2));
     const wedgeTex = track(makeCapTexture());
@@ -1070,12 +1072,6 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const wedge = new THREE.InstancedMesh(wedgeGeo, wedgeMat, arcs.length);
     wedge.castShadow = true;
     wedge.receiveShadow = true;
-    // The gold rim rail: a quarter-torus laid flat (rotateX) so its arc lines up
-    // with the cylinder's +x→+z quarter, riding the top rim of the curved face.
-    const rimGeo = track(new THREE.TorusGeometry(ARC_WEDGE_R, 0.055, 6, 14, Math.PI / 2));
-    rimGeo.rotateX(-Math.PI / 2);
-    const rimMat = track(new THREE.MeshStandardMaterial({ color: 0x2a2214, emissive: 0xffcf5a, emissiveIntensity: 0.65, roughness: 0.6, metalness: 0.0 }));
-    const rim = new THREE.InstancedMesh(rimGeo, rimMat, arcs.length);
     // The default quarter fills the (+x,+z) quadrant from its axis; rotate so it
     // faces the OPEN interior of each corner (see collision.ts qi/qj).
     const rotFor = (qi: number, qj: number): number =>
@@ -1091,16 +1087,10 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       pos.set(cxr, wedgeH / 2, czr);
       m.compose(pos, q, one);
       wedge.setMatrixAt(k, m);
-      pos.set(cxr, wedgeH, czr); // the rail rides the top rim
-      m.compose(pos, q, one);
-      rim.setMatrixAt(k, m);
     });
     wedge.instanceMatrix.needsUpdate = true;
-    rim.instanceMatrix.needsUpdate = true;
     group.add(wedge);
-    group.add(rim);
     disposables.push({ dispose: () => wedge.dispose() });
-    disposables.push({ dispose: () => rim.dispose() });
   }
 
   scene.add(group);

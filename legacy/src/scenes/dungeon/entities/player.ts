@@ -1246,8 +1246,11 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
     state.plungerAim = Math.max(-PLUNGER_AIM_MAX, Math.min(PLUNGER_AIM_MAX, state.plungerAim + a.x * PLUNGER_AIM_RATE * dt));
   }
 
-  // Keep the parked knight facing down the current (steered) launch line.
+  // Keep the parked knight facing down the current (steered) launch line, and
+  // publish the live launch direction for the visible plunger rig to orient by.
   const dir = plungerDir();
+  state.plungerDirX = dir.x;
+  state.plungerDirZ = dir.z;
   p.facing = facingFromAim(dir.x, dir.z);
   p.anim.setFacing(p.facing);
 

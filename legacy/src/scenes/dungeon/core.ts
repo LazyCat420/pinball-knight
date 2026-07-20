@@ -28,7 +28,7 @@ import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
-import { createPinballParts, updatePinballParts } from "./render/pinball-parts";
+import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
@@ -2406,6 +2406,7 @@ function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   state.vfx?.update(frame);
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
+  updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
