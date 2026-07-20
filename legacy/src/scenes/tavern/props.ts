@@ -102,53 +102,124 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
 
   // ══════════════════════════════════════════════════════════
   // CENTRAL PINBALL TABLE — the run diorama, and the room's thesis.
+  //
+  // REBUILT 2026-07-20, from a screenshot rather than from reasoning. The old
+  // one read as a COUCH, and once you have seen it you cannot unsee it: a wide
+  // shallow timber body, a flat dark top, a low panel across the back and five
+  // glowing caps that landed exactly where cushions would be. Four things were
+  // wrong, and each of them is fixed here:
+  //
+  //  1. IT WAS LANDSCAPE. 3.6 wide by 2.0 deep is a sofa's footprint. A pinball
+  //     machine is narrow and deep with the long axis pointing away from you.
+  //     The rect in layout.ts is now 2.3 x 3.2. This is the single change that
+  //     did most of the work.
+  //  2. THE RAKE WAS BACKWARDS. `field.rotation.x = -0.13` with +z toward the
+  //     camera raises the NEAR edge and drops the far one — the opposite of the
+  //     comment above it, and it tilted the playfield away from the viewer so
+  //     the slope was invisible. It is +RAKE now, and steeper.
+  //  3. THE MARQUEE WAS OCCLUDED BY ITS OWN BACKGLASS. The gold sign sat at
+  //     z -2.58 and the dark glass panel at z -2.50, i.e. the sign was BEHIND
+  //     the thing it was supposed to be lighting up, from a camera at +z. The
+  //     one gold accent in the room's furniture never rendered a pixel.
+  //  4. THERE WAS NO BACKBOX. A 0.9-high panel leaning back off the rear edge is
+  //     a sofa back. A backbox is a tall vertical head standing proud of the
+  //     cabinet with a lit face — it is most of the silhouette.
   // ══════════════════════════════════════════════════════════
-  const t = OBSTACLES[0]; // { x: 0, z: -1.6, w: 3.6, d: 2.0 }
-  const tableTop = 0.92;
+  const t = OBSTACLES[0]; // { x: 0, z: -1.6, w: 2.3, d: 3.2 }
+  /** Playfield slope. ~11°, well over life-size, because the read matters more. */
+  const RAKE = 0.2;
+  /** Top of the legs / bottom of the cabinet body. */
+  const CAB_BOT = 0.5;
+  /** Deck height at the near (player) end, and at the far end after the rake. */
+  const DECK_FRONT = 1.02;
+  const DECK_BACK = DECK_FRONT + t.d * Math.sin(RAKE);
+  /** How far the cabinet sides stand proud of the deck — the ball-return lip. */
+  const SIDE_LIP = 0.16;
+  const SIDE_TOP_BACK = DECK_BACK + SIDE_LIP;
 
-  // Cabinet: heavy timber body on squat legs, like a real machine.
-  box(t.w, 0.5, t.d, mat(TIMBER_DK), t.x, tableTop - 0.25, t.z);
+  const cabMat = mat(TIMBER_DK);
+  const chromeMat = mat(STEEL, { metalness: 0.9, roughness: 0.2 });
+
+  // Legs: four, equal, chrome, and actually visible. The old ones were 0.22
+  // timber blocks tucked under a body that overhung them, so the machine looked
+  // like it was sitting on the floor.
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      box(0.22, tableTop - 0.5, 0.22, mat(TIMBER), t.x + sx * (t.w / 2 - 0.2), (tableTop - 0.5) / 2, t.z + sz * (t.d / 2 - 0.2));
+      box(0.14, CAB_BOT, 0.14, chromeMat, t.x + sx * (t.w / 2 - 0.12), CAB_BOT / 2, t.z + sz * (t.d / 2 - 0.12));
     }
   }
 
-  // Playfield: a glass-topped slope, tilted so the far end sits higher — the
-  // read that says "pinball table" rather than "dining table" at a glance.
+  // ── The cabinet, as a WEDGE ── two extruded side panels whose top edge climbs
+  // from front to back. This is the profile that reads "pinball" from any angle,
+  // and a box cannot fake it: a level body with a raked lid leaves a triangular
+  // void down each flank that the iso camera looks straight into.
+  const sideShape = new THREE.Shape();
+  sideShape.moveTo(t.d / 2, CAB_BOT); // front bottom
+  sideShape.lineTo(t.d / 2, DECK_FRONT + SIDE_LIP); // front top
+  sideShape.lineTo(-t.d / 2, SIDE_TOP_BACK); // back top
+  sideShape.lineTo(-t.d / 2, CAB_BOT); // back bottom
+  sideShape.closePath();
+  const sideGeo = new THREE.ExtrudeGeometry(sideShape, { depth: 0.14, bevelEnabled: false });
+  geos.push(sideGeo);
+  // The shape is authored in (z, y) and extruded along its own +z, so a -90° yaw
+  // maps shape-x onto world +z and pushes the thickness toward world -x.
+  for (const sx of [-1, 1]) {
+    const side = new THREE.Mesh(sideGeo, cabMat);
+    side.rotation.y = -Math.PI / 2;
+    side.position.set(t.x + sx * (t.w / 2) + (sx > 0 ? 0 : 0.14), 0, t.z);
+    side.castShadow = true;
+    side.receiveShadow = true;
+    group.add(side);
+  }
+  // Back and front panels closing the wedge, plus a floor pan so you never see
+  // daylight under the machine.
+  box(t.w, SIDE_TOP_BACK - CAB_BOT, 0.14, cabMat, t.x, (CAB_BOT + SIDE_TOP_BACK) / 2, t.z - t.d / 2 + 0.07);
+  box(t.w, DECK_FRONT + SIDE_LIP - CAB_BOT, 0.14, cabMat, t.x, (CAB_BOT + DECK_FRONT + SIDE_LIP) / 2, t.z + t.d / 2 - 0.07);
+  box(t.w, 0.1, t.d, mat(0x141018), t.x, CAB_BOT + 0.05, t.z);
+  // The lockdown bar — the brass lip you rest your hands on. Reads as the front
+  // of a machine and nothing else.
+  box(t.w + 0.04, 0.1, 0.16, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), t.x, DECK_FRONT + SIDE_LIP, t.z + t.d / 2 - 0.08);
+
+  // ── The playfield ── a raked group. Everything on the machine's top surface
+  // is a child of this, so it all follows the slope for free.
   const field = new THREE.Group();
-  field.position.set(t.x, tableTop, t.z);
-  field.rotation.x = -0.13;
+  field.position.set(t.x, (DECK_FRONT + DECK_BACK) / 2, t.z);
+  field.rotation.x = RAKE;
   group.add(field);
 
-  box(t.w - 0.3, 0.06, t.d - 0.2, mat(0x11202b, { roughness: 0.5 }), 0, 0, 0, field);
-
-  // Side rails in oxidised steel.
-  for (const sx of [-1, 1]) {
-    box(0.1, 0.16, t.d - 0.2, mat(STEEL_DK, { metalness: 0.6, roughness: 0.5 }), sx * (t.w / 2 - 0.2), 0.1, 0, field);
-  }
+  /** Deck half-extents in FIELD space — everything below is placed against these. */
+  const fW = (t.w - 0.28) / 2;
+  const fD = t.d / Math.cos(RAKE) / 2;
+  // Lit rather than merely dark: at this exposure a plain 0x11202b deck was the
+  // same value as the timber around it, which is half of why the top read as a
+  // cushion instead of glass over a light box.
+  box(fW * 2, 0.06, fD * 2, mat(0x14283a, { roughness: 0.4, emissive: 0x0d2233, emissiveIntensity: 0.6 }), 0, 0, 0, field);
 
   // Lit bumper caps — these are the run's completed targets.
   // ONE MATERIAL PER CAP, deliberately. They used to share a single instance,
   // which meant the loop's per-cap `emissiveIntensity` writes all landed on the
   // same object and the last one won: five caps that always lit and dimmed in
   // perfect unison, while the code that wrote them looked like a chase.
+  // Clustered in the UPPER half now, where a real bumper field lives — spread
+  // evenly over a wide table they were exactly a row of scatter cushions.
   for (const [bx, bz] of [
-    [-0.75, -0.35],
-    [0, -0.6],
-    [0.75, -0.35],
-    [-0.4, 0.25],
-    [0.5, 0.3],
+    [-0.5, -0.95],
+    [0.48, -1.0],
+    [0, -0.55],
+    [-0.55, -0.1],
+    [0.52, -0.15],
   ]) {
-    const b = cyl(0.16, 0.14, emissive(COLD, 0.5), bx, 0.11, bz, field);
+    const b = cyl(0.15, 0.16, emissive(COLD, 0.5), bx, 0.12, bz, field);
     bumpers.push(b);
   }
 
-  // A pair of flippers at the near end, in brass.
-  const flipperMat = mat(BRASS, { metalness: 0.7, roughness: 0.35 });
+  // A pair of flippers at the near end, in brass, splayed into the drain. These
+  // are the closest thing on the machine to the camera and the first shape the
+  // eye lands on, so they are oversized and sit proud of the deck.
+  const flipperMat = mat(BRASS, { metalness: 0.7, roughness: 0.35, emissive: BRASS, emissiveIntensity: 0.25 });
   for (const sx of [-1, 1]) {
-    const f = box(0.42, 0.08, 0.11, flipperMat, sx * 0.42, 0.09, t.d / 2 - 0.42, field);
-    f.rotation.y = sx * 0.42;
+    const f = box(0.46, 0.1, 0.12, flipperMat, sx * 0.34, 0.1, fD - 0.36, field);
+    f.rotation.y = sx * 0.5;
   }
 
   // The ball — parked until a strong run sends it round (see core's loop).
@@ -159,67 +230,98 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   dioramaBall.position.set(0, 0.13, 0.2);
   field.add(dioramaBall);
 
-  // Plunger lane on the right edge, aimed at the notice board — the visual rhyme
-  // with the descent gate.
-  box(0.12, 0.1, 0.5, mat(STEEL), t.w / 2 - 0.32, 0.1, t.d / 2 - 0.3, field);
-
   // ── The bits that make it a PINBALL playfield rather than a lit table ──
-  // Lane guides, a ramp, a spinner and drop targets: the four shapes anybody
-  // who has stood in front of a real machine reads instantly. All of it lives
-  // inside the cabinet footprint, so the walkable rect in layout.ts is untouched.
+  // A shooter lane, lane guides, a ramp, a spinner and drop targets. All of it
+  // lives inside the cabinet footprint, so the rect in layout.ts is untouched.
   const guideMat = mat(STEEL, { metalness: 0.75, roughness: 0.3 });
-  // Curved outlanes: a wire each side sweeping from the top arch down to the
-  // flippers, which is what gives the field its funnel shape from above.
-  const guideGeo = new THREE.TorusGeometry(0.62, 0.025, 6, 12, Math.PI * 0.75);
+  // THE PLUNGER LANE: a full-length divider down the east flank with the ball
+  // shooter poking out through the apron. On a real machine this is the one lane
+  // that runs the whole depth of the table, and from above it is the stripe that
+  // tells you which way the machine faces. Kept at x 0.92 so the diorama ball's
+  // 0.85-radius lap (core.ts) runs inside it rather than through it.
+  box(0.06, 0.22, fD * 1.7, guideMat, 0.92, 0.12, -0.1, field);
+  const shooterRod = cyl(0.045, 0.34, chromeMat, 0.92, 0.06, fD + 0.08, field);
+  shooterRod.rotation.x = Math.PI / 2;
+  const shooterKnob = cyl(0.09, 0.09, emissive(BLOOD, 0.9), 0.92, 0.06, fD + 0.26, field);
+  shooterKnob.rotation.x = Math.PI / 2;
+  // Curved outlanes sweeping from the top arch down toward the flippers — the
+  // funnel shape that says the ball drains toward you.
+  const guideGeo = new THREE.TorusGeometry(0.7, 0.025, 6, 12, Math.PI * 0.7);
   geos.push(guideGeo);
   for (const sx of [-1, 1]) {
     const guide = new THREE.Mesh(guideGeo, guideMat);
-    guide.position.set(sx * (t.w / 2 - 0.5), 0.09, -0.1);
-    guide.rotation.set(-Math.PI / 2, 0, sx > 0 ? -Math.PI * 0.62 : Math.PI * 0.62 - Math.PI * 0.75);
+    guide.position.set(sx * (fW - 0.22), 0.1, 0.35);
+    guide.rotation.set(-Math.PI / 2, 0, sx > 0 ? -Math.PI * 0.85 : Math.PI * 0.15);
     field.add(guide);
   }
-  // A habitrail ramp climbing from mid-field to the back arch — the one piece
-  // with real height on it, so the field reads as three-dimensional.
+  // A habitrail ramp climbing toward the back arch — the one piece with real
+  // height on it, so the field reads as three-dimensional and not printed.
   const rampMat = mat(0x2a4a5c, { metalness: 0.4, roughness: 0.45 });
-  const ramp = box(0.28, 0.05, 1.1, rampMat, -0.55, 0.22, -0.15, field);
-  ramp.rotation.x = 0.3;
-  for (const rz of [-0.55, 0.3]) box(0.05, 0.3, 0.05, guideMat, -0.55, 0.14, rz, field);
-  // Drop-target bank: three thin blades standing in a row, cold-lit.
+  const ramp = box(0.3, 0.05, 1.3, rampMat, -0.52, 0.26, -0.35, field);
+  ramp.rotation.x = 0.34;
+  for (const rz of [-0.85, 0.1]) box(0.05, 0.34, 0.05, guideMat, -0.52, 0.16, rz, field);
+  // Drop-target bank: three blades standing in a row across the upper field.
   const targetMat = emissive(COLD, 0.4);
-  for (let i = -1; i <= 1; i++) box(0.16, 0.13, 0.03, targetMat, 0.55 + i * 0.005, 0.11, -0.15 + i * 0.2, field);
-  // The spinner — a blade on a wire across a lane. Static, but the silhouette
-  // (a flat card hung edge-on between two posts) is the recognisable part.
-  for (const sx of [-1, 1]) box(0.04, 0.2, 0.04, guideMat, 0.12 + sx * 0.13, 0.14, 0.55, field);
-  const spinner = box(0.24, 0.16, 0.015, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), 0.12, 0.16, 0.55, field);
+  for (let i = -1; i <= 1; i++) box(0.2, 0.14, 0.03, targetMat, i * 0.26, 0.12, -1.34, field);
+  // The spinner — a blade hung edge-on between two posts across a lane.
+  for (const sx of [-1, 1]) box(0.04, 0.22, 0.04, guideMat, sx * 0.16, 0.15, 0.75, field);
+  const spinner = box(0.28, 0.18, 0.015, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), 0, 0.17, 0.75, field);
   spinner.rotation.x = 0.35;
   // Slingshot kickers above the flippers, angled in toward the drain.
-  const slingMat = mat(BLOOD, { roughness: 0.6 });
+  const slingMat = mat(BLOOD, { roughness: 0.6, emissive: BLOOD, emissiveIntensity: 0.35 });
   for (const sx of [-1, 1]) {
-    const s = box(0.34, 0.1, 0.07, slingMat, sx * 0.78, 0.1, t.d / 2 - 0.62, field);
-    s.rotation.y = sx * -0.7;
+    const s = box(0.4, 0.11, 0.08, slingMat, sx * 0.74, 0.11, fD - 0.75, field);
+    s.rotation.y = sx * -0.9;
   }
 
-  // Backglass: a distressed jackpot sign, half-broken. Gold is reserved for
-  // rewards, so this is the one place it appears in the room's furniture.
-  const glass = box(t.w - 0.4, 0.9, 0.12, mat(0x1a1410), t.x, tableTop + 0.45, t.z - t.d / 2 + 0.1);
-  glass.rotation.x = -0.16;
-  const signMat = emissive(GOLD, 0.75);
-  box(t.w - 0.9, 0.26, 0.04, signMat, t.x, tableTop + 0.62, t.z - t.d / 2 + 0.02);
+  // ── THE BACKBOX ── tall, vertical, standing proud of the cabinet with a lit
+  // marquee facing the camera. Leaned FORWARD (+x rotation tips the top toward
+  // +z) so the face is presented to a camera that looks down from the south
+  // rather than skewed away from it. Gold is reserved for rewards, so this is
+  // the one place it appears in the room's furniture.
+  const head = new THREE.Group();
+  head.position.set(t.x, SIDE_TOP_BACK - 0.05, t.z - t.d / 2 + 0.16);
+  head.rotation.x = 0.12;
+  group.add(head);
+  const HEAD_H = 1.35;
+  box(t.w - 0.04, HEAD_H, 0.24, cabMat, 0, HEAD_H / 2, 0, head); // housing
+  box(t.w - 0.2, HEAD_H - 0.18, 0.03, mat(0x120e0a), 0, HEAD_H / 2, 0.13, head); // bezel
+  // 0.95 came back from the render as a flat cream-white rectangle — the pixel
+  // pass's bloom takes an emissive this large well past the palette's gold and
+  // into paper. 0.45 is where it still reads as LIT but keeps its hue.
+  box(t.w - 0.34, HEAD_H - 0.36, 0.05, emissive(GOLD, 0.22), 0, HEAD_H / 2 + 0.02, 0.15, head); // the marquee
+  for (const sx of [-1, 1]) box(0.07, HEAD_H, 0.28, chromeMat, sx * (t.w / 2 - 0.05), HEAD_H / 2, 0.02, head); // chrome side trim
+  box(t.w - 0.3, 0.09, 0.12, emissive(COLD, 0.5), 0, HEAD_H + 0.02, 0.1, head); // topper strip
+  // Score reels under the marquee — three small cold windows, which is what
+  // makes the head read as a READOUT rather than a painted board.
+  for (let i = -1; i <= 1; i++) box(0.2, 0.16, 0.04, emissive(COLD, 0.7), i * 0.28, 0.3, 0.16, head);
 
-  accent("table", COLD, t.x, tableTop + 0.7, t.z + 0.4, 1.8);
+  // Two accents, not one: the head lights itself from the front (so the marquee
+  // is never a flat unlit rectangle at this exposure) and the playfield glows up
+  // out of the cabinet. The map key stays "table" — stations.ts pulses by id.
+  accent("table", COLD, t.x, DECK_BACK + 0.35, t.z + 0.2, 3.4);
+  const headGlow = new THREE.PointLight(GOLD, 2.4, 5, 2);
+  headGlow.position.set(t.x, SIDE_TOP_BACK + 0.9, t.z - t.d / 2 + 0.9);
+  group.add(headGlow);
 
   // ══════════════════════════════════════════════════════════
   // FORGE — west/northwest. Warm, loud, metal.
   // ══════════════════════════════════════════════════════════
   const f = OBSTACLES[1]; // { x: -7.2, z: -2.6 }
-  box(f.w, 1.3, f.d, mat(STONE), f.x, 0.65, f.z); // hearth block
+  // The hearth is NOT the room's generic STONE. It used to be, and the render
+  // showed why that fails: palette index 2 is a cold blue-grey, so the forge's
+  // whole mass sat in the cold half of the palette with a 0.95 x 0.75 orange
+  // sliver on top of it — the one prop that is supposed to anchor the warm side
+  // of the room was the bluest object in frame. Fire-stained brick instead.
+  const HEARTH = 0x5a4436;
+  box(f.w, 1.3, f.d, mat(HEARTH), f.x, 0.65, f.z); // hearth block
   box(1.1, 0.22, 0.9, mat(0x120c08), f.x + 0.4, 1.35, f.z); // coal bed recess
   const coals = box(0.95, 0.1, 0.75, emissive(WARM, 1.6), f.x + 0.4, 1.42, f.z);
   // Anvil, on a stump, in front of the hearth.
   box(0.5, 0.4, 0.5, mat(TIMBER_DK), f.x + 1.0, 0.2, f.z + 1.3);
   box(0.62, 0.2, 0.3, mat(STEEL_DK, { metalness: 0.75, roughness: 0.35 }), f.x + 1.0, 0.5, f.z + 1.3);
   // Chimney hood.
-  box(1.6, 1.1, 1.6, mat(STEEL_DK, { metalness: 0.5 }), f.x + 0.2, 2.5, f.z);
+  box(1.6, 1.1, 1.6, mat(0x2b2521, { metalness: 0.1, roughness: 1 }), f.x + 0.2, 2.5, f.z);
 
   // ── What makes it read FORGE and not "lit fireplace" ──
   // Everything here sits either on top of the hearth block (which fills the
@@ -228,7 +330,7 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const ironMat = mat(STEEL_DK, { metalness: 0.7, roughness: 0.4 });
   const hotMat = emissive(WARM, 1.2);
   // Mantel lip along the front edge, so the block has a top rather than a face.
-  box(f.w, 0.14, 0.18, mat(STONE), f.x, 1.36, f.z + f.d / 2 - 0.12);
+  box(f.w, 0.14, 0.18, mat(HEARTH), f.x, 1.36, f.z + f.d / 2 - 0.12);
   // The bellows — a fat wedge on the hearth's far side with a nozzle into the
   // coals. Two stacked boxes read as the leather concertina at this distance.
   box(0.62, 0.3, 0.5, mat(TIMBER_DK), f.x - 0.85, 1.62, f.z - 0.15);
@@ -265,15 +367,31 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   box(0.4, 0.06, 0.08, ironMat, f.x + 0.95, 1.4, f.z + 0.05); // and one gone cold
   // Embers on the anvil face, so the strike beat has somewhere to land.
   box(0.3, 0.03, 0.16, hotMat, f.x + 1.0, 0.61, f.z + 1.3);
-  accent("forge", WARM, f.x + 0.8, 1.5, f.z + 0.6, 3.2);
+  // THE FORGE IS THE ROOM'S WARM ANCHOR and it was reading as a dim grey box —
+  // the coal bed is a 0.95 x 0.75 sliver sunk in a recess, so almost none of its
+  // emissive reached the stone around it. Three lights instead of one: the
+  // station accent (which stations.ts pulses on focus), a wide low-falloff wash
+  // that actually lifts the northwest quarter of the room, and a tight one
+  // sitting IN the coals so the hearth has a visible hot core.
+  accent("forge", WARM, f.x + 0.8, 1.5, f.z + 0.6, 4.2);
+  const forgeWash = new THREE.PointLight(WARM, 5.5, 13, 2);
+  forgeWash.position.set(f.x + 1.2, 2.0, f.z + 1.0);
+  group.add(forgeWash);
+  const coalGlow = new THREE.PointLight(0xff8a3c, 3.6, 5, 2);
+  coalGlow.position.set(f.x + 0.4, 1.55, f.z);
+  group.add(coalGlow);
 
   // ══════════════════════════════════════════════════════════
   // BAR — east. Bottles, brass rail, warm lamps.
   // ══════════════════════════════════════════════════════════
   const b = OBSTACLES[2]; // { x: 7.2, z: -2.6 }
   box(b.w, 1.1, b.d, mat(TIMBER), b.x, 0.55, b.z); // counter
-  box(b.w + 0.2, 0.1, b.d + 0.2, mat(TIMBER_DK), b.x, 1.15, b.z); // top lip
-  box(0.08, 0.08, b.d, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), b.x - b.w / 2 - 0.1, 0.95, b.z); // foot rail
+  // The top lip used to be b.w+0.2 by b.d+0.2 and the foot rail hung 0.14 off
+  // the counter's west face — both outside the obstacle rect, so you clipped
+  // through the overhang walking past. Pulled inside; the lip still reads as a
+  // lip because it is a different tone, not because it sticks out.
+  box(b.w, 0.1, b.d, mat(TIMBER_DK), b.x, 1.15, b.z); // top lip
+  box(0.08, 0.08, b.d - 0.1, mat(BRASS, { metalness: 0.8, roughness: 0.3 }), b.x - b.w / 2 + 0.07, 0.95, b.z); // foot rail
   // Back shelf with bottles — a cluster of thin cylinders reads unmistakably.
   box(0.4, 1.8, b.d, mat(TIMBER_DK), b.x + 1.0, 0.9, b.z);
   const bottleMats = [emissive(0x3f9d5a, 0.35), emissive(BLOOD, 0.3), emissive(COLD, 0.3)];
@@ -380,22 +498,25 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   // ══════════════════════════════════════════════════════════
   // ARMORY BENCH — southwest. Vice, racks, discarded plate.
   // ══════════════════════════════════════════════════════════
-  const a = OBSTACLES[4]; // { x: -7.2, z: 2.8 }
-  box(a.w, 0.16, a.d, mat(TIMBER), a.x, 0.88, a.z); // bench top
+  const a = OBSTACLES[4]; // { x: -7.2, z: 3.05, w: 2.6, d: 2.5 }
+  /** Where the bench proper stops and the keeper's crate bank begins. */
+  const benchD = a.d - 0.7;
+  const benchZ = a.z - 0.35;
+  box(a.w, 0.16, benchD, mat(TIMBER), a.x, 0.88, benchZ); // bench top
   for (const sx of [-1, 1]) {
-    box(0.18, 0.88, a.d - 0.3, mat(TIMBER_DK), a.x + sx * (a.w / 2 - 0.2), 0.44, a.z);
+    box(0.18, 0.88, benchD - 0.3, mat(TIMBER_DK), a.x + sx * (a.w / 2 - 0.2), 0.44, benchZ);
   }
   // A repair vice, and YOUR weapon held in it — the physical home for upgrades.
   // The rune plates on it are the socketed cards (see syncViceCards below), so a
   // card is something you can SEE on the blade before you open any UI.
-  box(0.3, 0.26, 0.3, mat(STEEL_DK, { metalness: 0.7 }), a.x + 0.7, 1.06, a.z - 0.4);
-  const held = box(0.1, 0.9, 0.1, mat(STEEL, { metalness: 0.8, roughness: 0.3 }), a.x + 0.7, 1.55, a.z - 0.4);
+  box(0.3, 0.26, 0.3, mat(STEEL_DK, { metalness: 0.7 }), a.x + 0.7, 1.06, benchZ - 0.4);
+  const held = box(0.1, 0.9, 0.1, mat(STEEL, { metalness: 0.8, roughness: 0.3 }), a.x + 0.7, 1.55, benchZ - 0.4);
   held.rotation.z = 0.22;
 
   // Socket plates + the emitter at the hilt. Built once at max capacity and
   // shown/hidden on sync, so socketing a card never allocates mid-scene.
   const viceGroup = new THREE.Group();
-  viceGroup.position.set(a.x + 0.7, 0, a.z - 0.4);
+  viceGroup.position.set(a.x + 0.7, 0, benchZ - 0.4);
   group.add(viceGroup);
   const vicePlates: THREE.Mesh[] = [];
   for (let i = 0; i < VICE_MAX_PLATES; i++) {
@@ -420,12 +541,12 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   viceEmitter.visible = false;
   viceGroup.add(viceEmitter);
   const viceLight = new THREE.PointLight(0xffffff, 0, 2.4, 2);
-  viceLight.position.set(a.x + 0.7, 1.5, a.z - 0.3);
+  viceLight.position.set(a.x + 0.7, 1.5, benchZ - 0.3);
   group.add(viceLight);
   // Rack of plate behind, against the wall.
-  box(0.3, 1.7, a.d, mat(TIMBER_DK), a.x - 1.0, 0.85, a.z);
+  box(0.3, 1.7, benchD, mat(TIMBER_DK), a.x - 1.0, 0.85, benchZ);
   for (let i = 0; i < 3; i++) {
-    box(0.14, 0.44, 0.36, mat(STEEL_DK, { metalness: 0.6 }), a.x - 0.8, 1.5 - i * 0.5, a.z - 0.5 + i * 0.5);
+    box(0.14, 0.44, 0.36, mat(STEEL_DK, { metalness: 0.6 }), a.x - 0.8, 1.5 - i * 0.5, benchZ - 0.5 + i * 0.5);
   }
 
   // ── What makes it read ARMORY and not "workbench" ──
@@ -434,37 +555,58 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   // hangs on the wall above the rack, inside the existing obstacle rect.
   const plateMatArm = mat(STEEL, { metalness: 0.7, roughness: 0.35 });
   const darkPlate = mat(STEEL_DK, { metalness: 0.65, roughness: 0.45 });
-  cyl(0.06, 0.3, mat(TIMBER_DK), a.x + 0.15, 1.11, a.z + 0.6); // helm stand post
-  cyl(0.16, 0.05, mat(TIMBER_DK), a.x + 0.15, 0.98, a.z + 0.6); // its base
+  cyl(0.06, 0.3, mat(TIMBER_DK), a.x + 0.15, 1.11, benchZ + 0.6); // helm stand post
+  cyl(0.16, 0.05, mat(TIMBER_DK), a.x + 0.15, 0.98, benchZ + 0.6); // its base
   const helmGeo = new THREE.SphereGeometry(0.17, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
   geos.push(helmGeo);
   const helm = new THREE.Mesh(helmGeo, plateMatArm);
-  helm.position.set(a.x + 0.15, 1.28, a.z + 0.6);
+  helm.position.set(a.x + 0.15, 1.28, benchZ + 0.6);
   helm.castShadow = true;
   group.add(helm);
-  box(0.3, 0.07, 0.05, darkPlate, a.x + 0.15, 1.25, a.z + 0.76); // visor slit
-  box(0.06, 0.16, 0.06, mat(BLOOD), a.x + 0.15, 1.46, a.z + 0.6); // a stub of crest
+  box(0.3, 0.07, 0.05, darkPlate, a.x + 0.15, 1.25, benchZ + 0.76); // visor slit
+  box(0.06, 0.16, 0.06, mat(BLOOD), a.x + 0.15, 1.46, benchZ + 0.6); // a stub of crest
   // A shield leaning against the end of the bench.
-  const shield = box(0.55, 0.68, 0.07, darkPlate, a.x + 1.05, 0.36, a.z + 0.7);
+  const shield = box(0.55, 0.68, 0.07, darkPlate, a.x + 1.05, 0.36, benchZ + 0.7);
   shield.rotation.set(0.22, 0, 0.15);
-  box(0.14, 0.5, 0.03, plateMatArm, a.x + 1.05, 0.4, a.z + 0.74); // boss band
+  box(0.14, 0.5, 0.03, plateMatArm, a.x + 1.05, 0.4, benchZ + 0.74); // boss band
   // Gauntlets, a whetstone and a scatter of rivets on the bench top.
-  for (const gz of [-0.62, -0.4]) box(0.16, 0.1, 0.2, darkPlate, a.x - 0.2, 1.01, a.z + gz);
-  const stone = box(0.26, 0.08, 0.12, mat(0x555a63, { roughness: 1 }), a.x + 0.05, 1.0, a.z - 0.05);
+  for (const gz of [-0.62, -0.4]) box(0.16, 0.1, 0.2, darkPlate, a.x - 0.2, 1.01, benchZ + gz);
+  const stone = box(0.26, 0.08, 0.12, mat(0x555a63, { roughness: 1 }), a.x + 0.05, 1.0, benchZ - 0.05);
   stone.rotation.y = 0.4;
-  box(0.16, 0.03, 0.16, mat(BRASS, { metalness: 0.7, roughness: 0.5 }), a.x - 0.5, 0.98, a.z + 0.3);
+  box(0.16, 0.03, 0.16, mat(BRASS, { metalness: 0.7, roughness: 0.5 }), a.x - 0.5, 0.98, benchZ + 0.3);
   // Pegboard of tools on the wall above the rack — above head height.
-  box(0.06, 0.85, 1.5, mat(TIMBER_DK), a.x - 1.24, 2.25, a.z);
+  box(0.06, 0.85, 1.5, mat(TIMBER_DK), a.x - 1.24, 2.25, benchZ);
   for (const [ty, tz, th] of [
     [2.4, -0.5, 0.4],
     [2.35, -0.1, 0.5],
     [2.42, 0.35, 0.36],
     [2.3, 0.66, 0.55],
   ]) {
-    box(0.05, th, 0.05, darkPlate, a.x - 1.16, ty - th / 2, a.z + tz);
+    box(0.05, th, 0.05, darkPlate, a.x - 1.16, ty - th / 2, benchZ + tz);
   }
-  box(0.06, 0.09, 0.22, darkPlate, a.x - 1.16, 2.14, a.z - 0.1); // a hammer head on one
-  accent("armory", WARM, a.x + 0.6, 1.6, a.z + 0.5, 2.4);
+  box(0.06, 0.09, 0.22, darkPlate, a.x - 1.16, 2.14, benchZ - 0.1); // a hammer head on one
+  // ── The keeper's end of the bench ──
+  // The bench grew south (layout.ts) to reach its keeper, who used to sit on
+  // bare floor with the bench floating behind and above him. The first attempt
+  // put a crate, a barrel and a grindstone on the FLOOR in the new depth — and
+  // the render showed none of it, because the bench top is a solid slab over the
+  // whole rect and it roofed the lot. So the bench top now stops short (benchD)
+  // and the southern strip is a crate bank at the keeper's own height, which is
+  // both visible and still solid all the way to the rect's edge.
+  const bankZ = benchZ + benchD / 2 + 0.35;
+  box(a.w, 0.62, 0.7, mat(TIMBER), a.x, 0.31, bankZ);
+  box(a.w + 0.04, 0.07, 0.74, mat(TIMBER_DK), a.x, 0.65, bankZ); // its lid
+  for (const bx of [-0.72, 0, 0.72]) box(0.08, 0.62, 0.74, mat(TIMBER_DK), a.x + bx, 0.31, bankZ); // slat seams
+  // A barrel of quench oil and a grindstone standing ON the bank, at the east
+  // end — which is exactly where the keeper stands, so he has work at his hands.
+  const barrel = cyl(0.26, 0.56, mat(TIMBER_DK), a.x - 0.85, 0.96, bankZ);
+  for (const hy of [0.78, 1.14]) cyl(0.27, 0.05, mat(BRASS, { metalness: 0.7, roughness: 0.4 }), a.x - 0.85, hy, bankZ);
+  barrel.castShadow = true;
+  const wheel = cyl(0.26, 0.08, mat(0x555a63, { roughness: 1 }), a.x + 0.9, 0.97, bankZ);
+  wheel.rotation.z = Math.PI / 2;
+  for (const wz of [-0.16, 0.16]) box(0.08, 0.34, 0.08, mat(TIMBER_DK), a.x + 0.9, 0.85, bankZ + wz);
+  box(0.5, 0.06, 0.1, darkPlate, a.x + 0.2, 0.72, bankZ - 0.1); // stock waiting to be ground
+  accent("armory", WARM, a.x + 0.9, 1.4, a.z + 0.8, 3.4);
 
   // ══════════════════════════════════════════════════════════
   // NOTICE BOARD + DESCENT PLUNGER — north wall. The way out.
@@ -542,9 +684,11 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
     r.rotation.x = 0.24;
   }
   // The lever: a chrome rod with a blood-red knob, unmistakably a slot machine.
-  const lever = cyl(0.05, 0.55, mat(STEEL, { metalness: 0.9, roughness: 0.2 }), gx + 0.92, 1.3, gz);
+  // Was at gx+0.92 with the knob at gx+1.06 — the cabinet's rect only reaches
+  // gx+0.8, so the whole lever hung out over walkable floor and you clipped it.
+  const lever = cyl(0.05, 0.55, mat(STEEL, { metalness: 0.9, roughness: 0.2 }), gx + 0.64, 1.3, gz);
   lever.rotation.z = -0.3;
-  cyl(0.11, 0.11, emissive(BLOOD, 0.9), gx + 1.06, 1.55, gz);
+  cyl(0.11, 0.11, emissive(BLOOD, 0.9), gx + 0.76, 1.55, gz);
 
   // ── What makes it read ARCADE CABINET and not "lit box" ──
   // A marquee, a coin slot, a button panel and a speaker grille. The marquee
@@ -566,11 +710,34 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   panel.rotation.x = 0.2;
   const buttonMats = [emissive(BLOOD, 0.9), emissive(COLD, 0.9), emissive(WARM, 0.9)];
   for (let i = 0; i < 3; i++) cyl(0.07, 0.05, buttonMats[i], gx - 0.44 + i * 0.24, 1.73, gz + 0.16);
-  // A dartboard hung on the wall behind it — advertises the other games.
+  // A dartboard — advertises the other games. It is NOT hung on a wall, because
+  // there is no wall here to hang it on: build.ts only raises the north and west
+  // walls, and the south side is a knee-high rim. The old version floated at
+  // head height on nothing, directly behind the cabinet's marquee on screen, so
+  // it read as part of the arcade machine. It is now a freestanding board on a
+  // timber frame, moved east clear of the cabinet's screen silhouette and of the
+  // tout who throws at it.
+  // FIRST ATTEMPT AT THIS WAS WORSE THAN THE BUG. Putting it on a 2.3-high
+  // timber frame at x 7.0 turned it into a tall dark slab standing in the one
+  // gap between the two keepers, splitting that corner of the frame in half.
+  // Low posts, further east into the empty south-east floor, and a pale rim so
+  // the board reads as a target instead of another brown rectangle.
   const boardZ = ROOM_MAX_Z_PROP;
+  const dartX = 8.0;
+  const frameMat = mat(TIMBER_DK);
+  for (const px of [-0.5, 0.5]) box(0.1, 1.5, 0.1, frameMat, dartX + px, 0.75, boardZ);
+  box(0.86, 0.86, 0.05, mat(TIMBER), dartX, 1.15, boardZ - 0.05); // backing plank
+  const dartRings = [0xc9c0a8, BLOOD, 0xc9c0a8, 0x1a1410];
   for (let i = 0; i < 4; i++) {
-    const rad = 0.42 - i * 0.1;
-    cyl(rad, 0.03, mat(i % 2 === 0 ? 0x1a1410 : BLOOD), gx + 2.0, 1.9, boardZ).rotation.x = Math.PI / 2;
+    cyl(0.4 - i * 0.095, 0.03, mat(dartRings[i]), dartX, 1.15, boardZ).rotation.x = Math.PI / 2;
+  }
+  cyl(0.07, 0.035, emissive(GOLD, 0.5), dartX, 1.15, boardZ + 0.01).rotation.x = Math.PI / 2; // the bull
+  for (const [dx, dy] of [
+    [-0.12, 0.08],
+    [0.1, -0.14],
+  ]) {
+    const dart = cyl(0.02, 0.24, mat(STEEL), dartX + dx, 1.15 + dy, boardZ + 0.14);
+    dart.rotation.x = Math.PI / 2;
   }
   accent("gambler", GOLD, gx, 1.7, gz - 0.6, 2.4);
 

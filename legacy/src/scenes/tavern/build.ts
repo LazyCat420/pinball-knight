@@ -117,11 +117,19 @@ export function buildRoom(scene: THREE.Scene): BuiltRoom {
     box(STAIR.w, 0.22, 0.42, stairMat, STAIR.x, 0.11 - i * 0.14, STAIR.z + i * 0.34);
   }
   // A dark mouth behind it so the stair reads as going somewhere.
-  const mouthGeo = new THREE.PlaneGeometry(STAIR.w, 1.6);
+  //
+  // It used to be 3.0 x 1.6 standing at z 8.1 with its centre 0.8 up — which is
+  // OUTSIDE the room (maxZ is 7) and above the south rim, so it was a hard black
+  // rectangle floating in the void with a visible edge. Invisible while the room
+  // was near-black; the moment the light rig came up it was the loudest shape in
+  // the lower-left of the frame. Pulled inside the rim and shortened so it reads
+  // as the throat of the stairwell rather than a hole in the world.
+  const mouthGeo = new THREE.PlaneGeometry(STAIR.w - 0.2, 0.9);
   geos.push(mouthGeo);
   const mouth = new THREE.Mesh(mouthGeo, new THREE.MeshBasicMaterial({ color: 0x05070b }));
   mats.push(mouth.material as THREE.Material);
-  mouth.position.set(STAIR.x, 0.8, STAIR.z + 1.5);
+  mouth.position.set(STAIR.x, 0.05, STAIR.z + 1.05);
+  mouth.rotation.x = -0.55;
   group.add(mouth);
 
   scene.add(group);

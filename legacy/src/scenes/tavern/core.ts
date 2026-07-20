@@ -40,8 +40,27 @@ import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGr
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
 const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2;
 
-/** How far the framing drifts from the room's centre toward the player (0 = locked). */
-const CAM_LEAN = 0.5;
+/**
+ * How far the framing drifts from the room's centre toward the player
+ * (0 = locked to centre, 1 = full follow).
+ *
+ * THIS IS A MOVEMENT-FEEL CONSTANT, not just a framing one. The camera target
+ * is `centre + (player - centre) * CAM_LEAN`, so at 0.5 the camera moved
+ * exactly half as far as the knight — and since the knight is what you are
+ * watching, HALF YOUR APPARENT SPEED was being cancelled by the camera chasing
+ * you. That is why the room read as sluggish even after the walk speed was
+ * raised: the fix was fighting the camera rather than the controller.
+ *
+ * A full follow (1.0) was tried in an earlier pass and rejected, correctly —
+ * it pushed half the stations out of frame, which is the one thing the hub's
+ * fixed composition exists to prevent. 0.72 is the middle: the knight now
+ * carries ~72% of their own motion, and the wider render target this codebase
+ * now uses (the FOV cap went 1600 → 1920, so a 1080p window shows 30 tiles
+ * against the 20 the room was composed for) leaves far more slack at the edges
+ * than existed when 1.0 was rejected. The reason that experiment failed is
+ * materially weaker than it was.
+ */
+const CAM_LEAN = 0.72;
 /** Camera smoothing, higher = snappier. */
 const CAM_LERP = 3.4;
 
@@ -76,10 +95,16 @@ const CAM_ZOOM_WIDE = 0.78;
  *
  * `fitZoom()` picks ONE value at entry and on resize: exactly 1 (genuinely
  * pixel-perfect) when the render target can hold the room, else the wide
- * framing. Be honest about the odds — the room's iso footprint is ~22.6 x 16.5
- * tiles and most real windows resolve to a render target shorter than 16.5,
- * so in practice the tavern usually still sits at 0.78 and is NOT 1:1. It is
- * just no longer animating, which is the part that read as crawling.
+ * framing. The room's iso footprint is ~22.6 x 16.5 tiles, so it fits whenever
+ * the render target is at least 1448 x 1053.
+ *
+ * MEASURED, not assumed: a 1920x1080 window resolves to a 1920x1080 target
+ * (30 x 16.875 tiles) and therefore runs at zoom 1 — the tavern IS 1:1 there,
+ * confirmed by driving the real scene headless. An earlier version of this
+ * comment guessed the opposite ("most real windows... still sits at 0.78"),
+ * which is what you get for reasoning about framing instead of looking at it.
+ * Smaller windows and high-DPI setups that resolve to a shorter target do fall
+ * back to 0.78 and are not 1:1.
  */
 const ROOM_FOOTPRINT_TILES_W = 22.63;
 const ROOM_FOOTPRINT_TILES_H = 16.45;
@@ -328,9 +353,15 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07090d);
-  // Warm haze near the hearth end; the far corners fall into deep shadow, which
-  // is what keeps the room feeling like a refuge rather than a lit box.
-  scene.fog = new THREE.Fog(0x0b0d12, 18, 42);
+  // Warm haze at the room's edges. THE NUMBERS USED TO BE 18/42 AND THAT WAS THE
+  // SINGLE BIGGEST REASON THE TAVERN RENDERED NEAR-BLACK — not the light rig.
+  // The iso camera sits at CAMERA_DIST 24, so its own target was already 25% of
+  // the way to full fog, and the north-west corner of the room (~34 units out)
+  // was 67% faded to 0x0b0d12. Two thirds of the furniture in the far half was
+  // being crossfaded into the background colour before a single light was
+  // considered. The dungeon uses 30/58 for exactly this reason. 28/64 keeps a
+  // little falloff at the corners without eating the room.
+  scene.fog = new THREE.Fog(0x141018, 28, 64);
   tavern.scene = scene;
   tavern.renderer = renderer;
 
@@ -352,13 +383,36 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // Brighter than the dungeon's rig, not dimmer: the dungeon earns its darkness
   // with a torch every few tiles, while this is one room lit by six fixtures. A
   // straight copy of those levels rendered the tavern almost black.
-  const ambient = new THREE.AmbientLight(0x8a93a8, AMBIENT_INTENSITY * 1.9);
-  const hemi = new THREE.HemisphereLight(0xa8b6cc, 0x2a2130, HEMI_INTENSITY * 1.5);
-  const dir = new THREE.DirectionalLight(0xd8c8b0, DIR_INTENSITY * 1.1);
+  //
+  // THE MULTIPLIERS BELOW ARE TAVERN-LOCAL OVERRIDES. `AMBIENT_INTENSITY` and
+  // friends are the DUNGEON's constants and are deliberately not touched — the
+  // dungeon earns its darkness with a torch every few tiles and a fog radius,
+  // and raising them there would flatten it. This room is a safehouse between
+  // floors: it is supposed to be warm and legible, and a screenshot showed the
+  // left and bottom thirds of the frame were unreadable — props sitting in
+  // shadow you could not name. 1.9/1.5/1.1 -> 3.2/2.6/1.35.
+  const ambient = new THREE.AmbientLight(0x99a0b2, AMBIENT_INTENSITY * 3.2);
+  // The ground half of the hemisphere is a warm timber bounce rather than the
+  // old cold purple: every floor in here is planking lit by fire, and bouncing
+  // violet up into the furniture was fighting the warm/cold discipline.
+  const hemi = new THREE.HemisphereLight(0xb2c0d6, 0x4a3324, HEMI_INTENSITY * 2.6);
+  const dir = new THREE.DirectionalLight(0xdccbb2, DIR_INTENSITY * 1.35);
   dir.position.set(-6, DIR_HEIGHT, -4);
   dir.castShadow = true;
   dir.shadow.mapSize.set(1024, 1024);
   scene.add(ambient, hemi, dir);
+
+  // Two soft fills over the halves of the room that no fixture reaches. The
+  // stations all light themselves from their own accents, so the DEAD ZONES are
+  // the open floor between them — the south-west quarter (armory approach) and
+  // the south spine the player actually walks in along. Wide radius and low
+  // intensity: these are meant to lift the floor off black, not to cast a pool
+  // that competes with a station's accent for the eye.
+  const fillSW = new THREE.PointLight(0xffb271, 3.4, 16, 2);
+  fillSW.position.set(-4.5, 3.6, 2.6);
+  const fillS = new THREE.PointLight(0xd9b48c, 2.8, 15, 2);
+  fillS.position.set(1.5, 3.6, 4.4);
+  scene.add(fillSW, fillS);
 
   room = buildRoom(scene);
   props = buildProps(scene);

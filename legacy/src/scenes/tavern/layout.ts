@@ -154,8 +154,12 @@ export const STATIONS: Station[] = [
     // spot sat EIGHT HUNDREDTHS of a unit inside the only place you were allowed
     // to be. `isOpen` passed, so no test caught it, but in practice you were
     // permanently pinned against the table with the spotlight disc half under
-    // it. 0.4 is 0.68 clear, on the south side you actually walk in from.
-    z: 0.4,
+    // it. 0.4 was 0.68 clear, on the south side you actually walk in from.
+    //
+    // 0.4 -> 0.9 because the pinball cabinet turned PORTRAIT (see OBSTACLES[0]):
+    // it is now 3.2 deep instead of 2.0, so its south face moved from -0.6 to
+    // 0.0 and the old spot would have been pinned against it again.
+    z: 0.9,
     radius: 1.9,
     accent: COLD,
     action: { kind: "summary" },
@@ -225,11 +229,27 @@ export const STATIONS: Station[] = [
  * instead of a box.
  */
 export const OBSTACLES: Rect[] = [
-  { x: 0, z: -1.6, w: 3.6, d: 2.0 }, // central pinball table
+  // THE CENTRAL PINBALL TABLE, AND IT IS PORTRAIT ON PURPOSE (2026-07-20).
+  //
+  // This was 3.6 x 2.0 — wider than it was deep. Under the fixed iso camera that
+  // is the silhouette of a SOFA, and a screenshot confirmed it: a long low brown
+  // body, a flat dark top and a back panel, with the bumper caps reading as
+  // scattered lights on cushions. No amount of playfield detail fixed it,
+  // because the detail was being read as things sitting on a couch.
+  //
+  // A pinball machine is roughly 1 : 2, narrow-to-deep, with the long axis
+  // pointing AWAY from the player. 2.3 x 3.2 gives that, and it is what makes
+  // the rake, the flippers-at-the-near-end and the tall backbox read as one
+  // object instead of upholstery. The stand-here spot moved south with it.
+  { x: 0, z: -1.6, w: 2.3, d: 3.2 },
   { x: -7.2, z: -2.6, w: 2.6, d: 2.2 }, // forge + anvil
   { x: 7.2, z: -2.6, w: 2.6, d: 2.2 }, // bar counter
   { x: 7.2, z: 2.8, w: 2.6, d: 2.0 }, // card dealer's table
-  { x: -7.2, z: 2.8, w: 2.6, d: 2.0 }, // armory bench
+  // Armory bench. Extended south (d 2.0 -> 2.5, centre 2.8 -> 3.05) so that the
+  // bench actually reaches its keeper: the frog sat 0.6 clear of the old south
+  // face with nothing at its level, which read as a creature parked on open
+  // floor rather than somebody working at a station.
+  { x: -7.2, z: 3.05, w: 2.6, d: 2.5 },
   { x: 0, z: -6.4, w: 4.2, d: 1.0 }, // notice board
   // The DESCENT PLUNGER housing. Named in the rect above's old comment but
   // never actually covered by it: props.ts builds the housing at x 2.6 (the
@@ -268,7 +288,15 @@ export const KEEPER_SPOTS: KeeperSpot[] = [
   { id: "forge", x: -6.6, z: -0.7 },
   { id: "bar", x: 6.6, z: -0.7 },
   { id: "dealer", x: 6.6, z: 4.4 },
-  { id: "armory", x: -6.6, z: 4.4 },
+  // The armory keeper, moved off open floor (2026-07-20). He used to stand at
+  // (-6.6, 4.4): under the bench's x-span but 0.6 south of its face, so from the
+  // camera he was a squat frog on bare planks with the bench floating behind and
+  // above him. He now stands at the bench's south-east CORNER, which the bench
+  // itself was extended to reach — the same "beside its long face" relationship
+  // the other four keepers have. He cannot go further west or north (that is
+  // inside the bench) nor further east (that is inside his own stand-here spot's
+  // 0.8 exclusion), so the corner is the one place both reads work.
+  { id: "armory", x: -5.35, z: 4.3 },
   // The gambler's tout. NOT behind the cabinet (x 3.15..4.65, z 5.45..6.35 in
   // props.ts) and NOT on the stand-here spot — east of the machine and a step
   // into the room, in the throwing line of the wall dartboard at (5.9, 6.6).
@@ -280,7 +308,14 @@ export const KEEPER_SPOTS: KeeperSpot[] = [
   // (5.4, 5.0) is 2.28 from the dealer against a 1.7 radius, a 0.58 margin, and
   // 1.5 clear of the cabinet. Tucking him nearer the machine he is touting for
   // is the right direction anyway.
-  { id: "gambler", x: 5.4, z: 5.0 },
+  //
+  // 2026-07-20: (5.4, 5.0) put him 1.34 from the card dealer's keeper, and at
+  // this camera angle two upright sprites 1.34 apart on the same screen diagonal
+  // read as ONE clump of bodies in front of the arcade cabinet. Pulled south and
+  // west to hug the machine he is touting for — 2.06 apart now, and he overlaps
+  // the cabinet rather than the dealer. 5.3 is the westmost he can go: 5.02 is
+  // where the cabinet's collision rect starts.
+  { id: "gambler", x: 5.3, z: 6.0 },
 ];
 
 /** The player's entry point — at the foot of the dungeon stair, facing in. */
