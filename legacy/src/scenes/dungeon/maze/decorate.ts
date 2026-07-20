@@ -726,7 +726,7 @@ export function decorateMaze(
   torchBudget: number,
   partBudget = 8,
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number } = {},
 ): LevelPlan {
   // First walkable tile scanning from the top-left — (1,1) on a raw
   // backtracker maze, (2,2) once the walls have been thickened.
@@ -810,7 +810,13 @@ export function decorateMaze(
     }),
     rng,
   );
-  for (const def of rollLevelItems(rng)) {
+  // A modifier can fatten the armoury (Blackout pays for the dark, Gilded is a
+  // treasure floor): extra rolls appended to this level's normal set.
+  const bonusRolls: RolledItem[] = [];
+  for (let k = 0; k < (extras.bonusItems ?? 0); k++) {
+    bonusRolls.push({ kind: "potion", id: shuffled(POTION_POOL, rng)[0] });
+  }
+  for (const def of [...rollLevelItems(rng), ...bonusRolls]) {
     const spot = itemSpots.find((p) => !items.some((it) => Math.abs(it.i - p.i) + Math.abs(it.j - p.j) < 5));
     if (!spot) break; // a maze too small for all six — fine, place what fits
     items.push({ kind: def.kind, id: def.id, i: spot.i, j: spot.j });

@@ -86,6 +86,45 @@ const DIRS: ReadonlyArray<readonly [number, number]> = [
   [-1, 0],
 ];
 
+/** A cell-space coordinate pair, `[cx, cy]` — cell (cx, cy) is tile (2cx+1, 2cy+1). */
+export type CellPos = readonly [number, number];
+
+/**
+ * Optional shaping for generateMaze. Both fields default to "off" and the
+ * off path is bit-identical to the plain backtracker, so existing floors are
+ * untouched by their presence.
+ */
+export interface MazeOpts {
+  /**
+   * Cells pre-carved and marked visited before the growing tree runs, so the
+   * maze grows AROUND a shape rather than filling the whole rectangle
+   * uniformly — the mechanism behind every floor archetype (archetypes.ts).
+   * Need not be connected: stitchCells welds the result.
+   */
+  seeds?: ReadonlyArray<CellPos>;
+  /**
+   * Fill the seeded region SOLID — including the even/even corner tiles the
+   * cell lattice would otherwise leave standing as pillars.
+   *
+   * Without this a "great hall" is really a hypostyle hall: welding adjacent
+   * seeds opens the walls between cells but leaves a 1-tile pillar at every
+   * corner, which thickenWalls then doubles into a 2×2 column every four tiles.
+   * That is fine for a gallery and useless as an open arena to carom around,
+   * which is the entire reason the archetype exists.
+   *
+   * Safe: carveRooms already fills its rects solid (corners included), so a
+   * solid region is an established shape downstream, and thickenWalls' 2-thick
+   * wall guarantee comes from the doubling itself rather than from the lattice.
+   */
+  solidSeeds?: boolean;
+  /**
+   * Tilt the braid probability across the floor in [0,1]: 0 is flat (the
+   * classic behaviour), 1 ramps from 2× braid at the start corner to ~0× at
+   * the far corner. See the braid pass for the exact ramp.
+   */
+  braidGradient?: number;
+}
+
 /**
  * Generate a maze via the **growing-tree** algorithm — one function that spans
  * a whole continuum of maze textures via `windiness`, so different floors can
@@ -120,7 +159,14 @@ const DIRS: ReadonlyArray<readonly [number, number]> = [
  * (2c+1, 2c+1) and the only carved walls are the single tiles between two
  * adjacent cells.
  */
-export function generateMaze(cellsW: number, cellsH: number, rng: () => number, braid = 0.12, windiness = 1): Grid {
+export function generateMaze(
+  cellsW: number,
+  cellsH: number,
+  rng: () => number,
+  braid = 0.12,
+  windiness = 1,
+  opts: MazeOpts = {},
+): Grid {
   if (cellsW < 2 || cellsH < 2) throw new Error(`[dungeon] maze needs ≥2 cells per side, got ${cellsW}x${cellsH}`);
 
   const w = cellsW * 2 + 1;
@@ -129,9 +175,50 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
 
   // Growing tree over cells. Cell (cx, cy) lives at tile (2cx+1, 2cy+1).
   const visited = new Uint8Array(cellsW * cellsH);
-  const active: Array<[number, number]> = [[0, 0]];
-  visited[0] = 1;
-  setTile(g, 1, 1, T_FLOOR);
+  const active: Array<[number, number]> = [];
+  // SEEDED START (floor archetypes): instead of growing from the single cell
+  // (0,0), a whole pre-carved SHAPE — a spine corridor, a great hall, a cave
+  // blob — is marked visited up front and the maze grows out of it, filling
+  // whatever the shape left over. That is what makes a floor's MACRO layout
+  // differ instead of every level being a uniform-density maze. See
+  // archetypes.ts. Adjacent seed cells get the wall between them opened so the
+  // seeded shape reads as one continuous space, not a dotted lattice.
+  const seeds = opts.seeds;
+  if (seeds && seeds.length) {
+    for (const [cx, cy] of seeds) {
+      if (cx < 0 || cy < 0 || cx >= cellsW || cy >= cellsH) continue;
+      if (visited[cy * cellsW + cx]) continue;
+      visited[cy * cellsW + cx] = 1;
+      setTile(g, cx * 2 + 1, cy * 2 + 1, T_FLOOR);
+      active.push([cx, cy]);
+    }
+    // Weld the shape together (only ever carves wall→floor).
+    for (const [cx, cy] of active) {
+      for (const [dx, dy] of DIRS) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= cellsW || ny >= cellsH) continue;
+        if (visited[ny * cellsW + nx]) setTile(g, cx + nx + 1, cy + ny + 1, T_FLOOR);
+      }
+    }
+    // Knock out the corner pillars inside a solid region: wherever four seeds
+    // form a 2×2 quad, the tile at their shared corner is floor too.
+    if (opts.solidSeeds) {
+      const isSeed = (cx: number, cy: number): boolean =>
+        cx >= 0 && cy >= 0 && cx < cellsW && cy < cellsH && visited[cy * cellsW + cx] === 1;
+      for (const [cx, cy] of active) {
+        if (isSeed(cx + 1, cy) && isSeed(cx, cy + 1) && isSeed(cx + 1, cy + 1)) {
+          setTile(g, cx * 2 + 2, cy * 2 + 2, T_FLOOR);
+        }
+      }
+    }
+  }
+  if (!active.length) {
+    // No seeds (or all out of range): the classic single-cell backtracker start.
+    active.push([0, 0]);
+    visited[0] = 1;
+    setTile(g, 1, 1, T_FLOOR);
+  }
 
   while (active.length) {
     // Which active cell to grow from — newest (windy) vs random (bushy). Only
@@ -165,14 +252,31 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
     active.push([nx, ny]);
   }
 
+  // Seeded shapes can leave two separate carved components touching but not
+  // joined (each grew its own tree and stopped at the other's "visited" cells),
+  // so weld the cell graph back into one piece. No-op for a single-seed maze,
+  // and it draws no rng — the stream stays put either way.
+  if (seeds && seeds.length) stitchCells(g, cellsW, cellsH);
+
   // Braid: open some walls that sit between two floor tiles (never the border).
+  //
+  // `braidGradient` tilts that probability across the floor instead of applying
+  // it flat: at g>0 the region around the start cell (which decorate picks as
+  // the player's spawn — the first walkable tile from the top-left) braids up
+  // to (1+g)× and the far corner down to (1-g)×, so a floor opens loopy and
+  // flankable and tightens into corridor duels as you push toward the stairs.
+  // At the default 0 the probability is exactly `braid` everywhere and the
+  // draw count is unchanged, so existing floors stay bit-identical.
   if (braid > 0) {
+    const grad = opts.braidGradient ?? 0;
+    const far = w + h; // Manhattan span, for normalising the ramp
     for (let j = 1; j < h - 1; j++) {
       for (let i = 1; i < w - 1; i++) {
         if (at(g, i, j) !== T_WALL) continue;
         const horizontal = at(g, i - 1, j) === T_FLOOR && at(g, i + 1, j) === T_FLOOR;
         const vertical = at(g, i, j - 1) === T_FLOOR && at(g, i, j + 1) === T_FLOOR;
-        if ((horizontal || vertical) && rng() < braid) {
+        const p = grad === 0 ? braid : braid * (1 + grad * (1 - (2 * (i + j)) / far));
+        if ((horizontal || vertical) && rng() < p) {
           setTile(g, i, j, T_FLOOR);
         }
       }
@@ -180,6 +284,55 @@ export function generateMaze(cellsW: number, cellsH: number, rng: () => number, 
   }
 
   return g;
+}
+
+/**
+ * Weld the cell graph into ONE connected component by carving walls between
+ * cells that are adjacent but not joined. Union-find over cell space: first
+ * union everything the carve already connected, then open one wall per pair of
+ * distinct components until a single component remains.
+ *
+ * Only ever carves wall→floor, only ever between two cell tiles, so both
+ * downstream invariants survive: connectivity can only increase, and the
+ * odd/even lattice discipline (walls at even coords between odd cells) holds.
+ */
+function stitchCells(g: Grid, cellsW: number, cellsH: number): void {
+  const parent = new Int32Array(cellsW * cellsH);
+  for (let k = 0; k < parent.length; k++) parent[k] = k;
+  const find = (a: number): number => {
+    let r = a;
+    while (parent[r] !== r) r = parent[r];
+    while (parent[a] !== r) {
+      const next = parent[a];
+      parent[a] = r;
+      a = next;
+    }
+    return r;
+  };
+  const union = (a: number, b: number): boolean => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra === rb) return false;
+    parent[rb] = ra;
+    return true;
+  };
+
+  // Pass 1: absorb the connections the maze already carved.
+  for (let cy = 0; cy < cellsH; cy++) {
+    for (let cx = 0; cx < cellsW; cx++) {
+      const a = cy * cellsW + cx;
+      if (cx + 1 < cellsW && at(g, cx * 2 + 2, cy * 2 + 1) !== T_WALL) union(a, a + 1);
+      if (cy + 1 < cellsH && at(g, cx * 2 + 1, cy * 2 + 2) !== T_WALL) union(a, a + cellsW);
+    }
+  }
+  // Pass 2: join whatever is still separate.
+  for (let cy = 0; cy < cellsH; cy++) {
+    for (let cx = 0; cx < cellsW; cx++) {
+      const a = cy * cellsW + cx;
+      if (cx + 1 < cellsW && union(a, a + 1)) setTile(g, cx * 2 + 2, cy * 2 + 1, T_FLOOR);
+      if (cy + 1 < cellsH && union(a, a + cellsW)) setTile(g, cx * 2 + 1, cy * 2 + 2, T_FLOOR);
+    }
+  }
 }
 
 /**

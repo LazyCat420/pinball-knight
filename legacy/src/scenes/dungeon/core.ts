@@ -45,7 +45,9 @@ import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./collision";
 import { decorateMaze, widenMainArtery, type PrefabAnchor } from "./maze/decorate";
-import { stampPrefabs, themeFor } from "./maze/prefabs";
+import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./maze/prefabs";
+import { archetypeFor } from "./maze/archetypes";
+import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
@@ -1021,7 +1023,19 @@ function startLevel(level: number): void {
   // thickening, so the wall-band structure survives. Thick walls are what make
   // the Diablo low-rim/tall-back trick work — see thickenWalls. Decoration
   // runs on the thickened grid, with room rects scaled to match.
-  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid, cfg.windiness);
+  // FLOOR ARCHETYPE: the macro layout — Warrens / Spine / Great Hall / Cavern /
+  // Ring Keep. It pre-carves a SHAPE the maze then grows around, so descending
+  // changes a floor's structure and not just its palette. Cycles every 5 while
+  // the biome cycles every 4, so the pair takes 20 floors to repeat.
+  const arch = archetypeFor(level);
+  // MODIFIER: rolled from this floor's own seed (not a cycle), so two runs at
+  // the same depth differ. Scales budgets only — see maze/modifiers.ts.
+  const modifier = rollModifier(level, rng);
+  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid * arch.braidMult, cfg.windiness, {
+    seeds: arch.seeds(cfg.cellsW, cfg.cellsH, rng) ?? undefined,
+    solidSeeds: arch.solid,
+    braidGradient: arch.braidGradient,
+  });
   // A grade-S/A descent unlocked a BONUS room on this floor (Wave F glue).
   const bonusRoom = state.bonusRoomNext;
   state.bonusRoomNext = false;
@@ -1030,10 +1044,16 @@ function startLevel(level: number): void {
   // shuffle bag — Slalom, Gauntlet, Oilworks, the Magician's Parlor… Carved
   // before the secret cracks so the cracks see the final wall set.
   const theme = themeFor(level);
+  // The floor's ONE set piece goes down FIRST, with priority and a wide mortar:
+  // the Tilt Table, the Pachinko Drop, the Observatory… Regular stamps then
+  // fill in around it, clustered on this floor's hot zones so the level has
+  // loud rooms and quiet halls instead of an even sprinkle everywhere.
+  const landmark = stampLandmark(raw, rng, theme);
+  const focus = pickFocusCells(raw, rng);
   // More open-chamber prefabs per floor (Slice 2, open playfield) — the theme
   // pools are mostly open tables/halls, so this adds bounce-able area.
   const prefabCount = Math.min(3 + Math.floor((level - 1) / 2), 6);
-  const stamped = stampPrefabs(raw, rng, prefabCount, theme);
+  const stamped = stampPrefabs(raw, rng, prefabCount, theme, landmark.claimed, focus);
   crackSecretWalls(raw, rng, cfg.secrets);
   const grid = thickenWalls(raw);
   // Widen the main start→stairs artery into a 3-wide "launch highway" so the
@@ -1042,20 +1062,34 @@ function startLevel(level: number): void {
   // topology/parts/arc-corners/render — sees the widened grid.
   widenMainArtery(grid);
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
-  // Prefab anchors ride the same ×2 into the thickened grid.
-  const anchors: PrefabAnchor[] = stamped.anchors.map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
+  // Prefab anchors ride the same ×2 into the thickened grid — the landmark's
+  // first, so its set-piece furniture wins any tile the regular stamps also want.
+  const anchors: PrefabAnchor[] = [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
   // Pinball-machine density grows with depth: deeper floors are busier tables.
   const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
-  const plan = decorateMaze(grid, rng, cfg.zombies, cfg.torches, partBudget, rooms, {
-    anchors,
-    deal: theme.deal,
-    targets: TARGETS_PER_FLOOR,
-    trapdoors: TRAPDOORS_PER_FLOOR,
-    vaultRamps: VAULT_RAMPS_PER_FLOOR, // ramps aimed ACROSS a band, so the hop jumps the maze
-    hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
-    forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
-    launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
-  });
+  // The floor modifier scales the budgets (and only the budgets — it can't
+  // reach connectivity). Every product is floored at a sane minimum so a harsh
+  // roll can't produce a pitch-dark or furniture-free floor.
+  const plan = decorateMaze(
+    grid,
+    rng,
+    Math.max(1, Math.round(cfg.zombies * modifier.hordeMult)),
+    Math.max(4, Math.round(cfg.torches * modifier.torchMult)),
+    Math.max(4, Math.round(partBudget * modifier.partMult)),
+    rooms,
+    {
+      anchors,
+      // A modifier biases WHICH furniture the corridor pass reaches for first.
+      deal: modifier.dealBias.length ? ([...modifier.dealBias, ...theme.deal] as typeof theme.deal) : theme.deal,
+      targets: TARGETS_PER_FLOOR,
+      trapdoors: Math.round(TRAPDOORS_PER_FLOOR * modifier.trapdoorMult),
+      vaultRamps: VAULT_RAMPS_PER_FLOOR, // ramps aimed ACROSS a band, so the hop jumps the maze
+      hazards: Math.round(Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX) * modifier.hazardMult),
+      forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
+      launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
+      bonusItems: modifier.bonusItems,
+    },
+  );
 
   state.grid = grid;
   // Fresh fog every floor — the grid's dimensions change with depth, and
@@ -1279,8 +1313,16 @@ function startLevel(level: number): void {
   // A boss floor gets an ominous warning instead of the usual flavour line.
   const cycle = Math.floor((level - 1) / BIOMES.length) + 1;
   const suffix = cycle > 1 ? ` · deeper (${cycle})` : "";
-  const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${biome.flavour}${suffix}`;
-  showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}`, sub);
+  // The archetype names the SHAPE the player is about to walk into, so a Great
+  // Hall or a Cavern reads as intentional rather than as the maze glitching.
+  const shape = arch.id === "warrens" ? "" : ` · ${arch.label}`;
+  // Biome flavour keeps the chapter feel; the archetype line is appended only
+  // when the floor's shape is actually unusual, so level 1 reads as it always did.
+  const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
+  const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${flavour}${suffix}`;
+  showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
+  // A modifier MUST be announced — an unannounced one reads as a bug, not a twist.
+  if (modifier.id !== "none") showPickupNote(`⚠ ${modifier.label.toUpperCase()} — ${modifier.flavour}`);
   if (bonusRoom) showPickupNote("🏆 BONUS VAULT unlocked on this floor");
 }
 

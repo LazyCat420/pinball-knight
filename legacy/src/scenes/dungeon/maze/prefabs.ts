@@ -6,9 +6,16 @@
  * tile is a backtracker-carved cell and carving walls between floors only adds
  * loops. A stamp's '#' cells mean "leave whatever the maze had", not "wall".
  *
- * Variety without repetition comes from a seeded SHUFFLE BAG: every prefab
- * enters the bag in all 4 rotations; draws are without replacement, so a floor
- * can't repeat a stamp until it has used everything in its theme's pool.
+ * Variety without repetition comes from a seeded SHUFFLE BAG holding SHAPES;
+ * draws are without replacement and the orientation (4 rotations × mirror) is
+ * drawn after, so a floor can't repeat a room until it has used everything in
+ * its theme's pool. Bagging the orientations individually instead would make
+ * the guarantee per-variant, which is not the guarantee that matters — four
+ * rotations of the same room still read as the same room four times.
+ *
+ * Two tiers stamp per floor: ONE landmark set piece (LANDMARKS, placed first
+ * with priority) and then the regular furniture stamps around it, clustered on
+ * the floor's hot zones so a level has loud rooms and quiet halls.
  *
  * Stamps are authored in CELL space (1 cell = 2×2 tiles after thickenWalls).
  * Legend:
@@ -167,6 +174,89 @@ export const PREFABS: Prefab[] = [
   },
 ];
 
+/**
+ * LANDMARK STAMPS — the set-piece tier. Regular prefabs are 3-7 cells and read
+ * as furniture you pass through; these are 7-11 cells and are meant to be THE
+ * room you remember from a floor, so exactly one lands per level (stampLandmark
+ * runs first, with priority and a wider mortar, before the regular stamps fill
+ * in around it). Same legend, same carve-only contract.
+ */
+export const LANDMARKS: Prefab[] = [
+  {
+    // The Pachinko Drop — staggered bumper rows funnelling onto a pit line with
+    // one safe prize pocket. Enter from the top and let the physics do the rest.
+    name: "pachinko",
+    cells: [
+      ".........",
+      ".B.B.B.B.",
+      "..B.B.B..",
+      ".B.B.B.B.",
+      "..B.B.B..",
+      ".I.I.I.I.",
+      "....$....",
+    ],
+  },
+  {
+    // The Tilt Table — an actual mini pinball table: flippers and a plunger at
+    // the bottom of a walled bowl, slingshots on the flanks, a target bank up
+    // top. The one room on a floor that plays entirely by table rules.
+    name: "tilttable",
+    cells: [
+      "...TTT...",
+      ".L.....L.",
+      ".B.....B.",
+      "....$....",
+      ".B.....B.",
+      ".L.....L.",
+      ".........",
+      "..F...F..",
+      "....S....",
+    ],
+  },
+  {
+    // The Grinder — a rhythm lane: gloves and electric plates alternating down
+    // an oiled straight you cannot brake on. Carry speed or get chewed.
+    name: "grinder",
+    cells: [
+      "...........",
+      ".G.E.G.E.G.",
+      ".OOOOOOOOO.",
+      ".G.E.G.E.G.",
+      "....*...$..",
+    ],
+  },
+  {
+    // The Observatory — a mirror octagon around a central bullseye. Nothing
+    // reaches the middle straight; every shot has to bank its way in.
+    name: "observatory",
+    cells: [
+      "..M.M.M..",
+      ".M.....M.",
+      "M.......M",
+      ".........",
+      "M...T...M",
+      ".........",
+      "M.......M",
+      ".M..$..M.",
+      "..M.M.M..",
+    ],
+  },
+  {
+    // The Nest — a webbed den: magnet strips raking the approach, a slick
+    // oil bed around the prize island, and the horde bedded down in it.
+    name: "nest",
+    cells: [
+      ".N.N.N.N.",
+      ".........",
+      "..OOOOO..",
+      "..O.$.O..",
+      "..OOOOO..",
+      ".*.......",
+      ".N.N.N.N.",
+    ],
+  },
+];
+
 /** Rotate a stamp 90° clockwise. */
 export function rotatePrefab(p: Prefab): Prefab {
   const h = p.cells.length;
@@ -237,6 +327,11 @@ export class ShuffleBag<T> {
 export interface FloorTheme {
   name: string;
   pool: string[]; // prefab names in this theme's bag
+  /**
+   * LANDMARK names (see LANDMARKS) this theme can draw its one set piece from.
+   * Every theme must list at least one, so no floor goes without a set piece.
+   */
+  landmarks: string[];
   deal: PartSpotKind[]; // corridor part deal bias
   /** Horde-mix weight overrides for this biome. Kinds omitted keep their
    * base weight; the horde roller (core.ts) reads this to skew the roster
@@ -249,6 +344,7 @@ export const THEMES: FloorTheme[] = [
     // The Cold Crypt — the classic table: bumpers, lanes, a flipper or two.
     name: "crypt",
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
+    landmarks: ["tilttable", "pachinko"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "deflector", "spinpad", "mirror", "slingshot", "oil"],
     enemies: { zombie: 3, ghost: 2, bat: 2 },
   },
@@ -256,6 +352,7 @@ export const THEMES: FloorTheme[] = [
     // The Rotting Warren — everything is slick and nothing brakes.
     name: "warren",
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
+    landmarks: ["nest", "grinder"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "deflector", "flipper", "ramp", "slingshot"],
     enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2 },
   },
@@ -263,6 +360,7 @@ export const THEMES: FloorTheme[] = [
     // The Bloodworks — the punch factory.
     name: "bloodworks",
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
+    landmarks: ["grinder", "pachinko"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "deflector", "bumper", "slingshot", "spinpad"],
     enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2 },
   },
@@ -270,6 +368,7 @@ export const THEMES: FloorTheme[] = [
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
     name: "arcane",
     pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
+    landmarks: ["observatory", "tilttable"],
     deal: ["spinpad", "bumper", "mirror", "spring", "deflector", "oil", "glove", "flipper", "slingshot", "mirror"],
     enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2 },
   },
@@ -298,66 +397,224 @@ const ANCHOR_KINDS: Record<string, PrefabAnchor["kind"]> = {
   $: "prize",
 };
 
+/** A footprint already taken by a stamp, in CELL space. */
+export interface ClaimRect {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+export interface StampResult {
+  anchors: PrefabAnchor[];
+  stamped: string[];
+  /** Footprints claimed so far — pass into a later stamp pass to avoid overlap. */
+  claimed: ClaimRect[];
+}
+
+/**
+ * Carve one oriented stamp at a cell-space position, returning its anchors.
+ * Only ever carves wall→floor ('#' means "leave whatever the maze had"), so
+ * connectivity is preserved by construction.
+ */
+function carveStamp(g: Grid, pf: Prefab, cx: number, cy: number, anchors: PrefabAnchor[]): void {
+  const ph = pf.cells.length;
+  const pw = pf.cells[0].length;
+  const carvedAt = (dx: number, dy: number): boolean => dx >= 0 && dy >= 0 && dy < ph && dx < pw && pf.cells[dy][dx] !== "#";
+  for (let dy = 0; dy < ph; dy++) {
+    for (let dx = 0; dx < pw; dx++) {
+      if (!carvedAt(dx, dy)) continue;
+      const ti = (cx + dx) * 2 + 1;
+      const tj = (cy + dy) * 2 + 1;
+      setTile(g, ti, tj, T_FLOOR);
+      // Adjacent carved cells get the wall between them opened, so the stamp's
+      // interior is one walkable shape rather than a dotted lattice.
+      if (carvedAt(dx + 1, dy)) setTile(g, ti + 1, tj, T_FLOOR);
+      if (carvedAt(dx, dy + 1)) setTile(g, ti, tj + 1, T_FLOOR);
+      const kind = ANCHOR_KINDS[pf.cells[dy][dx]];
+      if (kind) anchors.push({ i: ti, j: tj, kind });
+    }
+  }
+}
+
+/**
+ * Shared placement loop behind both stamp passes.
+ *
+ * `focus` is the HOT-ZONE bias: rather than one uniform draw, each attempt
+ * takes FOCUS_TRIES candidate positions and keeps the one nearest a focal cell.
+ * Uniform placement spread the furniture evenly and made every floor read as
+ * the same mush of moderate density; clustering it gives a floor loud arenas
+ * AND quiet halls, which is the pacing the density-gradient work is after.
+ * With no focal points the first candidate always wins, so it degrades to the
+ * old uniform draw.
+ */
+/**
+ * Candidate positions drawn per placement. This trades off against stamp
+ * VARIETY and has a floor below which the pass misbehaves: candidates that
+ * clash with an existing stamp are discarded, so too few draws means a shape
+ * often finds no legal spot near a focal point, gets dropped, and the bag
+ * cycles early — which is what lets a room repeat. Measured, 5 was not enough
+ * (clustering collapsed); 10 was the break-even. 12 keeps margin.
+ */
+const FOCUS_TRIES = 12;
+
+function stampFrom(
+  g: Grid,
+  rng: () => number,
+  shapes: Prefab[][],
+  count: number,
+  claimed: ClaimRect[],
+  mortar: number,
+  focus: ReadonlyArray<readonly [number, number]>,
+): StampResult {
+  const cellsW = (g.w - 1) / 2;
+  const cellsH = (g.h - 1) / 2;
+  const anchors: PrefabAnchor[] = [];
+  const stamped: string[] = [];
+  if (!shapes.length) return { anchors, stamped, claimed };
+
+  // The bag holds SHAPES, not orientations, and the orientation is drawn after.
+  // Bagging the ~8 orientations of each shape individually (as this used to)
+  // makes the no-repeat guarantee per-VARIANT, which is not the guarantee that
+  // matters: four rotations of the Switchback still read as the same room four
+  // times. Shape-level bagging means a floor can't repeat a room until it has
+  // used every room in its theme.
+  const bag = new ShuffleBag(shapes, rng);
+  const nearestFocus = (cx: number, cy: number, pw: number, ph: number): number => {
+    let best = Infinity;
+    for (const [fx, fy] of focus) best = Math.min(best, Math.hypot(cx + pw / 2 - fx, cy + ph / 2 - fy));
+    return best;
+  };
+
+  // A shape that fails to find a spot is RETRIED rather than discarded: letting
+  // a failed attempt consume a bag draw lets the bag wrap around early, which
+  // reintroduces the very repeat the shape-level bag exists to prevent. After
+  // RETRIES_PER_SHAPE misses we give up on it and move on, so a shape that
+  // simply cannot fit can't stall the pass.
+  const RETRIES_PER_SHAPE = 3;
+  let pending: Prefab[] | null = null;
+  let pendingTries = 0;
+
+  for (let placed = 0, attempt = 0; placed < count && attempt < count * 14; attempt++) {
+    const orientations: Prefab[] = pending ?? bag.draw();
+    const pf = orientations[Math.floor(rng() * orientations.length)];
+    const ph = pf.cells.length;
+    const pw = pf.cells[0].length;
+    if (pw + 2 > cellsW || ph + 2 > cellsH) {
+      pending = null; // never going to fit this grid — drop it for good
+      pendingTries = 0;
+      continue;
+    }
+
+    // Mortar between stamps, so two shapes never fuse into mush.
+    const mortarClash = (tx: number, ty: number): boolean =>
+      claimed.some((r) => tx < r.cx + r.w + mortar && r.cx < tx + pw + mortar && ty < r.cy + r.h + mortar && r.cy < ty + ph + mortar);
+
+    // Draw candidates and keep the CLASH-FREE one closest to a hot zone.
+    //
+    // The clash test has to happen INSIDE this loop, not after it. Scoring
+    // first and testing the winner afterwards means that once a few stamps have
+    // clustered around a focal point every later draw picks an occupied spot
+    // and fails — so only the smallest shape in the pool ever fits and the
+    // floor gets stamped with the same tiny room repeatedly. Filtering first
+    // lets a big shape settle further out instead of being dropped.
+    let cx = -1;
+    let cy = -1;
+    let bestScore = Infinity;
+    const tries = focus.length ? FOCUS_TRIES : 1;
+    for (let t = 0; t < tries; t++) {
+      const tx = 1 + Math.floor(rng() * (cellsW - pw - 1));
+      const ty = 1 + Math.floor(rng() * (cellsH - ph - 1));
+      if (mortarClash(tx, ty)) continue;
+      const score = focus.length ? nearestFocus(tx, ty, pw, ph) : 0;
+      if (score < bestScore) {
+        bestScore = score;
+        cx = tx;
+        cy = ty;
+      }
+    }
+    if (cx < 0) {
+      pendingTries++;
+      pending = pendingTries < RETRIES_PER_SHAPE ? orientations : null;
+      if (!pending) pendingTries = 0;
+      continue;
+    }
+
+    carveStamp(g, pf, cx, cy, anchors);
+    claimed.push({ cx, cy, w: pw, h: ph });
+    stamped.push(pf.name);
+    pending = null;
+    pendingTries = 0;
+    placed++;
+  }
+  return { anchors, stamped, claimed };
+}
+
+/**
+ * Pick this floor's HOT ZONES — the focal cells that stamp placement clusters
+ * around. Two of them, kept apart so they don't collapse into one blob.
+ */
+export function pickFocusCells(g: Grid, rng: () => number, n = 2): Array<readonly [number, number]> {
+  const cellsW = (g.w - 1) / 2;
+  const cellsH = (g.h - 1) / 2;
+  const out: Array<readonly [number, number]> = [];
+  const minSep = Math.max(cellsW, cellsH) * 0.35;
+  for (let attempt = 0; attempt < n * 12 && out.length < n; attempt++) {
+    const cx = 1 + Math.floor(rng() * Math.max(1, cellsW - 2));
+    const cy = 1 + Math.floor(rng() * Math.max(1, cellsH - 2));
+    if (out.some(([fx, fy]) => Math.hypot(fx - cx, fy - cy) < minSep)) continue;
+    out.push([cx, cy] as const);
+  }
+  return out;
+}
+
+/**
+ * Stamp this floor's ONE set piece — the landmark room (see LANDMARKS). Runs
+ * BEFORE stampPrefabs so the biggest shape gets first pick of the floor, with a
+ * 2-cell mortar so the regular stamps can't crowd it. Returns the claimed
+ * footprints to hand on to stampPrefabs.
+ *
+ * Deliberately unbiased by hot zones: the landmark IS a hot zone, and the
+ * focal points are picked around it afterwards.
+ */
+export function stampLandmark(g: Grid, rng: () => number, theme: FloorTheme, claimed: ClaimRect[] = []): StampResult {
+  const byName = new Map(LANDMARKS.map((p) => [p.name, p]));
+  const shapes: Prefab[][] = [];
+  for (const name of theme.landmarks) {
+    const p = byName.get(name);
+    if (p) shapes.push(variantsOf(p));
+  }
+  return stampFrom(g, rng, shapes, 1, claimed, 2, []);
+}
+
 /**
  * Stamp `count` theme prefabs over a RAW (pre-thicken) maze. Draws from the
- * theme's shuffle bag (each prefab enters in all 4 rotations, so even a
- * repeated shape lands differently), places without overlap, carves floor
- * cells + the walls between adjacent carved cells, and returns the furniture
- * anchors in RAW TILE coordinates (callers scale ×2 after thickenWalls).
+ * theme's shuffle bag (each prefab enters in all 4 rotations AND mirrors, so
+ * even a repeated shape lands differently), places without overlap, carves
+ * floor cells + the walls between adjacent carved cells, and returns the
+ * furniture anchors in RAW TILE coordinates (callers scale ×2 after
+ * thickenWalls).
+ *
+ * `claimed` carries footprints from an earlier pass (the landmark); `focus`
+ * clusters placement around this floor's hot zones.
  */
 export function stampPrefabs(
   g: Grid,
   rng: () => number,
   count: number,
   theme: FloorTheme,
-): { anchors: PrefabAnchor[]; stamped: string[] } {
-  const cellsW = (g.w - 1) / 2;
-  const cellsH = (g.h - 1) / 2;
+  claimed: ClaimRect[] = [],
+  focus: ReadonlyArray<readonly [number, number]> = [],
+): StampResult {
   const byName = new Map(PREFABS.map((p) => [p.name, p]));
-  const variants: Prefab[] = [];
+  const shapes: Prefab[][] = [];
   for (const name of theme.pool) {
     const p = byName.get(name);
     if (!p) continue;
-    // Rotations AND mirrors, so even a repeated shape lands a fresh way.
-    variants.push(...variantsOf(p));
+    // All 4 rotations AND their mirrors, so a repeated shape still lands fresh.
+    shapes.push(variantsOf(p));
   }
-  if (variants.length === 0) return { anchors: [], stamped: [] };
-
-  const bag = new ShuffleBag(variants, rng);
-  const anchors: PrefabAnchor[] = [];
-  const stamped: string[] = [];
-  const claimed: Array<{ cx: number; cy: number; w: number; h: number }> = [];
-
-  for (let placed = 0, attempt = 0; placed < count && attempt < count * 14; attempt++) {
-    const pf = bag.draw();
-    const ph = pf.cells.length;
-    const pw = pf.cells[0].length;
-    if (pw + 2 > cellsW || ph + 2 > cellsH) continue;
-    const cx = 1 + Math.floor(rng() * (cellsW - pw - 1));
-    const cy = 1 + Math.floor(rng() * (cellsH - ph - 1));
-    // One-cell mortar between stamps so two shapes never fuse into mush.
-    if (claimed.some((r) => cx < r.cx + r.w + 1 && r.cx < cx + pw + 1 && cy < r.cy + r.h + 1 && r.cy < cy + ph + 1)) continue;
-
-    // Carve: every non-'#' cell becomes floor; adjacent carved cells get the
-    // wall between them opened, so the stamp's interior is one walkable shape.
-    const carvedAt = (dx: number, dy: number): boolean => dx >= 0 && dy >= 0 && dy < ph && dx < pw && pf.cells[dy][dx] !== "#";
-    for (let dy = 0; dy < ph; dy++) {
-      for (let dx = 0; dx < pw; dx++) {
-        if (!carvedAt(dx, dy)) continue;
-        const ti = (cx + dx) * 2 + 1;
-        const tj = (cy + dy) * 2 + 1;
-        setTile(g, ti, tj, T_FLOOR);
-        if (carvedAt(dx + 1, dy)) setTile(g, ti + 1, tj, T_FLOOR);
-        if (carvedAt(dx, dy + 1)) setTile(g, ti, tj + 1, T_FLOOR);
-        const kind = ANCHOR_KINDS[pf.cells[dy][dx]];
-        if (kind) anchors.push({ i: ti, j: tj, kind });
-      }
-    }
-    claimed.push({ cx, cy, w: pw, h: ph });
-    stamped.push(pf.name);
-    placed++;
-  }
-  return { anchors, stamped };
+  return stampFrom(g, rng, shapes, count, claimed, 1, focus);
 }
 
 /**
