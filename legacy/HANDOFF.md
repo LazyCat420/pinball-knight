@@ -2,11 +2,11 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `811e945`, service `dee17f0`, both on synology, both verified
+**Live:** client `f920f1b`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
-- 697 client tests, 28 service tests, production build clean.
+- 708 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
@@ -43,7 +43,54 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
 
-## This pass — tavern controls, coin drops, the casino
+## This pass — an adversarial audit of the two passes below
+
+Three reviewers were pointed at the previous two commits and told to find what
+was BROKEN, not to summarise. They found ~30 issues including three in work I'd
+just shipped. **The pattern worth keeping: every one of the worst findings sat
+in a gap the tests did not reach, and several tests were green while the thing
+they named was false.**
+
+**A stake-eating P0.** `placeBet` spends gold the instant you press PLAY, and
+every game calls `resolve()` from inside its own `render()`. Switching games or
+hitting LEAVE mid-round disposed the game and stopped its loop, so `resolve()`
+never fired — no payout, no round counted, no ledger entry, gold gone. Every
+game was exposed; no test drove `dispose()` mid-round. Guarded at the buttons
+AND settled as a forfeit in `closeGambler`, because `closeTavern()` calls that
+directly and would have bypassed a button-only fix.
+
+**`sprite-scale.test.ts` was green while its own invariant was violated.**
+It asserts `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` — but screen pixels per
+world unit is `PPU * camera.zoom`, and the test cannot see `zoom` or
+`mesh.scale`. The tavern (0.78, easing to 0.92), the reaper (1.4), all six
+enemy reskins and slime minis were never 1:1. **A test that pins constants in
+isolation proves nothing about the runtime.** The tavern zoom is now static;
+it is still not 1:1 on most windows and that is now written down.
+
+**Coins weren't banked before the tavern** — every sweep site is a teardown and
+the tavern isn't one, so uncollected kill gold was missing in the one place
+gold is spendable.
+
+**Three of my own changes were wrong**: `ICON_UPSCALE` made shop icons worse
+(7.2× minification instead of 2.4×), `MAX_RENDER` at 1600×900 letterboxed 31%
+of a 1080p screen, and a comment claimed `createStaticSprite` is what makes the
+tavern keepers crisp when the tavern is the one scene where it can't be.
+
+**Two performance findings that only measurement could surface:** coin sprites
+were rebuilt per coin (~166k palette evaluations each, ~3.3M on a multi-kill),
+and roulette baked nothing (6,276 `fillRect`/frame at 8.61ms, when only the
+pocket ring rotates). Now cached / baked: 1,516/frame at 2.60ms, verified
+pixel-identical against the old renderer across four wheel states.
+
+**Still open from the audit** — see the numbered list below: `planSpin` blocks
+~17ms mean / 66ms worst on PLAY; the burst integrator is dt-dependent (3
+bounces at 144Hz vs 2 at 60Hz); `atlas-loader.ts` will silently reintroduce
+non-integer minification the moment a forged 128px atlas lands; RT realloc
+thrash on window drag; and the optimal darts aim is +203g/visit, not the
+documented +172g, because the test measures `TREBLE_20` which no optimal player
+would use.
+
+## The pass before — tavern controls, coin drops, the casino
 
 **The tavern's controls were rotated 90°.** `tavern/player.ts` hand-rolled the
 screen→world rotation as `(a.x - a.z, a.x + a.z) * ISO` instead of calling the
@@ -256,7 +303,47 @@ feature left in the plan.
 Ordered by what I'd do first. (Numbering is not contiguous — resolved items
 are deleted rather than renumbered, per the note at the top of this file.)
 
-0. **Decide two design calls from the casino pass.**
+0. **Open findings from the audit, none of them fixed.** Ordered by what I'd do
+   first.
+   - **`planSpin` blocks the main thread on PLAY.** Measured over 400 spins:
+     mean 16.9ms, p95 34ms, **max 66ms** — so the average press drops a frame
+     and the worst drops four, on a fast dev box. The physics is right; the
+     scheduling is wrong. Spread the launch-speed search across the wheel's
+     wind-up frames rather than doing it all on the click.
+   - **`atlas-loader.ts` will silently reintroduce the blur** the moment a
+     forged sprite atlas lands. It builds a `SpriteSheet` from a PNG at whatever
+     cell size the artist packed, but the mesh is hardcoded `SPRITE_UNITS` = 72
+     render px. A 128px-cell atlas minifies 128→72 at ratio 1.78 — exactly the
+     artifact the pixel pass exists to kill. Inert today only because
+     `public/dungeon/sprites/` doesn't exist. **Validate
+     `img.height === SPRITE_PIXEL_GRID` in the loader.**
+   - **The coin burst integrator is dt-dependent** despite the file's own
+     docblock claiming otherwise: 2 bounces at 60Hz, **3 at 144Hz**, and an 8%
+     spread in settle time. Only the magnet segment is dt-exact; the test only
+     covers rest→magnet because `fakeCoin()` defaults to `phase: "rest"`.
+   - **Render-target realloc thrash on window drag.** The guard compares
+     `renderW/renderH`, but below the cap those track window width directly, so
+     dragging an edge reallocates the scene target, depth texture and both bloom
+     targets every 2px of drag. Needs a debounce or a coarser size step.
+   - **The darts payout budget is measured against a strategy no optimal player
+     would use.** `TREBLE_20` gives the documented +172g/visit, but a grid
+     search finds `(-0.13, -0.50)` — nudged toward 19 — worth **+203g/visit**,
+     because 20's neighbours (1 and 19) are wildly asymmetric. The test asserts
+     `< 1.35` RTP using `TREBLE_20` only, so the real optimum sits ~1.2% under
+     the ceiling rather than the 4.8% the docs imply. Any loosening of
+     `wobbleRadius` breaks the budget with nothing to catch it.
+   - **Resting coins are not durable.** A coin in `rest` phase is uncredited
+     indefinitely and nothing persists `state.groundItems`, so a refresh or
+     crash discards up to `COIN_LIVE_CAP` (28) coins' worth of gold.
+   - **`splitCoinValue` drifts on non-integer input** (`7.5, 2 → [4,4] = 8`,
+     inventing 0.5g) despite a docblock promising it sums exactly "for every
+     input". Unreachable today — every caller passes integers and `spawnCoin`
+     floors — but it's an exported function whose contract is wrong.
+   - **6912px atlases exceed the 4096 `MAX_TEXTURE_SIZE`** floor on older
+     integrated GPUs, where the knight would render as garbage. Much improved
+     (was 12288) and not a regression, but nothing asserts a bound.
+
+1. **Decide two design calls from the casino pass.**
    - **Darts now has bounded RNG in the outcome**, which the original file
      header explicitly disclaimed. The dart never lands further from your aim
      than `wobbleRadius` (asserted), and it exists because without it the skill
