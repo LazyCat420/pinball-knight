@@ -11,7 +11,7 @@
  * bypass the stake caps and the per-visit round limit.
  */
 import { getBalance, spendGold, addGold } from "../../../utils/gold-wallet";
-import { ensurePixelFonts } from "../../../pixel/pixel-font";
+import { ensurePixelFonts, awaitPixelFonts } from "../../../pixel/pixel-font";
 import {
   createTableState,
   placeBet,
@@ -21,6 +21,7 @@ import {
   canBet,
   roundsLeft,
   raiseBet,
+  canRaise,
   ROUNDS_PER_VISIT,
   type TableState,
   type TableDeps,
@@ -45,6 +46,17 @@ export interface PlayApi {
    * the player can't cover it. Does NOT consume another round off the limit.
    */
   raise(extra: number): boolean;
+  /**
+   * Would `raise(extra)` succeed? Asks without taking the gold.
+   *
+   * For DISABLING an action rather than refusing it after the click. A game
+   * cannot check this itself — the wallet is the shell's, deliberately (see the
+   * header) — and `controls()` has no way to say "no" to the player: it returns
+   * buttons, and `say()` is only reachable from the shell. So an unaffordable
+   * option has to be greyed out at the point it is offered or it becomes a
+   * button that does nothing.
+   */
+  canRaise(extra: number): boolean;
 }
 
 /** Every game implements this; the shell drives it. */
@@ -90,6 +102,11 @@ let stake = 10;
 let flash = "";
 let flashT = 0;
 let onClosed: (() => void) | null = null;
+/**
+ * Settles the in-flight round as a forfeit. Set while a round is live, null
+ * otherwise. See `startRound` — this is what stops a teardown eating the stake.
+ */
+let forfeitRound: (() => void) | null = null;
 /** Repaint guard for the game-control row — see the loop. */
 let lastControlSig = "";
 
@@ -221,12 +238,33 @@ function startRound(): void {
 
   const staked = stake;
   let settled = false;
+  const gameId = game.id;
+
+  // Park a forfeit for this round so a teardown can't strand the stake.
+  //
+  // The button guard above refuses to switch or leave while a game is busy, but
+  // `closeGambler()` is also called straight from `closeTavern()`, which never
+  // goes through it. Without this, ANY path that tears the cabinet down
+  // mid-round loses the gold with no ledger entry at all.
+  //
+  // Settling as a 0-payout forfeit is deliberately not a refund: the bet was
+  // placed and the round happened. What matters is that it goes through
+  // `settle()` exactly once, so `roundsPlayed`, `table.net` and the log stay
+  // consistent with the gold that actually moved.
+  forfeitRound = () => {
+    if (settled) return;
+    settled = true;
+    settle(table, wallet, { game: gameId, stake: staked, payout: 0, label: "WALKED AWAY" });
+    forfeitRound = null;
+  };
+
   game.play(staked, {
     resolve(result) {
       // Guard against a game resolving twice: that would pay twice AND burn two
       // rounds off the limit.
       if (settled) return;
       settled = true;
+      forfeitRound = null;
       settle(table, wallet, result);
       say(result.label + (result.payout > 0 ? ` · +${result.payout}g` : ""));
       refreshChrome();
@@ -236,12 +274,18 @@ function startRound(): void {
       if (ok) refreshChrome(); // the extra gold must visibly leave, like the first
       return ok;
     },
+    canRaise: (extra) => canRaise(wallet, extra),
   });
 }
 
 function selectGame(id: GameId): void {
   const def = GAMES.find((g) => g.id === id);
   if (!def) return;
+  // Belt and braces: the click handler refuses a switch while busy, but this is
+  // also reachable from `openGambler`'s initial `selectGame("slots")`, and a
+  // future caller would otherwise silently drop a live stake.
+  forfeitRound?.();
+  forfeitRound = null;
   game?.dispose?.();
   game = def.make();
   if (!el) return;
@@ -333,6 +377,27 @@ export function openGambler(host: HTMLElement, onClose: () => void): void {
       refreshChrome();
       return;
     }
+    // SWITCHING GAMES OR LEAVING MID-ROUND USED TO EAT THE STAKE.
+    //
+    // `placeBet` spends the gold the instant you press PLAY, and every game
+    // calls `resolve()` from inside its own `render()`. Swapping the game (or
+    // closing the cabinet) disposes the old one and stops its render loop — so
+    // `resolve()` never fired, `settle()` never ran, and the stake was simply
+    // gone: no payout, no round counted, no entry in the net ticker. Stake 100g
+    // on roulette, click BLACKJACK while the wheel is turning, lose 100g to
+    // nothing at all. Every game was exposed.
+    //
+    // Refuse the switch while a round is live rather than trying to unwind it.
+    // A forfeit-refund would be kinder but it has to be exactly-once against
+    // `settle()`, and a game that is mid-animation is the worst place to try to
+    // prove that; "you can't leave the table mid-spin" is also just true of a
+    // real casino.
+    if (t.dataset.game || t.dataset.act === "leave") {
+      if (game?.busy()) {
+        say("FINISH THE ROUND FIRST");
+        return;
+      }
+    }
     if (t.dataset.game) {
       selectGame(t.dataset.game as GameId);
       return;
@@ -353,12 +418,32 @@ export function openGambler(host: HTMLElement, onClose: () => void): void {
 
   selectGame("slots");
   refreshChrome();
-  last = performance.now();
-  raf = requestAnimationFrame(loop);
+
+  // WAIT FOR THE FONT before the first canvas frame.
+  //
+  // `pixel-font.ts` is explicit that injecting the @font-face is not enough for
+  // canvas: `ctx.font = "12px 'Press Start 2P'"` before the face has loaded
+  // falls back to a smooth system mono, silently. DOM users are fine because
+  // font-display:swap repaints them — canvas users are not. `map-renderer.ts`
+  // and `damage-text.ts` both await; the gambler was the only canvas in the
+  // repo that didn't, so every cabinet opened with a few frames of the wrong
+  // typeface in a game whose whole look is the pixel grid.
+  //
+  // This is the same class of bug `symbols.ts` records in its header, where the
+  // slot glyphs silently fell back and rendered as smooth vector shapes.
+  void awaitPixelFonts().then(() => {
+    if (!el) return; // closed again while we were waiting
+    last = performance.now();
+    raf = requestAnimationFrame(loop);
+  });
 }
 
 export function closeGambler(): void {
   if (!el) return;
+  // Settle any live round BEFORE the game is disposed. `closeTavern()` calls
+  // this directly, so it is not covered by the LEAVE button's busy guard.
+  forfeitRound?.();
+  forfeitRound = null;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
   game?.dispose?.();

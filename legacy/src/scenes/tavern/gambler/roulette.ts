@@ -101,7 +101,22 @@ export const BETS: BetDef[] = [
   { id: "t3", label: "13-18", bet: { kind: "third", index: 2 }, pays: 3 },
 ];
 
-/** A straight-up bet on one number. Built on demand — 19 buttons is a lot. */
+/**
+ * A straight-up bet on one number. Built on demand — 19 buttons is a lot.
+ *
+ * NOT IN `BETS`, deliberately, and the blurb no longer claims it is. It is
+ * priced correctly (18× on a 19-pocket wheel is the same 18/19 return as every
+ * other bet, which `roulette.test.ts` pins), so the maths is not what keeps it
+ * off the table — the cabinet is what does. The bet grid in `roulette-art.ts` is
+ * a fixed 3×3 of 88px chips; nineteen more would need either a number grid the
+ * panel has no room for or a spinner to pick the number, and the shell renders
+ * controls as one flat row of DOM buttons.
+ *
+ * Kept because it is the honest expression of the pricing rule in this file's
+ * header ("every bet type carries the SAME edge"), and because it is what a
+ * number-picker would be built on if the panel ever grows one. Exercised by the
+ * pricing tests, which is what stops it rotting.
+ */
 export function straightBet(n: number): BetDef {
   return { id: `n${n}`, label: String(n), bet: { kind: "straight", n }, pays: POCKETS - 1 };
 }

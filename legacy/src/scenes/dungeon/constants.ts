@@ -39,15 +39,25 @@ export const RENDER_H = 720;
  * an allocation guard second.
  *
  * Integer scale, a full-screen fill, and a fixed field of view are mutually
- * exclusive — you can have any two. We gave up fixed FOV (see INTEGER_SCALE
- * below), but unbounded that trade is worse than it sounds: PPU is pinned at
+ * exclusive — you can have any two. We gave up fixed FOV (see the RENDER_W note
+ * above), but unbounded that trade is worse than it sounds: PPU is pinned at
  * 64, so the render width IS the field of view. A 1920-wide target shows 30
  * tiles where the game was designed around 20, which makes every sprite
  * physically SMALLER on screen — the opposite of the fidelity this whole change
  * was chasing, even though each pixel is now perfectly square.
  *
- * 1600×900 caps the drift at +25% (20 → 25 tiles). Past that the integer scale
- * is KEPT and the canvas letterboxes: crispness is the thing we refuse to
+ * 1920×1080 is chosen so the most common desktop size fills the screen at a
+ * whole-number scale. The previous 1600×900 was a bad pick: it sat just below
+ * 1920, so a 1080p player got 160px bars each side and 90px top and bottom —
+ * 31% of the screen black — to buy a framing nobody asked for.
+ *
+ * Be clear about what integer scaling costs at 1080p, because it is real and
+ * there is no way to avoid it: the old fractional path was effectively ×1.5,
+ * giving the designed 20 tiles at 96px each. No integer reproduces that. ×1 is
+ * 30 tiles at 64px (more level, smaller figures); ×2 is 15 tiles at 128px (big
+ * chunky figures, a quarter less warning of what is coming). We took ×1.
+ *
+ * Past this size the integer scale is KEPT and the canvas letterboxes: crispness is the thing we refuse to
  * trade, and modest bars beat a level that silently zooms out on a big monitor.
  * It also still does the original job — a 7680×1080 ultrawide pins the scale at
  * 1 and would otherwise ask for a 7680-wide target.
@@ -55,8 +65,8 @@ export const RENDER_H = 720;
  * Raising this re-opens the FOV question; it is not a free "use more of the
  * screen" dial. Must stay EVEN (see the even-size rule in pixel-pass.ts).
  */
-export const MAX_RENDER_W = 1600;
-export const MAX_RENDER_H = 900;
+export const MAX_RENDER_W = 1920;
+export const MAX_RENDER_H = 1080;
 
 /**
  * Pixels per world unit. FIXED at 64 — one tile (1 world unit) is always

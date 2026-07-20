@@ -44,6 +44,71 @@ function ctx(): AudioContext | null {
   }
 }
 
+/**
+ * THE TABLE'S OUTPUT BUS.
+ *
+ * Every cue in this file connects here rather than straight to `destination`,
+ * so that `hushBlackjack()` has ONE thing to turn down. Without it there is no
+ * handle on sound that has already been scheduled: `note()` and `thump()` book
+ * their oscillators up to a second into the future and then let go of them, so
+ * walking away mid-hand left the win fanfare and the chip pushes playing over
+ * the tavern with nothing able to stop them.
+ *
+ * Today every cue is a short one-shot so the damage is ~1s of stray audio. The
+ * reason to fix it now is that the next person to add a sustained bed — a
+ * shuffle loop, a table ambience — would inherit a game whose `dispose()` could
+ * not silence it, which is exactly the bug roulette already had to fix.
+ *
+ * Cached per AudioContext: the manager can hand back a NEW context after a
+ * teardown, and a gain node from a dead context is silently inert.
+ */
+let busCtx: AudioContext | null = null;
+let busNode: GainNode | null = null;
+
+function bus(c: AudioContext): GainNode {
+  if (busCtx !== c || !busNode) {
+    busCtx = c;
+    busNode = c.createGain();
+    busNode.gain.value = 1;
+    busNode.connect(c.destination);
+  }
+  return busNode;
+}
+
+/**
+ * Silence everything this table has scheduled. Called from the game's
+ * `dispose()`.
+ *
+ * Ramps rather than snapping to zero: cutting a live oscillator's gain in one
+ * sample is a click, and a click on the way out of the cabinet is worse than
+ * the tail it is suppressing. The bus is then dropped, so the next cue builds a
+ * clean one at full gain.
+ */
+export function hushBlackjack(): void {
+  const n = busNode;
+  const c = busCtx;
+  busNode = null;
+  busCtx = null;
+  if (!n || !c) return;
+  try {
+    const t = c.currentTime;
+    n.gain.cancelScheduledValues(t);
+    n.gain.setValueAtTime(n.gain.value, t);
+    n.gain.linearRampToValueAtTime(0, t + 0.02);
+    // Long enough for the ramp to finish; disconnecting mid-ramp is the click
+    // the ramp exists to avoid.
+    setTimeout(() => {
+      try {
+        n.disconnect();
+      } catch {
+        // already gone
+      }
+    }, 60);
+  } catch {
+    // fail-silent, like every other path in this file
+  }
+}
+
 /** Schedule one note and clean up after itself. */
 function note(
   c: AudioContext,
@@ -62,7 +127,7 @@ function note(
   g.gain.linearRampToValueAtTime(opts.gain, t + 0.006);
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   osc.connect(g);
-  g.connect(c.destination);
+  g.connect(bus(c));
   osc.start(t);
   osc.stop(t + opts.dur + 0.02);
   osc.onended = () => {
@@ -96,7 +161,7 @@ function thump(
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   src.connect(f);
   f.connect(g);
-  g.connect(c.destination);
+  g.connect(bus(c));
   src.start(t);
   src.onended = () => {
     src.disconnect();

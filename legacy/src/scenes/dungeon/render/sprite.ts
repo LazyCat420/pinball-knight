@@ -157,9 +157,6 @@ const BAYER4 = [
  */
 const DITHER_AMP = 10;
 
-/** Whole-number upscale for DOM shop icons — see `renderPaintIcon`. */
-const ICON_UPSCALE = 3;
-
 /**
  * THE CRUSH PASS (2026-07-14 Castlevania round; reworked 2026-07-19).
  *
@@ -244,19 +241,17 @@ export function renderPaintIcon(paint: FramePaint): string {
   if (!ctx) return "";
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
-  const small = crushToGrid(canvas);
-
-  // The icon goes into an <img> in the shop DOM, where SPRITE_PIXEL_GRID px
-  // would be tiny. Upscale by a WHOLE number so the art stays square — the
-  // consumer still needs `image-rendering: pixelated` to keep it that way.
-  const out = document.createElement("canvas");
-  out.width = SPRITE_PIXEL_GRID * ICON_UPSCALE;
-  out.height = SPRITE_PIXEL_GRID * ICON_UPSCALE;
-  const octx = out.getContext("2d");
-  if (!octx) return "";
-  octx.imageSmoothingEnabled = false;
-  octx.drawImage(small, 0, 0, out.width, out.height);
-  return out.toDataURL();
+  // Ship the crushed canvas AT ITS NATIVE SIZE.
+  //
+  // This used to upscale ×3 to 216px on the reasoning that 72px "would be tiny
+  // in the shop DOM". That was simply wrong: `tavern.ts` draws these icons at
+  // 28-34px, so 72px is already more than double the box. The upscale turned a
+  // 2.4× minification into a 7.2× one, and because `.tv-icon` sets
+  // `image-rendering: pixelated`, the browser nearest-samples 1 pixel in every
+  // 7.2 — so a 2px highlight survives or vanishes depending on its sub-pixel
+  // phase, differently per item. It also cost 2.8× the pixels through a
+  // synchronous PNG encode for every shop entry.
+  return crushToGrid(canvas).toDataURL();
 }
 
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
@@ -513,7 +508,31 @@ export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mes
  * billboarding contract as actors: origin at the bottom-centre, tilted once
  * toward the fixed camera.
  */
-export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispose(): void } {
+/**
+ * Texture cache for static sprites, keyed by the PAINTER.
+ *
+ * Every item of a kind is byte-identical — `ITEM_PAINTS.coin` always draws the
+ * same coin — so building it per instance was pure waste. Coins made that waste
+ * expensive: a kill drops 2-4 of them (a style kill up to 8, a pinball
+ * multi-kill 20+ in a frame), and each one was a 128px canvas + the vector
+ * paint + `crushToGrid`, whose palette snap alone is 72×72 pixels × 32 palette
+ * entries ≈ 166k distance evaluations. Twenty coins in one frame was ~3.3M
+ * iterations plus 40 canvas allocations and 20 GPU uploads, all synchronous, at
+ * exactly the moment the screen is busiest.
+ *
+ * The live-coin cap does NOT help — it culls after `spawnCoin` has already
+ * built every sprite, so it bounds draw calls and memory, never the spawn cost.
+ *
+ * Session-lifetime, like `sharedBlobTexture` above: `ITEM_PAINTS` is a fixed
+ * finite set, so there is nothing to evict. A WeakMap keyed on the closure
+ * still lets a one-off painter be collected if a caller ever passes one.
+ */
+const staticTexCache = new WeakMap<FramePaint, THREE.CanvasTexture>();
+
+function staticTexture(paint: FramePaint): THREE.CanvasTexture {
+  const hit = staticTexCache.get(paint);
+  if (hit) return hit;
+
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
@@ -522,30 +541,47 @@ export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispo
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
 
-  // Upload the CRUSHED canvas, not the 128px paint box — same 1:1 texel rule
-  // as the actor atlas. The tavern keepers come through here, so this is the
-  // path that decides whether the people you talk to look crisp.
+  // Upload the CRUSHED canvas, not the 128px paint box — one texel per render
+  // pixel at zoom 1, same rule as the actor atlas. NB the tavern runs a camera
+  // zoom below 1, so items there are minified and this does NOT hold; see the
+  // note on SPRITE_UNITS in constants.ts.
   const tex = new THREE.CanvasTexture(crushToGrid(canvas));
   celFilters(tex);
+  staticTexCache.set(paint, tex);
+  return tex;
+}
 
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
-  geo.translate(0, SPRITE_UNITS / 2, 0);
+/**
+ * Shared geometry for every static sprite — they are all the same quad.
+ * Built lazily so importing this module never touches THREE's GL side.
+ */
+let sharedStaticGeo: THREE.PlaneGeometry | null = null;
+function staticGeometry(): THREE.PlaneGeometry {
+  if (!sharedStaticGeo) {
+    sharedStaticGeo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
+    sharedStaticGeo.translate(0, SPRITE_UNITS / 2, 0);
+  }
+  return sharedStaticGeo;
+}
+
+export function createStaticSprite(paint: FramePaint): { mesh: THREE.Mesh; dispose(): void } {
+  // The MATERIAL stays per-instance: `tavern/npcs.ts` tints individual keepers
+  // via `mesh.material.color`, so sharing it would tint the whole cast.
   const mat = new THREE.MeshBasicMaterial({
-    map: tex,
+    map: staticTexture(paint),
     transparent: true,
     alphaTest: 0.5,
     side: THREE.DoubleSide,
   });
-  const mesh = new THREE.Mesh(geo, mat);
+  const mesh = new THREE.Mesh(staticGeometry(), mat);
   faceCamera(mesh);
   mesh.renderOrder = 5; // under actors, over the floor
 
   return {
     mesh,
-    dispose: () => {
-      geo.dispose();
-      mat.dispose();
-      tex.dispose();
-    },
+    // Only the material is ours. The geometry and texture are shared and
+    // outlive every individual sprite — disposing them here would blank every
+    // other item on the floor.
+    dispose: () => mat.dispose(),
   };
 }

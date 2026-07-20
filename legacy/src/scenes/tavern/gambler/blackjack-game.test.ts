@@ -39,6 +39,7 @@ vi.mock("./blackjack-audio", () => ({
   sfxPush: cue("push"),
   sfxLoseHand: cue("lose"),
   sfxShuffle: cue("shuffle"),
+  hushBlackjack: cue("hush"),
 }));
 
 /** The stacked shoe for the hand under test, then a real deck behind it. */
@@ -71,6 +72,10 @@ async function makeGame(stack: Card[], raise: (n: number) => boolean = () => tru
       raises.push(n);
       return raise(n);
     },
+    // Same predicate the shell derives both from — a harness where DOUBLE is
+    // offered but refused, or refused but offered, is testing a table that
+    // cannot exist.
+    canRaise: (n) => raise(n),
   });
   return {
     game,
@@ -267,5 +272,122 @@ describe("the hand reads in order", () => {
     // Settled and unlocked — the shell can offer another round.
     expect(h.game.busy()).toBe(false);
     expect(h.game.controls?.()).toEqual([]);
+  });
+
+  /**
+   * `busy()` MUST stay true through the settle hold.
+   *
+   * It used to be `phase is deal/player/flip/dealer`, which omits "done" — so
+   * for the 2.0s the result plate is up, the table reported itself idle. The
+   * plate is the only place the hand's outcome is stated, and an immediate PLAY
+   * wiped it before it could be read. Roulette's `busy()` has always covered its
+   * own settle hold; the two games disagreeing was the actual defect.
+   *
+   * This stopped being cosmetic when the shell started refusing a game switch
+   * and a LEAVE while `busy()` — the flag is now load-bearing, so "every phase
+   * that is still doing something" has to be the rule rather than a preference.
+   */
+  it("stays busy through the settle hold, not just to the last card", async () => {
+    // Player 20, dealer 19 — the dealer stands at once, so the hand reaches
+    // `done` about 0.8s after the stand and then holds.
+    const h = await makeGame(shoe(c(10), c(10), c(10), c(9)));
+    h.step(1.2);
+    h.game.onControl?.("stand");
+    h.step(1.5); // flip + one dealer beat: settled, and well into the hold
+
+    expect(h.resolves, "the hand should have settled by now").toHaveLength(1);
+    expect(h.game.busy(), "the result plate is still up — the table is not free").toBe(true);
+
+    // ...and it does eventually let go, or the cabinet would lock for good.
+    h.step(2.5);
+    expect(h.game.busy()).toBe(false);
+  });
+});
+
+describe("leaving the table", () => {
+  it("clears the hand on dispose", async () => {
+    const h = await makeGame(shoe(c(10), c(2), c(9), c(3)));
+    h.step(1.2);
+    expect(h.game.busy()).toBe(true);
+    h.game.dispose?.();
+    // Silences whatever is still scheduled. Every cue is a one-shot today, so
+    // this is worth ~1s — the point is that the handle exists at all, for the
+    // next person who adds a sustained bed.
+    expect(cues).toContain("hush");
+    // A disposed table is idle, offers nothing, and is safe to render.
+    expect(h.game.busy()).toBe(false);
+    expect(h.game.controls?.()).toEqual([]);
+    expect(() => h.step(0.5)).not.toThrow();
+  });
+});
+
+/**
+ * A long hand must stay INSIDE the felt.
+ *
+ * At the natural 40px pitch the eighth card's right edge landed at 390, past the
+ * readout plates at 376 — so the cards a player most needs to count (they only
+ * get eight by drawing aces and deuces) were drawn underneath the totals. It
+ * takes a contrived shoe to reach, which is exactly why it survived: nobody
+ * playing normally ever saw it.
+ *
+ * Checked by watching where cards are actually PAINTED rather than by
+ * recomputing the layout here — a test that restates the pitch formula passes
+ * whatever the formula says.
+ */
+describe("a long hand", () => {
+  it("never draws a card under the readout plates", async () => {
+    // Aces and deuces: eight cards without busting.
+    const many = [c(1), c(10), c(1), c(9), c(1), c(1), c(2), c(2), c(2), c(2)];
+    const h = await makeGame(many);
+    h.step(1.2);
+    for (let i = 0; i < 6; i++) {
+      h.game.onControl?.("hit");
+      h.step(0.4);
+    }
+
+    // Re-render through a context that records the right edge of every fill.
+    const cv = createCanvas(520, 200);
+    const ctx = cv.getContext("2d") as unknown as CanvasRenderingContext2D;
+    let rightmost = 0;
+    const real = ctx.fillRect.bind(ctx);
+    ctx.fillRect = (x: number, y: number, w: number, hh: number): void => {
+      // Only the player's card row. Bounded on the left as well as the top,
+      // because the readout plates share this y band and legitimately draw
+      // their own right-hand edge out at 514.
+      if (y >= 104 && y <= 154 && x < 376 && w <= 60) rightmost = Math.max(rightmost, x + w);
+      real(x, y, w, hh);
+    };
+    h.game.render(ctx, 520, 200, 1 / 30);
+
+    // `panelX` is 376. Nothing in the player's row may reach it.
+    expect(rightmost).toBeLessThanOrEqual(376);
+  });
+});
+
+describe("the double button", () => {
+  it("is offered when the purse covers it", async () => {
+    const h = await makeGame(shoe(c(5), c(10), c(6), c(9)), () => true);
+    h.step(1.2);
+    const double = h.game.controls?.().find((x) => x.id === "double");
+    expect(double?.disabled).toBeFalsy();
+  });
+
+  /**
+   * An unaffordable DOUBLE must be GREYED OUT, not silently swallowed.
+   *
+   * `controls()` used to gate only on "two cards and not already doubled", so a
+   * player without the gold got a live button that did nothing at all when
+   * pressed: `raise()` refused, the hand carried on undoubled, and nothing said
+   * why. `say()` belongs to the shell and is unreachable from `onControl`, so
+   * the refusal has to be visible at the point the button is offered.
+   */
+  it("is disabled when the purse cannot cover it", async () => {
+    const h = await makeGame(shoe(c(5), c(10), c(6), c(9)), () => false);
+    h.step(1.2);
+    const double = h.game.controls?.().find((x) => x.id === "double");
+    expect(double, "DOUBLE should still be listed, just dead").toBeDefined();
+    expect(double?.disabled).toBe(true);
+    // HIT and STAND are unaffected — only the option that costs gold goes.
+    expect(h.game.controls?.().find((x) => x.id === "hit")?.disabled).toBeFalsy();
   });
 });

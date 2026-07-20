@@ -41,9 +41,30 @@
  * highlights toward yellow. A ramp built by dragging a lightness slider makes
  * every material read as grey wearing a colour, which is the note `slots-game`
  * records too.
+ *
+ * ── Why the wheel is BAKED ──────────────────────────────────────────────────
+ * The rasteriser above is honest but expensive: a full wheel is eight per-pixel
+ * disc scans plus a ~190-column skirt loop, and it was being re-run from scratch
+ * on every single frame — about 6,000 `fillRect` calls a frame, most of a 60fps
+ * budget spent redrawing pixels that had not changed.
+ *
+ * Exactly ONE of those discs depends on the rotor: the pocket ring. The rim,
+ * lip, track, apron, cone, turret disc, deflectors and the whole skirt are
+ * geometry that never moves. So they are baked ONCE into offscreen canvases
+ * (`buildWheelLayers`) and blitted with `drawImage`, the same way `darts-art`
+ * bakes its board. Three layers rather than one, because the painter's order
+ * interleaves them with things that DO move:
+ *
+ *   base  →  pocket ring  →  numbers  →  mid  →  turret arms  →  ball  →  far
+ *
+ * `base` is everything under the ring, `mid` everything over the ring but under
+ * the ball, and `far` the far-half rim/lip annuli that put the rim back on top
+ * of the ball. Splitting there is what keeps the depth sort — and therefore the
+ * ball disappearing behind the far rim — identical to the unbaked version.
  */
 import { colorOf } from "./roulette";
-import { DEFLECTORS, POCKET_PITCH, R_POCKET, type BallFrame } from "./roulette-physics";
+import { DEFLECTORS, POCKET_PITCH, R_POCKET, R_DEFLECTOR, type BallFrame } from "./roulette-physics";
+import { domCanvasFactory, type CanvasFactory, type OffscreenLike } from "./offscreen";
 
 /** Wheel centre and size, in canvas pixels. */
 export const CX = 124;
@@ -70,13 +91,37 @@ const CONE2_LIFT = 9;
 const TURRET_R = 0.21;
 const TURRET_LIFT = 15;
 
-/** Where the ball rides when it is up on the track, in art radius. */
+/**
+ * Where the ball rides when it is up on the track, in ART radius.
+ *
+ * DELIBERATELY NOT `R_BALL_TRACK` (which is 1). The two are different quantities
+ * and both are correct:
+ *
+ *   · `R_BALL_TRACK = 1` is the physics model's NORMALISATION. The simulator
+ *     works in units where the track is the unit circle, because that is what
+ *     makes the centripetal-support term read as `omega^2 * r` with no scale
+ *     factor smeared through it.
+ *   · `BALL_TRACK_R = 0.9` is where that maps to on screen. The wheel's art
+ *     radius 1.0 is the outer edge of the RIM, and the groove the ball actually
+ *     runs in is the band from APRON_R to TRACK_R (0.855..0.925). A ball drawn
+ *     at art radius 1.0 would be riding the mahogany rim, outside the bowl.
+ *
+ * `drawWheel` is where they meet: it remaps physics [R_POCKET, 1] onto art
+ * [R_POCKET, BALL_TRACK_R]. So this is one source of truth for the physical
+ * track and one for its projection, not two guesses at the same number — but
+ * BALL_TRACK_R must stay inside [APRON_R, TRACK_R] or the ball leaves the
+ * groove.
+ */
 const BALL_TRACK_R = 0.9;
 /** Depth of the bowl's outer wall below the rim, in pixels. */
 const SKIRT = 13;
 
-/** Deflector ring radius in art space, and half-size of a diamond in pixels. */
-const DEFL_R = 0.8;
+/**
+ * Deflector ring radius. Taken from the physics module rather than restated:
+ * a diamond drawn somewhere the ball never scatters is a picture of a different
+ * wheel, and the two numbers being equal by hand is exactly how that drifts.
+ */
+const DEFL_R = R_DEFLECTOR;
 
 /** ── Ramps ── ink, shade, base, lite, hi. Cool shadows, warm highlights. */
 const MAHOGANY = ["#2a1218", "#46201c", "#6b3624", "#94552f", "#c08a4e"];
@@ -266,30 +311,34 @@ function ballLift(f: BallFrame): number {
   return RING_LIFT + 1 + onTrack * (TRACK_LIFT - RING_LIFT) + f.height * 7;
 }
 
-export interface WheelView {
-  /** Live ball + rotor state. */
-  frame: BallFrame;
-  /** Pocket to flash gold, or -1. */
-  highlight: number;
-  /** 0..1 flash phase for the highlight, so it can pulse. */
-  flash: number;
-  /** Draw the ball at all — false while idle. */
-  showBall: boolean;
-}
+/** ── The bake ─────────────────────────────────────────────────────────────── */
 
 /**
- * Draw the whole wheel.
+ * Size of the baked layers.
  *
- * The terrace order below IS the depth sort; changing it changes what occludes
- * what. Read it top to bottom as "outside in, then the ball, then the far rim
- * back on top".
+ * The wheel lives entirely in the top-left of the cabinet canvas, so the layers
+ * are cropped to a box that contains it rather than being canvas-sized: the rim
+ * spans x 30..218 and the skirt bottoms out around y 150. Blitting at (0,0)
+ * keeps every coordinate in this file absolute, which means the bake shares the
+ * SAME `project()` and `paintDisc()` as everything drawn live on top of it —
+ * a separate local coordinate space is exactly how a baked layer drifts a pixel
+ * away from the live art it has to line up with.
  */
-export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView): void {
-  const { frame } = v;
-  const rotor = frame.rotor;
+export const BAKE_W = Math.ceil(CX + R) + 4;
+export const BAKE_H = Math.ceil(CY - RIM_LIFT + R * FLAT) + SKIRT + 6;
 
-  // ── Bowl skirt ── the outer wall below the rim. One rect per column, so the
-  // silhouette is the same rasterised ellipse the rim uses and they line up.
+/** The three static layers of the wheel, in painter's order. */
+export interface WheelLayers {
+  /** Skirt, rim, lip, track, apron — everything UNDER the pocket ring. */
+  base: OffscreenLike;
+  /** Cone, turret disc, deflectors — over the ring, under the ball. */
+  mid: OffscreenLike;
+  /** Far-half rim and lip annuli — drawn back on top of the ball. */
+  far: OffscreenLike;
+}
+
+/** The bowl's outer wall. One rect per column, so it shares the rim's silhouette. */
+function paintSkirt(ctx: CanvasRenderingContext2D): void {
   const ryRim = R * FLAT;
   for (let sx = Math.floor(CX - R); sx <= Math.ceil(CX + R); sx++) {
     const dxw = sx + 0.5 - CX;
@@ -305,27 +354,126 @@ export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView): void {
     const t = dxw / R;
     const lit = Math.round(1.5 + t * LX * 2 - Math.abs(t) * 1.2);
     const base = lit < 0 ? 0 : lit > 3 ? 3 : lit;
-    for (let k = 0; k < SKIRT; k++) {
-      const j = base - (k > SKIRT - 4 ? 1 : 0);
-      ctx.fillStyle = WALL[j < 0 ? 0 : j];
-      ctx.fillRect(sx, yb + k, 1, 1);
-    }
+    // One rect per RUN of identical wall tone rather than one per pixel. The
+    // ramp only ever steps once down the column (the last 3 rows darken), so
+    // this is 2 rects where the original emitted 13.
+    const split = SKIRT - 3;
+    ctx.fillStyle = WALL[base];
+    ctx.fillRect(sx, yb, 1, split);
+    ctx.fillStyle = WALL[base - 1 < 0 ? 0 : base - 1];
+    ctx.fillRect(sx, yb + split, 1, SKIRT - split);
     ctx.fillStyle = "#0c1a15";
     ctx.fillRect(sx, yb + SKIRT, 1, 2);
   }
+}
 
-  // ── Rim ── mahogany, lit from the upper left.
-  paintDisc(ctx, RIM_R, 0, RIM_LIFT, (rr, _a, nx, ny) => tone(MAHOGANY, nx, ny, edgeOf(rr, LIP_R, RIM_R), 0.4));
+/** The cone's radial terracing. Steps, not a lit sphere — see `drawWheel`. */
+const coneTone = (ramp: string[], rr: number, lo: number, hi: number, nx: number, ny: number): string => {
+  const step = Math.floor(edgeOf(rr, lo, hi) * 3.99);
+  const lit = nx * LX + ny * LY;
+  const i = step + (lit > 0.5 ? 2 : lit > 0.05 ? 1 : 0);
+  return ramp[i < 0 ? 0 : i > 4 ? 4 : i];
+};
 
-  // ── Brass lip ── the bright ring that catches the light at the track's edge.
-  paintDisc(ctx, LIP_R, 0, LIP_LIFT, (rr, _a, nx, ny) => tone(BRASS, nx, ny, edgeOf(rr, TRACK_R, LIP_R), 0.6));
+/**
+ * Bake every part of the wheel that does not move.
+ *
+ * Call once per cabinet. `factory` exists so tests can hand in node-canvas; see
+ * `offscreen.ts`.
+ */
+export function buildWheelLayers(factory: CanvasFactory = domCanvasFactory): WheelLayers {
+  const make = (): { cv: OffscreenLike; ctx: CanvasRenderingContext2D } => {
+    const cv = factory(BAKE_W, BAKE_H);
+    const ctx = cv.getContext("2d") as CanvasRenderingContext2D;
+    ctx.imageSmoothingEnabled = false;
+    return { cv, ctx };
+  };
 
-  // ── Ball track ── a dark polished groove. Darker at its inner edge, which is
+  // ── base ── skirt first, then the terraces outside in. Each disc paints over
+  // the interior of the last, which is the bowl's occlusion.
+  const base = make();
+  paintSkirt(base.ctx);
+  // Rim — mahogany, lit from the upper left.
+  paintDisc(base.ctx, RIM_R, 0, RIM_LIFT, (rr, _a, nx, ny) => tone(MAHOGANY, nx, ny, edgeOf(rr, LIP_R, RIM_R), 0.4));
+  // Brass lip — the bright ring that catches the light at the track's edge.
+  paintDisc(base.ctx, LIP_R, 0, LIP_LIFT, (rr, _a, nx, ny) => tone(BRASS, nx, ny, edgeOf(rr, TRACK_R, LIP_R), 0.6));
+  // Ball track — a dark polished groove. Darker at its inner edge, which is
   // what makes it read as a channel rather than a flat band.
-  paintDisc(ctx, TRACK_R, 0, TRACK_LIFT, (rr, _a, nx, ny) => tone(GROOVE, nx, ny, edgeOf(rr, APRON_R, TRACK_R), 1.1));
+  paintDisc(base.ctx, TRACK_R, 0, TRACK_LIFT, (rr, _a, nx, ny) => tone(GROOVE, nx, ny, edgeOf(rr, APRON_R, TRACK_R), 1.1));
+  // Apron — the stator's slope, where the deflectors live.
+  paintDisc(base.ctx, APRON_R, 0, APRON_LIFT, (rr, _a, nx, ny) => tone(STEEL, nx, ny, edgeOf(rr, RING_R, APRON_R), 0));
 
-  // ── Apron ── the stator's slope, where the deflectors live.
-  paintDisc(ctx, APRON_R, 0, APRON_LIFT, (rr, _a, nx, ny) => tone(STEEL, nx, ny, edgeOf(rr, RING_R, APRON_R), 0));
+  // ── mid ── the brass terraces climbing to the turret, plus the deflectors.
+  //
+  // These get RADIAL banding with only a weak light term, unlike every other
+  // surface. The first pass shaded them the same way as the rim and the result
+  // was a smeared gold blob across the middle of the wheel — a lit sphere, not
+  // a turned cone. Concentric steps are what say "machined metal", and the
+  // light is left in only strongly enough to keep the near side warmer.
+  // Blending the light smoothly into the step index put a dead straight
+  // quantisation edge down the middle of the cone, which read as a seam in the
+  // metal. So the terraces are PURELY radial, and the light contributes only as
+  // a specular: one ramp step brighter where the surface faces it.
+  // A hard specular patch is a highlight; a soft ramp across the whole cone is
+  // a smudge.
+  const mid = make();
+  paintDisc(mid.ctx, CONE_R, 0, CONE_LIFT, (rr, _a, nx, ny) => coneTone(BRASS, rr, CONE2_R, CONE_R, nx, ny));
+  paintDisc(mid.ctx, CONE2_R, 0, CONE2_LIFT, (rr, _a, nx, ny) => coneTone(BRASS, rr, TURRET_R, CONE2_R, nx, ny));
+  paintDisc(mid.ctx, TURRET_R, 0, TURRET_LIFT, (rr, _a, nx, ny) => coneTone(MAHOGANY, rr, 0, TURRET_R, nx, ny));
+
+  // Deflectors — diamonds on the STATIONARY bowl, so no rotor term here. Four
+  // of the eight sit lower on screen than the ball's track, and the raised
+  // pixel above each one is what sells them as metal standing proud.
+  for (let i = 0; i < DEFLECTORS; i++) {
+    const a = (i / DEFLECTORS) * Math.PI * 2 + 0.21;
+    const p = project(a, DEFL_R, APRON_LIFT + 2);
+    const lit = Math.cos(a) * LX + Math.sin(a) * LY > 0;
+    mid.ctx.fillStyle = BRASS[1];
+    mid.ctx.fillRect(p.x - 3, p.y, 7, 1);
+    mid.ctx.fillRect(p.x - 2, p.y - 1, 5, 1);
+    mid.ctx.fillRect(p.x - 2, p.y + 1, 5, 1);
+    mid.ctx.fillStyle = lit ? BRASS[4] : BRASS[2];
+    mid.ctx.fillRect(p.x - 1, p.y - 1, 3, 2);
+    mid.ctx.fillStyle = BRASS[0];
+    mid.ctx.fillRect(p.x - 1, p.y + 2, 3, 1);
+  }
+
+  // ── far ── the depth sort's payoff. Repainting these two annuli over the far
+  // half is what makes the ball vanish behind the rim on the far side of the
+  // orbit instead of sliding across it.
+  const far = make();
+  paintDisc(far.ctx, RIM_R, LIP_R, RIM_LIFT, (rr, _a, nx, ny) => tone(MAHOGANY, nx, ny, edgeOf(rr, LIP_R, RIM_R), 0.4), true);
+  paintDisc(far.ctx, LIP_R, TRACK_R, LIP_LIFT, (rr, _a, nx, ny) => tone(BRASS, nx, ny, edgeOf(rr, TRACK_R, LIP_R), 0.6), true);
+
+  return { base: base.cv, mid: mid.cv, far: far.cv };
+}
+
+export interface WheelView {
+  /** Live ball + rotor state. */
+  frame: BallFrame;
+  /** Pocket to flash gold, or -1. */
+  highlight: number;
+  /** 0..1 flash phase for the highlight, so it can pulse. */
+  flash: number;
+  /** Draw the ball at all — false while idle. */
+  showBall: boolean;
+}
+
+/**
+ * Draw the whole wheel.
+ *
+ * The order below IS the depth sort; changing it changes what occludes what.
+ * Read it top to bottom as "the baked bowl, then the ring that turns, then the
+ * baked cone, then the ball, then the baked far rim back on top".
+ *
+ * `layers` comes from `buildWheelLayers()` and is built once per cabinet.
+ */
+export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView, layers: WheelLayers): void {
+  const { frame } = v;
+  const rotor = frame.rotor;
+
+  // ── Bowl ── skirt, rim, lip, track and apron, baked. One blit, no scan.
+  ctx.drawImage(layers.base as unknown as CanvasImageSource, 0, 0);
 
   // ── Pocket ring ── the only band whose colour depends on ANGLE, and the only
   // one indexed in the rotor's frame. This is where counter-rotation becomes
@@ -343,33 +491,15 @@ export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView): void {
     return tone(POCKET_RAMP[colorOf(idx)], nx, ny, edge, -0.2);
   });
 
-  // ── Cone ── the brass terraces climbing to the turret.
-  //
-  // These get RADIAL banding with only a weak light term, unlike every other
-  // surface. The first pass shaded them the same way as the rim and the result
-  // was a smeared gold blob across the middle of the wheel — a lit sphere, not
-  // a turned cone. Concentric steps are what say "machined metal", and the
-  // light is left in only strongly enough to keep the near side warmer.
-  // Blending the light smoothly into the step index put a dead straight
-  // quantisation edge down the middle of the cone, which read as a seam in the
-  // metal. So the terraces are now PURELY radial, and the light contributes
-  // only as a specular: one ramp step brighter where the surface faces it.
-  // A hard specular patch is a highlight; a soft ramp across the whole cone is
-  // a smudge.
-  const coneTone = (ramp: string[], rr: number, lo: number, hi: number, nx: number, ny: number): string => {
-    const step = Math.floor(edgeOf(rr, lo, hi) * 3.99);
-    const lit = nx * LX + ny * LY;
-    const i = step + (lit > 0.5 ? 2 : lit > 0.05 ? 1 : 0);
-    return ramp[i < 0 ? 0 : i > 4 ? 4 : i];
-  };
-  paintDisc(ctx, CONE_R, 0, CONE_LIFT, (rr, _a, nx, ny) => coneTone(BRASS, rr, CONE2_R, CONE_R, nx, ny));
-  paintDisc(ctx, CONE2_R, 0, CONE2_LIFT, (rr, _a, nx, ny) => coneTone(BRASS, rr, TURRET_R, CONE2_R, nx, ny));
-  paintDisc(ctx, TURRET_R, 0, TURRET_LIFT, (rr, _a, nx, ny) => coneTone(MAHOGANY, rr, 0, TURRET_R, nx, ny));
-
   // ── Pocket numbers ── near half only. On the far half the terraces above
   // them are in the way and the foreshortening leaves under two pixels of
   // height, so they are simply not drawn — the same reason a real wheel's far
   // numbers are unreadable from a seat at the table.
+  //
+  // Drawn BEFORE the cone blit rather than after it, unlike the unbaked version.
+  // Safe because the number ring sits at radius 0.62 and the cone's outer edge
+  // is 0.5, so the two can never touch — and it lets the cone and the
+  // deflectors, which bracket the numbers in the original order, share one blit.
   for (let n = 0; n < 19; n++) {
     const a = rotor + n * POCKET_PITCH;
     const s = Math.sin(a);
@@ -378,22 +508,8 @@ export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView): void {
     tinyNumber(ctx, n, p.x, p.y - 2, n === v.highlight && v.flash > 0 ? "#3a2a06" : "#b9c4d6");
   }
 
-  // ── Deflectors ── diamonds on the STATIONARY bowl, so no rotor term here.
-  // Four of the eight sit lower on screen than the ball's track, and the raised
-  // pixel above each one is what sells them as metal standing proud.
-  for (let i = 0; i < DEFLECTORS; i++) {
-    const a = (i / DEFLECTORS) * Math.PI * 2 + 0.21;
-    const p = project(a, DEFL_R, APRON_LIFT + 2);
-    const lit = Math.cos(a) * LX + Math.sin(a) * LY > 0;
-    ctx.fillStyle = BRASS[1];
-    ctx.fillRect(p.x - 3, p.y, 7, 1);
-    ctx.fillRect(p.x - 2, p.y - 1, 5, 1);
-    ctx.fillRect(p.x - 2, p.y + 1, 5, 1);
-    ctx.fillStyle = lit ? BRASS[4] : BRASS[2];
-    ctx.fillRect(p.x - 1, p.y - 1, 3, 2);
-    ctx.fillStyle = BRASS[0];
-    ctx.fillRect(p.x - 1, p.y + 2, 3, 1);
-  }
+  // ── Cone and deflectors ── baked. Second blit.
+  ctx.drawImage(layers.mid as unknown as CanvasImageSource, 0, 0);
 
   // ── Turret ── the four-armed brass handle riding the rotor. It is the
   // clearest read on which way the WHEEL is turning, as opposed to the ball.
@@ -461,18 +577,8 @@ export function drawWheel(ctx: CanvasRenderingContext2D, v: WheelView): void {
     drawBall(ctx, p.x, p.y, true);
   }
 
-  // ── Far rim back on top ── the depth sort's payoff. Repainting these two
-  // annuli over the far half is what makes the ball vanish behind the rim on
-  // the far side of the orbit instead of sliding across it.
-  paintDisc(
-    ctx,
-    RIM_R,
-    LIP_R,
-    RIM_LIFT,
-    (rr, _a, nx, ny) => tone(MAHOGANY, nx, ny, edgeOf(rr, LIP_R, RIM_R), 0.4),
-    true,
-  );
-  paintDisc(ctx, LIP_R, TRACK_R, LIP_LIFT, (rr, _a, nx, ny) => tone(BRASS, nx, ny, edgeOf(rr, TRACK_R, LIP_R), 0.6), true);
+  // ── Far rim back on top ── the depth sort's payoff, baked. Third blit.
+  ctx.drawImage(layers.far as unknown as CanvasImageSource, 0, 0);
 
   // ── Winner callout ── drawn dead last, so nothing can occlude it.
   //
@@ -518,7 +624,17 @@ function box(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 }
 
 export interface PanelView {
-  bets: Array<{ id: string; label: string; selected: boolean }>;
+  /**
+   * `pays` is carried per chip and PRINTED verbatim.
+   *
+   * It used to be reconstructed here as `id is a third ? 3 : 2`, which is a
+   * second copy of the pricing table living in the art — the picture agreed
+   * with `BETS` only by coincidence, and re-pricing a bet in `roulette.ts` would
+   * have left the chip printing the old odds with nothing to catch it. Same
+   * rule as blackjack's printed rules arc: the picture reads from the source
+   * that pays out.
+   */
+  bets: Array<{ id: string; label: string; selected: boolean; pays: number }>;
   pays: number;
   stake: number;
   /** Last few pockets, newest first. */
@@ -580,7 +696,7 @@ export function drawPanel(ctx: CanvasRenderingContext2D, v: PanelView): void {
     ctx.fillStyle = b.selected ? C_WIN_HI : C_TEXT;
     ctx.fillText(b.label, x + CW / 2, y + 6);
     ctx.fillStyle = b.selected ? C_WIN : C_DIM;
-    ctx.fillText(`${b.id === "t1" || b.id === "t2" || b.id === "t3" ? 3 : 2}x`, x + CW / 2, y + 16);
+    ctx.fillText(`${b.pays}x`, x + CW / 2, y + 16);
   }
 
   // ── History ── the last few pockets, as coloured chips. Every roulette table

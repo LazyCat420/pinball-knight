@@ -42,7 +42,7 @@ async function run(reels: string[], multiplier: number) {
   const { createSlotsGame } = await import("./slots-game");
   const ctx: any = createCanvas(520, 200).getContext("2d");
   const g = createSlotsGame();
-  g.play(10, { resolve: () => {}, raise: () => true });
+  g.play(10, { resolve: () => {}, raise: () => true, canRaise: () => true });
   for (let e = 0; e < 2.4; e += 1 / 60) g.render(ctx, 520, 200, 1 / 60);
   return calls.slice();
 }

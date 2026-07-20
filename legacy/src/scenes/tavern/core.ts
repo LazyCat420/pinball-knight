@@ -8,7 +8,7 @@
  * two scenes looking like one game.
  */
 import * as THREE from "three";
-import { createPixelPass, type PixelPass } from "../dungeon/render/pixel-pass";
+import { createPixelPass, computeRenderSizing, type PixelPass } from "../dungeon/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../dungeon/camera";
 import { createInput, type InputHandle } from "../dungeon/input";
 import { openVendorCounter, isVendorCounterOpen } from "../dungeon/tavern";
@@ -23,6 +23,7 @@ import {
   OUTLINE_DEFAULT,
   BLOOM_DEFAULT,
   AO_DEFAULT,
+  PPU,
 } from "../dungeon/constants";
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
@@ -53,9 +54,57 @@ const CAM_LERP = 3.4;
  * and the room stops reading as a hub. This is emphasis, not a cutscene.
  */
 const CAM_ZOOM_WIDE = 0.78;
-const CAM_ZOOM_FOCUS = 0.92;
-/** Zoom easing rate. Slower than the pan, so the push-in trails the lean. */
-const CAM_ZOOM_LERP = 2.4;
+
+/**
+ * THE CAMERA ZOOM NO LONGER ANIMATES, and that is a pixel-fidelity decision
+ * rather than an art one.
+ *
+ * Sprite crispness rests on one texel landing on one render pixel:
+ * `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID`. Screen pixels per world unit is
+ * actually `PPU * camera.zoom`, so ANY zoom other than exactly 1 breaks it —
+ * 72 texels get squeezed into `72 * zoom` pixels and NearestFilter drops rows
+ * in an irregular comb. The dungeon never noticed because it never sets zoom.
+ *
+ * There used to be a push-in from 0.78 to 0.92 on station focus, EASED over
+ * ~0.4s. That meant the comb pattern shifted every frame of the transition, so
+ * the artifact crawled across every keeper and prop exactly as you walked up to
+ * talk to one. An animated version of the precise defect the whole pixel pass
+ * exists to prevent, and worse than a static offset.
+ *
+ * Focus is still signalled — `stations.ts` puts a spotlight on the floor and
+ * pulses the station's accent light. Those cost no fidelity. The zoom did.
+ *
+ * `fitZoom()` picks ONE value at entry and on resize: exactly 1 (genuinely
+ * pixel-perfect) when the render target can hold the room, else the wide
+ * framing. Be honest about the odds — the room's iso footprint is ~22.6 x 16.5
+ * tiles and most real windows resolve to a render target shorter than 16.5,
+ * so in practice the tavern usually still sits at 0.78 and is NOT 1:1. It is
+ * just no longer animating, which is the part that read as crawling.
+ */
+const ROOM_FOOTPRINT_TILES_W = 22.63;
+const ROOM_FOOTPRINT_TILES_H = 16.45;
+
+/**
+ * The one zoom this visit uses. Exactly 1 when the room fits (so the tavern is
+ * genuinely 1 texel : 1 pixel), otherwise the wide framing.
+ *
+ * Never returns anything BETWEEN the two and never magnifies: a zoom above 1
+ * would break the texel identity just as badly as one below it.
+ */
+function fitZoom(): number {
+  if (typeof window === "undefined") return CAM_ZOOM_WIDE;
+  const { renderW, renderH } = computeRenderSizing(window.innerWidth, window.innerHeight);
+  const fits = renderW / PPU >= ROOM_FOOTPRINT_TILES_W && renderH / PPU >= ROOM_FOOTPRINT_TILES_H;
+  return fits ? 1 : CAM_ZOOM_WIDE;
+}
+
+/** Apply `fitZoom()` to the live camera. Safe to call before the camera exists. */
+function applyZoom(): void {
+  camZoom = fitZoom();
+  if (!tavern.camera) return;
+  tavern.camera.zoom = camZoom;
+  tavern.camera.updateProjectionMatrix();
+}
 
 let raf = 0;
 let last = 0;
@@ -174,24 +223,9 @@ function frame(now: number): void {
     tavern.camZ += (tz - tavern.camZ) * k;
     if (tavern.camera) aimCamera(tavern.camera, tavern.camX, 0, tavern.camZ);
 
-    // Push in on focus, back out on release. Always eased toward the CURRENT
-    // target rather than run as a timed transition, so changing focus (or
-    // losing it) part-way through simply retargets — there is no state in which
-    // the camera can be left stranded at a zoom nobody asked for. And it only
-    // ever writes the camera's own projection, so it cannot fight the player
-    // controller, which never reads it.
-    //
-    // Held still while a panel is up: `frozen` clears the focus, and letting
-    // that zoom the room back out behind a full-screen overlay means the push-in
-    // replays from wide every time you close a vendor.
-    if (tavern.camera && !frozen) {
-      const wantZoom = tavern.focus ? CAM_ZOOM_FOCUS : CAM_ZOOM_WIDE;
-      if (Math.abs(wantZoom - camZoom) > 1e-4) {
-        camZoom += (wantZoom - camZoom) * Math.min(1, dt * CAM_ZOOM_LERP);
-        tavern.camera.zoom = camZoom;
-        tavern.camera.updateProjectionMatrix();
-      }
-    }
+    // NB: no zoom work here any more. The focus push-in used to live on this
+    // line and it is deliberately gone — see the note on CAM_ZOOM_WIDE. Zoom is
+    // now set once by `fitZoom()` at entry and on resize.
   }
 
   fx?.update(dt, tavern.time, props?.accents ?? new Map());
@@ -307,10 +341,10 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   container.appendChild(canvas);
 
   const camera = createDungeonCamera();
-  camZoom = CAM_ZOOM_WIDE; // module-level, so a second visit must not inherit the last one
-  camera.zoom = camZoom; // wide enough to hold the whole staged room in frame
-  camera.updateProjectionMatrix();
+  // Module-level, so a second visit must not inherit the last one. Picks 1
+  // (pixel-perfect) when the render target can hold the room, else wide.
   tavern.camera = camera;
+  applyZoom();
 
   // ── Lights ── warm/cold contrast is the navigation aid: warm = people and
   // fire, cold = machinery and the way down. The base rig stays dim so the
@@ -374,6 +408,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
   onResize = (): void => {
     pixelPass?.resize();
+    applyZoom(); // the render size just changed, so the fit decision may have too
   };
   window.addEventListener("resize", onResize);
 

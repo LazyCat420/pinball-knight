@@ -28,9 +28,10 @@
  * animation frame can never drop a fret click, and the audio can never drift
  * out of sync with the picture.
  */
-import { POCKETS, settleBet, BETS, type BetDef } from "./roulette";
+import { spinWheel, settleBet, BETS, type BetDef } from "./roulette";
 import { planSpin, frameAt, hitsBetween, type Spin, type BallFrame } from "./roulette-physics";
-import { drawWheel, drawPanel, clearTable } from "./roulette-art";
+import { drawWheel, drawPanel, clearTable, buildWheelLayers, type WheelLayers } from "./roulette-art";
+import type { CanvasFactory } from "./offscreen";
 import {
   sfxWheelSpin,
   sfxBallLaunch,
@@ -57,7 +58,12 @@ function idleFrame(rotor: number): BallFrame {
   return { theta: 0, rotor, radius: 1, height: 1, omega: 0, phase: "seated", hit: "none" };
 }
 
-export function createRouletteGame(): CasinoGame {
+export interface RouletteOpts {
+  /** Injected by tests so the wheel bake runs under node-canvas. */
+  canvasFactory?: CanvasFactory;
+}
+
+export function createRouletteGame(opts: RouletteOpts = {}): CasinoGame {
   let spinning = false;
   let settleT = 0;
   let pocket = 0;
@@ -76,6 +82,12 @@ export function createRouletteGame(): CasinoGame {
   let lastResult: { pocket: number; won: boolean; text: string } | null = null;
   const history: number[] = [];
 
+  /**
+   * The baked static wheel art. Built on the first frame rather than here so a
+   * cabinet that is opened and never switched to roulette pays nothing for it.
+   */
+  let layers: WheelLayers | null = null;
+
   /** Kill the bed. Called from every exit path, including a mid-spin unmount. */
   const hush = (): void => {
     if (sound) {
@@ -87,7 +99,12 @@ export function createRouletteGame(): CasinoGame {
   return {
     id: "roulette",
     name: "ROULETTE",
-    blurb: "0-18, single zero · colour/parity/half pay 2x · thirds 3x · a number 18x",
+    // Describes ONLY the bets `controls()` actually offers. It used to advertise
+    // "a number 18x", but `BETS` has never contained a straight-up — the player
+    // was told they could back a number and then handed nine chips, none of
+    // which was one. See `roulette.ts` for why the straight-up stays off the
+    // table.
+    blurb: "0-18, single zero · colour/parity/half pay 2x · thirds 3x",
 
     busy: () => spinning || settleT > 0,
 
@@ -106,7 +123,10 @@ export function createRouletteGame(): CasinoGame {
 
     play(stake, api): void {
       // ── The outcome, decided here and nowhere else. ──
-      pocket = Math.floor(Math.random() * POCKETS);
+      // Through `spinWheel` rather than an inlined `Math.floor(rand * POCKETS)`,
+      // so the draw lives in the rules module next to the pricing it has to
+      // agree with.
+      pocket = spinWheel();
       // ...and a trajectory that genuinely arrives at it.
       spin = planSpin(pocket);
 
@@ -182,16 +202,23 @@ export function createRouletteGame(): CasinoGame {
 
       clearTable(ctx, w, h);
 
+      if (!layers) layers = buildWheelLayers(opts.canvasFactory);
+
       const settling = !spinning && settleT > 0;
-      drawWheel(ctx, {
-        frame,
-        highlight: settling ? pocket : -1,
-        flash: settling ? (Math.floor(settleT * FLASH_HZ * 2) % 2 === 0 ? 1 : 0.4) : 0,
-        showBall: spinning || settling,
-      });
+      drawWheel(
+        ctx,
+        {
+          frame,
+          highlight: settling ? pocket : -1,
+          flash: settling ? (Math.floor(settleT * FLASH_HZ * 2) % 2 === 0 ? 1 : 0.4) : 0,
+          showBall: spinning || settling,
+        },
+        layers,
+      );
 
       drawPanel(ctx, {
-        bets: BETS.map((b) => ({ id: b.id, label: b.label, selected: b.id === bet.id })),
+        // `pays` straight off the BetDef — the chip prints what settleBet pays.
+        bets: BETS.map((b) => ({ id: b.id, label: b.label, selected: b.id === bet.id, pays: b.pays })),
         pays: bet.pays,
         stake: stakeNow,
         history,

@@ -1628,6 +1628,21 @@ function onPlayerDeath(): void {
 }
 
 function descend(): void {
+  // BANK ANY COINS STILL ON THE FLOOR before the tavern opens.
+  //
+  // Every other sweep site is a teardown (startLevel, death, exit), and the
+  // tavern is not one — `startLevel` only runs when you LEAVE it, via
+  // `onDescend` below. So without this, gold you killed for but never walked
+  // over is missing from the purse in the one place gold is spendable: you
+  // clear a floor, leave ~30g of coins lying in the maze, and the shop and the
+  // gambler both read a balance that doesn't include it. `maxStake()` shrinks
+  // too, so you can't even bet what you should be able to. It lands one floor
+  // late, after you've already spent.
+  //
+  // A straight regression from making coins physical — before that, a kill was
+  // banked the instant it happened.
+  sweepCoins();
+
   // Grade the floor being left BEFORE startLevel resets the ledger.
   const { grade, gold } = gradeFloor();
   state.goldRun += GOLD_PER_DESCENT + gold;

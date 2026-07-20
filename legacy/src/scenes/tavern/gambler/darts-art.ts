@@ -33,22 +33,11 @@
  */
 import { scoreAt, WEDGES, WEDGE_COUNT, R_DOUBLE_IN, R_TREBLE_IN, R_TREBLE_OUT, R_OUTER_BULL } from "./darts";
 
-/** The minimum surface both a DOM canvas and node-canvas satisfy. */
-export interface OffscreenLike {
-  width: number;
-  height: number;
-  getContext(id: "2d"): unknown;
-}
-
-export type CanvasFactory = (w: number, h: number) => OffscreenLike;
-
-/** Default factory. Tests inject node-canvas instead so the bake is checkable. */
-export const domCanvasFactory: CanvasFactory = (w, h) => {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return c as unknown as OffscreenLike;
-};
+// The canvas-factory seam lives in `offscreen.ts` now that roulette bakes its
+// wheel the same way. Re-exported here so existing importers keep working.
+import { domCanvasFactory, type CanvasFactory, type OffscreenLike } from "./offscreen";
+export { domCanvasFactory };
+export type { CanvasFactory, OffscreenLike };
 
 /** How far past the rim the wooden surround and its number ring extend. */
 export const SURROUND_OUT = 1.3;

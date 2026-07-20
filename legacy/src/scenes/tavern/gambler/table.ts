@@ -153,9 +153,26 @@ export function placeBet(table: TableState, deps: TableDeps, stake: number): Bet
  * original stake rather than doubling for free.
  */
 export function raiseBet(table: TableState, deps: TableDeps, extra: number): boolean {
-  if (extra <= 0) return false;
-  if (deps.getBalance() < extra) return false;
+  if (!canRaise(deps, extra)) return false;
   return deps.spendGold(extra);
+}
+
+/**
+ * Could a raise of `extra` go through right now? Asks, without taking anything.
+ *
+ * Exists so a game can GREY OUT an unaffordable action instead of offering it
+ * and then silently swallowing the click. Blackjack's DOUBLE was live whenever
+ * the hand was two cards, purse regardless: a player without the gold pressed
+ * it, `raise()` returned false, the hand quietly carried on undoubled, and
+ * nothing on screen or in the flash line ever said why.
+ *
+ * Deliberately the same predicate `raiseBet` gates on rather than a second
+ * reading of the rule — a button that is enabled on one test and refused on
+ * another is the same silent no-op wearing a different hat.
+ */
+export function canRaise(deps: TableDeps, extra: number): boolean {
+  if (extra <= 0) return false;
+  return deps.getBalance() >= extra;
 }
 
 /**

@@ -37,8 +37,17 @@ import { sfxLeverPull, sfxReelSpin, sfxReelStop, sfxNearMiss, sfxWinSmall, sfxJa
 import type { CasinoGame } from "./index";
 import type { RoundResult } from "./table";
 
-/** Seconds each reel spins before it may stop, indexed by reel. */
-const STOP_AT = [0.7, 1.25, 1.95];
+/**
+ * Seconds each reel spins before it may stop, indexed by reel.
+ *
+ * The DEFAULTS. `poke()` pulls a reel forward, so the live schedule is per-game
+ * instance state (`stopAt` below) copied from here at the start of every spin.
+ * It used to mutate this array in place — a module-level `const` written from an
+ * input handler. `play()` restored all three values so nothing was actually
+ * broken, but the restore was the only thing standing between a slammed button
+ * and every future slot machine in the process inheriting a shortened reel.
+ */
+const STOP_AT_DEFAULT = [0.7, 1.25, 1.95] as const;
 /** How long the win banner holds before controls unlock. */
 const SETTLE_HOLD = 0.9;
 
@@ -144,6 +153,8 @@ function isJackpot(o: SpinOutcome): boolean {
 export function createSlotsGame(): CasinoGame {
   let t = 0;
   let spinning = false;
+  /** This cabinet's live stop schedule. Reset from STOP_AT_DEFAULT each spin. */
+  const stopAt: number[] = [...STOP_AT_DEFAULT];
   let outcome: SpinOutcome | null = null;
   let stakeNow = 0;
   let lastPayout = 0;
@@ -167,7 +178,7 @@ export function createSlotsGame(): CasinoGame {
   let sparkles: Array<[number, number]> = [];
 
   /** Has reel `i` come to rest? */
-  const stopped = (i: number): boolean => !spinning || t >= STOP_AT[i];
+  const stopped = (i: number): boolean => !spinning || t >= stopAt[i];
 
   const symbolAt = (reel: number, row: number): Symbol => {
     // While spinning, scroll the strip; once stopped, show the outcome centred.
@@ -280,8 +291,8 @@ export function createSlotsGame(): CasinoGame {
       // honour it: bring the next unstopped reel forward rather than ignoring it.
       if (!spinning) return;
       for (let i = 0; i < 3; i++) {
-        if (t < STOP_AT[i]) {
-          STOP_AT[i] = Math.max(t + 0.08, STOP_AT[i] - 0.35);
+        if (t < stopAt[i]) {
+          stopAt[i] = Math.max(t + 0.08, stopAt[i] - 0.35);
           break;
         }
       }
@@ -299,9 +310,7 @@ export function createSlotsGame(): CasinoGame {
       idleT = 0;
       lever = 1;
       sparkles = [];
-      STOP_AT[0] = 0.7;
-      STOP_AT[1] = 1.25;
-      STOP_AT[2] = 1.95;
+      for (let i = 0; i < stopAt.length; i++) stopAt[i] = STOP_AT_DEFAULT[i];
       for (let i = 0; i < 3; i++) {
         wasStopped[i] = false;
         bounceT[i] = 0;
@@ -344,11 +353,11 @@ export function createSlotsGame(): CasinoGame {
             // match mid-spin means nothing, and cueing off that would fire the
             // riser on spins that were never close.
             //
-            // The `t < STOP_AT[2]` guard matters: `poke()` can pull the third
+            // The `t < stopAt[2]` guard matters: `poke()` can pull the third
             // reel's stop forward far enough that reels 1 and 2 land on the
             // same frame, and a riser with nothing left to resolve into is
             // worse than silence.
-            if (i === 1 && outcome && outcome.reels[0] === outcome.reels[1] && t < STOP_AT[2]) {
+            if (i === 1 && outcome && outcome.reels[0] === outcome.reels[1] && t < stopAt[2]) {
               sfxNearMiss();
             }
           }

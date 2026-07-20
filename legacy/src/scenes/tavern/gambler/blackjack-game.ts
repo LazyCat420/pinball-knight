@@ -64,6 +64,7 @@ import {
   sfxPush,
   sfxLoseHand,
   sfxShuffle,
+  hushBlackjack,
 } from "./blackjack-audio";
 import type { CasinoGame, PlayApi } from "./index";
 
@@ -238,18 +239,57 @@ export function createBlackjackGame(): CasinoGame {
     name: "BLACKJACK",
     blurb: "dealer stands on all 17 · blackjack pays 3:2 · double on your first two cards",
 
-    busy: () => phase === "deal" || phase === "player" || phase === "flip" || phase === "dealer",
+    /**
+     * Busy INCLUDES the settle hold, matching roulette.
+     *
+     * It used to stop at "dealer", so the 2.0s result plate — the only place the
+     * hand's outcome is stated — could be wiped by an immediate PLAY. That was
+     * a polish bug until the shell started gating the game-switch and LEAVE
+     * buttons on `busy()`; now it is a correctness one, because a game that
+     * reports itself idle while `phase === "done"` is a game the shell will let
+     * you walk out of. `finish()` has already resolved by then, so no stake is
+     * at risk — but the same reasoning is what makes "busy() must cover every
+     * phase that is still doing something" the rule rather than a preference.
+     */
+    busy: () => phase !== "idle",
 
     controls() {
       if (phase !== "player") return [];
       const two = player.length === 2;
+      // Double is only legal on the opening two cards, and only if the purse can
+      // cover a second stake. The purse term is NOT belt-and-braces: without it
+      // the button was live for a player who could not afford it, `raise()`
+      // refused, and the hand carried on undoubled with nothing said. `say()` is
+      // the shell's and is unreachable from `onControl`, so the refusal has to
+      // happen where the button is offered.
+      const affordable = api?.canRaise(stakeNow) ?? false;
       return [
         { id: "hit", label: "HIT" },
         { id: "stand", label: "STAND" },
-        // Double is only legal on the opening two cards, and only if the purse
-        // can cover a second stake — the shell's raise() is the authority.
-        { id: "double", label: `DOUBLE +${stakeNow}g`, disabled: !two || doubled },
+        { id: "double", label: `DOUBLE +${stakeNow}g`, disabled: !two || doubled || !affordable },
       ];
+    },
+
+    /**
+     * Leaving the table mid-hand must not leave the cues playing over the tavern.
+     *
+     * Slots and roulette both had one of these and blackjack did not. Every cue
+     * here is a short one-shot, so today this suppresses at most about a second
+     * of stray chips and fanfare — the point is that `dispose()` now HAS a way
+     * to silence the table, which it did not before `hushBlackjack()` gave the
+     * cues a bus to hang off.
+     */
+    dispose(): void {
+      hushBlackjack();
+      // Drop the round state too, so a disposed game can't be rendered back to
+      // life holding a hand that the shell has already forfeited.
+      phase = "idle";
+      player = [];
+      dealer = [];
+      api = null;
+      resolved = true;
+      settleT = 0;
+      wagered = 0;
     },
 
     onControl(id): void {
@@ -382,7 +422,6 @@ export function createBlackjackGame(): CasinoGame {
       // ── Layout ──
       const size = cardSize(50);
       const gap = 4;
-      const pitch = size.w + gap;
       const SHOE = { x: 6, y: 8, w: 44, h: 52 };
       const cardX = 74;
       const dealerY = 14;
@@ -396,6 +435,29 @@ export function createBlackjackGame(): CasinoGame {
       const circleY = 174;
       /** Where a card leaves the shoe — its delivery lip, not its centre. */
       const lip = { x: SHOE.x + SHOE.w - 12, y: SHOE.y + SHOE.h - 16 };
+
+      /**
+       * Card pitch, TIGHTENED so a long hand cannot run under the readouts.
+       *
+       * At the natural pitch of `size.w + gap` (40px) the eighth card's right
+       * edge lands at 390, past `panelX` at 376 — so a big hand drew its last
+       * cards underneath the DEALER/YOU plates and became unreadable exactly
+       * when the player most needed to count it. Eight cards needs a hand of
+       * aces and deuces so it is rare, but eleven is reachable and the drawing
+       * simply got worse the longer the hand got.
+       *
+       * Overlapping rather than wrapping to a second row: a wrapped row would
+       * have to move the betting circle and the totals plates, and a fanned hand
+       * with only the left edge of each card showing is how a hand is actually
+       * held. `cards-art` prints the rank and suit in the top-left corner, which
+       * is the part that stays visible.
+       *
+       * `- 2` on the budget is the `lean` shear, which can push a card two
+       * pixels right of its slot.
+       */
+      const rowRight = panelX - 6;
+      const pitchFor = (n: number): number =>
+        n <= 1 ? size.w + gap : Math.min(size.w + gap, Math.floor((rowRight - cardX - size.w - 2) / (n - 1)));
 
       // ── Rail and felt ──
       box(0, 0, w, h, C_RAIL);
@@ -461,7 +523,7 @@ export function createBlackjackGame(): CasinoGame {
        * only ever on whole pixels. Interpolating smoothly would put it on half
        * pixels for most of the slide and fringe every edge of the art.
        */
-      const slot = (d: Dealt, i: number, y: number): { x: number; y: number; arrived: boolean } => {
+      const slot = (d: Dealt, i: number, y: number, pitch: number): { x: number; y: number; arrived: boolean } => {
         const tx = cardX + i * pitch;
         const p = (clock - d.t0) / SLIDE;
         if (p >= 1) return { x: tx, y, arrived: true };
@@ -492,8 +554,10 @@ export function createBlackjackGame(): CasinoGame {
       const holeDown = hf < Math.floor(FLIP_FRAMES.length / 2);
 
       const row = (hand: Dealt[], y: number, hole: boolean, ring: string | null): void => {
+        // Per-row, so the dealer tightening up never squashes the player's hand.
+        const pitch = pitchFor(hand.length);
         hand.forEach((d, i) => {
-          const at = slot(d, i, y);
+          const at = slot(d, i, y, pitch);
           // A card in flight has no shadow — a shadow pinned under a moving
           // object is what makes cheap animation look pasted on.
           const isHole = hole && i === 1;
