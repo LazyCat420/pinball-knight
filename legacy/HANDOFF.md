@@ -2,11 +2,11 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `3207487`, service `dee17f0`, both on synology, both verified
+**Live:** client `811e945`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
-- 602 client tests, 28 service tests, production build clean.
+- 697 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
@@ -25,10 +25,17 @@ floors, not a menu. Five stations plus a descend gate plus a casino corner. Five
 keepers, each with its OWN paint and idle loop, room tone, hearth/forge VFX.
 Socketed cards show as rune plates on the weapon in the armory vice.
 
-**The Gambler** — a casino cabinet at the tavern station (2.2, 5.5): slots,
-roulette, darts, blackjack. All four playable. Slots has a drawn cabinet
-(bezel chase bulbs, printed paytable, coin slot, payout tray, attract mode)
-and seven procedural SFX in `gambler/audio.ts`.
+**The Gambler** — a casino cabinet at the tavern station (2.2, 5.5). All four
+games are now fully built, each with its own art + audio module:
+- **Slots** — drawn cabinet, bezel chase bulbs, printed paytable, attract mode.
+- **Roulette** — a real three-phase physics model (`roulette-physics.ts`):
+  counter-rotating rotor vs stationary bowl, track departure at
+  `w² <= (g/r)tan a`, deflector scatter, fret rattle. Cited to Small & Tse
+  (arXiv:1204.6412) in the file header.
+- **Darts** — a genuine two-stage aim-then-power throw (`darts-throw.ts`, pure
+  and testable), real flight arc, darts that stick.
+- **Blackjack** — hand-authored card art (3x5 rank bitmaps, true pip layouts,
+  court figures), felt table, dealing animation, edge-on hole-card flip.
 
 **Maps** — the site room map (`M` outside the dungeon) is pixel art; the dungeon
 has fog of war, a HUD minimap, and a full floor map on `M`.
@@ -36,7 +43,53 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
 
-## This pass — pixel fidelity
+## This pass — tavern controls, coin drops, the casino
+
+**The tavern's controls were rotated 90°.** `tavern/player.ts` hand-rolled the
+screen→world rotation as `(a.x - a.z, a.x + a.z) * ISO` instead of calling the
+shared `screenDirToWorld`. That expression is the correct basis turned exactly a
+quarter turn: **W walked screen-RIGHT, A screen-UP, S screen-LEFT, D
+screen-DOWN.** The dungeon was fine because it always called the shared helper —
+the tavern held the only second copy of the maths, and a second copy is the only
+reason the two could disagree. `movement.test.ts` pins each key back to the axis
+it was pressed on. **Lesson: there is exactly one screen↔world basis in this
+codebase and it lives in `dungeon/camera.ts`. Never write another.**
+
+**Coin drops were already implemented, wired, and invisible.** `killZombie` →
+`onCoinDrop` → `spawnCoin` all worked. The coin was alive for **118ms**: the
+magnet was a per-FRAME fraction (`x += (px - x) * 0.22`), i.e. exponential
+approach, 7.1 frames from the 2.6u magnet range to the 0.45u pickup range, and
+it slid flat along the floor. It was also frame-rate dependent — 49ms at 144Hz.
+Now burst (projectile motion + bounces) → rest (same bob as other ground items)
+→ a fixed 0.42s eased arc to chest height, with an absorb flash and a chime.
+A test asserts the flight is >200ms and identical at 30/60/144fps.
+**Found on the way:** `dropBossReward` had a `!state.scene` early-return ABOVE
+its `addGold`, so headless boss gold was never credited at all.
+
+**Darts was a gold faucet and nobody noticed.** The old curve paid 6× for 120+
+with 180 reachable every round once you had the timing: **+3000g per visit**
+against 80–200g of floor income. Refitted over four candidate curves at 120k
+rounds each; mastery now nets ~+172g/visit at max stake, and RTP *slopes down*
+with stake because hand-wobble widens faster than reward, so the cap is
+self-enforcing rather than resting entirely on `ROUNDS_PER_VISIT`. **Check this
+arithmetic before touching any casino payout.**
+
+**Roulette never steers the ball.** The pocket is drawn first, then launch
+SPEED is treated as the free parameter — 600 physically plausible values are
+simulated honestly to rest and the first that lands in the target is kept.
+600/600 spins land naturally with zero corrections, because the deflector strike
+makes launch-speed→pocket chaotic. The trajectory is baked at a fixed 1/120s and
+replayed against wall clock: a variable frame rate cannot integrate a chaotic
+system reproducibly.
+
+**Blackjack's felt tells the truth.** The conventional printed arc is "DEALER
+MUST HIT SOFT 17" — which would be a LIE here, since `blackjack.ts` stands on
+all 17. The felt prints `DEALER STANDS ON ALL 17`. This is the third instance
+this month of the same bug class: **an agent- or player-facing document
+promising behaviour the implementation never had.** When you print a rule,
+read the implementation first.
+
+## The pass before — pixel fidelity
 
 **The "blurry characters" complaint was never a filtering problem.** Filtering
 was already `NearestFilter` on both mag and min, mipmaps off, `SRGBColorSpace`
@@ -203,7 +256,28 @@ feature left in the plan.
 Ordered by what I'd do first. (Numbering is not contiguous — resolved items
 are deleted rather than renumbered, per the note at the top of this file.)
 
-1. **Play the tavern and judge the walk speed.** `WALK_SPEED` went 3.4 → 4.6,
+0. **Decide two design calls from the casino pass.**
+   - **Darts now has bounded RNG in the outcome**, which the original file
+     header explicitly disclaimed. The dart never lands further from your aim
+     than `wobbleRadius` (asserted), and it exists because without it the skill
+     ceiling was one memorised beat. Revert to fully deterministic if the
+     no-RNG rule matters more than the ceiling.
+   - **Roulette's `busy()` now returns `spinning || settleT > 0`**, so controls
+     stay locked through the 1.9s settle hold instead of unlocking the instant
+     the ball stops. Deliberate — the settle is the payoff — but it is a
+     behaviour change from `busy: () => spinning`.
+
+1. **The gambler canvas should probably be 240px tall, not 200.** At 200,
+   blackjack's two 50px card rows plus the rail eat the vertical budget, so the
+   betting circle had to go BESIDE the player's hand rather than below it, which
+   is backwards from a real table. 40 more pixels would also let cards grow to
+   ~60px, at which point 9s and 10s could keep the full 7×7 pip instead of
+   dropping to the small one. NOT done this pass because slots, roulette and
+   darts were all designed and visually verified against 200 — changing it
+   invalidates three other layouts that would need re-verifying. It lives in
+   `gambler/index.ts`.
+
+2. **Play the tavern and judge the walk speed.** `WALK_SPEED` went 3.4 → 4.6,
    but `CAM_LEAN = 0.5` in `tavern/core.ts` literally halves apparent on-screen
    motion, and it is the largest remaining contributor to "sluggish". It was NOT
    changed — a full player-follow was tried in an earlier pass and rejected
