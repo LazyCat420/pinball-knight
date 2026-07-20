@@ -2,11 +2,11 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `64c7184`, service `dee17f0`, both on synology, both verified
+**Live:** client `3207487`, service `dee17f0`, both on synology, both verified
 against the running containers (not dev).
 
 - Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
-- 556 client tests, 28 service tests, production build clean.
+- 602 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
@@ -21,12 +21,14 @@ part collision moved to `entities/pinball-collide.ts` as an exhaustive
 until it's handled.
 
 **The Tavern (`src/scenes/tavern/`)** — a walkable isometric room between
-floors, not a menu. Five stations plus a descend gate plus a casino corner. Four
-keepers with idle loops, room tone, hearth/forge VFX. Socketed cards show as
-rune plates on the weapon in the armory vice.
+floors, not a menu. Five stations plus a descend gate plus a casino corner. Five
+keepers, each with its OWN paint and idle loop, room tone, hearth/forge VFX.
+Socketed cards show as rune plates on the weapon in the armory vice.
 
-**The Gambler** — a casino cabinet at the tavern station (3.0, 5.6): slots,
-roulette, darts, blackjack. All four playable.
+**The Gambler** — a casino cabinet at the tavern station (2.2, 5.5): slots,
+roulette, darts, blackjack. All four playable. Slots has a drawn cabinet
+(bezel chase bulbs, printed paytable, coin slot, payout tray, attract mode)
+and seven procedural SFX in `gambler/audio.ts`.
 
 **Maps** — the site room map (`M` outside the dungeon) is pixel art; the dungeon
 has fog of war, a HUD minimap, and a full floor map on `M`.
@@ -34,7 +36,60 @@ has fog of war, a HUD minimap, and a full floor map on `M`.
 **Leaderboards** — `game_scores` table with a `game` discriminator. Pinball can
 write scores; **it doesn't yet** (see below).
 
-**Four rooms were reworked this pass. Three of the four had the same
+## This pass — pixel fidelity
+
+**The "blurry characters" complaint was never a filtering problem.** Filtering
+was already `NearestFilter` on both mag and min, mipmaps off, `SRGBColorSpace`
+set. The art was being destroyed by RESAMPLING, in two independent places that
+compounded.
+
+**1. The sprite pipeline resampled three times to display once.** Art painted at
+128px → crushed to a 52px grid → nearest-upscaled BACK into a 128px texture
+(128/52 = 2.46, so the stored "pixels" were unevenly 2 and 3 texels wide) → then
+MINIFIED by the GPU to ~70 screen px. That last step is the killer: it is a
+0.55× downscale, so nearest sampling threw away ~45% of the texels, picking
+different ones each frame the actor moved. Muddy when still, crawling when
+walking.
+
+Now it is ONE crush, straight to a 72px grid that *is* the texture, with
+`SPRITE_UNITS` derived as `SPRITE_PIXEL_GRID / PPU` so one art pixel lands on
+exactly one render pixel. `SPRITE_PX` (128) stays as the AUTHORING box — it is a
+coordinate system for `cel-painter.ts`/`figure.ts`, not a resolution — and the
+2× supersample still earns its keep by anti-aliasing curves before the crush.
+52 → 72 is also a real fidelity jump: ~52px is the awkward size where a face is
+2–3px of mush.
+
+**2. `INTEGER_SCALE` was false**, so the whole 1280×720 framebuffer was stretched
+by a fractional factor (×1.5 at 1080p) and shown with `image-rendering:pixelated`
+— every pixel alternately 1 or 2 device pixels wide, across the entire screen,
+hitting props and tiles as well as actors. The comment justifying it ("cel art
+scales cleanly, it's smooth shapes not a pixel grid") was stale; the pipeline
+crushes everything to a hard grid now.
+
+Render size is now derived from the window (`computeRenderSizing`) so the scale
+is always whole. **The trap:** the ortho frustum is baked from `RENDER_W` ONCE in
+`createDungeonCamera()` with no resize path, so making the target adaptive
+without syncing the frustum would have silently made PPU 96 instead of 64 and
+re-broken the sprite identity — the fix would have been worse than the bug. It
+is synced per-frame in `pixel-pass.ts`. Same bake existed on the FPS rampage
+camera's `aspect` (latent, pre-existing).
+
+**3. `aimCamera` snapped to `1/PPU`, which is one pixel only at zoom 1.** The
+dungeon never sets zoom so it was correct there; the TAVERN runs 0.78 → 0.92, so
+the hub was snapping to 0.78 of a pixel — quantising motion onto a lattice
+aligned with nothing, which is strictly worse than not snapping. The tavern's
+sprite mesh had the identical bug.
+
+**Bugs found that were not cosmetic:**
+
+- The `table` station's stand-spot sat **0.08 units INSIDE** the only legal
+  position, so you were permanently pinned against the central pinball table.
+  `isOpen()` passed, so no existing check caught it.
+- The **descent plunger housing had no collision rect at all** — it is built at
+  x 2.6 but `OBSTACLES[5]` only spans ±2.1, so you could walk through the thing
+  that launches you into the next floor.
+
+**Four rooms were reworked in an earlier pass. Three of the four had the same
 shape of bug: something that LOOKED like it was working contributed nothing.**
 
 **The pirate cabin (`/pirate`) rendered as a near-black frame.** The candles
@@ -148,6 +203,29 @@ feature left in the plan.
 Ordered by what I'd do first. (Numbering is not contiguous — resolved items
 are deleted rather than renumbered, per the note at the top of this file.)
 
+1. **Play the tavern and judge the walk speed.** `WALK_SPEED` went 3.4 → 4.6,
+   but `CAM_LEAN = 0.5` in `tavern/core.ts` literally halves apparent on-screen
+   motion, and it is the largest remaining contributor to "sluggish". It was NOT
+   changed — a full player-follow was tried in an earlier pass and rejected
+   because it pushed half the stations out of frame. **The wider FOV from this
+   pass makes a higher lean safer than it was when it was rejected**, so ~0.65 is
+   the next lever if it still drags. Three feel changes landed unverified-on-
+   screen this pass (speed, sprite snap, camera snap); don't stack a fourth
+   blind.
+
+2. **There is no master volume or mute anywhere in the codebase.** Every SFX in
+   `dungeon/audio.ts`, `tavern/audio.ts` and the new `gambler/audio.ts` writes an
+   absolute gain straight to `ctx.destination`. Gains were hand-picked to sit
+   under the room tone. Adding a mute means a master `GainNode` in
+   `utils/audio-manager.ts` that every cue routes through — a real feature, and
+   it touches every audio file.
+
+3. **Props that overhang their collision rects.** The audit that caught the
+   plunger also flagged: the anvil/stump (~0.05 south of the forge rect, and
+   `npcs.ts` ANVIL agrees with it, so probably deliberate), the arcade lever and
+   knob, the bar's top lip and foot rail, the table backglass, and the wall
+   dartboard. All cosmetic-only today — you clip a corner, nothing breaks.
+
 6. **Legacy type debt.** ~5975 repo-wide tsc errors, masked by
    `ignoreBuildErrors: true` in `next.config.js`. They're concentrated in
    `src/objects` and `src/room` — old JS renamed to `.ts`. Not worth a sweep;
@@ -197,6 +275,26 @@ are deleted rather than renumbered, per the note at the top of this file.)
 
 **Things that look safe and aren't:**
 
+- **`SPRITE_UNITS`, `SPRITE_PIXEL_GRID` and `PPU` are a locked triple.**
+  `SPRITE_UNITS * PPU` must equal `SPRITE_PIXEL_GRID` exactly, or sprites go
+  soft again. Nothing crashes when it drifts — the art just quietly stops being
+  crisp — which is how the old 1.354 ratio survived for months.
+  `sprite-scale.test.ts` exists solely to fail on this.
+- **`MAX_RENDER_W/H` (1600×900) is a FIELD-OF-VIEW clamp, not an allocation
+  guard.** PPU is pinned, so render width IS the field of view: an unclamped
+  1920-wide target shows 30 tiles where the game was designed around 20, which
+  makes every sprite physically *smaller*. Raising it re-opens that question; it
+  is not a free "use more screen" dial. 2560×1440 and 3840×2160 already fill
+  perfectly at the designed 20-tile view; 1080p takes ~160px bars each side.
+- **Any camera that sets `zoom` must snap to `1/(PPU * zoom)`**, not `1/PPU`.
+  See `aimCamera`. The dungeon's zoom is always 1, so this stays invisible until
+  someone reuses the camera in a scene that zooms — which the tavern does.
+- **`renderPaintIcon` upscales by a WHOLE number** (`ICON_UPSCALE`) for DOM shop
+  icons. The consumer still needs `image-rendering: pixelated` or the browser
+  undoes it.
+- **The `merchant` paint is shared with the dungeon's merchant.** Redressing him
+  as an aproned smith for the tavern forge changes how he reads down there too.
+  Deliberate, but cross-scene — the same is true of any `NPC_PAINTS` edit.
 - **Never delete `pnpm-workspace.yaml` or `pnpm-lock.yaml`.** The Dockerfile
   uses `npm ci`, so they look inert — but deploy-kit's test gate runs `pnpm
   install`, and the workspace file carries the approved-native-build allowlist
