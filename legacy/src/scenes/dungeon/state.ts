@@ -63,6 +63,8 @@ export interface Player extends Actor {
   curveT: number;
   /** Seconds left on Magnet Boots (repel crawlers; strips LAUNCH not drag). */
   magBootsT: number;
+  /** Seconds left on Multi-Ball (two echo knights trail you and ram). 0 = inactive. */
+  multiBallT: number;
 
   // ── Active-skill economy (Diablo HUD) ──
   /** Spendable mana pool for the Q/E abilities (0..MANA_MAX). Separate from ultCharge. */
@@ -704,6 +706,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     webbedT: 0,
     curveT: 0,
     magBootsT: 0,
+    multiBallT: 0,
     mana: MANA_MAX,
     magnetAuraT: 0,
     bladeStormT: 0,

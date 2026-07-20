@@ -5,6 +5,7 @@
 import { state } from "./state";
 import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
 import { disposeNpcs } from "./entities/npc";
+import { disposeMultiBall } from "./entities/multiball";
 import { disposePinballParts } from "./render/pinball-parts";
 import { disposeHUDs } from "./hud";
 
@@ -36,6 +37,9 @@ export function disposeLevel(): void {
 
   disposePinballParts(state.scene);
   disposeNpcs();
+  // The echo knights hold their own cloned textures + geometry; the buff timer
+  // survives the descent, so updateMultiBall re-spawns them on the next floor.
+  disposeMultiBall();
 
   state.maze?.dispose();
   state.maze = null;

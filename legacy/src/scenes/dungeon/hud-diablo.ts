@@ -473,6 +473,7 @@ function activeBuffs(): BuffView[] {
   add(p.ironT, "ball", "🪩", "#f0a63c", POTIONS.ballform.duration, `Ball Form · ${POTIONS.ballform.description}`);
   if (p.ironT <= 0.05) add(p.turboT, "turbo", "💨", "#6fd0e8", POTIONS.ballform.duration, "Turbo · frictionless momentum");
   add(state.freezeT, "freeze", "❄️", "#bfe8ff", POTIONS.freeze.duration, "Freeze · the horde is stopped");
+  add(p.multiBallT, "multiball", "🔮", "#b06fe8", POTIONS.multiball.duration, `Multi-Ball · ${POTIONS.multiball.description}`);
   add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, `Curve Shot · ${POTIONS.curveshot.description}`);
   add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, `Magnet Boots · ${POTIONS.magnetboots.description}`);
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");

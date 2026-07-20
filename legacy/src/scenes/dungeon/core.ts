@@ -58,6 +58,7 @@ import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import { castAbility, tickAbilities } from "./abilities";
+import { spawnMultiBall, updateMultiBall } from "./entities/multiball";
 import {
   levelConfig,
   FLOW_INTERVAL,
@@ -447,6 +448,7 @@ export function launchDungeonGame(onExit?: () => void): void {
               spring: p.springT,
               curve: p.curveT,
               magBoots: p.magBootsT,
+              multiBall: p.multiBallT,
               magnetAura: p.magnetAuraT,
               bladeStorm: p.bladeStormT,
               webbed: p.webbedT,
@@ -1419,7 +1421,7 @@ function debugSpawnRing(): void {
   });
   // Also scatter every potion in a tight ring right around the player, so a
   // small wiggle picks them all up (pickup + effect QA) and the art is visible.
-  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"].forEach((id, i, arr) => {
+  ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"].forEach((id, i, arr) => {
     if (!state.scene) return;
     const sprite = createStaticSprite(ITEM_PAINTS[id]);
     const a = (i / arr.length) * Math.PI * 2;
@@ -1778,6 +1780,7 @@ const SHOP_STOCK: ShopEntry[] = [
   { id: "health", label: "Health", icon: "❤️", price: 12, detail: POTIONS.health.description },
   { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: `${POTIONS.shield.duration}s ${POTIONS.shield.description}` },
   { id: "ballform", label: "Ball Form", icon: "🪩", price: 24, detail: `${POTIONS.ballform.duration}s ${POTIONS.ballform.description}` },
+  { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: `${POTIONS.multiball.duration}s ${POTIONS.multiball.description}` },
   { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: `${POTIONS.curveshot.duration}s ${POTIONS.curveshot.description}` },
   { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: `${POTIONS.magnetboots.duration}s ${POTIONS.magnetboots.description}` },
   { id: "mace", label: "Mace", icon: "🔨", price: 28, detail: "heavy melee" },
@@ -1878,6 +1881,12 @@ function applyPotion(id: PotionId): void {
     if (id === "freeze") {
       state.freezeT = def.duration;
       sfxFreeze();
+    }
+    if (id === "multiball") {
+      // The echoes own their own countdown + teardown (entities/multiball.ts).
+      p.multiBallT = def.duration;
+      spawnMultiBall();
+      sfxBumper();
     }
     if (id === "curveshot") p.curveT = def.duration;
     if (id === "magnetboots") p.magBootsT = def.duration;
@@ -2018,6 +2027,7 @@ function simulate(dt: number): void {
   updateProjectiles(dt);
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
+  updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
   checkPickups();

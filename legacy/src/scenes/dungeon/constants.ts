@@ -347,6 +347,26 @@ export const BALL_RAM_KNOCKBACK = 1.1; // shove per ram (a wrecking ball, not a 
 /** Ball clip playback. */
 export const FPS_BALL = 14;
 
+// ── MULTI-BALL (the 🔮 potion: two echo knights) ────────────────
+/** How many echoes peel off the knight. */
+export const MULTIBALL_COUNT = 2;
+/** Seconds of player path kept in the follow trail — must exceed the deepest lag. */
+export const MULTIBALL_TRAIL_SECONDS = 1.2;
+/** Seconds each echo lags behind the live knight (index-aligned with the echoes). */
+export const MULTIBALL_LAGS = [0.22, 0.4];
+/** World units each echo is nudged sideways off the path, alternating side. */
+export const MULTIBALL_SIDE_OFFSET = 0.42;
+/** Back-step (seconds) used to read the trail HEADING for the sideways nudge. */
+export const MULTIBALL_HEADING_STEP = 0.1;
+/** Exponential catch-up rate toward the sampled trail point (per second). */
+export const MULTIBALL_FOLLOW_RATE = 16;
+/** Fraction of a full ram an echo lands — they assist, they don't replace you. */
+export const MULTIBALL_RAM_MULT = 0.5;
+/** Seconds an echo must wait before it can ram the SAME enemy again. */
+export const MULTIBALL_RAM_COOLDOWN = 0.45;
+/** Sprite opacity of an echo — clearly a ghost of you, not a second player. */
+export const MULTIBALL_OPACITY = 0.5;
+
 // ── PINBALL PARTS (the maze/pinball-machine hybrid) ─────────────
 /**
  * Modular pinball components stamped into the maze by decorateMaze, placed by

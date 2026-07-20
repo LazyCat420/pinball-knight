@@ -404,14 +404,34 @@ export function updateHUD(el: HTMLDivElement): void {
   if (p && p.rageT > 0) buffs.push(`<span style="color:#d97b29">💢 RAGE ${Math.ceil(p.rageT)}s</span>`);
   if (p && p.hasteT > 0) buffs.push(`<span style="color:#6fd0e8">⚡ HASTE ${Math.ceil(p.hasteT)}s</span>`);
   if (p && p.shieldT > 0) buffs.push(`<span style="color:#8fc46b">🛡️ SHIELD ${Math.ceil(p.shieldT)}s</span>`);
-  // Ball Form drives iron/turbo/spring together — show it as one chip.
-  if (p && p.turboT > 0) buffs.push(`<span style="color:#f0a63c">🪩 BALL FORM ${Math.ceil(p.turboT)}s</span>`);
+  // Ball Form drives iron/turbo/spring together, so key the chip off the RAM
+  // core (ironT), not off turboT. The flipper-charge ability raises turboT
+  // ALONE, and keying off it labelled that "Ball Form" too — you'd read that you
+  // had the whole pinball fantasy when all you had was frictionless momentum.
+  // `hud-diablo.ts:472-474` already fixed this; the rampage bar had not.
+  if (p && p.ironT > 0) buffs.push(`<span style="color:#f0a63c">🪩 BALL FORM ${Math.ceil(p.ironT)}s</span>`);
+  else if (p && p.turboT > 0) buffs.push(`<span style="color:#6fd0e8">💨 TURBO ${Math.ceil(p.turboT)}s</span>`);
+  if (p && p.multiBallT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI-BALL ${Math.ceil(p.multiBallT)}s</span>`);
   if (p && p.curveT > 0) buffs.push(`<span style="color:#6fd0e8">🌀 CURVE ${Math.ceil(p.curveT)}s</span>`);
   if (p && p.magBootsT > 0) buffs.push(`<span style="color:#a83244">🧲 BOOTS ${Math.ceil(p.magBootsT)}s</span>`);
   if (state.freezeT > 0) buffs.push(`<span style="color:#bfe8ff">❄️ FROZEN ${Math.ceil(state.freezeT)}s</span>`);
   if (p && p.webbedT > 0) buffs.push(`<span style="color:#eef1f5">🕸️ WEBBED</span>`);
+  // The Q/E ability buffs. The Diablo strip has always tiled these
+  // (hud-diablo.ts:478-480) but this bar did not, so entering a rampage with a
+  // Blade Storm running made it vanish from the HUD while it was still very much
+  // active. The section is called the UNIFIED buff strip; the two HUDs should
+  // not disagree about what is on you.
+  if (state.slowT > 0) buffs.push(`<span style="color:#bfe8ff">⏳ TIME CRAWL ${Math.ceil(state.slowT)}s</span>`);
+  if (p && p.bladeStormT > 0) buffs.push(`<span style="color:#d95763">🌪️ BLADES ${Math.ceil(p.bladeStormT)}s</span>`);
+  if (p && p.magnetAuraT > 0) buffs.push(`<span style="color:#6fd0e8">🧲 AURA ${Math.ceil(p.magnetAuraT)}s</span>`);
+  // ONE LINE, clipped. The buffs are joined inline, and without `nowrap` a run
+  // with five or more active (rage + haste + ball form + curve + boots is an
+  // ordinary mid-floor state) wrapped onto a second line. That grew the top
+  // strip past its min-height and pushed it down over the Targets row and the
+  // SCORE/DEPTH/KILLS cells beneath — the rampage HUD rendered with its own text
+  // sliced through. Matches the Diablo strip, which is already nowrap+hidden.
   const buffRow = buffs.length
-    ? `<div style="font:${SERIF};letter-spacing:1px;margin-top:2px">${buffs.join("&nbsp;&nbsp;")}</div>`
+    ? `<div style="font:${SERIF};letter-spacing:1px;margin-top:2px;white-space:nowrap;overflow:hidden;min-width:0;flex:0 1 auto">${buffs.join("&nbsp;&nbsp;")}</div>`
     : "";
 
   // The floor's target objective — only shown when the floor has targets.

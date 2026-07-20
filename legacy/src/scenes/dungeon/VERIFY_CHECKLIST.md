@@ -1,7 +1,11 @@
 # 🎮 Pinball Knight — Verification Checklist
 
-**Living manual-QA pass** — there is no E2E harness for the 3D game, so this is
-how a change gets confirmed in the real thing. Run it before shipping anything
+**Living manual-QA pass.** Much of §0-§5 is now driveable headlessly via
+`window.__dungeonProbe()` (a dev hook exposing the buff timers, HUD mode, godMode
+flags, enemy/part counts — added because almost everything here is a canvas or a
+transient tile and a harness clicking the debug panel could not otherwise tell
+whether anything happened). What a harness CANNOT judge is feel — pacing, whether
+a bounce is satisfying, whether the arc reads. Those still need a human. Run it before shipping anything
 that touches the HUD, power-ups or parts. **Open the debug console with the
 `` ` `` (backtick) key** — it makes almost all of this testable without playing
 from depth 1.
@@ -51,6 +55,15 @@ Use the panel's POTION row to apply each and confirm a tile appears with icon + 
 - [ ] Kill All (proper death FX + score) vs Clear (instant wipe) both work.
 - [ ] Next Floor / Boss Level descend correctly; Spawn Reaper summons the Death Dealer.
 
-## 6. Known-open (NOT expected to be perfect yet)
+## 6. Score, juice & persistence (2026-07-19 wave)
+- [ ] Die → the run posts to the leaderboard. Board name is editable on the death screen; it defaults to `KNIGHT`, never `???`.
+- [ ] Death screen shows **BEST DEPTH**, and calls out `★ DEEPEST YET` when you beat it. Survives a reload.
+- [ ] **Damage numbers** float at the point of impact — white/yellow dealt, red taken, bigger for amplified hits. Digits only (no glyph fallback).
+- [ ] Picking up a card shows the **painted holo card** briefly. It never pauses the game and never needs a click. A mythic lands harder than a common.
+- [ ] Ramp hop: the **contact shadow stays on the floor** while the knight is in the air (same on the trapdoor ride).
+- [ ] Full map (**M**) washes rooms by archetype (speedway / bumper / arena / vault) — **only where you have already been**.
+- [ ] Minimap shows an **edge chevron** toward the stairs once they're outside the window — and only after you've found them.
+
+## 7. Known-open (NOT expected to be perfect yet)
 - Floors can still feel **too narrow to bounce** — that's the §2.5 OPEN PLAYFIELD roadmap work, not yet built.
-- Movement left/right + aim direction — flagged for empirical check (§5.1); tell me if anything feels inverted.
+- ~~Movement left/right + aim direction possibly inverted~~ — **RESOLVED 2026-07-19.** It was never an inversion: movement and aim share one code path (`screenDirToWorld`) with no sign error. `arrowleft`/`arrowright` were bound in **both** `MOVE_KEYS` and `TURN_LEFT`/`TURN_RIGHT`, so in FPS mode Left strafed *and* rotated on the same frame. Arrows are movement, q/e turn, and `input.test.ts` forbids double-binding.

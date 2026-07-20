@@ -135,6 +135,7 @@ export type PotionId =
   | "gold"
   | "ballform"
   | "freeze"
+  | "multiball"
   | "curveshot"
   | "magnetboots";
 
@@ -175,13 +176,17 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   ballform: { id: "ballform", label: "Ball Form", icon: "🪩", color: 0xf0a63c, heal: 0, duration: 14, description: "you ARE the pinball" },
   // Freeze Ray: the whole machine holds its breath — thread the bumper room.
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6, description: "the floor holds its breath" },
+  // Multi-Ball: the pinball classic — two ghost knights peel off you, trail
+  // your recent path and ram whatever you skim past. Same duration as ball
+  // form: it's the other half of the "you ARE the machine" fantasy.
+  multiball: { id: "multiball", label: "Multi-Ball", icon: "🔮", color: 0xb06fe8, heal: 0, duration: 14, description: "two echo knights ram for you" },
   // Curve Shot: your projectiles bend around corners along your sweep.
   curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12, description: "bending projectiles" },
   // Magnet Boots: repel the magnet crawlers, LAUNCH off the magnet strips.
   magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18, description: "repel crawlers · strips LAUNCH" },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

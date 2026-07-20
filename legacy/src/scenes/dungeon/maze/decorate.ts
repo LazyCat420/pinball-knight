@@ -164,7 +164,7 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // from the pool. Health is guaranteed so the run stays survivable; the rest add
 // "do I chug it now?" decisions. Ids → POTIONS (the consolidated pinball kit:
 // ball form / freeze / multi-ball, alongside the combat buffs).
-const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "curveshot", "magnetboots"];
+const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {
