@@ -174,14 +174,32 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
  * up here. (dirx,dirz) is the incoming hit direction (need not be unit);
  * `push` scales the wall-aware knockback.
  */
-export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: number, push: number): void {
+/**
+ * @param force skip the momentum gates and the reaper's immunity.
+ *
+ * ONLY the debug panel's Kill All passes this. Those gates are deliberate
+ * teaching rules — a goblin shrugs off a standing poke, a golem needs
+ * smash-speed, a drifting ghost is untouchable, the Death Dealer cannot be hurt
+ * at all — and they apply to the player at all times. But they also applied to
+ * Kill All, which is a QA tool whose entire job is to empty the floor: it called
+ * damageZombie with zero momentum, so ghosts, goblins and golems survived it and
+ * the button silently under-delivered.
+ */
+export function damageZombie(
+  z: Zombie,
+  damage: number,
+  dirx: number,
+  dirz: number,
+  push: number,
+  force = false,
+): void {
   const g = state.grid;
   if (!g || z.mode === "dead") return;
 
   // The DEATH DEALER cannot be harmed — steel passes through it with a puff of
   // cold ectoplasm and nothing else. No damage, no knockback, no hitstop
   // reward: the game is telling you to run, not to try harder.
-  if (z.kind === "reaper") {
+  if (z.kind === "reaper" && !force) {
     state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 6);
     return;
   }
@@ -192,14 +210,14 @@ export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: numb
   // ── The momentum gates (Wave B — "hit things fast" is a teachable rule) ──
   // GHOST: immune while drifting — it only exists to steel while materialized
   // (winding up its touch, or inside the window after it lands).
-  if (z.kind === "ghost" && (z.vulnT ?? 0) <= 0 && z.mode !== "windup") {
+  if (!force && z.kind === "ghost" && (z.vulnT ?? 0) <= 0 && z.mode !== "windup") {
     state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 5);
     return;
   }
   // GOBLIN: rubber shrugs off a standing poke — only a hit carried on
   // momentum lands. GOLEM: masonry — nothing below the smash-speed bar dents
   // it. Both give the "wrong tool" clink so the rule reads.
-  if ((z.kind === "goblin" && momentum <= 0) || (z.kind === "golem" && momentum < SECRET_BREAK_SPEED)) {
+  if (!force && ((z.kind === "goblin" && momentum <= 0) || (z.kind === "golem" && momentum < SECRET_BREAK_SPEED))) {
     state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
     state.shakeT = Math.max(state.shakeT, 0.05);
     if (!_gateHintShown) {

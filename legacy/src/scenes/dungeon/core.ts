@@ -464,8 +464,18 @@ export function launchDungeonGame(onExit?: () => void): void {
         hudMode: state.hudMode,
         fpsActive: state.fpsActive,
         ultCharge: state.ultCharge,
-        // §5 world
+        // §5 world.
+        // `enemies` counts CORPSES too — Kill All damages every zombie to death
+        // and they linger in the array playing their death FX, which is exactly
+        // what distinguishes it from Clear (instant wipe, no FX). A harness
+        // asserting "Kill All emptied the array" would be asserting the wrong
+        // thing, so expose the live count separately.
         enemies: state.zombies.length,
+        enemiesAlive: state.zombies.filter((z) => z.mode !== "dead").length,
+        // Descending opens the TAVERN first; `level` only advances once you use
+        // its descend plunger. Without this a harness reads "level stuck" and
+        // calls a working hub a bug.
+        tavernOpen: isTavernSceneOpen(),
         parts: state.pinballParts.length,
         level: state.level,
         gameOver: state.gameOver,
@@ -1465,7 +1475,7 @@ function debugSpawnEnemy(kind: EnemyKind): void {
 /** Kill every living enemy through the normal death path (FX + score fire). */
 function debugKillAll(): void {
   for (const z of [...state.zombies]) {
-    if (z.mode !== "dead") damageZombie(z, 9999, 0, 0, 0);
+    if (z.mode !== "dead") damageZombie(z, 9999, 0, 0, 0, true); // force: bypass the momentum gates
   }
 }
 
