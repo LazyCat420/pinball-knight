@@ -9,6 +9,8 @@ import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./cons
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 import { ensurePixelFonts } from "./pixel-fonts";
 import { clamp, clamp01 } from "../../utils/math";
+import { loadBestDepth } from "./best-depth";
+import { getPlayerName, setPlayerName, NAME_MAX } from "../../services/player-name";
 
 const FONT = `700 13px ui-monospace, "SF Mono", Menlo, monospace`;
 /**
@@ -580,6 +582,45 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
       &nbsp;·&nbsp; GOLD <span style="color:#ffd98a">${state.goldRun}</span>
     </div>
   `;
+
+  // ── Best depth ──────────────────────────────────────────────────────────
+  // The one number a solo player wants between runs. A NEW record is called out
+  // explicitly; otherwise it just sits there as the target to beat.
+  const best = loadBestDepth();
+  const isRecord = state.level >= best && state.level > 1;
+  const bestLine = document.createElement("div");
+  bestLine.style.cssText =
+    `font-family:${WOLF_NUM};font-size:15px;letter-spacing:2px;margin:-14px 0 20px;` +
+    `color:${isRecord ? "#ffd98a" : "#6b7688"}`;
+  bestLine.textContent = isRecord ? `★ DEEPEST YET — FLOOR ${best}` : `BEST DEPTH · FLOOR ${best}`;
+  el.appendChild(bestLine);
+
+  // ── Leaderboard name ────────────────────────────────────────────────────
+  // The run has already been posted under the stored name by the time this
+  // shows, so editing here applies to FUTURE runs. Saying so avoids implying
+  // the score just submitted gets renamed.
+  const nameRow = document.createElement("div");
+  nameRow.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:14px";
+  const nameLabel = document.createElement("span");
+  nameLabel.style.cssText = "font-size:11px;letter-spacing:2px;color:#6b7688";
+  nameLabel.textContent = "BOARD NAME";
+  const nameInput = document.createElement("input");
+  nameInput.value = getPlayerName();
+  nameInput.maxLength = NAME_MAX;
+  nameInput.style.cssText = `
+    background:#171a22;color:#c8ccd4;border:2px solid #2a2f3a;border-radius:2px;
+    font:700 13px ui-monospace,Menlo,monospace;letter-spacing:2px;
+    padding:6px 10px;width:130px;text-transform:uppercase;
+  `;
+  // The dungeon binds nearly every key; without this, typing a name walks the
+  // knight around behind the death screen.
+  nameInput.addEventListener("keydown", (e) => e.stopPropagation());
+  nameInput.addEventListener("change", () => {
+    nameInput.value = setPlayerName(nameInput.value);
+  });
+  nameRow.appendChild(nameLabel);
+  nameRow.appendChild(nameInput);
+  el.appendChild(nameRow);
 
   const retry = document.createElement("button");
   retry.style.cssText = btn("#f0a63c");

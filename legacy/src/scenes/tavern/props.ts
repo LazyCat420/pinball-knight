@@ -129,7 +129,10 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   }
 
   // Lit bumper caps — these are the run's completed targets.
-  const bumperMat = emissive(COLD, 0.5);
+  // ONE MATERIAL PER CAP, deliberately. They used to share a single instance,
+  // which meant the loop's per-cap `emissiveIntensity` writes all landed on the
+  // same object and the last one won: five caps that always lit and dimmed in
+  // perfect unison, while the code that wrote them looked like a chase.
   for (const [bx, bz] of [
     [-0.75, -0.35],
     [0, -0.6],
@@ -137,7 +140,7 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
     [-0.4, 0.25],
     [0.5, 0.3],
   ]) {
-    const b = cyl(0.16, 0.14, bumperMat, bx, 0.11, bz, field);
+    const b = cyl(0.16, 0.14, emissive(COLD, 0.5), bx, 0.11, bz, field);
     bumpers.push(b);
   }
 

@@ -802,7 +802,13 @@ function updateRide(dt: number): boolean {
   // from drop to ride is continuous instead of a pop back to floor level.
   const h = Math.sin(Math.PI * u) * TRAPDOOR_HEIGHT;
   const under = Math.max(0, 1 - u / TRAPDOOR_RISE);
-  p.sprite.mesh.position.y = h - TRAPDOOR_DROP_DEPTH * under * under;
+  const rideY = h - TRAPDOOR_DROP_DEPTH * under * under;
+  p.sprite.mesh.position.y = rideY;
+  // Same shadow fix as the ramp hop: the blob is a child of the sprite, so
+  // without this it flies the rollercoaster too. Clamped at 0 because while the
+  // rail is still hauling you out from under the floor the elevation is
+  // negative, and a shadow pushed UP through the floor reads worse than none.
+  p.sprite.setElevation(Math.max(0, rideY));
 
   if (u >= 1) {
     p.rideT = -1;
@@ -822,6 +828,7 @@ function updateRide(dt: number): boolean {
     const dl = Math.hypot(dx, dz) || 1;
     p.ridePts = [];
     p.sprite.mesh.position.y = 0;
+    p.sprite.setElevation(0);
     p.momX = dx / dl;
     p.momZ = dz / dl;
     p.momSpeed = TRAPDOOR_EXIT_SPEED;
@@ -923,11 +930,16 @@ function updateHop(dt: number): boolean {
   syncActorMesh(p); // pins y=0; lift after, like the ride
   const hgt = Math.sin(Math.PI * u) * RAMP_HOP_HEIGHT;
   p.sprite.mesh.position.y = hgt;
+  // Pin the contact shadow to the floor. Without this the blob — a child of the
+  // sprite mesh — rides up with the knight, killing the only cue that reads as
+  // height in an isometric view.
+  p.sprite.setElevation(hgt);
   if (Math.random() < 12 * dt) state.vfx?.sparks(p.x, 0.3 + hgt, p.z, 0, 0, 2);
 
   if (u >= 1) {
     p.hopT = -1;
     p.sprite.mesh.position.y = 0;
+    p.sprite.setElevation(0);
     // Land into pinball momentum along the launch heading — the physics carries
     // the speed onward and reflects it if we set down flush against a wall.
     p.momX = p.hopDirX;

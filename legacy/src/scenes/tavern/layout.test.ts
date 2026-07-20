@@ -60,6 +60,39 @@ describe("floor plan sanity", () => {
     }
   });
 
+  it("no keeper stands inside SOMEONE ELSE'S interaction radius", () => {
+    // A keeper loitering in a neighbour's radius reads as belonging to the wrong
+    // counter, and their turn-to-face fires for a station they don't keep. The
+    // gambler's tout is the tight one — the card dealer's radius reaches to
+    // z 4.4, which is exactly where the obvious spot for him is.
+    for (const k of KEEPER_SPOTS) {
+      for (const s of STATIONS) {
+        if (s.id === k.id) continue;
+        const d = Math.hypot(k.x - s.x, k.z - s.z);
+        expect(d, `keeper "${k.id}" is standing in "${s.id}"'s radius`).toBeGreaterThan(s.radius);
+      }
+    }
+  });
+
+  it("every station a keeper could staff has one", () => {
+    // The gambler shipped as an UNATTENDED cabinet because it was simply absent
+    // from KEEPER_SPOTS — no error, no failing test, just a station that read as
+    // unfinished next to four staffed ones. Pin the roster so the next station
+    // added has to make that choice on purpose.
+    const staffed = new Set(KEEPER_SPOTS.map((k) => k.id));
+    expect([...staffed].sort()).toEqual(["armory", "bar", "dealer", "forge", "gambler"]);
+    // Only the two that are not a person's job are allowed to go unstaffed.
+    for (const s of STATIONS) {
+      if (s.action.kind === "summary" || s.action.kind === "descend") continue;
+      expect(staffed.has(s.id), `station "${s.id}" has no keeper`).toBe(true);
+    }
+  });
+
+  it("keeper spots are unique, one per station", () => {
+    const ids = KEEPER_SPOTS.map((k) => k.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("station ids are unique", () => {
     const ids = STATIONS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);

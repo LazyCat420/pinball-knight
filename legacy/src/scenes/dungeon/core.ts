@@ -36,6 +36,7 @@ import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { showCardPickup } from "./card-popup";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -183,6 +184,10 @@ import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxFreeze, sfxBumper, sfxSpring } from "./audio";
+import { scoreRun, runDetail, type RunStats } from "./run-score";
+import { saveLeaderboardScore } from "../../services/score-service";
+import { loadBestDepth, saveBestDepth } from "./best-depth";
+import { getPlayerName } from "../../services/player-name";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -650,6 +655,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.weaponSlots = [freshWeapon("sword"), null];
   state.activeSlot = 0;
   state.gear = {};
+  beginRunLedger();
   startLevel(1);
 
   console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
@@ -916,6 +922,10 @@ function startLevel(level: number): void {
   disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
 
   state.level = level;
+  // Run-scoped, so it must be updated here rather than in the per-floor reset
+  // below. `saveBestDepth` no-ops unless this genuinely beats the record.
+  if (level > state.runDeepestFloor) state.runDeepestFloor = level;
+  saveBestDepth(level);
   const cfg = levelConfig(level);
 
   // Depth grading: each biome down shifts the fill palette a family over.
@@ -975,6 +985,10 @@ function startLevel(level: number): void {
   // carrying exploration across a descent would be a spoiler.
   state.fog = createFog(grid);
   state.stairs = plan.stairs;
+  // Keep the archetype rooms — everything else on `plan` is consumed while
+  // building the floor, but the map wants to label these and they were being
+  // dropped with the local.
+  state.levelRooms = plan.rooms.map((r) => ({ i0: r.i0, j0: r.j0, w: r.w, h: r.h, kind: r.kind }));
   // Curved walls: bank every qualifying maze corner, minus tiles a pinball
   // part already owns (a deflector there banks on its own — no double-dip).
   const partTiles = new Set(plan.parts.map((q) => `${q.i},${q.j}`));
@@ -1439,9 +1453,68 @@ function dropBossReward(x: number, z: number): void {
   state.hudDirty = true;
 }
 
+/**
+ * Begin a NEW run's leaderboard ledger.
+ *
+ * Separate from `startLevel`, which runs on every descent and wipes the
+ * per-floor ledger. These fields must survive a descent — they describe the
+ * whole run, which is what a leaderboard row is.
+ */
+function beginRunLedger(): void {
+  state.runDeepestFloor = 1;
+  state.runBestCombo = 0;
+  state.runStartMs = performance.now();
+  state.runScoreSubmitted = false;
+}
+
+/** Gather the run-scoped ledger into the shape `run-score.ts` grades. */
+function currentRunStats(): RunStats {
+  return {
+    deepestFloor: state.runDeepestFloor,
+    bestCombo: state.runBestCombo,
+    kills: state.kills,
+    gold: state.goldRun,
+    durationS: state.runStartMs > 0 ? (performance.now() - state.runStartMs) / 1000 : 0,
+  };
+}
+
+/**
+ * Post the finished run to the leaderboard.
+ *
+ * Guarded by `runScoreSubmitted` because death and the "leave" path can both
+ * reach here for the same run, and a duplicated row is worse than a missing one.
+ *
+ * Deliberately awaited and its result inspected: `saveLeaderboardScore` returns
+ * `Promise<boolean>` and a 4xx does NOT reject the underlying fetch, so a
+ * fire-and-forget call reports a rejected score as a save. That exact bug hid
+ * raccoon-tornado's failures for months — do not "simplify" this back.
+ */
+async function submitRunScore(): Promise<void> {
+  if (state.runScoreSubmitted) return;
+  state.runScoreSubmitted = true;
+
+  const stats = currentRunStats();
+  const score = scoreRun(stats);
+  const name = getPlayerName();
+
+  const ok = await saveLeaderboardScore(
+    score,
+    name,
+    0, // maxAltitude — not meaningful here; the schema is shared across games
+    0, // distance — ditto
+    stats.deepestFloor, // tunnelDepth is the closest existing column to "how deep"
+    "pinball-knight",
+    runDetail(stats),
+  );
+  if (!ok) console.warn("[dungeon] leaderboard rejected the run score");
+}
+
 function onPlayerDeath(): void {
   if (state.gameOver) return;
   state.gameOver = true;
+  // Fire-and-forget at the call site is fine ONLY because submitRunScore itself
+  // awaits and logs; the death screen must not wait on the network to appear.
+  void submitRunScore();
   sfxGameOver();
   state.player?.sprite.setTint(0x6b7688); // drained
   state.gameOverEl = showGameOver({
@@ -1459,6 +1532,7 @@ function onPlayerDeath(): void {
         Object.assign(state.player, freshPlayerFields());
         state.player.sprite.setTint(null);
       }
+      beginRunLedger(); // a retry is a NEW run for the board, not a continuation
       startLevel(1); // roguelite: gold is banked, the run restarts
     },
     onLeave: () => exitDungeonGame(),
@@ -1555,11 +1629,13 @@ function pickUpCard(it: GroundItem): boolean {
   if (!def) return true;
   const active = state.weaponSlots[state.activeSlot];
   if (active && socketCard(active, id)) {
+    showCardPickup(id); // brief painted-card flourish (card-popup.ts) — never blocks
     faceOnSpecial();
     showPickupNote(`${def.icon} ${def.label.toUpperCase()} SOCKETED — ${def.description}`);
     return true;
   }
   if (state.cardStash.length < 10) {
+    showCardPickup(id);
     state.cardStash.push(id);
     showPickupNote(`${def.icon} ${def.label.toUpperCase()} — stashed for the Tavern`);
     return true;
@@ -1830,6 +1906,9 @@ function simulate(dt: number): void {
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
   if (p.bounceCombo > state.levelBestCombo) state.levelBestCombo = p.bounceCombo;
+  // Run-scoped twin of the line above — levelBestCombo is wiped every descent,
+  // so without this the leaderboard would only ever see the FINAL floor's combo.
+  if (p.bounceCombo > state.runBestCombo) state.runBestCombo = p.bounceCombo;
   if (!state.reaperWarned && state.levelT >= REAPER_AFTER - REAPER_WARNING) {
     state.reaperWarned = true;
     showToast("A COLD WIND RISES", "something is coming — find the stairs");

@@ -440,6 +440,19 @@ export const state = {
   /** Seed for the whole run; each level derives its own stream from it. */
   runSeed: 0,
 
+  // ── Run-scoped leaderboard ledger ──
+  // Distinct from the per-floor ledger below, which startLevel() wipes. These
+  // survive a descent and are only reset when a NEW RUN begins, because that is
+  // what a leaderboard row describes.
+  /** Deepest floor REACHED this run (1-based). */
+  runDeepestFloor: 1,
+  /** Best bounce combo across the whole run — levelBestCombo resets per floor. */
+  runBestCombo: 0,
+  /** performance.now() at run start; the run's duration is measured from it. */
+  runStartMs: 0,
+  /** True once this run's score has been posted, so death can't double-submit. */
+  runScoreSubmitted: false,
+
   // ── Per-floor score ledger (reset by startLevel; graded by descend) ──
   /** Seconds spent on the current floor — also the Death Dealer's fuse. */
   levelT: 0,
@@ -536,6 +549,18 @@ export const state = {
   /** The player's spawn point this floor (world coords) — where a pit spits you back. */
   levelStart: { x: 0, z: 0 },
   maze: null as MazeHandle | null,
+  /**
+   * This floor's archetype rooms (speedway / bumper / arena / vault).
+   *
+   * `decorateMaze` returns these on its LevelPlan, but the plan used to be a
+   * local const in `startLevel` and only `maze` survived — so `plan.rooms` was
+   * computed, used to furnish the floor, then discarded, and the floor map had
+   * no way to label a room. Stashed here so `map-render` can.
+   *
+   * Typed structurally rather than importing `PlannedRoom` from `maze/decorate`
+   * to keep `state.ts` free of a dependency on the generator.
+   */
+  levelRooms: [] as Array<{ i0: number; j0: number; w: number; h: number; kind: string }>,
   groundItems: [] as GroundItem[],
   /** Non-interactive set dressing (bones, skulls, rubble). */
   props: [] as Array<{ sprite: { mesh: THREE.Mesh; dispose(): void } }>,

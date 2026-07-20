@@ -228,6 +228,17 @@ export function damageZombie(z: Zombie, damage: number, dirx: number, dirz: numb
   z.flashT = FLASH_TIME;
   z.sprite.setTint(0xff6a6a);
 
+  // FLOATING DAMAGE NUMBER. This is the single funnel every source of harm to a
+  // zombie passes through (melee, every projectile, burn ticks, bumpers, pin
+  // chains, abilities), so hooking here — rather than at each call site — means
+  // no source can land silently.
+  //
+  // The game has no crit ROLL, but it does have amplified hits: rage and the
+  // pinball-synergy multiplier (see playerDamage above) both genuinely multiply
+  // the number, so those read as crits rather than inventing a fake stat.
+  const amped = !!p && (p.rageT > 0 || momentum > CARD_PINBALL_SPEED);
+  state.vfx?.damage(z.x, 1.05, z.z, damage, amped ? "crit" : "out");
+
   const ghost = z.kind === "ghost";
   // Impact juice: sparks along the blow, a spray of rot, a beat of hit-freeze
   // and a small camera kick. A GHOST sheds cold ECTOPLASM (blue sparks), not
@@ -530,7 +541,12 @@ export function hitPlayer(z: Zombie): void {
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0xff5555);
-  if (absorbed.hpDamage > 0) state.vfx?.blood(p.x, 0.6, p.z, "red", 10);
+  if (absorbed.hpDamage > 0) {
+    state.vfx?.blood(p.x, 0.6, p.z, "red", 10);
+    // Damage TAKEN reads red. Only what actually reached hearts is shown — a
+    // bite the armor ate whole is a 0, and a floating 0 reads as a miss.
+    state.vfx?.damage(p.x, 1.15, p.z, absorbed.hpDamage, "in");
+  }
   state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
   state.shakeT = absorbed.hpDamage > 0 ? 0.25 : 0.12; // armor soaks the flinch too
   state.hudDirty = true;
@@ -567,7 +583,10 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0x8fc46b); // acid-green flash, not the usual red bite
-  if (absorbed.hpDamage > 0) state.vfx?.blood(p.x, 0.6, p.z, "green", 8);
+  if (absorbed.hpDamage > 0) {
+    state.vfx?.blood(p.x, 0.6, p.z, "green", 8);
+    state.vfx?.damage(p.x, 1.15, p.z, absorbed.hpDamage, "in");
+  }
   state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
   state.shakeT = Math.max(state.shakeT, absorbed.hpDamage > 0 ? 0.2 : 0.1);
   state.hudDirty = true;

@@ -29,12 +29,12 @@ import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, createStationPrompt, refreshFocus, type StationFx, type StationPrompt } from "./stations";
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
-import { tavern, resetTavernState, type TavernStats } from "./state";
+import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
-import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxStationFocus, sfxPlunger } from "./audio";
+import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
 const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2;
@@ -43,6 +43,19 @@ const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2;
 const CAM_LEAN = 0.5;
 /** Camera smoothing, higher = snappier. */
 const CAM_LERP = 3.4;
+
+/**
+ * Camera zoom — wide enough to hold the whole staged room, easing IN when a
+ * station takes focus so stepping up to a counter feels like stepping up to it.
+ *
+ * Kept small (about 18%) on purpose. The framing is a fixed iso composition with
+ * six stations arranged to be visible at once; push in far enough to be dramatic
+ * and the room stops reading as a hub. This is emphasis, not a cutscene.
+ */
+const CAM_ZOOM_WIDE = 0.78;
+const CAM_ZOOM_FOCUS = 0.92;
+/** Zoom easing rate. Slower than the pan, so the push-in trails the lean. */
+const CAM_ZOOM_LERP = 2.4;
 
 let raf = 0;
 let last = 0;
@@ -58,6 +71,13 @@ let npcs: BuiltNpcs | null = null;
 let vfx: VfxSystem | null = null;
 /** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
 let moteT = 0;
+/** Live camera zoom, eased toward the wide/focused target every frame. */
+let camZoom = CAM_ZOOM_WIDE;
+/** What the diorama should show. Read once on entry — the run can't change here. */
+let diorama: DioramaState = { lit: 0, ballSpeed: 0 };
+/** Diorama ball angle. Integrated, not derived from the clock, so a change of
+ * speed never teleports the ball across the playfield. */
+let ballAngle = 0;
 
 /**
  * Show/hide the dungeon's bottom HUD.
@@ -153,6 +173,25 @@ function frame(now: number): void {
     tavern.camX += (tx - tavern.camX) * k;
     tavern.camZ += (tz - tavern.camZ) * k;
     if (tavern.camera) aimCamera(tavern.camera, tavern.camX, 0, tavern.camZ);
+
+    // Push in on focus, back out on release. Always eased toward the CURRENT
+    // target rather than run as a timed transition, so changing focus (or
+    // losing it) part-way through simply retargets — there is no state in which
+    // the camera can be left stranded at a zoom nobody asked for. And it only
+    // ever writes the camera's own projection, so it cannot fight the player
+    // controller, which never reads it.
+    //
+    // Held still while a panel is up: `frozen` clears the focus, and letting
+    // that zoom the room back out behind a full-screen overlay means the push-in
+    // replays from wide every time you close a vendor.
+    if (tavern.camera && !frozen) {
+      const wantZoom = tavern.focus ? CAM_ZOOM_FOCUS : CAM_ZOOM_WIDE;
+      if (Math.abs(wantZoom - camZoom) > 1e-4) {
+        camZoom += (wantZoom - camZoom) * Math.min(1, dt * CAM_ZOOM_LERP);
+        tavern.camera.zoom = camZoom;
+        tavern.camera.updateProjectionMatrix();
+      }
+    }
   }
 
   fx?.update(dt, tavern.time, props?.accents ?? new Map());
@@ -173,19 +212,35 @@ function frame(now: number): void {
     c.emissiveIntensity = 1.3 + Math.sin(tavern.time * 5.2) * 0.35;
   }
 
-  // ── The diorama is alive ── bumper caps chase, and the ball trundles a lap.
-  // A machine that idles dead looks broken; this is the room's heartbeat.
+  // ── The diorama reports the run ── lit caps are targets you actually
+  // completed (`readDiorama`), and the ball only laps after a strong floor. The
+  // caps still breathe, because a live machine shouldn't be a static readout —
+  // but an unlit cap stays dark no matter how long you stand there.
   if (props) {
     for (let i = 0; i < props.bumpers.length; i++) {
       const m = props.bumpers[i].material as THREE.MeshStandardMaterial;
-      m.emissiveIntensity = 0.35 + Math.max(0, Math.sin(tavern.time * 2.4 - i * 0.9)) * 0.9;
+      m.emissiveIntensity = i < diorama.lit ? 0.5 + Math.max(0, Math.sin(tavern.time * 2.4 - i * 0.9)) * 0.85 : 0.04;
     }
-    const orbit = tavern.time * 0.55;
-    props.dioramaBall.position.set(Math.cos(orbit) * 0.85, 0.13, Math.sin(orbit) * 0.5 - 0.1);
+    if (diorama.ballSpeed > 0) {
+      ballAngle += dt * diorama.ballSpeed;
+      props.dioramaBall.position.set(Math.cos(ballAngle) * 0.85, 0.13, Math.sin(ballAngle) * 0.5 - 0.1);
+    }
   }
 
-  // ── Keepers ── the smith's hammer beat drives its own sparks and sound.
-  npcs?.update(tavern.time, vfx, () => sfxAnvil());
+  // ── Keepers ── the work-loop beats drive their own sparks and sound, and the
+  // station focus computed above is what tells them you have walked up.
+  npcs?.update({
+    time: tavern.time,
+    dt,
+    vfx,
+    focusId: tavern.focus?.id ?? null,
+    playerX: p?.x ?? 0,
+    onBeat: (kind) => {
+      if (kind === "anvil") sfxAnvil();
+      else if (kind === "dart") sfxDart();
+      else sfxKeeperGreet();
+    },
+  });
 
   // ── Ambient particles ── embers off the hearth and the forge coals, plus dust
   // drifting through the room. Emitted on a cadence rather than per-frame, so
@@ -252,7 +307,8 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   container.appendChild(canvas);
 
   const camera = createDungeonCamera();
-  camera.zoom = 0.78; // wide enough to hold the whole staged room in frame
+  camZoom = CAM_ZOOM_WIDE; // module-level, so a second visit must not inherit the last one
+  camera.zoom = camZoom; // wide enough to hold the whole staged room in frame
   camera.updateProjectionMatrix();
   tavern.camera = camera;
 
@@ -276,6 +332,10 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   prompt = createStationPrompt(container);
 
   resetGamblerVisit(); // the round limit is PER VISIT, so clear it on entry
+  // Read the run ONCE: the stats are handed in at entry and nothing in the
+  // tavern can change them, so re-deriving this per frame would only allocate.
+  diorama = readDiorama(tavern.stats, props.bumpers.length);
+  ballAngle = 0;
   vfx = createVfx(scene);
   npcs = buildNpcs(scene);
   props.syncViceCards();
@@ -331,6 +391,11 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     // Socketed-card display on the armory vice: how many rune plates are lit,
     // so a harness can confirm the blade actually shows what is fitted.
     vicePlates: props?.plateCount() ?? 0,
+    // The diorama is meant to REPORT the run, so a harness has to be able to
+    // read what it claims and compare it against the stats it was handed.
+    dioramaLit: diorama.lit,
+    dioramaBallSpeed: diorama.ballSpeed,
+    camZoom,
   });
   // Dev/QA: leave the tavern without descending, so a harness can re-enter it
   // after changing run state (e.g. socketing a card) and see the room rebuild.

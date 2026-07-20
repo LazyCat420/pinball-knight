@@ -106,22 +106,49 @@ Stations map onto the vendors that already exist, so no economy is rewritten:
    flicker; hearth/forge embers, dust motes, sparks on each hammer blow; a
    procedural room tone (brown-noise hearth + machinery hum) plus anvil, station
    focus and plunger one-shots.
-6. 🔶 **NPCs** done — four keepers with distinct idle loops (the smith's hammer
-   is a real beat the sparks and sound hang off).
+6. ✅ **NPCs** done — five keepers with distinct idle loops. Two are real work
+   loops with a beat the sparks and sound hang off: the smith's hammer, and the
+   gambler's tout throwing darts at the wall board (a long lean-back to sight
+   it, then a snap forward — the same rising-edge trick as the hammer, opposite
+   silhouette). They also notice you: turn-to-face plus a one-shot greeting.
 7. ✅ **The gambler** shipped — a casino cabinet with four playable games
    (slots, roulette, blackjack, darts), each with a tested RTP. See
    `gambler/GAMBLER_PLAN.md`.
 
-### Also still open
+### Closed since
 
-- **No keeper at the gambler station.** `KEEPER_SPOTS` (`layout.ts:199-203`)
-  omits it, so the casino is an unattended cabinet.
-- **No camera zoom-in** on Armory/Blacksmith interaction (the wide hub framing
-  holds through the panel).
-- **The diorama does not reflect the actual run** — bumper caps chase on a timer
-  rather than showing completed targets, and the ball laps constantly instead of
-  moving after a strong floor.
-- **Keepers do not react** to being approached (no turn-to-face, no greeting).
+- ✅ **A keeper at the gambler station.** `KEEPER_SPOTS` has a fifth entry at
+  (5.2, 4.6) — east of the cabinet, a step into the room, in the throwing line
+  of the wall dartboard. Note the near-miss: the obvious spot at z 4.4 sits
+  EXACTLY on the card dealer's 1.6 radius, so `layout.test.ts` now also asserts
+  no keeper stands in a neighbour's radius.
+- ✅ **Keepers react to being approached.** They reuse the station focus
+  `stations.ts` already computes rather than running a second distance scan, so
+  the keeper, the spotlight and the prompt can never disagree about whether you
+  have arrived. The art is a billboard, so the "turn" is a mirror eased THROUGH
+  zero; each keeper's working orientation faces their own prop, which is what
+  makes breaking off to look at you visible at all.
+- ✅ **Camera eases in on focus** and back out on release (0.78 → 0.92). Always
+  eased toward the current target rather than run as a timed transition, so a
+  focus change mid-push simply retargets and the camera cannot be stranded. Held
+  still while a panel is up, or the push-in replays from wide on every close.
+- ✅ **The diorama reports the run.** `readDiorama()` in `state.ts` maps
+  `TavernStats` — which is the whole of the run reachable from this scene — onto
+  lit caps and ball speed. A weak floor leaves the ball parked.
+
+Found while doing it: the five bumper caps **shared one material instance**, so
+the loop's per-cap `emissiveIntensity` writes all landed on the same object and
+the last one won. Code that read as a chase rendered as five caps pulsing in
+unison. They get one material each now.
+
+### Still open
+
+- The gambler's cabinet is **not in `OBSTACLES`** — you can walk through it.
+- Only four NPC paints exist and there are now five keepers, so the gambler's
+  tout reuses the armory frog, tinted gold and placed across the room. A fifth
+  paint would want `cel-painter.ts`, which belongs to the dungeon.
+- `readDiorama` can only see grade/floor/kills/bestCombo. Per-target detail
+  (which bumpers a run actually hit) is not plumbed into `TavernStats`.
 
 ### Retired
 

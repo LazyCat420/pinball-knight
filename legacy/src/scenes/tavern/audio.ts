@@ -186,6 +186,98 @@ export function sfxAnvil(): void {
   }
 }
 
+/**
+ * A dart hitting the board — a dry, dead thunk with no ring.
+ *
+ * Deliberately the opposite of the anvil: that one is bright metal that rings
+ * on, this one is cork and it stops. Two work loops running in the same room
+ * need to be distinguishable with your eyes shut.
+ */
+export function sfxDart(): void {
+  const c = ctx();
+  if (!c) return;
+  try {
+    const t = c.currentTime;
+
+    // A very short noise burst, low-passed hard — the board absorbing it.
+    const len = Math.floor(c.sampleRate * 0.07);
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 2;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 900;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.055, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    src.connect(lp);
+    lp.connect(g);
+    g.connect(c.destination);
+    src.start(t);
+    src.onended = () => {
+      src.disconnect();
+      lp.disconnect();
+      g.disconnect();
+    };
+
+    // A low body thump under it so it has weight at this distance.
+    const osc = c.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(190, t);
+    osc.frequency.exponentialRampToValueAtTime(90, t + 0.09);
+    const og = c.createGain();
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(0.04, t + 0.004);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+    osc.connect(og);
+    og.connect(c.destination);
+    osc.start(t);
+    osc.stop(t + 0.13);
+    osc.onended = () => {
+      osc.disconnect();
+      og.disconnect();
+    };
+  } catch {
+    // fail-silent
+  }
+}
+
+/**
+ * A keeper noticing you walk up — a short, warm, falling two-note.
+ *
+ * It plays on the same frame as `sfxStationFocus`, so it is pitched LOW and
+ * quiet and falls where that one rises: the pair has to read as one event
+ * ("you've arrived, and someone looked up"), not as two competing blips.
+ */
+export function sfxKeeperGreet(): void {
+  const c = ctx();
+  if (!c) return;
+  try {
+    const t = c.currentTime;
+    const osc = c.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(330, t + 0.06);
+    osc.frequency.setValueAtTime(247, t + 0.15);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.setValueAtTime(0, t + 0.06);
+    g.gain.linearRampToValueAtTime(0.026, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(g);
+    g.connect(c.destination);
+    osc.start(t);
+    osc.stop(t + 0.32);
+    osc.onended = () => {
+      osc.disconnect();
+      g.disconnect();
+    };
+  } catch {
+    // fail-silent
+  }
+}
+
 /** Stepping into a station's radius — a soft, non-intrusive confirm. */
 export function sfxStationFocus(): void {
   const c = ctx();

@@ -494,6 +494,52 @@ function buildMagStrip(): THREE.Group {
   return gp;
 }
 
+/** The placement heading(s) a builder needs, unpacked from the level plan spot. */
+export interface PartBuildCtx {
+  /** Primary direction (launch / facing / surface line). */
+  dirX: number;
+  dirZ: number;
+  /** Second leg — only the deflector's corner bank uses it. */
+  dir2X: number;
+  dir2Z: number;
+}
+
+type PartBuilder = (c: PartBuildCtx) => THREE.Group;
+
+/**
+ * Per-kind MESH construction. EXHAUSTIVE by construction, exactly like
+ * PART_HANDLERS in entities/pinball-collide.ts: adding a `PinballPartKind`
+ * without adding it here is a type error.
+ *
+ * This replaced a 17-branch `if (s.kind === …)` chain whose final `else` was a
+ * CATCH-ALL that built a deflector. A new kind therefore didn't fail loudly —
+ * it silently rendered as a banked corner rail, or (once the chain grew a
+ * branch for every kind the game actually placed) the catch-all only ever ran
+ * for `deflector` and the next kind added would have inherited its mesh.
+ * There is no no-op entry here on purpose: every part kind is visible furniture,
+ * so "renders nothing" is never the right answer.
+ */
+export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
+  bumper: () => buildBumper(),
+  spring: ({ dirX, dirZ }) => buildSpring(dirX, dirZ),
+  ramp: ({ dirX, dirZ }) => buildRamp(dirX, dirZ),
+  booster: ({ dirX, dirZ }) => buildBooster(dirX, dirZ),
+  deflector: ({ dirX, dirZ, dir2X, dir2Z }) => buildDeflector(dirX, dirZ, dir2X, dir2Z),
+  glove: ({ dirX, dirZ }) => buildGlove(dirX, dirZ),
+  oil: () => buildOil(),
+  spinpad: () => buildSpinPad(),
+  slingshot: ({ dirX, dirZ }) => buildSlingshot(dirX, dirZ),
+  target: ({ dirX, dirZ }) => buildTarget(dirX, dirZ),
+  trapdoor: () => buildTrapdoor(),
+  flipper: ({ dirX, dirZ }) => buildFlipper(dirX, dirZ),
+  mirror: ({ dirX, dirZ }) => buildMirror(dirX, dirZ),
+  pit: () => buildPit(),
+  electric: () => buildElectric(),
+  firevent: ({ dirX, dirZ }) => buildFireVent(dirX, dirZ),
+  magstrip: () => buildMagStrip(),
+  rollover: ({ dirX, dirZ }) => buildRollover(dirX, dirZ),
+};
+
 /** Build every part mesh for a level plan and register them on state. */
 export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THREE.Scene): void {
   for (const s of spots) {
@@ -502,25 +548,7 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
     const dirZ = s.dirJ;
     const dir2X = s.dir2I;
     const dir2Z = s.dir2J;
-    let mesh: THREE.Group;
-    if (s.kind === "bumper") mesh = buildBumper();
-    else if (s.kind === "spring") mesh = buildSpring(dirX, dirZ);
-    else if (s.kind === "ramp") mesh = buildRamp(dirX, dirZ);
-    else if (s.kind === "booster") mesh = buildBooster(dirX, dirZ);
-    else if (s.kind === "glove") mesh = buildGlove(dirX, dirZ);
-    else if (s.kind === "oil") mesh = buildOil();
-    else if (s.kind === "spinpad") mesh = buildSpinPad();
-    else if (s.kind === "slingshot") mesh = buildSlingshot(dirX, dirZ);
-    else if (s.kind === "target") mesh = buildTarget(dirX, dirZ);
-    else if (s.kind === "trapdoor") mesh = buildTrapdoor();
-    else if (s.kind === "flipper") mesh = buildFlipper(dirX, dirZ);
-    else if (s.kind === "mirror") mesh = buildMirror(dirX, dirZ);
-    else if (s.kind === "rollover") mesh = buildRollover(dirX, dirZ);
-    else if (s.kind === "pit") mesh = buildPit();
-    else if (s.kind === "electric") mesh = buildElectric();
-    else if (s.kind === "firevent") mesh = buildFireVent(dirX, dirZ);
-    else if (s.kind === "magstrip") mesh = buildMagStrip();
-    else mesh = buildDeflector(dirX, dirZ, dir2X, dir2Z);
+    const mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z });
     mesh.position.set(x, 0, z);
     scene.add(mesh);
     const part: PinballPart = {
@@ -562,6 +590,306 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
 /** Global idle-animation clock (safe to reset per level). */
 let animT = 0;
 
+/** Per-frame context every animator shares. `animT` is read from module scope. */
+interface PartAnimCtx {
+  dt: number;
+  /** state.freezeT > 0 — the freeze ray stops self-clocked parts mid-swing. */
+  frozen: boolean;
+}
+
+type PartAnimator = (part: PinballPart, c: PartAnimCtx) => void;
+
+/**
+ * Parts with no idle/hit animation at all. Spelled out rather than omitted (the
+ * `selfFiring` convention from entities/pinball-collide.ts): an explicit no-op
+ * PROVES the kind was considered, where an absent entry would just be the old
+ * silent miss wearing a table's clothes.
+ */
+const inert: PartAnimator = () => {};
+
+/**
+ * How long a hit animation lives before hitT is retired. Was a nested ternary
+ * (`trapdoor ? … : firevent ? … : 0.6`); a table so a new kind with a long
+ * animation can't silently inherit the 0.6 s default and get cut off.
+ */
+export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
+  bumper: 0.6,
+  spring: 0.6,
+  ramp: 0.6,
+  booster: 0.6,
+  deflector: 0.6,
+  glove: 0.6,
+  oil: 0.6,
+  spinpad: 0.6,
+  slingshot: 0.6,
+  target: 0.6,
+  trapdoor: TRAPDOOR_DROP + 1.6,
+  flipper: 0.6,
+  mirror: 0.6,
+  pit: 0.6,
+  electric: 0.6,
+  firevent: VENT_WARN + VENT_ACTIVE + 0.1,
+  magstrip: 0.6,
+  rollover: 0.6,
+};
+
+/**
+ * Per-kind idle/hit ANIMATION. EXHAUSTIVE by construction, the same shape as
+ * PART_HANDLERS in entities/pinball-collide.ts.
+ *
+ * This replaced a 16-branch `else if` chain that ended `else if (part.kind !==
+ * "pit")` — i.e. deflector reached its animation by being the only kind left
+ * over, and `pit` by being explicitly excluded from the leftovers. A newly
+ * added kind would have landed in that final branch and been animated as a
+ * DEFLECTOR (reading userData.edge, which its mesh doesn't have, so: nothing).
+ * Now a missing kind is a compile error.
+ *
+ * The glove and fire-vent SELF-CLOCKS used to be two `if (part.kind === …)`
+ * guards ahead of the chain. They are folded into those two entries and run
+ * first inside them, which is the same order as before: clock stamps hitT = 0,
+ * then this frame's animation reads it, then the hitT lifetime check retires it.
+ */
+export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
+  bumper: (part) => {
+    // hit: a fast radial pop (out 60ms, settle 140ms); idle: dome breathes
+    let s = 1;
+    if (part.hitT >= 0 && part.hitT < 0.2) {
+      const t = part.hitT / 0.2;
+      s = 1 + 0.35 * Math.sin(Math.min(1, t * 1.6) * Math.PI);
+    }
+    part.mesh.scale.set(s, 1, s);
+    const dome = part.mesh.userData.dome as THREE.MeshStandardMaterial | undefined;
+    // Slice 5 — a LIT bumper (or the whole floor during a jackpot) burns GOLD
+    // and brighter; an unlit one keeps the cool arcane breathe.
+    const lit = (part.hits ?? 0) >= BUMPER_LIT_HITS || state.jackpotT > 0;
+    if (dome) {
+      // An AIMED bumper flares white-hot on top of whatever it already was —
+      // the shot you're lined up on should be the brightest thing on screen.
+      dome.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
+      const base = (lit ? 1.5 : 0.7) + (part.aimed ? 1.4 : 0);
+      const rate = part.aimed ? 11 : lit ? 6 : 3;
+      dome.emissiveIntensity = base + 0.3 * Math.sin(animT * rate + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+    }
+  },
+
+  spring: (part) => {
+    // hit: squash then overshoot along Y — the boing
+    const coil = part.mesh.userData.coil as THREE.Group | undefined;
+    if (coil) {
+      let sy = 1;
+      if (part.hitT >= 0 && part.hitT < 0.3) {
+        const t = part.hitT / 0.3;
+        sy = t < 0.3 ? 1 - 0.6 * (t / 0.3) : 0.4 + 0.9 * Math.min(1, (t - 0.3) / 0.5) - 0.3 * Math.sin(((t - 0.3) / 0.7) * Math.PI);
+        sy = Math.max(0.3, sy);
+      }
+      coil.scale.y = sy;
+    }
+  },
+
+  ramp: (part) => {
+    // A wave sweeps UP the three arrows (a clear directional "GO" crawl); on
+    // trigger the whole ramp flashes bright and the kicker lip pops.
+    const mats = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+    const lipMat = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const lipMesh = part.mesh.userData.lipMesh as THREE.Mesh | undefined;
+    const phase = (part.mesh.userData.phase as number) ?? 0;
+    const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
+    if (mats) {
+      mats.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 6 + phase - k * ((Math.PI * 2) / 3)));
+        m.emissiveIntensity = 0.3 + 0.9 * wave + flash * 2.6;
+      });
+    }
+    if (lipMat) lipMat.emissiveIntensity = 0.6 + 0.2 * Math.sin(animT * 4 + phase) + flash * 2.6;
+    if (lipMesh) lipMesh.scale.y = 1 + flash * 0.7; // spring compress→release
+  },
+
+  booster: (part) => {
+    // A fast forward wave chases down the three chevrons (a clear directional
+    // "GO →"); the side strips pulse together; a trigger flashes the whole pad.
+    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+    const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
+    const phase = (part.mesh.userData.phase as number) ?? 0;
+    const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
+    if (chevs) {
+      chevs.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 9 + phase - k * ((Math.PI * 2) / 3)));
+        m.emissiveIntensity = 0.35 + 1.0 * wave + flash * 2.4;
+      });
+    }
+    if (strips) strips.forEach((m) => (m.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 5 + phase) + flash * 2.0));
+  },
+
+  deflector: (part) => {
+    // deflector: gold edge flashes on a hit
+    const edge = part.mesh.userData.edge as THREE.MeshStandardMaterial | undefined;
+    if (edge) edge.emissiveIntensity = 0.5 + (part.hitT >= 0 && part.hitT < 0.25 ? 1.4 * (1 - part.hitT / 0.25) : 0);
+  },
+
+  glove: (part, { dt, frozen }) => {
+    // GLOVE clock: count down to the punch, throw it (hitT drives both the
+    // piston anim and the live damage window read by entities/hazards.ts),
+    // rewind with jitter. The freeze-ray stops the clock mid-swing.
+    if (!frozen) {
+      part.fireT = (part.fireT ?? GLOVE_PERIOD) - dt;
+      if (part.fireT <= 0) {
+        part.fireT = GLOVE_PERIOD * (0.8 + Math.random() * 0.5);
+        part.hitT = 0;
+        part.punchSpent = false;
+      }
+    }
+    // punch: the piston SNAPS out over the active window, eases back after
+    const piston = part.mesh.userData.piston as THREE.Group | undefined;
+    if (piston) {
+      let ext = 0;
+      if (part.hitT >= 0) {
+        const t = part.hitT;
+        ext = t < GLOVE_ACTIVE ? Math.min(1, t / 0.05) : Math.max(0, 1 - (t - GLOVE_ACTIVE) / 0.25);
+      }
+      piston.position.x = ext * (GLOVE_LANE_LEN * 0.75);
+    }
+    const fist = part.mesh.userData.fist as THREE.MeshStandardMaterial | undefined;
+    if (fist) fist.emissiveIntensity = 0.3 + (part.hitT >= 0 && part.hitT < GLOVE_ACTIVE ? 0.8 : 0);
+  },
+
+  oil: (part) => {
+    const sheen = part.mesh.userData.sheen as THREE.MeshStandardMaterial | undefined;
+    if (sheen) sheen.emissiveIntensity = 0.16 + 0.1 * Math.sin(animT * 1.7 + part.i * 2);
+  },
+
+  spinpad: (part, { frozen }) => {
+    const rotor = part.mesh.userData.rotor as THREE.Group | undefined;
+    if (rotor) rotor.rotation.y = frozen ? rotor.rotation.y : animT * 3.4 + part.i;
+  },
+
+  slingshot: (part) => {
+    // the band twangs on a hit
+    const band = part.mesh.userData.band as THREE.Mesh | undefined;
+    if (band) {
+      const k = part.hitT >= 0 && part.hitT < 0.3 ? Math.sin((part.hitT / 0.3) * Math.PI * 3) * 0.25 : 0;
+      band.position.x = k;
+    }
+  },
+
+  target: (part, { dt }) => {
+    const mats = part.mesh.userData.ringMats as THREE.MeshStandardMaterial[] | undefined;
+    const rings = part.mesh.userData.rings as THREE.Group | undefined;
+    if (part.done) {
+      // broken: rings tip over, glow dies
+      if (rings) rings.rotation.z = Math.min(Math.PI / 2.2, rings.rotation.z + dt * 6);
+      if (mats) mats.forEach((m) => (m.emissiveIntensity = 0.02));
+    } else if (part.bank !== undefined && mats) {
+      // Slice 6 — banked drop-target: GREEN steady-bright once lit, else a
+      // dim red "armed" wink so the 1-2-3 progress reads at a glance.
+      mats[2].emissive.setHex(part.lit ? 0x6fe89a : 0xd95763);
+      mats[2].emissiveIntensity = part.lit ? 1.7 : 0.5 + 0.35 * Math.sin(animT * 4 + part.j);
+    } else if (mats) {
+      mats[2].emissiveIntensity = 0.7 + 0.5 * Math.sin(animT * 4 + part.j); // the eye winks
+    }
+  },
+
+  trapdoor: (part) => {
+    // The hatch BANGS open on its hinge, hangs there while the knight drops
+    // through (entities/player.startDrop owns that beat — the swing is timed
+    // to TRAPDOOR_OPEN so the floor is gone exactly when he falls), then
+    // creaks shut on an empty hole.
+    const door = part.mesh.userData.door as THREE.Group | undefined;
+    if (door) {
+      let open = 0;
+      if (part.hitT >= 0) {
+        const t = part.hitT;
+        if (t < TRAPDOOR_OPEN) {
+          // Slam: eased out hard, then a small overswing that settles back —
+          // a door thrown open, not a door lerped open.
+          const u = t / TRAPDOOR_OPEN;
+          open = 1 - (1 - u) * (1 - u) * (1 - u);
+        } else if (t < TRAPDOOR_DROP + 0.9) {
+          open = 1 + 0.06 * Math.sin((t - TRAPDOOR_OPEN) * 14) * Math.max(0, 1 - (t - TRAPDOOR_OPEN) * 2.5);
+        } else {
+          open = Math.max(0, 1 - (t - (TRAPDOOR_DROP + 0.9)) / 0.6); // creaks shut
+        }
+      }
+      door.rotation.z = Math.min(1.08, Math.max(0, open)) * 1.4;
+    }
+  },
+
+  flipper: (part) => {
+    // the paddle SNAPS up on a hit, then eases back down
+    const paddle = part.mesh.userData.paddle as THREE.Group | undefined;
+    let up = 0;
+    if (paddle) {
+      if (part.hitT >= 0) {
+        const t = part.hitT;
+        up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
+      }
+      paddle.rotation.z = up * 0.9;
+    }
+    // Slice 7 telegraph: the gold striking edge breathes so the flipper reads
+    // "live/ready", and flares bright the instant it swings.
+    const edge = part.mesh.userData.edgeMat as THREE.MeshStandardMaterial | undefined;
+    if (edge) edge.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 4 + part.i) + up * 1.8;
+  },
+
+  mirror: (part) => {
+    const glint = part.mesh.userData.glint as THREE.MeshStandardMaterial | undefined;
+    if (glint) glint.emissiveIntensity = 0.4 + 0.25 * Math.sin(animT * 2 + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
+  },
+
+  // A hole in the floor: no idle shimmer, no hit animation. The rim mesh is
+  // static and the fall is the player's, not the part's.
+  pit: inert,
+
+  electric: (part, { frozen }) => {
+    // pulse: dark for ELEC_OFF, glow for ELEC_ON — per-plate phase offset
+    const live = ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) < ELEC_ON;
+    const warn = !live && ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) > ELEC_OFF - 0.3; // about to fire
+    const plate = part.mesh.userData.plateMat as THREE.MeshStandardMaterial | undefined;
+    const node = part.mesh.userData.nodeMat as THREE.MeshStandardMaterial | undefined;
+    const glow = frozen ? 0 : live ? 1.6 + 0.4 * Math.sin(animT * 30) : warn ? 0.5 : 0.05;
+    if (plate) plate.emissiveIntensity = glow;
+    if (node) node.emissiveIntensity = glow + 0.2;
+  },
+
+  firevent: (part, { dt, frozen }) => {
+    // FIRE VENT clock: same cadence as the glove, its own period; hitT drives
+    // the plume + the burn window read by hazards.ts. Frozen = no jet.
+    if (!frozen) {
+      part.fireT = (part.fireT ?? VENT_PERIOD) - dt;
+      if (part.fireT <= 0) {
+        part.fireT = VENT_PERIOD * (0.8 + Math.random() * 0.5);
+        part.hitT = 0;
+        part.punchSpent = false;
+      }
+    }
+    // the plume roars during the active window, sputters just before
+    const plume = part.mesh.userData.plume as THREE.Mesh | undefined;
+    const mat = part.mesh.userData.plumeMat as THREE.MeshStandardMaterial | undefined;
+    let scale = 0.001;
+    if (part.hitT >= 0) {
+      const t = part.hitT;
+      if (t < VENT_WARN) scale = 0.15 + 0.1 * Math.sin(t * 40); // sputter tell
+      else if (t < VENT_WARN + VENT_ACTIVE) scale = 1 + 0.15 * Math.sin(t * 25); // roar
+    }
+    if (plume) plume.scale.setScalar(scale);
+    if (mat) mat.emissiveIntensity = scale > 0.5 ? 1 : 0.3;
+  },
+
+  magstrip: (part, { frozen }) => {
+    const field = part.mesh.userData.fieldMat as THREE.MeshStandardMaterial | undefined;
+    if (field) field.emissiveIntensity = frozen ? 0.1 : 0.45 + 0.4 * Math.sin(animT * 8 + part.i);
+  },
+
+  rollover: (part) => {
+    // Lamp: gold + steady when this lane is lit, cool and breathing when not.
+    const lamp = part.mesh.userData.lamp as THREE.MeshStandardMaterial | undefined;
+    if (lamp) {
+      const lit = part.lane !== undefined && part.laneSeq !== undefined && !!state.laneLit[part.lane]?.[part.laneSeq];
+      lamp.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
+      lamp.emissiveIntensity = (lit ? 1.6 : 0.5) + (part.aimed ? 1.2 : 0) + 0.25 * Math.sin(animT * (lit ? 5 : 2.5) + part.i);
+    }
+  },
+};
+
 /**
  * Tick cooldowns + drive idle/hit animations. The ONE place part timers mutate
  * per frame; player.ts only consumes ready parts and stamps cooldownT/hitT=0.
@@ -593,211 +921,11 @@ export function updatePinballParts(dt: number): void {
       }
     }
 
-    // GLOVE clock: count down to the punch, throw it (hitT drives both the
-    // piston anim and the live damage window read by entities/hazards.ts),
-    // rewind with jitter. The freeze-ray stops the clock mid-swing.
-    if (part.kind === "glove" && !frozen) {
-      part.fireT = (part.fireT ?? GLOVE_PERIOD) - dt;
-      if (part.fireT <= 0) {
-        part.fireT = GLOVE_PERIOD * (0.8 + Math.random() * 0.5);
-        part.hitT = 0;
-        part.punchSpent = false;
-      }
-    }
-    // FIRE VENT clock: same cadence, its own period; hitT drives the plume +
-    // the burn window read by hazards.ts. Frozen = no jet.
-    if (part.kind === "firevent" && !frozen) {
-      part.fireT = (part.fireT ?? VENT_PERIOD) - dt;
-      if (part.fireT <= 0) {
-        part.fireT = VENT_PERIOD * (0.8 + Math.random() * 0.5);
-        part.hitT = 0;
-        part.punchSpent = false;
-      }
-    }
+    // Self-clocks (glove, fire vent) live at the top of their own animator, so
+    // they still stamp hitT before this frame's animation reads it.
+    PART_ANIMATORS[part.kind](part, { dt, frozen });
 
-    if (part.kind === "bumper") {
-      // hit: a fast radial pop (out 60ms, settle 140ms); idle: dome breathes
-      let s = 1;
-      if (part.hitT >= 0 && part.hitT < 0.2) {
-        const t = part.hitT / 0.2;
-        s = 1 + 0.35 * Math.sin(Math.min(1, t * 1.6) * Math.PI);
-      }
-      part.mesh.scale.set(s, 1, s);
-      const dome = part.mesh.userData.dome as THREE.MeshStandardMaterial | undefined;
-      // Slice 5 — a LIT bumper (or the whole floor during a jackpot) burns GOLD
-      // and brighter; an unlit one keeps the cool arcane breathe.
-      const lit = (part.hits ?? 0) >= BUMPER_LIT_HITS || state.jackpotT > 0;
-      if (dome) {
-        // An AIMED bumper flares white-hot on top of whatever it already was —
-        // the shot you're lined up on should be the brightest thing on screen.
-        dome.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
-        const base = (lit ? 1.5 : 0.7) + (part.aimed ? 1.4 : 0);
-        const rate = part.aimed ? 11 : lit ? 6 : 3;
-        dome.emissiveIntensity = base + 0.3 * Math.sin(animT * rate + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
-      }
-    } else if (part.kind === "spring") {
-      // hit: squash then overshoot along Y — the boing
-      const coil = part.mesh.userData.coil as THREE.Group | undefined;
-      if (coil) {
-        let sy = 1;
-        if (part.hitT >= 0 && part.hitT < 0.3) {
-          const t = part.hitT / 0.3;
-          sy = t < 0.3 ? 1 - 0.6 * (t / 0.3) : 0.4 + 0.9 * Math.min(1, (t - 0.3) / 0.5) - 0.3 * Math.sin(((t - 0.3) / 0.7) * Math.PI);
-          sy = Math.max(0.3, sy);
-        }
-        coil.scale.y = sy;
-      }
-    } else if (part.kind === "ramp") {
-      // A wave sweeps UP the three arrows (a clear directional "GO" crawl); on
-      // trigger the whole ramp flashes bright and the kicker lip pops.
-      const mats = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-      const lipMat = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
-      const lipMesh = part.mesh.userData.lipMesh as THREE.Mesh | undefined;
-      const phase = (part.mesh.userData.phase as number) ?? 0;
-      const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
-      if (mats) {
-        mats.forEach((m, k) => {
-          const wave = Math.max(0, Math.sin(animT * 6 + phase - k * ((Math.PI * 2) / 3)));
-          m.emissiveIntensity = 0.3 + 0.9 * wave + flash * 2.6;
-        });
-      }
-      if (lipMat) lipMat.emissiveIntensity = 0.6 + 0.2 * Math.sin(animT * 4 + phase) + flash * 2.6;
-      if (lipMesh) lipMesh.scale.y = 1 + flash * 0.7; // spring compress→release
-    } else if (part.kind === "booster") {
-      // A fast forward wave chases down the three chevrons (a clear directional
-      // "GO →"); the side strips pulse together; a trigger flashes the whole pad.
-      const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-      const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
-      const phase = (part.mesh.userData.phase as number) ?? 0;
-      const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
-      if (chevs) {
-        chevs.forEach((m, k) => {
-          const wave = Math.max(0, Math.sin(animT * 9 + phase - k * ((Math.PI * 2) / 3)));
-          m.emissiveIntensity = 0.35 + 1.0 * wave + flash * 2.4;
-        });
-      }
-      if (strips) strips.forEach((m) => (m.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 5 + phase) + flash * 2.0));
-    } else if (part.kind === "glove") {
-      // punch: the piston SNAPS out over the active window, eases back after
-      const piston = part.mesh.userData.piston as THREE.Group | undefined;
-      if (piston) {
-        let ext = 0;
-        if (part.hitT >= 0) {
-          const t = part.hitT;
-          ext = t < GLOVE_ACTIVE ? Math.min(1, t / 0.05) : Math.max(0, 1 - (t - GLOVE_ACTIVE) / 0.25);
-        }
-        piston.position.x = ext * (GLOVE_LANE_LEN * 0.75);
-      }
-      const fist = part.mesh.userData.fist as THREE.MeshStandardMaterial | undefined;
-      if (fist) fist.emissiveIntensity = 0.3 + (part.hitT >= 0 && part.hitT < GLOVE_ACTIVE ? 0.8 : 0);
-    } else if (part.kind === "spinpad") {
-      const rotor = part.mesh.userData.rotor as THREE.Group | undefined;
-      if (rotor) rotor.rotation.y = frozen ? rotor.rotation.y : animT * 3.4 + part.i;
-    } else if (part.kind === "slingshot") {
-      // the band twangs on a hit
-      const band = part.mesh.userData.band as THREE.Mesh | undefined;
-      if (band) {
-        const k = part.hitT >= 0 && part.hitT < 0.3 ? Math.sin((part.hitT / 0.3) * Math.PI * 3) * 0.25 : 0;
-        band.position.x = k;
-      }
-    } else if (part.kind === "target") {
-      const mats = part.mesh.userData.ringMats as THREE.MeshStandardMaterial[] | undefined;
-      const rings = part.mesh.userData.rings as THREE.Group | undefined;
-      if (part.done) {
-        // broken: rings tip over, glow dies
-        if (rings) rings.rotation.z = Math.min(Math.PI / 2.2, rings.rotation.z + dt * 6);
-        if (mats) mats.forEach((m) => (m.emissiveIntensity = 0.02));
-      } else if (part.bank !== undefined && mats) {
-        // Slice 6 — banked drop-target: GREEN steady-bright once lit, else a
-        // dim red "armed" wink so the 1-2-3 progress reads at a glance.
-        mats[2].emissive.setHex(part.lit ? 0x6fe89a : 0xd95763);
-        mats[2].emissiveIntensity = part.lit ? 1.7 : 0.5 + 0.35 * Math.sin(animT * 4 + part.j);
-      } else if (mats) {
-        mats[2].emissiveIntensity = 0.7 + 0.5 * Math.sin(animT * 4 + part.j); // the eye winks
-      }
-    } else if (part.kind === "trapdoor") {
-      // The hatch BANGS open on its hinge, hangs there while the knight drops
-      // through (entities/player.startDrop owns that beat — the swing is timed
-      // to TRAPDOOR_OPEN so the floor is gone exactly when he falls), then
-      // creaks shut on an empty hole.
-      const door = part.mesh.userData.door as THREE.Group | undefined;
-      if (door) {
-        let open = 0;
-        if (part.hitT >= 0) {
-          const t = part.hitT;
-          if (t < TRAPDOOR_OPEN) {
-            // Slam: eased out hard, then a small overswing that settles back —
-            // a door thrown open, not a door lerped open.
-            const u = t / TRAPDOOR_OPEN;
-            open = 1 - (1 - u) * (1 - u) * (1 - u);
-          } else if (t < TRAPDOOR_DROP + 0.9) {
-            open = 1 + 0.06 * Math.sin((t - TRAPDOOR_OPEN) * 14) * Math.max(0, 1 - (t - TRAPDOOR_OPEN) * 2.5);
-          } else {
-            open = Math.max(0, 1 - (t - (TRAPDOOR_DROP + 0.9)) / 0.6); // creaks shut
-          }
-        }
-        door.rotation.z = Math.min(1.08, Math.max(0, open)) * 1.4;
-      }
-    } else if (part.kind === "rollover") {
-      // Lamp: gold + steady when this lane is lit, cool and breathing when not.
-      const lamp = part.mesh.userData.lamp as THREE.MeshStandardMaterial | undefined;
-      if (lamp) {
-        const lit = part.lane !== undefined && part.laneSeq !== undefined && !!state.laneLit[part.lane]?.[part.laneSeq];
-        lamp.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
-        lamp.emissiveIntensity = (lit ? 1.6 : 0.5) + (part.aimed ? 1.2 : 0) + 0.25 * Math.sin(animT * (lit ? 5 : 2.5) + part.i);
-      }
-    } else if (part.kind === "oil") {
-      const sheen = part.mesh.userData.sheen as THREE.MeshStandardMaterial | undefined;
-      if (sheen) sheen.emissiveIntensity = 0.16 + 0.1 * Math.sin(animT * 1.7 + part.i * 2);
-    } else if (part.kind === "flipper") {
-      // the paddle SNAPS up on a hit, then eases back down
-      const paddle = part.mesh.userData.paddle as THREE.Group | undefined;
-      let up = 0;
-      if (paddle) {
-        if (part.hitT >= 0) {
-          const t = part.hitT;
-          up = t < FLIPPER_SWING ? Math.min(1, t / 0.06) : Math.max(0, 1 - (t - FLIPPER_SWING) / 0.3);
-        }
-        paddle.rotation.z = up * 0.9;
-      }
-      // Slice 7 telegraph: the gold striking edge breathes so the flipper reads
-      // "live/ready", and flares bright the instant it swings.
-      const edge = part.mesh.userData.edgeMat as THREE.MeshStandardMaterial | undefined;
-      if (edge) edge.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 4 + part.i) + up * 1.8;
-    } else if (part.kind === "mirror") {
-      const glint = part.mesh.userData.glint as THREE.MeshStandardMaterial | undefined;
-      if (glint) glint.emissiveIntensity = 0.4 + 0.25 * Math.sin(animT * 2 + part.i) + (part.hitT >= 0 && part.hitT < 0.2 ? 1.2 : 0);
-    } else if (part.kind === "electric") {
-      // pulse: dark for ELEC_OFF, glow for ELEC_ON — per-plate phase offset
-      const live = ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) < ELEC_ON;
-      const warn = !live && ((animT + (part.phase ?? 0)) % (ELEC_ON + ELEC_OFF)) > ELEC_OFF - 0.3; // about to fire
-      const plate = part.mesh.userData.plateMat as THREE.MeshStandardMaterial | undefined;
-      const node = part.mesh.userData.nodeMat as THREE.MeshStandardMaterial | undefined;
-      const glow = frozen ? 0 : live ? 1.6 + 0.4 * Math.sin(animT * 30) : warn ? 0.5 : 0.05;
-      if (plate) plate.emissiveIntensity = glow;
-      if (node) node.emissiveIntensity = glow + 0.2;
-    } else if (part.kind === "firevent") {
-      // the plume roars during the active window, sputters just before
-      const plume = part.mesh.userData.plume as THREE.Mesh | undefined;
-      const mat = part.mesh.userData.plumeMat as THREE.MeshStandardMaterial | undefined;
-      let scale = 0.001;
-      if (part.hitT >= 0) {
-        const t = part.hitT;
-        if (t < VENT_WARN) scale = 0.15 + 0.1 * Math.sin(t * 40); // sputter tell
-        else if (t < VENT_WARN + VENT_ACTIVE) scale = 1 + 0.15 * Math.sin(t * 25); // roar
-      }
-      if (plume) plume.scale.setScalar(scale);
-      if (mat) mat.emissiveIntensity = scale > 0.5 ? 1 : 0.3;
-    } else if (part.kind === "magstrip") {
-      const field = part.mesh.userData.fieldMat as THREE.MeshStandardMaterial | undefined;
-      if (field) field.emissiveIntensity = frozen ? 0.1 : 0.45 + 0.4 * Math.sin(animT * 8 + part.i);
-    } else if (part.kind !== "pit") {
-      // deflector: gold edge flashes on a hit
-      const edge = part.mesh.userData.edge as THREE.MeshStandardMaterial | undefined;
-      if (edge) edge.emissiveIntensity = 0.5 + (part.hitT >= 0 && part.hitT < 0.25 ? 1.4 * (1 - part.hitT / 0.25) : 0);
-    }
-
-    if (part.hitT > (part.kind === "trapdoor" ? TRAPDOOR_DROP + 1.6 : part.kind === "firevent" ? VENT_WARN + VENT_ACTIVE + 0.1 : 0.6)) part.hitT = -1;
+    if (part.hitT > PART_HIT_LIFETIME[part.kind]) part.hitT = -1;
   }
 }
 

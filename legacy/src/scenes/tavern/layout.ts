@@ -152,7 +152,13 @@ export const STATIONS: Station[] = [
     // has a visible cost — you can't afford the card you wanted.
     label: "Risk Gold",
     blurb: "slots · roulette · blackjack · darts",
-    x: 3.0,
+    // West of the cabinet, not in front of it. The stand-here spot used to be
+    // 3.0 — fine while the cabinet was walk-through, but it sits inside the
+    // solid rect added for it (|3.0 - 3.9| = 0.9, under the 0.8 half-width plus
+    // PLAYER_RADIUS 0.32), so the station became unreachable. `layout.test.ts`
+    // caught it immediately, which is the whole reason placement lives here as
+    // data rather than scattered through the prop builders.
+    x: 2.5,
     z: 5.6,
     radius: 1.5,
     accent: GOLD,
@@ -175,6 +181,11 @@ export const OBSTACLES: Rect[] = [
   { x: 7.2, z: 2.8, w: 2.6, d: 2.0 }, // card dealer's table
   { x: -7.2, z: 2.8, w: 2.6, d: 2.0 }, // armory bench
   { x: 0, z: -6.4, w: 4.2, d: 1.0 }, // notice board / plunger housing
+  // The gambler's arcade cabinet. Sized to its TOP LIP (1.6 x 1.0, the widest
+  // part) rather than the body, so you can't clip a corner. Every other station
+  // had a rect from the start; this one shipped without one and you could walk
+  // straight through the cabinet.
+  { x: 3.9, z: 5.9, w: 1.6, d: 1.0 },
 ];
 
 /**
@@ -201,6 +212,13 @@ export const KEEPER_SPOTS: KeeperSpot[] = [
   { id: "bar", x: 6.6, z: -0.7 },
   { id: "dealer", x: 6.6, z: 4.4 },
   { id: "armory", x: -6.6, z: 4.4 },
+  // The gambler's tout. NOT behind the cabinet (x 3.15..4.65, z 5.45..6.35 in
+  // props.ts) and NOT on the stand-here spot at (3.0, 5.6) — east of the machine
+  // and a step into the room, in the throwing line of the wall dartboard at
+  // (5.9, 6.8). Also kept clear of the card dealer's radius: at z 4.4 this spot
+  // lands EXACTLY on it (1.60 from a 1.60 radius), which is the kind of
+  // boundary that resolves differently on a float rounding change.
+  { id: "gambler", x: 5.2, z: 4.6 },
 ];
 
 /** The player's entry point — at the foot of the dungeon stair, facing in. */

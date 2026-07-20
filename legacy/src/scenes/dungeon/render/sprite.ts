@@ -327,6 +327,18 @@ export interface ActorSprite {
    * it hides the blob for the duration rather than let it stick up wrong.
    */
   setBlobVisible(v: boolean): void;
+  /**
+   * Hold the contact shadow on the GROUND while the actor is airborne.
+   *
+   * The blob is a CHILD of the sprite mesh, so raising `mesh.position.y` for a
+   * ramp hop / wall-kick / pounce lifted the shadow with the knight — which is
+   * exactly the cue that was supposed to sell the height, and it read as the
+   * shadow being glued to his feet instead.
+   *
+   * Pass the actor's current elevation above the floor; the blob cancels it and
+   * stays put. Pass 0 on landing.
+   */
+  setElevation(dy: number): void;
   dispose(): void;
 }
 
@@ -401,6 +413,14 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     },
     setBlobVisible(v: boolean): void {
       blob.visible = v;
+    },
+    setElevation(dy: number): void {
+      // The blob's rest position is 2cm above the feet, expressed in the
+      // parent's LOCAL frame (the parent is billboarded, hence the inverse
+      // rotation). Subtracting the elevation in that same frame pins the shadow
+      // to the floor while the sprite rises.
+      const inv = mesh.quaternion.clone().invert();
+      blob.position.copy(new THREE.Vector3(0, 0.02 - dy, 0).applyQuaternion(inv));
     },
     dispose: () => {
       geo.dispose();

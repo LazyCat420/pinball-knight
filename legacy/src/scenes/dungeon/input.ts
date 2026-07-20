@@ -49,7 +49,9 @@ export interface InputHandle {
   dispose(): void;
 }
 
-const MOVE_KEYS: Record<string, [number, number]> = {
+// Exported for `input.test.ts`, which asserts no key is bound to both movement
+// and turning — see the note on TURN_LEFT below for why that matters.
+export const MOVE_KEYS: Record<string, [number, number]> = {
   w: [0, -1],
   arrowup: [0, -1],
   s: [0, 1],
@@ -65,9 +67,23 @@ const MOVE_KEYS: Record<string, [number, number]> = {
 // mouse owns aiming + attacking, which is what an iso ARPG wants.
 const ATTACK_KEYS = new Set<string>();
 const DODGE_KEYS = new Set([" "]);
-// FPS look-turn keys: q/e plus the left/right arrows (left = turn left).
-const TURN_LEFT = new Set(["q", "arrowleft"]);
-const TURN_RIGHT = new Set(["e", "arrowright"]);
+// FPS look-turn keys: q/e ONLY.
+//
+// The left/right arrows used to be in here as well as in MOVE_KEYS. Both sets
+// are read from the same `down` set — `axis()` for movement, `turnAxis()` for
+// the FPS camera — so holding Left strafed left AND rotated the camera left on
+// the same frame. That compound motion is almost certainly what the
+// long-standing "control inversion" note in ROADMAP §6 / VERIFY_CHECKLIST §6
+// was reacting to: there is no sign error anywhere in the movement or aim math
+// (both route through screenDirToWorld with the same convention), the arrows
+// were just bound to two things at once.
+//
+// Arrows stay as the movement alias for WASD, which is what they do in iso mode
+// and what players expect; q/e keep the turn, which is the conventional FPS
+// binding. Anything added here must NOT also appear in MOVE_KEYS — `input.test.ts`
+// asserts that.
+export const TURN_LEFT = new Set(["q"]);
+export const TURN_RIGHT = new Set(["e"]);
 
 export function createInput(attackSurface: HTMLElement): InputHandle {
   const down = new Set<string>();

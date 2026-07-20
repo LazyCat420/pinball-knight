@@ -77,6 +77,48 @@ export const tavern: TavernState = {
   disposers: [],
 };
 
+/**
+ * How the central diorama should read for a given run.
+ *
+ * The pinball table is the room's thesis — a machine that reports the floor you
+ * just cleared. Animating it on a free-running timer made it decorative instead:
+ * the caps chased and the ball lapped identically after a perfect floor and
+ * after a death on the stairs, which is worse than a dead machine, because it
+ * looks like information and isn't.
+ *
+ * `TavernStats` is everything the dungeon hands over when it opens the tavern,
+ * so this is the whole of the run that is legitimately reachable from here. Kept
+ * pure and in this module (rather than in `props.ts`) so it can be tested
+ * without a canvas, and so nothing in the tavern reaches into dungeon state to
+ * find more.
+ */
+export interface DioramaState {
+  /** How many bumper caps are lit — completed targets. */
+  lit: number;
+  /** Ball orbit rate, rad/s. 0 parks it: a weak floor leaves the machine still. */
+  ballSpeed: number;
+}
+
+/** Letter grades, best first. Anything unrecognised (including "-") ranks 0. */
+const GRADE_RANK: Record<string, number> = { S: 5, A: 4, B: 3, C: 2, D: 1, F: 0 };
+
+export function gradeRank(grade: string): number {
+  return GRADE_RANK[grade.toUpperCase()] ?? 0;
+}
+
+/**
+ * Targets are ordered easiest-first, so the caps light left-to-right as a run
+ * gets better and a glance at the table tells you roughly how it went.
+ */
+export function readDiorama(stats: TavernStats, bumperCount: number): DioramaState {
+  const rank = gradeRank(stats.grade);
+  const targets = [stats.floor >= 1, stats.kills >= 10, stats.bestCombo >= 5, stats.kills >= 40, rank >= 4];
+  const lit = Math.min(bumperCount, targets.filter(Boolean).length);
+  // B or better sends the ball round, and it goes faster the better you did.
+  const ballSpeed = rank >= 3 ? 0.3 + (rank - 3) * 0.32 : 0;
+  return { lit, ballSpeed };
+}
+
 /** Wipe scene-local state. Persistent run state is untouched by design. */
 export function resetTavernState(): void {
   tavern.active = false;

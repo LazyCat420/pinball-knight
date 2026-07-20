@@ -19,6 +19,7 @@
 import * as THREE from "three";
 import { PALETTE_HEX } from "./palette";
 import { CAMERA_YAW, CAMERA_TILT } from "../constants";
+import { DamageTextPool, type DamageTextKind } from "./damage-text";
 
 function toLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -325,6 +326,12 @@ export interface VfxSystem {
    * a trail), with its own tinted, fading material. `tint` multiplies the art.
    */
   ghost(src: THREE.Mesh, tint: number, life?: number, opacity?: number): void;
+  /**
+   * A floating damage number rising from the point of impact. `kind` picks the
+   * read: "out"/"crit" for damage dealt, "in" for damage taken. See
+   * render/damage-text.ts.
+   */
+  damage(x: number, y: number, z: number, amount: number, kind: DamageTextKind): void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -344,10 +351,12 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const additive = new ParticlePool(500, THREE.AdditiveBlending);
   const alpha = new ParticlePool(400, THREE.NormalBlending);
   const slashes = new SlashPool();
+  const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
   scene.add(additive.points);
   scene.add(alpha.points);
   scene.add(slashes.group);
+  scene.add(dmgText.group);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -428,10 +437,14 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.add(mesh);
       ghosts.push({ mesh, mat, t: 0, life, o0: opacity });
     },
+    damage(x, y, z, amount, kind) {
+      dmgText.spawn(x, y, z, amount, kind);
+    },
     update(dt) {
       additive.update(dt);
       alpha.update(dt);
       slashes.update(dt);
+      dmgText.update(dt);
       for (let i = ghosts.length - 1; i >= 0; i--) {
         const g = ghosts[i];
         g.t += dt;
@@ -448,9 +461,11 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(additive.points);
       scene.remove(alpha.points);
       scene.remove(slashes.group);
+      scene.remove(dmgText.group);
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
+      dmgText.dispose();
       for (const g of ghosts) {
         scene.remove(g.mesh);
         g.mat.dispose();
