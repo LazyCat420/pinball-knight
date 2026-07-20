@@ -1006,7 +1006,13 @@ export function decorateMaze(
   // part; the Wave-A kinds are threaded through so every floor tastes them)
   // until the budget is spent or every pool is dry. Themes may pass their own
   // deal to bias the floor (a sewer floor deals oil twice, etc.).
-  const deal: PartSpotKind[] = extras.deal ?? ["bumper", "ramp", "spring", "glove", "flipper", "oil", "deflector", "mirror", "spinpad", "slingshot"];
+  // NB: `deflector` is deliberately NOT dealt into corridors anymore. The deal
+  // only ever had a "corner" topology to put it on = a 1-wide dogleg bend, which
+  // is exactly the "curved rail in a random place" the real banked corners (the
+  // ≥2×2 pocket wedges, rendered in build.ts) are not. Deflectors now come ONLY
+  // from the deliberate ORBIT rails framing big rooms (furnishRooms). The flow
+  // pass will reintroduce corridor banks on genuinely sweepable corners.
+  const deal: PartSpotKind[] = extras.deal ?? ["bumper", "ramp", "spring", "glove", "flipper", "oil", "mirror", "spinpad", "slingshot"];
   let dealIdx = 0;
   let dry = 0;
   while (parts.length < corridorBudget && dry < deal.length) {

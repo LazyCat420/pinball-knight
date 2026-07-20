@@ -345,7 +345,7 @@ export const THEMES: FloorTheme[] = [
     name: "crypt",
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     landmarks: ["tilttable", "pachinko"],
-    deal: ["bumper", "ramp", "spring", "glove", "flipper", "deflector", "spinpad", "mirror", "slingshot", "oil"],
+    deal: ["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
     enemies: { zombie: 3, ghost: 2, bat: 2 },
   },
   {
@@ -353,7 +353,7 @@ export const THEMES: FloorTheme[] = [
     name: "warren",
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     landmarks: ["nest", "grinder"],
-    deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "deflector", "flipper", "ramp", "slingshot"],
+    deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
     enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2 },
   },
   {
@@ -361,7 +361,7 @@ export const THEMES: FloorTheme[] = [
     name: "bloodworks",
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     landmarks: ["grinder", "pachinko"],
-    deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "deflector", "bumper", "slingshot", "spinpad"],
+    deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
     enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2 },
   },
   {
@@ -369,7 +369,7 @@ export const THEMES: FloorTheme[] = [
     name: "arcane",
     pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
     landmarks: ["observatory", "tilttable"],
-    deal: ["spinpad", "bumper", "mirror", "spring", "deflector", "oil", "glove", "flipper", "slingshot", "mirror"],
+    deal: ["spinpad", "bumper", "mirror", "spring", "oil", "glove", "flipper", "slingshot", "mirror"],
     enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2 },
   },
 ];

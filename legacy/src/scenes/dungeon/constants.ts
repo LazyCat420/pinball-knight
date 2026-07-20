@@ -631,8 +631,10 @@ export const ARC_BOOST = 1.03;
 export const ARC_COOLDOWN = 0.25;
 /** Below this you're just walking a corner — no bank, only the visual. */
 export const ARC_MIN_SPEED = 6;
-/** Radius of the rendered quarter-cylinder wedge that caps a banked corner. */
-export const ARC_WEDGE_R = 0.5;
+/** Radius of the rendered quarter-cylinder wedge that caps a banked corner.
+ *  Bumped 2026-07-20 to match the banked-rail read (was 0.5, buried against the
+ *  2-tile wall bands so the real sweepable corners never looked curved). */
+export const ARC_WEDGE_R = 0.62;
 // ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
 export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
 export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled
