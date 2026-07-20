@@ -93,6 +93,10 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   pipsEl = document.createElement("div");
   pipsEl.style.cssText = `display:flex;gap:5px;align-items:center;flex-wrap:nowrap;overflow:hidden`;
   buffStripEl = document.createElement("div");
+  // Stable hook for VERIFY_CHECKLIST harnesses. The strip is otherwise an
+  // unlabelled styled div, so a test could only find it by matching CSS — which
+  // breaks on any restyle and silently starts asserting nothing.
+  buffStripEl.setAttribute("data-buff-strip", "");
   buffStripEl.style.cssText = `display:flex;gap:5px;align-items:center;flex-wrap:nowrap;overflow:hidden`;
   header.appendChild(pipsEl);
   header.appendChild(buffStripEl);

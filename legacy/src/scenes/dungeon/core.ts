@@ -178,7 +178,7 @@ import {
   MOTE_RATE,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, POTIONS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
@@ -422,6 +422,52 @@ export function launchDungeonGame(onExit?: () => void): void {
         seen: exploredCount(f),
         pct: Math.round(exploredFraction(f, g) * 100),
         mapOpen: isFloorMapOpen(),
+      };
+    };
+    // Dev: the state VERIFY_CHECKLIST.md asserts on.
+    //
+    // Almost everything in that checklist is a canvas, a shader or a transient
+    // DOM tile, so a harness driving the debug panel can click a control and
+    // have no way to tell whether it did anything. This is the read-back.
+    (window as unknown as { __dungeonProbe?: () => unknown }).__dungeonProbe = () => {
+      const p = state.player;
+      return {
+        // §0 debug toggles
+        godMode: state.godMode,
+        infMana: state.infMana,
+        noCooldown: state.noCooldown,
+        // §2/§3 buffs — the timers the buff strip renders from
+        buffs: p
+          ? {
+              rage: p.rageT,
+              haste: p.hasteT,
+              shield: p.shieldT,
+              iron: p.ironT,
+              turbo: p.turboT,
+              spring: p.springT,
+              curve: p.curveT,
+              magBoots: p.magBootsT,
+              magnetAura: p.magnetAuraT,
+              bladeStorm: p.bladeStormT,
+              webbed: p.webbedT,
+              oil: p.oilT,
+            }
+          : null,
+        freezeT: state.freezeT ?? 0,
+        potionIds: POTION_IDS.slice(),
+        // §1 vitals
+        hp: p?.hp ?? 0,
+        mana: p?.mana ?? 0,
+        // §4 rampage / HUD swap
+        hudMode: state.hudMode,
+        fpsActive: state.fpsActive,
+        ultCharge: state.ultCharge,
+        // §5 world
+        enemies: state.zombies.length,
+        parts: state.pinballParts.length,
+        level: state.level,
+        gameOver: state.gameOver,
+        weapon: state.weaponSlots[state.activeSlot]?.id ?? null,
       };
     };
     // Dev: socket a card straight into the active weapon. `__dungeonSocket('ember')`.
