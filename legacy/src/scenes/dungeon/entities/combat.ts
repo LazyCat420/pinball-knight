@@ -4,6 +4,7 @@
  * zombie.ts and projectiles.ts.
  */
 import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
+import { awardKillXp, skillAgg } from "../skill-runtime";
 import {
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
@@ -67,6 +68,9 @@ export function playerDamage(base: number): number {
     dmg = dmg * agg.damageMult + agg.damageFlat;
     if (agg.pinballMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= agg.pinballMult;
   }
+  const skills = skillAgg();
+  dmg *= skills.damageMult;
+  if (skills.pinballDamageMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= skills.pinballDamageMult;
   if (p && p.rageT > 0) dmg *= RAGE_DAMAGE_MULT;
   return dmg;
 }
@@ -454,6 +458,7 @@ function killZombie(z: Zombie): void {
   state.hitstopT = Math.max(state.hitstopT, z.boss ? HITSTOP_KILL * 2.5 : HITSTOP_KILL);
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
+  awardKillXp(!!z.boss); // character XP — the skill tree's fuel
   onCardRoll?.(z.x, z.z, !!z.boss); // roll a modifier-card drop
   // Every kill DROPS coins on the floor (magnet-collected) rather than silently
   // crediting the purse — a visible payout. Falls back to an instant credit if

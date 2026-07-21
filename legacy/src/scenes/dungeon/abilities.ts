@@ -10,6 +10,7 @@
  * drifts the existing ground items in, Blade Storm reuses damageZombie.
  */
 import { state } from "./state";
+import { playerManaMax, skillAgg } from "./skill-runtime";
 import type { Zombie } from "./state";
 import { FACING_VEC, damageZombie } from "./entities/combat";
 import {
@@ -53,9 +54,9 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
 
 export const ABILITY_IDS: AbilityId[] = ["flippercharge", "arcanepulse", "magnetaura", "timecrawl", "bladestorm"];
 
-/** Live mana, clamped. */
+/** Live mana, clamped to the (skill-extended) pool. */
 export function getMana(): number {
-  return clamp(state.player?.mana ?? 0, 0, MANA_MAX);
+  return clamp(state.player?.mana ?? 0, 0, playerManaMax());
 }
 
 /** Can the ability in this skill slot fire right now (equipped, off cooldown, affordable)? */
@@ -78,7 +79,7 @@ export function castAbility(slot: 0 | 1): boolean {
   if ((state.abilityCd[id] ?? 0) > 0 || p.mana < def.cost) return false;
 
   p.mana = Math.max(0, p.mana - def.cost);
-  state.abilityCd[id] = def.cooldown;
+  state.abilityCd[id] = def.cooldown * skillAgg().cooldownMult; // Swift Casting ranks
 
   switch (id) {
     case "flippercharge": {
@@ -139,8 +140,8 @@ export function tickAbilities(dt: number): void {
   if (!p) return;
 
   // Debug: keep the pool topped and the skills instantly re-castable.
-  if (state.infMana && p.mana < MANA_MAX) {
-    p.mana = MANA_MAX;
+  if (state.infMana && p.mana < playerManaMax()) {
+    p.mana = playerManaMax();
     state.hudDirty = true;
   }
   if (state.noCooldown) {
@@ -148,7 +149,7 @@ export function tickAbilities(dt: number): void {
   }
 
   // Passive mana regen.
-  if (p.mana < MANA_MAX) {
+  if (p.mana < playerManaMax()) {
     const before = p.mana;
     p.mana = Math.min(MANA_MAX, p.mana + MANA_REGEN * dt);
     if (Math.floor(p.mana) !== Math.floor(before)) state.hudDirty = true;

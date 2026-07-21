@@ -12,6 +12,7 @@
  * boots come from the gear slots.
  */
 import { state, activeWeapon } from "../state";
+import { skillAgg } from "../skill-runtime";
 import {
   PLAYER_SPEED,
   PLAYER_R,
@@ -1428,6 +1429,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // still snappy; Shift adds SPRINT_BASE_MULT at once and the spool lerps the
   // rest of the way to SPRINT_SPEED_MULT.
   let targetSpeed = PLAYER_SPEED * (attacking ? ATTACK_MOVE_FACTOR : 1);
+  targetSpeed *= skillAgg().moveSpeedMult; // Greased Greaves ranks
   if (state.gear.boots !== undefined) targetSpeed *= BOOTS_SPEED_FACTOR;
   if (p.hasteT > 0) targetSpeed *= HASTE_SPEED_MULT; // haste potion: run faster
   if (p.turboT > 0) targetSpeed *= TURBO_WALK_MULT; // turbo: quicker feet too

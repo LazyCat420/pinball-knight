@@ -41,6 +41,8 @@ import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySetting
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { getKnightSheet, setHandmadeOverride } from "./render/knight-sheets";
+import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
+import { hasStartCardPerk } from "./legacy";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -202,7 +204,7 @@ import {
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
-import { CARDS, STASH_MAX, rollCardDrop, socketCard, type CardId } from "./cards";
+import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
@@ -665,6 +667,12 @@ export function launchDungeonGame(onExit?: () => void): void {
     }
   });
 
+  // Level-up fanfare: toast + modifier sting; the tree lives in the menu (I).
+  setLevelUpHandler((level, points) => {
+    showToast(`LEVEL ${level}`, `+1 skill point · ${points} unspent — press I`);
+    sfxModifier();
+  });
+
   // ── HUD + input ──
   // Dual HUD: the Diablo panel (iso) + the Wolfenstein bar (rampage). mountHUDs
   // builds both, mounts the shared face, and sets state.hudEl to the wolf bar.
@@ -684,7 +692,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   debugPanelDispose = createDebugPanel(state.container, {
     heal: () => {
       if (!state.player) return;
-      state.player.hp = PLAYER_MAX_HP;
+      state.player.hp = playerMaxHp();
       faceOnHeal();
       rippleGlobe("life");
       state.hudDirty = true;
@@ -692,6 +700,13 @@ export function launchDungeonGame(onExit?: () => void): void {
     addGold: (n) => {
       state.goldRun += n;
       addGold(n, "dungeon-game");
+      state.hudDirty = true;
+    },
+    grantXp: (n) => {
+      debugGrantXp(n);
+    },
+    grantSkillPoints: (n) => {
+      state.skillPoints += n;
       state.hudDirty = true;
     },
     fillRampage: () => {
@@ -1147,6 +1162,7 @@ function startLevel(level: number): void {
       silhouette: createOcclusionSilhouette(sprite),
       ...freshPlayerFields(),
     };
+    state.player.hp = playerMaxHp(); // legacy hearts land at creation
     state.playerArtKey = lookKey(weaponId, lookFromGear(state.gear));
   } else {
     state.player.x = startPos.x;
@@ -1657,6 +1673,28 @@ function beginRunLedger(): void {
   state.runStartMs = performance.now();
   state.pausedRunS = 0;
   state.runScoreSubmitted = false;
+  beginRunProgression();
+}
+
+/**
+ * A NEW RUN's character progression: the tree resets with the run (roguelite),
+ * the memoized aggregate re-reads any legacy perks bought since, and the Pack
+ * Rat perk seeds the stash. Piggybacks on beginRunLedger because "what counts
+ * as a new run" must have exactly one definition (launch AND retry hit it).
+ */
+function beginRunProgression(): void {
+  state.charXp = 0;
+  state.charLevel = 1;
+  state.skillPoints = 0;
+  state.skillRanks = {};
+  state.unlockedAbilities = ["flippercharge", "arcanepulse"];
+  state.seenCards = new Set();
+  invalidateSkillAgg();
+  if (hasStartCardPerk()) {
+    const bag = cardsOfRarity("common");
+    state.cardStash.push(bag[Math.floor(Math.random() * bag.length)]);
+  }
+  if (state.player) state.player.hp = playerMaxHp();
 }
 
 /** Gather the run-scoped ledger into the shape `run-score.ts` grades. */
@@ -1728,6 +1766,8 @@ function onPlayerDeath(): void {
         state.player.sprite.setTint(null);
       }
       beginRunLedger(); // a retry is a NEW run for the board, not a continuation
+      if (state.player) state.player.hp = playerMaxHp(); // after fresh fields
+      state.hudDirty = true;
       startLevel(1); // roguelite: gold is banked, the run restarts
     },
     onLeave: () => exitDungeonGame(),
@@ -1752,6 +1792,7 @@ function descend(): void {
 
   // Grade the floor being left BEFORE startLevel resets the ledger.
   const { grade, gold } = gradeFloor();
+  awardFloorXp(state.level, grade); // character XP, scaled by the grade
   state.goldRun += GOLD_PER_DESCENT + gold;
   addGold(GOLD_PER_DESCENT + gold, "dungeon-game");
   // A great floor unlocks a BONUS vault room on the next one (Wave F glue).
@@ -1820,8 +1861,11 @@ function dropCardMaybe(x: number, z: number, boss: boolean): void {
  */
 function creditGold(v: number): void {
   if (v <= 0) return;
-  state.goldRun += v;
-  addGold(v, "dungeon-game");
+  // Coin Magnet ranks / the Lucky Coin legacy perk scale COIN value here, the
+  // one funnel every physical coin credit passes through.
+  const scaled = Math.round(v * skillAgg().goldMult);
+  state.goldRun += scaled;
+  addGold(scaled, "dungeon-game");
   state.hudDirty = true;
 }
 
@@ -2142,8 +2186,9 @@ const SHOP_STOCK: ShopEntry[] = [
   { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: `${POTIONS.multiball.duration}s ${POTIONS.multiball.description}` },
   { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: `${POTIONS.curveshot.duration}s ${POTIONS.curveshot.description}` },
   { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: `${POTIONS.magnetboots.duration}s ${POTIONS.magnetboots.description}` },
-  { id: "mace", label: "Mace", icon: "🔨", price: 28, detail: "heavy melee" },
-  { id: "gun", label: "Gun", icon: "🔫", price: 30, detail: "30 ammo" },
+  // Weapons are gone from the cart (2026-07-20): they drop in the maze and the
+  // tavern forges them — the rolling cart's identity is the mid-floor top-up
+  // of TEMPORARY power, which is also what keeps it distinct from the tree.
 ];
 
 /** Open the merchant's shop overlay and PAUSE the sim while it's up. */
@@ -2154,12 +2199,10 @@ function openShop(): void {
     if (!entry || getBalance() < entry.price) return;
     if (!spendGold(entry.price)) return;
     state.goldRun = Math.max(0, state.goldRun - entry.price); // keep the run tally honest
-    if (entry.id in WEAPONS) {
-      state.weaponSlots[state.activeSlot] = freshWeapon(entry.id as WeaponId);
-      showPickupNote(`${entry.icon} ${entry.label.toUpperCase()} — bought`);
-    } else {
-      applyPotion(entry.id as PotionId);
-    }
+    // Belt first, like a floor pickup; drink immediately only if the belt's full.
+    const pid = entry.id as PotionId;
+    if (addToBelt(pid)) showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — belted`);
+    else applyPotion(pid);
     state.hudDirty = true;
     refreshShopOverlay(state.shopEl, getBalance());
   };
@@ -2217,7 +2260,7 @@ function applyPotion(id: PotionId): void {
   if (!p) return;
   const def = POTIONS[id];
   if (def.heal > 0) {
-    p.hp = Math.min(PLAYER_MAX_HP, p.hp + def.heal);
+    p.hp = Math.min(playerMaxHp(), p.hp + def.heal);
     state.vfx?.blood(p.x, 0.6, p.z, "red", 6); // a little red sparkle for the heal
   }
   if (def.gold && def.gold > 0) {

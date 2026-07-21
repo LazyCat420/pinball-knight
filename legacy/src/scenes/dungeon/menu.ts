@@ -24,11 +24,14 @@ import { state, activeWeapon, WEAPON_SLOTS } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type GearSlot } from "./items";
 import { CARDS, STASH_MAX, cardFitsKind, socketCard, lowerRarity, cardsOfRarity } from "./cards";
 import { ABILITIES, ABILITY_IDS, type AbilityId } from "./abilities";
-import { getBalance } from "../../utils/gold-wallet";
+import { getBalance, spendGold } from "../../utils/gold-wallet";
 import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel, btn } from "./ui-cards";
 import { getSettings, saveSettings, type ReaderPolicy, type DungeonSettings } from "./settings-save";
 import { setSfxMuted } from "./audio";
 import { loadBestDepth } from "./best-depth";
+import { SKILLS, SKILL_IDS, SKILL_BRANCHES, canLearn, xpForLevel, type SkillBranch } from "./skills";
+import { spendSkillPoint, unlockedAbilities, invalidateSkillAgg } from "./skill-runtime";
+import { LEGACY_PERKS, PERK_IDS, perkRank, addPerkRank } from "./legacy";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 
 export type MenuTab = "equipment" | "cards" | "skills" | "stats" | "settings";
@@ -92,6 +95,25 @@ function injectStyles(): void {
       font:700 10px ui-monospace,Menlo,monospace;letter-spacing:1px}
     .gmenu-toggle.on{background:#1c2a17;color:#8fe86f;border:1px solid #8fe86f}
     .gmenu-toggle.off{background:#241609;color:#9a8f77;border:1px solid #4a3d28}
+    .gmenu-tree{display:flex;gap:10px;align-items:flex-start}
+    .gmenu-branch{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+    .gmenu-branch-h{font:9px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:2px;margin-bottom:2px}
+    .gmenu-node{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer;font-family:inherit;
+      background:#00000044;border:1px solid #4a3d28;border-radius:7px;padding:7px 8px;color:#e8dcc0}
+    .gmenu-node-icon{font-size:18px;flex:0 0 auto}
+    .gmenu-node-text{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+    .gmenu-node-text b{font-size:11px}
+    .gmenu-node-text span{color:#9a8f77;font-size:9px}
+    .gmenu-node-text i{font-style:normal;font-size:8px;letter-spacing:.5px;margin-top:1px}
+    .gmenu-node.open{border-color:#8fe86f}
+    .gmenu-node.open i{color:#8fe86f}
+    .gmenu-node.locked{opacity:.55;cursor:not-allowed}
+    .gmenu-node.locked i{color:#d9a75a}
+    .gmenu-node.maxed{border-color:${GOLD};cursor:default}
+    .gmenu-node.maxed i{color:${GOLD}}
+    .gmenu-pips{display:flex;flex-direction:column;gap:2px;margin-left:auto}
+    .gmenu-pip{width:7px;height:7px;border-radius:2px;background:#241609;border:1px solid #4a3d28}
+    .gmenu-pip.on{background:${GOLD};border-color:#fff3c0}
   `;
   document.head.appendChild(s);
 }
@@ -147,30 +169,92 @@ function cardsBody(): string {
     <div style="display:flex;flex-wrap:wrap;margin-top:4px">${stashHtml}</div>`;
 }
 
-/** Overridden by Phase-5's skill tree; today: Q/E active-ability loadout. */
-let skillsExtraBody: (() => string) | null = null;
-export function setSkillsExtraBody(fn: (() => string) | null): void {
-  skillsExtraBody = fn;
+const BRANCH_META: Record<SkillBranch, { label: string; color: string }> = {
+  steel: { label: "⚔ STEEL", color: "#c8ccd4" },
+  flipper: { label: "🪩 FLIPPER", color: "#6fd0e8" },
+  arcana: { label: "✷ ARCANA", color: "#b06fe8" },
+};
+
+/** One node card: rank pips, cost, and its gate state. */
+function skillNode(id: string): string {
+  const def = SKILLS[id];
+  const rank = state.skillRanks[id] ?? 0;
+  const gate = canLearn(id, state.skillRanks, state.skillPoints);
+  const maxed = rank >= def.maxRank;
+  const cls = maxed ? "maxed" : gate.ok ? "open" : "locked";
+  const pips = Array.from({ length: def.maxRank }, (_, i) => `<span class="gmenu-pip ${i < rank ? "on" : ""}"></span>`).join("");
+  const req = (def.requires ?? []).map((r) => SKILLS[r]?.label).filter(Boolean).join(", ");
+  const sub = maxed ? "MAXED" : gate.ok ? `+1 rank · ${def.cost}pt` : gate.why ?? "";
+  return `<button data-act="skill:${id}" class="gmenu-node ${cls}" ${maxed ? "disabled" : ""} title="${req ? `requires ${req}` : ""}">
+    <span class="gmenu-node-icon">${def.icon}</span>
+    <span class="gmenu-node-text"><b>${def.label}</b><span>${def.description}</span><i>${sub}</i></span>
+    <span class="gmenu-pips">${pips}</span>
+  </button>`;
 }
 
 function skillsBody(): string {
+  // ── Header: level, XP bar, points ──
+  const need = xpForLevel(state.charLevel);
+  const pct = Math.max(0, Math.min(100, Math.round((state.charXp / need) * 100)));
+  const header = `<div class="gmenu-row" style="gap:12px">
+      <b style="color:${GOLD};font-size:13px">LEVEL ${state.charLevel}</b>
+      <span style="flex:1;height:8px;border:1px solid #4a3d28;border-radius:4px;background:#0b0d12;overflow:hidden">
+        <span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#7a5c22,${GOLD})"></span>
+      </span>
+      <span style="color:#9a8f77;font-size:10px">${state.charXp}/${need} xp</span>
+      <b style="color:${state.skillPoints > 0 ? "#8fe86f" : "#9a8f77"};font-size:11px">${state.skillPoints} point${state.skillPoints === 1 ? "" : "s"}</b>
+    </div>`;
+
+  // ── The tree: three branch columns ──
+  const cols = SKILL_BRANCHES.map((b) => {
+    const meta = BRANCH_META[b];
+    const nodes = SKILL_IDS.filter((id) => SKILLS[id].branch === b)
+      .sort((x, y) => SKILLS[x].row - SKILLS[y].row)
+      .map(skillNode)
+      .join("");
+    return `<div class="gmenu-branch"><div class="gmenu-branch-h" style="color:${meta.color}">${meta.label}</div>${nodes}</div>`;
+  }).join("");
+
+  // ── Legacy perks: permanent, wallet-gold, survive death ──
+  const perks = PERK_IDS.map((id) => {
+    const def = LEGACY_PERKS[id];
+    const rank = perkRank(id);
+    const maxed = rank >= def.maxRank;
+    const afford = getBalance() >= def.cost;
+    const status = maxed ? `<span style="color:${GOLD};font-size:10px;letter-spacing:1px">OWNED${def.maxRank > 1 ? ` ${rank}/${def.maxRank}` : ""}</span>` : btn(`perk:${id}`, rank > 0 ? `Rank ${rank + 1}` : "Buy", def.cost, !afford);
+    return `<div class="gmenu-row" style="border-color:${maxed ? GOLD : "#4a3d28"}">
+      <span style="font-size:18px">${def.icon}</span>
+      <span style="display:flex;flex-direction:column;line-height:1.2"><b style="color:#e8dcc0;font-size:12px">${def.label}</b><span style="color:#9a8f77;font-size:9px">${def.description}</span></span>
+      <span style="flex:1"></span>${status}</div>`;
+  }).join("");
+
+  // ── Active abilities: unlocked assign to Q/E, locked point at the tree ──
+  const unlocked = unlockedAbilities();
   const rows = ABILITY_IDS.map((id) => {
     const a = ABILITIES[id];
+    const has = unlocked.includes(id);
     const onQ = state.abilitySlots[0] === id;
     const onE = state.abilitySlots[1] === id;
-    return `<div class="gmenu-row">
+    const controls = has
+      ? `<button data-act="abq:${id}" class="gmenu-toggle ${onQ ? "on" : "off"}">Q</button>
+         <button data-act="abe:${id}" class="gmenu-toggle ${onE ? "on" : "off"}">E</button>`
+      : `<span style="color:#6c5a3e;font-size:9px;letter-spacing:1px">🔒 unlock in ARCANA</span>`;
+    return `<div class="gmenu-row" style="${has ? "" : "opacity:.55"}">
       <span style="font-size:20px;filter:drop-shadow(0 0 6px ${a.color})">${a.icon}</span>
       <span style="display:flex;flex-direction:column;line-height:1.2">
         <b style="color:${a.color};font-size:12px">${a.label}</b>
         <span style="color:#9a8f77;font-size:9px">${a.detail} · ${a.cost} mana · ${a.cooldown}s cd</span>
       </span>
       <span style="flex:1"></span>
-      <button data-act="abq:${id}" class="gmenu-toggle ${onQ ? "on" : "off"}">Q</button>
-      <button data-act="abe:${id}" class="gmenu-toggle ${onE ? "on" : "off"}">E</button>
+      ${controls}
     </div>`;
   }).join("");
-  const extra = skillsExtraBody ? skillsExtraBody() : "";
-  return `${extra}<div class="gmenu-h">ACTIVE ABILITIES — assign to Q / E</div>${rows}`;
+
+  return `${header}
+    <div class="gmenu-tree">${cols}</div>
+    <div class="gmenu-h" style="color:${GOLD}">LEGACY — permanent, bought with banked gold, survives death</div>
+    ${perks}
+    <div class="gmenu-h">ACTIVE ABILITIES — assign to Q / E</div>${rows}`;
 }
 
 function statsBody(): string {
@@ -358,11 +442,35 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     return;
   }
 
+  // ── Skills: spend a point into a tree node ──
+  if (act === "skill") {
+    const res = spendSkillPoint(raw);
+    if (!res.ok) flash(res.why ?? "can't learn that yet");
+    else flash(`${SKILLS[raw].icon} ${SKILLS[raw].label} — rank ${state.skillRanks[raw]}`);
+    render();
+    return;
+  }
+
+  // ── Legacy: buy a permanent perk with banked gold ──
+  if (act === "perk") {
+    const def = LEGACY_PERKS[raw];
+    if (!def) return;
+    if (perkRank(raw) >= def.maxRank) { flash("already owned"); return; }
+    if (getBalance() < def.cost || !spendGold(def.cost)) { flash("not enough banked gold"); return; }
+    state.goldRun = Math.max(0, state.goldRun - def.cost); // same honesty rule as the tavern
+    addPerkRank(raw);
+    invalidateSkillAgg();
+    state.hudDirty = true;
+    flash(`${def.icon} ${def.label} — yours forever`);
+    render();
+    return;
+  }
+
   // ── Skills: Q/E assignment ──
   if (act === "abq" || act === "abe") {
     const slot = act === "abq" ? 0 : 1;
     const id = raw as AbilityId;
-    if (!ABILITIES[id]) return;
+    if (!ABILITIES[id] || !unlockedAbilities().includes(id)) return;
     const other = 1 - slot;
     // Assigning an ability that's on the other key swaps them instead of duping.
     if (state.abilitySlots[other] === id) state.abilitySlots[other] = state.abilitySlots[slot];

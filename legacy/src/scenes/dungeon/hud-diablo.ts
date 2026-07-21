@@ -23,7 +23,7 @@ import { createFace, renderFace, setFaceHealth } from "./hud-face";
 import { createMinimap, renderMinimap, disposeMinimap } from "./hud-minimap";
 import { toggleFloorMap } from "./map-overlay";
 import { ABILITIES, type AbilityId } from "./abilities";
-import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
+import { playerMaxHp, playerManaMax } from "./skill-runtime";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
 import { ensureWolfFonts } from "./ui";
 import { clamp, clamp01 } from "../../utils/math";
@@ -342,8 +342,8 @@ export function renderDiablo(dt: number): void {
 
   lifeRippleT = Math.max(0, lifeRippleT - dt);
   manaRippleT = Math.max(0, manaRippleT - dt);
-  const lifeLvl = p ? Math.max(0, p.hp) / PLAYER_MAX_HP : 0;
-  const manaLvl = p ? clamp(p.mana, 0, MANA_MAX) / MANA_MAX : 0;
+  const lifeLvl = p ? Math.max(0, p.hp) / playerMaxHp() : 0;
+  const manaLvl = p ? clamp(p.mana, 0, playerManaMax()) / playerManaMax() : 0;
   if (lifeCtx) drawGlobe(lifeCtx, lifeLvl, wavePhase, "#e0455a", "#5a0e17", lifeLvl <= 0.25, lifeRippleT);
   if (manaCtx) drawGlobe(manaCtx, manaLvl, wavePhase * 0.85 + 2, "#5aa9e6", "#141a4a", manaLvl <= 0.15, manaRippleT);
   // Live numeric readouts over the globes (HP hearts, whole mana).
@@ -352,7 +352,7 @@ export function renderDiablo(dt: number): void {
     lifeValEl.textContent = String(hp);
     lifeValEl.style.color = lifeLvl <= 0.25 ? "#ff6a7a" : "#fff";
   }
-  if (manaValEl) manaValEl.textContent = String(Math.floor(manaLvl * MANA_MAX));
+  if (manaValEl) manaValEl.textContent = String(Math.floor(manaLvl * playerManaMax()));
 
   // Skill cooldown sweeps.
   for (let i = 0; i < skillSlots.length; i++) {
@@ -362,7 +362,7 @@ export function renderDiablo(dt: number): void {
 
   paintHeader();
 
-  setFaceHealth(p?.hp ?? 0, PLAYER_MAX_HP);
+  setFaceHealth(p?.hp ?? 0, playerMaxHp());
   renderFace(dt);
 }
 

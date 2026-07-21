@@ -18,6 +18,10 @@ import { POTIONS, POTION_IDS } from "./items";
 export interface DebugActions {
   heal(): void;
   addGold(n: number): void;
+  /** Grant character XP (drives the skill tree without grinding). */
+  grantXp(n: number): void;
+  /** Grant unspent skill points directly. */
+  grantSkillPoints(n: number): void;
   fillRampage(): void;
   killAll(): void;
   clearEnemies(): void;
@@ -109,6 +113,8 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   };
   gbtn("❤️ Heal", actions.heal);
   gbtn("💰 +100g", () => actions.addGold(100));
+  gbtn("✨ +500xp", () => actions.grantXp(500));
+  gbtn("🌳 +5pts", () => actions.grantSkillPoints(5));
   gbtn("🔫 Rampage", actions.fillRampage);
   gbtn("💀 Kill All", actions.killAll);
   gbtn("🧹 Clear", actions.clearEnemies);

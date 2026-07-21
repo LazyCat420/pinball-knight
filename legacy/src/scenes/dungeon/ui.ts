@@ -5,7 +5,8 @@
  * quantized. Styled to match the palette so they don't clash with the art.
  */
 import { state, WEAPON_SLOTS } from "./state";
-import { PLAYER_MAX_HP, SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
+import { SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
+import { playerMaxHp } from "./skill-runtime";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 import { ensurePixelFonts } from "./pixel-fonts";
 import { clamp, clamp01 } from "../../utils/math";
@@ -396,7 +397,7 @@ export function updateHUD(el: HTMLDivElement): void {
   const hp = Math.max(0, state.player?.hp ?? 0);
   const hearts =
     `<span style="color:#d95763">${"♥".repeat(hp)}</span>` +
-    `<span style="color:#2b303b">${"♥".repeat(Math.max(0, PLAYER_MAX_HP - hp))}</span>`;
+    `<span style="color:#2b303b">${"♥".repeat(Math.max(0, playerMaxHp() - hp))}</span>`;
 
   // Sprint spool (the 3s Shift ramp) — a thin blue rail that turns gold once
   // the charge passes the wall-ride threshold, so "the ride is armed" reads at
@@ -507,7 +508,7 @@ export function updateHUD(el: HTMLDivElement): void {
       : `<span style="color:#6b7688">🔫 ${pct}%</span>`;
 
   // HEALTH cell: a big Wolfenstein numeric %, red at low HP, hearts beneath.
-  const hpPct = Math.round((hp / PLAYER_MAX_HP) * 100);
+  const hpPct = Math.round((hp / playerMaxHp()) * 100);
   const hpColor = hp <= 1 ? "#d95763" : hp <= 2 ? "#f0a63c" : "#8fc46b";
   const healthCell = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px">

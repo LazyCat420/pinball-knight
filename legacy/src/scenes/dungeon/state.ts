@@ -705,6 +705,18 @@ export const state = {
   hudMode: "diablo" as "diablo" | "wolf",
   /** The two equipped skills — [Q, E]. */
   abilitySlots: ["flippercharge", "arcanepulse"] as [AbilityId | null, AbilityId | null],
+
+  // ── Character progression (run-scoped; legacy perks persist in legacy.ts) ──
+  /** XP into the current level. */
+  charXp: 0,
+  /** Character level (1-based). Not the floor — that's `level` above. */
+  charLevel: 1,
+  /** Unspent skill points (one per level-up). */
+  skillPoints: 0,
+  /** Ranks taken per skill node (skills.ts SKILLS). */
+  skillRanks: {} as Record<string, number>,
+  /** Abilities available to the Q/E slots — defaults + tree unlocks. */
+  unlockedAbilities: ["flippercharge", "arcanepulse"] as AbilityId[],
   /** Per-ability cooldown remaining (seconds). */
   abilityCd: {} as Record<AbilityId, number>,
   /** Time Crawl: while > 0 the horde's dt is scaled down (slow-mo enemies). */
@@ -854,6 +866,11 @@ export function resetState(): void {
   state.freezeT = 0;
   state.hudMode = "diablo";
   state.abilitySlots = ["flippercharge", "arcanepulse"];
+  state.charXp = 0;
+  state.charLevel = 1;
+  state.skillPoints = 0;
+  state.skillRanks = {};
+  state.unlockedAbilities = ["flippercharge", "arcanepulse"];
   state.abilityCd = {} as Record<AbilityId, number>;
   state.slowT = 0;
   state.belt = [null, null, null, null];
