@@ -192,7 +192,11 @@ export const DIR_INTENSITY = 1.5; // the raking cold key light that casts shadow
 export const PLAYER_LAMP_INTENSITY = 1.6;
 export const PLAYER_LAMP_RANGE = 4.5;
 export const DIR_HEIGHT = 14; // how high above the target the sun sits
-export const SHADOW_MAP_SIZE = 2048; // per-frame shadow render resolution
+// 1024, down from 2048: the scene is quantized to a 1280×720 pixel-art target,
+// where a 2k shadow map is resolution the eye never sees — but the GPU pays
+// for the full depth pass. Combined with the 30 Hz shadow throttle in the
+// loop this cuts shadow cost ~8×.
+export const SHADOW_MAP_SIZE = 1024; // shadow render resolution
 /** Half-extent (world units) of the directional light's ortho shadow frustum. */
 export const SHADOW_AREA = 16;
 /** Shadow darkness: 0 = black shadows, 1 = invisible. Kept soft so it snaps to a stone step, not void. */
@@ -303,7 +307,11 @@ export const MAX_FRAME = 0.1;
  * real PointLight — dozens of live point lights melt a forward renderer, and
  * off-screen torches can't be seen lighting anything anyway.
  */
-export const TORCH_LIGHT_POOL = 12;
+// 6, down from 12: every MeshStandardMaterial fragment loops over ALL live
+// point lights, and the pinball floors carry ~150+ materials — halving the
+// pool nearly halves the biggest per-pixel cost in the scene. The far half of
+// the old pool sat on torches outside the small follow-cam view anyway.
+export const TORCH_LIGHT_POOL = 6;
 
 // ── Player ──────────────────────────────────────────────────────
 export const PLAYER_SPEED = 4.2; // tiles/sec

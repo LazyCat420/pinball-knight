@@ -222,6 +222,8 @@ import { getPlayerName } from "../../services/player-name";
  */
 let sun: THREE.DirectionalLight | null = null;
 let lamp: THREE.PointLight | null = null;
+// Parity counter for the 30 Hz shadow-map throttle (see the render loop).
+let shadowFrameCounter = 0;
 let ambient: THREE.AmbientLight | null = null;
 let debugPanelDispose: (() => void) | null = null;
 let hemi: THREE.HemisphereLight | null = null;
@@ -314,6 +316,11 @@ export function launchDungeonGame(onExit?: () => void): void {
   // band rather than a hard jagged step.
   state.renderer.shadowMap.enabled = true;
   state.renderer.shadowMap.type = THREE.PCFShadowMap;
+  // The full shadow depth pass re-rendered every frame is a heavy fixed cost;
+  // the loop flags needsUpdate on alternate frames instead (30 Hz shadows —
+  // invisible under the pixel quantizer, halves the shadow pass).
+  state.renderer.shadowMap.autoUpdate = false;
+  state.renderer.shadowMap.needsUpdate = true;
   state.container.appendChild(state.renderer.domElement);
 
   state.pixelPass = createPixelPass(state.renderer, {
@@ -2596,6 +2603,12 @@ function loop(now: number): void {
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
   if (state.scene && renderCam && state.pixelPass) {
+    // Shadow throttle: autoUpdate is off (see renderer setup); render the
+    // shadow depth pass on alternate frames only.
+    shadowFrameCounter++;
+    if (state.renderer && shadowFrameCounter % 2 === 0) {
+      state.renderer.shadowMap.needsUpdate = true;
+    }
     state.pixelPass.render(state.scene, renderCam);
   }
 }
