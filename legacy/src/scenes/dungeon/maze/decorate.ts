@@ -825,53 +825,65 @@ function furnishRooms(
  * was thickened).
  */
 /**
- * HALF-CIRCLE COURTS — carve a semicircle of wall into a big room to make a
- * curved bumper court (rendered as a smooth arc in build.ts buildCurveCourts).
- * The curved BACK faces away from the start and the flat mouth opens toward it,
- * so you enter the mouth and bank around the curve. GUARDED: if the arc would
- * strand any floor tile from the start it's fully reverted. One court per floor,
- * in the largest room that can hold it.
+ * HALF-CIRCLE COURTS — bow one WALL of a big room out into a semicircle, so the
+ * room gets a genuinely curved boundary (a D-shaped chamber / stadium end) that
+ * is PART OF THE MAZE, not a freestanding arc floating in open floor. The bulge
+ * faces away from the start; the arc's endpoints land on the room's far corners,
+ * tying into the perpendicular walls. Carves the bay floor, walls the outer rim
+ * (rendered as a smooth shell in build.ts), and drops a few bumpers inside.
+ * GUARDED: reverts entirely if it would strand any floor tile from the start.
  */
 function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: PinballPartSpot[], rng: () => number): CurveCourt[] {
-  const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 7).sort((a, b) => b.w * b.h - a.w * a.h);
+  const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 6).sort((a, b) => b.w * b.h - a.w * a.h);
   for (const room of candidates) {
-    const ci = room.i0 + Math.floor(room.w / 2);
-    const cj = room.j0 + Math.floor(room.h / 2);
-    const r = Math.min(Math.floor(Math.min(room.w, room.h) / 2) - 1, 5); // up to a 5-tile sweep — a LONG curve
-    if (r < 2) continue;
-    // Curved back centred on the direction AWAY from the start; flat mouth opens
-    // back toward it.
-    const mid = Math.atan2(cj - start.j, ci - start.i);
-    const a0 = mid - Math.PI / 2;
-    const a1 = mid + Math.PI / 2;
-    // Integer arc tiles (deduped).
-    const steps = Math.max(12, Math.round((a1 - a0) * r * 2.4));
-    const seen = new Set<string>();
-    const arc: Array<[number, number]> = [];
-    for (let s = 0; s <= steps; s++) {
-      const th = a0 + ((a1 - a0) * s) / steps;
-      const ti = ci + Math.round(r * Math.cos(th));
-      const tj = cj + Math.round(r * Math.sin(th));
-      const key = `${ti},${tj}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      arc.push([ti, tj]);
-    }
-    // Carve the arc onto interior FLOOR tiles only.
-    const changed: Array<[number, number]> = [];
-    for (const [ti, tj] of arc) {
-      if (ti <= 0 || tj <= 0 || ti >= g.w - 1 || tj >= g.h - 1) continue;
-      if (at(g, ti, tj) === T_FLOOR) {
-        setTile(g, ti, tj, T_WALL);
-        changed.push([ti, tj]);
+    const rci = room.i0 + Math.floor(room.w / 2);
+    const rcj = room.j0 + Math.floor(room.h / 2);
+    // Outward cardinal = the room side facing away from the start.
+    const dx = rci - start.i;
+    const dz = rcj - start.j;
+    const od = Math.abs(dx) >= Math.abs(dz) ? { i: Math.sign(dx) || 1, j: 0 } : { i: 0, j: Math.sign(dz) || 1 };
+    // The bowed edge runs perpendicular to `od`; its length sets the radius so
+    // the arc's ends reach the room's two far corners (→ tied into the walls).
+    const edgeLen = od.i !== 0 ? room.h : room.w;
+    if (edgeLen < 7 || edgeLen > 15) continue; // keep the bulge sane
+    const r = Math.floor((edgeLen - 1) / 2);
+    // Centre = midpoint of the bowed edge (the room's last floor tile on that side).
+    const cx = od.i !== 0 ? (od.i > 0 ? room.i0 + room.w - 1 : room.i0) : rci;
+    const cy = od.j !== 0 ? (od.j > 0 ? room.j0 + room.h - 1 : room.j0) : rcj;
+
+    const carvedFloor: Array<[number, number]> = []; // bay floor (was wall)
+    const rimWall: Array<[number, number]> = []; // arc rim (was floor)
+    const arcTiles: Array<[number, number]> = []; // every rim tile, for the render skip
+    for (let dj = -r - 1; dj <= r + 1; dj++) {
+      for (let di = -r - 1; di <= r + 1; di++) {
+        const outSide = di * od.i + dj * od.j;
+        if (outSide < 0) continue; // leave the room side alone
+        const dist = Math.hypot(di, dj);
+        if (dist > r + 0.6) continue;
+        const ti = cx + di;
+        const tj = cy + dj;
+        if (ti <= 0 || tj <= 0 || ti >= g.w - 1 || tj >= g.h - 1) continue;
+        if (dist <= r - 0.7) {
+          if (at(g, ti, tj) === T_WALL) {
+            setTile(g, ti, tj, T_FLOOR); // carve the bay
+            carvedFloor.push([ti, tj]);
+          }
+        } else {
+          arcTiles.push([ti, tj]); // rim → curved wall
+          if (at(g, ti, tj) === T_FLOOR) {
+            setTile(g, ti, tj, T_WALL);
+            rimWall.push([ti, tj]);
+          }
+        }
       }
     }
     const revert = (): void => {
-      for (const [ti, tj] of changed) setTile(g, ti, tj, T_FLOOR);
+      for (const [ti, tj] of carvedFloor) setTile(g, ti, tj, T_WALL);
+      for (const [ti, tj] of rimWall) setTile(g, ti, tj, T_FLOOR);
     };
-    if (changed.length < 5) {
+    if (rimWall.length + carvedFloor.length < 6) {
       revert();
-      continue; // too thin to read as a court
+      continue; // nothing meaningful carved (edge already open, etc.)
     }
     // Connectivity guard: no floor tile may be stranded from the start.
     const d = bfsDistances(g, start.i, start.j);
@@ -888,27 +900,22 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
       revert();
       continue;
     }
-    // Drop any parts that fell on the new walls; plant a few bumpers inside.
-    const wallSet = new Set(changed.map(([ti, tj]) => `${ti},${tj}`));
+    // Drop any parts that fell on the new rim wall; plant a few bumpers in the bay.
+    const wallSet = new Set(rimWall.map(([ti, tj]) => `${ti},${tj}`));
     for (let k = parts.length - 1; k >= 0; k--) {
       if (wallSet.has(`${parts[k].i},${parts[k].j}`)) parts.splice(k, 1);
     }
-    const inside: Array<[number, number]> = [];
-    for (let dj = -(r - 1); dj <= r - 1; dj++) {
-      for (let di = -(r - 1); di <= r - 1; di++) {
-        if (di * di + dj * dj > (r - 1) * (r - 1)) continue;
-        if (at(g, ci + di, cj + dj) === T_FLOOR) inside.push([ci + di, cj + dj]);
-      }
-    }
+    const bayFloor = carvedFloor.filter(([ti, tj]) => at(g, ti, tj) === T_FLOOR);
     const put: Array<[number, number]> = [];
-    for (const [ti, tj] of shuffled(inside, rng)) {
+    for (const [ti, tj] of shuffled(bayFloor, rng)) {
       if (put.length >= 3) break;
       if (put.some(([pi, pj]) => Math.abs(pi - ti) + Math.abs(pj - tj) < 2)) continue;
       if (parts.some((q) => q.i === ti && q.j === tj)) continue;
       parts.push({ i: ti, j: tj, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 });
       put.push([ti, tj]);
     }
-    return [{ ci, cj, r, a0, a1, tiles: changed }];
+    const mid = Math.atan2(od.j, od.i);
+    return [{ ci: cx, cj: cy, r, a0: mid - Math.PI / 2, a1: mid + Math.PI / 2, tiles: arcTiles }];
   }
   return [];
 }
