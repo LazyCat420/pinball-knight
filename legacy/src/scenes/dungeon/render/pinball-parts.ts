@@ -937,30 +937,39 @@ export function updatePinballParts(dt: number): void {
 // launch direction; the rig yaws to the live launch line and rides the player. ──
 let plungerRig: THREE.Group | null = null;
 
+/** Plunger materials draw ON TOP (depthTest off) so the rig is never buried by
+ *  the wall the spawn sits against — it reads as a launcher in the back frame. */
+function plungerMat(color: number, emissive = 0, ei = 0): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: ei, roughness: 0.5, metalness: 0 });
+  m.depthTest = false;
+  m.depthWrite = false;
+  return m;
+}
+
 function buildPlungerRig(): THREE.Group {
   const g = new THREE.Group();
-  // Two chute rails hugging the launch line, so the knight reads as "in the lane".
-  const railMat = std(C_STEEL_DK);
-  for (const zside of [-0.5, 0.5]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 0.1), railMat);
-    rail.position.set(-0.65, 0.09, zside);
-    g.add(rail);
-  }
-  // The back stop the striker rests against at full pull.
-  const stop = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.5, 1.12), std(C_STEEL));
-  stop.position.set(-1.78, 0.25, 0);
-  g.add(stop);
-  // The STRIKER: a gold head + shaft behind the knight that pulls back with the
-  // charge (its x is driven in updatePlungerRig) and faces the launch.
+  // COMPACT (no long rails — those buried into the wall behind the spawn): a
+  // short spring behind the knight + a bright gold plunger head, all emissive
+  // and drawn over the walls so you can always see it. Local +X = launch.
   const striker = new THREE.Group();
   striker.name = "striker";
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.44, 0.72), std(C_GOLD, C_GOLD, 0.4));
-  head.position.set(0, 0.3, 0);
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.13, 0.13), std(C_STEEL));
-  shaft.position.set(-0.36, 0.3, 0);
-  striker.add(head, shaft);
-  striker.position.set(-0.8, 0, 0);
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.42, 12), plungerMat(0x3a2c0a, C_GOLD, 0.9));
+  head.rotation.z = Math.PI / 2; // lay the disc along the launch axis
+  head.position.set(0.1, 0.4, 0);
+  // A stubby spring coil (stacked rings) behind the head.
+  for (let k = 0; k < 3; k++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 12), plungerMat(0x2a2214, C_GOLD, 0.5));
+    ring.rotation.y = Math.PI / 2;
+    ring.position.set(-0.12 - k * 0.16, 0.4, 0);
+    striker.add(ring);
+  }
+  striker.add(head);
+  striker.position.set(-0.55, 0, 0);
   g.add(striker);
+  // Draw the whole rig last, over the walls.
+  g.traverse((o) => {
+    (o as THREE.Mesh).renderOrder = 30;
+  });
   return g;
 }
 
@@ -979,7 +988,7 @@ export function updatePlungerRig(): void {
   // local +X → world launch dir: rotation.y θ maps +X to (cosθ, 0, -sinθ).
   plungerRig.rotation.y = Math.atan2(-state.plungerDirZ, state.plungerDirX);
   const striker = plungerRig.getObjectByName("striker");
-  if (striker) striker.position.x = -(0.8 + state.plungerPower * 0.95); // draw back with charge
+  if (striker) striker.position.x = -(0.55 + state.plungerPower * 0.5); // short draw-back so it stays clear of walls
 }
 
 function disposePlungerRig(scene: THREE.Scene | null): void {

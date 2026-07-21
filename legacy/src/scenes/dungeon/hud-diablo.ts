@@ -21,6 +21,7 @@
 import { state } from "./state";
 import { createFace, renderFace, setFaceHealth } from "./hud-face";
 import { createMinimap, renderMinimap, disposeMinimap } from "./hud-minimap";
+import { toggleFloorMap } from "./map-overlay";
 import { ABILITIES, type AbilityId } from "./abilities";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
@@ -156,11 +157,20 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   row.appendChild(segmentBox(withLabel("BELT · ⇧1-4", belt)));
 
   // Segment 6 — MINIMAP. Last in the row so the existing four segments keep
-  // their positions; the map is a reference, not something you act on.
+  // their positions. The panel is `pointer-events: none`, so clicking anything
+  // in it is normally dead; the minimap is the one exception — re-enable pointer
+  // events on just this segment and toggle the full-screen map on click, so the
+  // "MAP · M" caption isn't the only way in.
   const mapBox = document.createElement("div");
   mapBox.style.cssText = `width:58px;height:58px`;
   mapBox.appendChild(createMinimap());
-  row.appendChild(segmentBox(withLabel("MAP · M", mapBox)));
+  const mapSeg = segmentBox(withLabel("MAP · M", mapBox));
+  mapSeg.style.pointerEvents = "auto";
+  mapSeg.style.cursor = "pointer";
+  mapSeg.addEventListener("click", () => {
+    if (state.container) toggleFloorMap(state.container);
+  });
+  row.appendChild(mapSeg);
 
   container.appendChild(el);
   panelEl = el;
