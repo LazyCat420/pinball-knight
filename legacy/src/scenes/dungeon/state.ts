@@ -440,6 +440,10 @@ export const state = {
   /** The between-floor TAVERN hub overlay while it's open (null = closed; sim
    * pauses, exactly like the shop). See tavern.ts. */
   tavernEl: null as HTMLDivElement | null,
+  /** The modal card reader while it's open (null = closed; sim pauses). See card-reader.ts. */
+  cardReaderEl: null as HTMLDivElement | null,
+  /** The in-game menu (Esc/I) while it's open (null = closed; sim pauses). See menu.ts. */
+  menuEl: null as HTMLDivElement | null,
   /** The first-person rampage overlay (crosshair + gun + red vignette). */
   fpsOverlayEl: null as HTMLDivElement | null,
   /** The centred ×N bounce-combo flash (pinball score glue). */
@@ -479,6 +483,10 @@ export const state = {
   runBestCombo: 0,
   /** performance.now() at run start; the run's duration is measured from it. */
   runStartMs: 0,
+  /** Wall-clock seconds spent sim-paused this run (menus, card reader, shop,
+   * tavern). Subtracted from the leaderboard duration so reading a card or
+   * browsing the menu doesn't count against the run's pace. */
+  pausedRunS: 0,
   /** True once this run's score has been posted, so death can't double-submit. */
   runScoreSubmitted: false,
 
@@ -584,6 +592,9 @@ export const state = {
   cardStash: [] as string[],
   /** Per-run cap: at most one legendary card drops from the dungeon per run. */
   legendaryDropped: false,
+  /** CardIds already shown in the full card reader this run — repeats of a
+   * common/rare card fall back to the non-blocking popup. */
+  seenCards: new Set<string>(),
 
   // The level
   grid: null as Grid | null,
@@ -807,6 +818,10 @@ export function resetState(): void {
   state.shopEl = null;
   state.tavernEl?.remove();
   state.tavernEl = null;
+  state.cardReaderEl?.remove();
+  state.cardReaderEl = null;
+  state.menuEl?.remove();
+  state.menuEl = null;
   state.fpsOverlayEl = null;
   state.comboFlashEl = null;
   state.prevBounceCombo = 0;
@@ -852,6 +867,8 @@ export function resetState(): void {
   state.gear = {};
   state.cardStash = [];
   state.legendaryDropped = false;
+  state.seenCards = new Set();
+  state.pausedRunS = 0;
   state.grid = null;
   state.fog = null;
   state.stairs = null;

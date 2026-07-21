@@ -26,7 +26,7 @@
  */
 import { state } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
-import { CARDS, RARITY_HEX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
+import { CARDS, RARITY_HEX, STASH_MAX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
 import { renderPaintIcon } from "./render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
@@ -57,7 +57,6 @@ const PRICE_REPAIR_WEAPON = 30;
 const PRICE_ADD_SLOT = 60;
 const PRICE_REROLL_CARD = 40;
 const PRICE_REPAIR_GEAR = 40;
-const STASH_MAX = 10;
 // The Alchemist's stock — a curated shelf that carries onto the belt (Shift+1-4).
 const POTION_STOCK: PotionId[] = ["health", "rage", "haste", "shield", "freeze", "ballform"];
 const PRICE_POTION: Partial<Record<PotionId, number>> = { health: 15, rage: 28, haste: 28, shield: 34, freeze: 40, ballform: 65 };

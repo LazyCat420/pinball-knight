@@ -141,7 +141,7 @@ describe("the plunger launch (a floor opens PARKED in the chute)", () => {
     state.player = {
       x: 0,
       z: 0,
-      facing: "S",
+      // facing comes from the freshPlayerFields() spread below (same "S").
       anim: { setFacing() {}, play() {}, setRate() {} },
       sprite: { mesh: { position: { set() {} } } },
       ...freshPlayerFields(),
@@ -170,6 +170,7 @@ describe("the plunger launch (a floor opens PARKED in the chute)", () => {
       turnAxis: () => 0,
       consumeMouseDelta: () => ({ dx: 0, dy: 0 }),
       aimScreen: () => null,
+      clearTransient: () => {},
       dispose: () => {},
     };
   }

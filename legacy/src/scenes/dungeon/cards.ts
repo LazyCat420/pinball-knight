@@ -77,6 +77,10 @@ export const CARDS: Record<CardId, CardDef> = {
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
 
+/** How many unsocketed cards the run can carry. One source of truth — the
+ * pickup path (core.ts), the Tavern dealer and the menu all read this. */
+export const STASH_MAX = 10;
+
 const BY_RARITY: Record<CardRarity, CardId[]> = {
   common: CARD_IDS.filter((id) => CARDS[id].rarity === "common"),
   rare: CARD_IDS.filter((id) => CARDS[id].rarity === "rare"),

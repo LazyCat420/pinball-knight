@@ -48,6 +48,13 @@ export interface InputHandle {
    * projects the player to screen and fires toward this point.
    */
   aimScreen(): { x: number; y: number } | null;
+  /**
+   * Drop any queued taps and accumulated mouse deltas WITHOUT touching held
+   * state. Modals call this on close: the window keydown listener still runs
+   * while an overlay is up, so the Space that dismissed a card reader would
+   * otherwise sit queued and fire a dodge roll the instant the sim resumes.
+   */
+  clearTransient(): void;
   dispose(): void;
 }
 
@@ -233,6 +240,12 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     },
     aimScreen() {
       return cursorSeen ? { x: cursorX, y: cursorY } : null;
+    },
+    clearTransient() {
+      attackQueued = false;
+      dodgeQueued = false;
+      mouseDx = 0;
+      mouseDy = 0;
     },
     dispose() {
       window.removeEventListener("keydown", onKeyDown);

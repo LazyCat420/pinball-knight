@@ -36,7 +36,7 @@ import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
-import { showCardPickup } from "./card-popup";
+import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -198,7 +198,7 @@ import {
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
-import { CARDS, rollCardDrop, socketCard, type CardId } from "./cards";
+import { CARDS, STASH_MAX, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
@@ -1140,6 +1140,14 @@ function startLevel(level: number): void {
     state.player.z = startPos.z;
     state.player.attackT = -1;
   }
+  // TEMP DEBUG (local screenshot only — REMOVE before commit): ?dbgcourt jumps
+  // the knight onto a curve court so the camera reveals the smooth arc wall.
+  if (typeof location !== "undefined" && new URLSearchParams(location.search).has("dbgcourt") && plan.curveCourts.length) {
+    const c = plan.curveCourts[0];
+    const cc = tileCenter(grid, c.ci, c.cj);
+    state.player.x = cc.x;
+    state.player.z = cc.z;
+  }
   state.player.anim.setFacing("S");
   state.player.anim.play("idle", { force: true });
   syncActorMesh(state.player);
@@ -1381,6 +1389,14 @@ function handleKey(e: KeyboardEvent): void {
   // dungeon still fires abilities underneath it — `e` is Q/E ability here and
   // the interact key there.
   if (isTavernSceneOpen()) return;
+
+  // ── Card reader is open: Space/Enter/Escape advance, everything else is
+  // swallowed (including the map — the world is frozen for READING). ──
+  if (state.cardReaderEl) {
+    if (e.key === " " || e.key === "Enter" || e.key === "Escape") advanceCardReader();
+    e.preventDefault();
+    return;
+  }
   // M — the floor map. Free inside the dungeon now that the site map yields the
   // key for the run (see map/map-overlay.setMapSuppressed).
   if (e.key === "m" || e.key === "M") {
@@ -1616,6 +1632,7 @@ function beginRunLedger(): void {
   state.runDeepestFloor = 1;
   state.runBestCombo = 0;
   state.runStartMs = performance.now();
+  state.pausedRunS = 0;
   state.runScoreSubmitted = false;
 }
 
@@ -1626,7 +1643,7 @@ function currentRunStats(): RunStats {
     bestCombo: state.runBestCombo,
     kills: state.kills,
     gold: state.goldRun,
-    durationS: state.runStartMs > 0 ? (performance.now() - state.runStartMs) / 1000 : 0,
+    durationS: state.runStartMs > 0 ? Math.max(0, (performance.now() - state.runStartMs) / 1000 - state.pausedRunS) : 0,
   };
 }
 
@@ -1998,14 +2015,15 @@ function pickUpCard(it: GroundItem): boolean {
   if (!def) return true;
   const active = state.weaponSlots[state.activeSlot];
   if (active && socketCard(active, id)) {
-    showCardPickup(id); // brief painted-card flourish (card-popup.ts) — never blocks
+    // Reader for first-of-kind / epic+ (pauses the world); popup for repeats.
+    presentCardPickup(id, `SOCKETED INTO ${WEAPONS[active.id].icon} ${WEAPONS[active.id].label.toUpperCase()}`);
     faceOnSpecial();
     showPickupNote(`${def.icon} ${def.label.toUpperCase()} SOCKETED — ${def.description}`);
     return true;
   }
-  if (state.cardStash.length < 10) {
-    showCardPickup(id);
+  if (state.cardStash.length < STASH_MAX) {
     state.cardStash.push(id);
+    presentCardPickup(id, `STASHED FOR THE TAVERN — ${state.cardStash.length}/${STASH_MAX}`);
     showPickupNote(`${def.icon} ${def.label.toUpperCase()} — stashed for the Tavern`);
     return true;
   }
@@ -2268,13 +2286,24 @@ function gradeFloor(): { grade: string; gold: number } {
   return { grade, gold: GRADE_GOLD[grade] ?? 0 };
 }
 
+/**
+ * True while ANY modal surface owns the screen: the merchant shop, the DOM
+ * tavern, the walkable tavern scene, the card reader, or the in-game menu.
+ * This is THE pause contract — `simulate` early-returns on it, and `loop`
+ * books the elapsed wall-clock into `state.pausedRunS` so the leaderboard's
+ * run duration doesn't count time spent reading.
+ */
+export function isSimPaused(): boolean {
+  return !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl) || isTavernSceneOpen();
+}
+
 /** One 60Hz simulation step. */
 function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
   if (state.gameOver || !p || !g || !state.input) return;
-  // Shop, the DOM tavern, and the walkable tavern scene all pause the world.
-  if (state.shopEl || state.tavernEl || isTavernSceneOpen()) return;
+  // Shop, tavern (both forms), card reader and menu all pause the world.
+  if (isSimPaused()) return;
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
@@ -2370,6 +2399,9 @@ function loop(now: number): void {
   const frame = Math.min(Math.max(0, (now - state.lastTime) / 1000), MAX_FRAME);
   state.lastTime = now;
   state.elapsed += frame;
+
+  // Book paused wall-clock so the run's leaderboard duration excludes it.
+  if (isSimPaused()) state.pausedRunS += frame;
 
   // ── Fixed-timestep simulation ──
   // Hit-freeze: while hitstopT is running the sim is paused so the impact reads
@@ -2504,6 +2536,7 @@ function loop(now: number): void {
 
 export function exitDungeonGame(): void {
   closeFloorMap();
+  dismissCardReader(); // also drops any queued cards — module state, not on `state`
   if (!state.active) return;
 
   const onExit = state.onExitCallback;

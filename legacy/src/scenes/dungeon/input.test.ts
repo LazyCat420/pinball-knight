@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOVE_KEYS, TURN_LEFT, TURN_RIGHT } from "./input";
+import { MOVE_KEYS, TURN_LEFT, TURN_RIGHT, createInput } from "./input";
 
 describe("dungeon input bindings", () => {
   /**
@@ -39,5 +39,36 @@ describe("dungeon input bindings", () => {
     // Guards against a sign typo in the movement table itself.
     expect(MOVE_KEYS["a"][0]).toBe(-MOVE_KEYS["d"][0]);
     expect(MOVE_KEYS["w"][1]).toBe(-MOVE_KEYS["s"][1]);
+  });
+
+  /**
+   * The regression this exists for: the window keydown listener keeps running
+   * while a modal (card reader / menu) is up, so the Space that DISMISSED the
+   * modal sits queued as a dodge and fires a roll the instant the sim resumes.
+   * Modals call clearTransient() on close; it must drain queued taps without
+   * releasing held state (a held plunger pull should survive a toast).
+   */
+  it("clearTransient drains queued taps but keeps held state", () => {
+    // node test env has no window/DOM — stub just enough to capture handlers.
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const g = globalThis as { window?: unknown };
+    g.window = {
+      addEventListener: (type: string, fn: (e: unknown) => void) => {
+        handlers[type] = fn;
+      },
+      removeEventListener: () => {},
+    };
+    const surface = { addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
+    try {
+      const input = createInput(surface);
+      handlers.keydown({ key: " ", repeat: false, preventDefault: () => {} });
+      input.clearTransient();
+      expect(input.consumeDodge()).toBe(false); // the queued tap is gone…
+      expect(input.dodgeHeld()).toBe(true); // …but the key is still held
+      handlers.keyup({ key: " " });
+      expect(input.dodgeHeld()).toBe(false);
+    } finally {
+      delete g.window;
+    }
   });
 });
