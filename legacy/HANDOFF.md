@@ -2,35 +2,62 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `95a7d50`, service `dee17f0`, both on synology.
+**Live:** client `d93856c`, service `dee17f0`, both on synology (verified HTTP
+200 at http://10.0.0.16:5174 after deploy). This deploy also carried the
+previously-pushed-not-deployed backlog: the 2026-07-20 menu/progression wave
+(`16da88d..9d34127`), the curve-court infrastructure rework (`6f37902`), and
+two perf passes (`0ea95ed` jungle, `6240f96` dungeon lights).
 
-## ⚠️ PUSHED, NOT DEPLOYED (2026-07-20 menu/progression wave)
+## Latest — booster STATION SPINE (path-first routing, `d93856c`)
 
-Commits `16da88d..9d34127` (+ the docs commit after) are on origin/main but
-**not on the NAS**: deploy.sh ships the WORKING TREE, and at hand-off time the
-tree carried another active session's uncommitted `src/room/kitchen.ts` edit —
-deploying would have baked their half-done work into prod. **Whoever deploys
-next ships this wave for free.** Verified before push: 606 dungeon/tavern
-tests, tsc 0 errors in `src/scenes/*`, production build, and a headless
-playwright smoke on the live dev server (dungeon boots, menu opens, skill
-point spends, 0 console errors).
+The complaint: pinball parts read as isolated clusters — a booster lane that
+shoved you into empty corridor, rooms stacked with pin grids and parallel
+speedway lanes — instead of ONE route. Now every floor strings a **connected
+booster route down the main start→stairs artery**, so getting pushed feeds
+into the next thing. All in `maze/decorate.ts`:
 
-The wave (details in `src/scenes/dungeon/PINBALL_KNIGHT_PLAN.md` §0.5, manual
-QA rows in `VERIFY_CHECKLIST.md` §7):
-- Card pickups PAUSE into a modal reader (Space/Enter continues; repeats of
-  common/rare keep the old flash; policy in Settings).
-- In-game menu on **Esc/I** (Esc no longer hard-exits): Equipment paperdoll,
-  Cards socketing anywhere, Skills, Stats, Settings (persisted).
-- Knight art is gear-aware — no plume/dull iron until you buy plate; the
-  paperdoll and the tavern knight mirror it live; equip hoist + anvil-hammer
-  one-shots play at the tavern counters.
-- Hybrid skill tree: run-scoped XP tree (12 nodes; unlocks the 3 locked
-  abilities) + permanent gold-bought LEGACY perks (`pinball-knight-legacy`
-  localStorage). Merchant cart is now potions-only.
+- **`traceArtery()`** — the ordered start→stairs path, extracted from
+  `widenArtery` (one source of truth; the artery is already carved + widened
+  every floor by `widenMainArtery`, so the spine already exists in the map).
+- **`layStationSpine()`** — walks that path and lays booster RUNS (stride 3-4,
+  always down-flow into open floor) that feed into reactive STATIONS: a
+  `deflector` banks each bend onto the next leg, a `bumper` caroms each open
+  crossing. Every part is marked **`spine: true`** — a new flag on
+  `PinballPartSpot`, exempt from the anti-clustering spacing (like `chain`) AND
+  from the A1 runway repair (`openLaunchTargets`), because a pad feeding a bend
+  is MEANT to have the turn a tile or two ahead. It is its own layer OFF the
+  corridor budget (`corridorBudget` is measured after it), so the deal fills the
+  pockets that branch off the spine.
+- **Old standalone booster-lanes → TRIBUTARIES** that must merge onto the spine
+  (a run only counts if an end touches the spine), never dead-end into blank
+  corridor. `CHAINS_DEFAULT` 2→1 (the spine is the primary route now).
+- **`furnishRooms`** leaves the spine lane CLEAR (`onSpine` predicate) so the
+  route runs through a room — it becomes a station ON the path; speedway rooms
+  collapse their 2-3 parallel lanes to ONE down-flow segment.
+- **`stampCurveCourts`** reverts any arc that would wall a spine tile (a
+  booster's forward tile is itself a spine tile — burying it fired boosts into
+  rock; `onSpine` guard added alongside the connectivity revert).
 
-- Client — http://10.0.0.16:5174 (verified HTTP 200 after deploy) · Service — http://10.0.0.16:5175
-- 757 client tests, 28 service tests, production build clean.
-- Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).
+Verified: 349 dungeon tests (incl. `decorate.test.ts` "STATION SPINE" over 45
+seeds on the REAL pipeline — asserts a connected, down-flow route into open
+floor, deflector legs walkable, spanning ≥25% of the floor), tsc 0 in
+`src/scenes/dungeon`, `next build`, headless boot smoke 0 console errors
+(plunger fires straight into the first spine booster run).
+
+**The `spine` flag is the seam.** Anything that reasons about launch parts
+(runway repair, spacing, budget) must decide whether it applies to spine parts
+— they are deliberately clustered and deliberately short-runway. Tests that
+assert the A1 invariant / spacing / budget all now skip `p.spine`.
+
+**Next lever (deferred, taste):** bias `archetypeFor` toward the `spine`
+archetype (or force a spine seed every floor) so the artery is a straight
+boulevard rather than a winding widened corridor — pure "make the road
+straighter". Routing along the existing artery already delivers the connected
+path; see `PINBALL_KNIGHT_PLAN.md` §1.5.
+
+- Client — http://10.0.0.16:5174 · Service — http://10.0.0.16:5175
+- 349 dungeon tests green; repo tsc errors ~5970 (all pre-existing, in
+  `src/objects` / `src/main.ts`), masked by `ignoreBuildErrors`.
 - `src/scenes/dungeon`, `src/scenes/tavern`, `src/pixel`, `src/map`,
   `src/services` all typecheck at **0 errors**. Keep them there.
 
