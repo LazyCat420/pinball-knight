@@ -29,7 +29,6 @@ import {
   FLAME_FRAMES,
   CAMERA_YAW,
   CAMERA_TILT,
-  ARC_WEDGE_R,
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, T_CRACKED } from "./generator";
 import type { LevelPlan } from "./decorate";
@@ -660,6 +659,31 @@ export interface MazeHandle {
   dispose(): void;
 }
 
+/**
+ * Render each half-circle bumper court (decorate.stampCurveCourts) as a smooth
+ * half-cylinder wall SHELL over its carved arc tiles — genuine long curved walls
+ * you bank around, not blocky corners. The arc tiles are already solid in the
+ * grid (collision) and skipped by the wall-box loop. three.js cylinder theta
+ * runs +Z→+X, so a tile-space arc angle `th` maps to thetaStart = π/2 − a1.
+ */
+function buildCurveCourts(group: THREE.Group, grid: Grid, plan: LevelPlan, track: <T extends { dispose(): void }>(x: T) => T): void {
+  const courts = plan.curveCourts ?? [];
+  if (!courts.length) return;
+  const tex = track(makeCapTexture());
+  const mat = track(new THREE.MeshStandardMaterial({ map: tex, color: PALETTE_HEX[4], roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
+  for (const c of courts) {
+    const center = tileCenter(grid, c.ci, c.cj);
+    const span = c.a1 - c.a0;
+    const seg = Math.max(16, Math.round(span / (Math.PI / 16)));
+    const geo = track(new THREE.CylinderGeometry(c.r, c.r, WALL_H, seg, 1, true, Math.PI / 2 - c.a1, span));
+    const shell = new THREE.Mesh(geo, mat);
+    shell.position.set(center.x, WALL_H / 2, center.z);
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    group.add(shell);
+  }
+}
+
 export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
@@ -696,10 +720,15 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const mossCells: Array<{ x: number; z: number; i: number; j: number }> = [];
   const lowCells: Array<{ x: number; z: number; i: number; j: number }> = [];
   const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
+  // Curve-court arc tiles are solid for collision but get a smooth SHELL below
+  // instead of a blocky box — skip them here so the two don't z-fight.
+  const courtTiles = new Set<string>();
+  for (const c of plan.curveCourts ?? []) for (const [ti, tj] of c.tiles) courtTiles.add(`${ti},${tj}`);
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
       if (at(grid, i, j) === T_CRACKED) continue; // secret bands get their own removable meshes below
+      if (courtTiles.has(`${i},${j}`)) continue; // rendered as a smooth arc shell instead
       let exposed = false;
       for (let dj = -1; dj <= 1 && !exposed; dj++) {
         for (let di = -1; di <= 1; di++) {
@@ -1053,45 +1082,13 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     lightPool.push(light);
   }
 
-  // ── Curved walls — a FULL-HEIGHT quarter-cylinder that rounds each banked
-  // corner (collision.computeArcCorners), so the concave corner where two walls
-  // meet reads as a swept pinball return lane instead of a right angle. Physics
-  // is the point-trigger bank in player.ts; this is the visual, and every one
-  // sits on a genuinely sweepable corner (a ≥2×2 open pocket).
-  //
-  // NB (2026-07-20): an earlier pass drew this half-height with an emissive-gold
-  // rim torus riding the top — the wedge got buried by the full-height walls and
-  // only the rim showed, as a gold arc FLOATING in mid-air with nothing under
-  // it. Full-height + wall material + no floating rim = it reads as a wall.
-  if (arcs.length) {
-    const wedgeH = WALL_H; // full wall height — the rounded corner IS the wall here
-    // Quarter cylinder: axis = the corner's right angle, curved face bulging in.
-    const wedgeGeo = track(new THREE.CylinderGeometry(ARC_WEDGE_R, ARC_WEDGE_R + 0.06, wedgeH, 14, 1, false, 0, Math.PI / 2));
-    const wedgeTex = track(makeCapTexture());
-    const wedgeMat = track(new THREE.MeshStandardMaterial({ map: wedgeTex, color: PALETTE_HEX[4], roughness: 0.85, metalness: 0.0 }));
-    const wedge = new THREE.InstancedMesh(wedgeGeo, wedgeMat, arcs.length);
-    wedge.castShadow = true;
-    wedge.receiveShadow = true;
-    // The default quarter fills the (+x,+z) quadrant from its axis; rotate so it
-    // faces the OPEN interior of each corner (see collision.ts qi/qj).
-    const rotFor = (qi: number, qj: number): number =>
-      qi === 1 && qj === 0 ? -Math.PI / 2 : qi === 0 && qj === 0 ? 0 : qi === 1 && qj === 1 ? Math.PI : Math.PI / 2;
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const pos = new THREE.Vector3();
-    const one = new THREE.Vector3(1, 1, 1);
-    arcs.forEach((a, k) => {
-      const cxr = a.cx + (a.qi === 1 ? 0.5 : -0.5); // the crook corner point
-      const czr = a.cz + (a.qj === 1 ? 0.5 : -0.5);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotFor(a.qi, a.qj));
-      pos.set(cxr, wedgeH / 2, czr);
-      m.compose(pos, q, one);
-      wedge.setMatrixAt(k, m);
-    });
-    wedge.instanceMatrix.needsUpdate = true;
-    group.add(wedge);
-    disposables.push({ dispose: () => wedge.dispose() });
-  }
+  // ── Curved walls ──
+  // The single-corner rounding was removed 2026-07-20 (read as "weird bumps").
+  // Long curved walls now come from CURVE COURTS — semicircle wall structures
+  // rendered as smooth half-cylinder shells (buildCurveCourts below). The
+  // corner-bank PHYSICS (collision.computeArcCorners + player.bankArcCorners)
+  // stays — it's an invisible momentum assist at 2×2 pocket corners.
+  buildCurveCourts(group, grid, plan, track);
 
   scene.add(group);
 

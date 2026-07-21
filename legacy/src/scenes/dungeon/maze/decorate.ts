@@ -134,6 +134,24 @@ export interface LevelPlan {
   secrets: TilePos[];
   /** The Oracle Frog's dead-end perch, if this floor drew one. */
   frog: TilePos | null;
+  /** Half-circle bumper courts — semicircle wall structures rendered as smooth
+   *  arcs (build.ts buildCurveCourts). The wall tiles are already carved solid
+   *  into the grid; this just carries the geometry for the curved render. */
+  curveCourts: CurveCourt[];
+}
+
+/** A half-circle bumper court: a semicircle of wall (tile centre `ci,cj`, radius
+ *  `r` tiles) spanning angles [a0, a1] (≈ a half turn), open across the flat
+ *  side. Rendered as a smooth half-cylinder shell over the carved arc tiles. */
+export interface CurveCourt {
+  ci: number;
+  cj: number;
+  r: number;
+  a0: number;
+  a1: number;
+  /** The exact arc tiles carved solid — the renderer skips blocky boxes here and
+   *  draws the smooth shell instead (else the two z-fight). */
+  tiles: Array<[number, number]>;
 }
 
 function shuffled<T>(items: T[], rng: () => number): T[] {
@@ -806,6 +824,95 @@ function furnishRooms(
  * carved archetype rects in THIS grid's coordinates (already ×2 if the maze
  * was thickened).
  */
+/**
+ * HALF-CIRCLE COURTS — carve a semicircle of wall into a big room to make a
+ * curved bumper court (rendered as a smooth arc in build.ts buildCurveCourts).
+ * The curved BACK faces away from the start and the flat mouth opens toward it,
+ * so you enter the mouth and bank around the curve. GUARDED: if the arc would
+ * strand any floor tile from the start it's fully reverted. One court per floor,
+ * in the largest room that can hold it.
+ */
+function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: PinballPartSpot[], rng: () => number): CurveCourt[] {
+  const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 7).sort((a, b) => b.w * b.h - a.w * a.h);
+  for (const room of candidates) {
+    const ci = room.i0 + Math.floor(room.w / 2);
+    const cj = room.j0 + Math.floor(room.h / 2);
+    const r = Math.min(Math.floor(Math.min(room.w, room.h) / 2) - 1, 3);
+    if (r < 2) continue;
+    // Curved back centred on the direction AWAY from the start; flat mouth opens
+    // back toward it.
+    const mid = Math.atan2(cj - start.j, ci - start.i);
+    const a0 = mid - Math.PI / 2;
+    const a1 = mid + Math.PI / 2;
+    // Integer arc tiles (deduped).
+    const steps = Math.max(12, Math.round((a1 - a0) * r * 2.4));
+    const seen = new Set<string>();
+    const arc: Array<[number, number]> = [];
+    for (let s = 0; s <= steps; s++) {
+      const th = a0 + ((a1 - a0) * s) / steps;
+      const ti = ci + Math.round(r * Math.cos(th));
+      const tj = cj + Math.round(r * Math.sin(th));
+      const key = `${ti},${tj}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      arc.push([ti, tj]);
+    }
+    // Carve the arc onto interior FLOOR tiles only.
+    const changed: Array<[number, number]> = [];
+    for (const [ti, tj] of arc) {
+      if (ti <= 0 || tj <= 0 || ti >= g.w - 1 || tj >= g.h - 1) continue;
+      if (at(g, ti, tj) === T_FLOOR) {
+        setTile(g, ti, tj, T_WALL);
+        changed.push([ti, tj]);
+      }
+    }
+    const revert = (): void => {
+      for (const [ti, tj] of changed) setTile(g, ti, tj, T_FLOOR);
+    };
+    if (changed.length < 5) {
+      revert();
+      continue; // too thin to read as a court
+    }
+    // Connectivity guard: no floor tile may be stranded from the start.
+    const d = bfsDistances(g, start.i, start.j);
+    let stranded = false;
+    for (let j = 0; j < g.h && !stranded; j++) {
+      for (let i = 0; i < g.w; i++) {
+        if (at(g, i, j) === T_FLOOR && d[idx(g, i, j)] < 0) {
+          stranded = true;
+          break;
+        }
+      }
+    }
+    if (stranded) {
+      revert();
+      continue;
+    }
+    // Drop any parts that fell on the new walls; plant a few bumpers inside.
+    const wallSet = new Set(changed.map(([ti, tj]) => `${ti},${tj}`));
+    for (let k = parts.length - 1; k >= 0; k--) {
+      if (wallSet.has(`${parts[k].i},${parts[k].j}`)) parts.splice(k, 1);
+    }
+    const inside: Array<[number, number]> = [];
+    for (let dj = -(r - 1); dj <= r - 1; dj++) {
+      for (let di = -(r - 1); di <= r - 1; di++) {
+        if (di * di + dj * dj > (r - 1) * (r - 1)) continue;
+        if (at(g, ci + di, cj + dj) === T_FLOOR) inside.push([ci + di, cj + dj]);
+      }
+    }
+    const put: Array<[number, number]> = [];
+    for (const [ti, tj] of shuffled(inside, rng)) {
+      if (put.length >= 3) break;
+      if (put.some(([pi, pj]) => Math.abs(pi - ti) + Math.abs(pj - tj) < 2)) continue;
+      if (parts.some((q) => q.i === ti && q.j === tj)) continue;
+      parts.push({ i: ti, j: tj, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 });
+      put.push([ti, tj]);
+    }
+    return [{ ci, cj, r, a0, a1, tiles: changed }];
+  }
+  return [];
+}
+
 export function decorateMaze(
   g: Grid,
   rng: () => number,
@@ -1362,5 +1469,9 @@ export function decorateMaze(
     }
   }
 
-  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog };
+  // ── Half-circle courts: carve a curved bumper court into a big room (guarded
+  // against stranding). Last, so it can prune parts that fall on its new walls. ──
+  const curveCourts = stampCurveCourts(g, furnished.rooms, start, parts, rng);
+
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts };
 }
