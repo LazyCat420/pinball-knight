@@ -37,6 +37,8 @@ import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, 
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
+import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
+import { renderKnightPortrait } from "./render/knight-portrait";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -277,6 +279,9 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.onExitCallback = onExit ?? null;
   state.runSeed = (Math.random() * 0x7fffffff) | 0;
   setInputOwner("dungeon-game");
+  // Persisted player settings (menu → Settings) land on state BEFORE the pixel
+  // pass is built, so createPixelPass below reads the saved look directly.
+  applySettingsLive();
 
   // ── Overlay ──
   state.container = document.createElement("div");
@@ -1140,14 +1145,6 @@ function startLevel(level: number): void {
     state.player.z = startPos.z;
     state.player.attackT = -1;
   }
-  // TEMP DEBUG (local screenshot only — REMOVE before commit): ?dbgcourt jumps
-  // the knight onto a curve court so the camera reveals the smooth arc wall.
-  if (typeof location !== "undefined" && new URLSearchParams(location.search).has("dbgcourt") && plan.curveCourts.length) {
-    const c = plan.curveCourts[0];
-    const cc = tileCenter(grid, c.ci, c.cj);
-    state.player.x = cc.x;
-    state.player.z = cc.z;
-  }
   state.player.anim.setFacing("S");
   state.player.anim.play("idle", { force: true });
   syncActorMesh(state.player);
@@ -1397,6 +1394,17 @@ function handleKey(e: KeyboardEvent): void {
     e.preventDefault();
     return;
   }
+
+  // ── Game menu is open: Esc/I close, Tab/arrows cycle tabs, 1-5 jump. ──
+  if (state.menuEl) {
+    const k = e.key.toLowerCase();
+    if (k === "escape" || k === "i") closeGameMenu();
+    else if (k === "tab" || k === "arrowright") cycleMenuTab(1);
+    else if (k === "arrowleft") cycleMenuTab(-1);
+    else if (/^[1-5]$/.test(k)) menuTabByIndex(Number(k) - 1);
+    e.preventDefault();
+    return;
+  }
   // M — the floor map. Free inside the dungeon now that the site map yields the
   // key for the run (see map/map-overlay.setMapSuppressed).
   if (e.key === "m" || e.key === "M") {
@@ -1418,8 +1426,15 @@ function handleKey(e: KeyboardEvent): void {
   }
 
   switch (e.key.toLowerCase()) {
+    // Esc/I open the menu (leaving the run is the menu's confirmed ABANDON
+    // button now — a reflexive Esc must not vaporize a good run).
     case "escape":
-      exitDungeonGame();
+    case "i":
+      e.preventDefault();
+      closeFloorMap(); // the menu freezes the world; a stale map under it lies
+      if (state.container) {
+        openGameMenu(state.container, { onAbandon: exitDungeonGame, paintPortrait: paintMenuPortrait });
+      }
       return;
 
     // ── Weapon slots (plain 1/2) · quick-use belt (Shift+1..4) ──

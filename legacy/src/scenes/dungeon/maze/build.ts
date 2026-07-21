@@ -669,8 +669,24 @@ export interface MazeHandle {
 function buildCurveCourts(group: THREE.Group, grid: Grid, plan: LevelPlan, track: <T extends { dispose(): void }>(x: T) => T): void {
   const courts = plan.curveCourts ?? [];
   if (!courts.length) return;
-  const tex = track(makeCapTexture());
-  const mat = track(new THREE.MeshStandardMaterial({ map: tex, color: PALETTE_HEX[4], roughness: 0.85, metalness: 0, side: THREE.DoubleSide }));
+  // The player stands INSIDE the arc, so the camera sees its concave face, which
+  // points away from the torches — a plain lit material renders near-black. Use
+  // the wall-FACE masonry texture (not the flat cap) and a dim emissive floor so
+  // the curved wall reads as a lit wall from the inside. DoubleSide: it's a shell.
+  const tex = track(makeWallTexture(false, false));
+  const mat = track(
+    new THREE.MeshStandardMaterial({
+      map: tex,
+      color: PALETTE_HEX[4],
+      // A uniform grey-green emissive floor so the concave inside — which faces
+      // away from every torch — still reads as a lit stone wall, not a black void.
+      emissive: 0x5c6850,
+      emissiveIntensity: 1.0,
+      roughness: 0.92,
+      metalness: 0,
+      side: THREE.DoubleSide,
+    }),
+  );
   for (const c of courts) {
     const center = tileCenter(grid, c.ci, c.cj);
     const span = c.a1 - c.a0;

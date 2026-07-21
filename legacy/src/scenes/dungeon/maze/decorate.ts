@@ -837,7 +837,7 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
   for (const room of candidates) {
     const ci = room.i0 + Math.floor(room.w / 2);
     const cj = room.j0 + Math.floor(room.h / 2);
-    const r = Math.min(Math.floor(Math.min(room.w, room.h) / 2) - 1, 3);
+    const r = Math.min(Math.floor(Math.min(room.w, room.h) / 2) - 1, 5); // up to a 5-tile sweep — a LONG curve
     if (r < 2) continue;
     // Curved back centred on the direction AWAY from the start; flat mouth opens
     // back toward it.
