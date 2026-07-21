@@ -153,9 +153,10 @@ describe("decorateMaze", () => {
     const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
     // Vault ramps are their own layer too (aimed across a band, off-budget).
     const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
-    // Chain links are placed ON each other's shot lines on purpose, so the
-    // anti-clustering rule is exactly what they're exempt from.
-    const spaced = dealt.filter((p) => !p.chain);
+    // Chain links AND station-spine parts are placed ON each other's shot lines
+    // on purpose (a route where each part feeds the next), so the anti-clustering
+    // rule is exactly what they're exempt from.
+    const spaced = dealt.filter((p) => !p.chain && !p.spine);
     for (const a of spaced) {
       for (const b of spaced) {
         if (a === b) continue;
@@ -268,8 +269,8 @@ describe("decorateMaze", () => {
     // Targets, trapdoors + hazards are objective/traversal layers OVER the
     // budget; the dealt machine parts themselves must stay inside it.
     const layerKinds = new Set(["target", "trapdoor", "pit", "electric", "firevent", "magstrip", "booster", "rollover"]);
-    // Vault ramps are their own layer too (aimed across a band, off-budget).
-    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault);
+    // Vault ramps AND the station-spine route are their own layers (off-budget).
+    const dealt = plan.parts.filter((p) => !layerKinds.has(p.kind) && !p.vault && !p.spine);
     expect(dealt.length).toBeLessThanOrEqual(6);
     // Scattered break-them-all targets stay within budget; the Slice 6 drop-target
     // BANK is a separate layer (bank !== undefined) and doesn't count against it.
@@ -375,23 +376,69 @@ describe("decorateMaze — rooms + secrets", () => {
     }
   });
 
-  it("lays booster LANES: rows of adjacent pads aimed the same way down a straight run", () => {
-    const { g, plan } = makeFullLevel(19);
-    const boosters = plan.parts.filter((p) => p.kind === "booster");
-    // corridor lane boosters (outside any room) come in aligned adjacent runs
-    const laneBoosters = boosters.filter((b) => !plan.rooms.some((r) => b.i >= r.i0 && b.i < r.i0 + r.w && b.j >= r.j0 && b.j < r.j0 + r.h));
-    expect(laneBoosters.length).toBeGreaterThanOrEqual(3);
-    for (const b of laneBoosters) {
-      // each pad is on floor, aimed along a cardinal axis, with runway ahead
-      expect(at(g, b.i, b.j)).toBe(T_FLOOR);
-      expect(Math.abs(b.dirI) + Math.abs(b.dirJ)).toBe(1);
-      expect(at(g, b.i + b.dirI, b.j + b.dirJ)).not.toBe(T_WALL);
-      // a lane-mate sits directly ahead OR behind along the shared axis
-      const neighbourInLane = laneBoosters.some(
-        (o) => o !== b && ((o.i === b.i + b.dirI && o.j === b.j + b.dirJ) || (o.i === b.i - b.dirI && o.j === b.j - b.dirJ)),
-      );
-      expect(neighbourInLane).toBe(true);
+  it("STATION SPINE: a connected booster route runs the artery, every pad down-flow into open floor", () => {
+    // The user's ask: "boosters feed into each other to make a path throughout
+    // the map… when you get pushed it feeds into something else." Measured on the
+    // REAL pipeline (thickened + widened artery + endpoints) — the floor the
+    // player actually gets, where the spine is laid down the launch highway.
+    let sampled = 0;
+    for (let seed = 500; seed < 545; seed++) {
+      const raw = generateMaze(14, 11, mulberry32(seed));
+      const rooms0 = carveRooms(raw, mulberry32(seed + 1), 3, 2, 4);
+      crackSecretWalls(raw, mulberry32(seed + 2), 3);
+      const g = thickenWalls(raw);
+      const rooms = rooms0.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+      const ends = pickEndpoints(g, mulberry32(seed + 5));
+      if (!ends) continue;
+      widenMainArtery(g, ends);
+      const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 12, rooms, { endpoints: ends });
+      const dist = bfsDistances(g, ends.start.i, ends.start.j);
+      const spine = plan.parts.filter((p) => p.spine);
+      if (spine.length === 0) continue;
+      sampled++;
+
+      const boosters = spine.filter((p) => p.kind === "booster");
+      expect(boosters.length, `seed ${seed}: the route has no boosters`).toBeGreaterThanOrEqual(2);
+      let feeds = 0;
+      for (const b of boosters) {
+        // on floor, one cardinal axis, and fires into OPEN floor — never the old
+        // "boost that just splats on a wall a tile away" dead conveyor.
+        expect(at(g, b.i, b.j)).toBe(T_FLOOR);
+        expect(Math.abs(b.dirI) + Math.abs(b.dirJ)).toBe(1);
+        expect(at(g, b.i + b.dirI, b.j + b.dirJ)).not.toBe(T_WALL);
+        // DOWN-FLOW: shoves you toward the exit, never back at the spawn.
+        const fwd = dist[idx(g, b.i + b.dirI, b.j + b.dirJ)];
+        const bwd = dist[idx(g, b.i - b.dirI, b.j - b.dirJ)];
+        expect(fwd, `spine booster @${b.i},${b.j} points backward (seed ${seed})`).toBeGreaterThanOrEqual(bwd);
+        // FEEDS SOMETHING: another spine part lies further down its fire ray
+        // within a few tiles (the next pad, or the bend station it delivers you
+        // to). The terminal pad nearest the stairs may drain into the exit.
+        for (let s = 1; s <= 4; s++) {
+          const ti = b.i + b.dirI * s;
+          const tj = b.j + b.dirJ * s;
+          if (at(g, ti, tj) === T_WALL) break;
+          if (spine.some((q) => q !== b && q.i === ti && q.j === tj)) { feeds++; break; }
+        }
+      }
+      // The route is a CHAIN, not a scatter: the great majority of pads hand off
+      // to the next part along their own fire line (the terminal pad near the
+      // stairs may drain into the exit, and a very long straight can stride wide).
+      expect(feeds, `seed ${seed}: only ${feeds}/${boosters.length} pads feed another part`).toBeGreaterThanOrEqual(Math.ceil(boosters.length * 0.75));
+
+      // A bend station banks you round the corner: both legs are walkable (open
+      // floor, or the stairs tile when the turn feeds straight into the exit).
+      for (const d of spine.filter((p) => p.kind === "deflector")) {
+        expect(at(g, d.i + d.dirI, d.j + d.dirJ), `deflector leg1 @${d.i},${d.j}`).not.toBe(T_WALL);
+        expect(at(g, d.i + d.dir2I, d.j + d.dir2J), `deflector leg2 @${d.i},${d.j}`).not.toBe(T_WALL);
+      }
+
+      // The route goes THROUGHOUT the map, not one corner: its parts span a real
+      // slice of the floor's start→exit distance.
+      const ds = spine.map((p) => dist[idx(g, p.i, p.j)]);
+      const maxDist = Math.max(...Array.from(dist).filter((v) => v < 1e8));
+      expect(Math.max(...ds) - Math.min(...ds), `seed ${seed}: spine barely spans the floor`).toBeGreaterThanOrEqual(maxDist * 0.25);
     }
+    expect(sampled, "no station spine sampled across 45 seeds").toBeGreaterThan(15);
   });
 
   it("frames big open rooms with curved corner rails (deflectors) — the playfield read", () => {
@@ -547,6 +594,10 @@ describe("openLaunchTargets (A1) — launch parts break through into new space",
       const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 10, [], { launchBreaks: 6 });
       for (const p of plan.parts) {
         if (!launchKinds.has(p.kind) || Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
+        // Station-spine boosters that feed a BEND deflector are exempt (like
+        // vault ramps): a wall a tile or two ahead is the point — the deflector
+        // banks you round before you reach it. openLaunchTargets skips them too.
+        if (p.spine || p.vault) continue;
         // walk the fire direction: it must reach MIN_RUNWAY floor, or hit a
         // BREAKABLE (cracked) wall — never a plain T_WALL up close.
         let runway = 0;

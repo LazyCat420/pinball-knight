@@ -12,7 +12,6 @@
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile } from "./generator";
 import { bfsDistances } from "../entities/ai";
-import { clamp } from "../../../utils/math";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -82,6 +81,15 @@ export interface PinballPartSpot extends TilePos {
    * what make a floor a table instead of a scatter — see CHAIN_LINKS.
    */
   chain?: boolean;
+  /**
+   * STATION SPINE: this part belongs to the connected booster route laid down
+   * the main start→stairs artery (layStationSpine). Like `chain` it skips the
+   * anti-clustering spacing; unlike an ordinary launcher it is EXEMPT from the
+   * A1 runway repair (openLaunchTargets), because a spine booster that feeds a
+   * bend deflector is SUPPOSED to have a wall a tile or two ahead — the turn is
+   * the point. The spine is the "boosters feed into each other" backbone.
+   */
+  spine?: boolean;
   /**
    * ORBIT (D2): this banked rail is one corner of a closed CIRCUIT around a
    * room. Railing all four in sequence completes the orbit — the loop shot a
@@ -271,7 +279,7 @@ const KICKBACK_CHANCE = 0.15;
  */
 const CHAIN_LINKS = 4; // parts per chain, including the seed launcher
 const CHAIN_TRIES = 40; // seed candidates to try before giving up on a chain
-const CHAINS_DEFAULT = 2; // shot chains seeded per floor, before the spacing deal fills in
+const CHAINS_DEFAULT = 1; // secondary shot chain off the spine (the station spine is now the primary route)
 
 /** The last floor tile travelling (di,dj) from (i,j) before a wall stops you. */
 function runwayEnd(g: Grid, i: number, j: number, di: number, dj: number, max = 12): TilePos | null {
@@ -408,11 +416,20 @@ export function widenMainArtery(g: Grid, ends: Endpoints): void {
   widenArtery(g, ends.start, ends.stairs, dist);
 }
 
-function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): void {
-  // Walk the gradient stairs → start (each step drops the BFS distance by one).
+/**
+ * THE SPINE — the ordered tile path down the main artery from START to STAIRS,
+ * walking the BFS-from-start gradient (each step drops the distance by one). The
+ * single source of truth for "the way through the floor": widenMainArtery widens
+ * it into a 3-wide highway and layStationSpine strings the connected booster
+ * route along it. Returned start→stairs so a caller can lay parts in travel
+ * order. Empty if the gradient dead-ends (never on a connected maze).
+ */
+export function traceArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): TilePos[] {
+  // Walk the gradient stairs → start, then reverse so the path reads in the
+  // direction of travel (spawn → exit).
   let cur: TilePos = stairs;
   let guard = 0;
-  const path: TilePos[] = [cur];
+  const back: TilePos[] = [cur];
   while (!(cur.i === start.i && cur.j === start.j) && guard++ < g.w * g.h) {
     const dcur = dist[idx(g, cur.i, cur.j)];
     let next: TilePos | null = null;
@@ -427,8 +444,15 @@ function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array)
     }
     if (!next) break; // gradient dead-ended (shouldn't on a connected maze)
     cur = next;
-    path.push(cur);
+    back.push(cur);
   }
+  back.reverse();
+  return back;
+}
+
+function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): void {
+  const path = traceArtery(g, start, stairs, dist);
+  if (!path.length) return;
   // Widen each artery tile: carve one perpendicular wall neighbour (never the
   // border). Perp is relative to the local travel direction along the path.
   for (let k = 0; k < path.length; k++) {
@@ -552,7 +576,7 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
   // Fix the offenders FIRST (short runway ending at a wall) so they win the crack
   // budget, then do the payoff cracks for the healthy ones. Two ordered passes.
   const launch = shuffled(
-    parts.filter((p) => !p.vault && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
+    parts.filter((p) => !p.vault && !p.spine && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
     rng,
   );
   const remove = new Set<PinballPartSpot>();
@@ -664,6 +688,7 @@ function furnishRooms(
   g: Grid,
   dist: Int32Array,
   forceVault = false,
+  onSpine: (i: number, j: number) => boolean = () => false,
 ): { rooms: PlannedRoom[]; spawns: TilePos[]; items: ItemDrop[]; parts: PinballPartSpot[] } {
   const planned: PlannedRoom[] = [];
   const spawns: TilePos[] = [];
@@ -703,11 +728,10 @@ function furnishRooms(
     const clearAt = (i: number, j: number): boolean => !parts.some((q) => q.i === i && q.j === j);
 
     if (kind === "bumper") {
-      // FILL the chamber with a staggered GRID of bumpers (every ~3 tiles) so a
-      // big room is a real bumper FIELD, not five lonely pins in a bare hall.
-      // Alternate rows offset half a step for the diamond/quincunx read.
-      // Density scales with area. (Bumpers only: a slingshot needs a straight
-      // corridor to fire along, and an open chamber tile has no such lane.)
+      // A staggered field of pop bumpers to carom THROUGH on the way past. The
+      // spine lane is left CLEAR so the booster route runs straight through the
+      // middle, flanked by bumpers — the room becomes a station ON the path
+      // rather than a wall of pins you wander into and stall in.
       const STEP = 3;
       const m = 1; // margin from the walls
       let row = 0;
@@ -715,6 +739,7 @@ function furnishRooms(
         const stag = row % 2 ? Math.floor(STEP / 2) : 0;
         for (let gx = room.i0 + m + stag; gx <= room.i0 + room.w - 1 - m; gx += STEP) {
           if (!clearAt(gx, gy)) continue;
+          if (onSpine(gx, gy)) continue; // keep the booster route's lane open
           // the four inner corners are reserved for the curved rails below
           const atCorner = (gx === room.i0 + 1 || gx === room.i0 + room.w - 2) && (gy === room.j0 + 1 || gy === room.j0 + room.h - 2);
           if (atCorner && room.w >= 6 && room.h >= 6) continue;
@@ -722,9 +747,9 @@ function furnishRooms(
         }
       }
     } else if (kind === "speedway") {
-      // PARALLEL accelerating lanes down the long axis (ramp → booster → ramp,
-      // all aimed the same way). A wide room gets 2-3 lanes across the short
-      // axis so the whole floor of the room is a launch bank, not one thin strip.
+      // ONE accelerating lane down the long axis (ramp → booster → ramp, aimed
+      // down-flow) — a spine SEGMENT, not a stack of 2-3 parallel banks. The room
+      // reads as a stretch of the highway you blast through, wired into the route.
       const alongW = room.w >= room.h;
       // PATH-FIRST: aim the whole lane DOWN-FLOW (toward the exit), not a coin
       // flip — a speedway that launches you back at the door is the "speed up
@@ -737,18 +762,18 @@ function furnishRooms(
       if (rng() < KICKBACK_CHANCE) sign = -sign;
       const longLen = alongW ? room.w : room.h;
       const shortLen = alongW ? room.h : room.w;
-      const nLanes = clamp(Math.floor(shortLen / 3), 1, 3);
+      // Put the single lane on the spine's cross-position if the spine crosses
+      // the room (so it IS the highway); else down the room's centre line.
+      const off = Math.floor(shortLen / 2);
       const nPer = Math.max(3, Math.floor(longLen / 3));
-      for (let lane = 0; lane < nLanes; lane++) {
-        const off = Math.round(((lane + 1) / (nLanes + 1)) * (shortLen - 1));
-        for (let s = 0; s < nPer; s++) {
-          const t = Math.round(1 + (s * (longLen - 3)) / Math.max(1, nPer - 1));
-          const i = alongW ? room.i0 + t : room.i0 + off;
-          const j = alongW ? room.j0 + off : room.j0 + t;
-          if (!clearAt(i, j)) continue;
-          const pk: PartSpotKind = s % 2 === 0 ? "ramp" : "booster";
-          part({ kind: pk, i, j, dirI: alongW ? sign : 0, dirJ: alongW ? 0 : sign });
-        }
+      for (let s = 0; s < nPer; s++) {
+        const t = Math.round(1 + (s * (longLen - 3)) / Math.max(1, nPer - 1));
+        const i = alongW ? room.i0 + t : room.i0 + off;
+        const j = alongW ? room.j0 + off : room.j0 + t;
+        if (!clearAt(i, j)) continue;
+        if (onSpine(i, j)) continue; // the spine pass already lays boosters here
+        const pk: PartSpotKind = s % 2 === 0 ? "ramp" : "booster";
+        part({ kind: pk, i, j, dirI: alongW ? sign : 0, dirJ: alongW ? 0 : sign });
       }
     } else {
       // arena + vault share the corner geometry.
@@ -833,7 +858,14 @@ function furnishRooms(
  * (rendered as a smooth shell in build.ts), and drops a few bumpers inside.
  * GUARDED: reverts entirely if it would strand any floor tile from the start.
  */
-function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: PinballPartSpot[], rng: () => number): CurveCourt[] {
+function stampCurveCourts(
+  g: Grid,
+  rooms: PlannedRoom[],
+  start: TilePos,
+  parts: PinballPartSpot[],
+  rng: () => number,
+  onSpine: (i: number, j: number) => boolean = () => false,
+): CurveCourt[] {
   const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 6).sort((a, b) => b.w * b.h - a.w * a.h);
   for (const room of candidates) {
     const rci = room.i0 + Math.floor(room.w / 2);
@@ -854,6 +886,7 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
     const carvedFloor: Array<[number, number]> = []; // bay floor (was wall)
     const rimWall: Array<[number, number]> = []; // arc rim (was floor)
     const arcTiles: Array<[number, number]> = []; // every rim tile, for the render skip
+    let hitsSpine = false; // an arc that would wall the booster route is not worth it
     for (let dj = -r - 1; dj <= r + 1; dj++) {
       for (let di = -r - 1; di <= r + 1; di++) {
         const outSide = di * od.i + dj * od.j;
@@ -871,6 +904,7 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
         } else {
           arcTiles.push([ti, tj]); // rim → curved wall
           if (at(g, ti, tj) === T_FLOOR) {
+            if (onSpine(ti, tj)) hitsSpine = true; // would bury the station spine
             setTile(g, ti, tj, T_WALL);
             rimWall.push([ti, tj]);
           }
@@ -881,9 +915,9 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
       for (const [ti, tj] of carvedFloor) setTile(g, ti, tj, T_WALL);
       for (const [ti, tj] of rimWall) setTile(g, ti, tj, T_FLOOR);
     };
-    if (rimWall.length + carvedFloor.length < 6) {
+    if (hitsSpine || rimWall.length + carvedFloor.length < 6) {
       revert();
-      continue; // nothing meaningful carved (edge already open, etc.)
+      continue; // would wall the spine, or nothing meaningful carved
     }
     // Connectivity guard: no floor tile may be stranded from the start.
     const d = bfsDistances(g, start.i, start.j);
@@ -918,6 +952,92 @@ function stampCurveCourts(g: Grid, rooms: PlannedRoom[], start: TilePos, parts: 
     return [{ ci: cx, cj: cy, r, a0: mid - Math.PI / 2, a1: mid + Math.PI / 2, tiles: arcTiles }];
   }
   return [];
+}
+
+/**
+ * LAY THE STATION SPINE — the connected booster route that makes a floor a
+ * pinball table you TRAVERSE rather than a scatter of parts you wander past.
+ *
+ * The user's ask: "boosters feed into each other to make a path throughout the
+ * map… when you get pushed it feeds into something else." This is that path.
+ *
+ * Walk the ordered artery `spine` (start→stairs — see traceArtery), and:
+ *   - down each STRAIGHT RUN lay a row of booster pads aimed down-path, so the
+ *     knight is railed forward from one station to the next;
+ *   - at each BEND drop a `deflector` that banks the incoming run onto the
+ *     outgoing one with speed intact — getting shoved carries you round the turn;
+ *   - where the route crosses an open junction, a `bumper` to carom off so a
+ *     crossing still hands you onward instead of dumping your momentum.
+ *
+ * Every part is `spine: true`: exempt from the anti-clustering spacing (like a
+ * chain link) AND from the A1 runway repair (openLaunchTargets) — a pad that
+ * feeds a bend is SUPPOSED to have the wall a tile or two ahead. It is its own
+ * layer over the part budget; the corridor deal then fills the pockets that
+ * branch OFF the spine, all of it spacing around these tiles.
+ *
+ * Mutates `parts`. No-op on a floor too small to trace an artery.
+ */
+function layStationSpine(
+  g: Grid,
+  spine: TilePos[],
+  start: TilePos,
+  stairs: TilePos,
+  parts: PinballPartSpot[],
+  items: ItemDrop[],
+): void {
+  if (spine.length < 4) return;
+  const CALM = 4; // keep the plunger launch zone at the mouth clear
+  const MIN_STRIDE = 3; // a pad every ~3 tiles — a conveyor you boost-and-coast down, not a wall of pads
+  const MAX_STRIDE = 4; // …and never further than this apart, so each pad still hands you to the next
+  const takenTile = (i: number, j: number): boolean =>
+    parts.some((q) => q.i === i && q.j === j) || items.some((it) => it.i === i && it.j === j);
+  const placeable = (p: TilePos): boolean =>
+    !(p.i === stairs.i && p.j === stairs.j) &&
+    Math.abs(p.i - start.i) + Math.abs(p.j - start.j) >= CALM &&
+    !takenTile(p.i, p.j);
+  const dirOf = (a: TilePos, b: TilePos): [number, number] => [Math.sign(b.i - a.i), Math.sign(b.j - a.j)];
+
+  // Segment the path into maximal straight runs; the tile between two runs is a bend.
+  const n = spine.length;
+  let k = 0;
+  while (k < n - 1) {
+    const [di, dj] = dirOf(spine[k], spine[k + 1]);
+    let end = k + 1;
+    while (end < n - 1) {
+      const [ndi, ndj] = dirOf(spine[end], spine[end + 1]);
+      if (ndi !== di || ndj !== dj) break;
+      end++;
+    }
+    // Booster pads the whole run [k .. end), skipping the bend tile spine[end].
+    // The run direction (di,dj) IS down-flow by construction — the spine is
+    // ordered start→stairs, so each step raises dist-from-start by one — and it
+    // always points at the next spine tile (real floor), so no sign check is
+    // needed and a pad can never fire into a wall. Pads are spaced MIN..MAX apart
+    // (never more than MAX_STRIDE) so a long straight becomes a proper highway
+    // where every pad still hands you to the next — no dead coast.
+    const stride = Math.max(MIN_STRIDE, Math.min(MAX_STRIDE, Math.ceil((end - k) / 4)));
+    for (let t = k; t < end; t += stride) {
+      const p = spine[t];
+      if (placeable(p)) parts.push({ kind: "booster", i: p.i, j: p.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, spine: true });
+    }
+    // The station where the run DELIVERS you (the bend), if any tile follows.
+    if (end < n - 1) {
+      const bend = spine[end];
+      const [odi, odj] = dirOf(spine[end], spine[end + 1]); // outgoing leg
+      if (placeable(bend)) {
+        const openLegs = WALL_SIDES.filter(([li, lj]) => at(g, bend.i + li, bend.j + lj) === T_FLOOR);
+        if ((odi !== di || odj !== dj) && openLegs.length <= 2) {
+          // A clean corner → a deflector banks incoming→outgoing (speed intact).
+          // Legs match classifyTopology: where you came FROM (-in) and GO (+out).
+          parts.push({ kind: "deflector", i: bend.i, j: bend.j, dirI: -di, dirJ: -dj, dir2I: odi, dir2J: odj, spine: true });
+        } else {
+          // A wide crossing → a bumper to carom off, still on the route.
+          parts.push({ kind: "bumper", i: bend.i, j: bend.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, spine: true });
+        }
+      }
+    }
+    k = end;
+  }
 }
 
 export function decorateMaze(
@@ -967,11 +1087,20 @@ export function decorateMaze(
   const stairs: TilePos = extras.endpoints?.stairs ?? farthest;
   setTile(g, stairs.i, stairs.j, T_STAIRS);
 
+  // THE SPINE — the ordered start→stairs artery path (already widened into a
+  // 3-wide highway by widenMainArtery in core). The connected booster route is
+  // laid down it (layStationSpine); rooms it crosses keep a clear lane so the
+  // route runs THROUGH them. The single "way through the floor".
+  const spine = traceArtery(g, start, stairs, dist);
+  const spineSet = new Set(spine.map((p) => idx(g, p.i, p.j)));
+  const onSpine = (i: number, j: number): boolean => spineSet.has(idx(g, i, j));
+
   // ── Rooms first: archetype content is SEEDED into the pools below, so all
   // the general placement (and its spacing rules) works around it. General
   // placement also stays OUT of room interiors — each room is its archetype's
-  // set piece, not another stretch of corridor. ──
-  const furnished = furnishRooms(rooms, rng, start, g, dist, extras.forceVault);
+  // set piece, not another stretch of corridor. Rooms leave the spine lane clear
+  // so the booster route can run through them (they become stations ON the path). ──
+  const furnished = furnishRooms(rooms, rng, start, g, dist, extras.forceVault, onSpine);
   const inRoom = (p: TilePos): boolean =>
     rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
 
@@ -1052,7 +1181,14 @@ export function decorateMaze(
   // archetypes have already seeded their own parts (they don't count against
   // the corridor budget — a bumper chamber shouldn't strip the maze bare). ──
   const parts: PinballPartSpot[] = [...furnished.parts];
-  const corridorBudget = partBudget + furnished.parts.length;
+  // ── STATION SPINE (path-first): string the connected booster route down the
+  // main artery FIRST, so the floor has one legible "boosters feed into each
+  // other" route before anything else fills in. It is its OWN LAYER (like the
+  // banks/hazards/rollover layers): the corridor budget is measured AFTER it, so
+  // the spine never strips the deal — the deal below just spaces AROUND these
+  // tiles, filling the pockets that branch off the spine. ──
+  layStationSpine(g, spine, start, stairs, parts, items);
+  const corridorBudget = partBudget + parts.length;
   const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
@@ -1245,41 +1381,45 @@ export function decorateMaze(
     }
   }
 
-  // ── BOOSTER LANES (the accelerating "highway" layer): lay rows of 2-3 booster
-  // pads down a straight run, all aimed the same way, so a floor reads as a
-  // machine with real speed channels — not a maze with the odd dash pad. Its own
-  // layer over the part budget (like banks/hazards), so a lane never strips the
-  // corridor deal. Best-effort: place up to LANE_COUNT lanes on suitable runs. ──
-  const LANE_COUNT = extras.boosterLanes ?? 3;
+  // ── BOOSTER TRIBUTARIES: short off-spine booster runs that MERGE onto the
+  // station spine — a side channel whose last pad throws you onto the highway,
+  // never a lane that dead-ends into blank corridor (the old standalone-lane bug
+  // the user hit: "gets pushed but feeds into nothing"). A run only counts if the
+  // tile just past its forward end is on (or touching) the spine, so every
+  // tributary literally feeds the route. Its own layer over the part budget. ──
+  const TRIB_COUNT = extras.boosterLanes ?? 2;
   const LANE_LEN = 3;
   const laneAxes: Array<[number, number]> = [[1, 0], [0, 1]];
+  const touchesSpine = (i: number, j: number): boolean =>
+    onSpine(i, j) || WALL_SIDES.some(([di, dj]) => onSpine(i + di, j + dj));
   let lanesPlaced = 0;
   laneSearch: for (const p of shuffled(floors, rng)) {
-    if (lanesPlaced >= LANE_COUNT) break;
-    if (inRoom(p) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 5) continue;
+    if (lanesPlaced >= TRIB_COUNT) break;
+    if (inRoom(p) || onSpine(p.i, p.j) || Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 5) continue;
     for (const [ai, aj] of shuffled(laneAxes, rng)) {
-      // The LANE_LEN pad tiles must be floor, clear of other parts, not stairs.
-      // Wide corridors are fine — the pads snap your heading to the axis, so the
-      // lane rails you straight down it regardless.
+      // The LANE_LEN pad tiles must be floor, off the spine, clear of other
+      // parts, not stairs. Wide corridors are fine — the pads snap your heading.
       const padsOk = [0, 1, 2].every(
-        (s) => at(g, p.i + ai * s, p.j + aj * s) === T_FLOOR && !(p.i + ai * s === stairs.i && p.j + aj * s === stairs.j),
+        (s) =>
+          at(g, p.i + ai * s, p.j + aj * s) === T_FLOOR &&
+          !onSpine(p.i + ai * s, p.j + aj * s) &&
+          !(p.i + ai * s === stairs.i && p.j + aj * s === stairs.j),
       );
       const clear = [0, 1, 2].every((s) => !parts.some((q) => Math.abs(q.i - (p.i + ai * s)) + Math.abs(q.j - (p.j + aj * s)) < 2));
       if (!padsOk || !clear) continue;
-      // PATH-FIRST: a speed lane must fire DOWN-FLOW (toward the exit), never
-      // back the way you came — the old code hardcoded +x/+z, so half of them
-      // shoved you backward. Look at the open exit past each end of the pad
-      // cluster and point the pads toward whichever is further from the start.
+      // The run must FEED THE SPINE: one of its two ends spills onto the highway.
+      // Point the pads toward whichever end does (preferring the down-flow one).
       const fwdI = p.i + ai * LANE_LEN;
       const fwdJ = p.j + aj * LANE_LEN; // one past the last pad
       const bwdI = p.i - ai;
       const bwdJ = p.j - aj; // one before the first pad
-      const fwdOpen = at(g, fwdI, fwdJ) === T_FLOOR && !(fwdI === stairs.i && fwdJ === stairs.j);
-      const bwdOpen = at(g, bwdI, bwdJ) === T_FLOOR && !(bwdI === stairs.i && bwdJ === stairs.j);
-      if (!fwdOpen && !bwdOpen) continue; // no runway either way — not a real lane
-      const fwdD = fwdOpen ? distAt(g, dist, fwdI, fwdJ) : -Infinity;
-      const bwdD = bwdOpen ? distAt(g, dist, bwdI, bwdJ) : -Infinity;
-      const sign = fwdD >= bwdD ? 1 : -1; // point toward the higher dist-from-start
+      const fwdFeeds = at(g, fwdI, fwdJ) === T_FLOOR && touchesSpine(fwdI, fwdJ) && !(fwdI === stairs.i && fwdJ === stairs.j);
+      const bwdFeeds = at(g, bwdI, bwdJ) === T_FLOOR && touchesSpine(bwdI, bwdJ) && !(bwdI === stairs.i && bwdJ === stairs.j);
+      if (!fwdFeeds && !bwdFeeds) continue; // doesn't reach the spine — not a tributary
+      // If both ends feed it, pick the down-flow one; else the one that feeds.
+      let sign: number;
+      if (fwdFeeds && bwdFeeds) sign = distAt(g, dist, fwdI, fwdJ) >= distAt(g, dist, bwdI, bwdJ) ? 1 : -1;
+      else sign = fwdFeeds ? 1 : -1;
       for (let s = 0; s < LANE_LEN; s++) {
         parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "booster", dirI: ai * sign, dirJ: aj * sign, dir2I: 0, dir2J: 0 });
       }
@@ -1478,7 +1618,7 @@ export function decorateMaze(
 
   // ── Half-circle courts: carve a curved bumper court into a big room (guarded
   // against stranding). Last, so it can prune parts that fall on its new walls. ──
-  const curveCourts = stampCurveCourts(g, furnished.rooms, start, parts, rng);
+  const curveCourts = stampCurveCourts(g, furnished.rooms, start, parts, rng, onSpine);
 
   return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts };
 }
