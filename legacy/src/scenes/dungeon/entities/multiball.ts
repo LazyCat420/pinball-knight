@@ -15,8 +15,9 @@
  */
 import * as THREE from "three";
 import { state, activeWeapon, type Zombie } from "../state";
-import { createActorSprite, buildSpriteSheet, type ActorSprite, type SpriteSheet } from "../render/sprite";
-import { makeKnightPaints } from "../render/cel-painter";
+import { createActorSprite, type ActorSprite, type SpriteSheet } from "../render/sprite";
+import { getKnightSheet } from "../render/knight-sheets";
+import { lookFromGear } from "../render/knight-look";
 import { Animator, facingFromVelocity, type Facing } from "../render/animator";
 import { worldDirToScreen } from "../camera";
 import { syncActorMesh, damageZombie, playerDamage } from "./combat";
@@ -159,13 +160,8 @@ export function tickRamCooldowns<K>(cd: Map<K, number>, dt: number): Map<K, numb
  * disposeAll's existing sheet sweep already covers them.
  */
 function knightSheet(): SpriteSheet {
-  const id = activeWeapon().id;
-  let sheet = state.playerSheets.get(id);
-  if (!sheet) {
-    sheet = buildSpriteSheet(makeKnightPaints(id));
-    state.playerSheets.set(id, sheet);
-  }
-  return sheet;
+  // Echoes mirror the player exactly — same weapon, same worn gear.
+  return getKnightSheet(activeWeapon().id, lookFromGear(state.gear), "dungeon");
 }
 
 /** True while the echoes are out. */

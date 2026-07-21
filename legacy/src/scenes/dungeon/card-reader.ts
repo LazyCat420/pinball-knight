@@ -25,6 +25,7 @@ import { CARDS, RARITY_HEX, type CardId } from "./cards";
 import { state } from "./state";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 import { showCardPickup } from "./card-popup";
+import { getSettings } from "./settings-save";
 
 const STYLE_ID = "dungeon-cardreader-style";
 
@@ -45,7 +46,9 @@ export function shouldOpenReader(id: CardId, seen: ReadonlySet<string>): boolean
  * card seen, and routes to the reader or the old non-blocking popup.
  */
 export function presentCardPickup(id: CardId, note: string): void {
-  const open = shouldOpenReader(id, state.seenCards);
+  // Player preference first (menu → Settings): always / smart / never.
+  const policy = getSettings().readerPolicy;
+  const open = policy === "always" || (policy === "smart" && shouldOpenReader(id, state.seenCards));
   state.seenCards.add(id);
   if (open) showCardReader(id, note);
   else showCardPickup(id);

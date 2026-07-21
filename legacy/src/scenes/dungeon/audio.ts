@@ -9,7 +9,19 @@
 import { getAudioCtx } from "../../utils/audio-manager";
 import { clamp01 } from "../../utils/math";
 
+/** One mute gate for every sting: ctx() returns null while muted, and every
+ * sfx function already fail-silents on a null context. Set from the menu's
+ * Settings tab (persisted via settings-save.ts). */
+let sfxMuted = false;
+export function setSfxMuted(v: boolean): void {
+  sfxMuted = v;
+}
+export function isSfxMuted(): boolean {
+  return sfxMuted;
+}
+
 function ctx(): AudioContext | null {
+  if (sfxMuted) return null;
   try {
     const c = getAudioCtx();
     if (!c) return null;

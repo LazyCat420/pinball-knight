@@ -28,6 +28,7 @@ import { paletteCss, inkFor, shadeFor, highlightFor } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
+import { FULL_PLATE, type KnightLook } from "./knight-look";
 import {
   type Pt,
   type Dir3,
@@ -495,13 +496,19 @@ const KNIGHT_RIG: RigConfig = {
  * `plumeLag` (px) trails the crest behind the head's motion — overlapping action
  * so the plume flows on the walk/attack instead of moving rigidly with the helm.
  */
-function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0): void {
+function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0, hasHelm = true): void {
   const [x, y] = head;
-  const pl = plumeLag; // +x trails right; the crest tip drags opposite motion
+  const pl = plumeLag;
+  // No helmet equipped: same dome, same T-visor (the readability contract),
+  // but dull dark iron, no plume, no arcane eye-spark. Gear brightens; it
+  // never changes the silhouette's grammar.
+  const dome: Ramp = hasHelm ? K_PLATE : K_PLATE_DK; // +x trails right; the crest tip drags opposite motion
   // Crest plume — a bold blood-red comb, drawn BEHIND the helm so it reads as a
   // silhouette-topping shape, not an antenna. Multi-lobe for a flowing mane and a
   // brighter front lobe for volume; the tip lobes carry the lag.
-  if (dir === "E") {
+  if (!hasHelm) {
+    // bare dull helm — plume and spark are the helmet's reward
+  } else if (dir === "E") {
     // side profile — a long horsehair mane sweeping back off the crown
     plateShaded(ctx, [[x - 1, y - 15], [x - 14, y - 24 + pl * 0.3], [x - 27, y - 16 + pl], [x - 30, y + 2 + pl * 1.2], [x - 20, y - 2], [x - 6, y - 5]], K_PLUME, { rim: false });
     figDetail(ctx, [[x - 4, y - 13], [x - 18, y - 16 + pl * 0.6], [x - 27, y - 8 + pl]], 2, 13); // bright strand
@@ -514,7 +521,7 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
   }
   // Helm dome — a rounded bucket, not a ball: flat-ish crown, jaw taper.
   if (dir === "E") {
-    plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], K_PLATE, { backlight: 30 });
+    plateShaded(ctx, [[x - 12, y - 12], [x + 12, y - 12], [x + 14, y + 4], [x + 8, y + 12], [x - 10, y + 10]], dome, { backlight: 30 });
     // brow ridge catches light — a bright band across the crown
     figDetail(ctx, [[x - 10, y - 9], [x + 10, y - 9]], 1.5, 21);
     // nose guard juts forward (+x)
@@ -522,7 +529,7 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
     // eye slit — hard black void, the only pure-INK on the figure
     rrectShaded(ctx, x + 2, y - 3, 11, 4, 1.5, 1, { ink: 1 });
   } else {
-    plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], K_PLATE, { backlight: 30 });
+    plateShaded(ctx, [[x - 13, y - 13], [x + 13, y - 13], [x + 14, y + 6], [x + 6, y + 13], [x - 6, y + 13], [x - 14, y + 6]], dome, { backlight: 30 });
     // brow ridge highlight across the crown for a defined forehead
     figDetail(ctx, [[x - 11, y - 9], [x + 11, y - 9]], 1.5, 21);
     if (dir === "S") {
@@ -530,8 +537,10 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
       // single most important readability feature. Hard black.
       rrectShaded(ctx, x - 11, y - 3, 22, 4, 2, 1, { ink: 1 }); // eye slit
       rrectShaded(ctx, x - 2.5, y - 1, 5, 12, 2, 1, { ink: 1 }); // breath slot
-      figGlow(ctx, x - 6, y - 1, 1.6, 30, 18); // faint arcane eye-spark, left
-      figGlow(ctx, x + 6, y - 1, 1.6, 30, 18); // right
+      if (hasHelm) {
+        figGlow(ctx, x - 6, y - 1, 1.6, 30, 18); // faint arcane eye-spark, left
+        figGlow(ctx, x + 6, y - 1, 1.6, 30, 18); // right
+      }
       figDetail(ctx, [[x - 12, y + 9], [x + 12, y + 9]], 1.5, K_STEEL_DK); // chin seam
     } else {
       // back of the helm — a central ridge + neck guard
@@ -559,8 +568,14 @@ function knightGreave(ctx: CanvasRenderingContext2D, knee: Pt, foot: Pt, m: Ramp
  * back-to-front so limbs overlap correctly; the held weapon rides the weapon
  * hand from the HAND_* tables (kept — they encode good swing arcs).
  */
-function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId): void {
+function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId, look: KnightLook = FULL_PLATE): void {
   const { bob, stride, atk } = pose;
+  // Gear → ramps. Equipped pieces paint bright polished steel with gold trim;
+  // missing pieces paint the SAME shapes in dull dark iron (see knight-look.ts).
+  const CUIRASS: Ramp = look.armor ? K_PLATE : K_PLATE_DK;
+  const TASSET: Ramp = look.armor ? K_LEG : K_PLATE_DK;
+  const TRIM = look.armor ? K_TRIM : K_STEEL_DK;
+  const GREAVE: Ramp = look.boots ? K_PLATE : K_PLATE_DK;
   const swing = pose.swing ?? 0;
   const roll = pose.roll ?? 0;
   const plumeLag = pose.plumeLag ?? 0;
@@ -600,12 +615,12 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
     legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 11, K_STEEL_DK, K_STEEL_DK, d3);
     knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE_DK); // far greave (dim)
     legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
-    knightGreave(ctx, sk.kneeR, sk.footR, K_PLATE); // near greave
+    knightGreave(ctx, sk.kneeR, sk.footR, GREAVE); // near greave
   } else {
     legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 12, K_LEG, K_PLATE_DK, d3);
     legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
-    knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE);
-    knightGreave(ctx, sk.kneeR, sk.footR, K_PLATE);
+    knightGreave(ctx, sk.kneeL, sk.footL, GREAVE);
+    knightGreave(ctx, sk.kneeR, sk.footR, GREAVE);
   }
 
   // ── faulds + tassets (armoured skirt over the hips) ──
@@ -613,8 +628,8 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
     // central fauld
     plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 5, sk.hip[1] + 10], [sk.hipL[0] - 5, sk.hip[1] + 10]], K_PLATE_DK);
     // two thigh tassets hanging over the legs — reads as layered plate armour
-    plateShaded(ctx, [[sk.hipL[0] - 4, sk.hip[1] + 2], [sk.hipL[0] + 4, sk.hip[1] + 2], [sk.hipL[0] + 3, sk.hip[1] + 15], [sk.hipL[0] - 5, sk.hip[1] + 14]], K_LEG);
-    plateShaded(ctx, [[sk.hipR[0] - 4, sk.hip[1] + 2], [sk.hipR[0] + 4, sk.hip[1] + 2], [sk.hipR[0] + 5, sk.hip[1] + 14], [sk.hipR[0] - 3, sk.hip[1] + 15]], K_LEG);
+    plateShaded(ctx, [[sk.hipL[0] - 4, sk.hip[1] + 2], [sk.hipL[0] + 4, sk.hip[1] + 2], [sk.hipL[0] + 3, sk.hip[1] + 15], [sk.hipL[0] - 5, sk.hip[1] + 14]], TASSET);
+    plateShaded(ctx, [[sk.hipR[0] - 4, sk.hip[1] + 2], [sk.hipR[0] + 4, sk.hip[1] + 2], [sk.hipR[0] + 5, sk.hip[1] + 14], [sk.hipR[0] - 3, sk.hip[1] + 15]], TASSET);
   } else {
     // profile: a single tasset over the near thigh
     plateShaded(ctx, [[sk.hip[0] - 2, sk.hip[1] - 2], [sk.hip[0] + 9, sk.hip[1] - 2], [sk.hip[0] + 8, sk.hip[1] + 13], [sk.hip[0] - 2, sk.hip[1] + 12]], K_PLATE_DK);
@@ -623,20 +638,20 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // ── torso: a tapered cuirass, wider at the chest ── (cool backlight rim on
   // the shadow side — the second light that makes plate read as polished metal)
   const t = knightTorsoPts(sk, dir);
-  plateShaded(ctx, t, K_PLATE, { backlight: 30 });
+  plateShaded(ctx, t, CUIRASS, { backlight: 30 });
   // plackart V-seam + fluting + belt + gold buckle
   if (dir === "S") {
     figDetail(ctx, [[sk.chest[0], sk.chest[1] + 2], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK); // central keel
     figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 4], [sk.chest[0], sk.chest[1] + 15], [sk.chest[0] + 12, sk.chest[1] + 4]], 1.5, K_STEEL_DK); // plackart V
     figDetail(ctx, [[sk.chest[0] - 9, sk.chest[1] - 1], [sk.chest[0] - 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight L
     figDetail(ctx, [[sk.chest[0] + 9, sk.chest[1] - 1], [sk.chest[0] + 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight R
-    rrectShaded(ctx, sk.chest[0] - 3, sk.chest[1] - 2, 6, 5, 1.5, K_TRIM); // gorget-boss / gold stud
+    rrectShaded(ctx, sk.chest[0] - 3, sk.chest[1] - 2, 6, 5, 1.5, TRIM); // gorget-boss / gold stud
   } else if (dir === "E") {
     figDetail(ctx, [[sk.chest[0] + 8, sk.chest[1] - 1], [sk.chest[0] + 7, sk.hip[1] - 3]], 1.4, 21); // front-edge highlight
     figDetail(ctx, [[sk.chest[0] - 6, sk.chest[1] + 3], [sk.chest[0] - 7, sk.hip[1] - 3]], 1.4, K_STEEL_DK); // back-edge shadow
   }
   rrectShaded(ctx, sk.hipL[0] - 2, sk.hip[1] - 6, (sk.hipR[0] - sk.hipL[0]) + 4, 6, 2, 27); // belt
-  rrectShaded(ctx, sk.hip[0] - 4, sk.hip[1] - 6, 8, 6, 1.5, K_TRIM); // buckle
+  rrectShaded(ctx, sk.hip[0] - 4, sk.hip[1] - 6, 8, 6, 1.5, TRIM); // buckle
 
   // ── off arm (non-weapon) — now driven by the rig joints so it SWINGS ──
   if (dir === "E") {
@@ -653,7 +668,7 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // the shoulders. A rounded multi-point plate reads as armour, not a button. ──
   const pauldron = (px: number, py: number, flip: number): void => {
     // main cop
-    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], K_PLATE, { backlight: 30 });
+    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], CUIRASS, { backlight: 30 });
     // lower lame (a second overlapping plate for depth)
     plateShaded(ctx, [[px - 9 * flip, py + 5], [px + 11 * flip, py + 3], [px + 10 * flip, py + 11], [px - 7 * flip, py + 12]], K_PLATE_DK);
     figDetail(ctx, [[px - 7 * flip, py - 1], [px + 9 * flip, py - 4]], 1.5, 21); // top-edge glint
@@ -672,7 +687,7 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, K_PLATE);
 
   // ── head / helm (plume trails on plumeLag) ──
-  knightHelm(ctx, sk.head, d3, plumeLag);
+  knightHelm(ctx, sk.head, d3, plumeLag, look.helmet);
 
   if (!weaponBehind) {
     drawGhost();
@@ -731,8 +746,8 @@ function knightTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
  * forward tumble. Direction of spin follows facing so a westward roll turns
  * the other way from an eastward one.
  */
-function knightRollFrame(dir: Dir, t: number, weapon: WeaponId): FramePaint {
-  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 4, stride: 0, roll: 0.3 }, weapon);
+function knightRollFrame(dir: Dir, t: number, weapon: WeaponId, look: KnightLook): FramePaint {
+  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 4, stride: 0, roll: 0.3 }, weapon, look);
   const spinDir = dir === "N" ? -1 : 1; // N faces away → tumble reads reversed
   const angle = spinDir * t * Math.PI * 2; // one full rotation across the roll
   const tuck = 0.72 + 0.12 * Math.sin(t * Math.PI); // squash to a ball mid-roll
@@ -754,8 +769,8 @@ function knightRollFrame(dir: Dir, t: number, weapon: WeaponId): FramePaint {
  * chasing the spin so it reads as a blurring wheel even at 4 frames. Same
  * rotate-a-finished-figure trick as the roll, just tighter and looping.
  */
-function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId): FramePaint {
-  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 6, stride: 0, roll: 0.4 }, weapon);
+function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId, look: KnightLook): FramePaint {
+  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 6, stride: 0, roll: 0.4 }, weapon, look);
   return (ctx) => {
     groundShadow(ctx, CX, GROUND + 3, 22);
     ctx.save();
@@ -780,10 +795,10 @@ function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId): FramePaint {
   };
 }
 
-/** Build the full painter set for the knight holding `weapon`. */
-export function makeKnightPaints(weapon: WeaponId): ActorPaints {
+/** Build the full painter set for the knight holding `weapon`, dressed as `look`. */
+export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
-  const F = (dir: Dir, p: KPose) => (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, p, weapon);
+  const F = (dir: Dir, p: KPose) => (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, p, weapon, look);
 
   const dirClips = (dir: Dir) => ({
     // ── IDLE: a 4-frame breathing loop. The chest rises (bob up) and settles,
@@ -854,19 +869,19 @@ export function makeKnightPaints(weapon: WeaponId): ActorPaints {
     // feet, pop back up. i-frames cover the front half (see player.ts); the
     // spin is fastest through the middle two frames where the tuck is tightest. ──
     roll: [
-      knightRollFrame(dir, 0.12, weapon),
-      knightRollFrame(dir, 0.4, weapon),
-      knightRollFrame(dir, 0.68, weapon),
-      knightRollFrame(dir, 0.92, weapon),
+      knightRollFrame(dir, 0.12, weapon, look),
+      knightRollFrame(dir, 0.4, weapon, look),
+      knightRollFrame(dir, 0.68, weapon, look),
+      knightRollFrame(dir, 0.92, weapon, look),
     ],
 
     // ── BALL: the pinball-overcharge form — a looping quarter-turn-per-frame
     // spin of the tucked figure with a chasing speed ring. ──
     ball: [
-      knightBallFrame(dir, 0, weapon),
-      knightBallFrame(dir, Math.PI / 2, weapon),
-      knightBallFrame(dir, Math.PI, weapon),
-      knightBallFrame(dir, (3 * Math.PI) / 2, weapon),
+      knightBallFrame(dir, 0, weapon, look),
+      knightBallFrame(dir, Math.PI / 2, weapon, look),
+      knightBallFrame(dir, Math.PI, weapon, look),
+      knightBallFrame(dir, (3 * Math.PI) / 2, weapon, look),
     ],
   });
 

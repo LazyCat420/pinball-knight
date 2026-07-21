@@ -39,6 +39,8 @@ import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOve
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { renderKnightPortrait } from "./render/knight-portrait";
+import { lookFromGear, lookKey } from "./render/knight-look";
+import { getKnightSheet, setHandmadeOverride } from "./render/knight-sheets";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -254,23 +256,28 @@ export function isDungeonGameActive(): boolean {
   return state.active;
 }
 
-/** The knight's atlas for a given held weapon — built once, cached for the session. */
+/** The knight's atlas for the held weapon DRESSED IN the current gear — the
+ * shared LRU cache in render/knight-sheets does the building. */
 function playerSheetFor(id: WeaponId): SpriteSheet {
-  let sheet = state.playerSheets.get(id);
-  if (!sheet) {
-    sheet = buildSpriteSheet(makeKnightPaints(id));
-    state.playerSheets.set(id, sheet);
-  }
-  return sheet;
+  return getKnightSheet(id, lookFromGear(state.gear), "dungeon");
 }
 
-/** Make the sprite match the active hand. Cheap no-op when nothing changed. */
+/** Make the sprite match the active hand AND the worn gear. Runs every frame;
+ * cheap no-op when the composite key hasn't changed. Because gear is part of
+ * the key, a helmet pickup, an armory purchase, or a cuirass shattering
+ * mid-fight all re-dress the knight with no extra hooks. */
 function applyWeaponArt(): void {
   const id = activeWeapon().id;
-  if (id === state.playerArtWeapon || !state.player) return;
+  const key = lookKey(id, lookFromGear(state.gear));
+  if (key === state.playerArtKey || !state.player) return;
   state.player.sprite.setSheet(playerSheetFor(id));
   state.player.silhouette?.syncMap();
-  state.playerArtWeapon = id;
+  state.playerArtKey = key;
+}
+
+/** The paperdoll painter handed to the menu — the live mirror of the knight. */
+function paintMenuPortrait(canvas: HTMLCanvasElement): void {
+  renderKnightPortrait(canvas, activeWeapon().id, lookFromGear(state.gear));
 }
 
 export function launchDungeonGame(onExit?: () => void): void {
@@ -409,7 +416,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       which === "chomper" ? state.chomperSheet :
       which === "magnet" ? state.magnetSheet :
       which === "webspinner" ? state.webspinnerSheet :
-      which === "knight" ? state.playerSheets.get("sword") ?? null :
+      which === "knight" ? (state.playerArtKey ? state.playerSheets.get(state.playerArtKey) : null) ?? null :
       state.zombieVariantSheets[0] ?? null;
     (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
       const img = sheetFor(which)?.texture.image as HTMLCanvasElement | undefined;
@@ -650,8 +657,9 @@ export function launchDungeonGame(onExit?: () => void): void {
   // and the knight upgrades on next launch. Missing art = silent fallback.
   void loadAtlasSheet("knight-sword").then((sheet) => {
     if (!sheet || !state.active) return;
-    state.playerSheets.set("sword", sheet);
-    if (state.playerArtWeapon === "sword" && state.player) {
+    // Hand-made art isn't gear-aware, so it overrides EVERY sword look.
+    setHandmadeOverride("sword", sheet);
+    if (activeWeapon().id === "sword" && state.player) {
       state.player.sprite.setSheet(sheet);
       state.player.silhouette?.syncMap();
     }
@@ -1139,7 +1147,7 @@ function startLevel(level: number): void {
       silhouette: createOcclusionSilhouette(sprite),
       ...freshPlayerFields(),
     };
-    state.playerArtWeapon = weaponId;
+    state.playerArtKey = lookKey(weaponId, lookFromGear(state.gear));
   } else {
     state.player.x = startPos.x;
     state.player.z = startPos.z;

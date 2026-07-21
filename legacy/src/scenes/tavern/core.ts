@@ -28,7 +28,7 @@ import {
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, createStationPrompt, refreshFocus, type StationFx, type StationPrompt } from "./stations";
-import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer } from "./player";
+import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
@@ -205,6 +205,8 @@ function interact(): void {
     tavern.openStation = null;
     // You socketed a card at that counter — put it on the blade in the vice.
     props?.syncViceCards();
+    // You bought plate — the knight visibly wears it the moment the counter drops.
+    refreshTavernPlayerArt();
   });
 }
 

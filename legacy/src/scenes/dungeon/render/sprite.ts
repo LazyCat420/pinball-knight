@@ -177,7 +177,7 @@ const DITHER_AMP = 10;
  * Now the art IS the texture: one resample, at the grid the art was authored
  * for, mapped 1:1 to screen pixels via SPRITE_UNITS.
  */
-function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
+export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   const small = document.createElement("canvas");
   small.width = g;

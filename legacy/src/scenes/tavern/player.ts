@@ -12,8 +12,9 @@
  */
 import * as THREE from "three";
 import { state as dungeonState, activeWeapon } from "../dungeon/state";
-import { buildSpriteSheet, createActorSprite } from "../dungeon/render/sprite";
-import { makeKnightPaints } from "../dungeon/render/cel-painter";
+import { createActorSprite } from "../dungeon/render/sprite";
+import { getKnightSheet } from "../dungeon/render/knight-sheets";
+import { lookFromGear, lookKey } from "../dungeon/render/knight-look";
 import { Animator, facingFromVelocity, type Facing } from "../dungeon/render/animator";
 import { PPU } from "../dungeon/constants";
 import { screenDirToWorld } from "../dungeon/camera";
@@ -113,15 +114,9 @@ function syncMesh(p: TavernPlayer): void {
 
 /** Build the knight and drop them at the foot of the stair. */
 export function createTavernPlayer(scene: THREE.Scene): TavernPlayer {
-  const weaponId = activeWeapon().id;
-  // Reuse the dungeon's cached atlas when it exists, so entering the tavern
-  // doesn't re-run the (not cheap) paint + pixel-crush for art we already have.
-  let sheet = dungeonState.playerSheets.get(weaponId);
-  if (!sheet) {
-    sheet = buildSpriteSheet(makeKnightPaints(weaponId));
-    dungeonState.playerSheets.set(weaponId, sheet);
-  }
-
+  // The shared knight-sheet cache: the tavern knight is visibly the SAME
+  // knight who came up the stairs — same weapon, same worn gear.
+  const sheet = getKnightSheet(activeWeapon().id, lookFromGear(dungeonState.gear), "tavern");
   const sprite = createActorSprite(sheet, false);
   scene.add(sprite.mesh);
   animator = new Animator(sprite);
@@ -138,7 +133,25 @@ export function createTavernPlayer(scene: THREE.Scene): TavernPlayer {
   vz = 0;
   animator.setFacing(p.facing);
   syncMesh(p);
+  lastArtKey = lookKey(activeWeapon().id, lookFromGear(dungeonState.gear));
   return p;
+}
+
+/** Which (weapon, look) atlas the tavern knight currently wears. */
+let lastArtKey: string | null = null;
+
+/**
+ * Re-dress the tavern knight if the loadout changed — called when a vendor
+ * counter closes, so buying plate at the Armorer visibly lands on the knight
+ * the moment you step back into the room.
+ */
+export function refreshTavernPlayerArt(): void {
+  const p = tavern.player;
+  if (!p) return;
+  const key = lookKey(activeWeapon().id, lookFromGear(dungeonState.gear));
+  if (key === lastArtKey) return;
+  p.sprite.setSheet(getKnightSheet(activeWeapon().id, lookFromGear(dungeonState.gear), "tavern"));
+  lastArtKey = key;
 }
 
 /**

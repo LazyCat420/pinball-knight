@@ -633,10 +633,11 @@ export const state = {
   /** Auto-derived banked corners (curved walls) — every qualifying maze corner
    * sweeps momentum leg→leg like a return lane. See collision.computeArcCorners. */
   arcCorners: [] as ArcCorner[],
-  /** One knight atlas per weapon, built lazily — a swap is a texture switch. */
-  playerSheets: new Map<WeaponId, SpriteSheet>(),
-  /** Which weapon's art the player sprite currently shows. */
-  playerArtWeapon: null as WeaponId | null,
+  /** Knight atlases keyed on weapon+gear look (render/knight-look.lookKey),
+   * built lazily and LRU-capped WITH texture dispose — see render/knight-sheets. */
+  playerSheets: new Map<string, SpriteSheet>(),
+  /** Which (weapon, look) key the player sprite currently shows. */
+  playerArtKey: null as string | null,
   zombieSheet: null as SpriteSheet | null,
   /** A small pool of cosmetic zombie-variant sheets; each spawn picks one by seed. */
   zombieVariantSheets: [] as SpriteSheet[],
@@ -881,7 +882,7 @@ export function resetState(): void {
   state.pinballParts = [];
   state.arcCorners = [];
   state.playerSheets = new Map();
-  state.playerArtWeapon = null;
+  state.playerArtKey = null;
   state.zombieSheet = null;
   state.zombieVariantSheets = [];
   state.spiderSheet = null;
