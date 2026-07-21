@@ -166,7 +166,7 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
 
   let tx = 0;
   let tz = 0;
-  if (!frozen) {
+  if (!frozen && !oneShot) {
     const a = input.axis();
     if (a.x !== 0 || a.z !== 0) {
       // The input axis is SCREEN-relative; under the isometric yaw, screen-up is
@@ -229,6 +229,12 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
   p.speed = Math.hypot(vx, vz);
   p.animT += dt;
 
+  if (oneShot) {
+    // The one-shot owns the clip; just advance it.
+    animator.update(dt);
+    syncMesh(p);
+    return;
+  }
   if (p.speed > WALK_CLIP_THRESHOLD) {
     p.facing = facingFromVelocity(vx, vz, p.facing);
     animator.setFacing(p.facing);
@@ -246,6 +252,32 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
 /** Drop the module-local animator/velocity when the scene closes. */
 export function disposeTavernPlayer(): void {
   animator = null;
+  oneShot = false;
   vx = 0;
   vz = 0;
+}
+
+/** True while a one-shot clip (equip/forge) owns the animator — the per-frame
+ * idle/walk switching in updateTavernPlayer would cancel it otherwise. */
+let oneShot = false;
+
+/**
+ * Play a one-shot flourish on the tavern knight (the gear hoist, the anvil
+ * hammer). Movement input is ignored until it ends so the knight doesn't
+ * moonwalk through their own hammer swing.
+ */
+export function playTavernOneShot(clip: "equip" | "forge", onEnd?: () => void): void {
+  if (!animator || !tavern.player) return;
+  oneShot = true;
+  vx = 0;
+  vz = 0;
+  animator.setRate(1);
+  animator.play(clip, {
+    force: true,
+    onEnd: () => {
+      oneShot = false;
+      animator?.play("idle", { force: true });
+      onEnd?.();
+    },
+  });
 }

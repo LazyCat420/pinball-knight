@@ -46,6 +46,20 @@ const PRICE_POTION: Partial<Record<PotionId, number>> = { health: 15, rage: 28, 
 const PRICE_GEAR: Record<GearSlot, number> = { helmet: 45, armor: 70, boots: 40 };
 const BELT_MAX = 4;
 
+/**
+ * One-shot flourishes queued by successful counter actions, consumed by the
+ * walkable scene when the counter closes: the knight hammers at the anvil for
+ * smith work, hoists new plate for a gear buy. The economy layer never touches
+ * the 3D knight directly — same split as the rest of this module.
+ */
+export type TavernFx = "repair" | "gear" | "slot" | "forge";
+let pendingFx: TavernFx[] = [];
+export function consumePendingTavernFx(): TavernFx[] {
+  const out = pendingFx;
+  pendingFx = [];
+  return out;
+}
+
 /** Which vendor's counter is open; null = the room view (walk the tavern). */
 export type VendorId = "cards" | "weapons" | "armor" | "potions";
 let activeVendor: VendorId | null = null;
@@ -441,6 +455,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if ((state.gear[s] ?? 0) >= base) { flash("already equipped"); return; }
     if (!pay(PRICE_GEAR[s])) { flash("not enough gold"); return; }
     state.gear = { ...state.gear, [s]: base };
+    pendingFx.push("gear");
     state.hudDirty = true;
     flash(`${GEAR[s].icon} ${GEAR[s].label} equipped`);
     render();
@@ -506,6 +521,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (!Number.isFinite(w.durability) || w.durability >= WEAPONS[w.id].maxDurability) { flash("weapon is already sound"); return; }
     if (!pay(PRICE_REPAIR_WEAPON)) { flash("not enough gold"); return; }
     w.durability = WEAPONS[w.id].maxDurability;
+    pendingFx.push("repair");
     state.hudDirty = true;
     render();
     return;
@@ -517,6 +533,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (weaponSlotCount(w) >= 3) { flash("weapon is maxed out"); return; }
     if (!pay(PRICE_ADD_SLOT)) { flash("not enough gold"); return; }
     w.bonusSlots = (w.bonusSlots ?? 0) + 1;
+    pendingFx.push("slot");
     render();
     return;
   }
@@ -538,6 +555,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     forgePick.sort((a, b) => b - a).forEach((i) => state.cardStash.splice(i, 1));
     forgePick = [];
     state.cardStash.push(newCard);
+    pendingFx.push("forge");
     flash(`forged a RARE: ${CARDS[newCard].label}`);
     render();
     return;
@@ -559,6 +577,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (!missing) { flash("all gear is sound"); return; }
     if (!pay(PRICE_REPAIR_GEAR)) { flash("not enough gold"); return; }
     for (const s of GEAR_SLOTS) if (state.gear[s] !== undefined || GEAR[s].absorb > 0) state.gear[s] = GEAR[s].absorb > 0 ? GEAR[s].absorb : 1;
+    pendingFx.push("repair");
     state.hudDirty = true;
     render();
     return;

@@ -262,6 +262,9 @@ export const FPS_ATTACK = 12;
 export const FPS_DEATH = 6;
 /** Roll clip: 4 tuck/spin frames across ~ROLL_DURATION (0.42s) → ~10fps. */
 export const FPS_ROLL = 10;
+/** The tavern one-shots: the gear-hoist flourish and the anvil hammer loop. */
+export const FPS_EQUIP = 8;
+export const FPS_FORGE = 7;
 /**
  * Run clip base rate — the sprint gait. The ANIMATOR's playback rate is then
  * multiplied by (1 + RUN_RATE_RAMP·sprintCharge) in player.ts, so the run

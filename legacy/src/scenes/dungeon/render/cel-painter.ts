@@ -54,7 +54,7 @@ import {
 
 export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
 export type Dir = "S" | "N" | "E";
-export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball";
+export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball" | "equip" | "forge";
 export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
 
 const PX = SPRITE_PX; // 128 — all coordinates below live in this box
@@ -873,6 +873,26 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
       knightRollFrame(dir, 0.4, weapon, look),
       knightRollFrame(dir, 0.68, weapon, look),
       knightRollFrame(dir, 0.92, weapon, look),
+    ],
+
+    // ── EQUIP: the tavern gear-hoist — crouch, raise the weapon overhead
+    // (the windup pose IS a hoist), plume flourish, settle. One-shot; played
+    // by the walkable tavern when the armorer's counter closes on a purchase. ──
+    equip: [
+      F(dir, { bob: 2, stride: 0, atk: "windup", plumeLag: -1 }), // dip + grab
+      F(dir, { bob: -2, stride: 0, atk: "windup", plumeLag: -2 }), // hoist high
+      F(dir, { bob: -2.5, stride: 0, atk: "windup", plumeLag: 2 }), // hold the pose, plume whips
+      F(dir, { bob: 0.5, stride: 0, plumeLag: 0.5 }), // settle to carry
+    ],
+
+    // ── FORGE: hammer strikes at the anvil — the held art is FORCED to the
+    // mace so every weapon repairs with the same smith's hammer; the attack
+    // hand tables already encode a good hammer arc. Two beats per play. ──
+    forge: [
+      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: -1, stride: 0, atk: "windup", roll: 0.4, plumeLag: -1 }, "mace", look),
+      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 1.5, stride: 0, atk: "strike", roll: -0.6, plumeLag: 1.5 }, "mace", look),
+      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: -0.5, stride: 0, atk: "windup", roll: 0.3, plumeLag: -0.6 }, "mace", look),
+      (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 1.5, stride: 0, atk: "low", roll: -0.4, plumeLag: 1 }, "mace", look),
     ],
 
     // ── BALL: the pinball-overcharge form — a looping quarter-turn-per-frame

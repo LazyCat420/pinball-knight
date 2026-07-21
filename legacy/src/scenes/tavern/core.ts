@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../dungeon/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../dungeon/camera";
 import { createInput, type InputHandle } from "../dungeon/input";
-import { openVendorCounter, isVendorCounterOpen } from "../dungeon/tavern";
+import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../dungeon/tavern";
 import {
   AMBIENT_INTENSITY,
   HEMI_INTENSITY,
@@ -28,7 +28,7 @@ import {
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, createStationPrompt, refreshFocus, type StationFx, type StationPrompt } from "./stations";
-import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt } from "./player";
+import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
@@ -205,8 +205,25 @@ function interact(): void {
     tavern.openStation = null;
     // You socketed a card at that counter — put it on the blade in the vice.
     props?.syncViceCards();
-    // You bought plate — the knight visibly wears it the moment the counter drops.
-    refreshTavernPlayerArt();
+    // ── The counter's work lands ON the knight the moment it closes ──
+    // Gear buys: hoist the new plate overhead, and re-dress mid-hoist so the
+    // shine and the flourish arrive together. Smith work (repair / new slot /
+    // forge): hammer the anvil, with an ember burst per beat.
+    const fx = consumePendingTavernFx();
+    if (fx.includes("gear")) {
+      playTavernOneShot("equip", () => refreshTavernPlayerArt());
+      refreshTavernPlayerArt();
+    } else if (fx.length > 0) {
+      playTavernOneShot("forge");
+      sfxAnvil();
+      const p = tavern.player;
+      if (p && vfx) {
+        vfx.sparks(p.x, 0.9, p.z, 0, 0, 10);
+        for (let i = 0; i < 5; i++) vfx.ember(p.x + (Math.random() - 0.5) * 0.6, 0.7 + Math.random() * 0.5, p.z + (Math.random() - 0.5) * 0.6);
+      }
+    } else {
+      refreshTavernPlayerArt(); // no flourish, but never leave stale art
+    }
   });
 }
 

@@ -6,7 +6,7 @@
  */
 import type { ActorSprite } from "./sprite";
 import type { Dir, ClipName } from "./cel-painter";
-import { FPS_IDLE, FPS_WALK, FPS_RUN, FPS_ATTACK, FPS_DEATH, FPS_ROLL, FPS_BALL } from "../constants";
+import { FPS_IDLE, FPS_WALK, FPS_RUN, FPS_ATTACK, FPS_DEATH, FPS_ROLL, FPS_BALL, FPS_EQUIP, FPS_FORGE } from "../constants";
 
 /** The four directions the game thinks in. */
 export type Facing = "S" | "N" | "E" | "W";
@@ -19,6 +19,8 @@ const FPS: Record<ClipName, number> = {
   death: FPS_DEATH,
   roll: FPS_ROLL,
   ball: FPS_BALL,
+  equip: FPS_EQUIP,
+  forge: FPS_FORGE,
 };
 
 const LOOPS: Record<ClipName, boolean> = {
@@ -29,6 +31,8 @@ const LOOPS: Record<ClipName, boolean> = {
   death: false,
   roll: false,
   ball: true,
+  equip: false,
+  forge: false,
 };
 
 /** Facing → (authored direction, whether to mirror). */
