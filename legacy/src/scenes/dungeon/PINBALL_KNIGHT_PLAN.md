@@ -156,6 +156,22 @@ rect**, so you could walk through it.
 
 ---
 
+## 0.5 Shipped 2026-07-20 — menu / progression wave
+
+Five commits (`16da88d`…`9d34127`), all unit- (606) + tsc- + build- + headless-
+smoke-verified (dungeon boots, menu opens, skill point spends, 0 console errors):
+
+| Feature | Where |
+|---|---|
+| **Pausing card reader** (first-of-kind & epic+ pause the world; Space/Enter continues; repeats keep the popup) | `card-reader.ts`; policy pinned in `card-reader.test.ts`; gate is `core.isSimPaused()` |
+| **In-game menu on Esc/I** — Equipment / Cards / Skills / Stats / Settings; Esc no longer hard-exits (ABANDON RUN is two-click) | `menu.ts`; shared card DOM renderer extracted to `ui-cards.ts` |
+| **Gear-aware knight art** — helmet/armor/boots swap ramps (no plume when bare-headed); LRU'd sheet cache keyed `weapon\|look`; live paperdoll portrait | `render/knight-look.ts`, `render/knight-sheets.ts`, `render/knight-portrait.ts`, `cel-painter.ts makeKnightPaints(weapon, look)` |
+| **Equip/forge one-shot clips** played by the walkable tavern when a counter closes | `cel-painter.ts` clips + `TavernFx` queue in `tavern.ts`, drained in `../tavern/core.ts interact()` |
+| **Hybrid skill tree** — run-scoped XP tree (12 nodes, 3 branches, ability unlocks) + permanent gold-bought LEGACY perks; merchant cart now sells only timed potions | `skills.ts` (+test), `legacy.ts` (+test), `skill-runtime.ts`; hooks in `combat.playerDamage/killZombie`, `descend()`, `abilities.ts`, `entities/player.ts` |
+| **Persisted settings** (SFX mute, pixel FX, reader policy) + paused wall-clock excluded from leaderboard time | `settings-save.ts`, `state.pausedRunS` |
+
+Manual QA rows for all of it: `VERIFY_CHECKLIST.md` §7.
+
 ## 1. Open work
 
 Everything this section previously listed was cleared on 2026-07-19 (commit

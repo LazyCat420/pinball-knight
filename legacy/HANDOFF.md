@@ -4,6 +4,30 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 **Live:** client `95a7d50`, service `dee17f0`, both on synology.
 
+## ⚠️ PUSHED, NOT DEPLOYED (2026-07-20 menu/progression wave)
+
+Commits `16da88d..9d34127` (+ the docs commit after) are on origin/main but
+**not on the NAS**: deploy.sh ships the WORKING TREE, and at hand-off time the
+tree carried another active session's uncommitted `src/room/kitchen.ts` edit —
+deploying would have baked their half-done work into prod. **Whoever deploys
+next ships this wave for free.** Verified before push: 606 dungeon/tavern
+tests, tsc 0 errors in `src/scenes/*`, production build, and a headless
+playwright smoke on the live dev server (dungeon boots, menu opens, skill
+point spends, 0 console errors).
+
+The wave (details in `src/scenes/dungeon/PINBALL_KNIGHT_PLAN.md` §0.5, manual
+QA rows in `VERIFY_CHECKLIST.md` §7):
+- Card pickups PAUSE into a modal reader (Space/Enter continues; repeats of
+  common/rare keep the old flash; policy in Settings).
+- In-game menu on **Esc/I** (Esc no longer hard-exits): Equipment paperdoll,
+  Cards socketing anywhere, Skills, Stats, Settings (persisted).
+- Knight art is gear-aware — no plume/dull iron until you buy plate; the
+  paperdoll and the tavern knight mirror it live; equip hoist + anvil-hammer
+  one-shots play at the tavern counters.
+- Hybrid skill tree: run-scoped XP tree (12 nodes; unlocks the 3 locked
+  abilities) + permanent gold-bought LEGACY perks (`pinball-knight-legacy`
+  localStorage). Merchant cart is now potions-only.
+
 - Client — http://10.0.0.16:5174 (verified HTTP 200 after deploy) · Service — http://10.0.0.16:5175
 - 757 client tests, 28 service tests, production build clean.
 - Repo tsc errors ~5970 (all pre-existing, in `src/objects` / `src/main.ts`).

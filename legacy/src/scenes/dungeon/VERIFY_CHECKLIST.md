@@ -59,11 +59,23 @@ Use the panel's POTION row to apply each and confirm a tile appears with icon + 
 - [ ] Die → the run posts to the leaderboard. Board name is editable on the death screen; it defaults to `KNIGHT`, never `???`.
 - [ ] Death screen shows **BEST DEPTH**, and calls out `★ DEEPEST YET` when you beat it. Survives a reload.
 - [ ] **Damage numbers** float at the point of impact — white/yellow dealt, red taken, bigger for amplified hits. Digits only (no glyph fallback).
-- [ ] Picking up a card shows the **painted holo card** briefly. It never pauses the game and never needs a click. A mythic lands harder than a common.
+- [ ] ~~Picking up a card shows the painted holo card briefly. It never pauses the game~~ — **SUPERSEDED 2026-07-20** by the modal card reader (§7): first-of-kind and epic+ pickups PAUSE to read; repeats keep the old non-blocking flash.
 - [ ] Ramp hop: the **contact shadow stays on the floor** while the knight is in the air (same on the trapdoor ride).
 - [ ] Full map (**M**) washes rooms by archetype (speedway / bumper / arena / vault) — **only where you have already been**.
 - [ ] Minimap shows an **edge chevron** toward the stairs once they're outside the window — and only after you've found them.
 
-## 7. Known-open (NOT expected to be perfect yet)
+## 7. Menu, card reader, gear looks, skill tree (2026-07-20 wave)
+- [ ] **Card reader**: pick up a NEW card mid-horde → the world freezes (zombies hold, VFX still drift), the card shows big with its description and where it went; **Space/Enter/click** continues and does NOT fire a dodge roll on resume. A second copy of a common only flashes the old popup; an epic+ always opens the reader.
+- [ ] Two cards grabbed together **queue** in the reader (×1 MORE chip) instead of replacing.
+- [ ] **Esc opens the menu**, not exit-to-room; leaving is the two-click ABANDON RUN button. **I** opens it too. Tab/←→ cycle tabs, 1-5 jump. Sim frozen while open (reaper clock holds); run duration on the death screen excludes menu/reader time.
+- [ ] **Equipment tab**: paperdoll portrait matches the in-world knight exactly (weapon + gear); ⇄ Equip swaps the hand and the held art changes on resume.
+- [ ] **Cards tab**: socket a stash card into a ＋ slot anywhere; un-socket drops one rarity tier (same rule as the armory).
+- [ ] **Gear looks**: run-start knight is DULL iron with NO plume; buying/picking up a helmet adds the bright helm + blood plume within a frame; armor shattering mid-fight visibly dulls the chest. Tavern knight matches the dungeon knight after an armory purchase (hoist animation plays as the counter closes; smith work plays anvil hammering + sparks).
+- [ ] **Skill tree**: kills/floor clears fill the XP bar (toast on level-up); spend points in SKILLS — a damage node visibly raises floating damage numbers, Greased Greaves visibly quickens the walk. Arcana unlocks appear in the Q/E assignment rows. Tree resets on death.
+- [ ] **Legacy**: buy a perk (e.g. Old Scar) with banked gold → survives death AND a full page reload; Pack Rat seeds a common card into the stash at the start of every run.
+- [ ] **Settings tab**: SFX mute silences stings; pixel-FX toggles change the render pass; both survive a reload. Card-reader policy ALWAYS/SMART/NEVER behaves as labelled.
+- [ ] **Merchant cart** sells only potions now (no mace/gun); buys go to the belt first, drink-immediately only when the belt is full.
+
+## 8. Known-open (NOT expected to be perfect yet)
 - Floors can still feel **too narrow to bounce** — that's the §2.5 OPEN PLAYFIELD roadmap work, not yet built.
 - ~~Movement left/right + aim direction possibly inverted~~ — **RESOLVED 2026-07-19.** It was never an inversion: movement and aim share one code path (`screenDirToWorld`) with no sign error. `arrowleft`/`arrowright` were bound in **both** `MOVE_KEYS` and `TURN_LEFT`/`TURN_RIGHT`, so in FPS mode Left strafed *and* rotated on the same frame. Arrows are movement, q/e turn, and `input.test.ts` forbids double-binding.
