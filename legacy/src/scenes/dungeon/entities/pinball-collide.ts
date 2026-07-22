@@ -43,7 +43,9 @@ import {
   BOOSTER_RADIUS,
   BOOSTER_COOLDOWN,
   BOOSTER_STEER_LOCK,
-  DEFLECTOR_BOOST,
+  DEFLECTOR_GRAB_TIME,
+  DEFLECTOR_THROW_SPEED,
+  DEFLECTOR_THROW_BOOST,
   DEFLECTOR_COOLDOWN,
   OIL_RADIUS,
   OIL_LAUNCH_SPEED,
@@ -88,7 +90,7 @@ import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
-import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt } from "../audio";
+import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
  * The player-owned behaviours a part can trigger. Passed in rather than imported
@@ -356,25 +358,38 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
   },
 
   deflector: ({ part, p, d2, inMomentum }) => {
-    // Banked corner, only meaningful while carrying momentum.
-    if (!inMomentum || d2 > 0.5 * 0.5) return;
-    // Which leg did we come IN along? Exit along the other, speed intact.
+    // GRAB-THROW corner: the deflector CATCHES the knight and hurls him around
+    // the bend, rather than smoothly banking. Only meaningful while carrying
+    // momentum, and only when actually cornering into it (not grazing past).
+    if (!inMomentum || p.grabT > 0 || d2 > 0.5 * 0.5) return;
+    // Which leg did we come IN along? We get THROWN out along the OTHER one.
     const inFrom1 = p.momX * -part.dirX + p.momZ * -part.dirZ; // heading INTO leg 1
     const inFrom2 = p.momX * -part.dir2X + p.momZ * -part.dir2Z;
     if (inFrom1 < 0.3 && inFrom2 < 0.3) return; // grazing past, not cornering
     if (inFrom1 >= inFrom2) {
-      p.momX = part.dir2X;
-      p.momZ = part.dir2Z;
+      p.throwDirX = part.dir2X;
+      p.throwDirZ = part.dir2Z;
     } else {
-      p.momX = part.dirX;
-      p.momZ = part.dirZ;
+      p.throwDirX = part.dirX;
+      p.throwDirZ = part.dirZ;
     }
-    p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * DEFLECTOR_BOOST);
+    // Snap onto the rail and wind up: updatePinball pins the knight here for
+    // DEFLECTOR_GRAB_TIME, then releases the throw. Speed floors at a real hurl
+    // and multiplies a fast entry, clamped to the ceiling.
+    p.grabT = DEFLECTOR_GRAB_TIME;
+    p.grabX = part.x;
+    p.grabZ = part.z;
+    p.throwSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * DEFLECTOR_THROW_BOOST, DEFLECTOR_THROW_SPEED));
+    // The CATCH — a hard thunk + a shove of hitstop so the grab reads, and
+    // sparks gathering onto the rail. The THROW (burst + launch) fires on
+    // release in updatePinball.
     onPartTrigger();
-    part.cooldownT = DEFLECTOR_COOLDOWN;
+    part.cooldownT = DEFLECTOR_COOLDOWN + DEFLECTOR_GRAB_TIME;
     part.hitT = 0;
-    state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 6);
-    sfxRoll();
+    state.hitstopT = Math.max(state.hitstopT, 0.05);
+    state.shakeT = Math.max(state.shakeT, 0.12);
+    state.vfx?.sparks(part.x, 0.35, part.z, 0, 0, 10);
+    sfxHeavy();
     // D2 — if this rail is a corner of an ORBIT, it might have just advanced
     // (or completed) a lap. hitOrbitRail owns that bookkeeping.
     if (part.orbit !== undefined) hitOrbitRail(part);

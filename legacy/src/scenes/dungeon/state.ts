@@ -151,6 +151,15 @@ export interface Player extends Actor {
   momSpeed: number;
   /** Cooldown between ball-form ram hits on zombies. */
   ramT: number;
+  /** DEFLECTOR GRAB-THROW: seconds left the knight is caught by a deflector,
+   *  pinned + winding up before the launch. 0 = not grabbed. */
+  grabT: number;
+  /** Grab pin point (deflector centre) and the throw the wind-up releases into. */
+  grabX: number;
+  grabZ: number;
+  throwDirX: number;
+  throwDirZ: number;
+  throwSpeed: number;
   /** Bounce COMBO: climbs per wall hit (Sonic combo), resets after PINBALL_COMBO_WINDOW. */
   bounceCombo: number;
   /** Seconds since the last bounce — resets bounceCombo when it lapses. */
@@ -839,6 +848,12 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     momZ: 0,
     momSpeed: 0,
     ramT: 0,
+    grabT: 0,
+    grabX: 0,
+    grabZ: 0,
+    throwDirX: 0,
+    throwDirZ: 0,
+    throwSpeed: 0,
     bounceCombo: 0,
     bounceComboT: 0,
     wallMoveT: -1,

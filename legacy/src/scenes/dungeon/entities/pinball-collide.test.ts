@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields, type PinballPart, type PinballPartKind } from "../state";
 import { PART_HANDLERS, touchPinballParts, type PinballDeps } from "./pinball-collide";
-import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_BOOST, BOOSTER_SPEED, FLIPPER_SPEED } from "../constants";
+import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, FLIPPER_SPEED } from "../constants";
 
 /** Every kind the game can place. Kept literal so adding one fails here too. */
 const ALL_KINDS: PinballPartKind[] = [
@@ -259,20 +259,43 @@ describe("launchers", () => {
 });
 
 describe("deflector", () => {
-  it("banks leg→leg, preserving speed with a whisper of boost", () => {
+  it("GRABS leg→leg: pins the knight and arms a throw along the exit leg", () => {
     const p = state.player!;
     // Travelling +x into a corner whose legs are +x and +z: we came IN along
-    // leg 1, so we should leave along leg 2.
+    // leg 1, so the throw is armed along leg 2. The catch does NOT redirect
+    // momentum yet — that fires when the wind-up releases (updatePinball).
     p.momX = 1;
     p.momZ = 0;
     p.momSpeed = 10;
+    p.grabT = 0;
     state.pinballParts = [part("deflector", { dirX: -1, dirZ: 0, dir2X: 0, dir2Z: 1 })];
 
     touchPinballParts(true, 0, deps);
 
-    expect(p.momX).toBe(0);
-    expect(p.momZ).toBe(1);
-    expect(p.momSpeed).toBeCloseTo(10 * DEFLECTOR_BOOST, 5);
+    // Caught: pinned for the wind-up, throw armed along the exit leg (+z).
+    expect(p.grabT).toBeCloseTo(DEFLECTOR_GRAB_TIME, 5);
+    expect(p.throwDirX).toBe(0);
+    expect(p.throwDirZ).toBe(1);
+    // Throw speed floors at a real hurl (max(10·boost, 19) = 19), clamped.
+    expect(p.throwSpeed).toBeCloseTo(Math.min(PINBALL_MAX_SPEED, Math.max(10 * DEFLECTOR_THROW_BOOST, DEFLECTOR_THROW_SPEED)), 5);
+    // Momentum is untouched during the catch — the throw hasn't fired.
+    expect(p.momX).toBe(1);
+    expect(p.momZ).toBe(0);
+    expect(p.momSpeed).toBe(10);
+  });
+
+  it("does not re-grab while already held (grabT > 0)", () => {
+    const p = state.player!;
+    p.momX = 1;
+    p.momZ = 0;
+    p.momSpeed = 12;
+    p.grabT = 0.05; // mid wind-up
+    p.throwSpeed = 42; // sentinel — must not be overwritten
+    state.pinballParts = [part("deflector", { dirX: -1, dirZ: 0, dir2X: 0, dir2Z: 1 })];
+
+    touchPinballParts(true, 0, deps);
+
+    expect(p.throwSpeed).toBe(42);
   });
 
   it("ignores a walking player (momentum-only part)", () => {

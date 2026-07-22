@@ -988,6 +988,32 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const g = state.grid;
   if (!p || !g || p.momSpeed <= 0) return false;
 
+  // DEFLECTOR GRAB-THROW hold: a corner deflector caught the knight (see
+  // pinball-collide.ts `deflector`). He's pinned to the rail for a wind-up
+  // beat, untouchable, then HURLED along the stored exit leg. Owns the player
+  // for the duration — no steering, collision or friction runs while held.
+  if (p.grabT > 0) {
+    p.grabT -= dt;
+    p.x = p.grabX;
+    p.z = p.grabZ;
+    p.iframes = Math.max(p.iframes, 0.2);
+    // Wind-up: a tight burst of sparks gathering onto the rail each frame.
+    state.vfx?.sparks(p.grabX, 0.35, p.grabZ, 0, 0, 3);
+    if (p.grabT <= 0) {
+      // RELEASE — the throw. Launch hard along the exit leg with a spark burst,
+      // a shove of shake and a spring twang.
+      p.grabT = 0;
+      p.momX = p.throwDirX;
+      p.momZ = p.throwDirZ;
+      p.momSpeed = p.throwSpeed;
+      state.shakeT = Math.max(state.shakeT, 0.22);
+      state.vfx?.sparks(p.x + p.momX * PLAYER_R, 0.35, p.z + p.momZ * PLAYER_R, p.momX, p.momZ, 16);
+      sfxSpring();
+    }
+    syncActorMesh(p);
+    return true;
+  }
+
   // Part 2 — TEMPO ZONES. The 0→deep combo is three acts: Launch (accelerate),
   // Cruise (flow, ball form armed, gold aura), Frenzy (edge of control, faster
   // ball + screen FX). Each upward crossing fires ONE signal (toast + shake +
@@ -1242,6 +1268,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // the BALL-form gate now.)
   if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) {
     p.momSpeed = 0;
+    p.grabT = 0; // never leave a grab hanging when the ride ends
     p.bounceCombo = 0;
     p.bounceComboT = 0;
     state.partComboHits = 0;

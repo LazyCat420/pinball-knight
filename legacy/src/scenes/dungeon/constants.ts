@@ -659,6 +659,16 @@ export const RAMP_HOP_SPEED = 16; // u/s the arc travels (governs airtime) — s
 export const DEFLECTOR_BOOST = 1.03;
 /** Re-trigger lockout after a bank, so one corner can't fire twice in a frame. */
 export const DEFLECTOR_COOLDOWN = 0.3;
+// ── Deflector GRAB-THROW (the corner catches the knight and HURLS him) ──
+// Instead of a smooth bank, a deflector snaps the ball to its centre, holds it
+// for a wind-up beat, then launches it hard around the corner.
+/** Seconds the knight is pinned mid-wind-up before the throw fires. */
+export const DEFLECTOR_GRAB_TIME = 0.13;
+/** The throw is at least this fast (u/s) — a hurl, not a nudge. Floors the
+ *  launch so even a slow arrival gets flung; clamped to PINBALL_MAX_SPEED. */
+export const DEFLECTOR_THROW_SPEED = 19;
+/** …and multiplies whatever you brought in, so a fast entry throws faster. */
+export const DEFLECTOR_THROW_BOOST = 1.18;
 
 // ── Booster pad (Sonic's speed booster — the accelerating LANE element) ──
 // Unlike a ramp (a one-shot dash floor), boosters are placed in CHAINS down a
