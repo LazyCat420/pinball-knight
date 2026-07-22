@@ -2,21 +2,57 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `048c853` on synology (deployed 2026-07-22, banner
-`HEAD@048c853`; rollback image `braindeadbot-client:previous` = `26a4f1f`).
-Service unchanged. Deployed from a **clean worktree at HEAD** (see the
-`COPY . .` gotcha) because another session had uncommitted maze/collision
-WIP in the shared checkout — that WIP is NOT in this build.
+**Live:** client `b2f4f21` on synology (deployed 2026-07-22, banner
+`main@b2f4f21`; rollback image `braindeadbot-client:previous`). Service
+unchanged. This build carries everything up to HEAD: the shaped-wall foundation
+(below), plus the already-committed storm cards (`048c853`) and elemental armor
+styles (`96b3a76`).
 
-> This deploy also carried live **`048c853` "storm cards"** (on-hit
-> thunderbolt line-AoE) — a parallel session committed+pushed it on top of
-> the armor commit but hadn't deployed it. It rode along because HEAD is the
-> deployable unit. Its author owns its handoff notes; flagged here only so the
-> live-vs-committed delta is honest. A flaky test surfaced in that area during
-> verification (one of ~816 failed on 1 of 3 runs, passed the deploy gate) —
-> worth a look by whoever owns the storm/maze code.
+## Latest — shaped-wall foundation: real slant geometry + collision (`b2f4f21`)
 
-## Latest — elemental armor STYLE sets at the Armorer (`96b3a76`)
+The maze was locked to axis-aligned boxes at every layer, and the old "curve
+court" faked curves with a `CylinderGeometry` shell painted OVER square colliders
+— the floating green arc the user rightly hated (visual ≠ physical). Reinvented
+so a tile can carry a SHAPE and ONE derivation feeds BOTH the wall mesh and the
+collider.
+
+- **`maze/tile-shape.ts`** (new, pure+tested) — `TileShape` (FULL + 4 SLANTs),
+  `shapeTriangle`/`shapeNormal`, `resolveCircleTriangle`. THE single source of
+  truth; extends to `ROUND` (arc) shapes next.
+- **`generator.ts`** — `Grid.shapes` parallel `Uint8Array` (default FULL).
+  Walkability unchanged → AI/flow-field/spawns untouched. All `Grid` literals
+  (incl. test helpers) now pass `shapes`.
+- **`collision.ts`** — the axis sweep uses `blocksSquare` (shaped tiles are
+  TRANSPARENT to it, or the diagonal is never felt — the key correction); a
+  corrective `resolveShaped` owns slant triangles and returns the contact
+  normal; `moveCircle` sub-steps > 0.4/step and returns `hitN`; `circleCollides`
+  is shape-aware (so `wallContact` normals stay right). FULL-only = identical
+  (regression-tested).
+- **`entities/player.ts`** — pinball ricochet reflects about the slant normal
+  (`v−2(v·n)n`, flat restitution, `v·n<0` guard); takes precedence over the
+  square axis-flip (the push-out also trips blockedX/Z).
+- **`maze/build.ts`** — slant tiles render as triangular-prism instanced meshes
+  (`slantPrismGeometry`, explicit per-face normals) from the SAME triangle the
+  collider uses. `stampCurveCourts`/`buildCurveCourts` retired → green arc gone.
+- **`maze/decorate.ts`** — `assignCornerShapes` bevels convex outer corners
+  (two-pass, leak-safe: a slant only lands when both backing legs stay full
+  squares, so 2×2 nubs stay square and no leg leaks).
+
+Tests 829 green (tile-shape 9, collision slant 3, decorate authoring+leak-safety
+1). Build + tsc clean. Headless (playwright+swiftshader): dungeon renders, **no
+green arc**.
+
+**⚠️ Visible impact is currently SUBTLE and this is the important caveat.**
+`assignCornerShapes` only bevels CONVEX corners (wall-tips / pillar corners),
+which are sparse — many floors show few/none, and ROOM corners + corridor BENDS
+(the boxy bits you notice most) are CONCAVE and are NOT touched yet. Headless
+reveals still look mostly boxy. The foundation (shape model + real collision +
+render + one source of truth) is the load-bearing 80%; the dramatic "octagon
+rooms / beveled bends / curves" look is the NEXT increment — drive placement off
+the concave-corner detection (`computeArcCorners` already finds those bends) and
+add `ROUND` shapes, with an anti-pinch gate for 2-wide corridors.
+
+## Prior — elemental armor STYLE sets at the Armorer (`96b3a76`)
 
 Ask: "more styles of knight armor — ice, wind, fire, thunder — priced high
 vs gold/monster so they're not easy to get." Four purchasable plate SKINS
