@@ -2,14 +2,67 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `137f32c` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@1a1f068`; rollback image
+**Live:** client `5f9fbfe` on synology (deployed 2026-07-22 from a clean
+worktree, banner `HEAD@7221552`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
-HEAD: 4× floors + route-math plan v2 (below), the title intro (`877c83c`),
-shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`), elemental armor
-(`96b3a76`).
+HEAD: the progressive combo ramp (below), 4× floors + route-math plan v2
+(`137f32c`), the title intro (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`),
+storm cards (`048c853`), elemental armor (`96b3a76`).
 
-## Latest — 4× floor area + ROUTE_MATH_PLAN v2 (`137f32c`)
+## Latest — progressive combo ramp (`5f9fbfe`)
+
+The pinball combo was a LINEAR chain (each bounce +1 combo, +1 gold, speed
+climbing straight into the 22 u/s cap). Reworked into a CONCAVE ramp across six
+levers, all pure functions in **`entities/combo-curve.ts`** (10 tests) read by
+player.ts / combat.ts / core.ts:
+
+- **Part 1** log speed ceiling on WALL/CORNER **gains only** — `comboSpeedCeil`.
+  Corrected from the source plan, which would have clamped the plunger (13 at
+  combo 0) and springs (16) down to 8: the ceiling caps what BOUNCING earns and
+  never drags you below a speed a PART already gave you.
+- **Part 3** corner restitution + flat kick taper toward speed-neutral with
+  depth (`comboCornerRestitution`/`comboCornerAdd`) — speed from the LINE, not a
+  pop. Parts 1+3 both flatten the approach to the cap; they're tuned together.
+- **Part 4** the combo window shrinks 2.2s→0.9s (`comboWindow`), replacing the
+  flat `PINBALL_COMBO_WINDOW` at **all 6 bounce sites** (player, pinball-collide,
+  zombie, hazards). The tension mechanic — a second of open floor drops a deep
+  chain, which kills the ping-pong ceiling.
+- **Part 5** gentle global combo friction (`1+0.015√n`, +15% at 100×) nudges
+  deep chains onto the tight route. Kept as a FEEL lever, NOT the plan's stated
+  perf fix — see the diagnosis note below.
+- **Part 6** tiered gold (`comboKillGold` = +3g per DOUBLING: 2/5/8/11/14/17/20)
+  replaces the flat +1/step capped at 12, in combat.ts; floored to whole coins.
+- **Part 2** tempo zones Launch→Cruise(≥8)→Frenzy(≥30) (`comboZone`): Cruise
+  arms ball form + gold aura + toast; Frenzy pushes ball speed 1.35→1.6, pulls
+  the vignette 0.32→0.48 and adds a pulsing chromatic aberration. The FX are a
+  **new `uAberration` uniform + `setFrenzyFx(intensity)` on the pixel pass**,
+  driven per rendered frame from core's existing combo hook via
+  `frenzyIntensity(combo)`. `state.comboZone` tracks the act; signals fire on
+  upward crossings only.
+
+**⚠️ The source plan's PERFORMANCE DIAGNOSIS was false and it's worth knowing.**
+It claimed 100× combo lags because collision "sub-steps every tick cause
+geometry thrash." But `moveCircle` only sub-steps above `MAX_STEP` = 0.4/tick,
+and at the 22 u/s cap the ball moves `22/60 = 0.367` — **exactly one collision
+step per tick**, never more, and nothing scales cost with combo depth. There is
+no combo-linked lag in the code. Part 5 was implemented as a route-bias feel
+lever, not a perf fix. If real lag ever shows at high combo, profile it fresh —
+it is NOT this.
+
+All magnitudes (ceiling base 8 / Nsat 40, taper λ 0.08 / μ 0.06, window
+2.2→0.9, friction k 0.015, gold tier +3, zone thresholds 8/30, frenzy vignette
+0.48 / aberration 0.006 / ball 1.6) are **named constants at the top of
+constants.ts** — they are play-test tuning knobs.
+
+Verified: 849 tests green (10 new: concavity, monotonicity, economy bounds,
+zone thresholds), build + dungeon tsc clean, and a headless playwright run that
+fired the plunger and drove a REAL combo through Cruise (×9, HUD "BALL READY"
+armed) into Frenzy (×34) — vignette visibly pulls the corners dark, style kills
+bank gold (23 kills that run), sim stable, zero console errors. **NOT judged for
+FEEL on a real monitor** — first manual QA: ride a long chain, judge whether the
+window floor is too punishing and whether the ramp still feels urgent early.
+
+## Prior — 4× floor area + ROUTE_MATH_PLAN v2 (`137f32c`)
 
 Floors are 4× the area (2× per side): level 1 ~74×54 → **~150×106 tiles**,
 deep caps ~134×102 → **~266×202 (~54k tiles)**. `levelConfig` cell formulas
