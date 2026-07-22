@@ -30,6 +30,12 @@ export interface Grid {
   h: number;
   /** Row-major tiles, `t[j * w + i]`. */
   t: Uint8Array;
+  /**
+   * Row-major per-tile SHAPE ids (tile-shape.ts), same layout as `t`. Default 0
+   * = SHAPE_FULL (a plain square), so a grid that never assigns shapes behaves
+   * exactly as before. Only meaningful on WALL tiles; walkability ignores it.
+   */
+  shapes: Uint8Array;
 }
 
 export interface TilePos {
@@ -65,6 +71,17 @@ export function setTile(g: Grid, i: number, j: number, v: number): void {
 export function isWalkable(g: Grid, i: number, j: number): boolean {
   const t = at(g, i, j);
   return t === T_FLOOR || t === T_STAIRS;
+}
+
+/** Per-tile shape (tile-shape.ts). Out of bounds → 0 (SHAPE_FULL). */
+export function shapeAt(g: Grid, i: number, j: number): number {
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return 0;
+  return g.shapes[idx(g, i, j)];
+}
+
+export function setShape(g: Grid, i: number, j: number, v: number): void {
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return;
+  g.shapes[idx(g, i, j)] = v;
 }
 
 /**
@@ -171,7 +188,7 @@ export function generateMaze(
 
   const w = cellsW * 2 + 1;
   const h = cellsH * 2 + 1;
-  const g: Grid = { w, h, t: new Uint8Array(w * h) }; // all T_WALL
+  const g: Grid = { w, h, t: new Uint8Array(w * h), shapes: new Uint8Array(w * h) }; // all T_WALL / SHAPE_FULL
 
   // Growing tree over cells. Cell (cx, cy) lives at tile (2cx+1, 2cy+1).
   const visited = new Uint8Array(cellsW * cellsH);
@@ -440,7 +457,7 @@ export function crackSecretWalls(g: Grid, rng: () => number, count: number): Til
 export function thickenWalls(g: Grid): Grid {
   const w = g.w * 2;
   const h = g.h * 2;
-  const out: Grid = { w, h, t: new Uint8Array(w * h) }; // all T_WALL
+  const out: Grid = { w, h, t: new Uint8Array(w * h), shapes: new Uint8Array(w * h) }; // all T_WALL / SHAPE_FULL
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
       const v = at(g, i, j);

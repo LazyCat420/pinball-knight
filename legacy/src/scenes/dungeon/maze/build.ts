@@ -30,7 +30,8 @@ import {
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
-import { type Grid, isWalkable, tileCenter, at, T_CRACKED } from "./generator";
+import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED } from "./generator";
+import { isSlant, shapeCorners, type TileShape } from "./tile-shape";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
 import { clamp } from "../../../utils/math";
@@ -700,6 +701,82 @@ function buildCurveCourts(group: THREE.Group, grid: Grid, plan: LevelPlan, track
   }
 }
 
+interface V3 {
+  x: number;
+  y: number;
+  z: number;
+}
+type UV = [number, number];
+
+/**
+ * Right-triangular-prism geometry for a SLANT tile: the solid triangle
+ * (tile-shape.ts, tile-local [0,1]²) extruded to `height`, re-centred on the
+ * tile in xz (origin) with its base at y=0. Non-indexed with explicit per-face
+ * normals (crisp faceted shading — the hypotenuse's normal matches the collider
+ * normal) and two geometry groups: side faces → material 0 (wall face),
+ * top/bottom caps → material 1 (cap). Mirrors the box wall's [face…, cap] setup.
+ */
+function slantPrismGeometry(shape: TileShape, height: number): THREE.BufferGeometry {
+  const P = shapeCorners(shape)!.map((c) => ({ x: c.x - 0.5, z: c.z - 0.5 })); // tile-centred
+  const bot: V3[] = P.map((p) => ({ x: p.x, y: 0, z: p.z }));
+  const top: V3[] = P.map((p) => ({ x: p.x, y: height, z: p.z }));
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const tri = (a: V3, b: V3, c: V3, n: V3, ua: UV, ub: UV, uc: UV): void => {
+    // Wind the triangle CCW with respect to the intended outward normal `n`.
+    let B = b;
+    let C = c;
+    let UB = ub;
+    let UC = uc;
+    const e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
+    const e2x = c.x - a.x, e2y = c.y - a.y, e2z = c.z - a.z;
+    const cxn = e1y * e2z - e1z * e2y;
+    const cyn = e1z * e2x - e1x * e2z;
+    const czn = e1x * e2y - e1y * e2x;
+    if (cxn * n.x + cyn * n.y + czn * n.z < 0) {
+      B = c;
+      C = b;
+      UB = uc;
+      UC = ub;
+    }
+    pos.push(a.x, a.y, a.z, B.x, B.y, B.z, C.x, C.y, C.z);
+    nor.push(n.x, n.y, n.z, n.x, n.y, n.z, n.x, n.y, n.z);
+    uv.push(ua[0], ua[1], UB[0], UB[1], UC[0], UC[1]);
+  };
+  // Caps first (group → cap material).
+  const capUV = (p: V3): UV => [p.x + 0.5, p.z + 0.5];
+  tri(top[0], top[1], top[2], { x: 0, y: 1, z: 0 }, capUV(top[0]), capUV(top[1]), capUV(top[2]));
+  tri(bot[0], bot[1], bot[2], { x: 0, y: -1, z: 0 }, capUV(bot[0]), capUV(bot[1]), capUV(bot[2]));
+  const capVerts = pos.length / 3;
+  // Side faces (group → wall-face material): one quad per triangle edge.
+  for (let e = 0; e < 3; e++) {
+    const a = e;
+    const b = (e + 1) % 3;
+    const third = P[(e + 2) % 3];
+    let nx = P[b].z - P[a].z; // horizontal perpendicular of the edge
+    let nz = -(P[b].x - P[a].x);
+    const mx = third.x - (P[a].x + P[b].x) / 2;
+    const mz = third.z - (P[a].z + P[b].z) / 2;
+    if (nx * mx + nz * mz > 0) {
+      nx = -nx;
+      nz = -nz;
+    } // point away from the interior
+    const len = Math.hypot(nx, nz) || 1;
+    const n: V3 = { x: nx / len, y: 0, z: nz / len };
+    const elen = Math.hypot(P[b].x - P[a].x, P[b].z - P[a].z);
+    tri(bot[a], bot[b], top[b], n, [0, 0], [elen, 0], [elen, 1]);
+    tri(bot[a], top[b], top[a], n, [0, 0], [elen, 1], [0, 1]);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.addGroup(0, capVerts, 1); // caps → material index 1
+  geo.addGroup(capVerts, pos.length / 3 - capVerts, 0); // sides → material index 0
+  return geo;
+}
+
 export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
@@ -736,6 +813,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const mossCells: Array<{ x: number; z: number; i: number; j: number }> = [];
   const lowCells: Array<{ x: number; z: number; i: number; j: number }> = [];
   const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
+  // Shaped (slant) wall tiles are drawn as triangular prisms, not boxes.
+  const slantCells: Array<{ x: number; z: number; i: number; j: number; shape: TileShape; low: boolean }> = [];
   // Curve-court arc tiles are solid for collision but get a smooth SHELL below
   // instead of a blocky box — skip them here so the two don't z-fight.
   const courtTiles = new Set<string>();
@@ -761,6 +840,12 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
       const cc = tileCenter(grid, i, j);
       const c = { x: cc.x, z: cc.z, i, j };
+      // A SLANT tile is a triangular prism (built below), never a box.
+      const shape = shapeAt(grid, i, j);
+      if (isSlant(shape)) {
+        slantCells.push({ x: cc.x, z: cc.z, i, j, shape, low: rim });
+        continue;
+      }
       if (rim) {
         lowCells.push(c);
       } else if ((i * 7 + j * 13) % 4 === 0) {
@@ -833,6 +918,49 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   addWallMesh(fullCells, WALL_H, false);
   addWallMesh(mossCells, WALL_H, true);
   addWallMesh(lowCells, WALL_LOW, false);
+
+  // ── Slanted walls — triangular prisms, instanced per (shape, height). The
+  // hypotenuse quad reads as a wall face; the cap reuses the shared cap material
+  // so a slant's top matches a box's top. One geometry per bucket (few tiles). ──
+  if (slantCells.length) {
+    const slantFaceMat = (low: boolean): THREE.Material =>
+      track(
+        new THREE.MeshStandardMaterial({
+          map: track(makeWallTexture(false, low)),
+          normalMap: track(normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          normalScale: new THREE.Vector2(1, 1),
+          roughness: 0.92,
+          metalness: 0,
+        }),
+      );
+    const faceFull = slantFaceMat(false);
+    const faceLow = slantFaceMat(true);
+    const buckets = new Map<string, typeof slantCells>();
+    for (const c of slantCells) {
+      const key = `${c.shape}:${c.low ? 1 : 0}`;
+      let arr = buckets.get(key);
+      if (!arr) buckets.set(key, (arr = []));
+      arr.push(c);
+    }
+    for (const [key, cells] of buckets) {
+      const [shapeStr, lowStr] = key.split(":");
+      const low = lowStr === "1";
+      const height = low ? WALL_LOW : WALL_H;
+      const geo = track(slantPrismGeometry(Number(shapeStr) as TileShape, height));
+      const mesh = new THREE.InstancedMesh(geo, [low ? faceLow : faceFull, capMat], cells.length);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      const m = new THREE.Matrix4();
+      cells.forEach((c, k) => {
+        m.setPosition(c.x, 0, c.z); // prism base on the floor, xz at tile centre
+        mesh.setMatrixAt(k, m);
+        wallAt.set(`${c.i},${c.j}`, { mesh, index: k });
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      group.add(mesh);
+      disposables.push({ dispose: () => mesh.dispose() });
+    }
+  }
 
   // ── Secret CRACKED bands — the smash-through walls. Each 2×2 band is its
   // own Group of per-tile boxes (NOT in the instanced walls) so a pinball

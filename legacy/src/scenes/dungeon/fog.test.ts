@@ -18,7 +18,7 @@ function openGrid(w = 21, h = 15): Grid {
     t[j * w] = T_WALL;
     t[j * w + w - 1] = T_WALL;
   }
-  return { w, h, t };
+  return { w, h, t, shapes: new Uint8Array(w * h) };
 }
 
 describe("createFog", () => {
@@ -141,14 +141,14 @@ describe("exploredFraction", () => {
     const h = 15;
     const t = new Uint8Array(w * h).fill(T_WALL);
     for (let i = 5; i < 10; i++) t[7 * w + i] = T_FLOOR;
-    const g: Grid = { w, h, t };
+    const g: Grid = { w, h, t, shapes: new Uint8Array(w * h) };
     const f = createFog(g);
     for (let i = 5; i < 10; i++) revealAround(f, g, i, 7, 1);
     expect(exploredFraction(f, g)).toBe(1);
   });
 
   it("returns 0 rather than NaN for a grid with no walkable tiles", () => {
-    const g: Grid = { w: 8, h: 8, t: new Uint8Array(64).fill(T_WALL) };
+    const g: Grid = { w: 8, h: 8, t: new Uint8Array(64).fill(T_WALL), shapes: new Uint8Array(64) };
     expect(exploredFraction(createFog(g), g)).toBe(0);
   });
 });

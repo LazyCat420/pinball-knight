@@ -10,7 +10,8 @@
  *
  * DOM- and three-free: tested alongside the generator.
  */
-import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile } from "./generator";
+import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape } from "./generator";
+import { SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, type TileShape } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 export interface Torch extends TilePos {
@@ -858,6 +859,58 @@ function furnishRooms(
  * (rendered as a smooth shell in build.ts), and drops a few bumpers inside.
  * GUARDED: reverts entirely if it would strand any floor tile from the start.
  */
+/**
+ * BEVEL convex outer wall corners into 45° SLANTS (tile-shape.ts): the maze
+ * stops being all right angles — room corners read as octagons and corridor
+ * bends cut the corner, rendered AND collided from the one shape (build.ts +
+ * collision.ts). A convex corner is a WALL tile with FLOOR on two ADJACENT
+ * cardinals plus their shared diagonal (a real open corner), the other two
+ * cardinals solid (the wall turning). The slant is named by that open corner.
+ *
+ * Two passes so a bevel never strips its own backing: a slant's two legs are
+ * held by its backing-neighbour SQUARES (a slant tile is transparent to the
+ * square sweep — collision.blocksSquare), so a corner is beveled only when BOTH
+ * backing neighbours stay full squares (not themselves candidates). That leaves
+ * tiny 2×2 wall nubs square (all four corners are candidates → none qualify)
+ * and never opens a leak at a leg.
+ */
+function assignCornerShapes(g: Grid): void {
+  const cand = new Int8Array(g.w * g.h).fill(-1); // -1 = none, else the TileShape
+  const cornerAt = (i: number, j: number): number => {
+    if (at(g, i, j) !== T_WALL) return -1; // plain walls only (skip cracked/stairs)
+    const N = isWalkable(g, i, j - 1);
+    const S = isWalkable(g, i, j + 1);
+    const E = isWalkable(g, i + 1, j);
+    const W = isWalkable(g, i - 1, j);
+    const NE = isWalkable(g, i + 1, j - 1);
+    const NW = isWalkable(g, i - 1, j - 1);
+    const SE = isWalkable(g, i + 1, j + 1);
+    const SW = isWalkable(g, i - 1, j + 1);
+    if (N && E && NE && !S && !W) return SHAPE_SLANT_NE;
+    if (N && W && NW && !S && !E) return SHAPE_SLANT_NW;
+    if (S && E && SE && !N && !W) return SHAPE_SLANT_SE;
+    if (S && W && SW && !N && !E) return SHAPE_SLANT_SW;
+    return -1;
+  };
+  for (let j = 1; j < g.h - 1; j++) for (let i = 1; i < g.w - 1; i++) cand[idx(g, i, j)] = cornerAt(i, j);
+  const isCand = (i: number, j: number): boolean => i >= 0 && j >= 0 && i < g.w && j < g.h && cand[idx(g, i, j)] >= 0;
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      const shape = cand[idx(g, i, j)] as TileShape;
+      if (shape < 0) continue;
+      const back = shapeBacking(shape)!;
+      const b0i = i + back[0].x;
+      const b0j = j + back[0].z;
+      const b1i = i + back[1].x;
+      const b1j = j + back[1].z;
+      // Both legs must be backed by SOLID FULL squares (not floor, not another bevel).
+      if (isWalkable(g, b0i, b0j) || isWalkable(g, b1i, b1j)) continue;
+      if (isCand(b0i, b0j) || isCand(b1i, b1j)) continue;
+      setShape(g, i, j, shape);
+    }
+  }
+}
+
 function stampCurveCourts(
   g: Grid,
   rooms: PlannedRoom[],
@@ -866,6 +919,14 @@ function stampCurveCourts(
   rng: () => number,
   onSpine: (i: number, j: number) => boolean = () => false,
 ): CurveCourt[] {
+  // RETIRED (2026-07-21): the curve court rendered a smooth CylinderGeometry
+  // shell OVER square rim tiles, so the visible arc and the (staircased-square)
+  // collider disagreed — the "floating green arc" complaint. Curved big-room
+  // walls return as REAL shaped tiles (tile-shape.ts ROUND shapes) that render
+  // AND collide from one source. Kept wired (returns nothing) so the pipeline
+  // and buildCurveCourts fall through cleanly.
+  const RETIRED = true;
+  if (RETIRED) return [];
   const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 6).sort((a, b) => b.w * b.h - a.w * a.h);
   for (const room of candidates) {
     const rci = room.i0 + Math.floor(room.w / 2);
@@ -1619,6 +1680,12 @@ export function decorateMaze(
   // ── Half-circle courts: carve a curved bumper court into a big room (guarded
   // against stranding). Last, so it can prune parts that fall on its new walls. ──
   const curveCourts = stampCurveCourts(g, furnished.rooms, start, parts, rng, onSpine);
+
+  // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
+  // LAST tile mutation, so the topology it reads (rooms, corridors, launch
+  // break-throughs, secrets) is final. Only reshapes existing walls — never
+  // changes walkability, so AI/flow-field/spawns are unaffected. ──
+  assignCornerShapes(g);
 
   return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts };
 }

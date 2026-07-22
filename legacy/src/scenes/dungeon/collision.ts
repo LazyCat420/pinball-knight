@@ -11,12 +11,25 @@
  * Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
  * DOM- and three-free: tested.
  */
-import { type Grid, isWalkable } from "./maze/generator";
+import { type Grid, isWalkable, shapeAt } from "./maze/generator";
 import { clamp } from "../../utils/math";
+import { SHAPE_FULL, isSlant, shapeTriangleAt, resolveCircleTriangle } from "./maze/tile-shape";
 
 const EPS = 1e-4;
 
-/** True if a circle at world (x, z) with radius r overlaps any solid tile. */
+/**
+ * Does a solid tile block the axis-separated square sweep? A shaped (slant) tile
+ * is TRANSPARENT to the sweep — its diagonal is owned solely by resolveShaped,
+ * so the square clamp must not stop the circle at the cell boundary (or the
+ * diagonal would never be felt). Its two legs still block, but via the solid
+ * SQUARE neighbours that back them (see tile-shape.ts SLANT_BACKING).
+ */
+function blocksSquare(g: Grid, i: number, j: number): boolean {
+  return !isWalkable(g, i, j) && shapeAt(g, i, j) === SHAPE_FULL;
+}
+
+/** True if a circle at world (x, z) with radius r overlaps any solid tile
+ * (shape-aware: a slant tile is tested against its triangle, not its square). */
 export function circleCollides(g: Grid, x: number, z: number, r: number): boolean {
   const gx = x + g.w / 2;
   const gz = z + g.h / 2;
@@ -27,6 +40,12 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       if (isWalkable(g, i, j)) continue;
+      const shape = shapeAt(g, i, j);
+      if (isSlant(shape)) {
+        const tri = shapeTriangleAt(shape, i, j)!;
+        if (resolveCircleTriangle({ x: gx, z: gz }, r, tri[0], tri[1], tri[2])) return true;
+        continue;
+      }
       // Closest point on the tile AABB to the circle centre.
       const cx = clamp(gx, i, i + 1);
       const cz = clamp(gz, j, j + 1);
@@ -152,23 +171,48 @@ export function computeArcCorners(g: Grid): ArcCorner[] {
   return out;
 }
 
-/**
- * Move a circle by (dx, dz), clamping against walls. Returns the resolved
- * world position. Assumes |dx|,|dz| < 1 - 2r per call (true at our speeds and
- * frame times by an order of magnitude), so no tunnelling checks needed.
- */
-export function moveCircle(
-  g: Grid,
-  x: number,
-  z: number,
-  r: number,
-  dx: number,
-  dz: number,
-): { x: number; z: number } {
-  let gx = x + g.w / 2;
-  const gz0 = z + g.h / 2;
+/** The resolved position, plus the contact NORMAL if a SHAPED (slant) wall was
+ * hit this move — the pinball reflection reads `hitN` for a diagonal ricochet;
+ * every other caller ignores it and just takes {x,z}. */
+export interface MoveResult {
+  x: number;
+  z: number;
+  hitN: { nx: number; nz: number } | null;
+}
 
-  // ── X axis ──
+/**
+ * Push a circle (grid-space centre) out of every SHAPED tile it overlaps, and
+ * return the deepest contact normal. The square sweep leaves shaped tiles
+ * alone (they're transparent to it), so this is their sole collider. Slants are
+ * placed only on backed convex corners (see assignCornerShapes), so a body this
+ * size overlaps at most one meaningfully — resolving the deepest is enough.
+ */
+function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number; gz: number; nx: number; nz: number } | null {
+  const i0 = Math.floor(gx - r);
+  const i1 = Math.floor(gx + r);
+  const j0 = Math.floor(gz - r);
+  const j1 = Math.floor(gz + r);
+  let best: { pen: number; nx: number; nz: number } | null = null;
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const shape = shapeAt(g, i, j);
+      if (!isSlant(shape) || isWalkable(g, i, j)) continue;
+      const tri = shapeTriangleAt(shape, i, j)!;
+      const hit = resolveCircleTriangle({ x: gx, z: gz }, r, tri[0], tri[1], tri[2]);
+      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz };
+    }
+  }
+  if (!best) return null;
+  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz };
+}
+
+/** One sweep-and-clamp move (square walls) + one corrective shaped pass. Grid
+ * coords in/out. Sub-stepping in `moveCircle` keeps each call within the
+ * no-tunnel bound. */
+function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number, dz: number): { gx: number; gz: number; hitN: { nx: number; nz: number } | null } {
+  let gx = gx0;
+
+  // ── X axis (square walls only; slant tiles are transparent here) ──
   if (dx !== 0) {
     gx += dx;
     const dir = Math.sign(dx);
@@ -177,7 +221,7 @@ export function moveCircle(
     const j0 = Math.floor(gz0 - r + EPS);
     const j1 = Math.floor(gz0 + r - EPS);
     for (let j = j0; j <= j1; j++) {
-      if (!isWalkable(g, ti, j)) {
+      if (blocksSquare(g, ti, j)) {
         gx = dir > 0 ? ti - r - EPS : ti + 1 + r + EPS;
         break;
       }
@@ -194,12 +238,44 @@ export function moveCircle(
     const i0 = Math.floor(gx - r + EPS);
     const i1 = Math.floor(gx + r - EPS);
     for (let i = i0; i <= i1; i++) {
-      if (!isWalkable(g, i, tj)) {
+      if (blocksSquare(g, i, tj)) {
         gz = dir > 0 ? tj - r - EPS : tj + 1 + r + EPS;
         break;
       }
     }
   }
 
-  return { x: gx - g.w / 2, z: gz - g.h / 2 };
+  // ── Corrective pass: push out of any slant triangle, capture its normal. ──
+  const shaped = resolveShaped(g, gx, gz, r);
+  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz } };
+  return { gx, gz, hitN: null };
+}
+
+/** Largest per-step move that keeps the axis sweep tunnel-free (< 1 − 2r). */
+const MAX_STEP = 0.4;
+
+/**
+ * Move a circle by (dx, dz), clamping against walls (square tiles) and slants
+ * (shaped tiles). Returns the resolved world position and, if a slant face was
+ * struck, its contact normal (`hitN`) for a diagonal ricochet.
+ *
+ * Sub-steps when the requested move exceeds the no-tunnel bound (the pinball at
+ * terminal speed does ~0.5 units/frame, over the old |d| < 1−2r ≈ 0.4 limit),
+ * so both the square sweep and the slant pass stay correct at any speed.
+ */
+export function moveCircle(g: Grid, x: number, z: number, r: number, dx: number, dz: number): MoveResult {
+  let gx = x + g.w / 2;
+  let gz = z + g.h / 2;
+  const dist = Math.hypot(dx, dz);
+  const steps = dist > MAX_STEP ? Math.ceil(dist / MAX_STEP) : 1;
+  const sx = dx / steps;
+  const sz = dz / steps;
+  let hitN: { nx: number; nz: number } | null = null;
+  for (let s = 0; s < steps; s++) {
+    const r2 = moveCircleStep(g, gx, gz, r, sx, sz);
+    gx = r2.gx;
+    gz = r2.gz;
+    if (r2.hitN) hitN = r2.hitN; // keep the most recent slant contact
+  }
+  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN };
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable } from "./maze/generator";
+import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable, setTile, setShape } from "./maze/generator";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./collision";
+import { SHAPE_SLANT_NE } from "./maze/tile-shape";
 
 /** A 7x5 room: solid border, open interior, one pillar at (3,2). */
 function room(): Grid {
@@ -12,7 +13,7 @@ function room(): Grid {
     for (let i = 1; i < w - 1; i++) t[j * w + i] = T_FLOOR;
   }
   t[2 * w + 3] = T_WALL; // pillar
-  return { w, h, t };
+  return { w, h, t, shapes: new Uint8Array(w * h) };
 }
 
 const R = 0.3;
@@ -51,7 +52,47 @@ describe("collision", () => {
   it("a zero move is a no-op", () => {
     const g = room();
     const p = tileCenter(g, 1, 1);
-    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z });
+    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null });
+  });
+});
+
+describe("slant (shaped) collision", () => {
+  /** A 7×7 open room with a single SLANT_NE wall at tile (3,3) (world origin),
+   * backed by solid W (2,3) and S (3,4) neighbours — a real convex slant. */
+  function slantRoom(): Grid {
+    const w = 7;
+    const h = 7;
+    const t = new Uint8Array(w * h).fill(T_WALL);
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) t[j * w + i] = T_FLOOR;
+    const g: Grid = { w, h, t, shapes: new Uint8Array(w * h) };
+    setTile(g, 3, 3, T_WALL); // the slant tile
+    setTile(g, 2, 3, T_WALL); // west backing leg
+    setTile(g, 3, 4, T_WALL); // south backing leg
+    setShape(g, 3, 3, SHAPE_SLANT_NE);
+    return g;
+  }
+
+  it("is SOLID on the cut-off (SW) side and OPEN on the NE side", () => {
+    const g = slantRoom(); // tile (3,3) centre is world (0,0)
+    expect(circleCollides(g, -0.3, 0.3, 0.2)).toBe(true); // SW solid half
+    expect(circleCollides(g, 0.3, -0.3, 0.2)).toBe(false); // NE open half — walkable
+  });
+
+  it("moveCircle into the diagonal pushes back along the NE normal", () => {
+    const g = slantRoom();
+    // Start on the open NE side, drive SW into the hypotenuse.
+    const res = moveCircle(g, 0.35, -0.35, 0.25, -0.3, 0.3);
+    expect(res.hitN).not.toBeNull();
+    expect(res.hitN!.nx).toBeGreaterThan(0); // pushed east...
+    expect(res.hitN!.nz).toBeLessThan(0); // ...and north → NE
+    // And the resolved position is no longer penetrating the triangle.
+    expect(circleCollides(g, res.x, res.z, 0.25)).toBe(false);
+  });
+
+  it("a move that never touches a slant reports hitN = null", () => {
+    const g = slantRoom();
+    const res = moveCircle(g, 1.2, 1.2, 0.25, 0.1, 0); // far in open floor
+    expect(res.hitN).toBeNull();
   });
 });
 
@@ -64,7 +105,7 @@ describe("computeArcCorners (curved walls)", () => {
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) if (rows[j][i] === ".") t[j * w + i] = T_FLOOR;
     }
-    return { w, h, t };
+    return { w, h, t, shapes: new Uint8Array(w * h) };
   }
 
   it("rounds all four inner corners of a 2×2 open pocket", () => {

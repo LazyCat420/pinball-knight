@@ -1055,7 +1055,30 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
   }
 
-  if (blockedX || blockedZ) {
+  if (res.hitN) {
+    // SLANT WALL: a shaped tile was struck — the collider pushed us off its
+    // diagonal and handed back the exact face NORMAL. Reflect the momentum
+    // about it (v − 2(v·n)n) for a true diagonal ricochet, guarded by v·n < 0
+    // so we only bounce when moving INTO the face (no push-out jitter). A slant
+    // is a single FLAT face — flat restitution only, NEVER the corner tier
+    // (that would be an infinite speed farm). Slants are never cracked, so the
+    // smash-through paths below don't apply.
+    const nx = res.hitN.nx;
+    const nz = res.hitN.nz;
+    const vn = p.momX * nx + p.momZ * nz;
+    if (vn < 0) {
+      p.momX -= 2 * vn * nx;
+      p.momZ -= 2 * vn * nz;
+      const rest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
+      p.bounceCombo += 1;
+      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
+      state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
+      state.hitstopT = Math.max(state.hitstopT, 0.02);
+      sfxRoll();
+    }
+  } else if (blockedX || blockedZ) {
     // SECRET WALL: enough momentum landing on a CRACKED band shatters it — the
     // knight barrels straight through the new gap (no reflection), spending a
     // slice of speed on the masonry. Still a combo tick: smashing IS style.

@@ -36,7 +36,7 @@ function openGrid(w = 61, h = 61): Grid {
     t[j * w] = T_WALL;
     t[j * w + w - 1] = T_WALL;
   }
-  return { w, h, t };
+  return { w, h, t, shapes: new Uint8Array(w * h) };
 }
 
 interface Rect {
