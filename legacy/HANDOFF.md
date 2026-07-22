@@ -3,7 +3,7 @@
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 **Live:** client `5f9fbfe` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@7221552`; rollback image
+worktree, banner `HEAD@059c146`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
 HEAD: the progressive combo ramp (below), 4× floors + route-math plan v2
 (`137f32c`), the title intro (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`),
