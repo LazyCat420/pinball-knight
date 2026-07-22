@@ -35,6 +35,15 @@ export const SHAPE_SLANT_NE = 1;
 export const SHAPE_SLANT_NW = 2;
 export const SHAPE_SLANT_SE = 3;
 export const SHAPE_SLANT_SW = 4;
+// ROUND_x rounds the same corner a SLANT_x cuts, but with a quarter-circle arc
+// (radius = 1 tile) instead of a straight diagonal — a curved wall the ball
+// rolls around. The solid is a quarter-DISC centred on the corner OPPOSITE the
+// cut; the arc faces the open (cut) corner. Backing legs are identical to the
+// matching slant (they depend only on the cut corner).
+export const SHAPE_ROUND_NE = 5;
+export const SHAPE_ROUND_NW = 6;
+export const SHAPE_ROUND_SE = 7;
+export const SHAPE_ROUND_SW = 8;
 
 /** A tile-shape id (stored one-per-tile in `Grid.shapes`). */
 export type TileShape = number;
@@ -46,6 +55,25 @@ export interface Vec2 {
 
 export function isSlant(shape: TileShape): boolean {
   return shape >= SHAPE_SLANT_NE && shape <= SHAPE_SLANT_SW;
+}
+
+export function isRound(shape: TileShape): boolean {
+  return shape >= SHAPE_ROUND_NE && shape <= SHAPE_ROUND_SW;
+}
+
+/** Any non-FULL shape — the tile is a prism/wedge, transparent to the square sweep. */
+export function isShaped(shape: TileShape): boolean {
+  return isSlant(shape) || isRound(shape);
+}
+
+/** Which corner a ROUND shape cuts, as the equivalent SLANT id (for shared tables). */
+function roundToSlant(shape: TileShape): TileShape {
+  return shape - (SHAPE_ROUND_NE - SHAPE_SLANT_NE);
+}
+
+/** The ROUND that cuts the same corner as a given SLANT (curved variant). */
+export function slantToRound(shape: TileShape): TileShape {
+  return shape + (SHAPE_ROUND_NE - SHAPE_SLANT_NE);
 }
 
 // The four unit-cell corners (tile-local).
@@ -93,9 +121,68 @@ export function shapeNormal(shape: TileShape): Vec2 | null {
   return SLANT_NORMALS[shape] ?? null;
 }
 
-/** The two backing-neighbour offsets a slant needs solid, or null. */
+/** The two backing-neighbour offsets a shape needs solid, or null. Depends only
+ * on the cut corner, so a ROUND maps to its matching SLANT. */
 export function shapeBacking(shape: TileShape): readonly [Vec2, Vec2] | null {
+  if (isRound(shape)) return SLANT_BACKING[roundToSlant(shape)] ?? null;
   return SLANT_BACKING[shape] ?? null;
+}
+
+// ── ROUND geometry: solid quarter-disc centred on the corner OPPOSITE the cut. ──
+const ROUND_CENTER: Record<number, Vec2> = {
+  [SHAPE_ROUND_NE]: { x: 0, z: 1 }, // cut NE → centre SW
+  [SHAPE_ROUND_NW]: { x: 1, z: 1 }, // cut NW → centre SE
+  [SHAPE_ROUND_SE]: { x: 0, z: 0 }, // cut SE → centre NW
+  [SHAPE_ROUND_SW]: { x: 1, z: 0 }, // cut SW → centre NE
+};
+/** Sign of the open quadrant (centre → cut corner) — used to gate the arc to its
+ * open side so it never pushes a ball sitting behind a backed leg. */
+const ROUND_OPEN: Record<number, Vec2> = {
+  [SHAPE_ROUND_NE]: { x: 1, z: -1 },
+  [SHAPE_ROUND_NW]: { x: -1, z: -1 },
+  [SHAPE_ROUND_SE]: { x: 1, z: 1 },
+  [SHAPE_ROUND_SW]: { x: -1, z: 1 },
+};
+
+/** Tile-local arc centre for a ROUND shape (render + collision share it), or null. */
+export function roundCenter(shape: TileShape): Vec2 | null {
+  return ROUND_CENTER[shape] ?? null;
+}
+/** Tile-local open-quadrant sign for a ROUND shape (which way the arc faces), or null. */
+export function roundOpenDir(shape: TileShape): Vec2 | null {
+  return ROUND_OPEN[shape] ?? null;
+}
+
+/**
+ * Resolve a circle against a ROUND tile's quarter-disc (centre C grid coords,
+ * radius 1). Returns the radial push-out + contact normal (which VARIES along
+ * the arc — that's the curved ricochet), or null if clear / off the open side.
+ */
+function resolveCircleArc(px: number, pz: number, r: number, cx: number, cz: number, openX: number, openZ: number): { nx: number; nz: number; pen: number } | null {
+  const dx = px - cx;
+  const dz = pz - cz;
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6 || d >= 1 + r) return null; // degenerate, or beyond the arc
+  if (dx * openX < -1e-6 || dz * openZ < -1e-6) return null; // behind a backed leg
+  return { nx: dx / d, nz: dz / d, pen: 1 + r - d };
+}
+
+/**
+ * Unified collider for a shaped tile at (i, j): a slant resolves against its
+ * triangle, a round against its quarter-disc arc. Returns the push-out normal +
+ * penetration, or null. The one entry point collision.ts calls.
+ */
+export function resolveCircleShape(shape: TileShape, i: number, j: number, px: number, pz: number, r: number): { nx: number; nz: number; pen: number } | null {
+  if (isSlant(shape)) {
+    const tri = shapeTriangleAt(shape, i, j)!;
+    return resolveCircleTriangle({ x: px, z: pz }, r, tri[0], tri[1], tri[2]);
+  }
+  if (isRound(shape)) {
+    const c = ROUND_CENTER[shape];
+    const o = ROUND_OPEN[shape];
+    return resolveCircleArc(px, pz, r, i + c.x, j + c.z, o.x, o.z);
+  }
+  return null;
 }
 
 /**

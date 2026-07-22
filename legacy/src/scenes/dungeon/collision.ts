@@ -13,7 +13,7 @@
  */
 import { type Grid, isWalkable, shapeAt } from "./maze/generator";
 import { clamp } from "../../utils/math";
-import { SHAPE_FULL, isSlant, shapeTriangleAt, resolveCircleTriangle } from "./maze/tile-shape";
+import { SHAPE_FULL, isShaped, resolveCircleShape } from "./maze/tile-shape";
 
 const EPS = 1e-4;
 
@@ -41,9 +41,8 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
     for (let i = i0; i <= i1; i++) {
       if (isWalkable(g, i, j)) continue;
       const shape = shapeAt(g, i, j);
-      if (isSlant(shape)) {
-        const tri = shapeTriangleAt(shape, i, j)!;
-        if (resolveCircleTriangle({ x: gx, z: gz }, r, tri[0], tri[1], tri[2])) return true;
+      if (isShaped(shape)) {
+        if (resolveCircleShape(shape, i, j, gx, gz, r)) return true;
         continue;
       }
       // Closest point on the tile AABB to the circle centre.
@@ -196,9 +195,8 @@ function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       const shape = shapeAt(g, i, j);
-      if (!isSlant(shape) || isWalkable(g, i, j)) continue;
-      const tri = shapeTriangleAt(shape, i, j)!;
-      const hit = resolveCircleTriangle({ x: gx, z: gz }, r, tri[0], tri[1], tri[2]);
+      if (!isShaped(shape) || isWalkable(g, i, j)) continue;
+      const hit = resolveCircleShape(shape, i, j, gx, gz, r);
       if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz };
     }
   }

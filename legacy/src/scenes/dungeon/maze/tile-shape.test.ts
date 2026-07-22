@@ -11,13 +11,20 @@ import {
   SHAPE_SLANT_NW,
   SHAPE_SLANT_SE,
   SHAPE_SLANT_SW,
+  SHAPE_ROUND_SE,
+  SHAPE_ROUND_NE,
   isSlant,
+  isRound,
+  isShaped,
   shapeCorners,
   shapeNormal,
+  shapeBacking,
   shapeTriangleAt,
+  roundCenter,
   pointInTriangle,
   edgeOutwardNormal,
   resolveCircleTriangle,
+  resolveCircleShape,
   type Vec2,
 } from "./tile-shape";
 
@@ -108,5 +115,43 @@ describe("resolveCircleTriangle (collision core)", () => {
     expect(hit.nx).toBeCloseTo(R2, 3);
     expect(hit.nz).toBeCloseTo(-R2, 3);
     expect(hit.pen).toBeGreaterThan(0.2); // r plus the inside distance
+  });
+});
+
+describe("ROUND shapes + arc collision", () => {
+  it("classifies rounds and shares backing with the matching slant", () => {
+    expect(isRound(SHAPE_ROUND_SE)).toBe(true);
+    expect(isSlant(SHAPE_ROUND_SE)).toBe(false);
+    expect(isShaped(SHAPE_ROUND_SE)).toBe(true);
+    expect(isShaped(SHAPE_SLANT_SE)).toBe(true);
+    expect(isShaped(SHAPE_FULL)).toBe(false);
+    // ROUND_SE and SLANT_SE cut the same corner → same backing legs (N + W).
+    expect(shapeBacking(SHAPE_ROUND_SE)).toEqual(shapeBacking(SHAPE_SLANT_SE));
+  });
+
+  it("centres the quarter-disc on the corner opposite the cut", () => {
+    expect(roundCenter(SHAPE_ROUND_SE)).toEqual({ x: 0, z: 0 }); // cut SE → centre NW
+    expect(roundCenter(SHAPE_ROUND_NE)).toEqual({ x: 0, z: 1 }); // cut NE → centre SW
+  });
+
+  it("reflects the ball radially off the arc — a CURVED normal that varies", () => {
+    // ROUND_SE at tile (0,0): solid quarter-disc centred at NW (0,0), r=1, arc
+    // faces SE. A ball on the SE side within reach is pushed radially out.
+    const a = resolveCircleShape(SHAPE_ROUND_SE, 0, 0, 0.9, 0.62, 0.25)!;
+    const b = resolveCircleShape(SHAPE_ROUND_SE, 0, 0, 0.62, 0.9, 0.25)!;
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    for (const h of [a, b]) {
+      expect(h.nx).toBeGreaterThan(0);
+      expect(h.nz).toBeGreaterThan(0);
+      expect(Math.hypot(h.nx, h.nz)).toBeCloseTo(1, 5); // unit normal
+    }
+    // The normals DIFFER along the arc — a curve, not one flat face.
+    expect(Math.abs(a.nx - b.nx)).toBeGreaterThan(0.1);
+  });
+
+  it("does not collide beyond the arc's reach or behind a backed leg", () => {
+    expect(resolveCircleShape(SHAPE_ROUND_SE, 0, 0, 1.9, 1.9, 0.25)).toBeNull(); // too far
+    expect(resolveCircleShape(SHAPE_ROUND_SE, 0, 0, -0.5, -0.5, 0.25)).toBeNull(); // behind legs
   });
 });

@@ -31,7 +31,7 @@ import {
   CAMERA_TILT,
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED } from "./generator";
-import { isSlant, shapeCorners, type TileShape } from "./tile-shape";
+import { isRound, isShaped, shapeCorners, roundCenter, type TileShape } from "./tile-shape";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
 import { clamp } from "../../../utils/math";
@@ -777,6 +777,59 @@ function slantPrismGeometry(shape: TileShape, height: number): THREE.BufferGeome
   return geo;
 }
 
+/**
+ * Curved-wall shell for a ROUND tile: a quarter-cylinder face (radius 1, the
+ * quarter that faces the cut/open corner) sampled in the SAME frame the collider
+ * uses (centre = tile-shape.roundCenter, radius 1) so the visible curve sits
+ * exactly on the collider arc. Capless shell (DoubleSide material) like the old
+ * curve court — but now bound to a real per-tile collider, so no more mismatch.
+ */
+function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.BufferGeometry {
+  const cc = roundCenter(shape)!; // tile-local [0,1]
+  const cx = cc.x - 0.5; // tile-centred
+  const cz = cc.z - 0.5;
+  // The two arc endpoints are the corners adjacent to the cut (share one axis
+  // with the centre); the 90° arc sweeps between them around the centre.
+  const e0 = { x: 1 - cc.x, z: cc.z };
+  const e1 = { x: cc.x, z: 1 - cc.z };
+  const start = Math.atan2(e0.z - cc.z, e0.x - cc.x);
+  let da = Math.atan2(e1.z - cc.z, e1.x - cc.x) - start;
+  while (da > Math.PI) da -= 2 * Math.PI;
+  while (da < -Math.PI) da += 2 * Math.PI;
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const ring: Array<{ x: number; z: number }> = [];
+  for (let s = 0; s <= seg; s++) {
+    const t = start + da * (s / seg);
+    ring.push({ x: cx + Math.cos(t), z: cz + Math.sin(t) });
+  }
+  const face = (ax: number, az: number, bx: number, bz: number): void => {
+    // Two tris for the vertical quad a(bottom)→b(bottom)→b(top)→a(top); radial
+    // outward normals (per-vertex, so the lit surface reads as a smooth curve).
+    const na = Math.hypot(ax - cx, az - cz) || 1;
+    const nb = Math.hypot(bx - cx, bz - cz) || 1;
+    const nax = (ax - cx) / na;
+    const naz = (az - cz) / na;
+    const nbx = (bx - cx) / nb;
+    const nbz = (bz - cz) / nb;
+    // a0 b0 b1
+    pos.push(ax, 0, az, bx, 0, bz, bx, height, bz);
+    nor.push(nax, 0, naz, nbx, 0, nbz, nbx, 0, nbz);
+    uv.push(0, 0, 1, 0, 1, 1);
+    // a0 b1 a1
+    pos.push(ax, 0, az, bx, height, bz, ax, height, az);
+    nor.push(nax, 0, naz, nbx, 0, nbz, nax, 0, naz);
+    uv.push(0, 0, 1, 1, 0, 1);
+  };
+  for (let s = 0; s < seg; s++) face(ring[s].x, ring[s].z, ring[s + 1].x, ring[s + 1].z);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  return geo;
+}
+
 export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
@@ -840,9 +893,9 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
       const cc = tileCenter(grid, i, j);
       const c = { x: cc.x, z: cc.z, i, j };
-      // A SLANT tile is a triangular prism (built below), never a box.
+      // A SHAPED tile (slant prism / round shell) is built below, never a box.
       const shape = shapeAt(grid, i, j);
-      if (isSlant(shape)) {
+      if (isShaped(shape)) {
         slantCells.push({ x: cc.x, z: cc.z, i, j, shape, low: rim });
         continue;
       }
@@ -919,11 +972,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   addWallMesh(mossCells, WALL_H, true);
   addWallMesh(lowCells, WALL_LOW, false);
 
-  // ── Slanted walls — triangular prisms, instanced per (shape, height). The
-  // hypotenuse quad reads as a wall face; the cap reuses the shared cap material
-  // so a slant's top matches a box's top. One geometry per bucket (few tiles). ──
+  // ── Shaped walls — SLANT tiles as triangular prisms (face + cap material),
+  // ROUND tiles as capless curved shells (DoubleSide, tied to the real collider
+  // arc). Instanced per (shape, height); one geometry per bucket (few tiles). ──
   if (slantCells.length) {
-    const slantFaceMat = (low: boolean): THREE.Material =>
+    const makeFace = (low: boolean, curved: boolean): THREE.Material =>
       track(
         new THREE.MeshStandardMaterial({
           map: track(makeWallTexture(false, low)),
@@ -931,10 +984,13 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
           normalScale: new THREE.Vector2(1, 1),
           roughness: 0.92,
           metalness: 0,
+          side: curved ? THREE.DoubleSide : THREE.FrontSide, // shells are capless
         }),
       );
-    const faceFull = slantFaceMat(false);
-    const faceLow = slantFaceMat(true);
+    const faceFull = makeFace(false, false);
+    const faceLow = makeFace(true, false);
+    const roundFull = makeFace(false, true);
+    const roundLow = makeFace(true, true);
     const buckets = new Map<string, typeof slantCells>();
     for (const c of slantCells) {
       const key = `${c.shape}:${c.low ? 1 : 0}`;
@@ -944,15 +1000,18 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     }
     for (const [key, cells] of buckets) {
       const [shapeStr, lowStr] = key.split(":");
+      const shape = Number(shapeStr) as TileShape;
       const low = lowStr === "1";
       const height = low ? WALL_LOW : WALL_H;
-      const geo = track(slantPrismGeometry(Number(shapeStr) as TileShape, height));
-      const mesh = new THREE.InstancedMesh(geo, [low ? faceLow : faceFull, capMat], cells.length);
+      const round = isRound(shape);
+      const geo = track(round ? roundShellGeometry(shape, height) : slantPrismGeometry(shape, height));
+      const mat: THREE.Material | THREE.Material[] = round ? (low ? roundLow : roundFull) : [low ? faceLow : faceFull, capMat];
+      const mesh = new THREE.InstancedMesh(geo, mat, cells.length);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       const m = new THREE.Matrix4();
       cells.forEach((c, k) => {
-        m.setPosition(c.x, 0, c.z); // prism base on the floor, xz at tile centre
+        m.setPosition(c.x, 0, c.z); // base on the floor, xz at tile centre
         mesh.setMatrixAt(k, m);
         wallAt.set(`${c.i},${c.j}`, { mesh, index: k });
       });

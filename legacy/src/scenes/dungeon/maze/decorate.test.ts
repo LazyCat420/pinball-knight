@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
 import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints } from "./decorate";
-import { isSlant, shapeBacking } from "./tile-shape";
+import { isShaped, shapeBacking } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
@@ -17,10 +17,10 @@ function openSides(g: ReturnType<typeof generateMaze>, i: number, j: number): Ar
   return ([[0, -1], [1, 0], [0, 1], [-1, 0]] as Array<[number, number]>).filter(([di, dj]) => at(g, i + di, j + dj) === T_FLOOR);
 }
 
-describe("assignCornerShapes — slanted walls on the real pipeline", () => {
-  it("bevels convex corners across floors, and every slant is leak-safe", () => {
-    let totalSlants = 0;
-    let seedsWithSlants = 0;
+describe("assignCornerShapes — shaped walls on the real pipeline", () => {
+  it("reshapes convex + concave corners across floors, and every shape is leak-safe", () => {
+    let total = 0;
+    let seedsWith = 0;
     for (let seed = 0; seed < 30; seed++) {
       const g = thickenWalls(generateMaze(10, 8, mulberry32(seed)));
       decorateMaze(g, mulberry32(seed + 1), 8, 10, 10);
@@ -28,23 +28,23 @@ describe("assignCornerShapes — slanted walls on the real pipeline", () => {
       for (let j = 0; j < g.h; j++) {
         for (let i = 0; i < g.w; i++) {
           const s = shapeAt(g, i, j);
-          if (!isSlant(s)) continue;
+          if (!isShaped(s)) continue;
           here++;
-          // A slant only RESHAPES a wall — walkability is unchanged.
+          // A shape only RESHAPES a wall — walkability is unchanged.
           expect(isWalkable(g, i, j)).toBe(false);
-          // Both legs are backed by SOLID FULL squares: no leak, no adjacent bevel.
+          // Both legs are backed by SOLID FULL squares: no leak, no adjacent reshape.
           for (const b of shapeBacking(s)!) {
             expect(isWalkable(g, i + b.x, j + b.z)).toBe(false);
-            expect(isSlant(shapeAt(g, i + b.x, j + b.z))).toBe(false);
+            expect(isShaped(shapeAt(g, i + b.x, j + b.z))).toBe(false);
           }
         }
       }
-      totalSlants += here;
-      if (here > 0) seedsWithSlants++;
+      total += here;
+      if (here > 0) seedsWith++;
     }
-    // The pass actually fires on real mazes (not a no-op), on most floors.
-    expect(totalSlants).toBeGreaterThan(0);
-    expect(seedsWithSlants).toBeGreaterThan(15);
+    // Concave (room/bend) corners are common, so the pass now fires on ~every floor.
+    expect(total).toBeGreaterThan(0);
+    expect(seedsWith).toBeGreaterThan(25);
   });
 });
 

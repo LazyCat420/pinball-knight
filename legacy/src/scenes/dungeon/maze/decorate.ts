@@ -11,7 +11,7 @@
  * DOM- and three-free: tested alongside the generator.
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape } from "./generator";
-import { SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, type TileShape } from "./tile-shape";
+import { SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 export interface Torch extends TilePos {
@@ -860,39 +860,82 @@ function furnishRooms(
  * GUARDED: reverts entirely if it would strand any floor tile from the start.
  */
 /**
- * BEVEL convex outer wall corners into 45° SLANTS (tile-shape.ts): the maze
- * stops being all right angles — room corners read as octagons and corridor
- * bends cut the corner, rendered AND collided from the one shape (build.ts +
- * collision.ts). A convex corner is a WALL tile with FLOOR on two ADJACENT
- * cardinals plus their shared diagonal (a real open corner), the other two
- * cardinals solid (the wall turning). The slant is named by that open corner.
+ * Reshape wall corners into 45° SLANTS and quarter-round CURVES (tile-shape.ts):
+ * the maze stops being all right angles. Rendered AND collided from the one
+ * shape (build.ts + collision.ts). Two families of corner:
  *
- * Two passes so a bevel never strips its own backing: a slant's two legs are
- * held by its backing-neighbour SQUARES (a slant tile is transparent to the
- * square sweep — collision.blocksSquare), so a corner is beveled only when BOTH
- * backing neighbours stay full squares (not themselves candidates). That leaves
- * tiny 2×2 wall nubs square (all four corners are candidates → none qualify)
- * and never opens a leak at a leg.
+ *  - CONVEX (a wall tip / pillar corner): a WALL tile with FLOOR on two adjacent
+ *    cardinals + their shared diagonal, the other two cardinals solid.
+ *  - CONCAVE (a room corner / wide bend): the SOLID DIAGONAL wall tile of an
+ *    inner "crook" — detected with the SAME gate as collision.computeArcCorners
+ *    (a ≥2×2 open pocket, so 1-wide dogleg turns are excluded → tight corridors
+ *    stay square, the "rooms + wide bends only" rule). We cut the diagonal
+ *    tile's corner that faces the open crook.
+ *
+ * Each candidate is SLANT or ROUND by a deterministic per-tile hash (mixed
+ * patterns). Two passes so a reshape never strips its own backing: a shaped
+ * tile is transparent to the square sweep (collision.blocksSquare), so its two
+ * legs are held by backing-neighbour SQUARES — a corner is reshaped only when
+ * BOTH backing neighbours stay full squares (not themselves candidates). Leaves
+ * tiny 2×2 nubs square and never opens a leak.
  */
 function assignCornerShapes(g: Grid): void {
   const cand = new Int8Array(g.w * g.h).fill(-1); // -1 = none, else the TileShape
-  const cornerAt = (i: number, j: number): number => {
-    if (at(g, i, j) !== T_WALL) return -1; // plain walls only (skip cracked/stairs)
-    const N = isWalkable(g, i, j - 1);
-    const S = isWalkable(g, i, j + 1);
-    const E = isWalkable(g, i + 1, j);
-    const W = isWalkable(g, i - 1, j);
-    const NE = isWalkable(g, i + 1, j - 1);
-    const NW = isWalkable(g, i - 1, j - 1);
-    const SE = isWalkable(g, i + 1, j + 1);
-    const SW = isWalkable(g, i - 1, j + 1);
-    if (N && E && NE && !S && !W) return SHAPE_SLANT_NE;
-    if (N && W && NW && !S && !E) return SHAPE_SLANT_NW;
-    if (S && E && SE && !N && !W) return SHAPE_SLANT_SE;
-    if (S && W && SW && !N && !E) return SHAPE_SLANT_SW;
-    return -1;
+  // Mix: ~half the corners curve, the rest bevel — deterministic by position.
+  const styled = (slant: TileShape, i: number, j: number): TileShape => ((i * 3 + j * 5) % 2 === 0 ? slantToRound(slant) : slant);
+  const put = (i: number, j: number, shape: TileShape): void => {
+    if (i > 0 && j > 0 && i < g.w - 1 && j < g.h - 1 && at(g, i, j) === T_WALL) cand[idx(g, i, j)] = shape;
   };
-  for (let j = 1; j < g.h - 1; j++) for (let i = 1; i < g.w - 1; i++) cand[idx(g, i, j)] = cornerAt(i, j);
+
+  // ── CONVEX corners (wall tips / pillars): shape the wall tile itself. ──
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (at(g, i, j) !== T_WALL) continue;
+      const N = isWalkable(g, i, j - 1);
+      const S = isWalkable(g, i, j + 1);
+      const E = isWalkable(g, i + 1, j);
+      const W = isWalkable(g, i - 1, j);
+      if (N && E && isWalkable(g, i + 1, j - 1) && !S && !W) put(i, j, styled(SHAPE_SLANT_NE, i, j));
+      else if (N && W && isWalkable(g, i - 1, j - 1) && !S && !E) put(i, j, styled(SHAPE_SLANT_NW, i, j));
+      else if (S && E && isWalkable(g, i + 1, j + 1) && !N && !W) put(i, j, styled(SHAPE_SLANT_SE, i, j));
+      else if (S && W && isWalkable(g, i - 1, j + 1) && !N && !E) put(i, j, styled(SHAPE_SLANT_SW, i, j));
+    }
+  }
+
+  // ── CONCAVE corners (room / wide-bend inner corners): shape the SOLID DIAGONAL
+  // wall tile, cutting the corner that faces the open crook. Same gate as
+  // computeArcCorners (far diagonal must be open) → 1-wide turns stay square. ──
+  const floor = (i: number, j: number): boolean => isWalkable(g, i, j);
+  const wall = (i: number, j: number): boolean => !isWalkable(g, i, j);
+  // Per crook: two wall dirs, the solid diagonal, far diagonal, two open legs,
+  // and the corner the diagonal tile cuts (facing the crook).
+  const crooks = [
+    { wa: [0, -1], wb: [1, 0], diag: [1, -1], opp: [-1, 1], l1: [-1, 0], l2: [0, 1], cut: SHAPE_SLANT_SW }, // NE crook → diag SW-cut
+    { wa: [0, -1], wb: [-1, 0], diag: [-1, -1], opp: [1, 1], l1: [1, 0], l2: [0, 1], cut: SHAPE_SLANT_SE }, // NW → SE
+    { wa: [0, 1], wb: [1, 0], diag: [1, 1], opp: [-1, -1], l1: [-1, 0], l2: [0, -1], cut: SHAPE_SLANT_NW }, // SE → NW
+    { wa: [0, 1], wb: [-1, 0], diag: [-1, 1], opp: [1, -1], l1: [1, 0], l2: [0, -1], cut: SHAPE_SLANT_NE }, // SW → NE
+  ] as const;
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (!floor(i, j)) continue;
+      for (const c of crooks) {
+        if (
+          wall(i + c.wa[0], j + c.wa[1]) &&
+          wall(i + c.wb[0], j + c.wb[1]) &&
+          wall(i + c.diag[0], j + c.diag[1]) &&
+          floor(i + c.l1[0], j + c.l1[1]) &&
+          floor(i + c.l2[0], j + c.l2[1]) &&
+          floor(i + c.opp[0], j + c.opp[1])
+        ) {
+          const ti = i + c.diag[0];
+          const tj = j + c.diag[1];
+          put(ti, tj, styled(c.cut, ti, tj));
+        }
+      }
+    }
+  }
+
+  // ── Pass 2: assign only where both backing legs stay solid FULL squares. ──
   const isCand = (i: number, j: number): boolean => i >= 0 && j >= 0 && i < g.w && j < g.h && cand[idx(g, i, j)] >= 0;
   for (let j = 1; j < g.h - 1; j++) {
     for (let i = 1; i < g.w - 1; i++) {
@@ -903,9 +946,8 @@ function assignCornerShapes(g: Grid): void {
       const b0j = j + back[0].z;
       const b1i = i + back[1].x;
       const b1j = j + back[1].z;
-      // Both legs must be backed by SOLID FULL squares (not floor, not another bevel).
-      if (isWalkable(g, b0i, b0j) || isWalkable(g, b1i, b1j)) continue;
-      if (isCand(b0i, b0j) || isCand(b1i, b1j)) continue;
+      if (isWalkable(g, b0i, b0j) || isWalkable(g, b1i, b1j)) continue; // leg not backed
+      if (isCand(b0i, b0j) || isCand(b1i, b1j)) continue; // backing would itself reshape
       setShape(g, i, j, shape);
     }
   }
