@@ -48,6 +48,8 @@ export const R_LEATHER: Ramp = [26, 27, 28];
 export const R_BLOOD: Ramp = [11, 12, 13];
 /** Bone / steel-highlight (skulls, spurs). */
 export const R_BONE: Ramp = [20, 21, 22];
+/** Human skin tone ramp (shadow, mid, light). */
+export const R_SKIN: Ramp = [23, 24, 25];
 
 /** Feet line in the 128px cel — kept identical to cel-painter's GROUND. */
 export const GROUND = 118;

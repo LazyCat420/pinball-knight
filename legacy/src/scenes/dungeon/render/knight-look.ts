@@ -2,13 +2,11 @@
  * KNIGHT LOOK — the pure mapping from equipped gear to what the sprite painter
  * draws. DOM/three-free so it unit-tests headlessly.
  *
- * Design rule (see cel-painter's knightHelm): gear presence is expressed as
- * RAMP SWAPS, never geometry removal — the T-visor and the full silhouette are
- * the knight's readability, so an ungeared knight is the same shape in dull
- * dark iron with no plume, and each equipped piece brightens its region:
- *   helmet → polished helm + the crest plume
- *   armor  → bright cuirass/pauldrons/tassets + trim
- *   boots  → bright greaves
+ * Design rule: an unarmored character is a regular guy in a tunic without metal plate.
+ * Each equipped armor piece adds plate geometry:
+ *   helmet → metal great-helm with crest plume & visor
+ *   armor  → metal cuirass, pauldrons, and tassets over tunic
+ *   boots  → metal greaves & poleyns over boots
  *
  * The STYLE (armor-styles.ts) picks WHICH ramps the equipped pieces brighten
  * to — Crypt Iron steel by default, or an unlocked elemental set. It rides the

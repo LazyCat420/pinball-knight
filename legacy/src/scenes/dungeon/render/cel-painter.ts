@@ -43,6 +43,7 @@ import {
   R_BLOOD,
   R_LEATHER,
   R_BONE,
+  R_SKIN,
   buildSkeleton,
   legShaded,
   armShaded,
@@ -525,16 +526,26 @@ const KNIGHT_RIG: RigConfig = {
 function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0, hasHelm = true, sp: StylePaint = STYLE_PAINTS.iron): void {
   const [x, y] = head;
   const pl = plumeLag;
-  // No helmet equipped: same dome, same T-visor (the readability contract),
-  // but dull dark iron, no plume, no arcane eye-spark. Gear brightens; it
-  // never changes the silhouette's grammar.
-  const dome: Ramp = hasHelm ? sp.plate : K_PLATE_DK; // +x trails right; the crest tip drags opposite motion
-  // Crest plume — a bold blood-red comb, drawn BEHIND the helm so it reads as a
-  // silhouette-topping shape, not an antenna. Multi-lobe for a flowing mane and a
-  // brighter front lobe for volume; the tip lobes carry the lag.
   if (!hasHelm) {
-    // bare dull helm — plume and spark are the helmet's reward
-  } else if (dir === "E") {
+    // Bare head for unarmored regular guy (face + hair)
+    if (dir === "E") {
+      plateShaded(ctx, [[x - 10, y - 10], [x + 9, y - 10], [x + 11, y + 2], [x + 13, y + 4], [x + 7, y + 11], [x - 8, y + 9]], R_SKIN, { backlight: 30 });
+      plateShaded(ctx, [[x - 11, y - 12], [x + 7, y - 12], [x + 8, y - 5], [x - 6, y - 4], [x - 11, y + 2]], R_LEATHER, { rim: false });
+      rrectShaded(ctx, x + 5, y - 2, 3, 2, 1, 1, { ink: 1 });
+    } else {
+      plateShaded(ctx, [[x - 10, y - 10], [x + 10, y - 10], [x + 11, y + 4], [x + 5, y + 12], [x - 5, y + 12], [x - 11, y + 4]], R_SKIN, { backlight: 30 });
+      if (dir === "S") {
+        plateShaded(ctx, [[x - 11, y - 12], [x + 11, y - 12], [x + 10, y - 4], [x - 10, y - 4]], R_LEATHER, { rim: false });
+        rrectShaded(ctx, x - 7, y - 2, 4, 3, 1, 1, { ink: 1 });
+        rrectShaded(ctx, x + 3, y - 2, 4, 3, 1, 1, { ink: 1 });
+      } else {
+        plateShaded(ctx, [[x - 11, y - 12], [x + 11, y - 12], [x + 12, y + 4], [x + 8, y + 10], [x - 8, y + 10], [x - 12, y + 4]], R_LEATHER, { backlight: 30 });
+      }
+    }
+    return;
+  }
+  const dome: Ramp = sp.plate;
+  if (dir === "E") {
     // side profile — a long horsehair mane sweeping back off the crown
     plateShaded(ctx, [[x - 1, y - 15], [x - 14, y - 24 + pl * 0.3], [x - 27, y - 16 + pl], [x - 30, y + 2 + pl * 1.2], [x - 20, y - 2], [x - 6, y - 5]], sp.plume, { rim: false });
     figDetail(ctx, [[x - 4, y - 13], [x - 18, y - 16 + pl * 0.6], [x - 27, y - 8 + pl]], 2, sp.plume[2]); // bright strand
@@ -563,10 +574,8 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
       // single most important readability feature. Hard black.
       rrectShaded(ctx, x - 11, y - 3, 22, 4, 2, 1, { ink: 1 }); // eye slit
       rrectShaded(ctx, x - 2.5, y - 1, 5, 12, 2, 1, { ink: 1 }); // breath slot
-      if (hasHelm) {
-        figGlow(ctx, x - 6, y - 1, 1.6, sp.spark, sp.sparkHot); // faint elemental eye-spark, left
-        figGlow(ctx, x + 6, y - 1, 1.6, sp.spark, sp.sparkHot); // right
-      }
+      figGlow(ctx, x - 6, y - 1, 1.6, sp.spark, sp.sparkHot); // faint elemental eye-spark, left
+      figGlow(ctx, x + 6, y - 1, 1.6, sp.spark, sp.sparkHot); // right
       figDetail(ctx, [[x - 12, y + 9], [x + 12, y + 9]], 1.5, K_STEEL_DK); // chin seam
     } else {
       // back of the helm — a central ridge + neck guard
@@ -596,14 +605,11 @@ function knightGreave(ctx: CanvasRenderingContext2D, knee: Pt, foot: Pt, m: Ramp
  */
 function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId, look: KnightLook = FULL_PLATE): void {
   const { bob, stride, atk } = pose;
-  // Gear → ramps. Equipped pieces paint bright in the worn STYLE's ramps (iron
-  // steel by default, or an elemental set — STYLE_PAINTS above); missing pieces
-  // paint the SAME shapes in dull dark iron (see knight-look.ts).
   const sp = STYLE_PAINTS[look.style ?? "iron"];
-  const CUIRASS: Ramp = look.armor ? sp.plate : K_PLATE_DK;
-  const TASSET: Ramp = look.armor ? sp.plate : K_PLATE_DK;
+  const CUIRASS: Ramp = look.armor ? sp.plate : R_LEATHER;
+  const TASSET: Ramp = sp.plate;
   const TRIM = look.armor ? sp.trim : K_STEEL_DK;
-  const GREAVE: Ramp = look.boots ? sp.plate : K_PLATE_DK;
+  const GREAVE: Ramp = sp.plate;
   const swing = pose.swing ?? 0;
   const roll = pose.roll ?? 0;
   const plumeLag = pose.plumeLag ?? 0;
@@ -638,45 +644,51 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   }
 
   // ── BACK leg first, then front, so the near leg overlaps ──
+  const legColor = look.armor ? K_LEG : R_LEATHER;
   if (dir === "E") {
     // profile: far leg (dimmer) behind, near leg in front
     legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 11, K_STEEL_DK, K_STEEL_DK, d3);
-    knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE_DK); // far greave (dim)
-    legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
-    knightGreave(ctx, sk.kneeR, sk.footR, GREAVE); // near greave
+    if (look.boots) knightGreave(ctx, sk.kneeL, sk.footL, K_PLATE_DK); // far greave (dim)
+    legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 12, legColor, K_PLATE_DK, d3);
+    if (look.boots) knightGreave(ctx, sk.kneeR, sk.footR, GREAVE); // near greave
   } else {
-    legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 12, K_LEG, K_PLATE_DK, d3);
-    legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 12, K_LEG, K_PLATE_DK, d3);
-    knightGreave(ctx, sk.kneeL, sk.footL, GREAVE);
-    knightGreave(ctx, sk.kneeR, sk.footR, GREAVE);
+    legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 12, legColor, K_PLATE_DK, d3);
+    legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 12, legColor, K_PLATE_DK, d3);
+    if (look.boots) {
+      knightGreave(ctx, sk.kneeL, sk.footL, GREAVE);
+      knightGreave(ctx, sk.kneeR, sk.footR, GREAVE);
+    }
   }
 
   // ── faulds + tassets (armoured skirt over the hips) ──
-  if (dir !== "E") {
-    // central fauld
-    plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 5, sk.hip[1] + 10], [sk.hipL[0] - 5, sk.hip[1] + 10]], K_PLATE_DK);
-    // two thigh tassets hanging over the legs — reads as layered plate armour
-    plateShaded(ctx, [[sk.hipL[0] - 4, sk.hip[1] + 2], [sk.hipL[0] + 4, sk.hip[1] + 2], [sk.hipL[0] + 3, sk.hip[1] + 15], [sk.hipL[0] - 5, sk.hip[1] + 14]], TASSET);
-    plateShaded(ctx, [[sk.hipR[0] - 4, sk.hip[1] + 2], [sk.hipR[0] + 4, sk.hip[1] + 2], [sk.hipR[0] + 5, sk.hip[1] + 14], [sk.hipR[0] - 3, sk.hip[1] + 15]], TASSET);
-  } else {
-    // profile: a single tasset over the near thigh
-    plateShaded(ctx, [[sk.hip[0] - 2, sk.hip[1] - 2], [sk.hip[0] + 9, sk.hip[1] - 2], [sk.hip[0] + 8, sk.hip[1] + 13], [sk.hip[0] - 2, sk.hip[1] + 12]], K_PLATE_DK);
+  if (look.armor) {
+    if (dir !== "E") {
+      // central fauld
+      plateShaded(ctx, [[sk.hipL[0] - 2, sk.hip[1] - 4], [sk.hipR[0] + 2, sk.hip[1] - 4], [sk.hipR[0] + 5, sk.hip[1] + 10], [sk.hipL[0] - 5, sk.hip[1] + 10]], K_PLATE_DK);
+      // two thigh tassets hanging over the legs — reads as layered plate armour
+      plateShaded(ctx, [[sk.hipL[0] - 4, sk.hip[1] + 2], [sk.hipL[0] + 4, sk.hip[1] + 2], [sk.hipL[0] + 3, sk.hip[1] + 15], [sk.hipL[0] - 5, sk.hip[1] + 14]], TASSET);
+      plateShaded(ctx, [[sk.hipR[0] - 4, sk.hip[1] + 2], [sk.hipR[0] + 4, sk.hip[1] + 2], [sk.hipR[0] + 5, sk.hip[1] + 14], [sk.hipR[0] - 3, sk.hip[1] + 15]], TASSET);
+    } else {
+      // profile: a single tasset over the near thigh
+      plateShaded(ctx, [[sk.hip[0] - 2, sk.hip[1] - 2], [sk.hip[0] + 9, sk.hip[1] - 2], [sk.hip[0] + 8, sk.hip[1] + 13], [sk.hip[0] - 2, sk.hip[1] + 12]], K_PLATE_DK);
+    }
   }
 
-  // ── torso: a tapered cuirass, wider at the chest ── (cool backlight rim on
-  // the shadow side — the second light that makes plate read as polished metal)
+  // ── torso: a tapered cuirass (if armored) or cloth tunic (if unarmored) ──
   const t = knightTorsoPts(sk, dir);
   plateShaded(ctx, t, CUIRASS, { backlight: 30 });
-  // plackart V-seam + fluting + belt + gold buckle
-  if (dir === "S") {
-    figDetail(ctx, [[sk.chest[0], sk.chest[1] + 2], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK); // central keel
-    figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 4], [sk.chest[0], sk.chest[1] + 15], [sk.chest[0] + 12, sk.chest[1] + 4]], 1.5, K_STEEL_DK); // plackart V
-    figDetail(ctx, [[sk.chest[0] - 9, sk.chest[1] - 1], [sk.chest[0] - 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight L
-    figDetail(ctx, [[sk.chest[0] + 9, sk.chest[1] - 1], [sk.chest[0] + 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight R
-    rrectShaded(ctx, sk.chest[0] - 3, sk.chest[1] - 2, 6, 5, 1.5, TRIM); // gorget-boss / gold stud
-  } else if (dir === "E") {
-    figDetail(ctx, [[sk.chest[0] + 8, sk.chest[1] - 1], [sk.chest[0] + 7, sk.hip[1] - 3]], 1.4, 21); // front-edge highlight
-    figDetail(ctx, [[sk.chest[0] - 6, sk.chest[1] + 3], [sk.chest[0] - 7, sk.hip[1] - 3]], 1.4, K_STEEL_DK); // back-edge shadow
+  if (look.armor) {
+    // plackart V-seam + fluting + belt + gold buckle
+    if (dir === "S") {
+      figDetail(ctx, [[sk.chest[0], sk.chest[1] + 2], [sk.chest[0], sk.hip[1] - 2]], 2, K_STEEL_DK); // central keel
+      figDetail(ctx, [[sk.chest[0] - 12, sk.chest[1] + 4], [sk.chest[0], sk.chest[1] + 15], [sk.chest[0] + 12, sk.chest[1] + 4]], 1.5, K_STEEL_DK); // plackart V
+      figDetail(ctx, [[sk.chest[0] - 9, sk.chest[1] - 1], [sk.chest[0] - 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight L
+      figDetail(ctx, [[sk.chest[0] + 9, sk.chest[1] - 1], [sk.chest[0] + 7, sk.chest[1] + 10]], 1.2, 21); // pec highlight R
+      rrectShaded(ctx, sk.chest[0] - 3, sk.chest[1] - 2, 6, 5, 1.5, TRIM); // gorget-boss / gold stud
+    } else if (dir === "E") {
+      figDetail(ctx, [[sk.chest[0] + 8, sk.chest[1] - 1], [sk.chest[0] + 7, sk.hip[1] - 3]], 1.4, 21); // front-edge highlight
+      figDetail(ctx, [[sk.chest[0] - 6, sk.chest[1] + 3], [sk.chest[0] - 7, sk.hip[1] - 3]], 1.4, K_STEEL_DK); // back-edge shadow
+    }
   }
   rrectShaded(ctx, sk.hipL[0] - 2, sk.hip[1] - 6, (sk.hipR[0] - sk.hipL[0]) + 4, 6, 2, 27); // belt
   rrectShaded(ctx, sk.hip[0] - 4, sk.hip[1] - 6, 8, 6, 1.5, TRIM); // buckle
@@ -684,35 +696,37 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // ── off arm (non-weapon) — now driven by the rig joints so it SWINGS ──
   if (dir === "E") {
     // far arm hint behind the torso (dim), tracks the swing subtly
-    armShaded(ctx, [sk.shoulderL[0] + 2, sk.shoulderL[1] + 2], sk.elbowL, sk.handL, 7, K_STEEL_DK, K_PLATE_DK);
+    armShaded(ctx, [sk.shoulderL[0] + 2, sk.shoulderL[1] + 2], sk.elbowL, sk.handL, 7, K_STEEL_DK, look.armor ? K_PLATE_DK : R_SKIN);
   } else {
     const offSh: Pt = dir === "S" ? sk.shoulderL : sk.shoulderR;
     const offEl: Pt = dir === "S" ? sk.elbowL : sk.elbowR;
     const offHand: Pt = dir === "S" ? sk.handL : sk.handR;
-    armShaded(ctx, offSh, offEl, offHand, 8, K_LEG, K_PLATE_DK);
+    armShaded(ctx, offSh, offEl, offHand, 8, legColor, look.armor ? K_PLATE_DK : R_SKIN);
   }
 
   // ── pauldrons (shoulder cops) — angular LAYERED plates (two lames) that widen
   // the shoulders. A rounded multi-point plate reads as armour, not a button. ──
-  const pauldron = (px: number, py: number, flip: number): void => {
-    // main cop
-    plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], CUIRASS, { backlight: 30 });
-    // lower lame (a second overlapping plate for depth)
-    plateShaded(ctx, [[px - 9 * flip, py + 5], [px + 11 * flip, py + 3], [px + 10 * flip, py + 11], [px - 7 * flip, py + 12]], K_PLATE_DK);
-    figDetail(ctx, [[px - 7 * flip, py - 1], [px + 9 * flip, py - 4]], 1.5, 21); // top-edge glint
-  };
-  if (dir === "E") {
-    pauldron(sk.shoulderR[0] + 3, sk.shoulderR[1], 1);
-  } else {
-    pauldron(sk.shoulderL[0], sk.shoulderL[1], -1);
-    pauldron(sk.shoulderR[0], sk.shoulderR[1], 1);
+  if (look.armor) {
+    const pauldron = (px: number, py: number, flip: number): void => {
+      // main cop
+      plateShaded(ctx, [[px - 11 * flip, py - 5], [px + 10 * flip, py - 8], [px + 12 * flip, py + 5], [px - 9 * flip, py + 9]], CUIRASS, { backlight: 30 });
+      // lower lame (a second overlapping plate for depth)
+      plateShaded(ctx, [[px - 9 * flip, py + 5], [px + 11 * flip, py + 3], [px + 10 * flip, py + 11], [px - 7 * flip, py + 12]], K_PLATE_DK);
+      figDetail(ctx, [[px - 7 * flip, py - 1], [px + 9 * flip, py - 4]], 1.5, 21); // top-edge glint
+    };
+    if (dir === "E") {
+      pauldron(sk.shoulderR[0] + 3, sk.shoulderR[1], 1);
+    } else {
+      pauldron(sk.shoulderL[0], sk.shoulderL[1], -1);
+      pauldron(sk.shoulderR[0], sk.shoulderR[1], 1);
+    }
   }
 
   // ── weapon arm: shoulder → hand anchor ──
   const wShoulder: Pt = dir === "S" ? sk.shoulderR : dir === "N" ? sk.shoulderL : sk.shoulderR;
-  armShaded(ctx, wShoulder, [(wShoulder[0] + weaponHand[0]) / 2, (wShoulder[1] + weaponHand[1]) / 2 - 3], weaponHand, 8, K_LEG, K_PLATE_DK);
-  // gauntlet fist at the weapon hand (rides the cuirass style once armoured)
-  ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, look.armor ? sp.plate : K_PLATE);
+  armShaded(ctx, wShoulder, [(wShoulder[0] + weaponHand[0]) / 2, (wShoulder[1] + weaponHand[1]) / 2 - 3], weaponHand, 8, legColor, look.armor ? K_PLATE_DK : R_SKIN);
+  // gauntlet fist at the weapon hand (rides the cuirass style once armoured, bare skin if unarmored)
+  ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, look.armor ? sp.plate : R_SKIN);
 
   // ── head / helm (plume trails on plumeLag) ──
   knightHelm(ctx, sk.head, d3, plumeLag, look.helmet, sp);
