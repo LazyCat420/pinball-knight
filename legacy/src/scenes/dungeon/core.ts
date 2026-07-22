@@ -214,6 +214,7 @@ import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
 import { getPlayerName } from "../../services/player-name";
+import { runPinballIntro } from "./intro";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -772,12 +773,18 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.activeSlot = 0;
   state.gear = {};
   beginRunLedger();
-  startLevel(1);
 
-  console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
+  // The title intro owns the RAF until it finishes or is skipped; it parks its
+  // letter maze on state.maze, which startLevel's disposeLevel reclaims.
+  runPinballIntro(() => {
+    if (!state.active) return;
+    startLevel(1);
 
-  state.lastTime = performance.now();
-  state.animFrameId = requestAnimationFrame(loop);
+    console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
+
+    state.lastTime = performance.now();
+    state.animFrameId = requestAnimationFrame(loop);
+  });
 }
 
 /** Base HP per enemy family. */
