@@ -2,13 +2,14 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `b2f4f21` on synology (deployed 2026-07-22, banner
-`main@b2f4f21`; rollback image `braindeadbot-client:previous`). Service
-unchanged. This build carries everything up to HEAD: the shaped-wall foundation
-(below), plus the already-committed storm cards (`048c853`) and elemental armor
-styles (`96b3a76`).
+**Live:** client `b77ac83` on synology (deployed 2026-07-22, banner
+`main@b77ac83`; rollback image `braindeadbot-client:previous`). Service
+unchanged. Carries everything to HEAD: shaped walls (foundation `b2f4f21` +
+curves/concave `b77ac83`, below), storm cards (`048c853`), elemental armor
+(`96b3a76`). NOTE: a parallel session has an uncommitted `src/scenes/dungeon/
+intro/` in the shared tree — NOT in this build.
 
-## Latest — shaped-wall foundation: real slant geometry + collision (`b2f4f21`)
+## Latest — shaped walls: slants + CURVES on room/bend corners (`b2f4f21`+`b77ac83`)
 
 The maze was locked to axis-aligned boxes at every layer, and the old "curve
 court" faked curves with a `CylinderGeometry` shell painted OVER square colliders
@@ -42,15 +43,22 @@ Tests 829 green (tile-shape 9, collision slant 3, decorate authoring+leak-safety
 1). Build + tsc clean. Headless (playwright+swiftshader): dungeon renders, **no
 green arc**.
 
-**⚠️ Visible impact is currently SUBTLE and this is the important caveat.**
-`assignCornerShapes` only bevels CONVEX corners (wall-tips / pillar corners),
-which are sparse — many floors show few/none, and ROOM corners + corridor BENDS
-(the boxy bits you notice most) are CONCAVE and are NOT touched yet. Headless
-reveals still look mostly boxy. The foundation (shape model + real collision +
-render + one source of truth) is the load-bearing 80%; the dramatic "octagon
-rooms / beveled bends / curves" look is the NEXT increment — drive placement off
-the concave-corner detection (`computeArcCorners` already finds those bends) and
-add `ROUND` shapes, with an anti-pinch gate for 2-wide corridors.
+**Curves + concave shipped (`b77ac83`).** `tile-shape.ts` now has `ROUND_*`
+(quarter-disc, radius 1) beside the slants, on the same pipeline —
+`resolveCircleShape` dispatches slant→triangle, round→ARC (radial normal → a
+real curved ricochet). `build.ts roundShellGeometry` renders a capless curved
+shell sampled in the collider's frame (visual on the arc). `assignCornerShapes`
+now also reshapes CONCAVE corners — the solid diagonal wall tile of an inner
+crook, gated by `computeArcCorners`' ≥2×2-pocket rule so tight 1-wide turns stay
+square ("rooms + wide bends only"); SLANT vs ROUND picked per-tile (mixed).
+Headless confirms curved corner shells render, the ball rolls + combos, and the
+green arc is gone. Config knobs: the slant/round mix hash and the convex/concave
+gates in `assignCornerShapes`; tighten/loosen there.
+
+Open follow-ups: (a) the mix is a positional hash — could theme by floor/room;
+(b) ROUND shells are capless (DoubleSide) like the old court — add a quarter-disc
+cap if a top seam shows; (c) enemies still path tile-centres (they don't ride the
+curves — fine, they're not balls).
 
 ## Prior — elemental armor STYLE sets at the Armorer (`96b3a76`)
 
