@@ -3,7 +3,7 @@
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 **Live:** client `137f32c` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@afb54ed`; rollback image
+worktree, banner `HEAD@1a1f068`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
 HEAD: 4× floors + route-math plan v2 (below), the title intro (`877c83c`),
 shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`), elemental armor
