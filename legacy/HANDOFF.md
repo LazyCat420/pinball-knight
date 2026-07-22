@@ -3,7 +3,7 @@
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 **Live:** client `7598968` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@9249174`; rollback image
+worktree, banner `HEAD@ee00e40`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
 HEAD: deflector grab-throw (below), the progressive combo ramp (`5f9fbfe`), 4×
 floors + route-math plan v2 (`137f32c`), the title intro (`877c83c`), shaped
