@@ -45,8 +45,6 @@ import {
   OVERCHARGE_TIME,
   OVERCHARGE_DECAY,
   PINBALL_WALL_RESTITUTION,
-  PINBALL_CORNER_RESTITUTION,
-  PINBALL_CORNER_ADD,
   PINBALL_MAX_SPEED,
   PINBALL_FRICTION,
   FRICTION_OPEN,
@@ -56,8 +54,8 @@ import {
   LANE_PROBE_MAX,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
-  PINBALL_COMBO_WINDOW,
   BALL_SPEED_MULT,
+  FRENZY_BALL_SPEED_MULT,
   BALL_RAM_COOLDOWN,
   BALL_RAM_KNOCKBACK,
   RAMP_SPEED,
@@ -135,7 +133,8 @@ import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../audio";
+import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
 
@@ -989,8 +988,31 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const g = state.grid;
   if (!p || !g || p.momSpeed <= 0) return false;
 
+  // Part 2 — TEMPO ZONES. The 0→deep combo is three acts: Launch (accelerate),
+  // Cruise (flow, ball form armed, gold aura), Frenzy (edge of control, faster
+  // ball + screen FX). Each upward crossing fires ONE signal (toast + shake +
+  // sting) so the player learns to feel the boundaries and aim for milestones.
+  const zone = comboZone(p.bounceCombo);
+  if (zone !== state.comboZone) {
+    const order = { launch: 0, cruise: 1, frenzy: 2 } as const;
+    if (order[zone] > order[state.comboZone]) {
+      if (zone === "cruise") {
+        p.overcharge = 1; // arm ball form the moment you reach the flow state
+        showToast("🌀 CRUISE", `combo ×${p.bounceCombo} · in the flow`);
+        state.shakeT = Math.max(state.shakeT, 0.16);
+        sfxSpring();
+      } else if (zone === "frenzy") {
+        showToast("🔥 FRENZY", `combo ×${p.bounceCombo} · on the edge`);
+        state.shakeT = Math.max(state.shakeT, 0.3);
+        sfxBumper();
+      }
+    }
+    state.comboZone = zone;
+  }
+
   const isBall = p.overcharge >= 1;
-  const speedMul = isBall ? BALL_SPEED_MULT : 1;
+  // Frenzy pushes the ball harder (FRENZY_BALL_SPEED_MULT vs BALL_SPEED_MULT).
+  const speedMul = isBall ? (zone === "frenzy" ? FRENZY_BALL_SPEED_MULT : BALL_SPEED_MULT) : 1;
 
   // Overcharge keeps building WHILE bouncing — you're obviously moving fast, so
   // the ride itself charges toward ball form. Without this the first wall slam
@@ -1072,7 +1094,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       const rest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
       p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      p.bounceComboT = comboWindow(p.bounceCombo);
       state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
       state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
       state.hitstopT = Math.max(state.hitstopT, 0.02);
@@ -1085,7 +1107,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     if (p.momSpeed >= SECRET_BREAK_SPEED && trySmashAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       p.momSpeed *= 0.85;
       p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      p.bounceComboT = comboWindow(p.bounceCombo);
       syncActorMesh(p);
       return true;
     }
@@ -1101,7 +1123,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     if (p.momSpeed >= WALL_BREAK_SPEED && trySmashWallAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       p.momSpeed *= WALL_BREAK_SPEED_COST;
       p.bounceCombo += 1;
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      p.bounceComboT = comboWindow(p.bounceCombo);
       syncActorMesh(p);
       return true;
     }
@@ -1118,11 +1140,20 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     const corner = blockedX && blockedZ;
     // Spring Legs turns even flat walls into gainers — compound bouncing.
     const flatRest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
-    p.momSpeed = corner
-      ? Math.min(PINBALL_MAX_SPEED, p.momSpeed * PINBALL_CORNER_RESTITUTION + PINBALL_CORNER_ADD)
-      : Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest);
+    if (corner) {
+      // CORNER gain, combo-shaped (Parts 1+3): the restitution + flat kick
+      // TAPER with combo depth (comboCornerRestitution/Add), and the result is
+      // capped by the logarithmic combo ceiling — but ONLY as a cap on the
+      // GAIN. A corner never drags you below the speed you already carry (a
+      // plunger/spring can launch you above the ceiling at combo 0; the ceiling
+      // just limits what BOUNCING alone can earn), so the launch feel is intact.
+      const gain = p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo);
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, Math.min(gain, comboSpeedCeil(p.bounceCombo))));
+    } else {
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest);
+    }
     p.bounceCombo += 1;
-    p.bounceComboT = PINBALL_COMBO_WINDOW;
+    p.bounceComboT = comboWindow(p.bounceCombo);
     // Bounce juice scales with the combo — a corner hit throws a bigger burst.
     const n = currentWallNormal();
     const sx = n ? n.nx : -p.momX;
@@ -1150,7 +1181,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     if (isWalkable(g, tile.i + di, tile.j + dj)) openN++;
   }
   const surfMul = openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT;
-  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul;
+  // Part 5 — deep combos add a gentle global grip (comboFrictionMul), so a long
+  // chain bleeds a little faster in open rooms and is nudged back onto the
+  // tight machine route where its bounces belong. Oil/Turbo still zero it out.
+  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul * comboFrictionMul(p.bounceCombo);
   p.momSpeed = Math.max(0, p.momSpeed - friction * dt);
   p.bounceComboT = Math.max(0, p.bounceComboT - dt);
   if (p.bounceComboT <= 0) {
@@ -1187,7 +1221,9 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   p.iframes = Math.max(p.iframes, isBall ? 0.2 : 0.08);
 
   // Aura + facing: gold ghosts, face the travel direction, spin the ball clip.
-  spawnAura(dt, isBall ? 0.05 : 0.07, true, 0.3, 0.45);
+  // Aura runs cool blue in the Launch act, gold from Cruise onward — the
+  // colour shift IS the zone signal you carry the whole ride.
+  spawnAura(dt, isBall ? 0.05 : 0.07, zone !== "launch", 0.3, 0.45);
   const s = worldDirToScreen(p.momX, p.momZ);
   p.facing = facingFromVelocity(s.x, s.z, p.facing);
   p.anim.setFacing(p.facing);
@@ -1503,7 +1539,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
         p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
         p.ramT = 0;
         p.bounceCombo = 1;
-        p.bounceComboT = PINBALL_COMBO_WINDOW;
+        p.bounceComboT = comboWindow(p.bounceCombo);
         syncActorMesh(p);
         return;
       }
@@ -1517,7 +1553,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.momSpeed = Math.max(curSpeed, PLAYER_SPEED * SPRINT_SPEED_MULT);
       p.ramT = 0;
       p.bounceCombo = 1; // the launch itself is the first bounce of the chain
-      p.bounceComboT = PINBALL_COMBO_WINDOW;
+      p.bounceComboT = comboWindow(p.bounceCombo);
       state.shakeT = Math.max(state.shakeT, 0.2);
       state.vfx?.sparks(p.x + (n ? n.nx : 0) * PLAYER_R, 0.35, p.z + (n ? n.nz : 0) * PLAYER_R, p.momX, p.momZ, 10);
       sfxHeavy();

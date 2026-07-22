@@ -51,6 +51,8 @@ import {
   AO_RADIUS,
   AO_STRENGTH,
   VIGNETTE,
+  FRENZY_VIGNETTE,
+  FRENZY_ABERRATION,
 } from "../constants";
 
 const FULLSCREEN_VERT = /* glsl */ `
@@ -118,6 +120,7 @@ uniform float uBloom;      // bloom strength (0 = off)
 uniform float uAo;         // AO strength (0 = off)
 uniform float uAoRadius;   // AO ring radius in texels
 uniform float uVignette;   // corner darkening (0 = off)
+uniform float uAberration; // chromatic RGB split toward the corners (0 = off)
 uniform vec2  uResolution;
 
 varying vec2 vUv;
@@ -166,7 +169,20 @@ float aoTerm() {
 }
 
 void main() {
-  vec3 col = texture2D(tDiffuse, vUv).rgb; // LINEAR scene
+  // Chromatic aberration (frenzy FX): split R/B outward from centre so the
+  // scene edges fringe as the combo peaks — the "edge of control" read. Off
+  // (uAberration 0) restores the exact single-tap fetch.
+  vec3 col;
+  if (uAberration > 0.0001) {
+    vec2 off = (vUv - 0.5) * uAberration;
+    col = vec3(
+      texture2D(tDiffuse, vUv + off).r,
+      texture2D(tDiffuse, vUv).g,
+      texture2D(tDiffuse, vUv - off).b
+    );
+  } else {
+    col = texture2D(tDiffuse, vUv).rgb; // LINEAR scene
+  }
 
   // AO in linear, before the sRGB curve.
   if (uAo > 0.001) col *= 1.0 - aoTerm() * uAo;
@@ -328,6 +344,11 @@ export interface PixelPass {
   setOutline(on: boolean): void;
   setBloom(on: boolean): void;
   setAo(on: boolean): void;
+  /**
+   * Frenzy FX (combo Part 2): drive the vignette pull + chromatic aberration
+   * from a [0,1] intensity. 0 restores the baseline vignette and zero split.
+   */
+  setFrenzyFx(intensity: number): void;
   dispose(): void;
 }
 
@@ -416,6 +437,7 @@ export function createPixelPass(
     uAo: { value: opts.ao ? AO_STRENGTH : 0 },
     uAoRadius: { value: AO_RADIUS },
     uVignette: { value: VIGNETTE },
+    uAberration: { value: 0 },
     // MUST track the render target. A stale uResolution silently misaligns the
     // AO ring, the outline's neighbour taps and the scanline rows — it looks
     // like a completely different bug, so it is updated in resize() below.
@@ -574,6 +596,11 @@ export function createPixelPass(
     },
     setAo: (on) => {
       finalUniforms.uAo.value = on ? AO_STRENGTH : 0;
+    },
+    setFrenzyFx: (intensity) => {
+      const t = Math.max(0, Math.min(1, intensity));
+      finalUniforms.uVignette.value = VIGNETTE + (FRENZY_VIGNETTE - VIGNETTE) * t;
+      finalUniforms.uAberration.value = FRENZY_ABERRATION * t;
     },
     dispose: () => {
       depthTexture.dispose();

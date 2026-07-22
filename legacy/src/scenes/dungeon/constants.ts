@@ -444,9 +444,47 @@ export const LANE_CENTER_PULL = 5.0;
 export const LANE_PROBE_MAX = 1.8;
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;
-/** Seconds without a bounce before the combo counter resets (keep the chain alive). */
+/**
+ * Seconds without a bounce before the combo counter resets (keep the chain
+ * alive). This is the ANCHOR/legacy value; the live window is combo-indexed —
+ * `comboWindow(n)` in combo-curve.ts shrinks it from COMBO_WINDOW_MAX toward
+ * COMBO_WINDOW_MIN as the chain climbs, so a deep combo demands you stay on the
+ * track. Kept as the shots.ts chain-alive reference and the reset default.
+ */
 export const PINBALL_COMBO_WINDOW = 1.6;
 export const BALL_SPEED_MULT = 1.35; // extra speed in ball form (on top of momentum)
+
+// ── Progressive combo ramp (combo-curve.ts) ─────────────────────
+// The whole ramp is a CONCAVE curve, not the old linear chain: early combos
+// pay off urgently, then the gains flatten so 100× never feels like a wall (or
+// a lag spike). Every parameter below feeds a pure function in combo-curve.ts;
+// see ROUTE_MATH_PLAN-adjacent notes / the combo plan for the derivations.
+//
+// Part 1 — logarithmic speed ceiling on WALL/CORNER gains (parts still launch
+// to their own speeds; the ceiling only caps what bouncing can EARN):
+export const COMBO_CEIL_BASE = 8; // u/s the wall-gain ceiling starts at
+export const COMBO_CEIL_K = 0.4; // log compression (lower = more gradual)
+export const COMBO_CEIL_NSAT = 40; // bounces to ~95% of PINBALL_MAX_SPEED
+// Part 3 — restitution taper: the first corner is the most exciting, deep
+// corners hold speed but stop gifting it (speed comes from the LINE, not a pop):
+export const COMBO_REST_LAMBDA = 0.08; // corner-restitution decay 1.12→1.0
+export const COMBO_ADD_MU = 0.06; // corner flat-kick decay 1.4→~0
+// Part 4 — the combo window shrinks with depth, then stabilises:
+export const COMBO_WINDOW_MAX = 2.2; // generous at low combo (learn the line)
+export const COMBO_WINDOW_MIN = 0.9; // tight at high combo (open floor breaks it)
+export const COMBO_WINDOW_ALPHA = 0.07; // shrink rate
+// Part 5 — global combo friction: at high combo open floor grips a little more,
+// biasing toward tight machine routes (gentle: +15% at 100×):
+export const COMBO_FRICTION_K = 0.015;
+// Part 6 — tiered jackpot gold: +COMBO_GOLD_TIER per doubling of the combo,
+// uncapped but logarithmic so mastery always pays and never breaks economy:
+export const COMBO_GOLD_TIER = 3;
+// Part 2 — tempo zones: Launch (accelerate) → Cruise (flow) → Frenzy (edge):
+export const COMBO_ZONE_CRUISE = 8; // enter Cruise: aura goes gold, ball form arms
+export const COMBO_ZONE_FRENZY = 30; // enter Frenzy: faster ball, vignette + aberration
+export const FRENZY_BALL_SPEED_MULT = 1.6; // ball speed mult while in Frenzy (vs BALL_SPEED_MULT)
+export const FRENZY_VIGNETTE = 0.48; // vignette target at full Frenzy (vs VIGNETTE 0.32)
+export const FRENZY_ABERRATION = 0.006; // peak chromatic-aberration split (UV units)
 export const BALL_RAM_COOLDOWN = 0.18; // seconds between ram hits on the horde
 export const BALL_RAM_KNOCKBACK = 1.1; // shove per ram (a wrecking ball, not a tap)
 /** Ball clip playback. */

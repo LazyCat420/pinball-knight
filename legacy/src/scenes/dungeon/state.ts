@@ -528,6 +528,9 @@ export const state = {
   partComboHits: 0,
   /** True once this combo already paid its FRENZY bonus. */
   frenzyPaid: false,
+  /** Tempo zone the live bounce combo currently sits in (Part 2 signals fire
+   *  on upward crossings). Reset implicitly when the combo lapses to launch. */
+  comboZone: "launch" as import("./entities/combo-curve").ComboZone,
   /** Slice 5 — jackpot: bumpers on this floor, how many are lit, jackpot flash. */
   bumperTotal: 0,
   bumpersLit: 0,
@@ -891,6 +894,7 @@ export function resetState(): void {
   state.targetsHit = 0;
   state.partComboHits = 0;
   state.frenzyPaid = false;
+  state.comboZone = "launch";
   state.bumperTotal = 0;
   state.bumpersLit = 0;
   state.jackpotT = 0;

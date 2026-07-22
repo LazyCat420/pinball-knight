@@ -215,6 +215,7 @@ import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
+import { frenzyIntensity } from "./entities/combo-curve";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -2709,6 +2710,14 @@ function loop(now: number): void {
     if (sc) spawnFloatingCombo(combo, sc.x, sc.y);
   }
   state.prevBounceCombo = combo;
+
+  // Frenzy screen FX (combo Part 2): vignette pull + chromatic aberration ramp
+  // in with the deep combo and PULSE so the edge-of-control read breathes.
+  // Driven per rendered frame (presentation only); eases back to 0 as the combo
+  // lapses. sin() on real elapsed time is fine here — it never touches the sim.
+  const fBase = frenzyIntensity(combo);
+  const fPulse = fBase > 0 ? fBase * (0.78 + 0.22 * Math.sin(state.elapsed * 7)) : 0;
+  state.pixelPass?.setFrenzyFx(fPulse);
 
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");

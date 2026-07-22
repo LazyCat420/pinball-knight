@@ -28,9 +28,6 @@ import {
   BRUTE_DAMAGE,
   BRUTE_KNOCKBACK,
   REAPER_DAMAGE,
-  STYLE_KILL_BASE_GOLD,
-  STYLE_KILL_COMBO_GOLD,
-  STYLE_KILL_GOLD_MAX,
   SECRET_BREAK_SPEED,
   GHOST_VULN_TIME,
   GOLEM_DAMAGE,
@@ -50,6 +47,7 @@ import {
   CARD_BOLT_DAMAGE,
   CARD_BOLT_COOLDOWN,
 } from "../constants";
+import { comboKillGold } from "./combo-curve";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
@@ -568,7 +566,11 @@ function killZombie(z: Zombie): void {
   // the machine rewards playing like a ball, not walking up and stabbing.
   const p = state.player;
   if (p && p.momSpeed > 0) {
-    const bonus = Math.min(STYLE_KILL_GOLD_MAX, STYLE_KILL_BASE_GOLD + p.bounceCombo * STYLE_KILL_COMBO_GOLD) * greedMul;
+    // Part 6 — TIERED jackpot gold: +3g per DOUBLING of the combo (2/5/8/11/…),
+    // logarithmic so a 64× chain pays 10× a 1× kill without ever breaking the
+    // economy, and — unlike the old flat +1/step capped at 12 — mastery always
+    // reads as progress. `bonus` is floored so it stays whole coins.
+    const bonus = Math.floor(comboKillGold(p.bounceCombo) * greedMul);
     // Routed through the coin drop too: a style kill is a bigger physical payout
     // at the same corpse, so it should visibly drop MORE coins than a plain kill
     // rather than silently bumping a counter next to a 2-coin pop.

@@ -15,7 +15,6 @@ import {
   GLOVE_DAMAGE,
   GLOVE_KNOCKBACK,
   PINBALL_MAX_SPEED,
-  PINBALL_COMBO_WINDOW,
   ELEC_ON,
   ELEC_OFF,
   ELEC_RADIUS,
@@ -28,6 +27,7 @@ import {
   VENT_DAMAGE,
   VENT_BURN_COOLDOWN,
 } from "../constants";
+import { comboWindow } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
 import { sfxBumper, sfxFlame } from "../audio";
 
@@ -65,7 +65,7 @@ export function simulateHazards(dt: number): void {
         p.momZ = part.dirZ;
         p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, GLOVE_SPEED));
         p.bounceCombo += 1;
-        p.bounceComboT = PINBALL_COMBO_WINDOW;
+        p.bounceComboT = comboWindow(p.bounceCombo);
         state.partComboHits += 1;
         p.iframes = Math.max(p.iframes, 0.15);
         connected = true;

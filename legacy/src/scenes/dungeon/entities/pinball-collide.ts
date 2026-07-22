@@ -22,7 +22,6 @@ import { state, type Player, type PinballPart, type PinballPartKind } from "../s
 import {
   PLAYER_R,
   PINBALL_MAX_SPEED,
-  PINBALL_COMBO_WINDOW,
   BUMPER_RADIUS,
   BUMPER_KICK_MULT,
   BUMPER_KICK_ADD,
@@ -82,6 +81,7 @@ import {
   PIT_GOLD_PENALTY,
   PIT_DAMAGE,
 } from "../constants";
+import { comboWindow } from "./combo-curve";
 import { moveCircle } from "../collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
@@ -142,7 +142,7 @@ export function onPartTrigger(): void {
   const p = state.player;
   if (!p) return;
   p.bounceCombo += 1;
-  p.bounceComboT = PINBALL_COMBO_WINDOW;
+  p.bounceComboT = comboWindow(p.bounceCombo);
   if (p.webbedT > 0) {
     p.webbedT = 0;
     showPickupNote("🕸️ web SHAKEN OFF");

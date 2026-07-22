@@ -76,13 +76,13 @@ import {
   WEBSPIN_R,
   GHOST_VULN_TIME,
   PINBALL_MAX_SPEED,
-  PINBALL_COMBO_WINDOW,
   PLAYER_R,
   WALL_CONTACT_PROBE,
   CARD_CHILL_SLOW,
   CARD_BURN_TICK,
   CARD_BURN_DMG,
 } from "../constants";
+import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
 import { flowStep } from "./ai";
@@ -251,7 +251,7 @@ export function updateZombies(dt: number): void {
         p.momZ = nz;
         p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, GOBLIN_KICK_SPEED));
         p.bounceCombo += 1;
-        p.bounceComboT = PINBALL_COMBO_WINDOW;
+        p.bounceComboT = comboWindow(p.bounceCombo);
         p.iframes = Math.max(p.iframes, 0.2);
         // The goblin recoils too — rubber meets rubber.
         const res = moveCircle(g, z.x, z.z, GOBLIN_R, -nx * 0.5, -nz * 0.5);
