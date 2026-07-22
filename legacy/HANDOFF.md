@@ -2,11 +2,49 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `d93856c`, service `dee17f0`, both on synology (verified HTTP
-200 at http://10.0.0.16:5174 after deploy). This deploy also carried the
-previously-pushed-not-deployed backlog: the 2026-07-20 menu/progression wave
-(`16da88d..9d34127`), the curve-court infrastructure rework (`6f37902`), and
-two perf passes (`0ea95ed` jungle, `6240f96` dungeon lights).
+**Live:** client `9f442be` on synology (deployed 2026-07-21, container healthy;
+rollback image saved as `braindeadbot-client:previous`). Service unchanged.
+
+## Latest — Ragnarok-style reagent drops + Alchemist brewing (`9f442be`)
+
+Kills now drop **themed alchemy reagents** and you **brew potions** from them at
+the Tavern Alchemist — the RO model (a monster drops what it's "made of", you
+combine loot + an Empty Bottle catalyst at an Alchemist per recipes).
+
+- **`reagents.ts`** (new, pure+tested) — 14 themed reagents, each keyed to the
+  enemy it comes from via `ENEMY_DROPS`, EXHAUSTIVE by `EnemyKind` (a new enemy
+  is a compile error here). `rollReagentDrops(kind, {boss}, rand)` rolls each
+  table entry independently (0–2 drops); a boss guarantees a Grim Bone.
+- **`recipes.ts`** (new, pure+tested) — the brew book. Re-craftable classics +
+  6 new craft-only brews. `canCraft(r, pouch, flasks, gold)` / `craftCost(r)`.
+- **6 new powerups** (`items.ts` POTIONS + new `Player` timers): Regen Salve,
+  Venom Coat, Stoneskin, Static Charge, Greed Draught, Elixir of Life. Each fires
+  at ONE existing choke point — Venom/Static in `applyCardOnHit`, Stoneskin in
+  `hitPlayer`/`hitPlayerRanged`, Greed in `killZombie`'s coin credit, Regen in
+  the `core.ts` buff-tick loop, Elixir via `state.bonusMaxHp` → `playerMaxHp()`.
+- **Drops as motes** — `dropReagentsMaybe`/`spawnReagentMote` in `core.ts` reuse
+  the coin flight (`updateCoins` keys off `it.coin`, not kind); a new
+  `kind:"reagent"` branch in `checkPickups` banks them on magnet arrival. Gem
+  sprites via `gemItem()` in `cel-painter.ts`, tinted per reagent colour.
+- **Empty Flask catalyst** — `state.flasks`, bought cheap (`PRICE_FLASK`) OR
+  brewed from `Glass Shard ×3` (the `flask` recipe). Glass drops from golem/pin.
+- **Alchemist UI** — `tavern.ts potionsBody` gained a **Buy/Brew** toggle: brew
+  book with have/need ingredient badges + a pouch strip; brew routes the output
+  onto the belt. Read-only pouch view added to the menu **Stats** tab.
+- **Run-scoped** — `state.reagents`/`flasks`/`bonusMaxHp` reset in
+  `beginRunProgression` + `resetState` (only wallet gold + legacy perks survive).
+
+**Tests:** 806 green (23 new: `reagents.test.ts`, `recipes.test.ts`,
+`entities/combat-brews.test.ts`). Build compiles; tsc clean on all touched files.
+
+**⚠️ NOT click-tested in a live browser** — no playwright/swiftshader harness in
+the build env, so the pure logic + on-hit wiring are unit-verified but the live
+tavern brew clicks, gem-mote rendering, and each buff's in-game FEEL were not
+driven. First manual QA pass: kill a slime/golem → see gem motes fly in + pouch
+toast; open Tavern Alchemist → Brew tab → buy a flask, craft a flask from 3 Glass
+Shards, brew Health + Stoneskin/Regen → confirm belt fill + HUD tiles + effects.
+
+## Prior — booster STATION SPINE (path-first routing, `d93856c`)
 
 ## Latest — booster STATION SPINE (path-first routing, `d93856c`)
 
