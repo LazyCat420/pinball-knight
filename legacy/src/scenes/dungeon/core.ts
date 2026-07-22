@@ -61,7 +61,7 @@ import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, setCoinDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -203,7 +203,8 @@ import {
   MOTE_RATE,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
@@ -754,6 +755,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   setCardRollHandler(dropCardMaybe);
   // Every kill drops magnet-collected coins on the floor.
   setCoinDropHandler(spawnCoin);
+  // …and a chance at themed alchemy reagents (RO-style loot).
+  setReagentDropHandler(dropReagentsMaybe);
   // A shattered brick golem sprays ricochet shards.
   setGolemShatterHandler((x, z) => golemShards(x, z));
   // Catching the rolling merchant opens its shop.
@@ -1696,6 +1699,11 @@ function beginRunProgression(): void {
   state.skillRanks = {};
   state.unlockedAbilities = ["flippercharge", "arcanepulse"];
   state.seenCards = new Set();
+  // The alchemy pouch is run-scoped — a new run starts you empty-handed (only
+  // wallet gold + legacy perks carry over). See reagents.ts / recipes.ts.
+  state.reagents = {};
+  state.flasks = 0;
+  state.bonusMaxHp = 0;
   invalidateSkillAgg();
   if (hasStartCardPerk()) {
     const bag = cardsOfRarity("common");
@@ -1991,6 +1999,56 @@ function spawnCoin(x: number, z: number, value: number): void {
   enforceCoinCap();
 }
 
+/** Credit a reagent straight into the run pouch (headless fallback + arrival). */
+function creditReagent(id: ReagentId): void {
+  state.reagents[id] = (state.reagents[id] ?? 0) + 1;
+  state.hudDirty = true;
+}
+
+/**
+ * Roll a kill's themed reagent drops (reagents.ts) and scatter them as motes.
+ * Each mote rides the SAME burst→rest→magnet flight as a coin (updateCoins keys
+ * off `it.coin`, not the kind), so it fans out of the corpse and homes to the
+ * knight — but it's absorbed into the alchemy pouch, not the purse.
+ */
+function dropReagentsMaybe(x: number, z: number, kind: EnemyKind, boss: boolean): void {
+  const ids = rollReagentDrops(kind, { boss });
+  for (let i = 0; i < ids.length; i++) spawnReagentMote(x, z, ids[i], i, ids.length);
+}
+
+function spawnReagentMote(x: number, z: number, id: ReagentId, i: number, n: number): void {
+  if (!state.scene) {
+    creditReagent(id); // headless harness: no scene, just bank it
+    return;
+  }
+  const sprite = createStaticSprite(ITEM_PAINTS[id]);
+  sprite.mesh.scale.multiplyScalar(COIN_DROP_SCALE * 1.15); // a touch bigger than a coin
+  sprite.mesh.position.set(x, COIN_SPAWN_Y, z);
+  state.scene.add(sprite.mesh);
+  const ang = (i / Math.max(1, n)) * Math.PI * 2 + Math.random() * 0.9;
+  const spd = COIN_BURST_SPREAD * (0.4 + Math.random() * 0.7);
+  state.groundItems.push({
+    kind: "reagent",
+    id,
+    x,
+    z,
+    sprite,
+    bobPhase: Math.random() * Math.PI * 2,
+    coin: {
+      phase: "burst",
+      y: COIN_SPAWN_Y,
+      vx: Math.cos(ang) * spd,
+      vy: COIN_BURST_VY * (0.85 + Math.random() * 0.3),
+      vz: Math.sin(ang) * spd,
+      age: 0,
+      magT: 0,
+      fromX: x,
+      fromY: COIN_REST_Y,
+      fromZ: z,
+    },
+  });
+}
+
 /**
  * Coin physics — burst, rest, magnet.
  *
@@ -2151,6 +2209,20 @@ function checkPickups(dt: number): void {
       removeGroundItem(k);
       continue;
     }
+    // A reagent mote is banked when its magnet flight ARRIVES, same as a coin —
+    // the flight is the pickup animation, so proximity alone doesn't grab it.
+    if (it.kind === "reagent") {
+      const c = it.coin;
+      if (c && c.magT < COIN_MAGNET_TIME) continue;
+      const rid = it.id as ReagentId;
+      creditReagent(rid);
+      const def = REAGENTS[rid];
+      state.vfx?.sparks(it.x, COIN_CHEST_Y, it.z, 0, 0, 6);
+      sfxPickup();
+      showPickupNote(`${def.icon} ${def.label.toUpperCase()} — ${state.reagents[rid]} in pouch`);
+      removeGroundItem(k);
+      continue;
+    }
     if (dist > PICKUP_RANGE) continue;
 
     if (it.kind === "weapon") {
@@ -2299,13 +2371,30 @@ function applyPotion(id: PotionId): void {
     }
     if (id === "curveshot") p.curveT = def.duration;
     if (id === "magnetboots") p.magBootsT = def.duration;
+    // ── Craft-only brews ──
+    if (id === "regen") {
+      p.regenT = def.duration;
+      p.regenTickT = REGEN_TICK_INTERVAL;
+    }
+    if (id === "venomcoat") p.venomCoatT = def.duration;
+    if (id === "stoneskin") p.stoneT = def.duration;
+    if (id === "static") p.staticT = def.duration;
+    if (id === "greed") p.greedT = def.duration;
+  }
+  // Elixir of Life: instant full heal AND a permanent-for-the-run max-hearts
+  // bump (the only potion that raises the ceiling). Heal AFTER the bump so it
+  // tops off at the new maximum.
+  if (id === "elixir") {
+    state.bonusMaxHp += ELIXIR_MAXHP_BONUS;
+    p.hp = playerMaxHp();
+    state.vfx?.sparks(p.x, 0.9, p.z, 0, 0, 18);
   }
   p.sprite.setTint(def.color);
   p.flashT = 0.18; // brief pulse, cleared by updateFlash
   // Consistent pickup feedback for EVERY potion (single source of truth):
   // heals get a relieved grin + red splash, everything else a wide grin + a
   // blue splash; the persistent buff strip then carries the running timer.
-  if (def.heal > 0) {
+  if (def.heal > 0 || id === "elixir") {
     faceOnHeal();
     rippleGlobe("life");
   } else {
@@ -2402,11 +2491,23 @@ function simulate(dt: number): void {
 
   // ── Buff timers tick down; HUD refreshes each whole second so the
   // countdown reads live, plus once more when a buff ends. ──
-  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "curveT", "magBootsT"] as const) {
+  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "curveT", "magBootsT", "venomCoatT", "stoneT", "staticT", "greedT", "regenT"] as const) {
     const before = p[key];
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
+  }
+  // Regen Salve: heal a heart every REGEN_TICK_INTERVAL seconds while it runs.
+  if (p.regenT > 0) {
+    p.regenTickT -= dt;
+    if (p.regenTickT <= 0) {
+      p.regenTickT = REGEN_TICK_INTERVAL;
+      if (p.hp < playerMaxHp()) {
+        p.hp = Math.min(playerMaxHp(), p.hp + REGEN_HEAL_PER_TICK);
+        state.vfx?.blood(p.x, 0.6, p.z, "red", 4);
+        state.hudDirty = true;
+      }
+    }
   }
   // Active skills: mana regen, cooldowns, magnet pull + blade-storm ticks.
   tickAbilities(dt);

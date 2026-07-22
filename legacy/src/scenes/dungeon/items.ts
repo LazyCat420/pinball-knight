@@ -137,7 +137,14 @@ export type PotionId =
   | "freeze"
   | "multiball"
   | "curveshot"
-  | "magnetboots";
+  | "magnetboots"
+  // ── Craft-only brews (Tavern Alchemist; see recipes.ts) ──
+  | "regen"
+  | "venomcoat"
+  | "stoneskin"
+  | "static"
+  | "greed"
+  | "elixir";
 
 export interface PotionDef {
   id: PotionId;
@@ -184,14 +191,43 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   curveshot: { id: "curveshot", label: "Curve Shot", icon: "🌀", color: 0x6fd0e8, heal: 0, duration: 12, description: "bending projectiles" },
   // Magnet Boots: repel the magnet crawlers, LAUNCH off the magnet strips.
   magnetboots: { id: "magnetboots", label: "Magnet Boots", icon: "🧲", color: 0xa83244, heal: 0, duration: 18, description: "repel crawlers · strips LAUNCH" },
+  // ── Craft-only brews — no shop row, no floor spawn; you BREW these at the
+  // Alchemist from monster reagents (recipes.ts). Each is a distinct buff that
+  // reads at one existing combat choke point. ──
+  // Regen Salve: slow health regen over time (heal handled in the buff tick).
+  regen: { id: "regen", label: "Regen Salve", icon: "🧪", color: 0x8fd46b, heal: 0, duration: 10, description: "regenerate over time" },
+  // Venom Coat: your hits POISON for the duration (weapon coating).
+  venomcoat: { id: "venomcoat", label: "Venom Coat", icon: "☠️", color: 0xa83fd0, heal: 0, duration: 14, description: "your hits POISON" },
+  // Stoneskin: incoming damage is halved for the duration.
+  stoneskin: { id: "stoneskin", label: "Stoneskin", icon: "🪨", color: 0x9a8f77, heal: 0, duration: 12, description: "halve damage taken" },
+  // Static Charge: every hit ARCS to a nearby foe (chain lightning).
+  static: { id: "static", label: "Static Charge", icon: "⚡", color: 0xf0e05a, heal: 0, duration: 12, description: "hits ARC to nearby foes" },
+  // Greed Draught: kills pay double gold for the duration.
+  greed: { id: "greed", label: "Greed Draught", icon: "💰", color: 0xffd98a, heal: 0, duration: 20, description: "double kill gold" },
+  // Elixir of Life: instant FULL heal AND a permanent-for-the-run +2 max hearts.
+  elixir: { id: "elixir", label: "Elixir of Life", icon: "🌟", color: 0xff8fae, heal: 0, duration: 0, description: "full heal · +2 max hearts (run)" },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
+export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "regen", "venomcoat", "stoneskin", "static", "greed", "elixir"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;
 export const HASTE_SPEED_MULT = 1.45;
 export const HASTE_COOLDOWN_MULT = 0.6; // attacks come out faster too
+
+// ── Craft-only brew tuning (see applyPotion / combat.ts) ──
+/** Regen Salve: hearts restored per tick, and seconds between ticks. */
+export const REGEN_HEAL_PER_TICK = 1;
+export const REGEN_TICK_INTERVAL = 2;
+/** Stoneskin: incoming damage multiplier while active. */
+export const STONESKIN_DAMAGE_MULT = 0.5;
+/** Greed Draught: kill-gold multiplier while active. */
+export const GREED_GOLD_MULT = 2;
+/** Static Charge: arc damage + reach (tiles) to the nearest other foe. */
+export const STATIC_ARC_DAMAGE = 2;
+export const STATIC_ARC_RANGE = 3.2;
+/** Elixir of Life: permanent-for-the-run max-hearts bump. */
+export const ELIXIR_MAXHP_BONUS = 2;
 
 /** Remaining durability per equipped slot; absent key = nothing equipped. */
 export type GearState = Partial<Record<GearSlot, number>>;

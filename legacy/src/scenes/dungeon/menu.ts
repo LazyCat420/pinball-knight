@@ -30,6 +30,7 @@ import { getSettings, saveSettings, type ReaderPolicy, type DungeonSettings } fr
 import { setSfxMuted } from "./audio";
 import { loadBestDepth } from "./best-depth";
 import { SKILLS, SKILL_IDS, SKILL_BRANCHES, canLearn, xpForLevel, type SkillBranch } from "./skills";
+import { REAGENTS, REAGENT_IDS } from "./reagents";
 import { spendSkillPoint, unlockedAbilities, invalidateSkillAgg } from "./skill-runtime";
 import { LEGACY_PERKS, PERK_IDS, perkRank, addPerkRank } from "./legacy";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
@@ -273,7 +274,14 @@ function statsBody(): string {
     ["In hand", `${WEAPONS[w.id].icon} ${WEAPONS[w.id].label}`],
     ["Run time", `${mm}:${ss} (pauses don't count)`],
   ];
-  return `<div class="gmenu-h">THE RUN SO FAR</div>` + rows.map(([k, v]) => `<div class="gmenu-kv"><span>${k}</span><b>${v}</b></div>`).join("");
+  const held = REAGENT_IDS.filter((id) => (state.reagents[id] ?? 0) > 0);
+  const pouch = held.length
+    ? held.map((id) => `<span title="${REAGENTS[id].description}" style="color:${REAGENTS[id].color};font-size:12px;white-space:nowrap">${REAGENTS[id].icon} ${REAGENTS[id].label} ×${state.reagents[id]}</span>`).join("")
+    : `<span style="color:#6c5a3e;font-size:11px">no reagents — slay monsters to gather them, brew at the Tavern Alchemist</span>`;
+  const pouchBlock = `<div class="gmenu-h">ALCHEMY POUCH</div>
+    <div class="gmenu-kv"><span>Empty Flasks</span><b>🧴 ${state.flasks}</b></div>
+    <div style="display:flex;flex-direction:column;gap:3px;padding:2px 0">${pouch}</div>`;
+  return `<div class="gmenu-h">THE RUN SO FAR</div>` + rows.map(([k, v]) => `<div class="gmenu-kv"><span>${k}</span><b>${v}</b></div>`).join("") + pouchBlock;
 }
 
 function toggleRow(key: keyof DungeonSettings & string, label: string, hint: string, on: boolean): string {

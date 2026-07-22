@@ -28,6 +28,7 @@ import { paletteCss, inkFor, shadeFor, highlightFor } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
+import { REAGENTS, REAGENT_IDS } from "../reagents";
 import { FULL_PLATE, type KnightLook } from "./knight-look";
 import {
   type Pt,
@@ -2670,6 +2671,41 @@ function cardItem(hex: string): FramePaint {
   };
 }
 
+/** A dropped REAGENT — a small faceted gem in the material's colour, so the
+ * kind reads at a glance on the floor (reagents.ts). One factory, tinted. */
+function gemItem(hex: string): FramePaint {
+  const facet: Array<[number, number]> = [[64, 60], [80, 78], [64, 100], [48, 78]];
+  return (ctx) => {
+    groundShadow(ctx, 64, 100, 15);
+    ctx.beginPath();
+    ctx.moveTo(facet[0][0], facet[0][1]);
+    for (const [x, y] of facet.slice(1)) ctx.lineTo(x, y);
+    ctx.closePath();
+    ctx.fillStyle = hex;
+    ctx.fill();
+    // Top facet highlight.
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(64, 60);
+    ctx.lineTo(72, 76);
+    ctx.lineTo(64, 84);
+    ctx.lineTo(56, 76);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Dark rim for the cel outline.
+    ctx.strokeStyle = "#00000066";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(facet[0][0], facet[0][1]);
+    for (const [x, y] of facet.slice(1)) ctx.lineTo(x, y);
+    ctx.closePath();
+    ctx.stroke();
+    celShade(ctx);
+  };
+}
+
 export const ITEM_PAINTS: Record<string, FramePaint> = {
   // Dropped modifier cards, one per CardId, tinted by rarity (see cards.ts).
   ...Object.fromEntries(CARD_IDS.map((id) => [id, cardItem(RARITY_HEX[CARDS[id].rarity])])),
@@ -2697,6 +2733,16 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   multiball: potionItem("#b06fe8"),
   curveshot: potionItem("#6fd0e8"),
   magnetboots: potionItem("#a83244"),
+  // Craft brews that can land on the belt but never on the floor still take a
+  // flask sprite for HUD icon fallbacks (renderPaintIcon reads ITEM_PAINTS).
+  regen: potionItem("#8fd46b"),
+  venomcoat: potionItem("#a83fd0"),
+  stoneskin: potionItem("#9a8f77"),
+  static: potionItem("#f0e05a"),
+  greed: goldIdolItem(),
+  elixir: potionItem("#ff8fae"),
+  // Dropped reagents — one gem per material, tinted by its colour (reagents.ts).
+  ...Object.fromEntries(REAGENT_IDS.map((id) => [id, gemItem(REAGENTS[id].color)])),
 };
 
 // ══════════════════════════════════════════════════════════════════

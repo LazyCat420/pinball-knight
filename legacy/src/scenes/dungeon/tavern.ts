@@ -27,6 +27,8 @@
 import { state } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { CARDS, RARITY_HEX, STASH_MAX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
+import { REAGENTS, REAGENT_IDS, type ReagentId } from "./reagents";
+import { RECIPES, RECIPE_IDS, canCraft, craftCost, type RecipeDef } from "./recipes";
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
 import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel, btn } from "./ui-cards";
 
@@ -45,6 +47,9 @@ const PRICE_POTION: Partial<Record<PotionId, number>> = { health: 15, rage: 28, 
 // "equipped" sentinel, matching the dungeon pickup path).
 const PRICE_GEAR: Record<GearSlot, number> = { helmet: 45, armor: 70, boots: 40 };
 const BELT_MAX = 4;
+/** Empty Flask catalyst — cheap off the shelf (RO buys Empty Bottles from an
+ * NPC); also craftable from Glass Shards via the `flask` recipe. */
+const PRICE_FLASK = 8;
 
 /**
  * One-shot flourishes queued by successful counter actions, consumed by the
@@ -106,7 +111,13 @@ interface TavernDeps {
 let selectedStash = -1; // a stash card picked to socket
 let forgePick: number[] = []; // stash indices chosen for a forge
 let barOffers: CardId[] = [];
+let alchemistTab: "buy" | "brew" = "buy"; // Alchemist counter: shelf vs brew book
 let deps: TavernDeps | null = null;
+
+/** Belt room for a potion WITHOUT mutating (a matching stack, or an empty slot). */
+function beltHasRoom(id: PotionId): boolean {
+  return state.belt.some((s) => s && s.id === id) || state.belt.some((s) => !s);
+}
 
 function rollBarOffers(): void {
   // Weighted stock: mostly common/rare with the occasional epic, and a RARE
@@ -310,26 +321,83 @@ function armorBody(): string {
     <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:6px">${btn("repair-gear", "🛡️ Repair all gear", PRICE_REPAIR_GEAR)}</div>`;
 }
 
-/** 🧪 Alchemist — buy belt potions that carry into the next floor (Shift+1-4). */
+/** The alchemy pouch line: flasks + every reagent you're carrying. */
+function pouchStrip(): string {
+  const chips = REAGENT_IDS.filter((id) => (state.reagents[id] ?? 0) > 0)
+    .map((id) => `<span title="${REAGENTS[id].label}" style="color:${REAGENTS[id].color};font-size:11px;white-space:nowrap">${REAGENTS[id].icon}×${state.reagents[id]}</span>`)
+    .join("  ");
+  const body = chips || `<span style="color:#6c5a3e;font-size:10px">no reagents yet — slay monsters to gather them</span>`;
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:2px 0 8px;padding:5px 7px;background:#00000044;border:1px solid #4a3d28;border-radius:6px">
+    <b style="color:#c9c1ad;font-size:10px;letter-spacing:.5px">POUCH</b>
+    <span style="color:#e8dcc0;font-size:11px">🧴×${state.flasks}</span>
+    ${body}</div>`;
+}
+
+/** One reagent-cost badge, green when satisfied and red when short. */
+function costBadge(icon: string, have: number, need: number): string {
+  const ok = have >= need;
+  return `<span style="color:${ok ? "#8fc46b" : "#c0705a"};font-size:10px;white-space:nowrap">${icon}${have}/${need}</span>`;
+}
+
+/** One row of the brew book — output, its have/need ingredient badges, Brew. */
+function recipeRow(r: RecipeDef): string {
+  const parts = (Object.entries(r.inputs) as Array<[ReagentId, number]>)
+    .map(([id, n]) => costBadge(REAGENTS[id].icon, state.reagents[id] ?? 0, n))
+    .join(" ");
+  const flaskBadge = r.flasks > 0 ? " " + costBadge("🧴", state.flasks, r.flasks) : "";
+  const goldBadge = r.gold ? ` <span style="color:${getBalance() >= r.gold ? GOLD : "#c0705a"};font-size:10px">${r.gold}g</span>` : "";
+  const iconId = r.output === "flask" ? "flask" : r.output;
+  const can = canCraft(r, state.reagents, state.flasks, getBalance()) && (r.output === "flask" || beltHasRoom(r.output as PotionId));
+  return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:5px 7px;background:#00000044;border:1px solid #4a3d28;border-radius:6px">
+    ${iconTag(iconId, r.icon, 32)}
+    <span style="display:flex;flex-direction:column;line-height:1.25;gap:1px"><b style="color:#e8dcc0;font-size:12px">${r.label}</b><span>${parts}${flaskBadge}${goldBadge}</span></span>
+    <span style="flex:1"></span>
+    ${btn(`brew:${r.id}`, "Brew", undefined, !can)}
+  </div>`;
+}
+
+/** 🧪 Alchemist — BUY belt potions off the shelf, or BREW them from reagents. */
 function potionsBody(): string {
   const beltCount = state.belt.filter((b) => b).length;
   const beltFull = beltCount >= BELT_MAX && !state.belt.some((b) => b && b.count < 99);
   const beltTxt = state.belt.map((b) => (b ? `${b.icon}×${b.count}` : "·")).join("  ");
-  const shelf = POTION_STOCK.map((id) => {
-    const p = POTIONS[id];
-    const price = PRICE_POTION[id] ?? 30;
-    const eff = p.heal ? `heal ${p.heal}` : p.duration ? `${p.duration}s` : "instant";
-    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:5px 7px;background:#00000044;border:1px solid #4a3d28;border-radius:6px">
-      ${iconTag(id, p.icon, 34)}
-      <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${p.label}</b><span style="color:#9a8f77;font-size:9px">${eff}</span></span>
-      <span style="flex:1"></span>
-      ${btn(`buypotion:${id}`, "Buy", price, beltFull)}
-    </div>`;
-  }).join("");
-  return `
+  const tab = (id: "buy" | "brew", label: string): string => {
+    const on = alchemistTab === id;
+    return `<button data-act="alchtab:${id}" style="cursor:pointer;background:${on ? "#2a2010" : "#171208"};color:${on ? GOLD : "#9a8f77"};border:1px solid ${on ? GOLD : "#4a3d28"};border-bottom:none;border-radius:5px 5px 0 0;padding:5px 12px;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.5px">${label}</button>`;
+  };
+  const header = `
     <div style="color:#c9c1ad;font-size:11px;margin-bottom:2px">BELT ${beltCount}/${BELT_MAX} — <span style="color:#e8dcc0">${beltTxt}</span></div>
-    <div style="color:#9a8f77;font-size:9px;margin-bottom:6px">bought potions ride your belt into the next floor · use with Shift+1-4</div>
-    ${shelf}`;
+    <div style="color:#9a8f77;font-size:9px;margin-bottom:6px">potions ride your belt into the next floor · use with Shift+1-4</div>
+    <div style="display:flex;gap:4px;margin-bottom:-1px">${tab("buy", "🛒 Buy")}${tab("brew", "⚗️ Brew")}</div>`;
+
+  if (alchemistTab === "buy") {
+    const shelf = POTION_STOCK.map((id) => {
+      const p = POTIONS[id];
+      const price = PRICE_POTION[id] ?? 30;
+      const eff = p.heal ? `heal ${p.heal}` : p.duration ? `${p.duration}s` : "instant";
+      return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:5px 7px;background:#00000044;border:1px solid #4a3d28;border-radius:6px">
+        ${iconTag(id, p.icon, 34)}
+        <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${p.label}</b><span style="color:#9a8f77;font-size:9px">${eff}</span></span>
+        <span style="flex:1"></span>
+        ${btn(`buypotion:${id}`, "Buy", price, beltFull)}
+      </div>`;
+    }).join("");
+    return `${header}<div style="border:1px solid #4a3d28;border-radius:0 6px 6px 6px;padding:8px">${shelf}</div>`;
+  }
+
+  // Brew tab: pouch, a cheap flask buy, then the recipe book (flask recipe first).
+  const flaskRow = `<div style="display:flex;align-items:center;gap:8px;margin:0 0 6px;padding:5px 7px;background:#00000044;border:1px dashed #4a3d28;border-radius:6px">
+    <span style="font-size:26px">🧴</span>
+    <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">Empty Flask</b><span style="color:#9a8f77;font-size:9px">catalyst · every brew needs one</span></span>
+    <span style="flex:1"></span>
+    ${btn("buyflask", "Buy", PRICE_FLASK)}
+  </div>`;
+  const book = RECIPE_IDS.map((id) => recipeRow(RECIPES[id])).join("");
+  return `${header}<div style="border:1px solid #4a3d28;border-radius:0 6px 6px 6px;padding:8px">
+    ${pouchStrip()}
+    ${flaskRow}
+    <div style="color:#c9c1ad;font-size:10px;letter-spacing:.5px;margin:2px 0 4px">BREW BOOK — reagents drop from the monsters they suit</div>
+    ${book}</div>`;
 }
 
 const VENDOR_BODY: Record<VendorId, () => string> = { cards: cardsBody, weapons: weaponsBody, armor: armorBody, potions: potionsBody };
@@ -443,6 +511,47 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (!stowOnBelt(id)) { flash("belt is full"); return; }
     if (!pay(PRICE_POTION[id] ?? 30)) { unstowFromBelt(id); flash("not enough gold"); return; }
     flash(`${POTIONS[id].icon} ${POTIONS[id].label} → belt`);
+    render();
+    return;
+  }
+
+  // ── Alchemist: switch the counter between the shelf and the brew book ──
+  if (act === "alchtab") {
+    alchemistTab = raw === "brew" ? "brew" : "buy";
+    render();
+    return;
+  }
+
+  // ── Alchemist: buy an Empty Flask catalyst ──
+  if (act === "buyflask") {
+    if (!pay(PRICE_FLASK)) { flash("not enough gold"); return; }
+    state.flasks += 1;
+    state.hudDirty = true;
+    flash("🧴 Empty Flask bought");
+    render();
+    return;
+  }
+
+  // ── Alchemist: BREW a recipe from reagents (+ flask + optional gold) ──
+  if (act === "brew") {
+    const r = RECIPES[raw];
+    if (!r) return;
+    if (!canCraft(r, state.reagents, state.flasks, getBalance())) { flash("missing materials"); return; }
+    // A potion output needs belt room; check BEFORE consuming so a full belt
+    // never eats the reagents.
+    if (r.output !== "flask" && !beltHasRoom(r.output as PotionId)) { flash("belt is full"); return; }
+    const cost = craftCost(r);
+    for (const [rid, n] of cost.inputs) state.reagents[rid] = (state.reagents[rid] ?? 0) - n;
+    state.flasks -= cost.flasks;
+    if (cost.gold > 0) pay(cost.gold);
+    if (r.output === "flask") {
+      state.flasks += 1;
+      flash("🧴 Empty Flask brewed");
+    } else {
+      stowOnBelt(r.output as PotionId);
+      flash(`${r.icon} ${r.label} → belt`);
+    }
+    state.hudDirty = true;
     render();
     return;
   }
@@ -600,6 +709,7 @@ export function openTavern(container: HTMLElement, d: TavernDeps): void {
   deps = d;
   selectedStash = -1;
   forgePick = [];
+  alchemistTab = "buy";
   activeVendor = null;
   injectCardStyles();
   injectTavernStyles();
@@ -654,6 +764,7 @@ export function openVendorCounter(container: HTMLElement, vendor: VendorId, stat
   activeVendor = vendor;
   selectedStash = -1;
   forgePick = [];
+  alchemistTab = "buy";
   injectCardStyles();
   injectTavernStyles();
   if (barOffers.length === 0) rollBarOffers();

@@ -66,6 +66,20 @@ export interface Player extends Actor {
   /** Seconds left on Multi-Ball (two echo knights trail you and ram). 0 = inactive. */
   multiBallT: number;
 
+  // ── Craft-only brews (Alchemist; see recipes.ts / applyPotion) ──
+  /** Seconds left on Regen Salve (heals over time). 0 = inactive. */
+  regenT: number;
+  /** Countdown between Regen Salve heal ticks. */
+  regenTickT: number;
+  /** Seconds left on Venom Coat (your hits POISON). 0 = inactive. */
+  venomCoatT: number;
+  /** Seconds left on Stoneskin (incoming damage halved). 0 = inactive. */
+  stoneT: number;
+  /** Seconds left on Static Charge (hits arc to a nearby foe). 0 = inactive. */
+  staticT: number;
+  /** Seconds left on Greed Draught (double kill gold). 0 = inactive. */
+  greedT: number;
+
   // ── Active-skill economy (Diablo HUD) ──
   /** Spendable mana pool for the Q/E abilities (0..MANA_MAX). Separate from ultCharge. */
   mana: number;
@@ -389,8 +403,8 @@ export interface CoinFlight {
 }
 
 export interface GroundItem {
-  kind: "weapon" | "gear" | "potion" | "card" | "coin";
-  id: string; // WeaponId | GearSlot | PotionId | CardId | "coin"
+  kind: "weapon" | "gear" | "potion" | "card" | "coin" | "reagent";
+  id: string; // WeaponId | GearSlot | PotionId | CardId | "coin" | ReagentId
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -592,6 +606,14 @@ export const state = {
   cardStash: [] as string[],
   /** Per-run cap: at most one legendary card drops from the dungeon per run. */
   legendaryDropped: false,
+  /** RUN-scoped alchemy pouch — reagent id → count, gathered from kills, spent
+   * brewing at the Tavern Alchemist (recipes.ts). Wiped on death like the rest
+   * of the run (only wallet gold + legacy perks survive). */
+  reagents: {} as Record<string, number>,
+  /** Empty Flask catalyst count — the RO "Empty Bottle" every brew consumes. */
+  flasks: 0,
+  /** Elixir of Life's run-scoped max-hearts bonus (feeds playerMaxHp). */
+  bonusMaxHp: 0,
   /** CardIds already shown in the full card reader this run — repeats of a
    * common/rare card fall back to the non-blocking popup. */
   seenCards: new Set<string>(),
@@ -777,6 +799,12 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     curveT: 0,
     magBootsT: 0,
     multiBallT: 0,
+    regenT: 0,
+    regenTickT: 0,
+    venomCoatT: 0,
+    stoneT: 0,
+    staticT: 0,
+    greedT: 0,
     mana: MANA_MAX,
     magnetAuraT: 0,
     bladeStormT: 0,
@@ -886,6 +914,9 @@ export function resetState(): void {
   state.cardStash = [];
   state.legendaryDropped = false;
   state.seenCards = new Set();
+  state.reagents = {};
+  state.flasks = 0;
+  state.bonusMaxHp = 0;
   state.pausedRunS = 0;
   state.grid = null;
   state.fog = null;

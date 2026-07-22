@@ -50,7 +50,7 @@ import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
 import { addGold } from "../../../utils/gold-wallet";
-import { WEAPONS, GEAR, degradeWeapon, absorbDamage, RAGE_DAMAGE_MULT } from "../items";
+import { WEAPONS, GEAR, degradeWeapon, absorbDamage, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 
 /**
@@ -81,14 +81,44 @@ export function playerDamage(base: number): number {
  */
 export function applyCardOnHit(z: Zombie): void {
   const w = state.weaponSlots[state.activeSlot];
-  if (!w || !w.cards || !w.cards.length) return;
-  const agg = aggregateCards(w.cards);
-  if (agg.chill) z.chillT = CARD_CHILL_TIME;
-  if (agg.burn) {
+  if (w && w.cards && w.cards.length) {
+    const agg = aggregateCards(w.cards);
+    if (agg.chill) z.chillT = CARD_CHILL_TIME;
+    if (agg.burn) {
+      z.dotT = CARD_BURN_TIME;
+      z.dotDmg = CARD_BURN_DMG;
+      z.dotTickT = 0;
+    }
+  }
+  // ── Craft brews that ride EVERY hit (no weapon/card needed) ──
+  const p = state.player;
+  if (!p) return;
+  // Venom Coat: your strikes poison — the same DoT the burn card stamps.
+  if (p.venomCoatT > 0) {
     z.dotT = CARD_BURN_TIME;
     z.dotDmg = CARD_BURN_DMG;
     z.dotTickT = 0;
   }
+  // Static Charge: the blow ARCS to the nearest OTHER living foe — a free zap
+  // that ignores the momentum gates (it's lightning, not steel).
+  if (p.staticT > 0) arcStatic(z);
+}
+
+/** Static Charge's chain: zap the nearest living zombie other than `from`. */
+function arcStatic(from: Zombie): void {
+  let best: Zombie | null = null;
+  let bestD = STATIC_ARC_RANGE;
+  for (const other of state.zombies) {
+    if (other === from || other.mode === "dead") continue;
+    const d = Math.hypot(other.x - from.x, other.z - from.z);
+    if (d < bestD) {
+      bestD = d;
+      best = other;
+    }
+  }
+  if (!best) return;
+  state.vfx?.sparks(best.x, 0.7, best.z, from.x - best.x, from.z - best.z, 10);
+  damageZombie(best, STATIC_ARC_DAMAGE, best.x - from.x, best.z - from.z, 0, true);
 }
 
 /**
@@ -413,6 +443,12 @@ export function setCoinDropHandler(fn: (x: number, z: number, value: number) => 
   onCoinDrop = fn;
 }
 
+/** Reagent-drop roll on a kill — core owns the spawn (scene access + rng). */
+let onReagentDrop: ((x: number, z: number, kind: EnemyKind, boss: boolean) => void) | null = null;
+export function setReagentDropHandler(fn: (x: number, z: number, kind: EnemyKind, boss: boolean) => void): void {
+  onReagentDrop = fn;
+}
+
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
@@ -460,21 +496,25 @@ function killZombie(z: Zombie): void {
   state.kills++;
   awardKillXp(!!z.boss); // character XP — the skill tree's fuel
   onCardRoll?.(z.x, z.z, !!z.boss); // roll a modifier-card drop
+  onReagentDrop?.(z.x, z.z, z.kind, !!z.boss); // roll themed alchemy reagents
   // Every kill DROPS coins on the floor (magnet-collected) rather than silently
   // crediting the purse — a visible payout. Falls back to an instant credit if
-  // no drop handler is wired (e.g. a headless test harness).
+  // no drop handler is wired (e.g. a headless test harness). Greed Draught
+  // doubles the payout while it's active.
+  const greedMul = state.player && state.player.greedT > 0 ? GREED_GOLD_MULT : 1;
+  const killGold = GOLD_PER_KILL * greedMul;
   if (onCoinDrop) {
-    onCoinDrop(z.x, z.z, GOLD_PER_KILL);
+    onCoinDrop(z.x, z.z, killGold);
   } else {
-    state.goldRun += GOLD_PER_KILL;
-    addGold(GOLD_PER_KILL, "dungeon-game");
+    state.goldRun += killGold;
+    addGold(killGold, "dungeon-game");
   }
   // STYLE KILL: a kill carried by pinball momentum (a ball ram, or any hit
   // landed mid-ride) pays bonus gold that scales with the live bounce combo —
   // the machine rewards playing like a ball, not walking up and stabbing.
   const p = state.player;
   if (p && p.momSpeed > 0) {
-    const bonus = Math.min(STYLE_KILL_GOLD_MAX, STYLE_KILL_BASE_GOLD + p.bounceCombo * STYLE_KILL_COMBO_GOLD);
+    const bonus = Math.min(STYLE_KILL_GOLD_MAX, STYLE_KILL_BASE_GOLD + p.bounceCombo * STYLE_KILL_COMBO_GOLD) * greedMul;
     // Routed through the coin drop too: a style kill is a bigger physical payout
     // at the same corpse, so it should visibly drop MORE coins than a plain kill
     // rather than silently bumping a counter next to a 2-coin pop.
@@ -554,7 +594,10 @@ export function hitPlayer(z: Zombie): void {
   if (state.godMode) return; // debug god mode: untouchable
   if (p.iframes > 0 || p.shieldT > 0) return; // shield potion = untouchable
 
-  const damage = DMG_BY_KIND[z.kind];
+  const raw = DMG_BY_KIND[z.kind];
+  // Stoneskin halves the bite before the armor even sees it (ceil so a 1-dmg
+  // nip still stings for 1 — a floor of "0" would read as full immunity).
+  const damage = p.stoneT > 0 ? Math.ceil(raw * STONESKIN_DAMAGE_MULT) : raw;
   const heavyHitter = z.kind === "brute" || z.kind === "reaper" || z.kind === "golem" || z.kind === "chomper";
   const knockback = heavyHitter ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
   // A ghost that just landed its touch stays MATERIALIZED — the punish window.
@@ -603,7 +646,8 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
   const g = state.grid;
   if (!p || !g || p.hp <= 0 || state.godMode || p.iframes > 0 || p.shieldT > 0) return; // godMode/shield: untouchable
 
-  const absorbed = absorbDamage(state.gear, damage);
+  const dmg = p.stoneT > 0 ? Math.ceil(damage * STONESKIN_DAMAGE_MULT) : damage; // Stoneskin
+  const absorbed = absorbDamage(state.gear, dmg);
   state.gear = absorbed.gear;
   for (const slot of absorbed.destroyed) {
     showToast(`${GEAR[slot].icon} ${GEAR[slot].label.toUpperCase()} DESTROYED`);

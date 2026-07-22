@@ -26,9 +26,10 @@ export function invalidateSkillAgg(): void {
   cached = null;
 }
 
-/** Max hearts with Iron Heart ranks + legacy scars. */
+/** Max hearts with Iron Heart ranks + legacy scars + any Elixir of Life bump
+ * brewed this run (state.bonusMaxHp; see items.ts / applyPotion). */
 export function playerMaxHp(): number {
-  return PLAYER_MAX_HP + skillAgg().maxHpFlat;
+  return PLAYER_MAX_HP + skillAgg().maxHpFlat + state.bonusMaxHp;
 }
 
 /** Max mana with Mana Well ranks. */

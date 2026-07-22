@@ -491,6 +491,12 @@ function activeBuffs(): BuffView[] {
   add(p.multiBallT, "multiball", "🔮", "#b06fe8", POTIONS.multiball.duration, `Multi-Ball · ${POTIONS.multiball.description}`);
   add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, `Curve Shot · ${POTIONS.curveshot.description}`);
   add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, `Magnet Boots · ${POTIONS.magnetboots.description}`);
+  // ── Craft-only brews (recipes.ts) ──
+  add(p.regenT, "regen", "🧪", "#8fd46b", POTIONS.regen.duration, `Regen Salve · ${POTIONS.regen.description}`);
+  add(p.venomCoatT, "venomcoat", "☠️", "#a83fd0", POTIONS.venomcoat.duration, `Venom Coat · ${POTIONS.venomcoat.description}`);
+  add(p.stoneT, "stoneskin", "🪨", "#9a8f77", POTIONS.stoneskin.duration, `Stoneskin · ${POTIONS.stoneskin.description}`);
+  add(p.staticT, "static", "⚡", "#f0e05a", POTIONS.static.duration, `Static Charge · ${POTIONS.static.description}`);
+  add(p.greedT, "greed", "💰", "#ffd98a", POTIONS.greed.duration, `Greed Draught · ${POTIONS.greed.description}`);
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");
   add(p.bladeStormT, "blades", "🌪️", "#d95763", 5, "Blade Storm · orbiting blades");
   add(p.magnetAuraT, "aura", "🧲", "#6fd0e8", 4, "Magnet Aura · pulling loot");
