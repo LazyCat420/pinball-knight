@@ -2,14 +2,38 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `5f9fbfe` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@059c146`; rollback image
+**Live:** client `7598968` on synology (deployed 2026-07-22 from a clean
+worktree, banner `HEAD@9249174`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
-HEAD: the progressive combo ramp (below), 4× floors + route-math plan v2
-(`137f32c`), the title intro (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`),
-storm cards (`048c853`), elemental armor (`96b3a76`).
+HEAD: deflector grab-throw (below), the progressive combo ramp (`5f9fbfe`), 4×
+floors + route-math plan v2 (`137f32c`), the title intro (`877c83c`), shaped
+walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`), elemental armor
+(`96b3a76`).
 
-## Latest — progressive combo ramp (`5f9fbfe`)
+## Latest — deflectors GRAB & THROW the knight (`7598968`)
+
+A deflector used to smoothly bank your momentum around a corner. Now it CATCHES
+the knight — snaps him onto the rail, holds a `DEFLECTOR_GRAB_TIME` (0.13s)
+wind-up beat (hitstop + thunk + gathering sparks), then HURLS him along the
+exit leg at a real launch speed (`DEFLECTOR_THROW_SPEED` 19 u/s floor,
+`×DEFLECTOR_THROW_BOOST` 1.18 on a fast entry, clamped to PINBALL_MAX_SPEED).
+Reads as a slingshot, not a curve.
+
+- The catch is armed in `pinball-collide.ts deflector` (keeps the leg-choice +
+  cornering guards; sets player `grabT/grabX/grabZ/throwDir*/throwSpeed`; guards
+  re-grab while held). The HOLD+release lives in a block at the TOP of
+  `updatePinball` (player.ts) — it OWNS the player while grabbed (pinned,
+  i-frames up, no steer/collision/friction), fires the throw on release, and is
+  cleared on ride-exit so a grab can never hang. `grabT` is on the
+  `__dungeonPlayer` dev probe.
+
+Verified: 850 tests green (deflector unit test rewritten to the grab-throw
+contract + a no-re-grab test), build + dungeon tsc clean, headless ride caught
+at 22 u/s → thrown at the 19 floor, zero console errors. Knobs
+(GRAB_TIME/THROW_SPEED/THROW_BOOST) at the top of constants.ts; NOT feel-judged
+on a real monitor.
+
+## Prior — progressive combo ramp (`5f9fbfe`)
 
 The pinball combo was a LINEAR chain (each bounce +1 combo, +1 gold, speed
 climbing straight into the 22 u/s cap). Reworked into a CONCAVE ramp across six
