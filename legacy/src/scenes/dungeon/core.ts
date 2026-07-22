@@ -583,6 +583,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       enterTavern(state.container, {
         stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
         onDescend: () => startLevel(state.level + 1),
+        onAbandon: () => exitDungeonGame(),
       });
       return true;
     };
@@ -1825,6 +1826,9 @@ function descend(): void {
         startLevel(nextLevel);
         showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
       },
+      // The tavern's game menu (Esc/I) carries the same confirmed ABANDON as
+      // the dungeon's; the tavern closes itself first, then this ends the run.
+      onAbandon: () => exitDungeonGame(),
     });
   } else {
     startLevel(nextLevel);

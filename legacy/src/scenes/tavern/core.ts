@@ -12,6 +12,10 @@ import { createPixelPass, computeRenderSizing, type PixelPass } from "../dungeon
 import { createDungeonCamera, aimCamera } from "../dungeon/camera";
 import { createInput, type InputHandle } from "../dungeon/input";
 import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../dungeon/tavern";
+import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../dungeon/menu";
+import { state as dungeonState, activeWeapon } from "../dungeon/state";
+import { renderKnightPortrait } from "../dungeon/render/knight-portrait";
+import { lookFromGear } from "../dungeon/render/knight-look";
 import {
   AMBIENT_INTENSITY,
   HEMI_INTENSITY,
@@ -145,6 +149,8 @@ let npcs: BuiltNpcs | null = null;
 let vfx: VfxSystem | null = null;
 /** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
 let moteT = 0;
+/** Last frame's overlay state — the frozen→free edge re-dresses the knight. */
+let wasFrozen = false;
 /** Live camera zoom, eased toward the wide/focused target every frame. */
 let camZoom = CAM_ZOOM_WIDE;
 /** What the diorama should show. Read once on entry — the run can't change here. */
@@ -170,7 +176,35 @@ function hideDungeonHud(hidden: boolean): void {
 
 /** True while any overlay owns the screen — movement and interaction freeze. */
 function panelOpen(): boolean {
-  return isVendorCounterOpen() || isRunSummaryOpen() || isGamblerOpen();
+  return isVendorCounterOpen() || isRunSummaryOpen() || isGamblerOpen() || isGameMenuOpen();
+}
+
+/**
+ * Open the SAME game menu the dungeon has on Esc/I (equipment paperdoll, cards,
+ * skills, stats, settings). The dungeon's key handler deliberately yields while
+ * this scene is open, so without this wiring the menu was unreachable from the
+ * tavern — the one place you most want to review a loadout.
+ */
+function openTavernMenu(): void {
+  const host = tavern.container;
+  if (!host || panelOpen()) return;
+  prompt?.hide();
+  openGameMenu(host, {
+    onAbandon: () => {
+      // Leave the run from the tavern: tear this scene down first, then hand
+      // the exit to the dungeon (wired at enterTavern time).
+      const leave = tavern.onAbandon;
+      closeTavern();
+      leave?.();
+    },
+    paintPortrait: (canvas) => renderKnightPortrait(canvas, activeWeapon().id, lookFromGear(dungeonState.gear)),
+  });
+  // The menu sheet's stylesheet z-index (10004) was chosen against the DUNGEON
+  // canvas; this scene's canvas sits at 10005, which buried the menu under the
+  // room — present in the DOM, invisible on screen. Lift it above the canvas
+  // (and above the vendor counters' 10007, though the two can never stack —
+  // panelOpen() gates this open).
+  if (dungeonState.menuEl) dungeonState.menuEl.style.zIndex = "10008";
 }
 
 /** Act on the focused station. */
@@ -236,6 +270,11 @@ function frame(now: number): void {
   tavern.time += dt;
 
   const frozen = panelOpen();
+  // Any overlay can change the loadout (the menu swaps the active hand, the
+  // counters sell plate) — re-dress the knight the frame the screen comes back.
+  // Cheap when nothing changed: refreshTavernPlayerArt is a string-key compare.
+  if (wasFrozen && !frozen) refreshTavernPlayerArt();
+  wasFrozen = frozen;
   if (input) updateTavernPlayer(dt, input, frozen);
 
   const p = tavern.player;
@@ -348,6 +387,8 @@ function frame(now: number): void {
 export interface TavernOptions {
   stats: TavernStats;
   onDescend: () => void;
+  /** Leave the run entirely — the game menu's confirmed ABANDON button. */
+  onAbandon?: () => void;
 }
 
 /**
@@ -368,7 +409,9 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   tavern.container = container;
   tavern.stats = opts.stats;
   tavern.onDescend = opts.onDescend;
+  tavern.onAbandon = opts.onAbandon ?? null;
   tavern.time = 0;
+  wasFrozen = false;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x07090d);
@@ -467,14 +510,32 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     if (!tavern.active) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    // ── Game menu is open: Esc/I close, Tab/arrows cycle, 1-5 jump — the same
+    // routing the dungeon gives it. Everything else is swallowed.
+    if (isGameMenuOpen()) {
+      const k = e.key.toLowerCase();
+      if (k === "escape" || k === "i") closeGameMenu();
+      else if (k === "tab" || k === "arrowright") cycleMenuTab(1);
+      else if (k === "arrowleft") cycleMenuTab(-1);
+      else if (/^[1-5]$/.test(k)) menuTabByIndex(Number(k) - 1);
+      e.preventDefault();
+      return;
+    }
     if (e.key === "e" || e.key === "E") {
       e.preventDefault();
       interact();
-    } else if (e.key === "Escape") {
+    } else if (e.key === "i" || e.key === "I" || e.key === "Escape") {
       if (isRunSummaryOpen()) {
         closeRunSummary();
         tavern.openStation = null;
+        return;
       }
+      // Vendor counters and the casino own their close buttons — don't stack
+      // the menu over them. With nothing else up, Esc/I open the menu, same
+      // muscle memory as the dungeon.
+      if (panelOpen()) return;
+      e.preventDefault();
+      openTavernMenu();
     }
   };
   window.addEventListener("keydown", onKey);
@@ -532,6 +593,9 @@ export function closeTavern(): void {
 
   closeRunSummary();
   closeGambler();
+  // Menu teardown is guarded by its own open-check; abandoning FROM the menu
+  // already closed it, but a descend scripted while it's up must not leak it.
+  if (isGameMenuOpen()) closeGameMenu();
   prompt?.dispose();
   fx?.dispose();
   props?.dispose();

@@ -55,6 +55,9 @@ export interface TavernState {
 
   stats: TavernStats;
   onDescend: (() => void) | null;
+  /** Leave the run for good (the game menu's confirmed ABANDON). The tavern
+   * closes itself first, then hands the exit to the dungeon via this. */
+  onAbandon: (() => void) | null;
 
   /** Per-frame disposal list for everything this scene allocated. */
   disposers: Array<() => void>;
@@ -74,6 +77,7 @@ export const tavern: TavernState = {
   time: 0,
   stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
   onDescend: null,
+  onAbandon: null,
   disposers: [],
 };
 
@@ -133,5 +137,6 @@ export function resetTavernState(): void {
   tavern.camZ = 0;
   tavern.time = 0;
   tavern.onDescend = null;
+  tavern.onAbandon = null;
   tavern.disposers = [];
 }

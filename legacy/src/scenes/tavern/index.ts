@@ -18,6 +18,9 @@ export type { TavernStats };
 export interface OpenTavernOptions {
   stats: TavernStats;
   onDescend: () => void;
+  /** Leave the run entirely — the walkable scene's game menu ABANDON. The DOM
+   * fallback has no menu, so it simply never calls it. */
+  onAbandon?: () => void;
 }
 
 /**

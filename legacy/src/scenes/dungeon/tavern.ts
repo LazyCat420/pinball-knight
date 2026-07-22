@@ -24,8 +24,10 @@
  * backdrop needed one too — so its scene was always null on the only path that
  * still reached it.
  */
-import { state } from "./state";
+import { state, activeWeapon } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { renderKnightPortrait } from "./render/knight-portrait";
+import { lookFromGear } from "./render/knight-look";
 import { CARDS, RARITY_HEX, STASH_MAX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { REAGENTS, REAGENT_IDS, type ReagentId } from "./reagents";
 import { RECIPES, RECIPE_IDS, canCraft, craftCost, type RecipeDef } from "./recipes";
@@ -301,14 +303,16 @@ function weaponsBody(): string {
     <div style="display:flex;flex-wrap:wrap;margin:4px 0">${rerollList}</div>`;
 }
 
-/** 🛡️ Armorer — buy fresh plate for empty/worn slots, repair all gear. */
+/** 🛡️ Armorer — buy fresh plate for empty/worn slots, repair all gear. The
+ * MIRROR beside the list is the menu's paperdoll (`renderKnightPortrait`), so
+ * hovering a piece shows the plate ON your actual sprite before you pay. */
 function armorBody(): string {
   const pieces = GEAR_SLOTS.map((s) => {
     const base = GEAR[s].absorb > 0 ? GEAR[s].absorb : 1;
     const cur = state.gear[s] ?? 0;
     const owned = cur >= base;
     const soak = GEAR[s].absorb > 0 ? `soaks ${GEAR[s].absorb}` : "+move speed";
-    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+    return `<div data-prev="${s}" style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:4px 6px;border:1px solid transparent;border-radius:6px">
       ${iconTag(s, GEAR[s].icon, 34)}
       <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${GEAR[s].label}</b><span style="color:#9a8f77;font-size:9px">${soak}${owned ? ` · equipped (${cur})` : ""}</span></span>
       <span style="flex:1"></span>
@@ -316,9 +320,45 @@ function armorBody(): string {
     </div>`;
   }).join("");
   return `
-    <div style="color:#c9c1ad;font-size:11px;margin-bottom:4px">PLATE FOR SALE</div>
-    ${pieces}
-    <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:6px">${btn("repair-gear", "🛡️ Repair all gear", PRICE_REPAIR_GEAR)}</div>`;
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 12px;background:#00000044;border:1px solid #4a3d28;border-radius:8px;flex:0 0 auto">
+        <span style="color:#c9c1ad;font-size:10px;letter-spacing:.5px">THE MIRROR</span>
+        <canvas id="armorer-doll" width="180" height="200" style="image-rendering:pixelated"></canvas>
+        <span id="armorer-doll-cap" style="color:#9a8f77;font-size:9px;text-align:center;max-width:180px">hover a piece to see it on you</span>
+      </div>
+      <div style="flex:1;min-width:260px">
+        <div style="color:#c9c1ad;font-size:11px;margin-bottom:4px">PLATE FOR SALE</div>
+        ${pieces}
+        <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:6px">${btn("repair-gear", "🛡️ Repair all gear", PRICE_REPAIR_GEAR)}</div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Paint the armorer's mirror and wire the hover previews.
+ *
+ * Called after every armor-counter render: the counter is string-HTML, so the
+ * canvas and its rows are recreated each time and the listeners must be too
+ * (same reason `paintHoloCards` runs post-render). The preview forces the
+ * hovered slot ON over your real gear — for a piece you already wear it simply
+ * shows what you have, which is honest either way.
+ */
+function wireArmorerMirror(stage: Element): void {
+  const canvas = stage.querySelector<HTMLCanvasElement>("#armorer-doll");
+  if (!canvas) return;
+  const cap = stage.querySelector<HTMLElement>("#armorer-doll-cap");
+  const paint = (previewSlot: GearSlot | null): void => {
+    const look = lookFromGear(state.gear);
+    if (previewSlot) look[previewSlot] = true;
+    renderKnightPortrait(canvas, activeWeapon().id, look);
+    if (cap) cap.textContent = previewSlot ? `wearing the ${GEAR[previewSlot].label}` : "hover a piece to see it on you";
+  };
+  paint(null);
+  stage.querySelectorAll<HTMLElement>("[data-prev]").forEach((row) => {
+    const slot = row.dataset.prev as GearSlot;
+    row.addEventListener("mouseenter", () => { row.style.borderColor = "#4a3d28"; row.style.background = "#00000044"; paint(slot); });
+    row.addEventListener("mouseleave", () => { row.style.borderColor = "transparent"; row.style.background = "none"; paint(null); });
+  });
 }
 
 /** The alchemy pouch line: flasks + every reagent you're carrying. */
@@ -462,12 +502,14 @@ function render(): void {
     // One counter, no room view — the walkable tavern is the room.
     stage.innerHTML = v ? vendorView(v) : "";
     paintHoloCards(stage);
+    if (v?.id === "armor") wireArmorerMirror(stage);
     const g = el.querySelector("#tavern-gold");
     if (g) g.textContent = `${getBalance()}g`;
     return;
   }
   stage.innerHTML = roomView() + (v ? vendorView(v) : "");
   paintHoloCards(stage); // fill in the card canvases this render just emitted
+  if (v?.id === "armor") wireArmorerMirror(stage);
   const goldEl = el.querySelector("#tavern-gold");
   if (goldEl) goldEl.textContent = `${getBalance()}g`;
 }
