@@ -2,10 +2,54 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `9f442be` on synology (deployed 2026-07-21, container healthy;
-rollback image saved as `braindeadbot-client:previous`). Service unchanged.
+**Live:** client `26a4f1f` on synology (deployed 2026-07-21, banner
+`main@26a4f1f`, clean tree; rollback image `braindeadbot-client:previous`).
+Service unchanged.
 
-## Latest — Ragnarok-style reagent drops + Alchemist brewing (`9f442be`)
+## Latest — Armorer MIRROR + game menu reachable from the tavern (`26a4f1f`)
+
+Two asks: "see what the armor looks like ON the character at the Armorer", and
+"how do I open the inventory/character menu" (answer: Esc/I — but it was
+unreachable from the tavern, see below).
+
+- **Armorer mirror** (`dungeon/tavern.ts armorBody` + `wireArmorerMirror`) —
+  the Armorer counter now shows the knight paperdoll (`renderKnightPortrait`,
+  whose header always said "the armorer counter, later") beside the plate list.
+  Hovering a row repaints the doll with that piece forced ON
+  (`lookFromGear(state.gear)` + slot override), caption flips to "wearing the
+  Helmet" etc. Buying repaints via the normal `render()` pass. The wiring runs
+  after EVERY armor-counter render because the counter is string-HTML — canvas
+  and listeners are recreated each time, same reason `paintHoloCards` re-runs.
+- **Game menu from the tavern** (`tavern/core.ts`) — the dungeon's Esc/I
+  handler deliberately yields while the walkable tavern is open
+  (`isTavernSceneOpen()` early-return in `core.handleKey`), so the Diablo-style
+  menu was unreachable in the one room built for loadout fiddling. The tavern's
+  own `onKey` now opens it on Esc/I (when no other panel is up), routes menu
+  keys (Esc/I close, Tab/arrows cycle, 1-5 jump), and `panelOpen()` includes
+  `isGameMenuOpen()` so movement freezes and the 3D pass skips.
+- **z-index trap, caught headless:** `.gmenu` is 10004 in its stylesheet —
+  chosen against the DUNGEON canvas. The tavern canvas sits at 10005, so the
+  menu was in the DOM, keyboard-live, and 100% invisible. `openTavernMenu`
+  lifts `state.menuEl` to 10008 inline. If the menu ever "doesn't open" in a
+  new full-screen scene, check stacking before keys.
+- **ABANDON from the tavern** — new optional `onAbandon` threaded
+  `enterTavern → TavernOptions → tavern.onAbandon`; the menu's confirmed
+  ABANDON closes the tavern scene first, then `exitDungeonGame()`. Both
+  dungeon call sites pass it.
+- **Frozen→free edge re-dresses the knight** (`wasFrozen` in the frame loop) —
+  the menu can swap the active hand, and previously only the vendor-counter
+  close path refreshed the sprite. Cheap: `refreshTavernPlayerArt` is a
+  string-key compare.
+
+**Verified headless** (playwright+swiftshader, dev :5174 AND live :5174 after
+deploy): menu opens/closes over the room with tabs cycling; walked to the
+armory via `__tavernProbe` navigation, E opens the counter, mirror canvas
+paints (~10k px), and all three hover previews hash to distinct pixels
+(helmet also adds the plume silhouette). Screenshots in session scratchpad.
+NOTE: armor/boots previews are RAMP SWAPS (brightness, not silhouette) —
+pixel-count metrics can't see them; hash pixel VALUES.
+
+## Prior — Ragnarok-style reagent drops + Alchemist brewing (`9f442be`)
 
 Kills now drop **themed alchemy reagents** and you **brew potions** from them at
 the Tavern Alchemist — the RO model (a monster drops what it's "made of", you
@@ -45,8 +89,6 @@ toast; open Tavern Alchemist → Brew tab → buy a flask, craft a flask from 3 
 Shards, brew Health + Stoneskin/Regen → confirm belt fill + HUD tiles + effects.
 
 ## Prior — booster STATION SPINE (path-first routing, `d93856c`)
-
-## Latest — booster STATION SPINE (path-first routing, `d93856c`)
 
 The complaint: pinball parts read as isolated clusters — a booster lane that
 shoved you into empty corridor, rooms stacked with pin grids and parallel
