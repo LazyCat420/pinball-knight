@@ -2,13 +2,46 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `877c83c` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@877c83c`; rollback image `braindeadbot-client:previous`).
-Service unchanged. Carries everything to HEAD: the title intro (below), shaped
-walls (foundation `b2f4f21` + curves/concave `b77ac83`), storm cards
-(`048c853`), elemental armor (`96b3a76`).
+**Live:** client `137f32c` on synology (deployed 2026-07-22 from a clean
+worktree, banner `HEAD@afb54ed`; rollback image
+`braindeadbot-client:previous`). Service unchanged. Carries everything to
+HEAD: 4× floors + route-math plan v2 (below), the title intro (`877c83c`),
+shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`), elemental armor
+(`96b3a76`).
 
-## Latest — PINBALL KNIGHT title intro (`877c83c`)
+## Latest — 4× floor area + ROUTE_MATH_PLAN v2 (`137f32c`)
+
+Floors are 4× the area (2× per side): level 1 ~74×54 → **~150×106 tiles**,
+deep caps ~134×102 → **~266×202 (~54k tiles)**. `levelConfig` cell formulas
+doubled; budgets that ride `floorTiles` (zombies, torches, artery length →
+spine parts, FAR_BAND stair distance) scale on their own; hand-tuned caps were
+re-set: zombies 60→110, torches 40→80 (`TORCH_LIGHT_POOL` stays 6 — it's a
+GPU budget), rooms 5+1.2l cap 14, secrets 4+1l cap 10, launchBreaks 8..16,
+corridor `partBudget` 8→16 (decorate.ts), `FROG_TRAIL_TILES` 30→50. The floor
+texture is a fixed 512px repeating tile, so no 8192px-texture-cap hazard.
+
+**`src/scenes/dungeon/ROUTE_MATH_PLAN.md`** is the reworked route-geometry /
+generation-math plan, corrected against the engine (Part 0 lists the five v1
+assumptions the code contradicts — read that before implementing any of it).
+Key additions: speed-interval propagation along the route DAG (§2b — booster
+spacing from restitution math, cracked-wall punches speed-gated), tier-2
+validation that replays routes through the REAL `moveCircle`, and the 4×
+scaling table (§10). Build order in §11; step 1 (4×) is this commit.
+
+**Perf watchlist for real-GPU QA** (headless can't measure frame rate): ~110
+zombie sprites ≈ 110 draw calls; AI flow field is O(tiles) at up to 54k tiles;
+`floor-pipeline.test.ts` runtime grew ~4× (suite still ~13s). If deep floors
+chug: flow-field cadence → zombie cap → wall culling, in that order. Also NOT
+judged headless: whether 4× floors FEEL right (walk time to stairs roughly
+doubles; the spine + trapdoor rides matter much more now).
+
+Verified: 839 tests green (floor-pipeline start→stairs solvability over 17
+depths × 4 seeds at the new sizes), build clean, ASCII renders of levels 1/9
+eyeballed (healthy corridor structure, no voids/hypostyle artifacts), headless
+boot of a live 4× floor + full-map overlay with 110 zombies and zero console
+errors.
+
+## Prior — PINBALL KNIGHT title intro (`877c83c`)
 
 `/dungeon` now opens on a title sequence instead of dropping straight into
 floor 1: the knight sprints through a chirpy Mario-style 2D overworld
