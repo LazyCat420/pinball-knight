@@ -2,15 +2,30 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `7598968` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@ee00e40`; rollback image
+**Live:** client `ba9b484` on synology (deployed 2026-07-22 from a clean
+worktree, banner `HEAD@ba9b484`; rollback image
 `braindeadbot-client:previous`). Service unchanged. Carries everything to
-HEAD: deflector grab-throw (below), the progressive combo ramp (`5f9fbfe`), 4×
-floors + route-math plan v2 (`137f32c`), the title intro (`877c83c`), shaped
-walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`), elemental armor
-(`96b3a76`).
+HEAD: crisp intro knight (below), deflector grab-throw (`7598968`), the
+progressive combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`),
+the title intro (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards
+(`048c853`), elemental armor (`96b3a76`).
 
-## Latest — deflectors GRAB & THROW the knight (`7598968`)
+## Latest — crisp knight in the intro run phase (`ba9b484`)
+
+The intro's running knight looked muddy (fat pixels beside thin ones): he was
+drawn 1.4× onto the 480px background canvas, which is THEN CSS-upscaled ~3.3× to
+screen — two fractional resamples, uneven pixel grid. Now he rides his OWN
+display-resolution overlay canvas (`kc`, z 9001, 1:1 with screen, no CSS
+upscale) drawn at the nearest INTEGER multiple of the 72px sprite grid (`KS`,
+~5×) at integer position → one art pixel = KS whole pixels. Background stays on
+the low-res canvas (solid shapes don't care). Contact shadow moved onto the same
+overlay; overlay retires in `beginShatter` (he's the 3D ball then) + teardown.
+Verified headless: uniform pixel grid + full run→bonk→shatter→sweep, zero
+errors, no leftover overlay at the shatter. **This is the reusable fix for any
+"blurry 2D sprite" here: a bitmap needs an INTEGER final scale; put it on its
+own display-res canvas rather than through a fractional CSS upscale.**
+
+## Prior — deflectors GRAB & THROW the knight (`7598968`)
 
 A deflector used to smoothly bank your momentum around a corner. Now it CATCHES
 the knight — snaps him onto the rail, holds a `DEFLECTOR_GRAB_TIME` (0.13s)
