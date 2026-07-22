@@ -877,9 +877,9 @@ export const MERCHANT_SPAWN_MIN_RING = 5;
 // connectivity by construction, so this stays solvable.
 export const ROOM_MIN_CELLS = 3; // smallest room side, cells (≥6 tiles post-thicken)
 export const ROOM_MAX_CELLS = 6; // largest room side, cells (up to 12 tiles — real arenas)
-export const ROOMS_BASE = 3; // rooms on level 1
-export const ROOMS_PER_LEVEL = 0.8; // +~1 room every ~1.25 depths…
-export const ROOMS_MAX = 8; // …capped
+export const ROOMS_BASE = 5; // rooms on level 1 (re-tuned for 4× floor area)
+export const ROOMS_PER_LEVEL = 1.2; // +~1 room every ~0.8 depths…
+export const ROOMS_MAX = 14; // …capped (full ×4 would dissolve the maze into rooms)
 
 // ── Secret walls (smash through at pinball speed) ───────────────
 /**
@@ -902,9 +902,9 @@ export const WALL_BREAK_SPEED = 15;
 /** Wall tiles a terminal-speed smash punches through — bands are 2 thick. */
 export const WALL_BREAK_DEPTH = 2;
 export const WALL_BREAK_SPEED_COST = 0.7; // momentum kept after punching masonry
-export const SECRETS_BASE = 2; // cracked walls on level 1
-export const SECRETS_PER_LEVEL = 0.5;
-export const SECRETS_MAX = 5;
+export const SECRETS_BASE = 4; // cracked walls on level 1 (re-tuned for 4× floors)
+export const SECRETS_PER_LEVEL = 1;
+export const SECRETS_MAX = 10;
 
 // ── The Death Dealer (the floor timer) ──────────────────────────
 /**
@@ -1455,11 +1455,14 @@ export function levelConfig(level: number): LevelConfig {
   const l = Math.max(1, level);
   // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2.
   // Bigger + faster-growing than the first build so deeper floors are sprawling
-  // labyrinths, not the same small maze. Level 1 is ~72×52 tiles; the caps let
-  // late floors reach ~134×102. (A3 — the caps rose with the A1 break-throughs:
-  // players now carve their own openness, so a floor can start bigger + denser.)
-  const cellsW = Math.min(17 + Math.ceil(l * 1.4), 33);
-  const cellsH = Math.min(12 + l, 25);
+  // labyrinths, not the same small maze. 4× AREA (2× per side) since the route
+  // plan rework: level 1 is ~150×106 tiles; the caps let late floors reach
+  // ~266×202 (~54k tiles). Counts that should ride the area do so via
+  // floorTiles below; hard caps were re-tuned for the new area — see
+  // ROUTE_MATH_PLAN.md §10 for what scales, what's hand-set, and the perf
+  // watchlist (zombie draw calls, flow-field O(tiles)).
+  const cellsW = Math.min(34 + Math.ceil(l * 2.8), 66);
+  const cellsH = Math.min(24 + 2 * l, 50);
   const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
   // Maze character cycles by depth so no two consecutive floors share a shape:
   // level 1 stays the familiar winding backtracker (1.0), then a bushy
@@ -1469,13 +1472,16 @@ export function levelConfig(level: number): LevelConfig {
   return {
     cellsW,
     cellsH,
-    zombies: Math.min(Math.round(floorTiles / 32) + 3 * (l - 1), 60),
+    // Cap re-tuned for 4× floors: at the old 60 the density would drop 4× and
+    // big floors would read empty. 110 is a DRAW-CALL budget as much as a
+    // difficulty one — each zombie is its own sprite mesh; raise with care.
+    zombies: Math.min(Math.round(floorTiles / 32) + 3 * (l - 1), 110),
     // Faster horde overall, and it ramps harder with depth — a deep floor is a
     // genuine sprint, not a shuffle. (Spiders multiply this again, see items.)
     zombieSpeed: Math.min(1.5 + 0.12 * l, 2.8),
     // Torches ride the maze area too — sparse torches left whole regions
     // pitch dark. Only TORCH_LIGHT_POOL of them are ever LIVE lights.
-    torches: Math.min(Math.round(floorTiles / 55) + 8, 40),
+    torches: Math.min(Math.round(floorTiles / 55) + 8, 80),
     // Braiding grows with depth: shallow floors are corridor duels (few loops),
     // deep floors are open labyrinths full of flanking routes and dead-end
     // ambush pockets. Capped so it never dissolves into an open room.
@@ -1487,7 +1493,7 @@ export function levelConfig(level: number): LevelConfig {
     // A1 break-through budget: funds both the safety fixes (no boost into an
     // unbreakable wall) and the payoff cracks (a lane that punches through).
     // Grows with depth so deeper floors expand more as you smash outward.
-    launchBreaks: Math.min(5 + Math.floor((l - 1) / 2), 10),
+    launchBreaks: Math.min(8 + Math.floor((l - 1) / 2), 16),
   };
 }
 
@@ -1524,7 +1530,7 @@ export const WITCH_CHANCE = 0.5; // chance a smashed secret reveals her (once pe
  * trail of gold motes tracing the route to the stairs.
  */
 export const FROG_COOLDOWN = 20; // seconds between consultations
-export const FROG_TRAIL_TILES = 30; // how far the mote trail traces
+export const FROG_TRAIL_TILES = 50; // how far the mote trail traces (scaled with 4× floors)
 export const FROG_TRAIL_STAGGER = 0.045; // seconds between trail motes
 
 // ── Wave-F power-ups + score glue ───────────────────────────────

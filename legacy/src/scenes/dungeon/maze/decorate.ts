@@ -1148,7 +1148,8 @@ export function decorateMaze(
   rng: () => number,
   zombieCount: number,
   torchBudget: number,
-  partBudget = 8,
+  partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
+
   rooms: Room[] = [],
   extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints } = {},
 ): LevelPlan {
