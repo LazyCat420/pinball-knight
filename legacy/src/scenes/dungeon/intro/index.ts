@@ -227,6 +227,24 @@ export function runPinballIntro(onDone: () => void): void {
   const BLOCK_CLEAR = KH + JUMP_H - 8; // bottom of brick: headbutt at apex
   const blockWorldX = KX + SCROLL_SPEED * RUN_DUR; // arrives overhead at bonk
 
+  // The knight rides his OWN display-resolution canvas so his sprite scales by
+  // a WHOLE number and stays crisp. The background canvas is 480px wide and
+  // CSS-upscaled ~3.3× (fractional) — fine for the chunky solid shapes, but it
+  // smeared the sprite's pixel grid (fat pixel next to thin). Here `S` maps the
+  // 480-virtual space to real screen px, and the knight is drawn at the nearest
+  // INTEGER multiple of the sprite grid, so one art pixel = KS whole pixels.
+  const S = window.innerWidth / BW;
+  const kc = document.createElement("canvas");
+  kc.width = Math.round(window.innerWidth);
+  kc.height = Math.round(BH * S);
+  kc.style.cssText =
+    "position:absolute;inset:0;width:100%;height:100%;z-index:9001;image-rendering:pixelated;pointer-events:none;";
+  overlay.appendChild(kc);
+  const kctx = kc.getContext("2d")!;
+  kctx.imageSmoothingEnabled = false;
+  const KS = Math.max(2, Math.round((KH * S) / SPRITE_PIXEL_GRID)); // integer sprite scale
+  const KREAL = SPRITE_PIXEL_GRID * KS; // knight height, real px
+
   // DOM bits: skip button always; title banner appears at the title phase.
   const styleEl = document.createElement("style");
   styleEl.textContent = "@keyframes pk-blink{0%,55%{opacity:1}56%,100%{opacity:0}}";
@@ -265,6 +283,7 @@ export function runPinballIntro(onDone: () => void): void {
     window.removeEventListener("keydown", onSkipKey, true);
     window.removeEventListener("pointerdown", onSkipPointer, true);
     c2d.remove();
+    kc.remove(); // no-op if beginShatter already retired it
     skipBtn.remove();
     banner.remove();
     styleEl.remove();
@@ -391,21 +410,25 @@ export function runPinballIntro(onDone: () => void): void {
       yOff = JUMP_H * 4 * u * (1 - u);
       frame = rollFrames[Math.min(rollFrames.length - 1, Math.floor(u * 2 * rollFrames.length))];
     }
-    // Contact shadow
-    ctx.fillStyle = "rgba(0,0,0,.25)";
-    ctx.beginPath();
-    ctx.ellipse(KX, GROUND_Y + 4, 26 - yOff * 0.12, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.drawImage(
+    // The knight + his contact shadow render on the crisp display-res canvas,
+    // at integer scale and integer position (no sub-pixel smear). Coordinates
+    // are the same 480-virtual ones the background uses, mapped up by S.
+    kctx.clearRect(0, 0, kc.width, kc.height);
+    kctx.fillStyle = "rgba(0,0,0,.25)";
+    kctx.beginPath();
+    kctx.ellipse(KX * S, (GROUND_Y + 4) * S, (26 - yOff * 0.12) * S, 6 * S, 0, 0, Math.PI * 2);
+    kctx.fill();
+    const baseY = (GROUND_Y - yOff + 6) * S; // where the feet land, real px
+    kctx.drawImage(
       strip,
       (stripIndex.get(frame) ?? 0) * SPRITE_PIXEL_GRID,
       0,
       SPRITE_PIXEL_GRID,
       SPRITE_PIXEL_GRID,
-      KX - KH / 2,
-      Math.round(GROUND_Y - KH - yOff + 6),
-      KH,
-      KH,
+      Math.round(KX * S - KREAL / 2),
+      Math.round(baseY - KREAL),
+      KREAL,
+      KREAL,
     );
 
     // Bonk flash + sparks
@@ -439,6 +462,8 @@ export function runPinballIntro(onDone: () => void): void {
   }
 
   function beginShatter(): void {
+    // The knight is now the 3D ball — his 2D canvas retires as the world breaks.
+    kc.remove();
     snap = document.createElement("canvas");
     snap.width = BW;
     snap.height = BH;
