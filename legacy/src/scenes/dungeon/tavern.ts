@@ -28,6 +28,7 @@ import { state, activeWeapon } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear } from "./render/knight-look";
+import { ARMOR_STYLES, ELEMENTAL_STYLE_IDS, activeStyle, isStyleUnlocked, unlockStyle, setActiveStyle, styleGearGrant, type ArmorStyleId } from "./armor-styles";
 import { CARDS, RARITY_HEX, STASH_MAX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { REAGENTS, REAGENT_IDS, type ReagentId } from "./reagents";
 import { RECIPES, RECIPE_IDS, canCraft, craftCost, type RecipeDef } from "./recipes";
@@ -309,9 +310,10 @@ function weaponsBody(): string {
 function armorBody(): string {
   const pieces = GEAR_SLOTS.map((s) => {
     const base = GEAR[s].absorb > 0 ? GEAR[s].absorb : 1;
+    const grant = styleGearGrant(s, base);
     const cur = state.gear[s] ?? 0;
-    const owned = cur >= base;
-    const soak = GEAR[s].absorb > 0 ? `soaks ${GEAR[s].absorb}` : "+move speed";
+    const owned = cur >= grant;
+    const soak = GEAR[s].absorb > 0 ? `soaks ${grant}` : "+move speed";
     return `<div data-prev="${s}" style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:4px 6px;border:1px solid transparent;border-radius:6px">
       ${iconTag(s, GEAR[s].icon, 34)}
       <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:#e8dcc0;font-size:12px">${GEAR[s].label}</b><span style="color:#9a8f77;font-size:9px">${soak}${owned ? ` · equipped (${cur})` : ""}</span></span>
@@ -319,6 +321,28 @@ function armorBody(): string {
       ${owned ? `<span style="color:#5a7d4a;font-size:10px;letter-spacing:.5px">EQUIPPED</span>` : btn(`buygear:${s}`, "Buy", PRICE_GEAR[s])}
     </div>`;
   }).join("");
+  // ── Elemental SETS — permanent style unlocks (armor-styles.ts). A set is a
+  // prestige purchase: several runs of banked kills, not an impulse buy. Iron
+  // heads the list so switching back is always one click.
+  const worn = activeStyle();
+  const styleRow = (id: ArmorStyleId): string => {
+    const d = ARMOR_STYLES[id];
+    const unlocked = isStyleUnlocked(id);
+    const isWorn = worn === id;
+    const bonus = d.bonusAbsorb.helmet > 0 ? ` · finer steel (helm +${d.bonusAbsorb.helmet}, armor +${d.bonusAbsorb.armor} soak)` : "";
+    const action = isWorn
+      ? `<span style="color:#5a7d4a;font-size:10px;letter-spacing:.5px">WORN</span>`
+      : unlocked
+        ? btn(`wearstyle:${id}`, "Wear")
+        : btn(`buyset:${id}`, "Buy set", d.price);
+    return `<div data-prevstyle="${id}" style="display:flex;align-items:center;gap:8px;margin:4px 0;padding:4px 6px;border:1px solid transparent;border-radius:6px">
+      <span style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:19px;background:#00000055;border:1px solid ${d.swatch};border-radius:6px">${d.icon}</span>
+      <span style="display:flex;flex-direction:column;line-height:1.15"><b style="color:${d.swatch};font-size:12px">${d.label}</b><span style="color:#9a8f77;font-size:9px">${d.blurb}${unlocked ? "" : bonus}</span></span>
+      <span style="flex:1"></span>
+      ${action}
+    </div>`;
+  };
+  const sets = (["iron", ...ELEMENTAL_STYLE_IDS] as ArmorStyleId[]).map(styleRow).join("");
   return `
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 12px;background:#00000044;border:1px solid #4a3d28;border-radius:8px;flex:0 0 auto">
@@ -330,6 +354,8 @@ function armorBody(): string {
         <div style="color:#c9c1ad;font-size:11px;margin-bottom:4px">PLATE FOR SALE</div>
         ${pieces}
         <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:6px">${btn("repair-gear", "🛡️ Repair all gear", PRICE_REPAIR_GEAR)}</div>
+        <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:8px;color:#c9c1ad;font-size:11px;margin-bottom:4px">STYLES OF THE FORGE <span style="color:#9a8f77;font-size:9px">— buy a set once, wear it forever · comes with full plate</span></div>
+        ${sets}
       </div>
     </div>`;
 }
@@ -347,18 +373,21 @@ function wireArmorerMirror(stage: Element): void {
   const canvas = stage.querySelector<HTMLCanvasElement>("#armorer-doll");
   if (!canvas) return;
   const cap = stage.querySelector<HTMLElement>("#armorer-doll-cap");
-  const paint = (previewSlot: GearSlot | null): void => {
-    const look = lookFromGear(state.gear);
+  const paint = (previewSlot: GearSlot | null, previewStyle?: ArmorStyleId): void => {
+    // A style preview shows the FULL SET in that style — that's what the gold
+    // buys, so that's what the mirror sells. Slot previews keep your worn style.
+    const look = previewStyle ? { helmet: true, armor: true, boots: true, style: previewStyle } : lookFromGear(state.gear);
     if (previewSlot) look[previewSlot] = true;
     renderKnightPortrait(canvas, activeWeapon().id, look);
-    if (cap) cap.textContent = previewSlot ? `wearing the ${GEAR[previewSlot].label}` : "hover a piece to see it on you";
+    if (cap) cap.textContent = previewStyle ? `${ARMOR_STYLES[previewStyle].label} — the full set` : previewSlot ? `wearing the ${GEAR[previewSlot].label}` : "hover a piece to see it on you";
   };
   paint(null);
-  stage.querySelectorAll<HTMLElement>("[data-prev]").forEach((row) => {
-    const slot = row.dataset.prev as GearSlot;
-    row.addEventListener("mouseenter", () => { row.style.borderColor = "#4a3d28"; row.style.background = "#00000044"; paint(slot); });
+  const hoverRow = (row: HTMLElement, over: () => void): void => {
+    row.addEventListener("mouseenter", () => { row.style.borderColor = "#4a3d28"; row.style.background = "#00000044"; over(); });
     row.addEventListener("mouseleave", () => { row.style.borderColor = "transparent"; row.style.background = "none"; paint(null); });
-  });
+  };
+  stage.querySelectorAll<HTMLElement>("[data-prev]").forEach((row) => hoverRow(row, () => paint(row.dataset.prev as GearSlot)));
+  stage.querySelectorAll<HTMLElement>("[data-prevstyle]").forEach((row) => hoverRow(row, () => paint(null, row.dataset.prevstyle as ArmorStyleId)));
 }
 
 /** The alchemy pouch line: flasks + every reagent you're carrying. */
@@ -603,12 +632,45 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     const s = raw as GearSlot;
     if (!GEAR[s]) return;
     const base = GEAR[s].absorb > 0 ? GEAR[s].absorb : 1;
-    if ((state.gear[s] ?? 0) >= base) { flash("already equipped"); return; }
+    const grant = styleGearGrant(s, base); // finer steel while an elemental set is worn
+    if ((state.gear[s] ?? 0) >= grant) { flash("already equipped"); return; }
     if (!pay(PRICE_GEAR[s])) { flash("not enough gold"); return; }
-    state.gear = { ...state.gear, [s]: base };
+    state.gear = { ...state.gear, [s]: grant };
     pendingFx.push("gear");
     state.hudDirty = true;
     flash(`${GEAR[s].icon} ${GEAR[s].label} equipped`);
+    render();
+    return;
+  }
+
+  // ── Armorer: buy an elemental SET — permanent style unlock + full plate ──
+  if (act === "buyset") {
+    const id = raw as ArmorStyleId;
+    const def = ARMOR_STYLES[id];
+    if (!def || def.price <= 0 || isStyleUnlocked(id)) return;
+    if (!pay(def.price)) { flash("not enough gold"); return; }
+    unlockStyle(id); // unlock AND wear it
+    // You walk out dressed: the set comes with full plate in its finer steel
+    // (never downgrading a piece that somehow has more left).
+    const plate: typeof state.gear = { ...state.gear };
+    for (const s of GEAR_SLOTS) {
+      const base = GEAR[s].absorb > 0 ? GEAR[s].absorb : 1;
+      plate[s] = Math.max(plate[s] ?? 0, styleGearGrant(s, base, id));
+    }
+    state.gear = plate;
+    pendingFx.push("gear");
+    state.hudDirty = true;
+    flash(`${def.icon} ${def.label} — forged & worn`);
+    render();
+    return;
+  }
+
+  // ── Armorer: wear a set you already own (free) ──
+  if (act === "wearstyle") {
+    const id = raw as ArmorStyleId;
+    if (!ARMOR_STYLES[id] || !setActiveStyle(id)) return;
+    state.hudDirty = true; // sprites re-dress via the per-frame look-key checks
+    flash(`${ARMOR_STYLES[id].icon} ${ARMOR_STYLES[id].label} worn`);
     render();
     return;
   }

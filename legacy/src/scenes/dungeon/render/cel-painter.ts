@@ -30,6 +30,7 @@ import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
 import { REAGENTS, REAGENT_IDS } from "../reagents";
 import { FULL_PLATE, type KnightLook } from "./knight-look";
+import type { ArmorStyleId } from "../armor-styles";
 import {
   type Pt,
   type Dir3,
@@ -481,6 +482,30 @@ const K_TRIM = 16; // flame/gold — buckle, trim glints
 const K_PLUME: Ramp = R_BLOOD; // [11,12,13] helmet crest
 const K_LEG: Ramp = R_STEEL; // legs (cuisses)
 
+/**
+ * ARMOR STYLE → paint. An elemental set (armor-styles.ts) swaps which RAMPS the
+ * equipped pieces brighten to — the same rule as gear presence (ramp swaps,
+ * never geometry), so every style keeps the knight's silhouette grammar. All
+ * indices are real Cold-Crypt palette entries so the quantizer stays clean:
+ * ice rides the arcane ramp, wind the rot-greens, fire the torch ramp, thunder
+ * a storm-slate whose highlight and trim crack into lightning gold. Missing
+ * pieces stay dull dark iron in EVERY style — the set only paints what you wear.
+ */
+interface StylePaint {
+  plate: Ramp; // helm dome, cuirass, pauldrons, tassets, greaves
+  plume: Ramp; // helmet crest
+  trim: number; // gorget stud + belt buckle accent
+  spark: number; // visor eye-glow core
+  sparkHot: number; // eye-glow hot centre
+}
+const STYLE_PAINTS: Record<ArmorStyleId, StylePaint> = {
+  iron: { plate: K_PLATE, plume: K_PLUME, trim: K_TRIM, spark: 30, sparkHot: 18 },
+  ice: { plate: [29, 30, 31], plume: [30, 31, 22], trim: 31, spark: 31, sparkHot: 22 },
+  wind: { plate: [7, 8, 9], plume: [8, 9, 22], trim: 9, spark: 9, sparkHot: 22 },
+  fire: { plate: [14, 15, 16], plume: [15, 16, 17], trim: 17, spark: 16, sparkHot: 18 },
+  thunder: { plate: [2, 3, 4], plume: [16, 17, 18], trim: 18, spark: 17, sparkHot: 18 },
+};
+
 /** Upright knight proportions — a real standing figure, not a barrel. */
 const KNIGHT_RIG: RigConfig = {
   shoulderW: 17,
@@ -497,13 +522,13 @@ const KNIGHT_RIG: RigConfig = {
  * `plumeLag` (px) trails the crest behind the head's motion — overlapping action
  * so the plume flows on the walk/attack instead of moving rigidly with the helm.
  */
-function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0, hasHelm = true): void {
+function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag = 0, hasHelm = true, sp: StylePaint = STYLE_PAINTS.iron): void {
   const [x, y] = head;
   const pl = plumeLag;
   // No helmet equipped: same dome, same T-visor (the readability contract),
   // but dull dark iron, no plume, no arcane eye-spark. Gear brightens; it
   // never changes the silhouette's grammar.
-  const dome: Ramp = hasHelm ? K_PLATE : K_PLATE_DK; // +x trails right; the crest tip drags opposite motion
+  const dome: Ramp = hasHelm ? sp.plate : K_PLATE_DK; // +x trails right; the crest tip drags opposite motion
   // Crest plume — a bold blood-red comb, drawn BEHIND the helm so it reads as a
   // silhouette-topping shape, not an antenna. Multi-lobe for a flowing mane and a
   // brighter front lobe for volume; the tip lobes carry the lag.
@@ -511,14 +536,14 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
     // bare dull helm — plume and spark are the helmet's reward
   } else if (dir === "E") {
     // side profile — a long horsehair mane sweeping back off the crown
-    plateShaded(ctx, [[x - 1, y - 15], [x - 14, y - 24 + pl * 0.3], [x - 27, y - 16 + pl], [x - 30, y + 2 + pl * 1.2], [x - 20, y - 2], [x - 6, y - 5]], K_PLUME, { rim: false });
-    figDetail(ctx, [[x - 4, y - 13], [x - 18, y - 16 + pl * 0.6], [x - 27, y - 8 + pl]], 2, 13); // bright strand
-    figDetail(ctx, [[x - 6, y - 8], [x - 20, y - 6 + pl]], 1.5, 11); // dark strand
+    plateShaded(ctx, [[x - 1, y - 15], [x - 14, y - 24 + pl * 0.3], [x - 27, y - 16 + pl], [x - 30, y + 2 + pl * 1.2], [x - 20, y - 2], [x - 6, y - 5]], sp.plume, { rim: false });
+    figDetail(ctx, [[x - 4, y - 13], [x - 18, y - 16 + pl * 0.6], [x - 27, y - 8 + pl]], 2, sp.plume[2]); // bright strand
+    figDetail(ctx, [[x - 6, y - 8], [x - 20, y - 6 + pl]], 1.5, sp.plume[0]); // dark strand
   } else {
     // front/back — a tall fanned crest rising off the crown, tip trailing on pl
-    plateShaded(ctx, [[x - 4, y - 14], [x - 2 + pl * 0.4, y - 27], [x + 6 + pl, y - 30], [x + 11 + pl * 1.2, y - 22], [x + 6, y - 14]], K_PLUME, { rim: false });
-    figDetail(ctx, [[x + 1, y - 15], [x + 3 + pl * 0.6, y - 25], [x + 8 + pl, y - 28]], 2, 13); // bright strand
-    figDetail(ctx, [[x + 2, y - 15], [x + 5 + pl, y - 23]], 1.5, 11); // dark strand
+    plateShaded(ctx, [[x - 4, y - 14], [x - 2 + pl * 0.4, y - 27], [x + 6 + pl, y - 30], [x + 11 + pl * 1.2, y - 22], [x + 6, y - 14]], sp.plume, { rim: false });
+    figDetail(ctx, [[x + 1, y - 15], [x + 3 + pl * 0.6, y - 25], [x + 8 + pl, y - 28]], 2, sp.plume[2]); // bright strand
+    figDetail(ctx, [[x + 2, y - 15], [x + 5 + pl, y - 23]], 1.5, sp.plume[0]); // dark strand
   }
   // Helm dome — a rounded bucket, not a ball: flat-ish crown, jaw taper.
   if (dir === "E") {
@@ -539,8 +564,8 @@ function knightHelm(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, plumeLag
       rrectShaded(ctx, x - 11, y - 3, 22, 4, 2, 1, { ink: 1 }); // eye slit
       rrectShaded(ctx, x - 2.5, y - 1, 5, 12, 2, 1, { ink: 1 }); // breath slot
       if (hasHelm) {
-        figGlow(ctx, x - 6, y - 1, 1.6, 30, 18); // faint arcane eye-spark, left
-        figGlow(ctx, x + 6, y - 1, 1.6, 30, 18); // right
+        figGlow(ctx, x - 6, y - 1, 1.6, sp.spark, sp.sparkHot); // faint elemental eye-spark, left
+        figGlow(ctx, x + 6, y - 1, 1.6, sp.spark, sp.sparkHot); // right
       }
       figDetail(ctx, [[x - 12, y + 9], [x + 12, y + 9]], 1.5, K_STEEL_DK); // chin seam
     } else {
@@ -571,12 +596,14 @@ function knightGreave(ctx: CanvasRenderingContext2D, knee: Pt, foot: Pt, m: Ramp
  */
 function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapon: WeaponId, look: KnightLook = FULL_PLATE): void {
   const { bob, stride, atk } = pose;
-  // Gear → ramps. Equipped pieces paint bright polished steel with gold trim;
-  // missing pieces paint the SAME shapes in dull dark iron (see knight-look.ts).
-  const CUIRASS: Ramp = look.armor ? K_PLATE : K_PLATE_DK;
-  const TASSET: Ramp = look.armor ? K_LEG : K_PLATE_DK;
-  const TRIM = look.armor ? K_TRIM : K_STEEL_DK;
-  const GREAVE: Ramp = look.boots ? K_PLATE : K_PLATE_DK;
+  // Gear → ramps. Equipped pieces paint bright in the worn STYLE's ramps (iron
+  // steel by default, or an elemental set — STYLE_PAINTS above); missing pieces
+  // paint the SAME shapes in dull dark iron (see knight-look.ts).
+  const sp = STYLE_PAINTS[look.style ?? "iron"];
+  const CUIRASS: Ramp = look.armor ? sp.plate : K_PLATE_DK;
+  const TASSET: Ramp = look.armor ? sp.plate : K_PLATE_DK;
+  const TRIM = look.armor ? sp.trim : K_STEEL_DK;
+  const GREAVE: Ramp = look.boots ? sp.plate : K_PLATE_DK;
   const swing = pose.swing ?? 0;
   const roll = pose.roll ?? 0;
   const plumeLag = pose.plumeLag ?? 0;
@@ -684,11 +711,11 @@ function knightFrame(ctx: CanvasRenderingContext2D, dir: Dir, pose: KPose, weapo
   // ── weapon arm: shoulder → hand anchor ──
   const wShoulder: Pt = dir === "S" ? sk.shoulderR : dir === "N" ? sk.shoulderL : sk.shoulderR;
   armShaded(ctx, wShoulder, [(wShoulder[0] + weaponHand[0]) / 2, (wShoulder[1] + weaponHand[1]) / 2 - 3], weaponHand, 8, K_LEG, K_PLATE_DK);
-  // gauntlet fist at the weapon hand
-  ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, K_PLATE);
+  // gauntlet fist at the weapon hand (rides the cuirass style once armoured)
+  ellShaded(ctx, weaponHand[0], weaponHand[1], 5, 5, look.armor ? sp.plate : K_PLATE);
 
   // ── head / helm (plume trails on plumeLag) ──
-  knightHelm(ctx, sk.head, d3, plumeLag, look.helmet);
+  knightHelm(ctx, sk.head, d3, plumeLag, look.helmet, sp);
 
   if (!weaponBehind) {
     drawGhost();
