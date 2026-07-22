@@ -653,6 +653,11 @@ export const CARD_CHILL_SLOW = 0.5; // movement multiplier while chilled
 export const CARD_BURN_TIME = 3.0; // seconds an enemy burns
 export const CARD_BURN_TICK = 0.5; // seconds between burn ticks
 export const CARD_BURN_DMG = 1; // damage per burn tick
+// ── Thunderbolt on-hit (storm cards) — a line-AoE that arcs out along the strike ──
+export const CARD_BOLT_LENGTH = 5; // blocks the bolt travels in front of the struck foe
+export const CARD_BOLT_HALF_WIDTH = 0.9; // blocks either side of the bolt line that gets hit
+export const CARD_BOLT_DAMAGE = 4; // damage dealt to every foe caught in the line
+export const CARD_BOLT_COOLDOWN = 0.6; // seconds between bolts (throttles rapid swings)
 
 export const PARTS_BASE = 6; // parts on level 1
 export const PARTS_PER_LEVEL = 2; // extra parts per depth…

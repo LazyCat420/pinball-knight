@@ -42,6 +42,7 @@ interface Theme {
 }
 function themeFor(c: CardDef): Theme {
   const m = c.modifier;
+  if (m.bolt) return { type: "STORM", energy: "⚡", frame: ["#1e1b4b", "#4f46e5"], accent: "#a5b4fc" };
   if (m.onHit === "burn") return { type: "BLAZE", energy: "🔥", frame: ["#5e1c0b", "#d1541d"], accent: "#fb923c" };
   if (m.onHit === "chill") return { type: "FROST", energy: "❄️", frame: ["#0b3a5e", "#1d9fd1"], accent: "#7dd3fc" };
   if (m.pinballMult && m.pinballMult > 1) return { type: "MOMENTUM", energy: "🪩", frame: ["#5e4a0b", "#d1a01d"], accent: "#fcd34d" };
@@ -78,6 +79,7 @@ function cardPower(c: CardDef): number {
   if (m.pinballMult) p += (m.pinballMult - 1) * 40;
   if (m.cooldownMult) p += (1 - m.cooldownMult) * 80;
   if (m.durabilityMult) p += (m.durabilityMult - 1) * 20;
+  if (m.bolt) p += 45;
   return Math.max(10, Math.round(p / 5) * 5);
 }
 
@@ -94,6 +96,9 @@ function movesFor(c: CardDef): Array<{ name: string; power: string; text: string
   }
   if (m.damageFlat) {
     out.push({ name: "Weighted Core", power: `+${m.damageFlat}`, text: "Flat damage added after every other bonus resolves." });
+  }
+  if (m.bolt) {
+    out.push({ name: "Chain Lightning", power: "BOLT", text: "Strikes arc a thunderbolt through the foes ahead of the one you hit." });
   }
   if (m.onHit === "burn") {
     out.push({ name: "Ember Brand", power: "DOT", text: "Struck foes catch fire and burn over time." });

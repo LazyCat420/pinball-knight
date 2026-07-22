@@ -31,6 +31,9 @@ export interface CardModifier {
   onHit?: "chill" | "burn";
   /** Bonus damage MULTIPLIER applied only while riding pinball momentum. */
   pinballMult?: number;
+  /** On hit, arc a THUNDERBOLT out along the strike line — a throttled line-AoE
+   * that damages every foe in front of the struck enemy (see combat.fireBolt). */
+  bolt?: boolean;
 }
 
 export interface CardDef {
@@ -67,12 +70,15 @@ export const CARDS: Record<CardId, CardDef> = {
   executioner: { id: "executioner", label: "Executioner", icon: "🪓", rarity: "epic", weaponKinds: "both", description: "+60% damage", modifier: { damageMult: 1.6 } },
   frostbite: { id: "frostbite", label: "Frostbite", icon: "🧊", rarity: "epic", weaponKinds: "both", description: "+25% dmg and hits CHILL", modifier: { damageMult: 1.25, onHit: "chill" } },
   quickblade: { id: "quickblade", label: "Quickblade", icon: "🌀", rarity: "epic", weaponKinds: "both", description: "−30% cooldown, +1 dmg", modifier: { cooldownMult: 0.7, damageFlat: 1 } },
+  stormchain: { id: "stormchain", label: "Storm Chain", icon: "⚡", rarity: "epic", weaponKinds: "both", description: "hits arc a THUNDERBOLT through foes ahead", modifier: { bolt: true } },
   // ── Legendary (gold) ──
   pinballwizard: { id: "pinballwizard", label: "Pinball Wizard", icon: "🎰", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, DOUBLE while riding momentum", modifier: { damageMult: 1.4, pinballMult: 2 } },
   soulreaver: { id: "soulreaver", label: "Soul Reaver", icon: "💀", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +50% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.5, onHit: "burn" } },
+  thunderlord: { id: "thunderlord", label: "Thunderlord", icon: "🌩️", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, hits arc a THUNDERBOLT ahead", modifier: { damageMult: 1.4, bolt: true } },
   // ── Mythic (iridescent) — build-defining chase cards, sold only at the Tavern ──
   worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
   timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
+  tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
 };
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
@@ -102,10 +108,11 @@ export interface CardAggregate {
   chill: boolean;
   burn: boolean;
   pinballMult: number; // 1 = none; only applied while riding momentum
+  bolt: boolean; // any socketed card arcs a thunderbolt on hit
 }
 
 export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
-  const agg: CardAggregate = { damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1 };
+  const agg: CardAggregate = { damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false };
   if (!cards) return agg;
   for (const id of cards) {
     const m = CARDS[id]?.modifier;
@@ -117,6 +124,7 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
     if (m.onHit === "chill") agg.chill = true;
     if (m.onHit === "burn") agg.burn = true;
     if (m.pinballMult) agg.pinballMult *= m.pinballMult;
+    if (m.bolt) agg.bolt = true;
   }
   return agg;
 }

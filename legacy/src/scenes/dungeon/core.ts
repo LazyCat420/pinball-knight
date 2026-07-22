@@ -2501,6 +2501,8 @@ function simulate(dt: number): void {
     p[key] = Math.max(0, before - dt);
     if (Math.ceil(p[key]) !== Math.ceil(before) || p[key] === 0) state.hudDirty = true;
   }
+  // Storm-card thunderbolt cooldown — silent (no HUD), just gates re-fire.
+  if (p.boltCdT > 0) p.boltCdT = Math.max(0, p.boltCdT - dt);
   // Regen Salve: heal a heart every REGEN_TICK_INTERVAL seconds while it runs.
   if (p.regenT > 0) {
     p.regenTickT -= dt;

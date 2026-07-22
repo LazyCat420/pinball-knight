@@ -306,6 +306,106 @@ class SlashPool {
   }
 }
 
+/**
+ * Thunderbolt — a jagged additive polyline that whips down the strike line for
+ * the Storm cards (see combat.fireBolt). Each bolt is drawn as two overlaid
+ * STRANDS: a tight near-white core and a wider electric-blue glow, both
+ * bloom-fed so the line reads as crackling lightning rather than a drawn edge.
+ * The path is re-jittered per spawn (clean at both ends via a sine taper) and
+ * the opacity flickers as it fades over BOLT_LIFE — cheap, no textures.
+ */
+const BOLT_LINES = 8; // pool size — a few concurrent bolts, 2 strands each
+const BOLT_POINTS = 16; // vertices per jagged strand
+const BOLT_LIFE = 0.22; // seconds a bolt stays visible
+const BOLT_CORE_HEX = 0xdff3ff; // tight strand — near white
+const BOLT_GLOW_HEX = 0x5eb0ff; // wide strand — electric blue
+
+class BoltPool {
+  readonly group: THREE.Group;
+  private lines: THREE.Line[] = [];
+  private attrs: THREE.BufferAttribute[] = [];
+  private life: number[] = [];
+  private maxLife: number[] = [];
+  private cursor = 0;
+
+  constructor() {
+    this.group = new THREE.Group();
+    for (let i = 0; i < BOLT_LINES; i++) {
+      const geo = new THREE.BufferGeometry();
+      const pos = new THREE.BufferAttribute(new Float32Array(BOLT_POINTS * 3), 3);
+      pos.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute("position", pos);
+      const mat = new THREE.LineBasicMaterial({
+        color: BOLT_GLOW_HEX,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      line.renderOrder = 13; // above slashes
+      line.frustumCulled = false; // endpoints move; skip the cull test
+      this.lines.push(line);
+      this.attrs.push(pos);
+      this.life.push(0);
+      this.maxLife.push(0);
+      this.group.add(line);
+    }
+  }
+
+  spawn(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void {
+    const d = Math.hypot(dirx, dirz) || 1;
+    const nx = dirx / d;
+    const nz = dirz / d;
+    const px = -nz; // ground-plane perpendicular
+    const pz = nx;
+    for (let s = 0; s < 2; s++) {
+      const i = this.cursor;
+      this.cursor = (this.cursor + 1) % BOLT_LINES;
+      const attr = this.attrs[i];
+      const amp = s === 0 ? 0.26 : 0.55; // core tight, glow wider
+      for (let k = 0; k < BOLT_POINTS; k++) {
+        const t = k / (BOLT_POINTS - 1);
+        const taper = Math.sin(t * Math.PI); // 0 at both ends → clean anchor points
+        const j = (Math.random() * 2 - 1) * amp * taper;
+        const yj = (Math.random() * 2 - 1) * 0.16 * taper;
+        attr.setXYZ(k, x + nx * length * t + px * j, y + yj, z + nz * length * t + pz * j);
+      }
+      attr.needsUpdate = true;
+      const line = this.lines[i];
+      (line.material as THREE.LineBasicMaterial).color.setHex(s === 0 ? BOLT_CORE_HEX : BOLT_GLOW_HEX);
+      (line.material as THREE.LineBasicMaterial).opacity = 1;
+      line.visible = true;
+      this.life[i] = BOLT_LIFE;
+      this.maxLife[i] = BOLT_LIFE;
+    }
+  }
+
+  update(dt: number): void {
+    for (let i = 0; i < BOLT_LINES; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      const line = this.lines[i];
+      if (this.life[i] <= 0) {
+        line.visible = false;
+        continue;
+      }
+      const t = this.life[i] / this.maxLife[i]; // 1 → 0
+      // Flicker: fade the bolt out while jittering brightness so it crackles.
+      (line.material as THREE.LineBasicMaterial).opacity = t * (0.55 + Math.random() * 0.45);
+    }
+  }
+
+  dispose(): void {
+    for (const l of this.lines) {
+      l.geometry.dispose();
+      (l.material as THREE.Material).dispose();
+    }
+  }
+}
+
 export interface VfxSystem {
   /** Bright sparks flying off an impact point. */
   sparks(x: number, y: number, z: number, dirx: number, dirz: number, count?: number): void;
@@ -319,6 +419,8 @@ export interface VfxSystem {
   dust(x: number, y: number, z: number): void;
   /** A melee slash crescent in the facing direction. */
   slash(x: number, y: number, z: number, facing: string, color: number): void;
+  /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
+  bolt(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void;
   /**
    * A fading AFTERIMAGE of an actor's billboard — the speed-aura ghost. Clones
    * the source mesh's transform and SHARES its geometry + texture (zero GPU
@@ -351,11 +453,13 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const additive = new ParticlePool(500, THREE.AdditiveBlending);
   const alpha = new ParticlePool(400, THREE.NormalBlending);
   const slashes = new SlashPool();
+  const bolts = new BoltPool();
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
   scene.add(additive.points);
   scene.add(alpha.points);
   scene.add(slashes.group);
+  scene.add(bolts.group);
   scene.add(dmgText.group);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -417,6 +521,9 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     slash(x, y, z, facing, color) {
       slashes.spawn(x, y, z, facing, color);
     },
+    bolt(x, y, z, dirx, dirz, length) {
+      bolts.spawn(x, y, z, dirx, dirz, length);
+    },
     ghost(src, tint, life = 0.32, opacity = 0.4) {
       if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
       const srcMat = src.material as THREE.MeshBasicMaterial;
@@ -444,6 +551,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       additive.update(dt);
       alpha.update(dt);
       slashes.update(dt);
+      bolts.update(dt);
       dmgText.update(dt);
       for (let i = ghosts.length - 1; i >= 0; i--) {
         const g = ghosts[i];
@@ -461,10 +569,12 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(additive.points);
       scene.remove(alpha.points);
       scene.remove(slashes.group);
+      scene.remove(bolts.group);
       scene.remove(dmgText.group);
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
+      bolts.dispose();
       dmgText.dispose();
       for (const g of ghosts) {
         scene.remove(g.mesh);

@@ -8,7 +8,7 @@ describe("cards", () => {
       expect(["common", "rare", "epic", "legendary", "mythic"]).toContain(c.rarity);
       expect(["melee", "ranged", "both"]).toContain(c.weaponKinds);
       const m = c.modifier;
-      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult;
+      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult || m.bolt;
       expect(hasEffect, `${id} does nothing`).toBeTruthy();
     }
   });
@@ -35,9 +35,15 @@ describe("cards", () => {
     expect(agg.pinballMult).toBeGreaterThan(1);
   });
 
+  it("collects the thunderbolt flag from storm cards", () => {
+    expect(aggregateCards(["stormchain"]).bolt).toBe(true);
+    expect(aggregateCards(["thunderlord"]).bolt).toBe(true);
+    expect(aggregateCards(["keenedge"]).bolt).toBe(false);
+  });
+
   it("empty / undefined sockets are a no-op", () => {
     const agg = aggregateCards(undefined);
-    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1 });
+    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false });
   });
 
   it("respects weapon-kind fit", () => {

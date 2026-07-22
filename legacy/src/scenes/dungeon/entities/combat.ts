@@ -45,6 +45,10 @@ import {
   CARD_CHILL_TIME,
   CARD_BURN_TIME,
   CARD_BURN_DMG,
+  CARD_BOLT_LENGTH,
+  CARD_BOLT_HALF_WIDTH,
+  CARD_BOLT_DAMAGE,
+  CARD_BOLT_COOLDOWN,
 } from "../constants";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
@@ -89,6 +93,7 @@ export function applyCardOnHit(z: Zombie): void {
       z.dotDmg = CARD_BURN_DMG;
       z.dotTickT = 0;
     }
+    if (agg.bolt) fireBolt(z);
   }
   // ── Craft brews that ride EVERY hit (no weapon/card needed) ──
   const p = state.player;
@@ -119,6 +124,55 @@ function arcStatic(from: Zombie): void {
   if (!best) return;
   state.vfx?.sparks(best.x, 0.7, best.z, from.x - best.x, from.z - best.z, 10);
   damageZombie(best, STATIC_ARC_DAMAGE, best.x - from.x, best.z - from.z, 0, true);
+}
+
+/** Height (blocks) the thunderbolt is drawn at — enemy torso, so it visibly
+ * crosses the foes it hits. */
+const BOLT_Y = 0.7;
+
+/**
+ * STORM-CARD THUNDERBOLT — on hit, a bolt whips out from the struck enemy along
+ * the strike line (player → foe, so it continues "in front" away from you),
+ * damaging every living foe within a narrow lane for CARD_BOLT_LENGTH blocks.
+ * Throttled by p.boltCdT so rapid swings can't chain-spam it. Force-damages
+ * (like static arc) — it's lightning, so the momentum gates don't apply.
+ */
+function fireBolt(struck: Zombie): void {
+  const p = state.player;
+  if (!p || p.boltCdT > 0) return;
+
+  // Direction: from the player toward the struck foe, continuing outward. Fall
+  // back to the player's facing when they're standing on top of the enemy.
+  let dx = struck.x - p.x;
+  let dz = struck.z - p.z;
+  let d = Math.hypot(dx, dz);
+  if (d < 0.01) {
+    const [fx, fz] = FACING_VEC[p.facing];
+    dx = fx;
+    dz = fz;
+    d = Math.hypot(dx, dz) || 1;
+  }
+  const nx = dx / d;
+  const nz = dz / d;
+  p.boltCdT = CARD_BOLT_COOLDOWN;
+
+  // Damage every living foe inside the lane: projection along the bolt within
+  // [0, length] AND perpendicular distance within the half-width.
+  for (const other of state.zombies) {
+    if (other.mode === "dead") continue;
+    const rx = other.x - struck.x;
+    const rz = other.z - struck.z;
+    const along = rx * nx + rz * nz; // distance down the bolt
+    if (along < -0.4 || along > CARD_BOLT_LENGTH) continue;
+    const perp = Math.abs(rx * -nz + rz * nx); // distance off the centre line
+    if (perp > CARD_BOLT_HALF_WIDTH) continue;
+    damageZombie(other, CARD_BOLT_DAMAGE, nx, nz, 0, true);
+    state.vfx?.sparks(other.x, 0.7, other.z, nx, nz, 6);
+  }
+
+  // The bolt itself, plus a spark burst where it terminates.
+  state.vfx?.bolt(struck.x, BOLT_Y, struck.z, nx, nz, CARD_BOLT_LENGTH);
+  state.vfx?.sparks(struck.x + nx * CARD_BOLT_LENGTH, BOLT_Y, struck.z + nz * CARD_BOLT_LENGTH, nx, nz, 8);
 }
 
 /**

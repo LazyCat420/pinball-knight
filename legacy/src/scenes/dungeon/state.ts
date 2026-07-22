@@ -77,6 +77,8 @@ export interface Player extends Actor {
   stoneT: number;
   /** Seconds left on Static Charge (hits arc to a nearby foe). 0 = inactive. */
   staticT: number;
+  /** Cooldown before a Storm-card thunderbolt may fire again. 0 = ready. */
+  boltCdT: number;
   /** Seconds left on Greed Draught (double kill gold). 0 = inactive. */
   greedT: number;
 
@@ -804,6 +806,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     venomCoatT: 0,
     stoneT: 0,
     staticT: 0,
+    boltCdT: 0,
     greedT: 0,
     mana: MANA_MAX,
     magnetAuraT: 0,
