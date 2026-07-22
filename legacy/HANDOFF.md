@@ -2,11 +2,77 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `26a4f1f` on synology (deployed 2026-07-21, banner
-`main@26a4f1f`, clean tree; rollback image `braindeadbot-client:previous`).
-Service unchanged.
+**Live:** client `048c853` on synology (deployed 2026-07-22, banner
+`HEAD@048c853`; rollback image `braindeadbot-client:previous` = `26a4f1f`).
+Service unchanged. Deployed from a **clean worktree at HEAD** (see the
+`COPY . .` gotcha) because another session had uncommitted maze/collision
+WIP in the shared checkout — that WIP is NOT in this build.
 
-## Latest — Armorer MIRROR + game menu reachable from the tavern (`26a4f1f`)
+> This deploy also carried live **`048c853` "storm cards"** (on-hit
+> thunderbolt line-AoE) — a parallel session committed+pushed it on top of
+> the armor commit but hadn't deployed it. It rode along because HEAD is the
+> deployable unit. Its author owns its handoff notes; flagged here only so the
+> live-vs-committed delta is honest. A flaky test surfaced in that area during
+> verification (one of ~816 failed on 1 of 3 runs, passed the deploy gate) —
+> worth a look by whoever owns the storm/maze code.
+
+## Latest — elemental armor STYLE sets at the Armorer (`96b3a76`)
+
+Ask: "more styles of knight armor — ice, wind, fire, thunder — priced high
+vs gold/monster so they're not easy to get." Four purchasable plate SKINS
+beside the free iron default, sold at the Tavern Armorer.
+
+- **`armor-styles.ts`** (new, pure + fail-soft persistence) — the four sets
+  (ice/wind/fire/thunder) + iron. A style is a **permanent unlock**
+  (localStorage `pinball-knight-armor-styles`, the `legacy.ts` pattern —
+  survives death like wallet gold, NOT run-scoped). One worn at a time;
+  `activeStyle()` / `unlockStyle()` (unlock+wear) / `setActiveStyle()` (wear
+  an owned one, free). `activeStyle()` is fail-soft to iron if storage is
+  blocked or corrupt (never paints a locked set).
+- **Pricing is prestige-tier** (the "not easy" ask): ice/wind 600, fire 750,
+  thunder 900 gold vs `GOLD_PER_KILL=2` → **300–450 plain kills each**,
+  several runs of banked gold. `armor-styles.test.ts` PINS `price/GOLD_PER_KILL
+  ≥ 250` so a future GOLD_PER_KILL bump can't quietly make them cheap.
+- **Modest mechanical edge, look is the product:** while an elemental set is
+  worn the Armorer's plate is finer steel — helmet +2 / armor +3 soak on buy
+  (`styleGearGrant`). Boots stay the `1` sentinel. Floor-found plate is
+  unaffected — the style is a skin over whatever you wear.
+- **`render/knight-look.ts`** — style now rides `KnightLook.style` AND the
+  sheet cache key: `lookKey` went `"weapon|HAB"` → **`"weapon|HAB|style"`**
+  (absent = iron, so old keys don't collide). `lookFromGear(gear, style?)`
+  reads `activeStyle()` by default. Because the key changed, wearing a set
+  re-dresses EVERY consumer (dungeon, walkable tavern, multiball echoes,
+  paperdolls) through the exact per-frame key checks gear swaps already use —
+  no new hooks. Tavern knight re-dresses on counter close via the existing
+  `refreshTavernPlayerArt` string-key compare.
+- **`render/cel-painter.ts`** — `STYLE_PAINTS` maps each set to REAL Cold-Crypt
+  palette ramps (ice→arcane 29/30/31, wind→rot-green 7/8/9, fire→torch
+  14/15/16, thunder→**storm-slate 2/3/4** + lightning-gold plume/trim/spark).
+  Ramp swaps ONLY — silhouette grammar untouched, same rule as gear presence.
+  `knightHelm` takes the `StylePaint` so the crest plume + visor eye-spark
+  recolour per set too.
+- **`tavern.ts armorBody`** — a "STYLES OF THE FORGE" section under the plate
+  list: Buy set / Wear / WORN, with the MIRROR hover-previewing the FULL set
+  in that style (`data-prevstyle`), and the plate-grant reflecting the worn
+  style's finer-steel bonus. Buying a set unlocks+wears it AND grants full
+  plate in that set's steel.
+
+**Verified:** 10 new/updated unit tests (`armor-styles.test.ts`,
+`knight-look.test.ts`) + a throwaway **headless render check** (node-canvas
+shim → real `renderKnightPortrait` → crush pipeline) confirming all 5 styles
+produce distinct dominant plate tones and each elemental set shifts >15% of
+sprite pixels vs iron. **Thunder was retuned during that check:** it first
+reused steel-mid and quantized to the SAME dominant tone as iron — moved to
+stone 2/3/4 (dark storm-slate) so the black-and-gold reads clearly distinct.
+Prod build clean; deploy test-gate green.
+
+**⚠️ NOT click-tested in a live browser** (no playwright harness in env, per
+the reagent/menu passes). First manual QA: Tavern → Armorer → hover each set
+in the mirror (full-set preview), buy one → knight re-dresses on stepping
+back into the room, walk into the dungeon and confirm the plate/plume/eye
+recolour holds across facings and the multiball echoes match.
+
+## Prior — Armorer MIRROR + game menu reachable from the tavern (`26a4f1f`)
 
 Two asks: "see what the armor looks like ON the character at the Armorer", and
 "how do I open the inventory/character menu" (answer: Esc/I — but it was
