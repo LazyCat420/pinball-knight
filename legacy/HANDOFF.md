@@ -2,14 +2,55 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `b77ac83` on synology (deployed 2026-07-22, banner
-`main@b77ac83`; rollback image `braindeadbot-client:previous`). Service
-unchanged. Carries everything to HEAD: shaped walls (foundation `b2f4f21` +
-curves/concave `b77ac83`, below), storm cards (`048c853`), elemental armor
-(`96b3a76`). NOTE: a parallel session has an uncommitted `src/scenes/dungeon/
-intro/` in the shared tree — NOT in this build.
+**Live:** client `877c83c` on synology (deployed 2026-07-22 from a clean
+worktree, banner `HEAD@877c83c`; rollback image `braindeadbot-client:previous`).
+Service unchanged. Carries everything to HEAD: the title intro (below), shaped
+walls (foundation `b2f4f21` + curves/concave `b77ac83`), storm cards
+(`048c853`), elemental armor (`96b3a76`).
 
-## Latest — shaped walls: slants + CURVES on room/bend corners (`b2f4f21`+`b77ac83`)
+## Latest — PINBALL KNIGHT title intro (`877c83c`)
+
+`/dungeon` now opens on a title sequence instead of dropping straight into
+floor 1: the knight sprints through a chirpy Mario-style 2D overworld
+("WORLD 1-1", clouds, hills), headbutts a `?` brick (hitstop, DING, COIN x01),
+and the whole 2D plane shatters into falling shards — revealing he was inside
+the dungeon all along: a 3D letter maze whose WALLS spell `PINBALL / KNIGHT`,
+with the knight in ball form ricocheting off the letterforms while the camera
+tilts up from side-on (7°→38°) and pulls out to frame the title. PRESS ANY KEY.
+
+- **`intro/title-grid.ts`** (pure, 6 tests incl. a 2-sim-minute soak) — 5-row
+  wall-stroke letter font + sealed arena `Grid` fed to the REAL `buildMaze`;
+  ricochet sim on the REAL `moveCircle` (slant-normal reflect else axis flip,
+  constant energy, anti-wedge guards).
+- **`intro/index.ts`** — phase machine (run/bonk/shatter/sweep/title) on its
+  own RAF, registered on `state.animFrameId` so `exitDungeonGame` cancels it.
+  The letter maze is parked on `state.maze` — `startLevel(1)`'s `disposeLevel`
+  reclaims it, no special casing. Fog, camera zoom, sun shadow bounds, and HUD
+  visibility are stashed and restored on teardown. Intro-only stage lights
+  (the gameplay rig is a dim ambience + a player-following lamp — neither
+  works for a title card). The stairs kit `buildMaze` always erects is hidden
+  by proximity (its arcane beam pokes over the border wall).
+- **Skips:** any key/click, SKIP button, `?no-intro=1`, `__skipDungeonIntro`,
+  prefers-reduced-motion. It also auto-completes (~12s) with no input. QA
+  probe: `window.__dungeonIntroPhase` (null once done).
+- **Gotcha worth keeping: the knight atlas is ~8600px wide, over swiftshader's
+  8192 GPU texture cap — canvas `drawImage` from it can silently paint
+  NOTHING** (first frames drew the shadow but no knight; headless screenshot
+  caught it). The 2D phase pre-extracts its ~12 frames via `getImageData`
+  (CPU path, immune). Same family as the open `atlas-loader` size finding.
+- **Headless QA scripts that launch `/dungeon` now cross the intro first** —
+  append `?no-intro=1` (or set `__skipDungeonIntro`) before probing gameplay;
+  under swiftshader the intro takes ~2min of wall clock to auto-complete.
+
+Verified: 839 tests green, build + dungeon-tree tsc clean, playwright/
+swiftshader run of all five phases with per-phase screenshots READ (that is
+how the missing-knight and HUD-over-intro bugs were found), zero console
+errors, and the game boots normally after the intro and with `?no-intro=1`.
+NOT yet play-tested on a real GPU/monitor — first manual QA: watch the whole
+thing once, judge pacing (RUN_DUR/SWEEP_DUR/TITLE_DUR at the top of
+`intro/index.ts`), and confirm the bumper sting isn't too chatty.
+
+## Prior — shaped walls: slants + CURVES on room/bend corners (`b2f4f21`+`b77ac83`)
 
 The maze was locked to axis-aligned boxes at every layer, and the old "curve
 court" faked curves with a `CylinderGeometry` shell painted OVER square colliders
