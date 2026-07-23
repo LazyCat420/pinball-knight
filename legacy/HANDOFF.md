@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `9bb89a2` on synology (deployed 2026-07-22; rollback image
+**Live:** client `1201c1a` on synology (deployed 2026-07-22; rollback image
 `braindeadbot-client:previous`). Service unchanged. Newly live since
 `ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
 look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
@@ -11,7 +11,32 @@ combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
 (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
 elemental armor (`96b3a76`).
 
-## Latest — Storm, the 4th marble material (`9bb89a2`)
+## Latest — Shadow + Lava: the material set is COMPLETE (`c8465a3`, `1201c1a`)
+
+All six brainstorm materials now live: 💎diamond 💧water 🪨stone ⚡storm 🌑shadow 🔥lava.
+
+🌑 **Shadow (`c8465a3`)** — evasion/control:
+- collider shrinks 0.3→0.21 (`materialPlayerR` at the ride sweep) = slips gaps;
+  flat restitution 1.05 (slowly accelerates); bumper scatter ×2.
+- On bounce: a SHADOW-CLONE decoy — nearby foes chase it via a new per-enemy
+  lure (`zombie lureT/lureX/lureZ` overrides the flow-field target, same shape
+  as slick `slipT`).
+- On slam: VOID IMPLOSION — yanks foes inward (moveCircle, no wall-clip) + dmg.
+
+🔥 **Lava (`1201c1a`)** — terrain scorcher, reuses the existing `fire` floor-fx:
+- explosive bumper kicks (materialBumperMult 1.6, foil to stone's 0.15).
+- On bounce: deposits a burning puddle (fire floor-fx = burn DoT); chain
+  bounces leave a trail of flame.
+- On slam: ERUPTION — a ring of fire puddles.
+- Terrain: Lava × oil → VAPORIZE (`lavaVaporizesOil` in the oil handler).
+- Self-harm on your own fire behind the existing SELF-HARM toggle.
+
+Adding a material touches ~9 seams (union, MATERIALS meta, MATERIAL_LIST,
+isMaterial, MATERIAL_DURATION, ITEM_PAINTS gem, debug chip, ui + hud-diablo
+chips, idle sparkle). Per-material tests: marble-storm/shadow/lava.test.ts.
+432 dungeon tests green. NOT click-tested.
+
+## Prior — Storm, the 4th marble material (`9bb89a2`)
 
 ⚡ Storm joins diamond/water/stone (`entities/marble.ts`):
 - **Physics:** lane-centring pull ×2 (`materialLanePull` → the lane-glide nudge)
