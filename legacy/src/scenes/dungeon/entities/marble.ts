@@ -64,12 +64,21 @@ import {
   STONE_MAGSTRIP_CAP,
   DIAMOND_DISCHARGE_RADIUS,
   DIAMOND_DISCHARGE_DMG,
+  STORM_LANE_PULL_MULT,
+  STORM_STEER_MULT,
+  STORM_BOUNCE_ARC_DMG,
+  STORM_BOUNCE_ARC_LEN,
+  STORM_BOUNCE_ARC_HALF,
+  STORM_CLAP_RADIUS,
+  STORM_CLAP_DMG,
+  STORM_CLAP_STUN,
+  STORM_WET_DMG,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 import { damageZombie } from "./combat";
-import { sfxFreeze, sfxSpring, sfxHeavy } from "../audio";
+import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper } from "../audio";
 
 export interface MaterialMeta {
   label: string;
@@ -87,12 +96,13 @@ export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
   diamond: { label: "Diamond", icon: "💎", tint: PALETTE_HEX[31], trail: 0xd8f6ff, sfx: sfxFreeze },
   water: { label: "Water", icon: "💧", tint: PALETTE_HEX[30], trail: 0x3f9fd8, sfx: sfxSpring },
   stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4], trail: 0x9aa4b4, sfx: sfxHeavy },
+  storm: { label: "Storm", icon: "⚡", tint: 0xf0e05a, trail: 0xfff3a0, sfx: sfxBumper },
 };
 
-export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone"];
+export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm"];
 
 export function isMaterial(id: string): id is MarbleMaterial {
-  return id === "diamond" || id === "water" || id === "stone";
+  return id === "diamond" || id === "water" || id === "stone" || id === "storm";
 }
 
 /** True when materials are globally enabled and a player currently has one. */
@@ -176,9 +186,18 @@ export function materialFrictionMult(): number {
   }
 }
 
-/** Multiplier on steering grip (water is slippery). */
+/** Multiplier on steering grip (water is slippery, storm is sharp). */
 export function materialSteerMult(): number {
-  return activeMaterial() === "water" ? WATER_STEER_MULT : 1;
+  switch (activeMaterial()) {
+    case "water": return WATER_STEER_MULT;
+    case "storm": return STORM_STEER_MULT;
+    default: return 1;
+  }
+}
+
+/** Multiplier on the lane-centring pull (storm rails corridors). */
+export function materialLanePull(): number {
+  return activeMaterial() === "storm" ? STORM_LANE_PULL_MULT : 1;
 }
 
 /** Ram knockback for the current material (stone shoves hard, water flows). */
@@ -253,7 +272,48 @@ export function emitMaterialOnBounce(nx: number, nz: number): void {
       state.vfx?.burst(cx, 0.12, cz, MATERIALS.water.tint, 7, 2.5);
     } else if (m === "stone") {
       stoneShockwave(cx, cz, STONE_SHOCK_RADIUS, STONE_SHOCK_DMG);
+    } else if (m === "storm") {
+      // A sideways lightning arc perpendicular to the ball's travel — zaps the
+      // corridor you just bounced across.
+      const hl = Math.hypot(p.momX, p.momZ) || 1;
+      stormArc(cx, cz, p.momZ / hl, -p.momX / hl);
+      // Storm × water-slick → the floor is a Tesla coil: chain the shock across
+      // everything standing on any wet tile (the fusion-window synergy).
+      stormElectrifyWet();
     }
+  }
+}
+
+/** A storm lightning arc from (cx,cz) along a unit dir — a narrow damage lane
+ *  rendered with the jagged bolt VFX (reuses the CARD_BOLT lane geometry). */
+function stormArc(cx: number, cz: number, nx: number, nz: number): void {
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const rx = zmb.x - cx;
+    const rz = zmb.z - cz;
+    const along = rx * nx + rz * nz;
+    if (along < -0.4 || along > STORM_BOUNCE_ARC_LEN) continue;
+    if (Math.abs(rx * -nz + rz * nx) > STORM_BOUNCE_ARC_HALF) continue;
+    damageZombie(zmb, STORM_BOUNCE_ARC_DMG, nx, nz, 0.2);
+  }
+  state.vfx?.bolt(cx, 0.4, cz, nx, nz, STORM_BOUNCE_ARC_LEN);
+}
+
+/** Storm synergy: discharge into every foe standing on a water slick scar. */
+function stormElectrifyWet(): void {
+  for (const fx of state.floorFx) {
+    if (fx.kind !== "slick") continue;
+    let zapped = false;
+    for (const zmb of state.zombies) {
+      if (zmb.mode === "dead") continue;
+      const dx = zmb.x - fx.x;
+      const dz = zmb.z - fx.z;
+      const rr = fx.radius + ZOMBIE_R;
+      if (dx * dx + dz * dz > rr * rr) continue;
+      damageZombie(zmb, STORM_WET_DMG, dx, dz, 0.1);
+      zapped = true;
+    }
+    if (zapped) state.vfx?.burst(fx.x, 0.15, fx.z, 0x9fe8ff, 6, fx.radius * 3);
   }
 }
 
@@ -288,8 +348,34 @@ export function materialSlam(): void {
       stoneShockwave(p.x, p.z, STONE_SLAM_RADIUS, dmg);
       p.momSpeed *= 0.3; // most of it went into the ground
       state.shakeT = Math.max(state.shakeT, 0.4);
+    } else if (m === "storm") {
+      thunderclap(p.x, p.z);
     }
   }
+}
+
+/** ⚡ THUNDERCLAP: a ring of electricity that damages AND STUNS (freezes in
+ *  place, reusing the slick's slipT with zero drift) every foe it passes. */
+function thunderclap(x: number, z: number): void {
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - x;
+    const dz = zmb.z - z;
+    const rr = STORM_CLAP_RADIUS + ZOMBIE_R;
+    if (dx * dx + dz * dz > rr * rr) continue;
+    damageZombie(zmb, STORM_CLAP_DMG, dx, dz, 0.5);
+    // Stun = a slip with no drift → it stands frozen for the duration.
+    zmb.slipT = STORM_CLAP_STUN;
+    zmb.slipVX = 0;
+    zmb.slipVZ = 0;
+  }
+  // Concentric bolt spokes + a bright ring so the clap READS as a shockwave.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    state.vfx?.bolt(x, 0.35, z, Math.cos(a), Math.sin(a), STORM_CLAP_RADIUS * 0.7);
+  }
+  state.vfx?.burst(x, 0.4, z, MATERIALS.storm.trail, 20, STORM_CLAP_RADIUS * 3);
+  state.shakeT = Math.max(state.shakeT, 0.35);
 }
 
 /** A stone shockwave: radial damage + a dust ring (reuses the pounce-slam look). */

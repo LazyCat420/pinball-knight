@@ -399,6 +399,7 @@ const MATERIAL_CHIP: Record<string, { icon: string; label: string; color: string
   diamond: { icon: "💎", label: "DIAMOND", color: "#6fd0e8" },
   water: { icon: "💧", label: "WATER", color: "#4aa6d0" },
   stone: { icon: "🪨", label: "STONE", color: "#9aa4b4" },
+  storm: { icon: "⚡", label: "STORM", color: "#f0e05a" },
 };
 
 export function updateHUD(el: HTMLDivElement): void {

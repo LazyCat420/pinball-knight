@@ -139,6 +139,7 @@ import {
   materialBreakSpeeds,
   materialFrictionMult,
   materialSteerMult,
+  materialLanePull,
   materialRamKnockback,
   materialCornerAddMult,
   materialMaxSpeed,
@@ -275,6 +276,7 @@ function updateBuffTells(dt: number): void {
       const mz = p.z + Math.sin(a) * r;
       if (p.material === "diamond") state.vfx.burst(mx, 0.35 + Math.random() * 0.4, mz, MATERIALS.diamond.trail, 1, 0.4);
       else if (p.material === "water") state.vfx.burst(mx, 0.15, mz, MATERIALS.water.tint, 1, 0.5);
+      else if (p.material === "storm") state.vfx.burst(mx, 0.3 + Math.random() * 0.5, mz, MATERIALS.storm.trail, 2, 1.2);
       else state.vfx.dust(mx, 0.05, mz);
     }
   }
@@ -1135,7 +1137,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       const steering = a.x !== 0 || a.z !== 0;
       const strength = steering ? 0.45 : 1;
       const dir = Math.sign(imbalance);
-      const nudge = Math.min(Math.abs(imbalance) * 0.5, LANE_CENTER_PULL * dt) * strength;
+      const nudge = Math.min(Math.abs(imbalance) * 0.5, LANE_CENTER_PULL * materialLanePull() * dt) * strength;
       const r2 = moveCircle(g, p.x, p.z, PLAYER_R, perpX * dir * nudge, perpZ * dir * nudge);
       p.x = r2.x;
       p.z = r2.z;

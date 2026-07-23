@@ -40,6 +40,7 @@ const MATERIALS_DBG: Array<{ id: string; label: string }> = [
   { id: "diamond", label: "💎 Diamond" },
   { id: "water", label: "💧 Water" },
   { id: "stone", label: "🪨 Stone" },
+  { id: "storm", label: "⚡ Storm" },
 ];
 
 const SPAWNABLE: Array<{ kind: string; label: string }> = [

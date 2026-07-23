@@ -2788,6 +2788,7 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   diamond: gemItem("#6fd0e8"),
   water: gemItem("#2e6d8f"),
   stone: gemItem("#6b7688"),
+  storm: gemItem("#f0e05a"),
 };
 
 // ══════════════════════════════════════════════════════════════════
