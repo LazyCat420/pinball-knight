@@ -514,6 +514,7 @@ function activeBuffs(): BuffView[] {
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");
   add(p.bladeStormT, "blades", "🌪️", "#d95763", 5, "Blade Storm · orbiting blades");
   add(p.magnetAuraT, "aura", "🧲", "#6fd0e8", 4, "Magnet Aura · pulling loot");
+  add(p.fireTrailT, "firetrail", "🔥", "#f0a63c", 0.9, "Fire Trail · burning wake");
   add(p.webbedT, "webbed", "🕸️", "#eef1f5", 3, "Webbed · slowed");
   return out;
 }

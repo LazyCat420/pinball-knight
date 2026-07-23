@@ -39,6 +39,7 @@ import {
   BAT_ATTACK_COOLDOWN,
   BAT_WOBBLE_AMP,
   BAT_WOBBLE_FREQ,
+  OIL_STEER_BLEND,
   BAT_HOVER_Y,
   SLIME_R,
   SLIME_CONTACT_RANGE,
@@ -593,6 +594,29 @@ export function updateZombies(dt: number): void {
         const push = (SEPARATION_R - d) / SEPARATION_R;
         sx += (dx / d) * push;
         sz += (dz / d) * push;
+      }
+    }
+
+    // ── OIL skid ── a greased foe can't steer: its travelled heading only
+    // BLENDS toward where it wants to go, so it slides past turns (and past
+    // you) until the grease wears off. Bats fly above the pool — unaffected.
+    if (z.oiledT && z.oiledT > 0 && z.kind !== "bat") {
+      z.oiledT = Math.max(0, z.oiledT - dt);
+      if (vx !== 0 || vz !== 0) {
+        const hx = z.oilHX ?? vx;
+        const hz = z.oilHZ ?? vz;
+        const k = Math.min(1, OIL_STEER_BLEND * dt);
+        const nx = hx + (vx - hx) * k;
+        const nz = hz + (vz - hz) * k;
+        const len = Math.hypot(nx, nz) || 1;
+        z.oilHX = nx / len;
+        z.oilHZ = nz / len;
+        vx = z.oilHX;
+        vz = z.oilHZ;
+      }
+      if (z.oiledT === 0) {
+        z.oilHX = undefined;
+        z.oilHZ = undefined;
       }
     }
 

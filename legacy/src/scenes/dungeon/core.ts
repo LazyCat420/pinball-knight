@@ -214,6 +214,7 @@ import {
   CRYSTAL_HP, CRYSTAL_FROM_LEVEL,
   MIMIC_HP, MIMIC_SPEED_FACTOR, MIMIC_FROM_LEVEL,
   BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE,
+  FINISHER_FLASH_T, FINISHER_FLASH_MAX,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -3058,6 +3059,15 @@ function loop(now: number): void {
   const fBase = frenzyIntensity(combo);
   const fPulse = fBase > 0 ? fBase * (0.78 + 0.22 * Math.sin(state.elapsed * 7)) : 0;
   state.pixelPass?.setFrenzyFx(fPulse);
+
+  // Katana-finisher screen flash: decays on REAL frame time (not sim dt) so it
+  // plays through the very hitstop the finisher causes — freeze + white-out
+  // land on the same beat. Quadratic falloff: a hard pop, a fast fade.
+  if (state.flashT > 0) {
+    state.flashT = Math.max(0, state.flashT - frame);
+    const k = state.flashT / FINISHER_FLASH_T;
+    state.pixelPass?.setFlash(FINISHER_FLASH_MAX * k * k);
+  }
 
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");

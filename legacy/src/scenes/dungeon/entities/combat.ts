@@ -543,7 +543,7 @@ const UNIT_MELEE: MeleeScale = { damageMul: 1, arcMul: 1, rangeMul: 1, knockback
  * arcMul WIDENS the arc: since the gate is `dot >= arcCos`, a wider arc means a
  * SMALLER cosine threshold, so we lerp arcCos toward -1 (full circle) by arcMul.
  */
-export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
+export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE, onHit?: (z: Zombie) => void): boolean {
   const p = state.player;
   const g = state.grid;
   if (!p || !g) return false;
@@ -574,6 +574,7 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE): boolean {
     const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35) * scale.knockbackMul;
     damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
     applyCardOnHit(z);
+    onHit?.(z); // per-victim presentation hook (katana finisher cut-through ghosts)
   }
 
   if (landed) {

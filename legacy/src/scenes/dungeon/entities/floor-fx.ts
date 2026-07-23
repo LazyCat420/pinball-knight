@@ -12,6 +12,9 @@
  *   • fire  (Lava, deferred) — a burning puddle that ticks BURN DoT; wired now
  *     so the R&D toggles have something to exercise.
  *   • shard-field — reserved (Diamond ground glitter); currently visual-only.
+ *   • oil   (Slick Field ability) — a spilled pool: foes on it lose steering
+ *     (zombie oiledT), the rolling ball picks up p.oilT glide, and any FIRE
+ *     floorFx that overlaps it IGNITES the whole pool into a long burn.
  */
 import * as THREE from "three";
 import { state, type FloorFx, type FloorFxKind } from "../state";
@@ -24,6 +27,9 @@ import {
   ZOMBIE_R,
   PLAYER_R,
   MATERIAL_SELF_HARM_DMG,
+  OIL_ZOMBIE_T,
+  OIL_MARBLE_T,
+  OIL_IGNITE_LIFE,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { damageZombie, hitPlayerRanged } from "./combat";
@@ -38,6 +44,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   slick: PALETTE_HEX[30], // arcane mid (wet blue)
   fire: PALETTE_HEX[16], // flame
   "shard-field": PALETTE_HEX[31], // prismatic cool
+  oil: PALETTE_HEX[29], // arcane dark — a deep blue-black sheen
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -121,7 +128,8 @@ export function updateFloorFx(dt: number): void {
     const fade = Math.min(1, frac * 3); // back third: shrink with the fade
     fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
     if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
-    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.45 * fade;
+    else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
+    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = (fx.kind === "oil" ? 0.6 : 0.45) * fade;
 
     // ── Ambient emission ── fire breathes rising embers; slick shimmers with a
     // drifting mote now and then. Cheap (1 particle per tick), reads great.
@@ -132,6 +140,7 @@ export function updateFloorFx(dt: number): void {
       const ez = fx.z + Math.sin(a) * r;
       if (fx.kind === "fire") state.vfx.ember(ex, 0.08, ez);
       else if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
+      else if (fx.kind === "oil" && Math.random() < 0.4) state.vfx.mote(ex, 0.08, ez); // iridescent glints
     }
 
     // ── Enemy overlap ── (skipped for hostile enemy hazards — those hunt YOU)
@@ -153,6 +162,24 @@ export function updateFloorFx(dt: number): void {
         zmb.burnT = CARD_BURN_TICK;
         damageZombie(zmb, FIRE_PUDDLE_DMG, 0, 0, 0);
         state.vfx?.sparks(zmb.x, 0.4, zmb.z, 0, 1, 3);
+      } else if (fx.kind === "oil") {
+        // Greased: steering barely bites while oiledT holds (zombie.ts blends
+        // the heading), refreshed for as long as the foe stays in the pool.
+        zmb.oiledT = OIL_ZOMBIE_T;
+        if (ticked && Math.random() < 0.35) state.vfx?.mote(zmb.x, 0.15, zmb.z);
+      }
+    }
+
+    // ── The ball glides on oil ── the existing oil-flask state (no friction,
+    // dead steering) is exactly the "faster and slicker" ride, topped up for
+    // every frame the rolling knight stays on the pool.
+    if (fx.kind === "oil" && p && p.momSpeed > 0) {
+      const dx = p.x - fx.x;
+      const dz = p.z - fx.z;
+      const rr = fx.radius + PLAYER_R;
+      if (dx * dx + dz * dz <= rr * rr) {
+        p.oilT = Math.max(p.oilT, OIL_MARBLE_T);
+        if (ticked) state.vfx?.mote(p.x, 0.1, p.z);
       }
     }
 
@@ -164,5 +191,31 @@ export function updateFloorFx(dt: number): void {
       const rr = fx.radius + PLAYER_R;
       if (dx * dx + dz * dz <= rr * rr) hitPlayerRanged(MATERIAL_SELF_HARM_DMG, fx.x, fx.z);
     }
+  }
+
+  // ── IGNITION ── any fire touching an oil pool lights the WHOLE pool: the
+  // oil despawns and a fire of the same footprint takes its place for a long
+  // burn. This is the Flipper-Charge-over-your-own-slick combo. Done as its
+  // own pass so despawn/spawn never fights the main loop's index walk.
+  for (let i = state.floorFx.length - 1; i >= 0; i--) {
+    const oil = state.floorFx[i];
+    if (oil.kind !== "oil") continue;
+    let lit = false;
+    for (const f of state.floorFx) {
+      if (f.kind !== "fire") continue;
+      const dx = f.x - oil.x;
+      const dz = f.z - oil.z;
+      const rr = f.radius + oil.radius;
+      if (dx * dx + dz * dz <= rr * rr) {
+        lit = true;
+        break;
+      }
+    }
+    if (!lit) continue;
+    const { x, z, radius } = oil;
+    despawn(i);
+    spawnFloorFx("fire", x, z, radius, OIL_IGNITE_LIFE);
+    state.vfx?.burst(x, 0.3, z, PALETTE_HEX[16], 24, 4); // whoosh — the pool catches
+    state.shakeT = Math.max(state.shakeT, 0.15);
   }
 }

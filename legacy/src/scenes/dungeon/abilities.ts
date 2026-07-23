@@ -13,6 +13,7 @@ import { state } from "./state";
 import { playerManaMax, skillAgg } from "./skill-runtime";
 import type { Zombie } from "./state";
 import { FACING_VEC, damageZombie } from "./entities/combat";
+import { spawnFloorFx } from "./entities/floor-fx";
 import {
   MANA_MAX,
   MANA_REGEN,
@@ -24,11 +25,21 @@ import {
   BLADESTORM_RADIUS,
   BLADESTORM_DAMAGE,
   BLADESTORM_TICK,
+  PULSE_WAVE_DUR,
+  PULSE_RING_LAG,
+  PULSE_RIM_BURSTS,
+  FLIPPER_TRAIL_T,
+  FLIPPER_TRAIL_MIN_SPEED,
+  FLIPPER_TRAIL_RADIUS,
+  FLIPPER_TRAIL_LIFE,
+  FLIPPER_TRAIL_GHOST_T,
+  OIL_SLICK_RADIUS,
+  OIL_SLICK_LIFE,
 } from "./constants";
 import { sfxSpin, sfxBumper, sfxFreeze, sfxSwing } from "./audio";
 import { clamp } from "../../utils/math";
 
-export type AbilityId = "flippercharge" | "arcanepulse" | "magnetaura" | "timecrawl" | "bladestorm";
+export type AbilityId = "flippercharge" | "arcanepulse" | "magnetaura" | "timecrawl" | "bladestorm" | "slickfield";
 
 export interface AbilityDef {
   id: AbilityId;
@@ -50,9 +61,73 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   magnetaura: { id: "magnetaura", label: "Magnet Aura", icon: "🧲", cost: 25, cooldown: 7, color: "#6fd0e8", detail: "Pull nearby loot for 4s" },
   timecrawl: { id: "timecrawl", label: "Time Crawl", icon: "⏳", cost: 50, cooldown: 11, color: "#bfe8ff", detail: "Slow the horde for 3s" },
   bladestorm: { id: "bladestorm", label: "Blade Storm", icon: "🌪️", cost: 40, cooldown: 9, color: "#d95763", detail: "Orbiting blades for 5s" },
+  slickfield: { id: "slickfield", label: "Slick Field", icon: "🛢️", cost: 25, cooldown: 8, color: "#8a5fd0", detail: "Spill oil — foes skid, the ball glides, fire ignites it" },
 };
 
-export const ABILITY_IDS: AbilityId[] = ["flippercharge", "arcanepulse", "magnetaura", "timecrawl", "bladestorm"];
+export const ABILITY_IDS: AbilityId[] = ["flippercharge", "arcanepulse", "magnetaura", "timecrawl", "bladestorm", "slickfield"];
+
+/**
+ * A live Arcane Pulse shockwave: damage rides the EXPANDING ring (matching the
+ * vfx.ring visual), so each foe is struck the frame the wave front crosses it —
+ * with a mini-bolt snapped back to the cast point, D2-Nova style. Module-local:
+ * waves live well under a second, so run teardown never needs to clear them.
+ */
+interface PulseWave {
+  x: number;
+  z: number;
+  t: number;
+  hit: Set<Zombie>;
+}
+const pulseWaves: PulseWave[] = [];
+
+/** Ease-out wave-front radius at time `t` — mirrors RingPool's expansion curve. */
+function pulseRadius(t: number): number {
+  const k = Math.min(1, t / PULSE_WAVE_DUR);
+  return ARCANE_PULSE_RADIUS * (1 - (1 - k) * (1 - k));
+}
+
+/** Launch a pulse shockwave at (x,z) — split out so tests can drive it silently. */
+export function spawnPulseWave(x: number, z: number): void {
+  pulseWaves.push({ x, z, t: 0, hit: new Set() });
+  state.vfx?.ring(x, z, 0xffffff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR);
+  state.vfx?.ring(x, z, 0x8800ff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, PULSE_RING_LAG);
+}
+
+function tickPulseWaves(dt: number): void {
+  for (let i = pulseWaves.length - 1; i >= 0; i--) {
+    const w = pulseWaves[i];
+    w.t += dt;
+    const r = pulseRadius(w.t);
+    for (const z of state.zombies) {
+      if (z.mode === "dead" || w.hit.has(z)) continue;
+      const dx = z.x - w.x;
+      const dz = z.z - w.z;
+      const d = Math.hypot(dx, dz);
+      if (d > r || d > ARCANE_PULSE_RADIUS) continue;
+      w.hit.add(z);
+      const inv = d || 1;
+      damageZombie(z, ARCANE_PULSE_DAMAGE, dx / inv, dz / inv, 6);
+      // The wave-front impact: a red pop on the foe and an arc snapped back to
+      // the cast point — the shockwave visibly DID that.
+      state.vfx?.blood(z.x, 0.6, z.z, "red", 6);
+      if (d > 0.4) state.vfx?.bolt(w.x, 0.6, w.z, dx, dz, d);
+    }
+    if (w.t >= PULSE_WAVE_DUR) {
+      // The rim arrives: impact pops evenly around the circumference.
+      for (let k = 0; k < PULSE_RIM_BURSTS; k++) {
+        const a = (k / PULSE_RIM_BURSTS) * Math.PI * 2;
+        state.vfx?.burst(w.x + Math.cos(a) * ARCANE_PULSE_RADIUS, 0.25, w.z + Math.sin(a) * ARCANE_PULSE_RADIUS, 0x8800ff, 6, 2.2);
+      }
+      pulseWaves.splice(i, 1);
+    }
+  }
+}
+
+// Fire-trail tile tracker — which tile last received a burn scar, so a fast
+// ride drops exactly one scar per tile crossed instead of one per frame.
+let trailIx = Number.NaN;
+let trailIz = Number.NaN;
+let trailGhostT = 0;
 
 /** Live mana, clamped to the (skill-extended) pool. */
 export function getMana(): number {
@@ -90,23 +165,20 @@ export function castAbility(slot: 0 | 1): boolean {
       p.momSpeed = FLIPPER_LAUNCH_SPEED;
       p.turboT = Math.max(p.turboT, 0.9); // ride it out with no friction
       p.iframes = Math.max(p.iframes, 0.35);
+      // The launch IGNITES: flame ghosts + embers while riding, and a burning
+      // scar per tile crossed (spawned in tickAbilities below).
+      p.fireTrailT = FLIPPER_TRAIL_T;
+      trailIx = Math.floor(p.x);
+      trailIz = Math.floor(p.z);
       state.shakeT = Math.max(state.shakeT, 0.18);
       state.vfx?.sparks(p.x, 0.5, p.z, -p.momX, -p.momZ, 12);
+      state.vfx?.burst(p.x, 0.4, p.z, 0xff6600, 12, 3);
       sfxBumper();
       break;
     }
     case "arcanepulse": {
-      for (const z of state.zombies) {
-        if (z.mode === "dead") continue;
-        const dx = z.x - p.x;
-        const dz = z.z - p.z;
-        const d = Math.hypot(dx, dz);
-        if (d > ARCANE_PULSE_RADIUS) continue;
-        const inv = d || 1;
-        damageZombie(z, ARCANE_PULSE_DAMAGE, dx / inv, dz / inv, 6);
-      }
+      spawnPulseWave(p.x, p.z);
       state.shakeT = Math.max(state.shakeT, 0.3);
-      state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 26);
       sfxSpin();
       break;
     }
@@ -123,6 +195,13 @@ export function castAbility(slot: 0 | 1): boolean {
     case "bladestorm":
       p.bladeStormT = 5;
       p.bladeStormTickT = 0;
+      sfxSwing();
+      break;
+    case "slickfield":
+      // One big spilled pool (≈3×3 tiles). The floor-fx overlap loop does the
+      // rest: foes skid, the rolling ball glides, overlapping fire ignites it.
+      spawnFloorFx("oil", p.x, p.z, OIL_SLICK_RADIUS, OIL_SLICK_LIFE);
+      state.vfx?.burst(p.x, 0.2, p.z, 0x1f3d52, 26, 2.5); // low dark floor-hugging eruption
       sfxSwing();
       break;
   }
@@ -161,6 +240,34 @@ export function tickAbilities(dt: number): void {
     if (c > 0) {
       state.abilityCd[id] = Math.max(0, c - dt);
       if (state.abilityCd[id] === 0) state.hudDirty = true;
+    }
+  }
+
+  // Arcane Pulse shockwaves — damage rides the expanding wave front.
+  if (pulseWaves.length > 0) tickPulseWaves(dt);
+
+  // Flipper Charge fire trail: while the ride is hot, flame afterimages +
+  // embers off the knight, and one burning scar per NEW tile crossed. Slowing
+  // below the threshold gutters the fire early — no standing-still bonfires.
+  if (p.fireTrailT > 0) {
+    p.fireTrailT = Math.max(0, p.fireTrailT - dt);
+    if (p.momSpeed >= FLIPPER_TRAIL_MIN_SPEED) {
+      trailGhostT -= dt;
+      if (trailGhostT <= 0) {
+        trailGhostT = FLIPPER_TRAIL_GHOST_T;
+        state.vfx?.ghost(p.sprite.mesh, 0xff4400, 0.22, 0.35);
+      }
+      state.vfx?.ember(p.x, 0.25, p.z);
+      state.vfx?.ember(p.x, 0.4, p.z);
+      const ix = Math.floor(p.x);
+      const iz = Math.floor(p.z);
+      if (ix !== trailIx || iz !== trailIz) {
+        trailIx = ix;
+        trailIz = iz;
+        spawnFloorFx("fire", p.x, p.z, FLIPPER_TRAIL_RADIUS, FLIPPER_TRAIL_LIFE);
+      }
+    } else if (p.momSpeed <= 0.01) {
+      p.fireTrailT = 0; // the ride ended — the fire goes with it
     }
   }
 

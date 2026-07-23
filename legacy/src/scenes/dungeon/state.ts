@@ -107,6 +107,8 @@ export interface Player extends Actor {
   mana: number;
   /** Seconds left on Magnet Aura (ground items drift to you). 0 = inactive. */
   magnetAuraT: number;
+  /** Seconds the Flipper Charge fire trail keeps burning behind the ride. */
+  fireTrailT: number;
   /** Seconds left on Blade Storm (orbiting blades bite nearby foes). 0 = inactive. */
   bladeStormT: number;
   /** Cadence timer between Blade Storm damage ticks. */
@@ -302,6 +304,12 @@ export interface Zombie extends Actor {
   dotT?: number;
   dotDmg?: number;
   dotTickT?: number;
+  /** OIL slick (Slick Field): while > 0 steering barely bites — the foe's
+   *  heading blends toward its intent so slowly it slides past corners. */
+  oiledT?: number;
+  /** OIL slick: the greased heading the foe is actually travelling on. */
+  oilHX?: number;
+  oilHZ?: number;
   /** WATER slick: seconds an enemy keeps sliding (loses traction; drifts). */
   slipT?: number;
   /** WATER slick: unit drift direction while slipping. */
@@ -511,7 +519,7 @@ export interface Projectile {
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;
@@ -823,6 +831,9 @@ export const state = {
   fpsStreakT: 0,
   /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going). */
   hitstopT: 0,
+  /** Full-screen white flash left (katana finisher) — decays in REAL time in the
+   *  render loop, so it plays through its own hitstop. Drives pixelPass.setFlash. */
+  flashT: 0,
 
   // ── Active-skill economy + HUD mode ──
   /** Which HUD is mounted: "diablo" is the iso strategy panel, "wolf" the rampage combat bar. */
@@ -931,6 +942,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     greedT: 0,
     mana: MANA_MAX,
     magnetAuraT: 0,
+    fireTrailT: 0,
     bladeStormT: 0,
     bladeStormTickT: 0,
     dropT: -1,
@@ -1033,6 +1045,7 @@ export function resetState(): void {
   state.unlockedAbilities = ["flippercharge", "arcanepulse"];
   state.abilityCd = {} as Record<AbilityId, number>;
   state.slowT = 0;
+  state.flashT = 0;
   state.belt = [null, null, null, null];
   state.bonusRoomNext = false;
   state.npcs = [];

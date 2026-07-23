@@ -121,6 +121,7 @@ uniform float uAo;         // AO strength (0 = off)
 uniform float uAoRadius;   // AO ring radius in texels
 uniform float uVignette;   // corner darkening (0 = off)
 uniform float uAberration; // chromatic RGB split toward the corners (0 = off)
+uniform float uFlash;      // full-screen white flash (katana finisher), 0 = off
 uniform vec2  uResolution;
 
 varying vec2 vUv;
@@ -210,6 +211,10 @@ void main() {
     );
     if (e > ${(0.35 / 200).toFixed(6)}) col *= 0.45;
   }
+
+  // Full-screen flash BEFORE dither/quantize so the wash snaps to the palette's
+  // bright ramp like everything else — a one-beat white-out, not an overlay.
+  if (uFlash > 0.001) col = mix(col, vec3(1.0), uFlash);
 
   // Nudge each pixel up/down the ramp before snapping — buys back apparent
   // colour depth so smooth gradients (AO, bloom, torch falloff) don't snap into
@@ -349,6 +354,8 @@ export interface PixelPass {
    * from a [0,1] intensity. 0 restores the baseline vignette and zero split.
    */
   setFrenzyFx(intensity: number): void;
+  /** Full-screen white flash [0,1] — the katana-finisher beat. 0 = off. */
+  setFlash(intensity: number): void;
   dispose(): void;
 }
 
@@ -438,6 +445,7 @@ export function createPixelPass(
     uAoRadius: { value: AO_RADIUS },
     uVignette: { value: VIGNETTE },
     uAberration: { value: 0 },
+    uFlash: { value: 0 },
     // MUST track the render target. A stale uResolution silently misaligns the
     // AO ring, the outline's neighbour taps and the scanline rows — it looks
     // like a completely different bug, so it is updated in resize() below.
@@ -601,6 +609,9 @@ export function createPixelPass(
       const t = Math.max(0, Math.min(1, intensity));
       finalUniforms.uVignette.value = VIGNETTE + (FRENZY_VIGNETTE - VIGNETTE) * t;
       finalUniforms.uAberration.value = FRENZY_ABERRATION * t;
+    },
+    setFlash: (intensity) => {
+      finalUniforms.uFlash.value = Math.max(0, Math.min(1, intensity));
     },
     dispose: () => {
       depthTexture.dispose();

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ABILITIES, ABILITY_IDS, canCast, tickAbilities, getMana } from "./abilities";
+import { ABILITIES, ABILITY_IDS, canCast, tickAbilities, getMana, spawnPulseWave } from "./abilities";
 import { state } from "./state";
-import { MANA_MAX, MANA_REGEN } from "./constants";
+import { MANA_MAX, MANA_REGEN, ARCANE_PULSE_DAMAGE, PULSE_WAVE_DUR, FLIPPER_TRAIL_LIFE } from "./constants";
 
 /**
  * The active-skill mana economy is pure logic (no WebGL / audio on these paths),
@@ -19,8 +19,8 @@ function stubPlayer(mana: number): void {
 }
 
 describe("ability table integrity", () => {
-  it("has exactly the five ids, all coherent and affordable within the pool", () => {
-    expect(ABILITY_IDS).toHaveLength(5);
+  it("has exactly the six ids, all coherent and affordable within the pool", () => {
+    expect(ABILITY_IDS).toHaveLength(6);
     for (const id of ABILITY_IDS) {
       const def = ABILITIES[id];
       expect(def.id).toBe(id);
@@ -57,6 +57,76 @@ describe("mana regen + cooldowns (tickAbilities)", () => {
     expect(state.slowT).toBeCloseTo(0.6, 5);
     tickAbilities(5);
     expect(state.slowT).toBe(0);
+  });
+});
+
+describe("arcane pulse shockwave (spawnPulseWave + tickAbilities)", () => {
+  // Ghost-kind foes with vulnT up: they pass damageZombie's gates, take the hit
+  // and get phase-shoved without ever touching the (stubbed) grid's walls.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function fakeGhost(x: number, z: number): any {
+    return {
+      kind: "ghost",
+      vulnT: 5,
+      hp: 100,
+      mode: "chase",
+      x,
+      z,
+      flashT: 0,
+      aggro: false,
+      sprite: { setTint() {}, mesh: { position: { set() {} } } },
+    };
+  }
+
+  beforeEach(() => {
+    stubPlayer(0);
+    state.grid = {} as never; // truthy so damageZombie doesn't early-return
+    state.vfx = undefined as never;
+  });
+
+  it("hits foes only when the expanding wave front reaches them", () => {
+    const near = fakeGhost(0.5, 0);
+    const far = fakeGhost(3.0, 0);
+    state.zombies = [near, far];
+    spawnPulseWave(0, 0);
+
+    tickAbilities(0.05); // wave front ≈0.7 world units out — only `near` is crossed
+    expect(near.hp).toBe(100 - ARCANE_PULSE_DAMAGE);
+    expect(far.hp).toBe(100);
+
+    tickAbilities(PULSE_WAVE_DUR); // wave completes — `far` crossed exactly once
+    expect(far.hp).toBe(100 - ARCANE_PULSE_DAMAGE);
+    expect(near.hp).toBe(100 - ARCANE_PULSE_DAMAGE); // never double-hit
+  });
+});
+
+describe("flipper charge fire trail (tickAbilities)", () => {
+  it("drops one burning floor scar per NEW tile crossed, none once slow", () => {
+    stubPlayer(0);
+    const p = state.player!;
+    state.zombies = [];
+    state.floorFx = [];
+    state.vfx = undefined as never;
+    state.scene = { add() {}, remove() {} } as unknown as typeof state.scene;
+    state.dbgMaterialFloorFx = true;
+    Object.assign(p, { x: 100.5, z: 100.5, momSpeed: 12, fireTrailT: 0.6, sprite: { mesh: {} } });
+
+    tickAbilities(0.016); // fresh tile → one scar
+    expect(state.floorFx.length).toBe(1);
+    expect(state.floorFx[0].kind).toBe("fire");
+    expect(state.floorFx[0].life).toBe(FLIPPER_TRAIL_LIFE);
+
+    tickAbilities(0.016); // same tile → still one
+    expect(state.floorFx.length).toBe(1);
+
+    p.x = 101.5; // crossed into the next tile
+    tickAbilities(0.016);
+    expect(state.floorFx.length).toBe(2);
+
+    p.x = 102.5;
+    p.momSpeed = 1; // below the trail threshold — the fire gutters
+    tickAbilities(0.016);
+    expect(state.floorFx.length).toBe(2);
   });
 });
 

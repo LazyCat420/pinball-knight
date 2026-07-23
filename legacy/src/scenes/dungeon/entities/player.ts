@@ -102,6 +102,7 @@ import {
   LIGHT_1,
   LIGHT_2,
   COMBO_FINISH,
+  FINISHER_FLASH_T,
   HEAVY,
   COMBO_WINDOW,
   CHARGE_TIME,
@@ -1516,7 +1517,23 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     const activeEnd = m.windup + m.active;
     if (!p.didHit && p.attackT >= activeStart && p.attackT <= activeEnd) {
       p.didHit = true;
-      resolvePlayerAttack({ damageMul: m.damageMul, arcMul: m.arcMul, rangeMul: m.rangeMul, knockbackMul: m.knockbackMul, hitstopMul: m.hitstopMul });
+      const finisher = m === COMBO_FINISH;
+      const landed = resolvePlayerAttack(
+        { damageMul: m.damageMul, arcMul: m.arcMul, rangeMul: m.rangeMul, knockbackMul: m.knockbackMul, hitstopMul: m.hitstopMul },
+        // Every foe the finisher cuts through leaves a white slice-ghost.
+        finisher ? (z) => state.vfx?.ghost(z.sprite.mesh, 0xffffff, 0.2, 0.6) : undefined,
+      );
+      if (finisher && landed) {
+        // ── KATANA FLASH ── the payoff beat: the knight blurs white, the
+        // screen pops (pixel-pass uFlash, decays in core's render loop), three
+        // parallel cuts hang in the air and the contact point erupts.
+        state.flashT = FINISHER_FLASH_T;
+        state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.18, 0.9);
+        const [ffx, ffz] = FACING_VEC[p.facing];
+        for (const yo of [0.3, 0.7, 1.1]) state.vfx?.slash(p.x + ffx * 0.7, yo, p.z + ffz * 0.7, p.facing, 0xffffff);
+        state.vfx?.burst(p.x + ffx, 0.6, p.z + ffz, 0xff6600, 20, 4.5);
+        state.shakeT = Math.max(state.shakeT, 0.25);
+      }
     }
     // A combo can chain once the active window has passed (early recovery); the
     // window stays open COMBO_WINDOW after that so a follow-up press links.

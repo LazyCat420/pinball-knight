@@ -1218,7 +1218,10 @@ export interface MoveTiming {
 }
 export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
 export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
-export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 1.6, arcMul: 1.35, rangeMul: 1.1, knockbackMul: 2, hitstopMul: 1.4 };
+// The finisher is the KATANA moment (white flash, triple cut, cut-through
+// ghosts — see player.ts) so it hits like a payoff: 2× damage, a genuinely wide
+// arc and the heaviest non-heavy hitstop in the kit.
+export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 2.0, arcMul: 1.6, rangeMul: 1.25, knockbackMul: 2, hitstopMul: 1.8 };
 export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, hitstopMul: 1.8 };
 
 /** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
@@ -1460,6 +1463,36 @@ export const TIMECRAWL_FACTOR = 0.3; // enemy dt scale while Time Crawl runs
 export const BLADESTORM_RADIUS = 1.6; // tiles the orbiting blades reach
 export const BLADESTORM_DAMAGE = 2; // per tick
 export const BLADESTORM_TICK = 0.35; // seconds between blade hits
+
+// ── Arcane Pulse shockwave ── damage rides the expanding ring, not an instant
+// AoE: each foe is hit the frame the wave front crosses it (sonar-ping read).
+export const PULSE_WAVE_DUR = 0.45; // seconds the ring takes to reach full radius
+export const PULSE_RING_LAG = 0.07; // the purple chaser ring starts this far behind
+export const PULSE_RIM_BURSTS = 8; // impact pops around the rim at max radius
+
+// ── Flipper Charge fire trail ── the launch ignites the knight: flame ghosts +
+// embers while riding, and a burning floor scar per NEW tile crossed. Uses the
+// existing fire floorFx, so the horde burns on it and the player doesn't (unless
+// the self-harm debug toggle is on).
+export const FLIPPER_TRAIL_T = 0.9; // matches the launch's turbo ride-out
+export const FLIPPER_TRAIL_MIN_SPEED = 6; // u/s — below this the fire gutters out
+export const FLIPPER_TRAIL_RADIUS = 0.55; // per-tile burn disc
+export const FLIPPER_TRAIL_LIFE = 3.5; // seconds each trail tile keeps burning
+export const FLIPPER_TRAIL_GHOST_T = 0.05; // seconds between flame afterimages
+
+// ── Slick Field (oil) ── a spilled oil pool: foes lose steering on it, the
+// rolling ball picks up the existing p.oilT glide, and any overlapping FIRE
+// floorFx ignites the whole pool.
+export const OIL_SLICK_RADIUS = 1.6; // the spill (≈3×3 tiles)
+export const OIL_SLICK_LIFE = 12; // seconds the pool lingers
+export const OIL_ZOMBIE_T = 2.5; // greased-steering seconds, refreshed while inside
+export const OIL_STEER_BLEND = 1.1; // per-second heading blend while oiled (low = skid)
+export const OIL_MARBLE_T = 0.35; // p.oilT topped to this while the ball crosses oil
+export const OIL_IGNITE_LIFE = 8; // seconds an ignited pool burns
+
+// ── Katana finisher presentation ──
+export const FINISHER_FLASH_T = 0.14; // seconds of full-screen white flash on connect
+export const FINISHER_FLASH_MAX = 0.75; // peak flash intensity fed to the pixel pass
 export const FPS_EYE_HEIGHT = 0.62; // camera height above the floor, world units
 export const FPS_FOV = 75; // degrees — wide, Wolfenstein-ish
 export const FPS_MOVE_SPEED = 5.6; // faster than the iso walk — you're a wrecking ball

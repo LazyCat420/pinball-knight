@@ -406,6 +406,90 @@ class BoltPool {
   }
 }
 
+/**
+ * Shockwave ring — a flat expanding annulus on the floor (Arcane Pulse's sonar
+ * ping). A thin unit ring scaled to the live radius: additive, bloom-fed, with
+ * a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the rim.
+ * Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
+ */
+const RING_COUNT = 4; // overlapping rings are rare (a cast is 2)
+const RING_INNER = 0.86; // unit-ring inner radius → thin band that scales up
+
+class RingPool {
+  readonly group: THREE.Group;
+  private meshes: THREE.Mesh[] = [];
+  private life: number[] = [];
+  private maxLife: number[] = [];
+  private maxR: number[] = [];
+  private delay: number[] = [];
+  private geo: THREE.RingGeometry;
+  private cursor = 0;
+
+  constructor() {
+    this.group = new THREE.Group();
+    this.geo = new THREE.RingGeometry(RING_INNER, 1, 40);
+    for (let i = 0; i < RING_COUNT; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        opacity: 0,
+      });
+      const m = new THREE.Mesh(this.geo, mat);
+      m.rotation.x = -Math.PI / 2; // lay flat on the floor
+      m.visible = false;
+      m.renderOrder = 11;
+      this.meshes.push(m);
+      this.life.push(0);
+      this.maxLife.push(0);
+      this.maxR.push(1);
+      this.delay.push(0);
+      this.group.add(m);
+    }
+  }
+
+  spawn(x: number, z: number, color: number, maxRadius: number, duration: number, delay = 0): void {
+    const i = this.cursor;
+    this.cursor = (this.cursor + 1) % RING_COUNT;
+    const m = this.meshes[i];
+    m.position.set(x, 0.06, z);
+    (m.material as THREE.MeshBasicMaterial).color.setHex(color);
+    m.visible = false; // stays hidden through the delay
+    this.life[i] = duration;
+    this.maxLife[i] = duration;
+    this.maxR[i] = maxRadius;
+    this.delay[i] = delay;
+  }
+
+  update(dt: number): void {
+    for (let i = 0; i < RING_COUNT; i++) {
+      if (this.life[i] <= 0) continue;
+      if (this.delay[i] > 0) {
+        this.delay[i] -= dt;
+        continue;
+      }
+      this.life[i] -= dt;
+      const m = this.meshes[i];
+      if (this.life[i] <= 0) {
+        m.visible = false;
+        continue;
+      }
+      const t = 1 - this.life[i] / this.maxLife[i]; // 0 → 1
+      const r = this.maxR[i] * (1 - (1 - t) * (1 - t)); // ease-out expansion
+      m.scale.setScalar(Math.max(0.05, r));
+      (m.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI);
+      m.visible = true;
+    }
+  }
+
+  dispose(): void {
+    this.geo.dispose();
+    for (const m of this.meshes) (m.material as THREE.Material).dispose();
+  }
+}
+
 export interface VfxSystem {
   /** Bright sparks flying off an impact point. */
   sparks(x: number, y: number, z: number, dirx: number, dirz: number, count?: number): void;
@@ -428,6 +512,12 @@ export interface VfxSystem {
   slash(x: number, y: number, z: number, facing: string, color: number): void;
   /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
   bolt(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void;
+  /**
+   * A flat shockwave ring expanding along the floor to `maxRadius` over
+   * `duration` seconds (opacity bells with sin(π·t)). `delay` holds it hidden
+   * first — the Arcane Pulse purple chaser rides 70ms behind the white core.
+   */
+  ring(x: number, z: number, color: number, maxRadius: number, duration: number, delay?: number): void;
   /**
    * A fading AFTERIMAGE of an actor's billboard — the speed-aura ghost. Clones
    * the source mesh's transform and SHARES its geometry + texture (zero GPU
@@ -461,12 +551,14 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const alpha = new ParticlePool(400, THREE.NormalBlending);
   const slashes = new SlashPool();
   const bolts = new BoltPool();
+  const rings = new RingPool();
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
   scene.add(additive.points);
   scene.add(alpha.points);
   scene.add(slashes.group);
   scene.add(bolts.group);
+  scene.add(rings.group);
   scene.add(dmgText.group);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -545,6 +637,9 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);
     },
+    ring(x, z, color, maxRadius, duration, delay = 0) {
+      rings.spawn(x, z, color, maxRadius, duration, delay);
+    },
     ghost(src, tint, life = 0.32, opacity = 0.4) {
       if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
       const srcMat = src.material as THREE.MeshBasicMaterial;
@@ -573,6 +668,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       alpha.update(dt);
       slashes.update(dt);
       bolts.update(dt);
+      rings.update(dt);
       dmgText.update(dt);
       for (let i = ghosts.length - 1; i >= 0; i--) {
         const g = ghosts[i];
@@ -591,11 +687,13 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(alpha.points);
       scene.remove(slashes.group);
       scene.remove(bolts.group);
+      scene.remove(rings.group);
       scene.remove(dmgText.group);
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
       bolts.dispose();
+      rings.dispose();
       dmgText.dispose();
       for (const g of ghosts) {
         scene.remove(g.mesh);
