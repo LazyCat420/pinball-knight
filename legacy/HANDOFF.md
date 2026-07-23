@@ -2,15 +2,64 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `ba9b484` on synology (deployed 2026-07-22 from a clean
-worktree, banner `HEAD@ba9b484`; rollback image
-`braindeadbot-client:previous`). Service unchanged. Carries everything to
-HEAD: crisp intro knight (below), deflector grab-throw (`7598968`), the
-progressive combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`),
-the title intro (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards
-(`048c853`), elemental armor (`96b3a76`).
+**Live:** client `d73c5aa` on synology (deployed 2026-07-22; rollback image
+`braindeadbot-client:previous`). Service unchanged. Newly live since
+`ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
+look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
+Also carries: crisp intro knight (`ba9b484`), deflector grab-throw (`7598968`),
+combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
+(`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
+elemental armor (`96b3a76`).
 
-## Latest — crisp knight in the intro run phase (`ba9b484`)
+## Latest — marble VFX polish + loot spread + route geometry (`d73c5aa`)
+
+Audit-then-implement wave on three complaints: transformations looked flat,
+loot clustered, and some floors were a straight sparse line to the stairs.
+
+- **`vfx.burst(x,y,z,color,count,speed)`** — new tinted additive radial
+  primitive (render/vfx.ts). ~35% white-hot cores push it over the 0.7 bloom
+  threshold, so bursts glow; every other primitive has hardcoded colours.
+- **Transformation moment** (`entities/marble.ts applyMaterial`): tint + trail
+  double burst, 3 stacked afterimages, shake/hitstop, per-material sting
+  (diamond `sfxFreeze`, water `sfxSpring`, stone `sfxHeavy`). Fusion fires the
+  outgoing material's burst too. MATERIALS meta grew `trail` + `sfx` fields —
+  trail hues are DISTINCT from potion tells (diamond can't be `0x6fd0e8`,
+  that's HASTE).
+- **Material trails** (player.ts `updateBuffTells`): trail ghost each tell tick
+  (+ fusing material's), plus an idle sparkle cadence (diamond glints, water
+  drips, stone crumbles). Runs during the pinball ride (called before the ride
+  branch).
+- **Floor-fx animation** (entities/floor-fx.ts): grow-in pop with overshoot,
+  breathing pulse, slick slowly spins, fire breathes embers / slick sheds motes
+  on tick, shrink+fade on the back third.
+- **Loot spread** (maze/decorate.ts): items now bin into FOUR distance-from-
+  start rings and round-robin them (paces loot across the whole trek);
+  off-spine tiles first (loot rewards leaving the artery); pairwise separation
+  scales with the trek (`max(5, 12% of maxDist)`, relax floor 5 — the
+  Manhattan-5 test invariant holds). Floor-1 marbles fan out at rings 4/7/10
+  via `nearestOpenTile` `minRing` (its `n` is an ORDINAL — that was the
+  stacked-on-spawn bug).
+- **Winding exits** (decorate.ts `pickEndpoints`): samples 6 far-band
+  candidates and keeps the lowest `directness − bendRate` (directness =
+  euclid/pathLen; 1.0 = straight shot). Kills the "straight line to the exit"
+  floors; far-band ≥0.82 and quadrant variety survive. Measured: old mean
+  directness 0.630 → 0.575, and the ~1.0 tail is gone.
+- **Density** (core.ts + decorate.ts): part budget now adds
+  `floorTiles/2000` (the 4× floors change had left `PARTS_MAX=26` absolute
+  over ~26k late tiles), and a **sparse-region fill** drops one omni part
+  (bumper, spinpad every 3rd) into every ~24-tile coarse region that has
+  junction candidates but no machine — junction-topology only, so the
+  runway/orphan and topology tests all hold. `LevelConfig` now exposes
+  `floorTiles`.
+- **`maze/route-metrics.test.ts`** pins all of it: worst directness < 0.82
+  across 24 seeds, ≥1 bend per 12 tiles, no big region without a part.
+  414 dungeon tests green.
+
+NOT click-tested — build + unit only. QA loop: floor 1, grab a marble (they're
+now 4/7/10 tiles out from spawn), watch the recrystallize burst + trail; `` ` ``
+panel MARBLE chips for the rest.
+
+## Prior — crisp knight in the intro run phase (`ba9b484`)
 
 The intro's running knight looked muddy (fat pixels beside thin ones): he was
 drawn 1.4× onto the 480px background canvas, which is THEN CSS-upscaled ~3.3× to
