@@ -129,6 +129,9 @@ to SAME-SCENE peers only.
 - **Marble-vs-marble**: knights collide (`coop.playerCollisions`) — rolling
   reflects off a peer, a standing knight hit by a rolling marble gets launched.
   Each client resolves only its own knight.
+- **Teammates on the map** (`map-render.ts`): same-floor pool-mates draw on the
+  HUD minimap AND the M map in their knight colors, through fog (a teammate is
+  not a spoiler); off-window mates get a border chevron in their color.
 
 **Known v1 gaps (deliberate):** zombie AI still *chases* only the authority's
 knight (replicas take contact damage when overlapped, but aggro won't hunt them
