@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `d73c5aa` on synology (deployed 2026-07-22; rollback image
+**Live:** client `1df5f6d` on synology (deployed 2026-07-22; rollback image
 `braindeadbot-client:previous`). Service unchanged. Newly live since
 `ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
 look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
@@ -11,7 +11,18 @@ combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
 (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
 elemental armor (`96b3a76`).
 
-## Latest — marble VFX polish + loot spread + route geometry (`d73c5aa`)
+## Latest — stairs beacon reads as the exit (`1df5f6d`)
+
+Playtest report: the tall arcane beam over the stairs pocket read as "???" —
+its base (pit + pylons) hides behind wall rims, and iso projection puts the
+beam's pixels over tiles NORTH of the trigger tile, so "walking over it" did
+nothing. Now: the beam breathes (opacity pulse + slow twist, animated via
+`MazeHandle.stairsBeam` next to the torch flames), rising arcane sparks climb
+it within ~20 tiles, and a one-shot per-floor hint fires when it first comes
+into view ("⬇ THE BLUE BEACON — the stairs down; step into its base",
+`state.stairsHintShown`, crackHint pattern).
+
+## Prior — marble VFX polish + loot spread + route geometry (`d73c5aa`)
 
 Audit-then-implement wave on three complaints: transformations looked flat,
 loot clustered, and some floors were a straight sparse line to the stairs.
