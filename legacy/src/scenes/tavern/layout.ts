@@ -321,6 +321,22 @@ export const KEEPER_SPOTS: KeeperSpot[] = [
 /** The player's entry point — at the foot of the dungeon stair, facing in. */
 export const SPAWN = { x: 0, z: 5.4 } as const;
 
+/**
+ * Staggered spawn points, one per color slot, so up to 8 knights don't stack on
+ * a single tile when they enter the shared tavern. Slot 0 keeps the canonical
+ * SPAWN; the rest fan out along the south wall around it. Indexed by color slot.
+ */
+export const SPAWN_SLOTS: readonly { x: number; z: number }[] = [
+  { x: 0.0, z: 5.4 },
+  { x: 1.2, z: 5.2 },
+  { x: -1.2, z: 5.2 },
+  { x: 2.2, z: 5.0 },
+  { x: -2.2, z: 5.0 },
+  { x: 1.0, z: 5.8 },
+  { x: -1.0, z: 5.8 },
+  { x: 0.0, z: 6.0 },
+] as const;
+
 /** The stair back down, drawn at the south wall. */
 export const STAIR = { x: 0, z: 6.6, w: 3.0, d: 1.2 } as const;
 

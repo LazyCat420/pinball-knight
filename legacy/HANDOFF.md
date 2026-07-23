@@ -2,16 +2,76 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `1201c1a` on synology (deployed 2026-07-22; rollback image
-`braindeadbot-client:previous`). Service unchanged. Newly live since
-`ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
-look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
-Also carries: crisp intro knight (`ba9b484`), deflector grab-throw (`7598968`),
-combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
-(`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
-elemental armor (`96b3a76`).
+**Live:** client + service now carry **Pinball-Knight multiplayer, increment 1
+(the social tavern)** — additive, degrades to the exact single-player game when
+no backend is reachable. Prior work (marble materials, elemental armor, shaped
+walls, 4× floors, title intro, combo ramp, casino) all remains live/untouched.
 
-## Latest — Shadow + Lava: the material set is COMPLETE (`c8465a3`, `1201c1a`)
+## 🕸️ MULTIPLAYER — increment 1 SHIPPED, increment 2 (co-op dungeon + boss) NEXT
+
+**User goal:** up to 8 knights share the tavern; parties of ≤4 drop into a co-op
+dungeon; the run ends with a **boss fight gating the exit portal**.
+**Chosen model:** raw `ws`, **host-authoritative shared physics** (role-0 client
+owns the sim; server relays only its snapshots). A dedicated Node physics server
+is infeasible without a 4000+-line refactor — every `Player`/`Zombie`/`Npc` in
+`dungeon/state.ts` embeds three.js `sprite`/`anim`/`mesh` and `simulate()` calls
+`vfx`/`hudDirty`/`showToast`. Host-authoritative keeps ONE authority owning the
+whole world and runs the proven sim unchanged.
+
+### Increment 1 — SHIPPED THIS DEPLOY (social tavern: presence + matchmaking)
+
+**Service** — new `src/realtime/` on the existing `:5175` at `/ws` (no new port,
+compose untouched, REST origin allowlist reused):
+`protocol.ts` (canonical wire contract) · `lobby.ts` (one 8-slot room + overflow
++ color slots + ready-queue→party-countdown 10/7/5s + 30s solo fallback, splits
+parties of ≤4) · `session.ts` (dungeon relay; **enforces host-authority — only
+role-0 snapshots relay**; host migration) · `hub.ts` (ws: origin gate, heartbeat,
+flood guard) · wired via `attachRealtime(server,{allowedOrigins})`.
+Tests: `lobby.test.ts` (7) + `hub.integration.test.ts` (2, real sockets).
+**38/38 service tests green; `tsc` clean.**
+
+**Client** — `src/net/socket.ts` (`NetClient`: typed ws, reconnect/backoff, gated
+by REST `isRemoteBackendEnabled()`; `net()` singleton survives the scene change) ·
+`src/net/protocol.ts` (**MIRROR — keep in lockstep with the service**) ·
+`src/net/session.ts` (tavern→dungeon handoff baton; set now, consumed in incr.2) ·
+`scenes/tavern/multiplayer.ts` (tinted remote sprites + canvas nameplates, 15Hz
+broadcast, interpolation, ready gate, lobby store) · `layout.ts` `SPAWN_SLOTS[8]` ·
+`ui.ts` `createLobbyHud` (roster dots + countdown bar) · `core.ts` (per-frame
+presence; **descend station is a READY TOGGLE when connected**; party/solo:start →
+descend). **`next build` clean; 257 client tests pass.**
+
+⚠️ **Incr.1 limitation:** `party:start` currently descends each member into their
+OWN single-player dungeon (synchronized DROP, not a shared world). Shared world =
+incr.2.
+⚠️ **Untested visually:** no 2-browser live run was possible in the build env —
+presence logic is unit+integration-tested over real sockets, but sprite tint,
+nameplate Y (`SPRITE_UNITS*1.18`), and HUD layout are **unverified; first QA task
+is two LAN browsers on `/dungeon`.** Degrades to single-player if the socket
+never opens, so blast radius is contained.
+
+### Increment 2 — NOT built. The shared dungeon + boss.
+
+Groundwork in place: session relay + host invariant + migration (server), the
+handoff baton (`net/session.ts`), seeded floors (`maze/prefabs.ts`
+`ShuffleBag(rng)` → one seed reproduces the maze everywhere), and `core.ts:447`
+already builds an enemy-snapshot array (the world-snapshot template). Steps:
+1. Dungeon `consumePendingSession()` on entry; if co-op, `session:hello` + seed
+   the floor RNG from a host-broadcast seed (identical mazes for all).
+2. Host (role 0) runs `simulate()` unchanged; at ~20Hz serializes the LOGICAL
+   subset of `state` (player x/z/hp/facing/timers, `zombies`→`core.ts:447` shape,
+   items, boss) → `session:snapshot`.
+3. Replicas render from snapshots + **predict+reconcile the local knight**
+   (continuous WASD ⇒ input lag ⇒ forward `session:input`, apply host correction).
+4. **Networked end boss gating the portal** — extend the existing boss system
+   (`Zombie.boss`, `combat.ts:539`, `core.ts:1267` OVERLORD): final floor spawns
+   a boss instead of stairs; **portal spawns only on boss death**, agreed via
+   `session:event`.
+5. Lifecycle: `session:leave` on death/exit; handle `session:peer-left`
+   (migration wired) + `session:ended`.
+
+**Keep in lockstep:** `service/src/realtime/protocol.ts` ⇔ `client/src/net/protocol.ts`.
+
+## Prior — Shadow + Lava: the material set is COMPLETE (`c8465a3`, `1201c1a`)
 
 All six brainstorm materials now live: 💎diamond 💧water 🪨stone ⚡storm 🌑shadow 🔥lava.
 

@@ -35,7 +35,18 @@ import { createStationFx, createStationPrompt, refreshFocus, type StationFx, typ
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
-import { showRunSummary, closeRunSummary, isRunSummaryOpen } from "./ui";
+import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, type LobbyHud } from "./ui";
+import {
+  initTavernNet,
+  disposeTavernNet,
+  broadcastLocal,
+  updateRemotes,
+  setLocalReady,
+  isMultiplayerActive,
+  lobbyView,
+  type LaunchInfo,
+} from "./multiplayer";
+import { setPendingSession } from "../../net/session";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
@@ -147,6 +158,10 @@ let onKey: ((e: KeyboardEvent) => void) | null = null;
 let onResize: (() => void) | null = null;
 let npcs: BuiltNpcs | null = null;
 let vfx: VfxSystem | null = null;
+let lobbyHud: LobbyHud | null = null;
+/** Set while a formed party is descending, so closeTavern keeps the shared
+ * socket alive for the dungeon session channel. */
+let launching = false;
 /** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
 let moteT = 0;
 /** Last frame's overlay state — the frozen→free edge re-dresses the knight. */
@@ -217,6 +232,17 @@ function interact(): void {
   prompt?.hide();
 
   if (s.action.kind === "descend") {
+    // ── Multiplayer: the plunger gate is a READY toggle, not an instant drop ──
+    // Readying joins the lobby's party queue; the actual descent happens when the
+    // server fires party:start / solo:start (see launchFromLobby). Single-player
+    // keeps the original behaviour — pull the plunger, go straight down.
+    if (isMultiplayerActive()) {
+      sfxPlunger();
+      const nowReady = !lobbyView().iAmReady;
+      setLocalReady(nowReady);
+      tavern.openStation = null; // the gate is momentary, not a panel
+      return;
+    }
     sfxPlunger();
     const go = tavern.onDescend;
     closeTavern();
@@ -261,6 +287,22 @@ function interact(): void {
   });
 }
 
+/**
+ * The lobby formed a party (or the solo timer fired). Stash the session for the
+ * dungeon to consume, then descend exactly as the plunger gate would — but keep
+ * the shared socket alive across the scene change so the dungeon can join the
+ * session channel.
+ */
+function launchFromLobby(info: LaunchInfo): void {
+  if (launching) return;
+  launching = true;
+  setPendingSession({ sessionId: info.sessionId, role: info.role, members: info.members, hostId: info.hostId, solo: info.solo });
+  sfxPlunger();
+  const go = tavern.onDescend;
+  closeTavern();
+  go?.();
+}
+
 function frame(now: number): void {
   if (!tavern.active) return;
   raf = requestAnimationFrame(frame);
@@ -282,6 +324,12 @@ function frame(now: number): void {
     // ── Station focus ──
     const next: Station | null = frozen ? null : stationAt(p.x, p.z);
     if (refreshFocus(next)) {
+      // ── Multiplayer: walking away from the plunger gate un-readies you ──
+      // (matches the lobby rule "leave the gate → player:ready(false)"). Only
+      // the descend station toggles ready, so any focus change off it clears it.
+      if (isMultiplayerActive() && lobbyView().iAmReady && next?.action.kind !== "descend") {
+        setLocalReady(false);
+      }
       fx?.setFocus(next);
       if (next) {
         prompt?.show(next);
@@ -290,6 +338,12 @@ function frame(now: number): void {
         prompt?.hide();
       }
     }
+
+    // ── Multiplayer presence ── broadcast our pose (throttled) and advance the
+    // interpolated remote knights. Both are no-ops when not connected.
+    broadcastLocal(dt, p.x, p.z, p.facing);
+    updateRemotes(dt);
+    lobbyHud?.update(lobbyView());
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
     // the room subtly presents what you're about to use. Never rotates.
@@ -498,6 +552,13 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   hideDungeonHud(true);
   startTavernAmbience();
 
+  // ── Multiplayer presence ── connect to the lobby and spin up the roster/
+  // countdown HUD. initTavernNet is a no-op when the backend isn't reachable, so
+  // an offline / public visitor simply plays the single-player tavern.
+  launching = false;
+  lobbyHud = createLobbyHud(container);
+  initTavernNet(scene, launchFromLobby);
+
   pixelPass = createPixelPass(renderer, {
     quantize: QUANTIZE_DEFAULT,
     dither: DITHER_DEFAULT,
@@ -590,6 +651,13 @@ export function closeTavern(): void {
   if (onResize) window.removeEventListener("resize", onResize);
   onKey = null;
   onResize = null;
+
+  // Multiplayer teardown. When a party is launching we keep the shared socket
+  // alive (the dungeon session channel rides it), only dropping the presence
+  // listeners + remote sprites; a normal close drops the socket too.
+  disposeTavernNet(launching);
+  lobbyHud?.dispose();
+  lobbyHud = null;
 
   closeRunSummary();
   closeGambler();
