@@ -75,6 +75,14 @@ function nearestKnight(x: number, z: number): { x: number; z: number } | null {
   return best;
 }
 
+/** Knights currently on this floor, ME included — the king's HP fairness unit. */
+function knightsOnFloor(): number {
+  const tag = `dungeon:${state.level}`;
+  let n = 1;
+  for (const peer of peers()) if (peer.scene === tag) n++;
+  return n;
+}
+
 interface Skull {
   mesh: THREE.Mesh;
   phase: number; // orbit angle offset
@@ -100,6 +108,8 @@ interface BossState {
   orbitT: number;
   portal: THREE.Mesh | null;
   opened: boolean;
+  /** How many knights the king's HP is currently scaled for (fairness). */
+  scaledFor: number;
 }
 
 let boss: BossState | null = null;
@@ -199,6 +209,9 @@ export function spawnBoss(
     orbitT: 0,
     portal: null,
     opened: false,
+    // Spawn hp is the 1-knight value; the first updateBoss tick rescales to
+    // however many knights are actually on the floor.
+    scaledFor: 1,
   };
   state.exitLocked = true;
   showToast("☠ THE REAPER KING ☠", "slay it — only then does the portal open");
@@ -223,6 +236,22 @@ export function updateBoss(dt: number): void {
 
   const p = state.player;
   if (!p) return;
+
+  // ── FAIRNESS SCALING ── the king's HP tracks the knights actually on the
+  // floor: 2 players = ×2, drop-in mid-fight included (the current damage
+  // FRACTION is preserved, so arriving help never heals him in relative terms,
+  // and a rage-quit doesn't strand the survivor against a double-HP wall).
+  const n = knightsOnFloor();
+  if (n !== boss.scaledFor) {
+    const factor = n / boss.scaledFor;
+    const mh = boss.z.maxHp ?? boss.z.hp;
+    boss.z.maxHp = Math.max(1, Math.round(mh * factor));
+    boss.z.hp = Math.min(boss.z.maxHp, Math.max(1, Math.round(boss.z.hp * factor)));
+    if (n > boss.scaledFor) showToast("☠ THE KING FEEDS ON NUMBERS", `${n} knights — his health swells ×${n}`);
+    boss.scaledFor = n;
+    state.hudDirty = true;
+  }
+
   const bx = boss.z.x;
   const bz = boss.z.z;
   // The king menaces whichever knight is CLOSEST — ours or a pool-mate's.
@@ -528,6 +557,9 @@ export function adoptBoss(z: Zombie): void {
     orbitT: 0,
     portal: null,
     opened: false,
+    // The inherited hp was already scaled by the previous authority — seed
+    // scaledFor with the CURRENT knight count so the next tick doesn't double it.
+    scaledFor: knightsOnFloor(),
   };
   state.exitLocked = true;
 }
