@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `1df5f6d` on synology (deployed 2026-07-22; rollback image
+**Live:** client `491384b` on synology (deployed 2026-07-22; rollback image
 `braindeadbot-client:previous`). Service unchanged. Newly live since
 `ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
 look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
@@ -11,7 +11,35 @@ combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
 (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
 elemental armor (`96b3a76`).
 
-## Latest — stairs beacon reads as the exit (`1df5f6d`)
+## Latest — material × terrain reactions (`491384b`)
+
+The brainstorm's deferred terrain layer, wired to the 3 live materials. Each is
+a helper in `entities/marble.ts` (gated by `reactingAs()` = materials on +
+`state.dbgMaterialTerrain` + right material), called from the REAL hazard
+handlers so it composes with the existing part logic:
+
+- 💧 **Water × magstrip → STEAM ERUPTION** (`tryWaterSteam`, magstrip handler):
+  the anti-speed trap flash-boils — instead of the crawl-clamp you erupt: a
+  scalding radial burst (dmg + knockback) and a launch to `WATER_STEAM_LAUNCH`.
+- 🪨 **Stone × magstrip → PLOW** (`stoneMagstripCap`): the field can't grip a
+  boulder — clamp rises to 13 u/s (vs 3.2).
+- 🪨 **Stone × oil → GRIP** (`stoneIgnoresOil`, oil handler early-return): no
+  hydroplane.
+- 🪨 **Stone × pit → BRIDGE** (`stoneBridgesPit`, pit handler): too heavy to be
+  swallowed while rolling; plows across with a dust plume.
+- 💧 **Water × firevent → STEAM** (`waterQuenchesFire`, hazards firevent): the
+  jet flash-boils harmlessly, no burn.
+- 💎 **Diamond × electric → DISCHARGE** (`tryDiamondDischarge`, hazards
+  electric): eats the shock, zaps nearby foes instead.
+
+Flip the whole layer with the ` panel **TERRAIN RX** toggle. New constants in
+the MATERIAL × TERRAIN block. `marble-terrain.test.ts` pins gating + launch
+contract (damageZombie propagation is its own tested path — needs a real grid).
+420 dungeon tests green. NOT click-tested. Reachability caveat: magstrip/oil/
+pit/electric/firevent are depth-gated + RNG-placed parts, so a floor may not
+have every hazard — use the ` panel to spawn a material and hunt a strip.
+
+## Prior — stairs beacon reads as the exit (`1df5f6d`)
 
 Playtest report: the tall arcane beam over the stairs pocket read as "???" —
 its base (pit + pylons) hides behind wall rims, and iso projection puts the
