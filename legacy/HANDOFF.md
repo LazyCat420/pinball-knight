@@ -2,6 +2,38 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🗡️ NEWEST (2026-07-23): ability & map-effect wave — needs click-QA
+
+Shipped + deployed (build + 891 unit tests green; **not click-tested**). Full
+grounded plan + deliberate scope cuts: `src/scenes/dungeon/ABILITY_FX_PLAN.md`.
+
+- **Arcane Pulse** is now a real shockwave: damage rides the expanding ring
+  (white core + lagging purple chaser, new `RingPool` in `render/vfx.ts`), foes
+  are struck as the front crosses them with a mini-bolt back to the cast point.
+  Wave tracker lives module-local in `abilities.ts` (`spawnPulseWave`).
+- **Katana finisher**: 3rd combo hit buffed (2.0×, wider arc) and on connect —
+  white player ghost, triple parallel cuts, cut-through ghosts per victim
+  (`resolvePlayerAttack` grew an `onHit` hook), and a full-screen white flash:
+  new `uFlash` uniform + `setFlash()` in `pixel-pass.ts`, driven by
+  `state.flashT` which decays on REAL frame time in core so it plays through
+  the finisher's own hitstop.
+- **Flipper Charge** ignites a fire trail: flame afterimages + embers while the
+  ride is fast, one burning `fire` floorFx per NEW tile crossed (existing burn
+  ticks do the damage; player-safe unless the self-harm debug toggle is on).
+- **Slick Field** — NEW 6th ability (🛢️ 25 mana/8s, arcana node `unlockslick`,
+  requires `unlockmagnet`): spills an `oil` FloorFxKind pool. Oiled zombies
+  lose steering (`oiledT` heading blend in zombie.ts; bats exempt), the rolling
+  ball tops up the existing `p.oilT` glide, and **any fire touching oil ignites
+  the whole pool** (8s burn) — Flipper Charge across your own slick is the
+  designed combo.
+- **Deliberately NOT done** (draft wanted it, codebase said no): Magnet Aura and
+  Blade Storm kept (skill tree/coins/co-op/save weaving); burning-bumper jackpot
+  synergy + frost runes/tar pit/etc deferred — see the plan doc.
+- **QA notes**: `` ` `` debug panel has ∞ mana / no-cooldown toggles; Slick Field
+  needs the arcana skill point or add `"slickfield"` to `state.unlockedAbilities`
+  in console. Watch for: ring visibility vs bloom, flash intensity taste
+  (FINISHER_FLASH_MAX 0.75), oil pool readability on dark floors.
+
 **Live:** client + service carry **Pinball-Knight multiplayer as a DROP-IN POOL**
 — no lobby/ready/party. Everyone on the site auto-joins ONE shared world (shared
 server seed → identical maze/enemy/boss), sees each other in the tavern hub AND
