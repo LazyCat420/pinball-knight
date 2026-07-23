@@ -19,6 +19,8 @@ import { at, worldToTile, T_WALL, T_STAIRS, T_CRACKED, type Grid } from "./maze/
 import { fogAt, FOG_HIDDEN, FOG_DIM, type Fog } from "./fog";
 import { PALETTE_HEX } from "./render/palette";
 import { clamp } from "../../utils/math";
+import { peers } from "../../net/presence";
+import { colorForSlot } from "../../net/protocol";
 
 /** `#rrggbb` for a Cold Crypt palette index. */
 function pal(i: number): string {
@@ -361,6 +363,36 @@ export function drawFloorMap(
     const t = worldToTile(g, z.x, z.z);
     if (!visible(t.i, t.j)) continue;
     mark(t.i, t.j, C_ENEMY, 1);
+  }
+
+  // ── Pool-mates ── teammates on THIS floor, each in their knight color.
+  // Drawn through fog ON PURPOSE: the aggro/discovered gates above exist so the
+  // map can't become an aimbot, but a teammate is not a spoiler — finding each
+  // other is the whole point of a shared map. Windowed views also get a border
+  // chevron per off-window mate (same clamp as the stairs pointer) so "where
+  // are you?" has an answer at minimap scale.
+  {
+    const tag = `dungeon:${state.level}`;
+    for (const peer of peers()) {
+      if (peer.scene !== tag) continue;
+      const color = `#${(colorForSlot(peer.slot).hex & 0xffffff).toString(16).padStart(6, "0")}`;
+      const t = worldToTile(g, peer.x, peer.z);
+      const inWindow = t.i >= i0 && t.i < i1 && t.j >= j0 && t.j < j1;
+      if (inWindow) {
+        mark(t.i, t.j, color, 2);
+      } else if (opts.window && p) {
+        const pt = worldToTile(g, p.x, p.z);
+        const px = ox + (pt.i - i0) * s + s / 2;
+        const py = oy + (pt.j - j0) * s + s / 2;
+        const e = clampRayToBorder(px, py, t.i - pt.i, t.j - pt.j, cw, ch);
+        if (e) {
+          const sgnX = Math.abs(e.dx) >= Math.abs(e.dy) ? (e.dx >= 0 ? 1 : -1) : 0;
+          const sgnY = sgnX === 0 ? (e.dy >= 0 ? 1 : -1) : 0;
+          drawChevron(ctx, e.x + sgnX, e.y + sgnY, e.dx, e.dy, C_VOID, 11);
+          drawChevron(ctx, e.x, e.y, e.dx, e.dy, color, 9);
+        }
+      }
+    }
   }
 
   // ── Player ── drawn last so nothing can cover it.
