@@ -4,6 +4,7 @@
  */
 import { state } from "./state";
 import { clearProjectiles, disposeProjectileAssets } from "./entities/projectiles";
+import { clearFloorFx, disposeFloorFxAssets } from "./entities/floor-fx";
 import { disposeNpcs } from "./entities/npc";
 import { disposeMultiBall } from "./entities/multiball";
 import { disposePinballParts } from "./render/pinball-parts";
@@ -22,6 +23,7 @@ export function disposeLevel(): void {
   state.zombies = [];
 
   clearProjectiles();
+  clearFloorFx();
 
   state.groundItems.forEach((it) => {
     state.scene?.remove(it.sprite.mesh);
@@ -84,6 +86,7 @@ export function disposeAll(): void {
   state.goblinSheet = state.pinSheet = state.golemSheet = state.chomperSheet = state.magnetSheet = state.webspinnerSheet = null;
 
   disposeProjectileAssets();
+  disposeFloorFxAssets();
 
   state.vfx?.dispose();
   state.vfx = null;

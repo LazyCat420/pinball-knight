@@ -1591,3 +1591,60 @@ export const TURBO_WALK_MULT = 1.25;
 export const SPRINGLEGS_RESTITUTION = 1.05;
 /** Floor grade S/A unlocks a BONUS VAULT room on the next floor. */
 export const BONUS_ROOM_GRADES = ["S", "A"];
+
+// ── MARBLE MATERIALS ────────────────────────────────────────────
+// A second "ball" axis: what the pinball is MADE OF. Modifies ride physics at
+// the same choke points that branch on springT/turboT/oilT, plus on-bounce and
+// on-slam emitters. See entities/marble.ts and state.MarbleMaterial.
+/** How long a picked-up material lasts (seconds), by material. */
+export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24 } as const;
+/** Fusion window: after a 2nd pickup, both materials co-fire this long. */
+export const MATERIAL_FUSION_TIME = 2;
+/** Min momentum (u/s) before a bounce emits anything — rewards flow, kills spam. */
+export const MATERIAL_EMIT_SPEED = 6;
+/** Min seconds between on-bounce emissions. */
+export const MATERIAL_EMIT_COOLDOWN = 0.12;
+
+// 💎 Diamond — offense / projectiles
+export const DIAMOND_RESTITUTION = 1.0; // perfectly elastic flat walls
+export const DIAMOND_WALL_BREAK_SPEED = 8; // was WALL_BREAK_SPEED 15
+export const DIAMOND_SECRET_BREAK_SPEED = 4; // was SECRET_BREAK_SPEED 7
+export const DIAMOND_BOUNCE_SHARDS = 4; // shards per qualifying bounce
+export const DIAMOND_BOUNCE_FAN = 0.7; // ±rad fan around the ricochet vector (~40°)
+export const DIAMOND_BOUNCE_DMG = 1;
+export const DIAMOND_SLAM_SHARDS = 8; // radial burst on pounce slam
+export const DIAMOND_SLAM_SPEED = 12; // u/s
+export const DIAMOND_SLAM_DMG = 2;
+export const DIAMOND_SHARD_SPEED = 14; // u/s of an on-bounce shard
+
+// 💧 Water — fast & slippery (mobility / flow)
+export const WATER_RESTITUTION = 0.98; // keeps almost all speed
+export const WATER_FRICTION_MULT = 0.08; // near-frictionless glide (permanent-oil feel)
+export const WATER_STEER_MULT = 0.55; // slippery: weak grip, momentum-dominated
+export const WATER_RAM_KNOCKBACK = 0.2; // flows through, barely shoves
+export const WATER_SLICK_RADIUS = 0.7; // tile radius of a slick scar
+export const WATER_SLICK_LIFE = 4; // seconds a slick persists
+export const WATER_SLAM_SLICKS = 5; // slick patches thrown on slam
+export const WATER_SLAM_SPEED_KICK = 4; // u/s forward kick on slam
+export const WATER_SLIP_TIME = 0.8; // seconds an enemy slides after touching slick
+export const WATER_SLIP_SPEED = 2.4; // u/s an enemy drifts while slipping
+
+// 🪨 Stone — force / area-denial
+export const STONE_RAM_KNOCKBACK = 3.3; // was BALL_RAM_KNOCKBACK 1.1
+export const STONE_FRICTION_MULT = 1.6; // rolls, doesn't glide
+export const STONE_MAX_SPEED = 16; // lower ceiling (vs PINBALL_MAX_SPEED 22)
+export const STONE_BUMPER_KICK_MULT = 0.15; // ignores small bumper forces
+export const STONE_CORNER_ADD_MULT = 3; // corner hits accelerate harder
+export const STONE_SHOCK_RADIUS = 0.6; // on-bounce shockwave radius (tiles)
+export const STONE_SHOCK_DMG = 1;
+export const STONE_SHOCK_GOLEM_MULT = 2; // stone bullies golems
+export const STONE_SLAM_RADIUS = 1.4; // boulder-slam AoE
+export const STONE_SLAM_BASE_DMG = 4;
+export const STONE_SLAM_DMG_PER_SPEED = 0.3; // + this × speed converted
+
+// Floor-fx (persistent scars)
+export const FLOORFX_TICK = 0.4; // seconds between floor-fx damage/status ticks
+export const FIRE_PUDDLE_DMG = 1; // per tick (deferred Lava; wired for R&D)
+export const FIRE_PUDDLE_LIFE = 3;
+export const FIRE_PUDDLE_RADIUS = 0.8;
+export const MATERIAL_SELF_HARM_DMG = 1; // player dmg per tick on own hazard (toggle)

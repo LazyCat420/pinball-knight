@@ -393,6 +393,14 @@ function meter(value: number, max: number, color: string, blocks = 10): string {
   );
 }
 
+/** Buff-strip chip data for each marble material (inlined to avoid an import
+ *  cycle through entities/marble → combat → ui). Mirror of MATERIALS meta. */
+const MATERIAL_CHIP: Record<string, { icon: string; label: string; color: string }> = {
+  diamond: { icon: "💎", label: "DIAMOND", color: "#6fd0e8" },
+  water: { icon: "💧", label: "WATER", color: "#4aa6d0" },
+  stone: { icon: "🪨", label: "STONE", color: "#9aa4b4" },
+};
+
 export function updateHUD(el: HTMLDivElement): void {
   const hp = Math.max(0, state.player?.hp ?? 0);
   const hearts =
@@ -468,6 +476,11 @@ export function updateHUD(el: HTMLDivElement): void {
   // `hud-diablo.ts:472-474` already fixed this; the rampage bar had not.
   if (p && p.ironT > 0) buffs.push(`<span style="color:#f0a63c">🪩 BALL FORM ${Math.ceil(p.ironT)}s</span>`);
   else if (p && p.turboT > 0) buffs.push(`<span style="color:#6fd0e8">💨 TURBO ${Math.ceil(p.turboT)}s</span>`);
+  if (p && p.material && p.materialT > 0) {
+    const m = MATERIAL_CHIP[p.material];
+    const fuse = p.fuseT > 0 && p.fuseMaterial ? ` +${MATERIAL_CHIP[p.fuseMaterial].icon}` : "";
+    buffs.push(`<span style="color:${m.color}">${m.icon} ${m.label} ${Math.ceil(p.materialT)}s${fuse}</span>`);
+  }
   if (p && p.multiBallT > 0) buffs.push(`<span style="color:#b06fe8">🔮 MULTI-BALL ${Math.ceil(p.multiBallT)}s</span>`);
   if (p && p.curveT > 0) buffs.push(`<span style="color:#6fd0e8">🌀 CURVE ${Math.ceil(p.curveT)}s</span>`);
   if (p && p.magBootsT > 0) buffs.push(`<span style="color:#a83244">🧲 BOOTS ${Math.ceil(p.magBootsT)}s</span>`);

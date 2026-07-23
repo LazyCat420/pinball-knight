@@ -32,8 +32,15 @@ export interface DebugActions {
   spawnRing(): void;
   giveWeapon(id: string): void;
   applyPotion(id: string): void;
+  applyMaterial(id: string): void;
   spawnEnemy(kind: string): void;
 }
+
+const MATERIALS_DBG: Array<{ id: string; label: string }> = [
+  { id: "diamond", label: "💎 Diamond" },
+  { id: "water", label: "💧 Water" },
+  { id: "stone", label: "🪨 Stone" },
+];
 
 const SPAWNABLE: Array<{ kind: string; label: string }> = [
   { kind: "zombie", label: "🧟 Zombie" },
@@ -138,6 +145,16 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   // ── Apply potion ──
   section("POTION");
   chips(el, POTION_IDS.map((id) => ({ label: POTIONS[id].icon, title: POTIONS[id].label, fn: () => actions.applyPotion(id) })));
+
+  // ── Marble materials (R&D): grant a material + flip each feature live ──
+  section("MARBLE");
+  chips(el, MATERIALS_DBG.map((m) => ({ label: m.label, title: m.id, fn: () => actions.applyMaterial(m.id), wide: true })));
+  addToggle("MAT ENABLED", () => state.dbgMaterialEnabled, (v) => (state.dbgMaterialEnabled = v));
+  addToggle("ON-BOUNCE", () => state.dbgMaterialOnBounce, (v) => (state.dbgMaterialOnBounce = v));
+  addToggle("SLAM EMIT", () => state.dbgMaterialSlam, (v) => (state.dbgMaterialSlam = v));
+  addToggle("FLOOR FX", () => state.dbgMaterialFloorFx, (v) => (state.dbgMaterialFloorFx = v));
+  addToggle("SELF-HARM", () => state.dbgMaterialSelfHarm, (v) => (state.dbgMaterialSelfHarm = v));
+  addToggle("FLOOR-1 DROPS", () => state.dbgMaterialFloor1Spawn, (v) => (state.dbgMaterialFloor1Spawn = v));
 
   // ── Spawn enemy ──
   section("SPAWN");

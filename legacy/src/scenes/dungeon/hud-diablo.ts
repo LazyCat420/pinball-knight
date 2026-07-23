@@ -491,6 +491,17 @@ function activeBuffs(): BuffView[] {
   add(p.multiBallT, "multiball", "🔮", "#b06fe8", POTIONS.multiball.duration, `Multi-Ball · ${POTIONS.multiball.description}`);
   add(p.curveT, "curve", "🌀", "#6fd0e8", POTIONS.curveshot.duration, `Curve Shot · ${POTIONS.curveshot.description}`);
   add(p.magBootsT, "boots", "🧲", "#a83244", POTIONS.magnetboots.duration, `Magnet Boots · ${POTIONS.magnetboots.description}`);
+  // ── Marble material (entities/marble.ts) — the "what the ball is made of" axis.
+  // Inlined tile meta (icon/colour/max/label) to avoid an import cycle. ──
+  if (p.material) {
+    const M: Record<string, { icon: string; color: string; max: number; label: string }> = {
+      diamond: { icon: "💎", color: "#6fd0e8", max: 20, label: "Diamond Marble · elastic; fires shards on bounce/slam" },
+      water: { icon: "💧", color: "#4aa6d0", max: 16, label: "Water Marble · fast & slippery; lays a slick trail" },
+      stone: { icon: "🪨", color: "#9aa4b4", max: 24, label: "Stone Marble · heavy; shockwaves + boulder slam" },
+    };
+    const m = M[p.material];
+    if (m) add(p.materialT, `mat-${p.material}`, m.icon, m.color, m.max, m.label);
+  }
   // ── Craft-only brews (recipes.ts) ──
   add(p.regenT, "regen", "🧪", "#8fd46b", POTIONS.regen.duration, `Regen Salve · ${POTIONS.regen.description}`);
   add(p.venomCoatT, "venomcoat", "☠️", "#a83fd0", POTIONS.venomcoat.duration, `Venom Coat · ${POTIONS.venomcoat.description}`);

@@ -25,7 +25,7 @@
  */
 import * as THREE from "three";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind } from "./state";
+import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
@@ -59,6 +59,8 @@ import { bfsDistances } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
+import { updateFloorFx, clearFloorFx } from "./entities/floor-fx";
+import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
 import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
@@ -495,6 +497,9 @@ export function launchDungeonGame(onExit?: () => void): void {
               bladeStorm: p.bladeStormT,
               webbed: p.webbedT,
               oil: p.oilT,
+              material: p.material,
+              materialT: p.materialT,
+              fuseMaterial: p.fuseMaterial,
             }
           : null,
         freezeT: state.freezeT ?? 0,
@@ -747,6 +752,9 @@ export function launchDungeonGame(onExit?: () => void): void {
     applyPotion: (id) => {
       if (id in POTIONS) applyPotion(id as PotionId);
     },
+    applyMaterial: (id) => {
+      if (isMaterial(id)) applyMaterial(id);
+    },
     spawnEnemy: (kind) => debugSpawnEnemy(kind as EnemyKind),
   });
 
@@ -761,7 +769,15 @@ export function launchDungeonGame(onExit?: () => void): void {
   // …and a chance at themed alchemy reagents (RO-style loot).
   setReagentDropHandler(dropReagentsMaybe);
   // A shattered brick golem sprays ricochet shards.
-  setGolemShatterHandler((x, z) => golemShards(x, z));
+  setGolemShatterHandler((x, z) => {
+    golemShards(x, z);
+    // Elite reward: a shattered brick golem sometimes yields a marble — biased
+    // toward STONE (beat stone with stone), else a random material.
+    if (Math.random() < 0.5) {
+      const m: MarbleMaterial = Math.random() < 0.6 ? "stone" : MATERIAL_LIST[Math.floor(Math.random() * MATERIAL_LIST.length)];
+      spawnMaterialDrop(x, z, m);
+    }
+  });
   // Catching the rolling merchant opens its shop.
   setMerchantCaughtHandler(openShop);
   resetCombatJuice();
@@ -1268,6 +1284,20 @@ function startLevel(level: number): void {
     state.scene!.add(sprite.mesh);
     return { kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
   });
+
+  // ── R&D: seed the three marble materials near the floor-1 spawn so the whole
+  // system is always testable without hunting a vault (toggle in the ` panel). ──
+  if (level === 1 && state.dbgMaterialFloor1Spawn && state.scene && state.player) {
+    const pt = worldToTile(grid, state.player.x, state.player.z);
+    MATERIAL_LIST.forEach((m, i) => {
+      const spot = nearestOpenTile(grid, pt.i, pt.j, i + 2) ?? pt;
+      const c = tileCenter(grid, spot.i, spot.j);
+      const sprite = createStaticSprite(ITEM_PAINTS[m]);
+      sprite.mesh.position.set(c.x, 0, c.z);
+      state.scene!.add(sprite.mesh);
+      state.groundItems.push({ kind: "material", id: m, x: c.x, z: c.z, sprite, bobPhase: i * 2 });
+    });
+  }
 
   // ── Set dressing ──
   state.props = plan.props.map((pr) => {
@@ -2061,6 +2091,15 @@ function spawnReagentMote(x: number, z: number, id: ReagentId, i: number, n: num
   });
 }
 
+/** Drop a marble material on the floor (elite/vault reward; grabbed on contact). */
+function spawnMaterialDrop(x: number, z: number, m: MarbleMaterial): void {
+  if (!state.scene) return;
+  const sprite = createStaticSprite(ITEM_PAINTS[m]);
+  sprite.mesh.position.set(x, 0, z);
+  state.scene.add(sprite.mesh);
+  state.groundItems.push({ kind: "material", id: m, x, z, sprite, bobPhase: Math.random() * 6 });
+}
+
 /**
  * Coin physics — burst, rest, magnet.
  *
@@ -2250,6 +2289,12 @@ function checkPickups(dt: number): void {
       }
     } else if (it.kind === "card") {
       if (!pickUpCard(it)) continue; // stash full — leave the card on the floor
+    } else if (it.kind === "material") {
+      // Marble materials apply on contact (held one at a time; a 2nd opens a
+      // fusion window). Not brewable, not belted — the ball IS the material.
+      const m = it.id as MarbleMaterial;
+      applyMaterial(m);
+      showPickupNote(`${MATERIALS[m].icon} ${MATERIALS[m].label.toUpperCase()} MARBLE`);
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];
@@ -2560,6 +2605,8 @@ function simulate(dt: number): void {
   // slow-mo while the player runs at full speed. Everything else keeps real dt.
   updateZombies(state.slowT > 0 ? dt * TIMECRAWL_FACTOR : dt);
   updateProjectiles(dt);
+  updateFloorFx(dt); // marble scars (slick/fire) tick status/damage to overlappers
+  updateMaterial(dt); // marble material + fusion timers
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
   updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch

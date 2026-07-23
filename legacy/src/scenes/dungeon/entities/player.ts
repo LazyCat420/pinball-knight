@@ -133,6 +133,17 @@ import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
+import {
+  materialFlatRestitution,
+  materialBreakSpeeds,
+  materialFrictionMult,
+  materialSteerMult,
+  materialRamKnockback,
+  materialCornerAddMult,
+  materialMaxSpeed,
+  emitMaterialOnBounce,
+  materialSlam,
+} from "./marble";
 import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../audio";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 
@@ -515,6 +526,8 @@ function pounceSlam(move: MoveTiming): void {
     applyCardOnHit(z);
   }
   if (state.zombies.some((z) => z.mode !== "dead")) wearActiveWeapon();
+  // Marble materials fire their big slam emitter here (shards / slick / boulder).
+  materialSlam();
   // Impact juice: a shockwave of dust + a hard shake.
   for (let i = 0; i < 6; i++) {
     const ang = (i / 6) * Math.PI * 2;
@@ -1051,8 +1064,9 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // A dash panel locks steering briefly so its lane actually carries you.
   steerLockT = Math.max(0, steerLockT - dt);
   const a = input.axis();
-  // Oil kills the steering (you're on a slick); turbo sharpens it.
-  const steerMul = p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1;
+  // Oil kills the steering (you're on a slick); turbo sharpens it. Water marble
+  // is slippery — weak grip, so momentum dominates (materialSteerMult).
+  const steerMul = (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult();
   if (steerLockT <= 0 && (a.x !== 0 || a.z !== 0)) {
     const wd = screenDirToWorld(a.x, a.z);
     const wl = Math.hypot(wd.x, wd.z) || 1;
@@ -1117,20 +1131,23 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     if (vn < 0) {
       p.momX -= 2 * vn * nx;
       p.momZ -= 2 * vn * nz;
-      const rest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
+      const rest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
       p.bounceCombo += 1;
       p.bounceComboT = comboWindow(p.bounceCombo);
       state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
       state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
       state.hitstopT = Math.max(state.hitstopT, 0.02);
+      emitMaterialOnBounce(nx, nz);
       sfxRoll();
     }
   } else if (blockedX || blockedZ) {
     // SECRET WALL: enough momentum landing on a CRACKED band shatters it — the
     // knight barrels straight through the new gap (no reflection), spending a
     // slice of speed on the masonry. Still a combo tick: smashing IS style.
-    if (p.momSpeed >= SECRET_BREAK_SPEED && trySmashAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+    // Diamond marble punches through masonry at far lower speed (materialBreakSpeeds).
+    const brk = materialBreakSpeeds();
+    if (p.momSpeed >= brk.secret && trySmashAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       p.momSpeed *= 0.85;
       p.bounceCombo += 1;
       p.bounceComboT = comboWindow(p.bounceCombo);
@@ -1139,14 +1156,14 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
     // Bounced off a crack too slowly: nothing teaches that SPEED is the key
     // (there's no button and no weapon for it), so say it once per floor.
-    if (p.momSpeed < SECRET_BREAK_SPEED && !state.crackHintShown && crackedAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+    if (p.momSpeed < brk.secret && !state.crackHintShown && crackedAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       state.crackHintShown = true;
       showPickupNote("🧱 CRACKED WALL — hit it FASTER to break through");
     }
     // KOOL-AID: at terminal speed you punch through an ORDINARY wall into the
     // corridor behind it — your own shortcut. Costs a big slice of speed so it
     // can't chew a straight line across the whole floor.
-    if (p.momSpeed >= WALL_BREAK_SPEED && trySmashWallAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
+    if (p.momSpeed >= brk.wall && trySmashWallAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
       p.momSpeed *= WALL_BREAK_SPEED_COST;
       p.bounceCombo += 1;
       p.bounceComboT = comboWindow(p.bounceCombo);
@@ -1165,7 +1182,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // accelerators. Every bounce still ticks the combo chain.
     const corner = blockedX && blockedZ;
     // Spring Legs turns even flat walls into gainers — compound bouncing.
-    const flatRest = p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION;
+    // Marble materials override the flat restitution (diamond elastic, water slick).
+    const flatRest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
     if (corner) {
       // CORNER gain, combo-shaped (Parts 1+3): the restitution + flat kick
       // TAPER with combo depth (comboCornerRestitution/Add), and the result is
@@ -1173,7 +1191,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       // GAIN. A corner never drags you below the speed you already carry (a
       // plunger/spring can launch you above the ceiling at combo 0; the ceiling
       // just limits what BOUNCING alone can earn), so the launch feel is intact.
-      const gain = p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo);
+      const gain = p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo) * materialCornerAddMult();
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, Math.min(gain, comboSpeedCeil(p.bounceCombo))));
     } else {
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest);
@@ -1187,6 +1205,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, (corner ? 14 : 6) + Math.min(10, p.bounceCombo * 2));
     state.shakeT = Math.max(state.shakeT, (corner ? 0.18 : 0.1) + Math.min(0.12, p.bounceCombo * 0.02));
     state.hitstopT = Math.max(state.hitstopT, corner ? 0.05 : 0.02);
+    emitMaterialOnBounce(sx, sz);
     sfxRoll();
   }
 
@@ -1210,8 +1229,11 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // Part 5 — deep combos add a gentle global grip (comboFrictionMul), so a long
   // chain bleeds a little faster in open rooms and is nudged back onto the
   // tight machine route where its bounces belong. Oil/Turbo still zero it out.
-  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul * comboFrictionMul(p.bounceCombo);
+  // Marble materials scale the bleed: water glides (near-zero), stone drags more.
+  const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul * comboFrictionMul(p.bounceCombo) * materialFrictionMult();
   p.momSpeed = Math.max(0, p.momSpeed - friction * dt);
+  // Stone tops out at a lower speed ceiling than the default.
+  p.momSpeed = Math.min(p.momSpeed, materialMaxSpeed());
   p.bounceComboT = Math.max(0, p.bounceComboT - dt);
   if (p.bounceComboT <= 0) {
     p.bounceCombo = 0;
@@ -1226,13 +1248,15 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   if (ramming && p.ramT <= 0) {
     const w = WEAPONS[activeWeapon().id];
     const dmg = playerDamage(Math.max(2, w.damage * 1.5) * (p.ironT > 0 ? IRONCORE_RAM_MULT : 1));
+    // Stone shoves hard; water flows through with barely a nudge.
+    const ramKb = materialRamKnockback();
     let hit = false;
     for (const z of state.zombies) {
       if (z.mode === "dead") continue;
       const dx = z.x - p.x;
       const dz = z.z - p.z;
       if (dx * dx + dz * dz > (PLAYER_R + ZOMBIE_R + 0.15) * (PLAYER_R + ZOMBIE_R + 0.15)) continue;
-      damageZombie(z, dmg, p.momX, p.momZ, BALL_RAM_KNOCKBACK);
+      damageZombie(z, dmg, p.momX, p.momZ, ramKb);
       applyCardOnHit(z);
       hit = true;
     }

@@ -1,0 +1,279 @@
+/**
+ * MARBLE MATERIALS — the "what is the ball made of" axis.
+ *
+ * A material is NOT a potion: it modifies the pinball ride's physics at the same
+ * choke points that already branch on springT/turboT/oilT, plus it fires an
+ * emitter on every fast wall bounce and a bigger one from the pounce slam. Held
+ * one at a time; a fresh pickup opens a short FUSION window during which the
+ * previous material co-fires before it expires (the one novel stacking rule).
+ *
+ * This module owns:
+ *   • metadata (label/icon/tint) for HUD + pickups + debug,
+ *   • pure physics helpers the ride reads (restitution/friction/knockback/…),
+ *   • applyMaterial / updateMaterial (timers + fusion),
+ *   • emitMaterialOnBounce / materialSlam (the shard/slick/shockwave emitters).
+ *
+ * Everything downstream reuses existing engines: spawnShardBurst (golem shards),
+ * spawnFloorFx (new floor scars), damageZombie + the pounce dust-ring for the
+ * shockwave, and vfx.ghost for the aura tint.
+ */
+import { state, type MarbleMaterial } from "../state";
+import {
+  MATERIAL_DURATION,
+  MATERIAL_FUSION_TIME,
+  MATERIAL_EMIT_SPEED,
+  MATERIAL_EMIT_COOLDOWN,
+  DIAMOND_RESTITUTION,
+  DIAMOND_WALL_BREAK_SPEED,
+  DIAMOND_SECRET_BREAK_SPEED,
+  DIAMOND_BOUNCE_SHARDS,
+  DIAMOND_BOUNCE_FAN,
+  DIAMOND_BOUNCE_DMG,
+  DIAMOND_SHARD_SPEED,
+  DIAMOND_SLAM_SHARDS,
+  DIAMOND_SLAM_SPEED,
+  DIAMOND_SLAM_DMG,
+  WATER_RESTITUTION,
+  WATER_FRICTION_MULT,
+  WATER_STEER_MULT,
+  WATER_RAM_KNOCKBACK,
+  WATER_SLICK_RADIUS,
+  WATER_SLICK_LIFE,
+  WATER_SLAM_SLICKS,
+  WATER_SLAM_SPEED_KICK,
+  STONE_RAM_KNOCKBACK,
+  STONE_FRICTION_MULT,
+  STONE_MAX_SPEED,
+  STONE_BUMPER_KICK_MULT,
+  STONE_CORNER_ADD_MULT,
+  STONE_SHOCK_RADIUS,
+  STONE_SHOCK_DMG,
+  STONE_SHOCK_GOLEM_MULT,
+  STONE_SLAM_RADIUS,
+  STONE_SLAM_BASE_DMG,
+  STONE_SLAM_DMG_PER_SPEED,
+  SECRET_BREAK_SPEED,
+  WALL_BREAK_SPEED,
+  PINBALL_MAX_SPEED,
+  BALL_RAM_KNOCKBACK,
+  PLAYER_R,
+  ZOMBIE_R,
+} from "../constants";
+import { PALETTE_HEX } from "../render/palette";
+import { spawnShardBurst } from "./projectiles";
+import { spawnFloorFx } from "./floor-fx";
+import { damageZombie } from "./combat";
+
+export interface MaterialMeta {
+  label: string;
+  icon: string;
+  /** Aura/trail tint (also the pickup sprite colour). */
+  tint: number;
+}
+
+export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
+  diamond: { label: "Diamond", icon: "💎", tint: PALETTE_HEX[31] },
+  water: { label: "Water", icon: "💧", tint: PALETTE_HEX[30] },
+  stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4] },
+};
+
+export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone"];
+
+export function isMaterial(id: string): id is MarbleMaterial {
+  return id === "diamond" || id === "water" || id === "stone";
+}
+
+/** True when materials are globally enabled and a player currently has one. */
+function activeMaterial(): MarbleMaterial | null {
+  if (!state.dbgMaterialEnabled) return null;
+  const p = state.player;
+  return p && p.materialT > 0 ? p.material : null;
+}
+
+// ── Apply / update ──────────────────────────────────────────────
+
+/** Pick up (or debug-grant) a material. A 2nd material opens a fusion window. */
+export function applyMaterial(id: MarbleMaterial): void {
+  const p = state.player;
+  if (!p) return;
+  if (p.material && p.material !== id && p.materialT > 0) {
+    // Fusion: the outgoing material co-fires briefly alongside the new one.
+    p.fuseMaterial = p.material;
+    p.fuseT = MATERIAL_FUSION_TIME;
+  }
+  p.material = id;
+  p.materialT = MATERIAL_DURATION[id];
+  state.hudDirty = true;
+}
+
+/** Tick the material + fusion timers; clear the material when it lapses. */
+export function updateMaterial(dt: number): void {
+  const p = state.player;
+  if (!p) return;
+  if (p.materialEmitT > 0) p.materialEmitT = Math.max(0, p.materialEmitT - dt);
+  if (p.fuseT > 0) {
+    p.fuseT = Math.max(0, p.fuseT - dt);
+    if (p.fuseT === 0) p.fuseMaterial = null;
+  }
+  if (p.materialT > 0) {
+    const before = p.materialT;
+    p.materialT = Math.max(0, p.materialT - dt);
+    if (Math.ceil(before) !== Math.ceil(p.materialT) || p.materialT === 0) state.hudDirty = true;
+    if (p.materialT === 0) p.material = null;
+  }
+}
+
+// ── Physics helpers (pure; the ride reads these) ────────────────
+
+/** Flat/slant wall restitution override, or null to use the default. */
+export function materialFlatRestitution(): number | null {
+  switch (activeMaterial()) {
+    case "diamond": return DIAMOND_RESTITUTION;
+    case "water": return WATER_RESTITUTION;
+    default: return null;
+  }
+}
+
+/** Effective wall-break thresholds (diamond punches through far more easily). */
+export function materialBreakSpeeds(): { secret: number; wall: number } {
+  if (activeMaterial() === "diamond") {
+    return { secret: DIAMOND_SECRET_BREAK_SPEED, wall: DIAMOND_WALL_BREAK_SPEED };
+  }
+  return { secret: SECRET_BREAK_SPEED, wall: WALL_BREAK_SPEED };
+}
+
+/** Multiplier on momentum friction (water glides, stone drags). */
+export function materialFrictionMult(): number {
+  switch (activeMaterial()) {
+    case "water": return WATER_FRICTION_MULT;
+    case "stone": return STONE_FRICTION_MULT;
+    default: return 1;
+  }
+}
+
+/** Multiplier on steering grip (water is slippery). */
+export function materialSteerMult(): number {
+  return activeMaterial() === "water" ? WATER_STEER_MULT : 1;
+}
+
+/** Ram knockback for the current material (stone shoves hard, water flows). */
+export function materialRamKnockback(): number {
+  switch (activeMaterial()) {
+    case "stone": return STONE_RAM_KNOCKBACK;
+    case "water": return WATER_RAM_KNOCKBACK;
+    default: return BALL_RAM_KNOCKBACK;
+  }
+}
+
+/** Extra multiplier on the corner-hit acceleration (stone corners hit harder). */
+export function materialCornerAddMult(): number {
+  return activeMaterial() === "stone" ? STONE_CORNER_ADD_MULT : 1;
+}
+
+/** Multiplier on bumper kick (stone ignores small forces). */
+export function materialBumperMult(): number {
+  return activeMaterial() === "stone" ? STONE_BUMPER_KICK_MULT : 1;
+}
+
+/** Speed ceiling for the current material (stone tops out lower). */
+export function materialMaxSpeed(): number {
+  return activeMaterial() === "stone" ? STONE_MAX_SPEED : PINBALL_MAX_SPEED;
+}
+
+// ── Emitters ────────────────────────────────────────────────────
+
+/** Which materials emit this frame — the active one plus any fusing one. */
+function emittingMaterials(): MarbleMaterial[] {
+  if (!state.dbgMaterialEnabled) return [];
+  const p = state.player;
+  if (!p) return [];
+  const out: MarbleMaterial[] = [];
+  if (p.materialT > 0 && p.material) out.push(p.material);
+  if (p.fuseT > 0 && p.fuseMaterial && p.fuseMaterial !== p.material) out.push(p.fuseMaterial);
+  return out;
+}
+
+/**
+ * Fire the material's on-bounce emission. `nx,nz` is the wall's outward normal
+ * (points back toward the ball); the shard fan is aimed along the reflected
+ * heading. Throttled + speed-gated so it rewards flow, not wall spam.
+ */
+export function emitMaterialOnBounce(nx: number, nz: number): void {
+  const p = state.player;
+  if (!p || !state.dbgMaterialOnBounce) return;
+  if (p.momSpeed < MATERIAL_EMIT_SPEED || p.materialEmitT > 0) return;
+  const mats = emittingMaterials();
+  if (mats.length === 0) return;
+  p.materialEmitT = MATERIAL_EMIT_COOLDOWN;
+  // Contact point on the wall face, and the post-bounce travel heading.
+  const cx = p.x + nx * PLAYER_R;
+  const cz = p.z + nz * PLAYER_R;
+  const heading = Math.atan2(p.momZ, p.momX);
+  for (const m of mats) {
+    if (m === "diamond") {
+      spawnShardBurst(cx, cz, {
+        count: DIAMOND_BOUNCE_SHARDS,
+        speed: DIAMOND_SHARD_SPEED,
+        damage: DIAMOND_BOUNCE_DMG,
+        life: 0.6,
+        baseAngle: heading,
+        fan: DIAMOND_BOUNCE_FAN,
+        crystal: true,
+      });
+    } else if (m === "water") {
+      spawnFloorFx("slick", cx, cz, WATER_SLICK_RADIUS, WATER_SLICK_LIFE);
+    } else if (m === "stone") {
+      stoneShockwave(cx, cz, STONE_SHOCK_RADIUS, STONE_SHOCK_DMG);
+    }
+  }
+}
+
+/** Fire the material's pounce-slam emission (bigger than a bounce). */
+export function materialSlam(): void {
+  const p = state.player;
+  if (!p || !state.dbgMaterialSlam) return;
+  const mats = emittingMaterials();
+  for (const m of mats) {
+    if (m === "diamond") {
+      const rage = p.rageT > 0 ? 1.5 : 1;
+      spawnShardBurst(p.x, p.z, {
+        count: Math.round(DIAMOND_SLAM_SHARDS * rage),
+        speed: DIAMOND_SLAM_SPEED,
+        damage: DIAMOND_SLAM_DMG,
+        life: 0.7,
+        crystal: true,
+      });
+    } else if (m === "water") {
+      for (let n = 0; n < WATER_SLAM_SLICKS; n++) {
+        const a = (n / WATER_SLAM_SLICKS) * Math.PI * 2;
+        const r = WATER_SLICK_RADIUS * 1.2; // spread the splash patch out around you
+        spawnFloorFx("slick", p.x + Math.cos(a) * r, p.z + Math.sin(a) * r, WATER_SLICK_RADIUS, WATER_SLICK_LIFE);
+      }
+      // A forward speed kick (steam-launch feel), capped to the material ceiling.
+      p.momSpeed = Math.min(materialMaxSpeed(), p.momSpeed + WATER_SLAM_SPEED_KICK);
+    } else if (m === "stone") {
+      // Boulder slam: trade current speed for a big AoE. Bigger the faster you were.
+      const dmg = STONE_SLAM_BASE_DMG + STONE_SLAM_DMG_PER_SPEED * p.momSpeed;
+      stoneShockwave(p.x, p.z, STONE_SLAM_RADIUS, dmg);
+      p.momSpeed *= 0.3; // most of it went into the ground
+      state.shakeT = Math.max(state.shakeT, 0.4);
+    }
+  }
+}
+
+/** A stone shockwave: radial damage + a dust ring (reuses the pounce-slam look). */
+function stoneShockwave(x: number, z: number, radius: number, dmg: number): void {
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - x;
+    const dz = zmb.z - z;
+    const rr = radius + ZOMBIE_R;
+    if (dx * dx + dz * dz > rr * rr) continue;
+    const dealt = zmb.kind === "golem" ? dmg * STONE_SHOCK_GOLEM_MULT : dmg;
+    damageZombie(zmb, dealt, dx, dz, 0.8);
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    state.vfx?.dust(x + Math.cos(a) * radius * 0.7, 0.05, z + Math.sin(a) * radius * 0.7);
+  }
+}

@@ -207,6 +207,19 @@ export function updateZombies(dt: number): void {
       }
     }
 
+    // ── WATER SLICK ── stepped on a marble-water scar: lost its footing and
+    // slides (drift set where the slick was applied). No AI this frame — a brief
+    // slapstick skid that opens the horde up. Wall-bound via moveCircle.
+    if (z.slipT && z.slipT > 0) {
+      z.slipT = Math.max(0, z.slipT - dt);
+      const sres = moveCircle(g, z.x, z.z, bodyR, (z.slipVX ?? 0) * dt, (z.slipVZ ?? 0) * dt);
+      z.x = sres.x;
+      z.z = sres.z;
+      z.sprite.mesh.position.set(z.x, z.sprite.mesh.position.y, z.z);
+      z.anim.play("idle");
+      continue;
+    }
+
     // ── Aggro ──
     if (!z.aggro && state.flowField) {
       const t = worldToTile(g, z.x, z.z);

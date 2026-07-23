@@ -90,6 +90,7 @@ import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
+import { materialBumperMult } from "./marble";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
@@ -280,9 +281,10 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.hits = (part.hits ?? 0) + 1;
     const lit = part.hits >= BUMPER_LIT_HITS;
     const nowLit = part.hits === BUMPER_LIT_HITS;
+    // Stone marble is too heavy for a bumper to shove much (materialBumperMult).
     p.momSpeed = Math.min(
       PINBALL_MAX_SPEED,
-      Math.max(p.momSpeed * BUMPER_KICK_MULT + (lit ? BUMPER_KICK_LIT : BUMPER_KICK_ADD), BUMPER_MIN_EXIT),
+      Math.max(p.momSpeed * BUMPER_KICK_MULT + (lit ? BUMPER_KICK_LIT : BUMPER_KICK_ADD) * materialBumperMult(), BUMPER_MIN_EXIT),
     );
     onPartTrigger();
     part.cooldownT = BUMPER_COOLDOWN;

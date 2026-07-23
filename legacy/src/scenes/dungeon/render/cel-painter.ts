@@ -2784,6 +2784,10 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   elixir: potionItem("#ff8fae"),
   // Dropped reagents — one gem per material, tinted by its colour (reagents.ts).
   ...Object.fromEntries(REAGENT_IDS.map((id) => [id, gemItem(REAGENTS[id].color)])),
+  // Marble materials — a polished gem/orb per material (see entities/marble.ts).
+  diamond: gemItem("#6fd0e8"),
+  water: gemItem("#2e6d8f"),
+  stone: gemItem("#6b7688"),
 };
 
 // ══════════════════════════════════════════════════════════════════

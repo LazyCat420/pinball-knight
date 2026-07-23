@@ -33,6 +33,14 @@ export interface Actor {
   z: number;
 }
 
+/**
+ * MARBLE MATERIAL — a second "ball" axis (see entities/marble.ts). Not a potion:
+ * it changes what the pinball is MADE OF (physics, on-bounce emission, slam
+ * shoot-out, floor scarring). Held one at a time; a fresh pickup opens a brief
+ * fusion window where the previous material co-fires before it expires.
+ */
+export type MarbleMaterial = "diamond" | "water" | "stone";
+
 export interface Player extends Actor {
   hp: number;
   facing: Facing;
@@ -65,6 +73,18 @@ export interface Player extends Actor {
   magBootsT: number;
   /** Seconds left on Multi-Ball (two echo knights trail you and ram). 0 = inactive. */
   multiBallT: number;
+
+  // ── Marble material (see MarbleMaterial / entities/marble.ts) ──
+  /** Active marble material, or null. Physics/emission read this. */
+  material: MarbleMaterial | null;
+  /** Seconds left on the active material. 0 = inactive (material cleared). */
+  materialT: number;
+  /** During a fusion window: the PREVIOUS material still co-firing its emitters. */
+  fuseMaterial: MarbleMaterial | null;
+  /** Fusion-window countdown; while > 0 both material + fuseMaterial emit. */
+  fuseT: number;
+  /** Throttle so on-bounce emission fires at most every MATERIAL_EMIT_COOLDOWN. */
+  materialEmitT: number;
 
   // ── Craft-only brews (Alchemist; see recipes.ts / applyPotion) ──
   /** Seconds left on Regen Salve (heals over time). 0 = inactive. */
@@ -270,6 +290,11 @@ export interface Zombie extends Actor {
   dotT?: number;
   dotDmg?: number;
   dotTickT?: number;
+  /** WATER slick: seconds an enemy keeps sliding (loses traction; drifts). */
+  slipT?: number;
+  /** WATER slick: unit drift direction while slipping. */
+  slipVX?: number;
+  slipVZ?: number;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
@@ -414,8 +439,8 @@ export interface CoinFlight {
 }
 
 export interface GroundItem {
-  kind: "weapon" | "gear" | "potion" | "card" | "coin" | "reagent";
-  id: string; // WeaponId | GearSlot | PotionId | CardId | "coin" | ReagentId
+  kind: "weapon" | "gear" | "potion" | "card" | "coin" | "reagent" | "material";
+  id: string; // WeaponId | GearSlot | PotionId | CardId | "coin" | ReagentId | MarbleMaterial
   x: number;
   z: number;
   sprite: { mesh: THREE.Mesh; dispose(): void };
@@ -445,6 +470,24 @@ export interface Projectile {
   /** CURVE SHOT: a constant lateral acceleration (u/s²) bending the flight. */
   curveX?: number;
   curveZ?: number;
+  mesh: THREE.Mesh;
+  dispose(): void;
+}
+
+/** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
+ *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
+export type FloorFxKind = "slick" | "fire" | "shard-field";
+export interface FloorFx {
+  kind: FloorFxKind;
+  x: number;
+  z: number;
+  /** Effect radius, world units. */
+  radius: number;
+  /** Seconds left before it fades. */
+  life: number;
+  maxLife: number;
+  /** Countdown between damage/status ticks. */
+  tick: number;
   mesh: THREE.Mesh;
   dispose(): void;
 }
@@ -664,6 +707,8 @@ export const state = {
   player: null as Player | null,
   zombies: [] as Zombie[],
   projectiles: [] as Projectile[],
+  /** Persistent floor scars from marble materials (slick/fire/shard-field). */
+  floorFx: [] as FloorFx[],
   /** The level's pinball components (bumpers/springs/ramps/deflectors). */
   pinballParts: [] as PinballPart[],
   /** Auto-derived banked corners (curved walls) — every qualifying maze corner
@@ -782,6 +827,20 @@ export const state = {
   /** No cooldowns: ability cooldowns are zeroed every frame. */
   noCooldown: false,
 
+  // ── Marble-material R&D toggles (backtick panel; all default ON) ──
+  /** Master switch: material physics/emission active at all. */
+  dbgMaterialEnabled: true,
+  /** Emit projectiles/shockwaves/slick on wall bounces. */
+  dbgMaterialOnBounce: true,
+  /** Fire the material slam emitter from pounceSlam(). */
+  dbgMaterialSlam: true,
+  /** Spawn persistent floor scars (slick/fire). */
+  dbgMaterialFloorFx: true,
+  /** Player takes damage standing on their own hazard floor tiles. */
+  dbgMaterialSelfHarm: false,
+  /** R&D: drop all three materials near the floor-1 spawn. */
+  dbgMaterialFloor1Spawn: true,
+
   // Listeners
   input: null as InputHandle | null,
   onKeyDown: null as ((e: KeyboardEvent) => void) | null,
@@ -813,6 +872,11 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     curveT: 0,
     magBootsT: 0,
     multiBallT: 0,
+    material: null,
+    materialT: 0,
+    fuseMaterial: null,
+    fuseT: 0,
+    materialEmitT: 0,
     regenT: 0,
     regenTickT: 0,
     venomCoatT: 0,
@@ -949,6 +1013,7 @@ export function resetState(): void {
   state.player = null;
   state.zombies = [];
   state.projectiles = [];
+  state.floorFx = [];
   state.pinballParts = [];
   state.arcCorners = [];
   state.playerSheets = new Map();

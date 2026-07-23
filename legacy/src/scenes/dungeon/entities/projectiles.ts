@@ -80,6 +80,12 @@ function shardAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial }
   _shardMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[20] }); // stone chip
   return { geo: _shardGeo, mat: _shardMat };
 }
+let _crystalMat: THREE.MeshBasicMaterial | null = null;
+function crystalAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _shardGeo ??= new THREE.BoxGeometry(0.12, 0.12, 0.12);
+  _crystalMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[31] }); // prismatic cool
+  return { geo: _shardGeo, mat: _crystalMat };
+}
 
 export function disposeProjectileAssets(): void {
   _bulletGeo?.dispose();
@@ -92,8 +98,46 @@ export function disposeProjectileAssets(): void {
   _webMat?.dispose();
   _shardGeo?.dispose();
   _shardMat?.dispose();
+  _crystalMat?.dispose();
   _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
-  _webMat = _shardGeo = _shardMat = null;
+  _webMat = _shardGeo = _shardMat = _crystalMat = null;
+}
+
+/**
+ * A marble-material shard burst — the same ricocheting "shard" projectiles a
+ * shattered golem throws, but with tunable count/speed/damage/fuse and an
+ * optional aimed FAN (baseAngle ± fan) instead of a full radial ring. Diamond
+ * uses the prismatic crystal look; anything else the stone chip.
+ */
+export function spawnShardBurst(
+  x: number,
+  z: number,
+  opts: { count: number; speed: number; damage: number; life: number; baseAngle?: number; fan?: number; crystal?: boolean },
+): void {
+  if (!state.scene) return;
+  const { geo, mat } = opts.crystal ? crystalAssets() : shardAssets();
+  const { count, speed, damage, life, baseAngle, fan } = opts;
+  for (let n = 0; n < count; n++) {
+    // Aimed fan around baseAngle, or an even radial ring when no fan is given.
+    const a = fan !== undefined && baseAngle !== undefined
+      ? baseAngle + (count > 1 ? (n / (count - 1) - 0.5) * 2 * fan : 0)
+      : (n / count) * Math.PI * 2 + Math.random() * 0.4;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, PROJECTILE_Y, z);
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "shard",
+      x,
+      z,
+      vx: Math.cos(a) * speed,
+      vz: Math.sin(a) * speed,
+      life,
+      maxLife: life,
+      damage,
+      mesh,
+      dispose: () => {},
+    });
+  }
 }
 
 /**
