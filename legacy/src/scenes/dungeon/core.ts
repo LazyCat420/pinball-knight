@@ -1411,6 +1411,7 @@ function startLevel(level: number): void {
   state.shotChain = [];
   state.namedPaid = {};
   state.crackHintShown = false;
+  state.stairsHintShown = false;
 
   // Announce the depth AND the biome — descending reads as entering a new place.
   // A boss floor gets an ominous warning instead of the usual flavour line.
@@ -2704,6 +2705,28 @@ function loop(now: number): void {
     // Ambient dust motes drifting through the air near the player.
     if (Math.random() < MOTE_RATE * frame) {
       state.vfx?.mote(p.x + (Math.random() - 0.5) * 7, 0.15 + Math.random() * 0.9, p.z + (Math.random() - 0.5) * 5);
+    }
+    // ── The stairs beacon LIVES ── a slow breathing pulse + a twist so the
+    // beam reads as energy over the wall rims, and rising arcane sparks climb
+    // it when you're near enough to see them. A static translucent cylinder
+    // read as "unexplained prop" (players walked past the exit).
+    const sb = state.maze.stairsBeam;
+    sb.mat.opacity = 0.22 + 0.1 * (0.5 + 0.5 * Math.sin(state.elapsed * 2.1));
+    sb.mesh.rotation.y = state.elapsed * 0.5;
+    const sdx = sb.x - p.x;
+    const sdz = sb.z - p.z;
+    const sd2 = sdx * sdx + sdz * sdz;
+    if (sd2 < 20 * 20 && Math.random() < 2.4 * frame) {
+      const a = Math.random() * Math.PI * 2;
+      state.vfx?.burst(sb.x + Math.cos(a) * 0.25, 0.2 + Math.random() * 2.2, sb.z + Math.sin(a) * 0.25, 0x6fd0e8, 1, 0.3);
+    }
+    // First time the way down comes into view each floor, say what it is —
+    // the beacon's base (pit + pylons) hides behind wall rims, so the beam
+    // alone reads as a mystery instead of an exit (same lesson as the
+    // cracked-wall hint: nothing in the game teaches it otherwise).
+    if (!state.stairsHintShown && sd2 < 8 * 8) {
+      state.stairsHintShown = true;
+      showPickupNote("⬇ THE BLUE BEACON — the stairs down; step into its base");
     }
   }
 

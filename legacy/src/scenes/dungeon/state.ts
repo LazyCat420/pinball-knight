@@ -599,6 +599,8 @@ export const state = {
   witchSpawned: false,
   /** One-shot teach: shown the first time you bounce off a crack too slowly. */
   crackHintShown: false,
+  /** One-shot teach: shown the first time the stairs beacon comes into view. */
+  stairsHintShown: false,
 
   // ── D2 ORBITS: a lap round a room's four banked rails is a LOOP SHOT ──
   /** Circuit id currently being railed, or -1. */

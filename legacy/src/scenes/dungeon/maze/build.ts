@@ -648,6 +648,9 @@ export interface MazeHandle {
   lightPool: THREE.PointLight[];
   /** Flip-book flame textures — core advances their frame offset each frame. */
   flames: Array<{ tex: THREE.Texture; phase: number }>;
+  /** The stairs beacon — core pulses its opacity + feeds it rising motes so
+   *  the way down reads as living energy, not a static prop. */
+  stairsBeam: { mat: THREE.MeshBasicMaterial; mesh: THREE.Mesh; x: number; z: number };
   /**
    * The still-intact secret bands: (i,j) = the 2×2 band's top-left tile, (x,z)
    * its world centre, mesh the removable Group. secrets.ts splices entries as
@@ -1221,6 +1224,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   beam.position.set(sc.x, 1.6, sc.z);
   beam.renderOrder = 3;
   group.add(beam);
+  // Handed to core for the per-frame pulse + rising-mote feed (see MazeHandle).
+  const stairsBeam = { mat: beamMat as THREE.MeshBasicMaterial, mesh: beam, x: sc.x, z: sc.z };
   // The only cold light in the level, always on (not part of the torch pool),
   // now brighter + reaching further so its glow spills into the approach.
   const stairGlow = new THREE.PointLight(PALETTE_HEX[31], 4.0, 5.5, 2);
@@ -1300,6 +1305,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     torchAnchors,
     lightPool,
     flames,
+    stairsBeam,
     secrets,
     wallAt,
     dispose() {
