@@ -346,7 +346,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["slalom", "bullring", "pitstop", "slingway", "boulevard"],
     landmarks: ["tilttable", "pachinko"],
     deal: ["bumper", "ramp", "spring", "glove", "flipper", "spinpad", "mirror", "slingshot", "oil"],
-    enemies: { zombie: 3, ghost: 2, bat: 2 },
+    enemies: { zombie: 3, ghost: 2, bat: 2, wisp: 2, mimic: 1 },
   },
   {
     // The Rotting Warren — everything is slick and nothing brakes.
@@ -354,7 +354,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["oilworks", "switchback", "gauntlet", "pitstop", "pitroom", "sbend"],
     landmarks: ["nest", "grinder"],
     deal: ["oil", "bumper", "ramp", "oil", "spring", "glove", "flipper", "ramp", "slingshot"],
-    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2 },
+    enemies: { spider: 3, slime: 3, webspinner: 2, magnet: 2, hound: 2, sapper: 1 },
   },
   {
     // The Bloodworks — the punch factory.
@@ -362,7 +362,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     landmarks: ["grinder", "pachinko"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
-    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2 },
+    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2, bloater: 2, hound: 2 },
   },
   {
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.
@@ -370,7 +370,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["parlor", "slalom", "oilworks", "bullring", "mirrormaze", "sbend"],
     landmarks: ["observatory", "tilttable"],
     deal: ["spinpad", "bumper", "mirror", "spring", "oil", "glove", "flipper", "slingshot", "mirror"],
-    enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2 },
+    enemies: { ghost: 3, golem: 2, spitter: 2, bat: 2, necromancer: 2, warden: 1, crystalback: 1 },
   },
 ];
 

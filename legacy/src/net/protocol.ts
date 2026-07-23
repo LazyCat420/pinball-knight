@@ -8,8 +8,9 @@
  * so treat any edit here as an edit to both repos.
  */
 
-// ── Room / party sizing (kept in sync with the server) ────────────────────────
-export const TAVERN_MAX = 8;
+// ── Pool sizing (kept in sync with the server) ────────────────────────────────
+export const POOL_MAX = 24;
+export const TAVERN_MAX = 8; // legacy (dormant party code)
 export const PARTY_MAX = 4;
 export const PARTY_MIN = 2;
 
@@ -46,6 +47,8 @@ export interface RemoteKnight {
   z: number;
   facing: Facing;
   ready: boolean;
+  /** "tavern" | "dungeon:<floor>" — renderers show only same-scene peers. */
+  scene: string;
 }
 
 export interface PartyMember {
@@ -58,7 +61,7 @@ export interface PartyMember {
 // ── Client → Server ──────────────────────────────────────────────────────────
 export type ClientMessage =
   | { type: "hello"; name: string; preferredSlot?: number }
-  | { type: "move"; x: number; z: number; facing: Facing }
+  | { type: "move"; x: number; z: number; facing: Facing; scene: string }
   | { type: "ready"; ready: boolean }
   | { type: "session:hello"; sessionId: string }
   | { type: "session:snapshot"; sessionId: string; snap: unknown }
@@ -69,12 +72,12 @@ export type ClientMessage =
 
 // ── Server → Client ──────────────────────────────────────────────────────────
 export type ServerMessage =
-  | { type: "welcome"; id: string; slot: number; name: string; colors: readonly KnightColor[] }
+  | { type: "welcome"; id: string; slot: number; name: string; colors: readonly KnightColor[]; seed: number }
   | { type: "room:state"; players: RemoteKnight[] }
   | { type: "player:join"; player: RemoteKnight }
   | { type: "player:leave"; id: string }
   | { type: "room:full" }
-  | { type: "player:move"; id: string; x: number; z: number; facing: Facing }
+  | { type: "player:move"; id: string; x: number; z: number; facing: Facing; scene: string }
   | { type: "player:ready"; id: string; ready: boolean }
   | { type: "party:forming"; members: string[]; seconds: number }
   | { type: "party:tick"; seconds: number }

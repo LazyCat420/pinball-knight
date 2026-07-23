@@ -63,8 +63,9 @@ export function disposeFloorFxAssets(): void {
   }
 }
 
-/** Drop a floor scar of `kind` at (x,z). No-op if floor-fx are toggled off. */
-export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: number, life: number): void {
+/** Drop a floor scar of `kind` at (x,z). No-op if floor-fx are toggled off.
+ *  `hostile` marks an ENEMY hazard — it burns the player, not the horde. */
+export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: number, life: number, hostile = false): void {
   if (!state.scene || !state.dbgMaterialFloorFx) return;
   // Its own material instance so opacity can fade independently of siblings.
   const mesh = new THREE.Mesh(discGeo(), matFor(kind).clone());
@@ -76,6 +77,7 @@ export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: nu
     kind,
     x,
     z,
+    hostile,
     radius,
     life,
     maxLife: life,
@@ -132,8 +134,8 @@ export function updateFloorFx(dt: number): void {
       else if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
     }
 
-    // ── Enemy overlap ──
-    for (const zmb of state.zombies) {
+    // ── Enemy overlap ── (skipped for hostile enemy hazards — those hunt YOU)
+    for (const zmb of fx.hostile ? [] : state.zombies) {
       if (zmb.mode === "dead") continue;
       const dx = zmb.x - fx.x;
       const dz = zmb.z - fx.z;
@@ -154,8 +156,9 @@ export function updateFloorFx(dt: number): void {
       }
     }
 
-    // ── Self-harm (toggle): the player burns on their own fire, too ──
-    if (fx.kind === "fire" && ticked && state.dbgMaterialSelfHarm && p && p.hp > 0 && p.iframes <= 0) {
+    // ── Player harm ── a HOSTILE fire (enemy hazard) always burns you; your OWN
+    // fire only bites under the self-harm toggle.
+    if (fx.kind === "fire" && ticked && (fx.hostile || state.dbgMaterialSelfHarm) && p && p.hp > 0 && p.iframes <= 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;

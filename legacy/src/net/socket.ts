@@ -18,8 +18,38 @@ type AnyHandler = (msg: ServerMessage) => void;
 
 export type NetStatus = "idle" | "connecting" | "open" | "closed";
 
-/** ws(s):// URL for the realtime hub, or null when networking is disabled. */
+/**
+ * ws(s):// URL for the realtime hub, or null when networking is disabled.
+ *
+ * Two cases, because the backend is baked to a PRIVATE LAN address:
+ *  • LAN / dev (the page itself is on a private origin) → dial the baked backend
+ *    directly (`isRemoteBackendEnabled()` gates this exactly like the REST client).
+ *  • PUBLIC page (e.g. braindeadbot.com) → a private-IP socket is unreachable, so
+ *    connect SAME-ORIGIN (`wss://<page-host>/ws`). This works the moment the edge
+ *    proxies `/ws` → the service; until then the socket just fails and the game
+ *    stays single-player. Never dials the private IP from a public page.
+ */
 export function realtimeUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const pageHost = window.location.hostname;
+  const pageIsPrivate =
+    !pageHost ||
+    pageHost === "localhost" ||
+    pageHost.endsWith(".localhost") ||
+    pageHost.endsWith(".local") ||
+    pageHost === "::1" ||
+    pageHost.startsWith("127.") ||
+    pageHost.startsWith("10.") ||
+    pageHost.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(pageHost);
+
+  if (!pageIsPrivate) {
+    // Public page → same-origin ws (edge must forward /ws to the service).
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.host}/ws`;
+  }
+
+  // LAN/dev page → the baked (private) backend, gated like the REST client.
   if (!isRemoteBackendEnabled()) return null;
   try {
     const u = new URL(BACKEND_API_URL);
@@ -41,6 +71,7 @@ export class NetClient {
   private statusListeners = new Set<(s: NetStatus) => void>();
   private _status: NetStatus = "idle";
   private _id: string | null = null;
+  private _seed: number | null = null;
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private wantOpen = false;
@@ -52,6 +83,10 @@ export class NetClient {
   }
   get id(): string | null {
     return this._id;
+  }
+  /** The shared world seed handed out in `welcome` — the whole pool's dungeon. */
+  get seed(): number | null {
+    return this._seed;
   }
   get connected(): boolean {
     return this._status === "open";
@@ -117,7 +152,10 @@ export class NetClient {
       return;
     }
     if (!msg || typeof msg.type !== "string") return;
-    if (msg.type === "welcome") this._id = msg.id;
+    if (msg.type === "welcome") {
+      this._id = msg.id;
+      this._seed = msg.seed;
+    }
     const set = this.listeners.get(msg.type);
     if (set) for (const h of [...set]) h(msg);
     for (const h of [...this.anyListeners]) h(msg);

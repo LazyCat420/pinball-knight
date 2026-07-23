@@ -1089,19 +1089,35 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   // making ball form effectively unreachable (caught by driving it).
   p.overcharge = Math.min(1, p.overcharge + dt / OVERCHARGE_TIME);
 
-  // Steer: held input gently BENDS the momentum direction (a nudge, not full
-  // control — it's a physics roll, not a walk). Keeps it playable, not chaos.
-  // A dash panel locks steering briefly so its lane actually carries you.
+  // Steer: gently BEND the momentum direction (a nudge, not full control — it's
+  // a physics roll, not a walk). A dash panel locks steering briefly.
+  //
+  // MARBLE MODE steers with the MOUSE: a marble is AIMED, not walked — the ride
+  // bends toward the cursor. Falls back to WASD when there's no cursor (headless
+  // / keyboard-only), so the old scheme still works.
   steerLockT = Math.max(0, steerLockT - dt);
-  const a = input.axis();
   // Oil kills the steering (you're on a slick); turbo sharpens it. Water marble
   // is slippery — weak grip, so momentum dominates (materialSteerMult).
   const steerMul = (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult();
-  if (steerLockT <= 0 && (a.x !== 0 || a.z !== 0)) {
-    const wd = screenDirToWorld(a.x, a.z);
-    const wl = Math.hypot(wd.x, wd.z) || 1;
-    p.momX += (wd.x / wl) * PINBALL_STEER * steerMul * dt;
-    p.momZ += (wd.z / wl) * PINBALL_STEER * steerMul * dt;
+  let steerX = 0;
+  let steerZ = 0;
+  const cursor = input.aimScreen();
+  const aim = cursor ? mouseAimDirection(p.x, p.z, cursor) : null;
+  if (aim) {
+    steerX = aim.x;
+    steerZ = aim.z;
+  } else {
+    const a = input.axis();
+    if (a.x !== 0 || a.z !== 0) {
+      const wd = screenDirToWorld(a.x, a.z);
+      const wl = Math.hypot(wd.x, wd.z) || 1;
+      steerX = wd.x / wl;
+      steerZ = wd.z / wl;
+    }
+  }
+  if (steerLockT <= 0 && (steerX !== 0 || steerZ !== 0)) {
+    p.momX += steerX * PINBALL_STEER * steerMul * dt;
+    p.momZ += steerZ * PINBALL_STEER * steerMul * dt;
     const ml = Math.hypot(p.momX, p.momZ) || 1;
     p.momX /= ml;
     p.momZ /= ml;
@@ -1137,7 +1153,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     const nearWall = cp < LANE_PROBE_MAX || cn < LANE_PROBE_MAX;
     const imbalance = cp - cn; // >0 → more room on + side, drift that way
     if (nearWall && Math.abs(imbalance) > 0.12) {
-      const steering = a.x !== 0 || a.z !== 0;
+      const steering = steerX !== 0 || steerZ !== 0;
       const strength = steering ? 0.45 : 1;
       const dir = Math.sign(imbalance);
       const nudge = Math.min(Math.abs(imbalance) * 0.5, LANE_CENTER_PULL * materialLanePull() * dt) * strength;

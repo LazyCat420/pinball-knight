@@ -31,6 +31,7 @@ import {
 import { PALETTE_HEX } from "../render/palette";
 import { worldToTile, isWalkable } from "../maze/generator";
 import { damageZombie, playerDamage, hitPlayerRanged, webPlayer, applyCardOnHit } from "./combat";
+import { aggregateCards } from "../cards";
 import type { WeaponDef } from "../items";
 
 const HIT_R = 0.16; // projectile body radius for zombie contact
@@ -242,6 +243,9 @@ export function clearProjectiles(): void {
 export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz: number): void {
   if (!state.scene || !w.projectile || !w.projectileSpeed) return;
   const pellets = w.pellets ?? 1;
+  // PIERCE card: how many extra foes each shot passes through (Piercer/Railgun).
+  const wState = state.weaponSlots[state.activeSlot];
+  const pierce = wState?.cards?.length ? aggregateCards(wState.cards).pierce : 0;
 
   for (let n = 0; n < pellets; n++) {
     const jitter = (Math.random() - 0.5) * 2 * (w.spread ?? 0);
@@ -302,6 +306,7 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
       damage: playerDamage(w.damage), // rage buff doubles it, baked in at fire time
       curveX,
       curveZ,
+      pierced: w.projectile === "flame" ? 0 : pierce, // flame already passes through
       mesh,
       dispose,
     });
@@ -406,7 +411,14 @@ export function updateProjectiles(dt: number): void {
       } else {
         damageZombie(z, pr.damage, pr.vx, pr.vz, pr.kind === "arrow" ? 0.5 : 0.3);
         applyCardOnHit(z);
-        consumed = true;
+        // PIERCE: keep flying through this foe (one per frame, so a fast shot
+        // threads a line of enemies) until the pierce budget is spent.
+        if ((pr.pierced ?? 0) > 0) {
+          pr.pierced = (pr.pierced ?? 0) - 1;
+          state.vfx?.sparks(z.x, PROJECTILE_Y, z.z, pr.vx, pr.vz, 4);
+        } else {
+          consumed = true;
+        }
         break;
       }
     }

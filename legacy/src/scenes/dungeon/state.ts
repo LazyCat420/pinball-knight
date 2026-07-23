@@ -220,7 +220,7 @@ export interface Player extends Actor {
   silhouette: { mesh: THREE.Mesh; syncMap(): void; dispose(): void } | null;
 }
 
-export type ZombieMode = "idle" | "chase" | "windup" | "dead";
+export type ZombieMode = "idle" | "chase" | "windup" | "dead" | "charge" | "slam";
 
 /**
  * Enemy family — same AI/combat pipeline; stats, art and behaviour flags differ
@@ -265,7 +265,16 @@ export type EnemyKind =
   | "golem"
   | "chomper"
   | "magnet"
-  | "webspinner";
+  | "webspinner"
+  // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──
+  | "hound" // CHARGER — telegraphs a locked-line dash, self-stuns if it whiffs
+  | "bloater" // EXPLODER — bursts into a fire puddle on death / on reaching you
+  | "necromancer" // SUMMONER — hangs back, raises weak adds on a timer
+  | "warden" // SHIELDER — grants a damage-absorb shield to nearby foes
+  | "wisp" // EVASIVE — short-blinks away when hit, hard to pin
+  | "sapper" // ANTI-MATERIAL — drains your active marble on hit
+  | "crystalback" // REFLECTOR — ramming it at speed shatters shards into YOU
+  | "mimic"; // AMBUSHER — dormant + item-like until you're close, then lunges
 
 export interface Zombie extends Actor {
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
@@ -300,6 +309,19 @@ export interface Zombie extends Actor {
   /** SHADOW decoy: the clone position the foe walks toward while lured. */
   lureX?: number;
   lureZ?: number;
+  // ── Expansion-roster behavior state ──
+  /** CHARGER: locked dash direction + timer while in mode "charge". */
+  chargeT?: number;
+  chargeDirX?: number;
+  chargeDirZ?: number;
+  /** WARDEN shield: absorb-HP remaining (a Warden aura tops this up). */
+  shieldHp?: number;
+  /** BRUTE / enrage: true once it crossed its low-HP rage threshold. */
+  enraged?: boolean;
+  /** NECROMANCER / WARDEN cadence between summons / shield pulses. */
+  castT?: number;
+  /** MIMIC: dormant + disguised until the player steps close. */
+  dormant?: boolean;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
@@ -475,6 +497,8 @@ export interface Projectile {
   /** CURVE SHOT: a constant lateral acceleration (u/s²) bending the flight. */
   curveX?: number;
   curveZ?: number;
+  /** PIERCE card: extra foes this shot passes through before dying. */
+  pierced?: number;
   mesh: THREE.Mesh;
   dispose(): void;
 }
@@ -486,6 +510,9 @@ export interface FloorFx {
   kind: FloorFxKind;
   x: number;
   z: number;
+  /** True for an ENEMY-created hazard: it burns the PLAYER (ungated) and spares
+   *  enemies, the mirror of the player's own material scars. */
+  hostile?: boolean;
   /** Effect radius, world units. */
   radius: number;
   /** Seconds left before it fades. */

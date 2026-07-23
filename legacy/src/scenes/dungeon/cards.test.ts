@@ -8,7 +8,7 @@ describe("cards", () => {
       expect(["common", "rare", "epic", "legendary", "mythic"]).toContain(c.rarity);
       expect(["melee", "ranged", "both"]).toContain(c.weaponKinds);
       const m = c.modifier;
-      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult || m.bolt;
+      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult || m.bolt || m.materialMult || m.critChance || m.lifesteal || m.pierce;
       expect(hasEffect, `${id} does nothing`).toBeTruthy();
     }
   });
@@ -43,7 +43,7 @@ describe("cards", () => {
 
   it("empty / undefined sockets are a no-op", () => {
     const agg = aggregateCards(undefined);
-    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false });
+    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false, materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0 });
   });
 
   it("respects weapon-kind fit", () => {

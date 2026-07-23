@@ -36,17 +36,7 @@ import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTav
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, type LobbyHud } from "./ui";
-import {
-  initTavernNet,
-  disposeTavernNet,
-  broadcastLocal,
-  updateRemotes,
-  setLocalReady,
-  isMultiplayerActive,
-  lobbyView,
-  type LaunchInfo,
-} from "./multiplayer";
-import { setPendingSession } from "../../net/session";
+import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
@@ -162,9 +152,6 @@ let lobbyHud: LobbyHud | null = null;
 /** True while THIS visit is the multiplayer entry lobby (vs a between-floor shop
  * stop). Gates all the presence/matchmaking wiring. */
 let isLobby = false;
-/** Set while a formed party is descending, so closeTavern keeps the shared
- * socket alive for the dungeon session channel. */
-let launching = false;
 /** Ambient mote/ember cadence — atmosphere is emitted, not simulated. */
 let moteT = 0;
 /** Last frame's overlay state — the frozen→free edge re-dresses the knight. */
@@ -235,17 +222,9 @@ function interact(): void {
   prompt?.hide();
 
   if (s.action.kind === "descend") {
-    // ── Multiplayer: the plunger gate is a READY toggle, not an instant drop ──
-    // Readying joins the lobby's party queue; the actual descent happens when the
-    // server fires party:start / solo:start (see launchFromLobby). Single-player
-    // keeps the original behaviour — pull the plunger, go straight down.
-    if (isLobby && isMultiplayerActive()) {
-      sfxPlunger();
-      const nowReady = !lobbyView().iAmReady;
-      setLocalReady(nowReady);
-      tavern.openStation = null; // the gate is momentary, not a panel
-      return;
-    }
+    // Drop-in pool: descending is IMMEDIATE (no ready gate). Everyone shares the
+    // same world seed, so you drop into the same dungeon as whoever else is
+    // playing and see them on your floor.
     sfxPlunger();
     const go = tavern.onDescend;
     closeTavern();
@@ -290,22 +269,6 @@ function interact(): void {
   });
 }
 
-/**
- * The lobby formed a party (or the solo timer fired). Stash the session for the
- * dungeon to consume, then descend exactly as the plunger gate would — but keep
- * the shared socket alive across the scene change so the dungeon can join the
- * session channel.
- */
-function launchFromLobby(info: LaunchInfo): void {
-  if (launching) return;
-  launching = true;
-  setPendingSession({ sessionId: info.sessionId, role: info.role, members: info.members, hostId: info.hostId, solo: info.solo, seed: info.seed });
-  sfxPlunger();
-  const go = tavern.onDescend;
-  closeTavern();
-  go?.();
-}
-
 function frame(now: number): void {
   if (!tavern.active) return;
   raf = requestAnimationFrame(frame);
@@ -327,12 +290,6 @@ function frame(now: number): void {
     // ── Station focus ──
     const next: Station | null = frozen ? null : stationAt(p.x, p.z);
     if (refreshFocus(next)) {
-      // ── Multiplayer: walking away from the plunger gate un-readies you ──
-      // (matches the lobby rule "leave the gate → player:ready(false)"). Only
-      // the descend station toggles ready, so any focus change off it clears it.
-      if (isLobby && isMultiplayerActive() && lobbyView().iAmReady && next?.action.kind !== "descend") {
-        setLocalReady(false);
-      }
       fx?.setFocus(next);
       if (next) {
         prompt?.show(next);
@@ -342,13 +299,12 @@ function frame(now: number): void {
       }
     }
 
-    // ── Multiplayer presence (LOBBY ONLY) ── broadcast our pose (throttled) and
-    // advance the interpolated remote knights. Skipped entirely in a between-floor
-    // shop tavern; no-ops anyway when not connected.
+    // ── Pool presence (HUB ONLY) ── publish our pose + draw the pool-mates who
+    // are also in the tavern, and refresh the "N online" pill. Skipped in a
+    // between-floor shop tavern; no-ops anyway when the backend isn't reachable.
     if (isLobby) {
-      broadcastLocal(dt, p.x, p.z, p.facing);
-      updateRemotes(dt);
-      lobbyHud?.update(lobbyView());
+      updateTavernPool(dt, p.x, p.z, p.facing);
+      lobbyHud?.update({ connected: isMultiplayerActive(), count: poolOnlineCount() });
     }
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
@@ -565,11 +521,10 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // roster/countdown HUD. Between-floor shop stops skip all of this and stay the
   // single-player tavern. initTavernNet is itself a no-op when the backend isn't
   // reachable, so an offline / public visitor also just plays solo.
-  launching = false;
   isLobby = !!opts.lobby;
   if (isLobby) {
     lobbyHud = createLobbyHud(container);
-    initTavernNet(scene, launchFromLobby);
+    initTavernPool(scene);
   }
 
   pixelPass = createPixelPass(renderer, {
@@ -665,13 +620,11 @@ export function closeTavern(): void {
   onKey = null;
   onResize = null;
 
-  // Multiplayer teardown (LOBBY ONLY). When a party is launching we keep the
-  // shared socket alive (the dungeon session channel rides it), only dropping the
-  // presence listeners + remote sprites; a normal lobby close drops the socket
-  // too. A between-floor shop tavern never touched the net, so it must NOT close
-  // the socket — that would sever a live co-op session mid-run.
+  // Pool teardown (HUB ONLY). Drops the tavern's rendered pool-mates but leaves
+  // the shared socket OPEN — the dungeon rides the same connection, and presence
+  // is only fully closed on a complete game exit (exitDungeonGame → stopPresence).
   if (isLobby) {
-    disposeTavernNet(launching);
+    disposeTavernPool();
     lobbyHud?.dispose();
     lobbyHud = null;
   }

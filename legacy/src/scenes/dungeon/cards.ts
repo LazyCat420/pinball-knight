@@ -34,6 +34,17 @@ export interface CardModifier {
   /** On hit, arc a THUNDERBOLT out along the strike line — a throttled line-AoE
    * that damages every foe in front of the struck enemy (see combat.fireBolt). */
   bolt?: boolean;
+  /** Bonus damage MULTIPLIER applied only while a MARBLE MATERIAL is active
+   * (the material-synergy hybrid — reads player.material at the damage site). */
+  materialMult?: number;
+  /** Chance [0..1] for a hit to CRIT. Summed across sockets, capped at 1. */
+  critChance?: number;
+  /** Crit damage multiplier (max across sockets; default 2 when any crit card). */
+  critMult?: number;
+  /** HP restored to the knight per landed hit. Summed across sockets. */
+  lifesteal?: number;
+  /** Extra enemies a ranged shot passes THROUGH before dying. Summed. */
+  pierce?: number;
 }
 
 export interface CardDef {
@@ -79,6 +90,29 @@ export const CARDS: Record<CardId, CardDef> = {
   worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
   timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
   tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
+
+  // ══ EXPANSION — weapon-kind identity ══
+  rapidfire: { id: "rapidfire", label: "Rapid Fire", icon: "🔫", rarity: "rare", weaponKinds: "ranged", description: "−40% cooldown (ranged)", modifier: { cooldownMult: 0.6 } },
+  cleaver: { id: "cleaver", label: "Cleaver", icon: "🪒", rarity: "rare", weaponKinds: "melee", description: "+50% damage (melee)", modifier: { damageMult: 1.5 } },
+  gluttony: { id: "gluttony", label: "Gluttony", icon: "🍖", rarity: "epic", weaponKinds: "both", description: "+3 flat damage", modifier: { damageFlat: 3 } },
+
+  // ══ EXPANSION — MARBLE SYNERGY (bonus while a material is active) ══
+  elementalist: { id: "elementalist", label: "Elementalist", icon: "🔷", rarity: "rare", weaponKinds: "both", description: "+40% dmg while a MARBLE is active", modifier: { materialMult: 1.4 } },
+  overcharged: { id: "overcharged", label: "Overcharged", icon: "🌈", rarity: "epic", weaponKinds: "both", description: "+85% dmg while a MARBLE is active", modifier: { materialMult: 1.85 } },
+  attunement: { id: "attunement", label: "Attunement", icon: "🪬", rarity: "legendary", weaponKinds: "both", description: "+30% dmg always, +60% more while a MARBLE is active", modifier: { damageMult: 1.3, materialMult: 1.6 } },
+
+  // ══ EXPANSION — CRIT / LIFESTEAL / PIERCE (Phase 2) ══
+  keenmind: { id: "keenmind", label: "Keen Mind", icon: "🎯", rarity: "rare", weaponKinds: "both", description: "20% chance to CRIT (×2)", modifier: { critChance: 0.2 } },
+  assassin: { id: "assassin", label: "Assassin", icon: "🗡️", rarity: "epic", weaponKinds: "both", description: "30% CRIT for ×2.5", modifier: { critChance: 0.3, critMult: 2.5 } },
+  deathmark: { id: "deathmark", label: "Death Mark", icon: "☠️", rarity: "legendary", weaponKinds: "both", description: "40% CRIT for ×3, +25% dmg", modifier: { critChance: 0.4, critMult: 3, damageMult: 1.25 } },
+  leech: { id: "leech", label: "Leech", icon: "🧛", rarity: "rare", weaponKinds: "both", description: "heal 1 HP per hit", modifier: { lifesteal: 1 } },
+  vampiricedge: { id: "vampiricedge", label: "Vampiric Edge", icon: "🦇", rarity: "epic", weaponKinds: "both", description: "heal 1 HP per hit, +25% dmg", modifier: { lifesteal: 1, damageMult: 1.25 } },
+  piercer: { id: "piercer", label: "Piercer", icon: "➷", rarity: "rare", weaponKinds: "ranged", description: "shots pierce 2 extra foes", modifier: { pierce: 2 } },
+  railgun: { id: "railgun", label: "Railgun", icon: "🎇", rarity: "legendary", weaponKinds: "ranged", description: "shots pierce 5 foes, +40% dmg", modifier: { pierce: 5, damageMult: 1.4 } },
+
+  // ══ EXPANSION — CURSED (Phase 4): huge upside, real drawback ══
+  gladeath: { id: "gladeath", label: "Glass Cannon", icon: "🩻", rarity: "mythic", weaponKinds: "both", description: "+120% dmg, but −60% durability", modifier: { damageMult: 2.2, durabilityMult: 0.4 } },
+  bloodpact: { id: "bloodpact", label: "Blood Pact", icon: "🖤", rarity: "mythic", weaponKinds: "both", description: "50% CRIT ×3 and heal 1/hit, but −40% durability", modifier: { critChance: 0.5, critMult: 3, lifesteal: 1, durabilityMult: 0.6 } },
 };
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
@@ -109,10 +143,18 @@ export interface CardAggregate {
   burn: boolean;
   pinballMult: number; // 1 = none; only applied while riding momentum
   bolt: boolean; // any socketed card arcs a thunderbolt on hit
+  materialMult: number; // 1 = none; only applied while a marble material is active
+  critChance: number; // 0..1, summed then capped
+  critMult: number; // crit damage × (max across sockets)
+  lifesteal: number; // HP restored per hit, summed
+  pierce: number; // extra ranged pass-throughs, summed
 }
 
 export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
-  const agg: CardAggregate = { damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false };
+  const agg: CardAggregate = {
+    damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false,
+    materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0,
+  };
   if (!cards) return agg;
   for (const id of cards) {
     const m = CARDS[id]?.modifier;
@@ -125,7 +167,28 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
     if (m.onHit === "burn") agg.burn = true;
     if (m.pinballMult) agg.pinballMult *= m.pinballMult;
     if (m.bolt) agg.bolt = true;
+    if (m.materialMult) agg.materialMult *= m.materialMult;
+    if (m.critChance) agg.critChance += m.critChance;
+    if (m.critMult) agg.critMult = Math.max(agg.critMult, m.critMult);
+    if (m.lifesteal) agg.lifesteal += m.lifesteal;
+    if (m.pierce) agg.pierce += m.pierce;
   }
+  // ── SET BONUSES ── committing 2+ cards of a family resonates (a real choice
+  // with only 3 slots). Counted after the fold so it reads off the same cards.
+  let bolt = 0;
+  let crit = 0;
+  let material = 0;
+  for (const id of cards) {
+    const m = CARDS[id]?.modifier;
+    if (!m) continue;
+    if (m.bolt) bolt++;
+    if (m.critChance) crit++;
+    if (m.materialMult) material++;
+  }
+  if (bolt >= 2) agg.damageMult *= 1.25; // STORM set: the arcs resonate
+  if (crit >= 2) agg.critMult += 0.5; // ASSASSIN set: deeper crits
+  if (material >= 2) agg.materialMult *= 1.3; // ATTUNED set: stronger synergy
+  agg.critChance = Math.min(1, agg.critChance);
   return agg;
 }
 

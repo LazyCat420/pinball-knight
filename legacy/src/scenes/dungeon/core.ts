@@ -57,13 +57,13 @@ import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
-import { updateZombies } from "./entities/zombie";
+import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
-import { updateFloorFx, clearFloorFx } from "./entities/floor-fx";
+import { updateFloorFx, clearFloorFx, spawnFloorFx } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -203,6 +203,15 @@ import {
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
+  HOUND_HP, HOUND_SPEED_FACTOR, HOUND_FROM_LEVEL,
+  BLOATER_HP, BLOATER_SPEED_FACTOR, BLOATER_FROM_LEVEL,
+  NECRO_HP, NECRO_SPEED_FACTOR, NECRO_FROM_LEVEL,
+  WARDEN_HP, WARDEN_SPEED_FACTOR, WARDEN_FROM_LEVEL,
+  WISP_HP, WISP_SPEED_FACTOR, WISP_FROM_LEVEL,
+  SAPPER_HP, SAPPER_SPEED_FACTOR, SAPPER_FROM_LEVEL,
+  CRYSTAL_HP, CRYSTAL_FROM_LEVEL,
+  MIMIC_HP, MIMIC_SPEED_FACTOR, MIMIC_FROM_LEVEL,
+  BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -210,7 +219,8 @@ import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
-import { initCoop, updateCoop, endCoop, isReplica } from "./coop";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed } from "./coop";
+import { stopPresence } from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
@@ -780,6 +790,10 @@ export function launchDungeonGame(onExit?: () => void): void {
       spawnMaterialDrop(x, z, m);
     }
   });
+  // A BLOATER bursts into a burning puddle on death.
+  setBloaterBurstHandler((x, z) => spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true));
+  // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
+  setSummonHandler((x, z) => pendingSummons.push({ x, z }));
   // Catching the rolling merchant opens its shop.
   setMerchantCaughtHandler(openShop);
   resetCombatJuice();
@@ -802,8 +816,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   // the entry — the lobby is; `runPinballIntro` remains available for reuse.)
   const beginRun = (): void => {
     if (!state.active) return;
-    initCoop(); // consume the party baton + set the shared floor seed (no-op solo)
-    startLevel(1);
+    startLevel(1); // startLevel adopts the shared pool seed (coopSeed) if connected
+    initCoop(); // spin up dungeon-scene pool presence (no-op solo/offline)
     console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
@@ -832,7 +846,40 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   chomper: CHOMPER_HP,
   magnet: MAGNET_HP,
   webspinner: WEBSPIN_HP,
+  hound: HOUND_HP,
+  bloater: BLOATER_HP,
+  necromancer: NECRO_HP,
+  warden: WARDEN_HP,
+  wisp: WISP_HP,
+  sapper: SAPPER_HP,
+  crystalback: CRYSTAL_HP,
+  mimic: MIMIC_HP,
 };
+
+/** Expansion-roster reused-sheet map: which existing atlas + tint + scale each
+ *  new kind borrows (art is placeholder; behavior in zombie.ts carries identity). */
+const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
+  hound: { sheet: () => state.spiderSheet, tint: 0xc23a2a, scale: 1.05 }, // red hunting hound
+  bloater: { sheet: () => state.slimeSheet, tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
+  necromancer: { sheet: () => state.spitterSheet, tint: 0x8a5cd0, scale: 1.05 }, // purple caster
+  warden: { sheet: () => state.bruteSheet, tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
+  wisp: { sheet: () => state.ghostSheet, tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
+  sapper: { sheet: () => state.magnetSheet, tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
+  crystalback: { sheet: () => state.golemSheet, tint: 0x8fdfff, scale: 1.12 }, // crystalline golem
+  mimic: { sheet: () => state.golemSheet, tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
+};
+
+/** Spawn an expansion enemy from its reused sheet + tint; null if art missing. */
+function makeExpansion(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
+  const skin = EXPANSION_SKIN[kind];
+  const sheet = skin?.sheet();
+  if (!skin || !sheet) return null;
+  const z2 = makeZombie(sheet, x, z, speed, { kind });
+  z2.sprite.mesh.scale.multiplyScalar(skin.scale);
+  z2.baseTint = skin.tint;
+  z2.sprite.setTint(skin.tint);
+  return z2;
+}
 
 /**
  * The Wave-B roster now has BESPOKE atlases (was tinted reskins). Each maps to
@@ -882,6 +929,23 @@ function drainPendingMinis(): void {
     }
   }
   pendingMinis.length = 0;
+}
+
+/** Necromancer summons, deferred past the horde loop (spawning mid-iteration
+ *  would corrupt the array being walked, same as slime split). */
+const pendingSummons: Array<{ x: number; z: number }> = [];
+
+function drainPendingSummons(): void {
+  if (!pendingSummons.length) return;
+  const speed = levelConfig(state.level).zombieSpeed;
+  const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
+  for (const spec of pendingSummons) {
+    if (!sheet) break;
+    const add = makeZombie(sheet, spec.x + (Math.random() - 0.5) * 0.6, spec.z + (Math.random() - 0.5) * 0.6, speed, { kind: "zombie" });
+    add.aggro = true; // raised to serve — already hunting
+    state.zombies.push(add);
+  }
+  pendingSummons.length = 0;
 }
 
 /**
@@ -971,6 +1035,26 @@ function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: number, lev
       return level >= MAGNET_FROM_LEVEL ? makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR) : null;
     case "webspinner":
       return level >= WEBSPIN_FROM_LEVEL ? makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
+    case "hound":
+      return level >= HOUND_FROM_LEVEL ? makeExpansion("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
+    case "bloater":
+      return level >= BLOATER_FROM_LEVEL ? makeExpansion("bloater", x, z, baseSpeed * BLOATER_SPEED_FACTOR) : null;
+    case "necromancer":
+      return level >= NECRO_FROM_LEVEL ? makeExpansion("necromancer", x, z, baseSpeed * NECRO_SPEED_FACTOR) : null;
+    case "warden":
+      return level >= WARDEN_FROM_LEVEL ? makeExpansion("warden", x, z, baseSpeed * WARDEN_SPEED_FACTOR) : null;
+    case "wisp":
+      return level >= WISP_FROM_LEVEL ? makeExpansion("wisp", x, z, baseSpeed * WISP_SPEED_FACTOR) : null;
+    case "sapper":
+      return level >= SAPPER_FROM_LEVEL ? makeExpansion("sapper", x, z, baseSpeed * SAPPER_SPEED_FACTOR) : null;
+    case "crystalback":
+      return level >= CRYSTAL_FROM_LEVEL ? makeExpansion("crystalback", x, z, 0) : null;
+    case "mimic": {
+      if (level < MIMIC_FROM_LEVEL) return null;
+      const m = makeExpansion("mimic", x, z, baseSpeed * MIMIC_SPEED_FACTOR);
+      if (m) { m.dormant = true; m.aggro = false; }
+      return m;
+    }
     default:
       return null; // zombie/pin/reaper aren't horde-rollable via theme bias
   }
@@ -1079,6 +1163,11 @@ function startLevel(level: number): void {
   disposeBoss(); // drop any Reaper King skulls/telegraph/portal from the old floor
 
   state.level = level;
+  // ── Co-op: adopt the SHARED POOL SEED so every player generates the identical
+  // floor/enemy/boss layout. Set before the maze RNG below. No-op solo/offline. ──
+  const cs = coopSeed();
+  if (cs !== null) state.runSeed = cs >>> 0;
+  setCoopFloor(level); // pool presence now filters to this floor
   // Run-scoped, so it must be updated here rather than in the per-floor reset
   // below. `saveBestDepth` no-ops unless this genuinely beats the record.
   if (level > state.runDeepestFloor) state.runDeepestFloor = level;
@@ -2635,6 +2724,7 @@ function simulate(dt: number): void {
   updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
+  drainPendingSummons(); // necromancer adds, same deferral
   if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death
   updateCoop(dt); // co-op: broadcast our pose + advance party knights
   checkPickups(dt);
@@ -2846,7 +2936,8 @@ export function exitDungeonGame(): void {
   // exactly once, and never zero times" true for the whole lifecycle.
   sweepCoins();
 
-  endCoop(); // leave the session + drop party knights
+  endCoop(); // drop dungeon party knights
+  stopPresence(); // full game exit → leave the pool + close the socket
   disposeBoss(); // free any live Reaper King meshes
 
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);

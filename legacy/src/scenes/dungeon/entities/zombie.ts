@@ -81,7 +81,18 @@ import {
   CARD_CHILL_SLOW,
   CARD_BURN_TICK,
   CARD_BURN_DMG,
+  HOUND_R, HOUND_CONTACT_RANGE, HOUND_ATTACK_WINDUP, HOUND_ATTACK_COOLDOWN,
+  HOUND_CHARGE_RANGE, HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
+  BLOATER_R, BLOATER_CONTACT_RANGE, BLOATER_ATTACK_WINDUP, BLOATER_ATTACK_COOLDOWN,
+  NECRO_R, NECRO_CONTACT_RANGE, NECRO_ATTACK_WINDUP, NECRO_ATTACK_COOLDOWN, NECRO_SUMMON_CD, NECRO_SUMMON_MAX,
+  WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
+  WISP_R, WISP_CONTACT_RANGE, WISP_ATTACK_WINDUP, WISP_ATTACK_COOLDOWN, WISP_BLINK_DIST, WISP_BLINK_CD,
+  SAPPER_R, SAPPER_CONTACT_RANGE, SAPPER_ATTACK_WINDUP, SAPPER_ATTACK_COOLDOWN,
+  CRYSTAL_R, CRYSTAL_CONTACT_RANGE, CRYSTAL_ATTACK_WINDUP, CRYSTAL_ATTACK_COOLDOWN,
+  MIMIC_R, MIMIC_CONTACT_RANGE, MIMIC_ATTACK_WINDUP, MIMIC_ATTACK_COOLDOWN, MIMIC_WAKE_RANGE,
+  BRUTE_HP,
 } from "../constants";
+import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
@@ -117,6 +128,15 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   chomper: { bodyR: CHOMPER_R, contactRange: CHOMPER_CONTACT_RANGE, windup: CHOMPER_ATTACK_WINDUP, cooldown: CHOMPER_ATTACK_COOLDOWN, ranged: false },
   magnet: { bodyR: MAGNET_R, contactRange: MAGNET_CONTACT_RANGE, windup: MAGNET_ATTACK_WINDUP, cooldown: MAGNET_ATTACK_COOLDOWN, ranged: false },
   webspinner: { bodyR: WEBSPIN_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
+  // ── Expansion roster (bespoke branches below carry the behaviour) ──
+  hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
+  bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
+  necromancer: { bodyR: NECRO_R, contactRange: NECRO_CONTACT_RANGE, windup: NECRO_ATTACK_WINDUP, cooldown: NECRO_ATTACK_COOLDOWN, ranged: true },
+  warden: { bodyR: WARDEN_R, contactRange: WARDEN_CONTACT_RANGE, windup: WARDEN_ATTACK_WINDUP, cooldown: WARDEN_ATTACK_COOLDOWN, ranged: false },
+  wisp: { bodyR: WISP_R, contactRange: WISP_CONTACT_RANGE, windup: WISP_ATTACK_WINDUP, cooldown: WISP_ATTACK_COOLDOWN, ranged: false },
+  sapper: { bodyR: SAPPER_R, contactRange: SAPPER_CONTACT_RANGE, windup: SAPPER_ATTACK_WINDUP, cooldown: SAPPER_ATTACK_COOLDOWN, ranged: false },
+  crystalback: { bodyR: CRYSTAL_R, contactRange: CRYSTAL_CONTACT_RANGE, windup: CRYSTAL_ATTACK_WINDUP, cooldown: CRYSTAL_ATTACK_COOLDOWN, ranged: false },
+  mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
@@ -146,6 +166,59 @@ const DIRECT_STEER_RANGE = 1.6;
 
 /** One groan per window, not one per zombie — a chorus is just noise. */
 let _groanCooldown = 0;
+
+/** NECROMANCER summon hook (injected by core to defer the spawn past the loop,
+ *  like slime-split — spawning mid-iteration would corrupt the horde array). */
+let onSummon: ((x: number, z: number) => void) | null = null;
+export function setSummonHandler(fn: (x: number, z: number) => void): void {
+  onSummon = fn;
+}
+
+/** Lock a committed dash toward (pdx,pdz). Used by Hound + woken Mimic. */
+function startCharge(z: Zombie, pdx: number, pdz: number, pdist: number): void {
+  const d = pdist > 1e-4 ? pdist : 1;
+  z.mode = "charge";
+  z.chargeT = HOUND_CHARGE_TIME;
+  z.chargeDirX = pdx / d;
+  z.chargeDirZ = pdz / d;
+}
+
+/** BRUTE ground-slam: a radial haymaker with wider reach than a point bite. */
+function bruteSlam(z: Zombie, pdist: number, contactRange: number): void {
+  const p = state.player;
+  if (!p || p.hp <= 0) return;
+  if (pdist <= contactRange * 1.7) hitPlayer(z);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    state.vfx?.dust(z.x + Math.cos(a) * 0.6, 0.05, z.z + Math.sin(a) * 0.6);
+  }
+  state.shakeT = Math.max(state.shakeT, 0.2);
+}
+
+/** NECROMANCER: raise one add (deferred), unless the local horde is already thick. */
+function necroSummon(z: Zombie): void {
+  let near = 0;
+  for (const o of state.zombies) {
+    if (o.mode === "dead") continue;
+    if (Math.hypot(o.x - z.x, o.z - z.z) < 7) near++;
+  }
+  if (near >= NECRO_SUMMON_MAX) return;
+  onSummon?.(z.x, z.z);
+  state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 14);
+  state.vfx?.blood(z.x, 0.4, z.z, "green", 6);
+}
+
+/** WARDEN aura: top up a damage-absorb shield on every nearby living foe. */
+function wardenPulse(z: Zombie): void {
+  let shielded = 0;
+  for (const o of state.zombies) {
+    if (o === z || o.mode === "dead") continue;
+    if (Math.hypot(o.x - z.x, o.z - z.z) > WARDEN_SHIELD_RADIUS) continue;
+    o.shieldHp = Math.max(o.shieldHp ?? 0, WARDEN_SHIELD_HP);
+    shielded++;
+  }
+  if (shielded > 0) state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 8);
+}
 
 export function updateZombies(dt: number): void {
   const g = state.grid;
@@ -204,6 +277,50 @@ export function updateZombies(dt: number): void {
         state.vfx?.sparks(z.x, 0.5, z.z, 0, 1, 3);
         damageZombie(z, z.dotDmg ?? CARD_BURN_DMG, 0, 0, 0);
         if ((z.mode as string) === "dead") continue; // burn was the finishing blow (mutated in damageZombie)
+      }
+    }
+
+    // ── MIMIC ── dormant + item-like until you step close, then it BURSTS into
+    // a charge. While dormant it neither chases nor is aggro'd.
+    if (z.dormant) {
+      const dd = Math.hypot(p.x - z.x, p.z - z.z);
+      if (dd <= MIMIC_WAKE_RANGE && p.hp > 0) {
+        z.dormant = false;
+        z.aggro = true;
+        if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
+        sfxGroan();
+        startCharge(z, p.x - z.x, p.z - z.z, dd);
+      } else {
+        z.anim.play("idle");
+      }
+      continue; // dormant: no AI; woken: the charge runs next frame
+    }
+
+    // ── WARDEN ── a support aura: periodically grants a damage-absorb shield to
+    // nearby foes (a stickier horde; kill the Warden first). It otherwise chases.
+    if (z.kind === "warden") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = WARDEN_PULSE_CD;
+        wardenPulse(z);
+      }
+    }
+
+    // ── BRUTE ENRAGE ── below 40% HP it flies into a faster, angrier rage.
+    if (z.kind === "brute" && !z.enraged && z.hp <= BRUTE_HP * 0.4) {
+      z.enraged = true;
+      z.speed *= 1.4;
+      state.vfx?.sparks(z.x, 0.75, z.z, 0, 1, 12);
+      state.vfx?.blood(z.x, 0.6, z.z, "red", 6);
+    }
+
+    // ── SLIME ACID TRAIL ── it oozes a hostile burning puddle behind it on a
+    // slow cadence — don't chase one down a corridor into its own wake.
+    if (z.kind === "slime") {
+      z.castT = (z.castT ?? 0) - dt;
+      if (z.castT <= 0) {
+        z.castT = 1.5;
+        spawnFloorFx("fire", z.x, z.z, 0.5, 1.4, true);
       }
     }
 
@@ -304,6 +421,39 @@ export function updateZombies(dt: number): void {
       }
     }
 
+    // ── CHARGE: a committed locked-line dash (Hound / woken Mimic). Bowls into
+    // you for a heavy hit; slams the wall and self-stuns if it whiffs. ──
+    if (z.mode === "charge") {
+      z.chargeT = (z.chargeT ?? 0) - dt;
+      const cdx = z.chargeDirX ?? 0;
+      const cdz = z.chargeDirZ ?? 0;
+      z.anim.setFacing(facingFromWorld(cdx, cdz, "S"));
+      z.anim.play("walk", { force: true });
+      const step = HOUND_CHARGE_SPEED * dt;
+      const res = moveCircle(g, z.x, z.z, bodyR, cdx * step, cdz * step);
+      const moved = Math.hypot(res.x - z.x, res.z - z.z);
+      z.x = res.x;
+      z.z = res.z;
+      syncActorMesh(z);
+      if (Math.random() < 0.6) state.vfx?.dust(z.x, 0.04, z.z);
+      if (p.hp > 0 && Math.hypot(p.x - z.x, p.z - z.z) <= bodyR + PLAYER_R + 0.14) {
+        hitPlayer(z);
+        z.mode = "chase";
+        z.cooldown = attackCooldown;
+        z.chargeT = 0;
+      } else if ((z.chargeT ?? 0) <= 0 || moved < step * 0.4) {
+        // Whiffed or slammed a wall — recover; a wall slam costs a longer stun.
+        const slammed = moved < step * 0.4;
+        z.mode = "chase";
+        z.cooldown = attackCooldown + (slammed ? 0.5 : 0);
+        if (slammed) {
+          state.vfx?.dust(z.x, 0.05, z.z);
+          state.vfx?.sparks(z.x, 0.4, z.z, cdx, cdz, 6);
+        }
+      }
+      continue;
+    }
+
     // ── Attack windup: rooted, facing you. A melee kind bites when the windup
     // completes; a spitter (ranged) launches an acid glob instead. ──
     if (z.mode === "windup") {
@@ -328,11 +478,28 @@ export function updateZombies(dt: number): void {
         z.cooldown = attackCooldown;
         if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null); // drop the telegraph on release
         if (p.hp > 0) {
-          if (ranged) {
-            // Webspinners shoot silk (a slow, cleansed by parts); spitters acid.
+          if (z.kind === "hound" || z.kind === "mimic") {
+            startCharge(z, pdx, pdz, pdist); // the windup ends in a DASH, not a bite
+            continue;
+          } else if (z.kind === "brute") {
+            bruteSlam(z, pdist, contactRange); // a radial haymaker, not a point bite
+          } else if (z.kind === "necromancer") {
+            necroSummon(z); // raise an add instead of a projectile
+          } else if (ranged) {
+            // Webspinners shoot silk (a slow, cleansed by parts); spitters lob a
+            // TRIPLE-SPREAD acid volley (harder to sidestep than one glob).
             if (pdist > 1e-4) {
-              if (z.kind === "webspinner") spitWeb(z.x, z.z, pdx / pdist, pdz / pdist);
-              else spitGlob(z.x, z.z, pdx / pdist, pdz / pdist);
+              const ux = pdx / pdist;
+              const uz = pdz / pdist;
+              if (z.kind === "webspinner") {
+                spitWeb(z.x, z.z, ux, uz);
+              } else {
+                for (const ang of [-0.32, 0, 0.32]) {
+                  const c = Math.cos(ang);
+                  const s = Math.sin(ang);
+                  spitGlob(z.x, z.z, ux * c - uz * s, ux * s + uz * c);
+                }
+              }
             }
           } else if (pdist <= contactRange * 1.3) {
             hitPlayer(z);
@@ -345,6 +512,13 @@ export function updateZombies(dt: number): void {
     if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
 
     z.mode = "chase";
+    // HOUND telegraphs its charge from RANGE (not just contact) — the windup
+    // then releases into a dash (see the windup branch).
+    if (z.kind === "hound" && z.cooldown <= 0 && pdist <= HOUND_CHARGE_RANGE && p.hp > 0) {
+      z.mode = "windup";
+      z.windupT = 0;
+      continue;
+    }
     // Melee bites in contact range; a spitter fires from anywhere in its long
     // fire range (contactRange for it is SPITTER_FIRE_RANGE). The goblin never
     // bites — its contact behaviour is the bumper kick above.

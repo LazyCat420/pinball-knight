@@ -185,7 +185,10 @@ export function updateFps(dt: number, input: InputHandle): void {
   // forward/back (W = -1), a.x is strafe. ──
   const a = input.axis();
   const fwd = forwardXZ();
-  const right = { x: -fwd.z, z: fwd.x };
+  // Right-of-look. NOTE: the perpendicular is (fwd.z, -fwd.x), NOT its negation —
+  // the old (-fwd.z, fwd.x) put "right" on your LEFT, so A/D strafed the wrong
+  // way (you press left, you slide right). This is the corrected screen-right.
+  const right = { x: fwd.z, z: -fwd.x };
   // a.z is +down (toward camera) in iso; here -a.z means "W = forward".
   let mx = (fwd.x * -a.z + right.x * a.x);
   let mz = (fwd.z * -a.z + right.z * a.x);

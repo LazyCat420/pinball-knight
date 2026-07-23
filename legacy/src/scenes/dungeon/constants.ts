@@ -1696,3 +1696,85 @@ export const FIRE_PUDDLE_DMG = 1; // per tick (deferred Lava; wired for R&D)
 export const FIRE_PUDDLE_LIFE = 3;
 export const FIRE_PUDDLE_RADIUS = 0.8;
 export const MATERIAL_SELF_HARM_DMG = 1; // player dmg per tick on own hazard (toggle)
+
+// ══ EXPANSION ROSTER (CONTENT_EXPANSION_PLAN.md) ══════════════════
+// Reuse existing sprite sheets (tinted) — art is borrowed; behavior is bespoke.
+// 🐕 Hound — charger
+export const HOUND_HP = 3;
+export const HOUND_R = 0.3;
+export const HOUND_CONTACT_RANGE = 0.75;
+export const HOUND_ATTACK_WINDUP = 0.3;
+export const HOUND_ATTACK_COOLDOWN = 1.4;
+export const HOUND_SPEED_FACTOR = 1.35;
+export const HOUND_FROM_LEVEL = 2;
+export const HOUND_CHARGE_RANGE = 5.5; // starts a charge when you're in this range + line
+export const HOUND_CHARGE_WINDUP = 0.45; // telegraph before the dash
+export const HOUND_CHARGE_SPEED = 10; // dash speed (tiles/s)
+export const HOUND_CHARGE_TIME = 0.5; // dash duration
+export const HOUND_CHARGE_DMG = 3;
+// 🤢 Bloater — exploder
+export const BLOATER_HP = 6;
+export const BLOATER_R = 0.4;
+export const BLOATER_CONTACT_RANGE = 0.7;
+export const BLOATER_ATTACK_WINDUP = 0.4;
+export const BLOATER_ATTACK_COOLDOWN = 2;
+export const BLOATER_SPEED_FACTOR = 0.62;
+export const BLOATER_FROM_LEVEL = 3;
+export const BLOATER_BURST_RADIUS = 1.6; // fire puddle radius left on death
+// 💀 Necromancer — summoner
+export const NECRO_HP = 4;
+export const NECRO_R = 0.32;
+export const NECRO_CONTACT_RANGE = 4.5; // ranged: kites like a spitter
+export const NECRO_ATTACK_WINDUP = 0.5;
+export const NECRO_ATTACK_COOLDOWN = 2;
+export const NECRO_SPEED_FACTOR = 0.8;
+export const NECRO_FROM_LEVEL = 4;
+export const NECRO_SUMMON_CD = 4.5; // seconds between raising an add
+export const NECRO_SUMMON_MAX = 6; // don't summon past this live-horde count nearby
+// 🛡 Warden — shielder
+export const WARDEN_HP = 8;
+export const WARDEN_R = 0.4;
+export const WARDEN_CONTACT_RANGE = 0.8;
+export const WARDEN_ATTACK_WINDUP = 0.5;
+export const WARDEN_ATTACK_COOLDOWN = 1.6;
+export const WARDEN_SPEED_FACTOR = 0.7;
+export const WARDEN_FROM_LEVEL = 4;
+export const WARDEN_SHIELD_RADIUS = 3.5;
+export const WARDEN_SHIELD_HP = 3; // absorb granted to each nearby foe
+export const WARDEN_PULSE_CD = 3; // re-shield cadence
+// 🔮 Wisp — evasive
+export const WISP_HP = 2;
+export const WISP_R = 0.28;
+export const WISP_CONTACT_RANGE = 0.7;
+export const WISP_ATTACK_WINDUP = 0.3;
+export const WISP_ATTACK_COOLDOWN = 1.2;
+export const WISP_SPEED_FACTOR = 1.0;
+export const WISP_FROM_LEVEL = 3;
+export const WISP_BLINK_DIST = 2.6; // teleport distance when hit
+export const WISP_BLINK_CD = 0.6; // min seconds between blinks
+// ⚡ Sapper — anti-material
+export const SAPPER_HP = 3;
+export const SAPPER_R = 0.3;
+export const SAPPER_CONTACT_RANGE = 0.75;
+export const SAPPER_ATTACK_WINDUP = 0.35;
+export const SAPPER_ATTACK_COOLDOWN = 1.5;
+export const SAPPER_SPEED_FACTOR = 1.1;
+export const SAPPER_FROM_LEVEL = 5;
+// 💎 Crystalback — reflector (rooted, momentum-gated like a golem)
+export const CRYSTAL_HP = 6;
+export const CRYSTAL_R = 0.42;
+export const CRYSTAL_CONTACT_RANGE = 0.82;
+export const CRYSTAL_ATTACK_WINDUP = 0.5;
+export const CRYSTAL_ATTACK_COOLDOWN = 1.5;
+export const CRYSTAL_FROM_LEVEL = 4;
+export const CRYSTAL_SHARDS = 7; // shards sprayed at YOU when rammed at speed
+export const CRYSTAL_SHARD_DMG = 2;
+// 🪞 Mimic — ambusher
+export const MIMIC_HP = 4;
+export const MIMIC_R = 0.34;
+export const MIMIC_CONTACT_RANGE = 0.72;
+export const MIMIC_ATTACK_WINDUP = 0.25;
+export const MIMIC_ATTACK_COOLDOWN = 1.4;
+export const MIMIC_SPEED_FACTOR = 1.3;
+export const MIMIC_FROM_LEVEL = 3;
+export const MIMIC_WAKE_RANGE = 1.7; // dormant until you step this close

@@ -59,6 +59,14 @@ const SPAWNABLE: Array<{ kind: string; label: string }> = [
   { kind: "chomper", label: "🪴 Chomper" },
   { kind: "magnet", label: "🧲 Crawler" },
   { kind: "webspinner", label: "🕸️ Spinner" },
+  { kind: "hound", label: "🐕 Hound" },
+  { kind: "bloater", label: "🤢 Bloater" },
+  { kind: "necromancer", label: "💀 Necro" },
+  { kind: "warden", label: "🛡️ Warden" },
+  { kind: "wisp", label: "🔮 Wisp" },
+  { kind: "sapper", label: "⚡ Sapper" },
+  { kind: "crystalback", label: "💎 Crystal" },
+  { kind: "mimic", label: "🪞 Mimic" },
 ];
 
 const PX_LABEL = `'Press Start 2P', ui-monospace, monospace`;

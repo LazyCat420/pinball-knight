@@ -4,7 +4,7 @@
  * zombie.ts and projectiles.ts.
  */
 import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
-import { awardKillXp, skillAgg } from "../skill-runtime";
+import { awardKillXp, skillAgg, playerMaxHp } from "../skill-runtime";
 import {
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
@@ -46,6 +46,10 @@ import {
   CARD_BOLT_HALF_WIDTH,
   CARD_BOLT_DAMAGE,
   CARD_BOLT_COOLDOWN,
+  CRYSTAL_SHARD_DMG,
+  CRYSTAL_SHARDS,
+  WISP_BLINK_CD,
+  WISP_BLINK_DIST,
 } from "../constants";
 import { comboKillGold } from "./combo-curve";
 import { moveCircle } from "../collision";
@@ -61,14 +65,27 @@ import { aggregateCards } from "../cards";
  * riding momentum, and finally the rage buff. The one choke point every player
  * hit (melee, ranged, ram) passes through, so a card lifts them all.
  */
+/** Set by playerDamage when the last roll CRIT; read + cleared by damageZombie's
+ *  floating-number so the hit reads as a crit. Player hits call playerDamage
+ *  immediately before damageZombie, so the flag never leaks to other sources. */
+let _lastCrit = false;
+
 export function playerDamage(base: number): number {
   const p = state.player;
   let dmg = base;
+  _lastCrit = false;
   const w = state.weaponSlots[state.activeSlot];
   if (w && w.cards && w.cards.length) {
     const agg = aggregateCards(w.cards);
     dmg = dmg * agg.damageMult + agg.damageFlat;
     if (agg.pinballMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= agg.pinballMult;
+    // MARBLE SYNERGY: bonus while any material is riding (Elementalist/Attunement).
+    if (agg.materialMult > 1 && p && p.material && p.materialT > 0) dmg *= agg.materialMult;
+    // CRIT roll: a real chance for an amplified hit (Keen Mind / Assassin / …).
+    if (agg.critChance > 0 && Math.random() < agg.critChance) {
+      dmg *= agg.critMult;
+      _lastCrit = true;
+    }
   }
   const skills = skillAgg();
   dmg *= skills.damageMult;
@@ -92,6 +109,18 @@ export function applyCardOnHit(z: Zombie): void {
       z.dotTickT = 0;
     }
     if (agg.bolt) fireBolt(z);
+    // LIFESTEAL: the blow feeds the knight (Leech / Vampiric Edge / Blood Pact).
+    if (agg.lifesteal > 0) {
+      const p2 = state.player;
+      if (p2 && p2.hp > 0) {
+        const max = playerMaxHp();
+        if (p2.hp < max) {
+          p2.hp = Math.min(max, p2.hp + agg.lifesteal);
+          state.hudDirty = true;
+          state.vfx?.sparks(p2.x, 0.7, p2.z, 0, 1, 3);
+        }
+      }
+    }
   }
   // ── Craft brews that ride EVERY hit (no weapon/card needed) ──
   const p = state.player;
@@ -327,6 +356,28 @@ export function damageZombie(
     push = 0; // the slide IS the knockback
   }
 
+  // CRYSTALBACK: ramming it at pinball speed shatters a shard-spray back INTO
+  // you — a reflector that taxes momentum. It still takes the hit; the shards
+  // are the price of the ram. (Weapon hits at walking speed are safe.)
+  if (z.kind === "crystalback" && momentum > CARD_PINBALL_SPEED && p && p.hp > 0 && p.iframes <= 0) {
+    hitPlayerRanged(CRYSTAL_SHARD_DMG, z.x, z.z);
+    state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, CRYSTAL_SHARDS);
+  }
+
+  // WARDEN SHIELD: a damage-absorb bubble eats the blow first. A full absorb is
+  // a shield-break spark and no HP lost — nothing below this runs.
+  if ((z.shieldHp ?? 0) > 0) {
+    const absorbed = Math.min(z.shieldHp!, damage);
+    z.shieldHp! -= absorbed;
+    damage -= absorbed;
+    state.vfx?.sparks(z.x, 0.7, z.z, dirx, dirz, 6);
+    z.aggro = true;
+    if (damage <= 0) {
+      z.flashT = FLASH_TIME;
+      return;
+    }
+  }
+
   z.hp -= damage;
   z.aggro = true; // hitting a dormant zombie certainly wakes it
   z.flashT = FLASH_TIME;
@@ -340,7 +391,9 @@ export function damageZombie(
   // The game has no crit ROLL, but it does have amplified hits: rage and the
   // pinball-synergy multiplier (see playerDamage above) both genuinely multiply
   // the number, so those read as crits rather than inventing a fake stat.
-  const amped = !!p && (p.rageT > 0 || momentum > CARD_PINBALL_SPEED);
+  const crit = _lastCrit;
+  _lastCrit = false;
+  const amped = crit || (!!p && (p.rageT > 0 || momentum > CARD_PINBALL_SPEED));
   state.vfx?.damage(z.x, 1.05, z.z, damage, amped ? "crit" : "out");
 
   const ghost = z.kind === "ghost";
@@ -366,6 +419,23 @@ export function damageZombie(
       }
       syncActorMesh(z);
     }
+  }
+
+  // WISP: survives the blow, then short-BLINKS away from you — evasive, hard to
+  // pin. Throttled so it can't teleport every tick of a fast weapon.
+  if (z.hp > 0 && z.kind === "wisp" && (z.castT ?? 0) <= 0 && p) {
+    z.castT = WISP_BLINK_CD;
+    let bx = z.x - p.x;
+    let bz = z.z - p.z;
+    const bd = Math.hypot(bx, bz) || 1;
+    bx /= bd;
+    bz /= bd;
+    // Ghost-style phase: no wall clamp (it drifts through), then a puff at both ends.
+    state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 8);
+    z.x += bx * WISP_BLINK_DIST;
+    z.z += bz * WISP_BLINK_DIST;
+    syncActorMesh(z);
+    state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 8);
   }
 
   if (z.hp <= 0) {
@@ -484,6 +554,12 @@ export function setGolemShatterHandler(fn: (x: number, z: number) => void): void
   onGolemShatter = fn;
 }
 
+/** BLOATER death → a fire puddle (core owns floor-fx to avoid a circular import). */
+let onBloaterBurst: ((x: number, z: number) => void) | null = null;
+export function setBloaterBurstHandler(fn: (x: number, z: number) => void): void {
+  onBloaterBurst = fn;
+}
+
 /** Card-drop roll on a kill — core owns the spawn (scene access + rng). */
 let onCardRoll: ((x: number, z: number, boss: boolean) => void) | null = null;
 export function setCardRollHandler(fn: (x: number, z: number, boss: boolean) => void): void {
@@ -506,6 +582,8 @@ function killZombie(z: Zombie): void {
   z.anim.play("death", { force: true });
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
+  // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.
+  if (z.kind === "bloater") onBloaterBurst?.(z.x, z.z);
   // A brick golem SHATTERS — the masonry becomes a spray of ricochet shards.
   if (z.kind === "golem") onGolemShatter?.(z.x, z.z);
   // Bowling ledger: pins downed close together are one STRIKE.
@@ -636,6 +714,15 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   chomper: CHOMPER_DAMAGE,
   magnet: MAGNET_DAMAGE,
   webspinner: ZOMBIE_DAMAGE,
+  // ── Expansion roster ──
+  hound: SPIDER_DAMAGE,
+  bloater: ZOMBIE_DAMAGE,
+  necromancer: ZOMBIE_DAMAGE,
+  warden: BRUTE_DAMAGE,
+  wisp: GHOST_DAMAGE,
+  sapper: SPIDER_DAMAGE,
+  crystalback: GOLEM_DAMAGE,
+  mimic: BRUTE_DAMAGE,
 };
 
 /**
@@ -690,6 +777,17 @@ export function hitPlayer(z: Zombie): void {
   p.z = res.z;
   syncActorMesh(p);
   if (z.kind === "brute") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
+  // SAPPER: the bite DRAINS your active marble material — a hard counter that
+  // makes a material a resource to protect, not just spend.
+  if (z.kind === "sapper" && p.material && p.materialT > 0) {
+    p.material = null;
+    p.materialT = 0;
+    p.fuseMaterial = null;
+    p.fuseT = 0;
+    state.hudDirty = true;
+    state.vfx?.sparks(p.x, 0.7, p.z, 0, 1, 12);
+    showToast("⚡ MATERIAL DRAINED", "the sapper stole your marble");
+  }
 }
 
 /**
