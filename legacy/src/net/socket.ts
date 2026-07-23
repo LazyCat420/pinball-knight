@@ -1,16 +1,11 @@
 /**
  * 🔌 NetClient — the browser end of the realtime transport.
  *
- * A thin, typed wrapper over the native WebSocket: derives the ws(s) URL from
- * the same BACKEND_API_URL the REST client uses, reconnects with backoff, and
- * dispatches decoded {@link ServerMessage}s to typed listeners. It knows nothing
- * about the tavern or the dungeon — those wire their own handlers on top.
- *
- * Reachability follows the REST rule exactly (`isRemoteBackendEnabled`): a
- * private/LAN backend is only dialled when the page is itself served from the
- * LAN, so a public visitor never opens a doomed socket to their own machine.
+ * A thin, typed wrapper over the native WebSocket: connects same-origin to the
+ * in-process pool hub (see realtimeUrl), reconnects with backoff, and dispatches
+ * decoded {@link ServerMessage}s to typed listeners. It knows nothing about the
+ * tavern or the dungeon — those wire their own handlers on top.
  */
-import { BACKEND_API_URL, isRemoteBackendEnabled } from "../services/api-config";
 import type { ClientMessage, ServerMessage, ServerMessageOf, ServerMessageType } from "./protocol";
 
 type Handler<T extends ServerMessageType> = (msg: ServerMessageOf<T>) => void;
@@ -21,45 +16,23 @@ export type NetStatus = "idle" | "connecting" | "open" | "closed";
 /**
  * ws(s):// URL for the realtime hub, or null when networking is disabled.
  *
- * Two cases, because the backend is baked to a PRIVATE LAN address:
- *  • LAN / dev (the page itself is on a private origin) → dial the baked backend
- *    directly (`isRemoteBackendEnabled()` gates this exactly like the REST client).
- *  • PUBLIC page (e.g. braindeadbot.com) → a private-IP socket is unreachable, so
- *    connect SAME-ORIGIN (`wss://<page-host>/ws`). This works the moment the edge
- *    proxies `/ws` → the service; until then the socket just fails and the game
- *    stays single-player. Never dials the private IP from a public page.
+ * ALWAYS SAME-ORIGIN `/ws`. The multiplayer pool hub runs IN-PROCESS in the
+ * game's own production server (server.mjs → server/realtime.mjs), so the socket
+ * endpoint is wherever the page came from — `wss://braindeadbot.com/ws`
+ * publicly, `ws://10.0.0.16:5174/ws` on the LAN. One origin, one pool: never
+ * dial a different host, or LAN and public players would split into separate
+ * worlds (that was the bug with routing ws to braindeadbot-service, which is
+ * also LAN-bound and unreachable both from public pages and from inside the
+ * client's container).
+ *
+ * Under `next dev` there is no custom server, so the upgrade fails and the game
+ * simply runs single-player — to test multiplayer locally, use
+ * `npm run build && npm start`.
  */
 export function realtimeUrl(): string | null {
   if (typeof window === "undefined") return null;
-  const pageHost = window.location.hostname;
-  const pageIsPrivate =
-    !pageHost ||
-    pageHost === "localhost" ||
-    pageHost.endsWith(".localhost") ||
-    pageHost.endsWith(".local") ||
-    pageHost === "::1" ||
-    pageHost.startsWith("127.") ||
-    pageHost.startsWith("10.") ||
-    pageHost.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(pageHost);
-
-  if (!pageIsPrivate) {
-    // Public page → same-origin ws (edge must forward /ws to the service).
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.host}/ws`;
-  }
-
-  // LAN/dev page → the baked (private) backend, gated like the REST client.
-  if (!isRemoteBackendEnabled()) return null;
-  try {
-    const u = new URL(BACKEND_API_URL);
-    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
-    u.pathname = "/ws";
-    u.search = "";
-    return u.toString();
-  } catch {
-    return null;
-  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/ws`;
 }
 
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000];

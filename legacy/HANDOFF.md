@@ -10,26 +10,27 @@ KING** whose death opens the exit portal. Additive; solo/offline is the same
 single-player game. Prior work (materials, armor, shaped walls, 4× floors, combo
 ramp, casino) all live/untouched.
 
-## ⚠️ CONNECTIVITY — public play needs a one-line edge route (READ FIRST)
+## ✅ CONNECTIVITY — SOLVED: the hub lives IN the game server (READ FIRST)
 
-The client is baked with the PRIVATE backend `10.0.0.16:5175`. The client now
-picks its ws target by page origin:
-- **LAN/dev page** (`http://10.0.0.16:5174`) → dials the baked private backend.
-  **This works today — test multiplayer with two browsers on the LAN IP.**
-- **Public page** (`braindeadbot.com`) → connects SAME-ORIGIN `wss://braindeadbot.com/ws`.
-  But the edge (`deploy-kit/edge/generated/Caddyfile`) proxies ALL of
-  braindeadbot.com → client `:5174`, so `/ws` hits Next, not the ws server →
-  **public multiplayer is DEAD until the edge forwards `/ws` → `:5175`.**
-  deploy-kit is read-only (owner-managed); the needed change in the
-  `braindeadbot.com {}` block:
-  ```
-  @ws path /ws
-  reverse_proxy @ws 10.0.0.16:5175   # BEFORE the catch-all; Caddy handles Upgrade
-  reverse_proxy 10.0.0.16:5174
-  ```
-  Until then the socket fails gracefully and the game runs solo (the tavern shows
-  an OFFLINE pill). Alternative: expose the service on its own public subdomain
-  and bake that as `NEXT_PUBLIC_BACKEND_URL`.
+**The multiplayer pool hub now runs IN-PROCESS in the client's own production
+server** — `server.mjs` + `server/realtime.mjs` (`npm start` = `node server.mjs`,
+which serves Next AND hosts `/ws`). The browser always connects SAME-ORIGIN
+(`src/net/socket.ts realtimeUrl()`): `wss://braindeadbot.com/ws` publicly,
+`ws://10.0.0.16:5174/ws` on the LAN — **one pool for everyone, no edge changes,
+no service networking.**
+
+Why the previous approaches died, so nobody retries them:
+- Edge route `/ws → :5175`: correct but lives in deploy-kit = **read-only**.
+- Client-server TCP tunnel → service: the service binds `10.0.0.16:5175`
+  (LAN-only) and sits on a different docker network — **unreachable from inside
+  the client container** (502 / socket hang-up).
+The pool is pure in-memory state (roster/seed/poses, no DB), so in-process is the
+right home. `braindeadbot-service/src/realtime/` still exists but is **UNUSED**
+(its REST scores/youtube routes are unaffected). Keep the wire protocol in
+lockstep: `server/realtime.mjs` ⇔ `src/net/protocol.ts`.
+
+Dev note: `next dev` has no custom server → no `/ws` → game runs solo. To test
+multiplayer locally: `npm run build && npm start`, two tabs on localhost:5174.
 
 ## 🕸️ MULTIPLAYER — the drop-in pool (SHIPPED)
 
