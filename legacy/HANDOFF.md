@@ -2,37 +2,44 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🗡️ NEWEST (2026-07-23): ability & map-effect wave — needs click-QA
+## 🗡️ NEWEST (2026-07-23, wave 2): FX wave made LEGIBLE + movement feel — screenshot-verified
 
-Shipped + deployed (build + 891 unit tests green; **not click-tested**). Full
-grounded plan + deliberate scope cuts: `src/scenes/dungeon/ABILITY_FX_PLAN.md`.
+Wave 1 shipped the mechanics but the visuals didn't land in a real playtest
+("same hit every time / red circle / orange things / never saw slick field").
+Wave 2 fixed every one and was **verified with headless playwright+swiftshader
+screenshots** (recipe below). Plan doc: `src/scenes/dungeon/ABILITY_FX_PLAN.md`.
 
-- **Arcane Pulse** is now a real shockwave: damage rides the expanding ring
-  (white core + lagging purple chaser, new `RingPool` in `render/vfx.ts`), foes
-  are struck as the front crosses them with a mini-bolt back to the cast point.
-  Wave tracker lives module-local in `abilities.ts` (`spawnPulseWave`).
-- **Katana finisher**: 3rd combo hit buffed (2.0×, wider arc) and on connect —
-  white player ghost, triple parallel cuts, cut-through ghosts per victim
-  (`resolvePlayerAttack` grew an `onHit` hook), and a full-screen white flash:
-  new `uFlash` uniform + `setFlash()` in `pixel-pass.ts`, driven by
-  `state.flashT` which decays on REAL frame time in core so it plays through
-  the finisher's own hitstop.
-- **Flipper Charge** ignites a fire trail: flame afterimages + embers while the
-  ride is fast, one burning `fire` floorFx per NEW tile crossed (existing burn
-  ticks do the damage; player-safe unless the self-harm debug toggle is on).
-- **Slick Field** — NEW 6th ability (🛢️ 25 mana/8s, arcana node `unlockslick`,
-  requires `unlockmagnet`): spills an `oil` FloorFxKind pool. Oiled zombies
-  lose steering (`oiledT` heading blend in zombie.ts; bats exempt), the rolling
-  ball tops up the existing `p.oilT` glide, and **any fire touching oil ignites
-  the whole pool** (8s burn) — Flipper Charge across your own slick is the
-  designed combo.
-- **Deliberately NOT done** (draft wanted it, codebase said no): Magnet Aura and
-  Blade Storm kept (skill tree/coins/co-op/save weaving); burning-bumper jackpot
-  synergy + frost runes/tar pit/etc deferred — see the plan doc.
-- **QA notes**: `` ` `` debug panel has ∞ mana / no-cooldown toggles; Slick Field
-  needs the arcana skill point or add `"slickfield"` to `state.unlockedAbilities`
-  in console. Watch for: ring visibility vs bloom, flash intensity taste
-  (FINISHER_FLASH_MAX 0.75), oil pool readability on dark floors.
+- **Red-circle root cause**: the pulse chaser was 0x8800ff purple — OFF-PALETTE,
+  so the composite quantizer snapped it to blood red. Rule: **VFX colours must
+  be palette-native** (render/palette.ts) or they become a different colour.
+  Rings/bursts now use arcane blues; the white core blooms as intended.
+- **Combo legibility**: light-1 classic cut → light-2 crossed X (orange+white
+  mirrored) → finisher big white draw-cut + echo + blur ON THE SWING (connect
+  still adds flash/triple-cut/victim ghosts). Chain shortens + clip rate ramps
+  per step, small forward lunge per swing, finisher RESETS to step 0.
+- **Fire/oil floorFx have painted canvas textures** (floor-fx.ts
+  paintKindTexture): fire = white-hot core/ragged edge/additive + per-frame
+  ember stream (was 1 ember/0.5s — the "orange things"); oil = dark pool with
+  bright iridescent rim. Both read from across the room.
+- **Slick Field is default-unlocked** (arcana node removed — nobody found it).
+- **Movement feel**: sprint spool 3s→1.5s + base 1.35 (Shift kicks now); corner
+  bounce gains softened (rest 1.08 / add 1.0 / ceiling K 0.15); **pocket-rattle
+  guard** (player.ts notePocketBounce + POCKET_* constants) bleeds momentum when
+  5+ bounces cluster inside one 1.4u circle — no more stuck-in-a-gap ricochets
+  (QA: rides now settle instead of climbing 14→22 u/s forever).
+- **Floor 1 variety**: spiders/hounds/goblins/bowling pins spawn from level 1.
+- **Curves**: corner reshape mix now 75% quarter-rounds (live since 07-21 at
+  50/50 — the engine does REAL arc collision; not a boxes limitation).
+
+**Headless visual QA recipe (WORKS — use before shipping FX):** dev server
+:5174 → `/dungeon?no-intro=1` → wait `__tavernProbe`, waypoint-walk around the
+centre table to (0,-5.3), press `e` → dungeon. Knight starts PARKED IN THE
+PLUNGER (movement+attacks dead until SPACE pull-release launches). ` panel:
+GOD MODE/INF MANA/NO COOLDOWN + spawn chips (`[title=zombie]`). Hooks:
+`__dungeonWarp(x,z)` zeroes momentum (melee is LOCKED OUT while riding — warp
+≥3u from every `__dungeonParts()` entry or bumpers re-grab instantly),
+`__dungeonAbility(slot,id)`, `__dungeonStats().floorFx`. Script: session
+scratchpad qa.mjs pattern; playwright import from lupos-bot node_modules.
 
 **Live:** client + service carry **Pinball-Knight multiplayer as a DROP-IN POOL**
 — no lobby/ready/party. Everyone on the site auto-joins ONE shared world (shared
