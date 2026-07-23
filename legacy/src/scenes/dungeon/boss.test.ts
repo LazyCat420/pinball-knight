@@ -63,7 +63,7 @@ beforeEach(() => {
 
 test("spawning the Reaper King seals the exit and rings it with skulls", () => {
   let king: Zombie | null = null;
-  spawnBoss(state.grid!, { i: 3, j: 3 }, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
     king = fakeZombie(x, z, hp);
     state.zombies.push(king);
     return king;
@@ -78,7 +78,7 @@ test("spawning the Reaper King seals the exit and rings it with skulls", () => {
 });
 
 test("a few ticks keep the exit sealed while the king lives", () => {
-  spawnBoss(state.grid!, { i: 3, j: 3 }, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
     const k = fakeZombie(x, z, hp);
     state.zombies.push(k);
     return k;
@@ -90,7 +90,7 @@ test("a few ticks keep the exit sealed while the king lives", () => {
 
 test("killing the Reaper King opens the portal and unlocks the exit", () => {
   let king: Zombie = fakeZombie(0, 0, 1);
-  spawnBoss(state.grid!, { i: 3, j: 3 }, (x, z, hp) => {
+  spawnBoss(state.grid!, { i: 3, j: 3 }, 220, (x, z, hp) => {
     king = fakeZombie(x, z, hp);
     state.zombies.push(king);
     return king;

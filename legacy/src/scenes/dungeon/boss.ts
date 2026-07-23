@@ -31,7 +31,8 @@ import { tileCenter, type Grid, type TilePos } from "./maze/generator";
 import { peers } from "../../net/presence";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
-const KING_HP = 220; // meaty — a real fight, not a speed-bump
+// (King HP now arrives as a spawn parameter — core scales it by floor, see
+// KING_HP_BASE/KING_HP_PER_FLOOR in constants.ts. Every floor is boss-gated.)
 const KING_SPEED = 2.0; // slow, inexorable
 const KING_SCALE = REAPER_SCALE * 1.55; // looms over the horde
 const SKULL_COUNT = 5;
@@ -167,11 +168,12 @@ function makePortal(): THREE.Mesh {
 export function spawnBoss(
   grid: Grid,
   spot: TilePos,
+  hp: number,
   makeZombie: (x: number, z: number, hp: number) => Zombie,
 ): void {
   if (boss || !state.scene || !state.player) return;
   const c = tileCenter(grid, spot.i, spot.j);
-  const z = makeZombie(c.x, c.z, KING_HP);
+  const z = makeZombie(c.x, c.z, hp);
   z.baseTint = REAPER_TINT;
   z.sprite.setTint(REAPER_TINT);
   z.sprite.mesh.scale.multiplyScalar(KING_SCALE);

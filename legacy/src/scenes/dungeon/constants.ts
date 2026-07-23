@@ -1423,7 +1423,12 @@ export const GHOST_FROM_LEVEL = 2; // start haunting early
  * progress rather than an endless treadmill. Reuses the brute art (scaled) and
  * the brute's heavy-hit AI.
  */
-export const BOSS_EVERY = 5; // a boss on levels 5, 10, 15, …
+export const BOSS_EVERY = 5; // every Nth floor the king is a MEGA (double HP)
+// Every floor's exit is now boss-gated (live QA ask): the Reaper King guards
+// the stairs on EVERY level, HP scaling with depth so floor 1 is a fight a
+// starting sword can win. On BOSS_EVERY floors he comes back twice as mean.
+export const KING_HP_BASE = 24; // floor-1 king
+export const KING_HP_PER_FLOOR = 13; // +per floor below that
 export const BOSS_BASE_HP = 40;
 export const BOSS_HP_PER_TIER = 25; // +this much per boss encounter (level/5)
 export const BOSS_SPEED_FACTOR = 0.55;
@@ -1530,7 +1535,7 @@ export function levelConfig(level: number): LevelConfig {
     // Cap re-tuned for 4× floors: at the old 60 the density would drop 4× and
     // big floors would read empty. 110 is a DRAW-CALL budget as much as a
     // difficulty one — each zombie is its own sprite mesh; raise with care.
-    zombies: Math.min(Math.round(floorTiles / 32) + 3 * (l - 1), 110),
+    zombies: Math.min(Math.round(floorTiles / 26) + 3 * (l - 1), 135), // densified after co-op QA ("not enough monsters") — packs land on top of this
     // Faster horde overall, and it ramps harder with depth — a deep floor is a
     // genuine sprint, not a shuffle. (Spiders multiply this again, see items.)
     zombieSpeed: Math.min(1.5 + 0.12 * l, 2.8),

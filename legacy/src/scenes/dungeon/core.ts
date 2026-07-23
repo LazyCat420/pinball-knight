@@ -157,6 +157,8 @@ import {
   GRADE_COMBO_OK,
   GRADE_GOLD,
   BOSS_EVERY,
+  KING_HP_BASE,
+  KING_HP_PER_FLOOR,
   BOSS_BASE_HP,
   BOSS_HP_PER_TIER,
   BOSS_SPEED_FACTOR,
@@ -1462,19 +1464,20 @@ function startLevel(level: number): void {
     }
   }
 
-  // ── BOSS FLOOR: the REAPER KING guards the exit every BOSS_EVERY floors ──
-  // Replaces the old stairs-guarding OVERLORD brute. The king (boss.ts) is a
-  // killable reaper-art brute with an orbiting skull ring + a telegraphed
-  // tentacle slam; while it lives `state.exitLocked` holds the stairs shut, and
-  // its death blooms the exit PORTAL. Scales its HP by tier via the injected
-  // spawner. Only spawns for the host — a replica renders the streamed king.
-  if (level % BOSS_EVERY === 0 && state.stairs && state.scene && state.player && !isReplica()) {
-    const tier = level / BOSS_EVERY; // 1 at L5, 2 at L10, …
-    const bhp = BOSS_BASE_HP + BOSS_HP_PER_TIER * (tier - 1) * 3; // king is meatier than the old overlord
+  // ── EVERY floor's exit is boss-gated: the REAPER KING guards the stairs ──
+  // (Live QA ask: "a boss at the end to get to the next level, even solo".)
+  // The king (boss.ts) is a killable reaper-art brute with an orbiting skull
+  // ring + a telegraphed tentacle slam; while it lives `state.exitLocked` holds
+  // the stairs shut, and its death blooms the exit PORTAL. HP scales with the
+  // floor; every BOSS_EVERY-th floor is a MEGA king at double HP. Only spawns
+  // for the floor authority — a replica renders the streamed king.
+  if (state.stairs && state.scene && state.player && !isReplica()) {
+    const mega = level % BOSS_EVERY === 0;
+    const bhp = Math.round((KING_HP_BASE + KING_HP_PER_FLOOR * (level - 1)) * (mega ? 2 : 1));
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
     const speed = cfg.zombieSpeed * BOSS_SPEED_FACTOR;
-    spawnBoss(grid, spot, (x, z, hp) => {
-      const b = makeZombie(reaperSheet(), x, z, speed, { kind: "brute", hp: hp || bhp, boss: true, maxHp: hp || bhp });
+    spawnBoss(grid, spot, bhp, (x, z, hp) => {
+      const b = makeZombie(reaperSheet(), x, z, speed, { kind: "brute", hp, boss: true, maxHp: hp });
       state.zombies.push(b);
       return b;
     });
@@ -1590,11 +1593,11 @@ function startLevel(level: number): void {
   // Seed-deterministic (floor rng) so every co-op client builds the same packs.
   {
     const spineParts = plan.parts.filter((pt) => pt.spine);
-    const packCap = Math.min(26, Math.ceil(state.zombies.length * 0.45));
+    const packCap = Math.min(38, Math.ceil(state.zombies.length * 0.6));
     let packAdded = 0;
     for (const pt of spineParts) {
       if (packAdded >= packCap) break;
-      if (rng() > 0.5) continue;
+      if (rng() > 0.65) continue;
       const packSize = 2 + Math.floor(rng() * 2);
       for (let n = 0; n < packSize && packAdded < packCap; n++) {
         const spot = nearestOpenTile(grid, pt.i, pt.j, 1 + Math.floor(rng() * 5), 2);
@@ -1602,6 +1605,18 @@ function startLevel(level: number): void {
         const c = tileCenter(grid, spot.i, spot.j);
         state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
         packAdded++;
+      }
+    }
+    // Plaza packs: the polish pass stamped bumper diamonds into big empty
+    // rooms and reported their centres — garrison each one (3-4 enemies), so
+    // a plaza is a bounce-pattern ARENA, never dead space.
+    for (const pz of plan.plazas) {
+      const packSize = 3 + Math.floor(rng() * 2);
+      for (let n = 0; n < packSize; n++) {
+        const spot = nearestOpenTile(grid, pz.i, pz.j, 1 + Math.floor(rng() * 5), 1);
+        if (!spot) continue;
+        const c = tileCenter(grid, spot.i, spot.j);
+        state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
       }
     }
   }

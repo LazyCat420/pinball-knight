@@ -141,6 +141,9 @@ export interface LevelPlan {
   rooms: PlannedRoom[];
   /** Top-left tile of every 2×2 CRACKED band (see crackSecretWalls/secrets.ts). */
   secrets: TilePos[];
+  /** Centres of large open plazas that got a bumper-diamond pattern stamped —
+   * core spawns ARPG monster packs here so big rooms are never empty. */
+  plazas: TilePos[];
   /** The Oracle Frog's dead-end perch, if this floor drew one. */
   frog: TilePos | null;
   /** Half-circle bumper courts — semicircle wall structures rendered as smooth
@@ -1161,7 +1164,14 @@ function layStationSpine(
     const stride = Math.max(MIN_STRIDE, Math.min(MAX_STRIDE, Math.ceil((end - k) / 4)));
     for (let t = k; t < end; t += stride) {
       const p = spine[t];
-      if (placeable(p)) parts.push({ kind: "booster", i: p.i, j: p.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, spine: true });
+      // RUNWAY GUARD (live QA: "boosters boost into a wall"). A pad one tile
+      // before the bend fires you PAST the bend tile into the corner wall —
+      // the old "always points at the next spine tile" argument only proved
+      // ONE open tile. Require 2+ so the worst case is a bounce, not a splat;
+      // the bend station below owns the actual redirect.
+      if (placeable(p) && launchRunway(g, p.i, p.j, di, dj) >= 2) {
+        parts.push({ kind: "booster", i: p.i, j: p.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, spine: true });
+      }
     }
     // The station where the run DELIVERS you (the bend), if any tile follows.
     if (end < n - 1) {
@@ -1173,14 +1183,95 @@ function layStationSpine(
           // A clean corner → a deflector banks incoming→outgoing (speed intact).
           // Legs match classifyTopology: where you came FROM (-in) and GO (+out).
           parts.push({ kind: "deflector", i: bend.i, j: bend.j, dirI: -di, dirJ: -dj, dir2I: odi, dir2J: odj, spine: true });
+        } else if ((odi !== di || odj !== dj) && launchRunway(g, bend.i, bend.j, odi, odj) >= 2) {
+          // A wide bend → CURVE CARRY: a pad aimed down the OUTGOING leg, so the
+          // route arcs around the corner instead of dying on a bumper (live QA:
+          // bends were where momentum went to die). Reads as a curved lane.
+          parts.push({ kind: "booster", i: bend.i, j: bend.j, dirI: odi, dirJ: odj, dir2I: 0, dir2J: 0, spine: true });
         } else {
-          // A wide crossing → a bumper to carom off, still on the route.
+          // No outgoing runway (or a straight crossing) → a bumper to carom off.
           parts.push({ kind: "bumper", i: bend.i, j: bend.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, spine: true });
         }
       }
     }
     k = end;
   }
+}
+
+/**
+ * POLISH PASS — placement pathologies live QA actually hit, fixed as one sweep
+ * over the finished part list (after A1 so its re-aims are covered too):
+ *
+ *  1. OPPOSING LAUNCHERS: two directional parts on one clear line firing at
+ *     each other are a physical feedback loop you can't steer out of. The
+ *     later/non-spine one is DROPPED (never re-aimed — a re-aim here could
+ *     recreate the A1 wall-shot this pass runs after).
+ *  2. BUMPER CLUMPS: 3-4 bumpers on adjacent tiles read as a blob and play as
+ *     one wall. Enforce pairwise Chebyshev ≥ 3 between bumpers (spine bends
+ *     kept preferentially) so what remains is a PATTERN you bounce BETWEEN.
+ *  3. EMPTY PLAZAS: big open rooms with no machine in them. Every ~5×5
+ *     fully-open block with no parts nearby gets a bumper DIAMOND (four
+ *     bumpers on a ring, 2 tiles out) — a reusable bounce pattern, and core
+ *     drops a monster pack on the same centres (returned as `plazas`).
+ */
+function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number): TilePos[] {
+  const isLauncher = (p: PinballPartSpot): boolean =>
+    (p.dirI !== 0 || p.dirJ !== 0) && p.kind !== "deflector" && !p.vault;
+
+  // ── 1. Opposing launchers on a clear line ──
+  const drop = new Set<PinballPartSpot>();
+  for (let a = 0; a < parts.length; a++) {
+    const A = parts[a];
+    if (drop.has(A) || !isLauncher(A)) continue;
+    for (let step = 1; step <= 10; step++) {
+      const ti = A.i + A.dirI * step;
+      const tj = A.j + A.dirJ * step;
+      if (at(g, ti, tj) !== T_FLOOR) break; // wall closes the line — no loop possible
+      const B = parts.find((q) => q.i === ti && q.j === tj && !drop.has(q) && isLauncher(q));
+      if (!B) continue;
+      if (B.dirI === -A.dirI && B.dirJ === -A.dirJ) {
+        // Facing pair with line of sight: kill one. Spine survives (it IS the
+        // route); between two spine parts this cannot happen by construction.
+        drop.add(A.spine && !B.spine ? B : A);
+      }
+      break; // first part on the line settles it either way
+    }
+  }
+
+  // ── 2. Bumper de-clump ── spine bends first so the route keeps its stations.
+  const bumpers = parts.filter((p) => p.kind === "bumper" && !drop.has(p));
+  bumpers.sort((x, y) => Number(y.spine ?? false) - Number(x.spine ?? false));
+  const kept: PinballPartSpot[] = [];
+  for (const b of bumpers) {
+    if (kept.some((k) => Math.max(Math.abs(k.i - b.i), Math.abs(k.j - b.j)) < 3)) drop.add(b);
+    else kept.push(b);
+  }
+  if (drop.size) {
+    for (let i = parts.length - 1; i >= 0; i--) if (drop.has(parts[i])) parts.splice(i, 1);
+  }
+
+  // ── 3. Plaza patterns ──
+  const plazas: TilePos[] = [];
+  const candidates: TilePos[] = [];
+  for (let cj = 3; cj < g.h - 3; cj += 4) {
+    for (let ci = 3; ci < g.w - 3; ci += 4) {
+      let open = 0;
+      for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (at(g, ci + di, cj + dj) === T_FLOOR) open++;
+      if (open < 25) continue; // not a true plaza — some wall inside the window
+      if (parts.some((p) => Math.max(Math.abs(p.i - ci), Math.abs(p.j - cj)) <= 3)) continue;
+      candidates.push({ i: ci, j: cj });
+    }
+  }
+  for (const c of shuffled(candidates, rng).slice(0, 8)) {
+    // Re-check spacing — an earlier stamp this loop may now be the neighbour.
+    if (parts.some((p) => Math.max(Math.abs(p.i - c.i), Math.abs(p.j - c.j)) <= 3)) continue;
+    for (const [di, dj] of [[2, 0], [-2, 0], [0, 2], [0, -2]] as const) {
+      if (at(g, c.i + di, c.j + dj) !== T_FLOOR) continue;
+      parts.push({ kind: "bumper", i: c.i + di, j: c.j + dj, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 });
+    }
+    plazas.push(c);
+  }
+  return plazas;
 }
 
 export function decorateMaze(
@@ -1803,6 +1894,7 @@ export function decorateMaze(
   // all parts + torches so it can avoid furnished walls, and BEFORE the secrets
   // scan below so its new bands are collected like any other crack. ──
   openLaunchTargets(g, parts, torches, rng, extras.launchBreaks ?? 6);
+  const plazas = polishParts(g, parts, rng);
 
   // ── Secrets: collect every CRACKED band stamped by crackSecretWalls. After
   // thickenWalls a raw crack is a 2×2 band whose top-left tile has even coords
@@ -1824,5 +1916,5 @@ export function decorateMaze(
   // changes walkability, so AI/flow-field/spawns are unaffected. ──
   assignCornerShapes(g);
 
-  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts };
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts, plazas };
 }
