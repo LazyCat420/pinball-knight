@@ -89,8 +89,15 @@ function pulseRadius(t: number): number {
 /** Launch a pulse shockwave at (x,z) — split out so tests can drive it silently. */
 export function spawnPulseWave(x: number, z: number): void {
   pulseWaves.push({ x, z, t: 0, hit: new Set() });
+  // Three rings sell the sonar ping: a hot white core, an arcane-blue chaser,
+  // a slow faint echo — plus an immediate radial burst so the CAST itself pops.
+  // Colours are PALETTE-NATIVE arcane blues: the composite pass quantizes to
+  // the 32-colour palette, and off-palette purple (0x8800ff) snapped to blood
+  // red — the "red circle" bug.
   state.vfx?.ring(x, z, 0xffffff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR);
-  state.vfx?.ring(x, z, 0x8800ff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, PULSE_RING_LAG);
+  state.vfx?.ring(x, z, 0x6fd0e8, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, PULSE_RING_LAG);
+  state.vfx?.ring(x, z, 0x2e6d8f, ARCANE_PULSE_RADIUS * 0.8, PULSE_WAVE_DUR * 1.6, PULSE_RING_LAG * 2.5);
+  state.vfx?.burst(x, 0.5, z, 0x6fd0e8, 18, 5);
 }
 
 function tickPulseWaves(dt: number): void {
@@ -116,7 +123,7 @@ function tickPulseWaves(dt: number): void {
       // The rim arrives: impact pops evenly around the circumference.
       for (let k = 0; k < PULSE_RIM_BURSTS; k++) {
         const a = (k / PULSE_RIM_BURSTS) * Math.PI * 2;
-        state.vfx?.burst(w.x + Math.cos(a) * ARCANE_PULSE_RADIUS, 0.25, w.z + Math.sin(a) * ARCANE_PULSE_RADIUS, 0x8800ff, 6, 2.2);
+        state.vfx?.burst(w.x + Math.cos(a) * ARCANE_PULSE_RADIUS, 0.25, w.z + Math.sin(a) * ARCANE_PULSE_RADIUS, 0x6fd0e8, 6, 2.2);
       }
       pulseWaves.splice(i, 1);
     }
@@ -265,6 +272,7 @@ export function tickAbilities(dt: number): void {
         trailIx = ix;
         trailIz = iz;
         spawnFloorFx("fire", p.x, p.z, FLIPPER_TRAIL_RADIUS, FLIPPER_TRAIL_LIFE);
+        state.vfx?.burst(p.x, 0.3, p.z, 0xf0a63c, 6, 2); // the tile CATCHES behind the ride
       }
     } else if (p.momSpeed <= 0.01) {
       p.fireTrailT = 0; // the ride ended — the fire goes with it

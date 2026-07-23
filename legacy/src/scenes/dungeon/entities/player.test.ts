@@ -226,15 +226,16 @@ describe("the dodge-roll is a momentum move", () => {
   });
 });
 
-describe("sprint ramp (the 3-second spool-up)", () => {
+describe("sprint ramp (the quick spool-up)", () => {
   it("reaches full charge in ~SPRINT_RAMP_TIME and gates the wall-ride at halfway", () => {
     // Charge integrates dt/RAMP each frame; after RAMP_TIME of holding it's full.
     let c = 0;
     const dt = 1 / 60;
     for (let t = 0; t < SPRINT_RAMP_TIME; t += dt) c = Math.min(1, c + dt / SPRINT_RAMP_TIME);
     expect(c).toBeCloseTo(1, 2);
-    // The 3s ask, and the >50% ride gate reached at ~half the ramp.
-    expect(SPRINT_RAMP_TIME).toBeCloseTo(3, 5);
+    // Playtest 07-23: the original 3s spool read as "shift does nothing" — the
+    // ramp is now 1.5s. Keep it SHORT (≤2s) and the ride gate at halfway.
+    expect(SPRINT_RAMP_TIME).toBeLessThanOrEqual(2);
     expect(SPRINT_RIDE_THRESHOLD).toBe(0.5);
   });
 

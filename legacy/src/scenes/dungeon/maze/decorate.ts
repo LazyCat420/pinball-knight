@@ -924,8 +924,10 @@ function furnishRooms(
  */
 function assignCornerShapes(g: Grid): void {
   const cand = new Int8Array(g.w * g.h).fill(-1); // -1 = none, else the TileShape
-  // Mix: ~half the corners curve, the rest bevel — deterministic by position.
-  const styled = (slant: TileShape, i: number, j: number): TileShape => ((i * 3 + j * 5) % 2 === 0 ? slantToRound(slant) : slant);
+  // Mix: ~3/4 of the corners CURVE, the rest bevel — deterministic by position.
+  // (Was 50/50; playtest 07-23 read the maze as "still all boxes", so rounds
+  // now dominate and the bevels are the accent.)
+  const styled = (slant: TileShape, i: number, j: number): TileShape => ((i * 3 + j * 5) % 4 !== 1 ? slantToRound(slant) : slant);
   const put = (i: number, j: number, shape: TileShape): void => {
     if (i > 0 && j > 0 && i < g.w - 1 && j < g.h - 1 && at(g, i, j) === T_WALL) cand[idx(g, i, j)] = shape;
   };

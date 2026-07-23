@@ -851,7 +851,7 @@ export const state = {
   /** Ranks taken per skill node (skills.ts SKILLS). */
   skillRanks: {} as Record<string, number>,
   /** Abilities available to the Q/E slots — defaults + tree unlocks. */
-  unlockedAbilities: ["flippercharge", "arcanepulse"] as AbilityId[],
+  unlockedAbilities: ["flippercharge", "arcanepulse", "slickfield"] as AbilityId[],
   /** Per-ability cooldown remaining (seconds). */
   abilityCd: {} as Record<AbilityId, number>,
   /** Time Crawl: while > 0 the horde's dt is scaled down (slow-mo enemies). */
@@ -1042,7 +1042,7 @@ export function resetState(): void {
   state.charLevel = 1;
   state.skillPoints = 0;
   state.skillRanks = {};
-  state.unlockedAbilities = ["flippercharge", "arcanepulse"];
+  state.unlockedAbilities = ["flippercharge", "arcanepulse", "slickfield"];
   state.abilityCd = {} as Record<AbilityId, number>;
   state.slowT = 0;
   state.flashT = 0;

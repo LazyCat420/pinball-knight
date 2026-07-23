@@ -11,7 +11,7 @@
  * Attack numbers come from whatever weapon is currently in the active slot;
  * boots come from the gear slots.
  */
-import { state, activeWeapon } from "../state";
+import { state, activeWeapon, type Player } from "../state";
 import { skillAgg } from "../skill-runtime";
 import {
   PLAYER_SPEED,
@@ -54,6 +54,10 @@ import {
   LANE_PROBE_MAX,
   PINBALL_STEER,
   PINBALL_EXIT_MULT,
+  POCKET_RADIUS,
+  POCKET_BOUNCES,
+  POCKET_DAMP,
+  POCKET_WINDOW,
   BALL_SPEED_MULT,
   FRENZY_BALL_SPEED_MULT,
   BALL_RAM_COOLDOWN,
@@ -1027,6 +1031,29 @@ function wallClearance(g: Grid, x: number, z: number, dirX: number, dirZ: number
  * back. At FULL overcharge he's a BALL: faster, and he RAMS zombies on contact.
  * A dodge tap bails out instantly (handled in updatePlayer before this runs).
  */
+// ── Pocket-rattle guard ── bounce-cluster tracker (see POCKET_* constants):
+// several bounces inside one small anchor circle within a rolling window means
+// the ball is rattling in a dead-end gap; each further rattle bleeds momentum
+// hard so the exit threshold arrives in a few hits and control returns.
+let pocketAX = 0;
+let pocketAZ = 0;
+let pocketN = 0;
+let pocketT = 0;
+function notePocketBounce(p: Player): void {
+  if (pocketT > 0 && Math.hypot(p.x - pocketAX, p.z - pocketAZ) < POCKET_RADIUS) {
+    pocketN++;
+    if (pocketN > POCKET_BOUNCES) {
+      p.momSpeed *= POCKET_DAMP;
+      state.vfx?.dust(p.x, 0.15, p.z); // scrubbing off speed reads as dust, not a bug
+    }
+  } else {
+    pocketAX = p.x;
+    pocketAZ = p.z;
+    pocketN = 1;
+  }
+  pocketT = POCKET_WINDOW;
+}
+
 function updatePinball(dt: number, input: InputHandle): boolean {
   const p = state.player;
   const g = state.grid;
@@ -1164,6 +1191,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
   }
 
+  pocketT = Math.max(0, pocketT - dt);
+
   if (res.hitN) {
     // SLANT WALL: a shaped tile was struck — the collider pushed us off its
     // diagonal and handed back the exact face NORMAL. Reflect the momentum
@@ -1182,6 +1211,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
       p.bounceCombo += 1;
       p.bounceComboT = comboWindow(p.bounceCombo);
+      notePocketBounce(p);
       state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
       state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
       state.hitstopT = Math.max(state.hitstopT, 0.02);
@@ -1245,6 +1275,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
     p.bounceCombo += 1;
     p.bounceComboT = comboWindow(p.bounceCombo);
+    notePocketBounce(p);
     // Bounce juice scales with the combo — a corner hit throws a bigger burst.
     const n = currentWallNormal();
     const sx = n ? n.nx : -p.momX;
@@ -1530,7 +1561,11 @@ export function updatePlayer(dt: number, input: InputHandle): void {
         state.flashT = FINISHER_FLASH_T;
         state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.18, 0.9);
         const [ffx, ffz] = FACING_VEC[p.facing];
-        for (const yo of [0.3, 0.7, 1.1]) state.vfx?.slash(p.x + ffx * 0.7, yo, p.z + ffz * 0.7, p.facing, 0xffffff);
+        let cutRoll = -0.14;
+        for (const yo of [0.3, 0.7, 1.1]) {
+          state.vfx?.slash(p.x + ffx * 0.7, yo, p.z + ffz * 0.7, p.facing, 0xffffff, { roll: cutRoll, scale: 1.35, life: 0.22 });
+          cutRoll += 0.14;
+        }
         state.vfx?.burst(p.x + ffx, 0.6, p.z + ffz, 0xff6600, 20, 4.5);
         state.shakeT = Math.max(state.shakeT, 0.25);
       }
@@ -1816,13 +1851,16 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
   }
 
   const move = p.comboStep === 0 ? LIGHT_1 : p.comboStep === 1 ? LIGHT_2 : COMBO_FINISH;
-  const nextStep = Math.min(2, p.comboStep + 1);
+  // After the finisher the chain RESTARTS at light-1 — mashing reads as a
+  // 1-2-3 … 1-2-3 rhythm instead of finisher spam.
+  const nextStep = p.comboStep >= 2 ? 0 : p.comboStep + 1;
   startMelee(move, nextStep, "light");
 }
 
 /** Begin a melee swing: set the move timeline, combo step, play the clip + fx/sfx. */
 function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"): void {
   const p = state.player;
+  const g = state.grid;
   if (!p) return;
   p.move = move;
   p.comboStep = comboStep;
@@ -1830,15 +1868,49 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   p.didHit = false;
   p.comboWindowT = 0;
   p.cooldown = 0; // the move's own recovery gates the next swing now
-  p.anim.setRate(1); // never inherit the run gait's ramped rate
+  // The chain SPEEDS UP: each step plays its clip faster (the timings in
+  // constants shorten to match), so mashing visibly accelerates into the
+  // finisher instead of three identical beats.
+  const rate = move === LIGHT_2 ? 1.18 : move === COMBO_FINISH ? 1.35 : 1;
+  p.anim.setRate(rate); // never inherit the run gait's ramped rate
   p.anim.play("attack", { force: true });
   if (kind === "heavy") sfxHeavy();
   else sfxSwing();
-  // Slash crescent swept in the facing direction; a heavy/finisher throws a
-  // bigger, weapon-tinted arc.
-  const w = WEAPONS[activeWeapon().id];
+
+  // A short forward STEP into every swing (deeper into the chain, further) —
+  // wall-aware, so combos push the fight forward instead of fencing in place.
   const [fx, fz] = FACING_VEC[p.facing];
-  const scale = move === HEAVY ? 1.5 : move === COMBO_FINISH ? 1.3 : 1;
-  state.vfx?.slash(p.x + fx * 0.5 * scale, 0.6, p.z + fz * 0.5 * scale, p.facing, w.slashColor ?? 0xdfe7f2);
+  const lunge = move === COMBO_FINISH ? 0.45 : move === LIGHT_2 ? 0.22 : move === HEAVY ? 0.1 : 0.14;
+  if (g && lunge > 0) {
+    const res = moveCircle(g, p.x, p.z, PLAYER_R, fx * lunge, fz * lunge);
+    p.x = res.x;
+    p.z = res.z;
+    syncActorMesh(p);
+  }
+
+  // ── Per-step slash language ── every hit of the chain LOOKS different:
+  //   light-1: the classic crescent, weapon-tinted
+  //   light-2: an X — two crossed cuts (down-swing + mirrored up-swing)
+  //   finisher: a huge white draw-cut + a mirrored orange echo (the katana
+  //             tell fires on the SWING, whiff or not; the flash/triple-cut
+  //             payoff still lands on connect in the timeline above)
+  //   heavy:   one oversized weapon-colour cleave
+  const w = WEAPONS[activeWeapon().id];
+  const wc = w.slashColor ?? 0xdfe7f2;
+  const sx = p.x + fx * 0.5;
+  const sz = p.z + fz * 0.5;
+  if (move === LIGHT_2) {
+    state.vfx?.slash(sx, 0.6, sz, p.facing, wc, { roll: 0.45, scale: 1.15 });
+    state.vfx?.slash(sx, 0.6, sz, p.facing, 0xffa54a, { roll: -0.45, scale: 1.15, mirror: true });
+  } else if (move === COMBO_FINISH) {
+    state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xffffff, { scale: 1.7, life: 0.2 });
+    state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xff8800, { scale: 1.45, mirror: true, life: 0.17 });
+    state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.16, 0.55); // the wind-up blur
+    state.shakeT = Math.max(state.shakeT, 0.12);
+  } else if (move === HEAVY) {
+    state.vfx?.slash(p.x + fx * 0.75, 0.6, p.z + fz * 0.75, p.facing, wc, { scale: 1.6 });
+  } else {
+    state.vfx?.slash(sx, 0.6, sz, p.facing, wc);
+  }
 }
 

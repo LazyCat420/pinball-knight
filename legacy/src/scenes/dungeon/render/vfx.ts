@@ -205,7 +205,7 @@ class ParticlePool {
  * Billboarded to the fixed iso camera (like the actor sprites) and rolled in
  * screen space to point along the facing.
  */
-const SLASH_COUNT = 6;
+const SLASH_COUNT = 10; // combo steps stack cuts (X-cut + finisher volley overlap)
 /** Screen-plane roll (rotation.z, applied first under YXZ) per facing. */
 const SLASH_ROLL: Record<string, number> = {
   E: 0,
@@ -236,11 +236,25 @@ function slashTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** Per-spawn slash styling — how the combo steps stop looking identical. */
+export interface SlashOpts {
+  /** Extra screen-plane roll (radians) on top of the facing's base roll. */
+  roll?: number;
+  /** Size multiplier (1 = the classic crescent). */
+  scale?: number;
+  /** Flip the crescent across the swing line — an UP-swing vs a down-swing. */
+  mirror?: boolean;
+  /** Seconds visible (default 0.14; finisher cuts hang a touch longer). */
+  life?: number;
+}
+
 class SlashPool {
   readonly group: THREE.Group;
   private meshes: THREE.Mesh[] = [];
   private life: number[] = [];
   private maxLife: number[] = [];
+  private scale0: number[] = [];
+  private mirror: boolean[] = [];
   private tex: THREE.CanvasTexture;
   private geo: THREE.PlaneGeometry;
   private cursor = 0;
@@ -265,22 +279,26 @@ class SlashPool {
       this.meshes.push(m);
       this.life.push(0);
       this.maxLife.push(0);
+      this.scale0.push(1);
+      this.mirror.push(false);
       this.group.add(m);
     }
   }
 
-  spawn(x: number, y: number, z: number, facing: string, color: number): void {
+  spawn(x: number, y: number, z: number, facing: string, color: number, opts: SlashOpts = {}): void {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % SLASH_COUNT;
     const m = this.meshes[i];
     m.position.set(x, y, z);
-    m.rotation.z = SLASH_ROLL[facing] ?? 0;
+    m.rotation.z = (SLASH_ROLL[facing] ?? 0) + (opts.roll ?? 0);
     m.rotation.y = CAMERA_YAW;
     m.rotation.x = -CAMERA_TILT;
     (m.material as THREE.MeshBasicMaterial).color.setHex(color);
     m.visible = true;
-    this.life[i] = 0.14;
-    this.maxLife[i] = 0.14;
+    this.life[i] = opts.life ?? 0.14;
+    this.maxLife[i] = this.life[i];
+    this.scale0[i] = opts.scale ?? 1;
+    this.mirror[i] = opts.mirror ?? false;
   }
 
   update(dt: number): void {
@@ -293,8 +311,8 @@ class SlashPool {
         continue;
       }
       const t = this.life[i] / this.maxLife[i]; // 1 → 0
-      const scale = 1.4 - 0.5 * t; // grows as it fades
-      m.scale.setScalar(scale);
+      const scale = (1.4 - 0.5 * t) * this.scale0[i]; // grows as it fades
+      m.scale.set(scale, this.mirror[i] ? -scale : scale, scale);
       (m.material as THREE.MeshBasicMaterial).opacity = t;
     }
   }
@@ -412,8 +430,8 @@ class BoltPool {
  * a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the rim.
  * Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
  */
-const RING_COUNT = 4; // overlapping rings are rare (a cast is 2)
-const RING_INNER = 0.86; // unit-ring inner radius → thin band that scales up
+const RING_COUNT = 6; // a cast is 3 (core + chaser + echo); two casts can overlap
+const RING_INNER = 0.78; // unit-ring inner radius → a FAT band that scales up
 
 class RingPool {
   readonly group: THREE.Group;
@@ -508,8 +526,9 @@ export interface VfxSystem {
    * burst glows. Use for transformations, elemental pops, material emissions.
    */
   burst(x: number, y: number, z: number, color: number, count?: number, speed?: number): void;
-  /** A melee slash crescent in the facing direction. */
-  slash(x: number, y: number, z: number, facing: string, color: number): void;
+  /** A melee slash crescent in the facing direction. `opts` restyles it per
+   *  combo step (roll/scale/mirror/life) — see SlashOpts. */
+  slash(x: number, y: number, z: number, facing: string, color: number, opts?: SlashOpts): void;
   /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
   bolt(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void;
   /**
@@ -631,8 +650,8 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
         );
       }
     },
-    slash(x, y, z, facing, color) {
-      slashes.spawn(x, y, z, facing, color);
+    slash(x, y, z, facing, color, opts) {
+      slashes.spawn(x, y, z, facing, color, opts);
     },
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);

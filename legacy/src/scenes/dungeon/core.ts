@@ -67,7 +67,7 @@ import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemSh
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
-import { castAbility, tickAbilities } from "./abilities";
+import { castAbility, tickAbilities, ABILITIES, type AbilityId } from "./abilities";
 import { spawnMultiBall, updateMultiBall } from "./entities/multiball";
 import {
   levelConfig,
@@ -461,9 +461,20 @@ export function launchDungeonGame(onExit?: () => void): void {
       hostileGlobs: state.projectiles.filter((pr) => pr.hostile).length,
       enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp })),
       playerHp: state.player?.hp,
+      floorFx: state.floorFx.map((f) => f.kind),
     });
     // Dev: force a weapon into the active slot (QA the bow/gun/etc. without hunting
     // for a pickup). `__dungeonGive('bow')`.
+    // Dev: bind any ability to a Q/E slot (QA a skill without the tree grind).
+    // `__dungeonAbility(1, 'slickfield')`.
+    (window as unknown as { __dungeonAbility?: (slot: number, id: string) => boolean }).__dungeonAbility = (slot: number, id: string) => {
+      if (!(id in ABILITIES) || (slot !== 0 && slot !== 1)) return false;
+      const aid = id as AbilityId;
+      if (!state.unlockedAbilities.includes(aid)) state.unlockedAbilities.push(aid);
+      state.abilitySlots[slot] = aid;
+      state.hudDirty = true;
+      return true;
+    };
     (window as unknown as { __dungeonGive?: (id: string) => boolean }).__dungeonGive = (id: string) => {
       if (!(id in WEAPONS)) return false;
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);

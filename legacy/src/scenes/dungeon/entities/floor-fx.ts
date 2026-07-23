@@ -39,6 +39,7 @@ const FLOOR_Y = 0.03; // just above the floor plane
 // Shared GPU assets per kind (a unit disc scaled per-instance), torn down on teardown.
 let _discGeo: THREE.CircleGeometry | null = null;
 const _mats: Partial<Record<FloorFxKind, THREE.MeshBasicMaterial>> = {};
+const _texs: Partial<Record<FloorFxKind, THREE.CanvasTexture>> = {};
 
 const KIND_COLOR: Record<FloorFxKind, number> = {
   slick: PALETTE_HEX[30], // arcane mid (wet blue)
@@ -51,13 +52,89 @@ function discGeo(): THREE.CircleGeometry {
   _discGeo ??= new THREE.CircleGeometry(1, 20); // unit radius, scaled per fx
   return _discGeo;
 }
+
+/**
+ * Painted looks for the two kinds that must READ from across the room. A flat
+ * tinted disc worked for water but made fire look like an orange coaster and
+ * oil vanish into dark stone — these canvases give each a real identity:
+ *   fire — white-hot core → orange → deep-red ragged edge (additive, blooms)
+ *   oil  — near-black pool with a bright iridescent RIM + thin sheen arcs
+ */
+function paintKindTexture(kind: "fire" | "oil"): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null; // headless tests — flat tint
+  const s = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = s;
+  canvas.height = s;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const cx = s / 2;
+  if (kind === "fire") {
+    // Ragged blob edge: overlapping mid-orange circles around the rim…
+    ctx.fillStyle = "#d97b29";
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const r = s * (0.3 + Math.random() * 0.08);
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * r * 0.55, cx + Math.sin(a) * r * 0.55, s * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // …then the hot radial core stacked on top.
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "#fff3c8");
+    g.addColorStop(0.25, "#ffd98a");
+    g.addColorStop(0.55, "#f0a63c");
+    g.addColorStop(0.85, "rgba(122,59,18,0.6)");
+    g.addColorStop(1, "rgba(122,59,18,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+  } else {
+    // Oil: a dark pool whose RIM catches the light, plus thin sheen arcs.
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(6,8,16,0.95)");
+    g.addColorStop(0.72, "rgba(15,20,40,0.95)");
+    g.addColorStop(0.9, "#2e6d8f");
+    g.addColorStop(0.97, "#6fd0e8");
+    g.addColorStop(1, "rgba(111,208,232,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      // Iridescent swirls — alternating petrol blue/purple partial arcs.
+      ctx.strokeStyle = i % 2 ? "rgba(111,208,232,0.5)" : "rgba(138,95,208,0.5)";
+      const r = s * (0.12 + i * 0.07);
+      const a0 = Math.random() * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cx, r, a0, a0 + Math.PI * (0.6 + Math.random() * 0.8));
+      ctx.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 function matFor(kind: FloorFxKind): THREE.MeshBasicMaterial {
-  _mats[kind] ??= new THREE.MeshBasicMaterial({
-    color: KIND_COLOR[kind],
-    transparent: true,
-    opacity: 0.4,
-    depthWrite: false,
-  });
+  if (!_mats[kind]) {
+    const tex = kind === "fire" || kind === "oil" ? (_texs[kind] ??= paintKindTexture(kind) ?? undefined) : undefined;
+    _mats[kind] = tex
+      ? new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          opacity: 0.4,
+          depthWrite: false,
+          // Fire ADDS light (bloom feeds on the white core); oil sits on the scene.
+          blending: kind === "fire" ? THREE.AdditiveBlending : THREE.NormalBlending,
+        })
+      : new THREE.MeshBasicMaterial({
+          color: KIND_COLOR[kind],
+          transparent: true,
+          opacity: 0.4,
+          depthWrite: false,
+        });
+  }
   return _mats[kind]!;
 }
 
@@ -67,6 +144,10 @@ export function disposeFloorFxAssets(): void {
   for (const k of Object.keys(_mats) as FloorFxKind[]) {
     _mats[k]?.dispose();
     delete _mats[k];
+  }
+  for (const k of Object.keys(_texs) as FloorFxKind[]) {
+    _texs[k]?.dispose();
+    delete _texs[k];
   }
 }
 
@@ -124,23 +205,36 @@ export function updateFloorFx(dt: number): void {
     const age = fx.maxLife - fx.life;
     const frac = fx.life / fx.maxLife;
     const grow = age < 0.18 ? 0.35 + (age / 0.18) * 0.75 : 1.1 - Math.min(0.1, (age - 0.18) * 0.5);
-    const pulse = 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
+    // Fire FLICKERS (fast, deep pulse); liquids breathe slowly.
+    const pulse = fx.kind === "fire"
+      ? 1 + Math.sin(age * 13 + fx.x * 3.1 + fx.z * 1.7) * 0.12
+      : 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
     const fade = Math.min(1, frac * 3); // back third: shrink with the fade
     fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
     if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
     else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
-    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = (fx.kind === "oil" ? 0.6 : 0.45) * fade;
+    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = (fx.kind === "oil" ? 0.75 : fx.kind === "fire" ? 0.85 : 0.45) * fade;
 
-    // ── Ambient emission ── fire breathes rising embers; slick shimmers with a
-    // drifting mote now and then. Cheap (1 particle per tick), reads great.
-    if (ticked && state.vfx) {
+    // ── Ambient emission ── FIRE actually burns: a steady per-frame stream of
+    // rising embers plus the odd upward spark burst, scaled by pool size so a
+    // big ignited slick roars while a trail tile crackles. Liquids shimmer.
+    if (state.vfx) {
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * fx.radius * 0.8;
       const ex = fx.x + Math.cos(a) * r;
       const ez = fx.z + Math.sin(a) * r;
-      if (fx.kind === "fire") state.vfx.ember(ex, 0.08, ez);
-      else if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
-      else if (fx.kind === "oil" && Math.random() < 0.4) state.vfx.mote(ex, 0.08, ez); // iridescent glints
+      if (fx.kind === "fire") {
+        const density = Math.min(3, 0.8 + fx.radius); // embers/frame odds, by size
+        if (Math.random() < dt * 60 * 0.35 * density) state.vfx.ember(ex, 0.1, ez);
+        if (Math.random() < dt * 60 * 0.12 * density) state.vfx.ember(fx.x, 0.35, fx.z); // inner tongue, higher
+        if (Math.random() < dt * 2.2) state.vfx.sparks(ex, 0.15, ez, 0, 0.6, 2); // crackle pop
+      } else if (ticked) {
+        if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
+        else if (fx.kind === "oil") {
+          state.vfx.mote(ex, 0.08, ez); // iridescent glints, every tick
+          if (Math.random() < 0.3) state.vfx.burst(ex, 0.12, ez, 0x6fd0e8, 2, 0.7);
+        }
+      }
     }
 
     // ── Enemy overlap ── (skipped for hostile enemy hazards — those hunt YOU)

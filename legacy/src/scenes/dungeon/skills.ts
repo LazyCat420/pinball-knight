@@ -72,7 +72,6 @@ export const SKILLS: Record<SkillId, SkillNodeDef> = {
   unlockmagnet: { id: "unlockmagnet", label: "Magnet Aura", icon: "🧲", branch: "arcana", row: 1, maxRank: 1, cost: 1, requires: ["manawell"], description: "unlock the Magnet Aura ability", modifier: { unlockAbility: "magnetaura" } },
   unlocktimecrawl: { id: "unlocktimecrawl", label: "Time Crawl", icon: "⏳", branch: "arcana", row: 2, maxRank: 1, cost: 2, requires: ["unlockmagnet"], description: "unlock the Time Crawl ability", modifier: { unlockAbility: "timecrawl" } },
   unlockbladestorm: { id: "unlockbladestorm", label: "Blade Storm", icon: "🌪️", branch: "arcana", row: 2, maxRank: 1, cost: 2, requires: ["swiftcasting"], description: "unlock the Blade Storm ability", modifier: { unlockAbility: "bladestorm" } },
-  unlockslick: { id: "unlockslick", label: "Slick Field", icon: "🛢️", branch: "arcana", row: 2, maxRank: 1, cost: 2, requires: ["unlockmagnet"], description: "unlock the Slick Field ability", modifier: { unlockAbility: "slickfield" } },
 };
 
 export const SKILL_IDS: SkillId[] = Object.keys(SKILLS);

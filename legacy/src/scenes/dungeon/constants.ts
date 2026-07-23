@@ -333,7 +333,7 @@ export const PLAYER_IFRAMES = 0.9;
  * of the way to SPRINT_SPEED_MULT over the 3s ramp. Top gear is dramatic on
  * purpose — the payoff for a sustained run.
  */
-export const SPRINT_BASE_MULT = 1.22; // instant multiplier the moment Shift is held
+export const SPRINT_BASE_MULT = 1.35; // instant multiplier the moment Shift is held
 export const SPRINT_SPEED_MULT = 1.85; // top speed multiplier at full sprint charge
 /**
  * Walk accel/friction stays snappy (press ≈ full WALK speed almost at once) so
@@ -357,7 +357,9 @@ export const MOVE_FRICTION = 42; // units/sec² decel when no input
  * past SPRINT_RIDE_THRESHOLD (halfway up the ramp). Playtest-set to 3s per the
  * "ramp up over 3 seconds to full sprint" request.
  */
-export const SPRINT_RAMP_TIME = 3.0; // seconds of sustained run to reach full sprint
+// Playtest 2026-07-23: 3.0s read as "shift does nothing" — the spool now fills
+// in 1.5s (and the base gear above is meatier), so Shift visibly kicks.
+export const SPRINT_RAMP_TIME = 1.5; // seconds of sustained run to reach full sprint
 export const SPRINT_DECAY_TIME = 0.8; // seconds for the charge to bleed back to 0 when you stop
 /**
  * The charge HOLDS for this long before it starts decaying, so a light swing
@@ -422,8 +424,10 @@ export const OVERCHARGE_DECAY = 1.0; // seconds to bleed overcharge once fully s
  * springs, ramps) — see the PART physics below.
  */
 export const PINBALL_WALL_RESTITUTION = 0.94; // flat wall: keep most speed, gain nothing (real pinball walls are 0.1-0.5; this is already generous)
-export const PINBALL_CORNER_RESTITUTION = 1.12; // corner pocket: multiply up
-export const PINBALL_CORNER_ADD = 1.4; // + a flat kick per corner hit
+// Playtest 2026-07-23: corners pumped speed faster than pockets could bleed it
+// — softened so the ramp is earned over a run, not two ricochets.
+export const PINBALL_CORNER_RESTITUTION = 1.08; // corner pocket: multiply up
+export const PINBALL_CORNER_ADD = 1.0; // + a flat kick per corner hit
 /** Hard ceiling on pinball momentum — chained corners/parts climb to here, then hold. */
 export const PINBALL_MAX_SPEED = 22; // u/s (≈5× walk) — genuinely fast, still steerable
 /** Momentum bleed while NOT bouncing — very gentle so a good line stays fast. */
@@ -444,6 +448,16 @@ export const LANE_CENTER_PULL = 5.0;
 export const LANE_PROBE_MAX = 1.8;
 /** Momentum below this multiple of PLAYER_SPEED exits pinball back to normal control. */
 export const PINBALL_EXIT_MULT = 1.05;
+
+// ── Pocket-rattle guard ── ping-ponging inside a dead-end pocket used to hold
+// (even GROW) speed forever — the ball got stuck rattling in small gaps with
+// the player powerless. If several bounces land inside one small anchor circle
+// within a rolling window, each further rattle bleeds momentum hard so control
+// returns in under a second.
+export const POCKET_RADIUS = 1.4; // world units — "the same small gap"
+export const POCKET_BOUNCES = 5; // clustered bounces tolerated before damping
+export const POCKET_DAMP = 0.62; // momSpeed multiplier per rattle past the limit
+export const POCKET_WINDOW = 1.1; // seconds between bounces that still count as rattling
 /**
  * Seconds without a bounce before the combo counter resets (keep the chain
  * alive). This is the ANCHOR/legacy value; the live window is combo-indexed —
@@ -467,7 +481,7 @@ export const COMBO_CEIL_BASE = 8; // u/s the wall-gain ceiling starts at
 // K 0.25 flattens the early gains, NSAT 80 doubles the bounces needed to
 // approach max — solo speed is now EARNED over a long chain, which is what
 // makes the marble-on-marble ×2 (coop.playerCollisions) read as the jackpot.
-export const COMBO_CEIL_K = 0.25; // log compression (lower = more gradual)
+export const COMBO_CEIL_K = 0.15; // log compression (lower = more gradual; 0.25→0.15 playtest 07-23: ramp too hot)
 export const COMBO_CEIL_NSAT = 80; // bounces to ~95% of PINBALL_MAX_SPEED
 // Part 3 — restitution taper: the first corner is the most exciting, deep
 // corners hold speed but stop gifting it (speed comes from the LINE, not a pop):
@@ -1054,7 +1068,7 @@ export const GOBLIN_SPEED_FACTOR = 1.2;
 export const GOBLIN_KICK_SPEED = 9; // the bounce it hands the player
 export const GOBLIN_KICK_COOLDOWN = 0.6;
 export const GOBLIN_RATIO = 5;
-export const GOBLIN_FROM_LEVEL = 2;
+export const GOBLIN_FROM_LEVEL = 1; // 2→1 playtest 07-23: floor 1 was zombies-only
 /**
  * BOWLING PIN CREW — six 1-HP pins spawned in triangle formation. They don't
  * chase; they're SCENERY THAT SCORES: knock one into the rest and the chain
@@ -1070,7 +1084,7 @@ export const PIN_SLIDE_FROM_HIT = 7; // slide speed a full knockback hit imparts
 export const PIN_STRIKE_WINDOW = 1.6; // seconds for kills to count as one strike
 export const PIN_STRIKE_COUNT = 3;
 export const PIN_STRIKE_GOLD = 12;
-export const PIN_FROM_LEVEL = 2;
+export const PIN_FROM_LEVEL = 1; // 2→1 playtest 07-23: floor 1 was zombies-only
 /**
  * BRICK GOLEM — a wall with a temper. Stationary, blocks a corridor, slams
  * anyone who walks close. It only takes damage from a hit carried at
@@ -1216,12 +1230,14 @@ export interface MoveTiming {
    */
   hitstopMul: number;
 }
+// The chain ACCELERATES: each step is shorter than the last (and player.ts
+// ramps the clip rate to match), so mashing visibly speeds up into the finisher.
 export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
-export const LIGHT_2: MoveTiming = { windup: 0.08, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
+export const LIGHT_2: MoveTiming = { windup: 0.06, active: 0.05, recovery: 0.09, damageMul: 1.15, arcMul: 1.15, rangeMul: 1.05, knockbackMul: 1.1, hitstopMul: 1.1 };
 // The finisher is the KATANA moment (white flash, triple cut, cut-through
 // ghosts — see player.ts) so it hits like a payoff: 2× damage, a genuinely wide
 // arc and the heaviest non-heavy hitstop in the kit.
-export const COMBO_FINISH: MoveTiming = { windup: 0.12, active: 0.07, recovery: 0.22, damageMul: 2.0, arcMul: 1.6, rangeMul: 1.25, knockbackMul: 2, hitstopMul: 1.8 };
+export const COMBO_FINISH: MoveTiming = { windup: 0.11, active: 0.07, recovery: 0.16, damageMul: 2.0, arcMul: 1.6, rangeMul: 1.25, knockbackMul: 2, hitstopMul: 1.8 };
 export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, hitstopMul: 1.8 };
 
 /** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
@@ -1346,7 +1362,7 @@ export const SPIDER_ATTACK_COOLDOWN = 0.85;
 export const SPIDER_DAMAGE = 1;
 /** ~1 spider per this many zombies in the horde, from level SPIDER_FROM_LEVEL. */
 export const SPIDER_RATIO = 4;
-export const SPIDER_FROM_LEVEL = 2;
+export const SPIDER_FROM_LEVEL = 1; // 2→1 playtest 07-23: floor 1 was zombies-only
 
 // ── Brutes ──────────────────────────────────────────────────────
 /**
@@ -1466,7 +1482,7 @@ export const BLADESTORM_TICK = 0.35; // seconds between blade hits
 
 // ── Arcane Pulse shockwave ── damage rides the expanding ring, not an instant
 // AoE: each foe is hit the frame the wave front crosses it (sonar-ping read).
-export const PULSE_WAVE_DUR = 0.45; // seconds the ring takes to reach full radius
+export const PULSE_WAVE_DUR = 0.55; // seconds the ring takes to reach full radius
 export const PULSE_RING_LAG = 0.07; // the purple chaser ring starts this far behind
 export const PULSE_RIM_BURSTS = 8; // impact pops around the rim at max radius
 
@@ -1748,7 +1764,7 @@ export const HOUND_CONTACT_RANGE = 0.75;
 export const HOUND_ATTACK_WINDUP = 0.3;
 export const HOUND_ATTACK_COOLDOWN = 1.4;
 export const HOUND_SPEED_FACTOR = 1.35;
-export const HOUND_FROM_LEVEL = 2;
+export const HOUND_FROM_LEVEL = 1; // 2→1 playtest 07-23: floor 1 was zombies-only
 export const HOUND_CHARGE_RANGE = 5.5; // starts a charge when you're in this range + line
 export const HOUND_CHARGE_WINDUP = 0.45; // telegraph before the dash
 export const HOUND_CHARGE_SPEED = 10; // dash speed (tiles/s)
