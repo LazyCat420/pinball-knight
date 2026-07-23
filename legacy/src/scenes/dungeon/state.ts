@@ -277,6 +277,9 @@ export type EnemyKind =
   | "mimic"; // AMBUSHER — dormant + item-like until you're close, then lunges
 
 export interface Zombie extends Actor {
+  /** Co-op network id — assigned by makeZombie in creation order, which is
+   * seed-deterministic at startLevel so every pool member agrees on the horde. */
+  nid?: string;
   /** Which enemy family — drives stats (speed/hp/damage) and which sheet. */
   kind: EnemyKind;
   hp: number;
@@ -466,6 +469,9 @@ export interface CoinFlight {
 }
 
 export interface GroundItem {
+  /** Co-op network id — set on items every pool member should agree on (floor
+   * loot + authority drops). Coins are personal juice and never carry one. */
+  nid?: string;
   kind: "weapon" | "gear" | "potion" | "card" | "coin" | "reagent" | "material";
   id: string; // WeaponId | GearSlot | PotionId | CardId | "coin" | ReagentId | MarbleMaterial
   x: number;

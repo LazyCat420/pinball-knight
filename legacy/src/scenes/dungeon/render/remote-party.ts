@@ -35,7 +35,17 @@ interface View {
   rz: number;
   facing: Facing;
   seen: boolean;
+  /** Last clip the peer reported ("ball"/"roll"/"attack" are mirrored 1:1). */
+  mode: string;
 }
+
+/**
+ * Clips mirrored verbatim from the peer instead of being derived from velocity.
+ * The derive-from-velocity path renders a bouncing marble as a walk cycle
+ * flip-flopping E/W on every wall hit — "running back and forth". Mirroring the
+ * peer's actual clip is what makes a ball look like a ball.
+ */
+const MIRRORED_CLIPS = new Set(["ball", "roll", "attack", "run"]);
 
 export class RemotePartyRenderer {
   private readonly views = new Map<string, View>();
@@ -62,6 +72,7 @@ export class RemotePartyRenderer {
       v.tx = p.x;
       v.tz = p.z;
       v.tf = p.facing;
+      v.mode = p.mode;
       if (!v.seen) {
         v.seen = true;
         v.rx = p.x;
@@ -88,7 +99,7 @@ export class RemotePartyRenderer {
     const nameplate = makeNameplate(name, colorForSlot(slot).hex);
     sprite.mesh.add(nameplate);
     this.scene.add(sprite.mesh);
-    const v: View = { slot, sprite, animator, nameplate, tx: 0, tz: 0, tf: "S", rx: 0, rz: 0, facing: "S", seen: false };
+    const v: View = { slot, sprite, animator, nameplate, tx: 0, tz: 0, tf: "S", rx: 0, rz: 0, facing: "S", seen: false, mode: "idle" };
     this.views.set(id, v);
     return v;
   }
@@ -118,7 +129,13 @@ export class RemotePartyRenderer {
       const vx = (v.rx - px) / (dt || 1 / 60);
       const vz = (v.rz - pz) / (dt || 1 / 60);
       const speed = Math.hypot(vx, vz);
-      if (speed > WALK_THRESHOLD) {
+      if (MIRRORED_CLIPS.has(v.mode)) {
+        // Peer is in a special clip (marble, tumble, swing) — mirror it and use
+        // their REPORTED facing; velocity-derived facing flip-flops on bounces.
+        v.animator.setFacing(v.tf);
+        v.animator.play(v.mode as Parameters<Animator["play"]>[0]);
+        v.animator.setRate(v.mode === "ball" ? 1 + Math.min(1.5, speed / 8) : 1);
+      } else if (speed > WALK_THRESHOLD) {
         v.facing = facingFromVelocity(vx, vz, v.facing);
         v.animator.setFacing(v.facing);
         v.animator.play("walk");
@@ -136,6 +153,13 @@ export class RemotePartyRenderer {
   /** How many pool members are currently rendered here. */
   get count(): number {
     return this.views.size;
+  }
+
+  /** Interpolated positions + modes of every rendered knight (for collisions). */
+  positions(): Array<{ x: number; z: number; mode: string }> {
+    const out: Array<{ x: number; z: number; mode: string }> = [];
+    for (const v of this.views.values()) if (v.seen) out.push({ x: v.rx, z: v.rz, mode: v.mode });
+    return out;
   }
 
   dispose(): void {

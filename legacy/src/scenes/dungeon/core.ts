@@ -63,7 +63,7 @@ import { updateFloorFx, clearFloorFx, spawnFloorFx } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie } from "./entities/combat";
+import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie, setCoopCombatBridge, hitPlayerRanged } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -219,7 +219,7 @@ import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed } from "./coop";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill } from "./coop";
 import { stopPresence } from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
@@ -773,6 +773,80 @@ export function launchDungeonGame(onExit?: () => void): void {
   // A slain overlord drops its reward here (kept out of combat.ts to avoid a
   // circular import).
   setBossDefeatedHandler(dropBossReward);
+
+  // ── Co-op wiring ── the hooks coop.ts drives the shared world through, and
+  // the bridge combat.ts forwards replica damage over. All injected here so
+  // neither module imports core (no cycles).
+  setCoopHooks({
+    spawnGhost: (nid, kind, x, z, boss) => {
+      // Snapshot said an enemy exists that we don't have — build a rendering
+      // body for it. Sheet by kind, zombie-sheet fallback for exotic kinds.
+      const sheet =
+        kind === "reaper" || boss
+          ? reaperSheet()
+          : {
+              zombie: state.zombieSheet,
+              spider: state.spiderSheet,
+              brute: state.bruteSheet,
+              spitter: state.spitterSheet,
+              ghost: state.ghostSheet,
+              bat: state.batSheet,
+              slime: state.slimeSheet,
+              goblin: state.goblinSheet,
+              pin: state.pinSheet,
+              golem: state.golemSheet,
+              chomper: state.chomperSheet,
+              magnet: state.magnetSheet,
+              webspinner: state.webspinnerSheet,
+            }[kind as string] ?? state.zombieSheet;
+      if (!sheet) return null;
+      const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
+      z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)
+      bumpZombieNid(nid);
+      if (boss) {
+        // The Reaper King's ghost looms like the real thing.
+        z2.baseTint = REAPER_TINT;
+        z2.sprite.setTint(REAPER_TINT);
+        z2.sprite.mesh.scale.multiplyScalar(1.55);
+      }
+      state.zombies.push(z2);
+      return z2;
+    },
+    spawnGhostItem: (nid, kind, id, x, z) => {
+      const paint = ITEM_PAINTS[id];
+      if (!paint || !state.scene) return null;
+      const sprite = createStaticSprite(paint);
+      sprite.mesh.position.set(x, 0, z);
+      state.scene.add(sprite.mesh);
+      const it: GroundItem = { nid, kind, id, x, z, sprite, bobPhase: Math.random() * 6 };
+      state.groundItems.push(it);
+      return it;
+    },
+    removeZombie: (z) => {
+      state.scene?.remove(z.sprite.mesh);
+      z.sprite.dispose();
+    },
+    removeItem: (it) => {
+      state.scene?.remove(it.sprite.mesh);
+      it.sprite.dispose();
+    },
+    onRemoteKill: (x, z, kind, boss) => {
+      // The authority killed something on our floor: gibs + SHARED kill gold
+      // (co-op pays every knight — gold is per-client, not split).
+      if (kind === "ghost") state.vfx?.sparks(x, 0.6, z, 0, 0, 22);
+      else state.vfx?.blood(x, 0.6, z, "green", 20);
+      spawnCoin(x, z, boss ? BOSS_GOLD : GOLD_PER_KILL);
+      if (boss) state.shakeT = Math.max(state.shakeT, 0.4);
+    },
+    applyDamage: (z, dmg, dx, dz, push) => {
+      // A replica's hit, already gated by THEIR momentum — apply it raw
+      // (force), except the untouchable Death Dealer.
+      if (z.kind === "reaper") return;
+      damageZombie(z, dmg, dx, dz, push, true);
+    },
+    hurtPlayer: (dmg, srcX, srcZ) => hitPlayerRanged(dmg, srcX, srcZ),
+  });
+  setCoopCombatBridge({ isReplica, forward: coopForwardDamage, onKill: coopBroadcastKill });
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
   setCardRollHandler(dropCardMaybe);
@@ -953,6 +1027,18 @@ function drainPendingSummons(): void {
  * horde, the debug spawner, and the giant-spider spawns — every enemy runs the
  * same pathing/combat in updateZombies, differing only by `kind` + stats.
  */
+/** Co-op network-id sequence — reset per floor. Creation order at startLevel is
+ * seed-deterministic, so every pool member hands out the SAME nids and replicas
+ * adopt the authority's snapshot without respawning a thing. Runtime spawns
+ * (reaper, splits) only happen on the authority, whose counter keeps going. */
+let zombieNidSeq = 0;
+/** Ghost adoption saw an authority nid — keep our counter past it so a later
+ * authority handover can't mint a colliding id. */
+export function bumpZombieNid(nid: string): void {
+  const n = Number(nid.replace(/^z/, ""));
+  if (Number.isFinite(n) && n >= zombieNidSeq) zombieNidSeq = n + 1;
+}
+
 function makeZombie(
   sheet: SpriteSheet,
   x: number,
@@ -977,6 +1063,7 @@ function makeZombie(
   anim.setFacing("S");
   anim.play("idle");
   const z2: Zombie = {
+    nid: "z" + zombieNidSeq++,
     sprite,
     anim,
     x,
@@ -1168,6 +1255,8 @@ function startLevel(level: number): void {
   const cs = coopSeed();
   if (cs !== null) state.runSeed = cs >>> 0;
   setCoopFloor(level); // pool presence now filters to this floor
+  zombieNidSeq = 0; // per-floor network ids — deterministic across the pool
+  itemNidSeq = 0;
   // Run-scoped, so it must be updated here rather than in the per-floor reset
   // below. `saveBestDepth` no-ops unless this genuinely beats the record.
   if (level > state.runDeepestFloor) state.runDeepestFloor = level;
@@ -1390,7 +1479,7 @@ function startLevel(level: number): void {
     const pos = tileCenter(grid, it.i, it.j);
     sprite.mesh.position.set(pos.x, 0, pos.z);
     state.scene!.add(sprite.mesh);
-    return { kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
+    return { nid: "L" + k, kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
   });
 
   // ── R&D: seed the three marble materials near the floor-1 spawn so the whole
@@ -1465,7 +1554,7 @@ function startLevel(level: number): void {
         const c = tileCenter(grid, prizeSpot.i, prizeSpot.j);
         sprite.mesh.position.set(c.x + dx, 0, c.z);
         state.scene.add(sprite.mesh);
-        state.groundItems.push({ kind: "potion", id, x: c.x + dx, z: c.z, sprite, bobPhase: Math.random() * 6 });
+        state.groundItems.push({ nid: "d" + itemNidSeq++, kind: "potion", id, x: c.x + dx, z: c.z, sprite, bobPhase: Math.random() * 6 });
       }
     }
   }
@@ -1816,7 +1905,7 @@ function dropBossReward(x: number, z: number): void {
     const pz = z + d.dz;
     sprite.mesh.position.set(px, 0, pz);
     state.scene.add(sprite.mesh);
-    state.groundItems.push({ kind: "potion", id: d.id, x: px, z: pz, sprite, bobPhase: Math.random() * 6 });
+    state.groundItems.push({ nid: "d" + itemNidSeq++, kind: "potion", id: d.id, x: px, z: pz, sprite, bobPhase: Math.random() * 6 });
   }
   state.hudDirty = true;
 }
@@ -2020,7 +2109,7 @@ function dropCardMaybe(x: number, z: number, boss: boolean): void {
   const sprite = createStaticSprite(ITEM_PAINTS[id]);
   sprite.mesh.position.set(x, 0, z);
   state.scene.add(sprite.mesh);
-  state.groundItems.push({ kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });
+  state.groundItems.push({ nid: "d" + itemNidSeq++, kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });
 }
 
 /**
@@ -2038,11 +2127,18 @@ function creditGold(v: number): void {
   state.hudDirty = true;
 }
 
+/** Runtime-drop network-id sequence (cards/potions/materials the authority
+ * rolls mid-floor). Reset per floor beside zombieNidSeq. */
+let itemNidSeq = 0;
+
 /** Pull a ground item out of the world: unparent, free its GPU resources, drop
- * it from the list. Everything that removes an item goes through this. */
+ * it from the list. Everything that removes an item goes through this — which
+ * makes it the one funnel for co-op TAKE broadcasts: picking up a shared (nid'd)
+ * item tells the floor so it vanishes on every screen. */
 function removeGroundItem(k: number): void {
   const it = state.groundItems[k];
   if (!it) return;
+  coopItemTaken(it); // no-op for coins/personal drops (no nid) or offline
   state.scene?.remove(it.sprite.mesh);
   it.sprite.dispose();
   state.groundItems.splice(k, 1);
@@ -2209,7 +2305,7 @@ function spawnMaterialDrop(x: number, z: number, m: MarbleMaterial): void {
   const sprite = createStaticSprite(ITEM_PAINTS[m]);
   sprite.mesh.position.set(x, 0, z);
   state.scene.add(sprite.mesh);
-  state.groundItems.push({ kind: "material", id: m, x, z, sprite, bobPhase: Math.random() * 6 });
+  state.groundItems.push({ nid: "d" + itemNidSeq++, kind: "material", id: m, x, z, sprite, bobPhase: Math.random() * 6 });
 }
 
 /**
@@ -2581,7 +2677,7 @@ function applyPotion(id: PotionId): void {
  */
 function spawnReaper(): void {
   const p = state.player;
-  if (!p) return; // no longer gated on the ghost sheet — the reaper has its own
+  if (!p || isReplica()) return; // replica floors get the authority's reaper via snapshot
   state.reaperOut = true;
   const a = Math.random() * Math.PI * 2;
   // Bespoke hooded-and-scythed art (was the ghost sheet dyed with REAPER_TINT).
@@ -2715,7 +2811,9 @@ function simulate(dt: number): void {
   }
   // TIME CRAWL: the ability scales the horde's dt so enemies move + wind up in
   // slow-mo while the player runs at full speed. Everything else keeps real dt.
-  updateZombies(state.slowT > 0 ? dt * TIMECRAWL_FACTOR : dt);
+  // Co-op replica: the floor authority simulates the horde; ours are snapshot-
+  // driven ghosts advanced inside updateCoop. Everything else still ticks.
+  if (!isReplica()) updateZombies(state.slowT > 0 ? dt * TIMECRAWL_FACTOR : dt);
   updateProjectiles(dt);
   updateFloorFx(dt); // marble scars (slick/fire) tick status/damage to overlappers
   updateMaterial(dt); // marble material + fusion timers

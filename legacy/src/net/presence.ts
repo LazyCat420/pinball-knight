@@ -21,6 +21,9 @@ export interface PeerInfo {
   x: number;
   z: number;
   facing: Facing;
+  /** The knight's current animation clip ("walk"/"ball"/"roll"/…) so remotes
+   * can mirror it — a bouncing marble must not render as a walk cycle. */
+  mode: string;
 }
 
 const MOVE_HZ = 15;
@@ -30,7 +33,7 @@ const roster = new Map<string, PeerInfo>();
 let installed = false;
 let localScene = "tavern";
 let moveT = 0;
-let lastSent = { x: NaN, z: NaN, f: "S" as Facing };
+let lastSent = { x: NaN, z: NaN, f: "S" as Facing, m: "" };
 
 /**
  * Ensure the pool connection + subscriptions exist. Idempotent: the socket is a
@@ -52,11 +55,11 @@ export function startPresence(name: string): boolean {
 
   c.on("room:state", (m) => {
     roster.clear();
-    for (const p of m.players) roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing });
+    for (const p of m.players) roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: "idle" });
   });
   c.on("player:join", (m) => {
     const p = m.player;
-    roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing });
+    roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: "idle" });
   });
   c.on("player:leave", (m) => roster.delete(m.id));
   c.on("player:move", (m) => {
@@ -66,10 +69,11 @@ export function startPresence(name: string): boolean {
       e.z = m.z;
       e.facing = m.facing;
       e.scene = m.scene;
+      e.mode = m.mode ?? "idle";
     } else {
       // Learned via movement before a join/snapshot — fill what we can; the next
       // room:state/join corrects color+name.
-      roster.set(m.id, { id: m.id, slot: 0, name: "KNIGHT", scene: m.scene, x: m.x, z: m.z, facing: m.facing });
+      roster.set(m.id, { id: m.id, slot: 0, name: "KNIGHT", scene: m.scene, x: m.x, z: m.z, facing: m.facing, mode: m.mode ?? "idle" });
     }
   });
   return true;
@@ -100,18 +104,19 @@ export function peers(): PeerInfo[] {
 /** Set which scene the local knight is in ("tavern" | "dungeon:<floor>"). */
 export function setLocalScene(scene: string): void {
   localScene = scene;
-  lastSent = { x: NaN, z: NaN, f: "S" }; // force a resend under the new scene tag
+  lastSent = { x: NaN, z: NaN, f: "S", m: "" }; // force a resend under the new scene tag
 }
 
-/** Publish the local pose (throttled). Tagged with the current local scene. */
-export function sendPose(dt: number, x: number, z: number, facing: Facing): void {
+/** Publish the local pose (throttled). Tagged with the current local scene and
+ * the knight's current animation clip so remotes can mirror it. */
+export function sendPose(dt: number, x: number, z: number, facing: Facing, mode = "idle"): void {
   if (!net().connected) return;
   moveT -= dt;
   if (moveT > 0) return;
   moveT = MOVE_INTERVAL;
-  if (x === lastSent.x && z === lastSent.z && facing === lastSent.f) return;
-  lastSent = { x, z, f: facing };
-  net().send({ type: "move", x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, facing, scene: localScene });
+  if (x === lastSent.x && z === lastSent.z && facing === lastSent.f && mode === lastSent.m) return;
+  lastSent = { x, z, f: facing, m: mode };
+  net().send({ type: "move", x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, facing, scene: localScene, mode });
 }
 
 /** Full teardown — closes the socket. Only on a complete game exit. */

@@ -213,6 +213,23 @@ export function setBossDefeatedHandler(fn: (x: number, z: number) => void): void
 }
 
 /**
+ * Co-op combat bridge (injected by core, same pattern as the handlers above —
+ * combat must not import the net layer). On a REPLICA floor the authority owns
+ * every zombie's HP: `isReplica` gates the local hp write, `forward` ships the
+ * final computed damage to the authority, and `onKill` lets the authority
+ * broadcast deaths so every screen gets the gibs + shared gold.
+ */
+interface CoopCombatBridge {
+  isReplica(): boolean;
+  forward(z: Zombie, dmg: number, dx: number, dz: number, push: number): void;
+  onKill(z: Zombie): void;
+}
+let coopBridge: CoopCombatBridge | null = null;
+export function setCoopCombatBridge(b: CoopCombatBridge): void {
+  coopBridge = b;
+}
+
+/**
  * A big slime's death SPLITS it into two minis. Spawning lives in core (it owns
  * makeZombie/sheets), and it must be DEFERRED to the end of the sim step —
  * killZombie fires inside loops over state.zombies, and minis born mid-swing
@@ -376,6 +393,21 @@ export function damageZombie(
       z.flashT = FLASH_TIME;
       return;
     }
+  }
+
+  // ── CO-OP REPLICA: the floor authority owns this zombie's HP. Our momentum
+  // gates already ran above (they're about the ATTACKER), so forward the final
+  // damage and keep only the local juice — authoritative hp arrives in the next
+  // world snapshot, and a death comes back as a kill act.
+  if (coopBridge?.isReplica() && z.nid) {
+    coopBridge.forward(z, damage, dirx, dirz, push);
+    z.flashT = FLASH_TIME;
+    z.sprite.setTint(0xff6a6a);
+    state.vfx?.damage(z.x, 1.05, z.z, damage, "out");
+    state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 9);
+    state.hitstopT = Math.max(state.hitstopT, HITSTOP_HIT);
+    state.shakeT = Math.max(state.shakeT, SHAKE_ON_HIT);
+    return;
   }
 
   z.hp -= damage;
@@ -580,6 +612,7 @@ export function setReagentDropHandler(fn: (x: number, z: number, kind: EnemyKind
 function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.anim.play("death", { force: true });
+  coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
   if (z.kind === "slime" && !z.mini) onSlimeSplit?.(z.x, z.z, z.speed);
   // A BLOATER bursts into a burning puddle — don't melee-kill it at your feet.

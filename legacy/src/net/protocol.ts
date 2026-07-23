@@ -61,8 +61,12 @@ export interface PartyMember {
 // ── Client → Server ──────────────────────────────────────────────────────────
 export type ClientMessage =
   | { type: "hello"; name: string; preferredSlot?: number }
-  | { type: "move"; x: number; z: number; facing: Facing; scene: string }
-  | { type: "ready"; ready: boolean }
+  | { type: "move"; x: number; z: number; facing: Facing; scene: string; mode?: string }
+  // World channel: `world` = the floor authority's enemy/loot/boss snapshot,
+  // `act` = discrete game events (hit forwards, kills, loot takes, boss slams).
+  // Server relays both to same-scene peers only.
+  | { type: "world"; scene: string; snap: unknown }
+  | { type: "act"; scene: string; act: unknown }
   | { type: "session:hello"; sessionId: string }
   | { type: "session:snapshot"; sessionId: string; snap: unknown }
   | { type: "session:input"; sessionId: string; input: unknown }
@@ -77,7 +81,9 @@ export type ServerMessage =
   | { type: "player:join"; player: RemoteKnight }
   | { type: "player:leave"; id: string }
   | { type: "room:full" }
-  | { type: "player:move"; id: string; x: number; z: number; facing: Facing; scene: string }
+  | { type: "player:move"; id: string; x: number; z: number; facing: Facing; scene: string; mode?: string }
+  | { type: "world"; fromId: string; scene: string; snap: unknown }
+  | { type: "act"; fromId: string; scene: string; act: unknown }
   | { type: "player:ready"; id: string; ready: boolean }
   | { type: "party:forming"; members: string[]; seconds: number }
   | { type: "party:tick"; seconds: number }

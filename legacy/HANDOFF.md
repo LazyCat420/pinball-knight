@@ -97,14 +97,44 @@ env) — sprite tint, nameplates, and same-floor rendering need QA with two LAN
 browsers on `http://10.0.0.16:5174`. **Test the boss fast:** in the dungeon, `
 panel → "next boss" (jumps to floor 5), or `__dungeonLevel(5)`.
 
-**⚠️ Enemy authority — the honest limitation.** POSE-SYNCED, not enemy-authoritative:
-every client sims its OWN world off the shared seed, so you spawn on the identical
-floor + boss and SEE each other, but enemy/boss HP can DRIFT over a long fight
-(each kills its own instance). `isReplica()` returns false for now. **Next step:**
-make one client (or the server) authoritative for enemy/boss state — add a
-snapshot channel that streams `state.zombies`→`core.ts:447` shape + the king; the
-others set `isReplica()`→true (the boss-spawn gate + enemy loop already check it),
-suppress local enemy/boss sim, and render from snapshots.
+### ✅ ENEMY/BOSS/LOOT SYNC — SHIPPED (per-floor authority)
+
+Each dungeon floor elects ONE simulator: **authority = smallest peer id on the
+floor** (deterministic, no negotiation; recomputed every frame from presence, so
+join/leave hands over seamlessly). The authority runs the normal sim and streams
+a 10Hz `world` snapshot (zombies by `nid`: kind/pos/hp/mode/boss · nid'd ground
+items · boss aux: bones/slam/portal · exit lock); the server relays `world`/`act`
+to SAME-SCENE peers only.
+
+- **Replicas** (`coop.ts`): suppress `updateZombies`/`spawnReaper`/boss AI;
+  reconcile `state.zombies`+`state.groundItems` against snapshots by `nid`
+  (same objects, positions lerped). nids are minted by `makeZombie` in creation
+  order — seed-deterministic at startLevel, so both clients hand out the SAME
+  ids and adoption is seamless (no respawn flicker).
+- **Shared HP**: replica hits compute damage locally (attacker's momentum gates)
+  then forward via `act:dmg` (`combat.ts` coop bridge, injected — no cycles);
+  authority applies with force (reaper stays immune). Deaths broadcast `act:kill`
+  → gibs + shared kill gold on every screen (co-op pays every knight fully).
+- **Shared loot**: `removeGroundItem` is the take-funnel → `act:take` removes the
+  item on every screen. Authority drops (cards/potions/materials/boss reward)
+  carry `nid`s; coins/reagent motes stay personal.
+- **Boss synced**: aux snapshot mirrors bones/slam-telegraph/portal on replicas
+  (`boss.ts applyRemoteBossAux`/`updateBossReplica`); slam + bone damage applied
+  by EACH client vs its own knight (player HP is client-owned); slams/bones
+  target the NEAREST knight incl. peers (`nearestKnight`). Handover: promotion
+  `adoptBoss`es a living king; demotion `disposeBoss`es the frozen module.
+- **Animation fix**: poses carry the CURRENT CLIP (`p.anim.getClip()`);
+  remotes mirror ball/roll/attack/run instead of deriving walk from velocity —
+  a bouncing marble no longer renders as "running back and forth".
+- **Marble-vs-marble**: knights collide (`coop.playerCollisions`) — rolling
+  reflects off a peer, a standing knight hit by a rolling marble gets launched.
+  Each client resolves only its own knight.
+
+**Known v1 gaps (deliberate):** zombie AI still *chases* only the authority's
+knight (replicas take contact damage when overlapped, but aggro won't hunt them
+— needs a target abstraction in zombie.ts); enemy PROJECTILES (spitters) aren't
+mirrored to replicas; authority opening a menu pauses its sim → floor freezes
+for replicas; two players grabbing one item in the same tick can double it.
 
 **Keep in lockstep:** `service/src/realtime/protocol.ts` ⇔ `client/src/net/protocol.ts`.
 
