@@ -1135,8 +1135,12 @@ function startLevel(level: number): void {
   // Prefab anchors ride the same ×2 into the thickened grid — the landmark's
   // first, so its set-piece furniture wins any tile the regular stamps also want.
   const anchors: PrefabAnchor[] = [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
-  // Pinball-machine density grows with depth: deeper floors are busier tables.
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX);
+  // Pinball-machine density grows with depth AND rides the floor's actual area
+  // — the 4× floors change scaled zombies/torches/rooms but left this an
+  // absolute cap, spreading 26 parts over ~26k late-game tiles (the "sparse"
+  // read). The area term keeps parts-per-tile roughly constant as floors grow;
+  // decorateMaze's sparse-region fill then guarantees no quadrant ships empty.
+  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + Math.floor(cfg.floorTiles / 2000);
   // The floor modifier scales the budgets (and only the budgets — it can't
   // reach connectivity). Every product is floored at a sane minimum so a harsh
   // roll can't produce a pitch-dark or furniture-free floor.
@@ -1290,7 +1294,10 @@ function startLevel(level: number): void {
   if (level === 1 && state.dbgMaterialFloor1Spawn && state.scene && state.player) {
     const pt = worldToTile(grid, state.player.x, state.player.z);
     MATERIAL_LIST.forEach((m, i) => {
-      const spot = nearestOpenTile(grid, pt.i, pt.j, i + 2) ?? pt;
+      // minRing staggers each marble into its own distance shell (4/7/10 tiles
+      // out) — nearestOpenTile's `n` is an ORDINAL, so without minRing all
+      // three land in the ring right on top of the spawn.
+      const spot = nearestOpenTile(grid, pt.i, pt.j, 1 + i, 4 + i * 3) ?? pt;
       const c = tileCenter(grid, spot.i, spot.j);
       const sprite = createStaticSprite(ITEM_PAINTS[m]);
       sprite.mesh.position.set(c.x, 0, c.z);

@@ -63,18 +63,24 @@ import { PALETTE_HEX } from "../render/palette";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 import { damageZombie } from "./combat";
+import { sfxFreeze, sfxSpring, sfxHeavy } from "../audio";
 
 export interface MaterialMeta {
   label: string;
   icon: string;
-  /** Aura/trail tint (also the pickup sprite colour). */
+  /** Pickup-sprite / burst colour. */
   tint: number;
+  /** Afterimage-trail tint — deliberately DISTINCT from the buff tells
+   *  (diamond can't ride 0x6fd0e8: that already means HASTE on the knight). */
+  trail: number;
+  /** The transformation sting (also fired on fusion). */
+  sfx: () => void;
 }
 
 export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
-  diamond: { label: "Diamond", icon: "💎", tint: PALETTE_HEX[31] },
-  water: { label: "Water", icon: "💧", tint: PALETTE_HEX[30] },
-  stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4] },
+  diamond: { label: "Diamond", icon: "💎", tint: PALETTE_HEX[31], trail: 0xd8f6ff, sfx: sfxFreeze },
+  water: { label: "Water", icon: "💧", tint: PALETTE_HEX[30], trail: 0x3f9fd8, sfx: sfxSpring },
+  stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4], trail: 0x9aa4b4, sfx: sfxHeavy },
 };
 
 export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone"];
@@ -96,13 +102,26 @@ function activeMaterial(): MarbleMaterial | null {
 export function applyMaterial(id: MarbleMaterial): void {
   const p = state.player;
   if (!p) return;
-  if (p.material && p.material !== id && p.materialT > 0) {
+  const fusing = p.material && p.material !== id && p.materialT > 0;
+  if (fusing) {
     // Fusion: the outgoing material co-fires briefly alongside the new one.
     p.fuseMaterial = p.material;
     p.fuseT = MATERIAL_FUSION_TIME;
   }
   p.material = id;
   p.materialT = MATERIAL_DURATION[id];
+  // ── The TRANSFORMATION moment — the ball recrystallizes. A tinted radial
+  // burst at the knight (white-hot cores bloom), a stack of quick afterimages
+  // in the material's trail hue, a kick of shake, and the material's sting.
+  // Fusion doubles the burst: two colours collide.
+  const meta = MATERIALS[id];
+  state.vfx?.burst(p.x, 0.5, p.z, meta.tint, 18, 5);
+  state.vfx?.burst(p.x, 0.15, p.z, meta.trail, 10, 3);
+  if (fusing && p.fuseMaterial) state.vfx?.burst(p.x, 0.5, p.z, MATERIALS[p.fuseMaterial].tint, 12, 4);
+  for (let i = 0; i < 3; i++) state.vfx?.ghost(p.sprite.mesh, meta.trail, 0.4 + i * 0.12, 0.5 - i * 0.12);
+  state.shakeT = Math.max(state.shakeT, 0.22);
+  state.hitstopT = Math.max(state.hitstopT, 0.04);
+  meta.sfx();
   state.hudDirty = true;
 }
 
@@ -220,8 +239,12 @@ export function emitMaterialOnBounce(nx: number, nz: number): void {
         fan: DIAMOND_BOUNCE_FAN,
         crystal: true,
       });
+      // Prismatic glint at the contact point — the shards' muzzle flash.
+      state.vfx?.burst(cx, 0.4, cz, MATERIALS.diamond.trail, 6, 3);
     } else if (m === "water") {
       spawnFloorFx("slick", cx, cz, WATER_SLICK_RADIUS, WATER_SLICK_LIFE);
+      // A low wet splash hugging the floor.
+      state.vfx?.burst(cx, 0.12, cz, MATERIALS.water.tint, 7, 2.5);
     } else if (m === "stone") {
       stoneShockwave(cx, cz, STONE_SHOCK_RADIUS, STONE_SHOCK_DMG);
     }
@@ -243,6 +266,7 @@ export function materialSlam(): void {
         life: 0.7,
         crystal: true,
       });
+      state.vfx?.burst(p.x, 0.5, p.z, MATERIALS.diamond.trail, 14, 5);
     } else if (m === "water") {
       for (let n = 0; n < WATER_SLAM_SLICKS; n++) {
         const a = (n / WATER_SLAM_SLICKS) * Math.PI * 2;
@@ -251,6 +275,7 @@ export function materialSlam(): void {
       }
       // A forward speed kick (steam-launch feel), capped to the material ceiling.
       p.momSpeed = Math.min(materialMaxSpeed(), p.momSpeed + WATER_SLAM_SPEED_KICK);
+      state.vfx?.burst(p.x, 0.15, p.z, MATERIALS.water.tint, 12, 4);
     } else if (m === "stone") {
       // Boulder slam: trade current speed for a big AoE. Bigger the faster you were.
       const dmg = STONE_SLAM_BASE_DMG + STONE_SLAM_DMG_PER_SPEED * p.momSpeed;
@@ -272,8 +297,11 @@ function stoneShockwave(x: number, z: number, radius: number, dmg: number): void
     const dealt = zmb.kind === "golem" ? dmg * STONE_SHOCK_GOLEM_MULT : dmg;
     damageZombie(zmb, dealt, dx, dz, 0.8);
   }
+  // Dust ring on the perimeter + a warm additive core so the wave READS
+  // (dust alone sits below the bloom threshold and vanished on busy frames).
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     state.vfx?.dust(x + Math.cos(a) * radius * 0.7, 0.05, z + Math.sin(a) * radius * 0.7);
   }
+  state.vfx?.burst(x, 0.1, z, MATERIALS.stone.trail, 8, radius * 3);
 }

@@ -1480,6 +1480,8 @@ export const WINDINESS_CYCLE = [1.0, 0.3, 0.65];
 export interface LevelConfig {
   cellsW: number; // maze CELLS (tile grid is 2*cells+1)
   cellsH: number;
+  /** ≈ walkable tiles after the 2× thicken — the area every density budget rides. */
+  floorTiles: number;
   zombies: number;
   zombieSpeed: number; // tiles/sec
   torches: number;
@@ -1520,6 +1522,7 @@ export function levelConfig(level: number): LevelConfig {
   return {
     cellsW,
     cellsH,
+    floorTiles,
     // Cap re-tuned for 4× floors: at the old 60 the density would drop 4× and
     // big floors would read empty. 110 is a DRAW-CALL budget as much as a
     // difficulty one — each zombie is its own sprite mesh; raise with care.

@@ -109,9 +109,28 @@ export function updateFloorFx(dt: number): void {
     const ticked = fx.tick <= 0;
     if (ticked) fx.tick = fx.kind === "fire" ? CARD_BURN_TICK : FLOORFX_TICK;
 
-    // Fade out over the back third of its life.
+    // ── Life animation ── a snappy grow-in pop (slight overshoot), a gentle
+    // breathing pulse while live, and a shrink+fade over the back third. The
+    // slick slowly spins so the puddle reads liquid instead of stamped.
+    const age = fx.maxLife - fx.life;
     const frac = fx.life / fx.maxLife;
-    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.4 * Math.min(1, frac * 3);
+    const grow = age < 0.18 ? 0.35 + (age / 0.18) * 0.75 : 1.1 - Math.min(0.1, (age - 0.18) * 0.5);
+    const pulse = 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
+    const fade = Math.min(1, frac * 3); // back third: shrink with the fade
+    fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
+    if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
+    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.45 * fade;
+
+    // ── Ambient emission ── fire breathes rising embers; slick shimmers with a
+    // drifting mote now and then. Cheap (1 particle per tick), reads great.
+    if (ticked && state.vfx) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * fx.radius * 0.8;
+      const ex = fx.x + Math.cos(a) * r;
+      const ez = fx.z + Math.sin(a) * r;
+      if (fx.kind === "fire") state.vfx.ember(ex, 0.08, ez);
+      else if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
+    }
 
     // ── Enemy overlap ──
     for (const zmb of state.zombies) {

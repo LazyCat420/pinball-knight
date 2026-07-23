@@ -388,8 +388,48 @@ export function pickEndpoints(g: Grid, rng: () => number): Endpoints | null {
     const d = dist[idx(g, p.i, p.j)];
     return d >= cutoff && !(p.i === start.i && p.j === start.j);
   });
-  const stairs = far.length ? far[Math.floor(rng() * far.length)] : start;
+  // ROUTE GEOMETRY (ROUTE_MATH §3 flow, applied to the exit pick): distance
+  // alone let a straight boulevard be the exit path — on spine/great-hall
+  // floors the trek was long but geometrically trivial, and widenMainArtery
+  // then paved that straight shot into a highway. Sample K candidates from the
+  // far band and keep the WINDIEST route: score = directness − bend rate,
+  // where directness = straight-line/path-length (1.0 = dead-straight shot)
+  // and bends are direction changes along the traced artery. The far-band
+  // distance guarantee and the per-floor variety both survive — we only bias
+  // WHICH far tile wins toward the one whose route actually snakes.
+  const stairs = pickWindingStairs(g, start, far, dist, rng) ?? start;
   return { start, stairs };
+}
+
+/** Far-band candidates sampled per exit pick — enough to dodge the straight
+ *  shot without flattening the variety of a random draw. */
+const STAIRS_SAMPLES = 6;
+
+function pickWindingStairs(g: Grid, start: TilePos, far: TilePos[], dist: Int32Array, rng: () => number): TilePos | null {
+  if (!far.length) return null;
+  let best: TilePos | null = null;
+  let bestScore = Infinity;
+  for (let k = 0; k < Math.min(STAIRS_SAMPLES, far.length); k++) {
+    const cand = far[Math.floor(rng() * far.length)];
+    const pathLen = dist[idx(g, cand.i, cand.j)];
+    if (pathLen <= 0) continue;
+    const directness = Math.hypot(cand.i - start.i, cand.j - start.j) / pathLen;
+    const path = traceArtery(g, start, cand, dist);
+    let turns = 0;
+    for (let t = 2; t < path.length; t++) {
+      const ai = path[t - 1].i - path[t - 2].i;
+      const aj = path[t - 1].j - path[t - 2].j;
+      const bi = path[t].i - path[t - 1].i;
+      const bj = path[t].j - path[t - 1].j;
+      if (ai !== bi || aj !== bj) turns++;
+    }
+    const score = directness - turns / pathLen; // lower = windier AND bendier
+    if (score < bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  return best;
 }
 
 /**
@@ -1242,8 +1282,17 @@ export function decorateMaze(
 
   // ── Items: this level's roll, scattered on quieter floor tiles ──
   // Not on the stairs, not on top of a zombie spawn, a few tiles out from the
-  // start (finding your first pickup should take a moment of exploring), and
-  // spread apart so one corridor doesn't hold the whole armoury.
+  // start (finding your first pickup should take a moment of exploring).
+  //
+  // SPREAD (the old pass was a single shuffled first-fit with a Manhattan-5
+  // rule — on 4× floors whatever region the shuffle front-loaded ate the whole
+  // armoury while the rest of the map read empty):
+  //  • candidates are binned into FOUR distance-from-start rings and placement
+  //    round-robins the rings, so loot paces the whole trek start→stairs;
+  //  • within a ring, OFF-SPINE tiles come first — the artery is the highway,
+  //    pickups should reward stepping off it (spine tiles remain as fallback);
+  //  • pairwise separation scales with the floor (≥5, ~12% of the trek), with
+  //    relaxing passes so small mazes still seat everything.
   const items: ItemDrop[] = [...furnished.items];
   const itemSpots = shuffled(
     floors.filter((p) => {
@@ -1252,15 +1301,32 @@ export function decorateMaze(
     }),
     rng,
   );
+  const ringOf = (p: TilePos): number => Math.min(3, Math.floor((dist[idx(g, p.i, p.j)] / Math.max(1, maxDist)) * 4));
+  const ringPools: TilePos[][] = [[], [], [], []];
+  for (const p of itemSpots) ringPools[ringOf(p)].push(p);
+  for (let r = 0; r < 4; r++) {
+    ringPools[r] = [...ringPools[r].filter((p) => !onSpine(p.i, p.j)), ...ringPools[r].filter((p) => onSpine(p.i, p.j))];
+  }
   // A modifier can fatten the armoury (Blackout pays for the dark, Gilded is a
   // treasure floor): extra rolls appended to this level's normal set.
   const bonusRolls: RolledItem[] = [];
   for (let k = 0; k < (extras.bonusItems ?? 0); k++) {
     bonusRolls.push({ kind: "potion", id: shuffled(POTION_POOL, rng)[0] });
   }
+  // Separation floors at 5 — the pairwise-spread invariant (decorate.test)
+  // holds even on the relax pass. Euclidean ≥5 ⇒ Manhattan ≥5.
+  const sepPasses = [Math.max(5, Math.floor(maxDist * 0.12)), 5];
+  let itemRing = 0;
   for (const def of [...rollLevelItems(rng), ...bonusRolls]) {
-    const spot = itemSpots.find((p) => !items.some((it) => Math.abs(it.i - p.i) + Math.abs(it.j - p.j) < 5));
-    if (!spot) break; // a maze too small for all six — fine, place what fits
+    let spot: TilePos | undefined;
+    for (const sep of sepPasses) {
+      for (let k = 0; k < 4 && !spot; k++) {
+        spot = ringPools[(itemRing + k) % 4].find((p) => !items.some((it) => Math.hypot(it.i - p.i, it.j - p.j) < sep));
+      }
+      if (spot) break;
+    }
+    if (!spot) break; // a maze too small for the full roll — place what fits
+    itemRing = (itemRing + 1) % 4;
     items.push({ kind: def.kind, id: def.id, i: spot.i, j: spot.j });
   }
 
@@ -1438,6 +1504,34 @@ export function decorateMaze(
       break;
     }
     dry = placed ? 0 : dry + 1;
+  }
+
+  // ── SPARSE-REGION FILL — the 4× density backstop the area change never got.
+  // The deal above spreads by TOPOLOGY but nothing spatial stops the budget
+  // clustering around the artery: on a ~26k-tile floor, whole quadrants shipped
+  // with zero machine. Partition the grid into coarse screen-sized cells; every
+  // cell that still has an unused junction candidate and NO part of any kind
+  // yet gets one omni part (bumper, spinpad every third — no fire direction, so
+  // none of the runway/orphan invariants apply). One part per empty region:
+  // area-proportional by construction, so density now rides the floor size.
+  const REGION = 24; // tiles per coarse cell side (~one screen of maze)
+  const regW = Math.ceil(g.w / REGION);
+  const regionOf = (i: number, j: number): number => Math.floor(j / REGION) * regW + Math.floor(i / REGION);
+  const filledRegions = new Set(parts.map((p) => regionOf(p.i, p.j)));
+  const fillPools = new Map<number, TopoSpot[]>();
+  for (const c of byTopo.junction) {
+    const r = regionOf(c.i, c.j);
+    const pool = fillPools.get(r) ?? [];
+    if (pool.length === 0) fillPools.set(r, pool);
+    pool.push(c);
+  }
+  let fillCount = 0;
+  for (const [r, pool] of fillPools) {
+    if (filledRegions.has(r)) continue;
+    const cand = pool.find((c) => !parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 3));
+    if (!cand) continue;
+    parts.push(spotForKind(++fillCount % 3 === 0 ? "spinpad" : "bumper", cand, rng));
+    filledRegions.add(r);
   }
 
   // ── VAULT RAMPS: the ramps that actually jump the maze.

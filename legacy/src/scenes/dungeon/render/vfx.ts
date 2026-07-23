@@ -417,6 +417,13 @@ export interface VfxSystem {
   mote(x: number, y: number, z: number): void;
   /** A puff of floor dust (footsteps, landings). */
   dust(x: number, y: number, z: number): void;
+  /**
+   * A TINTED radial burst — additive glow particles flying outward from a
+   * point. The magic/material cousin of sparks(): the caller picks the colour,
+   * and a fraction of white-hot cores pushes it over the bloom threshold so the
+   * burst glows. Use for transformations, elemental pops, material emissions.
+   */
+  burst(x: number, y: number, z: number, color: number, count?: number, speed?: number): void;
   /** A melee slash crescent in the facing direction. */
   slash(x: number, y: number, z: number, facing: string, color: number): void;
   /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
@@ -515,6 +522,20 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
           x, y, z,
           rnd(-1, 1), rnd(0.3, 1), rnd(-1, 1),
           C_DUST, rnd(3, 5), rnd(0.25, 0.5), 3, 2,
+        );
+      }
+    },
+    burst(x, y, z, color, count = 14, speed = 4) {
+      const tint = linColor(color);
+      for (let i = 0; i < count; i++) {
+        // An even radial fan with jitter, a gentle upward pop, quick settle.
+        const a = (i / count) * Math.PI * 2 + rnd(-0.35, 0.35);
+        const sp = speed * rnd(0.45, 1.15);
+        additive.spawn(
+          x, y, z,
+          Math.cos(a) * sp, rnd(0.8, 2.8), Math.sin(a) * sp,
+          Math.random() < 0.35 ? C_SPARK : tint, // white-hot cores → bloom
+          rnd(3, 6), rnd(0.25, 0.55), 7, 2.5,
         );
       }
     },

@@ -134,6 +134,7 @@ import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACI
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
 import {
+  MATERIALS,
   materialFlatRestitution,
   materialBreakSpeeds,
   materialFrictionMult,
@@ -229,6 +230,7 @@ function spawnAura(dt: number, interval: number, hot: boolean, life = AURA_LIFE,
 /** Cadence timers for the per-buff world tells (separate from the sprint aura). */
 let buffTellT = 0;
 let shieldRingT = 0;
+let materialMoteT = 0;
 
 /**
  * BUFF WORLD-TELLS — every timed buff gets a look, not just a HUD tile.
@@ -252,6 +254,29 @@ function updateBuffTells(dt: number): void {
     if (p.rageT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_RAGE, 0.3, 0.42);
     else if (p.hasteT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_HASTE, 0.26, 0.34);
     if (p.shieldT > 0) state.vfx.ghost(p.sprite.mesh, TELL_TINT_SHIELD, 0.34, 0.3);
+    // MARBLE MATERIAL — the ball's substance gets its own trail hue (distinct
+    // from every potion tell), stacking with the buff ghosts above. During a
+    // fusion window both materials shed images — two colours interleaved.
+    if (p.material && p.materialT > 0) {
+      state.vfx.ghost(p.sprite.mesh, MATERIALS[p.material].trail, 0.3, 0.38);
+      if (p.fuseT > 0 && p.fuseMaterial) state.vfx.ghost(p.sprite.mesh, MATERIALS[p.fuseMaterial].trail, 0.24, 0.3);
+    }
+  }
+
+  // Per-material idle sparkle: diamond glints, water drips, stone crumbles —
+  // a slow ambient tell so the material reads even standing still.
+  if (p.material && p.materialT > 0) {
+    materialMoteT -= dt;
+    if (materialMoteT <= 0) {
+      materialMoteT = 0.22;
+      const a = Math.random() * Math.PI * 2;
+      const r = 0.25 + Math.random() * 0.25;
+      const mx = p.x + Math.cos(a) * r;
+      const mz = p.z + Math.sin(a) * r;
+      if (p.material === "diamond") state.vfx.burst(mx, 0.35 + Math.random() * 0.4, mz, MATERIALS.diamond.trail, 1, 0.4);
+      else if (p.material === "water") state.vfx.burst(mx, 0.15, mz, MATERIALS.water.tint, 1, 0.5);
+      else state.vfx.dust(mx, 0.05, mz);
+    }
   }
 
   // The shield BUBBLE: a ring of motes orbiting the knight, so invulnerability
