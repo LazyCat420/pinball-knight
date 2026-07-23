@@ -29,6 +29,21 @@ right home. `braindeadbot-service/src/realtime/` still exists but is **UNUSED**
 (its REST scores/youtube routes are unaffected). Keep the wire protocol in
 lockstep: `server/realtime.mjs` ⇔ `src/net/protocol.ts`.
 
+**🪤 THE TRAP THAT ATE A DAY — Next kills foreign websockets LAZILY.** Next 16
+embedded as a custom server attaches its own socket management on the FIRST HTTP
+request it serves, and from then on destroys every upgraded socket it doesn't
+recognize (~10ms after the 101, close 1006, NOTHING logged). The container's
+healthcheck hits `/` seconds after boot → /ws was always dead in prod, while
+every local "ws first, http later" test passed. A plain `server.on("upgrade")`
+listener CANNOT fix it (Next's late listener still runs after yours). The fix in
+`server/realtime.mjs`: `WebSocketServer({noServer})` + wrap `server.emit` so
+`/ws` upgrades are handled directly and never dispatched to other listeners.
+If /ws ever regresses to instant-1006: check that emit wrapper first, and test
+the "http request FIRST, then ws" order — it's the only order production sees.
+
+**VERIFIED LIVE (2026-07-22):** two ws clients via `wss://braindeadbot.com/ws` —
+same pool seed, join fan-out, scene-tagged moves, both directions.
+
 Dev note: `next dev` has no custom server → no `/ws` → game runs solo. To test
 multiplayer locally: `npm run build && npm start`, two tabs on localhost:5174.
 
