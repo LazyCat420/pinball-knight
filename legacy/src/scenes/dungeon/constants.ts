@@ -463,8 +463,12 @@ export const BALL_SPEED_MULT = 1.35; // extra speed in ball form (on top of mome
 // Part 1 — logarithmic speed ceiling on WALL/CORNER gains (parts still launch
 // to their own speeds; the ceiling only caps what bouncing can EARN):
 export const COMBO_CEIL_BASE = 8; // u/s the wall-gain ceiling starts at
-export const COMBO_CEIL_K = 0.4; // log compression (lower = more gradual)
-export const COMBO_CEIL_NSAT = 40; // bounces to ~95% of PINBALL_MAX_SPEED
+// Retuned from 0.4/40 after 2-player playtest feedback ("ramps up too quick"):
+// K 0.25 flattens the early gains, NSAT 80 doubles the bounces needed to
+// approach max — solo speed is now EARNED over a long chain, which is what
+// makes the marble-on-marble ×2 (coop.playerCollisions) read as the jackpot.
+export const COMBO_CEIL_K = 0.25; // log compression (lower = more gradual)
+export const COMBO_CEIL_NSAT = 80; // bounces to ~95% of PINBALL_MAX_SPEED
 // Part 3 — restitution taper: the first corner is the most exciting, deep
 // corners hold speed but stop gifting it (speed comes from the LINE, not a pop):
 export const COMBO_REST_LAMBDA = 0.08; // corner-restitution decay 1.12→1.0

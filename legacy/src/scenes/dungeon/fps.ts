@@ -134,7 +134,12 @@ function facingToYaw(): number {
 /** Mouse-look: accumulate yaw/pitch from a relative pointer delta. */
 export function onFpsMouseMove(dx: number, dy: number): void {
   if (!state.fpsActive) return;
-  state.fpsYaw -= dx * FPS_MOUSE_SENS;
+  // SIGN CONVENTION (worked out from the camera, not by feel): the camera
+  // lookAt()s along forwardXZ = (sin yaw, -cos yaw), so growing yaw veers the
+  // view toward +x when facing -z — the RIGHT of the screen. Mouse-right
+  // (dx > 0) must therefore INCREASE yaw. This was `-=` (turn left on
+  // mouse-right) and play-testing called it out as inverted.
+  state.fpsYaw += dx * FPS_MOUSE_SENS;
   state.fpsPitch = clamp(state.fpsPitch - dy * FPS_MOUSE_SENS, -FPS_PITCH_LIMIT, FPS_PITCH_LIMIT);
 }
 
@@ -179,16 +184,19 @@ export function updateFps(dt: number, input: InputHandle): void {
   const md = input.consumeMouseDelta();
   if (md.dx !== 0 || md.dy !== 0) onFpsMouseMove(md.dx, md.dy);
   const turn = input.turnAxis();
-  state.fpsYaw -= turn * FPS_TURN_SPEED * dt;
+  // turnAxis is +1 for "turn right" — same convention as the mouse above.
+  state.fpsYaw += turn * FPS_TURN_SPEED * dt;
 
   // ── Move: W/S along look, A/D strafe. Screen-relative axis reused: a.z is
   // forward/back (W = -1), a.x is strafe. ──
   const a = input.axis();
   const fwd = forwardXZ();
-  // Right-of-look. NOTE: the perpendicular is (fwd.z, -fwd.x), NOT its negation —
-  // the old (-fwd.z, fwd.x) put "right" on your LEFT, so A/D strafed the wrong
-  // way (you press left, you slide right). This is the corrected screen-right.
-  const right = { x: fwd.z, z: -fwd.x };
+  // Right-of-look = fwd × up = (-fwd.z, fwd.x). A previous pass flipped this to
+  // (fwd.z, -fwd.x) "because strafe felt wrong" — but the real bug was the yaw
+  // SIGN (above): with turning inverted, the doubly-inverted strafe felt right.
+  // Both signs are now canonical: yaw+ = turn right, and this is true
+  // screen-right, so D strafes right with no compensating errors.
+  const right = { x: -fwd.z, z: fwd.x };
   // a.z is +down (toward camera) in iso; here -a.z means "W = forward".
   let mx = (fwd.x * -a.z + right.x * a.x);
   let mz = (fwd.z * -a.z + right.z * a.x);

@@ -2894,13 +2894,21 @@ function loop(now: number): void {
   if (p) p.anim.update(frame);
   for (const z of state.zombies) z.anim.update(frame);
 
-  // Loot bobs gently, snapped to the pixel grid so it doesn't shimmer. Coins are
+  // Loot bobs, snapped to the pixel grid so it doesn't shimmer. Coins are
   // skipped: they own their own Y across burst/rest/magnet (updateCoins), and
   // two writers on one position is a fight, not a bob.
+  //
+  // Playtest feedback said loot was easy to walk past, so it now ADVERTISES:
+  // the bob is taller (0.05 → 0.09), and each item throws a small golden GLINT
+  // once per ~2.4s cycle, staggered by its own bobPhase so a loot pile
+  // twinkles rather than strobing in unison. The glint is a tinted burst —
+  // its white-hot cores cross the bloom threshold, so it genuinely sparkles.
   for (const it of state.groundItems) {
     if (it.coin) continue;
-    const y = 0.06 + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.05;
+    const y = 0.06 + Math.sin(state.elapsed * 2.6 + it.bobPhase) * 0.09;
     it.sprite.mesh.position.y = Math.round(y * PPU) / PPU;
+    const cycle = (state.elapsed + it.bobPhase) % 2.4;
+    if (cycle < frame) state.vfx?.burst(it.x, 0.4, it.z, 0xf0dc9a, 3, 1.4);
   }
 
   if (p && state.maze) {

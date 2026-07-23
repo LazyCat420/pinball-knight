@@ -36,6 +36,7 @@ import { state, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { RemotePartyRenderer } from "./render/remote-party";
 import { bossNetState, applyRemoteBossAux, updateBossReplica, adoptBoss, bossActive, disposeBoss, type BossAux } from "./boss";
 import { PINBALL_MAX_SPEED } from "./constants";
+import { sfxBumper } from "./audio";
 
 const SNAP_INTERVAL = 0.1; // authority world snapshots at 10Hz
 const GHOST_LERP = 10; // replica zombie interpolation rate
@@ -398,15 +399,22 @@ function playerCollisions(): void {
     p.x = peer.x + nx * PLAYER_BOUNCE_R;
     p.z = peer.z + nz * PLAYER_BOUNCE_R;
     if (p.momSpeed > 1) {
-      // We're rolling: reflect momentum off the peer (slightly bouncy).
+      // We're rolling: reflect momentum off the peer — and DOUBLE it. This is
+      // the co-op jackpot: the solo combo ramp is deliberately slow (see
+      // COMBO_CEIL_K/NSAT), so ricocheting off your teammate is the fastest
+      // acceleration in the game. Both clients run the same rule, so a head-on
+      // marble-vs-marble sends BOTH knights screaming apart.
       const dot = p.momX * nx + p.momZ * nz;
       if (dot < 0) {
         p.momX -= 2 * dot * nx;
         p.momZ -= 2 * dot * nz;
-        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * 1.02);
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * 2);
+        state.vfx?.burst(peer.x + nx * 0.25, 0.6, peer.z + nz * 0.25, 0xf0c040, 18, 6);
+        state.hitstopT = Math.max(state.hitstopT, 0.05);
+        sfxBumper();
       }
       state.vfx?.sparks(peer.x + nx * 0.25, 0.5, peer.z + nz * 0.25, nx, nz, 8);
-      state.shakeT = Math.max(state.shakeT, 0.08);
+      state.shakeT = Math.max(state.shakeT, 0.12);
     } else if (peer.mode === "ball") {
       // Standing knight hit by a rolling marble: get launched.
       p.momX = nx;
