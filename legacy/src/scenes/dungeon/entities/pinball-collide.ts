@@ -91,7 +91,7 @@ import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
-import { materialBumperMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit } from "./marble";
+import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit } from "./marble";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
@@ -270,7 +270,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     const d = Math.sqrt(d2) || 1;
     // Radial exit with the authentic ±6° scatter (active parts only — plain
     // walls stay mirror-perfect, per the research).
-    const scatter = (Math.random() * 2 - 1) * BUMPER_SCATTER;
+    const scatter = (Math.random() * 2 - 1) * BUMPER_SCATTER * materialBumperScatterMult();
     const cs = Math.cos(scatter);
     const sn = Math.sin(scatter);
     const nx = dx / d;

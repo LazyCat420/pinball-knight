@@ -73,12 +73,21 @@ import {
   STORM_CLAP_DMG,
   STORM_CLAP_STUN,
   STORM_WET_DMG,
+  SHADOW_PLAYER_R,
+  SHADOW_RESTITUTION,
+  SHADOW_BUMPER_SCATTER_MULT,
+  SHADOW_LURE_RADIUS,
+  SHADOW_LURE_TIME,
+  SHADOW_IMPLODE_RADIUS,
+  SHADOW_IMPLODE_PULL,
+  SHADOW_IMPLODE_DMG,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
+import { moveCircle } from "../collision";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 import { damageZombie } from "./combat";
-import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper } from "../audio";
+import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin } from "../audio";
 
 export interface MaterialMeta {
   label: string;
@@ -97,12 +106,13 @@ export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
   water: { label: "Water", icon: "💧", tint: PALETTE_HEX[30], trail: 0x3f9fd8, sfx: sfxSpring },
   stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4], trail: 0x9aa4b4, sfx: sfxHeavy },
   storm: { label: "Storm", icon: "⚡", tint: 0xf0e05a, trail: 0xfff3a0, sfx: sfxBumper },
+  shadow: { label: "Shadow", icon: "🌑", tint: 0x2a1e3a, trail: 0x140a1e, sfx: sfxSpin },
 };
 
-export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm"];
+export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm", "shadow"];
 
 export function isMaterial(id: string): id is MarbleMaterial {
-  return id === "diamond" || id === "water" || id === "stone" || id === "storm";
+  return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow";
 }
 
 /** True when materials are globally enabled and a player currently has one. */
@@ -165,8 +175,19 @@ export function materialFlatRestitution(): number | null {
   switch (activeMaterial()) {
     case "diamond": return DIAMOND_RESTITUTION;
     case "water": return WATER_RESTITUTION;
+    case "shadow": return SHADOW_RESTITUTION;
     default: return null;
   }
+}
+
+/** Effective collision radius for the ride sweep (shadow slips tight gaps). */
+export function materialPlayerR(): number {
+  return activeMaterial() === "shadow" ? SHADOW_PLAYER_R : PLAYER_R;
+}
+
+/** Multiplier on bumper exit-scatter (shadow's exits go unpredictable). */
+export function materialBumperScatterMult(): number {
+  return activeMaterial() === "shadow" ? SHADOW_BUMPER_SCATTER_MULT : 1;
 }
 
 /** Effective wall-break thresholds (diamond punches through far more easily). */
@@ -280,8 +301,29 @@ export function emitMaterialOnBounce(nx: number, nz: number): void {
       // Storm × water-slick → the floor is a Tesla coil: chain the shock across
       // everything standing on any wet tile (the fusion-window synergy).
       stormElectrifyWet();
+    } else if (m === "shadow") {
+      // A SHADOW CLONE decoy at the pre-bounce spot — nearby foes break off and
+      // chase it (per-enemy lure) while it dissolves. No damage: pure evasion.
+      shadowDecoy(p.x, p.z);
     }
   }
+}
+
+/** Spawn a shadow-clone decoy: an ink afterimage at (x,z) that nearby foes
+ *  peel off to chase (lureT), buying the shadow ball a window to slip away. */
+function shadowDecoy(x: number, z: number): void {
+  const p = state.player;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - x;
+    const dz = zmb.z - z;
+    if (dx * dx + dz * dz > SHADOW_LURE_RADIUS * SHADOW_LURE_RADIUS) continue;
+    zmb.lureT = SHADOW_LURE_TIME;
+    zmb.lureX = x;
+    zmb.lureZ = z;
+  }
+  if (p) state.vfx?.ghost(p.sprite.mesh, MATERIALS.shadow.trail, 0.4, 0.55);
+  state.vfx?.burst(x, 0.25, z, MATERIALS.shadow.tint, 6, 1.5);
 }
 
 /** A storm lightning arc from (cx,cz) along a unit dir — a narrow damage lane
@@ -350,8 +392,39 @@ export function materialSlam(): void {
       state.shakeT = Math.max(state.shakeT, 0.4);
     } else if (m === "storm") {
       thunderclap(p.x, p.z);
+    } else if (m === "shadow") {
+      voidImplosion(p.x, p.z);
     }
   }
+}
+
+/** 🌑 VOID IMPLOSION: violently yank every nearby foe inward (they crush
+ *  together and take collision damage), then release — a gravity-well panic
+ *  button. Reuses moveCircle so nobody is shoved into a wall. */
+function voidImplosion(x: number, z: number): void {
+  const g = state.grid;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = x - zmb.x;
+    const dz = z - zmb.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > SHADOW_IMPLODE_RADIUS * SHADOW_IMPLODE_RADIUS) continue;
+    const d = Math.hypot(dx, dz) || 1;
+    const pull = d * SHADOW_IMPLODE_PULL; // fraction of the way to the centre
+    if (g) {
+      const r = moveCircle(g, zmb.x, zmb.z, ZOMBIE_R, (dx / d) * pull, (dz / d) * pull);
+      zmb.x = r.x;
+      zmb.z = r.z;
+    }
+    damageZombie(zmb, SHADOW_IMPLODE_DMG, -dx, -dz, 0);
+  }
+  // Collapsing ring of ink motes + a dark core.
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    state.vfx?.mote(x + Math.cos(a) * SHADOW_IMPLODE_RADIUS * 0.6, 0.3, z + Math.sin(a) * SHADOW_IMPLODE_RADIUS * 0.6);
+  }
+  state.vfx?.burst(x, 0.4, z, MATERIALS.shadow.trail, 14, 1.5);
+  state.shakeT = Math.max(state.shakeT, 0.3);
 }
 
 /** ⚡ THUNDERCLAP: a ring of electricity that damages AND STUNS (freezes in

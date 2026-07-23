@@ -396,6 +396,17 @@ export function updateZombies(dt: number): void {
       }
     }
 
+    // ── SHADOW LURE ── a shadow-clone decoy has this foe's attention: it walks
+    // toward the clone instead of you until the lure lapses (or it arrives).
+    if (z.lureT && z.lureT > 0) {
+      z.lureT = Math.max(0, z.lureT - dt);
+      const lx = (z.lureX ?? z.x) - z.x;
+      const lz = (z.lureZ ?? z.z) - z.z;
+      const ld = Math.hypot(lx, lz) || 1;
+      vx = lx / ld;
+      vz = lz / ld;
+    }
+
     // ── Separation — shove apart any living neighbours that overlap ──
     let sx = 0;
     let sz = 0;

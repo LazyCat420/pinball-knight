@@ -1600,7 +1600,7 @@ export const BONUS_ROOM_GRADES = ["S", "A"];
 // the same choke points that branch on springT/turboT/oilT, plus on-bounce and
 // on-slam emitters. See entities/marble.ts and state.MarbleMaterial.
 /** How long a picked-up material lasts (seconds), by material. */
-export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16 } as const;
+export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16, shadow: 12 } as const;
 /** Fusion window: after a 2nd pickup, both materials co-fire this long. */
 export const MATERIAL_FUSION_TIME = 2;
 /** Min momentum (u/s) before a bounce emits anything — rewards flow, kills spam. */
@@ -1673,6 +1673,16 @@ export const STORM_CLAP_STUN = 0.6; // seconds a foe is stunned (frozen in place
 // Storm × water-slick → ELECTRIFIED FLOOR: a storm bounce over a wet tile
 // discharges into everything standing on any slick, chaining the shock.
 export const STORM_WET_DMG = 2;
+
+// 🌑 Shadow — evasion / control (slips gaps, decoys, void implosion)
+export const SHADOW_PLAYER_R = 0.21; // shrunk collider (vs PLAYER_R 0.3) — slips tight gaps
+export const SHADOW_RESTITUTION = 1.05; // flat walls slowly ACCELERATE — slippery unreality
+export const SHADOW_BUMPER_SCATTER_MULT = 2.0; // bumper exits get unpredictable
+export const SHADOW_LURE_RADIUS = 4.0; // foes this close get pulled onto the decoy
+export const SHADOW_LURE_TIME = 1.2; // seconds a foe chases the shadow clone
+export const SHADOW_IMPLODE_RADIUS = 4.2; // void-implosion reach (slam)
+export const SHADOW_IMPLODE_PULL = 0.45; // fraction of the way to you a foe is yanked
+export const SHADOW_IMPLODE_DMG = 2; // collision damage as they crush together
 
 // Floor-fx (persistent scars)
 export const FLOORFX_TICK = 0.4; // seconds between floor-fx damage/status ticks

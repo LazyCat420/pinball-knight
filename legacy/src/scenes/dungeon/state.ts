@@ -39,7 +39,7 @@ export interface Actor {
  * shoot-out, floor scarring). Held one at a time; a fresh pickup opens a brief
  * fusion window where the previous material co-fires before it expires.
  */
-export type MarbleMaterial = "diamond" | "water" | "stone" | "storm";
+export type MarbleMaterial = "diamond" | "water" | "stone" | "storm" | "shadow";
 
 export interface Player extends Actor {
   hp: number;
@@ -295,6 +295,11 @@ export interface Zombie extends Actor {
   /** WATER slick: unit drift direction while slipping. */
   slipVX?: number;
   slipVZ?: number;
+  /** SHADOW decoy: seconds this foe is lured toward a shadow clone (not you). */
+  lureT?: number;
+  /** SHADOW decoy: the clone position the foe walks toward while lured. */
+  lureX?: number;
+  lureZ?: number;
   /** Ghost/bat hover-bob + wobble phase accumulator (seconds); unused by grounded kinds. */
   bobT?: number;
   /** True for a slime spawned by a split — minis never split again. */
