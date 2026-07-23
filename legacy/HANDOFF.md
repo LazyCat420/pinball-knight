@@ -2,7 +2,7 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client `491384b` on synology (deployed 2026-07-22; rollback image
+**Live:** client `9bb89a2` on synology (deployed 2026-07-22; rollback image
 `braindeadbot-client:previous`). Service unchanged. Newly live since
 `ba9b484`: **marble materials system** (`3fcecc1`), unarmored-knight default
 look (`cadfa82`, parallel session), and the **VFX/spread/route wave** below.
@@ -11,7 +11,26 @@ combo ramp (`5f9fbfe`), 4× floors + route-math plan v2 (`137f32c`), title intro
 (`877c83c`), shaped walls (`b2f4f21`+`b77ac83`), storm cards (`048c853`),
 elemental armor (`96b3a76`).
 
-## Latest — material × terrain reactions (`491384b`)
+## Latest — Storm, the 4th marble material (`9bb89a2`)
+
+⚡ Storm joins diamond/water/stone (`entities/marble.ts`):
+- **Physics:** lane-centring pull ×2 (`materialLanePull` → the lane-glide nudge)
+  = rails corridors with inhuman precision; sharper steer ×1.45.
+- **On bounce:** a sideways LIGHTNING ARC perpendicular to travel (`stormArc`,
+  CARD_BOLT-style damage lane + `vfx.bolt`).
+- **On slam:** THUNDERCLAP (`thunderclap`) — a ring that damages AND STUNS,
+  freezing foes in place by reusing the water-slick `slipT` with zero drift.
+- **Synergy:** Storm × water-slick → ELECTRIFIED FLOOR (`stormElectrifyWet`) — a
+  storm bounce discharges into every foe on any slick tile (the fusion-window
+  Tesla-coil payoff: grab water then storm inside the 2s window).
+
+Added to every material seam: `MarbleMaterial` union, MATERIALS meta +
+MATERIAL_LIST + isMaterial + MATERIAL_DURATION, ITEM_PAINTS gem sprite, ` panel
+chip, both HUD chips (ui + hud-diablo), idle sparkle. Drops + floor-1 seeding
+pick it up automatically off MATERIAL_LIST. `marble-storm.test.ts` pins
+lane-pull / steer / thunderclap-stun. 424 dungeon tests green. NOT click-tested.
+
+## Prior — material × terrain reactions (`491384b`)
 
 The brainstorm's deferred terrain layer, wired to the 3 live materials. Each is
 a helper in `entities/marble.ts` (gated by `reactingAs()` = materials on +
