@@ -29,6 +29,7 @@ import {
 } from "../constants";
 import { comboWindow } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
+import { tryDiamondDischarge, waterQuenchesFire } from "./marble";
 import { sfxBumper, sfxFlame } from "../audio";
 
 /** A shared clock the electric-plate phase reads (mirrors pinball-parts' animT). */
@@ -90,6 +91,12 @@ export function simulateHazards(dt: number): void {
       const dz = p.z - part.z;
       if (dx * dx + dz * dz > ELEC_RADIUS * ELEC_RADIUS) continue;
       elecCd = ELEC_ZAP_COOLDOWN;
+      // 💎 Diamond CHANNELS the plate: eats the shock and discharges it into
+      // nearby foes instead of taking damage.
+      if (tryDiamondDischarge(p.x, p.z)) {
+        state.shakeT = Math.max(state.shakeT, 0.16);
+        continue;
+      }
       hitPlayerRanged(ELEC_DAMAGE, part.x, part.z); // funnels through armor/i-frames
       state.vfx?.sparks(p.x, 0.5, p.z, 0, 1, 16);
       state.shakeT = Math.max(state.shakeT, 0.2);
@@ -99,9 +106,12 @@ export function simulateHazards(dt: number): void {
       if (!roaring) continue;
       if (p && p.hp > 0 && p.rideT < 0 && ventCd <= 0 && inLaneOf(part, p.x, p.z, VENT_LANE_LEN, VENT_LANE_HALF)) {
         ventCd = VENT_BURN_COOLDOWN;
-        hitPlayerRanged(VENT_DAMAGE, part.x, part.z);
-        state.vfx?.ember(p.x, 0.4, p.z);
-        if (Math.random() < 0.3) sfxFlame();
+        // 💧 Water flash-boils the jet into a harmless steam puff — no burn.
+        if (!waterQuenchesFire(p.x, p.z)) {
+          hitPlayerRanged(VENT_DAMAGE, part.x, part.z);
+          state.vfx?.ember(p.x, 0.4, p.z);
+          if (Math.random() < 0.3) sfxFlame();
+        }
       }
       for (const z of state.zombies) {
         if (z.mode === "dead" || z.kind === "reaper") continue;

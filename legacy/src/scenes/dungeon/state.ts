@@ -840,6 +840,8 @@ export const state = {
   dbgMaterialFloorFx: true,
   /** Player takes damage standing on their own hazard floor tiles. */
   dbgMaterialSelfHarm: false,
+  /** Material × terrain reactions (water→steam, stone plows, diamond discharge). */
+  dbgMaterialTerrain: true,
   /** R&D: drop all three materials near the floor-1 spawn. */
   dbgMaterialFloor1Spawn: true,
 

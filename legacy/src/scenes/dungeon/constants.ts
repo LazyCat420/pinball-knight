@@ -1645,6 +1645,22 @@ export const STONE_SLAM_RADIUS = 1.4; // boulder-slam AoE
 export const STONE_SLAM_BASE_DMG = 4;
 export const STONE_SLAM_DMG_PER_SPEED = 0.3; // + this × speed converted
 
+// ── MATERIAL × TERRAIN REACTIONS ──
+// The ball's substance reacts to hazard tiles it crosses (see entities/marble.ts
+// materialTerrain* + the pinball-collide / hazards handlers that call them).
+// 💧 Water × magstrip → STEAM ERUPTION (the anti-speed trap flash-boils into a
+//    launch + a scalding radial burst instead of dragging you to a crawl).
+export const WATER_STEAM_LAUNCH = 14; // u/s the eruption flings you (vs the crawl)
+export const WATER_STEAM_RADIUS = 2.0; // scald radius (tiles)
+export const WATER_STEAM_DMG = 3;
+export const WATER_STEAM_COOLDOWN = 0.5; // per-strip re-arm
+// 🪨 Stone × magstrip → PLOW: too heavy for the field to grip; barely slowed.
+export const STONE_MAGSTRIP_CAP = 13; // speed clamp for stone (vs MAGSTRIP_SPEED_CAP 3.2)
+// 💎 Diamond × electric → DISCHARGE: prismatic lattice channels a live plate
+//    into a zap on nearby foes, and diamond eats the shock itself.
+export const DIAMOND_DISCHARGE_RADIUS = 2.4;
+export const DIAMOND_DISCHARGE_DMG = 4;
+
 // Floor-fx (persistent scars)
 export const FLOORFX_TICK = 0.4; // seconds between floor-fx damage/status ticks
 export const FIRE_PUDDLE_DMG = 1; // per tick (deferred Lava; wired for R&D)

@@ -153,6 +153,7 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   addToggle("ON-BOUNCE", () => state.dbgMaterialOnBounce, (v) => (state.dbgMaterialOnBounce = v));
   addToggle("SLAM EMIT", () => state.dbgMaterialSlam, (v) => (state.dbgMaterialSlam = v));
   addToggle("FLOOR FX", () => state.dbgMaterialFloorFx, (v) => (state.dbgMaterialFloorFx = v));
+  addToggle("TERRAIN RX", () => state.dbgMaterialTerrain, (v) => (state.dbgMaterialTerrain = v));
   addToggle("SELF-HARM", () => state.dbgMaterialSelfHarm, (v) => (state.dbgMaterialSelfHarm = v));
   addToggle("FLOOR-1 DROPS", () => state.dbgMaterialFloor1Spawn, (v) => (state.dbgMaterialFloor1Spawn = v));
 

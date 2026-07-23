@@ -78,6 +78,7 @@ import {
   MAGSTRIP_SPEED_CAP,
   MAGBOOTS_STRIP_LAUNCH,
   MAGSTRIP_BOOTS_COOLDOWN,
+  WATER_STEAM_COOLDOWN,
   PIT_RADIUS,
   PIT_CLIMB_COOLDOWN,
   PIT_GOLD_PENALTY,
@@ -90,7 +91,7 @@ import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
-import { materialBumperMult } from "./marble";
+import { materialBumperMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit } from "./marble";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
@@ -407,6 +408,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // The slick: a WALKING touch converts your stride into a frictionless
     // slide along your heading; riding over it re-greases the momentum.
     if (d2 > OIL_RADIUS * OIL_RADIUS) return;
+    if (stoneIgnoresOil()) return; // 🪨 a boulder doesn't hydroplane — keeps grip
     if (inMomentum) {
       p.oilT = OIL_SLICK_TIME; // keep the ride greased (no friction, dead steering)
       return; // no cooldown stamp — the slick is a zone, not a trigger
@@ -580,6 +582,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // out sets us on the rim, so lock the hole briefly — otherwise a bounce
     // straight back in reads as the pit "grabbing" you.
     if (p.rideT >= 0 || p.dropT >= 0 || d2 > PIT_RADIUS * PIT_RADIUS) return;
+    if (stoneBridgesPit()) return; // 🪨 too heavy to be swallowed — plows across
     part.cooldownT = PIT_CLIMB_COOLDOWN;
     fallInPit(part.x, part.z);
     return "stop"; // the fall owns this frame
@@ -604,7 +607,15 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
       }
       return;
     }
-    if (p.momSpeed > MAGSTRIP_SPEED_CAP) p.momSpeed = MAGSTRIP_SPEED_CAP;
+    // 💧 Water FLASH-BOILS on the field: the trap becomes a steam launch.
+    if (inMomentum && part.cooldownT <= 0 && tryWaterSteam()) {
+      onPartTrigger();
+      part.cooldownT = WATER_STEAM_COOLDOWN;
+      return;
+    }
+    // 🪨 Stone plows through — the magnet can't grip a boulder (higher clamp).
+    const cap = stoneMagstripCap() ?? MAGSTRIP_SPEED_CAP;
+    if (p.momSpeed > cap) p.momSpeed = cap;
     if (Math.random() < 0.3) state.vfx?.sparks(part.x, 0.2, part.z, 0, 1, 2);
   },
 

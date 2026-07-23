@@ -58,6 +58,12 @@ import {
   BALL_RAM_KNOCKBACK,
   PLAYER_R,
   ZOMBIE_R,
+  WATER_STEAM_LAUNCH,
+  WATER_STEAM_RADIUS,
+  WATER_STEAM_DMG,
+  STONE_MAGSTRIP_CAP,
+  DIAMOND_DISCHARGE_RADIUS,
+  DIAMOND_DISCHARGE_DMG,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { spawnShardBurst } from "./projectiles";
@@ -304,4 +310,92 @@ function stoneShockwave(x: number, z: number, radius: number, dmg: number): void
     state.vfx?.dust(x + Math.cos(a) * radius * 0.7, 0.05, z + Math.sin(a) * radius * 0.7);
   }
   state.vfx?.burst(x, 0.1, z, MATERIALS.stone.trail, 8, radius * 3);
+}
+
+// ── MATERIAL × TERRAIN REACTIONS ────────────────────────────────
+// The ball's substance reacts to hazard tiles. Called from the hazard handlers
+// (pinball-collide PART_HANDLERS + hazards.simulateHazards); each is a no-op
+// unless materials AND the terrain toggle are on, so the panel can flip the
+// whole layer. See constants MATERIAL × TERRAIN block.
+
+/** True when reactions are enabled AND `m` is the active ride material. */
+function reactingAs(m: MarbleMaterial): boolean {
+  return state.dbgMaterialTerrain && activeMaterial() === m;
+}
+
+/**
+ * 💧 Water × magstrip → STEAM ERUPTION. The magnet field flash-boils the water
+ * marble: instead of dragging you to a crawl, you erupt — a scalding radial
+ * burst (damage + knockback) and a hard launch along your heading. Returns true
+ * when it fired (the magstrip handler then SKIPS its slow + stamps a cooldown).
+ */
+export function tryWaterSteam(): boolean {
+  const p = state.player;
+  if (!p || !reactingAs("water")) return false;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - p.x;
+    const dz = zmb.z - p.z;
+    const rr = WATER_STEAM_RADIUS + ZOMBIE_R;
+    if (dx * dx + dz * dz > rr * rr) continue;
+    damageZombie(zmb, WATER_STEAM_DMG, dx, dz, 1.2);
+  }
+  // Erupt along your current heading (or straight up-lane if stalled).
+  p.momSpeed = Math.max(p.momSpeed, WATER_STEAM_LAUNCH);
+  // A white scald cloud + a low blue splash.
+  state.vfx?.burst(p.x, 0.4, p.z, 0xffffff, 20, 5);
+  state.vfx?.burst(p.x, 0.12, p.z, MATERIALS.water.tint, 10, 3);
+  spawnFloorFx("slick", p.x, p.z, WATER_SLICK_RADIUS, WATER_SLICK_LIFE);
+  state.shakeT = Math.max(state.shakeT, 0.3);
+  sfxSpring();
+  return true;
+}
+
+/** 🪨 Stone × magstrip → PLOW: the field can't grip a boulder. Returns the
+ *  effective speed clamp, or null to use the normal cap. */
+export function stoneMagstripCap(): number | null {
+  return reactingAs("stone") ? STONE_MAGSTRIP_CAP : null;
+}
+
+/** 🪨 Stone × oil → GRIP: a boulder doesn't hydroplane. True = ignore the slick. */
+export function stoneIgnoresOil(): boolean {
+  return reactingAs("stone");
+}
+
+/** 🪨 Stone × pit → BRIDGE: too heavy to be swallowed while rolling; it plows
+ *  across (a plume of dust) instead of falling in. */
+export function stoneBridgesPit(): boolean {
+  const p = state.player;
+  if (!p || !reactingAs("stone") || p.momSpeed <= 0) return false;
+  state.vfx?.dust(p.x, 0.05, p.z);
+  state.vfx?.burst(p.x, 0.1, p.z, MATERIALS.stone.trail, 6, 2);
+  return true;
+}
+
+/** 💧 Water × firevent → STEAM: the jet flash-boils the water instead of
+ *  burning you. True = skip the burn (a steam puff is emitted). */
+export function waterQuenchesFire(x: number, z: number): boolean {
+  if (!reactingAs("water")) return false;
+  state.vfx?.burst(x, 0.3, z, 0xffffff, 8, 3);
+  return true;
+}
+
+/**
+ * 💎 Diamond × electric → DISCHARGE. The prismatic lattice channels a live
+ * plate into a zap on nearby foes and eats the shock itself. Returns true when
+ * it fired (the electric handler then SKIPS the player damage). Fires at most
+ * on the plate's own zap cadence (the caller already gates on that).
+ */
+export function tryDiamondDischarge(x: number, z: number): boolean {
+  if (!reactingAs("diamond")) return false;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - x;
+    const dz = zmb.z - z;
+    const rr = DIAMOND_DISCHARGE_RADIUS + ZOMBIE_R;
+    if (dx * dx + dz * dz > rr * rr) continue;
+    damageZombie(zmb, DIAMOND_DISCHARGE_DMG, dx, dz, 0.4);
+  }
+  state.vfx?.burst(x, 0.5, z, 0x9fe8ff, 16, DIAMOND_DISCHARGE_RADIUS * 3);
+  return true; // absorbed regardless — diamond never takes the shock
 }
