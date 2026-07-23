@@ -1600,7 +1600,7 @@ export const BONUS_ROOM_GRADES = ["S", "A"];
 // the same choke points that branch on springT/turboT/oilT, plus on-bounce and
 // on-slam emitters. See entities/marble.ts and state.MarbleMaterial.
 /** How long a picked-up material lasts (seconds), by material. */
-export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16, shadow: 12 } as const;
+export const MATERIAL_DURATION = { diamond: 20, water: 16, stone: 24, storm: 16, shadow: 12, lava: 14 } as const;
 /** Fusion window: after a 2nd pickup, both materials co-fire this long. */
 export const MATERIAL_FUSION_TIME = 2;
 /** Min momentum (u/s) before a bounce emits anything — rewards flow, kills spam. */
@@ -1683,6 +1683,12 @@ export const SHADOW_LURE_TIME = 1.2; // seconds a foe chases the shadow clone
 export const SHADOW_IMPLODE_RADIUS = 4.2; // void-implosion reach (slam)
 export const SHADOW_IMPLODE_PULL = 0.45; // fraction of the way to you a foe is yanked
 export const SHADOW_IMPLODE_DMG = 2; // collision damage as they crush together
+
+// 🔥 Lava — terrain scorcher (leave the machine burning)
+export const LAVA_BUMPER_MULT = 1.6; // reactive off parts — explosive bumper kicks
+export const LAVA_SLAM_GLOBS = 6; // fire puddles thrown in a ring on the slam
+export const LAVA_SLAM_FIRE_RADIUS = 0.9;
+export const LAVA_SLAM_FIRE_LIFE = 3;
 
 // Floor-fx (persistent scars)
 export const FLOORFX_TICK = 0.4; // seconds between floor-fx damage/status ticks

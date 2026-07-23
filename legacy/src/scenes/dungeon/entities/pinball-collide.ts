@@ -91,7 +91,7 @@ import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
-import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit } from "./marble";
+import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit, lavaVaporizesOil } from "./marble";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
@@ -409,6 +409,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // slide along your heading; riding over it re-greases the momentum.
     if (d2 > OIL_RADIUS * OIL_RADIUS) return;
     if (stoneIgnoresOil()) return; // 🪨 a boulder doesn't hydroplane — keeps grip
+    if (lavaVaporizesOil(part.x, part.z)) return; // 🔥 the slick flashes to flame
     if (inMomentum) {
       p.oilT = OIL_SLICK_TIME; // keep the ride greased (no friction, dead steering)
       return; // no cooldown stamp — the slick is a zone, not a trigger

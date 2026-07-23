@@ -500,6 +500,7 @@ function activeBuffs(): BuffView[] {
       stone: { icon: "🪨", color: "#9aa4b4", max: 24, label: "Stone Marble · heavy; shockwaves + boulder slam" },
       storm: { icon: "⚡", color: "#f0e05a", max: 16, label: "Storm Marble · rails corridors; lightning arcs + thunderclap" },
       shadow: { icon: "🌑", color: "#9a7fc0", max: 12, label: "Shadow Marble · slips gaps; decoy clones + void implosion" },
+      lava: { icon: "🔥", color: "#f0a63c", max: 14, label: "Lava Marble · leaves burning puddles; erupts on slam" },
     };
     const m = M[p.material];
     if (m) add(p.materialT, `mat-${p.material}`, m.icon, m.color, m.max, m.label);

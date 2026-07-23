@@ -81,13 +81,19 @@ import {
   SHADOW_IMPLODE_RADIUS,
   SHADOW_IMPLODE_PULL,
   SHADOW_IMPLODE_DMG,
+  LAVA_BUMPER_MULT,
+  LAVA_SLAM_GLOBS,
+  LAVA_SLAM_FIRE_RADIUS,
+  LAVA_SLAM_FIRE_LIFE,
+  FIRE_PUDDLE_RADIUS,
+  FIRE_PUDDLE_LIFE,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { moveCircle } from "../collision";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 import { damageZombie } from "./combat";
-import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin } from "../audio";
+import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame } from "../audio";
 
 export interface MaterialMeta {
   label: string;
@@ -107,12 +113,13 @@ export const MATERIALS: Record<MarbleMaterial, MaterialMeta> = {
   stone: { label: "Stone", icon: "🪨", tint: PALETTE_HEX[4], trail: 0x9aa4b4, sfx: sfxHeavy },
   storm: { label: "Storm", icon: "⚡", tint: 0xf0e05a, trail: 0xfff3a0, sfx: sfxBumper },
   shadow: { label: "Shadow", icon: "🌑", tint: 0x2a1e3a, trail: 0x140a1e, sfx: sfxSpin },
+  lava: { label: "Lava", icon: "🔥", tint: 0xf0a63c, trail: 0xd97b29, sfx: sfxFlame },
 };
 
-export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm", "shadow"];
+export const MATERIAL_LIST: MarbleMaterial[] = ["diamond", "water", "stone", "storm", "shadow", "lava"];
 
 export function isMaterial(id: string): id is MarbleMaterial {
-  return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow";
+  return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow" || id === "lava";
 }
 
 /** True when materials are globally enabled and a player currently has one. */
@@ -235,9 +242,13 @@ export function materialCornerAddMult(): number {
   return activeMaterial() === "stone" ? STONE_CORNER_ADD_MULT : 1;
 }
 
-/** Multiplier on bumper kick (stone ignores small forces). */
+/** Multiplier on bumper kick (stone ignores small forces; lava is explosive). */
 export function materialBumperMult(): number {
-  return activeMaterial() === "stone" ? STONE_BUMPER_KICK_MULT : 1;
+  switch (activeMaterial()) {
+    case "stone": return STONE_BUMPER_KICK_MULT;
+    case "lava": return LAVA_BUMPER_MULT;
+    default: return 1;
+  }
 }
 
 /** Speed ceiling for the current material (stone tops out lower). */
@@ -305,6 +316,11 @@ export function emitMaterialOnBounce(nx: number, nz: number): void {
       // A SHADOW CLONE decoy at the pre-bounce spot — nearby foes break off and
       // chase it (per-enemy lure) while it dissolves. No damage: pure evasion.
       shadowDecoy(p.x, p.z);
+    } else if (m === "lava") {
+      // Leave the machine HOT: every fast bounce deposits a burning puddle
+      // (the fire floor-fx ticks burn DoT to anything standing in it).
+      spawnFloorFx("fire", cx, cz, FIRE_PUDDLE_RADIUS, FIRE_PUDDLE_LIFE);
+      state.vfx?.burst(cx, 0.2, cz, MATERIALS.lava.tint, 6, 2.5);
     }
   }
 }
@@ -394,6 +410,15 @@ export function materialSlam(): void {
       thunderclap(p.x, p.z);
     } else if (m === "shadow") {
       voidImplosion(p.x, p.z);
+    } else if (m === "lava") {
+      // ERUPTION: a ring of fire puddles around you — a burning arena.
+      for (let n = 0; n < LAVA_SLAM_GLOBS; n++) {
+        const a = (n / LAVA_SLAM_GLOBS) * Math.PI * 2;
+        const r = LAVA_SLAM_FIRE_RADIUS * 1.3;
+        spawnFloorFx("fire", p.x + Math.cos(a) * r, p.z + Math.sin(a) * r, LAVA_SLAM_FIRE_RADIUS, LAVA_SLAM_FIRE_LIFE);
+      }
+      state.vfx?.burst(p.x, 0.4, p.z, MATERIALS.lava.tint, 18, 4);
+      state.shakeT = Math.max(state.shakeT, 0.3);
     }
   }
 }
@@ -519,6 +544,15 @@ export function stoneMagstripCap(): number | null {
 /** 🪨 Stone × oil → GRIP: a boulder doesn't hydroplane. True = ignore the slick. */
 export function stoneIgnoresOil(): boolean {
   return reactingAs("stone");
+}
+
+/** 🔥 Lava × oil → VAPORIZE: the slick flashes off into flame. True = the oil
+ *  handler skips greasing and a fire puddle is deposited instead. */
+export function lavaVaporizesOil(x: number, z: number): boolean {
+  if (!reactingAs("lava")) return false;
+  spawnFloorFx("fire", x, z, FIRE_PUDDLE_RADIUS, FIRE_PUDDLE_LIFE);
+  state.vfx?.burst(x, 0.2, z, MATERIALS.lava.tint, 10, 3);
+  return true;
 }
 
 /** 🪨 Stone × pit → BRIDGE: too heavy to be swallowed while rolling; it plows

@@ -401,6 +401,7 @@ const MATERIAL_CHIP: Record<string, { icon: string; label: string; color: string
   stone: { icon: "🪨", label: "STONE", color: "#9aa4b4" },
   storm: { icon: "⚡", label: "STORM", color: "#f0e05a" },
   shadow: { icon: "🌑", label: "SHADOW", color: "#9a7fc0" },
+  lava: { icon: "🔥", label: "LAVA", color: "#f0a63c" },
 };
 
 export function updateHUD(el: HTMLDivElement): void {

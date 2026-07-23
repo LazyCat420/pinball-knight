@@ -2790,6 +2790,7 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   stone: gemItem("#6b7688"),
   storm: gemItem("#f0e05a"),
   shadow: gemItem("#3a2a55"),
+  lava: gemItem("#f0a63c"),
 };
 
 // ══════════════════════════════════════════════════════════════════

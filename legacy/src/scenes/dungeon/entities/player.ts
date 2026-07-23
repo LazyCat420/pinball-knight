@@ -279,6 +279,7 @@ function updateBuffTells(dt: number): void {
       else if (p.material === "water") state.vfx.burst(mx, 0.15, mz, MATERIALS.water.tint, 1, 0.5);
       else if (p.material === "storm") state.vfx.burst(mx, 0.3 + Math.random() * 0.5, mz, MATERIALS.storm.trail, 2, 1.2);
       else if (p.material === "shadow") state.vfx.mote(mx, 0.2 + Math.random() * 0.4, mz);
+      else if (p.material === "lava") state.vfx.ember(mx, 0.1, mz);
       else state.vfx.dust(mx, 0.05, mz);
     }
   }
