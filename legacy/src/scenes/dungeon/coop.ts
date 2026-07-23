@@ -378,6 +378,17 @@ function handleAct(act: Act): void {
   }
 }
 
+/**
+ * The knight just died: push one final pose tagged mode:"death" (bypassing the
+ * 15Hz throttle) so peers gray the body out and STOP colliding with it — live
+ * QA bounced marbles off a corpse. Poses resume automatically on retry.
+ */
+export function coopAnnounceDeath(): void {
+  const p = state.player;
+  if (!p || !isConnected()) return;
+  net().send({ type: "move", x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, facing: p.facing, scene: sceneTag(floor), mode: "death" });
+}
+
 // ── Marble-vs-marble ──────────────────────────────────────────────────────────
 /**
  * Knights collide with each other. Each client resolves only its OWN knight
@@ -388,7 +399,9 @@ function handleAct(act: Act): void {
 function playerCollisions(): void {
   const p = state.player;
   if (!p || !renderer) return;
+  if (state.gameOver) return; // our own corpse doesn't bounce either
   for (const peer of renderer.positions()) {
+    if (peer.mode === "death") continue; // never carom off a fallen knight
     const dx = p.x - peer.x;
     const dz = p.z - peer.z;
     const d = Math.hypot(dx, dz);

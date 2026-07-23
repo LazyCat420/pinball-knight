@@ -37,6 +37,8 @@ interface View {
   seen: boolean;
   /** Last clip the peer reported ("ball"/"roll"/"attack" are mirrored 1:1). */
   mode: string;
+  /** Peer announced death — drained tint until their next live pose. */
+  dead: boolean;
 }
 
 /**
@@ -99,7 +101,7 @@ export class RemotePartyRenderer {
     const nameplate = makeNameplate(name, colorForSlot(slot).hex);
     sprite.mesh.add(nameplate);
     this.scene.add(sprite.mesh);
-    const v: View = { slot, sprite, animator, nameplate, tx: 0, tz: 0, tf: "S", rx: 0, rz: 0, facing: "S", seen: false, mode: "idle" };
+    const v: View = { slot, sprite, animator, nameplate, tx: 0, tz: 0, tf: "S", rx: 0, rz: 0, facing: "S", seen: false, mode: "idle", dead: false };
     this.views.set(id, v);
     return v;
   }
@@ -129,6 +131,20 @@ export class RemotePartyRenderer {
       const vx = (v.rx - px) / (dt || 1 / 60);
       const vz = (v.rz - pz) / (dt || 1 / 60);
       const speed = Math.hypot(vx, vz);
+      // Death: drain the tint and hold idle until a live pose arrives (retry).
+      if (v.mode === "death" && !v.dead) {
+        v.dead = true;
+        v.sprite.setTint(0x6b7688);
+      } else if (v.mode !== "death" && v.dead) {
+        v.dead = false;
+        v.sprite.setTint(colorForSlot(v.slot).hex);
+      }
+      if (v.dead) {
+        v.animator.play("idle");
+        v.animator.update(dt);
+        v.sprite.mesh.position.set(v.rx, 0, v.rz);
+        continue;
+      }
       if (MIRRORED_CLIPS.has(v.mode)) {
         // Peer is in a special clip (marble, tumble, swing) — mirror it and use
         // their REPORTED facing; velocity-derived facing flip-flops on bounces.

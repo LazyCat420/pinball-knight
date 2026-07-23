@@ -219,7 +219,7 @@ import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill } from "./coop";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath } from "./coop";
 import { stopPresence } from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
@@ -803,6 +803,13 @@ export function launchDungeonGame(onExit?: () => void): void {
       const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
       z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)
       bumpZombieNid(nid);
+      // The Death Dealer's warning toast fires in spawnReaper — authority-only.
+      // Without this, the replica player meets an immune scythe ghost with NO
+      // explanation and reads it as a broken boss (exactly what live QA did).
+      if (kind === "reaper") {
+        showToast("☠ THE DEATH DEALER ☠", "it cannot be slain — take the stairs");
+        state.shakeT = Math.max(state.shakeT, 0.3);
+      }
       if (boss) {
         // The Reaper King's ghost looms like the real thing.
         z2.baseTint = REAPER_TINT;
@@ -1575,6 +1582,30 @@ function startLevel(level: number): void {
   // ── Per-floor score ledger + the Death Dealer's fuse ──
   state.levelT = 0;
   state.levelStartKills = state.kills;
+  // ── ARPG PACKS along the fast lanes ──
+  // The spine (the connected booster route down the artery) is where the run
+  // moves at pinball speed — exactly where an ARPG wants its monster packs, so
+  // ripping through at speed means ripping THROUGH something. 2-3 enemies
+  // cluster near ~half the spine stations, capped relative to the base horde.
+  // Seed-deterministic (floor rng) so every co-op client builds the same packs.
+  {
+    const spineParts = plan.parts.filter((pt) => pt.spine);
+    const packCap = Math.min(26, Math.ceil(state.zombies.length * 0.45));
+    let packAdded = 0;
+    for (const pt of spineParts) {
+      if (packAdded >= packCap) break;
+      if (rng() > 0.5) continue;
+      const packSize = 2 + Math.floor(rng() * 2);
+      for (let n = 0; n < packSize && packAdded < packCap; n++) {
+        const spot = nearestOpenTile(grid, pt.i, pt.j, 1 + Math.floor(rng() * 5), 2);
+        if (!spot) continue;
+        const c = tileCenter(grid, spot.i, spot.j);
+        state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
+        packAdded++;
+      }
+    }
+  }
+
   state.levelHordeSize = state.zombies.length;
   state.levelBestCombo = 0;
   state.reaperOut = false;
@@ -1997,6 +2028,7 @@ async function submitRunScore(): Promise<void> {
 function onPlayerDeath(): void {
   if (state.gameOver) return;
   state.gameOver = true;
+  coopAnnounceDeath(); // final pose w/ mode:"death" — peers stop colliding with the body
   // Bank the loose change before the run is scored — the run tally on the death
   // screen should include coins that were still mid-flight when you died.
   sweepCoins();
@@ -2491,7 +2523,7 @@ function checkPickups(dt: number): void {
       // not drunk on contact. If the belt is full, drink it now so it's not lost.
       const pid = it.id as PotionId;
       if (addToBelt(pid)) {
-        showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — ${POTIONS[pid].description} · belt`);
+        showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — ${POTIONS[pid].description} · belt: press 1-4 to drink`);
       } else {
         applyPotion(pid);
       }
@@ -2502,7 +2534,7 @@ function checkPickups(dt: number): void {
       // fusion window). Not brewable, not belted — the ball IS the material.
       const m = it.id as MarbleMaterial;
       applyMaterial(m);
-      showPickupNote(`${MATERIALS[m].icon} ${MATERIALS[m].label.toUpperCase()} MARBLE`);
+      showPickupNote(`${MATERIALS[m].icon} ${MATERIALS[m].label.toUpperCase()} MARBLE — ACTIVE NOW, the ball IS the material`);
     } else {
       const slot = it.id as GearSlot;
       const def = GEAR[slot];

@@ -262,6 +262,8 @@ const ISO = Math.SQRT1_2;
 
 /** One-shot toast for the momentum-gate lesson (goblin/golem clink). */
 let _gateHintShown = false;
+/** One-shot "the reaper is immune" explainer — reset per run with the rest. */
+let _reaperImmuneShown = false;
 
 /** Rolling ledger for the bowling STRIKE bonus (3+ pins inside the window). */
 let _pinKills = 0;
@@ -270,6 +272,7 @@ let _strikePaid = false;
 
 /** Reset the per-run combat feel state (called by core on launch/retry). */
 export function resetCombatJuice(): void {
+  _reaperImmuneShown = false;
   _gateHintShown = false;
   _pinKills = 0;
   _pinKillT = 0;
@@ -333,6 +336,13 @@ export function damageZombie(
   // reward: the game is telling you to run, not to try harder.
   if (z.kind === "reaper" && !force) {
     state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 6);
+    // Live QA hit this thing for a full minute believing it was a broken boss.
+    // Silence reads as a bug — say the rule out loud the first time steel
+    // passes through it (once per run; resetCombatJuice clears the flag).
+    if (!_reaperImmuneShown) {
+      _reaperImmuneShown = true;
+      showToast("☠ IT CANNOT BE SLAIN", "the Death Dealer only chases — RUN for the stairs");
+    }
     return;
   }
 
