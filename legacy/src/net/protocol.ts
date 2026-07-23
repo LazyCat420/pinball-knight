@@ -79,10 +79,10 @@ export type ServerMessage =
   | { type: "party:forming"; members: string[]; seconds: number }
   | { type: "party:tick"; seconds: number }
   | { type: "party:cancelled"; reason: "bailed" | "disconnected" }
-  | { type: "party:start"; sessionId: string; members: PartyMember[]; role: number; hostId: string }
+  | { type: "party:start"; sessionId: string; members: PartyMember[]; role: number; hostId: string; seed: number }
   | { type: "solo:countdown"; seconds: number }
-  | { type: "solo:start"; sessionId: string }
-  | { type: "session:state"; members: PartyMember[]; hostId: string; role: number }
+  | { type: "solo:start"; sessionId: string; seed: number }
+  | { type: "session:state"; members: PartyMember[]; hostId: string; role: number; seed: number }
   | { type: "session:snapshot"; snap: unknown }
   | { type: "session:input"; fromId: string; input: unknown }
   | { type: "session:event"; fromId: string; event: unknown }

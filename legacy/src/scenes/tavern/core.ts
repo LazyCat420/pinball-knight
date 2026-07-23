@@ -159,6 +159,9 @@ let onResize: (() => void) | null = null;
 let npcs: BuiltNpcs | null = null;
 let vfx: VfxSystem | null = null;
 let lobbyHud: LobbyHud | null = null;
+/** True while THIS visit is the multiplayer entry lobby (vs a between-floor shop
+ * stop). Gates all the presence/matchmaking wiring. */
+let isLobby = false;
 /** Set while a formed party is descending, so closeTavern keeps the shared
  * socket alive for the dungeon session channel. */
 let launching = false;
@@ -236,7 +239,7 @@ function interact(): void {
     // Readying joins the lobby's party queue; the actual descent happens when the
     // server fires party:start / solo:start (see launchFromLobby). Single-player
     // keeps the original behaviour — pull the plunger, go straight down.
-    if (isMultiplayerActive()) {
+    if (isLobby && isMultiplayerActive()) {
       sfxPlunger();
       const nowReady = !lobbyView().iAmReady;
       setLocalReady(nowReady);
@@ -296,7 +299,7 @@ function interact(): void {
 function launchFromLobby(info: LaunchInfo): void {
   if (launching) return;
   launching = true;
-  setPendingSession({ sessionId: info.sessionId, role: info.role, members: info.members, hostId: info.hostId, solo: info.solo });
+  setPendingSession({ sessionId: info.sessionId, role: info.role, members: info.members, hostId: info.hostId, solo: info.solo, seed: info.seed });
   sfxPlunger();
   const go = tavern.onDescend;
   closeTavern();
@@ -327,7 +330,7 @@ function frame(now: number): void {
       // ── Multiplayer: walking away from the plunger gate un-readies you ──
       // (matches the lobby rule "leave the gate → player:ready(false)"). Only
       // the descend station toggles ready, so any focus change off it clears it.
-      if (isMultiplayerActive() && lobbyView().iAmReady && next?.action.kind !== "descend") {
+      if (isLobby && isMultiplayerActive() && lobbyView().iAmReady && next?.action.kind !== "descend") {
         setLocalReady(false);
       }
       fx?.setFocus(next);
@@ -339,11 +342,14 @@ function frame(now: number): void {
       }
     }
 
-    // ── Multiplayer presence ── broadcast our pose (throttled) and advance the
-    // interpolated remote knights. Both are no-ops when not connected.
-    broadcastLocal(dt, p.x, p.z, p.facing);
-    updateRemotes(dt);
-    lobbyHud?.update(lobbyView());
+    // ── Multiplayer presence (LOBBY ONLY) ── broadcast our pose (throttled) and
+    // advance the interpolated remote knights. Skipped entirely in a between-floor
+    // shop tavern; no-ops anyway when not connected.
+    if (isLobby) {
+      broadcastLocal(dt, p.x, p.z, p.facing);
+      updateRemotes(dt);
+      lobbyHud?.update(lobbyView());
+    }
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
     // the room subtly presents what you're about to use. Never rotates.
@@ -443,6 +449,9 @@ export interface TavernOptions {
   onDescend: () => void;
   /** Leave the run entirely — the game menu's confirmed ABANDON button. */
   onAbandon?: () => void;
+  /** Lobby mode — connect to multiplayer + show the roster/ready gate. Only the
+   * entry hall; between-floor shop stops leave this falsy. See OpenTavernOptions. */
+  lobby?: boolean;
 }
 
 /**
@@ -552,12 +561,16 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   hideDungeonHud(true);
   startTavernAmbience();
 
-  // ── Multiplayer presence ── connect to the lobby and spin up the roster/
-  // countdown HUD. initTavernNet is a no-op when the backend isn't reachable, so
-  // an offline / public visitor simply plays the single-player tavern.
+  // ── Multiplayer presence (LOBBY ONLY) ── connect to the lobby and spin up the
+  // roster/countdown HUD. Between-floor shop stops skip all of this and stay the
+  // single-player tavern. initTavernNet is itself a no-op when the backend isn't
+  // reachable, so an offline / public visitor also just plays solo.
   launching = false;
-  lobbyHud = createLobbyHud(container);
-  initTavernNet(scene, launchFromLobby);
+  isLobby = !!opts.lobby;
+  if (isLobby) {
+    lobbyHud = createLobbyHud(container);
+    initTavernNet(scene, launchFromLobby);
+  }
 
   pixelPass = createPixelPass(renderer, {
     quantize: QUANTIZE_DEFAULT,
@@ -652,12 +665,17 @@ export function closeTavern(): void {
   onKey = null;
   onResize = null;
 
-  // Multiplayer teardown. When a party is launching we keep the shared socket
-  // alive (the dungeon session channel rides it), only dropping the presence
-  // listeners + remote sprites; a normal close drops the socket too.
-  disposeTavernNet(launching);
-  lobbyHud?.dispose();
-  lobbyHud = null;
+  // Multiplayer teardown (LOBBY ONLY). When a party is launching we keep the
+  // shared socket alive (the dungeon session channel rides it), only dropping the
+  // presence listeners + remote sprites; a normal lobby close drops the socket
+  // too. A between-floor shop tavern never touched the net, so it must NOT close
+  // the socket — that would sever a live co-op session mid-run.
+  if (isLobby) {
+    disposeTavernNet(launching);
+    lobbyHud?.dispose();
+    lobbyHud = null;
+  }
+  isLobby = false;
 
   closeRunSummary();
   closeGambler();

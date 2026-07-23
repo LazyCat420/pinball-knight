@@ -47,6 +47,7 @@ export interface LaunchInfo {
   members: PartyMember[];
   hostId: string;
   solo: boolean;
+  seed: number;
 }
 
 interface LobbyView {
@@ -252,12 +253,12 @@ export function initTavernNet(s: THREE.Scene, launch: (info: LaunchInfo) => void
   // Launch into the dungeon
   unsubs.push(
     client.on("party:start", (m) => {
-      onLaunch?.({ sessionId: m.sessionId, role: m.role, members: m.members, hostId: m.hostId, solo: false });
+      onLaunch?.({ sessionId: m.sessionId, role: m.role, members: m.members, hostId: m.hostId, solo: false, seed: m.seed });
     }),
   );
   unsubs.push(
     client.on("solo:start", (m) => {
-      onLaunch?.({ sessionId: m.sessionId, role: 0, members: [], hostId: view.myId ?? "", solo: true });
+      onLaunch?.({ sessionId: m.sessionId, role: 0, members: [], hostId: view.myId ?? "", solo: true, seed: m.seed });
     }),
   );
 

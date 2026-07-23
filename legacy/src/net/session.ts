@@ -18,6 +18,8 @@ export interface PendingSession {
   members: PartyMember[];
   hostId: string;
   solo: boolean;
+  /** Server-assigned floor seed — every party member generates identical mazes. */
+  seed: number;
 }
 
 let pending: PendingSession | null = null;

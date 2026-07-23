@@ -21,6 +21,13 @@ export interface OpenTavernOptions {
   /** Leave the run entirely — the walkable scene's game menu ABANDON. The DOM
    * fallback has no menu, so it simply never calls it. */
   onAbandon?: () => void;
+  /**
+   * LOBBY mode — this is the multiplayer entry hall, not a between-floors shop
+   * stop. Only a lobby connects to the realtime server, shows other players +
+   * the roster/countdown HUD, and turns the plunger gate into a READY toggle.
+   * Between-floor taverns pass this falsy so they stay a quick, solo shop.
+   */
+  lobby?: boolean;
 }
 
 /**

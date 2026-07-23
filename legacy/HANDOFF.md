@@ -2,72 +2,70 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-**Live:** client + service now carry **Pinball-Knight multiplayer, increment 1
-(the social tavern)** — additive, degrades to the exact single-player game when
-no backend is reachable. Prior work (marble materials, elemental armor, shaped
-walls, 4× floors, title intro, combo ramp, casino) all remains live/untouched.
+**Live:** client + service carry **Pinball-Knight multiplayer, increments 1 & 2**
+— the tavern is now the ENTRY LOBBY, parties drop into a SHARED-SEED dungeon and
+see each other, and the run's boss floor is the **REAPER KING** whose death opens
+the exit portal. Additive; a solo/offline player gets the same single-player game
+(now entered via the tavern). Prior work (materials, armor, shaped walls, 4×
+floors, combo ramp, casino) all live/untouched.
 
-## 🕸️ MULTIPLAYER — increment 1 SHIPPED, increment 2 (co-op dungeon + boss) NEXT
+## 🕸️ MULTIPLAYER — increments 1 & 2 SHIPPED
 
-**User goal:** up to 8 knights share the tavern; parties of ≤4 drop into a co-op
-dungeon; the run ends with a **boss fight gating the exit portal**.
-**Chosen model:** raw `ws`, **host-authoritative shared physics** (role-0 client
-owns the sim; server relays only its snapshots). A dedicated Node physics server
-is infeasible without a 4000+-line refactor — every `Player`/`Zombie`/`Npc` in
-`dungeon/state.ts` embeds three.js `sprite`/`anim`/`mesh` and `simulate()` calls
-`vfx`/`hudDirty`/`showToast`. Host-authoritative keeps ONE authority owning the
-whole world and runs the proven sim unchanged.
+**User goal:** land in the tavern, others on the site join in real time, party
+drops into a co-op dungeon, run ends on a **boss that gates the exit portal**
+(the boss = the Reaper "with multiple skulls + a tentacle slam").
+**Model:** raw `ws`, one authority per session (host = role 0). A dedicated Node
+physics server is infeasible (the sim is inseparable from three.js), so co-op is
+host-relay + shared-seed; see the enemy-authority note below.
 
-### Increment 1 — SHIPPED THIS DEPLOY (social tavern: presence + matchmaking)
+### Increment 1 — social tavern (presence + matchmaking)
+**Service** `src/realtime/` on `:5175` at `/ws`: `protocol.ts` (canonical) ·
+`lobby.ts` (8-slot room + overflow + color slots + ready→countdown 10/7/5s + 30s
+solo) · `session.ts` (relay; role-0-only snapshots; **server assigns the shared
+floor `seed`**; host migration) · `hub.ts` (origin gate, heartbeat, flood guard).
+**Client** `src/net/`: `socket.ts` (`NetClient`, reconnect, gated by
+`isRemoteBackendEnabled()`, `net()` singleton) · `protocol.ts` (**MIRROR**) ·
+`session.ts` (handoff baton). Tavern `multiplayer.ts` (tinted remotes + nameplates
++ 15Hz + ready gate), `ui.ts` roster/countdown HUD, `layout.ts` `SPAWN_SLOTS[8]`.
 
-**Service** — new `src/realtime/` on the existing `:5175` at `/ws` (no new port,
-compose untouched, REST origin allowlist reused):
-`protocol.ts` (canonical wire contract) · `lobby.ts` (one 8-slot room + overflow
-+ color slots + ready-queue→party-countdown 10/7/5s + 30s solo fallback, splits
-parties of ≤4) · `session.ts` (dungeon relay; **enforces host-authority — only
-role-0 snapshots relay**; host migration) · `hub.ts` (ws: origin gate, heartbeat,
-flood guard) · wired via `attachRealtime(server,{allowedOrigins})`.
-Tests: `lobby.test.ts` (7) + `hub.integration.test.ts` (2, real sockets).
-**38/38 service tests green; `tsc` clean.**
+### Increment 2 — tavern-entry + co-op dungeon + the Reaper King
+- **Tavern is the entry lobby** (`core.ts launchDungeonGame` → `enterTavern(…,
+  {lobby:true})`; `onDescend`→`beginRun` = `initCoop()` + `startLevel(1)`). A new
+  `lobby` flag means ONLY the entry hall matchmakes — between-floor taverns stay a
+  quick solo shop (and never touch the session socket). The title intro is no
+  longer the entry.
+- **Shared seed** (`net/session.ts` baton carries server `seed`; `coop.initCoop`
+  sets `state.runSeed` before floor 1) → every client generates the IDENTICAL
+  maze / enemy layout / boss placement, per floor (`runSeed ^ level`).
+- **`scenes/dungeon/coop.ts`** — pose broadcast (all-to-all via `session:event`)
+  + tinted, interpolated party knights rendered in the dungeon. `isCoop()`,
+  `coopSeed()`, `isReplica()` (see note).
+- **`scenes/dungeon/boss.ts` — the REAPER KING.** A killable `brute` in reaper
+  art (real `reaper` kind is combat-immune), scaled up, with an ORBITING SKULL
+  ring (skulls also fling bone projectiles) and a telegraphed TENTACLE SLAM
+  (growing ring → AoE damage + pinball-launch). Spawns on `level % BOSS_EVERY===0`
+  (floor 5, 10, …) replacing the old OVERLORD; `state.exitLocked` seals the stairs
+  until it dies, then the **PORTAL blooms over the stairs** and the stairs descend
+  as normal. All procedural meshes (no art pipeline). Tuning constants at the top
+  of boss.ts.
+- Tests: `boss.test.ts` (spawn→locked, death→portal→unlocked, headless) +
+  38 service + 692 client, `tsc`+`next build` clean.
 
-**Client** — `src/net/socket.ts` (`NetClient`: typed ws, reconnect/backoff, gated
-by REST `isRemoteBackendEnabled()`; `net()` singleton survives the scene change) ·
-`src/net/protocol.ts` (**MIRROR — keep in lockstep with the service**) ·
-`src/net/session.ts` (tavern→dungeon handoff baton; set now, consumed in incr.2) ·
-`scenes/tavern/multiplayer.ts` (tinted remote sprites + canvas nameplates, 15Hz
-broadcast, interpolation, ready gate, lobby store) · `layout.ts` `SPAWN_SLOTS[8]` ·
-`ui.ts` `createLobbyHud` (roster dots + countdown bar) · `core.ts` (per-frame
-presence; **descend station is a READY TOGGLE when connected**; party/solo:start →
-descend). **`next build` clean; 257 client tests pass.**
+**Verified:** solo path (a solo player is host-of-1 → boss fully works) via the
+headless boss contract test + build/tests. **NOT 2-browser tested** (no such env)
+— sprite tint, nameplates, and same-seed agreement need QA with two LAN browsers.
+**Test the boss fast:** in `/dungeon`, ` panel → "next boss" (jumps to floor 5),
+or `__dungeonLevel(5)`.
 
-⚠️ **Incr.1 limitation:** `party:start` currently descends each member into their
-OWN single-player dungeon (synchronized DROP, not a shared world). Shared world =
-incr.2.
-⚠️ **Untested visually:** no 2-browser live run was possible in the build env —
-presence logic is unit+integration-tested over real sockets, but sprite tint,
-nameplate Y (`SPRITE_UNITS*1.18`), and HUD layout are **unverified; first QA task
-is two LAN browsers on `/dungeon`.** Degrades to single-player if the socket
-never opens, so blast radius is contained.
-
-### Increment 2 — NOT built. The shared dungeon + boss.
-
-Groundwork in place: session relay + host invariant + migration (server), the
-handoff baton (`net/session.ts`), seeded floors (`maze/prefabs.ts`
-`ShuffleBag(rng)` → one seed reproduces the maze everywhere), and `core.ts:447`
-already builds an enemy-snapshot array (the world-snapshot template). Steps:
-1. Dungeon `consumePendingSession()` on entry; if co-op, `session:hello` + seed
-   the floor RNG from a host-broadcast seed (identical mazes for all).
-2. Host (role 0) runs `simulate()` unchanged; at ~20Hz serializes the LOGICAL
-   subset of `state` (player x/z/hp/facing/timers, `zombies`→`core.ts:447` shape,
-   items, boss) → `session:snapshot`.
-3. Replicas render from snapshots + **predict+reconcile the local knight**
-   (continuous WASD ⇒ input lag ⇒ forward `session:input`, apply host correction).
-4. **Networked end boss gating the portal** — extend the existing boss system
-   (`Zombie.boss`, `combat.ts:539`, `core.ts:1267` OVERLORD): final floor spawns
-   a boss instead of stairs; **portal spawns only on boss death**, agreed via
-   `session:event`.
-5. Lifecycle: `session:leave` on death/exit; handle `session:peer-left`
-   (migration wired) + `session:ended`.
+**⚠️ Enemy authority — the honest limitation.** This pass is POSE-SYNCED, not
+enemy-authoritative: every client runs its OWN sim off the shared seed, so you
+start on the identical floor + boss and SEE each other, but enemy/boss HP can
+DRIFT between clients over a long fight (each kills its own instance).
+`isReplica()` returns false for now. **Next step:** make the host authoritative
+for enemy/boss state (stream `state.zombies`→`core.ts:447` shape + the king @20Hz
+via `session:snapshot`; replicas set `isReplica()`→true, suppress local
+enemy/boss sim — the boss-spawn gate + enemy loop already check `isReplica()` — and
+render from snapshots; forward damage as `session:event`).
 
 **Keep in lockstep:** `service/src/realtime/protocol.ts` ⇔ `client/src/net/protocol.ts`.
 

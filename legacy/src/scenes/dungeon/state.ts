@@ -576,6 +576,9 @@ export const state = {
   reaperOut: false,
   /** True once the pre-spawn warning toast has shown. */
   reaperWarned: false,
+  /** Boss floor: the stairs won't descend until the guardian boss is slain. Set
+   * by boss.ts spawnBoss, cleared when the boss dies (portal opens). */
+  exitLocked: false,
 
   // ── Wave A/E/F floor state (targets, NPCs, frenzy, world freeze) ──
   /** This floor's target-bullseye objective: total placed / broken so far. */
@@ -977,6 +980,7 @@ export function resetState(): void {
   state.levelHordeSize = 0;
   state.levelBestCombo = 0;
   state.reaperOut = false;
+  state.exitLocked = false;
   state.reaperWarned = false;
   state.targetsTotal = 0;
   state.targetsHit = 0;

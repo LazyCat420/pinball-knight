@@ -209,6 +209,8 @@ import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, R
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen } from "../tavern";
+import { spawnBoss, updateBoss, disposeBoss } from "./boss";
+import { initCoop, updateCoop, endCoop, isReplica } from "./coop";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
@@ -791,16 +793,26 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.gear = {};
   beginRunLedger();
 
-  // The title intro owns the RAF until it finishes or is skipped; it parks its
-  // letter maze on state.maze, which startLevel's disposeLevel reclaims.
-  runPinballIntro(() => {
+  // ── Start in the TAVERN lobby ──
+  // Multiplayer entry point: you land in the walkable tavern, see whoever else
+  // is on the site in real time, and ready up at the plunger gate to drop into
+  // the run — solo, or together as a formed party. Descending consumes the
+  // session baton (no-op for a solo/offline run), seeds the shared floor, and
+  // only THEN starts the dungeon loop on floor 1. (The title intro is no longer
+  // the entry — the lobby is; `runPinballIntro` remains available for reuse.)
+  const beginRun = (): void => {
     if (!state.active) return;
+    initCoop(); // consume the party baton + set the shared floor seed (no-op solo)
     startLevel(1);
-
     console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
-
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
+  };
+  enterTavern(state.container, {
+    stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
+    onDescend: beginRun,
+    onAbandon: () => exitDungeonGame(),
+    lobby: true, // the entry hall IS the multiplayer lobby
   });
 }
 
@@ -1064,6 +1076,7 @@ function startLevel(level: number): void {
   // player earned and never received.
   sweepCoins();
   disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
+  disposeBoss(); // drop any Reaper King skulls/telegraph/portal from the old floor
 
   state.level = level;
   // Run-scoped, so it must be updated here rather than in the per-floor reset
@@ -1264,20 +1277,22 @@ function startLevel(level: number): void {
     }
   }
 
-  // ── Mini-boss: an OVERLORD guards the stairs every BOSS_EVERY floors ──
-  if (level % BOSS_EVERY === 0 && state.bossSheet && state.stairs) {
+  // ── BOSS FLOOR: the REAPER KING guards the exit every BOSS_EVERY floors ──
+  // Replaces the old stairs-guarding OVERLORD brute. The king (boss.ts) is a
+  // killable reaper-art brute with an orbiting skull ring + a telegraphed
+  // tentacle slam; while it lives `state.exitLocked` holds the stairs shut, and
+  // its death blooms the exit PORTAL. Scales its HP by tier via the injected
+  // spawner. Only spawns for the host — a replica renders the streamed king.
+  if (level % BOSS_EVERY === 0 && state.stairs && state.scene && state.player && !isReplica()) {
     const tier = level / BOSS_EVERY; // 1 at L5, 2 at L10, …
-    const bhp = BOSS_BASE_HP + BOSS_HP_PER_TIER * (tier - 1);
-    // Plant it a couple of tiles off the stairs so it's between you and the exit.
+    const bhp = BOSS_BASE_HP + BOSS_HP_PER_TIER * (tier - 1) * 3; // king is meatier than the old overlord
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
-    const c = tileCenter(grid, spot.i, spot.j);
-    const boss = makeZombie(state.bossSheet, c.x, c.z, cfg.zombieSpeed * BOSS_SPEED_FACTOR, {
-      kind: "brute",
-      hp: bhp,
-      boss: true,
-      maxHp: bhp,
+    const speed = cfg.zombieSpeed * BOSS_SPEED_FACTOR;
+    spawnBoss(grid, spot, (x, z, hp) => {
+      const b = makeZombie(reaperSheet(), x, z, speed, { kind: "brute", hp: hp || bhp, boss: true, maxHp: hp || bhp });
+      state.zombies.push(b);
+      return b;
     });
-    state.zombies.push(boss);
   }
 
   // ── Loot on the floor ──
@@ -2620,11 +2635,16 @@ function simulate(dt: number): void {
   updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
+  if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death
+  updateCoop(dt); // co-op: broadcast our pose + advance party knights
   checkPickups(dt);
 
   // ── Stairs? ──
+  // On a boss floor the exit is SEALED until the Reaper King dies (state.exitLocked,
+  // set by boss.ts). Once slain, the portal blooms over the stairs and stepping
+  // onto them descends as normal.
   const pt = worldToTile(g, p.x, p.z);
-  if (at(g, pt.i, pt.j) === T_STAIRS) {
+  if (at(g, pt.i, pt.j) === T_STAIRS && !state.exitLocked) {
     descend();
   } else if (p.hp <= 0) {
     onPlayerDeath();
@@ -2825,6 +2845,9 @@ export function exitDungeonGame(): void {
   // (startLevel, onPlayerDeath, here), which is what makes "a coin is credited
   // exactly once, and never zero times" true for the whole lifecycle.
   sweepCoins();
+
+  endCoop(); // leave the session + drop party knights
+  disposeBoss(); // free any live Reaper King meshes
 
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);
