@@ -11,9 +11,9 @@
  * Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
  * DOM- and three-free: tested.
  */
-import { type Grid, isWalkable, shapeAt } from "./maze/generator";
+import { type Grid, isWalkable, shapeAt, arcFeatureAt } from "./maze/generator";
 import { clamp } from "../../utils/math";
-import { SHAPE_FULL, isShaped, resolveCircleShape } from "./maze/tile-shape";
+import { SHAPE_FULL, isShaped, isArc, resolveCircleShape, resolveArcFeature } from "./maze/tile-shape";
 
 const EPS = 1e-4;
 
@@ -26,6 +26,21 @@ const EPS = 1e-4;
  */
 function blocksSquare(g: Grid, i: number, j: number): boolean {
   return !isWalkable(g, i, j) && shapeAt(g, i, j) === SHAPE_FULL;
+}
+
+/**
+ * Resolve a circle against ONE shaped tile, whatever family it is: slants and
+ * single-tile rounds carry their geometry in the shape id; an ARC slice defers
+ * to its multi-tile feature. Every arc slice of one feature resolves against
+ * the SAME circle, so overlapping two slices at once yields one consistent
+ * radial answer — "deepest pen wins" stays coherent across the sweep.
+ */
+function resolveShapeOrArc(g: Grid, shape: number, i: number, j: number, gx: number, gz: number, r: number): { nx: number; nz: number; pen: number } | null {
+  if (isArc(shape)) {
+    const f = arcFeatureAt(g, i, j);
+    return f ? resolveArcFeature(f, gx, gz, r) : null;
+  }
+  return resolveCircleShape(shape, i, j, gx, gz, r);
 }
 
 /** True if a circle at world (x, z) with radius r overlaps any solid tile
@@ -42,7 +57,7 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
       if (isWalkable(g, i, j)) continue;
       const shape = shapeAt(g, i, j);
       if (isShaped(shape)) {
-        if (resolveCircleShape(shape, i, j, gx, gz, r)) return true;
+        if (resolveShapeOrArc(g, shape, i, j, gx, gz, r)) return true;
         continue;
       }
       // Closest point on the tile AABB to the circle centre.
@@ -196,7 +211,7 @@ function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number
     for (let i = i0; i <= i1; i++) {
       const shape = shapeAt(g, i, j);
       if (!isShaped(shape) || isWalkable(g, i, j)) continue;
-      const hit = resolveCircleShape(shape, i, j, gx, gz, r);
+      const hit = resolveShapeOrArc(g, shape, i, j, gx, gz, r);
       if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz };
     }
   }

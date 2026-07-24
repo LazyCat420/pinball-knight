@@ -2,7 +2,76 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🧹 NEWEST (2026-07-23, wave 3): audit + cleanup sweep — both repos
+## 🌀 NEWEST (2026-07-24): REAL CURVED MAZE WALLS — multi-tile ARC SWEEPS
+
+The long-standing complaint "curved walls just render a curve object in the
+room" is fixed at the architecture level. The maze now authors **multi-tile
+circular arcs (radius 2-3) that ARE the walls** — mesh and collider derive from
+one descriptor, extending the tile-shape contract that killed the old floating
+green arc. Screenshot-verified headless (walls visibly sweep through bends;
+knight collides + slides along the curve with a rotating radial normal).
+
+**Architecture (the extension seam a future reader needs):**
+- `maze/tile-shape.ts` — `SHAPE_ARC` (id 9) marks a tile as one SLICE of a
+  multi-tile `ArcFeature {cx, cz, r, a0, span, solidOut?}` (grid-space centre,
+  radius in tiles, angular span; `span: 2π` = full island). `resolveArcFeature`
+  is the parameterized collider: solid-INSIDE (convex guide, push radially out)
+  or solid-OUTSIDE (concave bowl, push back toward centre). Angle outside the
+  span → null (the flat walls own it).
+- `maze/generator.ts` — `Grid.arcs?: ArcFeature[]` + `Grid.arcIdx?: Int16Array`
+  (tile → feature index; OPTIONAL so hand-built test grids stay terse; use
+  `ensureArcs`/`arcFeatureAt`).
+- `collision.ts resolveShapeOrArc` — SHAPE_ARC dispatches to the feature. All
+  slices of one feature resolve against the SAME circle, so "deepest pen wins"
+  stays coherent when the ball overlaps two slices. Arc tiles remain
+  sweep-transparent (`blocksSquare` unchanged); walkability NEVER reads shapes.
+- `maze/arc-sweeps.ts` (new) — the authoring pass:
+  * **Convex fillets** (wall-mass outer corners): carve-only → safe by
+    construction. **Concave fillets** (room inner corners, ≥2×2-pocket gate +
+    clearance ring): fill floor→wall, gated on `occupied` (every placed
+    spawn/item/part/torch + 3×3 halo) and batch-BFS strand-guarded with revert.
+    Radii tried [3,2]; cap 96/floor.
+  * **ORBIT ISLAND** `stampOrbitIsland` — ONE full-circle round island (r 2.3)
+    in a wide-open disc, ring lane ≥1.6, flanked by two bumpers (decorate.ts
+    wires it BEFORE polishParts so plaza diamonds don't collide). Fires on
+    ~1/3 of floors. Wall-adding → strand-guarded.
+  * Runs in decorateMaze AFTER secrets scan, BEFORE assignCornerShapes; the
+    r=1 pass skips sweep-claimed tiles and won't treat an arc slice as backing.
+- `maze/build.ts arcSweepGeometry` — ALL sweeps merged into ONE mesh (constant
+  draw calls): vertical band at the exact collider radius + a top CAP RING on
+  the solid side (no hollow tops from iso). Knee-high when any slice is
+  camera-side rim (Diablo rule), else full height.
+- Ricochet needed NO changes — player.ts reflects about `hitN`, and arc normals
+  are radial, so the ball BANKS around sweeps and slides along them (verified:
+  probe normal rotates -0.97/-0.25 → -0.91/-0.42 across one slide).
+
+**Tests:** `maze/arc-sweeps.test.ts` (12) — feature math both polarities, span
+gating, authoring on hand-built + real grids, occupied veto, moveCircle
+contact + no-sink + normal-varies, orbit island connectivity + decline.
+decorate.test.ts's leak-safety invariant now knows arc slices (feature-backed,
+not leg-backed). 903 client tests green, tsc 0, build + deploy-gate clean.
+
+**QA recipe additions:** ASCII render trick — print `◠` for SHAPE_ARC tiles
+(level-1 floor showed 39 features hugging corners; see git history of this
+wave for the throwaway test). Headless: tavern → probe-guided WASD walk to the
+descend gate `(0,-4.9) r1.6, focus==="board"` → `e`; **page.screenshot() hangs
+on a pending font-load in dev — use a CDP `Page.captureScreenshot` session**
+(scratchpad qa-arcs2.mjs pattern).
+
+**Also:** boss bar + descent card no longer say OVERLORD (mega floors announce
+"a MEGA REAPER KING guards the stairs"). NOTE: every floor is boss-gated now —
+that is intended live behavior, not a bug.
+
+**Open follow-ups (the user's stated roadmap, NOT yet built):**
+1. Part-placement quality: boosters/bumpers that fire into walls; route parts
+   so interactions chain (extend ROUTE_MATH_PLAN work).
+2. **Light-puzzle secret rooms**: lit-lamp sequence opens a locked door to a
+   loot room — per-floor puzzles. (Secrets/cracked-band + card-reader seams are
+   the starting points.)
+3. Sweeps could theme by floor (mix hash is positional); orbit island count
+   could scale with floor size.
+
+## Prior (2026-07-23, wave 3): audit + cleanup sweep — both repos
 
 Five-subsystem audit (core/UI, entities, maze, render, net+service) then a
 cleanup pass. **891 client + 36 service tests green, tsc 0 in all kept-clean

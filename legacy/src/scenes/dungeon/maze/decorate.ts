@@ -10,8 +10,9 @@
  *
  * DOM- and three-free: tested alongside the generator.
  */
-import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape } from "./generator";
-import { SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
+import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape, shapeAt } from "./generator";
+import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
+import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { bfsDistances } from "../entities/ai";
 import { PICKUP_WEAPONS } from "../items";
 
@@ -898,7 +899,8 @@ function assignCornerShapes(g: Grid): void {
   // now dominate and the bevels are the accent.)
   const styled = (slant: TileShape, i: number, j: number): TileShape => ((i * 3 + j * 5) % 4 !== 1 ? slantToRound(slant) : slant);
   const put = (i: number, j: number, shape: TileShape): void => {
-    if (i > 0 && j > 0 && i < g.w - 1 && j < g.h - 1 && at(g, i, j) === T_WALL) cand[idx(g, i, j)] = shape;
+    // Skip tiles already claimed by a multi-tile arc sweep (shape ≠ FULL).
+    if (i > 0 && j > 0 && i < g.w - 1 && j < g.h - 1 && at(g, i, j) === T_WALL && shapeAt(g, i, j) === SHAPE_FULL) cand[idx(g, i, j)] = shape;
   };
 
   // ── CONVEX corners (wall tips / pillars): shape the wall tile itself. ──
@@ -962,6 +964,8 @@ function assignCornerShapes(g: Grid): void {
       const b1j = j + back[1].z;
       if (isWalkable(g, b0i, b0j) || isWalkable(g, b1i, b1j)) continue; // leg not backed
       if (isCand(b0i, b0j) || isCand(b1i, b1j)) continue; // backing would itself reshape
+      // An arc-sweep slice is sweep-transparent — it can't back a leg either.
+      if (shapeAt(g, b0i, b0j) !== SHAPE_FULL || shapeAt(g, b1i, b1j) !== SHAPE_FULL) continue;
       setShape(g, i, j, shape);
     }
   }
@@ -1761,6 +1765,38 @@ export function decorateMaze(
   // all parts + torches so it can avoid furnished walls, and BEFORE the secrets
   // scan below so its new bands are collected like any other crack. ──
   openLaunchTargets(g, parts, torches, rng, extras.launchBreaks ?? 6);
+
+  // ── ARC SWEEPS, part 1 — the ORBIT ISLAND (arc-sweeps.ts). Stamped BEFORE
+  // polishParts so the plaza scan sees the island and doesn't drop a bumper
+  // diamond on top of it. `occupied` = every tile carrying placed content;
+  // wall-adding stamps must never eat a spawn/item/part/torch. ──
+  const occupiedKeys = new Set<number>();
+  const claim = (t: { i: number; j: number } | null | undefined): void => {
+    if (!t) return;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) occupiedKeys.add((t.j + dj) * g.w + (t.i + di));
+  };
+  claim(start);
+  claim(stairs);
+  for (const s of spawns) claim(s);
+  for (const it of items) claim(it);
+  for (const p of props) claim(p);
+  for (const p of parts) claim(p);
+  for (const t of torches) claim(t);
+  claim(frog);
+  const occupied = (i: number, j: number): boolean => occupiedKeys.has(j * g.w + i);
+  const orbit = stampOrbitIsland(g, start, occupied, rng);
+  if (orbit) {
+    // Two bumpers flanking the ring turn the orbit into a real pinball toy.
+    for (const [di, dj] of [[0, -1], [0, 1]] as const) {
+      const bi = Math.round(orbit.ci + di * 4) ;
+      const bj = Math.round(orbit.cj + dj * 4);
+      if (at(g, bi, bj) === T_FLOOR && !occupied(bi, bj) && !parts.some((p) => p.i === bi && p.j === bj)) {
+        parts.push({ i: bi, j: bj, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 });
+        claim({ i: bi, j: bj });
+      }
+    }
+  }
+
   const plazas = polishParts(g, parts, rng);
 
   // ── Secrets: collect every CRACKED band stamped by crackSecretWalls. After
@@ -1772,6 +1808,14 @@ export function decorateMaze(
       if (at(g, i, j) === T_CRACKED) secrets.push({ i, j });
     }
   }
+
+  // ── ARC SWEEPS, part 2 — multi-tile fillets (arc-sweeps.ts): radius 2-3
+  // sweeping curves on qualifying wall-mass corners (carve-only) and room inner
+  // corners (fill, strand-guarded). Before assignCornerShapes so the r=1
+  // single-tile pass only decorates the corners the sweeps didn't claim. ──
+  const newParts = parts.filter((p) => !occupiedKeys.has(p.j * g.w + p.i));
+  for (const p of newParts) claim(p); // polishParts may have added plaza bumpers
+  authorArcSweeps(g, start, occupied, rng);
 
   // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch

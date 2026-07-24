@@ -36,6 +36,14 @@ export interface Grid {
    * exactly as before. Only meaningful on WALL tiles; walkability ignores it.
    */
   shapes: Uint8Array;
+  /**
+   * Multi-tile arc features (sweeping curved walls — tile-shape.ts ArcFeature).
+   * A tile with SHAPE_ARC stores its feature's index in `arcIdx` (-1 = none).
+   * OPTIONAL so hand-built test grids don't have to carry them; use
+   * `ensureArcs(g)` before writing and `arcFeatureAt(g,i,j)` to read.
+   */
+  arcs?: import("./tile-shape").ArcFeature[];
+  arcIdx?: Int16Array;
 }
 
 export interface TilePos {
@@ -82,6 +90,20 @@ export function shapeAt(g: Grid, i: number, j: number): number {
 export function setShape(g: Grid, i: number, j: number, v: number): void {
   if (i < 0 || j < 0 || i >= g.w || j >= g.h) return;
   g.shapes[idx(g, i, j)] = v;
+}
+
+/** Lazily create the arc-feature storage (see Grid.arcs). */
+export function ensureArcs(g: Grid): void {
+  if (!g.arcs) g.arcs = [];
+  if (!g.arcIdx) g.arcIdx = new Int16Array(g.w * g.h).fill(-1);
+}
+
+/** The arc feature owning tile (i,j), or null (tile isn't an arc slice). */
+export function arcFeatureAt(g: Grid, i: number, j: number): import("./tile-shape").ArcFeature | null {
+  if (!g.arcs || !g.arcIdx) return null;
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return null;
+  const a = g.arcIdx[idx(g, i, j)];
+  return a >= 0 ? (g.arcs[a] ?? null) : null;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
 import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints } from "./decorate";
-import { isShaped, shapeBacking } from "./tile-shape";
+import { isShaped, isArc, shapeBacking } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
@@ -30,9 +30,16 @@ describe("assignCornerShapes — shaped walls on the real pipeline", () => {
           const s = shapeAt(g, i, j);
           if (!isShaped(s)) continue;
           here++;
-          // A shape only RESHAPES a wall — walkability is unchanged.
+          // Every shaped tile is a wall to the AI, whatever family it is.
           expect(isWalkable(g, i, j)).toBe(false);
-          // Both legs are backed by SOLID FULL squares: no leak, no adjacent reshape.
+          if (isArc(s)) {
+            // A multi-tile sweep slice: backed by its feature, not by legs.
+            const fid = g.arcIdx ? g.arcIdx[idx(g, i, j)] : -1;
+            expect(fid).toBeGreaterThanOrEqual(0);
+            expect(g.arcs![fid]).toBeTruthy();
+            continue;
+          }
+          // Slants/rounds: both legs backed by SOLID FULL squares — no leak.
           for (const b of shapeBacking(s)!) {
             expect(isWalkable(g, i + b.x, j + b.z)).toBe(false);
             expect(isShaped(shapeAt(g, i + b.x, j + b.z))).toBe(false);

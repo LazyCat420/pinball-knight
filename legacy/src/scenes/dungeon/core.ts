@@ -1672,7 +1672,7 @@ function startLevel(level: number): void {
   // Biome flavour keeps the chapter feel; the archetype line is appended only
   // when the floor's shape is actually unusual, so level 1 reads as it always did.
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
-  const sub = level % BOSS_EVERY === 0 ? "☠ an OVERLORD guards the stairs ☠" : `${flavour}${suffix}`;
+  const sub = level % BOSS_EVERY === 0 ? "☠ a MEGA REAPER KING guards the stairs ☠" : `${flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
   // Arrival sting. Paired with the toast rather than the geometry build so the
   // sound and the card land together.

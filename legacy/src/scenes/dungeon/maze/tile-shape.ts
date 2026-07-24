@@ -44,6 +44,14 @@ export const SHAPE_ROUND_NE = 5;
 export const SHAPE_ROUND_NW = 6;
 export const SHAPE_ROUND_SE = 7;
 export const SHAPE_ROUND_SW = 8;
+// ARC marks a tile as one slice of a MULTI-TILE arc feature (radius 2+ sweeping
+// curve — the pinball "ball guide"). The geometry lives OFF-GRID in
+// `Grid.arcs[Grid.arcIdx[tile]]` (an ArcFeature), because a Uint8 can't carry a
+// centre/radius/span; the shape id only says "ask the feature". Like every
+// shaped tile it is transparent to the square sweep and resolved analytically —
+// mesh (build.ts buildArcShells) and collider (resolveArcFeature) both read the
+// SAME descriptor, so see = hit.
+export const SHAPE_ARC = 9;
 
 /** A tile-shape id (stored one-per-tile in `Grid.shapes`). */
 export type TileShape = number;
@@ -61,9 +69,14 @@ export function isRound(shape: TileShape): boolean {
   return shape >= SHAPE_ROUND_NE && shape <= SHAPE_ROUND_SW;
 }
 
-/** Any non-FULL shape — the tile is a prism/wedge, transparent to the square sweep. */
+/** A slice of a multi-tile arc feature (see SHAPE_ARC / ArcFeature). */
+export function isArc(shape: TileShape): boolean {
+  return shape === SHAPE_ARC;
+}
+
+/** Any non-FULL shape — the tile is a prism/wedge/arc-slice, transparent to the square sweep. */
 export function isShaped(shape: TileShape): boolean {
-  return isSlant(shape) || isRound(shape);
+  return isSlant(shape) || isRound(shape) || isArc(shape);
 }
 
 /** Which corner a ROUND shape cuts, as the equivalent SLANT id (for shared tables). */
@@ -178,6 +191,73 @@ export function resolveCircleShape(shape: TileShape, i: number, j: number, px: n
     return resolveCircleArc(px, pz, r, i + c.x, j + c.z, o.x, o.z);
   }
   return null;
+}
+
+// ── MULTI-TILE ARC FEATURES — sweeping curved walls (radius 2+ tiles) ─────────
+
+/**
+ * One sweeping curved wall: a circular arc of radius `r` tiles centred at a
+ * GRID-space point, solid on the INSIDE (d ≤ r — the wall bulges toward the
+ * ball, the convex "ball guide" of a pinball table). Tiles the arc passes
+ * through carry SHAPE_ARC + this feature's index; tiles fully inside stay FULL
+ * squares (they back the arc against sweep leaks); tiles fully outside are
+ * carved to floor by the authoring pass.
+ *
+ * Angles are in the atan2(z, x) frame (x east, z south): 0 = east, π/2 = south.
+ * The solid span is [a0, a0 + span] going CCW-in-screen-terms (increasing
+ * angle); span = 2π means a full round island.
+ */
+export interface ArcFeature {
+  /** Arc centre in GRID coords (tile units; (0,0) = the grid's NW corner). */
+  cx: number;
+  cz: number;
+  /** Radius in tiles. */
+  r: number;
+  /** Start angle (radians, atan2 frame). Ignored when span ≥ 2π. */
+  a0: number;
+  /** Angular extent (radians, > 0). 2π = full circle. */
+  span: number;
+  /**
+   * Which side is wall. false/absent = solid INSIDE (d ≤ r): a convex guide the
+   * ball sweeps around (island, rounded wall-mass corner). true = solid OUTSIDE
+   * (d ≥ r): a concave bowl — a room's inner corner rounded into a curved
+   * pocket the ball banks through.
+   */
+  solidOut?: boolean;
+}
+
+const TWO_PI = Math.PI * 2;
+
+/** Is angle `ang` within [a0, a0+span] (mod 2π)? */
+export function angleInSpan(ang: number, a0: number, span: number): boolean {
+  if (span >= TWO_PI - 1e-9) return true;
+  let rel = (ang - a0) % TWO_PI;
+  if (rel < 0) rel += TWO_PI;
+  return rel <= span + 1e-9;
+}
+
+/**
+ * Resolve a circle (centre px,pz grid coords, radius r) against an arc
+ * feature's curved face. Solid is INSIDE the arc, so contact happens at
+ * d < f.r + r; the push-out is radial (normal VARIES along the sweep — the
+ * curved ricochet, same contract as the single-tile rounds). Outside the
+ * angular span the straight walls own the contact, so this returns null there.
+ */
+export function resolveArcFeature(f: ArcFeature, px: number, pz: number, r: number): { nx: number; nz: number; pen: number } | null {
+  const dx = px - f.cx;
+  const dz = pz - f.cz;
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6) return null; // degenerate centre
+  if (f.solidOut) {
+    // Concave bowl: free space is d ≤ f.r − r; push back toward the centre.
+    if (d <= f.r - r) return null;
+    if (!angleInSpan(Math.atan2(dz, dx), f.a0, f.span)) return null;
+    return { nx: -dx / d, nz: -dz / d, pen: d + r - f.r };
+  }
+  // Convex guide: free space is d ≥ f.r + r; push radially outward.
+  if (d >= f.r + r) return null;
+  if (!angleInSpan(Math.atan2(dz, dx), f.a0, f.span)) return null;
+  return { nx: dx / d, nz: dz / d, pen: f.r + r - d };
 }
 
 /**

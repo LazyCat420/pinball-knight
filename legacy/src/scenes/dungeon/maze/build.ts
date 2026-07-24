@@ -30,8 +30,8 @@ import {
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
-import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED } from "./generator";
-import { isRound, isShaped, shapeCorners, roundCenter, type TileShape } from "./tile-shape";
+import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED, idx } from "./generator";
+import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "./tile-shape";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
 import { clamp } from "../../../utils/math";
@@ -792,6 +792,75 @@ function roundShellGeometry(shape: TileShape, height: number, seg = 12): THREE.B
   return geo;
 }
 
+/**
+ * ARC-SWEEP SHELLS — one merged geometry for every multi-tile ArcFeature
+ * (arc-sweeps.ts). Each feature contributes a vertical curved band sampled at
+ * its exact collider radius/span (see = hit) plus a horizontal cap ring on its
+ * SOLID side, so the sweep doesn't read hollow from the iso camera. Merged into
+ * a single mesh: draw calls stay constant no matter how many sweeps a floor
+ * authors. Grid-space centres are baked into world coords here.
+ */
+function arcSweepGeometry(arcs: readonly ArcFeature[], grid: Grid, heightFor: (fi: number) => number): THREE.BufferGeometry | null {
+  const pos: number[] = [];
+  const norm: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const wOff = grid.w / 2;
+  const hOff = grid.h / 2;
+  for (let fi = 0; fi < arcs.length; fi++) {
+    const f = arcs[fi];
+    const h = heightFor(fi);
+    const cxw = f.cx - wOff;
+    const czw = f.cz - hOff;
+    const seg = Math.max(8, Math.ceil(f.span * f.r * 5));
+    const base = pos.length / 3;
+    for (let s = 0; s <= seg; s++) {
+      const a = f.a0 + (f.span * s) / seg;
+      const dx = Math.cos(a);
+      const dz = Math.sin(a);
+      const x = cxw + dx * f.r;
+      const z = czw + dz * f.r;
+      // Normal faces the OPEN side (radially out for a convex guide, in for a
+      // concave bowl); the material is DoubleSide so grazing views still fill.
+      const nx = f.solidOut ? -dx : dx;
+      const nz = f.solidOut ? -dz : dz;
+      pos.push(x, 0, z, x, h, z);
+      norm.push(nx, 0, nz, nx, 0, nz);
+      const u = (f.r * f.span * s) / seg; // arc length in tiles → texture repeat
+      uv.push(u, 0, u, 1);
+    }
+    for (let s = 0; s < seg; s++) {
+      const v0 = base + s * 2;
+      index.push(v0, v0 + 2, v0 + 1, v0 + 1, v0 + 2, v0 + 3);
+    }
+    // Cap ring on the solid side, a hair above the box caps (no z-fight).
+    const rIn = f.solidOut ? f.r : Math.max(0.2, f.r - 1.0);
+    const rOut = f.solidOut ? f.r + 1.0 : f.r;
+    const capBase = pos.length / 3;
+    const yTop = h + 0.004;
+    for (let s = 0; s <= seg; s++) {
+      const a = f.a0 + (f.span * s) / seg;
+      const dx = Math.cos(a);
+      const dz = Math.sin(a);
+      pos.push(cxw + dx * rIn, yTop, czw + dz * rIn, cxw + dx * rOut, yTop, czw + dz * rOut);
+      norm.push(0, 1, 0, 0, 1, 0);
+      const u = (f.r * f.span * s) / seg;
+      uv.push(u, 0, u, 1);
+    }
+    for (let s = 0; s < seg; s++) {
+      const v0 = capBase + s * 2;
+      index.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2);
+    }
+  }
+  if (!pos.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(norm, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  return geo;
+}
+
 export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs: ArcCorner[] = []): MazeHandle {
   const group = new THREE.Group();
   const disposables: Array<{ dispose(): void }> = [];
@@ -830,6 +899,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
   // Shaped (slant) wall tiles are drawn as triangular prisms, not boxes.
   const slantCells: Array<{ x: number; z: number; i: number; j: number; shape: TileShape; low: boolean }> = [];
+  // Per arc-sweep feature: does any of its slices sit on the camera-side rim?
+  const arcRim = new Map<number, boolean>();
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
@@ -853,7 +924,15 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       // A SHAPED tile (slant prism / round shell) is built below, never a box.
       const shape = shapeAt(grid, i, j);
       if (isShaped(shape)) {
-        slantCells.push({ x: cc.x, z: cc.z, i, j, shape, low: rim });
+        if (isArc(shape)) {
+          // A multi-tile arc slice — rendered as one feature shell below, not
+          // per-tile. Remember whether ANY slice is camera-side rim so the
+          // whole sweep takes the knee-high treatment (Diablo rule).
+          const fid = grid.arcIdx ? grid.arcIdx[idx(grid, i, j)] : -1;
+          if (fid >= 0) arcRim.set(fid, (arcRim.get(fid) ?? false) || rim);
+        } else {
+          slantCells.push({ x: cc.x, z: cc.z, i, j, shape, low: rim });
+        }
         continue;
       }
       if (rim) {
@@ -975,6 +1054,30 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       mesh.instanceMatrix.needsUpdate = true;
       group.add(mesh);
       disposables.push({ dispose: () => mesh.dispose() });
+    }
+  }
+
+  // ── ARC SWEEPS — every multi-tile curved wall as ONE merged mesh, sampled at
+  // the exact collider radius/span. Knee-high when any slice is camera-side rim
+  // (same Diablo rule as boxes), full otherwise. ──
+  if (grid.arcs && grid.arcs.length) {
+    const sweepGeo = arcSweepGeometry(grid.arcs, grid, (fi) => ((arcRim.get(fi) ?? true) ? WALL_LOW : WALL_H));
+    if (sweepGeo) {
+      track(sweepGeo);
+      const sweepMat = track(
+        new THREE.MeshStandardMaterial({
+          map: track(makeWallTexture(false, false)),
+          normalMap: track(normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          normalScale: new THREE.Vector2(1, 1),
+          roughness: 0.92,
+          metalness: 0,
+          side: THREE.DoubleSide,
+        }),
+      );
+      const sweepMesh = new THREE.Mesh(sweepGeo, sweepMat);
+      sweepMesh.castShadow = true;
+      sweepMesh.receiveShadow = true;
+      group.add(sweepMesh);
     }
   }
 
