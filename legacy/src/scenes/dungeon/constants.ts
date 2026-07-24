@@ -712,6 +712,43 @@ export const ARC_MIN_SPEED = 6;
  *  Bumped 2026-07-20 to match the banked-rail read (was 0.5, buried against the
  *  2-tile wall bands so the real sweepable corners never looked curved). */
 export const ARC_WEDGE_R = 0.62;
+
+// ── Curved-wall KICKERS (booster rubber on the sweeps — see maze/arc-sweeps) ──
+/**
+ * Real tables wrap their curved guides in live rubber: the ball doesn't just
+ * bank off a swept wall, it gets THROWN off it. A kicker band is an angular
+ * sub-span of an ArcFeature that converts a ricochet into a bumper-grade kick.
+ * Tuned against the bumper (BUMPER_KICK_ADD 3.2 / BUMPER_MIN_EXIT) so a wall
+ * kicker reads as the same family of accelerator, slightly softer — it is free
+ * and unavoidable on the sweep, where a bumper has to be aimed at.
+ */
+/** Never multiplies the incoming speed — a flat kick, like a bumper. */
+export const ARC_KICK_MULT = 1.0;
+/** Flat speed added on top of the reflection (u/s). */
+export const ARC_KICK_ADD = 2.6;
+/** Speed floor leaving the rubber — a slow graze still gets flung. */
+export const ARC_KICK_MIN_EXIT = 9;
+/** Below this, contact is a lean, not a hit: bank normally, no kick, no flash. */
+export const ARC_KICK_MIN_SPEED = 3.5;
+/** Authentic ±rad exit scatter, same rule as bumpers (active parts scatter). */
+export const ARC_KICK_SCATTER = 0.1;
+/** Re-fire lockout so hugging the band can't machine-gun it. */
+export const ARC_KICK_COOLDOWN = 0.3;
+/** Gold paid per kick — small; the payout is the SPEED, not the purse. */
+export const ARC_KICK_GOLD = 1;
+/** Seconds the rubber stays visibly compressed + lit after a kick. */
+export const ARC_KICK_FLASH = 0.26;
+/** How far the rubber stands proud of the collider face (world units). */
+export const ARC_KICK_THICK = 0.07;
+/** Fraction of a fillet sweep's span the band covers (centred on the arc). */
+export const ARC_KICK_BAND_FRAC = 0.62;
+/** Chance a qualifying fillet sweep is authored with rubber. */
+export const ARC_KICK_CHANCE = 0.45;
+/** Bands strung evenly around an orbit island, and each one's width (rad). */
+export const ARC_KICK_ISLAND_BANDS = 3;
+export const ARC_KICK_ISLAND_SPAN = 0.62;
+/** Hard cap per floor — a machine, not a trampoline. */
+export const ARC_KICK_MAX = 10;
 // ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
 export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
 export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled
@@ -1485,6 +1522,27 @@ export const BLADESTORM_TICK = 0.35; // seconds between blade hits
 export const PULSE_WAVE_DUR = 0.55; // seconds the ring takes to reach full radius
 export const PULSE_RING_LAG = 0.07; // the purple chaser ring starts this far behind
 export const PULSE_RIM_BURSTS = 8; // impact pops around the rim at max radius
+/** Ground bolts forked at the cast, and again mid-flight — the "lightning
+ *  crown" that makes the pulse read as an arcane DISCHARGE instead of a hoop. */
+export const PULSE_CAST_FORKS = 8;
+export const PULSE_MID_FORKS = 6;
+
+// ── Sustained-buff LOOKS ── Blade Storm, Magnet Aura and Time Crawl are states,
+// not events, so each one draws on a beat for as long as it is up. Cadences are
+// deliberately coarse (a few per second): the ring/ghost pools are small, and a
+// per-frame spawn would chew through them and thin every other effect on screen.
+/** Blade Storm: crescents in the visible ring, and its orbit speed (rad/s). */
+export const BLADESTORM_BLADES = 3;
+export const BLADESTORM_SPIN = 7.5;
+/** Magnet Aura: the field's drawn reach, its collapse-ring beat, and how many
+ *  items get an arc snapped onto them per beat. */
+export const MAGNET_FIELD_R = 3.2;
+export const MAGNET_PULSE_EVERY = 0.42;
+export const MAGNET_LEASH_MAX = 3;
+/** Time Crawl: the field's drawn reach and the beat its enemy-smear ghosts run
+ *  at (the ghosts are the effect — the horde visibly dragging). */
+export const TIMECRAWL_FIELD_R = 4.2;
+export const TIMECRAWL_SMEAR = 0.22;
 
 // ── Flipper Charge fire trail ── the launch ignites the knight: flame ghosts +
 // embers while riding, and a burning floor scar per NEW tile crossed. Uses the

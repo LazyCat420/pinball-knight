@@ -70,6 +70,13 @@ import {
   ARC_BOOST,
   ARC_COOLDOWN,
   ARC_MIN_SPEED,
+  ARC_KICK_MULT,
+  ARC_KICK_ADD,
+  ARC_KICK_MIN_EXIT,
+  ARC_KICK_MIN_SPEED,
+  ARC_KICK_SCATTER,
+  ARC_KICK_COOLDOWN,
+  ARC_KICK_GOLD,
   SECRET_BREAK_SPEED,
   WALL_BREAK_SPEED,
   WALL_BREAK_SPEED_COST,
@@ -128,6 +135,7 @@ import { moveCircle, wallContact } from "../collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
 
 import { showPickupNote, showToast } from "../ui";
+import { addGold } from "../../../utils/gold-wallet";
 import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
 import { rotateLanes, armSkillShot } from "../shots";
 import { facingFromVelocity, type Facing } from "../render/animator";
@@ -150,6 +158,8 @@ import {
   materialMaxSpeed,
   emitMaterialOnBounce,
   materialSlam,
+  materialBumperMult,
+  materialBumperScatterMult,
 } from "./marble";
 import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../audio";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
@@ -1206,16 +1216,46 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     if (vn < 0) {
       p.momX -= 2 * vn * nx;
       p.momZ -= 2 * vn * nz;
-      const rest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
-      p.bounceCombo += 1;
-      p.bounceComboT = comboWindow(p.bounceCombo);
-      notePocketBounce(p);
-      state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
-      state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
-      state.hitstopT = Math.max(state.hitstopT, 0.02);
-      emitMaterialOnBounce(nx, nz);
-      sfxRoll();
+      // BOOSTER RUBBER: this stretch of the curved wall is a kicker band, so it
+      // doesn't just return the ball — it THROWS it. Flat add + exit floor +
+      // the authentic scatter, exactly the bumper's family of accelerator
+      // (constants ARC_KICK_*), applied ON TOP of the reflection above so the
+      // launch still leaves along the curve's live radial normal.
+      const kick = res.hitKick && p.momSpeed >= ARC_KICK_MIN_SPEED ? res.hitKick : null;
+      if (kick) {
+        const scatter = (Math.random() * 2 - 1) * ARC_KICK_SCATTER * materialBumperScatterMult();
+        const cs = Math.cos(scatter);
+        const sn = Math.sin(scatter);
+        const mx = p.momX;
+        const mz = p.momZ;
+        p.momX = mx * cs - mz * sn;
+        p.momZ = mx * sn + mz * cs;
+        p.momSpeed = Math.min(
+          PINBALL_MAX_SPEED,
+          Math.max(p.momSpeed * ARC_KICK_MULT + ARC_KICK_ADD * materialBumperMult(), ARC_KICK_MIN_EXIT),
+        );
+        kick.cooldownT = ARC_KICK_COOLDOWN;
+        kick.hitT = 0;
+        onPartTrigger(); // combo + frenzy chain, same as a bumper or a bank
+        state.goldRun += ARC_KICK_GOLD;
+        addGold(ARC_KICK_GOLD, "dungeon-game");
+        state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, nx, nz, 16);
+        state.shakeT = Math.max(state.shakeT, 0.2);
+        state.hitstopT = Math.max(state.hitstopT, 0.04);
+        emitMaterialOnBounce(nx, nz);
+        sfxBumper();
+      } else {
+        const rest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
+        p.bounceCombo += 1;
+        p.bounceComboT = comboWindow(p.bounceCombo);
+        notePocketBounce(p);
+        state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
+        state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
+        state.hitstopT = Math.max(state.hitstopT, 0.02);
+        emitMaterialOnBounce(nx, nz);
+        sfxRoll();
+      }
     }
   } else if (blockedX || blockedZ) {
     // SECRET WALL: enough momentum landing on a CRACKED band shatters it — the

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ABILITIES, ABILITY_IDS, canCast, tickAbilities, getMana, spawnPulseWave } from "./abilities";
 import { state } from "./state";
-import { MANA_MAX, MANA_REGEN, ARCANE_PULSE_DAMAGE, PULSE_WAVE_DUR, FLIPPER_TRAIL_LIFE } from "./constants";
+import { MANA_MAX, MANA_REGEN, ARCANE_PULSE_DAMAGE, PULSE_WAVE_DUR, FLIPPER_TRAIL_LIFE, MAGNET_PULSE_EVERY, TIMECRAWL_SMEAR } from "./constants";
 
 /**
  * The active-skill mana economy is pure logic (no WebGL / audio on these paths),
@@ -149,5 +149,96 @@ describe("canCast gating", () => {
     stubPlayer(MANA_MAX);
     state.abilitySlots = [null, null];
     expect(canCast(0)).toBe(false);
+  });
+});
+
+/**
+ * SUSTAINED BUFF LOOKS. Blade Storm, Magnet Aura and Time Crawl each used to
+ * draw nothing at all in the world — a one-shot spark on cast and then an
+ * invisible five seconds. These pin that each one now emits its OWN signature
+ * while it runs, on its own beat, through the real vfx surface.
+ */
+describe("sustained buff visuals", () => {
+  interface Calls {
+    blades: number;
+    ringsInward: number;
+    bolts: number;
+    ghosts: number;
+  }
+  function spyVfx(): Calls {
+    const c: Calls = { blades: 0, ringsInward: 0, bolts: 0, ghosts: 0 };
+    state.vfx = {
+      blades: () => void c.blades++,
+      ring: (...args: unknown[]) => void (args[6] ? c.ringsInward++ : 0),
+      bolt: () => void c.bolts++,
+      ghost: () => void c.ghosts++,
+      sparks: () => {},
+      burst: () => {},
+      blood: () => {},
+      ember: () => {},
+      mote: () => {},
+      dust: () => {},
+      slash: () => {},
+      damage: () => {},
+      update: () => {},
+      dispose: () => {},
+    } as unknown as typeof state.vfx;
+    return c;
+  }
+
+  it("Blade Storm keeps a visible blade ring alive every frame it runs", () => {
+    stubPlayer(0);
+    const c = spyVfx();
+    state.zombies = [];
+    const p = state.player!;
+    p.bladeStormT = 1;
+    p.bladeStormTickT = 1; // no damage tick inside this window
+    tickAbilities(0.016);
+    tickAbilities(0.016);
+    expect(c.blades).toBe(2); // keep-alive: one refresh per frame, not per tick
+    p.bladeStormT = 0;
+    tickAbilities(0.016);
+    expect(c.blades).toBe(2); // lapsed → the blades stop being drawn
+    state.vfx = null;
+  });
+
+  it("Magnet Aura draws COLLAPSING rings and leashes nearby loot with arcs", () => {
+    stubPlayer(0);
+    const c = spyVfx();
+    const p = state.player!;
+    p.x = 0;
+    p.z = 0;
+    p.magnetAuraT = 3;
+    state.groundItems = [
+      { kind: "potion", x: 2, z: 0, sprite: { mesh: { position: { x: 2, z: 0 } } } },
+    ] as unknown as typeof state.groundItems;
+    // A full beat's worth of dt always crosses the pulse timer, whatever phase
+    // a previous test left it in (the beat is module-local and re-seeded on cast).
+    tickAbilities(MAGNET_PULSE_EVERY);
+    expect(c.ringsInward).toBe(1);
+    expect(c.bolts).toBe(1); // an arc onto the item being reeled in
+    tickAbilities(0.016); // still inside the fresh beat → no second ring
+    expect(c.ringsInward).toBe(1);
+    state.vfx = null;
+  });
+
+  it("Time Crawl smears the HORDE (an afterimage per live foe), not just the caster", () => {
+    stubPlayer(0);
+    const c = spyVfx();
+    const p = state.player!;
+    p.x = 0;
+    p.z = 0;
+    state.slowT = 2;
+    state.zombies = [
+      { mode: "chase", sprite: { mesh: {} } },
+      { mode: "chase", sprite: { mesh: {} } },
+      { mode: "dead", sprite: { mesh: {} } }, // corpses don't smear
+    ] as unknown as typeof state.zombies;
+    tickAbilities(TIMECRAWL_SMEAR);
+    expect(c.ghosts).toBe(2);
+    tickAbilities(0.016); // inside the fresh beat
+    expect(c.ghosts).toBe(2);
+    state.zombies = [];
+    state.vfx = null;
   });
 });

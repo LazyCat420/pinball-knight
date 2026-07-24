@@ -5,8 +5,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, at, isWalkable, idx, mulberry32, ensureArcs } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, resolveArcFeature, angleInSpan, type ArcFeature } from "./tile-shape";
-import { authorArcSweeps, stampOrbitIsland, ORBIT_RADIUS } from "./arc-sweeps";
+import { SHAPE_FULL, SHAPE_ARC, resolveArcFeature, angleInSpan, kickBandAt, type ArcFeature } from "./tile-shape";
+import { authorArcSweeps, stampOrbitIsland, ORBIT_RADIUS, KICK_MAX_PER_FLOOR, KICK_ISLAND_BANDS, KICK_ISLAND_SPAN } from "./arc-sweeps";
 import { moveCircle } from "../collision";
 import { bfsDistances } from "../entities/ai";
 
@@ -208,6 +208,100 @@ describe("arc bookkeeping", () => {
     // No non-arc tile carries SHAPE_ARC leakage into the r=1 families.
     for (let k = 0; k < g.shapes.length; k++) {
       if (g.arcIdx![k] >= 0) expect(g.shapes[k]).toBe(SHAPE_ARC);
+    }
+  });
+});
+
+describe("kicker bands (curved-wall boosters)", () => {
+  const guide: ArcFeature = { cx: 10, cz: 10, r: 3, a0: Math.PI, span: Math.PI / 2 }; // faces NW
+
+  it("kickBandAt reports the band that owns a contact, and nothing off it", () => {
+    const f: ArcFeature = { ...guide, kicks: [{ a0: Math.PI * 1.1, span: Math.PI * 0.3, cooldownT: 0, hitT: -1 }] };
+    // Contact angle is the radial direction from the centre — mid-band here.
+    const mid = Math.PI * 1.25;
+    expect(kickBandAt(f, 10 + Math.cos(mid) * 3, 10 + Math.sin(mid) * 3)).toBe(f.kicks![0]);
+    // Just outside the band (still on the feature's face) → plain stone.
+    const off = Math.PI * 1.05;
+    expect(kickBandAt(f, 10 + Math.cos(off) * 3, 10 + Math.sin(off) * 3)).toBeNull();
+    // Bandless feature is always plain stone.
+    expect(kickBandAt(guide, 10 + Math.cos(mid) * 3, 10 + Math.sin(mid) * 3)).toBeNull();
+  });
+
+  it("a band on cooldown is dead rubber (ricochets normally)", () => {
+    const band = { a0: Math.PI, span: Math.PI / 2, cooldownT: 0.2, hitT: 0 };
+    const f: ArcFeature = { ...guide, kicks: [band] };
+    const mid = Math.PI * 1.25;
+    expect(kickBandAt(f, 10 + Math.cos(mid) * 3, 10 + Math.sin(mid) * 3)).toBeNull();
+    band.cooldownT = 0;
+    expect(kickBandAt(f, 10 + Math.cos(mid) * 3, 10 + Math.sin(mid) * 3)).toBe(band);
+  });
+
+  it("moveCircle hands the band back through hitKick when the ball rides the rubber", () => {
+    const g = emptyGrid(24, 24);
+    openRect(g, 1, 1, 22, 22);
+    // A hand-built convex guide centred in the room, rubber over its whole face.
+    ensureArcs(g);
+    const f: ArcFeature = { cx: 12, cz: 12, r: 3, a0: Math.PI, span: Math.PI / 2, kicks: [{ a0: Math.PI, span: Math.PI / 2, cooldownT: 0, hitT: -1 }] };
+    g.arcs!.push(f);
+    for (let j = 8; j <= 12; j++) {
+      for (let i = 8; i <= 12; i++) {
+        g.t[j * g.w + i] = T_WALL;
+        g.shapes[j * g.w + i] = SHAPE_ARC;
+        g.arcIdx![idx(g, i, j)] = 0;
+      }
+    }
+    // Drive the ball into the NW face of the guide (grid → world offset w/2,h/2).
+    const wx = 12 - 2.6 - g.w / 2;
+    const wz = 12 - 2.6 - g.h / 2;
+    const res = moveCircle(g, wx, wz, 0.3, 0.35, 0.35);
+    expect(res.hitN).toBeTruthy();
+    expect(res.hitKick).toBe(f.kicks![0]);
+    // Same geometry with the rubber stripped → contact, but no kick.
+    f.kicks = undefined;
+    const plain = moveCircle(g, wx, wz, 0.3, 0.35, 0.35);
+    expect(plain.hitN).toBeTruthy();
+    expect(plain.hitKick).toBeNull();
+  });
+
+  it("authoring dresses only CONVEX sweeps, stays under the floor cap, and every band sits inside its own sweep", () => {
+    let total = 0;
+    // Sweep seeds: the dressing is a per-sweep ROLL, so one seed proves nothing
+    // about the invariants and a single unlucky seed proves nothing about reach.
+    for (let seed = 0; seed < 12; seed++) {
+      const g = emptyGrid(40, 40);
+      openRect(g, 1, 1, 38, 38);
+      for (let j = 12; j <= 30; j++) for (let i = 12; i <= 30; i++) g.t[j * g.w + i] = T_WALL;
+      authorArcSweeps(g, { i: 2, j: 2 }, never, mulberry32(seed));
+      let bands = 0;
+      for (const f of g.arcs ?? []) {
+        if (!f.kicks) continue;
+        expect(f.solidOut).toBeFalsy(); // concave bowls never wear rubber
+        for (const k of f.kicks) {
+          bands++;
+          expect(k.span).toBeGreaterThan(0);
+          expect(k.span).toBeLessThanOrEqual(f.span);
+          // Band fully contained in the sweep it rides.
+          expect(angleInSpan(k.a0, f.a0, f.span)).toBe(true);
+          expect(angleInSpan(k.a0 + k.span, f.a0, f.span)).toBe(true);
+          expect(k.cooldownT).toBe(0);
+        }
+      }
+      expect(bands).toBeLessThanOrEqual(KICK_MAX_PER_FLOOR);
+      total += bands;
+    }
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it("the orbit island always wears evenly-spaced rubber", () => {
+    const g = emptyGrid(24, 24);
+    openRect(g, 1, 1, 22, 22);
+    expect(stampOrbitIsland(g, { i: 2, j: 2 }, never, mulberry32(7))).toBeTruthy();
+    const f = g.arcs![g.arcs!.length - 1];
+    expect(f.kicks).toHaveLength(KICK_ISLAND_BANDS);
+    const step = (Math.PI * 2) / KICK_ISLAND_BANDS;
+    for (let k = 1; k < f.kicks!.length; k++) {
+      expect(f.kicks![k].a0 - f.kicks![k - 1].a0).toBeCloseTo(step, 6);
+      expect(f.kicks![k].span).toBeCloseTo(KICK_ISLAND_SPAN, 6);
     }
   });
 });

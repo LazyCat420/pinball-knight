@@ -33,6 +33,15 @@ import {
   FLIPPER_TRAIL_GHOST_T,
   OIL_SLICK_RADIUS,
   OIL_SLICK_LIFE,
+  PULSE_CAST_FORKS,
+  PULSE_MID_FORKS,
+  BLADESTORM_BLADES,
+  BLADESTORM_SPIN,
+  MAGNET_FIELD_R,
+  MAGNET_PULSE_EVERY,
+  MAGNET_LEASH_MAX,
+  TIMECRAWL_FIELD_R,
+  TIMECRAWL_SMEAR,
 } from "./constants";
 import { sfxSpin, sfxBumper, sfxFreeze, sfxSwing } from "./audio";
 import { clamp } from "../../utils/math";
@@ -75,6 +84,8 @@ interface PulseWave {
   z: number;
   t: number;
   hit: Set<Zombie>;
+  /** Has the mid-flight lightning crown gone off yet? (once per wave) */
+  forked: boolean;
 }
 const pulseWaves: PulseWave[] = [];
 
@@ -86,9 +97,12 @@ function pulseRadius(t: number): number {
 
 /** Launch a pulse shockwave at (x,z) — split out so tests can drive it silently. */
 export function spawnPulseWave(x: number, z: number): void {
-  pulseWaves.push({ x, z, t: 0, hit: new Set() });
-  // Three rings sell the sonar ping: a hot white core, an arcane-blue chaser,
-  // a slow faint echo — plus an immediate radial burst so the CAST itself pops.
+  pulseWaves.push({ x, z, t: 0, hit: new Set(), forked: false });
+  // The cast reads as a DISCHARGE, not a drawn circle. Three rings still carry
+  // the wave front (hot white core, arcane-blue chaser, slow echo), but the
+  // thing that says "magic" is the LIGHTNING CROWN fired with them: a full ring
+  // of jagged bolts whipping out along the ground from the cast point, so the
+  // pulse looks like it is arcing outward rather than a hoop expanding.
   // Colours are PALETTE-NATIVE arcane blues: the composite pass quantizes to
   // the 32-colour palette, and off-palette purple (0x8800ff) snapped to blood
   // red — the "red circle" bug.
@@ -96,6 +110,22 @@ export function spawnPulseWave(x: number, z: number): void {
   state.vfx?.ring(x, z, 0x6fd0e8, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, PULSE_RING_LAG);
   state.vfx?.ring(x, z, 0x2e6d8f, ARCANE_PULSE_RADIUS * 0.8, PULSE_WAVE_DUR * 1.6, PULSE_RING_LAG * 2.5);
   state.vfx?.burst(x, 0.5, z, 0x6fd0e8, 18, 5);
+  forkCrown(x, z, PULSE_CAST_FORKS, ARCANE_PULSE_RADIUS * 0.55, 0);
+}
+
+/**
+ * A ring of `n` ground bolts radiating from (x,z) out to `len`, offset by
+ * `phase` so successive crowns don't land on the same spokes. The arcane
+ * signature: the pulse is a discharge that FORKS, and each fork is a real
+ * thunderbolt from the same pool the Storm cards use.
+ */
+function forkCrown(x: number, z: number, n: number, len: number, phase: number): void {
+  const vfx = state.vfx;
+  if (!vfx) return;
+  for (let k = 0; k < n; k++) {
+    const a = phase + (k / n) * Math.PI * 2;
+    vfx.bolt(x, 0.45, z, Math.cos(a), Math.sin(a), len * (0.8 + Math.random() * 0.4));
+  }
 }
 
 function tickPulseWaves(dt: number): void {
@@ -103,6 +133,13 @@ function tickPulseWaves(dt: number): void {
     const w = pulseWaves[i];
     w.t += dt;
     const r = pulseRadius(w.t);
+    // Mid-flight, the discharge forks a SECOND crown — longer, rotated off the
+    // cast one — so the arcs chase the wave front out instead of firing once at
+    // the origin and leaving a bare ring to finish the trip alone.
+    if (!w.forked && w.t >= PULSE_WAVE_DUR * 0.45) {
+      w.forked = true;
+      forkCrown(w.x, w.z, PULSE_MID_FORKS, ARCANE_PULSE_RADIUS * 0.95, Math.PI / PULSE_MID_FORKS);
+    }
     for (const z of state.zombies) {
       if (z.mode === "dead" || w.hit.has(z)) continue;
       const dx = z.x - w.x;
@@ -118,11 +155,16 @@ function tickPulseWaves(dt: number): void {
       if (d > 0.4) state.vfx?.bolt(w.x, 0.6, w.z, dx, dz, d);
     }
     if (w.t >= PULSE_WAVE_DUR) {
-      // The rim arrives: impact pops evenly around the circumference.
+      // The rim arrives: impact pops evenly around the circumference, each one
+      // struck by its own short bolt so the wave EARTHS itself at the edge
+      // rather than simply fading out.
       for (let k = 0; k < PULSE_RIM_BURSTS; k++) {
         const a = (k / PULSE_RIM_BURSTS) * Math.PI * 2;
-        state.vfx?.burst(w.x + Math.cos(a) * ARCANE_PULSE_RADIUS, 0.25, w.z + Math.sin(a) * ARCANE_PULSE_RADIUS, 0x6fd0e8, 6, 2.2);
+        const rx = w.x + Math.cos(a) * ARCANE_PULSE_RADIUS;
+        const rz = w.z + Math.sin(a) * ARCANE_PULSE_RADIUS;
+        state.vfx?.burst(rx, 0.25, rz, 0x6fd0e8, 6, 2.2);
       }
+      forkCrown(w.x, w.z, PULSE_RIM_BURSTS, ARCANE_PULSE_RADIUS, Math.PI / PULSE_RIM_BURSTS);
       pulseWaves.splice(i, 1);
     }
   }
@@ -133,6 +175,14 @@ function tickPulseWaves(dt: number): void {
 let trailIx = Number.NaN;
 let trailIz = Number.NaN;
 let trailGhostT = 0;
+
+// Sustained-aura scratch. Each buff whose LOOK is a state rather than an event
+// keeps its beat here: pool-friendly cadences (a ring/ghost per tick, never per
+// frame) and the blade ring's live phase. Module-local like pulseWaves — these
+// only matter while the buff is up, and every one of them is re-seeded on cast.
+let magnetPulseT = 0;
+let crawlSmearT = 0;
+let bladeAngle = 0;
 
 /** Live mana, clamped to the (skill-extended) pool. */
 export function getMana(): number {
@@ -189,17 +239,35 @@ export function castAbility(slot: 0 | 1): boolean {
     }
     case "magnetaura":
       p.magnetAuraT = 4;
+      magnetPulseT = 0; // the field pulses on the very first frame it is up
+      // A PULL, so everything about it runs inward: two collapsing rings that
+      // accelerate into the knight (RingPool's inward mode) instead of the
+      // outward wave every other cast uses. The aura's ongoing suction is drawn
+      // in tickAbilities — the cast is just the field snapping on.
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.5, 0, true);
+      state.vfx?.ring(p.x, p.z, 0x2e6d8f, MAGNET_FIELD_R * 0.7, 0.6, 0.12, true);
       state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 10);
       sfxSpin();
       break;
     case "timecrawl":
       state.slowT = 3;
-      state.vfx?.sparks(p.x, 0.7, p.z, 0, 0, 14);
+      crawlSmearT = 0; // the horde starts smearing immediately, not a beat late
+      // A cold front rolling out, then the world holding its breath: one wide
+      // pale ring, one slow echo, and a low frost burst. The horde's own
+      // smeared afterimages (tickAbilities) are what actually sell the SLOW.
+      state.vfx?.ring(p.x, p.z, 0xbfe8ff, TIMECRAWL_FIELD_R, 0.55);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R * 1.15, 1.1, 0.1);
+      state.vfx?.burst(p.x, 0.35, p.z, 0xbfe8ff, 20, 3);
+      state.flashT = Math.max(state.flashT, 0.12); // the instant everything stalls
       sfxFreeze();
       break;
     case "bladestorm":
       p.bladeStormT = 5;
       p.bladeStormTickT = 0;
+      bladeAngle = 0;
+      // The blades come OUT: a fast steel ring snapping to its orbit radius.
+      state.vfx?.ring(p.x, p.z, 0xc8ccd4, BLADESTORM_RADIUS, 0.28);
+      state.vfx?.burst(p.x, 0.6, p.z, 0xeef1f5, 12, 4);
       sfxSwing();
       break;
     case "slickfield":
@@ -207,6 +275,9 @@ export function castAbility(slot: 0 | 1): boolean {
       // rest: foes skid, the rolling ball glides, overlapping fire ignites it.
       spawnFloorFx("oil", p.x, p.z, OIL_SLICK_RADIUS, OIL_SLICK_LIFE);
       state.vfx?.burst(p.x, 0.2, p.z, 0x1f3d52, 26, 2.5); // low dark floor-hugging eruption
+      // The pool SPREADS: a ring racing out to the slick's own edge, so the
+      // spill has a visible leading front instead of a disc appearing whole.
+      state.vfx?.ring(p.x, p.z, 0x2e6d8f, OIL_SLICK_RADIUS, 0.42);
       sfxSwing();
       break;
   }
@@ -277,15 +348,49 @@ export function tickAbilities(dt: number): void {
     }
   }
 
-  // Time Crawl timer (effect lives at the updateZombies call).
+  // Time Crawl timer (effect lives at the updateZombies call) + its look. The
+  // buff's whole point is that the HORDE is crawling, so that is what gets
+  // drawn: every live foe leaves a pale-blue afterimage, smearing where it was
+  // a beat ago. A ring around the player alone would say "you cast something";
+  // ghosts on the enemies say "they are stuck in treacle".
   if (state.slowT > 0) {
     state.slowT = Math.max(0, state.slowT - dt);
+    crawlSmearT -= dt;
+    if (crawlSmearT <= 0) {
+      crawlSmearT = TIMECRAWL_SMEAR;
+      for (const z of state.zombies) {
+        if (z.mode === "dead") continue;
+        state.vfx?.ghost(z.sprite.mesh, 0xbfe8ff, 0.5, 0.3);
+      }
+      // A slow shallow ripple off the knight keeps the FIELD readable when the
+      // room happens to be empty.
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R, 0.9);
+    }
     if (state.slowT === 0) state.hudDirty = true;
   }
 
   // Magnet Aura: drift ground items toward the knight.
   if (p.magnetAuraT > 0) {
     p.magnetAuraT = Math.max(0, p.magnetAuraT - dt);
+    // The field, made visible: collapsing rings on a steady beat, plus an arc
+    // snapped onto whatever loot is currently being dragged in — the aura
+    // should look like it is REELING things, not like a buff icon.
+    magnetPulseT -= dt;
+    if (magnetPulseT <= 0) {
+      magnetPulseT = MAGNET_PULSE_EVERY;
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.45, 0, true);
+      let leashed = 0;
+      for (const it of state.groundItems) {
+        if (leashed >= MAGNET_LEASH_MAX) break;
+        if (it.blockedUntilAway) continue;
+        const dx = p.x - it.x;
+        const dz = p.z - it.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 0.5 || d > MAGNET_FIELD_R) continue;
+        state.vfx?.bolt(it.x, 0.4, it.z, dx, dz, d);
+        leashed++;
+      }
+    }
     for (const it of state.groundItems) {
       if (it.blockedUntilAway) continue;
       // Coins are NOT dragged here. They run their own burst/rest/magnet flight
@@ -308,6 +413,11 @@ export function tickAbilities(dt: number): void {
   // Blade Storm: orbiting blades bite everything close on a fixed cadence.
   if (p.bladeStormT > 0) {
     p.bladeStormT = Math.max(0, p.bladeStormT - dt);
+    // The blades themselves — a keep-alive ring of crescents actually circling
+    // the knight at the damage radius, so the hitbox is something you can SEE
+    // (this buff used to be invisible: sparks on a hit and nothing else).
+    bladeAngle += BLADESTORM_SPIN * dt;
+    state.vfx?.blades(p.x, 0.55, p.z, bladeAngle, BLADESTORM_BLADES, BLADESTORM_RADIUS * 0.72, 0xc8ccd4);
     p.bladeStormTickT -= dt;
     if (p.bladeStormT > 0 && p.bladeStormTickT <= 0) {
       p.bladeStormTickT = BLADESTORM_TICK;
@@ -320,6 +430,9 @@ export function tickAbilities(dt: number): void {
         if (d > BLADESTORM_RADIUS) continue;
         const inv = d || 1;
         damageZombie(z, BLADESTORM_DAMAGE, dx / inv, dz / inv, 3);
+        // Each bite lands ON the foe — a cut where the blade actually connected,
+        // not a generic puff at the knight's feet.
+        state.vfx?.sparks(z.x, 0.6, z.z, dx / inv, dz / inv, 7);
         hit = z;
       }
       if (hit) state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 6);

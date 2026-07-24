@@ -2,7 +2,95 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🔥 NEWEST (2026-07-24): LIGHT-PUZZLE SECRET VAULTS — per-floor braziers → loot
+## 🔥 NEWEST (2026-07-24): CURVED-WALL BOOSTERS + ability FX that match the ability
+
+Two asks, one wave. (1) The curved walls (arc sweeps) now wear **kicker rubber**
+like a real table's ball-guides — stretches that THROW the ball instead of
+banking it. (2) Three of the six Q/E specials drew **nothing at all** in the
+world (screenshot-verified before the change: Blade Storm, Magnet Aura and Time
+Crawl each fired a one-shot spark and that was it); Arcane Pulse drew plain
+expanding circles. All four now animate what they actually DO.
+
+### Curved-wall kickers (the booster rubber)
+
+**One angular sub-span, four files.** A `KickBand {a0, span, cooldownT, hitT}`
+is a stretch of an existing `ArcFeature`'s face — same circle, same collider —
+so mesh and trigger can't disagree (the tile-shape see = hit contract applied to
+a part). No new geometry family, no new collider.
+
+- `maze/tile-shape.ts` — `ArcFeature.kicks?: KickBand[]` + `kickBandAt(f,px,pz)`,
+  which keys off the CONTACT ANGLE (the radial direction the collider pushed out
+  along). A band on cooldown reports null = dead rubber, ricochets normally.
+- `maze/arc-sweeps.ts` — authoring. `KICK_CHANCE` 0.45 per qualifying **convex**
+  fillet (concave bowls never get rubber: a kick there fires you into the pocket
+  you're already stuck in), band = the middle `KICK_BAND_FRAC` of the sweep;
+  the **orbit island always** wears `KICK_ISLAND_BANDS` evenly spaced (a lap is
+  now a chain of kicks). Cap `KICK_MAX_PER_FLOOR` = 10.
+- `collision.ts` — `MoveResult.hitKick: KickBand | null`, resolved where the
+  feature is still in scope. Additive; every non-pinball caller ignores it.
+- `entities/player.ts` — in the existing `res.hitN` branch: reflect as before,
+  then if `hitKick` and speed ≥ `ARC_KICK_MIN_SPEED`, apply the bumper-family
+  kick (flat `ARC_KICK_ADD`, `ARC_KICK_MIN_EXIT` floor, ±`ARC_KICK_SCATTER`),
+  stamp the band, `onPartTrigger()` (combo/frenzy chain), gold, sfxBumper.
+  Marble material mults apply (stone shrugs a kicker off, same as a bumper).
+- `render/arc-kickers.ts` (new) — per-band mesh (body + top rail) sampled off the
+  identical circle/height, `ARC_KICK_THICK` proud of the face; `updateArcKickers`
+  owns cooldown/flash ticking (the updatePinballParts pattern) and drives the
+  idle breathe + hot flash + recoil squash. Built in `build.ts`, handed out on
+  `MazeHandle.arcKickers`, ticked in the core frame loop.
+
+**QA hook:** `window.__dungeonKickers()` → `[{x, z, cooldownT, hitT}]` per band —
+the only read-back (the bands are geometry on a merged wall mesh). Warp beside
+one, `__dungeonLaunch` into it, watch `hitT` go ≥ 0.
+
+**Headless-verified:** level 1 authored **10 bands**; the orbit island renders
+its three gold bands wrapped around the curve (screenshot); an 11 u/s entry came
+off a band at **13.47 u/s** with `hitT 0.1 / cooldownT 0.2` stamped and the
+combo chain ticked (×2 COMBO on screen). **TRAP that cost a QA cycle:** the
+knight boots PARKED IN THE PLUNGER and the park **overrides `__dungeonLaunch`** —
+a harness must do a SPACE pull-release *first* or every launch silently no-ops.
+
+### Ability FX
+
+- **Arcane Pulse** — was three expanding rings. Now a **lightning discharge**:
+  the rings still carry the wave front, but a *crown of ground bolts* forks at
+  the cast, again mid-flight (rotated off the first), and once more as the rim
+  earths itself. Uses the existing BoltPool (raised to 40 lines so a whole crown
+  fits alongside the per-victim arcs).
+- **Blade Storm** — was invisible. New `vfx.blades()` KEEP-ALIVE pool: crescents
+  actually orbiting the knight at the damage radius, so the hitbox is visible.
+  Per-tick sparks now land ON the foe that was cut, not at the caster's feet.
+- **Magnet Aura** — was invisible. Rings now **collapse inward** (RingPool gained
+  an `inward` mode with an ease-IN curve, so a pull accelerates into the centre
+  instead of looking like a wave played backwards) on a `MAGNET_PULSE_EVERY`
+  beat, plus an arc snapped onto up to 3 items currently being reeled in.
+- **Time Crawl** — was invisible. The buff's point is that the HORDE is crawling,
+  so that is what's drawn: every live foe leaves a pale-blue afterimage on a
+  `TIMECRAWL_SMEAR` beat (plus a cast flash + a slow ripple so an empty room
+  still reads).
+- **Slick Field** — the spill now has a leading front (a ring racing out to the
+  pool's own radius) instead of a disc appearing whole.
+- **Flipper Charge** — untouched; it was already the good one.
+
+Sustained-buff LOOK constants are grouped in constants.ts; the beats are coarse
+on purpose (a few per second) because the ring/ghost pools are small and a
+per-frame spawn would starve every other effect on screen. Each beat is
+re-seeded to 0 on cast, so a buff pulses on its very first frame.
+
+**Headless-verified** (screenshots): the pulse's lightning crown forks visibly
+through the ring; the magnet's rings collapse inward; Time Crawl ripples; three
+crescents orbit the knight under Blade Storm. `abilities.test.ts` pins the three
+sustained looks against a spied vfx surface (blades per frame, one inward ring +
+item arcs per magnet beat, one ghost per LIVE foe per crawl beat).
+**QA trap:** without INF MANA a scripted back-to-back cast sweep silently fails
+on the expensive skills (Blade Storm 40, Slick Field 25) — the debug-panel
+toggle clicks are unreliable; wait out the 7/s regen and assert
+`__dungeonProbe().buffs` instead of trusting the keypress.
+
+**Still true:** any dungeon VFX colour must be PALETTE-NATIVE or near-white —
+off-palette 0x8800ff once quantized to blood red (the original "red circle").
+
+## Prior (2026-07-24): LIGHT-PUZZLE SECRET VAULTS — per-floor braziers → loot
 
 Every qualifying floor now hosts a **light puzzle**: a sealed loot **vault
 chest** in an open chamber (far from start) plus 3-5 scattered **braziers**.

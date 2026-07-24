@@ -13,7 +13,7 @@
  */
 import { type Grid, isWalkable, shapeAt, arcFeatureAt } from "./maze/generator";
 import { clamp } from "../../utils/math";
-import { SHAPE_FULL, isShaped, isArc, resolveCircleShape, resolveArcFeature } from "./maze/tile-shape";
+import { SHAPE_FULL, isShaped, isArc, resolveCircleShape, resolveArcFeature, kickBandAt, type KickBand } from "./maze/tile-shape";
 
 const EPS = 1e-4;
 
@@ -35,10 +35,16 @@ function blocksSquare(g: Grid, i: number, j: number): boolean {
  * the SAME circle, so overlapping two slices at once yields one consistent
  * radial answer — "deepest pen wins" stays coherent across the sweep.
  */
-function resolveShapeOrArc(g: Grid, shape: number, i: number, j: number, gx: number, gz: number, r: number): { nx: number; nz: number; pen: number } | null {
+function resolveShapeOrArc(g: Grid, shape: number, i: number, j: number, gx: number, gz: number, r: number): { nx: number; nz: number; pen: number; kick?: KickBand | null } | null {
   if (isArc(shape)) {
     const f = arcFeatureAt(g, i, j);
-    return f ? resolveArcFeature(f, gx, gz, r) : null;
+    if (!f) return null;
+    const hit = resolveArcFeature(f, gx, gz, r);
+    // A sweep can wear BOOSTER RUBBER over part of its face (KickBand). Report
+    // which band (if any) owns this contact so the ricochet can become a kick —
+    // resolved here rather than in the caller because only this scope still
+    // knows WHICH feature answered.
+    return hit ? { ...hit, kick: kickBandAt(f, gx, gz) } : null;
   }
   return resolveCircleShape(shape, i, j, gx, gz, r);
 }
@@ -192,6 +198,10 @@ export interface MoveResult {
   x: number;
   z: number;
   hitN: { nx: number; nz: number } | null;
+  /** The BOOSTER band that owned the contact, when `hitN` came off a stretch of
+   * kicker rubber on an arc sweep — the ricochet becomes a kick (player.ts).
+   * null for plain stone; ignored by every non-pinball caller. */
+  hitKick: KickBand | null;
 }
 
 /**
@@ -201,28 +211,28 @@ export interface MoveResult {
  * placed only on backed convex corners (see assignCornerShapes), so a body this
  * size overlaps at most one meaningfully — resolving the deepest is enough.
  */
-function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number; gz: number; nx: number; nz: number } | null {
+function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number; gz: number; nx: number; nz: number; kick: KickBand | null } | null {
   const i0 = Math.floor(gx - r);
   const i1 = Math.floor(gx + r);
   const j0 = Math.floor(gz - r);
   const j1 = Math.floor(gz + r);
-  let best: { pen: number; nx: number; nz: number } | null = null;
+  let best: { pen: number; nx: number; nz: number; kick: KickBand | null } | null = null;
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       const shape = shapeAt(g, i, j);
       if (!isShaped(shape) || isWalkable(g, i, j)) continue;
       const hit = resolveShapeOrArc(g, shape, i, j, gx, gz, r);
-      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz };
+      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz, kick: hit.kick ?? null };
     }
   }
   if (!best) return null;
-  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz };
+  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz, kick: best.kick };
 }
 
 /** One sweep-and-clamp move (square walls) + one corrective shaped pass. Grid
  * coords in/out. Sub-stepping in `moveCircle` keeps each call within the
  * no-tunnel bound. */
-function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number, dz: number): { gx: number; gz: number; hitN: { nx: number; nz: number } | null } {
+function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number, dz: number): { gx: number; gz: number; hitN: { nx: number; nz: number } | null; hitKick: KickBand | null } {
   let gx = gx0;
 
   // ── X axis (square walls only; slant tiles are transparent here) ──
@@ -260,8 +270,8 @@ function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number
 
   // ── Corrective pass: push out of any slant triangle, capture its normal. ──
   const shaped = resolveShaped(g, gx, gz, r);
-  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz } };
-  return { gx, gz, hitN: null };
+  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz }, hitKick: shaped.kick };
+  return { gx, gz, hitN: null, hitKick: null };
 }
 
 /** Largest per-step move that keeps the axis sweep tunnel-free (< 1 − 2r). */
@@ -284,11 +294,15 @@ export function moveCircle(g: Grid, x: number, z: number, r: number, dx: number,
   const sx = dx / steps;
   const sz = dz / steps;
   let hitN: { nx: number; nz: number } | null = null;
+  let hitKick: KickBand | null = null;
   for (let s = 0; s < steps; s++) {
     const r2 = moveCircleStep(g, gx, gz, r, sx, sz);
     gx = r2.gx;
     gz = r2.gz;
-    if (r2.hitN) hitN = r2.hitN; // keep the most recent slant contact
+    if (r2.hitN) {
+      hitN = r2.hitN; // keep the most recent slant contact…
+      hitKick = r2.hitKick; // …and the rubber (or lack of it) that went with it
+    }
   }
-  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN };
+  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN, hitKick };
 }

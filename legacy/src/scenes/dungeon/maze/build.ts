@@ -32,6 +32,7 @@ import {
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED, idx } from "./generator";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "./tile-shape";
+import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
 import { clamp } from "../../../utils/math";
@@ -660,6 +661,10 @@ export interface MazeHandle {
   /** Tile "i,j" → the wall InstancedMesh + instance index drawing it, so a
    * high-speed smash can hide one wall at runtime (secrets.ts smashWallAt). */
   wallAt: Map<string, { mesh: THREE.InstancedMesh; index: number }>;
+  /** The BOOSTER rubber on the curved sweeps — core ticks their cooldown/flash
+   *  each frame (render/arc-kickers.updateArcKickers). Empty on floors whose
+   *  sweeps drew no bands. */
+  arcKickers: ArcKickerVisual[];
   dispose(): void;
 }
 
@@ -1060,6 +1065,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // ── ARC SWEEPS — every multi-tile curved wall as ONE merged mesh, sampled at
   // the exact collider radius/span. Knee-high when any slice is camera-side rim
   // (same Diablo rule as boxes), full otherwise. ──
+  let arcKickers: ArcKickerVisual[] = [];
   if (grid.arcs && grid.arcs.length) {
     const sweepGeo = arcSweepGeometry(grid.arcs, grid, (fi) => ((arcRim.get(fi) ?? true) ? WALL_LOW : WALL_H));
     if (sweepGeo) {
@@ -1078,6 +1084,14 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       sweepMesh.castShadow = true;
       sweepMesh.receiveShadow = true;
       group.add(sweepMesh);
+    }
+    // The BOOSTER rubber riding those same sweeps — sampled off the identical
+    // circle/height so it hugs the wall the ball actually hits.
+    const kick = buildArcKickers(grid.arcs, grid, (fi) => ((arcRim.get(fi) ?? true) ? WALL_LOW : WALL_H));
+    if (kick.kickers.length) {
+      group.add(kick.group);
+      for (const d of kick.disposables) disposables.push(d);
+      arcKickers = kick.kickers;
     }
   }
 
@@ -1357,6 +1371,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     stairsBeam,
     secrets,
     wallAt,
+    arcKickers,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());

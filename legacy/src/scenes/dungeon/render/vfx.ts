@@ -332,7 +332,10 @@ class SlashPool {
  * The path is re-jittered per spawn (clean at both ends via a sine taper) and
  * the opacity flickers as it fades over BOLT_LIFE — cheap, no textures.
  */
-const BOLT_LINES = 8; // pool size — a few concurrent bolts, 2 strands each
+// Pool size — 2 strands per bolt, and the Arcane Pulse nova forks a whole ring
+// of them at once (8 radials × 2 strands), so the pool has to hold a full nova
+// plus the per-victim bolts that follow the wave front.
+const BOLT_LINES = 40;
 const BOLT_POINTS = 16; // vertices per jagged strand
 const BOLT_LIFE = 0.22; // seconds a bolt stays visible
 const BOLT_CORE_HEX = 0xdff3ff; // tight strand — near white
@@ -430,7 +433,9 @@ class BoltPool {
  * a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the rim.
  * Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
  */
-const RING_COUNT = 6; // a cast is 3 (core + chaser + echo); two casts can overlap
+// A cast is 3-4 rings, and the sustained auras (Magnet, Time Crawl) drip one
+// every few tenths of a second on top of whatever else is live.
+const RING_COUNT = 16;
 const RING_INNER = 0.78; // unit-ring inner radius → a FAT band that scales up
 
 class RingPool {
@@ -440,6 +445,8 @@ class RingPool {
   private maxLife: number[] = [];
   private maxR: number[] = [];
   private delay: number[] = [];
+  /** true = the ring COLLAPSES inward (a pull) instead of expanding (a push). */
+  private inward: boolean[] = [];
   private geo: THREE.RingGeometry;
   private cursor = 0;
 
@@ -464,11 +471,12 @@ class RingPool {
       this.maxLife.push(0);
       this.maxR.push(1);
       this.delay.push(0);
+      this.inward.push(false);
       this.group.add(m);
     }
   }
 
-  spawn(x: number, z: number, color: number, maxRadius: number, duration: number, delay = 0): void {
+  spawn(x: number, z: number, color: number, maxRadius: number, duration: number, delay = 0, inward = false): void {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % RING_COUNT;
     const m = this.meshes[i];
@@ -479,6 +487,7 @@ class RingPool {
     this.maxLife[i] = duration;
     this.maxR[i] = maxRadius;
     this.delay[i] = delay;
+    this.inward[i] = inward;
   }
 
   update(dt: number): void {
@@ -495,11 +504,97 @@ class RingPool {
         continue;
       }
       const t = 1 - this.life[i] / this.maxLife[i]; // 0 → 1
-      const r = this.maxR[i] * (1 - (1 - t) * (1 - t)); // ease-out expansion
+      // Outward: ease-out expansion (a pressure wave — fast launch, slow edge).
+      // Inward: ease-IN collapse, so a pull ACCELERATES into the centre, which
+      // is what makes it read as suction rather than a wave played backwards.
+      const r = this.inward[i] ? this.maxR[i] * (1 - t * t) : this.maxR[i] * (1 - (1 - t) * (1 - t));
       m.scale.setScalar(Math.max(0.05, r));
       (m.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI);
       m.visible = true;
     }
+  }
+
+  dispose(): void {
+    this.geo.dispose();
+    for (const m of this.meshes) (m.material as THREE.Material).dispose();
+  }
+}
+
+/**
+ * ORBITING BLADES — Blade Storm, made visible.
+ *
+ * Every other pool here fires an EVENT that then decays. A buff that lasts five
+ * seconds is a STATE, so this pool is keep-alive instead: `refresh()` places the
+ * blades for this frame and re-arms a short hold; `update()` hides them once the
+ * caller stops refreshing (i.e. the buff lapsed) — no teardown call to forget,
+ * and a dropped frame just leaves the ring up a beat longer.
+ *
+ * The blades are the SLASH crescent texture on billboards, rolled in screen
+ * space so each one leans along its own tangent — the same trick the melee
+ * slash uses to aim a flat quad in an iso view.
+ */
+const BLADE_MAX = 6;
+const BLADE_HOLD = 0.12; // seconds a placed blade survives without a refresh
+
+class BladeRing {
+  readonly group: THREE.Group;
+  private meshes: THREE.Mesh[] = [];
+  private geo: THREE.PlaneGeometry;
+  private hold = 0;
+
+  constructor(tex: THREE.CanvasTexture) {
+    this.group = new THREE.Group();
+    this.geo = new THREE.PlaneGeometry(0.85, 0.85);
+    for (let i = 0; i < BLADE_MAX; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        opacity: 0.85,
+      });
+      const m = new THREE.Mesh(this.geo, mat);
+      m.rotation.order = "YXZ";
+      m.visible = false;
+      m.renderOrder = 12;
+      this.meshes.push(m);
+      this.group.add(m);
+    }
+  }
+
+  refresh(x: number, y: number, z: number, angle: number, count: number, radius: number, color: number): void {
+    this.hold = BLADE_HOLD;
+    const n = Math.min(count, BLADE_MAX);
+    for (let i = 0; i < BLADE_MAX; i++) {
+      const m = this.meshes[i];
+      if (i >= n) {
+        m.visible = false;
+        continue;
+      }
+      const a = angle + (i / n) * Math.PI * 2;
+      m.position.set(x + Math.cos(a) * radius, y, z + Math.sin(a) * radius);
+      // Lean the crescent along the orbit tangent (screen-space roll), then
+      // billboard it to the fixed iso camera like every other flat FX quad.
+      m.rotation.z = -a - Math.PI / 2;
+      m.rotation.y = CAMERA_YAW;
+      m.rotation.x = -CAMERA_TILT;
+      const mat = m.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(color);
+      // A touch of per-blade flicker so the ring shimmers instead of reading as
+      // a rigid decal spinning at a constant brightness.
+      mat.opacity = 0.7 + Math.random() * 0.3;
+      m.scale.setScalar(0.9 + Math.random() * 0.2);
+      m.visible = true;
+    }
+  }
+
+  update(dt: number): void {
+    if (this.hold <= 0) return;
+    this.hold -= dt;
+    if (this.hold > 0) return;
+    for (const m of this.meshes) m.visible = false;
   }
 
   dispose(): void {
@@ -536,7 +631,15 @@ export interface VfxSystem {
    * `duration` seconds (opacity bells with sin(π·t)). `delay` holds it hidden
    * first — the Arcane Pulse purple chaser rides 70ms behind the white core.
    */
-  ring(x: number, z: number, color: number, maxRadius: number, duration: number, delay?: number): void;
+  ring(x: number, z: number, color: number, maxRadius: number, duration: number, delay?: number, inward?: boolean): void;
+  /**
+   * ORBITING BLADES — the Blade Storm ring made visible. A KEEP-ALIVE call:
+   * drive it every frame while the buff is up (position + the ring's current
+   * phase angle) and stop calling it to put the blades away. Unlike every other
+   * primitive here it is a sustained state, not an event, because the effect it
+   * draws is a sustained state.
+   */
+  blades(x: number, y: number, z: number, angle: number, count: number, radius: number, color: number): void;
   /**
    * A fading AFTERIMAGE of an actor's billboard — the speed-aura ghost. Clones
    * the source mesh's transform and SHARES its geometry + texture (zero GPU
@@ -571,6 +674,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const slashes = new SlashPool();
   const bolts = new BoltPool();
   const rings = new RingPool();
+  const bladeRing = new BladeRing(slashTexture());
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
   scene.add(additive.points);
@@ -578,6 +682,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   scene.add(slashes.group);
   scene.add(bolts.group);
   scene.add(rings.group);
+  scene.add(bladeRing.group);
   scene.add(dmgText.group);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -656,8 +761,11 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);
     },
-    ring(x, z, color, maxRadius, duration, delay = 0) {
-      rings.spawn(x, z, color, maxRadius, duration, delay);
+    ring(x, z, color, maxRadius, duration, delay = 0, inward = false) {
+      rings.spawn(x, z, color, maxRadius, duration, delay, inward);
+    },
+    blades(x, y, z, angle, count, radius, color) {
+      bladeRing.refresh(x, y, z, angle, count, radius, color);
     },
     ghost(src, tint, life = 0.32, opacity = 0.4) {
       if (ghosts.length >= GHOST_CAP) return; // aura, not a smoke machine
@@ -688,6 +796,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       slashes.update(dt);
       bolts.update(dt);
       rings.update(dt);
+      bladeRing.update(dt);
       dmgText.update(dt);
       for (let i = ghosts.length - 1; i >= 0; i--) {
         const g = ghosts[i];
@@ -707,12 +816,14 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(slashes.group);
       scene.remove(bolts.group);
       scene.remove(rings.group);
+      scene.remove(bladeRing.group);
       scene.remove(dmgText.group);
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
       bolts.dispose();
       rings.dispose();
+      bladeRing.dispose();
       dmgText.dispose();
       for (const g of ghosts) {
         scene.remove(g.mesh);

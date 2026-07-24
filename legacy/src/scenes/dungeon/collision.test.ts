@@ -52,7 +52,7 @@ describe("collision", () => {
   it("a zero move is a no-op", () => {
     const g = room();
     const p = tileCenter(g, 1, 1);
-    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null });
+    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null, hitKick: null });
   });
 });
 

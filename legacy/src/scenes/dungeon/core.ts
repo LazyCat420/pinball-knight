@@ -29,6 +29,7 @@ import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type G
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
+import { updateArcKickers } from "./render/arc-kickers";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
@@ -644,6 +645,12 @@ export function launchDungeonGame(onExit?: () => void): void {
       return { open: !!state.shopEl };
     };
     // Dev: the still-intact secret bands + the floor ledger (secret/reaper/grade QA).
+    // Dev: the BOOSTER rubber on the curved walls — world mid-point of each
+    // band plus its live cooldown/flash, so a harness can warp beside one, fire
+    // the ball into it and assert the kick actually fired (there is no other
+    // read-back: the bands are geometry on a merged wall mesh).
+    (window as unknown as { __dungeonKickers?: () => unknown }).__dungeonKickers = () =>
+      (state.maze?.arcKickers ?? []).map((k) => ({ x: k.x, z: k.z, cooldownT: k.band.cooldownT, hitT: k.band.hitT }));
     (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
     (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
@@ -2968,6 +2975,7 @@ function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   state.vfx?.update(frame);
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
+  if (state.maze) updateArcKickers(state.maze.arcKickers, frame, state.elapsed); // curved-wall booster rubber
   updateLampPuzzle(frame); // brazier glow + vault chest reveal
   updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay

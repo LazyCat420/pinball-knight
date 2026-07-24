@@ -224,6 +224,50 @@ export interface ArcFeature {
    * pocket the ball banks through.
    */
   solidOut?: boolean;
+  /**
+   * KICKER BANDS strung along this face — the pinball rubber (see KickBand).
+   * Absent/empty = the whole sweep is plain stone. Authored by arc-sweeps.ts.
+   */
+  kicks?: KickBand[];
+}
+
+/**
+ * A live BOOSTER band on an arc face — the strip of rubber a real table wraps
+ * around its curved guides. Purely an angular SUB-SPAN of the owning feature:
+ * geometry is still the feature's circle, so the mesh (build.arcKickerGeometry)
+ * and the trigger test (`kickBandAt`) can never disagree with the wall the ball
+ * actually rides. Contact inside the band converts a plain ricochet into a
+ * hard, scattered KICK (entities/player.ts).
+ *
+ * `cooldownT`/`hitT` are mutable per-frame scratch — the same contract as
+ * ArcCorner and PinballPart. One owner ticks them (render/arc-kickers.ts).
+ */
+export interface KickBand {
+  /** Band start angle (radians, atan2 frame) — inside the feature's own span. */
+  a0: number;
+  /** Band angular extent (radians, > 0). */
+  span: number;
+  /** Re-fire lockout, seconds. >0 = dead rubber (ball just banked off it). */
+  cooldownT: number;
+  /** Seconds since the last kick, or <0 for "never hit" — drives the flash. */
+  hitT: number;
+}
+
+/**
+ * Which kicker band (if any) owns the contact a circle at (px,pz) just made
+ * with `f`. Keyed off the CONTACT ANGLE — the radial direction from the arc
+ * centre — so it is exactly the point resolveArcFeature pushed out along.
+ * Returns null for a plain-stone stretch, a bandless feature, or a band still
+ * on cooldown (dead rubber ricochets normally).
+ */
+export function kickBandAt(f: ArcFeature, px: number, pz: number): KickBand | null {
+  if (!f.kicks || f.kicks.length === 0) return null;
+  const ang = Math.atan2(pz - f.cz, px - f.cx);
+  for (const k of f.kicks) {
+    if (k.cooldownT > 0) continue;
+    if (angleInSpan(ang, k.a0, k.span)) return k;
+  }
+  return null;
 }
 
 const TWO_PI = Math.PI * 2;

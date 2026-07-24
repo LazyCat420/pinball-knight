@@ -28,7 +28,7 @@
  * spans the quadrant facing (cx,cz). DOM- and three-free: tested.
  */
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, type ArcFeature } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 /** Fillet radii tried largest-first at every qualifying corner. */
@@ -38,6 +38,29 @@ export const MAX_SWEEPS_PER_FLOOR = 96;
 /** Orbit island: island radius and required clear ring beyond it (tiles). */
 export const ORBIT_RADIUS = 2.3;
 export const ORBIT_RING = 1.6;
+
+// ── KICKER BANDS — the booster rubber wrapped around a sweep (see KickBand) ──
+// Authoring knobs live here beside the sweeps they dress (constants.ts owns the
+// physics/feel numbers the kick itself uses). A band is an angular sub-span of
+// the sweep it rides, so it costs no extra geometry decisions: same circle,
+// same collider, just a stretch that THROWS instead of banking.
+/** Chance a qualifying fillet sweep is dressed with rubber. */
+export const KICK_CHANCE = 0.45;
+/** Fraction of a fillet's span the band covers, centred on the arc. */
+export const KICK_BAND_FRAC = 0.62;
+/** Bands strung evenly around an orbit island, and each one's width (rad). */
+export const KICK_ISLAND_BANDS = 3;
+export const KICK_ISLAND_SPAN = 0.62;
+/** Hard cap per floor — a machine, not a trampoline. */
+export const KICK_MAX_PER_FLOOR = 10;
+/** Only sweeps with at least this much arc are worth a band (rad). */
+export const KICK_MIN_SPAN = 0.9;
+
+/** A fresh, ready band covering `span` radians centred inside [a0, a0+total]. */
+function centredBand(a0: number, total: number, frac: number): KickBand {
+  const span = total * frac;
+  return { a0: a0 + (total - span) / 2, span, cooldownT: 0, hitT: -1 };
+}
 
 /** Tiles that carry placed content (parts/items/spawns/…): never converted. */
 export type Occupied = (i: number, j: number) => boolean;
@@ -194,10 +217,17 @@ function revertConcave(g: Grid, plan: FilletPlan): void {
  * commit immediately; concave sweeps commit then get ONE collective BFS strand
  * check — if any floor tile lost its path to `start`, every concave fillet is
  * reverted (rare; conservative). Returns the number of committed features.
+ *
+ * Qualifying sweeps are also DRESSED WITH KICKER RUBBER (see KickBand): a
+ * centred band on a fraction of the sweeps, capped per floor. Only CONVEX
+ * sweeps get rubber — those are the guides the ball rides along the outside of,
+ * where a kick throws it back into the room; a concave bowl's rubber would fire
+ * the ball into the pocket it is already trapped in.
  */
 export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng: () => number): number {
   ensureArcs(g);
   let count = g.arcs!.length;
+  let kickers = g.arcs!.reduce((n, f) => n + (f.kicks?.length ?? 0), 0);
   const concavePlans: FilletPlan[] = [];
 
   for (let j = 1; j < g.h - 1 && count < MAX_SWEEPS_PER_FLOOR; j++) {
@@ -236,6 +266,11 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
       for (const R of FILLET_RADII) {
         const plan = planFillet(g, px, pz, cx, cz, R, concave, occupied);
         if (!plan) continue;
+        // Rubber on the convex guides only, on a roll, under the floor cap.
+        if (!concave && kickers < KICK_MAX_PER_FLOOR && plan.feature.span >= KICK_MIN_SPAN && rng() < KICK_CHANCE) {
+          plan.feature.kicks = [centredBand(plan.feature.a0, plan.feature.span, KICK_BAND_FRAC)];
+          kickers++;
+        }
         commitFillet(g, plan);
         if (concave) concavePlans.push(plan);
         count++;
@@ -261,7 +296,6 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
       count -= concavePlans.length;
     }
   }
-  void rng; // reserved for future per-corner styling rolls
   return count;
 }
 
@@ -316,7 +350,15 @@ export function stampOrbitIsland(g: Grid, start: TilePos, occupied: Occupied, rn
     }
   }
   if (changed.length === 0) return null;
-  g.arcs!.push({ cx: site.ci, cz: site.cj, r: R, a0: 0, span: Math.PI * 2 });
+  // The island always wears rubber: KICK_ISLAND_BANDS strung evenly around it,
+  // so a lap of the orbit is a chain of kicks rather than a free coast. Phase is
+  // rolled so two floors' islands don't read identically.
+  const phase = rng() * Math.PI * 2;
+  const kicks: KickBand[] = [];
+  for (let k = 0; k < KICK_ISLAND_BANDS; k++) {
+    kicks.push({ a0: phase + (k * Math.PI * 2) / KICK_ISLAND_BANDS, span: KICK_ISLAND_SPAN, cooldownT: 0, hitT: -1 });
+  }
+  g.arcs!.push({ cx: site.ci, cz: site.cj, r: R, a0: 0, span: Math.PI * 2, kicks });
 
   // Strand guard: the open ring should keep everything connected, but verify.
   const d = bfsDistances(g, start.i, start.j);
