@@ -1526,6 +1526,21 @@ export const PULSE_RIM_BURSTS = 8; // impact pops around the rim at max radius
  *  crown" that makes the pulse read as an arcane DISCHARGE instead of a hoop. */
 export const PULSE_CAST_FORKS = 8;
 export const PULSE_MID_FORKS = 6;
+/** Short arcs snapping off the LIVE wave front, and how often. Keeps the front
+ *  reading as travelling energy instead of a hoop being scaled up. */
+export const PULSE_CRACKLE_ARCS = 2;
+export const PULSE_CRACKLE_EVERY = 0.07;
+/** The summoning glyph struck under the caster: how long it burns and how fast
+ *  it turns (rad/s — the inner wheel counter-rotates faster). */
+export const PULSE_SIGIL_LIFE = 0.85;
+export const PULSE_SIGIL_SPIN = 1.4;
+/** Arcane motes thrown UP the cast point, so the spell has a vertical too. */
+export const PULSE_COLUMN_MOTES = 14;
+/** The pulse's palette. Arcane light/mid (31/30) — NOTHING in this spell is
+ *  allowed to be red, which is what the original off-palette purple quantized
+ *  to. Near-white cores come from the particle pools themselves. */
+export const PULSE_C_LIGHT = 0x6fd0e8;
+export const PULSE_C_MID = 0x2e6d8f;
 
 // ── Sustained-buff LOOKS ── Blade Storm, Magnet Aura and Time Crawl are states,
 // not events, so each one draws on a beat for as long as it is up. Cadences are

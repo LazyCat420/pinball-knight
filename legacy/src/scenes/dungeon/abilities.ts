@@ -35,6 +35,13 @@ import {
   OIL_SLICK_LIFE,
   PULSE_CAST_FORKS,
   PULSE_MID_FORKS,
+  PULSE_CRACKLE_ARCS,
+  PULSE_CRACKLE_EVERY,
+  PULSE_SIGIL_LIFE,
+  PULSE_SIGIL_SPIN,
+  PULSE_COLUMN_MOTES,
+  PULSE_C_LIGHT,
+  PULSE_C_MID,
   BLADESTORM_BLADES,
   BLADESTORM_SPIN,
   MAGNET_FIELD_R,
@@ -86,6 +93,8 @@ interface PulseWave {
   hit: Set<Zombie>;
   /** Has the mid-flight lightning crown gone off yet? (once per wave) */
   forked: boolean;
+  /** Countdown to the next crackle off the live wave front. */
+  crackleT: number;
 }
 const pulseWaves: PulseWave[] = [];
 
@@ -95,22 +104,48 @@ function pulseRadius(t: number): number {
   return ARCANE_PULSE_RADIUS * (1 - (1 - k) * (1 - k));
 }
 
-/** Launch a pulse shockwave at (x,z) — split out so tests can drive it silently. */
+/**
+ * ARCANE PULSE — a spell being CAST, not a circle being drawn.
+ *
+ * The old build was three fat hoops on the floor, and it read as exactly that:
+ * "a circle". Every element below exists to bury that read under an actual
+ * arcane discharge, in the order the eye picks them up:
+ *
+ *   1. a RUNE SIGIL struck under the caster (counter-rotating, glyphed) — the
+ *      single strongest "this is magic" signal, and the thing a plain annulus
+ *      can never be;
+ *   2. a LIGHTNING CROWN forking out along the ground, re-fired mid-flight and
+ *      again at the rim, so arcs are on screen for the whole wave rather than
+ *      one 0.2s flash;
+ *   3. a vertical COLUMN of arcane motes off the cast point — the spell has an
+ *      up, not just an outward;
+ *   4. and only THEN the shockwave rings — now a THIN, sharp wave-front line at
+ *      reduced opacity (RingOpts.thin), a leading edge instead of a hoop.
+ *
+ * Colours are PALETTE-NATIVE arcane blues (29/30/31) plus near-white cores. The
+ * composite pass quantizes to 32 colours, and off-palette purple (0x8800ff)
+ * once snapped to blood red — the original "red circle". Nothing in this effect
+ * is allowed to be red, including the on-hit pop (arcane burst, not blood).
+ */
 export function spawnPulseWave(x: number, z: number): void {
-  pulseWaves.push({ x, z, t: 0, hit: new Set(), forked: false });
-  // The cast reads as a DISCHARGE, not a drawn circle. Three rings still carry
-  // the wave front (hot white core, arcane-blue chaser, slow echo), but the
-  // thing that says "magic" is the LIGHTNING CROWN fired with them: a full ring
-  // of jagged bolts whipping out along the ground from the cast point, so the
-  // pulse looks like it is arcing outward rather than a hoop expanding.
-  // Colours are PALETTE-NATIVE arcane blues: the composite pass quantizes to
-  // the 32-colour palette, and off-palette purple (0x8800ff) snapped to blood
-  // red — the "red circle" bug.
-  state.vfx?.ring(x, z, 0xffffff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR);
-  state.vfx?.ring(x, z, 0x6fd0e8, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, PULSE_RING_LAG);
-  state.vfx?.ring(x, z, 0x2e6d8f, ARCANE_PULSE_RADIUS * 0.8, PULSE_WAVE_DUR * 1.6, PULSE_RING_LAG * 2.5);
-  state.vfx?.burst(x, 0.5, z, 0x6fd0e8, 18, 5);
+  pulseWaves.push({ x, z, t: 0, hit: new Set(), forked: false, crackleT: 0 });
+  const vfx = state.vfx;
+  if (!vfx) return;
+  // 1 — the glyph. Wider than the damage radius and slower than the wave, so it
+  // is still burning when the front lands.
+  vfx.sigil(x, z, PULSE_C_LIGHT, ARCANE_PULSE_RADIUS * 1.05, PULSE_SIGIL_LIFE, PULSE_SIGIL_SPIN);
+  vfx.sigil(x, z, 0xffffff, ARCANE_PULSE_RADIUS * 0.45, PULSE_SIGIL_LIFE * 0.7, -PULSE_SIGIL_SPIN * 1.9);
+  // 2 — the discharge.
   forkCrown(x, z, PULSE_CAST_FORKS, ARCANE_PULSE_RADIUS * 0.55, 0);
+  // 3 — the column: a hot core pop plus motes thrown UP the cast point.
+  vfx.burst(x, 0.5, z, PULSE_C_LIGHT, 18, 5);
+  for (let k = 0; k < PULSE_COLUMN_MOTES; k++) {
+    vfx.ember(x + (Math.random() * 2 - 1) * 0.35, 0.15 + Math.random() * 1.5, z + (Math.random() * 2 - 1) * 0.35);
+  }
+  // 4 — the wave front, quiet and sharp underneath all of it.
+  vfx.ring(x, z, 0xffffff, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR, { thin: true });
+  vfx.ring(x, z, PULSE_C_LIGHT, ARCANE_PULSE_RADIUS, PULSE_WAVE_DUR * 1.3, { thin: true, delay: PULSE_RING_LAG, opacity: 0.8 });
+  vfx.ring(x, z, PULSE_C_MID, ARCANE_PULSE_RADIUS * 0.8, PULSE_WAVE_DUR * 1.6, { delay: PULSE_RING_LAG * 2.5, opacity: 0.35 });
 }
 
 /**
@@ -140,6 +175,18 @@ function tickPulseWaves(dt: number): void {
       w.forked = true;
       forkCrown(w.x, w.z, PULSE_MID_FORKS, ARCANE_PULSE_RADIUS * 0.95, Math.PI / PULSE_MID_FORKS);
     }
+    // CRACKLE: a couple of short arcs snapping outward FROM the live wave front
+    // on a fast beat. This is what keeps the front reading as energy travelling
+    // rather than as a hoop being scaled up — the arcs are always exactly where
+    // the damage is.
+    w.crackleT -= dt;
+    if (w.crackleT <= 0 && r > 0.5) {
+      w.crackleT = PULSE_CRACKLE_EVERY;
+      for (let k = 0; k < PULSE_CRACKLE_ARCS; k++) {
+        const a = Math.random() * Math.PI * 2;
+        state.vfx?.bolt(w.x + Math.cos(a) * r * 0.55, 0.4, w.z + Math.sin(a) * r * 0.55, Math.cos(a), Math.sin(a), r * 0.55);
+      }
+    }
     for (const z of state.zombies) {
       if (z.mode === "dead" || w.hit.has(z)) continue;
       const dx = z.x - w.x;
@@ -149,9 +196,10 @@ function tickPulseWaves(dt: number): void {
       w.hit.add(z);
       const inv = d || 1;
       damageZombie(z, ARCANE_PULSE_DAMAGE, dx / inv, dz / inv, 6);
-      // The wave-front impact: a red pop on the foe and an arc snapped back to
-      // the cast point — the shockwave visibly DID that.
-      state.vfx?.blood(z.x, 0.6, z.z, "red", 6);
+      // The wave-front impact: an ARCANE pop on the foe (never a blood spray —
+      // this spell has no red in it) and an arc snapped back to the cast point,
+      // so the shockwave visibly DID that.
+      state.vfx?.burst(z.x, 0.6, z.z, PULSE_C_LIGHT, 10, 3);
       if (d > 0.4) state.vfx?.bolt(w.x, 0.6, w.z, dx, dz, d);
     }
     if (w.t >= PULSE_WAVE_DUR) {
@@ -162,7 +210,7 @@ function tickPulseWaves(dt: number): void {
         const a = (k / PULSE_RIM_BURSTS) * Math.PI * 2;
         const rx = w.x + Math.cos(a) * ARCANE_PULSE_RADIUS;
         const rz = w.z + Math.sin(a) * ARCANE_PULSE_RADIUS;
-        state.vfx?.burst(rx, 0.25, rz, 0x6fd0e8, 6, 2.2);
+        state.vfx?.burst(rx, 0.25, rz, PULSE_C_LIGHT, 6, 2.2);
       }
       forkCrown(w.x, w.z, PULSE_RIM_BURSTS, ARCANE_PULSE_RADIUS, Math.PI / PULSE_RIM_BURSTS);
       pulseWaves.splice(i, 1);
@@ -244,8 +292,8 @@ export function castAbility(slot: 0 | 1): boolean {
       // accelerate into the knight (RingPool's inward mode) instead of the
       // outward wave every other cast uses. The aura's ongoing suction is drawn
       // in tickAbilities — the cast is just the field snapping on.
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.5, 0, true);
-      state.vfx?.ring(p.x, p.z, 0x2e6d8f, MAGNET_FIELD_R * 0.7, 0.6, 0.12, true);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.5, { inward: true });
+      state.vfx?.ring(p.x, p.z, 0x2e6d8f, MAGNET_FIELD_R * 0.7, 0.6, { delay: 0.12, inward: true });
       state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 10);
       sfxSpin();
       break;
@@ -256,7 +304,7 @@ export function castAbility(slot: 0 | 1): boolean {
       // pale ring, one slow echo, and a low frost burst. The horde's own
       // smeared afterimages (tickAbilities) are what actually sell the SLOW.
       state.vfx?.ring(p.x, p.z, 0xbfe8ff, TIMECRAWL_FIELD_R, 0.55);
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R * 1.15, 1.1, 0.1);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R * 1.15, 1.1, { delay: 0.1 });
       state.vfx?.burst(p.x, 0.35, p.z, 0xbfe8ff, 20, 3);
       state.flashT = Math.max(state.flashT, 0.12); // the instant everything stalls
       sfxFreeze();
@@ -378,7 +426,7 @@ export function tickAbilities(dt: number): void {
     magnetPulseT -= dt;
     if (magnetPulseT <= 0) {
       magnetPulseT = MAGNET_PULSE_EVERY;
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.45, 0, true);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.45, { inward: true });
       let leashed = 0;
       for (const it of state.groundItems) {
         if (leashed >= MAGNET_LEASH_MAX) break;

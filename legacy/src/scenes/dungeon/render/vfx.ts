@@ -428,15 +428,33 @@ class BoltPool {
 }
 
 /**
- * Shockwave ring — a flat expanding annulus on the floor (Arcane Pulse's sonar
- * ping). A thin unit ring scaled to the live radius: additive, bloom-fed, with
- * a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the rim.
- * Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
+ * Shockwave ring — a flat expanding annulus on the floor. Additive, bloom-fed,
+ * with a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the
+ * rim. Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
+ *
+ * TWO band widths, because one shape can't do both jobs: the FAT band reads as
+ * a soft field boundary (the auras), while a shockwave needs a THIN, sharp line
+ * — a fat hoop scaled to a 3.4-tile radius stops reading as a wave front and
+ * starts reading as "a big circle drawn on the floor", which is exactly the
+ * complaint the Arcane Pulse rework had to answer.
  */
 // A cast is 3-4 rings, and the sustained auras (Magnet, Time Crawl) drip one
 // every few tenths of a second on top of whatever else is live.
 const RING_COUNT = 16;
-const RING_INNER = 0.78; // unit-ring inner radius → a FAT band that scales up
+const RING_INNER = 0.78; // fat unit-ring inner radius → a soft field band
+const RING_INNER_THIN = 0.955; // sharp unit-ring inner radius → a wave-front line
+
+/** Per-spawn ring styling. */
+export interface RingOpts {
+  /** Hold the ring hidden this long before it starts (chaser rings). */
+  delay?: number;
+  /** COLLAPSE inward (a pull) instead of expanding (a push). */
+  inward?: boolean;
+  /** Draw the sharp wave-front line instead of the fat field band. */
+  thin?: boolean;
+  /** Peak opacity multiplier (default 1) — how loud this ring is allowed to be. */
+  opacity?: number;
+}
 
 class RingPool {
   readonly group: THREE.Group;
@@ -447,12 +465,15 @@ class RingPool {
   private delay: number[] = [];
   /** true = the ring COLLAPSES inward (a pull) instead of expanding (a push). */
   private inward: boolean[] = [];
-  private geo: THREE.RingGeometry;
+  private peak: number[] = [];
+  private fat: THREE.RingGeometry;
+  private thin: THREE.RingGeometry;
   private cursor = 0;
 
   constructor() {
     this.group = new THREE.Group();
-    this.geo = new THREE.RingGeometry(RING_INNER, 1, 40);
+    this.fat = new THREE.RingGeometry(RING_INNER, 1, 40);
+    this.thin = new THREE.RingGeometry(RING_INNER_THIN, 1, 64);
     for (let i = 0; i < RING_COUNT; i++) {
       const mat = new THREE.MeshBasicMaterial({
         transparent: true,
@@ -462,7 +483,7 @@ class RingPool {
         side: THREE.DoubleSide,
         opacity: 0,
       });
-      const m = new THREE.Mesh(this.geo, mat);
+      const m = new THREE.Mesh(this.fat, mat);
       m.rotation.x = -Math.PI / 2; // lay flat on the floor
       m.visible = false;
       m.renderOrder = 11;
@@ -472,22 +493,25 @@ class RingPool {
       this.maxR.push(1);
       this.delay.push(0);
       this.inward.push(false);
+      this.peak.push(1);
       this.group.add(m);
     }
   }
 
-  spawn(x: number, z: number, color: number, maxRadius: number, duration: number, delay = 0, inward = false): void {
+  spawn(x: number, z: number, color: number, maxRadius: number, duration: number, opts: RingOpts = {}): void {
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % RING_COUNT;
     const m = this.meshes[i];
     m.position.set(x, 0.06, z);
+    m.geometry = opts.thin ? this.thin : this.fat;
     (m.material as THREE.MeshBasicMaterial).color.setHex(color);
     m.visible = false; // stays hidden through the delay
     this.life[i] = duration;
     this.maxLife[i] = duration;
     this.maxR[i] = maxRadius;
-    this.delay[i] = delay;
-    this.inward[i] = inward;
+    this.delay[i] = opts.delay ?? 0;
+    this.inward[i] = opts.inward ?? false;
+    this.peak[i] = opts.opacity ?? 1;
   }
 
   update(dt: number): void {
@@ -509,13 +533,167 @@ class RingPool {
       // is what makes it read as suction rather than a wave played backwards.
       const r = this.inward[i] ? this.maxR[i] * (1 - t * t) : this.maxR[i] * (1 - (1 - t) * (1 - t));
       m.scale.setScalar(Math.max(0.05, r));
-      (m.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI);
+      (m.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI) * this.peak[i];
       m.visible = true;
     }
   }
 
   dispose(): void {
+    this.fat.dispose();
+    this.thin.dispose();
+    for (const m of this.meshes) (m.material as THREE.Material).dispose();
+  }
+}
+
+/**
+ * RUNE SIGIL — a summoning glyph that snaps into existence under a cast, spins,
+ * and burns away.
+ *
+ * This is the piece that makes a spell read as MAGIC rather than as geometry.
+ * A shockwave ring alone is a circle; a circle with runes, radial ticks and a
+ * counter-rotating inner wheel is a spell being cast. Painted once to a canvas
+ * (the slash/floor-fx pattern) and tinted per spawn, so it costs one texture.
+ *
+ * The sigil punches in fast (over-scaled, then settling), holds while the wave
+ * travels, and fades as it over-expands — never a static decal.
+ */
+const SIGIL_COUNT = 4;
+
+function sigilTexture(): THREE.CanvasTexture {
+  const s = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = s;
+  canvas.height = s;
+  const ctx = canvas.getContext("2d")!;
+  const c = s / 2;
+  ctx.translate(c, c);
+  ctx.strokeStyle = "#ffffff";
+  ctx.fillStyle = "#ffffff";
+  ctx.lineCap = "butt";
+  // Two concentric rims — the frame every summoning circle hangs off.
+  for (const [r, w, a] of [[0.94, 3, 1], [0.86, 1.5, 0.7], [0.52, 2, 0.85], [0.44, 1, 0.5]] as const) {
+    ctx.globalAlpha = a;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.arc(0, 0, c * r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Radial tick marks around the rim — long every 4th, the "graduated dial" read.
+  ctx.globalAlpha = 0.9;
+  for (let k = 0; k < 32; k++) {
+    const a = (k / 32) * Math.PI * 2;
+    const long = k % 4 === 0;
+    ctx.lineWidth = long ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * c * 0.86, Math.sin(a) * c * 0.86);
+    ctx.lineTo(Math.cos(a) * c * (long ? 0.66 : 0.76), Math.sin(a) * c * (long ? 0.66 : 0.76));
+    ctx.stroke();
+  }
+  // Inner star polygon {8/3} — angular, non-circular, so the eye reads a GLYPH.
+  ctx.globalAlpha = 0.8;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let k = 0; k <= 8; k++) {
+    const a = ((k * 3) / 8) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(a) * c * 0.52;
+    const y = Math.sin(a) * c * 0.52;
+    if (k === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // Rune blocks sitting in the band between the rims.
+  ctx.globalAlpha = 0.95;
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + Math.PI / 16;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.translate(c * 0.69, 0);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillRect(-5, -7, 10, 2.5);
+    ctx.fillRect(-5, 0, 6, 2.5);
+    ctx.fillRect(-2, 5, 7, 2.5);
+    ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+class SigilPool {
+  readonly group: THREE.Group;
+  private meshes: THREE.Mesh[] = [];
+  private life: number[] = [];
+  private maxLife: number[] = [];
+  private r0: number[] = [];
+  private spin: number[] = [];
+  private geo: THREE.PlaneGeometry;
+  private tex: THREE.CanvasTexture;
+  private cursor = 0;
+
+  constructor() {
+    this.group = new THREE.Group();
+    this.tex = sigilTexture();
+    this.geo = new THREE.PlaneGeometry(2, 2); // unit-radius quad, scaled per spawn
+    for (let i = 0; i < SIGIL_COUNT; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: this.tex,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        opacity: 0,
+      });
+      const m = new THREE.Mesh(this.geo, mat);
+      m.rotation.x = -Math.PI / 2; // flat on the floor
+      m.visible = false;
+      m.renderOrder = 10; // under the rings and bolts
+      this.meshes.push(m);
+      this.life.push(0);
+      this.maxLife.push(0);
+      this.r0.push(1);
+      this.spin.push(0);
+      this.group.add(m);
+    }
+  }
+
+  spawn(x: number, z: number, color: number, radius: number, life: number, spin: number): void {
+    const i = this.cursor;
+    this.cursor = (this.cursor + 1) % SIGIL_COUNT;
+    const m = this.meshes[i];
+    m.position.set(x, 0.05, z);
+    m.rotation.z = Math.random() * Math.PI * 2; // never the same glyph orientation
+    (m.material as THREE.MeshBasicMaterial).color.setHex(color);
+    m.visible = true;
+    this.life[i] = life;
+    this.maxLife[i] = life;
+    this.r0[i] = radius;
+    this.spin[i] = spin;
+  }
+
+  update(dt: number): void {
+    for (let i = 0; i < SIGIL_COUNT; i++) {
+      if (this.life[i] <= 0) continue;
+      this.life[i] -= dt;
+      const m = this.meshes[i];
+      if (this.life[i] <= 0) {
+        m.visible = false;
+        continue;
+      }
+      const t = 1 - this.life[i] / this.maxLife[i]; // 0 → 1
+      // Punch in over the first 18% (overshoot → settle), then drift wider as
+      // it burns off: struck, not faded up.
+      const k = t < 0.18 ? t / 0.18 : 1;
+      const scale = this.r0[i] * (k < 1 ? 0.55 + 0.55 * k : 1.0 + (t - 0.18) * 0.28);
+      m.scale.set(scale, scale, scale);
+      m.rotation.z += this.spin[i] * dt;
+      (m.material as THREE.MeshBasicMaterial).opacity = k < 1 ? k : Math.pow(1 - (t - 0.18) / 0.82, 0.7);
+    }
+  }
+
+  dispose(): void {
     this.geo.dispose();
+    this.tex.dispose();
     for (const m of this.meshes) (m.material as THREE.Material).dispose();
   }
 }
@@ -631,7 +809,13 @@ export interface VfxSystem {
    * `duration` seconds (opacity bells with sin(π·t)). `delay` holds it hidden
    * first — the Arcane Pulse purple chaser rides 70ms behind the white core.
    */
-  ring(x: number, z: number, color: number, maxRadius: number, duration: number, delay?: number, inward?: boolean): void;
+  ring(x: number, z: number, color: number, maxRadius: number, duration: number, opts?: RingOpts): void;
+  /**
+   * A RUNE SIGIL struck onto the floor at (x,z): a summoning glyph that punches
+   * in, counter-rotates at `spin` rad/s and burns away over `life`. What turns
+   * "an expanding circle" into "a spell being cast".
+   */
+  sigil(x: number, z: number, color: number, radius: number, life: number, spin: number): void;
   /**
    * ORBITING BLADES — the Blade Storm ring made visible. A KEEP-ALIVE call:
    * drive it every frame while the buff is up (position + the ring's current
@@ -675,6 +859,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const bolts = new BoltPool();
   const rings = new RingPool();
   const bladeRing = new BladeRing(slashTexture());
+  const sigils = new SigilPool();
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
   scene.add(additive.points);
@@ -683,6 +868,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   scene.add(bolts.group);
   scene.add(rings.group);
   scene.add(bladeRing.group);
+  scene.add(sigils.group);
   scene.add(dmgText.group);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
@@ -761,8 +947,11 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);
     },
-    ring(x, z, color, maxRadius, duration, delay = 0, inward = false) {
-      rings.spawn(x, z, color, maxRadius, duration, delay, inward);
+    ring(x, z, color, maxRadius, duration, opts) {
+      rings.spawn(x, z, color, maxRadius, duration, opts);
+    },
+    sigil(x, z, color, radius, life, spin) {
+      sigils.spawn(x, z, color, radius, life, spin);
     },
     blades(x, y, z, angle, count, radius, color) {
       bladeRing.refresh(x, y, z, angle, count, radius, color);
@@ -797,6 +986,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       bolts.update(dt);
       rings.update(dt);
       bladeRing.update(dt);
+      sigils.update(dt);
       dmgText.update(dt);
       for (let i = ghosts.length - 1; i >= 0; i--) {
         const g = ghosts[i];
@@ -817,6 +1007,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(bolts.group);
       scene.remove(rings.group);
       scene.remove(bladeRing.group);
+      scene.remove(sigils.group);
       scene.remove(dmgText.group);
       additive.dispose();
       alpha.dispose();
@@ -824,6 +1015,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       bolts.dispose();
       rings.dispose();
       bladeRing.dispose();
+      sigils.dispose();
       dmgText.dispose();
       for (const g of ghosts) {
         scene.remove(g.mesh);

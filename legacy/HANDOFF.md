@@ -52,11 +52,27 @@ a harness must do a SPACE pull-release *first* or every launch silently no-ops.
 
 ### Ability FX
 
-- **Arcane Pulse** — was three expanding rings. Now a **lightning discharge**:
-  the rings still carry the wave front, but a *crown of ground bolts* forks at
-  the cast, again mid-flight (rotated off the first), and once more as the rim
-  earths itself. Uses the existing BoltPool (raised to 40 lines so a whole crown
-  fits alongside the per-victim arcs).
+- **Arcane Pulse** — the user's actual complaint ("just a red circle"). It was
+  three FAT hoops, and a fat annulus scaled to a 3.4-tile radius stops reading
+  as a wave front and starts reading as a circle drawn on the floor. Rebuilt so
+  the circle is no longer the star, in the order the eye picks things up:
+  1. a **RUNE SIGIL** struck under the caster (new `vfx.sigil()` — graduated rim
+     ticks, an {8/3} star polygon, rune blocks, a counter-rotating inner wheel).
+     This is the single strongest "this is magic" signal and the one thing a
+     plain annulus can never be;
+  2. a **lightning crown** forking at the cast, again mid-flight, and again as
+     the rim earths itself, PLUS a fast **crackle** beat snapping short arcs off
+     the LIVE wave front — arcs are on screen for the whole wave now, not one
+     0.2s flash, and they're always exactly where the damage is;
+  3. a vertical **column** of arcane motes (the spell has an up, not just an out);
+  4. and only then the rings — now a **thin, sharp** wave-front line at reduced
+     opacity (`RingOpts.thin`; RingPool carries both band widths, the fat one
+     still serving the auras).
+  The on-hit pop was a RED blood spray — replaced with an arcane burst, so there
+  is now literally no red in the spell. BoltPool raised to 40 lines so a whole
+  crown fits alongside the crackle and the per-victim arcs.
+  Verified: pixel-sampled mid-effect frames are ~4.8k arcane-blue px and zero
+  red beyond the boss HP bar's constant ~600.
 - **Blade Storm** — was invisible. New `vfx.blades()` KEEP-ALIVE pool: crescents
   actually orbiting the knight at the damage radius, so the hitbox is visible.
   Per-tick sparks now land ON the foe that was cut, not at the caster's feet.
@@ -87,8 +103,15 @@ on the expensive skills (Blade Storm 40, Slick Field 25) — the debug-panel
 toggle clicks are unreliable; wait out the 7/s regen and assert
 `__dungeonProbe().buffs` instead of trusting the keypress.
 
+`vfx.ring()` now takes an **opts object** (`{delay, inward, thin, opacity}`)
+instead of trailing positional flags — every caller is in abilities.ts.
+
 **Still true:** any dungeon VFX colour must be PALETTE-NATIVE or near-white —
 off-palette 0x8800ff once quantized to blood red (the original "red circle").
+Worth knowing: the current build has **no red pixels** in Arcane Pulse and never
+did in the shipped colours — "red circle" was the *shape* complaint as much as
+the colour one. A big flat hoop reads as a drawn circle whatever colour it is;
+the fix was structural (sigil + lightning + thin front), not a recolour.
 
 ## Prior (2026-07-24): LIGHT-PUZZLE SECRET VAULTS — per-floor braziers → loot
 
