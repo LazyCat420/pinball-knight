@@ -1237,6 +1237,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         kick.cooldownT = ARC_KICK_COOLDOWN;
         kick.hitT = 0;
         onPartTrigger(); // combo + frenzy chain, same as a bumper or a bank
+        // Kickers are accelerators mounted ON walls, so two facing bands across
+        // a narrow lane are the same standing-wave trap as two facing launchers.
+        // The band cooldown alone doesn't damp it — the pocket guard does.
+        notePocketBounce(p);
         state.goldRun += ARC_KICK_GOLD;
         addGold(ARC_KICK_GOLD, "dungeon-game");
         state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, nx, nz, 16);
@@ -1328,7 +1332,20 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   // Pinball PARTS: bumpers kick, springs launch, ramps floor your speed,
   // deflectors bank you around corners. The real accelerators of the machine.
+  //
+  // Part triggers feed the POCKET-RATTLE guard too. It used to see wall bounces
+  // only, which left the nastier version of the same trap uncovered: two parts
+  // throwing the knight back and forth is a standing wave with no wall bounce in
+  // it at all, so nothing bled the speed. `breakLaunchDuels` (decorate.ts) stops
+  // the authored version of that at generation time; this is the runtime net,
+  // for the cases it can't see — a smashed cracked wall reshaping a lane
+  // mid-run, a marble material, a part pair that only lines up once you arrive
+  // at speed. Every part trigger bumps `bounceCombo` (onPartTrigger), so the
+  // delta is the signal — no new plumbing, and no import cycle back into
+  // pinball-collide.
+  const comboBefore = p.bounceCombo;
   touchPinballParts(true, curSpeed, PINBALL_DEPS);
+  if (p.bounceCombo !== comboBefore) notePocketBounce(p);
   // Curved walls: sweep momentum around every banked maze corner.
   bankArcCorners(dt);
 

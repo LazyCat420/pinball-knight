@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
-import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints } from "./decorate";
+import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels } from "./decorate";
 import { isShaped, isArc, shapeBacking } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
@@ -711,3 +711,109 @@ describe("runway re-aim after arc sweeps", () => {
     }
   });
 });
+
+/**
+ * LAUNCH DUELS — two launchers aimed down one open lane at each other, which is
+ * the authored half of the ping-pong trap (the runtime half is the pocket-rattle
+ * guard in player.ts). These drive the pure pass directly on hand-built grids,
+ * then assert the invariant holds on real floors.
+ */
+describe("breakLaunchDuels", () => {
+  /** An open horizontal corridor of floor at row j, i in [1, w-2]. */
+  function corridor(w: number, h: number, j: number) {
+    const g = generateMaze(3, 3, mulberry32(1)); // shape only; we overwrite below
+    const grid = { w, h, t: new Uint8Array(w * h).fill(T_WALL), shapes: new Uint8Array(w * h) };
+    for (let i = 1; i <= w - 2; i++) grid.t[j * w + i] = T_FLOOR;
+    void g;
+    return grid as unknown as ReturnType<typeof generateMaze>;
+  }
+  const launcher = (i: number, j: number, dirI: number, dirJ: number, extra: object = {}) =>
+    ({ i, j, kind: "ramp", dirI, dirJ, dir2I: 0, dir2J: 0, ...extra }) as Parameters<typeof breakLaunchDuels>[1][number];
+
+  it("breaks a head-on pair down a clear lane", () => {
+    const g = corridor(20, 5, 2);
+    const a = launcher(3, 2, 1, 0);
+    const b = launcher(9, 2, -1, 0);
+    const parts = [a, b];
+    expect(breakLaunchDuels(g, parts)).toBe(1);
+    // In a 1-wide corridor the only escape is to REVERSE one of them, which
+    // makes the pair parallel — a chain, not a standing wave.
+    expect(parts).toHaveLength(2);
+    const opposed = a.dirI === -b.dirI && a.dirJ === -b.dirJ;
+    expect(opposed).toBe(false);
+  });
+
+  it("leaves an opposed pair alone when a WALL separates them", () => {
+    const g = corridor(20, 5, 2);
+    g.t[2 * 20 + 6] = T_WALL; // plug the lane between them
+    const a = launcher(3, 2, 1, 0);
+    const b = launcher(9, 2, -1, 0);
+    expect(breakLaunchDuels(g, [a, b])).toBe(0);
+    expect([a.dirI, b.dirI]).toEqual([1, -1]); // untouched
+  });
+
+  it("leaves an opposed pair alone when they are too far apart to sustain it", () => {
+    const g = corridor(40, 5, 2);
+    const a = launcher(2, 2, 1, 0);
+    const b = launcher(2 + 20, 2, -1, 0); // > DUEL_RANGE
+    expect(breakLaunchDuels(g, [a, b])).toBe(0);
+  });
+
+  it("leaves parts that merely face away, or share no axis, alone", () => {
+    const g = corridor(20, 5, 2);
+    const back = [launcher(3, 2, -1, 0), launcher(9, 2, 1, 0)]; // firing apart
+    expect(breakLaunchDuels(g, back)).toBe(0);
+    const perp = [launcher(3, 2, 1, 0), launcher(9, 2, 0, 1)]; // not opposed
+    expect(breakLaunchDuels(g, perp)).toBe(0);
+  });
+
+  it("never touches a VAULT ramp — firing into rock is its whole point", () => {
+    const g = corridor(20, 5, 2);
+    const vault = launcher(3, 2, 1, 0, { vault: true });
+    const b = launcher(9, 2, -1, 0);
+    breakLaunchDuels(g, [vault, b]);
+    expect(vault.dirI).toBe(1);
+    expect(vault.kind).toBe("ramp");
+  });
+
+  it("never re-aims a SPINE part — the route's down-flow invariant outranks the duel", () => {
+    // A wide room, so both have somewhere else to point.
+    const w = 20;
+    const h = 9;
+    const g = { w, h, t: new Uint8Array(w * h).fill(T_WALL), shapes: new Uint8Array(w * h) } as unknown as ReturnType<typeof generateMaze>;
+    for (let j = 1; j <= h - 2; j++) for (let i = 1; i <= w - 2; i++) g.t[j * w + i] = T_FLOOR;
+    const spine = launcher(4, 4, 1, 0, { spine: true });
+    const plain = launcher(10, 4, -1, 0);
+    expect(breakLaunchDuels(g, [spine, plain])).toBe(1);
+    expect([spine.dirI, spine.dirJ]).toEqual([1, 0]); // spine kept its shot…
+    expect(plain.dirI === -spine.dirI && plain.dirJ === -spine.dirJ).toBe(false); // …the other one moved
+  });
+
+  it("real floors come out with no launch duels left", () => {
+    for (let seed = 0; seed < 30; seed++) {
+      const g = thickenWalls(generateMaze(10, 8, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 14);
+      const live = plan.parts.filter(
+        (p) => !p.vault && LAUNCH_KINDS_TEST.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1,
+      );
+      for (let x = 0; x < live.length; x++) {
+        for (let y = x + 1; y < live.length; y++) {
+          const a = live[x];
+          const b = live[y];
+          if (a.dirI !== -b.dirI || a.dirJ !== -b.dirJ) continue;
+          const along = a.dirI !== 0 ? (b.i - a.i) * a.dirI : (b.j - a.j) * a.dirJ;
+          const across = a.dirI !== 0 ? b.j - a.j : b.i - a.i;
+          if (across !== 0 || along <= 0 || along > 12) continue;
+          let clear = true;
+          for (let s = 1; s < along && clear; s++) {
+            if (at(g, a.i + a.dirI * s, a.j + a.dirJ * s) !== T_FLOOR) clear = false;
+          }
+          expect(clear, `seed ${seed}: ${a.kind}@${a.i},${a.j} duels ${b.kind}@${b.i},${b.j}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+/** Mirror of decorate.ts LAUNCH_KINDS (not exported — kept in step by the test above). */
+const LAUNCH_KINDS_TEST = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);

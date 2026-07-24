@@ -660,6 +660,155 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
   return opened;
 }
 
+// ── LAUNCH DUELS — two launchers aimed down the same open lane at each other ──
+//
+// The failure this kills: a ramp firing east and a booster firing west, sitting
+// on the same row with clear floor between them. Each one catches the knight and
+// throws him straight back into the other. Part cooldowns are short (a booster's
+// is 0.18s) and nothing else damps it, so the ball ping-pongs until the player
+// steers out — which he cannot, because a launch part also stamps a steer lock.
+//
+// Placement can't see this coming: a part's facing is decided from LOCAL
+// topology (`classify`) and re-aimed twice more afterwards (openLaunchTargets,
+// then the post-sweep runway pass), so two parts that were individually sane can
+// end up pointed at each other. That is why this runs LAST, over final facings.
+
+/** How far apart two launchers can still duel (tiles). Beyond this, friction
+ *  bleeds enough speed between them that the loop decays on its own. */
+const DUEL_RANGE = 12;
+
+/**
+ * Is `b` in front of `a`, on `a`'s fire axis, with nothing but floor between?
+ *
+ * The general test is the dot-product pair from the design note — facings
+ * anti-parallel (`a.dir · b.dir ≤ -0.85`) AND `b` ahead of `a`
+ * (`a.dir · normalize(b.pos − a.pos) ≥ 0.7`). On this grid every launch facing
+ * is a UNIT CARDINAL, so those collapse to exact integer tests, which is what is
+ * written here: cheaper, and no threshold to tune. Note the second condition is
+ * symmetric once the first holds — if a fires at b and their facings oppose,
+ * then b necessarily fires at a — so only one direction needs checking.
+ *
+ * The clear-floor walk is the part the design note omits and the part that
+ * matters most: two opposed launchers with a WALL between them are not a duel,
+ * they are two ordinary launchers, and "fixing" them would churn good floors.
+ */
+function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot): boolean {
+  if (a.dirI !== -b.dirI || a.dirJ !== -b.dirJ) return false; // facings must oppose
+  const di = a.dirI;
+  const dj = a.dirJ;
+  // Same fire axis, and b on the side a is actually pointing.
+  const along = di !== 0 ? (b.i - a.i) * di : (b.j - a.j) * dj;
+  const across = di !== 0 ? b.j - a.j : b.i - a.i;
+  if (across !== 0 || along <= 0 || along > DUEL_RANGE) return false;
+  for (let s = 1; s < along; s++) {
+    if (at(g, a.i + di * s, a.j + dj * s) !== T_FLOOR) return false; // walled off — harmless
+  }
+  return true;
+}
+
+/** Can this part be re-aimed / demoted at all? A VAULT ramp fires into rock on
+ *  purpose (that IS the feature), so it can never be one half of a duel. */
+function duelEligible(p: PinballPartSpot): boolean {
+  return !p.vault && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1;
+}
+
+/**
+ * Break every launch duel on the floor. Runs at the very end of decorateMaze,
+ * after the last pass that can change a facing.
+ *
+ * Resolution, cheapest first — the goal is to keep the machine's furniture, so
+ * deleting a part is the last resort:
+ *   1) RE-AIM one of the pair to any other cardinal with real runway that does
+ *      not immediately start a fresh duel. Note that simply REVERSING a part is
+ *      a legitimate fix and often the best one in a 1-wide corridor: a duel
+ *      needs ANTI-PARALLEL facings, so flipping one makes the pair PARALLEL,
+ *      which is a chain — the good thing — rather than a standing wave.
+ *   2) DEMOTE to a bumper, but only where a bumper belongs. Parts are placed to
+ *      match tile topology (see KIND_TOPOLOGY) and a bumper's topology is a
+ *      JUNCTION, so dropping one onto a corridor tile would break that
+ *      invariant — decorate.test.ts asserts it.
+ *   3) REMOVE the part, the same last resort openLaunchTargets uses for an
+ *      orphan it cannot aim anywhere.
+ *
+ * Which of the pair yields: the one that is cheapest to change. A CHAIN part was
+ * placed because another part's exit ray lands on it, so it yields only if its
+ * opponent has no way out. A SPINE part NEVER yields — it is one link of the
+ * connected booster route down the main artery, and that route carries its own
+ * invariant (every pad points down-flow toward the stairs, pinned by
+ * decorate.test.ts). Re-aiming one to escape a duel silently points it backward
+ * and breaks the route, which is a worse bug than the duel. A spine-vs-spine
+ * duel is therefore left alone here and caught at runtime by the pocket-rattle
+ * guard instead; the spine builder owns preventing it.
+ *
+ * Mutates `parts`; returns the number of duels resolved. Pure (no three/DOM).
+ */
+export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
+  const yieldCost = (p: PinballPartSpot): number => (p.spine ? 2 : 0) + (p.chain ? 1 : 0);
+  const openSides = (i: number, j: number): number => CARDINALS.filter(([di, dj]) => at(g, i + di, j + dj) === T_FLOOR).length;
+  let fixed = 0;
+
+  // Re-aiming can create a fresh duel with a third part, so iterate to a fixed
+  // point. Each round fixes at most one pair; a pair nobody may move (spine vs
+  // spine) is skipped rather than retried, or the loop would spin on it.
+  for (let round = 0; round < 8; round++) {
+    const live = parts.filter(duelEligible);
+    let duel: [PinballPartSpot, PinballPartSpot] | null = null;
+    outer: for (let x = 0; x < live.length; x++) {
+      for (let y = x + 1; y < live.length; y++) {
+        if (!firesAt(g, live[x], live[y])) continue;
+        if (live[x].spine && live[y].spine) continue; // neither may move — the runtime guard owns this one
+        duel = [live[x], live[y]];
+        break outer;
+      }
+    }
+    if (!duel) break;
+
+    // Try the cheaper part first; fall back to its opponent if it is boxed in.
+    // A spine link is never a candidate at all.
+    const order = (yieldCost(duel[0]) <= yieldCost(duel[1]) ? [duel[0], duel[1]] : [duel[1], duel[0]]).filter((p) => !p.spine);
+    let resolved = false;
+    for (const p of order) {
+      const foe = p === duel[0] ? duel[1] : duel[0];
+      let best: readonly [number, number] | null = null;
+      let bestRun = MIN_RUNWAY - 1;
+      for (const [di, dj] of CARDINALS) {
+        if (di === p.dirI && dj === p.dirJ) continue; // the shot we're replacing
+        const run = launchRunway(g, p.i, p.j, di, dj);
+        if (run <= bestRun) continue;
+        // Don't trade this duel for another one.
+        const probe = { ...p, dirI: di, dirJ: dj };
+        if (live.some((q) => q !== p && q !== foe && (firesAt(g, probe, q) || firesAt(g, q, probe)))) continue;
+        bestRun = run;
+        best = [di, dj];
+      }
+      if (best) {
+        p.dirI = best[0];
+        p.dirJ = best[1];
+        resolved = true;
+        break;
+      }
+    }
+    if (!resolved && order.length > 0) {
+      // Nowhere to point either of them. Demote the cheaper one if its tile is
+      // somewhere a bumper legitimately lives (a junction); otherwise take the
+      // part out rather than leave a launcher in a standing wave.
+      const p = order[0];
+      if (openSides(p.i, p.j) >= 3) {
+        p.kind = "bumper";
+        p.dirI = 0;
+        p.dirJ = 0;
+        p.dir2I = 0;
+        p.dir2J = 0;
+      } else {
+        const k = parts.indexOf(p);
+        if (k >= 0) parts.splice(k, 1);
+      }
+    }
+    fixed++;
+  }
+  return fixed;
+}
+
 /** Which topology pool each dealable part kind draws from. */
 const KIND_TOPOLOGY: Record<string, Topology> = {
   bumper: "junction",
@@ -1842,6 +1991,12 @@ export function decorateMaze(
       p.dirJ = bestD[1];
     }
   }
+
+  // ── LAUNCH DUELS: with every facing now final (placement, the A1 repair and
+  // the post-sweep re-aim above have all had their say), break any pair of
+  // launchers left aimed down one open lane at each other — the ping-pong trap.
+  // Must be the LAST pass that touches a part's direction. ──
+  breakLaunchDuels(g, parts);
 
   // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch

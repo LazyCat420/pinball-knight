@@ -26,7 +26,38 @@ asserts *a probabilistic search always succeeds* has this shape; see
 already spotted (`darts.test.ts` RTP Monte Carlo, `toucan-game.test.ts` global
 `Math.random` override).
 
-## 📋 NEXT WAVE PLANNED: src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md
+## 🔧 TRACK A + D SHIPPED: launch duels can no longer be authored or sustained
+
+**The bug was real and common** — measured over 200 generated floors, **54.5%
+carried at least one "launch duel"**: two launch parts aimed down one clear lane
+at each other (346 total, ~1.7/floor). Each throws the knight straight back into
+the other; a booster's cooldown is 0.18s and a launch part stamps a steer lock,
+so you cannot drive out of it.
+
+- **`breakLaunchDuels(g, parts)`** (decorate.ts, pure + tested) runs as the LAST
+  pass that touches a facing. A duel = anti-parallel facings, same fire axis,
+  pointed at each other, within 12 tiles, **with nothing but floor between them**
+  — that last clause is what keeps it from churning harmless opposed pairs that
+  have a wall between them. Resolution: re-aim (a straight REVERSE counts and is
+  often best — a duel needs ANTI-parallel facings, so flipping one makes the pair
+  parallel, i.e. a chain) → demote to a bumper, but only on a junction, since
+  KIND_TOPOLOGY requires it → remove. Cost across 200 floors: ~243 re-aimed, 101
+  demoted, **2 removed**. Census after: **0/200 floors**.
+- **A SPINE part never yields.** Re-aiming one to escape a duel points it
+  backward and breaks the connected route's down-flow invariant (pinned by
+  decorate.test.ts — it caught this immediately). Spine-vs-spine is left to the
+  runtime guard.
+- **Runtime net (Track D):** part triggers now feed `notePocketBounce`.
+  `updatePinball` snapshots `bounceCombo` around `touchPinballParts` — every part
+  trigger bumps it via `onPartTrigger`, so no new plumbing and no import cycle.
+  The **arc kickers** are wired in too; they were bypassing it, a hole from the
+  boosters wave.
+
+Facings are decided from LOCAL corridor topology (`classify`) and re-aimed twice
+more afterwards, which is exactly why two individually-sane parts can end up
+duelling — and why this pass must stay last.
+
+## 📋 REMAINING WAVE: src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md
 
 Maze/level-generation checklist (booster feedback loops, level sameness, density,
 plus the leftovers from the booster/FX wave). **Four premises of the incoming

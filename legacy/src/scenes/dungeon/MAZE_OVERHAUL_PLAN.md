@@ -64,37 +64,54 @@ but **not** windiness — windiness is a flat 3-cycle by depth
       `testTimeout` to 30 s for them). Add a fast smoke pass (N floors ×
       {reachable, has start+stairs, no orphan parts, no anti-parallel pair}).
 
-## Track A — Booster feedback loops (critical path)
+## Track A — Booster feedback loops ✅ SHIPPED
 
-The bug: two launch parts aimed at each other with nothing between them is a
-perfect billiard, and **nothing damps it** — part cooldowns are short
-(`BOOSTER_COOLDOWN 0.18`), and the pocket-rattle guard doesn't see part hits.
+The bug was real and COMMON: measured over 200 generated floors, **54.5% carried
+at least one launch duel** (346 in total, ~1.7 per floor). Nothing damped them —
+part cooldowns are short (a booster's is 0.18s), a launch part also stamps a
+steer lock so you cannot drive out, and the pocket-rattle guard only watched
+wall bounces.
 
-- [ ] **Anti-parallel post-pass** over the final `PinballPartSpot[]`, run at the
-      end of `decorateMaze` beside the existing runway re-aim pass (which is the
-      proven precedent for "re-point a part after placement"). Flag a pair when
-      **both** hold: facings oppose (`dot(a.dir, b.dir) ≤ -0.85`) **and** they
-      are actually aimed at each other (`dot(a.dir, normalize(b.pos - a.pos)) ≥ 0.7`).
-      The second test is what stops false positives in separate corridors.
-      Gate on distance too (~10 tiles) — far pairs bleed enough speed to friction.
-- [ ] Resolve a flagged pair by **re-aiming** the one with more alternative
-      runway (reuse the runway scorer), and only demote to a bumper if no
-      cardinal has `≥ MIN_RUNWAY`. Preserve the spine/vault exemptions.
-- [ ] Test: hand-built grids with a known opposing pair → assert the pass fixes
-      it; plus a multi-seed sweep asserting zero surviving pairs.
-- [ ] **The arc KICKERS I just shipped bypass this too** — the kicker branch in
-      `updatePinball` deliberately skips `notePocketBounce`, so two facing
-      kicker bands on opposing sweeps can rattle. Either wire kickers into the
-      pocket guard or add the same anti-parallel gate at authoring time in
-      `arc-sweeps.ts`.
+- [x] **`breakLaunchDuels(g, parts)`** (decorate.ts, pure + tested) runs as the
+      LAST pass that touches a facing — after placement, after the A1 runway
+      repair, after the post-sweep re-aim. A duel is: facings anti-parallel, on
+      the same fire axis, pointing at each other, within `DUEL_RANGE` (12), with
+      **nothing but floor between them**. That last clause is the one the draft
+      omitted and the one that matters — two opposed launchers with a wall
+      between them are harmless and must not be churned.
+      *(On this grid every launch facing is a unit cardinal, so the draft's
+      dot-product tests collapse to exact integer comparisons — no thresholds to
+      tune. And the second dot test is redundant: if a fires at b and the
+      facings oppose, b necessarily fires at a.)*
+- [x] Resolution, cheapest first: **re-aim** to any cardinal with runway that
+      doesn't start a fresh duel (including a straight REVERSE — a duel needs
+      anti-parallel facings, so flipping one makes the pair *parallel*, i.e. a
+      chain, which is the good thing); else **demote to a bumper** but only on a
+      junction, since KIND_TOPOLOGY requires it; else **remove**.
+      Measured cost across 200 floors: ~243 re-aimed, 101 demoted, **2 removed**
+      (13 691 → 13 689 parts). The floor keeps its furniture.
+- [x] **A SPINE part never yields.** Learned the hard way: re-aiming one to
+      escape a duel points it backward and breaks the connected route's
+      down-flow invariant, which decorate.test.ts pins. A spine-vs-spine duel is
+      left to the runtime guard instead.
+- [x] Tests: hand-built corridors for each branch (head-on, wall between, out of
+      range, facing away, perpendicular, vault-exempt, spine-exempt) plus a
+      30-seed sweep asserting zero surviving duels on real floors. Census: 0/200
+      floors after the pass.
 
-## Track D — Runtime safety net (pair with A)
+## Track D — Runtime safety net ✅ SHIPPED
 
-- [ ] Wire `onPartTrigger()` into `notePocketBounce` so part-driven ping-pong
-      damps exactly like wall rattle. Cheap, proven, and catches whatever the
-      static pass misses (cracked walls change topology mid-run).
-- [ ] Consider a small angular jitter on the damped exit as well as the speed
-      cut — a pure speed cut still leaves the *geometry* periodic.
+- [x] Part triggers now feed `notePocketBounce`. `updatePinball` snapshots
+      `bounceCombo` around `touchPinballParts` and notes a rattle when it moves —
+      every part trigger bumps it via `onPartTrigger`, so no new plumbing and no
+      import cycle back into pinball-collide. This is the net for what static
+      analysis cannot see: a smashed cracked wall reshaping a lane mid-run, a
+      marble material, a pair that only lines up once you arrive at speed.
+- [x] Arc KICKERS wired into the same guard (they were bypassing it — a hole I
+      introduced in the boosters wave: two facing kicker bands across a narrow
+      lane are the same standing wave).
+- [ ] Optional polish: add a small angular jitter to the damped exit as well as
+      the speed cut. A pure speed cut still leaves the *geometry* periodic.
 
 ## Track B — Level variety
 
