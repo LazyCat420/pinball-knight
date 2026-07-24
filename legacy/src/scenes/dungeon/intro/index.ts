@@ -107,7 +107,7 @@ export function runPinballIntro(onDone: () => void): void {
     rooms: [],
     secrets: [],
     frog: null,
-    curveCourts: [],
+    plazas: [],
   };
   state.maze = buildMaze(scene, grid, plan, []); // disposeLevel reclaims it
   // buildMaze always erects the stairs kit (pit, pylons, arcane beam) at

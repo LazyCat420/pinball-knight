@@ -2,7 +2,81 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🗡️ NEWEST (2026-07-23, wave 2): FX wave made LEGIBLE + movement feel — screenshot-verified
+## 🧹 NEWEST (2026-07-23, wave 3): audit + cleanup sweep — both repos
+
+Five-subsystem audit (core/UI, entities, maze, render, net+service) then a
+cleanup pass. **891 client + 36 service tests green, tsc 0 in all kept-clean
+trees, `next build` clean.** Everything below is unit/build-verified; none of it
+was click-tested (nothing here changes feel — it's deletions, guards and three
+real bug fixes).
+
+**Real bugs fixed:**
+- **Reaper King slam telegraph drew under the LOCAL player** (`boss.ts`): the
+  slam commits to the nearest knight (`target`, possibly a pool-mate) but the
+  warning ring used `p.x/p.z`. In co-op the host saw the ring under its own feet
+  while the slam landed on the peer. Now uses `target`.
+- **Mana Well never worked** — passive regen (`abilities.ts`) and the per-kill
+  top-up (`combat.ts`) clamped to base `MANA_MAX`, so the skill's +15/+30 pool
+  could never fill outside the `infMana` debug path. Both clamp to
+  `playerManaMax()` now.
+- **Boss bar said "☠ THE OVERLORD ☠"** (`ui.ts`) — user-visible leftover from
+  the pre-Reaper-King boss. Now "THE REAPER KING".
+- Dungeon-tree tsc regression fixed: `intro/index.ts` LevelPlan literal was
+  missing the new `plazas` field.
+
+**Multiplayer/net cleanup (protocol is now honest):**
+- `src/net/protocol.ts` pruned to the messages the live hub actually speaks
+  (hello/move/world/act/ping ⇆ welcome/room:*/player:*/world/act/pong). All
+  party/solo/session/ready variants deleted; `src/net/session.ts` (dead party
+  baton) deleted; `socket.ts` dead `onAny`/`onStatus` API removed. Header now
+  names **`server/realtime.mjs` as canonical** (was pointing at the service).
+- `RemoteKnight` gained `mode` and the hub's `view()` now sends it: a mid-scene
+  joiner renders existing peers in their real pose (was: everyone idle until
+  their next move). `ready:false` dropped from the wire.
+- **Hub hardening** (`server/realtime.mjs`): `maxPayload` 64 KB (ws default is
+  100 MB — one giant frame would have fanned out to 23 peers), overflow
+  waiting-room capped at 32 (was unbounded), refusals close 1013.
+- `coop.ts initCoop` is now idempotent (calls `endCoop` first) — a double init
+  would have doubled world/act subscriptions and applied snapshots twice.
+- Service repo: `src/realtime/` KEPT (it still attaches in server.ts and its
+  tests cover it) but its protocol header now says clearly it's a DORMANT,
+  drifted copy — the canonical lives in the client. Its hub also got the 64 KB
+  `maxPayload`.
+
+**Dead code deleted (client):**
+- The whole retired **curve-court subsystem** (~150 lines): `stampCurveCourts`
+  + `CurveCourt` + `LevelPlan.curveCourts` (decorate.ts), `buildCurveCourts` +
+  `courtTiles` skip (build.ts), intro literal field. Curves are ROUND tile
+  shapes now; the misleading "smooth half-cylinder shells" comments went too.
+- The superseded **centred combo flash** (`flashBounceCombo`/`createComboFlash`/
+  `COMBO_RANKS` in ui.ts + `state.comboFlashEl` + mount/dispose) — the element
+  was built and torn down every run but never shown; `spawnFloatingCombo` is the
+  live system.
+- Unused exports: `getDiabloEl`/`getDiabloFaceFrame`, `getWolfEl` +
+  write-only `state.hudEl`, `secrets.isBreakableWall`, `audio.isSfxMuted`,
+  `tile-shape.roundOpenDir`, `settings-save.__resetSettingsCache`, dead imports
+  (`KING_SPEED`, `BALL_RAM_KNOCKBACK`, `PINBALL_COMBO_WINDOW` + its `void`,
+  `MANA_MAX` where superseded). decorate's `WEAPON_POOL` now aliases
+  `items.PICKUP_WEAPONS` (was a drifted copy). Lifecycle `console.log`s removed
+  from core.ts.
+- Stale docs fixed: `modifiers.rollModifier` rng-draw contract, palette "only
+  warm hues" claim, run-score's "core.ts is ~1900 lines".
+
+**New guard:** `render/atlas-loader.ts` now REJECTS (falls back to procedural
+painter, with a console.warn) an atlas whose cell height ≠ `SPRITE_PIXEL_GRID`
+or whose strip exceeds the probed GPU `MAX_TEXTURE_SIZE` — closes the known
+"silently paints nothing over 8192px" hazard at the loader instead of leaving
+it to each caller.
+
+**Known-open (deliberately NOT touched):**
+- `pixel-pass.ts` render-target realloc thrash on slow window edge-drag (~every
+  2px). Real but needs a feel-safe debounce; profile before fixing.
+- Zombie aggro still only hunts the authority's knight; spitter projectiles not
+  mirrored; authority menu-pause freezes replica floors (documented v1 gaps).
+- `prefabs.fullyReachable` (test-only third flood-fill) and the PX_LABEL/WOLF
+  font-stack near-duplicates: judged not worth the churn.
+
+## Prior (2026-07-23, wave 2): FX wave made LEGIBLE + movement feel — screenshot-verified
 
 Wave 1 shipped the mechanics but the visuals didn't land in a real playtest
 ("same hit every time / red circle / orange things / never saw slick field").

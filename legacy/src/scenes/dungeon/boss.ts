@@ -33,7 +33,6 @@ import { peers } from "../../net/presence";
 // ── Tuning ────────────────────────────────────────────────────────────────────
 // (King HP now arrives as a spawn parameter — core scales it by floor, see
 // KING_HP_BASE/KING_HP_PER_FLOOR in constants.ts. Every floor is boss-gated.)
-const KING_SPEED = 2.0; // slow, inexorable
 const KING_SCALE = REAPER_SCALE * 1.55; // looms over the horde
 const SKULL_COUNT = 5;
 const SKULL_ORBIT_R = 1.5;
@@ -280,7 +279,7 @@ export function updateBoss(dt: number): void {
     boss.slamX = target.x;
     boss.slamZ = target.z;
     boss.telegraph = makeTelegraph();
-    boss.telegraph.position.set(p.x, 0.04, p.z);
+    boss.telegraph.position.set(target.x, 0.04, target.z);
     state.scene?.add(boss.telegraph);
   }
   if (boss.slamPhase === "telegraph") {

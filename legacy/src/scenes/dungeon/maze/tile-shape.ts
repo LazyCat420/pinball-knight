@@ -148,11 +148,6 @@ const ROUND_OPEN: Record<number, Vec2> = {
 export function roundCenter(shape: TileShape): Vec2 | null {
   return ROUND_CENTER[shape] ?? null;
 }
-/** Tile-local open-quadrant sign for a ROUND shape (which way the arc faces), or null. */
-export function roundOpenDir(shape: TileShape): Vec2 | null {
-  return ROUND_OPEN[shape] ?? null;
-}
-
 /**
  * Resolve a circle against a ROUND tile's quarter-disc (centre C grid coords,
  * radius 1). Returns the radial push-out + contact normal (which VARIES along

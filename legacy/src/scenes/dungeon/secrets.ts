@@ -121,11 +121,6 @@ export function wallRunDepth(g: Grid, i: number, j: number, ddx: number, ddz: nu
   return 0; // thicker than we're willing to punch through — that's bedrock
 }
 
-/** True if a fast enough player may KOOL-AID through the wall at (i,j). */
-export function isBreakableWall(g: Grid, i: number, j: number, ddx: number, ddz: number): boolean {
-  return wallRunDepth(g, i, j, ddx, ddz) > 0;
-}
-
 /**
  * Smash an ordinary wall tile (i,j): open the grid, pop its wall instance out
  * of the InstancedMesh, burst masonry dust. No loot (that's the secret wall's

@@ -9,15 +9,13 @@
  */
 import { state } from "./state";
 import { createDiabloHUD, renderDiablo, refreshDiablo, disposeDiabloHUD } from "./hud-diablo";
-import { createWolfHUD, updateWolfHUD, getWolfEl, disposeWolfHUD } from "./hud-wolf";
+import { createWolfHUD, updateWolfHUD, disposeWolfHUD } from "./hud-wolf";
 import { disposeFace } from "./hud-face";
 
 /** Build both HUDs (face auto-mounts into the Diablo frame) and set the start mode. */
 export function mountHUDs(container: HTMLElement): void {
   createDiabloHUD(container); // this also creates + mounts the shared face
   createWolfHUD(container);
-  // Keep the legacy handle pointing at the wolf bar for existing call sites.
-  state.hudEl = getWolfEl();
   setHUDMode(state.hudMode);
 }
 

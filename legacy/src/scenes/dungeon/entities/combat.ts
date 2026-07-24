@@ -4,7 +4,7 @@
  * zombie.ts and projectiles.ts.
  */
 import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
-import { awardKillXp, skillAgg, playerMaxHp } from "../skill-runtime";
+import { awardKillXp, skillAgg, playerMaxHp, playerManaMax } from "../skill-runtime";
 import {
   KNOCKBACK_ZOMBIE,
   KNOCKBACK_PLAYER,
@@ -23,7 +23,6 @@ import {
   SHAKE_ON_HIT,
   SHAKE_ON_KILL,
   ULT_CHARGE_PER_KILL,
-  MANA_MAX,
   MANA_PER_KILL,
   BRUTE_DAMAGE,
   BRUTE_KNOCKBACK,
@@ -656,8 +655,8 @@ function killZombie(z: Zombie): void {
     state.vfx?.blood(z.x, 0.7, z.z, "red", 16);
     state.vfx?.sparks(z.x, 0.7, z.z, 0, 0, 8);
   }
-  // Killing the OVERLORD is the milestone: a huge gore blast, a bonus gold
-  // windfall and a guaranteed health-potion drop right where it fell.
+  // Killing a boss (the Reaper King) is the milestone: a huge gore blast, a
+  // bonus gold windfall and a guaranteed health-potion drop right where it fell.
   if (z.boss) {
     state.vfx?.blood(z.x, 0.9, z.z, "red", 40);
     state.vfx?.blood(z.x, 0.6, z.z, "green", 40);
@@ -720,7 +719,8 @@ function killZombie(z: Zombie): void {
     state.ultCharge = Math.min(1, state.ultCharge + ULT_CHARGE_PER_KILL);
     // A small mana top-up too (see abilities.ts), so the Q/E skills stay in
     // rotation. Inlined rather than imported to keep combat ↔ abilities acyclic.
-    if (p) p.mana = Math.min(MANA_MAX, p.mana + MANA_PER_KILL);
+    // Clamps to playerManaMax() so Mana Well ranks actually enlarge the pool.
+    if (p) p.mana = Math.min(playerManaMax(), p.mana + MANA_PER_KILL);
   }
   state.hudDirty = true;
   sfxZombieDie();

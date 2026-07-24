@@ -1,18 +1,17 @@
 /**
  * 🕸️ Realtime protocol — client MIRROR of the wire contract.
  *
- * The canonical definition lives in
- * `braindeadbot-service/src/realtime/protocol.ts`. This file must track it
- * exactly (same convention the score/youtube service clients use). A payload
- * that drifts from the server's shape is a silent desync, not a compile error,
- * so treat any edit here as an edit to both repos.
+ * The canonical definition lives in `server/realtime.mjs` (this repo — the
+ * pool hub runs in-process in the production server). This file must track it
+ * exactly. A payload that drifts from the server's shape is a silent desync,
+ * not a compile error, so treat any edit here as an edit to both files.
+ *
+ * (braindeadbot-service/src/realtime/ still carries an older, dormant copy of
+ * this contract; it receives no traffic and is NOT the reference.)
  */
 
 // ── Pool sizing (kept in sync with the server) ────────────────────────────────
 export const POOL_MAX = 24;
-export const TAVERN_MAX = 8; // legacy (dormant party code)
-export const PARTY_MAX = 4;
-export const PARTY_MIN = 2;
 
 // ── The eight knight colors (join-order slots) ───────────────────────────────
 export interface KnightColor {
@@ -46,16 +45,11 @@ export interface RemoteKnight {
   x: number;
   z: number;
   facing: Facing;
-  ready: boolean;
   /** "tavern" | "dungeon:<floor>" — renderers show only same-scene peers. */
   scene: string;
-}
-
-export interface PartyMember {
-  id: string;
-  slot: number;
-  name: string;
-  role: number; // 0 = host
+  /** Current animation clip ("idle"/"walk"/"ball"/…) so a mid-scene joiner
+   * renders existing peers in their real pose, not a default idle. */
+  mode?: string;
 }
 
 // ── Client → Server ──────────────────────────────────────────────────────────
@@ -67,11 +61,6 @@ export type ClientMessage =
   // Server relays both to same-scene peers only.
   | { type: "world"; scene: string; snap: unknown }
   | { type: "act"; scene: string; act: unknown }
-  | { type: "session:hello"; sessionId: string }
-  | { type: "session:snapshot"; sessionId: string; snap: unknown }
-  | { type: "session:input"; sessionId: string; input: unknown }
-  | { type: "session:event"; sessionId: string; event: unknown }
-  | { type: "session:leave"; sessionId: string }
   | { type: "ping" };
 
 // ── Server → Client ──────────────────────────────────────────────────────────
@@ -84,19 +73,6 @@ export type ServerMessage =
   | { type: "player:move"; id: string; x: number; z: number; facing: Facing; scene: string; mode?: string }
   | { type: "world"; fromId: string; scene: string; snap: unknown }
   | { type: "act"; fromId: string; scene: string; act: unknown }
-  | { type: "player:ready"; id: string; ready: boolean }
-  | { type: "party:forming"; members: string[]; seconds: number }
-  | { type: "party:tick"; seconds: number }
-  | { type: "party:cancelled"; reason: "bailed" | "disconnected" }
-  | { type: "party:start"; sessionId: string; members: PartyMember[]; role: number; hostId: string; seed: number }
-  | { type: "solo:countdown"; seconds: number }
-  | { type: "solo:start"; sessionId: string; seed: number }
-  | { type: "session:state"; members: PartyMember[]; hostId: string; role: number; seed: number }
-  | { type: "session:snapshot"; snap: unknown }
-  | { type: "session:input"; fromId: string; input: unknown }
-  | { type: "session:event"; fromId: string; event: unknown }
-  | { type: "session:peer-left"; id: string; newHostId?: string }
-  | { type: "session:ended"; reason: string }
   | { type: "pong" };
 
 export type ServerMessageType = ServerMessage["type"];

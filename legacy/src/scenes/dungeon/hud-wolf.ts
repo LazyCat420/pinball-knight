@@ -43,10 +43,6 @@ export function createWolfHUD(container: HTMLElement): HTMLDivElement {
   return el;
 }
 
-export function getWolfEl(): HTMLDivElement | null {
-  return wolfEl;
-}
-
 /** Repaint the bar's live numbers (delegates to the ui.ts renderer). */
 export function updateWolfHUD(): void {
   if (wolfEl) updateHUD(wolfEl);

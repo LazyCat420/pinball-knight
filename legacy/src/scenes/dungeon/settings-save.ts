@@ -70,8 +70,3 @@ export function saveSettings(patch: Partial<DungeonSettings>): DungeonSettings {
   }
   return s;
 }
-
-/** Test seam. */
-export function __resetSettingsCache(): void {
-  cached = null;
-}

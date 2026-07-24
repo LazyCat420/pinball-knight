@@ -134,6 +134,9 @@ export function coopSeed(): number | null {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 export function initCoop(): void {
   if (!isConnected() || !state.scene) return;
+  // Idempotent: a second init without an endCoop would double the world/act
+  // subscriptions and apply every snapshot twice.
+  endCoop();
   floor = state.level || 1;
   setLocalScene(sceneTag(floor));
   renderer = new RemotePartyRenderer(state.scene, "dungeon", (s) => s === sceneTag(floor));

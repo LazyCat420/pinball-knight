@@ -14,6 +14,7 @@
  */
 import * as THREE from "three";
 import type { SpriteSheet } from "./sprite";
+import { SPRITE_PIXEL_GRID } from "../constants";
 
 interface AtlasManifest {
   /** Total frames in the strip. */
@@ -23,6 +24,21 @@ interface AtlasManifest {
 }
 
 const BASE = "/dungeon/sprites";
+
+/** This GPU's max texture edge, probed once. A strip wider than this uploads as
+ * an EMPTY texture with no error — the knight simply vanishes (swiftshader caps
+ * at 8192; the ~8600px knight atlas hit exactly this, see intro/index.ts). */
+let maxTexSize: number | null = null;
+function gpuMaxTextureSize(): number {
+  if (maxTexSize !== null) return maxTexSize;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl2") ?? document.createElement("canvas").getContext("webgl");
+    maxTexSize = gl ? (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) : 8192;
+  } catch {
+    maxTexSize = 8192;
+  }
+  return maxTexSize;
+}
 
 export async function loadAtlasSheet(name: string): Promise<SpriteSheet | null> {
   try {
@@ -34,6 +50,19 @@ export async function loadAtlasSheet(name: string): Promise<SpriteSheet | null> 
     const img = new Image();
     img.src = `${BASE}/${name}.png`;
     await img.decode();
+
+    // A strip at the wrong cell height re-introduces the fractional-scale blur
+    // the whole pixel pipeline exists to kill; one over the GPU's texture cap
+    // silently paints NOTHING. Both fall back to the procedural painter, which
+    // at least renders.
+    if (img.height !== SPRITE_PIXEL_GRID) {
+      console.warn(`atlas ${name}: cell height ${img.height} ≠ ${SPRITE_PIXEL_GRID} — ignoring, procedural painter stays`);
+      return null;
+    }
+    if (img.width > gpuMaxTextureSize()) {
+      console.warn(`atlas ${name}: strip ${img.width}px exceeds GPU max texture size ${gpuMaxTextureSize()} — ignoring, procedural painter stays`);
+      return null;
+    }
 
     // Draw onto a canvas so the result is a CanvasTexture like every other
     // sheet (and so the browser can drop the decoded Image afterwards).

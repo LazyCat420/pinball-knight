@@ -179,15 +179,6 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
   return el;
 }
 
-export function getDiabloEl(): HTMLDivElement | null {
-  return panelEl;
-}
-
-/** The centre socket the shared face lives in while the Diablo HUD is active. */
-export function getDiabloFaceFrame(): HTMLDivElement | null {
-  return faceFrameEl;
-}
-
 export function disposeDiabloHUD(): void {
   disposeMinimap();
   panelEl?.remove();

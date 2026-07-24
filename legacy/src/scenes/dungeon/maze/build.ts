@@ -663,47 +663,6 @@ export interface MazeHandle {
   dispose(): void;
 }
 
-/**
- * Render each half-circle bumper court (decorate.stampCurveCourts) as a smooth
- * half-cylinder wall SHELL over its carved arc tiles — genuine long curved walls
- * you bank around, not blocky corners. The arc tiles are already solid in the
- * grid (collision) and skipped by the wall-box loop. three.js cylinder theta
- * runs +Z→+X, so a tile-space arc angle `th` maps to thetaStart = π/2 − a1.
- */
-function buildCurveCourts(group: THREE.Group, grid: Grid, plan: LevelPlan, track: <T extends { dispose(): void }>(x: T) => T): void {
-  const courts = plan.curveCourts ?? [];
-  if (!courts.length) return;
-  // The player stands INSIDE the arc, so the camera sees its concave face, which
-  // points away from the torches — a plain lit material renders near-black. Use
-  // the wall-FACE masonry texture (not the flat cap) and a dim emissive floor so
-  // the curved wall reads as a lit wall from the inside. DoubleSide: it's a shell.
-  const tex = track(makeWallTexture(false, false));
-  const mat = track(
-    new THREE.MeshStandardMaterial({
-      map: tex,
-      color: PALETTE_HEX[4],
-      // A uniform grey-green emissive floor so the concave inside — which faces
-      // away from every torch — still reads as a lit stone wall, not a black void.
-      emissive: 0x5c6850,
-      emissiveIntensity: 1.0,
-      roughness: 0.92,
-      metalness: 0,
-      side: THREE.DoubleSide,
-    }),
-  );
-  for (const c of courts) {
-    const center = tileCenter(grid, c.ci, c.cj);
-    const span = c.a1 - c.a0;
-    const seg = Math.max(16, Math.round(span / (Math.PI / 16)));
-    const geo = track(new THREE.CylinderGeometry(c.r, c.r, WALL_H, seg, 1, true, Math.PI / 2 - c.a1, span));
-    const shell = new THREE.Mesh(geo, mat);
-    shell.position.set(center.x, WALL_H / 2, center.z);
-    shell.castShadow = true;
-    shell.receiveShadow = true;
-    group.add(shell);
-  }
-}
-
 interface V3 {
   x: number;
   y: number;
@@ -871,15 +830,10 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const southFaces: Array<{ x: number; z: number; i: number; j: number }> = [];
   // Shaped (slant) wall tiles are drawn as triangular prisms, not boxes.
   const slantCells: Array<{ x: number; z: number; i: number; j: number; shape: TileShape; low: boolean }> = [];
-  // Curve-court arc tiles are solid for collision but get a smooth SHELL below
-  // instead of a blocky box — skip them here so the two don't z-fight.
-  const courtTiles = new Set<string>();
-  for (const c of plan.curveCourts ?? []) for (const [ti, tj] of c.tiles) courtTiles.add(`${ti},${tj}`);
   for (let j = 0; j < grid.h; j++) {
     for (let i = 0; i < grid.w; i++) {
       if (isWalkable(grid, i, j)) continue;
       if (at(grid, i, j) === T_CRACKED) continue; // secret bands get their own removable meshes below
-      if (courtTiles.has(`${i},${j}`)) continue; // rendered as a smooth arc shell instead
       let exposed = false;
       for (let dj = -1; dj <= 1 && !exposed; dj++) {
         for (let di = -1; di <= 1; di++) {
@@ -1289,14 +1243,6 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     group.add(light);
     lightPool.push(light);
   }
-
-  // ── Curved walls ──
-  // The single-corner rounding was removed 2026-07-20 (read as "weird bumps").
-  // Long curved walls now come from CURVE COURTS — semicircle wall structures
-  // rendered as smooth half-cylinder shells (buildCurveCourts below). The
-  // corner-bank PHYSICS (collision.computeArcCorners + player.bankArcCorners)
-  // stays — it's an invisible momentum assist at 2×2 pocket corners.
-  buildCurveCourts(group, grid, plan, track);
 
   scene.add(group);
 

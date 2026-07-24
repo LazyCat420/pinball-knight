@@ -35,7 +35,7 @@ import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusio
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, createComboFlash, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { renderKnightPortrait } from "./render/knight-portrait";
@@ -717,10 +717,9 @@ export function launchDungeonGame(onExit?: () => void): void {
 
   // ── HUD + input ──
   // Dual HUD: the Diablo panel (iso) + the Wolfenstein bar (rampage). mountHUDs
-  // builds both, mounts the shared face, and sets state.hudEl to the wolf bar.
+  // builds both and mounts the shared face.
   mountHUDs(state.container);
   state.fpsOverlayEl = createFpsOverlay(state.container);
-  state.comboFlashEl = createComboFlash(state.container);
   state.bossBarEl = createBossBar(state.container);
   state.plungerMeterEl = createPlungerMeter(state.container);
   state.input = createInput(state.container);
@@ -913,7 +912,6 @@ export function launchDungeonGame(onExit?: () => void): void {
     if (!state.active) return;
     startLevel(1); // startLevel adopts the shared pool seed (coopSeed) if connected
     initCoop(); // spin up dungeon-scene pool presence (no-op solo/offline)
-    console.log("🗡️ Maze Game: descending (run seed", state.runSeed, ")");
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
   };
@@ -3128,7 +3126,6 @@ export function exitDungeonGame(): void {
   hemi = null;
   clearInputOwner();
 
-  console.log(`🗡️ Maze Game: exited at depth ${state.level} (${state.kills} kills, ${state.goldRun} gold)`);
   resetState();
   onExit?.();
 }

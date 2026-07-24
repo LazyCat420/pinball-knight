@@ -186,61 +186,6 @@ export function setFpsOverlay(el: HTMLDivElement | null, on: boolean): void {
   if (el) el.style.display = on ? "block" : "none";
 }
 
-/** Escalating word + colour for the on-screen bounce-combo flash. */
-const COMBO_RANKS: Array<[number, string, string]> = [
-  [2, "COMBO", "#ffd23f"],
-  [4, "NICE", "#8fc46b"],
-  [6, "SLICK", "#6fd0e8"],
-  [9, "WILD", "#f0a63c"],
-  [13, "INSANE", "#d95763"],
-];
-
-/**
- * A centred "×N" flash that pops on every bounce-combo STEP (the pinball
- * counterpart to the FPS kill-streak readout). Built once; flashBounceCombo
- * pops + fades it. Kept separate from the HUD's static combo tag so each fresh
- * bounce actually reads as an escalating hit, not a quiet number ticking up.
- */
-export function createComboFlash(container: HTMLElement): HTMLDivElement {
-  const el = document.createElement("div");
-  el.id = "dungeon-combo-flash";
-  ensureWolfFonts();
-  el.style.cssText = `
-    position: fixed; left: 50%; top: 120px; transform: translateX(-50%) scale(1);
-    z-index: 10001; text-align: center; opacity: 0; display: none;
-    pointer-events: none; user-select: none;
-    font-family: ${WOLF_NUM}; line-height: 0.9;
-    text-shadow: 0 0 8px rgba(255,210,63,0.7), 2px 2px 0 #0b0d12;
-  `;
-  container.appendChild(el);
-  return el;
-}
-
-let comboFlashTimer = 0;
-export function flashBounceCombo(el: HTMLDivElement | null, combo: number): void {
-  if (!el || combo < 2) return;
-  let word = "COMBO";
-  let color = "#ffd23f";
-  for (const [n, w, c] of COMBO_RANKS) {
-    if (combo >= n) { word = w; color = c; }
-  }
-  el.style.color = color;
-  el.innerHTML = `<div style="font-family:${WOLF_NUM};font-size:26px">×${combo}</div>` +
-    `<div style="font-family:${WOLF_LABEL};font-size:9px;letter-spacing:2px;margin-top:2px">${word}</div>`;
-  el.style.display = "block";
-  el.style.transition = "none";
-  el.style.opacity = "1";
-  el.style.transform = `translateX(-50%) scale(${Math.min(1.25, 1.0 + combo * 0.015)})`;
-  requestAnimationFrame(() => {
-    el.style.transition = "transform 0.16s ease-out, opacity 0.5s ease-out 0.22s";
-    el.style.transform = "translateX(-50%) scale(1)";
-    el.style.opacity = "0";
-  });
-  // Hide after the fade so a stale flash can't linger over the next floor.
-  window.clearTimeout(comboFlashTimer);
-  comboFlashTimer = window.setTimeout(() => { el.style.display = "none"; }, 800);
-}
-
 // Fix 2 — RAGNAROK-style floating combo numbers. Instead of one static centred
 // counter, every fresh bounce spawns a small bold "×N" at the knight's SCREEN
 // position that floats up, shrinks and fades — and stacks with an upward
@@ -281,8 +226,8 @@ export function spawnFloatingCombo(combo: number, sx: number, sy: number): void 
 }
 
 /**
- * The overlord boss bar: a classic wide health bar pinned to the top-centre of
- * the screen, shown only while the mini-boss is alive. Built once, appended to
+ * The boss health bar: a classic wide bar pinned to the top-centre of the
+ * screen, shown only while the boss is alive. Built once, appended to
  * the container; updateBossBar drives its fill + visibility each frame.
  */
 export function createBossBar(container: HTMLElement): HTMLDivElement {
@@ -296,7 +241,7 @@ export function createBossBar(container: HTMLElement): HTMLDivElement {
   el.innerHTML = `
     <div style="font:900 14px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:3px;color:#d95763;
                 text-shadow:0 0 8px rgba(217,87,99,0.8),1px 1px 0 #0b0d12;margin-bottom:3px">
-      ☠ THE OVERLORD ☠
+      ☠ THE REAPER KING ☠
     </div>
     <div style="height:12px;background:#0b0d12;border:2px solid #6b1f2a;
                 box-shadow:0 0 8px rgba(217,87,99,0.5)">

@@ -32,7 +32,6 @@ import {
   SKILL_SHOT_GOLD,
   NAMED_CHAIN_MAX,
   NAMED_COMBOS,
-  PINBALL_COMBO_WINDOW,
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { showToast, showPickupNote } from "./ui";
@@ -220,5 +219,4 @@ export function updateShots(dt: number): void {
   }
   const p = state.player;
   if (p && p.bounceComboT <= 0 && state.shotChain.length > 0 && p.momSpeed <= 0) clearShotChain();
-  void PINBALL_COMBO_WINDOW;
 }

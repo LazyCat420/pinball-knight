@@ -2,8 +2,8 @@
  * Run scoring for the leaderboard.
  *
  * Kept out of `core.ts` so the formula is readable and testable on its own —
- * `core.ts` is ~1900 lines and a scoring rule buried in it is a rule nobody can
- * find or tune.
+ * `core.ts` is thousands of lines and a scoring rule buried in it is a rule
+ * nobody can find or tune.
  *
  * DEPTH DOMINATES. Pinball Knight is a descent: the run's whole goal is to get
  * further down, and death restarts at floor 1. A leaderboard that ranked on

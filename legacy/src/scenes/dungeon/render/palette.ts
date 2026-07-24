@@ -1,8 +1,9 @@
 /**
  * Dungeon — "Cold Crypt" palette.
  *
- * 32 colours, hand-picked. The ONLY warm hues in the entire palette are the
- * torch ramp (14-18) — everything else is cold stone, rot, steel and blood.
+ * 32 colours, hand-picked. The warm hues are confined to the torch ramp
+ * (14-18), skin (23-25) and leather/wood (26-28) — the environment itself is
+ * cold stone, rot, steel and blood.
  * That's deliberate: it makes torchlight feel like the only comfort down here,
  * and it contrasts hard with the mouse room's warm earth palette (`P` in
  * mouse-room.ts) so descending feels like going somewhere else.

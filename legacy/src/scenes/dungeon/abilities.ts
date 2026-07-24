@@ -15,9 +15,7 @@ import type { Zombie } from "./state";
 import { FACING_VEC, damageZombie } from "./entities/combat";
 import { spawnFloorFx } from "./entities/floor-fx";
 import {
-  MANA_MAX,
   MANA_REGEN,
-  MANA_PER_KILL,
   ARCANE_PULSE_RADIUS,
   ARCANE_PULSE_DAMAGE,
   FLIPPER_LAUNCH_SPEED,
@@ -237,7 +235,7 @@ export function tickAbilities(dt: number): void {
   // Passive mana regen.
   if (p.mana < playerManaMax()) {
     const before = p.mana;
-    p.mana = Math.min(MANA_MAX, p.mana + MANA_REGEN * dt);
+    p.mana = Math.min(playerManaMax(), p.mana + MANA_REGEN * dt);
     if (Math.floor(p.mana) !== Math.floor(before)) state.hudDirty = true;
   }
 

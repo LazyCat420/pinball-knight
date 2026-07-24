@@ -16,9 +16,6 @@ let sfxMuted = false;
 export function setSfxMuted(v: boolean): void {
   sfxMuted = v;
 }
-export function isSfxMuted(): boolean {
-  return sfxMuted;
-}
 
 function ctx(): AudioContext | null {
   if (sfxMuted) return null;

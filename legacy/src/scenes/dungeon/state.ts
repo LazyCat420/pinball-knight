@@ -547,7 +547,6 @@ export const state = {
 
   // DOM
   container: null as HTMLDivElement | null,
-  hudEl: null as HTMLDivElement | null,
   gameOverEl: null as HTMLDivElement | null,
   /** The merchant's shop overlay while it's open (null = closed; sim pauses). */
   shopEl: null as HTMLDivElement | null,
@@ -560,11 +559,9 @@ export const state = {
   menuEl: null as HTMLDivElement | null,
   /** The first-person rampage overlay (crosshair + gun + red vignette). */
   fpsOverlayEl: null as HTMLDivElement | null,
-  /** The centred ×N bounce-combo flash (pinball score glue). */
-  comboFlashEl: null as HTMLDivElement | null,
   /** Last frame's bounce combo, so a rise fires the flash exactly once per step. */
   prevBounceCombo: 0,
-  /** The overlord boss health bar (top-centre, shown only when a boss lives). */
+  /** The boss health bar (top-centre, shown only when a boss lives). */
   bossBarEl: null as HTMLDivElement | null,
   /** The plunger power meter (bottom-centre, shown only while parked to launch). */
   plungerMeterEl: null as HTMLDivElement | null,
@@ -996,7 +993,6 @@ export function resetState(): void {
   state.active = false;
   state.onExitCallback = null;
   state.container = null;
-  state.hudEl = null;
   state.gameOverEl = null;
   state.shopEl = null;
   state.tavernEl?.remove();
@@ -1006,7 +1002,6 @@ export function resetState(): void {
   state.menuEl?.remove();
   state.menuEl = null;
   state.fpsOverlayEl = null;
-  state.comboFlashEl = null;
   state.prevBounceCombo = 0;
   state.bossBarEl = null;
   state.plungerMeterEl = null;

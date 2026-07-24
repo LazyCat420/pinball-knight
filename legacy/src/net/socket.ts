@@ -9,7 +9,6 @@
 import type { ClientMessage, ServerMessage, ServerMessageOf, ServerMessageType } from "./protocol";
 
 type Handler<T extends ServerMessageType> = (msg: ServerMessageOf<T>) => void;
-type AnyHandler = (msg: ServerMessage) => void;
 
 export type NetStatus = "idle" | "connecting" | "open" | "closed";
 
@@ -40,8 +39,6 @@ const BACKOFF_MS = [1000, 2000, 4000, 8000, 15000];
 export class NetClient {
   private ws: WebSocket | null = null;
   private readonly listeners = new Map<string, Set<(m: ServerMessage) => void>>();
-  private readonly anyListeners = new Set<AnyHandler>();
-  private statusListeners = new Set<(s: NetStatus) => void>();
   private _status: NetStatus = "idle";
   private _id: string | null = null;
   private _seed: number | null = null;
@@ -67,8 +64,8 @@ export class NetClient {
 
   /**
    * Open the socket. `onOpen` fires on the first connect AND every reconnect —
-   * callers use it to (re-)send `hello` / `session:hello`. Returns false when
-   * networking is disabled for this origin (caller stays single-player).
+   * callers use it to (re-)send `hello`. Returns false when networking is
+   * disabled for this origin (caller stays single-player).
    */
   connect(onOpen?: () => void): boolean {
     const url = realtimeUrl();
@@ -131,7 +128,6 @@ export class NetClient {
     }
     const set = this.listeners.get(msg.type);
     if (set) for (const h of [...set]) h(msg);
-    for (const h of [...this.anyListeners]) h(msg);
   }
 
   /** Subscribe to one message type. Returns an unsubscribe function. */
@@ -144,17 +140,6 @@ export class NetClient {
     const wrapped = handler as (m: ServerMessage) => void;
     set.add(wrapped);
     return () => set!.delete(wrapped);
-  }
-
-  /** Subscribe to every message (used for debug / catch-all routing). */
-  onAny(handler: AnyHandler): () => void {
-    this.anyListeners.add(handler);
-    return () => this.anyListeners.delete(handler);
-  }
-
-  onStatus(handler: (s: NetStatus) => void): () => void {
-    this.statusListeners.add(handler);
-    return () => this.statusListeners.delete(handler);
   }
 
   send(msg: ClientMessage): void {
@@ -177,16 +162,14 @@ export class NetClient {
   }
 
   private setStatus(s: NetStatus): void {
-    if (this._status === s) return;
     this._status = s;
-    for (const h of [...this.statusListeners]) h(s);
   }
 }
 
 /**
  * The process-wide client. One socket serves both the tavern and the dungeon —
- * the party you formed in the lobby is the party that drops together, so the
- * connection must survive the scene change.
+ * the drop-in pool you joined is the pool you dungeon with, so the connection
+ * must survive the scene change.
  */
 let shared: NetClient | null = null;
 export function net(): NetClient {

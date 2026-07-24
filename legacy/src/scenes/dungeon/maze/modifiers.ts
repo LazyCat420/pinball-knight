@@ -127,9 +127,9 @@ export const MODIFIER_FROM_LEVEL = 3;
 export const MODIFIER_CHANCE = 0.45;
 
 /**
- * Roll this floor's modifier. Draws exactly one rng value when the level is
- * below MODIFIER_FROM_LEVEL and two otherwise, so the stream stays predictable
- * for a given (run, level).
+ * Roll this floor's modifier. Draws ZERO rng values below MODIFIER_FROM_LEVEL
+ * (early return) and one or two otherwise (one when the chance gate fails), so
+ * the stream stays predictable for a given (run, level).
  */
 export function rollModifier(level: number, rng: () => number): FloorModifier {
   if (level < MODIFIER_FROM_LEVEL) return NO_MODIFIER;

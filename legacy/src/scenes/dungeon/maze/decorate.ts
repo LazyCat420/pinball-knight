@@ -13,6 +13,7 @@
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape } from "./generator";
 import { SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
+import { PICKUP_WEAPONS } from "../items";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -146,27 +147,9 @@ export interface LevelPlan {
   plazas: TilePos[];
   /** The Oracle Frog's dead-end perch, if this floor drew one. */
   frog: TilePos | null;
-  /** Half-circle bumper courts — semicircle wall structures rendered as smooth
-   *  arcs (build.ts buildCurveCourts). The wall tiles are already carved solid
-   *  into the grid; this just carries the geometry for the curved render. */
-  curveCourts: CurveCourt[];
 }
 
-/** A half-circle bumper court: a semicircle of wall (tile centre `ci,cj`, radius
- *  `r` tiles) spanning angles [a0, a1] (≈ a half turn), open across the flat
- *  side. Rendered as a smooth half-cylinder shell over the carved arc tiles. */
-export interface CurveCourt {
-  ci: number;
-  cj: number;
-  r: number;
-  a0: number;
-  a1: number;
-  /** The exact arc tiles carved solid — the renderer skips blocky boxes here and
-   *  draws the smooth shell instead (else the two z-fight). */
-  tiles: Array<[number, number]>;
-}
-
-function shuffled<T>(items: T[], rng: () => number): T[] {
+function shuffled<T>(items: readonly T[], rng: () => number): T[] {
   const arr = items.slice();
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -187,7 +170,7 @@ const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
  * each level rolls THREE of them (rng-driven — every depth has a different
  * armoury) plus one of each gear slot. Ids resolve against items.ts.
  */
-const WEAPON_POOL = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
+const WEAPON_POOL: readonly string[] = PICKUP_WEAPONS;
 const WEAPONS_PER_LEVEL = 3;
 const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // Potions strewn per floor: always a health flask, plus THREE random power-ups
@@ -889,20 +872,6 @@ function furnishRooms(
 }
 
 /**
- * Mutates the grid (stamps T_STAIRS) and returns the plan. `rooms` are the
- * carved archetype rects in THIS grid's coordinates (already ×2 if the maze
- * was thickened).
- */
-/**
- * HALF-CIRCLE COURTS — bow one WALL of a big room out into a semicircle, so the
- * room gets a genuinely curved boundary (a D-shaped chamber / stadium end) that
- * is PART OF THE MAZE, not a freestanding arc floating in open floor. The bulge
- * faces away from the start; the arc's endpoints land on the room's far corners,
- * tying into the perpendicular walls. Carves the bay floor, walls the outer rim
- * (rendered as a smooth shell in build.ts), and drops a few bumpers inside.
- * GUARDED: reverts entirely if it would strand any floor tile from the start.
- */
-/**
  * Reshape wall corners into 45° SLANTS and quarter-round CURVES (tile-shape.ts):
  * the maze stops being all right angles. Rendered AND collided from the one
  * shape (build.ts + collision.ts). Two families of corner:
@@ -996,110 +965,6 @@ function assignCornerShapes(g: Grid): void {
       setShape(g, i, j, shape);
     }
   }
-}
-
-function stampCurveCourts(
-  g: Grid,
-  rooms: PlannedRoom[],
-  start: TilePos,
-  parts: PinballPartSpot[],
-  rng: () => number,
-  onSpine: (i: number, j: number) => boolean = () => false,
-): CurveCourt[] {
-  // RETIRED (2026-07-21): the curve court rendered a smooth CylinderGeometry
-  // shell OVER square rim tiles, so the visible arc and the (staircased-square)
-  // collider disagreed — the "floating green arc" complaint. Curved big-room
-  // walls return as REAL shaped tiles (tile-shape.ts ROUND shapes) that render
-  // AND collide from one source. Kept wired (returns nothing) so the pipeline
-  // and buildCurveCourts fall through cleanly.
-  const RETIRED = true;
-  if (RETIRED) return [];
-  const candidates = rooms.filter((r) => Math.min(r.w, r.h) >= 6).sort((a, b) => b.w * b.h - a.w * a.h);
-  for (const room of candidates) {
-    const rci = room.i0 + Math.floor(room.w / 2);
-    const rcj = room.j0 + Math.floor(room.h / 2);
-    // Outward cardinal = the room side facing away from the start.
-    const dx = rci - start.i;
-    const dz = rcj - start.j;
-    const od = Math.abs(dx) >= Math.abs(dz) ? { i: Math.sign(dx) || 1, j: 0 } : { i: 0, j: Math.sign(dz) || 1 };
-    // The bowed edge runs perpendicular to `od`; its length sets the radius so
-    // the arc's ends reach the room's two far corners (→ tied into the walls).
-    const edgeLen = od.i !== 0 ? room.h : room.w;
-    if (edgeLen < 7 || edgeLen > 15) continue; // keep the bulge sane
-    const r = Math.floor((edgeLen - 1) / 2);
-    // Centre = midpoint of the bowed edge (the room's last floor tile on that side).
-    const cx = od.i !== 0 ? (od.i > 0 ? room.i0 + room.w - 1 : room.i0) : rci;
-    const cy = od.j !== 0 ? (od.j > 0 ? room.j0 + room.h - 1 : room.j0) : rcj;
-
-    const carvedFloor: Array<[number, number]> = []; // bay floor (was wall)
-    const rimWall: Array<[number, number]> = []; // arc rim (was floor)
-    const arcTiles: Array<[number, number]> = []; // every rim tile, for the render skip
-    let hitsSpine = false; // an arc that would wall the booster route is not worth it
-    for (let dj = -r - 1; dj <= r + 1; dj++) {
-      for (let di = -r - 1; di <= r + 1; di++) {
-        const outSide = di * od.i + dj * od.j;
-        if (outSide < 0) continue; // leave the room side alone
-        const dist = Math.hypot(di, dj);
-        if (dist > r + 0.6) continue;
-        const ti = cx + di;
-        const tj = cy + dj;
-        if (ti <= 0 || tj <= 0 || ti >= g.w - 1 || tj >= g.h - 1) continue;
-        if (dist <= r - 0.7) {
-          if (at(g, ti, tj) === T_WALL) {
-            setTile(g, ti, tj, T_FLOOR); // carve the bay
-            carvedFloor.push([ti, tj]);
-          }
-        } else {
-          arcTiles.push([ti, tj]); // rim → curved wall
-          if (at(g, ti, tj) === T_FLOOR) {
-            if (onSpine(ti, tj)) hitsSpine = true; // would bury the station spine
-            setTile(g, ti, tj, T_WALL);
-            rimWall.push([ti, tj]);
-          }
-        }
-      }
-    }
-    const revert = (): void => {
-      for (const [ti, tj] of carvedFloor) setTile(g, ti, tj, T_WALL);
-      for (const [ti, tj] of rimWall) setTile(g, ti, tj, T_FLOOR);
-    };
-    if (hitsSpine || rimWall.length + carvedFloor.length < 6) {
-      revert();
-      continue; // would wall the spine, or nothing meaningful carved
-    }
-    // Connectivity guard: no floor tile may be stranded from the start.
-    const d = bfsDistances(g, start.i, start.j);
-    let stranded = false;
-    for (let j = 0; j < g.h && !stranded; j++) {
-      for (let i = 0; i < g.w; i++) {
-        if (at(g, i, j) === T_FLOOR && d[idx(g, i, j)] < 0) {
-          stranded = true;
-          break;
-        }
-      }
-    }
-    if (stranded) {
-      revert();
-      continue;
-    }
-    // Drop any parts that fell on the new rim wall; plant a few bumpers in the bay.
-    const wallSet = new Set(rimWall.map(([ti, tj]) => `${ti},${tj}`));
-    for (let k = parts.length - 1; k >= 0; k--) {
-      if (wallSet.has(`${parts[k].i},${parts[k].j}`)) parts.splice(k, 1);
-    }
-    const bayFloor = carvedFloor.filter(([ti, tj]) => at(g, ti, tj) === T_FLOOR);
-    const put: Array<[number, number]> = [];
-    for (const [ti, tj] of shuffled(bayFloor, rng)) {
-      if (put.length >= 3) break;
-      if (put.some(([pi, pj]) => Math.abs(pi - ti) + Math.abs(pj - tj) < 2)) continue;
-      if (parts.some((q) => q.i === ti && q.j === tj)) continue;
-      parts.push({ i: ti, j: tj, kind: "bumper", dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 });
-      put.push([ti, tj]);
-    }
-    const mid = Math.atan2(od.j, od.i);
-    return [{ ci: cx, cj: cy, r, a0: mid - Math.PI / 2, a1: mid + Math.PI / 2, tiles: arcTiles }];
-  }
-  return [];
 }
 
 /**
@@ -1908,15 +1773,11 @@ export function decorateMaze(
     }
   }
 
-  // ── Half-circle courts: carve a curved bumper court into a big room (guarded
-  // against stranding). Last, so it can prune parts that fall on its new walls. ──
-  const curveCourts = stampCurveCourts(g, furnished.rooms, start, parts, rng, onSpine);
-
   // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch
   // break-throughs, secrets) is final. Only reshapes existing walls — never
   // changes walkability, so AI/flow-field/spawns are unaffected. ──
   assignCornerShapes(g);
 
-  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, curveCourts, plazas };
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas };
 }

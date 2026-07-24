@@ -55,11 +55,11 @@ export function startPresence(name: string): boolean {
 
   c.on("room:state", (m) => {
     roster.clear();
-    for (const p of m.players) roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: "idle" });
+    for (const p of m.players) roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: p.mode ?? "idle" });
   });
   c.on("player:join", (m) => {
     const p = m.player;
-    roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: "idle" });
+    roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: p.mode ?? "idle" });
   });
   c.on("player:leave", (m) => roster.delete(m.id));
   c.on("player:move", (m) => {
