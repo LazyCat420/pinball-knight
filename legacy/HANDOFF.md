@@ -2,7 +2,54 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🌀 NEWEST (2026-07-24): REAL CURVED MAZE WALLS — multi-tile ARC SWEEPS
+## 🔥 NEWEST (2026-07-24): LIGHT-PUZZLE SECRET VAULTS — per-floor braziers → loot
+
+Every qualifying floor now hosts a **light puzzle**: a sealed loot **vault
+chest** in an open chamber (far from start) plus 3-5 scattered **braziers**.
+Roll (or walk) the knight over each brazier to light it; the last one **opens
+the vault** and spills the reward. Headless-verified end to end (probe: 3
+braziers unlit → warp onto each → `lit:3, unlocked:true`, chest lid lifts, loot
+potions spawn, zero errors).
+
+**Architecture (deliberately invariant-safe):** the vault is a CHEST, not a
+carved sealed room — so the "every floor tile reachable" pipeline invariant
+(floor-pipeline.test.ts:82) is untouched. Before solving, the reward simply
+doesn't exist as ground items; opening spawns them (the secrets.ts payout
+pattern). No movement barrier, no stranded floor.
+
+- **`maze/lamp-puzzle.ts`** (pure, tested) — `authorLampPuzzle(g, start,
+  occupied, rng, lampCount)` picks braziers (reachable, unoccupied, spread by
+  `max(6, maxD/6)`, ≥3 from the vault) + a far open vault tile + a loot table.
+  `lampCountFor(level)` = 3-5. Only READS the grid.
+- **`lamp` is a new pinball-part kind** — touches the FOUR exhaustive tables
+  (PartSpotKind + PinballPartKind unions, PART_HANDLERS, PART_BUILDERS +
+  PART_ANIMATORS + PART_HIT_LIFETIME). Braziers ride the normal
+  `createPinballParts` pass (authored spots pushed into `plan.parts` in
+  startLevel BEFORE the build). NOT placed by the decorate deal (deal reads
+  theme arrays, not the union) — authored separately.
+- **`lamp-puzzle.ts`** (runtime) — builds the chest mesh, `lightLamp(part)`
+  (called from the `lamp` handler: mark lit, FX, `N/M` note, open on last),
+  `openVault()` (spawn loot ground items in a ring + arcane burst + toast),
+  `updateLampPuzzle(dt)` (chest warms blood-iron→gold→arcane, lid lifts on
+  open), `disposeLampPuzzle`. State: `state.lampPuzzle` (reset in resetState +
+  disposeLevel).
+- Wired in `core.ts startLevel` (author+inject before createPinballParts,
+  install after) + frame loop (`updateLampPuzzle`) + `dispose.ts`.
+
+**QA hook:** `window.__lampPuzzle()` → `{total, lit, unlocked, vault, lamps:[{x,z,lit}]}`
+— warp the ball onto each `lamps[].x/z`, then the vault, to drive the whole
+puzzle headlessly (scratchpad qa-lamp.mjs). Braziers light on ANY contact
+(no speed gate — it's a puzzle, not a skill shot).
+
+**NOT judged on a real monitor** — first manual QA: are 3-5 braziers per floor
+the right count/spread? Is the chest reward worth the detour? The chest reads
+a bit small/dark in headless shots — may want scale/glow tuning.
+
+**Open follow-ups (roadmap):** the deeper "parts chain into routes"
+(ROUTE_MATH_PLAN) work; sweeps could theme by floor; puzzle could add a
+lock-order variant (light in sequence) reusing the target-BANK seq machinery.
+
+## Prior (2026-07-24): REAL CURVED MAZE WALLS — multi-tile ARC SWEEPS
 
 The long-standing complaint "curved walls just render a curve object in the
 room" is fixed at the architecture level. The maze now authors **multi-tile

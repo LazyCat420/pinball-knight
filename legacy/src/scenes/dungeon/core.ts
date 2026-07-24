@@ -51,6 +51,8 @@ import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
+import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
+import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./maze/prefabs";
 import { archetypeFor } from "./maze/archetypes";
 import { rollModifier } from "./maze/modifiers";
@@ -1376,6 +1378,24 @@ function startLevel(level: number): void {
     },
   );
 
+  // ── LIGHT PUZZLE: scatter braziers + seal a loot vault (maze/lamp-puzzle).
+  // Author it here (before parts are built) so the lamp spots ride the SAME
+  // createPinballParts pass. `occupied` = everything already placed, so a
+  // brazier/vault never lands on a spawn, item, part, torch or the endpoints. ──
+  const puzzleOccupied = new Set<string>();
+  const markOcc = (t: { i: number; j: number } | null | undefined): void => {
+    if (t) puzzleOccupied.add(`${t.i},${t.j}`);
+  };
+  markOcc(plan.start);
+  markOcc(plan.stairs);
+  plan.parts.forEach(markOcc);
+  plan.spawns.forEach(markOcc);
+  plan.items.forEach(markOcc);
+  plan.props.forEach(markOcc);
+  plan.torches.forEach(markOcc);
+  const lampPuzzlePlan = authorLampPuzzle(grid, plan.start, (i, j) => puzzleOccupied.has(`${i},${j}`), rng, lampCountFor(level));
+  if (lampPuzzlePlan) plan.parts.push(...lampPuzzlePlan.lamps);
+
   state.grid = grid;
   // Fresh fog every floor — the grid's dimensions change with depth, and
   // carrying exploration across a descent would be a spoiler.
@@ -1394,6 +1414,8 @@ function startLevel(level: number): void {
   });
   state.maze = buildMaze(state.scene, grid, plan, state.arcCorners);
   createPinballParts(plan.parts, grid, state.scene);
+  // The braziers are now built; raise the sealed vault chest they open.
+  if (lampPuzzlePlan) installLampPuzzle(lampPuzzlePlan, grid, state.scene);
 
   // ── Player ──
   const startPos = tileCenter(grid, plan.start.i, plan.start.j);
@@ -2946,6 +2968,7 @@ function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   state.vfx?.update(frame);
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
+  updateLampPuzzle(frame); // brazier glow + vault chest reveal
   updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay
   if (p) p.anim.update(frame);

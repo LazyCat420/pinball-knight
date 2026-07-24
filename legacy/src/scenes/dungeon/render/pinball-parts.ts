@@ -312,6 +312,26 @@ function buildTarget(dirX: number, dirZ: number): THREE.Group {
   return gp;
 }
 
+function buildLamp(): THREE.Group {
+  // A floor BRAZIER for the light puzzle: a stubby iron bowl on a base with a
+  // flame bead. Unlit = cold arcane + dark bowl; lit = a bright gold flame
+  // (swapped by the animator off part.lit). Radial, so no dir needed.
+  const gp = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.14, 10), std(C_STEEL_DK));
+  base.position.y = 0.07;
+  const bowlMat = std(C_STEEL_DK, C_ARCANE, 0.3);
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.14, 0.16, 12), bowlMat);
+  bowl.position.y = 0.22;
+  const flameMat = std(C_ARCANE, C_ARCANE, 0.9);
+  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), flameMat);
+  flame.position.y = 0.36;
+  gp.add(base, bowl, flame);
+  gp.userData.flameMat = flameMat;
+  gp.userData.bowlMat = bowlMat;
+  gp.userData.flame = flame;
+  return gp;
+}
+
 function buildRollover(dirX: number, dirZ: number): THREE.Group {
   // D3 — a ROLLOVER LANE: a shallow wire arch you roll THROUGH, with a lamp
   // bead on top. The bead is the whole point — it's the per-lane light that
@@ -538,6 +558,7 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   firevent: ({ dirX, dirZ }) => buildFireVent(dirX, dirZ),
   magstrip: () => buildMagStrip(),
   rollover: ({ dirX, dirZ }) => buildRollover(dirX, dirZ),
+  lamp: () => buildLamp(),
 };
 
 /** Build every part mesh for a level plan and register them on state. */
@@ -631,6 +652,7 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   firevent: VENT_WARN + VENT_ACTIVE + 0.1,
   magstrip: 0.6,
   rollover: 0.6,
+  lamp: 0.6,
 };
 
 /**
@@ -886,6 +908,25 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
       const lit = part.lane !== undefined && part.laneSeq !== undefined && !!state.laneLit[part.lane]?.[part.laneSeq];
       lamp.emissive.setHex(part.aimed ? C_SHOT : lit ? C_GOLD : C_ARCANE);
       lamp.emissiveIntensity = (lit ? 1.6 : 0.5) + (part.aimed ? 1.2 : 0) + 0.25 * Math.sin(animT * (lit ? 5 : 2.5) + part.i);
+    }
+  },
+
+  lamp: (part) => {
+    // A brazier: a cold arcane flicker while unlit; a bright leaping GOLD flame
+    // once lit (part.lit set by the puzzle). Bowl warms to match.
+    const flameMat = part.mesh.userData.flameMat as THREE.MeshStandardMaterial | undefined;
+    const bowlMat = part.mesh.userData.bowlMat as THREE.MeshStandardMaterial | undefined;
+    const flame = part.mesh.userData.flame as THREE.Object3D | undefined;
+    const lit = !!part.lit;
+    if (flameMat) {
+      flameMat.emissive.setHex(part.aimed && !lit ? C_SHOT : lit ? C_GOLD : C_ARCANE);
+      flameMat.emissiveIntensity = (lit ? 2.0 : 0.55) + (part.aimed && !lit ? 1.3 : 0) + 0.35 * Math.sin(animT * (lit ? 9 : 3) + part.i);
+    }
+    if (bowlMat) bowlMat.emissive.setHex(lit ? C_GOLD : C_ARCANE);
+    if (flame) {
+      const leap = lit ? 1 + 0.18 * Math.sin(animT * 11 + part.i) : 1;
+      flame.scale.set(1, leap, 1);
+      flame.position.y = 0.36 + (lit ? 0.04 * Math.sin(animT * 9) : 0);
     }
   },
 };

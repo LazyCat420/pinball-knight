@@ -60,7 +60,8 @@ export type PartSpotKind =
   | "electric"
   | "firevent"
   | "magstrip"
-  | "rollover";
+  | "rollover"
+  | "lamp";
 
 export interface PinballPartSpot extends TilePos {
   kind: PartSpotKind;

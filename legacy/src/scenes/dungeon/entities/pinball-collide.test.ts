@@ -39,6 +39,7 @@ const ALL_KINDS: PinballPartKind[] = [
   "firevent",
   "magstrip",
   "rollover",
+  "lamp",
 ];
 
 function stubPlayer(): void {

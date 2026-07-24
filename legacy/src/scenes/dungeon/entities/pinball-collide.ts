@@ -89,6 +89,7 @@ import { moveCircle } from "../collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
+import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
 import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit, lavaVaporizesOil } from "./marble";
@@ -463,6 +464,14 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.35, part.z, p.momX, p.momZ, 9);
     sfxSpring();
+  },
+
+  lamp: ({ part, d2 }) => {
+    // A light-puzzle brazier: roll (or walk) over it to light it. Forgiving —
+    // no speed gate, since it's a puzzle, not a skill shot. Idempotent.
+    if (part.lit) return;
+    if (d2 > TARGET_RADIUS * TARGET_RADIUS) return;
+    lightLamp(part);
   },
 
   target: ({ part, p, dx, dz, d2, inMomentum }) => {

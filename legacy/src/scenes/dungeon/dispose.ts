@@ -8,6 +8,7 @@ import { clearFloorFx, disposeFloorFxAssets } from "./entities/floor-fx";
 import { disposeNpcs } from "./entities/npc";
 import { disposeMultiBall } from "./entities/multiball";
 import { disposePinballParts } from "./render/pinball-parts";
+import { disposeLampPuzzle } from "./lamp-puzzle";
 import { disposeHUDs } from "./hud";
 
 /**
@@ -38,6 +39,7 @@ export function disposeLevel(): void {
   state.props = [];
 
   disposePinballParts(state.scene);
+  disposeLampPuzzle(state.scene);
   disposeNpcs();
   // The echo knights hold their own cloned textures + geometry; the buff timer
   // survives the descent, so updateMultiBall re-spawns them on the next floor.

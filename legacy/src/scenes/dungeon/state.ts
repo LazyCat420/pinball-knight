@@ -402,7 +402,9 @@ export type PinballPartKind =
   | "electric"
   | "firevent"
   | "magstrip"
-  | "rollover";
+  | "rollover"
+  // Light-puzzle brazier: roll over it to light it; all lit opens the vault.
+  | "lamp";
 
 export interface PinballPart {
   kind: PinballPartKind;
@@ -748,6 +750,22 @@ export const state = {
    */
   levelRooms: [] as Array<{ i0: number; j0: number; w: number; h: number; kind: string }>,
   groundItems: [] as GroundItem[],
+
+  /**
+   * LIGHT PUZZLE (per floor): a sealed loot vault plus scattered braziers. Roll
+   * the pinball knight over every brazier to light them all; the last one opens
+   * the vault (spawns loot at the chest). `null` on floors that don't roll one.
+   * Built in startLevel, reset in resetState + disposeLevel.
+   */
+  lampPuzzle: null as null | {
+    total: number;
+    lit: number;
+    unlocked: boolean;
+    vault: { i: number; j: number; x: number; z: number };
+    loot: string[];
+    chest: THREE.Object3D | null;
+    openT: number; // seconds since the vault opened (drives the reveal anim)
+  },
   /** Non-interactive set dressing (bones, skulls, rubble). */
   props: [] as Array<{ sprite: { mesh: THREE.Mesh; dispose(): void } }>,
 
@@ -1030,6 +1048,7 @@ export function resetState(): void {
   state.bumperTotal = 0;
   state.bumpersLit = 0;
   state.jackpotT = 0;
+  state.lampPuzzle = null;
   state.freezeT = 0;
   state.hudMode = "diablo";
   state.abilitySlots = ["flippercharge", "arcanepulse"];
