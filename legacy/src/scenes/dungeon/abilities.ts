@@ -196,9 +196,12 @@ function tickPulseWaves(dt: number): void {
       w.hit.add(z);
       const inv = d || 1;
       damageZombie(z, ARCANE_PULSE_DAMAGE, dx / inv, dz / inv, 6);
-      // The wave-front impact: an ARCANE pop on the foe (never a blood spray —
-      // this spell has no red in it) and an arc snapped back to the cast point,
-      // so the shockwave visibly DID that.
+      // The wave-front impact, in two halves that do DIFFERENT jobs — keep both:
+      // the blood spray is the hit landing on a body (the same feedback every
+      // other damage source in the game gives, and the thing that makes a kill
+      // read), while the arcane pop + the arc snapped back to the cast point say
+      // the SHOCKWAVE is what did it.
+      state.vfx?.blood(z.x, 0.6, z.z, "red", 6);
       state.vfx?.burst(z.x, 0.6, z.z, PULSE_C_LIGHT, 10, 3);
       if (d > 0.4) state.vfx?.bolt(w.x, 0.6, w.z, dx, dz, d);
     }

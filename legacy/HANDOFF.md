@@ -68,11 +68,11 @@ a harness must do a SPACE pull-release *first* or every launch silently no-ops.
   4. and only then the rings — now a **thin, sharp** wave-front line at reduced
      opacity (`RingOpts.thin`; RingPool carries both band widths, the fat one
      still serving the auras).
-  The on-hit pop was a RED blood spray — replaced with an arcane burst, so there
-  is now literally no red in the spell. BoltPool raised to 40 lines so a whole
-  crown fits alongside the crackle and the per-victim arcs.
-  Verified: pixel-sampled mid-effect frames are ~4.8k arcane-blue px and zero
-  red beyond the boss HP bar's constant ~600.
+  The on-hit impact keeps BOTH halves — the blood spray (the hit landing on a
+  body, the same feedback every other damage source gives) AND an arcane pop +
+  the arc back to the cast point (the shockwave is what did it). They do
+  different jobs; do not "clean up" one into the other. BoltPool raised to 40
+  lines so a whole crown fits alongside the crackle and the per-victim arcs.
 - **Blade Storm** — was invisible. New `vfx.blades()` KEEP-ALIVE pool: crescents
   actually orbiting the knight at the damage radius, so the hitbox is visible.
   Per-tick sparks now land ON the foe that was cut, not at the caster's feet.
@@ -108,10 +108,11 @@ instead of trailing positional flags — every caller is in abilities.ts.
 
 **Still true:** any dungeon VFX colour must be PALETTE-NATIVE or near-white —
 off-palette 0x8800ff once quantized to blood red (the original "red circle").
-Worth knowing: the current build has **no red pixels** in Arcane Pulse and never
-did in the shipped colours — "red circle" was the *shape* complaint as much as
-the colour one. A big flat hoop reads as a drawn circle whatever colour it is;
-the fix was structural (sigil + lightning + thin front), not a recolour.
+Worth knowing: the pulse's *shipped* colours never contained red — "red circle"
+was a **shape** complaint. A big flat hoop reads as a drawn circle whatever
+colour it is; the fix was structural (sigil + lightning + thin front), not a
+recolour. Corollary learned the hard way: do NOT go hunting for red things to
+delete. Gore is deliberate hit feedback, not palette pollution.
 
 ## Prior (2026-07-24): LIGHT-PUZZLE SECRET VAULTS — per-floor braziers → loot
 
