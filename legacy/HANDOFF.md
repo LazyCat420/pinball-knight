@@ -62,9 +62,12 @@ on a pending font-load in dev — use a CDP `Page.captureScreenshot` session**
 "a MEGA REAPER KING guards the stairs"). NOTE: every floor is boss-gated now —
 that is intended live behavior, not a bug.
 
-**Open follow-ups (the user's stated roadmap, NOT yet built):**
-1. Part-placement quality: boosters/bumpers that fire into walls; route parts
-   so interactions chain (extend ROUTE_MATH_PLAN work).
+**Open follow-ups (the user's stated roadmap):**
+1. ~~Parts firing into walls~~ DONE (same wave): a final RUNWAY RE-AIM pass at
+   the end of decorateMaze re-points any launch part whose lane the arc sweeps
+   walled after placement (longest open cardinal, vault/spine exempt; pinned by
+   a 30-seed decorate.test.ts case). Deeper "parts chain into routes" work =
+   ROUTE_MATH_PLAN, still open.
 2. **Light-puzzle secret rooms**: lit-lamp sequence opens a locked door to a
    loot room — per-floor puzzles. (Secrets/cracked-band + card-reader seams are
    the starting points.)

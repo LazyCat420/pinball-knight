@@ -687,3 +687,27 @@ describe("decorateMaze — prefab anchors always get a firing direction", () => 
     }
   });
 });
+
+describe("runway re-aim after arc sweeps", () => {
+  it("no launch part fires into a wall when any open lane exists", () => {
+    for (let seed = 40; seed < 70; seed++) {
+      const g = thickenWalls(generateMaze(10, 8, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 10);
+      const run = (i: number, j: number, di: number, dj: number): number => {
+        let n = 0;
+        while (n < 3 && at(g, i + di * (n + 1), j + dj * (n + 1)) === T_FLOOR) n++;
+        return n;
+      };
+      for (const p of plan.parts) {
+        if (p.vault || p.spine) continue;
+        if (!["ramp", "booster", "spring", "slingshot", "flipper"].includes(p.kind)) continue;
+        if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
+        const ahead = run(p.i, p.j, p.dirI, p.dirJ);
+        if (ahead >= 3) continue;
+        // Short lane is only allowed when NO cardinal has a full runway.
+        const best = Math.max(run(p.i, p.j, 1, 0), run(p.i, p.j, -1, 0), run(p.i, p.j, 0, 1), run(p.i, p.j, 0, -1));
+        expect(best).toBeLessThan(3);
+      }
+    }
+  });
+});

@@ -1817,6 +1817,31 @@ export function decorateMaze(
   for (const p of newParts) claim(p); // polishParts may have added plaza bumpers
   authorArcSweeps(g, start, occupied, rng);
 
+  // ── RUNWAY RE-AIM: the arc sweeps above can wall a launch part's lane after
+  // placement validated it. Final pass: any non-vault/non-spine launch part
+  // whose fire lane dropped below MIN_RUNWAY re-aims to its longest open
+  // cardinal (ties broken toward down-flow); if no direction has room it stays
+  // put — it was topology-validated at placement and only degrades to a bumper
+  // -feel, not a hard bug. ──
+  for (const p of parts) {
+    if (p.vault || p.spine || !LAUNCH_KINDS.has(p.kind)) continue;
+    if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
+    if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;
+    let bestRun = -1;
+    let bestD: [number, number] | null = null;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const run = launchRunway(g, p.i, p.j, di, dj);
+      if (run > bestRun) {
+        bestRun = run;
+        bestD = [di, dj];
+      }
+    }
+    if (bestD && bestRun >= MIN_RUNWAY) {
+      p.dirI = bestD[0];
+      p.dirJ = bestD[1];
+    }
+  }
+
   // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch
   // break-throughs, secrets) is final. Only reshapes existing walls — never
