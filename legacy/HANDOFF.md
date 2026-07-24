@@ -2,6 +2,40 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## ⚠️ THE "FLAKY TEST" IS FIXED — and the method matters more than the fix
+
+`roulette.test.ts > never needs the emergency correction` reddened the suite on
+~2% of runs and passed on every rerun. Root cause: `planSpin` hunts for a
+GENUINE trajectory landing on the already-drawn pocket by sweeping launch speeds
+under `SEED_TRIES` scatter seeds, falling back to a visible "correction" if all
+of them miss — on **unseeded** `Math.random`, so it is a dice roll.
+
+Measured over 30 000 spins: one sweep misses with **q ≈ 0.041**, and failures go
+as `q^SEED_TRIES`. At 3 → 2/30 000, which across the test's 300 spins is a ~2%
+chance of a red suite per run (matches the observed ~1-in-33). **SEED_TRIES is
+now 6** → 0/30 000 (~4e-9). Extra sweeps only run on the already-failing path,
+so it costs nothing. A `SEED_TRIES >= 6` guard test pins it: the 300-spin test
+can only catch rates near 1e-3 and would never have caught this.
+
+**Reusable method:** it would NOT reproduce idle (20/20 clean). It took a stress
+loop — full suite × N against 14 CPU burners
+(`scratchpad/stress.sh`) — to catch it, and a standalone Monte Carlo to SIZE the
+fix instead of guessing. Don't "fix" a flake you haven't measured. Any test that
+asserts *a probabilistic search always succeeds* has this shape; see
+`src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md` Track 0 for the two other candidates
+already spotted (`darts.test.ts` RTP Monte Carlo, `toucan-game.test.ts` global
+`Math.random` override).
+
+## 📋 NEXT WAVE PLANNED: src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md
+
+Maze/level-generation checklist (booster feedback loops, level sameness, density,
+plus the leftovers from the booster/FX wave). **Four premises of the incoming
+draft were wrong** and are corrected inline there — notably: prefab anchors don't
+need facing vectors (facing is assigned later from corridor topology), room
+archetypes are NOT dropped (`core.ts:1414`), room intent IS already enforced in
+`furnishRooms`, and the proposed runtime cycle-detector is 80% shipped as
+`notePocketBounce`. Read the corrections before costing that work.
+
 ## 🔥 NEWEST (2026-07-24): CURVED-WALL BOOSTERS + ability FX that match the ability
 
 Two asks, one wave. (1) The curved walls (arc sweeps) now wear **kicker rubber**

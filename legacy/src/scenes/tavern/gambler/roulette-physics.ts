@@ -115,8 +115,22 @@ const W0_MIN = 19;
 const W0_MAX = 24.5;
 /** Candidate launch speeds tried. Chaos means every pocket is reachable. */
 const W0_STEPS = 600;
-/** Distinct scatter seeds tried if a whole launch-speed sweep misses. */
-const SEED_TRIES = 3;
+/**
+ * Distinct scatter seeds tried if a whole launch-speed sweep misses.
+ *
+ * MEASURED (2026-07-24, 30 000 spins): one sweep misses with probability
+ * q ≈ 0.041, and the search only fails if EVERY seed's sweep misses — so the
+ * failure rate is q^SEED_TRIES. At 3 that is 6.7e-5, which sounds negligible
+ * and is not: the test drives 300 spins, so it reddened the suite on ~2% of
+ * runs (observed as a ~1-in-33 "flaky" failure that passed on every rerun, and
+ * cost a chunk of a session to track down). At 6 it is ~4e-9 — about one spin
+ * in 200 million, i.e. never, for a player or for CI.
+ *
+ * The cost is paid ONLY on the path that was already failing: a second sweep
+ * runs on ~4% of spins, a third on ~0.17%, a seventh essentially never. Raising
+ * this is close to free.
+ */
+export const SEED_TRIES = 6;
 
 /** Rotor launch speed window, rad/s. Negative: it counter-rotates. */
 const ROTOR_MIN = 1.15;
@@ -420,8 +434,9 @@ export function planSpin(target: number, rand: () => number = Math.random): Spin
   // Two free parameters, scanned in that order: the launch speed, and — if a
   // whole sweep of launch speeds somehow never reaches the target — the seed
   // for the scatter, which is the croupier's ball being a fractionally
-  // different ball. One seed alone left ~5% of spins unsolved; three has never
-  // failed across the 4,000 spins the test drives.
+  // different ball. One sweep misses ~4% of the time, so the seed retries are
+  // what actually make the search reliable; see SEED_TRIES for the measured
+  // numbers and why 3 was not enough.
   outer: for (let s = 0; s < SEED_TRIES; s++) {
     const seed = Math.floor(rand() * 0xffffffff);
     const start = Math.floor(rand() * W0_STEPS);

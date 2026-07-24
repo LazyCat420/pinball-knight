@@ -163,6 +163,7 @@ import {
   R_POCKET,
   W_CRIT,
   DT,
+  SEED_TRIES,
   type BallFrame,
 } from "./roulette-physics";
 
@@ -200,6 +201,20 @@ describe("the ball lands where the game already decided", () => {
       expect(last.radius).toBeCloseTo(R_POCKET, 6);
       expect(last.height).toBe(0);
     }
+  });
+
+  it("keeps enough seed retries that the search effectively never fails", () => {
+    // The guard on the test above. That test samples 300 spins, so it only
+    // catches a search failure rate around 1e-3 or worse — and the rate that
+    // actually bit us was 6.7e-5, which reddens the suite on ~2% of runs and
+    // looks exactly like an unreproducible flake.
+    //
+    // MEASURED 2026-07-24 over 30 000 spins: a single launch-speed sweep misses
+    // with q ≈ 0.041, and the search fails only when every seed's sweep misses,
+    // so the rate is q^SEED_TRIES. 3 → 6.7e-5 (2% of runs red, confirmed by
+    // re-measurement at 2/30 000). 6 → ~4e-9 (0/30 000). Pin the floor here
+    // rather than re-running a 100-second Monte Carlo in the suite.
+    expect(SEED_TRIES).toBeGreaterThanOrEqual(6);
   });
 
   it("never needs the emergency correction — the search finds a real trajectory", () => {
