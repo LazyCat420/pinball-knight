@@ -30,7 +30,7 @@
  *
  * DOM- and three-free: tested (prefabs.test.ts).
  */
-import { type Grid, type TilePos, T_FLOOR, T_WALL, at, setTile } from "./generator";
+import { type Grid, type TilePos, T_FLOOR, T_WALL, at, setTile, mulberry32 } from "./generator";
 import type { PrefabAnchor, PartSpotKind } from "./decorate";
 import type { EnemyKind } from "../state";
 
@@ -374,8 +374,40 @@ export const THEMES: FloorTheme[] = [
   },
 ];
 
-export function themeFor(level: number): FloorTheme {
-  return THEMES[(level - 1) % THEMES.length];
+/**
+ * Which theme SLOT a depth uses, as a per-run permutation.
+ *
+ * The plain `(level-1) % 4` meant floors 1, 5, 9, 13 were always the Crypt, in
+ * every run forever — the archetype cycles every 5 so the *pair* took 20 floors
+ * to repeat, but the theme itself was fully predictable from the depth. Here the
+ * four slots are shuffled per run AND per cycle-of-four, so the order differs
+ * between runs and between a run's first four floors and its next four, while
+ * still never repeating a theme inside any block of four.
+ *
+ * `runSeed 0` yields the identity order — the old behaviour — so a caller that
+ * has no run seed (tests, tools) sees exactly what it always did.
+ *
+ * IMPORTANT: core.ts's BIOMES are paired with THEMES by INDEX (crypt↔crypt,
+ * warren↔warren, …), so a floor's palette matches its furniture pool. Both must
+ * go through this one function or they drift apart.
+ */
+export function themeIndexFor(level: number, runSeed = 0): number {
+  const n = THEMES.length;
+  const l = Math.max(1, level);
+  const slot = (l - 1) % n;
+  if (!runSeed) return slot;
+  const cycle = Math.floor((l - 1) / n);
+  const rng = mulberry32((runSeed ^ ((cycle + 1) * 0x85ebca6b)) >>> 0);
+  const order = Array.from({ length: n }, (_, k) => k);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order[slot];
+}
+
+export function themeFor(level: number, runSeed = 0): FloorTheme {
+  return THEMES[themeIndexFor(level, runSeed)];
 }
 
 const ANCHOR_KINDS: Record<string, PrefabAnchor["kind"]> = {
@@ -465,7 +497,7 @@ function stampFrom(
   count: number,
   claimed: ClaimRect[],
   mortar: number,
-  focus: ReadonlyArray<readonly [number, number]>,
+  focus: ReadonlyArray<FocusCell>,
 ): StampResult {
   const cellsW = (g.w - 1) / 2;
   const cellsH = (g.h - 1) / 2;
@@ -480,9 +512,17 @@ function stampFrom(
   // times. Shape-level bagging means a floor can't repeat a room until it has
   // used every room in its theme.
   const bag = new ShuffleBag(shapes, rng);
+  // Distance to the nearest hot zone, scaled by that zone's PULL. A weak zone's
+  // distances are inflated, so candidates near it lose the "nearest focus" race
+  // to the dominant zone and the furniture piles up there instead. Two equally
+  // weighted zones gave every floor two matching blobs of activity; one loud
+  // half and one quiet half is the pacing this is for.
   const nearestFocus = (cx: number, cy: number, pw: number, ph: number): number => {
     let best = Infinity;
-    for (const [fx, fy] of focus) best = Math.min(best, Math.hypot(cx + pw / 2 - fx, cy + ph / 2 - fy));
+    for (const f of focus) {
+      const bias = f[2] ?? 1;
+      best = Math.min(best, Math.hypot(cx + pw / 2 - f[0], cy + ph / 2 - f[1]) * bias);
+    }
     return best;
   };
 
@@ -554,16 +594,33 @@ function stampFrom(
  * Pick this floor's HOT ZONES — the focal cells that stamp placement clusters
  * around. Two of them, kept apart so they don't collapse into one blob.
  */
-export function pickFocusCells(g: Grid, rng: () => number, n = 2): Array<readonly [number, number]> {
+/** Extra pull applied to every zone after the first. >1 = weaker: its distances
+ *  are inflated, so it loses candidates to the dominant zone. */
+const FOCUS_MIN_BIAS = 1.5;
+const FOCUS_MAX_BIAS = 2.5;
+
+/**
+ * The floor's hot zones: `[cellX, cellY, bias]`, kept at least 35% of the floor
+ * apart. The FIRST is dominant (bias 1); every later one is deliberately weaker
+ * (see FOCUS_*_BIAS), because equal zones produced two matching blobs of
+ * activity on every floor — symmetric, and so predictable that the density
+ * gradient stopped reading as pacing at all. One loud region and one quieter
+ * satellite is the shape we want: "there was a lot going on over there, and this
+ * side was quiet".
+ */
+export type FocusCell = readonly [number, number, number];
+
+export function pickFocusCells(g: Grid, rng: () => number, n = 2): FocusCell[] {
   const cellsW = (g.w - 1) / 2;
   const cellsH = (g.h - 1) / 2;
-  const out: Array<readonly [number, number]> = [];
+  const out: FocusCell[] = [];
   const minSep = Math.max(cellsW, cellsH) * 0.35;
   for (let attempt = 0; attempt < n * 12 && out.length < n; attempt++) {
     const cx = 1 + Math.floor(rng() * Math.max(1, cellsW - 2));
     const cy = 1 + Math.floor(rng() * Math.max(1, cellsH - 2));
-    if (out.some(([fx, fy]) => Math.hypot(fx - cx, fy - cy) < minSep)) continue;
-    out.push([cx, cy] as const);
+    if (out.some((f) => Math.hypot(f[0] - cx, f[1] - cy) < minSep)) continue;
+    const bias = out.length === 0 ? 1 : FOCUS_MIN_BIAS + rng() * (FOCUS_MAX_BIAS - FOCUS_MIN_BIAS);
+    out.push([cx, cy, bias] as const);
   }
   return out;
 }
@@ -604,7 +661,7 @@ export function stampPrefabs(
   count: number,
   theme: FloorTheme,
   claimed: ClaimRect[] = [],
-  focus: ReadonlyArray<readonly [number, number]> = [],
+  focus: ReadonlyArray<FocusCell> = [],
 ): StampResult {
   const byName = new Map(PREFABS.map((p) => [p.name, p]));
   const shapes: Prefab[][] = [];

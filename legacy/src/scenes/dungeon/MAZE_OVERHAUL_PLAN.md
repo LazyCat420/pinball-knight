@@ -113,31 +113,48 @@ wall bounces.
 - [ ] Optional polish: add a small angular jitter to the damped exit as well as
       the speed cut. A pure speed cut still leaves the *geometry* periodic.
 
-## Track B — Level variety
+## Track B — Level variety ✅ SHIPPED
 
-- [ ] **Windiness per archetype.** Add a `windiness: [min, max]` to
-      `FloorArchetype` and roll inside it, replacing the flat depth cycle.
-      Suggested: warrens 0.5–0.9, spine 0.85–1.0, greathall 0.2–0.5,
-      cavern 0.1–0.4, ringkeep 0.6–0.8. Zero new plumbing — windiness is
-      already threaded to `generateMaze`. Keep level 1 pinned near 1.0
-      (both the archetype cycle and `WINDINESS_CYCLE` deliberately open there).
-- [ ] **Per-run theme order.** `themeFor` is `(level-1) % 4`, so floors 1/5/9
-      are always Crypt. Shuffle the 4-theme order per run-seed, still
-      non-repeating within a cycle, so archetype and theme drift independently
-      *and* differ run to run. Check nothing else keys off theme index
-      (`BIOMES` in core.ts cycles every 4 — they must stay in step or both must
-      shuffle together).
+- [x] **Windiness per archetype.** `FloorArchetype.windiness: [min, max]`, rolled
+      per floor by `windinessFor(level, arch, rng)`, replacing the flat
+      `WINDINESS_CYCLE[(l-1) % 3]`. Ranges are chosen to agree with each macro
+      shape rather than fight it: spine 0.85–1.0 (branches stay dead-endy so the
+      highway keeps its monopoly on speed), greathall 0.2–0.5 (bushy rind around
+      the chamber), cavern 0.1–0.4 (short and branchy by nature), warrens
+      0.5–0.9, ringkeep 0.6–0.8. **Level 1 is pinned to 1.0** — the familiar
+      backtracker floor — for the same continuity reason the old cycle opened
+      there. Measured: a Cavern now draws **19 distinct windiness values over 20
+      floors**; before, every Cavern in the game was identical in texture.
+- [x] **Per-run theme order.** `themeIndexFor(level, runSeed)` shuffles the four
+      theme slots per run AND per cycle-of-four, so floors 1/5/9 are no longer
+      always the Crypt, while no theme repeats inside any block of four.
+      `runSeed 0` returns the identity order, i.e. exactly the old behaviour, so
+      seedless callers (tests, tools) are unaffected.
+      **The trap:** core.ts's `BIOMES` are paired with `THEMES` **by index** —
+      a floor's colour grade is supposed to match its furniture pool — so
+      `biomeFor` now reads the same `themeIndexFor` rather than its own modulo.
+      Shuffling one without the other would silently decouple palette from
+      content.
 
 ## Track C — Density and room intent
 
-- [ ] **Weighted hot zones.** `pickFocusCells` returns 2 unweighted zones, so
-      every floor gets two roughly equal blobs. Give each zone a weight (one
-      dominant, one minor) and bias `nearestFocus` by 1.5–2.5× for the weak one
-      → one loud half, one quiet half.
-- [ ] **Intent-aware prefab stamps.** Rooms are already intent-furnished; the
-      prefab pass is not. Feed a per-zone tag into `stampPrefabs` so a hot zone
-      overlapping a speedway room draws from ramp/slalom shapes and a vault zone
-      draws prize/trapdoor shapes.
+- [x] **Weighted hot zones.** `pickFocusCells` now returns `[cellX, cellY, bias]`
+      with the first zone dominant (bias 1) and each later one deliberately
+      weaker (1.5–2.5×, inflating its distances so it loses candidates in
+      `nearestFocus`). Two equal zones gave every floor two matching blobs of
+      activity — symmetric and predictable enough that the density gradient
+      stopped reading as pacing. Now: one loud region, one quieter satellite.
+- [ ] **Intent-aware prefab stamps.** BLOCKED ON ORDERING, and the blocker is
+      worth writing down: room *kinds* are assigned inside `furnishRooms`, which
+      runs in `decorateMaze` — but `stampPrefabs` runs BEFORE that, in
+      `startLevel`, on the raw pre-thicken grid. At stamp time the rooms exist
+      (`rawRooms`) but their archetypes do not. Doing this properly means
+      hoisting the kind assignment (a distance-from-start fraction plus the
+      doorstep and forced-vault rules) out of `furnishRooms` into something both
+      passes can call, then passing per-zone tags into `stampFrom`. Not hard,
+      but it is a refactor of a load-bearing function rather than the additive
+      change the draft implies — and rooms are ALREADY intent-furnished, so the
+      remaining win is only over the corridor stamps.
 
 ## Track E — Carried over from the boosters/FX wave
 
@@ -148,8 +165,11 @@ wall bounces.
       and pay 1g but never light. Wiring them in changes jackpot pacing.
 - [ ] Kickers only fire while riding momentum; bumpers fire from a cold walk.
       Intentional asymmetry — confirm.
-- [ ] **Magnet Aura + Time Crawl still use the FAT ring band** — the same "big
-      circle on the floor" read the Arcane Pulse rework just argued against.
-      Cheap to fix now that the thin-ring and sigil pools exist.
-- [ ] **Blade Storm colour mismatch** — HUD chip is blood red (`#d95763`), the
-      world blades render steel.
+- [x] **Magnet Aura + Time Crawl** moved off the FAT ring band onto thin
+      wave-front lines plus a sigil. Magnet's sigil counter-rotates against its
+      collapsing rings for the full 4s; Time Crawl's turns almost imperceptibly
+      (0.16 rad/s) for its 3s — the sigil's graduated rim ticks read as a CLOCK
+      FACE, which is the one shape that says "time" instead of "an area effect".
+- [x] **Blade Storm colour** unified to steel (`#c8ccd4`) across the ability
+      table, the Diablo HUD buff chip and the classic HUD buff strip — it was
+      blood red in the HUD while the world drew steel crescents.

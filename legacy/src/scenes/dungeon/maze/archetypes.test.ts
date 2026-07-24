@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, idx, T_FLOOR, T_WALL } from "./generator";
-import { ARCHETYPES, archetypeFor } from "./archetypes";
+import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
 import { bfsDistances } from "../entities/ai";
 
 /** Every floor tile reachable from the first walkable tile — the core invariant. */
@@ -261,5 +261,41 @@ describe("seeded generateMaze", () => {
       flatFar += f;
     }
     expect(nearTotal / farTotal).toBeGreaterThan(flatNear / flatFar);
+  });
+});
+
+describe("windinessFor", () => {
+  it("pins level 1 to the winding backtracker floor players know", () => {
+    expect(windinessFor(1, archetypeFor(1), mulberry32(1))).toBe(1);
+  });
+
+  it("rolls inside the archetype's own range on every deeper floor", () => {
+    for (const arch of ARCHETYPES) {
+      const [lo, hi] = arch.windiness;
+      expect(lo).toBeGreaterThanOrEqual(0);
+      expect(hi).toBeLessThanOrEqual(1);
+      expect(hi).toBeGreaterThan(lo); // a POINT value would be the old fixed cycle again
+      for (let seed = 0; seed < 40; seed++) {
+        const w = windinessFor(5, arch, mulberry32(seed));
+        expect(w, `${arch.id} seed ${seed}`).toBeGreaterThanOrEqual(lo);
+        expect(w).toBeLessThanOrEqual(hi);
+      }
+    }
+  });
+
+  it("gives two floors of the SAME archetype different corridor texture", () => {
+    // The whole point: a flat depth cycle made every Cavern identical in shape.
+    const arch = ARCHETYPES.find((a) => a.id === "cavern")!;
+    const a = windinessFor(9, arch, mulberry32(3));
+    const b = windinessFor(29, arch, mulberry32(17));
+    expect(Math.abs(a - b)).toBeGreaterThan(0.01);
+  });
+
+  it("keeps each archetype's texture in character with its macro shape", () => {
+    const by = (id: string) => ARCHETYPES.find((a) => a.id === id)!.windiness;
+    // A spine's branches must stay dead-endy or the highway loses its monopoly.
+    expect(by("spine")[0]).toBeGreaterThan(by("greathall")[1]);
+    // A cavern is short and branchy; a hall wants a bushy rind. Both low.
+    expect(by("cavern")[1]).toBeLessThan(by("warrens")[0]);
   });
 });

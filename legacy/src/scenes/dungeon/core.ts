@@ -54,8 +54,8 @@ import { computeArcCorners } from "./collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
-import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./maze/prefabs";
-import { archetypeFor } from "./maze/archetypes";
+import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
+import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
@@ -274,9 +274,14 @@ const BIOMES: Biome[] = [
   { name: "The Arcane Deep", flavour: "cold light · something old is awake", amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
 ];
 
-/** The biome for a given depth (cycles every BIOMES.length floors). */
+/**
+ * The biome for a given depth. Indexed through `themeIndexFor` — NOT a plain
+ * modulo — because BIOMES and THEMES are paired one-to-one by index, so a
+ * floor's colour grade matches the furniture pool it was dealt. The per-run
+ * shuffle lives in that one function; both sides must read it or they drift.
+ */
 function biomeFor(level: number): Biome {
-  return BIOMES[(level - 1) % BIOMES.length];
+  return BIOMES[themeIndexFor(level, state.runSeed)];
 }
 
 export function isDungeonGameActive(): boolean {
@@ -1177,7 +1182,7 @@ function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: number, lev
 
 /** Weighted-pick a themed kind from the hash, or null if the biome sets none. */
 function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
-  const theme = themeFor(level);
+  const theme = themeFor(level, state.runSeed);
   if (!theme.enemies || hash % 100 >= THEME_HORDE_BIAS) return null;
   const kinds = Object.keys(theme.enemies) as EnemyKind[];
   let total = 0;
@@ -1315,7 +1320,12 @@ function startLevel(level: number): void {
   // MODIFIER: rolled from this floor's own seed (not a cycle), so two runs at
   // the same depth differ. Scales budgets only — see maze/modifiers.ts.
   const modifier = rollModifier(level, rng);
-  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid * arch.braidMult, cfg.windiness, {
+  // WINDINESS is the archetype's texture knob now, rolled inside its own range
+  // rather than read off a flat depth cycle — two Caverns twenty floors apart
+  // used to share a corridor character exactly. cfg.windiness stays as the
+  // level-1 anchor and the fallback for callers that don't know the archetype.
+  const windiness = windinessFor(level, arch, rng);
+  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid * arch.braidMult, windiness, {
     seeds: arch.seeds(cfg.cellsW, cfg.cellsH, rng) ?? undefined,
     solidSeeds: arch.solid,
     braidGradient: arch.braidGradient,
@@ -1327,7 +1337,7 @@ function startLevel(level: number): void {
   // PREFAB STAMPS (Wave C): themed room/hallway shapes drawn from a seeded
   // shuffle bag — Slalom, Gauntlet, Oilworks, the Magician's Parlor… Carved
   // before the secret cracks so the cracks see the final wall set.
-  const theme = themeFor(level);
+  const theme = themeFor(level, state.runSeed);
   // The floor's ONE set piece goes down FIRST, with priority and a wide mortar:
   // the Tilt Table, the Pachinko Drop, the Observatory… Regular stamps then
   // fill in around it, clustered on this floor's hot zones so the level has

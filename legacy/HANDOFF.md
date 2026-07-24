@@ -57,6 +57,39 @@ Facings are decided from LOCAL corridor topology (`classify`) and re-aimed twice
 more afterwards, which is exactly why two individually-sane parts can end up
 duelling — and why this pass must stay last.
 
+## 🎲 TRACKS B + C SHIPPED: floors stop reading the same
+
+- **Windiness is per-ARCHETYPE now**, rolled inside a range
+  (`FloorArchetype.windiness` + `windinessFor`), replacing the flat
+  `WINDINESS_CYCLE[(l-1)%3]`. Ranges agree with each macro shape: spine 0.85-1.0
+  (branches stay dead-endy so the highway keeps its speed monopoly), greathall
+  0.2-0.5, cavern 0.1-0.4, warrens 0.5-0.9, ringkeep 0.6-0.8. **Level 1 stays
+  pinned at 1.0.** Measured: a Cavern now draws **19 distinct windiness values
+  across 20 floors** — before, every Cavern in the game had identical texture.
+- **Theme order is per-RUN and per-cycle** (`themeIndexFor(level, runSeed)`), so
+  floors 1/5/9 are no longer always the Crypt, while no theme repeats inside a
+  block of four. `runSeed 0` = the old identity order, so seedless callers are
+  unaffected. **TRAP:** `BIOMES` and `THEMES` are paired BY INDEX (a floor's
+  colour grade must match its furniture pool), so `biomeFor` reads the SAME
+  `themeIndexFor` — shuffle one without the other and palette silently decouples
+  from content.
+- **Hot zones are weighted**: `pickFocusCells` returns `[x, y, bias]`, first zone
+  dominant, later ones 1.5-2.5× weaker (inflated distances lose the
+  `nearestFocus` race). Two equal zones gave every floor two matching blobs.
+- **FX leftovers:** Magnet Aura + Time Crawl moved off the fat ring onto thin
+  fronts + a sigil. The magnet's glyph is **re-struck at the knight every beat**,
+  not once at the cast point — that aura MOVES WITH YOU, and a pinned glyph
+  detaches the moment you roll away. Time Crawl's is a short cast flourish for
+  the opposite reason: it slows the horde EVERYWHERE, so it has no centre to
+  mark; its ongoing read is the horde's smear ghosts. Blade Storm's colour is
+  now steel (`#c8ccd4`) in the ability table, the Diablo HUD chip AND the classic
+  HUD strip — it was blood red while the world drew steel crescents.
+
+**NOT visually verified:** the Time Crawl capture was blocked by a card-pickup
+modal. Its sigil uses the same pool as the pulse's and the magnet's (both
+screenshot-confirmed) and its smear ghosts are unit-tested, but nobody has seen
+the finished effect on screen.
+
 ## 📋 REMAINING WAVE: src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md
 
 Maze/level-generation checklist (booster feedback loops, level sameness, density,

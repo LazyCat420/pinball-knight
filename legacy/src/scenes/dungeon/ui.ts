@@ -440,7 +440,7 @@ export function updateHUD(el: HTMLDivElement): void {
   // active. The section is called the UNIFIED buff strip; the two HUDs should
   // not disagree about what is on you.
   if (state.slowT > 0) buffs.push(`<span style="color:#bfe8ff">⏳ TIME CRAWL ${Math.ceil(state.slowT)}s</span>`);
-  if (p && p.bladeStormT > 0) buffs.push(`<span style="color:#d95763">🌪️ BLADES ${Math.ceil(p.bladeStormT)}s</span>`);
+  if (p && p.bladeStormT > 0) buffs.push(`<span style="color:#c8ccd4">🌪️ BLADES ${Math.ceil(p.bladeStormT)}s</span>`);
   if (p && p.magnetAuraT > 0) buffs.push(`<span style="color:#6fd0e8">🧲 AURA ${Math.ceil(p.magnetAuraT)}s</span>`);
   // ONE LINE, clipped. The buffs are joined inline, and without `nowrap` a run
   // with five or more active (rage + haste + ball form + curve + boots is an

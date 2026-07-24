@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, T_FLOOR, T_WALL } from "./generator";
-import { PREFABS, LANDMARKS, THEMES, ShuffleBag, rotatePrefab, mirrorPrefab, variantsOf, stampPrefabs, stampLandmark, pickFocusCells, fullyReachable, themeFor } from "./prefabs";
+import { PREFABS, LANDMARKS, THEMES, ShuffleBag, rotatePrefab, mirrorPrefab, variantsOf, stampPrefabs, stampLandmark, pickFocusCells, fullyReachable, themeFor, themeIndexFor } from "./prefabs";
 
 describe("prefab stamps", () => {
   it("every stamp preserves full reachability (floor-only carving)", () => {
@@ -281,6 +281,63 @@ describe("stamp legend sanity", () => {
       if (before[k] !== T_WALL) {
         // floor can never revert to wall
         expect(g.t[k]).not.toBe(T_WALL);
+      }
+    }
+  });
+});
+
+/**
+ * PER-RUN THEME ORDER. `(level-1) % 4` made floors 1/5/9 the Crypt in every run
+ * forever. These pin the replacement: still a permutation (no repeats inside a
+ * block of four), but a different one per run and per cycle.
+ */
+describe("themeIndexFor", () => {
+  it("is the plain depth cycle when there is no run seed (the old behaviour)", () => {
+    for (let l = 1; l <= 12; l++) expect(themeIndexFor(l, 0)).toBe((l - 1) % THEMES.length);
+  });
+
+  it("never repeats a theme inside a block of four, for any run seed", () => {
+    for (const seed of [1, 7, 99, 12345, 0x7fffffff]) {
+      for (let block = 0; block < 5; block++) {
+        const seen = new Set<number>();
+        for (let k = 0; k < THEMES.length; k++) seen.add(themeIndexFor(block * THEMES.length + k + 1, seed));
+        expect(seen.size, `seed ${seed} block ${block}`).toBe(THEMES.length);
+      }
+    }
+  });
+
+  it("is stable for a run — the same depth always resolves to the same theme", () => {
+    for (let l = 1; l <= 20; l++) expect(themeIndexFor(l, 4242)).toBe(themeIndexFor(l, 4242));
+  });
+
+  it("actually differs between runs, and between cycles within a run", () => {
+    const runA = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 1, 11));
+    const runB = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 1, 22));
+    const laterCycle = Array.from({ length: 4 }, (_, k) => themeIndexFor(k + 5, 11));
+    expect(runA).not.toEqual(runB);
+    expect(runA).not.toEqual(laterCycle);
+  });
+});
+
+describe("pickFocusCells weighting", () => {
+  it("makes the first zone dominant and every later zone weaker", () => {
+    const g = generateMaze(24, 20, mulberry32(5));
+    const focus = pickFocusCells(g, mulberry32(9), 3);
+    expect(focus.length).toBeGreaterThan(1);
+    expect(focus[0][2]).toBe(1); // dominant
+    for (const f of focus.slice(1)) {
+      expect(f[2]).toBeGreaterThan(1); // inflated distances → loses candidates
+      expect(f[2]).toBeLessThanOrEqual(2.5);
+    }
+  });
+
+  it("still keeps the zones apart", () => {
+    const g = generateMaze(24, 20, mulberry32(5));
+    const focus = pickFocusCells(g, mulberry32(9), 3);
+    const minSep = Math.max((g.w - 1) / 2, (g.h - 1) / 2) * 0.35;
+    for (let a = 0; a < focus.length; a++) {
+      for (let b = a + 1; b < focus.length; b++) {
+        expect(Math.hypot(focus[a][0] - focus[b][0], focus[a][1] - focus[b][1])).toBeGreaterThanOrEqual(minSep);
       }
     }
   });

@@ -503,7 +503,7 @@ function activeBuffs(): BuffView[] {
   add(p.staticT, "static", "⚡", "#f0e05a", POTIONS.static.duration, `Static Charge · ${POTIONS.static.description}`);
   add(p.greedT, "greed", "💰", "#ffd98a", POTIONS.greed.duration, `Greed Draught · ${POTIONS.greed.description}`);
   add(state.slowT, "timecrawl", "⏳", "#bfe8ff", 3, "Time Crawl · slowed horde");
-  add(p.bladeStormT, "blades", "🌪️", "#d95763", 5, "Blade Storm · orbiting blades");
+  add(p.bladeStormT, "blades", "🌪️", "#c8ccd4", 5, "Blade Storm · orbiting blades");
   add(p.magnetAuraT, "aura", "🧲", "#6fd0e8", 4, "Magnet Aura · pulling loot");
   add(p.fireTrailT, "firetrail", "🔥", "#f0a63c", 0.9, "Fire Trail · burning wake");
   add(p.webbedT, "webbed", "🕸️", "#eef1f5", 3, "Webbed · slowed");

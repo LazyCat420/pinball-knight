@@ -41,6 +41,19 @@ export interface FloorArchetype {
   /** Braid gradient fed to generateMaze — loopy near spawn, tight near the stairs. */
   braidGradient: number;
   /**
+   * Growing-tree windiness RANGE [min, max], rolled per floor (see
+   * generateMaze): 1 = long winding backtracker corridors, 0 = bushy
+   * many-junction Prim's. This is the archetype's *texture* knob, and it is what
+   * stops floors of the same archetype reading identically — a depth-keyed
+   * cycle gave every Cavern the same corridor character forever.
+   *
+   * The ranges are chosen so the texture agrees with the macro shape rather than
+   * fighting it: a Spine wants dead-endy winding branches so the highway keeps
+   * its monopoly on speed; a Cavern is short and branchy by nature; a Great Hall
+   * wants a bushy maze filling the rind around the chamber.
+   */
+  windiness: readonly [number, number];
+  /**
    * Fill the seeded region solid rather than leaving the lattice's corner
    * pillars standing (MazeOpts.solidSeeds). On for the archetypes whose point
    * is OPEN AREA to carom around; a no-op for 1-cell-wide shapes like the
@@ -247,6 +260,8 @@ function cavernSeeds(cellsW: number, cellsH: number, rng: () => number): CellPos
 export const ARCHETYPES: FloorArchetype[] = [
   {
     id: "warrens",
+    // Mixed: junction-y passages AND long halls — the classic maze read.
+    windiness: [0.5, 0.9],
     solid: false,
     label: "Warrens",
     flavour: "close corridors · nowhere to build speed",
@@ -256,6 +271,7 @@ export const ARCHETYPES: FloorArchetype[] = [
   },
   {
     id: "spine",
+    windiness: [0.85, 1.0],
     solid: false,
     label: "The Spine",
     flavour: "one long road · everything else is a pocket",
@@ -266,6 +282,7 @@ export const ARCHETYPES: FloorArchetype[] = [
   },
   {
     id: "greathall",
+    windiness: [0.2, 0.5],
     solid: true,
     label: "The Great Hall",
     flavour: "one vast chamber · room to really move",
@@ -275,6 +292,7 @@ export const ARCHETYPES: FloorArchetype[] = [
   },
   {
     id: "cavern",
+    windiness: [0.1, 0.4],
     solid: true,
     label: "The Cavern",
     flavour: "no straight lines · the rock decides",
@@ -285,6 +303,7 @@ export const ARCHETYPES: FloorArchetype[] = [
   },
   {
     id: "ringkeep",
+    windiness: [0.6, 0.8],
     solid: true,
     label: "The Ring Keep",
     flavour: "gallery within gallery · the way in is inward",
@@ -302,4 +321,18 @@ export const ARCHETYPES: FloorArchetype[] = [
  */
 export function archetypeFor(level: number): FloorArchetype {
   return ARCHETYPES[(Math.max(1, level) - 1) % ARCHETYPES.length];
+}
+
+/**
+ * This floor's growing-tree windiness: a roll inside the archetype's range.
+ *
+ * Level 1 is pinned to 1.0 — the winding backtracker floor players already know
+ * — for the same continuity reason the old WINDINESS_CYCLE opened there. Every
+ * deeper floor rolls, so two Caverns twenty floors apart no longer share a
+ * corridor texture the way a fixed depth-cycle forced them to.
+ */
+export function windinessFor(level: number, arch: FloorArchetype, rng: () => number): number {
+  if (level <= 1) return 1;
+  const [lo, hi] = arch.windiness;
+  return lo + rng() * (hi - lo);
 }

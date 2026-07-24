@@ -74,7 +74,10 @@ export const ABILITIES: Record<AbilityId, AbilityDef> = {
   arcanepulse: { id: "arcanepulse", label: "Arcane Pulse", icon: "✷", cost: 35, cooldown: 5, color: "#b06fe8", detail: "360° arcane damage burst" },
   magnetaura: { id: "magnetaura", label: "Magnet Aura", icon: "🧲", cost: 25, cooldown: 7, color: "#6fd0e8", detail: "Pull nearby loot for 4s" },
   timecrawl: { id: "timecrawl", label: "Time Crawl", icon: "⏳", cost: 50, cooldown: 11, color: "#bfe8ff", detail: "Slow the horde for 3s" },
-  bladestorm: { id: "bladestorm", label: "Blade Storm", icon: "🌪️", cost: 40, cooldown: 9, color: "#d95763", detail: "Orbiting blades for 5s" },
+  // Colour is STEEL, matching the blades actually drawn in the world (vfx.blades
+  // + the cast ring). It read blood-red in the HUD while the orbiting crescents
+  // rendered steel — the slot glow is supposed to be the ability's tell.
+  bladestorm: { id: "bladestorm", label: "Blade Storm", icon: "🌪️", cost: 40, cooldown: 9, color: "#c8ccd4", detail: "Orbiting blades for 5s" },
   slickfield: { id: "slickfield", label: "Slick Field", icon: "🛢️", cost: 25, cooldown: 8, color: "#8a5fd0", detail: "Spill oil — foes skid, the ball glides, fire ignites it" },
 };
 
@@ -295,8 +298,17 @@ export function castAbility(slot: 0 | 1): boolean {
       // accelerate into the knight (RingPool's inward mode) instead of the
       // outward wave every other cast uses. The aura's ongoing suction is drawn
       // in tickAbilities — the cast is just the field snapping on.
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.5, { inward: true });
-      state.vfx?.ring(p.x, p.z, 0x2e6d8f, MAGNET_FIELD_R * 0.7, 0.6, { delay: 0.12, inward: true });
+      // Sharp collapsing LINES, not fat hoops — same lesson as the pulse: a
+      // wide annulus scaled to a 3-tile radius reads as "a circle on the floor"
+      // rather than as a field closing in.
+      //
+      // The glyph is re-struck on every beat AT THE KNIGHT (see tickAbilities),
+      // never once at the cast point: this aura MOVES WITH YOU — items are
+      // pulled toward wherever you are — so a sigil pinned to the ground would
+      // visibly detach the moment you rolled away, which is exactly the
+      // "animation doesn't match what's happening" problem this wave is about.
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.5, { inward: true, thin: true });
+      state.vfx?.ring(p.x, p.z, 0x2e6d8f, MAGNET_FIELD_R * 0.7, 0.6, { delay: 0.12, inward: true, thin: true });
       state.vfx?.sparks(p.x, 0.6, p.z, 0, 0, 10);
       sfxSpin();
       break;
@@ -306,8 +318,16 @@ export function castAbility(slot: 0 | 1): boolean {
       // A cold front rolling out, then the world holding its breath: one wide
       // pale ring, one slow echo, and a low frost burst. The horde's own
       // smeared afterimages (tickAbilities) are what actually sell the SLOW.
-      state.vfx?.ring(p.x, p.z, 0xbfe8ff, TIMECRAWL_FIELD_R, 0.55);
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R * 1.15, 1.1, { delay: 0.1 });
+      // The sigil's graduated rim ticks read as a CLOCK FACE, the one shape
+      // that says "time" rather than "an area effect". It turns almost
+      // imperceptibly (0.16 rad/s) — the dial has stalled, which is the whole
+      // fantasy. Deliberately a short CAST flourish, not a 3s field marker:
+      // Time Crawl slows the horde EVERYWHERE, so it has no centre to mark, and
+      // a long-lived glyph would just sit on the floor detaching from the
+      // knight. The ongoing effect is carried by the horde's smear ghosts below.
+      state.vfx?.sigil(p.x, p.z, 0xbfe8ff, TIMECRAWL_FIELD_R, 1.2, 0.16);
+      state.vfx?.ring(p.x, p.z, 0xbfe8ff, TIMECRAWL_FIELD_R, 0.55, { thin: true });
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R * 1.15, 1.1, { delay: 0.1, thin: true, opacity: 0.7 });
       state.vfx?.burst(p.x, 0.35, p.z, 0xbfe8ff, 20, 3);
       state.flashT = Math.max(state.flashT, 0.12); // the instant everything stalls
       sfxFreeze();
@@ -317,7 +337,7 @@ export function castAbility(slot: 0 | 1): boolean {
       p.bladeStormTickT = 0;
       bladeAngle = 0;
       // The blades come OUT: a fast steel ring snapping to its orbit radius.
-      state.vfx?.ring(p.x, p.z, 0xc8ccd4, BLADESTORM_RADIUS, 0.28);
+      state.vfx?.ring(p.x, p.z, 0xc8ccd4, BLADESTORM_RADIUS, 0.28, { thin: true });
       state.vfx?.burst(p.x, 0.6, p.z, 0xeef1f5, 12, 4);
       sfxSwing();
       break;
@@ -415,7 +435,7 @@ export function tickAbilities(dt: number): void {
       }
       // A slow shallow ripple off the knight keeps the FIELD readable when the
       // room happens to be empty.
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R, 0.9);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, TIMECRAWL_FIELD_R, 0.9, { thin: true, opacity: 0.55 });
     }
     if (state.slowT === 0) state.hudDirty = true;
   }
@@ -429,7 +449,11 @@ export function tickAbilities(dt: number): void {
     magnetPulseT -= dt;
     if (magnetPulseT <= 0) {
       magnetPulseT = MAGNET_PULSE_EVERY;
-      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.45, { inward: true });
+      // Glyph + collapsing line, both at the knight's LIVE position, with the
+      // glyph outliving its beat so successive strikes overlap into one field
+      // that travels with you rather than a strobe.
+      state.vfx?.sigil(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, MAGNET_PULSE_EVERY * 1.35, -1.1);
+      state.vfx?.ring(p.x, p.z, 0x6fd0e8, MAGNET_FIELD_R, 0.45, { inward: true, thin: true });
       let leashed = 0;
       for (const it of state.groundItems) {
         if (leashed >= MAGNET_LEASH_MAX) break;

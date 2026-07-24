@@ -557,7 +557,9 @@ class RingPool {
  * The sigil punches in fast (over-scaled, then settling), holds while the wave
  * travels, and fades as it over-expands — never a static decal.
  */
-const SIGIL_COUNT = 4;
+// Headroom for overlap: a pulse strikes two at once, the magnet re-strikes one
+// per beat while its aura runs, and a cast flourish can land on top of both.
+const SIGIL_COUNT = 8;
 
 function sigilTexture(): THREE.CanvasTexture {
   const s = 256;
