@@ -25,7 +25,7 @@
  * still reached it.
  */
 import { state, activeWeapon } from "./state";
-import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, breakChance, upgradeDamageMult, upgradeDurabilityMult, UPGRADE_DURABILITY_STEP, WEAPON_MAX_CARD_SLOTS, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, breakChance, upgradeDamageMult, upgradeDurabilityMult, UPGRADE_DURABILITY_STEP, WEAPON_MAX_CARD_SLOTS, salvageValue, insuranceCost, insuredCards, INSURANCE_MAX_TIER, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { sfxBreak } from "./audio";
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear } from "./render/knight-look";
@@ -38,7 +38,10 @@ import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel,
 
 // ── Prices ── widened spread so the shop has genuinely expensive pulls, not
 // just cheap chips: a mythic costs a whole run's savings.
-const PRICE_CARD: Record<CardRarity, number> = { common: 20, rare: 60, epic: 140, legendary: 320, mythic: 600 };
+// Cards are MONSTER TROPHIES. The shelf exists so a run that rolled badly is not
+// dead, not as a way to buy the build you want — so the prices are deliberately
+// steep and the stock is 3 random cards you cannot choose (rollBarOffers).
+const PRICE_CARD: Record<CardRarity, number> = { common: 55, rare: 170, epic: 420, legendary: 900, mythic: 1800 };
 const PRICE_REROLL_BAR = 15;
 const PRICE_REPAIR_WEAPON = 30;
 const PRICE_ADD_SLOT = 60;
@@ -57,6 +60,12 @@ const BELT_MAX = 4;
 /** Empty Flask catalyst — cheap off the shelf (RO buys Empty Bottles from an
  * NPC); also craftable from Glass Shards via the `flask` recipe. */
 const PRICE_FLASK = 8;
+/** The reagent the card forge consumes — a RARE drop (reaper/necromancer/boss),
+ *  so forging a rare card costs you a rare monster. */
+const FORGE_CATALYST = "grimbone";
+/** Rarity ladder, low->high. Insurance saves the RAREST cards first, so it needs
+ *  an ordering; `indexOf` on this is that ordering. */
+const CARD_RANK: CardRarity[] = ["common", "rare", "epic", "legendary", "mythic"];
 
 /**
  * One-shot flourishes queued by successful counter actions, consumed by the
@@ -122,6 +131,29 @@ let forgePick: number[] = []; // stash indices chosen for a forge
 let upgradeArmed: number | null = null;
 
 /**
+ * 🧿 INSURANCE row — pay in advance so a shatter does not take your trophies.
+ *
+ * This is what stops upgrade risk from being a pure grind. The weapon still
+ * dies (protecting that would delete the risk), but the CARDS — the things you
+ * actually hunted a specific monster for — can be bought back out of the fire
+ * before you roll. Sacrifice gold now for a softer landing, or keep the gold
+ * and gamble the trophies.
+ */
+function insureRow(w: WeaponState): string {
+  const cards = w.cards?.length ?? 0;
+  if (cards === 0) return "";
+  const tier = Math.min(w.insured ?? 0, INSURANCE_MAX_TIER);
+  const pips = Array.from({ length: INSURANCE_MAX_TIER }, (_, i) => (i < tier ? "🧿" : "·")).join("");
+  if (tier >= INSURANCE_MAX_TIER || tier >= cards) {
+    return `<div style="color:#8fc46b;font-size:9px;margin-top:4px">${pips} INSURED — ${Math.min(tier, cards)} card(s) survive a shatter</div>`;
+  }
+  return `<div style="margin-top:4px">
+    <span style="color:#9a8f77;font-size:9px">${pips} insured: ${tier}/${Math.min(INSURANCE_MAX_TIER, cards)} cards survive a shatter</span>
+    ${btn("insure", `🧿 Insure ${tier + 1} card${tier + 1 > 1 ? "s" : ""}`, insuranceCost(tier, w.rarity ?? "common"))}
+  </div>`;
+}
+
+/**
  * ⚒️ UPGRADE panel — the anti-hoard gamble, stated plainly.
  *
  * The whole point of upgrade risk is that the player CHOOSES it, so the exact
@@ -143,13 +175,20 @@ function upgradePanel(): string {
     ? `<span style="color:#8fc46b">SAFE — no break chance</span>`
     : `<span style="color:${pct >= 36 ? "#d95763" : "#f0a63c"}">${pct}% chance to SHATTER the weapon</span>`;
   const cards = w.cards?.length ?? 0;
+  const tier = w.insured ?? 0;
+  const atRisk = Math.max(0, cards - Math.min(tier, INSURANCE_MAX_TIER));
   return `<div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:8px">
     <div style="color:#c9c1ad;font-size:11px">UPGRADE — ${WEAPONS[w.id].icon} ${WEAPONS[w.id].label} <b style="color:${GOLD}">+${lvl}</b></div>
     <div style="color:#9a8f77;font-size:9px;margin:2px 0">
       next: damage ×${upgradeDamageMult(lvl + 1).toFixed(2)} · durability ×${upgradeDurabilityMult(lvl + 1).toFixed(2)} · ${riskTxt}
     </div>
-    ${armed ? `<div style="color:#d95763;font-size:10px;margin:3px 0">⚠ CONFIRM — a failure destroys the weapon${cards > 0 ? ` and its ${cards} socketed card(s)` : ""}.</div>` : ""}
+    ${armed ? `<div style="color:#d95763;font-size:10px;margin:3px 0">⚠ CONFIRM — a failure destroys the weapon${atRisk > 0 ? ` and ${atRisk} of its ${cards} card(s)` : cards > 0 ? " but your insured cards survive" : ""}.</div>` : ""}
     ${btn("upgrade", armed ? `⚠️ CONFIRM +${lvl + 1}` : `⚒️ Upgrade to +${lvl + 1}`, cost)}
+    ${insureRow(w)}
+    <div style="color:#9a8f77;font-size:9px;margin-top:6px">
+      Retiring it pays <b style="color:${GOLD}">${salvageValue(w)}g</b> and returns every card. A SHATTER pays nothing.
+    </div>
+    ${btn("salvage", "♻️ Sacrifice weapon", undefined)}
   </div>`;
 }
 let barOffers: CardId[] = [];
@@ -339,7 +378,7 @@ function weaponsBody(): string {
     ${upgradePanel()}
     <div style="border-top:1px solid #4a3d28;padding-top:8px;color:#c9c1ad;font-size:11px">FORGE — pick 2 commons → 1 rare</div>
     <div style="display:flex;flex-wrap:wrap;margin:4px 0">${forgeList}</div>
-    <div>${btn("forge", "⚒️ Forge", undefined, forgePick.length !== 2)}</div>
+    <div>${btn("forge", `⚒️ Forge (💀 ${state.reagents[FORGE_CATALYST] ?? 0})`, undefined, forgePick.length !== 2 || (state.reagents[FORGE_CATALYST] ?? 0) < 1)}</div>
     <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:8px;color:#c9c1ad;font-size:11px">REROLL a card (same rarity, new roll) — click one:</div>
     <div style="display:flex;flex-wrap:wrap;margin:4px 0">${rerollList}</div>`;
 }
@@ -799,13 +838,23 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (!pay(PRICE_UPGRADE_BASE + lvl * 25)) { flash("not enough gold"); return; }
     upgradeArmed = null;
     if (Math.random() < risk) {
-      // DESTROYED — the weapon and every card socketed in it are gone. This is
-      // the anti-hoard mechanic doing its job: power you cannot lose is power
-      // that ends the run.
-      const lost = w.cards?.length ?? 0;
+      // DESTROYED. The weapon is always gone — that is the anti-hoard mechanic
+      // doing its job, and insuring the weapon itself would delete the risk.
+      // Socketed cards are gone TOO, except the ones insurance bought back out
+      // of the fire (rarest first — the player paid to protect what matters).
+      const held = w.cards ?? [];
+      const saved = insuredCards(held, w.insured ?? 0, (id) => CARD_RANK.indexOf(CARDS[id]?.rarity));
+      const lost = held.length - saved.length;
       state.weaponSlots[activeWeaponSlotIndex()] = null;
+      for (const id of saved) if (state.cardStash.length < STASH_MAX) state.cardStash.push(id);
       sfxBreak();
-      flash(lost > 0 ? `💥 THE BLADE SHATTERS — ${lost} card(s) lost` : "💥 THE BLADE SHATTERS");
+      flash(
+        saved.length > 0
+          ? `💥 THE BLADE SHATTERS — 🧿 ${saved.length} card(s) saved${lost > 0 ? `, ${lost} lost` : ""}`
+          : lost > 0
+            ? `💥 THE BLADE SHATTERS — ${lost} card(s) lost`
+            : "💥 THE BLADE SHATTERS",
+      );
       render();
       return;
     }
@@ -820,6 +869,40 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     }
     pendingFx.push("slot");
     flash(`⚒️ +${w.upgrade} — damage ×${upgradeDamageMult(w.upgrade).toFixed(2)}`);
+    render();
+    return;
+  }
+
+  if (act === "insure") {
+    const w = state.weaponSlots[activeWeaponSlotIndex()];
+    if (!w) { flash("no weapon equipped"); return; }
+    const cards = w.cards?.length ?? 0;
+    if (cards === 0) { flash("nothing socketed to insure"); return; }
+    const tier = Math.min(w.insured ?? 0, INSURANCE_MAX_TIER);
+    if (tier >= INSURANCE_MAX_TIER || tier >= cards) { flash("already fully insured"); return; }
+    if (!pay(insuranceCost(tier, w.rarity ?? "common"))) { flash("not enough gold"); return; }
+    w.insured = tier + 1;
+    pendingFx.push("slot");
+    flash(`🧿 insured — ${w.insured} card(s) survive a shatter`);
+    render();
+    return;
+  }
+
+  if (act === "salvage") {
+    const w = state.weaponSlots[activeWeaponSlotIndex()];
+    if (!w) { flash("no weapon equipped"); return; }
+    // A DELIBERATE sacrifice pays out and returns every card — unlike a shatter,
+    // which pays nothing. That asymmetry is the whole point: retiring a weapon
+    // on your terms is a decision, losing one to a bad roll is a consequence.
+    const gold = salvageValue(w);
+    const back = w.cards ?? [];
+    let kept = 0;
+    for (const id of back) if (state.cardStash.length < STASH_MAX) { state.cardStash.push(id); kept++; }
+    state.weaponSlots[activeWeaponSlotIndex()] = null;
+    state.goldRun += gold;
+    addGold(gold, "dungeon-game");
+    pendingFx.push("forge");
+    flash(`♻️ sacrificed for ${gold}g${kept > 0 ? ` · ${kept} card(s) returned` : ""}${kept < back.length ? " · stash full!" : ""}`);
     render();
     return;
   }
@@ -846,6 +929,13 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     if (forgePick.length !== 2) return;
     // both must still be commons
     if (!forgePick.every((i) => CARDS[state.cardStash[i]]?.rarity === "common")) { forgePick = []; render(); return; }
+    // A GRIM BONE gates the forge. It used to be unlimited and free, which made
+    // rare cards manufacturable from the commons any floor hands out — the exact
+    // "you can craft cards" hole the design is trying to avoid. Now the forge
+    // still works, but it costs a rare monster material, so even crafting is
+    // downstream of hunting.
+    if ((state.reagents[FORGE_CATALYST] ?? 0) < 1) { flash("the forge needs a 💀 Grim Bone"); return; }
+    state.reagents[FORGE_CATALYST] = (state.reagents[FORGE_CATALYST] ?? 0) - 1;
     // remove the two (descending index so splices don't shift), add a rare
     const rare = cardsOfRarity("rare");
     const newCard = rare[Math.floor(Math.random() * rare.length)];

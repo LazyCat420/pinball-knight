@@ -182,6 +182,9 @@ export interface WeaponState {
   /** Weaponsmith UPGRADE level. Each level is stronger AND riskier — see
    *  `breakChance`. Absent = 0, never upgraded. */
   upgrade?: number;
+  /** Paid CARD INSURANCE tier (0-2): how many socketed cards survive a shatter.
+   *  Bought BEFORE the gamble, so it is a decision rather than a consolation. */
+  insured?: number;
 }
 
 export function freshWeapon(id: WeaponId, rarity: ItemRarity = "common"): WeaponState {
@@ -217,6 +220,78 @@ export const UPGRADE_RISK_CAP = 0.6;
 export const UPGRADE_DAMAGE_STEP = 0.12;
 /** Max-durability gained per upgrade level. */
 export const UPGRADE_DURABILITY_STEP = 0.08;
+
+/**
+ * SALVAGE — break a weapon down at the Weaponsmith for GOLD.
+ *
+ * The deliberate asymmetry that makes the loop work:
+ *   · SACRIFICE (your choice)  -> gold back, cards returned. A real decision.
+ *   · SHATTER  (a failed roll) -> nothing. The weapon AND its cards are gone.
+ *
+ * Losing everything to a gamble you chose is what keeps upgrading tense; getting
+ * something back for a weapon you deliberately retired is what stops spare
+ * weapons being litter. If both paid out, there'd be no reason to ever stop
+ * upgrading.
+ *
+ * Value scales with rarity (what it was) and upgrade level (what you put in),
+ * but always returns LESS than the upgrades cost — salvage is a consolation, not
+ * an income stream, or the optimal play becomes upgrade-then-salvage forever.
+ */
+export const SALVAGE_BY_RARITY: Record<ItemRarity, number> = {
+  common: 15,
+  rare: 40,
+  epic: 90,
+  legendary: 200,
+};
+/** Gold per upgrade level recovered. Well under PRICE_UPGRADE_BASE (45) + the
+ *  per-level climb, so pumping a weapon to salvage it is always a LOSS. */
+export const SALVAGE_PER_UPGRADE = 12;
+
+export function salvageValue(w: { rarity?: ItemRarity; upgrade?: number }): number {
+  return SALVAGE_BY_RARITY[w.rarity ?? "common"] + Math.max(0, w.upgrade ?? 0) * SALVAGE_PER_UPGRADE;
+}
+
+// ── CARD INSURANCE ──────────────────────────────────────────────
+//
+// The answer to "upgrade risk is just a grind". Before you gamble, you can PAY
+// to protect socketed cards against a shatter. That turns a coin-flip into a
+// decision made in advance: spend now for a softer landing, or pocket the gold
+// and risk the trophies.
+//
+// Insurance covers CARDS ONLY. The weapon still dies — protecting that would
+// remove the risk entirely and with it the whole anti-hoard point.
+
+/** How many socketed cards each insurance tier saves from a shatter. */
+export const INSURANCE_MAX_TIER = 2;
+/** Gold per tier, multiplied by the rarity of the weapon being protected — a
+ *  legendary's sockets are worth more, so insuring them costs more. */
+export const INSURANCE_BASE_COST = 55;
+export const INSURANCE_RARITY_MULT: Record<ItemRarity, number> = {
+  common: 1,
+  rare: 1.4,
+  epic: 2,
+  legendary: 3,
+};
+
+/** Price to raise a weapon's insurance from `tier` to `tier + 1`. */
+export function insuranceCost(tier: number, rarity: ItemRarity = "common"): number {
+  const next = Math.max(0, tier) + 1;
+  return Math.round(INSURANCE_BASE_COST * next * INSURANCE_RARITY_MULT[rarity]);
+}
+
+/**
+ * Which socketed cards survive a shatter. Insurance saves the RAREST first —
+ * the player paid to protect what matters, and making them guess which chip the
+ * game considered valuable would be a bad surprise at the worst moment.
+ *
+ * `rarityRank` is injected so this stays free of the cards module (items.ts is
+ * imported by cards.ts, so importing back would be a cycle).
+ */
+export function insuredCards(cards: string[], tier: number, rarityRank: (id: string) => number): string[] {
+  const n = Math.min(Math.max(0, Math.floor(tier)), INSURANCE_MAX_TIER);
+  if (n <= 0 || cards.length === 0) return [];
+  return [...cards].sort((a, b) => rarityRank(b) - rarityRank(a)).slice(0, n);
+}
 
 /**
  * Chance that upgrading FROM `level` destroys the item. Pure and tested: the
