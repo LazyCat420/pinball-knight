@@ -29,7 +29,7 @@
  */
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "./tile-shape";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 
 /** Fillet radii tried largest-first at every qualifying corner. */
 export const FILLET_RADII: readonly number[] = [3, 2];
@@ -330,7 +330,7 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
 
   // Collective strand guard for the wall-adding family.
   if (concavePlans.length > 0) {
-    const d = bfsDistances(g, start.i, start.j);
+    const d = bfsDistancesOwned(g, start.i, start.j); // held while scanning
     let stranded = false;
     for (let j = 0; j < g.h && !stranded; j++) {
       for (let i = 0; i < g.w; i++) {
@@ -410,7 +410,7 @@ export function stampOrbitIsland(g: Grid, start: TilePos, occupied: Occupied, rn
   g.arcs!.push({ cx: site.ci, cz: site.cj, r: R, a0: 0, span: Math.PI * 2, kicks });
 
   // Strand guard: the open ring should keep everything connected, but verify.
-  const d = bfsDistances(g, start.i, start.j);
+  const d = bfsDistancesOwned(g, start.i, start.j); // held while scanning
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
       if (isWalkable(g, i, j) && d[idx(g, i, j)] < 0) {

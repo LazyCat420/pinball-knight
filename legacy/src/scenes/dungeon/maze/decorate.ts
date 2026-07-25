@@ -14,7 +14,7 @@ import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CR
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { createSpacingGrid } from "./spacing-grid";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 import { PICKUP_WEAPONS } from "../items";
 
 export interface Torch extends TilePos {
@@ -369,7 +369,7 @@ export function pickEndpoints(g: Grid, rng: () => number): Endpoints | null {
   // Stairs: a random pick from the far band, not the strict argmax — so two
   // floors that happen to share a start corner still put the exit in
   // different places.
-  const dist = bfsDistances(g, start.i, start.j);
+  const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
   let maxDist = 0;
   for (const p of floors) maxDist = Math.max(maxDist, dist[idx(g, p.i, p.j)]);
   const cutoff = Math.max(1, maxDist * FAR_BAND);
@@ -441,7 +441,7 @@ const FAR_BAND = 0.82;
  * widened highway to somewhere that isn't the exit.
  */
 export function widenMainArtery(g: Grid, ends: Endpoints): void {
-  const dist = bfsDistances(g, ends.start.i, ends.start.j);
+  const dist = bfsDistancesOwned(g, ends.start.i, ends.start.j); // held across later BFS calls
   if (dist[idx(g, ends.stairs.i, ends.stairs.j)] <= 6) return; // too small to bother
   widenArtery(g, ends.start, ends.stairs, dist);
 }
@@ -1325,7 +1325,7 @@ export function decorateMaze(
       }
     }
   }
-  const dist = bfsDistances(g, start.i, start.j);
+  const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
 
   const floors: TilePos[] = [];
   let maxDist = 0;

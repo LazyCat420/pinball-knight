@@ -62,7 +62,7 @@ import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type SpawnLayout } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
-import { bfsDistances } from "./entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
@@ -3104,7 +3104,7 @@ function simulate(dt: number): void {
   if (state.flowTimer <= 0) {
     state.flowTimer = FLOW_INTERVAL;
     const pt = worldToTile(g, p.x, p.z);
-    state.flowField = bfsDistances(g, pt.i, pt.j);
+    state.flowField = bfsDistancesOwned(g, pt.i, pt.j); // RETAINED on state across frames
   }
 
   // ── Buff timers tick down; HUD refreshes each whole second so the

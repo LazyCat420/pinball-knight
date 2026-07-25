@@ -39,7 +39,7 @@ import {
 } from "../constants";
 import { tileCenter, worldToTile, isWalkable, idx } from "../maze/generator";
 import { moveCircle } from "../collision";
-import { bfsDistances, flowStep, flowAway } from "./ai";
+import { bfsDistances, bfsDistancesOwned, flowStep, flowAway } from "./ai";
 import { createStaticSprite } from "../render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
@@ -213,7 +213,7 @@ function frogConsult(frog: Npc): void {
   frog.cooldownT = FROG_COOLDOWN;
   sfxRibbit();
   // BFS from the STAIRS; walking downhill from the player IS the route there.
-  const field = bfsDistances(g, state.stairs.i, state.stairs.j);
+  const field = bfsDistancesOwned(g, state.stairs.i, state.stairs.j); // held while stepping
   let cur = worldToTile(g, p.x, p.z);
   const trail: Array<{ x: number; z: number }> = [];
   for (let n = 0; n < FROG_TRAIL_TILES; n++) {
