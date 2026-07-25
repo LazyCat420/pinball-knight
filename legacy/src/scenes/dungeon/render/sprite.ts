@@ -115,7 +115,7 @@ function blobMaterial(): THREE.MeshBasicMaterial {
  * standing ON the ground rather than floating in front of it.
  */
 let sharedBlobTexture: THREE.CanvasTexture | null = null;
-function blobTexture(): THREE.CanvasTexture {
+export function blobTexture(): THREE.CanvasTexture {
   if (sharedBlobTexture) return sharedBlobTexture;
   const s = 64;
   const canvas = document.createElement("canvas");
@@ -140,6 +140,12 @@ function blobTexture(): THREE.CanvasTexture {
  * rotation is a CONSTANT, so a single baked quaternion counter-rotates the
  * blob to lie flat on the floor — no per-frame work, and it follows the actor
  * automatically as a child.
+ */
+/**
+ * The per-actor blob mesh. Still used when no pool is installed — the intro
+ * scene and unit tests build sprites with no dungeon scene around them, and a
+ * pool is a floor-scoped resource. `installBlobPool` swaps in the instanced
+ * path for the dungeon, where the actor count actually matters.
  */
 function makeContactBlob(parent: THREE.Mesh): THREE.Mesh {
   const blob = new THREE.Mesh(blobGeometry(), blobMaterial());
