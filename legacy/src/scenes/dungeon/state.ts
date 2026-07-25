@@ -289,6 +289,16 @@ export interface Zombie extends Actor {
   maxHp?: number;
   /** True for the stairs-guarding mini-boss: health bar + reward on death. */
   boss?: boolean;
+  /**
+   * Collision radius override, when this actor's sprite was scaled away from
+   * its kind's default. Absent = use the STATS table (the normal case).
+   *
+   * Set for the Reaper King, whose mesh is scaled 2.17x: without it the
+   * collider stayed at the brute's 0.42 while the visible body was ~0.91 wide,
+   * so the king walked half-buried into 1-tile corridors. Anything that scales
+   * a sprite mesh must set this too, or it will drift the same way.
+   */
+  bodyR?: number;
   mode: ZombieMode;
   speed: number;
   windupT: number;

@@ -259,7 +259,13 @@ export function updateZombies(dt: number): void {
     // Per-family combat feel (bite range, windup, cooldown, body size, whether
     // it attacks at range) comes from the STATS table.
     const st = STATS[z.kind];
-    const { contactRange, windup, bodyR } = st;
+    const { contactRange, windup } = st;
+    // BODY RADIUS is per-KIND by default, but an actor whose sprite was scaled
+    // up needs a collider that matches or it walks its visible body into walls.
+    // The Reaper King was the case that exposed this: boss.ts scales its mesh
+    // by 2.17x, so a 0.42 collider let a ~0.91-wide body sit half-buried in
+    // 1-tile corridors. `bodyR` on the zombie overrides the table.
+    const bodyR = z.bodyR ?? st.bodyR;
     const attackCooldown = st.cooldown;
     const ranged = st.ranged;
 

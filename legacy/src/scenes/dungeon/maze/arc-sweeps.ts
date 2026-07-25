@@ -31,7 +31,30 @@ import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWal
 import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "./tile-shape";
 import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 
-/** Fillet radii tried largest-first at every qualifying corner. */
+/**
+ * Fillet radii tried largest-first at every qualifying corner.
+ *
+ * DELIBERATELY UNCHANGED at [3, 2], because measurement killed the obvious
+ * idea. A radius-R fillet needs an R×R block where every tile passes the
+ * structural tests, so the cost grows quadratically: censused over 40 real
+ * floors, radius 2 fitted 3673 times, radius 3 only 161, radius 4 just 4 and
+ * radius 5 twice. Bigger fillets are not the lever for longer arcs — they are
+ * mostly wasted attempts, and adding radius 4 also perturbs which corners get
+ * carved at all (it broke a pinned convex-site test by fitting where nothing
+ * fitted before). Changing this rerolls floor layouts for no gain.
+ *
+ * Merging adjacent quarter-turns into one long sweep was tried too, and it does
+ * not work either — for a structural reason worth recording so nobody rebuilds
+ * it. Every fillet is centred at C = P − (cx·R, cz·R) for its OWN corner P, so
+ * two fillets at different corners are on different circles by construction.
+ * Censused on a real floor: 96 arcs, 96 distinct circles, zero sharing a
+ * centre. There is nothing to merge.
+ *
+ * Longer banks therefore need a different AUTHORING primitive — an arc placed
+ * along a corridor run rather than filleted into a corner — which is a new
+ * feature, not a tuning change. Until then a rail's length is one quarter-turn,
+ * and RAIL_GRACE is what makes that long enough to hold.
+ */
 export const FILLET_RADII: readonly number[] = [3, 2];
 /** Feature cap per floor (draw-call + Int16 arcIdx sanity; generous). */
 export const MAX_SWEEPS_PER_FLOOR = 96;
@@ -44,15 +67,18 @@ export const ORBIT_RING = 1.6;
 // physics/feel numbers the kick itself uses). A band is an angular sub-span of
 // the sweep it rides, so it costs no extra geometry decisions: same circle,
 // same collider, just a stretch that THROWS instead of banking.
-/** Chance a qualifying fillet sweep is dressed with rubber. */
-export const KICK_CHANCE = 0.45;
+/** Chance a qualifying fillet sweep is dressed with rubber. Cut from 0.45 with
+ *  the rail rebalance: rubber on the OUTSIDE bulges was reading as "the
+ *  boosters are on the wrong curves", because it out-numbered the inside
+ *  lanes and gold shouts louder than arcane blue. It is now the accent. */
+export const KICK_CHANCE = 0.22;
 /** Fraction of a fillet's span the band covers, centred on the arc. */
 export const KICK_BAND_FRAC = 0.62;
 /** Bands strung evenly around an orbit island, and each one's width (rad). */
 export const KICK_ISLAND_BANDS = 3;
 export const KICK_ISLAND_SPAN = 0.62;
 /** Hard cap per floor — a machine, not a trampoline. */
-export const KICK_MAX_PER_FLOOR = 10;
+export const KICK_MAX_PER_FLOOR = 6;
 /** Only sweeps with at least this much arc are worth a band (rad). */
 export const KICK_MIN_SPAN = 0.9;
 
@@ -63,12 +89,21 @@ export const KICK_MIN_SPAN = 0.9;
 // it — exactly the line a booster lane should reward. A convex sweep is an
 // outside corner you glance off, which is what rubber is for. Concave sweeps
 // previously wore nothing at all, so this dresses a face that was plain stone.
-/** Chance a qualifying concave sweep is authored as a booster lane. */
-export const LANE_CHANCE = 0.55;
-/** Fraction of the sweep's span the strip covers, centred on the arc. */
-export const LANE_BAND_FRAC = 0.78;
-/** Hard cap per floor — a corner to take fast, not a conveyor belt. */
-export const LANE_MAX_PER_FLOOR = 6;
+// REBALANCED after the playtest report: the boosters read as being on the
+// OUTSIDE curves, because rubber (convex, 45% chance, cap 10) was far more
+// common than lanes (concave, 55%, cap 6) and gold reads louder than blue. The
+// geometry was right; the emphasis was backwards. Inside curves are now the
+// PRIMARY boost surface — that is the racing line, and it is where a rail can
+// be held.
+/** Chance a qualifying concave sweep is dressed as a rail/lane. Near-certain:
+ *  an undressed inside curve is a wasted corner. */
+export const LANE_CHANCE = 0.92;
+/** Fraction of the sweep's span the strip covers. Nearly the whole arc — a rail
+ *  you can only hold across the middle third would fight the grace window. */
+export const LANE_BAND_FRAC = 0.94;
+/** Hard cap per floor. Raised well past rubber's 10: inside curves are the
+ *  headline mechanic now, not a garnish. */
+export const LANE_MAX_PER_FLOOR = 16;
 /** Only sweeps with at least this much arc are worth a lane (rad). */
 export const LANE_MIN_SPAN = 0.9;
 
@@ -348,12 +383,6 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
   return count;
 }
 
-/**
- * Stamp ONE round orbit island into a wide-open floor disc: a full-circle
- * convex ArcFeature the ball can ride around, with a clear ring lane.
- * Wall-adding → BFS strand guard with full revert. Returns the island centre
- * (grid lattice coords) or null if no site qualified.
- */
 export function stampOrbitIsland(g: Grid, start: TilePos, occupied: Occupied, rng: () => number): { ci: number; cj: number } | null {
   ensureArcs(g);
   const R = ORBIT_RADIUS;

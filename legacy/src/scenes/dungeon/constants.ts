@@ -839,6 +839,52 @@ export const ARC_LANE_GOLD = 2;
 export const ARC_LANE_FLASH = 0.34;
 /** How far the strip stands proud of the collider face (world units). */
 export const ARC_LANE_THICK = 0.05;
+
+// ── BANKED RAILS ── the inside-curve ride (entities/rail.ts)
+//
+// The playtest ask, in the player's own words: "like a NASCAR driver scraping
+// the sidewall to get faster speed... Hot Wheels mixed with pinball mixed with
+// Sonic". That is not the one-shot lane boost above, and it is not rubber. It
+// is a SUSTAINED state: hold yourself into the banked inside wall and keep
+// accelerating for as long as you can stay on it.
+//
+// Three rules define the feel, and all three were the player's explicit call:
+//
+//   1. It goes on the INSIDE of the curve (concave sweeps). Standing inside the
+//      circle with the wall banking around you is the racing line; the outside
+//      of a bulge is just a corner you glance off.
+//   2. You EARN it. Contact alone is not enough — you must steer INTO the wall
+//      to hold the rail, and you drift off if you stop. A rail that grabbed you
+//      automatically would be a conveyor belt, not a skill.
+//   3. It EXCEEDS the normal speed cap while held, and decays back afterwards.
+//      Without this a long rail hits PINBALL_MAX_SPEED almost immediately and
+//      stops feeling like acceleration — the whole Sonic payoff is the overspeed
+//      you carry out of the loop.
+/** Accel while held, u/s². Compounds over a long arc — a big sweep is worth it. */
+export const RAIL_ACCEL = 15;
+/** Minimum speed to catch a rail at all. Below this you just slide along stone. */
+export const RAIL_MIN_SPEED = 5;
+/**
+ * How hard you must be steering into the wall to hold on: the dot of your input
+ * against the inward normal. ~0.35 is a lean, not a pixel-perfect press — the
+ * skill should be reading the curve, not fighting the stick.
+ */
+export const RAIL_HOLD_DOT = 0.35;
+/** Grace after breaking the hold before the rail drops you (s). Forgives a
+ *  momentary wobble mid-corner without forgiving letting go. */
+export const RAIL_GRACE = 0.16;
+/** Ceiling while railing, as a multiple of PINBALL_MAX_SPEED. This is the
+ *  over-cap the player asked for — earned speed a normal bounce cannot reach. */
+export const RAIL_OVERSPEED = 1.6;
+/** Decay back toward the normal cap once you leave, u/s². Slow enough that the
+ *  exit is a payoff you carry down the next corridor. */
+export const RAIL_DECAY = 9;
+/** Contact band: how far off the exact collider face still counts as railing. */
+export const RAIL_STICK = 0.34;
+/** Sparks per second while railing — the scrape. */
+export const RAIL_SPARK_HZ = 26;
+/** Gold per second while held. Rewards the long ride, not the touch. */
+export const RAIL_GOLD_HZ = 6;
 // ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
 export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
 export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled
