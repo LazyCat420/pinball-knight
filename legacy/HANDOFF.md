@@ -4,8 +4,55 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 ## ⚙️ STEEL PINBALL + SKILL-TREE FIX + AIM INDICATOR (2026-07-24, this session)
 
-Deployed **`main@1f75dae`** → synology, live on :5174 (HTTP 200 verified).
-1157 tests / 100 files pass · 0 dungeon type errors · `next build` clean.
+Deployed **`main@a1b0f6b`** → synology, live on :5174 (HTTP 200 verified).
+1188 tests / 103 files pass · 0 dungeon type errors · `next build` clean.
+
+### 0. CORRECTION — steel is POTION-ONLY now (was wrongly the default)
+
+My first cut made the chrome sphere the visual AND physics for **every**
+momentum ride, so the knight never tumbled again and the 🪩 Ball Form potion
+had no identity — it was already the default. Fixed:
+
+- **`ball`** = the spinning tucked knight (restored verbatim). The ordinary
+  overcharge / parts / bounce ride, handling exactly as it did before this wave.
+- **`steelball`** = a NEW clip, drawn only while `ironT > 0`. The steel weight
+  is gated on the same flag (`steelBall()` in marble.ts).
+- A marble MATERIAL still overrides steel wholesale.
+
+⚠️ **Adding a clip touches THREE exhaustive tables** — `ClipName` (cel-painter),
+`clipNames` (sprite.ts) and the animator's `FPS` + `LOOPS` records. `tsc` caught
+the last two; it will catch you too, but only if you run it.
+
+**Shinier, as asked:** the body gradient uses HARD stops (doubled at .34/.36 and
+.52/.55) rather than a soft ramp — polish is about CONTRAST, chrome jumps from
+blown-out sky to near-black horizon over a few pixels where satin blends. Plus a
+zero-falloff specular core, wide low bloom, secondary catchlight and a reflected
+streak. **The floor bounce-light had to come DOWN** (0.42 → 0.17) and the
+underside kept cold: at full strength it flooded the lower half and the ball read
+as **brass**, not steel.
+
+### 0b. THE GROOVE — the trail the heavy ball engraves
+
+A ball that heavy doesn't glide over stone, it **engraves** it. Each stamp is a
+real `floor-fx` entry, **not a decal** — which is exactly what makes it
+interactive rather than an indent:
+
+- **Enemies that stumble into a rut TRIP** — the water-slick `slipT` channel at a
+  fraction of its drift (you catch a foot in a groove, you don't skate along it).
+- **A cruising ball that finds an old cut gets RAILED along it** — your own trail
+  becomes track you can ride. Gated on speed: a screaming ball jumps the cut, a
+  cruising one drops in.
+
+Stamps are spaced by **distance, not frames** (a per-frame stamp carpets the
+floor at 144fps — pinned by a regression test), and the trail memory resets in
+`clearFloorFx` so floor 2 inherits no seam. Constants under the `GROOVE` block in
+constants.ts; `carveGroove` is called from the ball branch of `updatePinball`.
+
+**Both looks were verified by rendering to PNG and LOOKING** — the groove's first
+cut read as a string of dark beads (opaque discs) and its second as a scalloped
+caterpillar (stroked lips chaining across overlapping stamps). It is now a soft
+overlapping cut with an **additive** lip that accumulates into one smooth
+highlight down the length of the rut. Neither problem was visible in the code.
 
 ### 1. The skill tree was unusable — FIXED
 
@@ -118,9 +165,14 @@ how you can tell why the ball stopped responding.
 All of the above is pinned by tests, and the ball art was eyeballed as a PNG, but
 **none of it has been PLAYED**:
 - **Steel tuning** — seven constants, sensible ratios but unplayed. All in
-  `constants.ts` under the `STEEL: the BASE ball form is a solid ball bearing`
-  block. Floaty → raise `STEEL_FRICTION_MULT`; sluggish to turn → raise
-  `STEEL_STEER_MULT`.
+  `constants.ts` under the `STEEL` block. Floaty → raise `STEEL_FRICTION_MULT`;
+  sluggish to turn → raise `STEEL_STEER_MULT`.
+- **Groove tuning** — nine constants under the `GROOVE` block. The two most
+  likely to want a hand: `GROOVE_LIFE` (26s — how long the floor stays scarred)
+  and `GROOVE_RAIL_PULL` (3.4 — how hard an old rut grabs a passing ball). If
+  ruts feel like they fight you, drop the pull or the `GROOVE_RAIL_MAX_SPEED`
+  window. Whether a floor gets visually noisy after a long Ball Form is
+  genuinely unknown until someone plays it.
 - **`.reachable` colour** in the skill menu (`#5c6f4e` border) is a guess.
 - **Aim indicator feel** — arrow size, the 0.85–1.6 length ramp, whether the bend
   wedge reads at speed or just adds clutter. Constants at the top of
