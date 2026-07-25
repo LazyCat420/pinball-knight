@@ -14,6 +14,7 @@ import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CR
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { createSpacingGrid } from "./spacing-grid";
+import { authorArteryBanks } from "./artery-banks";
 import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 import { PICKUP_WEAPONS } from "../items";
 
@@ -1344,11 +1345,34 @@ export function decorateMaze(
   const stairs: TilePos = extras.endpoints?.stairs ?? farthest;
   setTile(g, stairs.i, stairs.j, T_STAIRS);
 
-  // THE SPINE — the ordered start→stairs artery path (already widened into a
-  // 3-wide highway by widenMainArtery in core). The connected booster route is
-  // laid down it (layStationSpine); rooms it crosses keep a clear lane so the
-  // route runs THROUGH them. The single "way through the floor".
-  const spine = traceArtery(g, start, stairs, dist);
+  // ── ARTERY BANKS + THE SPINE, in that order and for a reason ────────────
+  //
+  // A bank converts floor to wall to form the OUTER shell of a turn, and the
+  // spine walks straight through every bend a bank wants — at ridden radius 5
+  // the two corridor tiles nearest the corner sit at d=5.00 and d=5.75, both
+  // inside the bank's band. So the two cannot be fenced apart: excluding spine
+  // tiles rejects every bank (measured 0/floor), and banking after the route is
+  // traced re-derives the route through a different corner, leaving the pads
+  // already laid pointing backward (decorate.test.ts catches exactly that).
+  //
+  // The resolution is ORDERING, not exclusion. Bank the grid FIRST, then trace.
+  // The route is then computed on the banked grid and follows the banks by
+  // construction — and layStationSpine's bend handling already wants this: it
+  // drops a DEFLECTOR at a clean corner "to bank incoming→outgoing with speed
+  // intact", which is the square-tile version of the very thing a bank builds.
+  // Route and bank were never in conflict; they were just being built in the
+  // wrong order.
+  //
+  // The provisional trace is only used to FIND the bends. It is discarded.
+  {
+    const probe = traceArtery(g, start, stairs, dist);
+    if (probe.length >= 8) authorArteryBanks(g, probe, start, () => false);
+  }
+  // Re-derive distances on the banked grid — the banks moved walls, so the old
+  // field is stale, and a stale field would trace a path through a tile that is
+  // now solid.
+  const bankedDist = bfsDistancesOwned(g, start.i, start.j);
+  const spine = traceArtery(g, start, stairs, bankedDist);
   const spineSet = new Set(spine.map((p) => idx(g, p.i, p.j)));
   const onSpine = (i: number, j: number): boolean => spineSet.has(idx(g, i, j));
 
@@ -1983,6 +2007,7 @@ export function decorateMaze(
   // single-tile pass only decorates the corners the sweeps didn't claim. ──
   const newParts = parts.filter((p) => !occupiedKeys.has(p.j * g.w + p.i));
   for (const p of newParts) claim(p); // polishParts may have added plaza bumpers
+
   authorArcSweeps(g, start, occupied, rng);
 
   // ── RUNWAY RE-AIM: the arc sweeps above can wall a launch part's lane after
