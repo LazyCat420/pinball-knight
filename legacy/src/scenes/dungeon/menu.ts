@@ -31,15 +31,17 @@ import { setSfxMuted } from "./audio";
 import { loadBestDepth } from "./best-depth";
 import { SKILLS, SKILL_IDS, SKILL_BRANCHES, canLearn, xpForLevel, type SkillBranch } from "./skills";
 import { REAGENTS, REAGENT_IDS } from "./reagents";
+import { buildBestiary, bestiaryProgress } from "./bestiary";
 import { spendSkillPoint, unlockedAbilities, invalidateSkillAgg } from "./skill-runtime";
 import { LEGACY_PERKS, PERK_IDS, perkRank, addPerkRank } from "./legacy";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 
-export type MenuTab = "equipment" | "cards" | "skills" | "stats" | "settings";
+export type MenuTab = "equipment" | "cards" | "skills" | "bestiary" | "stats" | "settings";
 const TABS: Array<{ id: MenuTab; label: string; icon: string }> = [
   { id: "equipment", label: "EQUIPMENT", icon: "🗡️" },
   { id: "cards", label: "CARDS", icon: "🃏" },
   { id: "skills", label: "SKILLS", icon: "✨" },
+  { id: "bestiary", label: "BESTIARY", icon: "📖" },
   { id: "stats", label: "STATS", icon: "📜" },
   { id: "settings", label: "SETTINGS", icon: "⚙️" },
 ];
@@ -265,6 +267,73 @@ function skillsBody(): string {
     <div class="gmenu-h">ACTIVE ABILITIES — assign to Q / E</div>${rows}`;
 }
 
+/**
+ * BESTIARY tab — what each monster is made of, and which cards are its essence.
+ *
+ * Everything here comes out of `buildBestiary()`, which derives from ENEMY_DROPS
+ * / CardDef.source / ZOMBIE_TYPES. Nothing about loot is written twice.
+ *
+ * An unfought monster shows its name and blurb but MASKS its drops behind `???`.
+ * Handing over the full table on floor 1 would make the screen a wiki; making
+ * you earn each row is what makes it a bestiary.
+ */
+function bestiaryBody(): string {
+  const entries = buildBestiary(state.killsByKind);
+  const p = bestiaryProgress(state.killsByKind);
+  const HIDDEN = `<span style="color:#6c5a3e;font-size:11px">??? — slay one to learn what it carries</span>`;
+
+  const rowsFor = (e: ReturnType<typeof buildBestiary>[number]): string => {
+    if (!e.seen) return HIDDEN;
+    const drops = e.drops.length
+      ? e.drops
+          .map(
+            (d) =>
+              `<span title="${REAGENTS[d.id].description}" style="color:${d.color};font-size:11px;white-space:nowrap">${d.icon} ${d.label} <span style="color:#6c5a3e">${Math.round(d.chance * 100)}%</span></span>`,
+          )
+          .join("")
+      : `<span style="color:#6c5a3e;font-size:11px">carries no materials</span>`;
+    const cards = e.cards.length
+      ? e.cards
+          .map(
+            (c) =>
+              `<span title="${c.description}" style="color:${c.hex};font-size:11px;white-space:nowrap">${c.icon} ${c.label}${c.grantsAbility ? " ⚡" : ""}</span>`,
+          )
+          .join("")
+      : `<span style="color:#6c5a3e;font-size:11px">no card of its own</span>`;
+    // Sub-type rows (zombies only) reveal one at a time, same rule as the kinds.
+    const subs = e.subTypes.length
+      ? `<div style="display:flex;flex-direction:column;gap:2px;margin-top:4px;padding-left:8px;border-left:1px solid #4a3d28">` +
+        e.subTypes
+          .map((s) =>
+            s.seen
+              ? `<span style="font-size:11px;color:#c9c1ad;white-space:nowrap"><b style="color:#e8dcc0">${s.label}</b> <span style="color:#9a8f77">${s.hp} hp${s.notes.length ? " · " + s.notes.join(" · ") : ""}</span> <span style="color:#6c5a3e">×${s.kills}</span></span>`
+              : `<span style="font-size:11px;color:#6c5a3e">${s.label} — not yet met</span>`,
+          )
+          .join("") +
+        `</div>`
+      : "";
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px">${drops}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">${cards}</div>${subs}`;
+  };
+
+  const body = entries
+    .map(
+      (e) => `<div style="padding:6px 0;border-top:1px solid #33291a">
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <b style="color:${e.seen ? "#e8dcc0" : "#6c5a3e"};font-size:12px">${e.icon} ${e.label}</b>
+        <span style="color:#9a8f77;font-size:10px;flex:1">${e.blurb}</span>
+        <span style="color:#6c5a3e;font-size:10px">${e.seen ? `×${e.kills}` : "unmet"}</span>
+      </div>
+      ${rowsFor(e)}
+    </div>`,
+    )
+    .join("");
+
+  return `<div class="gmenu-h" style="color:${GOLD}">BESTIARY — ${p.seen}/${p.total} monsters met</div>
+    <div style="color:#9a8f77;font-size:10px;margin-bottom:2px">A monster's materials brew at the Tavern Alchemist; its card is its power, socketed into a weapon. ⚡ marks a card that grants an ability.</div>
+    ${body}`;
+}
+
 function statsBody(): string {
   const runS = state.runStartMs > 0 ? Math.max(0, (performance.now() - state.runStartMs) / 1000 - state.pausedRunS) : 0;
   const mm = Math.floor(runS / 60);
@@ -331,6 +400,7 @@ const TAB_BODY: Record<MenuTab, () => string> = {
   equipment: equipmentBody,
   cards: cardsBody,
   skills: skillsBody,
+  bestiary: bestiaryBody,
   stats: statsBody,
   settings: settingsBody,
 };

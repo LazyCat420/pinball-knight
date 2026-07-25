@@ -7,7 +7,8 @@
  * playerDamage and the movement code read it every hit/frame, and rebuilding
  * a Record fold there would be waste.
  */
-import { state } from "./state";
+import { state, activeWeapon } from "./state";
+import { aggregateCards } from "./cards";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { SKILLS, aggregateSkills, canLearn, grantXp, xpForFloorClear, XP_KILL, XP_KILL_BOSS, type SkillAggregate, type SkillId } from "./skills";
 import { legacyBaseModifiers } from "./legacy";
@@ -37,9 +38,62 @@ export function playerManaMax(): number {
   return MANA_MAX + skillAgg().manaMaxFlat;
 }
 
-/** Abilities usable in the Q/E slots: the two defaults + tree unlocks. */
+/**
+ * Abilities usable in the Q/E slots: the two defaults, the skill-tree unlocks,
+ * and any SKILL CARD socketed into the weapon currently in HAND (cards.ts
+ * grantsAbility).
+ *
+ * This stays THE one funnel for "what can I cast" — the card grants merge here
+ * rather than being looked up again at the cast site, so there is exactly one
+ * answer and the HUD, the menu and castAbility can never disagree.
+ *
+ * Held-weapon scope is the design: swapping weapons swaps your ability loadout,
+ * which is what makes the second weapon slot a real decision. It is also why
+ * `syncAbilitySlots` below has to run whenever the held weapon changes.
+ */
 export function unlockedAbilities(): AbilityId[] {
-  return [...state.unlockedAbilities, ...skillAgg().unlocked.filter((a) => !state.unlockedAbilities.includes(a))];
+  const out = [...state.unlockedAbilities];
+  for (const a of skillAgg().unlocked) if (!out.includes(a)) out.push(a);
+  for (const a of heldWeaponCards().unlocked) if (!out.includes(a)) out.push(a);
+  return out;
+}
+
+/** The card aggregate of the weapon in HAND (empty when bare-fisted). */
+function heldWeaponCards(): ReturnType<typeof aggregateCards> {
+  return aggregateCards(activeWeapon()?.cards);
+}
+
+/**
+ * Ability MANA cost multiplier from socketed skill cards. Read at the cast site
+ * so a weapon swap re-prices instantly.
+ */
+export function abilityCostMult(): number {
+  return heldWeaponCards().abilityCostMult;
+}
+
+/**
+ * Drop any Q/E binding whose ability is no longer available, and clear its live
+ * cooldown.
+ *
+ * Called after ANYTHING that can change the held weapon — swap, pickup, a weapon
+ * breaking at 0 durability. Without it a card-granted ability stays bound to Q
+ * after the weapon carrying it leaves your hand, and casting it would be free
+ * power from a weapon you are not holding.
+ *
+ * Returns true if a slot actually changed, so the caller can flag the HUD dirty.
+ */
+export function syncAbilitySlots(): boolean {
+  const ok = unlockedAbilities();
+  let changed = false;
+  for (const slot of [0, 1] as const) {
+    const id = state.abilitySlots[slot];
+    if (id && !ok.includes(id)) {
+      state.abilitySlots[slot] = null;
+      delete state.abilityCd[id];
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 /** Level-up fanfare is core's business (toast + sting); wired at launch. */

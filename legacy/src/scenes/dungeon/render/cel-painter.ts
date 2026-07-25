@@ -1172,8 +1172,17 @@ export interface ZVariant {
   rag: number;
   /** 0..3 — how much extra caked blood/gore to splatter on. */
   gore: number;
-  /** Which arm is a stump (null = both intact). Reads as battle-worn. */
-  stump: "L" | "R" | null;
+  /**
+   * Which ARM is a stump (null = both intact). Reads as battle-worn. "both" is
+   * the FLAILER sub-type's silhouette — it bites because it cannot swing.
+   */
+  stump: "L" | "R" | "both" | null;
+  /**
+   * Which LEG is gone (null = both intact). Drives the zombie sub-type
+   * silhouette (zombie-types.ts): a HOBBLER limps on one leg and a CRAWLER has
+   * lost both, and neither stat story reads unless the art agrees with it.
+   */
+  legStump: "L" | "R" | "both" | null;
   /** A soiled bandage wrap somewhere, adds silhouette noise. */
   bandage: boolean;
   /**
@@ -1211,11 +1220,19 @@ function vrand(seed: number, step: number): number {
  * and the hue second, so two zombies in a horde read apart at a glance.
  */
 export const ZOMBIE_VARIANTS: ZVariant[] = [
-  { skin: 7, rag: 26, gore: 1, stump: null, bandage: false, spur: "R", bone: "ribs", tatter: 22, seed: 1 },
-  { skin: 8, rag: 27, gore: 2, stump: "L", bandage: false, spur: "R", bone: "skull", tatter: 0, seed: 2 },
-  { skin: 6, rag: 2, gore: 3, stump: null, bandage: true, spur: "L", bone: "spine", tatter: 30, seed: 3 },
-  { skin: 9, rag: 28, gore: 0, stump: "R", bandage: false, spur: "L", bone: "ribs", tatter: 14, seed: 4 },
-  { skin: 7, rag: 29, gore: 2, stump: null, bandage: true, spur: null, bone: "skull", tatter: 34, seed: 5 },
+  { skin: 7, rag: 26, gore: 1, stump: null, legStump: null, bandage: false, spur: "R", bone: "ribs", tatter: 22, seed: 1 },
+  { skin: 8, rag: 27, gore: 2, stump: "L", legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 0, seed: 2 },
+  { skin: 6, rag: 2, gore: 3, stump: null, legStump: null, bandage: true, spur: "L", bone: "spine", tatter: 30, seed: 3 },
+  { skin: 9, rag: 28, gore: 0, stump: "R", legStump: null, bandage: false, spur: "L", bone: "ribs", tatter: 14, seed: 4 },
+  { skin: 7, rag: 29, gore: 2, stump: null, legStump: null, bandage: true, spur: null, bone: "skull", tatter: 34, seed: 5 },
+  // ── SUB-TYPE silhouettes (zombie-types.ts) ──
+  // ADDED, not substituted: the five above are the intact pool and still carry
+  // the plurality of spawns. These exist so a Hobbler/Crawler/Flailer has art
+  // matching its stat story — `variantIndicesFor` filters down to them.
+  { skin: 8, rag: 26, gore: 2, stump: null, legStump: "L", bandage: true, spur: "R", bone: "ribs", tatter: 10, seed: 6 },
+  { skin: 6, rag: 27, gore: 3, stump: null, legStump: "R", bandage: false, spur: "L", bone: "spine", tatter: 18, seed: 7 },
+  { skin: 7, rag: 2, gore: 3, stump: null, legStump: "both", bandage: false, spur: "L", bone: "ribs", tatter: 6, seed: 8 },
+  { skin: 9, rag: 28, gore: 3, stump: "both", legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 26, seed: 9 },
 ];
 
 /** Caked-blood splatter for a gorier variant — post-fill, pre-shade. */
@@ -1376,8 +1393,8 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   const dark = skin[0];
   const flesh = skin[1];
   const rag: Ramp = [Math.max(26, v.rag - 1), v.rag, Math.min(28, v.rag + 1)] as const;
-  const stumpL = v.stump === "L";
-  const stumpR = v.stump === "R";
+  const stumpL = v.stump === "L" || v.stump === "both";
+  const stumpR = v.stump === "R" || v.stump === "both";
 
   // Lean the whole upper body forward around the feet (the shamble) — bigger in
   // profile where it reads, subtle head-on.
@@ -1410,12 +1427,22 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   }
 
   // ── legs — bare rotten shanks in tattered trousers ──
+  //
+  // `legStump` amputates one or both. This is the silhouette half of the zombie
+  // SUB-TYPE system (zombie-types.ts): a Hobbler limps on one leg and a Crawler
+  // has lost both, and neither stat story reads unless the art agrees.
+  const legGoneL = v.legStump === "L" || v.legStump === "both";
+  const legGoneR = v.legStump === "R" || v.legStump === "both";
   if (dir === "E") {
-    legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 9, skin[0], dark, d3);
-    legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 10, rag, flesh, d3);
+    if (legGoneL) legStumpShaded(ctx, sk.hip, sk.kneeL, 9, skin[0]);
+    else legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 9, skin[0], dark, d3);
+    if (legGoneR) legStumpShaded(ctx, sk.hip, sk.kneeR, 10, rag);
+    else legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 10, rag, flesh, d3);
   } else {
-    legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 10, rag, dark, d3);
-    legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 10, rag, dark, d3);
+    if (legGoneL) legStumpShaded(ctx, sk.hipL, sk.kneeL, 10, rag);
+    else legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 10, rag, dark, d3);
+    if (legGoneR) legStumpShaded(ctx, sk.hipR, sk.kneeR, 10, rag);
+    else legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 10, rag, dark, d3);
   }
   if (dir !== "N") rags(ctx, v, CX - 2, sk.hip[1] + 8, 2); // trouser cuffs
 
@@ -1543,6 +1570,20 @@ function zombieBone(ctx: CanvasRenderingContext2D, sk: Skeleton, dir: Dir, v: ZV
     // slab so there's still a light anchor at body height.
     plateShaded(ctx, [[bx - 5, c[1] + 3], [bx + 5, c[1] + 3], [bx + 4, c[1] + 20], [bx - 4, c[1] + 20]], R_BONE);
   }
+}
+
+/**
+ * An AMPUTATED leg: the thigh only, ending in a bleeding cap where the knee was.
+ *
+ * Deliberately mirrors `zombieArm`'s stump branch (the same 5px blood cap in ink
+ * 11) so a lost leg and a lost arm read as the same kind of injury. Cut SHORT of
+ * the knee joint — a stump that runs the full thigh length still reads as a leg
+ * bent behind the body, which defeats the whole point.
+ */
+function legStumpShaded(ctx: CanvasRenderingContext2D, hip: Pt, knee: Pt, w: number, m: Ramp | number): void {
+  const cut: Pt = [hip[0] + (knee[0] - hip[0]) * 0.62, hip[1] + (knee[1] - hip[1]) * 0.62];
+  limbShaded(ctx, hip, cut, w, m);
+  ellShaded(ctx, cut[0], cut[1], 5.5, 5, 11, 0, { rim: false }); // bleeding stump cap
 }
 
 /** A zombie arm shoulder→hand with a grasping claw or a bleeding stump. */
@@ -1865,10 +1906,10 @@ export function makeSpiderPaints(): ActorPaints {
 // spur: null — the brute draws its OWN bony shoulder spurs over the top of the
 // scaled body, and stacking the zombie's broken-blade under them just muddies
 // the shoulder line. It keeps the exposed ribcage, which reads huge at 1.36×.
-const BRUTE_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 2, stump: null, bandage: false, spur: null, bone: "ribs", tatter: 18, seed: 9 };
+const BRUTE_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 2, stump: null, legStump: null, bandage: false, spur: null, bone: "ribs", tatter: 18, seed: 9 };
 // The overlord (boss) is the brute drawn even bigger, with a jagged bone crown
 // and blood-red glowing eyes so it reads as "the big one" at a glance.
-const BOSS_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 3, stump: null, bandage: false, spur: null, bone: "spine", tatter: 26, seed: 13 };
+const BOSS_VARIANT: ZVariant = { skin: 6, rag: 26, gore: 3, stump: null, legStump: null, bandage: false, spur: null, bone: "spine", tatter: 26, seed: 13 };
 
 /** `scale` = body size multiplier; `crowned` adds boss horns/crown + red eyes. */
 function bruteFrame(dir: Dir, pose: ZPose, scale = 1.36, crowned = false): FramePaint {
@@ -1975,7 +2016,7 @@ export function makeBossPaints(): ActorPaints {
 
 // bone: "spine" — the collarbone yoke sits high on the chest, clear of the acid
 // sac that gets painted over the belly; an exposed ribcage would be hidden.
-const SPITTER_VARIANT: ZVariant = { skin: 8, rag: 27, gore: 1, stump: null, bandage: false, spur: "L", bone: "spine", tatter: 16, seed: 11 };
+const SPITTER_VARIANT: ZVariant = { skin: 8, rag: 27, gore: 1, stump: null, legStump: null, bandage: false, spur: "L", bone: "spine", tatter: 16, seed: 11 };
 
 /** A spit-charge pose flag rides on ZPose.lurch magnitude — big lurch = rearing. */
 function spitterFrame(dir: Dir, pose: ZPose, charging = false): FramePaint {

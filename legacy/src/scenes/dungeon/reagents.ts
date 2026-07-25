@@ -118,13 +118,17 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
  */
 export function rollReagentDrops(
   kind: EnemyKind,
-  opts: { boss?: boolean } = {},
+  opts: { boss?: boolean; dropMult?: number } = {},
   rand: () => number = Math.random,
 ): ReagentId[] {
   const table = ENEMY_DROPS[kind] ?? [];
   const out: ReagentId[] = [];
+  // A zombie SUB-TYPE weights its own loot (zombie-types.ts typeDropMult): a
+  // 9-HP hulk should not pay a 2-HP midget's wage. Clamped to 1 so a large
+  // multiplier can never turn a chance roll into a guarantee.
+  const mult = opts.dropMult ?? 1;
   const roll = (entries: DropEntry[]): void => {
-    for (const e of entries) if (rand() < e.chance) out.push(e.id);
+    for (const e of entries) if (rand() < Math.min(1, e.chance * mult)) out.push(e.id);
   };
   roll(table);
   if (opts.boss) {

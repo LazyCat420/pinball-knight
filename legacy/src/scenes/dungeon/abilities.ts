@@ -10,7 +10,7 @@
  * drifts the existing ground items in, Blade Storm reuses damageZombie.
  */
 import { state } from "./state";
-import { playerManaMax, skillAgg } from "./skill-runtime";
+import { playerManaMax, skillAgg, abilityCostMult } from "./skill-runtime";
 import type { Zombie } from "./state";
 import { FACING_VEC, damageZombie } from "./entities/combat";
 import { spawnFloorFx } from "./entities/floor-fx";
@@ -260,9 +260,13 @@ export function castAbility(slot: 0 | 1): boolean {
   const id = state.abilitySlots[slot];
   if (!p || !id) return false;
   const def = ABILITIES[id];
-  if ((state.abilityCd[id] ?? 0) > 0 || p.mana < def.cost) return false;
+  // SKILL CARDS can discount the cast (cards.ts abilityCostMult). Priced off the
+  // weapon in HAND, so the discount leaves with the weapon. Floored at 1 mana —
+  // a free cast would make the whole mana economy decorative.
+  const cost = Math.max(1, Math.round(def.cost * abilityCostMult()));
+  if ((state.abilityCd[id] ?? 0) > 0 || p.mana < cost) return false;
 
-  p.mana = Math.max(0, p.mana - def.cost);
+  p.mana = Math.max(0, p.mana - cost);
   state.abilityCd[id] = def.cooldown * skillAgg().cooldownMult; // Swift Casting ranks
 
   switch (id) {

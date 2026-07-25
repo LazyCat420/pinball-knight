@@ -23,6 +23,7 @@
  * visually the same trick, none of the context risk.
  */
 import { CARDS, RARITY_HEX, type CardDef, type CardId, type CardRarity } from "../cards";
+import { KIND_INFO } from "../bestiary";
 
 /** Real trading-card proportions (63mm × 88mm), same as the reference engine. */
 export const CARD_W = 512;
@@ -422,6 +423,18 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.font = "700 13px ui-monospace, Menlo, monospace";
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.fillText(theme.type, ax + aw - 12, ay + ah - 12);
+
+  // ── SOURCE MONSTER (CardDef.source) ──
+  // A card is a slain monster's power bottled, so the card has to SAY whose. The
+  // mythics are deliberately sourceless (Tavern chase cards, not loot) and just
+  // keep the cosmic speckle field with nothing claiming to have dropped them.
+  if (c.source) {
+    const info = KIND_INFO[c.source];
+    ctx.textAlign = "left";
+    ctx.font = "700 12px ui-monospace, Menlo, monospace";
+    ctx.fillStyle = "rgba(255,255,255,0.62)";
+    ctx.fillText(`${info.icon} ${info.label.toUpperCase()}`, ax + 12, ay + ah - 12);
+  }
 
   // ── Plaque ──
   const plaque = ctx.createLinearGradient(86, 396, 426, 422);

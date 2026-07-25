@@ -8,6 +8,7 @@
  * keeps the horde from stacking into a single sprite.
  */
 import { state, type Zombie, type EnemyKind } from "../state";
+import { ZOMBIE_TYPES } from "../zombie-types";
 import {
   ZOMBIE_R,
   ZOMBIE_CONTACT_RANGE,
@@ -82,6 +83,8 @@ import {
   CARD_CHILL_SLOW,
   CARD_BURN_TICK,
   CARD_BURN_DMG,
+  LIMP_AMP,
+  LIMP_FREQ,
   HOUND_R, HOUND_CONTACT_RANGE, HOUND_ATTACK_WINDUP, HOUND_ATTACK_COOLDOWN,
   HOUND_CHARGE_RANGE, HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
   BLOATER_R, BLOATER_CONTACT_RANGE, BLOATER_ATTACK_WINDUP, BLOATER_ATTACK_COOLDOWN,
@@ -259,7 +262,14 @@ export function updateZombies(dt: number): void {
     // Per-family combat feel (bite range, windup, cooldown, body size, whether
     // it attacks at range) comes from the STATS table.
     const st = STATS[z.kind];
-    const { contactRange, windup } = st;
+    // ── ZOMBIE SUB-TYPE (zombie-types.ts) ──
+    // The STATS table stays keyed by EnemyKind; a sub-type MULTIPLIES it. That is
+    // the whole reason sub-types are not kinds: one row per family, eight
+    // behaviours layered on top. An absent ztype (every non-zombie, and the
+    // shambler) resolves to the identity bundle, so this costs one lookup.
+    const sub = z.ztype ? ZOMBIE_TYPES[z.ztype] : null;
+    const contactRange = st.contactRange * (sub?.reachMult ?? 1);
+    const windup = st.windup * (sub?.windupMult ?? 1);
     // BODY RADIUS is per-KIND by default, but an actor whose sprite was scaled
     // up needs a collider that matches or it walks its visible body into walls.
     // The Reaper King was the case that exposed this: boss.ts scales its mesh
@@ -271,6 +281,10 @@ export function updateZombies(dt: number): void {
 
     z.cooldown = Math.max(0, z.cooldown - dt);
     z.burnT = Math.max(0, z.burnT - dt); // flame-tick immunity window
+    // Gait clock. The bat branch and the ghost path each advance this for their
+    // own wobble/bob, but a HOBBLER is a grounded zombie that reaches neither —
+    // without this its limp phase stays pinned at 0 and it walks smoothly.
+    if (sub?.gait === "limp") z.bobT = (z.bobT ?? 0) + dt;
 
     // ── CARD statuses (cards.ts) ── CHILL slows this frame's movement; BURN
     // ticks damage over time. Chill's factor is read at the grounded move below.
@@ -642,8 +656,16 @@ export function updateZombies(dt: number): void {
     // Golems and chompers are FURNITURE WITH TEETH: rooted, never shoved by
     // the horde's separation pass — they hold their chokepoint.
     const rooted = z.kind === "golem" || z.kind === "chomper";
-    const mx = rooted ? 0 : (vx * z.speed * chillMul + sx * 1.5) * dt;
-    const mz = rooted ? 0 : (vz * z.speed * chillMul + sz * 1.5) * dt;
+    // The HOBBLER's LIMP: lurch forward, drag the bad leg, lurch again. The phase
+    // is seeded from the nid (core.makeZombie) rather than wall-clock, so it is
+    // per-actor distinct AND identical on every co-op peer. Floored at 0 because
+    // a large amplitude would otherwise drive the multiplier negative and walk
+    // the zombie backwards.
+    const gait = sub?.gait === "limp"
+      ? Math.max(0, 1 + LIMP_AMP * Math.sin((z.bobT ?? 0) * LIMP_FREQ + (z.gaitPhase ?? 0)))
+      : 1;
+    const mx = rooted ? 0 : (vx * z.speed * chillMul * gait + sx * 1.5) * dt;
+    const mz = rooted ? 0 : (vz * z.speed * chillMul * gait + sz * 1.5) * dt;
     if (mx !== 0 || mz !== 0) {
       const res = moveCircle(g, z.x, z.z, bodyR, mx, mz);
       z.x = res.x;

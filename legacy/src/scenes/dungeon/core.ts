@@ -41,6 +41,7 @@ import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { ZOMBIE_TYPES, ZOMBIE_TYPE_IDS, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "./zombie-types";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
@@ -48,7 +49,7 @@ import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySetting
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { getKnightSheet, setHandmadeOverride } from "./render/knight-sheets";
-import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
+import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg, syncAbilitySlots } from "./skill-runtime";
 import { hasStartCardPerk } from "./legacy";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
@@ -86,6 +87,9 @@ import {
   GOLD_PER_DESCENT,
   PLAYER_MAX_HP,
   ZOMBIE_HP,
+  ZOMBIE_R,
+  CRAWLER_PITCH,
+  HULK_MIN_OPEN_NEIGHBOURS,
   SPIDER_HP,
   SPIDER_SPEED_FACTOR,
   SPIDER_RATIO,
@@ -317,6 +321,14 @@ function applyWeaponArt(): void {
   state.player.sprite.setSheet(playerSheetFor(id));
   state.player.silhouette?.syncMap();
   state.playerArtKey = key;
+  // ── SKILL CARDS (cards.ts grantsAbility) ──
+  // A card-granted ability lives on the weapon in HAND, so the hand changing can
+  // invalidate a Q/E binding. Hooked HERE deliberately: this function is already
+  // the one funnel every hand change passes through (pickup, swap, break, retry),
+  // and the alternative — patching all five call sites — is a bug waiting for the
+  // sixth one to be added. The key check above means this only fires on an actual
+  // change, not every frame.
+  if (syncAbilitySlots()) state.hudDirty = true;
 }
 
 /** The paperdoll painter handed to the menu — the live mirror of the knight. */
@@ -677,11 +689,44 @@ export function launchDungeonGame(onExit?: () => void): void {
     //   __dungeonSpawn({kind:"zombie", count:8, ring:3})   ring at 3 tiles
     //   __dungeonSpawn({kind:"brute", count:1, at:{x,z}})  exact spot
     //   __dungeonSpawn({kind:"ghost", count:4, ring:2, hp:1, aggro:false})
+    //   __dungeonSpawn({kind:"zombie", ztype:"hulk", count:1})  a SUB-TYPE
     //
     // Returns what was ACTUALLY placed (`spawned` can be < `requested` in a
     // tight room), so a test never asserts against a horde it did not get.
     (window as unknown as { __dungeonSpawn?: (spec: DebugSpawnSpec) => unknown }).__dungeonSpawn = (spec: DebugSpawnSpec) =>
       debugSpawn({ ...spec, count: spec?.count ?? 1 });
+    // Dev: ONE OF EACH zombie sub-type in a ring — the silhouette check.
+    //   __zombieTypes()          ring at 3 tiles, posed, not aggroed
+    //   __zombieTypes(4)         wider ring
+    // Returns each sub-type with where it landed and its resolved stats, so a
+    // headless harness asserts against what was PLACED rather than what it hoped
+    // for (a tight room can reject a hulk — see resolveZombieType).
+    (window as unknown as { __zombieTypes?: (ring?: number) => unknown }).__zombieTypes = (ring = 3) => {
+      const out: Array<{ ztype: string; x: number; z: number; hp: number; bodyR: number; scale: number }> = [];
+      ZOMBIE_TYPE_IDS.forEach((t, i) => {
+        const r = debugSpawn({
+          kind: "zombie",
+          ztype: t,
+          count: 1,
+          ring,
+          // Fan them around the ring rather than stacking on one bearing.
+          phase: (i / ZOMBIE_TYPE_IDS.length) * Math.PI * 2,
+          aggro: false,
+        });
+        const zz = state.zombies[state.zombies.length - 1];
+        if (r.spawned > 0 && zz) {
+          out.push({
+            ztype: zz.ztype ?? "shambler",
+            x: +zz.x.toFixed(2),
+            z: +zz.z.toFixed(2),
+            hp: zz.hp,
+            bodyR: zz.bodyR ?? ZOMBIE_R,
+            scale: +zz.sprite.mesh.scale.x.toFixed(2),
+          });
+        }
+      });
+      return { placed: out.length, requested: ZOMBIE_TYPE_IDS.length, types: out };
+    };
     // Dev: the live input picture — which keys are down, what the touch overlay
     // and the pad are reporting, and whether the poller is seeing a controller
     // at all. Controllers and touch have no other read-back headlessly.
@@ -1252,7 +1297,7 @@ function makeZombie(
   x: number,
   z: number,
   speed: number,
-  opts: { kind?: EnemyKind; hp?: number; boss?: boolean; maxHp?: number } = {},
+  opts: { kind?: EnemyKind; hp?: number; boss?: boolean; maxHp?: number; ztype?: ZombieType } = {},
 ): Zombie {
   const kind = opts.kind ?? "zombie";
   const sprite = createActorSprite(sheet, false);
@@ -1270,8 +1315,9 @@ function makeZombie(
   const anim = new Animator(sprite);
   anim.setFacing("S");
   anim.play("idle");
+  const nid = "z" + zombieNidSeq++;
   const z2: Zombie = {
-    nid: "z" + zombieNidSeq++,
+    nid,
     sprite,
     anim,
     x,
@@ -1289,6 +1335,33 @@ function makeZombie(
     burnT: 0,
     bobT: 0,
   };
+  // ── ZOMBIE SUB-TYPE (zombie-types.ts) ──
+  // Applied at the single construction site so the stat bundle and the collider
+  // can never disagree. An explicit `opts.hp` still wins: a boss or a scripted
+  // spawn sets HP deliberately and must not be re-scaled underneath it.
+  const t = opts.ztype;
+  if (t && t !== "shambler") {
+    const d = ZOMBIE_TYPES[t];
+    z2.ztype = t;
+    z2.speed = speed * d.speedMult;
+    if (opts.hp == null) z2.hp = typeHp(HP_BY_KIND[kind], t);
+    if (opts.maxHp != null) z2.maxHp = typeHp(opts.maxHp, t);
+    if (d.scale !== 1) {
+      sprite.mesh.scale.multiplyScalar(d.scale);
+      // NOT optional. state.ts's `bodyR` comment records the Reaper King walking
+      // half-buried into corridors because a scaled mesh kept an unscaled
+      // collider; zombie-types.test.ts asserts bodyRMult moves with scale.
+      z2.bodyR = ZOMBIE_R * d.bodyRMult;
+    }
+    // Limp phase off the nid — deterministic across peers, distinct per actor,
+    // so a pair of hobblers never limps in lockstep.
+    if (d.gait === "limp") z2.gaitPhase = (Number(nid.replace(/^z/, "")) || 0) * 1.7;
+    // A crawler has no legs: tip the billboard onto its belly. Rotation ONLY —
+    // syncActorMesh re-pins y to 0 every frame, so a height offset set here
+    // would be silently erased on the next update (which is why the ghost's
+    // hover has to live in syncGhostMesh instead of on the actor).
+    if (d.gait === "crawl") sprite.mesh.rotation.z = CRAWLER_PITCH;
+  }
   syncActorMesh(z2);
   return z2;
 }
@@ -1413,9 +1486,40 @@ function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number,
     const zb = makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR);
     if (zb) return zb;
   }
+  // ── Baseline zombie — but WHICH zombie (zombie-types.ts) ──
+  // The sub-type comes off the SAME hash the family cascade above used (re-mixed
+  // inside pickZombieType so the two rolls do not correlate), never Math.random:
+  // co-op peers each build the horde locally from the shared pool seed, so a
+  // random draw here would disagree about who is a hulk.
+  const ztype = resolveZombieType(pickZombieType(hash, level), x, z);
   const variantSheets = state.zombieVariantSheets;
-  const sheet = variantSheets[hash % variantSheets.length] ?? state.zombieSheet!;
-  return makeZombie(sheet, x, z, baseSpeed);
+  // The silhouette must agree with the stat story: a crawler wearing two good
+  // legs is a lie the player notices immediately.
+  const allowed = variantIndicesFor(ztype, ZOMBIE_VARIANTS);
+  const vi = allowed[hash % allowed.length];
+  const sheet = variantSheets[vi] ?? variantSheets[0] ?? state.zombieSheet!;
+  return makeZombie(sheet, x, z, baseSpeed, { ztype });
+}
+
+/**
+ * Veto a sub-type whose BODY does not fit where it is being spawned.
+ *
+ * A hulk's collider is ~1.5x a zombie's — wider than a 1-tile corridor tolerates
+ * — so spawning one in a dead end wedges it in rock. That is the Reaper King bug
+ * (see `Zombie.bodyR` in state.ts) in a new costume, and the cheapest honest fix
+ * is to not place it there: fall through to a LURCHER, which keeps the "big slow
+ * bruiser" beat with a body that fits.
+ */
+function resolveZombieType(t: ZombieType, x: number, z: number): ZombieType {
+  if (t !== "hulk") return t;
+  const g = state.grid;
+  if (!g) return t;
+  const c = worldToTile(g, x, z);
+  let open = 0;
+  for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    if (isWalkable(g, c.i + di, c.j + dj)) open++;
+  }
+  return open >= HULK_MIN_OPEN_NEIGHBOURS ? "hulk" : "lurcher";
 }
 
 /**
@@ -2112,11 +2216,15 @@ function debugSpawnRing(): void {
  * The single place that knows which construction path a kind takes (plain
  * zombie sheet / reskin / spawnKind), so every debug spawn route shares it.
  */
-function makeDebugEnemy(kind: EnemyKind, x: number, z: number): Zombie | null {
+function makeDebugEnemy(kind: EnemyKind, x: number, z: number, ztype?: ZombieType): Zombie | null {
   const speed = levelConfig(state.level).zombieSpeed;
   if (kind === "zombie") {
-    const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
-    return sheet ? makeZombie(sheet, x, z, speed, { kind: "zombie" }) : null;
+    // A sub-typed debug spawn must wear the matching SILHOUETTE, or the headless
+    // art check is looking at a shambler with a hulk's stats and passes for the
+    // wrong reason.
+    const allowed = ztype ? variantIndicesFor(ztype, ZOMBIE_VARIANTS) : [0];
+    const sheet = state.zombieVariantSheets[allowed[0]] ?? state.zombieVariantSheets[0] ?? state.zombieSheet;
+    return sheet ? makeZombie(sheet, x, z, speed, { kind: "zombie", ztype }) : null;
   }
   if (RESKIN[kind]) return makeReskin(kind, x, z, speed);
   return spawnKind(kind, x, z, speed, 99); // level 99 clears every FROM_LEVEL gate
@@ -2132,6 +2240,12 @@ export interface DebugSpawnSpec extends SpawnLayout {
   aggro?: boolean;
   /** Centre the layout here instead of on the knight (world coords). */
   at?: { x: number; z: number };
+  /**
+   * Zombie SUB-TYPE to force (zombie-types.ts). Ignored for other kinds. Lets a
+   * harness put one of each on screen for the silhouette check:
+   *   __dungeonSpawn({kind:"zombie", ztype:"hulk", count:1})
+   */
+  ztype?: ZombieType;
 }
 
 /** What actually got placed — a harness asserts against this, not a guess. */
@@ -2167,7 +2281,7 @@ function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
   const points = resolveSpawnPoints(g, cx, cz, spec);
   const placed: Array<{ x: number; z: number }> = [];
   for (const pt of points) {
-    const zz = makeDebugEnemy(spec.kind, pt.x, pt.z);
+    const zz = makeDebugEnemy(spec.kind, pt.x, pt.z, spec.ztype);
     if (!zz) continue;
     zz.aggro = spec.aggro ?? true;
     const hp = spec.hp;
@@ -2479,9 +2593,11 @@ function dropWeapon(w: WeaponState, x: number, z: number): void {
  * thing up and not holding it would feel like a misclick.
  */
 /** A kill rolled the dice — maybe spawn a modifier card on the floor. */
-function dropCardMaybe(x: number, z: number, boss: boolean): void {
+function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKind = "zombie", dropMult = 1): void {
   if (!state.scene) return;
-  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped });
+  // `kind` drives the AFFINITY pick (cards.ts): a card off a Ghost should be a
+  // Ghost's card. `dropMult` is the zombie sub-type's loot weight.
+  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, kind, dropMult });
   if (!id) return;
   if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
   const sprite = createStaticSprite(ITEM_PAINTS[id]);
@@ -2639,8 +2755,8 @@ function creditReagent(id: ReagentId): void {
  * off `it.coin`, not the kind), so it fans out of the corpse and homes to the
  * knight — but it's absorbed into the alchemy pouch, not the purse.
  */
-function dropReagentsMaybe(x: number, z: number, kind: EnemyKind, boss: boolean): void {
-  const ids = rollReagentDrops(kind, { boss });
+function dropReagentsMaybe(x: number, z: number, kind: EnemyKind, boss: boolean, dropMult = 1): void {
+  const ids = rollReagentDrops(kind, { boss, dropMult });
   for (let i = 0; i < ids.length; i++) spawnReagentMote(x, z, ids[i], i, ids.length);
 }
 

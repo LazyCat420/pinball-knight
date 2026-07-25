@@ -2,6 +2,7 @@
  * Module state singleton — same pattern as mouse-game/state.ts.
  */
 import { freshRail, type RailState } from "./entities/rail";
+import type { ZombieType } from "./zombie-types";
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
@@ -313,6 +314,22 @@ export interface Zombie extends Actor {
    * a sprite mesh must set this too, or it will drift the same way.
    */
   bodyR?: number;
+  /**
+   * Behavioural SUB-TYPE, only meaningful for `kind: "zombie"` (zombie-types.ts).
+   * Runner/lurcher/hulk/midget/crawler/flailer/hobbler are multiplier bundles
+   * over the zombie baseline rather than EnemyKinds, because EnemyKind feeds six
+   * exhaustive Record tables and eight near-identical rows in each is not a
+   * design.
+   *
+   * DERIVED from the shared spawn hash on every peer — never transmitted — so
+   * co-op stays in agreement about which zombie is a hulk. Absent = shambler.
+   */
+  ztype?: ZombieType;
+  /**
+   * Per-actor gait phase for the HOBBLER's limp, seeded from `nid` so two
+   * hobblers never limp in lockstep and every peer computes the same wobble.
+   */
+  gaitPhase?: number;
   mode: ZombieMode;
   speed: number;
   windupT: number;
@@ -758,6 +775,13 @@ export const state = {
   reagents: {} as Record<string, number>,
   /** Empty Flask catalyst count — the RO "Empty Bottle" every brew consumes. */
   flasks: 0,
+  /**
+   * RUN-scoped kill tally per EnemyKind, plus a `zombie:<ztype>` key per zombie
+   * SUB-TYPE. Feeds the BESTIARY (bestiary.ts): an entry reveals what a monster
+   * drops only once you have actually fought it, so the screen teaches through
+   * play instead of handing over a wiki. Reset alongside `reagents`.
+   */
+  killsByKind: {} as Record<string, number>,
   /** Elixir of Life's run-scoped max-hearts bonus (feeds playerMaxHp). */
   bonusMaxHp: 0,
   /** CardIds already shown in the full card reader this run — repeats of a
@@ -1118,6 +1142,7 @@ export function resetState(): void {
   state.seenCards = new Set();
   state.reagents = {};
   state.flasks = 0;
+  state.killsByKind = {};
   state.bonusMaxHp = 0;
   state.pausedRunS = 0;
   state.grid = null;

@@ -4,6 +4,7 @@
  * zombie.ts and projectiles.ts.
  */
 import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
+import { typeDropMult, ZOMBIE_TYPES } from "../zombie-types";
 import { awardKillXp, skillAgg, playerMaxHp, playerManaMax } from "../skill-runtime";
 import {
   KNOCKBACK_ZOMBIE,
@@ -602,9 +603,15 @@ export function setBloaterBurstHandler(fn: (x: number, z: number) => void): void
   onBloaterBurst = fn;
 }
 
-/** Card-drop roll on a kill — core owns the spawn (scene access + rng). */
-let onCardRoll: ((x: number, z: number, boss: boolean) => void) | null = null;
-export function setCardRollHandler(fn: (x: number, z: number, boss: boolean) => void): void {
+/**
+ * Card-drop roll on a kill — core owns the spawn (scene access + rng).
+ *
+ * `kind` reached this signature for the AFFINITY roll (cards.ts): a card dropped
+ * by a Ghost should be a Ghost's card. `dropMult` carries the zombie SUB-TYPE's
+ * loot weight so a 9-HP hulk does not pay a 2-HP midget's wage.
+ */
+let onCardRoll: ((x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number) => void) | null = null;
+export function setCardRollHandler(fn: (x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number) => void): void {
   onCardRoll = fn;
 }
 
@@ -614,9 +621,35 @@ export function setCoinDropHandler(fn: (x: number, z: number, value: number) => 
 }
 
 /** Reagent-drop roll on a kill — core owns the spawn (scene access + rng). */
-let onReagentDrop: ((x: number, z: number, kind: EnemyKind, boss: boolean) => void) | null = null;
-export function setReagentDropHandler(fn: (x: number, z: number, kind: EnemyKind, boss: boolean) => void): void {
+let onReagentDrop: ((x: number, z: number, kind: EnemyKind, boss: boolean, dropMult: number) => void) | null = null;
+export function setReagentDropHandler(fn: (x: number, z: number, kind: EnemyKind, boss: boolean, dropMult: number) => void): void {
   onReagentDrop = fn;
+}
+
+/**
+ * Record a kill for the BESTIARY. Two keys per zombie — the family ("zombie") and
+ * the sub-type ("zombie:hulk") — because the bestiary reveals a sub-type's row
+ * only once you have actually met one, so the screen teaches through play rather
+ * than handing over the whole table up front.
+ */
+function tallyKill(z: Zombie): void {
+  const bump = (k: string): number => {
+    const n = (state.killsByKind[k] ?? 0) + 1;
+    state.killsByKind[k] = n;
+    return n;
+  };
+  bump(z.kind);
+  if (!z.ztype) return;
+  const n = bump(`${z.kind}:${z.ztype}`);
+  // FIRST of a sub-type this run: name it. Eight zombie flavours the player
+  // cannot name are eight zombies; a one-line callout on the first kill is what
+  // makes the roster legible, and it fires once rather than on every hit — a tag
+  // on each blow would be noise in a horde and would teach nothing after the
+  // first one. The bestiary tab carries the detail from there.
+  if (n === 1) {
+    const d = ZOMBIE_TYPES[z.ztype];
+    showToast(`🧟 ${d.label.toUpperCase()} SLAIN`, "a new kind of dead — see the BESTIARY");
+  }
 }
 
 function killZombie(z: Zombie): void {
@@ -668,14 +701,21 @@ function killZombie(z: Zombie): void {
   state.shakeT = Math.max(state.shakeT, SHAKE_ON_KILL);
   state.kills++;
   awardKillXp(!!z.boss); // character XP — the skill tree's fuel
-  onCardRoll?.(z.x, z.z, !!z.boss); // roll a modifier-card drop
-  onReagentDrop?.(z.x, z.z, z.kind, !!z.boss); // roll themed alchemy reagents
+  // ── BESTIARY tally (bestiary.ts) ── keyed by kind, and by `zombie:<ztype>` so
+  // the sub-types reveal individually. Same funnel as the drops on purpose.
+  tallyKill(z);
+  // A zombie SUB-TYPE weights its own loot: a hulk is worth more than a midget.
+  const dropMult = z.ztype ? typeDropMult(z.ztype) : 1;
+  onCardRoll?.(z.x, z.z, !!z.boss, z.kind, dropMult); // roll a modifier-card drop
+  onReagentDrop?.(z.x, z.z, z.kind, !!z.boss, dropMult); // roll themed alchemy reagents
   // Every kill DROPS coins on the floor (magnet-collected) rather than silently
   // crediting the purse — a visible payout. Falls back to an instant credit if
   // no drop handler is wired (e.g. a headless test harness). Greed Draught
   // doubles the payout while it's active.
   const greedMul = state.player && state.player.greedT > 0 ? GREED_GOLD_MULT : 1;
-  const killGold = GOLD_PER_KILL * greedMul;
+  // A tougher zombie sub-type pays proportionally more (capped at 2x inside
+  // typeDropMult) — otherwise the fastest gold in the game is farming midgets.
+  const killGold = Math.max(1, Math.round(GOLD_PER_KILL * greedMul * dropMult));
   if (onCoinDrop) {
     onCoinDrop(z.x, z.z, killGold);
   } else {
@@ -786,7 +826,10 @@ export function hitPlayer(z: Zombie): void {
   // nip still stings for 1 — a floor of "0" would read as full immunity).
   const damage = p.stoneT > 0 ? Math.ceil(raw * STONESKIN_DAMAGE_MULT) : raw;
   const heavyHitter = z.kind === "brute" || z.kind === "reaper" || z.kind === "golem" || z.kind === "chomper";
-  const knockback = heavyHitter ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER;
+  // A HULK sub-type hits like the heavies it is the size of — reusing the shove
+  // the brute already uses rather than inventing a second knockback path.
+  const hulkPush = z.ztype ? ZOMBIE_TYPES[z.ztype].knockback : undefined;
+  const knockback = hulkPush ?? (heavyHitter ? BRUTE_KNOCKBACK : KNOCKBACK_PLAYER);
   // A ghost that just landed its touch stays MATERIALIZED — the punish window.
   if (z.kind === "ghost") z.vulnT = GHOST_VULN_TIME;
 

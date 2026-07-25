@@ -1607,6 +1607,26 @@ export const ZOMBIE_CONTACT_RANGE = 0.72;
 export const ZOMBIE_ATTACK_WINDUP = 0.45;
 export const ZOMBIE_ATTACK_COOLDOWN = 1.1;
 export const ZOMBIE_DAMAGE = 1;
+
+// ── Zombie SUB-TYPE gaits (zombie-types.ts) ──
+/**
+ * The HOBBLER's LIMP: its speed oscillates +/-LIMP_AMP around the sub-type's
+ * average, so a one-legged zombie lurches and drags instead of gliding at a
+ * constant rate. The amplitude has to be large to read at dungeon distance — a
+ * 15% wobble is invisible; 60% is a limp.
+ */
+export const LIMP_AMP = 0.6;
+export const LIMP_FREQ = 4.2;
+/** The CRAWLER's prone pitch (radians) — tipped onto its belly, not upright. */
+export const CRAWLER_PITCH = 1.15;
+/**
+ * A HULK's collider is ~1.5x a zombie's, wider than a 1-tile corridor tolerates;
+ * spawning one there wedges it in rock (the Reaper King bug in a new costume).
+ * Below this many open neighbours the spawn falls through to a LURCHER — same
+ * "big and slow" beat, with a body that fits.
+ */
+export const HULK_MIN_OPEN_NEIGHBOURS = 3;
+
 /** Flow-field distance (in tiles) at which a zombie notices you. Once aggroed, always aggroed. */
 export const AGGRO_TILES = 9;
 /** Zombies shove each other apart below this distance, so a horde doesn't stack into one sprite. */
