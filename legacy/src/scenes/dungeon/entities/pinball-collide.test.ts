@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields, type PinballPart, type PinballPartKind } from "../state";
 import { PART_HANDLERS, touchPinballParts, type PinballDeps } from "./pinball-collide";
-import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, FLIPPER_SPEED } from "../constants";
+import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, FLIPPER_SPEED, GRAVEPIT_RADIUS } from "../constants";
 
 /** Every kind the game can place. Kept literal so adding one fails here too. */
 const ALL_KINDS: PinballPartKind[] = [
@@ -35,6 +35,7 @@ const ALL_KINDS: PinballPartKind[] = [
   "flipper",
   "mirror",
   "pit",
+  "gravepit",
   "electric",
   "firevent",
   "magstrip",
@@ -118,6 +119,84 @@ describe("dispatch is exhaustive", () => {
     // run its OWN handler. Two kinds sharing a function is fine (the self-firing
     // hazards do), but a kind must never be absent.
     for (const kind of ALL_KINDS) expect(kind in PART_HANDLERS).toBe(true);
+  });
+});
+
+describe("gravepit — the lethal hole a departing knight leaves", () => {
+  /** The grave pit writes hp and syncs the sprite, so the stub needs a mesh. */
+  function lethalStub(): void {
+    stubPlayer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (state.player as any).sprite = { mesh: { position: { set: () => {} } } };
+    state.player!.hp = 6;
+  }
+
+  beforeEach(() => {
+    lethalStub();
+    state.godMode = false;
+  });
+
+  it("KILLS outright — hp to zero, not a scratch", () => {
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p: state.player!, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(state.player!.hp).toBe(0);
+  });
+
+  it("kills THROUGH i-frames, a shield and stoneskin", () => {
+    // Every one of these nullifies normal damage. A hole that respects them
+    // would silently fail to kill anyone who arrived at speed — and arriving at
+    // speed is how you arrive. See fallInGravePit's comment.
+    const p = state.player!;
+    p.iframes = 5;
+    p.shieldT = 5;
+    p.stoneT = 5;
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(p.hp).toBe(0);
+  });
+
+  it("stops the ball dead rather than flinging the corpse onward", () => {
+    const p = state.player!;
+    p.momSpeed = 18;
+    p.momX = 12;
+    p.momZ = -9;
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(p.momSpeed).toBe(0);
+    expect(p.momX).toBe(0);
+    expect(p.momZ).toBe(0);
+  });
+
+  it("returns 'stop' so no later part re-reads a stale position", () => {
+    // The fall relocates the player, exactly like the ordinary pit.
+    const r = PART_HANDLERS.gravepit({ part: part("gravepit"), p: state.player!, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(r).toBe("stop");
+  });
+
+  it("does nothing outside its radius", () => {
+    const far = GRAVEPIT_RADIUS * GRAVEPIT_RADIUS + 1;
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p: state.player!, dx: 0, dz: 0, d2: far, inMomentum: true, curSpeed: 0, deps });
+    expect(state.player!.hp).toBe(6);
+  });
+
+  it("lets a RIDE carry you across, like the ordinary pit", () => {
+    // A coaster is explicitly above the floor; swallowing a rider would make an
+    // unrelated mechanic feel broken.
+    const p = state.player!;
+    p.rideT = 0.5;
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(p.hp).toBe(6);
+  });
+
+  it("spares a god-mode player — that is a debug switch, not a mechanic", () => {
+    state.godMode = true;
+    PART_HANDLERS.gravepit({ part: part("gravepit"), p: state.player!, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps });
+    expect(state.player!.hp).toBe(6);
+    state.godMode = false;
+  });
+
+  it("is idempotent on an already-dead player", () => {
+    const p = state.player!;
+    p.hp = 0;
+    expect(() => PART_HANDLERS.gravepit({ part: part("gravepit"), p, dx: 0, dz: 0, d2: 0, inMomentum: true, curSpeed: 0, deps })).not.toThrow();
+    expect(p.hp).toBe(0);
   });
 });
 

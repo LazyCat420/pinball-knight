@@ -35,7 +35,8 @@ import { createStationFx, createStationPrompt, refreshFocus, type StationFx, typ
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
-import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, type LobbyHud } from "./ui";
+import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, showTavernBanner, clearTavernBanner, type LobbyHud } from "./ui";
+import { onPeerArrive, onPeerDepart } from "../../net/presence";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
@@ -603,6 +604,16 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     return true;
   };
 
+  // Pool arrivals/departures announced in the lobby too. Keyed "tavern" so a
+  // re-entry replaces the hook instead of stacking one per visit; both are
+  // dropped in closeTavern so a banner can't fire into a torn-down container.
+  onPeerArrive("tavern", (p) => {
+    if (tavern.container) showTavernBanner(tavern.container, "🛡️ A knight has arrived", `${p.name} joined the pool`);
+  });
+  onPeerDepart("tavern", (p) => {
+    if (tavern.container) showTavernBanner(tavern.container, "💀 A knight has left", `${p.name} is gone`);
+  });
+
   last = performance.now();
   raf = requestAnimationFrame(frame);
   return true;
@@ -619,6 +630,12 @@ export function closeTavern(): void {
   if (onResize) window.removeEventListener("resize", onResize);
   onKey = null;
   onResize = null;
+
+  // Drop the presence hooks + any live banner before the container goes: a
+  // late arrival firing into a torn-down room would append an orphan node.
+  onPeerArrive("tavern", null);
+  onPeerDepart("tavern", null);
+  clearTavernBanner();
 
   // Pool teardown (HUB ONLY). Drops the tavern's rendered pool-mates but leaves
   // the shared socket OPEN — the dungeon rides the same connection, and presence

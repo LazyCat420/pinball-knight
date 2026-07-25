@@ -919,6 +919,21 @@ export const PIT_GOLD_PENALTY = 8;
 export const PIT_DAMAGE = 1;
 export const PIT_CLIMB_COOLDOWN = 1.2; // re-trigger lockout so a rim landing can't loop
 /**
+ * GRAVE PIT — the lethal hole torn open where a knight left the pool.
+ *
+ * Wider than a normal pit and LETHAL (see fallInGravePit). The extra radius is
+ * not just menace: this hazard appears mid-run with no warning, so it has to be
+ * seen from further away than the furniture a player walked past on arrival.
+ */
+export const GRAVEPIT_RADIUS = 0.66;
+/** Seconds the detonation's shockwave keeps damaging, before the hole settles. */
+export const GRAVEPIT_BLAST_LIFE = 0.5;
+/** Radius the departing knight's blast reaches (world units). */
+export const GRAVEPIT_BLAST_RADIUS = 2.4;
+/** Damage the blast deals to ENEMIES caught in it (players are never hurt by
+ *  it — the hole is the threat, and a hit at spawn time would be unavoidable). */
+export const GRAVEPIT_BLAST_DAMAGE = 3;
+/**
  * ELECTRIC GRID — a floor plate that PULSES: dark and safe for ELEC_OFF
  * seconds, then live and lethal-ish for ELEC_ON. Standing on a live plate
  * zaps you (damage + a hard scatter). Rhythm dodge; the plates on one floor

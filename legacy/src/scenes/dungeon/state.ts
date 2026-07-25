@@ -399,6 +399,10 @@ export type PinballPartKind =
   | "mirror"
   // Wave-H floor hazards (placed + animated like parts; no launch)
   | "pit"
+  // A GRAVE PIT — torn open where a player left the pool. Unlike "pit" (climb
+  // out, lose a heart) this one kills outright: it is the scar a detonating
+  // knight leaves, and it is spawned at RUNTIME, not dealt at level-gen.
+  | "gravepit"
   | "electric"
   | "firevent"
   | "magstrip"

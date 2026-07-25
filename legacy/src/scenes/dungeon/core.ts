@@ -28,7 +28,7 @@ import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
-import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
+import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
@@ -192,6 +192,9 @@ import {
   COIN_DROP_SCALE,
   COIN_STACK_DROP_SCALE,
   GOLD_PER_KILL,
+  GRAVEPIT_BLAST_RADIUS,
+  GRAVEPIT_BLAST_LIFE,
+  GRAVEPIT_BLAST_DAMAGE,
   DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
@@ -229,10 +232,10 @@ import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId 
 import { enterTavern, isTavernSceneOpen } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath } from "./coop";
-import { stopPresence } from "../../net/presence";
+import { stopPresence, onPeerArrive } from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
+import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
 import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
@@ -770,6 +773,20 @@ export function launchDungeonGame(onExit?: () => void): void {
         cooldownT: l.band.cooldownT,
         hitT: l.band.hitT,
       }));
+    // Dev: detonate a departing knight at (x,z) WITHOUT a second real client.
+    // A pool departure needs two browsers and a disconnect timed by hand, which
+    // is not a thing a harness can stage — so this calls the same function the
+    // network path calls. Returns the tile the hole actually landed on (it
+    // snaps, and refuses to stack), or null if the spot was unusable.
+    (window as unknown as { __dungeonHole?: (x: number, z: number, n?: string) => unknown }).__dungeonHole = (x: number, z: number, n = "A KNIGHT") => {
+      const before = state.pinballParts.length;
+      tearGraveHole(x, z, n);
+      const made = state.pinballParts.length > before ? state.pinballParts[state.pinballParts.length - 1] : null;
+      return made ? { i: made.i, j: made.j, x: made.x, z: made.z } : null;
+    };
+    /** Dev: every grave pit on the floor — a harness cannot see parts otherwise. */
+    (window as unknown as { __dungeonHoles?: () => unknown }).__dungeonHoles = () =>
+      state.pinballParts.filter((p) => p.kind === "gravepit").map((p) => ({ i: p.i, j: p.j, x: p.x, z: p.z }));
     (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
     (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
@@ -1000,8 +1017,15 @@ export function launchDungeonGame(onExit?: () => void): void {
       damageZombie(z, dmg, dx, dz, push, true);
     },
     hurtPlayer: (dmg, srcX, srcZ) => hitPlayerRanged(dmg, srcX, srcZ),
+    tearHole: (x, z, name) => tearGraveHole(x, z, name),
   });
   setCoopCombatBridge({ isReplica, forward: coopForwardDamage, onKill: coopBroadcastKill });
+  // A new knight joining the pool is announced wherever you are standing. Keyed
+  // "dungeon" so re-entering replaces the hook rather than stacking one per
+  // descend; presence drops it on stopPresence.
+  onPeerArrive("dungeon", (p) => {
+    showToast("🛡️ A KNIGHT HAS ARRIVED", `${p.name} joined the pool`);
+  });
   // A slain big slime queues two minis, spawned after combat resolution.
   setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
   setCardRollHandler(dropCardMaybe);
@@ -2296,6 +2320,60 @@ function onPlayerDeath(): void {
     },
     onLeave: () => exitDungeonGame(),
   });
+}
+
+/**
+ * A knight left the pool: detonate their body and tear a LETHAL hole where they
+ * stood. Runs on every client — the floor authority calls it directly and
+ * broadcasts, replicas call it from the mirrored `hole` act (coop.ts) — so the
+ * hole exists once, in the same place, in everyone's world.
+ *
+ * The position is SNAPPED to a tile centre. Two reasons, and both matter:
+ * the departing peer's last-known pose is whatever 15Hz `move` frame arrived
+ * before they dropped, so it can sit fractionally inside a wall; and snapping
+ * makes the hole land somewhere a player can actually be, rather than half
+ * under a wall band where it would be an invisible instant-death trap.
+ */
+function tearGraveHole(x: number, z: number, name: string): void {
+  const g = state.grid;
+  if (!g || !state.scene) return;
+  let t = worldToTile(g, x, z);
+  if (!isWalkable(g, t.i, t.j)) {
+    // They died against (or inside) geometry — put the hole on the nearest tile
+    // a knight could stand on instead. n=1 is the ORDINAL of the first walkable
+    // tile found, not a distance (see nearestOpenTile).
+    const open = nearestOpenTile(g, t.i, t.j, 1);
+    if (!open) return; // nowhere sane to put it — better no hole than a bad one
+    t = open;
+  }
+  // Never stack a second hole on a tile that already has one: a departing pool
+  // can re-use the same doorway, and two colliders on one spot is just waste.
+  if (state.pinballParts.some((p) => p.kind === "gravepit" && p.i === t.i && p.j === t.j)) return;
+  const c = tileCenter(g, t.i, t.j);
+
+  // ── The detonation ──
+  state.vfx?.burst(c.x, 0.5, c.z, PALETTE_HEX[12], 34, 5.5);
+  state.vfx?.ring(c.x, c.z, PALETTE_HEX[11], GRAVEPIT_BLAST_RADIUS, GRAVEPIT_BLAST_LIFE);
+  state.vfx?.blood(c.x, 0.6, c.z, "red", 26);
+  state.shakeT = Math.max(state.shakeT, 0.55);
+  state.hitstopT = Math.max(state.hitstopT, 0.06);
+  sfxHeavy();
+  // The blast damages ENEMIES only. A player standing next to the departure
+  // point could not have seen it coming, and killing them for someone else's
+  // disconnect is punishment without agency — the HOLE is the lasting threat.
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - c.x;
+    const dz = zmb.z - c.z;
+    const d = Math.hypot(dx, dz);
+    if (d > GRAVEPIT_BLAST_RADIUS) continue;
+    const inv = d > 1e-3 ? 1 / d : 0;
+    damageZombie(zmb, GRAVEPIT_BLAST_DAMAGE, dx * inv, dz * inv, 1.1, true);
+  }
+
+  // ── The scar ──
+  spawnPinballPart("gravepit", c.x, c.z, g, state.scene);
+  showToast("💀 A KNIGHT HAS FALLEN", `${name} left the pool — mind the hole`);
 }
 
 function descend(): void {

@@ -19,7 +19,7 @@
 import * as THREE from "three";
 import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
-import { tileCenter, type Grid } from "../maze/generator";
+import { tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
 import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS } from "../constants";
 
@@ -436,6 +436,47 @@ function buildPit(): THREE.Group {
   return gp;
 }
 
+/**
+ * A GRAVE PIT — the hole a departing knight's detonation tears in the floor.
+ *
+ * Deliberately louder than `buildPit`. A normal pit costs a heart; this one
+ * KILLS, it appears mid-run with no warning where a player was standing a
+ * moment ago, and a player who reads it as the familiar pit dies for free. So
+ * it is wider (0.62 vs 0.42), it gets a ring of blown-out debris shards that
+ * the plain pit has no equivalent of, and its rim is BLOOD-lit rather than
+ * steel — the palette's danger channel, matching the damage numbers and the
+ * boss bar rather than the machine parts.
+ */
+function buildGravePit(): THREE.Group {
+  const gp = new THREE.Group();
+  // The void. Deeper and wider than a pit, with near-black walls so it reads as
+  // bottomless rather than as a bowl you could climb out of.
+  const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.34, 0.9, 20), std(PALETTE_HEX[0], 0x000000, 0));
+  hole.position.y = -0.42;
+  // A torn, blood-lit rim: two rings at different radii so the edge reads as
+  // ragged masonry rather than a machined lip.
+  const rimMat = std(PALETTE_HEX[11], PALETTE_HEX[12], 0.35);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.075, 8, 22), rimMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.015;
+  gp.userData.rimMat = rimMat; // the animator pulses this — see PART_ANIMATORS
+  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.035, 6, 20), std(PALETTE_HEX[10], PALETTE_HEX[11], 0.2));
+  rim2.rotation.x = Math.PI / 2;
+  rim2.position.y = -0.02;
+  gp.add(hole, rim, rim2);
+  // Blown-out debris: shards flung clear of the rim, irregular by construction
+  // (a deterministic ring would read as decoration, not damage).
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + (k % 3) * 0.21;
+    const rr = 0.78 + (k % 4) * 0.075;
+    const shard = new THREE.Mesh(new THREE.BoxGeometry(0.13 + (k % 3) * 0.04, 0.07, 0.1), std(PALETTE_HEX[2], PALETTE_HEX[10], 0.08));
+    shard.position.set(Math.cos(a) * rr, 0.035, Math.sin(a) * rr);
+    shard.rotation.set((k % 2) * 0.3, a + 0.4, (k % 3) * 0.22);
+    gp.add(shard);
+  }
+  return gp;
+}
+
 function buildElectric(): THREE.Group {
   const gp = new THREE.Group();
   // A floor plate with four TALL prong pylons + a central emitter rod, so the
@@ -554,6 +595,7 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   flipper: ({ dirX, dirZ }) => buildFlipper(dirX, dirZ),
   mirror: ({ dirX, dirZ }) => buildMirror(dirX, dirZ),
   pit: () => buildPit(),
+  gravepit: () => buildGravePit(),
   electric: () => buildElectric(),
   firevent: ({ dirX, dirZ }) => buildFireVent(dirX, dirZ),
   magstrip: () => buildMagStrip(),
@@ -608,6 +650,42 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
   state.bumpersLit = 0;
 }
 
+/**
+ * Spawn ONE part at runtime, mid-floor, at a world position.
+ *
+ * `createPinballParts` above builds a whole level plan at load; this is for
+ * hazards that appear during play (today: the grave pit a departing knight
+ * leaves). Kept separate deliberately — the plan builder finishes by recomputing
+ * `state.bumperTotal`/`bumpersLit`, and re-running that on an incremental add
+ * would reset the floor's jackpot progress. This function must never touch
+ * those counters, which is also why it refuses to spawn a bumper.
+ *
+ * Returns the part, or null if the grid/scene isn't ready.
+ */
+export function spawnPinballPart(kind: PinballPartKind, x: number, z: number, g: Grid, scene: THREE.Scene): PinballPart | null {
+  if (kind === "bumper") return null; // would desync the jackpot counters — see above
+  const mesh = PART_BUILDERS[kind]({ dirX: 0, dirZ: 1, dir2X: 1, dir2Z: 0 });
+  mesh.position.set(x, 0, z);
+  scene.add(mesh);
+  const t = worldToTile(g, x, z);
+  const part: PinballPart = {
+    kind,
+    i: t.i,
+    j: t.j,
+    x,
+    z,
+    dirX: 0,
+    dirZ: 1,
+    dir2X: 1,
+    dir2Z: 0,
+    cooldownT: 0,
+    hitT: -1,
+    mesh,
+  };
+  state.pinballParts.push(part);
+  return part;
+}
+
 /** Global idle-animation clock (safe to reset per level). */
 let animT = 0;
 
@@ -648,6 +726,7 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   flipper: 0.6,
   mirror: 0.6,
   pit: 0.6,
+  gravepit: 0.6,
   electric: 0.6,
   firevent: VENT_WARN + VENT_ACTIVE + 0.1,
   magstrip: 0.6,
@@ -860,6 +939,17 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   // A hole in the floor: no idle shimmer, no hit animation. The rim mesh is
   // static and the fall is the player's, not the part's.
   pit: inert,
+
+  // A GRAVE PIT breathes, unlike a plain pit. It appeared mid-run where a
+  // player just died, so it has to catch the eye of someone who has already
+  // learned to ignore the static floor furniture — a slow blood pulse on the
+  // rim does that without animating anything the player could mistake for a
+  // safe, cycling hazard (electric/firevent both telegraph a safe phase; this
+  // one is never safe).
+  gravepit: (part) => {
+    const mat = part.mesh.userData.rimMat as THREE.MeshStandardMaterial | undefined;
+    if (mat) mat.emissiveIntensity = 0.35 + 0.22 * Math.sin(animT * 2.2 + part.i);
+  },
 
   electric: (part, { frozen }) => {
     // pulse: dark for ELEC_OFF, glow for ELEC_ON — per-plate phase offset

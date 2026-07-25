@@ -80,6 +80,7 @@ import {
   MAGSTRIP_BOOTS_COOLDOWN,
   WATER_STEAM_COOLDOWN,
   PIT_RADIUS,
+  GRAVEPIT_RADIUS,
   PIT_CLIMB_COOLDOWN,
   PIT_GOLD_PENALTY,
   PIT_DAMAGE,
@@ -88,6 +89,7 @@ import { comboWindow } from "./combo-curve";
 import { moveCircle } from "../collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
+import { PALETTE_HEX } from "../render/palette";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../camera";
@@ -184,6 +186,47 @@ function fireJackpot(): void {
   // reset every bumper so the floor can be re-lit for another jackpot
   for (const part of state.pinballParts) if (part.kind === "bumper") part.hits = 0;
   state.bumpersLit = 0;
+}
+
+/**
+ * Fall into a GRAVE PIT — the hole a departing knight tore in the floor. This
+ * one is LETHAL, and lethal without qualification: it ignores armor, Stoneskin,
+ * i-frames and shields, and it does not route through hitPlayerRanged.
+ *
+ * That bluntness is deliberate and is the only thing that works here. Every
+ * softer option fails in practice:
+ *   · armor/Stoneskin would make death depend on loadout, so the same fall
+ *     kills one player and tickles another with no visible difference;
+ *   · i-frames are topped up constantly by rolling, wall contact and bumper
+ *     bounces (player.ts stamps them in seven places), so an i-frame-respecting
+ *     hole would silently fail to kill a player who arrived at speed — which is
+ *     exactly how anyone arrives.
+ * A hole you can fall into and survive by accident is worse than no hole: it
+ * teaches players the wrong thing about a hazard that is meant to be absolute.
+ *
+ * God mode still saves you — that is a debug switch, not a game mechanic.
+ */
+function fallInGravePit(px: number, pz: number): void {
+  const p = state.player;
+  if (!p || p.hp <= 0) return;
+  if (state.godMode) return;
+  p.momSpeed = 0;
+  p.momX = 0;
+  p.momZ = 0;
+  p.rideT = -1;
+  p.ridePts = [];
+  // Centre them in the hole and drop them out of sight — they are not climbing
+  // out of this one, and leaving the sprite on the rim would read as survival.
+  p.x = px;
+  p.z = pz;
+  p.sprite.mesh.position.y = -0.55;
+  p.hp = 0; // death is polled from hp <= 0 in core's sim step
+  state.hudDirty = true;
+  state.shakeT = Math.max(state.shakeT, 0.5);
+  state.vfx?.burst(px, 0.2, pz, PALETTE_HEX[11], 22, 3.2);
+  syncActorMesh(p);
+  showToast("🕳️ SWALLOWED", "the floor gave way where a knight fell");
+  sfxHurt();
 }
 
 /**
@@ -595,6 +638,15 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     if (stoneBridgesPit()) return; // 🪨 too heavy to be swallowed — plows across
     part.cooldownT = PIT_CLIMB_COOLDOWN;
     fallInPit(part.x, part.z);
+    return "stop"; // the fall owns this frame
+  },
+
+  gravepit: ({ part, p, d2 }) => {
+    // A GRAVE PIT kills. Same "am I over it" gate as a pit — the coaster still
+    // carries you across, because a ride is explicitly above the floor and
+    // taking that away would make an unrelated mechanic feel broken.
+    if (p.rideT >= 0 || p.dropT >= 0 || d2 > GRAVEPIT_RADIUS * GRAVEPIT_RADIUS) return;
+    fallInGravePit(part.x, part.z);
     return "stop"; // the fall owns this frame
   },
 

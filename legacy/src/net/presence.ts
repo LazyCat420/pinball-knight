@@ -36,6 +36,53 @@ let moveT = 0;
 let lastSent = { x: NaN, z: NaN, f: "S" as Facing, m: "" };
 
 /**
+ * ARRIVAL / DEPARTURE listeners.
+ *
+ * Presence is the only layer that sees join and leave, but it is deliberately
+ * scene-agnostic — it must not import the tavern or the dungeon (both import
+ * IT). So it publishes, and whichever scene is mounted subscribes. Listeners
+ * are keyed so a scene re-entering replaces its own hook instead of stacking a
+ * second copy on every descend.
+ *
+ * The leave payload carries the peer's LAST KNOWN position: the server's
+ * `player:leave` is `{id}` only, and by the time a listener runs the roster
+ * entry is gone, so it is read out here while it still exists. That position is
+ * what the dungeon detonates.
+ */
+export interface PeerArrival {
+  id: string;
+  name: string;
+  scene: string;
+}
+export interface PeerDeparture {
+  id: string;
+  name: string;
+  /** The scene they were in when last seen — a hole belongs on THAT floor. */
+  scene: string;
+  x: number;
+  z: number;
+}
+type ArriveFn = (p: PeerArrival) => void;
+type DepartFn = (p: PeerDeparture) => void;
+const arriveListeners = new Map<string, ArriveFn>();
+const departListeners = new Map<string, DepartFn>();
+/** Peers we have already greeted this session — see the join handler for why a
+ *  plain "did the roster have them" check is not enough. */
+const seenPeers = new Set<string>();
+
+/** Subscribe to pool arrivals under `key` (replaces any previous hook of that
+ *  key). Pass null to unsubscribe — scenes do this on teardown. */
+export function onPeerArrive(key: string, fn: ArriveFn | null): void {
+  if (fn) arriveListeners.set(key, fn);
+  else arriveListeners.delete(key);
+}
+/** Subscribe to pool departures under `key`. Same contract as onPeerArrive. */
+export function onPeerDepart(key: string, fn: DepartFn | null): void {
+  if (fn) departListeners.set(key, fn);
+  else departListeners.delete(key);
+}
+
+/**
  * Ensure the pool connection + subscriptions exist. Idempotent: the socket is a
  * singleton and the subs install once. `name` is sent on (re)connect. Returns
  * false when the backend isn't reachable (caller stays single-player).
@@ -55,13 +102,38 @@ export function startPresence(name: string): boolean {
 
   c.on("room:state", (m) => {
     roster.clear();
-    for (const p of m.players) roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: p.mode ?? "idle" });
+    for (const p of m.players) {
+      roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: p.mode ?? "idle" });
+      // Everyone already online counts as "seen" WITHOUT announcing. room:state
+      // arrives on OUR connect, so announcing here would greet the whole pool
+      // the instant we log in — and after a reconnect it would do it again.
+      seenPeers.add(p.id);
+    }
   });
   c.on("player:join", (m) => {
     const p = m.player;
     roster.set(p.id, { id: p.id, slot: p.slot, name: p.name, scene: p.scene, x: p.x, z: p.z, facing: p.facing, mode: p.mode ?? "idle" });
+    // Announce only a peer we have never seen this session. A flapping socket
+    // reconnects with backoff and re-emits joins for people already in the pool;
+    // without this the pool would "arrive" over and over.
+    if (!seenPeers.has(p.id)) {
+      seenPeers.add(p.id);
+      // Name comes off the JOIN PAYLOAD, never the roster: a peer learned via
+      // movement first is stored under the placeholder "KNIGHT".
+      const arrival: PeerArrival = { id: p.id, name: p.name, scene: p.scene };
+      for (const fn of arriveListeners.values()) fn(arrival);
+    }
   });
-  c.on("player:leave", (m) => roster.delete(m.id));
+  c.on("player:leave", (m) => {
+    // Read the last-known pose BEFORE dropping it — the server's leave payload
+    // is `{id}` alone, and this is the only record of where they fell.
+    const last = roster.get(m.id);
+    roster.delete(m.id);
+    seenPeers.delete(m.id); // a genuine re-join later should announce again
+    if (!last) return;
+    const departure: PeerDeparture = { id: m.id, name: last.name, scene: last.scene, x: last.x, z: last.z };
+    for (const fn of departListeners.values()) fn(departure);
+  });
   c.on("player:move", (m) => {
     const e = roster.get(m.id);
     if (e) {
@@ -122,6 +194,9 @@ export function sendPose(dt: number, x: number, z: number, facing: Facing, mode 
 /** Full teardown — closes the socket. Only on a complete game exit. */
 export function stopPresence(): void {
   roster.clear();
+  seenPeers.clear();
+  arriveListeners.clear();
+  departListeners.clear();
   installed = false;
   net().close();
 }

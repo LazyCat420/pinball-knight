@@ -20,6 +20,62 @@ export function isRunSummaryOpen(): boolean {
   return el !== null;
 }
 
+// ── Pool arrival/departure banner ────────────────────────────────────────────
+// The tavern had no transient-message surface at all; the dungeon's `showToast`
+// is a full-screen centred overlay bound to the DUNGEON's container, so it
+// cannot be reused here (and would be too loud for a lobby anyway — you are
+// reading vendor panels, not fighting).
+//
+// This is the quiet equivalent: a top-centre banner that slides in, holds, and
+// leaves. Single-slot like the dungeon's toast, for the same reason — several
+// knights joining at once must not stack overlapping banners.
+let banner: HTMLDivElement | null = null;
+let bannerHide = 0;
+let bannerRemove = 0;
+
+/** Announce something transient in the tavern (pool arrivals/departures). */
+export function showTavernBanner(host: HTMLElement, text: string, sub = ""): void {
+  if (banner) {
+    window.clearTimeout(bannerHide);
+    window.clearTimeout(bannerRemove);
+    banner.remove();
+    banner = null;
+  }
+  const b = document.createElement("div");
+  b.style.cssText = `
+    position:absolute; top:0; left:50%; transform:translate(-50%,-14px); z-index:10006;
+    pointer-events:none; user-select:none; text-align:center;
+    padding:9px 20px 10px; border:1px solid rgba(240,192,64,0.35); border-top:none;
+    background:linear-gradient(180deg, rgba(11,13,18,0.94), rgba(11,13,18,0.72));
+    font:600 13px/1.35 ui-monospace,monospace; letter-spacing:2px; font-variant:small-caps;
+    color:${GOLD}; text-shadow:0 0 12px rgba(240,192,64,0.35), 1px 1px 0 #0b0d12;
+    opacity:0; transition:opacity .22s ease, transform .22s ease;
+  `;
+  b.innerHTML = `<div>${text}</div>` + (sub ? `<div style="font-size:11px;letter-spacing:1px;color:#9aa4b4;font-variant:normal;margin-top:3px">${sub}</div>` : "");
+  host.appendChild(b);
+  banner = b;
+  requestAnimationFrame(() => {
+    b.style.opacity = "1";
+    b.style.transform = "translate(-50%,0)";
+  });
+  bannerHide = window.setTimeout(() => {
+    b.style.opacity = "0";
+    b.style.transform = "translate(-50%,-14px)";
+    bannerRemove = window.setTimeout(() => {
+      b.remove();
+      if (banner === b) banner = null;
+    }, 260);
+  }, 2200);
+}
+
+/** Drop any live banner — called on scene teardown so it can't outlive the room. */
+export function clearTavernBanner(): void {
+  window.clearTimeout(bannerHide);
+  window.clearTimeout(bannerRemove);
+  banner?.remove();
+  banner = null;
+}
+
 /** Grades worth celebrating — S and A get the gold treatment, the rest don't. */
 function gradeColor(grade: string): string {
   return grade === "S" || grade === "A" ? GOLD : "#c9c1ad";

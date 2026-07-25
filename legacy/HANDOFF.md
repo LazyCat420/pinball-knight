@@ -2,6 +2,66 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🌀 BOOSTER LANES + 💀 GRAVE PITS (2026-07-24, this session)
+
+Two new mechanics plus the gamepad fix (see the controller section below).
+
+**BOOSTER LANES** — curved speed strips on the swept walls. The distinction that
+drives the whole design: kicker rubber is a RADIAL accelerator (throws you OFF
+the wall), a lane is TANGENTIAL (carries you ALONG it and spits you out following
+the bend). They live on CONCAVE sweeps — the inside of a bend — which is the
+geometric opposite of where rubber goes, so the two never compete and a face is
+never both.
+
+Lanes are ONE-WAY: `laneBandAt` checks the ball's travel against the lane's
+tangent and refuses a ball running the wrong way, so a lane can never reverse
+you. Direction is drawn as CHEVRONS — nothing else in the geometry shows it, and
+a bare strip reads as symmetric. Palette is arcane blue (29-31) against rubber's
+flame gold so you can tell at a glance which kind of curve you are approaching.
+Files: `maze/tile-shape.ts` (LaneBand/laneBandAt/laneTangent), `collision.ts`
+(threads travel direction down + reports `hitLane`), `entities/player.ts` (the
+tangential launch, ahead of the reflection), `maze/arc-sweeps.ts` (authoring),
+`render/arc-lanes.ts` (the visuals). QA: **`__dungeonLanes()`** — note it
+reports `cw`, and a harness entering against the grain gets correctly ignored.
+
+**GRAVE PITS** — a knight leaving the pool detonates and tears a LETHAL hole
+where they stood. Lethal without qualification: ignores armor, Stoneskin,
+i-frames and shields (i-frames are topped up by rolling/wall-contact/bumpers in
+seven places, so anything softer silently fails to kill anyone arriving at
+speed — which is how everyone arrives). God mode still saves you. Holes are
+permanent and uncapped for the floor; the blast damages ENEMIES only, since
+killing a bystander for someone else's disconnect is punishment without agency.
+
+Replication is AUTHORITY-BASED (`coop.ts`, new `hole` act): every client sees
+`player:leave`, but if each spawned its own hole they would disagree by a
+fraction of a tile — the roster's last-known pose is whatever 15Hz `move` frame
+that client last received. Authority decides, replicas mirror. Position snaps to
+a tile centre, and to the nearest walkable tile if they died against geometry.
+QA: **`__dungeonHole(x,z,name)`** and **`__dungeonHoles()`** — a real departure
+needs two browsers and hand-timed disconnect, which no harness can stage.
+
+**ARRIVAL/DEPARTURE announcements** in BOTH scenes. `net/presence.ts` publishes
+(`onPeerArrive`/`onPeerDepart`, keyed so a scene re-entry replaces its hook
+instead of stacking one per descend); the dungeon uses `showToast`, and the
+tavern got a new quiet top-centre banner (`showTavernBanner`) since it had no
+transient-message surface at all. Three traps are covered by `presence.test.ts`
+and will bite anyone who rewrites this: `room:state` fires on YOUR connect
+carrying the whole pool (announcing from it greets everyone at login); a peer
+learned via `player:move` first is stored as the placeholder "KNIGHT" (read the
+name off the JOIN payload); and a flapping socket re-emits joins for people who
+never left.
+
+⚠️ **Harness note that cost time here:** the knight starts PARKED IN THE PLUNGER
+and the park OVERRIDES `__dungeonLaunch`. A hole spawned directly under a
+"launched" ball did not kill, because the ball was never moving. Do the SPACE
+pull-release first (momSpeed goes non-zero), *then* drive. Verified after that:
+hp 0 and `gameOver: true` through the real loop.
+
+**Not judged on a real monitor** (headless swiftshader only): lane chevrons pick
+up warm torch tint rather than reading pure arcane blue — the two-tone bed/
+chevron split still reads, but the colour balance wants a human eye. Grave pit
+scale/menace likewise.
+
 ## ⚠️ THE "FLAKY TEST" IS FIXED — and the method matters more than the fix
 
 `roulette.test.ts > never needs the emergency correction` reddened the suite on

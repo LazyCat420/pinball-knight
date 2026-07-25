@@ -34,6 +34,7 @@ const ALL_KINDS: PinballPartKind[] = [
   "flipper",
   "mirror",
   "pit",
+  "gravepit",
   "electric",
   "firevent",
   "magstrip",

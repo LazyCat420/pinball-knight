@@ -30,7 +30,7 @@
  *
  * Everything is a no-op when offline or alone — solo play is byte-identical.
  */
-import { peers, sendPose, setLocalScene, isConnected, poolSeed, myId, type PeerInfo } from "../../net/presence";
+import { peers, sendPose, setLocalScene, isConnected, poolSeed, myId, onPeerDepart, type PeerInfo } from "../../net/presence";
 import { net } from "../../net/socket";
 import { state, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { RemotePartyRenderer } from "./render/remote-party";
@@ -71,7 +71,11 @@ interface WorldSnap {
 type Act =
   | { k: "dmg"; n: string; d: number; dx: number; dz: number; p: number }
   | { k: "kill"; n: string; x: number; z: number; kind: string; boss: boolean }
-  | { k: "take"; n: string };
+  | { k: "take"; n: string }
+  // A knight left the pool and their body detonated: tear a lethal hole at
+  // (x,z). Broadcast by the floor AUTHORITY only, so exactly one hole exists in
+  // everyone's world — see announceHole.
+  | { k: "hole"; x: number; z: number; n: string };
 
 // ── Hooks injected by core (avoids import cycles into core.ts) ────────────────
 export interface CoopHooks {
@@ -89,6 +93,9 @@ export interface CoopHooks {
   applyDamage(z: Zombie, dmg: number, dx: number, dz: number, push: number): void;
   /** Hurt the LOCAL player (replica-side contact/slam damage). */
   hurtPlayer(dmg: number, srcX: number, srcZ: number): void;
+  /** Detonate a departed knight at (x,z): blast VFX + a permanent lethal hole.
+   *  Runs on EVERY client (authority broadcasts, replicas mirror). */
+  tearHole(x: number, z: number, name: string): void;
 }
 let hooks: CoopHooks | null = null;
 export function setCoopHooks(h: CoopHooks): void {
@@ -153,6 +160,21 @@ export function initCoop(): void {
       handleAct(m.act as Act);
     }),
   );
+
+  // ── A knight leaving the pool blows a hole in the floor ──
+  // Only the floor AUTHORITY acts on the departure and broadcasts the result.
+  // Every client sees `player:leave`, so if each spawned its own hole they would
+  // disagree by a fraction of a tile (the roster's last-known pose is whatever
+  // 15Hz `move` frame that client happened to receive last) — and a lethal
+  // hazard that sits in a different place for each player is unplayable.
+  // Authority decides, everyone mirrors.
+  onPeerDepart("dungeon", (d) => {
+    if (d.scene !== sceneTag(floor)) return; // they left from another floor
+    if (!enemyAuthorityIsMe()) return; // a replica waits for the broadcast
+    hooks?.tearHole(d.x, d.z, d.name);
+    net().send({ type: "act", scene: sceneTag(floor), act: { k: "hole", x: d.x, z: d.z, n: d.name } satisfies Act });
+  });
+  unsubs.push(() => onPeerDepart("dungeon", null));
 }
 
 export function setCoopFloor(level: number): void {
@@ -376,6 +398,14 @@ function handleAct(act: Act): void {
         hooks.removeItem(state.groundItems[i]);
         state.groundItems.splice(i, 1);
       }
+      break;
+    }
+    case "hole": {
+      // Mirror the authority's detonation. Replicas only — the authority
+      // already tore its own hole before broadcasting, and doing it twice would
+      // stack two colliders on one spot.
+      if (enemyAuthorityIsMe()) return;
+      hooks.tearHole(act.x, act.z, act.n);
       break;
     }
   }
