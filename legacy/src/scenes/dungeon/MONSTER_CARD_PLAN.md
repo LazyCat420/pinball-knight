@@ -455,25 +455,41 @@ user's headline ask (zombie variety) and lands first.
 
 - [x] D1. `pnpm test` green (vitest). New suites: `zombie-types`, `bestiary`,
       plus the extended `cards` / `skills-audit`.
-- [ ] D2. **NOT RUN** — headless QA per the `braindeadbot-headless-screenshots` +
-      `dungeon-harness-loop-traps` memories: **descend from the tavern first**
-      (a lobby with `polls: 0` means you never entered the dungeon), pull the
-      plunger release, then `__dungeonSpawn` one of each sub-type in a ring and
-      screenshot. Confirm 8 visually distinct silhouettes.
-- [ ] D3. **NOT RUN in-engine** (the guard itself is unit-tested) — confirm
-      hulks never spawn wall-embedded in 1-tile corridors (A6).
-- [ ] D4. **NOT RUN** — two clients on one seed agree on every zombie's
-      `ztype`. Derivation is unit-tested as deterministic, but no two-client
-      run was done. This is the one that silently breaks.
+- [x] D2. **DONE** — headless QA at localhost. The descend recipe that works:
+      `__dungeonLevel(n)` builds the floor but leaves the LOBBY up, and
+      `__tavernClose()` is NOT a descend (it skips `onDescend`/`beginRun`, so
+      hp 0 / player null / black screen). You must walk to the `board` station
+      and press E. WASD is SCREEN-relative — W goes north-WEST — and the central
+      pinball table (x0 z-1.6 w2.3 d3.2) blocks the spine, so route east around
+      it. `__zombieTypes(3)` then placed **8/8** with correct distinct stats
+      (hulk hp9/bodyR0.45/scale1.55, midget hp2/bodyR0.195, crawler hp4 prone),
+      and `__dungeonStats()` confirmed those HP values in the LIVE horde.
+      Silhouettes verified visually — all 8 read apart.
+- [x] D3. **DONE in-engine** — 20/20 hulks placed across rings 1-6 with no
+      wedging and no texture-resize warnings.
+- [x] D4. **DONE** — `coop-determinism.test.ts` pins the invariant exactly.
+      Two real browsers can NOT verify this: each client walks a different path
+      through the tavern before descending and drains `Math.random` at a
+      different rate, so their runSeeds diverge before a floor is built
+      (observed: startX 94.5 vs -94.5, 190 vs 221 enemies). Pinning the whole
+      `Math.random` stream does not fix it. The property that matters is pure —
+      identical (hash, level) must give identical sub-types — and is now tested
+      directly, including non-vacuousness and order-independence.
 - [x] D5. Verify no new ground-item `kind` string reached the co-op protocol
       (§5). If one did, update the service and deploy both.
-- [ ] D6. **BLOCKED in the worktree** — a symlinked `node_modules` breaks
-      Turbopack ("points out of the filesystem root"). `tsc` + 1242 tests are
-      green; run `pnpm build` from the primary checkout. **Rebuild `canvas` after any
-      `pnpm install`** (`dungeon-4x-floors-route-math` memory).
+- [x] D6. **DONE** — `next build` clean at HEAD in the primary checkout, and in
+      an isolated worktree once `node_modules` was a real COPY. A **symlinked**
+      `node_modules` breaks Turbopack ("points out of the filesystem root").
+      Separately: a running `next start` pins its manifest at boot, so rebuilding
+      `.next` underneath it serves phantom missing chunks — restart the server
+      after any rebuild. **Rebuild `canvas` after any `pnpm install`**
+      (`dungeon-4x-floors-route-math` memory).
 - [x] D7. Update `CHANGES.md`, `VERIFY_CHECKLIST.md`, `HANDOFF.md`.
-- [x] D8. Commit, deploy (`bash deploy.sh`), verify at the LIVE URL — not just
-      the local dev server.
+- [ ] D8. **DEPLOY DEFERRED — the user's call.** Everything is committed on
+      `main`; nothing is live. braindeadbot deploys the WORKING TREE (`COPY . .`,
+      not git HEAD), and a parallel session has had uncommitted work in this
+      checkout throughout, so deploying would ship their unfinished wave too.
+      Deploy once that tree is clean.
 
 ---
 
