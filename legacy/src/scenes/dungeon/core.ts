@@ -32,6 +32,8 @@ import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballP
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { tickJuice, resetJuice } from "./entities/juice";
+import { railCap } from "./entities/rail";
+import { PINBALL_MAX_SPEED } from "./constants";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
@@ -764,6 +766,26 @@ export function launchDungeonGame(onExit?: () => void): void {
     // rubber doesn't — `cw`, the direction it throws. A harness must enter WITH
     // the grain or the lane correctly ignores it, so a test that doesn't know
     // the direction is a test that fails for the wrong reason.
+    // Dev: live BANKED RAIL state — the only read-back for a held ride. A rail
+    // is invisible to __dungeonLanes (which reports authored geometry, not what
+    // the knight is doing), so without this a harness cannot tell "riding" from
+    // "touching a wall that happens to be curved".
+    (window as unknown as { __dungeonRail?: () => unknown }).__dungeonRail = () => {
+      const p = state.player;
+      if (!p) return null;
+      return {
+        riding: p.rail.featureIdx >= 0,
+        featureIdx: p.rail.featureIdx,
+        rideT: +p.rail.rideT.toFixed(3),
+        slipT: +p.rail.slipT.toFixed(3),
+        speed: +p.momSpeed.toFixed(2),
+        // The headline number: how far past the normal ceiling the ride has
+        // pushed. 0 means the rail is not paying yet.
+        overspeed: +Math.max(0, p.momSpeed - PINBALL_MAX_SPEED).toFixed(2),
+        cap: PINBALL_MAX_SPEED,
+        railCap: +railCap().toFixed(2),
+      };
+    };
     (window as unknown as { __dungeonLanes?: () => unknown }).__dungeonLanes = () =>
       (state.maze?.arcLanes ?? []).map((l) => ({
         x: l.x,

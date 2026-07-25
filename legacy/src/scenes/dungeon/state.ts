@@ -1,6 +1,7 @@
 /**
  * Module state singleton — same pattern as mouse-game/state.ts.
  */
+import { freshRail, type RailState } from "./entities/rail";
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
@@ -186,6 +187,12 @@ export interface Player extends Actor {
   bounceCombo: number;
   /** Seconds since the last bounce — resets bounceCombo when it lapses. */
   bounceComboT: number;
+  /**
+   * BANKED RAIL ride (entities/rail.ts) — which inside curve is being held,
+   * how long for, and how long since the hold lapsed. This is the only state
+   * in the game allowed to carry speed past PINBALL_MAX_SPEED.
+   */
+  rail: RailState;
 
   // ── Wall moves (Mortal-Kombat-style specials off a wall) ──
   /**
@@ -1005,6 +1012,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     throwDirZ: 0,
     throwSpeed: 0,
     bounceCombo: 0,
+    rail: freshRail(),
     bounceComboT: 0,
     wallMoveT: -1,
     wallMoveDur: 0,
