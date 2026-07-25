@@ -11,7 +11,10 @@
     "deploy:dry": "bash deploy.sh --dry-run",
     "lint": "next lint",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "playtest": "node scripts/playtest.mjs",
+    "playtest:gpu": "node scripts/playtest.mjs --gpu --profile",
+    "playtest:soak": "node scripts/playtest.mjs --mode bounce --secs 300 --profile"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
