@@ -33,7 +33,10 @@ export interface DebugActions {
   giveWeapon(id: string): void;
   applyPotion(id: string): void;
   applyMaterial(id: string): void;
-  spawnEnemy(kind: string): void;
+  /** Spawn `count` of a kind. >1 arranges them in a ring around the knight, so
+   *  an AoE can be aimed at a horde at a known range instead of one monster
+   *  standing on your toes. */
+  spawnEnemy(kind: string, count: number): void;
 }
 
 const MATERIALS_DBG: Array<{ id: string; label: string }> = [
@@ -169,8 +172,37 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   addToggle("FLOOR-1 DROPS", () => state.dbgMaterialFloor1Spawn, (v) => (state.dbgMaterialFloor1Spawn = v));
 
   // ── Spawn enemy ──
+  // PACK SIZE first: one monster is enough to look at a sprite and not enough
+  // to test anything else. The multiplier rides every chip below it, so "×8
+  // then ghost" is a ring of eight to aim an AoE at.
   section("SPAWN");
-  chips(el, SPAWNABLE.map((s) => ({ label: s.label, title: s.kind, fn: () => actions.spawnEnemy(s.kind), wide: true })));
+  let packSize = 1;
+  const packRow = document.createElement("div");
+  packRow.style.cssText = "display:flex;gap:4px;margin-bottom:4px";
+  const packBtns: HTMLButtonElement[] = [];
+  const paintPack = (): void => {
+    packBtns.forEach((b) => {
+      const on = Number(b.dataset.n) === packSize;
+      b.style.background = on ? "#2f6f8f" : "#12161c";
+      b.style.borderColor = on ? "#6fd0e8" : "#234";
+      b.style.color = on ? "#eaffff" : "#7f9fb0";
+    });
+  };
+  for (const n of [1, 5, 10]) {
+    const b = document.createElement("button");
+    b.textContent = `×${n}`;
+    b.dataset.n = String(n);
+    b.style.cssText = `${baseBtn}flex:1`;
+    b.onclick = () => {
+      packSize = n;
+      paintPack();
+    };
+    packBtns.push(b);
+    packRow.appendChild(b);
+  }
+  paintPack();
+  el.appendChild(packRow);
+  chips(el, SPAWNABLE.map((s) => ({ label: s.label, title: s.kind, fn: () => actions.spawnEnemy(s.kind, packSize), wide: true })));
 
   container.appendChild(el);
   panelEl = el;

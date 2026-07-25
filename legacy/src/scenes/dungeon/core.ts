@@ -56,6 +56,7 @@ import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
 import { archetypeFor, windinessFor } from "./maze/archetypes";
+import { resolveSpawnPoints, type SpawnLayout } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
 import { bfsDistances } from "./entities/ai";
@@ -650,6 +651,39 @@ export function launchDungeonGame(onExit?: () => void): void {
       return { open: !!state.shopEl };
     };
     // Dev: the still-intact secret bands + the floor ledger (secret/reaper/grade QA).
+    // ── Dev SPAWN CONSOLE ── the scriptable counterpart to the ` panel's enemy
+    // chips. The chips are DOM clicks, which are unreliable to drive from a
+    // harness (a silently-missed toggle cost this project two QA cycles), and
+    // they place exactly one monster next to the knight — useless for the
+    // questions worth asking, which almost all need a CROWD at a KNOWN RANGE.
+    //
+    //   __dungeonSpawn({kind:"zombie", count:8, ring:3})   ring at 3 tiles
+    //   __dungeonSpawn({kind:"brute", count:1, at:{x,z}})  exact spot
+    //   __dungeonSpawn({kind:"ghost", count:4, ring:2, hp:1, aggro:false})
+    //
+    // Returns what was ACTUALLY placed (`spawned` can be < `requested` in a
+    // tight room), so a test never asserts against a horde it did not get.
+    (window as unknown as { __dungeonSpawn?: (spec: DebugSpawnSpec) => unknown }).__dungeonSpawn = (spec: DebugSpawnSpec) =>
+      debugSpawn({ ...spec, count: spec?.count ?? 1 });
+    // Dev: wipe the floor of enemies (and corpses). Returns how many went.
+    (window as unknown as { __dungeonClear?: () => number }).__dungeonClear = () => {
+      const n = state.zombies.length;
+      debugClearEnemies();
+      return n;
+    };
+    // Dev: the god-mode toggles, WITHOUT going through the panel's DOM. These
+    // three are the difference between a QA script that works and one that
+    // silently screenshots an ability that never fired for want of mana.
+    // Call with no argument to read them back.
+    (window as unknown as { __dungeonDebug?: (f?: Record<string, boolean>) => unknown }).__dungeonDebug = (f?: Record<string, boolean>) => {
+      if (f) {
+        if (f.god !== undefined) state.godMode = f.god;
+        if (f.mana !== undefined) state.infMana = f.mana;
+        if (f.noCd !== undefined) state.noCooldown = f.noCd;
+        state.hudDirty = true;
+      }
+      return { god: state.godMode, mana: state.infMana, noCd: state.noCooldown };
+    };
     // Dev: the BOOSTER rubber on the curved walls — world mid-point of each
     // band plus its live cooldown/flash, so a harness can warp beside one, fire
     // the ball into it and assert the kick actually fired (there is no other
@@ -794,7 +828,7 @@ export function launchDungeonGame(onExit?: () => void): void {
     applyMaterial: (id) => {
       if (isMaterial(id)) applyMaterial(id);
     },
-    spawnEnemy: (kind) => debugSpawnEnemy(kind as EnemyKind),
+    spawnEnemy: (kind, count) => debugSpawnEnemy(kind as EnemyKind, count),
   });
 
   // A slain overlord drops its reward here (kept out of combat.ts to avoid a
@@ -1931,31 +1965,83 @@ function debugSpawnRing(): void {
 
 // ── Debug-panel action helpers (used by the ` god-mode console) ──
 
-/** Spawn one enemy of any kind next to the player, bypassing the level gates. */
-function debugSpawnEnemy(kind: EnemyKind): void {
-  const p = state.player;
-  const g = state.grid;
-  if (!p || !g) return;
-  const pt = worldToTile(g, p.x, p.z);
-  const spot = nearestOpenTile(g, pt.i, pt.j, 2) ?? pt;
-  const c = tileCenter(g, spot.i, spot.j);
+/**
+ * Build ONE enemy of any kind at a world position, bypassing the level gates.
+ * The single place that knows which construction path a kind takes (plain
+ * zombie sheet / reskin / spawnKind), so every debug spawn route shares it.
+ */
+function makeDebugEnemy(kind: EnemyKind, x: number, z: number): Zombie | null {
   const speed = levelConfig(state.level).zombieSpeed;
-  let zz: Zombie | null;
   if (kind === "zombie") {
     const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
-    zz = sheet ? makeZombie(sheet, c.x, c.z, speed, { kind: "zombie" }) : null;
-  } else if (kind === "reaper") {
+    return sheet ? makeZombie(sheet, x, z, speed, { kind: "zombie" }) : null;
+  }
+  if (RESKIN[kind]) return makeReskin(kind, x, z, speed);
+  return spawnKind(kind, x, z, speed, 99); // level 99 clears every FROM_LEVEL gate
+}
+
+/** What a scripted spawn can ask for beyond "one of these, next to me". */
+export interface DebugSpawnSpec extends SpawnLayout {
+  kind: EnemyKind;
+  /** Override starting HP — for damage maths you can actually assert on. */
+  hp?: number;
+  /** Default true. `false` leaves them idle, which is what you want when the
+   *  thing under test is aggro/pathing itself rather than a fight. */
+  aggro?: boolean;
+  /** Centre the layout here instead of on the knight (world coords). */
+  at?: { x: number; z: number };
+}
+
+/** What actually got placed — a harness asserts against this, not a guess. */
+export interface DebugSpawnResult {
+  spawned: number;
+  requested: number;
+  kind: string;
+  points: Array<{ x: number; z: number }>;
+}
+
+/**
+ * Spawn a GROUP of enemies in a known shape (see debug-spawn.ts) — the scripted
+ * counterpart to the panel's one-click chips.
+ *
+ * Returns what was actually placed, including a `spawned < requested` when the
+ * room was too tight, so a headless test never asserts against a horde it did
+ * not get.
+ */
+function debugSpawn(spec: DebugSpawnSpec): DebugSpawnResult {
+  const p = state.player;
+  const g = state.grid;
+  const requested = Math.max(0, Math.floor(spec.count));
+  const empty: DebugSpawnResult = { spawned: 0, requested, kind: spec.kind, points: [] };
+  if (!p || !g) return empty;
+  // The Reaper is a floor-wide singleton with its own summon ritual, not a
+  // thing you can place N of.
+  if (spec.kind === "reaper") {
     if (!state.reaperOut) spawnReaper();
-    return;
-  } else if (RESKIN[kind]) {
-    zz = makeReskin(kind, c.x, c.z, speed);
-  } else {
-    zz = spawnKind(kind, c.x, c.z, speed, 99); // level 99 clears every FROM_LEVEL gate
+    return { ...empty, spawned: state.reaperOut ? 1 : 0 };
   }
-  if (zz) {
-    zz.aggro = true;
+  const cx = spec.at?.x ?? p.x;
+  const cz = spec.at?.z ?? p.z;
+  const points = resolveSpawnPoints(g, cx, cz, spec);
+  const placed: Array<{ x: number; z: number }> = [];
+  for (const pt of points) {
+    const zz = makeDebugEnemy(spec.kind, pt.x, pt.z);
+    if (!zz) continue;
+    zz.aggro = spec.aggro ?? true;
+    const hp = spec.hp;
+    if (hp !== undefined) {
+      zz.hp = hp;
+      zz.maxHp = Math.max(zz.maxHp ?? hp, hp); // maxHp is optional on Zombie
+    }
     state.zombies.push(zz);
+    placed.push({ x: pt.x, z: pt.z });
   }
+  return { spawned: placed.length, requested, kind: spec.kind, points: placed };
+}
+
+/** Spawn one enemy of any kind next to the player, bypassing the level gates. */
+function debugSpawnEnemy(kind: EnemyKind, count = 1): void {
+  debugSpawn({ kind, count, ring: count > 1 ? 2 : 0 });
 }
 
 /** Kill every living enemy through the normal death path (FX + score fire). */

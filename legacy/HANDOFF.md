@@ -57,6 +57,45 @@ Facings are decided from LOCAL corridor topology (`classify`) and re-aimed twice
 more afterwards, which is exactly why two individually-sane parts can end up
 duelling — and why this pass must stay last.
 
+## 🧟 SPAWN DEBUGGER — script a horde in one call (READ IF YOU WRITE QA)
+
+The floor already had enemy chips in the ` panel: one click, one monster, next
+to the knight. Fine for eyeballing a sprite, useless for everything else — and
+DOM chip clicks are unreliable to drive from a harness (a silently-missed
+GOD MODE / INF MANA toggle cost two QA cycles this month: you screenshot an
+ability that never fired). New hooks:
+
+```js
+__dungeonDebug({god:true, mana:true, noCd:true})   // no DOM, returns the flags
+__dungeonClear()                                   // wipe the floor, returns count
+__dungeonSpawn({kind:"zombie", count:8, ring:3})   // ring at a KNOWN range
+__dungeonSpawn({kind:"ghost", count:5, ring:1.4, hp:3, aggro:false})
+__dungeonSpawn({kind:"brute", count:1, at:{x,z}})  // exact spot
+```
+
+`__dungeonSpawn` returns `{spawned, requested, kind, points}` — `spawned <
+requested` when the room is genuinely too tight, so a test never asserts against
+a horde it did not get. The panel's chips gained a **×1/×5/×10 pack size** on top
+(a pack >1 arranges as a ring), so it is better for hands too.
+
+**The layout math is pure + tested** (`debug-spawn.ts`): why a ring matters is
+that almost every question needs a crowd at a KNOWN RANGE — does Blade Storm
+bite everything inside its radius, does the pulse's wave front strike foes in
+distance order, does an AoE stop at its edge.
+
+**RADIUS BEATS BEARING, and the first cut got it wrong.** Snapping each slot
+outward from its ideal POINT reads fine in an open room and collapses in a
+corridor: every off-axis bearing is wall, so each slot walks back to the nearest
+floor — the knight's own lane. `ring:3` returned monsters at 0.0/1.0/1.41, i.e.
+standing on him. Now each slot scores candidates in an annulus with radius
+weighted 3× bearing. Live re-check in a real maze: 3.00 3.00 3.16 3.16 3.16 2.24
+2.24 4.00 for a radius-3 ask. Pinned by a corridor regression test.
+
+**It paid for itself immediately:** Time Crawl was the one effect still not
+visually verified (its earlier capture was blocked by a card modal). Clear floor
+→ ring of 8 aggro'd zombies → cast → the clock-face dial and the horde's
+pale-blue smear ghosts are both confirmed on screen.
+
 ## 🎲 TRACKS B + C SHIPPED: floors stop reading the same
 
 - **Windiness is per-ARCHETYPE now**, rolled inside a range
@@ -85,10 +124,7 @@ duelling — and why this pass must stay last.
   now steel (`#c8ccd4`) in the ability table, the Diablo HUD chip AND the classic
   HUD strip — it was blood red while the world drew steel crescents.
 
-**NOT visually verified:** the Time Crawl capture was blocked by a card-pickup
-modal. Its sigil uses the same pool as the pulse's and the magnet's (both
-screenshot-confirmed) and its smear ghosts are unit-tested, but nobody has seen
-the finished effect on screen.
+Time Crawl is now visually verified too — see the spawn-debugger section above.
 
 ## 📋 REMAINING WAVE: src/scenes/dungeon/MAZE_OVERHAUL_PLAN.md
 
