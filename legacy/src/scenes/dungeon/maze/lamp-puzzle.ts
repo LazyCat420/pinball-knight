@@ -14,7 +14,7 @@
  */
 import { type Grid, type TilePos, T_FLOOR, at, idx } from "./generator";
 import type { PinballPartSpot } from "./decorate";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 
 export interface LampPuzzlePlan {
   /** Brazier spots (already PinballPartSpots so they inject into plan.parts). */
@@ -46,7 +46,7 @@ export function lampCountFor(level: number): number {
  * lands on top of them.
  */
 export function authorLampPuzzle(g: Grid, start: TilePos, occupied: (i: number, j: number) => boolean, rng: () => number, lampCount: number): LampPuzzlePlan | null {
-  const d = bfsDistances(g, start.i, start.j);
+  const d = bfsDistancesOwned(g, start.i, start.j); // held while placing
   let maxD = 0;
   for (let k = 0; k < d.length; k++) if (d[k] > maxD) maxD = d[k];
   if (maxD < 8) return null; // too small to bother

@@ -62,13 +62,60 @@ export function faceCameraIso(mesh: THREE.Mesh): void {
 }
 
 /**
+ * SHARED SPRITE RESOURCES.
+ *
+ * Every actor used to allocate its own quad geometry, its own contact-blob
+ * geometry and its own blob material — for shapes that are byte-identical
+ * across the entire horde. At the ~175-zombie cap that is ~350 geometries and
+ * ~175 materials describing two distinct rectangles.
+ *
+ * These are module singletons, built on first use and never disposed: they
+ * outlive any single floor deliberately, since the next floor needs the exact
+ * same two rectangles and rebuilding them per descent is what this removes.
+ * A per-actor `dispose()` must therefore NEVER dispose these — see
+ * `ActorSprite.dispose`, which now only drops what it uniquely owns (its
+ * cloned texture and its material).
+ *
+ * The blob's TEXTURE was already shared; the geometry and material were not.
+ */
+let sharedSpriteGeo: THREE.PlaneGeometry | null = null;
+function spriteGeometry(): THREE.PlaneGeometry {
+  if (sharedSpriteGeo) return sharedSpriteGeo;
+  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
+  // Origin at the bottom-centre so the sprite stands ON its position. Baked
+  // into the shared geometry because it is the same for every actor.
+  geo.translate(0, SPRITE_UNITS / 2, 0);
+  sharedSpriteGeo = geo;
+  return geo;
+}
+
+let sharedBlobGeo: THREE.PlaneGeometry | null = null;
+function blobGeometry(): THREE.PlaneGeometry {
+  if (sharedBlobGeo) return sharedBlobGeo;
+  sharedBlobGeo = new THREE.PlaneGeometry(SPRITE_UNITS * 0.62, SPRITE_UNITS * 0.62);
+  return sharedBlobGeo;
+}
+
+let sharedBlobMat: THREE.MeshBasicMaterial | null = null;
+function blobMaterial(): THREE.MeshBasicMaterial {
+  if (sharedBlobMat) return sharedBlobMat;
+  sharedBlobMat = new THREE.MeshBasicMaterial({
+    map: blobTexture(),
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+  });
+  return sharedBlobMat;
+}
+
+/**
  * Soft round contact-shadow texture, built once and shared by every actor. A
  * radial black-to-transparent gradient; the blob that carries it is tinted and
  * laid flat on the floor under an actor's feet so the billboard reads as
  * standing ON the ground rather than floating in front of it.
  */
 let sharedBlobTexture: THREE.CanvasTexture | null = null;
-function blobTexture(): THREE.CanvasTexture {
+export function blobTexture(): THREE.CanvasTexture {
   if (sharedBlobTexture) return sharedBlobTexture;
   const s = 64;
   const canvas = document.createElement("canvas");
@@ -94,15 +141,14 @@ function blobTexture(): THREE.CanvasTexture {
  * blob to lie flat on the floor — no per-frame work, and it follows the actor
  * automatically as a child.
  */
+/**
+ * The per-actor blob mesh. Still used when no pool is installed — the intro
+ * scene and unit tests build sprites with no dungeon scene around them, and a
+ * pool is a floor-scoped resource. `installBlobPool` swaps in the instanced
+ * path for the dungeon, where the actor count actually matters.
+ */
 function makeContactBlob(parent: THREE.Mesh): THREE.Mesh {
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS * 0.62, SPRITE_UNITS * 0.62);
-  const mat = new THREE.MeshBasicMaterial({
-    map: blobTexture(),
-    transparent: true,
-    depthWrite: false,
-    fog: true,
-  });
-  const blob = new THREE.Mesh(geo, mat);
+  const blob = new THREE.Mesh(blobGeometry(), blobMaterial());
   blob.renderOrder = 6; // above the floor, below the actor (10)
 
   const inv = parent.quaternion.clone().invert();
@@ -368,12 +414,15 @@ export interface ActorSprite {
 }
 
 export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite {
-  // Origin at the bottom-centre so the sprite stands ON its position.
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS, SPRITE_UNITS);
-  geo.translate(0, SPRITE_UNITS / 2, 0);
+  // Shared across every actor — the quad and its bottom-centre origin are
+  // identical for all of them (see spriteGeometry).
+  const geo = spriteGeometry();
 
   // The texture is cloned per-sprite so two actors sharing a sheet can be on
   // different frames — the offset lives on the texture, not the material.
+  // This clone is the ONE genuinely per-actor allocation here, and it is why
+  // the horde cannot simply become a single InstancedMesh without first moving
+  // the frame offset into an instanced attribute.
   let tex = sheet.texture.clone();
   tex.needsUpdate = true;
 
@@ -448,11 +497,14 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       blob.position.copy(new THREE.Vector3(0, 0.02 - dy, 0).applyQuaternion(inv));
     },
     dispose: () => {
-      geo.dispose();
+      // ONLY what this actor uniquely owns. `geo`, the blob's geometry and the
+      // blob's material are module singletons shared by every actor on the
+      // floor (see spriteGeometry/blobGeometry/blobMaterial) — disposing them
+      // here would tear the shared buffers out from under every OTHER living
+      // actor the moment the first one died, so the horde would render blank
+      // from the first kill onward. They are deliberately never disposed.
       mat.dispose();
       tex.dispose();
-      (blob.geometry as THREE.BufferGeometry).dispose();
-      (blob.material as THREE.Material).dispose();
     },
   };
 

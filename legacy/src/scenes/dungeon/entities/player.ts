@@ -12,6 +12,7 @@
  * boots come from the gear slots.
  */
 import { state, activeWeapon, type Player } from "../state";
+import { requestShake, requestHitstop } from "./juice";
 import { skillAgg } from "../skill-runtime";
 import {
   PLAYER_SPEED,
@@ -501,7 +502,7 @@ function startWallLaunch(kind: "kick" | "pounce", normal: { nx: number; nz: numb
   for (let i = 0; i < 4; i++) {
     state.vfx?.dust(p.x - p.wallMoveDirX * (0.2 + i * 0.12), 0.08 + i * 0.05, p.z - p.wallMoveDirZ * (0.2 + i * 0.12));
   }
-  state.shakeT = Math.max(state.shakeT, 0.12);
+  requestShake(0.12);
   return true;
 }
 
@@ -583,8 +584,8 @@ function pounceSlam(move: MoveTiming): void {
     const ang = (i / 6) * Math.PI * 2;
     state.vfx?.dust(p.x + Math.cos(ang) * POUNCE_AOE * 0.6, 0.05, p.z + Math.sin(ang) * POUNCE_AOE * 0.6);
   }
-  state.shakeT = Math.max(state.shakeT, 0.3);
-  state.hitstopT = Math.max(state.hitstopT, 0.06);
+  requestShake(0.3);
+  requestHitstop(0.06);
   sfxHeavy();
 }
 
@@ -839,7 +840,7 @@ function startRide(): void {
   p.anim.setRate(1.4);
   // The toast/sfx already fired when the hatch opened (startDrop) — the ride is
   // the second half of one event, not a new one.
-  state.shakeT = Math.max(state.shakeT, 0.2);
+  requestShake(0.2);
 }
 
 /**
@@ -912,7 +913,7 @@ function updateRide(dt: number): boolean {
     for (const q of state.pinballParts) if (q.kind === "trapdoor") q.cooldownT = Math.max(q.cooldownT, TRAPDOOR_COOLDOWN);
     onPartTrigger();
     for (let k = 0; k < 3; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
-    state.shakeT = Math.max(state.shakeT, 0.25);
+    requestShake(0.25);
     sfxHeavy();
   }
   return true;
@@ -978,7 +979,7 @@ function startRampHop(dirX: number, dirZ: number, speed: number): void {
   p.anim.setRate(1.3);
   p.anim.play("roll", { force: true }); // reuse the tumble clip for the airborne hop
   sfxRoll();
-  state.shakeT = Math.max(state.shakeT, 0.14);
+  requestShake(0.14);
 }
 
 /**
@@ -1020,7 +1021,7 @@ function updateHop(dt: number): boolean {
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.hopSpeed);
     onPartTrigger();
     for (let k = 0; k < 4; k++) state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.5, 0.04, p.z + (Math.random() - 0.5) * 0.5);
-    state.shakeT = Math.max(state.shakeT, 0.16);
+    requestShake(0.16);
     sfxHeavy();
   }
   return true;
@@ -1113,7 +1114,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       p.momX = p.throwDirX;
       p.momZ = p.throwDirZ;
       p.momSpeed = p.throwSpeed;
-      state.shakeT = Math.max(state.shakeT, 0.22);
+      requestShake(0.22);
       state.vfx?.sparks(p.x + p.momX * PLAYER_R, 0.35, p.z + p.momZ * PLAYER_R, p.momX, p.momZ, 16);
       sfxSpring();
     }
@@ -1132,11 +1133,11 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       if (zone === "cruise") {
         p.overcharge = 1; // arm ball form the moment you reach the flow state
         showToast("🌀 CRUISE", `combo ×${p.bounceCombo} · in the flow`);
-        state.shakeT = Math.max(state.shakeT, 0.16);
+        requestShake(0.16);
         sfxSpring();
       } else if (zone === "frenzy") {
         showToast("🔥 FRENZY", `combo ×${p.bounceCombo} · on the edge`);
-        state.shakeT = Math.max(state.shakeT, 0.3);
+        requestShake(0.3);
         sfxBumper();
       }
     }
@@ -1260,7 +1261,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       // Sparks stream ALONG the lane, not off the wall — the visual has to read
       // as "carried around the bend", which is the whole difference from rubber.
       state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, lane.tx, lane.tz, 18);
-      state.shakeT = Math.max(state.shakeT, 0.14);
+      requestShake(0.14);
       emitMaterialOnBounce(nx, nz);
       sfxBumper();
     } else if (vn < 0) {
@@ -1294,8 +1295,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         state.goldRun += ARC_KICK_GOLD;
         addGold(ARC_KICK_GOLD, "dungeon-game");
         state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, nx, nz, 16);
-        state.shakeT = Math.max(state.shakeT, 0.2);
-        state.hitstopT = Math.max(state.hitstopT, 0.04);
+        requestShake(0.2);
+        requestHitstop(0.04);
         emitMaterialOnBounce(nx, nz);
         sfxBumper();
       } else {
@@ -1305,8 +1306,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         p.bounceComboT = comboWindow(p.bounceCombo);
         notePocketBounce(p);
         state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
-        state.shakeT = Math.max(state.shakeT, 0.1 + Math.min(0.12, p.bounceCombo * 0.02));
-        state.hitstopT = Math.max(state.hitstopT, 0.02);
+        requestShake(0.1 + Math.min(0.12, p.bounceCombo * 0.02));
+        requestHitstop(0.02);
         emitMaterialOnBounce(nx, nz);
         sfxRoll();
       }
@@ -1374,8 +1375,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     const sx = n ? n.nx : -p.momX;
     const sz = n ? n.nz : -p.momZ;
     state.vfx?.sparks(p.x + sx * PLAYER_R, 0.35, p.z + sz * PLAYER_R, sx, sz, (corner ? 14 : 6) + Math.min(10, p.bounceCombo * 2));
-    state.shakeT = Math.max(state.shakeT, (corner ? 0.18 : 0.1) + Math.min(0.12, p.bounceCombo * 0.02));
-    state.hitstopT = Math.max(state.hitstopT, corner ? 0.05 : 0.02);
+    requestShake((corner ? 0.18 : 0.1) + Math.min(0.12, p.bounceCombo * 0.02));
+    requestHitstop(corner ? 0.05 : 0.02);
     emitMaterialOnBounce(sx, sz);
     sfxRoll();
   }
@@ -1446,7 +1447,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     }
     if (hit) {
       p.ramT = BALL_RAM_COOLDOWN;
-      state.shakeT = Math.max(state.shakeT, 0.18);
+      requestShake(0.18);
     }
   }
 
@@ -1564,7 +1565,7 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
     p.ramT = 0;
     if (state.plungerSkill) armSkillShot(state.plungerSkill);
     sfxSpring();
-    state.shakeT = Math.max(state.shakeT, 0.14 + 0.22 * state.plungerPower);
+    requestShake(0.14 + 0.22 * state.plungerPower);
     state.vfx?.sparks(p.x, 0.4, p.z, -dir.x, -dir.z, 6);
     state.plungerArmed = false;
     state.plungerCharging = false;
@@ -1673,7 +1674,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
           cutRoll += 0.14;
         }
         state.vfx?.burst(p.x + ffx, 0.6, p.z + ffz, 0xff6600, 20, 4.5);
-        state.shakeT = Math.max(state.shakeT, 0.25);
+        requestShake(0.25);
       }
     }
     // A combo can chain once the active window has passed (early recovery); the
@@ -1809,7 +1810,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.ramT = 0;
       p.bounceCombo = 1; // the launch itself is the first bounce of the chain
       p.bounceComboT = comboWindow(p.bounceCombo);
-      state.shakeT = Math.max(state.shakeT, 0.2);
+      requestShake(0.2);
       state.vfx?.sparks(p.x + (n ? n.nx : 0) * PLAYER_R, 0.35, p.z + (n ? n.nz : 0) * PLAYER_R, p.momX, p.momZ, 10);
       sfxHeavy();
       syncActorMesh(p);
@@ -2011,7 +2012,7 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
     state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xffffff, { scale: 1.7, life: 0.2 });
     state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xff8800, { scale: 1.45, mirror: true, life: 0.17 });
     state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.16, 0.55); // the wind-up blur
-    state.shakeT = Math.max(state.shakeT, 0.12);
+    requestShake(0.12);
   } else if (move === HEAVY) {
     state.vfx?.slash(p.x + fx * 0.75, 0.6, p.z + fz * 0.75, p.facing, wc, { scale: 1.6 });
   } else {

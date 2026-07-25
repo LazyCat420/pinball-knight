@@ -13,7 +13,8 @@
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape, shapeAt } from "./generator";
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
-import { bfsDistances } from "../entities/ai";
+import { createSpacingGrid } from "./spacing-grid";
+import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 import { PICKUP_WEAPONS } from "../items";
 
 export interface Torch extends TilePos {
@@ -368,7 +369,7 @@ export function pickEndpoints(g: Grid, rng: () => number): Endpoints | null {
   // Stairs: a random pick from the far band, not the strict argmax — so two
   // floors that happen to share a start corner still put the exit in
   // different places.
-  const dist = bfsDistances(g, start.i, start.j);
+  const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
   let maxDist = 0;
   for (const p of floors) maxDist = Math.max(maxDist, dist[idx(g, p.i, p.j)]);
   const cutoff = Math.max(1, maxDist * FAR_BAND);
@@ -440,7 +441,7 @@ const FAR_BAND = 0.82;
  * widened highway to somewhere that isn't the exit.
  */
 export function widenMainArtery(g: Grid, ends: Endpoints): void {
-  const dist = bfsDistances(g, ends.start.i, ends.start.j);
+  const dist = bfsDistancesOwned(g, ends.start.i, ends.start.j); // held across later BFS calls
   if (dist[idx(g, ends.stairs.i, ends.stairs.j)] <= 6) return; // too small to bother
   widenArtery(g, ends.start, ends.stairs, dist);
 }
@@ -1324,7 +1325,7 @@ export function decorateMaze(
       }
     }
   }
-  const dist = bfsDistances(g, start.i, start.j);
+  const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
 
   const floors: TilePos[] = [];
   let maxDist = 0;
@@ -1372,11 +1373,23 @@ export function decorateMaze(
   );
   // Two passes: first honour a pairwise separation so the horde is spread
   // through the maze, then (if the maze is too small for that) fill anyway.
-  for (const pass of [2.5, 0]) {
+  // The spacing test is bucketed rather than a linear scan over `spawns`:
+  // at the caps this loop ran 26,400 candidates x 135 placed. `taken` also
+  // replaces the `spawns.includes(p)` identity check, which was a second O(n)
+  // scan per candidate — a tile already chosen in pass 1 is simply marked.
+  const spawnGrid = [createSpacingGrid(2.5), createSpacingGrid(0)];
+  const taken = new Set<number>();
+  for (let pass = 0; pass < 2; pass++) {
+    const near = spawnGrid[pass];
     for (const p of candidates) {
       if (spawns.length >= zombieCount) break;
-      if (spawns.some((s) => Math.hypot(s.i - p.i, s.j - p.j) < pass) || spawns.includes(p)) continue;
+      const k = idx(g, p.i, p.j);
+      if (taken.has(k) || near.occupied(p.i, p.j)) continue;
       spawns.push(p);
+      taken.add(k);
+      // Every grid must learn the point, or pass 2 would re-place on top of
+      // pass 1's spawns.
+      for (const gr of spawnGrid) gr.add(p.i, p.j);
     }
     if (spawns.length >= zombieCount) break;
   }
@@ -1384,12 +1397,17 @@ export function decorateMaze(
   // ── Torches: floor tiles with an adjacent SOLID wall, spaced ≥4 apart.
   // Never a cracked band — its sconce would hang in mid-air after the smash. ──
   const torches: Torch[] = [];
+  // Manhattan spacing, bucketed — the linear form ran 26,400 x 80 at the caps.
+  // The metric MUST stay manhattan: switching to euclid here would change which
+  // tiles qualify and reroll every floor's torch layout.
+  const torchGrid = createSpacingGrid(4, "manhattan");
   for (const p of shuffled(floors, rng)) {
     if (torches.length >= torchBudget) break;
-    if (torches.some((t) => Math.abs(t.i - p.i) + Math.abs(t.j - p.j) < 4)) continue;
+    if (torchGrid.occupied(p.i, p.j)) continue;
     const side = WALL_SIDES.find(([di, dj]) => at(g, p.i + di, p.j + dj) === T_WALL);
     if (!side) continue;
     torches.push({ i: p.i, j: p.j, di: side[0], dj: side[1] });
+    torchGrid.add(p.i, p.j);
   }
 
   // ── Items: this level's roll, scattered on quieter floor tiles ──

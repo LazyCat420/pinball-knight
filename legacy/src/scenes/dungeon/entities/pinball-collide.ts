@@ -18,6 +18,7 @@
  * Part cooldowns/hit animations are ticked by the parts renderer (one owner);
  * this only consumes ready parts and stamps cooldownT/hitT.
  */
+import { PART_TOUCH_BROAD_SQ } from "../constants";
 import { state, type Player, type PinballPart, type PinballPartKind } from "../state";
 import {
   PLAYER_R,
@@ -95,6 +96,7 @@ import { lightLamp } from "../lamp-puzzle";
 import { screenDirToWorld } from "../camera";
 import { syncActorMesh, damageZombie } from "./combat";
 import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit, lavaVaporizesOil } from "./marble";
+import { requestShake, requestHitstop } from "./juice";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**
@@ -160,7 +162,7 @@ export function onPartTrigger(): void {
     state.goldRun += FRENZY_GOLD;
     addGold(FRENZY_GOLD, "dungeon-game");
     showToast("🪩 FRENZY", `${state.partComboHits} parts in one chain · +${FRENZY_GOLD}g`);
-    state.shakeT = Math.max(state.shakeT, 0.25);
+    requestShake(0.25);
   }
 }
 
@@ -173,7 +175,7 @@ function fireJackpot(): void {
   state.goldRun += JACKPOT_GOLD;
   addGold(JACKPOT_GOLD, "dungeon-game");
   showToast("🪩 JACKPOT!", `bumpers lit · +${JACKPOT_GOLD}g`);
-  state.shakeT = Math.max(state.shakeT, 0.4);
+  requestShake(0.4);
   state.jackpotT = 3;
   for (const z of state.zombies) {
     if (z.mode === "dead") continue;
@@ -222,7 +224,7 @@ function fallInGravePit(px: number, pz: number): void {
   p.sprite.mesh.position.y = -0.55;
   p.hp = 0; // death is polled from hp <= 0 in core's sim step
   state.hudDirty = true;
-  state.shakeT = Math.max(state.shakeT, 0.5);
+  requestShake(0.5);
   state.vfx?.burst(px, 0.2, pz, PALETTE_HEX[11], 22, 3.2);
   syncActorMesh(p);
   showToast("🕳️ SWALLOWED", "the floor gave way where a knight fell");
@@ -275,7 +277,7 @@ function fallInPit(px: number, pz: number): void {
     spendGold(lost);
   }
   state.hudDirty = true;
-  state.shakeT = Math.max(state.shakeT, 0.4);
+  requestShake(0.4);
   syncActorMesh(p);
   showPickupNote(`🕳️ FELL IN A PIT — climbing out${lost > 0 ? ` · −${lost}g` : ""}`);
   sfxHurt();
@@ -335,8 +337,8 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.cooldownT = BUMPER_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.5, part.z, dx, dz, lit ? 18 : 12);
-    state.shakeT = Math.max(state.shakeT, lit ? 0.22 : 0.16);
-    state.hitstopT = Math.max(state.hitstopT, 0.03);
+    requestShake(lit ? 0.22 : 0.16);
+    requestHitstop(0.03);
     sfxBumper();
     if (lit) {
       state.goldRun += BUMPER_LIT_GOLD;
@@ -359,7 +361,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.hitT = 0;
     state.vfx?.dust(part.x, 0.1, part.z);
     state.vfx?.sparks(part.x, 0.3, part.z, part.dirX, part.dirZ, 8);
-    state.shakeT = Math.max(state.shakeT, 0.14);
+    requestShake(0.14);
     sfxSpring();
   },
 
@@ -383,7 +385,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // a distinct whoosh, so a ramp launch is unmistakable (not a silent shove).
     state.vfx?.dust(p.x, 0.06, p.z);
     state.vfx?.sparks(part.x, 0.45, part.z, part.dirX, part.dirZ, 16);
-    state.shakeT = Math.max(state.shakeT, 0.12);
+    requestShake(0.12);
     sfxSpin();
   },
 
@@ -433,8 +435,8 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     onPartTrigger();
     part.cooldownT = DEFLECTOR_COOLDOWN + DEFLECTOR_GRAB_TIME;
     part.hitT = 0;
-    state.hitstopT = Math.max(state.hitstopT, 0.05);
-    state.shakeT = Math.max(state.shakeT, 0.12);
+    requestHitstop(0.05);
+    requestShake(0.12);
     state.vfx?.sparks(part.x, 0.35, part.z, 0, 0, 10);
     sfxHeavy();
     // D2 — if this rail is a corner of an ORBIT, it might have just advanced
@@ -484,7 +486,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.cooldownT = SPINPAD_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 10);
-    state.shakeT = Math.max(state.shakeT, 0.14);
+    requestShake(0.14);
     sfxSpin();
   },
 
@@ -536,7 +538,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
           addGold(BANK_CLEAR_GOLD, "dungeon-game");
           showToast("🎯 TARGET BANK!", `1·2·3 lit · +${BANK_CLEAR_GOLD}g`);
           recordShot("bank");
-          state.shakeT = Math.max(state.shakeT, 0.3);
+          requestShake(0.3);
         } else {
           showPickupNote(`🎯 BANK ${(part.seq ?? 0) + 1}/${bankParts.length}`);
         }
@@ -560,7 +562,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     state.goldRun += TARGET_GOLD;
     addGold(TARGET_GOLD, "dungeon-game");
     state.vfx?.sparks(part.x, 0.6, part.z, dx, dz, 14);
-    state.shakeT = Math.max(state.shakeT, 0.14);
+    requestShake(0.14);
     sfxTarget();
     if (state.targetsHit >= state.targetsTotal && state.targetsTotal > 0) {
       state.goldRun += TARGET_CLEAR_GOLD;
@@ -605,7 +607,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.cooldownT = FLIPPER_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, 16);
-    state.shakeT = Math.max(state.shakeT, 0.22);
+    requestShake(0.22);
     sfxSpring();
   },
 
@@ -709,6 +711,14 @@ export function touchPinballParts(inMomentum: boolean, curSpeed: number, deps: P
     const dx = p.x - part.x;
     const dz = p.z - part.z;
     const d2 = dx * dx + dz * dz;
+    // BROAD PHASE. Every handler's first act is a radius test against its own
+    // (small) trigger distance, so a part tens of tiles away can only ever
+    // return "no". Rejecting those here skips the call and the per-kind work
+    // behind it. The cutoff is deliberately far larger than any part's real
+    // trigger radius — this must never change WHICH parts fire, only how
+    // quickly we discover that distant ones do not. A tight gate here would
+    // be a collision bug, not an optimisation.
+    if (d2 > PART_TOUCH_BROAD_SQ) continue;
     const stop = PART_HANDLERS[part.kind]({ part, p, dx, dz, d2, inMomentum, curSpeed, deps });
     if (stop === "stop") return;
   }

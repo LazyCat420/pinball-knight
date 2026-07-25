@@ -21,7 +21,7 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -1037,26 +1037,43 @@ export function updatePinballParts(dt: number): void {
   const pl = state.player;
   const aiming = !!pl && pl.momSpeed >= SHOT_LIGHT_MIN_SPEED;
   for (const part of state.pinballParts) {
+    // TIMERS ALWAYS TICK, for every part on the floor, however distant.
+    // These are GAME STATE, not animation: a bumper's cooldown decides whether
+    // it fires when you arrive, so freezing it off-screen would mean a part's
+    // readiness depended on whether you had been looking at it. That is the
+    // classic distance-culling bug and it would be maddening to debug.
     part.cooldownT = Math.max(0, part.cooldownT - dt);
     if (part.hitT >= 0) part.hitT += dt;
+    if (part.hitT > PART_HIT_LIFETIME[part.kind]) part.hitT = -1;
+
+    // Everything BELOW here is purely visual, so it is gated on being near
+    // enough to see. The animator walks meshes and writes material uniforms —
+    // by far the expensive half — and a part the camera cannot show has
+    // nothing to animate. The camera sees VIEW_W x VIEW_H tiles, so a radius
+    // generous enough to cover the corners still skips most of a big floor.
+    const vdx = pl ? part.x - pl.x : 0;
+    const vdz = pl ? part.z - pl.z : 0;
+    const near = !pl || vdx * vdx + vdz * vdz <= PART_ANIM_RANGE_SQ;
+    if (!near) {
+      // Off-screen parts must not keep a stale "aimed" glow: if one lights up
+      // and you leave, it would still be lit when you came back.
+      part.aimed = false;
+      continue;
+    }
 
     part.aimed = false;
     if (aiming && pl) {
-      const dx = part.x - pl.x;
-      const dz = part.z - pl.z;
-      const dist = Math.hypot(dx, dz);
+      const dist = Math.hypot(vdx, vdz);
       if (dist > 0.6 && dist <= SHOT_LIGHT_RANGE) {
         // Inside the forward cone — tighter the further away, so the light
         // resolves onto ONE part as you close rather than washing a whole room.
-        part.aimed = (pl.momX * dx + pl.momZ * dz) / dist >= SHOT_LIGHT_COS;
+        part.aimed = (pl.momX * vdx + pl.momZ * vdz) / dist >= SHOT_LIGHT_COS;
       }
     }
 
     // Self-clocks (glove, fire vent) live at the top of their own animator, so
     // they still stamp hitT before this frame's animation reads it.
     PART_ANIMATORS[part.kind](part, { dt, frozen });
-
-    if (part.hitT > PART_HIT_LIFETIME[part.kind]) part.hitT = -1;
   }
 }
 
