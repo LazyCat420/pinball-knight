@@ -108,6 +108,10 @@ function injectStyles(): void {
     .gmenu-node-text i{font-style:normal;font-size:8px;letter-spacing:.5px;margin-top:1px}
     .gmenu-node.open{border-color:#8fe86f}
     .gmenu-node.open i{color:#8fe86f}
+    /* Prereqs met, just can't afford it yet: stays legible and stays put.
+       Only the affordability tint changes when points are spent. */
+    .gmenu-node.reachable{opacity:.9;border-color:#5c6f4e}
+    .gmenu-node.reachable i{color:#7f9a6f}
     .gmenu-node.locked{opacity:.55;cursor:not-allowed}
     .gmenu-node.locked i{color:#d9a75a}
     .gmenu-node.maxed{border-color:${GOLD};cursor:default}
@@ -182,7 +186,10 @@ function skillNode(id: string): string {
   const rank = state.skillRanks[id] ?? 0;
   const gate = canLearn(id, state.skillRanks, state.skillPoints);
   const maxed = rank >= def.maxRank;
-  const cls = maxed ? "maxed" : gate.ok ? "open" : "locked";
+  // Four states, not three. "reachable" (prereqs met, can't afford yet) is its
+  // own quiet look so the tree does NOT flip from all-green to all-dark on
+  // every spend — that flicker is what read as broken selection.
+  const cls = maxed ? "maxed" : gate.ok ? "open" : gate.reachable ? "reachable" : "locked";
   const pips = Array.from({ length: def.maxRank }, (_, i) => `<span class="gmenu-pip ${i < rank ? "on" : ""}"></span>`).join("");
   const req = (def.requires ?? []).map((r) => SKILLS[r]?.label).filter(Boolean).join(", ");
   const sub = maxed ? "MAXED" : gate.ok ? `+1 rank · ${def.cost}pt` : gate.why ?? "";
@@ -366,10 +373,38 @@ function flash(msg: string): void {
   }, 1600);
 }
 
-function handle(act: string, ds: { idx?: string; w?: string }): void {
-  const raw = ds.idx ?? "";
-  const idx = ds.idx !== undefined && ds.idx !== "" ? parseInt(ds.idx, 10) : -1;
-  const wIdx = ds.w !== undefined && ds.w !== "" ? parseInt(ds.w, 10) : -1;
+/**
+ * Resolve one delegated click into the two things a handler actually wants:
+ * an ENTITY ID (a skill/perk/ability/tab name, from the `data-act` suffix) and
+ * a NUMERIC INDEX (a stash/slot position, from `data-idx`).
+ *
+ * These used to share one field, which is what broke the skill tree: holoCard
+ * renders `data-idx=""` (empty string, not absent), and `ds.idx ?? suffix`
+ * only falls through on `undefined` — so an empty index SHADOWED the suffix and
+ * `spendSkillPoint("")` looked up an unknown node, failing silently while the
+ * re-render repainted every affordance. Empty means ABSENT here, and the id
+ * never reads from `data-idx` at all.
+ *
+ * Exported for menu-dispatch.test.ts — the fault was in this resolution, not in
+ * any of the pure tables the rest of the suite already covers.
+ */
+export function resolveAct(
+  suffix: string | undefined,
+  ds: { idx?: string; w?: string },
+): { id: string; idx: number; wIdx: number } {
+  const num = (v: string | undefined): number => (v !== undefined && v !== "" ? parseInt(v, 10) : -1);
+  const idx = num(ds.idx);
+  return {
+    // The suffix is the id. Fall back to a numeric data-idx only for the
+    // legacy card handlers ("pick") that carry their id positionally.
+    id: suffix !== undefined && suffix !== "" ? suffix : idx >= 0 ? String(idx) : "",
+    idx,
+    wIdx: num(ds.w),
+  };
+}
+
+function handle(act: string, ds: { idx?: string; w?: string; suffix?: string }): void {
+  const { id: raw, idx, wIdx } = resolveAct(ds.suffix, ds);
   // Any click that isn't the abandon button disarms it.
   if (act !== "abandon" && abandonArmed) abandonArmed = false;
 
@@ -452,6 +487,12 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
 
   // ── Skills: spend a point into a tree node ──
   if (act === "skill") {
+    // A dispatch that loses the node id used to no-op silently while still
+    // re-rendering, which read as "the tree selects everything then nothing".
+    if (!raw || !SKILLS[raw]) {
+      flash("couldn't read that skill node");
+      return;
+    }
     const res = spendSkillPoint(raw);
     if (!res.ok) flash(res.why ?? "can't learn that yet");
     else flash(`${SKILLS[raw].icon} ${SKILLS[raw].label} — rank ${state.skillRanks[raw]}`);
@@ -563,7 +604,7 @@ export function openGameMenu(container: HTMLElement, d: MenuDeps): void {
       return;
     }
     const [name, suffix] = t.dataset.act!.split(":");
-    handle(name, { idx: t.dataset.idx ?? suffix, w: t.dataset.w });
+    handle(name, { idx: t.dataset.idx, w: t.dataset.w, suffix });
   });
   container.appendChild(el);
   state.menuEl = el;

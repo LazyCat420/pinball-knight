@@ -5,6 +5,7 @@ import { freshRail, type RailState } from "./entities/rail";
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
+import type { AimIndicator } from "./render/aim-indicator";
 import type { ActorSprite, SpriteSheet } from "./render/sprite";
 import type { Animator, Facing } from "./render/animator";
 import type { Grid, TilePos } from "./maze/generator";
@@ -597,6 +598,8 @@ export const state = {
   camera: null as THREE.OrthographicCamera | null,
   pixelPass: null as PixelPass | null,
   vfx: null as VfxSystem | null,
+  /** Pinball heading/steer arrows — only visible while rolling. */
+  aimIndicator: null as AimIndicator | null,
 
   // Run state
   level: 1,
@@ -1146,6 +1149,7 @@ export function resetState(): void {
   state.fpsStreakT = 0;
   state.hitstopT = 0;
   state.vfx = null;
+  state.aimIndicator = null;
   state.accumulator = 0;
   state.animFrameId = null;
   state.lastTime = 0;

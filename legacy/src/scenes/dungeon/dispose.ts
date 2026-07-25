@@ -92,6 +92,8 @@ export function disposeAll(): void {
 
   state.vfx?.dispose();
   state.vfx = null;
+  state.aimIndicator?.dispose();
+  state.aimIndicator = null;
 
   state.pixelPass?.dispose();
 

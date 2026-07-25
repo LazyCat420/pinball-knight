@@ -28,6 +28,7 @@ import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
+import { createAimIndicator } from "./render/aim-indicator";
 import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
@@ -418,6 +419,12 @@ export function launchDungeonGame(onExit?: () => void): void {
   // Lives for the whole session (not per level); drawn into the scene so it
   // gets pixelated, quantized and bloomed with everything else.
   state.vfx = createVfx(state.scene);
+
+  // ── Pinball aim indicator ──
+  // Ground decal showing heading vs steer while rolling; hidden otherwise, so
+  // it costs nothing visually outside ball form.
+  state.aimIndicator = createAimIndicator();
+  state.scene.add(state.aimIndicator.group);
 
   // ── Camera ──
   state.camera = createDungeonCamera();

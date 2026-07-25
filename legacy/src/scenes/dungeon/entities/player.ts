@@ -1194,6 +1194,20 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     p.momZ /= ml;
   }
 
+  // Draw the heading/steer arrows AFTER the bend is applied, so the gold arrow
+  // is the momentum you actually have this frame. Steering under a lock still
+  // shows the heading — the cyan pull arrow just drops out, which is itself the
+  // feedback that steering is currently disabled (dash panel / oil).
+  state.aimIndicator?.update(
+    p.x,
+    p.z,
+    p.momX,
+    p.momZ,
+    steerLockT <= 0 && (steerX !== 0 || steerZ !== 0) ? { x: steerX, z: steerZ } : null,
+    p.momSpeed,
+    PINBALL_MAX_SPEED,
+  );
+
   // Advance and detect a wall hit: try the full step; if moveCircle clamps us
   // short of the intended landing spot, we hit something — REFLECT the momentum
   // about the wall normal (wallContact at the pre-move point gives it).
@@ -1695,6 +1709,11 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // ── Pinball ── while momentum is live the knight bounces off walls and owns
   // the player. A dodge tap BAILS OUT of it (kill the momentum, then fall
   // through so the same tap can start a roll off the exit).
+  // The arrows belong to ball form only — any frame that reaches the walking
+  // code below has left it, so clear them here rather than at each of
+  // updatePinball's several early returns.
+  if (p.momSpeed <= 0) state.aimIndicator?.hide();
+
   if (p.momSpeed > 0) {
     if (input.consumeDodge()) {
       // D3 — THE LANE CHANGE: a dodge tap also rotates which rollover lanes are
@@ -1704,6 +1723,11 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.momSpeed = 0;
     } else if (updatePinball(dt, input)) {
       return;
+    } else {
+      // Pinball bailed out mid-roll (grab-hold, launch hand-off) without
+      // reaching its steer block — don't leave a stale arrow pointing at a
+      // heading that is no longer being driven.
+      state.aimIndicator?.hide();
     }
   }
 

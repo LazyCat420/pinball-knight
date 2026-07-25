@@ -125,17 +125,38 @@ export function aggregateSkills(ranks: Record<SkillId, number>, base?: SkillModi
   return a;
 }
 
+/**
+ * Why a node can't take another rank. The POINTS gate is deliberately split
+ * from the others: affording a node is a property of your wallet that changes
+ * on every spend, while being maxed or missing a prerequisite is a property of
+ * the node itself. Collapsing the two made the whole tree light up green at
+ * 1 point and go dark the instant it was spent — read as "it selects
+ * everything, then deselects everything, then nothing is clickable". The menu
+ * styles `reachable` (stable) and `ok` (affordable) differently on the back of
+ * this distinction.
+ */
+export type SkillGate = "ok" | "maxed" | "prereq" | "points";
+
 /** Can this node take another rank right now? */
-export function canLearn(id: SkillId, ranks: Record<SkillId, number>, points: number): { ok: boolean; why?: string } {
+export function canLearn(
+  id: SkillId,
+  ranks: Record<SkillId, number>,
+  points: number,
+): { ok: boolean; why?: string; gate: SkillGate; reachable: boolean } {
   const def = SKILLS[id];
-  if (!def) return { ok: false, why: "unknown skill" };
+  if (!def) return { ok: false, why: "unknown skill", gate: "prereq", reachable: false };
   const cur = ranks[id] ?? 0;
-  if (cur >= def.maxRank) return { ok: false, why: "maxed" };
+  if (cur >= def.maxRank) return { ok: false, why: "maxed", gate: "maxed", reachable: false };
   for (const req of def.requires ?? []) {
-    if ((ranks[req] ?? 0) < 1) return { ok: false, why: `requires ${SKILLS[req]?.label ?? req}` };
+    if ((ranks[req] ?? 0) < 1) {
+      return { ok: false, why: `requires ${SKILLS[req]?.label ?? req}`, gate: "prereq", reachable: false };
+    }
   }
-  if (points < def.cost) return { ok: false, why: `needs ${def.cost} point${def.cost === 1 ? "" : "s"}` };
-  return { ok: true };
+  // Prereqs are satisfied — this node is REACHABLE regardless of the balance.
+  if (points < def.cost) {
+    return { ok: false, why: `needs ${def.cost} point${def.cost === 1 ? "" : "s"}`, gate: "points", reachable: true };
+  }
+  return { ok: true, gate: "ok", reachable: true };
 }
 
 // ── XP curve ──────────────────────────────────────────────────────────────────
