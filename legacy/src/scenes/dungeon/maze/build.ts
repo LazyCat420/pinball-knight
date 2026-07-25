@@ -44,6 +44,66 @@ function noise(x: number, y: number, seed: number): number {
   return n - Math.floor(n);
 }
 
+/**
+ * TEXTURE CACHE — paint once, reuse for the rest of the run.
+ *
+ * Measured: the per-descent canvas work is ~75ms, and it is depth-independent
+ * — sixteen textures rebuilt from scratch on every floor, several of them
+ * 512x512 per-pixel double loops. That was pure waste, because every one of
+ * these images is derived from PALETTE_HEX, a module constant. A Crypt floor
+ * and a Bloodworks floor paint BYTE-IDENTICAL stone; only the scene lighting
+ * differs between biomes (core.ts sets ambient/hemisphere colours, nothing
+ * else). So the same picture was being repainted forever.
+ *
+ * Cached by a caller-supplied key. Entries deliberately OUTLIVE a floor: the
+ * next floor wants the same images, and rebuilding them per descent is exactly
+ * the cost being removed. That makes these immortal module state, so buildMaze
+ * must NOT `track()` a cached texture for disposal — disposing one would blank
+ * the texture for every later floor. See `cachedTexture` callers.
+ *
+ * REPEAT IS NOT PART OF THE IMAGE. Two floors of different sizes need the same
+ * pixels tiled a different number of times, and repeat is a cheap property on
+ * the texture object, not something painted into the canvas. Callers that need
+ * a different repeat get a clone (which shares the underlying canvas/GPU
+ * upload) rather than a repaint.
+ */
+const textureCache = new Map<string, THREE.CanvasTexture>();
+
+/**
+ * Fetch or paint a texture under `key`. `make` runs only on a miss.
+ *
+ * The returned texture is SHARED — never dispose it, and never mutate anything
+ * that changes its pixels. Setting `repeat`/`offset` on a shared texture would
+ * affect every user, so use `cachedTiled` when the repeat varies.
+ */
+function cachedTexture(key: string, make: () => THREE.CanvasTexture): THREE.CanvasTexture {
+  const hit = textureCache.get(key);
+  if (hit) return hit;
+  const tex = make();
+  textureCache.set(key, tex);
+  return tex;
+}
+
+/**
+ * A cached image at a caller-specific tiling. The canvas is painted once and
+ * shared; only the lightweight wrapper differs per repeat.
+ */
+function cachedTiled(key: string, make: () => THREE.CanvasTexture, repeatX: number, repeatY: number): THREE.CanvasTexture {
+  const base = cachedTexture(key, make);
+  if (base.repeat.x === repeatX && base.repeat.y === repeatY) return base;
+  const clone = base.clone();
+  clone.needsUpdate = true;
+  clone.repeat.set(repeatX, repeatY);
+  return clone;
+}
+
+/** Drop every cached texture. Only for a full teardown of the dungeon scene —
+ *  NOT per floor, which is the entire point of the cache. */
+export function clearTextureCache(): void {
+  for (const t of textureCache.values()) t.dispose();
+  textureCache.clear();
+}
+
 function pixelTexture(
   size: number,
   paint: (ctx: CanvasRenderingContext2D) => void,
@@ -881,9 +941,12 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   };
 
   // ── Floor — one plane under the whole grid ──
-  const floorTex = track(makeFloorTexture(grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK));
-  const floorNorm = track(
-    normalTexture(PPU * FLOOR_BLOCK, floorHeight, grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK, 2.0),
+  const floorTex = cachedTiled("floor", () => makeFloorTexture(1, 1), grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK);
+  const floorNorm = cachedTiled(
+    "floor-norm",
+    () => normalTexture(PPU * FLOOR_BLOCK, floorHeight, 1, 1, 2.0),
+    grid.w / FLOOR_BLOCK,
+    grid.h / FLOOR_BLOCK,
   );
   const floorMat = track(
     new THREE.MeshStandardMaterial({
@@ -958,8 +1021,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     }
   }
 
-  const capTex = track(makeCapTexture());
-  const capNorm = track(normalTexture(PPU, capHeight, 1, 1, 2.5));
+  const capTex = cachedTexture("cap", makeCapTexture);
+  const capNorm = cachedTexture("cap-norm", () => normalTexture(PPU, capHeight, 1, 1, 2.5));
   const capMat = track(
     new THREE.MeshStandardMaterial({
       map: capTex,
@@ -980,14 +1043,14 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     // Faces stretch their square texture over the (slightly non-1) wall height
     // rather than repeating — repetition would wrap the trim band into the
     // skirting at the top of the wall. A ~10% stretch is invisible.
-    const faceTex = track(makeWallTexture(mossy, low));
+    const faceTex = cachedTexture(`wall-${mossy}-${low}`, () => makeWallTexture(mossy, low));
     const lowHeight = (x: number, y: number): number => {
       if (y < 2) return 0.7; // top catch-light sits proud
       if (y >= PPU - 4) return 0.1;
       if (Math.abs(y - 28) < 1.5 || x % 22 < 1.5) return 0.2; // joints
       return 0.5;
     };
-    const faceNorm = track(normalTexture(PPU, low ? lowHeight : wallHeight, 1, 1, 2.5));
+    const faceNorm = cachedTexture(`wall-norm-${low}`, () => normalTexture(PPU, low ? lowHeight : wallHeight, 1, 1, 2.5));
     const faceMat = track(
       new THREE.MeshStandardMaterial({
         map: faceTex,
@@ -1025,8 +1088,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const makeFace = (low: boolean, curved: boolean): THREE.Material =>
       track(
         new THREE.MeshStandardMaterial({
-          map: track(makeWallTexture(false, low)),
-          normalMap: track(normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          map: cachedTexture(`wall-false-${low}`, () => makeWallTexture(false, low)),
+          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(PPU, wallHeight, 1, 1, 2.5)),
           normalScale: new THREE.Vector2(1, 1),
           roughness: 0.92,
           metalness: 0,
@@ -1078,8 +1141,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       track(sweepGeo);
       const sweepMat = track(
         new THREE.MeshStandardMaterial({
-          map: track(makeWallTexture(false, false)),
-          normalMap: track(normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          map: cachedTexture("wall-false-false", () => makeWallTexture(false, false)),
+          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(PPU, wallHeight, 1, 1, 2.5)),
           normalScale: new THREE.Vector2(1, 1),
           roughness: 0.92,
           metalness: 0,
@@ -1117,8 +1180,8 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   if (plan.secrets.length) {
     const crackMats = new Map<boolean, THREE.MeshStandardMaterial>();
     for (const low of [false, true]) {
-      const tex = track(makeWallTexture(false, low, true));
-      const norm = track(normalTexture(PPU, low ? capHeight : wallHeight, 1, 1, 2.5));
+      const tex = cachedTexture(`wall-cracked-${low}`, () => makeWallTexture(false, low, true));
+      const norm = cachedTexture(`wall-norm-crack-${low}`, () => normalTexture(PPU, low ? capHeight : wallHeight, 1, 1, 2.5));
       crackMats.set(
         low,
         track(
@@ -1191,7 +1254,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     for (const arcane of [false, true]) {
       const cells = bannerAt.filter((f) => ((f.i + f.j) % 2 === 0) === arcane);
       if (!cells.length) continue;
-      const tex = track(makeBannerTexture(arcane));
+      const tex = cachedTexture(`banner-${arcane}`, () => makeBannerTexture(arcane));
       const mat = track(
         new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 1 }),
       );
@@ -1237,7 +1300,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   }
   if (crates.length) {
     const crateGeo = track(new THREE.BoxGeometry(0.3, 0.3, 0.3));
-    const crateTex = track(makeCrateTexture());
+    const crateTex = cachedTexture("crate", makeCrateTexture);
     const crateMat = track(new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.95 }));
     const mesh = new THREE.InstancedMesh(crateGeo, crateMat, crates.length);
     mesh.castShadow = true;
@@ -1248,7 +1311,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   }
   if (barrels.length) {
     const barrelGeo = track(new THREE.CylinderGeometry(0.13, 0.15, 0.36, 8));
-    const barrelTex = track(makeBarrelTexture());
+    const barrelTex = cachedTexture("barrel", makeBarrelTexture);
     const barrelMat = track(new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.9 }));
     const mesh = new THREE.InstancedMesh(barrelGeo, barrelMat, barrels.length);
     mesh.castShadow = true;
@@ -1324,7 +1387,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // Animated flip-book flame, billboarded to the fixed iso camera. Basic
   // (unlit) so a flame is always the brightest thing on screen — the bloom
   // pass turns that brightness into a halo.
-  const flameStrip = track(makeFlameTexture());
+  const flameStrip = cachedTexture("flame", makeFlameTexture);
   const flameGeo = track(new THREE.PlaneGeometry(0.3, 0.34));
   const flames: Array<{ tex: THREE.Texture; phase: number }> = [];
 
