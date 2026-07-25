@@ -3024,13 +3024,14 @@ function gemItem(hex: string): FramePaint {
 export const ITEM_PAINTS: Record<string, FramePaint> = {
   // Dropped modifier cards, one per CardId, tinted by rarity (see cards.ts).
   ...Object.fromEntries(CARD_IDS.map((id) => [id, cardItem(RARITY_HEX[CARDS[id].rarity])])),
-  sword: groundWeapon("sword"),
-  stick: groundWeapon("stick"),
-  mace: groundWeapon("mace"),
-  chair: groundWeapon("chair"),
-  gun: groundWeapon("gun"),
-  bow: groundWeapon("bow"),
-  flamethrower: groundWeapon("flamethrower"),
+  // DERIVED from the weapon table, not hand-listed. A hand-written list silently
+  // omitted three new weapons; the decorator then spawned one as a ground pickup,
+  // ITEM_PAINTS[id] came back undefined, and the floor build died with
+  // "e is not a function" — a BLACK SCREEN with a working HUD, because the
+  // whole level failed to construct. ITEM_PAINTS is an untyped object literal,
+  // so nothing caught it at compile time. Generating the entries makes adding a
+  // weapon a one-line change that cannot forget its ground sprite.
+  ...Object.fromEntries((Object.keys(WEAPONS) as WeaponId[]).filter((id) => id !== "fists").map((id) => [id, groundWeapon(id)])),
   helmet: HELMET_ITEM,
   armor: ARMOR_ITEM,
   boots: BOOTS_ITEM,

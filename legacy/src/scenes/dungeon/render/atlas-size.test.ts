@@ -13,9 +13,9 @@
  *     looks the same from every angle — the steel ball was 12 identical cells).
  */
 import { describe, expect, it } from "vitest";
-import { makeKnightPaints, type ClipName } from "./cel-painter";
+import { makeKnightPaints, ITEM_PAINTS, type ClipName } from "./cel-painter";
 import { FULL_PLATE } from "./knight-look";
-import { WEAPONS, type WeaponId } from "../items";
+import { WEAPONS, PICKUP_WEAPONS, type WeaponId } from "../items";
 import { SPRITE_PIXEL_GRID, MAX_ATLAS_WIDTH } from "../constants";
 
 const CLIPS: ClipName[] = ["idle", "walk", "run", "attack", "death", "roll", "ball", "steelball", "equip", "forge"];
@@ -71,5 +71,41 @@ describe("the knight atlas fits on the GPU", () => {
   it("every frame has a cell — the grid never truncates content", () => {
     const a = pack("sword");
     expect(a.cols * a.rows).toBeGreaterThanOrEqual(a.frames);
+  });
+});
+
+
+/**
+ * GROUND SPRITES — the black-screen bug that atlas work masked.
+ *
+ * ITEM_PAINTS is an untyped object literal, so a weapon missing from it type-
+ * checks fine. The level decorator then spawns that weapon as a ground pickup,
+ * `ITEM_PAINTS[id]` returns undefined, and the floor build dies with
+ * "e is not a function" — the WHOLE LEVEL fails to construct, which presents as
+ * a black screen with a working HUD. Three new weapons shipped that way.
+ */
+describe("every weapon has a ground sprite", () => {
+  it("REGRESSION: every pickup weapon is paintable on the floor", () => {
+    for (const id of PICKUP_WEAPONS) {
+      const paint = (ITEM_PAINTS as Record<string, unknown>)[id];
+      expect(typeof paint, `ITEM_PAINTS["${id}"] is ${typeof paint} — the floor build will throw`).toBe("function");
+    }
+  });
+
+  it("covers every weapon in the table except fists", () => {
+    for (const id of Object.keys(WEAPONS) as WeaponId[]) {
+      if (id === "fists") continue; // never dropped
+      expect(typeof (ITEM_PAINTS as Record<string, unknown>)[id], `${id} has no ground sprite`).toBe("function");
+    }
+  });
+
+  it("and every weapon renders HELD, not just on the ground", () => {
+    // WEAPON_HELD is Partial<Record<>>, so a missing painter renders the knight
+    // empty-handed rather than throwing — quieter, but still wrong.
+    for (const id of Object.keys(WEAPONS) as WeaponId[]) {
+      if (id === "fists") continue;
+      const p = makeKnightPaints(id, FULL_PLATE);
+      expect(p.S.idle, `${id} has no idle clip`).toBeTruthy();
+    }
   });
 });
