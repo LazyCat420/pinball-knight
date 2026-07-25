@@ -51,6 +51,9 @@ export interface Player extends Actor {
   attackT: number;
   /** True once this swing's active window has connected — one swing, one hit roll. */
   didHit: boolean;
+  /** Did the CURRENT swing actually land on something? Gates the combo chain:
+   *  whiffing drops you back to step 1 (COMBO_REQUIRES_HIT). */
+  comboLanded: boolean;
   cooldown: number;
   iframes: number;
   flashT: number;
@@ -769,6 +772,8 @@ export const state = {
   cardStash: [] as string[],
   /** Per-run cap: at most one legendary card drops from the dungeon per run. */
   legendaryDropped: false,
+  /** One mythic per run, same shape as the legendary latch. */
+  mythicDropped: false,
   /** RUN-scoped alchemy pouch — reagent id → count, gathered from kills, spent
    * brewing at the Tavern Alchemist (recipes.ts). Wiped on death like the rest
    * of the run (only wallet gold + legacy perks survive). */
@@ -992,6 +997,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     facing: "S",
     attackT: -1,
     didHit: false,
+    comboLanded: false,
     cooldown: 0,
     iframes: 0,
     flashT: 0,
@@ -1139,6 +1145,7 @@ export function resetState(): void {
   state.gear = {};
   state.cardStash = [];
   state.legendaryDropped = false;
+  state.mythicDropped = false;
   state.seenCards = new Set();
   state.reagents = {};
   state.flasks = 0;

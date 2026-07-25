@@ -18,7 +18,10 @@
  * DOM- and three-free: the durability math is tested.
  */
 
-export type WeaponId = "fists" | "sword" | "stick" | "mace" | "chair" | "gun" | "bow" | "flamethrower";
+export type WeaponId =
+  | "fists" | "sword" | "stick" | "mace" | "chair"
+  | "greatsword" | "warhammer" | "wreckingball"
+  | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
 export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard";
@@ -45,6 +48,34 @@ export interface WeaponDef {
   pellets?: number;
   /** Melee slash-arc VFX tint (sRGB hex). Defaults to a cold steel white. */
   slashColor?: number;
+  /** Multiplier on the knockback this weapon's hits impart. The chair's whole
+   *  identity is a 360 sweep that SHOVES — reach + shove, not damage. */
+  knockbackMult?: number;
+  /**
+   * HEFT — how heavy this weapon is to SWING, as a multiplier on the move
+   * timeline (windup + recovery). 1 = the standard sword feel.
+   *
+   * Until this existed every weapon shared one set of move timings, so "slow"
+   * could only mean "longer cooldown between identical swings" — a mace and a
+   * stick wound up at exactly the same speed. Heft is what makes a greatsword
+   * COMMIT: a long tell you can be punished during, and a recovery you are
+   * rooted through if you whiff.
+   *
+   * Only stretches windup/recovery, never the ACTIVE window — a heavy weapon
+   * should be slow to start and slow to end, not have a more forgiving hitbox.
+   */
+  heft?: number;
+  /**
+   * MOMENTUM WEAPON — damage scales with the pinball momentum you are carrying
+   * when the blow lands. The wrecking ball's whole identity: it is the one
+   * weapon that rewards swinging mid-ride rather than punishing it.
+   */
+  momentumScaling?: boolean;
+  /** Ranged only — extra enemies a shot passes THROUGH before dying. Baseline
+   *  for the weapon; STACKS with the Piercer/Railgun cards (cards.ts pierce).
+   *  This is the bow's niche: the gun out-ranges and out-paces it, but only the
+   *  bow threads a whole corridor queue with one arrow. */
+  pierce?: number;
   /** How many modifier CARDS this weapon can socket (see cards.ts). The Tavern
    * blacksmith can raise it up to WEAPON_MAX_CARD_SLOTS. */
   cardSlots: number;
@@ -58,14 +89,37 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5, cardSlots: 1 },
   stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e, cardSlots: 1 },
   mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a, cardSlots: 2 },
-  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.5, arcCos: 0.0, cooldown: 0.7, maxDurability: 10, slashColor: 0x6b4a2e, cardSlots: 1 },
+  // CHAIR — the CROWD weapon. arcCos 0 is a full 360 sweep: alone among melee it
+  // hits everything around you, and that is the whole point. It was 2.9 DPS on a
+  // 10-swing life, i.e. worse than fists with no visible reason to pick it up.
+  // Now it reaches furthest, shoves hardest, and lasts long enough to matter.
+  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.8, arcCos: 0.0, cooldown: 0.55, maxDurability: 22, slashColor: 0x6b4a2e, cardSlots: 1, knockbackMult: 2.2 },
   gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04, cardSlots: 2 },
-  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 16, projectile: "arrow", projectileSpeed: 11, spread: 0, cardSlots: 1 },
-  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 110, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2, cardSlots: 3 },
+  // BOW — the LANE weapon. The gun beat it on range, rate and slots, leaving it
+  // with no reason to exist. Arrows now PIERCE: one shot down a corridor spits
+  // a whole queue of foes, which is a thing no other weapon can do.
+  // ══ HEAVY CLASS — slow to swing, and the heft field is what makes that real ══
+  // GREATSWORD — the committed sweep. Longest reach and a wide arc, but heft 1.7
+  // means a long tell you can be punished during and a recovery you are rooted
+  // through if you whiff. You pick your moment with this.
+  greatsword: { id: "greatsword", label: "Greatsword", icon: "🗡", kind: "melee", damage: 5, range: 2.0, arcCos: 0.15, cooldown: 0.9, maxDurability: 40, slashColor: 0xeef1f5, cardSlots: 2, heft: 1.7, knockbackMult: 1.5 },
+  // WARHAMMER — siege. The narrowest melee arc in the game (it hits ONE thing)
+  // paired with the biggest damage and shove: it doesn't clear crowds, it
+  // deletes whatever it lands on. Heaviest heft, so missing genuinely costs.
+  warhammer: { id: "warhammer", label: "Warhammer", icon: "🔨", kind: "melee", damage: 7, range: 1.4, arcCos: 0.72, cooldown: 1.15, maxDurability: 50, slashColor: 0xffd98a, cardSlots: 2, heft: 2.1, knockbackMult: 3.4 },
+  // WRECKING BALL — the pinball weapon. A full 360 sweep like the chair but
+  // lethal, and it is the only weapon whose damage scales with the momentum you
+  // are carrying (see MOMENTUM_WEAPON_* / playerDamage). Swing it while rolling.
+  wreckingball: { id: "wreckingball", label: "Wrecking Ball", icon: "⛓️", kind: "melee", damage: 4, range: 1.9, arcCos: 0.0, cooldown: 1.0, maxDurability: 36, slashColor: 0xc8ccd4, cardSlots: 2, heft: 1.85, knockbackMult: 2.6, momentumScaling: true },
+  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 22, projectile: "arrow", projectileSpeed: 11, spread: 0, cardSlots: 2, pierce: 2 },
+  // FLAMER — the burst tool. 23.5 DPS is 4x the next-best, so it pays for that
+  // with the shortest life in the game: ~3.5s of continuous fire (was 9.4s) and
+  // 2 slots rather than the most. You empty it into a horde, you don't carry it.
+  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 42, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2, cardSlots: 2 },
 };
 
 /** The weapons that spawn as maze pickups (you start with the sword). */
-export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
+export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "greatsword", "warhammer", "wreckingball", "gun", "bow", "flamethrower"];
 
 export interface WeaponState {
   id: WeaponId;

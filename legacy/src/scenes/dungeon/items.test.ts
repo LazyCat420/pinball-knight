@@ -28,8 +28,11 @@ describe("weapon durability", () => {
   });
 
   it("wears down by one per use and reports the breaking use", () => {
-    let w = freshWeapon("chair"); // maxDurability 10
-    for (let i = 0; i < 9; i++) {
+    // Reads maxDurability from the table rather than hardcoding it: a balance
+    // pass on the chair used to redden this test for no real reason.
+    const max = WEAPONS.chair.maxDurability;
+    let w = freshWeapon("chair");
+    for (let i = 0; i < max - 1; i++) {
       const r = degradeWeapon(w);
       expect(r.broke).toBe(false);
       w = r.weapon;

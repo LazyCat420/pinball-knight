@@ -245,7 +245,10 @@ export function fireWeapon(w: WeaponDef, px: number, pz: number, fx: number, fz:
   const pellets = w.pellets ?? 1;
   // PIERCE card: how many extra foes each shot passes through (Piercer/Railgun).
   const wState = state.weaponSlots[state.activeSlot];
-  const pierce = wState?.cards?.length ? aggregateCards(wState.cards).pierce : 0;
+  // Weapon BASELINE pierce (the bow threads a lane) plus whatever the socketed
+  // Piercer/Railgun cards add on top — they stack rather than override.
+  const pierce =
+    (w.pierce ?? 0) + (wState?.cards?.length ? aggregateCards(wState.cards).pierce : 0);
 
   for (let n = 0; n < pellets; n++) {
     const jitter = (Math.random() - 0.5) * 2 * (w.spread ?? 0);

@@ -39,6 +39,8 @@ import {
   PIN_STRIKE_GOLD,
   WEB_TIME,
   CARD_PINBALL_SPEED,
+  PINBALL_MAX_SPEED,
+  MOMENTUM_WEAPON_MAX,
   CARD_CHILL_TIME,
   CARD_BURN_TIME,
   CARD_BURN_DMG,
@@ -86,6 +88,14 @@ export function playerDamage(base: number): number {
       dmg *= agg.critMult;
       _lastCrit = true;
     }
+  }
+  // WRECKING BALL: the one weapon whose damage RIDES your momentum. Swinging
+  // mid-roll is normally awkward; this weapon makes it the point. Scales from
+  // 1x at a standstill to MOMENTUM_WEAPON_MAX at terminal speed.
+  const wd = WEAPONS[activeWeapon().id];
+  if (wd.momentumScaling && p && p.momSpeed > 0) {
+    const t = Math.min(1, p.momSpeed / PINBALL_MAX_SPEED);
+    dmg *= 1 + (MOMENTUM_WEAPON_MAX - 1) * t;
   }
   const skills = skillAgg();
   dmg *= skills.damageMult;
@@ -571,7 +581,9 @@ export function resolvePlayerAttack(scale: MeleeScale = UNIT_MELEE, onHit?: (z: 
     landed = true;
     // Knockback along the swing, wall-aware. Heavier weapons + heavier moves shove harder.
     const dmg = playerDamage(w.damage * scale.damageMul);
-    const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35) * scale.knockbackMul;
+    // The weapon's own shove multiplier rides on top of the move's (the chair
+    // is a crowd-shover, not a damage dealer — that IS its identity).
+    const push = KNOCKBACK_ZOMBIE * (1 + (dmg - 1) * 0.35) * scale.knockbackMul * (w.knockbackMult ?? 1);
     damageZombie(z, dmg, d > 1e-4 ? dx : fx, d > 1e-4 ? dz : fz, push);
     applyCardOnHit(z);
     onHit?.(z); // per-victim presentation hook (katana finisher cut-through ghosts)

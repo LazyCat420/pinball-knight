@@ -79,8 +79,10 @@ export interface CardDef {
    * slain kind's own cards), the bestiary's "what does this thing drop" column,
    * and the source-monster art window on the holo card.
    *
-   * `undefined` = not monster-derived. The mythics are deliberately sourceless —
-   * they are Tavern chase cards, not loot.
+   * `undefined` = not monster-derived. The mythics are sourceless: they have no
+   * single monster to be the essence OF, so an affinity roll can't bias toward
+   * them. They still drop — see MYTHIC_FLOOR — just from a deep boss rather
+   * than from a kind.
    */
   source?: EnemyKind;
 }
@@ -113,7 +115,7 @@ export const CARDS: Record<CardId, CardDef> = {
   pinballwizard: { id: "pinballwizard", label: "Pinball Wizard", icon: "🎰", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, DOUBLE while riding momentum", source: "pin", modifier: { damageMult: 1.4, pinballMult: 2 } },
   soulreaver: { id: "soulreaver", label: "Soul Reaver", icon: "💀", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +50% dmg, hits BURN", source: "reaper", modifier: { damageFlat: 2, damageMult: 1.5, onHit: "burn" } },
   thunderlord: { id: "thunderlord", label: "Thunderlord", icon: "🌩️", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, hits arc a THUNDERBOLT ahead", source: "wisp", modifier: { damageMult: 1.4, bolt: true } },
-  // ── Mythic (iridescent) — build-defining chase cards, sold only at the Tavern ──
+  // ── Mythic (iridescent) — build-defining chase cards: the Tavern shelf, or a floor-10+ boss ──
   worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
   timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
   tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
@@ -307,9 +309,26 @@ export const AFFINITY_CHANCE = 0.7;
 export const COMMON_DROP_CHANCE = 0.08;
 
 /**
+ * MYTHIC — the top of the table, and until now UNREACHABLE from play.
+ *
+ * `rollCardDrop` had branches for legendary/epic/rare/common and none for
+ * mythic, so the five mythics existed only on the tavern's 1% shelf roll at
+ * 600g. Measured over 200k best-case boss rolls (boss + gold wall + floor 20 +
+ * legendary allowed): 0 mythics in 167,830 drops. A whole rarity tier was dead
+ * content you could finish a run without ever seeing.
+ *
+ * Deliberately rarer and DEEPER than legendary — it sits above it in the same
+ * once-per-run shape, so the tier reads as "the run-defining pull" rather than
+ * a second legendary.
+ */
+export const MYTHIC_FLOOR = 10; // boss floors are every 5th, so this is boss #2+
+export const MYTHIC_CHANCE = 0.18;
+
+/**
  * Roll a card drop for a slain enemy (or a smashed gold secret). Rates per the
  * design: common from anything, rare from bosses, epic from bosses/gold walls,
- * legendary once per run from a deep boss. Returns a CardId or null.
+ * legendary once per run from a deep boss, mythic once per run from a DEEPER
+ * boss. Returns a CardId or null.
  *
  * AFFINITY: when `kind` is given, a dropping card is AFFINITY_CHANCE likely to be
  * one of THAT monster's own cards (CardDef.source) at the rarity the gates
@@ -327,6 +346,8 @@ export function rollCardDrop(
     goldWall?: boolean;
     floor: number;
     legendaryAllowed?: boolean;
+    /** False once this run has already dropped its one mythic. */
+    mythicAllowed?: boolean;
     kind?: EnemyKind;
     dropMult?: number;
   },
@@ -349,6 +370,12 @@ export function rollCardDrop(
     }
     return pool[Math.floor(rand() * pool.length)];
   };
+  // Mythic: once per run, only from a DEEP boss, and rarer than legendary.
+  // Checked FIRST so the top tier isn't shadowed by the legendary branch
+  // consuming the same boss roll.
+  if (opts.boss && opts.floor >= MYTHIC_FLOOR && opts.mythicAllowed && rand() < MYTHIC_CHANCE) {
+    return pick(cardsOfRarity("mythic"));
+  }
   // Legendary: once per run, only from a floor-5+ boss.
   if (opts.boss && opts.floor >= 5 && opts.legendaryAllowed && rand() < 0.5) {
     return pick(cardsOfRarity("legendary"));

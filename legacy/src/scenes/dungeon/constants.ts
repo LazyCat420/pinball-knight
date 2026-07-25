@@ -1441,15 +1441,15 @@ export const WALL_CONTACT_PROBE = 0.26;
 export const WALLKICK_DURATION = 0.3; // seconds of the launch hop
 export const WALLKICK_IFRAMES = 0.16; // invuln over the front of the hop
 export const WALLKICK_DISTANCE = 2.2; // tiles launched off the wall
-export const WALLKICK: MoveTiming = { windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, hitstopMul: 1.3 };
+export const WALLKICK: MoveTiming = { tag: "wallkick", windup: 0.04, active: 0.06, recovery: 0.14, damageMul: 1.4, arcMul: 1.2, rangeMul: 1.15, knockbackMul: 1.8, hitstopMul: 1.3 };
 /** Wall-ride: sprint-charged slide along a wall face + a wide sweeping slash. */
-export const WALLRIDE: MoveTiming = { windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, hitstopMul: 1.5 };
+export const WALLRIDE: MoveTiming = { tag: "wallride", windup: 0.05, active: 0.08, recovery: 0.16, damageMul: 1.5, arcMul: 1.7, rangeMul: 1.25, knockbackMul: 1.5, hitstopMul: 1.5 };
 /** Pounce slam: face wall + charge + release → leap arc off the wall to an AoE landing. */
 export const POUNCE_DURATION = 0.36; // arc travel time
 export const POUNCE_IFRAMES = 0.22; // airborne = untouchable most of the arc
 export const POUNCE_DISTANCE = 3.2; // tiles leapt off the wall
 export const POUNCE_AOE = 1.6; // radial hit radius on landing (tiles)
-export const POUNCE: MoveTiming = { windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, hitstopMul: 2 };
+export const POUNCE: MoveTiming = { tag: "pounce", windup: 0.02, active: 0.1, recovery: 0.26, damageMul: 1.9, arcMul: 2, rangeMul: 1, knockbackMul: 2.4, hitstopMul: 2 };
 
 // ── Dodge-roll (tap Space) ──────────────────────────────────────
 /**
@@ -1497,19 +1497,72 @@ export interface MoveTiming {
    * Light ≈ 50ms stays the floor; the heavy lands at ~90ms.
    */
   hitstopMul: number;
+  /**
+   * Stable identity for the move. scaleMove() returns a COPY (heft-stretched),
+   * so `move === COMBO_FINISH` reference checks silently stop matching the
+   * moment a weapon has heft — six presentation branches broke exactly that way
+   * while I was wiring this. Compare `move.tag`, never the object.
+   */
+  tag: MoveTag;
 }
+export type MoveTag = "light1" | "light2" | "finish" | "surge" | "heavy" | "wallride" | "pounce" | "wallkick";
 // The chain ACCELERATES: each step is shorter than the last (and player.ts
 // ramps the clip rate to match), so mashing visibly speeds up into the finisher.
-export const LIGHT_1: MoveTiming = { windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
-export const LIGHT_2: MoveTiming = { windup: 0.06, active: 0.05, recovery: 0.09, damageMul: 1.15, arcMul: 1.15, rangeMul: 1.05, knockbackMul: 1.1, hitstopMul: 1.1 };
+export const LIGHT_1: MoveTiming = { tag: "light1", windup: 0.1, active: 0.05, recovery: 0.12, damageMul: 1, arcMul: 1, rangeMul: 1, knockbackMul: 1, hitstopMul: 1 };
+export const LIGHT_2: MoveTiming = { tag: "light2", windup: 0.06, active: 0.05, recovery: 0.09, damageMul: 1.15, arcMul: 1.15, rangeMul: 1.05, knockbackMul: 1.1, hitstopMul: 1.1 };
 // The finisher is the KATANA moment (white flash, triple cut, cut-through
 // ghosts — see player.ts) so it hits like a payoff: 2× damage, a genuinely wide
 // arc and the heaviest non-heavy hitstop in the kit.
-export const COMBO_FINISH: MoveTiming = { windup: 0.11, active: 0.07, recovery: 0.16, damageMul: 2.0, arcMul: 1.6, rangeMul: 1.25, knockbackMul: 2, hitstopMul: 1.8 };
-export const HEAVY: MoveTiming = { windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, hitstopMul: 1.8 };
+export const COMBO_FINISH: MoveTiming = { tag: "finish", windup: 0.11, active: 0.07, recovery: 0.16, damageMul: 2.0, arcMul: 1.6, rangeMul: 1.25, knockbackMul: 2, hitstopMul: 1.8 };
+export const HEAVY: MoveTiming = { tag: "heavy", windup: 0.24, active: 0.08, recovery: 0.28, damageMul: 2.2, arcMul: 1.5, rangeMul: 1.15, knockbackMul: 2.6, hitstopMul: 1.8 };
+
+/**
+ * FOURTH STEP — the chain no longer stops at three.
+ *
+ * The old chain was light-1 → light-2 → finisher → back to 1, which meant every
+ * melee weapon in the game played the same three beats and the rhythm never
+ * changed. Landing the full chain now opens a SURGE: a wide, hard-hitting
+ * fourth swing that only exists if you actually connected your way there.
+ */
+export const COMBO_SURGE: MoveTiming = { tag: "surge", windup: 0.13, active: 0.09, recovery: 0.2, damageMul: 2.8, arcMul: 1.9, rangeMul: 1.35, knockbackMul: 2.8, hitstopMul: 2.1 };
+/** Wrecking-ball damage multiplier at terminal momentum (1x at a standstill). */
+export const MOMENTUM_WEAPON_MAX = 2.6;
+
+/** How many steps a chain runs before it restarts. */
+export const COMBO_MAX_STEP = 3;
+/** The chain itself, in order. Indexed by p.comboStep. */
+export const COMBO_CHAIN: MoveTiming[] = [LIGHT_1, LIGHT_2, COMBO_FINISH, COMBO_SURGE];
+
+/**
+ * The chain only advances on a swing that CONNECTED. Whiffing drops you back to
+ * step 1 — the combo is a reward for hitting, not for mashing at empty air,
+ * which is what made the old chain feel like it had no stakes.
+ */
+export const COMBO_REQUIRES_HIT = true;
+/**
+ * Each landed step shortens the NEXT step's windup by this much (compounding,
+ * floored by COMBO_RAMP_FLOOR). A chain you're landing visibly accelerates.
+ */
+export const COMBO_RAMP = 0.92;
+export const COMBO_RAMP_FLOOR = 0.7;
 
 /** Chain to the next combo step only if the follow-up is pressed within this window after a swing's active frames. */
 export const COMBO_WINDOW = 0.34;
+/** A heavy weapon gets a longer link window — you cannot mash a greatsword at
+ *  dagger speed, so the chain would be impossible to hold without this. */
+export const COMBO_WINDOW_HEFT_MULT = 0.75;
+
+/**
+ * Scale a move's timeline by a weapon's HEFT. Stretches the windup (the tell)
+ * and the recovery (the commitment) but never the ACTIVE window — a heavy
+ * weapon is slow to start and slow to finish, not easier to land.
+ *
+ * Pure so the timing maths is unit-tested rather than eyeballed in-game.
+ */
+export function scaleMove(move: MoveTiming, heft: number): MoveTiming {
+  if (heft === 1) return move;
+  return { ...move, windup: move.windup * heft, recovery: move.recovery * heft };
+}
 /** A charge held past this releases the heavy at max power. */
 export const CHARGE_TIME = 0.6;
 /** Inputs landed this early still fire (action-game buffering courtesy). */

@@ -354,7 +354,54 @@ function drawFlamethrowerHeld(ctx: CanvasRenderingContext2D, o: { fire?: boolean
   }
 }
 
+/**
+ * GREATSWORD — the same silhouette language as the sword but scaled to a
+ * two-hander: longer blade, a fuller down the middle (the groove that reads as
+ * "big blade" more than length alone) and a broad crossguard.
+ */
+function drawGreatswordHeld(ctx: CanvasRenderingContext2D): void {
+  limb(ctx, 0, 10, 0, -20, 6, F(27)); // grip, long enough for two hands
+  rrect(ctx, -8, -26, 16, 5, 2, F(19)); // crossguard
+  // Blade: a long tapered wedge.
+  poly(ctx, [[-6, -26], [6, -26], [4, -84], [0, -92], [-4, -84]], F(21));
+  poly(ctx, [[-2, -28], [2, -28], [1.5, -82], [0, -88], [-1.5, -82]], F(22)); // fuller
+  ell(ctx, 0, 10, 4, 4, F(16)); // pommel
+}
+
+/**
+ * WARHAMMER — mass on a stick. A blocky head with a flat striking face and a
+ * back spike, so the silhouette says "this hits ONE thing very hard".
+ */
+function drawWarhammerHeld(ctx: CanvasRenderingContext2D): void {
+  limb(ctx, 0, 8, 0, -42, 8, F(27)); // thick haft
+  rrect(ctx, -13, -57, 21, 16, 3, F(20)); // head block
+  rrect(ctx, -13, -53, 5, 9, 1, F(21)); // bright striking face
+  poly(ctx, [[8, -55], [8, -45], [17, -50]], F(19)); // back spike
+  rrect(ctx, -6, -14, 12, 5, 2, F(16)); // band
+}
+
+/**
+ * WRECKING BALL — a chain and a sphere. Drawn slack and off-centre so it reads
+ * as SWUNG rather than held rigid, which is the whole fantasy of the weapon.
+ */
+function drawWreckingBallHeld(ctx: CanvasRenderingContext2D): void {
+  limb(ctx, 0, 8, 0, -22, 5, F(27)); // short handle
+  // Chain links arcing out to the ball.
+  const pts: Array<[number, number]> = [[2, -26], [5, -33], [9, -40], [13, -47]];
+  for (const [lx, ly] of pts) ell(ctx, lx, ly, 3, 3, F(20));
+  // The ball: steel sphere with a hot rim and a couple of studs.
+  ell(ctx, 17, -54, 12, 12, F(19));
+  ell(ctx, 14, -57, 6, 6, F(21)); // lit shoulder
+  ell(ctx, 12, -59, 2.5, 2.5, F(22)); // specular
+  for (const [sx, sy] of [[24, -49], [22, -61], [11, -47]] as Array<[number, number]>) {
+    ell(ctx, sx, sy, 2.5, 2.5, F(20));
+  }
+}
+
 const WEAPON_HELD: Partial<Record<WeaponId, HeldPaint>> = {
+  greatsword: (ctx) => drawGreatswordHeld(ctx),
+  warhammer: (ctx) => drawWarhammerHeld(ctx),
+  wreckingball: (ctx) => drawWreckingBallHeld(ctx),
   sword: (ctx) => drawSwordHeld(ctx),
   stick: (ctx) => drawStickHeld(ctx),
   mace: (ctx) => drawMaceHeld(ctx),

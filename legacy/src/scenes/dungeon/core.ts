@@ -2597,9 +2597,10 @@ function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKind = "z
   if (!state.scene) return;
   // `kind` drives the AFFINITY pick (cards.ts): a card off a Ghost should be a
   // Ghost's card. `dropMult` is the zombie sub-type's loot weight.
-  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, kind, dropMult });
+  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, dropMult });
   if (!id) return;
   if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
+  if (CARDS[id].rarity === "mythic") state.mythicDropped = true;
   const sprite = createStaticSprite(ITEM_PAINTS[id]);
   sprite.mesh.position.set(x, 0, z);
   state.scene.add(sprite.mesh);

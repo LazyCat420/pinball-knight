@@ -122,6 +122,14 @@ import {
   LIGHT_1,
   LIGHT_2,
   COMBO_FINISH,
+  COMBO_SURGE,
+  COMBO_CHAIN,
+  COMBO_MAX_STEP,
+  COMBO_RAMP,
+  COMBO_RAMP_FLOOR,
+  COMBO_REQUIRES_HIT,
+  COMBO_WINDOW_HEFT_MULT,
+  scaleMove,
   FINISHER_FLASH_T,
   HEAVY,
   COMBO_WINDOW,
@@ -1780,12 +1788,13 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     const activeEnd = m.windup + m.active;
     if (!p.didHit && p.attackT >= activeStart && p.attackT <= activeEnd) {
       p.didHit = true;
-      const finisher = m === COMBO_FINISH;
+      const finisher = m.tag === "finish" || m.tag === "surge";
       const landed = resolvePlayerAttack(
         { damageMul: m.damageMul, arcMul: m.arcMul, rangeMul: m.rangeMul, knockbackMul: m.knockbackMul, hitstopMul: m.hitstopMul },
         // Every foe the finisher cuts through leaves a white slice-ghost.
         finisher ? (z) => state.vfx?.ghost(z.sprite.mesh, 0xffffff, 0.2, 0.6) : undefined,
       );
+      p.comboLanded = landed;
       if (finisher && landed) {
         // ── KATANA FLASH ── the payoff beat: the knight blurs white, the
         // screen pops (pixel-pass uFlash, decays in core's render loop), three
@@ -1804,8 +1813,16 @@ export function updatePlayer(dt: number, input: InputHandle): void {
     }
     // A combo can chain once the active window has passed (early recovery); the
     // window stays open COMBO_WINDOW after that so a follow-up press links.
-    if (p.attackT >= activeEnd && p.comboWindowT <= 0 && p.comboStep < 2) {
-      p.comboWindowT = COMBO_WINDOW;
+    //
+    // THE CHAIN IS EARNED: a swing that hit NOTHING does not open the window,
+    // so mashing at empty air drops you back to step 1. That is what gives the
+    // combo stakes — previously you could chain to the finisher against a wall.
+    // A heavy weapon gets a longer window (you cannot mash a warhammer at
+    // dagger speed, so a flat window would make its chain unreachable).
+    const canChain = !COMBO_REQUIRES_HIT || p.comboLanded;
+    if (p.attackT >= activeEnd && p.comboWindowT <= 0 && p.comboStep <= COMBO_MAX_STEP && canChain) {
+      const heft = WEAPONS[activeWeapon().id].heft ?? 1;
+      p.comboWindowT = COMBO_WINDOW * (1 + (heft - 1) * COMBO_WINDOW_HEFT_MULT);
     }
     // Move done: end the swing. If no combo continued, the step resets.
     if (p.attackT >= m.windup + m.active + m.recovery) {
@@ -2057,7 +2074,7 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
     if (facingWall && startWallLaunch("pounce", wall!, input)) {
       return; // launched off the wall
     }
-    startMelee(HEAVY, 0, "heavy"); // free — heavies aren't rationed anymore
+    startMelee(scaleMove(HEAVY, WEAPONS[activeWeapon().id].heft ?? 1), 0, "heavy"); // free — heavies aren't rationed anymore
     return;
   }
 
@@ -2081,10 +2098,16 @@ function updateMelee(dt: number, input: InputHandle, attacking: boolean): void {
     return;
   }
 
-  const move = p.comboStep === 0 ? LIGHT_1 : p.comboStep === 1 ? LIGHT_2 : COMBO_FINISH;
-  // After the finisher the chain RESTARTS at light-1 — mashing reads as a
-  // 1-2-3 … 1-2-3 rhythm instead of finisher spam.
-  const nextStep = p.comboStep >= 2 ? 0 : p.comboStep + 1;
+  // FOUR steps now (…→ SURGE), and each one is stretched by the weapon's HEFT
+  // so a greatsword swings like a greatsword instead of a fast sword with a
+  // bigger number. The chain also ACCELERATES as you land it (comboRamp).
+  const base = COMBO_CHAIN[Math.min(p.comboStep, COMBO_CHAIN.length - 1)];
+  const heft = WEAPONS[activeWeapon().id].heft ?? 1;
+  const ramp = Math.max(COMBO_RAMP_FLOOR, Math.pow(COMBO_RAMP, p.comboStep));
+  const move = scaleMove(base, heft * ramp);
+  // After the last step the chain RESTARTS — mashing reads as a rhythm, not
+  // finisher spam.
+  const nextStep = p.comboStep >= COMBO_MAX_STEP ? 0 : p.comboStep + 1;
   startMelee(move, nextStep, "light");
 }
 
@@ -2097,12 +2120,13 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   p.comboStep = comboStep;
   p.attackT = 0;
   p.didHit = false;
+  p.comboLanded = false; // this swing has not connected yet
   p.comboWindowT = 0;
   p.cooldown = 0; // the move's own recovery gates the next swing now
   // The chain SPEEDS UP: each step plays its clip faster (the timings in
   // constants shorten to match), so mashing visibly accelerates into the
   // finisher instead of three identical beats.
-  const rate = move === LIGHT_2 ? 1.18 : move === COMBO_FINISH ? 1.35 : 1;
+  const rate = move.tag === "light2" ? 1.18 : move.tag === "finish" ? 1.35 : move.tag === "surge" ? 1.45 : 1;
   p.anim.setRate(rate); // never inherit the run gait's ramped rate
   p.anim.play("attack", { force: true });
   if (kind === "heavy") sfxHeavy();
@@ -2111,7 +2135,7 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   // A short forward STEP into every swing (deeper into the chain, further) —
   // wall-aware, so combos push the fight forward instead of fencing in place.
   const [fx, fz] = FACING_VEC[p.facing];
-  const lunge = move === COMBO_FINISH ? 0.45 : move === LIGHT_2 ? 0.22 : move === HEAVY ? 0.1 : 0.14;
+  const lunge = move.tag === "surge" ? 0.6 : move.tag === "finish" ? 0.45 : move.tag === "light2" ? 0.22 : move.tag === "heavy" ? 0.1 : 0.14;
   if (g && lunge > 0) {
     const res = moveCircle(g, p.x, p.z, PLAYER_R, fx * lunge, fz * lunge);
     p.x = res.x;
@@ -2130,15 +2154,15 @@ function startMelee(move: MoveTiming, comboStep: number, kind: "light" | "heavy"
   const wc = w.slashColor ?? 0xdfe7f2;
   const sx = p.x + fx * 0.5;
   const sz = p.z + fz * 0.5;
-  if (move === LIGHT_2) {
+  if (move.tag === "light2") {
     state.vfx?.slash(sx, 0.6, sz, p.facing, wc, { roll: 0.45, scale: 1.15 });
     state.vfx?.slash(sx, 0.6, sz, p.facing, 0xffa54a, { roll: -0.45, scale: 1.15, mirror: true });
-  } else if (move === COMBO_FINISH) {
+  } else if (move.tag === "finish" || move.tag === "surge") {
     state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xffffff, { scale: 1.7, life: 0.2 });
     state.vfx?.slash(p.x + fx * 0.7, 0.65, p.z + fz * 0.7, p.facing, 0xff8800, { scale: 1.45, mirror: true, life: 0.17 });
     state.vfx?.ghost(p.sprite.mesh, 0xffffff, 0.16, 0.55); // the wind-up blur
     requestShake(0.12);
-  } else if (move === HEAVY) {
+  } else if (move.tag === "heavy") {
     state.vfx?.slash(p.x + fx * 0.75, 0.6, p.z + fz * 0.75, p.facing, wc, { scale: 1.6 });
   } else {
     state.vfx?.slash(sx, 0.6, sz, p.facing, wc);
