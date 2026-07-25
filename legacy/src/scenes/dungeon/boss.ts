@@ -26,7 +26,7 @@ import * as THREE from "three";
 import { state, type Zombie } from "./state";
 import { hitPlayerRanged } from "./entities/combat";
 import { showToast } from "./ui";
-import { PINBALL_MAX_SPEED, REAPER_SCALE, REAPER_TINT } from "./constants";
+import { PINBALL_MAX_SPEED, REAPER_SCALE, REAPER_TINT, BRUTE_R } from "./constants";
 import { tileCenter, type Grid, type TilePos } from "./maze/generator";
 import { peers } from "../../net/presence";
 
@@ -34,6 +34,16 @@ import { peers } from "../../net/presence";
 // (King HP now arrives as a spawn parameter — core scales it by floor, see
 // KING_HP_BASE/KING_HP_PER_FLOOR in constants.ts. Every floor is boss-gated.)
 const KING_SCALE = REAPER_SCALE * 1.55; // looms over the horde
+/**
+ * The king's COLLIDER, derived from the same scale as his mesh.
+ *
+ * Not a free parameter: a hand-picked number here would drift the moment
+ * KING_SCALE was retuned, which is exactly the bug this fixes. Slightly under
+ * the full visual half-width (0.86 of it) so he can still squeeze through a
+ * 2-wide gap that looks passable — a boss that reads as fitting but does not
+ * is just as frustrating as one embedded in stone.
+ */
+export const KING_BODY_R = BRUTE_R * KING_SCALE * 0.86;
 const SKULL_COUNT = 5;
 const SKULL_ORBIT_R = 1.5;
 const SKULL_ORBIT_SPEED = 1.1; // rad/s
@@ -186,6 +196,11 @@ export function spawnBoss(
   z.baseTint = REAPER_TINT;
   z.sprite.setTint(REAPER_TINT);
   z.sprite.mesh.scale.multiplyScalar(KING_SCALE);
+  // The collider must grow WITH the mesh, from the same constant, or the two
+  // drift apart. They did: the king rendered ~2.17x wide while colliding as a
+  // plain brute (0.42), so he walked half his visible body into 1-tile
+  // corridors and read as stuck in the wall. Derived, never hand-tuned.
+  z.bodyR = KING_BODY_R;
   z.aggro = true;
 
   const skulls: Skull[] = [];

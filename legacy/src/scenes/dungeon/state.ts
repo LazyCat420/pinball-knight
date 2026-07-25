@@ -1,6 +1,7 @@
 /**
  * Module state singleton — same pattern as mouse-game/state.ts.
  */
+import { freshRail, type RailState } from "./entities/rail";
 import type * as THREE from "three";
 import type { PixelPass } from "./render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
@@ -186,6 +187,12 @@ export interface Player extends Actor {
   bounceCombo: number;
   /** Seconds since the last bounce — resets bounceCombo when it lapses. */
   bounceComboT: number;
+  /**
+   * BANKED RAIL ride (entities/rail.ts) — which inside curve is being held,
+   * how long for, and how long since the hold lapsed. This is the only state
+   * in the game allowed to carry speed past PINBALL_MAX_SPEED.
+   */
+  rail: RailState;
 
   // ── Wall moves (Mortal-Kombat-style specials off a wall) ──
   /**
@@ -289,6 +296,16 @@ export interface Zombie extends Actor {
   maxHp?: number;
   /** True for the stairs-guarding mini-boss: health bar + reward on death. */
   boss?: boolean;
+  /**
+   * Collision radius override, when this actor's sprite was scaled away from
+   * its kind's default. Absent = use the STATS table (the normal case).
+   *
+   * Set for the Reaper King, whose mesh is scaled 2.17x: without it the
+   * collider stayed at the brute's 0.42 while the visible body was ~0.91 wide,
+   * so the king walked half-buried into 1-tile corridors. Anything that scales
+   * a sprite mesh must set this too, or it will drift the same way.
+   */
+  bodyR?: number;
   mode: ZombieMode;
   speed: number;
   windupT: number;
@@ -995,6 +1012,7 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     throwDirZ: 0,
     throwSpeed: 0,
     bounceCombo: 0,
+    rail: freshRail(),
     bounceComboT: 0,
     wallMoveT: -1,
     wallMoveDur: 0,

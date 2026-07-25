@@ -13,6 +13,7 @@
  */
 import { state, activeWeapon, type Player } from "../state";
 import { requestShake, requestHitstop } from "./juice";
+import { holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./rail";
 import { skillAgg } from "../skill-runtime";
 import {
   PLAYER_SPEED,
@@ -84,6 +85,8 @@ import {
   ARC_LANE_MIN_SPEED,
   ARC_LANE_COOLDOWN,
   ARC_LANE_GOLD,
+  RAIL_SPARK_HZ,
+  RAIL_GOLD_HZ,
   SECRET_BREAK_SPEED,
   WALL_BREAK_SPEED,
   WALL_BREAK_SPEED_COST,
@@ -1055,6 +1058,10 @@ let pocketAX = 0;
 let pocketAZ = 0;
 let pocketN = 0;
 let pocketT = 0;
+/** Spark/gold cadence accumulators for the banked rail (module-level: one
+ *  knight, and they must survive across frames to pace the scrape). */
+let railSparkT = 0;
+let railGoldT = 0;
 /**
  * Where the player is AIMING, as a world direction — or null for "no aim, use
  * the facing".
@@ -1229,6 +1236,14 @@ function updatePinball(dt: number, input: InputHandle): boolean {
 
   pocketT = Math.max(0, pocketT - dt);
 
+  // RAIL contact for THIS frame, filled by the collision block below. Declared
+  // out here because the rail is a per-frame state machine: it has to be
+  // stepped whether or not a wall was touched, so that letting go actually
+  // drops you rather than freezing the ride at its last contact.
+  let railContact = false;
+  let railStrength = 0;
+  let railTangent: { tx: number; tz: number } | null = null;
+
   if (res.hitN) {
     // SLANT WALL: a shaped tile was struck — the collider pushed us off its
     // diagonal and handed back the exact face NORMAL. Reflect the momentum
@@ -1247,7 +1262,27 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // it just rode instead of being thrown off it. (A ball arriving against the
     // grain never gets here — laneBandAt already rejected it — so it falls
     // through to the normal bank and a lane can't stop anyone head-on.)
-    const lane = res.hitLane && p.momSpeed >= ARC_LANE_MIN_SPEED ? res.hitLane : null;
+    // ── BANKED RAIL ────────────────────────────────────────────────────────
+    // The inside of a bend, held under power: a NASCAR high line, a Sonic loop.
+    // Checked BEFORE the one-shot lane below, because a rail supersedes it —
+    // the two would otherwise both fire on the same contact and the lane's
+    // cooldown would fight the rail's continuous accel.
+    //
+    // `hitN` on a concave face points INWARD (the collider pushes the ball back
+    // toward the arc centre), which is exactly the direction the player must be
+    // steering to hold the line. That is why no extra geometry is needed here.
+    if (res.hitLane?.concave) {
+      const strength = holdStrength(steerX, steerZ, nx, nz);
+      if (p.rail.featureIdx !== res.hitLane.featureIdx) {
+        // Different curve than the one being ridden (or none): try to catch it.
+        p.rail.featureIdx = -1;
+        tryCatchRail(p.rail, res.hitLane.featureIdx, strength, p.momSpeed);
+      }
+      railContact = true;
+      railStrength = strength;
+      railTangent = { tx: res.hitLane.tx, tz: res.hitLane.tz };
+    }
+    const lane = res.hitLane && p.momSpeed >= ARC_LANE_MIN_SPEED && p.rail.featureIdx < 0 ? res.hitLane : null;
     if (lane) {
       p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * ARC_LANE_MULT + ARC_LANE_ADD * materialBumperMult(), ARC_LANE_MIN_EXIT));
       p.momX = lane.tx * p.momSpeed;
@@ -1380,6 +1415,57 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     emitMaterialOnBounce(sx, sz);
     sfxRoll();
   }
+
+  // ── RAIL STEP ──────────────────────────────────────────────────────────
+  // Stepped EVERY frame, contact or not: the rail is a held state, so the
+  // frame you stop touching the wall (or stop steering into it) is the frame
+  // it has to notice and let go.
+  {
+    const step = stepRail(p.rail, railContact, railStrength, p.momSpeed, dt);
+    if (step.riding && railTangent) {
+      p.momSpeed = step.speed;
+      // Steer the ball ALONG the curve while it rides. Without this the ball
+      // holds a straight heading and grinds off the arc after a few degrees —
+      // the wall banks away and the "ride" is over before it reads as one.
+      // This is what makes a rail feel like following the curve rather than
+      // scraping a flat.
+      p.momX = railTangent.tx;
+      p.momZ = railTangent.tz;
+      railSparkT += dt;
+      const sparkEvery = 1 / RAIL_SPARK_HZ;
+      while (railSparkT >= sparkEvery) {
+        railSparkT -= sparkEvery;
+        // Sparks stream BACKWARD along the wall from the contact point — the
+        // scrape. Speed-scaled so a fast rail visibly showers.
+        const cx = p.x - railTangent.tx * PLAYER_R * 0.6;
+        const cz = p.z - railTangent.tz * PLAYER_R * 0.6;
+        state.vfx?.sparks(cx, 0.3, cz, -railTangent.tx, -railTangent.tz, 2 + Math.min(6, Math.floor(p.momSpeed / 5)));
+      }
+      railGoldT += dt;
+      const goldEvery = 1 / RAIL_GOLD_HZ;
+      while (railGoldT >= goldEvery) {
+        railGoldT -= goldEvery;
+        state.goldRun += 1;
+        addGold(1, "dungeon-game");
+      }
+      // A steady low rumble while held, not a per-frame bang.
+      if (p.rail.rideT > 0.12 && railSparkT < dt) sfxRoll();
+    } else if (step.released) {
+      // EXIT FLOURISH — the payoff read. A burst along the exit tangent plus a
+      // kick of shake, so leaving a rail at overspeed feels like being fired
+      // out of the corner rather than simply ceasing to accelerate.
+      railSparkT = 0;
+      railGoldT = 0;
+      if (p.momSpeed > PINBALL_MAX_SPEED) {
+        state.vfx?.sparks(p.x, 0.4, p.z, p.momX, p.momZ, 16);
+        requestShake(0.16);
+        sfxSpring();
+      }
+    }
+  }
+  // Bleed any over-cap speed back toward the normal ceiling. No-op at or below
+  // the cap, so this never touches ordinary pinball.
+  if (p.rail.featureIdx < 0) p.momSpeed = decayOverspeed(p.momSpeed, dt);
 
   // Pinball PARTS: bumpers kick, springs launch, ramps floor your speed,
   // deflectors bank you around corners. The real accelerators of the machine.

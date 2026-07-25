@@ -11,7 +11,7 @@
  * Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
  * DOM- and three-free: tested.
  */
-import { type Grid, isWalkable, shapeAt, arcFeatureAt } from "./maze/generator";
+import { type Grid, isWalkable, shapeAt, arcFeatureAt, idx } from "./maze/generator";
 import { clamp } from "../../utils/math";
 import {
   SHAPE_FULL,
@@ -34,6 +34,20 @@ export interface LaneHit {
   band: LaneBand;
   tx: number;
   tz: number;
+  /**
+   * Which ArcFeature this contact belongs to. The RAIL needs it to know it is
+   * still on the SAME curve frame to frame — without an identity a ball
+   * brushing two different sweeps in quick succession would read as one
+   * continuous ride and keep its accumulated overspeed across a gap it never
+   * actually carried it through.
+   */
+  featureIdx: number;
+  /**
+   * True when this face is CONCAVE (solid outside the circle) — the inside of
+   * a bend, the banked racing line. Only these can be railed: on a convex
+   * bulge there is nothing to lean into, the wall curves away from you.
+   */
+  concave: boolean;
 }
 
 /**
@@ -79,7 +93,16 @@ function resolveShapeOrArc(
     return {
       ...hit,
       kick: kickBandAt(f, gx, gz),
-      lane: lane ? { band: lane, ...laneTangent(f, lane, gx, gz) } : null,
+      lane: lane
+        ? {
+            band: lane,
+            ...laneTangent(f, lane, gx, gz),
+            featureIdx: g.arcIdx ? g.arcIdx[idx(g, i, j)] : -1,
+            // solidOut = solid OUTSIDE the circle = the ball rides the inside
+            // = a banked face you can lean into. That is the rail surface.
+            concave: !!f.solidOut,
+          }
+        : null,
     };
   }
   return resolveCircleShape(shape, i, j, gx, gz, r);
