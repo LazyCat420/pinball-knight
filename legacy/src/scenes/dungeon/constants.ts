@@ -837,7 +837,12 @@ export const BOOSTER_STEER_LOCK = 0.16; // brief lock so the arrow carries you t
 // rebound and fires it again: a standing wave the pocket-rattle damp can't win,
 // because the booster's speed FLOOR re-floors whatever the damp just scrubbed.
 // A pad that re-fires while the ball is still in front of it is jammed.
-export const BOOSTER_JAM_HITS = 3; // re-fires at the same spot before a pad stands down
+// 1, not 3: catching the ball a SECOND time in the same spot already proves the
+// pad is bouncing it back to itself, and every extra tolerated cycle is a beat
+// the player feels as friction/stutter (live QA). At 3 the knight rattled for
+// ~0.77s before release; at 1, ~0.3s. A legitimate chain is unaffected — those
+// pads catch you somewhere NEW, which resets the streak (see BOOSTER_JAM_RADIUS).
+export const BOOSTER_JAM_HITS = 1; // re-fires at the same spot before a pad stands down
 export const BOOSTER_JAM_RADIUS = 0.9; // world units — "caught the same ball again"
 export const BOOSTER_JAM_WINDOW = 0.75; // s between re-fires that still count as a jam
 export const BOOSTER_JAM_COOLDOWN = 0.9; // s the jammed pad stays dark, long enough to roll clear

@@ -236,6 +236,15 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 /** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
 const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
+/**
+ * A BEND's curve-carry booster needs more runway than a straight-run pad. It
+ * sits in the corner, so the tile behind it is wall by construction: a ball
+ * that reaches the far wall rebounds onto the pad and gets re-fired, which the
+ * player feels as friction/stutter in the corner. With no escape behind, the
+ * only remedy is enough room ahead that the launch never returns. See the
+ * curve-carry branch in layStationSpine for the measurements.
+ */
+const CARRY_RUNWAY = 3;
 
 /**
  * PATH-FIRST flow: the "speed up" parts must shove you ONWARD toward the exit,
@@ -1206,10 +1215,29 @@ function layStationSpine(
           // A clean corner → a deflector banks incoming→outgoing (speed intact).
           // Legs match classifyTopology: where you came FROM (-in) and GO (+out).
           parts.push({ kind: "deflector", i: bend.i, j: bend.j, dirI: -di, dirJ: -dj, dir2I: odi, dir2J: odj, spine: true });
-        } else if ((odi !== di || odj !== dj) && launchRunway(g, bend.i, bend.j, odi, odj) >= 2) {
+        } else if ((odi !== di || odj !== dj) && launchRunway(g, bend.i, bend.j, odi, odj) >= CARRY_RUNWAY) {
           // A wide bend → CURVE CARRY: a pad aimed down the OUTGOING leg, so the
           // route arcs around the corner instead of dying on a bumper (live QA:
           // bends were where momentum went to die). Reads as a curved lane.
+          //
+          // This needs a LONGER runway than a straight-run pad, and the reason is
+          // asymmetric: a bend pad sits IN the corner, so the tile behind it is
+          // the corner wall by construction (measured: back = 0 for every one of
+          // them). A ball that reaches the far wall therefore rebounds straight
+          // back onto the pad, which re-fires it — the runtime jam guard
+          // (BOOSTER_JAM_*) breaks that loop, but the player still feels the
+          // cycles as a stutter, the "friction between the booster and the
+          // corner" from live QA. With no room behind, the only fix available
+          // here is enough room AHEAD that a BOOSTER_SPEED launch never comes
+          // back. At 2 tiles it always does.
+          //
+          // MEASURED over 200 generated floors: at >= 2 this produced 392 such
+          // pads out of 2949 boosters (13.3%, ~1 in 8); at >= 3 (CARRY_RUNWAY),
+          // zero. 3 is the MINIMUM that clears them — 4 costs 78 more pads and
+          // 5 costs 364, neither buying anything, so don't raise it idly.
+          // The bumper branch below absorbs the rejects, which is the right
+          // fallback — a bumper in a tight corner caroms you out instead of
+          // pinning you against the wall it is bolted to.
           parts.push({ kind: "booster", i: bend.i, j: bend.j, dirI: odi, dirJ: odj, dir2I: 0, dir2J: 0, spine: true });
         } else {
           // No outgoing runway (or a straight crossing) → a bumper to carom off.

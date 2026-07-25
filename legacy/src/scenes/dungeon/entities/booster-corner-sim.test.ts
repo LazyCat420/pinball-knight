@@ -93,6 +93,8 @@ function boosterAt(g: Grid, i: number, j: number, dirX: number, dirZ: number): P
 }
 
 let deps: PinballDeps;
+/** Live steer-lock timer, written by the deps below — the "dead stick" measure. */
+let steerLockT = 0;
 
 beforeEach(() => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,7 +105,17 @@ beforeEach(() => {
   state.frenzyPaid = false;
   state.goldRun = 0;
   state.zombies = [];
-  deps = { startRampHop: () => {}, startDrop: () => {}, setSteerLock: () => {}, raiseSteerLock: () => {} };
+  steerLockT = 0;
+  deps = {
+    startRampHop: () => {},
+    startDrop: () => {},
+    setSteerLock: (t) => {
+      steerLockT = t;
+    },
+    raiseSteerLock: (t) => {
+      steerLockT = Math.max(steerLockT, t);
+    },
+  };
 });
 
 /**
@@ -111,7 +123,7 @@ beforeEach(() => {
  * Returns how many times a booster fired and the frame the ride ended on
  * (-1 = still going, i.e. the knight never got control back).
  */
-function ride(g: Grid, frames: number): { fires: number; endedAt: number; maxD: number } {
+function ride(g: Grid, frames: number): { fires: number; endedAt: number; maxD: number; lockedFrames: number } {
   const p = state.player!;
   const dt = 1 / 60;
   const originX = p.x;
@@ -122,6 +134,7 @@ function ride(g: Grid, frames: number): { fires: number; endedAt: number; maxD: 
   let pocketT = 0;
   let fires = 0;
   let maxD = 0;
+  let lockedFrames = 0;
   // The pocket-rattle guard, as player.ts applies it.
   const notePocketBounce = (): void => {
     if (pocketT > 0 && Math.hypot(p.x - pocketAX, p.z - pocketAZ) < POCKET_RADIUS) {
@@ -145,6 +158,8 @@ function ride(g: Grid, frames: number): { fires: number; endedAt: number; maxD: 
       }
     }
     pocketT = Math.max(0, pocketT - dt);
+    steerLockT = Math.max(0, steerLockT - dt);
+    if (steerLockT > 0) lockedFrames++;
 
     const step = p.momSpeed * dt;
     const tx = p.x + p.momX * step;
@@ -178,9 +193,9 @@ function ride(g: Grid, frames: number): { fires: number; endedAt: number; maxD: 
     const surf = openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT;
     p.momSpeed = Math.max(0, p.momSpeed - PINBALL_FRICTION * surf * dt);
     maxD = Math.max(maxD, Math.hypot(p.x - originX, p.z - originZ));
-    if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) return { fires, endedAt: f, maxD };
+    if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) return { fires, endedAt: f, maxD, lockedFrames };
   }
-  return { fires, endedAt: -1, maxD };
+  return { fires, endedAt: -1, maxD, lockedFrames };
 }
 
 describe("booster fired into a sharp corner", () => {
@@ -210,6 +225,35 @@ describe("booster fired into a sharp corner", () => {
     const { fires } = ride(cornerGrid(), 3600);
 
     expect(fires).toBeLessThan(10);
+  });
+
+  /**
+   * The FEEL regression, reported after the first fix shipped: "the clipping is
+   * a lot less but I still notice a stutter... like a friction feeling between
+   * the booster and that corner."
+   *
+   * Ending the ride was never the thing the player perceives — CONTROL is. Every
+   * booster re-fire re-arms BOOSTER_STEER_LOCK, so while the pad keeps catching
+   * you the stick does nothing, and that is what reads as friction. The guard
+   * has to hand steering back FAST, not merely terminate eventually.
+   */
+  it("hands steering back quickly — the stutter is measured in steer-lock, not speed", () => {
+    const g = cornerGrid();
+    const pad = boosterAt(g, 2, 2, 1, 0);
+    state.pinballParts = [pad];
+    const p = state.player!;
+    p.x = pad.x;
+    p.z = pad.z;
+    p.momX = 1;
+    p.momZ = 0;
+    p.momSpeed = 0;
+
+    const { lockedFrames } = ride(g, 3600);
+
+    // At BOOSTER_JAM_HITS = 3 this was ~37 frames (0.62s) of dead stick; at 1 it
+    // is ~14 (0.23s). Anything approaching half a second reads as the pad
+    // fighting the player.
+    expect(lockedFrames).toBeLessThan(20);
   });
 });
 
