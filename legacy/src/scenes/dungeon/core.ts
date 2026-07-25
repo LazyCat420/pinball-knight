@@ -1705,6 +1705,7 @@ function startLevel(level: number): void {
       launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
       bonusItems: modifier.bonusItems,
       endpoints: endpoints ?? undefined,
+      floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
     },
   );
 
@@ -1851,7 +1852,7 @@ function startLevel(level: number): void {
     const pos = tileCenter(grid, it.i, it.j);
     sprite.mesh.position.set(pos.x, 0, pos.z);
     state.scene!.add(sprite.mesh);
-    return { nid: "L" + k, kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7 };
+    return { nid: "L" + k, kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7, rarity: it.rarity };
   });
 
   // ── R&D: seed the three marble materials near the floor-1 spawn so the whole
@@ -2615,6 +2616,9 @@ function dropWeapon(w: WeaponState, x: number, z: number): void {
     sprite,
     bobPhase: Math.random() * Math.PI * 2,
     durability: w.durability,
+    rarity: w.rarity,
+    cards: w.cards,
+    upgrade: w.upgrade,
     blockedUntilAway: true,
   });
 }
@@ -2953,7 +2957,17 @@ function pickUpCard(it: GroundItem): boolean {
 
 function pickUpWeapon(it: GroundItem): void {
   const id = it.id as WeaponId;
-  const incoming: WeaponState = { id, durability: it.durability ?? WEAPONS[id].maxDurability };
+  // Carry the rolled RARITY, sockets and upgrade level across the pickup — a
+  // weapon that forgot its rarity would silently lose card slots, and one that
+  // forgot its cards would eat them on every exchange.
+  const incoming: WeaponState = {
+    id,
+    durability: it.durability ?? WEAPONS[id].maxDurability,
+    rarity: it.rarity ?? "common",
+    cards: it.cards ?? [],
+    bonusSlots: 0,
+    upgrade: it.upgrade ?? 0,
+  };
 
   const empty = state.weaponSlots.findIndex((s) => s === null);
   if (empty >= 0) {

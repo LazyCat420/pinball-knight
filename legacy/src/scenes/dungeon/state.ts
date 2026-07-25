@@ -14,7 +14,7 @@ import type { Fog } from "./fog";
 import type { ArcCorner } from "./collision";
 import type { MazeHandle } from "./maze/build";
 import type { InputHandle } from "./input";
-import type { WeaponState, WeaponId, GearState, ProjectileKind } from "./items";
+import type { WeaponState, WeaponId, GearState, ProjectileKind, ItemRarity } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import type { AbilityId } from "./abilities";
 
@@ -549,6 +549,15 @@ export interface GroundItem {
   bobPhase: number;
   /** Carried durability for weapons dropped in an exchange. Undefined = fresh. */
   durability?: number;
+  /** Rolled ITEM RARITY (weapons/gear) — decides how many cards it can socket.
+   *  Undefined = common. Carried on the ground item so a dropped-and-regrabbed
+   *  weapon keeps the rarity it was found with. */
+  rarity?: ItemRarity;
+  /** Socketed cards riding along on a dropped weapon, so an exchange does not
+   *  silently strip them. */
+  cards?: string[];
+  /** Weaponsmith upgrade level carried across a drop/pickup. */
+  upgrade?: number;
   /** Set on a just-dropped weapon: not grabbable until the player steps away. */
   blockedUntilAway?: boolean;
   /** Gold a coin drop is worth (kind === "coin"). */

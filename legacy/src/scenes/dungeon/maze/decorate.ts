@@ -16,7 +16,7 @@ import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { createSpacingGrid } from "./spacing-grid";
 import { authorArteryBanks } from "./artery-banks";
 import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
-import { PICKUP_WEAPONS } from "../items";
+import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
 export interface Torch extends TilePos {
   /** Direction from the floor tile to the wall it mounts on. */
@@ -28,6 +28,14 @@ export interface ItemDrop extends TilePos {
   kind: "weapon" | "gear" | "potion";
   /** WeaponId / GearSlot / PotionId — resolved by core against items.ts. */
   id: string;
+  /**
+   * Rolled ITEM RARITY for weapons/gear — how many CARDS the piece can socket
+   * (items.ts SLOTS_BY_RARITY). Rolled HERE, off the floor's seeded rng, so
+   * every co-op peer generating the same floor agrees on what dropped; a
+   * Math.random here would give one player a legendary and another a common on
+   * the same tile. Undefined for potions.
+   */
+  rarity?: ItemRarity;
 }
 
 export interface PropSpot extends TilePos {
@@ -1333,7 +1341,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -2074,6 +2082,17 @@ export function decorateMaze(
   // break-throughs, secrets) is final. Only reshapes existing walls — never
   // changes walkability, so AI/flow-field/spawns are unaffected. ──
   assignCornerShapes(g);
+
+  // ── ITEM RARITY, stamped in ONE place ──
+  // Every weapon/gear drop on this floor rolls its rarity here rather than at
+  // the half-dozen `items.push(...)` sites, so a new drop site cannot forget to
+  // roll and silently ship a common. Uses the floor's SEEDED rng, which is what
+  // keeps co-op peers agreeing on what dropped where.
+  const floorNo = extras.floor ?? 1;
+  for (const it of items) {
+    if (it.kind === "potion") continue;
+    it.rarity = rollItemRarity(floorNo, rng);
+  }
 
   return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas };
 }
