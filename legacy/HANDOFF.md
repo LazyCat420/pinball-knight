@@ -57,6 +57,48 @@ Facings are decided from LOCAL corridor topology (`classify`) and re-aimed twice
 more afterwards, which is exactly why two individually-sane parts can end up
 duelling — and why this pass must stay last.
 
+## 🎮 CONTROLLER + TOUCH — SHIPPED BUT ONE PIECE IS UNVERIFIED (read this)
+
+Gamepad and on-screen touch controls both land here. **Inert for existing
+players**: the poller is a no-op with nothing plugged in, and the touch overlay
+is only built on a touch device (or with `?touch=1`). Nothing about the
+keyboard/mouse path changed.
+
+Architecture: both sources fill a `VirtualPad` (virtual-pad.ts) — the same six
+continuous things a keyboard says — and `input.ts` MERGES that behind the
+existing `InputHandle`. So `updatePlayer`, the pinball ride and the FPS rampage
+read exactly the interface they always read, and a bad pad mapping cannot reach
+gameplay logic. Analog merge rule: the LARGER deflection wins, never the sum.
+
+**TWO pads, deliberately.** Touch is EVENT-driven (writes on pointerdown/move,
+value persists). A gamepad is POLL-driven and must be rebuilt from scratch each
+frame or it is MONOTONIC — the first cut had one shared pad and a single press
+of X made the knight attack forever, because `poll` only ever ORs bits in.
+`resetPad` before each poll is what fixes that; do not "simplify" them back
+into one.
+
+**VERIFIED** (headless, fake pad via `navigator.getGamepads` + real pointer
+events at 844×390 and 390×844):
+- left stick moves the knight; half-deflection reports 0.295 (the deadzone
+  rescale), i.e. analog walk actually works;
+- touch stick drags and releases cleanly to zero;
+- the touch overlay does NOT cover the HUD (buttons anchor off a measured
+  `--pad-bottom`); overlap check reports none.
+
+**NOT WORKING / NEXT THING TO FIX:** gamepad BUTTONS do not produce their
+discrete actions. `__dungeonInput()` shows `polls: 197, connected: true,
+prevKnown: [17]` but `lastTaps: []` — the poller runs and has previous state,
+yet the rising-edge test never fires, so LB→Q etc. never dispatch. Sticks work,
+so `readPad` is being called with a live pad; the bug is in the edge path
+(gamepad.ts `edge()` / the `prev` bookkeeping in `createGamepadPoller`).
+Unit tests for the edge logic PASS, so the fault is in the wiring, not the
+mapping. `__dungeonInput()` is the read-back to debug it with.
+
+**Discrete actions are bridged by dispatching synthetic KeyboardEvents**
+(`virtual-pad.pressKey`) into core's existing keydown switch — verified working
+on its own (a synthetic `q` casts). That keeps ONE definition of what E does
+instead of a second dispatch table.
+
 ## 🧟 SPAWN DEBUGGER — script a horde in one call (READ IF YOU WRITE QA)
 
 The floor already had enemy chips in the ` panel: one click, one monster, next

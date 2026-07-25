@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields } from "../state";
 import { updatePlunger } from "./player";
 import type { InputHandle } from "../input";
+import { emptyPad } from "../virtual-pad";
 import {
   ROLL_DISTANCE,
   ROLL_DURATION,
@@ -170,6 +171,10 @@ describe("the plunger launch (a floor opens PARKED in the chute)", () => {
       turnAxis: () => 0,
       consumeMouseDelta: () => ({ dx: 0, dy: 0 }),
       aimScreen: () => null,
+      aimStick: () => null,
+      poll: () => {},
+      pad: emptyPad(),
+      debug: () => ({}),
       clearTransient: () => {},
       dispose: () => {},
     };

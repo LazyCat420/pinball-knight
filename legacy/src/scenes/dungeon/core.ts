@@ -30,6 +30,7 @@ import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
+import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
@@ -249,6 +250,8 @@ let lamp: THREE.PointLight | null = null;
 // Parity counter for the 30 Hz shadow-map throttle (see the render loop).
 let shadowFrameCounter = 0;
 let ambient: THREE.AmbientLight | null = null;
+/** The on-screen touch pad, when this device gets one (see createTouchControls). */
+let touchControls: TouchControls | null = null;
 let debugPanelDispose: (() => void) | null = null;
 let hemi: THREE.HemisphereLight | null = null;
 
@@ -665,6 +668,10 @@ export function launchDungeonGame(onExit?: () => void): void {
     // tight room), so a test never asserts against a horde it did not get.
     (window as unknown as { __dungeonSpawn?: (spec: DebugSpawnSpec) => unknown }).__dungeonSpawn = (spec: DebugSpawnSpec) =>
       debugSpawn({ ...spec, count: spec?.count ?? 1 });
+    // Dev: the live input picture — which keys are down, what the touch overlay
+    // and the pad are reporting, and whether the poller is seeing a controller
+    // at all. Controllers and touch have no other read-back headlessly.
+    (window as unknown as { __dungeonInput?: () => unknown }).__dungeonInput = () => state.input?.debug() ?? null;
     // Dev: wipe the floor of enemies (and corpses). Returns how many went.
     (window as unknown as { __dungeonClear?: () => number }).__dungeonClear = () => {
       const n = state.zombies.length;
@@ -771,6 +778,13 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.bossBarEl = createBossBar(state.container);
   state.plungerMeterEl = createPlungerMeter(state.container);
   state.input = createInput(state.container);
+  // ON-SCREEN PAD for phones/tablets. Built only where it is wanted — a mouse
+  // user must never get thumb buttons over their game — but `?touch=1` forces
+  // it on for testing the layout from a desktop browser.
+  const forceTouch = typeof location !== "undefined" && /[?&]touch=1/.test(location.search);
+  if (state.container && (forceTouch || isTouchDevice())) {
+    touchControls = createTouchControls(state.container, state.input.pad);
+  }
   showControlsHint(state.container);
 
   state.onKeyDown = handleKey;
@@ -2910,6 +2924,10 @@ export function isSimPaused(): boolean {
 function simulate(dt: number): void {
   const p = state.player;
   const g = state.grid;
+  // The Gamepad API is PULL-ONLY — it never fires an event for stick movement —
+  // so a pad has to be sampled every step, ahead of everything that reads the
+  // input. Cheap and a no-op when nothing is plugged in.
+  state.input?.poll();
   if (state.gameOver || !p || !g || !state.input) return;
   // Shop, tavern (both forms), card reader and menu all pause the world.
   if (isSimPaused()) return;
@@ -3245,6 +3263,8 @@ export function exitDungeonGame(): void {
   debugPanelDispose?.();
   debugPanelDispose = null;
   state.input?.dispose();
+  touchControls?.dispose();
+  touchControls = null;
 
   disposeAll();
   sun = null; // the lights themselves are freed with the scene by disposeAll

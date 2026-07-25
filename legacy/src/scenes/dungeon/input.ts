@@ -1,11 +1,25 @@
 /**
- * Keyboard + mouse input for the dungeon.
+ * Input for the dungeon: keyboard + mouse, GAMEPAD, and the on-screen TOUCH pad.
  *
  * WASD / arrows to move, LEFT-CLICK to attack (hold = heavy) toward the cursor,
  * SPACE or right-click to dodge, Shift to sprint. The room's own input is
  * already muted while we run (core calls setInputOwner), so listening on window
  * here is safe.
+ *
+ * The two newer sources do not get their own path through the game. They both
+ * fill a `VirtualPad` (virtual-pad.ts) — the same six continuous things a
+ * keyboard says — and this module MERGES that into the keyboard state behind
+ * the existing InputHandle. So `updatePlayer`, the pinball ride and the FPS
+ * rampage all keep reading exactly the interface they always read, and a bug in
+ * the pad mapping cannot reach gameplay logic.
+ *
+ * Merging rule for the analog axis: the LARGER deflection wins, never the sum.
+ * A keyboard and a stick can be live at once (a pad plugged in while someone
+ * rests a hand on WASD), and summing them would produce a faster-than-possible
+ * diagonal.
  */
+import { emptyPad, resetPad, type VirtualPad } from "./virtual-pad";
+import { createGamepadPoller } from "./gamepad";
 
 export interface InputHandle {
   /** Normalised movement axis, -1..1 per component. +z is south (toward the camera). */
@@ -48,6 +62,22 @@ export interface InputHandle {
    * projects the player to screen and fires toward this point.
    */
   aimScreen(): { x: number; y: number } | null;
+  /**
+   * The analog AIM vector in screen space (right stick / touch), magnitude
+   * 0..1, or null when nothing is aiming. Takes precedence over `aimScreen`:
+   * a pad has no cursor, so ranged fire and the pinball steer read the stick
+   * direction directly (the caller runs it through screenDirToWorld, exactly
+   * as it already does for the movement axis).
+   */
+  aimStick(): { x: number; y: number } | null;
+  /** Poll the hardware pad. Called once per frame by the game loop — the
+   *  Gamepad API is pull-only, it never fires events for stick movement. */
+  poll(): void;
+  /** The shared pad surface, so the touch overlay can write into it. */
+  pad: VirtualPad;
+  /** Live input state for the `__dungeonInput` QA hook. A controller and a
+   *  touch overlay have no other read-back from a headless harness. */
+  debug(): unknown;
   /**
    * Drop any queued taps and accumulated mouse deltas WITHOUT touching held
    * state. Modals call this on close: the window keydown listener still runs
@@ -96,6 +126,15 @@ export const TURN_RIGHT = new Set(["e"]);
 
 export function createInput(attackSurface: HTMLElement): InputHandle {
   const down = new Set<string>();
+  // TWO pads, because the two sources report differently and must not overwrite
+  // each other. Touch is EVENT-driven: it writes on pointerdown/move and the
+  // value is meant to persist until the next event. A gamepad is POLL-driven:
+  // its state must be rebuilt from scratch every frame, or it is monotonic
+  // (see resetPad). Keeping them apart lets each behave correctly, and `axis()`
+  // simply takes whichever is pushed hardest.
+  const pad = emptyPad(); // touch overlay writes here
+  const gp = emptyPad(); // rebuilt by the poller each frame
+  const gamepads = createGamepadPoller(gp);
   let attackQueued = false;
   let attackHeld = false;
   let dodgeQueued = false;
@@ -164,12 +203,15 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     cursorSeen = true;
   };
 
-  // A tab-out mid-keypress would leave keys stuck down forever.
+  // A tab-out mid-keypress would leave keys stuck down forever — and the same
+  // is true of a pad button or a thumb that lifted off-screen.
   const onBlur = () => {
     down.clear();
     attackHeld = false;
     dodgeDown = false;
     sprint = false;
+    resetPad(pad);
+    resetPad(gp);
   };
 
   window.addEventListener("keydown", onKeyDown);
@@ -198,31 +240,43 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
         x *= Math.SQRT1_2;
         z *= Math.SQRT1_2;
       }
-      return { x, z };
+      // Larger deflection wins (see the header) — a stick at 40% walks, and a
+      // keyboard's ±1 is just that curve's endpoint.
+      let best = { x, z };
+      for (const src of [pad, gp]) {
+        if (Math.hypot(src.moveX, src.moveZ) > Math.hypot(best.x, best.z)) best = { x: src.moveX, z: src.moveZ };
+      }
+      return best;
     },
     consumeAttack() {
-      const want = attackQueued || attackHeld;
+      const want = attackQueued || attackHeld || pad.attack || gp.attack || pad.attackTap || gp.attackTap;
       attackQueued = false;
+      pad.attackTap = false;
+      gp.attackTap = false;
       return want;
     },
     consumeAttackTap() {
-      const want = attackQueued;
+      const want = attackQueued || pad.attackTap || gp.attackTap;
       attackQueued = false;
+      pad.attackTap = false;
+      gp.attackTap = false;
       return want;
     },
     attackHeldNow() {
-      return attackHeld;
+      return attackHeld || pad.attack || gp.attack;
     },
     sprintHeld() {
-      return sprint;
+      return sprint || pad.sprint || gp.sprint;
     },
     consumeDodge() {
-      const want = dodgeQueued;
+      const want = dodgeQueued || pad.dodgeTap || gp.dodgeTap;
       dodgeQueued = false;
+      pad.dodgeTap = false;
+      gp.dodgeTap = false;
       return want;
     },
     dodgeHeld() {
-      return dodgeDown;
+      return dodgeDown || pad.dodge || gp.dodge;
     },
     turnAxis() {
       let t = 0;
@@ -241,9 +295,26 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
     aimScreen() {
       return cursorSeen ? { x: cursorX, y: cursorY } : null;
     },
+    aimStick() {
+      const a = Math.hypot(gp.aimX, gp.aimY) > Math.hypot(pad.aimX, pad.aimY) ? gp : pad;
+      return Math.hypot(a.aimX, a.aimY) > 0 ? { x: a.aimX, y: a.aimY } : null;
+    },
+    poll() {
+      // Rebuild the pad's continuous state from scratch — see resetPad.
+      resetPad(gp);
+      gamepads.poll();
+    },
+    debug() {
+      return { keys: [...down], touch: { ...pad }, gamepad: { ...gp }, poller: gamepads.debug() };
+    },
+    pad,
     clearTransient() {
       attackQueued = false;
       dodgeQueued = false;
+      pad.attackTap = false;
+      pad.dodgeTap = false;
+      gp.attackTap = false;
+      gp.dodgeTap = false;
       mouseDx = 0;
       mouseDy = 0;
     },

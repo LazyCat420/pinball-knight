@@ -1048,6 +1048,27 @@ let pocketAX = 0;
 let pocketAZ = 0;
 let pocketN = 0;
 let pocketT = 0;
+/**
+ * Where the player is AIMING, as a world direction — or null for "no aim, use
+ * the facing".
+ *
+ * A pad or a touch stick has no cursor, so it reports a screen-space DIRECTION
+ * instead of a point; that goes through screenDirToWorld exactly as the
+ * movement axis already does. The stick wins when it is deflected, so plugging
+ * a controller in does not leave the bow pointing at wherever the mouse was
+ * last parked.
+ */
+function aimDirection(input: InputHandle, px: number, pz: number): { x: number; z: number } | null {
+  const stick = input.aimStick();
+  if (stick) {
+    const wd = screenDirToWorld(stick.x, stick.y);
+    const l = Math.hypot(wd.x, wd.z) || 1;
+    return { x: wd.x / l, z: wd.z / l };
+  }
+  const cursor = input.aimScreen();
+  return cursor ? mouseAimDirection(px, pz, cursor) : null;
+}
+
 function notePocketBounce(p: Player): void {
   if (pocketT > 0 && Math.hypot(p.x - pocketAX, p.z - pocketAZ) < POCKET_RADIUS) {
     pocketN++;
@@ -1138,8 +1159,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const steerMul = (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult();
   let steerX = 0;
   let steerZ = 0;
-  const cursor = input.aimScreen();
-  const aim = cursor ? mouseAimDirection(p.x, p.z, cursor) : null;
+  const aim = aimDirection(input, p.x, p.z);
   if (aim) {
     steerX = aim.x;
     steerZ = aim.z;
@@ -1815,8 +1835,7 @@ export function updatePlayer(dt: number, input: InputHandle): void {
       p.cooldown = w.cooldown * (p.hasteT > 0 ? HASTE_COOLDOWN_MULT : 1) * aggregateCards(state.weaponSlots[state.activeSlot]?.cards).cooldownMult;
       p.anim.setRate(1); // never inherit the run gait's ramped rate
       p.anim.play("attack", { force: true });
-      const cursor = input.aimScreen();
-      const aim = cursor ? mouseAimDirection(p.x, p.z, cursor) : null;
+      const aim = aimDirection(input, p.x, p.z);
       let fx: number;
       let fz: number;
       if (aim) {
