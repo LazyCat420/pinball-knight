@@ -229,6 +229,12 @@ export interface ArcFeature {
    * Absent/empty = the whole sweep is plain stone. Authored by arc-sweeps.ts.
    */
   kicks?: KickBand[];
+  /**
+   * BOOSTER LANES strung along this face (see LaneBand). Distinct from `kicks`:
+   * rubber THROWS the ball off the wall, a lane CARRIES it along the wall.
+   * A stretch may not be both — arc-sweeps.ts authors one or the other.
+   */
+  lanes?: LaneBand[];
 }
 
 /**
@@ -251,6 +257,83 @@ export interface KickBand {
   cooldownT: number;
   /** Seconds since the last kick, or <0 for "never hit" — drives the flash. */
   hitT: number;
+}
+
+/**
+ * A live BOOSTER LANE on an arc face — a curved speed strip the ball RIDES.
+ *
+ * The difference from KickBand is the whole point of the feature. Rubber is a
+ * radial accelerator: it reflects you off the wall, harder than you arrived. A
+ * lane is TANGENTIAL — roll into the curve and it sweeps you around the bend
+ * and spits you out along it, faster. Hitting rubber ends your travel along the
+ * wall; hitting a lane is the travel.
+ *
+ * Because the boost is tangential it needs a DIRECTION: `cw` is which way along
+ * the circle the lane throws (true = increasing angle in the atan2 frame). A
+ * ball entering against the lane's grain is not boosted — it just banks off the
+ * stone as usual, so a lane is a one-way road and can never cancel a player's
+ * momentum head-on.
+ *
+ * Same sub-span contract as KickBand: geometry is the owning feature's circle,
+ * so the mesh and the trigger can never disagree with the wall the ball rides.
+ * `cooldownT`/`hitT` are mutable per-frame scratch with ONE owner
+ * (render/arc-lanes.ts).
+ */
+export interface LaneBand {
+  /** Band start angle (radians, atan2 frame) — inside the feature's own span. */
+  a0: number;
+  /** Band angular extent (radians, > 0). */
+  span: number;
+  /** Direction the lane throws: true = increasing angle, false = decreasing. */
+  cw: boolean;
+  /** Re-fire lockout, seconds. >0 = spent (the ball just rode it). */
+  cooldownT: number;
+  /** Seconds since the last boost, or <0 for "never ridden" — drives the flash. */
+  hitT: number;
+}
+
+/**
+ * Which booster lane (if any) owns the contact a circle at (px,pz) just made,
+ * given the ball's momentum. Same angular test as `kickBandAt`, PLUS a grain
+ * check: the ball must already be travelling along the lane's direction (its
+ * velocity must have a positive component along the lane's tangent). A ball
+ * arriving against the grain, or dead-on into the wall, gets a normal bank.
+ *
+ * `mx`/`mz` is the ball's momentum vector at contact.
+ */
+export function laneBandAt(f: ArcFeature, px: number, pz: number, mx: number, mz: number): LaneBand | null {
+  if (!f.lanes || f.lanes.length === 0) return null;
+  const dx = px - f.cx;
+  const dz = pz - f.cz;
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6) return null;
+  const ang = Math.atan2(dz, dx);
+  for (const l of f.lanes) {
+    if (l.cooldownT > 0) continue;
+    if (!angleInSpan(ang, l.a0, l.span)) continue;
+    // Tangent at the contact point, pointing the way the lane throws. Rotating
+    // the outward radial by +90° gives the increasing-angle tangent.
+    const sign = l.cw ? 1 : -1;
+    const tx = (-dz / d) * sign;
+    const tz = (dx / d) * sign;
+    if (mx * tx + mz * tz <= 0) continue; // against the grain — no boost
+    return l;
+  }
+  return null;
+}
+
+/**
+ * The unit TANGENT of `l` at the contact point (px,pz) on `f`, pointing the way
+ * the lane throws. This is the exit direction a boosted ball leaves along —
+ * computed from the same circle the collider used, so the launch always follows
+ * the wall the player can see.
+ */
+export function laneTangent(f: ArcFeature, l: LaneBand, px: number, pz: number): { tx: number; tz: number } {
+  const dx = px - f.cx;
+  const dz = pz - f.cz;
+  const d = Math.hypot(dx, dz) || 1;
+  const sign = l.cw ? 1 : -1;
+  return { tx: (-dz / d) * sign, tz: (dx / d) * sign };
 }
 
 /**

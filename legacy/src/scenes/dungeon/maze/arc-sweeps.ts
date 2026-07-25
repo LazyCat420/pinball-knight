@@ -28,7 +28,7 @@
  * spans the quadrant facing (cx,cz). DOM- and three-free: tested.
  */
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "./tile-shape";
 import { bfsDistances } from "../entities/ai";
 
 /** Fillet radii tried largest-first at every qualifying corner. */
@@ -56,10 +56,40 @@ export const KICK_MAX_PER_FLOOR = 10;
 /** Only sweeps with at least this much arc are worth a band (rad). */
 export const KICK_MIN_SPAN = 0.9;
 
+// ── BOOSTER LANES — the curved speed strip a ball RIDES (see LaneBand) ──
+// Lanes go on CONCAVE sweeps, which is the geometric opposite of where rubber
+// goes, and the reason both can exist without competing. A concave bowl is the
+// INSIDE of a bend: the ball enters, follows the curve round and leaves along
+// it — exactly the line a booster lane should reward. A convex sweep is an
+// outside corner you glance off, which is what rubber is for. Concave sweeps
+// previously wore nothing at all, so this dresses a face that was plain stone.
+/** Chance a qualifying concave sweep is authored as a booster lane. */
+export const LANE_CHANCE = 0.55;
+/** Fraction of the sweep's span the strip covers, centred on the arc. */
+export const LANE_BAND_FRAC = 0.78;
+/** Hard cap per floor — a corner to take fast, not a conveyor belt. */
+export const LANE_MAX_PER_FLOOR = 6;
+/** Only sweeps with at least this much arc are worth a lane (rad). */
+export const LANE_MIN_SPAN = 0.9;
+
 /** A fresh, ready band covering `span` radians centred inside [a0, a0+total]. */
 function centredBand(a0: number, total: number, frac: number): KickBand {
   const span = total * frac;
   return { a0: a0 + (total - span) / 2, span, cooldownT: 0, hitT: -1 };
+}
+
+/**
+ * A fresh booster lane centred on the sweep, throwing in direction `cw`.
+ *
+ * The direction is picked per-sweep rather than derived from geometry: a
+ * concave bowl is symmetric, so BOTH ways round are a legitimate racing line and
+ * neither is more "correct". Fixing one per lane is what makes it a one-way
+ * road — the thing that stops a lane from ever fighting a player's momentum,
+ * since a ball running the other way simply isn't grabbed (see laneBandAt).
+ */
+function centredLane(a0: number, total: number, frac: number, cw: boolean): LaneBand {
+  const span = total * frac;
+  return { a0: a0 + (total - span) / 2, span, cw, cooldownT: 0, hitT: -1 };
 }
 
 /** Tiles that carry placed content (parts/items/spawns/…): never converted. */
@@ -202,8 +232,17 @@ function commitFillet(g: Grid, plan: FilletPlan): void {
 }
 
 /** Undo a committed CONCAVE fillet (floor restored; feature left orphaned —
- * harmless, nothing points at it). Convex fillets never need reverting. */
+ * harmless for collision, nothing points at it). Convex fillets never need
+ * reverting.
+ *
+ * The bands ARE stripped, though: collision reaches a feature only through a
+ * tile's arcIdx, but the RENDERERS walk `g.arcs` directly and would happily
+ * build a strip of rubber or a lit lane hovering over the open floor this
+ * revert just restored. Dropping them is cheaper and safer than teaching every
+ * renderer to detect an orphan. */
 function revertConcave(g: Grid, plan: FilletPlan): void {
+  plan.feature.kicks = undefined;
+  plan.feature.lanes = undefined;
   for (const t of plan.fillTiles) setTile(g, t.i, t.j, T_FLOOR);
   for (const t of plan.arcTiles) {
     setTile(g, t.i, t.j, T_FLOOR);
@@ -228,6 +267,7 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
   ensureArcs(g);
   let count = g.arcs!.length;
   let kickers = g.arcs!.reduce((n, f) => n + (f.kicks?.length ?? 0), 0);
+  let lanes = g.arcs!.reduce((n, f) => n + (f.lanes?.length ?? 0), 0);
   const concavePlans: FilletPlan[] = [];
 
   for (let j = 1; j < g.h - 1 && count < MAX_SWEEPS_PER_FLOOR; j++) {
@@ -270,6 +310,15 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
         if (!concave && kickers < KICK_MAX_PER_FLOOR && plan.feature.span >= KICK_MIN_SPAN && rng() < KICK_CHANCE) {
           plan.feature.kicks = [centredBand(plan.feature.a0, plan.feature.span, KICK_BAND_FRAC)];
           kickers++;
+        }
+        // BOOSTER LANE on the concave bowls — the inside of a bend, which is the
+        // line a speed strip should reward. Mutually exclusive with rubber by
+        // construction (that branch is convex-only), so a face is never both.
+        // Direction is a coin flip: both ways round a symmetric bowl are a real
+        // racing line, and fixing one is what makes the lane one-way.
+        if (concave && lanes < LANE_MAX_PER_FLOOR && plan.feature.span >= LANE_MIN_SPAN && rng() < LANE_CHANCE) {
+          plan.feature.lanes = [centredLane(plan.feature.a0, plan.feature.span, LANE_BAND_FRAC, rng() < 0.5)];
+          lanes++;
         }
         commitFillet(g, plan);
         if (concave) concavePlans.push(plan);

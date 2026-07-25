@@ -30,6 +30,7 @@ import { createPixelPass } from "./render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
+import { updateArcLanes } from "./render/arc-lanes";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
@@ -755,6 +756,20 @@ export function launchDungeonGame(onExit?: () => void): void {
     // read-back: the bands are geometry on a merged wall mesh).
     (window as unknown as { __dungeonKickers?: () => unknown }).__dungeonKickers = () =>
       (state.maze?.arcKickers ?? []).map((k) => ({ x: k.x, z: k.z, cooldownT: k.band.cooldownT, hitT: k.band.hitT }));
+    // Dev: the BOOSTER LANES, same read-back plus the one thing a lane has that
+    // rubber doesn't — `cw`, the direction it throws. A harness must enter WITH
+    // the grain or the lane correctly ignores it, so a test that doesn't know
+    // the direction is a test that fails for the wrong reason.
+    (window as unknown as { __dungeonLanes?: () => unknown }).__dungeonLanes = () =>
+      (state.maze?.arcLanes ?? []).map((l) => ({
+        x: l.x,
+        z: l.z,
+        cw: l.band.cw,
+        a0: l.band.a0,
+        span: l.band.span,
+        cooldownT: l.band.cooldownT,
+        hitT: l.band.hitT,
+      }));
     (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
     (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
@@ -3148,6 +3163,7 @@ function loop(now: number): void {
   state.vfx?.update(frame);
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
   if (state.maze) updateArcKickers(state.maze.arcKickers, frame, state.elapsed); // curved-wall booster rubber
+  if (state.maze) updateArcLanes(state.maze.arcLanes, frame, state.elapsed); // curved-wall booster lanes
   updateLampPuzzle(frame); // brazier glow + vault chest reveal
   updatePlungerRig(); // the visible launcher, shown only while parked to launch
   updateShots(frame); // orbit-lap + skill-shot windows, named-combo chain decay

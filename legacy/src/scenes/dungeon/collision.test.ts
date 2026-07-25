@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable, setTile, setShape } from "./maze/generator";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./collision";
-import { SHAPE_SLANT_NE } from "./maze/tile-shape";
+import { SHAPE_SLANT_NE, SHAPE_ARC } from "./maze/tile-shape";
 
 /** A 7x5 room: solid border, open interior, one pillar at (3,2). */
 function room(): Grid {
@@ -52,7 +52,103 @@ describe("collision", () => {
   it("a zero move is a no-op", () => {
     const g = room();
     const p = tileCenter(g, 1, 1);
-    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null, hitKick: null });
+    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null, hitKick: null, hitLane: null });
+  });
+});
+
+/**
+ * BOOSTER LANES through the real collider. arc-lanes.test.ts covers the grain
+ * maths in isolation; this asserts the wiring — that a lane authored on a grid
+ * feature actually comes back out of `moveCircle`, tangent and all. That seam is
+ * where a lane silently does nothing despite every unit test passing.
+ */
+describe("collision — booster lanes", () => {
+  /** A big open room with ONE convex arc feature, wearing a lane over its span. */
+  function laneRoom(cw: boolean): Grid {
+    const w = 16;
+    const h = 16;
+    const t = new Uint8Array(w * h).fill(T_FLOOR);
+    for (let i = 0; i < w; i++) {
+      t[i] = T_WALL;
+      t[(h - 1) * w + i] = T_WALL;
+    }
+    for (let j = 0; j < h; j++) {
+      t[j * w] = T_WALL;
+      t[j * w + w - 1] = T_WALL;
+    }
+    const g: Grid = { w, h, t, shapes: new Uint8Array(w * h), arcs: [], arcIdx: new Int16Array(w * h).fill(-1) };
+    // A radius-3 quarter guide centred at grid (8,8), solid inside, wearing a
+    // lane across its whole span.
+    g.arcs!.push({
+      cx: 8,
+      cz: 8,
+      r: 3,
+      a0: 0,
+      span: Math.PI / 2,
+      lanes: [{ a0: 0, span: Math.PI / 2, cw, cooldownT: 0, hitT: -1 }],
+    });
+    // Mark the tiles the arc passes through as ARC slices pointing at feature 0.
+    for (let j = 8; j <= 11; j++) {
+      for (let i = 8; i <= 11; i++) {
+        const d = Math.hypot(i + 0.5 - 8, j + 0.5 - 8);
+        if (d > 2 && d < 4) {
+          setTile(g, i, j, T_WALL);
+          setShape(g, i, j, SHAPE_ARC);
+          g.arcIdx![j * w + i] = 0;
+        }
+      }
+    }
+    return g;
+  }
+
+  /** Drive a circle into the arc face at `ang`, travelling `(dx,dz)`. */
+  function probe(g: Grid, ang: number, dx: number, dz: number) {
+    // Start just outside the face and move inward-ish along the given vector.
+    const r = 3.55;
+    const x = 8 + Math.cos(ang) * r - g.w / 2;
+    const z = 8 + Math.sin(ang) * r - g.h / 2;
+    return moveCircle(g, x, z, R, dx, dz);
+  }
+
+  it("reports a lane hit for a ball running WITH the grain", () => {
+    const g = laneRoom(true);
+    const ang = 0.6;
+    // Tangent for cw at this angle, nudged inward so contact actually happens.
+    const tx = -Math.sin(ang);
+    const tz = Math.cos(ang);
+    const inx = -Math.cos(ang) * 0.35;
+    const inz = -Math.sin(ang) * 0.35;
+    const res = probe(g, ang, tx * 0.3 + inx, tz * 0.3 + inz);
+    expect(res.hitN).not.toBeNull();
+    expect(res.hitLane).not.toBeNull();
+    // The exit tangent must be a unit vector along the lane.
+    expect(Math.hypot(res.hitLane!.tx, res.hitLane!.tz)).toBeCloseTo(1, 6);
+    // …and must point the way the lane throws.
+    expect(res.hitLane!.tx * tx + res.hitLane!.tz * tz).toBeGreaterThan(0.9);
+  });
+
+  it("reports NO lane for a ball running against the grain", () => {
+    const g = laneRoom(true);
+    const ang = 0.6;
+    const tx = -Math.sin(ang);
+    const tz = Math.cos(ang);
+    const inx = -Math.cos(ang) * 0.35;
+    const inz = -Math.sin(ang) * 0.35;
+    // Same contact, opposite travel along the lane.
+    const res = probe(g, ang, -tx * 0.3 + inx, -tz * 0.3 + inz);
+    expect(res.hitN).not.toBeNull(); // still hits the wall…
+    expect(res.hitLane).toBeNull(); // …but the lane does not grab it
+  });
+
+  it("a spent lane reports nothing until its cooldown clears", () => {
+    const g = laneRoom(true);
+    g.arcs![0].lanes![0].cooldownT = 0.5;
+    const ang = 0.6;
+    const tx = -Math.sin(ang);
+    const tz = Math.cos(ang);
+    const res = probe(g, ang, tx * 0.3 - Math.cos(ang) * 0.35, tz * 0.3 - Math.sin(ang) * 0.35);
+    expect(res.hitN).not.toBeNull();
+    expect(res.hitLane).toBeNull();
   });
 });
 

@@ -77,6 +77,12 @@ import {
   ARC_KICK_SCATTER,
   ARC_KICK_COOLDOWN,
   ARC_KICK_GOLD,
+  ARC_LANE_MULT,
+  ARC_LANE_ADD,
+  ARC_LANE_MIN_EXIT,
+  ARC_LANE_MIN_SPEED,
+  ARC_LANE_COOLDOWN,
+  ARC_LANE_GOLD,
   SECRET_BREAK_SPEED,
   WALL_BREAK_SPEED,
   WALL_BREAK_SPEED_COST,
@@ -1233,7 +1239,31 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     const nx = res.hitN.nx;
     const nz = res.hitN.nz;
     const vn = p.momX * nx + p.momZ * nz;
-    if (vn < 0) {
+    // BOOSTER LANE: this stretch is a speed strip and the ball is running WITH
+    // its grain, so the curve does not bounce it — it CARRIES it. Handled ahead
+    // of the reflection below because a lane replaces the ricochet outright:
+    // the exit is the arc's live tangent, so the ball leaves following the bend
+    // it just rode instead of being thrown off it. (A ball arriving against the
+    // grain never gets here — laneBandAt already rejected it — so it falls
+    // through to the normal bank and a lane can't stop anyone head-on.)
+    const lane = res.hitLane && p.momSpeed >= ARC_LANE_MIN_SPEED ? res.hitLane : null;
+    if (lane) {
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * ARC_LANE_MULT + ARC_LANE_ADD * materialBumperMult(), ARC_LANE_MIN_EXIT));
+      p.momX = lane.tx * p.momSpeed;
+      p.momZ = lane.tz * p.momSpeed;
+      lane.band.cooldownT = ARC_LANE_COOLDOWN;
+      lane.band.hitT = 0;
+      onPartTrigger(); // combo + frenzy chain, same as rubber or a bumper
+      notePocketBounce(p);
+      state.goldRun += ARC_LANE_GOLD;
+      addGold(ARC_LANE_GOLD, "dungeon-game");
+      // Sparks stream ALONG the lane, not off the wall — the visual has to read
+      // as "carried around the bend", which is the whole difference from rubber.
+      state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, lane.tx, lane.tz, 18);
+      state.shakeT = Math.max(state.shakeT, 0.14);
+      emitMaterialOnBounce(nx, nz);
+      sfxBumper();
+    } else if (vn < 0) {
       p.momX -= 2 * vn * nx;
       p.momZ -= 2 * vn * nz;
       // BOOSTER RUBBER: this stretch of the curved wall is a kicker band, so it

@@ -13,9 +13,28 @@
  */
 import { type Grid, isWalkable, shapeAt, arcFeatureAt } from "./maze/generator";
 import { clamp } from "../../utils/math";
-import { SHAPE_FULL, isShaped, isArc, resolveCircleShape, resolveArcFeature, kickBandAt, type KickBand } from "./maze/tile-shape";
+import {
+  SHAPE_FULL,
+  isShaped,
+  isArc,
+  resolveCircleShape,
+  resolveArcFeature,
+  kickBandAt,
+  laneBandAt,
+  laneTangent,
+  type KickBand,
+  type LaneBand,
+} from "./maze/tile-shape";
 
 const EPS = 1e-4;
+
+/** A booster-lane contact: the band that owns it plus its exit TANGENT, both
+ *  computed off the arc that answered so the launch follows the visible wall. */
+export interface LaneHit {
+  band: LaneBand;
+  tx: number;
+  tz: number;
+}
 
 /**
  * Does a solid tile block the axis-separated square sweep? A shaped (slant) tile
@@ -35,16 +54,33 @@ function blocksSquare(g: Grid, i: number, j: number): boolean {
  * the SAME circle, so overlapping two slices at once yields one consistent
  * radial answer — "deepest pen wins" stays coherent across the sweep.
  */
-function resolveShapeOrArc(g: Grid, shape: number, i: number, j: number, gx: number, gz: number, r: number): { nx: number; nz: number; pen: number; kick?: KickBand | null } | null {
+function resolveShapeOrArc(
+  g: Grid,
+  shape: number,
+  i: number,
+  j: number,
+  gx: number,
+  gz: number,
+  r: number,
+  mx: number,
+  mz: number,
+): { nx: number; nz: number; pen: number; kick?: KickBand | null; lane?: LaneHit | null } | null {
   if (isArc(shape)) {
     const f = arcFeatureAt(g, i, j);
     if (!f) return null;
     const hit = resolveArcFeature(f, gx, gz, r);
-    // A sweep can wear BOOSTER RUBBER over part of its face (KickBand). Report
-    // which band (if any) owns this contact so the ricochet can become a kick —
-    // resolved here rather than in the caller because only this scope still
-    // knows WHICH feature answered.
-    return hit ? { ...hit, kick: kickBandAt(f, gx, gz) } : null;
+    if (!hit) return null;
+    // A sweep can wear BOOSTER RUBBER over part of its face (KickBand), or be a
+    // BOOSTER LANE that carries the ball along it (LaneBand). Both are resolved
+    // here rather than in the caller because only this scope still knows WHICH
+    // feature answered. A lane also needs the travel direction, hence mx/mz:
+    // it only grabs a ball already moving along its grain.
+    const lane = laneBandAt(f, gx, gz, mx, mz);
+    return {
+      ...hit,
+      kick: kickBandAt(f, gx, gz),
+      lane: lane ? { band: lane, ...laneTangent(f, lane, gx, gz) } : null,
+    };
   }
   return resolveCircleShape(shape, i, j, gx, gz, r);
 }
@@ -63,7 +99,11 @@ export function circleCollides(g: Grid, x: number, z: number, r: number): boolea
       if (isWalkable(g, i, j)) continue;
       const shape = shapeAt(g, i, j);
       if (isShaped(shape)) {
-        if (resolveShapeOrArc(g, shape, i, j, gx, gz, r)) return true;
+        // A static overlap test has no travel direction, so pass a zero vector:
+        // no lane can claim the contact (laneBandAt needs positive travel along
+        // the grain), which is right — this asks "am I inside a wall", and a
+        // booster lane is a wall either way.
+        if (resolveShapeOrArc(g, shape, i, j, gx, gz, r, 0, 0)) return true;
         continue;
       }
       // Closest point on the tile AABB to the circle centre.
@@ -202,6 +242,11 @@ export interface MoveResult {
    * kicker rubber on an arc sweep — the ricochet becomes a kick (player.ts).
    * null for plain stone; ignored by every non-pinball caller. */
   hitKick: KickBand | null;
+  /** The BOOSTER LANE that owned the contact, when `hitN` came off a curved
+   * speed strip the ball is running WITH — the ricochet becomes a tangential
+   * launch along the bend instead (player.ts). Mutually exclusive with hitKick
+   * in practice, since arc-sweeps authors one or the other per stretch. */
+  hitLane: LaneHit | null;
 }
 
 /**
@@ -211,28 +256,42 @@ export interface MoveResult {
  * placed only on backed convex corners (see assignCornerShapes), so a body this
  * size overlaps at most one meaningfully — resolving the deepest is enough.
  */
-function resolveShaped(g: Grid, gx: number, gz: number, r: number): { gx: number; gz: number; nx: number; nz: number; kick: KickBand | null } | null {
+function resolveShaped(
+  g: Grid,
+  gx: number,
+  gz: number,
+  r: number,
+  mx: number,
+  mz: number,
+): { gx: number; gz: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null } | null {
   const i0 = Math.floor(gx - r);
   const i1 = Math.floor(gx + r);
   const j0 = Math.floor(gz - r);
   const j1 = Math.floor(gz + r);
-  let best: { pen: number; nx: number; nz: number; kick: KickBand | null } | null = null;
+  let best: { pen: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null } | null = null;
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       const shape = shapeAt(g, i, j);
       if (!isShaped(shape) || isWalkable(g, i, j)) continue;
-      const hit = resolveShapeOrArc(g, shape, i, j, gx, gz, r);
-      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz, kick: hit.kick ?? null };
+      const hit = resolveShapeOrArc(g, shape, i, j, gx, gz, r, mx, mz);
+      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz, kick: hit.kick ?? null, lane: hit.lane ?? null };
     }
   }
   if (!best) return null;
-  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz, kick: best.kick };
+  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz, kick: best.kick, lane: best.lane };
 }
 
 /** One sweep-and-clamp move (square walls) + one corrective shaped pass. Grid
  * coords in/out. Sub-stepping in `moveCircle` keeps each call within the
  * no-tunnel bound. */
-function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number, dz: number): { gx: number; gz: number; hitN: { nx: number; nz: number } | null; hitKick: KickBand | null } {
+function moveCircleStep(
+  g: Grid,
+  gx0: number,
+  gz0: number,
+  r: number,
+  dx: number,
+  dz: number,
+): { gx: number; gz: number; hitN: { nx: number; nz: number } | null; hitKick: KickBand | null; hitLane: LaneHit | null } {
   let gx = gx0;
 
   // ── X axis (square walls only; slant tiles are transparent here) ──
@@ -269,9 +328,11 @@ function moveCircleStep(g: Grid, gx0: number, gz0: number, r: number, dx: number
   }
 
   // ── Corrective pass: push out of any slant triangle, capture its normal. ──
-  const shaped = resolveShaped(g, gx, gz, r);
-  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz }, hitKick: shaped.kick };
-  return { gx, gz, hitN: null, hitKick: null };
+  // The requested move (dx,dz) IS the travel direction at contact, which is what
+  // a booster lane needs to decide whether the ball is running with its grain.
+  const shaped = resolveShaped(g, gx, gz, r, dx, dz);
+  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz }, hitKick: shaped.kick, hitLane: shaped.lane };
+  return { gx, gz, hitN: null, hitKick: null, hitLane: null };
 }
 
 /** Largest per-step move that keeps the axis sweep tunnel-free (< 1 − 2r). */
@@ -295,6 +356,7 @@ export function moveCircle(g: Grid, x: number, z: number, r: number, dx: number,
   const sz = dz / steps;
   let hitN: { nx: number; nz: number } | null = null;
   let hitKick: KickBand | null = null;
+  let hitLane: LaneHit | null = null;
   for (let s = 0; s < steps; s++) {
     const r2 = moveCircleStep(g, gx, gz, r, sx, sz);
     gx = r2.gx;
@@ -302,7 +364,8 @@ export function moveCircle(g: Grid, x: number, z: number, r: number, dx: number,
     if (r2.hitN) {
       hitN = r2.hitN; // keep the most recent slant contact…
       hitKick = r2.hitKick; // …and the rubber (or lack of it) that went with it
+      hitLane = r2.hitLane; // …and the lane, likewise
     }
   }
-  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN, hitKick };
+  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN, hitKick, hitLane };
 }

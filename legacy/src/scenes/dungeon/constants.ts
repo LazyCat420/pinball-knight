@@ -740,6 +740,11 @@ export const ARC_KICK_GOLD = 1;
 export const ARC_KICK_FLASH = 0.26;
 /** How far the rubber stands proud of the collider face (world units). */
 export const ARC_KICK_THICK = 0.07;
+// ⚠️ DEAD MIRRORS — the five below are NOT read by anything. maze/arc-sweeps.ts
+// declares its own copies (KICK_BAND_FRAC/KICK_CHANCE/KICK_ISLAND_BANDS/
+// KICK_ISLAND_SPAN/KICK_MAX_PER_FLOOR) and never imports these, so editing them
+// changes nothing. Tune the ones in arc-sweeps.ts. Kept only because deleting
+// exports is a wider blast radius than labelling them.
 /** Fraction of a fillet sweep's span the band covers (centred on the arc). */
 export const ARC_KICK_BAND_FRAC = 0.62;
 /** Chance a qualifying fillet sweep is authored with rubber. */
@@ -749,6 +754,36 @@ export const ARC_KICK_ISLAND_BANDS = 3;
 export const ARC_KICK_ISLAND_SPAN = 0.62;
 /** Hard cap per floor — a machine, not a trampoline. */
 export const ARC_KICK_MAX = 10;
+
+// ── Curved-wall BOOSTER LANES (speed strips ON the sweeps — arc-sweeps.ts) ──
+/**
+ * A lane is the OTHER thing a curved guide can do. Rubber (above) is a RADIAL
+ * accelerator — it throws the ball off the wall. A lane is TANGENTIAL: roll into
+ * the bend with its grain and it sweeps you around and spits you out ALONG the
+ * curve, faster than you came in. That is the "curved booster lane" feel — a
+ * banked corner you take at speed, not a trampoline you bounce off.
+ *
+ * Deliberately stronger than a kick (ADD 3.4 vs 2.6): a lane only fires when you
+ * are already running its way, so it rewards a line the player chose, where
+ * rubber fires on any contact at all. The exit is the arc's live tangent, so the
+ * ball leaves following the wall it just rode.
+ */
+/** Multiplies incoming speed — a lane COMPOUNDS a good line, unlike flat rubber. */
+export const ARC_LANE_MULT = 1.12;
+/** Flat speed added on top of the multiply (u/s). */
+export const ARC_LANE_ADD = 3.4;
+/** Speed floor leaving a lane — entering slow still leaves you moving. */
+export const ARC_LANE_MIN_EXIT = 10;
+/** Below this, a lane is just a wall to lean on: no boost, no flash. */
+export const ARC_LANE_MIN_SPEED = 3;
+/** Re-fire lockout — long enough that one sweep is one boost, not a grind. */
+export const ARC_LANE_COOLDOWN = 0.45;
+/** Gold paid per boost — the payout is the LINE, not the purse. */
+export const ARC_LANE_GOLD = 2;
+/** Seconds the strip stays lit after a boost. */
+export const ARC_LANE_FLASH = 0.34;
+/** How far the strip stands proud of the collider face (world units). */
+export const ARC_LANE_THICK = 0.05;
 // ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
 export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
 export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled

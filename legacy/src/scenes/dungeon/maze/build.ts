@@ -33,6 +33,7 @@ import {
 import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED, idx } from "./generator";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "./tile-shape";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
+import { buildArcLanes, type ArcLaneVisual } from "../render/arc-lanes";
 import type { LevelPlan } from "./decorate";
 import type { ArcCorner } from "../collision";
 import { clamp } from "../../../utils/math";
@@ -665,6 +666,10 @@ export interface MazeHandle {
    *  each frame (render/arc-kickers.updateArcKickers). Empty on floors whose
    *  sweeps drew no bands. */
   arcKickers: ArcKickerVisual[];
+  /** The BOOSTER LANES on the curved sweeps — core ticks their cooldown/flash
+   *  each frame (render/arc-lanes.updateArcLanes). Empty on floors whose sweeps
+   *  drew no lanes. */
+  arcLanes: ArcLaneVisual[];
   dispose(): void;
 }
 
@@ -1066,6 +1071,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // the exact collider radius/span. Knee-high when any slice is camera-side rim
   // (same Diablo rule as boxes), full otherwise. ──
   let arcKickers: ArcKickerVisual[] = [];
+  let arcLanes: ArcLaneVisual[] = [];
   if (grid.arcs && grid.arcs.length) {
     const sweepGeo = arcSweepGeometry(grid.arcs, grid, (fi) => ((arcRim.get(fi) ?? true) ? WALL_LOW : WALL_H));
     if (sweepGeo) {
@@ -1092,6 +1098,13 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       group.add(kick.group);
       for (const d of kick.disposables) disposables.push(d);
       arcKickers = kick.kickers;
+    }
+    // …and the BOOSTER LANES riding the concave sweeps, same circle, same rule.
+    const lane = buildArcLanes(grid.arcs, grid, (fi) => ((arcRim.get(fi) ?? true) ? WALL_LOW : WALL_H));
+    if (lane.lanes.length) {
+      group.add(lane.group);
+      for (const d of lane.disposables) disposables.push(d);
+      arcLanes = lane.lanes;
     }
   }
 
@@ -1372,6 +1385,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     secrets,
     wallAt,
     arcKickers,
+    arcLanes,
     dispose() {
       scene.remove(group);
       disposables.forEach((d) => d.dispose());
