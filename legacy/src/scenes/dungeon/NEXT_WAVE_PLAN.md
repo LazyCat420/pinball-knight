@@ -94,16 +94,35 @@ Checked in `node_modules/three`:
 
 ### Implementation sketch
 
+Shader-chunk details below were verified by reading `node_modules/three/src/`
+directly, **not** from forum posts — several widely-copied snippets are wrong
+for r185 (see "the vUv trap" below).
+
 1. **`render/sprite-instances.ts`** (new) — an `InstancedMesh` per sheet, with:
-   - `InstancedBufferAttribute` `aFrame` (vec2: uv offset x, repeat sign) —
-     per-instance frame + flip, replacing the cloned texture entirely;
-   - `onBeforeCompile` patch injecting the offset into the vertex shader's UV;
-   - `instanceColor` for the damage-flash tint (currently `mat.color`);
+   - `InstancedBufferAttribute` **`aFrame` as a `vec4`** — `(u0, v0, uScale,
+     vScale)`. Offset *and* scale per instance costs nothing extra over a vec2
+     and is the established idiom; flip becomes a negative `uScale`, so it
+     needs no separate attribute.
+   - `onBeforeCompile` **appending after** `#include <uv_vertex>`:
+     ```glsl
+     #include <uv_vertex>
+     #ifdef USE_MAP
+       vMapUv = aFrame.xy + vMapUv * aFrame.zw;
+     #endif
+     ```
+     **Append, never replace the chunk.** Replacing it silently drops every
+     other map's UV varying (`vAlphaMapUv`, `vNormalMapUv`…) — harmless today
+     since `map` is the only texture, fatal the moment anyone adds an alphaMap.
+   - `instanceColor` via `setColorAt` for the damage-flash tint.
    - slot claim/release/recycle, mirroring `blob-pool.ts`'s proven shape.
-2. **Billboarding is nearly free here.** The orthographic camera never rotates,
-   so "face the camera" is a **constant quaternion** — bake it into the instance
-   matrix once, exactly as `blob-pool.ts` does for the flat blob rotation. No
-   vertex-shader billboard maths, no per-frame CPU rotation.
+2. **Billboarding is FREE here — do not write a billboard shader.** The
+   orthographic camera never rotates, so the correction is constant. A
+   `PlaneGeometry` already faces +Z and an ortho camera looks down −Z: they
+   already face each other. Any fixed tilt is baked once with `geo.rotateX()`
+   at construction and every instance inherits it. No vertex-shader maths, no
+   per-frame CPU rotation, no per-instance quaternion. (The naive
+   billboard-in-shader snippets on the forum are also a known trap — they drop
+   the per-instance translation and render one visible object.)
 3. **`ActorSprite` becomes a thin handle** over `{pool, slot}` implementing the
    same interface. `setFrame` writes `aFrame`, `setTint` calls `setColorAt`,
    `setElevation`/`setBlobVisible` drive the blob pool.
@@ -111,29 +130,109 @@ Checked in `node_modules/three`:
    which build sprites with no dungeon around them.
 5. **Wire the blob pool** at the same time — it is already built and tested.
 
+### The tint ports over cleanly — verified, not assumed
+
+This is usually the blocker that makes people abandon instancing, so it was
+traced through the r185 shader chain: `instancingColor` switches on `USE_COLOR`
+in the **fragment** shader (`WebGLProgram.js` ~738), `color_vertex` does
+`vColor.rgb *= instanceColor.rgb`, and `color_fragment` does `diffuseColor *=
+vColor`. Final colour is `material.color × instanceColor × textureSample` —
+**identical multiplicative semantics to the current per-mesh `mat.color` damage
+flash.** It is a true drop-in.
+
+Two caveats: `instanceColor` is **RGB only** (no per-instance alpha), and
+`setColorAt` does *not* colour-space-convert the way `material.color` setters
+do — build flash colours with `new THREE.Color().setHex(0xff0000,
+THREE.SRGBColorSpace)` or they look washed out.
+
+### The vUv trap (why old examples fail silently)
+
+three.js renamed `vUv` → `vMapUv` (per-map varyings) around **r151-r152**, so
+every atlas snippet written before then is wrong on r185 and fails *silently* —
+the shader compiles and renders the wrong frame. Related: r185's `uv_vertex`
+uses a `MAP_UV` macro, not a literal `uv`, so hardcoding `uv` only works while
+`map.channel === 0`.
+
+**Always assert the patch matched**, because a no-op `.replace()` is the single
+most common failure mode here:
+```js
+if (!shader.vertexShader.includes('aFrame')) throw new Error('atlas patch failed');
+```
+Also set `customProgramCacheKey` so patched and unpatched materials cannot
+collide in three's program cache.
+
+### Texture setup
+
+`NearestFilter` (already used) **plus `ClampToEdgeWrapping`** — the common
+example uses `RepeatWrapping`, which bleeds neighbouring atlas cells at frame
+edges. Leave `texture.offset`/`repeat` at defaults: `mapTransform` folds into
+`vMapUv` and would double-apply.
+
 ### Pitfalls to design against
 
+- **Transparency sorting — the material flags matter.** Instanced sprites
+  cannot be depth-sorted per-instance (three sorts per *object*, and the horde
+  is one object). `alphaTest` sidesteps this entirely because it is a **cutout,
+  not a blend**: surviving fragments are fully opaque, so the depth buffer
+  resolves ordering order-independently. The configuration must be
+  `alphaTest: 0.5` with **`transparent: false`** and `depthWrite: true`.
+  Setting `transparent: true` *alongside* alphaTest is the classic mistake — it
+  pushes the mesh into the transparent pass and reintroduces the sorting
+  problem for no benefit. **`createActorSprite` does exactly this today**
+  (`sprite.ts:428-433`: `transparent: true` **and** `alphaTest: 0.5`), so the
+  instanced path should drop `transparent`.
+  ⚠️ **But verify against the occlusion silhouette before changing it.**
+  `createOcclusionSilhouette` (`sprite.ts:517-540`) draws the player through
+  walls using `depthFunc: THREE.GreaterDepth`, which depends on what does and
+  does not write depth in which pass. Flipping `transparent` moves actors
+  between the transparent and opaque passes and can therefore change when the
+  silhouette appears. Test the see-through-wall effect explicitly after the
+  change; this is a visual regression no unit test will catch.
 - **Frustum culling**: an `InstancedMesh`'s bounding sphere covers every
-  instance, so it is effectively never culled. `blob-pool.ts` already sets
-  `frustumCulled = false` deliberately for this reason. One draw call is cheap;
-  a wrong bounding sphere that culls the whole horde is not.
-- **Transparency sorting**: instanced sprites cannot be depth-sorted
-  per-instance. These sprites use `alphaTest: 0.5` (hard cutout), which writes
-  depth and **sidesteps sorting entirely** — this is why the technique is safe
-  here and would not be for soft-alpha sprites.
-- **Buffer growth**: reallocating an `InstancedMesh` must copy existing
-  matrices across or every live actor teleports. `blob-pool.test.ts` already
-  pins that regression; reuse the pattern.
-- **`onBeforeCompile` and caching**: three caches compiled programs; a material
-  using `onBeforeCompile` should set `customProgramCacheKey` or risk shader
-  cache collisions between patched and unpatched materials.
+  instance, so it is culled only when *every* sprite is offscreen — effectively
+  never. Set `frustumCulled = false` and accept it; the draw is one call
+  regardless. `blob-pool.ts` already does this deliberately.
+- **Bounding sphere is not auto-updated.** `setMatrixAt` does not recompute it,
+  so raycasting against a stale volume misbehaves (the classic symptom is the
+  sphere acting "as if at the origin"). Irrelevant if nothing raycasts the
+  horde — worth confirming before relying on it.
+- **Buffer growth**: `InstancedMesh` count is fixed at construction and
+  reallocating must copy existing matrices across, or every live actor
+  teleports. `blob-pool.test.ts` already pins that regression. Better:
+  **over-allocate** (capacity ~512 for a 175 cap) and drive `mesh.count`, which
+  doubles as a free "hide the tail" mechanism.
+- **Hiding instances**: there is no native API (three.js issue #30403 was
+  closed as *not planned*). Zero-scale matrix is standard and fine at this
+  scale; shrinking `mesh.count` genuinely skips work if a dense alive-prefix is
+  maintained.
+- **Upload cost is a non-issue — do not over-engineer it.** 175 instances × 16
+  floats = **11 KB per frame**. `addUpdateRange` exists for partial uploads
+  (note `updateRange` was *removed* in r169; ranges accumulate and need
+  `clearUpdateRanges()`), but many small `bufferSubData` calls are often slower
+  than one full upload at this size. Just upload the whole buffer.
+- **Custom vertex shaders break shadows/depth prepass.** `onBeforeCompile`
+  patches only that material; shadow maps use `MeshDepthMaterial`, which knows
+  nothing about the UV patch. Only relevant if actors cast shadows — they
+  currently do not.
+
+### Expected payoff
+
+~350 actor draw calls → **~15-20** (one per sheet), or 1 per sheet actually on
+screen. Per-frame cost becomes ~11 KB of matrix upload plus ~8 KB of frame
+data — both negligible. Also removes ~175 texture clones, which is GPU memory
+as well as draw calls.
 
 ### Effort / risk
 
 Largest remaining item. ~1-2 focused sessions. **Medium-high risk** — it touches
 what every actor looks like, and a subtle UV bug shows as the wrong animation
-frame rather than a crash. Mitigation: the `ActorSprite` interface is preserved,
-so it can be feature-flagged and reverted wholesale.
+frame rather than a crash. Mitigations: the `ActorSprite` interface is
+preserved so it can be feature-flagged and reverted wholesale; assert the
+shader patch matched; and QA the occlusion silhouette explicitly.
+
+If this ever needs to go further (per-instance culling, sorting, real
+visibility), `agargaro/instanced-mesh` is the maintained library that adds
+exactly those — worth knowing about rather than hand-rolling them.
 
 ---
 
