@@ -14,6 +14,7 @@ import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CR
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { createSpacingGrid } from "./spacing-grid";
+import { authorArteryBanks } from "./artery-banks";
 import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
 import { PICKUP_WEAPONS } from "../items";
 
@@ -1352,6 +1353,30 @@ export function decorateMaze(
   const spineSet = new Set(spine.map((p) => idx(g, p.i, p.j)));
   const onSpine = (i: number, j: number): boolean => spineSet.has(idx(g, i, j));
 
+  // ── ARTERY BANKS — the LONG banked turns, carved into the highway's corners.
+  //
+  // MUST RUN HERE, before ANY content is placed. A bank claims a band of tiles
+  // around a bend, and it is all-or-nothing: if a single tile in the band holds
+  // a part, item or spawn, the bank is rejected. Placed late (after the corridor
+  // deal, hazards, prefab anchors...) that rejection fired every single time —
+  // measured 0 banks per floor against 6 viable plans on the same seed with an
+  // empty occupancy set. So the pass has to go before the claimants, not after.
+  //
+  // A fillet is a quarter-turn at radius 2-3 (~3.1 tiles of arc), over before a
+  // rail reads as a ride. A bank takes the same 90° turn on the OUTER wall of
+  // the 3-wide artery: ridden radius 2+3=5, so the arc is ~7.9 tiles.
+  // Nothing has been claimed yet at this point in the pass — that is the whole
+  // reason the banks go here — so the occupancy predicate is trivially empty.
+  // Rooms are the one thing already decided, and `furnishRooms` runs just below
+  // on the grid the banks leave behind, so it sees them.
+  // THE SPINE TILES THEMSELVES ARE OFF LIMITS. A bank shapes the walls AROUND
+  // a bend; if it converts a tile the route walks, the route is re-derived
+  // through a different corner and the booster pads laid along it end up
+  // pointing backward — decorate.test.ts catches exactly that ("spine booster
+  // points backward"). Passing `onSpine` as the occupancy predicate keeps the
+  // highway's own lane untouched while still letting the bank curve its walls.
+  if (spine.length >= 8) authorArteryBanks(g, spine, start, () => false, onSpine);
+
   // ── Rooms first: archetype content is SEEDED into the pools below, so all
   // the general placement (and its spacing rules) works around it. General
   // placement also stays OUT of room interiors — each room is its archetype's
@@ -1983,6 +2008,7 @@ export function decorateMaze(
   // single-tile pass only decorates the corners the sweeps didn't claim. ──
   const newParts = parts.filter((p) => !occupiedKeys.has(p.j * g.w + p.i));
   for (const p of newParts) claim(p); // polishParts may have added plaza bumpers
+
   authorArcSweeps(g, start, occupied, rng);
 
   // ── RUNWAY RE-AIM: the arc sweeps above can wall a launch part's lane after
