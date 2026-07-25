@@ -290,15 +290,54 @@ const stamped = stampPrefabs(raw, rng, prefabCount, theme, landmark.claimed, foc
 assembly placer is the same idea one level up**: place machines first, pass
 their claims down.
 
+### What the research changed (read before implementing)
+
+Two findings from surveying shipped generators (Enter the Gungeon, Spelunky,
+TinyKeep, Diablo 1, Unexplored, Wolverson's roguelike tutorial) that improve
+the design as planned:
+
+**1. Place the MOST-CONSTRAINED machine first, not a random draw.** Gungeon
+begins final assembly "with the room with the most connections" — the
+most-constrained-variable heuristic from constraint satisfaction. A machine
+with four typed ports has far fewer legal positions than a two-port lane, so
+placing it late means placing it into a space that no longer fits it. Sort the
+draw by port count descending. This is the single highest-leverage ordering
+decision and it is nearly free to implement.
+
+**2. Author a GUTTER into each machine.** Wolverson's room vaults carry a
+1-tile walkable border in the template itself, explicitly to maintain
+connectivity. It is the cheapest possible fix for the "stamped structure seals
+a corridor" failure — the most commonly reported prefab pitfall. Our
+`Assembly.floor` should include that border, or `assembly-check.ts` should
+grow a rule requiring one.
+
+**3. Do NOT rotate machines at runtime — mirror only.** This is the pitfall
+most relevant to us and the one I would otherwise have walked into. Gungeon
+treats orientation as risky enough to *defer* connector choice entirely,
+because "picking one with a sensible orientation is vital". Our machines are
+gravity- and flow-directional: a ramp has an up-flow. `orientationsOf` already
+produces all 8 orientations, and every one is validated — but a machine that is
+*mechanically* sensible upside-down is a separate question from one that
+*validates*. Recommend restricting the placer's draw to rotations that keep
+down-flow sane, and leaning on horizontal mirroring for variety.
+
+**4. A `MustConnect` assertion.** Modular-kit systems flag every connector that
+must terminate in a matched port or an explicit cap, and fail loudly in debug
+builds — it "catches doorways-to-nowhere before ship". Our port model already
+has the data; add the assertion at generation time.
+
 ### Steps
 
-1. **`maze/assembly-place.ts`** — pick N machines from a `ShuffleBag` (shape-level,
-   not orientation-level — the existing bag comment explains why), draw an
-   orientation, score candidate positions like `stampFrom` does (clash test
-   **inside** the candidate loop, not after — that bug is documented at
+1. **`maze/assembly-place.ts`** — draw machines **ordered by port count
+   descending** (most-constrained-first), pick an orientation from the
+   flow-safe subset, score candidate positions like `stampFrom` does (clash
+   test **inside** the candidate loop, not after — that bug is documented at
    `prefabs.ts:553-560`), carve, emit `PinballPartSpot[]` with `AssemblyRef`.
 2. **Reserve**: return `ClaimRect[]` and thread it through `stampPrefabs` and the
-   corridor deal, so nothing else lands inside a machine.
+   corridor deal, so nothing else lands inside a machine. Every subsequent
+   tile-writing pass should take the claim map as an **explicit parameter, not
+   a convention** — "later passes trample authored content" is a named,
+   recurring failure in the literature.
 3. **Exempt**: grouped parts skip `polishParts` de-clumping and runway re-aim.
    One field check, three call sites.
 4. **Two unambiguous fixes, independent of the above:**
@@ -329,6 +368,46 @@ true by construction rather than by a check that must be re-run.
 model and validator are already built and tested, and the flag makes it
 reversible.
 
+### Track 2b — the upgrade path, once 2 works
+
+Two ideas from the research worth banking now and building later. Neither
+blocks Track 2; both make it much stronger.
+
+**Port signatures (the Spelunky trick) — the cheapest variety multiplier.**
+Spelunky never validates solvability after the fact; it makes failure
+impossible. It plans a solution path, tags each slot with a *type* describing
+its exits, then loads any hand-authored template matching that signature.
+Because every type-1 template has exits in the same places, **any** type-1
+template is substitutable and the path is correct by construction.
+
+Applied here: type each machine slot by its **port signature** (`IN:W,
+OUT:E-ramp`). Author several machines per signature. Plan flow in terms of
+signatures, then fill each slot with any machine matching it. Chaining becomes
+guaranteed rather than checked, and N machines per signature across M slots
+gives N^M layouts from a modest authoring budget. This directly addresses the
+"repetition with a small prefab pool" pitfall — for scale, Gungeon ships ~300
+authored rooms for its *first stage*.
+
+**Cyclic skeletons (Dormans / Unexplored) — the right answer for pinball.**
+Tree-shaped generation produces dead ends; a dead end in pinball is a drain.
+Cyclic generation instead draws a **loop** with entrance and goal on it, so the
+two arcs are alternative routes between the same endpoints, and expansion
+inserts nodes *into* cycles rather than branching off them. Pinball flow is
+literally cyclic — launch → orbit → return lane → re-launch — so this is
+structurally aligned with the mechanic in a way branching generation is not.
+
+The cheap version already exists in the codebase's reach: TinyKeep's
+MST-plus-re-added-edges (Delaunay for sensible neighbours, MST as the
+reachability floor, then re-add a fraction of discarded edges for loops).
+TinyKeep uses 15%; for pinball loops are the goal rather than the garnish, so
+that dial wants to be far higher.
+
+**Cap the ambition deliberately.** Unexplored 1 ships ~5,000 rewrite rules and
+Unexplored 2 over 20,000 — and Ludomotion published a paper on the resulting
+maintenance burden. Take the structural insight (loops-first, mission/space
+split), not the general-purpose grammar engine. Dormans' **24 major cycle
+types** is the right order of magnitude for a hand-authored template library.
+
 ---
 
 ## Track 3 — Chunked wall meshes: RECOMMENDED AGAINST (for now)
@@ -358,6 +437,50 @@ working. Generation stays eager and whole; only submission is culled. This is
 explicitly *not* "generate on demand" — see below.
 
 ---
+
+## On WFC and Game of Life (the cellular-automata question)
+
+Raised during planning: could Conway's Game of Life / cellular automata drive
+cave shapes, monster clustering and ore veins, and could Wave Function Collapse
+place the machines?
+
+**WFC is the wrong tool for placing machines.** Its value is emergent local
+texture from many small pieces; we have the opposite problem — a few large
+pieces whose *global* relationships (this ramp feeds that orbit) are the entire
+point. Boris the Brave's summary is the decisive one: *"Because WFC only
+constrains nearby tiles, it rarely generates large scale structures, which can
+give large levels a homogenous, unplanned look."* Encoding "ramp A must chain
+into orbit B" as local tile adjacency is possible and miserable, and it is
+exactly the distant-constraint interaction that drives contradiction and
+backtracking cost up. Academic assessment is blunter still: exponential
+worst-case backtracking makes plain WFC "unsuitable for commercial games" at
+scale.
+
+**Where both ARE legitimately useful — as a later fill pass, not a placer:**
+
+- Pre-placing and **locking** tiles is trivially supported in WFC: *"It's very
+  easy to fix certain tiles before generation… They then get seamlessly
+  integrated."* So the hybrid is: stamp machines, lock those cells, let WFC (or
+  cellular automata, or the existing maze generator) fill the **interstitial
+  texture** around them. Caves of Qud is the shipped proof — it uses WFC for
+  hut/crypt/lair interiors, while zone-level structure comes from other passes.
+- **DeBroglie's Path Constraint** forces a path to exist between annotated
+  tiles during solving, which is a real answer to WFC's connectivity blindness
+  — annotate machine ports and let it guarantee they connect.
+- Standard 4-5 smoothing CA (`B5678/S45678`) is the established cave-shaping
+  rule; plain Life (`B3/S23`) is tuned for gliders and produces sparse
+  disconnected debris, which is the opposite of a playable floor.
+
+**Two hard constraints if this is ever built:** CA output is not guaranteed
+connected, so it must be followed by a flood fill that keeps the largest region
+(Wolverson's `cull_unreachable_areas` idiom, which converts orphaned floor to
+wall) — and that cull **must be gated on the claim map**, or it will happily
+delete authored machine tiles. That is precisely the "later pass tramples
+authored content" failure.
+
+**Verdict: not scheduled.** It adds geometry and variety to a generator whose
+current problem is coherence, not texture. Revisit after Track 2, as a
+cavern-archetype fill pass with machines locked.
 
 ## Explicitly NOT doing: lazy / chunked generation
 
