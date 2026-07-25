@@ -458,6 +458,30 @@ export const POCKET_RADIUS = 1.4; // world units — "the same small gap"
 export const POCKET_BOUNCES = 5; // clustered bounces tolerated before damping
 export const POCKET_DAMP = 0.62; // momSpeed multiplier per rattle past the limit
 export const POCKET_WINDOW = 1.1; // seconds between bounces that still count as rattling
+
+// ── JUICE GOVERNOR ── (entities/juice.ts)
+// Playtest: "it lags when I go super fast and interact with multiple things."
+// It was not frame rate. hitstop PAUSES the fixed-step sim, and fourteen call
+// sites re-armed it with a bare Math.max, so a fast ricochet stacked freeze on
+// freeze and the ball visibly stuttered — worse the better you played.
+// A LONE hit is unchanged; only the 2nd+ inside a chain is damped.
+/** Two freezes closer together than this are one stutter, not two crunches. */
+export const HITSTOP_MIN_GAP = 0.11; // seconds
+/** Per-chain-step multiplier on freeze length. */
+export const HITSTOP_CHAIN_FALLOFF = 0.55;
+/** Never damp below this fraction — a silent hit reads as a bug. */
+export const HITSTOP_CHAIN_FLOOR = 0.25;
+/** Hard ceiling on pending freeze: the sim can never pause longer than this,
+ *  which makes the pathological stack structurally impossible. */
+export const HITSTOP_MAX_PENDING = 0.09; // seconds
+/** Shake re-armed inside this window is skipped when the running shake is
+ *  already at least as strong (re-arming a 0.14s over a live 0.5s did nothing). */
+export const SHAKE_CHAIN_WINDOW = 0.09; // seconds
+/** Per-chain-step multiplier on shake length. Gentler than hitstop: shake does
+ *  not stop the world, it just adds noise, so it can stay livelier. */
+export const SHAKE_CHAIN_FALLOFF = 0.72;
+/** Shake never damps below this fraction of the requested amount. */
+export const SHAKE_CHAIN_FLOOR = 0.35;
 /**
  * Seconds without a bounce before the combo counter resets (keep the chain
  * alive). This is the ANCHOR/legacy value; the live window is combo-indexed —
@@ -632,6 +656,37 @@ export const NAMED_COMBOS: ReadonlyArray<{ name: string; icon: string; shots: st
 export const SHOT_LIGHT_MIN_SPEED = 5; // below this you're walking, not shooting
 export const SHOT_LIGHT_RANGE = 14; // world units the light reaches down a lane
 export const SHOT_LIGHT_COS = 0.94; // ~20° half-angle cone
+/**
+ * How far from the knight a part still gets ANIMATED (world units, squared for
+ * a branch-free compare). Only the visual half is gated — cooldowns and hit
+ * timers always tick, everywhere, because those are game state and a part whose
+ * readiness depended on being looked at would be a nightmare to reason about.
+ *
+ * Sized to comfortably clear both the camera window (VIEW_W 20 × VIEW_H 11.25
+ * tiles, so a corner sits ~11.5 units out) and SHOT_LIGHT_RANGE (14), which
+ * must keep working or the "shoot HERE" light would pop in as you approached.
+ * 24 leaves generous headroom for both while still skipping most parts on a
+ * big floor, where the deal can place 60-100 of them.
+ */
+export const PART_ANIM_RANGE = 24;
+export const PART_ANIM_RANGE_SQ = PART_ANIM_RANGE * PART_ANIM_RANGE;
+
+/**
+ * BROAD-PHASE cutoff for `touchPinballParts` (world units, squared).
+ *
+ * The collision scan walks every part on the floor each sim step; each handler
+ * then does its own radius test. Parts far away can only ever answer "no", so
+ * rejecting them before the call is free work saved.
+ *
+ * SAFETY: this must stay comfortably ABOVE the largest per-part trigger reach,
+ * or parts would silently stop firing — a collision bug wearing an
+ * optimisation's clothes. Measured maxima today: MAGNET_PULL_RANGE 4.2,
+ * VENT_LANE_LEN 2.4, GLOVE_LANE_LEN 1.7, everything else ≤1.6. 12 is roughly
+ * 3× the worst case. A part_touch test pins this relationship so a future part
+ * with a longer reach fails the suite instead of failing in play.
+ */
+export const PART_TOUCH_BROAD = 12;
+export const PART_TOUCH_BROAD_SQ = PART_TOUCH_BROAD * PART_TOUCH_BROAD;
 
 export const JACKPOT_GOLD = 45;
 export const JACKPOT_DAMAGE = 6; // burst dealt to every enemy on the floor

@@ -31,6 +31,7 @@ import { createVfx } from "./render/vfx";
 import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
+import { tickJuice, resetJuice } from "./entities/juice";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
@@ -1426,6 +1427,7 @@ function startLevel(level: number): void {
   sweepCoins();
   disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
   disposeBoss(); // drop any Reaper King skulls/telegraph/portal from the old floor
+  resetJuice(); // a new floor never inherits the previous one's shake/freeze chain
 
   state.level = level;
   // ── Co-op: adopt the SHARED POOL SEED so every player generates the identical
@@ -3210,6 +3212,12 @@ function loop(now: number): void {
   // as a crunch. VFX and rendering (below) keep running through the freeze. We
   // clamp the accumulator so no time is banked — the world doesn't fast-forward
   // to catch up the instant the freeze ends.
+  // Juice clocks run in REAL time, deliberately outside the fixed-step block
+  // below: they measure the gap between crunches as the PLAYER feels it, and
+  // sim time does not advance during a hitstop — clocking them inside would
+  // freeze the limiter exactly when it is needed.
+  tickJuice(frame);
+
   state.accumulator += frame;
   if (state.hitstopT > 0) {
     state.hitstopT = Math.max(0, state.hitstopT - frame);
