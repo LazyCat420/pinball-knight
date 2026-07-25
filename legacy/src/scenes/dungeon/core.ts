@@ -250,6 +250,8 @@ import { loadBestDepth, saveBestDepth } from "./best-depth";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
+import { profBegin, profEnd, profCount, profFrame, installProfilerHooks } from "./profiler";
+import { installBotHooks } from "./playtest-bot";
 
 /**
  * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
@@ -695,6 +697,16 @@ export function launchDungeonGame(onExit?: () => void): void {
     // tight room), so a test never asserts against a horde it did not get.
     (window as unknown as { __dungeonSpawn?: (spec: DebugSpawnSpec) => unknown }).__dungeonSpawn = (spec: DebugSpawnSpec) =>
       debugSpawn({ ...spec, count: spec?.count ?? 1 });
+    // Dev: FRAME PROFILER — answers "why does it lag" with numbers.
+    //   __dungeonProfile()      profile ~240 frames, print a table, auto-stop
+    //   __dungeonProfileStop()  stop early
+    // Play normally while it runs (bounce off walls to catch the jitter case).
+    installProfilerHooks();
+    // Dev: PLAYTEST BOT — drives the fake pad so a soak test needs no hands.
+    //   __dungeonBot({ mode:"bounce", seconds:120, profile:true })
+    //   __dungeonBotStop()
+    // Reports stuck episodes, deaths, peak combo and any thrown errors.
+    installBotHooks();
     // Dev: ONE OF EACH zombie sub-type in a ring — the silhouette check.
     //   __zombieTypes()          ring at 3 tiles, posed, not aggroed
     //   __zombieTypes(4)         wider ring
@@ -3342,6 +3354,7 @@ function simulate(dt: number): void {
 function loop(now: number): void {
   if (!state.active) return;
   state.animFrameId = requestAnimationFrame(loop);
+  profBegin("FRAME (total)");
 
   // Clamped BOTH ways: MAX_FRAME is tab-out protection, and the 0 floor guards
   // against a first RAF timestamp that lags performance.now() (headless/pre-
@@ -3366,6 +3379,8 @@ function loop(now: number): void {
   tickJuice(frame);
 
   state.accumulator += frame;
+  profBegin("sim (fixed steps)");
+  let simSteps = 0;
   if (state.hitstopT > 0) {
     state.hitstopT = Math.max(0, state.hitstopT - frame);
     state.accumulator = Math.min(state.accumulator, FIXED_STEP);
@@ -3373,8 +3388,14 @@ function loop(now: number): void {
     while (state.accumulator >= FIXED_STEP) {
       state.accumulator -= FIXED_STEP;
       simulate(FIXED_STEP);
+      simSteps++;
     }
   }
+  profEnd("sim (fixed steps)");
+  // A frame that runs 2+ fixed steps is CATCHING UP from a slow previous frame.
+  // A rising count here means the lag is self-reinforcing (slow frame → more
+  // sim work → slower frame), which reads as a stutter that will not settle.
+  profCount("sim steps/frame", simSteps);
 
   // ── The tavern owns the screen ──
   // It runs its own renderer and covers the dungeon completely, so everything
@@ -3382,7 +3403,12 @@ function loop(now: number): void {
   // were competing (dungeon pixel pass, tavern pixel pass, casino canvas) and
   // the panel canvas was getting ~4fps as a result. The rAF stays alive so the
   // loop resumes the moment the player descends.
-  if (isTavernSceneOpen()) return;
+  if (isTavernSceneOpen()) {
+    // Close the open span; this frame drew nothing, so it must not be sampled
+    // as a fast one (that would flatter the average).
+    profEnd("FRAME (total)");
+    return;
+  }
 
   const p = state.player;
   const g = state.grid;
@@ -3393,7 +3419,9 @@ function loop(now: number): void {
 
   // ── Presentation (per rendered frame) ──
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
+  profBegin("vfx.update");
   state.vfx?.update(frame);
+  profEnd("vfx.update");
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
   if (state.maze) updateArcKickers(state.maze.arcKickers, frame, state.elapsed); // curved-wall booster rubber
   if (state.maze) updateArcLanes(state.maze.arcLanes, frame, state.elapsed); // curved-wall booster lanes
@@ -3458,9 +3486,17 @@ function loop(now: number): void {
   if (p && g && state.maze) {
     // Park the pooled torch lights on the nearest torches. Sorting a handful
     // of anchors per frame is nothing; 20 live point lights would not be.
+    //
+    // MEASURED, NOT ASSUMED: this map+sort allocates a fresh array of objects
+    // every frame and sorts ALL anchors to use only the first few. That is a
+    // textbook GC-churn shape, so it is instrumented — if the sample says it is
+    // cheap, leave it alone.
+    profBegin("torch light sort");
+    profCount("torch anchors", state.maze.torchAnchors.length);
     const anchors = state.maze.torchAnchors
       .map((a) => ({ a, d: (a.x - p.x) * (a.x - p.x) + (a.z - p.z) * (a.z - p.z) }))
       .sort((u, v) => u.d - v.d);
+    profEnd("torch light sort");
     state.maze.lightPool.forEach((light, i) => {
       const anchor = anchors[i]?.a;
       if (anchor) light.position.set(anchor.x, WALL_H * 0.62 + 0.3, anchor.z);
@@ -3497,7 +3533,11 @@ function loop(now: number): void {
 
   if (state.hudDirty) {
     state.hudDirty = false;
+    // The DOM rebuild path. Guarded per-element in hud-diablo, but a bounce
+    // still lands here every time the combo ticks.
+    profBegin("refreshHUD (DOM)");
     refreshHUD();
+    profEnd("refreshHUD (DOM)");
   }
   // Per-frame HUD animation: liquid globes, cooldown rings, the face's blink/
   // wince timers. Cheap even when a panel is slid off-screen.
@@ -3543,8 +3583,16 @@ function loop(now: number): void {
     if (state.renderer && shadowFrameCounter % 2 === 0) {
       state.renderer.shadowMap.needsUpdate = true;
     }
+    // GPU submission, not GPU completion: WebGL is async, so this measures the
+    // CPU cost of building + submitting the passes. A small number here with a
+    // large FRAME total means the cost is CPU-side, above this line.
+    profBegin("pixelPass.render");
     state.pixelPass.render(state.scene, renderCam);
+    profEnd("pixelPass.render");
+    if (state.renderer) profCount("draw calls", state.renderer.info.render.calls);
   }
+  profEnd("FRAME (total)");
+  profFrame();
 }
 
 export function exitDungeonGame(): void {

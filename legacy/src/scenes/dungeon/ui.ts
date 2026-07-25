@@ -193,35 +193,93 @@ export function setFpsOverlay(el: HTMLDivElement | null, on: boolean): void {
 // colour escalates (white → yellow → orange → red/gold) with a brief screen
 // shake on the big ones. Caller passes the projected screen pixels (camera.ts
 // worldToScreenPx) so this module stays DOM-only.
-let floatComboActive = 0;
+// PERF — this used to createElement/appendChild per bounce and remove the node
+// on an 820ms setTimeout. Bouncing off walls fires bounces faster than they
+// retire, so live nodes ACCUMULATED without bound: every frame the browser
+// restyled, re-laid-out and re-composited the whole pile (each one is a
+// position:fixed node with a text-shadow and a running transition). That is the
+// jitter during long fast chains, and it got worse the longer the chain ran.
+//
+// Now: a fixed pool of MAX_FLOAT_COMBO nodes, created once and RECYCLED. The
+// element count is bounded no matter how fast the bounces come, so the per-frame
+// compositor cost is flat. Oldest-first reuse means a fast chain still reads as
+// a spray of rising numbers — the newest number always animates.
+const MAX_FLOAT_COMBO = 12;
+interface FloatComboSlot {
+  el: HTMLDivElement;
+  /** Wall-clock ms when this slot's animation ends; 0 = free. */
+  freeAt: number;
+}
+let floatComboPool: FloatComboSlot[] = [];
+let floatComboCursor = 0;
+
+/** Drop the pool when the dungeon tears down so stale nodes don't leak. */
+export function disposeFloatingCombos(): void {
+  for (const s of floatComboPool) s.el.remove();
+  floatComboPool = [];
+  floatComboCursor = 0;
+}
+
 export function spawnFloatingCombo(combo: number, sx: number, sy: number): void {
   if (!state.container || combo < 2) return;
   ensureWolfFonts();
+
+  const now = performance.now();
+
+  // Grow lazily up to the cap; past it, recycle round-robin. The cursor walks
+  // oldest-first, so the slot we steal is the one closest to finishing anyway.
+  let slot: FloatComboSlot;
+  if (floatComboPool.length < MAX_FLOAT_COMBO) {
+    const el = document.createElement("div");
+    el.style.position = "fixed";
+    el.style.zIndex = "10001";
+    el.style.pointerEvents = "none";
+    el.style.userSelect = "none";
+    el.style.whiteSpace = "nowrap";
+    el.style.fontFamily = WOLF_NUM;
+    el.style.lineHeight = "1";
+    // Promote once, up front. Without this the browser creates and destroys a
+    // compositor layer per animation, which is most of the per-bounce cost.
+    el.style.willChange = "transform, opacity";
+    state.container.appendChild(el);
+    slot = { el, freeAt: 0 };
+    floatComboPool.push(slot);
+  } else {
+    slot = floatComboPool[floatComboCursor];
+    floatComboCursor = (floatComboCursor + 1) % MAX_FLOAT_COMBO;
+  }
+
+  // Waterfall offset: count only the slots still animating, so the stack height
+  // reflects what is actually on screen rather than a monotonic counter.
+  let live = 0;
+  for (const s of floatComboPool) if (s.freeAt > now) live++;
+
   const color = combo >= 10 ? "#ffcf3f" : combo >= 6 ? "#f0a63c" : combo >= 3 ? "#ffe066" : "#eef1f5";
-  const stack = floatComboActive; // waterfall: each live number starts higher
-  floatComboActive++;
   const jitterX = (Math.random() * 2 - 1) * 8;
-  const startY = sy - stack * 12;
+  const startY = sy - Math.min(live, MAX_FLOAT_COMBO - 1) * 12;
   const size = 18 + Math.min(18, combo); // bigger chains punch bigger numbers
-  const el = document.createElement("div");
-  el.style.cssText = `
-    position: fixed; left: ${sx + jitterX}px; top: ${startY}px;
-    transform: translate(-50%,-50%) scale(1); z-index: 10001;
-    pointer-events: none; user-select: none; white-space: nowrap;
-    font-family: ${WOLF_NUM}; font-size: ${size}px; line-height: 1;
-    color: ${color}; text-shadow: 0 0 7px ${color}99, 2px 2px 0 #0b0d12;
-    opacity: 1; transition: transform 0.8s ease-out, opacity 0.8s ease-out;
-  `;
+
+  const el = slot.el;
+  // Reset to the start pose with NO transition, otherwise a recycled node would
+  // animate from wherever it died back to the spawn point.
+  el.style.transition = "none";
+  el.style.left = `${sx + jitterX}px`;
+  el.style.top = `${startY}px`;
+  el.style.transform = "translate(-50%,-50%) scale(1)";
+  el.style.opacity = "1";
+  el.style.fontSize = `${size}px`;
+  el.style.color = color;
+  el.style.textShadow = `0 0 7px ${color}99, 2px 2px 0 #0b0d12`;
   el.textContent = `×${combo}`;
-  state.container.appendChild(el);
-  requestAnimationFrame(() => {
-    el.style.transform = "translate(-50%,-50%) translateY(-40px) scale(0.7)";
-    el.style.opacity = "0";
-  });
-  window.setTimeout(() => {
-    el.remove();
-    floatComboActive = Math.max(0, floatComboActive - 1);
-  }, 820);
+  slot.freeAt = now + 820;
+
+  // Force the start pose to land before re-arming the transition; without the
+  // reflow read the browser coalesces both writes and nothing animates.
+  void el.offsetHeight;
+  el.style.transition = "transform 0.8s ease-out, opacity 0.8s ease-out";
+  el.style.transform = "translate(-50%,-50%) translateY(-40px) scale(0.7)";
+  el.style.opacity = "0";
+
   if (combo >= 6) state.shakeT = Math.max(state.shakeT, combo >= 10 ? 0.22 : 0.12);
 }
 

@@ -57,7 +57,21 @@ let faceFrameEl: HTMLDivElement | null = null;
 let wavePhase = 0;
 let lifeRippleT = 0; // >0 = a potion just splashed the life globe
 let manaRippleT = 0;
-let lastHeaderSig = ""; // repaint guard for the numeric cells + buff strip + pips
+// Per-element repaint guards. Split out of a single header signature so a
+// change to one strip (notably the combo pip, which ticks on every wall bounce)
+// does not reparse the innerHTML of the other three.
+let lastWeaponSig = "";
+let lastStatsSig = "";
+let lastPipsSig = "";
+let lastBuffsSig = "";
+
+/** Invalidate every guard so the next refresh rebuilds the whole header. */
+function invalidateHeaderSigs(): void {
+  lastWeaponSig = "";
+  lastStatsSig = "";
+  lastPipsSig = "";
+  lastBuffsSig = "";
+}
 
 /** A potion/spell splash on a globe: a brief amplitude + brightness pulse. */
 export function rippleGlobe(which: "life" | "mana"): void {
@@ -174,7 +188,7 @@ export function createDiabloHUD(container: HTMLElement): HTMLDivElement {
 
   container.appendChild(el);
   panelEl = el;
-  lastHeaderSig = "";
+  invalidateHeaderSigs();
   refreshDiablo();
   return el;
 }
@@ -194,7 +208,7 @@ export function disposeDiabloHUD(): void {
   cardSlotEl = null;
   faceFrameEl = null;
   wavePhase = 0;
-  lastHeaderSig = "";
+  invalidateHeaderSigs();
 }
 
 // ── builders ────────────────────────────────────────────────────
@@ -540,28 +554,42 @@ function paintHeader(): void {
   }
 
   // Rebuild only on a content change (ceil-seconds granularity for buff timers).
-  const sig = [
-    wIcon, wName, ammo,
-    state.goldRun, state.level, state.kills, rampage,
-    combo, (p?.overcharge ?? 0) >= 0.999 ? 1 : 0, state.targetsHit, state.targetsTotal,
-    buffs.map((b) => `${b.key}:${Math.ceil(b.t)}`).join(","),
-  ].join("|");
-  if (sig === lastHeaderSig) return;
-  lastHeaderSig = sig;
+  //
+  // PERF — the guard is PER-ELEMENT, not one signature for the whole header.
+  // bounceCombo lands in the pips signature only, so bouncing off walls no
+  // longer reparses the weapon cell, the four stat cells and the buff strip on
+  // every single bounce; it rewrites the one strip that actually changed.
+  const weaponSig = `${wIcon}|${wName}|${ammo}|${ammoColor}`;
+  if (weaponSig !== lastWeaponSig) {
+    lastWeaponSig = weaponSig;
+    weaponEl.innerHTML =
+      `<div style="font-family:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">AMMO</div>` +
+      `<div style="font-family:${PX_NUM};font-size:26px;line-height:0.8;color:${ammoColor};text-shadow:1px 1px 0 #0b0c10">${ammo}</div>` +
+      `<div style="font-family:${PX_LABEL};font-size:7px;color:#bfae86;white-space:nowrap;margin-top:2px">${wIcon} ${wName}</div>`;
+  }
 
-  weaponEl.innerHTML =
-    `<div style="font-family:${PX_LABEL};font-size:6px;letter-spacing:1px;color:#7a8496">AMMO</div>` +
-    `<div style="font-family:${PX_NUM};font-size:26px;line-height:0.8;color:${ammoColor};text-shadow:1px 1px 0 #0b0c10">${ammo}</div>` +
-    `<div style="font-family:${PX_LABEL};font-size:7px;color:#bfae86;white-space:nowrap;margin-top:2px">${wIcon} ${wName}</div>`;
+  const statsSig = `${state.goldRun}|${state.level}|${state.kills}|${rampage}|${rampageColor}`;
+  if (statsSig !== lastStatsSig) {
+    lastStatsSig = statsSig;
+    statsEl.innerHTML =
+      statHTML("SCORE", String(state.goldRun), "#ffd98a") +
+      statHTML("DEPTH", String(state.level), "#f0a63c") +
+      statHTML("KILLS", String(state.kills), "#8fc46b") +
+      statHTML("RAMPAGE", rampage, rampageColor);
+  }
 
-  statsEl.innerHTML =
-    statHTML("SCORE", String(state.goldRun), "#ffd98a") +
-    statHTML("DEPTH", String(state.level), "#f0a63c") +
-    statHTML("KILLS", String(state.kills), "#8fc46b") +
-    statHTML("RAMPAGE", rampage, rampageColor);
+  // The only strip a bounce touches.
+  const pipsSig = pips.join("");
+  if (pipsSig !== lastPipsSig) {
+    lastPipsSig = pipsSig;
+    pipsEl.innerHTML = pipsSig;
+  }
 
-  pipsEl.innerHTML = pips.join("");
-  buffStripEl.innerHTML = buffs.map(buffTileHTML).join("");
+  const buffsSig = buffs.map((b) => `${b.key}:${Math.ceil(b.t)}`).join(",");
+  if (buffsSig !== lastBuffsSig) {
+    lastBuffsSig = buffsSig;
+    buffStripEl.innerHTML = buffs.map(buffTileHTML).join("");
+  }
 }
 
 // ── discrete content refresh (on hudDirty) ──────────────────────
