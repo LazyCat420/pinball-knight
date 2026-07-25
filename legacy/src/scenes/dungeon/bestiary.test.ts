@@ -138,8 +138,34 @@ describe("zombie sub-type rows", () => {
 
   it("counts the shambler as met after any plain zombie kill", () => {
     // The shambler is the baseline and carries no `ztype` on the actor, so it has
-    // no `zombie:shambler` tally to read — it has to fall back to the family.
+    // no `zombie:shambler` tally to read — it is the family total minus the
+    // tagged sub-types.
     expect(zombieEntry({ zombie: 1 }).subTypes.find((s) => s.id === "shambler")!.seen).toBe(true);
     expect(zombieEntry({}).subTypes.find((s) => s.id === "shambler")!.seen).toBe(false);
+  });
+
+  /**
+   * REGRESSION (found in live QA, 2026-07-25): the bestiary rendered
+   * "Shambler 3 hp x0" beside sub-types showing x6, because `kills` was read
+   * from the non-existent `zombie:shambler` key while `seen` fell back to the
+   * family total. A visible zero on the one kind you have definitely been
+   * killing reads as a broken tally.
+   */
+  it("derives the shambler COUNT as the family total minus tagged sub-types", () => {
+    const rows = new Map(
+      zombieEntry({ zombie: 46, "zombie:runner": 6, "zombie:hulk": 6, "zombie:crawler": 5 })
+        .subTypes.map((s) => [s.id, s]),
+    );
+    expect(rows.get("shambler")!.kills).toBe(46 - 17);
+    expect(rows.get("shambler")!.seen).toBe(true);
+    expect(rows.get("runner")!.kills).toBe(6);
+  });
+
+  it("never reports a negative shambler count", () => {
+    // Sub-type keys can outnumber the family total if a tally is ever seeded
+    // out of order; clamp rather than render "x-3".
+    const s = zombieEntry({ zombie: 1, "zombie:hulk": 5 }).subTypes.find((r) => r.id === "shambler")!;
+    expect(s.kills).toBe(0);
+    expect(s.seen).toBe(false);
   });
 });

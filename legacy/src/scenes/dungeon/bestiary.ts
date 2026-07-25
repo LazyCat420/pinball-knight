@@ -155,18 +155,22 @@ function subTypeNotes(t: ZombieType): string[] {
 
 function subTypesFor(kind: EnemyKind, kills: Record<string, number>): BestiarySubType[] {
   if (kind !== "zombie") return [];
+  // The SHAMBLER is the baseline: `makeZombie` only stamps a `ztype` when it is
+  // NOT the shambler, so there is no `zombie:shambler` key to read. Its count is
+  // therefore the family total MINUS every tagged sub-type — otherwise the row
+  // renders "Shambler 3 hp x0" next to sub-types showing x6, which reads as a
+  // broken tally on the one kind the player has definitely been killing.
+  const tagged = ZOMBIE_TYPE_IDS.reduce((sum, t) => sum + (kills[`zombie:${t}`] ?? 0), 0);
+  const shamblers = Math.max(0, (kills.zombie ?? 0) - tagged);
   return ZOMBIE_TYPE_IDS.map((t) => {
-    const n = kills[`zombie:${t}`] ?? 0;
+    const n = t === "shambler" ? shamblers : kills[`zombie:${t}`] ?? 0;
     return {
       id: t,
       label: ZOMBIE_TYPES[t].label,
       hp: typeHp(ZOMBIE_HP, t),
       notes: subTypeNotes(t),
       kills: n,
-      // The shambler is the baseline you meet on floor 1 and is never tagged
-      // with a ztype on the actor, so it has no per-sub-type tally to read.
-      // Treat any zombie kill at all as having met it.
-      seen: t === "shambler" ? (kills.zombie ?? 0) > 0 : n > 0,
+      seen: n > 0,
     };
   });
 }
