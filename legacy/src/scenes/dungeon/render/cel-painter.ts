@@ -1061,6 +1061,14 @@ function knightSteelBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: K
 /** Build the full painter set for the knight holding `weapon`, dressed as `look`. */
 export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
+  // A SPHERE looks the same from every angle, so the steel ball's four frames
+  // are authored ONCE and the same FramePaint objects are handed to all three
+  // facings. Building them per-direction produced 12 byte-identical frames and
+  // pushed the atlas strip past the GPU's 8192px limit, which silently
+  // downscales the whole sheet and blanks every sprite in the game.
+  const steelBallFrames: FramePaint[] = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((spin) =>
+    knightSteelBallFrame("S", spin, weapon, look),
+  );
   const F = (dir: Dir, p: KPose) => (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, p, weapon, look);
 
   const dirClips = (dir: Dir) => ({
@@ -1169,12 +1177,7 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
 
     // ── STEEL BALL: the 🪩 Ball Form potion only — an actual chrome sphere.
     // Kept as its own clip so the everyday overcharge ride above is untouched. ──
-    steelball: [
-      knightSteelBallFrame(dir, 0, weapon, look),
-      knightSteelBallFrame(dir, Math.PI / 2, weapon, look),
-      knightSteelBallFrame(dir, Math.PI, weapon, look),
-      knightSteelBallFrame(dir, (3 * Math.PI) / 2, weapon, look),
-    ],
+    steelball: steelBallFrames,
   });
 
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };

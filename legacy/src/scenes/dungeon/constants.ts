@@ -1525,6 +1525,14 @@ export const HEAVY: MoveTiming = { tag: "heavy", windup: 0.24, active: 0.08, rec
  * fourth swing that only exists if you actually connected your way there.
  */
 export const COMBO_SURGE: MoveTiming = { tag: "surge", windup: 0.13, active: 0.09, recovery: 0.2, damageMul: 2.8, arcMul: 1.9, rangeMul: 1.35, knockbackMul: 2.8, hitstopMul: 2.1 };
+/**
+ * Widest sprite atlas we will build. WebGL's guaranteed floor is 2048 but every
+ * target we ship to reports 8192+; over that the texture is silently RESIZED,
+ * which corrupts the whole sheet's UVs and blanks every sprite (a black screen
+ * with a working HUD). sprite.ts throws rather than let that ship.
+ */
+export const MAX_ATLAS_WIDTH = 8192;
+
 /** Wrecking-ball damage multiplier at terminal momentum (1x at a standstill). */
 export const MOMENTUM_WEAPON_MAX = 2.6;
 

@@ -22,7 +22,7 @@ import * as THREE from "three";
 import type { ActorPaints, Dir, ClipName, FramePaint } from "./cel-painter";
 import { makeReaperPaints } from "./cel-painter";
 import { PALETTE_HEX } from "./palette";
-import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW } from "../constants";
+import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW, MAX_ATLAS_WIDTH } from "../constants";
 
 /**
  * Face the isometric camera exactly: yaw to the camera's heading, then tilt
@@ -164,6 +164,10 @@ export interface SpriteSheet {
   /** clipKey `${dir}:${clip}` → the frame indices in the atlas */
   clips: Map<string, number[]>;
   frameCount: number;
+  /** Atlas grid dimensions — frames wrap into rows once a strip would exceed
+   *  the GPU's max texture width. */
+  cols: number;
+  rows: number;
 }
 
 /** Nearest filtering — authored pixels must stay square on screen. */
@@ -301,7 +305,7 @@ export function renderPaintIcon(paint: FramePaint): string {
 }
 
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
-function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: number): void {
+function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: number, row: number): void {
   const scratch = document.createElement("canvas");
   scratch.width = SPRITE_PX;
   scratch.height = SPRITE_PX;
@@ -311,7 +315,7 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: n
   paint(ctx);
   // The strip cell is the GRID, not the paint box — the crushed art goes in at
   // its native size and is never scaled again between here and the screen.
-  strip.drawImage(crushToGrid(scratch), index * SPRITE_PIXEL_GRID, 0);
+  strip.drawImage(crushToGrid(scratch), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
 }
 
 /**
@@ -323,6 +327,8 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, index: n
 export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   const flat: FramePaint[] = [];
   const clips = new Map<string, number[]>();
+  /** FramePaint → its slot in `flat`, so identical frames pack once. */
+  const seen = new Map<FramePaint, number>();
 
   const dirs: Dir[] = ["S", "N", "E"];
   // Every clip an actor might author. `roll` is knight-only; actors that don't
@@ -334,31 +340,55 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
     for (const clip of clipNames) {
       const list = paints[dir][clip];
       if (!list) continue;
+      // DEDUPE by reference: a clip that is identical across facings (the steel
+      // ball is a sphere — it looks the same from every angle) hands the SAME
+      // FramePaint objects to each direction, and packing those three times
+      // wastes atlas width for no visual difference. The strip is one row, so
+      // width is the scarce resource that decides whether the sheet fits.
       const indices: number[] = [];
       for (const paint of list) {
-        indices.push(flat.length);
-        flat.push(paint);
+        let at = seen.get(paint);
+        if (at === undefined) {
+          at = flat.length;
+          seen.set(paint, at);
+          flat.push(paint);
+        }
+        indices.push(at);
       }
       clips.set(`${dir}:${clip}`, indices);
     }
   }
 
+  // GRID, not a strip. A single row of frames hit the GPU's 8192px texture
+  // ceiling at 113 frames; past that the texture is silently RESIZED, which
+  // corrupts every UV on the sheet and renders as a BLACK SCREEN with a working
+  // HUD. Nothing throws, so it costs a deploy to find. Wrapping into rows means
+  // width is bounded by COLS and the sheet grows downward instead.
+  const cols = Math.min(flat.length, Math.floor(MAX_ATLAS_WIDTH / SPRITE_PIXEL_GRID));
+  const rows = Math.max(1, Math.ceil(flat.length / cols));
+
   const canvas = document.createElement("canvas");
-  canvas.width = flat.length * SPRITE_PIXEL_GRID;
-  canvas.height = SPRITE_PIXEL_GRID;
+  canvas.width = cols * SPRITE_PIXEL_GRID;
+  canvas.height = rows * SPRITE_PIXEL_GRID;
+  if (canvas.height > MAX_ATLAS_WIDTH) {
+    throw new Error(
+      `[dungeon] sprite atlas is ${canvas.width}x${canvas.height}px (${flat.length} frames) — over the ` +
+        `${MAX_ATLAS_WIDTH}px limit in BOTH axes. Share identical frames across facings or drop a clip.`,
+    );
+  }
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite atlas");
 
-  flat.forEach((paint, i) => paintFrame(ctx, paint, i));
+  flat.forEach((paint, i) => paintFrame(ctx, paint, i % cols, Math.floor(i / cols)));
 
   const texture = new THREE.CanvasTexture(canvas);
   celFilters(texture);
   texture.wrapS = THREE.RepeatWrapping; // needed for the flip trick below
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  // Show exactly one frame at a time.
-  texture.repeat.set(1 / flat.length, 1);
+  texture.wrapT = THREE.RepeatWrapping; // rows now, so V wraps too
+  // Show exactly one CELL at a time.
+  texture.repeat.set(1 / cols, 1 / rows);
 
-  return { texture, clips, frameCount: flat.length };
+  return { texture, clips, frameCount: flat.length, cols, rows };
 }
 
 /**
@@ -450,7 +480,13 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
   // to anchor on the frame's RIGHT edge instead of its left. Get this wrong and
   // a flipped sprite shows the neighbouring frame.
   function applyFrame(): void {
-    tex.offset.x = flipped ? (currentFrame + 1) / api.sheet.frameCount : currentFrame / api.sheet.frameCount;
+    const { cols, rows } = api.sheet;
+    const col = currentFrame % cols;
+    const row = Math.floor(currentFrame / cols);
+    tex.offset.x = (flipped ? col + 1 : col) / cols;
+    // V is bottom-up in GL while the canvas paints top-down, so row 0 is the
+    // TOP row of the image and must map to the highest offset.
+    tex.offset.y = (rows - 1 - row) / rows;
   }
 
   const api: ActorSprite = {
@@ -464,7 +500,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
     setFlipped(next: boolean): void {
       if (next === flipped) return;
       flipped = next;
-      tex.repeat.x = (flipped ? -1 : 1) / api.sheet.frameCount;
+      tex.repeat.x = (flipped ? -1 : 1) / api.sheet.cols;
       applyFrame(); // repeat changed — the offset anchor moved with it
     },
     // The material colour MULTIPLIES the texture, so white is "no tint". A red
@@ -481,7 +517,7 @@ export function createActorSprite(sheet: SpriteSheet, lit: boolean): ActorSprite
       api.sheet = next;
       mat.map = tex;
       mat.needsUpdate = true;
-      tex.repeat.set((flipped ? -1 : 1) / next.frameCount, 1);
+      tex.repeat.set((flipped ? -1 : 1) / next.cols, 1 / next.rows);
       applyFrame();
       old.dispose();
     },

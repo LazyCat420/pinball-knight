@@ -81,6 +81,10 @@ export async function loadAtlasSheet(name: string): Promise<SpriteSheet | null> 
     return {
       texture,
       frameCount: manifest.frames,
+      // A pre-baked atlas is a single ROW; the runtime builder wraps into a
+      // grid, and both feed the same addressing math.
+      cols: manifest.frames,
+      rows: 1,
       clips: new Map(Object.entries(manifest.clips)),
     };
   } catch {
