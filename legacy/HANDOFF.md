@@ -2,7 +2,140 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🌀 BOOSTER LANES + 💀 GRAVE PITS (2026-07-24, this session)
+## ⚙️ STEEL PINBALL + SKILL-TREE FIX + AIM INDICATOR (2026-07-24, this session)
+
+Deployed **`main@1f75dae`** → synology, live on :5174 (HTTP 200 verified).
+1157 tests / 100 files pass · 0 dungeon type errors · `next build` clean.
+
+### 1. The skill tree was unusable — FIXED
+
+**Reported as:** "click a skill, it selects multiple, then deselects all, then I
+can't pick any."
+
+**It was never a selection bug** — there is no selection state on skill nodes.
+`canLearn()` collapsed two unrelated questions into ONE boolean (*are the
+prerequisites met* vs *can you afford it right now*) and the menu rendered a
+single `.open` class off it.
+
+With 1 skill point, **eight nodes** passed that check at once and all lit green.
+Spending it dropped every one to `.locked` (dimmed, `cursor:not-allowed`) in the
+same repaint. Nothing was ever selected — that was the affordance highlight
+moving as one block, and it left you genuinely unable to spend.
+
+`canLearn` now returns `gate: "ok"|"maxed"|"prereq"|"points"` plus `reachable`,
+which depends only on prerequisites, **not** your wallet. The menu renders four
+states with a quiet `.reachable` style for "prereqs met, can't afford yet", so
+spending a point changes only the affordability tint instead of repainting the
+whole tree.
+
+⚠️ **My first diagnosis was WRONG** and the dead code is still in the tree. I
+claimed an empty `data-idx` from `holoCard` was shadowing the skill id in the
+click dispatcher. Testing against the real markup disproved it: skill nodes are
+SIBLINGS of cards, never nested, so that shadowing cannot happen. The
+`resolveAct` extraction in `menu.ts` was written on that wrong theory — it is
+tested and harmless, and `perk:`/`abq:`/`abe:` share the path, but **it fixed
+nothing**. Revert it if you want the change minimal.
+
+### 2. All 12 skills audited — every one works
+
+`skills-audit.test.ts` buys each node through the real `spendSkillPoint` path and
+asserts the effect reaches a live system:
+
+| Skill | Reaches |
+|---|---|
+| Whetstone, Juggernaut | `combat.ts` damage |
+| Iron Heart | `playerMaxHp()` |
+| Greased Greaves | `player.ts` move speed |
+| Ball Bearings, Wrecking Ball | pinball damage above `CARD_PINBALL_SPEED` |
+| Coin Magnet | `creditGold()` |
+| Mana Well | `playerManaMax()` |
+| Swift Casting | ability cooldowns |
+| Magnet Aura / Time Crawl / Blade Storm | `unlockedAbilities()` |
+
+Costs deduct exactly; max-rank refuses WITHOUT consuming points; the memoized
+aggregate invalidates on spend. A guard test FAILS if anyone adds a
+`SkillModifier` field that `fold()` forgets to apply.
+
+🔎 **Latent hole, deliberately not fixed:** `castAbility()` never checks
+`unlockedAbilities()` — it trusts `state.abilitySlots`. Slots are only assignable
+through the menu, which does check, so nothing is broken today. Anything else
+that writes `abilitySlots` would bypass the tree.
+
+### 3. Ball form is now an actual steel pinball
+
+`knightBallFrame` was drawing **the knight sprite shrunk to 60% and spun** with
+two arcs around it. No metal was ever drawn — it read as "a small man tumbling",
+so the form's whole physics fantasy had zero visual support.
+
+Now paints a real polished sphere off the palette's **steel ramp (19-22)** —
+whose warm-dark / cold-light spread is what reads as metal instead of grey
+plastic: sky-lit crown, dark equator band, warm floor bounce-light, orbiting
+specular, rim light. Bands rotate with `spin` so the surface visibly **rolls**
+while the silhouette stays perfectly round.
+
+**Verified by rendering the sheet through node-canvas and LOOKING at the PNG**,
+not by reading code. The first pass had a crest dot that read as a bug sitting on
+the sphere, and a speed ring that looked like a detached handle — both only
+visible by looking, both fixed. To re-check art after a change: render
+`makeKnightPaints(...).S.ball` frames into a `node-canvas` and write a PNG
+(`canvas` is already a devDependency).
+
+### 4. Steel physics — heavier, smashes through, runs things over
+
+The bare ball carries mass through the **existing** material hooks:
+
+| Axis | Was | Now |
+|---|---|---|
+| Wall break | 15 u/s | **11** |
+| Secret break | 7 u/s | **5.5** |
+| Speed kept punching masonry | 70% | **82%** |
+| Ram knockback | 1.1 | **1.9** |
+| Ram damage | 1× | **1.35×** |
+| Friction | 1.0 | **0.82** (a good line CARRIES) |
+| Steering | 1.0 | **0.88** (weight costs agility) |
+
+⚠️ **Steel is the NO-MATERIAL baseline ONLY.** My first pass returned it from
+every `default:` branch, silently making diamond/storm/shadow/lava heavy too —
+`marble-storm.test.ts` caught it on diamond's steering. A pickup **replaces** the
+ball's substance rather than stacking. Stone stays a strict upgrade on both new
+mass axes. Invariant pinned in `marble-steel.test.ts`; keep it if you add
+materials.
+
+### 5. Pinball aim indicator
+
+Ground decal under the ball while rolling (`render/aim-indicator.ts`):
+**gold solid arrow** = actual momentum (length scales with speed) · **cyan dashed
+arrow** = where the cursor pulls · **wedge between them** filling as they diverge,
+coloured per turn direction.
+
+Both are needed because `PINBALL_STEER` only *bends* momentum — the cursor is
+never where you're going, so one arrow would mislead. The steer arrow
+deliberately **vanishes when steering is locked** (dash panel / oil), which is
+how you can tell why the ball stopped responding.
+
+### ⚠️ Unverified — the honest list
+
+All of the above is pinned by tests, and the ball art was eyeballed as a PNG, but
+**none of it has been PLAYED**:
+- **Steel tuning** — seven constants, sensible ratios but unplayed. All in
+  `constants.ts` under the `STEEL: the BASE ball form is a solid ball bearing`
+  block. Floaty → raise `STEEL_FRICTION_MULT`; sluggish to turn → raise
+  `STEEL_STEER_MULT`.
+- **`.reachable` colour** in the skill menu (`#5c6f4e` border) is a guess.
+- **Aim indicator feel** — arrow size, the 0.85–1.6 length ramp, whether the bend
+  wedge reads at speed or just adds clutter. Constants at the top of
+  `aim-indicator.ts`.
+
+### 🔀 Parallel-session note
+
+A concurrent session swept the skills fix + aim indicator into commit `a2458f8`,
+whose message is about **bank geometry** and never mentions them. The code is
+intact and verified — only the commit message is misleading. If you go looking
+for "where did the skills fix land", it is there, not in a commit named for it.
+
+---
+
+## 🌀 BOOSTER LANES + 💀 GRAVE PITS (2026-07-24, earlier session)
 
 Two new mechanics plus the gamepad fix (see the controller section below).
 
