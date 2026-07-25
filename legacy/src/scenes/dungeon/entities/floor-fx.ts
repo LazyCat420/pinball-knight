@@ -39,6 +39,14 @@ import {
   GROOVE_TRIP_SPEED,
   GROOVE_RAIL_PULL,
   GROOVE_RAIL_MAX_SPEED,
+  GROOVE_ALIGN_RIDE,
+  GROOVE_ALIGN_CROSS,
+  GROOVE_HOP_HEIGHT,
+  GROOVE_HOP_TIME,
+  GROOVE_HOP_SPEED_KEEP,
+  GROOVE_HOP_MIN_SPEED,
+  GROOVE_DEFLECT,
+  GROOVE_HOP_COOLDOWN,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { damageZombie, hitPlayerRanged } from "./combat";
@@ -236,7 +244,7 @@ let hasGroove = false;
  * gives it persistence, overlap detection and disposal for free — and what lets
  * `grooveInteract` below make it something you can actually use.
  */
-export function carveGroove(x: number, z: number, speed: number): void {
+export function carveGroove(x: number, z: number, speed: number, dirX = 0, dirZ = 0): void {
   if (speed < GROOVE_MIN_SPEED) return;
   if (hasGroove && Math.hypot(x - lastGrooveX, z - lastGrooveZ) < GROOVE_SPACING) return;
   hasGroove = true;
@@ -245,6 +253,14 @@ export function carveGroove(x: number, z: number, speed: number): void {
   // Faster = deeper bite, so a screaming line scars harder than a cruise.
   const bite = Math.min(1, speed / PINBALL_MAX_SPEED);
   spawnFloorFx("groove", x, z, GROOVE_RADIUS * (0.8 + bite * 0.5), GROOVE_LIFE);
+  // Stamp the cut's own LINE onto it. A groove is a directional feature — this
+  // is what lets the ball tell "crossing it" from "riding it" later.
+  const cut = state.floorFx[state.floorFx.length - 1];
+  if (cut && cut.kind === "groove") {
+    const l = Math.hypot(dirX, dirZ);
+    cut.dirX = l > 1e-6 ? dirX / l : 1;
+    cut.dirZ = l > 1e-6 ? dirZ / l : 0;
+  }
   // Stone chips fly on the cut — the sound-free tell that the floor just lost.
   if (state.vfx && Math.random() < 0.3) state.vfx.sparks(x, 0.06, z, 0, 0.4, 2);
 }
@@ -274,24 +290,87 @@ function grooveInteract(fx: FloorFx, _dt: number, ticked: boolean): void {
     }
   }
 
-  // Rail the player's ball along the cut.
+  // ── The ball meets the cut ──
   const p = state.player;
-  if (!p || p.momSpeed <= 0 || p.momSpeed > GROOVE_RAIL_MAX_SPEED) return;
+  if (!p || p.momSpeed <= 0) return;
   const px = p.x - fx.x;
   const pz = p.z - fx.z;
   const pr = fx.radius + PLAYER_R;
   if (px * px + pz * pz > pr * pr) return;
-  // Pull the heading toward the groove's centre-line. The cut has no stored
-  // direction of its own, so "along it" is simply the ball's own heading with
-  // the lateral offset trimmed out — which is exactly what a rut does to a
-  // wheel. Normalised after, same contract as the lane-glide nudge.
-  const d = Math.hypot(px, pz) || 1;
-  const pull = GROOVE_RAIL_PULL * _dt * (1 - d / pr);
-  p.momX -= (px / d) * pull;
-  p.momZ -= (pz / d) * pull;
+
+  // How aligned is travel with the cut's own line? This one number decides
+  // which of the three behaviours the rut applies.
+  const gx = fx.dirX ?? 1;
+  const gz = fx.dirZ ?? 0;
+  const along = p.momX * gx + p.momZ * gz; // both unit → this IS cos(angle)
+  const absAlong = Math.abs(along);
+
+  if (absAlong < GROOVE_ALIGN_CROSS) {
+    // BROADSIDE — the near lip kicks the ball off the floor. It keeps its
+    // heading (a lip launches you onward, it doesn't turn you) but pays a
+    // little speed to the impact, and it's airborne long enough to clear the
+    // trough. The cooldown stops a dense trail buzzing the ball in place.
+    if (p.momSpeed >= GROOVE_HOP_MIN_SPEED && p.grooveHopT <= 0 && p.grooveHopCdT <= 0) {
+      p.grooveHopT = GROOVE_HOP_TIME;
+      p.grooveHopDur = GROOVE_HOP_TIME;
+      p.grooveHopCdT = GROOVE_HOP_COOLDOWN;
+      p.momSpeed *= GROOVE_HOP_SPEED_KEEP;
+      state.vfx?.dust(p.x, 0.06, p.z);
+      state.vfx?.sparks(p.x, 0.1, p.z, 0, 0.5, 3);
+    }
+    return;
+  }
+
+  if (absAlong >= GROOVE_ALIGN_RIDE) {
+    // RIDING IT — you're in the trough. Rail toward the centre-line so the cut
+    // holds you, but only under the speed cap: a screaming ball rides straight
+    // over the top of its own rut.
+    if (p.momSpeed > GROOVE_RAIL_MAX_SPEED) return;
+    const d = Math.hypot(px, pz) || 1;
+    const pull = GROOVE_RAIL_PULL * _dt * (1 - d / pr);
+    p.momX -= (px / d) * pull;
+    p.momZ -= (pz / d) * pull;
+  } else {
+    // GLANCING — you clipped the edge at a shallow angle. The trough wall
+    // DEFLECTS the heading toward the cut's line (signed, so a ball running
+    // against the groove's direction is turned to the near end, not spun
+    // round). This is the "swoop off it" case.
+    const sign = along >= 0 ? 1 : -1;
+    const k = GROOVE_DEFLECT * _dt;
+    p.momX += gx * sign * k;
+    p.momZ += gz * sign * k;
+    if (ticked) state.vfx?.mote(p.x, 0.1, p.z);
+  }
   const ml = Math.hypot(p.momX, p.momZ) || 1;
   p.momX /= ml;
   p.momZ /= ml;
+}
+
+/**
+ * Advance the groove hop — the little airborne arc over a rut's lip.
+ *
+ * Deliberately NOT the ramp-hop system: that one OWNS the player (it lerps
+ * position along a stored trajectory and blocks all other movement). A groove
+ * bump must leave the ride fully in control — the ball keeps steering,
+ * bouncing and colliding exactly as it would on the ground. So this only
+ * lifts the SPRITE and pins the contact shadow, which is all "airborne" needs
+ * to read in an isometric view.
+ */
+export function updateGrooveHop(dt: number): void {
+  const p = state.player;
+  if (!p) return;
+  if (p.grooveHopCdT > 0) p.grooveHopCdT = Math.max(0, p.grooveHopCdT - dt);
+  if (p.grooveHopT <= 0) return;
+  p.grooveHopT = Math.max(0, p.grooveHopT - dt);
+  const u = p.grooveHopDur > 0 ? 1 - p.grooveHopT / p.grooveHopDur : 1;
+  const h = Math.sin(Math.PI * Math.min(1, u)) * GROOVE_HOP_HEIGHT;
+  p.sprite.mesh.position.y = h;
+  p.sprite.setElevation(h);
+  if (p.grooveHopT <= 0) {
+    p.sprite.mesh.position.y = 0;
+    p.sprite.setElevation(0);
+    state.vfx?.dust(p.x, 0.05, p.z); // the landing puff
+  }
 }
 
 function despawn(index: number): void {

@@ -9,8 +9,15 @@
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import { state } from "../state";
-import { carveGroove, clearFloorFx } from "./floor-fx";
-import { GROOVE_MIN_SPEED, GROOVE_SPACING, GROOVE_LIFE } from "../constants";
+import { carveGroove, clearFloorFx, updateFloorFx, updateGrooveHop } from "./floor-fx";
+import {
+  GROOVE_MIN_SPEED,
+  GROOVE_SPACING,
+  GROOVE_LIFE,
+  GROOVE_HOP_MIN_SPEED,
+  GROOVE_HOP_SPEED_KEEP,
+  GROOVE_RAIL_MAX_SPEED,
+} from "../constants";
 
 beforeEach(() => {
   // spawnFloorFx needs a scene + the floor-fx toggle to do anything.
@@ -78,5 +85,117 @@ describe("carving", () => {
     // The very next cut at the SAME spot must land (the spacing memory reset).
     carveGroove(5, 5, 14);
     expect(grooves()).toHaveLength(1);
+  });
+});
+
+
+// ── The rut has a SHAPE — the ball reacts to it ──────────────────────────────
+//
+// The first cut only ever pulled toward a groove's centre, which made it a
+// trail you follow rather than a feature you feel. A real cut is DIRECTIONAL:
+// crossing it broadside launches you off the lip, clipping it deflects you,
+// riding it rails you.
+
+/** A ball sitting on a groove, travelling along `dir`. */
+function ballOn(fx: { x: number; z: number }, dirX: number, dirZ: number, speed: number) {
+  state.player = {
+    x: fx.x,
+    z: fx.z,
+    momX: dirX,
+    momZ: dirZ,
+    momSpeed: speed,
+    grooveHopT: 0,
+    grooveHopDur: 0,
+    grooveHopCdT: 0,
+    sprite: { mesh: { position: { y: 0 } }, setElevation: () => {} },
+  } as unknown as typeof state.player;
+  return state.player!;
+}
+
+describe("the groove is directional", () => {
+  it("stores the heading the ball cut it with", () => {
+    carveGroove(0, 0, 14, 1, 0);
+    const cut = grooves()[0];
+    expect(cut.dirX).toBeCloseTo(1);
+    expect(cut.dirZ).toBeCloseTo(0);
+  });
+
+  it("normalises a non-unit heading", () => {
+    carveGroove(0, 0, 14, 3, 4); // length 5
+    const cut = grooves()[0];
+    expect(Math.hypot(cut.dirX!, cut.dirZ!)).toBeCloseTo(1);
+  });
+
+  it("CROSSING it broadside launches the ball and costs a little speed", () => {
+    carveGroove(0, 0, 14, 1, 0); // cut runs along +X
+    const p = ballOn({ x: 0, z: 0 }, 0, 1, 14); // travelling across it, +Z
+    updateFloorFx(0.016);
+    expect(p.grooveHopT).toBeGreaterThan(0); // airborne
+    expect(p.momSpeed).toBeCloseTo(14 * GROOVE_HOP_SPEED_KEEP);
+    // A lip launches you ONWARD — it must not turn you.
+    expect(p.momX).toBeCloseTo(0);
+    expect(p.momZ).toBeCloseTo(1);
+  });
+
+  it("does NOT launch a ball that is crawling", () => {
+    carveGroove(0, 0, 14, 1, 0);
+    const p = ballOn({ x: 0, z: 0 }, 0, 1, GROOVE_HOP_MIN_SPEED - 1);
+    updateFloorFx(0.016);
+    expect(p.grooveHopT).toBe(0);
+  });
+
+  it("RIDING it rails the ball toward the cut's centre-line", () => {
+    carveGroove(0, 0, 14, 1, 0);
+    // Travelling along the cut but offset to one side.
+    const p = ballOn({ x: 0, z: 0.2 }, 1, 0, GROOVE_RAIL_MAX_SPEED - 2);
+    updateFloorFx(0.05);
+    expect(p.grooveHopT).toBe(0); // riding, not launched
+    expect(p.momZ).toBeLessThan(0); // pulled back toward z=0
+  });
+
+  it("a SCREAMING ball rides straight over its own rut", () => {
+    carveGroove(0, 0, 14, 1, 0);
+    const p = ballOn({ x: 0, z: 0.2 }, 1, 0, GROOVE_RAIL_MAX_SPEED + 5);
+    updateFloorFx(0.05);
+    expect(p.momZ).toBeCloseTo(0); // untouched
+  });
+
+  it("GLANCING it swoops the heading toward the cut's line", () => {
+    carveGroove(0, 0, 14, 1, 0); // cut along +X
+    // ~55° across: past the cross threshold, short of the ride one.
+    const a = (55 * Math.PI) / 180;
+    const p = ballOn({ x: 0, z: 0 }, Math.cos(a), Math.sin(a), 12);
+    const beforeX = p.momX;
+    updateFloorFx(0.05);
+    expect(p.grooveHopT).toBe(0); // deflected, not launched
+    expect(p.momX).toBeGreaterThan(beforeX); // bent toward +X, the cut's line
+    expect(Math.hypot(p.momX, p.momZ)).toBeCloseTo(1); // stays a unit heading
+  });
+
+  it("the hop arcs up and returns the sprite to the floor", () => {
+    carveGroove(0, 0, 14, 1, 0);
+    const heights: number[] = [];
+    const p = ballOn({ x: 0, z: 0 }, 0, 1, 14);
+    p.sprite = {
+      mesh: { position: { y: 0 } },
+      setElevation: (h: number) => heights.push(h),
+    } as unknown as typeof p.sprite;
+    updateFloorFx(0.016);
+    for (let i = 0; i < 30; i++) updateGrooveHop(0.016);
+    expect(Math.max(...heights)).toBeGreaterThan(0); // it left the ground
+    expect(heights[heights.length - 1]).toBe(0); // and came back down
+    expect(p.grooveHopT).toBe(0);
+  });
+
+  it("REGRESSION: a dense trail cannot buzz the ball with back-to-back hops", () => {
+    // Lay a run of cuts, then drive across them: the cooldown must gate it.
+    for (let i = 0; i < 12; i++) carveGroove(i * GROOVE_SPACING * 1.1, 0, 14, 1, 0);
+    const p = ballOn({ x: 0, z: 0 }, 0, 1, 14);
+    updateFloorFx(0.016);
+    expect(p.grooveHopT).toBeGreaterThan(0);
+    const speedAfterFirst = p.momSpeed;
+    // Immediately overlapping more cuts must NOT stack another hop/speed loss.
+    updateFloorFx(0.016);
+    expect(p.momSpeed).toBeCloseTo(speedAfterFirst);
   });
 });

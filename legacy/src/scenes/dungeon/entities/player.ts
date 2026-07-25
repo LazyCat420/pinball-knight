@@ -1579,7 +1579,7 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // everyday overcharge ride stays the spinning tucked knight.
     p.anim.play(p.ironT > 0 ? "steelball" : "ball");
     // …and only a ball THAT heavy engraves the floor it crosses.
-    if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed);
+    if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed, p.momX, p.momZ);
   } else {
     p.anim.setRate(1.4);
     p.anim.play("roll");

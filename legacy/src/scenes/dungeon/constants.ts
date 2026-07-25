@@ -582,6 +582,36 @@ export const GROOVE_RAIL_PULL = 3.4;
  *  jumps the cut, a cruising one drops into it. */
 export const GROOVE_RAIL_MAX_SPEED = 17;
 
+// ── Groove PHYSICS: the rut has a SHAPE, so the ball reacts to it ────────────
+// A trail you merely follow is a decal with extra steps. A real cut in stone
+// has a near lip, a trough and a far lip, and a ball meeting it does different
+// things depending on the ANGLE it arrives at:
+//   • broadside (crossing it) → the near lip KICKS the ball airborne; it lands
+//     past the cut having lost a little speed to the impact.
+//   • glancing (clipping it)  → the trough DEFLECTS the heading toward the
+//     groove's own line — the rut steers you as you catch its edge.
+//   • along it (riding it)    → you drop in and it rails you (RAIL_PULL above).
+/** cos(angle) between travel and the cut ABOVE which you're riding it.
+ *  0.72 ≈ within ~44° of the groove's line. */
+export const GROOVE_ALIGN_RIDE = 0.72;
+/** |cos| BELOW which the crossing is broadside enough to launch the ball.
+ *  0.42 ≈ steeper than ~65° across the cut. */
+export const GROOVE_ALIGN_CROSS = 0.42;
+/** Peak height of the hop over a rut, world units. Small on purpose — this is
+ *  a jolt, not the ramp launch. */
+export const GROOVE_HOP_HEIGHT = 0.34;
+/** How long that hop lasts. Short enough to read as a bump. */
+export const GROOVE_HOP_TIME = 0.19;
+/** Momentum kept across a broadside hit — the lip costs you a little. */
+export const GROOVE_HOP_SPEED_KEEP = 0.94;
+/** Minimum speed to get airborne at all; below this you just rattle. */
+export const GROOVE_HOP_MIN_SPEED = 7;
+/** How hard a glancing pass bends the heading toward the cut's line, 1/sec. */
+export const GROOVE_DEFLECT = 5.2;
+/** Re-arm before the same ball can be bumped again. Without it a dense trail
+ *  fires a hop every frame and the ball buzzes in place. */
+export const GROOVE_HOP_COOLDOWN = 0.26;
+
 // ── MULTI-BALL (the 🔮 potion: two echo knights) ────────────────
 /** How many echoes peel off the knight. */
 export const MULTIBALL_COUNT = 2;

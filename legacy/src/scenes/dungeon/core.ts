@@ -69,7 +69,7 @@ import { bfsDistances, bfsDistancesOwned } from "./entities/ai";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
-import { updateFloorFx, clearFloorFx, spawnFloorFx } from "./entities/floor-fx";
+import { updateFloorFx, clearFloorFx, spawnFloorFx, updateGrooveHop } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
@@ -3198,6 +3198,7 @@ function simulate(dt: number): void {
   if (!isReplica()) updateZombies(state.slowT > 0 ? dt * TIMECRAWL_FACTOR : dt);
   updateProjectiles(dt);
   updateFloorFx(dt); // marble scars (slick/fire) tick status/damage to overlappers
+  updateGrooveHop(dt); // the little airborne arc when the ball clears a rut's lip
   updateMaterial(dt); // marble material + fusion timers
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails

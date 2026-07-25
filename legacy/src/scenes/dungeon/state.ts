@@ -175,6 +175,12 @@ export interface Player extends Actor {
   momSpeed: number;
   /** Cooldown between ball-form ram hits on zombies. */
   ramT: number;
+  /** GROOVE BUMP: seconds left in the little airborne hop over a rut. 0 = grounded. */
+  grooveHopT: number;
+  /** Total duration of the current groove hop (so the arc can be normalised). */
+  grooveHopDur: number;
+  /** Re-arm timer so a dense trail can't fire a hop every frame. */
+  grooveHopCdT: number;
   /** DEFLECTOR GRAB-THROW: seconds left the knight is caught by a deflector,
    *  pinned + winding up before the launch. 0 = not grabbed. */
   grabT: number;
@@ -558,6 +564,15 @@ export interface FloorFx {
   maxLife: number;
   /** Countdown between damage/status ticks. */
   tick: number;
+  /**
+   * GROOVE only — the unit heading the ball was travelling when it cut this
+   * rut. A groove is a DIRECTIONAL feature: crossing one broadside kicks the
+   * ball up and deflects it, while running along it drops you in and rails
+   * you. Without a stored heading a rut is just a circle and can only ever
+   * pull toward its centre. Undefined for every other kind.
+   */
+  dirX?: number;
+  dirZ?: number;
   mesh: THREE.Mesh;
   dispose(): void;
 }
@@ -1008,6 +1023,9 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     momZ: 0,
     momSpeed: 0,
     ramT: 0,
+    grooveHopT: 0,
+    grooveHopDur: 0,
+    grooveHopCdT: 0,
     grabT: 0,
     grabX: 0,
     grabZ: 0,
