@@ -148,14 +148,24 @@ export function createGamepadPoller(out: VirtualPad): { poll(): void; connected(
       seen = false;
       for (let k = 0; k < pads.length; k++) {
         const pad = pads[k];
-        if (!pad) continue;
+        // An EMPTY slot forgets its pad, per slot. Clearing only when every pad
+        // is gone is not enough: with a second pad still connected, a stale
+        // prev[0] would be compared against a DIFFERENT pad plugged into slot 0
+        // later, and a button held at that moment reads as a fresh press — the
+        // phantom-action-on-connect that `prev: null` exists to prevent.
+        if (!pad) {
+          prev[k] = undefined;
+          continue;
+        }
         seen = true;
         const res = readPad(pad as PadLike, out, prev[k] ?? null);
         prev[k] = res.buttons;
         if (res.taps.length) lastTaps = res.taps;
         for (const key of res.taps) pressKey(key);
       }
-      if (!seen) prev = [];
+      // Trailing slots the browser stopped reporting entirely (the array itself
+      // shrank) are dropped too — the loop above never visits those indices.
+      if (prev.length > pads.length) prev.length = pads.length;
     },
     connected() {
       return seen;

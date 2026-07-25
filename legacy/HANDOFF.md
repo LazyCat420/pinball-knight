@@ -85,14 +85,38 @@ events at 844×390 and 390×844):
 - the touch overlay does NOT cover the HUD (buttons anchor off a measured
   `--pad-bottom`); overlap check reports none.
 
-**NOT WORKING / NEXT THING TO FIX:** gamepad BUTTONS do not produce their
-discrete actions. `__dungeonInput()` shows `polls: 197, connected: true,
-prevKnown: [17]` but `lastTaps: []` — the poller runs and has previous state,
-yet the rising-edge test never fires, so LB→Q etc. never dispatch. Sticks work,
-so `readPad` is being called with a live pad; the bug is in the edge path
-(gamepad.ts `edge()` / the `prev` bookkeeping in `createGamepadPoller`).
-Unit tests for the edge logic PASS, so the fault is in the wiring, not the
-mapping. `__dungeonInput()` is the read-back to debug it with.
+**✅ BUTTONS WORK — the "gamepad buttons are dead" report was a HARNESS BUG**
+(resolved 2026-07-24). Browser-verified after descending: LB→`q`, RB→`e`,
+Y→`r`, D-pad→belt `1`/`2`, Back→`m` (screenshot shows the map overlay actually
+opening), a held button fires exactly ONCE, and a half-deflected stick reports
+0.359 then returns to 0. **Nothing in `readPad`/`edge()` was wrong.**
+
+Two separate traps produced the false report, and BOTH will bite the next
+harness:
+
+1. **The poll only runs after you DESCEND.** `state.animFrameId` is first set in
+   `beginRun` (core.ts) — in the tavern lobby there is no loop, so `simulate`
+   never runs and `__dungeonInput()` reads `polls: 0` with every input dead,
+   sticks included. A harness that asserts from the lobby sees "gamepad
+   broken". Walk to the gate at (0,-5.3) and press `e` FIRST.
+2. **A fake pad must start AT REST.** A button already down on a pad's first
+   poll is held-at-connect and is deliberately suppressed forever (the
+   `prev: null` contract) — a stub that reports a press immediately and never
+   releases can NEVER produce a tap, however many frames run. This is the
+   `polls: 197 / prevKnown: [17] / lastTaps: []` signature from the old report.
+
+Use **`__dungeonPad`** rather than hand-rolling a stub — it installs the pad at
+rest and merges alongside any real pad:
+`connect()` · `tap(btn)` · `hold(btn)`/`release(btn)` · `stick(x,y)` ·
+`aim(x,y)` · `disconnect()` · `state()`. Indices are gamepad.ts's `BTN`. Allow
+TWO frames per press (press frame + release frame) before asserting.
+
+**Fixed for real along the way:** the poller only forgot `prev` when EVERY pad
+vanished, so with two pads connected, unplugging slot 0 left stale state and a
+pad replugged there with a button held fired a phantom action on connect. Now
+cleared per slot. Covered by `gamepad-poller.test.ts` (new — the old suite only
+exercised `readPad`, which is exactly why a poller-level bug hid behind a fully
+green mapping suite).
 
 **Discrete actions are bridged by dispatching synthetic KeyboardEvents**
 (`virtual-pad.pressKey`) into core's existing keydown switch — verified working

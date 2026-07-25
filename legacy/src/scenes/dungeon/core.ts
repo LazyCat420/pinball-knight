@@ -672,6 +672,64 @@ export function launchDungeonGame(onExit?: () => void): void {
     // and the pad are reporting, and whether the poller is seeing a controller
     // at all. Controllers and touch have no other read-back headlessly.
     (window as unknown as { __dungeonInput?: () => unknown }).__dungeonInput = () => state.input?.debug() ?? null;
+    // Dev: a FAKE CONTROLLER, because a headless harness has no pad and hand-
+    // rolled `getGamepads` stubs get this wrong in a way that looks exactly like
+    // a broken poller. A button already down on the pad's FIRST poll is treated
+    // as held-at-connect and deliberately never fires (see gamepad.ts `prev:
+    // null`) — so a stub that reports a press immediately, and holds it, can
+    // never produce a tap no matter how many frames run. That cost a QA cycle.
+    //
+    // This hook always installs the pad AT REST and only presses when asked, so
+    // the edge is real:
+    //   __dungeonPad.connect()          plug in a resting pad
+    //   __dungeonPad.tap(4)             press + release button 4 (LB → q)
+    //   __dungeonPad.hold(4) / .release(4)
+    //   __dungeonPad.stick(x, y)        left stick; .aim(x, y) for the right
+    //   __dungeonPad.disconnect()
+    // Buttons are the standard-mapping indices exported as BTN in gamepad.ts.
+    // A tap needs TWO polls to be seen (press frame, release frame), so let at
+    // least two animation frames pass before asserting.
+    (window as unknown as { __dungeonPad?: unknown }).__dungeonPad = (() => {
+      const buttons = Array.from({ length: 17 }, () => ({ pressed: false }));
+      const axes = [0, 0, 0, 0];
+      const fake = { axes, buttons, connected: true, id: "debug fake pad (standard)", index: 0, mapping: "standard", timestamp: 0 };
+      let plugged = false;
+      const real = navigator.getGamepads?.bind(navigator);
+      // Merge rather than replace: a real pad plugged in alongside must keep
+      // working, and the poller already merges every connected pad.
+      navigator.getGamepads = () => {
+        const live = real ? Array.from(real()) : [];
+        return (plugged ? [...live, fake] : live) as ReturnType<Navigator["getGamepads"]>;
+      };
+      const press = (i: number, v: boolean) => {
+        if (i >= 0 && i < buttons.length) buttons[i] = { pressed: v };
+      };
+      return {
+        connect() {
+          for (let i = 0; i < buttons.length; i++) buttons[i] = { pressed: false };
+          axes.fill(0);
+          plugged = true;
+          return "pad connected at rest";
+        },
+        disconnect() {
+          plugged = false;
+          return "pad disconnected";
+        },
+        hold: (i: number) => (press(i, true), `hold ${i}`),
+        release: (i: number) => (press(i, false), `release ${i}`),
+        /** Press and auto-release after `frames` polls, so the edge is clean. */
+        tap(i: number, frames = 2) {
+          press(i, true);
+          let n = 0;
+          const step = () => (++n >= frames ? press(i, false) : requestAnimationFrame(step));
+          requestAnimationFrame(step);
+          return `tap ${i}`;
+        },
+        stick: (x: number, y: number) => ((axes[0] = x), (axes[1] = y), `stick ${x},${y}`),
+        aim: (x: number, y: number) => ((axes[2] = x), (axes[3] = y), `aim ${x},${y}`),
+        state: () => ({ plugged, axes: [...axes], down: buttons.map((b, i) => (b.pressed ? i : -1)).filter((i) => i >= 0) }),
+      };
+    })();
     // Dev: wipe the floor of enemies (and corpses). Returns how many went.
     (window as unknown as { __dungeonClear?: () => number }).__dungeonClear = () => {
       const n = state.zombies.length;
