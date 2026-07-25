@@ -17,7 +17,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields, type PinballPart, type PinballPartKind } from "../state";
 import { PART_HANDLERS, touchPinballParts, type PinballDeps } from "./pinball-collide";
-import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, FLIPPER_SPEED, GRAVEPIT_RADIUS } from "../constants";
+import { SPRING_SPEED, PINBALL_MAX_SPEED, DEFLECTOR_GRAB_TIME, DEFLECTOR_THROW_SPEED, DEFLECTOR_THROW_BOOST, BOOSTER_SPEED, BOOSTER_JAM_HITS, BOOSTER_JAM_COOLDOWN, FLIPPER_SPEED, GRAVEPIT_RADIUS } from "../constants";
 
 /** Every kind the game can place. Kept literal so adding one fails here too. */
 const ALL_KINDS: PinballPartKind[] = [
@@ -307,6 +307,76 @@ describe("launchers", () => {
     expect(p.momX).toBe(0);
     expect(p.momZ).toBe(1);
     expect(p.momSpeed).toBe(BOOSTER_SPEED);
+  });
+
+  // ── The corner-clip trap ────────────────────────────────────────────────
+  // Live bug: a booster aimed into a SHARP CORNER fires the knight at the wall,
+  // the wall throws him straight back onto the pad, and the pad fires again.
+  // The pocket-rattle damp in player.ts cannot break it — it scrubs momSpeed and
+  // the booster's speed FLOOR immediately restores it, so the loop is stable and
+  // the player cannot steer out (every re-fire re-arms the steer lock).
+  describe("booster jam guard (corner clip)", () => {
+    /** One rebound onto the same pad: the ball comes back to where it started. */
+    function refire(pad: PinballPart): void {
+      const p = state.player!;
+      p.x = 0;
+      p.z = 0; // bounced back onto the pad
+      pad.cooldownT = 0; // the short booster cooldown has elapsed
+      touchPinballParts(true, 0, deps);
+    }
+
+    it("stands the pad down after repeated re-fires at the same spot", () => {
+      const p = state.player!;
+      const pad = part("booster", { dirX: 0, dirZ: 1 });
+      state.pinballParts = [pad];
+
+      // The trap: fire, bounce back, fire, bounce back…
+      for (let i = 0; i < BOOSTER_JAM_HITS; i++) refire(pad);
+      expect(p.momSpeed).toBe(BOOSTER_SPEED); // still boosting — a chain is legal
+
+      // …until the pad notices it is the one doing the trapping.
+      p.momSpeed = 2; // whatever the wall left him after the damp
+      refire(pad);
+
+      expect(p.momSpeed).toBe(2); // NOT re-floored — the ball keeps its own speed
+      expect(pad.cooldownT).toBe(BOOSTER_JAM_COOLDOWN); // dark long enough to roll clear
+    });
+
+    it("leaves the heading alone when jammed, so the knight can steer out", () => {
+      const p = state.player!;
+      const pad = part("booster", { dirX: 0, dirZ: 1 });
+      state.pinballParts = [pad];
+
+      for (let i = 0; i < BOOSTER_JAM_HITS; i++) refire(pad);
+      // The rebound heading: away from the wall the pad keeps firing him into.
+      p.momX = 0;
+      p.momZ = -1;
+      steerLock = 0;
+      refire(pad);
+
+      expect(p.momZ).toBe(-1); // not snapped back into the corner
+      expect(steerLock).toBe(0); // and no fresh steer lock to fight
+    });
+
+    it("does NOT trip on a legitimate chain — each pad catches you further along", () => {
+      const p = state.player!;
+      const pad = part("booster", { dirX: 0, dirZ: 1 });
+      state.pinballParts = [pad];
+
+      // A real booster lane: the ball is somewhere NEW on each contact, so the
+      // streak never accumulates and the pad keeps flooring the speed.
+      for (let i = 0; i < BOOSTER_JAM_HITS + 3; i++) {
+        p.x = 0;
+        p.z = 0;
+        p.momSpeed = 1;
+        pad.cooldownT = 0;
+        touchPinballParts(true, 0, deps);
+        expect(p.momSpeed).toBe(BOOSTER_SPEED);
+        // …then travel on, the way an un-trapped ball does.
+        pad.jamX = -99;
+        pad.jamZ = -99;
+      }
+    });
   });
 
   it("a flipper catapults a walking player too", () => {

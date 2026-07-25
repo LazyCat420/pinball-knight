@@ -833,6 +833,14 @@ export const BOOSTER_SPEED = 15; // speed floor along the arrow (a touch above a
 export const BOOSTER_RADIUS = 0.5; // trigger radius, world units
 export const BOOSTER_COOLDOWN = 0.18; // short — a chain must re-fire tile-to-tile
 export const BOOSTER_STEER_LOCK = 0.16; // brief lock so the arrow carries you to the next pad
+// ── Booster JAM guard ── a pad firing into a corner catches the ball on the
+// rebound and fires it again: a standing wave the pocket-rattle damp can't win,
+// because the booster's speed FLOOR re-floors whatever the damp just scrubbed.
+// A pad that re-fires while the ball is still in front of it is jammed.
+export const BOOSTER_JAM_HITS = 3; // re-fires at the same spot before a pad stands down
+export const BOOSTER_JAM_RADIUS = 0.9; // world units — "caught the same ball again"
+export const BOOSTER_JAM_WINDOW = 0.75; // s between re-fires that still count as a jam
+export const BOOSTER_JAM_COOLDOWN = 0.9; // s the jammed pad stays dark, long enough to roll clear
 
 // ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
 /** How close to a corner's centre a fast entry banks (world units). */

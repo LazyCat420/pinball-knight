@@ -499,6 +499,17 @@ export interface PinballPart {
   /** ROLLOVER LANE (D3): lane-array id + which lane across the array. */
   lane?: number;
   laneSeq?: number;
+  /**
+   * BOOSTER JAM guard: consecutive re-fires that caught the ball in the same
+   * spot, and where/when that streak was last seen. A pad aimed into a sharp
+   * corner catches the rebound and re-launches it forever; the pocket-rattle
+   * damp can't break that because this pad's speed FLOOR undoes the damping.
+   * Counting the re-fires lets the pad notice it is the one doing the trapping.
+   */
+  jamN?: number;
+  jamX?: number;
+  jamZ?: number;
+  jamT?: number;
   /** The part's mesh group in the scene (built by render/pinball-parts). */
   mesh: THREE.Object3D;
 }

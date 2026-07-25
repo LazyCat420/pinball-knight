@@ -44,6 +44,10 @@ import {
   BOOSTER_RADIUS,
   BOOSTER_COOLDOWN,
   BOOSTER_STEER_LOCK,
+  BOOSTER_JAM_HITS,
+  BOOSTER_JAM_RADIUS,
+  BOOSTER_JAM_WINDOW,
+  BOOSTER_JAM_COOLDOWN,
   DEFLECTOR_GRAB_TIME,
   DEFLECTOR_THROW_SPEED,
   DEFLECTOR_THROW_BOOST,
@@ -395,6 +399,36 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // too, so stepping onto a booster LANE launches you and each subsequent
     // pad in the chain re-aims + tops you up, railing you down the lane.
     if (d2 > BOOSTER_RADIUS * BOOSTER_RADIUS) return;
+    // ── JAM GUARD ────────────────────────────────────────────────────────
+    // A pad aimed at a SHARP CORNER fires the ball a fraction of a tile into
+    // the wall, which bounces it straight back onto the pad, which fires it
+    // again: the ball ping-pongs between corner and booster and the player
+    // has no input that escapes it (the steer lock re-arms on every re-fire).
+    // The pocket-rattle damp in player.ts cannot break this one, because it
+    // scrubs momSpeed and THIS handler's floor immediately restores it — the
+    // guard damps and the booster undoes the damping, forever.
+    //
+    // So the pad owns the fix: catching the same ball, in the same spot, more
+    // than a couple of times in a row means the pad IS the trap. It stands
+    // down for long enough that the ball's own bounce carries it clear. The
+    // streak is keyed to a POSITION (not just a count) so a legitimate chain —
+    // where each re-fire happens further down the lane — never trips it.
+    const jammed = (part.jamT ?? 0) > 0 && Math.hypot(p.x - (part.jamX ?? 0), p.z - (part.jamZ ?? 0)) < BOOSTER_JAM_RADIUS;
+    part.jamN = jammed ? (part.jamN ?? 0) + 1 : 1;
+    part.jamX = p.x;
+    part.jamZ = p.z;
+    part.jamT = BOOSTER_JAM_WINDOW;
+    if (part.jamN > BOOSTER_JAM_HITS) {
+      // Stand down: no re-aim, no speed floor, no steer lock — everything that
+      // would re-enter the loop. The pad goes dark and the ball keeps whatever
+      // momentum the wall left it, so the pocket damp can finally land and the
+      // knight rolls out under his own control.
+      part.jamN = 0;
+      part.cooldownT = BOOSTER_JAM_COOLDOWN;
+      part.hitT = 0;
+      state.vfx?.dust(part.x, 0.15, part.z); // a cough, not a launch — the pad visibly gives up
+      return;
+    }
     p.momX = part.dirX;
     p.momZ = part.dirZ;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, BOOSTER_SPEED));

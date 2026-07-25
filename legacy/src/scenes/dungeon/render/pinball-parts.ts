@@ -1045,6 +1045,13 @@ export function updatePinballParts(dt: number): void {
     part.cooldownT = Math.max(0, part.cooldownT - dt);
     if (part.hitT >= 0) part.hitT += dt;
     if (part.hitT > PART_HIT_LIFETIME[part.kind]) part.hitT = -1;
+    // BOOSTER JAM window (same reasoning as the cooldown above — game state, so
+    // it ticks everywhere). When it lapses the pad's jam streak is stale: the
+    // ball left and came back later, which is a fresh visit, not a rattle.
+    if (part.jamT !== undefined && part.jamT > 0) {
+      part.jamT = Math.max(0, part.jamT - dt);
+      if (part.jamT === 0) part.jamN = 0;
+    }
 
     // Everything BELOW here is purely visual, so it is gated on being near
     // enough to see. The animator walks meshes and writes material uniforms —
