@@ -37,16 +37,36 @@ import {
   STONE_WALL_BREAK_SPEED_COST,
 } from "../constants";
 
-function setMaterial(m: MarbleMaterial | null): void {
+/** `iron` = the Ball Form potion is up (p.ironT), which is what makes it steel. */
+function setMaterial(m: MarbleMaterial | null, iron = true): void {
   state.dbgMaterialEnabled = true;
-  state.player = { ...(state.player ?? {}), material: m, materialT: m ? 5 : 0 } as typeof state.player;
+  state.player = {
+    ...(state.player ?? {}),
+    material: m,
+    materialT: m ? 5 : 0,
+    ironT: iron ? 5 : 0,
+  } as typeof state.player;
 }
 
 beforeEach(() => {
   setMaterial(null);
 });
 
-describe("the bare ball is STEEL", () => {
+describe("steel is GATED on the Ball Form potion, not the default ride", () => {
+  it("an ordinary overcharge roll (no potion) keeps the ORIGINAL physics", () => {
+    setMaterial(null, false);
+    const brk = materialBreakSpeeds();
+    expect(brk.wall).toBe(WALL_BREAK_SPEED);
+    expect(brk.secret).toBe(SECRET_BREAK_SPEED);
+    expect(materialWallBreakCost()).toBe(WALL_BREAK_SPEED_COST);
+    expect(materialRamKnockback()).toBe(BALL_RAM_KNOCKBACK);
+    expect(materialRamDamageMult()).toBe(1);
+    expect(materialFrictionMult()).toBe(1);
+    expect(materialSteerMult()).toBe(1);
+  });
+});
+
+describe("the ball is STEEL while Ball Form is up", () => {
   it("smashes masonry sooner than the old flesh baseline", () => {
     const brk = materialBreakSpeeds();
     expect(brk.wall).toBe(STEEL_WALL_BREAK_SPEED);

@@ -555,6 +555,33 @@ export const STEEL_WALL_BREAK_SPEED_COST = 0.82; // was WALL_BREAK_SPEED_COST 0.
 /** Ram damage multiplier: the ball's own weight behind every body it meets. */
 export const STEEL_RAM_DAMAGE_MULT = 1.35;
 
+// ── The GROOVE: the trail the steel ball gouges into the floor ────────────────
+// A ball bearing this heavy doesn't glide over stone, it ENGRAVES it. The rut
+// it leaves is a real feature, not a decal: it snags the horde that stumbles
+// into it and RAILS a ball that finds it later, so your own trail becomes
+// track you can ride. Runs on the floor-fx system (state.floorFx), so it
+// already has persistence, per-frame overlap and disposal for free.
+/** Minimum momentum to score the floor at all — a slow roll just polishes it. */
+export const GROOVE_MIN_SPEED = 9;
+/** World-units between stamps. Tighter than the ball's radius so the rut reads
+ *  as ONE continuous furrow rather than a dotted line of pits. */
+export const GROOVE_SPACING = 0.34;
+/** Rut half-width, world units. Narrow: it is a score mark, not a puddle. */
+export const GROOVE_RADIUS = 0.3;
+/** How long a cut stays before the dungeon floor is "swept". Long — the point
+ *  is that it's still there when you come back round. */
+export const GROOVE_LIFE = 26;
+/** Enemies crossing a rut stumble: the same slip channel the water slick uses,
+ *  at a fraction of its drift (you trip in it, you don't skate across it). */
+export const GROOVE_TRIP_TIME = 0.42;
+export const GROOVE_TRIP_SPEED = 0.9;
+/** A rolling ball that crosses its own groove gets STEERED along the cut, as a
+ *  fraction of the lane-centring pull. This is what makes a trail into track. */
+export const GROOVE_RAIL_PULL = 3.4;
+/** Speed the ball must be under for the rut to grab it — a screaming ball
+ *  jumps the cut, a cruising one drops into it. */
+export const GROOVE_RAIL_MAX_SPEED = 17;
+
 // ── MULTI-BALL (the 🔮 potion: two echo knights) ────────────────
 /** How many echoes peel off the knight. */
 export const MULTIBALL_COUNT = 2;

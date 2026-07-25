@@ -30,6 +30,15 @@ import {
   OIL_ZOMBIE_T,
   OIL_MARBLE_T,
   OIL_IGNITE_LIFE,
+  PINBALL_MAX_SPEED,
+  GROOVE_MIN_SPEED,
+  GROOVE_SPACING,
+  GROOVE_RADIUS,
+  GROOVE_LIFE,
+  GROOVE_TRIP_TIME,
+  GROOVE_TRIP_SPEED,
+  GROOVE_RAIL_PULL,
+  GROOVE_RAIL_MAX_SPEED,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { damageZombie, hitPlayerRanged } from "./combat";
@@ -46,6 +55,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   fire: PALETTE_HEX[16], // flame
   "shard-field": PALETTE_HEX[31], // prismatic cool
   oil: PALETTE_HEX[29], // arcane dark — a deep blue-black sheen
+  groove: PALETTE_HEX[2], // stone dark — a cut in the floor, not a substance
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -60,7 +70,7 @@ function discGeo(): THREE.CircleGeometry {
  *   fire — white-hot core → orange → deep-red ragged edge (additive, blooms)
  *   oil  — near-black pool with a bright iridescent RIM + thin sheen arcs
  */
-function paintKindTexture(kind: "fire" | "oil"): THREE.CanvasTexture | null {
+function paintKindTexture(kind: "fire" | "oil" | "groove"): THREE.CanvasTexture | null {
   if (typeof document === "undefined") return null; // headless tests — flat tint
   const s = 128;
   const canvas = document.createElement("canvas");
@@ -69,7 +79,38 @@ function paintKindTexture(kind: "fire" | "oil"): THREE.CanvasTexture | null {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const cx = s / 2;
-  if (kind === "fire") {
+  if (kind === "groove") {
+    // A CUT, not a stain. What reads as "gouged out of stone" is the pairing of
+    // a dark trench with a BRIGHT CHIPPED LIP on the light side — the lip is
+    // freshly exposed rock catching the torchlight, and without it a dark oval
+    // just looks like a shadow lying on the floor.
+    // A trail is drawn as many OVERLAPPING stamps, so each one must be soft and
+    // partly transparent — a hard opaque disc turns the trail into a string of
+    // beads (which is exactly what the first cut looked like). Falloff starts
+    // immediately and the core never reaches full black.
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(10,12,18,0.62)"); // deepest part of the trench
+    g.addColorStop(0.35, "rgba(18,22,30,0.44)");
+    g.addColorStop(0.68, "rgba(35,40,50,0.2)");
+    g.addColorStop(1, "rgba(43,48,59,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Exposed-rock lip on the light side. A STROKED arc chained into a
+    // scalloped caterpillar edge across overlapping stamps; a soft additive
+    // blob instead accumulates into one smooth highlight running the length of
+    // the rut, which is what sells "carved" rather than "shadow".
+    ctx.globalCompositeOperation = "lighter";
+    const lip = ctx.createRadialGradient(cx, cx - s * 0.1, 0, cx, cx - s * 0.1, s * 0.34);
+    lip.addColorStop(0, "rgba(154,164,180,0.10)");
+    lip.addColorStop(1, "rgba(154,164,180,0)");
+    ctx.fillStyle = lip;
+    ctx.beginPath();
+    ctx.arc(cx, cx - s * 0.1, s * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  } else if (kind === "fire") {
     // Ragged blob edge: overlapping mid-orange circles around the rim…
     ctx.fillStyle = "#d97b29";
     for (let i = 0; i < 10; i++) {
@@ -118,7 +159,10 @@ function paintKindTexture(kind: "fire" | "oil"): THREE.CanvasTexture | null {
 
 function matFor(kind: FloorFxKind): THREE.MeshBasicMaterial {
   if (!_mats[kind]) {
-    const tex = kind === "fire" || kind === "oil" ? (_texs[kind] ??= paintKindTexture(kind) ?? undefined) : undefined;
+    const tex =
+      kind === "fire" || kind === "oil" || kind === "groove"
+        ? (_texs[kind] ??= paintKindTexture(kind) ?? undefined)
+        : undefined;
     _mats[kind] = tex
       ? new THREE.MeshBasicMaterial({
           map: tex,
@@ -175,6 +219,81 @@ export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: nu
   });
 }
 
+// ── THE GROOVE — the steel ball's trail ───────────────────────────────────────
+
+/** Where the last groove stamp landed, so the trail spaces evenly regardless
+ *  of framerate (a per-frame stamp would carpet the floor at 144fps). */
+let lastGrooveX = 0;
+let lastGrooveZ = 0;
+let hasGroove = false;
+
+/**
+ * Gouge the floor under a heavy ball. Called every frame while rolling; stamps
+ * only once per GROOVE_SPACING travelled, so the rut is a continuous furrow at
+ * any framerate.
+ *
+ * Deliberately NOT a decal: each stamp is a real floor-fx entry, which is what
+ * gives it persistence, overlap detection and disposal for free — and what lets
+ * `grooveInteract` below make it something you can actually use.
+ */
+export function carveGroove(x: number, z: number, speed: number): void {
+  if (speed < GROOVE_MIN_SPEED) return;
+  if (hasGroove && Math.hypot(x - lastGrooveX, z - lastGrooveZ) < GROOVE_SPACING) return;
+  hasGroove = true;
+  lastGrooveX = x;
+  lastGrooveZ = z;
+  // Faster = deeper bite, so a screaming line scars harder than a cruise.
+  const bite = Math.min(1, speed / PINBALL_MAX_SPEED);
+  spawnFloorFx("groove", x, z, GROOVE_RADIUS * (0.8 + bite * 0.5), GROOVE_LIFE);
+  // Stone chips fly on the cut — the sound-free tell that the floor just lost.
+  if (state.vfx && Math.random() < 0.3) state.vfx.sparks(x, 0.06, z, 0, 0.4, 2);
+}
+
+/**
+ * What a rut DOES once it exists — the whole reason this isn't a decal.
+ *
+ *  • Enemies that stumble into it TRIP (the water-slick channel at a fraction
+ *    of its drift: you catch a foot in a groove, you don't skate along it).
+ *  • A rolling ball that finds a cut gets RAILED along it — your own trail
+ *    becomes track. Gated on speed: a screaming ball jumps the cut, a cruising
+ *    one drops in. This is the interactive half the player asked for.
+ */
+function grooveInteract(fx: FloorFx, _dt: number, ticked: boolean): void {
+  const rr = fx.radius + ZOMBIE_R;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - fx.x;
+    const dz = zmb.z - fx.z;
+    if (dx * dx + dz * dz > rr * rr) continue;
+    if (!zmb.slipT || zmb.slipT <= 0) {
+      const d = Math.hypot(dx, dz) || 1;
+      zmb.slipT = GROOVE_TRIP_TIME;
+      zmb.slipVX = (dx / d) * GROOVE_TRIP_SPEED;
+      zmb.slipVZ = (dz / d) * GROOVE_TRIP_SPEED;
+      if (ticked) state.vfx?.dust(zmb.x, 0.1, zmb.z);
+    }
+  }
+
+  // Rail the player's ball along the cut.
+  const p = state.player;
+  if (!p || p.momSpeed <= 0 || p.momSpeed > GROOVE_RAIL_MAX_SPEED) return;
+  const px = p.x - fx.x;
+  const pz = p.z - fx.z;
+  const pr = fx.radius + PLAYER_R;
+  if (px * px + pz * pz > pr * pr) return;
+  // Pull the heading toward the groove's centre-line. The cut has no stored
+  // direction of its own, so "along it" is simply the ball's own heading with
+  // the lateral offset trimmed out — which is exactly what a rut does to a
+  // wheel. Normalised after, same contract as the lane-glide nudge.
+  const d = Math.hypot(px, pz) || 1;
+  const pull = GROOVE_RAIL_PULL * _dt * (1 - d / pr);
+  p.momX -= (px / d) * pull;
+  p.momZ -= (pz / d) * pull;
+  const ml = Math.hypot(p.momX, p.momZ) || 1;
+  p.momX /= ml;
+  p.momZ /= ml;
+}
+
 function despawn(index: number): void {
   const fx = state.floorFx[index];
   state.scene?.remove(fx.mesh);
@@ -183,6 +302,7 @@ function despawn(index: number): void {
 }
 
 export function clearFloorFx(): void {
+  hasGroove = false; // a new floor starts unscarred — no seam from the last one
   for (let i = state.floorFx.length - 1; i >= 0; i--) despawn(i);
 }
 
@@ -204,6 +324,17 @@ export function updateFloorFx(dt: number): void {
     // slick slowly spins so the puddle reads liquid instead of stamped.
     const age = fx.maxLife - fx.life;
     const frac = fx.life / fx.maxLife;
+
+    // ── GROOVE: a cut in stone, so it does NONE of the liquid animation. It
+    // is stamped at full size instantly (the ball carved it as it passed), sits
+    // perfectly still, and only slowly dulls as grit settles into it. A rut
+    // that pulsed or span would read as a puddle.
+    if (fx.kind === "groove") {
+      fx.mesh.scale.setScalar(fx.radius);
+      (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.72 * Math.min(1, frac * 4);
+      grooveInteract(fx, dt, ticked);
+      continue;
+    }
     const grow = age < 0.18 ? 0.35 + (age / 0.18) * 0.75 : 1.1 - Math.min(0.1, (age - 0.18) * 0.5);
     // Fire FLICKERS (fast, deep pulse); liquids breathe slowly.
     const pulse = fx.kind === "fire"

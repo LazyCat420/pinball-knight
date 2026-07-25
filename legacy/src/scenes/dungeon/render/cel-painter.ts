@@ -57,7 +57,7 @@ import {
 
 export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
 export type Dir = "S" | "N" | "E";
-export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball" | "equip" | "forge";
+export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball" | "steelball" | "equip" | "forge";
 export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
 
 const PX = SPRITE_PX; // 128 — all coordinates below live in this box
@@ -806,36 +806,80 @@ function knightRollFrame(dir: Dir, t: number, weapon: WeaponId, look: KnightLook
 }
 
 /**
- * BALL-FORM frame: the pinball overcharge ultimate — an actual POLISHED STEEL
- * PINBALL, not the knight.
+ * BALL-FORM frame: the pinball OVERCHARGE form — the knight tucked to a tight
+ * ball, spinning a quarter-turn per frame, with a bright speed ring chasing the
+ * spin so it reads as a blurring wheel even at 4 frames. Same
+ * rotate-a-finished-figure trick as the roll, just tighter and looping.
  *
- * This used to draw the knight sprite shrunk to 60% and spun, which read as
- * "a small man tumbling" rather than "a ball bearing the size of a man" — the
- * form's whole physics fantasy (heavy, metal, smashes masonry) had no visual
- * support at all.
- *
- * What sells chrome is the REFLECTION, not the shading: a real ball bearing
- * shows a bright sky-lit crown, a dark equator where it grazes the horizon, and
- * a warm BOUNCE-LIGHT crescent low down where the floor kicks light back up.
- * The palette's steel ramp (19-22) is built for exactly this — its dark end
- * leans warm-violet while the light end stays icy, which is the temperature
- * spread that reads as metal instead of grey plastic.
- *
- * `spin` rotates only the highlight and the banding, so the sphere's silhouette
- * stays perfectly round while its surface visibly rolls.
+ * This is the ORDINARY ride (overcharge / parts / bounces). Drinking the Ball
+ * Form potion swaps to `knightSteelBallFrame` below — an actual metal sphere —
+ * so the potion has a visual identity the everyday roll doesn't.
  */
-function knightBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: KnightLook): FramePaint {
+function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId, look: KnightLook): FramePaint {
+  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 6, stride: 0, roll: 0.4 }, weapon, look);
+  return (ctx) => {
+    groundShadow(ctx, CX, GROUND + 3, 22);
+    ctx.save();
+    ctx.translate(CX, GROUND - 20);
+    ctx.rotate(spin);
+    ctx.scale(0.6, 0.6);
+    ctx.translate(-CX, -(GROUND - 20));
+    base(ctx);
+    ctx.restore();
+    // speed ring — an arc chasing the spin angle (alpha ≥0.55: crush cutout)
+    ctx.beginPath();
+    ctx.arc(CX, GROUND - 20, 27, spin, spin + 3.6);
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(238, 241, 245, 0.7)";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(CX, GROUND - 20, 22, spin + 0.6, spin + 2.6);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(111, 208, 232, 0.6)"; // arcane streak inside
+    ctx.stroke();
+  };
+}
+
+/**
+ * STEEL BALL-FORM frame: the 🪩 Ball Form potion — you ARE the pinball, so you
+ * are drawn as one. A mirror-polished chrome ball bearing, NOT the knight.
+ *
+ * Only used while `ironT > 0`. The ordinary overcharge ride keeps the spinning
+ * knight above; this is what makes the potion feel like a transformation.
+ *
+ * What sells CHROME is reflection, not shading. A mirror ball is dominated by
+ * what it reflects: a blown-out sky-lit crown, a hard dark horizon band, a
+ * mirrored floor low down, and — the detail that reads as "polished" more than
+ * any other — a razor-sharp SPECULAR with a tight bloom. The palette's steel
+ * ramp (19-22) is built for it: the dark end leans warm-violet while the light
+ * end stays icy, and that temperature spread is what separates metal from grey
+ * plastic.
+ *
+ * `spin` rotates the reflection and banding only, so the silhouette stays
+ * perfectly round while the surface visibly rolls.
+ */
+function knightSteelBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: KnightLook): FramePaint {
   const R = 21; // a touch bigger than the old 0.6-scaled figure — it has WEIGHT
   const cy = GROUND - R - 1; // resting on the floor line
   return (ctx) => {
     groundShadow(ctx, CX, GROUND + 3, 20);
 
-    // ── Body: a vertical sky→floor gradient, the base read of a lit sphere.
+    // ── Body: a MIRROR gradient with HARD stops, not a soft ramp. Polish is
+    // about contrast — a chrome ball jumps from blown-out sky to near-black
+    // horizon over a few pixels, where a satin/plastic ball blends smoothly.
+    // Doubling up the stops at 0.34/0.36 and 0.52/0.55 is what buys that snap.
     const body = ctx.createLinearGradient(0, cy - R, 0, cy + R);
-    body.addColorStop(0, paletteCss(22)); // sky-lit crown
-    body.addColorStop(0.42, paletteCss(21));
-    body.addColorStop(0.72, paletteCss(20));
-    body.addColorStop(1, paletteCss(19)); // warm violet underside
+    body.addColorStop(0, "#ffffff"); // blown-out sky reflection
+    body.addColorStop(0.16, paletteCss(22));
+    body.addColorStop(0.34, paletteCss(21));
+    body.addColorStop(0.36, paletteCss(20)); // hard step — the polish tell
+    body.addColorStop(0.52, paletteCss(19));
+    body.addColorStop(0.55, "#181b24"); // near-black horizon band
+    body.addColorStop(0.76, "#3d4454"); // cold slate, NOT the warm 19 — keeping
+    body.addColorStop(0.9, paletteCss(20)); // the underside cold is what says
+    body.addColorStop(1, paletteCss(21)); // STEEL rather than brass
+
     ctx.beginPath();
     ctx.arc(CX, cy, R, 0, Math.PI * 2);
     ctx.fillStyle = body;
@@ -849,12 +893,16 @@ function knightBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: Knight
     ctx.clip();
     ctx.translate(CX, cy);
     ctx.rotate(spin * 0.5);
-    ctx.fillStyle = "rgba(23, 26, 34, 0.42)";
+    ctx.fillStyle = "rgba(15, 17, 23, 0.5)";
     ctx.fillRect(-R, -2.5, R * 2, 5);
     // A second, thinner band a quarter turn on — two bands make the roll
     // direction unambiguous where one band is symmetric.
-    ctx.fillStyle = "rgba(23, 26, 34, 0.22)";
+    ctx.fillStyle = "rgba(15, 17, 23, 0.26)";
     ctx.fillRect(-R, R * 0.42, R * 2, 3);
+    // A bright REFLECTED streak riding between them: a mirror shows the room's
+    // lit surfaces, not just its dark ones.
+    ctx.fillStyle = "rgba(238, 241, 245, 0.34)";
+    ctx.fillRect(-R, -R * 0.55, R * 2, 2.6);
     ctx.restore();
 
     // ── Bounce light: warm crescent low on the ball where the floor kicks
@@ -864,28 +912,49 @@ function knightBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: Knight
     ctx.beginPath();
     ctx.arc(CX, cy, R, 0, Math.PI * 2);
     ctx.clip();
-    const bounce = ctx.createRadialGradient(CX, cy + R * 0.72, 1, CX, cy + R * 0.72, R * 0.85);
-    bounce.addColorStop(0, "rgba(240, 166, 60, 0.30)"); // torch warmth off the floor
+    // Kept SUBTLE on purpose: at 0.42 it flooded the lower half and the ball
+    // read as brass, not steel. It only needs to hint that a floor exists.
+    const bounce = ctx.createRadialGradient(CX, cy + R * 0.78, 1, CX, cy + R * 0.78, R * 0.62);
+    bounce.addColorStop(0, "rgba(240, 166, 60, 0.17)"); // torch warmth off the floor
     bounce.addColorStop(1, "rgba(240, 166, 60, 0)");
     ctx.fillStyle = bounce;
     ctx.fillRect(CX - R, cy - R, R * 2, R * 2);
     ctx.restore();
 
-    // ── Specular: a hard hot dot plus a soft bloom, orbiting with the spin so
-    // the light source stays put while the METAL turns under it.
+    // ── Specular: the loudest polish cue. A TIGHT blown-out core with a hard
+    // edge (a mirror's highlight has almost no falloff — a soft blob reads as
+    // satin) plus a wide low bloom for the glare, and a small secondary
+    // catchlight from the opposite side that only a shiny surface would pick up.
     const hx = CX + Math.cos(spin) * R * 0.34;
     const hy = cy - R * 0.42 + Math.sin(spin) * R * 0.16;
-    const glow = ctx.createRadialGradient(hx, hy, 0.5, hx, hy, R * 0.55);
-    glow.addColorStop(0, "rgba(255, 255, 255, 0.85)");
+    const glow = ctx.createRadialGradient(hx, hy, 0.5, hx, hy, R * 0.7);
+    glow.addColorStop(0, "rgba(255, 255, 255, 0.62)");
+    glow.addColorStop(0.35, "rgba(255, 255, 255, 0.18)");
     glow.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(hx, hy, R * 0.55, 0, Math.PI * 2);
+    ctx.arc(hx, hy, R * 0.7, 0, Math.PI * 2);
     ctx.fill();
+    // Hard core — near-zero falloff is what says MIRROR.
+    const core = ctx.createRadialGradient(hx, hy, 0, hx, hy, 4.6);
+    core.addColorStop(0, "#ffffff");
+    core.addColorStop(0.72, "#ffffff");
+    core.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = core;
     ctx.beginPath();
-    ctx.arc(hx, hy, 3.1, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
+    ctx.arc(hx, hy, 4.6, 0, Math.PI * 2);
     ctx.fill();
+    // Secondary catchlight, opposite side, small and cool.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.ellipse(CX - Math.cos(spin) * R * 0.46, cy + R * 0.34, 4.2, 2.2, -spin * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = "#dfe8f5";
+    ctx.fill();
+    ctx.restore();
 
     // ── Crest tell: a thin equatorial STRIPE in the worn set's plume colour,
     // so you can still tell WHOSE ball this is in co-op (and which armor style
@@ -1049,6 +1118,15 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
       knightBallFrame(dir, Math.PI / 2, weapon, look),
       knightBallFrame(dir, Math.PI, weapon, look),
       knightBallFrame(dir, (3 * Math.PI) / 2, weapon, look),
+    ],
+
+    // ── STEEL BALL: the 🪩 Ball Form potion only — an actual chrome sphere.
+    // Kept as its own clip so the everyday overcharge ride above is untouched. ──
+    steelball: [
+      knightSteelBallFrame(dir, 0, weapon, look),
+      knightSteelBallFrame(dir, Math.PI / 2, weapon, look),
+      knightSteelBallFrame(dir, Math.PI, weapon, look),
+      knightSteelBallFrame(dir, (3 * Math.PI) / 2, weapon, look),
     ],
   });
 

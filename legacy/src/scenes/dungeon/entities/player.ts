@@ -153,6 +153,7 @@ import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera
 import { InputHandle } from "../input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
+import { carveGroove } from "./floor-fx";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
 import {
@@ -1573,7 +1574,12 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   p.anim.setFacing(p.facing);
   if (isBall) {
     p.anim.setRate(1 + p.momSpeed * 0.1);
-    p.anim.play("ball");
+    // The 🪩 Ball Form potion is the ONLY thing that draws you as an actual
+    // chrome sphere — "you ARE the pinball" earns its own silhouette. The
+    // everyday overcharge ride stays the spinning tucked knight.
+    p.anim.play(p.ironT > 0 ? "steelball" : "ball");
+    // …and only a ball THAT heavy engraves the floor it crosses.
+    if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed);
   } else {
     p.anim.setRate(1.4);
     p.anim.play("roll");

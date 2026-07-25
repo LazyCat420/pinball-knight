@@ -19,6 +19,7 @@ const FPS: Record<ClipName, number> = {
   death: FPS_DEATH,
   roll: FPS_ROLL,
   ball: FPS_BALL,
+  steelball: FPS_BALL, // same cadence — it's the same ride, different skin
   equip: FPS_EQUIP,
   forge: FPS_FORGE,
 };
@@ -31,6 +32,7 @@ const LOOPS: Record<ClipName, boolean> = {
   death: false,
   roll: false,
   ball: true,
+  steelball: true,
   equip: false,
   forge: false,
 };

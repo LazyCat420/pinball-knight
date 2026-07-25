@@ -132,6 +132,21 @@ export function isMaterial(id: string): id is MarbleMaterial {
   return id === "diamond" || id === "water" || id === "stone" || id === "storm" || id === "shadow" || id === "lava";
 }
 
+/**
+ * True while the 🪩 BALL FORM potion is up — "you ARE the pinball", so the ball
+ * is genuinely made of steel for as long as it lasts.
+ *
+ * This is deliberately NOT the default for every momentum ride. An ordinary
+ * overcharge roll is the knight tumbling with momentum; only the potion turns
+ * him into a ball bearing, and the weight below is that potion's payoff. A
+ * marble MATERIAL still overrides steel wholesale — a pickup replaces what the
+ * ball is made of.
+ */
+function steelBall(): boolean {
+  const p = state.player;
+  return !!p && p.ironT > 0;
+}
+
 /** True when materials are globally enabled and a player currently has one. */
 function activeMaterial(): MarbleMaterial | null {
   if (!state.dbgMaterialEnabled) return null;
@@ -212,9 +227,9 @@ export function materialBreakSpeeds(): { secret: number; wall: number } {
   if (activeMaterial() === "diamond") {
     return { secret: DIAMOND_SECRET_BREAK_SPEED, wall: DIAMOND_WALL_BREAK_SPEED };
   }
-  // No material: the bare ball is STEEL, which already bites masonry harder
-  // than a tumbling knight did.
-  return { secret: STEEL_SECRET_BREAK_SPEED, wall: STEEL_WALL_BREAK_SPEED };
+  // Ball Form: steel bites masonry harder than a tumbling knight does.
+  if (steelBall()) return { secret: STEEL_SECRET_BREAK_SPEED, wall: STEEL_WALL_BREAK_SPEED };
+  return { secret: SECRET_BREAK_SPEED, wall: WALL_BREAK_SPEED };
 }
 
 /**
@@ -229,7 +244,7 @@ export function materialFrictionMult(): number {
   switch (m) {
     case "water": return WATER_FRICTION_MULT;
     case "stone": return STONE_FRICTION_MULT;
-    default: return m ? 1 : STEEL_FRICTION_MULT; // heavy: the floor scrubs it less
+    default: return !m && steelBall() ? STEEL_FRICTION_MULT : 1; // heavy: floor scrubs it less
   }
 }
 
@@ -239,7 +254,7 @@ export function materialSteerMult(): number {
   switch (m) {
     case "water": return WATER_STEER_MULT;
     case "storm": return STORM_STEER_MULT;
-    default: return m ? 1 : STEEL_STEER_MULT; // …and correspondingly harder to turn
+    default: return !m && steelBall() ? STEEL_STEER_MULT : 1; // …and harder to turn
   }
 }
 
@@ -254,9 +269,8 @@ export function materialRamKnockback(): number {
   switch (m) {
     case "stone": return STONE_RAM_KNOCKBACK;
     case "water": return WATER_RAM_KNOCKBACK;
-    // Bare steel shoves harder than the old flesh baseline; every other
-    // material keeps its own tuned value.
-    default: return m ? BALL_RAM_KNOCKBACK : STEEL_RAM_KNOCKBACK;
+    // Ball Form shoves harder; everything else keeps its own tuned value.
+    default: return !m && steelBall() ? STEEL_RAM_KNOCKBACK : BALL_RAM_KNOCKBACK;
   }
 }
 
@@ -268,14 +282,14 @@ export function materialRamKnockback(): number {
 export function materialRamDamageMult(): number {
   const m = activeMaterial();
   if (m === "stone") return STONE_RAM_DAMAGE_MULT;
-  return m ? 1 : STEEL_RAM_DAMAGE_MULT;
+  return !m && steelBall() ? STEEL_RAM_DAMAGE_MULT : 1;
 }
 
 /** Momentum retained after punching through masonry. Steel barely slows. */
 export function materialWallBreakCost(): number {
   const m = activeMaterial();
   if (m === "stone") return STONE_WALL_BREAK_SPEED_COST;
-  return m ? WALL_BREAK_SPEED_COST : STEEL_WALL_BREAK_SPEED_COST;
+  return !m && steelBall() ? STEEL_WALL_BREAK_SPEED_COST : WALL_BREAK_SPEED_COST;
 }
 
 /** Extra multiplier on the corner-hit acceleration (stone corners hit harder). */
