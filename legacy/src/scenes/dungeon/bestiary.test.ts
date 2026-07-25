@@ -47,7 +47,15 @@ describe("bestiary derivation (no second source of truth)", () => {
     for (const id of CARD_IDS) {
       const src = CARDS[id].source;
       if (!src) continue;
-      expect(byKind.get(src)!.cards.map((c) => c.id), `${id} missing from ${src}`).toContain(id);
+      const entry = byKind.get(src)!;
+      // A SUB-TYPED card lives on its sub-type row, not the family row — that is
+      // what makes "farm Hulks for the Hulk card" a real goal rather than "kill
+      // any zombie". Everything else files under the family.
+      const sub = CARDS[id].subType;
+      const where = sub
+        ? entry.subTypes.find((s) => s.id === sub)!.cards
+        : entry.cards;
+      expect(where.map((c) => c.id), `${id} missing from ${src}${sub ? ":" + sub : ""}`).toContain(id);
     }
   });
 
@@ -65,11 +73,17 @@ describe("bestiary derivation (no second source of truth)", () => {
     }
   });
 
-  it("flags skill cards so the UI can mark them", () => {
-    const magnet = buildBestiary({}).find((e) => e.kind === "magnet")!;
-    expect(magnet.cards.find((c) => c.id === "magnetheart")?.grantsAbility).toBe(true);
-    // A stat-only card off the same monster must NOT be flagged.
-    expect(magnet.cards.find((c) => c.id === "magnetcore")?.grantsAbility).toBe(false);
+  it("files a sub-typed card on its SUB-TYPE row, not the family row", () => {
+    // "Farm Hulks for the Hulk card" only reads if the Hulk card is ON the Hulk
+    // row. A sub-typed card leaking onto the Zombie row would say "kill any
+    // zombie", which is not the goal the drop table actually implements.
+    const zombie = buildBestiary({}).find((e) => e.kind === "zombie")!;
+    expect(zombie.cards.every((c) => !CARDS[c.id].subType)).toBe(true);
+    const hulk = zombie.subTypes.find((s) => s.id === "hulk")!;
+    expect(hulk.cards.map((c) => c.id)).toContain("hulkknuckle");
+    // …and it must not also appear under a different sub-type.
+    const midget = zombie.subTypes.find((s) => s.id === "midget")!;
+    expect(midget.cards.map((c) => c.id)).not.toContain("hulkknuckle");
   });
 });
 

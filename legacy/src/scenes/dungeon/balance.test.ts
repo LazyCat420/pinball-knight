@@ -93,9 +93,9 @@ describe("no weapon is best at everything", () => {
     expect(dps("flamethrower")).toBeGreaterThan(dps("gun"));
     expect(sustain("flamethrower")).toBeLessThan(sustain("gun"));
     expect(sustain("flamethrower")).toBeLessThan(sustain("bow"));
-    // …and it must not carry the most card slots on top of that.
-    const maxSlots = Math.max(...Object.values(WEAPONS).map((w) => w.cardSlots));
-    expect(WEAPONS.flamethrower.cardSlots).toBeLessThanOrEqual(maxSlots);
+    // Card slots are no longer a weapon-identity axis — they come from the
+    // ITEM'S RARITY now (items.ts SLOTS_BY_RARITY), so every weapon id has the
+    // same ceiling and there is nothing left for the flamer to over-carry.
     expect(lifetime("flamethrower")).toBeLessThan(lifetime("mace"));
   });
 
@@ -110,7 +110,7 @@ describe("no weapon is best at everything", () => {
         w.range > WEAPONS.fists.range * 1.5 ||
         (w.knockbackMult ?? 1) > 1 ||
         (w.pierce ?? 0) > 0 ||
-        w.cardSlots > 0;
+        (w.heft ?? 1) !== 1;
       expect(better, `${id} is dominated by fists`).toBe(true);
     }
   });
@@ -140,8 +140,9 @@ describe("no weapon is best at everything", () => {
     // one thing the bow does that nothing else does.
     expect(WEAPONS.bow.pierce ?? 0).toBeGreaterThan(0);
     expect(WEAPONS.gun.pierce ?? 0).toBe(0);
-    // It should not ALSO be strictly worse on the softer axes.
-    expect(WEAPONS.bow.cardSlots).toBeGreaterThanOrEqual(WEAPONS.gun.cardSlots - 1);
+    // It should not ALSO be strictly worse on the softer axes. (Card slots used
+    // to be one of those axes; they are rarity-driven now, so every weapon id
+    // shares a ceiling and the comparison is meaningless.)
     expect(WEAPONS.bow.damage).toBeGreaterThan(WEAPONS.gun.damage);
   });
 
@@ -149,7 +150,7 @@ describe("no weapon is best at everything", () => {
     // The fire path is `(w.pierce ?? 0) + aggregateCards(cards).pierce`. A
     // weapon baseline that silently replaced the card total would make the
     // Piercer/Railgun cards worthless on the one weapon built around pierce.
-    const cardPierce = aggregateCards(["piercer"]).pierce;
+    const cardPierce = aggregateCards(["venomgland"]).pierce;
     expect(cardPierce).toBeGreaterThan(0);
     const combined = (WEAPONS.bow.pierce ?? 0) + cardPierce;
     expect(combined).toBeGreaterThan(cardPierce);

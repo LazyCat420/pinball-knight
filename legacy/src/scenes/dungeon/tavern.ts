@@ -25,7 +25,8 @@
  * still reached it.
  */
 import { state, activeWeapon } from "./state";
-import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, breakChance, upgradeDamageMult, upgradeDurabilityMult, UPGRADE_DURABILITY_STEP, WEAPON_MAX_CARD_SLOTS, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { sfxBreak } from "./audio";
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear } from "./render/knight-look";
 import { ARMOR_STYLES, ELEMENTAL_STYLE_IDS, activeStyle, isStyleUnlocked, unlockStyle, setActiveStyle, styleGearGrant, type ArmorStyleId } from "./armor-styles";
@@ -41,6 +42,9 @@ const PRICE_CARD: Record<CardRarity, number> = { common: 20, rare: 60, epic: 140
 const PRICE_REROLL_BAR = 15;
 const PRICE_REPAIR_WEAPON = 30;
 const PRICE_ADD_SLOT = 60;
+/** Weaponsmith UPGRADE — cost climbs with the level, so pushing deep costs real
+ *  gold as well as real risk. */
+const PRICE_UPGRADE_BASE = 45;
 const PRICE_REROLL_CARD = 40;
 const PRICE_REPAIR_GEAR = 40;
 // The Alchemist's stock — a curated shelf that carries onto the belt (Shift+1-4).
@@ -113,6 +117,41 @@ interface TavernDeps {
 // ── Ephemeral UI selection (reset on open) ──
 let selectedStash = -1; // a stash card picked to socket
 let forgePick: number[] = []; // stash indices chosen for a forge
+/** Upgrade level the player has ARMED (clicked once) but not yet confirmed.
+ *  null = nothing armed. Reset on every other action so a stale arm can't fire. */
+let upgradeArmed: number | null = null;
+
+/**
+ * ⚒️ UPGRADE panel — the anti-hoard gamble, stated plainly.
+ *
+ * The whole point of upgrade risk is that the player CHOOSES it, so the exact
+ * break chance is on the button before the click, and anything above 0% needs a
+ * second click to confirm. A hidden roll that eats a legendary is a feel-bad; a
+ * stated 36% gamble is a story the player tells afterwards.
+ */
+function upgradePanel(): string {
+  const w = state.weaponSlots[activeWeaponSlotIndex()];
+  if (!w) {
+    return `<div style="border-top:1px solid #4a3d28;padding-top:8px;color:#6c5a3e;font-size:10px">UPGRADE — no weapon equipped</div>`;
+  }
+  const lvl = w.upgrade ?? 0;
+  const risk = breakChance(lvl);
+  const cost = PRICE_UPGRADE_BASE + lvl * 25;
+  const pct = Math.round(risk * 100);
+  const armed = upgradeArmed === lvl && risk > 0;
+  const riskTxt = risk === 0
+    ? `<span style="color:#8fc46b">SAFE — no break chance</span>`
+    : `<span style="color:${pct >= 36 ? "#d95763" : "#f0a63c"}">${pct}% chance to SHATTER the weapon</span>`;
+  const cards = w.cards?.length ?? 0;
+  return `<div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:8px">
+    <div style="color:#c9c1ad;font-size:11px">UPGRADE — ${WEAPONS[w.id].icon} ${WEAPONS[w.id].label} <b style="color:${GOLD}">+${lvl}</b></div>
+    <div style="color:#9a8f77;font-size:9px;margin:2px 0">
+      next: damage ×${upgradeDamageMult(lvl + 1).toFixed(2)} · durability ×${upgradeDurabilityMult(lvl + 1).toFixed(2)} · ${riskTxt}
+    </div>
+    ${armed ? `<div style="color:#d95763;font-size:10px;margin:3px 0">⚠ CONFIRM — a failure destroys the weapon${cards > 0 ? ` and its ${cards} socketed card(s)` : ""}.</div>` : ""}
+    ${btn("upgrade", armed ? `⚠️ CONFIRM +${lvl + 1}` : `⚒️ Upgrade to +${lvl + 1}`, cost)}
+  </div>`;
+}
 let barOffers: CardId[] = [];
 let alchemistTab: "buy" | "brew" = "buy"; // Alchemist counter: shelf vs brew book
 let deps: TavernDeps | null = null;
@@ -297,6 +336,7 @@ function weaponsBody(): string {
       ${btn("repair-weapon", "🛠️ Repair weapon", PRICE_REPAIR_WEAPON)}
       ${btn("addslot", "➕ Add card slot", PRICE_ADD_SLOT)}
     </div>
+    ${upgradePanel()}
     <div style="border-top:1px solid #4a3d28;padding-top:8px;color:#c9c1ad;font-size:11px">FORGE — pick 2 commons → 1 rare</div>
     <div style="display:flex;flex-wrap:wrap;margin:4px 0">${forgeList}</div>
     <div>${btn("forge", "⚒️ Forge", undefined, forgePick.length !== 2)}</div>
@@ -545,6 +585,10 @@ function render(): void {
 
 function handle(act: string, ds: { idx?: string; w?: string }): void {
   if (!deps) return;
+  // Any action OTHER than the upgrade button disarms a pending confirm. Without
+  // this, arming a gamble then wandering off to buy a potion leaves it primed,
+  // and the next stray click on Upgrade fires a roll the player never re-read.
+  if (act !== "upgrade") upgradeArmed = null;
   const raw = ds.idx ?? ""; // string-keyed acts (vendor / buypotion / buygear) use this
   const idx = ds.idx !== undefined && ds.idx !== "" ? parseInt(ds.idx, 10) : -1;
   const wIdx = ds.w !== undefined && ds.w !== "" ? parseInt(ds.w, 10) : -1;
@@ -736,6 +780,46 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     w.durability = WEAPONS[w.id].maxDurability;
     pendingFx.push("repair");
     state.hudDirty = true;
+    render();
+    return;
+  }
+
+  if (act === "upgrade") {
+    const w = state.weaponSlots[activeWeaponSlotIndex()];
+    if (!w) { flash("no weapon equipped"); return; }
+    const lvl = w.upgrade ?? 0;
+    const risk = breakChance(lvl);
+    // TWO-STEP once there is real risk. A hidden coin-flip that eats a legendary
+    // is a feel-bad; a stated 36% gamble the player deliberately took is a story.
+    if (risk > 0 && upgradeArmed !== lvl) {
+      upgradeArmed = lvl;
+      render();
+      return;
+    }
+    if (!pay(PRICE_UPGRADE_BASE + lvl * 25)) { flash("not enough gold"); return; }
+    upgradeArmed = null;
+    if (Math.random() < risk) {
+      // DESTROYED — the weapon and every card socketed in it are gone. This is
+      // the anti-hoard mechanic doing its job: power you cannot lose is power
+      // that ends the run.
+      const lost = w.cards?.length ?? 0;
+      state.weaponSlots[activeWeaponSlotIndex()] = null;
+      sfxBreak();
+      flash(lost > 0 ? `💥 THE BLADE SHATTERS — ${lost} card(s) lost` : "💥 THE BLADE SHATTERS");
+      render();
+      return;
+    }
+    w.upgrade = lvl + 1;
+    // Top the blade up to its new, higher ceiling so the upgrade is felt now.
+    const def = WEAPONS[w.id];
+    if (Number.isFinite(w.durability)) {
+      w.durability = Math.min(
+        Math.round(def.maxDurability * upgradeDurabilityMult(w.upgrade)),
+        w.durability + Math.round(def.maxDurability * UPGRADE_DURABILITY_STEP),
+      );
+    }
+    pendingFx.push("slot");
+    flash(`⚒️ +${w.upgrade} — damage ×${upgradeDamageMult(w.upgrade).toFixed(2)}`);
     render();
     return;
   }

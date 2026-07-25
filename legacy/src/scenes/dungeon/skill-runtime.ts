@@ -7,8 +7,7 @@
  * playerDamage and the movement code read it every hit/frame, and rebuilding
  * a Record fold there would be waste.
  */
-import { state, activeWeapon } from "./state";
-import { aggregateCards } from "./cards";
+import { state } from "./state";
 import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import { SKILLS, aggregateSkills, canLearn, grantXp, xpForFloorClear, XP_KILL, XP_KILL_BOSS, type SkillAggregate, type SkillId } from "./skills";
 import { legacyBaseModifiers } from "./legacy";
@@ -39,36 +38,17 @@ export function playerManaMax(): number {
 }
 
 /**
- * Abilities usable in the Q/E slots: the two defaults, the skill-tree unlocks,
- * and any SKILL CARD socketed into the weapon currently in HAND (cards.ts
- * grantsAbility).
+ * Abilities usable in the Q/E slots: the two defaults plus the skill tree's
+ * unlocks. THE ONE FUNNEL for "what can I cast".
  *
- * This stays THE one funnel for "what can I cast" — the card grants merge here
- * rather than being looked up again at the cast site, so there is exactly one
- * answer and the HUD, the menu and castAbility can never disagree.
- *
- * Held-weapon scope is the design: swapping weapons swaps your ability loadout,
- * which is what makes the second weapon slot a real decision. It is also why
- * `syncAbilitySlots` below has to run whenever the held weapon changes.
+ * Cards deliberately do NOT feed this. The skill tree upgrades the PLAYER;
+ * cards upgrade the GEAR. An earlier cut let a socketed card grant an ability,
+ * which blurred the only line that makes two progression systems worth having.
  */
 export function unlockedAbilities(): AbilityId[] {
   const out = [...state.unlockedAbilities];
   for (const a of skillAgg().unlocked) if (!out.includes(a)) out.push(a);
-  for (const a of heldWeaponCards().unlocked) if (!out.includes(a)) out.push(a);
   return out;
-}
-
-/** The card aggregate of the weapon in HAND (empty when bare-fisted). */
-function heldWeaponCards(): ReturnType<typeof aggregateCards> {
-  return aggregateCards(activeWeapon()?.cards);
-}
-
-/**
- * Ability MANA cost multiplier from socketed skill cards. Read at the cast site
- * so a weapon swap re-prices instantly.
- */
-export function abilityCostMult(): number {
-  return heldWeaponCards().abilityCostMult;
 }
 
 /**

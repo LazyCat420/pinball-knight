@@ -296,7 +296,7 @@ function bestiaryBody(): string {
       ? e.cards
           .map(
             (c) =>
-              `<span title="${c.description}" style="color:${c.hex};font-size:11px;white-space:nowrap">${c.icon} ${c.label}${c.grantsAbility ? " ⚡" : ""}</span>`,
+              `<span title="${c.description}" style="color:${c.hex};font-size:11px;white-space:nowrap">${c.icon} ${c.label}</span>`,
           )
           .join("")
       : `<span style="color:#6c5a3e;font-size:11px">no card of its own</span>`;
@@ -306,7 +306,7 @@ function bestiaryBody(): string {
         e.subTypes
           .map((s) =>
             s.seen
-              ? `<span style="font-size:11px;color:#c9c1ad;white-space:nowrap"><b style="color:#e8dcc0">${s.label}</b> <span style="color:#9a8f77">${s.hp} hp${s.notes.length ? " · " + s.notes.join(" · ") : ""}</span> <span style="color:#6c5a3e">×${s.kills}</span></span>`
+              ? `<span style="font-size:11px;color:#c9c1ad;white-space:nowrap"><b style="color:#e8dcc0">${s.label}</b> <span style="color:#9a8f77">${s.hp} hp${s.notes.length ? " · " + s.notes.join(" · ") : ""}</span> <span style="color:#6c5a3e">×${s.kills}</span>${s.cards.map((c) => ` <span title="${c.description}" style="color:${c.hex}">${c.icon} ${c.label}</span>`).join("")}</span>`
               : `<span style="font-size:11px;color:#6c5a3e">${s.label} — not yet met</span>`,
           )
           .join("") +
@@ -330,7 +330,7 @@ function bestiaryBody(): string {
     .join("");
 
   return `<div class="gmenu-h" style="color:${GOLD}">BESTIARY — ${p.seen}/${p.total} monsters met</div>
-    <div style="color:#9a8f77;font-size:10px;margin-bottom:2px">A monster's materials brew at the Tavern Alchemist; its card is its power, socketed into a weapon. ⚡ marks a card that grants an ability.</div>
+    <div style="color:#9a8f77;font-size:10px;margin-bottom:2px">A monster's materials brew at the Tavern Alchemist; its card is its power, socketed into a weapon or armour. Every zombie shape drops its own card.</div>
     ${body}`;
 }
 

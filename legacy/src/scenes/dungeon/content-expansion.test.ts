@@ -6,35 +6,39 @@ import { ENEMY_DROPS } from "./reagents";
  *  the new card fields + set bonuses, and roster-table completeness. */
 describe("expansion cards", () => {
   it("aggregates the new fields (material / crit / lifesteal / pierce)", () => {
-    expect(aggregateCards(["elementalist"]).materialMult).toBeCloseTo(1.4);
-    expect(aggregateCards(["keenmind"]).critChance).toBeCloseTo(0.2);
-    expect(aggregateCards(["keenmind"]).critMult).toBe(2); // default when unset
-    expect(aggregateCards(["assassin"]).critMult).toBe(2.5);
-    expect(aggregateCards(["leech"]).lifesteal).toBe(1);
-    expect(aggregateCards(["piercer"]).pierce).toBe(2);
-    expect(aggregateCards(["railgun"]).pierce).toBe(5);
+    expect(aggregateCards(["crystalshard"]).materialMult).toBeCloseTo(CARDS.crystalshard.modifier.materialMult!);
+    expect(aggregateCards(["goblintooth"]).critChance).toBeCloseTo(0.2);
+    expect(aggregateCards(["goblintooth"]).critMult).toBe(2); // default when unset
+    expect(aggregateCards(["flailerjaw"]).critMult).toBe(2.5);
+    expect(aggregateCards(["ectoplasmcore"]).lifesteal).toBe(1);
+    expect(aggregateCards(["venomgland"]).pierce).toBe(2);
+    expect(aggregateCards(["webspinnersilk"]).pierce).toBe(CARDS.webspinnersilk.modifier.pierce!);
   });
 
   it("crit chance sums and clamps at 1", () => {
-    expect(aggregateCards(["deathmark", "bloodpact"]).critChance).toBe(0.9); // 0.4 + 0.5
+    expect(aggregateCards(["flailerjaw", "bloodpact"]).critChance).toBeCloseTo(
+      CARDS.flailerjaw.modifier.critChance! + CARDS.bloodpact.modifier.critChance!,
+    );
     // three big crit cards can't exceed certainty
-    expect(aggregateCards(["deathmark", "bloodpact", "assassin"]).critChance).toBe(1);
+    expect(aggregateCards(["flailerjaw", "bloodpact", "flailerjaw"]).critChance).toBe(1);
   });
 
   it("STORM set (2+ bolt cards) resonates for +25% damage", () => {
-    const solo = aggregateCards(["thunderlord"]).damageMult; // 1.4
-    const set = aggregateCards(["thunderlord", "stormchain"]).damageMult; // 1.4 × 1.25
+    const solo = aggregateCards(["tempestcrown"]).damageMult; // 1.4
+    const set = aggregateCards(["tempestcrown", "wispspark"]).damageMult; // 1.4 × 1.25
     expect(set).toBeCloseTo(solo * 1.25);
   });
 
   it("ASSASSIN set (2+ crit cards) deepens crit multiplier by +0.5", () => {
     // assassin critMult 2.5, keenmind default 2 → max 2.5, +0.5 set bonus = 3.0
-    expect(aggregateCards(["assassin", "keenmind"]).critMult).toBeCloseTo(3.0);
+    expect(aggregateCards(["flailerjaw", "goblintooth"]).critMult).toBeCloseTo(3.0);
   });
 
   it("ATTUNED set (2+ marble cards) amplifies material synergy ×1.3", () => {
-    const two = aggregateCards(["elementalist", "overcharged"]).materialMult;
-    expect(two).toBeCloseTo(1.4 * 1.85 * 1.3);
+    const a = CARDS.crystalshard.modifier.materialMult!;
+    const b = CARDS.golemcore.modifier.materialMult!;
+    const two = aggregateCards(["crystalshard", "golemcore"]).materialMult;
+    expect(two).toBeCloseTo(a * b * 1.3);
   });
 
   it("cursed cards carry a real drawback (durability < 1)", () => {

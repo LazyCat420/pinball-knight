@@ -75,14 +75,16 @@ export interface BestiaryCard {
   /** Rarity accent, so the row can be tinted without re-deriving it. */
   hex: string;
   description: string;
-  /** True for a SKILL CARD — it grants an active ability, not just stats. */
-  grantsAbility: boolean;
+  /** Which zombie SUB-TYPE this card belongs to, when it is sub-typed. */
+  subType?: ZombieType;
 }
 
 /** A zombie sub-type row (the `zombie` entry only). */
 export interface BestiarySubType {
   id: ZombieType;
   label: string;
+  /** The card this sub-type is the essence of (empty if it has none yet). */
+  cards: BestiaryCard[];
   /** Resolved HP off ZOMBIE_HP, so the row shows the real number. */
   hp: number;
   /** Human-readable stat deltas vs. the shambler baseline, e.g. "1.75× speed". */
@@ -108,8 +110,11 @@ export interface BestiaryEntry {
 /** Cards sourced to a kind, ordered common → mythic so the row reads as a ladder. */
 const RARITY_ORDER: CardRarity[] = ["common", "rare", "epic", "legendary", "mythic"];
 
-function cardsFor(kind: EnemyKind): BestiaryCard[] {
-  return CARD_IDS.filter((id) => CARDS[id].source === kind)
+function cardsFor(kind: EnemyKind, subType?: ZombieType): BestiaryCard[] {
+  // A sub-typed card belongs on its SUB-TYPE row, not the family row — that is
+  // the whole point of "farm Hulks for the Hulk card". Asking for the family
+  // (no subType) returns only the un-sub-typed cards.
+  return CARD_IDS.filter((id) => CARDS[id].source === kind && CARDS[id].subType === subType)
     .sort((a, b) => RARITY_ORDER.indexOf(CARDS[a].rarity) - RARITY_ORDER.indexOf(CARDS[b].rarity))
     .map((id) => {
       const c = CARDS[id];
@@ -120,7 +125,7 @@ function cardsFor(kind: EnemyKind): BestiaryCard[] {
         rarity: c.rarity,
         hex: RARITY_HEX[c.rarity],
         description: c.description,
-        grantsAbility: !!c.modifier.grantsAbility,
+        subType: c.subType,
       };
     });
 }
@@ -167,6 +172,7 @@ function subTypesFor(kind: EnemyKind, kills: Record<string, number>): BestiarySu
     return {
       id: t,
       label: ZOMBIE_TYPES[t].label,
+      cards: cardsFor("zombie", t),
       hp: typeHp(ZOMBIE_HP, t),
       notes: subTypeNotes(t),
       kills: n,

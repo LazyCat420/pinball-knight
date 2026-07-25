@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CARDS, CARD_IDS, aggregateCards, cardFitsKind, cardsOfRarity, cardsOfSource, rollCardDrop, socketCard, COMMON_DROP_CHANCE } from "./cards";
-import { freshWeapon } from "./items";
+import { CARDS, CARD_IDS, aggregateCards, cardFitsKind, cardsOfRarity, cardsOfSource, rollCardDrop, COMMON_DROP_CHANCE } from "./cards";
 
 describe("cards", () => {
   it("every card has a valid rarity, kind and at least one effect", () => {
@@ -9,48 +8,53 @@ describe("cards", () => {
       expect(["common", "rare", "epic", "legendary", "mythic"]).toContain(c.rarity);
       expect(["melee", "ranged", "both"]).toContain(c.weaponKinds);
       const m = c.modifier;
-      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult || m.bolt || m.materialMult || m.critChance || m.lifesteal || m.pierce || m.grantsAbility || m.abilityCostMult;
+      const hasEffect = m.damageFlat || m.damageMult || m.cooldownMult || m.durabilityMult || m.onHit || m.pinballMult || m.bolt || m.materialMult || m.critChance || m.lifesteal || m.pierce;
       expect(hasEffect, `${id} does nothing`).toBeTruthy();
     }
   });
 
   it("aggregates flat additively and percent/pinball/cooldown multiplicatively", () => {
-    // bloodedge (+1 flat) + keenedge (×1.3) + sharpened (×0.85 cd)
-    const agg = aggregateCards(["bloodedge", "keenedge", "sharpened"]);
-    expect(agg.damageFlat).toBe(1);
-    expect(agg.damageMult).toBeCloseTo(1.3);
-    expect(agg.cooldownMult).toBeCloseTo(0.85);
-    // a 2-damage weapon: 2 × 1.3 + 1 = 3.6
-    expect(2 * agg.damageMult + agg.damageFlat).toBeCloseTo(3.6);
+    // Derived from the table, not hardcoded — a retune must not break the MATH
+    // test, only the balance tests that deliberately pin numbers.
+    const flat = CARDS.lurcherspine.modifier.damageFlat!;
+    const mult = CARDS.spidersilk.modifier.damageMult!;
+    const cd = CARDS.midgetclaw.modifier.cooldownMult!;
+    const agg = aggregateCards(["lurcherspine", "spidersilk", "midgetclaw"]);
+    expect(agg.damageFlat).toBe(flat);
+    expect(agg.damageMult).toBeCloseTo(mult);
+    expect(agg.cooldownMult).toBeCloseTo(cd);
+    // flat is added AFTER the percent multiplier
+    expect(2 * agg.damageMult + agg.damageFlat).toBeCloseTo(2 * mult + flat);
   });
 
-  it("stacks the same rarity's multipliers (two keen edges = ×1.69)", () => {
-    const agg = aggregateCards(["keenedge", "keenedge"]);
-    expect(agg.damageMult).toBeCloseTo(1.69);
+  it("stacks the same card's multiplier multiplicatively", () => {
+    const one = CARDS.spidersilk.modifier.damageMult!;
+    const agg = aggregateCards(["spidersilk", "spidersilk"]);
+    expect(agg.damageMult).toBeCloseTo(one * one);
   });
 
   it("collects on-hit + pinball flags", () => {
-    const agg = aggregateCards(["frostchip", "embercore", "pinballwizard"]);
+    const agg = aggregateCards(["crawlergrip", "necrosigil", "timeripper"]);
     expect(agg.chill).toBe(true);
     expect(agg.burn).toBe(true);
     expect(agg.pinballMult).toBeGreaterThan(1);
   });
 
   it("collects the thunderbolt flag from storm cards", () => {
-    expect(aggregateCards(["stormchain"]).bolt).toBe(true);
-    expect(aggregateCards(["thunderlord"]).bolt).toBe(true);
-    expect(aggregateCards(["keenedge"]).bolt).toBe(false);
+    expect(aggregateCards(["wispspark"]).bolt).toBe(true);
+    expect(aggregateCards(["tempestcrown"]).bolt).toBe(true);
+    expect(aggregateCards(["spidersilk"]).bolt).toBe(false);
   });
 
   it("empty / undefined sockets are a no-op", () => {
     const agg = aggregateCards(undefined);
-    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false, materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0, unlocked: [], abilityCostMult: 1 });
+    expect(agg).toEqual({ damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false, materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0 });
   });
 
   it("respects weapon-kind fit", () => {
-    expect(cardFitsKind("bloodedge", "ranged")).toBe(true); // both
-    expect(cardFitsKind("momentumstrike", "ranged")).toBe(false); // melee-only
-    expect(cardFitsKind("momentumstrike", "melee")).toBe(true);
+    expect(cardFitsKind("lurcherspine", "ranged")).toBe(true); // both
+    expect(cardFitsKind("brutecleaver", "ranged")).toBe(false); // melee-only
+    expect(cardFitsKind("brutecleaver", "melee")).toBe(true);
   });
 
   it("drop rates: a common floor mob drops nothing most of the time, sometimes a common", () => {
@@ -121,9 +125,10 @@ describe("monster affinity (CardDef.source)", () => {
     let own = 0;
     let foreign = 0;
     for (let k = 0; k < 20000; k++) {
-      const id = rollCardDrop({ boss: false, floor: 1, kind: "ghost" }, rand);
+      // spider has a COMMON card; ghost's is epic and unreachable off a mob.
+      const id = rollCardDrop({ boss: false, floor: 1, kind: "spider" }, rand);
       if (!id) continue;
-      if (CARDS[id].source === "ghost") own++;
+      if (CARDS[id].source === "spider") own++;
       else foreign++;
     }
     expect(own).toBeGreaterThan(0);
@@ -195,60 +200,97 @@ describe("monster affinity (CardDef.source)", () => {
   });
 });
 
-describe("skill cards (CardModifier.grantsAbility)", () => {
-  const SKILL_CARDS = CARD_IDS.filter((id) => CARDS[id].modifier.grantsAbility);
 
-  it("ships one skill card per LOCKABLE ability, each sourced from a monster", () => {
-    // The ceiling is 3 on purpose: magnetaura / timecrawl / bladestorm are the
-    // only abilities not already in state.unlockedAbilities, so those are the only
-    // ones a card can meaningfully grant. The rest of the monster roster carries
-    // ability-COST discounts instead.
-    expect(SKILL_CARDS.length).toBe(3);
-    for (const id of SKILL_CARDS) expect(CARDS[id].source, `${id} needs a source`).toBeTruthy();
-    expect(SKILL_CARDS.map((id) => CARDS[id].modifier.grantsAbility).sort()).toEqual([
-      "bladestorm",
-      "magnetaura",
-      "timecrawl",
-    ]);
+/**
+ * THE 25-CARD TABLE — the shape the rework committed to, and the rules that keep
+ * it honest as it grows.
+ */
+describe("the card table", () => {
+  const byRarity = (r: string): string[] => CARD_IDS.filter((id) => CARDS[id].rarity === r);
+
+  it("is exactly 5 cards per rarity, 25 total", () => {
+    for (const r of ["common", "rare", "epic", "legendary", "mythic"] as const) {
+      expect(byRarity(r).length, `${r} should have 5`).toBe(5);
+    }
+    expect(CARD_IDS).toHaveLength(25);
   });
 
-  it("collects granted abilities into the aggregate", () => {
-    const agg = aggregateCards(["magnetheart", "reaperclock"]);
-    expect(agg.unlocked).toContain("magnetaura");
-    expect(agg.unlocked).toContain("timecrawl");
+  it("sources every non-mythic to a monster, and no mythic to any", () => {
+    for (const id of CARD_IDS) {
+      const c = CARDS[id];
+      if (c.rarity === "mythic") expect(c.source, `${id} is a mythic with a source`).toBeUndefined();
+      else expect(c.source, `${id} has no monster`).toBeTruthy();
+    }
   });
 
-  it("dedupes a doubled grant — two copies is still one ability", () => {
-    const agg = aggregateCards(["magnetheart", "magnetheart"]);
-    expect(agg.unlocked).toEqual(["magnetaura"]);
+  it("gives all EIGHT zombie sub-types a card of their own", () => {
+    const subs = CARD_IDS.map((id) => CARDS[id].subType).filter(Boolean);
+    expect(new Set(subs).size).toBe(8);
+    // …and each sub-type gets exactly one, so no sub-type is over-represented.
+    expect(subs.length).toBe(8);
   });
 
-  it("grants nothing from a socket-free weapon", () => {
-    expect(aggregateCards([]).unlocked).toEqual([]);
-    expect(aggregateCards(undefined).unlocked).toEqual([]);
+  it("only sub-types ZOMBIE cards — the other kinds have no sub-types", () => {
+    for (const id of CARD_IDS) {
+      if (CARDS[id].subType) expect(CARDS[id].source, `${id}`).toBe("zombie");
+    }
   });
 
-  it("compounds ability cost discounts multiplicatively", () => {
-    expect(aggregateCards(["witchfocus"]).abilityCostMult).toBeCloseTo(0.75);
-    expect(aggregateCards(["witchfocus", "reaperclock"]).abilityCostMult).toBeCloseTo(0.6);
-    expect(aggregateCards(["wispspark"]).abilityCostMult).toBeCloseTo(0.65);
-    expect(aggregateCards(["bloodedge"]).abilityCostMult).toBe(1);
+  /**
+   * Every mechanic needs TWO+ sources or its 2-card set bonus in aggregateCards
+   * is unreachable, and the mechanic reads as a one-card orphan the player can
+   * never build around.
+   */
+  it("gives every mechanic at least two cards", () => {
+    const count = (pred: (m: (typeof CARDS)[string]["modifier"]) => unknown): number =>
+      CARD_IDS.filter((id) => pred(CARDS[id].modifier)).length;
+    expect(count((m) => m.bolt), ).toBeGreaterThanOrEqual(2);
+    expect(count((m) => m.materialMult)).toBeGreaterThanOrEqual(2);
+    expect(count((m) => m.critChance)).toBeGreaterThanOrEqual(2);
+    expect(count((m) => m.pierce)).toBeGreaterThanOrEqual(2);
+    expect(count((m) => m.lifesteal)).toBeGreaterThanOrEqual(2);
+    expect(count((m) => m.pinballMult)).toBeGreaterThanOrEqual(2);
   });
 
-  it("un-socketing removes the grant", () => {
-    const w = freshWeapon("mace"); // 2 slots
-    expect(socketCard(w, "magnetheart")).toBe(true);
-    expect(aggregateCards(w.cards).unlocked).toContain("magnetaura");
-    w.cards = w.cards!.filter((c) => c !== "magnetheart");
-    expect(aggregateCards(w.cards).unlocked).toEqual([]);
+  it("grants no ABILITIES — that is the skill tree's job", () => {
+    // The two axes must not overlap: the tree upgrades the PLAYER, cards upgrade
+    // the GEAR. A card handing out a Q/E ability blurs the only line that makes
+    // having two progression systems worth it.
+    for (const id of CARD_IDS) {
+      expect("grantsAbility" in CARDS[id].modifier, `${id} grants an ability`).toBe(false);
+    }
+  });
+});
+
+describe("sub-type affinity", () => {
+  it("drops the HULK card off a hulk, not just any zombie card", () => {
+    const rand = lcg(21);
+    let hulkCard = 0;
+    let otherZombie = 0;
+    for (let k = 0; k < 40000; k++) {
+      const id = rollCardDrop({ boss: true, floor: 6, kind: "zombie", subType: "hulk" }, rand);
+      if (!id) continue;
+      if (CARDS[id].subType === "hulk") hulkCard++;
+      else if (CARDS[id].source === "zombie") otherZombie++;
+    }
+    expect(hulkCard).toBeGreaterThan(0);
+    // A hulk must never hand you a different sub-type's card — "farm Hulks for
+    // the Hulk card" has to mean something.
+    expect(otherZombie).toBe(0);
   });
 
-  it("keeps a melee-only skill card off a ranged weapon", () => {
-    // Blade Storm is a melee fantasy; socketing it into a bow would hand a
-    // ranged build a melee ability for free.
-    expect(cardFitsKind("brutewhirl", "ranged")).toBe(false);
-    expect(cardFitsKind("brutewhirl", "melee")).toBe(true);
-    const bow = freshWeapon("bow");
-    expect(socketCard(bow, "brutewhirl")).toBe(false);
+  it("never gives a MIDGET the hulk's card", () => {
+    const rand = lcg(5);
+    for (let k = 0; k < 20000; k++) {
+      const id = rollCardDrop({ boss: false, floor: 3, kind: "zombie", subType: "midget" }, rand);
+      if (id) expect(CARDS[id].subType === "hulk").toBe(false);
+    }
+  });
+
+  it("still drops family cards for a kind with no sub-types", () => {
+    const rand = lcg(9);
+    let n = 0;
+    for (let k = 0; k < 20000; k++) if (rollCardDrop({ boss: false, floor: 2, kind: "spider" }, rand)) n++;
+    expect(n).toBeGreaterThan(0);
   });
 });

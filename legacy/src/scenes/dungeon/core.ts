@@ -2626,11 +2626,12 @@ function dropWeapon(w: WeaponState, x: number, z: number): void {
  * thing up and not holding it would feel like a misclick.
  */
 /** A kill rolled the dice — maybe spawn a modifier card on the floor. */
-function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKind = "zombie", dropMult = 1): void {
+function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKind = "zombie", dropMult = 1, subType?: ZombieType): void {
   if (!state.scene) return;
-  // `kind` drives the AFFINITY pick (cards.ts): a card off a Ghost should be a
-  // Ghost's card. `dropMult` is the zombie sub-type's loot weight.
-  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, dropMult });
+  // `kind` + `subType` drive the AFFINITY pick (cards.ts): a card off a Ghost
+  // should be a Ghost's card, and one off a HULK should be the Hulk card rather
+  // than any old zombie chip. `dropMult` is the sub-type's loot weight.
+  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, subType, dropMult });
   if (!id) return;
   if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
   if (CARDS[id].rarity === "mythic") state.mythicDropped = true;

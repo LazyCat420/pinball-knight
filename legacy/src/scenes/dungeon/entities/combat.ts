@@ -4,7 +4,7 @@
  * zombie.ts and projectiles.ts.
  */
 import { state, activeWeapon, type Zombie, type EnemyKind } from "../state";
-import { typeDropMult, ZOMBIE_TYPES } from "../zombie-types";
+import { typeDropMult, ZOMBIE_TYPES, type ZombieType } from "../zombie-types";
 import { awardKillXp, skillAgg, playerMaxHp, playerManaMax } from "../skill-runtime";
 import {
   KNOCKBACK_ZOMBIE,
@@ -58,7 +58,7 @@ import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
 import { addGold } from "../../../utils/gold-wallet";
-import { WEAPONS, GEAR, degradeWeapon, absorbDamage, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
+import { WEAPONS, GEAR, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";
 
 /**
@@ -77,6 +77,10 @@ export function playerDamage(base: number): number {
   let dmg = base;
   _lastCrit = false;
   const w = state.weaponSlots[state.activeSlot];
+  // WEAPONSMITH UPGRADE (+1, +2, …). Applied before the cards so a card's
+  // percentage multiplies the upgraded base, which is what makes stacking an
+  // upgrade AND a good card feel like a real build rather than two flat adds.
+  if (w?.upgrade) dmg *= upgradeDamageMult(w.upgrade);
   if (w && w.cards && w.cards.length) {
     const agg = aggregateCards(w.cards);
     dmg = dmg * agg.damageMult + agg.damageFlat;
@@ -622,8 +626,8 @@ export function setBloaterBurstHandler(fn: (x: number, z: number) => void): void
  * by a Ghost should be a Ghost's card. `dropMult` carries the zombie SUB-TYPE's
  * loot weight so a 9-HP hulk does not pay a 2-HP midget's wage.
  */
-let onCardRoll: ((x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number) => void) | null = null;
-export function setCardRollHandler(fn: (x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number) => void): void {
+let onCardRoll: ((x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number, subType?: ZombieType) => void) | null = null;
+export function setCardRollHandler(fn: (x: number, z: number, boss: boolean, kind: EnemyKind, dropMult: number, subType?: ZombieType) => void): void {
   onCardRoll = fn;
 }
 
@@ -718,7 +722,7 @@ function killZombie(z: Zombie): void {
   tallyKill(z);
   // A zombie SUB-TYPE weights its own loot: a hulk is worth more than a midget.
   const dropMult = z.ztype ? typeDropMult(z.ztype) : 1;
-  onCardRoll?.(z.x, z.z, !!z.boss, z.kind, dropMult); // roll a modifier-card drop
+  onCardRoll?.(z.x, z.z, !!z.boss, z.kind, dropMult, z.ztype); // roll a modifier-card drop
   onReagentDrop?.(z.x, z.z, z.kind, !!z.boss, dropMult); // roll themed alchemy reagents
   // Every kill DROPS coins on the floor (magnet-collected) rather than silently
   // crediting the purse — a visible payout. Falls back to an instant credit if

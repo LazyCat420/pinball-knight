@@ -76,25 +76,74 @@ export interface WeaponDef {
    *  This is the bow's niche: the gun out-ranges and out-paces it, but only the
    *  bow threads a whole corridor queue with one arrow. */
   pierce?: number;
-  /** How many modifier CARDS this weapon can socket (see cards.ts). The Tavern
-   * blacksmith can raise it up to WEAPON_MAX_CARD_SLOTS. */
-  cardSlots: number;
 }
 
-/** Hard cap on socketed cards per weapon (blacksmith upgrades stop here). */
-export const WEAPON_MAX_CARD_SLOTS = 3;
+/**
+ * ITEM RARITY — what decides how many CARDS a piece of kit can socket.
+ *
+ * Card slots used to be hand-authored per weapon (sword 1, mace 2, flamer 3) and
+ * armour had none at all, so the only way to fit more cards was to buy slots.
+ * Rarity replaces that: the item you FOUND decides its ceiling, which is what
+ * makes a legendary drop exciting rather than just a bigger number.
+ */
+export type ItemRarity = "common" | "rare" | "epic" | "legendary";
+
+export const ITEM_RARITIES: ItemRarity[] = ["common", "rare", "epic", "legendary"];
+
+/** Slots by rarity. 1-4, and 4 is the hard cap for every item in the game. */
+export const SLOTS_BY_RARITY: Record<ItemRarity, number> = {
+  common: 1,
+  rare: 2,
+  epic: 3,
+  legendary: 4,
+};
+
+/** Hard cap on socketed cards per item (slot purchases stop here). */
+export const WEAPON_MAX_CARD_SLOTS = 4;
+
+/** Rarity accents, shared by the item name, its ground glow and the card face. */
+export const ITEM_RARITY_HEX: Record<ItemRarity, string> = {
+  common: "#9aa4b4",
+  rare: "#4f8fdb",
+  epic: "#a46fe8",
+  legendary: "#f0a63c",
+};
+
+/**
+ * Roll the rarity of a dropped item. Deeper floors bias higher, but a common is
+ * always possible and a legendary is never guaranteed — a floor that hands out
+ * legendaries stops the hunt, which is the thing this whole system exists to
+ * avoid. `rand` is injectable so the roll is testable.
+ */
+export function rollItemRarity(floor: number, rand: () => number = Math.random): ItemRarity {
+  // Weights shift with depth: commons fade, legendaries creep in from floor ~4.
+  const d = Math.max(0, floor - 1);
+  const w: Record<ItemRarity, number> = {
+    common: Math.max(10, 60 - d * 6),
+    rare: 28 + Math.min(12, d * 2),
+    epic: Math.min(34, 10 + d * 3),
+    legendary: Math.min(18, Math.max(0, d - 2) * 2.5),
+  };
+  const total = ITEM_RARITIES.reduce((n, r) => n + w[r], 0);
+  let x = rand() * total;
+  for (const r of ITEM_RARITIES) {
+    x -= w[r];
+    if (x < 0) return r;
+  }
+  return "common";
+}
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
-  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity, slashColor: 0xc8ccd4, cardSlots: 0 },
-  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5, cardSlots: 1 },
-  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e, cardSlots: 1 },
-  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a, cardSlots: 2 },
+  fists: { id: "fists", label: "Fists", icon: "✊", kind: "melee", damage: 1, range: 0.85, arcCos: 0.5, cooldown: 0.3, maxDurability: Infinity, slashColor: 0xc8ccd4 },
+  sword: { id: "sword", label: "Sword", icon: "🗡️", kind: "melee", damage: 2, range: 1.35, arcCos: 0.5, cooldown: 0.38, maxDurability: 30, slashColor: 0xeef1f5 },
+  stick: { id: "stick", label: "Stick", icon: "🪵", kind: "melee", damage: 1, range: 1.2, arcCos: 0.5, cooldown: 0.24, maxDurability: 15, slashColor: 0x6b4a2e },
+  mace: { id: "mace", label: "Mace", icon: "🔨", kind: "melee", damage: 3, range: 1.25, arcCos: 0.55, cooldown: 0.62, maxDurability: 45, slashColor: 0xffd98a },
   // CHAIR — the CROWD weapon. arcCos 0 is a full 360 sweep: alone among melee it
   // hits everything around you, and that is the whole point. It was 2.9 DPS on a
   // 10-swing life, i.e. worse than fists with no visible reason to pick it up.
   // Now it reaches furthest, shoves hardest, and lasts long enough to matter.
-  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.8, arcCos: 0.0, cooldown: 0.55, maxDurability: 22, slashColor: 0x6b4a2e, cardSlots: 1, knockbackMult: 2.2 },
-  gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04, cardSlots: 2 },
+  chair: { id: "chair", label: "Chair", icon: "🪑", kind: "melee", damage: 2, range: 1.8, arcCos: 0.0, cooldown: 0.55, maxDurability: 22, slashColor: 0x6b4a2e, knockbackMult: 2.2 },
+  gun: { id: "gun", label: "Gun", icon: "🔫", kind: "ranged", damage: 2, range: 10, arcCos: 1, cooldown: 0.32, maxDurability: 30, projectile: "bullet", projectileSpeed: 16, spread: 0.04 },
   // BOW — the LANE weapon. The gun beat it on range, rate and slots, leaving it
   // with no reason to exist. Arrows now PIERCE: one shot down a corridor spits
   // a whole queue of foes, which is a thing no other weapon can do.
@@ -102,20 +151,20 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   // GREATSWORD — the committed sweep. Longest reach and a wide arc, but heft 1.7
   // means a long tell you can be punished during and a recovery you are rooted
   // through if you whiff. You pick your moment with this.
-  greatsword: { id: "greatsword", label: "Greatsword", icon: "🗡", kind: "melee", damage: 5, range: 2.0, arcCos: 0.15, cooldown: 0.9, maxDurability: 40, slashColor: 0xeef1f5, cardSlots: 2, heft: 1.7, knockbackMult: 1.5 },
+  greatsword: { id: "greatsword", label: "Greatsword", icon: "🗡", kind: "melee", damage: 5, range: 2.0, arcCos: 0.15, cooldown: 0.9, maxDurability: 40, slashColor: 0xeef1f5, heft: 1.7, knockbackMult: 1.5 },
   // WARHAMMER — siege. The narrowest melee arc in the game (it hits ONE thing)
   // paired with the biggest damage and shove: it doesn't clear crowds, it
   // deletes whatever it lands on. Heaviest heft, so missing genuinely costs.
-  warhammer: { id: "warhammer", label: "Warhammer", icon: "🔨", kind: "melee", damage: 7, range: 1.4, arcCos: 0.72, cooldown: 1.15, maxDurability: 50, slashColor: 0xffd98a, cardSlots: 2, heft: 2.1, knockbackMult: 3.4 },
+  warhammer: { id: "warhammer", label: "Warhammer", icon: "🔨", kind: "melee", damage: 7, range: 1.4, arcCos: 0.72, cooldown: 1.15, maxDurability: 50, slashColor: 0xffd98a, heft: 2.1, knockbackMult: 3.4 },
   // WRECKING BALL — the pinball weapon. A full 360 sweep like the chair but
   // lethal, and it is the only weapon whose damage scales with the momentum you
   // are carrying (see MOMENTUM_WEAPON_* / playerDamage). Swing it while rolling.
-  wreckingball: { id: "wreckingball", label: "Wrecking Ball", icon: "⛓️", kind: "melee", damage: 4, range: 1.9, arcCos: 0.0, cooldown: 1.0, maxDurability: 36, slashColor: 0xc8ccd4, cardSlots: 2, heft: 1.85, knockbackMult: 2.6, momentumScaling: true },
-  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 22, projectile: "arrow", projectileSpeed: 11, spread: 0, cardSlots: 2, pierce: 2 },
+  wreckingball: { id: "wreckingball", label: "Wrecking Ball", icon: "⛓️", kind: "melee", damage: 4, range: 1.9, arcCos: 0.0, cooldown: 1.0, maxDurability: 36, slashColor: 0xc8ccd4, heft: 1.85, knockbackMult: 2.6, momentumScaling: true },
+  bow: { id: "bow", label: "Bow", icon: "🏹", kind: "ranged", damage: 3, range: 8.5, arcCos: 1, cooldown: 0.72, maxDurability: 22, projectile: "arrow", projectileSpeed: 11, spread: 0, pierce: 2 },
   // FLAMER — the burst tool. 23.5 DPS is 4x the next-best, so it pays for that
   // with the shortest life in the game: ~3.5s of continuous fire (was 9.4s) and
   // 2 slots rather than the most. You empty it into a horde, you don't carry it.
-  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 42, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2, cardSlots: 2 },
+  flamethrower: { id: "flamethrower", label: "Flamer", icon: "🔥", kind: "ranged", damage: 1, range: 3.4, arcCos: 1, cooldown: 0.085, maxDurability: 42, projectile: "flame", projectileSpeed: 4.6, spread: 0.3, pellets: 2 },
 };
 
 /** The weapons that spawn as maze pickups (you start with the sword). */
@@ -124,20 +173,70 @@ export const PICKUP_WEAPONS: WeaponId[] = ["stick", "mace", "chair", "greatsword
 export interface WeaponState {
   id: WeaponId;
   durability: number;
-  /** Socketed modifier cards (CardId[], max = WEAPONS[id].cardSlots + any
-   * blacksmith slot upgrades tracked in bonusSlots). See cards.ts. */
+  /** Socketed modifier cards (CardId[], max = SLOTS_BY_RARITY[rarity] + bonusSlots). */
   cards?: string[];
   /** Extra card slots bought at the Tavern blacksmith (0 by default). */
   bonusSlots?: number;
+  /** What this piece rolled when it dropped. Absent = common (old saves). */
+  rarity?: ItemRarity;
+  /** Weaponsmith UPGRADE level. Each level is stronger AND riskier — see
+   *  `breakChance`. Absent = 0, never upgraded. */
+  upgrade?: number;
 }
 
-export function freshWeapon(id: WeaponId): WeaponState {
-  return { id, durability: WEAPONS[id].maxDurability, cards: [], bonusSlots: 0 };
+export function freshWeapon(id: WeaponId, rarity: ItemRarity = "common"): WeaponState {
+  return { id, durability: WEAPONS[id].maxDurability, cards: [], bonusSlots: 0, rarity, upgrade: 0 };
 }
 
-/** Total card slots a weapon has (base + blacksmith upgrades, capped). */
+/** Total card slots an item has: its rarity's allowance plus bought slots, capped. */
+export function slotsForRarity(rarity: ItemRarity | undefined, bonus = 0): number {
+  return Math.min(WEAPON_MAX_CARD_SLOTS, SLOTS_BY_RARITY[rarity ?? "common"] + bonus);
+}
+
+/** Total card slots a weapon has. */
 export function weaponSlotCount(w: WeaponState): number {
-  return Math.min(WEAPON_MAX_CARD_SLOTS, WEAPONS[w.id].cardSlots + (w.bonusSlots ?? 0));
+  return slotsForRarity(w.rarity, w.bonusSlots ?? 0);
+}
+
+// ── UPGRADE RISK ────────────────────────────────────────────────
+//
+// The anti-hoard mechanic. Upgrading raises a weapon's damage, but past a safe
+// floor each attempt can DESTROY it. The point is that nothing is permanent:
+// if the best kit could be kept forever, players would hoard one god-item and
+// the run would stop being a run. This is also what keeps REPAIR worth paying
+// for — a weapon you might lose is a weapon worth maintaining.
+
+/** Upgrades below this level are FREE OF RISK, so the system teaches before it
+ *  bites. You learn the button is good, then you learn it has a price. */
+export const UPGRADE_SAFE_LEVEL = 3;
+/** Break chance added per level past the safe floor. */
+export const UPGRADE_RISK_STEP = 0.12;
+/** No upgrade is ever a coin-flip worse than this. */
+export const UPGRADE_RISK_CAP = 0.6;
+/** Damage gained per upgrade level (multiplicative on the weapon's base). */
+export const UPGRADE_DAMAGE_STEP = 0.12;
+/** Max-durability gained per upgrade level. */
+export const UPGRADE_DURABILITY_STEP = 0.08;
+
+/**
+ * Chance that upgrading FROM `level` destroys the item. Pure and tested: the
+ * number shown in the confirm dialog must be the number actually rolled, or the
+ * gamble is a lie.
+ */
+export function breakChance(level: number): number {
+  const n = Math.max(0, Math.floor(level));
+  if (n < UPGRADE_SAFE_LEVEL) return 0;
+  return Math.min(UPGRADE_RISK_CAP, (n - UPGRADE_SAFE_LEVEL + 1) * UPGRADE_RISK_STEP);
+}
+
+/** Damage multiplier from a weapon's upgrade level. */
+export function upgradeDamageMult(level = 0): number {
+  return 1 + Math.max(0, level) * UPGRADE_DAMAGE_STEP;
+}
+
+/** Max-durability multiplier from a weapon's upgrade level. */
+export function upgradeDurabilityMult(level = 0): number {
+  return 1 + Math.max(0, level) * UPGRADE_DURABILITY_STEP;
 }
 
 /**
@@ -285,6 +384,36 @@ export const ELIXIR_MAXHP_BONUS = 2;
 
 /** Remaining durability per equipped slot; absent key = nothing equipped. */
 export type GearState = Partial<Record<GearSlot, number>>;
+
+/**
+ * A gear piece's SOCKETS, kept in a parallel map rather than folded into
+ * `GearState`.
+ *
+ * `GearState` is a bare `slot -> durability` number that eleven modules read
+ * directly (`state.gear[slot] ?? 0`), and the absorb path deletes a key to mean
+ * "destroyed". Turning those numbers into objects would touch every one of those
+ * call sites for no gain, and quietly break any that still expected a number.
+ * A parallel map keeps the hot, well-tested durability path untouched.
+ *
+ * Absent key = an unsocketed (or unequipped) piece.
+ */
+export interface GearPiece {
+  rarity: ItemRarity;
+  cards: string[];
+  /** Weaponsmith upgrade level — same risk curve as weapons (`breakChance`). */
+  upgrade?: number;
+}
+
+export type GearCards = Partial<Record<GearSlot, GearPiece>>;
+
+/** Slots a gear piece has, off its rolled rarity. */
+export function gearSlotCount(p: GearPiece | undefined): number {
+  return p ? slotsForRarity(p.rarity, 0) : 0;
+}
+
+export function freshGearPiece(rarity: ItemRarity = "common"): GearPiece {
+  return { rarity, cards: [], upgrade: 0 };
+}
 
 /**
  * Route incoming damage through the armor, helmet first. Each absorbed point

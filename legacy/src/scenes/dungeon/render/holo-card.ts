@@ -85,38 +85,32 @@ function cardPower(c: CardDef): number {
 }
 
 /**
- * The card's "moves": the modifier broken into named attacks with power
- * numbers, so a chip reads like a creature's attack list instead of a stat
- * line. Each move is one thing the card actually does.
+ * The card's effects as PLAIN STAT LINES.
+ *
+ * These used to be invented attack names — any card with `cooldownMult < 1`
+ * became "Quickdraw", any with `durabilityMult > 1` became "Tempered Steel".
+ * Two problems: the names were the loudest thing on a card whose actual identity
+ * is the MONSTER it came from, and they read as skills, which is exactly the
+ * thing cards are not (skills are the tree's job — see cards.ts). The stat IS
+ * the text now, and the monster gets the headline.
  */
 function movesFor(c: CardDef): Array<{ name: string; power: string; text: string }> {
   const m = c.modifier;
   const out: Array<{ name: string; power: string; text: string }> = [];
-  if (m.damageMult && m.damageMult > 1) {
-    out.push({ name: "Honed Strike", power: `${Math.round((m.damageMult - 1) * 100)}%`, text: "Every blow lands harder while this chip is socketed." });
-  }
-  if (m.damageFlat) {
-    out.push({ name: "Weighted Core", power: `+${m.damageFlat}`, text: "Flat damage added after every other bonus resolves." });
-  }
-  if (m.bolt) {
-    out.push({ name: "Chain Lightning", power: "BOLT", text: "Strikes arc a thunderbolt through the foes ahead of the one you hit." });
-  }
-  if (m.onHit === "burn") {
-    out.push({ name: "Ember Brand", power: "DOT", text: "Struck foes catch fire and burn over time." });
-  }
-  if (m.onHit === "chill") {
-    out.push({ name: "Deep Chill", power: "SLOW", text: "Struck foes are chilled and crawl for a spell." });
-  }
-  if (m.pinballMult && m.pinballMult > 1) {
-    out.push({ name: "Ball Lightning", power: `×${m.pinballMult}`, text: "Damage multiplies while you ride pinball momentum." });
-  }
-  if (m.cooldownMult && m.cooldownMult < 1) {
-    out.push({ name: "Quickdraw", power: `−${Math.round((1 - m.cooldownMult) * 100)}%`, text: "The weapon recovers faster between swings." });
-  }
-  if (m.durabilityMult && m.durabilityMult > 1) {
-    out.push({ name: "Tempered Steel", power: `×${m.durabilityMult}`, text: "The weapon survives far more punishment." });
-  }
-  return out.slice(0, 2); // two move rows is what the layout has room for
+  const pct = (v: number): string => `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`;
+  if (m.damageMult && m.damageMult !== 1) out.push({ name: "Damage", power: pct(m.damageMult), text: "" });
+  if (m.damageFlat) out.push({ name: "Flat damage", power: `+${m.damageFlat}`, text: "" });
+  if (m.bolt) out.push({ name: "Thunderbolt", power: "ON HIT", text: "" });
+  if (m.onHit === "burn") out.push({ name: "Burn", power: "ON HIT", text: "" });
+  if (m.onHit === "chill") out.push({ name: "Chill", power: "ON HIT", text: "" });
+  if (m.critChance) out.push({ name: "Crit chance", power: `${Math.round(m.critChance * 100)}%`, text: "" });
+  if (m.lifesteal) out.push({ name: "Lifesteal", power: `+${m.lifesteal} HP`, text: "" });
+  if (m.pierce) out.push({ name: "Pierce", power: `+${m.pierce}`, text: "" });
+  if (m.pinballMult && m.pinballMult > 1) out.push({ name: "On momentum", power: `×${m.pinballMult}`, text: "" });
+  if (m.materialMult && m.materialMult > 1) out.push({ name: "On marble", power: `×${m.materialMult}`, text: "" });
+  if (m.cooldownMult && m.cooldownMult !== 1) out.push({ name: "Cooldown", power: pct(m.cooldownMult), text: "" });
+  if (m.durabilityMult && m.durabilityMult !== 1) out.push({ name: "Durability", power: pct(m.durabilityMult), text: "" });
+  return out.slice(0, 2); // two rows is what the layout has room for
 }
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -430,10 +424,17 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   // keep the cosmic speckle field with nothing claiming to have dropped them.
   if (c.source) {
     const info = KIND_INFO[c.source];
-    ctx.textAlign = "left";
-    ctx.font = "700 12px ui-monospace, Menlo, monospace";
-    ctx.fillStyle = "rgba(255,255,255,0.62)";
-    ctx.fillText(`${info.icon} ${info.label.toUpperCase()}`, ax + 12, ay + ah - 12);
+    // The monster is the HEADLINE, not a footnote. It sits big and centred along
+    // the bottom of the art window, tinted by rarity, so "which monster is this"
+    // is answerable at a glance and from across the room.
+    const name = c.subType ? c.subType.toUpperCase() : info.label.toUpperCase();
+    ctx.textAlign = "center";
+    ctx.fillStyle = RARITY_HEX[c.rarity];
+    ctx.shadowColor = "rgba(0,0,0,0.85)";
+    ctx.shadowBlur = 6;
+    fitText(ctx, `${info.icon} ${name}`, aw - 24, 30, 800);
+    ctx.fillText(`${info.icon} ${name}`, ax + aw / 2, ay + ah - 16);
+    ctx.shadowBlur = 0;
   }
 
   // ── Plaque ──
@@ -447,7 +448,13 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.fillStyle = "#111827";
   ctx.font = "700 13px ui-monospace, Menlo, monospace";
   ctx.textAlign = "center";
-  ctx.fillText(`${c.rarity.toUpperCase()} · ${theme.type} CHIP`, 256, 414);
+  // The plaque names WHAT YOU KILLED, not an invented chip class. A card is a
+  // slain monster's power bottled; "COMMON · SWIFT CHIP" told the player nothing
+  // about where it came from or what to farm for another one.
+  const slain = c.source
+    ? `SLAIN: ${(c.subType ? `${KIND_INFO[c.source].label} — ${c.subType}` : KIND_INFO[c.source].label).toUpperCase()}`
+    : `${c.rarity.toUpperCase()} · CHASE CARD`;
+  ctx.fillText(slain, 256, 414);
 
   // ── Moves box ──
   ctx.fillStyle = "rgba(0,0,0,0.3)";

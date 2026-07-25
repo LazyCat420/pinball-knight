@@ -1,10 +1,19 @@
 /**
- * CARDS — weapon modifier chips that socket into a weapon's card slots.
+ * CARDS — a slain monster's power, bottled and socketed into your GEAR.
  *
- * A card is NOT an item you equip standalone; it slots into an equipped weapon
- * (WeaponState.cards, bounded by WeaponDef.cardSlots) and changes how that
- * weapon resolves damage. Four rarities scale the power. Effects come in three
- * flavours, all resolved centrally so any weapon benefits:
+ * THE TWO AXES, and they must not overlap:
+ *   · the SKILL TREE upgrades the PLAYER (hp, mana, move speed, ability unlocks)
+ *   · CARDS upgrade the GEAR (weapons and armour)
+ * An earlier cut had cards granting Q/E abilities. That was wrong — abilities
+ * are the tree's job, and a card that hands you one blurs the only line that
+ * makes two progression systems worth having.
+ *
+ * A card is NOT an item you equip standalone; it slots into a weapon or a piece
+ * of armour (bounded by that item's RARITY — see SLOTS_BY_RARITY in items.ts)
+ * and changes how it performs. Every card is the essence of exactly one monster,
+ * INCLUDING the eight zombie sub-types: a Hulk and a Midget are different
+ * monsters and drop different cards. Effects come in three flavours, all
+ * resolved centrally so any weapon benefits:
  *   - STAT   : flat/percent damage, cooldown, durability (aggregateCards).
  *   - ON-HIT : a status stamped on the struck enemy (chill = slow, burn = DoT).
  *   - PINBALL: a bonus that only fires while you're carrying pinball momentum
@@ -14,7 +23,7 @@
  */
 import { WEAPONS, weaponSlotCount, type WeaponKind, type WeaponState } from "./items";
 import type { EnemyKind } from "./state";
-import type { AbilityId } from "./abilities";
+import type { ZombieType } from "./zombie-types";
 
 export type CardRarity = "common" | "rare" | "epic" | "legendary" | "mythic";
 export type CardId = string;
@@ -47,19 +56,6 @@ export interface CardModifier {
   lifesteal?: number;
   /** Extra enemies a ranged shot passes THROUGH before dying. Summed. */
   pierce?: number;
-  /**
-   * SKILL CARD — socketing this GRANTS an active Q/E ability while the weapon is
-   * HELD. Same AbilityId space the skill tree unlocks (skills.ts unlockAbility),
-   * merged in the one `unlockedAbilities()` funnel so there is still a single
-   * answer to "what can I cast".
-   *
-   * Held-weapon-scoped on purpose: swapping weapons swaps your ability loadout,
-   * which is what makes the second weapon slot a real decision instead of a
-   * spare damage stat.
-   */
-  grantsAbility?: AbilityId;
-  /** Ability MANA cost multiplier (<1 = cheaper). Multiplied across sockets. */
-  abilityCostMult?: number;
 }
 
 export interface CardDef {
@@ -85,6 +81,15 @@ export interface CardDef {
    * than from a kind.
    */
   source?: EnemyKind;
+  /**
+   * For a card sourced to a zombie SUB-TYPE rather than the family as a whole.
+   * All eight sub-types share `kind: "zombie"` (see zombie-types.ts — they are a
+   * multiplier bundle, not an EnemyKind), so `source` alone cannot tell a Hulk
+   * card from a Midget card. The affinity roll prefers a sub-type match over a
+   * family match, and the bestiary files these under the SUB-TYPE row — which is
+   * what makes "farm Hulks for the Hulk card" a legible goal.
+   */
+  subType?: ZombieType;
 }
 
 export const RARITY_HEX: Record<CardRarity, string> = {
@@ -96,83 +101,56 @@ export const RARITY_HEX: Record<CardRarity, string> = {
 };
 
 export const CARDS: Record<CardId, CardDef> = {
-  // ── Common (grey) ──
-  bloodedge: { id: "bloodedge", label: "Blood Edge", icon: "🩸", rarity: "common", weaponKinds: "both", description: "+1 damage", source: "zombie", modifier: { damageFlat: 1 } },
-  sharpened: { id: "sharpened", label: "Sharpened", icon: "🔪", rarity: "common", weaponKinds: "both", description: "−15% cooldown", source: "goblin", modifier: { cooldownMult: 0.85 } },
-  tempered: { id: "tempered", label: "Tempered", icon: "⚒️", rarity: "common", weaponKinds: "both", description: "+50% durability", source: "golem", modifier: { durabilityMult: 1.5 } },
-  frostchip: { id: "frostchip", label: "Frost Chip", icon: "❄️", rarity: "common", weaponKinds: "both", description: "hits CHILL: slow the enemy", source: "ghost", modifier: { onHit: "chill" } },
-  // ── Rare (blue) ──
-  keenedge: { id: "keenedge", label: "Keen Edge", icon: "⚔️", rarity: "rare", weaponKinds: "both", description: "+30% damage", source: "hound", modifier: { damageMult: 1.3 } },
-  embercore: { id: "embercore", label: "Ember Core", icon: "🔥", rarity: "rare", weaponKinds: "both", description: "hits BURN over time", source: "bloater", modifier: { onHit: "burn" } },
-  momentumstrike: { id: "momentumstrike", label: "Momentum Strike", icon: "🪩", rarity: "rare", weaponKinds: "melee", description: "+60% damage while riding momentum", source: "pin", modifier: { pinballMult: 1.6 } },
-  reinforced: { id: "reinforced", label: "Reinforced", icon: "🛠️", rarity: "rare", weaponKinds: "both", description: "+1 dmg, +100% durability", source: "golem", modifier: { damageFlat: 1, durabilityMult: 2 } },
-  // ── Epic (purple) ──
-  executioner: { id: "executioner", label: "Executioner", icon: "🪓", rarity: "epic", weaponKinds: "both", description: "+60% damage", source: "brute", modifier: { damageMult: 1.6 } },
-  frostbite: { id: "frostbite", label: "Frostbite", icon: "🧊", rarity: "epic", weaponKinds: "both", description: "+25% dmg and hits CHILL", source: "ghost", modifier: { damageMult: 1.25, onHit: "chill" } },
-  quickblade: { id: "quickblade", label: "Quickblade", icon: "🌀", rarity: "epic", weaponKinds: "both", description: "−30% cooldown, +1 dmg", source: "bat", modifier: { cooldownMult: 0.7, damageFlat: 1 } },
-  stormchain: { id: "stormchain", label: "Storm Chain", icon: "⚡", rarity: "epic", weaponKinds: "both", description: "hits arc a THUNDERBOLT through foes ahead", source: "wisp", modifier: { bolt: true } },
-  // ── Legendary (gold) ──
-  pinballwizard: { id: "pinballwizard", label: "Pinball Wizard", icon: "🎰", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, DOUBLE while riding momentum", source: "pin", modifier: { damageMult: 1.4, pinballMult: 2 } },
-  soulreaver: { id: "soulreaver", label: "Soul Reaver", icon: "💀", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +50% dmg, hits BURN", source: "reaper", modifier: { damageFlat: 2, damageMult: 1.5, onHit: "burn" } },
-  thunderlord: { id: "thunderlord", label: "Thunderlord", icon: "🌩️", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, hits arc a THUNDERBOLT ahead", source: "wisp", modifier: { damageMult: 1.4, bolt: true } },
-  // ── Mythic (iridescent) — build-defining chase cards: the Tavern shelf, or a floor-10+ boss ──
+  // 25 cards, exactly 5 per rarity. Every non-mythic is the essence of ONE
+  // monster; the eight zombie SUB-TYPES each get their own card, because a Hulk
+  // and a Midget are different monsters and should not drop the same chip.
+  //
+  // MECHANIC COVERAGE RULE: every mechanic needs at least TWO cards or its
+  // 2-card set bonus in `aggregateCards` is unreachable and the mechanic reads
+  // as a one-card orphan.
+  //   bolt     -> wispspark, tempestcrown
+  //   material -> crystalshard, golemcore
+  //   crit     -> goblintooth, flailerjaw, bloodpact
+  //   pierce   -> venomgland, webspinnersilk
+  //   lifesteal-> ectoplasmcore, grimscythe, bloodpact
+  //   pinball  -> runnersinew, timeripper
+
+  // ══ COMMON (5) — the shallow-floor horde ══
+  shamblerhide: { id: "shamblerhide", label: "Shambler Hide", icon: "🧟", rarity: "common", weaponKinds: "both", description: "+35% durability", source: "zombie", subType: "shambler", modifier: { durabilityMult: 1.35 } },
+  midgetclaw: { id: "midgetclaw", label: "Midget Claw", icon: "🦴", rarity: "common", weaponKinds: "both", description: "−12% cooldown", source: "zombie", subType: "midget", modifier: { cooldownMult: 0.88 } },
+  hobblerbrace: { id: "hobblerbrace", label: "Hobbler Brace", icon: "🦯", rarity: "common", weaponKinds: "both", description: "+25% durability, −5% cooldown", source: "zombie", subType: "hobbler", modifier: { durabilityMult: 1.25, cooldownMult: 0.95 } },
+  batwingchip: { id: "batwingchip", label: "Bat Wing", icon: "🦇", rarity: "common", weaponKinds: "both", description: "−10% cooldown, +15% durability", source: "bat", modifier: { cooldownMult: 0.9, durabilityMult: 1.15 } },
+  spidersilk: { id: "spidersilk", label: "Spider Silk", icon: "🕸️", rarity: "common", weaponKinds: "both", description: "+20% damage", source: "spider", modifier: { damageMult: 1.2 } },
+
+  // ══ RARE (5) — specialists ══
+  runnersinew: { id: "runnersinew", label: "Runner Sinew", icon: "🏃", rarity: "rare", weaponKinds: "both", description: "+35% damage while riding momentum", source: "zombie", subType: "runner", modifier: { pinballMult: 1.35 } },
+  lurcherspine: { id: "lurcherspine", label: "Lurcher Spine", icon: "🦴", rarity: "rare", weaponKinds: "both", description: "+1 dmg, +80% durability", source: "zombie", subType: "lurcher", modifier: { damageFlat: 1, durabilityMult: 1.8 } },
+  goblintooth: { id: "goblintooth", label: "Goblin Tooth", icon: "👺", rarity: "rare", weaponKinds: "both", description: "20% chance to CRIT (×2)", source: "goblin", modifier: { critChance: 0.2 } },
+  venomgland: { id: "venomgland", label: "Venom Gland", icon: "🤮", rarity: "rare", weaponKinds: "both", description: "shots pierce 2 more foes, hits BURN", source: "spitter", modifier: { pierce: 2, onHit: "burn" } },
+  wispspark: { id: "wispspark", label: "Wisp Spark", icon: "✨", rarity: "rare", weaponKinds: "both", description: "hits arc a THUNDERBOLT through foes ahead", source: "wisp", modifier: { bolt: true } },
+
+  // ══ EPIC (5) — the heavies ══
+  hulkknuckle: { id: "hulkknuckle", label: "Hulk Knuckle", icon: "💪", rarity: "epic", weaponKinds: "both", description: "+60% damage, but +15% cooldown", source: "zombie", subType: "hulk", modifier: { damageMult: 1.6, cooldownMult: 1.15 } },
+  crawlergrip: { id: "crawlergrip", label: "Crawler Grip", icon: "🖐️", rarity: "epic", weaponKinds: "both", description: "+40% dmg and hits CHILL", source: "zombie", subType: "crawler", modifier: { damageMult: 1.4, onHit: "chill" } },
+  ectoplasmcore: { id: "ectoplasmcore", label: "Ectoplasm Core", icon: "👻", rarity: "epic", weaponKinds: "both", description: "+25% dmg, hits CHILL, heal 1/hit", source: "ghost", modifier: { damageMult: 1.25, onHit: "chill", lifesteal: 1 } },
+  crystalshard: { id: "crystalshard", label: "Crystal Shard", icon: "🔷", rarity: "epic", weaponKinds: "both", description: "+50% dmg while a MARBLE is active", source: "crystalback", modifier: { materialMult: 1.5 } },
+  webspinnersilk: { id: "webspinnersilk", label: "Webspinner Silk", icon: "🕸️", rarity: "epic", weaponKinds: "ranged", description: "shots pierce 3 more foes, −15% cooldown", source: "webspinner", modifier: { pierce: 3, cooldownMult: 0.85 } },
+
+  // ══ LEGENDARY (5) — build-defining, off the deep roster ══
+  flailerjaw: { id: "flailerjaw", label: "Flailer Jaw", icon: "😬", rarity: "legendary", weaponKinds: "both", description: "+50% dmg, 30% CRIT for ×2.5", source: "zombie", subType: "flailer", modifier: { damageMult: 1.5, critChance: 0.3, critMult: 2.5 } },
+  grimscythe: { id: "grimscythe", label: "Grim Scythe", icon: "☠️", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +45% dmg, heal 1/hit", source: "reaper", modifier: { damageFlat: 2, damageMult: 1.45, lifesteal: 1 } },
+  necrosigil: { id: "necrosigil", label: "Necro Sigil", icon: "🕯️", rarity: "legendary", weaponKinds: "both", description: "+40% dmg, hits BURN", source: "necromancer", modifier: { damageMult: 1.4, onHit: "burn" } },
+  golemcore: { id: "golemcore", label: "Golem Core", icon: "🗿", rarity: "legendary", weaponKinds: "both", description: "+2 dmg, +35% dmg while a MARBLE is active, +100% durability", source: "golem", modifier: { damageFlat: 2, materialMult: 1.35, durabilityMult: 2 } },
+  brutecleaver: { id: "brutecleaver", label: "Brute Cleaver", icon: "🪓", rarity: "legendary", weaponKinds: "melee", description: "+70% damage (melee)", source: "brute", modifier: { damageMult: 1.7 } },
+
+  // ══ MYTHIC (5) — chase cards. SOURCELESS on purpose: no single monster is
+  // their essence, so affinity can never bias toward them. Tavern shelf, or a
+  // deep boss. Two are CURSED — a real drawback for a huge upside. ══
   worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
   timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
   tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
-
-  // ══ EXPANSION — weapon-kind identity ══
-  rapidfire: { id: "rapidfire", label: "Rapid Fire", icon: "🔫", rarity: "rare", weaponKinds: "ranged", description: "−40% cooldown (ranged)", source: "webspinner", modifier: { cooldownMult: 0.6 } },
-  cleaver: { id: "cleaver", label: "Cleaver", icon: "🪒", rarity: "rare", weaponKinds: "melee", description: "+50% damage (melee)", source: "brute", modifier: { damageMult: 1.5 } },
-  gluttony: { id: "gluttony", label: "Gluttony", icon: "🍖", rarity: "epic", weaponKinds: "both", description: "+3 flat damage", source: "chomper", modifier: { damageFlat: 3 } },
-
-  // ══ EXPANSION — MARBLE SYNERGY (bonus while a material is active) ══
-  elementalist: { id: "elementalist", label: "Elementalist", icon: "🔷", rarity: "rare", weaponKinds: "both", description: "+40% dmg while a MARBLE is active", source: "crystalback", modifier: { materialMult: 1.4 } },
-  overcharged: { id: "overcharged", label: "Overcharged", icon: "🌈", rarity: "epic", weaponKinds: "both", description: "+85% dmg while a MARBLE is active", source: "crystalback", modifier: { materialMult: 1.85 } },
-  attunement: { id: "attunement", label: "Attunement", icon: "🪬", rarity: "legendary", weaponKinds: "both", description: "+30% dmg always, +60% more while a MARBLE is active", source: "crystalback", modifier: { damageMult: 1.3, materialMult: 1.6 } },
-
-  // ══ EXPANSION — CRIT / LIFESTEAL / PIERCE (Phase 2) ══
-  keenmind: { id: "keenmind", label: "Keen Mind", icon: "🎯", rarity: "rare", weaponKinds: "both", description: "20% chance to CRIT (×2)", source: "spider", modifier: { critChance: 0.2 } },
-  assassin: { id: "assassin", label: "Assassin", icon: "🗡️", rarity: "epic", weaponKinds: "both", description: "30% CRIT for ×2.5", source: "spider", modifier: { critChance: 0.3, critMult: 2.5 } },
-  deathmark: { id: "deathmark", label: "Death Mark", icon: "☠️", rarity: "legendary", weaponKinds: "both", description: "40% CRIT for ×3, +25% dmg", source: "reaper", modifier: { critChance: 0.4, critMult: 3, damageMult: 1.25 } },
-  leech: { id: "leech", label: "Leech", icon: "🧛", rarity: "rare", weaponKinds: "both", description: "heal 1 HP per hit", source: "bat", modifier: { lifesteal: 1 } },
-  vampiricedge: { id: "vampiricedge", label: "Vampiric Edge", icon: "🦇", rarity: "epic", weaponKinds: "both", description: "heal 1 HP per hit, +25% dmg", source: "bat", modifier: { lifesteal: 1, damageMult: 1.25 } },
-  piercer: { id: "piercer", label: "Piercer", icon: "➷", rarity: "rare", weaponKinds: "ranged", description: "shots pierce 2 extra foes", source: "spitter", modifier: { pierce: 2 } },
-  railgun: { id: "railgun", label: "Railgun", icon: "🎇", rarity: "legendary", weaponKinds: "ranged", description: "shots pierce 5 foes, +40% dmg", source: "spitter", modifier: { pierce: 5, damageMult: 1.4 } },
-
-  // ══ EXPANSION — CURSED (Phase 4): huge upside, real drawback ══
   gladeath: { id: "gladeath", label: "Glass Cannon", icon: "🩻", rarity: "mythic", weaponKinds: "both", description: "+120% dmg, but −60% durability", modifier: { damageMult: 2.2, durabilityMult: 0.4 } },
   bloodpact: { id: "bloodpact", label: "Blood Pact", icon: "🖤", rarity: "mythic", weaponKinds: "both", description: "50% CRIT ×3 and heal 1/hit, but −40% durability", modifier: { critChance: 0.5, critMult: 3, lifesteal: 1, durabilityMult: 0.6 } },
-
-  // ══ MONSTER ESSENCE — one card per otherwise-uncovered kind ══
-  // The point of `source` is that every monster is worth hunting for something.
-  // These fill the kinds the original table left with no card of their own.
-  spidersilk: { id: "spidersilk", label: "Spider Silk", icon: "🕸️", rarity: "common", weaponKinds: "both", description: "−10% cooldown, +25% durability", source: "spider", modifier: { cooldownMult: 0.9, durabilityMult: 1.25 } },
-  slimecoat: { id: "slimecoat", label: "Slime Coat", icon: "🟢", rarity: "common", weaponKinds: "both", description: "+35% durability", source: "slime", modifier: { durabilityMult: 1.35 } },
-  houndfang: { id: "houndfang", label: "Hound Fang", icon: "🐺", rarity: "rare", weaponKinds: "both", description: "+35% damage while riding momentum", source: "hound", modifier: { pinballMult: 1.35 } },
-  wardenplate: { id: "wardenplate", label: "Warden Plate", icon: "🛡️", rarity: "rare", weaponKinds: "both", description: "+1 dmg, +150% durability", source: "warden", modifier: { damageFlat: 1, durabilityMult: 2.5 } },
-  magnetcore: { id: "magnetcore", label: "Magnet Core", icon: "🧲", rarity: "rare", weaponKinds: "both", description: "+20% dmg while a MARBLE is active, −10% cooldown", source: "magnet", modifier: { materialMult: 1.2, cooldownMult: 0.9 } },
-  sapperfuse: { id: "sapperfuse", label: "Sapper Fuse", icon: "🧨", rarity: "epic", weaponKinds: "both", description: "+35% dmg, hits BURN", source: "sapper", modifier: { damageMult: 1.35, onHit: "burn" } },
-  mimicjaw: { id: "mimicjaw", label: "Mimic Jaw", icon: "🪤", rarity: "epic", weaponKinds: "both", description: "25% CRIT for ×2.75", source: "mimic", modifier: { critChance: 0.25, critMult: 2.75 } },
-  necrosigil: { id: "necrosigil", label: "Necro Sigil", icon: "🕯️", rarity: "legendary", weaponKinds: "both", description: "+35% dmg, heal 1 HP per hit", source: "necromancer", modifier: { damageMult: 1.35, lifesteal: 1 } },
-
-  // ══ SKILL CARDS — a monster's power as an ACTIVE ability ══
-  // Socketing one grants its Q/E ability while that weapon is HELD (see
-  // CardModifier.grantsAbility). Each is sourced from the monster whose own
-  // behaviour the ability imitates: a wisp blinks and crackles, a pin IS the
-  // pinball, a reaper bends time around itself.
-  // Only THREE abilities are genuinely locked — magnetaura, timecrawl and
-  // bladestorm (skills.ts unlock nodes). The knight already starts holding
-  // flippercharge / arcanepulse / slickfield (state.unlockedAbilities), so a card
-  // "granting" one of those would be a dead chip wearing a build-defining
-  // description. The other monsters get a cost discount instead, which is a real
-  // effect on abilities you already have.
-  magnetheart: { id: "magnetheart", label: "Magnet Heart", icon: "🧿", rarity: "rare", weaponKinds: "both", description: "GRANTS Magnet Aura", source: "magnet", modifier: { grantsAbility: "magnetaura" } },
-  witchfocus: { id: "witchfocus", label: "Witch Focus", icon: "🔮", rarity: "rare", weaponKinds: "both", description: "−25% ability mana cost", source: "necromancer", modifier: { abilityCostMult: 0.75 } },
-  wispspark: { id: "wispspark", label: "Wisp Spark", icon: "✨", rarity: "epic", weaponKinds: "both", description: "−35% ability mana cost", source: "wisp", modifier: { abilityCostMult: 0.65 } },
-  pinsoul: { id: "pinsoul", label: "Pin Soul", icon: "🎳", rarity: "epic", weaponKinds: "both", description: "+45% dmg on momentum, −20% ability cost", source: "pin", modifier: { pinballMult: 1.45, abilityCostMult: 0.8 } },
-  bloateroil: { id: "bloateroil", label: "Bloater Oil", icon: "🛢️", rarity: "epic", weaponKinds: "both", description: "+30% dmg, hits BURN, −15% ability cost", source: "bloater", modifier: { damageMult: 1.3, onHit: "burn", abilityCostMult: 0.85 } },
-  reaperclock: { id: "reaperclock", label: "Reaper Clock", icon: "⏱️", rarity: "legendary", weaponKinds: "both", description: "GRANTS Time Crawl, −20% ability cost", source: "reaper", modifier: { grantsAbility: "timecrawl", abilityCostMult: 0.8 } },
-  brutewhirl: { id: "brutewhirl", label: "Brute Whirl", icon: "🌪️", rarity: "legendary", weaponKinds: "melee", description: "GRANTS Blade Storm, −20% ability cost", source: "brute", modifier: { grantsAbility: "bladestorm", abilityCostMult: 0.8 } },
 };
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
@@ -208,17 +186,12 @@ export interface CardAggregate {
   critMult: number; // crit damage × (max across sockets)
   lifesteal: number; // HP restored per hit, summed
   pierce: number; // extra ranged pass-throughs, summed
-  /** Q/E abilities the socketed SKILL CARDS grant (deduped). Mirrors
-   * SkillAggregate.unlocked so both feed the one `unlockedAbilities()` funnel. */
-  unlocked: AbilityId[];
-  /** Ability mana cost multiplier, compounded across sockets (1 = full price). */
-  abilityCostMult: number;
 }
 
 export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
   const agg: CardAggregate = {
     damageFlat: 0, damageMult: 1, cooldownMult: 1, durabilityMult: 1, chill: false, burn: false, pinballMult: 1, bolt: false,
-    materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0, unlocked: [], abilityCostMult: 1,
+    materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0,
   };
   if (!cards) return agg;
   for (const id of cards) {
@@ -237,10 +210,6 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
     if (m.critMult) agg.critMult = Math.max(agg.critMult, m.critMult);
     if (m.lifesteal) agg.lifesteal += m.lifesteal;
     if (m.pierce) agg.pierce += m.pierce;
-    // SKILL CARDS. Deduped: two copies of the same grant is still one ability,
-    // and a duplicate must not push a second entry into the Q/E list.
-    if (m.grantsAbility && !agg.unlocked.includes(m.grantsAbility)) agg.unlocked.push(m.grantsAbility);
-    if (m.abilityCostMult) agg.abilityCostMult *= m.abilityCostMult;
   }
   // ── SET BONUSES ── committing 2+ cards of a family resonates (a real choice
   // with only 3 slots). Counted after the fold so it reads off the same cards.
@@ -349,6 +318,8 @@ export function rollCardDrop(
     /** False once this run has already dropped its one mythic. */
     mythicAllowed?: boolean;
     kind?: EnemyKind;
+    /** Zombie SUB-TYPE of the slain foe, when it had one (zombie-types.ts). */
+    subType?: ZombieType;
     dropMult?: number;
   },
   rand: () => number = Math.random,
@@ -365,10 +336,33 @@ export function rollCardDrop(
    */
   const pick = (pool: CardId[]): CardId => {
     if (opts.kind) {
-      const own = pool.filter((id) => CARDS[id].source === opts.kind);
+      // SUB-TYPE first: a Hulk should drop the Hulk card, not just "a zombie
+      // card". Falls back to the family pool when this kind has no sub-typed
+      // card at this rarity (every non-zombie, and any rarity a sub-type
+      // doesn't appear at).
+      const sub = opts.subType
+        ? pool.filter((id) => CARDS[id].source === opts.kind && CARDS[id].subType === opts.subType)
+        : [];
+      if (sub.length > 0 && rand() < AFFINITY_CHANCE) return sub[Math.floor(rand() * sub.length)];
+      // Family match, excluding cards that belong to a DIFFERENT sub-type — a
+      // Midget must never hand you the Hulk card just for being a zombie.
+      const own = pool.filter(
+        (id) => CARDS[id].source === opts.kind && (!CARDS[id].subType || CARDS[id].subType === opts.subType),
+      );
       if (own.length > 0 && rand() < AFFINITY_CHANCE) return own[Math.floor(rand() * own.length)];
     }
-    return pool[Math.floor(rand() * pool.length)];
+    // NON-AFFINITY fallback. A sub-typed card must never arrive from a monster
+    // that is not that sub-type — a Hulk handing you the Midget card breaks the
+    // one promise the whole system makes ("farm THIS thing for THIS card"), and
+    // the affinity branches above are not enough on their own because this line
+    // is reached ~30% of the time by design. Foreign sub-type cards are simply
+    // not in the pool for this kill.
+    const eligible = pool.filter((id) => {
+      const st = CARDS[id].subType;
+      return !st || (CARDS[id].source === opts.kind && st === opts.subType);
+    });
+    const from = eligible.length > 0 ? eligible : pool;
+    return from[Math.floor(rand() * from.length)];
   };
   // Mythic: once per run, only from a DEEP boss, and rarer than legendary.
   // Checked FIRST so the top tier isn't shadowed by the legendary branch

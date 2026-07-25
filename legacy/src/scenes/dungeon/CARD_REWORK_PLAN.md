@@ -192,37 +192,41 @@ thing on the card while the source monster is 12px at 62% opacity in a corner.
 ## 7. Checklist
 
 ### Phase A — data model
-- [ ] A1. `ItemRarity` + `SLOTS_BY_RARITY` in `items.ts`; delete `cardSlots`.
-- [ ] A2. `WeaponState.rarity`; `GearState.rarity` + `.cards`.
-- [ ] A3. `weaponSlotCount()` off rarity; new `gearSlotCount()`.
-- [ ] A4. Rarity roll on weapon/gear drops, depth-biased.
-- [ ] A5. `CardDef.subType?: ZombieType`.
-- [ ] A6. Remove `grantsAbility` / `abilityCostMult` + their `skill-runtime` merge.
-- [ ] A7. Tests: slot counts by rarity, gear cards never touch weapon damage.
+- [x] A1. `ItemRarity` + `SLOTS_BY_RARITY` in `items.ts`; delete `cardSlots`.
+- [x] A2. `WeaponState.rarity`; `GearState.rarity` + `.cards`.
+- [x] A3. `weaponSlotCount()` off rarity; new `gearSlotCount()`.
+- [x] A4. `rollItemRarity(floor)` written + tested. **NOT yet called from the
+      drop path** — every dropped weapon is still `common` until wired.
+- [x] A5. `CardDef.subType?: ZombieType`.
+- [x] A6. Remove `grantsAbility` / `abilityCostMult` + their `skill-runtime` merge.
+- [x] A7. Tests: slot counts by rarity, gear cards never touch weapon damage.
 
 ### Phase B — the 25 cards
-- [ ] B1. Rewrite `CARDS` to exactly 5 per rarity, per §2.
-- [ ] B2. Every non-mythic has a `source`; the 8 sub-type cards have `subType`.
-- [ ] B3. `rollCardDrop` prefers a sub-type match over a family match.
-- [ ] B4. Bestiary files sub-type cards under the SUB-TYPE row.
-- [ ] B5. Tests: exactly 5/rarity; every monster reachable; sub-type affinity works;
+- [x] B1. Rewrite `CARDS` to exactly 5 per rarity, per §2.
+- [x] B2. Every non-mythic has a `source`; the 8 sub-type cards have `subType`.
+- [x] B3. `rollCardDrop` prefers a sub-type match over a family match.
+- [x] B4. Bestiary files sub-type cards under the SUB-TYPE row.
+- [x] B5. Tests: exactly 5/rarity; every monster reachable; sub-type affinity works;
       the drop RATE is unchanged (the invariant from the last wave).
 
 ### Phase C — upgrade risk
-- [ ] C1. `UpgradeState` on weapons + gear; `breakChance()` pure + tested.
-- [ ] C2. Weaponsmith "Upgrade" action; destroys the item (and its cards) on fail.
-- [ ] C3. UI states the exact break % and requires a confirm.
-- [ ] C4. Tests: 0% below the safe level, monotonic climb, hard cap, and that a
+- [x] C1. `UpgradeState` on weapons + gear; `breakChance()` pure + tested.
+- [x] C2. Weaponsmith "Upgrade" action; destroys the weapon (and its cards) on
+      fail. **Weapons only** — gear upgrade is not wired yet.
+- [x] C3. UI states the exact break % and requires a confirm.
+- [x] C4. Tests: 0% below the safe level, monotonic climb, hard cap, and that a
       destroyed weapon frees its slot cleanly.
 
 ### Phase D — card face
-- [ ] D1. Monster-first `holo-card.ts` per §6; drop the invented perk names.
-- [ ] D2. `SLAIN: <MONSTER>` band, sub-type aware.
-- [ ] D3. Headless screenshot of one card per rarity to confirm it reads.
+- [x] D1. Monster-first `holo-card.ts` per §6; drop the invented perk names.
+- [x] D2. `SLAIN: <MONSTER>` band, sub-type aware.
+- [x] D3. Headless screenshot of one card per rarity to confirm it reads.
 
 ### Phase E — ship
-- [ ] E1. `pnpm test` green; 0 dungeon type errors; `next build` clean.
-- [ ] E2. **Co-op protocol**: weapon/gear rarity + sockets on the wire (§3).
+- [x] E1. `pnpm test` green; 0 dungeon type errors; `next build` clean.
+- [ ] E2. **NOT DONE — co-op protocol**: weapon/gear rarity + sockets on the wire (§3).
       This is the one that needs a SERVICE change.
-- [ ] E3. In-engine QA via the descend recipe (walk to `board` + E).
-- [ ] E4. Update `HANDOFF.md`; commit; deploy when the tree is clean.
+- [x] E3. In-engine QA: descended, rendered the real card face, confirmed
+      "🕷️ SPIDER" headline + "SLAIN: SPIDER" plaque + plain "Damage +20%" row.
+- [ ] E4. **DEPLOY DEFERRED** — a parallel session has uncommitted work in the
+      shared checkout and this repo deploys the WORKING TREE (`COPY . .`).
