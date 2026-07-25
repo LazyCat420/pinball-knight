@@ -237,7 +237,7 @@ import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
-import { enterTavern, isTavernSceneOpen } from "../tavern";
+import { enterTavern, isTavernSceneOpen, closeTavern } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath } from "./coop";
 import { stopPresence, onPeerArrive } from "../../net/presence";
@@ -924,7 +924,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const p = state.player;
       if (!p) return null;
       const ax = state.input?.axis() ?? { x: 0, z: 0 };
-      return { x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, grabT: p.grabT, rideT: p.rideT, dropT: p.dropT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, curveT: p.curveT, magBootsT: p.magBootsT };
+      return { plungerArmed: state.plungerArmed, plungerCharging: state.plungerCharging, x: p.x, z: p.z, hp: p.hp, rollT: p.rollT, iframes: p.iframes, clip: p.anim.getClip(), facing: p.facing, ax, sprint: state.input?.sprintHeld?.() ?? false, active: state.active, gameOver: state.gameOver, curSpeed: debugCurSpeed(), attackT: p.attackT, comboStep: p.comboStep, chargeT: p.chargeT, moving: !!p.move, kills: state.kills, sprintCharge: p.sprintCharge, wallMoveT: p.wallMoveT, wallMoveKind: p.wallMoveKind, wallNormal: debugWallNormal(), overcharge: p.overcharge, momSpeed: p.momSpeed, bounceCombo: p.bounceCombo, grabT: p.grabT, rideT: p.rideT, dropT: p.dropT, oilT: p.oilT, webbedT: p.webbedT, ironT: p.ironT, turboT: p.turboT, springT: p.springT, curveT: p.curveT, magBootsT: p.magBootsT };
     };
   }
 
@@ -1161,6 +1161,27 @@ export function launchDungeonGame(onExit?: () => void): void {
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
   };
+  // Dev: skip the lobby and drop straight into floor 1.
+  //
+  // WHY A HOOK AND NOT A CLICK. The lobby gate is a walk-to-the-plunger
+  // interaction in a 3D scene; driving it from a harness means pathing a player
+  // to a world position before the run can even start, and a missed approach
+  // looks exactly like a broken test. `?autostart=1` (or __dungeonStartRun())
+  // is the deterministic entry the playtest bot uses.
+  (window as unknown as { __dungeonStartRun?: () => string }).__dungeonStartRun = () => {
+    if (state.player) return "run already started";
+    closeTavern();
+    beginRun();
+    return "run started";
+  };
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("autostart") === "1") {
+    // One frame later: enterTavern below has to finish building the lobby
+    // before we tear it down, or its teardown runs against a half-built scene.
+    requestAnimationFrame(() => {
+      closeTavern();
+      beginRun();
+    });
+  }
   enterTavern(state.container, {
     stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
     onDescend: beginRun,

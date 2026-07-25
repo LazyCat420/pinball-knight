@@ -53,6 +53,9 @@ interface PlayerSnapshot {
   bounceCombo: number;
   kills: number;
   momSpeed: number;
+  /** True while parked in the launch chute — input cannot move the knight. */
+  plungerArmed: boolean;
+  plungerCharging: boolean;
 }
 
 export type BotMode =
@@ -179,6 +182,8 @@ export function startBot(opts: BotOptions = {}): string {
   let stuckOpen = false;
   let lastHp = Infinity;
   let phase = 0;
+  /** Frames spent holding the plunger this pull; drives the release. */
+  let plungerHeld = 0;
 
   const decide = () => {
     if (!running) return;
@@ -196,6 +201,28 @@ export function startBot(opts: BotOptions = {}): string {
     report.kills = snap.kills;
     if (snap.hp < lastHp && snap.hp <= 0) report.deaths++;
     lastHp = snap.hp;
+
+    // ── The launch chute ──
+    // A floor OPENS with the knight parked in the plunger: updatePlunger owns
+    // the player and swallows every movement input until the pull is released,
+    // so a bot that only pushes the stick sits motionless for the whole run.
+    // (That is exactly what the first soak runs did — 0 displacement, reported
+    // as a corner "wedge".) Pull, hold a beat to build power, then release.
+    if (snap.plungerArmed) {
+      plungerHeld++;
+      if (plungerHeld === 1) {
+        p.stick(0, 0); // steer straight; a held axis rotates the launch line
+        p.hold(BTN.A); // A / cross = plunger pull
+      } else if (plungerHeld >= 5) {
+        p.release(BTN.A); // fire
+        plungerHeld = 0;
+      }
+      // Parked is NOT stuck — the game is holding us on purpose.
+      stillSince = performance.now();
+      lastPos = { x: snap.x, z: snap.z };
+      return;
+    }
+    plungerHeld = 0;
 
     // Stuck detection: only meaningful because we KNOW we are pushing a stick.
     const moved = Number.isNaN(lastPos.x)

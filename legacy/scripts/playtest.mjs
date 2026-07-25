@@ -36,7 +36,7 @@ import { existsSync } from "node:fs";
 
 const { values: a } = parseArgs({
   options: {
-    url: { type: "string", default: "http://localhost:5174" },
+    url: { type: "string", default: "http://localhost:5174/dungeon?no-intro=1&autostart=1" },
     mode: { type: "string", default: "mixed" },
     secs: { type: "string", default: "30" },
     profile: { type: "boolean", default: false },
@@ -176,12 +176,26 @@ async function shutdown(code) {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
+// WSL2 + host browser: Windows forwards its own localhost into WSL, but it
+// cannot reach the WSL subnet IP (the default firewall drops it). So when we are
+// driving the HOST browser at a WSL-local address, rewrite the host to localhost
+// — that is the path Windows actually routes.
+let targetUrl = a.url;
+if (realGpu) {
+  const u = new URL(a.url);
+  if (u.hostname !== "localhost" && /^(127\.|0\.0\.0\.0|10\.|100\.|172\.|192\.168\.)/.test(u.hostname)) {
+    u.hostname = "localhost";
+    targetUrl = u.toString();
+    log(`▶ rewrote host → localhost for the host browser (WSL2 port forwarding)`);
+  }
+}
+
 log(`▶ backend: ${backend}`);
-log(`▶ opening ${a.url}`);
+log(`▶ opening ${targetUrl}`);
 try {
-  await page.goto(a.url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
 } catch (e) {
-  console.error(`✗ could not reach ${a.url} — is the dev server running? (pnpm dev)\n  ${e.message}`);
+  console.error(`✗ could not reach ${targetUrl} — is the dev server running? (pnpm dev)\n  ${e.message}`);
   await shutdown(2);
 }
 
@@ -197,11 +211,22 @@ log(`▶ renderer: ${glInfo}`);
 const looksSoftware = /swiftshader|llvmpipe|software/i.test(glInfo);
 
 log("▶ waiting for the dungeon to boot…");
+// The hooks install when the scene mounts; the PLAYER only exists once a run
+// has begun. `?autostart=1` drops straight into floor 1, but fall back to the
+// explicit starter if a caller pointed us at a plain URL.
 try {
   await page.waitForFunction(
     () => typeof window.__dungeonBot === "function" && typeof window.__dungeonPlayer === "function",
     { timeout: 120_000 },
   );
+  // Now wait for an ACTIVE player. Without this the bot starts against the
+  // lobby and immediately self-stops with "player inactive".
+  await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, { timeout: 60_000 })
+    .catch(async () => {
+      log("▶ still in the lobby — starting the run explicitly");
+      await page.evaluate(() => window.__dungeonStartRun?.());
+      await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, { timeout: 60_000 });
+    });
 } catch {
   console.error(
     "✗ dungeon hooks never appeared. The game may not have reached the dungeon " +
