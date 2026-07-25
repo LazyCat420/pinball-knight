@@ -1345,37 +1345,36 @@ export function decorateMaze(
   const stairs: TilePos = extras.endpoints?.stairs ?? farthest;
   setTile(g, stairs.i, stairs.j, T_STAIRS);
 
-  // THE SPINE — the ordered start→stairs artery path (already widened into a
-  // 3-wide highway by widenMainArtery in core). The connected booster route is
-  // laid down it (layStationSpine); rooms it crosses keep a clear lane so the
-  // route runs THROUGH them. The single "way through the floor".
-  const spine = traceArtery(g, start, stairs, dist);
+  // ── ARTERY BANKS + THE SPINE, in that order and for a reason ────────────
+  //
+  // A bank converts floor to wall to form the OUTER shell of a turn, and the
+  // spine walks straight through every bend a bank wants — at ridden radius 5
+  // the two corridor tiles nearest the corner sit at d=5.00 and d=5.75, both
+  // inside the bank's band. So the two cannot be fenced apart: excluding spine
+  // tiles rejects every bank (measured 0/floor), and banking after the route is
+  // traced re-derives the route through a different corner, leaving the pads
+  // already laid pointing backward (decorate.test.ts catches exactly that).
+  //
+  // The resolution is ORDERING, not exclusion. Bank the grid FIRST, then trace.
+  // The route is then computed on the banked grid and follows the banks by
+  // construction — and layStationSpine's bend handling already wants this: it
+  // drops a DEFLECTOR at a clean corner "to bank incoming→outgoing with speed
+  // intact", which is the square-tile version of the very thing a bank builds.
+  // Route and bank were never in conflict; they were just being built in the
+  // wrong order.
+  //
+  // The provisional trace is only used to FIND the bends. It is discarded.
+  {
+    const probe = traceArtery(g, start, stairs, dist);
+    if (probe.length >= 8) authorArteryBanks(g, probe, start, () => false);
+  }
+  // Re-derive distances on the banked grid — the banks moved walls, so the old
+  // field is stale, and a stale field would trace a path through a tile that is
+  // now solid.
+  const bankedDist = bfsDistancesOwned(g, start.i, start.j);
+  const spine = traceArtery(g, start, stairs, bankedDist);
   const spineSet = new Set(spine.map((p) => idx(g, p.i, p.j)));
   const onSpine = (i: number, j: number): boolean => spineSet.has(idx(g, i, j));
-
-  // ── ARTERY BANKS — the LONG banked turns, carved into the highway's corners.
-  //
-  // MUST RUN HERE, before ANY content is placed. A bank claims a band of tiles
-  // around a bend, and it is all-or-nothing: if a single tile in the band holds
-  // a part, item or spawn, the bank is rejected. Placed late (after the corridor
-  // deal, hazards, prefab anchors...) that rejection fired every single time —
-  // measured 0 banks per floor against 6 viable plans on the same seed with an
-  // empty occupancy set. So the pass has to go before the claimants, not after.
-  //
-  // A fillet is a quarter-turn at radius 2-3 (~3.1 tiles of arc), over before a
-  // rail reads as a ride. A bank takes the same 90° turn on the OUTER wall of
-  // the 3-wide artery: ridden radius 2+3=5, so the arc is ~7.9 tiles.
-  // Nothing has been claimed yet at this point in the pass — that is the whole
-  // reason the banks go here — so the occupancy predicate is trivially empty.
-  // Rooms are the one thing already decided, and `furnishRooms` runs just below
-  // on the grid the banks leave behind, so it sees them.
-  // THE SPINE TILES THEMSELVES ARE OFF LIMITS. A bank shapes the walls AROUND
-  // a bend; if it converts a tile the route walks, the route is re-derived
-  // through a different corner and the booster pads laid along it end up
-  // pointing backward — decorate.test.ts catches exactly that ("spine booster
-  // points backward"). Passing `onSpine` as the occupancy predicate keeps the
-  // highway's own lane untouched while still letting the bank curve its walls.
-  if (spine.length >= 8) authorArteryBanks(g, spine, start, () => false, onSpine);
 
   // ── Rooms first: archetype content is SEEDED into the pools below, so all
   // the general placement (and its spacing rules) works around it. General

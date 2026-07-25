@@ -184,7 +184,7 @@ export function chainBends(bends: readonly Bend[], maxGap: number): BendChain[] 
  * `a0`/`span` are the angular range of the OUTER wall the ball actually rides,
  * measured in the same atan2 frame `resolveArcFeature` uses.
  */
-export function arcForBend(b: Bend, ri: number, w: number): { cx: number; cz: number; r: number; a0: number; span: number } {
+export function arcForBend(b: Bend, ri: number, w: number): { cx: number; cz: number; r: number; a0: number; span: number; cw: boolean } {
   const ro = ri + w;
   // Corner tile centre.
   const px = b.corner.i + 0.5;
@@ -204,7 +204,8 @@ export function arcForBend(b: Bend, ri: number, w: number): { cx: number; cz: nu
   const span = Math.PI / 2;
   // Clockwise turn sweeps toward increasing angle in this frame.
   const a0 = b.turn > 0 ? entryAng - span / 2 : entryAng - span / 2;
-  return { cx, cz, r: ro, a0, span };
+  // cw follows the turn: a clockwise bend throws clockwise.
+  return { cx, cz, r: ro, a0, span, cw: b.turn > 0 };
 }
 
 /** Ridden arc length of a chain, in tiles — the number that decides whether a
@@ -228,6 +229,10 @@ export const BANK_MAX_PER_FLOOR = 6;
 export const BANK_RI = 2;
 /** Assumed corridor width — `widenMainArtery` carves a 3-wide highway. */
 export const BANK_W = 3;
+/** Fraction of a bank's span the rail covers. Nearly all of it: the ride is
+ *  the reason the bank exists, and a rail you can only catch in the middle
+ *  third fights the grace window. */
+export const BANK_LANE_FRAC = 0.94;
 
 /** One authored bank, ready to commit (or discard) as a unit. */
 export interface BankPlan {
@@ -291,7 +296,7 @@ export function planArteryBanks(
  */
 function planOneBank(
   g: Grid,
-  a: { cx: number; cz: number; r: number; a0: number; span: number },
+  a: { cx: number; cz: number; r: number; a0: number; span: number; cw: boolean },
   occupied: (i: number, j: number) => boolean,
   claimed: Set<number>,
   protect: (i: number, j: number) => boolean,
@@ -338,11 +343,31 @@ function planOneBank(
   // A bank with no face is not a bank. Require enough arc tiles that the
   // feature is actually rideable rather than a token curve.
   if (arcTiles.length < 3) return null;
-  return {
-    feature: { cx: a.cx, cz: a.cz, r: a.r, a0: a.a0, span: a.span, solidOut: true },
-    arcTiles,
-    fillTiles,
+  // EVERY bank gets a rail across nearly its whole span. A bank exists to be
+  // ridden — an unrailed one is just a curved wall, and the whole point of
+  // paying for the geometry is the ride. `cw` follows the turn direction so the
+  // rail throws the way the corridor actually goes; a rail pointing against the
+  // route would simply never be caught (laneBandAt rejects against-grain
+  // contact), which is a silent waste rather than a bug.
+  const bandSpan = a.span * BANK_LANE_FRAC;
+  const feature: ArcFeature = {
+    cx: a.cx,
+    cz: a.cz,
+    r: a.r,
+    a0: a.a0,
+    span: a.span,
+    solidOut: true,
+    lanes: [
+      {
+        a0: a.a0 + (a.span - bandSpan) / 2,
+        span: bandSpan,
+        cw: a.cw,
+        cooldownT: 0,
+        hitT: -1,
+      },
+    ],
   };
+  return { feature, arcTiles, fillTiles };
 }
 
 /** Commit a planned bank to the grid. Mirrors commitFillet in arc-sweeps.ts. */

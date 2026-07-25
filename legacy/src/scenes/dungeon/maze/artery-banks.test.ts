@@ -165,3 +165,43 @@ describe("chainArcLength — is a bank even worth authoring?", () => {
     expect(chainArcLength(chain, 2, 5)).toBeGreaterThan(chainArcLength(chain, 2, 3));
   });
 });
+
+describe("banks land on real floors and are rideable", () => {
+  it("authors LONG railed banks without breaking the floor", async () => {
+    const { generateMaze, thickenWalls, isWalkable, idx } = await import("./generator");
+    const { decorateMaze, widenMainArtery, pickEndpoints } = await import("./decorate");
+    const { bfsDistancesOwned } = await import("../entities/ai");
+    const { levelConfig } = await import("../constants");
+    const { mulberry32 } = await import("../../../utils/rng");
+
+    let longRailed = 0;
+    let floors = 0;
+    for (let seed = 0; seed < 8; seed++) {
+      const cfg = levelConfig(1 + seed);
+      const rng = mulberry32(4242 + seed);
+      const grid = thickenWalls(generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid, cfg.windiness));
+      const ep = pickEndpoints(grid, rng);
+      if (!ep) continue;
+      widenMainArtery(grid, ep);
+      decorateMaze(grid, rng, cfg.zombies, cfg.torches, 16, [], { endpoints: ep });
+      floors++;
+
+      // Every floor must still be solvable — banks ADD WALL, so this is the
+      // invariant that matters most.
+      const d = bfsDistancesOwned(grid, ep.start.i, ep.start.j);
+      for (let j = 0; j < grid.h; j++) {
+        for (let i = 0; i < grid.w; i++) {
+          expect(!(isWalkable(grid, i, j) && d[idx(grid, i, j)] < 0), `orphan at ${i},${j}`).toBe(true);
+        }
+      }
+      for (const f of grid.arcs ?? []) {
+        if (f.span <= 1e-6) continue;
+        if (f.r * f.span >= 6 && (f.lanes?.length ?? 0) > 0) longRailed++;
+      }
+    }
+    // The whole point of the module: arcs long enough to actually hold a rail.
+    // A shipped fillet is ~3.1 tiles; these are ~7.9.
+    expect(floors).toBeGreaterThan(0);
+    expect(longRailed / floors).toBeGreaterThan(1);
+  }, 300000);
+});
