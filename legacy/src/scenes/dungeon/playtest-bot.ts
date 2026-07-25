@@ -322,4 +322,7 @@ export function installBotHooks(): void {
   if (typeof window === "undefined") return;
   w().__dungeonBot = (opts?: BotOptions) => startBot(opts ?? {});
   w().__dungeonBotStop = () => stopBot();
+  // Lets the headless runner poll for completion instead of sleeping for the
+  // full duration — a crash or an early self-stop surfaces immediately.
+  w().__dungeonBotIsRunning = () => running;
 }
