@@ -806,33 +806,138 @@ function knightRollFrame(dir: Dir, t: number, weapon: WeaponId, look: KnightLook
 }
 
 /**
- * BALL-FORM frame: the pinball overcharge ultimate — the knight tucked to a
- * tight ball, spinning a quarter-turn per frame, with a bright speed ring
- * chasing the spin so it reads as a blurring wheel even at 4 frames. Same
- * rotate-a-finished-figure trick as the roll, just tighter and looping.
+ * BALL-FORM frame: the pinball overcharge ultimate — an actual POLISHED STEEL
+ * PINBALL, not the knight.
+ *
+ * This used to draw the knight sprite shrunk to 60% and spun, which read as
+ * "a small man tumbling" rather than "a ball bearing the size of a man" — the
+ * form's whole physics fantasy (heavy, metal, smashes masonry) had no visual
+ * support at all.
+ *
+ * What sells chrome is the REFLECTION, not the shading: a real ball bearing
+ * shows a bright sky-lit crown, a dark equator where it grazes the horizon, and
+ * a warm BOUNCE-LIGHT crescent low down where the floor kicks light back up.
+ * The palette's steel ramp (19-22) is built for exactly this — its dark end
+ * leans warm-violet while the light end stays icy, which is the temperature
+ * spread that reads as metal instead of grey plastic.
+ *
+ * `spin` rotates only the highlight and the banding, so the sphere's silhouette
+ * stays perfectly round while its surface visibly rolls.
  */
-function knightBallFrame(dir: Dir, spin: number, weapon: WeaponId, look: KnightLook): FramePaint {
-  const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 6, stride: 0, roll: 0.4 }, weapon, look);
+function knightBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: KnightLook): FramePaint {
+  const R = 21; // a touch bigger than the old 0.6-scaled figure — it has WEIGHT
+  const cy = GROUND - R - 1; // resting on the floor line
   return (ctx) => {
-    groundShadow(ctx, CX, GROUND + 3, 22);
+    groundShadow(ctx, CX, GROUND + 3, 20);
+
+    // ── Body: a vertical sky→floor gradient, the base read of a lit sphere.
+    const body = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+    body.addColorStop(0, paletteCss(22)); // sky-lit crown
+    body.addColorStop(0.42, paletteCss(21));
+    body.addColorStop(0.72, paletteCss(20));
+    body.addColorStop(1, paletteCss(19)); // warm violet underside
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = body;
+    ctx.fill();
+
+    // ── Equator band: the dark horizon line a chrome sphere always carries.
+    // Rotating it with `spin` is what makes the ball read as ROLLING.
     ctx.save();
-    ctx.translate(CX, GROUND - 20);
-    ctx.rotate(spin);
-    ctx.scale(0.6, 0.6);
-    ctx.translate(-CX, -(GROUND - 20));
-    base(ctx);
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(CX, cy);
+    ctx.rotate(spin * 0.5);
+    ctx.fillStyle = "rgba(23, 26, 34, 0.42)";
+    ctx.fillRect(-R, -2.5, R * 2, 5);
+    // A second, thinner band a quarter turn on — two bands make the roll
+    // direction unambiguous where one band is symmetric.
+    ctx.fillStyle = "rgba(23, 26, 34, 0.22)";
+    ctx.fillRect(-R, R * 0.42, R * 2, 3);
     ctx.restore();
-    // speed ring — an arc chasing the spin angle (alpha ≥0.55: crush cutout)
+
+    // ── Bounce light: warm crescent low on the ball where the floor kicks
+    // light back up. This is the single detail that stops it reading as a
+    // flat grey circle.
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(CX, GROUND - 20, 27, spin, spin + 3.6);
-    ctx.lineWidth = 5;
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    const bounce = ctx.createRadialGradient(CX, cy + R * 0.72, 1, CX, cy + R * 0.72, R * 0.85);
+    bounce.addColorStop(0, "rgba(240, 166, 60, 0.30)"); // torch warmth off the floor
+    bounce.addColorStop(1, "rgba(240, 166, 60, 0)");
+    ctx.fillStyle = bounce;
+    ctx.fillRect(CX - R, cy - R, R * 2, R * 2);
+    ctx.restore();
+
+    // ── Specular: a hard hot dot plus a soft bloom, orbiting with the spin so
+    // the light source stays put while the METAL turns under it.
+    const hx = CX + Math.cos(spin) * R * 0.34;
+    const hy = cy - R * 0.42 + Math.sin(spin) * R * 0.16;
+    const glow = ctx.createRadialGradient(hx, hy, 0.5, hx, hy, R * 0.55);
+    glow.addColorStop(0, "rgba(255, 255, 255, 0.85)");
+    glow.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(hx, hy, R * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(hx, hy, 3.1, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+
+    // ── Crest tell: a thin equatorial STRIPE in the worn set's plume colour,
+    // so you can still tell WHOSE ball this is in co-op (and which armor style
+    // you're running). Drawn as a band that rolls with the ball rather than a
+    // fixed dot — a dot read as a bug sitting on the sphere.
+    const crest = STYLE_PAINTS[look.style ?? "iron"].plume;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(CX, cy);
+    ctx.rotate(spin * 0.5);
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = paletteCss(crest[crest.length - 1]);
+    ctx.fillRect(-R, -R * 0.92, R * 2, 2.4);
+    ctx.restore();
+
+    // ── Rim: a cold bright arc along the top-left edge, the contact between
+    // the sphere and the air. Keeps the silhouette crisp after the pixel crush.
+    ctx.beginPath();
+    ctx.arc(CX, cy, R - 0.8, Math.PI * 1.05, Math.PI * 1.75);
+    ctx.lineWidth = 1.8;
     ctx.lineCap = "round";
-    ctx.strokeStyle = "rgba(238, 241, 245, 0.7)";
+    ctx.strokeStyle = "rgba(238, 241, 245, 0.9)";
     ctx.stroke();
+
+    // ── Outline: the palette's ink, so it sits in the same world as every
+    // other actor after quantize.
     ctx.beginPath();
-    ctx.arc(CX, GROUND - 20, 22, spin + 0.6, spin + 2.6);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(111, 208, 232, 0.6)"; // arcane streak inside
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = paletteCss(1);
+    ctx.stroke();
+
+    // ── Speed streak: a THIN arc hugging the ball, fading at both ends, so it
+    // reads as motion blur coming off the metal. The old thick opaque ring sat
+    // clearly detached from the sphere and looked like a handle bolted on.
+    const sweep = 2.2;
+    const streak = ctx.createLinearGradient(
+      CX + Math.cos(spin) * (R + 3),
+      cy + Math.sin(spin) * (R + 3),
+      CX + Math.cos(spin + sweep) * (R + 3),
+      cy + Math.sin(spin + sweep) * (R + 3),
+    );
+    streak.addColorStop(0, "rgba(238, 241, 245, 0)");
+    streak.addColorStop(0.5, "rgba(238, 241, 245, 0.42)");
+    streak.addColorStop(1, "rgba(238, 241, 245, 0)");
+    ctx.beginPath();
+    ctx.arc(CX, cy, R + 2.5, spin, spin + sweep);
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = streak;
     ctx.stroke();
   };
 }

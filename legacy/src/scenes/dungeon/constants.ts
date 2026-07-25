@@ -532,6 +532,29 @@ export const BALL_RAM_KNOCKBACK = 1.1; // shove per ram (a wrecking ball, not a 
 /** Ball clip playback. */
 export const FPS_BALL = 14;
 
+// ── STEEL: the BASE ball form is a solid ball bearing ─────────────────────────
+// Ball form always LOOKED like a physics object but handled like the knight
+// with momentum bolted on: it broke masonry at the same 15 u/s a bare roll did,
+// shoved bodies the same 1.1, and carried no extra mass anywhere. Now the base
+// form is genuinely STEEL — heavier than flesh, lighter than the Stone marble
+// (which stays the "immovable boulder" pickup, a strict upgrade on every axis).
+//
+// These are the DEFAULTS the material hooks fall back to, so a pickup still
+// overrides them wholesale and nothing about the material layer changes.
+/** Masonry yields sooner to a steel ball than to a tumbling knight. */
+export const STEEL_WALL_BREAK_SPEED = 11; // was WALL_BREAK_SPEED 15
+export const STEEL_SECRET_BREAK_SPEED = 5.5; // was SECRET_BREAK_SPEED 7
+/** Mass tells on impact: bodies get shoved harder and the ball keeps its line. */
+export const STEEL_RAM_KNOCKBACK = 1.9; // was BALL_RAM_KNOCKBACK 1.1
+/** Heavier = less speed scrubbed by the floor, so a good line CARRIES. */
+export const STEEL_FRICTION_MULT = 0.82;
+/** …and correspondingly harder to turn. Weight costs you agility. */
+export const STEEL_STEER_MULT = 0.88;
+/** Momentum kept when punching masonry — steel barely notices a thin wall. */
+export const STEEL_WALL_BREAK_SPEED_COST = 0.82; // was WALL_BREAK_SPEED_COST 0.7
+/** Ram damage multiplier: the ball's own weight behind every body it meets. */
+export const STEEL_RAM_DAMAGE_MULT = 1.35;
+
 // ── MULTI-BALL (the 🔮 potion: two echo knights) ────────────────
 /** How many echoes peel off the knight. */
 export const MULTIBALL_COUNT = 2;
@@ -1917,6 +1940,9 @@ export const WATER_SLIP_SPEED = 2.4; // u/s an enemy drifts while slipping
 // 🪨 Stone — force / area-denial
 export const STONE_RAM_KNOCKBACK = 3.3; // was BALL_RAM_KNOCKBACK 1.1
 export const STONE_FRICTION_MULT = 1.6; // rolls, doesn't glide
+/** Stone stays a strict upgrade on steel for the two new mass axes. */
+export const STONE_RAM_DAMAGE_MULT = 1.7; // vs STEEL_RAM_DAMAGE_MULT 1.35
+export const STONE_WALL_BREAK_SPEED_COST = 0.9; // vs STEEL 0.82 — a boulder shrugs off masonry
 export const STONE_MAX_SPEED = 16; // lower ceiling (vs PINBALL_MAX_SPEED 22)
 export const STONE_BUMPER_KICK_MULT = 0.15; // ignores small bumper forces
 export const STONE_CORNER_ADD_MULT = 3; // corner hits accelerate harder

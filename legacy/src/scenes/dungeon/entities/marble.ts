@@ -42,6 +42,16 @@ import {
   WATER_SLAM_SLICKS,
   WATER_SLAM_SPEED_KICK,
   STONE_RAM_KNOCKBACK,
+  STONE_RAM_DAMAGE_MULT,
+  STONE_WALL_BREAK_SPEED_COST,
+  STEEL_WALL_BREAK_SPEED,
+  STEEL_SECRET_BREAK_SPEED,
+  STEEL_RAM_KNOCKBACK,
+  STEEL_FRICTION_MULT,
+  STEEL_STEER_MULT,
+  STEEL_RAM_DAMAGE_MULT,
+  STEEL_WALL_BREAK_SPEED_COST,
+  WALL_BREAK_SPEED_COST,
   STONE_FRICTION_MULT,
   STONE_MAX_SPEED,
   STONE_BUMPER_KICK_MULT,
@@ -202,24 +212,34 @@ export function materialBreakSpeeds(): { secret: number; wall: number } {
   if (activeMaterial() === "diamond") {
     return { secret: DIAMOND_SECRET_BREAK_SPEED, wall: DIAMOND_WALL_BREAK_SPEED };
   }
-  return { secret: SECRET_BREAK_SPEED, wall: WALL_BREAK_SPEED };
+  // No material: the bare ball is STEEL, which already bites masonry harder
+  // than a tumbling knight did.
+  return { secret: STEEL_SECRET_BREAK_SPEED, wall: STEEL_WALL_BREAK_SPEED };
 }
 
-/** Multiplier on momentum friction (water glides, stone drags). */
+/**
+ * Multiplier on momentum friction (water glides, stone drags).
+ *
+ * STEEL is the BARE-BALL baseline only — a material pickup replaces the ball's
+ * substance outright, so diamond/storm/shadow/lava keep their own neutral 1
+ * rather than inheriting steel's weight on top of their own identity.
+ */
 export function materialFrictionMult(): number {
-  switch (activeMaterial()) {
+  const m = activeMaterial();
+  switch (m) {
     case "water": return WATER_FRICTION_MULT;
     case "stone": return STONE_FRICTION_MULT;
-    default: return 1;
+    default: return m ? 1 : STEEL_FRICTION_MULT; // heavy: the floor scrubs it less
   }
 }
 
 /** Multiplier on steering grip (water is slippery, storm is sharp). */
 export function materialSteerMult(): number {
-  switch (activeMaterial()) {
+  const m = activeMaterial();
+  switch (m) {
     case "water": return WATER_STEER_MULT;
     case "storm": return STORM_STEER_MULT;
-    default: return 1;
+    default: return m ? 1 : STEEL_STEER_MULT; // …and correspondingly harder to turn
   }
 }
 
@@ -230,11 +250,32 @@ export function materialLanePull(): number {
 
 /** Ram knockback for the current material (stone shoves hard, water flows). */
 export function materialRamKnockback(): number {
-  switch (activeMaterial()) {
+  const m = activeMaterial();
+  switch (m) {
     case "stone": return STONE_RAM_KNOCKBACK;
     case "water": return WATER_RAM_KNOCKBACK;
-    default: return BALL_RAM_KNOCKBACK;
+    // Bare steel shoves harder than the old flesh baseline; every other
+    // material keeps its own tuned value.
+    default: return m ? BALL_RAM_KNOCKBACK : STEEL_RAM_KNOCKBACK;
   }
+}
+
+/**
+ * Damage multiplier the ram applies for the ball's own mass. Steel is the
+ * bare-ball baseline; Stone (the boulder pickup) hits harder still; the other
+ * materials trade mass for their own effects and stay neutral.
+ */
+export function materialRamDamageMult(): number {
+  const m = activeMaterial();
+  if (m === "stone") return STONE_RAM_DAMAGE_MULT;
+  return m ? 1 : STEEL_RAM_DAMAGE_MULT;
+}
+
+/** Momentum retained after punching through masonry. Steel barely slows. */
+export function materialWallBreakCost(): number {
+  const m = activeMaterial();
+  if (m === "stone") return STONE_WALL_BREAK_SPEED_COST;
+  return m ? WALL_BREAK_SPEED_COST : STEEL_WALL_BREAK_SPEED_COST;
 }
 
 /** Extra multiplier on the corner-hit acceleration (stone corners hit harder). */

@@ -164,6 +164,8 @@ import {
   materialLanePull,
   materialPlayerR,
   materialRamKnockback,
+  materialRamDamageMult,
+  materialWallBreakCost,
   materialCornerAddMult,
   materialMaxSpeed,
   emitMaterialOnBounce,
@@ -1384,7 +1386,9 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // corridor behind it — your own shortcut. Costs a big slice of speed so it
     // can't chew a straight line across the whole floor.
     if (p.momSpeed >= brk.wall && trySmashWallAhead(g, p.x, p.z, p.momX, p.momZ, blockedX, blockedZ)) {
-      p.momSpeed *= WALL_BREAK_SPEED_COST;
+      // Mass decides how much the wall costs you: steel shrugs off thin
+      // masonry where a tumbling knight used to lose a third of its speed.
+      p.momSpeed *= materialWallBreakCost();
       p.bounceCombo += 1;
       p.bounceComboT = comboWindow(p.bounceCombo);
       syncActorMesh(p);
@@ -1532,7 +1536,12 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const ramming = isBall || p.ironT > 0;
   if (ramming && p.ramT <= 0) {
     const w = WEAPONS[activeWeapon().id];
-    const dmg = playerDamage(Math.max(2, w.damage * 1.5) * (p.ironT > 0 ? IRONCORE_RAM_MULT : 1));
+    // The ball's own MASS rides on every ram — steel by default, more for
+    // Stone. This is what makes running things over feel like weight rather
+    // than a shoulder barge.
+    const dmg = playerDamage(
+      Math.max(2, w.damage * 1.5) * (p.ironT > 0 ? IRONCORE_RAM_MULT : 1) * (isBall ? materialRamDamageMult() : 1),
+    );
     // Stone shoves hard; water flows through with barely a nudge.
     const ramKb = materialRamKnockback();
     let hit = false;
