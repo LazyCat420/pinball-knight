@@ -39,6 +39,44 @@
  */
 import * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
+import { NodeMaterial } from "three/webgpu";
+import {
+  dot,
+  float,
+  floor,
+  fract,
+  max,
+  mix,
+  mod,
+  pow,
+  screenCoordinate,
+  smoothstep,
+  step,
+  texture,
+  uniform,
+  uv,
+  vec2,
+  vec3,
+  vec4,
+} from "three/tsl";
+
+/**
+ * TSL's public types are deeply generic in the node's element type ("float",
+ * "vec3", …) and every operator returns a differently-parameterised type. A
+ * shader graph mixes those freely — `dot()` takes vec3s and yields a float,
+ * `select()` unions two branches — so threading exact types through would mean
+ * annotating every intermediate with a type only the compiler cares about.
+ *
+ * The graph is validated where it actually matters: three type-checks the node
+ * tree when it builds the shader, and the render output is asserted by pixel
+ * readback in the playtest harness. So the local alias is deliberately loose.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TSLNode = any;
+
+/** A TSL uniform node: opaque in the graph, but `.value` is live from JS. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TSLUniform<T> = any & { value: T };
 import { PALETTE_SIZE, paletteToFloatArray } from "./palette";
 import {
   RENDER_W,
@@ -56,198 +94,179 @@ import {
   FRENZY_ABERRATION,
 } from "../constants";
 
-const FULLSCREEN_VERT = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
-}
-`;
+/**
+ * ── THE POST CHAIN IS TSL, NOT GLSL ────────────────────────────────────────
+ *
+ * Same three passes, same maths, same order. What changed is only the language:
+ * WebGPURenderer compiles node graphs, and a raw `ShaderMaterial` is rejected
+ * outright ("Material ShaderMaterial is not compatible") — which renders a
+ * COMPLETELY BLACK screen while the game logic keeps ticking happily.
+ *
+ * The deliberate decision at the top of this file still stands: no
+ * EffectComposer, no stock bloom pass. This pipeline owns its colour handling
+ * against a hand-managed LINEAR target, and the backend does not change that.
+ *
+ * The one genuine semantic difference is UV ORIGIN. GLSL sampled with the
+ * `uv` varying and read `gl_FragCoord` for dither/scanlines; TSL's `uv()` and
+ * `screenCoordinate` carry the same convention here because every pass is a
+ * fullscreen quad in the same orientation, so the Bayer matrix and the
+ * scanline parity land on the same pixels as before.
+ */
 
 // ── Bloom: bright-pass ──────────────────────────────────────────
 // Keep only what's brighter than the threshold, softly. Runs in linear.
-const BRIGHT_FRAG = /* glsl */ `
-precision highp float;
-uniform sampler2D tSrc;
-uniform float uThreshold;
-varying vec2 vUv;
-void main() {
-  vec3 c = texture2D(tSrc, vUv).rgb;
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  float k = clamp((l - uThreshold) / max(1.0 - uThreshold, 0.001), 0.0, 1.0);
-  gl_FragColor = vec4(c * k, 1.0);
+function brightNode(src: THREE.Texture, threshold: TSLNode): TSLNode {
+  const c = texture(src, uv()).rgb;
+  const l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  const k = l.sub(threshold).div(max(float(1).sub(threshold), float(0.001))).clamp(0, 1);
+  return vec4(c.mul(k), 1);
 }
-`;
 
 // ── Bloom: separable 9-tap gaussian ─────────────────────────────
-const BLUR_FRAG = /* glsl */ `
-precision highp float;
-uniform sampler2D tSrc;
-uniform vec2 uDir; // texel step * radius, along one axis
-varying vec2 vUv;
-void main() {
-  // Normalised gaussian weights (sigma ~2).
-  float w0 = 0.227027;
-  float w1 = 0.194595;
-  float w2 = 0.121622;
-  float w3 = 0.054054;
-  float w4 = 0.016216;
-  vec3 c = texture2D(tSrc, vUv).rgb * w0;
-  c += texture2D(tSrc, vUv + uDir * 1.0).rgb * w1;
-  c += texture2D(tSrc, vUv - uDir * 1.0).rgb * w1;
-  c += texture2D(tSrc, vUv + uDir * 2.0).rgb * w2;
-  c += texture2D(tSrc, vUv - uDir * 2.0).rgb * w2;
-  c += texture2D(tSrc, vUv + uDir * 3.0).rgb * w3;
-  c += texture2D(tSrc, vUv - uDir * 3.0).rgb * w3;
-  c += texture2D(tSrc, vUv + uDir * 4.0).rgb * w4;
-  c += texture2D(tSrc, vUv - uDir * 4.0).rgb * w4;
-  gl_FragColor = vec4(c, 1.0);
-}
-`;
-
-// ── Final composite + cel quantize ──────────────────────────────
-const FINAL_FRAG = /* glsl */ `
-precision highp float;
-
-uniform sampler2D tDiffuse;
-uniform sampler2D tBloom;
-uniform sampler2D tDepth;
-uniform vec3  uPalette[${PALETTE_SIZE}];
-uniform float uQuantize;
-uniform float uDither;
-uniform float uScanline;
-uniform float uOutline;
-uniform float uBloom;      // bloom strength (0 = off)
-uniform float uAo;         // AO strength (0 = off)
-uniform float uAoRadius;   // AO ring radius in texels
-uniform float uVignette;   // corner darkening (0 = off)
-uniform float uAberration; // chromatic RGB split toward the corners (0 = off)
-uniform float uFlash;      // full-screen white flash (katana finisher), 0 = off
-uniform vec2  uResolution;
-
-varying vec2 vUv;
-
-// Accurate linear → sRGB transfer.
-vec3 linearToSRGB(vec3 c) {
-  c = max(c, vec3(0.0));
-  vec3 lo = c * 12.92;
-  vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
-  return mix(lo, hi, step(vec3(0.0031308), c));
+// Normalised gaussian weights (sigma ~2) — identical taps to the GLSL version.
+const BLUR_W = [0.227027, 0.194595, 0.121622, 0.054054, 0.016216] as const;
+function blurNode(src: THREE.Texture, dir: TSLNode): TSLNode {
+  const at = (o: TSLNode): TSLNode => texture(src, uv().add(o)).rgb;
+  let c: TSLNode = at(vec2(0, 0)).mul(BLUR_W[0]);
+  for (let i = 1; i <= 4; i++) {
+    const step = dir.mul(float(i));
+    c = c.add(at(step).mul(BLUR_W[i])).add(at(step.negate()).mul(BLUR_W[i]));
+  }
+  return vec4(c, 1);
 }
 
-// Compact Bayer 4x4 — returns [0,1).
-float bayer2(vec2 a) {
-  a = floor(a);
-  return fract(a.x / 2.0 + a.y * a.y * 0.75);
-}
-float bayer4(vec2 a) {
-  return bayer2(0.5 * a) * 0.25 + bayer2(a);
+/** Uniform handles for the final composite, so render()/setters can poke them. */
+interface FinalUniforms {
+  quantize: TSLUniform<number>;
+  dither: TSLUniform<number>;
+  scanline: TSLUniform<number>;
+  outline: TSLUniform<number>;
+  bloom: TSLUniform<number>;
+  ao: TSLUniform<number>;
+  aoRadius: TSLUniform<number>;
+  vignette: TSLUniform<number>;
+  aberration: TSLUniform<number>;
+  flash: TSLUniform<number>;
+  resolution: TSLUniform<THREE.Vector2>;
 }
 
-float depthAt(vec2 texelOffset) {
-  return texture2D(tDepth, vUv + texelOffset / uResolution).x;
-}
+/**
+ * ── Final composite + cel quantize ─────────────────────────────────────────
+ *
+ * The whole art direction lives here, in this order (the order IS the look):
+ * chromatic aberration → AO → bloom → linear→sRGB → vignette → ink outline →
+ * flash → dither → palette snap → scanlines.
+ *
+ * The GLSL original branched with `if`. TSL is a graph, so a runtime `if` on a
+ * uniform would have to be `Fn`/`If` nodes; instead each toggle is folded into
+ * a `mix(off, on, flag)` where the flag is already 0/1. Same result, no
+ * divergence, and the uniform stays pokeable from JS.
+ */
+function finalNode(
+  diffuse: THREE.Texture,
+  bloomTex: THREE.Texture,
+  depth: THREE.Texture,
+  palette: Float32Array,
+  u: FinalUniforms,
+): TSLNode {
+  const vUv = uv();
+  const res = u.resolution;
 
-// Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner —
-// wall base meeting the floor — has neighbours that sit CLOSER to the camera
-// than the centre; we sample a ring at two radii and darken by how many
-// neighbours are moderately closer. Tiny diffs (flat ground) and huge diffs
-// (a silhouette against the void) are both excluded, so we get corner AO
-// without a halo around every sprite.
-float aoTerm() {
-  float c = depthAt(vec2(0.0));
-  if (c >= 0.999) return 0.0; // void / sky — nothing to occlude
-  float occ = 0.0;
-  for (int i = 0; i < 8; i++) {
-    float a = float(i) * 0.7853981634; // 2π / 8
-    vec2 dir = vec2(cos(a), sin(a));
-    for (int r = 1; r <= 2; r++) {
-      float rad = uAoRadius * (r == 1 ? 0.5 : 1.0);
-      float diff = c - depthAt(dir * rad);
-      occ += step(0.00015, diff) * (1.0 - smoothstep(0.004, 0.02, diff));
+  // Depth sampling helper — matches `depthAt(texelOffset)` in the GLSL.
+  const depthAt = (ox: number, oy: number): TSLNode =>
+    texture(depth, vUv.add(vec2(ox, oy).div(res))).x;
+
+  // ── Chromatic aberration: split R/B outward from centre. `uAberration = 0`
+  // must reduce to EXACTLY the single-tap fetch, so it is a mix, not a scale.
+  const off = vUv.sub(0.5).mul(u.aberration);
+  const plain = texture(diffuse, vUv).rgb;
+  const split = vec3(texture(diffuse, vUv.add(off)).r, plain.g, texture(diffuse, vUv.sub(off)).b);
+  let col: TSLNode = mix(plain, split, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
+
+  // ── Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner
+  // has neighbours CLOSER than the centre; sample a ring at two radii and
+  // darken by how many neighbours are moderately closer. Tiny diffs (flat
+  // ground) and huge ones (a silhouette against the void) are both excluded,
+  // so corners get AO without haloing every sprite.
+  const c0 = depthAt(0, 0);
+  let occ: TSLNode = float(0);
+  for (let i = 0; i < 8; i++) {
+    const a = i * 0.7853981634; // 2π / 8
+    for (let r = 1; r <= 2; r++) {
+      const rad = r === 1 ? 0.5 : 1.0;
+      // uAoRadius is a uniform, so the offset must be built as nodes.
+      const d = vec2(Math.cos(a) * rad, Math.sin(a) * rad).mul(u.aoRadius);
+      const diff = c0.sub(texture(depth, vUv.add(d.div(res))).x);
+      occ = occ.add(step(float(0.00015), diff).mul(float(1).sub(smoothstep(0.004, 0.02, diff))));
     }
   }
-  return occ / 16.0;
+  // Void/sky (depth >= 0.999) is excluded — nothing there to occlude.
+  const aoTerm = c0.greaterThanEqual(0.999).select(float(0), occ.div(16));
+  col = col.mul(float(1).sub(aoTerm.mul(u.ao)));
+
+  // ── Bloom, added in LINEAR so bright torch cores bleed a warm halo.
+  col = col.add(texture(bloomTex, vUv).rgb.mul(u.bloom));
+
+  // ── Accurate linear → sRGB transfer (done by hand; see the file header).
+  const lo: TSLNode = col.mul(12.92);
+  const hi: TSLNode = pow(max(col, vec3(0, 0, 0)), vec3(1 / 2.4, 1 / 2.4, 1 / 2.4)).mul(1.055).sub(0.055);
+  // step() is typed float-only, but GLSL step() is COMPONENTWISE on vec3 and
+  // that is exactly what the original shader relied on for the per-channel
+  // sRGB knee. The graph handles vec3 fine; only the .d.ts is narrow.
+  const knee: TSLNode = (step as TSLNode)(vec3(0.0031308, 0.0031308, 0.0031308), col);
+  col = mix(lo, hi, knee);
+
+  // ── Vignette, BEFORE the quantizer so the falloff snaps to darker steps.
+  const q = vUv.sub(0.5);
+  const vig = smoothstep(0.85, 0.32, dot(q, q).mul(2)); // 1 centre → 0 corners
+  col = col.mul(mix(float(1), vig, u.vignette));
+
+  // ── Depth-discontinuity ink outline — the cel-shading move. With an ORTHO
+  // camera the depth buffer is linear in eye space, so a FIXED threshold works.
+  const dc = depthAt(0, 0);
+  const e = max(
+    max(depthAt(1, 0).sub(dc).abs(), depthAt(-1, 0).sub(dc).abs()),
+    max(depthAt(0, 1).sub(dc).abs(), depthAt(0, -1).sub(dc).abs()),
+  );
+  const inked = e.greaterThan(float(0.35 / 200)).select(float(0.45), float(1));
+  col = col.mul(mix(float(1), inked, u.outline));
+
+  // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the
+  // palette's bright ramp like everything else.
+  col = mix(col, vec3(1, 1, 1), u.flash);
+
+  // ── Bayer 4x4 ordered dither. Nudges each pixel up/down the ramp before the
+  // snap, buying back apparent colour depth so gradients don't band.
+  // screenCoordinate is the TSL equivalent of gl_FragCoord.xy.
+  const fc = screenCoordinate;
+  const bayer2 = (v: TSLNode): TSLNode => {
+    const a: TSLNode = floor(v);
+    return fract(a.x.div(2).add(a.y.mul(a.y).mul(0.75)));
+  };
+  const b = bayer2(fc.mul(0.5)).mul(0.25).add(bayer2(fc)).sub(0.5);
+  col = col.add(b.mul(2 / PALETTE_SIZE).mul(u.dither));
+
+  // ── Snap to the nearest palette entry, luma-weighted. Unrolled over the 32
+  // colours: the palette is a compile-time constant here, so this becomes a
+  // flat min-reduction with no uniform array indexing.
+  let best: TSLNode = vec3(palette[0], palette[1], palette[2]);
+  let bestDist: TSLNode = float(1e9);
+  for (let i = 0; i < PALETTE_SIZE; i++) {
+    const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
+    const d = col.sub(pc).mul(vec3(0.3, 0.59, 0.11));
+    const dist = dot(d, d);
+    const closer = dist.lessThan(bestDist);
+    best = closer.select(pc, best);
+    bestDist = closer.select(dist, bestDist);
+  }
+  col = mix(col, best, u.quantize);
+
+  // ── Scanlines: every other ROW of the render target, dimmed.
+  const line: TSLNode = mod(floor(vUv.y.mul(res.y)), 2);
+  col = col.mul(mix(float(1), mix(float(1), float(0.86), line), u.scanline));
+
+  return vec4(col, 1);
 }
-
-void main() {
-  // Chromatic aberration (frenzy FX): split R/B outward from centre so the
-  // scene edges fringe as the combo peaks — the "edge of control" read. Off
-  // (uAberration 0) restores the exact single-tap fetch.
-  vec3 col;
-  if (uAberration > 0.0001) {
-    vec2 off = (vUv - 0.5) * uAberration;
-    col = vec3(
-      texture2D(tDiffuse, vUv + off).r,
-      texture2D(tDiffuse, vUv).g,
-      texture2D(tDiffuse, vUv - off).b
-    );
-  } else {
-    col = texture2D(tDiffuse, vUv).rgb; // LINEAR scene
-  }
-
-  // AO in linear, before the sRGB curve.
-  if (uAo > 0.001) col *= 1.0 - aoTerm() * uAo;
-
-  // Add bloom in linear so bright torch cores bleed a warm halo.
-  if (uBloom > 0.001) col += texture2D(tBloom, vUv).rgb * uBloom;
-
-  col = linearToSRGB(col);
-
-  // Vignette — darken toward the corners for a framed, modern look. Applied
-  // before the quantizer so the falloff snaps to darker palette steps.
-  if (uVignette > 0.001) {
-    vec2 q = vUv - 0.5;
-    float vig = smoothstep(0.85, 0.32, dot(q, q) * 2.0); // 1 centre → 0 corners
-    col *= mix(1.0, vig, uVignette);
-  }
-
-  // Depth-discontinuity ink outline (the cel-shading move). With an ORTHO
-  // camera the depth buffer is linear in eye space, so a fixed threshold works.
-  if (uOutline > 0.5) {
-    float dc = depthAt(vec2(0.0));
-    float e = max(
-      max(abs(depthAt(vec2(1.0, 0.0)) - dc), abs(depthAt(vec2(-1.0, 0.0)) - dc)),
-      max(abs(depthAt(vec2(0.0, 1.0)) - dc), abs(depthAt(vec2(0.0, -1.0)) - dc))
-    );
-    if (e > ${(0.35 / 200).toFixed(6)}) col *= 0.45;
-  }
-
-  // Full-screen flash BEFORE dither/quantize so the wash snaps to the palette's
-  // bright ramp like everything else — a one-beat white-out, not an overlay.
-  if (uFlash > 0.001) col = mix(col, vec3(1.0), uFlash);
-
-  // Nudge each pixel up/down the ramp before snapping — buys back apparent
-  // colour depth so smooth gradients (AO, bloom, torch falloff) don't snap into
-  // hard concentric bands.
-  if (uDither > 0.5) {
-    float b = bayer4(gl_FragCoord.xy) - 0.5;
-    col += b * (2.0 / float(${PALETTE_SIZE}));
-  }
-
-  // Snap to the nearest palette entry, luma-weighted.
-  if (uQuantize > 0.5) {
-    vec3  best = uPalette[0];
-    float bestDist = 1e9;
-    for (int i = 0; i < ${PALETTE_SIZE}; i++) {
-      vec3 d = (col - uPalette[i]) * vec3(0.30, 0.59, 0.11);
-      float dist = dot(d, d);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = uPalette[i];
-      }
-    }
-    col = best;
-  }
-
-  if (uScanline > 0.5) {
-    float line = mod(floor(vUv.y * uResolution.y), 2.0);
-    col *= mix(1.0, 0.86, line);
-  }
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
 
 /** The result of one sizing pass. Pure data — safe to compute without a GL context. */
 export interface RenderSizing {
@@ -374,6 +393,16 @@ export function createPixelPass(
   // We want fat honest pixels, so devicePixelRatio is deliberately ignored.
   renderer.setPixelRatio(1);
   renderer.toneMapping = THREE.NoToneMapping;
+  // The final composite does its own linear→sRGB BEFORE the palette snap (the
+  // palette is sRGB, and dither/quantize must run in that space). The legacy
+  // WebGLRenderer skipped its output encode for any ShaderMaterial that didn't
+  // `#include <colorspace_fragment>`; WebGPURenderer's node pipeline applies
+  // the canvas encode to EVERY material, which double-encoded the whole game
+  // (measured: the same shader read (26,40,27) on an offscreen target and
+  // (54,59,70) on the canvas — everything washed out). Declaring the output as
+  // linear-sRGB turns that second encode into a no-op. Only the final quad ever
+  // draws to the canvas, so nothing else is affected.
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
   // Everything below is sized from THIS, and re-sized from it on every resize.
   let sizing = computeRenderSizing(window.innerWidth, window.innerHeight);
@@ -410,59 +439,73 @@ export function createPixelPass(
   const bloomB = new THREE.WebGLRenderTarget(BW, BH, bloomTargetOpts);
 
   // ── Materials ──
-  const brightMat = new THREE.ShaderMaterial({
-    vertexShader: FULLSCREEN_VERT,
-    fragmentShader: BRIGHT_FRAG,
-    uniforms: {
-      tSrc: { value: sceneTarget.texture },
-      uThreshold: { value: BLOOM_THRESHOLD },
-    },
-    depthTest: false,
-    depthWrite: false,
-  });
+  // NodeMaterial + fragmentNode is the TSL equivalent of a fullscreen-quad
+  // ShaderMaterial. Depth test/write stay off exactly as before.
+  const blurDir = uniform(new THREE.Vector2());
 
-  const blurMat = new THREE.ShaderMaterial({
-    vertexShader: FULLSCREEN_VERT,
-    fragmentShader: BLUR_FRAG,
-    uniforms: {
-      tSrc: { value: null },
-      uDir: { value: new THREE.Vector2() },
-    },
-    depthTest: false,
-    depthWrite: false,
-  });
+  const brightMat = new NodeMaterial();
+  brightMat.depthTest = false;
+  brightMat.depthWrite = false;
+  brightMat.fragmentNode = brightNode(sceneTarget.texture, uniform(BLOOM_THRESHOLD));
 
-  const finalUniforms = {
-    tDiffuse: { value: sceneTarget.texture },
-    tBloom: { value: bloomA.texture },
-    tDepth: { value: depthTexture },
-    uPalette: { value: paletteToFloatArray() },
-    uQuantize: { value: opts.quantize ? 1 : 0 },
-    uDither: { value: opts.dither ? 1 : 0 },
-    uScanline: { value: opts.scanline ? 1 : 0 },
-    uOutline: { value: opts.outline ? 1 : 0 },
-    uBloom: { value: opts.bloom ? BLOOM_STRENGTH : 0 },
-    uAo: { value: opts.ao ? AO_STRENGTH : 0 },
-    uAoRadius: { value: AO_RADIUS },
-    uVignette: { value: VIGNETTE },
-    uAberration: { value: 0 },
-    uFlash: { value: 0 },
-    // MUST track the render target. A stale uResolution silently misaligns the
+  // The blur runs TWICE per frame over DIFFERENT sources (bloomA then bloomB),
+  // and a node graph binds its texture at build time — so this needs one
+  // material per direction rather than one mutated `tSrc` uniform.
+  const blurMatH = new NodeMaterial();
+  blurMatH.depthTest = false;
+  blurMatH.depthWrite = false;
+  blurMatH.fragmentNode = blurNode(bloomA.texture, blurDir);
+
+  const blurMatV = new NodeMaterial();
+  blurMatV.depthTest = false;
+  blurMatV.depthWrite = false;
+  blurMatV.fragmentNode = blurNode(bloomB.texture, blurDir);
+
+  // Uniform HANDLES, not a plain object: TSL uniforms are nodes whose `.value`
+  // is live, which is what lets setFrenzyFx/setFlash/resize poke them.
+  const finalUniforms: FinalUniforms = {
+    quantize: uniform(opts.quantize ? 1 : 0),
+    dither: uniform(opts.dither ? 1 : 0),
+    scanline: uniform(opts.scanline ? 1 : 0),
+    outline: uniform(opts.outline ? 1 : 0),
+    bloom: uniform(opts.bloom ? BLOOM_STRENGTH : 0),
+    ao: uniform(opts.ao ? AO_STRENGTH : 0),
+    aoRadius: uniform(AO_RADIUS),
+    vignette: uniform(VIGNETTE),
+    aberration: uniform(0),
+    flash: uniform(0),
+    // MUST track the render target. A stale resolution silently misaligns the
     // AO ring, the outline's neighbour taps and the scanline rows — it looks
     // like a completely different bug, so it is updated in resize() below.
-    uResolution: { value: new THREE.Vector2(sizing.renderW, sizing.renderH) },
+    resolution: uniform(new THREE.Vector2(sizing.renderW, sizing.renderH)),
   };
-  const finalMat = new THREE.ShaderMaterial({
-    vertexShader: FULLSCREEN_VERT,
-    fragmentShader: FINAL_FRAG,
-    uniforms: finalUniforms,
-    depthTest: false,
-    depthWrite: false,
-  });
+  const finalMat = new NodeMaterial();
+  finalMat.depthTest = false;
+  finalMat.depthWrite = false;
+  finalMat.fragmentNode = finalNode(
+    sceneTarget.texture,
+    bloomA.texture,
+    depthTexture,
+    paletteToFloatArray(),
+    finalUniforms,
+  );
 
   // One reusable fullscreen quad; passes swap its material.
+  //
+  // THE CAMERA NOW HAS TO BE REAL. The old GLSL vertex shader ignored it
+  // outright — `gl_Position = vec4(position.xy, 0.0, 1.0)` writes clip space
+  // directly, so the quad landed on screen no matter what the camera said, and
+  // this camera's near=0 / quad-at-z=0 collision never mattered. NodeMaterial
+  // uses the STANDARD vertex path (model-view-projection), so a quad sitting
+  // exactly on the near plane is clipped and the screen goes black — with no
+  // error, because nothing is wrong except the geometry being invisible.
+  //
+  // Pulling the camera back and giving it real near/far puts the quad safely
+  // inside the frustum. The projection is still a plain 2x2 ortho box, so the
+  // quad still maps 1:1 to the viewport.
   const quadScene = new THREE.Scene();
-  const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+  quadCam.position.z = 1;
   const quadGeo = new THREE.PlaneGeometry(2, 2);
   const quad: THREE.Mesh = new THREE.Mesh(quadGeo, finalMat);
   quadScene.add(quad);
@@ -491,7 +534,7 @@ export function createPixelPass(
       BH = next.renderH / 2;
       bloomA.setSize(BW, BH);
       bloomB.setSize(BW, BH);
-      finalUniforms.uResolution.value.set(next.renderW, next.renderH);
+      finalUniforms.resolution.value.set(next.renderW, next.renderH);
     }
     sizing = next;
 
@@ -565,17 +608,16 @@ export function createPixelPass(
     renderer.render(scene, camera);
 
     // 2. Bloom chain (skipped when strength is 0).
-    if (finalUniforms.uBloom.value > 0.001) {
-      brightMat.uniforms.tSrc.value = sceneTarget.texture;
+    if (finalUniforms.bloom.value > 0.001) {
       blit(brightMat, bloomA);
 
-      blurMat.uniforms.tSrc.value = bloomA.texture;
-      blurMat.uniforms.uDir.value.set(BLOOM_RADIUS / BW, 0);
-      blit(blurMat, bloomB);
+      // H then V. Each direction has its own material because a node graph
+      // binds its source texture at build time (see the note above).
+      blurDir.value.set(BLOOM_RADIUS / BW, 0);
+      blit(blurMatH, bloomB); // reads bloomA
 
-      blurMat.uniforms.tSrc.value = bloomB.texture;
-      blurMat.uniforms.uDir.value.set(0, BLOOM_RADIUS / BH);
-      blit(blurMat, bloomA); // final blurred bloom lands back in bloomA
+      blurDir.value.set(0, BLOOM_RADIUS / BH);
+      blit(blurMatV, bloomA); // reads bloomB; blurred bloom lands back in bloomA
     }
 
     // 3. Composite + cel quantize → screen.
@@ -589,30 +631,30 @@ export function createPixelPass(
     render,
     resize,
     setQuantize: (on) => {
-      finalUniforms.uQuantize.value = on ? 1 : 0;
+      finalUniforms.quantize.value = on ? 1 : 0;
     },
     setDither: (on) => {
-      finalUniforms.uDither.value = on ? 1 : 0;
+      finalUniforms.dither.value = on ? 1 : 0;
     },
     setScanline: (on) => {
-      finalUniforms.uScanline.value = on ? 1 : 0;
+      finalUniforms.scanline.value = on ? 1 : 0;
     },
     setOutline: (on) => {
-      finalUniforms.uOutline.value = on ? 1 : 0;
+      finalUniforms.outline.value = on ? 1 : 0;
     },
     setBloom: (on) => {
-      finalUniforms.uBloom.value = on ? BLOOM_STRENGTH : 0;
+      finalUniforms.bloom.value = on ? BLOOM_STRENGTH : 0;
     },
     setAo: (on) => {
-      finalUniforms.uAo.value = on ? AO_STRENGTH : 0;
+      finalUniforms.ao.value = on ? AO_STRENGTH : 0;
     },
     setFrenzyFx: (intensity) => {
       const t = Math.max(0, Math.min(1, intensity));
-      finalUniforms.uVignette.value = VIGNETTE + (FRENZY_VIGNETTE - VIGNETTE) * t;
-      finalUniforms.uAberration.value = FRENZY_ABERRATION * t;
+      finalUniforms.vignette.value = VIGNETTE + (FRENZY_VIGNETTE - VIGNETTE) * t;
+      finalUniforms.aberration.value = FRENZY_ABERRATION * t;
     },
     setFlash: (intensity) => {
-      finalUniforms.uFlash.value = Math.max(0, Math.min(1, intensity));
+      finalUniforms.flash.value = Math.max(0, Math.min(1, intensity));
     },
     dispose: () => {
       depthTexture.dispose();
@@ -621,7 +663,8 @@ export function createPixelPass(
       bloomB.dispose();
       quadGeo.dispose();
       brightMat.dispose();
-      blurMat.dispose();
+      blurMatH.dispose();
+      blurMatV.dispose();
       finalMat.dispose();
     },
   };

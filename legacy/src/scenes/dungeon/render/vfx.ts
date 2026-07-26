@@ -19,9 +19,9 @@
 import * as THREE from "three";
 // SpriteNodeMaterial lives in three/webgpu, not three — it is a node material.
 import { SpriteNodeMaterial } from "three/webgpu";
-import { add, attribute, float, mul, positionLocal, vec4 } from "three/tsl";
+import { attribute, float, mul, vec4 } from "three/tsl";
 import { PALETTE_HEX } from "./palette";
-import { CAMERA_YAW, CAMERA_TILT } from "../constants";
+import { CAMERA_YAW, CAMERA_TILT, PPU } from "../constants";
 import { DamageTextPool, type DamageTextKind } from "./damage-text";
 
 function toLinear(c: number): number {
@@ -69,7 +69,13 @@ const C_DUST = linColor(0x6b7688); // stone light
  *    anti-aliased rim. That is the same hard-square look the old fragment
  *    shader gave, which the palette quantiser depends on.
  */
-const PARTICLE_SCALE = 0.05;
+// aSize is calibrated in RENDER-TARGET PIXELS — that is what `gl_PointSize =
+// aSize` meant, and every spawn call in this file still passes those numbers.
+// The quad is scaled in WORLD units, and the ortho camera maps 1 world unit to
+// PPU pixels, so pixels → world is a divide by PPU. (0.05 here — a leftover
+// from the spike — made every ember 3.2x too big; overlapping torch streams
+// rendered as giant translucent slabs.)
+const PARTICLE_SCALE = 1 / PPU;
 
 interface PoolData {
   vx: Float32Array;
@@ -125,7 +131,15 @@ class ParticlePool {
     // Billboarded quad + per-instance offset, scale and colour. `aAlpha` going
     // to 0 is what retires a particle (the pool sets size 0 too), which
     // reproduces the old `if (vAlpha <= 0.001) discard;`.
-    this.mat.positionNode = add(positionLocal, attribute<"vec3">("aOffset", "vec3"));
+    //
+    // positionNode is the sprite's CENTER, nothing else. SpriteNodeMaterial
+    // supplies the quad corners itself (`alignedPosition = positionGeometry.xy`
+    // scaled by scaleNode, added in view space) — its own doc comment says
+    // `material.positionNode = instancedBufferAttribute(...)`. Adding
+    // positionLocal here leaks the ±0.5 corner into the centre in UNSCALED
+    // world units, which rendered every particle as a ~1-world-unit slab no
+    // matter what aSize said.
+    this.mat.positionNode = attribute<"vec3">("aOffset", "vec3");
     this.mat.scaleNode = mul(attribute<"float">("aSize", "float"), float(PARTICLE_SCALE));
     this.mat.colorNode = vec4(attribute<"vec3">("aColor", "vec3"), attribute<"float">("aAlpha", "float"));
 

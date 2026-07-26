@@ -389,16 +389,53 @@ const report = await page.evaluate(() => window.__dungeonBotStop()).catch(() => 
 // a live frame has hundreds, a dead one has exactly 1.
 const canvasCheck = await page
   .evaluate(async () => {
-    const c = document.querySelector("canvas");
-    if (!c) return { ok: false, reason: "no canvas element" };
-    const bmp = await createImageBitmap(c);
-    const cv = new OffscreenCanvas(bmp.width, bmp.height);
-    const cx = cv.getContext("2d");
-    cx.drawImage(bmp, 0, 0);
-    const d = cx.getImageData(0, 0, bmp.width, bmp.height).data;
+    // WHICH canvas: the page has ~9 (HUD portraits, minimap, dice…) AND TWO at
+    // the full render size — the room/background scene under <main>, and the
+    // dungeon's own inside its overlay container. Picking "the biggest" grabs
+    // the room and reports a healthy 1200+ colours no matter what the dungeon
+    // does, which silently turns this whole check into a no-op.
+    //
+    // The dungeon renderer appends its canvas to the fixed, z-indexed overlay
+    // that launchDungeonGame builds (state.container, z-index 10000), so match
+    // on that: the deepest full-size canvas whose ancestor is positioned fixed.
+    const all = [...document.querySelectorAll("canvas")];
+    if (!all.length) return { ok: false, reason: "no canvas element" };
+    const big = all.filter((x) => x.width * x.height >= 640 * 360);
+    const overlay = big.filter((x) => {
+      for (let el = x.parentElement; el; el = el.parentElement) {
+        if (getComputedStyle(el).position === "fixed") return true;
+      }
+      return false;
+    });
+    // Prefer the overlay (dungeon) canvas; fall back to the largest one so this
+    // still works for scenes that render straight into the page.
+    const c = (overlay.length ? overlay : big.length ? big : all).reduce((a, b) =>
+      b.width * b.height > a.width * a.height ? b : a,
+    );
+
+    // WHEN to sample: the drawing buffer is NOT preserved (preserveDrawingBuffer
+    // defaults to false), so it is cleared once the frame is composited. Reading
+    // it from an ordinary task therefore returns a blank buffer even when the
+    // game is drawing perfectly. Sampling INSIDE a rAF callback catches the
+    // frame while it is still intact.
+    const snap = await new Promise((resolve) => {
+      requestAnimationFrame(async () => {
+        try {
+          const bmp = await createImageBitmap(c);
+          const cv = new OffscreenCanvas(bmp.width, bmp.height);
+          const cx = cv.getContext("2d");
+          cx.drawImage(bmp, 0, 0);
+          resolve(cx.getImageData(0, 0, bmp.width, bmp.height).data);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+    if (!snap) return { ok: false, reason: "could not read the canvas" };
+
     const seen = new Set();
-    for (let i = 0; i < d.length; i += 4) seen.add((d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | (d[i + 2] >> 4));
-    return { ok: seen.size > 1, distinct: seen.size, w: bmp.width, h: bmp.height };
+    for (let i = 0; i < snap.length; i += 4) seen.add((snap[i] >> 4) << 8 | (snap[i + 1] >> 4) << 4 | (snap[i + 2] >> 4));
+    return { ok: seen.size > 1, distinct: seen.size, w: c.width, h: c.height };
   })
   .catch((e) => ({ ok: false, reason: String(e).slice(0, 120) }));
 
