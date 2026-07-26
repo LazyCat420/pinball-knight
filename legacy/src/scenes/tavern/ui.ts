@@ -9,6 +9,7 @@ import { GEAR, GEAR_SLOTS } from "../dungeon/items";
 import { state as dungeonState } from "../dungeon/state";
 import { getBalance } from "../../utils/gold-wallet";
 import type { TavernStats } from "./state";
+import { describeParty, type FloorGroup } from "./join-board";
 
 const GOLD = "#f0c040";
 const COLD = "#6fd0e8";
@@ -147,7 +148,9 @@ export function closeRunSummary(): void {
  * a mystery. Shows an OFFLINE state when the socket can't reach the backend.
  */
 export interface LobbyHud {
-  update(info: { connected: boolean; count: number }): void;
+  update(info: { connected: boolean; count: number; groups?: FloorGroup[]; resumeFloor?: number }): void;
+  /** Called when a floor row is clicked — descend straight onto that depth. */
+  onJoin(fn: (floor: number) => void): void;
   dispose(): void;
 }
 
@@ -171,8 +174,65 @@ export function createLobbyHud(host: HTMLElement): LobbyHud {
   ].join(";");
   host.appendChild(pill);
 
+  // ── "Who's down there" board ──
+  // Sits under the pool pill. Pointer events are enabled HERE (the pill above is
+  // deliberately inert) because these rows are the only clickable thing in the
+  // hub that isn't a walk-up station — joining a friend two floors down should
+  // not require pathing a knight across the room first.
+  const board = document.createElement("div");
+  board.style.cssText = [
+    "position:absolute",
+    "top:52px",
+    "right:16px",
+    "width:196px",
+    "padding:8px",
+    "background:rgba(10,12,16,0.78)",
+    "border:2px solid #2c2838",
+    "border-radius:4px",
+    "font-family:'Press Start 2P',monospace",
+    "font-size:8px",
+    "letter-spacing:1px",
+    "color:#e8e2d4",
+    "z-index:10006",
+    "display:none",
+  ].join(";");
+  host.appendChild(board);
+
+  let joinFn: ((floor: number) => void) | null = null;
+  /** Last rendered signature — re-rendering every frame would kill hover/click. */
+  let sig = "";
+
+  const rowFor = (g: FloorGroup): HTMLElement => {
+    const row = document.createElement("div");
+    row.style.cssText = [
+      "display:flex",
+      "justify-content:space-between",
+      "align-items:center",
+      "gap:6px",
+      "padding:5px 4px",
+      "margin-top:3px",
+      "border:1px solid " + (g.safe ? "#3a4a38" : "#5a3a30"),
+      "border-radius:2px",
+      "cursor:pointer",
+      "background:rgba(255,255,255,0.02)",
+    ].join(";");
+    // A floor past your record is marked, never blocked — following friends
+    // deeper than you have ever been is the player's call.
+    row.innerHTML =
+      `<span style="color:${g.safe ? "#8fc46b" : "#f0a63c"}">F${g.floor}${g.safe ? "" : " ⚠"}</span>` +
+      `<span style="color:#8a8172;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${describeParty(g.names)}</span>` +
+      `<span style="color:#5080e0">JOIN</span>`;
+    row.addEventListener("mouseenter", () => (row.style.background = "rgba(80,128,224,0.16)"));
+    row.addEventListener("mouseleave", () => (row.style.background = "rgba(255,255,255,0.02)"));
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      joinFn?.(g.floor);
+    });
+    return row;
+  };
+
   return {
-    update({ connected, count }): void {
+    update({ connected, count, groups, resumeFloor }): void {
       if (connected) {
         pill.style.borderColor = "#50c878";
         pill.innerHTML = `<span style="color:#50c878">●</span> POOL · ${count} ONLINE`;
@@ -180,9 +240,40 @@ export function createLobbyHud(host: HTMLElement): LobbyHud {
         pill.style.borderColor = "#544e63";
         pill.innerHTML = `<span style="color:#8a8172">○</span> OFFLINE`;
       }
+
+      const gs = groups ?? [];
+      const next = `${connected}|${resumeFloor ?? 0}|` + gs.map((g) => `${g.floor}:${g.safe}:${g.names.join(",")}`).join("|");
+      if (next === sig) return; // nothing changed — leave the live DOM alone
+      sig = next;
+
+      if (!connected || (gs.length === 0 && !resumeFloor)) {
+        board.style.display = "none";
+        return;
+      }
+      board.style.display = "block";
+      board.replaceChildren();
+
+      // Your own unfinished business comes FIRST — the whole point of the death
+      // flow is that your gear is waiting somewhere specific.
+      if (resumeFloor) {
+        const note = document.createElement("div");
+        note.style.cssText = "color:#ffd98a;line-height:1.6;padding-bottom:5px;border-bottom:1px solid #2c2838";
+        note.innerHTML = `⚰ YOUR KIT · FLOOR ${resumeFloor}<br><span style="color:#6b7688;font-size:7px">PULL THE PLUNGER TO RETURN</span>`;
+        board.appendChild(note);
+      }
+
+      const title = document.createElement("div");
+      title.style.cssText = "color:#6b7688;padding:6px 0 2px";
+      title.textContent = gs.length ? "WHO'S DOWN THERE" : "NOBODY IS DOWN THERE";
+      board.appendChild(title);
+      for (const g of gs) board.appendChild(rowFor(g));
+    },
+    onJoin(fn): void {
+      joinFn = fn;
     },
     dispose(): void {
       pill.remove();
+      board.remove();
     },
   };
 }

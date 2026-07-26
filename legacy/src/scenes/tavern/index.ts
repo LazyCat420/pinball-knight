@@ -17,7 +17,9 @@ export type { TavernStats };
 
 export interface OpenTavernOptions {
   stats: TavernStats;
-  onDescend: () => void;
+  /** Begin a descent. `floor` targets a specific depth (resume-after-death, or
+   *  a JOIN from the who's-down-there board); omitted = the caller's default. */
+  onDescend: (floor?: number) => void;
   /** Leave the run entirely — the walkable scene's game menu ABANDON. The DOM
    * fallback has no menu, so it simply never calls it. */
   onAbandon?: () => void;

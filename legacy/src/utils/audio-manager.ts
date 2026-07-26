@@ -39,8 +39,55 @@ function getLandBuffer(ctx: any): any {
   return _cachedLandBuf;
 }
 
+/**
+ * GLOBAL SILENCE.
+ *
+ * `getAudioCtx()` is the one chokepoint every sound in this app goes through —
+ * dungeon stings, tavern ambience, the gambler, the record player, the room
+ * minigames. Returning null here mutes all of them at once, and every caller
+ * already fail-silents on a null context, so nothing needs a second code path.
+ *
+ * Why it exists: an automated playtest that boots a real browser also plays real
+ * sound out of the speakers, with no in-game menu to reach and often no visible
+ * window to close. That is an unmutable noise source on someone's machine, which
+ * is not acceptable. Silence is therefore the DEFAULT for any automated run —
+ * `?mute=1` in the harness URL — and can also be flipped at runtime.
+ */
+let _silenced = false;
+
+function readMuteFlag(): boolean {
+  try {
+    const q = new URLSearchParams(window.location.search);
+    // `playtest=1` implies mute: a harness run should never make noise unless
+    // someone deliberately asks to hear it with `&mute=0`.
+    if (q.get("mute") === "1" || q.get("playtest") === "1") return q.get("mute") !== "0";
+  } catch {
+    // A sandboxed/odd location object must not break audio setup.
+  }
+  return false;
+}
+
+/** Mute or unmute EVERY sound source in the app. */
+export function setGlobalMute(v: boolean): void {
+  _silenced = v;
+  // Suspend the live context too — muting must stop sound that is already
+  // playing (a held ambience loop), not just block the next one.
+  if (v && _audioCtx) {
+    try {
+      _audioCtx.suspend?.();
+    } catch {
+      /* nothing to do */
+    }
+  }
+}
+
+export function isGloballyMuted(): boolean {
+  return _silenced;
+}
+
 export function getAudioCtx(): any {
   if (typeof window === "undefined") return null;
+  if (_silenced) return null;
   if (!_audioCtx) {
     _audioCtx = new ((window as any).AudioContext || (window as any).webkitAudioContext)();
   }
@@ -48,6 +95,18 @@ export function getAudioCtx(): any {
     _audioCtx.resume().catch(() => {});
   }
   return _audioCtx;
+}
+
+if (typeof window !== "undefined") {
+  // Read the URL flag ONCE at module load, before any scene can request a
+  // context — a mute applied after the first sting has already leaked noise.
+  _silenced = readMuteFlag();
+  // Runtime escape hatch, for a harness that wants to toggle mid-run and for
+  // anyone debugging a "why is this silent" moment from the console.
+  (window as any).__setMute = (v: boolean) => {
+    setGlobalMute(v !== false);
+    return _silenced;
+  };
 }
 
 // Auto-unlock AudioContext on first user interaction
@@ -83,6 +142,7 @@ export function playOscillator({
 }: any) {
   try {
     const ctx = getAudioCtx();
+    if (!ctx) return; // muted — not an error, just nothing to play
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -114,6 +174,7 @@ export function playOscillator({
 export function playNoiseBurst({ duration = 0.1, vol = 0.1 }: any) {
   try {
     const ctx = getAudioCtx();
+    if (!ctx) return null; // muted — not an error, just nothing to play
     const now = ctx.currentTime;
     const bufLen = ctx.sampleRate * duration;
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);

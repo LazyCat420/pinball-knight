@@ -76,6 +76,41 @@ Use the panel's POTION row to apply each and confirm a tile appears with icon + 
 - [ ] **Settings tab**: SFX mute silences stings; pixel-FX toggles change the render pass; both survive a reload. Card-reader policy ALWAYS/SMART/NEVER behaves as labelled.
 - [ ] **Merchant cart** sells only potions now (no mace/gun); buys go to the belt first, drink-immediately only when the belt is full.
 
+## 7.5 Machine-audited (2026-07-25) — `pnpm audit:gpu`
+
+`scripts/audit-checklist.mjs` drives the game through the real input path and
+asserts the MECHANICAL half of §3/§5 — the claims that are yes/no rather than
+feel. It does NOT judge fun; it catches features that silently stopped working.
+Re-run it after any change to combat, buffs or enemy behaviour.
+
+| Claim | Verdict |
+|---|---|
+| §3 Ball Form: momentum does not bleed | ✅ PASS — coasting decay exactly 0.00 u/s (friction zeroed); speed *rises* on bounces |
+| §3 Freeze: the whole floor freezes | ✅ PASS — horde drift ~6.4u before, 0.00u during |
+| §5 Golem: immune below smash speed | ✅ PASS — no chip damage while stationary |
+| §5 Webspinner: webs the player | ✅ PASS — peak `webbedT` ≈ 2.6 |
+| §3 Rage: double damage | ⊘ not verified — needs a scriptable damage hook (`__dungeonHit`) |
+| §5 Magnet: pulls the player in | ⊘ usually skipped — see below |
+| §5 Parts cleanse webs | ⊘ not verified — needs a scriptable part-trigger hook |
+
+**The magnet is the interesting one.** Its pull is suppressed when the knight is
+`grounded` (`wallContact(...) !== null` — braced against a wall resists the
+field). After a plunger launch the knight is usually against a wall, so the pull
+correctly does not fire and the check reports SKIP with that reason rather than a
+false FAIL. Verifying it properly needs a spawn in open floor.
+
+**Three harness traps this cost, recorded so the next person skips them:**
+1. **The launch chute.** A floor opens with the knight parked in the plunger,
+   where `updatePlunger` zeroes momentum every frame. Any check that reads
+   position or `momSpeed` while parked returns identical before/after numbers
+   that look exactly like a broken mechanic. Leave the chute first.
+2. **Bounces are not decay.** Measuring Ball Form by start-minus-end speed
+   reported a FAIL on a mechanic that works perfectly — the knight bounces
+   during the sample and bounces ADD speed. Compare only bounce-free steps.
+3. **The magnet walks.** Asserting on player↔magnet *distance* passes even when
+   the pull never fires, because the magnet closes the gap itself. Assert PLAYER
+   displacement.
+
 ## 8. Known-open (NOT expected to be perfect yet)
 - Floors can still feel **too narrow to bounce** — that's the §2.5 OPEN PLAYFIELD roadmap work, not yet built.
 - ~~Movement left/right + aim direction possibly inverted~~ — **RESOLVED 2026-07-19.** It was never an inversion: movement and aim share one code path (`screenDirToWorld`) with no sign error. `arrowleft`/`arrowright` were bound in **both** `MOVE_KEYS` and `TURN_LEFT`/`TURN_RIGHT`, so in FPS mode Left strafed *and* rotated on the same frame. Arrows are movement, q/e turn, and `input.test.ts` forbids double-binding.

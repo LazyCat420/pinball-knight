@@ -239,14 +239,15 @@ import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath } from "./coop";
-import { stopPresence, onPeerArrive } from "../../net/presence";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
+import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
 import { scoreRun, runDetail, type RunStats } from "./run-score";
 import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
+import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, type CorpseItem } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
@@ -499,7 +500,9 @@ export function launchDungeonGame(onExit?: () => void): void {
     (window as unknown as { __dungeonStats?: () => unknown }).__dungeonStats = () => ({
       projectiles: state.projectiles.length,
       hostileGlobs: state.projectiles.filter((pr) => pr.hostile).length,
-      enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp })),
+      // x/z included so a harness can assert MOVEMENT (freeze stops the horde,
+      // the magnet drags you in) — kind/hp alone cannot answer those.
+      enemies: state.zombies.map((z) => ({ kind: z.kind, mode: z.mode, aggro: z.aggro, hp: z.hp, boss: !!z.boss, maxHp: z.maxHp, x: z.x, z: z.z })),
       playerHp: state.player?.hp,
       floorFx: state.floorFx.map((f) => f.kind),
     });
@@ -520,6 +523,34 @@ export function launchDungeonGame(onExit?: () => void): void {
       state.weaponSlots[state.activeSlot] = freshWeapon(id as WeaponId);
       return true;
     };
+    // Dev: die on demand. The corpse/resume loop is otherwise only reachable by
+    // actually losing a fight, which a harness cannot do reliably — and "did my
+    // kit drop where I fell" is exactly the thing that needs testing unattended.
+    (window as unknown as { __dungeonDie?: () => unknown }).__dungeonDie = () => {
+      onPlayerDeath();
+      return { floor: state.level, piles: pilesOnFloor(state.level).length, resume: loadResumeFloor() };
+    };
+    // Dev: who is in the pool, where, and are we the floor authority. The only
+    // way a harness can assert that per-floor scene isolation actually holds —
+    // "8 players don't collide" is otherwise untestable without eyeballing two
+    // browsers side by side.
+    (window as unknown as { __dungeonPool?: () => unknown }).__dungeonPool = () => ({
+      level: state.level,
+      seed: state.runSeed,
+      poolSeed: coopSeed(),
+      connected: isCoop(),
+      authority: enemyAuthorityIsMe(),
+      me: myId(),
+      peers: peers().map((p) => ({ name: p.name, scene: p.scene })),
+      sameFloor: peers().filter((p) => p.scene === `dungeon:${state.level}`).length,
+    });
+    // Dev: read the corpse ledger without touching localStorage from the page.
+    (window as unknown as { __dungeonCorpses?: (floor?: number) => unknown }).__dungeonCorpses = (floor?: number) => ({
+      floors: floorsWithPiles(),
+      piles: pilesOnFloor(floor ?? state.level),
+      resume: loadResumeFloor(),
+      onFloor: state.groundItems.filter((g) => g.corpseId).length,
+    });
     // Dev: the floor map's exploration state — the only way a harness can see
     // whether fog is actually being revealed (the minimap is a canvas).
     (window as unknown as { __dungeonFog?: () => unknown }).__dungeonFog = () => {
@@ -1154,12 +1185,40 @@ export function launchDungeonGame(onExit?: () => void): void {
   // session baton (no-op for a solo/offline run), seeds the shared floor, and
   // only THEN starts the dungeon loop on floor 1. (The title intro is no longer
   // the entry — the lobby is; `runPinballIntro` remains available for reuse.)
-  const beginRun = (): void => {
+  // ── Open the pool socket NOW, not when the tavern opens ──
+  // Presence used to be started only by the tavern lobby (initTavernPool), which
+  // made the CONNECTION owned by a screen rather than the session. Any path that
+  // reaches a floor without lingering in the lobby — `?autostart=1`, the playtest
+  // bot, __dungeonStartRun — therefore generated its maze before `welcome` had
+  // delivered the shared seed, and two such clients got DIFFERENT mazes for the
+  // same floor number. Measured: client B booted with poolSeed:null while client
+  // A already had one.
+  //
+  // startPresence is idempotent (it early-returns once installed), so the tavern
+  // calling it again is harmless.
+  startPresence(getPlayerName());
+
+  // `floor` comes from the tavern: your resume floor (the plunger) or a peer's
+  // depth (the join board). Absent = a fresh crawl from the top.
+  //
+  // ⚠️ WAITS FOR THE POOL SEED. The socket can be OPEN while `welcome` — the
+  // message that carries the shared world seed — is still in flight. Generating
+  // the floor in that window bakes in a LOCAL random seed, so two players who
+  // descend at the same moment get different mazes for the same floor number and
+  // walk through each other's walls for the rest of the session. Observed live:
+  // a second client booted with `connected: true` but `seed: null`.
+  //
+  // The wait is bounded and short — a solo/offline player must never be held at
+  // a black screen because a backend they aren't using didn't answer.
+  const beginRun = (floor?: number): void => {
     if (!state.active) return;
-    startLevel(1); // startLevel adopts the shared pool seed (coopSeed) if connected
+    const target = floor && floor > 0 ? floor : 1;
+    startLevel(target); // startLevel adopts the shared pool seed (coopSeed) if connected
     initCoop(); // spin up dungeon-scene pool presence (no-op solo/offline)
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
+    // The seed may still be in flight — re-seed this floor if it disagrees.
+    adoptPoolSeedWhenItArrives(target);
   };
   // Dev: skip the lobby and drop straight into floor 1.
   //
@@ -1886,6 +1945,9 @@ function startLevel(level: number): void {
   snapCameraTo(startPos.x, startPos.z);
   state.hudDirty = true;
 
+  // ── CORPSE PILES ── everything you dropped here on a previous death.
+  spawnCorpsePiles(grid, level);
+
   // ── BOWLING PIN CREWS ── racked around far spawn tiles from PIN_FROM_LEVEL.
   if (level >= PIN_FROM_LEVEL && plan.spawns.length > 0) {
     const crews = 1 + (level >= 5 ? 1 : 0);
@@ -2465,6 +2527,162 @@ async function submitRunScore(): Promise<void> {
   if (!ok) console.warn("[dungeon] leaderboard rejected the run score");
 }
 
+/**
+ * How long we keep WATCHING for the shared seed after a floor has been built.
+ *
+ * MEASURED, not guessed: with two clients connecting at once under software
+ * rendering, the second one's handshake completed at ~2.0s (the first's at
+ * ~1.6s). A 1.2s budget expired while that client was still `connecting`, so it
+ * kept a private floor — the bug this reconciliation exists to fix. 5s leaves
+ * real headroom on a slow link.
+ *
+ * Nothing is blocked while this runs (see adoptPoolSeedWhenItArrives), so a
+ * generous window costs an offline player only a handful of cheap frame checks.
+ */
+const POOL_SEED_WAIT_MS = 5000;
+
+/**
+ * Resolve once the pool seed is known — or once the wait times out.
+ *
+ * ⚠️ It is NOT enough to check `isCoop()` and bail when it's false. At the
+ * moment a run begins the socket is often still OPENING: `isCoop()` reads false,
+ * an early return fires, and the floor is generated from a local seed a
+ * heartbeat before `welcome` would have supplied the shared one. That is the
+ * exact race this function exists to close, so it waits for the seed itself and
+ * lets the TIMEOUT — not a connection probe — decide when to give up.
+ *
+ * Returns immediately only when the seed is already in hand. On timeout it
+ * resolves anyway rather than rejecting: an offline player, or one whose backend
+ * is slow, must get a private floor rather than a hang.
+ */
+/**
+ * Adopt the shared seed if it shows up AFTER the floor was already built, and
+ * rebuild that floor so it matches everyone else's.
+ *
+ * ⚠️ WHY NOT BLOCK THE DESCENT INSTEAD. The obvious version — await the seed,
+ * then generate — was built first and was WRONG: it holds the whole game behind
+ * a network round-trip, and under software rendering the polling chain that
+ * implemented it got starved and never resolved at all, so the run simply never
+ * started (the harness saw hooks present but `active` forever undefined).
+ * Blocking a boot on a backend that may not answer is a bad trade regardless of
+ * how the wait is written.
+ *
+ * So the descent is never delayed. The floor is generated at once from a local
+ * seed; if `welcome` lands later and disagrees, we rebuild the CURRENT floor
+ * against the shared seed. A solo player never pays anything, and a pool player
+ * gets a one-off regeneration in the first moments instead of a hang.
+ *
+ * Only ever fires while still on the floor the run started on: rebuilding under
+ * someone who has already descended would teleport them into a fresh maze.
+ */
+function adoptPoolSeedWhenItArrives(startedOnLevel: number): void {
+  if (coopSeed() !== null) return; // already shared — nothing to reconcile
+  const started = performance.now();
+  const tick = (): void => {
+    if (!state.active) return;
+    const seed = coopSeed();
+    if (seed !== null) {
+      // Someone else's world is authoritative. Rebuild only if we actually
+      // disagree, and only if the player hasn't moved on to another floor.
+      if ((seed >>> 0) !== state.runSeed && state.level === startedOnLevel) {
+        startLevel(startedOnLevel);
+      }
+      return;
+    }
+    if (poolStatus() === "closed" || performance.now() - started > POOL_SEED_WAIT_MS) return;
+    // requestAnimationFrame, NOT setTimeout: under software rendering the timer
+    // queue is starved hard enough that a 30ms chain stalls outright, while RAF
+    // is tied to the frames the game is already producing.
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/**
+ * Lay out every corpse pile stored for this floor as ground items.
+ *
+ * ⚠️ THE POSITION IS NOT TRUSTWORTHY. Floors are regenerated from the run seed
+ * every time you enter them, so the tile you died on may now be solid wall (or
+ * off-grid entirely, if the maze came out smaller). A pile inside a wall is gear
+ * the player can see and never reach — the exact failure this feature exists to
+ * prevent. So the saved spot is a HINT: `nearestOpenTile` walks out to the
+ * closest standable tile, the same fix `tearGraveHole` uses for departed peers.
+ *
+ * Items fan out around that tile so a ten-item pile reads as a scatter of loot
+ * rather than one sprite with nine hidden underneath it.
+ */
+function spawnCorpsePiles(grid: Grid, level: number): void {
+  if (!state.scene) return;
+  const me = myId();
+  for (const pile of pilesOnFloor(level)) {
+    let t = worldToTile(grid, pile.x, pile.z);
+    if (!isWalkable(grid, t.i, t.j)) {
+      const open = nearestOpenTile(grid, t.i, t.j, 1);
+      if (!open) continue; // this floor has nowhere to put it — try again next visit
+      t = open;
+    }
+    const centre = tileCenter(grid, t.i, t.j);
+    pile.items.forEach((item, n) => {
+      const paint = ITEM_PAINTS[item.id];
+      if (!paint) return; // an id from an older build — skip the sprite, keep the save
+      const sprite = createStaticSprite(paint);
+      // Fan out on a small ring; index 0 sits dead centre on the death spot.
+      const ang = (n / Math.max(1, pile.items.length)) * Math.PI * 2;
+      const r = n === 0 ? 0 : 0.34;
+      const x = centre.x + Math.cos(ang) * r;
+      const z = centre.z + Math.sin(ang) * r;
+      sprite.mesh.position.set(x, 0, z);
+      state.scene!.add(sprite.mesh);
+      state.groundItems.push({
+        kind: item.kind,
+        id: item.id,
+        x,
+        z,
+        sprite,
+        bobPhase: Math.random() * Math.PI * 2,
+        durability: item.durability,
+        rarity: item.rarity,
+        cards: item.cards,
+        upgrade: item.upgrade,
+        // OWNER-ONLY. Monster loot stays shared with the pool; a corpse is not
+        // loot, it's the player's own run sitting on the floor. Checked at the
+        // pickup funnel so the pile still RENDERS for everyone.
+        corpseOwner: pile.owner,
+        corpseId: pile.id,
+      });
+    });
+    if (canLoot(pile, me)) {
+      showToast("⚰️ YOUR KIT IS HERE", `${pile.items.length} item${pile.items.length === 1 ? "" : "s"} from a previous death`);
+    }
+  }
+}
+
+/**
+ * Serialize everything the knight is carrying into a corpse pile.
+ *
+ * Weapons and cards carry their full identity (durability, rarity, sockets,
+ * upgrade level) because losing a +3 legendary and recovering a plain one would
+ * be worse than losing it outright. Gear is a bare slot→durability map in this
+ * codebase (see items.GearState), so that is all there is to carry.
+ *
+ * The starting sword is deliberately INCLUDED. It is worth little, but a pile
+ * that silently omits part of what you were holding teaches players not to
+ * trust the mechanic, and that distrust costs more than the sword.
+ */
+function collectCorpseItems(): CorpseItem[] {
+  const items: CorpseItem[] = [];
+  for (const w of state.weaponSlots) {
+    if (!w || w.id === "fists") continue;
+    items.push({ kind: "weapon", id: w.id, durability: w.durability, rarity: w.rarity, cards: w.cards, upgrade: w.upgrade });
+  }
+  for (const [slot, dur] of Object.entries(state.gear)) {
+    if (typeof dur !== "number" || dur <= 0) continue;
+    items.push({ kind: "gear", id: slot, durability: dur });
+  }
+  for (const id of state.cardStash) items.push({ kind: "card", id });
+  return items;
+}
+
 function onPlayerDeath(): void {
   if (state.gameOver) return;
   state.gameOver = true;
@@ -2477,27 +2695,81 @@ function onPlayerDeath(): void {
   void submitRunScore();
   sfxGameOver();
   state.player?.sprite.setTint(0x6b7688); // drained
+
+  // ── Drop the kit where you fell ──
+  // Recorded BEFORE the inventory is cleared below, and persisted immediately:
+  // a player who closes the tab on the death screen must still find their pile
+  // when they come back, or the promise only holds for players who are polite
+  // about how they quit.
+  const dropped = collectCorpseItems();
+  const p = state.player;
+  addPile(state.level, p?.x ?? 0, p?.z ?? 0, myId() ?? "", dropped);
+  // The floor you DIED on — not the deepest you reached. That difference is the
+  // feature: the tavern sends you back to where your stuff is.
+  saveResumeFloor(state.level);
+
   state.gameOverEl = showGameOver({
+    droppedCount: dropped.length,
+    // Death now returns you to the TAVERN with an empty pack, rather than
+    // restarting at floor 1. The kit is not gone — it is on the floor above,
+    // and the tavern's plunger offers the trip back.
     onRetry: () => {
       state.gameOverEl?.remove();
       state.gameOverEl = null;
       state.gameOver = false;
-      state.kills = 0;
-      state.goldRun = 0;
-      state.weaponSlots = [freshWeapon("sword"), null];
-      state.activeSlot = 0;
-      state.gear = {};
-      resetCombatJuice();
-      if (state.player) {
-        Object.assign(state.player, freshPlayerFields());
-        state.player.sprite.setTint(null);
-      }
-      beginRunLedger(); // a retry is a NEW run for the board, not a continuation
-      if (state.player) state.player.hp = playerMaxHp(); // after fresh fields
-      state.hudDirty = true;
-      startLevel(1); // roguelite: gold is banked, the run restarts
+      returnToTavern();
     },
     onLeave: () => exitDungeonGame(),
+  });
+}
+
+/**
+ * Wake up in the tavern after a death: the run's carried kit is now lying on the
+ * floor you died on, so the knight is reset to bare hands and sent to the hub.
+ *
+ * Wallet gold and legacy perks survive (they always have). What is new is that
+ * losing the run no longer loses the gear — `state.cardStash` and the weapon and
+ * gear slots are cleared here only because `collectCorpseItems` has already
+ * written them to a pile.
+ */
+function returnToTavern(): void {
+  state.kills = 0;
+  state.goldRun = 0;
+  state.weaponSlots = [freshWeapon("sword"), null];
+  state.activeSlot = 0;
+  state.gear = {};
+  state.cardStash = [];
+  resetCombatJuice();
+  if (state.player) {
+    Object.assign(state.player, freshPlayerFields());
+    state.player.sprite.setTint(null);
+    state.player.hp = playerMaxHp(); // after fresh fields
+  }
+  beginRunLedger(); // the next descent is a NEW run for the board
+  state.hudDirty = true;
+
+  const deathFloor = state.level;
+  if (!state.container) {
+    startLevel(1);
+    return;
+  }
+  // A death drops you into the hub in LOBBY mode, exactly like first entry: it
+  // is where the pool gathers, and someone who just died is precisely the player
+  // who wants to see whether anyone is on a floor worth joining.
+  enterTavern(state.container, {
+    stats: { grade: "-", floor: deathFloor, kills: 0, bestCombo: 0 },
+    // `|| ` not `?? ` — loadResumeFloor returns 0 (not nullish) when unset.
+    // initCoop must run here too: the death teardown dropped the dungeon-scene
+    // presence subscriptions, and without re-installing them you descend into a
+    // floor where no pool-mate is ever drawn.
+    onDescend: (floor?: number) => {
+      const target = floor || loadResumeFloor() || 1;
+      startLevel(target);
+      initCoop();
+      adoptPoolSeedWhenItArrives(target);
+    },
+    onAbandon: () => exitDungeonGame(),
+    lobby: true,
   });
 }
 
@@ -2675,6 +2947,13 @@ function removeGroundItem(k: number): void {
   state.scene?.remove(it.sprite.mesh);
   it.sprite.dispose();
   state.groundItems.splice(k, 1);
+  // A corpse pile is only DONE when its last item is off the floor. Clearing it
+  // on the first pickup would strand the rest on a refresh; clearing it here
+  // means an interrupted recovery (you grabbed the sword, then died again)
+  // leaves the remainder recoverable, which is the whole promise.
+  if (it.corpseId && !state.groundItems.some((g) => g.corpseId === it.corpseId)) {
+    clearPile(it.corpseId);
+  }
 }
 
 /**
@@ -2997,6 +3276,13 @@ function checkPickups(dt: number): void {
     // A weapon you just put down: inert until you actually leave the spot.
     if (it.blockedUntilAway) {
       if (dist > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
+      continue;
+    }
+    // SOMEONE ELSE'S CORPSE. Visible, walkable-over, not takeable. Checked
+    // before any pickup branch so no item kind can leak past it. The nudge only
+    // fires within pickup range, or standing near a friend's grave would spam.
+    if (it.corpseOwner !== undefined && !canLoot({ id: it.corpseId ?? "", floor: state.level, x: it.x, z: it.z, owner: it.corpseOwner, items: [] }, myId())) {
+      if (dist < PICKUP_RANGE) showPickupNote(`⚰️ another knight's kit — not yours to take`);
       continue;
     }
     // A coin is absorbed when its magnet flight ARRIVES, not on proximity: the

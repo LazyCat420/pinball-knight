@@ -36,7 +36,10 @@ import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTav
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
 import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, showTavernBanner, clearTavernBanner, type LobbyHud } from "./ui";
-import { onPeerArrive, onPeerDepart } from "../../net/presence";
+import { onPeerArrive, onPeerDepart, peers } from "../../net/presence";
+import { groupByFloor } from "./join-board";
+import { loadBestDepth } from "../dungeon/best-depth";
+import { loadResumeFloor } from "../dungeon/corpse-run";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
@@ -226,10 +229,15 @@ function interact(): void {
     // Drop-in pool: descending is IMMEDIATE (no ready gate). Everyone shares the
     // same world seed, so you drop into the same dungeon as whoever else is
     // playing and see them on your floor.
+    //
+    // The plunger targets YOUR resume floor — the depth you last died at, where
+    // your kit is lying. `undefined` (never died) lets the dungeon pick its own
+    // default rather than hard-coding floor 1 in the hub.
     sfxPlunger();
     const go = tavern.onDescend;
+    const resume = isLobby ? loadResumeFloor() || undefined : undefined;
     closeTavern();
-    go?.();
+    go?.(resume);
     return;
   }
   if (s.action.kind === "summary") {
@@ -305,7 +313,12 @@ function frame(now: number): void {
     // between-floor shop tavern; no-ops anyway when the backend isn't reachable.
     if (isLobby) {
       updateTavernPool(dt, p.x, p.z, p.facing);
-      lobbyHud?.update({ connected: isMultiplayerActive(), count: poolOnlineCount() });
+      lobbyHud?.update({
+        connected: isMultiplayerActive(),
+        count: poolOnlineCount(),
+        groups: groupByFloor(peers(), loadBestDepth()),
+        resumeFloor: loadResumeFloor(),
+      });
     }
 
     // ── Camera ── wide hub view, leaning slightly toward the focused station so
@@ -403,7 +416,7 @@ function frame(now: number): void {
 
 export interface TavernOptions {
   stats: TavernStats;
-  onDescend: () => void;
+  onDescend: (floor?: number) => void;
   /** Leave the run entirely — the game menu's confirmed ABANDON button. */
   onAbandon?: () => void;
   /** Lobby mode — connect to multiplayer + show the roster/ready gate. Only the
@@ -525,6 +538,15 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   isLobby = !!opts.lobby;
   if (isLobby) {
     lobbyHud = createLobbyHud(container);
+    // JOIN a floor someone else is already on. Same descend path as the
+    // plunger, just with an explicit destination instead of your own resume
+    // floor — that one substitution is the whole co-op story.
+    lobbyHud.onJoin((floor) => {
+      const go = tavern.onDescend;
+      sfxPlunger();
+      closeTavern();
+      go?.(floor);
+    });
     initTavernPool(scene);
   }
 

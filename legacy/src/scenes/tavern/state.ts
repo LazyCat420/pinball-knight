@@ -54,7 +54,7 @@ export interface TavernState {
   time: number;
 
   stats: TavernStats;
-  onDescend: (() => void) | null;
+  onDescend: ((floor?: number) => void) | null;
   /** Leave the run for good (the game menu's confirmed ABANDON). The tavern
    * closes itself first, then hands the exit to the dungeon via this. */
   onAbandon: (() => void) | null;

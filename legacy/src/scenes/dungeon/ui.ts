@@ -660,7 +660,7 @@ export function showPickupNote(text: string): void {
   }, 1100);
 }
 
-export function showGameOver(opts: { onRetry: () => void; onLeave: () => void }): HTMLDivElement {
+export function showGameOver(opts: { onRetry: () => void; onLeave: () => void; droppedCount?: number }): HTMLDivElement {
   const el = document.createElement("div");
   el.style.cssText = `
     position: fixed; inset: 0; z-index: 10002;
@@ -699,6 +699,21 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
   bestLine.textContent = isRecord ? `★ DEEPEST YET — FLOOR ${best}` : `BEST DEPTH · FLOOR ${best}`;
   el.appendChild(bestLine);
 
+  // ── What you left behind ────────────────────────────────────────────────
+  // Death drops your kit where you fell. Saying so HERE is what makes the
+  // tavern's "return to floor N" button legible a moment later — otherwise the
+  // player reads an empty inventory as a bug and the whole mechanic as a loss.
+  if (opts.droppedCount) {
+    const drop = document.createElement("div");
+    drop.style.cssText =
+      `font-family:${WOLF_NUM};font-size:15px;letter-spacing:2px;` +
+      `margin:-8px 0 20px;color:#8fc46b;text-align:center;line-height:1.6`;
+    drop.innerHTML =
+      `<span style="color:#ffd98a">${opts.droppedCount}</span> ITEM${opts.droppedCount === 1 ? "" : "S"} DROPPED ON FLOOR ${state.level}<br>` +
+      `<span style="font-size:12px;color:#6b7688">GO BACK FOR THEM — THEY KEEP</span>`;
+    el.appendChild(drop);
+  }
+
   // ── Leaderboard name ────────────────────────────────────────────────────
   // The run has already been posted under the stored name by the time this
   // shows, so editing here applies to FUTURE runs. Saying so avoids implying
@@ -726,9 +741,12 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void })
   nameRow.appendChild(nameInput);
   el.appendChild(nameRow);
 
+  // Death sends you to the TAVERN now, not back to floor 1 — the button says
+  // where you are actually going, because "descend again" would read as a
+  // restart and this is the opposite of one.
   const retry = document.createElement("button");
   retry.style.cssText = btn("#f0a63c");
-  retry.textContent = "⚔ DESCEND AGAIN";
+  retry.textContent = "🍺 BACK TO THE TAVERN";
   retry.addEventListener("click", (e) => {
     e.stopPropagation();
     opts.onRetry();

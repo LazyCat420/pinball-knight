@@ -12,6 +12,7 @@
  */
 import { net } from "./socket";
 import type { Facing } from "./protocol";
+import type { NetStatus } from "./socket";
 
 export interface PeerInfo {
   id: string;
@@ -159,6 +160,11 @@ export function myId(): string | null {
 }
 export function poolSeed(): number | null {
   return net().seed;
+}
+/** Raw socket status — lets a caller tell "still connecting" from "gave up",
+ *  which `isConnected()` (open-only) collapses into a single false. */
+export function poolStatus(): NetStatus {
+  return net().status;
 }
 /** Everyone in the pool including you. */
 export function onlineCount(): number {

@@ -562,6 +562,15 @@ export interface GroundItem {
   blockedUntilAway?: boolean;
   /** Gold a coin drop is worth (kind === "coin"). */
   value?: number;
+  /**
+   * Set on items lying in a CORPSE PILE: the pool id of the knight who died
+   * (or "" for a solo/offline death). Monster loot is shared with the floor,
+   * but a corpse belongs to whoever dropped it — see corpse-run.canLoot. The
+   * pile still renders for everyone; only the pickup is gated.
+   */
+  corpseOwner?: string;
+  /** Which stored pile this item came from, so an emptied pile can be cleared. */
+  corpseId?: string;
   /** Burst/rest/magnet flight state (kind === "coin"). See CoinFlight. */
   coin?: CoinFlight;
 }
