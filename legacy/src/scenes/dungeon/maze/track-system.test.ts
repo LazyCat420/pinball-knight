@@ -23,7 +23,11 @@ import { mulberry32 } from "../../../utils/rng";
 import { growTrack, circuitRank, seedNodes, meshNeighbours, growNetwork, DEFAULT_GROW } from "./track-grow";
 import { buildTrackPath, totalArcLength, TRACK_RADII } from "./track-path";
 import { carveTrack, growMazeAround } from "./track-carve";
-import { idx, isWalkable, T_FLOOR, type Grid } from "./generator";
+import { at, idx, isWalkable, T_FLOOR, T_STAIRS, type Grid } from "./generator";
+import { buildTrackFloor as trackFloor } from "./track-floor";
+import { decorateMaze } from "./decorate";
+import { bfsDistances } from "../entities/ai";
+import { levelConfig } from "../constants";
 
 const rngFor = (s: number): (() => number) => mulberry32((s * 2654435761) >>> 0);
 
@@ -226,5 +230,39 @@ describe("track carve + maze growth", () => {
     const a = buildTrackFloor(70, 44, 3);
     const b = buildTrackFloor(70, 44, 3);
     expect(Array.from(a.g.t)).toEqual(Array.from(b.g.t));
+  });
+});
+
+describe("track floor through the REAL decorate pipeline", () => {
+  // `floor-pipeline.test.ts` keeps its own copy of the legacy build order, so
+  // it does NOT exercise this path. Without this suite the integration is
+  // untested: every stage below runs on a track grid for the first time.
+  it("every depth is buildable and solvable start→stairs", () => {
+    for (const level of [1, 2, 3, 5, 8, 13, 20, 30, 40]) {
+      for (const runSeed of [1, 12345, 0xc0ffee]) {
+        const label = `L${level} run ${runSeed}`;
+        const rng = mulberry32((runSeed ^ (level * 0x9e3779b9)) >>> 0);
+        const cfg = levelConfig(level);
+        const f = trackFloor(cfg.cellsW, cfg.cellsH, rng);
+        expect(f, `${label}: no floor`).not.toBeNull();
+        const plan = decorateMaze(f!.grid, rng, 10, 8, 12, [], {
+          endpoints: { start: f!.start, stairs: f!.stairs },
+        });
+        expect(at(f!.grid, plan.stairs.i, plan.stairs.j), `${label}: stairs missing`).toBe(T_STAIRS);
+        const dist = bfsDistances(f!.grid, plan.start.i, plan.start.j);
+        const d = dist[idx(f!.grid, plan.stairs.i, plan.stairs.j)];
+        expect(d, `${label}: stairs unreachable`).toBeGreaterThan(0);
+        expect(d, `${label}: stairs unreachable`).toBeLessThan(0x3fffffff);
+      }
+    }
+  });
+
+  it("puts BOTH endpoints on the circuit, so the route rides the track", () => {
+    for (let s = 1; s <= 12; s++) {
+      const f = trackFloor(24, 18, mulberry32((s * 2654435761) >>> 0));
+      expect(f).not.toBeNull();
+      expect(f!.mask.lane[idx(f!.grid, f!.start.i, f!.start.j)], `seed ${s}: start off-track`).toBe(1);
+      expect(f!.mask.lane[idx(f!.grid, f!.stairs.i, f!.stairs.j)], `seed ${s}: stairs off-track`).toBe(1);
+    }
   });
 });

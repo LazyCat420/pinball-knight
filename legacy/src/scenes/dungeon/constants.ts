@@ -1243,6 +1243,21 @@ export const MERCHANT_SPAWN_MIN_RING = 5;
  *   vault    → the treasure room: two prize items, guarded.
  * Rooms/sizes are in maze CELLS (tiles ≈ cells·2, ×2 again after thickening).
  */
+/**
+ * TRACK-FIRST generation — grow the circuit, then grow the maze around it.
+ *
+ * Off = the legacy pipeline (random maze, then trace-and-widen an artery
+ * through it). That ordering is why ramps and boosters used to land on corners
+ * the ball never takes, and why real curves had nowhere to fit: 81.8% of open
+ * tiles had an open radius of ZERO, and radius-4 fillets fitted 4 times across
+ * 40 floors (censused in maze/artery-banks.ts).
+ *
+ * On = maze/track-floor.ts. The flag is kept rather than deleting the old path
+ * because the two generators produce very different floors, and being able to
+ * A/B them on the same seed is the only honest way to judge a layout change.
+ */
+export const TRACK_FIRST = true;
+
 // Rooms are the OPEN "pinball table" space (corridors are 2-wide transit that a
 // ball can't really bounce in). Slice 2 (open playfield) makes them bigger and
 // more numerous so momentum has room to chain — carveRooms preserves

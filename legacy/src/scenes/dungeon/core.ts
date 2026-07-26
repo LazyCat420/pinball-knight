@@ -59,6 +59,7 @@ import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
+import { buildTrackFloor } from "./maze/track-floor";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
@@ -153,6 +154,7 @@ import {
   MERCHANT_FROM_LEVEL,
   BONUS_ROOM_GRADES,
   PARTS_BASE,
+  TRACK_FIRST,
   PARTS_PER_LEVEL,
   PARTS_MAX,
   ROOM_MIN_CELLS,
@@ -1730,21 +1732,58 @@ function startLevel(level: number): void {
   const prefabCount = Math.min(3 + Math.floor((level - 1) / 2), 6);
   const stamped = stampPrefabs(raw, rng, prefabCount, theme, landmark.claimed, focus);
   crackSecretWalls(raw, rng, cfg.secrets);
-  const grid = thickenWalls(raw);
-  // Widen the main start→stairs artery into a 3-wide "launch highway" so the
-  // floor plays as a machine and not a uniform 2-wide box maze. Reachability-
-  // preserving (only carves wall→floor); runs BEFORE decorate so every stage —
-  // topology/parts/arc-corners/render — sees the widened grid.
-  // START + STAIRS are chosen ONCE here and shared by both the artery widener
-  // and decorateMaze. Both used to derive them independently with the same
-  // "top-left tile → farthest tile" rule, which put the exit in the
-  // bottom-right corner of every floor; see pickEndpoints.
-  const endpoints = pickEndpoints(grid, rng);
-  if (endpoints) widenMainArtery(grid, endpoints);
-  const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+  // ── TRACK-FIRST base grid ────────────────────────────────────────────────
+  //
+  // The floor's main artery used to be DERIVED from the random maze: carve a
+  // maze, trace a path through it, widen that path. So the "track" inherited
+  // every wiggle and dead-end the maze happened to produce — curves landed
+  // where a gap existed rather than where the ball goes (the ramp fragments
+  // pointing nowhere), and there was nowhere to put a real curve at all
+  // (artery-banks censused 22,713 open tiles: 81.8% have an open radius of
+  // ZERO; radius-4 fillets fitted 4 times across 40 floors).
+  //
+  // Now the circuit is GROWN FIRST — slime-mould flow reinforcement, so it is
+  // naturally loopy and different every level — and the maze grows into what's
+  // left, tying in at on-ramps. Corner radius becomes an input we allocate
+  // rather than an output we scavenge. See maze/track-floor.ts.
+  //
+  // It generates at FINAL tile resolution, so it replaces `thickenWalls` too;
+  // the fallback path below still thickens, which is why `grid` is assigned
+  // from one branch or the other rather than being a single expression.
+  const track = TRACK_FIRST ? buildTrackFloor(cfg.cellsW, cfg.cellsH, rng) : null;
+  let grid: Grid;
+  let endpoints: { start: TilePos; stairs: TilePos } | null;
+  if (track) {
+    grid = track.grid;
+    // Both endpoints sit ON the circuit and a lap apart, so the route between
+    // them RIDES the track instead of treating it as scenery between errands.
+    endpoints = { start: track.start, stairs: track.stairs };
+  } else {
+    grid = thickenWalls(raw);
+    // Widen the main start→stairs artery into a 3-wide "launch highway" so the
+    // floor plays as a machine and not a uniform 2-wide box maze. Reachability-
+    // preserving (only carves wall→floor); runs BEFORE decorate so every stage —
+    // topology/parts/arc-corners/render — sees the widened grid.
+    // START + STAIRS are chosen ONCE here and shared by both the artery widener
+    // and decorateMaze. Both used to derive them independently with the same
+    // "top-left tile → farthest tile" rule, which put the exit in the
+    // bottom-right corner of every floor; see pickEndpoints.
+    endpoints = pickEndpoints(grid, rng);
+    if (endpoints) widenMainArtery(grid, endpoints);
+  }
+  // Room rects and prefab anchors are authored in HALF-SCALE cell coords and
+  // scaled ×2 to land on the thickened grid. The track floor is generated at
+  // final resolution from its own geometry and never saw those stamps, so it
+  // ships no room rects — decorateMaze's own sparse-region fill covers it.
+  const rooms = track ? [] : rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   // Prefab anchors ride the same ×2 into the thickened grid — the landmark's
   // first, so its set-piece furniture wins any tile the regular stamps also want.
-  const anchors: PrefabAnchor[] = [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
+  // Skipped on a track floor for the same reason as `rooms`: those stamps were
+  // carved into `raw`, which the track floor does not use, so their anchors
+  // would point at furniture that isn't there.
+  const anchors: PrefabAnchor[] = track
+    ? []
+    : [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
   // Pinball-machine density grows with depth AND rides the floor's actual area
   // — the 4× floors change scaled zombies/torches/rooms but left this an
   // absolute cap, spreading 26 parts over ~26k late-game tiles (the "sparse"
