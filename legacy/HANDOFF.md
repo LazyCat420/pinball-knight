@@ -2,6 +2,63 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🧟 CARD ART — the card now SHOWS the monster (2026-07-25, this session)
+
+**Live:** http://10.0.0.16:5174/dungeon · 1377 tests pass (119 files) · `next build` clean.
+
+### What was reported
+
+> "those cards are suppose to be the monster we kill. So if its a zombie we get a
+> zombie card. right now we still get these skill cards we need to change it and
+> make the art better."
+
+### What was actually wrong — half the report was already fixed
+
+The card **data** was already monsters: commit `55f90be` earlier the same day
+replaced the skill-chip table with 25 monster cards (`CardDef.source`, the eight
+zombie sub-types, affinity drops). That was shipped and live. There is no
+skill-card code path left — every surface reads the one `CARDS` table.
+
+What had NOT changed was the **art**, and that is why it still read as a skill
+card. `holo-card.ts` painted `c.icon` — a **150px emoji** — as the entire
+portrait. 🧟 rendered as a washed-out grey blob behind a speckle field, so a
+"Shambler Hide" and a "Grim Scythe" looked like the same anonymous stat chip.
+The card claimed an identity its art refused to draw.
+
+### The fix
+
+**New `src/scenes/dungeon/render/monster-portrait.ts`.** The game already owns
+cel-shaded art for every monster (`cel-painter.ts` — plain canvas-2D painters
+over a 128×128 box, no three.js/DOM). A portrait is just: run the same painter
+the horde uses, blit it scaled into the art window. `KIND_PORTRAIT` is
+exhaustive by `EnemyKind` and **mirrors core.ts's `EXPANSION_SKIN` / `RESKIN`**,
+so a Wisp card shows the cyan-tinted ghost a Wisp actually is.
+
+Then in `holo-card.ts`: portrait on a lit stage (floor pool + rarity backlight,
+NEAREST sampling so the selout outlines stay crisp), foil/speckle/backdrop damped
+behind the subject, a scrim under the monster nameplate, and the stage pill leads
+with the monster family instead of the old "CHIP".
+
+**Three real bugs fixed on the way:**
+- Tinting was done in-place (`multiply` + `destination-in` onto itself), which
+  tinted the transparent background too — the Wisp painted as a **solid cyan
+  rectangle**. Now masked via a separate `destination-in` scratch layer.
+- Hulk Knuckle's cooldown *penalty* rendered **`−−15%`**, and Glass Cannon's
+  durability drawback looked like an upgrade. Percentages are signed honestly
+  now, and cooldown says "Attack speed" / "Slower swing" since below-1 is good.
+- All five variant-unfiltered zombie sub-types took `ZOMBIE_VARIANTS[0]`, so
+  Hulk and Midget were one body at two zoom levels. Spread deterministically.
+
+### Verified
+
+`monster-portrait.test.ts` (9 tests) pins coverage for every kind + sub-type,
+the tint-rectangle regression, the sub-type spread, memoisation, and the
+headless-null guard. Rendered all 25 faces in **real Chrome** via Playwright —
+matches the node-canvas render, so the compositing is right in the browser that
+ships.
+
+Committed and pushed to `main`, then deployed to synology.
+
 ## 🪧 "ENTER MAZE" SIGN above the tavern notice board (2026-07-25, this session)
 
 **Commit `7d503cc`** · pushed to `main` · deployed **`main@7d503cc` → synology**

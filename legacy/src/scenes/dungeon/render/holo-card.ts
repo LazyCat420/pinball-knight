@@ -24,6 +24,7 @@
  */
 import { CARDS, RARITY_HEX, type CardDef, type CardId, type CardRarity } from "../cards";
 import { KIND_INFO } from "../bestiary";
+import { monsterPortrait, portraitScale } from "./monster-portrait";
 
 /** Real trading-card proportions (63mm × 88mm), same as the reference engine. */
 export const CARD_W = 512;
@@ -98,6 +99,11 @@ function movesFor(c: CardDef): Array<{ name: string; power: string; text: string
   const m = c.modifier;
   const out: Array<{ name: string; power: string; text: string }> = [];
   const pct = (v: number): string => `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`;
+  // Cooldown reads inverted from every other multiplier: BELOW 1 is the good
+  // outcome (faster), so the raw `pct()` would print "−12%" for a speed-up and
+  // "+15%" for a penalty — correct arithmetic, backwards as a player-facing
+  // claim. These two rows say FASTER/SLOWER instead of signing a bare percent.
+  const cdPct = (v: number): string => `${v < 1 ? "−" : "+"}${Math.round(Math.abs(1 - v) * 100)}%`;
   if (m.damageMult && m.damageMult !== 1) out.push({ name: "Damage", power: pct(m.damageMult), text: "" });
   if (m.damageFlat) out.push({ name: "Flat damage", power: `+${m.damageFlat}`, text: "" });
   if (m.bolt) out.push({ name: "Thunderbolt", power: "ON HIT", text: "" });
@@ -108,7 +114,7 @@ function movesFor(c: CardDef): Array<{ name: string; power: string; text: string
   if (m.pierce) out.push({ name: "Pierce", power: `+${m.pierce}`, text: "" });
   if (m.pinballMult && m.pinballMult > 1) out.push({ name: "On momentum", power: `×${m.pinballMult}`, text: "" });
   if (m.materialMult && m.materialMult > 1) out.push({ name: "On marble", power: `×${m.materialMult}`, text: "" });
-  if (m.cooldownMult && m.cooldownMult !== 1) out.push({ name: "Cooldown", power: pct(m.cooldownMult), text: "" });
+  if (m.cooldownMult && m.cooldownMult !== 1) out.push({ name: m.cooldownMult < 1 ? "Attack speed" : "Slower swing", power: cdPct(m.cooldownMult), text: "" });
   if (m.durabilityMult && m.durabilityMult !== 1) out.push({ name: "Durability", power: pct(m.durabilityMult), text: "" });
   return out.slice(0, 2); // two rows is what the layout has room for
 }
@@ -152,11 +158,11 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLine
 }
 
 /** The seeded backdrop behind the emblem — 4 patterns, exactly as the original. */
-function paintBackdrop(ctx: CanvasRenderingContext2D, pattern: number, ax: number, ay: number, aw: number, ah: number, rand: () => number): void {
+function paintBackdrop(ctx: CanvasRenderingContext2D, pattern: number, ax: number, ay: number, aw: number, ah: number, rand: () => number, alpha = 0.18): void {
   ctx.save();
   rr(ctx, ax, ay, aw, ah, 10);
   ctx.clip();
-  ctx.globalAlpha = 0.18;
+  ctx.globalAlpha = alpha;
   ctx.fillStyle = "#ffffff";
   const cx = ax + aw / 2;
   const cy = ay + ah / 2;
@@ -322,7 +328,10 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.font = "700 12px ui-monospace, Menlo, monospace";
   ctx.textAlign = "left";
   const fits = c.weaponKinds === "both" ? "ANY WEAPON" : `${c.weaponKinds.toUpperCase()} ONLY`;
-  ctx.fillText(`CHIP · ${fits}`, 34, 33);
+  // "CHIP" was the old stat-chip vocabulary. A card is a monster's essence, so
+  // the pill leads with the monster family and keeps the fit as the qualifier.
+  const stage = c.source ? KIND_INFO[c.source].label.toUpperCase() : "CHASE";
+  ctx.fillText(`${stage} · ${fits}`, 34, 33);
 
   // ── Name + power ──
   ctx.shadowColor = "rgba(0,0,0,0.85)";
@@ -372,30 +381,88 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   rr(ctx, ax, ay, aw, ah, 10);
   ctx.fill();
 
-  paintBackdrop(ctx, seed % 4, ax, ay, aw, ah, rand);
+  // Resolved BEFORE the backdrop so the backdrop can get out of its way: the
+  // ray/ring patterns were authored to carry an otherwise-empty window, and at
+  // full strength they read straight through a creature standing in front.
+  const portrait = c.source ? monsterPortrait(c.source, c.subType) : null;
+  paintBackdrop(ctx, seed % 4, ax, ay, aw, ah, rand, portrait ? 0.07 : 0.18);
 
-  // The emblem itself — the chip's icon, big and centred.
+  // ── THE MONSTER ITSELF ──
+  // The card is a slain monster's power bottled, so the monster has to BE the
+  // art. This paints the same cel the horde is drawn from (render/monster-
+  // portrait.ts) rather than the 150px emoji that used to sit here — the emoji
+  // rendered as a washed-out blob behind the speckle field and made every card
+  // look like the anonymous stat chip the monster rework existed to kill.
+  //
+  // Sourceless mythics have no monster to draw, so they keep the emoji emblem:
+  // that IS their identity (a chase card, not loot).
   ctx.save();
   rr(ctx, ax, ay, aw, ah, 10);
   ctx.clip();
-  ctx.textAlign = "center";
-  ctx.font = "150px ui-monospace, Menlo, monospace";
-  ctx.shadowColor = "rgba(0,0,0,0.6)";
-  ctx.shadowBlur = 18;
-  ctx.fillText(c.icon, ax + aw / 2, ay + ah / 2 + 54);
-  ctx.shadowBlur = 0;
+
+  if (portrait) {
+    // A floor pool under the feet, so the creature stands ON something instead
+    // of floating in a gradient. Drawn before the sprite, inside the clip.
+    const fy = ay + ah * 0.82;
+    const fg = ctx.createRadialGradient(ax + aw / 2, fy, 4, ax + aw / 2, fy, aw * 0.34);
+    fg.addColorStop(0, "rgba(0,0,0,0.55)");
+    fg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.ellipse(ax + aw / 2, fy, aw * 0.32, ah * 0.07, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Backlight in the rarity colour — separates the silhouette from the
+    // backdrop, which flat cel art badly needs at this size.
+    const halo = ctx.createRadialGradient(ax + aw / 2, ay + ah * 0.5, 8, ax + aw / 2, ay + ah * 0.5, aw * 0.42);
+    halo.addColorStop(0, `${RARITY_HEX[c.rarity]}55`);
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(ax, ay, aw, ah);
+
+    // Cel art is authored at 128px and must scale with NEAREST sampling, or the
+    // selout outlines blur into the mush this art style exists to avoid.
+    ctx.imageSmoothingEnabled = false;
+    // Sized off the window HEIGHT and then FITTED, never cropped. The cel is a
+    // 128×128 box with the creature occupying roughly the lower ⅔, so the draw
+    // is anchored on the FEET (the floor pool) and the box is capped so the
+    // head cannot leave the frame — a decapitated portrait is worse than a
+    // small one, and a 1.55× hulk hits that ceiling immediately.
+    const feetY = ay + ah * 0.90;
+    const want = ah * 1.18 * portraitScale(c.source!, c.subType);
+    // The cel's figure sits inside ~86% of its box; keep that much above the
+    // feet line within the window.
+    const box = Math.min(want, (feetY - ay - 6) / 0.86);
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = 12;
+    ctx.drawImage(portrait, ax + (aw - box) / 2, feetY - box, box, box);
+    ctx.shadowBlur = 0;
+    ctx.imageSmoothingEnabled = true;
+  } else {
+    ctx.textAlign = "center";
+    ctx.font = "150px ui-monospace, Menlo, monospace";
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 18;
+    ctx.fillText(c.icon, ax + aw / 2, ay + ah / 2 + 54);
+    ctx.shadowBlur = 0;
+  }
 
   // Cosmic sheen + speck field inside the art window (screen blend).
+  // With a monster in the window the foil has to stay BEHIND the subject in
+  // legibility terms — at full strength the sheen hazes the cel art and the
+  // specks read as snow on top of the creature. Rarity still escalates, just
+  // from a lower floor.
+  const foilScale = portrait ? 0.45 : 1;
   ctx.globalCompositeOperation = "screen";
   const sheen = ctx.createLinearGradient(ax, ay + ah, ax + aw, ay);
   ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => sheen.addColorStop(i / (arr.length - 1), col));
-  ctx.globalAlpha = 0.08 + tier * 0.05;
+  ctx.globalAlpha = (0.08 + tier * 0.05) * foilScale;
   ctx.fillStyle = sheen;
   ctx.fillRect(ax, ay, aw, ah);
 
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 0.9 * foilScale;
   const speckColors = ["#ffffff", "#9ffcff", "#ffb3f5", "#fff59f"];
-  const speckCount = 18 + tier * 16;
+  const speckCount = Math.round((18 + tier * 16) * (portrait ? 0.5 : 1));
   for (let i = 0; i < speckCount; i++) {
     const sx = ax + rand() * aw;
     const sy = ay + rand() * ah;
@@ -424,16 +491,29 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   // keep the cosmic speckle field with nothing claiming to have dropped them.
   if (c.source) {
     const info = KIND_INFO[c.source];
-    // The monster is the HEADLINE, not a footnote. It sits big and centred along
-    // the bottom of the art window, tinted by rarity, so "which monster is this"
-    // is answerable at a glance and from across the room.
+    // The monster is the HEADLINE, not a footnote. It sits along the bottom of
+    // the art window, tinted by rarity, so "which monster is this" is answerable
+    // at a glance and from across the room.
+    //
+    // The name now rides a dark scrim rather than sitting bare on the art: with
+    // a portrait behind it, unscrimmed text competed with the creature's own
+    // outlines and neither won.
     const name = c.subType ? c.subType.toUpperCase() : info.label.toUpperCase();
+    const label = portrait ? name : `${info.icon} ${name}`;
+    const by = ay + ah - 44;
+    const scrim = ctx.createLinearGradient(0, by, 0, ay + ah);
+    scrim.addColorStop(0, "rgba(0,0,0,0)");
+    scrim.addColorStop(0.45, "rgba(0,0,0,0.72)");
+    scrim.addColorStop(1, "rgba(0,0,0,0.86)");
+    ctx.fillStyle = scrim;
+    ctx.fillRect(ax, by, aw, ah - (by - ay));
+
     ctx.textAlign = "center";
     ctx.fillStyle = RARITY_HEX[c.rarity];
     ctx.shadowColor = "rgba(0,0,0,0.85)";
     ctx.shadowBlur = 6;
-    fitText(ctx, `${info.icon} ${name}`, aw - 24, 30, 800);
-    ctx.fillText(`${info.icon} ${name}`, ax + aw / 2, ay + ah - 16);
+    fitText(ctx, label, aw - 24, 30, 800);
+    ctx.fillText(label, ax + aw / 2, ay + ah - 14);
     ctx.shadowBlur = 0;
   }
 
@@ -498,10 +578,24 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
 
   // ── Stats strip ──
   const m = c.modifier;
+  // A SIGNED percentage, so a drawback reads as one. `−${1 - v}` hard-coded a
+  // minus and then printed a negative number for any multiplier ABOVE 1 — the
+  // Hulk Knuckle's +15% cooldown penalty rendered "−−15%", and Glass Cannon's
+  // durability drawback looked like an upgrade. Cards with real downsides are a
+  // design pillar here; the face has to tell the truth about them.
+  const signed = (v: number): string => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v))}%`;
+  // Damage folds the flat bonus in at ~10%/point purely so the strip has one
+  // number; the moves box above lists flat and percent separately.
+  const dmgPct = ((m.damageMult ?? 1) - 1) * 100 + (m.damageFlat ?? 0) * 10;
+  // Cooldown is inverted: a multiplier BELOW 1 is faster, i.e. an improvement.
+  const cdPct = m.cooldownMult ? (1 - m.cooldownMult) * 100 : 0;
+  const durPct = m.durabilityMult ? (m.durabilityMult - 1) * 100 : 0;
+  const good = "#4ade80";
+  const bad = "#f87171";
   const stats: Array<[string, string, string]> = [
-    ["DAMAGE", m.damageMult || m.damageFlat ? `+${Math.round(((m.damageMult ?? 1) - 1) * 100 + (m.damageFlat ?? 0) * 10)}%` : "—", "#4ade80"],
-    ["COOLDOWN", m.cooldownMult ? `−${Math.round((1 - m.cooldownMult) * 100)}%` : "—", "#7dd3fc"],
-    ["DURABILITY", m.durabilityMult ? `×${m.durabilityMult}` : "—", "#fcd34d"],
+    ["DAMAGE", dmgPct ? signed(dmgPct) : "—", dmgPct >= 0 ? good : bad],
+    ["COOLDOWN", m.cooldownMult ? signed(cdPct) : "—", cdPct >= 0 ? "#7dd3fc" : bad],
+    ["DURABILITY", m.durabilityMult ? signed(durPct) : "—", durPct >= 0 ? "#fcd34d" : bad],
   ];
   stats.forEach(([label, value, col], i) => {
     const cx2 = 100 + i * 156;
