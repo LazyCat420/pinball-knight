@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { coinCountFor, splitCoinValue, sweepCoins, __coinInternals } from "./core";
+import { coinCountFor, splitCoinValue, sweepCoins, updateCoins, enforceCoinCap } from "./economy/coins";
+import { __coinInternals } from "./core";
 import { state } from "./state";
 import type { GroundItem } from "./state";
 import {
@@ -14,7 +15,11 @@ import {
   COIN_BURST_VY,
 } from "./constants";
 
-const { updateCoins, checkPickups, enforceCoinCap } = __coinInternals;
+// coinCountFor/splitCoinValue/sweepCoins/updateCoins/enforceCoinCap are imported
+// directly from economy/coins.ts now. checkPickups is still core-owned (it
+// handles every pickup kind, not just coins) so it keeps the test seam until
+// step 3 of the decomposition moves it to economy/pickups.ts.
+const { checkPickups } = __coinInternals;
 
 /**
  * Coins are the only ground item that carries VALUE, so every path that removes
