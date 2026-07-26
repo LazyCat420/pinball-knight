@@ -341,11 +341,29 @@ function paintMenuPortrait(canvas: HTMLCanvasElement): void {
   renderKnightPortrait(canvas, activeWeapon().id, lookFromGear(state.gear));
 }
 
+/**
+ * `?seed=<int>` — pin the run seed so a floor regenerates identically.
+ * Returns null when absent or unparseable, so the caller falls back to random.
+ */
+function readSeedParam(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("seed");
+  if (raw === null) return null;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return null;
+  // Match the random path's range: a non-negative 31-bit int.
+  return Math.abs(n) % 0x7fffffff;
+}
+
 export function launchDungeonGame(onExit?: () => void): void {
   if (state.active) return;
   state.active = true;
   state.onExitCallback = onExit ?? null;
-  state.runSeed = (Math.random() * 0x7fffffff) | 0;
+  // `?seed=<int>` pins the run. runSeed drives the maze, the biome theme and
+  // every spawn, so a fixed seed is what makes two screenshots comparable —
+  // without it each run builds a different floor and a visual diff is noise.
+  // Used by the renderer-migration baselines; harmless in normal play.
+  state.runSeed = readSeedParam() ?? (Math.random() * 0x7fffffff) | 0;
   setInputOwner("dungeon-game");
   // Persisted player settings (menu → Settings) land on state BEFORE the pixel
   // pass is built, so createPixelPass below reads the saved look directly.

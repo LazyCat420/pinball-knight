@@ -235,3 +235,21 @@ describe("thickenWalls", () => {
     }
   });
 });
+
+describe("seeded reproducibility (renderer-migration baselines)", () => {
+  // The `?seed=` param exists so a screenshot taken on the WebGL build can be
+  // diffed against the same floor on the WebGPU build. That is only meaningful
+  // if one seed really does rebuild one identical grid — this pins it.
+  it("rebuilds a byte-identical grid from the same seed", () => {
+    const a = generateMaze(12, 9, mulberry32(12345));
+    const b = generateMaze(12, 9, mulberry32(12345));
+    expect(Array.from(b.t)).toEqual(Array.from(a.t));
+    expect(Array.from(b.shapes)).toEqual(Array.from(a.shapes));
+  });
+
+  it("produces a different grid for a different seed", () => {
+    const a = generateMaze(12, 9, mulberry32(12345));
+    const c = generateMaze(12, 9, mulberry32(54321));
+    expect(Array.from(c.t)).not.toEqual(Array.from(a.t));
+  });
+});

@@ -62,6 +62,13 @@ const { values: a } = parseArgs({
     watch: { type: "boolean", default: false },
     /** Drive the host's real Chrome so timings reflect actual GPU performance. */
     gpu: { type: "boolean", default: false },
+    /** Renderer backend to force via ?gpu= — the A/B lever. `auto` leaves the
+     *  page to decide. NOTE: WebGPU is unavailable in Playwright's bundled
+     *  Chromium (and in WSL generally), so `--backend webgpu` is only
+     *  meaningful together with --gpu, which drives the HOST's Chrome. */
+    backend: { type: "string", default: "auto" },
+    /** Pin the dungeon run seed so two runs build the identical floor. */
+    seed: { type: "string" },
     "cdp-port": { type: "string", default: "9333" },
     "max-frame-ms": { type: "string", default: "0" },
     /** Enforce --max-frame-ms even under software rendering (not advised). */
@@ -226,15 +233,29 @@ let targetUrl = a.url;
   const u = new URL(targetUrl, "http://localhost");
   u.searchParams.set("playtest", "1");
   u.searchParams.set("mute", a.sound ? "0" : "1");
+  // ?gpu= is read by src/render/backend.ts. Only set it when explicitly asked,
+  // so a default run keeps whatever the page would have chosen on its own.
+  if (a.backend !== "auto") u.searchParams.set("gpu", a.backend);
+  // ?seed= pins the floor. Two runs with the same seed are comparable; without
+  // it, a screenshot diff between backends is measuring maze noise.
+  if (a.seed !== undefined) u.searchParams.set("seed", a.seed);
   targetUrl = targetUrl.startsWith("http") ? u.toString() : `${u.pathname}${u.search}`;
 }
 if (realGpu) {
-  const u = new URL(a.url);
+  // Rebuild from targetUrl, NOT a.url — the block above already added playtest,
+  // mute, gpu and seed, and re-deriving from a.url would silently drop them.
+  const u = new URL(targetUrl, "http://localhost");
   if (u.hostname !== "localhost" && /^(127\.|0\.0\.0\.0|10\.|100\.|172\.|192\.168\.)/.test(u.hostname)) {
     u.hostname = "localhost";
     targetUrl = u.toString();
     log(`▶ rewrote host → localhost for the host browser (WSL2 port forwarding)`);
   }
+}
+if (a.backend === "webgpu" && !realGpu) {
+  // Fail loudly rather than measure a lie: without a host browser this run
+  // would silently fall back to WebGL2 and report it as a WebGPU result.
+  log(`⚠ --backend webgpu without a real GPU browser: WebGPU is absent from the`);
+  log(`  bundled Chromium, so the page will fail or fall back. Use --gpu.`);
 }
 
 log(`▶ backend: ${backend}`);
