@@ -22,6 +22,8 @@
  * and a maze rarely has clean floor at every bearing.
  */
 import { type Grid, type TilePos, isWalkable, worldToTile, tileCenter } from "./maze/generator";
+import type { EnemyKind } from "./state";
+import type { ZombieType } from "./zombie-types";
 
 /** How a scripted spawn arranges its monsters. */
 export interface SpawnLayout {
@@ -35,6 +37,36 @@ export interface SpawnLayout {
   ring?: number;
   /** Rotate the ring, so successive calls don't stack on the same bearings. */
   phase?: number;
+}
+
+/**
+ * A scripted spawn request — `SpawnLayout` plus what to spawn. Lives here with
+ * the layout it extends (rather than in core.ts, where it used to sit) so the
+ * dev harness can type its hooks without importing back up into core.
+ */
+export interface DebugSpawnSpec extends SpawnLayout {
+  kind: EnemyKind;
+  /** Override starting HP — for damage maths you can actually assert on. */
+  hp?: number;
+  /** Default true. `false` leaves them idle, which is what you want when the
+   *  thing under test is aggro/pathing itself rather than a fight. */
+  aggro?: boolean;
+  /** Centre the layout here instead of on the knight (world coords). */
+  at?: { x: number; z: number };
+  /**
+   * Zombie SUB-TYPE to force (zombie-types.ts). Ignored for other kinds. Lets a
+   * harness put one of each on screen for the silhouette check:
+   *   __dungeonSpawn({kind:"zombie", ztype:"hulk", count:1})
+   */
+  ztype?: ZombieType;
+}
+
+/** What actually got placed — a harness asserts against this, not a guess. */
+export interface DebugSpawnResult {
+  spawned: number;
+  requested: number;
+  kind: string;
+  points: Array<{ x: number; z: number }>;
 }
 
 /** The ideal (unsnapped) offsets for a layout, in tiles. Exported for tests and
