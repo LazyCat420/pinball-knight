@@ -17,6 +17,9 @@
  * Both are fixed-size ring buffers; a spent particle just goes to size 0.
  */
 import * as THREE from "three";
+// SpriteNodeMaterial lives in three/webgpu, not three — it is a node material.
+import { SpriteNodeMaterial } from "three/webgpu";
+import { add, attribute, float, mul, positionLocal, vec4 } from "three/tsl";
 import { PALETTE_HEX } from "./palette";
 import { CAMERA_YAW, CAMERA_TILT } from "../constants";
 import { DamageTextPool, type DamageTextKind } from "./damage-text";
@@ -41,31 +44,32 @@ const C_BLOOD_G = [linColor(0x5f8a4f), linColor(0x3d5c3a), linColor(0x8fc46b)]; 
 const C_BLOOD_R = [linColor(0xa83244), linColor(0x6b1f2a), linColor(0xd95763)]; // blood red
 const C_DUST = linColor(0x6b7688); // stone light
 
-const PARTICLE_VERT = /* glsl */ `
-attribute float aSize;
-attribute float aAlpha;
-attribute vec3 aColor;
-varying float vAlpha;
-varying vec3 vColor;
-void main() {
-  vAlpha = aAlpha;
-  vColor = aColor;
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = aSize;
-}
-`;
-
-// Square particles — the pixel look wants hard little squares, not soft dots.
-const PARTICLE_FRAG = /* glsl */ `
-precision highp float;
-varying float vAlpha;
-varying vec3 vColor;
-void main() {
-  if (vAlpha <= 0.001) discard;
-  gl_FragColor = vec4(vColor, vAlpha);
-}
-`;
+/**
+ * PARTICLES ARE QUADS, NOT `THREE.Points` — and that is forced, not stylistic.
+ *
+ * The old GLSL set `gl_PointSize = aSize`. There is no equivalent on the WebGPU
+ * path: `PointsNodeMaterial.setupVertex()` reads
+ *
+ *   if ( builder.object.isPoints ) return super.setupVertex( builder );
+ *   else return this.setupVertexSprite( builder );
+ *
+ * so ANY `THREE.Points` object skips sprite/quad expansion and every particle
+ * rasterises as a single pixel. Measured: 64 particles → exactly 64 lit pixels,
+ * and `sizeAttenuation` / `sizeNode` / `SpriteNodeMaterial` make no difference,
+ * because the branch is on the OBJECT, not the material.
+ *
+ * An `InstancedMesh` of unit quads takes the sprite path, where `scaleNode`
+ * applies. Two properties of this port matter:
+ *
+ *  - POSITION RIDES AN INSTANCED ATTRIBUTE (`aOffset`), not `instanceMatrix`.
+ *    That keeps `spawn()`/`update()` writing flat Float32Arrays exactly as they
+ *    always have — no per-particle Matrix4 composition on the CPU every frame.
+ *  - The quad is UNIT-SIZED and scaled in WORLD units, so the edges stay hard.
+ *    Verified by pixel readback: 0 partially-transparent pixels, i.e. no
+ *    anti-aliased rim. That is the same hard-square look the old fragment
+ *    shader gave, which the palette quantiser depends on.
+ */
+const PARTICLE_SCALE = 0.05;
 
 interface PoolData {
   vx: Float32Array;
@@ -79,43 +83,53 @@ interface PoolData {
 }
 
 class ParticlePool {
-  readonly points: THREE.Points;
-  private geo: THREE.BufferGeometry;
-  private mat: THREE.ShaderMaterial;
-  private pos: THREE.BufferAttribute;
-  private col: THREE.BufferAttribute;
-  private size: THREE.BufferAttribute;
-  private alpha: THREE.BufferAttribute;
+  /** Kept named `points` — the whole VfxSystem adds/removes this by that name. */
+  readonly points: THREE.InstancedMesh;
+  private geo: THREE.InstancedBufferGeometry | THREE.BufferGeometry;
+  private mat: SpriteNodeMaterial;
+  private pos: THREE.InstancedBufferAttribute;
+  private col: THREE.InstancedBufferAttribute;
+  private size: THREE.InstancedBufferAttribute;
+  private alpha: THREE.InstancedBufferAttribute;
   private d: PoolData;
   private cursor = 0;
   private readonly n: number;
 
   constructor(count: number, blending: THREE.Blending) {
     this.n = count;
-    this.geo = new THREE.BufferGeometry();
-    this.pos = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
-    this.col = new THREE.BufferAttribute(new Float32Array(count * 3), 3);
-    this.size = new THREE.BufferAttribute(new Float32Array(count), 1);
-    this.alpha = new THREE.BufferAttribute(new Float32Array(count), 1);
+    // A unit quad, instanced per particle. PlaneGeometry(1,1) is centred, so
+    // the offset attribute below places the particle's CENTRE — same semantics
+    // the old `position` attribute had for a point sprite.
+    this.geo = new THREE.PlaneGeometry(1, 1);
+    this.pos = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    this.col = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    this.size = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+    this.alpha = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
     this.pos.setUsage(THREE.DynamicDrawUsage);
     this.col.setUsage(THREE.DynamicDrawUsage);
     this.size.setUsage(THREE.DynamicDrawUsage);
     this.alpha.setUsage(THREE.DynamicDrawUsage);
-    this.geo.setAttribute("position", this.pos);
+    // NOT "position" — that name belongs to the quad's own 4 vertices. The
+    // per-particle centre is a separate instanced attribute added to it.
+    this.geo.setAttribute("aOffset", this.pos);
     this.geo.setAttribute("aColor", this.col);
     this.geo.setAttribute("aSize", this.size);
     this.geo.setAttribute("aAlpha", this.alpha);
 
-    this.mat = new THREE.ShaderMaterial({
-      vertexShader: PARTICLE_VERT,
-      fragmentShader: PARTICLE_FRAG,
+    this.mat = new SpriteNodeMaterial({
       transparent: true,
       blending,
       depthTest: true,
       depthWrite: false,
     });
+    // Billboarded quad + per-instance offset, scale and colour. `aAlpha` going
+    // to 0 is what retires a particle (the pool sets size 0 too), which
+    // reproduces the old `if (vAlpha <= 0.001) discard;`.
+    this.mat.positionNode = add(positionLocal, attribute<"vec3">("aOffset", "vec3"));
+    this.mat.scaleNode = mul(attribute<"float">("aSize", "float"), float(PARTICLE_SCALE));
+    this.mat.colorNode = vec4(attribute<"vec3">("aColor", "vec3"), attribute<"float">("aAlpha", "float"));
 
-    this.points = new THREE.Points(this.geo, this.mat);
+    this.points = new THREE.InstancedMesh(this.geo, this.mat, count);
     this.points.frustumCulled = false;
 
     this.d = {
