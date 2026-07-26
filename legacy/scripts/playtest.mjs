@@ -9,6 +9,15 @@
  *   pnpm playtest --mode bounce --secs 120 --profile
  *   pnpm playtest:gpu --profile                REAL GPU timings (see below)
  *   pnpm playtest --max-frame-ms 20            fail if p95 frame exceeds 20ms
+ *   pnpm playtest --watch                      WATCH it play in a real window
+ *   pnpm playtest --shots                      periodic PNGs to review after
+ *   pnpm playtest --sound                      opt IN to audio (off by default)
+ *
+ * ── AUDIO IS OFF BY DEFAULT ─────────────────────────────────────────────────
+ * A harness run boots a real browser, which means real sound out of real
+ * speakers — with no window to close and no in-game menu to reach. So every run
+ * is muted twice over (Chrome's --mute-audio AND the app's own ?mute=1 gate),
+ * and `--sound` is the explicit opt-in for a run you are sitting and watching.
  *
  * EXIT CODE is the point for CI: non-zero when the bot got stuck, the game threw,
  * or the frame budget was missed. A green run means the game survived N seconds
@@ -32,7 +41,7 @@
 import { chromium } from "playwright";
 import { parseArgs } from "node:util";
 import { spawn, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 
 const { values: a } = parseArgs({
   options: {
@@ -41,6 +50,16 @@ const { values: a } = parseArgs({
     secs: { type: "string", default: "30" },
     profile: { type: "boolean", default: false },
     headed: { type: "boolean", default: false },
+    /** Play the game's audio. OFF by default — an automated run that makes
+     *  noise out of someone's speakers with no window to close and no menu to
+     *  reach is not something a harness should ever do uninvited. */
+    sound: { type: "boolean", default: false },
+    /** Write periodic PNGs so a run can be reviewed after the fact. */
+    shots: { type: "boolean", default: false },
+    "shot-every": { type: "string", default: "5" },
+    "shot-dir": { type: "string", default: "playtest-shots" },
+    /** Watch it play in a real window: headed + slowed to human speed. */
+    watch: { type: "boolean", default: false },
     /** Drive the host's real Chrome so timings reflect actual GPU performance. */
     gpu: { type: "boolean", default: false },
     "cdp-port": { type: "string", default: "9333" },
@@ -49,6 +68,14 @@ const { values: a } = parseArgs({
     "force-budget": { type: "boolean", default: false },
   },
 });
+
+// --watch is the "let me actually SEE it" switch: open a real window, and use
+// the host GPU so it renders at a watchable framerate instead of a SwiftShader
+// slideshow. Both are just defaults — an explicit --gpu / --headed still wins.
+if (a.watch) {
+  a.headed = true;
+  if (!a.gpu) a.gpu = true;
+}
 
 const SECS = Number(a.secs);
 const MAX_FRAME_MS = Number(a["max-frame-ms"]);
@@ -84,7 +111,7 @@ let spawnedHostBrowser = null;
 async function connectRealGpu() {
   if (await cdpAlive(CDP_PORT)) {
     log(`▶ reusing existing CDP browser on :${CDP_PORT}`);
-    return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`);
+    return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
   }
   const exe = WIN_CHROME.find((p) => existsSync(p));
   if (!exe) return null;
@@ -94,6 +121,7 @@ async function connectRealGpu() {
     exe,
     [
       a.headed ? "--new-window" : "--headless=new",
+      ...(a.sound ? [] : ["--mute-audio"]),
       `--remote-debugging-port=${CDP_PORT}`,
       "--remote-allow-origins=*",
       // A dedicated profile dir keeps this from colliding with the user's
@@ -110,7 +138,7 @@ async function connectRealGpu() {
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 500));
     if (await cdpAlive(CDP_PORT)) {
-      return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`);
+      return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
     }
   }
   return null;
@@ -146,7 +174,16 @@ if (a.gpu) {
 if (!browser) {
   browser = await chromium.launch({
     headless: !a.headed,
-    args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--no-sandbox"],
+    // --mute-audio silences the whole browser PROCESS, independent of anything
+    // the page does. Belt-and-braces with the app's own ?mute=1 gate: either
+    // alone is enough, and together no code path can make noise by accident.
+    args: [
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader",
+      "--no-sandbox",
+      ...(a.sound ? [] : ["--mute-audio"]),
+    ],
   });
 }
 
@@ -181,6 +218,16 @@ async function shutdown(code) {
 // driving the HOST browser at a WSL-local address, rewrite the host to localhost
 // — that is the path Windows actually routes.
 let targetUrl = a.url;
+// ── SILENCE BY DEFAULT ──
+// `?playtest=1` puts audio-manager into global-mute at module load, before any
+// scene can request a context (a mute applied later has already leaked a sting).
+// `--sound` opts back in for a run you are deliberately watching.
+{
+  const u = new URL(targetUrl, "http://localhost");
+  u.searchParams.set("playtest", "1");
+  u.searchParams.set("mute", a.sound ? "0" : "1");
+  targetUrl = targetUrl.startsWith("http") ? u.toString() : `${u.pathname}${u.search}`;
+}
 if (realGpu) {
   const u = new URL(a.url);
   if (u.hostname !== "localhost" && /^(127\.|0\.0\.0\.0|10\.|100\.|172\.|192\.168\.)/.test(u.hostname)) {
@@ -191,6 +238,7 @@ if (realGpu) {
 }
 
 log(`▶ backend: ${backend}`);
+log(`▶ audio: ${a.sound ? "ON (--sound)" : "MUTED"}`);
 log(`▶ opening ${targetUrl}`);
 try {
   await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -232,6 +280,18 @@ try {
     "✗ dungeon hooks never appeared. The game may not have reached the dungeon " +
       "scene (title screen? intro?), or it failed to start.",
   );
+  // Say WHICH stage stalled — "hooks never appeared" is the same message whether
+  // the bundle never mounted or the player just never went active, and those
+  // have completely different causes.
+  const diag = await page.evaluate(() => ({
+    bot: typeof window.__dungeonBot,
+    player: typeof window.__dungeonPlayer,
+    active: window.__dungeonPlayer?.()?.active,
+    startRun: typeof window.__dungeonStartRun,
+    poolSeed: window.__dungeonPool?.()?.poolSeed ?? null,
+    level: window.__dungeonPool?.()?.level ?? null,
+  })).catch((e) => ({ evalFailed: String(e).slice(0, 120) }));
+  console.error("    diagnostics:", JSON.stringify(diag));
   for (const e of pageErrors.slice(0, 10)) console.error("   ", e);
   await shutdown(2);
 }
@@ -243,13 +303,54 @@ await page.evaluate(
   [a.mode, SECS, a.profile],
 );
 
+// ── Live progress ──
+// A silent poll loop gives a watcher nothing to look at for the whole run, so
+// this prints a one-line heartbeat of what the bot is actually doing and (with
+// --shots) drops periodic PNGs. Being able to SEE the run is the difference
+// between "it passed" and knowing what it did.
+const SHOT_DIR = a["shot-dir"];
+let shotN = 0;
+if (a.shots) {
+  mkdirSync(SHOT_DIR, { recursive: true });
+  log(`▶ screenshots → ${SHOT_DIR}/`);
+}
+
 const deadline = Date.now() + SECS * 1000 + 20_000;
+const startedAt = Date.now();
+let lastShot = 0;
 while (Date.now() < deadline) {
   await page.waitForTimeout(1000);
   const still = await page
     .evaluate(() => !!window.__dungeonBotIsRunning?.())
     .catch(() => false);
+
+  const el = Math.round((Date.now() - startedAt) / 1000);
+  const p = await page.evaluate(() => {
+    const pl = window.__dungeonPlayer?.();
+    const pool = window.__dungeonPool?.();
+    return pl ? { hp: pl.hp, kills: pl.kills, combo: pl.bounceCombo, lvl: pool?.level, peers: pool?.sameFloor } : null;
+  }).catch(() => null);
+  if (p) {
+    log(
+      `   ${String(el).padStart(3)}s  floor ${p.lvl ?? "?"}  hp ${p.hp}  ` +
+        `kills ${p.kills}  combo ${p.combo ?? 0}${p.peers ? `  peers ${p.peers}` : ""}`,
+    );
+  }
+
+  if (a.shots && Date.now() - lastShot >= Number(a["shot-every"]) * 1000) {
+    lastShot = Date.now();
+    const f = `${SHOT_DIR}/shot-${String(++shotN).padStart(3, "0")}-${el}s.png`;
+    await page.screenshot({ path: f }).catch(() => {});
+  }
+
   if (!still) break;
+}
+
+// A final frame is worth more than any of the periodic ones — it shows the
+// state the run ENDED in, which is what you want when something went wrong.
+if (a.shots) {
+  await page.screenshot({ path: `${SHOT_DIR}/final.png` }).catch(() => {});
+  log(`▶ final frame → ${SHOT_DIR}/final.png`);
 }
 
 const report = await page.evaluate(() => window.__dungeonBotStop()).catch(() => null);

@@ -222,7 +222,17 @@ export function startBot(opts: BotOptions = {}): string {
       lastPos = { x: snap.x, z: snap.z };
       return;
     }
-    plungerHeld = 0;
+    if (plungerHeld > 0) {
+      // We just LEFT the chute. The pull zeroed the stick and may still hold A;
+      // clear both now. Without this the bot idles at neutral until the next
+      // heading change — which reads as a mid-map freeze and was reported as a
+      // phantom "stuck" for the rest of the run.
+      plungerHeld = 0;
+      p.release(BTN.A);
+      const [rx, rz] = DIRS[dirIdx];
+      p.stick(rx, rz);
+      stillSince = performance.now();
+    }
 
     // Stuck detection: only meaningful because we KNOW we are pushing a stick.
     const moved = Number.isNaN(lastPos.x)
