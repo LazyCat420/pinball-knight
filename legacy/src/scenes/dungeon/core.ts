@@ -51,7 +51,6 @@ import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySetting
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { setHandmadeOverride } from "./render/knight-sheets";
 import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
-import { hasStartCardPerk } from "./legacy";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
@@ -230,7 +229,7 @@ import {
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
-import { CARDS, STASH_MAX, rollCardDrop, socketCard, cardsOfRarity, type CardId } from "./cards";
+import { CARDS, STASH_MAX, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
@@ -238,8 +237,6 @@ import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } fr
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
-import { scoreRun, runDetail, type RunStats } from "./run-score";
-import { saveLeaderboardScore } from "../../services/score-service";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
 import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, type CorpseItem } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
@@ -249,6 +246,7 @@ import { profBegin, profEnd, profCount, profFrame } from "./profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
 import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets } from "./boot/sheets";
+import { beginRunLedger, submitRunScore } from "./run/ledger";
 import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
 import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
@@ -1921,89 +1919,6 @@ function dropBossReward(x: number, z: number): void {
   state.hudDirty = true;
 }
 
-/**
- * Begin a NEW run's leaderboard ledger.
- *
- * Separate from `startLevel`, which runs on every descent and wipes the
- * per-floor ledger. These fields must survive a descent — they describe the
- * whole run, which is what a leaderboard row is.
- */
-function beginRunLedger(): void {
-  state.runDeepestFloor = 1;
-  state.runBestCombo = 0;
-  state.runStartMs = performance.now();
-  state.pausedRunS = 0;
-  state.runScoreSubmitted = false;
-  beginRunProgression();
-}
-
-/**
- * A NEW RUN's character progression: the tree resets with the run (roguelite),
- * the memoized aggregate re-reads any legacy perks bought since, and the Pack
- * Rat perk seeds the stash. Piggybacks on beginRunLedger because "what counts
- * as a new run" must have exactly one definition (launch AND retry hit it).
- */
-function beginRunProgression(): void {
-  state.charXp = 0;
-  state.charLevel = 1;
-  state.skillPoints = 0;
-  state.skillRanks = {};
-  state.unlockedAbilities = ["flippercharge", "arcanepulse"];
-  state.seenCards = new Set();
-  // The alchemy pouch is run-scoped — a new run starts you empty-handed (only
-  // wallet gold + legacy perks carry over). See reagents.ts / recipes.ts.
-  state.reagents = {};
-  state.flasks = 0;
-  state.bonusMaxHp = 0;
-  invalidateSkillAgg();
-  if (hasStartCardPerk()) {
-    const bag = cardsOfRarity("common");
-    state.cardStash.push(bag[Math.floor(Math.random() * bag.length)]);
-  }
-  if (state.player) state.player.hp = playerMaxHp();
-}
-
-/** Gather the run-scoped ledger into the shape `run-score.ts` grades. */
-function currentRunStats(): RunStats {
-  return {
-    deepestFloor: state.runDeepestFloor,
-    bestCombo: state.runBestCombo,
-    kills: state.kills,
-    gold: state.goldRun,
-    durationS: state.runStartMs > 0 ? Math.max(0, (performance.now() - state.runStartMs) / 1000 - state.pausedRunS) : 0,
-  };
-}
-
-/**
- * Post the finished run to the leaderboard.
- *
- * Guarded by `runScoreSubmitted` because death and the "leave" path can both
- * reach here for the same run, and a duplicated row is worse than a missing one.
- *
- * Deliberately awaited and its result inspected: `saveLeaderboardScore` returns
- * `Promise<boolean>` and a 4xx does NOT reject the underlying fetch, so a
- * fire-and-forget call reports a rejected score as a save. That exact bug hid
- * raccoon-tornado's failures for months — do not "simplify" this back.
- */
-async function submitRunScore(): Promise<void> {
-  if (state.runScoreSubmitted) return;
-  state.runScoreSubmitted = true;
-
-  const stats = currentRunStats();
-  const score = scoreRun(stats);
-  const name = getPlayerName();
-
-  const ok = await saveLeaderboardScore(
-    score,
-    name,
-    0, // maxAltitude — not meaningful here; the schema is shared across games
-    0, // distance — ditto
-    stats.deepestFloor, // tunnelDepth is the closest existing column to "how deep"
-    "pinball-knight",
-    runDetail(stats),
-  );
-  if (!ok) console.warn("[dungeon] leaderboard rejected the run score");
-}
 
 /**
  * How long we keep WATCHING for the shared seed after a floor has been built.
