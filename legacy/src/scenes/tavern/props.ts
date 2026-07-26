@@ -26,6 +26,98 @@ const VICE_MAX_PLATES = 3;
 /** Rarity order, for picking the emitter's colour from the best card fitted. */
 const RARITY_ORDER: CardRarity[] = ["common", "rare", "epic", "legendary", "mythic"];
 
+/**
+ * Draw a lit marquee legend onto a canvas, for the one sign the room carries.
+ *
+ * Texel density is chosen to survive the pixel post-pass: at 1024x208 across a
+ * 3.1-unit plane the glyphs land near the pass's own grid, so the strokes stay
+ * crisp instead of shimmering as the camera eases. Alpha, not a background
+ * colour — the housing behind it is real geometry and should light normally.
+ *
+ * Falls back to a plain (untextured) panel if 2D canvas is unavailable, which is
+ * the headless/probe path: the sign loses its letters, never the whole scene.
+ */
+function makeSignTexture(text: string): THREE.CanvasTexture | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 220; // ~= the 4.2 x 0.9 panel's aspect, so glyphs stay square
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // MEASURE, then fit. 'Press Start 2P' may or may not have loaded by the time
+  // the tavern builds (it is a webfont and this runs on scene open), and the
+  // monospace fallback is a different width per em. Picking a size by eye means
+  // the word overflows the plane in one case and floats in a sea of alpha in the
+  // other, and the second is what the first render actually looked like. Binary-
+  // free fit: measure at a reference size and scale to 92% of the canvas width.
+  // The word gets the middle 74% and the two arrow gutters take the rest.
+  const TEXT_FRAC = 0.74;
+  const REF = 100;
+  ctx.font = `${REF}px 'Press Start 2P', monospace`;
+  const refW = ctx.measureText(text).width || canvas.width;
+  const size = Math.min((canvas.width * TEXT_FRAC * REF) / refW, canvas.height * 0.6);
+  ctx.font = `${Math.round(size)}px 'Press Start 2P', monospace`;
+
+  // Three passes, dark to light. The wide dark stroke is what keeps the legend
+  // readable against the tavern's warm bloom; without it the cyan fill blows out
+  // to white at the edges and the word turns into a bar of light.
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#06181f";
+  ctx.lineWidth = Math.max(8, size * 0.24);
+  ctx.strokeText(text, cx, cy);
+  ctx.shadowColor = "#6fd0e8";
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = "#6fd0e8";
+  ctx.fillText(text, cx, cy);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#eafaff";
+  ctx.fillText(text, cx, cy - Math.round(size * 0.04));
+
+  // A down-arrow in each gutter, pointing at the board below the sign.
+  //
+  // NARROW AND TALL, not the squat equilateral triangle drawn first. The sign's
+  // plane is foreshortened to roughly half-height by the iso camera, so a wide
+  // shallow arrowhead comes out of the projection wider than it is tall and
+  // reads as a sideways pennant — which is exactly what the first render showed.
+  // Half as wide and with a stem, the vertical axis survives the squash.
+  const gutter = canvas.width * (1 - TEXT_FRAC) * 0.5;
+  const aw = Math.min(gutter * 0.34, canvas.height * 0.2);
+  const top = canvas.height * 0.14;
+  const bot = canvas.height * 0.86;
+  for (const side of [-1, 1]) {
+    const ax = side < 0 ? gutter * 0.52 : canvas.width - gutter * 0.52;
+    ctx.beginPath();
+    ctx.moveTo(ax - aw * 0.42, top); // stem
+    ctx.lineTo(ax + aw * 0.42, top);
+    ctx.lineTo(ax + aw * 0.42, bot - aw * 1.5);
+    ctx.lineTo(ax + aw, bot - aw * 1.5); // head
+    ctx.lineTo(ax, bot);
+    ctx.lineTo(ax - aw, bot - aw * 1.5);
+    ctx.lineTo(ax - aw * 0.42, bot - aw * 1.5);
+    ctx.closePath();
+    ctx.strokeStyle = "#06181f";
+    ctx.lineWidth = Math.max(6, aw * 0.5);
+    ctx.stroke();
+    // Filled at the LETTERS' brightness, not the accent's. At plain COLD the
+    // arrows came back visibly dimmer than the word beside them, because the
+    // glyphs get a third white pass on top and the arrows did not — the eye read
+    // that as two different signs sharing a panel.
+    ctx.fillStyle = "#bfeef8";
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 const STONE = PALETTE_HEX[2];
 const TIMBER = PALETTE_HEX[26];
 const TIMBER_DK = PALETTE_HEX[27] ?? PALETTE_HEX[26];
@@ -63,6 +155,8 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
   const mats: THREE.Material[] = [];
   const bumpers: THREE.Mesh[] = [];
   const accents = new Map<string, THREE.PointLight>();
+  /** The ENTER MAZE legend. Owned here so dispose() frees the GPU texture too. */
+  let signTex: THREE.CanvasTexture | null = null;
 
   const mat = (color: number, opts: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial => {
     const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.15, ...opts });
@@ -626,9 +720,95 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
     box(0.05, 0.05, 0.04, mat(BLOOD), p.position.x, p.position.y + h / 2 - 0.05, n.z + 0.04); // the pin
   }
   // A hooded lantern on the board's post, so the notices are lit from somewhere.
-  box(0.09, 0.34, 0.09, mat(STEEL_DK), n.x - 2.0, 2.35, n.z + 0.1);
-  box(0.18, 0.2, 0.18, emissive(WARM, 1.3), n.x - 2.0, 2.12, n.z + 0.1);
-  box(0.24, 0.06, 0.24, mat(STEEL_DK), n.x - 2.0, 2.24, n.z + 0.1); // the hood
+  // Dropped from y 2.35 to 2.05 when the ENTER MAZE sign went in above the board:
+  // the sign hangs at the wall plane behind it, and at the old height the hood
+  // projected straight over the sign's left arrow. Lower is also the better
+  // light — it rakes across the notices instead of washing them from overhead.
+  const lanternY = 2.05;
+  box(0.09, 0.34, 0.09, mat(STEEL_DK), n.x - 2.0, lanternY, n.z + 0.1);
+  box(0.18, 0.2, 0.18, emissive(WARM, 1.3), n.x - 2.0, lanternY - 0.23, n.z + 0.1);
+  box(0.24, 0.06, 0.24, mat(STEEL_DK), n.x - 2.0, lanternY - 0.11, n.z + 0.1); // the hood
+  // ── "ENTER MAZE" SIGN ── the one place the room breaks its own no-labels rule.
+  //
+  // TAVERN_PLAN says stations read from shape and accent colour, never from text,
+  // and every other station honours that. The way DOWN is the exception because
+  // it is the only prop a first-time player MUST find: everything else is
+  // optional, and a player who never locates the forge just plays without a
+  // socket, while a player who never locates the board never starts a run at all.
+  // Shape alone was not carrying it — a corkboard reads as scenery, and the cold
+  // floor lane points at the plunger from a metre away, which you only notice
+  // once you are already standing in it.
+  //
+  // Hung ABOVE the board rather than pinned to it, at 2.62: clear of the board's
+  // 2.2 top and its lantern, and under WALL_HEIGHT 3.2 so it never clips the wall
+  // cap. Leaned forward 0.16rad for the same reason the pinball backbox is — the
+  // camera looks down at 38 degrees, so a panel flat against the wall presents
+  // its face edge-on and the letters foreshorten into a smear.
+  // SIZED FROM THE RENDER, NOT FROM THE UNITS. The first pass was 3.1 x 0.62
+  // with the word inset in its canvas, and on screen the caps stood about ten
+  // pixels tall — the iso projection foreshortens a wall-mounted panel's height
+  // hard, and then the pixel pass quantises what is left. It read as a smudge.
+  // 4.2 x 1.15 with the glyphs filling their canvas edge to edge is what makes
+  // the word legible from the spawn stair, which is the only test that matters.
+  signTex = makeSignTexture("ENTER MAZE");
+  const SIGN_W = 4.2;
+  const SIGN_H = 0.8;
+  const signPivot = new THREE.Group();
+  // POSITIONED IN SCREEN SPACE, NOT WORLD SPACE — and those disagree here.
+  //
+  // Under a 45-degree-yaw iso camera, +z (toward the room) also projects DOWNWARD
+  // on screen. The first placement leaned the sign forward 0.16rad and stood it
+  // 0.06 proud of the board, both of which push it toward the viewer, and the
+  // render came back with the legend lying across the top row of notices — it
+  // read as painted ON the corkboard rather than hung above it. Height alone
+  // could not fix that, because the wall caps at WALL_HEIGHT 3.2.
+  //
+  // So it is pushed BACK to the wall face (z -6.72, behind the board's -6.6
+  // backing) and up to 3.0, and the lean is cut to 0.06 — just enough to catch
+  // the light, not enough to drop the panel onto the board. Housing now spans
+  // y 2.5..3.5 at the wall plane, which projects clear ABOVE the board's 2.2 top.
+  signPivot.position.set(n.x, 3.0, n.z - 0.32);
+  signPivot.rotation.x = 0.06;
+  group.add(signPivot);
+  box(SIGN_W + 0.22, SIGN_H + 0.2, 0.18, mat(TIMBER_DK), 0, 0, -0.07, signPivot); // the housing
+  // A near-black inlay behind the letters. Without it the glyphs sit on timber
+  // that the hearth lights to roughly their own value, and a cyan word on a warm
+  // brown of equal brightness is exactly the contrast the pixel pass destroys.
+  box(SIGN_W + 0.02, SIGN_H + 0.02, 0.04, mat(0x0a1418), 0, 0, 0.035, signPivot);
+  box(SIGN_W + 0.26, 0.09, 0.24, mat(STEEL_DK, { metalness: 0.6 }), 0, SIGN_H / 2 + 0.13, -0.05, signPivot); // top rail
+  // The face is UNLIT (MeshBasicMaterial): a standard material would take the
+  // room's warm hearth light across the glyphs and the pixel pass's bloom would
+  // then eat the thin strokes. Basic keeps the letters at exactly the contrast
+  // the canvas drew them at, which is the whole point of a sign.
+  const signMat = new THREE.MeshBasicMaterial({
+    map: signTex ?? undefined,
+    color: signTex ? 0xffffff : COLD,
+    transparent: true,
+  });
+  mats.push(signMat);
+  const signGeo = new THREE.PlaneGeometry(SIGN_W, SIGN_H);
+  geos.push(signGeo);
+  const signFace = new THREE.Mesh(signGeo, signMat);
+  signFace.position.set(0, 0, 0.075);
+  signPivot.add(signFace);
+  // Two bulbs on the rail, aimed at the face, so the sign reads as a fixture the
+  // tavern installed rather than a decal floating on the wall.
+  for (const sx of [-1, 1]) {
+    box(0.07, 0.18, 0.07, mat(STEEL_DK), sx * (SIGN_W / 2 - 0.2), SIGN_H / 2 + 0.24, 0.02, signPivot);
+    cyl(0.1, 0.08, emissive(COLD, 1.1), sx * (SIGN_W / 2 - 0.2), SIGN_H / 2 + 0.36, 0.07, signPivot);
+  }
+  // A dedicated light on the sign itself. The station accent below is pulsed by
+  // stations.ts when you are in range; this one is always on, because the sign's
+  // job is to be legible from the spawn stair BEFORE you are anywhere near it.
+  const signGlow = new THREE.PointLight(COLD, 2.2, 5, 2);
+  signGlow.position.set(n.x, 2.6, n.z + 1.0);
+  group.add(signGlow);
+  // The down-arrows that flank the word are PAINTED INTO THE TEXTURE, not built
+  // as geometry. Two earlier attempts at real chevrons both failed on the same
+  // constraint: the only free wall is the ~0.1 strip between the board's top
+  // notices (y ~2.0) and the sign's bottom edge, and anything thin enough to fit
+  // there disappears into the pixel pass. In the texture they get the sign's own
+  // contrast and cost nothing.
   // THE PLUNGER — a real launcher housing set into the wall beside the board.
   // Pulling it sends you back into the machine.
   const plungerX = n.x + n.w / 2 + 0.5;
@@ -802,6 +982,7 @@ export function buildProps(scene: THREE.Scene): BuiltProps {
       scene.remove(group);
       for (const g of geos) g.dispose();
       for (const m of mats) m.dispose();
+      signTex?.dispose();
     },
   };
 }
