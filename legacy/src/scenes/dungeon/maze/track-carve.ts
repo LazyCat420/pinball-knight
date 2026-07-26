@@ -44,8 +44,9 @@ import {
   setShape,
   ensureArcs,
   isWalkable,
+  shapeAt,
 } from "./generator";
-import { SHAPE_FULL } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_ARC } from "./tile-shape";
 import type { TrackPath } from "./track-path";
 
 /** Marks which tiles belong to the circuit, so later passes can respect it. */
@@ -129,7 +130,71 @@ export function carveTrack(g: Grid, path: TrackPath): TrackMask {
       disc(g, mask, a.cx + Math.cos(ang) * a.r, a.cz + Math.sin(ang) * a.r, half);
     }
   }
+
   return mask;
+}
+
+/**
+ * Register the fillets as real ArcFeatures on the grid.
+ *
+ * MUST RUN AFTER `growMazeAround`. Publishing inside `carveTrack` looked
+ * natural but marked shoulders that the maze and the connect pass then carved
+ * back to floor — measured 20.6% of arc tiles orphaned that way, each one a
+ * tile claiming curved collision on open ground.
+ *
+ * Carving the lane alone gives a curve you can DRIVE but not one you can SEE or
+ * BOUNCE OFF: the collider and the wall mesh both reach a curved face through a
+ * tile's `arcIdx` → `Grid.arcs` (tile-shape.ts), and without this pass the
+ * corner is just tile-shaped floor with a stair-stepped rock edge. Every banked
+ * turn would read as a jagged notch — the exact "why does this wall look
+ * accidental" artefact the rework exists to remove.
+ *
+ * These fillets are CONVEX (solid inside the circle, ball sweeps the outside),
+ * so the tiles to mark are the wall tiles just INSIDE the arc radius. Marking
+ * only tiles that are actually wall keeps the pass safe by construction: it
+ * changes no tile's walkability, so it cannot affect connectivity.
+ */
+export function publishArcs(g: Grid, path: TrackPath): void {
+  ensureArcs(g);
+  for (const a of path.arcs) {
+    // Collect first, publish second. Taking `fi = g.arcs.length` up front and
+    // then NOT pushing (when an arc owns no tiles) would leave every later
+    // feature's tiles pointing one slot short — the collider would read a
+    // neighbouring curve's geometry, which is the worst kind of see≠hit bug
+    // because it looks almost right.
+    const own: number[] = [];
+    const steps = Math.max(8, Math.ceil((a.r * a.span) / 0.3));
+    for (let s = 0; s <= steps; s++) {
+      const ang = a.a0 + (a.span * s) / steps;
+      // Walk inward from the lane's inner edge toward the arc centre, marking
+      // the solid shoulder the ball rides against.
+      //
+      // The span has to reach PAST the carved lane. The fillet was swept with a
+      // half-width-2 brush, so everything within ~2 tiles inside the radius is
+      // the floor we just carved and only beyond that is the wall island the
+      // curve wraps. Probing 0.5-1.6 found almost nothing: 124 arc tiles across
+      // 113 features, i.e. barely a tile per curve, so the curves were
+      // effectively unregistered and rendered as stair-stepped rock.
+      for (let d = 2.0; d <= 4.5; d += 0.5) {
+        const i = Math.floor(a.cx + Math.cos(ang) * (a.r - d));
+        const j = Math.floor(a.cz + Math.sin(ang) * (a.r - d));
+        if (i < 0 || j < 0 || i >= g.w || j >= g.h) continue;
+        if (at(g, i, j) !== T_WALL) continue;
+        if (shapeAt(g, i, j) === SHAPE_ARC) continue; // already owned
+        own.push(idx(g, i, j));
+      }
+    }
+    // Only keep a feature that actually owns tiles. An arc with no tiles is an
+    // orphan the RENDERERS would still draw (they walk `g.arcs` directly, see
+    // arc-sweeps.revertConcave) — a curved wall hanging in mid-air.
+    if (!own.length) continue;
+    const fi = g.arcs!.length;
+    g.arcs!.push(a);
+    for (const k of own) {
+      g.shapes[k] = SHAPE_ARC;
+      g.arcIdx![k] = fi;
+    }
+  }
 }
 
 /**

@@ -22,8 +22,9 @@ import { describe, it, expect } from "vitest";
 import { mulberry32 } from "../../../utils/rng";
 import { growTrack, circuitRank, seedNodes, meshNeighbours, growNetwork, DEFAULT_GROW } from "./track-grow";
 import { buildTrackPath, totalArcLength, TRACK_RADII } from "./track-path";
+import { SHAPE_ARC } from "./tile-shape";
 import { carveTrack, growMazeAround } from "./track-carve";
-import { at, idx, isWalkable, T_FLOOR, T_STAIRS, type Grid } from "./generator";
+import { at, idx, isWalkable, T_FLOOR, T_STAIRS, T_WALL, type Grid } from "./generator";
 import { buildTrackFloor as trackFloor } from "./track-floor";
 import { decorateMaze } from "./decorate";
 import { bfsDistances } from "../entities/ai";
@@ -230,6 +231,41 @@ describe("track carve + maze growth", () => {
     const a = buildTrackFloor(70, 44, 3);
     const b = buildTrackFloor(70, 44, 3);
     expect(Array.from(a.g.t)).toEqual(Array.from(b.g.t));
+  });
+});
+
+describe("arc publication (see = hit)", () => {
+  it("registers the fillets as real ArcFeatures owning real WALL tiles", () => {
+    // Carving the lane alone gives a curve you can drive but not one you can
+    // see or bounce off — collider and mesh both reach a curved face through
+    // arcIdx → Grid.arcs. Probing too shallow found 124 tiles across 113
+    // features (barely one each), i.e. curves that were effectively
+    // unregistered and rendered as stair-stepped rock.
+    let feats = 0;
+    let tiles = 0;
+    let orphan = 0;
+    let badIdx = 0;
+    for (let s = 1; s <= 15; s++) {
+      const f = trackFloor(33, 25, mulberry32((s * 2654435761) >>> 0));
+      expect(f).not.toBeNull();
+      const g = f!.grid;
+      feats += g.arcs!.length;
+      for (let k = 0; k < g.w * g.h; k++) {
+        if (g.shapes[k] !== SHAPE_ARC) continue;
+        tiles++;
+        const i = k % g.w;
+        const j = (k - i) / g.w;
+        // An arc tile must BE wall — otherwise it claims curved collision on
+        // open floor. Publishing before growMazeAround orphaned 20.6% this way.
+        if (at(g, i, j) !== T_WALL) orphan++;
+        const fi = g.arcIdx![k];
+        if (fi < 0 || fi >= g.arcs!.length) badIdx++;
+      }
+    }
+    expect(feats).toBeGreaterThan(50);
+    expect(tiles / feats, "curves own too few tiles to read as curves").toBeGreaterThan(2);
+    expect(orphan, "arc tiles sitting on open floor").toBe(0);
+    expect(badIdx, "arcIdx points outside Grid.arcs").toBe(0);
   });
 });
 

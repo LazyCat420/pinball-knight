@@ -31,7 +31,7 @@
 import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, growMazeAround, type TrackMask } from "./track-carve";
+import { carveTrack, growMazeAround, publishArcs, type TrackMask } from "./track-carve";
 import { bfsDistances } from "../entities/ai";
 
 export interface TrackFloor {
@@ -113,6 +113,10 @@ export function buildTrackFloor(
 
   const mask = carveTrack(grid, path);
   growMazeAround(grid, mask, rng, { linkChance: opts.linkChance, fill: opts.fill });
+  // AFTER the maze, never before: the maze and the connect pass carve walls to
+  // floor, and a shoulder marked before that runs is a tile claiming curved
+  // collision on open ground (measured 20.6% orphaned when published early).
+  publishArcs(grid, path);
 
   const ends = pickTrackEndpoints(grid, mask);
   if (!ends) return null;
