@@ -2,6 +2,69 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🔌 SOCKET CONTRACT — geometry that has to mate (2026-07-26)
+
+**`main@0a50ddc`** → synology. 1402 tests pass (121 files) · `next build` clean.
+
+### What was reported
+
+> "the maze still renders as a mess … we don't have a system with labels for
+> what things are and where they can and can not connect like a plumbing system
+> … walls that go nowhere, dead ends into dead ends, boosters that go into
+> curved walls that make no sense."
+
+Correct diagnosis, and **sockets** is the industry term for exactly that. The
+track-first change fixed the *topology*; nothing validated that adjacent pieces
+actually mate.
+
+### Measured before → after (20 floors)
+
+| Defect | Before | After |
+|---|---|---|
+| Dead ends | 105.8/floor | **0.4** |
+| Wall stubs (nubs into rooms) | 116.4/floor | **0.5** |
+| Isolated wall pillars | 5.2/floor | **0** |
+| Launchers firing into a wall | 11.3% | **0%** |
+| Roads ending in mid-air | 1.3/floor | **0** |
+
+### `maze/track-socket.ts`
+
+Every tile presents a typed socket per edge — `road` / `room` / `wall` / `rim` —
+derived from the grid + lane mask (so it cannot drift), plus a compatibility
+table and a validator. Same idea as WFC's arc consistency: **a piece is valid
+because its edges agree with its neighbours', not because of where it sits.**
+Deliberately *not* a WFC solver — the growth model already makes the layout;
+this supplies the constraint and the check.
+
+### Four root causes, each of which defeated an earlier guess
+
+1. **Roads to nowhere were degree-1 LEAF NODES in the graph.** `pruneToCircuit`
+   keeps the graph connected and loopy — neither forbids a dangling spur.
+   Repairing at tile level chases its own tail (each extension becomes the new
+   end of the road: "joined" fired 8-24×/floor, count never moved). Fixed
+   topologically by `pruneLeaves`.
+2. **The socket table first forbade `road|wall`.** Wrong: ~2800 violations per
+   floor, *all* of them `road|wall`, because **a road has walls along its
+   sides**. The real defect is a road *ending* at a wall — a neighbourhood
+   property, now `findRoadTerminations`.
+3. **An unbounded dead-end cascade UNRAVELS the maze.** A 1-wide corridor zips
+   out tile by tile; off-track floor fell to **1.5% of the grid** and the level
+   read as one track blob. Capped, and corridors are **widened to 2-wide**
+   instead so they have no 3-walled tiles by construction.
+4. **`removeWallStubs` needed a fixed point** — one pass took 86 stubs to 19,
+   and the 19 were the ones it had just created.
+
+⚠️ `vault`/`spine` launchers stay exempt on the **legacy** generator (spine
+boosters carry a down-flow contract and `breakLaunchDuels` refuses to move
+them). Track floors opt in via `strictLaunchers`. Pulling them in unconditionally
+broke 3 tests — don't "simplify" that back.
+
+### Still not visually verified in-engine
+
+Same caveat as below: verified as ASCII + metrics, not a rendered screenshot.
+**Please play a floor.** Dials: `linkChance` / `fill` / `chance` in
+`growMazeAround`, `maxFill` in `uncarveDeadEnds`.
+
 ## 🛣️ TRACK-FIRST MAZE — the circuit is grown, then the maze fills in (2026-07-26)
 
 **`main@16bb1b9`** → synology. 1391 tests pass (120 files) · `next build` clean.
