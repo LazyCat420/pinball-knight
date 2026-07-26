@@ -360,7 +360,61 @@ export function growMazeAround(
     }
   }
 
+  widenMazeCorridors(g, mask, rng);
   connectAll(g, rng);
+}
+
+/**
+ * WIDEN the maze from 1-wide slots into 2-wide corridors and small chambers.
+ *
+ * The maze is grown on the odd-coordinate cell lattice, so its corridors are
+ * one tile wide. At this floor's final resolution that reads as graph paper —
+ * spindly passages where every tile is walled on three sides — and it is why
+ * a dead-end census reported 38.3 maze dead ends per floor while the track
+ * itself had 0.1.
+ *
+ * Deleting them was tried first and is the wrong tool: an unbounded dead-end
+ * cascade unravels a 1-wide corridor completely (each tile becomes a dead end
+ * as soon as the one ahead is filled), which reduced off-track floor to 1.5%
+ * of the grid — the maze vanished and the level read as one track blob.
+ *
+ * Widening fixes the cause instead. A 2-wide corridor has no 3-walled tiles by
+ * construction, so the same passages stop reading as spindly WITHOUT deleting
+ * any of the layout. It also matches the renderer's low-rim/tall-back
+ * assumption, which is why the legacy generator ran `thickenWalls` at all.
+ *
+ * Only carves wall→floor (connectivity can only improve) and never touches the
+ * track's keep-out margin, so the circuit keeps its shape.
+ */
+function widenMazeCorridors(g: Grid, mask: TrackMask, rng: () => number, chance = 0.72): void {
+  const add: number[] = [];
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (!isWalkable(g, i, j) || onLane(g, mask, i, j)) continue;
+      // Widen toward a solid neighbour that is itself clear of the track, so
+      // corridors thicken into the rock rather than eating into the lane's
+      // shoulder.
+      for (const [di, dj] of [
+        [1, 0],
+        [0, 1],
+      ] as const) {
+        const x = i + di;
+        const y = j + dj;
+        if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
+        if (isWalkable(g, x, y)) continue;
+        if (onLane(g, mask, x, y)) continue;
+        // Keep off the lane's immediate shoulder (and any published arc rim).
+        let nearLane = false;
+        for (let dj2 = -1; dj2 <= 1 && !nearLane; dj2++)
+          for (let di2 = -1; di2 <= 1; di2++) if (onLane(g, mask, x + di2, y + dj2)) nearLane = true;
+        if (nearLane) continue;
+        if (g.arcIdx && g.arcIdx[idx(g, x, y)] >= 0) continue;
+        if (rng() < chance) add.push(idx(g, x, y));
+      }
+    }
+  }
+  // Applied after the scan so the result doesn't depend on scan order.
+  for (const k of add) setTile(g, k % g.w, (k - (k % g.w)) / g.w, T_FLOOR);
 }
 
 /**

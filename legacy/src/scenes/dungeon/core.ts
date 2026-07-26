@@ -1812,6 +1812,12 @@ function startLevel(level: number): void {
       launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
       bonusItems: modifier.bonusItems,
       endpoints: endpoints ?? undefined,
+      // On a TRACK floor the geometry is generated, not authored, so a vault or
+      // spine part facing a wall carries no intent worth preserving — re-aim it
+      // or demote it to a bumper. The legacy generator keeps the exemption (its
+      // set-pieces really are authored, and its spine boosters carry a
+      // down-flow contract the re-aim would break).
+      strictLaunchers: !!track,
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
     },
   );

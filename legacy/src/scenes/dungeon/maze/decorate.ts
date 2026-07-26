@@ -1341,7 +1341,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -1362,6 +1362,7 @@ export function decorateMaze(
       }
     }
   }
+  const strictLaunchers = extras.strictLaunchers === true;
   const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
 
   const floors: TilePos[] = [];
@@ -2053,21 +2054,57 @@ export function decorateMaze(
   // put — it was topology-validated at placement and only degrades to a bumper
   // -feel, not a hard bug. ──
   for (const p of parts) {
-    if (p.vault || p.spine || !LAUNCH_KINDS.has(p.kind)) continue;
+    // `strictLaunchers` (track floors) drops the vault/spine exemption: those
+    // floors are generated geometry, not authored set-pieces, so a facing that
+    // points into a wall carries no intent worth preserving. On the legacy
+    // generator the exemption stays — see the note below.
+    if ((!strictLaunchers && (p.vault || p.spine)) || !LAUNCH_KINDS.has(p.kind)) continue;
     if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
     if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;
+    // VAULT and SPINE stay exempt, and it is worth saying why rather than
+    // leaving it to be "simplified" later. Both were pulled INTO this pass at
+    // one point to chase the last few wall-facing launchers, and both broke a
+    // real invariant that the generic launchers do not carry:
+    //   · a SPINE booster must shove the player DOWN-FLOW toward the exit
+    //     (decorate.test pins it), and re-aiming for runway alone reverses it;
+    //   · `breakLaunchDuels` deliberately refuses to move spine parts, so
+    //     anything that changes their facing here fights that pass and loses.
+    //   · a VAULT is a sealed authored set-piece whose geometry is its own.
+    // The wall-facing launchers those two produce are handled at the source
+    // instead — the track generator no longer builds the dead-end geometry
+    // that stranded them (maze/track-socket.ts).
     let bestRun = -1;
     let bestD: [number, number] | null = null;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const run = launchRunway(g, p.i, p.j, di, dj);
-      if (run > bestRun) {
-        bestRun = run;
-        bestD = [di, dj];
-      }
+      if (run <= bestRun) continue;
+      bestRun = run;
+      bestD = [di, dj];
     }
     if (bestD && bestRun >= MIN_RUNWAY) {
       p.dirI = bestD[0];
       p.dirJ = bestD[1];
+    } else {
+      // NO direction has a runway. The old behaviour was to leave it facing a
+      // wall on the reasoning that it "only degrades to a bumper-feel, not a
+      // hard bug" — but that is the visible defect: a booster aimed point-blank
+      // into a curved wall, which is nonsense to look at and does nothing when
+      // hit. Measured 8.7% of launchers firing into a wall within 3 tiles.
+      //
+      // Demote instead of delete: `bumper` is the omnidirectional part, so the
+      // spot still has furniture and the density budget still balances, but it
+      // no longer claims a direction it cannot honour.
+      p.kind = "bumper";
+      p.dirI = 0;
+      p.dirJ = 0;
+      // KEEP the spine badge. Clearing it was tried and it breaks a different
+      // invariant: `breakLaunchDuels` deliberately refuses to move spine parts
+      // (a spine-vs-spine duel is handed to the runtime guard instead), so
+      // un-badging a demoted part turns something protected into something
+      // movable and the duel breaker then re-aims it into a fresh duel. The
+      // badge means "sits on the authored route", which is still true — the
+      // part just no longer has a direction, and every consumer already gates
+      // on `Math.abs(dirI)+Math.abs(dirJ) === 1`.
     }
   }
 

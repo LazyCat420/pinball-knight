@@ -338,6 +338,46 @@ export function pruneToCircuit(g: TrackGraph, minLoops = 2, opts: { survive?: nu
   return { nodes: g.nodes.filter((n) => used.has(n.id)), edges: kept };
 }
 
+/**
+ * PRUNE LEAVES — drop degree-1 nodes, cascading.
+ *
+ * This is where "roads that dead-end in mid-air" actually come from, and it is
+ * worth being precise because two earlier fixes aimed at the symptom and missed.
+ *
+ * `pruneToCircuit` guarantees the graph stays CONNECTED and keeps its LOOPS,
+ * but neither property forbids a dangling spur: a node of degree 1 is attached
+ * to the network and destroys no cycle, so the pruner happily keeps it.
+ * Carved, that spur is a lane that runs out into solid rock. Measured on the
+ * graph: 2-4 leaf nodes per floor, which matched the 1.3 road terminations per
+ * floor seen downstream almost exactly.
+ *
+ * Repairing it at TILE level (extend the stub until it rejoins something) does
+ * not work — it was tried, and it "joined" 8-24 times per floor while the
+ * termination count never moved, because every extension creates a new tile
+ * that is itself the new end of the road. The defect is topological, so the fix
+ * has to be topological: remove the leaf, not the tile.
+ *
+ * Cascading, because removing a leaf can expose another one behind it.
+ */
+export function pruneLeaves(g: TrackGraph): TrackGraph {
+  const edges = g.edges.slice();
+  for (let guard = 0; guard < 200; guard++) {
+    const deg = new Map<number, number>();
+    for (const e of edges) {
+      deg.set(e.a, (deg.get(e.a) ?? 0) + 1);
+      deg.set(e.b, (deg.get(e.b) ?? 0) + 1);
+    }
+    const leaf = new Set([...deg.entries()].filter(([, d]) => d <= 1).map(([n]) => n));
+    if (!leaf.size) break;
+    for (let i = edges.length - 1; i >= 0; i--) {
+      if (leaf.has(edges[i].a) || leaf.has(edges[i].b)) edges.splice(i, 1);
+    }
+  }
+  const used = new Set<number>();
+  for (const e of edges) (used.add(e.a), used.add(e.b));
+  return { nodes: g.nodes.filter((n) => used.has(n.id)), edges };
+}
+
 /** Circuit rank (independent cycles) of a graph assumed connected. */
 export function circuitRank(g: TrackGraph): number {
   const used = new Set<number>();
@@ -387,5 +427,8 @@ export function growTrack(
   const maxLen = Math.min(w, h) * 0.42;
   const edges = meshNeighbours(nodes, 4, maxLen);
   const grown = growNetwork({ nodes, edges }, rng, opts.grow ?? DEFAULT_GROW);
-  return pruneToCircuit(grown, opts.minLoops ?? 2);
+  // Prune to a loopy connected core, THEN drop dangling spurs. Both are
+  // needed: pruneToCircuit protects cycles but happily keeps a degree-1 tail,
+  // and that tail is exactly what carves into a road ending in solid rock.
+  return pruneLeaves(pruneToCircuit(grown, opts.minLoops ?? 2));
 }

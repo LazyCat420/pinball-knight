@@ -31,7 +31,8 @@
 import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, growMazeAround, publishArcs, type TrackMask } from "./track-carve";
+import { carveTrack, growMazeAround, publishArcs, connectAll, type TrackMask } from "./track-carve";
+import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
 import { bfsDistances } from "../entities/ai";
 
 export interface TrackFloor {
@@ -113,8 +114,47 @@ export function buildTrackFloor(
 
   const mask = carveTrack(grid, path);
   growMazeAround(grid, mask, rng, { linkChance: opts.linkChance, fill: opts.fill });
-  // AFTER the maze, never before: the maze and the connect pass carve walls to
-  // floor, and a shoulder marked before that runs is a tile claiming curved
+
+  // ── PLUMBING REPAIR (track-socket.ts) ───────────────────────────────────
+  //
+  // The growth model makes an interesting layout but not a legible one. Before
+  // these passes, 20 floors measured 105.8 dead ends and 116.4 wall stubs EACH
+  // — corridors to nowhere and one-tile nubs jutting into rooms, which is what
+  // made the floor read as "a bunch of walls that go nowhere".
+  //
+  // Order is load-bearing:
+  //  1. UNCARVE first. It fills floor→wall and so can disconnect things, which
+  //     is fine only because connectAll runs after it.
+  //  2. DE-STUB second, on the result — uncarving creates new wall shapes and
+  //     some of them are stubs.
+  //  3. connectAll LAST, to restore the one-component invariant uncarve may
+  //     have broken. Carving wall→floor can only add connectivity, so nothing
+  //     after this can strand the player.
+  const endsEarly = pickTrackEndpoints(grid, mask);
+  uncarveDeadEnds(grid, mask, endsEarly ? [endsEarly.start, endsEarly.stairs] : []);
+  // De-stub runs AFTER growMazeAround's widening pass, which is itself what
+  // creates most of the stubs: thickening a corridor leaves one-tile pillars
+  // and nubs behind (measured 25.2 stubs + 5.2 isolated pillars per floor
+  // straight after widening).
+  connectAll(grid, rng);
+  // De-stub LAST of the tile passes. It must run after BOTH widening (which
+  // leaves one-tile pillars when a corridor thickens) and connectAll (whose
+  // repair corridors carve fresh nubs of their own). Running it before either
+  // one left 25.2 stubs + 5.2 isolated pillars per floor still standing.
+  removeWallStubs(grid, mask);
+  // A lane that still ends in mid-air is DEMOTED to plain room floor, so no
+  // booster or bank is ever sited along a road to nowhere.
+  //
+  // Note what this does NOT do: it no longer tries to EXTEND the stub to
+  // rejoin the circuit. That was tried and it chases its own tail — each
+  // extension creates a new tile that is itself the new end of the road
+  // ("joined" fired 8-24x per floor while the termination count never moved).
+  // The real cause was topological (degree-1 leaves in the graph) and is fixed
+  // upstream by pruneLeaves; this is only the belt-and-braces sweep.
+  if (endsEarly) healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
+
+  // AFTER the maze AND the repairs, never before: every pass above carves
+  // walls to floor, and a shoulder marked earlier is a tile claiming curved
   // collision on open ground (measured 20.6% orphaned when published early).
   publishArcs(grid, path);
 
