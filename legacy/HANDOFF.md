@@ -2,103 +2,90 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🎮 CONTROLLER FIXES — rampage turn + tavern polling (2026-07-25, this session)
+## 🪧 "ENTER MAZE" SIGN above the tavern notice board (2026-07-25, this session)
 
-**Commit `dbaf032`** · pushed to `main` · deployed **`main@dbaf032` → synology**
-**Live:** http://10.0.0.16:5174/dungeon — verified in **production**, not just built.
+**Commit `7d503cc`** · pushed to `main` · deployed **`main@7d503cc` → synology**
+**Live:** http://10.0.0.16:5174/dungeon — container verified `healthy` after deploy.
 
-1368 tests / 118 files pass · `next build` compiles.
+267 tavern tests pass · `tsc` clean on the touched file.
 
 ### What was reported
 
-> "rampage mode — I tried it with the controller and I can't go left or right.
-> Also the controller doesn't work in the tavern at the beginning, it only works
-> in the map in game."
+> "in the pinball knight game … make it more obvious where the user has to go to
+> start the game. I want a sign above that bulletin board that says Enter Maze"
 
-Two separate defects. Both real, both fixed.
+Shipped exactly that: a lit marquee reading **ENTER MAZE** hangs above the notice
+board on the north wall, with a cyan down-arrow in each gutter pointing at the
+`board` station. All of it in `src/scenes/tavern/props.ts` — the sign geometry
+sits in the NOTICE BOARD block, the legend is drawn by `makeSignTexture()` near
+the top of the file.
 
-### 1. Tavern: the pad was never polled
+### Why the room breaks its own rule for this one prop
 
-`src/scenes/tavern/core.ts` created an `InputHandle` (`createInput(canvas)`) and
-read `input.axis()` every frame via `updateTavernPlayer`, but **never called
-`input.poll()`**.
+`TAVERN_PLAN` says stations read from **shape plus accent colour, never text**,
+and every other station still honours that. The way down is the exception
+because it is the only station a first-time player *must* find: skipping the
+forge costs you a socket, skipping the board means no run ever starts. The two
+existing cues were not carrying it — a corkboard reads as scenery, and the cold
+floor lane only points at the plunger once you are already standing in it.
 
-The Gamepad API is **pull-only** — it fires no events for stick movement, so the
-poller is the only thing that ever writes the pad's move vector. Without that call
-the pad contributed nothing and `axis()` saw the keyboard alone. The dungeon polls
-in its own loop (`core.ts`, `state.input?.poll()`), which is exactly why the same
-controller worked "in the map in game" and nowhere else.
+### Three things the RENDER corrected that reasoning did not
 
-Fix: `input?.poll()` in the tavern frame loop, before the player reads the axis.
-It runs **unconditionally**, including while a station panel is frozen — the poller
-also bridges pad buttons to keys (E = interact, I = menu) via synthetic events, and
-those must keep working so you can leave a counter with the pad.
+Each of these shipped wrong first and was caught by screenshotting the live
+tavern. **If you touch this sign, screenshot it again** — the iso projection does
+not do what the world-space numbers suggest.
 
-### 2. Rampage: the right stick was not wired to the camera turn
+1. **SIZE.** First pass was 3.1 × 0.62 with the word inset in its canvas. On
+   screen the caps stood ~10 pixels tall: a wall-mounted panel is foreshortened
+   hard by the 38° camera, and the pixel post-pass quantises whatever survives.
+   Now 4.2 × 0.8, and the glyphs are **measured and fitted** to 74% of the canvas
+   width rather than sized by eye — `Press Start 2P` is a webfont that may not
+   have loaded when the tavern builds, and the monospace fallback has a different
+   width per em, so a hardcoded px size overflows in one case and floats in the
+   other.
+2. **PLACEMENT — `+z` PROJECTS DOWNWARD.** The sign leaned forward 0.16 rad and
+   stood 0.06 proud of the board; both push it toward the viewer, and under a
+   45°-yaw camera that also pushes it *down the screen*. The legend landed across
+   the top row of notices and read as painted **on** the corkboard. Raising it
+   could not fix that — the wall caps at `WALL_HEIGHT` 3.2. It now sits back at
+   the wall plane (z −6.72, behind the board's −6.6 backing) at y 3.0, lean cut
+   to 0.06.
+3. **THE ARROWS.** Two failed attempts. Real chevron geometry beside the board
+   turned into unreadable diagonal slashes (the 45° yaw rotates anything built in
+   the XY plane), and the only free wall — the ~0.1 strip between the notices and
+   the sign — is too thin for anything that survives the pixel pass. They are
+   **painted into the texture** now. The first texture version used squat
+   triangles, which came out of the projection wider than tall and read as
+   sideways pennants; they are narrow with a stem so the vertical axis survives
+   the squash, and filled at the letters' brightness rather than plain `COLD`
+   (the glyphs get a third near-white pass and the arrows did not, which read as
+   two different signs sharing a panel).
 
-The FPS camera turn reads `input.turnAxis()` (`fps.ts:186`), which was
-**keyboard-only** (q/e). The right stick filled `aimX`, which only ranged aiming
-and the pinball steer ever read.
+### Other edits in the same commit
 
-So on a pad in rampage you could walk and strafe but **never turn**. With no turn,
-strafe is the only lateral control — that is what "I can't go left or right" was.
-It is **not** a sign/inversion bug; the movement maths was already correct.
+- The board's hooded lantern drops **y 2.35 → 2.05**. Its hood projected directly
+  over the sign's left arrow. Lower is the better light anyway — it rakes across
+  the notices instead of washing them from overhead.
+- `dispose()` now frees `signTex`. It disposed geometries and materials but never
+  textures, because until now nothing in the tavern owned one.
 
-Fix: `turnAxis()` now also takes the right stick's X. Analog (a half-pushed stick
-turns at half speed), taking the **larger deflection** rather than summing —
-matching the rule `axis()` already uses, so keyboard + stick can't turn faster
-than either alone.
+### Known-good, deliberately NOT changed
 
-### Verification (live game, synthetic pad)
+**The interaction prompt still says `[E] DESCEND`,** from `STATIONS[0].label` in
+`src/scenes/tavern/layout.ts:110`. The sign and the prompt therefore use
+different words for the same action. Left alone as out of scope — if you want
+them to agree, change that one `label` field (and the `blurb` under it);
+`layout.test.ts` does not assert on the copy.
 
-- **Tavern**: knight walks `0.94` units from the stick where it previously moved
-  **zero**. Re-confirmed on the deployed production build (`0.715`).
-- **Rampage**: right stick turns yaw **+0.520 right / −0.520 left**, with
-  **0.0000 idle drift** (a resting stick does not spin the view).
-- On the **unfixed** build the same pad populates `gamepad.aimX = 1` — the hardware
-  reached the game fine, `turnAxis` just ignored it.
+### Verification
 
-### Tests
+Headless screenshot of the live tavern at spawn (x 0, z 5.4), 1400×900: the
+legend is readable **at full frame without zooming**, which was the bar — the
+sign has to work from the spawn stair, not just up close.
 
-- `src/scenes/dungeon/input.test.ts` — covers the stick turn through the **real
-  hardware path** (`navigator.getGamepads` → `readPad` → poller → `turnAxis`), not
-  only the touch surface. This matters: touch and gamepad fill **different**
-  `VirtualPad` structs, so a test asserting against `input.pad` alone would pass
-  while the hardware path stayed broken.
-- `src/scenes/dungeon/gamepad-polling.test.ts` — **new**. Pins the missing-poll
-  class statically: every scene that creates an `InputHandle` must also poll it.
-  A missing method call is invisible to the type checker and to every behavioural
-  test (the scene still runs, it just ignores the pad), and the tavern frame loop
-  needs a live three.js scene to drive.
-
-Both fail without their respective fix (verified by reverting each).
-
-### Also changed
-
-`__dungeonProbe()` now returns `fpsYaw` / `fpsPitch`. Nothing read the camera angle
-back, so a harness could only infer it from where forward movement travels — which
-is **wrong**, because forward slides along walls in rampage. That inference produced
-a **false PASS** (a "40.8° turn") against code where the right stick provably was
-not wired to `turnAxis` at all. Measure the angle, not the displacement.
-
-### Traps worth knowing (these cost real time)
-
-- **`ultCharge` resets to 0 on every floor change** (`state.ts` `resetLevel`).
-  Filling the rampage meter with the playtest bot is a lottery — identical runs
-  gave 0.09 / 0.36 / 0.63 / 0.99 / 1.00. Feed 1-hp enemies on the current floor and
-  poll fast instead. `fillRampage` is a debug-**panel** action, not a window hook,
-  and clicking that panel is a known hazard in this repo.
-- **11 kills = 0.99, not 1.0** (`ULT_CHARGE_PER_KILL = 0.09`). A `>= 1` poll gate
-  stalls one kill short; `canRampage()` genuinely wants `>= 1`.
-- The playtest bot **self-stops** when its `seconds` budget expires and charge then
-  plateaus — restart it rather than reading the stall as a result.
-- Scripted `pg.mouse.click` at a fixed screen point **never swings** (`attackT`
-  stays −1). Use `__dungeonPad` or `__dungeonBot`.
-- `__dungeonPad` is the game's own fake pad (`connect/hold/release/tap/stick/aim`)
-  and is preferable to a hand-rolled `getGamepads` stub — core.ts warns that
-  hand-rolled stubs mis-handle the held-at-connect edge case.
-
-### Not changed
-
-The mapping itself (`gamepad.ts`) was already correct. Deadzones verified: full
-deflection returns exactly 1.0; `0.08/0.05` drift returns 0.
+Recipe: playwright at `HTML-Notes/.venv/bin/python`, chromium with
+`--use-gl=swiftshader --enable-unsafe-swiftshader --no-sandbox`, `goto /dungeon`,
+then poll for `window.__tavernProbe` (`__dungeonProbe` does **not** exist in the
+lobby). Do **not** add `?no-intro=1` to `/dungeon` — it breaks chunk loading.
+Run against `next dev` on a spare port, never a rebuild under the live
+`next start`, which pins its own manifest and yields phantom missing chunks.
