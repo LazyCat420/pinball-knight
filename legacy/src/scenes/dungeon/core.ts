@@ -607,6 +607,15 @@ export function launchDungeonGame(onExit?: () => void): void {
         // §4 rampage / HUD swap
         hudMode: state.hudMode,
         fpsActive: state.fpsActive,
+        // The FPS camera ANGLE. Rampage is the one mode whose whole control
+        // story is "where am I looking", and nothing else reads that back: a
+        // harness can only infer it from where forward movement travels, which
+        // is wrong — forward slides along walls, so two runs differ in heading
+        // even when the camera never turned. That inference produced a false
+        // PASS for a broken right-stick turn, which is why the angle is exposed
+        // directly rather than derived.
+        fpsYaw: state.fpsYaw,
+        fpsPitch: state.fpsPitch,
         ultCharge: state.ultCharge,
         // §5 world.
         // `enemies` counts CORPSES too — Kill All damages every zombie to death

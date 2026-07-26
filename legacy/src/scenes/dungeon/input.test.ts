@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MOVE_KEYS, TURN_LEFT, TURN_RIGHT, createInput } from "./input";
 
 describe("dungeon input bindings", () => {
@@ -70,5 +70,109 @@ describe("dungeon input bindings", () => {
     } finally {
       delete g.window;
     }
+  });
+
+  /**
+   * The regression this exists for: in the FPS rampage the camera turn read
+   * `turnAxis()`, which was KEYBOARD-ONLY (q/e). The right stick filled `aimX`,
+   * which only ranged aiming and the pinball steer ever read. So on a pad you
+   * could walk and strafe in rampage but never turn — and with no turn, strafe
+   * is the only lateral control, which is what "I can't go left or right"
+   * actually was.
+   */
+  describe("turnAxis reads the right stick (FPS rampage)", () => {
+    const withInput = (fn: (input: ReturnType<typeof createInput>, handlers: Record<string, (e: unknown) => void>) => void): void => {
+      const handlers: Record<string, (e: unknown) => void> = {};
+      const g = globalThis as { window?: unknown };
+      g.window = {
+        addEventListener: (type: string, fn2: (e: unknown) => void) => {
+          handlers[type] = fn2;
+        },
+        removeEventListener: () => {},
+      };
+      const surface = { addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
+      try {
+        fn(createInput(surface), handlers);
+      } finally {
+        delete g.window;
+      }
+    };
+
+    it("turns from the touch/aim pad with no keyboard held", () => {
+      withInput((input) => {
+        expect(input.turnAxis()).toBe(0);
+        input.pad.aimX = 1;
+        expect(input.turnAxis()).toBe(1); // stick right = turn right
+        input.pad.aimX = -1;
+        expect(input.turnAxis()).toBe(-1);
+      });
+    });
+
+    it("is ANALOG — a half-pushed stick turns at half speed", () => {
+      withInput((input) => {
+        input.pad.aimX = 0.5;
+        expect(input.turnAxis()).toBeCloseTo(0.5);
+      });
+    });
+
+    it("takes the larger deflection rather than summing keyboard + stick", () => {
+      withInput((input, handlers) => {
+        handlers.keydown({ key: "e", repeat: false, preventDefault: () => {} }); // turn right, +1
+        input.pad.aimX = 0.4;
+        // Summing would give 1.4 — a faster-than-possible turn.
+        expect(input.turnAxis()).toBe(1);
+      });
+    });
+
+    it("does not turn from the stick's VERTICAL axis", () => {
+      // aimY is pitch/aim, not yaw — feeding it into the turn would make pushing
+      // the stick up spin the camera.
+      withInput((input) => {
+        input.pad.aimY = 1;
+        expect(input.turnAxis()).toBe(0);
+      });
+    });
+
+    /**
+     * The whole chain a real controller takes, not just the last link: a physical
+     * pad's axes[2] → readPad → the poller's VirtualPad → turnAxis. Asserting only
+     * against `input.pad` (the TOUCH surface) would have passed even while the
+     * hardware path stayed broken, because the poller writes a DIFFERENT pad
+     * struct — the two are deliberately separate (see createInput).
+     */
+    /** A hardware pad reporting `axes`, seen through navigator.getGamepads. */
+    const stubPad = (axes: number[]): void => {
+      const buttons = Array.from({ length: 17 }, () => ({ pressed: false }));
+      vi.stubGlobal("navigator", { getGamepads: () => [{ axes, buttons, connected: true }] });
+    };
+
+    it("turns from a HARDWARE pad, through poll()", () => {
+      withInput((input) => {
+        // axes = [leftX, leftY, rightX, rightY]; right stick pushed fully RIGHT.
+        stubPad([0, 0, 1, 0]);
+        try {
+          input.poll();
+          expect(input.turnAxis()).toBeCloseTo(1, 3);
+          // …and the left stick still strafes, independently of the turn.
+          expect(input.axis().x).toBeCloseTo(0, 3);
+        } finally {
+          vi.unstubAllGlobals();
+        }
+      });
+    });
+
+    it("a hardware pad at REST does not drift the camera", () => {
+      // A worn stick resting slightly off-centre must not spin the view forever;
+      // the deadzone is what stops it, and it has to survive this path too.
+      withInput((input) => {
+        stubPad([0, 0, 0.08, 0.05]);
+        try {
+          input.poll();
+          expect(input.turnAxis()).toBe(0);
+        } finally {
+          vi.unstubAllGlobals();
+        }
+      });
+    });
   });
 });

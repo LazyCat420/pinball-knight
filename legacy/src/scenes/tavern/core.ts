@@ -292,6 +292,14 @@ function frame(now: number): void {
   // Cheap when nothing changed: refreshTavernPlayerArt is a string-key compare.
   if (wasFrozen && !frozen) refreshTavernPlayerArt();
   wasFrozen = frozen;
+  // POLL THE PAD FIRST. The Gamepad API is pull-only — it never fires events for
+  // stick movement — so without this call `input.axis()` only ever saw the
+  // keyboard and a controller did nothing in the tavern while working fine in
+  // the dungeon (which polls in its own loop). Must run BEFORE the player reads
+  // the axis, and unconditionally: the poller also bridges pad buttons to keys
+  // (E = interact, I = menu) via synthetic events, and those must keep working
+  // while a station panel is frozen so you can leave a counter with the pad.
+  input?.poll();
   if (input) updateTavernPlayer(dt, input, frozen);
 
   const p = tavern.player;

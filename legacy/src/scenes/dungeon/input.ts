@@ -46,9 +46,13 @@ export interface InputHandle {
   /** True while the dodge key/button (Space / right-click) is HELD — the plunger pull. */
   dodgeHeld(): boolean;
   /**
-   * Keyboard turn axis for the FPS ultimate: -1 (turn left) .. +1 (turn right),
-   * from Q/E and the left/right arrows. Lets rampage be driven with the keyboard
-   * alone (and headlessly), independent of mouse-look.
+   * Turn axis for the FPS ultimate: -1 (turn left) .. +1 (turn right), from Q/E
+   * on the keyboard OR the right stick's X on a pad. Lets rampage be driven with
+   * the keyboard alone (and headlessly), independent of mouse-look.
+   *
+   * The pad contribution is ANALOG (a half-pushed stick turns at half speed),
+   * which is why this returns a float and not a sign. The keyboard's ±1 is the
+   * endpoint of the same curve.
    */
   turnAxis(): number;
   /**
@@ -284,6 +288,16 @@ export function createInput(attackSurface: HTMLElement): InputHandle {
         if (TURN_LEFT.has(key)) t -= 1;
         if (TURN_RIGHT.has(key)) t += 1;
       }
+      // The RIGHT STICK turns the FPS camera. Without this a pad could move in
+      // rampage but never look: `aimX` fed ranged aiming and the pinball steer
+      // only, and the FPS camera read `turnAxis` — which was keyboard-only. With
+      // no way to turn, the strafe axis is the ONLY lateral control, which is
+      // what "I can't go left or right in rampage" actually was.
+      //
+      // Larger deflection wins over the keyboard rather than summing, matching
+      // the rule `axis()` uses — so Q plus a stick can't turn faster than either.
+      const stickTurn = Math.abs(gp.aimX) > Math.abs(pad.aimX) ? gp.aimX : pad.aimX;
+      if (Math.abs(stickTurn) > Math.abs(t)) t = stickTurn;
       return t;
     },
     consumeMouseDelta() {
