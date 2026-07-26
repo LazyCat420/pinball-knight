@@ -2,6 +2,75 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🛣️ TRACK-FIRST MAZE — the circuit is grown, then the maze fills in (2026-07-26)
+
+**`main@16bb1b9`** → synology. 1391 tests pass (120 files) · `next build` clean.
+
+### What was reported
+
+> "we need to fix how the maze is rendered as you can see a lot of it just
+> doesn't make any sense. we need to build a track system and then build the
+> maze around it instead of just randomly putting the course together … so it's
+> like a bunch of interconnected highways?"
+
+Chosen by the user: **track-first**, with a **figure-eight-or-better circuit
+that morphs every level, grown with mould-growth algorithms**.
+
+### The root cause
+
+The pipeline was ordered backwards:
+
+    generateMaze → carveRooms → pickEndpoints → widenMainArtery → arcSweeps
+
+The "track" was a CONSEQUENCE of a random maze, so it inherited every wiggle it
+happened to produce. Hence the three visible symptoms: ramp fragments pointing
+nowhere (`authorArcSweeps` scans for corners that *fit*, not corners the ball
+takes), curves too short to ride (`artery-banks` censused 22,713 open tiles —
+**81.8% have an open radius of ZERO**; radius-4 fillets fitted **4 times in 40
+floors**), and nothing reading as a circuit because nothing ever was one.
+
+### The fix — four new modules
+
+    growTrack → buildTrackPath → carveTrack → growMazeAround → publishArcs
+
+- **`maze/track-grow.ts`** — Physarum (slime mould) growth, the
+  Tero–Takagi–Nakagawa conductivity model. Flow between food sources thickens
+  tubes; decay atrophies the rest. Redundant routes survive where two paths are
+  comparably good — the interconnected-highway topology a spanning tree destroys
+  by construction. Seeded, so co-op peers agree.
+- **`maze/track-path.ts`** — rounds every junction into a real fillet, radius
+  3–7 (9.4 tiles of arc at r=7 vs the shipped 3.1).
+- **`maze/track-carve.ts`** — sweeps a disc brush so lane width and corner radius
+  stay independent; grows the maze around the circuit; `connectAll` guarantees
+  one component.
+- **`maze/track-floor.ts`** — packages it as a drop-in base grid. `decorateMaze`
+  (parts/zombies/torches) is untouched.
+
+Flag: `TRACK_FIRST` in `constants.ts` (currently `true`). The legacy path is
+kept so both generators can be A/B'd on one seed.
+
+### Bugs found by measuring, not reading
+
+| Bug | Measurement |
+|---|---|
+| Reinforcement ~20× weaker than decay — every tube starved | 42/42 edges at conductivity 0.000 |
+| Rank pinned at exactly 2 — an *identical* figure-eight every floor | 30/30 seeds. Food count is the dial → now rank 2–9 |
+| Uncapped chord length paved the whole floor | one floor 97% track; capped → 24–47%, 0/40 runaways |
+| Maze districts sealed off from the track | 83 components on one floor, **75/75 floors fragmented** → 0/75 |
+| Arc probe too shallow — curves unregistered | 124 arc tiles / 113 features → 5.6 tiles per feature |
+| Arcs published before the maze carved | 20.6% orphaned onto open floor → 0 |
+
+### ⚠️ Not visually verified in-engine
+
+`__dungeonLevel(n)` confirms `startLevel` builds real floors with the new
+generator (216 and 267 zombies, 18 parts, no errors), and layout quality was
+verified exhaustively as ASCII. But I could **not** get a rendered screenshot:
+driving the tavern headlessly didn't reach the board, and `__tavernClose()` is
+not a descend (black screen — the `dungeon-headless-descend-recipe` memory).
+**Someone should play a floor and confirm it reads right.** Tunables if it
+doesn't: `linkChance` (on-ramp density) and `fill` (how much rock the maze
+leaves) in `growMazeAround`.
+
 ## 🧟 CARD ART — the card now SHOWS the monster (2026-07-25, this session)
 
 **Live:** http://10.0.0.16:5174/dungeon · 1377 tests pass (119 files) · `next build` clean.
