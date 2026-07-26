@@ -36,14 +36,13 @@ import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { tickJuice, resetJuice } from "./entities/juice";
 import { railCap } from "./entities/rail";
-import { PINBALL_MAX_SPEED } from "./constants";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
 import { createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
 import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
-import { ZOMBIE_TYPES, ZOMBIE_TYPE_IDS, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "./zombie-types";
+import { variantIndicesFor, type ZombieType } from "./zombie-types";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
@@ -247,6 +246,8 @@ import { installDevHooks } from "./dev/window-hooks";
 import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
 import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets } from "./boot/sheets";
 import { beginRunLedger, submitRunScore } from "./run/ledger";
+import { nearestOpenTile } from "./maze/nearest-open-tile";
+import { makeZombie, spawnKind, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, makeReskin, queueMini, queueSummon, resetZombieNid, RESKIN } from "./spawn/factory";
 import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
 import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
@@ -603,7 +604,7 @@ export function launchDungeonGame(onExit?: () => void): void {
     showToast("🛡️ A KNIGHT HAS ARRIVED", `${p.name} joined the pool`);
   });
   // A slain big slime queues two minis, spawned after combat resolution.
-  setSlimeSplitHandler((x, z, speed) => pendingMinis.push({ x, z, speed }));
+  setSlimeSplitHandler(queueMini);
   setCardRollHandler(dropCardMaybe);
   // Every kill drops magnet-collected coins on the floor.
   setCoinDropHandler(spawnCoin);
@@ -622,7 +623,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   // A BLOATER bursts into a burning puddle on death.
   setBloaterBurstHandler((x, z) => spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true));
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
-  setSummonHandler((x, z) => pendingSummons.push({ x, z }));
+  setSummonHandler(queueSummon);
   // Catching the rolling merchant opens its shop.
   setMerchantCaughtHandler(openShop);
   resetCombatJuice();
@@ -707,398 +708,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   });
 }
 
-/** Base HP per enemy family. */
-const HP_BY_KIND: Record<EnemyKind, number> = {
-  zombie: ZOMBIE_HP,
-  spider: SPIDER_HP,
-  brute: BRUTE_HP,
-  spitter: SPITTER_HP,
-  ghost: GHOST_HP,
-  bat: BAT_HP,
-  slime: SLIME_HP,
-  reaper: REAPER_HP, // nominal — combat.ts makes it immune anyway
-  goblin: GOBLIN_HP,
-  pin: PIN_HP,
-  golem: GOLEM_HP,
-  chomper: CHOMPER_HP,
-  magnet: MAGNET_HP,
-  webspinner: WEBSPIN_HP,
-  hound: HOUND_HP,
-  bloater: BLOATER_HP,
-  necromancer: NECRO_HP,
-  warden: WARDEN_HP,
-  wisp: WISP_HP,
-  sapper: SAPPER_HP,
-  crystalback: CRYSTAL_HP,
-  mimic: MIMIC_HP,
-};
-
-/** Expansion-roster reused-sheet map: which existing atlas + tint + scale each
- *  new kind borrows (art is placeholder; behavior in zombie.ts carries identity). */
-const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
-  hound: { sheet: () => state.spiderSheet, tint: 0xc23a2a, scale: 1.05 }, // red hunting hound
-  bloater: { sheet: () => state.slimeSheet, tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
-  necromancer: { sheet: () => state.spitterSheet, tint: 0x8a5cd0, scale: 1.05 }, // purple caster
-  warden: { sheet: () => state.bruteSheet, tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
-  wisp: { sheet: () => state.ghostSheet, tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
-  sapper: { sheet: () => state.magnetSheet, tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
-  crystalback: { sheet: () => state.golemSheet, tint: 0x8fdfff, scale: 1.12 }, // crystalline golem
-  mimic: { sheet: () => state.golemSheet, tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
-};
-
-/** Spawn an expansion enemy from its reused sheet + tint; null if art missing. */
-function makeExpansion(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
-  const skin = EXPANSION_SKIN[kind];
-  const sheet = skin?.sheet();
-  if (!skin || !sheet) return null;
-  const z2 = makeZombie(sheet, x, z, speed, { kind });
-  z2.sprite.mesh.scale.multiplyScalar(skin.scale);
-  z2.baseTint = skin.tint;
-  z2.sprite.setTint(skin.tint);
-  return z2;
-}
-
-/**
- * The Wave-B roster now has BESPOKE atlases (was tinted reskins). Each maps to
- * its own sheet + a display scale; no resting tint (the art carries identity).
- * `RESKIN` keeps its name so the debug ring + spawn table read unchanged.
- */
-const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; scale: number }>> = {
-  goblin: { sheet: () => state.goblinSheet, scale: 1.0 },
-  pin: { sheet: () => state.pinSheet, scale: 0.85 },
-  golem: { sheet: () => state.golemSheet, scale: 1.12 },
-  chomper: { sheet: () => state.chomperSheet, scale: 1.1 },
-  magnet: { sheet: () => state.magnetSheet, scale: 0.95 },
-  webspinner: { sheet: () => state.webspinnerSheet, scale: 1.05 },
-};
-
-/** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
-function makeReskin(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
-  const skin = RESKIN[kind];
-  const sheet = skin?.sheet();
-  if (!skin || !sheet) return null;
-  const z2 = makeZombie(sheet, x, z, speed, { kind });
-  z2.sprite.mesh.scale.multiplyScalar(skin.scale);
-  return z2;
-}
-
-/**
- * Slime minis spawned by a split, DEFERRED to the end of the sim step —
- * killZombie fires inside loops over state.zombies, and minis born mid-swing
- * would be clipped by the very blow that split their parent.
- */
-const pendingMinis: Array<{ x: number; z: number; speed: number }> = [];
-
-function drainPendingMinis(): void {
-  if (!pendingMinis.length) return;
-  for (const spec of pendingMinis) {
-    if (!state.slimeSheet) break;
-    // Two minis scatter to either side of the corpse.
-    for (const side of [-1, 1]) {
-      const mini = makeZombie(state.slimeSheet, spec.x + side * 0.35, spec.z + (Math.random() - 0.5) * 0.3, spec.speed * SLIME_MINI_SPEED_MULT, {
-        kind: "slime",
-        hp: SLIME_MINI_HP,
-      });
-      mini.mini = true;
-      mini.aggro = true; // it just watched you kill its parent
-      mini.sprite.mesh.scale.multiplyScalar(SLIME_MINI_SCALE);
-      state.zombies.push(mini);
-    }
-  }
-  pendingMinis.length = 0;
-}
-
-/** Necromancer summons, deferred past the horde loop (spawning mid-iteration
- *  would corrupt the array being walked, same as slime split). */
-const pendingSummons: Array<{ x: number; z: number }> = [];
-
-function drainPendingSummons(): void {
-  if (!pendingSummons.length) return;
-  const speed = levelConfig(state.level).zombieSpeed;
-  const sheet = state.zombieVariantSheets[0] ?? state.zombieSheet;
-  for (const spec of pendingSummons) {
-    if (!sheet) break;
-    const add = makeZombie(sheet, spec.x + (Math.random() - 0.5) * 0.6, spec.z + (Math.random() - 0.5) * 0.6, speed, { kind: "zombie" });
-    add.aggro = true; // raised to serve — already hunting
-    state.zombies.push(add);
-  }
-  pendingSummons.length = 0;
-}
-
-/**
- * Spawn one enemy from a prebuilt sheet at a world point. Shared by the level
- * horde, the debug spawner, and the giant-spider spawns — every enemy runs the
- * same pathing/combat in updateZombies, differing only by `kind` + stats.
- */
-/** Co-op network-id sequence — reset per floor. Creation order at startLevel is
- * seed-deterministic, so every pool member hands out the SAME nids and replicas
- * adopt the authority's snapshot without respawning a thing. Runtime spawns
- * (reaper, splits) only happen on the authority, whose counter keeps going. */
-let zombieNidSeq = 0;
-/** Ghost adoption saw an authority nid — keep our counter past it so a later
- * authority handover can't mint a colliding id. */
-export function bumpZombieNid(nid: string): void {
-  const n = Number(nid.replace(/^z/, ""));
-  if (Number.isFinite(n) && n >= zombieNidSeq) zombieNidSeq = n + 1;
-}
-
-function makeZombie(
-  sheet: SpriteSheet,
-  x: number,
-  z: number,
-  speed: number,
-  opts: { kind?: EnemyKind; hp?: number; boss?: boolean; maxHp?: number; ztype?: ZombieType } = {},
-): Zombie {
-  const kind = opts.kind ?? "zombie";
-  const sprite = createActorSprite(sheet, false);
-  // A ghost is SPECTRAL: knock its material translucent + disable the hard alpha
-  // cutout so the see-through drape reads (it also renders after opaque actors).
-  // The reaper shares the treatment, a shade more solid — it's a PRESENCE.
-  if (kind === "ghost" || kind === "reaper") {
-    const mat = sprite.mesh.material as THREE.MeshBasicMaterial;
-    mat.opacity = kind === "reaper" ? 0.82 : 0.62;
-    mat.alphaTest = 0.02;
-    mat.depthWrite = false;
-    sprite.mesh.renderOrder = 11;
-  }
-  state.scene!.add(sprite.mesh);
-  const anim = new Animator(sprite);
-  anim.setFacing("S");
-  anim.play("idle");
-  const nid = "z" + zombieNidSeq++;
-  const z2: Zombie = {
-    nid,
-    sprite,
-    anim,
-    x,
-    z,
-    kind,
-    hp: opts.hp ?? HP_BY_KIND[kind],
-    maxHp: opts.maxHp,
-    boss: opts.boss,
-    mode: "idle",
-    speed,
-    windupT: 0,
-    cooldown: 0,
-    flashT: 0,
-    aggro: false,
-    burnT: 0,
-    bobT: 0,
-  };
-  // ── ZOMBIE SUB-TYPE (zombie-types.ts) ──
-  // Applied at the single construction site so the stat bundle and the collider
-  // can never disagree. An explicit `opts.hp` still wins: a boss or a scripted
-  // spawn sets HP deliberately and must not be re-scaled underneath it.
-  const t = opts.ztype;
-  if (t && t !== "shambler") {
-    const d = ZOMBIE_TYPES[t];
-    z2.ztype = t;
-    z2.speed = speed * d.speedMult;
-    if (opts.hp == null) z2.hp = typeHp(HP_BY_KIND[kind], t);
-    if (opts.maxHp != null) z2.maxHp = typeHp(opts.maxHp, t);
-    if (d.scale !== 1) {
-      sprite.mesh.scale.multiplyScalar(d.scale);
-      // NOT optional. state.ts's `bodyR` comment records the Reaper King walking
-      // half-buried into corridors because a scaled mesh kept an unscaled
-      // collider; zombie-types.test.ts asserts bodyRMult moves with scale.
-      z2.bodyR = ZOMBIE_R * d.bodyRMult;
-    }
-    // Limp phase off the nid — deterministic across peers, distinct per actor,
-    // so a pair of hobblers never limps in lockstep.
-    if (d.gait === "limp") z2.gaitPhase = (Number(nid.replace(/^z/, "")) || 0) * 1.7;
-    // A crawler has no legs: tip the billboard onto its belly. Rotation ONLY —
-    // syncActorMesh re-pins y to 0 every frame, so a height offset set here
-    // would be silently erased on the next update (which is why the ghost's
-    // hover has to live in syncGhostMesh instead of on the actor).
-    if (d.gait === "crawl") sprite.mesh.rotation.z = CRAWLER_PITCH;
-  }
-  syncActorMesh(z2);
-  return z2;
-}
-
-/**
- * Pick + spawn one horde member for a spawn tile, given its hash. The special
- * families each own a residue class of the hash and only appear from their
- * FROM_LEVEL, so shallow floors are pure zombies and deeper floors mix in
- * spiders → brutes → spitters. Priority order matters (a spawn can only be one
- * thing): tank/ranged specials are checked before falling back to a zombie.
- */
-/**
- * Spawn ONE enemy of an explicit kind, honouring its depth gate and sheet
- * availability — returns null if it's not unlocked yet or its art is missing,
- * so a themed pick can cleanly fall through to the base cascade. Only the
- * biome-favourable families are mapped; anything else returns null.
- */
-function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
-  switch (kind) {
-    case "brute":
-      return level >= BRUTE_FROM_LEVEL && state.bruteSheet ? makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }) : null;
-    case "spitter":
-      return level >= SPITTER_FROM_LEVEL && state.spitterSheet ? makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" }) : null;
-    case "spider":
-      return level >= SPIDER_FROM_LEVEL && state.spiderSheet ? makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" }) : null;
-    case "ghost":
-      return level >= GHOST_FROM_LEVEL && state.ghostSheet ? makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" }) : null;
-    case "bat":
-      return level >= BAT_FROM_LEVEL && state.batSheet ? makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" }) : null;
-    case "slime":
-      return level >= SLIME_FROM_LEVEL && state.slimeSheet ? makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" }) : null;
-    case "goblin":
-      return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
-    case "chomper":
-      return level >= CHOMPER_FROM_LEVEL ? makeReskin("chomper", x, z, 0) : null;
-    case "golem":
-      return level >= GOLEM_FROM_LEVEL ? makeReskin("golem", x, z, 0) : null;
-    case "magnet":
-      return level >= MAGNET_FROM_LEVEL ? makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR) : null;
-    case "webspinner":
-      return level >= WEBSPIN_FROM_LEVEL ? makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
-    case "hound":
-      return level >= HOUND_FROM_LEVEL ? makeExpansion("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
-    case "bloater":
-      return level >= BLOATER_FROM_LEVEL ? makeExpansion("bloater", x, z, baseSpeed * BLOATER_SPEED_FACTOR) : null;
-    case "necromancer":
-      return level >= NECRO_FROM_LEVEL ? makeExpansion("necromancer", x, z, baseSpeed * NECRO_SPEED_FACTOR) : null;
-    case "warden":
-      return level >= WARDEN_FROM_LEVEL ? makeExpansion("warden", x, z, baseSpeed * WARDEN_SPEED_FACTOR) : null;
-    case "wisp":
-      return level >= WISP_FROM_LEVEL ? makeExpansion("wisp", x, z, baseSpeed * WISP_SPEED_FACTOR) : null;
-    case "sapper":
-      return level >= SAPPER_FROM_LEVEL ? makeExpansion("sapper", x, z, baseSpeed * SAPPER_SPEED_FACTOR) : null;
-    case "crystalback":
-      return level >= CRYSTAL_FROM_LEVEL ? makeExpansion("crystalback", x, z, 0) : null;
-    case "mimic": {
-      if (level < MIMIC_FROM_LEVEL) return null;
-      const m = makeExpansion("mimic", x, z, baseSpeed * MIMIC_SPEED_FACTOR);
-      if (m) { m.dormant = true; m.aggro = false; }
-      return m;
-    }
-    default:
-      return null; // zombie/pin/reaper aren't horde-rollable via theme bias
-  }
-}
-
-/** Weighted-pick a themed kind from the hash, or null if the biome sets none. */
-function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
-  const theme = themeFor(level, state.runSeed);
-  if (!theme.enemies || hash % 100 >= THEME_HORDE_BIAS) return null;
-  const kinds = Object.keys(theme.enemies) as EnemyKind[];
-  let total = 0;
-  for (const k of kinds) total += theme.enemies[k]!;
-  if (total <= 0) return null;
-  let r = (hash >>> 8) % total;
-  for (const k of kinds) {
-    r -= theme.enemies[k]!;
-    if (r < 0) return spawnKind(k, x, z, baseSpeed, level);
-  }
-  return null;
-}
-
-function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie {
-  const themed = themedHordePick(hash, x, z, baseSpeed, level);
-  if (themed) return themed;
-  if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0 && state.bruteSheet) {
-    return makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" });
-  }
-  if (level >= SPITTER_FROM_LEVEL && hash % SPITTER_RATIO === 1 && state.spitterSheet) {
-    return makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" });
-  }
-  if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2 && state.spiderSheet) {
-    return makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" });
-  }
-  if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3 && state.ghostSheet) {
-    return makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" });
-  }
-  if (level >= BAT_FROM_LEVEL && hash % BAT_RATIO === 3 && state.batSheet) {
-    return makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" });
-  }
-  if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4 && state.slimeSheet) {
-    return makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
-  }
-  // ── The Wave-B pinball roster (reskins; see RESKIN) ──
-  if (level >= GOBLIN_FROM_LEVEL && hash % GOBLIN_RATIO === 1) {
-    const zb = makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR);
-    if (zb) return zb;
-  }
-  if (level >= CHOMPER_FROM_LEVEL && hash % CHOMPER_RATIO === 5) {
-    const zb = makeReskin("chomper", x, z, 0); // rooted — it IS the chokepoint
-    if (zb) return zb;
-  }
-  if (level >= GOLEM_FROM_LEVEL && hash % GOLEM_RATIO === 5) {
-    const zb = makeReskin("golem", x, z, 0);
-    if (zb) return zb;
-  }
-  if (level >= MAGNET_FROM_LEVEL && hash % MAGNET_RATIO === 6) {
-    const zb = makeReskin("magnet", x, z, baseSpeed * MAGNET_SPEED_FACTOR);
-    if (zb) return zb;
-  }
-  if (level >= WEBSPIN_FROM_LEVEL && hash % WEBSPIN_RATIO === 2) {
-    const zb = makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR);
-    if (zb) return zb;
-  }
-  // ── Baseline zombie — but WHICH zombie (zombie-types.ts) ──
-  // The sub-type comes off the SAME hash the family cascade above used (re-mixed
-  // inside pickZombieType so the two rolls do not correlate), never Math.random:
-  // co-op peers each build the horde locally from the shared pool seed, so a
-  // random draw here would disagree about who is a hulk.
-  const ztype = resolveZombieType(pickZombieType(hash, level), x, z);
-  const variantSheets = state.zombieVariantSheets;
-  // The silhouette must agree with the stat story: a crawler wearing two good
-  // legs is a lie the player notices immediately.
-  const allowed = variantIndicesFor(ztype, ZOMBIE_VARIANTS);
-  const vi = allowed[hash % allowed.length];
-  const sheet = variantSheets[vi] ?? variantSheets[0] ?? state.zombieSheet!;
-  return makeZombie(sheet, x, z, baseSpeed, { ztype });
-}
-
-/**
- * Veto a sub-type whose BODY does not fit where it is being spawned.
- *
- * A hulk's collider is ~1.5x a zombie's — wider than a 1-tile corridor tolerates
- * — so spawning one in a dead end wedges it in rock. That is the Reaper King bug
- * (see `Zombie.bodyR` in state.ts) in a new costume, and the cheapest honest fix
- * is to not place it there: fall through to a LURCHER, which keeps the "big slow
- * bruiser" beat with a body that fits.
- */
-function resolveZombieType(t: ZombieType, x: number, z: number): ZombieType {
-  if (t !== "hulk") return t;
-  const g = state.grid;
-  if (!g) return t;
-  const c = worldToTile(g, x, z);
-  let open = 0;
-  for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-    if (isWalkable(g, c.i + di, c.j + dj)) open++;
-  }
-  return open >= HULK_MIN_OPEN_NEIGHBOURS ? "hulk" : "lurcher";
-}
-
-/**
- * Drop a BOWLING PIN CREW: PIN_CREW_SIZE pins racked in triangle formation
- * around a centre tile (offsets in world units, clamped to walkable tiles by
- * nearestOpenTile fallback). They don't fight — they score.
- */
-function spawnPinCrew(g: Grid, centre: TilePos): void {
-  const rack: Array<[number, number]> = [
-    [0, 0],
-    [0.55, -0.35],
-    [0.55, 0.35],
-    [1.1, -0.7],
-    [1.1, 0],
-    [1.1, 0.7],
-  ];
-  const c = tileCenter(g, centre.i, centre.j);
-  for (let k = 0; k < Math.min(PIN_CREW_SIZE, rack.length); k++) {
-    const px = c.x + rack[k][0];
-    const pz = c.z + rack[k][1];
-    const t = worldToTile(g, px, pz);
-    const spot = isWalkable(g, t.i, t.j) ? { x: px, z: pz } : (() => {
-      const open = nearestOpenTile(g, centre.i, centre.j, k + 1);
-      return open ? tileCenter(g, open.i, open.j) : c;
-    })();
-    const pin = makeReskin("pin", spot.x, spot.z, 0);
-    if (pin) state.zombies.push(pin);
-  }
-}
 
 /** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
 function startLevel(level: number): void {
@@ -1118,7 +727,7 @@ function startLevel(level: number): void {
   const cs = coopSeed();
   if (cs !== null) state.runSeed = cs >>> 0;
   setCoopFloor(level); // pool presence now filters to this floor
-  zombieNidSeq = 0; // per-floor network ids — deterministic across the pool
+  resetZombieNid(); // per-floor network ids — deterministic across the pool
   resetItemNid();
   // Run-scoped, so it must be updated here rather than in the per-floor reset
   // below. `saveBestDepth` no-ops unless this genuinely beats the record.
@@ -1725,29 +1334,6 @@ function debugTeleportToStairs(): void {
  * the debug spawner so test enemies always land on real floor, never inside a
  * wall band. Returns null if nothing walkable is close.
  */
-/**
- * The `n`-th walkable tile found scanning outward in ring shells from (ci, cj).
- *
- * NOTE the semantics: `n` is an ORDINAL, not a distance. Asking for n = 6 does
- * NOT get you a tile 6 tiles out — it gets the 6th walkable tile found, which
- * in an open area is still inside the r = 1 ring. Pass `minRing` when you
- * actually mean "no closer than this".
- */
-function nearestOpenTile(g: Grid, ci: number, cj: number, n: number, minRing = 1): TilePos | null {
-  const found: TilePos[] = [];
-  for (let r = Math.max(1, minRing); r <= Math.max(6, minRing + 5) && found.length < n; r++) {
-    for (let dj = -r; dj <= r; dj++) {
-      for (let di = -r; di <= r; di++) {
-        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; // ring shell only
-        const i = ci + di;
-        const j = cj + dj;
-        if (isWalkable(g, i, j)) found.push({ i, j });
-        if (found.length >= n) break;
-      }
-    }
-  }
-  return found[n - 1] ?? found[found.length - 1] ?? null;
-}
 
 /**
  * Dev-only: drop one zombie of each cosmetic variant plus a giant spider in a
