@@ -202,8 +202,14 @@ await page.setViewportSize({ width: 1280, height: 720 });
 
 const pageErrors = [];
 page.on("pageerror", (e) => pageErrors.push(String(e.message || e)));
+/** Renderer-level console errors. These do NOT throw, so without collecting
+ *  them a run can render a totally black screen and still report success —
+ *  which is exactly what "Material ShaderMaterial is not compatible" does on
+ *  the WebGPU path. Kept separate from pageErrors so the summary can name them. */
+const renderErrors = [];
 page.on("console", (m) => {
   const t = m.text();
+  if (m.type() === "error" && /THREE\.|WebGPU|WebGL|NodeBuilder|shader/i.test(t)) renderErrors.push(t);
   if (/^\[bot\]|^\[profiler\]/.test(t) || m.type() === "error") log("  ⟩", t);
 });
 
@@ -376,6 +382,26 @@ if (a.shots) {
 
 const report = await page.evaluate(() => window.__dungeonBotStop()).catch(() => null);
 
+// ── IS ANYTHING ACTUALLY ON SCREEN? ────────────────────────────────────────
+// The bot drives game STATE, which keeps ticking happily while the renderer
+// draws nothing — a broken shader shows up as a totally black canvas and an
+// otherwise perfect run. Sample the real canvas and count distinct colours:
+// a live frame has hundreds, a dead one has exactly 1.
+const canvasCheck = await page
+  .evaluate(async () => {
+    const c = document.querySelector("canvas");
+    if (!c) return { ok: false, reason: "no canvas element" };
+    const bmp = await createImageBitmap(c);
+    const cv = new OffscreenCanvas(bmp.width, bmp.height);
+    const cx = cv.getContext("2d");
+    cx.drawImage(bmp, 0, 0);
+    const d = cx.getImageData(0, 0, bmp.width, bmp.height).data;
+    const seen = new Set();
+    for (let i = 0; i < d.length; i += 4) seen.add((d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | (d[i + 2] >> 4));
+    return { ok: seen.size > 1, distinct: seen.size, w: bmp.width, h: bmp.height };
+  })
+  .catch((e) => ({ ok: false, reason: String(e).slice(0, 120) }));
+
 // ── Verdict ────────────────────────────────────────────────────────────────
 log("\n── playtest result ─────────────────────────────");
 if (!report || typeof report === "string") {
@@ -391,6 +417,10 @@ log(`kills:        ${report.kills}`);
 log(`deaths:       ${report.deaths}`);
 log(`stuck events: ${report.stuckEvents.length}`);
 log(`errors:       ${report.errors.length + pageErrors.length}`);
+log(`render errors:${renderErrors.length}`);
+log(
+  `canvas:       ${canvasCheck.ok ? `painting (${canvasCheck.distinct} distinct colours)` : `BLANK — ${canvasCheck.reason ?? "1 colour, nothing rendered"}`}`,
+);
 
 if (a.profile && report.profile?.length) {
   log("\n── frame profile (heaviest first) ──");
@@ -412,6 +442,16 @@ if (allErrors.length) {
   failed = true;
   console.error("\n✗ ERRORS thrown while playing:");
   for (const e of allErrors.slice(0, 20)) console.error("   ", e);
+}
+if (!canvasCheck.ok) {
+  failed = true;
+  console.error(`\n✗ NOTHING RENDERED — the canvas is a single flat colour (${canvasCheck.reason ?? "1 distinct colour"}).`);
+  console.error("   Game state ticked fine, so this is a RENDERER fault, not a gameplay one.");
+}
+if (renderErrors.length) {
+  failed = true;
+  console.error("\n✗ RENDERER errors (these never throw, so they cannot fail a run on their own):");
+  for (const e of [...new Set(renderErrors)].slice(0, 10)) console.error("   ", e);
 }
 if (MAX_FRAME_MS > 0) {
   if (looksSoftware && !a["force-budget"]) {

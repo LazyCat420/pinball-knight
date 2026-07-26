@@ -38,6 +38,7 @@
  * fractional-upscale scheme got wrong.
  */
 import * as THREE from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { PALETTE_SIZE, paletteToFloatArray } from "./palette";
 import {
   RENDER_W,
@@ -360,7 +361,7 @@ export interface PixelPass {
 }
 
 export function createPixelPass(
-  renderer: THREE.WebGLRenderer,
+  renderer: WebGPURenderer,
   opts: {
     quantize: boolean;
     dither: boolean;

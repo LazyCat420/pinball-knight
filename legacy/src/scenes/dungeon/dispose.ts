@@ -101,8 +101,15 @@ export function disposeAll(): void {
     // forceContextLoss() releases the GPU context outright. Without it, a few
     // launch/exit cycles will exhaust the browser's WebGL context limit and the
     // game silently stops rendering.
+    //
+    // That method exists ONLY on the legacy WebGLRenderer. WebGPURenderer does
+    // the same job inside dispose(): WebGLBackend.dispose() fetches the
+    // WEBGL_lose_context extension and calls loseContext() itself (see
+    // renderers/webgl-fallback/WebGLBackend.js), and the WebGPU backend
+    // releases the device there too. So dispose() alone is now the whole
+    // teardown — an optional-chained forceContextLoss?.() would be dead code
+    // that silently stopped protecting against context exhaustion.
     state.renderer.dispose();
-    state.renderer.forceContextLoss();
   }
 
   state.gameOverEl?.remove();

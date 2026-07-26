@@ -8,6 +8,7 @@
  * panel is open.
  */
 import type * as THREE from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import type { Station } from "./layout";
 import type { Facing } from "../dungeon/render/animator";
 import type { ActorSprite } from "../dungeon/render/sprite";
@@ -35,7 +36,7 @@ export interface TavernState {
   active: boolean;
   container: HTMLElement | null;
 
-  renderer: THREE.WebGLRenderer | null;
+  renderer: WebGPURenderer | null;
   scene: THREE.Scene | null;
   camera: THREE.OrthographicCamera | null;
 

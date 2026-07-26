@@ -24,6 +24,8 @@
  * the way in, clearInputOwner + full dispose on the way out.
  */
 import * as THREE from "three";
+import { WebGPURenderer } from "three/webgpu";
+import { selectBackend } from "../../render/backend";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
 import { createPixelPass } from "./render/pixel-pass";
@@ -266,6 +268,8 @@ let sun: THREE.DirectionalLight | null = null;
 let lamp: THREE.PointLight | null = null;
 // Parity counter for the 30 Hz shadow-map throttle (see the render loop).
 let shadowFrameCounter = 0;
+/** False until WebGPURenderer.init() resolves — render() throws before that. */
+let rendererReady = false;
 let ambient: THREE.AmbientLight | null = null;
 /** The on-screen touch pad, when this device gets one (see createTouchControls). */
 let touchControls: TouchControls | null = null;
@@ -342,6 +346,21 @@ function paintMenuPortrait(canvas: HTMLCanvasElement): void {
 }
 
 /**
+ * Flag every shadow-casting light in the scene to re-render its depth pass.
+ *
+ * WebGPU gates shadow updates PER-LIGHT (`shadow.needsUpdate || shadow.autoUpdate`
+ * in nodes/lighting/ShadowNode.js), unlike WebGLRenderer's single
+ * `renderer.shadowMap.needsUpdate`. Driving the lights works identically on both
+ * backends, so this is the portable form of the 30 Hz throttle.
+ */
+function setShadowsThrottled(needsUpdate: boolean): void {
+  state.scene?.traverse((o) => {
+    const l = o as THREE.Light & { shadow?: THREE.LightShadow };
+    if (l.isLight && l.shadow) l.shadow.needsUpdate = needsUpdate;
+  });
+}
+
+/**
  * `?seed=<int>` — pin the run seed so a floor regenerates identically.
  * Returns null when absent or unparseable, so the caller falls back to random.
  */
@@ -384,7 +403,18 @@ export function launchDungeonGame(onExit?: () => void): void {
   // ── Renderer ──
   // No MSAA: the quantize pass flattens colour anyway, and the depth-edge
   // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
-  state.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+  // WebGPURenderer drives BOTH backends; ?gpu=webgl forces the WebGL2 one.
+  // init() is awaited by the caller (launchDungeonGame) before the first frame.
+  state.renderer = new WebGPURenderer({ antialias: false, alpha: false, forceWebGL: selectBackend().forceWebGL });
+  // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
+  // ("called before the backend is initialized"). launchDungeonGame stays sync
+  // because neither caller awaits it (main.ts:328, mouse-room.ts:3053) — making
+  // it async would silently reorder their teardown. So the loop skips frames
+  // until this resolves; see the rendererReady gate in the render block.
+  rendererReady = false;
+  void state.renderer.init().then(() => {
+    rendererReady = true;
+  });
   state.renderer.setClearColor(PALETTE_HEX[0]);
   // One shadow-casting directional light needs the shadow map on. PCFSoft gives
   // a slightly feathered edge that survives the palette quantizer as a soft
@@ -392,10 +422,15 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.renderer.shadowMap.enabled = true;
   state.renderer.shadowMap.type = THREE.PCFShadowMap;
   // The full shadow depth pass re-rendered every frame is a heavy fixed cost;
-  // the loop flags needsUpdate on alternate frames instead (30 Hz shadows —
+  // the loop re-flags the light on alternate frames instead (30 Hz shadows —
   // invisible under the pixel quantizer, halves the shadow pass).
-  state.renderer.shadowMap.autoUpdate = false;
-  state.renderer.shadowMap.needsUpdate = true;
+  //
+  // THIS THROTTLE IS PER-LIGHT, NOT PER-RENDERER. WebGPURenderer.shadowMap is
+  // only { enabled, transmitted, type } — it has no autoUpdate/needsUpdate, so
+  // the old renderer-level flags would have gone SILENTLY dead here and shadows
+  // would quietly re-render every frame. three's WebGPU path gates on the light
+  // instead (nodes/lighting/ShadowNode.js: `shadow.needsUpdate || shadow.autoUpdate`),
+  // which setShadowsThrottled() below drives. See throttleShadows() in the loop.
   state.container.appendChild(state.renderer.domElement);
 
   state.pixelPass = createPixelPass(state.renderer, {
@@ -436,6 +471,10 @@ export function launchDungeonGame(onExit?: () => void): void {
   // whole visible area instead of being stretched across the entire maze.
   sun = new THREE.DirectionalLight(0xa7c0e0, DIR_INTENSITY);
   sun.castShadow = true;
+  // 30 Hz shadows — the loop re-flags shadow.needsUpdate on alternate frames.
+  // Must be per-light: WebGPURenderer has no renderer-level shadowMap.autoUpdate.
+  sun.shadow.autoUpdate = false;
+  sun.shadow.needsUpdate = true;
   sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   sun.shadow.camera.near = 0.5;
   sun.shadow.camera.far = DIR_HEIGHT * 2.5;
@@ -3970,12 +4009,14 @@ function loop(now: number): void {
   updatePlungerMeter(state.plungerMeterEl);
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
-  if (state.scene && renderCam && state.pixelPass) {
-    // Shadow throttle: autoUpdate is off (see renderer setup); render the
-    // shadow depth pass on alternate frames only.
+  // rendererReady: skip frames until the async backend init resolves. Simulation
+  // above has already run, so a couple of dropped frames at launch cost nothing.
+  if (state.scene && renderCam && state.pixelPass && rendererReady) {
+    // Shadow throttle: per-light autoUpdate is off (see renderer setup); render
+    // the shadow depth pass on alternate frames only.
     shadowFrameCounter++;
     if (state.renderer && shadowFrameCounter % 2 === 0) {
-      state.renderer.shadowMap.needsUpdate = true;
+      setShadowsThrottled(true);
     }
     // GPU submission, not GPU completion: WebGL is async, so this measures the
     // CPU cost of building + submitting the passes. A small number here with a

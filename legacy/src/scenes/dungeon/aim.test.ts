@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import * as THREE from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import { mouseAimDirection, worldDirToScreen, screenDirToWorld } from "./camera";
 import { createDungeonCamera } from "./camera";
 import { state } from "./state";
@@ -14,11 +15,11 @@ import { VIEW_W, VIEW_H } from "./constants";
 
 // A fake renderer whose canvas rect is a plain 0,0-anchored WxH box, so client
 // pixels == canvas pixels and the NDC math is easy to reason about.
-function fakeRenderer(w: number, h: number): THREE.WebGLRenderer {
+function fakeRenderer(w: number, h: number): WebGPURenderer {
   const dom = {
     getBoundingClientRect: () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h, x: 0, y: 0 }),
   };
-  return { domElement: dom } as unknown as THREE.WebGLRenderer;
+  return { domElement: dom } as unknown as WebGPURenderer;
 }
 
 const W = 1280;

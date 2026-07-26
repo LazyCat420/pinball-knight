@@ -4,6 +4,7 @@
 import { freshRail, type RailState } from "./entities/rail";
 import type { ZombieType } from "./zombie-types";
 import type * as THREE from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import type { PixelPass } from "./render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
 import type { AimIndicator } from "./render/aim-indicator";
@@ -657,7 +658,7 @@ export const state = {
   hudDirty: true,
 
   // Three
-  renderer: null as THREE.WebGLRenderer | null,
+  renderer: null as WebGPURenderer | null,
   scene: null as THREE.Scene | null,
   camera: null as THREE.OrthographicCamera | null,
   pixelPass: null as PixelPass | null,

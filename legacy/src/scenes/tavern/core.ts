@@ -8,6 +8,8 @@
  * two scenes looking like one game.
  */
 import * as THREE from "three";
+import { WebGPURenderer } from "three/webgpu";
+import { selectBackend } from "../../render/backend";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../dungeon/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../dungeon/camera";
 import { createInput, type InputHandle } from "../dungeon/input";
@@ -148,6 +150,8 @@ let props: BuiltProps | null = null;
 let fx: StationFx | null = null;
 let prompt: StationPrompt | null = null;
 let pixelPass: PixelPass | null = null;
+/** False until WebGPURenderer.init() resolves — render() throws before that. */
+let rendererReady = false;
 let onKey: ((e: KeyboardEvent) => void) | null = null;
 let onResize: (() => void) | null = null;
 let npcs: BuiltNpcs | null = null;
@@ -416,7 +420,9 @@ function frame(now: number): void {
   // the casino cabinet's canvas ran at ~2fps behind the tavern's pixel pass,
   // which turned a 2.6s wheel spin into 26 seconds of wall clock.
   if (frozen) return;
-  if (tavern.scene && tavern.camera) {
+  // rendererReady: the async backend init has to land before any render() call,
+  // which throws otherwise. A few skipped frames on entry are invisible.
+  if (tavern.scene && tavern.camera && rendererReady) {
     if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
     else tavern.renderer?.render(tavern.scene, tavern.camera);
   }
@@ -439,12 +445,26 @@ export interface TavernOptions {
 export function openTavernScene(container: HTMLElement, opts: TavernOptions): boolean {
   if (tavern.active) return true;
 
-  let renderer: THREE.WebGLRenderer;
+  let renderer: WebGPURenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: "high-performance" });
+    renderer = new WebGPURenderer({
+      antialias: false,
+      alpha: false,
+      powerPreference: "high-performance",
+      forceWebGL: selectBackend().forceWebGL,
+    });
   } catch {
     return false; // no context — caller keeps the DOM tavern
   }
+  // Backend creation is async and render() throws before it resolves. This
+  // function stays SYNC and keeps returning boolean, because index.ts:40 uses
+  // the return value to decide between this scene and the DOM tavern — making
+  // it async would turn that check into a truthy Promise and the DOM fallback
+  // would become unreachable. The loop skips frames until this flips.
+  rendererReady = false;
+  void renderer.init().then(() => {
+    rendererReady = true;
+  });
 
   tavern.active = true;
   tavern.container = container;
