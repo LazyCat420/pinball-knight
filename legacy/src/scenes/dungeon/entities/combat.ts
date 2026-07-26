@@ -52,8 +52,9 @@ import {
   CRYSTAL_SHARDS,
   WISP_BLINK_CD,
   WISP_BLINK_DIST,
+  COMBO_ZONE_CRUISE,
 } from "../constants";
-import { comboKillGold } from "./combo-curve";
+import { comboKillGold, comboDamageMult } from "./combo-curve";
 import { moveCircle } from "../collision";
 import type { Facing } from "../render/animator";
 import { screenDirToWorld } from "../camera";
@@ -104,6 +105,16 @@ export function playerDamage(base: number): number {
   const skills = skillAgg();
   dmg *= skills.damageMult;
   if (skills.pinballDamageMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= skills.pinballDamageMult;
+  // THE CHAIN ITSELF (combo-curve Part 7). Every lever the bounce combo drove
+  // before this was speed, economy or screen juice — a 100x chain hit exactly
+  // as hard as an 8x one unless you had drafted a pinballMult card. This is the
+  // free, build-independent half of that fantasy: nothing below the Cruise gate,
+  // then a concave ramp capped at COMBO_DMG_MAX.
+  //
+  // Deliberately AFTER the card and skill multipliers so it stacks with them
+  // rather than replacing them — an invested pinball build should still clearly
+  // out-damage a bare one carrying the same chain.
+  if (p && p.bounceCombo > COMBO_ZONE_CRUISE) dmg *= comboDamageMult(p.bounceCombo);
   if (p && p.rageT > 0) dmg *= RAGE_DAMAGE_MULT;
   return dmg;
 }

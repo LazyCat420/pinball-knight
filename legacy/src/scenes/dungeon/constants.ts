@@ -521,6 +521,31 @@ export const COMBO_FRICTION_K = 0.015;
 // Part 6 — tiered jackpot gold: +COMBO_GOLD_TIER per doubling of the combo,
 // uncapped but logarithmic so mastery always pays and never breaks economy:
 export const COMBO_GOLD_TIER = 3;
+// Part 7 — the chain finally pays DAMAGE, not just speed and gold.
+//
+// WHY. Every other lever above rewards a deep chain with pace, economy or
+// screen juice; none of them made you more lethal. A 100× chain rammed for
+// exactly the same damage as an 8× chain unless you happened to draft a
+// `pinballMult` card. The fantasy the chain sells — "I am a wrecking ball right
+// now" — was the one thing it did not deliver.
+//
+// SHAPE. Same log-saturating curve as Part 1 (comboSpeedCeil) so the two read
+// as one system: nothing below the Cruise gate, then a concave ramp that
+// saturates at COMBO_DMG_NSAT. Deliberately CONCAVE, not linear — the deep
+// chain should feel like mastery paying off, not like a damage cliff.
+//
+// WHY IT STARTS AT CRUISE. Combo 8 is already the game's own flow threshold
+// (COMBO_ZONE_CRUISE below force-arms ball form there). Starting the damage
+// ramp anywhere else would invent a second, invisible threshold.
+//
+// WHY THE CAP IS LOW. `pinballMult` cards and the pinballDamageMult skill are
+// the INVESTED version of this idea; a free bonus that rivalled them would make
+// drafting them pointless. 1.35× at saturation is a real reward that still
+// leaves the cards clearly stronger, and it stacks multiplicatively on top.
+// Raise it only after playing — raising reads as a buff, lowering as a nerf.
+export const COMBO_DMG_MAX = 1.35; // damage multiplier at full saturation
+export const COMBO_DMG_K = 0.15; // log compression, matched to COMBO_CEIL_K
+export const COMBO_DMG_NSAT = 60; // bounces to ~95% of COMBO_DMG_MAX
 // Part 2 — tempo zones: Launch (accelerate) → Cruise (flow) → Frenzy (edge):
 export const COMBO_ZONE_CRUISE = 8; // enter Cruise: aura goes gold, ball form arms
 export const COMBO_ZONE_FRENZY = 30; // enter Frenzy: faster ball, vignette + aberration

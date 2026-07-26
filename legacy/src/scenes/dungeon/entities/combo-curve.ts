@@ -25,6 +25,9 @@ import {
   COMBO_WINDOW_MAX,
   COMBO_WINDOW_MIN,
   COMBO_WINDOW_ALPHA,
+  COMBO_DMG_MAX,
+  COMBO_DMG_K,
+  COMBO_DMG_NSAT,
   COMBO_FRICTION_K,
   COMBO_GOLD_TIER,
   COMBO_ZONE_CRUISE,
@@ -90,6 +93,30 @@ export function comboFrictionMul(n: number): number {
  */
 export function comboKillGold(n: number): number {
   return STYLE_KILL_BASE_GOLD + COMBO_GOLD_TIER * Math.floor(Math.log2(Math.max(1, n)));
+}
+
+/**
+ * Part 7 — the chain's DAMAGE multiplier, the only lever here that reaches
+ * combat:
+ *   D(n) = 1                                            for n < Ncruise
+ *   D(n) = 1 + (Dmax − 1)·log(1 + k·(n − Ncruise)) / log(1 + k·Nsat)
+ *
+ * Nothing below the Cruise gate — combo 8 is already where the game flips into
+ * its flow state (comboZone arms ball form there), so the ramp starts on a
+ * threshold the player can already feel rather than inventing a new one.
+ *
+ * Same log-saturating shape as `comboSpeedCeil` so speed and lethality read as
+ * one system, and capped at COMBO_DMG_MAX (1.35×) — well under the invested
+ * `pinballMult` cards, which this multiplies with rather than replaces.
+ *
+ * 8→1.00, 16→1.12, 30→1.22, 60→1.33, 100→1.35 (saturating).
+ */
+export function comboDamageMult(n: number): number {
+  const over = Math.max(0, n - COMBO_ZONE_CRUISE);
+  if (over <= 0) return 1;
+  const num = Math.log(1 + COMBO_DMG_K * over);
+  const den = Math.log(1 + COMBO_DMG_K * COMBO_DMG_NSAT);
+  return 1 + (COMBO_DMG_MAX - 1) * Math.min(1, num / den);
 }
 
 /** Part 2 — which tempo act the current combo count sits in. */

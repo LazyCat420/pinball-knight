@@ -8,6 +8,7 @@ import {
   comboKillGold,
   comboZone,
   frenzyIntensity,
+  comboDamageMult,
 } from "./combo-curve";
 import {
   PINBALL_MAX_SPEED,
@@ -20,6 +21,7 @@ import {
   COMBO_ZONE_CRUISE,
   COMBO_ZONE_FRENZY,
   STYLE_KILL_BASE_GOLD,
+  COMBO_DMG_MAX,
 } from "../constants";
 
 describe("combo speed ceiling (Part 1)", () => {
@@ -112,5 +114,49 @@ describe("tempo zones (Part 2)", () => {
     expect(frenzyIntensity(COMBO_ZONE_FRENZY)).toBe(0);
     expect(frenzyIntensity(COMBO_ZONE_FRENZY + COMBO_ZONE_FRENZY)).toBe(1);
     expect(frenzyIntensity(1e6)).toBe(1);
+  });
+});
+
+describe("chain damage multiplier (Part 7)", () => {
+  it("is exactly 1.0 at and below the Cruise gate — early combat is untouched", () => {
+    expect(comboDamageMult(0)).toBe(1);
+    expect(comboDamageMult(1)).toBe(1);
+    expect(comboDamageMult(COMBO_ZONE_CRUISE - 1)).toBe(1);
+    expect(comboDamageMult(COMBO_ZONE_CRUISE)).toBe(1);
+  });
+
+  it("rises once past the gate", () => {
+    expect(comboDamageMult(COMBO_ZONE_CRUISE + 1)).toBeGreaterThan(1);
+  });
+
+  it("never decreases", () => {
+    for (let n = 1; n <= 512; n++) {
+      expect(comboDamageMult(n)).toBeGreaterThanOrEqual(comboDamageMult(n - 1));
+    }
+  });
+
+  it("saturates at COMBO_DMG_MAX and never exceeds it", () => {
+    // The cap is the whole design: a free bonus must never rival an invested
+    // pinballMult build. An unbounded curve here would silently do exactly that.
+    for (const n of [100, 1000, 1e6]) {
+      expect(comboDamageMult(n)).toBeLessThanOrEqual(COMBO_DMG_MAX + 1e-9);
+    }
+    expect(comboDamageMult(1e6)).toBeCloseTo(COMBO_DMG_MAX, 6);
+  });
+
+  it("is CONCAVE — each extra bounce is worth less than the last", () => {
+    // Mastery should taper, not cliff. A linear ramp would make deep chains a
+    // damage wall rather than a reward.
+    let prevStep = Infinity;
+    for (let n = COMBO_ZONE_CRUISE + 1; n < 80; n++) {
+      const step = comboDamageMult(n + 1) - comboDamageMult(n);
+      expect(step).toBeLessThanOrEqual(prevStep + 1e-9);
+      prevStep = step;
+    }
+  });
+
+  it("handles junk input without going negative or NaN", () => {
+    expect(comboDamageMult(-5)).toBe(1);
+    expect(Number.isFinite(comboDamageMult(0))).toBe(true);
   });
 });
