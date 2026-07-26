@@ -40,18 +40,17 @@ import { PINBALL_MAX_SPEED } from "./constants";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./render/atlas-loader";
-import { buildSpriteSheet, createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
+import { createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
 import { Animator } from "./render/animator";
-import { makeKnightPaints, makeZombiePaints, makeSpiderPaints, makeBrutePaints, makeSpitterPaints, makeGhostPaints, makeBatPaints, makeSlimePaints, makeBossPaints, makeGoblinPaints, makePinPaints, makeGolemPaints, makeChomperPaints, makeMagnetPaints, makeWebspinnerPaints, ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { ZOMBIE_TYPES, ZOMBIE_TYPE_IDS, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "./zombie-types";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
-import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear, lookKey } from "./render/knight-look";
-import { getKnightSheet, setHandmadeOverride } from "./render/knight-sheets";
-import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg, syncAbilitySlots } from "./skill-runtime";
+import { setHandmadeOverride } from "./render/knight-sheets";
+import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
 import { hasStartCardPerk } from "./legacy";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
@@ -210,19 +209,10 @@ import {
   DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
-  AMBIENT_INTENSITY,
-  HEMI_INTENSITY,
-  DIR_INTENSITY,
-  DIR_HEIGHT,
-  SHADOW_MAP_SIZE,
-  SHADOW_AREA,
-  SHADOW_OPACITY,
   FOG_NEAR,
   FOG_FAR,
   BLOOM_DEFAULT,
   AO_DEFAULT,
-  PLAYER_LAMP_INTENSITY,
-  PLAYER_LAMP_RANGE,
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
@@ -257,29 +247,19 @@ import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./profiler";
 import { installDevHooks } from "./dev/window-hooks";
+import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
+import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets } from "./boot/sheets";
 import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
 import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
 import { checkPickups } from "./economy/pickups";
 import { openShop, closeShop, applyPotion, useBeltSlot } from "./economy/shop";
 
-/**
- * Presentation-only lights, module-scoped (not on `state`) — rebuilt on every
- * launch. `sun` casts the shadows and follows the camera; `lamp` is the hero's
- * personal readability light; ambient/hemi are kept so startLevel can re-tint
- * them per depth (the FF dungeon trick: deeper floors shift palette).
- */
-let sun: THREE.DirectionalLight | null = null;
-let lamp: THREE.PointLight | null = null;
-// Parity counter for the 30 Hz shadow-map throttle (see the render loop).
-let shadowFrameCounter = 0;
 /** False until WebGPURenderer.init() resolves — render() throws before that. */
 let rendererReady = false;
-let ambient: THREE.AmbientLight | null = null;
 /** The on-screen touch pad, when this device gets one (see createTouchControls). */
 let touchControls: TouchControls | null = null;
 let debugPanelDispose: (() => void) | null = null;
-let hemi: THREE.HemisphereLight | null = null;
 
 /** Last sprint-spool+overcharge fill (in 20ths) the HUD painted — repaint only when it changes. */
 let meterBlocksShown = -1;
@@ -320,50 +300,6 @@ export function isDungeonGameActive(): boolean {
 
 /** The knight's atlas for the held weapon DRESSED IN the current gear — the
  * shared LRU cache in render/knight-sheets does the building. */
-function playerSheetFor(id: WeaponId): SpriteSheet {
-  return getKnightSheet(id, lookFromGear(state.gear), "dungeon");
-}
-
-/** Make the sprite match the active hand AND the worn gear. Runs every frame;
- * cheap no-op when the composite key hasn't changed. Because gear is part of
- * the key, a helmet pickup, an armory purchase, or a cuirass shattering
- * mid-fight all re-dress the knight with no extra hooks. */
-function applyWeaponArt(): void {
-  const id = activeWeapon().id;
-  const key = lookKey(id, lookFromGear(state.gear));
-  if (key === state.playerArtKey || !state.player) return;
-  state.player.sprite.setSheet(playerSheetFor(id));
-  state.player.silhouette?.syncMap();
-  state.playerArtKey = key;
-  // ── SKILL CARDS (cards.ts grantsAbility) ──
-  // A card-granted ability lives on the weapon in HAND, so the hand changing can
-  // invalidate a Q/E binding. Hooked HERE deliberately: this function is already
-  // the one funnel every hand change passes through (pickup, swap, break, retry),
-  // and the alternative — patching all five call sites — is a bug waiting for the
-  // sixth one to be added. The key check above means this only fires on an actual
-  // change, not every frame.
-  if (syncAbilitySlots()) state.hudDirty = true;
-}
-
-/** The paperdoll painter handed to the menu — the live mirror of the knight. */
-function paintMenuPortrait(canvas: HTMLCanvasElement): void {
-  renderKnightPortrait(canvas, activeWeapon().id, lookFromGear(state.gear));
-}
-
-/**
- * Flag every shadow-casting light in the scene to re-render its depth pass.
- *
- * WebGPU gates shadow updates PER-LIGHT (`shadow.needsUpdate || shadow.autoUpdate`
- * in nodes/lighting/ShadowNode.js), unlike WebGLRenderer's single
- * `renderer.shadowMap.needsUpdate`. Driving the lights works identically on both
- * backends, so this is the portable form of the 30 Hz throttle.
- */
-function setShadowsThrottled(needsUpdate: boolean): void {
-  state.scene?.traverse((o) => {
-    const l = o as THREE.Light & { shadow?: THREE.LightShadow };
-    if (l.isLight && l.shadow) l.shadow.needsUpdate = needsUpdate;
-  });
-}
 
 /**
  * `?seed=<int>` — pin the run seed so a floor regenerates identically.
@@ -453,46 +389,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   // Far (upper) corridors fade into the void — see FOG_NEAR/FOG_FAR.
   state.scene.fog = new THREE.Fog(PALETTE_HEX[0], FOG_NEAR, FOG_FAR);
 
-  // Cold slate fill. This is the colour the dungeon IS — torches and the key
-  // light are accents on top of it. With real normal maps and a directional
-  // key doing the shaping, ambient's job is the READABILITY floor: it can't
-  // bottom out to pure black or the quantizer snaps stone to void.
-  // (Colours are re-tinted per depth in startLevel.)
-  ambient = new THREE.AmbientLight(BIOMES[0].amb, AMBIENT_INTENSITY);
-  state.scene.add(ambient);
-
-  // A little vertical shape, so wall tops separate from wall faces.
-  hemi = new THREE.HemisphereLight(BIOMES[0].sky, BIOMES[0].ground, HEMI_INTENSITY);
-  state.scene.add(hemi);
-
-  // The hero's personal lamp — the Castlevania readability rule: whatever
-  // else is dark, the player and the tiles around them always read.
-  lamp = new THREE.PointLight(0xd9cba8, PLAYER_LAMP_INTENSITY, PLAYER_LAMP_RANGE, 2);
-  state.scene.add(lamp);
-
-  // The cold key light — a high, raking directional that casts the wall
-  // shadows into the corridors. Its ortho shadow frustum is small and follows
-  // the camera target each frame (see loop), so a 2k map stays crisp over the
-  // whole visible area instead of being stretched across the entire maze.
-  sun = new THREE.DirectionalLight(0xa7c0e0, DIR_INTENSITY);
-  sun.castShadow = true;
-  // 30 Hz shadows — the loop re-flags shadow.needsUpdate on alternate frames.
-  // Must be per-light: WebGPURenderer has no renderer-level shadowMap.autoUpdate.
-  sun.shadow.autoUpdate = false;
-  sun.shadow.needsUpdate = true;
-  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-  sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = DIR_HEIGHT * 2.5;
-  sun.shadow.camera.left = -SHADOW_AREA;
-  sun.shadow.camera.right = SHADOW_AREA;
-  sun.shadow.camera.top = SHADOW_AREA;
-  sun.shadow.camera.bottom = -SHADOW_AREA;
-  sun.shadow.bias = -0.0009; // kill the shadow-acne the coursed normal maps would otherwise show
-  sun.shadow.normalBias = 0.04;
-  // Soften the shadow so it snaps to a stone step, not pure void.
-  sun.shadow.intensity = 1 - SHADOW_OPACITY;
-  state.scene.add(sun);
-  state.scene.add(sun.target); // target is moved in the loop; must be in the graph
+  // The lighting rig (ambient/hemi/lamp/key + shadow config) — boot/lighting.ts.
+  buildLights(BIOMES[0]);
 
   // ── VFX (sparks / blood / embers / dust / slashes) ──
   // Lives for the whole session (not per level); drawn into the scene so it
@@ -509,26 +407,8 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.camera = createDungeonCamera();
   aimCamera(state.camera, 0, 0.5, 0);
 
-  // ── Sprite sheets (the knight's is per-weapon) ──
-  // A small pool of cosmetic zombie variants (ripped rags, gore, stumps, tone)
-  // so a horde doesn't read as clones. Each spawn picks one by seed. Built once
-  // per session — a handful of atlases is cheap.
-  state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => buildSpriteSheet(makeZombiePaints(v)));
-  state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
-  state.spiderSheet = buildSpriteSheet(makeSpiderPaints());
-  state.bruteSheet = buildSpriteSheet(makeBrutePaints());
-  state.spitterSheet = buildSpriteSheet(makeSpitterPaints());
-  state.ghostSheet = buildSpriteSheet(makeGhostPaints());
-  state.batSheet = buildSpriteSheet(makeBatPaints());
-  state.slimeSheet = buildSpriteSheet(makeSlimePaints());
-  state.bossSheet = buildSpriteSheet(makeBossPaints());
-  // Wave-B bespoke monster atlases (were tinted reskins).
-  state.goblinSheet = buildSpriteSheet(makeGoblinPaints());
-  state.pinSheet = buildSpriteSheet(makePinPaints());
-  state.golemSheet = buildSpriteSheet(makeGolemPaints());
-  state.chomperSheet = buildSpriteSheet(makeChomperPaints());
-  state.magnetSheet = buildSpriteSheet(makeMagnetPaints());
-  state.webspinnerSheet = buildSpriteSheet(makeWebspinnerPaints());
+  // ── Sprite sheets ── boot/sheets.ts builds every monster atlas.
+  buildMonsterSheets();
 
   // Dev / QA `window.__dungeon*` hooks — see dev/window-hooks.ts. Everything a
   // headless harness drives (spawning, god-mode, pad injection, art QA) lives
@@ -1250,11 +1130,7 @@ function startLevel(level: number): void {
 
   // Depth grading: each biome down shifts the fill palette a family over.
   const biome = biomeFor(level);
-  ambient?.color.setHex(biome.amb);
-  if (hemi) {
-    hemi.color.setHex(biome.sky);
-    hemi.groundColor.setHex(biome.ground);
-  }
+  tintLights(biome);
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
@@ -2824,11 +2700,7 @@ function loop(now: number): void {
   // Keep the key light's small shadow frustum centred on the player: the light
   // rakes in from the world's north-west (opposite the south-east camera) so
   // wall shadows fall toward the viewer, into the corridors, not away.
-  if (p && sun) {
-    sun.target.position.set(p.x, 0, p.z);
-    sun.position.set(p.x - DIR_HEIGHT * 0.55, DIR_HEIGHT, p.z - DIR_HEIGHT * 0.55);
-  }
-  if (p && lamp) lamp.position.set(p.x, 1.3, p.z);
+  if (p) followPlayer(p.x, p.z);
 
   if (state.hudDirty) {
     state.hudDirty = false;
@@ -2880,10 +2752,7 @@ function loop(now: number): void {
   if (state.scene && renderCam && state.pixelPass && rendererReady) {
     // Shadow throttle: per-light autoUpdate is off (see renderer setup); render
     // the shadow depth pass on alternate frames only.
-    shadowFrameCounter++;
-    if (state.renderer && shadowFrameCounter % 2 === 0) {
-      setShadowsThrottled(true);
-    }
+    if (state.renderer) tickShadowThrottle();
     // GPU submission, not GPU completion: WebGL is async, so this measures the
     // CPU cost of building + submitting the passes. A small number here with a
     // large FRAME total means the cost is CPU-side, above this line.
@@ -2923,10 +2792,7 @@ export function exitDungeonGame(): void {
   touchControls = null;
 
   disposeAll();
-  sun = null; // the lights themselves are freed with the scene by disposeAll
-  lamp = null;
-  ambient = null;
-  hemi = null;
+  clearLights(); // the lights themselves are freed with the scene by disposeAll
   clearInputOwner();
 
   resetState();
