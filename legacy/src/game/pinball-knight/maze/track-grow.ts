@@ -122,25 +122,244 @@ export function seedNodes(
   rng: () => number,
   opts: { foods: number; relays: number; margin?: number; minSep?: number },
 ): TrackNode[] {
+  const nodes: TrackNode[] = [];
+  const place = scatterPlacer(w, h, rng, nodes, opts);
+  // Food first so they claim the good spread; relays fill between them.
+  for (let i = 0; i < opts.foods; i++) place(true);
+  for (let i = 0; i < opts.relays; i++) place(false);
+  return nodes;
+}
+
+/**
+ * The rejection sampler shared by every layout: place a node at a random point
+ * at least `minSep` from every node already down, or give up after `tries`.
+ *
+ * Factored out so the structured layouts below can seed their FOOD nodes on a
+ * shape and still scatter their relays by exactly the rule `seedNodes` uses —
+ * the relays are what give the solver intermediate points to bend through, and
+ * they want the same organic spacing whatever shape the food is on.
+ */
+function scatterPlacer(
+  w: number,
+  h: number,
+  rng: () => number,
+  nodes: TrackNode[],
+  opts: { margin?: number; minSep?: number; keepOut?: { x: number; z: number; r: number } },
+  tries = 40,
+): (food: boolean) => boolean {
   const margin = opts.margin ?? Math.max(3, Math.min(w, h) * 0.12);
   const minSep = opts.minSep ?? Math.max(4, Math.min(w, h) * 0.16);
-  const nodes: TrackNode[] = [];
+  const keepOut = opts.keepOut;
   const far = (x: number, z: number): boolean => {
     for (const n of nodes) if ((n.x - x) ** 2 + (n.z - z) ** 2 < minSep * minSep) return false;
     return true;
   };
-  const place = (food: boolean, tries: number): void => {
+  return (food: boolean): boolean => {
     for (let t = 0; t < tries; t++) {
       const x = margin + rng() * (w - 2 * margin);
       const z = margin + rng() * (h - 2 * margin);
+      if (keepOut && (x - keepOut.x) ** 2 + (z - keepOut.z) ** 2 < keepOut.r * keepOut.r) continue;
       if (!far(x, z)) continue;
       nodes.push({ id: nodes.length, x, z, food });
-      return;
+      return true;
+    }
+    return false;
+  };
+}
+
+/**
+ * How a floor's FOOD nodes are sited before the growth simulation runs.
+ *
+ * This is the archetype's real lever on macro topology, and the reason it lives
+ * here rather than in a tile pass: Physarum reinforces routes BETWEEN food
+ * sources, so where the food sits decides what the surviving circuit looks
+ * like. Scatter food uniformly and you get the same organic mesh every floor,
+ * whatever the level is called.
+ *
+ *   scatter — uniform Poisson-ish. The mesh; no imposed shape.
+ *   spine   — food strung around one long thin STADIUM, so flow concentrates
+ *             into a single boulevard with a return run.
+ *   ring    — food on concentric rectangles, so progress reads as working
+ *             inward through galleries.
+ *   hub     — one food dead centre plus a ring around it, so legs radiate as
+ *             spokes from a chamber the carver then opens into a plaza.
+ *
+ * Every layout still runs through the SAME growth and pruning, so all of the
+ * downstream guarantees (connected, loopy, no dangling spurs) hold unchanged —
+ * a layout biases the outcome, it does not bypass the machinery.
+ */
+export type NodeLayout = "scatter" | "spine" | "ring" | "hub";
+
+export interface LayoutOpts {
+  layout: NodeLayout;
+  foods: number;
+  relays: number;
+  margin?: number;
+  minSep?: number;
+}
+
+/** Site nodes for a layout. `scatter` is exactly `seedNodes`, draw for draw. */
+export function layoutNodes(
+  w: number,
+  h: number,
+  rng: () => number,
+  opts: LayoutOpts,
+): TrackNode[] {
+  if (opts.layout === "scatter") return seedNodes(w, h, rng, opts);
+
+  const margin = opts.margin ?? Math.max(3, Math.min(w, h) * 0.12);
+  const minSep = opts.minSep ?? Math.max(4, Math.min(w, h) * 0.16);
+  const nodes: TrackNode[] = [];
+  const x0 = margin;
+  const z0 = margin;
+  const x1 = w - margin;
+  const z1 = h - margin;
+  // Structured food is placed on the shape whatever the spacing says — the
+  // shape IS the point — but never closer than half the separation, or two
+  // nodes fuse into one blob when the graph is smoothed into arcs.
+  const clear = (x: number, z: number): boolean => {
+    for (const n of nodes) if ((n.x - x) ** 2 + (n.z - z) ** 2 < (minSep * 0.5) ** 2) return false;
+    return true;
+  };
+  const put = (x: number, z: number, food: boolean): void => {
+    const cx = Math.max(x0, Math.min(x1, x));
+    const cz = Math.max(z0, Math.min(z1, z));
+    if (!clear(cx, cz)) return;
+    nodes.push({ id: nodes.length, x: cx, z: cz, food });
+  };
+  /** Walk a polyline and drop `n` food nodes at equal arc length. */
+  const alongPolyline = (pts: Array<[number, number]>, n: number): void => {
+    const segs: number[] = [];
+    let total = 0;
+    for (let k = 1; k < pts.length; k++) {
+      const d = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+      segs.push(d);
+      total += d;
+    }
+    if (total <= 0) return;
+    for (let i = 0; i < n; i++) {
+      let want = (total * i) / Math.max(1, n - 1);
+      for (let k = 0; k < segs.length; k++) {
+        if (want > segs[k] && k < segs.length - 1) {
+          want -= segs[k];
+          continue;
+        }
+        const t = segs[k] > 0 ? Math.min(1, want / segs[k]) : 0;
+        put(
+          pts[k][0] + (pts[k + 1][0] - pts[k][0]) * t,
+          pts[k][1] + (pts[k + 1][1] - pts[k][1]) * t,
+          true,
+        );
+        break;
+      }
     }
   };
-  // Food first so they claim the good spread; relays fill between them.
-  for (let i = 0; i < opts.foods; i++) place(true, 40);
-  for (let i = 0; i < opts.relays; i++) place(false, 40);
+
+  let keepOut: { x: number; z: number; r: number } | undefined;
+
+  if (opts.layout === "spine") {
+    // ── THE SPINE MUST BE A LOOP, and this is the whole lesson of the layout.
+    //
+    // The first version strung food along an open polyline — a straight run, an
+    // elbow, a Z — which is exactly what a "spine" sounds like. It produced
+    // nothing: measured over 10 seeds × 5 depths, lane share 0.016–0.056,
+    // circuit rank 1.1, and 8-10 floors out of 10 failing the exit-distance
+    // constraint with a stairwell 13 tiles from the spawn.
+    //
+    // The cause is topological and it is `pruneLeaves`. A path is ALL leaves:
+    // its two ends have degree 1, so they are removed, which exposes the next
+    // pair, cascading until only a cycle is left. Whatever the flow simulation
+    // reinforced, the boulevard was deleted after the fact — and the pruner is
+    // right to do it, because an open-ended road IS a road that dead-ends in
+    // solid rock.
+    //
+    // So the spine is a STADIUM: one long thin closed circuit, out along one
+    // side and back along the other. It reads as a boulevard at ground level
+    // (the two runs are far enough apart to be separate roads), it survives
+    // `pruneLeaves` by construction, and it gives the floor a genuine lap.
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
+    // Four poses: along each axis and the two diagonals.
+    const theta = (Math.floor(rng() * 4) * Math.PI) / 4;
+    const cos = Math.abs(Math.cos(theta));
+    const sin = Math.abs(Math.sin(theta));
+    // Half-width of the stadium — the gap between the outbound and return runs.
+    const half = Math.max(6, Math.min(x1 - x0, z1 - z0) * (0.16 + rng() * 0.08));
+    // Longest half-length whose rotated bounding box still fits the margins.
+    // Solving both extents at once rather than clamping afterwards keeps the
+    // shape centred instead of shoved against a wall.
+    const roomX = (x1 - x0) / 2;
+    const roomZ = (z1 - z0) / 2;
+    const lenX = cos > 1e-6 ? (roomX - half * sin) / cos : Infinity;
+    const lenZ = sin > 1e-6 ? (roomZ - half * cos) / sin : Infinity;
+    const len = Math.max(half + 4, Math.min(lenX, lenZ));
+    const ux = Math.cos(theta);
+    const uz = Math.sin(theta);
+    // Perpendicular, for the two runs.
+    const px = -uz;
+    const pz = ux;
+    const corner = (a: number, b: number): [number, number] => [
+      cx + ux * len * a + px * half * b,
+      cz + uz * len * a + pz * half * b,
+    ];
+    alongPolyline(
+      [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)],
+      opts.foods + 1,
+    );
+  } else if (opts.layout === "ring") {
+    // Concentric rectangles, outermost first, each inset by a fraction of the
+    // shorter half-span so the galleries are visibly separate roads.
+    const rings = Math.max(2, Math.min(3, Math.round(Math.min(w, h) / 34) + 1));
+    const inset = Math.min(x1 - x0, z1 - z0) / (2 * (rings + 1));
+    let placed = 0;
+    for (let r = 0; r < rings && placed < opts.foods; r++) {
+      const a0 = x0 + inset * r;
+      const b0 = z0 + inset * r;
+      const a1 = x1 - inset * r;
+      const b1 = z1 - inset * r;
+      // Outer rings get proportionally more food — they are longer roads.
+      const share = Math.max(
+        3,
+        Math.round((opts.foods * (rings - r)) / ((rings * (rings + 1)) / 2)),
+      );
+      const n = Math.min(share, opts.foods - placed);
+      alongPolyline(
+        [
+          [a0, b0],
+          [a1, b0],
+          [a1, b1],
+          [a0, b1],
+          [a0, b0],
+        ],
+        n + 1, // the closing point coincides with the opener; one extra covers it
+      );
+      placed += n;
+    }
+  } else {
+    // hub — a chamber with spokes. The centre node is what the carver later
+    // opens into the plaza, so it must be FOOD: relays get pruned, food never is.
+    const cx = (x0 + x1) / 2 + (rng() - 0.5) * (x1 - x0) * 0.1;
+    const cz = (z0 + z1) / 2 + (rng() - 0.5) * (z1 - z0) * 0.1;
+    put(cx, cz, true);
+    const ringR = Math.min(x1 - x0, z1 - z0) * 0.3;
+    const spokes = Math.max(4, Math.min(8, opts.foods - 2));
+    const phase = rng() * Math.PI * 2;
+    for (let s = 0; s < spokes; s++) {
+      const a = phase + (s / spokes) * Math.PI * 2;
+      put(cx + Math.cos(a) * ringR, cz + Math.sin(a) * ringR * ((z1 - z0) / (x1 - x0)), true);
+    }
+    // The rest of the food goes out near the walls, so the plaza has an outer
+    // world to be the centre OF rather than sitting alone in rock.
+    for (let s = 0; s < Math.max(0, opts.foods - spokes - 1); s++) {
+      const a = phase + 0.4 + (s / Math.max(1, opts.foods - spokes - 1)) * Math.PI * 2;
+      put(cx + Math.cos(a) * (x1 - x0) * 0.45, cz + Math.sin(a) * (z1 - z0) * 0.45, true);
+    }
+    // Keep relays out of the chamber, or the maze grows through the plaza.
+    keepOut = { x: cx, z: cz, r: ringR * 0.72 };
+  }
+
+  const place = scatterPlacer(w, h, rng, nodes, { margin, minSep, keepOut });
+  for (let i = 0; i < opts.relays; i++) place(false);
   return nodes;
 }
 
@@ -188,7 +407,13 @@ export function meshNeighbours(nodes: TrackNode[], k = 4, maxLen = Infinity): Tr
  * still yields a sane flow direction, which is all the conductivity update
  * actually consumes.
  */
-function solvePressures(g: TrackGraph, source: number, sink: number, flow: number, iters = 60): Float64Array {
+function solvePressures(
+  g: TrackGraph,
+  source: number,
+  sink: number,
+  flow: number,
+  iters = 60,
+): Float64Array {
   const n = g.nodes.length;
   const p = new Float64Array(n);
   p[source] = flow;
@@ -225,7 +450,11 @@ function solvePressures(g: TrackGraph, source: number, sink: number, flow: numbe
  * still survives if its flow beats decay. A single fixed pair would reinforce
  * exactly one path and decay everything else — a tree again.
  */
-export function growNetwork(g: TrackGraph, rng: () => number, opts: GrowOpts = DEFAULT_GROW): TrackGraph {
+export function growNetwork(
+  g: TrackGraph,
+  rng: () => number,
+  opts: GrowOpts = DEFAULT_GROW,
+): TrackGraph {
   const foods = g.nodes.filter((n) => n.food).map((n) => n.id);
   if (foods.length < 2 || g.edges.length === 0) return g;
 
@@ -287,7 +516,11 @@ export function growNetwork(g: TrackGraph, rng: () => number, opts: GrowOpts = D
  * because conductivity distributions vary wildly between seeds and no single
  * threshold is right for all of them.
  */
-export function pruneToCircuit(g: TrackGraph, minLoops = 2, opts: { survive?: number } = {}): TrackGraph {
+export function pruneToCircuit(
+  g: TrackGraph,
+  minLoops = 2,
+  opts: { survive?: number } = {},
+): TrackGraph {
   const keep = new Set(g.edges.map((_, i) => i));
   const order = g.edges.map((e, i) => ({ i, d: e.d })).sort((a, b) => a.d - b.d);
 
@@ -396,7 +629,15 @@ export function growTrack(
   w: number,
   h: number,
   rng: () => number,
-  opts: { foods?: number; relays?: number; minLoops?: number; grow?: GrowOpts } = {},
+  opts: {
+    foods?: number;
+    relays?: number;
+    minLoops?: number;
+    grow?: GrowOpts;
+    layout?: NodeLayout;
+    maxLenFrac?: number;
+    survive?: number;
+  } = {},
 ): TrackGraph {
   // Scale the seed count with floor area so a big floor gets a bigger network
   // rather than the same little circuit adrift in it.
@@ -414,21 +655,46 @@ export function growTrack(
   //
   // More food means more competing routes, so more tubes survive on their own
   // flow and the surviving topology actually differs between seeds.
+  //
+  // ── THE CAP THAT WASN'T ───────────────────────────────────────────────────
+  //
+  // The clamps below used to be `min(15, …)` and `min(22, …)`, and a census
+  // showed both BINDING FROM FLOOR 1: every depth from 1 to 10 wanted 15 food
+  // and 22 relays and got exactly that, while the grid grew 3975 → 11125 tiles.
+  // So "scale the seed count with floor area" is precisely what did not happen,
+  // and the consequence was visible in the output — the circuit's share of the
+  // walkable floor decayed 0.30 → 0.12 with depth. The same little network,
+  // adrift in a bigger and bigger floor, which is the exact failure the comment
+  // above claims to prevent. Raised so the clamp is a runaway guard on the
+  // deepest floors rather than the operative value on every floor.
   const area = w * h;
-  const foods = opts.foods ?? Math.max(6, Math.min(15, Math.round(area / 260) + 4));
-  const relays = opts.relays ?? Math.max(8, Math.min(22, Math.round(area / 190) + 6));
-  const nodes = seedNodes(w, h, rng, { foods, relays, minSep: 5 });
+  const foods = opts.foods ?? Math.max(6, Math.min(44, Math.round(area / 260) + 4));
+  const relays = opts.relays ?? Math.max(8, Math.min(64, Math.round(area / 190) + 6));
+  const nodes = layoutNodes(w, h, rng, {
+    layout: opts.layout ?? "scatter",
+    foods,
+    relays,
+    minSep: 5,
+  });
   // CAP THE CHORD LENGTH. A nearest-neighbour mesh on a sparse region can still
   // pair two nodes across the whole floor, and a long chord swept with a
   // 2.5-tile brush paves everything it crosses: measured 8/40 floors ending up
   // >70% track, one at 97% — a floor with no maze left in it at all. Keeping
   // tubes local also keeps the network planar-ish, so legs cross each other far
   // less and the circuit reads as roads rather than a cat's cradle.
-  const maxLen = Math.min(w, h) * 0.42;
+  const maxLen = Math.min(w, h) * (opts.maxLenFrac ?? 0.42);
   const edges = meshNeighbours(nodes, 4, maxLen);
   const grown = growNetwork({ nodes, edges }, rng, opts.grow ?? DEFAULT_GROW);
   // Prune to a loopy connected core, THEN drop dangling spurs. Both are
   // needed: pruneToCircuit protects cycles but happily keeps a degree-1 tail,
   // and that tail is exactly what carves into a road ending in solid rock.
-  return pruneLeaves(pruneToCircuit(grown, opts.minLoops ?? 2));
+  //
+  // `survive` is the second dial on how much circuit a floor gets, and it is
+  // NOT interchangeable with the node count: the node count decides how many
+  // routes compete, `survive` decides how many of them the pruner lets live.
+  // Measured over 8 seeds × 3 depths × 5 layouts, raising it 0.045 → 0.20
+  // roughly halves both lane share and circuit rank on every one, which makes
+  // it the archetype's coarse "how much track" knob. Left at the shipped
+  // default here; the profiles set their own (see archetypes.ts).
+  return pruneLeaves(pruneToCircuit(grown, opts.minLoops ?? 2, { survive: opts.survive }));
 }

@@ -58,11 +58,19 @@ but **not** windiness — windiness is a flat 3-cycle by depth
 - [ ] **`toucan-game.test.ts` monkey-patches `global.Math.random = () => 0.5`
       and never restores it.** Harmless under vitest's per-file isolation, but
       it is a landmine if isolation is ever turned off for speed.
-- [ ] **Smoke tests before more generation work.** The generation pipeline has
-      no cheap "does a floor come out sane" gate that runs per-floor; the deep
-      invariants live in a few heavy `it`s (vitest.config.js already raises
-      `testTimeout` to 30 s for them). Add a fast smoke pass (N floors ×
-      {reachable, has start+stairs, no orphan parts, no anti-parallel pair}).
+- [x] **Smoke tests before more generation work. SHIPPED** as
+      `maze/floor-metrics.ts` + `maze/floor-metrics.test.ts` (9 s for 8 tests,
+      ~80 floors). `measureFloor` is a pure grid → numbers function
+      (reachability, critical path, directness, turn rate, dead ends, choice
+      density, lane share, region coverage) and `checkFloor` is the constraint
+      band. See `.agents/game-dev-rules/procedural-level-generation.md` §6/§9.
+      **The thing worth knowing:** `floor-pipeline.test.ts` mirrors the LEGACY
+      branch of `startLevel` — the one `TRACK_FIRST` switched off — so it has
+      been green while testing a path that does not ship. The new gate runs the
+      live generator. Also, `bfsDistances` returns **−1** for unreachable, so a
+      reach metric written as `d < BIG` counts every unreachable tile as reached
+      and pins at 1.0 — a gate that can only pass. (First draft did exactly
+      that.)
 
 ## Track A — Booster feedback loops ✅ SHIPPED
 
@@ -144,7 +152,13 @@ wall bounces.
       `nearestFocus`). Two equal zones gave every floor two matching blobs of
       activity — symmetric and predictable enough that the density gradient
       stopped reading as pacing. Now: one loud region, one quieter satellite.
-- [ ] **Intent-aware prefab stamps.** BLOCKED ON ORDERING, and the blocker is
+- [ ] **Intent-aware prefab stamps.** BLOCKED ON ORDERING — and note the
+      bigger problem found in the archetype wave below: on a TRACK floor
+      `stampPrefabs`, `stampLandmark` and `carveRooms` all run against `raw`,
+      which the live path discards. Their anchors are dropped
+      (`const anchors = track ? [] : …`). So the whole stamp system is dead
+      weight on every shipped floor, not merely intent-blind. Fixing intent
+      before fixing reachability would be polishing an unused pass., and the blocker is
       worth writing down: room *kinds* are assigned inside `furnishRooms`, which
       runs in `decorateMaze` — but `stampPrefabs` runs BEFORE that, in
       `startLevel`, on the raw pre-thicken grid. At stamp time the rooms exist
@@ -173,3 +187,81 @@ wall bounces.
 - [x] **Blade Storm colour** unified to steel (`#c8ccd4`) across the ability
       table, the Diablo HUD buff chip and the classic HUD buff strip — it was
       blood red in the HUD while the world drew steel crescents.
+
+
+---
+
+## Track F — Archetypes reach the live generator ✅ SHIPPED (2026-07-26)
+
+The wave that came out of writing
+`.agents/game-dev-rules/procedural-level-generation.md`, whose §7 says: run a
+census, don't reason about the source. Three findings, none of them visible by
+reading.
+
+- [x] **The five floor archetypes did nothing.** `arch.seeds()` shapes the grid
+      `generateMaze` grows, and `TRACK_FIRST` has been on since the circuit
+      rework — so the live path built from `buildTrackFloor` and threw that grid
+      away. `buildTrackFloor` took no archetype argument at all. Censused over
+      6 seeds × 10 depths, the five archetypes were **statistically identical**
+      (open share 0.586–0.648, varying with floor SIZE and nothing else), while
+      core.ts:1203 printed "The Cavern · no straight lines · the rock decides"
+      on the descent card. The only thing an archetype changed on a shipped
+      floor was how many rng draws it consumed first.
+      Fixed by `TrackProfile` (archetypes.ts): node **layout**, loop floor, lane
+      scale, plaza, fill, link chance, chord cap, pruner survival. Each is set
+      at the layer that owns the property.
+- [x] **Node layouts** (`layoutNodes`, track-grow.ts) — `scatter` (unchanged,
+      draw for draw), `spine` (a long thin stadium), `ring` (concentric
+      galleries), `hub` (centre food node + spokes, opened into a plaza by
+      `carveChamber`). Physarum reinforces routes BETWEEN food sources, so where
+      the food sits is the real lever on macro topology.
+- [x] **The spine had to become a LOOP.** First cut strung food along an open
+      polyline and produced lane share 0.016–0.056, rank 1.1, 8-10/10 floors
+      failing the exit-distance constraint with the stairs 13 tiles from spawn.
+      `pruneLeaves` was eating it: a path is all leaves, so its ends cascade
+      away until only a cycle survives. A stadium (out one side, back the other)
+      survives by construction and still reads as one boulevard.
+- [x] **"Scale the seed count with floor area" did not.** `foods = min(15,
+      area/260 + 4)` **bound from floor 1** — every depth 1→10 wanted 15 food
+      and 22 relays and got exactly that, while the grid grew 3975 → 11125
+      tiles. Consequence: lane share decayed **0.30 → 0.12** with depth, the
+      circuit adrift in a bigger and bigger floor. Densities per 1000 tiles now,
+      with the clamp as a runaway guard (44/64) rather than the operative value.
+- [x] **`survive` is the second dial** and is not interchangeable with node
+      count: nodes decide how many routes compete, `survive` decides how many
+      the pruner keeps. Swept 8 seeds × 3 depths × 5 layouts: 0.045 → 0.20
+      roughly halves both lane share and rank on every layout.
+- [x] **Windiness reconnected.** `windinessFor` fed only the discarded `raw`;
+      it is now the surrounding maze's growing-tree bias on the live branch
+      (`growMazeAround` density, clamped 0.35–0.85).
+- [x] **`arcHalf` on `TrackPath`.** Lane scale had to reach the fillets too —
+      widening straights without widening corners makes every junction a funnel,
+      and a ball with momentum wedges in a funnel.
+
+Shipped signature (10 seeds/cell, lane share · circuit rank):
+
+| | L1 | L6 | L16 |
+|---|---|---|---|
+| Warrens | 0.25 · 5.6 | 0.19 · 9.4 | 0.15 · 9.5 |
+| Spine | 0.31 · 2.1 | 0.17 · 2.4 | 0.15 · 2.1 |
+| Great Hall | 0.23 · 3.9 | 0.47 · 9.0 | 0.37 · 4.4 |
+| Cavern | 0.40 · 8.3 | 0.28 · 11.4 | 0.23 · 13.3 |
+| Ring Keep | 0.39 · 3.3 | 0.30 · 5.5 | 0.26 · 7.6 |
+
+Re-run the census before retuning any of it; the gate asserts the constraint
+band, not these numbers.
+
+### Still open after this wave
+
+- [ ] **The track floor is a quarter the area the caller thinks it is.**
+      `buildTrackFloor` computes `w = cellsW * 2 + 1`, which is what
+      `generateMaze` produces BEFORE `thickenWalls` — the legacy branch ends up
+      at `(2c+1) * 2`. So a level-1 track floor is 75×53 where the legacy floor
+      is 150×106, and every budget riding `cfg.floorTiles` (zombies, torches,
+      the part-count area term) is calibrated for 4× the area. The docstring
+      claimed the doubling happened. NOT changed here: quadrupling floor area is
+      a balance and perf decision (flow-field is O(tiles), zombies are one mesh
+      each), not a generator fix. Decide deliberately.
+- [ ] **`floor-pipeline.test.ts` still exercises the legacy branch only.** The
+      new gate covers the live one; the old test should either be pointed at
+      both or relabelled as the fallback-path test.

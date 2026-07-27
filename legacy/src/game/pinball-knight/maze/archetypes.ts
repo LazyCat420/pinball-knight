@@ -24,8 +24,70 @@
  * DOM- and three-free, seeded-deterministic: tested in archetypes.test.ts.
  */
 import type { CellPos } from "./generator";
+import type { NodeLayout } from "./track-grow";
 
 export type ArchetypeId = "warrens" | "spine" | "greathall" | "cavern" | "ringkeep";
+
+/**
+ * The archetype's grip on the TRACK-FIRST generator.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * `seeds()` below shapes the grid `generateMaze` grows, and `TRACK_FIRST` has
+ * been on since the circuit rework — which means the live path built its floor
+ * from `buildTrackFloor` and discarded that grid entirely. Measured: a blind
+ * census over 6 seeds × 10 depths could not tell the five archetypes apart on
+ * ANY statistic (open share 0.586–0.648, varying with floor SIZE and nothing
+ * else), because `buildTrackFloor` took no archetype argument at all. The only
+ * thing an archetype changed on a shipped floor was how many rng draws it
+ * consumed before the real generator ran.
+ *
+ * Meanwhile core.ts prints the archetype's name and flavour on the descent card
+ * — "The Cavern · no straight lines · the rock decides" over a floor generated
+ * without ever consulting it. The game was describing a level it wasn't making.
+ *
+ * A profile fixes that at the layer that owns each property: node LAYOUT and
+ * the loop floor decide macro topology, lane scale and plaza decide the feel of
+ * the space, fill/link/density decide how much maze surrounds the circuit and
+ * how porous the boundary is. `seeds()` stays because the legacy branch is
+ * still the fallback when track growth degenerates.
+ */
+export interface TrackProfile {
+  /** Where the food nodes go — the archetype's real lever (see NodeLayout). */
+  layout: NodeLayout;
+  /**
+   * Food and relay nodes per 1000 tiles of grid. DENSITIES, not counts: the old
+   * absolute clamps bound from floor 1, so a floor three times the area got the
+   * same little circuit and the lane share decayed 0.30 → 0.12 with depth.
+   */
+  foodPer1k: number;
+  relayPer1k: number;
+  /** Circuit-rank floor. 1 = a single loop is enough; 4 = a proper web. */
+  minLoops: number;
+  /** Multiplier on every lane half-width (track-path). */
+  laneScale: number;
+  /** Fraction of the leftover space the maze fills (growMazeAround). */
+  fill: number;
+  /** On-ramp probability — how porous the circuit's edge is. */
+  linkChance: number;
+  /**
+   * Open chamber radius at the most central junction, as a fraction of the
+   * floor's short side. 0 = no plaza.
+   */
+  plazaFrac: number;
+  /**
+   * Cap on chord length as a fraction of the short side (meshNeighbours). Long
+   * chords pave everything they cross; short ones keep the network local and
+   * planar-ish.
+   */
+  maxLenFrac: number;
+  /**
+   * Pruner survival threshold relative to the network's strongest tube — the
+   * coarse "how much track" dial. Swept over 8 seeds × 3 depths per layout:
+   * 0.045 → 0.20 roughly halves both lane share and circuit rank.
+   */
+  survive: number;
+}
 
 export interface FloorArchetype {
   id: ArchetypeId;
@@ -62,9 +124,49 @@ export interface FloorArchetype {
   solid: boolean;
   /**
    * Seed cells for the growing tree, or null for the plain single-cell start
-   * (the classic backtracker floor).
+   * (the classic backtracker floor). LEGACY BRANCH ONLY — see `track`.
    */
   seeds(cellsW: number, cellsH: number, rng: () => number): CellPos[] | null;
+  /** How this archetype shapes the live track-first floor. */
+  track: TrackProfile;
+}
+
+/**
+ * The profile the track generator uses when nobody supplies one — the measured
+ * behaviour of the pre-profile generator, so a caller that doesn't care (tests,
+ * tools, the debug spawner) gets what it always got.
+ */
+export const DEFAULT_TRACK_PROFILE: TrackProfile = {
+  layout: "scatter",
+  foodPer1k: 3.8,
+  relayPer1k: 5.5,
+  minLoops: 2,
+  laneScale: 1,
+  fill: 0.72,
+  linkChance: 0.28,
+  plazaFrac: 0,
+  maxLenFrac: 0.42,
+  survive: 0.12,
+};
+
+/**
+ * Node counts for a floor of `w × h` tiles under a profile.
+ *
+ * Clamped only at the extremes: the floor stops a tiny map degenerating into
+ * two nodes and a line, and the ceiling is a runaway guard on the deepest maps
+ * rather than the operative value on every one — which is exactly what the old
+ * `min(15, …)` turned out to be.
+ */
+export function trackNodeCounts(
+  p: TrackProfile,
+  w: number,
+  h: number,
+): { foods: number; relays: number } {
+  const k = (w * h) / 1000;
+  return {
+    foods: Math.max(6, Math.min(44, Math.round(p.foodPer1k * k))),
+    relays: Math.max(8, Math.min(64, Math.round(p.relayPer1k * k))),
+  };
 }
 
 /** Every cell on the perimeter of a cell-space rect, clockwise-ish order. */
@@ -114,7 +216,11 @@ function spineSeeds(cellsW: number, cellsH: number, rng: () => number): CellPos[
     for (let y = midY; y < cellsH; y++) cells.push([midX, y]);
   } else {
     // Z: two offset east-west runs joined by a north-south connector.
-    const y2 = clamp(midY + (midY < cellsH / 2 ? 1 : -1) * Math.max(2, Math.floor(cellsH * 0.35)), 1, cellsH - 2);
+    const y2 = clamp(
+      midY + (midY < cellsH / 2 ? 1 : -1) * Math.max(2, Math.floor(cellsH * 0.35)),
+      1,
+      cellsH - 2,
+    );
     for (let x = 0; x <= midX; x++) cells.push([x, midY]);
     const [lo, hi] = midY < y2 ? [midY, y2] : [y2, midY];
     for (let y = lo; y <= hi; y++) cells.push([midX, y]);
@@ -134,8 +240,16 @@ function greatHallSeeds(cellsW: number, cellsH: number, rng: () => number): Cell
   const hw = Math.max(2, Math.floor(cellsW * 0.45));
   const hh = Math.max(2, Math.floor(cellsH * 0.5));
   // Centred, with a little jitter so the hall isn't in the same place twice.
-  const x0 = clamp(Math.floor((cellsW - hw) / 2 + (rng() - 0.5) * cellsW * 0.16), 1, cellsW - hw - 2);
-  const y0 = clamp(Math.floor((cellsH - hh) / 2 + (rng() - 0.5) * cellsH * 0.16), 1, cellsH - hh - 2);
+  const x0 = clamp(
+    Math.floor((cellsW - hw) / 2 + (rng() - 0.5) * cellsW * 0.16),
+    1,
+    cellsW - hw - 2,
+  );
+  const y0 = clamp(
+    Math.floor((cellsH - hh) / 2 + (rng() - 0.5) * cellsH * 0.16),
+    1,
+    cellsH - hh - 2,
+  );
   return rectCells(x0, y0, x0 + hw - 1, y0 + hh - 1);
 }
 
@@ -241,7 +355,12 @@ function cavernSeeds(cellsW: number, cellsH: number, rng: () => number): CellPos
       while (queue.length) {
         const [x, y] = queue.pop()!;
         blob.push([x, y]);
-        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+        for (const [dx, dy] of [
+          [0, -1],
+          [1, 0],
+          [0, 1],
+          [-1, 0],
+        ] as const) {
           const nx = x + dx;
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= cellsW || ny >= cellsH) continue;
@@ -268,6 +387,23 @@ export const ARCHETYPES: FloorArchetype[] = [
     braidMult: 1,
     braidGradient: 0,
     seeds: () => null,
+    // Tight lanes, a dense web of short tubes, and the maze pressed right up
+    // against them: the floor whose flavour promises "nowhere to build speed"
+    // should be the one where the circuit is narrowest and busiest. Censused
+    // lane share 0.25 → 0.15 from floor 1 to 16 — it thins with depth on
+    // purpose, because a Warrens is a maze that happens to have roads.
+    track: {
+      layout: "scatter",
+      foodPer1k: 4.6,
+      relayPer1k: 6.4,
+      minLoops: 3,
+      laneScale: 0.85,
+      fill: 0.86,
+      linkChance: 0.34,
+      plazaFrac: 0,
+      maxLenFrac: 0.34,
+      survive: 0.1,
+    },
   },
   {
     id: "spine",
@@ -279,6 +415,24 @@ export const ARCHETYPES: FloorArchetype[] = [
     braidMult: 0.6,
     braidGradient: 0.5,
     seeds: spineSeeds,
+    // Food strung around ONE long thin stadium, so the flow solver has no
+    // competing route to reinforce and pours everything into a single
+    // boulevard with a return run. The lowest loop floor in the game for the
+    // same reason: a spine with a web around it is just a Warrens with a wide
+    // bit. Wide lanes because the whole promise is plunging down it at speed,
+    // and long chords allowed so the boulevard runs the floor's length.
+    track: {
+      layout: "spine",
+      foodPer1k: 3.2,
+      relayPer1k: 5.0,
+      minLoops: 1,
+      laneScale: 1.25,
+      fill: 0.7,
+      linkChance: 0.22,
+      plazaFrac: 0,
+      maxLenFrac: 0.55,
+      survive: 0.14,
+    },
   },
   {
     id: "greathall",
@@ -289,6 +443,22 @@ export const ARCHETYPES: FloorArchetype[] = [
     braidMult: 0.85,
     braidGradient: 0.4,
     seeds: greatHallSeeds,
+    // The hub layout puts a food node dead centre with spokes radiating out;
+    // `plazaFrac` then opens that node into the chamber the name promises. The
+    // maze fills less of the rind so the hall dominates the floor's read, and
+    // the lanes are the widest of any archetype — this is the TABLE floor.
+    track: {
+      layout: "hub",
+      foodPer1k: 3.9,
+      relayPer1k: 4.4,
+      minLoops: 2,
+      laneScale: 1.35,
+      fill: 0.62,
+      linkChance: 0.3,
+      plazaFrac: 0.16,
+      maxLenFrac: 0.45,
+      survive: 0.1,
+    },
   },
   {
     id: "cavern",
@@ -300,6 +470,23 @@ export const ARCHETYPES: FloorArchetype[] = [
     braidMult: 0.5,
     braidGradient: 0.3,
     seeds: cavernSeeds,
+    // The loopiest floor in the game: dense food, the highest loop floor, a
+    // permissive pruner and short chords so nothing runs straight for long.
+    // "No straight lines · the rock decides" is a claim about TOPOLOGY, and
+    // this is where it gets paid for — high circuit rank with short legs is a
+    // floor with no through-route, only choices.
+    track: {
+      layout: "scatter",
+      foodPer1k: 5.0,
+      relayPer1k: 7.0,
+      minLoops: 4,
+      laneScale: 0.95,
+      fill: 0.68,
+      linkChance: 0.4,
+      plazaFrac: 0,
+      maxLenFrac: 0.3,
+      survive: 0.07,
+    },
   },
   {
     id: "ringkeep",
@@ -310,6 +497,23 @@ export const ARCHETYPES: FloorArchetype[] = [
     braidMult: 0.7,
     braidGradient: 0.35,
     seeds: ringKeepSeeds,
+    // Food on concentric rectangles, so the surviving tubes are galleries and
+    // the connections between them are gates. A low link chance keeps the
+    // galleries reading as separate roads rather than leaking into one another
+    // through the maze — "the way in is inward" only means anything if getting
+    // inward is a decision.
+    track: {
+      layout: "ring",
+      foodPer1k: 3.6,
+      relayPer1k: 5.2,
+      minLoops: 3,
+      laneScale: 1.05,
+      fill: 0.74,
+      linkChance: 0.2,
+      plazaFrac: 0,
+      maxLenFrac: 0.4,
+      survive: 0.14,
+    },
   },
 ];
 
