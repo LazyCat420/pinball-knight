@@ -128,6 +128,21 @@ function pixelTexture(
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
+  // WALLS RENDERED UPSIDE DOWN without this. A texture on a material `map`
+  // samples with v=0 at the TOP under the node renderer, while three's default
+  // flipY=true is the compensation the LEGACY WebGLRenderer wanted — so it
+  // double-flips. makeWallTexture paints unmistakable vertical structure: a trim
+  // + dentil course at the canvas TOP, a skirting base course and contact shadow
+  // at the BOTTOM, and (mossy) "damp rot climbing from the floor — denser at the
+  // bottom". All of it landed inverted: moss haloing the tops of pillars, the
+  // contact shadow floating in the air.
+  //
+  // Applied in the shared factory because the NORMAL MAP must flip WITH the
+  // albedo (see makeNormalTexture) — a normal map that disagrees with the
+  // diffuse lights every bevel from the wrong side, which reads as "the stone
+  // looks wrong" rather than as an obvious flip. The floor texture is noise and
+  // near flip-invariant, so this is a no-op there.
+  tex.flipY = false;
   return tex;
 }
 
@@ -178,6 +193,12 @@ function normalTexture(
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeatX, repeatY);
+  // MUST match pixelTexture's flipY. The height field mirrors the diffuse paint,
+  // so if the albedo flips and the normals do not, every bevel is lit from the
+  // wrong side — subtler than an upside-down picture and harder to attribute.
+  // The green channel (dy) is NOT negated to compensate: flipping the sampling
+  // flips the whole gradient field consistently, which is what keeps them paired.
+  tex.flipY = false;
   return tex;
 }
 
@@ -605,6 +626,11 @@ function makeBannerTexture(arcane: boolean): THREE.CanvasTexture {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
+  // Hung UPSIDE DOWN without this — see the flipY note on makeFlameTexture. The
+  // banner is strongly asymmetric along v: hanging pole at the canvas TOP
+  // (y 0..4), swallowtail notch cut out of the BOTTOM edge. Double-flipped, it
+  // rendered pole-down with the notch in the air.
+  tex.flipY = false;
   return tex;
 }
 
@@ -694,6 +720,18 @@ function makeFlameTexture(): THREE.CanvasTexture {
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
+  // THE FLAME BURNED DOWNWARD without this. The tongues above are drawn from
+  // `base = F - 4` (canvas BOTTOM) upward via `base - h`, so the wide base is at
+  // the bottom of the canvas and the tip points up — correct as painted. But a
+  // texture on a material `map` samples with v=0 at the TOP under the node
+  // renderer, and three's default flipY=true is the compensation the LEGACY
+  // WebGLRenderer wanted, so it double-flips and the flame hangs tip-down like
+  // an icicle under its own sconce hood.
+  //
+  // NOT a blanket rule for this file's other textures: the sprite atlas
+  // (engine/render/sprite.ts) computes `offset.y = (rows-1-row)/rows`, which
+  // DEPENDS on flipY staying true. Only full-quad textures want this.
+  tex.flipY = false;
   return tex;
 }
 

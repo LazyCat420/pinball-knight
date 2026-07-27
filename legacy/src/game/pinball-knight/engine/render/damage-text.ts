@@ -238,6 +238,11 @@ export class DamageTextPool {
       tex.minFilter = THREE.NearestFilter;
       tex.generateMipmaps = false;
       tex.colorSpace = THREE.SRGBColorSpace; // scene buffer is linear — see vfx.ts
+      // Damage numbers rendered UPSIDE DOWN without this. Same flipY trap as the
+      // torch flame (maze/build.ts) and the tavern sign: a texture on a material
+      // `map` samples v=0 at the TOP under the node renderer, and three's default
+      // flipY=true is the LEGACY WebGLRenderer's compensation, so it double-flips.
+      tex.flipY = false;
       const mat = new THREE.MeshBasicMaterial({
         map: tex,
         transparent: true,

@@ -9,7 +9,7 @@
  *
  *   ?gpu=webgpu — force the WebGPU backend (fails loudly if unavailable)
  *   ?gpu=webgl  — force the WebGL2 backend (the everyday rollback)
- *   ?gpu=auto   — default: WebGL2 (see the fork-flip note in selectBackend)
+ *   ?gpu=auto   — default: WEBGPU when the browser has it, else WebGL2
  *
  * Follows the `window.__debugFlags` precedent in src/main.ts.
  */
@@ -58,23 +58,26 @@ export function selectBackend(): BackendSelection {
       console.warn("[backend] ?gpu=webgpu forced, but navigator.gpu is absent — init will likely fail.");
     }
   } else {
-    // AUTO DEFAULTS TO WEBGL2, deliberately — not to WebGPU.
+    // AUTO DEFAULTS TO WEBGPU when the browser exposes it, falling back to
+    // WebGL2 otherwise. WebGPU is the intended renderer for this game; WebGL2 is
+    // the backup.
     //
-    // The WebGPU backend renders this game's render-target pipeline UPSIDE
-    // DOWN on some Chromium forks (seen live on Vivaldi: whole dungeon flipped
-    // + laggy, DOM fine) while rendering perfectly on current Chrome/Edge.
-    // Neither hazard is detectable from inside the page:
-    //  - forks strip their name from the UA and userAgentData brands, so the
-    //    browser cannot be fingerprinted;
-    //  - an in-page RT round-trip probe measures a DIFFERENT path than the
-    //    composite and false-positived on Chrome (a ?rtflip probe attempt
-    //    read "flipped" on the very browser that renders upright — shipping
-    //    it would have broken Chrome to fix Vivaldi).
-    // WebGL2 runs the identical node-material code and is correct on every
-    // browser tested, so it is the default; WebGPU stays one query param away
-    // (?gpu=webgpu) for measurement and for browsers proven good. Revisit
-    // when the fork ecosystem ships current Dawn.
-    forceWebGL = true;
+    // HISTORY — why this used to be pinned to WebGL2, and why that was wrong.
+    // The previous default (cf377a9) forced WebGL2 because "the WebGPU backend
+    // renders this game's render-target pipeline UPSIDE DOWN on some Chromium
+    // forks". The upside-down render was real, but the attribution was not: the
+    // flip is NOT backend-specific and NOT fork-specific. It was a set of
+    // CanvasTextures on material `map`s left at three's default flipY=true —
+    // the compensation the LEGACY WebGLRenderer wanted, which double-flips under
+    // the node renderer on BOTH backends. Screenshot-verified tip-down on the
+    // webgl backend AND on real Dawn, then upright on both once flipY was
+    // cleared per texture (torch flame, wall/normal, banner, damage numbers,
+    // peer nameplates, tavern sign).
+    //
+    // Forcing WebGL2 hid one symptom of that bug on one browser while leaving it
+    // in every other. The textures are fixed now, so the default goes back to
+    // the renderer this game is meant to run on.
+    forceWebGL = !available;
   }
 
   const name: "webgpu" | "webgl" = forceWebGL ? "webgl" : "webgpu";
