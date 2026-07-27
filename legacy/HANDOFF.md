@@ -45,7 +45,10 @@ neither. Those absences are not evidence of anything.
 the failures was a design error, both recorded below so the next attempt does
 not repeat them.
 
-## 🚪 DOORWAYS — measured, prototyped, REVERTED (2026-07-27). Design for v2 below.
+## 🚪 DOORWAYS — measured, prototyped twice, REVERTED twice (2026-07-27)
+
+> **▶ THE PLAN LIVES IN `src/game/pinball-knight/DOORWAY_PLAN.md`.** Start there;
+> this section is the history behind it.
 
 ### What was asked
 
@@ -124,12 +127,15 @@ circuit's fillets from the track PATH, not from the current grid. So:
   that was tried and still failed;
 - guarding hard enough to satisfy the arcs then broke `floor-metrics` too.
 
-**v3 must change the arc layer, not the doorway layer.** Either make
-`publishArcs` skip a fillet whose backing is not solid at stamp time (the same
-check `piece-rules` already performs, moved from assertion to authoring), or
-expose the path's planned fillet tiles so the doorway plan can avoid them
-up-front. Bolting more guards onto the carving cannot work — the two passes
-disagree about what the grid is, and that disagreement is the bug.
+**⚠️ CORRECTION — an earlier draft of this section said "v3 must change the arc
+layer". Read `src/game/pinball-knight/DOORWAY_PLAN.md` instead; that claim was
+based on a wrong reading of `publishArcs`.** It already claims only tiles that
+are `T_WALL` at stamp time, so it is not publishing over open floor. The real
+mismatch is that a feature's drawn ANGULAR SPAN covers tiles it never owned, so
+a doorway carved under the band un-backs the drawn geometry. That is why a 3×3
+guard around `arcIdx` failed — it checked ownership when the requirement is
+about the span. A span-occupancy guard is precise and needs no arc-layer change;
+clipping spans is the fallback if it rejects too many doorways.
 
 Also carried over and still true: never carve a `mask.sealed` tile — the launch
 chute's side walls are sealed, and opening one turns the plunger hallway into a
