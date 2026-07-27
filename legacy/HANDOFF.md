@@ -95,7 +95,47 @@ treating tile clearance as width.
 Residual after one pass: ~1.4 fixable 1-tile room pinches per floor. Not
 shippable.
 
-### v2 — the design that should work
+### v2 WAS BUILT AND ALSO REVERTED — read this before attempting v3
+
+v2 fixed the amplification and its own gate went green. It still could not ship,
+and the blocker is in a different module than the doorway code.
+
+**What worked.** Section labels computed ONCE from the clearance field, before
+any carving; a doorway is then "the opening between section 3 and section 7", a
+statement carving cannot invalidate. Siting by multi-source BFS out of every
+section at once — where two territories meet, those sections are connected, and
+the meeting tile with the greatest clearance is the cheapest place to put the
+door. One door per section PAIR (three corridors between the same two sections
+get one canonical door, not three, or the pair dissolves into one space).
+
+    authored ...... 32.4 doorways/floor, stable
+    sizes ......... 3w x3035  5w x469  7w x382 across 120 floors
+    CLOSED by a later pass ....... 0   (v1: 12)
+    plan drift on re-plan ........ 2.45/floor — no amplification
+    under 3 tiles after clamping centres inside the border .... 0/78 floors
+
+**Why it still cannot ship — `publishArcs` is not backing-aware.** It lays the
+circuit's fillets from the track PATH, not from the current grid. So:
+
+- carve BEFORE it → the fillets assume tiles are solid that are now open, and
+  `piece-rules` fails with "curved wall with nothing behind it";
+- carve AFTER it → every widening must dodge not just arc FACES but every tile
+  under a curve's whole drawn SPAN. A 3×3 neighbourhood guard is not enough —
+  that was tried and still failed;
+- guarding hard enough to satisfy the arcs then broke `floor-metrics` too.
+
+**v3 must change the arc layer, not the doorway layer.** Either make
+`publishArcs` skip a fillet whose backing is not solid at stamp time (the same
+check `piece-rules` already performs, moved from assertion to authoring), or
+expose the path's planned fillet tiles so the doorway plan can avoid them
+up-front. Bolting more guards onto the carving cannot work — the two passes
+disagree about what the grid is, and that disagreement is the bug.
+
+Also carried over and still true: never carve a `mask.sealed` tile — the launch
+chute's side walls are sealed, and opening one turns the plunger hallway into a
+corridor with a hole in it (`track-launch.test.ts` catches it).
+
+### The original v2 design notes
 
 **Fix the regions ONCE, before any carving**, from structure the generator
 already has (track lanes, the plaza, `TrackMask.lane`) rather than from a
@@ -116,9 +156,9 @@ Carry over from v1, which was sound:
   announcing it is the opposite of a secret;
 - the late pass must not cut a tile carrying an arc face.
 
-Still outstanding and NOT started: **revolving secret doors** — keep
-`T_CRACKED` hidden, and on impact spin the panel like an office revolving door.
-Independent of the above and low-risk.
+**Revolving secret doors are DONE** — shipped separately (`5ab8596`), see below.
+They were independent of all of this, which is why they landed and the doorways
+did not.
 
 **Physics is owned by another dev.** The bounce/rattle half of the narrow-gap
 complaint was explicitly handed to them; this work is geometry only.
