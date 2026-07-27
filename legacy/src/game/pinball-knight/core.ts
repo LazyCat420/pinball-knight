@@ -237,6 +237,7 @@ import { cardBase } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
 import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
+import { updateSecretDoors, disposeSecretDoors } from "./secrets";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { resolveDescendFloor, regroupTarget } from "../../net/rally";
@@ -872,6 +873,7 @@ function buildLevel(level: number): void {
   sweepCoins();
   disposeLevel(); // tears down the previous maze + horde + loot, keeps the player
   disposeBoss(); // drop any Reaper King skulls/telegraph/portal from the old floor
+  disposeSecretDoors(); // a half-spun door must not survive into the next floor
   resetJuice(); // a new floor never inherits the previous one's shake/freeze chain
 
   state.level = level;
@@ -2189,6 +2191,10 @@ function simulate(dt: number): void {
   drainPendingMinis(); // slime splits deferred past all combat resolution
   drainPendingSummons(); // necromancer adds, same deferral
   if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death
+  // Secret bands smashed this run are still swinging — spin them out. Runs on
+  // replicas too: the door is pure spectacle, and a replica that smashed a wall
+  // locally should see it turn like anyone else.
+  updateSecretDoors(dt);
   updateCoop(dt); // co-op: broadcast our pose + advance party knights
   checkPickups(dt);
 
@@ -2486,6 +2492,7 @@ export function exitDungeonGame(): void {
   endCoop(); // drop dungeon party knights
   stopPresence(); // full game exit → leave the pool + close the socket
   disposeBoss(); // free any live Reaper King meshes
+  disposeSecretDoors();
 
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);
