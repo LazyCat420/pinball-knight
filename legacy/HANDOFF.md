@@ -2,15 +2,151 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-> ⚠️ **Two sessions were live in this checkout on 2026-07-26.** Both are recorded
-> here; neither replaced the other. **Two more were live on 2026-07-27** — the
-> flow-orientation wave (`2215eff`) and the descent screen (`89d1aeb`), written
-> concurrently in the same checkout. The second was committed by the first
-> session at the user's instruction; see the note under it. **A third 07-27
-> session (site-map readability, `ef78126`) found uncommitted pinball-knight
-> edits (`boss.ts`, `boss.test.ts`, `entities/zombie.ts`) in the tree and left
-> them strictly alone — committed only its own two files, deployed from a clean
-> `HEAD` worktree.**
+> ⚠️ **THIS FILE IS 850+ LINES AND HAS BECOME THE LOG IT SAYS IT IS NOT.** Eight
+> sessions have prepended to it rather than replacing it, because there has been
+> a concurrent session live in this checkout nearly every time. Consolidating it
+> means deleting another session's in-flight notes, which no session has been
+> willing to do unilaterally. **Whoever next works here alone: collapse it to the
+> live state and delete the superseded sections.** Everything below the
+> flow-orientation wave (`2215eff`) is history, not current state.
+
+> ⚠️ **Sessions live in this checkout on 2026-07-27:** the flow-orientation wave
+> (`2215eff`), the descent screen (`89d1aeb`), site-map readability (`ef78126`),
+> the king's leash + floor rules (`efe67db`/`6f4d30b`), and the load warm-up
+> (`1d46f96`, below). The last of those found the maze session's uncommitted
+> edits (`maze/floor-rules.ts`, `maze/track-floor.ts`, new `maze/doorways.ts`) in
+> the tree and **left them strictly alone** — committed only its own files and
+> deployed from a clean `HEAD` worktree so that work did not ship early.
+
+## ⚡ THE DESCENT PREWARM COULD NOT SEE ANYTHING HIDDEN (2026-07-27)
+
+**`main@1d46f96`** → synology (clean `HEAD` worktree deploy, banner
+`HEAD@1d46f96`). Container `healthy`; `/dungeon` and `/` both 200 on
+`10.0.0.16:5174`. 1585 tests green (136 files) · `tsc` clean for
+`pinball-knight`.
+
+Plan + measurement protocol: **`src/game/pinball-knight/LOAD_PERF_PLAN.md`**.
+Research this came from: **`docs/game-dev-rules/game-research/`** (12 reference
+games; the perf one is `asteroids-and-performance.md`).
+
+### The defect
+
+`89d1aeb` shipped `warmFloorPipelines` and it works — it took a measured
+5103 ms first frame down to 44 ms. But `compileAsync` walks `_projectObject`,
+which **returns early on `object.visible === false`** and frustum-tests meshes
+(`three/src/renderers/common/Renderer.js:3082` and `:3132`, quoted in the plan).
+
+Every pooled effect in this game is constructed **invisible**, and their groups
+*are* scene children — so the warm-up reached all of them, skipped all of them,
+and reported success:
+
+| Pool | Slots | Built invisible at |
+|---|---|---|
+| SlashPool | 10 | `render/vfx.ts:305` |
+| BoltPool | 40 | `render/vfx.ts:396` |
+| RingPool | 16 | `render/vfx.ts:516` |
+| SigilPool | 8 | `render/vfx.ts:679` |
+| BladeRing | 6 | `render/vfx.ts:768` |
+| DamageTextPool | 32 | `engine/render/damage-text.ts:254` |
+
+Two more families it *could not* have seen: the dash **ghost** builds its
+material at spawn (`vfx.ts:992`), and the five **floor-fx** decal materials are
+lazy (`entities/floor-fx.ts:173`) so on a fresh floor none exist. Net effect:
+the first slash, bolt, ring, blade, sigil, damage number, dash and each decal
+kind of a run still compiled a pipeline **mid-fight**. Nothing threw; it hitched.
+
+### The fix
+
+- Each pool exposes `warmupTarget()`; `vfx.warmupReveal()` makes **one**
+  representative per family visible + unculled and returns a restore closure.
+  Pipelines key on material **content**, so one slot warms the whole pool.
+- A hidden **ghost prototype** carries the afterimage descriptor (`map` +
+  `alphaTest: 0.4`) on a 1×1 dummy texture.
+- `warmFloorFxReveal(scene)` forces all five `matFor(kind)` materials to exist
+  and reveals one proxy each. `spawnFloorFx` **clones** those, and a clone keys
+  to the same pipeline.
+- `warmFloorPipelines` wraps its existing loop with both reveals, restored in a
+  **`finally`** — a throw must never park a stray quad in the world.
+
+**Position is deliberately untouched.** `frustumCulled = false` skips the frustum
+test outright, so where a proxy sits is irrelevant, and not moving pool slots
+keeps this free of side effects on live effects.
+
+### Also: `state.floorFx` had no cap at all
+
+`FLOOR_FX_MAX = 300`, evicting oldest-first through the existing `despawn()`.
+Coins (28) and ghosts (14) were capped; this was not. The groove is the producer:
+
+    GROOVE_RAIL_MAX_SPEED 17 u/s ÷ GROOVE_SPACING 0.34 u  =  50 stamps/s
+    50 stamps/s × GROOVE_LIFE 26 s                        = 1,300 live decals
+
+Each is a Mesh **plus a cloned material** added straight to the scene. Eviction
+is from the FRONT on purpose: `carveGroove` reads `floorFx[length - 1]`
+immediately after spawning to stamp the cut's direction.
+
+### Measurement enablers — none of this was falsifiable before
+
+- **`engine/gpu-adapter.ts`** — probes `GPUAdapter.info`, flags software
+  rasterisers (`swiftshader`/`lavapipe`/`llvmpipe`). **Unknown counts as
+  untrusted**, deliberately.
+- The profiler prints the GPU and a loud **UNTRUSTED** banner on software.
+  **`__dungeonGpuInfo()`** answers it *before* you spend 600 frames.
+- **`profCount("gpu programs")`** — `info.memory.programs` is THE gate: it must
+  be **flat** from the descent screen closing through a whole fight. Any rise
+  names a material family the reveal still misses.
+- **`profCount("gpu textures")`** exists to settle the per-actor texture-clone
+  question (`render/sprite.ts:477`): ~135 at a full horde confirms one upload
+  per zombie, ~20 refutes it. **Nobody should cost that fix before reading it.**
+
+### Verified
+
+`load-warmup.test.ts` (6 tests), **negative-controlled**: disabling the reveal
+and the cap fails 4 of 6 with the exact expected assertions (0 revealed instead
+of 7; 350 and 325 decals instead of 300; evicted material never disposed). The
+restore test specifically pins that the ORIGINAL flags come back — BoltPool
+ships `frustumCulled` already false, so a restore assuming three's defaults
+would silently re-enable culling on it.
+
+### ⚠️ Open — the live numbers are NOT yet measured
+
+The before/after in the table under the descent-screen section is from
+`89d1aeb`; **this wave has no live profile yet.** It ships on reasoning plus
+unit tests. Someone with a real GPU should run the protocol in
+`LOAD_PERF_PLAN.md` §Measurement:
+
+1. `__dungeonGpuInfo()` — if it says software, **stop**, the numbers are void.
+2. Note `info.memory.programs` when the descent screen closes → `P_warm`.
+3. `__dungeonProfile(600)`, then fight: swing, cast a bolt, dash, take a hit,
+   ride a groove, ignite oil.
+4. **Pass = `# gpu programs` max equals `P_warm`.** Any positive delta names a
+   family still compiling cold.
+
+Prod is http-over-IP, so `navigator.gpu` is absent and you get the WebGL2
+fallback — use `https://braindeadbot.com/dungeon` over host Chrome/CDP, per the
+recipe further down this file.
+
+Other open items:
+
+- **`FLOOR_FX_MAX = 300` is reasoned, not playtested.** It keeps ~6 s of rut at
+  top speed. If the groove stops feeling like a rideable rail on long runs, that
+  is the dial.
+- The warm-up now compiles **more** than before, so the descent screen may get
+  marginally longer. It was 6–10 s cold; the added work is ~8 representative
+  materials, so this should be noise — but it is unmeasured.
+- The reveal covers pools that exist **at warm-up time**. Anything that invents
+  a material later (a new ability's one-off mesh) reopens the same hole, and the
+  `gpu programs` counter is how you would notice.
+
+### Deferred from the same audit, deliberately
+
+- **`blob-pool.ts` is dead code** — a tested `InstancedMesh` contact-shadow pool
+  with **zero call sites**; every actor still gets its own blob mesh
+  (`render/sprite.ts:158`), one extra draw call each. Wiring it is a sprite
+  lifecycle change, not a warm-up one.
+- **Torch-light sort** allocates ~80 objects and a full sort **per rendered
+  frame** (`core.ts:2335`, 80 torches/floor ≈ 4,800 objects/sec).
+- `mapSignature` builds a string over all 135 zombies per frame
+  (`map-render.ts:422`); `core.ts` rebuilds a 13-string literal per sim step.
 
 ## 🗺️ SITE MAP READABLE — binarized text sprites + a 2x logical grid (2026-07-27)
 
