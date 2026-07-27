@@ -62,6 +62,112 @@ for `src/map` + `src/pixel`; `pixel-canvas.test.ts` 11/11.
   (bottom-right, overlaps "YOU ARE HERE") — cosmetic, site-level, not the map's
   z-order.
 
+## 👑 THE KING GUARDS HIS POST + FLOOR RULES (2026-07-27)
+
+**`main@efe67db`** → synology. 1075 tests green · `tsc` clean · boss bar
+verified absent at spawn in-engine.
+
+### What was reported
+
+> "the boss can't be next to the starting point. and the starting point should
+> always be the corner of a map not just randomly in the middle of it unless
+> it's for specific types of levels … global maze generation logic … then we can
+> just cycle those theme rules with the global rules"
+
+### The boss was never misplaced — measure before building
+
+| | |
+|---|---|
+| king's spawn tile, nearest observed to the player (78 floors) | **56 BFS steps** |
+| mean, as a fraction of the floor's whole reach | **68%** |
+
+He rides the exit (`nearestOpenTile(stairs, 2)`) and the exit is already pushed
+a lap away. **Placement was correct and always had been.** `spawnBoss` set
+`z.aggro = true` — the one flag the generic zombie AI reads to decide whether to
+chase. Every other enemy starts `false` and wakes only inside `AGGRO_TILES` *by
+path distance*; the king opted out of that gate, so from the frame the floor
+built he walked to the spawn and never stopped.
+
+**No generation rule can fix a mover.** Hence `boss.ts` THE LEASH: an anchor
+(his spawn = the exit), a wake radius on the same flow field the grunts use, and
+a leash measured **from the anchor** so kiting him away and looping back cannot
+walk him off the stairs a step at a time. Disengaged he returns home. His
+barrage and slam are gated too — otherwise the leash removes the chase and
+leaves the harassment, which is the worse half. 8 tests in `boss.test.ts`.
+
+The boss bar is gated on engagement as well; it used to announce
+"☠ THE REAPER KING ☠" the instant the floor built, which by itself reads as
+"he's right here". `BossAux.engaged` is streamed so replicas agree.
+
+### maze/floor-rules.ts — the registry
+
+Rules are **scored preferences, not booleans**. "Spawn in a corner", "exit a lap
+away" and "boss far from spawn" can be jointly unsatisfiable on a small floor;
+applied in sequence, whichever ran last silently wins. When a rule genuinely
+cannot be met the generator records a **declared relaxation**
+(`TrackFloor.relaxed`) and the gate caps the rate — currently **3.8%**, capped
+at 12%. A silent fallback is indistinguishable from a broken rule.
+
+Every rule carries its own `check`, and `floor-rules.test.ts` iterates them over
+78 floors — a new rule is covered the moment it joins the array. It also prints
+each rule's *tightest observed margin*, which is what tells a regression guard
+apart from a threshold that has drifted into irrelevance.
+
+The archetype supplies **weights, never its own placement code**.
+
+| archetype | perimeterBias | why |
+|---|---|---|
+| warrens | 0.90 | a tangle with no centre worth starting in |
+| ringkeep | 0.85 | progression is working inward ring by ring |
+| spine | 0.80 | start at an END of the boulevard, not halfway along |
+| cavern | 0.70 | no architecture to respect |
+| **greathall** | **0.15** | **the exemption** — the floor IS its central chamber |
+
+Consumed by `carveLaunchChute` (which decides spawn on **94%** of floors) as a
+**term, never a filter**: a filter would reject every site on a floor whose
+circuit never reaches the border, and could override the runout gate that stops
+a chute firing into a wall. The geometry band is unchanged; perimeter chooses
+*within* it.
+
+    spawn perimeterScore, mean by archetype (1.0 = hard against the edge)
+      before   all five 0.35-0.42 — an 8-point spread, i.e. no archetype effect
+      after    warrens 0.68  spine 0.73  cavern 0.70  ringkeep 0.68
+               greathall 0.44  ← still central, on purpose
+
+### ⚠️ Found on the way — `removeWallStubs` stopped mid-cascade
+
+Moving the chute to the edge took the piece gate from 0 to **9 violations per
+150 floors**, 8 of them wall stubs. Against a bias-off control on the *same*
+floors: **2/150 before, 9/150 after** — the regression was real, the cause was
+not the chute.
+
+`removeWallStubs` iterated with `maxRounds = 6`. That is not a fixed point, it
+is six waves — opening a stub creates stubs around it, and on floors needing
+more the loop stopped **mid-cascade**, leaving nubs its own previous round had
+manufactured. Silently. Raising the cap to a runaway guard takes **both regimes
+to 0/150**, clearing the pre-existing 1.3% as well.
+
+The piece gate's sweep is widened **40 → 150 floors** and stays zero-tolerance:
+a 40-floor sample is exactly what let a 1.3% defect sit green.
+
+**A measurement mistake worth not repeating:** the first census of this said the
+two regimes were indistinguishable (5/300 vs 6/300). It built floors its own way
+instead of the way the gate does, so it sampled a different population. Rebuilt
+against `floorAt` verbatim, the difference was 4.5×. Copy the harness you are
+comparing against.
+
+### ⚠️ Open
+
+- `KING_WAKE_TILES` (26) / `KING_LEASH_TILES` (34) are reasoned, not playtested.
+  A test pins WAKE < LEASH (inverted, he oscillates), but the *feel* is unproven.
+- The leash is world distance from the anchor; the wake is path distance. Mixing
+  metrics is deliberate (you should not wake through a wall; the leash is about
+  how far he has physically strayed) but if he ever behaves oddly around a thin
+  wall, that asymmetry is the first place to look.
+- `perimeterScore` is edge distance, not corner distance — see its comment for
+  why corners were rejected. If "corner" specifically is wanted, that is a new
+  rule, not a retune.
+
 ## ⏳ THE DESCENT SCREEN — the freeze was SHADER COMPILATION, not generation (2026-07-27)
 
 **`main@89d1aeb`** → synology. Written by a **parallel session** in this
