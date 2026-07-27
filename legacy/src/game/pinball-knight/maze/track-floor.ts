@@ -28,26 +28,10 @@
  *
  * DOM- and three-free.
  */
-import {
-  type Grid,
-  type TilePos,
-  T_FLOOR,
-  T_STAIRS,
-  at,
-  idx,
-  isWalkable,
-  setTile,
-} from "./generator";
+import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import {
-  carveTrack,
-  carveChamber,
-  growMazeAround,
-  publishArcs,
-  connectAll,
-  type TrackMask,
-} from "./track-carve";
+import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
 import { bfsDistances } from "../engine/flow-field";
@@ -75,10 +59,7 @@ export interface TrackFloor {
  * Here both endpoints sit on the circuit and are pushed as far apart as the
  * lane allows, so the natural route between them RUNS THE TRACK.
  */
-export function pickTrackEndpoints(
-  g: Grid,
-  mask: TrackMask,
-): { start: TilePos; stairs: TilePos } | null {
+export function pickTrackEndpoints(g: Grid, mask: TrackMask): { start: TilePos; stairs: TilePos } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
@@ -124,13 +105,7 @@ export function buildTrackFloor(
   cellsW: number,
   cellsH: number,
   rng: () => number,
-  opts: {
-    linkChance?: number;
-    fill?: number;
-    minLoops?: number;
-    profile?: TrackProfile;
-    density?: number;
-  } = {},
+  opts: { linkChance?: number; fill?: number; minLoops?: number; profile?: TrackProfile; density?: number } = {},
 ): TrackFloor | null {
   const w = cellsW * 2 + 1;
   const h = cellsH * 2 + 1;
@@ -211,8 +186,7 @@ export function buildTrackFloor(
   // ("joined" fired 8-24x per floor while the termination count never moved).
   // The real cause was topological (degree-1 leaves in the graph) and is fixed
   // upstream by pruneLeaves; this is only the belt-and-braces sweep.
-  if (endsEarly)
-    healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
+  if (endsEarly) healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
 
   // AFTER the maze AND the repairs, never before: every pass above carves
   // walls to floor, and a shoulder marked earlier is a tile claiming curved

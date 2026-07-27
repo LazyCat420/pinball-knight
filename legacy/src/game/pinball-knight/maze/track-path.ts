@@ -114,10 +114,7 @@ export function angDiff(a: number, b: number): number {
  * favoured pair. Non-adjacent pairs are skipped: their fillets would cross the
  * junction interior and overlap each other.
  */
-export function buildTrackPath(
-  g: TrackGraph,
-  opts: { radii?: readonly number[]; laneScale?: number } = {},
-): TrackPath {
+export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[]; laneScale?: number } = {}): TrackPath {
   const radii = opts.radii ?? TRACK_RADII;
   // Multiplier on every lane half-width. A Great Hall's roads are broad and a
   // Warrens' are tight, and that is a thing the player FEELS at speed long
@@ -254,8 +251,7 @@ export function buildTrackPath(
       // Conductivity IS traffic, so the busiest tube becomes the widest road.
       // This is the visual payoff of the growth model: highway hierarchy comes
       // out of the simulation instead of being assigned arbitrarily.
-      half:
-        (rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur) * laneScale,
+      half: (rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur) * laneScale,
     });
   }
 

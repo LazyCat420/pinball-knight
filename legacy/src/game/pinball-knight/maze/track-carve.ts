@@ -318,8 +318,7 @@ export function growMazeAround(
 
   // Budget: stop once `fill` of the legal cells are carved, leaving rock.
   let legal = 0;
-  for (let j = 1; j < g.h - 1; j += 2)
-    for (let i = 1; i < g.w - 1; i += 2) if (clearOfTrack(i, j)) legal++;
+  for (let j = 1; j < g.h - 1; j += 2) for (let i = 1; i < g.w - 1; i += 2) if (clearOfTrack(i, j)) legal++;
   const budget = Math.max(1, Math.round(legal * fill));
   let carved = active.length;
 
@@ -367,10 +366,7 @@ export function growMazeAround(
       if (at(g, i, j) !== T_WALL) continue;
       // A wall tile with track on one side and maze floor on the other.
       const touchesTrack =
-        onLane(g, mask, i - 1, j) ||
-        onLane(g, mask, i + 1, j) ||
-        onLane(g, mask, i, j - 1) ||
-        onLane(g, mask, i, j + 1);
+        onLane(g, mask, i - 1, j) || onLane(g, mask, i + 1, j) || onLane(g, mask, i, j - 1) || onLane(g, mask, i, j + 1);
       if (!touchesTrack) continue;
       let mazeSide = false;
       for (const [di, dj] of [
@@ -433,8 +429,7 @@ function widenMazeCorridors(g: Grid, mask: TrackMask, rng: () => number, chance 
         // Keep off the lane's immediate shoulder (and any published arc rim).
         let nearLane = false;
         for (let dj2 = -1; dj2 <= 1 && !nearLane; dj2++)
-          for (let di2 = -1; di2 <= 1; di2++)
-            if (onLane(g, mask, x + di2, y + dj2)) nearLane = true;
+          for (let di2 = -1; di2 <= 1; di2++) if (onLane(g, mask, x + di2, y + dj2)) nearLane = true;
         if (nearLane) continue;
         if (g.arcIdx && g.arcIdx[idx(g, x, y)] >= 0) continue;
         if (rng() < chance) add.push(idx(g, x, y));

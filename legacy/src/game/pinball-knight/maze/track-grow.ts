@@ -199,12 +199,7 @@ export interface LayoutOpts {
 }
 
 /** Site nodes for a layout. `scatter` is exactly `seedNodes`, draw for draw. */
-export function layoutNodes(
-  w: number,
-  h: number,
-  rng: () => number,
-  opts: LayoutOpts,
-): TrackNode[] {
+export function layoutNodes(w: number, h: number, rng: () => number, opts: LayoutOpts): TrackNode[] {
   if (opts.layout === "scatter") return seedNodes(w, h, rng, opts);
 
   const margin = opts.margin ?? Math.max(3, Math.min(w, h) * 0.12);
@@ -245,11 +240,7 @@ export function layoutNodes(
           continue;
         }
         const t = segs[k] > 0 ? Math.min(1, want / segs[k]) : 0;
-        put(
-          pts[k][0] + (pts[k + 1][0] - pts[k][0]) * t,
-          pts[k][1] + (pts[k + 1][1] - pts[k][1]) * t,
-          true,
-        );
+        put(pts[k][0] + (pts[k + 1][0] - pts[k][0]) * t, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * t, true);
         break;
       }
     }
@@ -298,14 +289,8 @@ export function layoutNodes(
     // Perpendicular, for the two runs.
     const px = -uz;
     const pz = ux;
-    const corner = (a: number, b: number): [number, number] => [
-      cx + ux * len * a + px * half * b,
-      cz + uz * len * a + pz * half * b,
-    ];
-    alongPolyline(
-      [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)],
-      opts.foods + 1,
-    );
+    const corner = (a: number, b: number): [number, number] => [cx + ux * len * a + px * half * b, cz + uz * len * a + pz * half * b];
+    alongPolyline([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)], opts.foods + 1);
   } else if (opts.layout === "ring") {
     // Concentric rectangles, outermost first, each inset by a fraction of the
     // shorter half-span so the galleries are visibly separate roads.
@@ -318,10 +303,7 @@ export function layoutNodes(
       const a1 = x1 - inset * r;
       const b1 = z1 - inset * r;
       // Outer rings get proportionally more food — they are longer roads.
-      const share = Math.max(
-        3,
-        Math.round((opts.foods * (rings - r)) / ((rings * (rings + 1)) / 2)),
-      );
+      const share = Math.max(3, Math.round((opts.foods * (rings - r)) / ((rings * (rings + 1)) / 2)));
       const n = Math.min(share, opts.foods - placed);
       alongPolyline(
         [
@@ -407,13 +389,7 @@ export function meshNeighbours(nodes: TrackNode[], k = 4, maxLen = Infinity): Tr
  * still yields a sane flow direction, which is all the conductivity update
  * actually consumes.
  */
-function solvePressures(
-  g: TrackGraph,
-  source: number,
-  sink: number,
-  flow: number,
-  iters = 60,
-): Float64Array {
+function solvePressures(g: TrackGraph, source: number, sink: number, flow: number, iters = 60): Float64Array {
   const n = g.nodes.length;
   const p = new Float64Array(n);
   p[source] = flow;
@@ -450,11 +426,7 @@ function solvePressures(
  * still survives if its flow beats decay. A single fixed pair would reinforce
  * exactly one path and decay everything else — a tree again.
  */
-export function growNetwork(
-  g: TrackGraph,
-  rng: () => number,
-  opts: GrowOpts = DEFAULT_GROW,
-): TrackGraph {
+export function growNetwork(g: TrackGraph, rng: () => number, opts: GrowOpts = DEFAULT_GROW): TrackGraph {
   const foods = g.nodes.filter((n) => n.food).map((n) => n.id);
   if (foods.length < 2 || g.edges.length === 0) return g;
 
@@ -516,11 +488,7 @@ export function growNetwork(
  * because conductivity distributions vary wildly between seeds and no single
  * threshold is right for all of them.
  */
-export function pruneToCircuit(
-  g: TrackGraph,
-  minLoops = 2,
-  opts: { survive?: number } = {},
-): TrackGraph {
+export function pruneToCircuit(g: TrackGraph, minLoops = 2, opts: { survive?: number } = {}): TrackGraph {
   const keep = new Set(g.edges.map((_, i) => i));
   const order = g.edges.map((e, i) => ({ i, d: e.d })).sort((a, b) => a.d - b.d);
 
@@ -670,12 +638,7 @@ export function growTrack(
   const area = w * h;
   const foods = opts.foods ?? Math.max(6, Math.min(44, Math.round(area / 260) + 4));
   const relays = opts.relays ?? Math.max(8, Math.min(64, Math.round(area / 190) + 6));
-  const nodes = layoutNodes(w, h, rng, {
-    layout: opts.layout ?? "scatter",
-    foods,
-    relays,
-    minSep: 5,
-  });
+  const nodes = layoutNodes(w, h, rng, { layout: opts.layout ?? "scatter", foods, relays, minSep: 5 });
   // CAP THE CHORD LENGTH. A nearest-neighbour mesh on a sparse region can still
   // pair two nodes across the whole floor, and a long chord swept with a
   // 2.5-tile brush paves everything it crosses: measured 8/40 floors ending up

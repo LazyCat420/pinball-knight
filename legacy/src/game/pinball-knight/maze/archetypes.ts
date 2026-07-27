@@ -157,11 +157,7 @@ export const DEFAULT_TRACK_PROFILE: TrackProfile = {
  * rather than the operative value on every one — which is exactly what the old
  * `min(15, …)` turned out to be.
  */
-export function trackNodeCounts(
-  p: TrackProfile,
-  w: number,
-  h: number,
-): { foods: number; relays: number } {
+export function trackNodeCounts(p: TrackProfile, w: number, h: number): { foods: number; relays: number } {
   const k = (w * h) / 1000;
   return {
     foods: Math.max(6, Math.min(44, Math.round(p.foodPer1k * k))),
@@ -216,11 +212,7 @@ function spineSeeds(cellsW: number, cellsH: number, rng: () => number): CellPos[
     for (let y = midY; y < cellsH; y++) cells.push([midX, y]);
   } else {
     // Z: two offset east-west runs joined by a north-south connector.
-    const y2 = clamp(
-      midY + (midY < cellsH / 2 ? 1 : -1) * Math.max(2, Math.floor(cellsH * 0.35)),
-      1,
-      cellsH - 2,
-    );
+    const y2 = clamp(midY + (midY < cellsH / 2 ? 1 : -1) * Math.max(2, Math.floor(cellsH * 0.35)), 1, cellsH - 2);
     for (let x = 0; x <= midX; x++) cells.push([x, midY]);
     const [lo, hi] = midY < y2 ? [midY, y2] : [y2, midY];
     for (let y = lo; y <= hi; y++) cells.push([midX, y]);
@@ -240,16 +232,8 @@ function greatHallSeeds(cellsW: number, cellsH: number, rng: () => number): Cell
   const hw = Math.max(2, Math.floor(cellsW * 0.45));
   const hh = Math.max(2, Math.floor(cellsH * 0.5));
   // Centred, with a little jitter so the hall isn't in the same place twice.
-  const x0 = clamp(
-    Math.floor((cellsW - hw) / 2 + (rng() - 0.5) * cellsW * 0.16),
-    1,
-    cellsW - hw - 2,
-  );
-  const y0 = clamp(
-    Math.floor((cellsH - hh) / 2 + (rng() - 0.5) * cellsH * 0.16),
-    1,
-    cellsH - hh - 2,
-  );
+  const x0 = clamp(Math.floor((cellsW - hw) / 2 + (rng() - 0.5) * cellsW * 0.16), 1, cellsW - hw - 2);
+  const y0 = clamp(Math.floor((cellsH - hh) / 2 + (rng() - 0.5) * cellsH * 0.16), 1, cellsH - hh - 2);
   return rectCells(x0, y0, x0 + hw - 1, y0 + hh - 1);
 }
 
@@ -355,12 +339,7 @@ function cavernSeeds(cellsW: number, cellsH: number, rng: () => number): CellPos
       while (queue.length) {
         const [x, y] = queue.pop()!;
         blob.push([x, y]);
-        for (const [dx, dy] of [
-          [0, -1],
-          [1, 0],
-          [0, 1],
-          [-1, 0],
-        ] as const) {
+        for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
           const nx = x + dx;
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= cellsW || ny >= cellsH) continue;
