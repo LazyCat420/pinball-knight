@@ -40,6 +40,7 @@ import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaSt
 import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, showTavernBanner, clearTavernBanner, type LobbyHud } from "./ui";
 import { onPeerArrive, onPeerDepart, peers } from "../../net/presence";
 import { groupByFloor } from "./join-board";
+import { resolveDescendFloor } from "../../net/rally";
 import { loadBestDepth } from "../../game/pinball-knight/best-depth";
 import { loadResumeFloor } from "../../game/pinball-knight/corpse-run";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
@@ -230,18 +231,18 @@ function interact(): void {
   prompt?.hide();
 
   if (s.action.kind === "descend") {
-    // Drop-in pool: descending is IMMEDIATE (no ready gate). Everyone shares the
-    // same world seed, so you drop into the same dungeon as whoever else is
-    // playing and see them on your floor.
+    // Drop-in pool: descending is IMMEDIATE (no ready gate) and it is SHARED.
     //
-    // The plunger targets YOUR resume floor — the depth you last died at, where
-    // your kit is lying. `undefined` (never died) lets the dungeon pick its own
-    // default rather than hard-coding floor 1 in the hub.
+    // The plunger passes NO destination on purpose. It used to send you to your
+    // own resume floor, which quietly split the pool: two players who entered
+    // one after the other landed on two depths, and same-scene relaying made
+    // those two private games. The dungeon resolves the target now
+    // (`descendInto` → net/rally.ts): the floor the pool is on, or your resume
+    // floor when nobody is down there yet. Only a join-board row names a floor.
     sfxPlunger();
     const go = tavern.onDescend;
-    const resume = isLobby ? loadResumeFloor() || undefined : undefined;
     closeTavern();
-    go?.(resume);
+    go?.(undefined);
     return;
   }
   if (s.action.kind === "summary") {
@@ -330,6 +331,10 @@ function frame(now: number): void {
         count: poolOnlineCount(),
         groups: groupByFloor(peers(), loadBestDepth()),
         resumeFloor: loadResumeFloor(),
+        // Show where the plunger actually drops you — the pool's floor, not
+        // necessarily your own. Resolved with the SAME function the dungeon
+        // uses, so the board can never promise a different floor than you get.
+        descendFloor: resolveDescendFloor(peers(), loadResumeFloor()),
       });
     }
 

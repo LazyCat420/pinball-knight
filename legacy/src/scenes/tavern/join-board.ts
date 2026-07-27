@@ -1,25 +1,26 @@
 /**
  * 🪧 THE JOIN BOARD — "who's down there", and a way to go with them.
  *
- * THE PROBLEM IT SOLVES. Once players resume at their own last-died floor, the
- * pool fragments: eight knights at eight depths are eight private worlds,
- * because the server relays world/act to same-scene peers only (`dungeon:<n>`).
- * All the co-op that already works — scaled boss HP, shared loot, the
- * marble-vs-marble jackpot — would then fire only when two people happened to
- * die at the same depth.
+ * WHAT IT IS NOW. Descending itself rallies you onto the pool's floor
+ * (`net/rally.ts`), so this board is no longer the only road to co-op — it is
+ * the OVERRIDE: it shows every occupied floor and lets you pick a different one
+ * (a friend who split off, the depth your corpse is on) in one click.
  *
- * The fix is NOT to force everyone onto one floor. A knight dropped on floor 15
- * with a floor-3 kit dies instantly, and under the corpse rules that strands
- * their gear somewhere they cannot survive — a dead end, not a challenge.
+ * The board used to carry the whole co-op story, and that was the bug: joining
+ * was opt-in and easy to miss, so two players who entered one after the other
+ * each took the plunger to their own resume depth and played two private worlds
+ * — the server relays world/act to same-scene peers only (`dungeon:<n>`).
  *
- * So: descending is personal, joining is one click. The board lists every
- * occupied floor and lets you drop straight onto it. Floors at or below your
- * best depth are marked SAFE (you have survived them); deeper ones are marked
- * and still clickable, because "you'll probably die" is the player's call to
- * make, not ours.
+ * Floors at or below your best depth are marked SAFE (you have survived them);
+ * deeper ones are marked and still clickable, because "you'll probably die" is
+ * the player's call to make, not ours — and a knight who drops in deep is
+ * scaled to the depth on arrival (`game/pinball-knight/delve.ts`).
  */
 
 import type { PeerInfo } from "../../net/presence";
+import { floorOfScene } from "../../net/rally";
+
+export { floorOfScene };
 
 export interface FloorGroup {
   floor: number;
@@ -27,13 +28,6 @@ export interface FloorGroup {
   names: string[];
   /** True when the viewer has already reached this depth — no warning shown. */
   safe: boolean;
-}
-
-/** Parse the `dungeon:<n>` scene tag. Returns 0 for the tavern or a bad tag. */
-export function floorOfScene(scene: string): number {
-  if (!scene?.startsWith("dungeon:")) return 0;
-  const n = Number.parseInt(scene.slice("dungeon:".length), 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**

@@ -148,7 +148,7 @@ export function closeRunSummary(): void {
  * a mystery. Shows an OFFLINE state when the socket can't reach the backend.
  */
 export interface LobbyHud {
-  update(info: { connected: boolean; count: number; groups?: FloorGroup[]; resumeFloor?: number }): void;
+  update(info: { connected: boolean; count: number; groups?: FloorGroup[]; resumeFloor?: number; descendFloor?: number }): void;
   /** Called when a floor row is clicked — descend straight onto that depth. */
   onJoin(fn: (floor: number) => void): void;
   dispose(): void;
@@ -232,7 +232,7 @@ export function createLobbyHud(host: HTMLElement): LobbyHud {
   };
 
   return {
-    update({ connected, count, groups, resumeFloor }): void {
+    update({ connected, count, groups, resumeFloor, descendFloor }): void {
       if (connected) {
         pill.style.borderColor = "#50c878";
         pill.innerHTML = `<span style="color:#50c878">●</span> POOL · ${count} ONLINE`;
@@ -242,7 +242,7 @@ export function createLobbyHud(host: HTMLElement): LobbyHud {
       }
 
       const gs = groups ?? [];
-      const next = `${connected}|${resumeFloor ?? 0}|` + gs.map((g) => `${g.floor}:${g.safe}:${g.names.join(",")}`).join("|");
+      const next = `${connected}|${resumeFloor ?? 0}|${descendFloor ?? 0}|` + gs.map((g) => `${g.floor}:${g.safe}:${g.names.join(",")}`).join("|");
       if (next === sig) return; // nothing changed — leave the live DOM alone
       sig = next;
 
@@ -253,14 +253,21 @@ export function createLobbyHud(host: HTMLElement): LobbyHud {
       board.style.display = "block";
       board.replaceChildren();
 
-      // Your own unfinished business comes FIRST — the whole point of the death
-      // flow is that your gear is waiting somewhere specific.
-      if (resumeFloor) {
-        const note = document.createElement("div");
-        note.style.cssText = "color:#ffd98a;line-height:1.6;padding-bottom:5px;border-bottom:1px solid #2c2838";
-        note.innerHTML = `⚰ YOUR KIT · FLOOR ${resumeFloor}<br><span style="color:#6b7688;font-size:7px">PULL THE PLUNGER TO RETURN</span>`;
-        board.appendChild(note);
-      }
+      // WHERE THE PLUNGER GOES, stated up front. The pool always descends
+      // together, so this is the pool's floor whenever anyone is down there —
+      // and saying so is what stops a player from pulling the plunger expecting
+      // their own depth and quietly ending up in a different game (which is
+      // exactly what the old "pull the plunger to return" copy promised).
+      const target = descendFloor ?? resumeFloor ?? 1;
+      const withPool = gs.some((g) => g.floor === target);
+      const note = document.createElement("div");
+      note.style.cssText = "color:#ffd98a;line-height:1.6;padding-bottom:5px;border-bottom:1px solid #2c2838";
+      note.innerHTML =
+        `⚓ PLUNGER → FLOOR ${target}<br><span style="color:#6b7688;font-size:7px">${withPool ? "THE POOL IS DOWN THERE" : "NOBODY DOWN THERE YET"}</span>` +
+        // Your kit only needs calling out when it is somewhere ELSE — otherwise
+        // the plunger is already taking you to it.
+        (resumeFloor && resumeFloor !== target ? `<br><span style="color:#c8a86a;font-size:7px">⚰ YOUR KIT WAITS ON F${resumeFloor}</span>` : "");
+      board.appendChild(note);
 
       const title = document.createElement("div");
       title.style.cssText = "color:#6b7688;padding:6px 0 2px";

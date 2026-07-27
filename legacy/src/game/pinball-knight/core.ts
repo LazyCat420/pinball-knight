@@ -238,6 +238,8 @@ import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
+import { resolveDescendFloor, regroupTarget } from "../../net/rally";
+import { applyDelveCatchUp } from "./delve";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
@@ -685,9 +687,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   // a black screen because a backend they aren't using didn't answer.
   const beginRun = (floor?: number): void => {
     if (!state.active) return;
-    const target = floor && floor > 0 ? floor : 1;
-    startLevel(target); // startLevel adopts the shared pool seed (coopSeed) if connected
-    initCoop(); // spin up dungeon-scene pool presence (no-op solo/offline)
+    const target = descendInto(floor);
     state.lastTime = performance.now();
     state.animFrameId = requestAnimationFrame(loop);
     // The seed may still be in flight — re-seed this floor if it disagrees.
@@ -1442,6 +1442,17 @@ function dropBossReward(x: number, z: number): void {
 const POOL_SEED_WAIT_MS = 5000;
 
 /**
+ * How long after landing we keep watching for a pool-mate who descended in the
+ * same breath (see regroupWithPoolWhenTheyLand).
+ *
+ * Sized off the SAME measurement as POOL_SEED_WAIT_MS — a second client's
+ * handshake can take ~2s, and until it lands neither knight is in the other's
+ * roster. Past this window a player is playing the floor, and moving them is
+ * worse than letting them regroup through the join board.
+ */
+const REGROUP_WINDOW_MS = 6000;
+
+/**
  * Resolve once the pool seed is known — or once the wait times out.
  *
  * ⚠️ It is NOT enough to check `isCoop()` and bail when it's false. At the
@@ -1475,6 +1486,84 @@ const POOL_SEED_WAIT_MS = 5000;
  * Only ever fires while still on the floor the run started on: rebuilding under
  * someone who has already descended would teleport them into a fresh maze.
  */
+/**
+ * 🪜 THE ONE WAY DOWN from the tavern — used by the plunger, the join board and
+ * the retry-after-death path alike.
+ *
+ * Descending is no longer personal. `resolveDescendFloor` sends you to the floor
+ * the POOL is on, because the alternative (everyone to their own resume depth)
+ * is what made two players who entered one after the other play two separate
+ * games: the server relays world/act to same-scene peers only, so two floors are
+ * two worlds and every co-op feature — shared enemies, shared loot, scaled boss
+ * — silently never fired. An explicit join-board pick still wins; your own
+ * resume floor is the fallback when the pool is all still in the tavern.
+ *
+ * Arriving deep with a level-1 knight is made survivable by `applyDelveCatchUp`,
+ * not by keeping the pool apart.
+ *
+ * Returns the floor actually entered.
+ */
+function descendInto(explicit?: number): number {
+  const target = resolveDescendFloor(peers(), loadResumeFloor(), explicit);
+  startLevel(target); // startLevel adopts the shared pool seed (coopSeed) if connected
+  initCoop(); // spin up dungeon-scene pool presence (no-op offline)
+  grantDelveBoon(target);
+  regroupWithPoolWhenTheyLand(target);
+  return target;
+}
+
+/** Scale a knight who DROPPED to this depth up to what the depth expects, and
+ *  say so. No-op on floor 1 and for anyone who walked down honestly. */
+function grantDelveBoon(target: number): void {
+  const boon = applyDelveCatchUp(target);
+  if (!boon) return;
+  const p = state.player;
+  if (p && boon.hearts > 0) p.hp = Math.min(playerMaxHp(), p.hp + boon.hearts);
+  const bits = [
+    boon.levels > 0 ? `+${boon.levels} LVL` : "",
+    boon.hearts > 0 ? `+${boon.hearts} ❤` : "",
+    boon.upgrade > 0 ? `+${boon.upgrade} BLADE` : "",
+  ].filter(Boolean);
+  showToast(`⚗️ DELVER'S BOON · FLOOR ${target}`, bits.join("  ·  ") || "kitted for the depth");
+}
+
+/**
+ * Converge with the pool when two knights descended in the same breath.
+ *
+ * Both resolved their target against a roster that did not know about the other
+ * yet, so they can land on different floors — the exact "we entered one after
+ * the other and got separate games" failure, just compressed into one second.
+ * A moment later both rosters agree and `regroupTarget` (which counts the
+ * caller's OWN floor) returns the same answer on both machines, so exactly one
+ * of them moves.
+ *
+ * Same shape and the same reasoning as `adoptPoolSeedWhenItArrives`: never block
+ * the descent on the network, generate at once, reconcile if the pool disagrees,
+ * and only ever while the player is still standing on the floor they arrived on
+ * — regrouping someone mid-fight would be worse than being apart.
+ */
+function regroupWithPoolWhenTheyLand(startedOnLevel: number): void {
+  const started = performance.now();
+  const tick = (): void => {
+    if (!state.active || !isCoop()) return;
+    if (state.level !== startedOnLevel) return; // they moved on — leave them alone
+    const target = regroupTarget(peers(), state.level);
+    if (target !== null) {
+      showToast("🧲 REGROUPING", `the pool is on floor ${target}`);
+      startLevel(target);
+      grantDelveBoon(target);
+      // Re-arm the seed watcher: the one the descent started gives up the
+      // moment `state.level` changes, and a floor rebuilt while `welcome` is
+      // still in flight would keep a private maze on the floor we just moved to.
+      adoptPoolSeedWhenItArrives(target);
+      return;
+    }
+    if (performance.now() - started > REGROUP_WINDOW_MS) return;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 function adoptPoolSeedWhenItArrives(startedOnLevel: number): void {
   if (coopSeed() !== null) return; // already shared — nothing to reconcile
   const started = performance.now();
@@ -1661,15 +1750,13 @@ function returnToTavern(): void {
   // who wants to see whether anyone is on a floor worth joining.
   enterTavern(state.container, {
     stats: { grade: "-", floor: deathFloor, kills: 0, bestCombo: 0 },
-    // `|| ` not `?? ` — loadResumeFloor returns 0 (not nullish) when unset.
-    // initCoop must run here too: the death teardown dropped the dungeon-scene
-    // presence subscriptions, and without re-installing them you descend into a
-    // floor where no pool-mate is ever drawn.
+    // Same single entry as first boot: rally onto the pool's floor, catch the
+    // knight up to that depth, then reconcile the seed. `descendInto` also
+    // re-runs initCoop — the death teardown dropped the dungeon-scene presence
+    // subscriptions, and without re-installing them you descend into a floor
+    // where no pool-mate is ever drawn.
     onDescend: (floor?: number) => {
-      const target = floor || loadResumeFloor() || 1;
-      startLevel(target);
-      initCoop();
-      adoptPoolSeedWhenItArrives(target);
+      adoptPoolSeedWhenItArrives(descendInto(floor));
     },
     onAbandon: () => exitDungeonGame(),
     lobby: true,
