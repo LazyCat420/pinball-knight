@@ -22,7 +22,7 @@
  * the tilt here is a CSS 3D transform plus a pointer-tracked glare sheen —
  * visually the same trick, none of the context risk.
  */
-import { CARDS, RARITY_HEX, type CardDef, type CardId, type CardRarity } from "../cards";
+import { RARITY_HEX, cardDef, type CardDef, type CardId, type CardRarity } from "../cards";
 import { KIND_INFO } from "../bestiary";
 import { monsterPortrait, portraitScale } from "./monster-portrait";
 
@@ -215,13 +215,20 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, pattern: number, ax: numbe
  * visual churn.
  */
 export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
-  const c = CARDS[id];
+  // cardDef, not CARDS — this id may carry a LEVEL and a SHINY flag (see the
+  // instance section of cards.ts), and the face has to paint the stats this
+  // copy actually has rather than the catalogue's level-1 ones.
+  const c = cardDef(id);
   const ctx = canvas.getContext("2d");
   if (!c || !ctx) return;
 
+  const level = c.level ?? 1;
+  const shiny = !!c.shiny;
   const tier = TIER[c.rarity];
   const theme = themeFor(c);
-  const seed = hashString(c.id);
+  // Seeded off the BASE, so every copy of a card shares one speck field and
+  // backdrop — the level is a badge on a known face, not a different card.
+  const seed = hashString(c.base ?? c.id);
   const rand = lcg(seed);
   const W = CARD_W;
   const H = CARD_H;
@@ -332,6 +339,26 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   // the pill leads with the monster family and keeps the fit as the qualifier.
   const stage = c.source ? KIND_INFO[c.source].label.toUpperCase() : "CHASE";
   ctx.fillText(`${stage} · ${fits}`, 34, 33);
+
+  // ── LEVEL chip ──
+  // Drawn only from level 2 up: a level-1 card is the baseline and a "Lv 1"
+  // plate on every common would read as noise rather than information. Sits
+  // right of the stage pill so the two read as one header row.
+  if (level > 1) {
+    const lvW = 74;
+    ctx.fillStyle = shiny ? "#3a1c4a" : "#16202e";
+    rr(ctx, 222, 18, lvW, 22, 11);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = shiny ? "#ff9df0" : "#7dd3fc";
+    rr(ctx, 222, 18, lvW, 22, 11);
+    ctx.stroke();
+    ctx.fillStyle = shiny ? "#ffd6fb" : "#bfe6ff";
+    ctx.font = "800 13px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`Lv ${level}`, 222 + lvW / 2, 33);
+    ctx.textAlign = "left";
+  }
 
   // ── Name + power ──
   ctx.shadowColor = "rgba(0,0,0,0.85)";
@@ -475,6 +502,36 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
     ctx.fill();
   }
   ctx.shadowBlur = 0;
+
+  // ── SHINY: four-point sparkle stars across the art ──
+  // The shine has to be readable at a 74px thumbnail, before any text is. Big
+  // hard-edged stars survive the downscale where another speck pass would just
+  // brighten into haze.
+  if (shiny) {
+    ctx.globalAlpha = 0.95;
+    for (let i = 0; i < 11; i++) {
+      const sx = ax + 18 + rand() * (aw - 36);
+      const sy = ay + 18 + rand() * (ah - 36);
+      const r = 7 + rand() * 13;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.35, "rgba(190,240,255,.55)");
+      g.addColorStop(1, "rgba(190,240,255,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const rr2 = k % 2 ? r * 0.16 : r;
+        ctx.lineTo(sx + Math.cos(a) * rr2, sy + Math.sin(a) * rr2);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
   ctx.restore();
@@ -616,13 +673,24 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(255,255,255,0.6)";
   ctx.font = "700 12px ui-monospace, Menlo, monospace";
-  ctx.fillText(`PINBALL KNIGHT · ${theme.type}`, 484, 696);
+  // The shine claims the right footer — "PINBALL KNIGHT · POWER" is set dressing
+  // and a shiny is the single most interesting fact about the copy in your hand.
+  if (shiny) {
+    ctx.fillStyle = "#ffd6fb";
+    ctx.font = "800 14px ui-monospace, Menlo, monospace";
+    ctx.shadowColor = "rgba(255,120,235,0.9)";
+    ctx.shadowBlur = 10;
+    ctx.fillText("✦ SHINY", 484, 696);
+    ctx.shadowBlur = 0;
+  } else {
+    ctx.fillText(`PINBALL KNIGHT · ${theme.type}`, 484, 696);
+  }
 
   // ── The baked foil pass: what makes an IDLE card still read as holo ──
   ctx.globalCompositeOperation = "overlay";
   const foil = ctx.createLinearGradient(0, H, W, 0);
   ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => foil.addColorStop(i / (arr.length - 1), col));
-  ctx.globalAlpha = 0.04 + tier * 0.055;
+  ctx.globalAlpha = (0.04 + tier * 0.055) * (shiny ? 2.1 : 1);
   ctx.fillStyle = foil;
   ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = 1;
@@ -631,9 +699,11 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.restore();
 
   // ── Outer border, weight + colour by tier ──
-  const borderW = tier >= 4 ? 6 : tier >= 2 ? 5 : 4;
+  // A SHINY takes the rainbow ring whatever its rarity — that ring is what makes
+  // the pull identifiable across the room and at thumbnail size.
+  const borderW = shiny || tier >= 4 ? 6 : tier >= 2 ? 5 : 4;
   ctx.lineWidth = borderW;
-  if (tier === 4) {
+  if (shiny || tier === 4) {
     const rainbow = ctx.createLinearGradient(0, 0, W, H);
     ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => rainbow.addColorStop(i / (arr.length - 1), col));
     ctx.strokeStyle = rainbow;
@@ -654,6 +724,6 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
 
 /** Rarity tier of a card — exported so the DOM layer can scale its effects. */
 export function cardTier(id: CardId): number {
-  const c = CARDS[id];
+  const c = cardDef(id);
   return c ? TIER[c.rarity] : 0;
 }

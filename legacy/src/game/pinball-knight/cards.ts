@@ -68,6 +68,16 @@ export interface CardDef {
   weaponKinds: WeaponKind | "both";
   modifier: CardModifier;
   /**
+   * THIS COPY's level, 1..CARD_LEVEL_MAX. Present on every def that comes out of
+   * `cardDef()`; the raw CARDS catalogue leaves it undefined (i.e. level 1).
+   * Set by the drop roll from the FLOOR — see rollCardLevel.
+   */
+  level?: number;
+  /** THIS COPY is a shiny (see SHINY_CHANCE). Cosmetic AND a stat bonus. */
+  shiny?: boolean;
+  /** The catalogue id this copy is a level of — `id` minus the `#4s` suffix. */
+  base?: CardId;
+  /**
    * Which MONSTER this card is the essence of — the Ragnarok model, where a card
    * is a slain monster's power bottled rather than an anonymous stat chip.
    *
@@ -171,6 +181,253 @@ export function cardsOfRarity(r: CardRarity): CardId[] {
   return BY_RARITY[r].slice();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CARD INSTANCES — the same monster, a different card
+//
+// A Spider Silk off floor 1 and a Spider Silk off floor 17 used to be the same
+// byte-identical string, which made the twelfth copy of a common worth exactly
+// as much as the first and the end-of-floor haul a wall of repeated faces.
+//
+// A card in the WORLD now carries a LEVEL and a SHINY flag, encoded into the id:
+//
+//   spidersilk      level 1, plain   (canonical — every pre-existing id still valid)
+//   spidersilk#4    level 4, plain
+//   spidersilk#4s   level 4, SHINY
+//
+// WHY AN ENCODED STRING rather than an object: `state.cardStash`, the ground
+// item, `WeaponState.cards`, the co-op wire (coop.ts SnapItem.i) and the corpse
+// drop are all `string` today, three of them across a serialisation boundary.
+// Encoding keeps this change at "swap the lookup function"; an object model
+// would be a rewrite of the loadout with a wire format to version.
+//
+// `CARDS[id]` keeps its meaning — the CATALOGUE, base defs only. Every site that
+// can see a world card resolves through `cardDef(id)` instead.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Level ceiling. At 10 a card carries ~2.08× its base delta, which is about
+ * where the aggregate outruns what the enemy HP curve can absorb. */
+export const CARD_LEVEL_MAX = 10;
+
+/** Fraction of the card's BASE DELTA added per level above 1. */
+export const CARD_LEVEL_STEP = 0.12;
+
+/** A shiny's stat bonus, in the same delta-fraction units — worth ~2.5 levels.
+ * Enough that a shiny is a pull; not so much that a shiny common beats a plain
+ * epic, which would make rarity meaningless. */
+export const SHINY_GROWTH = 0.3;
+
+/** Base chance a dropped card is SHINY. Doubled off a boss, capped by
+ * SHINY_CHANCE_MAX — roughly one per run or two. */
+export const SHINY_CHANCE = 0.04;
+export const SHINY_CHANCE_MAX = 0.12;
+
+export interface CardInstance {
+  base: CardId;
+  level: number;
+  shiny: boolean;
+}
+
+/** Split a world card id into its parts. Tolerant by design: anything that
+ * doesn't parse (a bare catalogue id, a hand-typed dev id, a wire value from an
+ * older peer) reads as level 1 plain rather than throwing. */
+export function parseCard(id: CardId): CardInstance {
+  const hash = id.indexOf("#");
+  if (hash < 0) return { base: id, level: 1, shiny: false };
+  const base = id.slice(0, hash);
+  let suffix = id.slice(hash + 1);
+  const shiny = suffix.endsWith("s");
+  if (shiny) suffix = suffix.slice(0, -1);
+  const level = Number.parseInt(suffix, 10);
+  return {
+    base,
+    level: Number.isFinite(level) ? clampLevel(level) : 1,
+    shiny,
+  };
+}
+
+/** The catalogue id a world card is a copy of. Use this for anything keyed by
+ * CARD KIND rather than by copy — `ITEM_PAINTS`, the bestiary, affinity. */
+export function cardBase(id: CardId): CardId {
+  const hash = id.indexOf("#");
+  return hash < 0 ? id : id.slice(0, hash);
+}
+
+export function clampLevel(level: number): number {
+  return Math.max(1, Math.min(CARD_LEVEL_MAX, Math.round(level)));
+}
+
+/**
+ * Build a world card id. CANONICAL: a level-1 plain card collapses back to the
+ * bare base id, so the game never holds two spellings of the same card — which
+ * is what lets the haul screen stack by raw string equality.
+ */
+export function cardKey(base: CardId, level = 1, shiny = false): CardId {
+  const lv = clampLevel(level);
+  if (lv === 1 && !shiny) return base;
+  return `${base}#${lv}${shiny ? "s" : ""}`;
+}
+
+/** Is this copy a shiny? Cheap enough for a render path. */
+export function isShinyCard(id: CardId): boolean {
+  return id.endsWith("s") && id.includes("#");
+}
+
+/** This copy's level (1 for a bare catalogue id). */
+export function cardLevel(id: CardId): number {
+  return id.includes("#") ? parseCard(id).level : 1;
+}
+
+/** How much of the base delta this copy carries. Level 1 plain = 1 (unchanged). */
+export function cardGrowth(level: number, shiny: boolean): number {
+  return 1 + CARD_LEVEL_STEP * (clampLevel(level) - 1) + (shiny ? SHINY_GROWTH : 0);
+}
+
+/** Multipliers rounded so float noise never reaches the card face. */
+const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+/**
+ * Scale a modifier by `growth`.
+ *
+ * THE RULE: a level multiplies the card's DELTA FROM NEUTRAL, in BOTH
+ * directions. A level-6 Hulk Knuckle is a bigger Hulk Knuckle — more damage AND
+ * more cooldown penalty. Scaling only the upside would quietly launder every
+ * drawback card (gladeath, bloodpact, hulkknuckle) into a strict upgrade, and
+ * cards with real downsides are a design pillar here.
+ */
+export function scaleModifier(m: CardModifier, growth: number): CardModifier {
+  if (growth === 1) return m;
+  const out: CardModifier = {};
+  // Integers never regress: at low growth `round(1 * 1.12)` is still 1, and a
+  // levelled card that gave LESS pierce than its level-1 twin would be a bug.
+  const scaleInt = (v: number): number => Math.max(v, Math.round(v * growth));
+  const scaleMult = (v: number): number => r3(1 + (v - 1) * growth);
+
+  if (m.damageFlat) out.damageFlat = scaleInt(m.damageFlat);
+  if (m.damageMult) out.damageMult = scaleMult(m.damageMult);
+  if (m.cooldownMult) {
+    // Clamped both ways. An unclamped level-10 Time Ripper reaches 0.17, at
+    // which point the swing animation stops reading as a swing at all.
+    out.cooldownMult = Math.max(0.35, Math.min(2, scaleMult(m.cooldownMult)));
+  }
+  if (m.durabilityMult) out.durabilityMult = Math.max(0.05, scaleMult(m.durabilityMult));
+  if (m.onHit) out.onHit = m.onHit;
+  if (m.pinballMult) out.pinballMult = scaleMult(m.pinballMult);
+  if (m.bolt) out.bolt = m.bolt;
+  if (m.materialMult) out.materialMult = scaleMult(m.materialMult);
+  if (m.critChance) out.critChance = Math.min(0.9, r3(m.critChance * growth));
+  if (m.critMult) out.critMult = Math.min(6, scaleMult(m.critMult));
+  if (m.lifesteal) out.lifesteal = scaleInt(m.lifesteal);
+  if (m.pierce) out.pierce = scaleInt(m.pierce);
+  return out;
+}
+
+/**
+ * The card's effects as one sentence, generated from the modifier.
+ *
+ * The hand-written `description` ("+35% durability") becomes a LIE the moment a
+ * card levels, and a card that misreports its own stats is worse than one with
+ * no text at all. A level-1 plain card keeps its authored string — it reads
+ * better — and every other copy gets this.
+ */
+export function describeModifier(m: CardModifier): string {
+  const pct = (v: number): string => `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`;
+  const parts: string[] = [];
+  if (m.damageFlat) parts.push(`+${m.damageFlat} dmg`);
+  if (m.damageMult && m.damageMult !== 1) parts.push(`${pct(m.damageMult)} damage`);
+  // Cooldown reads inverted from every other multiplier — BELOW 1 is the good
+  // outcome — so it says faster/slower instead of signing a bare percent.
+  if (m.cooldownMult && m.cooldownMult !== 1) {
+    parts.push(`${Math.round(Math.abs(1 - m.cooldownMult) * 100)}% ${m.cooldownMult < 1 ? "faster" : "slower"}`);
+  }
+  if (m.durabilityMult && m.durabilityMult !== 1) parts.push(`${pct(m.durabilityMult)} durability`);
+  if (m.critChance) parts.push(`${Math.round(m.critChance * 100)}% CRIT (×${m.critMult ?? 2})`);
+  if (m.lifesteal) parts.push(`heal ${m.lifesteal}/hit`);
+  if (m.pierce) parts.push(`pierce +${m.pierce}`);
+  if (m.onHit) parts.push(`hits ${m.onHit.toUpperCase()}`);
+  if (m.bolt) parts.push("arcs a THUNDERBOLT");
+  if (m.pinballMult && m.pinballMult > 1) parts.push(`×${r3(m.pinballMult)} on momentum`);
+  if (m.materialMult && m.materialMult > 1) parts.push(`×${r3(m.materialMult)} on marble`);
+  return parts.join(", ");
+}
+
+/** Derived defs are memoised — `paintCard` and the haul screen both resolve the
+ * same id many times a frame and the scaling is pure. */
+const _instanceDefs = new Map<CardId, CardDef>();
+
+/**
+ * THE LOOKUP for a card that came out of the world.
+ *
+ * Returns the catalogue def unchanged for a plain level-1 card, and a derived
+ * def (scaled modifier, generated description, level/shiny/base set) for a
+ * levelled or shiny copy. Undefined for an id whose BASE isn't in the catalogue,
+ * which is the same contract `CARDS[id]` had.
+ */
+export function cardDef(id: CardId): CardDef | undefined {
+  const direct = CARDS[id];
+  if (direct) return direct;
+  const cached = _instanceDefs.get(id);
+  if (cached) return cached;
+  const { base, level, shiny } = parseCard(id);
+  const def = CARDS[base];
+  if (!def) return undefined;
+  const modifier = scaleModifier(def.modifier, cardGrowth(level, shiny));
+  const derived: CardDef = {
+    ...def,
+    id,
+    base,
+    level,
+    shiny,
+    modifier,
+    description: describeModifier(modifier) || def.description,
+  };
+  _instanceDefs.set(id, derived);
+  return derived;
+}
+
+/**
+ * Roll THIS drop's level off the floor it dropped on — the "cards get better as
+ * you go deeper" rule. Floors 1-2 hand out level 1s with the occasional 2;
+ * floor 19 hands out 9s and 10s, so the same monster's card is a genuinely
+ * different card at depth.
+ */
+export function rollCardLevel(floor: number, rand: () => number = Math.random): number {
+  const base = 1 + Math.floor((Math.max(1, floor) - 1) / 2);
+  const r = rand();
+  const lv = r < 0.2 ? base - 1 : r < 0.75 ? base : r < 0.95 ? base + 1 : base + 2;
+  return clampLevel(lv);
+}
+
+/** Roll whether this drop is a shiny. Bosses pay double. */
+export function rollShiny(boss = false, rand: () => number = Math.random): boolean {
+  return rand() < Math.min(SHINY_CHANCE_MAX, SHINY_CHANCE * (boss ? 2 : 1));
+}
+
+/**
+ * A dungeon drop, level and shine included.
+ *
+ * Deliberately a WRAPPER rather than folding the rolls into `rollCardDrop`:
+ * that function's rand-stream ordering is pinned by cards.test.ts against a
+ * rate-inflation regression (drawing a value before the gates shifts which
+ * kills drop). Here the level/shiny draws happen strictly AFTER the gates have
+ * already decided a card drops, so the drop RATE is untouched by construction.
+ */
+export function rollCardInstance(
+  opts: Parameters<typeof rollCardDrop>[0],
+  rand: () => number = Math.random,
+): CardId | null {
+  const base = rollCardDrop(opts, rand);
+  if (!base) return null;
+  return cardKey(base, rollCardLevel(opts.floor, rand), rollShiny(!!opts.boss, rand));
+}
+
+/** Re-key a card to a different BASE, keeping this copy's level and shine. Used
+ * by the tavern reroll and the un-socket tier drop: you paid to change WHICH
+ * card it is, not to lose the level you earned. */
+export function reKeyCard(id: CardId, newBase: CardId): CardId {
+  const { level, shiny } = parseCard(id);
+  return cardKey(newBase, level, shiny);
+}
+
 /** The combined effect of every socketed card (order-independent). */
 export interface CardAggregate {
   damageFlat: number;
@@ -195,7 +452,10 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
   };
   if (!cards) return agg;
   for (const id of cards) {
-    const m = CARDS[id]?.modifier;
+    // cardDef, not CARDS — a socketed card carries its own LEVEL, and folding
+    // the base modifier here would silently throw away every level the player
+    // earned the moment they socketed the card.
+    const m = cardDef(id)?.modifier;
     if (!m) continue;
     if (m.damageFlat) agg.damageFlat += m.damageFlat;
     if (m.damageMult) agg.damageMult *= m.damageMult;
@@ -217,7 +477,7 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
   let crit = 0;
   let material = 0;
   for (const id of cards) {
-    const m = CARDS[id]?.modifier;
+    const m = cardDef(id)?.modifier;
     if (!m) continue;
     if (m.bolt) bolt++;
     if (m.critChance) crit++;
@@ -232,7 +492,7 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
 
 /** Does a card fit a weapon of this kind? */
 export function cardFitsKind(card: CardId, kind: WeaponKind): boolean {
-  const wk = CARDS[card]?.weaponKinds;
+  const wk = cardDef(card)?.weaponKinds;
   return wk === "both" || wk === kind;
 }
 
@@ -243,7 +503,7 @@ export function cardFitsKind(card: CardId, kind: WeaponKind): boolean {
  * path and the Tavern armory.
  */
 export function socketCard(w: WeaponState, id: CardId): boolean {
-  if (!cardFitsKind(id, WEAPONS[w.id].kind)) return false;
+  if (!cardDef(id) || !cardFitsKind(id, WEAPONS[w.id].kind)) return false;
   const cards = w.cards ?? (w.cards = []);
   if (cards.length >= weaponSlotCount(w)) return false;
   const before = aggregateCards(cards).durabilityMult;

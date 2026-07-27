@@ -22,7 +22,7 @@
  */
 import { state, activeWeapon, WEAPON_SLOTS } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type GearSlot } from "./items";
-import { CARDS, STASH_MAX, cardFitsKind, socketCard, lowerRarity, cardsOfRarity } from "./cards";
+import { STASH_MAX, cardDef, cardFitsKind, socketCard, lowerRarity, cardsOfRarity, reKeyCard } from "./cards";
 import { ABILITIES, ABILITY_IDS, type AbilityId } from "./abilities";
 import { getBalance, spendGold } from "../../utils/gold-wallet";
 import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel, btn } from "./ui-cards";
@@ -532,10 +532,11 @@ function handle(act: string, ds: { idx?: string; w?: string; suffix?: string }):
     }
     const removed = w.cards.splice(idx, 1)[0];
     // Same respec cost as the tavern: one rarity tier down, commons crumble.
-    const lower = lowerRarity(CARDS[removed].rarity);
+    const lower = lowerRarity(cardDef(removed)!.rarity);
     if (lower) {
       const bag = cardsOfRarity(lower);
-      state.cardStash.push(bag[Math.floor(Math.random() * bag.length)]);
+      // Rarity tier down, LEVEL kept — same rule as the tavern armory.
+      state.cardStash.push(reKeyCard(removed, bag[Math.floor(Math.random() * bag.length)]));
       flash(`un-socketed → dropped to ${lower}`);
     } else {
       flash("common card crumbled to dust");

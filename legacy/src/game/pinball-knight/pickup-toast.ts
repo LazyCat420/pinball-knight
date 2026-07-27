@@ -23,7 +23,7 @@
  * up, not a four-second-stale backlog.
  */
 import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
-import { CARDS, RARITY_HEX, type CardId } from "./cards";
+import { RARITY_HEX, cardDef, type CardId } from "./cards";
 import { state } from "./state";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 
@@ -182,7 +182,7 @@ export function showPickupToast(text: string): void {
  */
 export function showCardToast(id: CardId, note: string): void {
   if (typeof document === "undefined" || !state.container) return;
-  const def = CARDS[id];
+  const def = cardDef(id);
   if (!def) return;
   ensurePixelFonts();
 
@@ -203,8 +203,12 @@ export function showCardToast(id: CardId, note: string): void {
   t.className = "pkt-text";
   const title = document.createElement("div");
   title.className = "pkt-title";
-  title.textContent = `${def.icon} ${def.label.toUpperCase()}`;
-  title.style.color = RARITY_HEX[def.rarity];
+  // The level and the shine go in the TITLE, not a badge: at 38px the thumbnail
+  // can't carry either, and "another Spider Silk" vs "a SHINY Spider Silk Lv7"
+  // is the whole difference between a toast worth glancing at and one that isn't.
+  const lv = (def.level ?? 1) > 1 ? ` Lv${def.level}` : "";
+  title.textContent = `${def.shiny ? "✦ " : ""}${def.icon} ${def.label.toUpperCase()}${lv}`;
+  title.style.color = def.shiny ? "#ffd6fb" : RARITY_HEX[def.rarity];
   t.appendChild(title);
   const sub = document.createElement("div");
   sub.className = "pkt-sub";

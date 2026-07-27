@@ -6,7 +6,7 @@
  * module deliberately does NOT wrap — a kill credits coins and rolls loot as
  * two independent things.
  */
-import { CARDS, rollCardDrop } from "../cards";
+import { cardBase, cardDef, rollCardInstance } from "../cards";
 import { COIN_BURST_SPREAD, COIN_BURST_VY, COIN_DROP_SCALE, COIN_REST_Y, COIN_SPAWN_Y } from "../constants";
 import { updateCoins } from "./coins";
 import { nextItemNid } from "./ground-items";
@@ -50,10 +50,14 @@ export function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKi
   // `kind` + `subType` drive the AFFINITY pick (cards.ts): a card off a Ghost
   // should be a Ghost's card, and one off a HULK should be the Hulk card rather
   // than any old zombie chip. `dropMult` is the sub-type's loot weight.
-  const id = rollCardDrop({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, subType, dropMult });
+  // rollCardInstance, not rollCardDrop: the card that lands on the floor carries
+  // the LEVEL rolled off this floor and its shiny flag, so a floor-17 Spider
+  // Silk is a genuinely better card than the floor-1 one (cards.ts §instances).
+  const id = rollCardInstance({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, subType, dropMult });
   if (!id) return;
-  if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
-  if (CARDS[id].rarity === "mythic") state.mythicDropped = true;
+  const rarity = cardDef(id)?.rarity;
+  if (rarity === "legendary") state.legendaryDropped = true;
+  if (rarity === "mythic") state.mythicDropped = true;
   spawnCardDrop(x, z, id);
 }
 
@@ -61,8 +65,12 @@ export function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKi
  * can place a known card (dev/window-hooks `__dungeonDropCard`) — card drops
  * are otherwise random, which makes the pickup path untestable unattended. */
 export function spawnCardDrop(x: number, z: number, id: string): void {
-  if (!state.scene || !CARDS[id]) return;
-  const sprite = createStaticSprite(ITEM_PAINTS[id]);
+  if (!state.scene || !cardDef(id)) return;
+  // The ground sprite is keyed by card KIND — ITEM_PAINTS has no entry for
+  // "spidersilk#4s", and an undefined paint reaches createStaticSprite and
+  // throws. Every copy of a card looks the same on the floor; the level is
+  // revealed when you read it.
+  const sprite = createStaticSprite(ITEM_PAINTS[cardBase(id)]);
   sprite.mesh.position.set(x, 0, z);
   state.scene.add(sprite.mesh);
   state.groundItems.push({ nid: nextItemNid(), kind: "card", id, x, z, sprite, bobPhase: Math.random() * 6 });

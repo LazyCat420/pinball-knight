@@ -14,7 +14,7 @@
  */
 import { state } from "./state";
 import { WEAPONS, weaponSlotCount, type WeaponState } from "./items";
-import { CARDS, RARITY_HEX, type CardId } from "./cards";
+import { RARITY_HEX, cardDef, type CardId } from "./cards";
 import { getBalance } from "../../utils/gold-wallet";
 import { renderPaintIcon } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
@@ -44,22 +44,29 @@ export function iconTag(id: string, emoji: string, px = 30): string {
 const MAX_TILT_DEG = 12;
 
 export function holoCard(id: CardId, opts: { act?: string; idx?: number; picked?: boolean; size?: "sm" | "md" | "lg" } = {}): string {
-  const c = CARDS[id];
+  const c = cardDef(id);
   if (!c) return "";
   const col = RARITY_HEX[c.rarity];
   const tier = cardTier(id);
+  const level = c.level ?? 1;
   const attrs = opts.act ? `data-act="${opts.act}" data-idx="${opts.idx ?? ""}"` : "";
-  const cls = ["hcard", `hc-${opts.size ?? "md"}`, tier >= 3 ? "hcard-gold" : "", tier >= 4 ? "hcard-myth" : "", opts.picked ? "picked" : ""]
+  const cls = ["hcard", `hc-${opts.size ?? "md"}`, tier >= 3 ? "hcard-gold" : "", tier >= 4 ? "hcard-myth" : "", c.shiny ? "hcard-shiny" : "", opts.picked ? "picked" : ""]
     .filter(Boolean)
     .join(" ");
+  // The Lv corner pip is DOM rather than part of the painted face: at hc-sm
+  // (74px) the face's own "Lv 4" plate downscales into mush, and the level is
+  // exactly the thing you need to compare two otherwise-identical cards.
+  const lvPip = level > 1 ? `<span class="hc-lv">${level}</span>` : "";
   // The face is PAINTED (render/holo-card.paintCard) onto this canvas by
   // paintHoloCards() after the innerHTML lands — the whole card, foil passes
   // and all, is one texture rather than a stack of DOM nodes. The shimmer and
   // glare sit above it as the only two live layers.
-  return `<div ${attrs} class="${cls}" style="--rc:${col};cursor:${opts.act ? "pointer" : "default"}" title="${c.description}">
+  const tip = `${c.shiny ? "✦ SHINY " : ""}${c.label}${level > 1 ? ` Lv${level}` : ""} — ${c.description}`;
+  return `<div ${attrs} class="${cls}" style="--rc:${col};cursor:${opts.act ? "pointer" : "default"}" title="${tip}">
     <canvas class="hc-face" data-card="${id}" width="${CARD_W}" height="${CARD_H}"></canvas>
     <span class="hc-glare"></span>
     <span class="hcard-shimmer"></span>
+    ${lvPip}
   </div>`;
 }
 
@@ -129,6 +136,22 @@ export function injectCardStyles(): void {
       background:linear-gradient(#12100c,#12100c) padding-box,conic-gradient(from 0deg,#ff5edb,#7cf9ff,#f5f36e,#ff8a5e,#ff5edb) border-box;
       animation:hcard-rainbow 5s linear infinite}
     @keyframes hcard-rainbow{to{filter:hue-rotate(360deg)}}
+    /* SHINY — an outer prismatic halo rather than a border, so it stacks with
+       whatever rarity treatment the card already has instead of replacing it.
+       Readable at hc-sm, which is the size the stash and socket cells use. */
+    .hcard-shiny{box-shadow:0 0 0 2px #fff,0 0 14px 3px #7cf9ff,0 0 26px 6px rgba(255,94,219,.55),0 6px 18px rgba(0,0,0,.55);
+      animation:hcard-shine 2.6s ease-in-out infinite}
+    .hcard-shiny:hover{box-shadow:0 0 0 2px #fff,0 0 20px 5px #7cf9ff,0 0 38px 10px rgba(255,94,219,.7),0 12px 28px rgba(0,0,0,.65)}
+    @keyframes hcard-shine{0%,100%{filter:none}50%{filter:brightness(1.14) saturate(1.25)}}
+    .hcard-shiny .hcard-shimmer::before{animation-duration:1.7s}
+    /* Level pip — the face carries a "Lv N" plate too, but it downscales into
+       mush at 74px and the level is what you compare two copies BY. */
+    .hc-lv{position:absolute;left:3px;bottom:3px;pointer-events:none;
+      min-width:15px;padding:0 3px;border-radius:4px;text-align:center;
+      background:rgba(9,14,22,.92);border:1px solid #7dd3fc;color:#bfe6ff;
+      font:800 10px ui-monospace,Menlo,monospace;line-height:14px;
+      text-shadow:0 1px 0 #000;box-shadow:0 1px 4px rgba(0,0,0,.6)}
+    .hcard-shiny .hc-lv{border-color:#ff9df0;color:#ffd6fb}
     .hcard-shimmer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
     .hcard-shimmer::before{content:'';position:absolute;top:-40%;bottom:-40%;left:0;width:45%;
       background:linear-gradient(100deg,transparent,rgba(255,255,255,.10),rgba(120,220,255,.16),rgba(255,150,255,.12),transparent);

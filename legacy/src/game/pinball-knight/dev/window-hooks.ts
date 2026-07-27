@@ -17,7 +17,8 @@
  */
 import { state } from "../state";
 import { ABILITIES, type AbilityId } from "../abilities";
-import { CARDS } from "../cards";
+import { cardDef } from "../cards";
+import { showCardHaul } from "../card-reader";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
@@ -238,7 +239,10 @@ export function installDevHooks(deps: DevHookDeps): void {
     // weapon actually HAS cards — which is what the armory vice displays.
     (window as unknown as { __dungeonSocket?: (id: string) => boolean }).__dungeonSocket = (id: string) => {
       const w = state.weaponSlots[state.activeSlot];
-      if (!w || !(id in CARDS)) return false;
+      // cardDef, not `id in CARDS` — a harness must be able to socket a
+      // levelled or shiny instance (`__dungeonSocket('spidersilk#8s')`), which
+      // is the only way to reach the scaled-stat path unattended.
+      if (!w || !cardDef(id)) return false;
       w.cards = [...(w.cards ?? []), id];
       return true;
     };
@@ -248,7 +252,7 @@ export function installDevHooks(deps: DevHookDeps): void {
     // grab (economy/pickups) and the corner toast both live.
     (window as unknown as { __dungeonDropCard?: (id: string, dx?: number, dz?: number) => boolean }).__dungeonDropCard = (id: string, dx = 0, dz = 0) => {
       const p = state.player;
-      if (!p || !(id in CARDS) || !state.scene) return false;
+      if (!p || !cardDef(id) || !state.scene) return false;
       spawnCardDrop(p.x + dx, p.z + dz, id);
       return true;
     };
@@ -308,6 +312,27 @@ export function installDevHooks(deps: DevHookDeps): void {
       const before = JSON.stringify(state.laneLit);
       rotateLanes();
       return JSON.stringify(state.laneLit) !== before;
+    };
+    // Dev: open the FLOOR HAUL screen on a synthetic haul, without clearing a
+    // floor first. `__dungeonHaul(['spidersilk','spidersilk','spidersilk#7s'])`.
+    // The haul only appears on a descent after a floor that actually dropped
+    // cards, which makes its stacking, level badges and shiny treatment the
+    // hardest surface in the game to reach — and the one most worth LOOKING at.
+    // Called with no argument it deals a representative spread: a stack of
+    // three, a levelled copy, and a shiny.
+    (window as unknown as { __dungeonHaul?: (ids?: string[], floor?: number) => boolean }).__dungeonHaul = (ids?: string[], floor?: number) => {
+      if (!state.container || state.cardReaderEl) return false;
+      const spread = ids ?? [
+        "spidersilk", "spidersilk", "spidersilk",
+        "batwingchip#3", "batwingchip#3",
+        "goblintooth#5", "crawlergrip#6s", "worldbreaker#9",
+      ];
+      const entries = spread
+        .filter((id) => cardDef(id))
+        .map((id, i) => ({ id, note: i % 2 ? "STASHED FOR THE TAVERN" : "SOCKETED INTO ⚔ SWORD", fresh: i === 0 }));
+      if (entries.length === 0) return false;
+      showCardHaul(entries, floor ?? state.level, () => {});
+      return true;
     };
     // Dev: open the between-floor TAVERN without clearing a floor first — it's
     // where the holo cards live, and QA'ing them shouldn't need a full run.

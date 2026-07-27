@@ -8,7 +8,7 @@
  */
 import { getPlayerName } from "../../../services/player-name";
 import { saveLeaderboardScore } from "../../../services/score-service";
-import { cardsOfRarity } from "../cards";
+import { cardKey, cardsOfRarity, rollCardLevel, rollShiny } from "../cards";
 import { hasStartCardPerk } from "../legacy";
 import { runDetail, scoreRun, type RunStats } from "../run-score";
 import { invalidateSkillAgg, playerMaxHp } from "../skill-runtime";
@@ -51,7 +51,9 @@ function beginRunProgression(): void {
   invalidateSkillAgg();
   if (hasStartCardPerk()) {
     const bag = cardsOfRarity("common");
-    state.cardStash.push(bag[Math.floor(Math.random() * bag.length)]);
+    // Floor 1 levels — this is a RUN-START seed, so it rolls off where the run
+    // begins rather than where the last one ended.
+    state.cardStash.push(cardKey(bag[Math.floor(Math.random() * bag.length)], rollCardLevel(1), rollShiny()));
   }
   if (state.player) state.player.hp = playerMaxHp();
 }

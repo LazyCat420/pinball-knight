@@ -30,7 +30,7 @@ import { sfxBreak } from "./audio";
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear } from "./render/knight-look";
 import { ARMOR_STYLES, ELEMENTAL_STYLE_IDS, activeStyle, isStyleUnlocked, unlockStyle, setActiveStyle, styleGearGrant, type ArmorStyleId } from "./armor-styles";
-import { CARDS, RARITY_HEX, STASH_MAX, cardsOfRarity, cardFitsKind, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
+import { CARD_LEVEL_MAX, RARITY_HEX, STASH_MAX, cardBase, cardDef, cardKey, cardsOfRarity, cardFitsKind, parseCard, reKeyCard, rollCardLevel, rollShiny, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { REAGENTS, REAGENT_IDS, type ReagentId } from "./reagents";
 import { RECIPES, RECIPE_IDS, canCraft, craftCost, type RecipeDef } from "./recipes";
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
@@ -209,7 +209,11 @@ function rollBarOffers(): void {
     const r = Math.random();
     const rarity: CardRarity = r < 0.5 ? "common" : r < 0.82 ? "rare" : r < 0.95 ? "epic" : r < 0.99 ? "legendary" : "mythic";
     const bag = cardsOfRarity(rarity);
-    pool.push(bag[Math.floor(Math.random() * bag.length)]);
+    // Levelled off how DEEP the run has been, not off floor 1. A twenty-floor
+    // run coming back up to a shelf of level-1 chips would make the dealer
+    // strictly worse than the dungeon, and the shelf would stop being a reason
+    // to hold gold.
+    pool.push(cardKey(bag[Math.floor(Math.random() * bag.length)], rollCardLevel(state.runDeepestFloor), rollShiny()));
   }
   barOffers = pool;
 }
@@ -344,7 +348,7 @@ function injectTavernStyles(): void {
 function cardsBody(): string {
   const stash = state.cardStash;
   const offers = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">${barOffers
-    .map((id, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${holoCard(id, { size: "lg" })}${btn(`buycard:${i}`, "Buy", PRICE_CARD[CARDS[id].rarity], stash.length >= STASH_MAX)}</div>`)
+    .map((id, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${holoCard(id, { size: "lg" })}${btn(`buycard:${i}`, "Buy", PRICE_CARD[cardDef(id)!.rarity], stash.length >= STASH_MAX)}</div>`)
     .join("")}</div>`;
   const weapons = state.weaponSlots.map((w, i) => (w ? weaponPanel(w, i) : "")).join("");
   const stashHtml = stash.length
@@ -363,7 +367,7 @@ function cardsBody(): string {
 /** 🔨 Weaponsmith — repair the blade, add a card slot, forge + reroll cards. */
 function weaponsBody(): string {
   const stash = state.cardStash;
-  const commons = stash.map((id, i) => ({ id, i })).filter((x) => CARDS[x.id].rarity === "common");
+  const commons = stash.map((id, i) => ({ id, i })).filter((x) => cardDef(x.id)?.rarity === "common");
   const forgeList = commons.length
     ? commons.map((x) => `<span data-act="forgepick" data-idx="${x.i}" style="cursor:pointer">${holoCard(x.id, { size: "sm", picked: forgePick.includes(x.i) })}</span>`).join("")
     : `<span style="color:#6c5a3e;font-size:10px">no common cards to forge</span>`;
@@ -785,10 +789,13 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     const removed = w.cards.splice(idx, 1)[0];
     // respec cost: the card drops one rarity tier (a random card of the lower
     // rarity); a common just crumbles to dust.
-    const lower = lowerRarity(CARDS[removed].rarity);
+    const lower = lowerRarity(cardDef(removed)!.rarity);
     if (lower) {
       const bag = cardsOfRarity(lower);
-      state.cardStash.push(bag[Math.floor(Math.random() * bag.length)]);
+      // The respec costs you a RARITY tier, not the level you earned — losing
+      // both would make un-socketing a level-9 card unthinkable, and the point
+      // of the mechanic is that respeccing stays available.
+      state.cardStash.push(reKeyCard(removed, bag[Math.floor(Math.random() * bag.length)]));
       flash(`un-socketed → dropped to ${lower}`);
     } else {
       flash("common card crumbled to dust");
@@ -802,7 +809,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     const id = barOffers[idx];
     if (!id) return;
     if (state.cardStash.length >= STASH_MAX) { flash("stash full"); return; }
-    if (!pay(PRICE_CARD[CARDS[id].rarity])) { flash("not enough gold"); return; }
+    if (!pay(PRICE_CARD[cardDef(id)!.rarity])) { flash("not enough gold"); return; }
     state.cardStash.push(id);
     barOffers.splice(idx, 1);
     render();
@@ -843,7 +850,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
       // Socketed cards are gone TOO, except the ones insurance bought back out
       // of the fire (rarest first — the player paid to protect what matters).
       const held = w.cards ?? [];
-      const saved = insuredCards(held, w.insured ?? 0, (id) => CARD_RANK.indexOf(CARDS[id]?.rarity));
+      const saved = insuredCards(held, w.insured ?? 0, (id) => CARD_RANK.indexOf(cardDef(id)?.rarity as CardRarity));
       const lost = held.length - saved.length;
       state.weaponSlots[activeWeaponSlotIndex()] = null;
       for (const id of saved) if (state.cardStash.length < STASH_MAX) state.cardStash.push(id);
@@ -928,7 +935,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
   if (act === "forge") {
     if (forgePick.length !== 2) return;
     // both must still be commons
-    if (!forgePick.every((i) => CARDS[state.cardStash[i]]?.rarity === "common")) { forgePick = []; render(); return; }
+    if (!forgePick.every((i) => cardDef(state.cardStash[i])?.rarity === "common")) { forgePick = []; render(); return; }
     // A GRIM BONE gates the forge. It used to be unlimited and free, which made
     // rare cards manufacturable from the commons any floor hands out — the exact
     // "you can craft cards" hole the design is trying to avoid. Now the forge
@@ -936,14 +943,24 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     // downstream of hunting.
     if ((state.reagents[FORGE_CATALYST] ?? 0) < 1) { flash("the forge needs a 💀 Grim Bone"); return; }
     state.reagents[FORGE_CATALYST] = (state.reagents[FORGE_CATALYST] ?? 0) - 1;
+    // The forge INHERITS from what it consumed: the higher of the two levels,
+    // +1 when both inputs matched it, and the shine if either input had one.
+    // Feeding two level-8 commons in and getting a level-1 rare back would make
+    // the forge a downgrade for anyone deep enough to have levelled commons.
+    const inputs = forgePick.map((i) => parseCard(state.cardStash[i]));
+    const forgedLevel = Math.min(
+      CARD_LEVEL_MAX,
+      Math.max(...inputs.map((c) => c.level)) + (inputs[0].level === inputs[1].level ? 1 : 0),
+    );
+    const forgedShiny = inputs.some((c) => c.shiny);
     // remove the two (descending index so splices don't shift), add a rare
     const rare = cardsOfRarity("rare");
-    const newCard = rare[Math.floor(Math.random() * rare.length)];
+    const newCard = cardKey(rare[Math.floor(Math.random() * rare.length)], forgedLevel, forgedShiny);
     forgePick.sort((a, b) => b - a).forEach((i) => state.cardStash.splice(i, 1));
     forgePick = [];
     state.cardStash.push(newCard);
     pendingFx.push("forge");
-    flash(`forged a RARE: ${CARDS[newCard].label}`);
+    flash(`forged a RARE: ${cardDef(newCard)!.label}${forgedLevel > 1 ? ` Lv${forgedLevel}` : ""}${forgedShiny ? " ✦SHINY" : ""}`);
     render();
     return;
   }
@@ -952,9 +969,11 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     const cur = state.cardStash[idx];
     if (!cur) return;
     if (!pay(PRICE_REROLL_CARD)) { flash("not enough gold"); return; }
-    const bag = cardsOfRarity(CARDS[cur].rarity).filter((c) => c !== cur);
-    state.cardStash[idx] = bag.length ? bag[Math.floor(Math.random() * bag.length)] : cur;
-    flash(`rerolled → ${CARDS[state.cardStash[idx]].label}`);
+    const bag = cardsOfRarity(cardDef(cur)!.rarity).filter((c) => c !== cardBase(cur));
+    // Same rarity, new card, SAME level and shine — you paid to change which
+    // card it is, not to have the level rolled back.
+    state.cardStash[idx] = bag.length ? reKeyCard(cur, bag[Math.floor(Math.random() * bag.length)]) : cur;
+    flash(`rerolled → ${cardDef(state.cardStash[idx])!.label}`);
     render();
     return;
   }

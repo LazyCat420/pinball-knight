@@ -22,7 +22,7 @@
  * handleKey, not a listener here — one keyboard owner, same as the shop.
  */
 import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
-import { CARDS, RARITY_HEX, type CardId } from "./cards";
+import { RARITY_HEX, cardBase, cardDef, isShinyCard, type CardId } from "./cards";
 import { state, type HaulEntry } from "./state";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 import { showCardToast } from "./pickup-toast";
@@ -42,7 +42,60 @@ let onHaulDone: (() => void) | null = null;
  * the one that is marked.
  */
 export function isNotablePull(id: CardId, seen: ReadonlySet<string>): boolean {
-  return cardTier(id) >= 2 || !seen.has(id);
+  // Seen-ness is per CARD KIND, not per copy: a level-7 Spider Silk is not a
+  // discovery just for being level 7. A SHINY always flags — it genuinely is
+  // the first one you have seen.
+  return cardTier(id) >= 2 || isShinyCard(id) || !seen.has(cardBase(id));
+}
+
+/** One row of the haul screen: a card and every copy of it found this floor. */
+export interface HaulStack {
+  id: CardId;
+  count: number;
+  /** Any copy in this stack was the run's first of that card kind. */
+  fresh: boolean;
+  /** Where the copies went, de-duplicated ("SOCKETED INTO ⚔ SWORD", "STASHED…"). */
+  notes: string[];
+}
+
+/**
+ * Fold a floor's haul into one row per DISTINCT card.
+ *
+ * Grouped by the full instance id, NOT the base: a level-3 Spider Silk and a
+ * level-1 Spider Silk are genuinely different cards and merging them would
+ * misreport what you are carrying. Three level-3s are one stack of ×3.
+ *
+ * Ordered BEST PULL FIRST (rarity → shine → level → count) rather than by
+ * pickup order. The thing worth looking at leads the screen instead of sitting
+ * at position nine behind eight commons.
+ *
+ * Pure, so the grouping is unit-tested without a DOM.
+ */
+export function stackHaul(entries: readonly HaulEntry[]): HaulStack[] {
+  const by = new Map<CardId, HaulStack>();
+  for (const e of entries) {
+    if (!cardDef(e.id)) continue;
+    const s = by.get(e.id);
+    if (s) {
+      s.count++;
+      s.fresh = s.fresh || !!e.fresh;
+      if (e.note && !s.notes.includes(e.note)) s.notes.push(e.note);
+    } else {
+      by.set(e.id, { id: e.id, count: 1, fresh: !!e.fresh, notes: e.note ? [e.note] : [] });
+    }
+  }
+  return [...by.values()].sort((a, b) => {
+    const ta = cardTier(a.id);
+    const tb = cardTier(b.id);
+    if (ta !== tb) return tb - ta;
+    const sa = isShinyCard(a.id) ? 1 : 0;
+    const sb = isShinyCard(b.id) ? 1 : 0;
+    if (sa !== sb) return sb - sa;
+    const la = cardDef(a.id)?.level ?? 1;
+    const lb = cardDef(b.id)?.level ?? 1;
+    if (la !== lb) return lb - la;
+    return b.count - a.count;
+  });
 }
 
 /**
@@ -51,8 +104,12 @@ export function isNotablePull(id: CardId, seen: ReadonlySet<string>): boolean {
  * touching the sim — walking over a card costs you nothing.
  */
 export function presentCardPickup(id: CardId, note: string): void {
-  const fresh = !state.seenCards.has(id);
-  state.seenCards.add(id);
+  // Tracked by card KIND. Keying `seenCards` on the full instance id would mark
+  // every new LEVEL of a card you already own as a discovery, and the NEW flag
+  // would stop meaning anything within two floors.
+  const base = cardBase(id);
+  const fresh = !state.seenCards.has(base);
+  state.seenCards.add(base);
   state.floorHaul.push({ id, note, fresh });
   showCardToast(id, note);
 }
@@ -91,6 +148,29 @@ function injectStyles(): void {
     @keyframes cardrd-deal{
       from{opacity:0;transform:translateY(14px) scale(.94)}
       to{opacity:1;transform:none}}
+    /* THE STACK. The face sits at the front of a relatively-positioned box; the
+       ghost plates behind it are absolutely positioned INSIDE that box, so the
+       cell's flow width is still exactly one card and the grid doesn't reflow
+       around a pile. Room is left at the top-right for the offset plates and the
+       count chip via padding on the box rather than a transform on the face —
+       transforming the face would fight the deal-in animation on the cell. */
+    .cardrd-stack{position:relative;width:100%;padding:11px 11px 0 0;box-sizing:border-box}
+    .cardrd-face{position:relative;z-index:2;display:block;width:100%;height:auto;border-radius:8px;
+      box-shadow:0 10px 28px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.6)}
+    .cardrd-ghost{position:absolute;z-index:1;left:0;top:11px;right:11px;bottom:0;
+      border-radius:8px;background:#10141c;border:2px solid #555;
+      box-shadow:0 6px 16px rgba(0,0,0,.6);transform-origin:50% 100%}
+    .cardrd-count{position:absolute;z-index:3;right:0;top:0;
+      min-width:26px;padding:2px 6px;border-radius:11px;text-align:center;
+      background:#0b0d12;border:2px solid #f0c85a;color:#f0c85a;
+      font:11px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
+      box-shadow:0 2px 8px rgba(0,0,0,.7),0 0 12px rgba(240,200,90,.45)}
+    .cardrd-shiny{display:inline-block;white-space:nowrap;vertical-align:middle;
+      padding:1px 5px;border-radius:4px;
+      background:#2a1030;border:1px solid #ff9df0;color:#ffd6fb;
+      font:8px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
+      box-shadow:0 0 10px rgba(255,120,235,.6);animation:cardrd-shine 1.8s ease-in-out infinite}
+    @keyframes cardrd-shine{0%,100%{opacity:.75}50%{opacity:1}}
     .cardrd-name{font:10px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
       text-align:center;text-shadow:1px 1px 0 #0b0d12}
     .cardrd-desc{font:8px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
@@ -105,7 +185,7 @@ function injectStyles(): void {
     @keyframes cardrd-pulse{0%,100%{opacity:.55}50%{opacity:1}}
     @media (prefers-reduced-motion:reduce){
       .cardrd,.cardrd-cell{animation-duration:1ms}
-      .cardrd-foot{animation:none}
+      .cardrd-foot,.cardrd-shiny{animation:none}
     }
   `;
   document.head.appendChild(s);
@@ -119,29 +199,67 @@ function faceWidth(n: number): number {
   return 92;
 }
 
-function buildCell(e: HaulEntry, i: number, w: number): HTMLElement | null {
-  const def = CARDS[e.id];
+function buildCell(s: HaulStack, i: number, w: number): HTMLElement | null {
+  const def = cardDef(s.id);
   if (!def) return null;
+  const shiny = !!def.shiny;
+  const level = def.level ?? 1;
   const cell = document.createElement("div");
   cell.className = "cardrd-cell";
   cell.style.width = `${w}px`;
   // Capped so a 12-card haul doesn't take four seconds to finish dealing.
   cell.style.animationDelay = `${Math.min(i * 55, 660)}ms`;
 
+  // ── The stack ──
+  // Duplicates are ONE cell with the copies drawn as offset plates behind the
+  // face, because that is what a pile of the same card physically looks like —
+  // and because eight identical faces in a row was the thing that made the haul
+  // screen read as noise. The count chip carries the actual number; the plates
+  // cap at two, since three ghosts already say "several" and any more just eats
+  // the cell's width.
+  const stack = document.createElement("div");
+  stack.className = "cardrd-stack";
+  const ghosts = Math.min(2, s.count - 1);
+  for (let k = ghosts; k >= 1; k--) {
+    const g = document.createElement("div");
+    g.className = "cardrd-ghost";
+    g.style.borderColor = RARITY_HEX[def.rarity];
+    g.style.transform = `translate(${k * 5}px, ${k * -5}px) rotate(${k * 2.2}deg)`;
+    stack.appendChild(g);
+  }
+
   const canvas = document.createElement("canvas");
   // paintCard REQUIRES the backing store to be exactly CARD_W x CARD_H.
   canvas.width = CARD_W;
   canvas.height = CARD_H;
-  canvas.style.cssText = `display:block;width:100%;height:auto;border-radius:8px;
-    box-shadow:0 10px 28px rgba(0,0,0,.75),0 0 0 1px rgba(0,0,0,.6)`;
-  paintCard(canvas, e.id);
-  cell.appendChild(canvas);
+  canvas.className = "cardrd-face";
+  paintCard(canvas, s.id);
+  stack.appendChild(canvas);
+
+  if (s.count > 1) {
+    const chip = document.createElement("span");
+    chip.className = "cardrd-count";
+    chip.textContent = `×${s.count}`;
+    stack.appendChild(chip);
+  }
+  cell.appendChild(stack);
 
   const name = document.createElement("div");
   name.className = "cardrd-name";
-  name.textContent = def.label.toUpperCase();
+  name.textContent = level > 1 ? `${def.label.toUpperCase()} Lv${level}` : def.label.toUpperCase();
   name.style.color = RARITY_HEX[def.rarity];
-  if (e.fresh) {
+  // The shine badge rides the NAME row, not the card face. Floated over the
+  // art it landed squarely on the stats strip — a badge that hides the numbers
+  // it is bragging about. The painted face carries its own "✦ SHINY" footer and
+  // the prismatic border, so this is the third and least intrusive signal.
+  if (shiny) {
+    const sh = document.createElement("span");
+    sh.className = "cardrd-shiny";
+    sh.textContent = "✦ SHINY";
+    name.appendChild(document.createTextNode(" "));
+    name.appendChild(sh);
+  }
+  if (s.fresh) {
     const badge = document.createElement("span");
     badge.className = "cardrd-new";
     badge.textContent = "NEW";
@@ -151,7 +269,9 @@ function buildCell(e: HaulEntry, i: number, w: number): HTMLElement | null {
   cell.appendChild(name);
 
   // The description is the point of reading at all — a card you socketed and
-  // never read is a stat you don't know you have.
+  // never read is a stat you don't know you have. For a levelled copy this is
+  // regenerated from the SCALED modifier (cards.ts describeModifier), so the
+  // line is what this card actually does rather than what its level-1 twin did.
   const desc = document.createElement("div");
   desc.className = "cardrd-desc";
   desc.textContent = `${def.icon} ${def.description}`;
@@ -159,7 +279,7 @@ function buildCell(e: HaulEntry, i: number, w: number): HTMLElement | null {
 
   const where = document.createElement("div");
   where.className = "cardrd-where";
-  where.textContent = e.note;
+  where.textContent = s.notes.join(" · ");
   cell.appendChild(where);
 
   return cell;
@@ -172,8 +292,9 @@ function buildCell(e: HaulEntry, i: number, w: number): HTMLElement | null {
  * instead of branching itself.
  */
 export function showCardHaul(entries: readonly HaulEntry[], floor: number, onDone: () => void): void {
-  const shown = entries.filter((e) => CARDS[e.id]);
-  if (typeof document === "undefined" || !state.container || shown.length === 0) {
+  const stacks = stackHaul(entries);
+  const total = stacks.reduce((n, s) => n + s.count, 0);
+  if (typeof document === "undefined" || !state.container || stacks.length === 0) {
     onDone();
     return;
   }
@@ -201,17 +322,25 @@ export function showCardHaul(entries: readonly HaulEntry[], floor: number, onDon
   title.textContent = `FLOOR ${floor} HAUL`;
   col.appendChild(title);
 
-  const newCount = shown.filter((e) => e.fresh).length;
+  const newCount = stacks.filter((s) => s.fresh).length;
+  const shinyCount = stacks.filter((s) => isShinyCard(s.id)).reduce((n, s) => n + s.count, 0);
   const sub = document.createElement("div");
   sub.className = "cardrd-sub";
-  sub.textContent = `${shown.length} CARD${shown.length === 1 ? "" : "S"}${newCount ? ` · ${newCount} NEW` : ""}`;
+  sub.textContent =
+    `${total} CARD${total === 1 ? "" : "S"}` +
+    (stacks.length !== total ? ` · ${stacks.length} KIND${stacks.length === 1 ? "" : "S"}` : "") +
+    (newCount ? ` · ${newCount} NEW` : "") +
+    (shinyCount ? ` · ${shinyCount} SHINY` : "");
   col.appendChild(sub);
 
   const grid = document.createElement("div");
   grid.className = "cardrd-grid";
-  const w = faceWidth(shown.length);
-  shown.forEach((e, i) => {
-    const cell = buildCell(e, i, w);
+  // Sized off the number of STACKS, not the number of cards — collapsing
+  // duplicates is what buys a big-haul floor readable faces instead of 92px
+  // thumbnails nobody can read the stat line on.
+  const w = faceWidth(stacks.length);
+  stacks.forEach((s, i) => {
+    const cell = buildCell(s, i, w);
     if (cell) grid.appendChild(cell);
   });
   col.appendChild(grid);

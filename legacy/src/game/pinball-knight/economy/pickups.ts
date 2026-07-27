@@ -11,7 +11,7 @@
 import { myId } from "../../../net/presence";
 import { sfxCoin, sfxPickup } from "../audio";
 import { presentCardPickup } from "../card-reader";
-import { CARDS, STASH_MAX, socketCard, type CardId } from "../cards";
+import { STASH_MAX, cardDef, socketCard, type CardId } from "../cards";
 import {
   BOOTS_SPEED_FACTOR,
   CARD_PICKUP_RANGE,
@@ -45,7 +45,7 @@ import { showPickupNote } from "../ui";
  * bounce. */
 export function pickUpCard(it: GroundItem): boolean {
   const id = it.id as CardId;
-  const def = CARDS[id];
+  const def = cardDef(id);
   if (!def) return true;
   const active = state.weaponSlots[state.activeSlot];
   if (active && socketCard(active, id)) {
