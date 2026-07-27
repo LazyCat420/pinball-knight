@@ -52,7 +52,7 @@
  *
  * DOM- and three-free. Pure apart from the grid/mask it carves.
  */
-import { type Grid, type TilePos, idx, isWalkable } from "./generator";
+import { type Grid, type TilePos, idx, isWalkable, setTile, T_WALL } from "./generator";
 import { carveStroke, type TrackMask } from "./track-carve";
 
 /** Half-width of the carved lane → a 3-tile-wide hallway. Matches `main`. */
@@ -157,7 +157,15 @@ export function findChuteSites(g: Grid, mask: TrackMask): Candidate[] {
           len = s;
         }
         if (len < LAUNCH_MIN) continue;
-        out.push({ mouth: { i, j }, base: { i: i - di * len, j: j - dj * len }, dirI: di, dirJ: dj, len });
+        const base = { i: i - di * len, j: j - dj * len };
+        // THE CLOSED END NEEDS A REAL END CAP. `crossSectionFree` only checks
+        // the band PERPENDICULAR to the run, so nothing stopped the base from
+        // landing one tile off the border — leaving a single-tile membrane
+        // behind it. The piece gate caught the consequence: a sealed tile at
+        // (19,2) opening onto floor at (19,1). Two tiles of stone behind the
+        // plunger, always.
+        if (base.i < 3 || base.j < 3 || base.i >= g.w - 3 || base.j >= g.h - 3) continue;
+        out.push({ mouth: { i, j }, base, dirI: di, dirJ: dj, len });
       }
     }
   }
@@ -245,6 +253,52 @@ export function carveLaunchChute(g: Grid, mask: TrackMask, rng: () => number): L
   }
 
   return { base, mouth, dirI, dirJ, spine, half: LAUNCH_HALF };
+}
+
+/**
+ * Close any side door the connectivity repair had to punch into the chute.
+ *
+ * `connectAll` prefers to route around a sealed lane's walls but will go
+ * through one rather than strand a pocket — correct precedence, and it leaves a
+ * rare hole: measured, about one floor in forty ends up with a sealed tile
+ * opening onto off-lane floor.
+ *
+ * This closes it, and the ORDER of the two operations is the whole design.
+ * Sealing first and checking after is what makes it safe: the alternative
+ * (refuse the repair up front) would trade a cosmetic defect for a stranded
+ * player, which is the one bug this generator may never ship. Here the seal is
+ * applied, connectivity is re-checked with the caller's own reachability test,
+ * and the tile is put back if it stranded anything. Worst case we are exactly
+ * where we started.
+ *
+ * `reaches` must answer "is every walkable tile still reachable from spawn".
+ * Returns the number of tiles sealed.
+ */
+export function resealChute(
+  g: Grid,
+  mask: TrackMask,
+  chute: LaunchChute,
+  reaches: () => boolean,
+): number {
+  let sealed = 0;
+  for (const t of chuteTiles(g, chute)) {
+    if (mask.sealed[idx(g, t.i, t.j)] !== 1) continue;
+    for (const [di, dj] of CARDINALS) {
+      const x = t.i + di;
+      const y = t.j + dj;
+      if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
+      if (!isWalkable(g, x, y)) continue;
+      if (mask.lane[idx(g, x, y)] === 1) continue; // part of the circuit: fine
+      const before = g.t[idx(g, x, y)];
+      setTile(g, x, y, T_WALL);
+      if (!reaches()) {
+        g.t[idx(g, x, y)] = before; // it was load-bearing — leave the door
+      } else {
+        sealed++;
+      }
+    }
+  }
+  return sealed;
 }
 
 /**

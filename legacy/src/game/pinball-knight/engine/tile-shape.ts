@@ -225,6 +225,19 @@ export interface ArcFeature {
    */
   solidOut?: boolean;
   /**
+   * WHO AUTHORED THIS FACE, and therefore whether it may be dropped when two
+   * curves meet incoherently (maze/arc-contract.ts).
+   *
+   *   "track"  — a fillet on the grown circuit. The lane was CARVED to this
+   *              radius, so the curve is the racing line; it never yields.
+   *   "island" — the orbit island's full circle. One feature by design.
+   *   "sweep"  — a scavenged corner fillet. Decoration; yields.
+   *
+   * Absent is read as "sweep", so an untagged feature is the one that gives way
+   * rather than the one that survives — the safe default if a new author forgets.
+   */
+  owner?: "track" | "island" | "sweep";
+  /**
    * KICKER BANDS strung along this face — the pinball rubber (see KickBand).
    * Absent/empty = the whole sweep is plain stone. Authored by arc-sweeps.ts.
    */

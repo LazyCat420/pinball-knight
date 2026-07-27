@@ -34,8 +34,9 @@ import { buildTrackPath, type TrackPath } from "./track-path";
 import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, sealedWalls, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
-import { carveLaunchChute, chuteTiles, type LaunchChute } from "./track-launch";
+import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
+import { compactArcs } from "./arc-contract";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { bfsDistances } from "../engine/flow-field";
 
@@ -372,6 +373,40 @@ export function buildTrackFloor(
     authorArteryBanks(grid, artery, ends.start, NOTHING_OCCUPIED, isGuarded);
     repair([ends.start, ends.stairs]);
   }
+
+  // ── LAST: prune curves nothing meaningfully owns ────────────────────────
+  //
+  // `arcSweepGeometry` walks `Grid.arcs` and draws every feature's FULL span
+  // without ever asking which tiles reference it, so a feature whittled down to
+  // one tile by a later pass still renders a whole quarter-circle band hanging
+  // off a single stone. Measured before this pass: 5.1% of features owned 1-2
+  // tiles and 0.1% owned none, and all of them were being drawn.
+  //
+  // It has to run here, after every pass that can take tiles away. It only
+  // rewrites shapes and remaps indices — no tile changes walkability — so it
+  // cannot affect connectivity.
+  // Close any side door `connectAll` had to punch into the plunger lane rather
+  // than strand a pocket (about one floor in forty). Strand-guarded: a tile
+  // that turns out to be load-bearing is put straight back.
+  if (chute) {
+    resealChute(grid, mask, chute, () => {
+      const d = bfsDistances(grid, ends.start.i, ends.start.j);
+      for (let j = 0; j < grid.h; j++) {
+        for (let i = 0; i < grid.w; i++) {
+          if (isWalkable(grid, i, j) && d[idx(grid, i, j)] < 0) return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  compactArcs(grid);
+  // Compaction turns a dropped feature's rim tiles back into plain stone, and a
+  // former rim can be a three-sided nub — `removeWallStubs` skips arc tiles, so
+  // it had no opinion on them while they were still rims. One more pass, after
+  // the last thing that can create one. It only opens walls that carry no arc
+  // face, so it cannot unback a surviving curve.
+  removeWallStubs(grid, mask);
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 

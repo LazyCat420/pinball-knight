@@ -2224,6 +2224,27 @@ export function decorateMaze(
   // Must be the LAST pass that touches a part's direction. ──
   breakLaunchDuels(g, parts);
 
+  // ── THE LAUNCH CHUTE IS THE CHUTE PASS'S ALONE ──────────────────────────
+  //
+  // Withholding the chute's tiles from `floors` keeps every pass that PICKS a
+  // candidate tile out of the lane, but not the ones that place at an OFFSET
+  // from one — the booster tributaries and the rollover/target arrays walk
+  // `p + dir * s` and never re-check where they landed. Measured: one unbadged
+  // booster inside the lane, aimed across it.
+  //
+  // Chasing each offset-walking pass individually is the wrong shape (the next
+  // one added would have the same hole), so the invariant is enforced once,
+  // here, after everything has placed: anything in the lane that is not the
+  // chute's own is removed. It is a removal rather than a re-aim because the
+  // lane's furniture is authored, not negotiated — see layLaunchChute.
+  if (chute) {
+    for (let k = parts.length - 1; k >= 0; k--) {
+      const q = parts[k];
+      if (q.chute) continue;
+      if (inChute(q.i, q.j)) parts.splice(k, 1);
+    }
+  }
+
   // ── Shaped walls: bevel convex outer corners into 45° slants (tile-shape.ts).
   // LAST tile mutation, so the topology it reads (rooms, corridors, launch
   // break-throughs, secrets) is final. Only reshapes existing walls — never

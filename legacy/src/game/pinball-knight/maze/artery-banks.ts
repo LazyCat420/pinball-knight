@@ -55,6 +55,7 @@ import {
 } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, angleInSpan, type ArcFeature } from "../engine/tile-shape";
 import { bfsDistancesOwned } from "../engine/flow-field";
+import { junctionClear } from "./arc-contract";
 
 /** The four cardinals, in the order `traceArtery` prefers them. */
 const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
@@ -382,7 +383,12 @@ function planOneBank(
 export function commitBank(g: Grid, plan: BankPlan): void {
   ensureArcs(g);
   const fi = g.arcs!.length;
-  g.arcs!.push(plan.feature);
+  // Tagged as the racing line's own curve — a bank IS the outer shell of a turn
+  // on the start→stairs route, so it ranks with the circuit's fillets and never
+  // yields to a scavenged sweep. Untagged it defaulted to "sweep", which let a
+  // bank land against a fillet of the opposite curvature: the piece gate caught
+  // exactly that ("flip at (75,42)").
+  g.arcs!.push({ ...plan.feature, owner: "track" });
   for (const t of plan.fillTiles) setTile(g, t.i, t.j, T_WALL);
   for (const t of plan.arcTiles) {
     setTile(g, t.i, t.j, T_WALL);
@@ -436,6 +442,12 @@ export function authorArteryBanks(
   // for a flood fill per bank is cheap and keeps the good ones.
   let kept = 0;
   for (const p of plans) {
+    // THE ARC CONTRACT applies to banks too. A bank is CONCAVE (solid outside —
+    // it is the outer shell of a turn) and it runs after the convex fillets, so
+    // an unguarded bank lands against one and the wall flips curvature inside a
+    // single tile. The piece gate caught exactly that: "flip against feature 0,
+    // kink 38°". Same guard, same reason as arc-sweeps.planFillet.
+    if (!junctionClear(g, p.arcTiles, { ...p.feature, owner: "track" })) continue;
     commitBank(g, p);
     if (strands(g, start)) revertBank(g, p);
     else kept++;

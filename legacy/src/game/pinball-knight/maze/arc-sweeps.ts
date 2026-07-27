@@ -30,6 +30,7 @@
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
 import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "../engine/tile-shape";
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
+import { junctionClear } from "./arc-contract";
 
 /**
  * Fillet radii tried largest-first at every qualifying corner.
@@ -244,12 +245,32 @@ function planFillet(g: Grid, px: number, pz: number, cx: number, cz: number, R: 
     for (let tj = z0; tj <= z1; tj++) if (at(g, floorColX, tj) !== T_FLOOR) return null;
   }
 
-  return {
-    feature: { cx: C.x, cz: C.z, r: R, a0: quadrantA0(cx, cz), span: HALF_PI, solidOut: concave || undefined },
-    arcTiles,
-    carveTiles,
-    fillTiles,
+  const feature: ArcFeature = {
+    cx: C.x,
+    cz: C.z,
+    r: R,
+    a0: quadrantA0(cx, cz),
+    span: HALF_PI,
+    solidOut: concave || undefined,
+    owner: "sweep",
   };
+
+  // ── THE ARC CONTRACT (maze/arc-contract.ts) ─────────────────────────────
+  //
+  // The guards above stop this fillet OVERLAPPING another one. They say nothing
+  // about it landing one tile away, and that is where the damage was: every
+  // fillet is centred on its own corner, so two neighbouring fillets are on
+  // different circles by construction and meet at whatever angle the grid
+  // happened to produce. Censused over 40 floors, 76.6% of different-feature
+  // adjacencies were a tangent kink steeper than 25° — median 47.7°. Two curves
+  // crashing into each other, which is what "curves connected to each other
+  // that make no sense" looks like from the camera.
+  //
+  // Rejecting costs nothing: the corner just stays square, which is legible.
+  // Committing and dissolving later would already have carved or filled tiles.
+  if (!junctionClear(g, arcTiles, feature)) return null;
+
+  return { feature, arcTiles, carveTiles, fillTiles };
 }
 
 /** Commit a planned fillet: mutate tiles + register the feature. */
@@ -436,7 +457,7 @@ export function stampOrbitIsland(g: Grid, start: TilePos, occupied: Occupied, rn
   for (let k = 0; k < KICK_ISLAND_BANDS; k++) {
     kicks.push({ a0: phase + (k * Math.PI * 2) / KICK_ISLAND_BANDS, span: KICK_ISLAND_SPAN, cooldownT: 0, hitT: -1 });
   }
-  g.arcs!.push({ cx: site.ci, cz: site.cj, r: R, a0: 0, span: Math.PI * 2, kicks });
+  g.arcs!.push({ cx: site.ci, cz: site.cj, r: R, a0: 0, span: Math.PI * 2, kicks, owner: "island" });
 
   // Strand guard: the open ring should keep everything connected, but verify.
   const d = bfsDistancesOwned(g, start.i, start.j); // held while scanning

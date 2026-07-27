@@ -276,7 +276,10 @@ export function publishArcs(g: Grid, path: TrackPath): void {
     // arc-sweeps.revertConcave) — a curved wall hanging in mid-air.
     if (!own.length) continue;
     const fi = g.arcs!.length;
-    g.arcs!.push(a);
+    // Tagged as the CIRCUIT's own: the lane was carved to this radius, so this
+    // curve is the racing line and never yields to a scavenged one when the
+    // arc contract has to break a tie. See maze/arc-contract.ts.
+    g.arcs!.push({ ...a, owner: "track" });
     for (const k of own) {
       g.shapes[k] = SHAPE_ARC;
       g.arcIdx![k] = fi;

@@ -115,13 +115,26 @@ describe("the launch chute", () => {
         const { f, cfg, rng } = liveFloor(level, seed);
         if (!f?.chute) continue;
         const c = f.chute;
+        // Snapshot the lane BEFORE decorate runs. `decorateMaze` mutates the
+        // grid (launch break-throughs, plaza polish), so `chuteTiles` computed
+        // afterwards can include tiles that were solid when decorate made its
+        // placement decisions — and a perfectly legal station-spine booster
+        // just outside the lane then reads as one inside it. The product
+        // computes this set on the pristine grid; so must the test.
+        const inChute = new Set(chuteTiles(f.grid, c).map((t) => idx(f.grid, t.i, t.j)));
+        // Mirror core.ts EXACTLY. Omitting `wallsAuthored` let decorate run its
+        // own artery-bank pass on a grid the maze layer had already banked,
+        // which walls tiles inside the chute and shifts the parts around it —
+        // a configuration the game never builds, and the source of a failure
+        // that looked like a product bug.
         const plan = decorateMaze(f.grid, rng, cfg.zombies, cfg.torches, 16, [], {
           endpoints: { start: f.start, stairs: f.stairs },
           strictLaunchers: true,
           chute: c,
+          orbit: f.orbit,
+          wallsAuthored: true,
           floor: level,
         });
-        const inChute = new Set(chuteTiles(f.grid, c).map((t) => idx(f.grid, t.i, t.j)));
         const tag = `L${level} seed=${seed}`;
 
         for (const z of plan.spawns) {
@@ -137,7 +150,12 @@ describe("the launch chute", () => {
         const inside = plan.parts.filter((q) => inChute.has(idx(f.grid, q.i, q.j)));
         if (!inside.length) bad.push(`${tag}: the chute has no boosters — it is just a corridor`);
         for (const q of inside) {
-          if (q.kind !== "booster") {
+          // The badge is the real contract: `chute` is what exempts a pad from
+          // the runway re-aim and the duel breaker, so an unbadged part in the
+          // lane is one those passes are still free to turn around.
+          if (!q.chute) {
+            bad.push(`${tag}: an unbadged '${q.kind}' sits in the chute`);
+          } else if (q.kind !== "booster") {
             bad.push(`${tag}: a '${q.kind}' is in the chute; only boosters belong there`);
           } else if (q.dirI !== c.dirI || q.dirJ !== c.dirJ) {
             bad.push(`${tag}: a chute booster fires (${q.dirI},${q.dirJ}) against the lane (${c.dirI},${c.dirJ})`);
