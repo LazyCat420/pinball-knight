@@ -27,11 +27,25 @@ import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
+import {
+  state,
+  resetState,
+  freshPlayerFields,
+  activeWeapon,
+  type Zombie,
+  type GroundItem,
+  type EnemyKind,
+  type MarbleMaterial,
+} from "./state";
 import { createPixelPass } from "./engine/render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createAimIndicator } from "./render/aim-indicator";
-import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
+import {
+  createPinballParts,
+  updatePinballParts,
+  updatePlungerRig,
+  spawnPinballPart,
+} from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { tickJuice, resetJuice } from "./engine/juice";
@@ -39,31 +53,89 @@ import { railCap } from "./entities/rail";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./engine/touch-controls";
 import { updateShots, rotateLanes } from "./shots";
 import { loadAtlasSheet } from "./engine/render/atlas-loader";
-import { createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./engine/render/sprite";
+import {
+  createActorSprite,
+  createStaticSprite,
+  createOcclusionSilhouette,
+  type SpriteSheet,
+} from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
 import { installEngine } from "./GameEngine";
 import { Animator } from "./engine/render/animator";
 import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
-import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import {
+  createDungeonCamera,
+  aimCamera,
+  snapCameraTo,
+  updateFollowCamera,
+  worldToScreenPx,
+} from "./engine/camera";
+import {
+  showToast,
+  showGameOver,
+  showControlsHint,
+  showPickupNote,
+  createFpsOverlay,
+  setFpsOverlay,
+  spawnFloatingCombo,
+  createBossBar,
+  updateBossBar,
+  createPlungerMeter,
+  updatePlungerMeter,
+  openShopOverlay,
+  refreshShopOverlay,
+  type ShopEntry,
+} from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
-import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
+import {
+  openGameMenu,
+  closeGameMenu,
+  cycleMenuTab,
+  menuTabByIndex,
+  applySettingsLive,
+} from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { setHandmadeOverride } from "./render/knight-sheets";
-import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
+import {
+  awardFloorXp,
+  awardDebugXp as debugGrantXp,
+  setLevelUpHandler,
+  invalidateSkillAgg,
+  playerMaxHp,
+  skillAgg,
+} from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
-import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
+import {
+  generateMaze,
+  thickenWalls,
+  carveRooms,
+  crackSecretWalls,
+  mulberry32,
+  tileCenter,
+  worldToTile,
+  at,
+  isWalkable,
+  type Grid,
+  type TilePos,
+  T_STAIRS,
+} from "./maze/generator";
 import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { buildTrackFloor } from "./maze/track-floor";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
-import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
+import {
+  stampPrefabs,
+  stampLandmark,
+  pickFocusCells,
+  themeFor,
+  themeIndexFor,
+} from "./maze/prefabs";
 import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
@@ -73,10 +145,37 @@ import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from 
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
 import { updateFloorFx, clearFloorFx, spawnFloorFx, updateGrooveHop } from "./entities/floor-fx";
-import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
+import {
+  updateMaterial,
+  applyMaterial,
+  isMaterial,
+  MATERIALS,
+  MATERIAL_LIST,
+} from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
-import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie, setCoopCombatBridge, hitPlayerRanged } from "./entities/combat";
+import {
+  updateNpcs,
+  disposeNpcs,
+  spawnFrog,
+  spawnMerchant,
+  setMerchantCaughtHandler,
+  rollMagicianClock,
+} from "./entities/npc";
+import {
+  syncActorMesh,
+  setBossDefeatedHandler,
+  setSlimeSplitHandler,
+  setGolemShatterHandler,
+  setBloaterBurstHandler,
+  setCardRollHandler,
+  setCoinDropHandler,
+  setReagentDropHandler,
+  resetCombatJuice,
+  tickCombatTimers,
+  damageZombie,
+  setCoopCombatBridge,
+  hitPlayerRanged,
+} from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./engine/input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -216,41 +315,144 @@ import {
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
-  HOUND_HP, HOUND_SPEED_FACTOR, HOUND_FROM_LEVEL,
-  BLOATER_HP, BLOATER_SPEED_FACTOR, BLOATER_FROM_LEVEL,
-  NECRO_HP, NECRO_SPEED_FACTOR, NECRO_FROM_LEVEL,
-  WARDEN_HP, WARDEN_SPEED_FACTOR, WARDEN_FROM_LEVEL,
-  WISP_HP, WISP_SPEED_FACTOR, WISP_FROM_LEVEL,
-  SAPPER_HP, SAPPER_SPEED_FACTOR, SAPPER_FROM_LEVEL,
-  CRYSTAL_HP, CRYSTAL_FROM_LEVEL,
-  MIMIC_HP, MIMIC_SPEED_FACTOR, MIMIC_FROM_LEVEL,
-  BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE,
-  FINISHER_FLASH_T, FINISHER_FLASH_MAX,
+  HOUND_HP,
+  HOUND_SPEED_FACTOR,
+  HOUND_FROM_LEVEL,
+  BLOATER_HP,
+  BLOATER_SPEED_FACTOR,
+  BLOATER_FROM_LEVEL,
+  NECRO_HP,
+  NECRO_SPEED_FACTOR,
+  NECRO_FROM_LEVEL,
+  WARDEN_HP,
+  WARDEN_SPEED_FACTOR,
+  WARDEN_FROM_LEVEL,
+  WISP_HP,
+  WISP_SPEED_FACTOR,
+  WISP_FROM_LEVEL,
+  SAPPER_HP,
+  SAPPER_SPEED_FACTOR,
+  SAPPER_FROM_LEVEL,
+  CRYSTAL_HP,
+  CRYSTAL_FROM_LEVEL,
+  MIMIC_HP,
+  MIMIC_SPEED_FACTOR,
+  MIMIC_FROM_LEVEL,
+  BLOATER_BURST_RADIUS,
+  FIRE_PUDDLE_LIFE,
+  FINISHER_FLASH_T,
+  FINISHER_FLASH_MAX,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import {
+  WEAPONS,
+  GEAR,
+  POTIONS,
+  POTION_IDS,
+  freshWeapon,
+  REGEN_HEAL_PER_TICK,
+  REGEN_TICK_INTERVAL,
+  ELIXIR_MAXHP_BONUS,
+  type WeaponId,
+  type WeaponState,
+  type GearSlot,
+  type PotionId,
+} from "./items";
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { CARDS, STASH_MAX, rollCardDrop, socketCard, type CardId } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
-import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
+import {
+  initCoop,
+  updateCoop,
+  endCoop,
+  isReplica,
+  setCoopFloor,
+  coopSeed,
+  setCoopHooks,
+  coopItemTaken,
+  coopForwardDamage,
+  coopBroadcastKill,
+  coopAnnounceDeath,
+  isCoop,
+  enemyAuthorityIsMe,
+} from "./coop";
+import {
+  stopPresence,
+  onPeerArrive,
+  myId,
+  peers,
+  poolStatus,
+  startPresence,
+} from "../../net/presence";
 import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
+import {
+  sfxStairs,
+  sfxGameOver,
+  sfxPickup,
+  sfxCoin,
+  sfxFreeze,
+  sfxBumper,
+  sfxLevelStart,
+  sfxModifier,
+  sfxBossReveal,
+  sfxHeavy,
+} from "./audio";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
-import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, type CorpseItem } from "./corpse-run";
+import {
+  addPile,
+  saveResumeFloor,
+  loadResumeFloor,
+  pilesOnFloor,
+  floorsWithPiles,
+  clearPile,
+  canLoot,
+  type CorpseItem,
+} from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
-import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
-import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
-import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets } from "./boot/sheets";
+import {
+  debugTeleportToStairs,
+  debugSpawnRing,
+  debugSpawn,
+  debugSpawnEnemy,
+  debugKillAll,
+  debugClearEnemies,
+  setDebugActionDeps,
+} from "./dev/debug-actions";
+import {
+  buildLights,
+  tintLights,
+  followPlayer,
+  tickShadowThrottle,
+  clearLights,
+} from "./boot/lighting";
+import {
+  playerSheetFor,
+  applyWeaponArt,
+  paintMenuPortrait,
+  buildMonsterSheets,
+} from "./boot/sheets";
 import { beginRunLedger, submitRunScore } from "./run/ledger";
 import { nearestOpenTile } from "./maze/nearest-open-tile";
-import { makeZombie, spawnKind, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, makeReskin, queueMini, queueSummon, resetZombieNid, RESKIN } from "./spawn/factory";
+import {
+  makeZombie,
+  spawnKind,
+  spawnHordeMember,
+  spawnPinCrew,
+  drainPendingMinis,
+  drainPendingSummons,
+  bumpZombieNid,
+  makeReskin,
+  queueMini,
+  queueSummon,
+  resetZombieNid,
+  RESKIN,
+} from "./spawn/factory";
 import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
 import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
@@ -280,10 +482,34 @@ interface Biome {
   ground: number;
 }
 const BIOMES: Biome[] = [
-  { name: "The Cold Crypt", flavour: "damp stone · the dead stir", amb: 0x6b7d99, sky: 0x8fa3bd, ground: 0x1e2430 },
-  { name: "The Rotting Warren", flavour: "moss and marrow · things breed here", amb: 0x6d8a78, sky: 0x8fbda6, ground: 0x1e2a22 },
-  { name: "The Bloodworks", flavour: "the walls weep red · tread carefully", amb: 0x8a6f74, sky: 0xbd949a, ground: 0x2a1e20 },
-  { name: "The Arcane Deep", flavour: "cold light · something old is awake", amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
+  {
+    name: "The Cold Crypt",
+    flavour: "damp stone · the dead stir",
+    amb: 0x6b7d99,
+    sky: 0x8fa3bd,
+    ground: 0x1e2430,
+  },
+  {
+    name: "The Rotting Warren",
+    flavour: "moss and marrow · things breed here",
+    amb: 0x6d8a78,
+    sky: 0x8fbda6,
+    ground: 0x1e2a22,
+  },
+  {
+    name: "The Bloodworks",
+    flavour: "the walls weep red · tread carefully",
+    amb: 0x8a6f74,
+    sky: 0xbd949a,
+    ground: 0x2a1e20,
+  },
+  {
+    name: "The Arcane Deep",
+    flavour: "cold light · something old is awake",
+    amb: 0x6f74a0,
+    sky: 0x97a0e0,
+    ground: 0x1e2233,
+  },
 ];
 
 /**
@@ -353,7 +579,11 @@ export function launchDungeonGame(onExit?: () => void): void {
   // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
   // WebGPURenderer drives BOTH backends; ?gpu=webgl forces the WebGL2 one.
   // init() is awaited by the caller (launchDungeonGame) before the first frame.
-  state.renderer = new WebGPURenderer({ antialias: false, alpha: false, forceWebGL: selectBackend().forceWebGL });
+  state.renderer = new WebGPURenderer({
+    antialias: false,
+    alpha: false,
+    forceWebGL: selectBackend().forceWebGL,
+  });
   // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
   // ("called before the backend is initialized"). launchDungeonGame stays sync
   // because neither caller awaits it (main.ts:328, mouse-room.ts:3053) — making
@@ -425,8 +655,15 @@ export function launchDungeonGame(onExit?: () => void): void {
   // before installDevHooks, which exposes those verbs to the harness.
   setDebugActionDeps({ spawnReaper });
   installDevHooks({
-    startLevel, descend, onPlayerDeath, openShop, applyPotion,
-    debugSpawn, debugClearEnemies, exitDungeonGame, tearGraveHole,
+    startLevel,
+    descend,
+    onPlayerDeath,
+    openShop,
+    applyPotion,
+    debugSpawn,
+    debugClearEnemies,
+    exitDungeonGame,
+    tearGraveHole,
   });
 
   // Hand-made pixel art overrides the procedural painters the moment it
@@ -537,7 +774,7 @@ export function launchDungeonGame(onExit?: () => void): void {
       const sheet =
         kind === "reaper" || boss
           ? reaperSheet()
-          : {
+          : ({
               zombie: state.zombieSheet,
               spider: state.spiderSheet,
               brute: state.bruteSheet,
@@ -551,7 +788,7 @@ export function launchDungeonGame(onExit?: () => void): void {
               chomper: state.chomperSheet,
               magnet: state.magnetSheet,
               webspinner: state.webspinnerSheet,
-            }[kind as string] ?? state.zombieSheet;
+            }[kind as string] ?? state.zombieSheet);
       if (!sheet) return null;
       const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
       z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)
@@ -627,12 +864,17 @@ export function launchDungeonGame(onExit?: () => void): void {
     // Elite reward: a shattered brick golem sometimes yields a marble — biased
     // toward STONE (beat stone with stone), else a random material.
     if (Math.random() < 0.5) {
-      const m: MarbleMaterial = Math.random() < 0.6 ? "stone" : MATERIAL_LIST[Math.floor(Math.random() * MATERIAL_LIST.length)];
+      const m: MarbleMaterial =
+        Math.random() < 0.6
+          ? "stone"
+          : MATERIAL_LIST[Math.floor(Math.random() * MATERIAL_LIST.length)];
       spawnMaterialDrop(x, z, m);
     }
   });
   // A BLOATER bursts into a burning puddle on death.
-  setBloaterBurstHandler((x, z) => spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true));
+  setBloaterBurstHandler((x, z) =>
+    spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true),
+  );
   // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
   setSummonHandler(queueSummon);
   // Catching the rolling merchant opens its shop.
@@ -703,7 +945,10 @@ export function launchDungeonGame(onExit?: () => void): void {
     beginRun();
     return "run started";
   };
-  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("autostart") === "1") {
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("autostart") === "1"
+  ) {
     // One frame later: enterTavern below has to finish building the lobby
     // before we tear it down, or its teardown runs against a half-built scene.
     requestAnimationFrame(() => {
@@ -718,7 +963,6 @@ export function launchDungeonGame(onExit?: () => void): void {
     lobby: true, // the entry hall IS the multiplayer lobby
   });
 }
-
 
 /** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
 function startLevel(level: number): void {
@@ -779,7 +1023,13 @@ function startLevel(level: number): void {
   // A grade-S/A descent unlocked a BONUS room on this floor (Wave F glue).
   const bonusRoom = state.bonusRoomNext;
   state.bonusRoomNext = false;
-  const rawRooms = carveRooms(raw, rng, cfg.rooms + (bonusRoom ? 1 : 0), ROOM_MIN_CELLS, ROOM_MAX_CELLS);
+  const rawRooms = carveRooms(
+    raw,
+    rng,
+    cfg.rooms + (bonusRoom ? 1 : 0),
+    ROOM_MIN_CELLS,
+    ROOM_MAX_CELLS,
+  );
   // PREFAB STAMPS (Wave C): themed room/hallway shapes drawn from a seeded
   // shuffle bag — Slalom, Gauntlet, Oilworks, the Magician's Parlor… Carved
   // before the secret cracks so the cracks see the final wall set.
@@ -813,7 +1063,23 @@ function startLevel(level: number): void {
   // It generates at FINAL tile resolution, so it replaces `thickenWalls` too;
   // the fallback path below still thickens, which is why `grid` is assigned
   // from one branch or the other rather than being a single expression.
-  const track = TRACK_FIRST ? buildTrackFloor(cfg.cellsW, cfg.cellsH, rng) : null;
+  //
+  // THE ARCHETYPE REACHES THE LIVE FLOOR HERE, and until this line it did not.
+  // `arch.seeds` shapes `raw`, and on a track floor `raw` is discarded — so the
+  // five archetypes were shaping a grid nobody used while the descent card
+  // below announced them by name (a blind census over 6 seeds × 10 depths could
+  // not tell them apart on any statistic). `arch.track` is the profile that
+  // makes the name true: node layout, loop floor, lane width, plaza, and how
+  // much maze surrounds the circuit. Windiness rides along as the surrounding
+  // maze's growing-tree bias — the same knob it always was, now on the branch
+  // that ships. Clamped: at 1.0 the surround is a pure backtracker with no
+  // junctions at all, and at 0 it is all junctions and no corridor.
+  const track = TRACK_FIRST
+    ? buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
+        profile: arch.track,
+        density: Math.max(0.35, Math.min(0.85, windiness)),
+      })
+    : null;
   let grid: Grid;
   let endpoints: { start: TilePos; stairs: TilePos } | null;
   if (track) {
@@ -838,7 +1104,9 @@ function startLevel(level: number): void {
   // scaled ×2 to land on the thickened grid. The track floor is generated at
   // final resolution from its own geometry and never saw those stamps, so it
   // ships no room rects — decorateMaze's own sparse-region fill covers it.
-  const rooms = track ? [] : rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
+  const rooms = track
+    ? []
+    : rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   // Prefab anchors ride the same ×2 into the thickened grid — the landmark's
   // first, so its set-piece furniture wins any tile the regular stamps also want.
   // Skipped on a track floor for the same reason as `rooms`: those stamps were
@@ -846,13 +1114,19 @@ function startLevel(level: number): void {
   // would point at furniture that isn't there.
   const anchors: PrefabAnchor[] = track
     ? []
-    : [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
+    : [...landmark.anchors, ...stamped.anchors].map((a) => ({
+        i: a.i * 2,
+        j: a.j * 2,
+        kind: a.kind,
+      }));
   // Pinball-machine density grows with depth AND rides the floor's actual area
   // — the 4× floors change scaled zombies/torches/rooms but left this an
   // absolute cap, spreading 26 parts over ~26k late-game tiles (the "sparse"
   // read). The area term keeps parts-per-tile roughly constant as floors grow;
   // decorateMaze's sparse-region fill then guarantees no quadrant ships empty.
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + Math.floor(cfg.floorTiles / 2000);
+  const partBudget =
+    Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) +
+    Math.floor(cfg.floorTiles / 2000);
   // The floor modifier scales the budgets (and only the budgets — it can't
   // reach connectivity). Every product is floored at a sane minimum so a harsh
   // roll can't produce a pitch-dark or furniture-free floor.
@@ -866,11 +1140,15 @@ function startLevel(level: number): void {
     {
       anchors,
       // A modifier biases WHICH furniture the corridor pass reaches for first.
-      deal: modifier.dealBias.length ? ([...modifier.dealBias, ...theme.deal] as typeof theme.deal) : theme.deal,
+      deal: modifier.dealBias.length
+        ? ([...modifier.dealBias, ...theme.deal] as typeof theme.deal)
+        : theme.deal,
       targets: TARGETS_PER_FLOOR,
       trapdoors: Math.round(TRAPDOORS_PER_FLOOR * modifier.trapdoorMult),
       vaultRamps: VAULT_RAMPS_PER_FLOOR, // ramps aimed ACROSS a band, so the hop jumps the maze
-      hazards: Math.round(Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX) * modifier.hazardMult),
+      hazards: Math.round(
+        Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX) * modifier.hazardMult,
+      ),
       forceVault: bonusRoom, // a grade-unlocked bonus floor guarantees a vault
       launchBreaks: cfg.launchBreaks, // A1 — smashable walls at launch-runway ends, scaled by depth
       bonusItems: modifier.bonusItems,
@@ -900,7 +1178,13 @@ function startLevel(level: number): void {
   plan.items.forEach(markOcc);
   plan.props.forEach(markOcc);
   plan.torches.forEach(markOcc);
-  const lampPuzzlePlan = authorLampPuzzle(grid, plan.start, (i, j) => puzzleOccupied.has(`${i},${j}`), rng, lampCountFor(level));
+  const lampPuzzlePlan = authorLampPuzzle(
+    grid,
+    plan.start,
+    (i, j) => puzzleOccupied.has(`${i},${j}`),
+    rng,
+    lampCountFor(level),
+  );
   if (lampPuzzlePlan) plan.parts.push(...lampPuzzlePlan.lamps);
 
   state.grid = grid;
@@ -1016,7 +1300,12 @@ function startLevel(level: number): void {
     const spot = nearestOpenTile(grid, state.stairs.i, state.stairs.j, 2) ?? state.stairs;
     const speed = cfg.zombieSpeed * BOSS_SPEED_FACTOR;
     spawnBoss(grid, spot, bhp, (x, z, hp) => {
-      const b = makeZombie(reaperSheet(), x, z, speed, { kind: "brute", hp, boss: true, maxHp: hp });
+      const b = makeZombie(reaperSheet(), x, z, speed, {
+        kind: "brute",
+        hp,
+        boss: true,
+        maxHp: hp,
+      });
       state.zombies.push(b);
       return b;
     });
@@ -1028,7 +1317,16 @@ function startLevel(level: number): void {
     const pos = tileCenter(grid, it.i, it.j);
     sprite.mesh.position.set(pos.x, 0, pos.z);
     state.scene!.add(sprite.mesh);
-    return { nid: "L" + k, kind: it.kind, id: it.id, x: pos.x, z: pos.z, sprite, bobPhase: k * 1.7, rarity: it.rarity };
+    return {
+      nid: "L" + k,
+      kind: it.kind,
+      id: it.id,
+      x: pos.x,
+      z: pos.z,
+      sprite,
+      bobPhase: k * 1.7,
+      rarity: it.rarity,
+    };
   });
 
   // ── R&D: seed the three marble materials near the floor-1 spawn so the whole
@@ -1082,11 +1380,26 @@ function startLevel(level: number): void {
     const s = state.stairs;
     // A ring of bumpers two tiles out from the exit — carom off them mid-brawl.
     const ringSpots: Array<{ i: number; j: number }> = [];
-    for (const [di, dj] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2]] as const) {
+    for (const [di, dj] of [
+      [2, 0],
+      [-2, 0],
+      [0, 2],
+      [0, -2],
+      [2, 2],
+      [-2, -2],
+    ] as const) {
       if (isWalkable(grid, s.i + di, s.j + dj)) ringSpots.push({ i: s.i + di, j: s.j + dj });
     }
     createPinballParts(
-      ringSpots.map((r) => ({ i: r.i, j: r.j, kind: "bumper" as const, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 })),
+      ringSpots.map((r) => ({
+        i: r.i,
+        j: r.j,
+        kind: "bumper" as const,
+        dirI: 0,
+        dirJ: 0,
+        dir2I: 0,
+        dir2J: 0,
+      })),
       grid,
       state.scene,
     );
@@ -1096,17 +1409,32 @@ function startLevel(level: number): void {
       const spot = nearestOpenTile(grid, s.i, s.j, n + 1);
       if (!spot) break;
       const c = tileCenter(grid, spot.i, spot.j);
-      state.zombies.push(makeZombie(state.bruteSheet, c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }));
+      state.zombies.push(
+        makeZombie(state.bruteSheet, c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, {
+          kind: "brute",
+        }),
+      );
     }
     // A guaranteed prize on the exit's doorstep (gold idol + a heal).
     const prizeSpot = nearestOpenTile(grid, s.i, s.j, 1);
     if (prizeSpot) {
-      for (const [id, dx] of [["gold", -0.4], ["health", 0.4]] as const) {
+      for (const [id, dx] of [
+        ["gold", -0.4],
+        ["health", 0.4],
+      ] as const) {
         const sprite = createStaticSprite(ITEM_PAINTS[id]);
         const c = tileCenter(grid, prizeSpot.i, prizeSpot.j);
         sprite.mesh.position.set(c.x + dx, 0, c.z);
         state.scene.add(sprite.mesh);
-        state.groundItems.push({ nid: nextItemNid(), kind: "potion", id, x: c.x + dx, z: c.z, sprite, bobPhase: Math.random() * 6 });
+        state.groundItems.push({
+          nid: nextItemNid(),
+          kind: "potion",
+          id,
+          x: c.x + dx,
+          z: c.z,
+          sprite,
+          bobPhase: Math.random() * 6,
+        });
       }
     }
   }
@@ -1120,7 +1448,8 @@ function startLevel(level: number): void {
     // Genuinely out in the floor, not on the doorstep: spawning it a tile away
     // put it inside MERCHANT_FLEE_RANGE at t=0, so it bolted before you ever
     // saw it. Its bell (updateMerchant) is what leads you to it now.
-    const spot = nearestOpenTile(grid, plan.start.i, plan.start.j, 3, MERCHANT_SPAWN_MIN_RING) ?? plan.start;
+    const spot =
+      nearestOpenTile(grid, plan.start.i, plan.start.j, 3, MERCHANT_SPAWN_MIN_RING) ?? plan.start;
     spawnMerchant(spot.i, spot.j);
   }
 
@@ -1145,7 +1474,9 @@ function startLevel(level: number): void {
         const spot = nearestOpenTile(grid, pt.i, pt.j, 1 + Math.floor(rng() * 5), 2);
         if (!spot) continue;
         const c = tileCenter(grid, spot.i, spot.j);
-        state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
+        state.zombies.push(
+          spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level),
+        );
         packAdded++;
       }
     }
@@ -1158,7 +1489,9 @@ function startLevel(level: number): void {
         const spot = nearestOpenTile(grid, pz.i, pz.j, 1 + Math.floor(rng() * 5), 1);
         if (!spot) continue;
         const c = tileCenter(grid, spot.i, spot.j);
-        state.zombies.push(spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level));
+        state.zombies.push(
+          spawnHordeMember((rng() * 0xffffffff) | 0, c.x, c.z, cfg.zombieSpeed, level),
+        );
       }
     }
   }
@@ -1169,7 +1502,9 @@ function startLevel(level: number): void {
   state.reaperWarned = false;
   // Wave A/E/F floor state: the target objective, the frenzy meter, the
   // Magician's visit clock, the once-per-floor witch.
-  state.targetsTotal = plan.parts.filter((pt) => pt.kind === "target" && pt.bank === undefined).length;
+  state.targetsTotal = plan.parts.filter(
+    (pt) => pt.kind === "target" && pt.bank === undefined,
+  ).length;
   state.targetsHit = 0;
   state.partComboHits = 0;
   state.frenzyPaid = false;
@@ -1204,7 +1539,8 @@ function startLevel(level: number): void {
   // Biome flavour keeps the chapter feel; the archetype line is appended only
   // when the floor's shape is actually unusual, so level 1 reads as it always did.
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
-  const sub = level % BOSS_EVERY === 0 ? "☠ a MEGA REAPER KING guards the stairs ☠" : `${flavour}${suffix}`;
+  const sub =
+    level % BOSS_EVERY === 0 ? "☠ a MEGA REAPER KING guards the stairs ☠" : `${flavour}${suffix}`;
   showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
   // Arrival sting. Paired with the toast rather than the geometry build so the
   // sound and the card land together.
@@ -1295,7 +1631,10 @@ function handleKey(e: KeyboardEvent): void {
       e.preventDefault();
       closeFloorMap(); // the menu freezes the world; a stale map under it lies
       if (state.container) {
-        openGameMenu(state.container, { onAbandon: exitDungeonGame, paintPortrait: paintMenuPortrait });
+        openGameMenu(state.container, {
+          onAbandon: exitDungeonGame,
+          paintPortrait: paintMenuPortrait,
+        });
       }
       return;
 
@@ -1305,10 +1644,18 @@ function handleKey(e: KeyboardEvent): void {
       selectSlot(1 - state.activeSlot);
       break;
     // ── Quick-use belt potions (plain 1..4) ──
-    case "1": useBeltSlot(0); break;
-    case "2": useBeltSlot(1); break;
-    case "3": useBeltSlot(2); break;
-    case "4": useBeltSlot(3); break;
+    case "1":
+      useBeltSlot(0);
+      break;
+    case "2":
+      useBeltSlot(1);
+      break;
+    case "3":
+      useBeltSlot(2);
+      break;
+    case "4":
+      useBeltSlot(3);
+      break;
 
     // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
     case "r":
@@ -1346,11 +1693,18 @@ function dropBossReward(x: number, z: number): void {
     const pz = z + d.dz;
     sprite.mesh.position.set(px, 0, pz);
     state.scene.add(sprite.mesh);
-    state.groundItems.push({ nid: nextItemNid(), kind: "potion", id: d.id, x: px, z: pz, sprite, bobPhase: Math.random() * 6 });
+    state.groundItems.push({
+      nid: nextItemNid(),
+      kind: "potion",
+      id: d.id,
+      x: px,
+      z: pz,
+      sprite,
+      bobPhase: Math.random() * 6,
+    });
   }
   state.hudDirty = true;
 }
-
 
 /**
  * How long we keep WATCHING for the shared seed after a floor has been built.
@@ -1409,7 +1763,7 @@ function adoptPoolSeedWhenItArrives(startedOnLevel: number): void {
     if (seed !== null) {
       // Someone else's world is authoritative. Rebuild only if we actually
       // disagree, and only if the player hasn't moved on to another floor.
-      if ((seed >>> 0) !== state.runSeed && state.level === startedOnLevel) {
+      if (seed >>> 0 !== state.runSeed && state.level === startedOnLevel) {
         startLevel(startedOnLevel);
       }
       return;
@@ -1477,7 +1831,10 @@ function spawnCorpsePiles(grid: Grid, level: number): void {
       });
     });
     if (canLoot(pile, me)) {
-      showToast("⚰️ YOUR KIT IS HERE", `${pile.items.length} item${pile.items.length === 1 ? "" : "s"} from a previous death`);
+      showToast(
+        "⚰️ YOUR KIT IS HERE",
+        `${pile.items.length} item${pile.items.length === 1 ? "" : "s"} from a previous death`,
+      );
     }
   }
 }
@@ -1498,7 +1855,14 @@ function collectCorpseItems(): CorpseItem[] {
   const items: CorpseItem[] = [];
   for (const w of state.weaponSlots) {
     if (!w || w.id === "fists") continue;
-    items.push({ kind: "weapon", id: w.id, durability: w.durability, rarity: w.rarity, cards: w.cards, upgrade: w.upgrade });
+    items.push({
+      kind: "weapon",
+      id: w.id,
+      durability: w.durability,
+      rarity: w.rarity,
+      cards: w.cards,
+      upgrade: w.upgrade,
+    });
   }
   for (const [slot, dur] of Object.entries(state.gear)) {
     if (typeof dur !== "number" || dur <= 0) continue;
@@ -1686,7 +2050,9 @@ function descend(): void {
       stats: { grade, floor: floorCleared, kills, bestCombo },
       onDescend: () => {
         startLevel(nextLevel);
-        showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+        showPickupNote(
+          gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`,
+        );
       },
       // The tavern's game menu (Esc/I) carries the same confirmed ABANDON as
       // the dungeon's; the tavern closes itself first, then this ends the run.
@@ -1697,7 +2063,6 @@ function descend(): void {
     showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
   }
 }
-
 
 /**
  * Spawn the DEATH DEALER: an unkillable blood-red reaper that enters a dozen
@@ -1710,10 +2075,16 @@ function spawnReaper(): void {
   state.reaperOut = true;
   const a = Math.random() * Math.PI * 2;
   // Bespoke hooded-and-scythed art (was the ghost sheet dyed with REAPER_TINT).
-  const reaper = makeZombie(reaperSheet(), p.x + Math.cos(a) * 12, p.z + Math.sin(a) * 12, REAPER_SPEED_BASE, {
-    kind: "reaper",
-    hp: REAPER_HP,
-  });
+  const reaper = makeZombie(
+    reaperSheet(),
+    p.x + Math.cos(a) * 12,
+    p.z + Math.sin(a) * 12,
+    REAPER_SPEED_BASE,
+    {
+      kind: "reaper",
+      hp: REAPER_HP,
+    },
+  );
   reaper.aggro = true;
   // The sheet is already painted blood-dark, so the tint is now only a faint
   // wash — enough that telegraph/flash clears restore the reaper's colour
@@ -1737,7 +2108,8 @@ function gradeFloor(): { grade: string; gold: number } {
   let pts = 0;
   pts += state.levelT <= GRADE_TIME_FAST ? 2 : state.levelT <= GRADE_TIME_OK ? 1 : 0;
   pts += share >= GRADE_KILLS_FULL ? 2 : share >= GRADE_KILLS_OK ? 1 : 0;
-  pts += state.levelBestCombo >= GRADE_COMBO_FULL ? 2 : state.levelBestCombo >= GRADE_COMBO_OK ? 1 : 0;
+  pts +=
+    state.levelBestCombo >= GRADE_COMBO_FULL ? 2 : state.levelBestCombo >= GRADE_COMBO_OK ? 1 : 0;
   const grade = pts >= 6 ? "S" : pts >= 5 ? "A" : pts >= 3 ? "B" : pts >= 2 ? "C" : "D";
   return { grade, gold: GRADE_GOLD[grade] ?? 0 };
 }
@@ -1750,7 +2122,9 @@ function gradeFloor(): { grade: string; gold: number } {
  * run duration doesn't count time spent reading.
  */
 export function isSimPaused(): boolean {
-  return !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl) || isTavernSceneOpen();
+  return (
+    !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl) || isTavernSceneOpen()
+  );
 }
 
 /** One 60Hz simulation step. */
@@ -1789,7 +2163,21 @@ function simulate(dt: number): void {
 
   // ── Buff timers tick down; HUD refreshes each whole second so the
   // countdown reads live, plus once more when a buff ends. ──
-  for (const key of ["rageT", "hasteT", "shieldT", "ironT", "turboT", "springT", "curveT", "magBootsT", "venomCoatT", "stoneT", "staticT", "greedT", "regenT"] as const) {
+  for (const key of [
+    "rageT",
+    "hasteT",
+    "shieldT",
+    "ironT",
+    "turboT",
+    "springT",
+    "curveT",
+    "magBootsT",
+    "venomCoatT",
+    "stoneT",
+    "staticT",
+    "greedT",
+    "regenT",
+  ] as const) {
     const before = p[key];
     if (before <= 0) continue;
     p[key] = Math.max(0, before - dt);
@@ -1979,7 +2367,11 @@ function loop(now: number): void {
     }
     // Ambient dust motes drifting through the air near the player.
     if (Math.random() < MOTE_RATE * frame) {
-      state.vfx?.mote(p.x + (Math.random() - 0.5) * 7, 0.15 + Math.random() * 0.9, p.z + (Math.random() - 0.5) * 5);
+      state.vfx?.mote(
+        p.x + (Math.random() - 0.5) * 7,
+        0.15 + Math.random() * 0.9,
+        p.z + (Math.random() - 0.5) * 5,
+      );
     }
     // ── The stairs beacon LIVES ── a slow breathing pulse + a twist so the
     // beam reads as energy over the wall rims, and rising arcane sparks climb
@@ -1993,7 +2385,14 @@ function loop(now: number): void {
     const sd2 = sdx * sdx + sdz * sdz;
     if (sd2 < 20 * 20 && Math.random() < 2.4 * frame) {
       const a = Math.random() * Math.PI * 2;
-      state.vfx?.burst(sb.x + Math.cos(a) * 0.25, 0.2 + Math.random() * 2.2, sb.z + Math.sin(a) * 0.25, 0x6fd0e8, 1, 0.3);
+      state.vfx?.burst(
+        sb.x + Math.cos(a) * 0.25,
+        0.2 + Math.random() * 2.2,
+        sb.z + Math.sin(a) * 0.25,
+        0x6fd0e8,
+        1,
+        0.3,
+      );
     }
     // First time the way down comes into view each floor, say what it is —
     // the beacon's base (pit + pylons) hides behind wall rims, so the beam
@@ -2090,7 +2489,7 @@ function loop(now: number): void {
 
   // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");
-  updateBossBar(state.bossBarEl, boss ? boss.hp : null, boss ? boss.maxHp ?? null : null);
+  updateBossBar(state.bossBarEl, boss ? boss.hp : null, boss ? (boss.maxHp ?? null) : null);
   updatePlungerMeter(state.plungerMeterEl);
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;

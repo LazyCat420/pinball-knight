@@ -61,6 +61,15 @@ export interface TrackPath {
   legs: TrackLeg[];
   /** Junction fillets, as engine-native arc descriptors. */
   arcs: ArcFeature[];
+  /**
+   * Half-width the CARVER must sweep every fillet at, in tiles.
+   *
+   * It rides here rather than being a constant in `carveTrack` because it has
+   * to track `laneScale`: widening the straights without widening the corners
+   * turns every junction into a funnel, and a ball carrying pinball momentum
+   * into a funnel wedges. One number, one owner.
+   */
+  arcHalf: number;
 }
 
 /**
@@ -105,8 +114,17 @@ export function angDiff(a: number, b: number): number {
  * favoured pair. Non-adjacent pairs are skipped: their fillets would cross the
  * junction interior and overlap each other.
  */
-export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[] } = {}): TrackPath {
+export function buildTrackPath(
+  g: TrackGraph,
+  opts: { radii?: readonly number[]; laneScale?: number } = {},
+): TrackPath {
   const radii = opts.radii ?? TRACK_RADII;
+  // Multiplier on every lane half-width. A Great Hall's roads are broad and a
+  // Warrens' are tight, and that is a thing the player FEELS at speed long
+  // before they read the descent card. Clamped: below ~0.6 the lane is narrower
+  // than the ball's own manoeuvring room, and above ~2 a trunk road paves the
+  // floor on its own.
+  const laneScale = Math.max(0.6, Math.min(2, opts.laneScale ?? 1));
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   const maxD = g.edges.reduce((m, e) => Math.max(m, e.d), 1e-9);
 
@@ -236,7 +254,8 @@ export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[] 
       // Conductivity IS traffic, so the busiest tube becomes the widest road.
       // This is the visual payoff of the growth model: highway hierarchy comes
       // out of the simulation instead of being assigned arbitrarily.
-      half: rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur,
+      half:
+        (rel > 0.66 ? LANE_HALF.trunk : rel > 0.28 ? LANE_HALF.main : LANE_HALF.spur) * laneScale,
     });
   }
 
@@ -282,7 +301,7 @@ export function buildTrackPath(g: TrackGraph, opts: { radii?: readonly number[] 
     });
   }
 
-  return { legs, arcs };
+  return { legs, arcs, arcHalf: 2 * laneScale };
 }
 
 /** Total rideable straight length — a sanity metric for tests. */

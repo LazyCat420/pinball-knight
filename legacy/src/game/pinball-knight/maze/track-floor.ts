@@ -28,10 +28,27 @@
  *
  * DOM- and three-free.
  */
-import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
+import {
+  type Grid,
+  type TilePos,
+  T_FLOOR,
+  T_STAIRS,
+  at,
+  idx,
+  isWalkable,
+  setTile,
+} from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, growMazeAround, publishArcs, connectAll, type TrackMask } from "./track-carve";
+import {
+  carveTrack,
+  carveChamber,
+  growMazeAround,
+  publishArcs,
+  connectAll,
+  type TrackMask,
+} from "./track-carve";
+import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
 import { bfsDistances } from "../engine/flow-field";
 
@@ -58,7 +75,10 @@ export interface TrackFloor {
  * Here both endpoints sit on the circuit and are pushed as far apart as the
  * lane allows, so the natural route between them RUNS THE TRACK.
  */
-export function pickTrackEndpoints(g: Grid, mask: TrackMask): { start: TilePos; stairs: TilePos } | null {
+export function pickTrackEndpoints(
+  g: Grid,
+  mask: TrackMask,
+): { start: TilePos; stairs: TilePos } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
@@ -93,27 +113,67 @@ export function pickTrackEndpoints(g: Grid, mask: TrackMask): { start: TilePos; 
  * Build a complete track-first base grid at FINAL tile resolution.
  *
  * `cellsW/cellsH` are the caller's half-scale numbers (what `generateMaze`
- * takes), doubled here so a floor comes out the same size it would have after
- * `thickenWalls` — depth pacing and every area-scaled budget in core.ts stay
- * calibrated.
+ * takes) and the grid comes out at `(2c+1)` per side.
+ *
+ * `profile` is the floor archetype's grip on the topology (archetypes.ts). It
+ * is optional so every existing caller keeps the shipped behaviour, but the
+ * game always passes one — without it the five archetypes are names on a card
+ * over five identical floors.
  */
 export function buildTrackFloor(
   cellsW: number,
   cellsH: number,
   rng: () => number,
-  opts: { linkChance?: number; fill?: number; minLoops?: number } = {},
+  opts: {
+    linkChance?: number;
+    fill?: number;
+    minLoops?: number;
+    profile?: TrackProfile;
+    density?: number;
+  } = {},
 ): TrackFloor | null {
   const w = cellsW * 2 + 1;
   const h = cellsH * 2 + 1;
   const grid: Grid = { w, h, t: new Uint8Array(w * h), shapes: new Uint8Array(w * h) };
 
-  const graph = growTrack(w, h, rng, { minLoops: opts.minLoops ?? 2 });
+  // Explicit `opts` still win over the profile, so the debug spawner and the
+  // tuning scripts can override one knob without inventing a whole profile.
+  const prof = opts.profile ?? DEFAULT_TRACK_PROFILE;
+  const { foods, relays } = trackNodeCounts(prof, w, h);
+
+  const graph = growTrack(w, h, rng, {
+    minLoops: opts.minLoops ?? prof.minLoops,
+    layout: prof.layout,
+    foods,
+    relays,
+    maxLenFrac: prof.maxLenFrac,
+    survive: prof.survive,
+  });
   if (graph.edges.length === 0) return null;
-  const path = buildTrackPath(graph);
+  const path = buildTrackPath(graph, { laneScale: prof.laneScale });
   if (path.legs.length === 0) return null;
 
   const mask = carveTrack(grid, path);
-  growMazeAround(grid, mask, rng, { linkChance: opts.linkChance, fill: opts.fill });
+  // THE PLAZA GOES DOWN BEFORE THE MAZE, never after. Carved afterwards it
+  // would bulldoze finished corridors and leave severed stubs pointing into it;
+  // carved here it is simply part of the circuit, and the maze's keep-out
+  // margin respects it like any other lane. Sited on the surviving graph node
+  // nearest the floor's centre — under the `hub` layout that IS the centre food
+  // node — and `carveChamber` declines rather than clip a plaza on the border.
+  if (prof.plazaFrac > 0 && graph.nodes.length) {
+    const cx = w / 2;
+    const cz = h / 2;
+    let hub = graph.nodes[0];
+    for (const n of graph.nodes) {
+      if ((n.x - cx) ** 2 + (n.z - cz) ** 2 < (hub.x - cx) ** 2 + (hub.z - cz) ** 2) hub = n;
+    }
+    carveChamber(grid, mask, hub.x, hub.z, Math.min(w, h) * prof.plazaFrac);
+  }
+  growMazeAround(grid, mask, rng, {
+    linkChance: opts.linkChance ?? prof.linkChance,
+    fill: opts.fill ?? prof.fill,
+    density: opts.density,
+  });
 
   // ── PLUMBING REPAIR (track-socket.ts) ───────────────────────────────────
   //
@@ -151,7 +211,8 @@ export function buildTrackFloor(
   // ("joined" fired 8-24x per floor while the termination count never moved).
   // The real cause was topological (degree-1 leaves in the graph) and is fixed
   // upstream by pruneLeaves; this is only the belt-and-braces sweep.
-  if (endsEarly) healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
+  if (endsEarly)
+    healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
 
   // AFTER the maze AND the repairs, never before: every pass above carves
   // walls to floor, and a shoulder marked earlier is a tile claiming curved
