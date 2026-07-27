@@ -9,7 +9,7 @@
  *
  *   ?gpu=webgpu — force the WebGPU backend (fails loudly if unavailable)
  *   ?gpu=webgl  — force the WebGL2 backend (the everyday rollback)
- *   ?gpu=auto   — default: WebGPU when the browser has it, else WebGL2
+ *   ?gpu=auto   — default: WebGL2 (see the fork-flip note in selectBackend)
  *
  * Follows the `window.__debugFlags` precedent in src/main.ts.
  */
@@ -58,7 +58,23 @@ export function selectBackend(): BackendSelection {
       console.warn("[backend] ?gpu=webgpu forced, but navigator.gpu is absent — init will likely fail.");
     }
   } else {
-    forceWebGL = !available;
+    // AUTO DEFAULTS TO WEBGL2, deliberately — not to WebGPU.
+    //
+    // The WebGPU backend renders this game's render-target pipeline UPSIDE
+    // DOWN on some Chromium forks (seen live on Vivaldi: whole dungeon flipped
+    // + laggy, DOM fine) while rendering perfectly on current Chrome/Edge.
+    // Neither hazard is detectable from inside the page:
+    //  - forks strip their name from the UA and userAgentData brands, so the
+    //    browser cannot be fingerprinted;
+    //  - an in-page RT round-trip probe measures a DIFFERENT path than the
+    //    composite and false-positived on Chrome (a ?rtflip probe attempt
+    //    read "flipped" on the very browser that renders upright — shipping
+    //    it would have broken Chrome to fix Vivaldi).
+    // WebGL2 runs the identical node-material code and is correct on every
+    // browser tested, so it is the default; WebGPU stays one query param away
+    // (?gpu=webgpu) for measurement and for browsers proven good. Revisit
+    // when the fork ecosystem ships current Dawn.
+    forceWebGL = true;
   }
 
   const name: "webgpu" | "webgl" = forceWebGL ? "webgl" : "webgpu";
