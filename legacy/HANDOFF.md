@@ -2,6 +2,83 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🔄 "IS THE GAME FLIPPED 180°?" — no, but the SIGN was (2026-07-26, this session)
+
+**Commit `e1426d2`** → synology. 1419 tests pass (123 files).
+
+### What was reported
+
+> "help me debug/audit/run tests to figure out why its flipped 180 degrees for
+> the game. the html isn't upside down only the game thats being rendered."
+
+### The game is NOT flipped — that part was a false alarm
+
+Reproduced the reported scene headless (tavern, `seed=42`, WebGL2) and compared
+landmarks against the user's screenshot: sign lower-right, pinball table centre,
+pool table upper-right, kitchen lower-left, near wall corner at bottom. **Every
+landmark matches in position and handedness.** The dungeon renders upright too.
+
+The room reads as a diamond with its near corner at the bottom because the camera
+is yawed **45°** and tilted **38°** (`engine/config.ts`) — that is the intended
+isometric projection, not a flip.
+
+### What WAS broken: the ENTER MAZE marquee rendered upside down
+
+`makeSignTexture()` in `src/scenes/tavern/props.ts` left `flipY` at three's
+default `true`. A texture on a material `map` samples with **v=0 at the TOP**
+under `WebGPURenderer` (both backends), while `PlaneGeometry` puts v=0 at the
+BOTTOM. `flipY=true` is the compensation the **legacy** `WebGLRenderer` wanted,
+so leaving it on double-flips and every glyph renders inverted. Fix is one line:
+`tex.flipY = false`.
+
+**This is the same trap as `a9eab59`** (raccoon-intro retro blit). That commit
+audited *render-target* textures and correctly cleared the dungeon pixel pass
+(which samples through explicit TSL `texture()` nodes) — a
+`CanvasTexture`-on-a-`map` was never in its scope.
+
+### Why this masqueraded as a whole-scene flip
+
+The sign is the **only text in the tavern**, so a garbled sign is a strong false
+cue that everything is inverted. "ENTER MAZE" with each letter flipped in place
+still looks like *a* word — on screen it was being read as **"TELLER HOUSE"**,
+which is what the user's screenshot shows.
+
+⚠️ **Reasoning from the screenshot actively misled**: flipped "ENTER MAZE" looks
+*mirrored*, which points at a Y-rotation or negative scale — neither of which was
+wrong. Probing with **`"ABC"`** is what settled it: letter order stayed A→B→C
+(so nothing is mirrored horizontally) while every glyph was inverted. Order
+preserved + glyphs inverted = a **v-flip and nothing else**. If you chase a
+suspected orientation bug, render an asymmetric probe rather than squinting at
+production copy.
+
+### Two things left open
+
+1. **`selectBackend()` has ZERO test coverage** — no test file references it.
+   That is the function whose regression produces a genuinely flipped screen, and
+   `src/render/backend.ts` documents that the real WebGPU flip is *undetectable
+   from inside the page* (forks strip their UA; an in-page RT probe
+   false-positived on Chrome). Worth a test pinning `auto → forceWebGL: true`; a
+   silent flip of that default cannot be recovered by probing.
+2. **The WebGPU backend could not be tested at all here.** Headless SwiftShader
+   reports "No available adapters" and silently falls back to WebGL2, so
+   `?gpu=webgpu` is untestable in this environment (the limitation
+   `scripts/playtest.mjs:260` already warns about). All verification is WebGL2.
+   The genuine WebGPU flip needs real GPU hardware.
+
+Verified the WebGL2-default guard is intact in source, in the local build, **and
+on the deployed container** — probing `http://10.0.0.16:5174/dungeon` logs
+`[backend] webgl (requested=auto)`. So the user was already on WebGL2.
+
+### Gotchas hit while verifying (both cost real time)
+
+- **`page.screenshot()` hangs** on "waiting for fonts to load" in this app. Use
+  CDP instead: `context.newCDPSession(page)` → `Page.captureScreenshot`.
+- **`__dungeonTavern()` returns `"no hook"` if called too early** and silently
+  leaves the DUNGEON on screen — which is not the scene under test, and looks
+  like a successful capture. Poll
+  `waitForFunction(() => typeof window.__dungeonTavern === "function")` with a
+  **60s+** timeout; the sprite-atlas boot takes ~30s under SwiftShader.
+
 ## 🗂 ONE FOLDER PER GAME + a real engine (2026-07-26)
 
 **`main`** → synology. 1419 tests pass (123 files, was 1404/121) ·
@@ -332,6 +409,11 @@ them to agree, change that one `label` field (and the `blurb` under it);
 Headless screenshot of the live tavern at spawn (x 0, z 5.4), 1400×900: the
 legend is readable **at full frame without zooming**, which was the bar — the
 sign has to work from the spawn stair, not just up close.
+
+⚠️ **That verification missed that every glyph was UPSIDE DOWN** — fixed later the
+same day in `e1426d2` (see the top section). "Readable at full frame" was checked
+by confirming letter-shaped bright pixels filled the panel, which a v-flipped
+marquee passes. A legibility check has to actually **read the word**.
 
 Recipe: playwright at `HTML-Notes/.venv/bin/python`, chromium with
 `--use-gl=swiftshader --enable-unsafe-swiftshader --no-sandbox`, `goto /dungeon`,
