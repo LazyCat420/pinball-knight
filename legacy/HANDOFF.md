@@ -3,7 +3,157 @@
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 > ⚠️ **Two sessions were live in this checkout on 2026-07-26.** Both are recorded
-> here; neither replaced the other.
+> here; neither replaced the other. **A third was live on 2026-07-27** (the
+> flow-orientation wave below) while a fourth had uncommitted work in
+> `dev/window-hooks.ts` and some `zzz-*.mjs` scratch files — those were left
+> alone and are NOT in `2215eff`.
+
+## 🧭 THE TRACK RUNS ONE WAY — Φ, and the booster family (2026-07-27)
+
+**`main@2215eff`** → synology. 1059 tests pass (93 files) · `tsc` clean for
+`pinball-knight` · verified in a rendered screenshot, not just as numbers.
+
+### What was reported
+
+> "here's examples I boxed in red of tracks that randomly generate that make no
+> sense … it's making paths that feed back into itself causing feedback loops
+> where the user gets stuck. we need to make sure that MOST of the tracks are
+> going one direction but have multiple paths that are possible over having one
+> set path. can we make different types of boosters? … we need corner booster,
+> curved boosters, more jumpers in the mix"
+
+The screenshot boxed two booster runs a few tiles apart pointing opposite ways.
+
+### What the census found (78 floors, the shipping `TRACK_FIRST` path)
+
+| measure | before |
+|---|---|
+| launch parts firing back toward the spawn | **16.2%** (544/3364) |
+| …of non-spine boosters | **57.2%** (253/442) |
+| …of flippers | **42.5%** (130/306) |
+| anti-parallel duels surviving `breakLaunchDuels` | **1.58/floor** — 121 of 123 spine-vs-spine |
+| launchers inside a CLOSED exit-ray cycle | **130** (6.4% of chained pads) |
+| `booster` share of all launch furniture | **73%** (2471 of 3364) |
+
+### Three rule bugs
+
+1. **`booster` and `flipper` were never in `FORWARD_FLOW_KINDS`.** A kind not in
+   that set takes its heading from `classifyTopology`, which resolves a straight
+   run's two ends with `rng() < 0.5`. The most common launch part on the floor
+   was aimed by a **coin flip**. The old comment justified omitting `flipper`
+   ("a redirect — its direction is already meaningful") and never mentioned
+   `booster` at all.
+2. **`breakLaunchDuels` skips spine-vs-spine by design** — which was 98% of what
+   it found — and cannot represent a ring of 3+ at all. The runtime
+   `BOOSTER_JAM` guard can't see those either: it trips when a pad catches the
+   ball in the same SPOT twice, and in a multi-pad ring it never does.
+3. **One route.** `layStationSpine` furnished the single traced artery, so the
+   floor had one set path however well it was aimed.
+
+### The fix — a scalar potential, not more pairwise repair
+
+`maze/flow-orient.ts` builds **Φ = BFS distance to the STAIRS**. Every launch
+part fires strictly downhill on Φ, so any chain of shoves is a strictly
+decreasing integer sequence — **a loop is impossible rather than rare**. Because
+Φ is defined on every walkable tile (not just one artery), every leg of the
+grown circuit gets a consistent forward direction, which is where the multiple
+routes come from: `alternateRoutes` descends Φ from far-apart heads, giving up
+to `ALT_ROUTES_MAX = 3` extra roads that all drain to the exit.
+
+**Φ is distance-to-STAIRS, not distance-from-start, and that is the whole
+point.** "Further from the spawn" is satisfied by any dead-end branch, so the
+old down-flow test could certify a pad firing down a pocket the exit isn't in —
+which is exactly how it stayed green while 16% of pads pointed home.
+
+`maze/flow-loops.ts` then walks the successor graph (each part's exit ray → the
+part it feeds; a functional graph, so trees hanging off cycles and nothing
+else), finds every cycle in one linear three-colour pass, and breaks it. **No
+spine exemption** — downhill is onward by definition now, so re-aiming a route
+part is safe, which is what made the old pass a no-op.
+
+### The booster family (was: one flat pad)
+
+- **`boostcorner`** — a turn that ACCELERATES: enters on `dir`, fires along
+  `dir2` (same two-leg convention as `deflector`, so they're interchangeable in
+  the plan). Replaces the "curve carry" hack — a straight pad dropped in a
+  corner, which re-fired its own rebound. This one knows which leg the ball
+  arrived on and **declines a rebound** instead of relaunching it.
+- **`boostcurve`** — carries a **TANGENT**, not a cardinal, so a grid staircase
+  renders and plays as one curved lane instead of a zigzag of axis-aligned
+  arrows. It fails `|dirI| + |dirJ| === 1`, so it is excluded from every
+  cardinal-only repair pass *by construction* rather than by a flag.
+- **`jumppad`** — the hop, made visible. The one shot per floor that flies over
+  a wall band was a `ramp` with a `vault` flag and no distinguishing mesh.
+
+### Found on the way — the jump shot didn't exist on track floors
+
+`strictLaunchers` is on for every track floor and lifted the `vault` exemption
+from the final runway re-aim. A vault part's runway is **0 by construction**
+(it's aimed at rock on purpose), so it failed `MIN_RUNWAY` on every floor and
+was re-aimed down the longest open corridor — silently turning the floor's only
+jump-the-maze shot into an ordinary dash pad, on every track floor since that
+flag shipped. `vault` is now exempt unconditionally.
+
+### After, same 78 floors
+
+| measure | before → after |
+|---|---|
+| firing backward | 16.2% → **1.5%** |
+| closed feedback cycles | 130 → **2** |
+| duels | 1.58 → **0.44** /floor |
+| side-by-side contraflow (the screenshot case) | 0.0137 → **0.0031** /launcher |
+| launch furniture | 3364 → **9162** (booster 50%, corner 40%, + curve/jump) |
+
+Baseline measured by re-running the census in a worktree at the **unmodified**
+parent commit, not from memory.
+
+### Two tests were proxies; they now assert the property
+
+- The down-flow test measured **dist-from-start** — wrong field, green while 16%
+  pointed home. Now Φ.
+- The duel test called an **intercepted lane** a duel. Two roads converging on a
+  Φ minimum with a corner booster at the meeting point is a **merge**, not a
+  ping-pong; the un-intercepted predicate would have "repaired" it by re-aiming
+  one road back up itself. Both the test and production `firesAt` now require a
+  clear lane with **nothing that catches the ball** in between.
+- Added: `NO CLOSED LOOP of shoves survives` and `route pads run STRICTLY
+  downhill on Φ`.
+- The station-spine chain gate went from 75%-per-seed to an **aggregate** 70%
+  plus a 50% per-seed collapse detector: a floor now has up to four roads and
+  therefore four times as many run-ends, so the un-chained share rises for a
+  structural reason. Measured 74.1% aggregate (was 69.6% before terminus
+  stations were added, 75% on the old single-road floor).
+
+### ⚠️ Gotchas
+
+- **`boostcorner` is NOT in `LAUNCH_KINDS`** and must not be added. Its `dir` is
+  the leg the ball ARRIVES on; a pass that read `dir` as a fire direction would
+  re-aim the entry. `maze/flow-loops.ts` handles it via its own `exitRay`.
+- **`boostcurve` has a non-integer `dirI/dirJ`.** Anything stepping
+  `p.i + p.dirI * s` over tiles must exclude it (they all gate on
+  `|dirI| + |dirJ| === 1`, which excludes it automatically).
+- `TANGENT_SNAP` (0.34 ≈ 20°) decides straight-pad vs curved-pad. Raise it and
+  curves become staircases again; drop it and near-straight runs get curve pads
+  that read as noise.
+- Emissives on the new parts were tuned **from a screenshot**: at the first
+  values the jump pad rendered as one white mass because its chevrons were
+  `C_SHOT`, the same colour and brightness as the takeoff lip behind them. Gold
+  chevrons under a `C_SHOT` lip is the hierarchy. Re-check in-engine if you
+  touch them.
+
+### Open
+
+- **Contraflow is down 77% per launcher but the absolute count is flat** (399 →
+  430 pairs/78 floors) because the floor now carries 2.7× the launch furniture.
+  If the user still points at side-by-side opposing runs, the remaining ones are
+  two *different roads* passing each other, both individually correct — the
+  lever would be `ALT_ROUTE_GAP` (currently 6) to push alternate roads further
+  apart.
+- **2 closed cycles remain** out of 5535 chained launchers. Not chased; they are
+  cases where `breakFlowLoops` could neither re-aim downhill nor demote (fewer
+  than 3 open sides) and removal left another ring.
+- `ramp` is still 22.3% backward — mostly the deliberate `KICKBACK_CHANCE`
+  (0.12) plus pads whose only open lane runs uphill. Both wanted; not a bug.
 
 ## 🙃 THE FLIP, ACTUALLY FIXED THIS TIME — the PIXEL PASS was inverting every frame (2026-07-26, third session)
 
