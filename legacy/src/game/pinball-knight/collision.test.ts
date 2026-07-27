@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable, setTile, setShape } from "./maze/generator";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
-import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./collision";
-import { SHAPE_SLANT_NE, SHAPE_ARC } from "./maze/tile-shape";
+import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./engine/collision";
+import { SHAPE_SLANT_NE, SHAPE_ARC } from "./engine/tile-shape";
 
 /** A 7x5 room: solid border, open interior, one pillar at (3,2). */
 function room(): Grid {

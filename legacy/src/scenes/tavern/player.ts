@@ -12,13 +12,13 @@
  */
 import * as THREE from "three";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
-import { createActorSprite } from "../../game/pinball-knight/render/sprite";
+import { createActorSprite } from "../../game/pinball-knight/engine/render/sprite";
 import { getKnightSheet } from "../../game/pinball-knight/render/knight-sheets";
 import { lookFromGear, lookKey } from "../../game/pinball-knight/render/knight-look";
-import { Animator, facingFromVelocity, type Facing } from "../../game/pinball-knight/render/animator";
+import { Animator, facingFromVelocity, type Facing } from "../../game/pinball-knight/engine/render/animator";
 import { PPU } from "../../game/pinball-knight/constants";
-import { screenDirToWorld } from "../../game/pinball-knight/camera";
-import type { InputHandle } from "../../game/pinball-knight/input";
+import { screenDirToWorld } from "../../game/pinball-knight/engine/camera";
+import type { InputHandle } from "../../game/pinball-knight/engine/input";
 import { moveInRoom, SPAWN } from "./layout";
 import { tavern, type TavernPlayer } from "./state";
 

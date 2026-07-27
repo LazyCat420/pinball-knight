@@ -11,8 +11,8 @@
  * bookkeeping bug could live.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createGamepadPoller, BTN, type PadLike } from "./gamepad";
-import { emptyPad } from "./virtual-pad";
+import { createGamepadPoller, BTN, type PadLike } from "./engine/gamepad";
+import { emptyPad } from "./engine/virtual-pad";
 
 /** Buttons a fresh pad reports, standard mapping. */
 const REST = () => Array.from({ length: 17 }, () => ({ pressed: false }));

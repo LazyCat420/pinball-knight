@@ -170,7 +170,7 @@ describe("banks land on real floors and are rideable", () => {
   it("authors LONG railed banks without breaking the floor", async () => {
     const { generateMaze, thickenWalls, isWalkable, idx } = await import("./generator");
     const { decorateMaze, widenMainArtery, pickEndpoints } = await import("./decorate");
-    const { bfsDistancesOwned } = await import("../entities/ai");
+    const { bfsDistancesOwned } = await import("../engine/flow-field");
     const { levelConfig } = await import("../constants");
     const { mulberry32 } = await import("../../../utils/rng");
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import * as THREE from "three";
-import { createActorSprite, type SpriteSheet } from "./sprite";
+import { createActorSprite, type SpriteSheet } from "../engine/render/sprite";
 
 /**
  * The contact blob's texture is painted on a 2D canvas, which this environment

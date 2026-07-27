@@ -22,7 +22,7 @@ import { SpriteNodeMaterial } from "three/webgpu";
 import { attribute, float, mul, vec4 } from "three/tsl";
 import { PALETTE_HEX } from "./palette";
 import { CAMERA_YAW, CAMERA_TILT, PPU } from "../constants";
-import { DamageTextPool, type DamageTextKind } from "./damage-text";
+import { DamageTextPool, type DamageTextKind } from "../engine/render/damage-text";
 
 function toLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);

@@ -10,8 +10,8 @@
 import type * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import type { Station } from "./layout";
-import type { Facing } from "../../game/pinball-knight/render/animator";
-import type { ActorSprite } from "../../game/pinball-knight/render/sprite";
+import type { Facing } from "../../game/pinball-knight/engine/render/animator";
+import type { ActorSprite } from "../../game/pinball-knight/engine/render/sprite";
 
 /** Run stats handed in by the dungeon when it opens the tavern. */
 export interface TavernStats {

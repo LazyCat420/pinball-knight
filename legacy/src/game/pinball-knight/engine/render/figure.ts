@@ -23,9 +23,12 @@
  * Coordinates live in the 128px cel box (SPRITE_PX); GROUND (feet line) matches
  * cel-painter's constant so figures share the floor with the old props/items.
  */
-import { paletteCss } from "./palette";
+import { enginePalette } from "../palette-source";
 
-const C = paletteCss;
+// Delegates rather than aliasing `enginePalette.css` directly: the game
+// installs its palette after this module is imported, so capturing the
+// function reference at load time would pin the greyscale fallback.
+const C = (index: number): string => enginePalette.css(index);
 
 // ── MATERIAL RAMPS ──────────────────────────────────────────────
 //

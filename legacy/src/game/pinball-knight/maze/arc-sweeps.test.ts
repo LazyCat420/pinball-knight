@@ -5,10 +5,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, at, isWalkable, idx, mulberry32, ensureArcs } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, resolveArcFeature, angleInSpan, kickBandAt, type ArcFeature } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_ARC, resolveArcFeature, angleInSpan, kickBandAt, type ArcFeature } from "../engine/tile-shape";
 import { authorArcSweeps, stampOrbitIsland, ORBIT_RADIUS, KICK_MAX_PER_FLOOR, KICK_ISLAND_BANDS, KICK_ISLAND_SPAN } from "./arc-sweeps";
-import { moveCircle } from "../collision";
-import { bfsDistances } from "../entities/ai";
+import { moveCircle } from "../engine/collision";
+import { bfsDistances } from "../engine/flow-field";
 
 const R2 = Math.SQRT1_2;
 
@@ -112,7 +112,7 @@ describe("authorArcSweeps", () => {
 });
 
 describe("moveCircle vs a multi-tile sweep", () => {
-  function sweepGrid(): { g: Grid; f: import("./tile-shape").ArcFeature; C: { x: number; z: number } } {
+  function sweepGrid(): { g: Grid; f: import("../engine/tile-shape").ArcFeature; C: { x: number; z: number } } {
     const g = emptyGrid(16, 16);
     openRect(g, 1, 1, 14, 14);
     for (let j = 6; j <= 14; j++) for (let i = 6; i <= 14; i++) g.t[j * g.w + i] = T_WALL;

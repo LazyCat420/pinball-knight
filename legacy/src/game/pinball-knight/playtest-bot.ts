@@ -28,8 +28,8 @@
  * bot is pushing a stick), DEATHS, floors cleared, and the bounce-combo peak —
  * plus the profiler table when `profile` is on.
  */
-import { BTN } from "./gamepad";
-import { getProfileSummary, getP95FrameMs, type ProfileStage } from "./profiler";
+import { BTN } from "./engine/gamepad";
+import { getProfileSummary, getP95FrameMs, type ProfileStage } from "./engine/profiler";
 
 /** The fake-pad surface installed by core.ts's debug hooks. */
 interface FakePad {

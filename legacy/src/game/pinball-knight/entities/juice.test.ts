@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state } from "../state";
-import { requestShake, requestHitstop, tickJuice, resetJuice, juiceDebug } from "./juice";
+import { requestShake, requestHitstop, tickJuice, resetJuice, juiceDebug } from "../engine/juice";
 import { HITSTOP_MAX_PENDING, HITSTOP_MIN_GAP } from "../constants";
 
 /** Put the governor and the juice fields back to a known cold start. */

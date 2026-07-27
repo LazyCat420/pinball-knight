@@ -98,11 +98,11 @@ import {
 } from "../constants";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
-import { moveCircle, wallContact } from "../collision";
+import { moveCircle, wallContact } from "../engine/collision";
 import { worldToTile, tileCenter, idx } from "../maze/generator";
-import { flowStep } from "./ai";
-import { facingFromVelocity, type Facing } from "../render/animator";
-import { worldDirToScreen } from "../camera";
+import { flowStep } from "../engine/flow-field";
+import { facingFromVelocity, type Facing } from "../engine/render/animator";
+import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
 import { spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";

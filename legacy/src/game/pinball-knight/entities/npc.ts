@@ -38,9 +38,9 @@ import {
   PPU,
 } from "../constants";
 import { tileCenter, worldToTile, isWalkable, idx } from "../maze/generator";
-import { moveCircle } from "../collision";
-import { bfsDistances, bfsDistancesOwned, flowStep, flowAway } from "./ai";
-import { createStaticSprite } from "../render/sprite";
+import { moveCircle } from "../engine/collision";
+import { bfsDistances, bfsDistancesOwned, flowStep, flowAway } from "../engine/flow-field";
+import { createStaticSprite } from "../engine/render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";

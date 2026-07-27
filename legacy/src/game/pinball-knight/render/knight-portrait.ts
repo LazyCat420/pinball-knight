@@ -8,7 +8,7 @@
  * bigger: what you see here is pixel-for-pixel what walks the dungeon.
  */
 import { makeKnightPaints } from "./cel-painter";
-import { crushToGrid } from "./sprite";
+import { crushToGrid } from "../engine/render/sprite";
 import { SPRITE_PX } from "../constants";
 import type { WeaponId } from "../items";
 import type { KnightLook } from "./knight-look";

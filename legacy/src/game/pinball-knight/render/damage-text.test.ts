@@ -4,7 +4,7 @@
  * they're the parts that carry the actual design rules.
  */
 import { describe, it, expect } from "vitest";
-import { formatDamage, damageTextStyle, damageTextFrame, POOL_SIZE } from "./damage-text";
+import { formatDamage, damageTextStyle, damageTextFrame, POOL_SIZE } from "../engine/render/damage-text";
 
 describe("formatDamage", () => {
   it("rounds fractional damage to a whole number", () => {

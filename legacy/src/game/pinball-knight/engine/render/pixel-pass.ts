@@ -77,22 +77,25 @@ type TSLNode = any;
 /** A TSL uniform node: opaque in the graph, but `.value` is live from JS. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TSLUniform<T> = any & { value: T };
-import { PALETTE_SIZE, paletteToFloatArray } from "./palette";
-import {
-  RENDER_W,
-  RENDER_H,
-  MAX_RENDER_W,
-  MAX_RENDER_H,
-  PPU,
-  BLOOM_THRESHOLD,
-  BLOOM_STRENGTH,
-  BLOOM_RADIUS,
-  AO_RADIUS,
-  AO_STRENGTH,
-  VIGNETTE,
-  FRENZY_VIGNETTE,
-  FRENZY_ABERRATION,
-} from "../constants";
+import { engineConfig } from "../config";
+import { enginePalette } from "../palette-source";
+
+// Local aliases for the injected tuning — see the note in sprite.ts.
+const {
+  renderW: RENDER_W,
+  renderH: RENDER_H,
+  maxRenderW: MAX_RENDER_W,
+  maxRenderH: MAX_RENDER_H,
+  bloomThreshold: BLOOM_THRESHOLD,
+  bloomStrength: BLOOM_STRENGTH,
+  bloomRadius: BLOOM_RADIUS,
+  aoRadius: AO_RADIUS,
+  aoStrength: AO_STRENGTH,
+  vignette: VIGNETTE,
+  frenzyVignette: FRENZY_VIGNETTE,
+  frenzyAberration: FRENZY_ABERRATION,
+} = engineConfig.post;
+const { ppu: PPU } = engineConfig.camera;
 
 /**
  * ── THE POST CHAIN IS TSL, NOT GLSL ────────────────────────────────────────
@@ -171,6 +174,12 @@ function finalNode(
 ): TSLNode {
   const vUv = uv();
   const res = u.resolution;
+
+  // Derived from the array actually handed in, not from a module constant: the
+  // palette is injected by the game, so its size is only known here. The
+  // unrolled snap below depends on this being the real count — a stale size
+  // would either skip colours or read past the end of the array.
+  const PALETTE_SIZE = Math.floor(palette.length / 3);
 
   // Depth sampling helper — matches `depthAt(texelOffset)` in the GLSL.
   const depthAt = (ox: number, oy: number): TSLNode =>
@@ -486,7 +495,7 @@ export function createPixelPass(
     sceneTarget.texture,
     bloomA.texture,
     depthTexture,
-    paletteToFloatArray(),
+    enginePalette.toFloatArray(),
     finalUniforms,
   );
 

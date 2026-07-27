@@ -12,7 +12,7 @@
 import * as THREE from "three";
 import { state } from "./state";
 import { type Grid, T_FLOOR, T_WALL, at, isWalkable, setTile, tileCenter } from "./maze/generator";
-import { createStaticSprite } from "./render/sprite";
+import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
 import { sfxBreak, sfxHeavy } from "./audio";

@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { type Grid, T_FLOOR, T_WALL, at, isWalkable, idx, mulberry32 } from "./generator";
 import { authorLampPuzzle, lampCountFor } from "./lamp-puzzle";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 function emptyGrid(w: number, h: number): Grid {
   const g: Grid = { w, h, t: new Uint8Array(w * h).fill(T_WALL), shapes: new Uint8Array(w * h) };

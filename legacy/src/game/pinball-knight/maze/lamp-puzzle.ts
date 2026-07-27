@@ -14,7 +14,7 @@
  */
 import { type Grid, type TilePos, T_FLOOR, at, idx } from "./generator";
 import type { PinballPartSpot } from "./decorate";
-import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 
 export interface LampPuzzlePlan {
   /** Brazier spots (already PinballPartSpots so they inject into plan.parts). */

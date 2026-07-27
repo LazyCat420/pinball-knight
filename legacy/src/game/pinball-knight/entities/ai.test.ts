@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, mulberry32, at, T_FLOOR, idx } from "../maze/generator";
-import { bfsDistances, bfsDistancesOwned, flowStep } from "./ai";
+import { bfsDistances, bfsDistancesOwned, flowStep } from "../engine/flow-field";
 
 describe("flow field", () => {
   it("descends from every reachable tile to the player, in exactly dist steps", () => {

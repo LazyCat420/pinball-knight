@@ -22,12 +22,12 @@ import { describe, it, expect } from "vitest";
 import { mulberry32 } from "../../../utils/rng";
 import { growTrack, circuitRank, seedNodes, meshNeighbours, growNetwork, DEFAULT_GROW } from "./track-grow";
 import { buildTrackPath, totalArcLength, TRACK_RADII } from "./track-path";
-import { SHAPE_ARC } from "./tile-shape";
+import { SHAPE_ARC } from "../engine/tile-shape";
 import { carveTrack, growMazeAround } from "./track-carve";
 import { at, idx, isWalkable, T_FLOOR, T_STAIRS, T_WALL, type Grid } from "./generator";
 import { buildTrackFloor as trackFloor } from "./track-floor";
 import { decorateMaze } from "./decorate";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 import { levelConfig } from "../constants";
 
 const rngFor = (s: number): (() => number) => mulberry32((s * 2654435761) >>> 0);

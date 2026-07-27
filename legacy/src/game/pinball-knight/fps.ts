@@ -32,10 +32,10 @@ import {
   RENDER_H,
   ZOMBIE_R,
 } from "./constants";
-import { moveCircle } from "./collision";
-import { faceCameraYaw, faceCameraIso } from "./render/sprite";
+import { moveCircle } from "./engine/collision";
+import { faceCameraYaw, faceCameraIso } from "./engine/render/sprite";
 import { damageZombie } from "./entities/combat";
-import type { InputHandle } from "./input";
+import type { InputHandle } from "./engine/input";
 import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
 import { setHUDMode } from "./hud";
 import { sfxGun } from "./audio";

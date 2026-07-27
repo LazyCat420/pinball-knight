@@ -4,8 +4,8 @@
  * would only ever be found by a person holding a controller.
  */
 import { describe, it, expect } from "vitest";
-import { readPad, BTN, STICK_DEADZONE, AIM_DEADZONE, type PadLike } from "./gamepad";
-import { emptyPad, applyDeadzone } from "./virtual-pad";
+import { readPad, BTN, STICK_DEADZONE, AIM_DEADZONE, type PadLike } from "./engine/gamepad";
+import { emptyPad, applyDeadzone } from "./engine/virtual-pad";
 
 /** A pad with everything at rest; `set` flips the bits a case cares about. */
 function pad(set: Partial<{ axes: number[]; down: number[] }> = {}): PadLike {

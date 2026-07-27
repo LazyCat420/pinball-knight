@@ -10,10 +10,10 @@
  * the second automatically.
  */
 import * as THREE from "three";
-import { createActorSprite, type ActorSprite } from "./sprite";
+import { createActorSprite, type ActorSprite } from "../engine/render/sprite";
 import { getKnightSheet, type SheetConsumer } from "./knight-sheets";
 import { lookFromGear } from "./knight-look";
-import { Animator, facingFromVelocity, type Facing } from "./animator";
+import { Animator, facingFromVelocity, type Facing } from "../engine/render/animator";
 import { colorForSlot } from "../../../net/protocol";
 import type { PeerInfo } from "../../../net/presence";
 import { state as dungeonState, activeWeapon } from "../state";

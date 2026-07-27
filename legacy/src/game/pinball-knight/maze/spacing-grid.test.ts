@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createSpacingGrid, type Metric } from "./spacing-grid";
+import { createSpacingGrid, type Metric } from "../engine/spacing-grid";
 import { mulberry32 } from "../../../utils/rng";
 
 /** The linear scan this replaces — the definition of correct. */

@@ -9,7 +9,7 @@
  *
  * DOM- and three-free on purpose: this is a tested module.
  */
-import { type Grid, type TilePos, idx, isWalkable } from "../maze/generator";
+import { type Grid, type TilePos, idx, isWalkable } from "./grid";
 
 /**
  * Distance (in tiles) from every walkable tile to (si, sj).

@@ -1,20 +1,22 @@
 /**
  * Module state singleton — same pattern as mouse-game/state.ts.
  */
+import { view } from "./engine/view-state";
+import { setChainDepthSource } from "./engine/juice";
 import { freshRail, type RailState } from "./entities/rail";
 import type { ZombieType } from "./zombie-types";
 import type * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
-import type { PixelPass } from "./render/pixel-pass";
+import type { PixelPass } from "./engine/render/pixel-pass";
 import type { VfxSystem } from "./render/vfx";
 import type { AimIndicator } from "./render/aim-indicator";
-import type { ActorSprite, SpriteSheet } from "./render/sprite";
-import type { Animator, Facing } from "./render/animator";
+import type { ActorSprite, SpriteSheet } from "./engine/render/sprite";
+import type { Animator, Facing } from "./engine/render/animator";
 import type { Grid, TilePos } from "./maze/generator";
 import type { Fog } from "./fog";
-import type { ArcCorner } from "./collision";
+import type { ArcCorner } from "./engine/collision";
 import type { MazeHandle } from "./maze/build";
-import type { InputHandle } from "./input";
+import type { InputHandle } from "./engine/input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind, ItemRarity } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import type { AbilityId } from "./abilities";
@@ -657,10 +659,33 @@ export const state = {
   /** Set by anything that changes a HUD number; core repaints once per frame at most. */
   hudDirty: true,
 
-  // Three
-  renderer: null as WebGPURenderer | null,
-  scene: null as THREE.Scene | null,
-  camera: null as THREE.OrthographicCamera | null,
+  // ── Three ──
+  //
+  // renderer/scene/camera are OWNED BY THE ENGINE (engine/view-state.ts) and
+  // reached here through accessors. The engine writes them; the game reads
+  // them through `state` exactly as it always has, so no call site changed.
+  //
+  // These are deliberately not plain fields holding copies: two copies of a
+  // camera reference drift the moment one side re-creates it on a resize, and
+  // the stale side then renders to a dead target.
+  get renderer(): WebGPURenderer | null {
+    return view.renderer;
+  },
+  set renderer(v: WebGPURenderer | null) {
+    view.renderer = v;
+  },
+  get scene(): THREE.Scene | null {
+    return view.scene;
+  },
+  set scene(v: THREE.Scene | null) {
+    view.scene = v;
+  },
+  get camera(): THREE.OrthographicCamera | null {
+    return view.camera;
+  },
+  set camera(v: THREE.OrthographicCamera | null) {
+    view.camera = v;
+  },
   pixelPass: null as PixelPass | null,
   vfx: null as VfxSystem | null,
   /** Pinball heading/steer arrows — only visible while rolling. */
@@ -912,10 +937,25 @@ export const state = {
   flowField: null as Int32Array | null,
   flowTimer: 0,
 
-  // Camera follow + screen shake
-  camX: 0,
-  camZ: 0,
-  shakeT: 0,
+  // Camera follow + screen shake — engine-owned, see the note on `renderer`.
+  get camX(): number {
+    return view.camX;
+  },
+  set camX(v: number) {
+    view.camX = v;
+  },
+  get camZ(): number {
+    return view.camZ;
+  },
+  set camZ(v: number) {
+    view.camZ = v;
+  },
+  get shakeT(): number {
+    return view.shakeT;
+  },
+  set shakeT(v: number) {
+    view.shakeT = v;
+  },
 
   // ── RAMPAGE: the FPS "ultimate" ──
   // Charges from kills; when full the player can drop into a first-person
@@ -942,8 +982,14 @@ export const state = {
   fpsStreak: 0,
   /** Seconds since the last rampage kill — the streak window. */
   fpsStreakT: 0,
-  /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going). */
-  hitstopT: 0,
+  /** Hit-freeze: while > 0 the fixed-step sim is paused (VFX/render keep going).
+   *  Engine-owned (the juice governor writes it) — see the note on `renderer`. */
+  get hitstopT(): number {
+    return view.hitstopT;
+  },
+  set hitstopT(v: number) {
+    view.hitstopT = v;
+  },
   /** Full-screen white flash left (katana finisher) — decays in REAL time in the
    *  render loop, so it plays through its own hitstop. Drives pixelPass.setFlash. */
   flashT: 0,
@@ -1238,3 +1284,14 @@ export function resetState(): void {
   state.onKeyDown = null;
   state.onResize = null;
 }
+
+/**
+ * Tell the engine's juice governor how deep the current impact chain is.
+ *
+ * Registered HERE rather than in GameEngine.installEngine because the reading
+ * is a property of this module: `bounceCombo` is per-PLAYER ride bookkeeping on
+ * `state`, reset when the chain lapses. Wiring it at state's module load means
+ * the governor damps correctly for anything that touches state — including
+ * unit tests, which exercise the governor without booting the game.
+ */
+setChainDepthSource(() => state.player?.bounceCombo ?? 0);

@@ -16,7 +16,7 @@
  * directions it must produce.
  */
 import { describe, it, expect } from "vitest";
-import { screenDirToWorld, worldDirToScreen } from "../../game/pinball-knight/camera";
+import { screenDirToWorld, worldDirToScreen } from "../../game/pinball-knight/engine/camera";
 
 /** Unit-ise so we compare direction, not magnitude. */
 function unit(v: { x: number; z: number }): { x: number; z: number } {

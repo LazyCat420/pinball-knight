@@ -99,7 +99,7 @@ import {
   FIRE_PUDDLE_LIFE,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
-import { moveCircle } from "../collision";
+import { moveCircle } from "../engine/collision";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
 import { damageZombie } from "./combat";

@@ -11,8 +11,8 @@
  * Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
  * DOM- and three-free: tested.
  */
-import { type Grid, isWalkable, shapeAt, arcFeatureAt, idx } from "./maze/generator";
-import { clamp } from "../../utils/math";
+import { type Grid, isWalkable, shapeAt, arcFeatureAt, idx } from "./grid";
+import { clamp } from "../../../utils/math";
 import {
   SHAPE_FULL,
   isShaped,
@@ -24,7 +24,7 @@ import {
   laneTangent,
   type KickBand,
   type LaneBand,
-} from "./maze/tile-shape";
+} from "./tile-shape";
 
 const EPS = 1e-4;
 

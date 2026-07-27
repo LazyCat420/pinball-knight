@@ -6,7 +6,7 @@
  * screen pixels wide) was invisible to every existing test.
  */
 import { describe, it, expect } from "vitest";
-import { computeRenderSizing } from "./pixel-pass";
+import { computeRenderSizing } from "../engine/render/pixel-pass";
 import { RENDER_W, RENDER_H, MAX_RENDER_W, MAX_RENDER_H, PPU } from "../constants";
 
 /** Real-world windows, including deliberately awkward ones. */

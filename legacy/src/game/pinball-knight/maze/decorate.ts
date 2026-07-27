@@ -11,11 +11,11 @@
  * DOM- and three-free: tested alongside the generator.
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape, shapeAt } from "./generator";
-import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "../engine/tile-shape";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
-import { createSpacingGrid } from "./spacing-grid";
+import { createSpacingGrid } from "../engine/spacing-grid";
 import { authorArteryBanks } from "./artery-banks";
-import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
 export interface Torch extends TilePos {

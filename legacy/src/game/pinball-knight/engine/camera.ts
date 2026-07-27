@@ -13,15 +13,16 @@
  * shifts by whole texels regardless of orientation. Same cure, new anatomy.
  */
 import * as THREE from "three";
-import { VIEW_W, VIEW_H, CAMERA_TILT, CAMERA_YAW, CAMERA_DIST, PPU, CAM_DEADZONE, CAM_LERP } from "./constants";
-import { state } from "./state";
+import { engineConfig, onConfigChange } from "./config";
+import { view } from "./view-state";
 
 export function createDungeonCamera(): THREE.OrthographicCamera {
+  const { viewW, viewH } = engineConfig.camera;
   const cam = new THREE.OrthographicCamera(
-    -VIEW_W / 2,
-    VIEW_W / 2,
-    VIEW_H / 2,
-    -VIEW_H / 2,
+    -viewW / 2,
+    viewW / 2,
+    viewH / 2,
+    -viewH / 2,
     0.1,
     200,
   );
@@ -31,11 +32,12 @@ export function createDungeonCamera(): THREE.OrthographicCamera {
 
 /** The camera's offset from whatever it's looking at. Fixed for the whole game. */
 export function cameraOffset(): THREE.Vector3 {
-  const horiz = Math.cos(CAMERA_TILT) * CAMERA_DIST;
+  const { tilt, yaw, dist } = engineConfig.camera;
+  const horiz = Math.cos(tilt) * dist;
   return new THREE.Vector3(
-    Math.sin(CAMERA_YAW) * horiz,
-    Math.sin(CAMERA_TILT) * CAMERA_DIST,
-    Math.cos(CAMERA_YAW) * horiz,
+    Math.sin(yaw) * horiz,
+    Math.sin(tilt) * dist,
+    Math.cos(yaw) * horiz,
   );
 }
 
@@ -43,9 +45,13 @@ export function cameraOffset(): THREE.Vector3 {
  * Ground-plane direction of "screen up" (away from the camera) and
  * "screen right" — the input remap and facing logic key off these so WASD is
  * always screen-relative, the way Diablo controls feel.
+ *
+ * Derived from yaw, so they are recomputed by `refreshCameraBasis` whenever
+ * the injected config changes. They are cached rather than computed per call
+ * because `screenDirToWorld` runs on every input sample and every facing pick.
  */
-const SCREEN_UP_XZ = { x: -Math.sin(CAMERA_YAW), z: -Math.cos(CAMERA_YAW) };
-const SCREEN_RIGHT_XZ = { x: Math.cos(CAMERA_YAW), z: -Math.sin(CAMERA_YAW) };
+let SCREEN_UP_XZ = { x: -Math.sin(engineConfig.camera.yaw), z: -Math.cos(engineConfig.camera.yaw) };
+let SCREEN_RIGHT_XZ = { x: Math.cos(engineConfig.camera.yaw), z: -Math.sin(engineConfig.camera.yaw) };
 
 /** Screen-space axis → world ground direction. */
 export function screenDirToWorld(sx: number, sz: number): { x: number; z: number } {
@@ -81,8 +87,8 @@ export function mouseAimDirection(
   pz: number,
   cursor: { x: number; y: number },
 ): { x: number; z: number } | null {
-  const cam = state.camera;
-  const renderer = state.renderer;
+  const cam = view.camera;
+  const renderer = view.renderer;
   if (!cam || !renderer) return null;
 
   // Player world → NDC → canvas pixels.
@@ -110,8 +116,8 @@ export function mouseAimDirection(
  */
 const _pScreen = new THREE.Vector3();
 export function worldToScreenPx(x: number, z: number, y = 0.6): { x: number; y: number } | null {
-  const cam = state.camera;
-  const renderer = state.renderer;
+  const cam = view.camera;
+  const renderer = view.renderer;
   if (!cam || !renderer) return null;
   _pScreen.set(x, y, z).project(cam);
   const rect = renderer.domElement.getBoundingClientRect();
@@ -121,7 +127,7 @@ export function worldToScreenPx(x: number, z: number, y = 0.6): { x: number; y: 
   };
 }
 
-const _offset = cameraOffset();
+let _offset = cameraOffset();
 const _target = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _upVec = new THREE.Vector3();
@@ -154,7 +160,7 @@ export function aimCamera(cam: THREE.OrthographicCamera, x: number, y: number, z
   _upVec.setFromMatrixColumn(cam.matrixWorld, 1);
   const dr = cam.position.dot(_right);
   const du = cam.position.dot(_upVec);
-  const pxPerUnit = PPU * (cam.zoom || 1);
+  const pxPerUnit = engineConfig.camera.ppu * (cam.zoom || 1);
   const snap = (v: number) => Math.round(v * pxPerUnit) / pxPerUnit;
   _fix
     .copy(_right)
@@ -166,9 +172,27 @@ export function aimCamera(cam: THREE.OrthographicCamera, x: number, y: number, z
 
 /** Hard-cut the follow target (level start, retry). No lerp across a level change. */
 export function snapCameraTo(x: number, z: number): void {
-  state.camX = x;
-  state.camZ = z;
+  view.camX = x;
+  view.camZ = z;
 }
+
+/**
+ * Re-derive the geometry cached from the injected config: the follow offset
+ * and the screen-axis basis.
+ *
+ * Called by `configureEngine`. Without it, a game that injects a different
+ * yaw would get a camera pointing one way and a WASD remap keyed to another —
+ * the controls would be rotated relative to the view, which is exactly the
+ * class of bug the shared basis exists to prevent.
+ */
+export function refreshCameraBasis(): void {
+  const { yaw } = engineConfig.camera;
+  SCREEN_UP_XZ = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+  SCREEN_RIGHT_XZ = { x: Math.cos(yaw), z: -Math.sin(yaw) };
+  _offset = cameraOffset();
+}
+
+onConfigChange(refreshCameraBasis);
 
 /**
  * Follow the player with a dead-zone: the player roams a small box around the
@@ -180,25 +204,26 @@ export function snapCameraTo(x: number, z: number): void {
  * on whole pixels.
  */
 export function updateFollowCamera(cam: THREE.OrthographicCamera, px: number, pz: number, dt: number): void {
-  const t = Math.min(1, CAM_LERP * dt);
+  const { deadzone, lerp } = engineConfig.camera;
+  const t = Math.min(1, lerp * dt);
 
-  const dx = px - state.camX;
-  if (Math.abs(dx) > CAM_DEADZONE) {
-    state.camX += (dx - Math.sign(dx) * CAM_DEADZONE) * t;
+  const dx = px - view.camX;
+  if (Math.abs(dx) > deadzone) {
+    view.camX += (dx - Math.sign(dx) * deadzone) * t;
   }
-  const dz = pz - state.camZ;
-  if (Math.abs(dz) > CAM_DEADZONE * 0.7) {
-    state.camZ += (dz - Math.sign(dz) * CAM_DEADZONE * 0.7) * t;
+  const dz = pz - view.camZ;
+  if (Math.abs(dz) > deadzone * 0.7) {
+    view.camZ += (dz - Math.sign(dz) * deadzone * 0.7) * t;
   }
 
   let ox = 0;
   let oz = 0;
-  if (state.shakeT > 0) {
-    state.shakeT = Math.max(0, state.shakeT - dt);
-    const amp = 0.14 * state.shakeT * 4; // decays with the timer
+  if (view.shakeT > 0) {
+    view.shakeT = Math.max(0, view.shakeT - dt);
+    const amp = 0.14 * view.shakeT * 4; // decays with the timer
     ox = (Math.random() - 0.5) * 2 * amp;
     oz = (Math.random() - 0.5) * 2 * amp;
   }
 
-  aimCamera(cam, state.camX + ox, 0.5, state.camZ + oz);
+  aimCamera(cam, view.camX + ox, 0.5, view.camZ + oz);
 }

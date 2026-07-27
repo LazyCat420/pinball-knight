@@ -28,22 +28,24 @@ import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
-import { createPixelPass } from "./render/pixel-pass";
+import { createPixelPass } from "./engine/render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createAimIndicator } from "./render/aim-indicator";
 import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
-import { tickJuice, resetJuice } from "./entities/juice";
+import { tickJuice, resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
-import { createTouchControls, isTouchDevice, type TouchControls } from "./touch-controls";
+import { createTouchControls, isTouchDevice, type TouchControls } from "./engine/touch-controls";
 import { updateShots, rotateLanes } from "./shots";
-import { loadAtlasSheet } from "./render/atlas-loader";
-import { createActorSprite, createStaticSprite, createOcclusionSilhouette, reaperSheet, type SpriteSheet } from "./render/sprite";
-import { Animator } from "./render/animator";
+import { loadAtlasSheet } from "./engine/render/atlas-loader";
+import { createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./engine/render/sprite";
+import { reaperSheet } from "./render/reaper-sheet";
+import { installEngine } from "./GameEngine";
+import { Animator } from "./engine/render/animator";
 import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
-import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./camera";
+import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
 import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
@@ -56,7 +58,7 @@ import { faceOnHeal, faceOnSpecial } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
-import { computeArcCorners } from "./collision";
+import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { buildTrackFloor } from "./maze/track-floor";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
@@ -66,7 +68,7 @@ import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze } from "./maze/build";
-import { bfsDistances, bfsDistancesOwned } from "./entities/ai";
+import { bfsDistances, bfsDistancesOwned } from "./engine/flow-field";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
@@ -76,7 +78,7 @@ import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
 import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie, setCoopCombatBridge, hitPlayerRanged } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
-import { createInput } from "./input";
+import { createInput } from "./engine/input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import { castAbility, tickAbilities, ABILITIES, type AbilityId } from "./abilities";
 import { spawnMultiBall, updateMultiBall } from "./entities/multiball";
@@ -241,7 +243,7 @@ import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPile
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
-import { profBegin, profEnd, profCount, profFrame } from "./profiler";
+import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
 import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
@@ -318,6 +320,11 @@ function readSeedParam(): number | null {
 export function launchDungeonGame(onExit?: () => void): void {
   if (state.active) return;
   state.active = true;
+  // Push this game's tuning, palette and chain-depth reading into the engine.
+  // MUST run before anything builds a camera, sprite or the pixel pass — those
+  // resolve config at construction, so a late install leaves the first objects
+  // built against the engine's neutral defaults (greyscale, default metrics).
+  installEngine();
   state.onExitCallback = onExit ?? null;
   // `?seed=<int>` pins the run. runSeed drives the maze, the biome theme and
   // every spawn, so a fixed seed is what makes two screenshots comparable —

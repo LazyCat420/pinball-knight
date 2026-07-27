@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { createBlobPool } from "./blob-pool";
+import { createBlobPool } from "../engine/render/blob-pool";
 
 function pool(initial = 4) {
   const scene = new THREE.Scene();

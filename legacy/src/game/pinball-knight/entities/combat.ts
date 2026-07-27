@@ -55,9 +55,9 @@ import {
   COMBO_ZONE_CRUISE,
 } from "../constants";
 import { comboKillGold, comboDamageMult } from "./combo-curve";
-import { moveCircle } from "../collision";
-import type { Facing } from "../render/animator";
-import { screenDirToWorld } from "../camera";
+import { moveCircle } from "../engine/collision";
+import type { Facing } from "../engine/render/animator";
+import { screenDirToWorld } from "../engine/camera";
 import { addGold } from "../../../utils/gold-wallet";
 import { WEAPONS, GEAR, degradeWeapon, absorbDamage, upgradeDamageMult, RAGE_DAMAGE_MULT, STONESKIN_DAMAGE_MULT, GREED_GOLD_MULT, STATIC_ARC_DAMAGE, STATIC_ARC_RANGE } from "../items";
 import { aggregateCards } from "../cards";

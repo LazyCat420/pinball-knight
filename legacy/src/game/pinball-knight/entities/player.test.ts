@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields } from "../state";
 import { updatePlunger } from "./player";
-import type { InputHandle } from "../input";
-import { emptyPad } from "../virtual-pad";
+import type { InputHandle } from "../engine/input";
+import { emptyPad } from "../engine/virtual-pad";
 import {
   ROLL_DISTANCE,
   ROLL_DURATION,

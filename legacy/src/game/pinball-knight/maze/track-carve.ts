@@ -46,7 +46,7 @@ import {
   isWalkable,
   shapeAt,
 } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC } from "./tile-shape";
+import { SHAPE_FULL, SHAPE_ARC } from "../engine/tile-shape";
 import type { TrackPath } from "./track-path";
 
 /** Marks which tiles belong to the circuit, so later passes can respect it. */

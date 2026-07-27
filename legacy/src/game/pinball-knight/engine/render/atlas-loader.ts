@@ -14,7 +14,7 @@
  */
 import * as THREE from "three";
 import type { SpriteSheet } from "./sprite";
-import { SPRITE_PIXEL_GRID } from "../constants";
+import { engineConfig } from "../config";
 
 interface AtlasManifest {
   /** Total frames in the strip. */
@@ -55,8 +55,8 @@ export async function loadAtlasSheet(name: string): Promise<SpriteSheet | null> 
     // the whole pixel pipeline exists to kill; one over the GPU's texture cap
     // silently paints NOTHING. Both fall back to the procedural painter, which
     // at least renders.
-    if (img.height !== SPRITE_PIXEL_GRID) {
-      console.warn(`atlas ${name}: cell height ${img.height} ≠ ${SPRITE_PIXEL_GRID} — ignoring, procedural painter stays`);
+    if (img.height !== engineConfig.sprite.pixelGrid) {
+      console.warn(`atlas ${name}: cell height ${img.height} ≠ ${engineConfig.sprite.pixelGrid} — ignoring, procedural painter stays`);
       return null;
     }
     if (img.width > gpuMaxTextureSize()) {

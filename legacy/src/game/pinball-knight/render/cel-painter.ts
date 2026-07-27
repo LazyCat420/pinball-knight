@@ -53,12 +53,12 @@ import {
   rrectShaded,
   detail as figDetail,
   glow as figGlow,
-} from "./figure";
+} from "../engine/render/figure";
 
-export type FramePaint = (ctx: CanvasRenderingContext2D) => void;
-export type Dir = "S" | "N" | "E";
-export type ClipName = "idle" | "walk" | "attack" | "death" | "roll" | "run" | "ball" | "steelball" | "equip" | "forge";
-export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
+// The painter VOCABULARY is engine (see engine/render/paint-types.ts); the art
+// below is content. Re-exported so this module's many call sites are unchanged.
+export type { FramePaint, Dir, ClipName, ActorPaints } from "../engine/render/paint-types";
+import type { FramePaint, Dir, ClipName, ActorPaints } from "../engine/render/paint-types";
 
 const PX = SPRITE_PX; // 128 — all coordinates below live in this box
 const C = paletteCss;

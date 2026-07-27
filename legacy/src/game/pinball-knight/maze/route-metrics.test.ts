@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, T_FLOOR } from "./generator";
 import { pickEndpoints, widenMainArtery, traceArtery, decorateMaze } from "./decorate";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 /** Directness of the start→stairs artery: 1.0 = a dead-straight shot. */
 function directness(seed: number): { direct: number; turnRate: number } {

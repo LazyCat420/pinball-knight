@@ -29,8 +29,12 @@
  * symbols like ●◆★, which would silently fall back and break the aesthetic.
  */
 import * as THREE from "three";
-import { CAMERA_YAW, CAMERA_TILT, PPU, SPRITE_PX, SPRITE_UNITS } from "../constants";
-import { awaitPixelFonts, labelFont } from "../pixel-fonts";
+import { engineConfig } from "../config";
+import { awaitPixelFonts, labelFont } from "../../../../pixel/pixel-font";
+
+// Local aliases for the injected tuning — see the note in sprite.ts.
+const { yaw: CAMERA_YAW, tilt: CAMERA_TILT, ppu: PPU } = engineConfig.camera;
+const { px: SPRITE_PX, units: SPRITE_UNITS } = engineConfig.sprite;
 
 /**
  * Who took the hit. Convention: damage the player DEALS reads light (white →

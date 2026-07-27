@@ -16,7 +16,7 @@
  * every level, so a fog buffer carried across a descent would be both the wrong
  * size and a spoiler.
  */
-import { at, T_WALL, type Grid } from "./maze/generator";
+import { at, T_WALL, type Grid } from "./engine/grid";
 
 /** Seen states. Ordered so `Math.max` promotes and never demotes. */
 export const FOG_HIDDEN = 0;

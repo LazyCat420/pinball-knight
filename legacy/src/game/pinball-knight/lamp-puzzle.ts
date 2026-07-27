@@ -15,7 +15,7 @@ import { state } from "./state";
 import type { PinballPart } from "./state";
 import type { LampPuzzlePlan } from "./maze/lamp-puzzle";
 import { type Grid, tileCenter } from "./maze/generator";
-import { createStaticSprite } from "./render/sprite";
+import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast, showPickupNote } from "./ui";
 import { sfxTarget, sfxBossReveal, sfxCoin } from "./audio";

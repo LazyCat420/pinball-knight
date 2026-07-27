@@ -10,9 +10,9 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
-import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/render/pixel-pass";
-import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/camera";
-import { createInput, type InputHandle } from "../../game/pinball-knight/input";
+import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/engine/render/pixel-pass";
+import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
+import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
 import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../../game/pinball-knight/tavern";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../../game/pinball-knight/menu";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";

@@ -53,8 +53,8 @@ import {
   isWalkable,
   ensureArcs,
 } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, angleInSpan, type ArcFeature } from "./tile-shape";
-import { bfsDistancesOwned } from "../entities/ai";
+import { SHAPE_FULL, SHAPE_ARC, angleInSpan, type ArcFeature } from "../engine/tile-shape";
+import { bfsDistancesOwned } from "../engine/flow-field";
 
 /** A unit cardinal step along the artery. */
 export interface Heading {

@@ -41,16 +41,24 @@
  * guarantee the next new part forgets it. One choke point means a new part
  * gets the behaviour for free, and the policy can be tuned in one place.
  */
-import { state } from "../state";
-import {
-  SHAKE_CHAIN_WINDOW,
-  SHAKE_CHAIN_FLOOR,
-  SHAKE_CHAIN_FALLOFF,
-  HITSTOP_MIN_GAP,
-  HITSTOP_CHAIN_FALLOFF,
-  HITSTOP_CHAIN_FLOOR,
-  HITSTOP_MAX_PENDING,
-} from "../constants";
+import { engineConfig } from "./config";
+import { view } from "./view-state";
+
+/**
+ * How deep the current impact chain is.
+ *
+ * The engine cannot ask the game "how many things has the knight hit without
+ * settling" — that is pinball content. So the game supplies the reading. The
+ * default returns 0, meaning "no chain", which makes the governor behave as a
+ * plain `Math.max` — the pre-governor behaviour, and a safe default for a game
+ * that has no chain concept at all.
+ */
+let readChainDepth: () => number = () => 0;
+
+/** Install the game's chain-depth reading. Called once at boot. */
+export function setChainDepthSource(fn: () => number): void {
+  readChainDepth = fn;
+}
 
 /**
  * Seconds since the last governed hit-freeze. Real time, not sim time — the
@@ -86,8 +94,9 @@ export function resetJuice(): void {
  */
 function chainFactor(falloff: number, floor: number): number {
   // bounceCombo lives on the PLAYER, not on state — it is per-knight ride
-  // bookkeeping, reset when the chain lapses (see comboWindow).
-  const depth = Math.max(0, (state.player?.bounceCombo ?? 0) - 1);
+  // bookkeeping, reset when the chain lapses (see comboWindow). The engine
+  // reaches it through the injected reader, not by importing the game.
+  const depth = Math.max(0, readChainDepth() - 1);
   if (depth <= 0) return 1;
   return Math.max(floor, Math.pow(falloff, depth));
 }
@@ -101,9 +110,10 @@ function chainFactor(falloff: number, floor: number): number {
  * running 0.5s boss shake never did anything visible anyway.
  */
 export function requestShake(amount: number): void {
-  const scaled = amount * chainFactor(SHAKE_CHAIN_FALLOFF, SHAKE_CHAIN_FLOOR);
-  if (sinceShake < SHAKE_CHAIN_WINDOW && state.shakeT >= scaled) return;
-  state.shakeT = Math.max(state.shakeT, scaled);
+  const { shakeChainFalloff, shakeChainFloor, shakeChainWindow } = engineConfig.juice;
+  const scaled = amount * chainFactor(shakeChainFalloff, shakeChainFloor);
+  if (sinceShake < shakeChainWindow && view.shakeT >= scaled) return;
+  view.shakeT = Math.max(view.shakeT, scaled);
   sinceShake = 0;
 }
 
@@ -122,10 +132,16 @@ export function requestShake(amount: number): void {
  *     pathological case structurally impossible rather than merely unlikely.
  */
 export function requestHitstop(amount: number): void {
-  if (sinceHitstop < HITSTOP_MIN_GAP) return;
-  const scaled = amount * chainFactor(HITSTOP_CHAIN_FALLOFF, HITSTOP_CHAIN_FLOOR);
-  const next = Math.max(state.hitstopT, scaled);
-  state.hitstopT = Math.min(next, HITSTOP_MAX_PENDING);
+  const {
+    hitstopMinGap,
+    hitstopChainFalloff,
+    hitstopChainFloor,
+    hitstopMaxPending,
+  } = engineConfig.juice;
+  if (sinceHitstop < hitstopMinGap) return;
+  const scaled = amount * chainFactor(hitstopChainFalloff, hitstopChainFloor);
+  const next = Math.max(view.hitstopT, scaled);
+  view.hitstopT = Math.min(next, hitstopMaxPending);
   sinceHitstop = 0;
 }
 

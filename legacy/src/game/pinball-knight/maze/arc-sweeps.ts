@@ -28,8 +28,8 @@
  * spans the quadrant facing (cx,cz). DOM- and three-free: tested.
  */
 import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWalkable, setShape, shapeAt, idx, ensureArcs } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "./tile-shape";
-import { bfsDistances, bfsDistancesOwned } from "../entities/ai";
+import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "../engine/tile-shape";
+import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 
 /**
  * Fillet radii tried largest-first at every qualifying corner.

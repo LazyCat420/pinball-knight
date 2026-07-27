@@ -33,7 +33,7 @@ import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
 import { carveTrack, growMazeAround, publishArcs, connectAll, type TrackMask } from "./track-carve";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 export interface TrackFloor {
   grid: Grid;

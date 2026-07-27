@@ -32,7 +32,7 @@
  * spawns and kills thousands of zombies does not grow the buffer.
  */
 import * as THREE from "three";
-import { SPRITE_UNITS } from "../constants";
+import { engineConfig } from "../config";
 
 /** Where a released slot is parked: far under the floor, never in frustum. */
 const PARKED_Y = -1000;
@@ -59,7 +59,7 @@ export interface BlobPool {
  * canvas.
  */
 export function createBlobPool(scene: THREE.Scene, texture: THREE.Texture, initial = 128): BlobPool {
-  const geo = new THREE.PlaneGeometry(SPRITE_UNITS * 0.62, SPRITE_UNITS * 0.62);
+  const geo = new THREE.PlaneGeometry(engineConfig.sprite.units * 0.62, engineConfig.sprite.units * 0.62);
   const mat = new THREE.MeshBasicMaterial({
     map: texture,
     transparent: true,

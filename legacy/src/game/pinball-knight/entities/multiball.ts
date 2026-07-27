@@ -15,11 +15,11 @@
  */
 import * as THREE from "three";
 import { state, activeWeapon, type Zombie } from "../state";
-import { createActorSprite, type ActorSprite, type SpriteSheet } from "../render/sprite";
+import { createActorSprite, type ActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { getKnightSheet } from "../render/knight-sheets";
 import { lookFromGear } from "../render/knight-look";
-import { Animator, facingFromVelocity, type Facing } from "../render/animator";
-import { worldDirToScreen } from "../camera";
+import { Animator, facingFromVelocity, type Facing } from "../engine/render/animator";
+import { worldDirToScreen } from "../engine/camera";
 import { syncActorMesh, damageZombie, playerDamage } from "./combat";
 import { WEAPONS, POTIONS } from "../items";
 import {

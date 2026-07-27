@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, mulberry32, at, idx, T_FLOOR, T_WALL } from "./generator";
 import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 /** Every floor tile reachable from the first walkable tile — the core invariant. */
 function assertSolvable(g: ReturnType<typeof generateMaze>, label: string): void {

@@ -20,7 +20,7 @@
  */
 import * as THREE from "three";
 import type { Grid } from "../maze/generator";
-import type { ArcFeature, KickBand } from "../maze/tile-shape";
+import type { ArcFeature, KickBand } from "../engine/tile-shape";
 import { PALETTE_HEX } from "./palette";
 import { ARC_KICK_FLASH, ARC_KICK_THICK } from "../constants";
 

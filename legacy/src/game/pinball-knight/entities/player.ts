@@ -12,7 +12,7 @@
  * boots come from the gear slots.
  */
 import { state, activeWeapon, type Player } from "../state";
-import { requestShake, requestHitstop } from "./juice";
+import { requestShake, requestHitstop } from "../engine/juice";
 import { holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./rail";
 import { skillAgg } from "../skill-runtime";
 import {
@@ -149,16 +149,16 @@ import {
   type MoveTiming,
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
-import { moveCircle, wallContact } from "../collision";
+import { moveCircle, wallContact } from "../engine/collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
 
 import { showPickupNote, showToast } from "../ui";
 import { addGold } from "../../../utils/gold-wallet";
 import { smashSecretAt, smashWallAt, wallRunDepth } from "../secrets";
 import { rotateLanes, armSkillShot } from "../shots";
-import { facingFromVelocity, type Facing } from "../render/animator";
-import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../camera";
-import { InputHandle } from "../input";
+import { facingFromVelocity, type Facing } from "../engine/render/animator";
+import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../engine/camera";
+import { InputHandle } from "../engine/input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
 import { carveGroove } from "./floor-fx";

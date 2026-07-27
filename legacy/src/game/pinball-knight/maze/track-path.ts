@@ -39,7 +39,7 @@
  *
  * DOM- and three-free, and deterministic. Pure geometry.
  */
-import type { ArcFeature } from "./tile-shape";
+import type { ArcFeature } from "../engine/tile-shape";
 import type { TrackGraph } from "./track-grow";
 
 /** A single rideable leg of the circuit: a straight run between two fillets. */

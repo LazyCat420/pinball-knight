@@ -12,7 +12,7 @@
  * ("dungeon" / "tavern") pins the last key it fetched.
  */
 import { state } from "../state";
-import { buildSpriteSheet, type SpriteSheet } from "./sprite";
+import { buildSpriteSheet, type SpriteSheet } from "../engine/render/sprite";
 import { makeKnightPaints } from "./cel-painter";
 import type { WeaponId } from "../items";
 import { lookKey, type KnightLook } from "./knight-look";

@@ -14,7 +14,7 @@ import { decorateMaze, widenMainArtery, pickEndpoints } from "./decorate";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./prefabs";
 import { archetypeFor } from "./archetypes";
 import { rollModifier } from "./modifiers";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 const ROOM_MIN_CELLS = 3;
 const ROOM_MAX_CELLS = 6;

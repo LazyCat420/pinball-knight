@@ -28,7 +28,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { state, freshPlayerFields, type PinballPart } from "../state";
 import { touchPinballParts, type PinballDeps } from "./pinball-collide";
-import { moveCircle } from "../collision";
+import { moveCircle } from "../engine/collision";
 // T_WALL = 0 and T_FLOOR = 1 — the opposite of the "0 is empty" instinct, so
 // these are imported, never hand-rolled: inverting them yields an all-floor grid
 // where the ball simply flies away and the trap never forms.

@@ -5,24 +5,44 @@
  * the only place that knows this, so the rest of the game just says "face west".
  */
 import type { ActorSprite } from "./sprite";
-import type { Dir, ClipName } from "./cel-painter";
-import { FPS_IDLE, FPS_WALK, FPS_RUN, FPS_ATTACK, FPS_DEATH, FPS_ROLL, FPS_BALL, FPS_EQUIP, FPS_FORGE } from "../constants";
+import type { Dir, ClipName } from "./paint-types";
+import { engineConfig } from "../config";
 
 /** The four directions the game thinks in. */
 export type Facing = "S" | "N" | "E" | "W";
 
-const FPS: Record<ClipName, number> = {
-  idle: FPS_IDLE,
-  walk: FPS_WALK,
-  run: FPS_RUN,
-  attack: FPS_ATTACK,
-  death: FPS_DEATH,
-  roll: FPS_ROLL,
-  ball: FPS_BALL,
-  steelball: FPS_BALL, // same cadence — it's the same ride, different skin
-  equip: FPS_EQUIP,
-  forge: FPS_FORGE,
-};
+/**
+ * Frame rate for a clip, read live from the injected config.
+ *
+ * A function rather than a captured table: the table used to be built at
+ * module load from `constants`, which would freeze whatever the config held
+ * at import time and silently ignore anything the game injected afterwards.
+ */
+function fpsFor(clip: ClipName): number {
+  const a = engineConfig.anim;
+  switch (clip) {
+    case "idle":
+      return a.idle;
+    case "walk":
+      return a.walk;
+    case "run":
+      return a.run;
+    case "attack":
+      return a.attack;
+    case "death":
+      return a.death;
+    case "roll":
+      return a.roll;
+    // steelball shares the ball cadence — it's the same ride, different skin.
+    case "ball":
+    case "steelball":
+      return a.ball;
+    case "equip":
+      return a.equip;
+    case "forge":
+      return a.forge;
+  }
+}
 
 const LOOPS: Record<ClipName, boolean> = {
   idle: true,
@@ -99,7 +119,7 @@ export class Animator {
     if (this.finished) return;
 
     this.timer += dt;
-    const step = 1 / (FPS[this.clip] * this.rate);
+    const step = 1 / (fpsFor(this.clip) * this.rate);
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;

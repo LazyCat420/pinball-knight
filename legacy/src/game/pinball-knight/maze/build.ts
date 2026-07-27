@@ -31,11 +31,11 @@ import {
   CAMERA_TILT,
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED, idx } from "./generator";
-import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "./tile-shape";
+import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "../engine/tile-shape";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
 import { buildArcLanes, type ArcLaneVisual } from "../render/arc-lanes";
 import type { LevelPlan } from "./decorate";
-import type { ArcCorner } from "../collision";
+import type { ArcCorner } from "../engine/collision";
 import { clamp } from "../../../utils/math";
 
 /** Deterministic hash-noise — no Math.random, so a level looks identical on rebuild. */

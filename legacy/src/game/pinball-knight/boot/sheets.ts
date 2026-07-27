@@ -13,7 +13,7 @@ import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeCh
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet } from "../render/knight-sheets";
-import { buildSpriteSheet, type SpriteSheet } from "../render/sprite";
+import { buildSpriteSheet, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
 

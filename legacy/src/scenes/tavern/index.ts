@@ -10,6 +10,7 @@
  */
 import { openTavernScene, closeTavern, isTavernSceneOpen } from "./core";
 import { openTavern as openDomTavern } from "../../game/pinball-knight/tavern";
+import { installEngine } from "../../game/pinball-knight/GameEngine";
 import type { TavernStats } from "./state";
 
 export { closeTavern, isTavernSceneOpen };
@@ -37,6 +38,11 @@ export interface OpenTavernOptions {
  * it got (the DOM tavern owns its own teardown via closeTavern in that module).
  */
 export function enterTavern(container: HTMLElement, opts: OpenTavernOptions): "scene" | "dom" {
+  // The tavern borrows the dungeon's engine (camera, input, pixel pass, sprite
+  // pipeline) and is reachable WITHOUT going through the dungeon first, so it
+  // must install the engine config itself. installEngine is idempotent — it
+  // overwrites the same config object — so doing it on both paths is safe.
+  installEngine();
   if (openTavernScene(container, opts)) return "scene";
   openDomTavern(container, { stats: opts.stats, onDescend: opts.onDescend });
   return "dom";

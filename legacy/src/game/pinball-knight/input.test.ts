@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MOVE_KEYS, TURN_LEFT, TURN_RIGHT, createInput } from "./input";
+import { MOVE_KEYS, TURN_LEFT, TURN_RIGHT, createInput } from "./engine/input";
 
 describe("dungeon input bindings", () => {
   /**

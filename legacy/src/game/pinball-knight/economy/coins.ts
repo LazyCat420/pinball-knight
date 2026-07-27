@@ -11,7 +11,7 @@ import { state } from "../state";
 import { addGold } from "../../../utils/gold-wallet";
 import { skillAgg } from "../skill-runtime";
 import { removeGroundItem } from "./ground-items";
-import { createStaticSprite } from "../render/sprite";
+import { createStaticSprite } from "../engine/render/sprite";
 import { ITEM_PAINTS } from "../render/cel-painter";
 import { at } from "../maze/generator";
 import {

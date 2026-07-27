@@ -9,7 +9,7 @@
  * Pure geometry + physics, no DOM/three.
  */
 import { describe, it, expect } from "vitest";
-import { laneBandAt, laneTangent, angleInSpan, type ArcFeature, type LaneBand } from "./tile-shape";
+import { laneBandAt, laneTangent, angleInSpan, type ArcFeature, type LaneBand } from "../engine/tile-shape";
 
 const HALF_PI = Math.PI / 2;
 

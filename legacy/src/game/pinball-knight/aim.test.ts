@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
-import { mouseAimDirection, worldDirToScreen, screenDirToWorld } from "./camera";
-import { createDungeonCamera } from "./camera";
+import { mouseAimDirection, worldDirToScreen, screenDirToWorld } from "./engine/camera";
+import { createDungeonCamera } from "./engine/camera";
 import { state } from "./state";
 import { VIEW_W, VIEW_H } from "./constants";
 

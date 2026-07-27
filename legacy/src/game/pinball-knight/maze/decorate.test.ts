@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_STAIRS, T_WALL, T_CRACKED, idx, shapeAt, isWalkable } from "./generator";
 import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels } from "./decorate";
-import { isShaped, isArc, shapeBacking } from "./tile-shape";
-import { bfsDistances } from "../entities/ai";
+import { isShaped, isArc, shapeBacking } from "../engine/tile-shape";
+import { bfsDistances } from "../engine/flow-field";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
   const g = generateMaze(10, 8, mulberry32(seed));

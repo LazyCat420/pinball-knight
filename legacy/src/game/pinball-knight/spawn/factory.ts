@@ -19,9 +19,9 @@ import { updateZombies } from "../entities/zombie";
 import { at, isWalkable, tileCenter, worldToTile, type Grid, type TilePos } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { themeFor } from "../maze/prefabs";
-import { Animator } from "../render/animator";
+import { Animator } from "../engine/render/animator";
 import { ZOMBIE_VARIANTS } from "../render/cel-painter";
-import { createActorSprite, type SpriteSheet } from "../render/sprite";
+import { createActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { ZOMBIE_TYPES, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "../zombie-types";
 

@@ -19,10 +19,17 @@
  * to face the camera pivots around the feet rather than sliding them.
  */
 import * as THREE from "three";
-import type { ActorPaints, Dir, ClipName, FramePaint } from "./cel-painter";
-import { makeReaperPaints } from "./cel-painter";
-import { PALETTE_HEX } from "./palette";
-import { SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_TILT, CAMERA_YAW, MAX_ATLAS_WIDTH } from "../constants";
+import type { ActorPaints, Dir, ClipName, FramePaint } from "./paint-types";
+import { enginePalette } from "../palette-source";
+import { engineConfig } from "../config";
+
+// Local aliases for the injected tuning. These are read at module load, which
+// is correct for geometry that is itself built once and shared (the sprite
+// quads below); a game that wants different sprite metrics must inject before
+// the first sprite is created, which the boot path guarantees.
+const { px: SPRITE_PX, units: SPRITE_UNITS, pixelGrid: SPRITE_PIXEL_GRID, maxAtlasWidth: MAX_ATLAS_WIDTH } =
+  engineConfig.sprite;
+const { tilt: CAMERA_TILT, yaw: CAMERA_YAW } = engineConfig.camera;
 
 /**
  * Face the isometric camera exactly: yaw to the camera's heading, then tilt
@@ -180,7 +187,16 @@ function celFilters(tex: THREE.CanvasTexture): void {
 
 // Palette as RGB triplets for the pixelate pass, with the same luma weighting
 // the screen-space quantizer uses.
-const PAL_RGB = PALETTE_HEX.map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+//
+// Resolved lazily and memoised, not captured at module load: the game installs
+// its palette during boot, which happens after this module is first imported.
+// Capturing here would silently quantize every sprite against the greyscale
+// fallback — a bug that renders, so it would not announce itself.
+let _palRgb: number[][] | null = null;
+function palRgb(): number[][] {
+  if (!_palRgb) _palRgb = enginePalette.hex().map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+  return _palRgb;
+}
 
 /**
  * 4×4 ordered (Bayer) dither matrix, centred to −0.5..+0.5. Nudging each pixel's
@@ -238,6 +254,9 @@ export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
   sctx.drawImage(src, 0, 0, g, g);
   const im = sctx.getImageData(0, 0, g, g);
   const d = im.data;
+  // Hoisted out of the per-pixel loop below: this runs for every texel of every
+  // frame of every atlas.
+  const PAL_RGB = palRgb();
   for (let py = 0; py < g; py++) {
     for (let px = 0; px < g; px++) {
       const i = (py * g + px) * 4;
@@ -392,19 +411,19 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
 }
 
 /**
- * The reaper's atlas, built on FIRST USE and cached for the session.
+ * Build a sheet on FIRST USE and cache it for the session.
  *
- * Every other actor's sheet is built up-front in core.ts's init, but the reaper
- * appears at most once per floor and only after REAPER_AFTER seconds — most
- * runs never see one. Building it lazily behind this accessor keeps the level
- * boot cost unchanged and, more usefully here, means adding bespoke reaper art
- * needs exactly one line changed at the call site instead of a new field
- * threaded through state/init/dispose.
+ * Most actors' sheets are built up-front in core's init, but a rare actor (the
+ * reaper appears at most once per floor, after a delay — most runs never see
+ * one) should not pay that cost at level boot. `paints` is a thunk so the art
+ * itself is not constructed until the sheet is.
  */
-let cachedReaperSheet: SpriteSheet | null = null;
-export function reaperSheet(): SpriteSheet {
-  if (!cachedReaperSheet) cachedReaperSheet = buildSpriteSheet(makeReaperPaints());
-  return cachedReaperSheet;
+export function lazySheet(paints: () => ActorPaints): () => SpriteSheet {
+  let cached: SpriteSheet | null = null;
+  return () => {
+    if (!cached) cached = buildSpriteSheet(paints());
+    return cached;
+  };
 }
 
 export interface ActorSprite {
@@ -566,7 +585,8 @@ export function createOcclusionSilhouette(actor: ActorSprite): { mesh: THREE.Mes
     transparent: true,
     alphaTest: 0.5,
     side: THREE.DoubleSide,
-    color: PALETTE_HEX[30], // arcane mid — reads as "you, behind the wall"
+    // The game's designated occlusion tint — reads as "you, behind the wall".
+    color: enginePalette.hex()[enginePalette.occlusionIndex],
     depthTest: true,
     depthWrite: false,
     depthFunc: THREE.GreaterDepth, // only draw where something occludes us

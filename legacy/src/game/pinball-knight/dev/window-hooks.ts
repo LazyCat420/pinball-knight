@@ -31,11 +31,11 @@ import { isFloorMapOpen } from "../map-overlay";
 import { at } from "../maze/generator";
 import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
-import { installProfilerHooks } from "../profiler";
+import { installProfilerHooks } from "../engine/profiler";
 import { rotateLanes } from "../shots";
 import { enterTavern, isTavernSceneOpen } from "../../../scenes/tavern";
 import { ZOMBIE_TYPE_IDS } from "../zombie-types";
-import type { SpriteSheet } from "../render/sprite";
+import type { SpriteSheet } from "../engine/render/sprite";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
 
 /**

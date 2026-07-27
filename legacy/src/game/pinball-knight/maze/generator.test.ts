@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, T_FLOOR, T_WALL, T_CRACKED, idx } from "./generator";
-import { bfsDistances } from "../entities/ai";
+import { bfsDistances } from "../engine/flow-field";
 
 describe("generateMaze", () => {
   it("produces a tile grid of 2*cells+1 per side", () => {

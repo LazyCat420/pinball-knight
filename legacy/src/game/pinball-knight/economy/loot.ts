@@ -13,7 +13,7 @@ import { nextItemNid } from "./ground-items";
 import { type WeaponState } from "../items";
 import { rollReagentDrops, type ReagentId } from "../reagents";
 import { ITEM_PAINTS } from "../render/cel-painter";
-import { createStaticSprite } from "../render/sprite";
+import { createStaticSprite } from "../engine/render/sprite";
 import { state, type EnemyKind, type MarbleMaterial } from "../state";
 import { type ZombieType } from "../zombie-types";
 

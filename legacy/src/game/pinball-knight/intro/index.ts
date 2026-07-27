@@ -28,7 +28,7 @@ import type { LevelPlan } from "../maze/decorate";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./title-grid";
 import { getKnightSheet } from "../render/knight-sheets";
 import { lookFromGear } from "../render/knight-look";
-import { createActorSprite, type ActorSprite } from "../render/sprite";
+import { createActorSprite, type ActorSprite } from "../engine/render/sprite";
 import { SPRITE_PIXEL_GRID, CAMERA_DIST, DIR_HEIGHT, SHADOW_AREA, FOG_NEAR, FOG_FAR, WALL_H } from "../constants";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "../pixel-fonts";
 import { sfxRoll, sfxBreak, sfxBumper, sfxCoin, sfxLevelStart } from "../audio";

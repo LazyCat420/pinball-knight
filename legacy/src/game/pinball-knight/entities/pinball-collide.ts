@@ -91,16 +91,16 @@ import {
   PIT_DAMAGE,
 } from "../constants";
 import { comboWindow } from "./combo-curve";
-import { moveCircle } from "../collision";
+import { moveCircle } from "../engine/collision";
 import { addGold, spendGold } from "../../../utils/gold-wallet";
 import { showPickupNote, showToast } from "../ui";
 import { PALETTE_HEX } from "../render/palette";
 import { recordShot, hitOrbitRail, hitRollover, trySkillShot } from "../shots";
 import { lightLamp } from "../lamp-puzzle";
-import { screenDirToWorld } from "../camera";
+import { screenDirToWorld } from "../engine/camera";
 import { syncActorMesh, damageZombie } from "./combat";
 import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit, lavaVaporizesOil } from "./marble";
-import { requestShake, requestHitstop } from "./juice";
+import { requestShake, requestHitstop } from "../engine/juice";
 import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
 
 /**

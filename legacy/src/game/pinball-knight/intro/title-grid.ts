@@ -9,7 +9,7 @@
  * physics can never drift from gameplay's.
  */
 import { T_WALL, T_FLOOR, type Grid } from "../maze/generator";
-import { moveCircle } from "../collision";
+import { moveCircle } from "../engine/collision";
 
 /**
  * 5-row pixel glyphs for the ten letters the title needs. Strokes are 1 tile —

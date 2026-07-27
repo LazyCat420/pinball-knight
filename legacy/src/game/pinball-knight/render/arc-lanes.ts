@@ -29,7 +29,7 @@
  */
 import * as THREE from "three";
 import type { Grid } from "../maze/generator";
-import type { ArcFeature, LaneBand } from "../maze/tile-shape";
+import type { ArcFeature, LaneBand } from "../engine/tile-shape";
 import { PALETTE_HEX } from "./palette";
 import { ARC_LANE_FLASH, ARC_LANE_THICK } from "../constants";
 

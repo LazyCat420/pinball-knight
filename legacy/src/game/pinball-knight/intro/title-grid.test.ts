@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildTitleGrid, stepIntroBall, TITLE_FONT, GLYPH_H, INTRO_BALL_SPEED, INTRO_BALL_R, type IntroBall } from "./title-grid";
 import { T_WALL, T_FLOOR, at, isWalkable, type Grid } from "../maze/generator";
-import { circleCollides } from "../collision";
+import { circleCollides } from "../engine/collision";
 
 function ascii(g: Grid): string {
   let out = "";

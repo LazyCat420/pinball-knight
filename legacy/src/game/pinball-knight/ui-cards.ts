@@ -16,7 +16,7 @@ import { state } from "./state";
 import { WEAPONS, weaponSlotCount, type WeaponState } from "./items";
 import { CARDS, RARITY_HEX, type CardId } from "./cards";
 import { getBalance } from "../../utils/gold-wallet";
-import { renderPaintIcon } from "./render/sprite";
+import { renderPaintIcon } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
 
