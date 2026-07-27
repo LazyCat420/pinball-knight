@@ -4,9 +4,12 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 ## 🗂 ONE FOLDER PER GAME + a real engine (2026-07-26)
 
-**`refactor/core-decomposition@c30434e`** — NOT deployed. 1419 tests pass
-(123 files, was 1404/121) · `next build` clean · all 21 game routes load in a
-browser · dungeon boots and renders (202 enemies, palette intact).
+**`main`** → synology. 1419 tests pass (123 files, was 1404/121) ·
+`next build` clean · all 21 game routes load in a browser · dungeon boots and
+renders (202 enemies, palette intact).
+
+Merged into `main` on top of `cf377a9` (WebGL2 becomes the default backend);
+tests and build re-run green after the merge, not just before it.
 
 ### The layout now
 
