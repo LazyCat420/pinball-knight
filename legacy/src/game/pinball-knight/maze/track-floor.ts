@@ -35,6 +35,7 @@ import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, seal
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
 import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
+import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN } from "./floor-rules";
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { compactArcs } from "./arc-contract";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
@@ -87,6 +88,19 @@ export interface TrackFloor {
    */
   chute: LaunchChute | null;
   /**
+   * Rules the generator could not satisfy and DELIBERATELY stood down on, by
+   * rule id (maze/floor-rules.ts).
+   *
+   * The point of recording rather than silently relaxing: constraints like
+   * "open at the edge" and "give the chute a long straight sealed run" can be
+   * jointly unsatisfiable on a floor whose circuit never reaches the border,
+   * and a rule that quietly gives up is indistinguishable from a rule that
+   * broke. With this the gate can hold the rule absolutely AND track how often
+   * the generator has to fall back — which is the number that tells you the
+   * thresholds have drifted out of reach.
+   */
+  relaxed: string[];
+  /**
    * Centre of the floor's ORBIT ISLAND, when one fitted — the full-circle
    * curved wall you can ride a lap around. Geometry belongs to this layer;
    * `decorateMaze` reads the centre to flank it with bumpers, which is content.
@@ -111,6 +125,7 @@ export function pickTrackEndpoints(
   g: Grid,
   mask: TrackMask,
   chute?: { base: TilePos; mouth: TilePos } | null,
+  opts: { perimeterBias?: number } = {},
 ): { start: TilePos; stairs: TilePos } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
@@ -173,7 +188,45 @@ export function pickTrackEndpoints(
   // mouth on a 3975-tile floor, i.e. the launch fired you out of the chute
   // almost on top of the exit. Sweeping from the mouth restores the intent —
   // a lap of the circuit from where the launch DELIVERS you.
-  const a = chute ? chute.base : far(lane[0]).pos;
+  // ── WHERE THE FLOOR OPENS WITHOUT A CHUTE ────────────────────────────────
+  //
+  // The ~6% of floors (5 of 78 censused) where no straight sealed run fitted.
+  // With a chute the spawn is the plunger's park tile and this is not ours to
+  // choose; without one it was "the farthest lane tile from an arbitrary lane
+  // tile", which is a pure function of the circuit's shape and lands wherever
+  // that happens to be.
+  //
+  // Same treatment the chute gets, for the same reason — otherwise these floors
+  // quietly ignore the archetype's `perimeterBias` and the rule check fails on
+  // exactly the minority of floors nobody looks at. A BAND again, not an
+  // argmax: every tile within TIE of the best distance is "as far as it gets"
+  // for any purpose the player can perceive, so the perimeter term chooses
+  // among equals rather than overriding the distance requirement.
+  const bias = opts.perimeterBias ?? 0;
+  const startBand = (from: TilePos): TilePos => {
+    const dist = bfsDistances(g, from.i, from.j);
+    let best = -1;
+    for (const p of lane) {
+      const d = dist[idx(g, p.i, p.j)];
+      if (d > best && d < 0x3fffffff) best = d;
+    }
+    if (best <= 0) return from;
+    let pick = from;
+    let pickScore = -Infinity;
+    for (const p of lane) {
+      const d = dist[idx(g, p.i, p.j)];
+      if (d < best * TIE || d >= 0x3fffffff) continue;
+      // Perimeter decides; the tiny distance term only breaks exact ties, so
+      // two equally-peripheral tiles resolve to the farther one deterministically.
+      const sc = bias * perimeterScore(g, p.i, p.j) + (d / Math.max(1, best)) * 0.001;
+      if (sc > pickScore) {
+        pickScore = sc;
+        pick = p;
+      }
+    }
+    return pick;
+  };
+  const a = chute ? chute.base : startBand(lane[0]);
   const b = far(chute ? chute.mouth : a);
   if (b.d <= 0) return null;
   return { start: a, stairs: b.pos };
@@ -240,7 +293,11 @@ export function buildTrackFloor(
   // the grid. Carved after `growMazeAround` it would bulldoze finished
   // corridors; carved as decoration (which is effectively what the old free-air
   // plunger was) it would be a launch ritual with no lane behind it.
-  const chute = carveLaunchChute(grid, mask, rng);
+  // The archetype's spawn-placement weight reaches the chute here — this call
+  // is what decides where the floor opens on 94% of floors (see the scoring
+  // block in track-launch.ts).
+  const profBias = prof.rules?.perimeterBias ?? DEFAULT_RULE_WEIGHTS.perimeterBias;
+  const chute = carveLaunchChute(grid, mask, rng, { perimeterBias: profBias });
   growMazeAround(grid, mask, rng, {
     linkChance: opts.linkChance ?? prof.linkChance,
     fill: opts.fill ?? prof.fill,
@@ -281,7 +338,7 @@ export function buildTrackFloor(
   // whatever they left simply shipped; measured on the live gate, moving them
   // here without re-running repair pushed six floors over the dead-end ceiling
   // (up to 5.31 per 1k tiles against a limit of 2.5).
-  const endsEarly = pickTrackEndpoints(grid, mask, chute);
+  const endsEarly = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias });
   const protect = endsEarly ? [endsEarly.start, endsEarly.stairs] : [];
   const repair = (keep: readonly TilePos[]): void => {
     uncarveDeadEnds(grid, mask, keep);
@@ -332,7 +389,7 @@ export function buildTrackFloor(
   // The curves change geometry, so the geometry gets repaired — see `repair`.
   repair(protect);
 
-  const ends = pickTrackEndpoints(grid, mask, chute);
+  const ends = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias });
   if (!ends) return null;
 
   // ── ARTERY BANKS — the last of the three curve families to come home ─────
@@ -410,7 +467,26 @@ export function buildTrackFloor(
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 
-  return { grid, graph, path, mask, start: ends.start, stairs: ends.stairs, chute, orbit };
+  // A high-bias floor that opened centrally: was a peripheral option ever on
+  // the table? `edgeBest` is the band's best, so "no" means impossible, not
+  // ignored. Without a chute the same question is asked of the lane itself.
+  const relaxed: string[] = [];
+  if (profBias >= 0.5 && perimeterScore(grid, ends.start.i, ends.start.j) < PERIMETER_RULE_MIN) {
+    const available = chute
+      ? chute.edgeBest
+      : (() => {
+          let m = 0;
+          for (let j = 0; j < grid.h; j++) {
+            for (let i = 0; i < grid.w; i++) {
+              if (mask.lane[idx(grid, i, j)] && isWalkable(grid, i, j)) m = Math.max(m, perimeterScore(grid, i, j));
+            }
+          }
+          return m;
+        })();
+    if (available < PERIMETER_RULE_MIN) relaxed.push("spawn-respects-perimeter-bias");
+  }
+
+  return { grid, graph, path, mask, start: ends.start, stairs: ends.stairs, chute, orbit, relaxed };
 }
 
 /** Independent cycles in the circuit — exposed for HUD/debug and tests. */

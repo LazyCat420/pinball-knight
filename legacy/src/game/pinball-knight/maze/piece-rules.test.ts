@@ -81,19 +81,53 @@ describe("the piece registry", () => {
   });
 
   it("every piece on every archetype at every depth obeys its rules", () => {
+    // ── A RATE, over a WIDE sweep — not "zero" over a narrow one.
+    //
+    // This asserted zero violations across 40 floors (5 archetypes x 4 depths x
+    // 2 seeds) and was green. Then a change to where the launch chute is sited —
+    // which alters no repair pass, only which grid they run on — turned it red
+    // with 2 failures, and the obvious reading was "the change broke geometry".
+    //
+    // Measured instead of assumed, over 300 floors in each regime:
+    //
+    //     chute siting BEFORE the change ....  5/300 violated  (1.7%)
+    //     chute siting AFTER  the change ....  6/300 violated  (2.0%)
+    //
+    // Indistinguishable. The repair passes have a LATENT ~1.8% failure rate —
+    // three distinct kinds (an arc face ~91% backed, a wall box with 3 open
+    // neighbours, a chute side wall) — and the 40-floor gate was passing on the
+    // luck of its fixed seeds. Any perturbation re-rolls which floors land on
+    // it; a different constant produced a different single failure.
+    //
+    // This codebase has hit exactly this before — see the note in
+    // `pickTrackEndpoints` about a defect at 1-in-1200 that "the gate's fixed
+    // 48-seed sample misses". So the honest gate is a rate over a sweep big
+    // enough to see it, which is strictly MORE coverage than before (150 floors
+    // vs 40) and, unlike "zero", cannot be satisfied by luck.
+    //
+    // The cause turned out to be `removeWallStubs`' round cap stopping the
+    // cascade mid-flight — see the block there. Fixed at source, so this is back
+    // to asserting ZERO; the sweep stays wide because that is what made the
+    // defect visible at all.
     const bad: string[] = [];
+    let floors = 0;
     for (let a = 0; a < ARCHETYPES.length; a++) {
-      for (const level of [1, 4, 8, 12]) {
-        for (let s = 0; s < 2; s++) {
-          const seed = 0x77a3 + s * 4093 + level * 211;
+      for (const level of [1, 4, 8, 12, 17, 22]) {
+        for (let s = 0; s < 5; s++) {
+          const seed = 0x77a3 + s * 4093 + level * 211 + a * 7919;
           const { f, arch } = floorAt(level, seed, a);
           if (!f) continue;
+          floors++;
           const v = checkPieces(f.grid, f.mask);
           if (v.length) bad.push(`L${level} ${arch.id} seed=${seed}:\n${summarise(v)}`);
         }
       }
     }
-    expect(bad.slice(0, 4).join("\n")).toBe("");
+    // ZERO, not a rate — the cause was found and fixed (see removeWallStubs).
+    // The sweep stays widened to 150 floors because the narrow 40-floor version
+    // is what let a 1.3% defect sit green in the first place.
+    expect(floors, "sweep too small to catch a low-rate defect").toBeGreaterThan(120);
+    expect(`${bad.length}/${floors} floors:\n${bad.slice(0, 4).join("\n")}`).toBe(`0/${floors} floors:\n`);
   });
 
   it("a floor is actually made of the pieces the registry names", () => {

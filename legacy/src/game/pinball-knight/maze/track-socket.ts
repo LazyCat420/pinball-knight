@@ -291,13 +291,36 @@ export function uncarveDeadEnds(
  * this pass is safe to run at any point. Rim tiles are exempt — those are the
  * banked shoulders of curves, and they are supposed to protrude.
  */
-export function removeWallStubs(g: Grid, mask: TrackMask | null, minOpen = 3, maxRounds = 6): number {
+export function removeWallStubs(g: Grid, mask: TrackMask | null, minOpen = 3, maxRounds = 32): number {
   let total = 0;
   // ITERATE TO A FIXED POINT. One pass is not enough: opening a stub raises the
   // open-neighbour count of the walls around it, so its neighbours can become
   // stubs in turn. Measured on a real floor, a single pass took 86 stubs down
   // to 19 rather than to 0 — and the 19 survivors were exactly the ones the
   // first pass had just created.
+  //
+  // ── THE CAP WAS THE BUG, and it was silent. ──────────────────────────────
+  //
+  // `maxRounds` was 6, which is not a fixed point on every floor — it is just
+  // "six waves". The loop already exits early the moment a round finds nothing
+  // (`if (!doomed.length) break`), so the cap only ever binds on floors that
+  // genuinely needed more, and on those it stopped MID-CASCADE and left the
+  // stubs its own previous round had manufactured. No error, no warning: the
+  // floor simply shipped with wall nubs jutting into open space, which is the
+  // exact "walls that go nowhere" defect this pass exists to remove.
+  //
+  // It surfaced when the launch chute started being sited at the map's edge
+  // (maze/floor-rules.ts `perimeterBias`). That change touches no repair pass —
+  // it only moves which grid they run on — yet the piece gate went from 0 to 9
+  // violations per 150 floors, 8 of them wall stubs. The obvious reading was
+  // "the new spawn rule broke geometry"; measured against a bias-off control on
+  // the SAME floors it was 2/150 before and 9/150 after, so the change was real
+  // but the cause was not the chute. Raising the cap took BOTH regimes to
+  // **0/150** — i.e. the pre-existing 1.3% was the same defect, just rarer.
+  //
+  // 32 is a runaway guard, not an operative value. If it is ever hit, something
+  // is oscillating and that is a bug worth finding rather than a limit worth
+  // raising.
   for (let round = 0; round < maxRounds; round++) {
     const doomed: number[] = [];
     for (let j = 1; j < g.h - 1; j++) {

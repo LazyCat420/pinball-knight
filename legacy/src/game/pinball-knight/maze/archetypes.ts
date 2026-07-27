@@ -25,6 +25,7 @@
  */
 import type { CellPos } from "./generator";
 import type { NodeLayout } from "./track-grow";
+import type { FloorRuleWeights } from "./floor-rules";
 
 export type ArchetypeId = "warrens" | "spine" | "greathall" | "cavern" | "ringkeep";
 
@@ -87,6 +88,12 @@ export interface TrackProfile {
    * 0.045 → 0.20 roughly halves both lane share and circuit rank.
    */
   survive: number;
+  /**
+   * PLACEMENT RULE WEIGHTS (maze/floor-rules.ts) — where the spawn goes and how
+   * far the exit/boss must be. Optional: omit it and the floor gets
+   * `DEFAULT_RULE_WEIGHTS`, which is the point of a global baseline.
+   */
+  rules?: Partial<FloorRuleWeights>;
 }
 
 export interface FloorArchetype {
@@ -376,6 +383,9 @@ export const ARCHETYPES: FloorArchetype[] = [
       foodPer1k: 4.6,
       relayPer1k: 6.4,
       minLoops: 3,
+      // A warren is a tight tangle with no centre worth starting in — push the
+      // opening hard to an edge so the run reads as burrowing INWARD.
+      rules: { perimeterBias: 0.9 },
       laneScale: 0.85,
       fill: 0.86,
       linkChance: 0.34,
@@ -405,6 +415,10 @@ export const ARCHETYPES: FloorArchetype[] = [
       foodPer1k: 3.2,
       relayPer1k: 5.0,
       minLoops: 1,
+      // The spine is one long stadium circuit. Starting at an END of it means
+      // the boulevard is ahead of you; starting halfway along wastes half the
+      // floor's only real straight.
+      rules: { perimeterBias: 0.8 },
       laneScale: 1.25,
       fill: 0.7,
       linkChance: 0.22,
@@ -431,6 +445,13 @@ export const ARCHETYPES: FloorArchetype[] = [
       foodPer1k: 3.9,
       relayPer1k: 4.4,
       minLoops: 2,
+      // ── THE EXEMPTION, and the reason `perimeterBias` is a weight rather
+      // than a global boolean. A Great Hall IS its central chamber — the hub
+      // layout puts a food node dead centre and `plazaFrac` carves it open.
+      // Spawning on the rim would place the player outside the one thing the
+      // floor is about. This is the "unless it's for specific types of levels"
+      // case, made explicit instead of being an unstated exception.
+      rules: { perimeterBias: 0.15 },
       laneScale: 1.35,
       fill: 0.62,
       linkChance: 0.3,
@@ -459,6 +480,10 @@ export const ARCHETYPES: FloorArchetype[] = [
       foodPer1k: 5.0,
       relayPer1k: 7.0,
       minLoops: 4,
+      // A cave has no architecture to respect, so the edge is as good a mouth
+      // as any — but less insistently than a warren, because a cavern's centre
+      // is not a landmark you would be missing out on.
+      rules: { perimeterBias: 0.7 },
       laneScale: 0.95,
       fill: 0.68,
       linkChance: 0.4,
@@ -483,6 +508,9 @@ export const ARCHETYPES: FloorArchetype[] = [
     // inward is a decision.
     track: {
       layout: "ring",
+      // Concentric galleries: the whole progression is working INWARD ring by
+      // ring, which only reads if you start on the outermost one.
+      rules: { perimeterBias: 0.85 },
       foodPer1k: 3.6,
       relayPer1k: 5.2,
       minLoops: 3,

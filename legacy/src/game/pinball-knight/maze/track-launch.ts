@@ -52,6 +52,7 @@
  *
  * DOM- and three-free. Pure apart from the grid/mask it carves.
  */
+import { perimeterScore, PERIMETER_RULE_MIN } from "./floor-rules";
 import { type Grid, type TilePos, idx, isWalkable, setTile, T_WALL } from "./generator";
 import { carveStroke, type TrackMask } from "./track-carve";
 
@@ -78,6 +79,15 @@ export const LAUNCH_MAX = 20;
 export const LAUNCH_CLEAR = 3;
 
 export interface LaunchChute {
+  /**
+   * The most peripheral score any site in the candidate band could offer
+   * (see `perimeterScore`). This is the answer to "did the generator have a
+   * CHOICE?", and it is the difference between a spawn-placement rule that was
+   * ignored and one that was impossible: on a floor whose circuit never reaches
+   * the border there is no peripheral chute to pick, and the caller records a
+   * declared relaxation rather than the rule silently failing.
+   */
+  edgeBest: number;
   /** The closed end — where the knight is PARKED at floor open. */
   base: TilePos;
   /** Where the chute merges onto the circuit. */
@@ -203,7 +213,33 @@ export function runoutPast(g: Grid, i: number, j: number, di: number, dj: number
  * on a small floor can genuinely leave no straight 8-tile pocket of rock. The
  * caller falls back to the old free-air launch, which is what shipped before.
  */
-export function carveLaunchChute(g: Grid, mask: TrackMask, rng: () => number): LaunchChute | null {
+/**
+ * Weight on the perimeter term in chute scoring, before the archetype's
+ * `perimeterBias` (0..1) scales it. See the block in `carveLaunchChute`: sized
+ * to break a tie between comparable sites, not to rescue a short one.
+ */
+const PERIMETER_WEIGHT = 14;
+/**
+ * Fraction of scored sites that form the candidate band. Widened from 0.15 once
+ * the perimeter pass started choosing within it: a narrow band picked by
+ * geometry alone often contained no peripheral site at all, so there was
+ * nothing for the bias to choose between.
+ */
+const BAND_FRAC = 0.3;
+/**
+ * How much of the band a full `perimeterBias` of 1.0 narrows away, keeping the
+ * most peripheral sites. At 0.75 a max-bias archetype still draws from the top
+ * quarter of the band rather than a single site, which is what keeps two runs
+ * of the same archetype from opening in the identical spot.
+ */
+const EDGE_NARROW = 0.75;
+
+export function carveLaunchChute(
+  g: Grid,
+  mask: TrackMask,
+  rng: () => number,
+  opts: { perimeterBias?: number } = {},
+): LaunchChute | null {
   const sites = findChuteSites(g, mask);
   if (!sites.length) return null;
 
@@ -213,15 +249,87 @@ export function carveLaunchChute(g: Grid, mask: TrackMask, rng: () => number): L
   // — 30 seeds would put the chute against the same edge most of the time. A
   // shuffled top band keeps the quality floor while restoring the variety the
   // user asked for.
+  // ── WHERE THE FLOOR OPENS ────────────────────────────────────────────────
+  //
+  // This function decides the player's SPAWN on 94% of floors (censused: 73 of
+  // 78 fit a chute, and `pickTrackEndpoints` hands `start` straight to
+  // `chute.base` when one exists). It was scoring purely on hallway geometry —
+  // length plus runout — with no opinion at all about where on the map that
+  // hallway sat, which is why spawn landed a mean 58-66% of the way to the
+  // centre on every archetype alike, an 8-point spread across five floor types
+  // that are supposed to feel different.
+  //
+  // `perimeterBias` (maze/floor-rules.ts, weighted per archetype) is added as a
+  // TERM, never as a filter. A filter would be the wrong shape twice over: on a
+  // floor whose circuit never reaches the border it would reject every site and
+  // silently produce no chute at all, and it would override the runout gate
+  // that stops a chute firing into a wall — trading a real playability
+  // guarantee for a cosmetic one. As a term it competes, and geometry still
+  // wins when the edge has nothing worth launching down.
+  //
+  // The weight is scaled to the other terms deliberately: `len` runs to ~20 and
+  // runout contributes up to 24, so PERIMETER_WEIGHT is sized to be able to
+  // separate two otherwise-comparable sites without being able to rescue a
+  // short one.
+  const bias = opts.perimeterBias ?? 0;
   const scored = sites.map((c) => ({
     c,
     // Length is the headline (a long hallway is the ask) but a chute that fires
     // into a wall is worthless however long it is, so the runout gates it.
-    score: c.len + 2 * Math.min(12, runoutPast(g, c.mouth.i, c.mouth.j, c.dirI, c.dirJ)),
+    score:
+      c.len +
+      2 * Math.min(12, runoutPast(g, c.mouth.i, c.mouth.j, c.dirI, c.dirJ)) +
+      // Scored at the BASE, which is the tile the player actually stands on —
+      // the mouth is by definition further in, so scoring there would reward a
+      // chute pointing at the wall from inside the map.
+      bias * PERIMETER_WEIGHT * perimeterScore(g, c.base.i, c.base.j),
   }));
   scored.sort((a, b) => b.score - a.score);
-  const band = scored.slice(0, Math.max(1, Math.ceil(scored.length * 0.15)));
-  const pick = band[Math.floor(rng() * band.length)] ?? band[0];
+  const band = scored.slice(0, Math.max(1, Math.ceil(scored.length * BAND_FRAC)));
+  // ── PERIMETER CHOOSES AMONG EQUALS ───────────────────────────────────────
+  //
+  // The score above already carries a perimeter term, but scoring alone was not
+  // enough and the measurement says why: with the term added but the band still
+  // picked at random, 17 of 78 floors still opened essentially dead centre
+  // (perimeterScore as low as 0.04). Two things were fighting it — the
+  // geometry terms run to ~44 so a 0.9-bias perimeter term tops out at under a
+  // third of that, and whatever the score decided, the final `rng()` pick threw
+  // a fair die across the whole band anyway.
+  //
+  // Raising the weight until perimeter dominates is the wrong fix and would
+  // break a real guarantee: `runout` is a TERM here, not a filter, so a
+  // perimeter weight large enough to always win is also large enough to select
+  // a chute that fires straight into a wall. That trade — a playability
+  // guarantee for a cosmetic one — is exactly what the block above says not to
+  // make.
+  //
+  // So the band stays a pure GEOMETRY band (its membership is unchanged, which
+  // is what preserves the quality floor) and the perimeter decides WITHIN it.
+  // Allocation, not argmax — the same shape as `pickTrackEndpoints`' tie-band.
+  // The rng then picks among the most peripheral slice of that, so variety
+  // survives: a floor still has several genuinely different openings to choose
+  // between, they are just all out at the edge.
+  const byEdge = bias > 0 ? [...band].sort((x, y) => perimeterScore(g, y.c.base.i, y.c.base.j) - perimeterScore(g, x.c.base.i, x.c.base.j)) : band;
+  const edgeCut = bias > 0 ? Math.max(1, Math.ceil(byEdge.length * (1 - bias * EDGE_NARROW))) : byEdge.length;
+  let pool = byEdge.slice(0, edgeCut);
+  // ── RELAX ONLY WHEN FORCED ───────────────────────────────────────────────
+  //
+  // Narrowing to the most peripheral slice is not the same as satisfying the
+  // rule, and the gap showed up as exactly one floor in 78: a ringkeep whose
+  // pool ran from 0.50 down to 0.28 and whose `rng()` drew the 0.28. The site
+  // was compliant-adjacent but the rule wants >= PERIMETER_RULE_MIN, and a
+  // qualifying site was sitting right there in the same pool.
+  //
+  // So when ANY candidate clears the bar, only those are eligible. When none
+  // does the pool is left alone and `buildTrackFloor` records a declared
+  // relaxation — which is the whole point of separating "could not" from "did
+  // not": the fallback stays available and stays counted.
+  if (bias >= 0.5) {
+    const compliant = pool.filter((x) => perimeterScore(g, x.c.base.i, x.c.base.j) >= PERIMETER_RULE_MIN);
+    if (compliant.length > 0) pool = compliant;
+  }
+  const pick = pool[Math.floor(rng() * pool.length)] ?? pool[0];
+  const edgeBest = band.reduce((m, x) => Math.max(m, perimeterScore(g, x.c.base.i, x.c.base.j)), 0);
   const { mouth, base, dirI, dirJ, len } = pick.c;
 
   // Carve base → mouth with the circuit's own brush, so every downstream pass
@@ -252,7 +360,7 @@ export function carveLaunchChute(g: Grid, mask: TrackMask, rng: () => number): L
     }
   }
 
-  return { base, mouth, dirI, dirJ, spine, half: LAUNCH_HALF };
+  return { base, mouth, dirI, dirJ, spine, half: LAUNCH_HALF, edgeBest };
 }
 
 /**

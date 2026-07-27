@@ -144,7 +144,7 @@ const STATS: Record<EnemyKind, EnemyStats> = {
 };
 
 /** World velocity → the facing the ART thinks in (screen-relative). */
-function facingFromWorld(wx: number, wz: number, fallback: Facing): Facing {
+export function facingFromWorld(wx: number, wz: number, fallback: Facing): Facing {
   const s = worldDirToScreen(wx, wz);
   return facingFromVelocity(s.x, s.z, fallback);
 }

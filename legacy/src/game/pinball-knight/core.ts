@@ -236,7 +236,7 @@ import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { cardBase } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
 import { openFloorLoading, type FloorLoading } from "./floor-loading";
-import { spawnBoss, updateBoss, disposeBoss } from "./boss";
+import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { resolveDescendFloor, regroupTarget } from "../../net/rally";
@@ -2405,9 +2405,17 @@ function loop(now: number): void {
     state.pixelPass?.setFlash(FINISHER_FLASH_MAX * k * k);
   }
 
-  // Boss bar: show it while the overlord is alive, hide once it's dead/gone.
+  // Boss bar: while the overlord is alive AND HAS NOTICED YOU.
+  //
+  // It used to appear the instant the floor built, so every descent opened with
+  // "☠ THE REAPER KING ☠" pinned to the top of the screen — which reads as "the
+  // boss is right here" even though a census of 78 floors puts his spawn tile a
+  // minimum of 56 BFS steps away. Gating on engagement (boss.ts, THE LEASH)
+  // makes the announcement mean what it says. `bossEngaged` answers for
+  // replicas too, off the streamed BossAux.
   const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");
-  updateBossBar(state.bossBarEl, boss ? boss.hp : null, boss ? boss.maxHp ?? null : null);
+  const seen = boss && (bossEngaged() || boss.hp < (boss.maxHp ?? boss.hp));
+  updateBossBar(state.bossBarEl, seen ? boss.hp : null, seen ? boss.maxHp ?? null : null);
   updatePlungerMeter(state.plungerMeterEl);
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;

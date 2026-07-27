@@ -24,10 +24,12 @@
  */
 import * as THREE from "three";
 import { state, type Zombie } from "./state";
-import { hitPlayerRanged } from "./entities/combat";
 import { showToast } from "./ui";
 import { PINBALL_MAX_SPEED, REAPER_SCALE, REAPER_TINT, BRUTE_R } from "./constants";
-import { tileCenter, type Grid, type TilePos } from "./maze/generator";
+import { tileCenter, idx, worldToTile, type Grid, type TilePos } from "./maze/generator";
+import { moveCircle } from "./engine/collision";
+import { hitPlayerRanged, syncActorMesh } from "./entities/combat";
+import { facingFromWorld } from "./entities/zombie";
 import { peers } from "../../net/presence";
 
 // ── Tuning ────────────────────────────────────────────────────────────────────
@@ -44,6 +46,47 @@ const KING_SCALE = REAPER_SCALE * 1.55; // looms over the horde
  * is just as frustrating as one embedded in stone.
  */
 export const KING_BODY_R = BRUTE_R * KING_SCALE * 0.86;
+/**
+ * ── THE LEASH ─────────────────────────────────────────────────────────────
+ *
+ * The king is a GUARDIAN. He is spawned on the exit (core.ts sites him at
+ * `nearestOpenTile(stairs, 2)`) and he locks it, so his whole job is to be
+ * between the player and the way down.
+ *
+ * He was not behaving like one. `spawnBoss` set `z.aggro = true`, which is the
+ * one flag the generic zombie AI uses to decide whether to chase — every other
+ * enemy on the floor starts `aggro = false` and wakes only when the player is
+ * within `AGGRO_TILES` *by path distance* (entities/zombie.ts reads
+ * `state.flowField`, which is BFS from the player). The king opted out of that
+ * gate entirely, so from the instant the floor built he walked toward the
+ * spawn, across the whole map, and never stopped.
+ *
+ * That is why the user reported the boss "next to the starting point" while a
+ * census of 78 generated floors said the opposite: **his spawn tile is never
+ * closer than 56 BFS steps from the player's, mean 68% of the floor's whole
+ * reach.** The placement was already correct and always had been. He simply
+ * did not stay there, and no generation rule can fix a mover — which is why
+ * this is a behaviour change and not a constraint in maze/floor-rules.ts.
+ *
+ * Two numbers, and they do different jobs:
+ *   WAKE  — path distance at which he notices you. Deliberately far wider than
+ *           a grunt's AGGRO_TILES: he should register you entering his hall,
+ *           not be startled at arm's length.
+ *   LEASH — how far from his ANCHOR he will follow before turning back. This
+ *           is what makes him a guardian rather than a pursuer, and it is
+ *           measured from the anchor (not from the player) so kiting him away
+ *           and looping back cannot drag him off the exit.
+ *
+ * LEASH is comfortably larger than WAKE on purpose. Inverted or too close
+ * together and he oscillates — wakes, steps forward, trips the leash, returns,
+ * wakes again — which reads as a broken boss rather than a cautious one.
+ */
+const KING_WAKE_TILES = 26; // path distance (tiles) at which he engages
+const KING_LEASH_TILES = 34; // world distance from the anchor before he returns
+/** Within this of the anchor he counts as home and stands his ground again. */
+const KING_HOME_TILES = 2.5;
+/** He walks home at a fraction of his hunting speed — a stalk back, not a sprint. */
+const KING_RETURN_SPEED = 0.75;
 const SKULL_COUNT = 5;
 const SKULL_ORBIT_R = 1.5;
 const SKULL_ORBIT_SPEED = 1.1; // rad/s
@@ -106,6 +149,15 @@ interface Bone {
 }
 interface BossState {
   z: Zombie;
+  /**
+   * His LAIR — the world position he was spawned at, i.e. the exit he guards.
+   * The leash is measured from here rather than from wherever he happens to be,
+   * so a player who kites him away and loops round cannot walk him off the
+   * stairs a step at a time.
+   */
+  anchor: { x: number; z: number };
+  /** True while hunting. Owned by `updateBoss`, which writes `z.aggro` from it. */
+  engaged: boolean;
   skulls: Skull[];
   bones: Bone[];
   slamT: number;
@@ -201,7 +253,10 @@ export function spawnBoss(
   // plain brute (0.42), so he walked half his visible body into 1-tile
   // corridors and read as stuck in the wall. Derived, never hand-tuned.
   z.bodyR = KING_BODY_R;
-  z.aggro = true;
+  // NOT `aggro = true`. That single line is what made him leave his post the
+  // instant the floor existed — see THE LEASH above. `updateBoss` now owns this
+  // flag and writes it from `engaged` every tick.
+  z.aggro = false;
 
   const skulls: Skull[] = [];
   for (let i = 0; i < SKULL_COUNT; i++) {
@@ -212,6 +267,12 @@ export function spawnBoss(
 
   boss = {
     z,
+    // His post IS where he was sited — the exit. Captured from the spawn
+    // position rather than re-derived from `state.stairs` later, because the
+    // two differ by `nearestOpenTile`'s search and the leash must be measured
+    // from the tile he actually stands on.
+    anchor: { x: c.x, z: c.z },
+    engaged: false,
     skulls,
     bones: [],
     slamT: SLAM_INTERVAL,
@@ -270,6 +331,65 @@ export function updateBoss(dt: number): void {
   const bz = boss.z.z;
   // The king menaces whichever knight is CLOSEST — ours or a pool-mate's.
   const target = nearestKnight(bx, bz) ?? { x: p.x, z: p.z };
+
+  // ── THE LEASH ── decided here, once, and everything below reads `engaged`.
+  //
+  // Runs AFTER `updateZombies` in `simulate`, so writing `z.aggro` takes effect
+  // on the next frame. That one-frame lag is imperceptible and it is the reason
+  // this can live here instead of being threaded into the generic AI: the
+  // generic path already does the right thing with `aggro`, it just needs
+  // someone to own the flag for this one enemy.
+  const homeD = Math.hypot(bx - boss.anchor.x, bz - boss.anchor.z);
+  // Path distance from the player to the king, exactly the quantity the grunt
+  // aggro gate uses — `state.flowField` is BFS from the player, indexed at the
+  // ENEMY's tile. Euclidean would wake him through a wall, which on a floor
+  // built around a looping circuit is routinely 30 tiles of real walking away.
+  let pathD = Infinity;
+  const g = state.grid;
+  if (g && state.flowField) {
+    const t = worldToTile(g, bx, bz);
+    const d = state.flowField[idx(g, t.i, t.j)];
+    if (d >= 0 && d < 0x3fffffff) pathD = d;
+  }
+  if (!boss.engaged) {
+    if (pathD <= KING_WAKE_TILES) {
+      boss.engaged = true;
+      showToast("☠ THE KING STIRS", "he has seen you");
+    }
+  } else if (homeD > KING_LEASH_TILES) {
+    // Off his post. Disengage and go back; he is a guardian, not a pursuer.
+    boss.engaged = false;
+  }
+  boss.z.aggro = boss.engaged;
+
+  // ── RETURNING ── walk home under our own steam. With `aggro` false the
+  // generic AI parks him in `idle` and does not move him at all, so without
+  // this he would simply stand wherever the leash tripped — which is worse than
+  // chasing, because the exit ends up unguarded AND he is loitering in a
+  // corridor. Deliberately slower than his hunt: a stalk back, not a retreat.
+  if (!boss.engaged && homeD > KING_HOME_TILES && g) {
+    const step = boss.z.speed * KING_RETURN_SPEED * dt;
+    const res = moveCircle(g, bx, bz, boss.z.bodyR ?? KING_BODY_R, ((boss.anchor.x - bx) / homeD) * step, ((boss.anchor.z - bz) / homeD) * step);
+    boss.z.x = res.x;
+    boss.z.z = res.z;
+    boss.z.anim.setFacing(facingFromWorld(boss.anchor.x - bx, boss.anchor.z - bz, "S"));
+    boss.z.anim.play("walk");
+    syncActorMesh(boss.z);
+  }
+
+  // ── DISENGAGED: no ranged pressure ──
+  //
+  // The barrage and the slam both aim at `target` with no range test of their
+  // own, so a leashed king would snipe bones and drop ground-pounds on a player
+  // halfway across the floor — the leash would have removed the chase and left
+  // the harassment, which is the worse half. Skulls keep wheeling (he is
+  // visibly alive and dangerous), the projectiles do not fire, and the timers
+  // are HELD rather than ticked down so re-entering his hall doesn't eat an
+  // instant slam from a countdown that expired while you were away.
+  if (!boss.engaged) {
+    updateBones(dt); // let anything already in flight land
+    return;
+  }
 
   // ── Skull ring wheels around the king ──
   boss.orbitT += dt * SKULL_ORBIT_SPEED;
@@ -419,6 +539,13 @@ export interface BossAux {
   portal: { x: number; z: number } | null;
   /** King alive → replicas keep their skull ring + exit lock. */
   alive: boolean;
+  /**
+   * Is he HUNTING (see THE LEASH)? Streamed so a replica's boss bar appears at
+   * the same moment the authority's does. Without it a replica would either
+   * show the bar from floor-build — the exact "the boss is at my spawn" read
+   * this whole change removes — or not until someone landed a hit.
+   */
+  engaged: boolean;
 }
 
 /** Authority side: serialize the aux threats for the snapshot. Null = no boss. */
@@ -429,12 +556,26 @@ export function bossNetState(): BossAux | null {
     slam: boss.slamPhase === "telegraph" ? { x: boss.slamX, z: boss.slamZ, t: boss.slamT } : null,
     portal: boss.portal ? { x: boss.portal.position.x, z: boss.portal.position.z } : null,
     alive: !boss.opened,
+    engaged: boss.engaged,
   };
+}
+
+/**
+ * Is the king hunting right now? Host-side truth; replicas read `BossAux.engaged`
+ * off the snapshot. Exported for the HUD — the boss bar is gated on it so the
+ * floor does not announce him before he has noticed you.
+ */
+export function bossEngaged(): boolean {
+  if (boss) return boss.engaged && !boss.opened;
+  // Replica: the authority's answer, off the last aux snapshot.
+  return !!replica?.engaged;
 }
 
 // Replica-side mirrored meshes — deliberately separate from `boss` (the
 // authority state) so an authority handover can adopt cleanly.
 interface ReplicaAux {
+  /** Last streamed `BossAux.engaged` — the replica's copy of THE LEASH state. */
+  engaged: boolean;
   skulls: THREE.Mesh[];
   bones: THREE.Mesh[];
   telegraph: THREE.Mesh | null;
@@ -445,7 +586,7 @@ interface ReplicaAux {
 let replica: ReplicaAux | null = null;
 
 function ensureReplica(): ReplicaAux {
-  if (!replica) replica = { skulls: [], bones: [], telegraph: null, slamPos: null, portal: null, orbitT: 0 };
+  if (!replica) replica = { engaged: false, skulls: [], bones: [], telegraph: null, slamPos: null, portal: null, orbitT: 0 };
   return replica;
 }
 
@@ -457,6 +598,7 @@ function ensureReplica(): ReplicaAux {
  */
 export function applyRemoteBossAux(aux: BossAux | null): void {
   const r = ensureReplica();
+  r.engaged = !!aux?.engaged;
 
   // Skull ring: cosmetic, orbits whatever boss-flagged zombie the snapshot gave us.
   const king = state.zombies.find((z) => z.boss && z.mode !== "dead");
@@ -560,6 +702,13 @@ export function adoptBoss(z: Zombie): void {
   }
   boss = {
     z,
+    // AUTHORITY HANDOVER: the previous simulator's anchor did not come across
+    // the wire, so the best available post is where he stands at the moment we
+    // inherit him. He is mid-fight by definition here, so `engaged` starts
+    // true — re-deriving it from the wake radius would have him stand down for
+    // a frame in the middle of a slam.
+    anchor: { x: z.x, z: z.z },
+    engaged: true,
     skulls,
     bones: [],
     slamT: SLAM_INTERVAL,
