@@ -19,9 +19,9 @@
  * Every keeper is now a distinct silhouette.
  */
 import * as THREE from "three";
-import { createStaticSprite } from "../dungeon/render/sprite";
-import { NPC_PAINTS } from "../dungeon/render/cel-painter";
-import type { VfxSystem } from "../dungeon/render/vfx";
+import { createStaticSprite } from "../../game/pinball-knight/render/sprite";
+import { NPC_PAINTS } from "../../game/pinball-knight/render/cel-painter";
+import type { VfxSystem } from "../../game/pinball-knight/render/vfx";
 import { KEEPER_SPOTS } from "./layout";
 
 /** How a keeper idles. */

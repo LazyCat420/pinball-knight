@@ -1,7 +1,7 @@
 /**
  * The knight, in the tavern. Walk, face, stop at furniture. That's the whole job.
  *
- * This deliberately does NOT reuse `scenes/dungeon/entities/player.ts`. That
+ * This deliberately does NOT reuse `game/pinball-knight/entities/player.ts`. That
  * controller is ~1500 lines interleaved with pinball momentum, wall-launches,
  * rides, dodge-rolls, melee combo state and grid smashing, and it requires a
  * maze `Grid` to move at all. None of that exists here and none of it should.
@@ -11,14 +11,14 @@
  * same knight who just came up the stairs, holding the same thing.
  */
 import * as THREE from "three";
-import { state as dungeonState, activeWeapon } from "../dungeon/state";
-import { createActorSprite } from "../dungeon/render/sprite";
-import { getKnightSheet } from "../dungeon/render/knight-sheets";
-import { lookFromGear, lookKey } from "../dungeon/render/knight-look";
-import { Animator, facingFromVelocity, type Facing } from "../dungeon/render/animator";
-import { PPU } from "../dungeon/constants";
-import { screenDirToWorld } from "../dungeon/camera";
-import type { InputHandle } from "../dungeon/input";
+import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
+import { createActorSprite } from "../../game/pinball-knight/render/sprite";
+import { getKnightSheet } from "../../game/pinball-knight/render/knight-sheets";
+import { lookFromGear, lookKey } from "../../game/pinball-knight/render/knight-look";
+import { Animator, facingFromVelocity, type Facing } from "../../game/pinball-knight/render/animator";
+import { PPU } from "../../game/pinball-knight/constants";
+import { screenDirToWorld } from "../../game/pinball-knight/camera";
+import type { InputHandle } from "../../game/pinball-knight/input";
 import { moveInRoom, SPAWN } from "./layout";
 import { tavern, type TavernPlayer } from "./state";
 

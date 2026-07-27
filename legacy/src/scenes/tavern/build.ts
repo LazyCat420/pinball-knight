@@ -10,7 +10,7 @@
  * disappears — silhouette and light colour are what read at this resolution.
  */
 import * as THREE from "three";
-import { PALETTE_HEX } from "../dungeon/render/palette";
+import { PALETTE_HEX } from "../../game/pinball-knight/render/palette";
 import { ROOM, ROOM_W, ROOM_D, WALL_HEIGHT, STAIR, WARM } from "./layout";
 
 /** Palette picks, by their index in the Cold Crypt ramp. */

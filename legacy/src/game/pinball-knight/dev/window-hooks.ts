@@ -33,7 +33,7 @@ import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
 import { installProfilerHooks } from "../profiler";
 import { rotateLanes } from "../shots";
-import { enterTavern, isTavernSceneOpen } from "../../tavern";
+import { enterTavern, isTavernSceneOpen } from "../../../scenes/tavern";
 import { ZOMBIE_TYPE_IDS } from "../zombie-types";
 import type { SpriteSheet } from "../render/sprite";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";

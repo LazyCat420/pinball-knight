@@ -4,12 +4,12 @@
  * Public surface for the dungeon: hand it the run's stats and a way to descend,
  * and it takes the screen until the player pulls the plunger.
  *
- * Falls back to the original DOM tavern (`scenes/dungeon/tavern.ts`) when a
+ * Falls back to the original DOM tavern (`game/pinball-knight/tavern.ts`) when a
  * WebGL context can't be had, so a machine that can't run the scene still gets
  * a working shop rather than a dead screen.
  */
 import { openTavernScene, closeTavern, isTavernSceneOpen } from "./core";
-import { openTavern as openDomTavern } from "../dungeon/tavern";
+import { openTavern as openDomTavern } from "../../game/pinball-knight/tavern";
 import type { TavernStats } from "./state";
 
 export { closeTavern, isTavernSceneOpen };

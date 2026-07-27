@@ -2,11 +2,11 @@
  * Tavern-owned overlays.
  *
  * Only the run summary lives here — every commerce panel is the existing,
- * already-tuned vendor UI in `scenes/dungeon/tavern.ts`, opened per-station.
+ * already-tuned vendor UI in `game/pinball-knight/tavern.ts`, opened per-station.
  * The rule is that this scene owns the ROOM and that module owns the ECONOMY.
  */
-import { GEAR, GEAR_SLOTS } from "../dungeon/items";
-import { state as dungeonState } from "../dungeon/state";
+import { GEAR, GEAR_SLOTS } from "../../game/pinball-knight/items";
+import { state as dungeonState } from "../../game/pinball-knight/state";
 import { getBalance } from "../../utils/gold-wallet";
 import type { TavernStats } from "./state";
 import { describeParty, type FloorGroup } from "./join-board";

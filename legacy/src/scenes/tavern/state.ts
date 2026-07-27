@@ -2,7 +2,7 @@
  * Tavern-scene state. Deliberately small.
  *
  * Everything PERSISTENT — gold, weapons, gear, the card stash, the belt — stays
- * where it already lives (`scenes/dungeon/state.ts` and the gold wallet), and
+ * where it already lives (`game/pinball-knight/state.ts` and the gold wallet), and
  * the tavern reads it directly. This module owns only what dies when you
  * descend: where the player is standing, which station they're near, and which
  * panel is open.
@@ -10,8 +10,8 @@
 import type * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import type { Station } from "./layout";
-import type { Facing } from "../dungeon/render/animator";
-import type { ActorSprite } from "../dungeon/render/sprite";
+import type { Facing } from "../../game/pinball-knight/render/animator";
+import type { ActorSprite } from "../../game/pinball-knight/render/sprite";
 
 /** Run stats handed in by the dungeon when it opens the tavern. */
 export interface TavernStats {

@@ -25,7 +25,7 @@ export interface Rect {
 
 /** What a station does when you interact with it. */
 export type StationKind =
-  /** Opens one of the existing vendor counters from scenes/dungeon/tavern.ts. */
+  /** Opens one of the existing vendor counters from game/pinball-knight/tavern.ts. */
   | { kind: "vendor"; vendor: "cards" | "weapons" | "armor" | "potions" }
   /** The run summary on the central table. */
   | { kind: "summary" }

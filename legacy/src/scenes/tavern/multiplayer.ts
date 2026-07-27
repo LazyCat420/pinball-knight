@@ -15,7 +15,7 @@ import * as THREE from "three";
 import type { Facing } from "../../net/protocol";
 import { getPlayerName } from "../../services/player-name";
 import { startPresence, sendPose, setLocalScene, peers, onlineCount, isConnected } from "../../net/presence";
-import { RemotePartyRenderer } from "../dungeon/render/remote-party";
+import { RemotePartyRenderer } from "../../game/pinball-knight/render/remote-party";
 
 const SCENE = "tavern";
 

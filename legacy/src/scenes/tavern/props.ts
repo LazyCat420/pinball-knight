@@ -12,13 +12,13 @@
  * the dungeon's parts — a sloped playfield, rails, bumper caps, a plunger.
  */
 import * as THREE from "three";
-import { PALETTE_HEX } from "../dungeon/render/palette";
+import { PALETTE_HEX } from "../../game/pinball-knight/render/palette";
 import { OBSTACLES, ROOM, WARM, COLD, GOLD } from "./layout";
 
 /** Just inside the south wall — where the dartboard hangs. */
 const ROOM_MAX_Z_PROP = ROOM.maxZ - 0.2;
-import { CARDS, RARITY_HEX, type CardId, type CardRarity } from "../dungeon/cards";
-import { activeWeapon } from "../dungeon/state";
+import { CARDS, RARITY_HEX, type CardId, type CardRarity } from "../../game/pinball-knight/cards";
+import { activeWeapon } from "../../game/pinball-knight/state";
 
 /** Most socket plates the vice can show — matches the max weapon card slots. */
 const VICE_MAX_PLATES = 3;

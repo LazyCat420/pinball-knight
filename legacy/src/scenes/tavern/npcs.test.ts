@@ -11,7 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { KEEPERS } from "./npcs";
 import { KEEPER_SPOTS, STATIONS } from "./layout";
-import { NPC_PAINTS } from "../dungeon/render/cel-painter";
+import { NPC_PAINTS } from "../../game/pinball-knight/render/cel-painter";
 
 describe("the keeper cast", () => {
   it("builds a body for every placed keeper — nobody is silently dropped", () => {

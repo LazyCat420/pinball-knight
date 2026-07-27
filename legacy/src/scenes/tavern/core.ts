@@ -10,14 +10,14 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
-import { createPixelPass, computeRenderSizing, type PixelPass } from "../dungeon/render/pixel-pass";
-import { createDungeonCamera, aimCamera } from "../dungeon/camera";
-import { createInput, type InputHandle } from "../dungeon/input";
-import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../dungeon/tavern";
-import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../dungeon/menu";
-import { state as dungeonState, activeWeapon } from "../dungeon/state";
-import { renderKnightPortrait } from "../dungeon/render/knight-portrait";
-import { lookFromGear } from "../dungeon/render/knight-look";
+import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/render/pixel-pass";
+import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/camera";
+import { createInput, type InputHandle } from "../../game/pinball-knight/input";
+import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../../game/pinball-knight/tavern";
+import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../../game/pinball-knight/menu";
+import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
+import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
+import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
 import {
   AMBIENT_INTENSITY,
   HEMI_INTENSITY,
@@ -30,7 +30,7 @@ import {
   BLOOM_DEFAULT,
   AO_DEFAULT,
   PPU,
-} from "../dungeon/constants";
+} from "../../game/pinball-knight/constants";
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, createStationPrompt, refreshFocus, type StationFx, type StationPrompt } from "./stations";
@@ -40,12 +40,12 @@ import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaSt
 import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, showTavernBanner, clearTavernBanner, type LobbyHud } from "./ui";
 import { onPeerArrive, onPeerDepart, peers } from "../../net/presence";
 import { groupByFloor } from "./join-board";
-import { loadBestDepth } from "../dungeon/best-depth";
-import { loadResumeFloor } from "../dungeon/corpse-run";
+import { loadBestDepth } from "../../game/pinball-knight/best-depth";
+import { loadResumeFloor } from "../../game/pinball-knight/corpse-run";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
-import { createVfx, type VfxSystem } from "../dungeon/render/vfx";
+import { createVfx, type VfxSystem } from "../../game/pinball-knight/render/vfx";
 import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
