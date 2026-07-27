@@ -2,9 +2,94 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-> ⚠️ **Two sessions were live in this checkout on 2026-07-26.** The flipY section
-> below belongs to the other one and was still in flight — it is kept, not
-> replaced. Only the intro-skip section is mine.
+> ⚠️ **Two sessions were live in this checkout on 2026-07-26.** Both are recorded
+> here; neither replaced the other.
+
+## 🙃 THE DUNGEON REALLY WAS UPSIDE DOWN — flipY + WebGPU is now the default (2026-07-26)
+
+**Commit `38484a6`**. 1427 tests pass (124 files, was 1419/123).
+
+### What was reported
+
+> "its still upside down. all you did was make the enter maze rightside up
+> everything else is still upside down."
+> "we are suppose to be using WebGPU as the main thing … only have it as backup
+> never do anything with WebGL only focus on WebGPU please."
+
+Both correct. An earlier section of this file concluded "the game is NOT flipped"
+(it is now reduced to a pointer, further down). **That conclusion was wrong** —
+see the method warning at the end of this section.
+
+### Root cause — the same flipY trap, in SIX more places
+
+`CanvasTexture`s on material `map`s left at three's default `flipY=true`. That
+default is the compensation the **legacy** `WebGLRenderer` wanted; under the node
+renderer a texture on a `map` samples with **v=0 at the TOP**, so it double-flips.
+
+| File | Texture | Symptom |
+|---|---|---|
+| `maze/build.ts` | `pixelTexture()` — wall albedo | trim/dentil course at the canvas top, skirting + contact shadow at the bottom, moss "climbing from the floor" — all inverted; moss haloed pillar **tops** |
+| `maze/build.ts` | `makeNormalTexture()` | must flip WITH the albedo or every bevel is lit from the wrong side |
+| `maze/build.ts` | `makeFlameTexture()` | torch flames burned **downward** |
+| `maze/build.ts` | `makeBannerTexture()` | hung pole-down, swallowtail notch in the air |
+| `render/remote-party.ts` | `makeNameplate()` | peer names upside down |
+| `engine/render/damage-text.ts` | the pool's texture | damage numbers upside down |
+
+⚠️ **NOT a blanket rule.** The sprite atlas (`engine/render/sprite.ts`) computes
+`offset.y = (rows-1-row)/rows`, which **depends on flipY staying true** — setting
+it false there breaks every character. Floor noise, the slash crescent, the radial
+sigil, oil swirls and the barrel are flip-invariant and deliberately untouched.
+
+### WebGPU is now the default backend
+
+`cf377a9` had pinned `auto` to WebGL2 because "the WebGPU backend renders this
+game's render-target pipeline UPSIDE DOWN on some Chromium forks". The flip was
+real; **the attribution was not.** It is neither backend- nor fork-specific —
+screenshot-verified tip-down on the webgl backend AND on real Dawn, upright on
+both after the flipY fixes. Forcing WebGL2 hid one symptom on one browser while
+leaving the bug in every other. `auto` now resolves to WebGPU, falling back to
+WebGL2 only when `navigator.gpu` is absent.
+
+### ⚠️ How to test WebGPU from WSL — and why `?gpu=webgpu` alone proves nothing
+
+**Headless SwiftShader has NO WebGPU adapter.** It logs "No available adapters",
+`WebGPURenderer` silently falls back to WebGL2, and the page still reports
+`__renderBackend === "webgpu"`. A run that looks like WebGPU but is not.
+
+Working recipe: drive **host Windows Chrome over CDP**
+(`/mnt/c/Program Files/Google/Chrome/Application/chrome.exe`, `--headless=new
+--remote-debugging-port=<p> --remote-allow-origins=* --user-data-dir=C:\Temp\...
+--enable-unsafe-webgpu`), then `chromium.connectOverCDP`. WSL2 forwards listening
+ports, so the WSL dev server on :5174 is reachable as `localhost`. Always assert
+`navigator.gpu` **and** that `requestAdapter()` returned an adapter. The tell that
+you are really on Dawn: Chrome logs "The powerPreference option is currently
+ignored … on Windows". `scripts/playtest.mjs --gpu` already implements the pattern.
+
+### `selectBackend()` now has tests — it had ZERO
+
+`src/render/backend.test.ts`, 8 tests. This is the one function whose regression
+flips the screen or silently downgrades the renderer, and `backend.ts` documents
+that neither is detectable from inside the page. **Negative-controlled**:
+restoring `forceWebGL = true` fails 4 of the 8, so the guard is not vacuous.
+
+### ⚠️ METHOD WARNING — how the first pass got it wrong
+
+The earlier session compared its own headless render against the user's
+screenshot, found every landmark matching, and concluded "not flipped". **Both
+images were flipped**, so they agreed. Comparing a suspect against another suspect
+proves nothing.
+
+What actually worked was an **absolute** oracle — an object whose correct
+orientation is knowable from the source alone:
+- `makeFlameTexture` paints tongues from `base = F - 4` (canvas BOTTOM) **upward**
+  via `base - h`. So the wide base belongs at the bottom and the tip points up.
+  On screen it was tip-down. That is decisive without any reference image.
+- `makeWallTexture`'s own comment says moss is "denser at the bottom". It was
+  rendering at the top.
+
+Sprites and the HUD are drawn in screen space and stayed upright throughout, which
+is exactly why this read as "everything except the UI is upside down" and why a
+landmark-position check could not see it.
 
 ## 🖱️ SKIP left an INVISIBLE CLICK BLOCKER over the whole site (2026-07-26)
 
@@ -82,82 +167,19 @@ mid-edit, this shipped from `git worktree add … HEAD` per
 
 ---
 
-## 🔄 "IS THE GAME FLIPPED 180°?" — no, but the SIGN was (2026-07-26, other session)
+## 🔄 "is the game flipped 180?" — the FIRST answer to this was WRONG (2026-07-26)
 
-**Commit `e1426d2`** → synology. 1419 tests pass (123 files).
+**Commit `e1426d2`** fixed the tavern `ENTER MAZE` sign (`makeSignTexture`,
+`flipY = false`). That fix is correct and still in.
 
-### What was reported
+But the write-up that accompanied it concluded **"the game is NOT flipped — the
+room reads as a diamond because of the 45°-yaw iso camera"**, and that was wrong.
+The dungeon *was* vertically inverted; the sign was one of seven affected
+textures. Corrected and superseded by **`38484a6`** at the top of this file —
+including the method mistake (comparing a suspect render against a suspect
+screenshot) that produced the false all-clear.
 
-> "help me debug/audit/run tests to figure out why its flipped 180 degrees for
-> the game. the html isn't upside down only the game thats being rendered."
-
-### The game is NOT flipped — that part was a false alarm
-
-Reproduced the reported scene headless (tavern, `seed=42`, WebGL2) and compared
-landmarks against the user's screenshot: sign lower-right, pinball table centre,
-pool table upper-right, kitchen lower-left, near wall corner at bottom. **Every
-landmark matches in position and handedness.** The dungeon renders upright too.
-
-The room reads as a diamond with its near corner at the bottom because the camera
-is yawed **45°** and tilted **38°** (`engine/config.ts`) — that is the intended
-isometric projection, not a flip.
-
-### What WAS broken: the ENTER MAZE marquee rendered upside down
-
-`makeSignTexture()` in `src/scenes/tavern/props.ts` left `flipY` at three's
-default `true`. A texture on a material `map` samples with **v=0 at the TOP**
-under `WebGPURenderer` (both backends), while `PlaneGeometry` puts v=0 at the
-BOTTOM. `flipY=true` is the compensation the **legacy** `WebGLRenderer` wanted,
-so leaving it on double-flips and every glyph renders inverted. Fix is one line:
-`tex.flipY = false`.
-
-**This is the same trap as `a9eab59`** (raccoon-intro retro blit). That commit
-audited *render-target* textures and correctly cleared the dungeon pixel pass
-(which samples through explicit TSL `texture()` nodes) — a
-`CanvasTexture`-on-a-`map` was never in its scope.
-
-### Why this masqueraded as a whole-scene flip
-
-The sign is the **only text in the tavern**, so a garbled sign is a strong false
-cue that everything is inverted. "ENTER MAZE" with each letter flipped in place
-still looks like *a* word — on screen it was being read as **"TELLER HOUSE"**,
-which is what the user's screenshot shows.
-
-⚠️ **Reasoning from the screenshot actively misled**: flipped "ENTER MAZE" looks
-*mirrored*, which points at a Y-rotation or negative scale — neither of which was
-wrong. Probing with **`"ABC"`** is what settled it: letter order stayed A→B→C
-(so nothing is mirrored horizontally) while every glyph was inverted. Order
-preserved + glyphs inverted = a **v-flip and nothing else**. If you chase a
-suspected orientation bug, render an asymmetric probe rather than squinting at
-production copy.
-
-### Two things left open
-
-1. **`selectBackend()` has ZERO test coverage** — no test file references it.
-   That is the function whose regression produces a genuinely flipped screen, and
-   `src/render/backend.ts` documents that the real WebGPU flip is *undetectable
-   from inside the page* (forks strip their UA; an in-page RT probe
-   false-positived on Chrome). Worth a test pinning `auto → forceWebGL: true`; a
-   silent flip of that default cannot be recovered by probing.
-2. **The WebGPU backend could not be tested at all here.** Headless SwiftShader
-   reports "No available adapters" and silently falls back to WebGL2, so
-   `?gpu=webgpu` is untestable in this environment (the limitation
-   `scripts/playtest.mjs:260` already warns about). All verification is WebGL2.
-   The genuine WebGPU flip needs real GPU hardware.
-
-Verified the WebGL2-default guard is intact in source, in the local build, **and
-on the deployed container** — probing `http://10.0.0.16:5174/dungeon` logs
-`[backend] webgl (requested=auto)`. So the user was already on WebGL2.
-
-### Gotchas hit while verifying (both cost real time)
-
-- **`page.screenshot()` hangs** on "waiting for fonts to load" in this app. Use
-  CDP instead: `context.newCDPSession(page)` → `Page.captureScreenshot`.
-- **`__dungeonTavern()` returns `"no hook"` if called too early** and silently
-  leaves the DUNGEON on screen — which is not the scene under test, and looks
-  like a successful capture. Poll
-  `waitForFunction(() => typeof window.__dungeonTavern === "function")` with a
-  **60s+** timeout; the sprite-atlas boot takes ~30s under SwiftShader.
+Kept only as a pointer, because the earlier text is cited in commit messages.
 
 ## 🗂 ONE FOLDER PER GAME + a real engine (2026-07-26)
 
