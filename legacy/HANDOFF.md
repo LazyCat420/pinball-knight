@@ -2,6 +2,64 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🗂 ONE FOLDER PER GAME + a real engine (2026-07-26)
+
+**`refactor/core-decomposition@c30434e`** — NOT deployed. 1419 tests pass
+(123 files, was 1404/121) · `next build` clean · all 21 game routes load in a
+browser · dungeon boots and renders (202 enemies, palette intact).
+
+### The layout now
+
+Every game has one parent folder under **`src/game/`** — 18 of them:
+`asteroids, beer-pong, chess, chinese-checkers, cigarette, cosmic-pool,
+dog-feeding, fishing, goblin-blocks, mahjong, mouse-game, mouse-poker,
+pinball-knight, pirate-chest, pirate-surf, raccoon-tornado, ski-game, toucan`.
+
+`src/objects/` is now **props + infrastructure only**. `src/room/` is rooms and
+props. Games no longer live in either.
+
+### `src/game/pinball-knight/engine/` is real, not a folder rename
+
+The engine imports **zero game content** — enforced by
+`engine/purity.test.ts`, which resolves each specifier rather than counting
+`../`, and was checked with a negative control (adding `import ../state` to
+`engine/profiler.ts` does fail it).
+
+Getting there needed dependency inversion, not moves:
+
+| Seam | Was | Now |
+|---|---|---|
+| `engine/config.ts` | engine imported `constants.ts` (2279 lines) for ~8 numbers | `GameEngine.installEngine()` pushes values in; `constants.ts` still owns them |
+| `engine/view-state.ts` | engine read AND WROTE `state.camX/shakeT/camera` | engine owns those fields; `state` delegates via accessors — **no call site changed, tavern untouched** |
+| `engine/palette-source.ts` | pass imported "Cold Crypt" | game registers its palette |
+| `engine/grid.ts` | collision/AI imported `maze/generator` | tile-grid substrate split out; generator re-exports it |
+| `engine/render/paint-types.ts` | `sprite.ts` imported 3372 lines of cel art for 4 types | vocabulary in engine, art stays content |
+
+`GameEngine.ts` holds the boot wiring plus **`FixedStepLoop`**, the 60Hz
+accumulator lifted out of core's RAF callback. Its three rules (clamp the delta
+BOTH ways, never bank time during a hit-freeze, tick juice clocks in REAL time)
+each exist because of a past bug and were untestable inline — now 12 tests.
+
+### Two judgement calls worth knowing
+
+- **beer-pong was NOT split** despite looking like prop+game.
+  `createBeerPongTable` shares module-level mutable state (`_sceneRef`, `cups`,
+  `readyBall`) with the game functions — the table IS the board. Splitting meant
+  duplicating state that drifts. Moved whole; the jungle room imports the
+  builder from `game/beer-pong`.
+- **fishtank WAS split** — its two halves import nothing from each other, so the
+  barrel was the only thing joining them → `game/fishing` + `room/props/aquarium`.
+- `cc-board.ts` / `sword-prop.ts` stay with `mouse-room` (they import its
+  palette `P`). The `cc-` prefix is misleading — chinese-checkers never uses it.
+
+### ⚠️ `scripts/playtest.mjs` fails on this branch AND on `main`
+
+Reports "dungeon hooks never appeared" while its own diagnostics print
+`active: true`. **Verified pre-existing**: checked out `3d0c626` (pre-refactor)
+and it fails identically. Not caused by this work. The game does boot — a direct
+probe shows all hooks present at ~20s under SwiftShader, which is slower than
+the harness's effective window.
+
 ## 🔌 SOCKET CONTRACT — geometry that has to mate (2026-07-26)
 
 **`main@0a50ddc`** → synology. 1402 tests pass (121 files) · `next build` clean.
