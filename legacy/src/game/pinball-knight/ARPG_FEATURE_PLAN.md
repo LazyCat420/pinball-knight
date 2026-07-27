@@ -36,12 +36,36 @@ the working tree. **Do not put any of it in a feature list.**
 | Gungeon **unkillable pursuer** | shipped as the **Death Dealer** | `spawnReaper()` `core.ts:1723`, timer-triggered via `REAPER_AFTER` |
 | Gungeon **enemy variety through stat bundles** | shipped as **zombie sub-types** | `zombie-types.ts` (8 sub-types, pure multiplier bundle) |
 | Floating damage numbers, blood, fog of war, minimap, co-op, boss | all shipped | `render/damage-text.ts`, `render/vfx.ts`, `fog.ts`, `hud-minimap.ts`, `coop.ts`, `boss.ts` |
+| **Per-tile terrain physics** — walls and floors made of different materials | shipped 2026-07-26 | `engine/surfaces.ts`, `maze/surface-paint.ts`; see the note below |
 
 Current content scale, for calibration: **22 enemy families** (`EnemyKind`,
 `state.ts:277`) × 8 zombie sub-types, **25 monster cards** across 5 rarities
 (`cards.ts:103`), **12 weapons** (`items.ts:136`), **16 potions**, **18 pinball
 part kinds**, **5 floor archetypes**, **6 floor modifiers**, **6 abilities**,
 **12 skill nodes**, **5 legacy perks**.
+
+### Update 2026-07-26 — the surface system landed
+
+Written after this document, and it changes what §B1.3 costs. Walls used to be
+pure geometry: `Grid.t` said wall-or-floor, `Grid.shapes` said what shape, and
+every physical property was a global constant or derived from topology, so
+every wall in the game bounced identically and every floor dragged identically.
+
+`Grid.surfaces` is now one byte per tile. Solid tiles read it as a
+**WallSurface** (stone / rubber / ice / mud / brass — restitution, bounce-add,
+corner gain, combo ticks), walkable tiles as a **FloorSurface** (stone / ice /
+sand / steel / flowstone — friction, steering grip, walk speed). `moveCircle`
+reports the struck tile's surface as `MoveResult.hitSurface`; `player.ts`
+applies it at both bounce paths and at friction/steer/walk.
+`maze/surface-paint.ts` stamps materials as contiguous patches from a floor
+modifier's `surfaceMix`, on its own derived RNG so layouts stay bit-identical.
+Index 0 of both tables is exactly neutral, so an unpainted floor plays as it
+always did.
+
+**What this unlocks:** every "the floor is made of X" idea in §B1.3 is now a
+table entry rather than a system. `Frozen` and `Silted` shipped with it as
+proof; `Magnetised`, `Brittle` and friends are the same shape. It does NOT
+change the §B1.3 work itself — the modifier roll is still a roll, not a bet.
 
 ### The ranking filter used throughout this document
 

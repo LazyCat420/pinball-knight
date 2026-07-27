@@ -30,7 +30,8 @@ import {
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
-import { type Grid, isWalkable, tileCenter, at, shapeAt, T_CRACKED, idx } from "./generator";
+import { type Grid, isWalkable, tileCenter, at, shapeAt, surfaceAt, T_CRACKED, idx } from "./generator";
+import { wallSurface, floorSurface, WALL_STONE, FLOOR_STONE } from "../engine/surfaces";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "../engine/tile-shape";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
 import { buildArcLanes, type ArcLaneVisual } from "../render/arc-lanes";
@@ -973,6 +974,57 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   floor.receiveShadow = true;
   group.add(floor);
 
+  // ── FLOOR SURFACE WASH ──────────────────────────────────────────────────
+  //
+  // The floor is ONE plane with a tiling texture, so there is no per-tile slot
+  // to tint the way walls have instances. Rather than patch the floor shader
+  // (which would put a custom material on the single biggest receiveShadow
+  // surface in the scene), painted tiles get a second, very thin quad washed
+  // over them — one InstancedMesh for the whole floor, and only for tiles that
+  // are actually non-stone. An unpainted floor builds nothing and costs nothing.
+  //
+  // Additive-ish transparency at low opacity so the flagstone texture still
+  // reads THROUGH the wash: the point is "this patch is ice", not "this patch
+  // is a flat blue rectangle" — the same mistake the card-art tint made.
+  {
+    const washCells: Array<{ x: number; z: number; hex: number }> = [];
+    for (let j = 0; j < grid.h; j++) {
+      for (let i = 0; i < grid.w; i++) {
+        if (!isWalkable(grid, i, j)) continue;
+        const surf = floorSurface(surfaceAt(grid, i, j));
+        if (surf.id === FLOOR_STONE) continue;
+        const cc = tileCenter(grid, i, j);
+        washCells.push({ x: cc.x, z: cc.z, hex: surf.hex });
+      }
+    }
+    if (washCells.length) {
+      const washGeo = track(new THREE.PlaneGeometry(1, 1));
+      washGeo.rotateX(-Math.PI / 2);
+      const washMat = track(
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0.42,
+          depthWrite: false, // a decal, never an occluder
+        }),
+      );
+      const washMesh = new THREE.InstancedMesh(washGeo, washMat, washCells.length);
+      washMesh.frustumCulled = false; // one object spanning the floor — culling it is all-or-nothing anyway
+      const wm = new THREE.Matrix4();
+      const wc = new THREE.Color();
+      washCells.forEach((c, k) => {
+        // Just proud of the floor plane. Too low z-fights, too high and the
+        // wash visibly floats off the ground at the camera's 38° tilt.
+        wm.setPosition(c.x, 0.012, c.z);
+        washMesh.setMatrixAt(k, wm);
+        washMesh.setColorAt(k, wc.setHex(c.hex, THREE.SRGBColorSpace));
+      });
+      washMesh.instanceMatrix.needsUpdate = true;
+      if (washMesh.instanceColor) washMesh.instanceColor.needsUpdate = true;
+      group.add(washMesh);
+      disposables.push({ dispose: () => washMesh.dispose() });
+    }
+  }
+
   // ── Walls — sort into full (back) and low (camera-side rim) ──
   // Only wall tiles with at least one walkable neighbour (8-way) get an
   // instance: a wall buried inside a solid block can never be seen.
@@ -1047,6 +1099,33 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // smashWallAt) can pop a single wall out of its InstancedMesh at runtime.
   const wallAt = new Map<string, { mesh: THREE.InstancedMesh; index: number }>();
 
+  /**
+   * Wash a wall instance with its SURFACE colour (engine/surfaces.ts), so
+   * rubber, ice, mud and brass are visible from across the room. A surface the
+   * player cannot see is a bug: a wall that eats your combo without looking any
+   * different reads as the physics being broken, not as terrain.
+   *
+   * Per-instance `instanceColor` rather than a separate material per surface —
+   * it keeps the one-draw-call-per-bucket property that makes the maze cheap.
+   * Two three.js details this depends on:
+   *  - `setColorAt` does NOT colour-space-convert the way `material.color`
+   *    setters do, so the hex is built with an explicit SRGBColorSpace or the
+   *    tint renders washed out;
+   *  - the first `setColorAt` call ALLOCATES `instanceColor` **zero-filled**,
+   *    so every instance that never gets written renders BLACK. That is why
+   *    the caller decides per BUCKET (`anyTint` below) and then writes every
+   *    instance including the stone ones, rather than writing only the
+   *    interesting ones and leaving the rest to a default that doesn't exist.
+   *    An all-stone bucket skips the call entirely and pays nothing.
+   */
+  const tintScratch = new THREE.Color();
+  const bucketNeedsTint = (cells: Array<{ i: number; j: number }>): boolean =>
+    cells.some((c) => wallSurface(surfaceAt(grid, c.i, c.j)).id !== WALL_STONE);
+  const tintWall = (mesh: THREE.InstancedMesh, k: number, i: number, j: number): void => {
+    const surf = wallSurface(surfaceAt(grid, i, j));
+    mesh.setColorAt(k, surf.id === WALL_STONE ? tintScratch.setRGB(1, 1, 1) : tintScratch.setHex(surf.hex, THREE.SRGBColorSpace));
+  };
+
   const addWallMesh = (cells: Array<{ x: number; z: number; i: number; j: number }>, height: number, mossy: boolean): void => {
     if (!cells.length) return;
     const low = height < 0.6;
@@ -1077,12 +1156,15 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     const m = new THREE.Matrix4();
+    const tinted = bucketNeedsTint(cells);
     cells.forEach((c, k) => {
       m.setPosition(c.x, height / 2, c.z);
       mesh.setMatrixAt(k, m);
       wallAt.set(`${c.i},${c.j}`, { mesh, index: k });
+      if (tinted) tintWall(mesh, k, c.i, c.j);
     });
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     group.add(mesh);
     disposables.push({ dispose: () => mesh.dispose() });
   };
@@ -1129,12 +1211,15 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       const m = new THREE.Matrix4();
+      const tinted = bucketNeedsTint(cells);
       cells.forEach((c, k) => {
         m.setPosition(c.x, 0, c.z); // base on the floor, xz at tile centre
         mesh.setMatrixAt(k, m);
         wallAt.set(`${c.i},${c.j}`, { mesh, index: k });
+        if (tinted) tintWall(mesh, k, c.i, c.j);
       });
       mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       group.add(mesh);
       disposables.push({ dispose: () => mesh.dispose() });
     }

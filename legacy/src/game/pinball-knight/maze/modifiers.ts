@@ -14,8 +14,9 @@
  *
  * DOM- and three-free: tested in modifiers.test.ts.
  */
+import { MAT_ICE, MAT_MUD, MAT_RUBBER, MAT_BRASS } from "../engine/surfaces";
 
-export type ModifierId = "none" | "flooded" | "blackout" | "overcharged" | "gilded" | "collapsing";
+export type ModifierId = "none" | "flooded" | "blackout" | "overcharged" | "gilded" | "collapsing" | "frozen" | "silted";
 
 export interface FloorModifier {
   id: ModifierId;
@@ -35,6 +36,18 @@ export interface FloorModifier {
    * the corridor pass reaches for first.
    */
   dealBias: string[];
+  /**
+   * What the floor is MADE OF (engine/surfaces.ts): relative weights over
+   * MaterialId, stamped as patches by maze/surface-paint.ts.
+   *
+   * This is the first modifier field that changes PHYSICS rather than a budget.
+   * It is still safe against the module's standing guarantee that "nothing here
+   * can affect connectivity", because the painter only ever rewrites what a
+   * tile is made of — it never moves one. An empty mix paints nothing.
+   */
+  surfaceMix: Record<number, number>;
+  /** Roughly what fraction of the floor the mix covers, 0..1. */
+  surfaceCoverage: number;
 }
 
 const BASE: Omit<FloorModifier, "id" | "label" | "flavour"> = {
@@ -45,6 +58,8 @@ const BASE: Omit<FloorModifier, "id" | "label" | "flavour"> = {
   trapdoorMult: 1,
   bonusItems: 0,
   dealBias: [],
+  surfaceMix: {},
+  surfaceCoverage: 0,
 };
 
 export const MODIFIERS: FloorModifier[] = [
@@ -64,6 +79,11 @@ export const MODIFIERS: FloorModifier[] = [
     dealBias: ["oil", "oil", "bumper"],
     partMult: 1.15,
     hazardMult: 1.2,
+    // The flavour text has promised "nothing here stops" since this modifier
+    // shipped; until surfaces existed the only thing backing it up was an oil
+    // deal bias. Ice patches make the claim literally true underfoot.
+    surfaceMix: { [MAT_ICE]: 1 },
+    surfaceCoverage: 0.3,
   },
   {
     // Half-lit, double-paid. The classic risk/reward dark floor.
@@ -84,6 +104,10 @@ export const MODIFIERS: FloorModifier[] = [
     partMult: 1.4,
     hordeMult: 1.25,
     dealBias: ["bumper", "slingshot", "glove"],
+    // Hot machinery = live rubber. Small patches, because rubber walls GAIN and
+    // a floor that is mostly rubber is a floor with no brakes anywhere.
+    surfaceMix: { [MAT_RUBBER]: 1 },
+    surfaceCoverage: 0.16,
   },
   {
     // Treasure floor: the armoury is fat, and so is what's guarding it.
@@ -94,6 +118,10 @@ export const MODIFIERS: FloorModifier[] = [
     bonusItems: 3,
     hordeMult: 1.6,
     hazardMult: 0.8,
+    // Brass bell-plate: the treasure floor is also the SCORING floor, since
+    // every strike on it is worth double on the chain.
+    surfaceMix: { [MAT_BRASS]: 1 },
+    surfaceCoverage: 0.22,
   },
   {
     // The floor is coming apart: hatches and pits everywhere, few torches.
@@ -106,6 +134,35 @@ export const MODIFIERS: FloorModifier[] = [
     hazardMult: 1.5,
     torchMult: 0.75,
     dealBias: ["pit", "trapdoor"],
+  },
+  {
+    // SURFACE-LED. The whole floor is a skating rink: you keep every unit of
+    // speed you build and almost none of your steering, so the route has to be
+    // chosen before you commit to it rather than corrected mid-ride. Fewer
+    // parts on purpose — the ICE is the obstacle, and stacking a dense table on
+    // top of it makes an unreadable floor rather than a hard one.
+    ...BASE,
+    id: "frozen",
+    label: "Frozen",
+    flavour: "black ice wall to wall · pick your line early",
+    partMult: 0.85,
+    hazardMult: 0.9,
+    surfaceMix: { [MAT_ICE]: 5, [MAT_MUD]: 1 },
+    surfaceCoverage: 0.62,
+  },
+  {
+    // SURFACE-LED, and the mirror of Frozen: mud kills chains, so a silted
+    // floor is where combo scoring goes to die and raw clearing pays instead.
+    // The bonus items are the compensation for a floor that refuses to be
+    // played stylishly.
+    ...BASE,
+    id: "silted",
+    label: "Silted",
+    flavour: "silt over everything · the chain dies where it touches",
+    bonusItems: 2,
+    hordeMult: 0.9,
+    surfaceMix: { [MAT_MUD]: 4, [MAT_BRASS]: 1 },
+    surfaceCoverage: 0.45,
   },
 ];
 

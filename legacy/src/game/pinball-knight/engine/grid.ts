@@ -44,6 +44,18 @@ export interface Grid {
    */
   arcs?: import("./tile-shape").ArcFeature[];
   arcIdx?: Int16Array;
+  /**
+   * Row-major per-tile SURFACE ids (surfaces.ts) — what the tile is MADE OF.
+   * Same layout as `t`. Default 0 is the neutral surface in BOTH vocabularies,
+   * so a grid that never assigns one plays exactly as it did before surfaces
+   * existed.
+   *
+   * One array serves walls and floors because a tile is never both: `isWalkable`
+   * decides whether a byte means a WallSurface or a FloorSurface. OPTIONAL so
+   * the ~40 hand-built test grids don't have to carry it; write through
+   * `ensureSurfaces(g)` and read through `surfaceAt(g,i,j)`.
+   */
+  surfaces?: Uint8Array;
 }
 
 export interface TilePos {
@@ -98,6 +110,28 @@ export function arcFeatureAt(
   if (i < 0 || j < 0 || i >= g.w || j >= g.h) return null;
   const a = g.arcIdx[idx(g, i, j)];
   return a >= 0 ? (g.arcs[a] ?? null) : null;
+}
+
+/** Lazily create the per-tile surface storage (see Grid.surfaces). */
+export function ensureSurfaces(g: Grid): void {
+  if (!g.surfaces) g.surfaces = new Uint8Array(g.w * g.h);
+}
+
+/**
+ * Per-tile surface id (surfaces.ts). Out of bounds, or a grid that carries no
+ * surface array, reads as 0 — the neutral surface in both tables — so every
+ * caller can read unconditionally and the physics never branches on absence.
+ */
+export function surfaceAt(g: Grid, i: number, j: number): number {
+  if (!g.surfaces) return 0;
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return 0;
+  return g.surfaces[idx(g, i, j)];
+}
+
+export function setSurface(g: Grid, i: number, j: number, v: number): void {
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return;
+  ensureSurfaces(g);
+  g.surfaces![idx(g, i, j)] = v;
 }
 
 /**

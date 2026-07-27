@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable, setTile, setShape } from "./maze/generator";
+import { type Grid, T_FLOOR, T_WALL, tileCenter, generateMaze, thickenWalls, mulberry32, isWalkable, setTile, setShape, setSurface } from "./maze/generator";
+import { WALL_RUBBER, WALL_ICE } from "./engine/surfaces";
 import { stampPrefabs, themeFor } from "./maze/prefabs";
 import { circleCollides, moveCircle, wallContact, computeArcCorners } from "./engine/collision";
 import { SHAPE_SLANT_NE, SHAPE_ARC } from "./engine/tile-shape";
@@ -52,7 +53,58 @@ describe("collision", () => {
   it("a zero move is a no-op", () => {
     const g = room();
     const p = tileCenter(g, 1, 1);
-    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null, hitKick: null, hitLane: null });
+    // hitSurface 0 = stone: nothing was touched, and 0 is also the neutral
+    // surface, so the pinball reflection can read it without a null check.
+    expect(moveCircle(g, p.x, p.z, R, 0, 0)).toEqual({ x: p.x, z: p.z, hitN: null, hitKick: null, hitLane: null, hitSurface: 0 });
+  });
+});
+
+/**
+ * SURFACE REPORTING — the seam that carries a wall's material to the physics.
+ *
+ * Worth its own block because this is the failure mode that would be invisible:
+ * if `hitSurface` never got populated, every wall in the game would keep
+ * bouncing exactly as it does today and the whole surface system would look
+ * like it was working while doing nothing. Painting the tile and asserting the
+ * id comes back is the only thing that proves the wire is connected.
+ */
+describe("wall surfaces reach the collider", () => {
+  it("reports the surface of the SQUARE wall that stopped the move", () => {
+    const g = room();
+    setSurface(g, 3, 2, WALL_RUBBER); // the pillar
+    const from = tileCenter(g, 2, 2);
+    const res = moveCircle(g, from.x, from.z, R, 1.2, 0); // drive east into it
+    expect(res.hitSurface).toBe(WALL_RUBBER);
+  });
+
+  it("reports 0 when the move touches nothing", () => {
+    const g = room();
+    setSurface(g, 3, 2, WALL_RUBBER);
+    const from = tileCenter(g, 1, 1);
+    expect(moveCircle(g, from.x, from.z, R, 0.1, 0).hitSurface).toBe(0);
+  });
+
+  it("reports the surface of a SHAPED wall, taken from the tile that resolved", () => {
+    // Slants are resolved by a different path than square walls (the corrective
+    // pass), so the two need separate cover — a fix to one does not fix the other.
+    const g = room();
+    setTile(g, 5, 1, T_WALL);
+    setShape(g, 5, 1, SHAPE_SLANT_NE);
+    setSurface(g, 5, 1, WALL_ICE);
+    const from = tileCenter(g, 5, 1);
+    const res = moveCircle(g, from.x, from.z, R, 0, 0);
+    expect(res.hitN).not.toBeNull(); // the slant did resolve
+    expect(res.hitSurface).toBe(WALL_ICE);
+  });
+
+  it("survives sub-stepping — a fast move keeps the surface it struck", () => {
+    // moveCircle sub-steps above MAX_STEP, and the surface is carried across
+    // sub-steps independently of hitN. A pinball at speed ALWAYS sub-steps, so
+    // losing it here would mean surfaces only ever worked while walking.
+    const g = room();
+    setSurface(g, 3, 2, WALL_RUBBER);
+    const from = tileCenter(g, 1, 2);
+    expect(moveCircle(g, from.x, from.z, R, 3.5, 0).hitSurface).toBe(WALL_RUBBER);
   });
 });
 

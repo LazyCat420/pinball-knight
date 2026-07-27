@@ -35,6 +35,9 @@ export {
   setShape,
   ensureArcs,
   arcFeatureAt,
+  ensureSurfaces,
+  surfaceAt,
+  setSurface,
   tileCenter,
   worldToTile,
 } from "../engine/grid";

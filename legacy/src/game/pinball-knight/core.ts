@@ -60,6 +60,7 @@ import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
+import { paintSurfaces } from "./maze/surface-paint";
 import { buildTrackFloor } from "./maze/track-floor";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
@@ -897,6 +898,17 @@ function startLevel(level: number): void {
       // set-pieces really are authored, and its spine boosters carry a
       // down-flow contract the re-aim would break).
       strictLaunchers: !!track,
+      // The plunger lane, when the track layer managed to fit one. decorate
+      // keeps every other kind of content out of it and lays its boosters.
+      chute: track?.chute ?? null,
+      // The island is geometry the maze layer built; decorate only flanks it.
+      orbit: track?.orbit ?? null,
+      // WALL GEOMETRY IS FINISHED. On a track floor every curved-wall family —
+      // the circuit's fillets, the arc sweeps, the orbit island and the artery
+      // banks — is authored by `buildTrackFloor` before decorate is called, so
+      // decorate places content into finished geometry instead of building more
+      // of it. The legacy branch passes nothing and keeps its own bank pass.
+      wallsAuthored: !!track,
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
     },
   );
@@ -918,6 +930,23 @@ function startLevel(level: number): void {
   plan.torches.forEach(markOcc);
   const lampPuzzlePlan = authorLampPuzzle(grid, plan.start, (i, j) => puzzleOccupied.has(`${i},${j}`), rng, lampCountFor(level));
   if (lampPuzzlePlan) plan.parts.push(...lampPuzzlePlan.lamps);
+
+  // ── SURFACES ── what the floor is MADE of (engine/surfaces.ts). Runs on the
+  // FINAL grid — after topology, shapes, cracks, prefabs and the lamp puzzle —
+  // because it only rewrites materials and must see the walls that survived.
+  //
+  // Seeded off (runSeed, level) but through its OWN derived stream inside
+  // paintSurfaces, NOT off `rng`: taking draws from the shared stream here
+  // would shift every later call and reroll the layout of every existing
+  // floor. This is the standing rule for new generation behaviour
+  // (ROUTE_MATH_PLAN Part 8) and it is why floors are bit-identical today.
+  paintSurfaces(grid, (state.runSeed ^ (level * 0x85ebca6b)) >>> 0, {
+    mix: modifier.surfaceMix,
+    coverage: modifier.surfaceCoverage,
+    // The arrival tile and the exit stay baseline: mud underfoot on spawn reads
+    // as broken controls, and terrain that steals the stairs is just a tax.
+    safeSpots: [tileCenter(grid, plan.start.i, plan.start.j), tileCenter(grid, plan.stairs.i, plan.stairs.j)],
+  });
 
   state.grid = grid;
   // Fresh fog every floor — the grid's dimensions change with depth, and
@@ -989,17 +1018,44 @@ function startLevel(level: number): void {
   // so a full pull straight down the lane lands a SKILL SHOT.
   {
     const p = state.player;
+    // On a chute floor the skill target must be REACHABLE BY THE LAUNCH — the
+    // launch line is the chute's axis and steering is capped at
+    // PLUNGER_AIM_MAX, so a target off to the side is a skill shot you cannot
+    // take however well you pull. Require it to sit ahead down the lane
+    // (a generous cone, since the target lives out in the playfield past the
+    // mouth); with no chute the old nearest-part rule stands unchanged.
+    const chuteDir = track?.chute ?? null;
     const skillPart = state.pinballParts
       .filter((q) => q.kind === "target" || q.kind === "bumper" || q.kind === "rollover")
       .map((q) => ({ q, d: Math.hypot(q.x - startPos.x, q.z - startPos.z) }))
       .filter((e) => e.d > 4 && e.d < PLUNGER_SKILL_RANGE)
+      .filter((e) => {
+        if (!chuteDir) return true;
+        const ax = (e.q.x - startPos.x) / e.d;
+        const az = (e.q.z - startPos.z) / e.d;
+        return ax * chuteDir.dirI + az * chuteDir.dirJ > 0.8;
+      })
       .sort((a, b) => a.d - b.d)[0]?.q;
     if (p) {
-      // Base launch line: toward the skill part if there is one, else straight
-      // down the widened artery toward the stairs.
+      // Base launch line, in priority order:
+      //
+      //  1. STRAIGHT DOWN THE CHUTE, when the floor has one. This is the whole
+      //     point of the lane — the plunger fires along the hallway, and ←/→
+      //     steer only within PLUNGER_AIM_MAX of it. Aiming at a scoring part
+      //     instead (which is what shipped) would point the launch diagonally
+      //     into the chute's own wall, since the chute is sealed by design.
+      //  2. Else the nearest scoring part, so a full pull still lands a skill
+      //     shot on a floor where no chute fitted.
+      //  3. Else straight at the stairs.
       let dx = 0;
       let dz = 1;
-      if (skillPart) {
+      const chute = track?.chute ?? null;
+      if (chute) {
+        // Tile deltas ARE world deltas here — both axes map straight through
+        // tileCenter — so the chute's cardinal is already the launch vector.
+        dx = chute.dirI;
+        dz = chute.dirJ;
+      } else if (skillPart) {
         dx = skillPart.x - p.x;
         dz = skillPart.z - p.z;
       } else if (state.stairs) {

@@ -150,7 +150,8 @@ import {
 } from "../constants";
 import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle, wallContact } from "../engine/collision";
-import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, type Grid } from "../maze/generator";
+import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, surfaceAt, type Grid } from "../maze/generator";
+import { wallSurface, floorSurface } from "../engine/surfaces";
 
 import { showPickupNote, showToast } from "../ui";
 import { addGold } from "../../../utils/gold-wallet";
@@ -1055,6 +1056,29 @@ function wallClearance(g: Grid, x: number, z: number, dirX: number, dirZ: number
 }
 
 /**
+ * Advance the bounce chain by what the struck SURFACE is worth.
+ *
+ * Three outcomes rather than one, because "how much combo is this bounce worth"
+ * is the cheapest lever a surface has on the ROUTE a player takes, and it is
+ * the one a stat multiplier can't express:
+ *  - normal (stone, rubber): +comboTicks and refresh the window — the old path
+ *    exactly, since stone's comboTicks is 1;
+ *  - ice: no growth, but the window still refreshes, so gliding a long icy wall
+ *    KEEPS a chain alive without building it. Ice is transport, not scoring;
+ *  - mud: the chain is dead. Refreshing a window on a broken chain would leave
+ *    a zero combo ticking down for no reason, so this zeroes both.
+ */
+function applySurfaceCombo(p: Player, surf: { comboTicks: number; breaksCombo: boolean }): void {
+  if (surf.breaksCombo) {
+    p.bounceCombo = 0;
+    p.bounceComboT = 0;
+    return;
+  }
+  p.bounceCombo += surf.comboTicks;
+  p.bounceComboT = comboWindow(p.bounceCombo);
+}
+
+/**
  * PINBALL PHYSICS — while p.momSpeed > 0 the knight carries real momentum and
  * bounces off walls instead of stopping. Owns the player (returns true) until
  * the momentum bleeds below PINBALL_EXIT_MULT·PLAYER_SPEED, then hands control
@@ -1181,7 +1205,14 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   steerLockT = Math.max(0, steerLockT - dt);
   // Oil kills the steering (you're on a slick); turbo sharpens it. Water marble
   // is slippery — weak grip, so momentum dominates (materialSteerMult).
-  const steerMul = (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult();
+  // FLOOR SURFACE grip (surfaces.ts). Read at the PRE-move position — this is
+  // the tile you are steering off, and by the friction block at the bottom of
+  // the frame you may be on a different one. Ice steering at 0.25 is what makes
+  // an icy room read as ice rather than as "fast stone": you keep the heading
+  // you brought, so entering one is a commitment.
+  const steerTile = worldToTile(g, p.x, p.z);
+  const steerMul =
+    (p.oilT > 0 ? OIL_STEER_FACTOR : p.turboT > 0 ? TURBO_STEER_MULT : 1) * materialSteerMult() * floorSurface(surfaceAt(g, steerTile.i, steerTile.j)).steerMult;
   let steerX = 0;
   let steerZ = 0;
   const aim = aimDirection(input, p.x, p.z);
@@ -1360,10 +1391,15 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         emitMaterialOnBounce(nx, nz);
         sfxBumper();
       } else {
-        const rest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
-        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest);
-        p.bounceCombo += 1;
-        p.bounceComboT = comboWindow(p.bounceCombo);
+        // SURFACE (surfaces.ts): what this slant is MADE of scales the plain
+        // reflection — rubber kicks, mud eats it, brass pays double combo. The
+        // kicker-band branch above is deliberately left alone: an authored
+        // kicker already IS a rubber band, and stacking a rubber surface on it
+        // would double-dip the one accelerator that is already the strongest.
+        const surf = wallSurface(res.hitSurface);
+        const rest = (materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION)) * surf.flatRestMult;
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest + surf.bounceAdd);
+        applySurfaceCombo(p, surf);
         notePocketBounce(p);
         state.vfx?.sparks(p.x + nx * PLAYER_R, 0.35, p.z + nz * PLAYER_R, nx, nz, 6 + Math.min(10, p.bounceCombo * 2));
         requestShake(0.1 + Math.min(0.12, p.bounceCombo * 0.02));
@@ -1414,9 +1450,14 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // springs and ramps (handled in touchPinballParts) are the other
     // accelerators. Every bounce still ticks the combo chain.
     const corner = blockedX && blockedZ;
+    // SURFACE (surfaces.ts): the material of the tile that actually stopped us,
+    // reported by moveCircle because only the collider knows which tile it was.
+    // Stone is all-1s/all-0s, so an unpainted floor takes the historical path
+    // through every line below.
+    const surf = wallSurface(res.hitSurface);
     // Spring Legs turns even flat walls into gainers — compound bouncing.
     // Marble materials override the flat restitution (diamond elastic, water slick).
-    const flatRest = materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION);
+    const flatRest = (materialFlatRestitution() ?? (p.springT > 0 ? SPRINGLEGS_RESTITUTION : PINBALL_WALL_RESTITUTION)) * surf.flatRestMult;
     if (corner) {
       // CORNER gain, combo-shaped (Parts 1+3): the restitution + flat kick
       // TAPER with combo depth (comboCornerRestitution/Add), and the result is
@@ -1424,13 +1465,17 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       // GAIN. A corner never drags you below the speed you already carry (a
       // plunger/spring can launch you above the ceiling at combo 0; the ceiling
       // just limits what BOUNCING alone can earn), so the launch feel is intact.
-      const gain = p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo) * materialCornerAddMult();
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, Math.min(gain, comboSpeedCeil(p.bounceCombo))));
+      const gain = Math.min(p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo) * materialCornerAddMult(), comboSpeedCeil(p.bounceCombo));
+      // The never-slower floor applies only to surfaces that GAIN. A damping
+      // surface has to be allowed to take speed off a corner or WALL_MUD would
+      // be a no-op in exactly the pocket it exists to punish — the floor would
+      // hand back every unit the mud just absorbed.
+      const next = surf.cornerMult >= 1 ? Math.max(p.momSpeed, gain * surf.cornerMult) : gain * surf.cornerMult;
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, next);
     } else {
-      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest);
+      p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest + surf.bounceAdd);
     }
-    p.bounceCombo += 1;
-    p.bounceComboT = comboWindow(p.bounceCombo);
+    applySurfaceCombo(p, surf);
     notePocketBounce(p);
     // Bounce juice scales with the combo — a corner hit throws a bigger burst.
     const n = currentWallNormal();
@@ -1523,7 +1568,13 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
     if (isWalkable(g, tile.i + di, tile.j + dj)) openN++;
   }
-  const surfMul = openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT;
+  // TOPOLOGY term (how open the tile is) × MATERIAL term (what it's made of).
+  // The two are deliberately multiplied rather than one replacing the other:
+  // the openness term is doing real work — a dead-end pocket must still bleed
+  // you down whatever it's paved with — so a surface COLOURS it. An ice pocket
+  // is still a pocket, just a fast one.
+  const floorSurf = floorSurface(surfaceAt(g, tile.i, tile.j));
+  const surfMul = (openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT) * floorSurf.frictionMult;
   // Part 5 — deep combos add a gentle global grip (comboFrictionMul), so a long
   // chain bleeds a little faster in open rooms and is nudged back onto the
   // tight machine route where its bounces belong. Oil/Turbo still zero it out.
@@ -1909,6 +1960,15 @@ export function updatePlayer(dt: number, input: InputHandle): void {
         state.vfx?.sparks(p.x - wall.nx * (PLAYER_R + 0.08), 0.3, p.z - wall.nz * (PLAYER_R + 0.08), wall.nx, wall.nz, 4);
       }
     }
+  }
+
+  // FLOOR SURFACE (surfaces.ts) also scales the ordinary WALK, so sand reads as
+  // heavy underfoot before you ever build momentum on it. Applied to the target
+  // rather than to the accel/friction rates, so the floor changes how fast you
+  // END UP going, not how twitchy the controls feel.
+  {
+    const wt = worldToTile(g, p.x, p.z);
+    targetSpeed *= floorSurface(surfaceAt(g, wt.i, wt.j)).walkMult;
   }
 
   const rate = (targetSpeed > curSpeed ? MOVE_ACCEL : MOVE_FRICTION) * dt;

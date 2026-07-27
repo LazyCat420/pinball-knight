@@ -11,7 +11,7 @@
  */
 import * as THREE from "three";
 import { state } from "./state";
-import { type Grid, T_FLOOR, T_WALL, at, isWalkable, setTile, tileCenter } from "./maze/generator";
+import { type Grid, T_FLOOR, T_WALL, at, isWalkable, setTile, setSurface, tileCenter } from "./maze/generator";
 import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
@@ -45,6 +45,9 @@ export function smashSecretAt(i: number, j: number): boolean {
   // so the horde can pour through immediately, not FLOW_INTERVAL later.
   for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
     setTile(g, band.i + di, band.j + dj, T_FLOOR);
+    // Wall→floor also flips which surface TABLE the tile's byte is read from;
+    // reset to neutral so the new doorway is plain rubble. See smashWallAt.
+    setSurface(g, band.i + di, band.j + dj, 0);
   }
   state.flowTimer = 0;
 
@@ -133,6 +136,11 @@ export function smashWallAt(i: number, j: number): boolean {
   if (at(g, i, j) !== T_WALL) return false;
 
   setTile(g, i, j, T_FLOOR);
+  // The tile just changed VOCABULARY: its surface byte was a WallSurface and is
+  // now read as a FloorSurface (engine/surfaces.ts shares one array between the
+  // two). Left alone, a smashed mud wall would come back as steel decking —
+  // both are id 3. Rubble underfoot is plain stone, so reset to the neutral 0.
+  setSurface(g, i, j, 0);
   state.flowTimer = 0; // let the horde re-path through the new gap immediately
 
   const inst = maze.wallAt.get(`${i},${j}`);

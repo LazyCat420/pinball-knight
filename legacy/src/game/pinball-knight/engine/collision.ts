@@ -11,7 +11,7 @@
  * Coordinates are world coords (maze centred on origin, 1 tile = 1 unit).
  * DOM- and three-free: tested.
  */
-import { type Grid, isWalkable, shapeAt, arcFeatureAt, idx } from "./grid";
+import { type Grid, isWalkable, shapeAt, arcFeatureAt, idx, surfaceAt } from "./grid";
 import { clamp } from "../../../utils/math";
 import {
   SHAPE_FULL,
@@ -223,9 +223,38 @@ export function computeArcCorners(g: Grid): ArcCorner[] {
     { wa: [0, 1], wb: [1, 0], diag: [1, 1], opp: [-1, -1], l1: [-1, 0], l2: [0, -1], qi: 1, qj: 1 }, // SE
     { wa: [0, 1], wb: [-1, 0], diag: [-1, 1], opp: [1, -1], l1: [1, 0], l2: [0, -1], qi: 0, qj: 1 }, // SW
   ] as const;
+  // A tile whose corner already carries REAL curved geometry is not a candidate.
+  //
+  // This function is the oldest of the three curve systems and the only one
+  // that builds no geometry at all: it finds square maze corners and gives them
+  // a momentum bank plus a rendered wedge. That was the whole toolkit once. It
+  // is not any more — `maze/arc-sweeps.ts` and `track-carve.publishArcs` author
+  // actual arc faces the collider and the mesh both derive from — and stacking
+  // the two on one corner is a visible double-dip: a wedge decal drawn over a
+  // swept curve, and a point-trigger redirect on top of a surface that already
+  // banks you. Censused at 327.8 corners per floor against ~84 real arc
+  // features, so this pass is numerous enough to bury the authored geometry if
+  // it is not told to stand down.
+  //
+  // The rule is deliberately "does any tile of this corner own an arc face",
+  // not "is this exact tile shaped" — a fillet's rim is the WALL side, and the
+  // crook we are testing is the FLOOR tile beside it.
+  const ownsArc = (i: number, j: number): boolean => {
+    if (!g.arcIdx) return false;
+    for (let dj = -1; dj <= 1; dj++) {
+      for (let di = -1; di <= 1; di++) {
+        const x = i + di;
+        const y = j + dj;
+        if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
+        if (g.arcIdx[y * g.w + x] >= 0) return true;
+      }
+    }
+    return false;
+  };
   for (let j = 1; j < g.h - 1; j++) {
     for (let i = 1; i < g.w - 1; i++) {
       if (!floor(i, j)) continue;
+      if (ownsArc(i, j)) continue;
       for (const c of crooks) {
         if (
           wall(i + c.wa[0], j + c.wa[1]) &&
@@ -270,6 +299,18 @@ export interface MoveResult {
    * launch along the bend instead (player.ts). Mutually exclusive with hitKick
    * in practice, since arc-sweeps authors one or the other per stretch. */
   hitLane: LaneHit | null;
+  /**
+   * The WALL SURFACE (surfaces.ts) of the tile that actually stopped this move
+   * — rubber, ice, mud, brass or plain stone. 0 when nothing was hit, which is
+   * also stone, so the pinball reflection can read it unconditionally.
+   *
+   * Reported here rather than looked up in player.ts because THIS is the only
+   * code that knows WHICH tile did the stopping. Recovering it downstream would
+   * mean re-deriving the contact tile from the resolved position, and a body
+   * clamped flush against a wall sits exactly on the boundary — the tile you'd
+   * round to is a coin flip between the wall and the floor in front of it.
+   */
+  hitSurface: number;
 }
 
 /**
@@ -286,22 +327,26 @@ function resolveShaped(
   r: number,
   mx: number,
   mz: number,
-): { gx: number; gz: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null } | null {
+): { gx: number; gz: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null; surface: number } | null {
   const i0 = Math.floor(gx - r);
   const i1 = Math.floor(gx + r);
   const j0 = Math.floor(gz - r);
   const j1 = Math.floor(gz + r);
-  let best: { pen: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null } | null = null;
+  let best: { pen: number; nx: number; nz: number; kick: KickBand | null; lane: LaneHit | null; surface: number } | null = null;
   for (let j = j0; j <= j1; j++) {
     for (let i = i0; i <= i1; i++) {
       const shape = shapeAt(g, i, j);
       if (!isShaped(shape) || isWalkable(g, i, j)) continue;
       const hit = resolveShapeOrArc(g, shape, i, j, gx, gz, r, mx, mz);
-      if (hit && (!best || hit.pen > best.pen)) best = { pen: hit.pen, nx: hit.nx, nz: hit.nz, kick: hit.kick ?? null, lane: hit.lane ?? null };
+      // The DEEPEST overlap wins, and its surface rides along with it — a slant
+      // is resolved as one face, so the face and the material must come from
+      // the same tile or a rubber bend could kick with stone's restitution.
+      if (hit && (!best || hit.pen > best.pen))
+        best = { pen: hit.pen, nx: hit.nx, nz: hit.nz, kick: hit.kick ?? null, lane: hit.lane ?? null, surface: surfaceAt(g, i, j) };
     }
   }
   if (!best) return null;
-  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz, kick: best.kick, lane: best.lane };
+  return { gx: gx + best.nx * (best.pen + EPS), gz: gz + best.nz * (best.pen + EPS), nx: best.nx, nz: best.nz, kick: best.kick, lane: best.lane, surface: best.surface };
 }
 
 /** One sweep-and-clamp move (square walls) + one corrective shaped pass. Grid
@@ -314,8 +359,14 @@ function moveCircleStep(
   r: number,
   dx: number,
   dz: number,
-): { gx: number; gz: number; hitN: { nx: number; nz: number } | null; hitKick: KickBand | null; hitLane: LaneHit | null } {
+): { gx: number; gz: number; hitN: { nx: number; nz: number } | null; hitKick: KickBand | null; hitLane: LaneHit | null; hitSurface: number } {
   let gx = gx0;
+  // The surface of whichever tile clamped us. Both axes write it; the LAST
+  // write wins, which for a corner impact (both axes blocked) means the Z wall
+  // decides. That is arbitrary but it must be DETERMINISTIC — the alternative,
+  // blending two surfaces, would make a corner between rubber and mud behave
+  // like neither and be untestable.
+  let hitSurface = 0;
 
   // ── X axis (square walls only; slant tiles are transparent here) ──
   if (dx !== 0) {
@@ -328,6 +379,7 @@ function moveCircleStep(
     for (let j = j0; j <= j1; j++) {
       if (blocksSquare(g, ti, j)) {
         gx = dir > 0 ? ti - r - EPS : ti + 1 + r + EPS;
+        hitSurface = surfaceAt(g, ti, j);
         break;
       }
     }
@@ -345,6 +397,7 @@ function moveCircleStep(
     for (let i = i0; i <= i1; i++) {
       if (blocksSquare(g, i, tj)) {
         gz = dir > 0 ? tj - r - EPS : tj + 1 + r + EPS;
+        hitSurface = surfaceAt(g, i, tj);
         break;
       }
     }
@@ -354,8 +407,9 @@ function moveCircleStep(
   // The requested move (dx,dz) IS the travel direction at contact, which is what
   // a booster lane needs to decide whether the ball is running with its grain.
   const shaped = resolveShaped(g, gx, gz, r, dx, dz);
-  if (shaped) return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz }, hitKick: shaped.kick, hitLane: shaped.lane };
-  return { gx, gz, hitN: null, hitKick: null, hitLane: null };
+  if (shaped)
+    return { gx: shaped.gx, gz: shaped.gz, hitN: { nx: shaped.nx, nz: shaped.nz }, hitKick: shaped.kick, hitLane: shaped.lane, hitSurface: shaped.surface };
+  return { gx, gz, hitN: null, hitKick: null, hitLane: null, hitSurface };
 }
 
 /** Largest per-step move that keeps the axis sweep tunnel-free (< 1 − 2r). */
@@ -380,15 +434,21 @@ export function moveCircle(g: Grid, x: number, z: number, r: number, dx: number,
   let hitN: { nx: number; nz: number } | null = null;
   let hitKick: KickBand | null = null;
   let hitLane: LaneHit | null = null;
+  let hitSurface = 0;
   for (let s = 0; s < steps; s++) {
     const r2 = moveCircleStep(g, gx, gz, r, sx, sz);
     gx = r2.gx;
     gz = r2.gz;
+    // Surface is kept from any sub-step that touched something, independently
+    // of hitN: a SQUARE wall reports a surface with no normal, and the pinball
+    // reflection for square walls is the axis flip, not the hitN branch. Gating
+    // this on hitN would silently make every flat wall in the game stone.
+    if (r2.hitSurface) hitSurface = r2.hitSurface;
     if (r2.hitN) {
       hitN = r2.hitN; // keep the most recent slant contact…
       hitKick = r2.hitKick; // …and the rubber (or lack of it) that went with it
       hitLane = r2.hitLane; // …and the lane, likewise
     }
   }
-  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN, hitKick, hitLane };
+  return { x: gx - g.w / 2, z: gz - g.h / 2, hitN, hitKick, hitLane, hitSurface };
 }
