@@ -19,6 +19,7 @@ import { state } from "../state";
 import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
+import { resetPickupSweep } from "../economy/pickups";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
@@ -148,6 +149,14 @@ export function installDevHooks(deps: DevHookDeps): void {
       piles: pilesOnFloor(floor ?? state.level),
       resume: loadResumeFloor(),
       onFloor: state.groundItems.filter((g) => g.corpseId).length,
+      // WHERE the pile actually materialised, not where it was saved. The two
+      // differ: spawnCorpsePiles walks the stored spot out to the nearest
+      // standable tile, so a harness that teleports to the SAVED x/z can miss
+      // the items entirely and read a refusal that isn't one.
+      onFloorItems: state.groundItems
+        .filter((g) => g.corpseId)
+        .map((g) => ({ kind: g.kind, id: g.id, x: g.x, z: g.z, owner: g.corpseOwner })),
+      player: state.player ? { x: state.player.x, z: state.player.z } : null,
     });
     // Dev: the floor map's exploration state — the only way a harness can see
     // whether fog is actually being revealed (the minimap is a canvas).
@@ -344,6 +353,23 @@ export function installDevHooks(deps: DevHookDeps): void {
         onAbandon: () => exitDungeonGame(),
       });
       return true;
+    };
+    // Dev: put the knight at a world position. `__dungeonTeleport(6, 6)`.
+    // Walking a headless bot to a specific tile is unreliable (WASD is
+    // screen-relative and the maze is generated), so without this a harness
+    // cannot stand on a thing and assert what happens — which is exactly how
+    // the corpse-pile pickup gate has to be tested.
+    //
+    // resetPickupSweep() is LOAD-BEARING: the pickup sweep measures distance to
+    // the SEGMENT the knight travelled this step, so a teleport would draw a
+    // line clean across the floor and hoover up every item on it.
+    (window as unknown as { __dungeonTeleport?: (x: number, z: number) => unknown }).__dungeonTeleport = (x: number, z: number) => {
+      const p = state.player;
+      if (!p || !Number.isFinite(x) || !Number.isFinite(z)) return false;
+      p.x = x;
+      p.z = z;
+      resetPickupSweep();
+      return { x: p.x, z: p.z };
     };
     // Dev: jump straight to a depth. The merchant, the magician and the reaper
     // all gate on level, so a harness that can't change floors can't test them.

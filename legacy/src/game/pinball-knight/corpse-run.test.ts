@@ -7,6 +7,7 @@ import {
   clearResumeFloor,
   floorsWithPiles,
   loadResumeFloor,
+  localKnightId,
   pilesOnFloor,
   saveResumeFloor,
   __resetCorpseCache,
@@ -33,12 +34,13 @@ afterEach(() => {
 describe("corpse piles", () => {
   it("survives a save/load round-trip", () => {
     stubStorage();
-    addPile(7, 3, 4, "peer-a", KIT);
+    const me = localKnightId();
+    addPile(7, 3, 4, me, KIT);
     __resetCorpseCache(); // simulate a fresh session reading the same storage
     const piles = pilesOnFloor(7);
     expect(piles).toHaveLength(1);
     expect(piles[0].items[0]).toMatchObject({ kind: "weapon", id: "sword", durability: 40 });
-    expect(piles[0].owner).toBe("peer-a");
+    expect(piles[0].owner).toBe(me);
   });
 
   it("ACCUMULATES piles — dying again never replaces the pile you were going for", () => {
@@ -128,6 +130,72 @@ describe("corpse ownership", () => {
   it("leaves a solo/offline pile lootable — there is no second claimant", () => {
     expect(canLoot({ ...pile, owner: "" }, null)).toBe(true);
     expect(canLoot({ ...pile, owner: "" }, "peer-b")).toBe(true);
+  });
+});
+
+/**
+ * THE LOCKOUT. Piles used to be stamped with `myId()` — the POOL SOCKET id,
+ * minted per connection. So the moment you reconnected (or came back the next
+ * day, or played offline where `myId()` is null) your own kit failed `canLoot`
+ * and the game told you it was "another knight's kit — not yours to take".
+ * Every corpse a player had ever left was permanently unrecoverable.
+ */
+describe("your own kit outlives the socket that dropped it", () => {
+  it("is lootable OFFLINE, where the pool id is null", () => {
+    stubStorage();
+    const me = localKnightId();
+    expect(canLoot({ id: "p", floor: 7, x: 0, z: 0, owner: me, items: KIT }, null)).toBe(true);
+  });
+
+  it("is lootable after a reconnect handed out a different socket id", () => {
+    stubStorage();
+    const me = localKnightId();
+    expect(canLoot({ id: "p", floor: 7, x: 0, z: 0, owner: me, items: KIT }, "a-brand-new-socket")).toBe(true);
+  });
+
+  it("keeps the same knight id across sessions", () => {
+    const store: Record<string, string> = {};
+    stubStorage(store);
+    const first = localKnightId();
+    __resetCorpseCache(); // new session, same browser storage
+    expect(localKnightId()).toBe(first);
+  });
+
+  it("ADOPTS a pile stamped with a dead socket id, so old corpses un-strand", () => {
+    // Exactly what a player who died under the broken version has in storage.
+    // Nothing ever writes another player's pile into your save, so a foreign
+    // owner here is always a stale socket id — never a real second claimant.
+    stubStorage({
+      "pinball-knight-corpse-runs": JSON.stringify({
+        piles: [{ id: "c5-old", floor: 5, x: 1, z: 2, owner: "socket-from-a-dead-session", items: KIT }],
+      }),
+    });
+    const piles = pilesOnFloor(5);
+    expect(piles).toHaveLength(1);
+    expect(piles[0].owner).toBe(localKnightId());
+    expect(canLoot(piles[0], null)).toBe(true);
+    expect(piles[0].items[0]).toMatchObject({ kind: "weapon", id: "sword" });
+  });
+
+  it("persists the adoption, so the repair happens once", () => {
+    const store = {
+      "pinball-knight-corpse-runs": JSON.stringify({
+        piles: [{ id: "c5-old", floor: 5, x: 1, z: 2, owner: "socket-from-a-dead-session", items: KIT }],
+      }),
+    };
+    stubStorage(store);
+    const me = localKnightId();
+    pilesOnFloor(5);
+    const written = JSON.parse(localStorage.getItem("pinball-knight-corpse-runs")!) as { piles: Array<{ owner: string }> };
+    expect(written.piles[0].owner).toBe(me);
+  });
+
+  it("still refuses a pile that is genuinely someone else's live session", () => {
+    // The co-op promise survives: adoption only ever runs on what LOAD reads out
+    // of local storage. A pile handed to canLoot directly with a foreign owner —
+    // the shape a future wire-synced pile would have — is still refused.
+    stubStorage();
+    expect(canLoot({ id: "p", floor: 7, x: 0, z: 0, owner: "peer-b", items: KIT }, "peer-c")).toBe(false);
   });
 });
 

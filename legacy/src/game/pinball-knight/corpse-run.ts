@@ -64,12 +64,48 @@ export const MAX_PILES_PER_FLOOR = 12;
 
 const KEY = "pinball-knight-corpse-runs";
 const RESUME_KEY = "pinball-knight-resume-floor";
+const OWNER_KEY = "pinball-knight-knight-id";
 
 interface Saved {
   piles: CorpsePile[];
 }
 
 let cached: Saved | null = null;
+
+/**
+ * THIS BROWSER's stable knight id.
+ *
+ * The bug this exists to kill: piles used to be stamped with `myId()` — the
+ * POOL SOCKET id, which is minted per connection. Die while connected, come
+ * back tomorrow (or just reconnect), and `canLoot` compared your kit's owner
+ * against a socket id that no longer exists. Every pile you had ever left was
+ * permanently unlootable, and the game told you it was "another knight's kit".
+ * Offline it was worse: `myId()` is null, so nothing ever matched.
+ *
+ * An owner id has to outlive the socket, because the thing it identifies — "the
+ * person at this keyboard" — does. Generated once and kept.
+ */
+let memoryOwner = "";
+export function localKnightId(): string {
+  if (memoryOwner) return memoryOwner;
+  try {
+    const stored = localStorage.getItem(OWNER_KEY);
+    if (stored) {
+      memoryOwner = stored;
+      return memoryOwner;
+    }
+  } catch {
+    /* fall through to a session-scoped id */
+  }
+  memoryOwner = `k-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  try {
+    localStorage.setItem(OWNER_KEY, memoryOwner);
+  } catch {
+    // Session-only. Storage being unavailable also means no piles were loaded,
+    // so there is nothing for the mismatch to strand.
+  }
+  return memoryOwner;
+}
 
 function isItem(v: unknown): v is CorpseItem {
   if (!v || typeof v !== "object") return false;
@@ -96,19 +132,30 @@ function isPile(v: unknown): v is CorpsePile {
 function load(): Saved {
   if (cached) return cached;
   const out: Saved = { piles: [] };
+  let adopted = false;
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw) as Record<string, unknown>;
       if (Array.isArray(p.piles)) {
+        const me = localKnightId();
         for (const entry of p.piles) {
           if (!isPile(entry)) continue; // hand-edited or corrupt → skip, don't throw
+          const stored = typeof (entry as CorpsePile).owner === "string" ? (entry as CorpsePile).owner : "";
+          // ADOPTION. Every pile in THIS browser's storage was written by
+          // `addPile` on THIS machine's death — nothing ever puts another
+          // player's pile in your save, and corpse items carry no `nid`, so
+          // they are excluded from the co-op snapshot too. A stored owner that
+          // isn't us is therefore always a dead socket id from the old scheme,
+          // never a real second claimant. Rewriting it here is what un-strands
+          // the kit of anyone who already died under the broken version.
+          if (stored && stored !== me) adopted = true;
           out.piles.push({
             id: entry.id,
             floor: Math.floor(entry.floor),
             x: entry.x,
             z: entry.z,
-            owner: typeof (entry as CorpsePile).owner === "string" ? (entry as CorpsePile).owner : "",
+            owner: stored && stored !== me ? me : stored,
             items: (entry.items as unknown[]).filter(isItem),
           });
         }
@@ -119,6 +166,7 @@ function load(): Saved {
     // still works; you just can't recover a corpse from a previous session.
   }
   cached = out;
+  if (adopted) save(); // persist the repair so it happens once, not every load
   return out;
 }
 
@@ -196,6 +244,12 @@ export function clearPile(id: string): void {
  */
 export function canLoot(pile: CorpsePile, viewerId: string | null): boolean {
   if (!pile.owner) return true;
+  // THIS BROWSER's own kit, whatever socket it is on right now — including no
+  // socket at all. `viewerId` is the pool id, which is null offline and a fresh
+  // string on every reconnect; gating solely on it is what locked players out
+  // of their own corpse (see localKnightId). The pool id still counts, so a
+  // pile stamped by a live session in the same pool matches either way.
+  if (pile.owner === localKnightId()) return true;
   return pile.owner === viewerId;
 }
 
@@ -232,7 +286,10 @@ export function clearResumeFloor(): void {
   }
 }
 
-/** Test seam — drops the memo so a fresh localStorage is re-read. */
+/** Test seam — drops the memos so a fresh localStorage is re-read. The knight
+ * id is memoised too, so a test simulating a new session must clear both or it
+ * keeps the previous stub's identity. */
 export function __resetCorpseCache(): void {
   cached = null;
+  memoryOwner = "";
 }

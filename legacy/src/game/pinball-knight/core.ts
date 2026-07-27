@@ -245,7 +245,7 @@ import { createFog, revealAround, exploredCount, exploredFraction } from "./fog"
 import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
 import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
 import { loadBestDepth, saveBestDepth } from "./best-depth";
-import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, type CorpseItem } from "./corpse-run";
+import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, localKnightId, type CorpseItem } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity } from "./entities/combo-curve";
@@ -1732,7 +1732,11 @@ function spawnCorpsePiles(grid: Grid, level: number): void {
     }
     const centre = tileCenter(grid, t.i, t.j);
     pile.items.forEach((item, n) => {
-      const paint = ITEM_PAINTS[item.id];
+      // A CARD in a pile is an INSTANCE id ("spidersilk#4s") and ITEM_PAINTS is
+      // keyed by card KIND, so the raw lookup misses and the `!paint` guard
+      // below would drop the item silently — invisible on the floor AND
+      // unrecoverable. cardBase is a no-op on every other kind's id.
+      const paint = ITEM_PAINTS[item.id] ?? ITEM_PAINTS[cardBase(item.id)];
       if (!paint) return; // an id from an older build — skip the sprite, keep the save
       const sprite = createStaticSprite(paint);
       // Fan out on a small ring; index 0 sits dead centre on the death spot.
@@ -1812,7 +1816,10 @@ function onPlayerDeath(): void {
   // about how they quit.
   const dropped = collectCorpseItems();
   const p = state.player;
-  addPile(state.level, p?.x ?? 0, p?.z ?? 0, myId() ?? "", dropped);
+  // The STABLE knight id, not `myId()`. The pool socket id is minted per
+  // connection, so a pile stamped with it became unlootable the moment you
+  // reconnected — your own kit, refused as "another knight's".
+  addPile(state.level, p?.x ?? 0, p?.z ?? 0, localKnightId(), dropped);
   // The floor you DIED on — not the deepest you reached. That difference is the
   // feature: the tavern sends you back to where your stuff is.
   saveResumeFloor(state.level);
