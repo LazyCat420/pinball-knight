@@ -434,6 +434,12 @@ export type PinballPartKind =
   | "spring"
   | "ramp"
   | "booster"
+  // The booster family — a corner that accelerates you round a turn, a curved
+  // lane that carries you along an authored arc, and a kicker that hops you
+  // clean over a wall band. See maze/decorate.ts PartSpotKind.
+  | "boostcorner"
+  | "boostcurve"
+  | "jumppad"
   | "deflector"
   | "glove"
   | "oil"

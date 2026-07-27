@@ -21,6 +21,8 @@ import { chuteTiles, type LaunchChute } from "./track-launch";
 // module's public surface and callers/tests import it from decorate.
 export { traceArtery };
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
+import { buildFlowField, descend, flowDrop, isDownhill, phiAt, steepestDown, UNREACHED } from "./flow-orient";
+import { breakFlowLoops } from "./flow-loops";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
 export interface Torch extends TilePos {
@@ -62,6 +64,13 @@ export type PartSpotKind =
   | "spring"
   | "ramp"
   | "booster"
+  // ── The booster FAMILY (live QA: "we keep recycling this one type of
+  // booster… we need corner booster, curved boosters, more jumpers"). Censused
+  // before they existed: `booster` was 73% of all launch furniture on the
+  // floor (2471 of 3364) and every one of them was the same flat straight pad.
+  | "boostcorner"
+  | "boostcurve"
+  | "jumppad"
   | "deflector"
   | "glove"
   | "oil"
@@ -260,7 +269,20 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 }
 
 /** Launch parts that fling the player — they need clear RUNWAY to be worth it. */
-const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper"]);
+//
+// `jumppad` is in: it fires along a single cardinal like the rest, and every
+// consumer already skips `vault` parts, which is what jump pads are.
+//
+// `boostcorner` and `boostcurve` are deliberately OUT, for two different
+// reasons worth stating so neither gets "tidied" in later:
+//   · a corner booster's `dir` is the leg the ball ARRIVES on, not the leg it
+//     fires along (same convention as `deflector`, which is also absent). A
+//     pass that read `dir` as a fire direction would re-aim the entry;
+//   · a curved booster's heading is a TANGENT, not a cardinal, so it fails the
+//     `|dirI| + |dirJ| === 1` guard every one of these consumers applies —
+//     out by construction, and listed here only so that is on purpose.
+// maze/flow-loops.ts handles both, via its own `exitRay`.
+const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper", "jumppad"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
 /**
  * A BEND's curve-carry booster needs more runway than a straight-run pad. It
@@ -275,16 +297,52 @@ const CARRY_RUNWAY = 3;
 /**
  * PATH-FIRST flow: the "speed up" parts must shove you ONWARD toward the exit,
  * not back the way you came (the "booster that just sends you back" bug). We
- * orient these down the dist-from-start gradient. `spring` (a dead-end plunger,
- * aims out the one opening) and `flipper` (a redirect) are deliberately NOT here
- * — their direction is already meaningful.
+ * orient these down Φ, the distance-to-stairs field (maze/flow-orient.ts).
+ *
+ * ── What this set used to be, and what it cost ───────────────────────────
+ *
+ * `["ramp", "slingshot"]`. `booster` and `flipper` were both absent, and the
+ * comment justified the omission for `flipper` ("a redirect — its direction is
+ * already meaningful") while never mentioning `booster` at all. A part not in
+ * this set takes its heading from `classifyTopology`, which resolves a straight
+ * run's two ends with `rng() < 0.5`. So the single most common launch part on
+ * the floor was aimed by a coin flip.
+ *
+ * Censused over 78 floors on the shipping path, before this line changed:
+ *   non-spine boosters firing back toward the spawn   253/442  (57.2%)
+ *   flippers                                          130/306  (42.5%)
+ *   every launch part on the floor                    544/3364 (16.2%)
+ *
+ * A flipper's direction IS meaningful — it is a redirect — but "meaningful" was
+ * doing no work when the leg it redirected onto was picked at random from the
+ * junction's four. Aiming it down-flow keeps the redirect and removes the coin.
+ *
+ * `spring` stays out: it lives on a dead end and has exactly one opening to aim
+ * out of, so there is no choice to make and forcing one would only fail.
  */
-const FORWARD_FLOW_KINDS = new Set<string>(["ramp", "slingshot"]);
+const FORWARD_FLOW_KINDS = new Set<string>(["ramp", "slingshot", "booster", "flipper", "jumppad"]);
 /**
  * …but a table needs the odd rebound, so leave this fraction of speed parts as
  * a deliberate kickback rather than a pure conveyor belt toward the stairs.
+ *
+ * NOT applied to route (`spine: true`) parts, and that asymmetry is the design:
+ * the routes are the floor's legible one-way structure and a random reversal in
+ * one is indistinguishable from the bug this wave fixes. The kickbacks belong to
+ * the loose corridor furniture, where a rebound reads as a rebound.
  */
-const KICKBACK_CHANCE = 0.15;
+const KICKBACK_CHANCE = 0.12;
+/**
+ * ALTERNATE ROUTES (see `alternateRoutes`): how many extra downhill roads a
+ * floor gets besides the traced artery, how far a new road's head must sit from
+ * every already-routed tile, and the shortest run that counts as a road at all
+ * rather than a rib hanging off one.
+ */
+const ALT_ROUTES_MAX = 3;
+const ALT_ROUTE_GAP = 6;
+const ALT_ROUTE_MIN_LEN = 10;
+/** Tiles an alternate road overlaps the road it merges into, so its last pads
+ *  fire into that road's pads instead of onto bare floor. See `alternateRoutes`. */
+const ALT_ROUTE_MERGE_RUN = 6;
 /**
  * CHAIN SEEDING — the thing that makes a floor read as a pinball TABLE rather
  * than a maze with parts sprinkled in it.
@@ -695,7 +753,7 @@ const DUEL_RANGE = 12;
  * matters most: two opposed launchers with a WALL between them are not a duel,
  * they are two ordinary launchers, and "fixing" them would churn good floors.
  */
-function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot): boolean {
+function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot, all: readonly PinballPartSpot[] = []): boolean {
   if (a.dirI !== -b.dirI || a.dirJ !== -b.dirJ) return false; // facings must oppose
   const di = a.dirI;
   const dj = a.dirJ;
@@ -705,6 +763,29 @@ function firesAt(g: Grid, a: PinballPartSpot, b: PinballPartSpot): boolean {
   if (across !== 0 || along <= 0 || along > DUEL_RANGE) return false;
   for (let s = 1; s < along; s++) {
     if (at(g, a.i + di * s, a.j + dj * s) !== T_FLOOR) return false; // walled off — harmless
+  }
+  // ── INTERCEPTED LANES ARE NOT DUELS ─────────────────────────────────────
+  //
+  // A wall between two opposed launchers already disqualifies the pair; so does
+  // another LAUNCHER between them, for the same reason and with the same force.
+  // The ping-pong needs the ball to travel from one to the other and back, and a
+  // launcher in the middle sets a fresh heading — the ball never completes the
+  // round trip.
+  //
+  // This is not hypothetical tidying. Once routes are laid on Φ, two roads
+  // CONVERGING on the same corridor from opposite ends is a normal, legible
+  // shape: both are downhill, they meet at a local minimum, and the part at that
+  // minimum turns the ball out of the lane. Observed on the very first floor
+  // that exercised it — boosters at (15,15)+j and (15,27)−j either side of a
+  // corner booster at (15,22), Φ 60 → 53 ← 58. Without this clause the pass
+  // would "repair" a merge junction by re-aiming one arm back up its own road,
+  // manufacturing the defect it exists to remove.
+  for (const q of all) {
+    if (q === a || q === b) continue;
+    if (!LAUNCH_KINDS.has(q.kind) && q.kind !== "boostcorner" && q.kind !== "boostcurve") continue;
+    const qa = di !== 0 ? (q.i - a.i) * di : (q.j - a.j) * dj;
+    const qc = di !== 0 ? q.j - a.j : q.i - a.i;
+    if (qc === 0 && qa > 0 && qa < along) return false; // something catches the ball first
   }
   return true;
 }
@@ -758,7 +839,7 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
     let duel: [PinballPartSpot, PinballPartSpot] | null = null;
     outer: for (let x = 0; x < live.length; x++) {
       for (let y = x + 1; y < live.length; y++) {
-        if (!firesAt(g, live[x], live[y])) continue;
+        if (!firesAt(g, live[x], live[y], parts)) continue;
         if (live[x].spine && live[y].spine) continue; // neither may move — the runtime guard owns this one
         duel = [live[x], live[y]];
         break outer;
@@ -780,7 +861,7 @@ export function breakLaunchDuels(g: Grid, parts: PinballPartSpot[]): number {
         if (run <= bestRun) continue;
         // Don't trade this duel for another one.
         const probe = { ...p, dirI: di, dirJ: dj };
-        if (live.some((q) => q !== p && q !== foe && (firesAt(g, probe, q) || firesAt(g, q, probe)))) continue;
+        if (live.some((q) => q !== p && q !== foe && (firesAt(g, probe, q, parts) || firesAt(g, q, probe, parts)))) continue;
         bestRun = run;
         best = [di, dj];
       }
@@ -867,7 +948,7 @@ function furnishRooms(
   rng: () => number,
   start: TilePos,
   g: Grid,
-  dist: Int32Array,
+  phi: Int32Array,
   forceVault = false,
   onSpine: (i: number, j: number) => boolean = () => false,
 ): { rooms: PlannedRoom[]; spawns: TilePos[]; items: ItemDrop[]; parts: PinballPartSpot[] } {
@@ -936,10 +1017,14 @@ function furnishRooms(
       // flip — a speedway that launches you back at the door is the "speed up
       // that sends you back" bug at room scale. Compare dist-from-start at the
       // two ends of the long axis; a small kickback chance keeps some variety.
+      // On Φ: the lane runs toward the LOWER distance-to-stairs end, so a
+      // speedway is a stretch of the same one-way system as every other route
+      // rather than a room-local decision that can contradict the corridor it
+      // opens onto.
       const midShort = alongW ? room.j0 + Math.floor(room.h / 2) : room.i0 + Math.floor(room.w / 2);
-      const dLo = alongW ? distAt(g, dist, room.i0 + 1, midShort) : distAt(g, dist, midShort, room.j0 + 1);
-      const dHi = alongW ? distAt(g, dist, room.i0 + room.w - 2, midShort) : distAt(g, dist, midShort, room.j0 + room.h - 2);
-      let sign = dHi >= dLo ? 1 : -1;
+      const dLo = alongW ? phiAt(g, phi, room.i0 + 1, midShort) : phiAt(g, phi, midShort, room.j0 + 1);
+      const dHi = alongW ? phiAt(g, phi, room.i0 + room.w - 2, midShort) : phiAt(g, phi, midShort, room.j0 + room.h - 2);
+      let sign = dHi <= dLo ? 1 : -1;
       if (rng() < KICKBACK_CHANCE) sign = -sign;
       const longLen = alongW ? room.w : room.h;
       const shortLen = alongW ? room.h : room.w;
@@ -1125,6 +1210,132 @@ function assignCornerShapes(g: Grid): void {
 }
 
 /**
+ * How far the route's smoothed heading may differ from the cardinal step under
+ * a pad before the pad becomes a CURVED one. Expressed as |sin θ|, so 0.34 is
+ * about 20° — below that the difference is not visible on an isometric tile and
+ * a curved pad would only add noise.
+ */
+const TANGENT_SNAP = 0.34;
+/** Tiles either side of a pad that the smoothed tangent averages over. Three is
+ *  a full staircase step (over-under-over) without reaching into the next bend. */
+const TANGENT_WINDOW = 3;
+
+/**
+ * The route's local heading at `k`, as a unit vector: the direction from the
+ * tile `TANGENT_WINDOW` back to the tile `TANGENT_WINDOW` ahead.
+ *
+ * Falls back to the cardinal step when the window degenerates (near either end
+ * of a route, or on a route that doubles back inside the window so the two
+ * samples coincide) — a zero-length tangent would normalise to NaN and a NaN
+ * heading is a part that pushes the player nowhere at all.
+ */
+function smoothTangent(route: TilePos[], k: number, di: number, dj: number): [number, number] {
+  const a = route[Math.max(0, k - TANGENT_WINDOW)];
+  const b = route[Math.min(route.length - 1, k + TANGENT_WINDOW)];
+  const vx = b.i - a.i;
+  const vz = b.j - a.j;
+  const len = Math.hypot(vx, vz);
+  if (len < 1e-6) return [di, dj];
+  return [vx / len, vz / len];
+}
+
+/**
+ * ALTERNATE ROUTES — the other ways down the floor.
+ *
+ * The station pass used to furnish exactly one path: `traceArtery` from spawn
+ * to stairs. That is a single set route, and live QA named it — the floor wants
+ * "MOST of the tracks going one direction but multiple paths that are
+ * possible", which a lone artery cannot be however well it is aimed.
+ *
+ * The grown circuit already HAS the alternatives (track-grow guarantees circuit
+ * rank ≥ 2, i.e. at least two independent cycles), they were simply never
+ * furnished. Finding them needs no new topology: take lane tiles that are FAR
+ * from everything already routed, and descend Φ from each. Every descent
+ * terminates at the exit, so each one is a genuine complete route — and because
+ * they share the field, a junction where two routes meet has both arms pointing
+ * the same way instead of one arm shoving you back up the other.
+ *
+ * Routes stop the moment they touch an existing one (`stop`): past the merge the
+ * corridor is already furnished, and a second row of pads there would double-pad
+ * one lane while leaving another bare.
+ *
+ * `seedGap` is the only tuning here: how far a candidate head must sit from
+ * every routed tile. Too small and the "alternates" are ribs hanging off the
+ * artery; large enough and they are separate roads.
+ */
+function alternateRoutes(
+  g: Grid,
+  phi: Int32Array,
+  primary: TilePos[],
+  start: TilePos,
+  stairs: TilePos,
+  rng: () => number,
+  opts: { max?: number; seedGap?: number; minLen?: number } = {},
+): TilePos[][] {
+  const max = opts.max ?? ALT_ROUTES_MAX;
+  const seedGap = opts.seedGap ?? ALT_ROUTE_GAP;
+  const minLen = opts.minLen ?? ALT_ROUTE_MIN_LEN;
+  const routed = new Set<number>(primary.map((p) => idx(g, p.i, p.j)));
+  const out: TilePos[][] = [];
+  // Candidate heads: walkable tiles ordered by Φ descending, so a route starts
+  // as far from the exit as it can and therefore covers as much floor as it
+  // can. Shuffled within the sweep so two floors with the same shape don't pick
+  // identical heads; the descent itself stays rng-free.
+  const heads: TilePos[] = [];
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (!isWalkable(g, i, j)) continue;
+      const v = phiAt(g, phi, i, j);
+      if (v >= UNREACHED || v < minLen) continue;
+      heads.push({ i, j });
+    }
+  }
+  const pool = shuffled(heads, rng).sort((a, b) => phiAt(g, phi, b.i, b.j) - phiAt(g, phi, a.i, a.j));
+  const farFromRouted = (p: TilePos): boolean => {
+    for (let dj = -seedGap; dj <= seedGap; dj++) {
+      for (let di = -seedGap; di <= seedGap; di++) {
+        if (Math.abs(di) + Math.abs(dj) > seedGap) continue;
+        const ni = p.i + di;
+        const nj = p.j + dj;
+        if (ni < 0 || nj < 0 || ni >= g.w || nj >= g.h) continue;
+        if (routed.has(idx(g, ni, nj))) return false;
+      }
+    }
+    return true;
+  };
+  for (const head of pool) {
+    if (out.length >= max) break;
+    if (head.i === start.i && head.j === start.j) continue;
+    if (!farFromRouted(head)) continue;
+    // ── RUN ON PAST THE MERGE, don't stop dead at it.
+    //
+    // Stopping at the first already-routed tile is the obvious rule and it
+    // leaves every alternate road ending in mid-air: its last pad fires at a
+    // bare tile of the road it just joined, so the knight is shoved onto the
+    // highway and then coasts. Measured with the hard stop, 28.8% of route pads
+    // had NO part anywhere along their fire ray — and widening the search from
+    // 4 tiles to 12 recovered only 1.6 points of that, so it was a genuine
+    // chain break rather than a pad just out of reach.
+    //
+    // Overlapping the last stretch fixes it at the cause: the tiles are already
+    // furnished, `layStationSpine` skips taken tiles, and the joining road's
+    // final pads now fire into the highway's existing pads. Which is what a
+    // slip road is — you merge INTO traffic, you don't stop at the junction.
+    let overlap = 0;
+    const path = descend(g, phi, head, {
+      stop: (p) => (routed.has(idx(g, p.i, p.j)) ? ++overlap > ALT_ROUTE_MERGE_RUN : false),
+    });
+    // A route that merges after three tiles is a rib, not a road. Measured on
+    // the pre-merge length, so a road cannot qualify on its overlap alone.
+    if (path.length - overlap < minLen) continue;
+    for (const p of path) routed.add(idx(g, p.i, p.j));
+    out.push(path);
+  }
+  void stairs; // the descent's sink by construction; named for the reader
+  return out;
+}
+
+/**
  * LAY THE STATION SPINE — the connected booster route that makes a floor a
  * pinball table you TRAVERSE rather than a scatter of parts you wander past.
  *
@@ -1149,6 +1360,7 @@ function assignCornerShapes(g: Grid): void {
  */
 function layStationSpine(
   g: Grid,
+  phi: Int32Array,
   spine: TilePos[],
   start: TilePos,
   stairs: TilePos,
@@ -1196,14 +1408,59 @@ function layStationSpine(
     // where every pad still hands you to the next — no dead coast.
     const stride = Math.max(MIN_STRIDE, Math.min(MAX_STRIDE, Math.ceil((end - k) / 4)));
     for (let t = k; t < end; t += stride) {
+      // ── SLIDE, DON'T SKIP. A stride tile that fails a guard used to be
+      // dropped outright, which is fine when the guards almost never fire and
+      // wrong now that a pad must also be strictly downhill: measured, the
+      // chain rate (pads that hand off to another route part within 4 tiles)
+      // fell from 75% to 50% because two consecutive skips leave an 8-tile hole
+      // and the next pad is out of reach of the previous one.
+      //
+      // A hole is worse than a slightly uneven rhythm — it is the "gets pushed
+      // and then coasts into nothing" complaint — so a rejected tile hands its
+      // slot to the next tile in the run rather than forfeiting it.
+      let t2 = t;
+      while (t2 < end && !(placeable(spine[t2]) && launchRunway(g, spine[t2].i, spine[t2].j, di, dj) >= 2 && isDownhill(g, phi, spine[t2].i, spine[t2].j, di, dj))) t2++;
+      if (t2 >= end) break; // nothing further in this run qualifies
+      t = t2;
       const p = spine[t];
       // RUNWAY GUARD (live QA: "boosters boost into a wall"). A pad one tile
       // before the bend fires you PAST the bend tile into the corner wall —
       // the old "always points at the next spine tile" argument only proved
       // ONE open tile. Require 2+ so the worst case is a bounce, not a splat;
       // the bend station below owns the actual redirect.
-      if (placeable(p) && launchRunway(g, p.i, p.j, di, dj) >= 2) {
-        parts.push({ kind: "booster", i: p.i, j: p.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, spine: true });
+      //
+      // …AND IT MUST GO DOWNHILL ON Φ. "Down-flow by construction" was true of
+      // the ONE artery this pass used to walk, whose every step raises
+      // dist-from-start by one. It stopped being free the moment the pass
+      // started furnishing alternate routes too, and it was never as strong as
+      // it sounded even for the artery: dist-from-start rises down any dead-end
+      // branch as happily as it does toward the exit. The explicit test is what
+      // the no-loops guarantee rests on, so it is asserted rather than argued.
+      {
+        // ── STRAIGHT PAD or CURVED PAD? Ask the route, not the tile.
+        //
+        // A grid route that runs diagonally comes out as a STAIRCASE of
+        // one-cardinal steps, and a row of axis-aligned pads laid on it reads
+        // as a zigzag of arrows arguing with each other — which is a fair part
+        // of what "tracks that make no sense" looks like from above, even when
+        // every pad is individually correct and pointing down-flow.
+        //
+        // The route's real heading there is the SMOOTHED tangent over a few
+        // tiles, not the single step under the pad. Where the two disagree by
+        // more than TANGENT_SNAP the pad becomes a `boostcurve` carrying the
+        // smoothed heading, so a staircase renders and plays as one curved lane.
+        //
+        // The gates above still use the CARDINAL step: runway and downhill are
+        // properties of the route, and keeping them cardinal means the no-loops
+        // guarantee is unaffected by the cosmetic-looking choice made here.
+        const tan = smoothTangent(spine, t, di, dj);
+        const off = Math.abs(tan[0] * dj - tan[1] * di); // |sin| between tangent and step
+        const diagOpen = at(g, p.i + Math.sign(tan[0]), p.j + Math.sign(tan[1])) === T_FLOOR;
+        if (off > TANGENT_SNAP && diagOpen) {
+          parts.push({ kind: "boostcurve", i: p.i, j: p.j, dirI: tan[0], dirJ: tan[1], dir2I: 0, dir2J: 0, spine: true });
+        } else {
+          parts.push({ kind: "booster", i: p.i, j: p.j, dirI: di, dirJ: dj, dir2I: 0, dir2J: 0, spine: true });
+        }
       }
     }
     // The station where the run DELIVERS you (the bend), if any tile follows.
@@ -1212,34 +1469,36 @@ function layStationSpine(
       const [odi, odj] = dirOf(spine[end], spine[end + 1]); // outgoing leg
       if (placeable(bend)) {
         const openLegs = WALL_SIDES.filter(([li, lj]) => at(g, bend.i + li, bend.j + lj) === T_FLOOR);
-        if ((odi !== di || odj !== dj) && openLegs.length <= 2) {
+        const turns = odi !== di || odj !== dj;
+        // ── THE CORNER BOOSTER gets first refusal on every turn that has the
+        // room for it. It is the part live QA asked for by name ("we need
+        // corner booster, curved boosters"), and it is the one that actually
+        // fits what a bend needs: a deflector preserves speed but adds none, a
+        // straight pad in the corner fires you at the outside wall. The corner
+        // booster takes the incoming leg and drives you out along the outgoing
+        // one with a speed floor, so a turn ACCELERATES instead of being the
+        // place momentum goes to die.
+        //
+        // Ordered ahead of the deflector deliberately: the deflector is now the
+        // fallback for a tight corner that cannot fit a boosted exit, which is
+        // the geometry it was always best at.
+        //
+        // It replaces the old CURVE-CARRY branch — a plain straight pad dropped
+        // in the corner aimed down the outgoing leg. That branch's own comment
+        // records why it needed CARRY_RUNWAY ≥ 3: the pad sits IN the corner, so
+        // the tile behind it is wall by construction, and a ball that reaches
+        // the far wall rebounds onto the pad and gets re-fired (measured at
+        // runway ≥ 2: 392 such pads out of 2949; at ≥ 3: zero). The corner
+        // booster keeps that runway requirement AND removes the cause, because
+        // it fires along the outgoing leg from a part that knows which leg the
+        // ball arrived on — a rebound comes back down `dir`, not `dir2`, and is
+        // handled as an entry rather than re-launched blind.
+        if (turns && launchRunway(g, bend.i, bend.j, odi, odj) >= CARRY_RUNWAY && isDownhill(g, phi, bend.i, bend.j, odi, odj)) {
+          parts.push({ kind: "boostcorner", i: bend.i, j: bend.j, dirI: -di, dirJ: -dj, dir2I: odi, dir2J: odj, spine: true });
+        } else if (turns && openLegs.length <= 2) {
           // A clean corner → a deflector banks incoming→outgoing (speed intact).
           // Legs match classifyTopology: where you came FROM (-in) and GO (+out).
           parts.push({ kind: "deflector", i: bend.i, j: bend.j, dirI: -di, dirJ: -dj, dir2I: odi, dir2J: odj, spine: true });
-        } else if ((odi !== di || odj !== dj) && launchRunway(g, bend.i, bend.j, odi, odj) >= CARRY_RUNWAY) {
-          // A wide bend → CURVE CARRY: a pad aimed down the OUTGOING leg, so the
-          // route arcs around the corner instead of dying on a bumper (live QA:
-          // bends were where momentum went to die). Reads as a curved lane.
-          //
-          // This needs a LONGER runway than a straight-run pad, and the reason is
-          // asymmetric: a bend pad sits IN the corner, so the tile behind it is
-          // the corner wall by construction (measured: back = 0 for every one of
-          // them). A ball that reaches the far wall therefore rebounds straight
-          // back onto the pad, which re-fires it — the runtime jam guard
-          // (BOOSTER_JAM_*) breaks that loop, but the player still feels the
-          // cycles as a stutter, the "friction between the booster and the
-          // corner" from live QA. With no room behind, the only fix available
-          // here is enough room AHEAD that a BOOSTER_SPEED launch never comes
-          // back. At 2 tiles it always does.
-          //
-          // MEASURED over 200 generated floors: at >= 2 this produced 392 such
-          // pads out of 2949 boosters (13.3%, ~1 in 8); at >= 3 (CARRY_RUNWAY),
-          // zero. 3 is the MINIMUM that clears them — 4 costs 78 more pads and
-          // 5 costs 364, neither buying anything, so don't raise it idly.
-          // The bumper branch below absorbs the rejects, which is the right
-          // fallback — a bumper in a tight corner caroms you out instead of
-          // pinning you against the wall it is bolted to.
-          parts.push({ kind: "booster", i: bend.i, j: bend.j, dirI: odi, dirJ: odj, dir2I: 0, dir2J: 0, spine: true });
         } else {
           // No outgoing runway (or a straight crossing) → a bumper to carom off.
           parts.push({ kind: "bumper", i: bend.i, j: bend.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, spine: true });
@@ -1247,6 +1506,23 @@ function layStationSpine(
       }
     }
     k = end;
+  }
+
+  // ── THE TERMINUS STATION ────────────────────────────────────────────────
+  //
+  // A bend gets a station; the END of a road used to get nothing. That was
+  // invisible while there was one road ending at the stairs (where draining
+  // into the exit is the correct behaviour) and became the dominant defect the
+  // moment there were four: each alternate road's last pad fired into bare
+  // floor, so the knight was railed along and then simply stopped.
+  //
+  // A bumper, because the terminus is where a road hands you to whatever is
+  // there — a carom keeps the momentum alive and pointed somewhere, where a
+  // directional part would be inventing a direction the route no longer has an
+  // opinion about. Skipped at the stairs: draining into the exit IS the ending.
+  const last = spine[n - 1];
+  if (last && placeable(last) && !(last.i === stairs.i && last.j === stairs.j)) {
+    parts.push({ kind: "bumper", i: last.i, j: last.j, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0, spine: true });
   }
 }
 
@@ -1500,7 +1776,23 @@ export function decorateMaze(
   // now solid.
   const bankedDist = bfsDistancesOwned(g, start.i, start.j);
   const spine = traceArtery(g, start, stairs, bankedDist);
-  const spineSet = new Set(spine.map((p) => idx(g, p.i, p.j)));
+  // ── Φ, THE FLOW FIELD (maze/flow-orient.ts) ─────────────────────────────
+  //
+  // Built here, on the FINAL geometry, and threaded through every pass that
+  // aims a launch part. Φ is BFS distance to the STAIRS, so "downhill" means
+  // onward-toward-the-exit on every tile of the floor — not just on the traced
+  // artery, and not merely "away from the spawn", which any dead-end branch
+  // also satisfies. See flow-orient.ts for why the guarantee needs a scalar
+  // potential rather than another pairwise repair pass.
+  const phi = buildFlowField(g, stairs);
+  // The ALTERNATE ROUTES. `spine` is one path; every other lane leg is the head
+  // of another, found by descending Φ until it merges into a route already laid
+  // down. That is the "multiple paths, not one set path" half of the ask, and
+  // it costs nothing extra to keep coherent — all of them run downhill on the
+  // same field, so no two routes can ever fight each other.
+  const routes = [spine, ...alternateRoutes(g, phi, spine, start, stairs, rng)];
+  const spineSet = new Set<number>();
+  for (const r of routes) for (const p of r) spineSet.add(idx(g, p.i, p.j));
   const onSpine = (i: number, j: number): boolean => spineSet.has(idx(g, i, j));
 
   // ── Rooms first: archetype content is SEEDED into the pools below, so all
@@ -1508,7 +1800,7 @@ export function decorateMaze(
   // placement also stays OUT of room interiors — each room is its archetype's
   // set piece, not another stretch of corridor. Rooms leave the spine lane clear
   // so the booster route can run through them (they become stations ON the path). ──
-  const furnished = furnishRooms(rooms, rng, start, g, dist, extras.forceVault, onSpine);
+  const furnished = furnishRooms(rooms, rng, start, g, phi, extras.forceVault, onSpine);
   const inRoom = (p: TilePos): boolean =>
     rooms.some((r) => p.i >= r.i0 && p.i < r.i0 + r.w && p.j >= r.j0 && p.j < r.j0 + r.h);
 
@@ -1638,7 +1930,10 @@ export function decorateMaze(
   // banks/hazards/rollover layers): the corridor budget is measured AFTER it, so
   // the spine never strips the deal — the deal below just spaces AROUND these
   // tiles, filling the pockets that branch off the spine. ──
-  layStationSpine(g, spine, start, stairs, parts, items, inChute);
+  // Every route, primary first. They share Φ, so a junction where two of them
+  // meet has both arms pointing the same way — which is the whole reason this
+  // can be a loop over routes instead of one carefully-hand-tuned path.
+  for (const route of routes) layStationSpine(g, phi, route, start, stairs, parts, items, inChute);
   // ── THE LAUNCH CHUTE'S OWN PADS ─────────────────────────────────────────
   // The chute owns its lane outright (`inChute` above bars the station spine
   // from it), so this pass is the only thing that furnishes it.
@@ -1763,10 +2058,25 @@ export function decorateMaze(
       // higher dist-from-start), so it launches you onward instead of back the
       // way you came. `dist` is the BFS-from-start field, already reflecting the
       // widened artery. Occasionally leave it as a deliberate kickback.
+      //
+      // Aimed on Φ (distance to the STAIRS), not on distance-from-start. The
+      // two are not the same field: "further from the spawn" is satisfied by
+      // any dead-end branch, so the old test would happily certify a pad firing
+      // down a pocket the exit is not in. Φ has one sink, so downhill always
+      // means progress — and because every pad in the floor now descends the
+      // same scalar, no chain of them can close a loop (flow-orient.ts).
       if (FORWARD_FLOW_KINDS.has(kind) && (spot.dirI !== 0 || spot.dirJ !== 0)) {
-        const fwd = distAt(g, dist, spot.i + spot.dirI, spot.j + spot.dirJ);
-        const bwd = distAt(g, dist, spot.i - spot.dirI, spot.j - spot.dirJ);
-        if (bwd > fwd && rng() > KICKBACK_CHANCE) spot = { ...spot, dirI: -spot.dirI, dirJ: -spot.dirJ };
+        const kick = rng() < KICKBACK_CHANCE;
+        if (!kick) {
+          // Take the steepest downhill cardinal that the tile's topology allows
+          // rather than merely un-reversing the coin flip. On a junction (where
+          // a flipper lands) there are up to four legs and "flip it round" can
+          // only ever choose between two of them.
+          const best = steepestDown(g, phi, spot.i, spot.j);
+          if (best && flowDrop(g, phi, spot.i, spot.j, best[0], best[1]) > flowDrop(g, phi, spot.i, spot.j, spot.dirI, spot.dirJ)) {
+            spot = { ...spot, dirI: best[0], dirJ: best[1] };
+          }
+        }
       }
       // No-orphan (Slice 3): a launch part must have RUNWAY in its fire
       // direction, or it just shoots you into a wall a tile away. Flip to the
@@ -1850,8 +2160,14 @@ export function decorateMaze(
         }
       }
       if (!aimed) continue;
+      // A JUMP PAD, not a ramp. The flight is the same call (`startRampHop`),
+      // but the part that causes it is now its own kind with its own mesh —
+      // previously the one shot per floor that jumps the maze was visually
+      // identical to the twenty dash ramps that don't, and read as a launcher
+      // bolted point-blank to a wall, which is what it looks like when you
+      // can't tell it is going to fly.
       parts.push({
-        kind: "ramp",
+        kind: "jumppad",
         i: c.i,
         j: c.j,
         dirI: aimed.di,
@@ -1900,9 +2216,15 @@ export function decorateMaze(
       const bwdFeeds = at(g, bwdI, bwdJ) === T_FLOOR && touchesSpine(bwdI, bwdJ) && !(bwdI === stairs.i && bwdJ === stairs.j);
       if (!fwdFeeds && !bwdFeeds) continue; // doesn't reach the spine — not a tributary
       // If both ends feed it, pick the down-flow one; else the one that feeds.
+      // Down-flow on Φ = the LOWER distance-to-stairs end.
       let sign: number;
-      if (fwdFeeds && bwdFeeds) sign = distAt(g, dist, fwdI, fwdJ) >= distAt(g, dist, bwdI, bwdJ) ? 1 : -1;
+      if (fwdFeeds && bwdFeeds) sign = phiAt(g, phi, fwdI, fwdJ) <= phiAt(g, phi, bwdI, bwdJ) ? 1 : -1;
       else sign = fwdFeeds ? 1 : -1;
+      // A tributary that merges UPHILL feeds the route backwards: it throws you
+      // onto the highway pointing at the spawn, which is the "speed up that
+      // sends you back" complaint with an extra step. Skip it — the search has
+      // plenty of other candidates and half a tributary is worse than none.
+      if (!isDownhill(g, phi, p.i, p.j, ai * sign, aj * sign)) continue;
       for (let s = 0; s < LANE_LEN; s++) {
         parts.push({ i: p.i + ai * s, j: p.j + aj * s, kind: "booster", dirI: ai * sign, dirJ: aj * sign, dir2I: 0, dir2J: 0 });
       }
@@ -2168,7 +2490,23 @@ export function decorateMaze(
     // points into a wall carries no intent worth preserving. On the legacy
     // generator the exemption stays — see the note below.
     if (p.chute) continue; // the plunger lane owns its facings — see PinballPartSpot.chute
-    if ((!strictLaunchers && (p.vault || p.spine)) || !LAUNCH_KINDS.has(p.kind)) continue;
+    // ── VAULT IS EXEMPT UNCONDITIONALLY, and `strictLaunchers` no longer lifts
+    // it. This was a real bug, not a tuning choice.
+    //
+    // `strictLaunchers` is on for every track floor, and its rationale — "a
+    // vault or spine part facing a wall carries no intent worth preserving" —
+    // is sound for `spine` and false for `vault`. A vault part is aimed at a
+    // wall BAND that `crossableBand` has already proved is 1-2 tiles thick with
+    // real corridor behind it, inside RAMP_HOP_MAX. Facing rock is the feature.
+    //
+    // The consequence was total: a vault part's runway is 0 by construction, so
+    // it failed the MIN_RUNWAY test below on every floor, and this pass then
+    // re-aimed it down the longest open corridor — turning the floor's only
+    // jump-the-maze shot into an ordinary dash pad, silently, on every track
+    // floor since `strictLaunchers` shipped. The kind survived; the feature did
+    // not.
+    if (p.vault) continue;
+    if ((!strictLaunchers && p.spine) || !LAUNCH_KINDS.has(p.kind)) continue;
     if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
     if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;
     // VAULT and SPINE stay exempt, and it is worth saying why rather than
@@ -2183,13 +2521,25 @@ export function decorateMaze(
     // The wall-facing launchers those two produce are handled at the source
     // instead — the track generator no longer builds the dead-end geometry
     // that stranded them (maze/track-socket.ts).
+    //
+    // DOWNHILL FIRST, longest-runway second. The old rule was runway alone with
+    // "ties broken toward down-flow", which only ever fired on an exact tie —
+    // and an exact tie between two corridor lengths is rare, so in practice the
+    // re-aim was free to point a pad back up the floor whenever the backward
+    // lane happened to be one tile longer. Since this pass runs after placement
+    // it was quietly undoing the orientation work above.
     let bestRun = -1;
     let bestD: [number, number] | null = null;
+    let bestDown = false;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const run = launchRunway(g, p.i, p.j, di, dj);
-      if (run <= bestRun) continue;
+      if (run < MIN_RUNWAY) continue;
+      const down = isDownhill(g, phi, p.i, p.j, di, dj);
+      if (bestD && bestDown && !down) continue; // never trade downhill for length
+      if (bestD && down === bestDown && run <= bestRun) continue;
       bestRun = run;
       bestD = [di, dj];
+      bestDown = down;
     }
     if (bestD && bestRun >= MIN_RUNWAY) {
       p.dirI = bestD[0];
@@ -2223,6 +2573,16 @@ export function decorateMaze(
   // launchers left aimed down one open lane at each other — the ping-pong trap.
   // Must be the LAST pass that touches a part's direction. ──
   breakLaunchDuels(g, parts);
+  // ── …AND EVERY OTHER CLOSED LOOP (maze/flow-loops.ts). The duel breaker only
+  // knows the 2-cycle, and only the half of it where neither part is on a
+  // route: measured on the shipping generator it left 1.58 duels per floor
+  // standing, 121 of 123 of them spine-vs-spine, plus 130 launchers in rings of
+  // three or more that it cannot represent at all. This pass walks the whole
+  // successor graph, so "no chain of shoves closes" is decided rather than
+  // approximated. It runs after the duel breaker, not instead of it — the
+  // pairwise pass is cheaper and resolves the easy cases with a re-aim this one
+  // would spend a demotion on. ──
+  breakFlowLoops(g, phi, parts);
 
   // ── THE LAUNCH CHUTE IS THE CHUTE PASS'S ALONE ──────────────────────────
   //

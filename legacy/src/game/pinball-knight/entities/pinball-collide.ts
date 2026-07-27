@@ -48,6 +48,19 @@ import {
   BOOSTER_JAM_RADIUS,
   BOOSTER_JAM_WINDOW,
   BOOSTER_JAM_COOLDOWN,
+  CORNER_BOOST_RADIUS,
+  CORNER_BOOST_SPEED,
+  CORNER_BOOST_COOLDOWN,
+  CORNER_BOOST_STEER_LOCK,
+  CORNER_BOOST_MIN_ENTRY,
+  CURVE_BOOST_RADIUS,
+  CURVE_BOOST_SPEED,
+  CURVE_BOOST_COOLDOWN,
+  CURVE_BOOST_STEER_LOCK,
+  JUMP_PAD_RADIUS,
+  JUMP_PAD_SPEED,
+  JUMP_PAD_COOLDOWN,
+  JUMP_PAD_STEER_LOCK,
   DEFLECTOR_GRAB_TIME,
   DEFLECTOR_THROW_SPEED,
   DEFLECTOR_THROW_BOOST,
@@ -437,6 +450,107 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.cooldownT = BOOSTER_COOLDOWN;
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.25, part.z, part.dirX, part.dirZ, 10);
+    sfxSpin();
+  },
+
+  boostcorner: ({ part, p, d2, deps }) => {
+    // ── THE CORNER BOOSTER — a turn that pays you for taking it.
+    //
+    // Geometry: (dirX,dirZ) is the leg the ball ARRIVES on, pointing back the
+    // way it came (so the incoming velocity is roughly −dir); (dir2X,dir2Z) is
+    // the leg it leaves along. Same convention as the deflector's two legs, so
+    // the level plan reads the same for both and a corner booster can degrade
+    // into a deflector without re-authoring anything.
+    if (d2 > CORNER_BOOST_RADIUS * CORNER_BOOST_RADIUS) return;
+    // WHICH WAY IS THE BALL GOING? This is the whole reason the part exists.
+    //
+    // The straight pad it replaces re-fired anything that touched it, which in
+    // a corner meant re-firing its own rebound: pad shoves ball at the outside
+    // wall, wall returns it, pad shoves again. The old code met that with a
+    // runway requirement (≥3 tiles ahead, so the launch never came back) and a
+    // runtime jam guard, i.e. two mitigations for a case it could not detect.
+    //
+    // Here it is simply detectable. A ball travelling roughly along the exit
+    // leg is a REBOUND coming back at the corner, not an entry — the exit is
+    // where we just sent it. Decline, and let the wall bounce and the pocket
+    // damp do their normal work; the pad will catch it again on the next real
+    // approach. No jam guard needed because the loop cannot start.
+    const along = p.momX * part.dir2X + p.momZ * part.dir2Z;
+    const speed = p.momSpeed;
+    if (speed > 0.5 && along > 0.7) return; // already heading out — nothing to redirect
+    p.momX = part.dir2X;
+    p.momZ = part.dir2Z;
+    // A graze walks round the corner; a real run gets the speed floor. Without
+    // the entry test, brushing a corner pad on foot flings you, which reads as
+    // the level grabbing the controls.
+    p.momSpeed =
+      speed >= CORNER_BOOST_MIN_ENTRY
+        ? Math.min(PINBALL_MAX_SPEED, Math.max(speed, CORNER_BOOST_SPEED))
+        : Math.min(PINBALL_MAX_SPEED, Math.max(speed, CORNER_BOOST_MIN_ENTRY));
+    deps.raiseSteerLock(CORNER_BOOST_STEER_LOCK);
+    onPartTrigger();
+    recordShot("ramp"); // a banked shot, same family as a ramp for the combo ledger
+    part.cooldownT = CORNER_BOOST_COOLDOWN;
+    part.hitT = 0;
+    state.vfx?.sparks(part.x, 0.3, part.z, part.dir2X, part.dir2Z, 12);
+    requestShake(0.1);
+    sfxSpin();
+  },
+
+  boostcurve: ({ part, p, d2, deps }) => {
+    // ── THE CURVED BOOSTER — a lane pad on an authored arc.
+    //
+    // Unlike every other launcher its heading is a TANGENT, not a cardinal:
+    // (dirX,dirZ) is a unit vector at an arbitrary angle, set from the arc the
+    // pad was placed on. That is deliberate and load-bearing — a run of these
+    // round a fillet reads as one continuous curved lane instead of a staircase
+    // of axis-aligned pads, which is what "curved boosters" actually means.
+    //
+    // The knock-on: every generator pass that reasons about facings gates on
+    // `Math.abs(dirI) + Math.abs(dirJ) === 1`, so this kind is excluded from
+    // the duel breaker, the runway re-aim and the loop breaker automatically.
+    // It cannot form a cardinal duel, and its arc is a piece of authored
+    // geometry rather than a placement guess, so there is nothing for them to
+    // repair.
+    if (d2 > CURVE_BOOST_RADIUS * CURVE_BOOST_RADIUS) return;
+    const len = Math.hypot(part.dirX, part.dirZ) || 1;
+    p.momX = part.dirX / len;
+    p.momZ = part.dirZ / len;
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, CURVE_BOOST_SPEED));
+    deps.raiseSteerLock(CURVE_BOOST_STEER_LOCK);
+    onPartTrigger();
+    part.cooldownT = CURVE_BOOST_COOLDOWN;
+    part.hitT = 0;
+    state.vfx?.sparks(part.x, 0.25, part.z, p.momX, p.momZ, 10);
+    sfxSpin();
+  },
+
+  jumppad: ({ part, p, d2, deps }) => {
+    // ── THE JUMP PAD — the hop, made visible.
+    //
+    // The airborne arc already existed: `startRampHop` flies the knight over a
+    // wall band and sets down on the far side, and the generator aimed a
+    // `vault`-flagged RAMP at a crossable band to use it. But a vault ramp and
+    // an ordinary ramp are the same mesh, so the one shot on the floor that
+    // jumps the maze looked exactly like the twenty that don't — and worse, it
+    // looked broken, because it is a launcher aimed point-blank at a wall.
+    //
+    // Same flight, own part, own silhouette. `startRampHop` falls back to a
+    // flat dash when it finds no clear landing, so a jump pad whose far side
+    // got walled off by a later pass degrades to a shove rather than a splat.
+    if (d2 > JUMP_PAD_RADIUS * JUMP_PAD_RADIUS) return;
+    p.momX = part.dirX;
+    p.momZ = part.dirZ;
+    p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, JUMP_PAD_SPEED));
+    recordShot("ramp");
+    trySkillShot(part);
+    deps.setSteerLock(JUMP_PAD_STEER_LOCK);
+    part.cooldownT = JUMP_PAD_COOLDOWN;
+    part.hitT = 0;
+    deps.startRampHop(part.dirX, part.dirZ, p.momSpeed);
+    state.vfx?.dust(p.x, 0.06, p.z);
+    state.vfx?.sparks(part.x, 0.5, part.z, part.dirX, part.dirZ, 20);
+    requestShake(0.16);
     sfxSpin();
   },
 

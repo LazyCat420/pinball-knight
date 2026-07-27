@@ -872,6 +872,50 @@ export const BOOSTER_JAM_RADIUS = 0.9; // world units — "caught the same ball 
 export const BOOSTER_JAM_WINDOW = 0.75; // s between re-fires that still count as a jam
 export const BOOSTER_JAM_COOLDOWN = 0.9; // s the jammed pad stays dark, long enough to roll clear
 
+// ── THE BOOSTER FAMILY ──────────────────────────────────────────────────────
+//
+// Live QA: "maybe that's the issue — because we keep recycling this one type of
+// booster, we need corner booster, curved boosters, more jumpers in the mix."
+// The census agreed: `booster` was 73% of all launch furniture on a floor (2471
+// of 3364 across 78 floors) and every instance was the same flat straight pad.
+// These three are the rest of the family. Each solves a piece of geometry the
+// straight pad handles badly rather than being a reskin of it.
+
+// CORNER BOOSTER — a turn that ACCELERATES. Enters on `dir`, leaves along
+// `dir2`. It replaces the old "curve carry" hack, which was a straight pad
+// dropped in a corner aimed down the outgoing leg: with the corner wall right
+// behind it, a ball that reached the far wall rebounded onto the pad and was
+// re-fired blind. This part knows which leg the ball arrived on, so a rebound
+// coming back down the OUTGOING leg is treated as an entry from the wrong side
+// and declined instead of relaunched.
+export const CORNER_BOOST_RADIUS = 0.62; // wider than a straight pad — it has to catch a turning ball
+export const CORNER_BOOST_SPEED = 16; // a shade above BOOSTER_SPEED: a good line through a turn should pay
+export const CORNER_BOOST_COOLDOWN = 0.22;
+export const CORNER_BOOST_STEER_LOCK = 0.2; // long enough to carry you clear of the corner wall
+/** Below this the entry is a graze, not a run — carry it round without the
+ *  speed floor, so walking into a corner pad doesn't fling you. */
+export const CORNER_BOOST_MIN_ENTRY = 3;
+
+// CURVED BOOSTER — a lane pad that sits ON an authored arc and drives you along
+// the tangent rather than along a cardinal. It is the only launcher whose
+// heading is not a unit cardinal, which is why it is deliberately EXCLUDED from
+// every pass that reasons about cardinals (the duel breaker, the runway re-aim,
+// the loop breaker's `movable`): those all gate on |dirI|+|dirJ| === 1, so the
+// exclusion is automatic rather than another flag to keep in sync.
+export const CURVE_BOOST_RADIUS = 0.55;
+export const CURVE_BOOST_SPEED = 15.5;
+export const CURVE_BOOST_COOLDOWN = 0.2;
+export const CURVE_BOOST_STEER_LOCK = 0.18;
+
+// JUMP PAD — the kicker that hops you clean over a wall band. The `vault` ramp
+// already did this, but disguised as an ordinary ramp: same mesh, same silhouette,
+// and the only thing distinguishing "this one flies" from "this one doesn't" was
+// a boolean the player cannot see. A dedicated part makes the shot READ.
+export const JUMP_PAD_RADIUS = 0.5;
+export const JUMP_PAD_SPEED = 17; // faster than a ramp — it has a band to clear
+export const JUMP_PAD_COOLDOWN = 0.45; // longer: an airborne knight shouldn't re-trigger on landing
+export const JUMP_PAD_STEER_LOCK = 0.28; // the whole airtime, so the arc lands where it aimed
+
 // ── Curved walls (auto-banked maze corners — see collision.computeArcCorners) ──
 /** How close to a corner's centre a fast entry banks (world units). */
 export const ARC_BANK_RADIUS = 0.62;

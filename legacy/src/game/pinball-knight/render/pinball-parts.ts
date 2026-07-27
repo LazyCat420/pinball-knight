@@ -34,18 +34,93 @@ function yawFor(dx: number, dz: number): number {
   return Math.atan2(-dz, dx);
 }
 
-function std(color: number, emissive = 0, emissiveIntensity = 1): THREE.MeshStandardMaterial {
+/**
+ * ── SHARED MATERIALS + GEOMETRY ────────────────────────────────────────────
+ *
+ * A floor places ~150 parts drawn from ~20 kinds, and every builder used to
+ * allocate its own materials and its own geometry. A census of a live floor
+ * found 1707 material instances of only 504 distinct LOOKS, and 1668 geometry
+ * instances of only 100 distinct SHAPES — 70% and 94% pure duplication.
+ *
+ * That is not merely wasteful, it is the load stall. WebGPU compiles one
+ * render pipeline per distinct material, lazily, the first time it is drawn —
+ * so the first frame of a floor spent FIVE SECONDS compiling ~1400 pipelines
+ * that were mostly copies of each other, and the steady state cost 1326 draw
+ * calls a frame because no two identical parts could share a batch. Neither
+ * cost is in `startLevel`, which is why the maze "generating" was never the
+ * thing to optimise: `startLevel` measures 544ms, and the frame after it
+ * measured 5103ms.
+ *
+ * So both are memoised by value. `std` and the `*Geo` helpers hand back ONE
+ * GPU object per distinct look/shape, shared by every part that asks.
+ *
+ * ⚠️ A SHARED OBJECT IS NEVER MUTATED AND NEVER DISPOSED.
+ *
+ *   - If a part's ANIMATOR writes to its material — the emissive pulses in
+ *     PART_ANIMATORS, most of them offset per part by `part.i` or a random
+ *     `phase` — that part must OWN it: build it with `stdOwn`. Sharing one
+ *     would make every bumper on the floor breathe in lockstep with the last
+ *     writer winning. Every material that reaches `userData` is animated, and
+ *     every one of those is built with `stdOwn` below.
+ *   - `disposePinballParts` skips anything flagged `userData.shared`, since
+ *     disposing it would pull the geometry out from under the NEXT floor.
+ *     Same discipline as the texture cache in maze/build.ts.
+ */
+const matCache = new Map<string, THREE.MeshStandardMaterial>();
+const geoCache = new Map<string, THREE.BufferGeometry>();
+
+/** A material this part OWNS, because its animator writes to it. Never cached. */
+function stdOwn(color: number, emissive = 0, emissiveIntensity = 1): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity, roughness: 0.6, metalness: 0.2 });
 }
 
+/** The one shared material for this exact look. NEVER mutate it — see stdOwn. */
+function std(color: number, emissive = 0, emissiveIntensity = 1): THREE.MeshStandardMaterial {
+  const key = `${color}|${emissive}|${emissiveIntensity}`;
+  let m = matCache.get(key);
+  if (!m) {
+    m = stdOwn(color, emissive, emissiveIntensity);
+    m.userData.shared = true;
+    matCache.set(key, m);
+  }
+  return m;
+}
+
+/** The one shared geometry for this exact shape. NEVER mutate it in place. */
+function geo<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
+  const hit = geoCache.get(key) as T | undefined;
+  if (hit) return hit;
+  const g = make();
+  g.userData.shared = true;
+  geoCache.set(key, g);
+  return g;
+}
+
+// Primitive shorthands that key the cache off the constructor arguments, so
+// two calls with identical numbers get the identical buffer. ExtrudeGeometry
+// is deliberately absent: both of its uses `.translate()` the result, and a
+// shared geometry translated once per part would walk away from the origin.
+const boxGeo = (...a: ConstructorParameters<typeof THREE.BoxGeometry>): THREE.BoxGeometry =>
+  geo(`box|${a.join()}`, () => new THREE.BoxGeometry(...a));
+const cylGeo = (...a: ConstructorParameters<typeof THREE.CylinderGeometry>): THREE.CylinderGeometry =>
+  geo(`cyl|${a.join()}`, () => new THREE.CylinderGeometry(...a));
+const torusGeo = (...a: ConstructorParameters<typeof THREE.TorusGeometry>): THREE.TorusGeometry =>
+  geo(`torus|${a.join()}`, () => new THREE.TorusGeometry(...a));
+const coneGeo = (...a: ConstructorParameters<typeof THREE.ConeGeometry>): THREE.ConeGeometry =>
+  geo(`cone|${a.join()}`, () => new THREE.ConeGeometry(...a));
+const sphereGeo = (...a: ConstructorParameters<typeof THREE.SphereGeometry>): THREE.SphereGeometry =>
+  geo(`sphere|${a.join()}`, () => new THREE.SphereGeometry(...a));
+const ringGeo = (...a: ConstructorParameters<typeof THREE.RingGeometry>): THREE.RingGeometry =>
+  geo(`ring|${a.join()}`, () => new THREE.RingGeometry(...a));
+
 function buildBumper(): THREE.Group {
   const gp = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.38, 0.16, 12), std(C_STEEL_DK));
+  const base = new THREE.Mesh(cylGeo(0.34, 0.38, 0.16, 12), std(C_STEEL_DK));
   base.position.y = 0.08;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.045, 8, 16), std(C_GOLD, C_GOLD, 0.5));
+  const ring = new THREE.Mesh(torusGeo(0.3, 0.045, 8, 16), std(C_GOLD, C_GOLD, 0.5));
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.17;
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), std(C_ARCANE, C_ARCANE, 0.9));
+  const dome = new THREE.Mesh(sphereGeo(0.26, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), stdOwn(C_ARCANE, C_ARCANE, 0.9));
   dome.position.y = 0.16;
   gp.add(base, ring, dome);
   gp.userData.dome = dome.material;
@@ -54,21 +129,21 @@ function buildBumper(): THREE.Group {
 
 function buildSpring(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.06, 0.56), std(C_STEEL_DK));
+  const plate = new THREE.Mesh(boxGeo(0.56, 0.06, 0.56), std(C_STEEL_DK));
   plate.position.y = 0.03;
   // coil — three stacked thin discs reads as a spring after the quantize
   const coil = new THREE.Group();
   for (let k = 0; k < 3; k++) {
-    const loop = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.035, 6, 12), std(C_STEEL));
+    const loop = new THREE.Mesh(torusGeo(0.16, 0.035, 6, 12), std(C_STEEL));
     loop.rotation.x = Math.PI / 2;
     loop.position.y = 0.1 + k * 0.07;
     coil.add(loop);
   }
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 10), std(C_STEEL, C_ARCANE, 0.25));
+  const top = new THREE.Mesh(cylGeo(0.2, 0.2, 0.05, 10), std(C_STEEL, C_ARCANE, 0.25));
   top.position.y = 0.33;
   coil.add(top);
   // chevron arrow on the plate aimed along the launch direction
-  const chev = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 3), std(C_GOLD, C_GOLD, 0.8));
+  const chev = new THREE.Mesh(coneGeo(0.12, 0.26, 3), std(C_GOLD, C_GOLD, 0.8));
   chev.rotation.z = -Math.PI / 2; // cone points +x
   chev.rotation.y = 0;
   chev.position.set(0.3, 0.07, 0);
@@ -104,7 +179,7 @@ function buildRamp(dirX: number, dirZ: number): THREE.Group {
 
   // ── Guide rails down each side (steel bars with a gold-lit top edge) ──
   for (const zside of [-1, 1]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(LEN * 1.02, 0.12, 0.06), std(C_STEEL, C_GOLD, 0.28));
+    const rail = new THREE.Mesh(boxGeo(LEN * 1.02, 0.12, 0.06), std(C_STEEL, C_GOLD, 0.28));
     rail.position.set(0, H / 2 + 0.05, (zside * W) / 2);
     rail.rotation.z = slope; // lie along the rising slope
     gp.add(rail);
@@ -113,8 +188,8 @@ function buildRamp(dirX: number, dirZ: number): THREE.Group {
   // ── Three big arrows climbing the slope (the "GO this way" crawl) ──
   const chevMats: THREE.MeshStandardMaterial[] = [];
   for (let k = 0; k < 3; k++) {
-    const m = std(C_ARCANE, C_ARCANE, 0.8);
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.32, 3), m);
+    const m = stdOwn(C_ARCANE, C_ARCANE, 0.8);
+    const chev = new THREE.Mesh(coneGeo(0.17, 0.32, 3), m);
     chev.rotation.z = -Math.PI / 2 + slope; // point up-slope, flush with the incline
     const x = -0.24 + k * 0.24;
     chev.position.set(x, slopeY(x) + 0.06, 0);
@@ -123,8 +198,8 @@ function buildRamp(dirX: number, dirZ: number): THREE.Group {
   }
 
   // ── Gold kicker lip at the top (the launch edge) ──
-  const lipMat = std(C_GOLD, C_GOLD, 0.7);
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, W + 0.06), lipMat);
+  const lipMat = stdOwn(C_GOLD, C_GOLD, 0.7);
+  const lip = new THREE.Mesh(boxGeo(0.1, 0.14, W + 0.06), lipMat);
   lip.position.set(LEN / 2 - 0.02, H + 0.02, 0);
   gp.add(lip);
 
@@ -147,14 +222,14 @@ function buildBooster(dirX: number, dirZ: number): THREE.Group {
   const LEN = 0.9;
   const W = 0.56;
   // ── Dark base plate (slightly recessed rim) ──
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(LEN, 0.05, W), std(0x1a1f2b));
+  const plate = new THREE.Mesh(boxGeo(LEN, 0.05, W), std(0x1a1f2b));
   plate.position.y = 0.025;
   gp.add(plate);
   // ── Two neon side strips running down the lane ──
   const stripMats: THREE.MeshStandardMaterial[] = [];
   for (const zside of [-1, 1]) {
-    const m = std(C_ARCANE, C_ARCANE, 0.8);
-    const strip = new THREE.Mesh(new THREE.BoxGeometry(LEN, 0.06, 0.06), m);
+    const m = stdOwn(C_ARCANE, C_ARCANE, 0.8);
+    const strip = new THREE.Mesh(boxGeo(LEN, 0.06, 0.06), m);
     strip.position.set(0, 0.06, (zside * (W - 0.06)) / 2);
     stripMats.push(m);
     gp.add(strip);
@@ -162,8 +237,8 @@ function buildBooster(dirX: number, dirZ: number): THREE.Group {
   // ── Three big forward chevrons (the scrolling "GO →" crawl) ──
   const chevMats: THREE.MeshStandardMaterial[] = [];
   for (let k = 0; k < 3; k++) {
-    const m = std(C_GOLD, C_GOLD, 0.9);
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 3), m);
+    const m = stdOwn(C_GOLD, C_GOLD, 0.9);
+    const chev = new THREE.Mesh(coneGeo(0.16, 0.34, 3), m);
     chev.rotation.z = -Math.PI / 2; // point +x, flat on the pad
     chev.position.set(-0.26 + k * 0.26, 0.075, 0);
     chevMats.push(m);
@@ -176,19 +251,183 @@ function buildBooster(dirX: number, dirZ: number): THREE.Group {
   return gp;
 }
 
+/**
+ * CORNER BOOSTER — a quarter-circle of chevrons sweeping from the entry leg to
+ * the exit leg, on a banked deck, with a kicker lip on the way out.
+ *
+ * The silhouette is the point. A player has to be able to tell at a glance that
+ * this corner will THROW him and which way, from an isometric camera, at speed.
+ * So: the chevrons curve (a straight pad's don't), they are gold like every
+ * other accelerating surface in the game, and the deck banks up on the outside
+ * of the turn the way a real banked corner does — the same visual grammar as
+ * the arc-swept walls this part usually sits inside.
+ *
+ * `d1` is the leg the ball ARRIVES on (pointing back the way it came) and `d2`
+ * the leg it leaves along, matching the deflector so the two are interchangeable
+ * in the level plan.
+ */
+function buildBoostCorner(d1x: number, d1z: number, d2x: number, d2z: number): THREE.Group {
+  const gp = new THREE.Group();
+  const R = 0.52; // sweep radius — sits inside a one-tile footprint
+  // ── Banked deck: a quarter annulus, tilted up on the outside edge ──
+  const deck = new THREE.Mesh(ringGeo(R - 0.3, R + 0.16, 14, 1, 0, Math.PI / 2), std(0x1a1f2b));
+  deck.rotation.x = -Math.PI / 2;
+  deck.position.y = 0.03;
+  gp.add(deck);
+  // ── Outer guide rail, following the same arc: the wall you lean on ──
+  const rail = new THREE.Mesh(torusGeo(R + 0.14, 0.055, 8, 14, Math.PI / 2), std(C_STEEL_DK, C_ARCANE, 0.3));
+  rail.rotation.x = -Math.PI / 2;
+  rail.position.y = 0.13;
+  gp.add(rail);
+  // ── Chevrons ALONG the arc, each yawed to the local tangent ──
+  const chevMats: THREE.MeshStandardMaterial[] = [];
+  const N = 4;
+  for (let k = 0; k < N; k++) {
+    const a = ((k + 0.5) / N) * (Math.PI / 2);
+    const m = stdOwn(C_GOLD, C_GOLD, 0.9);
+    const chev = new THREE.Mesh(coneGeo(0.14, 0.3, 3), m);
+    // Cone points +y by default: lay it flat pointing +x, then yaw to the
+    // tangent of the arc at this angle (tangent of (cos a, sin a) is
+    // (−sin a, cos a) — travelling counter-clockwise, which is the direction
+    // the group's own yaw below is chosen to make correct).
+    chev.rotation.z = -Math.PI / 2;
+    chev.position.set(Math.cos(a) * R, 0.09, Math.sin(a) * R);
+    chev.rotation.y = -a - Math.PI / 2;
+    chevMats.push(m);
+    gp.add(chev);
+  }
+  // ── Kicker lip on the exit, so the "you leave THIS way" reads even static ──
+  const lipMat = stdOwn(C_SHOT, C_SHOT, 0.8);
+  const lip = new THREE.Mesh(boxGeo(0.1, 0.16, 0.5), lipMat);
+  lip.position.set(0, 0.1, R);
+  lip.rotation.y = Math.PI / 2;
+  gp.add(lip);
+  // The arc runs +x → +z in local space, i.e. it enters travelling +x and exits
+  // travelling +z. Yaw so local +z lines up with the real exit leg. Using the
+  // EXIT rather than the bisector is what keeps the lip on the right side; a
+  // bisector yaw looks correct for the deck and puts the kicker in the wall.
+  gp.rotation.y = yawFor(d2x, d2z) - Math.PI / 2;
+  gp.userData.chevMats = chevMats;
+  gp.userData.lipMat = lipMat;
+  gp.userData.phase = Math.random() * Math.PI * 2;
+  void d1x;
+  void d1z; // entry leg is physics-only (see the boostcorner handler)
+  return gp;
+}
+
+/**
+ * CURVED BOOSTER — a short banked lane segment whose chevrons run along an
+ * arbitrary tangent rather than a cardinal.
+ *
+ * Flatter and longer than the corner booster: this one is a piece of a
+ * continuous curve, so several in a row have to read as ONE lane. That means no
+ * end caps and no kicker lip — anything that terminates the shape visually
+ * would chop the curve into beads.
+ */
+function buildBoostCurve(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const LEN = 0.94;
+  const W = 0.5;
+  const plate = new THREE.Mesh(boxGeo(LEN, 0.04, W), std(0x1a1f2b));
+  plate.position.y = 0.02;
+  gp.add(plate);
+  // One banked rail on the OUTSIDE only — a curve leans, a straight doesn't.
+  const stripMats: THREE.MeshStandardMaterial[] = [];
+  const bank = stdOwn(C_ARCANE, C_ARCANE, 0.7);
+  const rail = new THREE.Mesh(boxGeo(LEN, 0.1, 0.05), bank);
+  rail.position.set(0, 0.08, W / 2);
+  rail.rotation.x = -0.35; // the lean
+  stripMats.push(bank);
+  gp.add(rail);
+  const chevMats: THREE.MeshStandardMaterial[] = [];
+  for (let k = 0; k < 3; k++) {
+    const m = stdOwn(C_GOLD, C_GOLD, 0.85);
+    const chev = new THREE.Mesh(coneGeo(0.13, 0.3, 3), m);
+    chev.rotation.z = -Math.PI / 2;
+    // Fan the chevrons slightly across the pad so the run reads as bending
+    // rather than as three parallel arrows that happen to be rotated.
+    chev.rotation.y = (k - 1) * 0.16;
+    chev.position.set(-0.28 + k * 0.28, 0.06, (k - 1) * 0.04);
+    chevMats.push(m);
+    gp.add(chev);
+  }
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.chevMats = chevMats;
+  gp.userData.stripMats = stripMats;
+  gp.userData.phase = Math.random() * Math.PI * 2;
+  return gp;
+}
+
+/**
+ * JUMP PAD — a short steep kicker with a raised takeoff lip and a launch-angle
+ * gantry, so the shot that flies over a wall LOOKS like it flies.
+ *
+ * Deliberately not a longer ramp. The ramp is a dash panel that happens to hop;
+ * this is the hop, and the read the player needs is "up and over", so the
+ * geometry is vertical where the ramp's is horizontal: a stubby steep wedge, an
+ * overhead arch framing the flight line, and chevrons that climb rather than
+ * scroll.
+ */
+function buildJumpPad(dirX: number, dirZ: number): THREE.Group {
+  const gp = new THREE.Group();
+  const LEN = 0.62;
+  const H = 0.42; // steeper than a ramp's 0.34 over a longer 0.86
+  const W = 0.54;
+  const shape = new THREE.Shape();
+  shape.moveTo(-LEN / 2, 0);
+  shape.lineTo(LEN / 2, 0);
+  shape.lineTo(LEN / 2, H);
+  shape.closePath();
+  const wedgeGeo = new THREE.ExtrudeGeometry(shape, { depth: W, bevelEnabled: false });
+  wedgeGeo.translate(0, 0, -W / 2);
+  gp.add(new THREE.Mesh(wedgeGeo, std(C_STEEL_DK)));
+  // ── Takeoff lip: thick, bright, and proud of the wedge ──
+  const lipMat = stdOwn(C_SHOT, C_SHOT, 0.9);
+  const lip = new THREE.Mesh(boxGeo(0.12, 0.1, W + 0.1), lipMat);
+  lip.position.set(LEN / 2, H + 0.05, 0);
+  gp.add(lip);
+  // ── The gantry: two posts and a cross-beam over the takeoff, framing the
+  // flight line. This is the part that says "over", not "along". ──
+  for (const zside of [-1, 1]) {
+    const post = new THREE.Mesh(boxGeo(0.07, 0.5, 0.07), std(C_STEEL));
+    post.position.set(LEN / 2 - 0.02, 0.25, (zside * (W + 0.16)) / 2);
+    gp.add(post);
+  }
+  const beam = new THREE.Mesh(boxGeo(0.07, 0.07, W + 0.23), std(C_STEEL, C_GOLD, 0.35));
+  beam.position.set(LEN / 2 - 0.02, 0.5, 0);
+  gp.add(beam);
+  // ── Chevrons CLIMBING the wedge, pointing up-slope ──
+  const chevMats: THREE.MeshStandardMaterial[] = [];
+  const slope = Math.atan2(H, LEN);
+  for (let k = 0; k < 3; k++) {
+    const m = stdOwn(C_SHOT, C_SHOT, 0.85);
+    const chev = new THREE.Mesh(coneGeo(0.15, 0.3, 3), m);
+    chev.rotation.z = -Math.PI / 2 + slope;
+    const x = -0.18 + k * 0.18;
+    chev.position.set(x, (H * (x + LEN / 2)) / LEN + 0.07, 0);
+    chevMats.push(m);
+    gp.add(chev);
+  }
+  gp.rotation.y = yawFor(dirX, dirZ);
+  gp.userData.chevMats = chevMats;
+  gp.userData.lipMat = lipMat;
+  gp.userData.phase = Math.random() * Math.PI * 2;
+  return gp;
+}
+
 function buildDeflector(d1x: number, d1z: number, d2x: number, d2z: number): THREE.Group {
   const gp = new THREE.Group();
   // A genuinely CURVED banked rail (Wave D: "curved walls like a pinball
   // machine") — a quarter-torus sweeping from one open leg to the other,
   // backed by a quarter-cylinder wall wedge in the closed corner. The sweep
   // starts on the +x axis; yaw the group so its ends line up with the legs.
-  const rail = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.07, 8, 14, Math.PI / 2), std(C_STEEL_DK));
+  const rail = new THREE.Mesh(torusGeo(0.62, 0.07, 8, 14, Math.PI / 2), std(C_STEEL_DK));
   rail.rotation.x = -Math.PI / 2;
   rail.position.y = 0.3;
-  const edge = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 6, 14, Math.PI / 2), std(C_GOLD, C_GOLD, 0.6));
+  const edge = new THREE.Mesh(torusGeo(0.62, 0.035, 6, 14, Math.PI / 2), stdOwn(C_GOLD, C_GOLD, 0.6));
   edge.rotation.x = -Math.PI / 2;
   edge.position.y = 0.44;
-  const wedge = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.56, 0.4, 10, 1, false, 0, Math.PI / 2), std(C_STEEL_DK));
+  const wedge = new THREE.Mesh(cylGeo(0.5, 0.56, 0.4, 10, 1, false, 0, Math.PI / 2), std(C_STEEL_DK));
   wedge.position.y = 0.2;
   const curve = new THREE.Group();
   curve.add(rail, edge, wedge);
@@ -208,16 +447,16 @@ function buildDeflector(d1x: number, d1z: number, d2x: number, d2z: number): THR
 function buildGlove(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   // Wall plate on the mount side (opposite the punch direction).
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.5), std(C_STEEL_DK));
+  const plate = new THREE.Mesh(boxGeo(0.1, 0.5, 0.5), std(C_STEEL_DK));
   plate.position.set(-0.42, 0.35, 0);
   // Piston arm + the red glove, extended along +x by the punch anim.
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.36, 8), std(C_STEEL));
+  const arm = new THREE.Mesh(cylGeo(0.05, 0.05, 0.36, 8), std(C_STEEL));
   arm.rotation.z = Math.PI / 2;
   arm.position.set(-0.2, 0.35, 0);
-  const fist = new THREE.Mesh(new THREE.SphereGeometry(0.19, 10, 8), std(0xa83244, 0xa83244, 0.35));
+  const fist = new THREE.Mesh(sphereGeo(0.19, 10, 8), stdOwn(0xa83244, 0xa83244, 0.35));
   fist.scale.set(1.15, 0.95, 0.95);
   fist.position.set(0.02, 0.35, 0);
-  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.1, 8), std(C_GOLD, C_GOLD, 0.4));
+  const cuff = new THREE.Mesh(cylGeo(0.11, 0.13, 0.1, 8), std(C_GOLD, C_GOLD, 0.4));
   cuff.rotation.z = Math.PI / 2;
   cuff.position.set(-0.14, 0.35, 0);
   const piston = new THREE.Group();
@@ -236,7 +475,7 @@ function buildOil(): THREE.Group {
   const mat = std(0x14161c, 0x3a2a55, 0.22);
   mat.roughness = 0.15; // wet
   for (const [ox, oz, r] of [[0, 0, 0.42], [0.28, 0.14, 0.26], [-0.26, -0.12, 0.22]] as const) {
-    const blob = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.02, 12), mat);
+    const blob = new THREE.Mesh(cylGeo(r, r, 0.02, 12), mat);
     blob.position.set(ox, 0.012, oz);
     gp.add(blob);
   }
@@ -246,20 +485,20 @@ function buildOil(): THREE.Group {
 
 function buildSpinPad(): THREE.Group {
   const gp = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.08, 14), std(C_STEEL_DK));
+  const pad = new THREE.Mesh(cylGeo(0.42, 0.46, 0.08, 14), std(C_STEEL_DK));
   pad.position.y = 0.04;
   gp.add(pad);
   // A raised turbine rotor — three angled blades around a glowing gold hub cone,
   // so the whirl reads with real height (was low flat chevrons on the floor).
   const rotor = new THREE.Group();
   for (let k = 0; k < 3; k++) {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.05, 0.13), std(C_ARCANE, C_ARCANE, 0.7));
+    const blade = new THREE.Mesh(boxGeo(0.42, 0.05, 0.13), std(C_ARCANE, C_ARCANE, 0.7));
     const a = (k / 3) * Math.PI * 2;
     blade.position.set(Math.cos(a) * 0.19, 0.17, Math.sin(a) * 0.19);
     blade.rotation.y = -a;
     rotor.add(blade);
   }
-  const hub = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 8), std(C_GOLD, C_GOLD, 0.7));
+  const hub = new THREE.Mesh(coneGeo(0.12, 0.26, 8), std(C_GOLD, C_GOLD, 0.7));
   hub.position.y = 0.22;
   rotor.add(hub);
   gp.add(rotor);
@@ -272,11 +511,11 @@ function buildSlingshot(dirX: number, dirZ: number): THREE.Group {
   // Two gold posts flanking the lane (the lane runs along the part's dir),
   // with an elastic band stretched between them.
   for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.5, 8), std(C_GOLD, C_GOLD, 0.4));
+    const post = new THREE.Mesh(cylGeo(0.06, 0.08, 0.5, 8), std(C_GOLD, C_GOLD, 0.4));
     post.position.set(0, 0.25, side * 0.4);
     gp.add(post);
   }
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.8), std(C_ARCANE, C_ARCANE, 0.55));
+  const band = new THREE.Mesh(boxGeo(0.05, 0.08, 0.8), std(C_ARCANE, C_ARCANE, 0.55));
   band.position.y = 0.3;
   gp.add(band);
   gp.rotation.y = yawFor(dirX, dirZ);
@@ -288,7 +527,7 @@ function buildTarget(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   // A bullseye on a short pole, mounted toward its wall (dir points AT the
   // wall) and facing back out into the corridor.
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.55, 8), std(C_STEEL_DK));
+  const pole = new THREE.Mesh(cylGeo(0.04, 0.05, 0.55, 8), std(C_STEEL_DK));
   pole.position.set(0.3, 0.28, 0);
   const rings = new THREE.Group();
   const ringSpecs: Array<[number, number, number]> = [
@@ -298,8 +537,8 @@ function buildTarget(dirX: number, dirZ: number): THREE.Group {
   ];
   const ringMats: THREE.MeshStandardMaterial[] = [];
   ringSpecs.forEach(([r, colr, glow], k) => {
-    const m = std(colr, colr, glow);
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.04 + k * 0.012, 14), m);
+    const m = stdOwn(colr, colr, glow);
+    const disc = new THREE.Mesh(cylGeo(r, r, 0.04 + k * 0.012, 14), m);
     disc.rotation.z = Math.PI / 2;
     disc.position.set(0.24, 0.62, 0);
     ringMats.push(m);
@@ -317,13 +556,13 @@ function buildLamp(): THREE.Group {
   // flame bead. Unlit = cold arcane + dark bowl; lit = a bright gold flame
   // (swapped by the animator off part.lit). Radial, so no dir needed.
   const gp = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.14, 10), std(C_STEEL_DK));
+  const base = new THREE.Mesh(cylGeo(0.16, 0.22, 0.14, 10), std(C_STEEL_DK));
   base.position.y = 0.07;
-  const bowlMat = std(C_STEEL_DK, C_ARCANE, 0.3);
-  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.14, 0.16, 12), bowlMat);
+  const bowlMat = stdOwn(C_STEEL_DK, C_ARCANE, 0.3);
+  const bowl = new THREE.Mesh(cylGeo(0.22, 0.14, 0.16, 12), bowlMat);
   bowl.position.y = 0.22;
-  const flameMat = std(C_ARCANE, C_ARCANE, 0.9);
-  const flame = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), flameMat);
+  const flameMat = stdOwn(C_ARCANE, C_ARCANE, 0.9);
+  const flame = new THREE.Mesh(sphereGeo(0.15, 10, 8), flameMat);
   flame.position.y = 0.36;
   gp.add(base, bowl, flame);
   gp.userData.flameMat = flameMat;
@@ -340,17 +579,17 @@ function buildRollover(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   const railMat = std(C_STEEL, C_ARCANE, 0.2);
   for (const zside of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.3, 6), railMat);
+    const post = new THREE.Mesh(cylGeo(0.035, 0.045, 0.3, 6), railMat);
     post.position.set(0, 0.15, zside * 0.22);
     gp.add(post);
   }
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.035, 6, 12, Math.PI), railMat);
+  const arch = new THREE.Mesh(torusGeo(0.22, 0.035, 6, 12, Math.PI), railMat);
   arch.rotation.y = Math.PI / 2;
   arch.position.y = 0.3;
   gp.add(arch);
   // The lamp bead — unlit arcane, lit gold (set each frame from state.laneLit).
-  const lampMat = std(C_STEEL_DK, C_ARCANE, 0.5);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), lampMat);
+  const lampMat = stdOwn(C_STEEL_DK, C_ARCANE, 0.5);
+  const lamp = new THREE.Mesh(sphereGeo(0.09, 10, 8), lampMat);
   lamp.position.y = 0.53;
   gp.add(lamp);
   gp.rotation.y = yawFor(dirX, dirZ);
@@ -364,18 +603,18 @@ function buildTrapdoor(): THREE.Group {
   // ring. The punch anim flips it open on a hinge.
   // The SHAFT beneath it — sunk so it's invisible until the door swings wide,
   // then it's the black hole the knight visibly falls into.
-  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.74, 1.6, 0.74), std(PALETTE_HEX[0], 0x000000, 0));
+  const shaft = new THREE.Mesh(boxGeo(0.74, 1.6, 0.74), std(PALETTE_HEX[0], 0x000000, 0));
   shaft.position.y = -0.81;
   gp.add(shaft);
   const door = new THREE.Group();
   for (const side of [-1, 1]) {
-    const plank = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.05, 0.34), std(0x6b4a2e));
+    const plank = new THREE.Mesh(boxGeo(0.72, 0.05, 0.34), std(0x6b4a2e));
     plank.position.set(0, 0.025, side * 0.18);
     door.add(plank);
   }
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.06, 0.08), std(C_STEEL_DK));
+  const band = new THREE.Mesh(boxGeo(0.76, 0.06, 0.08), std(C_STEEL_DK));
   band.position.y = 0.03;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.02, 6, 10), std(C_STEEL, C_ARCANE, 0.25));
+  const ring = new THREE.Mesh(torusGeo(0.07, 0.02, 6, 10), std(C_STEEL, C_ARCANE, 0.25));
   ring.rotation.x = Math.PI / 2;
   ring.position.set(0.25, 0.06, 0);
   door.add(band, ring);
@@ -394,13 +633,13 @@ function buildFlipper(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   // A pivoting paddle: a wide steel bat with a gold striking edge + a hub.
   const paddle = new THREE.Group();
-  const bat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.24), std(C_STEEL, C_ARCANE, 0.2));
+  const bat = new THREE.Mesh(boxGeo(0.9, 0.12, 0.24), std(C_STEEL, C_ARCANE, 0.2));
   bat.position.x = 0.35;
-  const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.26), std(C_GOLD, C_GOLD, 0.7));
+  const edge = new THREE.Mesh(boxGeo(0.12, 0.14, 0.26), stdOwn(C_GOLD, C_GOLD, 0.7));
   edge.position.x = 0.78;
   paddle.add(bat, edge);
   paddle.position.y = 0.12;
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 0.14, 12), std(C_STEEL_DK));
+  const hub = new THREE.Mesh(cylGeo(0.14, 0.16, 0.14, 12), std(C_STEEL_DK));
   hub.position.y = 0.07;
   gp.add(hub, paddle);
   gp.rotation.y = yawFor(dirX, dirZ);
@@ -412,9 +651,9 @@ function buildFlipper(dirX: number, dirZ: number): THREE.Group {
 function buildMirror(mx: number, mz: number): THREE.Group {
   const gp = new THREE.Group();
   // A slim reflective slab standing along its surface line, glinting edge.
-  const slab = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.08), std(C_STEEL, C_ARCANE, 0.35));
+  const slab = new THREE.Mesh(boxGeo(1.0, 0.5, 0.08), std(C_STEEL, C_ARCANE, 0.35));
   slab.position.y = 0.28;
-  const glint = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.02), std(0xeef1f5, 0xeef1f5, 0.5));
+  const glint = new THREE.Mesh(boxGeo(1.0, 0.5, 0.02), stdOwn(0xeef1f5, 0xeef1f5, 0.5));
   glint.position.set(0, 0.28, 0.05);
   const rail = new THREE.Group();
   rail.add(slab, glint);
@@ -427,9 +666,9 @@ function buildMirror(mx: number, mz: number): THREE.Group {
 function buildPit(): THREE.Group {
   const gp = new THREE.Group();
   // A dark recessed hole with a jagged rim — reads as "do not fall in".
-  const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.5, 16), std(PALETTE_HEX[0], 0x000000, 0));
+  const hole = new THREE.Mesh(cylGeo(0.42, 0.3, 0.5, 16), std(PALETTE_HEX[0], 0x000000, 0));
   hole.position.y = -0.24; // sunk below the floor
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 8, 18), std(C_STEEL_DK));
+  const rim = new THREE.Mesh(torusGeo(0.44, 0.06, 8, 18), std(C_STEEL_DK));
   rim.rotation.x = Math.PI / 2;
   rim.position.y = 0.01;
   gp.add(hole, rim);
@@ -451,16 +690,16 @@ function buildGravePit(): THREE.Group {
   const gp = new THREE.Group();
   // The void. Deeper and wider than a pit, with near-black walls so it reads as
   // bottomless rather than as a bowl you could climb out of.
-  const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.34, 0.9, 20), std(PALETTE_HEX[0], 0x000000, 0));
+  const hole = new THREE.Mesh(cylGeo(0.62, 0.34, 0.9, 20), std(PALETTE_HEX[0], 0x000000, 0));
   hole.position.y = -0.42;
   // A torn, blood-lit rim: two rings at different radii so the edge reads as
   // ragged masonry rather than a machined lip.
-  const rimMat = std(PALETTE_HEX[11], PALETTE_HEX[12], 0.35);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.64, 0.075, 8, 22), rimMat);
+  const rimMat = stdOwn(PALETTE_HEX[11], PALETTE_HEX[12], 0.35);
+  const rim = new THREE.Mesh(torusGeo(0.64, 0.075, 8, 22), rimMat);
   rim.rotation.x = Math.PI / 2;
   rim.position.y = 0.015;
   gp.userData.rimMat = rimMat; // the animator pulses this — see PART_ANIMATORS
-  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.035, 6, 20), std(PALETTE_HEX[10], PALETTE_HEX[11], 0.2));
+  const rim2 = new THREE.Mesh(torusGeo(0.72, 0.035, 6, 20), std(PALETTE_HEX[10], PALETTE_HEX[11], 0.2));
   rim2.rotation.x = Math.PI / 2;
   rim2.position.y = -0.02;
   gp.add(hole, rim, rim2);
@@ -469,7 +708,7 @@ function buildGravePit(): THREE.Group {
   for (let k = 0; k < 9; k++) {
     const a = (k / 9) * Math.PI * 2 + (k % 3) * 0.21;
     const rr = 0.78 + (k % 4) * 0.075;
-    const shard = new THREE.Mesh(new THREE.BoxGeometry(0.13 + (k % 3) * 0.04, 0.07, 0.1), std(PALETTE_HEX[2], PALETTE_HEX[10], 0.08));
+    const shard = new THREE.Mesh(boxGeo(0.13 + (k % 3) * 0.04, 0.07, 0.1), std(PALETTE_HEX[2], PALETTE_HEX[10], 0.08));
     shard.position.set(Math.cos(a) * rr, 0.035, Math.sin(a) * rr);
     shard.rotation.set((k % 2) * 0.3, a + 0.4, (k % 3) * 0.22);
     gp.add(shard);
@@ -482,18 +721,18 @@ function buildElectric(): THREE.Group {
   // A floor plate with four TALL prong pylons + a central emitter rod, so the
   // hazard has vertical presence and reads even when the plate is dark (was a
   // near-flat plate with stubby nodes).
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.8), std(C_STEEL_DK, C_ARCANE, 0));
+  const plate = new THREE.Mesh(boxGeo(0.8, 0.04, 0.8), stdOwn(C_STEEL_DK, C_ARCANE, 0));
   plate.position.y = 0.02;
   gp.add(plate);
-  const nodeMat = std(C_ARCANE, 0x9fe8ff, 0.2);
+  const nodeMat = stdOwn(C_ARCANE, 0x9fe8ff, 0.2);
   for (const [nx, nz] of [[-0.28, -0.28], [0.28, -0.28], [-0.28, 0.28], [0.28, 0.28]] as const) {
-    const node = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.3, 8), nodeMat);
+    const node = new THREE.Mesh(cylGeo(0.05, 0.07, 0.3, 8), nodeMat);
     node.position.set(nx, 0.17, nz);
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), nodeMat);
+    const tip = new THREE.Mesh(sphereGeo(0.06, 8, 6), nodeMat);
     tip.position.set(nx, 0.32, nz);
     gp.add(node, tip);
   }
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.42, 6), nodeMat);
+  const core = new THREE.Mesh(cylGeo(0.035, 0.035, 0.42, 6), nodeMat);
   core.position.set(0, 0.23, 0);
   gp.add(core);
   gp.userData.plateMat = plate.material;
@@ -504,13 +743,13 @@ function buildElectric(): THREE.Group {
 function buildFireVent(dirX: number, dirZ: number): THREE.Group {
   const gp = new THREE.Group();
   // A wall nozzle (mount side is -dir) with a stubby barrel aimed down the lane.
-  const mount = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.4, 0.4), std(C_STEEL_DK));
+  const mount = new THREE.Mesh(boxGeo(0.12, 0.4, 0.4), std(C_STEEL_DK));
   mount.position.set(-0.3, 0.28, 0);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.3, 10), std(C_STEEL));
+  const barrel = new THREE.Mesh(cylGeo(0.1, 0.13, 0.3, 10), std(C_STEEL));
   barrel.rotation.z = Math.PI / 2;
   barrel.position.set(-0.1, 0.28, 0);
   // the flame plume, scaled by the anim when it roars
-  const plume = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.0, 10), std(0xf0a63c, 0xf0a63c, 0.9));
+  const plume = new THREE.Mesh(coneGeo(0.22, 1.0, 10), stdOwn(0xf0a63c, 0xf0a63c, 0.9));
   plume.rotation.z = -Math.PI / 2;
   plume.position.set(0.6, 0.28, 0);
   plume.scale.setScalar(0.001);
@@ -526,27 +765,27 @@ function buildMagStrip(): THREE.Group {
   // A charged SLOW-field: a dark band with two tall humming coil pylons at the
   // ends and inward braking chevrons, so it reads "cross here and you get
   // dragged to a crawl" at a glance (was a near-flat floor stripe).
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.6), std(0x241d2e));
+  const band = new THREE.Mesh(boxGeo(0.9, 0.04, 0.6), std(0x241d2e));
   band.position.y = 0.02;
   gp.add(band);
-  const fieldMat = std(0x2e6d8f, 0x39b0d8, 0.5);
+  const fieldMat = stdOwn(0x2e6d8f, 0x39b0d8, 0.5);
   for (const cx of [-0.4, 0.4]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.44, 8), std(C_STEEL_DK));
+    const post = new THREE.Mesh(cylGeo(0.08, 0.1, 0.44, 8), std(C_STEEL_DK));
     post.position.set(cx, 0.22, 0);
     gp.add(post);
     for (let k = 0; k < 3; k++) {
-      const coil = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.025, 6, 12), fieldMat);
+      const coil = new THREE.Mesh(torusGeo(0.13, 0.025, 6, 12), fieldMat);
       coil.rotation.x = Math.PI / 2;
       coil.position.set(cx, 0.12 + k * 0.12, 0);
       gp.add(coil);
     }
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), fieldMat);
+    const cap = new THREE.Mesh(sphereGeo(0.09, 8, 6), fieldMat);
     cap.position.set(cx, 0.46, 0);
     gp.add(cap);
   }
   // braking chevrons on the band, pointing INWARD (the "you'll be slowed" read)
   for (const [cx, sgn] of [[-0.2, 1], [0.2, -1]] as const) {
-    const chev = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.18, 3), fieldMat);
+    const chev = new THREE.Mesh(coneGeo(0.1, 0.18, 3), fieldMat);
     chev.rotation.z = sgn > 0 ? -Math.PI / 2 : Math.PI / 2;
     chev.position.set(cx, 0.06, 0);
     gp.add(chev);
@@ -585,6 +824,9 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   spring: ({ dirX, dirZ }) => buildSpring(dirX, dirZ),
   ramp: ({ dirX, dirZ }) => buildRamp(dirX, dirZ),
   booster: ({ dirX, dirZ }) => buildBooster(dirX, dirZ),
+  boostcorner: ({ dirX, dirZ, dir2X, dir2Z }) => buildBoostCorner(dirX, dirZ, dir2X, dir2Z),
+  boostcurve: ({ dirX, dirZ }) => buildBoostCurve(dirX, dirZ),
+  jumppad: ({ dirX, dirZ }) => buildJumpPad(dirX, dirZ),
   deflector: ({ dirX, dirZ, dir2X, dir2Z }) => buildDeflector(dirX, dirZ, dir2X, dir2Z),
   glove: ({ dirX, dirZ }) => buildGlove(dirX, dirZ),
   oil: () => buildOil(),
@@ -716,6 +958,13 @@ export const PART_HIT_LIFETIME: Record<PinballPartKind, number> = {
   spring: 0.6,
   ramp: 0.6,
   booster: 0.6,
+  boostcorner: 0.6,
+  boostcurve: 0.6,
+  // The jump pad's flash has to outlast the AIRTIME, or the pad goes dark while
+  // the knight is still over the wall it threw him across and the shot reads as
+  // two unrelated events. RAMP_HOP at RAMP_HOP_SPEED over RAMP_HOP_MAX tiles is
+  // ~0.3 s; 0.9 covers it with the landing.
+  jumppad: 0.9,
   deflector: 0.6,
   glove: 0.6,
   oil: 0.6,
@@ -819,6 +1068,61 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
       });
     }
     if (strips) strips.forEach((m) => (m.emissiveIntensity = 0.55 + 0.35 * Math.sin(animT * 5 + phase) + flash * 2.0));
+  },
+
+  boostcorner: (part) => {
+    // The wave chases AROUND the turn, so the four chevrons light entry-to-exit
+    // in order — the animation is what tells you which way the corner goes when
+    // the mesh is half-occluded by the wall it's tucked against. The exit lip
+    // flares on a hit, a beat after the last chevron, so a good line reads as a
+    // punch rather than a glow.
+    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+    const lip = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const phase = (part.mesh.userData.phase as number) ?? 0;
+    const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
+    if (chevs) {
+      chevs.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 8 + phase - k * ((Math.PI * 2) / chevs.length)));
+        m.emissiveIntensity = 0.3 + 0.95 * wave + flash * 2.2;
+      });
+    }
+    if (lip) lip.emissiveIntensity = 0.35 + 0.25 * Math.sin(animT * 4 + phase) + flash * 2.4;
+  },
+
+  boostcurve: (part) => {
+    // Same forward crawl as the straight pad but SLOWER and softer: several of
+    // these sit end to end in one curve, and three fast independent waves side
+    // by side strobe rather than flow. The lean rail glows steady to draw the
+    // line of the curve itself.
+    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+    const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
+    const phase = (part.mesh.userData.phase as number) ?? 0;
+    const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
+    if (chevs) {
+      chevs.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 6 + phase - k * ((Math.PI * 2) / 3)));
+        m.emissiveIntensity = 0.35 + 0.7 * wave + flash * 2.2;
+      });
+    }
+    if (strips) strips.forEach((m) => (m.emissiveIntensity = 0.7 + flash * 1.6));
+  },
+
+  jumppad: (part) => {
+    // Chevrons climb, then the takeoff lip STROBES — an anticipation beat that
+    // says "this one goes up". On a hit the lip goes white-hot for the whole
+    // airtime (see PART_HIT_LIFETIME.jumppad) so the pad is still visibly the
+    // source of the flight while the knight is over the wall.
+    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
+    const lip = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const phase = (part.mesh.userData.phase as number) ?? 0;
+    const flash = part.hitT >= 0 && part.hitT < 0.5 ? 1 - part.hitT / 0.5 : 0;
+    if (chevs) {
+      chevs.forEach((m, k) => {
+        const wave = Math.max(0, Math.sin(animT * 7 + phase - k * ((Math.PI * 2) / 3)));
+        m.emissiveIntensity = 0.3 + 0.9 * wave + flash * 2.6;
+      });
+    }
+    if (lip) lip.emissiveIntensity = 0.4 + 0.3 * Math.abs(Math.sin(animT * 3 + phase)) + flash * 3;
   },
 
   deflector: (part) => {
@@ -1108,12 +1412,12 @@ function buildPlungerRig(): THREE.Group {
   // and drawn over the walls so you can always see it. Local +X = launch.
   const striker = new THREE.Group();
   striker.name = "striker";
-  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.26, 0.42, 12), plungerMat(0x3a2c0a, C_GOLD, 0.9));
+  const head = new THREE.Mesh(cylGeo(0.24, 0.26, 0.42, 12), plungerMat(0x3a2c0a, C_GOLD, 0.9));
   head.rotation.z = Math.PI / 2; // lay the disc along the launch axis
   head.position.set(0.1, 0.4, 0);
   // A stubby spring coil (stacked rings) behind the head.
   for (let k = 0; k < 3; k++) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 12), plungerMat(0x2a2214, C_GOLD, 0.5));
+    const ring = new THREE.Mesh(torusGeo(0.16, 0.05, 6, 12), plungerMat(0x2a2214, C_GOLD, 0.5));
     ring.rotation.y = Math.PI / 2;
     ring.position.set(-0.12 - k * 0.16, 0.4, 0);
     striker.add(ring);
@@ -1146,14 +1450,30 @@ export function updatePlungerRig(): void {
   if (striker) striker.position.x = -(0.55 + state.plungerPower * 0.5); // short draw-back so it stays clear of walls
 }
 
+/**
+ * Release one part's GPU objects — but ONLY the ones it owns.
+ *
+ * Everything from `std`/`*Geo` is flagged `userData.shared` and belongs to the
+ * module cache, not to this part: it is the same buffer the next floor's parts
+ * will draw with. Disposing it here is not a leak fix, it is a use-after-free —
+ * the floor rebuilds, hands out the cached geometry, and draws nothing. This is
+ * the same rule the texture cache in maze/build.ts states ("never dispose it").
+ */
+function releaseOwned(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry && !m.geometry.userData.shared) m.geometry.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    for (const mm of Array.isArray(mat) ? mat : [mat]) {
+      if (mm && !mm.userData.shared) mm.dispose();
+    }
+  });
+}
+
 function disposePlungerRig(scene: THREE.Scene | null): void {
   if (!plungerRig) return;
   scene?.remove(plungerRig);
-  plungerRig.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (m.geometry) m.geometry.dispose();
-    (m.material as THREE.Material | undefined)?.dispose?.();
-  });
+  releaseOwned(plungerRig);
   plungerRig = null;
 }
 
@@ -1161,13 +1481,7 @@ export function disposePinballParts(scene: THREE.Scene | null): void {
   disposePlungerRig(scene); // rebuilt with the current scene on the next armed floor
   for (const part of state.pinballParts) {
     scene?.remove(part.mesh);
-    part.mesh.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.geometry) m.geometry.dispose();
-      const mat = m.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
-      else mat?.dispose();
-    });
+    releaseOwned(part.mesh);
   }
   state.pinballParts = [];
 }

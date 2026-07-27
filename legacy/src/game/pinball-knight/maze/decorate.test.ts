@@ -3,6 +3,9 @@ import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, a
 import { decorateMaze, widenMainArtery, openLaunchTargets, pickEndpoints, breakLaunchDuels } from "./decorate";
 import { isShaped, isArc, shapeBacking } from "../engine/tile-shape";
 import { bfsDistances } from "../engine/flow-field";
+import { PICKUP_WEAPONS } from "../items";
+import { buildFlowField, phiAt } from "./flow-orient";
+import { findFlowCycles } from "./flow-loops";
 
 function makeLevel(seed: number, zombies = 8, torches = 10, parts = 10) {
   const g = generateMaze(10, 8, mulberry32(seed));
@@ -96,8 +99,12 @@ describe("decorateMaze", () => {
     const weapons = plan.items.filter((it) => it.kind === "weapon").map((it) => it.id);
     expect(weapons.length).toBe(3);
     expect(new Set(weapons).size).toBe(3); // no duplicates in one level's roll
-    const pool = ["stick", "mace", "chair", "gun", "bow", "flamethrower"];
-    for (const id of weapons) expect(pool).toContain(id);
+    // Read the pool from the source of truth rather than restating it. The
+    // hand-written copy here was missing greatsword/warhammer/wreckingball and
+    // had been wrong since they were added — it only stayed green because this
+    // one seed's roll happened never to draw them, so the test was pinning an
+    // accident of the rng stream rather than the rule it claims to.
+    for (const id of weapons) expect(PICKUP_WEAPONS).toContain(id);
 
     for (const it of plan.items) {
       expect(at(g, it.i, it.j)).toBe(T_FLOOR);
@@ -124,11 +131,12 @@ describe("decorateMaze", () => {
         expect(open.length).toBe(1);
         expect([part.dirI, part.dirJ]).toEqual([open[0][0], open[0][1]]);
       } else if (part.vault) {
-        // VAULT RAMP — the deliberate exception: aimed square at a wall BAND
+        // JUMP PAD — the deliberate exception: aimed square at a wall BAND
         // with real corridor on the far side, so the hop clears the maze.
-        // Every other ramp aims ALONG its lane, which is why the ramp hop
-        // could never jump a wall before these existed.
-        expect(part.kind).toBe("ramp");
+        // Every other launcher aims ALONG its lane, which is why the ramp hop
+        // could never jump a wall before these existed. It was a `ramp` with a
+        // `vault` flag and no distinguishing mesh until it got its own kind.
+        expect(part.kind).toBe("jumppad");
         expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).toBe(T_WALL);
         // …and a landing exists within the hop's reach past the band.
@@ -182,6 +190,26 @@ describe("decorateMaze", () => {
         expect(at(g, part.i, part.j)).toBe(T_FLOOR);
         expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
         expect(at(g, part.i + part.dirI, part.j + part.dirJ)).not.toBe(T_WALL);
+      } else if (part.kind === "boostcorner") {
+        // A TURN, so its topology is a corner, never a junction: both legs
+        // cardinal, perpendicular to each other, and both open. Same shape as
+        // the deflector's assertion because they share the two-leg convention —
+        // but `open.length` is NOT pinned to 2 the way the deflector's is: a
+        // corner booster is laid on the route wherever the route turns, and a
+        // route can turn in an open plaza with three or four ways out.
+        expect(at(g, part.i, part.j)).toBe(T_FLOOR);
+        expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBe(1);
+        expect(Math.abs(part.dir2I) + Math.abs(part.dir2J)).toBe(1);
+        expect(Math.abs(part.dirI * part.dir2I + part.dirJ * part.dir2J)).toBe(0); // perpendicular (abs: -1*0 is -0)
+        expect(at(g, part.i + part.dir2I, part.j + part.dir2J)).not.toBe(T_WALL); // it can leave
+      } else if (part.kind === "boostcurve") {
+        // The one launcher whose heading is a TANGENT rather than a cardinal —
+        // that is the feature (a run of them renders as one curved lane), and
+        // it is what keeps this kind out of every cardinal-only repair pass.
+        // Asserted as: a unit vector that is NOT axis-aligned.
+        expect(at(g, part.i, part.j)).toBe(T_FLOOR);
+        expect(Math.hypot(part.dirI, part.dirJ)).toBeCloseTo(1, 6);
+        expect(Math.abs(part.dirI) + Math.abs(part.dirJ)).toBeGreaterThan(1);
       } else {
         // bumper / spinpad — a junction (3+ ways out): an open crossing
         expect(open.length).toBeGreaterThanOrEqual(3);
@@ -228,11 +256,21 @@ describe("decorateMaze", () => {
 
   it("PATH-FIRST: speed parts fire DOWN-FLOW (toward the exit), not back the way you came", () => {
     // The reported bug: "you'll just speed up into a booster that just sends you
-    // back." Speed parts (ramp/slingshot/booster) should point down the
-    // dist-from-start gradient — onward — with only a small kickback minority.
-    // Measured on the REAL pipeline (thickened + widened artery + endpoints),
-    // which is the floor the player actually gets and where forward runway
-    // exists — a raw un-thickened maze has corridors too short to launch down.
+    // back." Speed parts (ramp/slingshot/booster) should point down Φ — the
+    // distance-to-STAIRS field — with only a small kickback minority.
+    //
+    // ── This test used to measure dist-from-START, and that was the wrong
+    // field. Its own title says "toward the exit", but "further from the spawn"
+    // is satisfied by every dead-end branch on the floor, so a pad firing down
+    // a pocket the exit is not in scored as forward. Measured on the shipping
+    // generator while the assertion was green: 16.2% of launch parts fired back
+    // toward the spawn and 130 sat in closed feedback rings.
+    //
+    // Φ is the field decorate actually orients on (maze/flow-orient.ts) and the
+    // one the guarantee rests on, so it is the one asserted here. Measured on
+    // the REAL pipeline (thickened + widened artery + endpoints), which is the
+    // floor the player actually gets and where forward runway exists — a raw
+    // un-thickened maze has corridors too short to launch down.
     let forward = 0;
     let backward = 0;
     for (let seed = 500; seed < 545; seed++) {
@@ -245,20 +283,22 @@ describe("decorateMaze", () => {
       if (!ends) continue;
       widenMainArtery(g, ends);
       const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 12, rooms, { endpoints: ends });
-      const dist = bfsDistances(g, ends.start.i, ends.start.j);
+      const phi = buildFlowField(g, plan.stairs);
       for (const part of plan.parts) {
         if (part.kind !== "ramp" && part.kind !== "slingshot" && part.kind !== "booster") continue;
-        if (part.vault) continue; // vault ramps aim AT a wall on purpose
+        if (part.vault) continue; // vault parts aim AT a wall on purpose
         if (part.dirI === 0 && part.dirJ === 0) continue;
-        const fwd = dist[idx(g, part.i + part.dirI, part.j + part.dirJ)]; // tile it fires into
-        const bwd = dist[idx(g, part.i - part.dirI, part.j - part.dirJ)]; // behind it
-        if (fwd > bwd) forward++;
-        else if (bwd > fwd) backward++;
+        const fwd = phiAt(g, phi, part.i + part.dirI, part.j + part.dirJ); // tile it fires into
+        const bwd = phiAt(g, phi, part.i, part.j); // the pad's own tile
+        if (fwd < bwd) forward++;
+        else if (fwd > bwd) backward++;
       }
     }
     expect(forward + backward, "not enough speed parts sampled").toBeGreaterThan(30);
-    // The great majority lead onward; a kickback/runway-forced minority is fine.
-    expect(forward, `only ${forward}/${forward + backward} speed parts point onward`).toBeGreaterThan(backward * 3);
+    // The great majority lead onward. The remainder is the deliberate
+    // KICKBACK_CHANCE minority plus pads whose only open lane runs uphill — both
+    // are wanted, so this is a ratio and not "all of them".
+    expect(forward, `only ${forward}/${forward + backward} speed parts point onward`).toBeGreaterThan(backward * 6);
   });
 
   it("D2: an ORBIT is a complete ring of four rails, seq 0-3, or it isn't tagged at all", () => {
@@ -421,6 +461,8 @@ describe("decorateMaze — rooms + secrets", () => {
     // REAL pipeline (thickened + widened artery + endpoints) — the floor the
     // player actually gets, where the spine is laid down the launch highway.
     let sampled = 0;
+    let feedsAll = 0;
+    let padsAll = 0;
     for (let seed = 500; seed < 545; seed++) {
       const raw = generateMaze(14, 11, mulberry32(seed));
       const rooms0 = carveRooms(raw, mulberry32(seed + 1), 3, 2, 4);
@@ -431,7 +473,7 @@ describe("decorateMaze — rooms + secrets", () => {
       if (!ends) continue;
       widenMainArtery(g, ends);
       const plan = decorateMaze(g, mulberry32(seed + 3), 10, 12, 12, rooms, { endpoints: ends });
-      const dist = bfsDistances(g, ends.start.i, ends.start.j);
+      const phi = buildFlowField(g, plan.stairs);
       const spine = plan.parts.filter((p) => p.spine);
       if (spine.length === 0) continue;
       sampled++;
@@ -445,10 +487,14 @@ describe("decorateMaze — rooms + secrets", () => {
         expect(at(g, b.i, b.j)).toBe(T_FLOOR);
         expect(Math.abs(b.dirI) + Math.abs(b.dirJ)).toBe(1);
         expect(at(g, b.i + b.dirI, b.j + b.dirJ)).not.toBe(T_WALL);
-        // DOWN-FLOW: shoves you toward the exit, never back at the spawn.
-        const fwd = dist[idx(g, b.i + b.dirI, b.j + b.dirJ)];
-        const bwd = dist[idx(g, b.i - b.dirI, b.j - b.dirJ)];
-        expect(fwd, `spine booster @${b.i},${b.j} points backward (seed ${seed})`).toBeGreaterThanOrEqual(bwd);
+        // DOWN-FLOW on Φ: strictly closer to the STAIRS after the shove. Strict,
+        // and on the distance-to-exit field rather than distance-from-spawn —
+        // those are different fields (see flow-orient.ts) and only this one makes
+        // "a chain of shoves cannot close a loop" true. A route pad has no
+        // kickback allowance: the routes ARE the floor's one-way structure.
+        const fwd = phiAt(g, phi, b.i + b.dirI, b.j + b.dirJ);
+        const bwd = phiAt(g, phi, b.i, b.j);
+        expect(fwd, `spine booster @${b.i},${b.j} points backward (seed ${seed})`).toBeLessThan(bwd);
         // FEEDS SOMETHING: another spine part lies further down its fire ray
         // within a few tiles (the next pad, or the bend station it delivers you
         // to). The terminal pad nearest the stairs may drain into the exit.
@@ -459,25 +505,47 @@ describe("decorateMaze — rooms + secrets", () => {
           if (spine.some((q) => q !== b && q.i === ti && q.j === tj)) { feeds++; break; }
         }
       }
-      // The route is a CHAIN, not a scatter: the great majority of pads hand off
-      // to the next part along their own fire line (the terminal pad near the
-      // stairs may drain into the exit, and a very long straight can stride wide).
-      expect(feeds, `seed ${seed}: only ${feeds}/${boosters.length} pads feed another part`).toBeGreaterThanOrEqual(Math.ceil(boosters.length * 0.75));
+      // The route is a CHAIN, not a scatter: pads hand off to the next part
+      // along their own fire line.
+      //
+      // ── Per-seed floor plus an AGGREGATE gate, rather than 75% on every seed.
+      //
+      // The 75%-per-seed form was right when a floor had ONE road, whose only
+      // un-chained pad was the terminal one draining into the exit. A floor now
+      // gets up to four (see ALT_ROUTES_MAX), so it has four times as many run
+      // ends, and the un-chained share rises for a structural reason rather
+      // than a quality one. Measured over these 45 seeds: 74.1% of route pads
+      // hand off within 4 tiles (979 of 1322) against 69.6% before the terminus
+      // stations were added — i.e. the RATE is at parity with the single-road
+      // floor while the absolute count of chained pads is several times higher.
+      //
+      // So: the aggregate carries the quality claim, and the per-seed check
+      // becomes a collapse detector — a floor where half the pads chain into
+      // nothing is a bug, a floor at 67% is the tail of a distribution.
+      feedsAll += feeds;
+      padsAll += boosters.length;
+      expect(feeds, `seed ${seed}: only ${feeds}/${boosters.length} pads feed another part`).toBeGreaterThanOrEqual(Math.ceil(boosters.length * 0.5));
 
       // A bend station banks you round the corner: both legs are walkable (open
       // floor, or the stairs tile when the turn feeds straight into the exit).
-      for (const d of spine.filter((p) => p.kind === "deflector")) {
-        expect(at(g, d.i + d.dirI, d.j + d.dirJ), `deflector leg1 @${d.i},${d.j}`).not.toBe(T_WALL);
-        expect(at(g, d.i + d.dir2I, d.j + d.dir2J), `deflector leg2 @${d.i},${d.j}`).not.toBe(T_WALL);
+      // `boostcorner` shares the two-leg convention exactly so the two are
+      // interchangeable in the plan — asserted together rather than in two
+      // near-identical blocks, which is the point of sharing the convention.
+      for (const d of spine.filter((p) => p.kind === "deflector" || p.kind === "boostcorner")) {
+        expect(at(g, d.i + d.dirI, d.j + d.dirJ), `${d.kind} leg1 @${d.i},${d.j}`).not.toBe(T_WALL);
+        expect(at(g, d.i + d.dir2I, d.j + d.dir2J), `${d.kind} leg2 @${d.i},${d.j}`).not.toBe(T_WALL);
       }
 
       // The route goes THROUGHOUT the map, not one corner: its parts span a real
       // slice of the floor's start→exit distance.
-      const ds = spine.map((p) => dist[idx(g, p.i, p.j)]);
-      const maxDist = Math.max(...Array.from(dist).filter((v) => v < 1e8));
-      expect(Math.max(...ds) - Math.min(...ds), `seed ${seed}: spine barely spans the floor`).toBeGreaterThanOrEqual(maxDist * 0.25);
+      // Measured on Φ like everything else in this test: the routes' parts must
+      // cover a real slice of the exit-distance range, not huddle at one depth.
+      const ds = spine.map((p) => phiAt(g, phi, p.i, p.j)).filter((v) => v < 1e8);
+      const maxPhi = Math.max(...Array.from(phi).filter((v) => v < 1e8));
+      expect(Math.max(...ds) - Math.min(...ds), `seed ${seed}: routes barely span the floor`).toBeGreaterThanOrEqual(maxPhi * 0.25);
     }
     expect(sampled, "no station spine sampled across 45 seeds").toBeGreaterThan(15);
+    expect(feedsAll / padsAll, `only ${feedsAll}/${padsAll} route pads chain onward`).toBeGreaterThan(0.7);
   });
 
   it("frames big open rooms with curved corner rails (deflectors) — the playfield read", () => {
@@ -808,10 +876,78 @@ describe("breakLaunchDuels", () => {
           for (let s = 1; s < along && clear; s++) {
             if (at(g, a.i + a.dirI * s, a.j + a.dirJ * s) !== T_FLOOR) clear = false;
           }
+          // ── AN INTERCEPTED LANE IS NOT A DUEL, and this clause is the whole
+          // reason the old assertion was a proxy rather than the property.
+          //
+          // The ping-pong needs a ROUND TRIP: a throws the ball at b, b throws
+          // it back at a. A launcher standing between them sets a fresh heading
+          // and the trip never completes — exactly as a wall between them does,
+          // which the loop above already honours.
+          //
+          // It matters because two routes CONVERGING on one corridor from
+          // opposite ends is a normal shape once routes run downhill on Φ: both
+          // arms are correct, they meet at a local minimum, and the part at the
+          // minimum turns the ball out of the lane. Seed 24 produces exactly
+          // that — boosters at (15,15)+j and (15,27)−j either side of a corner
+          // booster at (15,22), Φ 60 → 53 ← 58 — and the un-intercepted
+          // predicate called it a duel. Repairing a merge junction would mean
+          // re-aiming one road back up itself.
+          for (const q of plan.parts) {
+            if (q === a || q === b || !clear) continue;
+            if (!LAUNCH_KINDS_TEST.has(q.kind) && q.kind !== "boostcorner" && q.kind !== "boostcurve") continue;
+            const qa = a.dirI !== 0 ? (q.i - a.i) * a.dirI : (q.j - a.j) * a.dirJ;
+            const qc = a.dirI !== 0 ? q.j - a.j : q.i - a.i;
+            if (qc === 0 && qa > 0 && qa < along) clear = false;
+          }
           expect(clear, `seed ${seed}: ${a.kind}@${a.i},${a.j} duels ${b.kind}@${b.i},${b.j}`).toBe(false);
         }
       }
     }
+  });
+
+  it("NO CLOSED LOOP of shoves survives on a real floor", () => {
+    // The property the pairwise duel test above can only approximate, and the
+    // one the player actually feels: follow each launcher's exit ray to the
+    // launcher it feeds and you must never come back to where you started.
+    //
+    // Censused on the shipping generator before maze/flow-loops.ts existed: 130
+    // launchers across 78 floors sat inside a closed ring, most of them in rings
+    // of THREE OR MORE, which no pair rule can represent and which the runtime
+    // BOOSTER_JAM guard cannot see either (it keys off the ball returning to the
+    // same spot, and in a multi-pad ring it never does).
+    let floors = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      const g = thickenWalls(generateMaze(12, 10, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 16);
+      floors++;
+      const cycles = findFlowCycles(g, plan.parts);
+      const show = cycles.map((c) => c.map((n) => `${plan.parts[n].kind}@${plan.parts[n].i},${plan.parts[n].j}`).join(" → "));
+      expect(cycles.length, `seed ${seed}: feedback loop(s) ${JSON.stringify(show)}`).toBe(0);
+    }
+    expect(floors, "no floors sampled").toBeGreaterThan(30);
+  });
+
+  it("route pads run STRICTLY downhill on Φ, so a route cannot double back", () => {
+    // The invariant every other guarantee here is built on. It is asserted on
+    // the route pads specifically because they are the ones with no kickback
+    // allowance — a loose corridor pad may deliberately rebound, a road may not.
+    let checked = 0;
+    for (let seed = 0; seed < 30; seed++) {
+      const g = thickenWalls(generateMaze(12, 10, mulberry32(seed)));
+      const plan = decorateMaze(g, mulberry32(seed + 1), 8, 10, 16);
+      const phi = buildFlowField(g, plan.stairs);
+      for (const p of plan.parts) {
+        if (!p.spine || p.chute) continue;
+        // Straight route pads fire along `dir`; a corner fires along `dir2`.
+        const [di, dj] = p.kind === "boostcorner" ? [p.dir2I, p.dir2J] : [p.dirI, p.dirJ];
+        if (p.kind !== "booster" && p.kind !== "boostcorner") continue;
+        checked++;
+        const from = phiAt(g, phi, p.i, p.j);
+        const to = phiAt(g, phi, p.i + Math.round(di), p.j + Math.round(dj));
+        expect(to, `${p.kind}@${p.i},${p.j} (seed ${seed}) fires uphill: Φ ${from} → ${to}`).toBeLessThan(from);
+      }
+    }
+    expect(checked, "no route pads sampled").toBeGreaterThan(50);
   });
 });
 
