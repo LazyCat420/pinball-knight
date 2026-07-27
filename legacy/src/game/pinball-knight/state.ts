@@ -540,6 +540,19 @@ export interface CoinFlight {
   fromZ: number;
 }
 
+/**
+ * One card in the FLOOR HAUL — what was picked up, the line saying where it
+ * went (socketed into which weapon / stashed n-of-10), and whether the run had
+ * seen that card before. Revealed as one screen when the floor ends; see
+ * card-reader.ts.
+ */
+export interface HaulEntry {
+  id: string;
+  note: string;
+  /** First copy of this card this run. */
+  fresh?: boolean;
+}
+
 export interface GroundItem {
   /** Co-op network id — set on items every pool member should agree on (floor
    * loot + authority drops). Coins are personal juice and never carry one. */
@@ -576,6 +589,8 @@ export interface GroundItem {
   corpseId?: string;
   /** Burst/rest/magnet flight state (kind === "coin"). See CoinFlight. */
   coin?: CoinFlight;
+  /** Seconds left before this item may print its refusal note again. */
+  noteCd?: number;
 }
 
 export interface Projectile {
@@ -844,9 +859,18 @@ export const state = {
   killsByKind: {} as Record<string, number>,
   /** Elixir of Life's run-scoped max-hearts bonus (feeds playerMaxHp). */
   bonusMaxHp: 0,
-  /** CardIds already shown in the full card reader this run — repeats of a
-   * common/rare card fall back to the non-blocking popup. */
+  /** CardIds already read this run. Kept for the haul screen's NEW badge. */
   seenCards: new Set<string>(),
+  /**
+   * THE FLOOR HAUL — every card picked up since the last tavern visit, in the
+   * order it was found, with the line saying where it went (socketed / stashed).
+   *
+   * Cards no longer interrupt the fight to be read: the pickup fires a corner
+   * toast, appends here, and the whole haul is revealed as one screen when the
+   * floor is cleared and the tavern opens (core.descend → showCardHaul).
+   * Consumed and emptied there.
+   */
+  floorHaul: [] as HaulEntry[],
 
   // The level
   grid: null as Grid | null,
@@ -1223,6 +1247,7 @@ export function resetState(): void {
   state.legendaryDropped = false;
   state.mythicDropped = false;
   state.seenCards = new Set();
+  state.floorHaul = [];
   state.reagents = {};
   state.flasks = 0;
   state.killsByKind = {};

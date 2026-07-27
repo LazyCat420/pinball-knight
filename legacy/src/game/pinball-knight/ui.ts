@@ -9,6 +9,7 @@ import { SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
 import { playerMaxHp } from "./skill-runtime";
 import { WEAPONS, GEAR, GEAR_SLOTS, type WeaponId } from "./items";
 import { ensurePixelFonts } from "./pixel-fonts";
+import { showPickupToast } from "./pickup-toast";
 import { clamp, clamp01 } from "../../utils/math";
 import { loadBestDepth } from "./best-depth";
 import { getPlayerName, setPlayerName, NAME_MAX } from "../../services/player-name";
@@ -638,26 +639,17 @@ export function showToast(text: string, subtext = ""): void {
   }, 1400);
 }
 
-/** Small bottom-centre notice for pickups — quieter than a full toast. */
+/**
+ * Small pickup/hint notice — quieter than a full toast.
+ *
+ * This used to be a full-width banner across the bottom of the PLAY AREA, which
+ * at pinball speed is a line of text laid over the thing you are trying to
+ * track. It now stacks in the bottom-right corner rail with every other pickup
+ * message (pickup-toast.ts). Kept as a named export because its ~8 call sites
+ * read as "notice", not "toast" (`showToast` is the big centre banner).
+ */
 export function showPickupNote(text: string): void {
-  if (!state.container) return;
-  const el = document.createElement("div");
-  el.style.cssText = `
-    position: fixed; bottom: 54px; left: 0; right: 0; z-index: 10001;
-    text-align: center; pointer-events: none; user-select: none;
-    font: 700 14px ui-monospace, Menlo, monospace; letter-spacing: 2px;
-    color: #ffd98a; text-shadow: 1px 1px 0 #0b0d12;
-    opacity: 0; transition: opacity 0.2s ease;
-  `;
-  el.textContent = text;
-  state.container.appendChild(el);
-  requestAnimationFrame(() => {
-    el.style.opacity = "1";
-  });
-  setTimeout(() => {
-    el.style.opacity = "0";
-    setTimeout(() => el.remove(), 300);
-  }, 1100);
+  showPickupToast(text);
 }
 
 export function showGameOver(opts: { onRetry: () => void; onLeave: () => void; droppedCount?: number }): HTMLDivElement {

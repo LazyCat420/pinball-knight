@@ -11,8 +11,12 @@ import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT } f
 
 const KEY = "pinball-knight-settings";
 
-/** When the modal card reader interrupts: every pickup, the smart policy
- * (first-of-kind this run or epic+), or never (always the passive popup). */
+/**
+ * RETIRED. Card pickups no longer interrupt the fight at all, so the setting
+ * that chose WHEN they interrupt has nothing left to choose. The type survives
+ * only so a returning player's stored blob still parses, and so a saved
+ * "never" can be migrated onto `haulReveal` below. See card-reader.ts.
+ */
 export type ReaderPolicy = "always" | "smart" | "never";
 
 export interface DungeonSettings {
@@ -21,7 +25,9 @@ export interface DungeonSettings {
   dither: boolean;
   scanline: boolean;
   outline: boolean;
-  readerPolicy: ReaderPolicy;
+  /** Show the FLOOR HAUL screen (every card found on the floor, laid out at
+   * once) on the way to the tavern. Off = the cards just arrive in the stash. */
+  haulReveal: boolean;
 }
 
 export function defaultSettings(): DungeonSettings {
@@ -31,7 +37,7 @@ export function defaultSettings(): DungeonSettings {
     dither: DITHER_DEFAULT,
     scanline: SCANLINE_DEFAULT,
     outline: OUTLINE_DEFAULT,
-    readerPolicy: "smart",
+    haulReveal: true,
   };
 }
 
@@ -52,7 +58,12 @@ export function getSettings(): DungeonSettings {
       if (typeof p.dither === "boolean") d.dither = p.dither;
       if (typeof p.scanline === "boolean") d.scanline = p.scanline;
       if (typeof p.outline === "boolean") d.outline = p.outline;
-      if (p.readerPolicy === "always" || p.readerPolicy === "smart" || p.readerPolicy === "never") d.readerPolicy = p.readerPolicy;
+      if (typeof p.haulReveal === "boolean") d.haulReveal = p.haulReveal;
+      // MIGRATION: a player who had turned the old modal card reader OFF was
+      // saying "stop showing me cards", so carry that across rather than
+      // greeting them with a brand-new screen they already opted out of. Read
+      // only when haulReveal itself is absent, so a later explicit choice wins.
+      else if ((p as Partial<{ readerPolicy: ReaderPolicy }>).readerPolicy === "never") d.haulReveal = false;
     }
   } catch (_e) {
     // Blocked storage → defaults, session-only.

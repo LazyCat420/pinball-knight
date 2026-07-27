@@ -26,7 +26,7 @@ import { CARDS, STASH_MAX, cardFitsKind, socketCard, lowerRarity, cardsOfRarity 
 import { ABILITIES, ABILITY_IDS, type AbilityId } from "./abilities";
 import { getBalance, spendGold } from "../../utils/gold-wallet";
 import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel, btn } from "./ui-cards";
-import { getSettings, saveSettings, type ReaderPolicy, type DungeonSettings } from "./settings-save";
+import { getSettings, saveSettings, type DungeonSettings } from "./settings-save";
 import { setSfxMuted } from "./audio";
 import { loadBestDepth } from "./best-depth";
 import { SKILLS, SKILL_IDS, SKILL_BRANCHES, canLearn, xpForLevel, type SkillBranch } from "./skills";
@@ -370,11 +370,6 @@ function toggleRow(key: keyof DungeonSettings & string, label: string, hint: str
 
 function settingsBody(): string {
   const s = getSettings();
-  const policyLabel: Record<ReaderPolicy, string> = {
-    always: "ALWAYS — every pickup pauses to read",
-    smart: "SMART — first-of-kind & epic+ pause, repeats flash by",
-    never: "NEVER — cards only flash, nothing pauses",
-  };
   return `
     <div class="gmenu-h">SOUND</div>
     <div class="gmenu-row">
@@ -387,13 +382,8 @@ function settingsBody(): string {
     ${toggleRow("dither", "Dither", "ordered dithering between palette steps", s.dither)}
     ${toggleRow("scanline", "Scanlines", "CRT scanline overlay", s.scanline)}
     ${toggleRow("outline", "Outline", "depth-edge ink outline", s.outline)}
-    <div class="gmenu-h">CARD READER</div>
-    <div class="gmenu-row">
-      <span style="display:flex;flex-direction:column;line-height:1.2"><b style="color:#e8dcc0;font-size:12px">When a card pickup pauses</b>
-      <span style="color:#9a8f77;font-size:9px">${policyLabel[s.readerPolicy]}</span></span>
-      <span style="flex:1"></span>
-      <button data-act="cycle-reader" class="gmenu-toggle on">${s.readerPolicy.toUpperCase()}</button>
-    </div>`;
+    <div class="gmenu-h">CARDS</div>
+    ${toggleRow("haulReveal", "Floor haul screen", "read every card you found when the floor ends — nothing interrupts the fight either way", s.haulReveal)}`;
 }
 
 const TAB_BODY: Record<MenuTab, () => string> = {
@@ -607,13 +597,6 @@ function handle(act: string, ds: { idx?: string; w?: string; suffix?: string }):
     const v = !s[key];
     saveSettings({ [key]: v } as Partial<DungeonSettings>);
     applySettingsLive();
-    render();
-    return;
-  }
-  if (act === "cycle-reader") {
-    const order: ReaderPolicy[] = ["smart", "always", "never"];
-    const cur = getSettings().readerPolicy;
-    saveSettings({ readerPolicy: order[(order.indexOf(cur) + 1) % order.length] });
     render();
     return;
   }

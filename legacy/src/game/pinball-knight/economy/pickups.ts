@@ -12,7 +12,17 @@ import { myId } from "../../../net/presence";
 import { sfxCoin, sfxPickup } from "../audio";
 import { presentCardPickup } from "../card-reader";
 import { CARDS, STASH_MAX, socketCard, type CardId } from "../cards";
-import { BOOTS_SPEED_FACTOR, COIN_CHEST_Y, COIN_MAGNET_TIME, DROP_CLEAR_RANGE, GOLD_PER_KILL, PICKUP_RANGE } from "../constants";
+import {
+  BOOTS_SPEED_FACTOR,
+  CARD_PICKUP_RANGE,
+  COIN_CHEST_Y,
+  COIN_MAGNET_TIME,
+  DROP_CLEAR_RANGE,
+  GOLD_PER_KILL,
+  PICKUP_NOTE_COOLDOWN,
+  PICKUP_RANGE,
+  PICKUP_SWEEP_MAX,
+} from "../constants";
 import { canLoot } from "../corpse-run";
 import { creditGold, updateCoins } from "./coins";
 import { removeGroundItem } from "./ground-items";
@@ -27,27 +37,71 @@ import { state, type GroundItem, type MarbleMaterial } from "../state";
 import { showPickupNote } from "../ui";
 
 /** Walk over a card: socket into the active weapon if it fits + has room, else
- * stash it for the Tavern. Returns false (leave it) only if the stash is full. */
+ * stash it for the Tavern. Returns false (leave it) only if the stash is full.
+ *
+ * Nothing here opens a modal any more. `presentCardPickup` files the card into
+ * the floor haul and flashes a corner toast; the faces are read as one screen
+ * when the floor is cleared. Picking up a card mid-bounce must not cost you the
+ * bounce. */
 export function pickUpCard(it: GroundItem): boolean {
   const id = it.id as CardId;
   const def = CARDS[id];
   if (!def) return true;
   const active = state.weaponSlots[state.activeSlot];
   if (active && socketCard(active, id)) {
-    // Reader for first-of-kind / epic+ (pauses the world); popup for repeats.
     presentCardPickup(id, `SOCKETED INTO ${WEAPONS[active.id].icon} ${WEAPONS[active.id].label.toUpperCase()}`);
     faceOnSpecial();
-    showPickupNote(`${def.icon} ${def.label.toUpperCase()} SOCKETED — ${def.description}`);
     return true;
   }
   if (state.cardStash.length < STASH_MAX) {
     state.cardStash.push(id);
     presentCardPickup(id, `STASHED FOR THE TAVERN — ${state.cardStash.length}/${STASH_MAX}`);
-    showPickupNote(`${def.icon} ${def.label.toUpperCase()} — stashed for the Tavern`);
     return true;
   }
-  showPickupNote(`🃏 stash full — visit the Tavern`);
+  // Refusal, not a pickup. The NOTE is the caller's job — it owns the per-item
+  // cooldown, without which resting on a card you can't take builds a DOM node
+  // every frame.
   return false;
+}
+
+/**
+ * How wide the mouth is for a given item kind. Cards and marble materials are
+ * the drops a run is built out of, so they get the generous radius; a spare
+ * helmet does not need one.
+ */
+function grabRange(kind: GroundItem["kind"]): number {
+  return kind === "card" || kind === "material" ? CARD_PICKUP_RANGE : PICKUP_RANGE;
+}
+
+/**
+ * Distance from point (px,pz) to the SEGMENT (ax,az)→(bx,bz).
+ *
+ * This is the whole pickup fix: the knight's path through a step is a segment,
+ * not the point it happened to stop on. Exported for the unit test — the
+ * failure it guards (a card passed over at speed and missed) is invisible at
+ * walking pace and only reproduces above ~15 u/s.
+ */
+export function segmentDistance(ax: number, az: number, bx: number, bz: number, px: number, pz: number): number {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const len2 = dx * dx + dz * dz;
+  // Degenerate segment (the knight stood still) — plain point distance.
+  if (len2 < 1e-9) return Math.hypot(px - ax, pz - az);
+  let t = ((px - ax) * dx + (pz - az) * dz) / len2;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  return Math.hypot(px - (ax + dx * t), pz - (az + dz * t));
+}
+
+/** Where the knight was at the END of the previous sweep, i.e. the start of the
+ * segment travelled this step. Invalid before the first sweep of a floor. */
+let sweepFromX = 0;
+let sweepFromZ = 0;
+let sweepValid = false;
+
+/** Forget the previous position — call on any hard reposition the sweep must
+ * not draw a line through (new floor, teardown). */
+export function resetPickupSweep(): void {
+  sweepValid = false;
 }
 
 export function pickUpWeapon(it: GroundItem): void {
@@ -85,20 +139,40 @@ export function checkPickups(dt: number): void {
   if (!p) return;
   updateCoins(dt);
 
+  // ── The segment travelled this step ──
+  // `distNow` (point) still answers "am I standing there?" for the two
+  // proximity NOTES below; `distSwept` (segment) answers "did I go over it?"
+  // for the pickup itself. A teleport-sized gap falls back to the point test —
+  // see PICKUP_SWEEP_MAX.
+  const fromX = sweepValid ? sweepFromX : p.x;
+  const fromZ = sweepValid ? sweepFromZ : p.z;
+  const swept = sweepValid && Math.hypot(p.x - fromX, p.z - fromZ) <= PICKUP_SWEEP_MAX;
+  sweepFromX = p.x;
+  sweepFromZ = p.z;
+  sweepValid = true;
+
   for (let k = state.groundItems.length - 1; k >= 0; k--) {
     const it = state.groundItems[k];
-    const dist = Math.hypot(it.x - p.x, it.z - p.z);
+    const distNow = Math.hypot(it.x - p.x, it.z - p.z);
+    const distSwept = swept ? segmentDistance(fromX, fromZ, p.x, p.z, it.x, it.z) : distNow;
+    if (it.noteCd) it.noteCd = Math.max(0, it.noteCd - dt);
 
     // A weapon you just put down: inert until you actually leave the spot.
+    // Deliberately the CURRENT distance — "step away" is a place you are, not a
+    // path you took, and the swept value would clear the block on the same step
+    // that dropped it.
     if (it.blockedUntilAway) {
-      if (dist > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
+      if (distNow > DROP_CLEAR_RANGE) it.blockedUntilAway = false;
       continue;
     }
     // SOMEONE ELSE'S CORPSE. Visible, walkable-over, not takeable. Checked
     // before any pickup branch so no item kind can leak past it. The nudge only
     // fires within pickup range, or standing near a friend's grave would spam.
     if (it.corpseOwner !== undefined && !canLoot({ id: it.corpseId ?? "", floor: state.level, x: it.x, z: it.z, owner: it.corpseOwner, items: [] }, myId())) {
-      if (dist < PICKUP_RANGE) showPickupNote(`⚰️ another knight's kit — not yours to take`);
+      if (distNow < PICKUP_RANGE && !it.noteCd) {
+        showPickupNote(`⚰️ another knight's kit — not yours to take`);
+        it.noteCd = PICKUP_NOTE_COOLDOWN;
+      }
       continue;
     }
     // A coin is absorbed when its magnet flight ARRIVES, not on proximity: the
@@ -127,7 +201,7 @@ export function checkPickups(dt: number): void {
       removeGroundItem(k);
       continue;
     }
-    if (dist > PICKUP_RANGE) continue;
+    if (distSwept > grabRange(it.kind)) continue;
 
     if (it.kind === "weapon") {
       pickUpWeapon(it);
@@ -141,7 +215,15 @@ export function checkPickups(dt: number): void {
         applyPotion(pid);
       }
     } else if (it.kind === "card") {
-      if (!pickUpCard(it)) continue; // stash full — leave the card on the floor
+      if (!pickUpCard(it)) {
+        // Stash full — leave the card on the floor, and say so at most once
+        // every PICKUP_NOTE_COOLDOWN seconds however long you loiter on it.
+        if (!it.noteCd) {
+          showPickupNote(`🃏 stash full — visit the Tavern`);
+          it.noteCd = PICKUP_NOTE_COOLDOWN;
+        }
+        continue;
+      }
     } else if (it.kind === "material") {
       // Marble materials apply on contact (held one at a time; a 2nd opens a
       // fusion window). Not brewable, not belted — the ball IS the material.

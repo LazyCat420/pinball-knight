@@ -47,7 +47,9 @@ import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter"
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
-import { presentCardPickup, advanceCardReader, dismissCardReader } from "./card-reader";
+import { advanceCardReader, dismissCardReader, showCardHaul } from "./card-reader";
+import { getSettings } from "./settings-save";
+import { clearPickupToasts } from "./pickup-toast";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { setHandmadeOverride } from "./render/knight-sheets";
@@ -255,7 +257,7 @@ import { makeZombie, spawnKind, spawnHordeMember, spawnPinCrew, drainPendingMini
 import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
 import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
-import { checkPickups } from "./economy/pickups";
+import { checkPickups, resetPickupSweep } from "./economy/pickups";
 import { openShop, closeShop, applyPotion, useBeltSlot } from "./economy/shop";
 
 /** False until WebGPURenderer.init() resolves — render() throws before that. */
@@ -741,6 +743,7 @@ function startLevel(level: number): void {
   setCoopFloor(level); // pool presence now filters to this floor
   resetZombieNid(); // per-floor network ids — deterministic across the pool
   resetItemNid();
+  resetPickupSweep(); // the knight is about to be teleported to the new spawn
   // Run-scoped, so it must be updated here rather than in the per-floor reset
   // below. `saveBestDepth` no-ops unless this genuinely beats the record.
   if (level > state.runDeepestFloor) state.runDeepestFloor = level;
@@ -1321,8 +1324,8 @@ function handleKey(e: KeyboardEvent): void {
   // the interact key there.
   if (isTavernSceneOpen()) return;
 
-  // ── Card reader is open: Space/Enter/Escape advance, everything else is
-  // swallowed (including the map — the world is frozen for READING). ──
+  // ── The floor-haul screen is up: Space/Enter/Escape continue to the tavern,
+  // everything else is swallowed (including the map — the floor is over). ──
   if (state.cardReaderEl) {
     if (e.key === " " || e.key === "Enter" || e.key === "Escape") advanceCardReader();
     e.preventDefault();
@@ -1636,6 +1639,9 @@ function returnToTavern(): void {
   state.activeSlot = 0;
   state.gear = {};
   state.cardStash = [];
+  // The cards found on the floor you died on are lying on your corpse now, not
+  // in your hand — there is no haul to reveal on the way to the tavern.
+  state.floorHaul = [];
   resetCombatJuice();
   if (state.player) {
     Object.assign(state.player, freshPlayerFields());
@@ -1752,8 +1758,14 @@ function descend(): void {
   const kills = state.kills;
   const bestCombo = state.levelBestCombo;
   const floorCleared = state.level;
+
   // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
-  if (state.container) {
+  const toTavern = (): void => {
+    if (!state.container) {
+      startLevel(nextLevel);
+      showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+      return;
+    }
     enterTavern(state.container, {
       stats: { grade, floor: floorCleared, kills, bestCombo },
       onDescend: () => {
@@ -1764,10 +1776,22 @@ function descend(): void {
       // the dungeon's; the tavern closes itself first, then this ends the run.
       onAbandon: () => exitDungeonGame(),
     });
-  } else {
-    startLevel(nextLevel);
-    showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
-  }
+  };
+
+  // ── THE FLOOR HAUL ──
+  // Every card found on this floor, read as one screen on the way out. This is
+  // the ONLY place card faces are shown at size: mid-fight they are a corner
+  // toast, because a modal in the middle of a bounce chain is an interruption
+  // the player never asked for.
+  //
+  // The haul takes the same `cardReaderEl` pause the tavern takes, so `descend`
+  // cannot re-fire from the stairs underneath it, and `toTavern` runs on its
+  // dismissal. Emptied here whether or not it is shown — a haul carried into
+  // the next floor would be revealed twice.
+  const haul = state.floorHaul;
+  state.floorHaul = [];
+  if (getSettings().haulReveal) showCardHaul(haul, floorCleared, toTavern);
+  else toTavern();
 }
 
 
@@ -2186,7 +2210,8 @@ function loop(now: number): void {
 
 export function exitDungeonGame(): void {
   closeFloorMap();
-  dismissCardReader(); // also drops any queued cards — module state, not on `state`
+  dismissCardReader(); // drops the haul screen AND its pending continuation
+  clearPickupToasts(); // the corner rail lives on the container, its timers don't
   if (!state.active) return;
 
   const onExit = state.onExitCallback;

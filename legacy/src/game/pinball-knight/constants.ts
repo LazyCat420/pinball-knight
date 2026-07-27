@@ -1643,6 +1643,40 @@ export const BOOTS_SPEED_FACTOR = 1.18;
 /** Walking within this range of a ground item picks it up. */
 export const PICKUP_RANGE = 0.45;
 
+/**
+ * Grab radius for the two RUN-DEFINING drops — cards and marble materials.
+ *
+ * Deliberately wider than PICKUP_RANGE. A helmet you miss is a helmet; a card
+ * you miss is the build you were going to play, and at pinball speed the ball
+ * is not steerable to a 0.45-unit target. See PICKUP_SWEEP_MAX for the other
+ * half of that fix.
+ */
+export const CARD_PICKUP_RANGE = 0.8;
+
+/**
+ * The furthest a single 60Hz step may have carried the knight for the pickup
+ * sweep to trust the segment between the two samples.
+ *
+ * WHY A SWEEP AT ALL: pickups used to be a point-in-radius test run once per
+ * fixed step, against the position the step ENDED at. At PINBALL_MAX_SPEED (22
+ * u/s) a step covers 0.37 units and a rail step covers ~0.5 — so a card sitting
+ * 0.4 units off the ball's line has both samples land outside its 0.45 radius
+ * and is never picked up, no matter how squarely you ran over it. That is the
+ * "I bounce straight through cards" bug: the faster you play, the smaller the
+ * pickup radius effectively gets.
+ *
+ * WHY A CAP: the same two samples straddle a TELEPORT (floor start, pit
+ * respawn, grab-throw, portal) and the segment between them would vacuum up
+ * every item on the line. Above this the sweep degrades to the old point test,
+ * which is exactly right for a jump — you did not travel that path.
+ */
+export const PICKUP_SWEEP_MAX = 1.5;
+
+/** Seconds between repeats of a per-item refusal note ("stash full", "not
+ * yours to take"). Without it the note is rebuilt 60x a second while you stand
+ * on the item, which is a DOM node per frame. */
+export const PICKUP_NOTE_COOLDOWN = 2.5;
+
 // ── Coin drops — the kill payout ────────────────────────────────
 /**
  * A dropped coin lives THREE phases: BURST (pops up and out of the corpse under
