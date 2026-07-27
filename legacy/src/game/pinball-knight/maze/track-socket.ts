@@ -114,6 +114,26 @@ export function socketAt(g: Grid, mask: TrackMask | null, i: number, j: number):
   return "wall";
 }
 
+/**
+ * Does a SEALED lane tile (see TrackMask.sealed) sit within two tiles?
+ *
+ * Two rather than one because the repair passes reason about membranes: a wall
+ * directly against the lane is the seal, and the one behind it is what stops
+ * the seal from being a single tile thick — and a one-tile membrane is exactly
+ * what `removeWallStubs` is built to delete.
+ */
+export function nearSealed(g: Grid, mask: TrackMask, i: number, j: number): boolean {
+  for (let dj = -2; dj <= 2; dj++) {
+    for (let di = -2; di <= 2; di++) {
+      const x = i + di;
+      const y = j + dj;
+      if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
+      if (mask.sealed[idx(g, x, y)] === 1) return true;
+    }
+  }
+  return false;
+}
+
 /** One place where two adjacent tiles present incompatible sockets. */
 export interface SocketViolation {
   i: number;
@@ -285,6 +305,12 @@ export function removeWallStubs(g: Grid, mask: TrackMask | null, minOpen = 3, ma
         if (isWalkable(g, i, j)) continue;
         if (at(g, i, j) === T_CRACKED) continue; // secret walls are deliberate
         if (g.arcIdx && g.arcIdx[idx(g, i, j)] >= 0) continue; // a curve's rim
+        // A SEALED lane's wall is deliberate too — same category as a secret
+        // wall, and for the same reason: it is authored, not left over. The
+        // launch chute is the only sealed lane today, and opening one of its
+        // side walls turns the plunger hallway into a corridor with a hole in
+        // it. This pass was doing exactly that on 23/60 floors.
+        if (mask && nearSealed(g, mask, i, j)) continue;
         let open = 0;
         for (const { di, dj } of DIRS) if (isWalkable(g, i + di, j + dj)) open++;
         if (open >= minOpen) doomed.push(idx(g, i, j));

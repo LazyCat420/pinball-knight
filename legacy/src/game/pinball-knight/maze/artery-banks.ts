@@ -56,6 +56,14 @@ import {
 import { SHAPE_FULL, SHAPE_ARC, angleInSpan, type ArcFeature } from "../engine/tile-shape";
 import { bfsDistancesOwned } from "../engine/flow-field";
 
+/** The four cardinals, in the order `traceArtery` prefers them. */
+const WALL_SIDES: ReadonlyArray<readonly [number, number]> = [
+  [0, -1],
+  [0, 1],
+  [-1, 0],
+  [1, 0],
+];
+
 /** A unit cardinal step along the artery. */
 export interface Heading {
   di: number;
@@ -444,4 +452,38 @@ function strands(g: Grid, start: TilePos): boolean {
     }
   }
   return false;
+}
+
+/**
+ * THE SPINE — the ordered tile path down the main artery from START to STAIRS,
+ * walking the BFS-from-start gradient (each step drops the distance by one). The
+ * single source of truth for "the way through the floor": widenMainArtery widens
+ * it into a 3-wide highway and layStationSpine strings the connected booster
+ * route along it. Returned start→stairs so a caller can lay parts in travel
+ * order. Empty if the gradient dead-ends (never on a connected maze).
+ */
+export function traceArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): TilePos[] {
+  // Walk the gradient stairs → start, then reverse so the path reads in the
+  // direction of travel (spawn → exit).
+  let cur: TilePos = stairs;
+  let guard = 0;
+  const back: TilePos[] = [cur];
+  while (!(cur.i === start.i && cur.j === start.j) && guard++ < g.w * g.h) {
+    const dcur = dist[idx(g, cur.i, cur.j)];
+    let next: TilePos | null = null;
+    for (const [di, dj] of WALL_SIDES) {
+      const ni = cur.i + di;
+      const nj = cur.j + dj;
+      if (at(g, ni, nj) === T_WALL) continue;
+      if (dist[idx(g, ni, nj)] === dcur - 1) {
+        next = { i: ni, j: nj };
+        break;
+      }
+    }
+    if (!next) break; // gradient dead-ended (shouldn't on a connected maze)
+    cur = next;
+    back.push(cur);
+  }
+  back.reverse();
+  return back;
 }

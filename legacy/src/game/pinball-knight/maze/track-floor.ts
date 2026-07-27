@@ -31,10 +31,45 @@
 import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
-import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, type TrackMask } from "./track-carve";
+import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, sealedWalls, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
+import { carveLaunchChute, chuteTiles, type LaunchChute } from "./track-launch";
+import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
+import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { bfsDistances } from "../engine/flow-field";
+
+/**
+ * The `occupied` predicate the curve passes take, with nothing to avoid.
+ *
+ * They are run before any content exists now, so there is genuinely nothing
+ * placed for a fillet to eat. Naming it rather than inlining `() => false` is
+ * deliberate: the empty predicate is the *statement* that geometry precedes
+ * content, and an inline arrow reads like an oversight.
+ */
+const NOTHING_OCCUPIED = (): boolean => false;
+
+/**
+ * Walls the connectivity repair should route around if it can: a sealed lane's
+ * side walls, plus every wall tile that carries a published arc face.
+ *
+ * The arc half is the new one and it matters more than it looks. `connectAll`
+ * carves the SHORTEST wall corridor into a stranded pocket, and a fillet's rim
+ * is a thin band of wall — often the shortest thing between two open spaces. A
+ * corridor punched through it leaves a curved wall with a doorway in the middle
+ * of the sweep: the collider still reports the whole arc as solid (it derives
+ * from `Grid.arcs`, not from the tiles), so the player sees a gap and hits a
+ * wall. That is the see≠hit class of bug, and it is worth a longer corridor to
+ * avoid. As always this is a preference and never a prohibition — connectAll
+ * retries without the mask rather than leave anything stranded.
+ */
+function repairKeepOut(g: Grid, mask: TrackMask): Uint8Array {
+  const out = sealedWalls(g, mask);
+  if (g.arcIdx) {
+    for (let k = 0; k < g.arcIdx.length; k++) if (g.arcIdx[k] >= 0) out[k] = 1;
+  }
+  return out;
+}
 
 export interface TrackFloor {
   grid: Grid;
@@ -44,6 +79,18 @@ export interface TrackFloor {
   /** Spawn and exit, chosen ON the circuit (see pickTrackEndpoints). */
   start: TilePos;
   stairs: TilePos;
+  /**
+   * The plunger lane (track-launch.ts), or null when no straight sealed run
+   * fitted. When present, `start` IS `chute.base` — the floor opens parked at
+   * the closed end, and firing runs the hallway before the maze begins.
+   */
+  chute: LaunchChute | null;
+  /**
+   * Centre of the floor's ORBIT ISLAND, when one fitted — the full-circle
+   * curved wall you can ride a lap around. Geometry belongs to this layer;
+   * `decorateMaze` reads the centre to flank it with bumpers, which is content.
+   */
+  orbit: { ci: number; cj: number } | null;
 }
 
 /**
@@ -59,7 +106,11 @@ export interface TrackFloor {
  * Here both endpoints sit on the circuit and are pushed as far apart as the
  * lane allows, so the natural route between them RUNS THE TRACK.
  */
-export function pickTrackEndpoints(g: Grid, mask: TrackMask): { start: TilePos; stairs: TilePos } | null {
+export function pickTrackEndpoints(
+  g: Grid,
+  mask: TrackMask,
+  chute?: { base: TilePos; mouth: TilePos } | null,
+): { start: TilePos; stairs: TilePos } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
@@ -71,21 +122,58 @@ export function pickTrackEndpoints(g: Grid, mask: TrackMask): { start: TilePos; 
   // Double sweep: farthest lane tile from an arbitrary one, then farthest from
   // that. The graph diameter along the actual walkable surface, so the two ends
   // are genuinely a lap apart rather than merely far in a straight line.
+  //
+  // ── Why the argmax is not enough ─────────────────────────────────────────
+  //
+  // Taking the single farthest tile treats "far" as the only thing that matters
+  // about an exit, and it isn't: a big loop's farthest point is often the one
+  // diametrically opposite, which is far to WALK and dead straight to LOOK at.
+  // That is the `directness` metric's failure case (euclid ÷ pathLen near 1),
+  // and it is not hypothetical — censused over 1200 floors, the shipped argmax
+  // produced a floor above the 0.85 band about once in 1200. Rare enough that
+  // the gate's fixed 48-seed sample misses it, which is precisely why it needs
+  // fixing at the source rather than at the assertion.
+  //
+  // So: take every tile within `TIE` of the best distance — they are all "a lap
+  // away" for any purpose the player can perceive — and among those pick the
+  // one the route has to work HARDEST to reach. The exit becomes an allocation
+  // instead of an argmax, which is the same inversion the whole track-first
+  // rework is built on (docs/game-dev-rules §3).
+  const TIE = 0.92;
   const far = (from: TilePos): { pos: TilePos; d: number } => {
     const dist = bfsDistances(g, from.i, from.j);
-    let bestPos = from;
     let best = -1;
     for (const p of lane) {
       const d = dist[idx(g, p.i, p.j)];
-      if (d > best && d < 0x3fffffff) {
-        best = d;
+      if (d > best && d < 0x3fffffff) best = d;
+    }
+    if (best <= 0) return { pos: from, d: best };
+    let bestPos = from;
+    let bestDirect = Infinity;
+    for (const p of lane) {
+      const d = dist[idx(g, p.i, p.j)];
+      if (d < best * TIE || d >= 0x3fffffff) continue;
+      const direct = Math.hypot(p.i - from.i, p.j - from.j) / d;
+      if (direct < bestDirect) {
+        bestDirect = direct;
         bestPos = p;
       }
     }
-    return { pos: bestPos, d: best };
+    return { pos: bestPos, d: dist[idx(g, bestPos.i, bestPos.j)] };
   };
-  const a = far(lane[0]).pos;
-  const b = far(a);
+  // With a launch chute the start is NOT ours to choose: the floor opens where
+  // the plunger is, and the plunger is at the closed end of the chute.
+  //
+  // The exit is then swept from the chute's MOUTH, not from its base, and the
+  // distinction is load-bearing. Sweeping from the base spends the floor's
+  // diameter on the chute itself — the ~20 tiles of hallway count toward "how
+  // far away is the farthest lane tile", so the exit lands correspondingly
+  // nearer. Measured: warrens L1 came out with the stairs **36 steps** from the
+  // mouth on a 3975-tile floor, i.e. the launch fired you out of the chute
+  // almost on top of the exit. Sweeping from the mouth restores the intent —
+  // a lap of the circuit from where the launch DELIVERS you.
+  const a = chute ? chute.base : far(lane[0]).pos;
+  const b = far(chute ? chute.mouth : a);
   if (b.d <= 0) return null;
   return { start: a, stairs: b.pos };
 }
@@ -144,6 +232,14 @@ export function buildTrackFloor(
     }
     carveChamber(grid, mask, hub.x, hub.z, Math.min(w, h) * prof.plazaFrac);
   }
+  // ── THE LAUNCH CHUTE (track-launch.ts) ──────────────────────────────────
+  //
+  // Carved HERE, between the circuit and the maze, for the same reason the
+  // plaza is: it must be part of the track by the time anything else looks at
+  // the grid. Carved after `growMazeAround` it would bulldoze finished
+  // corridors; carved as decoration (which is effectively what the old free-air
+  // plunger was) it would be a launch ritual with no lane behind it.
+  const chute = carveLaunchChute(grid, mask, rng);
   growMazeAround(grid, mask, rng, {
     linkChance: opts.linkChance ?? prof.linkChance,
     fill: opts.fill ?? prof.fill,
@@ -157,47 +253,129 @@ export function buildTrackFloor(
   // — corridors to nowhere and one-tile nubs jutting into rooms, which is what
   // made the floor read as "a bunch of walls that go nowhere".
   //
-  // Order is load-bearing:
+  // Order inside the block is load-bearing:
   //  1. UNCARVE first. It fills floor→wall and so can disconnect things, which
   //     is fine only because connectAll runs after it.
-  //  2. DE-STUB second, on the result — uncarving creates new wall shapes and
-  //     some of them are stubs.
-  //  3. connectAll LAST, to restore the one-component invariant uncarve may
+  //  2. connectAll next, to restore the one-component invariant uncarve may
   //     have broken. Carving wall→floor can only add connectivity, so nothing
   //     after this can strand the player.
-  const endsEarly = pickTrackEndpoints(grid, mask);
-  uncarveDeadEnds(grid, mask, endsEarly ? [endsEarly.start, endsEarly.stairs] : []);
-  // De-stub runs AFTER growMazeAround's widening pass, which is itself what
-  // creates most of the stubs: thickening a corridor leaves one-tile pillars
-  // and nubs behind (measured 25.2 stubs + 5.2 isolated pillars per floor
-  // straight after widening).
-  connectAll(grid, rng);
-  // De-stub LAST of the tile passes. It must run after BOTH widening (which
-  // leaves one-tile pillars when a corridor thickens) and connectAll (whose
-  // repair corridors carve fresh nubs of their own). Running it before either
-  // one left 25.2 stubs + 5.2 isolated pillars per floor still standing.
-  removeWallStubs(grid, mask);
-  // A lane that still ends in mid-air is DEMOTED to plain room floor, so no
-  // booster or bank is ever sited along a road to nowhere.
+  //  3. DE-STUB after both — widening leaves one-tile pillars when a corridor
+  //     thickens, and connectAll's repair corridors carve fresh nubs of their
+  //     own. Running it before either left 25.2 stubs + 5.2 isolated pillars
+  //     per floor still standing.
+  //  4. HEAL road terminations last: a lane that still ends in mid-air is
+  //     DEMOTED to plain room floor, so no booster or bank is ever sited along
+  //     a road to nowhere. Note what this does NOT do — it no longer tries to
+  //     EXTEND the stub to rejoin the circuit. That chases its own tail, since
+  //     each extension creates a new tile that is itself the new end of the
+  //     road ("joined" fired 8-24x per floor while the count never moved). The
+  //     real cause was topological (degree-1 graph leaves) and is fixed
+  //     upstream by pruneLeaves; this is the belt-and-braces sweep.
   //
-  // Note what this does NOT do: it no longer tries to EXTEND the stub to
-  // rejoin the circuit. That was tried and it chases its own tail — each
-  // extension creates a new tile that is itself the new end of the road
-  // ("joined" fired 8-24x per floor while the termination count never moved).
-  // The real cause was topological (degree-1 leaves in the graph) and is fixed
-  // upstream by pruneLeaves; this is only the belt-and-braces sweep.
-  if (endsEarly) healRoadTerminations(grid, mask, [endsEarly.start, endsEarly.stairs], { reach: 0 });
+  // It is a FUNCTION because it runs TWICE — once after the maze grows, and
+  // again after the curved walls are authored. That second call is not
+  // defensive padding: a concave fillet fills a corner pocket floor→wall, which
+  // is precisely the operation that manufactures a dead end. When the sweeps
+  // lived in the content pass they ran after every repair had finished and
+  // whatever they left simply shipped; measured on the live gate, moving them
+  // here without re-running repair pushed six floors over the dead-end ceiling
+  // (up to 5.31 per 1k tiles against a limit of 2.5).
+  const endsEarly = pickTrackEndpoints(grid, mask, chute);
+  const protect = endsEarly ? [endsEarly.start, endsEarly.stairs] : [];
+  const repair = (keep: readonly TilePos[]): void => {
+    uncarveDeadEnds(grid, mask, keep);
+    // The keep-out steers the repair around any SEALED lane's walls — today the
+    // launch chute's — and around published arc faces, because carving one is
+    // how a swept curve becomes a curved wall with a hole in it. Neither can
+    // refuse a connection; see connectAll.
+    connectAll(grid, rng, repairKeepOut(grid, mask));
+    removeWallStubs(grid, mask);
+    if (endsEarly) healRoadTerminations(grid, mask, keep, { reach: 0 });
+  };
+  repair(protect);
 
-  // AFTER the maze AND the repairs, never before: every pass above carves
-  // walls to floor, and a shoulder marked earlier is a tile claiming curved
-  // collision on open ground (measured 20.6% orphaned when published early).
+  // ── CURVED WALLS, ALL OF THEM, HERE ─────────────────────────────────────
+  //
+  // A floor's curves used to be authored by TWO different layers. This one
+  // published the circuit's own fillets; then `decorateMaze` — the CONTENT pass
+  // that places bumpers, loot and zombies — ran `stampOrbitIsland` and
+  // `authorArcSweeps` and built more. Censused over 30 floors, the content pass
+  // owned the majority of them: 48.8 features per floor against this layer's
+  // 35.5, and 179.3 tiles of arc length against 146.7. It also converted **44.9
+  // tiles per floor from floor to wall** — the content pass was building walls.
+  //
+  // That is the defect the user named ("the walls that are curved are in the
+  // pinball logic and not in the maze wall logic"), and it is a layering bug in
+  // the sense of docs/game-dev-rules §3: layer 2 owns corner radii, layer 4
+  // owns detail and "never contradicts" the macro intent. Curves authored after
+  // content are curves fitted around furniture; curves authored here are curves
+  // the furniture is then placed around. Same passes, opposite precedence.
+  //
+  // Three concrete things fall out of the move, none of them cosmetic:
+  //
+  //  · the repair passes now run BEFORE the curves exist and the de-stub pass
+  //    runs again after, so a nub a fillet leaves behind is cleaned like any
+  //    other. Previously the sweeps ran after every repair had finished and
+  //    whatever they left stood.
+  //  · `occupied` becomes trivially empty. That is the point, not a
+  //    regression: a concave fillet no longer declines because a torch is in
+  //    the way, it simply gets built and the torch is placed elsewhere.
+  //  · `publishArcs` goes FIRST, so the circuit's own banked turns claim their
+  //    tiles before the scavenging pass looks at corners. `authorArcSweeps`
+  //    only considers tiles whose shape is still SHAPE_FULL, so this ordering
+  //    is what makes "the track's curves win" true by construction.
   publishArcs(grid, path);
+  const arcStart = endsEarly?.start ?? { i: 1, j: 1 };
+  const orbit = stampOrbitIsland(grid, arcStart, NOTHING_OCCUPIED, rng);
+  authorArcSweeps(grid, arcStart, NOTHING_OCCUPIED, rng);
+  // The curves change geometry, so the geometry gets repaired — see `repair`.
+  repair(protect);
 
-  const ends = pickTrackEndpoints(grid, mask);
+  const ends = pickTrackEndpoints(grid, mask, chute);
   if (!ends) return null;
+
+  // ── ARTERY BANKS — the last of the three curve families to come home ─────
+  //
+  // A bank is the OUTER shell of a turn on the start→stairs route: it converts
+  // floor to wall to give a bend a rideable outside edge. It ran inside
+  // `decorateMaze` — as the very first thing that pass did, before any content,
+  // which is the tell that it never belonged there. Location was the only thing
+  // making it "content"; measured, it was the last remaining source of the
+  // content pass building walls (1.62 banks per floor, 82% of floors).
+  //
+  // It runs AFTER the sweeps and the repair, on the final endpoints, because a
+  // bank is defined by the route and the route is defined by the finished
+  // geometry. `authorArteryBanks` commits each bank behind its own strand
+  // guard, so this cannot orphan anything; the repair below then cleans the
+  // nubs the new wall shells leave, exactly as it does for the fillets.
+  //
+  // THE WHOLE CHUTE IS PROTECTED, mouth included. The route is traced from the
+  // spawn, and the spawn is the chute's park tile, so the artery runs the full
+  // length of the launch hallway and the mouth is its first real bend — exactly
+  // the shape the bank pass reaches for. Unprotected it walls the mouth in:
+  // measured on the live gate, 8 floors came back "no route from spawn to
+  // stairs" while reachability still read 1.0000, which is the signature of the
+  // route's second tile being solid rather than of anything being stranded.
+  //
+  // Protecting `mask.sealed` alone is NOT enough and that was the first fix
+  // tried: the mouth cross-section is deliberately left unsealed so the merge
+  // can open into the maze, which makes it the one part of the chute a bank may
+  // still eat. `chuteTiles` is the lane in full.
+  const arteryDist = bfsDistances(grid, ends.start.i, ends.start.j);
+  const artery = traceArtery(grid, ends.start, ends.stairs, arteryDist);
+  if (artery.length >= 8) {
+    const guarded = new Set<number>();
+    if (chute) for (const t of chuteTiles(grid, chute)) guarded.add(idx(grid, t.i, t.j));
+    for (let k = 0; k < mask.sealed.length; k++) if (mask.sealed[k] === 1) guarded.add(k);
+    const isGuarded = (i: number, j: number): boolean =>
+      i >= 0 && j >= 0 && i < grid.w && j < grid.h && guarded.has(idx(grid, i, j));
+    authorArteryBanks(grid, artery, ends.start, NOTHING_OCCUPIED, isGuarded);
+    repair([ends.start, ends.stairs]);
+  }
+
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 
-  return { grid, graph, path, mask, start: ends.start, stairs: ends.stairs };
+  return { grid, graph, path, mask, start: ends.start, stairs: ends.stairs, chute, orbit };
 }
 
 /** Independent cycles in the circuit — exposed for HUD/debug and tests. */

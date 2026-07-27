@@ -55,6 +55,51 @@ export interface TrackMask {
   lane: Uint8Array;
   /** Distance in tiles from the track centreline (Infinity off-track). */
   dist: Float32Array;
+  /**
+   * 1 = lane tile that must stay SEALED — no on-ramp may open into it and no
+   * connectivity repair may tunnel through its wall.
+   *
+   * Today that is exactly the launch chute (track-launch.ts). A plunger lane
+   * whose sides the on-ramp pass has drilled is not a plunger lane: the launch
+   * dribbles out of a side door instead of committing down the hallway. This
+   * lives on the MASK rather than as a list of tiles the chute module keeps,
+   * for the same reason `socketAt` derives its labels from the grid — a
+   * parallel structure is a structure that can drift.
+   */
+  sealed: Uint8Array;
+}
+
+/** Is this lane tile one nothing may tap into? Bounds-safe, like `onLane`. */
+function isSealed(g: Grid, mask: TrackMask, i: number, j: number): boolean {
+  if (i < 0 || j < 0 || i >= g.w || j >= g.h) return false;
+  return mask.sealed[idx(g, i, j)] === 1;
+}
+
+/**
+ * Wall tiles pressed against a SEALED lane — the keep-out for `connectAll`.
+ *
+ * Derived on demand from the mask rather than handed around, so it is always
+ * in step with whatever is currently sealed.
+ */
+export function sealedWalls(g: Grid, mask: TrackMask): Uint8Array {
+  const out = new Uint8Array(g.w * g.h);
+  for (let j = 1; j < g.h - 1; j++) {
+    for (let i = 1; i < g.w - 1; i++) {
+      if (isWalkable(g, i, j)) continue;
+      // Two tiles deep: a repair corridor that merely clips the outer column
+      // still leaves a one-tile membrane, and `removeWallStubs` deletes those.
+      for (let dj = -2; dj <= 2; dj++) {
+        for (let di = -2; di <= 2; di++) {
+          if (isSealed(g, mask, i + di, j + dj)) {
+            out[idx(g, i, j)] = 1;
+            di = 3;
+            dj = 3;
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -90,6 +135,24 @@ function disc(g: Grid, mask: TrackMask, cx: number, cz: number, r: number): void
 }
 
 /**
+ * Sweep the disc brush along a straight segment — one carve STROKE.
+ *
+ * Exported because the launch chute (track-launch.ts) is carved with the same
+ * brush as the circuit itself, deliberately: the chute must be a lane in every
+ * sense the rest of the pipeline understands (mask, keep-out margin, dead-end
+ * exemption, socket type), not a corridor that merely looks like one. Sharing
+ * the brush is what makes that true by construction rather than by remembering.
+ */
+export function carveStroke(g: Grid, mask: TrackMask, x0: number, z0: number, x1: number, z1: number, half: number): void {
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  const steps = Math.max(1, Math.ceil(len / 0.35));
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    disc(g, mask, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, half);
+  }
+}
+
+/**
  * Carve the circuit into the grid.
  *
  * Legs are swept discs along the segment; fillets are swept discs along the
@@ -106,6 +169,7 @@ export function carveTrack(g: Grid, path: TrackPath): TrackMask {
   const mask: TrackMask = {
     lane: new Uint8Array(g.w * g.h),
     dist: new Float32Array(g.w * g.h).fill(Infinity),
+    sealed: new Uint8Array(g.w * g.h),
   };
   ensureArcs(g);
 
@@ -368,6 +432,18 @@ export function growMazeAround(
       const touchesTrack =
         onLane(g, mask, i - 1, j) || onLane(g, mask, i + 1, j) || onLane(g, mask, i, j - 1) || onLane(g, mask, i, j + 1);
       if (!touchesTrack) continue;
+      // A SEALED lane (the launch chute) takes no on-ramps. This is the pass
+      // that was drilling them: it opens any wall with track on one side, and
+      // the chute's side walls are exactly that. Measured before the check,
+      // only 28/60 floors kept both chute walls intact.
+      if (
+        isSealed(g, mask, i - 1, j) ||
+        isSealed(g, mask, i + 1, j) ||
+        isSealed(g, mask, i, j - 1) ||
+        isSealed(g, mask, i, j + 1)
+      ) {
+        continue;
+      }
       let mazeSide = false;
       for (const [di, dj] of [
         [1, 0],
@@ -384,7 +460,7 @@ export function growMazeAround(
   }
 
   widenMazeCorridors(g, mask, rng);
-  connectAll(g, rng);
+  connectAll(g, rng, sealedWalls(g, mask));
 }
 
 /**
@@ -455,8 +531,14 @@ function widenMazeCorridors(g: Grid, mask: TrackMask, rng: () => number, chance 
  * shortest wall run back to reached space. Repeat until nothing is unreached.
  * Carving wall→floor only ever ADDS connectivity, so this cannot break anything
  * upstream, and it terminates because every pass strictly grows the reached set.
+ *
+ * `avoid` marks walls the repair should route AROUND if it can — today the
+ * launch chute's side walls (track-launch.chuteKeepOut), which a shortest-path
+ * corridor otherwise loves to punch straight through. It is a preference, not a
+ * prohibition: if the only route to a stranded pocket crosses an avoided wall,
+ * the search retries without the mask. Connectivity always wins.
  */
-export function connectAll(g: Grid, rng: () => number): void {
+export function connectAll(g: Grid, rng: () => number, avoid?: Uint8Array): void {
   const N = g.w * g.h;
   const flood = (from: number): Uint8Array => {
     const seen = new Uint8Array(N);
@@ -522,37 +604,48 @@ export function connectAll(g: Grid, rng: () => number): void {
     // BFS through WALLS from the stranded tile until we touch reached space,
     // then carve that corridor. Shortest-path so the opening is minimal and the
     // circuit keeps its shape.
-    const prev = new Int32Array(N).fill(-1);
-    const q: number[] = [target];
-    const mark = new Uint8Array(N);
-    mark[target] = 1;
-    let hit = -1;
-    while (q.length && hit < 0) {
-      const k = q.shift()!;
-      const i = k % g.w;
-      const j = (k - i) / g.w;
-      for (const [di, dj] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const) {
-        const x = i + di;
-        const y = j + dj;
-        if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
-        const kk = idx(g, x, y);
-        if (mark[kk]) continue;
-        mark[kk] = 1;
-        prev[kk] = k;
-        if (seen[kk]) {
-          hit = kk;
-          break;
+    //
+    // Run once respecting `avoid`, and again ignoring it if that found nothing.
+    // Ordering the attempts this way (rather than weighting one search) keeps
+    // the guarantee crisp: pass 2 is exactly the search that shipped before, so
+    // the mask can change which corridor gets carved but never whether one does.
+    const search = (blocked: Uint8Array | undefined): { hit: number; prev: Int32Array } => {
+      const prev = new Int32Array(N).fill(-1);
+      const q: number[] = [target];
+      const mark = new Uint8Array(N);
+      mark[target] = 1;
+      let hit = -1;
+      while (q.length && hit < 0) {
+        const k = q.shift()!;
+        const i = k % g.w;
+        const j = (k - i) / g.w;
+        for (const [di, dj] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const x = i + di;
+          const y = j + dj;
+          if (x < 1 || y < 1 || x >= g.w - 1 || y >= g.h - 1) continue;
+          const kk = idx(g, x, y);
+          if (mark[kk]) continue;
+          if (blocked && blocked[kk] && !seen[kk]) continue;
+          mark[kk] = 1;
+          prev[kk] = k;
+          if (seen[kk]) {
+            hit = kk;
+            break;
+          }
+          q.push(kk);
         }
-        q.push(kk);
       }
-    }
-    if (hit < 0) return; // nothing reachable at all — leave it rather than loop
-    for (let k = hit; k !== -1 && k !== target; k = prev[k]) {
+      return { hit, prev };
+    };
+    let r = search(avoid);
+    if (r.hit < 0 && avoid) r = search(undefined);
+    if (r.hit < 0) return; // nothing reachable at all — leave it rather than loop
+    for (let k = r.hit; k !== -1 && k !== target; k = r.prev[k]) {
       setTile(g, k % g.w, (k - (k % g.w)) / g.w, T_FLOOR);
     }
   }

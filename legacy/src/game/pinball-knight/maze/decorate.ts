@@ -12,9 +12,14 @@
  */
 import { type Grid, type TilePos, type Room, T_STAIRS, at, T_FLOOR, T_WALL, T_CRACKED, idx, setTile, isWalkable, setShape, shapeAt } from "./generator";
 import { SHAPE_FULL, SHAPE_SLANT_NE, SHAPE_SLANT_NW, SHAPE_SLANT_SE, SHAPE_SLANT_SW, shapeBacking, slantToRound, type TileShape } from "../engine/tile-shape";
-import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { createSpacingGrid } from "../engine/spacing-grid";
-import { authorArteryBanks } from "./artery-banks";
+import { authorArteryBanks, traceArtery } from "./artery-banks";
+import { chuteTiles, type LaunchChute } from "./track-launch";
+
+// `traceArtery` moved to artery-banks.ts (the maze layer) when the bank pass
+// did — see track-floor.ts. Re-exported here because it was part of this
+// module's public surface and callers/tests import it from decorate.
+export { traceArtery };
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
@@ -104,6 +109,19 @@ export interface PinballPartSpot extends TilePos {
    * the point. The spine is the "boosters feed into each other" backbone.
    */
   spine?: boolean;
+  /**
+   * LAUNCH CHUTE: a pad in the floor's plunger lane (track-launch.ts).
+   *
+   * Exempt from BOTH facing post-passes — the runway re-aim and
+   * `breakLaunchDuels` — and unlike the vault/spine exemption this one does not
+   * lift on a track floor, because the chute is exactly the thing those two
+   * passes cannot reason about. Its direction is not a placement guess to be
+   * corrected; it IS the lane, sealed on both sides and pointed at the merge.
+   * Measured before the badge: the re-aim flipped a pad to (0,−1) against a
+   * (0,1) lane, having found "more runway" back up the hallway the player was
+   * just fired out of.
+   */
+  chute?: boolean;
   /**
    * ORBIT (D2): this banked rail is one corner of a closed CIRCUIT around a
    * room. Railing all four in sequence completes the orbit — the loop shot a
@@ -462,40 +480,6 @@ export function widenMainArtery(g: Grid, ends: Endpoints): void {
   const dist = bfsDistancesOwned(g, ends.start.i, ends.start.j); // held across later BFS calls
   if (dist[idx(g, ends.stairs.i, ends.stairs.j)] <= 6) return; // too small to bother
   widenArtery(g, ends.start, ends.stairs, dist);
-}
-
-/**
- * THE SPINE — the ordered tile path down the main artery from START to STAIRS,
- * walking the BFS-from-start gradient (each step drops the distance by one). The
- * single source of truth for "the way through the floor": widenMainArtery widens
- * it into a 3-wide highway and layStationSpine strings the connected booster
- * route along it. Returned start→stairs so a caller can lay parts in travel
- * order. Empty if the gradient dead-ends (never on a connected maze).
- */
-export function traceArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): TilePos[] {
-  // Walk the gradient stairs → start, then reverse so the path reads in the
-  // direction of travel (spawn → exit).
-  let cur: TilePos = stairs;
-  let guard = 0;
-  const back: TilePos[] = [cur];
-  while (!(cur.i === start.i && cur.j === start.j) && guard++ < g.w * g.h) {
-    const dcur = dist[idx(g, cur.i, cur.j)];
-    let next: TilePos | null = null;
-    for (const [di, dj] of WALL_SIDES) {
-      const ni = cur.i + di;
-      const nj = cur.j + dj;
-      if (at(g, ni, nj) === T_WALL) continue;
-      if (dist[idx(g, ni, nj)] === dcur - 1) {
-        next = { i: ni, j: nj };
-        break;
-      }
-    }
-    if (!next) break; // gradient dead-ended (shouldn't on a connected maze)
-    cur = next;
-    back.push(cur);
-  }
-  back.reverse();
-  return back;
 }
 
 function widenArtery(g: Grid, start: TilePos, stairs: TilePos, dist: Int32Array): void {
@@ -1170,6 +1154,7 @@ function layStationSpine(
   stairs: TilePos,
   parts: PinballPartSpot[],
   items: ItemDrop[],
+  reserved: (i: number, j: number) => boolean = () => false,
 ): void {
   if (spine.length < 4) return;
   const CALM = 4; // keep the plunger launch zone at the mouth clear
@@ -1177,9 +1162,17 @@ function layStationSpine(
   const MAX_STRIDE = 4; // …and never further than this apart, so each pad still hands you to the next
   const takenTile = (i: number, j: number): boolean =>
     parts.some((q) => q.i === i && q.j === j) || items.some((it) => it.i === i && it.j === j);
+  // `reserved` is the LAUNCH CHUTE, and it needs to be a hard exclusion rather
+  // than the CALM radius doing the job. The artery is traced start→stairs and
+  // start IS the chute's park tile, so the route runs the full length of the
+  // chute — CALM clears four tiles of a twenty-tile hallway and the spine
+  // furnishes the rest, aiming pads by the ARTERY's flow. Measured, that put
+  // boosters firing across the lane, a deflector mid-chute, and pads in the
+  // merge the chute pass deliberately leaves clear.
   const placeable = (p: TilePos): boolean =>
     !(p.i === stairs.i && p.j === stairs.j) &&
     Math.abs(p.i - start.i) + Math.abs(p.j - start.j) >= CALM &&
+    !reserved(p.i, p.j) &&
     !takenTile(p.i, p.j);
   const dirOf = (a: TilePos, b: TilePos): [number, number] => [Math.sign(b.i - a.i), Math.sign(b.j - a.j)];
 
@@ -1254,6 +1247,78 @@ function layStationSpine(
       }
     }
     k = end;
+  }
+}
+
+/**
+ * FURNISH THE LAUNCH CHUTE — the accelerating hallway off the plunger.
+ *
+ * The chute's geometry belongs to the maze layer (track-launch.ts); what it
+ * needs to PLAY is a row of boosters that turn a plunger pull into a run. The
+ * user's ask, exactly: "the plunger to push the user in the beginning needs to
+ * be like the pinball machine where it leaves the starting point and it's a
+ * long hallway with boosters that then goes into the maze".
+ *
+ * Three decisions worth stating, because each has an obvious wrong version:
+ *
+ *  1. **The park tile stays bare.** `spine[0]` is where the knight stands while
+ *     the plunger charges. A pad under him would fire him before he released,
+ *     and the launch is supposed to be the player's.
+ *  2. **Pads ACCELERATE, they don't replace the launch.** They start a few
+ *     tiles out and stride down the lane, so a full pull and a soft tap feel
+ *     different all the way to the mouth. A pad on every tile makes the pull
+ *     irrelevant, which throws away the only skill in the opening.
+ *  3. **Nothing is placed in the last two tiles.** That is the merge, and a pad
+ *     firing INTO the junction fights whatever the circuit does with you there
+ *     — the launch-duel failure mode (see `breakLaunchDuels`) with the floor's
+ *     opening as one of the participants.
+ *
+ * All pads are `spine: true`: exempt from the anti-clustering spacing and from
+ * the A1 runway repair. Runway is guaranteed here by construction — the chute
+ * is straight, sealed and open all the way to the mouth — so the repair has
+ * nothing to add and its re-aim could only point a pad sideways into rock.
+ *
+ * Mutates `parts` and `torches`.
+ */
+function layLaunchChute(
+  g: Grid,
+  chute: LaunchChute,
+  parts: PinballPartSpot[],
+  torches: Torch[],
+): void {
+  const { spine, dirI, dirJ } = chute;
+  // First pad this far from the park tile: enough runway that the plunger's own
+  // power still reads before anything boosts it.
+  const LEAD = 3;
+  const STRIDE = 3;
+  // The merge, left clear — see (3) above.
+  const TAIL = 2;
+  for (let s = LEAD; s <= spine.length - 1 - TAIL; s += STRIDE) {
+    const p = spine[s];
+    if (!isWalkable(g, p.i, p.j)) continue;
+    parts.push({ kind: "booster", i: p.i, j: p.j, dirI, dirJ, dir2I: 0, dir2J: 0, spine: true, chute: true });
+  }
+  // The chute was withheld from the general torch pass with everything else, so
+  // it lights itself. Alternating walls down the lane: a corridor lit from one
+  // side reads as flat, and this one is meant to read as DEPTH — you should be
+  // able to see how far you are about to be thrown.
+  const pi = -dirJ;
+  const pj = dirI;
+  let side = 1;
+  for (let s = 1; s < spine.length - 1; s += 4) {
+    const c = spine[s];
+    for (let d = 1; d <= Math.ceil(chute.half) + 1; d++) {
+      const x = c.i + pi * side * d;
+      const y = c.j + pj * side * d;
+      if (!isWalkable(g, x, y)) {
+        // The torch sits on the last OPEN tile, sconce facing the wall it found.
+        const fx = c.i + pi * side * (d - 1);
+        const fy = c.j + pj * side * (d - 1);
+        if (isWalkable(g, fx, fy)) torches.push({ i: fx, j: fy, di: pi * side, dj: pj * side });
+        break;
+      }
+    }
+    side = -side;
   }
 }
 
@@ -1341,7 +1406,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -1365,12 +1430,31 @@ export function decorateMaze(
   const strictLaunchers = extras.strictLaunchers === true;
   const dist = bfsDistancesOwned(g, start.i, start.j); // held across later BFS calls
 
+  // ── THE LAUNCH CHUTE IS NOT GENERAL FLOOR ───────────────────────────────
+  //
+  // `floors` is the candidate pool every later pass draws from — spawns, loot,
+  // props, torches, the corridor part deal, booster tributaries, target banks.
+  // Withholding the chute's tiles HERE, once, is what keeps the plunger lane a
+  // plunger lane, and it is deliberately a single subtraction rather than an
+  // `if (inChute)` bolted onto each of the dozen `shuffled(floors)` loops
+  // downstream: one of those would eventually be added without the guard, and
+  // a zombie parked in the launch hallway turns the floor's opening commitment
+  // into a coin flip.
+  //
+  // The chute is then furnished on purpose by `layLaunchChute` below — pads and
+  // its own torches — so nothing is lost by excluding it, only chosen.
+  const chute = extras.chute ?? null;
+  const chuteSet = new Set<number>();
+  if (chute) for (const t of chuteTiles(g, chute)) chuteSet.add(idx(g, t.i, t.j));
+  const inChute = (i: number, j: number): boolean => chuteSet.has(idx(g, i, j));
+
   const floors: TilePos[] = [];
   let maxDist = 0;
   let farthest: TilePos = start;
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
       if (at(g, i, j) !== T_FLOOR) continue;
+      if (inChute(i, j)) continue;
       floors.push({ i, j });
       const d = dist[idx(g, i, j)];
       if (d > maxDist) {
@@ -1401,7 +1485,13 @@ export function decorateMaze(
   // wrong order.
   //
   // The provisional trace is only used to FIND the bends. It is discarded.
-  {
+  //
+  // ⚠️ `wallsAuthored` SKIPS this entirely, and that is the shipping path. On a
+  // track floor `buildTrackFloor` runs the same pass itself, with the rest of
+  // the wall geometry and on the final endpoints — see track-floor.ts. This
+  // branch is now only the LEGACY generator's, where there is no maze layer to
+  // do it. Running it in both places would bank an already-banked floor.
+  if (!extras.wallsAuthored) {
     const probe = traceArtery(g, start, stairs, dist);
     if (probe.length >= 8) authorArteryBanks(g, probe, start, () => false);
   }
@@ -1548,7 +1638,11 @@ export function decorateMaze(
   // banks/hazards/rollover layers): the corridor budget is measured AFTER it, so
   // the spine never strips the deal — the deal below just spaces AROUND these
   // tiles, filling the pockets that branch off the spine. ──
-  layStationSpine(g, spine, start, stairs, parts, items);
+  layStationSpine(g, spine, start, stairs, parts, items, inChute);
+  // ── THE LAUNCH CHUTE'S OWN PADS ─────────────────────────────────────────
+  // The chute owns its lane outright (`inChute` above bars the station spine
+  // from it), so this pass is the only thing that furnishes it.
+  if (chute) layLaunchChute(g, chute, parts, torches);
   const corridorBudget = partBudget + parts.length;
   const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
@@ -1995,10 +2089,15 @@ export function decorateMaze(
   // scan below so its new bands are collected like any other crack. ──
   openLaunchTargets(g, parts, torches, rng, extras.launchBreaks ?? 6);
 
-  // ── ARC SWEEPS, part 1 — the ORBIT ISLAND (arc-sweeps.ts). Stamped BEFORE
-  // polishParts so the plaza scan sees the island and doesn't drop a bumper
-  // diamond on top of it. `occupied` = every tile carrying placed content;
-  // wall-adding stamps must never eat a spawn/item/part/torch. ──
+  // ── THE ORBIT ISLAND'S BUMPERS ──────────────────────────────────────────
+  //
+  // The island itself is GEOMETRY and is stamped by the maze layer now
+  // (track-floor.ts); what belongs here is the content that dresses it. The
+  // caller passes the centre it built.
+  //
+  // `occupiedKeys` used to exist to stop the wall-adding stamps eating placed
+  // content. With the geometry authored first that job is gone, and what
+  // remains is the ordinary "don't put a bumper on a torch" bookkeeping.
   const occupiedKeys = new Set<number>();
   const claim = (t: { i: number; j: number } | null | undefined): void => {
     if (!t) return;
@@ -2013,7 +2112,7 @@ export function decorateMaze(
   for (const t of torches) claim(t);
   claim(frog);
   const occupied = (i: number, j: number): boolean => occupiedKeys.has(j * g.w + i);
-  const orbit = stampOrbitIsland(g, start, occupied, rng);
+  const orbit = extras.orbit ?? null;
   if (orbit) {
     // Two bumpers flanking the ring turn the orbit into a real pinball toy.
     for (const [di, dj] of [[0, -1], [0, 1]] as const) {
@@ -2038,17 +2137,27 @@ export function decorateMaze(
     }
   }
 
-  // ── ARC SWEEPS, part 2 — multi-tile fillets (arc-sweeps.ts): radius 2-3
-  // sweeping curves on qualifying wall-mass corners (carve-only) and room inner
-  // corners (fill, strand-guarded). Before assignCornerShapes so the r=1
-  // single-tile pass only decorates the corners the sweeps didn't claim. ──
+  // ── ARC SWEEPS ARE NOT AUTHORED HERE ANY MORE ───────────────────────────
+  //
+  // `authorArcSweeps` used to run at this point — inside the content pass,
+  // after every zombie, torch, item and part had been placed, converting 44.9
+  // tiles per floor from floor to wall. It now runs in `buildTrackFloor`, with
+  // the rest of the wall geometry, before any of this exists. See the block in
+  // track-floor.ts for the measurements and the reasoning.
+  //
+  // The legacy (non-track) generator has no equivalent stage of its own, so a
+  // caller that passes no `endpoints`/track floor simply gets no sweeps. That
+  // is deliberate: `TRACK_FIRST` is the shipping path, and duplicating the
+  // authoring here to serve the A/B branch would recreate exactly the two-owner
+  // situation this change exists to end.
   const newParts = parts.filter((p) => !occupiedKeys.has(p.j * g.w + p.i));
   for (const p of newParts) claim(p); // polishParts may have added plaza bumpers
 
-  authorArcSweeps(g, start, occupied, rng);
-
-  // ── RUNWAY RE-AIM: the arc sweeps above can wall a launch part's lane after
-  // placement validated it. Final pass: any non-vault/non-spine launch part
+  // ── RUNWAY RE-AIM: the curves authored upstream can wall a launch part's
+  // lane after placement validated it — the sweeps run before placement now,
+  // but `openLaunchTargets` and the banks above still move walls, and a
+  // launcher facing rock is the defect either way. Final pass: any
+  // non-vault/non-spine launch part
   // whose fire lane dropped below MIN_RUNWAY re-aims to its longest open
   // cardinal (ties broken toward down-flow); if no direction has room it stays
   // put — it was topology-validated at placement and only degrades to a bumper
@@ -2058,6 +2167,7 @@ export function decorateMaze(
     // floors are generated geometry, not authored set-pieces, so a facing that
     // points into a wall carries no intent worth preserving. On the legacy
     // generator the exemption stays — see the note below.
+    if (p.chute) continue; // the plunger lane owns its facings — see PinballPartSpot.chute
     if ((!strictLaunchers && (p.vault || p.spine)) || !LAUNCH_KINDS.has(p.kind)) continue;
     if (Math.abs(p.dirI) + Math.abs(p.dirJ) !== 1) continue;
     if (launchRunway(g, p.i, p.j, p.dirI, p.dirJ) >= MIN_RUNWAY) continue;

@@ -70,7 +70,7 @@ describe("floor gate — every generated floor is legal", () => {
           failures.push(`L${level} seed=${seed} ${arch.id}: generator returned null`);
           continue;
         }
-        const m = measureFloor(f.grid, f.start, f.stairs, f.mask);
+        const m = measureFloor(f.grid, f.start, f.stairs, f.mask, { routeFrom: f.chute?.mouth });
         for (const bad of checkFloor(m, f.grid)) {
           failures.push(`L${level} seed=${seed} ${arch.id}: ${bad}\n    ${formatMetrics(m)}`);
         }
@@ -90,7 +90,7 @@ describe("floor gate — every generated floor is legal", () => {
             failures.push(`${arch.id} L${level} seed=${seed}: generator returned null`);
             continue;
           }
-          const m = measureFloor(f.grid, f.start, f.stairs, f.mask);
+          const m = measureFloor(f.grid, f.start, f.stairs, f.mask, { routeFrom: f.chute?.mouth });
           for (const bad of checkFloor(m, f.grid)) {
             failures.push(`${arch.id} L${level} seed=${seed}: ${bad}\n    ${formatMetrics(m)}`);
           }
@@ -134,7 +134,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
     for (let s = 0; s < seeds; s++) {
       const { f } = archFloor(archIndex, level, 0xc0ffee + s * 7919);
       if (!f) continue;
-      const m = measureFloor(f.grid, f.start, f.stairs, f.mask);
+      const m = measureFloor(f.grid, f.start, f.stairs, f.mask, { routeFrom: f.chute?.mouth });
       lane += m.laneShare;
       open += m.openShare;
       rank += floorCircuitRank(f);
@@ -206,7 +206,7 @@ describe("the network scales with the floor", () => {
       for (let s = 0; s < 4; s++) {
         const { f } = liveFloor(level, 0x1234 + s * 7919);
         if (!f) continue;
-        lane += measureFloor(f.grid, f.start, f.stairs, f.mask).laneShare;
+        lane += measureFloor(f.grid, f.start, f.stairs, f.mask, { routeFrom: f.chute?.mouth }).laneShare;
         n++;
       }
       expect(n).toBeGreaterThan(0);

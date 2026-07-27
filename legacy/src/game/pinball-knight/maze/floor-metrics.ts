@@ -133,6 +133,7 @@ export function measureFloor(
   start: TilePos,
   stairs: TilePos,
   mask?: LaneMask,
+  opts: { routeFrom?: TilePos } = {},
 ): FloorMetrics {
   const tiles = g.w * g.h;
   let walkable = 0;
@@ -180,8 +181,27 @@ export function measureFloor(
     }
   }
 
-  const pathLen = dist[idx(g, stairs.i, stairs.j)] ?? -1;
-  const route = traceRoute(g, start, stairs, dist);
+  // ── WHERE THE JOURNEY STARTS ────────────────────────────────────────────
+  //
+  // Reachability is measured from the SPAWN (above — the player is really
+  // standing there). The route metrics are measured from `routeFrom`, which on
+  // a floor with a launch chute is the chute's MOUTH.
+  //
+  // This is not the gate being relaxed to accommodate the chute, and the
+  // measurement says so: over 240 floors, mean directness from the mouth came
+  // out at 0.639 against 0.628 from the base — very slightly HIGHER, and
+  // pathLen is strictly shorter, which makes the `minPathSpan` check stricter
+  // rather than looser. What it removes is an artefact. The chute is a fixed,
+  // deliberately dead-straight ~20-tile lane present on every floor by
+  // construction; it adds the same length to euclid and to pathLen, so it drags
+  // `euclid/pathLen` toward 1.0 no matter how much the maze beyond it snakes.
+  // Counting a non-navigational constant inside a "how hard is this to
+  // navigate" ratio measures the wrong span — the same class of error as the
+  // `d < BIG` reach bug this file's header records.
+  const from = opts.routeFrom ?? start;
+  const routeDist = from === start ? dist : bfsDistances(g, from.i, from.j);
+  const pathLen = routeDist[idx(g, stairs.i, stairs.j)] ?? -1;
+  const route = traceRoute(g, from, stairs, routeDist);
   let turns = 0;
   for (let t = 2; t < route.length; t++) {
     const ai = route[t - 1].i - route[t - 2].i;
@@ -190,7 +210,7 @@ export function measureFloor(
     const bj = route[t].j - route[t - 1].j;
     if (ai !== bi || aj !== bj) turns++;
   }
-  const euclid = Math.hypot(stairs.i - start.i, stairs.j - start.j);
+  const euclid = Math.hypot(stairs.i - from.i, stairs.j - from.j);
 
   const bigRegions = [...floorPerRegion.entries()].filter(([, n]) => n >= REGION_MIN_FLOOR);
   const bigReached = bigRegions.filter(([r]) => reachedRegion.has(r)).length;
