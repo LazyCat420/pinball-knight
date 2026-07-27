@@ -24,7 +24,12 @@
  *
  * The budget is 16.67ms for 60fps. A stage at 1ms is not your problem no matter
  * how ugly its code looks.
+ *
+ * TRUST. Every run prints the GPU it ran on. If that line says SOFTWARE
+ * RASTERISER the numbers describe a CPU pretending to be a GPU and cannot be
+ * compared with anything — see engine/gpu-adapter.ts.
  */
+import { gpuAdapterLabel, isSoftwareAdapter, probeGpuAdapter } from "./gpu-adapter";
 
 /** One accumulating timing bucket. */
 interface Bucket {
@@ -123,6 +128,10 @@ function start(frames: number): void {
   framesLeft = frames;
   runStart = performance.now();
   enabled = true;
+  // Fire-and-forget: the probe is cached, so by the time `stop()` prints the
+  // banner a run of any realistic length has long since resolved it. Starting
+  // it here rather than at module load keeps the cost off the boot path.
+  void probeGpuAdapter();
   // eslint-disable-next-line no-console
   console.log(`[profiler] running for ${frames} frames — play normally (bounce off walls to reproduce the jitter)`);
 }
@@ -159,8 +168,17 @@ function stop(): void {
       `avg ${(1000 / (wall / Math.max(1, frameCount))).toFixed(1)} fps ` +
       `(budget: 16.67ms/frame for 60fps)`,
   );
+  console.log(`[profiler] GPU: ${gpuAdapterLabel()}`);
   console.table(rows);
   console.log("[profiler] p95 >> p50 on a stage means HITCHES in that stage, not steady cost.");
+  // Loud, and last, so it is the line still on screen after the table scrolls.
+  if (isSoftwareAdapter()) {
+    console.warn(
+      "[profiler] ⚠ UNTRUSTED RUN — this is a software rasteriser (or an adapter we could not identify).\n" +
+        "GPU work reads as free and CPU work reads as catastrophic on one of these, so these numbers\n" +
+        "must not be compared against a run from real silicon. Re-measure on a hardware adapter.",
+    );
+  }
   /* eslint-enable no-console */
 }
 
@@ -175,5 +193,12 @@ export function installProfilerHooks(): void {
   w.__dungeonProfileStop = () => {
     stop();
     return "stopped";
+  };
+  // Ask BEFORE profiling, not after: if this says software there is no point
+  // spending 600 frames collecting numbers nobody may quote.
+  w.__dungeonGpuInfo = async () => {
+    const info = await probeGpuAdapter();
+    if (!info) return "no WebGPU adapter (WebGL fallback, or navigator.gpu absent) — timings are UNTRUSTED";
+    return `${gpuAdapterLabel()}${info.software ? "  — timings are UNTRUSTED" : "  — hardware, timings are comparable"}`;
   };
 }

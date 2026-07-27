@@ -277,6 +277,15 @@ export class DamageTextPool {
   }
 
   /**
+   * Slot 0, for the descent-screen prewarm. Every slot carries an identical
+   * material descriptor (only the canvas contents differ), so compiling one
+   * covers all POOL_SIZE of them — see `warmupReveal` in render/vfx.ts.
+   */
+  warmupTarget(): THREE.Object3D {
+    return this.slots[0].mesh;
+  }
+
+  /**
    * Throw a number at a world point. `amount` is the damage actually dealt;
    * sub-1 and non-positive amounts are dropped rather than shown as "0".
    */

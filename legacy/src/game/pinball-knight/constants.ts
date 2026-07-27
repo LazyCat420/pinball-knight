@@ -580,6 +580,24 @@ export const STEEL_WALL_BREAK_SPEED_COST = 0.82; // was WALL_BREAK_SPEED_COST 0.
 /** Ram damage multiplier: the ball's own weight behind every body it meets. */
 export const STEEL_RAM_DAMAGE_MULT = 1.35;
 
+/**
+ * Hard ceiling on live floor-fx entries (grooves, slicks, fire, oil, shards).
+ *
+ * Every entry is its own Mesh with its own CLONED material added straight to
+ * the scene, so this is a draw-call budget in the same sense the 135-zombie cap
+ * is — and until this existed, nothing bounded it. The groove alone can outrun
+ * that budget by an order of magnitude:
+ *
+ *     GROOVE_RAIL_MAX_SPEED 17 u/s ÷ GROOVE_SPACING 0.34 u  =  50 stamps/s
+ *     50 stamps/s × GROOVE_LIFE 26 s                        = 1,300 live decals
+ *
+ * 300 keeps ~6 s of rut at top speed (the whole 26 s at a walk), which is well
+ * past the range where your own trail is still useful to rail along, and caps
+ * the worst case at 4.3× under what it was. Oldest is evicted first, so what
+ * you lose is always the most-faded end of the trail.
+ */
+export const FLOOR_FX_MAX = 300;
+
 // ── The GROOVE: the trail the steel ball gouges into the floor ────────────────
 // A ball bearing this heavy doesn't glide over stone, it ENGRAVES it. The rut
 // it leaves is a real feature, not a decal: it snags the horde that stumbles

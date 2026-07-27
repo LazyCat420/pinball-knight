@@ -47,6 +47,7 @@ import {
   GROOVE_HOP_MIN_SPEED,
   GROOVE_DEFLECT,
   GROOVE_HOP_COOLDOWN,
+  FLOOR_FX_MAX,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
 import { damageZombie, hitPlayerRanged } from "./combat";
@@ -57,6 +58,10 @@ const FLOOR_Y = 0.03; // just above the floor plane
 let _discGeo: THREE.CircleGeometry | null = null;
 const _mats: Partial<Record<FloorFxKind, THREE.MeshBasicMaterial>> = {};
 const _texs: Partial<Record<FloorFxKind, THREE.CanvasTexture>> = {};
+
+/** Every kind, for the prewarm sweep. Derived from KIND_COLOR below so a new
+ *  kind cannot be added without this list picking it up. */
+const FLOOR_FX_KINDS = (): FloorFxKind[] => Object.keys(KIND_COLOR) as FloorFxKind[];
 
 const KIND_COLOR: Record<FloorFxKind, number> = {
   slick: PALETTE_HEX[30], // arcane mid (wet blue)
@@ -190,7 +195,51 @@ function matFor(kind: FloorFxKind): THREE.MeshBasicMaterial {
   return _mats[kind]!;
 }
 
+/**
+ * Hidden stand-ins, one per kind, that exist ONLY so the descent-screen prewarm
+ * has something to compile.
+ *
+ * Two reasons the prewarm could not see these materials before: `matFor` is
+ * LAZY, so on a fresh floor none of the five exist yet; and every real decal is
+ * created mid-play, long after the warm-up ran. So the first oil slick, the
+ * first fire puddle and the first groove of a run each compiled a pipeline in
+ * the middle of a fight.
+ *
+ * The proxies hold the SHARED base material — which is what `spawnFloorFx`
+ * clones — so warming the base warms every clone (pipelines are keyed by
+ * material content, and a clone matches its source).
+ */
+const _warmProxies: THREE.Mesh[] = [];
+
+/**
+ * Force all five kinds' materials into existence, reveal one proxy each, and
+ * return the closure that hides them again. Called by `warmFloorPipelines`.
+ */
+export function warmFloorFxReveal(scene: THREE.Scene): () => void {
+  if (!_warmProxies.length) {
+    for (const kind of FLOOR_FX_KINDS()) {
+      const m = new THREE.Mesh(discGeo(), matFor(kind)); // shared material, NOT a clone
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      _warmProxies.push(m);
+    }
+  }
+  // Re-add every time: the proxies live across floors, but nothing guarantees
+  // the scene they were parented to is the one being warmed now. add() on an
+  // existing child is a no-op reparent.
+  for (const m of _warmProxies) {
+    scene.add(m);
+    m.visible = true;
+    m.frustumCulled = false;
+  }
+  return () => {
+    for (const m of _warmProxies) m.visible = false;
+  };
+}
+
 export function disposeFloorFxAssets(): void {
+  for (const m of _warmProxies) m.removeFromParent();
+  _warmProxies.length = 0; // geometry + materials are the shared ones, disposed below
   _discGeo?.dispose();
   _discGeo = null;
   for (const k of Object.keys(_mats) as FloorFxKind[]) {
@@ -207,6 +256,11 @@ export function disposeFloorFxAssets(): void {
  *  `hostile` marks an ENEMY hazard — it burns the player, not the horde. */
 export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: number, life: number, hostile = false): void {
   if (!state.scene || !state.dbgMaterialFloorFx) return;
+  // Evict oldest-first BEFORE pushing, so the array never exceeds the budget
+  // even for a frame. despawn() is reused rather than splicing here so scene
+  // removal and material disposal stay in exactly one place — a bare splice
+  // would leak a mesh and a material per stamp, ~50/s under the ball.
+  while (state.floorFx.length >= FLOOR_FX_MAX) despawn(0);
   // Its own material instance so opacity can fade independently of siblings.
   const mesh = new THREE.Mesh(discGeo(), matFor(kind).clone());
   mesh.rotation.x = -Math.PI / 2; // lay flat on the floor

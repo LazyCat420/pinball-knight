@@ -75,7 +75,7 @@ import { bfsDistances, bfsDistancesOwned } from "./engine/flow-field";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
-import { updateFloorFx, clearFloorFx, spawnFloorFx, updateGrooveHop } from "./entities/floor-fx";
+import { updateFloorFx, clearFloorFx, spawnFloorFx, updateGrooveHop, warmFloorFxReveal } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
@@ -819,12 +819,26 @@ function armFloorLoading(level: number, then: () => void): void {
  *
  * Sequential, never concurrent: compileAsync saves and restores renderer state
  * around itself, so two in flight at once clobber each other's render context.
+ *
+ * THE HIDDEN HALF. compileAsync walks `_projectObject`, which returns early on
+ * `object.visible === false` and frustum-tests meshes (three:
+ * common/Renderer.js). Every pooled effect — slash, bolt, ring, blade, sigil,
+ * damage number — is built INVISIBLE, and the dash ghost and the five floor-fx
+ * decal materials are not built until they are first used. So for a long time
+ * this function walked right past all of them, and the first of each in a run
+ * still compiled cold, mid-fight, which is precisely the stall it exists to
+ * prevent. The two reveals below put one representative of each into the walk;
+ * pipelines are keyed by material content, so one warms the whole pool.
  */
 async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   const renderer = state.renderer;
   const scene = state.scene;
   const camera = state.camera;
   if (!renderer || !scene || !camera) return;
+  // Reveal BEFORE snapshotting children: the floor-fx proxies parent themselves
+  // to the scene here, and must be in the list the loop iterates.
+  const restoreVfx = state.vfx?.warmupReveal();
+  const restoreFloorFx = warmFloorFxReveal(scene);
   const children = [...scene.children];
   const CAPTIONS = ["FORGING THE MACHINE", "LIGHTING THE TORCHES", "WAKING THE HORDE", "SETTING THE TABLE"];
   try {
@@ -840,6 +854,11 @@ async function warmFloorPipelines(load: FloorLoading): Promise<void> {
     // A failed precompile is a slow first frame, not a broken floor — the
     // renderer will compile lazily exactly as it did before. Never strand the
     // player behind the descent screen over it.
+  } finally {
+    // Non-negotiable: leaving a pool slot visible parks a stray quad in the
+    // world for the whole floor, so this runs even if the compile threw.
+    restoreVfx?.();
+    restoreFloorFx();
   }
 }
 
@@ -2431,7 +2450,20 @@ function loop(now: number): void {
     profBegin("pixelPass.render");
     state.pixelPass.render(state.scene, renderCam);
     profEnd("pixelPass.render");
-    if (state.renderer) profCount("draw calls", state.renderer.info.render.calls);
+    if (state.renderer) {
+      profCount("draw calls", state.renderer.info.render.calls);
+      // THE warm-up gate. `memory.programs` counts distinct COMPILED shader
+      // programs (three: common/Info.js createProgram). It should be flat from
+      // the moment the descent screen closes — every rise during play is a
+      // material family the prewarm never saw, compiled mid-combat, which is a
+      // hitch the player felt. Watch its `max`, not its average.
+      profCount("gpu programs", state.renderer.info.memory.programs);
+      // Textures are here to settle whether the per-actor texture clone in
+      // render/sprite.ts really uploads one per zombie: ~135 at a full horde
+      // confirms it, ~20 refutes it. Nobody should cost that fix before this
+      // number has been read on real hardware.
+      profCount("gpu textures", state.renderer.info.memory.textures);
+    }
   }
   profEnd("FRAME (total)");
   profFrame();

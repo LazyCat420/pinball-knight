@@ -345,6 +345,11 @@ class SlashPool {
     }
   }
 
+  /** See `warmupReveal` — slot 0 stands in for the pool at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.meshes[0];
+  }
+
   dispose(): void {
     this.tex.dispose();
     this.geo.dispose();
@@ -445,6 +450,11 @@ class BoltPool {
       // Flicker: fade the bolt out while jittering brightness so it crackles.
       (line.material as THREE.LineBasicMaterial).opacity = t * (0.55 + Math.random() * 0.45);
     }
+  }
+
+  /** See `warmupReveal` — slot 0 stands in for the pool at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.lines[0];
   }
 
   dispose(): void {
@@ -564,6 +574,11 @@ class RingPool {
       (m.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI) * this.peak[i];
       m.visible = true;
     }
+  }
+
+  /** See `warmupReveal` — slot 0 stands in for the pool at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.meshes[0];
   }
 
   dispose(): void {
@@ -721,6 +736,11 @@ class SigilPool {
     }
   }
 
+  /** See `warmupReveal` — slot 0 stands in for the pool at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.meshes[0];
+  }
+
   dispose(): void {
     this.geo.dispose();
     this.tex.dispose();
@@ -805,6 +825,11 @@ class BladeRing {
     for (const m of this.meshes) m.visible = false;
   }
 
+  /** See `warmupReveal` — slot 0 stands in for the pool at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.meshes[0];
+  }
+
   dispose(): void {
     this.geo.dispose();
     for (const m of this.meshes) (m.material as THREE.Material).dispose();
@@ -867,6 +892,24 @@ export interface VfxSystem {
    * render/damage-text.ts.
    */
   damage(x: number, y: number, z: number, amount: number, kind: DamageTextKind): void;
+  /**
+   * Make one representative of every pooled effect briefly compilable, and
+   * return the closure that puts them back.
+   *
+   * WHY. `Renderer.compileAsync` walks `_projectObject`, which returns on
+   * `object.visible === false` (three: common/Renderer.js) and frustum-tests
+   * meshes. Every pool here builds its slots INVISIBLE, so the descent-screen
+   * prewarm — which does reach these groups, they are scene children — skipped
+   * all of them, and the first slash / bolt / ring / blade / sigil / damage
+   * number of a run compiled cold in the middle of a fight.
+   *
+   * Position is deliberately untouched: `frustumCulled = false` skips the
+   * frustum test outright, so where the proxy sits is irrelevant, and not
+   * moving pool slots keeps this free of side effects on live effects.
+   *
+   * Pipelines are cached by material CONTENT, so one slot warms all of them.
+   */
+  warmupReveal(): () => void;
   update(dt: number): void;
   dispose(): void;
 }
@@ -892,6 +935,26 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const sigils = new SigilPool();
   const dmgText = new DamageTextPool();
   const ghosts: Ghost[] = [];
+  // The dash afterimage builds its material at spawn time (see `ghost` below),
+  // so the prewarm can never have seen one — the first dash of a run paid the
+  // compile. This hidden stand-in carries the SAME descriptor (map present,
+  // alphaTest, transparent, DoubleSide, depthWrite off) on a 1×1 dummy
+  // texture; the pipeline key is content-based, so warming it warms every real
+  // ghost regardless of which actor sheet they end up sampling.
+  const ghostProtoTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+  ghostProtoTex.needsUpdate = true;
+  const ghostProto = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({
+      map: ghostProtoTex,
+      transparent: true,
+      opacity: 0.4,
+      alphaTest: 0.4,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  ghostProto.visible = false;
   scene.add(additive.points);
   scene.add(alpha.points);
   scene.add(slashes.group);
@@ -900,6 +963,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   scene.add(bladeRing.group);
   scene.add(sigils.group);
   scene.add(dmgText.group);
+  scene.add(ghostProto);
 
   const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -1009,6 +1073,31 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     damage(x, y, z, amount, kind) {
       dmgText.spawn(x, y, z, amount, kind);
     },
+    warmupReveal() {
+      const targets: THREE.Object3D[] = [
+        slashes.warmupTarget(),
+        bolts.warmupTarget(),
+        rings.warmupTarget(),
+        bladeRing.warmupTarget(),
+        sigils.warmupTarget(),
+        dmgText.warmupTarget(),
+        ghostProto,
+      ];
+      // Save the REAL prior flags rather than assuming they were all
+      // (false, true): BoltPool ships frustumCulled already off, and a restore
+      // that hardcodes the default would silently re-enable culling on it.
+      const saved = targets.map((o) => ({ o, visible: o.visible, frustumCulled: o.frustumCulled }));
+      for (const o of targets) {
+        o.visible = true;
+        o.frustumCulled = false;
+      }
+      return () => {
+        for (const s of saved) {
+          s.o.visible = s.visible;
+          s.o.frustumCulled = s.frustumCulled;
+        }
+      };
+    },
     update(dt) {
       additive.update(dt);
       alpha.update(dt);
@@ -1039,6 +1128,10 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(bladeRing.group);
       scene.remove(sigils.group);
       scene.remove(dmgText.group);
+      scene.remove(ghostProto);
+      ghostProto.geometry.dispose();
+      (ghostProto.material as THREE.Material).dispose();
+      ghostProtoTex.dispose();
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
