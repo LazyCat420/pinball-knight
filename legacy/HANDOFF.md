@@ -2,7 +2,87 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-## 🔄 "IS THE GAME FLIPPED 180°?" — no, but the SIGN was (2026-07-26, this session)
+> ⚠️ **Two sessions were live in this checkout on 2026-07-26.** The flipY section
+> below belongs to the other one and was still in flight — it is kept, not
+> replaced. Only the intro-skip section is mine.
+
+## 🖱️ SKIP left an INVISIBLE CLICK BLOCKER over the whole site (2026-07-26)
+
+**Commit `f78bb4a`** → synology (`HEAD@f78bb4a`, clean worktree). Container
+`healthy`. 1419 tests pass (123 files).
+
+### What was reported
+
+> "when i skip in braindeadbot intro then go to map i can't click it"
+
+### Root cause — an orphaned overlay, not a map bug
+
+The toucan flight owns **`#toucan-intro-blocker`**: a transparent, full-viewport
+`div` at **z-index 99998** that swallows clicks while the bird flies. The only
+thing that removes it is the flying run's own `_cleanupRef` closure.
+
+SKIP stays live for the whole intro, so pressing it **mid-flight** called
+`forceSkipBoot()` → the boot re-entered `triggerTransition(true)` → `startDissolve`
+→ a **second** `playToucanIntro()` underneath the run already flying. That second
+call saw `_running === true`, dismissed it as a stale HMR flag, and reset it —
+orphaning the live run's cleanup closure, blocker and all. The `skipToucanIntro()`
+immediately after then found `_running === false` and returned without doing
+anything.
+
+The console said it out loud, pre-fix:
+
+```
+[intro-scene] ⏭️ Skip button clicked
+[DOS-Boot]    ⏭️ Fast-forwarding to dissolve
+[DOS-Boot]    🎬 Preparing toucan intro…  fastForward: true
+[toucan-intro] ⚠️ _running was stale true — resetting   ← blocker orphaned HERE
+```
+
+### Why it presented as "the map won't click"
+
+An invisible overlay does not block the **keyboard**. `M` still opened the map,
+so the map looked like the broken thing. Every click on the page — map, compass,
+room props, games — was landing on the blocker instead. `#map-overlay` also
+stayed `hidden` because the compass click never reached it.
+
+### The fix — three layers
+
+| File | Change |
+|---|---|
+| `src/transitions/toucan-intro.ts` | All end-of-run paths route through `_endLiveRun()`. Re-entry while `_running` now **tears the live run down** instead of writing the flag off as stale. `_sweepStrayBlocker()` added as a backstop. |
+| `src/transitions/dos-boot.ts` | `_handedOff` — hand off to the toucan intro exactly **once**. Also stops `onDone`/`onReady` firing twice on a mid-flight skip (the app was booting the room on top of itself). |
+| `src/scenes/intro-scene.ts` | Skip the flight **before** the boot; `_finish()` fires the app callback once; teardown sweeps any stranded blocker. |
+
+### How it was verified — and how to re-verify
+
+`scratchpad/skip-probe.mjs` (playwright + swiftshader) drives the real intro,
+clicks SKIP mid-flight, then measures the **symptom**, not the teardown logs:
+`elementFromPoint` at the viewport centre, plus a real `page.click` on the
+compass that an overlay eats exactly as it would for a user.
+
+|  | pre-fix | post-fix (local + prod) |
+|---|---|---|
+| element at viewport centre | `DIV#toucan-intro-blocker` | `CANVAS#room-canvas-element` |
+| real click on the compass | **times out** | reaches it |
+| element over the open map | `DIV#toucan-intro-blocker` | `CANVAS#map-canvas` |
+
+Negative control was run by stashing the three files and re-probing — the bug
+reproduced, so the probe discriminates. End to end: after a mid-flight skip, `M`
+opens the map and a real click on OUTSIDE navigates to `/outside`. Boot-phase
+skip (SKIP pressed before the bird appears) re-checked for regression.
+
+⚠️ **No unit test.** This is a DOM-lifetime bug and `jsdom` is not installed
+here; a jsdom-free unit test would have to mock the very lifetime it is meant to
+check. The browser probe is the honest regression check — keep it.
+
+⚠️ **`deploy.sh` builds the WORKING TREE, not HEAD.** With the other session
+mid-edit, this shipped from `git worktree add … HEAD` per
+`braindeadbot-deploy-working-tree`. Success banner reads `HEAD@f78bb4a`, not
+`main@` — that is how you confirm the clean copy went out.
+
+---
+
+## 🔄 "IS THE GAME FLIPPED 180°?" — no, but the SIGN was (2026-07-26, other session)
 
 **Commit `e1426d2`** → synology. 1419 tests pass (123 files).
 
