@@ -40,13 +40,72 @@ technique as Unity's `ShaderVariantCollection.WarmUp` / Unreal PSO precaching.
 the co-op regroup, the seed-adoption rebuild and `__dungeonLevel` all rely on
 the floor existing the moment the call returns.
 
+### The other half — SHARED MATERIALS AND GEOMETRY (in `2215eff`, undocumented there)
+
+⚠️ **This shipped inside the flow-orientation commit, not the descent-screen
+one**, because the two sessions shared a checkout. `render/pinball-parts.ts` is
+where it lives, and it is the half that made the descent screen affordable:
+prewarming ~1400 redundant pipelines cost 10.1 s, prewarming the deduplicated
+set costs ~6 s.
+
+A live-floor census found the parts were built from private copies of identical
+GPU objects:
+
+| | instances | distinct | redundant |
+|---|---|---|---|
+| materials | 1707 | 504 | 70% |
+| geometries | 1668 | 100 | 94% |
+
+`std()` and six `*Geo` helpers now memoise by value. **Two invariants, and both
+will bite whoever adds the next part builder:**
+
+1. **A material an animator WRITES to must not be shared.** The `PART_ANIMATORS`
+   pulse `emissiveIntensity`, most of them offset per part by `part.i` or a
+   random `phase`. Share one and every part of that kind breathes in lockstep,
+   last writer winning. Build those with **`stdOwn`**. The reliable tell is that
+   *every animated material is the one stashed in `userData`* — that made the
+   audit mechanical, and it currently balances exactly: **24 `userData` captures
+   ↔ 24 `stdOwn` call sites**. If you add a builder, keep that count matched.
+2. **Never dispose a shared object.** `disposePinballParts` used to traverse and
+   dispose everything it found; on cached geometry that is a use-after-free the
+   *next* floor renders as nothing. `releaseOwned()` skips anything flagged
+   `userData.shared`. Same rule the texture cache in `maze/build.ts` states.
+
+`ExtrudeGeometry` is deliberately left uncached — both uses `.translate()` the
+result, and a shared geometry translated once per part walks off the origin.
+
 ### Verified before shipping
 
 Booted headless against the dev server: descent screen paints, the hold
-**RELEASES after ~8 s** under SwiftShader, floor renders with 152 parts. That
-check matters more than it looks — `renderHeldForLoad` is only cleared in a
-`.finally()`, so a `compileAsync` that never settled would strand the player on
-the loading screen with no way out. `tsc` clean, 1059 tests green.
+**RELEASES**, floor renders with 152 parts. That check matters more than it
+looks — `renderHeldForLoad` is only cleared in a `.finally()`, so a
+`compileAsync` that never settled would strand the player on the loading screen
+with no way out. `tsc` clean, 1059 tests green.
+
+### Verified LIVE on production (2026-07-27, real WebGPU)
+
+`https://braindeadbot.com/dungeon` over host Chrome/CDP — secure context, so the
+adapter is real (`nvidia/ampere`) and the backend is **WebGPU**, not the WebGL2
+fallback you get over `http://<IP>`:
+
+| | before | after |
+|---|---|---|
+| first frame | **5103 ms frozen** | 44 ms |
+| steady p50 / p95 | 81 ms / — | **35 ms / 40 ms** |
+| p95 over 40 s of bot play | — | **12 ms** (60fps budget = 16.67) |
+| draw calls at spawn | 1326 | 985 |
+| descent screen up | — | 220–250 ms |
+| playable | ~5.6 s frozen, then hitches | 6.2 s warm / 10.1 s cold |
+
+Zero page errors; the floor renders complete (parts, chevrons, walls) — the
+visual regression sharing could have caused did not happen.
+
+**The honest trade:** the descent is now *longer* in wall-clock (6–10 s vs
+~5.6 s) because the warm-up compiles **everything**, where lazy compilation only
+did what was on screen — which is precisely why the old build kept hitching for
+the next 10–20 s as you moved. It is now an animated screen with no hitches
+after. The cold/warm gap is Chrome's on-disk pipeline cache, so a returning
+player sees the 6 s number.
 
 ### ⚠️ Open / unverified
 
@@ -55,6 +114,17 @@ the loading screen with no way out. `tsc` clean, 1059 tests green.
 - The 5103 ms figure is from the **WebGPU** backend on a real GPU. WSL/headless
   falls back to WebGL2 ([[webgpu-needs-a-secure-context]]), where the compile
   cost is different — don't re-tune the batching against a SwiftShader run.
+  Concretely: under SwiftShader steady-state frames are **~1300 ms**, so a
+  `compileAsync` experiment there measured **18.4 s** and looked like it made
+  things *worse*. The same experiment on the real adapter took 6.6 s and removed
+  the stall. Use host Chrome over CDP and confirm
+  `(await navigator.gpu.requestAdapter()).info` names a real vendor.
+- **Next lever, if 6–10 s is judged too long:** warm only what is near the
+  player, close the screen, and background-warm the rest on a per-frame budget
+  (~8 ms). The remaining unique-material count is dominated by ~466 sprite
+  materials, which are per-instance **by design** — `createStaticSprite` says
+  why (`tavern/npcs.ts` tints individual keepers via `mesh.material.color`), so
+  that one needs the tint case handled before it can be shared.
 - Captions and phase fractions (`0.3 + 0.7 * f`) are hand-set; the bar's
   relationship to real remaining time is approximate.
 
