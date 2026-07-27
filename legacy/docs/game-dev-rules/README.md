@@ -12,6 +12,7 @@ here and the plan doc gets retired.
 | Doc | Read it before |
 | --- | --- |
 | [procedural-level-generation.md](procedural-level-generation.md) | touching any level/map/maze generator, or adding a knob to one |
+| [game-research/](game-research/README.md) | designing or tuning any Pinball Knight system — 12 reference-game deep dives (loops, drop/stat/balance math, perf) with per-game "Lessons for Pinball Knight" sections |
 
 Worked example: [../maze-generation-investigation-2026-07-26.md](../maze-generation-investigation-2026-07-26.md)
 runs this whole workflow over the Pinball Knight floor generator — census,
