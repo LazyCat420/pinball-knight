@@ -18,6 +18,111 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > the tree and **left them strictly alone** — committed only its own files and
 > deployed from a clean `HEAD` worktree so that work did not ship early.
 
+## ✅ NOT AN INCIDENT — the "vanished" maze work was deliberately reverted by its own author (2026-07-27)
+
+**Closing this out because it has been logged as a data-loss event and it was
+not one.** The note above records that `maze/floor-rules.ts` and
+`maze/track-floor.ts` reverted and a new untracked `maze/doorways.ts` was
+deleted, "with no reflog entry and no stash", counted as a fourth occurrence of
+a pattern.
+
+That was the maze session deleting **its own uncommitted prototype, on purpose**,
+and saying so at the time. No third-party work was touched:
+
+- the three files were last committed by that same session (`efe67db`,
+  `6f4d30b`); the uncommitted delta on top was purely its own doorway layer, and
+  `git checkout --` restored them to HEAD with every shipped rule intact
+  (`minBossEuclid`, `perimeterBias`, the leash — all still present and green);
+- `doorways.ts` was created in that session and never staged.
+
+**Do not spend time on `git fsck --lost-found` for this.** It cannot work: the
+changes were never staged, so no blob was ever written to the object database.
+There is nothing dangling to recover. The absence of a reflog entry and of a
+stash is likewise expected — `git checkout --` on unstaged changes creates
+neither. Those absences are not evidence of anything.
+
+**Why it was thrown away rather than shipped** — it failed two gates and one of
+the failures was a design error, both recorded below so the next attempt does
+not repeat them.
+
+## 🚪 DOORWAYS — measured, prototyped, REVERTED (2026-07-27). Design for v2 below.
+
+### What was asked
+
+> "we need to make sure we don't have narrow exits … it looks bad / looks
+> sloppy. It should have clear doorways, entrances from one place to another …
+> it should be a uniform size, and we have different uniform sizes that can go
+> from one section to another"
+
+Read carefully: this is a **vocabulary**, not a minimum. A minimum turns a
+1-tile squeeze into a 3-tile one and leaves every other opening at whatever
+arbitrary width the maze left, so the floor still reads as accidental. What
+makes an opening look authored is being recognisably the same object each time.
+
+### The measurement (keep this — it cost the most to get right)
+
+Passage width must be measured on the **medial axis** — the widest circle that
+fits at the pinch. An arbitrary tile's wall clearance is NOT width: every tile
+of a 2-wide corridor touches a wall exactly like a 1-wide one. Over 120 floors:
+
+| passage at a pinch | share | slack per side (ball r = 0.3) |
+|---|---|---|
+| **1 tile** | **81.3%** | **0.20** |
+| 3 tiles | 16.4% | 1.20 |
+| 5 tiles | 2.3% | 2.20 |
+
+Restricted to pinches that gate a **room** (a squeeze between two 5+-wide
+spaces): **10.9 per floor**. That is the set worth fixing — widening all 51
+pinches per floor would carve the maze open wholesale.
+
+⚠️ Two measurement mistakes were made before those numbers were trustworthy, and
+both are easy to repeat: (1) filtering candidates to clearance ≤ 2 and then
+printing "the clearance histogram", which is truncated by its own filter; (2)
+treating tile clearance as width.
+
+### Why v1 was reverted
+
+1. **The region detector is self-amplifying.** It decided what counted as a
+   "room" from LOCAL clearance, so widening an opening promoted the corridor
+   beyond it into a room, which manufactured a fresh doorway, which widened
+   again. Iterating it with `removeWallStubs` took authored doorways from **34
+   to 107 per floor** while barely moving the defect (109 → 102 surviving
+   pinches). This is the OPPOSITE of `removeWallStubs`, where every round
+   strictly reduces the work left — assuming the same shape is the trap.
+2. **It broke `piece-rules`** — carving cut into arc backing (the see-≠-hit
+   class: the collider derives from `Grid.arcs`, not from tiles).
+
+Residual after one pass: ~1.4 fixable 1-tile room pinches per floor. Not
+shippable.
+
+### v2 — the design that should work
+
+**Fix the regions ONCE, before any carving**, from structure the generator
+already has (track lanes, the plaza, `TrackMask.lane`) rather than from a
+clearance heuristic that moves the moment you carve. Then enumerate the openings
+*between those fixed regions* and snap each to the vocabulary. The region set
+never changes, so there is no cascade — and it matches the ask better, since
+"each room/section" is a thing the generator already knows about.
+
+Carry over from v1, which was sound:
+- vocabulary `[3, 5, 7]` — **odd**, so an opening has a true centre tile and
+  centres on the passage's own medial axis;
+- size chosen by what the opening JOINS (bigger space ⇒ wider mouth), so the
+  size carries information a player can learn, rather than being an rng roll;
+- widening is **only ever wall → floor**, so it cannot strand anything;
+- doorway tiles must be fenced off from `authorArteryBanks` / `authorArcSweeps`
+  / `resealChute`, all of which convert floor back to wall afterwards;
+- never widen a `T_CRACKED` tile — that is a deliberate hidden route, and
+  announcing it is the opposite of a secret;
+- the late pass must not cut a tile carrying an arc face.
+
+Still outstanding and NOT started: **revolving secret doors** — keep
+`T_CRACKED` hidden, and on impact spin the panel like an office revolving door.
+Independent of the above and low-risk.
+
+**Physics is owned by another dev.** The bounce/rattle half of the narrow-gap
+complaint was explicitly handed to them; this work is geometry only.
+
 ## ⚡ THE DESCENT PREWARM COULD NOT SEE ANYTHING HIDDEN (2026-07-27)
 
 **`main@1d46f96`** → synology (clean `HEAD` worktree deploy, banner
