@@ -28,7 +28,8 @@ import { exploredCount, exploredFraction } from "../fog";
 import { POTIONS, POTION_IDS, WEAPONS, freshWeapon } from "../items";
 import type { PotionId, WeaponId } from "../items";
 import { isFloorMapOpen } from "../map-overlay";
-import { at } from "../maze/generator";
+import { at, tileCenter } from "../maze/generator";
+import { spawnCardDrop } from "../economy/loot";
 import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
 import { installProfilerHooks } from "../engine/profiler";
@@ -240,6 +241,29 @@ export function installDevHooks(deps: DevHookDeps): void {
       if (!w || !(id in CARDS)) return false;
       w.cards = [...(w.cards ?? []), id];
       return true;
+    };
+    // Dev: put a KNOWN card on the floor, offset from the knight.
+    // `__dungeonDropCard('ember', 1.5, 0)`. Drops are random, so without this a
+    // harness cannot reach the pickup path at all — which is where the swept
+    // grab (economy/pickups) and the corner toast both live.
+    (window as unknown as { __dungeonDropCard?: (id: string, dx?: number, dz?: number) => boolean }).__dungeonDropCard = (id: string, dx = 0, dz = 0) => {
+      const p = state.player;
+      if (!p || !(id in CARDS) || !state.scene) return false;
+      spawnCardDrop(p.x + dx, p.z + dz, id);
+      return true;
+    };
+    // Dev: take the stairs from wherever you are. `descend` has been in the dep
+    // bag since the extraction with nothing calling it; this is what it was for.
+    // Grading, the floor-haul screen and the tavern hand-off all hang off this
+    // one call, and a harness cannot find the exit by itself under fog.
+    // Reports where the stairs actually are so a walk-over test can use them.
+    (window as unknown as { __dungeonDescend?: () => unknown }).__dungeonDescend = () => {
+      const g = state.grid;
+      const s = state.stairs;
+      const at_ = g && s ? tileCenter(g, s.i, s.j) : null;
+      if (state.gameOver || !state.player) return null;
+      descend();
+      return { from: state.level, stairs: at_, locked: state.exitLocked, haulShown: !!state.cardReaderEl };
     };
     // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/curveshot/…
     // without hunting for a flask). `__dungeonPotion('freeze')`.

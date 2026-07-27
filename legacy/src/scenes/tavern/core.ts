@@ -646,6 +646,20 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     dioramaBallSpeed: diorama.ballSpeed,
     camZoom,
   });
+  // Dev/QA: put the knight somewhere, instantly. Walking here is the single
+  // worst trap in the headless harness — WASD is SCREEN-relative, the central
+  // pinball table walls off the spine, and under SwiftShader a held key crosses
+  // about a fifth of a unit a second, so reaching the descend board on foot
+  // takes a minute of key-holding and usually ends in a wall. Anything that
+  // needs a LIVE FLOOR (which is most things) is gated behind that walk.
+  // Mirrors the dungeon's __dungeonWarp.
+  (window as unknown as { __tavernWarp?: (x: number, z: number) => boolean }).__tavernWarp = (x: number, z: number) => {
+    if (!tavern.player || !Number.isFinite(x) || !Number.isFinite(z)) return false;
+    tavern.player.x = x;
+    tavern.player.z = z;
+    tavern.player.speed = 0;
+    return true;
+  };
   // Dev/QA: leave the tavern without descending, so a harness can re-enter it
   // after changing run state (e.g. socketing a card) and see the room rebuild.
   (window as unknown as { __tavernClose?: () => boolean }).__tavernClose = () => {

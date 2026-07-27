@@ -62,10 +62,16 @@ function injectStyles(): void {
   const s = document.createElement("style");
   s.id = STYLE_ID;
   s.textContent = `
+    /* NO entry fade on the overlay itself, deliberately. It used to start at
+       opacity:0 and be carried in by a class-toggled transition; anything of
+       that shape can be left sitting at zero (see the long note in
+       pickup-toast.ts — a pending animation holds keyframe zero whatever the
+       fill mode). Here that would mean an INVISIBLE modal on top of a paused
+       sim: the game stops responding and there is nothing on screen to explain
+       why or to dismiss. The overlay, the title and the CONTINUE footer are all
+       unanimated for that reason; the cards below carry the motion. */
     .cardrd{position:fixed;inset:0;z-index:10003;display:flex;align-items:center;justify-content:center;
-      background:rgba(6,8,12,.78);backdrop-filter:blur(3px);opacity:0;transition:opacity 180ms ease-out;
-      overflow-y:auto}
-    .cardrd.in{opacity:1}
+      background:rgba(6,8,12,.78);backdrop-filter:blur(3px);overflow-y:auto}
     .cardrd-col{display:flex;flex-direction:column;align-items:center;gap:10px;
       max-width:min(94vw,940px);padding:24px 12px}
     .cardrd-title{font:16px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:4px;
@@ -74,11 +80,17 @@ function injectStyles(): void {
     .cardrd-grid{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;
       gap:10px;margin-top:4px}
     /* Each card rises in on its own small delay (set inline) so the haul deals
-       out rather than appearing as a block. */
+       out rather than appearing as a block. This one DOES need a backwards fill
+       — that is what holds a card off-screen through its delay — which is only
+       acceptable because the haul runs with the sim PAUSED, so the compositor
+       is not competing with the game loop. The overlay above is the fail-safe:
+       it, the title and the CONTINUE footer are unanimated, so a stalled deal
+       can never leave the player facing a blank screen with no way out. */
     .cardrd-cell{display:flex;flex-direction:column;align-items:center;gap:4px;
-      opacity:0;transform:translateY(14px) scale(.94);
-      animation:cardrd-deal 320ms cubic-bezier(.18,.9,.28,1.2) forwards}
-    @keyframes cardrd-deal{to{opacity:1;transform:translateY(0) scale(1)}}
+      animation:cardrd-deal 320ms cubic-bezier(.18,.9,.28,1.2) both}
+    @keyframes cardrd-deal{
+      from{opacity:0;transform:translateY(14px) scale(.94)}
+      to{opacity:1;transform:none}}
     .cardrd-name{font:10px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
       text-align:center;text-shadow:1px 1px 0 #0b0d12}
     .cardrd-desc{font:8px ${PIXEL_FONT_LABEL},ui-monospace,monospace;letter-spacing:1px;
@@ -92,8 +104,7 @@ function injectStyles(): void {
       animation:cardrd-pulse 1.6s ease-in-out infinite}
     @keyframes cardrd-pulse{0%,100%{opacity:.55}50%{opacity:1}}
     @media (prefers-reduced-motion:reduce){
-      .cardrd{transition-duration:1ms}
-      .cardrd-cell{animation-duration:1ms}
+      .cardrd,.cardrd-cell{animation-duration:1ms}
       .cardrd-foot{animation:none}
     }
   `;
@@ -214,8 +225,6 @@ export function showCardHaul(entries: readonly HaulEntry[], floor: number, onDon
   state.container.appendChild(el);
   state.cardReaderEl = el;
   onHaulDone = onDone;
-  // Double-rAF so the entry transition actually animates instead of snapping.
-  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("in")));
 }
 
 /**

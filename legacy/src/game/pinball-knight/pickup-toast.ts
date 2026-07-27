@@ -56,15 +56,34 @@ function injectStyles(): void {
     #${RAIL_ID}{position:fixed;right:10px;bottom:${RAIL_BOTTOM}px;z-index:10001;
       display:flex;flex-direction:column-reverse;align-items:flex-end;gap:5px;
       pointer-events:none;user-select:none;max-width:min(46vw,300px)}
+    /* THE ENTRANCE NEVER TOUCHES OPACITY. This is the whole reason the toast
+       is visible at all, and it took three tries to get right:
+
+         1. opacity:0 + add .in next frame + let a transition carry it — the
+            transition never advanced while the dungeon was actually being
+            played (the game loop saturates the main thread), so every toast sat
+            at opacity 0 for its entire life. The indicator you were promised
+            simply never appeared.
+         2. Same thing as a keyframe animation with fill-mode "both" — a
+            backwards fill pins the element to the hidden from-keyframe until
+            the compositor gets round to starting it. Same bug, one layer down.
+         3. ...and "forwards" does not save you either: a PENDING animation is
+            already in its active phase, so it holds keyframe zero regardless of
+            fill mode. Measured at up to two full poll windows (~2s) invisible.
+
+       So the entrance slides and does not fade, and it slides UP from 10px —
+       not in from the right, which would hold the row half off-screen for the
+       same window. Stall it completely and you get a static, fully visible
+       toast sitting 10px low. That is the feature; the motion is decoration. */
     .pkt{display:flex;align-items:center;gap:8px;
       background:rgba(10,12,17,.82);border:1px solid #2b3140;border-left-width:3px;
       border-radius:5px;padding:5px 8px 5px 6px;
       box-shadow:0 4px 14px rgba(0,0,0,.55);
-      transform:translateX(26px);opacity:0;
-      transition:transform 200ms cubic-bezier(.18,.9,.28,1.2),opacity 200ms ease-out}
-    .pkt.in{transform:translateX(0);opacity:1}
-    .pkt.out{transform:translateX(26px);opacity:0;
-      transition:transform ${OUT_MS}ms ease-in,opacity ${OUT_MS}ms ease-in}
+      opacity:1;transform:none;
+      animation:pkt-in 200ms cubic-bezier(.18,.9,.28,1.2)}
+    @keyframes pkt-in{from{transform:translateY(10px)}to{transform:none}}
+    .pkt.out{animation:pkt-out ${OUT_MS}ms ease-in forwards}
+    @keyframes pkt-out{to{opacity:0;transform:translateX(26px)}}
     .pkt-face{display:block;width:38px;height:auto;border-radius:3px;flex:0 0 auto;
       box-shadow:0 2px 6px rgba(0,0,0,.6)}
     .pkt-text{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -82,7 +101,7 @@ function injectStyles(): void {
     .pkt-t3{border-left-color:#f0a63c}
     .pkt-t4{border-left-color:#ff77e9}
     @media (prefers-reduced-motion:reduce){
-      .pkt,.pkt.in,.pkt.out{transition-duration:1ms}
+      .pkt,.pkt.out{animation-duration:1ms}
     }
   `;
   document.head.appendChild(s);
@@ -121,12 +140,14 @@ function push(el: HTMLElement, holdMs: number): void {
   // Newest wins: over the cap, the OLDEST row goes, not the incoming one.
   while (rows.length > MAX_ROWS) killRow(rows[0]);
 
-  requestAnimationFrame(() => el.classList.add("in"));
+  // No rAF hand-off to make it appear — the row is already visible (see the
+  // stylesheet); the entrance animation is decoration on top of that.
   const ts: ReturnType<typeof setTimeout>[] = [];
   ts.push(
     setTimeout(() => {
-      el.classList.remove("in");
       el.classList.add("out");
+      // Removal is on the TIMER, not on animationend: a starved compositor
+      // that never finishes the fade must still leave the rail empty.
       ts.push(setTimeout(() => killRow(el), OUT_MS));
     }, holdMs),
   );

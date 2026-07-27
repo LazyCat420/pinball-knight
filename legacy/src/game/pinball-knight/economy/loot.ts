@@ -54,6 +54,14 @@ export function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKi
   if (!id) return;
   if (CARDS[id].rarity === "legendary") state.legendaryDropped = true;
   if (CARDS[id].rarity === "mythic") state.mythicDropped = true;
+  spawnCardDrop(x, z, id);
+}
+
+/** Put a SPECIFIC card on the floor. Split out of the roll above so a harness
+ * can place a known card (dev/window-hooks `__dungeonDropCard`) — card drops
+ * are otherwise random, which makes the pickup path untestable unattended. */
+export function spawnCardDrop(x: number, z: number, id: string): void {
+  if (!state.scene || !CARDS[id]) return;
   const sprite = createStaticSprite(ITEM_PAINTS[id]);
   sprite.mesh.position.set(x, 0, z);
   state.scene.add(sprite.mesh);
