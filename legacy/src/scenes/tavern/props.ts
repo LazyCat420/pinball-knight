@@ -115,19 +115,11 @@ function makeSignTexture(text: string): THREE.CanvasTexture | null {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
-  // UPSIDE DOWN UNDER THE NODE RENDERER unless flipY is off. Same trap as the
-  // retro blit in transitions/raccoon-intro.ts: a texture on a material `map`
-  // samples with v=0 at the TOP under WebGPURenderer (both the webgpu and the
-  // webgl backends), while PlaneGeometry puts v=0 at the BOTTOM. three's default
-  // flipY=true is the compensation the LEGACY WebGLRenderer wanted, so leaving it
-  // on double-flips here and every glyph renders inverted.
-  //
-  // It read as garbled rather than obviously upside down — "ENTER MAZE" with each
-  // letter flipped in place still looks like *a* word, which is why it survived
-  // review as a font/bloom artefact. Probing with "ABC" is what isolated it: the
-  // letter ORDER stayed A→B→C (so nothing is mirrored horizontally) while every
-  // glyph was inverted, which is a v-flip and nothing else.
-  tex.flipY = false;
+  // Default flipY stays TRUE. The inverted glyphs this sign shipped with were
+  // the PIXEL PASS flipping the whole presented frame (rtUv in
+  // engine/render/pixel-pass.ts) — setting flipY=false here made the sign read
+  // correctly inside a frame that was still upside down, which is how the
+  // "everything else is still upside down" report happened.
   return tex;
 }
 

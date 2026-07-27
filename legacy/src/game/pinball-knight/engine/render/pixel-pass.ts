@@ -109,17 +109,36 @@ const { ppu: PPU } = engineConfig.camera;
  * EffectComposer, no stock bloom pass. This pipeline owns its colour handling
  * against a hand-managed LINEAR target, and the backend does not change that.
  *
- * The one genuine semantic difference is UV ORIGIN. GLSL sampled with the
- * `uv` varying and read `gl_FragCoord` for dither/scanlines; TSL's `uv()` and
- * `screenCoordinate` carry the same convention here because every pass is a
- * fullscreen quad in the same orientation, so the Bayer matrix and the
- * scanline parity land on the same pixels as before.
+ * The one genuine semantic difference is UV ORIGIN — and it is NOT a no-op.
+ * Under WebGPURenderer (BOTH backends), sampling a RENDER TARGET's texture
+ * with `uv()` on a fullscreen quad reads it v-flipped relative to what the
+ * legacy WebGLRenderer + ShaderMaterial idiom read. Every RT sampling hop in
+ * this file therefore goes through `rtUv()` below, which flips v back.
+ *
+ * How this was proven (2026-07-26, after three sessions chased textures):
+ * with NO compensation, the presented frame was upside down while its BLOOM
+ * was upright — the diffuse path is one sampling hop (odd ⇒ net flip), the
+ * bloom path is four (even ⇒ cancels). Mirrored bokeh floating in the void
+ * above the tavern was displaced marquee bloom. One flip per hop is the only
+ * model consistent with both, so the fix is one explicit flip per hop — NOT
+ * `flipY=false` on scene textures, which "fixes" each texture in isolation
+ * while leaving the world, sprites and geometry inverted (that was shipped
+ * TWICE, e1426d2 and 38484a6, and reverted with this change).
+ *
+ * `transitions/raccoon-intro.ts` is the same seam fixed the same way (its
+ * blit quad's UV attribute is flipped — a9eab59).
  */
+
+/** RT-sampling UV: v-flipped to undo the node renderer's render-target flip. */
+function rtUv(): TSLNode {
+  const u = uv();
+  return vec2(u.x, u.y.oneMinus());
+}
 
 // ── Bloom: bright-pass ──────────────────────────────────────────
 // Keep only what's brighter than the threshold, softly. Runs in linear.
 function brightNode(src: THREE.Texture, threshold: TSLNode): TSLNode {
-  const c = texture(src, uv()).rgb;
+  const c = texture(src, rtUv()).rgb;
   const l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   const k = l.sub(threshold).div(max(float(1).sub(threshold), float(0.001))).clamp(0, 1);
   return vec4(c.mul(k), 1);
@@ -129,7 +148,9 @@ function brightNode(src: THREE.Texture, threshold: TSLNode): TSLNode {
 // Normalised gaussian weights (sigma ~2) — identical taps to the GLSL version.
 const BLUR_W = [0.227027, 0.194595, 0.121622, 0.054054, 0.016216] as const;
 function blurNode(src: THREE.Texture, dir: TSLNode): TSLNode {
-  const at = (o: TSLNode): TSLNode => texture(src, uv().add(o)).rgb;
+  // Offsets ride on the flipped base UV; the kernel is symmetric (±each tap),
+  // so the flipped v-direction of `dir` changes nothing.
+  const at = (o: TSLNode): TSLNode => texture(src, rtUv().add(o)).rgb;
   let c: TSLNode = at(vec2(0, 0)).mul(BLUR_W[0]);
   for (let i = 1; i <= 4; i++) {
     const step = dir.mul(float(i));
@@ -172,7 +193,11 @@ function finalNode(
   palette: Float32Array,
   u: FinalUniforms,
 ): TSLNode {
-  const vUv = uv();
+  // Diffuse, depth and bloom are all render targets, so all three are sampled
+  // through the same flipped UV — keeping AO/outline depth taps registered
+  // with the colour they shade. Vignette and aberration are centre-symmetric,
+  // and dither/scanlines are screen-space patterns; none care about v-flip.
+  const vUv = rtUv();
   const res = u.resolution;
 
   // Derived from the array actually handed in, not from a module constant: the

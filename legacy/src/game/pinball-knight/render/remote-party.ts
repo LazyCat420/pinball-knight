@@ -203,11 +203,8 @@ function makeNameplate(name: string, hex: number): THREE.Mesh {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.colorSpace = THREE.SRGBColorSpace;
-  // Peer names rendered UPSIDE DOWN without this — same flipY trap as the torch
-  // flame (maze/build.ts makeFlameTexture) and the tavern sign. A texture on a
-  // material `map` samples v=0 at the TOP under the node renderer, so three's
-  // default flipY=true double-flips it.
-  tex.flipY = false;
+  // Default flipY stays TRUE — "upside-down peer names" was the pixel pass
+  // flipping the whole frame (rtUv in engine/render/pixel-pass.ts).
   const h = 0.28;
   const geo = new THREE.PlaneGeometry(h * (w / 24), h);
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });

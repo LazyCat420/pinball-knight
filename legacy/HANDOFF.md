@@ -5,50 +5,83 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > ⚠️ **Two sessions were live in this checkout on 2026-07-26.** Both are recorded
 > here; neither replaced the other.
 
-## 🙃 THE DUNGEON REALLY WAS UPSIDE DOWN — flipY + WebGPU is now the default (2026-07-26)
-
-**Commit `38484a6`**. 1427 tests pass (124 files, was 1419/123).
+## 🙃 THE FLIP, ACTUALLY FIXED THIS TIME — the PIXEL PASS was inverting every frame (2026-07-26, third session)
 
 ### What was reported
 
-> "its still upside down. all you did was make the enter maze rightside up
-> everything else is still upside down."
-> "we are suppose to be using WebGPU as the main thing … only have it as backup
-> never do anything with WebGL only focus on WebGPU please."
+> "flip the pinball knight game so its right side up. you have attempted to fix
+> this multiple times and have failed do not attempt the same tactics look at
+> your work."
 
-Both correct. An earlier section of this file concluded "the game is NOT flipped"
-(it is now reduced to a pointer, further down). **That conclusion was wrong** —
-see the method warning at the end of this section.
+The user was right for the third time. `38484a6` (the six flipY=false edits, the
+section this replaces) shipped, was live on prod, and the game was **still
+upside down** — because that fix, like `e1426d2` before it, compensated
+individual textures **inside a flipped frame** instead of fixing the frame.
 
-### Root cause — the same flipY trap, in SIX more places
+### The real root cause — one line of orientation, at the present seam
 
-`CanvasTexture`s on material `map`s left at three's default `flipY=true`. That
-default is the compensation the **legacy** `WebGLRenderer` wanted; under the node
-renderer a texture on a `map` samples with **v=0 at the TOP**, so it double-flips.
+Under `WebGPURenderer` (BOTH backends), sampling a **render target's** texture
+with TSL `uv()` on a fullscreen quad reads it **v-flipped** relative to the
+legacy `WebGLRenderer`+`ShaderMaterial` idiom. The pixel pass
+(`engine/render/pixel-pass.ts`) does exactly that for every frame of the game —
+so the **entire presented frame** was upside down: geometry, sprites, textures,
+everything except the DOM HUD.
 
-| File | Texture | Symptom |
+**Fix:** every RT sampling hop in the pixel pass now goes through `rtUv()`
+(v-flipped UV). The seven `flipY=false` texture edits are **reverted** — the
+textures were never wrong.
+
+### How it was proven (do it this way next time)
+
+1. **Reproduce in the USER'S browser, not a harness**: headless **Vivaldi** over
+   CDP (`/mnt/c/Users/Barco/AppData/Local/Vivaldi/Application/vivaldi.exe`,
+   same recipe as playtest's `--gpu`) against prod. Landmarks matched the
+   user's screenshot exactly.
+2. **Pure-math oracle, no rasterizer**: replicate the camera from source
+   constants (tilt 38°, yaw 45°, dist 24, ortho, zoom 0.78, target at spawn)
+   and `project()` landmark world positions. The ENTER MAZE sign (y 3.0, north
+   wall) projects to the screen **top**-right; the render had it **bottom**-
+   right, in exactly the v-mirrored position. x preserved + y mirrored ⇒
+   composite v-flip, not a yaw/mirror bug.
+3. **The bloom parity clincher**: the "fireflies" floating in the void were the
+   marquee's bloom, v-mirrored from its diffuse. Diffuse path = 1 RT sampling
+   hop (odd ⇒ flipped), bloom path = 4 hops (even ⇒ upright). One flip **per
+   hop** is the only model consistent with both — that pinned the seam without
+   touching a line of code.
+4. **Why the texture fixes fooled review**: with `flipY=false`, a texture is
+   pre-inverted, so the flipped composite flips it back to readable — "ENTER
+   MAZE" read fine on a frame where the KNIGHT WAS STANDING ON HIS HEAD (crop
+   the sprites next time; sprite.ts keeps flipY=true so sprites showed the
+   truth all along).
+
+### Verified after the fix (dev server, real browsers over CDP)
+
+| Oracle | webgl (Vivaldi) | webgpu (Chrome, real Dawn) |
 |---|---|---|
-| `maze/build.ts` | `pixelTexture()` — wall albedo | trim/dentil course at the canvas top, skirting + contact shadow at the bottom, moss "climbing from the floor" — all inverted; moss haloed pillar **tops** |
-| `maze/build.ts` | `makeNormalTexture()` | must flip WITH the albedo or every bevel is lit from the wrong side |
-| `maze/build.ts` | `makeFlameTexture()` | torch flames burned **downward** |
-| `maze/build.ts` | `makeBannerTexture()` | hung pole-down, swallowtail notch in the air |
-| `render/remote-party.ts` | `makeNameplate()` | peer names upside down |
-| `engine/render/damage-text.ts` | the pool's texture | damage numbers upside down |
+| Marquee ABOVE notice board, top of screen | ✓ | ✓ |
+| "ENTER MAZE" glyphs upright, arrows point DOWN at board | ✓ | ✓ |
+| Player + NPC sprites head-up | ✓ | ✓ |
+| Dartboard low on the SOUTH wall (5.9, 6.6) | ✓ | ✓ |
+| Bloom registered on its source (no void bokeh) | ✓ | ✓ |
 
-⚠️ **NOT a blanket rule.** The sprite atlas (`engine/render/sprite.ts`) computes
-`offset.y = (rows-1-row)/rows`, which **depends on flipY staying true** — setting
-it false there breaks every character. Floor noise, the slash crescent, the radial
-sigil, oil swirls and the barrel are flip-invariant and deliberately untouched.
+1427 pre-existing tests pass. (One failure in the full run is `__census.test.ts`,
+an untracked in-flight file belonging to the parallel session — it passes alone.)
 
-### WebGPU is now the default backend
+⚠️ Open, webgpu-only, **Vivaldi-only**: headless Vivaldi with `?gpu=webgpu`
+renders a black canvas (zero console errors). Chrome webgpu is fine. Prod is
+http-over-IP (insecure context ⇒ no `navigator.gpu`) so every prod visitor gets
+webgl regardless; this only matters if prod ever moves to https.
 
-`cf377a9` had pinned `auto` to WebGL2 because "the WebGPU backend renders this
-game's render-target pipeline UPSIDE DOWN on some Chromium forks". The flip was
-real; **the attribution was not.** It is neither backend- nor fork-specific —
-screenshot-verified tip-down on the webgl backend AND on real Dawn, upright on
-both after the flipY fixes. Forcing WebGL2 hid one symptom on one browser while
-leaving the bug in every other. `auto` now resolves to WebGPU, falling back to
-WebGL2 only when `navigator.gpu` is absent.
+### The backend default (unchanged by this session)
+
+`auto` resolves to WebGPU, falling back to WebGL2 when `navigator.gpu` is
+absent (i.e. all of http-over-IP prod today). `cf377a9`'s "WebGPU renders
+upside down on some forks" attribution stays retired — the flip was the pixel
+pass, on every backend.
+
+⚠️ **Sprite atlas exception still real**: `engine/render/sprite.ts` computes
+`offset.y = (rows-1-row)/rows`, which depends on `flipY=true`. It was correct
+before, throughout, and now.
 
 ### ⚠️ How to test WebGPU from WSL — and why `?gpu=webgpu` alone proves nothing
 
@@ -167,19 +200,24 @@ mid-edit, this shipped from `git worktree add … HEAD` per
 
 ---
 
-## 🔄 "is the game flipped 180?" — the FIRST answer to this was WRONG (2026-07-26)
+## 🔄 The flip's history, for anyone reading old commit messages (2026-07-26)
 
-**Commit `e1426d2`** fixed the tavern `ENTER MAZE` sign (`makeSignTexture`,
-`flipY = false`). That fix is correct and still in.
+Three attempts are cited in commits; only the third is correct:
+- **`e1426d2`** "the ENTER MAZE sign rendered upside down" — flipped the sign
+  texture inside a flipped frame; its write-up's "the game is NOT flipped" was
+  wrong (suspect-vs-suspect comparison).
+- **`38484a6`** "the dungeon was upside down — flipY on canvas textures" —
+  flipped six more textures inside the same flipped frame; its "verified
+  upright" screenshots were textures double-flipped back to readable while the
+  sprites in the same frame stood on their heads.
+- The **pixel-pass `rtUv()` fix** at the top of this file is the root cause;
+  both earlier commits' texture edits are reverted by it.
 
-But the write-up that accompanied it concluded **"the game is NOT flipped — the
-room reads as a diamond because of the 45°-yaw iso camera"**, and that was wrong.
-The dungeon *was* vertically inverted; the sign was one of seven affected
-textures. Corrected and superseded by **`38484a6`** at the top of this file —
-including the method mistake (comparing a suspect render against a suspect
-screenshot) that produced the false all-clear.
-
-Kept only as a pointer, because the earlier text is cited in commit messages.
+⚠️ **For the parallel session**: a `git stash` mishap briefly yanked your
+in-flight edits; everything was restored from `stash@{0}` except
+`jungle-controller.ts`, where your NEWER working-tree version was kept.
+`stash@{0}` is intentionally left in place as a safety net — drop it once
+you've confirmed nothing is missing.
 
 ## 🗂 ONE FOLDER PER GAME + a real engine (2026-07-26)
 
