@@ -125,8 +125,8 @@ export function pickTrackEndpoints(
   g: Grid,
   mask: TrackMask,
   chute?: { base: TilePos; mouth: TilePos } | null,
-  opts: { perimeterBias?: number } = {},
-): { start: TilePos; stairs: TilePos } | null {
+  opts: { perimeterBias?: number; minBossEuclid?: number } = {},
+): { start: TilePos; stairs: TilePos; relaxed?: string[] } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
     for (let i = 0; i < g.w; i++) {
@@ -156,26 +156,86 @@ export function pickTrackEndpoints(
   // instead of an argmax, which is the same inversion the whole track-first
   // rework is built on (docs/game-dev-rules §3).
   const TIE = 0.92;
-  const far = (from: TilePos): { pos: TilePos; d: number } => {
+  // ── AND A STRAIGHT-LINE FLOOR ON TOP OF IT ───────────────────────────────
+  //
+  // The `directness` preference below is `euclid / pathLen`, MINIMISED. With
+  // pathLen already pinned to the top 8% by the tie band, minimising that ratio
+  // is minimising EUCLID: of all the tiles a lap away by path, it deliberately
+  // takes the one physically nearest the spawn. That is the intended feature
+  // (a windy route, not a straight shot) and it had no floor under it.
+  //
+  // Measured in the running game, not the generator: the exit — and therefore
+  // the Reaper King, who is sited on it — arrived **6.7 tiles** from the player
+  // at t=0 on seed 1 and 8.9 on seed 777, while comfortably passing the
+  // path-distance rule because a wall sat between them. His skulls and slam
+  // both ignore walls (see `minBossEuclid`), so that is a boss shooting at your
+  // spawn from the moment the floor builds.
+  //
+  // So the band is filtered by straight-line distance FIRST, and the windiness
+  // preference then chooses among what survives. Ordering matters: applied the
+  // other way round the preference would keep picking the nearest tile and the
+  // filter would have nothing left to reject.
+  const minEuclid = opts.minBossEuclid ?? 0;
+  // `from` is where the sweep ORIGINATES; `eye` is where the player actually
+  // stands. With a launch chute they differ by the whole length of the hallway
+  // — the exit is swept from the mouth so the lap is measured from where the
+  // launch delivers you, but the king shoots at the PARK TILE. Measuring the
+  // sight line from the mouth let a 6.7-tile exit through on seed 1.
+  const far = (from: TilePos, eye: TilePos): { pos: TilePos; d: number; relaxed: boolean } => {
     const dist = bfsDistances(g, from.i, from.j);
     let best = -1;
     for (const p of lane) {
       const d = dist[idx(g, p.i, p.j)];
       if (d > best && d < 0x3fffffff) best = d;
     }
-    if (best <= 0) return { pos: from, d: best };
+    if (best <= 0) return { pos: from, d: best, relaxed: false };
+    const inBand = (tie: number): TilePos[] =>
+      lane.filter((p) => {
+        const d = dist[idx(g, p.i, p.j)];
+        return d >= best * tie && d < 0x3fffffff;
+      });
+    // ── WIDEN THE BAND BEFORE GIVING UP ─────────────────────────────────────
+    //
+    // On a small floor the top-8% band can contain nothing far enough away in a
+    // straight line — measured on L1 seed 1, the whole band topped out at 9.5
+    // tiles. Standing the rule down there is the wrong trade: it buys a maximal
+    // WALK at the cost of the king starting in your face, and the walk is the
+    // cheaper thing to give up. A shorter lap that is genuinely separated beats
+    // a longer one that is not.
+    //
+    // So the tie band is loosened in steps until something clears the sight
+    // line, and only a floor where even the loosest band fails records a
+    // relaxation. TIE stays the FIRST value tried, so floors that can satisfy
+    // both keep exactly the route they had.
+    let band = inBand(TIE);
+    let clear = band.filter((p) => Math.hypot(p.i - eye.i, p.j - eye.j) >= minEuclid);
+    for (const tie of [0.8, 0.65, 0.5]) {
+      if (clear.length > 0 || minEuclid <= 0) break;
+      band = inBand(tie);
+      clear = band.filter((p) => Math.hypot(p.i - eye.i, p.j - eye.j) >= minEuclid);
+    }
+    // Nothing in the band is far enough in a straight line — a genuinely small
+    // or tightly-coiled floor. Take the FARTHEST available rather than the
+    // windiest, and let the caller record a declared relaxation: silently
+    // falling back to the windiest would pick the closest, which is the defect.
+    const pool = clear.length > 0 ? clear : band;
+    const relaxed = clear.length === 0 && band.length > 0 && minEuclid > 0;
     let bestPos = from;
-    let bestDirect = Infinity;
-    for (const p of lane) {
+    let bestScore = Infinity;
+    for (const p of pool) {
       const d = dist[idx(g, p.i, p.j)];
-      if (d < best * TIE || d >= 0x3fffffff) continue;
-      const direct = Math.hypot(p.i - from.i, p.j - from.j) / d;
-      if (direct < bestDirect) {
-        bestDirect = direct;
+      const euclid = Math.hypot(p.i - eye.i, p.j - eye.j);
+      const wind = Math.hypot(p.i - from.i, p.j - from.j);
+      // Windiest among the compliant; farthest-in-sight when nothing complies.
+      // Windiness is still judged from the sweep origin (that is what makes the
+      // ROUTE snake); the straight-line floor is judged from the player.
+      const score = relaxed ? -euclid : wind / d;
+      if (score < bestScore) {
+        bestScore = score;
         bestPos = p;
       }
     }
-    return { pos: bestPos, d: dist[idx(g, bestPos.i, bestPos.j)] };
+    return { pos: bestPos, d: dist[idx(g, bestPos.i, bestPos.j)], relaxed };
   };
   // With a launch chute the start is NOT ours to choose: the floor opens where
   // the plunger is, and the plunger is at the closed end of the chute.
@@ -227,9 +287,9 @@ export function pickTrackEndpoints(
     return pick;
   };
   const a = chute ? chute.base : startBand(lane[0]);
-  const b = far(chute ? chute.mouth : a);
+  const b = far(chute ? chute.mouth : a, a);
   if (b.d <= 0) return null;
-  return { start: a, stairs: b.pos };
+  return { start: a, stairs: b.pos, relaxed: b.relaxed ? ["boss-not-within-sight-of-spawn"] : [] };
 }
 
 /**
@@ -297,6 +357,7 @@ export function buildTrackFloor(
   // is what decides where the floor opens on 94% of floors (see the scoring
   // block in track-launch.ts).
   const profBias = prof.rules?.perimeterBias ?? DEFAULT_RULE_WEIGHTS.perimeterBias;
+  const profEuclid = prof.rules?.minBossEuclid ?? DEFAULT_RULE_WEIGHTS.minBossEuclid;
   const chute = carveLaunchChute(grid, mask, rng, { perimeterBias: profBias });
   growMazeAround(grid, mask, rng, {
     linkChance: opts.linkChance ?? prof.linkChance,
@@ -338,7 +399,7 @@ export function buildTrackFloor(
   // whatever they left simply shipped; measured on the live gate, moving them
   // here without re-running repair pushed six floors over the dead-end ceiling
   // (up to 5.31 per 1k tiles against a limit of 2.5).
-  const endsEarly = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias });
+  const endsEarly = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
   const protect = endsEarly ? [endsEarly.start, endsEarly.stairs] : [];
   const repair = (keep: readonly TilePos[]): void => {
     uncarveDeadEnds(grid, mask, keep);
@@ -389,7 +450,7 @@ export function buildTrackFloor(
   // The curves change geometry, so the geometry gets repaired — see `repair`.
   repair(protect);
 
-  const ends = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias });
+  const ends = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
   if (!ends) return null;
 
   // ── ARTERY BANKS — the last of the three curve families to come home ─────
@@ -470,7 +531,7 @@ export function buildTrackFloor(
   // A high-bias floor that opened centrally: was a peripheral option ever on
   // the table? `edgeBest` is the band's best, so "no" means impossible, not
   // ignored. Without a chute the same question is asked of the lane itself.
-  const relaxed: string[] = [];
+  const relaxed: string[] = [...(ends.relaxed ?? [])];
   if (profBias >= 0.5 && perimeterScore(grid, ends.start.i, ends.start.j) < PERIMETER_RULE_MIN) {
     const available = chute
       ? chute.edgeBest

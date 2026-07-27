@@ -93,6 +93,30 @@ export interface FloorRuleWeights {
    * walking away. Tiles are what the player actually experiences.
    */
   minBossTiles: number;
+  /**
+   * Minimum STRAIGHT-LINE distance, in tiles, from the spawn to the boss.
+   *
+   * ── Why path distance was not enough, measured in the running game ───────
+   *
+   * `minBossTiles` above is a walking constraint and every floor cleared it —
+   * yet the king was arriving 6.7 tiles from the player at t=0 on seed 1 and
+   * 8.9 on seed 777 (`__dungeonBoss()`). Both numbers are true at once: there
+   * is a wall between them, so the WALK is 30+ steps while the SIGHT LINE is
+   * seven tiles.
+   *
+   * A wall is not distance here, and the reason is specific rather than
+   * aesthetic — the king's two ranged attacks ignore geometry outright:
+   *   · `updateBones` hits on proximity alone, `hypot(p - b) < BONE_HIT_R`,
+   *     with no line-of-sight test — skulls fly through stone;
+   *   · `doSlam` commits the ground-pound to the knight's current position,
+   *     also unblocked.
+   * So a boss "far away" by path can open fire on the spawn.
+   *
+   * Both constraints are therefore real and they are NOT redundant: path
+   * distance is what makes the floor a journey, straight-line distance is what
+   * keeps him out of your opening. Enforce both.
+   */
+  minBossEuclid: number;
 }
 
 /**
@@ -111,6 +135,9 @@ export interface FloorRuleWeights {
 export const DEFAULT_RULE_WEIGHTS: FloorRuleWeights = {
   perimeterBias: 0.75,
   minBossTiles: 30,
+  // Comfortably past BONE_MAX_DIST (16) so the opening cannot be shot at, with
+  // a little margin for the knight drifting toward him on the launch.
+  minBossEuclid: 20,
 };
 
 /**
@@ -203,6 +230,17 @@ export const FLOOR_RULES: FloorRule[] = [
       const d = pathTo(ctx, ctx.bossSpot);
       if (d < 0) return { ok: false, detail: "boss tile is unreachable from the spawn" };
       return { ok: d >= ctx.weights.minBossTiles, detail: `${d} path tiles (floor wants >= ${ctx.weights.minBossTiles})` };
+    },
+  },
+  {
+    id: "boss-not-within-sight-of-spawn",
+    why: "his skulls and his ground-pound both ignore walls, so a boss seven tiles away through stone can open fire on your spawn",
+    check(ctx) {
+      const d = Math.hypot(ctx.bossSpot.i - ctx.start.i, ctx.bossSpot.j - ctx.start.j);
+      if (ctx.relaxed?.includes("boss-not-within-sight-of-spawn")) {
+        return { ok: true, detail: `${d.toFixed(1)} tiles straight-line — RELAXED (floor too small to separate them)` };
+      }
+      return { ok: d >= ctx.weights.minBossEuclid, detail: `${d.toFixed(1)} tiles straight-line (wants >= ${ctx.weights.minBossEuclid})` };
     },
   },
   {

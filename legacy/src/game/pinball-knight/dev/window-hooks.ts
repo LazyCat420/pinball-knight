@@ -23,6 +23,7 @@ import { resetPickupSweep } from "../economy/pickups";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
+import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { debugCurSpeed, debugWallNormal } from "../entities/player";
 import { railCap } from "../entities/rail";
@@ -178,6 +179,34 @@ export function installDevHooks(deps: DevHookDeps): void {
     // Almost everything in that checklist is a canvas, a shader or a transient
     // DOM tile, so a harness driving the debug panel can click a control and
     // have no way to tell whether it did anything. This is the read-back.
+    /**
+     * ☠ WHERE IS THE KING, RIGHT NOW?
+     *
+     * Added because a generator census and a player's eyes disagreed: the
+     * census said the king's SPAWN TILE is never nearer than 56 BFS steps, the
+     * player said "the boss was literally right next to me when I started the
+     * map". Both can be true — the tile is where he is BUILT, not where he IS —
+     * and nothing exposed the second number, so the argument had no referee.
+     *
+     * Reports live world positions and the leash state, so a harness can settle
+     * it at t=0 instead of reasoning about it.
+     */
+    (window as unknown as { __dungeonBoss?: () => unknown }).__dungeonBoss = () => {
+      const p = state.player;
+      const king = state.zombies.find((z) => z.boss && z.mode !== "dead");
+      if (!king) return { king: null, engaged: bossEngaged(), stairs: state.stairs ?? null };
+      return {
+        king: { x: Math.round(king.x * 100) / 100, z: Math.round(king.z * 100) / 100, hp: king.hp, aggro: !!king.aggro },
+        player: p ? { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 } : null,
+        // Straight-line world distance = tiles (1 unit is 1 tile, engine/grid.ts).
+        dist: p ? Math.round(Math.hypot(king.x - p.x, king.z - p.z) * 100) / 100 : null,
+        engaged: bossEngaged(),
+        stairs: state.stairs ?? null,
+        levelStart: state.levelStart ?? null,
+        level: state.level,
+      };
+    };
+
     (window as unknown as { __dungeonProbe?: () => unknown }).__dungeonProbe = () => {
       const p = state.player;
       return {
