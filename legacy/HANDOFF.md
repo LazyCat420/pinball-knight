@@ -3,10 +3,60 @@
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
 > ⚠️ **Two sessions were live in this checkout on 2026-07-26.** Both are recorded
-> here; neither replaced the other. **A third was live on 2026-07-27** (the
-> flow-orientation wave below) while a fourth had uncommitted work in
-> `dev/window-hooks.ts` and some `zzz-*.mjs` scratch files — those were left
-> alone and are NOT in `2215eff`.
+> here; neither replaced the other. **Two more were live on 2026-07-27** — the
+> flow-orientation wave (`2215eff`) and the descent screen (`89d1aeb`), written
+> concurrently in the same checkout. The second was committed by the first
+> session at the user's instruction; see the note under it.
+
+## ⏳ THE DESCENT SCREEN — the freeze was SHADER COMPILATION, not generation (2026-07-27)
+
+**`main@89d1aeb`** → synology. Written by a **parallel session** in this
+checkout; committed and shipped by the flow-orientation session because
+`deploy.sh` builds `COPY . .` (the working tree, **not** HEAD), so an
+uncommitted file either ships untracked or is lost on the next clean deploy.
+
+### The measurement that reframes it
+
+On real hardware (NVIDIA Ampere, WebGPU backend):
+
+    buildLevel .................  544 ms
+    first frame after it ....... 5103 ms   ← the freeze
+
+WebGPU compiles a render pipeline **per distinct material, lazily**, the first
+time it is drawn — so a floor's worth of shaders all landed on frame one with
+the main thread blocked and nothing on screen. **A progress bar over the maze
+generator would have covered a tenth of the wait**, which is the trap here.
+
+### The shape of the fix
+
+`floor-loading.ts` puts a descent screen up; `warmFloorPipelines` then calls
+`renderer.compileAsync(child, camera, scene)` per top-level scene child (per
+child, not one whole-scene call, so the bar shows real progress) while
+`renderHeldForLoad` keeps the loop from simulating or rendering. Rendering early
+would trigger the exact compile storm the warm-up exists to schedule. Same
+technique as Unity's `ShaderVariantCollection.WarmUp` / Unreal PSO precaching.
+
+`buildLevel` (the old `startLevel` body) stays **synchronous**: `descendInto`,
+the co-op regroup, the seed-adoption rebuild and `__dungeonLevel` all rely on
+the floor existing the moment the call returns.
+
+### Verified before shipping
+
+Booted headless against the dev server: descent screen paints, the hold
+**RELEASES after ~8 s** under SwiftShader, floor renders with 152 parts. That
+check matters more than it looks — `renderHeldForLoad` is only cleared in a
+`.finally()`, so a `compileAsync` that never settled would strand the player on
+the loading screen with no way out. `tsc` clean, 1059 tests green.
+
+### ⚠️ Open / unverified
+
+- **No test covers `floor-loading.ts`.** The release path is guarded by
+  `try/catch` + `.finally()`, but nothing pins it.
+- The 5103 ms figure is from the **WebGPU** backend on a real GPU. WSL/headless
+  falls back to WebGL2 ([[webgpu-needs-a-secure-context]]), where the compile
+  cost is different — don't re-tune the batching against a SwiftShader run.
+- Captions and phase fractions (`0.3 + 0.7 * f`) are hand-set; the bar's
+  relationship to real remaining time is approximate.
 
 ## 🧭 THE TRACK RUNS ONE WAY — Φ, and the booster family (2026-07-27)
 
