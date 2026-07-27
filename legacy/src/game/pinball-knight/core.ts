@@ -235,6 +235,7 @@ import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, R
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { cardBase } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
+import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss } from "./boss";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
@@ -690,11 +691,16 @@ export function launchDungeonGame(onExit?: () => void): void {
   // a black screen because a backend they aren't using didn't answer.
   const beginRun = (floor?: number): void => {
     if (!state.active) return;
-    const target = descendInto(floor);
-    state.lastTime = performance.now();
-    state.animFrameId = requestAnimationFrame(loop);
-    // The seed may still be in flight — re-seed this floor if it disagrees.
-    adoptPoolSeedWhenItArrives(target);
+    // Resolved twice (here for the caption, again inside descendInto) because
+    // the screen has to name the depth before the build starts. Cheap and pure.
+    armFloorLoading(resolveDescendFloor(peers(), loadResumeFloor(), floor), () => {
+      if (!state.active) return;
+      const target = descendInto(floor);
+      state.lastTime = performance.now();
+      state.animFrameId = requestAnimationFrame(loop);
+      // The seed may still be in flight — re-seed this floor if it disagrees.
+      adoptPoolSeedWhenItArrives(target);
+    });
   };
   // Dev: skip the lobby and drop straight into floor 1.
   //
@@ -726,8 +732,119 @@ export function launchDungeonGame(onExit?: () => void): void {
 }
 
 
-/** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
+/**
+ * ── ENTERING A FLOOR ───────────────────────────────────────────────────────
+ *
+ * `startLevel` is the wrapper every caller already used; `buildLevel` below is
+ * the original synchronous build, unchanged. The split exists because the wait
+ * on a descent is NOT where it looks like it is.
+ *
+ * Measured on real hardware (NVIDIA Ampere, WebGPU backend):
+ *
+ *     buildLevel .................  544 ms
+ *     first frame after it ....... 5103 ms   ← the freeze
+ *
+ * WebGPU compiles a render pipeline per distinct material, lazily, the first
+ * time that material is drawn — so a floor's worth of shaders all landed on
+ * frame one, with the main thread blocked and nothing on screen. Generating the
+ * maze was never the problem, which is why simply putting a progress bar over
+ * the generator would have covered a tenth of the wait.
+ *
+ * So the compile is done DELIBERATELY, in batches, behind the descent screen
+ * (`warmFloorPipelines`), and the renderer is held off until it finishes —
+ * otherwise the first rendered frame would trigger exactly the compile storm we
+ * are trying to schedule. This is the standard loading-screen prewarm: Unity's
+ * ShaderVariantCollection.WarmUp and Unreal's PSO precaching do the same thing.
+ *
+ * `buildLevel` stays SYNCHRONOUS on purpose. Every caller — descendInto, the
+ * co-op regroup, the seed-adoption rebuild, __dungeonLevel — relies on the
+ * floor existing the moment the call returns; deferring it would run their next
+ * lines against the floor being torn down.
+ */
 function startLevel(level: number): void {
+  // A descent that pre-armed the screen (beginRun, the tavern's onDescend) has
+  // one up already and it has had a frame to paint. Anything else — a co-op
+  // regroup, a seed disagreement, a dev hook — raises it here, accepting that
+  // it cannot paint until the synchronous build below lets go of the thread.
+  if (!floorLoad && state.container) {
+    floorLoad = openFloorLoading(state.container, level);
+    renderHeldForLoad = true;
+  }
+  buildLevel(level);
+  const load = floorLoad;
+  if (!load) return;
+  load.phase("RAISING THE WALLS", 0.3);
+  void warmFloorPipelines(load).finally(() => {
+    load.close();
+    if (floorLoad === load) floorLoad = null;
+    renderHeldForLoad = false;
+    // The loop has been idle for several seconds; without this the next frame
+    // would carry a multi-second delta into the fixed-step accumulator.
+    state.lastTime = performance.now();
+  });
+}
+
+/** The live descent screen, or null when the game is not entering a floor. */
+let floorLoad: FloorLoading | null = null;
+/** While true the loop simulates and renders nothing — see startLevel. */
+let renderHeldForLoad = false;
+
+/**
+ * Raise the descent screen and give it a frame to paint BEFORE `then` blocks
+ * the thread building the floor. Used by the player-facing entries; without it
+ * the overlay is created and then immediately starved of a paint for the whole
+ * of `buildLevel`, so the descent still opens on a frozen black screen.
+ */
+function armFloorLoading(level: number, then: () => void): void {
+  if (!state.container) {
+    then();
+    return;
+  }
+  floorLoad = openFloorLoading(state.container, level);
+  renderHeldForLoad = true;
+  // Two frames: one for the browser to lay the overlay out, one for its own
+  // canvas loop to draw the first labyrinth frame.
+  requestAnimationFrame(() => requestAnimationFrame(then));
+}
+
+/**
+ * Compile this floor's render pipelines while the descent screen is up.
+ *
+ * Done per top-level scene child rather than in one `compileAsync(scene)` call
+ * so the bar reports real progress instead of sitting at 30% for six seconds.
+ * The three-argument form is the documented way to precompile a loose 3D object
+ * ("if the first argument is a 3D object, targetScene must represent the scene
+ * the object is going to be added to") and it keeps the pipeline cache keys
+ * matching the ones `render()` will look up.
+ *
+ * Sequential, never concurrent: compileAsync saves and restores renderer state
+ * around itself, so two in flight at once clobber each other's render context.
+ */
+async function warmFloorPipelines(load: FloorLoading): Promise<void> {
+  const renderer = state.renderer;
+  const scene = state.scene;
+  const camera = state.camera;
+  if (!renderer || !scene || !camera) return;
+  const children = [...scene.children];
+  const CAPTIONS = ["FORGING THE MACHINE", "LIGHTING THE TORCHES", "WAKING THE HORDE", "SETTING THE TABLE"];
+  try {
+    for (let i = 0; i < children.length; i++) {
+      await renderer.compileAsync(children[i], camera, scene);
+      // Throttled: a DOM write per child would cost more than the compile.
+      if (i % 16 === 0 || i === children.length - 1) {
+        const f = (i + 1) / children.length;
+        load.phase(CAPTIONS[Math.min(CAPTIONS.length - 1, Math.floor(f * CAPTIONS.length))], 0.3 + 0.7 * f);
+      }
+    }
+  } catch {
+    // A failed precompile is a slow first frame, not a broken floor — the
+    // renderer will compile lazily exactly as it did before. Never strand the
+    // player behind the descent screen over it.
+  }
+}
+
+/** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
+function buildLevel(level: number): void {
   if (!state.scene) return;
 
   // Bank any coins still on the old floor BEFORE it's torn down — disposeLevel
@@ -1859,8 +1976,10 @@ function descend(): void {
     enterTavern(state.container, {
       stats: { grade, floor: floorCleared, kills, bestCombo },
       onDescend: () => {
-        startLevel(nextLevel);
-        showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+        armFloorLoading(nextLevel, () => {
+          startLevel(nextLevel);
+          showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+        });
       },
       // The tavern's game menu (Esc/I) carries the same confirmed ABANDON as
       // the dungeon's; the tavern closes itself first, then this ends the run.
@@ -2062,6 +2181,11 @@ function simulate(dt: number): void {
 function loop(now: number): void {
   if (!state.active) return;
   state.animFrameId = requestAnimationFrame(loop);
+  // ── Held during a descent ── the descent screen owns the display while the
+  // floor's pipelines compile (see startLevel). Rendering here would trigger
+  // the lazy compile storm the warm-up exists to schedule, and simulating would
+  // run the world for the several seconds the player cannot see or act.
+  if (renderHeldForLoad) return;
   profBegin("FRAME (total)");
 
   // Clamped BOTH ways: MAX_FRAME is tab-out protection, and the 0 floor guards
