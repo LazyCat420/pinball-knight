@@ -1,59 +1,76 @@
 /**
- * HOLO CARDS — the dungeon's weapon chips, painted as real trading cards.
+ * CARD FACES — a slain monster, printed on the material it came from.
  *
- * This is a port of the congress/senate card engine in
- * `trading-client/frontend/src/lib/holoCardEngine.js`, keeping its architecture
- * and its look, and swapping only the domain layer:
+ * WHAT THIS REPLACED, and why. The previous face was a port of a trading-app
+ * "holo card" engine: a bright two-stop gradient keyed off the card's MODIFIER,
+ * then diagonal rainbow foil stripes, then a 55–70%-alpha metallic wash over
+ * the WHOLE card, then etched hatching, then a tiled reverse-holo sigil field,
+ * then one more rainbow `overlay` pass across everything. Rendered and looked
+ * at, it had four concrete faults:
  *
- *   - Same 63:88 card ratio painted onto a 512×716 canvas (not DOM), so every
- *     region is placed by hand and the whole face can take composited foil
- *     passes that CSS simply cannot do.
- *   - Same anatomy: stage pill, name + power, energy emblem, bevelled art
- *     window, plaque, moves box, stats strip, rarity/set footers.
- *   - Same stacked rarity treatment: diagonal foil stripes → metallic wash →
- *     etched engraving → tiled reverse-holo, then ONE `overlay` foil pass over
- *     the whole face so an idle card still reads as holographic.
- *   - Same seeded LCG so a given card's speck field and backdrop are stable
- *     across repaints.
+ *   1. THE WASH ATE THE TEXT. Those full-face `fillRect` passes ran over the
+ *      stats and the move rows as readily as over the border, so every epic and
+ *      above had a milky lower half — the Hulk Knuckle's "+60%" was very nearly
+ *      invisible against its own frame. Treatment now clips to the FRAME and
+ *      text panels are painted after it, never under it.
+ *   2. THE EMBLEMS WERE EMOJI. `⚔️ ⚡ 🔥 ❄️ 🛡️` drawn with `fillText`, which is
+ *      font-dependent: a headless render drew a ✗-in-a-circle where the emblem
+ *      belonged on nearly every card, and any client without an emoji font hits
+ *      the same hole. Every mark is a PATH now — see render/card-glyphs.ts.
+ *   3. THE MYTHICS HAD NO ART. A sourceless chase card fell back to
+ *      `CardDef.icon` at 150px, so the five rarest cards in the game were the
+ *      only ones showing a stock emoji sticker. They have hand-drawn sigils now.
+ *   4. IT WAS BUBBLY. Candy foil in a dark dungeon game, and the colour keyed
+ *      off the modifier, so a Golem card and a Ghost card were the same hot
+ *      orange because both add flat damage.
  *
- * The one deliberate divergence: the original swaps a shared three.js plane in
- * on hover for a GLSL tilt shader. This game already owns a WebGL context for
- * the dungeon itself, and a second one competing for it is a real hazard, so
- * the tilt here is a CSS 3D transform plus a pointer-tracked glare sheen —
- * visually the same trick, none of the context risk.
+ * The organising idea now: a card is PRINTED ON A MATERIAL that its monster
+ * chose. Bone stock for the undead, ink for the incorporeal, carved slate for
+ * the rooted, chitin for the arthropods, iron for the wrought, void for the
+ * chase cards (render/card-styles.ts). Rarity escalates only in the frame
+ * METAL, so it can never wash out the anatomy again.
+ *
+ * The layout is a real card's anatomy rather than a stat sheet: title bar with
+ * the name and cost, an art window with an inset bevel, a type line naming the
+ * monster, a text box on panel stock, then a footer. Everything is placed by
+ * hand on a 512×716 face (63:88, real trading-card proportions) and the whole
+ * thing is one canvas texture, so the DOM layer can tilt and light it as a
+ * single surface — see ui-cards.ts.
+ *
+ * Deterministic: every seeded flourish comes from the card's BASE id, so a card
+ * never shimmers between repaints and every copy of a card looks like the same
+ * card.
  */
-import { RARITY_HEX, cardDef, type CardDef, type CardId, type CardRarity } from "../cards";
+import { RARITY_HEX, cardDef, cardPower, modifierRows, type CardDef, type CardId, type CardRarity, type ModifierRow } from "../cards";
 import { KIND_INFO } from "../bestiary";
 import { monsterPortrait, portraitScale } from "./monster-portrait";
+import { drawGlyph, glyphPip, glyphSparkle, sigilFor, type Glyph } from "./card-glyphs";
+import { elementFor, metalFor, styleFor, type CardStyle, type Metal } from "./card-styles";
+import { mulberry32 } from "../../../utils/rng";
 
-/** Real trading-card proportions (63mm × 88mm), same as the reference engine. */
+/** Real trading-card proportions (63mm × 88mm). */
 export const CARD_W = 512;
 export const CARD_H = 716;
 
-/** Rarity → tier, the number every visual treatment below keys off. */
+/** Rarity → tier, the number the frame metal keys off. */
 const TIER: Record<CardRarity, number> = { common: 0, rare: 1, epic: 2, legendary: 3, mythic: 4 };
 
-const RARITY_FOOTER_COLOR = ["#d1d5db", "#93c5fd", "#e9d5ff", "#f3c93a", "#f0abfc"];
+// ── LAYOUT ────────────────────────────────────────────────────────────────────
+// One table, so the regions are checkable against each other instead of being
+// scattered as magic numbers through 400 lines of painting. The previous face
+// had a fixed 188px text box regardless of content, which left one-stat cards
+// (Spider Silk, Wisp Spark) with a 40%-of-the-card empty black rectangle.
+const PAD = 22; // card edge → frame content
+const TITLE_Y = 30;
+const TITLE_H = 46;
+const ART_Y = 88;
+const ART_H = 320;
+const TYPE_Y = ART_Y + ART_H + 10; // type line, directly under the art
+const TYPE_H = 30;
+const BOX_Y = TYPE_Y + TYPE_H + 10; // text box top
+const FOOT_H = 34; // footer band at the bottom
 
-/** Per-element theming, chosen from what the card actually DOES. */
-interface Theme {
-  type: string;
-  energy: string;
-  frame: [string, string];
-  accent: string;
-}
-function themeFor(c: CardDef): Theme {
-  const m = c.modifier;
-  if (m.bolt) return { type: "STORM", energy: "⚡", frame: ["#1e1b4b", "#4f46e5"], accent: "#a5b4fc" };
-  if (m.onHit === "burn") return { type: "BLAZE", energy: "🔥", frame: ["#5e1c0b", "#d1541d"], accent: "#fb923c" };
-  if (m.onHit === "chill") return { type: "FROST", energy: "❄️", frame: ["#0b3a5e", "#1d9fd1"], accent: "#7dd3fc" };
-  if (m.pinballMult && m.pinballMult > 1) return { type: "MOMENTUM", energy: "🪩", frame: ["#5e4a0b", "#d1a01d"], accent: "#fcd34d" };
-  if (m.cooldownMult && m.cooldownMult < 1) return { type: "SWIFT", energy: "⚡", frame: ["#0b5e4a", "#1dd1a0"], accent: "#5eead4" };
-  if (m.durabilityMult && m.durabilityMult > 1) return { type: "GUARD", energy: "🛡️", frame: ["#334155", "#64748b"], accent: "#cbd5e1" };
-  return { type: "POWER", energy: "⚔️", frame: ["#5e0b0b", "#d1341d"], accent: "#f87171" };
-}
-
-/** FNV-1a — the reference engine's hash, so seeding behaves identically. */
+/** FNV-1a — stable seeding for the grain and flourishes. */
 function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -63,60 +80,27 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
-/** Seeded LCG so a card's foil specks and backdrop never shimmer between repaints. */
-function lcg(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-/** The flavour "HP" — a single number summarising how strong the chip is. */
-function cardPower(c: CardDef): number {
-  const m = c.modifier;
-  let p = 10;
-  if (m.damageFlat) p += m.damageFlat * 15;
-  if (m.damageMult) p += (m.damageMult - 1) * 100;
-  if (m.pinballMult) p += (m.pinballMult - 1) * 40;
-  if (m.cooldownMult) p += (1 - m.cooldownMult) * 80;
-  if (m.durabilityMult) p += (m.durabilityMult - 1) * 20;
-  if (m.bolt) p += 45;
-  return Math.max(10, Math.round(p / 5) * 5);
-}
+// The seeded stream for a card's grain is `mulberry32` from utils/rng — that
+// module exists because three byte-identical private copies of it had already
+// drifted apart once, and a fourth here would be the same mistake. It also
+// matters for the ART: a bare LCG's low bits are famously non-random, and the
+// grain painters consume the stream in tight loops (`rand() * w, rand() * h`),
+// which is exactly the pattern where LCG lattice structure shows up as visible
+// banding in the card stock.
 
 /**
- * The card's effects as PLAIN STAT LINES.
+ * The card's effects as stat rows, capped at what the text box can hold.
  *
- * These used to be invented attack names — any card with `cooldownMult < 1`
- * became "Quickdraw", any with `durabilityMult > 1` became "Tempered Steel".
- * Two problems: the names were the loudest thing on a card whose actual identity
- * is the MONSTER it came from, and they read as skills, which is exactly the
- * thing cards are not (skills are the tree's job — see cards.ts). The stat IS
- * the text now, and the monster gets the headline.
+ * The WALK and the FORMATTING both live in cards.ts (`modifierRows`) next to
+ * the schema they read — this used to be a second, independent enumeration of
+ * every `CardModifier` field, and it drifted from the prose one exactly as you
+ * would expect: the same crit-rounding fix had to be applied in both files, and
+ * the two disagreed about which effects were even worth printing.
+ *
+ * What is left here is a RENDER decision: how many rows fit on a card.
  */
-function movesFor(c: CardDef): Array<{ name: string; power: string; text: string }> {
-  const m = c.modifier;
-  const out: Array<{ name: string; power: string; text: string }> = [];
-  const pct = (v: number): string => `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`;
-  // Cooldown reads inverted from every other multiplier: BELOW 1 is the good
-  // outcome (faster), so the raw `pct()` would print "−12%" for a speed-up and
-  // "+15%" for a penalty — correct arithmetic, backwards as a player-facing
-  // claim. These two rows say FASTER/SLOWER instead of signing a bare percent.
-  const cdPct = (v: number): string => `${v < 1 ? "−" : "+"}${Math.round(Math.abs(1 - v) * 100)}%`;
-  if (m.damageMult && m.damageMult !== 1) out.push({ name: "Damage", power: pct(m.damageMult), text: "" });
-  if (m.damageFlat) out.push({ name: "Flat damage", power: `+${m.damageFlat}`, text: "" });
-  if (m.bolt) out.push({ name: "Thunderbolt", power: "ON HIT", text: "" });
-  if (m.onHit === "burn") out.push({ name: "Burn", power: "ON HIT", text: "" });
-  if (m.onHit === "chill") out.push({ name: "Chill", power: "ON HIT", text: "" });
-  if (m.critChance) out.push({ name: "Crit chance", power: `${Math.round(m.critChance * 100)}%`, text: "" });
-  if (m.lifesteal) out.push({ name: "Lifesteal", power: `+${m.lifesteal} HP`, text: "" });
-  if (m.pierce) out.push({ name: "Pierce", power: `+${m.pierce}`, text: "" });
-  if (m.pinballMult && m.pinballMult > 1) out.push({ name: "On momentum", power: `×${m.pinballMult}`, text: "" });
-  if (m.materialMult && m.materialMult > 1) out.push({ name: "On marble", power: `×${m.materialMult}`, text: "" });
-  if (m.cooldownMult && m.cooldownMult !== 1) out.push({ name: m.cooldownMult < 1 ? "Attack speed" : "Slower swing", power: cdPct(m.cooldownMult), text: "" });
-  if (m.durabilityMult && m.durabilityMult !== 1) out.push({ name: "Durability", power: pct(m.durabilityMult), text: "" });
-  return out.slice(0, 2); // two rows is what the layout has room for
+function movesFor(c: CardDef): ModifierRow[] {
+  return modifierRows(c.modifier).slice(0, 4);
 }
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
@@ -129,95 +113,140 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   ctx.closePath();
 }
 
-/** Shrink a label until it fits — long card names must never overflow the plate. */
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, basePx: number, weight = 700): void {
+/** The card's type faces. One serif for display, one mono for data. */
+const DISPLAY = `"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif`;
+const DATA = `ui-monospace, Menlo, Consolas, monospace`;
+
+/** Shrink a label until it fits — long card names must never overflow. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number, basePx: number, weight: number, family: string): number {
   let px = basePx;
   do {
-    ctx.font = `${weight} ${px}px ui-monospace, Menlo, monospace`;
+    ctx.font = `${weight} ${px}px ${family}`;
     if (ctx.measureText(text).width <= maxW) break;
     px -= 1;
-  } while (px > 11);
+  } while (px > 10);
+  return px;
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (ctx.measureText(next).width > maxW && cur) {
-      lines.push(cur);
-      cur = w;
-      if (lines.length === maxLines) return lines;
-    } else {
-      cur = next;
-    }
+/** Letter-spaced small caps, the type line's voice. */
+function tracked(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, spacing: number, align: "left" | "center" | "right" = "left"): void {
+  const chars = [...text];
+  const total = chars.reduce((w, ch) => w + ctx.measureText(ch).width + spacing, 0) - spacing;
+  let cx = align === "left" ? x : align === "center" ? x - total / 2 : x - total;
+  const prev = ctx.textAlign;
+  ctx.textAlign = "left";
+  for (const ch of chars) {
+    ctx.fillText(ch, cx, y);
+    cx += ctx.measureText(ch).width + spacing;
   }
-  if (cur && lines.length < maxLines) lines.push(cur);
-  return lines;
+  ctx.textAlign = prev;
 }
 
-/** The seeded backdrop behind the emblem — 4 patterns, exactly as the original. */
-function paintBackdrop(ctx: CanvasRenderingContext2D, pattern: number, ax: number, ay: number, aw: number, ah: number, rand: () => number, alpha = 0.18): void {
-  ctx.save();
-  rr(ctx, ax, ay, aw, ah, 10);
-  ctx.clip();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = "#ffffff";
-  const cx = ax + aw / 2;
-  const cy = ay + ah / 2;
-  if (pattern === 0) {
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(a);
-      ctx.fillRect(0, -7, aw, 14);
-      ctx.restore();
-    }
-  } else if (pattern === 1) {
-    for (let x = -ah; x < aw + ah; x += 52) {
-      ctx.save();
-      ctx.translate(ax + x, ay);
-      ctx.rotate(Math.PI / 6);
-      ctx.fillRect(0, -ah, 22, ah * 3);
-      ctx.restore();
-    }
-  } else if (pattern === 2) {
-    for (let r = 14; r < aw; r += 34) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = "#ffffff";
-      ctx.stroke();
-    }
-  } else {
-    for (let i = 0; i < 46; i++) {
-      const sx = ax + rand() * aw;
-      const sy = ay + rand() * ah;
-      const sr = 2 + rand() * 5;
-      ctx.beginPath();
-      for (let k = 0; k < 10; k++) {
-        const a = (k / 10) * Math.PI * 2;
-        const rr2 = k % 2 ? sr : sr * 2.4;
-        ctx.lineTo(sx + Math.cos(a) * rr2, sy + Math.sin(a) * rr2);
-      }
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-  ctx.restore();
+/** A metal gradient across a box — the bevel look, light→dark→light. */
+function metalGrad(ctx: CanvasRenderingContext2D, m: Metal, x: number, y: number, w: number, h: number): CanvasGradient {
+  const g = ctx.createLinearGradient(x, y, x + w, y + h);
+  g.addColorStop(0, m.stops[0]);
+  g.addColorStop(0.5, m.stops[1]);
+  g.addColorStop(1, m.stops[2]);
+  return g;
 }
 
 /**
- * Paint one card onto a canvas. The canvas must already be CARD_W × CARD_H.
- * Everything is deterministic from the card id, so repainting is free of
- * visual churn.
+ * A corner filigree — a short double-rule with a turned end, mirrored into each
+ * corner of a box. This is what makes the frame read as PRINTED rather than as
+ * a rounded rectangle, and it costs four strokes.
+ */
+function filigree(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, len: number): void {
+  for (const sx of [1, -1]) {
+    for (const sy of [1, -1]) {
+      const cx = sx > 0 ? x : x + w;
+      const cy = sy > 0 ? y : y + h;
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * len, cy);
+      ctx.lineTo(cx + sx * 7, cy);
+      ctx.quadraticCurveTo(cx, cy, cx, cy + sy * 7);
+      ctx.lineTo(cx, cy + sy * len);
+      ctx.stroke();
+    }
+  }
+}
+
+/**
+ * PAINTED-FACE CACHE, keyed by card id.
+ *
+ * A face is expensive — ~1,900 canvas ops for an average card and ~3,700 for a
+ * chitin one, whose grain painter alone strokes 828 arcs — and it is perfectly
+ * DETERMINISTIC: `paintFace` derives everything from the id, including the
+ * level and shine that the id itself encodes (`spidersilk#4s`). So the id is a
+ * complete cache key.
+ *
+ * This matters because the consumers all rebuild their DOM wholesale.
+ * `tavern.ts` and `menu.ts` assign `stage.innerHTML = …` and then call
+ * `paintHoloCards`, which means the per-canvas `dataset.painted` guard in
+ * ui-cards.ts can never survive to a second read — the element carrying it was
+ * just discarded. Every buy, pick, reroll, forge and tab switch therefore
+ * repainted the entire visible stash from scratch to produce a pixel-identical
+ * result. At a 30-card stash that is ~56,000 canvas ops and ~30 discarded
+ * offscreen canvases per click.
+ *
+ * With the cache, the first paint of a given card is the only real one; every
+ * later one is a single `drawImage`. It also takes `paintCard` off the gameplay
+ * hot path — `pickup-toast.ts` paints a face inline, mid-run, while the
+ * dungeon's three.js loop is running.
+ */
+const _faceCache = new Map<CardId, HTMLCanvasElement>();
+
+/** Bounded so a long session with many card instances cannot grow without end. */
+const FACE_CACHE_MAX = 80;
+
+/**
+ * Paint one card onto a canvas, which must already be CARD_W × CARD_H.
+ *
+ * Cached: the face is painted once per card id and blitted thereafter.
  */
 export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  let face = _faceCache.get(id);
+  if (!face) {
+    if (typeof document === "undefined") {
+      // No DOM to build an offscreen face in (unit tests import this module):
+      // fall back to painting straight onto the caller's canvas.
+      paintFace(canvas, id);
+      return;
+    }
+    face = document.createElement("canvas");
+    face.width = CARD_W;
+    face.height = CARD_H;
+    paintFace(face, id);
+    // Simple FIFO eviction — cards are re-requested in bursts (a stash render),
+    // so anything fancier buys nothing over an 80-entry window.
+    if (_faceCache.size >= FACE_CACHE_MAX) {
+      const oldest = _faceCache.keys().next().value;
+      if (oldest !== undefined) _faceCache.delete(oldest);
+    }
+    _faceCache.set(id, face);
+  }
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(face, 0, 0, canvas.width, canvas.height);
+}
+
+/** Test seam: drop the memoised faces. */
+export function _clearFaceCache(): void {
+  _faceCache.clear();
+}
+
+/**
+ * Paint a card face from scratch. Deterministic from the card id.
+ *
+ * Not exported: callers go through `paintCard`, which caches.
+ */
+function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   // cardDef, not CARDS — this id may carry a LEVEL and a SHINY flag (see the
-  // instance section of cards.ts), and the face has to paint the stats this
-  // copy actually has rather than the catalogue's level-1 ones.
+  // instance section of cards.ts), and the face must print the stats this copy
+  // actually has rather than the catalogue's level-1 ones.
   const c = cardDef(id);
   const ctx = canvas.getContext("2d");
   if (!c || !ctx) return;
@@ -225,505 +254,532 @@ export function paintCard(canvas: HTMLCanvasElement, id: CardId): void {
   const level = c.level ?? 1;
   const shiny = !!c.shiny;
   const tier = TIER[c.rarity];
-  const theme = themeFor(c);
-  // Seeded off the BASE, so every copy of a card shares one speck field and
-  // backdrop — the level is a badge on a known face, not a different card.
-  const seed = hashString(c.base ?? c.id);
-  const rand = lcg(seed);
+  const st = styleFor(c.source);
+  const metal = metalFor(tier);
+  const el = elementFor(c.modifier); // the element MARK (a path, never an emoji)
+  // Seeded off the BASE, so every copy of a card shares one grain: the level is
+  // a badge on a known face, not a different card.
+  const rand = mulberry32(hashString(c.base ?? c.id));
   const W = CARD_W;
   const H = CARD_H;
+  const rarityCol = RARITY_HEX[c.rarity];
 
   ctx.clearRect(0, 0, W, H);
   ctx.save();
   rr(ctx, 0, 0, W, H, 26);
   ctx.clip();
 
-  // ── Frame: the element's two-stop gradient ──
-  const frame = ctx.createLinearGradient(0, 0, W, H);
-  frame.addColorStop(0, theme.frame[0]);
-  frame.addColorStop(1, theme.frame[1]);
-  ctx.fillStyle = frame;
+  // ── CARD STOCK ──
+  // The material's own two-stop base, then its grain painter. No rainbow, no
+  // element gradient: the stock says which monster family this is.
+  const stock = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  stock.addColorStop(0, st.stock[0]);
+  stock.addColorStop(1, st.stock[1]);
+  ctx.fillStyle = stock;
   ctx.fillRect(0, 0, W, H);
+  st.grain(ctx, 0, 0, W, H, rand);
 
-  // ── Tier ≥1: diagonal rainbow foil stripes across the frame ──
-  if (tier >= 1) {
-    ctx.globalAlpha = 0.05 + tier * 0.02;
-    for (let i = -H; i < W + H; i += 34) {
-      const g = ctx.createLinearGradient(i, 0, i + 34, 34);
-      g.addColorStop(0, "#ff5ec4");
-      g.addColorStop(0.5, "#5efcff");
-      g.addColorStop(1, "#f7ff5e");
-      ctx.fillStyle = g;
-      ctx.save();
-      ctx.translate(i, 0);
-      ctx.rotate(Math.PI / 5);
-      ctx.fillRect(0, -H, 16, H * 2.5);
-      ctx.restore();
-    }
-    ctx.globalAlpha = 1;
-  }
+  // A vignette, so the card has a lit centre and dark edges like a printed
+  // object rather than a flat fill.
+  const vig = ctx.createRadialGradient(W / 2, H * 0.38, H * 0.2, W / 2, H * 0.45, H * 0.78);
+  vig.addColorStop(0, "rgba(0,0,0,0)");
+  vig.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+  // The art window is painted AFTER this and carries its own lighting, so the
+  // vignette must not also be spent darkening it — three subtractive passes over
+  // one region is how the portraits ended up nearly invisible.
 
-  // ── Tier ≥2: metallic wash — silver, then gold, then masterball purple ──
-  if (tier >= 2) {
-    const metal = ctx.createLinearGradient(0, 0, W, H);
-    if (tier === 2) {
-      metal.addColorStop(0, "#e2e8f0");
-      metal.addColorStop(0.45, "#64748b");
-      metal.addColorStop(0.55, "#f8fafc");
-      metal.addColorStop(1, "#94a3b8");
-    } else if (tier === 3) {
-      metal.addColorStop(0, "#fff2b0");
-      metal.addColorStop(0.45, "#b8860b");
-      metal.addColorStop(0.55, "#f9e27a");
-      metal.addColorStop(1, "#8a6508");
-    } else {
-      metal.addColorStop(0, "#a855f7");
-      metal.addColorStop(0.4, "#4c1d95");
-      metal.addColorStop(0.6, "#d946ef");
-      metal.addColorStop(1, "#312e81");
-    }
-    ctx.globalAlpha = tier === 4 ? 0.7 : 0.55;
-    ctx.fillStyle = metal;
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
-  }
+  // ── FRAME RULES ──
+  // A double hairline just inside the card edge, in the rarity metal. This is
+  // the ONLY place tier repaints anything, and it is 2px wide.
+  ctx.strokeStyle = metalGrad(ctx, metal, 0, 0, W, H);
+  ctx.lineWidth = 2;
+  rr(ctx, 11, 11, W - 22, H - 22, 18);
+  ctx.stroke();
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1;
+  rr(ctx, 16, 16, W - 32, H - 32, 14);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 
-  // ── Tier ≥3: etched engraving lines ──
-  if (tier >= 3) {
-    ctx.globalAlpha = 0.08;
-    ctx.strokeStyle = tier === 4 ? "#f0abfc" : "#fff7cc";
-    ctx.lineWidth = 1;
-    for (let i = -H; i < W + H; i += 7) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0);
-      ctx.lineTo(i + H, H);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-  }
+  // Corner filigree in the same metal — printed furniture, not a border-radius.
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.75;
+  filigree(ctx, 16, 16, W - 32, H - 32, 34);
+  ctx.globalAlpha = 1;
 
-  // ── Tier 4: tiled reverse-holo sigil field (the Master Ball pass) ──
-  if (tier === 4) {
-    ctx.globalAlpha = 0.16;
-    const step = 46;
-    for (let row = 0; row * step < H + step; row++) {
-      for (let col = 0; col * step < W + step; col++) {
-        const bx = col * step + (row % 2 ? step / 2 : 0);
-        const by = row * step + step / 2;
-        ctx.beginPath();
-        ctx.arc(bx, by, 11, Math.PI, 0);
-        ctx.fillStyle = "#f0abfc";
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(bx, by, 11, 0, Math.PI);
-        ctx.fillStyle = "#ffffff";
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(bx, by, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = "#312e81";
-        ctx.fill();
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // ── Stage pill ──
-  ctx.fillStyle = "rgba(255,255,255,0.88)";
-  rr(ctx, 24, 18, 190, 22, 11);
+  // ── TITLE BAR ──
+  // Name on the left, power on the right, separated by a rule. Sits on a panel
+  // so a long name never fights the stock's grain for legibility.
+  const titleW = W - PAD * 2;
+  ctx.fillStyle = "rgba(0,0,0,0.42)";
+  rr(ctx, PAD, TITLE_Y - 26, titleW, TITLE_H, 7);
   ctx.fill();
-  ctx.fillStyle = "#111827";
-  ctx.font = "700 12px ui-monospace, Menlo, monospace";
+  ctx.strokeStyle = st.rule;
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 1;
+  rr(ctx, PAD, TITLE_Y - 26, titleW, TITLE_H, 7);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // The power number claims the right end of the bar, so the name is measured
+  // against what is actually left over.
+  const pwr = String(cardPower(c));
+  ctx.font = `700 30px ${DATA}`;
+  const pwrW = ctx.measureText(pwr).width;
+
   ctx.textAlign = "left";
-  const fits = c.weaponKinds === "both" ? "ANY WEAPON" : `${c.weaponKinds.toUpperCase()} ONLY`;
-  // "CHIP" was the old stat-chip vocabulary. A card is a monster's essence, so
-  // the pill leads with the monster family and keeps the fit as the qualifier.
-  const stage = c.source ? KIND_INFO[c.source].label.toUpperCase() : "CHASE";
-  ctx.fillText(`${stage} · ${fits}`, 34, 33);
-
-  // ── LEVEL chip ──
-  // Drawn only from level 2 up: a level-1 card is the baseline and a "Lv 1"
-  // plate on every common would read as noise rather than information. Sits
-  // right of the stage pill so the two read as one header row.
-  if (level > 1) {
-    const lvW = 74;
-    ctx.fillStyle = shiny ? "#3a1c4a" : "#16202e";
-    rr(ctx, 222, 18, lvW, 22, 11);
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = shiny ? "#ff9df0" : "#7dd3fc";
-    rr(ctx, 222, 18, lvW, 22, 11);
-    ctx.stroke();
-    ctx.fillStyle = shiny ? "#ffd6fb" : "#bfe6ff";
-    ctx.font = "800 13px ui-monospace, Menlo, monospace";
-    ctx.textAlign = "center";
-    ctx.fillText(`Lv ${level}`, 222 + lvW / 2, 33);
-    ctx.textAlign = "left";
-  }
-
-  // ── Name + power ──
-  ctx.shadowColor = "rgba(0,0,0,0.85)";
-  ctx.shadowBlur = 6;
-  ctx.fillStyle = "#ffffff";
-  fitText(ctx, c.label, 320, 30);
-  ctx.fillText(c.label, 24, 66);
-
-  ctx.textAlign = "right";
-  ctx.font = "700 13px ui-monospace, Menlo, monospace";
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.fillText("PWR", 400, 48);
-  ctx.font = "800 32px ui-monospace, Menlo, monospace";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(String(cardPower(c)), 448, 64);
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = st.ink;
+  ctx.shadowColor = "rgba(0,0,0,0.9)";
+  ctx.shadowBlur = 4;
+  fitText(ctx, c.label, titleW - pwrW - 44, 29, 600, DISPLAY);
+  ctx.fillText(c.label, PAD + 14, TITLE_Y + 6);
   ctx.shadowBlur = 0;
 
-  // ── Energy emblem ──
-  ctx.beginPath();
-  ctx.arc(472, 58, 17, 0, Math.PI * 2);
-  ctx.fillStyle = theme.accent;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "#ffffff";
-  ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.font = "18px ui-monospace, Menlo, monospace";
-  ctx.fillText(theme.energy, 472, 65);
+  ctx.textAlign = "right";
+  ctx.font = `700 30px ${DATA}`;
+  ctx.fillStyle = metal.glow;
+  ctx.fillText(pwr, W - PAD - 14, TITLE_Y + 6);
 
-  // ── Art window, with its gold bevel drawn 3px proud behind it ──
-  const ax = 28;
-  const ay = 86;
-  const aw = 456;
-  const ah = 298;
-  const bevel = ctx.createLinearGradient(ax, ay, ax + aw, ay + ah);
-  bevel.addColorStop(0, "#f3e28a");
-  bevel.addColorStop(0.5, "#b98a2f");
-  bevel.addColorStop(1, "#f3e28a");
-  ctx.fillStyle = bevel;
-  rr(ctx, ax - 3, ay - 3, aw + 6, ah + 6, 12);
+  // ── ART WINDOW ──
+  const ax = PAD + 8;
+  const aw = W - (PAD + 8) * 2;
+  const ay = ART_Y;
+  const ah = ART_H;
+
+  // The window is set INTO the card: a metal bevel proud of it, then a dark
+  // recess. That inset is most of what sells a card as an object.
+  ctx.fillStyle = metalGrad(ctx, metal, ax - 4, ay - 4, aw + 8, ah + 8);
+  rr(ctx, ax - 4, ay - 4, aw + 8, ah + 8, 9);
+  ctx.fill();
+  // A shadow line along the top/left inside the bevel — the recess.
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  rr(ctx, ax - 2, ay - 2, aw + 4, ah + 4, 8);
   ctx.fill();
 
-  const art = ctx.createLinearGradient(ax, ay, ax, ay + ah);
-  art.addColorStop(0, theme.frame[1]);
-  art.addColorStop(1, "#0b0c10");
-  ctx.fillStyle = art;
-  rr(ctx, ax, ay, aw, ah, 10);
-  ctx.fill();
-
-  // Resolved BEFORE the backdrop so the backdrop can get out of its way: the
-  // ray/ring patterns were authored to carry an otherwise-empty window, and at
-  // full strength they read straight through a creature standing in front.
-  const portrait = c.source ? monsterPortrait(c.source, c.subType) : null;
-  paintBackdrop(ctx, seed % 4, ax, ay, aw, ah, rand, portrait ? 0.07 : 0.18);
-
-  // ── THE MONSTER ITSELF ──
-  // The card is a slain monster's power bottled, so the monster has to BE the
-  // art. This paints the same cel the horde is drawn from (render/monster-
-  // portrait.ts) rather than the 150px emoji that used to sit here — the emoji
-  // rendered as a washed-out blob behind the speckle field and made every card
-  // look like the anonymous stat chip the monster rework existed to kill.
-  //
-  // Sourceless mythics have no monster to draw, so they keep the emoji emblem:
-  // that IS their identity (a chase card, not loot).
   ctx.save();
-  rr(ctx, ax, ay, aw, ah, 10);
+  rr(ctx, ax, ay, aw, ah, 6);
   ctx.clip();
 
-  if (portrait) {
-    // A floor pool under the feet, so the creature stands ON something instead
-    // of floating in a gradient. Drawn before the sprite, inside the clip.
-    const fy = ay + ah * 0.82;
-    const fg = ctx.createRadialGradient(ax + aw / 2, fy, 4, ax + aw / 2, fy, aw * 0.34);
-    fg.addColorStop(0, "rgba(0,0,0,0.55)");
-    fg.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = fg;
-    ctx.beginPath();
-    ctx.ellipse(ax + aw / 2, fy, aw * 0.32, ah * 0.07, 0, 0, Math.PI * 2);
-    ctx.fill();
+  const portrait = c.source ? monsterPortrait(c.source, c.subType) : null;
 
-    // Backlight in the rarity colour — separates the silhouette from the
-    // backdrop, which flat cel art badly needs at this size.
-    const halo = ctx.createRadialGradient(ax + aw / 2, ay + ah * 0.5, 8, ax + aw / 2, ay + ah * 0.5, aw * 0.42);
-    halo.addColorStop(0, `${RARITY_HEX[c.rarity]}55`);
-    halo.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = halo;
-    ctx.fillRect(ax, ay, aw, ah);
-
-    // Cel art is authored at 128px and must scale with NEAREST sampling, or the
-    // selout outlines blur into the mush this art style exists to avoid.
-    ctx.imageSmoothingEnabled = false;
-    // Sized off the window HEIGHT and then FITTED, never cropped. The cel is a
-    // 128×128 box with the creature occupying roughly the lower ⅔, so the draw
-    // is anchored on the FEET (the floor pool) and the box is capped so the
-    // head cannot leave the frame — a decapitated portrait is worse than a
-    // small one, and a 1.55× hulk hits that ceiling immediately.
-    const feetY = ay + ah * 0.90;
-    const want = ah * 1.18 * portraitScale(c.source!, c.subType);
-    // The cel's figure sits inside ~86% of its box; keep that much above the
-    // feet line within the window.
-    const box = Math.min(want, (feetY - ay - 6) / 0.86);
-    ctx.shadowColor = "rgba(0,0,0,0.7)";
-    ctx.shadowBlur = 12;
-    ctx.drawImage(portrait, ax + (aw - box) / 2, feetY - box, box, box);
-    ctx.shadowBlur = 0;
-    ctx.imageSmoothingEnabled = true;
-  } else {
-    ctx.textAlign = "center";
-    ctx.font = "150px ui-monospace, Menlo, monospace";
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
-    ctx.shadowBlur = 18;
-    ctx.fillText(c.icon, ax + aw / 2, ay + ah / 2 + 54);
-    ctx.shadowBlur = 0;
-  }
-
-  // Cosmic sheen + speck field inside the art window (screen blend).
-  // With a monster in the window the foil has to stay BEHIND the subject in
-  // legibility terms — at full strength the sheen hazes the cel art and the
-  // specks read as snow on top of the creature. Rarity still escalates, just
-  // from a lower floor.
-  const foilScale = portrait ? 0.45 : 1;
-  ctx.globalCompositeOperation = "screen";
-  const sheen = ctx.createLinearGradient(ax, ay + ah, ax + aw, ay);
-  ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => sheen.addColorStop(i / (arr.length - 1), col));
-  ctx.globalAlpha = (0.08 + tier * 0.05) * foilScale;
-  ctx.fillStyle = sheen;
+  // Backdrop: a lit floor and a dark sky in the STYLE's glow colour, so the
+  // creature stands in a place rather than on a gradient. The old face painted
+  // one of four seeded ray/ring patterns here, which at any usable strength
+  // read straight THROUGH the creature standing in front of it.
+  const sky = ctx.createLinearGradient(0, ay, 0, ay + ah);
+  sky.addColorStop(0, "#0a0c12");
+  sky.addColorStop(0.5, st.stock[1]);
+  sky.addColorStop(1, "#07080c");
+  ctx.fillStyle = sky;
   ctx.fillRect(ax, ay, aw, ah);
 
-  ctx.globalAlpha = 0.9 * foilScale;
-  const speckColors = ["#ffffff", "#9ffcff", "#ffb3f5", "#fff59f"];
-  const speckCount = Math.round((18 + tier * 16) * (portrait ? 0.5 : 1));
-  for (let i = 0; i < speckCount; i++) {
-    const sx = ax + rand() * aw;
-    const sy = ay + rand() * ah;
-    const sr = 0.6 + rand() * 1.8;
-    ctx.fillStyle = speckColors[Math.floor(rand() * speckColors.length)];
-    ctx.shadowColor = "#ffffff";
-    ctx.shadowBlur = 4;
-    ctx.beginPath();
-    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.shadowBlur = 0;
+  // A shaft of light from behind the subject: the one thing that separates flat
+  // cel art from its background at this size.
+  //
+  // This carries most of the window's LIGHT BUDGET, and the first cut set it far
+  // too low (`44`/`14` hex alpha) — stacked under the card vignette and the
+  // ground haze, the Goblin and Crystalback windows came out very nearly black
+  // and their portraits disappeared. Read the three passes together, not one at
+  // a time: the backdrop is the only one adding light and two are taking it away.
+  const shaft = ctx.createRadialGradient(ax + aw / 2, ay + ah * 0.48, 6, ax + aw / 2, ay + ah * 0.48, aw * 0.62);
+  shaft.addColorStop(0, `${st.glow}96`);
+  shaft.addColorStop(0.45, `${st.glow}3c`);
+  shaft.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = shaft;
+  ctx.fillRect(ax, ay, aw, ah);
 
-  // ── SHINY: four-point sparkle stars across the art ──
-  // The shine has to be readable at a 74px thumbnail, before any text is. Big
-  // hard-edged stars survive the downscale where another speck pass would just
-  // brighten into haze.
+  if (portrait) {
+    paintPortrait(ctx, portrait, c, ax, ay, aw, ah, st, rarityCol);
+  } else {
+    paintSigil(ctx, sigilFor(c.base ?? c.id), ax, ay, aw, ah, st, metal, rand);
+  }
+
+  // Ground haze along the bottom of the window, tying the subject to the floor.
+  const haze = ctx.createLinearGradient(0, ay + ah * 0.8, 0, ay + ah);
+  haze.addColorStop(0, "rgba(0,0,0,0)");
+  haze.addColorStop(1, "rgba(0,0,0,0.62)");
+  ctx.fillStyle = haze;
+  ctx.fillRect(ax, ay + ah * 0.8, aw, ah * 0.2);
+
+  // SHINY — a scatter of hard four-point sparkles. Hard-edged on purpose: this
+  // has to survive being downscaled to a 74px thumbnail, where another soft
+  // speck pass would just brighten into haze.
   if (shiny) {
-    ctx.globalAlpha = 0.95;
-    for (let i = 0; i < 11; i++) {
-      const sx = ax + 18 + rand() * (aw - 36);
-      const sy = ay + 18 + rand() * (ah - 36);
-      const r = 7 + rand() * 13;
-      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-      g.addColorStop(0, "rgba(255,255,255,1)");
-      g.addColorStop(0.35, "rgba(190,240,255,.55)");
-      g.addColorStop(1, "rgba(190,240,255,0)");
+    for (let i = 0; i < 13; i++) {
+      const sx = ax + 14 + rand() * (aw - 28);
+      const sy = ay + 14 + rand() * (ah - 28);
+      const r = 5 + rand() * 12;
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
+      g.addColorStop(0, "rgba(255,255,255,0.85)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(sx - r * 1.8, sy - r * 1.8, r * 3.6, r * 3.6);
       ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      for (let k = 0; k < 8; k++) {
-        const a = (k / 8) * Math.PI * 2;
-        const rr2 = k % 2 ? r * 0.16 : r;
-        ctx.lineTo(sx + Math.cos(a) * rr2, sy + Math.sin(a) * rr2);
-      }
-      ctx.closePath();
-      ctx.fill();
+      drawGlyph(ctx, glyphSparkle, sx, sy, r);
     }
   }
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
+
   ctx.restore();
 
-  // Element tag in the art window's corner.
-  ctx.textAlign = "right";
-  ctx.font = "700 13px ui-monospace, Menlo, monospace";
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText(theme.type, ax + aw - 12, ay + ah - 12);
-
-  // ── SOURCE MONSTER (CardDef.source) ──
-  // A card is a slain monster's power bottled, so the card has to SAY whose. The
-  // mythics are deliberately sourceless (Tavern chase cards, not loot) and just
-  // keep the cosmic speckle field with nothing claiming to have dropped them.
-  if (c.source) {
-    const info = KIND_INFO[c.source];
-    // The monster is the HEADLINE, not a footnote. It sits along the bottom of
-    // the art window, tinted by rarity, so "which monster is this" is answerable
-    // at a glance and from across the room.
-    //
-    // The name now rides a dark scrim rather than sitting bare on the art: with
-    // a portrait behind it, unscrimmed text competed with the creature's own
-    // outlines and neither won.
-    const name = c.subType ? c.subType.toUpperCase() : info.label.toUpperCase();
-    const label = portrait ? name : `${info.icon} ${name}`;
-    const by = ay + ah - 44;
-    const scrim = ctx.createLinearGradient(0, by, 0, ay + ah);
-    scrim.addColorStop(0, "rgba(0,0,0,0)");
-    scrim.addColorStop(0.45, "rgba(0,0,0,0.72)");
-    scrim.addColorStop(1, "rgba(0,0,0,0.86)");
-    ctx.fillStyle = scrim;
-    ctx.fillRect(ax, by, aw, ah - (by - ay));
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = RARITY_HEX[c.rarity];
-    ctx.shadowColor = "rgba(0,0,0,0.85)";
-    ctx.shadowBlur = 6;
-    fitText(ctx, label, aw - 24, 30, 800);
-    ctx.fillText(label, ax + aw / 2, ay + ah - 14);
-    ctx.shadowBlur = 0;
-  }
-
-  // ── Plaque ──
-  const plaque = ctx.createLinearGradient(86, 396, 426, 422);
-  plaque.addColorStop(0, "#cbd5e1");
-  plaque.addColorStop(0.5, "#f8fafc");
-  plaque.addColorStop(1, "#94a3b8");
-  ctx.fillStyle = plaque;
-  rr(ctx, 86, 396, 340, 26, 13);
+  // The element mark, bottom-right inside the art window: a small metal disc
+  // with the element's PATH glyph struck into it. This is the emblem that used
+  // to be an emoji.
+  const ex = ax + aw - 30;
+  const ey = ay + ah - 30;
+  ctx.fillStyle = "rgba(0,0,0,0.72)";
+  ctx.beginPath();
+  ctx.arc(ex, ey, 17, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#111827";
-  ctx.font = "700 13px ui-monospace, Menlo, monospace";
-  ctx.textAlign = "center";
-  // The plaque names WHAT YOU KILLED, not an invented chip class. A card is a
-  // slain monster's power bottled; "COMMON · SWIFT CHIP" told the player nothing
-  // about where it came from or what to farm for another one.
-  const slain = c.source
-    ? `SLAIN: ${(c.subType ? `${KIND_INFO[c.source].label} — ${c.subType}` : KIND_INFO[c.source].label).toUpperCase()}`
-    : `${c.rarity.toUpperCase()} · CHASE CARD`;
-  ctx.fillText(slain, 256, 414);
+  ctx.strokeStyle = metalGrad(ctx, metal, ex - 17, ey - 17, 34, 34);
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(ex, ey, 17, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = st.accent;
+  ctx.strokeStyle = st.accent;
+  ctx.lineWidth = 1.8;
+  drawGlyph(ctx, el, ex, ey, 9.5);
 
-  // ── Moves box ──
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  rr(ctx, 24, 436, 464, 188, 12);
+  // ── TYPE LINE ──
+  // Names the monster. A card is a slain monster's power bottled, so this is the
+  // line that says whose — and it is set in the display face at real size,
+  // tracked out, the way a card's type line reads.
+  // A sourceless chase card has no monster, so it names its own nature instead.
+  // Printing one shared "UNBOUND RELIC" on all five wasted the most prominent
+  // line on the card saying the same nothing five times.
+  // A sourced card names its monster; a sourceless chase card names its own
+  // nature, which cards.ts authors alongside its label (`typeLine`).
+  const typeText = (c.typeLine ?? (c.source ? (c.subType ?? KIND_INFO[c.source].label) : "Unbound Relic")).toUpperCase();
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  rr(ctx, PAD, TYPE_Y, W - PAD * 2, TYPE_H, 6);
   ctx.fill();
+  ctx.strokeStyle = st.rule;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 1;
+  rr(ctx, PAD, TYPE_Y, W - PAD * 2, TYPE_H, 6);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 
+  ctx.font = `700 15px ${DATA}`;
+  ctx.fillStyle = st.accent;
+  ctx.textAlign = "left";
+  tracked(ctx, typeText, PAD + 14, TYPE_Y + 20, 1.6);
+
+  // Right end of the type line: the fit qualifier.
+  ctx.font = `700 11px ${DATA}`;
+  ctx.fillStyle = st.ink;
+  ctx.globalAlpha = 0.62;
+  const fits = c.weaponKinds === "both" ? "ANY WEAPON" : `${c.weaponKinds.toUpperCase()} ONLY`;
+  tracked(ctx, fits, W - PAD - 14, TYPE_Y + 20, 1.2, "right");
+  ctx.globalAlpha = 1;
+
+  // ── TEXT BOX ──
+  // Height DERIVES from the row count, so a one-effect card does not print a
+  // 188px empty rectangle the way the old fixed-height box did.
   const moves = movesFor(c);
+  const ROW_H = 40;
+  const boxH = Math.max(84, moves.length * ROW_H + 30);
+  const boxY = BOX_Y;
+  const boxW = W - PAD * 2;
+
+  ctx.fillStyle = st.panel;
+  rr(ctx, PAD, boxY, boxW, boxH, 7);
+  ctx.fill();
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = st.rule;
+  ctx.lineWidth = 1;
+  rr(ctx, PAD, boxY, boxW, boxH, 7);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
   moves.forEach((mv, i) => {
-    const my = 452 + i * 92;
-    ctx.beginPath();
-    ctx.arc(50, my + 16, 14, 0, Math.PI * 2);
-    ctx.fillStyle = theme.accent;
-    ctx.fill();
-    ctx.textAlign = "center";
-    ctx.font = "14px ui-monospace, Menlo, monospace";
-    ctx.fillText(theme.energy, 50, my + 21);
+    const my = boxY + 18 + i * ROW_H;
+    // The element mark again at bullet size, in the row's own valence colour —
+    // a path, so it stays a mark and never becomes a tofu box.
+    const col = mv.good ? st.accent : "#e0574a";
+    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    drawGlyph(ctx, el, PAD + 24, my + 10, 7);
 
     ctx.textAlign = "left";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "700 21px ui-monospace, Menlo, monospace";
-    ctx.fillText(mv.name, 76, my + 24);
+    ctx.fillStyle = st.ink;
+    ctx.font = `500 19px ${DISPLAY}`;
+    ctx.fillText(mv.name, PAD + 42, my + 16);
 
     ctx.textAlign = "right";
-    ctx.font = "800 26px ui-monospace, Menlo, monospace";
-    ctx.fillText(mv.power, 476, my + 26);
+    ctx.font = `700 20px ${DATA}`;
+    ctx.fillStyle = col;
+    ctx.fillText(mv.value, W - PAD - 16, my + 16);
 
-    ctx.textAlign = "left";
-    ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.font = "400 13px ui-monospace, Menlo, monospace";
-    wrap(ctx, mv.text, 380, 2).forEach((line, k) => ctx.fillText(line, 76, my + 46 + k * 17));
-
-    if (i === 0 && moves.length > 1) {
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+    if (i < moves.length - 1) {
+      ctx.globalAlpha = 0.16;
+      ctx.strokeStyle = st.rule;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(44, my + 78);
-      ctx.lineTo(468, my + 78);
+      ctx.moveTo(PAD + 18, my + 28);
+      ctx.lineTo(W - PAD - 18, my + 28);
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
   });
 
-  // ── Stats strip ──
-  const m = c.modifier;
-  // A SIGNED percentage, so a drawback reads as one. `−${1 - v}` hard-coded a
-  // minus and then printed a negative number for any multiplier ABOVE 1 — the
-  // Hulk Knuckle's +15% cooldown penalty rendered "−−15%", and Glass Cannon's
-  // durability drawback looked like an upgrade. Cards with real downsides are a
-  // design pillar here; the face has to tell the truth about them.
-  const signed = (v: number): string => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v))}%`;
-  // Damage folds the flat bonus in at ~10%/point purely so the strip has one
-  // number; the moves box above lists flat and percent separately.
-  const dmgPct = ((m.damageMult ?? 1) - 1) * 100 + (m.damageFlat ?? 0) * 10;
-  // Cooldown is inverted: a multiplier BELOW 1 is faster, i.e. an improvement.
-  const cdPct = m.cooldownMult ? (1 - m.cooldownMult) * 100 : 0;
-  const durPct = m.durabilityMult ? (m.durabilityMult - 1) * 100 : 0;
-  const good = "#4ade80";
-  const bad = "#f87171";
-  const stats: Array<[string, string, string]> = [
-    ["DAMAGE", dmgPct ? signed(dmgPct) : "—", dmgPct >= 0 ? good : bad],
-    ["COOLDOWN", m.cooldownMult ? signed(cdPct) : "—", cdPct >= 0 ? "#7dd3fc" : bad],
-    ["DURABILITY", m.durabilityMult ? signed(durPct) : "—", durPct >= 0 ? "#fcd34d" : bad],
-  ];
-  stats.forEach(([label, value, col], i) => {
-    const cx2 = 100 + i * 156;
+  // ── FLAVOUR ──
+  // The gap between the text box and the footer, if any, carries the monster's
+  // blurb in italic — the line that makes the card feel written rather than
+  // generated. Only drawn when there is real room for it.
+  const footY = H - PAD - FOOT_H;
+  const gap = footY - (boxY + boxH);
+  // Same rule as the type line: the card's own authored flavour if it has one,
+  // otherwise its monster's blurb.
+  const blurb = c.flavour ?? (c.source ? KIND_INFO[c.source].blurb : undefined);
+  if (gap > 40 && blurb) {
+    ctx.globalAlpha = 0.55;
     ctx.textAlign = "center";
-    ctx.font = "700 11px ui-monospace, Menlo, monospace";
-    ctx.fillStyle = "rgba(255,255,255,0.65)";
-    ctx.fillText(label, cx2, 644);
-    ctx.font = "800 18px ui-monospace, Menlo, monospace";
-    ctx.fillStyle = value === "—" ? "rgba(255,255,255,0.35)" : col;
-    ctx.fillText(value, cx2, 666);
-  });
-
-  // ── Footers ──
-  ctx.textAlign = "left";
-  ctx.font = "italic 700 13px ui-monospace, Menlo, monospace";
-  ctx.fillStyle = RARITY_FOOTER_COLOR[tier];
-  ctx.fillText(`${"★".repeat(tier + 1)} ${c.rarity.toUpperCase()}`, 28, 696);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  ctx.font = "700 12px ui-monospace, Menlo, monospace";
-  // The shine claims the right footer — "PINBALL KNIGHT · POWER" is set dressing
-  // and a shiny is the single most interesting fact about the copy in your hand.
-  if (shiny) {
-    ctx.fillStyle = "#ffd6fb";
-    ctx.font = "800 14px ui-monospace, Menlo, monospace";
-    ctx.shadowColor = "rgba(255,120,235,0.9)";
-    ctx.shadowBlur = 10;
-    ctx.fillText("✦ SHINY", 484, 696);
-    ctx.shadowBlur = 0;
-  } else {
-    ctx.fillText(`PINBALL KNIGHT · ${theme.type}`, 484, 696);
+    ctx.fillStyle = st.ink;
+    const px = fitText(ctx, blurb, boxW - 40, 15, 400, DISPLAY);
+    ctx.font = `italic ${px}px ${DISPLAY}`;
+    ctx.fillText(blurb, W / 2, boxY + boxH + gap / 2 + 5);
+    ctx.globalAlpha = 1;
   }
 
-  // ── The baked foil pass: what makes an IDLE card still read as holo ──
-  ctx.globalCompositeOperation = "overlay";
-  const foil = ctx.createLinearGradient(0, H, W, 0);
-  ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => foil.addColorStop(i / (arr.length - 1), col));
-  ctx.globalAlpha = (0.04 + tier * 0.055) * (shiny ? 2.1 : 1);
-  ctx.fillStyle = foil;
-  ctx.fillRect(0, 0, W, H);
+  // ── FOOTER ──
+  // A rule, then rarity pips + name on the left and the imprint on the right.
+  ctx.strokeStyle = st.rule;
+  ctx.globalAlpha = 0.4;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD, footY);
+  ctx.lineTo(W - PAD, footY);
+  ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
+
+  // Rarity as PIPS — glyphs, replacing the "★★★" text run, which was one more
+  // font-dependent mark on a face that is meant to have none.
+  ctx.fillStyle = metal.glow;
+  for (let i = 0; i <= tier; i++) drawGlyph(ctx, glyphPip, PAD + 8 + i * 15, footY + 19, 5.5);
+
+  ctx.textAlign = "left";
+  ctx.font = `700 11px ${DATA}`;
+  ctx.fillStyle = metal.glow;
+  tracked(ctx, c.rarity.toUpperCase(), PAD + 12 + (tier + 1) * 15, footY + 23, 1.4);
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = st.ink;
+  ctx.globalAlpha = 0.5;
+  ctx.font = `700 10px ${DATA}`;
+  // A shiny claims the footer: it is the single most interesting fact about the
+  // copy in your hand, and it outranks set dressing.
+  if (shiny) {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#ffe9fb";
+    ctx.shadowColor = "rgba(255,140,240,0.9)";
+    ctx.shadowBlur = 9;
+    drawGlyph(ctx, glyphSparkle, W - PAD - 62, footY + 19, 6);
+    ctx.font = `800 12px ${DATA}`;
+    tracked(ctx, "SHINY", W - PAD - 10, footY + 23, 1.6, "right");
+    ctx.shadowBlur = 0;
+  } else {
+    tracked(ctx, st.imprint, W - PAD - 10, footY + 23, 1.2, "right");
+  }
+  ctx.globalAlpha = 1;
+
+  // ── LEVEL SEAL ──
+  // A struck metal disc in the title bar's left margin, drawn only from level 2:
+  // a "Lv 1" plate on every common is noise, not information.
+  if (level > 1) {
+    const lx = W - PAD - 20;
+    const ly = TITLE_Y + 44;
+    ctx.fillStyle = "rgba(0,0,0,0.85)";
+    ctx.beginPath();
+    ctx.arc(lx, ly, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = metalGrad(ctx, metal, lx - 17, ly - 17, 34, 34);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 17, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = metal.glow;
+    ctx.font = `800 15px ${DATA}`;
+    ctx.textAlign = "center";
+    ctx.fillText(String(level), lx, ly + 5);
+  }
 
   ctx.restore();
 
-  // ── Outer border, weight + colour by tier ──
-  // A SHINY takes the rainbow ring whatever its rarity — that ring is what makes
-  // the pull identifiable across the room and at thumbnail size.
-  const borderW = shiny || tier >= 4 ? 6 : tier >= 2 ? 5 : 4;
-  ctx.lineWidth = borderW;
-  if (shiny || tier === 4) {
-    const rainbow = ctx.createLinearGradient(0, 0, W, H);
-    ["#ff5ec4", "#5efcff", "#f7ff5e", "#5eff8f", "#c05eff"].forEach((col, i, arr) => rainbow.addColorStop(i / (arr.length - 1), col));
-    ctx.strokeStyle = rainbow;
-  } else if (tier === 3) {
-    ctx.strokeStyle = "#f3c93a";
-  } else if (tier === 2) {
-    const silver = ctx.createLinearGradient(0, 0, W, H);
-    silver.addColorStop(0, "#e2e8f0");
-    silver.addColorStop(0.5, "#94a3b8");
-    silver.addColorStop(1, "#e2e8f0");
-    ctx.strokeStyle = silver;
+  // ── OUTER EDGE ──
+  // The card's physical edge, in the rarity metal. A SHINY takes a prismatic
+  // edge whatever its rarity — that ring is what makes the pull identifiable
+  // across the room and at thumbnail size.
+  const bw = shiny || tier >= 3 ? 5 : 4;
+  ctx.lineWidth = bw;
+  if (shiny) {
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    ["#ffd9f4", "#9fe8ff", "#fff6c4", "#c9a3ff", "#ffd9f4"].forEach((col, i, a) => g.addColorStop(i / (a.length - 1), col));
+    ctx.strokeStyle = g;
   } else {
-    ctx.strokeStyle = RARITY_HEX[c.rarity];
+    ctx.strokeStyle = metalGrad(ctx, metal, 0, 0, W, H);
   }
-  rr(ctx, borderW / 2, borderW / 2, W - borderW, H - borderW, 24);
+  rr(ctx, bw / 2, bw / 2, W - bw, H - bw, 24);
   ctx.stroke();
+}
+
+/**
+ * The monster, painted into the art window.
+ *
+ * The cel art is authored at 128px and MUST scale with nearest-neighbour, or the
+ * selout outlines blur into exactly the mush the art style exists to avoid.
+ */
+function paintPortrait(
+  ctx: CanvasRenderingContext2D,
+  portrait: HTMLCanvasElement,
+  c: CardDef,
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  st: CardStyle,
+  rarityCol: string,
+): void {
+  // Contact shadow under the feet, so the creature stands ON something.
+  const fy = ay + ah * 0.85;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.62)";
+  ctx.filter = "blur(6px)";
+  ctx.beginPath();
+  ctx.ellipse(ax + aw / 2, fy, aw * 0.2, ah * 0.035, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Sized off the window height and FITTED, never cropped: the cel is a 128×128
+  // box with the creature in roughly the lower ⅔, so the draw is anchored on the
+  // FEET and the box is capped so the head cannot leave the frame. A decapitated
+  // portrait is worse than a small one, and a 1.55× hulk hits that ceiling
+  // immediately.
+  const feetY = ay + ah * 0.88;
+  const want = ah * 1.24 * portraitScale(c.source!, c.subType);
+  const box = Math.min(want, (feetY - ay - 8) / 0.86);
+  const bx = ax + (aw - box) / 2;
+  const by = feetY - box;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // RIM LIGHT: the sprite's own silhouette, drawn offset behind the subject so a
+  // sliver of lit edge shows past it. Flat cel art carries no lighting of its
+  // own, so without this it sits ON the backdrop rather than IN the scene.
+  //
+  // Kept DELIBERATELY faint. The first cut used `lighter` at α 0.5 with four
+  // offsets, which is additive light stacked four deep: every zombie came out
+  // wearing a red neon outline and the Brute's arms glowed. `source-over` at
+  // low alpha, offset DOWN-LEFT only (one light, from the upper right), reads as
+  // a lit edge instead of as a halo.
+  const rim = document.createElement("canvas");
+  rim.width = portrait.width;
+  rim.height = portrait.height;
+  const rctx = rim.getContext("2d");
+  if (rctx) {
+    rctx.drawImage(portrait, 0, 0);
+    // Tint the silhouette: fill the glow colour, then clip to the sprite alpha.
+    // Through a SEPARATE layer — doing it in place tints the transparent
+    // background too and paints the sprite as a solid rectangle.
+    rctx.globalCompositeOperation = "source-in";
+    rctx.fillStyle = st.glow;
+    rctx.fillRect(0, 0, rim.width, rim.height);
+    const o = Math.max(2, box * 0.016);
+    ctx.globalAlpha = 0.34;
+    ctx.drawImage(rim, bx - o, by + o * 0.6, box, box);
+    ctx.globalAlpha = 1;
+  }
+
+  // The creature itself, over a drop shadow that grounds it against the glow.
+  ctx.shadowColor = "rgba(0,0,0,0.75)";
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.drawImage(portrait, bx, by, box, box);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  // A soft key light from upper-left across the subject, in the rarity colour at
+  // low strength — enough to model the form without recolouring the creature.
+  ctx.globalCompositeOperation = "overlay";
+  const key = ctx.createLinearGradient(bx, by, bx + box, by + box);
+  key.addColorStop(0, `${rarityCol}40`);
+  key.addColorStop(0.5, "rgba(0,0,0,0)");
+  key.addColorStop(1, "rgba(0,0,0,0.35)");
+  ctx.fillStyle = key;
+  ctx.fillRect(ax, ay, aw, ah);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+}
+
+/**
+ * A sourceless chase card's art: its hand-drawn sigil, struck as an engraving.
+ *
+ * These cards used to fall back to `CardDef.icon` at 150px — the five rarest
+ * cards in the game were the only ones whose art was a stock emoji.
+ */
+function paintSigil(
+  ctx: CanvasRenderingContext2D,
+  sigil: Glyph,
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  st: CardStyle,
+  metal: Metal,
+  rand: () => number,
+): void {
+  const cx = ax + aw / 2;
+  const cy = ay + ah / 2;
+  const r = Math.min(aw, ah) * 0.38;
+
+  // A halo behind the mark, so the engraving has something to sit against.
+  const halo = ctx.createRadialGradient(cx, cy, 4, cx, cy, r * 2.1);
+  halo.addColorStop(0, `${st.glow}3a`);
+  halo.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = halo;
+  ctx.fillRect(ax, ay, aw, ah);
+
+  // Motes drifting around the sigil — the void stock's own weather.
+  ctx.save();
+  for (let i = 0; i < 26; i++) {
+    ctx.globalAlpha = 0.1 + rand() * 0.4;
+    ctx.fillStyle = st.accent;
+    ctx.beginPath();
+    ctx.arc(ax + rand() * aw, ay + rand() * ah, 0.6 + rand() * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // The engraving itself: a dark plate strike offset down-right, then the lit
+  // mark over it. That two-pass strike is what makes a line read as CUT INTO
+  // the card rather than drawn on top of it.
+  ctx.save();
+  ctx.strokeStyle = "rgba(0,0,0,0.85)";
+  ctx.fillStyle = "rgba(0,0,0,0.85)";
+  ctx.lineWidth = 4.2;
+  drawGlyph(ctx, sigil, cx + 2, cy + 3, r);
+
+  ctx.shadowColor = metal.glow;
+  ctx.shadowBlur = 16;
+  ctx.strokeStyle = metalGrad(ctx, metal, cx - r, cy - r, r * 2, r * 2);
+  ctx.fillStyle = metalGrad(ctx, metal, cx - r, cy - r, r * 2, r * 2);
+  ctx.lineWidth = 3.6;
+  drawGlyph(ctx, sigil, cx, cy, r);
+  ctx.restore();
 }
 
 /** Rarity tier of a card — exported so the DOM layer can scale its effects. */
 export function cardTier(id: CardId): number {
   const c = cardDef(id);
   return c ? TIER[c.rarity] : 0;
+}
+
+/** The card's printed style — the DOM layer keys its hover glow off this. */
+export function cardStyle(id: CardId): CardStyle {
+  return styleFor(cardDef(id)?.source);
 }

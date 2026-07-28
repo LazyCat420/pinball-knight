@@ -100,6 +100,23 @@ export interface CardDef {
    * what makes "farm Hulks for the Hulk card" a legible goal.
    */
   subType?: ZombieType;
+  /**
+   * The card's TYPE LINE and FLAVOUR, for cards that have no monster to take
+   * them from.
+   *
+   * Every sourced card gets both from its monster (`KIND_INFO`): the type line
+   * is the monster's name and the flavour is its blurb. The mythics are
+   * deliberately sourceless, so without these they printed one shared
+   * "UNBOUND RELIC" and no flavour at all — the five rarest cards in the game
+   * were also the least written.
+   *
+   * These live HERE, next to `label` and `description`, rather than in the
+   * renderer that happens to draw them: an id-keyed table in a canvas painter
+   * is authored game copy hidden somewhere no card author would ever open, and
+   * it silently defaults for any mythic added later. Card copy is card data.
+   */
+  typeLine?: string;
+  flavour?: string;
 }
 
 export const RARITY_HEX: Record<CardRarity, string> = {
@@ -156,11 +173,11 @@ export const CARDS: Record<CardId, CardDef> = {
   // ══ MYTHIC (5) — chase cards. SOURCELESS on purpose: no single monster is
   // their essence, so affinity can never bias toward them. Tavern shelf, or a
   // deep boss. Two are CURSED — a real drawback for a huge upside. ══
-  worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
-  timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
-  tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
-  gladeath: { id: "gladeath", label: "Glass Cannon", icon: "🩻", rarity: "mythic", weaponKinds: "both", description: "+120% dmg, but −60% durability", modifier: { damageMult: 2.2, durabilityMult: 0.4 } },
-  bloodpact: { id: "bloodpact", label: "Blood Pact", icon: "🖤", rarity: "mythic", weaponKinds: "both", description: "50% CRIT ×3 and heal 1/hit, but −40% durability", modifier: { critChance: 0.5, critMult: 3, lifesteal: 1, durabilityMult: 0.6 } },
+  worldbreaker: { id: "worldbreaker", label: "World Breaker", icon: "🌋", rarity: "mythic", weaponKinds: "both", description: "+2 dmg, +75% dmg, hits BURN", typeLine: "Cataclysm", flavour: "it was a mountain once, and it remembers being one", modifier: { damageFlat: 2, damageMult: 1.75, onHit: "burn" } },
+  timeripper: { id: "timeripper", label: "Time Ripper", icon: "⏳", rarity: "mythic", weaponKinds: "both", description: "−40% cooldown, +60% dmg, DOUBLE on momentum", typeLine: "Paradox", flavour: "the swing lands before you decide to make it", modifier: { cooldownMult: 0.6, damageMult: 1.6, pinballMult: 2 } },
+  tempestcrown: { id: "tempestcrown", label: "Tempest Crown", icon: "🌀", rarity: "mythic", weaponKinds: "both", description: "+50% dmg, hits BURN and arc a THUNDERBOLT", typeLine: "Regalia", flavour: "worn once, by something the storm answered to", modifier: { damageMult: 1.5, onHit: "burn", bolt: true } },
+  gladeath: { id: "gladeath", label: "Glass Cannon", icon: "🩻", rarity: "mythic", weaponKinds: "both", description: "+120% dmg, but −60% durability", typeLine: "Bargain", flavour: "hits like a falling star; holds like one too", modifier: { damageMult: 2.2, durabilityMult: 0.4 } },
+  bloodpact: { id: "bloodpact", label: "Blood Pact", icon: "🖤", rarity: "mythic", weaponKinds: "both", description: "50% CRIT ×3 and heal 1/hit, but −40% durability", typeLine: "Bargain", flavour: "the wound is the price, and it is always paid", modifier: { critChance: 0.5, critMult: 3, lifesteal: 1, durabilityMult: 0.6 } },
 };
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
@@ -322,6 +339,38 @@ export function scaleModifier(m: CardModifier, growth: number): CardModifier {
 }
 
 /**
+ * A card's POWER — one number summarising how strong a copy is.
+ *
+ * A flavour stat: it is printed on the card face and is the natural key for
+ * sorting a stash, but nothing in combat reads it. The weights are a judgement
+ * call about how much each mechanic is worth relative to the others.
+ *
+ * It lives HERE, with the schema, and not in the renderer that prints it. It is
+ * a hand-weighted sum over every field of `CardModifier`, which makes it a
+ * third exhaustive consumer of that schema alongside `scaleModifier` and
+ * `modifierRows` — and when it lived in the canvas painter it had already
+ * silently omitted `materialMult`, so Crystal Shard (a ×1.5 epic) printed the
+ * floor value of 10, the same number a card with no effects at all would show.
+ * A schema consumer that far from the schema is one nobody remembers to update.
+ */
+export function cardPower(c: Pick<CardDef, "modifier">): number {
+  const m = c.modifier;
+  let p = 10;
+  if (m.damageFlat) p += m.damageFlat * 15;
+  if (m.damageMult) p += (m.damageMult - 1) * 100;
+  if (m.pinballMult) p += (m.pinballMult - 1) * 40;
+  if (m.cooldownMult) p += (1 - m.cooldownMult) * 80;
+  if (m.durabilityMult) p += (m.durabilityMult - 1) * 20;
+  if (m.materialMult) p += (m.materialMult - 1) * 40;
+  if (m.bolt) p += 45;
+  if (m.critChance) p += m.critChance * 60;
+  if (m.lifesteal) p += m.lifesteal * 25;
+  if (m.pierce) p += m.pierce * 12;
+  if (m.onHit) p += 20;
+  return Math.max(10, Math.round(p / 5) * 5);
+}
+
+/**
  * The card's effects as one sentence, generated from the modifier.
  *
  * The hand-written `description` ("+35% durability") becomes a LIE the moment a
@@ -330,24 +379,81 @@ export function scaleModifier(m: CardModifier, growth: number): CardModifier {
  * better — and every other copy gets this.
  */
 export function describeModifier(m: CardModifier): string {
+  // A row with no prose is table-only (the "Crit damage" row folds into the
+  // crit-chance phrase); dropping it here avoids a stray empty segment.
+  return modifierRows(m)
+    .filter((r) => r.prose)
+    .map((r) => r.prose)
+    .join(", ");
+}
+
+/** One effect of a card, formatted for both a stat table and a prose line. */
+export interface ModifierRow {
+  /** Table label, e.g. "Attack speed". */
+  name: string;
+  /** Table value, e.g. "−12%" or "ON HIT". */
+  value: string;
+  /** The same fact as a phrase, e.g. "12% faster". */
+  prose: string;
+  /** Whether this row is an UPSIDE. Cards with real drawbacks are a pillar. */
+  good: boolean;
+}
+
+/**
+ * EVERY effect a modifier carries, in one pass, as structured rows.
+ *
+ * THE RULE THIS EXISTS TO KEEP: the semantics of a modifier are decided once.
+ * There used to be two independent walks over `CardModifier` — this one, and a
+ * `movesFor` in the card renderer — each re-encoding the same hard-won display
+ * rules from scratch. Both carried their own copy of:
+ *
+ *   - the COOLDOWN INVERSION (below 1 is the good outcome, so a bare signed
+ *     percent reads backwards), each with its own explanatory comment;
+ *   - the CRIT-DAMAGE ROUNDING (`critMult` is level-scaled and capped at 6, so
+ *     a level-4 Blood Pact carries 4.3199999…). That fix had to be applied
+ *     TWICE, in two files, to stop "×4.32" appearing — which is exactly the
+ *     drift this consolidation prevents.
+ *
+ * They had also already diverged in coverage: the prose line omitted `bolt`,
+ * `pinballMult` and `materialMult` that the card face printed. Callers keep
+ * their own PRESENTATION (a table row, a comma-joined sentence) and share the
+ * decision about what an effect MEANS.
+ */
+export function modifierRows(m: CardModifier): ModifierRow[] {
   const pct = (v: number): string => `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`;
-  const parts: string[] = [];
-  if (m.damageFlat) parts.push(`+${m.damageFlat} dmg`);
-  if (m.damageMult && m.damageMult !== 1) parts.push(`${pct(m.damageMult)} damage`);
+  // Multipliers get ONE decimal at most — see the crit note above.
+  const mult = (v: number): string => `×${Math.round(v * 10) / 10}`;
+  const rows: ModifierRow[] = [];
+  const add = (name: string, value: string, prose: string, good: boolean): void => {
+    rows.push({ name, value, prose, good });
+  };
+
+  if (m.damageMult && m.damageMult !== 1) add("Damage", pct(m.damageMult), `${pct(m.damageMult)} damage`, m.damageMult > 1);
+  if (m.damageFlat) add("Flat damage", `+${m.damageFlat}`, `+${m.damageFlat} dmg`, m.damageFlat > 0);
+  if (m.bolt) add("Thunderbolt", "ON HIT", "arcs a THUNDERBOLT", true);
+  if (m.onHit) add(m.onHit === "burn" ? "Burn" : "Chill", "ON HIT", `hits ${m.onHit.toUpperCase()}`, true);
+  if (m.critChance) {
+    const cm = Math.round((m.critMult ?? 2) * 10) / 10;
+    add("Crit chance", `${Math.round(m.critChance * 100)}%`, `${Math.round(m.critChance * 100)}% CRIT (×${cm})`, true);
+    if (m.critMult && m.critMult !== 2) add("Crit damage", mult(m.critMult), "", true);
+  }
+  if (m.lifesteal) add("Lifesteal", `+${m.lifesteal} HP`, `heal ${m.lifesteal}/hit`, true);
+  if (m.pierce) add("Pierce", `+${m.pierce}`, `pierce +${m.pierce}`, true);
+  if (m.pinballMult && m.pinballMult > 1) add("On momentum", mult(m.pinballMult), `${mult(m.pinballMult)} on momentum`, true);
+  if (m.materialMult && m.materialMult > 1) add("On marble", mult(m.materialMult), `${mult(m.materialMult)} on marble`, true);
   // Cooldown reads inverted from every other multiplier — BELOW 1 is the good
   // outcome — so it says faster/slower instead of signing a bare percent.
   if (m.cooldownMult && m.cooldownMult !== 1) {
-    parts.push(`${Math.round(Math.abs(1 - m.cooldownMult) * 100)}% ${m.cooldownMult < 1 ? "faster" : "slower"}`);
+    const faster = m.cooldownMult < 1;
+    const n = Math.round(Math.abs(1 - m.cooldownMult) * 100);
+    add(faster ? "Attack speed" : "Slower swing", `${faster ? "−" : "+"}${n}%`, `${n}% ${faster ? "faster" : "slower"}`, faster);
   }
-  if (m.durabilityMult && m.durabilityMult !== 1) parts.push(`${pct(m.durabilityMult)} durability`);
-  if (m.critChance) parts.push(`${Math.round(m.critChance * 100)}% CRIT (×${m.critMult ?? 2})`);
-  if (m.lifesteal) parts.push(`heal ${m.lifesteal}/hit`);
-  if (m.pierce) parts.push(`pierce +${m.pierce}`);
-  if (m.onHit) parts.push(`hits ${m.onHit.toUpperCase()}`);
-  if (m.bolt) parts.push("arcs a THUNDERBOLT");
-  if (m.pinballMult && m.pinballMult > 1) parts.push(`×${r3(m.pinballMult)} on momentum`);
-  if (m.materialMult && m.materialMult > 1) parts.push(`×${r3(m.materialMult)} on marble`);
-  return parts.join(", ");
+  if (m.durabilityMult && m.durabilityMult !== 1) {
+    add("Durability", pct(m.durabilityMult), `${pct(m.durabilityMult)} durability`, m.durabilityMult > 1);
+  }
+  // The "Crit damage" row is table-only (the prose folds it into the crit
+  // phrase), so drop empty prose rather than emit a stray comma.
+  return rows;
 }
 
 /** Derived defs are memoised — `paintCard` and the haul screen both resolve the
