@@ -83,6 +83,8 @@ export interface PostConfig {
   /** How hard concave corners darken. */
   aoStrength: number;
   vignette: number;
+  /** Luma step a colour edge must exceed to be inked (the second outline term). */
+  outlineEdgeThreshold: number;
   /** Vignette target at full frenzy. */
   frenzyVignette: number;
   /** Peak chromatic-aberration split, UV units. */
@@ -155,6 +157,7 @@ export const engineConfig: EngineConfig = {
     aoRadius: 14,
     aoStrength: 0.85,
     vignette: 0.32,
+    outlineEdgeThreshold: 0.26,
     frenzyVignette: 0.48,
     frenzyAberration: 0.006,
   },

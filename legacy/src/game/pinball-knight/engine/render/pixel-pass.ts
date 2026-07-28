@@ -51,6 +51,7 @@ import {
   pow,
   screenCoordinate,
   smoothstep,
+  sqrt,
   step,
   texture,
   uniform,
@@ -92,6 +93,7 @@ const {
   aoRadius: AO_RADIUS,
   aoStrength: AO_STRENGTH,
   vignette: VIGNETTE,
+  outlineEdgeThreshold: OUTLINE_EDGE_THRESHOLD,
   frenzyVignette: FRENZY_VIGNETTE,
   frenzyAberration: FRENZY_ABERRATION,
 } = engineConfig.post;
@@ -165,6 +167,10 @@ interface FinalUniforms {
   dither: TSLUniform<number>;
   scanline: TSLUniform<number>;
   outline: TSLUniform<number>;
+  /** 0/1 — is the colour-edge outline term live? */
+  colourOutline: TSLUniform<number>;
+  /** Luma step (in rough-gamma space) a colour edge must exceed to be inked. */
+  edgeThreshold: TSLUniform<number>;
   bloom: TSLUniform<number>;
   ao: TSLUniform<number>;
   aoRadius: TSLUniform<number>;
@@ -255,14 +261,54 @@ function finalNode(
   const vig = smoothstep(0.85, 0.32, dot(q, q).mul(2)); // 1 centre → 0 corners
   col = col.mul(mix(float(1), vig, u.vignette));
 
-  // ── Depth-discontinuity ink outline — the cel-shading move. With an ORTHO
-  // camera the depth buffer is linear in eye space, so a FIXED threshold works.
+  // ── Ink outline — the cel-shading move. TWO edge terms, because a depth
+  // edge alone is blind to the case that matters most.
+  //
+  // With an ORTHO camera the depth buffer is linear in eye space, so a fixed
+  // depth threshold works and catches every silhouette that stands PROUD of
+  // what is behind it. What it cannot see is a silhouette at the SAME depth:
+  // an actor standing on the floor plane, a prop against a wall it is touching,
+  // two monsters overlapping in the same rank. Those lose their edge entirely,
+  // and the maze track's surface painter made it worse by putting a bright
+  // flowstone wash under the rot-green horde — same depth, and after the
+  // 32-colour snap very nearly the same colour.
+  //
+  // So the second term is a LUMA edge on the colour buffer. It is the cheap
+  // stand-in for a palette-index edge: two neighbours that will quantize to
+  // different entries differ in luma by roughly a palette step first, and one
+  // dot product beats re-running the 32-way snap at four extra taps.
+  //
+  // The threshold is the whole design. Flagstone grout, the dither pattern and
+  // the AO ring all produce luma steps around 0.05-0.12; a real material or
+  // silhouette change is 0.25 and up. Under it the screen goes inky and the
+  // pixel art turns to mud, which is the failure this term has to avoid more
+  // than it has to catch every edge.
   const dc = depthAt(0, 0);
   const e = max(
     max(depthAt(1, 0).sub(dc).abs(), depthAt(-1, 0).sub(dc).abs()),
     max(depthAt(0, 1).sub(dc).abs(), depthAt(0, -1).sub(dc).abs()),
   );
-  const inked = e.greaterThan(float(0.35 / 200)).select(float(0.45), float(1));
+  // Sampled on the tone-mapped colour (a rough gamma via sqrt), not on linear:
+  // linear luma is crushed at the dark end, and this dungeon is nearly all dark
+  // end, so a linear threshold would fire on highlights and never on the
+  // shadowed silhouettes that need it.
+  const LUMA = vec3(0.3, 0.59, 0.11);
+  const lumaAt = (ox: number, oy: number): TSLNode =>
+    dot(sqrt(max(texture(diffuse, vUv.add(vec2(ox, oy).div(res))).rgb, vec3(0, 0, 0))), LUMA);
+  const lc = lumaAt(0, 0);
+  const le = max(
+    max(lumaAt(1, 0).sub(lc).abs(), lumaAt(-1, 0).sub(lc).abs()),
+    max(lumaAt(0, 1).sub(lc).abs(), lumaAt(0, -1).sub(lc).abs()),
+  );
+  // Void/sky is excluded the same way the AO ring excludes it: the edge where
+  // the level meets nothing is already the strongest depth edge on the screen,
+  // and inking it twice just thickens it.
+  // Comparisons yield bool nodes, which carry no arithmetic — every one is
+  // `select`ed to 0/1 before it meets a multiply.
+  const notVoid: TSLNode = dc.lessThan(0.999).select(float(1), float(0));
+  const colourEdge: TSLNode = le.greaterThan(u.edgeThreshold).select(float(1), float(0)).mul(notVoid).mul(u.colourOutline);
+  const depthEdge: TSLNode = e.greaterThan(float(0.35 / 200)).select(float(1), float(0));
+  const inked = max(depthEdge, colourEdge).greaterThan(float(0.5)).select(float(0.45), float(1));
   col = col.mul(mix(float(1), inked, u.outline));
 
   // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the
@@ -502,6 +548,8 @@ export function createPixelPass(
     dither: uniform(opts.dither ? 1 : 0),
     scanline: uniform(opts.scanline ? 1 : 0),
     outline: uniform(opts.outline ? 1 : 0),
+    colourOutline: uniform(opts.outline ? 1 : 0),
+    edgeThreshold: uniform(OUTLINE_EDGE_THRESHOLD),
     bloom: uniform(opts.bloom ? BLOOM_STRENGTH : 0),
     ao: uniform(opts.ao ? AO_STRENGTH : 0),
     aoRadius: uniform(AO_RADIUS),

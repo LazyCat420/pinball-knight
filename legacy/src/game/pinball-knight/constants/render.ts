@@ -167,6 +167,18 @@ export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — bande
 export const DITHER_DEFAULT = true; // ordered dither breaks AO/shadow banding before the quantizer (2026-07-14 3D pass)
 export const SCANLINE_DEFAULT = true; // subtle CRT scanlines — 14% row darkening; A/B'd 2026-07-15, adds arcade-cabinet feel with no readability cost
 export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
+/**
+ * Luma step (rough-gamma space, 0..1) a COLOUR edge must exceed before the ink
+ * pass darkens it — the second outline term, added because a depth edge cannot
+ * see a silhouette at the same depth as its background.
+ *
+ * This is the knob that decides mud vs pixel art, so it is a measured number
+ * and not a taste: flagstone grout, the Bayer dither and the AO ring all
+ * produce steps around 0.05-0.12, while a material change or a silhouette
+ * against the floor is 0.25 and up. Below ~0.2 the whole screen inks and the
+ * art turns to mush; that failure is worse than missing an edge.
+ */
+export const OUTLINE_EDGE_THRESHOLD = 0.26;
 
 // ── Lighting & depth (the "make the 3D read as 3D" pass) ────────
 /**
