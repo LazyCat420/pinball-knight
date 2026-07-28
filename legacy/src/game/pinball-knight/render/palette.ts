@@ -13,6 +13,49 @@
  * against them in sRGB).
  *
  * Sprite art references these by index via paletteCss() in cel-painter.ts.
+ *
+ * ── THE CENSUS (2026-07-28) ──────────────────────────────────────────────────
+ *
+ * Two measurements, because they disagree and the disagreement is the point.
+ *
+ * **Static**: 435 index-literal references across 17 non-test modules
+ * (`paletteCss(n)`, figure's `C(n)`, cel-painter's `F/SH/HI(n)`, `PALETTE_HEX[n]`).
+ * Exactly ONE entry has zero of them: **5, stone highlight**.
+ *
+ * **Pixel**: every actor/item/npc/prop painter run over its full clip table,
+ * 1.94M opaque painted pixels snapped to this palette by the same luma-weighted
+ * nearest match `crushToGrid` uses.
+ *
+ *   idx  share   who
+ *    1  25.58%   ink — a QUARTER of every actor is outline
+ *    6   6.95%   rot shadow (boss/brute/spitter)
+ *    3   6.45%   stone mid (knight, golem)
+ *   20   6.06%   steel mid (knight 68%)
+ *    7   5.48%   rot dark
+ *   19   4.86%   steel dark
+ *   10   4.20%   blood shadow (reaper 74%)
+ *   21   4.14%   steel light
+ *    2   3.84%   stone dark
+ *    5   3.55%   stone highlight ← NOTHING NAMES IT
+ *   ...
+ *   18   0.047%  flame core     ┐ the torch ramp is 2.26% of all actor pixels.
+ *   14   0.055%  ember          ┘ "the only warmth down here" barely touches a body.
+ *
+ * Two findings drove work in this wave:
+ *
+ * 1. **Entry 5 is not dead.** The static census says it is — no module names it
+ *    — and deleting it on that evidence would have been wrong: the quantizer
+ *    routes 3.55% of all painted pixels onto it anyway (49% of those from the
+ *    ghost, 30% from the knight's plate). A palette entry has TWO ways to be
+ *    reached and only one of them greps. It is now also named, as the bounce
+ *    tone for dark steel and stone (see RIM_FOR below).
+ *
+ * 2. **The warm ramp is decorative, not structural.** 14-18 together take 2.26%
+ *    of actor pixels and almost all of that is a goblin's lantern and a few
+ *    glow dots. Actors were lit entirely out of their OWN ramp, which is why a
+ *    rot-green zombie standing on a painted flowstone patch has no edge at all.
+ *    The rim/bounce tone below spends the torch ramp where it separates a
+ *    silhouette from the floor.
  */
 
 import { clamp } from "../../../utils/math";

@@ -1015,7 +1015,9 @@ function knightSteelBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: K
     ctx.translate(CX, cy);
     ctx.rotate(spin * 0.5);
     ctx.globalAlpha = 0.75;
-    ctx.fillStyle = paletteCss(crest[crest.length - 1]);
+    // The ramp's HI tone by index, not `length - 1`: a Ramp may now carry a
+    // fourth (bounce) entry, and "the last one" would silently become that.
+    ctx.fillStyle = paletteCss(crest[2]);
     ctx.fillRect(-R, -R * 0.92, R * 2, 2.4);
     ctx.restore();
 

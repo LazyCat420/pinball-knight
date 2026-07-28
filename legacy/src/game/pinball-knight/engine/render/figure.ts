@@ -38,7 +38,11 @@ const C = (index: number): string => enginePalette.css(index);
 // rot-green specks — the "confetti" on the plate. Instead every material
 // declares [shadeIdx, midIdx, hiIdx] as real palette indices, so the shade and
 // highlight bands land EXACTLY on palette entries and quantize with zero noise.
-export type Ramp = readonly [shade: number, mid: number, hi: number];
+//
+// A ramp may carry a FOURTH tone, the BOUNCE (see BOUNCE below). It is optional
+// so every existing 3-tuple still assigns, and `matBounce` fills one in from
+// BOUNCE_FOR when a ramp does not name its own.
+export type Ramp = readonly [shade: number, mid: number, hi: number, bounce?: number];
 
 /** Steel plate ramp (dark → light). */
 export const R_STEEL: Ramp = [19, 20, 21];
@@ -53,6 +57,67 @@ export const R_BLOOD: Ramp = [11, 12, 13];
 export const R_BONE: Ramp = [20, 21, 22];
 /** Human skin tone ramp (shadow, mid, light). */
 export const R_SKIN: Ramp = [23, 24, 25];
+
+// ── THE BOUNCE TONE ─────────────────────────────────────────────
+//
+// Three tones shade a form. They do not SEPARATE it. Everything above lights an
+// actor entirely out of its own ramp, so a figure's darkest edge and the floor
+// behind it can be the same value — and after the 32-colour snap, the same
+// COLOUR. The palette census (render/palette.ts) put a number on how bad that
+// had got: the torch ramp (14-18), the palette's only warm family and the thing
+// the whole art direction is built around, was 2.26% of all actor pixels. The
+// screenshot version of the same fact is a rot-green zombie standing on a
+// painted flowstone patch with no edge at all.
+//
+// So each material gets a fourth tone taken from a DIFFERENT family than its
+// own, painted on the LOWER-RIGHT silhouette — opposite the fixed upper-left
+// key. That is not decoration, it is the rig:
+//
+//   boot/lighting.ts builds a cold blue directional (0xa7c0e0) raking from the
+//   world's north-west — that is the key, and `hi` already serves it — plus a
+//   WARM point lamp (0xd9cba8) that follows the player at y=1.3, i.e. low and
+//   close. A low warm lamp plus torch pools is exactly a bounce: a thin warm
+//   line along the bottom edge of anything standing on the floor.
+//
+// Warm-against-cold and cold-against-warm both survive the quantizer (they are
+// far apart in the luma-weighted metric), which a value-only rim does not: a
+// "slightly lighter green" snaps straight back onto the green it came from.
+//
+// KEYED ON THE SHADE TONE, and sparse on purpose. The shade is the band that
+// actually touches the shadow-side edge, so it is the one that decides whether
+// there is a separation problem at all — and a LIGHT material does not have
+// one. The first cut keyed on the mid tone and gave steel a warm edge; the
+// contact sheet said it plainly, the knight's plate read as rust. Anything not
+// listed here gets no bounce and paints exactly as it did before.
+const BOUNCE_FOR: Record<number, number> = {
+  // rot flesh — flame, because a green rim on a green floor is not an edge, and
+  // green floor is precisely what the surface painter now puts under it
+  6: 16,
+  7: 16,
+  // skin
+  23: 16,
+  // blood / plume — the warm ramp keeps it red instead of pushing it pink
+  10: 14,
+  11: 15,
+  // leather, wood, rag — already the warmest thing on the body, so its bounce
+  // is the COLD key wrapping round the far side instead
+  26: 4,
+  27: 4,
+  // dark steel and the under-suit — stone highlight, the entry the census found
+  // nothing naming. Cool and pale: steel picking up the room, not rusting.
+  19: 5,
+  // stone / masonry props
+  2: 5,
+  // arcane
+  29: 31,
+};
+
+/**
+ * How wide the bounce line is, in cel px. Deliberately THIN: at 1.9 it crushes
+ * to roughly one pixel at the 72px grid, which is a contact edge. Widen it and
+ * actors stop looking lit and start looking like stickers with a glow border.
+ */
+const BOUNCE_W = 1.9;
 
 /** Feet line in the 128px cel — kept identical to cel-painter's GROUND. */
 export const GROUND = 118;
@@ -89,6 +154,17 @@ function matShade(m: Mat): number {
 function matHi(m: Mat): number {
   return typeof m === "number" ? m : m[2];
 }
+/**
+ * The bounce tone for a material: its own 4th entry if it declares one, else
+ * the cross-family pick in BOUNCE_FOR, else -1 for "this material gets no
+ * bounce". -1 rather than a fallback index on purpose — a material with no
+ * mapping should stay exactly as it painted before, not acquire a rim by
+ * accident.
+ */
+function matBounce(m: Mat): number {
+  if (typeof m !== "number" && m[3] != null) return m[3];
+  return BOUNCE_FOR[matShade(m)] ?? -1;
+}
 
 /**
  * A capsule limb from a→b with rounded caps, shaded along the ramp. The shade
@@ -96,13 +172,20 @@ function matHi(m: Mat): number {
  * offset up-left — both filled with REAL palette indices so they quantize to
  * clean bands (no confetti). Reads as a rounded tube after the crush.
  */
-export function limbShaded(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, m: Mat, opts: { rim?: boolean } = {}): void {
+export function limbShaded(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, m: Mat, opts: { rim?: boolean; bounce?: boolean } = {}): void {
   ctx.lineCap = "round";
   stroke(ctx, a, b, w + INK_W * 2, C(inkIdx(m))); // outline
   stroke(ctx, [a[0] + 1.6, a[1] + 1.6], [b[0] + 1.6, b[1] + 1.6], w, C(matShade(m))); // shade underneath
   stroke(ctx, a, b, w * 0.82, C(matMid(m))); // mid fill on top, shifted up-left
   if (opts.rim !== false) {
     stroke(ctx, [a[0] - 1.4, a[1] - 1.6], [b[0] - 1.4, b[1] - 1.6], w * 0.34, C(matHi(m))); // rim
+  }
+  // BOUNCE — the mirror of the rim: a thinner stroke offset DOWN-RIGHT, the
+  // shadow side, in a cross-family tone. Last, and narrow, so it lands as a
+  // contact line just inside the ink rather than as a second fill.
+  const bo = opts.bounce === false ? -1 : matBounce(m);
+  if (bo >= 0) {
+    stroke(ctx, [a[0] + 1.9, a[1] + 2.1], [b[0] + 1.9, b[1] + 2.1], Math.min(BOUNCE_W, w * 0.3), C(bo));
   }
 }
 
@@ -126,7 +209,7 @@ function stroke(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, color: s
 }
 
 /** A ramp-shaded ellipse: shade underneath, mid on top, warm rim arc, ink edge. */
-export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, m: Mat, rot = 0, opts: { ink?: number; rim?: boolean } = {}): void {
+export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, m: Mat, rot = 0, opts: { ink?: number; rim?: boolean; bounce?: boolean } = {}): void {
   // shade base (full shape in the shade tone)
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
@@ -148,6 +231,19 @@ export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, r
     ctx.fillStyle = C(matHi(m));
     ctx.fill();
   }
+  // BOUNCE — a thin stroked arc along the LOWER-RIGHT limb of the ellipse, just
+  // inside the ink. An arc rather than a filled crescent on purpose: a crescent
+  // would replace the shade band that sculpts the form, and the job here is to
+  // separate the shape from the floor, not to re-light it.
+  const bo = opts.bounce === false ? -1 : matBounce(m);
+  if (bo >= 0 && rx > 3 && ry > 3) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, Math.max(0.5, rx - INK_W * 0.45), Math.max(0.5, ry - INK_W * 0.45), rot, -0.14 * Math.PI, 0.64 * Math.PI);
+    ctx.lineWidth = BOUNCE_W;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = C(bo);
+    ctx.stroke();
+  }
 }
 
 /**
@@ -156,7 +252,7 @@ export function ellShaded(ctx: CanvasRenderingContext2D, x: number, y: number, r
  * lower-right, then a bright rim stroke on the upper-left silhouette. All real
  * palette indices → clean bands.
  */
-export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, opts: { ink?: number; rim?: boolean; backlight?: number } = {}): void {
+export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, opts: { ink?: number; rim?: boolean; backlight?: number; bounce?: boolean } = {}): void {
   // shade base
   path(ctx, pts);
   ctx.fillStyle = C(matShade(m));
@@ -186,11 +282,18 @@ export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, op
       ctx.stroke();
     }
   }
-  // cool BACKLIGHT rim along the lower-right (shadow-side) silhouette — highly
-  // reflective metal picks up a second light opposite the key (research: metal
-  // reads with BOTH a specular hotspot AND a shadow-side rim). Opt-in per plate
-  // via a palette index so only armour gets it, not flesh or rags.
-  if (opts.backlight != null) {
+  // BACKLIGHT / BOUNCE rim along the lower-right (shadow-side) silhouette.
+  //
+  // This started as an opt-in for ARMOUR only — highly reflective metal reads
+  // with both a specular hotspot and a shadow-side rim. The census showed the
+  // opt-in was the problem: only the helm and a couple of plates ever passed
+  // `backlight`, so everything made of flesh, rag or bone had no shadow-side
+  // edge at all and merged into whatever it was standing on. Now an explicit
+  // `backlight` still wins (it is how a plate names a colour the ramp does not
+  // imply), and everything else falls through to the material's BOUNCE_FOR
+  // tone. `backlight: -1` opts a plate out.
+  const bo = opts.backlight ?? (opts.bounce === false ? -1 : matBounce(m));
+  if (bo >= 0) {
     const bot = bottomRightRun(pts);
     if (bot.length >= 2) {
       ctx.beginPath();
@@ -198,7 +301,7 @@ export function plateShaded(ctx: CanvasRenderingContext2D, pts: Pt[], m: Mat, op
       for (let i = 1; i < bot.length; i++) ctx.lineTo(bot[i][0], bot[i][1]);
       ctx.lineWidth = 1.8;
       ctx.lineCap = "round";
-      ctx.strokeStyle = C(opts.backlight);
+      ctx.strokeStyle = C(bo);
       ctx.stroke();
     }
   }
