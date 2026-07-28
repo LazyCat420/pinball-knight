@@ -210,6 +210,15 @@ export const HULK_MIN_OPEN_NEIGHBOURS = 3;
 export const AGGRO_TILES = 9;
 /** Zombies shove each other apart below this distance, so a horde doesn't stack into one sprite. */
 export const SEPARATION_R = 0.55;
+/**
+ * Inside this range a grounded foe abandons the flow field and steers STRAIGHT
+ * at the knight. The field only knows tile centres, so door-frame shuffling at
+ * close range looks robotic. Was a private const in entities/zombie.ts; it moved
+ * here when the steering became a dispatch table (entities/movement.ts), because
+ * the baseline every other policy deviates from is a tuning number, not a
+ * detail of one function.
+ */
+export const DIRECT_STEER_RANGE = 1.6;
 /** The BFS flow field is recomputed on this cadence, not per frame — one BFS serves every zombie. */
 export const FLOW_INTERVAL = 0.25;
 
