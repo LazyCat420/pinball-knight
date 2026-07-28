@@ -11,7 +11,8 @@
  */
 import * as THREE from "three";
 import { state } from "./state";
-import { type Grid, T_FLOOR, T_WALL, at, isWalkable, setTile, setSurface, tileCenter } from "./maze/generator";
+import { type Grid, type TilePos, T_CRACKED, T_FLOOR, T_WALL, at, isWalkable, setTile, setSurface, shapeAt, tileCenter } from "./maze/generator";
+import { SHAPE_FULL } from "./engine/tile-shape";
 import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
@@ -102,6 +103,25 @@ export function updateSecretDoors(dt: number): void {
   }
 }
 
+/**
+ * Every door still turning, as numbers — the runtime referee for an animation.
+ *
+ * An animation is the one thing a unit test cannot actually check: `secrets.ts`
+ * can be exercised with a hand-built group and pass while the REAL band, built
+ * by `build.ts` and parented into the maze group, never turns because nothing
+ * ticks it or because it was already removed. This is what `__dungeonSecretDoors()`
+ * reads, so "does the door spin in the running game" has an answer that is not
+ * somebody squinting at a screenshot.
+ */
+export function secretDoorsInFlight(): Array<{ deg: number; y: number; opacity: number; t: number }> {
+  return revolving.map((r) => ({
+    deg: Math.round((r.obj.rotation.y * 180) / Math.PI),
+    y: Number(r.obj.position.y.toFixed(3)),
+    opacity: Number((r.mats[0]?.opacity ?? 1).toFixed(3)),
+    t: Number(r.t.toFixed(3)),
+  }));
+}
+
 /** Drop every door still turning — called on level teardown. */
 export function disposeSecretDoors(): void {
   for (const r of revolving) {
@@ -109,6 +129,127 @@ export function disposeSecretDoors(): void {
     for (const m of r.mats) m.dispose();
   }
   revolving.length = 0;
+}
+
+/**
+ * ── STAMP THE SECRET BANDS ON A TRACK FLOOR ──────────────────────────────────
+ *
+ * The mechanic had no supply. `crackSecretWalls` (maze/generator) marks single
+ * tiles on the HALF-SCALE grid, on the understanding that `thickenWalls` will
+ * double each one into the 2×2 band everything downstream assumes. The
+ * track-first generator does neither: it builds at final resolution, skips
+ * thickening, and **throws the half-scale grid away**. So every band that pass
+ * marks is discarded before the floor exists.
+ *
+ * Measured on the shipping path before this: `crackSecretWalls` picked 4-10
+ * bands per floor and the finished grid carried **zero**. The only cracks that
+ * ever reached a player came from `openLaunchTargets`' opportunistic terminal
+ * crack, which is a launcher-runway repair and not a secrets pass —
+ * **3 bands across 25 consecutive floors**, i.e. the smash-through payoff, its
+ * loot, the witch and the revolving door were all unreachable on ~9 floors in
+ * 10.
+ *
+ * This is the missing pass, and it lives here rather than in the generator for
+ * two reasons: it is the SUPPLY for this module's mechanic, and the maze layer
+ * is owned by other work in flight.
+ *
+ * ── What makes a legal band ──────────────────────────────────────────────
+ *
+ *  · EVEN-ALIGNED. `decorateMaze`'s secrets scan steps `i += 2, j += 2` and
+ *    `build.ts`/`smashSecretAt` both key off the top-left, so a band on an odd
+ *    coordinate is invisible to the game even though the tiles are cracked.
+ *  · FOUR SOLID PLAIN WALL TILES. `SHAPE_FULL` only — a cracked arc rim or
+ *    bevel would be opened by `smashSecretAt`, which un-backs the curve drawn
+ *    over it and leaves a ribbon of stone standing in open floor (the exact
+ *    defect `piece-rules` polices).
+ *  · CORRIDOR ON BOTH OPPOSITE SIDES, so smashing opens a genuine shortcut
+ *    rather than a nook — the same rule `crackSecretWalls` used, restated for a
+ *    2×2 band.
+ *  · off the shell, clear of anything the caller vetoes (the launch chute), and
+ *    spaced, so a floor's secrets are not bunched.
+ *
+ * Returns the top-left of each band stamped. No rng of its own beyond the one
+ * handed in: two co-op peers must crack the same walls.
+ */
+export function stampSecretBands(
+  g: Grid,
+  rng: () => number,
+  count: number,
+  opts: { avoid?: (i: number, j: number) => boolean; spacing?: number } = {},
+): TilePos[] {
+  if (count <= 0) return [];
+  const spacing = opts.spacing ?? 8;
+  const plain = (i: number, j: number): boolean =>
+    at(g, i, j) === T_WALL && shapeAt(g, i, j) === SHAPE_FULL && !(opts.avoid?.(i, j) ?? false);
+  const floor = (i: number, j: number): boolean => at(g, i, j) === T_FLOOR;
+
+  const candidates: TilePos[] = [];
+  for (let j = 2; j + 1 <= g.h - 3; j += 2) {
+    for (let i = 2; i + 1 <= g.w - 3; i += 2) {
+      if (!plain(i, j) || !plain(i + 1, j) || !plain(i, j + 1) || !plain(i + 1, j + 1)) continue;
+      // A shortcut needs open floor on BOTH sides of the band, on one axis —
+      // and along the WHOLE face, not just one of its two tiles.
+      //
+      // The looser `||` version passes the shortcut test and still ships a
+      // broken piece: with floor at only (i−1, j) and only (i+2, j+1), the tile
+      // at (i, j+1) has band on two sides and solid rock on the other two, so it
+      // is a cracked tile with NO open orthogonal neighbour — `piece-rules`
+      // calls that "sealed on all four sides", and it is right, because smashing
+      // it opens a pocket rather than a route. Measured: 30 violations across 32
+      // floors before this was tightened, 0 after.
+      const horizontal = floor(i - 1, j) && floor(i - 1, j + 1) && floor(i + 2, j) && floor(i + 2, j + 1);
+      const vertical = floor(i, j - 1) && floor(i + 1, j - 1) && floor(i, j + 2) && floor(i + 1, j + 2);
+      if (horizontal || vertical) candidates.push({ i, j });
+    }
+  }
+  for (let k = candidates.length - 1; k > 0; k--) {
+    const q = Math.floor(rng() * (k + 1));
+    [candidates[k], candidates[q]] = [candidates[q], candidates[k]];
+  }
+  const picked: TilePos[] = [];
+  for (const c of candidates) {
+    if (picked.length >= count) break;
+    if (picked.some((p) => Math.abs(p.i - c.i) + Math.abs(p.j - c.j) < spacing)) continue;
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) setTile(g, c.i + di, c.j + dj, T_CRACKED);
+    picked.push(c);
+  }
+  return picked;
+}
+
+/**
+ * Drop any band a LATER pass sealed in, reverting its tiles to plain wall.
+ *
+ * Stamping has to happen before `decorateMaze` — furniture mounts on `T_WALL`
+ * and skips `T_CRACKED`, so a band placed first can never end up with a sconce
+ * floating on it. The cost of that ordering is that decorate's own wall work can
+ * still close the corridor a band was opening onto, and a cracked tile with no
+ * open orthogonal neighbour is a smash that opens a pocket — `piece-rules` fails
+ * it as "sealed on all four sides", correctly.
+ *
+ * Measured: 3 bands in 32 floors were sealed this way. Reverting is safe by
+ * construction — `T_CRACKED` and `T_WALL` are both solid, so nothing about
+ * connectivity, pathing or reachability changes.
+ *
+ * Mutates `secrets` in place and returns how many were dropped.
+ */
+export function pruneSealedBands(g: Grid, secrets: TilePos[]): number {
+  const open = (i: number, j: number): boolean =>
+    isWalkable(g, i + 1, j) || isWalkable(g, i - 1, j) || isWalkable(g, i, j + 1) || isWalkable(g, i, j - 1);
+  let dropped = 0;
+  for (let k = secrets.length - 1; k >= 0; k--) {
+    const s = secrets[k];
+    let sealed = false;
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+      if (at(g, s.i + di, s.j + dj) === T_CRACKED && !open(s.i + di, s.j + dj)) sealed = true;
+    }
+    if (!sealed) continue;
+    for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+      if (at(g, s.i + di, s.j + dj) === T_CRACKED) setTile(g, s.i + di, s.j + dj, T_WALL);
+    }
+    secrets.splice(k, 1);
+    dropped++;
+  }
+  return dropped;
 }
 
 /** What tumbles out of the masonry: the gold idol plus one random power-up. */

@@ -237,7 +237,8 @@ import { cardBase } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
 import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
-import { updateSecretDoors, disposeSecretDoors } from "./secrets";
+import { updateSecretDoors, disposeSecretDoors, stampSecretBands, pruneSealedBands } from "./secrets";
+import { nearSealed } from "./maze/track-socket";
 import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { resolveDescendFloor, regroupTarget } from "../../net/rally";
@@ -998,6 +999,30 @@ function buildLevel(level: number): void {
     endpoints = pickEndpoints(grid, rng);
     if (endpoints) widenMainArtery(grid, endpoints);
   }
+  // ── SECRET BANDS, on the grid the player will actually stand on ──────────
+  //
+  // `crackSecretWalls` above ran on `raw` — the HALF-SCALE grid, on the
+  // understanding that `thickenWalls` doubles each mark into the 2×2 band the
+  // rest of the game assumes. A track floor does neither: it generates at final
+  // resolution and DISCARDS `raw`. So on the shipping path every one of those
+  // 4-10 bands was thrown away, and the only cracks a player ever met were the
+  // incidental ones `openLaunchTargets` leaves while repairing launcher runways
+  // — measured, 3 bands across 25 consecutive floors.
+  //
+  // The smash-through payoff, its loot, the speed witch and the revolving door
+  // were all unreachable on roughly nine floors in ten because of it.
+  //
+  // Stamped HERE, between geometry and decoration, deliberately: the walls are
+  // final (so a band is never cracked into a curve that a later pass reshapes)
+  // and `decorateMaze` has not yet run its secrets scan, so the bands are picked
+  // up by the existing plumbing with nothing else to change.
+  if (track) {
+    stampSecretBands(grid, rng, cfg.secrets, {
+      // The plunger lane commits you by design; a secret door in its side wall
+      // is the same defect as any other hole in it (track-launch.test.ts).
+      avoid: (i, j) => nearSealed(grid, track.mask, i, j),
+    });
+  }
   // Room rects and prefab anchors are authored in HALF-SCALE cell coords and
   // scaled ×2 to land on the thickened grid. The track floor is generated at
   // final resolution from its own geometry and never saw those stamps, so it
@@ -1059,6 +1084,11 @@ function buildLevel(level: number): void {
       floor: level, // ITEM RARITY is depth-biased — see rollItemRarity
     },
   );
+
+  // A band whose corridor decorate then walled off is a smash that opens a
+  // pocket — reverted to plain stone rather than shipped as a lie. Both tile
+  // types are solid, so nothing about reachability moves. See pruneSealedBands.
+  pruneSealedBands(grid, plan.secrets);
 
   // ── LIGHT PUZZLE: scatter braziers + seal a loot vault (maze/lamp-puzzle).
   // Author it here (before parts are built) so the lamp spots ride the SAME
