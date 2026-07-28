@@ -273,7 +273,10 @@ function skillsBody(): string {
       ? `<span style="color:${GOLD};font-size:9px;letter-spacing:1px">MAX</span>`
       : `<button data-act="abrank:${id}" class="gmenu-toggle ${state.skillPoints >= cost ? "on" : "off"}" title="rank ${rank + 1} — ${cost} point${cost === 1 ? "" : "s"}">+${cost}pt</button>`;
     const controls = has
-      ? `<span class="gmenu-pips">${pips}</span>${rankBtn}
+      // `.gmenu-pips` stacks VERTICALLY — it was written for the tall node
+      // cards in the tree columns. On a single-line ability row that reads as
+      // three specks; laid out along the row it reads as a rank meter.
+      ? `<span class="gmenu-pips" style="flex-direction:row;margin-left:0;align-items:center">${pips}</span>${rankBtn}
          <button data-act="abq:${id}" class="gmenu-toggle ${onQ ? "on" : "off"}">Q</button>
          <button data-act="abe:${id}" class="gmenu-toggle ${onE ? "on" : "off"}">E</button>`
       : `<span style="color:#6c5a3e;font-size:9px;letter-spacing:1px">🔒 unlock in ARCANA</span>`;
