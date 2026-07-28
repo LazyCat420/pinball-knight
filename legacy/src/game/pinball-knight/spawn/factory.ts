@@ -22,6 +22,7 @@ import { themeFor } from "../maze/prefabs";
 import { Animator } from "../engine/render/animator";
 import { ZOMBIE_VARIANTS } from "../render/cel-painter";
 import { createActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { sheetFor } from "../boot/sheets";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { ZOMBIE_TYPES, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "../zombie-types";
 
@@ -54,14 +55,14 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
 /** Expansion-roster reused-sheet map: which existing atlas + tint + scale each
  *  new kind borrows (art is placeholder; behavior in zombie.ts carries identity). */
 const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
-  hound: { sheet: () => state.spiderSheet, tint: 0xc23a2a, scale: 1.05 }, // red hunting hound
-  bloater: { sheet: () => state.slimeSheet, tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
-  necromancer: { sheet: () => state.spitterSheet, tint: 0x8a5cd0, scale: 1.05 }, // purple caster
-  warden: { sheet: () => state.bruteSheet, tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
-  wisp: { sheet: () => state.ghostSheet, tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
-  sapper: { sheet: () => state.magnetSheet, tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
-  crystalback: { sheet: () => state.golemSheet, tint: 0x8fdfff, scale: 1.12 }, // crystalline golem
-  mimic: { sheet: () => state.golemSheet, tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
+  hound: { sheet: () => sheetFor("spider"), tint: 0xc23a2a, scale: 1.05 }, // red hunting hound
+  bloater: { sheet: () => sheetFor("slime"), tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
+  necromancer: { sheet: () => sheetFor("spitter"), tint: 0x8a5cd0, scale: 1.05 }, // purple caster
+  warden: { sheet: () => sheetFor("brute"), tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
+  wisp: { sheet: () => sheetFor("ghost"), tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
+  sapper: { sheet: () => sheetFor("magnet"), tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
+  crystalback: { sheet: () => sheetFor("golem"), tint: 0x8fdfff, scale: 1.12 }, // crystalline golem
+  mimic: { sheet: () => sheetFor("golem"), tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
 };
 
 /** Spawn an expansion enemy from its reused sheet + tint; null if art missing. */
@@ -82,12 +83,12 @@ export function makeExpansion(kind: EnemyKind, x: number, z: number, speed: numb
  * `RESKIN` keeps its name so the debug ring + spawn table read unchanged.
  */
 export const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; scale: number }>> = {
-  goblin: { sheet: () => state.goblinSheet, scale: 1.0 },
-  pin: { sheet: () => state.pinSheet, scale: 0.85 },
-  golem: { sheet: () => state.golemSheet, scale: 1.12 },
-  chomper: { sheet: () => state.chomperSheet, scale: 1.1 },
-  magnet: { sheet: () => state.magnetSheet, scale: 0.95 },
-  webspinner: { sheet: () => state.webspinnerSheet, scale: 1.05 },
+  goblin: { sheet: () => sheetFor("goblin"), scale: 1.0 },
+  pin: { sheet: () => sheetFor("pin"), scale: 0.85 },
+  golem: { sheet: () => sheetFor("golem"), scale: 1.12 },
+  chomper: { sheet: () => sheetFor("chomper"), scale: 1.1 },
+  magnet: { sheet: () => sheetFor("magnet"), scale: 0.95 },
+  webspinner: { sheet: () => sheetFor("webspinner"), scale: 1.05 },
 };
 
 /** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
@@ -110,10 +111,12 @@ const pendingMinis: Array<{ x: number; z: number; speed: number }> = [];
 export function drainPendingMinis(): void {
   if (!pendingMinis.length) return;
   for (const spec of pendingMinis) {
-    if (!state.slimeSheet) break;
+    // The parent slime already forced this atlas into existence, so sheetFor is
+    // a cache read here — it just isn't a guard that can silently eat the split.
+    const slime = sheetFor("slime");
     // Two minis scatter to either side of the corpse.
     for (const side of [-1, 1]) {
-      const mini = makeZombie(state.slimeSheet, spec.x + side * 0.35, spec.z + (Math.random() - 0.5) * 0.3, spec.speed * SLIME_MINI_SPEED_MULT, {
+      const mini = makeZombie(slime, spec.x + side * 0.35, spec.z + (Math.random() - 0.5) * 0.3, spec.speed * SLIME_MINI_SPEED_MULT, {
         kind: "slime",
         hp: SLIME_MINI_HP,
       });
@@ -256,18 +259,24 @@ export function makeZombie(
  */
 export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: number, level: number): Zombie | null {
   switch (kind) {
+    // NB the `state.xSheet &&` guards these lines used to carry are gone, and
+    // deliberately. They dated from when every atlas was built up front, so
+    // they could only ever be true — but once sheets are built on demand a
+    // falsy read stops being "art is missing" and becomes "art has not been
+    // asked for yet", and the guard silently deletes the spawn instead. Going
+    // through sheetFor() makes the request the thing that builds it.
     case "brute":
-      return level >= BRUTE_FROM_LEVEL && state.bruteSheet ? makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }) : null;
+      return level >= BRUTE_FROM_LEVEL ? makeZombie(sheetFor("brute"), x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }) : null;
     case "spitter":
-      return level >= SPITTER_FROM_LEVEL && state.spitterSheet ? makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" }) : null;
+      return level >= SPITTER_FROM_LEVEL ? makeZombie(sheetFor("spitter"), x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" }) : null;
     case "spider":
-      return level >= SPIDER_FROM_LEVEL && state.spiderSheet ? makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" }) : null;
+      return level >= SPIDER_FROM_LEVEL ? makeZombie(sheetFor("spider"), x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" }) : null;
     case "ghost":
-      return level >= GHOST_FROM_LEVEL && state.ghostSheet ? makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" }) : null;
+      return level >= GHOST_FROM_LEVEL ? makeZombie(sheetFor("ghost"), x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" }) : null;
     case "bat":
-      return level >= BAT_FROM_LEVEL && state.batSheet ? makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" }) : null;
+      return level >= BAT_FROM_LEVEL ? makeZombie(sheetFor("bat"), x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" }) : null;
     case "slime":
-      return level >= SLIME_FROM_LEVEL && state.slimeSheet ? makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" }) : null;
+      return level >= SLIME_FROM_LEVEL ? makeZombie(sheetFor("slime"), x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" }) : null;
     case "goblin":
       return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
     case "chomper":
@@ -322,23 +331,26 @@ function themedHordePick(hash: number, x: number, z: number, baseSpeed: number, 
 export function spawnHordeMember(hash: number, x: number, z: number, baseSpeed: number, level: number): Zombie {
   const themed = themedHordePick(hash, x, z, baseSpeed, level);
   if (themed) return themed;
-  if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0 && state.bruteSheet) {
-    return makeZombie(state.bruteSheet, x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" });
+  // As in spawnKind: the sheet is fetched, not tested. A `state.xSheet` guard
+  // here would be a horde-composition bug the moment atlases became lazy —
+  // every brute would quietly fall through to a plain zombie.
+  if (level >= BRUTE_FROM_LEVEL && hash % BRUTE_RATIO === 0) {
+    return makeZombie(sheetFor("brute"), x, z, baseSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" });
   }
-  if (level >= SPITTER_FROM_LEVEL && hash % SPITTER_RATIO === 1 && state.spitterSheet) {
-    return makeZombie(state.spitterSheet, x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" });
+  if (level >= SPITTER_FROM_LEVEL && hash % SPITTER_RATIO === 1) {
+    return makeZombie(sheetFor("spitter"), x, z, baseSpeed * SPITTER_SPEED_FACTOR, { kind: "spitter" });
   }
-  if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2 && state.spiderSheet) {
-    return makeZombie(state.spiderSheet, x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" });
+  if (level >= SPIDER_FROM_LEVEL && hash % SPIDER_RATIO === 2) {
+    return makeZombie(sheetFor("spider"), x, z, baseSpeed * SPIDER_SPEED_FACTOR, { kind: "spider" });
   }
-  if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3 && state.ghostSheet) {
-    return makeZombie(state.ghostSheet, x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" });
+  if (level >= GHOST_FROM_LEVEL && hash % GHOST_RATIO === 3) {
+    return makeZombie(sheetFor("ghost"), x, z, baseSpeed * GHOST_SPEED_FACTOR, { kind: "ghost" });
   }
-  if (level >= BAT_FROM_LEVEL && hash % BAT_RATIO === 3 && state.batSheet) {
-    return makeZombie(state.batSheet, x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" });
+  if (level >= BAT_FROM_LEVEL && hash % BAT_RATIO === 3) {
+    return makeZombie(sheetFor("bat"), x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" });
   }
-  if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4 && state.slimeSheet) {
-    return makeZombie(state.slimeSheet, x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
+  if (level >= SLIME_FROM_LEVEL && hash % SLIME_RATIO === 4) {
+    return makeZombie(sheetFor("slime"), x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" });
   }
   // ── The Wave-B pinball roster (reskins; see RESKIN) ──
   if (level >= GOBLIN_FROM_LEVEL && hash % GOBLIN_RATIO === 1) {

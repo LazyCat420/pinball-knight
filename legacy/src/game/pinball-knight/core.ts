@@ -256,7 +256,7 @@ import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
 import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
-import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets } from "./boot/sheets";
+import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets, sheetFor, stopSheetBackfill, SHEET_KEY_BY_KIND } from "./boot/sheets";
 import { beginRunLedger, submitRunScore } from "./run/ledger";
 import { nearestOpenTile } from "./maze/nearest-open-tile";
 import { makeZombie, spawnKind, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, makeReskin, queueMini, queueSummon, resetZombieNid, RESKIN } from "./spawn/factory";
@@ -530,24 +530,16 @@ export function launchDungeonGame(onExit?: () => void): void {
     spawnGhost: (nid, kind, x, z, boss) => {
       // Snapshot said an enemy exists that we don't have — build a rendering
       // body for it. Sheet by kind, zombie-sheet fallback for exotic kinds.
+      // Through sheetFor, not the raw state fields: atlases are built lazily
+      // (boot/sheets.ts), and a PEER can be a floor deeper than us — so the one
+      // monster we have never met is exactly the one whose sheet the backfill
+      // may not have reached. Reading the field would draw it as a zombie.
       const sheet =
         kind === "reaper" || boss
           ? reaperSheet()
-          : {
-              zombie: state.zombieSheet,
-              spider: state.spiderSheet,
-              brute: state.bruteSheet,
-              spitter: state.spitterSheet,
-              ghost: state.ghostSheet,
-              bat: state.batSheet,
-              slime: state.slimeSheet,
-              goblin: state.goblinSheet,
-              pin: state.pinSheet,
-              golem: state.golemSheet,
-              chomper: state.chomperSheet,
-              magnet: state.magnetSheet,
-              webspinner: state.webspinnerSheet,
-            }[kind as string] ?? state.zombieSheet;
+          : SHEET_KEY_BY_KIND[kind as string]
+            ? sheetFor(SHEET_KEY_BY_KIND[kind as string])
+            : state.zombieSheet;
       if (!sheet) return null;
       const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
       z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)
@@ -1388,7 +1380,11 @@ function buildLevel(level: number): void {
   // original reasoning is that the king IS the set piece there, but the two do
   // not compete: the ring is what makes the arena read as an arena, and the
   // king now has a hall to fight in (maze/track-floor.ts carveBossChamber).
-  if (level >= 3 && state.bruteSheet && state.stairs && state.scene) {
+  // `state.bruteSheet` used to be part of this condition. It could never be
+  // false when every atlas was built up front — but with lazy atlases it would
+  // have deleted the whole exit arena on any floor the backfill hadn't reached
+  // the brute yet. The sheet is fetched below, where it is used.
+  if (level >= 3 && state.stairs && state.scene) {
     const s = state.stairs;
     // A ring of bumpers around the exit — carom off them mid-brawl.
     //
@@ -1432,7 +1428,7 @@ function buildLevel(level: number): void {
       const spot = nearestOpenTile(grid, s.i, s.j, n + 1);
       if (!spot) break;
       const c = tileCenter(grid, spot.i, spot.j);
-      state.zombies.push(makeZombie(state.bruteSheet, c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }));
+      state.zombies.push(makeZombie(sheetFor("brute"), c.x, c.z, cfg.zombieSpeed * BRUTE_SPEED_FACTOR, { kind: "brute" }));
     }
     // A guaranteed prize on the exit's doorstep (gold idol + a heal).
     const prizeSpot = nearestOpenTile(grid, s.i, s.j, 1);
@@ -2666,6 +2662,10 @@ export function exitDungeonGame(): void {
   stopPresence(); // full game exit → leave the pool + close the socket
   disposeBoss(); // free any live Reaper King meshes
   disposeSecretDoors();
+  // The idle atlas backfill (boot/sheets.ts) can still have callbacks queued.
+  // Left running, the next one paints a sheet onto a state disposeAll has
+  // already torn down — an atlas nothing will ever dispose.
+  stopSheetBackfill();
 
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);

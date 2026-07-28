@@ -345,12 +345,67 @@ const DITHER_AMP = 10;
  * Now the art IS the texture: one resample, at the grid the art was authored
  * for, mapped 1:1 to screen pixels via SPRITE_UNITS.
  */
+/**
+ * The shared crush target, used ONLY by the immediate-consumer path below.
+ *
+ * ⚠️ WHY THIS IS NOT SIMPLY `crushToGrid`'s OUTPUT — read before "simplifying".
+ *
+ * `crushToGrid`'s return value is not always consumed immediately.
+ * `staticTexture()` does `new THREE.CanvasTexture(crushToGrid(canvas))` and
+ * caches it: that RETAINS the canvas as a live texture source for the session.
+ * If that caller got the shared canvas, every cached item texture would end up
+ * showing whichever sprite was crushed last — the tavern shop's icons all
+ * turning into the same picture. It reads as an art bug and would never be
+ * looked for in a perf change.
+ *
+ * So `crushToGrid` still returns a canvas the caller OWNS, and the reuse lives
+ * in `crushToGridShared`, whose one caller (`paintFrame`) blits it on the very
+ * next line. That is where the win is anyway: 824 of the ~830 crushes in a load
+ * are atlas frames.
+ */
+let _crushCanvas: HTMLCanvasElement | null = null;
+let _crushCtx: CanvasRenderingContext2D | null = null;
+
+/**
+ * Crush into the SHARED canvas and return it.
+ *
+ * The result is valid only until the next call. Callers that keep it (a texture
+ * source, a cache) must use `crushToGrid` instead.
+ *
+ * `willReadFrequently: true` is the other half of the win: this context is
+ * `getImageData`'d on every single call, which on a GPU-backed canvas forces a
+ * readback each time. Measured together, reuse + the hint cut the crush loop by
+ * 46% (LOAD_PLAN.md §4) — far more than the palette snap everyone reaches for.
+ */
+function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
+  const g = SPRITE_PIXEL_GRID;
+  if (!_crushCanvas || _crushCanvas.width !== g) {
+    _crushCanvas = document.createElement("canvas");
+    _crushCanvas.width = g;
+    _crushCanvas.height = g;
+    _crushCtx = _crushCanvas.getContext("2d", { willReadFrequently: true });
+  }
+  const sctx = _crushCtx!;
+  // The previous frame's pixels are still there and the incoming art has a
+  // transparent surround — without this every sprite inherits the last one's
+  // silhouette as a halo.
+  sctx.clearRect(0, 0, g, g);
+  crushInto(sctx, src, g);
+  return _crushCanvas;
+}
+
 export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   const small = document.createElement("canvas");
   small.width = g;
   small.height = g;
-  const sctx = small.getContext("2d")!;
+  const sctx = small.getContext("2d", { willReadFrequently: true })!;
+  crushInto(sctx, src, g);
+  return small;
+}
+
+/** The crush itself — downscale, hard alpha cutout, dither, palette snap. */
+function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: number): void {
   sctx.imageSmoothingEnabled = true;
   sctx.imageSmoothingQuality = "high";
   sctx.drawImage(src, 0, 0, g, g);
@@ -405,7 +460,6 @@ export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
     }
   }
   sctx.putImageData(im, 0, 0);
-  return small;
 }
 
 /**
@@ -436,18 +490,43 @@ export function renderPaintIcon(paint: FramePaint): string {
   return crushToGrid(canvas).toDataURL();
 }
 
+/**
+ * The paint scratch, reused across every frame of every atlas.
+ *
+ * Same reasoning as the crush canvas above, and the same measurement: this used
+ * to be a fresh 128×128 canvas (plus its own 2D context) PER FRAME, so one
+ * `/dungeon` load allocated 1,828 canvases between here and `crushToGrid`.
+ * Nothing retains it — `paintFrame` blits and moves on — so one is enough.
+ */
+let _paintCanvas: HTMLCanvasElement | null = null;
+let _paintCtx: CanvasRenderingContext2D | null = null;
+
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
 function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: number, row: number): void {
-  const scratch = document.createElement("canvas");
-  scratch.width = SPRITE_PX;
-  scratch.height = SPRITE_PX;
-  const ctx = scratch.getContext("2d");
-  if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite frame");
+  if (!_paintCanvas) {
+    _paintCanvas = document.createElement("canvas");
+    _paintCanvas.width = SPRITE_PX;
+    _paintCanvas.height = SPRITE_PX;
+    _paintCtx = _paintCanvas.getContext("2d");
+    if (!_paintCtx) throw new Error("[dungeon] could not get 2D context for sprite frame");
+  }
+  const ctx = _paintCtx!;
+  // Non-negotiable on a reused canvas: painters draw a character on a
+  // transparent field and do not clear first, so without this every frame is
+  // composited on top of the previous one.
+  ctx.clearRect(0, 0, SPRITE_PX, SPRITE_PX);
+  // Painters mutate transform/alpha/composite freely. save/restore keeps one
+  // frame's leftover state from bleeding into the next now that they share a
+  // context — with a fresh canvas per frame this was free.
+  ctx.save();
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
+  ctx.restore();
   // The strip cell is the GRID, not the paint box — the crushed art goes in at
   // its native size and is never scaled again between here and the screen.
-  strip.drawImage(crushToGrid(scratch), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
+  // Shared crush target: blitted on this line, never retained. See the warning
+  // on crushToGridShared.
+  strip.drawImage(crushToGridShared(_paintCanvas), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
 }
 
 /**
