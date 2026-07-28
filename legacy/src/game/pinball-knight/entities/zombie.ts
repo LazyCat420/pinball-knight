@@ -262,21 +262,31 @@ function hasLineOfSight(g: Grid, ax: number, az: number, bx: number, bz: number)
 const NO_PACK = { packNear: 0, packCommitted: false };
 
 /**
- * How many living foes running the SAME policy are within PACK_RANGE, and has
- * any of them already gone? Counts itself, so PACK_MIN reads as "how many of us
- * it takes" rather than "how many friends".
+ * How much backup this actor has: living, awake foes within PACK_RANGE, itself
+ * included — ANY of them, not just other pack-hunters. `packCommitted` is
+ * narrower on purpose (a fellow pack-hunter that has already gone), because
+ * that is what propagates the surge across the group in one frame.
+ *
+ * Counting only same-policy neighbours was the first version, and a headless
+ * census on a live floor killed it: four pack-hunters spawned on a ring held at
+ * 4.99 units and never engaged, because a 12%-weight sub-type is scattered far
+ * wider than 5.5 units in a real maze. That is the "passes every test, never
+ * occurs" failure, and the fix is also the better fantasy — the thing is not
+ * waiting for other midgets, it is waiting to not be alone.
  *
  * O(n) per pack-hunter, which is why `needsPack` gates it: the horde budget is
- * 175 actors and only one sub-type (~12% of zombie spawns) ever asks.
+ * 175 actors and only one sub-type ever asks.
  */
 function packCensus(z: Zombie, move: MovementKind): { packNear: number; packCommitted: boolean } {
   let near = 0;
   let committed = false;
   for (const o of state.zombies) {
-    if (o.mode === "dead" || movementOf(o) !== move) continue;
+    if (o.mode === "dead" || !o.aggro) continue;
+    const om = movementOf(o);
+    if (om === "inert") continue; // a rack of bowling pins is not backup
     if (Math.hypot(o.x - z.x, o.z - z.z) > PACK_RANGE) continue;
     near++;
-    if ((o.moveCommit ?? 0) > 0) committed = true;
+    if (om === move && (o.moveCommit ?? 0) > 0) committed = true;
   }
   return { packNear: near, packCommitted: committed };
 }

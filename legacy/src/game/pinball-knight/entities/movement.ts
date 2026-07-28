@@ -161,9 +161,22 @@ export interface MoveCtx {
   contactRange: number;
   /** Clear straight line from actor to player? Only computed for ambushers. */
   los: boolean;
-  /** Living neighbours running the same policy within PACK_RANGE, self included. */
+  /**
+   * Living, awake foes within PACK_RANGE, self included — ANY of them, not just
+   * other pack-hunters.
+   *
+   * That distinction is the difference between a shipped mechanic and a dead
+   * one. Counting only same-policy neighbours was the first version and a
+   * headless census killed it: pack-hunters are one sub-type at 12% weight, so
+   * a real floor scatters four or five of them across the whole maze and three
+   * are almost never within 5.5 units of each other. Measured on a live floor,
+   * a "quorum" of four spawned on a ring held at 4.99 and NEVER engaged — a
+   * behaviour that passes every unit test and never occurs in the game.
+   *
+   * The fantasy was always "it won't come at you alone", and backup is backup.
+   */
   packNear: number;
-  /** True when one of those neighbours has already committed. */
+  /** True when a nearby pack-hunter has already committed — the surge spreads. */
   packCommitted: boolean;
 }
 
