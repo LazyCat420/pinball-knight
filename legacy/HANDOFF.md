@@ -18,6 +18,61 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > the tree and **left them strictly alone** — committed only its own files and
 > deployed from a clean `HEAD` worktree so that work did not ship early.
 
+## ✅ DECLONE WAVE 1 SHIPPED — momentum is a dial (2026-07-27, `ed5678e`…`b1ab552`)
+
+Read `src/game/pinball-knight/DECLONE_PLAN.md` §0-§2. §2 is now a record of what
+shipped (with its two deliberate deviations written down); §3-§6 are the
+remaining waves, one per session, in order.
+
+**Why the wave exists.** A two-track review — a full code audit plus a digest of
+the 12 reference-game reports in `docs/game-dev-rules/game-research/` — found
+that the pinball layer and the ARPG layer are two games sharing a HUD. Nearly
+every borrowed mechanic is a faithful, speed-blind port (dodge roll ~85%
+Gungeon, cards ~90% Ragnarok Online, refine gamble ~80% RO, reaper ~80%
+Gungeon), and the ENTIRE momentum-build interface was one binary constant:
+`momSpeed > CARD_PINBALL_SPEED` (8 of a 22 ceiling). Fully on at 36% of top
+speed, worth nothing above it.
+
+**What landed.** `momentumT()`/`momentumScaled()` in `entities/combo-curve.ts` —
+one concave hyperbolic ramp, 0 at a walk, 1 at terminal. Pinball cards, the
+tree's two momentum nodes and the wrecking ball's bespoke ramp all fold onto it.
+Card stacks now run through the house DR curve. 18 of 23 part kinds were
+invisible to the named-combo system; bumper-lighting, jackpots, flippers,
+mirrors and slings record shot identity now, and 6 new named combos spend the
+wider vocabulary. `scoreRun` finally reads the shot layer. The grade's pace axis
+was raw wall-clock (a brisk walk graded like a carried line) and is now FLOW;
+style capped at combo 8, exactly where the combo curve gets interesting, now 24.
+Clear a floor untouched and keep a heart. The S/A vault bonus has existed
+silently since Wave F and now says so.
+
+**Two bugs fixed on the way.** `flippercharge` ASSIGNED `momSpeed` instead of
+`max()`-ing it, so casting the signature speed ability while fast made you
+slower. The spinpad was a `Math.random()` fling — unaimable and not
+co-op-replayable; it is a rotating deflector now, sharing one phase function
+with the rotor the renderer draws.
+
+**Two deviations from the plan, both deliberate — see DECLONE_PLAN §2.**
+Softening the whole card stack made a SINGLE card under-deliver its printed
+value, which would have made `describeModifier` lie; the curve exempts the best
+card. And "bounces sustain, kills grow" is Hotline Miami's rule for a KILL
+combo — applied literally to a BOUNCE combo it would have turned `bounceCombo`
+into a kill counter and invalidated every curve calibrated on it, so it shipped
+inverted (bounces grow, a momentum kill refreshes the window).
+
+**Verified, not just built.** 1631 tests, 0 tsc errors in `pinball-knight`,
+coop-determinism + floor-pipeline green, `next build` clean, and a real headless
+run: the bot launched, combo climbed to 21, speeds rode 13-18.4 u/s, and the
+descend fired the flawless heart (hp 6→7) with zero non-WebSocket console
+errors. Deployed and re-checked on the NAS (`10.0.0.16:5174/dungeon`, 10 probes
+over a minute all 200, canvas renders, 0 console errors).
+
+**Gotcha for the next session:** `__dungeon*` hooks are DEV-ONLY — they do not
+exist in the production container, so headless prod checks must go through the
+canvas, not the hooks. Locally, `__dungeonLaunch` sets `momSpeed` without
+releasing the plunger, so the knight sits frozen at `plungerArmed: true` and
+looks like a dead sim; use `__dungeonBot()` to actually play. Under SwiftShader
+RAF runs at ~1.7fps — poll with `wait_for_function`, never a tight loop.
+
 ## ✅ DOORWAYS SHIPPED — uniform openings between sections (2026-07-27)
 
 Third attempt, and the one that landed. Read
