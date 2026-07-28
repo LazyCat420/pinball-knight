@@ -455,7 +455,16 @@ export const ARCHETYPES: FloorArchetype[] = [
       laneScale: 1.35,
       fill: 0.62,
       linkChance: 0.3,
-      plazaFrac: 0.16,
+      // 0.16 was not enough to make the name true. Censused over 36 floors per
+      // archetype, the Great Hall's largest fully-open blob covered 0.153 of
+      // its walkable area — BEHIND the Warrens' 0.185, which has no plaza and
+      // gets there by accident where a dense web's lanes merge. An archetype
+      // whose entire promise is "one vast chamber" must own the floor's biggest
+      // chamber by measurement, not by flavour text; area goes as the square,
+      // so 0.16 -> 0.24 is a 2.25x hall. `buildTrackFloor` steps the radius
+      // down until it fits and records `archetype-has-its-chamber` if none
+      // does, so a floor that cannot host one is visible rather than silent.
+      plazaFrac: 0.29,
       maxLenFrac: 0.45,
       survive: 0.1,
     },
@@ -513,7 +522,14 @@ export const ARCHETYPES: FloorArchetype[] = [
       rules: { perimeterBias: 0.85 },
       foodPer1k: 3.6,
       relayPer1k: 5.2,
-      minLoops: 3,
+      // Every gallery is a closed loop and every gate between two of them adds
+      // another, so a Ring Keep that measures 2 independent cycles is a Ring
+      // Keep with one ring. Raised 3 -> 4 once the relay keep-out stopped the
+      // mesh short-circuiting the galleries: without a loop floor to hold it,
+      // the same pruner that used to eat the Spine takes the inner rings, and
+      // a blind census then reads a third of Ring Keeps as Spines (both are
+      // "long straight roads, few loops").
+      minLoops: 4,
       laneScale: 1.05,
       fill: 0.74,
       linkChance: 0.2,

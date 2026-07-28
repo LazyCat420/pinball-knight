@@ -130,6 +130,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
     let lane = 0;
     let rank = 0;
     let open = 0;
+    let chamber = 0;
     let n = 0;
     for (let s = 0; s < seeds; s++) {
       const { f } = archFloor(archIndex, level, 0xc0ffee + s * 7919);
@@ -137,10 +138,11 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
       const m = measureFloor(f.grid, f.start, f.stairs, f.mask, { routeFrom: f.chute?.mouth });
       lane += m.laneShare;
       open += m.openShare;
+      chamber += m.chamberShare;
       rank += floorCircuitRank(f);
       n++;
     }
-    return { lane: lane / n, rank: rank / n, open: open / n, n };
+    return { lane: lane / n, rank: rank / n, open: open / n, chamber: chamber / n, n };
   }
 
   const ID = Object.fromEntries(ARCHETYPES.map((a, i) => [a.id, i])) as Record<string, number>;
@@ -164,6 +166,32 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
       // maze that happens to have roads. Compare LANE share rather than open
       // share — a dense maze opens plenty of tiles, just not as track.
       expect(hall.lane).toBeGreaterThan(warrens.lane * 1.4);
+    }
+  });
+
+  it("the Great Hall owns the floor's biggest ROOM, not just its widest road", () => {
+    // The defect this catches, and it shipped for two waves: the Great Hall
+    // led `laneShare` and still did not have the largest open chamber on its
+    // own floor — 0.153 against the Warrens' 0.185, which has no plaza at all.
+    // `laneShare` cannot tell a plaza from a wide road (both are lane tiles)
+    // and `openShare` had the Hall as the LEAST open archetype, so nothing in
+    // the old signature could see it. A card that promises "one vast chamber"
+    // has to be checkable against the chamber.
+    // Asserted as a RANKING, not a margin. "The Great Hall has the biggest
+    // room" is the constraint the descent card states; any particular lead
+    // (it runs 1.1-1.9x depending on depth) is today's tuning and would make
+    // this a change detector that goes red on the next legitimate pass.
+    for (const level of [4, 12]) {
+      const hall = signature(ID.greathall, level, 8);
+      const others = ARCHETYPES.map((a, i) => ({ id: a.id, i }))
+        .filter((o) => o.i !== ID.greathall)
+        .map((o) => ({ id: o.id, chamber: signature(o.i, level, 8).chamber }))
+        .sort((a, b) => b.chamber - a.chamber);
+      expect(hall.n).toBeGreaterThan(0);
+      expect(
+        hall.chamber,
+        `L${level}: the Great Hall's biggest room is ${hall.chamber.toFixed(3)} of the floor, behind ${others[0].id} at ${others[0].chamber.toFixed(3)}`,
+      ).toBeGreaterThan(others[0].chamber);
     }
   });
 

@@ -144,7 +144,12 @@ function scatterPlacer(
   h: number,
   rng: () => number,
   nodes: TrackNode[],
-  opts: { margin?: number; minSep?: number; keepOut?: { x: number; z: number; r: number } },
+  // `keepOut` is a PREDICATE, not a disc. It started as `{x, z, r}` for the
+  // hub's plaza, and the moment the spine needed to protect a long thin
+  // stadium there was no radius that expressed it: a disc big enough to cover
+  // the boulevard also covers half the floor. A predicate lets each layout
+  // state its own exclusion in its own geometry and costs the caller a closure.
+  opts: { margin?: number; minSep?: number; keepOut?: (x: number, z: number) => boolean },
   tries = 40,
 ): (food: boolean) => boolean {
   const margin = opts.margin ?? Math.max(3, Math.min(w, h) * 0.12);
@@ -158,7 +163,7 @@ function scatterPlacer(
     for (let t = 0; t < tries; t++) {
       const x = margin + rng() * (w - 2 * margin);
       const z = margin + rng() * (h - 2 * margin);
-      if (keepOut && (x - keepOut.x) ** 2 + (z - keepOut.z) ** 2 < keepOut.r * keepOut.r) continue;
+      if (keepOut?.(x, z)) continue;
       if (!far(x, z)) continue;
       nodes.push({ id: nodes.length, x, z, food });
       return true;
@@ -246,7 +251,7 @@ export function layoutNodes(w: number, h: number, rng: () => number, opts: Layou
     }
   };
 
-  let keepOut: { x: number; z: number; r: number } | undefined;
+  let keepOut: ((x: number, z: number) => boolean) | undefined;
 
   if (opts.layout === "spine") {
     // ── THE SPINE MUST BE A LOOP, and this is the whole lesson of the layout.
@@ -275,7 +280,17 @@ export function layoutNodes(w: number, h: number, rng: () => number, opts: Layou
     const cos = Math.abs(Math.cos(theta));
     const sin = Math.abs(Math.sin(theta));
     // Half-width of the stadium — the gap between the outbound and return runs.
-    const half = Math.max(6, Math.min(x1 - x0, z1 - z0) * (0.16 + rng() * 0.08));
+    //
+    // Widened from 0.16-0.24. The Spine runs the widest lanes in the game
+    // (laneScale 1.25), and at the old half-width the two U-turns at the ends
+    // were not hairpins, they were FILLED BOWLS: a turn of radius `half` swept
+    // by a lane that wide leaves no island in the middle. Measured, that gave
+    // the Spine the largest open blob of any archetype — 0.230 of walkable
+    // against the Great Hall's 0.213 — so the floor whose card promises "one
+    // long road · everything else is a pocket" was quietly the floor with the
+    // biggest room, and the Hall's one structural feature lost to it.
+    // A wider stadium keeps the ends as turns and the middle as rock.
+    const half = Math.max(8, Math.min(x1 - x0, z1 - z0) * (0.22 + rng() * 0.08));
     // Longest half-length whose rotated bounding box still fits the margins.
     // Solving both extents at once rather than clamping afterwards keeps the
     // shape centred instead of shoved against a wall.
@@ -291,20 +306,86 @@ export function layoutNodes(w: number, h: number, rng: () => number, opts: Layou
     const pz = ux;
     const corner = (a: number, b: number): [number, number] => [cx + ux * len * a + px * half * b, cz + uz * len * a + pz * half * b];
     alongPolyline([corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)], opts.foods + 1);
+    // ── KEEP THE RELAYS OUT OF THE INFIELD ──────────────────────────────────
+    //
+    // The stadium survives `pruneLeaves` by being a loop, but nothing was
+    // stopping a relay landing INSIDE it — and a relay in the infield is a
+    // node the mesh will happily chord across the middle of the boulevard,
+    // giving the flow solver a shortcut that costs half the lap. The result is
+    // a "spine" whose longest sustained straight varies wildly seed to seed:
+    // censused over 36 floors, longest 3-wide road ran 0.463 of the long side
+    // with an sd of 0.22 — i.e. some Spine floors had no boulevard at all,
+    // which is the one thing the archetype promises.
+    //
+    // The exclusion is the stadium's own geometry (a capsule inset from the
+    // runs), not a disc: no radius covers a long thin shape without also
+    // covering the floor. Food is unaffected — it is already ON the stadium.
+    const infield = Math.max(2, half - 3);
+    keepOut = (x: number, z: number): boolean => {
+      const dx = x - cx;
+      const dz = z - cz;
+      const along = dx * ux + dz * uz;
+      const across = dx * px + dz * pz;
+      return Math.abs(along) < len && Math.abs(across) < infield;
+    };
   } else if (opts.layout === "ring") {
-    // Concentric rectangles, outermost first, each inset by a fraction of the
-    // shorter half-span so the galleries are visibly separate roads.
-    const rings = Math.max(2, Math.min(3, Math.round(Math.min(w, h) / 34) + 1));
-    const inset = Math.min(x1 - x0, z1 - z0) / (2 * (rings + 1));
+    // ── CONCENTRIC GALLERIES, AND THE CONSTRAINT THAT MAKES THEM GALLERIES ──
+    //
+    // `meshNeighbours` wires every node to its K NEAREST. So if the gap
+    // between two rings is smaller than the gap between two food nodes ALONG a
+    // ring, each node's nearest neighbours are the ones on the ring next door,
+    // and the mesh comes out as RUNGS — a ladder — before the flow solver ever
+    // runs. The concentric layout is then meshed away and what survives is
+    // indistinguishable from a scatter web.
+    //
+    // That is what was happening. On a level-20 floor the old numbers put 20
+    // food on a 342-tile outer ring (spacing ~17) with an inset of 8.4, so
+    // every cross-ring neighbour was twice as close as every along-ring one.
+    // Censused: the Ring Keep's concentric-banding score ran 1.75 against
+    // 1.08-1.36 for archetypes with no rings at all (Cohen's d 0.88), and it
+    // was the confusion sink of a blind classifier — warrens, spine and
+    // greathall floors were all misread as Ring Keeps.
+    //
+    // So the inset is derived FROM the spacing rather than from the ring
+    // count, and the ring count drops until both fit inside the floor. Fix
+    // topology in topology-land: no amount of tile-level work downstream can
+    // put a gallery back once the mesh has decided it is a rung.
+    const span = Math.min(x1 - x0, z1 - z0);
+    /** Food on ring `r` of `n` — outer rings are longer roads and get more. */
+    const shareOf = (r: number, n: number): number => Math.max(3, Math.round((opts.foods * (n - r)) / ((n * (n + 1)) / 2)));
+    let rings = Math.max(2, Math.min(3, Math.round(Math.min(w, h) / 34) + 1));
+    let inset = 0;
+    for (; rings >= 2; rings--) {
+      // Widest along-ring spacing over the rings we would draw. The outermost
+      // is the longest road but also gets the most food, so it is not
+      // automatically the loosest — measure them all.
+      let worst = 0;
+      let placedGuess = 0;
+      for (let r = 0; r < rings; r++) {
+        const n = Math.min(shareOf(r, rings), Math.max(1, opts.foods - placedGuess));
+        placedGuess += n;
+        // Perimeter of ring r under the inset we are about to solve for is
+        // itself inset-dependent, so use the outermost perimeter as the upper
+        // bound: it can only overestimate the spacing, which is the safe
+        // direction for a separation constraint.
+        worst = Math.max(worst, (2 * (x1 - x0 + z1 - z0)) / Math.max(1, n));
+      }
+      // 1.25x, not 1.0: equal is a coin flip in a K-nearest tie, and a tie
+      // broken the wrong way is a rung.
+      inset = Math.max(span / (2 * (rings + 1)), worst * 1.25);
+      // Every ring must still enclose real area, or the innermost "gallery"
+      // is a dot in the middle of the floor.
+      if (inset * (rings - 1) * 2 < span * 0.62) break;
+    }
+    rings = Math.max(2, rings);
     let placed = 0;
     for (let r = 0; r < rings && placed < opts.foods; r++) {
       const a0 = x0 + inset * r;
       const b0 = z0 + inset * r;
       const a1 = x1 - inset * r;
       const b1 = z1 - inset * r;
-      // Outer rings get proportionally more food — they are longer roads.
-      const share = Math.max(3, Math.round((opts.foods * (rings - r)) / ((rings * (rings + 1)) / 2)));
-      const n = Math.min(share, opts.foods - placed);
+      if (a1 - a0 < 6 || b1 - b0 < 6) break; // a ring with no room left is not a gallery
+      const n = Math.min(shareOf(r, rings), opts.foods - placed);
       alongPolyline(
         [
           [a0, b0],
@@ -317,6 +398,29 @@ export function layoutNodes(w: number, h: number, rng: () => number, opts: Layou
       );
       placed += n;
     }
+    // Relays scattered between the galleries are the same defect as relays in
+    // the spine's infield: they are exactly the intermediate points a chord
+    // needs to cut from one gallery to the next. Keep them within a band of a
+    // ring so they bend the galleries instead of bridging them — the gates
+    // between rings are then the few the flow solver genuinely wants, which is
+    // what "the way in is inward" means.
+    const band = inset * 0.34;
+    keepOut = (x: number, z: number): boolean => {
+      for (let r = 0; r < rings; r++) {
+        const a0 = x0 + inset * r;
+        const b0 = z0 + inset * r;
+        const a1 = x1 - inset * r;
+        const b1 = z1 - inset * r;
+        if (a1 - a0 < 6 || b1 - b0 < 6) break;
+        // Chebyshev distance to the rectangle's outline.
+        const dx = Math.max(a0 - x, 0, x - a1);
+        const dz = Math.max(b0 - z, 0, z - b1);
+        const outside = Math.max(dx, dz);
+        const inside = x > a0 && x < a1 && z > b0 && z < b1 ? Math.min(x - a0, a1 - x, z - b0, b1 - z) : 0;
+        if (Math.max(outside, inside) <= band) return false; // near a gallery — allowed
+      }
+      return true;
+    };
   } else {
     // hub — a chamber with spokes. The centre node is what the carver later
     // opens into the plaza, so it must be FOOD: relays get pruned, food never is.
@@ -337,7 +441,8 @@ export function layoutNodes(w: number, h: number, rng: () => number, opts: Layou
       put(cx + Math.cos(a) * (x1 - x0) * 0.45, cz + Math.sin(a) * (z1 - z0) * 0.45, true);
     }
     // Keep relays out of the chamber, or the maze grows through the plaza.
-    keepOut = { x: cx, z: cz, r: ringR * 0.72 };
+    const chamberR = ringR * 0.72;
+    keepOut = (x: number, z: number): boolean => (x - cx) ** 2 + (z - cz) ** 2 < chamberR * chamberR;
   }
 
   const place = scatterPlacer(w, h, rng, nodes, { margin, minSep, keepOut });

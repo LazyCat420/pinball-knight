@@ -64,6 +64,22 @@ export interface FloorMetrics {
    * curiosity — it decayed 0.30 → 0.12 with depth before anyone measured it.
    */
   laneShare: number;
+  /**
+   * The floor's biggest actual ROOM ÷ walkable — the largest connected run of
+   * tiles whose whole 5×5 neighbourhood is open. A corridor can never qualify
+   * however long it is, and neither can a wide lane, so this measures the one
+   * thing `openShare` and `laneShare` both miss: whether the floor has a place
+   * to stand rather than only places to travel through.
+   *
+   * It exists because the Great Hall did not have one. Censused over 36 floors
+   * per archetype, the archetype whose descent card reads "one vast chamber ·
+   * room to really move" measured 0.153 here against 0.185 for the Warrens —
+   * which has no plaza at all and got there by accident where a dense web's
+   * lanes merge. Neither `openShare` (the Hall was the LEAST open floor) nor
+   * `laneShare` (the Hall led it) could see that, because a plaza and a wide
+   * road are the same tiles to both of them.
+   */
+  chamberShare: number;
   /** Coarse regions holding real floor area. */
   regions: number;
   /**
@@ -77,6 +93,71 @@ export interface FloorMetrics {
 /** Which walkable tiles belong to the floor's signature feature (the circuit). */
 export interface LaneMask {
   lane: Uint8Array;
+}
+
+/**
+ * Half-width of the neighbourhood a tile must have entirely open to count as
+ * "inside a room". 2 (a 5×5 block) is the smallest window a 4-wide lane cannot
+ * satisfy, which is the discrimination the metric exists to make — at 1 every
+ * wide road scores as a chamber and the number says nothing.
+ */
+const CHAMBER_R = 2;
+
+/**
+ * The largest connected blob of tiles that are deep inside open space, in
+ * tiles. Exported for tools; `measureFloor` divides it by `walkable`.
+ */
+export function largestChamber(g: Grid): number {
+  const deep = new Uint8Array(g.w * g.h);
+  for (let j = CHAMBER_R; j < g.h - CHAMBER_R; j++) {
+    for (let i = CHAMBER_R; i < g.w - CHAMBER_R; i++) {
+      let ok = 1;
+      for (let dj = -CHAMBER_R; dj <= CHAMBER_R && ok; dj++) {
+        for (let di = -CHAMBER_R; di <= CHAMBER_R; di++) {
+          if (!isWalkable(g, i + di, j + dj)) {
+            ok = 0;
+            break;
+          }
+        }
+      }
+      deep[idx(g, i, j)] = ok;
+    }
+  }
+  // Iterative flood fill, not recursion: a plaza on a deep floor is thousands
+  // of tiles and a recursive fill would blow the stack on exactly the floors
+  // this metric is for.
+  const seen = new Uint8Array(deep.length);
+  const stack: number[] = [];
+  let best = 0;
+  for (let k = 0; k < deep.length; k++) {
+    if (!deep[k] || seen[k]) continue;
+    let n = 0;
+    stack.length = 0;
+    stack.push(k);
+    seen[k] = 1;
+    while (stack.length) {
+      const c = stack.pop()!;
+      n++;
+      const ci = c % g.w;
+      const cj = (c - ci) / g.w;
+      for (const [di, dj] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const ni = ci + di;
+        const nj = cj + dj;
+        if (ni < 0 || nj < 0 || ni >= g.w || nj >= g.h) continue;
+        const nk = idx(g, ni, nj);
+        if (seen[nk] || !deep[nk]) continue;
+        seen[nk] = 1;
+        stack.push(nk);
+      }
+    }
+    if (n > best) best = n;
+  }
+  return best;
 }
 
 /**
@@ -226,6 +307,7 @@ export function measureFloor(
     deadEnds,
     choiceShare: walkable ? choices / walkable : 0,
     laneShare: walkable ? lane / walkable : 0,
+    chamberShare: walkable ? largestChamber(g) / walkable : 0,
     regions: bigRegions.length,
     regionReachShare: bigRegions.length ? bigReached / bigRegions.length : 1,
   };
@@ -324,6 +406,7 @@ export function formatMetrics(m: FloorMetrics): string {
     `dead=${m.deadEnds}`,
     `choice=${m.choiceShare.toFixed(3)}`,
     `lane=${m.laneShare.toFixed(3)}`,
+    `chamber=${m.chamberShare.toFixed(3)}`,
     `regions=${m.regions}`,
   ].join(" ");
 }

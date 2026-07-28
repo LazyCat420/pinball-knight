@@ -487,6 +487,23 @@ export function buildTrackFloor(
   // margin respects it like any other lane. Sited on the surviving graph node
   // nearest the floor's centre — under the `hub` layout that IS the centre food
   // node — and `carveChamber` declines rather than clip a plaza on the border.
+  //
+  // ── AND IT HAS TO WIN. ─────────────────────────────────────────────────────
+  //
+  // The Great Hall's card says "one vast chamber · room to really move", and
+  // censused over 36 floors it did not have the floor's biggest chamber: the
+  // largest fully-open blob covered 0.153 of its walkable area against 0.185 on
+  // a Warrens, which has no plaza at all and gets there by accident where lanes
+  // merge. A single call that returns false on a bad site made it worse than
+  // that — on those floors the archetype's ONLY structural feature silently did
+  // not exist, and nothing recorded that it hadn't.
+  //
+  // So: try the largest radius the profile asks for and step down until one
+  // fits, and if none does, say so in `relaxed` rather than shipping a Great
+  // Hall with no hall in it. Stepping down beats moving the site, because the
+  // site is the topological centre of the circuit and a chamber somewhere else
+  // is a chamber the roads do not lead to.
+  const plazaRelaxed: string[] = [];
   if (prof.plazaFrac > 0 && graph.nodes.length) {
     const cx = w / 2;
     const cz = h / 2;
@@ -494,7 +511,10 @@ export function buildTrackFloor(
     for (const n of graph.nodes) {
       if ((n.x - cx) ** 2 + (n.z - cz) ** 2 < (hub.x - cx) ** 2 + (hub.z - cz) ** 2) hub = n;
     }
-    carveChamber(grid, mask, hub.x, hub.z, Math.min(w, h) * prof.plazaFrac);
+    const want = Math.min(w, h) * prof.plazaFrac;
+    let carved = false;
+    for (let r = want; r >= want * 0.6 && !carved; r -= 1) carved = carveChamber(grid, mask, hub.x, hub.z, r);
+    if (!carved) plazaRelaxed.push("archetype-has-its-chamber");
   }
   // ── THE LAUNCH CHUTE (track-launch.ts) ──────────────────────────────────
   //
@@ -874,7 +894,7 @@ export function buildTrackFloor(
   // A high-bias floor that opened centrally: was a peripheral option ever on
   // the table? `edgeBest` is the band's best, so "no" means impossible, not
   // ignored. Without a chute the same question is asked of the lane itself.
-  const relaxed: string[] = [...(ends.relaxed ?? [])];
+  const relaxed: string[] = [...(ends.relaxed ?? []), ...plazaRelaxed];
   if (profBias >= 0.5 && perimeterScore(grid, ends.start.i, ends.start.j) < PERIMETER_RULE_MIN) {
     const available = chute
       ? chute.edgeBest
