@@ -15,6 +15,8 @@ import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./prefabs
 import { archetypeFor } from "./archetypes";
 import { rollModifier } from "./modifiers";
 import { bfsDistances } from "../engine/flow-field";
+import { floorBudgets } from "../constants";
+import { walkableCount } from "./floor-metrics";
 
 const ROOM_MIN_CELLS = 3;
 const ROOM_MAX_CELLS = 6;
@@ -25,7 +27,6 @@ function buildFloor(level: number, runSeed: number) {
   const l = Math.max(1, level);
   const cellsW = Math.min(17 + Math.ceil(l * 1.4), 33);
   const cellsH = Math.min(12 + l, 25);
-  const floorTiles = cellsW * cellsH * 8;
   const braid = Math.min(0.14 + 0.04 * l, 0.4);
   const windiness = [1.0, 0.3, 0.65][(l - 1) % 3];
 
@@ -49,8 +50,14 @@ function buildFloor(level: number, runSeed: number) {
 
   const rooms = rawRooms.map((r) => ({ i0: r.i0 * 2, j0: r.j0 * 2, w: r.w * 2, h: r.h * 2 }));
   const anchors = [...landmark.anchors, ...stamped.anchors].map((a) => ({ i: a.i * 2, j: a.j * 2, kind: a.kind }));
-  const zombies = Math.max(1, Math.round(Math.min(Math.round(floorTiles / 32) + 3 * (l - 1), 60) * modifier.hordeMult));
-  const torches = Math.max(4, Math.round(Math.min(Math.round(floorTiles / 55) + 8, 40) * modifier.torchMult));
+  // ⚠️ THESE WERE THREE TUNINGS STALE — a local copy of the budget arithmetic
+  // (`/32` capped 60, `/55` capped 40) that had not tracked constants.ts since
+  // it was written, so this "mirrors core.ts exactly" harness was mirroring a
+  // floor nobody had shipped in months. That is the exact drift `floorBudgets`
+  // was extracted to end: call the function, do not restate it.
+  const budgets = floorBudgets(l, walkableCount(grid));
+  const zombies = Math.max(1, Math.round(budgets.zombies * modifier.hordeMult));
+  const torches = Math.max(4, Math.round(budgets.torches * modifier.torchMult));
   const partBudget = Math.max(4, Math.round(Math.min(14 + (level - 1) * 2, 34) * modifier.partMult));
 
   const plan = decorateMaze(grid, rng, zombies, torches, partBudget, rooms, {

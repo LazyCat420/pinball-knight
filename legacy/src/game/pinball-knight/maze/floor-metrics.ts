@@ -329,6 +329,19 @@ export function formatMetrics(m: FloorMetrics): string {
 }
 
 /** Tiles that are wall — exported so callers can sanity-check a grid cheaply. */
+/**
+ * Tiles the player can stand on — the number every density budget should ride.
+ *
+ * Uses `isWalkable` (floor + stairs), which differs from `decorate`'s own
+ * candidate pool (T_FLOOR minus the ~20 chute tiles) by well under 1%. Stated so
+ * nobody "corrects" one to the other and quietly re-tunes every budget.
+ */
+export function walkableCount(g: Grid): number {
+  let n = 0;
+  for (let j = 0; j < g.h; j++) for (let i = 0; i < g.w; i++) if (isWalkable(g, i, j)) n++;
+  return n;
+}
+
 export function wallCount(g: Grid): number {
   let n = 0;
   for (let k = 0; k < g.t.length; k++) if (at(g, k % g.w, Math.floor(k / g.w)) === T_WALL) n++;

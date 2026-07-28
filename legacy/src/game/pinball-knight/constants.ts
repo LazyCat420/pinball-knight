@@ -2176,6 +2176,55 @@ export interface LevelConfig {
   launchBreaks: number;
 }
 
+/**
+ * THE DENSITY BUDGETS, as a pure function of the floor's REAL walkable area.
+ *
+ * Split out of `levelConfig` so its two callers cannot drift apart, because they
+ * genuinely need different inputs:
+ *   · `levelConfig` feeds it a PREDICTION — `delve.ts floorXpIncome` projects
+ *     the XP of floors that do not exist yet and cannot be handed a grid;
+ *   · `core.ts buildLevel` feeds it the COUNTED walkable tiles of the grid it
+ *     has just built, which is the truth.
+ * Copying the arithmetic into both is how `floor-pipeline.test.ts` ended up
+ * asserting against `floorTiles/32` and a cap of 60, three tunings out of date.
+ *
+ * ── WHY EVERY DIVISOR MOVED ───────────────────────────────────────────────
+ *
+ * They were all calibrated against `floorTiles`, which overstated the shipping
+ * floor's walkable area by **3.2x** (measured over 64 live floors; see the note
+ * on `floorTiles` below). The caps then hid it completely: at the old numbers
+ * BOTH the zombie and torch caps bound from level 1 upward, so the depth ramps
+ * were dead code and density FELL fourfold with depth instead of rising.
+ *
+ * The re-tune has one constraint beyond honesty — **the deep floors must not
+ * move** — and that is achievable precisely because the caps bind there. L10+
+ * zombies and L8+ torches come out bit-identical; everything shallower comes
+ * down, which is where the "jumbled mess" was.
+ */
+export function floorBudgets(level: number, walkable: number): { zombies: number; torches: number; partsArea: number } {
+  const l = Math.max(1, level);
+  return {
+    // /50 with a +2/level ramp. The old `/26` against a 3.2x-inflated area was
+    // effectively one zombie per 8 walkable tiles, which is why it pinned the
+    // cap on every floor. These numbers put the cap back to being the DRAW-CALL
+    // budget its comment claims it is: it first binds at L10.
+    //   L1  135 -> 50   L5  135 -> 87   L8  135 -> 121   L10+ unchanged
+    zombies: Math.min(Math.round(walkable / 50) + 2 * (l - 1), 135),
+    // /70 + 6. Derivation rather than taste: only TORCH_LIGHT_POOL (6) torches
+    // are ever live lights and each is a radius-6 PointLight, so for N torches
+    // over A walkable tiles the mean nearest-torch distance ~ 0.5*sqrt(A/N);
+    // requiring that inside one light radius gives N ~ A/144 ~ 7 per 1k. /70
+    // lands at ~16 per 1k — a 2x margin, which is what pays for corridors being
+    // 1-D where the estimate is 2-D. Cap first binds at L8.
+    torches: Math.min(Math.round(walkable / 70) + 6, 80),
+    // Near-parity with the old `floorTiles/2000` (which was walkable/627 in
+    // truth), and that is DELIBERATE. The corridor deal is not the density
+    // problem — censused at 19-26 parts per 1k walkable and already falling
+    // with depth. Moving it would re-roll every floor for no measured gain.
+    partsArea: Math.floor(walkable / 600),
+  };
+}
+
 export function levelConfig(level: number): LevelConfig {
   const l = Math.max(1, level);
   // Cell counts are PRE-thickenWalls: the final tile grid is (2*cells+1)*2.
@@ -2188,7 +2237,25 @@ export function levelConfig(level: number): LevelConfig {
   // watchlist (zombie draw calls, flow-field O(tiles)).
   const cellsW = Math.min(34 + Math.ceil(l * 2.8), 66);
   const cellsH = Math.min(24 + 2 * l, 50);
-  const floorTiles = cellsW * cellsH * 8; // ≈ walkable tiles after the 2× scale
+  /**
+   * PREDICTED walkable tiles. A prediction, and only ever used as one — the
+   * shipping path counts the real grid (`core.ts`, `walkableCount`).
+   *
+   * ⚠️ WAS `cellsW * cellsH * 8`, "≈ walkable tiles after the 2× scale", AND THE
+   * 2x SCALE HAS NOT APPLIED SINCE TRACK-FIRST SHIPPED. The legacy branch built
+   * `(2c+1)(2h+1)` and then `thickenWalls` DOUBLED each side again, so 8·c·h was
+   * a fair half of ~16·c·h. `buildTrackFloor` generates at final resolution and
+   * never thickens: the grid is ~4.1·c·h TOTAL, of which a measured 0.617 is
+   * walkable (64 live floors) => ~2.53·c·h. The old constant was therefore
+   * **3.2x too big**, and every budget riding it was calibrated against a floor
+   * four times the size of the one that ships.
+   *
+   * 2.5 rather than 2.53 because a round number is honest about being an
+   * estimate. Error against measured walkable: ±5% typical, -18% worst case on a
+   * deep Warrens (openShare 0.75 there against the 0.617 mean).
+   */
+  const floorTiles = Math.round(cellsW * cellsH * 2.5);
+  const budgets = floorBudgets(l, floorTiles);
   // Maze character cycles by depth so no two consecutive floors share a shape:
   // level 1 stays the familiar winding backtracker (1.0), then a bushy
   // junction-heavy floor (0.3), then a mixed one (0.65), repeating. Combined
@@ -2198,16 +2265,13 @@ export function levelConfig(level: number): LevelConfig {
     cellsW,
     cellsH,
     floorTiles,
-    // Cap re-tuned for 4× floors: at the old 60 the density would drop 4× and
-    // big floors would read empty. 110 is a DRAW-CALL budget as much as a
-    // difficulty one — each zombie is its own sprite mesh; raise with care.
-    zombies: Math.min(Math.round(floorTiles / 26) + 3 * (l - 1), 135), // densified after co-op QA ("not enough monsters") — packs land on top of this
+    // PREDICTIONS. `core.ts` recomputes both from the finished grid; these exist
+    // for `delve.ts floorXpIncome`, which projects floors that do not exist.
+    zombies: budgets.zombies,
     // Faster horde overall, and it ramps harder with depth — a deep floor is a
     // genuine sprint, not a shuffle. (Spiders multiply this again, see items.)
     zombieSpeed: Math.min(1.5 + 0.12 * l, 2.8),
-    // Torches ride the maze area too — sparse torches left whole regions
-    // pitch dark. Only TORCH_LIGHT_POOL of them are ever LIVE lights.
-    torches: Math.min(Math.round(floorTiles / 55) + 8, 80),
+    torches: budgets.torches,
     // Braiding grows with depth: shallow floors are corridor duels (few loops),
     // deep floors are open labyrinths full of flanking routes and dead-end
     // ambush pockets. Capped so it never dissolves into an open room.

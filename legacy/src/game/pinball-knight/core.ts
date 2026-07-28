@@ -64,6 +64,7 @@ import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { paintSurfaces } from "./maze/surface-paint";
 import { buildTrackFloor } from "./maze/track-floor";
+import { walkableCount } from "./maze/floor-metrics";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
 import { installLampPuzzle, updateLampPuzzle } from "./lamp-puzzle";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } from "./maze/prefabs";
@@ -229,6 +230,7 @@ import {
   MIMIC_HP, MIMIC_SPEED_FACTOR, MIMIC_FROM_LEVEL,
   BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE,
   FINISHER_FLASH_T, FINISHER_FLASH_MAX,
+  floorBudgets,
 } from "./constants";
 import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
 import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
@@ -1016,15 +1018,28 @@ function buildLevel(level: number): void {
   // absolute cap, spreading 26 parts over ~26k late-game tiles (the "sparse"
   // read). The area term keeps parts-per-tile roughly constant as floors grow;
   // decorateMaze's sparse-region fill then guarantees no quadrant ships empty.
-  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + Math.floor(cfg.floorTiles / 2000);
+  // ── THE GRID IS FINAL HERE, SO THE BUDGETS RIDE THE REAL AREA ───────────
+  //
+  // Every wall-moving pass has run (buildTrackFloor owns them all on the track
+  // branch, widenMainArtery on the legacy one) and decorateMaze writes only the
+  // stairs tile, so this count is the floor's actual walkable area. Until now
+  // the budgets rode `cfg.floorTiles`, an estimate measured at **3.2x too big**
+  // over 64 live floors — which is why the zombie and torch caps bound on every
+  // floor from level 1 and their depth ramps were dead code.
+  //
+  // Deterministic and rng-free: the grid is a pure function of (runSeed, level),
+  // so two co-op peers count the same number without exchanging anything.
+  const walkable = walkableCount(grid);
+  const budget = floorBudgets(level, walkable);
+  const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + budget.partsArea;
   // The floor modifier scales the budgets (and only the budgets — it can't
   // reach connectivity). Every product is floored at a sane minimum so a harsh
   // roll can't produce a pitch-dark or furniture-free floor.
   const plan = decorateMaze(
     grid,
     rng,
-    Math.max(1, Math.round(cfg.zombies * modifier.hordeMult)),
-    Math.max(4, Math.round(cfg.torches * modifier.torchMult)),
+    Math.max(1, Math.round(budget.zombies * modifier.hordeMult)),
+    Math.max(4, Math.round(budget.torches * modifier.torchMult)),
     Math.max(4, Math.round(partBudget * modifier.partMult)),
     rooms,
     {
