@@ -32,6 +32,31 @@
  */
 export const TRACK_FIRST = true;
 
+/**
+ * ARCHETYPE-DRIVEN SURFACE ZONING (maze/surface-paint.ts `paintBands`).
+ *
+ * Off = the 5x5 surface matrix keeps its single author, the floor modifier —
+ * which rolls on 45% of floors from level 3 and paints uniformly at random, so
+ * the mechanic is weather and nothing about a floor's SHAPE can ask for a
+ * material. On = each archetype also states what its launch district, machine
+ * core and drain lane are made of.
+ *
+ * WHAT "BIT-IDENTICAL" MEANS HERE, because it is the thing to check before
+ * touching this: `paintBands` runs on its own derived rng stream, takes zero
+ * draws from the generator's, and writes only `Grid.surfaces` — it moves no
+ * tile and changes no shape. So flipping this flag leaves every floor's
+ * GEOMETRY byte-for-byte identical and changes only what that geometry is made
+ * of. `floor-pipeline.test.ts` asserts exactly that, both ways, rather than
+ * taking the claim on trust.
+ *
+ * Default ON. A knob no live path reads is dead however well-tuned it is —
+ * that lesson is the reason this wave exists — so shipping the feature switched
+ * off would reproduce the defect it was written to fix. The flag stays because
+ * an A/B of the same seed with and without materials is the only honest way to
+ * judge whether the zoning reads.
+ */
+export const SURFACE_BANDS = true;
+
 // Rooms are the OPEN "pinball table" space (corridors are 2-wide transit that a
 // ball can't really bounce in). Slice 2 (open playfield) makes them bigger and
 // more numerous so momentum has room to chain — carveRooms preserves

@@ -1,22 +1,36 @@
 /**
- * WHOLE-FLOOR integration test: runs the exact sequence core.ts startLevel uses
- * — archetype seeds → maze → rooms → landmark → prefabs → secrets → thicken →
- * widen artery → decorate — across many depths and seeds.
+ * WHOLE-FLOOR integration test for the FALLBACK generator — archetype seeds →
+ * maze → rooms → landmark → prefabs → secrets → thicken → widen artery →
+ * decorate — across many depths and seeds.
+ *
+ * ⚠️ READ THE BRANCH LABEL. This file's header used to claim it ran "the exact
+ * sequence core.ts startLevel uses". It does not and has not since `TRACK_FIRST`
+ * went on: the sequence below is the one core.ts runs inside its `else`, and
+ * `buildTrackFloor` returned null 0 times over 400 measured floors. It is a
+ * genuine test of a genuine fallback, and it is NOT coverage of the shipping
+ * path — `floor-metrics.test.ts` and `track-fallback.test.ts` are.
  *
  * The unit tests pin each stage in isolation; this one catches the thing they
  * can't: a stage ORDERING mistake, or an archetype whose shape only breaks once
  * rooms and stamps have also been carved over it. A floor that fails here is a
- * floor a player would spawn into and be unable to finish.
+ * floor a player would spawn into and be unable to finish — on the day the
+ * fallback is needed.
+ *
+ * The last block is the exception and runs on the LIVE path: it is the
+ * bit-identity proof for `SURFACE_BANDS`, and a proof about the shipping floor
+ * has to be measured on the shipping floor.
  */
 import { describe, it, expect } from "vitest";
-import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, idx, T_FLOOR, T_STAIRS } from "./generator";
+import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, at, idx, isWalkable, T_FLOOR, T_STAIRS } from "./generator";
 import { decorateMaze, widenMainArtery, pickEndpoints } from "./decorate";
 import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./prefabs";
-import { archetypeFor } from "./archetypes";
+import { archetypeFor, ARCHETYPES, windinessFor } from "./archetypes";
 import { rollModifier } from "./modifiers";
 import { bfsDistances } from "../engine/flow-field";
-import { floorBudgets } from "../constants";
+import { floorBudgets, levelConfig } from "../constants";
 import { walkableCount } from "./floor-metrics";
+import { buildTrackFloor } from "./track-floor";
+import { paintBands, bandOf } from "./surface-paint";
 
 const ROOM_MIN_CELLS = 3;
 const ROOM_MAX_CELLS = 6;
@@ -217,5 +231,101 @@ describe("whole-floor pipeline", () => {
     expect(widths.size, "levels 21-25 should share a grid width").toBe(1);
     // The five archetypes should span a genuinely different amount of open floor.
     expect(Math.max(...perLevel) - Math.min(...perLevel)).toBeGreaterThan(0.05);
+  });
+});
+
+describe("SURFACE_BANDS is bit-identical in the only sense that matters", () => {
+  /** A live track floor, built the way core.ts does. */
+  function liveFloor(archIndex: number, level: number, seed: number) {
+    const cfg = levelConfig(level);
+    const arch = ARCHETYPES[archIndex];
+    const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+    const windiness = windinessFor(level, arch, rng);
+    return {
+      arch,
+      f: buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
+        profile: arch.track,
+        density: Math.max(0.35, Math.min(0.85, windiness)),
+      }),
+    };
+  }
+
+  it("painting bands changes no tile, no shape and no arc — only what they are made of", () => {
+    // The claim the flag's docstring makes, checked rather than trusted. A
+    // "safe" pass that quietly moved one wall would change reachability, and
+    // reachability is the one constraint this generator has no slack on.
+    for (let a = 0; a < ARCHETYPES.length; a++) {
+      for (const level of [3, 9, 17]) {
+        const seed = 0x8ba7 + a * 7919 + level * 104729;
+        const { arch, f } = liveFloor(a, level, seed);
+        expect(f, `${ARCHETYPES[a].id} L${level}: no floor`).not.toBeNull();
+        const g = f!.grid;
+        const label = `${arch.id} L${level}`;
+
+        const tBefore = Uint8Array.from(g.t);
+        const shapesBefore = Uint8Array.from(g.shapes);
+        const arcsBefore = JSON.stringify(g.arcs ?? []);
+        const arcIdxBefore = g.arcIdx ? Int32Array.from(g.arcIdx) : null;
+
+        const painted = paintBands(g, seed, f!.start, arch.track.bands ?? {});
+
+        expect(Array.from(g.t), `${label}: a band pass moved a TILE`).toEqual(Array.from(tBefore));
+        expect(Array.from(g.shapes), `${label}: a band pass changed a SHAPE`).toEqual(Array.from(shapesBefore));
+        expect(JSON.stringify(g.arcs ?? []), `${label}: a band pass changed an ARC`).toBe(arcsBefore);
+        if (arcIdxBefore) expect(Array.from(g.arcIdx!)).toEqual(Array.from(arcIdxBefore));
+        // …and it did do something, or the assertions above are vacuous. Every
+        // shipped archetype declares a band table, so every one must paint.
+        expect(painted, `${label}: SURFACE_BANDS painted nothing`).toBeGreaterThan(0);
+      }
+    }
+  }, 120000);
+
+  it("is deterministic and idempotent in (seed, grid, bands)", () => {
+    // Re-entrant startLevel must not double-paint into a third floor, and two
+    // co-op peers on the same seed must agree byte for byte.
+    const { arch, f } = liveFloor(2, 7, 0x1d0d);
+    const g = f!.grid;
+    const first = paintBands(g, 0x1d0d, f!.start, arch.track.bands ?? {});
+    const after = Uint8Array.from(g.surfaces!);
+    paintBands(g, 0x1d0d, f!.start, arch.track.bands ?? {});
+    expect(first).toBeGreaterThan(0);
+    // Asserted on the BYTES, not on the return value. The counter reports tiles
+    // changed by the pass INCLUDING the ones a later overlapping patch changes
+    // back — patches overlap freely, which is what makes the blobs read as
+    // organic — so a second identical pass legitimately reports a non-zero
+    // count while leaving the grid in exactly the state it found it. Asserting
+    // `second === 0` would be testing the counter, not the idempotence.
+    expect(Array.from(g.surfaces!)).toEqual(Array.from(after));
+  });
+
+  it("a patch never bleeds across a band boundary", () => {
+    // The property that makes the zoning legible. A blob spilling from the
+    // launch district into the machine core would put the wrong material where
+    // the descent card says speedway, and the player would read the whole
+    // system as noise rather than as pacing.
+    const { arch, f } = liveFloor(0, 11, 0x51de); // warrens: three DIFFERENT band mixes
+    const g = f!.grid;
+    paintBands(g, 0x51de, f!.start, arch.track.bands ?? {});
+    const dist = bfsDistances(g, f!.start.i, f!.start.j);
+    let maxD = 0;
+    for (let k = 0; k < dist.length; k++) if (dist[k] > maxD) maxD = dist[k];
+    // Warrens: launch = mud (FLOOR_SAND 2), machine = rubber (FLOOR_GRIP 4),
+    // drain = brass (FLOOR_STEEL 3). Each floor id may appear in ONE band only.
+    const seenIn = new Map<number, Set<number>>();
+    for (let j = 0; j < g.h; j++) {
+      for (let i = 0; i < g.w; i++) {
+        if (!isWalkable(g, i, j)) continue;
+        const k = idx(g, i, j);
+        if (dist[k] < 0) continue;
+        const s = g.surfaces![k];
+        if (!s) continue; // baseline stone belongs to no band
+        if (!seenIn.has(s)) seenIn.set(s, new Set());
+        seenIn.get(s)!.add(bandOf(dist[k] / maxD));
+      }
+    }
+    expect(seenIn.size, "nothing painted, so nothing was proved").toBeGreaterThan(1);
+    for (const [surface, bands] of seenIn) {
+      expect([...bands], `floor surface ${surface} leaked across bands`).toHaveLength(1);
+    }
   });
 });

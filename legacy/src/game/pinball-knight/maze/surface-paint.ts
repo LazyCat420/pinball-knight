@@ -25,9 +25,10 @@
  *
  * DOM- and three-free: tested in surface-paint.test.ts.
  */
-import { type Grid, isWalkable, setSurface, surfaceAt, ensureSurfaces, worldToTile } from "./generator";
+import { type Grid, type TilePos, idx, isWalkable, setSurface, surfaceAt, ensureSurfaces, worldToTile } from "./generator";
 import { mulberry32 } from "../../../utils/rng";
 import { material, pickSurface, type SurfaceMix, MAT_STONE } from "../engine/surfaces";
+import { bfsDistances } from "../engine/flow-field";
 
 /** Blob radii, in tiles. Small enough that a patch is a room-ish feature rather
  *  than a biome, big enough that you can see where it starts from outside it. */
@@ -123,4 +124,168 @@ export function paintSurfaces(g: Grid, seed: number, opts: PaintOpts): number {
     }
   }
   return painted;
+}
+
+// ── BAND PAINTING — the second author, and the reason there needed to be one ──
+//
+// Until this section the 5x5 surface matrix had exactly ONE author: a floor
+// modifier, which rolls on 45% of floors from level 3 and paints uniformly at
+// random over the whole map. So the most original mechanic in the game — five
+// materials whose walls and floors compose with the marble, the corner gain and
+// the combo chain — was reachable only as weather. Nothing about a floor's
+// SHAPE could ask for a surface, which meant the speedway near the spawn, the
+// bumper core and the vault by the stairs all played on identical stone.
+//
+// `decorateMaze` has drawn a three-zone floor since Slice 9: a room's archetype
+// is picked from how far it sits from the spawn — LAUNCH district near the
+// start, MACHINE core in the middle, DRAIN lane out by the exit — and corridor
+// width, friction and enemy density already ride the same distance. Painting
+// from those bands ties the material to the pacing that was already there
+// instead of inventing a second, competing geography.
+//
+// Same two rules as the painter above: blobs rather than per-tile noise, and
+// its own rng stream so the LAYOUT of every floor stays bit-identical. Nothing
+// here moves a tile, so reachability cannot move either.
+
+/** Distance-from-spawn fractions that separate the three zones. Matched to
+ *  `furnishRooms`, which has cut its room archetypes at the same two numbers
+ *  since Slice 9 — a second set of thresholds would put the materials and the
+ *  furniture on visibly different maps. */
+export const BAND_LAUNCH_END = 0.34;
+export const BAND_MACHINE_END = 0.68;
+
+/** Which zone a distance fraction falls in. 0 = launch, 1 = machine, 2 = drain. */
+export function bandOf(frac: number): 0 | 1 | 2 {
+  return frac < BAND_LAUNCH_END ? 0 : frac < BAND_MACHINE_END ? 1 : 2;
+}
+
+/**
+ * What an archetype (or theme, or any other author) wants each zone made of.
+ *
+ * Every field optional and an absent field paints nothing, so an author opts in
+ * one zone at a time rather than having to describe a whole floor.
+ */
+export interface BandPaint {
+  /** Near the spawn — the launch district, where the player builds speed. */
+  launch?: SurfaceMix;
+  /** The middle of the floor — the machine core, where the chain gets racked. */
+  machine?: SurfaceMix;
+  /** Out by the stairs — the drain lane, the fight and the reward. */
+  drain?: SurfaceMix;
+  /** Roughly what fraction of each band to cover. Same approximation as
+   *  `PaintOpts.coverage`: it drives patch COUNT, it is not measured back. */
+  coverage?: number;
+}
+
+/**
+ * Paint the three distance zones from a band table. Returns tiles changed.
+ *
+ * Runs AFTER `paintSurfaces` in core.ts, so a floor modifier's weather is the
+ * base coat and the archetype's zoning is what shows through on top — the
+ * modifier is the loud, announced, once-in-a-while event and the zoning is the
+ * floor's permanent character, which is the order they should land in.
+ */
+export function paintBands(g: Grid, seed: number, start: TilePos, bands: BandPaint, safeSpots?: Array<{ x: number; z: number }>): number {
+  const mixes = [bands.launch, bands.machine, bands.drain];
+  if (!mixes.some((m) => m && Object.keys(m).length)) return 0;
+  const coverage = bands.coverage ?? 0.35;
+  if (coverage <= 0) return 0;
+  ensureSurfaces(g);
+
+  // Its own stream, and a different mixing word from `paintSurfaces` so the two
+  // authors do not draw correlated blobs on the same floor.
+  const rng = mulberry32((seed ^ 0x2c1b3f5d) >>> 0);
+  const safe = (safeSpots ?? []).map((s) => worldToTile(g, s.x, s.z));
+
+  // ONE BFS, and everything derived from it here: `bfsDistances` hands back a
+  // shared scratch buffer that the next caller overwrites.
+  const dist = bfsDistances(g, start.i, start.j);
+  let maxD = 0;
+  for (let k = 0; k < dist.length; k++) if (dist[k] > maxD) maxD = dist[k];
+  if (maxD <= 0) return 0;
+
+  // Band membership per tile, precomputed: the patch loop below tests it once
+  // per tile per patch and re-deriving it there was the whole cost. −1 = wall
+  // or unreachable, which no band owns.
+  const band = new Int8Array(g.w * g.h).fill(-1);
+  const counts = [0, 0, 0];
+  for (let j = 0; j < g.h; j++) {
+    for (let i = 0; i < g.w; i++) {
+      const k = idx(g, i, j);
+      if (!isWalkable(g, i, j) || dist[k] < 0) continue;
+      const b = bandOf(dist[k] / maxD);
+      band[k] = b;
+      counts[b]++;
+    }
+  }
+
+  // Candidate patch centres per band. Collected rather than sampled by
+  // rejection because the drain band on a long floor can be a thin rind, and a
+  // rejection sampler on a thin target either misses or biases toward its fat
+  // end — the band would then be painted where it is widest instead of evenly.
+  const centres: number[][] = [[], [], []];
+  for (let k = 0; k < band.length; k++) if (band[k] >= 0) centres[band[k]].push(k);
+
+  const meanPatch = Math.PI * ((PATCH_MIN_R + PATCH_MAX_R) / 2) ** 2;
+  let painted = 0;
+
+  for (let b = 0; b < 3; b++) {
+    const mix = mixes[b];
+    if (!mix || !Object.keys(mix).length || !centres[b].length) continue;
+    const patches = Math.max(1, Math.round((counts[b] * coverage) / meanPatch));
+    for (let p = 0; p < patches; p++) {
+      const mat = material(pickSurface(mix, rng, MAT_STONE));
+      if (mat.id === MAT_STONE) continue; // a stone patch is a no-op, not a repaint
+      const k0 = centres[b][Math.floor(rng() * centres[b].length)];
+      const cx = (k0 % g.w) + 0.5;
+      const cz = Math.floor(k0 / g.w) + 0.5;
+      const r = PATCH_MIN_R + rng() * (PATCH_MAX_R - PATCH_MIN_R);
+      const aspect = 0.65 + rng() * 0.7;
+      const rx = r * aspect;
+      const rz = r / aspect;
+      const i0 = Math.max(0, Math.floor(cx - rx));
+      const i1 = Math.min(g.w - 1, Math.ceil(cx + rx));
+      const j0 = Math.max(0, Math.floor(cz - rz));
+      const j1 = Math.min(g.h - 1, Math.ceil(cz + rz));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const dx = (i + 0.5 - cx) / rx;
+          const dz = (j + 0.5 - cz) / rz;
+          if (dx * dx + dz * dz > 1) continue;
+          if (safe.some((s) => Math.abs(s.i - i) <= SAFE_R && Math.abs(s.j - j) <= SAFE_R)) continue;
+          const k = idx(g, i, j);
+          const walk = isWalkable(g, i, j);
+          // A patch is CLIPPED TO ITS BAND, which is what makes the zoning
+          // legible: a blob that bled across the launch/machine line would put
+          // rubber where the card says speedway and the player would read the
+          // whole system as random. Walls carry the band of a walkable
+          // neighbour — they have no distance of their own, and an unpainted
+          // wall around a painted floor is the bounce not matching the ground.
+          if (walk) {
+            if (band[k] !== b) continue;
+          } else if (!wallTouchesBand(g, band, i, j, b)) continue;
+          const v = walk ? mat.floor : mat.wall;
+          if (surfaceAt(g, i, j) !== v) painted++;
+          setSurface(g, i, j, v);
+        }
+      }
+    }
+  }
+  return painted;
+}
+
+/** True when a solid tile has a 4-neighbour walkable tile in band `b`. */
+function wallTouchesBand(g: Grid, band: Int8Array, i: number, j: number, b: number): boolean {
+  for (const [di, dj] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const ni = i + di;
+    const nj = j + dj;
+    if (ni < 0 || nj < 0 || ni >= g.w || nj >= g.h) continue;
+    if (band[idx(g, ni, nj)] === b) return true;
+  }
+  return false;
 }

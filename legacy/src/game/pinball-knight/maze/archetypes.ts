@@ -26,6 +26,8 @@
 import type { CellPos } from "./generator";
 import type { NodeLayout } from "./track-grow";
 import type { FloorRuleWeights } from "./floor-rules";
+import type { BandPaint } from "./surface-paint";
+import { MAT_BRASS, MAT_ICE, MAT_MUD, MAT_RUBBER } from "../engine/surfaces";
 
 export type ArchetypeId = "warrens" | "spine" | "greathall" | "cavern" | "ringkeep";
 
@@ -94,6 +96,24 @@ export interface TrackProfile {
    * `DEFAULT_RULE_WEIGHTS`, which is the point of a global baseline.
    */
   rules?: Partial<FloorRuleWeights>;
+  /**
+   * WHAT THE THREE ZONES ARE MADE OF (maze/surface-paint.ts `paintBands`).
+   *
+   * The 5x5 surface matrix is the one mechanic in this game that nothing else
+   * has, and until this field it had exactly ONE author: a floor modifier,
+   * rolled on 45% of floors from level 3 and painted uniformly at random. A
+   * floor's SHAPE could not ask for a material at all, so the speedway near
+   * the spawn, the bumper core and the vault by the stairs all played on
+   * identical stone.
+   *
+   * The bands are the ones `decorateMaze` has zoned rooms by since Slice 9 —
+   * distance from the spawn, cut at 0.34 and 0.68 — so the material and the
+   * furniture describe the same floor instead of two competing ones.
+   *
+   * Optional: omit it and the archetype paints nothing, which is the pre-band
+   * behaviour exactly. Gated globally by `SURFACE_BANDS`.
+   */
+  bands?: BandPaint;
 }
 
 export interface FloorArchetype {
@@ -392,6 +412,18 @@ export const ARCHETYPES: FloorArchetype[] = [
       plazaFrac: 0,
       maxLenFrac: 0.34,
       survive: 0.1,
+      // "nowhere to build speed" said underfoot rather than only on the card.
+      // The launch district is the one band every other archetype makes fast;
+      // a Warrens makes it MUD, so the floor refuses you a run-up from the
+      // first tile. Rubber through the tangle (the walls are what throw you
+      // here, since you will never carry speed of your own) and brass by the
+      // exit, where the fight finally pays.
+      bands: {
+        launch: { [MAT_MUD]: 1 },
+        machine: { [MAT_RUBBER]: 1 },
+        drain: { [MAT_BRASS]: 1 },
+        coverage: 0.26,
+      },
     },
   },
   {
@@ -425,6 +457,18 @@ export const ARCHETYPES: FloorArchetype[] = [
       plazaFrac: 0,
       maxLenFrac: 0.55,
       survive: 0.14,
+      // The boulevard is the promise, so the boulevard is STEEL: FLOOR_STEEL
+      // is the low-friction, faster-walking deck the surface table itself
+      // calls "the speedway surface", and brass walls beside it start the
+      // chain while you are still accelerating. Only a light rubber presence
+      // in the middle — a spine floor's pockets are meant to be pockets, and
+      // paving them with gain would make them the place to farm instead.
+      bands: {
+        launch: { [MAT_BRASS]: 1 },
+        machine: { [MAT_RUBBER]: 1 },
+        drain: { [MAT_BRASS]: 1 },
+        coverage: 0.3,
+      },
     },
   },
   {
@@ -467,6 +511,16 @@ export const ARCHETYPES: FloorArchetype[] = [
       plazaFrac: 0.29,
       maxLenFrac: 0.45,
       survive: 0.1,
+      // The hall IS the machine core, and the machine core is where the
+      // heaviest rubber goes: a chamber ringed in walls that throw you back is
+      // the only place on any floor where a carom can chain more than twice.
+      // This is the archetype the surface system was worth building for.
+      bands: {
+        launch: { [MAT_BRASS]: 1 },
+        machine: { [MAT_RUBBER]: 3, [MAT_BRASS]: 1 },
+        drain: { [MAT_BRASS]: 1 },
+        coverage: 0.34,
+      },
     },
   },
   {
@@ -499,6 +553,17 @@ export const ARCHETYPES: FloorArchetype[] = [
       plazaFrac: 0,
       maxLenFrac: 0.3,
       survive: 0.07,
+      // "the rock decides" is a claim about who is steering, and ICE is the
+      // only surface that literally takes the wheel: FLOOR_ICE keeps your
+      // heading as well as your speed, so on a floor with no straight lines
+      // the bend you are already in decides where you come out. Mud out by the
+      // exit for the same reason in reverse — the cave stops you dead rather
+      // than letting you ride a chain into the stairwell.
+      bands: {
+        machine: { [MAT_ICE]: 3, [MAT_RUBBER]: 1 },
+        drain: { [MAT_MUD]: 2, [MAT_BRASS]: 1 },
+        coverage: 0.3,
+      },
     },
   },
   {
@@ -536,6 +601,16 @@ export const ARCHETYPES: FloorArchetype[] = [
       plazaFrac: 0,
       maxLenFrac: 0.4,
       survive: 0.14,
+      // "the way in is inward" as a gradient you can feel: plain stone on the
+      // outer gallery, brass once you are through the first gate, brass and
+      // rubber together in the keep. The reward for working inward is that the
+      // scoring surface gets richer, which is the only way a concentric floor
+      // can pay for the decision it keeps asking you to make.
+      bands: {
+        machine: { [MAT_BRASS]: 1 },
+        drain: { [MAT_BRASS]: 2, [MAT_RUBBER]: 1 },
+        coverage: 0.28,
+      },
     },
   },
 ];

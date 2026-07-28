@@ -94,6 +94,19 @@ export const MODIFIERS: FloorModifier[] = [
     torchMult: 0.45,
     bonusItems: 2,
     hordeMult: 0.85,
+    // The only modifier where the player cannot SEE the floor, so it is the
+    // one where a surface has to be legible by ear and by feel instead. Brass
+    // is exactly that: ordinary restitution, so it never surprises you, but
+    // double combo ticks and a bright spark on contact — in the dark the walls
+    // you bounce off become the map. A small mud fraction keeps it a gamble
+    // rather than a gift, since a chain broken by a wall you never saw is the
+    // risk half of a risk/reward floor.
+    //
+    // Explicitly NOT ice or heavy rubber: a surface that steers or throws you
+    // is a surface you have to see coming, and stacking one on an unlit floor
+    // is not difficulty, it is a coin flip.
+    surfaceMix: { [MAT_BRASS]: 4, [MAT_MUD]: 1 },
+    surfaceCoverage: 0.24,
   },
   {
     // A denser table AND a bigger horde — the floor that plays fastest.
@@ -134,6 +147,14 @@ export const MODIFIERS: FloorModifier[] = [
     hazardMult: 1.5,
     torchMult: 0.75,
     dealBias: ["pit", "trapdoor"],
+    // "Keep moving" is a rule the floor should enforce, not just announce.
+    // Rubble underfoot (sand drags, mud walls break the chain) is what makes
+    // standing still expensive, and the scattered rubber slabs are the sprung
+    // masonry of a floor coming apart — the one thing that will still throw
+    // you clear of a hatch. Wide coverage because a collapsing floor that is
+    // mostly intact is just a floor with some holes in it.
+    surfaceMix: { [MAT_MUD]: 3, [MAT_RUBBER]: 1 },
+    surfaceCoverage: 0.4,
   },
   {
     // SURFACE-LED. The whole floor is a skating rink: you keep every unit of

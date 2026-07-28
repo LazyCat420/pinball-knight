@@ -62,7 +62,7 @@ import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
 import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
-import { paintSurfaces } from "./maze/surface-paint";
+import { paintSurfaces, paintBands } from "./maze/surface-paint";
 import { buildTrackFloor } from "./maze/track-floor";
 import { walkableCount } from "./maze/floor-metrics";
 import { authorLampPuzzle, lampCountFor } from "./maze/lamp-puzzle";
@@ -160,6 +160,7 @@ import {
   BONUS_ROOM_GRADES,
   PARTS_BASE,
   TRACK_FIRST,
+  SURFACE_BANDS,
   PARTS_PER_LEVEL,
   PARTS_MAX,
   ROOM_MIN_CELLS,
@@ -1158,13 +1159,32 @@ function buildLevel(level: number): void {
   // would shift every later call and reroll the layout of every existing
   // floor. This is the standing rule for new generation behaviour
   // (ROUTE_MATH_PLAN Part 8) and it is why floors are bit-identical today.
-  paintSurfaces(grid, (state.runSeed ^ (level * 0x85ebca6b)) >>> 0, {
+  const surfaceSeed = (state.runSeed ^ (level * 0x85ebca6b)) >>> 0;
+  // The arrival tile and the exit stay baseline: mud underfoot on spawn reads
+  // as broken controls, and terrain that steals the stairs is just a tax.
+  const surfaceSafe = [tileCenter(grid, plan.start.i, plan.start.j), tileCenter(grid, plan.stairs.i, plan.stairs.j)];
+  paintSurfaces(grid, surfaceSeed, {
     mix: modifier.surfaceMix,
     coverage: modifier.surfaceCoverage,
-    // The arrival tile and the exit stay baseline: mud underfoot on spawn reads
-    // as broken controls, and terrain that steals the stairs is just a tax.
-    safeSpots: [tileCenter(grid, plan.start.i, plan.start.j), tileCenter(grid, plan.stairs.i, plan.stairs.j)],
+    safeSpots: surfaceSafe,
   });
+  // ── THE SECOND AUTHOR ── the modifier above is WEATHER: it rolls on 45% of
+  // floors from level 3 and paints uniformly at random, which left the surface
+  // matrix — the one mechanic this game has that nothing else does — unable to
+  // hear anything a floor's SHAPE had to say. `paintBands` lets the archetype
+  // state what its launch district, machine core and drain lane are made of,
+  // zoned on the same distance-from-spawn bands `decorateMaze` has picked room
+  // archetypes from since Slice 9, so the material and the furniture describe
+  // one floor instead of two.
+  //
+  // SECOND, deliberately: the modifier is the announced once-in-a-while event
+  // and the zoning is the floor's permanent character, so the zoning is what
+  // shows through on top. Its own derived stream again, and it writes only
+  // `Grid.surfaces` — flipping SURFACE_BANDS leaves every floor's GEOMETRY
+  // byte-for-byte identical, which floor-pipeline.test.ts asserts both ways.
+  if (SURFACE_BANDS && arch.track.bands) {
+    paintBands(grid, surfaceSeed, plan.start, arch.track.bands, surfaceSafe);
+  }
 
   state.grid = grid;
   // Fresh fog every floor — the grid's dimensions change with depth, and
