@@ -1312,12 +1312,48 @@ function buildLevel(level: number): void {
   // real set piece: a carom ARENA (bumpers ringed round the exit) guarded by a
   // brute pack, with a guaranteed prize so clearing it pays. The run's last leg
   // is always a fight-or-flight, and the bumpers make it a PINBALL fight.
-  if (level >= 3 && level % BOSS_EVERY !== 0 && state.bruteSheet && state.stairs && state.scene) {
+  // ⚠️ IT USED TO SKIP `level % BOSS_EVERY === 0` — i.e. EVERY MEGA-BOSS FLOOR.
+  //
+  // Floor 5 is the first of them, and live QA reported its boss fight as "a
+  // jumbled mess". It was the one floor in five that got a DOUBLE-HP king
+  // (core.ts doubles his health on exactly this cadence) in bare corridor with
+  // no bumper ring, no brute guard and no prize — the set piece was withheld
+  // from precisely the floors built around a set-piece fight. The likely
+  // original reasoning is that the king IS the set piece there, but the two do
+  // not compete: the ring is what makes the arena read as an arena, and the
+  // king now has a hall to fight in (maze/track-floor.ts carveBossChamber).
+  if (level >= 3 && state.bruteSheet && state.stairs && state.scene) {
     const s = state.stairs;
-    // A ring of bumpers two tiles out from the exit — carom off them mid-brawl.
+    // A ring of bumpers around the exit — carom off them mid-brawl.
+    //
+    // ── IT ASKS THE MAZE FOR SPACE INSTEAD OF STAMPING FIXED OFFSETS ──
+    //
+    // The offsets were hard-coded at radius 2 and filtered by `isWalkable`, so a
+    // tight exit silently shipped two bumpers instead of six and the "arena"
+    // read as a couple of stray props. Now it walks outward: take the first
+    // radius that can seat most of the ring, so a King's Hall gets a full wide
+    // circle and a cramped legacy floor still gets the best ring it can hold.
     const ringSpots: Array<{ i: number; j: number }> = [];
-    for (const [di, dj] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2]] as const) {
-      if (isWalkable(grid, s.i + di, s.j + dj)) ringSpots.push({ i: s.i + di, j: s.j + dj });
+    for (const r of [3, 2, 4]) {
+      const offs: Array<readonly [number, number]> = [
+        [r, 0],
+        [-r, 0],
+        [0, r],
+        [0, -r],
+        [r - 1, r - 1],
+        [-(r - 1), -(r - 1)],
+        [r - 1, -(r - 1)],
+        [-(r - 1), r - 1],
+      ];
+      const fit = offs.filter(([di, dj]) => isWalkable(grid, s.i + di, s.j + dj)).map(([di, dj]) => ({ i: s.i + di, j: s.j + dj }));
+      if (fit.length >= 6 || (r === 4 && fit.length > ringSpots.length)) {
+        ringSpots.length = 0;
+        ringSpots.push(...fit);
+        if (fit.length >= 6) break;
+      } else if (fit.length > ringSpots.length) {
+        ringSpots.length = 0;
+        ringSpots.push(...fit);
+      }
     }
     createPinballParts(
       ringSpots.map((r) => ({ i: r.i, j: r.j, kind: "bumper" as const, dirI: 0, dirJ: 0, dir2I: 0, dir2J: 0 })),

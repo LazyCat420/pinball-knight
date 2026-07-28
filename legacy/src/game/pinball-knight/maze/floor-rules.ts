@@ -51,7 +51,7 @@
  */
 import { type Grid, type TilePos, idx, isWalkable } from "./generator";
 import type { ArchetypeId } from "./archetypes";
-import { measureDoorway, MIN_DOORWAY_WIDTH, DOORWAY_WIDTHS, type Doorway } from "./doorways";
+import { measureDoorway, clearanceField, widthFromClearance, MIN_DOORWAY_WIDTH, DOORWAY_WIDTHS, type Doorway } from "./doorways";
 
 /**
  * The archetype's grip on the placement rules.
@@ -168,6 +168,53 @@ export function perimeterScore(g: Grid, i: number, j: number): number {
  */
 export const PERIMETER_RULE_MIN = 0.34;
 
+/**
+ * THE KING'S HALL — how much clear floor the Reaper King's fight needs, in tiles
+ * of radius. DERIVED from his own mechanics, not chosen.
+ *
+ * The ground-pound is the only attack a room's SIZE changes. `updateBones` hits
+ * on proximity with no line-of-sight test, so walls do nothing about the skull
+ * barrage; the leash and the wake are path/anchor numbers no room this size can
+ * trip. So the derivation is about `doSlam`:
+ *
+ *   dodge = SLAM_RADIUS 2.6 + PLAYER_R 0.3                    = 2.90
+ *   noGo  = KING_BODY_R 0.784 + PLAYER_R 0.3                  = 1.08
+ *
+ * The crater commits to where you were standing, so you must TRAVEL `dodge` —
+ * and you cannot travel through the king, so a dodge lane is needed on each side
+ * of him:
+ *
+ *   span  = 2*dodge + 2*noGo = 7.97                           -> radius 3.98
+ *   + KING_HOME_TILES 2.5 (how far he drifts off the anchor)  = 6.48  -> 7
+ *
+ * ── Why not bigger, which is the part worth writing down ──
+ *
+ * Diameter 14 is inside BONE_MAX_DIST (16) ON PURPOSE. A hall he cannot shoot
+ * across is a hall you kite him around, which turns the fight from a duel into a
+ * chore. That ceiling — not the carve cost — is what fixes the upper bound, and
+ * it is why "round it up for a nicer doorway" is the wrong instinct: at radius
+ * 8.4 the hall would earn a width-7 mouth from DOORWAY_TIERS and break this.
+ *
+ * Cross-check: pi*7^2 ~ 154 tiles, 3.9% of the smallest floor, which is SMALLER
+ * than the greathall plaza that already ships (plazaFrac 0.16 -> ~226 tiles). The
+ * precedent already carries a bigger disc.
+ */
+export const BOSS_ARENA_R = 7;
+/**
+ * The same statement as BOSS_ARENA_R, expressed as a passage WIDTH so the gate
+ * can read it straight off `clearanceField` — the instrument the doorway system
+ * already uses, already exported, already deterministic. Two instruments for one
+ * quantity is how the old down-flow test came to measure a field nothing was
+ * oriented on.
+ *
+ * 9 and 7 are consistent: `core.ts` sites the king at `nearestOpenTile(stairs, 2)`,
+ * which in an open hall is a ring-1 neighbour — one tile off the exit — and
+ * `carveBossChamber` allows the centre one tile of slide. The widest circle that
+ * fits at his tile is therefore R - 1 - 1 = 5, and widthFromClearance gives
+ * 2*5 - 1 = 9.
+ */
+export const BOSS_ARENA_MIN_WIDTH = 9;
+
 /** Everything a rule needs to judge a finished floor. */
 export interface FloorRuleContext {
   grid: Grid;
@@ -193,6 +240,11 @@ export interface FloorRuleContext {
    * has nothing to judge and says so rather than passing silently.
    */
   doorways?: readonly Doorway[];
+  /**
+   * `clearanceField(grid)`, hoisted by the caller so 80 floors x N rules do not
+   * each run their own O(tiles) distance transform. Recomputed if absent.
+   */
+  clearance?: Int32Array;
 }
 
 export interface RuleVerdict {
@@ -320,6 +372,28 @@ export const FLOOR_RULES: FloorRule[] = [
       return {
         ok: worst >= MIN_DOORWAY_WIDTH,
         detail: `${worst} tiles narrowest of ${ds.length} authored (vocabulary ${[...DOORWAY_WIDTHS].reverse().join("/")}, wants >= ${MIN_DOORWAY_WIDTH})`,
+      };
+    },
+  },
+  {
+    id: "boss-has-room-to-fight",
+    why: "his ground-pound commits to where you were standing 1.1s ago and kills everything within 2.6 tiles of it — in a four-wide gallery there is nowhere to dodge TO, so the fight degenerates into standing in the crater and trading blows",
+    check(ctx) {
+      // No doorway plan means no chamber pass ran — a legacy maze floor. Same
+      // handling as `doorways-are-uniform`: say it has no instrument rather than
+      // pass silently, because a silent pass reads as coverage.
+      if (!ctx.doorways) return { ok: true, detail: "-1 — legacy floor, no chamber pass" };
+      const cl = ctx.clearance ?? clearanceField(ctx.grid);
+      // Measured at the KING's tile, not the stairs'. The two differ by one ring
+      // (`nearestOpenTile(stairs, 2)`), and that one tile is exactly the
+      // difference between the hall's 11 and the 9 required here.
+      const w = widthFromClearance(cl[idx(ctx.grid, ctx.bossSpot.i, ctx.bossSpot.j)]);
+      if (ctx.relaxed?.includes("boss-has-room-to-fight")) {
+        return { ok: true, detail: `${w} tiles across — RELAXED (no site on this floor could take an r=${BOSS_ARENA_R} hall)` };
+      }
+      return {
+        ok: w >= BOSS_ARENA_MIN_WIDTH,
+        detail: `${w} tiles across at the king's tile (wants >= ${BOSS_ARENA_MIN_WIDTH}; derived from SLAM_RADIUS 2.6 + PLAYER_R 0.3, twice, plus the king's own 1.08)`,
       };
     },
   },

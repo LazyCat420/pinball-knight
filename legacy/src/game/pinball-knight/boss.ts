@@ -84,7 +84,12 @@ export const KING_BODY_R = BRUTE_R * KING_SCALE * 0.86;
 const KING_WAKE_TILES = 26; // path distance (tiles) at which he engages
 const KING_LEASH_TILES = 34; // world distance from the anchor before he returns
 /** Within this of the anchor he counts as home and stands his ground again. */
-const KING_HOME_TILES = 2.5;
+/** Exported so `maze/floor-rules.ts` can DERIVE the arena size from the king's
+ *  own mechanics instead of restating a number that would then drift. The maze
+ *  modules are three-free and this file is not, so the derivation is duplicated
+ *  there and pinned against these by a test — the same shape as
+ *  RAIL_RIDE_INSET/PLAYER_R. */
+export const KING_HOME_TILES = 2.5;
 /** He walks home at a fraction of his hunting speed — a stalk back, not a sprint. */
 const KING_RETURN_SPEED = 0.75;
 const SKULL_COUNT = 5;
@@ -93,13 +98,13 @@ const SKULL_ORBIT_SPEED = 1.1; // rad/s
 const SKULL_Y = 1.5;
 const SLAM_INTERVAL = 4.2; // seconds between slams
 const SLAM_TELEGRAPH = 1.1; // windup the ring is visible before impact
-const SLAM_RADIUS = 2.6;
+export const SLAM_RADIUS = 2.6;
 const SLAM_DAMAGE = 2;
 const SLAM_LAUNCH = 16; // u/s knockback on hit
 const BARRAGE_INTERVAL = 2.6; // seconds between skull throws
 const BONE_SPEED = 9; // u/s projectile
 const BONE_DAMAGE = 1;
-const BONE_MAX_DIST = 16;
+export const BONE_MAX_DIST = 16;
 const BONE_HIT_R = 0.55;
 
 /**

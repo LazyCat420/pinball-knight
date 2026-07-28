@@ -19,9 +19,12 @@ import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "./prefabs
 import { archetypeFor, windinessFor } from "./archetypes";
 import { buildTrackFloor } from "./track-floor";
 import { nearestOpenTile } from "./nearest-open-tile";
+import { clearanceField } from "./doorways";
+import { SLAM_RADIUS, KING_BODY_R, KING_HOME_TILES, BONE_MAX_DIST } from "../boss";
+import { PLAYER_R } from "../constants";
 import { bfsDistances } from "../engine/flow-field";
 import { levelConfig } from "../constants";
-import { FLOOR_RULES, DEFAULT_RULE_WEIGHTS, checkFloorRules, perimeterScore, maxReach, type FloorRuleContext } from "./floor-rules";
+import { FLOOR_RULES, DEFAULT_RULE_WEIGHTS, checkFloorRules, perimeterScore, maxReach, type FloorRuleContext, BOSS_ARENA_R, BOSS_ARENA_MIN_WIDTH } from "./floor-rules";
 import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
 
 const RUN_SEEDS = [1, 12345, 0xc0ffee, 987654321, 424242, 7777];
@@ -62,6 +65,9 @@ function floorContext(level: number, runSeed: number): FloorRuleContext | null {
     weights: { ...DEFAULT_RULE_WEIGHTS, ...(arch.track.rules ?? {}) },
     relaxed: track.relaxed,
     doorways: track.doorways,
+    // Hoisted: 78 floors x N rules each running their own O(tiles) distance
+    // transform is the kind of cost that quietly makes a gate too slow to keep.
+    clearance: clearanceField(grid),
   };
 }
 
@@ -249,4 +255,32 @@ describe("floor rules", () => {
       }
     }
   }, 300000);
+});
+
+describe("the King's Hall is sized by the king, not by taste", () => {
+  it("BOSS_ARENA_R still follows from boss.ts's own numbers", () => {
+    // ── THE ASSERTION THAT KEEPS THE DERIVATION HONEST ────────────────────
+    //
+    // `maze/floor-rules.ts` is three-free and `boss.ts` is not, so the arena
+    // radius is derived in prose there and cannot import these constants. This
+    // is the seam: if someone retunes the ground-pound, the hall stops matching
+    // it silently, and the rule goes on passing while the fight it protects has
+    // changed underneath. Same shape as RAIL_RIDE_INSET === PLAYER_R.
+    //
+    //   dodge = SLAM_RADIUS + PLAYER_R          (you must TRAVEL out of the crater)
+    //   noGo  = KING_BODY_R + PLAYER_R          (and cannot travel through him)
+    //   span  = 2*dodge + 2*noGo                (a lane each side of him)
+    //   R     = span/2 + KING_HOME_TILES        (he drifts off his anchor)
+    const dodge = SLAM_RADIUS + PLAYER_R;
+    const noGo = KING_BODY_R + PLAYER_R;
+    const derived = Math.ceil((2 * dodge + 2 * noGo) / 2 + KING_HOME_TILES);
+    expect(BOSS_ARENA_R).toBe(derived);
+    // …and the UPPER bound, which is the reason not to simply make it bigger:
+    // a hall he cannot shoot across is a hall you kite him around.
+    expect(BOSS_ARENA_R * 2).toBeLessThanOrEqual(BONE_MAX_DIST);
+    // The gate's width and the carve's radius are one statement: the king stands
+    // a ring off the exit and the centre may slide a tile, so the widest circle
+    // at his tile is R-2 and widthFromClearance(R-2) = 2(R-2)-1.
+    expect(BOSS_ARENA_MIN_WIDTH).toBe(2 * (BOSS_ARENA_R - 2) - 1);
+  });
 });

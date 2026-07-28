@@ -28,19 +28,21 @@
  *
  * DOM- and three-free.
  */
-import { type Grid, type TilePos, T_FLOOR, T_STAIRS, at, idx, isWalkable, setTile } from "./generator";
+import { type Grid, type TilePos, T_FLOOR, T_STAIRS, T_WALL, at, idx, isWalkable, setTile, shapeAt } from "./generator";
 import { growTrack, circuitRank, type TrackGraph } from "./track-grow";
 import { buildTrackPath, type TrackPath } from "./track-path";
 import { carveTrack, carveChamber, growMazeAround, publishArcs, connectAll, sealedWalls, type TrackMask } from "./track-carve";
 import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./archetypes";
-import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
+import { uncarveDeadEnds, removeWallStubs, healRoadTerminations, nearSealed } from "./track-socket";
 import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
-import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN } from "./floor-rules";
-import { authorArcSweeps, stampOrbitIsland, orientArcRails } from "./arc-sweeps";
+import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN, BOSS_ARENA_R, BOSS_ARENA_MIN_WIDTH } from "./floor-rules";
+import { DEFAULT_CONSTRAINTS } from "./floor-metrics";
+import { authorArcSweeps, stampOrbitIsland, orientArcRails, ORBIT_RADIUS, ORBIT_RING } from "./arc-sweeps";
 import { buildFlowField } from "./flow-orient";
 import { compactArcs } from "./arc-contract";
+import { SHAPE_ARC } from "../engine/tile-shape";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
-import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, type Doorway } from "./doorways";
+import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, clearanceField, widthFromClearance, type Doorway } from "./doorways";
 import { bfsDistances } from "../engine/flow-field";
 
 /**
@@ -122,6 +124,12 @@ export interface TrackFloor {
    * that measured the opposite of what it claimed.
    */
   doorways: Doorway[];
+  /**
+   * The King's Hall, when one could be carved: the chamber around the exit that
+   * gives the Reaper King's ground-pound somewhere to be dodged. Null on a floor
+   * with no site for one, which is recorded in `relaxed` rather than passed over.
+   */
+  bossRoom: { ci: number; cj: number; r: number } | null;
 }
 
 /**
@@ -141,7 +149,21 @@ export function pickTrackEndpoints(
   g: Grid,
   mask: TrackMask,
   chute?: { base: TilePos; mouth: TilePos } | null,
-  opts: { perimeterBias?: number; minBossEuclid?: number } = {},
+  opts: {
+    perimeterBias?: number;
+    minBossEuclid?: number;
+    /**
+     * A PREFERENCE, inside the tie band, for where the EXIT lands. Never an
+     * override: `far()` applies it only after the distance band and the
+     * sight-line filter have chosen the pool, so it can only pick among equals
+     * — the same allocation-not-argmax shape this module's header argues for.
+     *
+     * Used twice for two phases of one requirement. Before the King's Hall is
+     * carved it asks "could a hall fit here at all"; after, "is this tile IN the
+     * hall". One hook, because they are one question.
+     */
+    stairsIn?: (i: number, j: number) => boolean;
+  } = {},
 ): { start: TilePos; stairs: TilePos; relaxed?: string[] } | null {
   const lane: TilePos[] = [];
   for (let j = 0; j < g.h; j++) {
@@ -236,9 +258,17 @@ export function pickTrackEndpoints(
     // falling back to the windiest would pick the closest, which is the defect.
     const pool = clear.length > 0 ? clear : band;
     const relaxed = clear.length === 0 && band.length > 0 && minEuclid > 0;
+    // ── THE EXIT PREFERS THE HALL WE ARE ABOUT TO CARVE FOR IT ─────────────
+    //
+    // A preference, and never a prohibition. If the band and the hall do not
+    // intersect, the hall loses: an exit close to the spawn is a worse defect
+    // than a king in a corridor, and the latter is recoverable (recorded as a
+    // relaxation and reported by the gate) while the former is not.
+    const hall = opts.stairsIn ? pool.filter((p) => opts.stairsIn!(p.i, p.j)) : [];
+    const choose = hall.length > 0 ? hall : pool;
     let bestPos = from;
     let bestScore = Infinity;
-    for (const p of pool) {
+    for (const p of choose) {
       const d = dist[idx(g, p.i, p.j)];
       const euclid = Math.hypot(p.i - eye.i, p.j - eye.j);
       const wind = Math.hypot(p.i - from.i, p.j - from.j);
@@ -306,6 +336,110 @@ export function pickTrackEndpoints(
   const b = far(chute ? chute.mouth : a, a);
   if (b.d <= 0) return null;
   return { start: a, stairs: b.pos, relaxed: b.relaxed ? ["boss-not-within-sight-of-spawn"] : [] };
+}
+
+
+/**
+ * THE KING'S HALL — the one chamber a track floor carves for a fight.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Live QA of floor 5 (ringkeep): the Reaper King fight happening "in a jumbled
+ * mess in the middle of the floor". He is sited at `nearestOpenTile(stairs, 2)`
+ * — whatever corridor the exit landed in — and on a ring keep that is a
+ * four-tile inner gallery. `maze/floor-rules.ts` constrains how FAR he is from
+ * the spawn (path distance, straight-line distance) and says nothing at all
+ * about the space he fights in.
+ *
+ * And there was nothing else to fall back on: the four room archetypes and all
+ * 13 prefabs are carved into `raw`, which `core.ts` DISCARDS on a track floor
+ * (`rooms = track ? [] : ...`). A track floor ships with no authored room of any
+ * kind. Floor 5 is also the worst case rather than a random one — `BOSS_EVERY`
+ * makes it a double-HP king, and core.ts skips the bumper-ring antechamber on
+ * exactly those floors.
+ *
+ * ── Why a disc, here, with this brush ─────────────────────────────────────
+ *
+ * `carveChamber` is the brush the greathall plaza already uses, and sharing it
+ * is what makes the hall a first-class part of the floor BY CONSTRUCTION rather
+ * than by remembering: `disc` sets `mask.lane`, so `uncarveDeadEnds` refuses to
+ * eat it (track-socket keeps off lane tiles), the socket layer types it as road,
+ * and the keep-out margin applies.
+ *
+ * It is wall -> floor ONLY, so it cannot disconnect anything and needs no strand
+ * guard — the same argument `connectAll` and `carveDoorways` already rest on.
+ * What it CAN leave is a stair-stepped rim of nubs, which is what the caller's
+ * `repair()` is for.
+ *
+ * ── Declines rather than clips ────────────────────────────────────────────
+ *
+ * Three refusals, each of which is a defect this would otherwise author:
+ *  · the SEALED lane and its flank (`nearSealed`) — the plunger hallway's whole
+ *    value is that it commits you, and a hall opening into its side is the
+ *    `floor-sealed` piece rule broken by the pass meant to improve the floor;
+ *  · `carveChamber`'s own border margin — a clipped hall is not a hall;
+ *  · a site that ALREADY measures big enough — a greathall whose exit landed in
+ *    its plaza needs no second chamber, and carving one would merge two rooms
+ *    into a field with no threshold between them.
+ *
+ * ONE tile of slide, no more, and the number is the same statement as the
+ * gate's: the width the rule measures at the king's tile is
+ * 2*(BOSS_ARENA_R - slide - 1) - 1 = 11 - 2*slide, against a required 9.
+ *
+ * Consumes NO rng: two co-op peers carve the identical hall.
+ */
+function carveBossChamber(
+  g: Grid,
+  mask: TrackMask,
+  stairs: TilePos,
+  clearance: Int32Array,
+  orbit: { ci: number; cj: number } | null,
+): { ci: number; cj: number; r: number } | null {
+  const R = BOSS_ARENA_R;
+  // Already roomy enough? Then this floor has its arena and a second carve would
+  // only dissolve the boundary between two chambers.
+  if (widthFromClearance(clearance[idx(g, stairs.i, stairs.j)]) >= BOSS_ARENA_MIN_WIDTH + 2) return null;
+  const SLIDE = 1;
+  for (let dj = -SLIDE; dj <= SLIDE; dj++) {
+    for (let di = -SLIDE; di <= SLIDE; di++) {
+      const ci = stairs.i + di;
+      const cj = stairs.j + dj;
+      if (ci - R < 2 || cj - R < 2 || ci + R > g.w - 3 || cj + R > g.h - 3) continue;
+      // Never open the plunger lane's flank — see above.
+      let touchesSealed = false;
+      for (let y = cj - R; y <= cj + R && !touchesSealed; y++) {
+        for (let x = ci - R; x <= ci + R; x++) {
+          if ((x - ci) * (x - ci) + (y - cj) * (y - cj) > R * R) continue;
+          if (x < 0 || y < 0 || x >= g.w || y >= g.h) continue;
+          if (nearSealed(g, mask, x, y)) {
+            touchesSealed = true;
+            break;
+          }
+        }
+      }
+      if (touchesSealed) continue;
+      // ── AND IT KEEPS CLEAR OF THE ORBIT ISLAND ──────────────────────────
+      //
+      // The island is a FULL-CIRCLE arc feature, and `trimArcToBacking` refuses
+      // to trim one — correctly, since a circle trimmed to a run stops being an
+      // island and the floor loses its centrepiece. So unlike every other curve
+      // family, an island cannot repair itself after the stone behind part of
+      // its ring is opened: it simply ships partly unbacked, drawn as a curved
+      // ribbon standing in open floor.
+      //
+      // That is exactly what happened the first time this pass ran — the piece
+      // gate reported two islands at 71% and 96% backed, both with their centres
+      // just outside the hall but their RINGS inside it. Hence the clearance is
+      // measured to the ring, not the centre: R + ORBIT_RADIUS + ORBIT_RING.
+      if (orbit) {
+        const need = R + ORBIT_RADIUS + ORBIT_RING;
+        if (Math.hypot(orbit.ci - ci, orbit.cj - cj) < need) continue;
+      }
+      if (!carveChamber(g, mask, ci, cj, R)) continue;
+      return { ci, cj, r: R };
+    }
+  }
+  return null;
 }
 
 /**
@@ -490,8 +624,94 @@ export function buildTrackFloor(
   // The curves change geometry, so the geometry gets repaired — see `repair`.
   repair(protect);
 
+  // ⚠️ NO `stairsIn` HERE, and that is deliberate. Biasing the FINAL exit toward
+  // tiles a hall could be centred on excludes a nine-tile band around the whole
+  // border, and `floor-metrics` caught the cost immediately: "exit on the
+  // doorstep" and "straight shot to the exit" on greathall floors, because the
+  // distance-and-windiness optimum is often exactly out there. The hall is a
+  // room we build for the exit, not a constraint the exit serves — where one
+  // genuinely cannot fit, `carveBossChamber` declines and the floor records a
+  // relaxation, which is the honest outcome.
   const ends = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
   if (!ends) return null;
+
+  // ── THE KING'S HALL ─────────────────────────────────────────────────────
+  //
+  // AFTER the final endpoints, and that position is the whole design.
+  //
+  // The obvious place is beside the plaza carve, or right after `endsEarly` so
+  // `planDoorways` can author the hall's mouths from the standard 3/5/7
+  // vocabulary for free. Both were tried and both are wrong, for two separate
+  // measured reasons:
+  //
+  //  · CARVED EARLY, IT GETS EATEN. `stampOrbitIsland` hunts for "a wide-open
+  //    floor disc" to stamp a full circle into, and the King's Hall is by
+  //    construction the widest open disc on the floor; the concave fillets want
+  //    its rim crooks and the artery banks want to shell its turns. All three
+  //    convert floor to WALL. Measured: the hall came out ONE TILE wide at the
+  //    king's tile on a third of floors — carved, then filled back in.
+  //  · CARVED AROUND THE PROVISIONAL EXIT, IT IS BUILT AROUND THE WRONG TILE.
+  //    `endsEarly` is re-picked here on a grid the curve passes have changed,
+  //    and `far()` scores by `wind/d` — a ratio that flips between distant
+  //    candidates on small perturbations. Measured: the final exit landed 17 to
+  //    81 tiles from the early one on half the floors. Forcing the exit to stay
+  //    put instead was tried too, and it costs exit QUALITY: `floor-metrics`
+  //    immediately reported "exit on the doorstep" and "straight shot to the
+  //    exit", because the early pick was never optimised for the final geometry.
+  //
+  // Carving here answers both at once. Every wall-adding curve family has
+  // already run, so there is nothing left to eat it (the artery banks below are
+  // the one exception, and they are guarded); and the exit is final, so the room
+  // is around the tile the player actually walks to. The price is that the hall
+  // is not in the doorway PLAN, so its mouths are ordinary openings rather than
+  // authored 3/5/7 thresholds. That is a real cost and it is the cheaper one:
+  // an exit on the doorstep ruins the floor, an unauthored mouth does not.
+  //
+  // ── AND IT IS GUARDED, because opening 154 tiles AT THE EXIT is a shortcut ──
+  //
+  // The hall adds floor, so it cannot strand anything — but it can shorten the
+  // route to the exit and straighten it, and on an already-open archetype that
+  // is enough to break the floor gate: measured, greathall L8 fell to pathLen 32
+  // against a required 39, and greathall L5 to directness 0.871 against 0.85.
+  // Both are the same story — a greathall already IS a chamber (plazaFrac carves
+  // one), so a second one next to the exit merges into it and the last stretch
+  // of the journey disappears.
+  //
+  // Same shape as `resealChute`'s guard: do it, re-measure, put it back if it
+  // was load-bearing. Reverting is exact because `disc` only ever converts wall
+  // to floor, so restoring the snapshot restores the floor precisely.
+  // ⚠️ MEASURED FROM THE CHUTE MOUTH, exactly as `measureFloor` does, not from
+  // the spawn. The two differ by the whole ~20-tile plunger lane, so a guard
+  // written from the spawn passes a floor the gate then fails — which is what
+  // happened: greathall L8 read 52 here and 32 there. A guard that measures a
+  // different quantity from the gate it exists to satisfy is not a guard.
+  const routeFrom = chute ? chute.mouth : ends.start;
+  const routeOk = (): boolean => {
+    const d = bfsDistances(grid, routeFrom.i, routeFrom.j);
+    const len = d[idx(grid, ends.stairs.i, ends.stairs.j)];
+    if (len < 0) return false;
+    if (len < (grid.w + grid.h) * DEFAULT_CONSTRAINTS.minPathSpan) return false;
+    const euclid = Math.hypot(ends.stairs.i - routeFrom.i, ends.stairs.j - routeFrom.j);
+    return len === 0 || euclid / len <= DEFAULT_CONSTRAINTS.maxDirectness;
+  };
+  const tilesBefore = Uint8Array.from(grid.t);
+  const laneBefore = Uint8Array.from(mask.lane);
+  const shapesBefore = Uint8Array.from(grid.shapes);
+  let bossRoom = carveBossChamber(grid, mask, ends.stairs, clearanceField(grid), orbit);
+  // A disc's rim is stair-stepped, so it leaves nubs like every other carve and
+  // gets the same treatment every other carve gets.
+  if (bossRoom) repair([ends.start, ends.stairs]);
+  if (bossRoom && !routeOk()) {
+    grid.t.set(tilesBefore);
+    grid.shapes.set(shapesBefore);
+    mask.lane.set(laneBefore);
+    bossRoom = null;
+  }
+  /** The hall's interior, kept clear of the one wall-adding pass still to come.
+   *  `r - 1` rather than `r` so the rim itself stays available to be filleted
+   *  round — a jagged arena rim is the artefact the curve work exists to remove. */
+  const inBossRoom = (i: number, j: number): boolean =>
+    bossRoom !== null && (i + 0.5 - bossRoom.ci) ** 2 + (j + 0.5 - bossRoom.cj) ** 2 <= (bossRoom.r - 1) ** 2;
 
   // ── ARTERY BANKS — the last of the three curve families to come home ─────
   //
@@ -527,7 +747,7 @@ export function buildTrackFloor(
     if (chute) for (const t of chuteTiles(grid, chute)) guarded.add(idx(grid, t.i, t.j));
     for (let k = 0; k < mask.sealed.length; k++) if (mask.sealed[k] === 1) guarded.add(k);
     const isGuarded = (i: number, j: number): boolean =>
-      i >= 0 && j >= 0 && i < grid.w && j < grid.h && guarded.has(idx(grid, i, j));
+      (i >= 0 && j >= 0 && i < grid.w && j < grid.h && guarded.has(idx(grid, i, j))) || inBossRoom(i, j);
     authorArteryBanks(grid, artery, ends.start, NOTHING_OCCUPIED, isGuarded);
     repair([ends.start, ends.stairs]);
   }
@@ -613,6 +833,21 @@ export function buildTrackFloor(
     compactArcs(grid);
     if (removeWallStubs(grid, mask) === 0) break;
   }
+  // ── AND COMPACTION HAS THE LAST WORD ────────────────────────────────────
+  //
+  // The loop above ends on `removeWallStubs`, which converts wall to FLOOR — so
+  // whenever the final round actually removes a stub, it can un-back an arc face
+  // that the compaction at the top of that same round had just certified. The
+  // loop's exit condition hides this in the common case (it breaks when the stub
+  // pass changed nothing, and then nothing can have been un-backed), which is
+  // why it went unnoticed until the King's Hall gave the stub pass more to do:
+  // three floors in 180 shipped a feature 71-96% backed, i.e. a curved ribbon
+  // with one end standing in open air — the exact defect the arc contract
+  // exists to prevent.
+  //
+  // One more compaction, unconditionally. It only ever trims or drops features,
+  // so it cannot create work for the stub pass and the fixed point still holds.
+  compactArcs(grid);
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 
@@ -654,6 +889,11 @@ export function buildTrackFloor(
         })();
     if (available < PERIMETER_RULE_MIN) relaxed.push("spawn-respects-perimeter-bias");
   }
+  // No hall could be sited, or the final exit walked out of the one that was.
+  // RECORDED rather than silently accepted: the rule then reports OK for this
+  // floor while floor-rules.test.ts separately caps how OFTEN that may happen,
+  // which is what stops a relaxation from hollowing the rule out.
+  if (!bossRoom || !inBossRoom(ends.stairs.i, ends.stairs.j)) relaxed.push("boss-has-room-to-fight");
 
   return {
     grid,
@@ -666,6 +906,7 @@ export function buildTrackFloor(
     orbit,
     relaxed,
     doorways: doors.doorways,
+    bossRoom,
   };
 }
 
