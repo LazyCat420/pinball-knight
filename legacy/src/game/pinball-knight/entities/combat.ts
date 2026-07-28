@@ -54,6 +54,7 @@ import {
   COMBO_ZONE_CRUISE,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow } from "./combo-curve";
+import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
 import { screenDirToWorld } from "../engine/camera";
@@ -511,8 +512,34 @@ export function damageZombie(
 
   if (z.hp <= 0) {
     killZombie(z);
-  } else {
-    sfxHit();
+    return;
+  }
+  sfxHit();
+
+  // ── IMPACT-SCALED STAGGER (DECLONE §6.1; entities/stagger.ts) ──
+  //
+  // Doom's pain chance, priced in momentum: this is the dial that turns damage
+  // into CROWD CONTROL, and until now the game had none. Fodder at terminal
+  // speed staggers on nearly every hit, so a ricochet chain through a pack
+  // reads as a chain; a brute barely flinches; a golem and the King never do.
+  //
+  // Two gates before the accumulator, both deliberate:
+  //   · the blow must have a DIRECTION. Burn ticks and fire puddles call this
+  //     funnel with (0,0,0) — a damage-over-time that stunlocks is not an
+  //     impact mechanic, it is a permanent disable with extra steps.
+  //   · it must not already be staggered, or the second hit of a fast weapon
+  //     would refresh the window forever off one entropy crossing.
+  //
+  // NO DICE. `accrue` banks chance × 100 per impact and fires on 100, so the
+  // long-run rate is exactly the printed chance with bounded variance and
+  // co-op peers agree by construction. `coop-determinism.test.ts` is the gate.
+  const impact = Math.hypot(dirx, dirz);
+  if (impact > 1e-4 && (z.staggerT ?? 0) <= 0) {
+    const base = painBase(z);
+    if (base > 0 && accrue(z, "painEntropy", painChance(base, momentum))) {
+      z.staggerT = staggerTime(momentum);
+      state.vfx?.sparks(z.x, 0.9, z.z, dirx, dirz, 5);
+    }
   }
 }
 

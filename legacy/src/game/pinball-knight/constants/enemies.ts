@@ -220,6 +220,30 @@ export const SEPARATION_R = 0.55;
  */
 export const DIRECT_STEER_RANGE = 1.6;
 
+// ── STAGGER / ENTROPY (entities/stagger.ts) ─────────────────────
+/**
+ * Doom's pain chance, priced in momentum. See entities/stagger.ts for the why;
+ * these are the three numbers the shape needs.
+ */
+/** What a hit at a dead stop is worth, as a fraction of the family's pain chance.
+ *  Small but non-zero, so a heavy weapon still rocks things occasionally — the
+ *  rest of the stat is bought with speed. */
+export const STAGGER_SPEED_FLOOR = 0.15;
+/** Seconds a stagger holds at walking pace… */
+export const STAGGER_TIME_MIN = 0.25;
+/** …and at terminal speed. A fast hit lands more often AND holds longer. */
+export const STAGGER_TIME_MAX = 0.6;
+/**
+ * The entropy accumulator's trigger threshold (PoE's is 100; the units are
+ * arbitrary and only the ratio matters). Chance × this accrues per event; the
+ * event fires when the counter crosses it, and the threshold is SUBTRACTED
+ * rather than the counter zeroed, so leftover entropy carries and the long-run
+ * rate is exactly the printed chance.
+ */
+export const ENTROPY_FULL = 100;
+/** A staggered actor's tint — pale and washed out: it is not in the fight. */
+export const STAGGER_TINT = 0xbcbcd0;
+
 // ── MOVEMENT POLICIES (entities/movement.ts) ────────────────────
 /**
  * The steering vocabulary's tuning. Every number here answers "how far off the

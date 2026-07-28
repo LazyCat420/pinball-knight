@@ -13,6 +13,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { pickZombieType, ZOMBIE_TYPES, ZOMBIE_TYPE_IDS } from "./zombie-types";
+import { accrue, painChance, PAIN_BY_KIND, type EntropyHolder } from "./entities/stagger";
+import { PINBALL_MAX_SPEED } from "./constants";
 
 /** The hash `spawnHordeMember` derives per spawn tile, reproduced faithfully. */
 function spawnHashes(runSeed: number, level: number, n: number): number[] {
@@ -74,5 +76,93 @@ describe("co-op: two peers on one seed agree on every zombie's sub-type", () => 
       for (const t of spawnHashes(31337, level, 500).map((h) => pickZombieType(h, level))) seen.add(t);
     }
     expect(seen.size).toBe(ZOMBIE_TYPE_IDS.length);
+  });
+});
+
+/**
+ * The SECOND co-op invariant, added with the stagger economy (DECLONE §6.1):
+ * every peer must agree on WHO IS STAGGERED, not just on who is a hulk.
+ *
+ * Stagger is decided per impact by a pain roll, and a pain roll is exactly the
+ * kind of thing that would normally be `Math.random() < chance` — which on four
+ * peers simulating the same floor means four different monsters frozen at four
+ * different moments, and a knight who is safe on one screen and bitten on
+ * another. The fix is the same shape as the sub-type hash: replace the roll
+ * with something that has no randomness in it at all.
+ *
+ * PoE's entropy accumulator (entities/stagger.ts) does that AND removes streaks
+ * as a side effect. What has to be pinned here is that it is a pure function of
+ * (counter, chance): no module state, no clock, no draw order dependence.
+ */
+describe("co-op: two peers agree on every stagger", () => {
+  /** Replay a peer's whole hit stream and record which hits interrupted. */
+  function peer(chances: number[]): boolean[] {
+    const z: EntropyHolder = {};
+    return chances.map((c) => accrue(z, "painEntropy", c));
+  }
+
+  /** A plausible fight: impacts at wildly varying speeds against one monster. */
+  function fight(seed: number, n: number): number[] {
+    // Speeds from a mulberry32 so the SEQUENCE is fixed but not uniform —
+    // an accumulator that only worked for a constant chance would pass a
+    // constant-rate test and fail here.
+    let a = seed >>> 0;
+    const rng = (): number => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    return Array.from({ length: n }, () => painChance(PAIN_BY_KIND.zombie, rng() * PINBALL_MAX_SPEED));
+  }
+
+  it("derives an identical stagger sequence from an identical hit sequence", () => {
+    for (const seed of [1, 42, 123456789]) {
+      const chances = fight(seed, 500);
+      expect(peer(chances), `seed ${seed} diverged`).toEqual(peer(chances));
+    }
+  });
+
+  it("gives DIFFERENT fights different staggers (the test above isn't vacuous)", () => {
+    expect(peer(fight(1, 500))).not.toEqual(peer(fight(2, 500)));
+  });
+
+  it("carries no state between actors — two monsters can't share a stream", () => {
+    // A module-level counter would make monster B's stagger depend on how many
+    // times monster A had been hit, which desyncs the moment two peers kill the
+    // horde in a different order.
+    const chances = fight(7, 300);
+    const solo = peer(chances);
+    const a: EntropyHolder = {};
+    const b: EntropyHolder = {};
+    const interleaved = chances.map((c) => {
+      accrue(b, "painEntropy", 0.9);
+      return accrue(a, "painEntropy", c);
+    });
+    expect(interleaved).toEqual(solo);
+  });
+
+  it("has zero Math.random on the path, even with the global booby-trapped", () => {
+    const real = Math.random;
+    Math.random = () => {
+      throw new Error("Math.random() reached the stagger path");
+    };
+    try {
+      peer(fight(99, 400));
+    } finally {
+      Math.random = real;
+    }
+  });
+
+  it("delivers each monster's PRINTED pain chance over a long fight", () => {
+    // Determinism is worthless if it is deterministically wrong: at terminal
+    // speed the rate must be the family's own number, not a rounded-down one.
+    for (const kind of ["zombie", "brute", "bat", "golem"] as const) {
+      const n = 4000;
+      const c = painChance(PAIN_BY_KIND[kind], PINBALL_MAX_SPEED);
+      const hits = peer(Array.from({ length: n }, () => c)).filter(Boolean).length;
+      expect(Math.abs(hits - c * n), kind).toBeLessThanOrEqual(1);
+    }
   });
 });

@@ -71,6 +71,7 @@ import {
   REAPER_SPEED_MAX,
   AGGRO_TILES,
   SEPARATION_R,
+  STAGGER_TINT,
   PACK_RANGE,
   LOS_PROBE_RANGE,
   LOS_PROBE_STEP,
@@ -472,6 +473,24 @@ export function updateZombies(dt: number): void {
       z.z = sres.z;
       z.sprite.mesh.position.set(z.x, z.sprite.mesh.position.y, z.z);
       z.anim.play("idle");
+      continue;
+    }
+
+    // ── STAGGERED (entities/stagger.ts) ── the hit rocked it: no steering, no
+    // attack, no leap. It drops whatever it was committed to, which is the
+    // whole point — stagger is CROWD CONTROL, and a control effect that leaves
+    // the wind-up running controls nothing. Placed before the aggro gate and
+    // before the phase branch so ghosts freeze mid-drift too.
+    if ((z.staggerT ?? 0) > 0) {
+      z.staggerT = Math.max(0, (z.staggerT ?? 0) - dt);
+      if (z.mode === "windup" || z.mode === "charge") {
+        z.mode = "chase";
+        z.windupT = 0;
+      }
+      cancelCommit(z);
+      z.anim.play("idle");
+      if (z.flashT <= 0) z.sprite.setTint(STAGGER_TINT);
+      syncActorMesh(z);
       continue;
     }
 

@@ -85,6 +85,14 @@ export interface ZombieTypeDef {
    * decorates the walk; `movement` decides where the walk goes.
    */
   movement?: MovementKind;
+  /**
+   * × the zombie family's pain chance (entities/stagger.ts). Absent = 1.
+   *
+   * The sub-type's half of the stagger economy: a Hulk shrugs off the ricochet
+   * that stunlocks a Midget, without either of them needing a different HP pool
+   * or a different branch anywhere.
+   */
+  painMult?: number;
 }
 
 /**
@@ -106,16 +114,22 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // Fast enough to afford the detour: it arrives from the side of whatever
     // corridor you are pointing your sword down.
     movement: "flanker",
+    // Frail and light — anything that connects rocks it.
+    painMult: 1.2,
   },
   lurcher: {
     id: "lurcher", label: "Lurcher",
     speedMult: 0.55, hpMult: 2.0, scale: 1.1, bodyRMult: 1.1, reachMult: 1.05, windupMult: 1.3,
     weight: 14, fromLevel: 1, variantFilter: null,
+    // Slow and heavy; it absorbs a hit and keeps coming.
+    painMult: 0.6,
   },
   hulk: {
     id: "hulk", label: "Hulk",
     speedMult: 0.7, hpMult: 3.0, scale: 1.55, bodyRMult: 1.5, reachMult: 1.35, windupMult: 1.45,
     weight: 6, fromLevel: 4, variantFilter: null, knockback: 7.5,
+    // Three times a zombie's mass. A ricochet does not move it.
+    painMult: 0.25,
   },
   midget: {
     id: "midget", label: "Midget",
@@ -124,6 +138,9 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // Too small to fight you alone, and it knows it. Hangs at the edge of the
     // light until three of them agree — then they all arrive at once.
     movement: "packhunter",
+    // The most stunlockable thing on the floor — and it knows it,
+    // which is why it will not come at you alone.
+    painMult: 1.3,
   },
   crawler: {
     id: "crawler", label: "Crawler",
@@ -135,6 +152,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // No legs, so it does not chase — it WAITS, flat on the floor, and springs
     // when you finally walk into its line. The one sub-type you can miss.
     movement: "ambusher",
+    // Already on the floor: there is less of it to knock over.
+    painMult: 0.8,
   },
   flailer: {
     id: "flailer", label: "Flailer",
@@ -146,6 +165,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // Nothing to swing with, so the whole BODY is the weapon: it crouches and
     // pounces along an arc. The crouch is the window you get.
     movement: "leaper",
+    // Baseline — its exception is the leap, not its footing.
+    painMult: 1.0,
   },
   hobbler: {
     id: "hobbler", label: "Hobbler",
@@ -154,6 +175,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // One leg gone IS the limp — exactly one, not both (that's the crawler).
     variantFilter: (v) => v.legStump === "L" || v.legStump === "R",
     gait: "limp",
+    // One leg. Its footing is the joke and the weakness.
+    painMult: 1.15,
   },
 };
 

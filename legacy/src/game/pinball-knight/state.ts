@@ -411,6 +411,19 @@ export interface Zombie extends Actor {
   moveT?: number;
   moveDirX?: number;
   moveDirZ?: number;
+  /**
+   * STAGGER (entities/stagger.ts) — Doom's pain chance, paid with a PoE entropy
+   * accumulator instead of dice. `painEntropy` banks chance × 100 per impact and
+   * fires when it crosses 100; `staggerT` is the frozen window it buys.
+   * `dodgeEntropy` is the same machinery for the `dodges-ranged` sub-type
+   * exception, kept as a SEPARATE counter so a sub-type that both staggers and
+   * dodges cannot have one stream starve the other.
+   *
+   * Counters, not rolls, so a co-op peer and a replay agree by construction.
+   */
+  painEntropy?: number;
+  staggerT?: number;
+  dodgeEntropy?: number;
 }
 
 /**
