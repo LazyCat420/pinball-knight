@@ -128,7 +128,14 @@ function centredLane(a0: number, total: number, frac: number, cw: boolean): Lane
   return { a0: a0 + (total - span) / 2, span, cw, cooldownT: 0, hitT: -1 };
 }
 
-/** Tiles that carry placed content (parts/items/spawns/…): never converted. */
+/**
+ * Tiles something else already owns: never converted by a sweep.
+ *
+ * Named for content (parts/items/spawns) because that is what it was for when
+ * the sweeps ran inside `decorateMaze`. Now that they run in the geometry layer
+ * the only thing it carries is the DOORWAY PLAN — openings decided before the
+ * curves exist, which a fillet must build around rather than through.
+ */
 export type Occupied = (i: number, j: number) => boolean;
 
 const HALF_PI = Math.PI / 2;
@@ -189,12 +196,22 @@ function planFillet(g: Grid, px: number, pz: number, cx: number, cz: number, R: 
     for (let ti = x0; ti <= x1; ti++) {
       const t = at(g, ti, tj);
       if (shapeAt(g, ti, tj) !== SHAPE_FULL) return null; // already claimed by a shape/sweep
+      // CLAIMED BY SOMETHING ELSE — and this applies to BOTH kinds of fillet.
+      // It used to be asked only on the concave branch, on the reasoning that a
+      // convex fillet lives inside wall mass and so cannot land on anything.
+      // That is true of CONTENT, which is what `occupied` originally meant, and
+      // false of a plan: a convex sweep carves its shoulder open and marks a rim
+      // right through a doorway that was planned before the curves existed. It
+      // was the single largest reason doorways were later refused — 220 of 1788
+      // planned openings, more than every other guard combined — and each one is
+      // a threshold given up so a scavenged decorative curve could exist.
+      if (occupied(ti, tj)) return null;
       const { dmin, dmax } = tileDistRange(C.x, C.z, ti, tj);
       const inside = dmax <= R + 1e-6; // fully within the circle
       const outside = dmin >= R - 1e-6; // fully beyond the circle
       if (concave) {
         // Block is room floor; solid grows OUTSIDE the circle (toward P).
-        if (t !== T_FLOOR || occupied(ti, tj)) return null;
+        if (t !== T_FLOOR) return null;
         if (outside) fillTiles.push({ i: ti, j: tj });
         else if (!inside) arcTiles.push({ i: ti, j: tj });
         // fully inside → stays open floor

@@ -22,6 +22,7 @@ import { nearestOpenTile } from "./nearest-open-tile";
 import { bfsDistances } from "../engine/flow-field";
 import { levelConfig } from "../constants";
 import { FLOOR_RULES, DEFAULT_RULE_WEIGHTS, checkFloorRules, perimeterScore, maxReach, type FloorRuleContext } from "./floor-rules";
+import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
 
 const RUN_SEEDS = [1, 12345, 0xc0ffee, 987654321, 424242, 7777];
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 17, 20, 25];
@@ -60,6 +61,7 @@ function floorContext(level: number, runSeed: number): FloorRuleContext | null {
     archetype: arch.id,
     weights: { ...DEFAULT_RULE_WEIGHTS, ...(arch.track.rules ?? {}) },
     relaxed: track.relaxed,
+    doorways: track.doorways,
   };
 }
 
@@ -174,6 +176,57 @@ describe("floor rules", () => {
       );
     }
     console.log(`  mean perimeterScore by archetype: ${report}`);
+  }, 300000);
+
+  it("DOORWAYS: the authored set is stable, sized from a vocabulary, and never narrow", () => {
+    // The count is the amplification guard. v1 of this pass re-derived what
+    // counted as a room from clearance on every round, which promotes the
+    // corridor beyond a widened opening into a room and manufactures a fresh
+    // doorway: 34 → 107 per floor while the pinches it was fixing barely moved.
+    // A count that has run away is the signature, so it is asserted as a BAND
+    // rather than a floor — a number that is too HIGH is the failure this
+    // catches, and one that is too low means the pass has stopped finding
+    // anything to author.
+    //
+    // The band is set from measurement on the shipping path, not from taste.
+    // DOORWAY_PLAN §6 wrote down 25-40 from the second attempt, which authored a
+    // door at every section PAIR whether or not there was a threshold there;
+    // this pass authors only where a real opening exists to make uniform (a
+    // seam that runs through open ground is not a doorway and gets none), so
+    // the honest number is lower. See the census printed below.
+    const sizes = new Map<number, number>();
+    const counts: number[] = [];
+    let widthSum = 0;
+    let widthN = 0;
+    for (const runSeed of RUN_SEEDS) {
+      for (const level of LEVELS) {
+        const ctx = floorContext(level, runSeed);
+        if (!ctx) continue;
+        const ds = ctx.doorways ?? [];
+        counts.push(ds.length);
+        for (const d of ds) {
+          sizes.set(d.w, (sizes.get(d.w) ?? 0) + 1);
+          widthSum += measureDoorway(ctx.grid, d);
+          widthN++;
+        }
+      }
+    }
+    const mean = counts.reduce((s, v) => s + v, 0) / Math.max(1, counts.length);
+    const report = `${mean.toFixed(1)}/floor over ${counts.length} floors, max ${Math.max(...counts)}, sizes ${[...sizes].sort((a, b) => a[0] - b[0]).map(([w, n]) => `${w}w x${n}`).join("  ")}, mean finished width ${(widthSum / Math.max(1, widthN)).toFixed(2)}`;
+    console.log(`  doorways: ${report}`);
+    expect(mean, `doorway count has run away — see the self-amplification note in doorways.ts. ${report}`).toBeLessThan(30);
+    expect(mean, `the doorway pass has stopped authoring anything. ${report}`).toBeGreaterThan(4);
+    // ALL THREE SIZES, or the vocabulary is one size with two dead constants —
+    // and "different uniform sizes that can go from one section to another" is
+    // half the thing the user asked for.
+    for (const w of DOORWAY_WIDTHS) {
+      expect(sizes.get(w) ?? 0, `no ${w}-wide doorway on any floor — the vocabulary has collapsed. ${report}`).toBeGreaterThan(0);
+    }
+    // A floor with a single section legitimately authors none, but that must
+    // stay the exception rather than becoming the norm — the rule itself passes
+    // silently on those, so this is where the rate is held.
+    const empty = counts.filter((n) => n === 0).length;
+    expect(empty / counts.length, `${empty}/${counts.length} floors authored no doorway at all`).toBeLessThan(0.12);
   }, 300000);
 
   it("a floor's spawn, exit and boss are all reachable from each other", () => {

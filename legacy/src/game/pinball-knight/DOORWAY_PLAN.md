@@ -1,10 +1,11 @@
 # DOORWAY PLAN — canonical openings between sections
 
-Status: **not shipped.** Two attempts built and reverted (2026-07-27). Neither
-was wasted — the measurement and the failure modes below are the expensive part,
-and the third attempt should be short.
+Status: **SHIPPED** (2026-07-27), third attempt. `maze/doorways.ts`, planned and
+carved in `buildTrackFloor`, gated by `doorways-are-uniform` in the floor-rules
+registry and a census in `floor-rules.test.ts`, inspectable at runtime with
+`__dungeonDoorways()`.
 
-Live QA, verbatim:
+Live QA that started it, verbatim:
 
 > "we need to make sure we don't have narrow exits because they are being
 > generated in the maze generator system and it looks bad/looks sloppy. It
@@ -18,16 +19,72 @@ happened to leave, so the floor still reads as accidental. What makes an opening
 look authored is being recognisably the same object each time you meet it.
 
 ⚠️ **The physics half of the complaint ("it makes the user bounce a bunch") is
-owned by another dev.** This plan is geometry only. Do not touch bounce damping
-or launcher behaviour.
+owned by another dev.** This work is geometry only; bounce damping and launcher
+behaviour were not touched.
 
 ---
 
-## 1. The measurement (do not redo this — it cost the most to get right)
+## 1. What shipped
+
+`maze/doorways.ts` — clearance field, section labels, Voronoi siting, plan,
+carve, audit. The module header carries the full rationale; this is the shape:
+
+1. **Clearance field** — a 3-4 chamfer distance transform. Width is measured on
+   the medial axis (§2), never from one tile's neighbours.
+2. **Sections, labelled ONCE** — connected components of clearance ≥ 3 (passage
+   ≥ 5 tiles) holding ≥ 14 tiles. Labelled before anything is carved, so a
+   doorway is *"the opening between section 3 and section 7"* — a statement
+   carving cannot invalidate, which is what kills v1's self-amplification (§3).
+3. **Siting** — multi-source BFS out of every section at once, a Voronoi
+   partition of corridor space. The boundary is grouped into connected strips;
+   each strip is one CONNECTION and gets one door.
+4. **Size** — the smallest member of `[3, 5, 7]` that clears both the size the
+   two sections earned (bigger section ⇒ wider mouth) and the opening's current
+   width. So a 4-tile gap becomes a 5-tile doorway; it is never left at 4.
+5. **Carve** — wall → floor only, extending along the travel axis until the
+   full-width cross-section is already open at both ends.
+6. **Audit** — `measureDoorway` reads the narrowest cross-section through the
+   AUTHORED centre. Never re-derived from the finished floor (§4).
+
+### Measured on the shipping path, 78 floors (6 seeds × 13 depths)
+
+```
+authored ...................... 9.9 doorways/floor, max 23
+sizes ......................... 3w ×301   5w ×340   7w ×131
+finished at the authored size .. 99.2%     (before the jamb rule: 83%)
+under 3 tiles ................. 0
+carved ........................ 6.15 tiles/floor across 1.5 doorways
+openShare ..................... 0.60 → 0.61
+dead ends per 1k tiles ........ 0.30 → 0.29
+```
+
+A/B against the same builder with the pass disabled, same seeds:
+
+```
+narrow section connections (< 3 tiles) on the shipped floor
+   pass off ... 4.13 per floor
+   pass on .... 3.41 per floor
+```
+
+**That 17% is the honest headline, and the residue is fully accounted for.**
+Every narrow opening the pass declines has a named reason (266 over 78 floors):
+
+| why | n | is that right? |
+|---|---|---|
+| `throat` | 89 | the squeeze is a long corridor, not a threshold. Widening corridors wholesale is exactly how v1 carved floors open. |
+| `arc` | 76 | a published curve occupies the cross-section. The circuit's fillets are the racing line and never yield (`arc-contract.yields`). |
+| `jamb` | 50 | a one-tile partition cannot hold a doorway — see §5. |
+| `span` | 23 | the arc-span guard (§4). **3.6% of planned sites, well under the 15% Step-A acceptance, so Step B was never needed.** |
+| `border` | 23 | the outermost ring stays solid. |
+| `sealed` | 5 | the launch chute. |
+
+---
+
+## 2. The measurement (do not redo this — it cost the most to get right)
 
 Passage width must be measured on the **medial axis**: the widest circle that
-fits at the pinch. An arbitrary tile's wall clearance is *not* width — every
-tile of a 2-wide corridor touches a wall exactly like a 1-wide one.
+fits at the pinch. An arbitrary tile's wall clearance is *not* width — every tile
+of a 2-wide corridor touches a wall exactly like a 1-wide one.
 
 Over 120 generated floors:
 
@@ -36,10 +93,6 @@ Over 120 generated floors:
 | **1 tile** | **81.3%** | **0.20** |
 | 3 tiles | 16.4% | 1.20 |
 | 5 tiles | 2.3% | 2.20 |
-
-Restricted to pinches that gate a **section** (a squeeze between two 5+-wide
-spaces): **10.9 per floor**. That is the target set. Widening all 51 pinches per
-floor would carve the maze open wholesale.
 
 At 22 u/s with 0.20 of slack per side the ball cannot cross without touching
 both walls, which is the reported rattle.
@@ -52,7 +105,7 @@ both walls, which is the reported rattle.
 
 ---
 
-## 2. What v1 did wrong — self-amplification
+## 3. What v1 did wrong — self-amplification
 
 v1 decided what counted as a "room" from **local clearance, re-derived on every
 pass**. That is self-amplifying: widening an opening promotes the corridor
@@ -62,144 +115,128 @@ beyond it into a room, which manufactures a fresh doorway, which widens again.
     surviving pinches over the same run:  109 → 102
 
 It is the **opposite** of `removeWallStubs`, where every round strictly reduces
-the work left. The "iterate to a fixed point" reflex is wrong here and applying
-it made things measurably worse.
+the work left. The "iterate to a fixed point" reflex is wrong here.
+
+Pinned by `doorways.test.ts` → "re-planning after carving does not manufacture
+new doorways".
 
 ---
 
-## 3. What v2 got right — keep all of this
+## 4. What v2 got right, and the two places its spec was wrong
 
-Section labels computed **once**, from the clearance field, before any carving.
-A doorway is then *"the opening between section 3 and section 7"* — a statement
-carving cannot invalidate.
+Kept wholesale: sections labelled once; Voronoi siting; the odd `[3,5,7]`
+vocabulary; size from what it joins rather than an rng roll; clamping the centre
+at PLAN time (`carveDoorways` refuses the outermost ring, so a centre sited one
+tile in silently comes out narrower); wall → floor only; never a `mask.sealed`
+tile; never a `T_CRACKED` tile.
 
-- **Siting:** multi-source BFS out of every section at once (a Voronoi partition
-  of corridor space). Where two territories meet, those sections are connected;
-  the meeting tile with the greatest clearance is the cheapest place to put the
-  door, because it is already the widest part of that connection.
-- **One door per section PAIR.** Two sections joined by three corridors get one
-  canonical door, not three — otherwise the widest-point rule opens every route
-  between them and the pair dissolves into a single space.
-- **Vocabulary `[3, 5, 7]`, odd on purpose** so an opening has a true centre tile
-  and centres on the passage's own axis.
-- **Size from what it JOINS** (bigger section ⇒ wider mouth), never an rng roll,
-  so the size carries information a player can learn.
-- **Clamp the centre inside the border at PLAN time.** `carveDoorways` refuses
-  to touch the outermost ring, so an opening sited one tile in silently comes out
-  narrower. Sliding the centre fixes it; 9 floors in 78 shipped a 2-wide door for
-  exactly this reason before the clamp.
-- **Only ever wall → floor**, so it can never strand anything and needs no repair.
-- **Never carve a `mask.sealed` tile.** The launch chute's side walls are sealed;
-  opening one turns the plunger hallway into a corridor with a hole in it.
-  `track-launch.test.ts` catches it.
-- **Never widen a `T_CRACKED` tile** — that is a deliberate hidden route, and
-  announcing it is the opposite of a secret.
+### 4a. The arc guard — the plan was right, its pseudo-code was not
 
-Measured with all of the above:
+The blocker was correctly diagnosed: `publishArcs` claims only tiles that are
+`T_WALL` at stamp time, so ownership is never the problem. The mismatch is that
+an arc feature's **drawn angular span** covers tiles it never owned, and a
+doorway carved under that band un-backs the drawn geometry.
 
-    authored ................... 32.4 doorways/floor, stable
-    sizes ...................... 3w ×3035   5w ×469   7w ×382  (120 floors)
-    closed by a later pass ..... 0        (v1: 12)
-    plan drift on re-plan ...... 2.45/floor — no amplification
-    under 3 tiles .............. 0/78 floors
+But §5's pseudo-code guarded the band `publishArcs` probes (2.0–4.5 tiles inside
+the radius). That is the OWNERSHIP band. `piece-rules` samples `backedAt`, which
+probes **0.6** tiles inside — a different set of tiles entirely, and guarding the
+first would have blocked plenty while protecting nothing.
 
----
+`arcSpanMask` therefore mirrors `backedAt`, sampled at 4× the density
+`backedFraction` uses so the marked set is a strict superset of what the gate
+probes. Pinned by "builds the span mask from what the backing check SAMPLES, not
+from what the feature owns".
 
-## 4. Why v2 still could not ship — and the correction to my earlier note
+### 4b. "The meeting tile with the greatest clearance" is a no-op
 
-It broke `piece-rules` ("every curved wall has stone behind it") and then
-`floor-metrics`.
+Read connection-by-connection this is sound: among several corridors joining two
+sections, the widest is the cheapest to bring up to standard. Read
+tile-by-tile — which is how it was implemented — it puts the door on the wrong
+side of the squeeze.
 
-**An earlier HANDOFF entry said "v3 must change the arc layer". That is not
-quite right — read this instead.** `publishArcs` (`maze/track-carve.ts:244`)
-already claims only tiles that are `T_WALL` **at stamp time**, so it is not
-publishing over open floor. The actual mismatch is:
+Two rooms separated by a wall with a one-tile slot meet across exactly two
+tiles: the slot, and the room tile beyond it. The room tile has the greater
+clearance, so the door is sited one tile PAST the squeeze, inside the room,
+where it measures nineteen tiles across and is discarded as "these two have
+merged". The squeeze it existed to remove is untouched.
 
-> An arc feature's **drawn angular span** covers tiles it does not *own*.
-> `arcSweepGeometry` draws the whole `a0 … a0 + span` band. A doorway carved
-> anywhere under that band un-backs the drawn geometry even though the feature
-> never claimed those tiles.
+Measured on 78 real floors: **1181 doorways carving 5.6 tiles per floor between
+them.** The pass was doing essentially nothing, and every number in v2's census
+still looked healthy — that is the failure mode worth remembering.
 
-That is why a 3×3 neighbourhood guard around `arcIdx` was not enough: the guard
-was checking ownership, and the requirement is about the **span**.
+The fix is to site at the connection's narrowest CROSS-SECTION (open run across
+the passage), not at its greatest clearance. Cross-section rather than clearance
+because clearance also falls off near the walls at the *ends* of a perfectly good
+wide opening; minimising it would site the door in the corner of a 15-tile mouth.
+
+Also corrected: **one door per CONNECTION, not per pair.** Per pair leaves every
+squeeze but one between the same two sections at its original width.
 
 ---
 
-## 5. v3 — do this, in this order
+## 5. Two rules the plan did not have, both from measurement
 
-### Step A (cheap, try first): guard on the SPAN, not on ownership
+**A seam wider than the vocabulary gets no door.** Two sections meeting across a
+12-tile front have not got a threshold between them, they have merged. 36% of
+seams are like this, and cutting a "doorway" into one authors an object standing
+in a field.
 
-Build a span-occupancy mask once, after all arc authoring:
-
-```
-for each feature f in grid.arcs:
-    steps = max(8, ceil(f.r * f.span / 0.25))
-    for s in 0..steps:
-        ang = f.a0 + f.span * s / steps
-        for d in 2.0 .. 4.5 step 0.5:            # same band publishArcs probes
-            mark tile( f.cx + cos(ang)*(f.r-d), f.cz + sin(ang)*(f.r-d) )
-```
-
-Forbid `carveDoorways` from opening any marked tile. This is precise, needs no
-change to the arc layer, and mirrors exactly what `piece-rules` samples.
-
-**Then MEASURE how many doorways it blocks.** With ~90 arc features per floor
-this may reject too many. Acceptance: if `< 15%` of planned doorways are blocked
-and the gate is green, ship it and stop.
-
-### Step B (only if Step A blocks too many): clip arc spans instead
-
-Move `piece-rules`' backing check from assertion into authoring: after doorways
-carve, walk each feature's span and **trim or split it** to the sub-ranges that
-still have solid backing. `maze/arc-contract.ts` already clips `kicks`/`lanes`
-sub-ranges — extend the same idea to the feature span itself. `compactArcs` then
-drops whatever is left too small.
-
-This is the more invasive option, which is why it is second.
-
-### Step C: wire and gate
-
-- Plan in `buildTrackFloor` on clean pre-curve geometry; carve **after** all
-  floor→wall passes (`authorArcSweeps`, `authorArteryBanks`, `resealChute`,
-  `compactArcs`) and **before** `removeWallStubs` — carving raises the
-  open-neighbour count of adjacent walls, so the stub sweep must see the result.
-- Fence doorway tiles off from those same passes via the `occupied` /
-  `isGuarded` predicates they already accept.
-- Add the rule to `maze/floor-rules.ts` (`doorways-are-uniform`), checking
-  **authored** doorways against the finished grid. Do **not** re-derive the set
-  from the final floor: a widened doorway is no longer a pinch, so re-detection
-  returns only the ones that were *not* fixed, and then measures a run that has
-  merged into the space beyond. An early version reported an opening as "9 wide"
-  for exactly this reason and failed 78/78 floors on a meaningless metric.
-- Store the plan on `TrackFloor.doorways` so the gate can see it.
+**`jambsSurvive` — a doorway is a hole in a wall, so there must still be a
+wall.** Widening a 1-tile slot whose neighbour is a lone pillar breaks sideways
+into whatever is behind it, and `removeWallStubs` then eats the rest of a thin
+partition (every tile of a one-tile wall already has open floor on both sides, so
+a hole gives its neighbours a third open side and the whole wall zips out).
+Before this check, **17% of doorways finished wider than the size they were
+authored at, the worst at 52 tiles.** After it, 1.3%.
 
 ---
 
-## 6. Acceptance criteria
+## 6. Two neighbouring bugs this uncovered
 
-Ship only when **all** of these hold:
+Both are independent of doorways and were fixed here because doorways made them
+fire.
 
-- [ ] `floor-rules.test.ts` green — no authored doorway finishes under 3 tiles
-- [ ] `piece-rules.test.ts` green — both the arc-backing and the full piece sweep
-- [ ] `floor-metrics.test.ts` green
-- [ ] `track-launch.test.ts` green — the chute is still sealed
-- [ ] full suite green (1086 at the time of writing)
-- [ ] doorways/floor in the 25–40 band (32.4 was healthy; 107 was amplification)
-- [ ] all three vocabulary sizes present across a 120-floor census
-- [ ] verified in-engine with a screenshot, not just numbers
+**`compactArcs` and `removeWallStubs` need a joint fixed point** (`track-floor`).
+Running each once leaves whichever defect the other just created: de-stubbing can
+open the last stone BEHIND a drawn arc span (the backing probe sits 0.6 tiles
+inside the radius, well short of the 2.0–4.5 band `publishArcs` claims), and
+compaction turns a dropped feature's rims into plain stone that can be a nub.
+Iterating is safe here — unlike the doorway pass — because both are MONOTONE in
+opposite directions and neither can undo the other's work.
+
+**`arc-sweeps.planFillet` asked `occupied` only on the concave branch.** True of
+content, false of a plan: a convex sweep carves its shoulder open and marks a rim
+straight through a doorway planned before the curves existed. It was the single
+largest reason doorways were refused — 220 of 1788, more than every other guard
+combined.
 
 ---
 
-## 7. Files
+## 7. Where the code is
 
 | file | role |
 |---|---|
-| `maze/doorways.ts` | **deleted — rewrite from §3** (clearance field, section labels, plan, carve, audit) |
-| `maze/track-floor.ts` | wiring: plan early, carve late, fence the tiles |
-| `maze/floor-rules.ts` | the `doorways-are-uniform` rule + `TrackProfile` weights |
-| `maze/track-carve.ts` | `publishArcs` — read it before Step B |
-| `maze/arc-contract.ts` | existing sub-range clipping to model Step B on |
-| `maze/piece-rules.ts` | the backing check to mirror / relocate |
+| `maze/doorways.ts` | the pass. Header carries the rationale. |
+| `maze/doorways.test.ts` | the unit half — 23 cases, each one a thing that went wrong |
+| `maze/track-floor.ts` | plan before the curves, carve after them, fence the tiles |
+| `maze/floor-rules.ts` | the `doorways-are-uniform` rule |
+| `maze/floor-rules.test.ts` | the census: count band, all three sizes, empty-floor rate |
+| `dev/window-hooks.ts` | `__dungeonDoorways()` — authored vs finished, in the running game |
 
-Per-archetype weights belong on `TrackProfile.rules` alongside `perimeterBias`,
-the pattern already shipped in `efe67db`.
+---
+
+## 8. Still open
+
+- **The count band.** §6 of the old plan wrote down 25–40 per floor from v2,
+  which authored a door at every section pair whether or not there was a
+  threshold there. This pass authors only where a real opening exists to make
+  uniform, so the honest number is 9.9. The gate asserts 4–30 as an
+  amplification guard; if the siting rules change, re-derive it, do not port it.
+- **`throat` (89 of 266 declined).** A long 1-wide corridor between two sections
+  is a genuine narrow exit that this pass deliberately does not touch. Fixing it
+  means authoring a doorway at each MOUTH of the corridor rather than at its
+  midpoint — a different siting rule, and a real feature rather than a tuning
+  change.
+- **`arc` (76).** The circuit's own fillets win over a doorway, which is the
+  right precedence. Whether the *scavenged* sweeps should also win is worth
+  asking now that `occupied` fences them.

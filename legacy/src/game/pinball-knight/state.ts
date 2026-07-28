@@ -16,6 +16,7 @@ import type { Grid, TilePos } from "./maze/generator";
 import type { Fog } from "./fog";
 import type { ArcCorner } from "./engine/collision";
 import type { MazeHandle } from "./maze/build";
+import type { Doorway } from "./maze/doorways";
 import type { InputHandle } from "./engine/input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind, ItemRarity } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, MANA_MAX } from "./constants";
@@ -890,6 +891,16 @@ export const state = {
   /** The player's spawn point this floor (world coords) — where a pit spits you back. */
   levelStart: { x: 0, z: 0 },
   maze: null as MazeHandle | null,
+  /**
+   * This floor's authored openings between sections (maze/doorways.ts).
+   *
+   * Kept so `__dungeonDoorways()` can point at one in the RUNNING game. That is
+   * not developer convenience: two of the last three generator defects shipped
+   * because they were verified against the generator's own numbers rather than
+   * against the floor a player stands on, and the boss-at-the-spawn one took a
+   * user to catch. `__dungeonBoss()` exists for the same reason.
+   */
+  doorways: [] as Doorway[],
   /**
    * This floor's archetype rooms (speedway / bumper / arena / vault).
    *

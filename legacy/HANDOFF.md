@@ -18,6 +18,73 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > the tree and **left them strictly alone** — committed only its own files and
 > deployed from a clean `HEAD` worktree so that work did not ship early.
 
+## ✅ DOORWAYS SHIPPED — uniform openings between sections (2026-07-27)
+
+Third attempt, and the one that landed. Read
+`src/game/pinball-knight/DOORWAY_PLAN.md` — it is now a record of what shipped,
+not a proposal, and §4 is the part worth your time.
+
+**What it does.** `maze/doorways.ts` labels a floor's SECTIONS once from a
+clearance field, partitions corridor space between them with a multi-source BFS,
+and authors one opening per CONNECTION at that connection's narrowest
+cross-section, sized to the smallest member of `[3, 5, 7]` that clears both the
+size the two sections earned and the opening's current width. Wall → floor only.
+Planned before the curves are authored (so the sweeps build around it), carved
+after every floor→wall pass, gated by `doorways-are-uniform` in the floor-rules
+registry.
+
+```
+9.9 doorways/floor over 78 floors    sizes 3w x301  5w x340  7w x131
+99.2% finish at exactly their authored size          0 under 3 tiles
+narrow section connections, same builder, same seeds:  4.13 → 3.41 per floor
+```
+
+**Two things in the plan's spec were wrong, and both mattered.**
+
+1. Step A's pseudo-code guarded the band `publishArcs` PROBES (2.0-4.5 tiles
+   inside the radius). `piece-rules` samples `backedAt`, which probes **0.6**
+   inside — a disjoint set of tiles. Guarding the first blocks plenty and
+   protects nothing. The span guard now mirrors `backedAt` and rejects **3.6%**
+   of planned sites, well under the 15% acceptance, so Step B was never needed.
+2. "The meeting tile with the greatest clearance" is a NO-OP read
+   tile-by-tile. Two rooms joined by a one-tile slot meet across two tiles: the
+   slot, and the room tile past it. The room tile is wider, so the door lands
+   inside the room, measures nineteen across, and is discarded as "merged" —
+   while the squeeze survives untouched. Measured: **1181 doorways carving 5.6
+   tiles per floor between them**, with every summary statistic still looking
+   healthy. Site at the narrowest cross-section instead.
+
+**Two neighbouring bugs it flushed out**, both independent of doorways:
+
+- `compactArcs` and `removeWallStubs` needed a JOINT fixed point. De-stubbing can
+  open the last stone behind a drawn arc span, and compaction turns dropped rims
+  into nubs. Safe to iterate (unlike the doorway pass) because both are monotone
+  in opposite directions. Was 1 unbacked arc per 150 floors.
+- `arc-sweeps.planFillet` asked `occupied` only on the CONCAVE branch. True of
+  content, false of a plan — a convex sweep marks a rim straight through a
+  planned doorway. It was the largest single reason doorways were refused, 220 of
+  1788, more than every other guard combined.
+
+**`__dungeonDoorways()`** is the new referee: authored size, finished size,
+world position for `__dungeonTeleport`. Verified in the running game on L1/8/12/17
+— authored == finished on every doorway, screenshots taken at carved ones.
+
+1614 tests green (138 files), typecheck clean.
+
+### Still open here
+- **`throat` — 89 of the 266 declined narrow openings** are long 1-wide corridors
+  between sections. Deliberately untouched (widening corridors wholesale is how
+  attempt 1 carved floors open). Fixing them means siting a doorway at each MOUTH
+  of the corridor instead of at its midpoint: a different rule, a real feature.
+- **The 25-40/floor band in the old plan is dead.** It came from a rule that
+  authored a door at every section pair whether or not a threshold existed there.
+  The gate now asserts 4-30 as an amplification guard. If the siting changes,
+  re-derive the band; do not port it.
+- KING_WAKE_TILES (26) / KING_LEASH_TILES (34) are reasoned, not playtested.
+- Contraflow is down 77% per launcher but flat in absolute count. Lever is
+  `ALT_ROUTE_GAP`.
+- **This file is still 900+ lines and still the log it says it is not.**
+
 ## ✅ NOT AN INCIDENT — the "vanished" maze work was deliberately reverted by its own author (2026-07-27)
 
 **Closing this out because it has been logged as a data-loss event and it was

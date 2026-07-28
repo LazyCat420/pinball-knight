@@ -32,6 +32,7 @@ import { POTIONS, POTION_IDS, WEAPONS, freshWeapon } from "../items";
 import type { PotionId, WeaponId } from "../items";
 import { isFloorMapOpen } from "../map-overlay";
 import { at, tileCenter } from "../maze/generator";
+import { measureDoorway } from "../maze/doorways";
 import { spawnCardDrop } from "../economy/loot";
 import { myId, peers } from "../../../net/presence";
 import { installBotHooks } from "../playtest-bot";
@@ -159,6 +160,36 @@ export function installDevHooks(deps: DevHookDeps): void {
         .map((g) => ({ kind: g.kind, id: g.id, x: g.x, z: g.z, owner: g.corpseOwner })),
       player: state.player ? { x: state.player.x, z: state.player.z } : null,
     });
+    // Dev: THE FLOOR'S AUTHORED DOORWAYS, with the width each one actually
+    // finished at, measured on the grid the player is standing on.
+    //
+    // The generator can already report this to itself, and that is exactly why
+    // the hook exists. Two of the last three geometry defects here shipped
+    // because they were verified against the generator's intent rather than
+    // against the running game — the boss arriving 6.7 tiles from the spawn
+    // cleared every check the generator made and took a user to catch. Anything
+    // that claims to have shaped the floor should be answerable at runtime;
+    // `__dungeonBoss()` is the same idea.
+    //
+    // `__dungeonTeleport(x, z)` takes world coords, so `world` is the field to
+    // feed it when you want to go and LOOK at one.
+    (window as unknown as { __dungeonDoorways?: () => unknown }).__dungeonDoorways = () => {
+      const g = state.grid;
+      if (!g) return null;
+      return state.doorways.map((d) => {
+        const c = tileCenter(g, d.i, d.j);
+        return {
+          i: d.i,
+          j: d.j,
+          world: { x: c.x, z: c.z },
+          authored: d.w,
+          finished: measureDoorway(g, d),
+          depth: d.back + d.fwd + 1,
+          carved: d.carved,
+          joins: [d.a, d.b],
+        };
+      });
+    };
     // Dev: the floor map's exploration state — the only way a harness can see
     // whether fog is actually being revealed (the minimap is a canvas).
     (window as unknown as { __dungeonFog?: () => unknown }).__dungeonFog = () => {

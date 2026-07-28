@@ -979,6 +979,8 @@ function buildLevel(level: number): void {
   let endpoints: { start: TilePos; stairs: TilePos } | null;
   if (track) {
     grid = track.grid;
+    // Exposed to the running game via `__dungeonDoorways()` — see state.doorways.
+    state.doorways = track.doorways;
     // Both endpoints sit ON the circuit and a lap apart, so the route between
     // them RIDES the track instead of treating it as scenery between errands.
     endpoints = { start: track.start, stairs: track.stairs };
@@ -992,6 +994,7 @@ function buildLevel(level: number): void {
     // and decorateMaze. Both used to derive them independently with the same
     // "top-left tile → farthest tile" rule, which put the exit in the
     // bottom-right corner of every floor; see pickEndpoints.
+    state.doorways = []; // the legacy maze has no section plan
     endpoints = pickEndpoints(grid, rng);
     if (endpoints) widenMainArtery(grid, endpoints);
   }

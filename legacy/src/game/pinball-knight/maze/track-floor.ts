@@ -39,6 +39,7 @@ import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN } from "./floo
 import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
 import { compactArcs } from "./arc-contract";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
+import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, type Doorway } from "./doorways";
 import { bfsDistances } from "../engine/flow-field";
 
 /**
@@ -48,6 +49,10 @@ import { bfsDistances } from "../engine/flow-field";
  * placed for a fillet to eat. Naming it rather than inlining `() => false` is
  * deliberate: the empty predicate is the *statement* that geometry precedes
  * content, and an inline arrow reads like an oversight.
+ *
+ * Content is still not what it avoids. What it DOES avoid now is the planned
+ * doorways (maze/doorways.ts) — the one thing on the grid at this point that
+ * was decided before the curves and must survive them.
  */
 const NOTHING_OCCUPIED = (): boolean => false;
 
@@ -106,6 +111,16 @@ export interface TrackFloor {
    * `decorateMaze` reads the centre to flank it with bumpers, which is content.
    */
   orbit: { ci: number; cj: number } | null;
+  /**
+   * The floor's authored openings between sections (maze/doorways.ts).
+   *
+   * Carried on the floor rather than re-derived, and that is the whole point:
+   * a widened doorway is no longer a pinch, so re-detecting the set from the
+   * finished grid returns exactly the openings that were NOT fixed. An early
+   * version of the gate did that and failed 78 floors out of 78 on a metric
+   * that measured the opposite of what it claimed.
+   */
+  doorways: Doorway[];
 }
 
 /**
@@ -413,6 +428,30 @@ export function buildTrackFloor(
   };
   repair(protect);
 
+  // ── DOORWAYS: PLANNED HERE, CARVED AT THE END (maze/doorways.ts) ─────────
+  //
+  // Planned on clean pre-curve geometry and carved after every floor→wall pass
+  // has run. The split is not tidiness, it is the fix for the failure that sank
+  // the first attempt: deciding what counts as a "room" from clearance
+  // re-derived on every pass is SELF-AMPLIFYING, because widening an opening
+  // promotes the corridor beyond it into a room, which manufactures a fresh
+  // doorway. Measured, 34 → 107 doorways per floor while the pinches barely
+  // moved. Labelling the sections once, here, makes a doorway "the opening
+  // between section 3 and section 7" — a statement carving cannot invalidate.
+  //
+  // The plan is also what the curve passes are told to avoid. A fillet built on
+  // a planned threshold is a curve the doorway would later have to cut through,
+  // and cutting it un-backs the drawn arc; steering the curves around the plan
+  // is far cheaper than arbitrating between them afterwards.
+  const doorSites = planDoorways(grid);
+  const doorGuard = new Set<number>();
+  for (const s of doorSites) {
+    const d = resolveDoorway(grid, s, { mask });
+    if (d) for (const t of doorwayFootprint(grid, d)) doorGuard.add(idx(grid, t.i, t.j));
+  }
+  const onDoorway = (i: number, j: number): boolean =>
+    i >= 0 && j >= 0 && i < grid.w && j < grid.h && doorGuard.has(idx(grid, i, j));
+
   // ── CURVED WALLS, ALL OF THEM, HERE ─────────────────────────────────────
   //
   // A floor's curves used to be authored by TWO different layers. This one
@@ -445,8 +484,8 @@ export function buildTrackFloor(
   //    is what makes "the track's curves win" true by construction.
   publishArcs(grid, path);
   const arcStart = endsEarly?.start ?? { i: 1, j: 1 };
-  const orbit = stampOrbitIsland(grid, arcStart, NOTHING_OCCUPIED, rng);
-  authorArcSweeps(grid, arcStart, NOTHING_OCCUPIED, rng);
+  const orbit = stampOrbitIsland(grid, arcStart, onDoorway, rng);
+  authorArcSweeps(grid, arcStart, onDoorway, rng);
   // The curves change geometry, so the geometry gets repaired — see `repair`.
   repair(protect);
 
@@ -483,7 +522,7 @@ export function buildTrackFloor(
   const arteryDist = bfsDistances(grid, ends.start.i, ends.start.j);
   const artery = traceArtery(grid, ends.start, ends.stairs, arteryDist);
   if (artery.length >= 8) {
-    const guarded = new Set<number>();
+    const guarded = new Set<number>(doorGuard);
     if (chute) for (const t of chuteTiles(grid, chute)) guarded.add(idx(grid, t.i, t.j));
     for (let k = 0; k < mask.sealed.length; k++) if (mask.sealed[k] === 1) guarded.add(k);
     const isGuarded = (i: number, j: number): boolean =>
@@ -518,13 +557,61 @@ export function buildTrackFloor(
     });
   }
 
-  compactArcs(grid);
-  // Compaction turns a dropped feature's rim tiles back into plain stone, and a
-  // former rim can be a three-sided nub — `removeWallStubs` skips arc tiles, so
-  // it had no opinion on them while they were still rims. One more pass, after
-  // the last thing that can create one. It only opens walls that carry no arc
-  // face, so it cannot unback a surviving curve.
-  removeWallStubs(grid, mask);
+  // ── AND NOW THE DOORWAYS ARE CUT ────────────────────────────────────────
+  //
+  // After every pass that converts floor to wall, so nothing can wall an
+  // opening back up — and BEFORE `compactArcs`, which is the ordering the piece
+  // gate forced. The arc-span guard refuses to cut under a drawn band, but the
+  // guard is a mask over tiles and a cut two tiles away can still take the last
+  // stone from under the END of a span. `compactArcs` is exactly the pass that
+  // trims a feature back to the part still backed, so it has to see the floor
+  // WITH the doorways in it. Carved after it, two floors in 150 shipped a
+  // curved ribbon over open ground (91% and 94% backed).
+  //
+  // The guard is therefore built from the pre-compaction feature list, which is
+  // a superset of the final one — strictly more conservative, never less.
+  //
+  // Before `removeWallStubs` too, because opening a doorway raises the open-
+  // neighbour count of every wall beside it: the nubs the cut leaves are
+  // exactly what that pass exists to clean, and running it first would leave
+  // them standing.
+  //
+  // Nothing needs to run after this to keep the floor connected. The carve is
+  // wall → floor only, so it cannot strand a tile; and the throat is extended
+  // until the full-width cross-section is already open on both sides, so every
+  // column of an opening ends on floor and the cut creates no dead ends.
+  const doors = carveDoorways(grid, doorSites, { mask, spanMask: arcSpanMask(grid) });
+
+  // ── TRIM CURVES AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
+  //
+  // These two passes feed each other, and running them once each — which is
+  // what shipped — leaves whichever defect the other one just created.
+  //
+  //  · compaction turns a dropped feature's rim tiles back into plain stone,
+  //    and a former rim can be a three-sided nub. `removeWallStubs` skips arc
+  //    tiles, so it had no opinion on them while they were still rims.
+  //  · de-stubbing opens wall tiles, and a wall tile can be the last stone
+  //    BEHIND a drawn arc span without carrying an arc face itself — the
+  //    backing probe sits 0.6 tiles inside the radius, well short of the 2.0-4.5
+  //    band `publishArcs` claims. Opening one leaves a curved ribbon over open
+  //    floor, which is what the piece gate caught on 1 floor in 150 once
+  //    doorways started creating stubs next to backing stone.
+  //
+  // ITERATING IS SAFE HERE, unlike the doorway pass itself (see doorways.ts on
+  // self-amplification), and the reason is that both passes are MONOTONE in
+  // opposite directions: `removeWallStubs` only ever converts wall → floor, and
+  // `compactArcs` only ever drops or trims features. Neither can undo the
+  // other's work, so the pair strictly decreases the work left and must reach a
+  // fixed point. The loop exits on the round that removes no stub — at which
+  // point nothing can have been unbacked since the last compaction.
+  //
+  // 8 is a runaway guard, not an operative value; measured, floors settle in
+  // two rounds. If it is ever hit, something is oscillating and that is a bug
+  // to find rather than a limit to raise.
+  for (let round = 0; round < 8; round++) {
+    compactArcs(grid);
+    if (removeWallStubs(grid, mask) === 0) break;
+  }
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
 
@@ -547,7 +634,18 @@ export function buildTrackFloor(
     if (available < PERIMETER_RULE_MIN) relaxed.push("spawn-respects-perimeter-bias");
   }
 
-  return { grid, graph, path, mask, start: ends.start, stairs: ends.stairs, chute, orbit, relaxed };
+  return {
+    grid,
+    graph,
+    path,
+    mask,
+    start: ends.start,
+    stairs: ends.stairs,
+    chute,
+    orbit,
+    relaxed,
+    doorways: doors.doorways,
+  };
 }
 
 /** Independent cycles in the circuit — exposed for HUD/debug and tests. */

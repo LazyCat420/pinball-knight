@@ -51,6 +51,7 @@
  */
 import { type Grid, type TilePos, idx, isWalkable } from "./generator";
 import type { ArchetypeId } from "./archetypes";
+import { measureDoorway, MIN_DOORWAY_WIDTH, DOORWAY_WIDTHS, type Doorway } from "./doorways";
 
 /**
  * The archetype's grip on the placement rules.
@@ -185,6 +186,13 @@ export interface FloorRuleContext {
    * exception rather than an escape hatch that hollows the rule out.
    */
   relaxed?: readonly string[];
+  /**
+   * The floor's authored openings between sections (`TrackFloor.doorways`).
+   *
+   * Absent on a legacy maze floor, which has no section plan — the rule then
+   * has nothing to judge and says so rather than passing silently.
+   */
+  doorways?: readonly Doorway[];
 }
 
 export interface RuleVerdict {
@@ -271,6 +279,48 @@ export const FLOOR_RULES: FloorRule[] = [
         return { ok: true, detail: `perimeterScore ${s.toFixed(2)} — RELAXED (no peripheral site existed)` };
       }
       return { ok: s >= PERIMETER_RULE_MIN, detail: `perimeterScore ${s.toFixed(2)} (bias ${want} wants >= ${PERIMETER_RULE_MIN})` };
+    },
+  },
+  {
+    id: "doorways-are-uniform",
+    why: "an opening the maze happened to leave one tile wide reads as sloppy and rattles the ball between both walls at speed; a doorway is supposed to be a recognisable object",
+    check(ctx) {
+      const ds = ctx.doorways;
+      if (!ds) return { ok: true, detail: "-1 — no doorway plan (legacy floor)" };
+      // A floor with one section — a greathall that is genuinely one chamber —
+      // has no pair to join and authors nothing. That is a legitimate outcome
+      // and this rule has nothing to say about it. What it must NOT become is a
+      // silent pass for a broken pass, so the RATE is asserted separately in
+      // floor-rules.test.ts, exactly as it is for `relaxed`.
+      if (ds.length === 0) return { ok: true, detail: "0 authored — no two sections to join on this floor" };
+      // ⚠️ MEASURED THROUGH THE AUTHORED CENTRES, never re-derived from the
+      // finished grid. A widened doorway is no longer a pinch, so re-detection
+      // returns precisely the openings that were NOT fixed and then measures a
+      // run that has merged into the space beyond — an early version reported
+      // an opening as "9 wide" for exactly that reason and failed 78/78 floors
+      // on a metric that measured the opposite of its claim.
+      let worst = Infinity;
+      let where = ds[0];
+      const offSize: Doorway[] = [];
+      for (const d of ds) {
+        const w = measureDoorway(ctx.grid, d);
+        if (w < worst) {
+          worst = w;
+          where = d;
+        }
+        if (w < d.w) offSize.push(d);
+      }
+      if (offSize.length) {
+        const d = offSize[0];
+        return {
+          ok: false,
+          detail: `${measureDoorway(ctx.grid, d)} tiles at (${d.i},${d.j}) — authored ${d.w}, ${offSize.length}/${ds.length} came out under their own size`,
+        };
+      }
+      return {
+        ok: worst >= MIN_DOORWAY_WIDTH,
+        detail: `${worst} tiles narrowest of ${ds.length} authored (vocabulary ${[...DOORWAY_WIDTHS].reverse().join("/")}, wants >= ${MIN_DOORWAY_WIDTH})`,
+      };
     },
   },
   {
