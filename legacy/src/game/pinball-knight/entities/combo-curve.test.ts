@@ -11,6 +11,7 @@ import {
   comboDamageMult,
   momentumT,
   momentumScaled,
+  momentumGate,
 } from "./combo-curve";
 import { PINBALL_MAX_SPEED as V_MAX, MOMENTUM_T_FLOOR } from "../constants";
 
@@ -208,5 +209,64 @@ describe("chain damage multiplier (Part 7)", () => {
   it("handles junk input without going negative or NaN", () => {
     expect(comboDamageMult(-5)).toBe(1);
     expect(Number.isFinite(comboDamageMult(0))).toBe(true);
+  });
+});
+
+describe("momentumGate — the enemy gates as curves (DECLONE §6.2)", () => {
+  const PINBALL_MAX_SPEED = V_MAX;
+  const BAR = 12; // stand-in for SECRET_BREAK_SPEED
+
+  it("is 0 at a standstill and 1 at terminal speed", () => {
+    expect(momentumGate(0, BAR, 0.25)).toBe(0);
+    expect(momentumGate(PINBALL_MAX_SPEED, BAR, 0.25)).toBeCloseTo(1, 6);
+  });
+
+  it("passes through EXACTLY `soft` at the old binary bar", () => {
+    // The whole point: the bar survives as a landmark instead of a wall.
+    for (const soft of [0, 0.1, 0.25, 0.5]) {
+      expect(momentumGate(BAR, BAR, soft)).toBeCloseTo(soft, 6);
+    }
+  });
+
+  it("is monotone — every extra unit of speed still pays, above AND below", () => {
+    let prev = -1;
+    for (let v = 0; v <= PINBALL_MAX_SPEED; v += 0.1) {
+      const f = momentumGate(v, BAR, 0.25);
+      expect(f).toBeGreaterThanOrEqual(prev);
+      prev = f;
+    }
+  });
+
+  it("soft=0 reproduces the OLD WALL exactly (nothing below the bar)", () => {
+    // Documents that the cliff is still expressible — the change is a knob, not
+    // a removal, so a monster that genuinely wants a wall can still have one.
+    expect(momentumGate(BAR - 0.01, BAR, 0)).toBeCloseTo(0, 6);
+    expect(momentumGate(BAR + 0.01, BAR, 0)).toBeGreaterThan(0);
+  });
+
+  it("a gate AT the walk floor degenerates to the bare momentum ramp", () => {
+    // The goblin's rule was only ever "carry SOME speed", so its curve should
+    // be momentumT itself and not acquire a second breakpoint.
+    for (const v of [0, 5, 8, 14, 22]) {
+      expect(momentumGate(v, MOMENTUM_T_FLOOR, 0.25)).toBeCloseTo(momentumT(v), 6);
+    }
+  });
+
+  it("stays in [0,1] for nonsense inputs", () => {
+    for (const v of [-5, 0, 22, 1000]) {
+      for (const g of [-1, 0, 12, 22, 100]) {
+        const f = momentumGate(v, g, 0.25);
+        expect(f).toBeGreaterThanOrEqual(0);
+        expect(f).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("MEASURED: the old gate is flat above the bar; this one is not", () => {
+    // The failure DECLONE §0 named — "fully switched on at 36% of top speed and
+    // gains nothing above it". Old gate: 1 at both 12 and 22. New: a real gap.
+    const atBar = momentumGate(BAR, BAR, 0.25);
+    const atTop = momentumGate(PINBALL_MAX_SPEED, BAR, 0.25);
+    expect(atTop - atBar).toBeGreaterThan(0.6);
   });
 });

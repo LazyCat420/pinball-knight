@@ -52,8 +52,15 @@ import {
   WISP_BLINK_CD,
   WISP_BLINK_DIST,
   COMBO_ZONE_CRUISE,
+  MOMENTUM_T_FLOOR,
+  GOLEM_GATE_SOFT,
+  CRYSTAL_GATE_SOFT,
+  CHOMPER_SHOVE_MAX,
+  GATE_MIN_FACTOR,
+  DODGE_RANGED_CHANCE,
+  SPEED_ONLY_T,
 } from "../constants";
-import { comboKillGold, comboDamageMult, momentumScaled, comboWindow } from "./combo-curve";
+import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
@@ -341,6 +348,12 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
  */
 /**
  * @param force skip the momentum gates and the reaper's immunity.
+ * @param src   which TOOL delivered the blow. Only the sub-type exceptions read
+ *   it (DECLONE §6.2) — "bounce-immune" needs to know a body-ram from a swing,
+ *   "dodges-ranged" needs to know an arrow from either. It defaults to `steel`
+ *   because that is the answer for every source that has no opinion (burn
+ *   ticks, hazards, abilities), and a wrong default here would quietly hand
+ *   every DoT the properties of a ram.
  *
  * ONLY the debug panel's Kill All passes this. Those gates are deliberate
  * teaching rules — a goblin shrugs off a standing poke, a golem needs
@@ -350,6 +363,8 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
  * damageZombie with zero momentum, so ghosts, goblins and golems survived it and
  * the button silently under-delivered.
  */
+export type DamageSource = "steel" | "bounce" | "ranged";
+
 export function damageZombie(
   z: Zombie,
   damage: number,
@@ -357,6 +372,7 @@ export function damageZombie(
   dirz: number,
   push: number,
   force = false,
+  src: DamageSource = "steel",
 ): void {
   const g = state.grid;
   if (!g || z.mode === "dead") return;
@@ -386,22 +402,67 @@ export function damageZombie(
     state.vfx?.sparks(z.x, 0.6, z.z, dirx, dirz, 5);
     return;
   }
-  // GOBLIN: rubber shrugs off a standing poke — only a hit carried on
-  // momentum lands. GOLEM: masonry — nothing below the smash-speed bar dents
-  // it. Both give the "wrong tool" clink so the rule reads.
-  if (!force && ((z.kind === "goblin" && momentum <= 0) || (z.kind === "golem" && momentum < SECRET_BREAK_SPEED))) {
-    state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
-    state.shakeT = Math.max(state.shakeT, 0.05);
-    if (!_gateHintShown) {
-      _gateHintShown = true;
-      showToast(z.kind === "golem" ? "🧱 IT SHRUGS OFF STEEL" : "🟢 IT BOUNCES OFF STEEL", "hit it at PINBALL SPEED");
+  // ── GOBLIN / GOLEM: the gate is now a CURVE (DECLONE §6.2) ──
+  //
+  // Both taught a real rule — rubber shrugs off a standing poke, masonry needs
+  // smash-speed — and both then flattened it into a switch: 7.9 u/s did
+  // nothing, 8.1 did everything, and 22 did no more than 8.1. `momentumGate`
+  // keeps the landmark and removes the cliff, so below the bar you CHIP
+  // (GOLEM_GATE_SOFT of your damage at the bar itself) and above it every
+  // further unit of speed still pays all the way to terminal.
+  //
+  // The clink survives at the bottom of the curve, because the teaching moment
+  // is what made these two worth having: a hit that lands for nothing has to
+  // SAY so, or the rule is invisible.
+  if (!force && (z.kind === "goblin" || z.kind === "golem")) {
+    const f =
+      z.kind === "golem"
+        ? momentumGate(momentum, SECRET_BREAK_SPEED, GOLEM_GATE_SOFT)
+        : momentumGate(momentum, MOMENTUM_T_FLOOR, 0); // "carry SOME speed" = the bare ramp
+    if (f <= GATE_MIN_FACTOR) {
+      state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
+      state.shakeT = Math.max(state.shakeT, 0.05);
+      if (!_gateHintShown) {
+        _gateHintShown = true;
+        showToast(z.kind === "golem" ? "🧱 IT SHRUGS OFF STEEL" : "🟢 IT BOUNCES OFF STEEL", "hit it at PINBALL SPEED");
+      }
+      sfxHit();
+      return;
     }
-    sfxHit();
-    return;
+    damage *= f;
   }
-  // CHOMPER: a momentum hit doesn't just hurt it — it SHOVES the plant off
-  // its chokepoint (triple knockback), opening the road.
-  if (z.kind === "chomper" && momentum > 0) push *= 3;
+  // CHOMPER: a momentum hit doesn't just hurt it — it SHOVES the plant off its
+  // chokepoint, opening the road. Was a flat ×3 the instant you were moving at
+  // all; now the shove RIDES the ramp, so a hard arrival clears the chokepoint
+  // and a nudge merely rocks it.
+  push *= z.kind === "chomper" ? momentumScaled(CHOMPER_SHOVE_MAX, momentum) : 1;
+
+  // ── SUB-TYPE EXCEPTION (DECLONE §6.2) — one rule per zombie flavour ──
+  // HM's weapon puzzle in pure data: see `ZombieTypeDef.exception`. All three
+  // resolve here, at the single damage funnel, so no exception can be honoured
+  // by one damage source and quietly ignored by another.
+  const exc = z.ztype ? ZOMBIE_TYPES[z.ztype].exception : undefined;
+  if (exc && !force) {
+    if (exc === "bounce-immune" && src === "bounce") {
+      // The shove still lands — it is immune to the DAMAGE, not to physics, and
+      // being punted across the room is the honest feedback for "wrong tool".
+      state.vfx?.sparks(z.x, 0.55, z.z, dirx, dirz, 5);
+      sfxHit();
+      damage = 0;
+    } else if (exc === "dodges-ranged" && src === "ranged") {
+      // Entropy, not dice (entities/stagger.ts): a reliable fraction of arrows
+      // miss, never an unlucky streak of five.
+      if (accrue(z, "dodgeEntropy", DODGE_RANGED_CHANCE)) {
+        state.vfx?.sparks(z.x, 0.7, z.z, -dirx, -dirz, 4);
+        z.aggro = true;
+        return;
+      }
+    } else if (exc === "speed-only" && momentumT(momentum) < SPEED_ONLY_T && damage >= z.hp) {
+      // Wearable down to 1 hp at any pace; the KILLING blow needs the ride.
+      damage = Math.max(0, z.hp - 1);
+      state.vfx?.sparks(z.x, 0.8, z.z, dirx, dirz, 4);
+    }
+  }
 
   // PIN: knockback becomes a SLIDE (integrated by zombie.updatePin, chaining
   // into the crew) rather than an instant shove.
@@ -416,9 +477,16 @@ export function damageZombie(
   // CRYSTALBACK: ramming it at pinball speed shatters a shard-spray back INTO
   // you — a reflector that taxes momentum. It still takes the hit; the shards
   // are the price of the ram. (Weapon hits at walking speed are safe.)
-  if (z.kind === "crystalback" && momentum > CARD_PINBALL_SPEED && p && p.hp > 0 && p.iframes <= 0) {
-    hitPlayerRanged(CRYSTAL_SHARD_DMG, z.x, z.z);
-    state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, CRYSTAL_SHARDS);
+  // The spray SCALES rather than arming at a bar: a graze throws one shard, a
+  // full-speed ram throws the whole reflector back at you. Same rule ("momentum
+  // is taxed here"), now with something to learn above the old threshold.
+  if (z.kind === "crystalback" && p && p.hp > 0 && p.iframes <= 0) {
+    const t = momentumGate(momentum, CARD_PINBALL_SPEED, CRYSTAL_GATE_SOFT);
+    const shards = Math.round(CRYSTAL_SHARDS * t);
+    if (shards >= 1) {
+      hitPlayerRanged(Math.max(1, Math.round(CRYSTAL_SHARD_DMG * t)), z.x, z.z);
+      state.vfx?.sparks(p.x, 0.5, p.z, p.x - z.x, p.z - z.z, shards);
+    }
   }
 
   // WARDEN SHIELD: a damage-absorb bubble eats the blow first. A full absorb is

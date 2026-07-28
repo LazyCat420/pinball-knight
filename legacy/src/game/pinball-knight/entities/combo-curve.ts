@@ -173,3 +173,39 @@ export function frenzyIntensity(n: number): number {
   if (n < COMBO_ZONE_FRENZY) return 0;
   return Math.min(1, (n - COMBO_ZONE_FRENZY) / COMBO_ZONE_FRENZY);
 }
+
+/**
+ * Part 8 — THE ENEMY GATE, as a curve.
+ *
+ * Four enemies used to read momentum as a switch (combat.ts:377-420): a goblin
+ * shrugged off anything thrown at zero speed, a golem was invulnerable below
+ * SECRET_BREAK_SPEED, a chomper's shove tripled the instant you were moving at
+ * all, a crystalback's shard-spray armed at CARD_PINBALL_SPEED. Each of them
+ * taught a real rule and then flattened it: 7.9 u/s did nothing, 8.1 u/s did
+ * everything, and 22 u/s did no more than 8.1.
+ *
+ * This is the shape that keeps the rule and removes the cliff:
+ *
+ *   f(v) = soft · t/tg                          for t ≤ tg
+ *   f(v) = soft + (1−soft)·(t−tg)/(1−tg)        for t > tg
+ *
+ * where t = momentumT(v) and tg = momentumT(gateSpeed). Below the old bar you
+ * chip for up to `soft` of your damage instead of nothing at all; at the bar
+ * you are exactly at `soft`; above it every further unit of speed still pays,
+ * all the way to terminal. `soft = 0` reproduces the old wall exactly, and
+ * `gateSpeed` at or below the walk floor degenerates to the bare ramp — which
+ * is what the goblin wants, since its rule was only ever "carry SOME speed".
+ *
+ * Kept here rather than in combat.ts so it is testable next to the ramp it
+ * rides on, and so all five momentum curves in the game read as one system.
+ */
+export function momentumGate(speed: number, gateSpeed: number, soft: number): number {
+  const t = momentumT(speed);
+  const tg = momentumT(gateSpeed);
+  const s = Math.max(0, Math.min(1, soft));
+  if (tg <= 0) return t; // no bar to clear: the ramp IS the gate
+  if (t <= 0) return 0;
+  if (t <= tg) return (s * t) / tg;
+  if (tg >= 1) return s; // a bar at terminal speed can never be cleared
+  return s + (1 - s) * ((t - tg) / (1 - tg));
+}

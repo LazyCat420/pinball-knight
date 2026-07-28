@@ -220,6 +220,27 @@ export const SEPARATION_R = 0.55;
  */
 export const DIRECT_STEER_RANGE = 1.6;
 
+// ── MOMENTUM GATES → CURVES (DECLONE §6.2) ──────────────────────
+/**
+ * `soft` for each enemy gate: the fraction of the effect delivered AT the old
+ * binary bar. Below the bar it ramps up to this; above it, on to 1 at terminal
+ * speed. `soft = 0` would reproduce the old wall exactly (see momentumGate).
+ */
+/** GOLEM: masonry chips below smash-speed instead of ignoring you outright. */
+export const GOLEM_GATE_SOFT = 0.25;
+/** CRYSTALBACK: a graze throws a shard or two; a full ram throws the reflector. */
+export const CRYSTAL_GATE_SOFT = 0.3;
+/** CHOMPER: knockback multiplier at terminal speed (was a flat ×3 at any speed). */
+export const CHOMPER_SHOVE_MAX = 3;
+/** Below this gate factor the blow reads as a CLINK — the teaching moment survives. */
+export const GATE_MIN_FACTOR = 0.02;
+
+// ── SUB-TYPE EXCEPTIONS (ZombieTypeDef.exception) ───────────────
+/** "dodges-ranged": the fraction of arrows that miss. Entropy, never dice. */
+export const DODGE_RANGED_CHANCE = 0.5;
+/** "speed-only": the momentumT a KILLING blow needs. Below it, it wears to 1 hp. */
+export const SPEED_ONLY_T = 0.45;
+
 // ── STAGGER / ENTROPY (entities/stagger.ts) ─────────────────────
 /**
  * Doom's pain chance, priced in momentum. See entities/stagger.ts for the why;

@@ -93,6 +93,35 @@ export interface ZombieTypeDef {
    * or a different branch anywhere.
    */
   painMult?: number;
+  /**
+   * ONE ASYMMETRIC EXCEPTION (DECLONE §6.2) — Hotline Miami's weapon-puzzle
+   * trick, as pure data.
+   *
+   * HM's Dodger sidesteps every projectile and can only be killed in melee; its
+   * Thug ignores melee entirely. Neither needed a damage number or an AI
+   * branch — the rule IS the enemy, and a floor becomes a puzzle about which
+   * tool goes where. Pinball Knight already has three tools (steel, the ram,
+   * the bow) and until now every zombie answered all three identically.
+   *
+   * So each sub-type takes exactly ONE exception from a deliberately tiny
+   * vocabulary, and only one, because a monster with two rules is a monster
+   * nobody reads:
+   *
+   *   "bounce-immune"  a body-ram does no damage (it still shoves). Too heavy,
+   *                    too low, or already on the floor. Bring steel.
+   *   "speed-only"     ordinary damage lands, but the KILLING blow needs real
+   *                    momentum — it can be worn to 1 hp at a walk and no
+   *                    further. Finish it with the ride.
+   *   "dodges-ranged"  sidesteps arrows and thrown things, on the same entropy
+   *                    counter as stagger (never dice), so it is a reliable
+   *                    fraction rather than an unlucky streak.
+   *
+   * The SHAMBLER deliberately has none. It is a third of every spawn and the
+   * thing the player learns "zombie" from; an exception on the baseline makes
+   * every other exception unreadable, because there is no longer a normal case
+   * to notice a deviation from.
+   */
+  exception?: "bounce-immune" | "speed-only" | "dodges-ranged";
 }
 
 /**
@@ -116,6 +145,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     movement: "flanker",
     // Frail and light — anything that connects rocks it.
     painMult: 1.2,
+    // Quick on its feet: it steps off the line of an arrow.
+    exception: "dodges-ranged",
   },
   lurcher: {
     id: "lurcher", label: "Lurcher",
@@ -123,6 +154,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     weight: 14, fromLevel: 1, variantFilter: null,
     // Slow and heavy; it absorbs a hit and keeps coming.
     painMult: 0.6,
+    // Two zombies' worth of mass. A ricochet just annoys it.
+    exception: "bounce-immune",
   },
   hulk: {
     id: "hulk", label: "Hulk",
@@ -130,6 +163,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     weight: 6, fromLevel: 4, variantFilter: null, knockback: 7.5,
     // Three times a zombie's mass. A ricochet does not move it.
     painMult: 0.25,
+    // Wearable down at a walk, killable only on the ride.
+    exception: "speed-only",
   },
   midget: {
     id: "midget", label: "Midget",
@@ -141,6 +176,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // The most stunlockable thing on the floor — and it knows it,
     // which is why it will not come at you alone.
     painMult: 1.3,
+    // A small fast target; arrows go over it.
+    exception: "dodges-ranged",
   },
   crawler: {
     id: "crawler", label: "Crawler",
@@ -154,6 +191,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     movement: "ambusher",
     // Already on the floor: there is less of it to knock over.
     painMult: 0.8,
+    // Flat on the floor — the ride passes straight over.
+    exception: "bounce-immune",
   },
   flailer: {
     id: "flailer", label: "Flailer",
@@ -167,6 +206,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     movement: "leaper",
     // Baseline — its exception is the leap, not its footing.
     painMult: 1.0,
+    // All body, no guard: it dies to impact, not to poking.
+    exception: "speed-only",
   },
   hobbler: {
     id: "hobbler", label: "Hobbler",
@@ -177,6 +218,8 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     gait: "limp",
     // One leg. Its footing is the joke and the weakness.
     painMult: 1.15,
+    // Already half-fallen; there is nothing left to knock down.
+    exception: "bounce-immune",
   },
 };
 

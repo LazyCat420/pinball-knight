@@ -17,6 +17,7 @@ import {
   variantIndicesFor,
 } from "./zombie-types";
 import { ZOMBIE_VARIANTS } from "./render/cel-painter";
+import { MOVEMENT_KINDS } from "./entities/movement";
 
 describe("ZOMBIE_TYPES table", () => {
   it("sums to 100 weight so the numbers read as percentages", () => {
@@ -172,5 +173,73 @@ describe("variantIndicesFor", () => {
     const intactOnly = ZOMBIE_VARIANTS.filter((v) => v.legStump === null);
     const idx = variantIndicesFor("crawler", intactOnly);
     expect(idx).toHaveLength(intactOnly.length);
+  });
+});
+
+/**
+ * WAVE-5 COLUMNS (DECLONE §6) — the two fields that stopped the sub-type table
+ * from being eight speeds in eight costumes.
+ *
+ * Both are data, and data is exactly where a "behaviour" quietly becomes a
+ * label: a movement policy nothing dispatches on, or an exception no damage
+ * source reads, looks identical in the table to one that works. These cases
+ * pin the CONTRACT (every value is real, the vocabulary stays small, the
+ * baseline stays clean) so the runtime tests have something honest to sit on.
+ */
+describe("sub-type movement policies", () => {
+  it("names only policies the dispatch table actually has", () => {
+    for (const t of ZOMBIE_TYPE_IDS) {
+      const m = ZOMBIE_TYPES[t].movement;
+      if (m) expect(MOVEMENT_KINDS, `${t} steers with "${m}", which no handler exists for`).toContain(m);
+    }
+  });
+
+  it("leaves the SHAMBLER on the baseline", () => {
+    // A third of every spawn and the thing "zombie" is learned from. If the
+    // baseline deviates there is no normal case to notice a deviation from.
+    expect(ZOMBIE_TYPES.shambler.movement).toBeUndefined();
+    expect(ZOMBIE_TYPES.shambler.exception).toBeUndefined();
+  });
+
+  it("gives the roster real SPREAD — not one policy wearing eight hats", () => {
+    const used = new Set(ZOMBIE_TYPE_IDS.map((t) => ZOMBIE_TYPES[t].movement).filter(Boolean));
+    expect(used.size).toBeGreaterThanOrEqual(4);
+    // …and none of them is the family default, which would be a no-op override.
+    expect(used.has("chase")).toBe(false);
+  });
+});
+
+describe("sub-type exceptions — one each, from a tiny vocabulary", () => {
+  const VOCAB = ["bounce-immune", "speed-only", "dodges-ranged"];
+
+  it("every exception is one of the three shared rules", () => {
+    for (const t of ZOMBIE_TYPE_IDS) {
+      const e = ZOMBIE_TYPES[t].exception;
+      if (e) expect(VOCAB, `${t} has an unknown exception "${e}"`).toContain(e);
+    }
+  });
+
+  it("uses ALL THREE — a rule nothing carries is a rule nobody learns", () => {
+    const used = new Set(ZOMBIE_TYPE_IDS.map((t) => ZOMBIE_TYPES[t].exception).filter(Boolean));
+    expect([...used].sort()).toEqual([...VOCAB].sort());
+  });
+
+  it("gives every sub-type except the shambler exactly one", () => {
+    // "Exactly one" is enforced by the field being a single value, so what is
+    // worth pinning is COVERAGE: seven of eight carry a rule.
+    const withRule = ZOMBIE_TYPE_IDS.filter((t) => ZOMBIE_TYPES[t].exception);
+    expect(withRule.length).toBe(ZOMBIE_TYPE_IDS.length - 1);
+    expect(withRule).not.toContain("shambler");
+  });
+
+  it("pain multipliers rank with mass, not with speed", () => {
+    // The Doom reading: the stagger economy is about how movable a thing is.
+    const pm = (t: (typeof ZOMBIE_TYPE_IDS)[number]): number => ZOMBIE_TYPES[t].painMult ?? 1;
+    expect(pm("hulk")).toBeLessThan(pm("lurcher"));
+    expect(pm("lurcher")).toBeLessThan(pm("shambler"));
+    expect(pm("midget")).toBeGreaterThan(pm("shambler"));
+    // …and the thing that is hardest to stagger is also the one that can only
+    // be killed at speed, so the two exceptions tell one story about the Hulk.
+    expect(ZOMBIE_TYPES.hulk.exception).toBe("speed-only");
   });
 });
