@@ -652,7 +652,7 @@ export interface Projectile {
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;
@@ -1107,8 +1107,11 @@ export const state = {
   skillPoints: 0,
   /** Ranks taken per skill node (skills.ts SKILLS). */
   skillRanks: {} as Record<string, number>,
-  /** Abilities available to the Q/E slots — defaults + tree unlocks. */
-  unlockedAbilities: ["flippercharge", "arcanepulse", "slickfield"] as AbilityId[],
+  /** Abilities available to the Q/E slots — defaults + tree unlocks. There are
+   *  exactly TWO slots, so the two defaults fill them; every other ability is
+   *  earned in the arcana branch (including Slick Field, which shipped free by
+   *  accident — see skills.ts `unlockslick`). */
+  unlockedAbilities: ["flippercharge", "arcanepulse"] as AbilityId[],
   /** Per-ability cooldown remaining (seconds). */
   abilityCd: {} as Record<AbilityId, number>,
   /** Time Crawl: while > 0 the horde's dt is scaled down (slow-mo enemies). */
@@ -1158,6 +1161,10 @@ export const state = {
   input: null as InputHandle | null,
   onKeyDown: null as ((e: KeyboardEvent) => void) | null,
   onResize: null as (() => void) | null,
+
+  /** Skill points invested into a single ability (0..ABILITY_RANK_MAX). Run-scoped,
+   *  like skillRanks — the tree and the abilities spend from the same wallet. */
+  abilityRanks: {} as Record<AbilityId, number>,
 };
 
 /** What's in the active hand right now. An empty slot fights as fists. */
@@ -1312,7 +1319,7 @@ export function resetState(): void {
   state.charLevel = 1;
   state.skillPoints = 0;
   state.skillRanks = {};
-  state.unlockedAbilities = ["flippercharge", "arcanepulse", "slickfield"];
+  state.unlockedAbilities = ["flippercharge", "arcanepulse"];
   state.abilityCd = {} as Record<AbilityId, number>;
   state.slowT = 0;
   state.flashT = 0;
@@ -1391,6 +1398,7 @@ export function resetState(): void {
   state.input = null;
   state.onKeyDown = null;
   state.onResize = null;
+  state.abilityRanks = {} as Record<AbilityId, number>;
 }
 
 /**

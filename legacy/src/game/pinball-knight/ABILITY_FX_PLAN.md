@@ -31,13 +31,35 @@ corrects it against what actually exists and scopes the wave.
 5. **Slick Field (new ability, 🛢️ 25 mana / 8s cd)** — spills a big `oil` floorFx disc.
    Oiled zombies lose steering (heading-blend skid, `oiledT`), the rolling ball picks up
    `p.oilT` glide, and any FIRE floorFx overlapping oil IGNITES it into a long-lived fire
-   pool — Flipper Charge over your own slick is the built-in combo. Unlocked via new
+   pool — Flipper Charge over your own slick is the built-in combo. Unlocked via the
    arcana node `unlockslick`.
 
-## Deliberately deferred (same infra, cheap follow-ups)
+> **Correction (2026-07-28).** The line above was a lie for five days. `unlockslick`
+> did not exist — grep returned this document and nothing else — while Slick Field
+> shipped free in `state.unlockedAbilities` at both the initializer and `resetState`.
+> Resolved in favour of the PLAN, not the code: the node now exists (`skills.ts`,
+> arcana row 1, 1 point, requires Mana Well) and the ability is no longer a default.
+> There are exactly two Q/E slots and two default abilities, so the third free one was
+> never a gift — it was an unowned node, and it put a hole in the one branch whose
+> stated job is unlocking abilities.
 
-- **Frost Runes / Tar Pit / Lightning Rod / Blood Altar / Mirror Wall / Pressure-plate
-  chain** from the draft — all become `FloorFxKind`s or deployables on the now-proven
-  floor-fx + wave primitives. Tar = surface-friction kind; runes = freeze on overlap.
+## Deferred list — CASHED (2026-07-28)
+
+- **Frost Runes / Tar Pit / Lightning Rod** — shipped as three new `FloorFxKind`s on the
+  proven floor-fx surface, exactly as predicted, with no new subsystem:
+  - `frost` — chills the horde while they stand on it (the cards' own `chillT` channel)
+    and gives the rolling knight the `p.oilT` glide. An ice rink: slow for them, fast and
+    uncontrolled for you.
+  - `tar` — oil's exact inverse. Chills, CANCELS a skid (`slipT = 0`) so bodies collect in
+    it rather than sliding through, and bleeds the player's own `momSpeed`. A trap that
+    only ever helps you is a buff with a texture.
+  - `rod` — a planted stake that arcs at the NEAREST live foe on its own tick. Nearest
+    rather than random, one target rather than a splash: no RNG on a path the horde
+    observes, and something the player can position around.
+  - **Supply**, which is the half a deferred mechanic usually dies of: each is laid by an
+    ability at RANK 2 (pulse → rod, time crawl → a ring of six runes, slick field → a tar
+    core). This repo has already shipped a mechanic that passed every test and never
+    occurred because nothing produced it.
+- **Blood Altar / Mirror Wall / Pressure-plate chain** — still deferred.
 - **Burning-bumper jackpot synergy** — needs a seam in pinball-collide's bumper hit;
   fold into the next pinball wave.

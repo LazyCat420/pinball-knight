@@ -48,8 +48,14 @@ import {
   GROOVE_DEFLECT,
   GROOVE_HOP_COOLDOWN,
   FLOOR_FX_MAX,
+  CARD_CHILL_TIME,
+  TAR_DRAG,
+  LIGHTNING_ROD_RANGE,
+  LIGHTNING_ROD_DAMAGE,
+  LIGHTNING_ROD_TICK,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
+import { skillAgg } from "../skill-runtime";
 import { damageZombie, hitPlayerRanged } from "./combat";
 
 const FLOOR_Y = 0.03; // just above the floor plane
@@ -61,7 +67,7 @@ const _texs: Partial<Record<FloorFxKind, THREE.CanvasTexture>> = {};
 
 /** Every kind, for the prewarm sweep. Derived from KIND_COLOR below so a new
  *  kind cannot be added without this list picking it up. */
-const FLOOR_FX_KINDS = (): FloorFxKind[] => Object.keys(KIND_COLOR) as FloorFxKind[];
+export const FLOOR_FX_KINDS = (): FloorFxKind[] => Object.keys(KIND_COLOR) as FloorFxKind[];
 
 const KIND_COLOR: Record<FloorFxKind, number> = {
   slick: PALETTE_HEX[30], // arcane mid (wet blue)
@@ -69,6 +75,9 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   "shard-field": PALETTE_HEX[31], // prismatic cool
   oil: PALETTE_HEX[29], // arcane dark — a deep blue-black sheen
   groove: PALETTE_HEX[2], // stone dark — a cut in the floor, not a substance
+  frost: PALETTE_HEX[31], // prismatic cool — ice
+  tar: PALETTE_HEX[26], // leather shadow — a matte brown-black, NOT oil's petrol sheen
+  rod: PALETTE_HEX[31], // prismatic cool — the arc's own colour
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -76,14 +85,26 @@ function discGeo(): THREE.CircleGeometry {
   return _discGeo;
 }
 
+/** Kinds whose look is PAINTED rather than a flat tint. A flat tinted disc
+ *  worked for water but made fire look like an orange coaster and oil vanish
+ *  into dark stone; every kind that has to be identified at a glance from
+ *  across a room gets its own canvas. */
+const PAINTED: FloorFxKind[] = ["fire", "oil", "groove", "frost", "tar", "rod"];
+/** Kinds that ADD light (they feed the bloom) rather than sitting on the scene. */
+const ADDITIVE: FloorFxKind[] = ["fire", "frost", "rod"];
+
 /**
- * Painted looks for the two kinds that must READ from across the room. A flat
- * tinted disc worked for water but made fire look like an orange coaster and
- * oil vanish into dark stone — these canvases give each a real identity:
- *   fire — white-hot core → orange → deep-red ragged edge (additive, blooms)
- *   oil  — near-black pool with a bright iridescent RIM + thin sheen arcs
+ * Painted looks. Each canvas exists to answer one question at a glance: what is
+ * this, and does it help or hurt?
+ *   fire  — white-hot core → orange → deep-red ragged edge (additive, blooms)
+ *   oil   — near-black pool with a bright iridescent RIM + thin sheen arcs
+ *   frost — a white core under radiating CRYSTAL SPOKES; angular where every
+ *           liquid here is round, because "ice" is a shape before it is a colour
+ *   tar   — matte and DEAD: no rim light, no sheen, no glow. Oil's opposite has
+ *           to look like oil's opposite or the pair teaches nothing
+ *   rod   — a bright stake: a hot pinpoint core inside a thin charged ring
  */
-function paintKindTexture(kind: "fire" | "oil" | "groove"): THREE.CanvasTexture | null {
+function paintKindTexture(kind: FloorFxKind): THREE.CanvasTexture | null {
   if (typeof document === "undefined") return null; // headless tests — flat tint
   const s = 128;
   const canvas = document.createElement("canvas");
@@ -123,6 +144,72 @@ function paintKindTexture(kind: "fire" | "oil" | "groove"): THREE.CanvasTexture 
     ctx.arc(cx, cx - s * 0.1, s * 0.34, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
+  } else if (kind === "frost") {
+    // Crystalline: a pale core, then straight SPOKES out to the rim. Additive,
+    // so it glows cold against stone the way fire glows hot.
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(255,255,255,0.95)");
+    g.addColorStop(0.4, "rgba(191,232,255,0.6)");
+    g.addColorStop(0.8, "rgba(111,208,232,0.28)");
+    g.addColorStop(1, "rgba(111,208,232,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(238,241,245,0.75)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cx);
+      ctx.lineTo(cx + Math.cos(a) * s * 0.46, cx + Math.sin(a) * s * 0.46);
+      ctx.stroke();
+      // Barbs, so a spoke reads as a frost crystal rather than a wheel spoke.
+      for (const t of [0.4, 0.68]) {
+        const bx = cx + Math.cos(a) * s * 0.46 * t;
+        const bz = cx + Math.sin(a) * s * 0.46 * t;
+        for (const off of [0.5, -0.5]) {
+          ctx.beginPath();
+          ctx.moveTo(bx, bz);
+          ctx.lineTo(bx + Math.cos(a + off) * s * 0.1, bz + Math.sin(a + off) * s * 0.1);
+          ctx.stroke();
+        }
+      }
+    }
+  } else if (kind === "tar") {
+    // Deliberately the dullest thing on the floor. Oil says "look at me and
+    // then slide"; tar says "there is nothing here and you will stop".
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "rgba(12,10,9,0.98)");
+    g.addColorStop(0.78, "rgba(26,20,16,0.95)");
+    g.addColorStop(0.94, "rgba(42,28,20,0.7)");
+    g.addColorStop(1, "rgba(42,28,20,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // A couple of sunken bubbles — the only motion tar is allowed.
+    ctx.fillStyle = "rgba(58,40,28,0.55)";
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.6;
+      const r = s * (0.12 + i * 0.05);
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * r, cx + Math.sin(a) * r, s * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (kind === "rod") {
+    const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, s * 0.5);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.18, "#bfe8ff");
+    g.addColorStop(0.5, "rgba(111,208,232,0.35)");
+    g.addColorStop(1, "rgba(111,208,232,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = "rgba(191,232,255,0.9)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cx, s * 0.36, 0, Math.PI * 2);
+    ctx.stroke();
   } else if (kind === "fire") {
     // Ragged blob edge: overlapping mid-orange circles around the rim…
     ctx.fillStyle = "#d97b29";
@@ -172,18 +259,16 @@ function paintKindTexture(kind: "fire" | "oil" | "groove"): THREE.CanvasTexture 
 
 function matFor(kind: FloorFxKind): THREE.MeshBasicMaterial {
   if (!_mats[kind]) {
-    const tex =
-      kind === "fire" || kind === "oil" || kind === "groove"
-        ? (_texs[kind] ??= paintKindTexture(kind) ?? undefined)
-        : undefined;
+    const tex = PAINTED.includes(kind) ? (_texs[kind] ??= paintKindTexture(kind) ?? undefined) : undefined;
     _mats[kind] = tex
       ? new THREE.MeshBasicMaterial({
           map: tex,
           transparent: true,
           opacity: 0.4,
           depthWrite: false,
-          // Fire ADDS light (bloom feeds on the white core); oil sits on the scene.
-          blending: kind === "fire" ? THREE.AdditiveBlending : THREE.NormalBlending,
+          // Fire, frost and the rod ADD light (bloom feeds on their white
+          // cores); oil and tar sit on the scene.
+          blending: ADDITIVE.includes(kind) ? THREE.AdditiveBlending : THREE.NormalBlending,
         })
       : new THREE.MeshBasicMaterial({
           color: KIND_COLOR[kind],
@@ -427,6 +512,36 @@ export function updateGrooveHop(dt: number): void {
   }
 }
 
+/**
+ * The rod earths itself through the NEAREST live foe in range.
+ *
+ * Nearest rather than a random pick, and one target rather than a splash, on
+ * purpose: the arc has to be something the player can predict and position
+ * around, and a rod that sprayed would just be a second Arcane Pulse on a
+ * timer. Deterministic — no RNG on a path the horde observes, which is what
+ * lets a co-op peer run the same rod and get the same corpses.
+ */
+function rodZap(fx: FloorFx): void {
+  let best: (typeof state.zombies)[number] | null = null;
+  let bestD = LIGHTNING_ROD_RANGE * LIGHTNING_ROD_RANGE;
+  for (const zmb of state.zombies) {
+    if (zmb.mode === "dead") continue;
+    const dx = zmb.x - fx.x;
+    const dz = zmb.z - fx.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > bestD) continue;
+    bestD = d2;
+    best = zmb;
+  }
+  if (!best) return;
+  const dx = best.x - fx.x;
+  const dz = best.z - fx.z;
+  const d = Math.hypot(dx, dz) || 1;
+  damageZombie(best, LIGHTNING_ROD_DAMAGE, dx / d, dz / d, 2);
+  state.vfx?.bolt(fx.x, 0.55, fx.z, dx / d, dz / d, d);
+  state.vfx?.sparks(best.x, 0.6, best.z, dx / d, dz / d, 5);
+}
+
 function despawn(index: number): void {
   const fx = state.floorFx[index];
   state.scene?.remove(fx.mesh);
@@ -450,7 +565,7 @@ export function updateFloorFx(dt: number): void {
     }
     fx.tick = Math.max(0, fx.tick - dt);
     const ticked = fx.tick <= 0;
-    if (ticked) fx.tick = fx.kind === "fire" ? CARD_BURN_TICK : FLOORFX_TICK;
+    if (ticked) fx.tick = fx.kind === "fire" ? CARD_BURN_TICK : fx.kind === "rod" ? LIGHTNING_ROD_TICK : FLOORFX_TICK;
 
     // ── Life animation ── a snappy grow-in pop (slight overshoot), a gentle
     // breathing pulse while live, and a shrink+fade over the back third. The
@@ -468,6 +583,19 @@ export function updateFloorFx(dt: number): void {
       grooveInteract(fx, dt, ticked);
       continue;
     }
+
+    // ── LIGHTNING ROD: a planted stake, not a puddle. It does not breathe, it
+    // HUMS — a tight fast pulse — and on every tick it earths itself through
+    // the nearest live foe. The one deferred kind that deals damage rather
+    // than applying a status, which is why a rank-2 Arcane Pulse changes how a
+    // room is fought instead of just how hard it is hit.
+    if (fx.kind === "rod") {
+      fx.mesh.scale.setScalar(fx.radius * (1 + Math.sin(age * 11) * 0.14));
+      (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * Math.min(1, frac * 4);
+      if (state.vfx && Math.random() < dt * 6) state.vfx.sparks(fx.x, 0.5, fx.z, 0, 0.8, 2);
+      if (ticked) rodZap(fx);
+      continue;
+    }
     const grow = age < 0.18 ? 0.35 + (age / 0.18) * 0.75 : 1.1 - Math.min(0.1, (age - 0.18) * 0.5);
     // Fire FLICKERS (fast, deep pulse); liquids breathe slowly.
     const pulse = fx.kind === "fire"
@@ -477,7 +605,11 @@ export function updateFloorFx(dt: number): void {
     fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
     if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
     else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
-    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = (fx.kind === "oil" ? 0.75 : fx.kind === "fire" ? 0.85 : 0.45) * fade;
+    else if (fx.kind === "frost") fx.mesh.rotation.z += dt * 0.09; // a crystal creeping, not a puddle turning
+    // Tar deliberately does NOT turn. It is the one substance here that is
+    // supposed to look like it has already stopped.
+    const alpha = fx.kind === "oil" ? 0.75 : fx.kind === "fire" ? 0.85 : fx.kind === "tar" ? 0.95 : fx.kind === "frost" ? 0.7 : 0.45;
+    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = alpha * fade;
 
     // ── Ambient emission ── FIRE actually burns: a steady per-frame stream of
     // rising embers plus the odd upward spark burst, scaled by pool size so a
@@ -492,11 +624,18 @@ export function updateFloorFx(dt: number): void {
         if (Math.random() < dt * 60 * 0.35 * density) state.vfx.ember(ex, 0.1, ez);
         if (Math.random() < dt * 60 * 0.12 * density) state.vfx.ember(fx.x, 0.35, fx.z); // inner tongue, higher
         if (Math.random() < dt * 2.2) state.vfx.sparks(ex, 0.15, ez, 0, 0.6, 2); // crackle pop
+      } else if (fx.kind === "frost") {
+        // Cold vapour rolling off the rune — the ONLY reason a frost tile reads
+        // as active rather than as a decal someone painted on the floor.
+        if (Math.random() < dt * 60 * 0.12) state.vfx.mote(ex, 0.05 + Math.random() * 0.3, ez);
+        if (ticked && Math.random() < 0.4) state.vfx.burst(fx.x, 0.1, fx.z, 0xbfe8ff, 2, 0.6);
       } else if (ticked) {
         if (fx.kind === "slick" && Math.random() < 0.6) state.vfx.mote(ex, 0.08, ez);
         else if (fx.kind === "oil") {
           state.vfx.mote(ex, 0.08, ez); // iridescent glints, every tick
           if (Math.random() < 0.3) state.vfx.burst(ex, 0.12, ez, 0x6fd0e8, 2, 0.7);
+        } else if (fx.kind === "tar" && Math.random() < 0.25) {
+          state.vfx.dust(ex, 0.05, ez); // a bubble surfacing and dying. No glints.
         }
       }
     }
@@ -525,13 +664,29 @@ export function updateFloorFx(dt: number): void {
         // the heading), refreshed for as long as the foe stays in the pool.
         zmb.oiledT = OIL_ZOMBIE_T;
         if (ticked && Math.random() < 0.35) state.vfx?.mote(zmb.x, 0.15, zmb.z);
+      } else if (fx.kind === "frost") {
+        // FROST RUNE — chilled while standing on it, and refreshed every frame
+        // it stays, so the rune is terrain rather than a one-shot debuff. Uses
+        // the card system's own chill channel: one slow, one meaning.
+        zmb.chillT = CARD_CHILL_TIME;
+        if (ticked && Math.random() < 0.4) state.vfx?.mote(zmb.x, 0.4, zmb.z);
+      } else if (fx.kind === "tar") {
+        // TAR PIT — the same chill, plus the thing that makes it tar rather
+        // than more ice: it CANCELS a skid. A foe that slipped, tripped or was
+        // launched into the pit stops dead in it instead of sliding through,
+        // which is what turns the pool into a place bodies collect.
+        zmb.chillT = CARD_CHILL_TIME;
+        zmb.slipT = 0;
+        if (ticked && Math.random() < 0.4) state.vfx?.dust(zmb.x, 0.1, zmb.z);
       }
     }
 
-    // ── The ball glides on oil ── the existing oil-flask state (no friction,
-    // dead steering) is exactly the "faster and slicker" ride, topped up for
-    // every frame the rolling knight stays on the pool.
-    if (fx.kind === "oil" && p && p.momSpeed > 0) {
+    // ── The ball glides on oil AND on ice ── the existing oil-flask state (no
+    // friction, dead steering) is exactly the "faster and slicker" ride, topped
+    // up for every frame the rolling knight stays on the pool. Frost gets the
+    // same channel deliberately: a rune field is a slow for the horde and a
+    // SKATING RINK for the ball, which is what makes laying one a decision.
+    if ((fx.kind === "oil" || fx.kind === "frost") && p && p.momSpeed > 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;
@@ -541,9 +696,27 @@ export function updateFloorFx(dt: number): void {
       }
     }
 
+    // ── Tar drags the ball down ── oil's exact inverse, applied to the player
+    // too. A trap that only ever helps you is a buff with a texture; this one
+    // eats YOUR momentum as readily as the horde's, so dropping a tar core in
+    // your own lane is a real cost and the doughnut shape a rank-2 Slick Field
+    // lays down is something to steer around rather than through.
+    if (fx.kind === "tar" && p && p.momSpeed > 0) {
+      const dx = p.x - fx.x;
+      const dz = p.z - fx.z;
+      const rr = fx.radius + PLAYER_R;
+      if (dx * dx + dz * dz <= rr * rr) {
+        p.momSpeed *= Math.exp(-TAR_DRAG * dt);
+        if (ticked) state.vfx?.dust(p.x, 0.08, p.z);
+      }
+    }
+
     // ── Player harm ── a HOSTILE fire (enemy hazard) always burns you; your OWN
-    // fire only bites under the self-harm toggle.
-    if (fx.kind === "fire" && ticked && (fx.hostile || state.dbgMaterialSelfHarm) && p && p.hp > 0 && p.iframes <= 0) {
+    // fire only bites under the self-harm toggle — or under the CINDER WAKE
+    // keystone, whose whole drawback is exactly this: the trail that makes you
+    // lethal is a trail you can drive back into. That is not a toggle the
+    // player forgot to turn off, it is the price of the node.
+    if (fx.kind === "fire" && ticked && (fx.hostile || state.dbgMaterialSelfHarm || skillAgg().cinderWake) && p && p.hp > 0 && p.iframes <= 0) {
       const dx = p.x - fx.x;
       const dz = p.z - fx.z;
       const rr = fx.radius + PLAYER_R;

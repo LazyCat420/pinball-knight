@@ -102,13 +102,17 @@ describe("vfx.warmupReveal exposes one representative per pool", () => {
 
 describe("warmFloorFxReveal forces the lazy decal materials into existence", () => {
   it("adds one proxy per kind, reveals them, and hides them again", async () => {
-    const { warmFloorFxReveal, disposeFloorFxAssets } = await import("./entities/floor-fx");
+    const { warmFloorFxReveal, disposeFloorFxAssets, FLOOR_FX_KINDS } = await import("./entities/floor-fx");
     const scene = new THREE.Scene();
+    // DERIVED, not a literal. This assertion was `toHaveLength(5)` and broke the
+    // day three new kinds landed — which is a test failing because the feature
+    // WORKED. The point of the warm-up is "one proxy per kind, whatever the
+    // kinds are", so that is what it now asserts.
+    const kinds = FLOOR_FX_KINDS().length;
 
     const restore = warmFloorFxReveal(scene);
     const proxies = scene.children.filter((o) => (o as THREE.Mesh).isMesh);
-    // slick / fire / shard-field / oil / groove — the whole FloorFxKind union.
-    expect(proxies).toHaveLength(5);
+    expect(proxies).toHaveLength(kinds);
     for (const p of proxies) {
       expect(p.visible).toBe(true);
       expect(p.frustumCulled).toBe(false);
@@ -120,7 +124,7 @@ describe("warmFloorFxReveal forces the lazy decal materials into existence", () 
     // Called once per floor. If it built a fresh set each time, a deep run
     // would carpet the scene with dead proxies.
     const restore2 = warmFloorFxReveal(scene);
-    expect(scene.children.filter((o) => (o as THREE.Mesh).isMesh)).toHaveLength(5);
+    expect(scene.children.filter((o) => (o as THREE.Mesh).isMesh)).toHaveLength(kinds);
     restore2();
 
     disposeFloorFxAssets();

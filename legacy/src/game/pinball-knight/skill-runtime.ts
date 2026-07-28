@@ -8,10 +8,10 @@
  * a Record fold there would be waste.
  */
 import { state } from "./state";
-import { PLAYER_MAX_HP, MANA_MAX } from "./constants";
+import { PLAYER_MAX_HP, MANA_MAX, MANA_POOL_FLOOR, ABILITY_RANK_MAX } from "./constants";
 import { SKILLS, aggregateSkills, canLearn, grantXp, xpForFloorClear, XP_KILL, XP_KILL_BOSS, type SkillAggregate, type SkillId } from "./skills";
 import { legacyBaseModifiers } from "./legacy";
-import type { AbilityId } from "./abilities";
+import { abilityRank, abilityRankCost, type AbilityId } from "./abilities";
 
 let cached: SkillAggregate | null = null;
 
@@ -32,9 +32,17 @@ export function playerMaxHp(): number {
   return PLAYER_MAX_HP + skillAgg().maxHpFlat + state.bonusMaxHp;
 }
 
-/** Max mana with Mana Well ranks. */
+/**
+ * Max mana with Mana Well ranks — and with the Blood Price keystone's −30,
+ * which is the first NEGATIVE contributor this pool has ever had.
+ *
+ * Floored above the most expensive ability in the table. A pool that could not
+ * afford any cast would not be a hard build, it would be a build in which the
+ * mana bar is decoration and Blood Price is not a choice — and a keystone whose
+ * drawback deletes the system it modifies is a bug wearing a design hat.
+ */
 export function playerManaMax(): number {
-  return MANA_MAX + skillAgg().manaMaxFlat;
+  return Math.max(MANA_POOL_FLOOR, MANA_MAX + skillAgg().manaMaxFlat);
 }
 
 /**
@@ -109,6 +117,28 @@ export function awardDebugXp(amount: number): void {
 /** XP for clearing a floor, scaled by its grade — called from descend(). */
 export function awardFloorXp(floor: number, grade: string): void {
   award(xpForFloorClear(floor, grade));
+}
+
+/**
+ * Spend points into an ABILITY instead of a tree node — the same wallet, so
+ * every rank bought here is a tree rank not bought.
+ *
+ * Gated on the ability being UNLOCKED, deliberately: ranks are an investment in
+ * something you can actually cast, and letting a player sink six points into a
+ * spell they have no node for would be a trap with no feedback. The escalating
+ * price (1, 2, 3) is what stops "dump everything into Arcane Pulse" from being
+ * strictly correct.
+ */
+export function spendAbilityRank(id: AbilityId): { ok: boolean; why?: string } {
+  if (!unlockedAbilities().includes(id)) return { ok: false, why: "ability not unlocked" };
+  const rank = abilityRank(id);
+  if (rank >= ABILITY_RANK_MAX) return { ok: false, why: "maxed" };
+  const cost = abilityRankCost(rank);
+  if (state.skillPoints < cost) return { ok: false, why: `needs ${cost} point${cost === 1 ? "" : "s"}` };
+  state.abilityRanks[id] = rank + 1;
+  state.skillPoints -= cost;
+  state.hudDirty = true;
+  return { ok: true };
 }
 
 /** Spend one point into a node. Returns ok/why for the menu to flash. */

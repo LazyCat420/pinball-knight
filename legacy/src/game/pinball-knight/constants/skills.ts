@@ -77,6 +77,13 @@ export const ULT_DURATION = 12; // seconds of rampage per activation
 // Q/E active skills. Regenerates over time and tops up a little per kill so the
 // skills stay in rotation without ever refuelling a rampage.
 export const MANA_MAX = 100;
+/**
+ * The smallest the pool is ever allowed to get once the Blood Price keystone's
+ * −30 (and any future negative) is applied. Must stay ≥ the priciest ability
+ * cost below, or that ability becomes uncastable-by-mana and the keystone stops
+ * being a choice — pinned by a test rather than by this comment.
+ */
+export const MANA_POOL_FLOOR = 55;
 export const MANA_REGEN = 7; // per second, passive
 export const MANA_PER_KILL = 6; // small top-up on an ordinary kill
 export const ARCANE_PULSE_RADIUS = 3.4; // tiles — Arcane Pulse AoE reach
@@ -125,6 +132,10 @@ export const BLADESTORM_SPIN = 7.5;
 export const MAGNET_FIELD_R = 3.2;
 export const MAGNET_PULSE_EVERY = 0.42;
 export const MAGNET_LEASH_MAX = 3;
+/** Rank-2 Magnet Aura: tiles/sec the horde is dragged in at the field's centre,
+ *  falling linearly to zero at MAGNET_FIELD_R. Deliberately slower than a
+ *  zombie walks — the well repositions a room, it does not disable it. */
+export const MAGNET_HORDE_PULL = 1.6;
 /** Time Crawl: the field's drawn reach and the beat its enemy-smear ghosts run
  *  at (the ghosts are the effect — the horde visibly dragging). */
 export const TIMECRAWL_FIELD_R = 4.2;
@@ -162,3 +173,118 @@ export const FPS_PITCH_LIMIT = 0.5; // radians up/down clamp
 export const FPS_SHOT_COOLDOWN = 0.14; // rapid-fire hitscan
 export const FPS_SHOT_DAMAGE = 3; // hitscan damage per shot
 export const FPS_SHOT_RANGE = 14; // tiles a hitscan shot reaches
+
+// ── MANA FROM THE TABLE (DECLONE §4.4) ──────────────────────────
+/**
+ * The pinball table is a BATTERY. Mana used to arrive from a wall clock and
+ * from kills — two sources, neither of which cared how you were playing, which
+ * left every ability in the game momentum-blind. A bounce now pays mana, and
+ * pays MORE the faster you were going when you took it.
+ *
+ * Deliberately small per bounce: a cruise chain of five or six bounces buys one
+ * Slick Field, a screaming chain buys a Time Crawl. It is a trickle, not a
+ * replacement for the clock — the clock is what keeps a slow, careful player in
+ * the game at all, and removing it is a KEYSTONE choice (see `dynamo`), not a
+ * silent global nerf.
+ */
+export const MANA_PER_BOUNCE = 1.4; // at a walk
+export const MANA_BOUNCE_MOMENTUM = 1.15; // extra multiple of that at terminal speed
+
+// ── ABILITY RANKS ───────────────────────────────────────────────
+/**
+ * Skill points can be invested into ONE ability instead of the tree. Ranks are
+ * a FARMABLE bonus, so they aggregate ADDITIVELY (DECLONE §1.2) — rank 3 is
+ * +75% ability power, never 1.25³ compounding away from the tuning.
+ *
+ * Rank 2 is deliberately not just a bigger number: each ability changes a RULE
+ * there (see `RANK_RULE_AT` uses in abilities.ts — a rod, a rune ring, a tar
+ * core). A progression axis that only prints larger digits is the flat-constant
+ * failure this codebase already named once.
+ */
+export const ABILITY_RANK_MAX = 3;
+export const ABILITY_RANK_STEP = 0.25; // additive power per rank
+export const ABILITY_RANK_RULE = 2; // rank at which the ability gains its extra rule
+
+// ── CAST ANIMATION (anticipation → impact → recovery) ───────────
+/**
+ * Every cast used to be a single frame: press, effect, done. Nothing wound up,
+ * so nothing had weight and an opponent had no tell to read.
+ *
+ * Each ability now runs three beats. `windup` is real, gameplay-affecting
+ * latency — the effect does NOT fire until it elapses — so the numbers are
+ * small and ordered by how heavy the spell is meant to feel: the launch is five
+ * frames, the time-stop is fifteen. `recover` is presentation only.
+ *
+ * `flash` feeds state.flashT, which core normalises against FINISHER_FLASH_T
+ * (0.14) — values above that would over-drive the pixel pass, so none is.
+ */
+export interface CastAnimDef {
+  /** Seconds of anticipation before the effect fires. */
+  windup: number;
+  /** Seconds of settle FX after it. Presentation only. */
+  recover: number;
+  /** Screen shake requested at the impact frame (through the juice governor). */
+  shake: number;
+  /** Hit-freeze at the impact frame; 0 = none. */
+  hitstop: number;
+  /** Full-screen flash at the impact frame; 0 = none. Keep ≤ FINISHER_FLASH_T. */
+  flash: number;
+  /** Radius the anticipation ring collapses from, world units. */
+  gather: number;
+}
+export const CAST_ANIM: Record<string, CastAnimDef> = {
+  // The signature move. Barely any wind-up — a coil, not a chant — but enough
+  // that the launch reads as a released spring rather than a teleport.
+  flippercharge: { windup: 0.08, recover: 0.22, shake: 0.18, hitstop: 0.03, flash: 0, gather: 1.8 },
+  arcanepulse: { windup: 0.2, recover: 0.34, shake: 0.3, hitstop: 0.05, flash: 0.08, gather: 3.2 },
+  magnetaura: { windup: 0.13, recover: 0.26, shake: 0.08, hitstop: 0, flash: 0, gather: 3.0 },
+  // The heaviest cast in the game: the world takes a breath before it stops.
+  timecrawl: { windup: 0.26, recover: 0.4, shake: 0.12, hitstop: 0.07, flash: 0.12, gather: 4.2 },
+  bladestorm: { windup: 0.15, recover: 0.24, shake: 0.14, hitstop: 0.04, flash: 0, gather: 2.2 },
+  slickfield: { windup: 0.11, recover: 0.28, shake: 0.1, hitstop: 0, flash: 0, gather: 2.0 },
+};
+/** Beat between anticipation motes, so a wind-up emits a handful, not a stream. */
+export const CAST_GATHER_EVERY = 0.035;
+
+// ── KEYSTONES (skills.ts) — a rule change plus a structural drawback ────
+/** Dynamo: the table pays this multiple per bounce once the clock is dead. */
+export const DYNAMO_BOUNCE_MULT = 3.2;
+/** Blood Price: hearts spent when the pool cannot cover a cast. */
+export const BLOOD_PRICE_HP = 1;
+/** Cinder Wake: momentumT at or above which the knight burns the floor. */
+export const CINDER_WAKE_T = 0.55;
+/** Cinder Wake: the burning tile it drops (smaller and shorter than the charge
+ *  trail — it is always on, so it must not carpet the floor). */
+export const CINDER_WAKE_RADIUS = 0.45;
+export const CINDER_WAKE_LIFE = 2.2;
+
+// ── DEFERRED FLOOR FX, cashed in (ABILITY_FX_PLAN "deliberately deferred") ──
+/**
+ * Frost Rune — an ICE tile. The horde is chilled while it stands on one; the
+ * rolling knight GLIDES over it (the oil-flask ride). Fast and uncontrolled for
+ * you, slow for them.
+ */
+export const FROST_RUNE_RADIUS = 0.7;
+export const FROST_RUNE_LIFE = 6;
+/** Runes laid in a ring by a rank-2 Time Crawl, and how far out. */
+export const FROST_RUNE_COUNT = 6;
+export const FROST_RUNE_RING = 2.6;
+/**
+ * Tar Pit — the exact inverse of oil. Nothing crosses it at speed: the horde
+ * bogs down and cannot skid, and YOUR momentum bleeds off too. The drawback is
+ * the point; a trap that only ever helps is a buff with a texture.
+ */
+export const TAR_PIT_RADIUS = 0.95;
+export const TAR_PIT_LIFE = 9;
+export const TAR_DRAG = 2.6; // per-second exponential decay applied to momSpeed
+/**
+ * Lightning Rod — a planted stake that arcs at the nearest live foe on every
+ * floor-fx tick. The one deferred kind that DEALS damage rather than applying a
+ * status, so it is the reason a rank-2 Arcane Pulse changes how a room is
+ * fought rather than just how hard it is hit.
+ */
+export const LIGHTNING_ROD_RADIUS = 0.45;
+export const LIGHTNING_ROD_LIFE = 5;
+export const LIGHTNING_ROD_RANGE = 4.2;
+export const LIGHTNING_ROD_DAMAGE = 3;
+export const LIGHTNING_ROD_TICK = 0.45;
