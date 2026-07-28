@@ -2,6 +2,97 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## ✅ MAP GENERATION — three waves, merged to main as `a354889` (2026-07-27)
+
+Live QA of **floor 5**: "boosters just going into walls … the section in the
+middle where i fight the boss is just kind of a jumbled mess". Both were real,
+and floor 5 is fully covered by the archetype system (`(level-1) % 5` →
+ringkeep) — nothing was unbuilt. What was wrong is that the geometry rule
+systems we already had did not COVER the two things in the screenshot, and none
+of them ran anywhere except in tests.
+
+Verified by census over 36-64 live floors AND by headless render (the recorded
+`RENDER IT AND LOOK` recipe). Floor 5, same seed, before → after:
+
+    parts        213-261 → 81-99        route parts  127-186 → 19-28
+    objects/1k   154-167 → 86-96        routeShare   0.60-0.73 → 0.23-0.29
+    king's tile  1-7 tiles across → 9-13, zero relaxations over 78 floors
+    cfg.floorTiles ÷ real walkable  3.2x → ~1.0x
+
+### `3d7c866` — rails were aimed by a coin flip
+
+`arc-sweeps.ts` picked a rail's throw direction with `rng() < 0.5`, and NOTHING
+checked what lay past its exit (`planFillet` proves exactly ONE open tile; a rail
+hands off at ≥10 u/s). Cause: a rail is a `LaneBand` on an `ArcFeature`, not a
+`PinballPartSpot`, so the entire Φ apparatus had never seen one.
+`orientArcRails(g, phi)` runs last in the geometry layer over `g.arcs`, so it
+owns BOTH rail authors (`authorArteryBanks` writes them too). 322 → 220 lanes,
+32% dropped as unfixable either way round; writes only `feature.lanes`, so it
+cannot perturb a layout (pinned by a test).
+
+Also: `checkPieces` gained a `furniture` label and an optional `{phi, parts}`, and
+now runs on a DECORATED floor — the largest population on screen had never been
+judged after placement. It immediately found three real defects: a route part
+being "saved" by pointing it uphill, `openLaunchTargets` cracking SHAPE_ARC
+tiles, and the crack rule judging a tile when the piece is a 2×2 band.
+
+### `5b0569a` — the route was segmented on the LATTICE, and every budget rode a floor 3.2× too big
+
+`layStationSpine` cut routes into maximal lattice runs, and **62% of those runs
+are ONE TILE LONG** because a Φ descent is a staircase — so it alternated pad,
+station, pad, station down every diagonal. One route event every 1.37 tiles =
+eleven per second. Now segmented on the SMOOTHED heading (accumulated 45° turn,
+`STATION_MIN_GAP` apart). `PAD_STRIDE = 8` is DERIVED: a booster is not an
+accelerator (at stride 3 it restores 1.2% of its own speed floor) — what it
+spends is STEERING, and the duty cycle `2.4/s` was 0.80.
+
+`floorTiles = cellsW*cellsH*8` was calibrated for the legacy `thickenWalls` grid;
+`buildTrackFloor` never thickens. Both the zombie and torch caps therefore bound
+from level 1 and their depth ramps were dead code. `floorBudgets(level, walkable)`
+extracted so `levelConfig` (a prediction, for delve's XP projection) and `core.ts`
+(the counted grid) cannot drift. Re-tuned so **L10+ zombies and L8+ torches are
+bit-identical** — only the shallow floors, where the crowding was, come down.
+
+New `maze/floor-density.ts` + gate: 60 floors, thresholds derived (nearest-
+neighbour spacing, the radius-6 light pool, the route budget itself).
+
+### `be05d19` — the King gets a hall
+
+A track floor shipped **no authored room of any kind** (`core.ts` discards the
+`raw` grid all the room/prefab stamps were carved into), and floor 5 was the ONE
+floor denied the antechamber — `level % BOSS_EVERY !== 0` withheld the bumper
+ring from exactly the double-HP mega-boss floors. Un-skipped; the ring now asks
+the maze for space instead of stamping fixed radius-2 offsets.
+
+`BOSS_ARENA_R = 7` is derived from `boss.ts` (2·(SLAM_RADIUS+PLAYER_R) +
+2·(KING_BODY_R+PLAYER_R), + KING_HOME_TILES), pinned against those constants by a
+test. Diameter 14 stays inside `BONE_MAX_DIST` ON PURPOSE — a hall he cannot
+shoot across is one you kite him around.
+
+⚠️ **WHERE it is carved is most of the design.** Early → `stampOrbitIsland` eats
+it (the hall is by construction the widest open disc on the floor); around the
+provisional exit → built around the wrong tile (the re-pick lands 17-81 tiles
+away); pinning the exit instead → `floor-metrics` reports "exit on the doorstep".
+It is carved AFTER the final endpoints, guarded three ways: a route re-check with
+revert (measured FROM THE CHUTE MOUTH, as `measureFloor` does — a spawn-relative
+guard read 52 where the gate read 32), a clearance to the orbit island's RING
+(a full circle is the one curve family `trimArcToBacking` refuses to trim, so it
+cannot repair itself), and the artery banks.
+
+### Open / worth knowing
+
+- **`decorate.test`'s chain rate moved 0.81 → 0.60** on shipping floors with 4.1×
+  fewer pads. Stated, not hidden: a pad fires along a cardinal while its road may
+  bend away, which at stride 3 it had no room to do. The per-seed claim is now
+  the exact one ("no route pad is stranded"); the rate is aggregate-only.
+- **The hall's mouths are not authored doorways.** Carving after `planDoorways`
+  is the price of carving after the final exit. Recoverable later by planning
+  doorways twice.
+- `zz-*.test.ts` census harnesses were temporary and are deleted; `floor-density`
+  is the permanent replacement.
+- Merged into `origin/main` with `git push origin HEAD:main` from a worktree —
+  the shared checkout was never touched, because another session was live in it.
+
 > ⚠️ **THIS FILE IS 850+ LINES AND HAS BECOME THE LOG IT SAYS IT IS NOT.** Eight
 > sessions have prepended to it rather than replacing it, because there has been
 > a concurrent session live in this checkout nearly every time. Consolidating it
