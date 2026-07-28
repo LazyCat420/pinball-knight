@@ -19,6 +19,9 @@
  * DOM- and three-free: this builds plain data, `menu.ts` draws it.
  */
 import { CARDS, CARD_IDS, RARITY_HEX, type CardId, type CardRarity } from "./cards";
+import { MOMENTUM_GATES, MOVEMENT_BY_KIND } from "./entities/enemy-rules";
+import { PAIN_BY_KIND } from "./entities/stagger";
+import { BESTIARY_MILESTONES, BESTIARY_AFFINITY_STEP, BESTIARY_AFFINITY_MAX } from "./constants";
 import { ENEMY_DROPS, REAGENTS, type ReagentId } from "./reagents";
 import { ZOMBIE_TYPES, ZOMBIE_TYPE_IDS, typeHp, type ZombieType } from "./zombie-types";
 import { ZOMBIE_HP } from "./constants";
@@ -93,6 +96,101 @@ export interface BestiarySubType {
   seen: boolean;
 }
 
+/**
+ * How a movement policy reads to a player. Descriptions, not implementation —
+ * "circles you at range" is what someone can act on; "tangential steering with
+ * a radial correction" is not.
+ */
+const MOVEMENT_TEXT: Record<string, string> = {
+  chase: "",
+  kite: "Holds its firing distance — it backs off when you close and shoots from the gap.",
+  rooted: "Rooted. It will not chase you; it holds ground and punishes anything that walks past.",
+  phase: "Ignores the maze. It drifts straight at you THROUGH walls — you cannot break line of sight on it.",
+  inert: "Does not fight. It scores.",
+  flanker: "Comes at you OFF-AXIS — round the side of whatever you are facing, closing the angle only at the last moment.",
+  strafer: "Circles at range and darts in on a cadence. The tint goes hot in the beat before it commits.",
+  ambusher: "Does not move at all until it can see you AND you are close. Then it springs, once, and never hides again.",
+  orbiter: "Rings you at radius, and the ring tightens every second. It gets closer without ever coming straight at you.",
+  leaper: "Crouches — a dead stop, glowing — then pounces along a CURVED line. The crouch is your window, and the arc is aimed where you were going.",
+  packhunter: "Will not engage you alone. It shadows you at the edge of the light until it has company, then the whole group commits at once.",
+};
+
+/** How hard it is to stagger, in words. The Doom dial, made legible. */
+function painText(kind: EnemyKind): string {
+  const p = PAIN_BY_KIND[kind];
+  if (p <= 0) return "Cannot be staggered by anything.";
+  if (p >= 0.65) return "Easily rocked — a fast ricochet chain can hold it in place.";
+  if (p >= 0.4) return "Staggers under a solid impact, but not under a poke.";
+  if (p >= 0.2) return "Hard to stagger. Only a real arrival interrupts it.";
+  return "Almost unstaggerable — it keeps coming through anything short of terminal speed.";
+}
+
+/**
+ * The rules for one family, in the order a player needs them: how it moves,
+ * what momentum does to it, and how hard it is to interrupt.
+ */
+function mechanicsFor(kind: EnemyKind): string[] {
+  const out: string[] = [];
+  const mv = MOVEMENT_TEXT[MOVEMENT_BY_KIND[kind]];
+  if (mv) out.push(mv);
+  const gate = MOMENTUM_GATES[kind];
+  if (gate) out.push(gate.text);
+  out.push(painText(kind));
+  return out;
+}
+
+/**
+ * What a family's kill count has bought.
+ *
+ * The bestiary was a read-only screen: it told you a Wisp drops flask glass and
+ * then gave you no reason to go and fight Wisps that you did not already have.
+ * Milestones make the tally itself a currency — each tier tightens that
+ * family's card AFFINITY, so farming a monster measurably improves your odds of
+ * ITS card rather than being flavour text about drops you were getting anyway.
+ *
+ * ⚠️ THE DOCUMENTED TRAP: `rollCardDrop` draws affinity INSIDE the pick
+ * (cards.ts:327, pinned by test). Any bias MUST be applied at exactly that
+ * point in the RNG stream or the whole drop table's rates move silently. This
+ * function is therefore a pure REPORT — it computes the multiplier and hands it
+ * over; it deliberately does not reach into the roll.
+ */
+export function familyMilestone(kills: number): BestiaryMilestone {
+  let tier = 0;
+  for (const m of BESTIARY_MILESTONES) if (kills >= m) tier++;
+  const next = tier < BESTIARY_MILESTONES.length ? BESTIARY_MILESTONES[tier] : null;
+  return {
+    tier,
+    next,
+    toNext: next === null ? null : next - kills,
+    affinity: familyAffinity(kills),
+  };
+}
+
+/**
+ * The card-affinity multiplier a family's kill count has earned, ≥ 1.
+ *
+ * Exported for the drop roll to consume AT the affinity draw (see the trap
+ * above). Capped, because an uncapped farm bonus turns one family into the only
+ * family worth killing — which is the opposite of what a bestiary is for.
+ */
+export function familyAffinity(kills: number): number {
+  let tier = 0;
+  for (const m of BESTIARY_MILESTONES) if (kills >= m) tier++;
+  return Math.min(BESTIARY_AFFINITY_MAX, 1 + tier * BESTIARY_AFFINITY_STEP);
+}
+
+/** What a family's kill count has earned. */
+export interface BestiaryMilestone {
+  /** How many tiers of BESTIARY_MILESTONES are cleared (0..n). */
+  tier: number;
+  /** Kills still needed for the next tier, or null at the top. */
+  toNext: number | null;
+  /** The next threshold, or null at the top. */
+  next: number | null;
+  /** Card-affinity bonus this family's drops now carry, as a multiplier. */
+  affinity: number;
+}
+
 export interface BestiaryEntry {
   kind: EnemyKind;
   label: string;
@@ -105,6 +203,29 @@ export interface BestiaryEntry {
   cards: BestiaryCard[];
   /** Populated for `zombie` only — its eight behavioural sub-types. */
   subTypes: BestiarySubType[];
+  /**
+   * The RULES this family plays by, in words, derived from the same tables the
+   * game enforces them from (entities/enemy-rules.ts, entities/stagger.ts).
+   *
+   * These existed only as behaviour before: nothing on any screen said a golem
+   * needs smash-speed or that ramming a crystalback sprays shards back into
+   * you, so the game's clearest teaching about momentum could only be learned
+   * by dying to it. Revealed with the rest of the row, on the first kill.
+   */
+  mechanics: string[];
+  /** Kill-count progression + what it has bought. */
+  milestone: BestiaryMilestone;
+  /**
+   * How many of this family you have killed BY RAMMING, and the deepest bounce
+   * combo you were carrying when one died.
+   *
+   * Both are the pinball layer keeping score of itself against the ARPG layer,
+   * which DECLONE §0 named as the split this whole plan exists to close: the
+   * bestiary counted kills and had no idea whether you earned them with a sword
+   * or at 20 u/s.
+   */
+  ramKills: number;
+  bestCombo: number;
 }
 
 /** Cards sourced to a kind, ordered common → mythic so the row reads as a ladder. */
@@ -155,8 +276,37 @@ function subTypeNotes(t: ZombieType): string[] {
   if (d.gait === "limp") out.push("limps — lurches and drags");
   if (d.gait === "crawl") out.push("legless — drags itself prone");
   if (d.knockback) out.push("knocks you off your line");
+  // The two Wave-5 columns. A sub-type's movement and its ONE exception are the
+  // things that decide how you fight it, so they read as rules rather than as
+  // percentages — and they are derived from the same table the game enforces.
+  if (d.movement) out.push(SUBTYPE_MOVEMENT_NOTE[d.movement] ?? d.movement);
+  if (d.exception) out.push(EXCEPTION_NOTE[d.exception]);
+  if (d.painMult !== undefined && d.painMult !== 1) {
+    out.push(d.painMult > 1 ? "easily staggered" : "hard to stagger");
+  }
   return out;
 }
+
+/** A sub-type's steering, in one short clause (the family rows carry the prose). */
+const SUBTYPE_MOVEMENT_NOTE: Record<string, string> = {
+  flanker: "approaches off-axis",
+  strafer: "circles and darts",
+  ambusher: "lies still until you are close",
+  orbiter: "rings you at radius",
+  leaper: "telegraphed pounce, on an arc",
+  packhunter: "will not engage without company",
+};
+
+/**
+ * The three shared exceptions, as the ANSWER rather than the rule — a bestiary
+ * that says "immune to bounce damage" has told you what fails; one that says
+ * "bring steel" has told you what to do.
+ */
+const EXCEPTION_NOTE: Record<string, string> = {
+  "bounce-immune": "RAMMING IT DOES NO DAMAGE — bring steel",
+  "speed-only": "can be worn to 1 hp at a walk; the killing blow needs the ride",
+  "dodges-ranged": "sidesteps about half of all arrows — close the distance",
+};
 
 function subTypesFor(kind: EnemyKind, kills: Record<string, number>): BestiarySubType[] {
   if (kind !== "zombie") return [];
@@ -201,6 +351,12 @@ export function buildBestiary(kills: Record<string, number> = {}): BestiaryEntry
       drops: dropsFor(kind),
       cards: cardsFor(kind),
       subTypes: subTypesFor(kind, kills),
+      mechanics: mechanicsFor(kind),
+      milestone: familyMilestone(n),
+      // Namespaced into the same tally record — see `tallyKill` in combat.ts
+      // for why there is no second state field.
+      ramKills: kills[`${kind}#ram`] ?? 0,
+      bestCombo: kills[`${kind}#combo`] ?? 0,
     };
   });
 }

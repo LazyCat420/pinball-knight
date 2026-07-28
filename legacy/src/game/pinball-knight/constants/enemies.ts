@@ -241,6 +241,18 @@ export const DODGE_RANGED_CHANCE = 0.5;
 /** "speed-only": the momentumT a KILLING blow needs. Below it, it wears to 1 hp. */
 export const SPEED_ONLY_T = 0.45;
 
+// ── BESTIARY MILESTONES (bestiary.ts) ───────────────────────────
+/**
+ * Kill counts per family that earn a card-affinity tier. Log-ish spacing so the
+ * first one lands inside a floor or two (progress must be visible before the
+ * screen is worth opening) and the last is a genuine farm.
+ */
+export const BESTIARY_MILESTONES = [10, 30, 75, 150];
+/** Affinity multiplier gained per tier… */
+export const BESTIARY_AFFINITY_STEP = 0.25;
+/** …and the cap. An uncapped farm bonus makes one family the only one worth killing. */
+export const BESTIARY_AFFINITY_MAX = 2;
+
 // ── STAGGER / ENTROPY (entities/stagger.ts) ─────────────────────
 /**
  * Doom's pain chance, priced in momentum. See entities/stagger.ts for the why;

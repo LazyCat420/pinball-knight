@@ -28,7 +28,6 @@ import {
   BRUTE_DAMAGE,
   BRUTE_KNOCKBACK,
   REAPER_DAMAGE,
-  SECRET_BREAK_SPEED,
   GHOST_VULN_TIME,
   GOLEM_DAMAGE,
   CHOMPER_DAMAGE,
@@ -52,9 +51,6 @@ import {
   WISP_BLINK_CD,
   WISP_BLINK_DIST,
   COMBO_ZONE_CRUISE,
-  MOMENTUM_T_FLOOR,
-  GOLEM_GATE_SOFT,
-  CRYSTAL_GATE_SOFT,
   CHOMPER_SHOVE_MAX,
   GATE_MIN_FACTOR,
   DODGE_RANGED_CHANCE,
@@ -62,6 +58,7 @@ import {
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
+import { MOMENTUM_GATES } from "./enemy-rules";
 import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
 import { screenDirToWorld } from "../engine/camera";
@@ -79,6 +76,10 @@ import { aggregateCards } from "../cards";
  *  floating-number so the hit reads as a crit. Player hits call playerDamage
  *  immediately before damageZombie, so the flag never leaks to other sources. */
 let _lastCrit = false;
+/** Which tool landed the blow currently resolving — read by `tallyKill` so the
+ *  bestiary can count RAM kills separately. Set at the top of every damage
+ *  resolution, so it can never describe an earlier hit. */
+let _killSrc: DamageSource = "steel";
 
 export function playerDamage(base: number): number {
   const p = state.player;
@@ -415,10 +416,11 @@ export function damageZombie(
   // is what made these two worth having: a hit that lands for nothing has to
   // SAY so, or the rule is invisible.
   if (!force && (z.kind === "goblin" || z.kind === "golem")) {
-    const f =
-      z.kind === "golem"
-        ? momentumGate(momentum, SECRET_BREAK_SPEED, GOLEM_GATE_SOFT)
-        : momentumGate(momentum, MOMENTUM_T_FLOOR, 0); // "carry SOME speed" = the bare ramp
+    // The bar and the softness come from MOMENTUM_GATES (entities/enemy-rules.ts),
+    // which is the SAME table the bestiary prints from — so what the screen
+    // teaches and what the code enforces cannot drift apart.
+    const g2 = MOMENTUM_GATES[z.kind]!;
+    const f = momentumGate(momentum, g2.bar, g2.soft);
     if (f <= GATE_MIN_FACTOR) {
       state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
       state.shakeT = Math.max(state.shakeT, 0.05);
@@ -481,7 +483,8 @@ export function damageZombie(
   // full-speed ram throws the whole reflector back at you. Same rule ("momentum
   // is taxed here"), now with something to learn above the old threshold.
   if (z.kind === "crystalback" && p && p.hp > 0 && p.iframes <= 0) {
-    const t = momentumGate(momentum, CARD_PINBALL_SPEED, CRYSTAL_GATE_SOFT);
+    const cg = MOMENTUM_GATES.crystalback!;
+    const t = momentumGate(momentum, cg.bar, cg.soft);
     const shards = Math.round(CRYSTAL_SHARDS * t);
     if (shards >= 1) {
       hitPlayerRanged(Math.max(1, Math.round(CRYSTAL_SHARD_DMG * t)), z.x, z.z);
@@ -518,6 +521,11 @@ export function damageZombie(
     return;
   }
 
+  // Which tool is about to (maybe) finish it, for the bestiary's ram tally.
+  // Same trick as `_lastCrit`: killZombie is called from inside this function
+  // and from nowhere else that matters, so a module-scope hand-off is honest
+  // and avoids threading a source through six call sites that don't care.
+  _killSrc = src;
   z.hp -= damage;
   z.aggro = true; // hitting a dormant zombie certainly wakes it
   z.flashT = FLASH_TIME;
@@ -765,6 +773,17 @@ function tallyKill(z: Zombie): void {
     return n;
   };
   bump(z.kind);
+  // ── HOW you killed it, not just how many (DECLONE §6.5) ──
+  // Namespaced into the SAME record rather than two new state fields, and that
+  // is deliberate: `killsByKind` is already reset in every place a run resets,
+  // already serialized wherever the tally is, and already keyed by string
+  // ("zombie:hulk"). Two parallel records would be two more things to remember
+  // to clear, and forgetting one is how a stat starts lying between runs. The
+  // "#" separator cannot collide with the ":" the sub-type keys use.
+  if (_killSrc === "bounce") state.killsByKind[`${z.kind}#ram`] = (state.killsByKind[`${z.kind}#ram`] ?? 0) + 1;
+  const combo = state.player?.bounceCombo ?? 0;
+  const bestKey = `${z.kind}#combo`;
+  if (combo > (state.killsByKind[bestKey] ?? 0)) state.killsByKind[bestKey] = combo;
   if (!z.ztype) return;
   const n = bump(`${z.kind}:${z.ztype}`);
   // FIRST of a sub-type this run: name it. Eight zombie flavours the player
