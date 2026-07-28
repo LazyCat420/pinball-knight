@@ -31,7 +31,7 @@ import {
   CAMERA_TILT,
 } from "../constants";
 import { type Grid, isWalkable, tileCenter, at, shapeAt, surfaceAt, T_CRACKED, idx } from "./generator";
-import { wallSurface, floorSurface, WALL_STONE, FLOOR_STONE } from "../engine/surfaces";
+import { wallSurface, floorSurface, WALL_STONE, FLOOR_STONE, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL } from "../engine/surfaces";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "../engine/tile-shape";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
 import { buildArcLanes, type ArcLaneVisual } from "../render/arc-lanes";
@@ -666,6 +666,120 @@ function makeBarrelTexture(): THREE.CanvasTexture {
 }
 
 /**
+ * SURFACE WASH TEXTURES — a painted patch has to look like a MATERIAL.
+ *
+ * `Grid.surfaces` decides physics per tile (engine/surfaces.ts) and the maze
+ * track's painter now covers a median of ~1900 tiles a floor with it. The
+ * renderer's answer was one flat colour quad per tile at 0.42 opacity, which on
+ * screen is a big saturated rectangle: the ice patch reads as a spilled bucket
+ * of blue, not as ice, and the flowstone patch reads as green paint — green
+ * paint that a rot-green horde then stands on invisibly.
+ *
+ * Physics contrast is this game's light and dark, so a surface has to be
+ * recognisable from across the room AND it has to say why it behaves the way it
+ * does. Each material gets a small tiling texture whose grain explains its
+ * numbers:
+ *
+ *   ICE       — long crystalline fractures, all leaning the same way. Nothing
+ *               holds a line on it (steerMult 0.25) and neither do they.
+ *   SAND      — dense loose grain and wind ripples. frictionMult 2.4, visibly.
+ *   STEEL     — riveted plate and panel seams. The one man-made floor.
+ *   FLOWSTONE — knobbly mineral pebbling. The grip IS the texture.
+ *
+ * Alpha-painted so the flagstone still reads THROUGH the patch, which is the
+ * one thing the flat wash got right. Four textures, cached for the session.
+ */
+const SURFACE_WASH_PX = 64;
+
+function makeSurfaceWashTexture(floorId: number): THREE.CanvasTexture {
+  return cachedTexture(`wash-${floorId}`, () =>
+    pixelTexture(
+      SURFACE_WASH_PX,
+      (ctx) => {
+        const S = SURFACE_WASH_PX;
+        ctx.clearRect(0, 0, S, S);
+        // Seeded per material so two materials never share a speckle pattern.
+        const seed = 17 + floorId * 131;
+        if (floorId === FLOOR_ICE) {
+          ctx.fillStyle = "rgba(111, 208, 232, 0.30)"; // arcane light 31
+          ctx.fillRect(0, 0, S, S);
+          ctx.strokeStyle = "rgba(238, 241, 245, 0.55)"; // steel highlight 22
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 7; i++) {
+            const y = noise(i, 3, seed) * S;
+            ctx.beginPath();
+            ctx.moveTo(-4, y);
+            ctx.lineTo(S + 4, y - S * 0.34);
+            ctx.stroke();
+          }
+          ctx.fillStyle = "rgba(200, 204, 212, 0.30)"; // steel light 21
+          for (let i = 0; i < 26; i++) ctx.fillRect(noise(i, 11, seed) * S, noise(i, 12, seed) * S, 2, 1);
+        } else if (floorId === FLOOR_SAND) {
+          ctx.fillStyle = "rgba(122, 59, 18, 0.34)"; // ember 14
+          ctx.fillRect(0, 0, S, S);
+          ctx.strokeStyle = "rgba(217, 123, 41, 0.28)"; // flame dark 15
+          ctx.lineWidth = 2;
+          for (let i = 0; i < 6; i++) {
+            const y = (i / 6) * S + noise(i, 5, seed) * 4;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.quadraticCurveTo(S / 2, y + 5, S, y);
+            ctx.stroke();
+          }
+          for (let i = 0; i < 160; i++) {
+            ctx.fillStyle = noise(i, 7, seed) > 0.5 ? "rgba(240, 166, 60, 0.34)" : "rgba(74, 50, 34, 0.34)";
+            ctx.fillRect(noise(i, 8, seed) * S, noise(i, 9, seed) * S, 1, 1);
+          }
+        } else if (floorId === FLOOR_STEEL) {
+          ctx.fillStyle = "rgba(138, 148, 166, 0.34)"; // steel mid 20
+          ctx.fillRect(0, 0, S, S);
+          ctx.strokeStyle = "rgba(84, 78, 99, 0.55)"; // steel dark 19
+          ctx.lineWidth = 2;
+          for (const p of [0, S / 2]) {
+            ctx.beginPath();
+            ctx.moveTo(p, 0);
+            ctx.lineTo(p, S);
+            ctx.moveTo(0, p);
+            ctx.lineTo(S, p);
+            ctx.stroke();
+          }
+          ctx.fillStyle = "rgba(238, 241, 245, 0.50)"; // steel highlight 22
+          for (let gx = 0; gx < 2; gx++) {
+            for (let gy = 0; gy < 2; gy++) {
+              const cx = gx * (S / 2) + S / 4;
+              const cy = gy * (S / 2) + S / 4;
+              for (const o of [[-9, -9], [9, -9], [-9, 9], [9, 9]] as Array<[number, number]>) {
+                ctx.fillRect(cx + o[0], cy + o[1], 2, 2);
+              }
+            }
+          }
+        } else {
+          // FLOOR_GRIP — flowstone: knobbly mineral deposit, lit up-left to
+          // match the scene's key so the bumps read as bumps and not as spots.
+          ctx.fillStyle = "rgba(61, 92, 58, 0.32)"; // rot dark 7
+          ctx.fillRect(0, 0, S, S);
+          for (let i = 0; i < 40; i++) {
+            const x = noise(i, 21, seed) * S;
+            const y = noise(i, 22, seed) * S;
+            const r = 1.5 + noise(i, 23, seed) * 3;
+            ctx.beginPath();
+            ctx.ellipse(x, y, r, r * 0.72, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(95, 138, 79, 0.40)"; // rot mid 8
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(x - r * 0.3, y - r * 0.32, r * 0.42, r * 0.32, 0, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(143, 196, 107, 0.42)"; // rot light 9
+            ctx.fill();
+          }
+        }
+      },
+      1,
+      1,
+    ),
+  );
+}
+
+/**
  * Torch flame flip-book: FLAME_FRAMES teardrop frames in one horizontal strip.
  * Layered palette tongues (ember → core) with a per-frame lean and tip lick —
  * the classic Castlevania wall-torch. Drawn bright so the bloom pass halos it.
@@ -986,40 +1100,50 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // Additive-ish transparency at low opacity so the flagstone texture still
   // reads THROUGH the wash: the point is "this patch is ice", not "this patch
   // is a flat blue rectangle" — the same mistake the card-art tint made.
+  //
+  // ONE MESH PER MATERIAL, not one mesh with per-instance colours. The old
+  // version tinted a single instanced quad, which is why every patch was a flat
+  // rectangle: an instanceColor can carry a hue but it cannot carry a GRAIN,
+  // and grain is the entire difference between "this patch is ice" and "this
+  // patch is blue". A floor uses at most four non-stone materials, so this is
+  // at most four extra draw calls for four recognisable substances.
   {
-    const washCells: Array<{ x: number; z: number; hex: number }> = [];
+    const byMaterial = new Map<number, Array<{ x: number; z: number }>>();
     for (let j = 0; j < grid.h; j++) {
       for (let i = 0; i < grid.w; i++) {
         if (!isWalkable(grid, i, j)) continue;
         const surf = floorSurface(surfaceAt(grid, i, j));
         if (surf.id === FLOOR_STONE) continue;
         const cc = tileCenter(grid, i, j);
-        washCells.push({ x: cc.x, z: cc.z, hex: surf.hex });
+        let cells = byMaterial.get(surf.id);
+        if (!cells) byMaterial.set(surf.id, (cells = []));
+        cells.push({ x: cc.x, z: cc.z });
       }
     }
-    if (washCells.length) {
+    for (const [floorId, cells] of byMaterial) {
       const washGeo = track(new THREE.PlaneGeometry(1, 1));
       washGeo.rotateX(-Math.PI / 2);
       const washMat = track(
         new THREE.MeshBasicMaterial({
+          map: makeSurfaceWashTexture(floorId), // cached, session-lived: never tracked
           transparent: true,
-          opacity: 0.42,
+          // The texture carries its own per-pixel alpha now, so the blanket
+          // 0.42 comes off — that opacity existed to stop a flat colour block
+          // from erasing the flagstone, and a grain does not need it.
+          opacity: 1,
           depthWrite: false, // a decal, never an occluder
         }),
       );
-      const washMesh = new THREE.InstancedMesh(washGeo, washMat, washCells.length);
+      const washMesh = new THREE.InstancedMesh(washGeo, washMat, cells.length);
       washMesh.frustumCulled = false; // one object spanning the floor — culling it is all-or-nothing anyway
       const wm = new THREE.Matrix4();
-      const wc = new THREE.Color();
-      washCells.forEach((c, k) => {
+      cells.forEach((c, k) => {
         // Just proud of the floor plane. Too low z-fights, too high and the
         // wash visibly floats off the ground at the camera's 38° tilt.
         wm.setPosition(c.x, 0.012, c.z);
         washMesh.setMatrixAt(k, wm);
-        washMesh.setColorAt(k, wc.setHex(c.hex, THREE.SRGBColorSpace));
       });
       washMesh.instanceMatrix.needsUpdate = true;
-      if (washMesh.instanceColor) washMesh.instanceColor.needsUpdate = true;
       group.add(washMesh);
       disposables.push({ dispose: () => washMesh.dispose() });
     }
