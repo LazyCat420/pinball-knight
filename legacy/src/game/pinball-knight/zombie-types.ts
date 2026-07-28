@@ -22,6 +22,7 @@
  * DOM- and three-free so the spawn math is unit-tested.
  */
 import type { ZVariant } from "./render/cel-painter";
+import type { MovementKind } from "./entities/movement";
 
 export type ZombieType =
   | "shambler" // baseline — what a zombie was before this table existed
@@ -72,6 +73,18 @@ export interface ZombieTypeDef {
   gait?: "limp" | "crawl";
   /** Contact knockback impulse (hulk only); undefined = the normal shove. */
   knockback?: number;
+  /**
+   * STEERING POLICY (entities/movement.ts), overriding the zombie family's
+   * `chase`. Absent = it walks the baseline line.
+   *
+   * This is the single field that stops the sub-type table from being eight
+   * flavours of "the same monster at a different speed". Before it, a Runner and
+   * a Crawler differed only in how FAST they walked the identical route to your
+   * face; now the Runner comes at an angle, the Crawler does not move until you
+   * are close, and the Midget will not engage until it has friends. `gait`
+   * decorates the walk; `movement` decides where the walk goes.
+   */
+  movement?: MovementKind;
 }
 
 /**
@@ -90,6 +103,9 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     id: "runner", label: "Runner",
     speedMult: 1.75, hpMult: 0.67, scale: 0.95, bodyRMult: 0.95, reachMult: 1.0, windupMult: 0.75,
     weight: 16, fromLevel: 2, variantFilter: null,
+    // Fast enough to afford the detour: it arrives from the side of whatever
+    // corridor you are pointing your sword down.
+    movement: "flanker",
   },
   lurcher: {
     id: "lurcher", label: "Lurcher",
@@ -105,6 +121,9 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     id: "midget", label: "Midget",
     speedMult: 1.35, hpMult: 0.67, scale: 0.62, bodyRMult: 0.65, reachMult: 0.7, windupMult: 0.85,
     weight: 12, fromLevel: 2, variantFilter: null,
+    // Too small to fight you alone, and it knows it. Hangs at the edge of the
+    // light until three of them agree — then they all arrive at once.
+    movement: "packhunter",
   },
   crawler: {
     id: "crawler", label: "Crawler",
@@ -113,6 +132,9 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // Legless: BOTH legs gone in the art, and it renders prone (§gait).
     variantFilter: (v) => v.legStump === "both",
     gait: "crawl",
+    // No legs, so it does not chase — it WAITS, flat on the floor, and springs
+    // when you finally walk into its line. The one sub-type you can miss.
+    movement: "ambusher",
   },
   flailer: {
     id: "flailer", label: "Flailer",
@@ -121,6 +143,9 @@ export const ZOMBIE_TYPES: Record<ZombieType, ZombieTypeDef> = {
     // No arms: it bites, so it needs the armless silhouette. (`stump` is the
     // ARM field — legs are `legStump`. Easy to transpose; the test pins it.)
     variantFilter: (v) => v.stump === "both",
+    // Nothing to swing with, so the whole BODY is the weapon: it crouches and
+    // pounces along an arc. The crouch is the window you get.
+    movement: "leaper",
   },
   hobbler: {
     id: "hobbler", label: "Hobbler",

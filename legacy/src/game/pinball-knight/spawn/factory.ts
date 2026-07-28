@@ -202,6 +202,13 @@ export function makeZombie(
     aggro: false,
     burnT: 0,
     bobT: 0,
+    // MOVEMENT phase (entities/movement.ts): which way a flanker peels, which
+    // way an orbiter rings, which way a leaper's arc bends. Derived from the
+    // nid — NOT Math.random — for the same reason the hobbler's limp phase is:
+    // every co-op peer builds the horde locally, so a random draw here would
+    // have two clients watching the same monster take opposite arcs. The golden
+    // ratio keeps consecutive nids from alternating in lockstep.
+    movePhase: (((Number(nid.replace(/^z/, "")) || 0) * 0.618033988749895) % 1 + 1) % 1,
   };
   // ── ZOMBIE SUB-TYPE (zombie-types.ts) ──
   // Applied at the single construction site so the stat bundle and the collider

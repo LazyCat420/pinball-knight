@@ -395,6 +395,22 @@ export interface Zombie extends Actor {
   slideVZ?: number;
   /** GHOST only: seconds left materialized (vulnerable). Immune while ≤ 0. */
   vulnT?: number;
+  /**
+   * MOVEMENT scratch (entities/movement.ts). These four are the ONLY state a
+   * steering policy owns, and they are deliberately generic: `moveT` is a
+   * strafer's dart cadence, an orbiter's spiral clock and a leaper's recovery
+   * timer, because a per-policy field on every actor would put six dead numbers
+   * on every zombie in a 175-actor horde.
+   *
+   * `movePhase` is the per-actor asymmetry (which way a flanker peels, which way
+   * an orbiter rings), derived from `nid` at spawn — NOT Math.random, so two
+   * co-op peers watching the same horde see the same arcs.
+   */
+  movePhase?: number;
+  moveCommit?: number;
+  moveT?: number;
+  moveDirX?: number;
+  moveDirZ?: number;
 }
 
 /**

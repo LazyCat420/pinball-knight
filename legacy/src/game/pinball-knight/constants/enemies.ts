@@ -219,6 +219,97 @@ export const SEPARATION_R = 0.55;
  * detail of one function.
  */
 export const DIRECT_STEER_RANGE = 1.6;
+
+// ── MOVEMENT POLICIES (entities/movement.ts) ────────────────────
+/**
+ * The steering vocabulary's tuning. Every number here answers "how far off the
+ * chase line does this intent take you", because a movement type that measures
+ * the same as `chase` is a label, not a behaviour — the colocated tests assert
+ * exactly that, and these are the knobs they move.
+ *
+ * All of it rides the EXISTING flow field + moveCircle substrate. Nothing in
+ * this block funds a second pathfinder.
+ */
+
+/** FLANKER: how far off the direct line it approaches, at full deviation (rad). */
+export const FLANK_ANGLE = 1.0; // ~57°, enough to arrive from the side of a corridor mouth
+/** Inside this it gives up the angle and commits straight in — it must still land its bite. */
+export const FLANK_CLOSE = 1.8;
+/** Beyond this the deviation is at FLANK_ANGLE; between the two it fades linearly. */
+export const FLANK_FAR = 7.0;
+
+/** STRAFER: the range it wants to hold (world units, floored by its own reach). */
+export const STRAFE_RANGE = 3.4;
+/** How hard it corrects back onto that range — bigger = looser circle. */
+export const STRAFE_BAND = 1.6;
+/** Seconds of circling between darts. The cadence IS the tell. */
+export const STRAFE_DART_CD = 3.2;
+/** Seconds a dart lasts before it drops back to circling. */
+export const STRAFE_DART_TIME = 0.85;
+/** Speed multiplier while darting — the commit has to look like a commit. */
+export const STRAFE_DART_MULT = 1.6;
+/** Seconds of hot tint before the dart releases: the window you get to react in. */
+export const STRAFE_TELL_LEAD = 0.5;
+
+/** AMBUSHER: it springs when it has line of sight AND you are inside this. */
+export const AMBUSH_RANGE = 5.0;
+/** Speed multiplier for the opening burst out of hiding. */
+export const AMBUSH_BURST_MULT = 1.6;
+/** Seconds the burst lasts. After it, it is an ordinary chaser forever. */
+export const AMBUSH_BURST_TIME = 1.2;
+
+/** ORBITER: the ring radius it opens at. */
+export const ORBIT_RADIUS = 3.6;
+/** Radial correction band — bigger = a lazier, wobblier ring. */
+export const ORBIT_BAND = 1.2;
+/**
+ * World units per second the ring TIGHTENS by. An orbiter that held its radius
+ * forever would be scenery you can ignore; the spiral makes "it's circling" and
+ * "and it's closing" the same readable motion.
+ */
+export const ORBIT_TIGHTEN = 0.18;
+
+/** LEAPER: it will pounce from inside this range… */
+export const LEAP_RANGE = 5.5;
+/** …but not from point-blank, where a pounce would just be a walk. */
+export const LEAP_MIN_RANGE = 1.2;
+/** Seconds of rooted crouch before release. THE window the player reads. */
+export const LEAP_WINDUP = 0.45;
+/** Seconds the pounce lasts. */
+export const LEAP_TIME = 0.5;
+/** Speed multiplier during the pounce. */
+export const LEAP_SPEED_MULT = 3.4;
+/**
+ * Radians per second the locked heading rotates during the pounce — this is
+ * what makes it an ARC. A straight dash is beaten by one sidestep; an arc bends
+ * toward where you were going, so it has to be READ. The heading is locked at
+ * crouch-exit and never re-aimed, which is what makes a leap baitable.
+ */
+export const LEAP_CURVE = 1.5;
+/** Seconds of recovery before it may crouch again. */
+export const LEAP_CD = 2.2;
+/** Speed multiplier while merely closing the gap — it saves itself for the leap. */
+export const LEAP_CRUISE_MULT = 0.75;
+
+/**
+ * LINE-OF-SIGHT probe (entities/zombie.ts `hasLineOfSight`). Only the ambusher
+ * and the leaper ask, and only inside this range — a probe is a walk along a
+ * segment and the horde budget is 175 actors.
+ */
+export const LOS_PROBE_RANGE = 6.0;
+/** Sample spacing along the probe. Below a tile, so a doorframe cannot be missed. */
+export const LOS_PROBE_STEP = 0.35;
+
+/** PACK-HUNTER: neighbours of the same policy within this count toward the quorum. */
+export const PACK_RANGE = 5.5;
+/** How many (including itself) it needs before it will engage at all. */
+export const PACK_MIN = 3;
+/** The range it shadows you at while it waits for numbers. */
+export const PACK_HOLD_RANGE = 5.0;
+/** Speed multiplier while stalking — it paces you rather than racing you. */
+export const PACK_STALK_MULT = 0.5;
+/** Speed multiplier once the quorum lands and the whole pack goes at once. */
+export const PACK_RUSH_MULT = 1.3;
 /** The BFS flow field is recomputed on this cadence, not per frame — one BFS serves every zombie. */
 export const FLOW_INTERVAL = 0.25;
 

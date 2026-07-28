@@ -25,6 +25,7 @@ import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
+import { movementOf } from "../entities/zombie";
 import { debugCurSpeed, debugWallNormal } from "../entities/player";
 import { railCap } from "../entities/rail";
 import { exploredCount, exploredFraction } from "../fog";
@@ -698,6 +699,35 @@ export function installDevHooks(deps: DevHookDeps): void {
       syncActorMesh(p);
       return true;
     };
+    // Dev: THE HORDE, as numbers. `__dungeonPlayer` reports the knight; there
+    // was no read-back for the monsters at all, which made every claim about
+    // enemy BEHAVIOUR unfalsifiable from a harness — you could screenshot a
+    // sprite but never measure a path. Movement policies (entities/movement.ts)
+    // are defined by the path they draw, so a headless run has to be able to
+    // sample one.
+    //
+    //   __dungeonFoes()             every living foe: kind, sub-type, policy, pos
+    //   __dungeonFoes("flanker")    only actors running that movement policy
+    //
+    // Positions are the raw sim coordinates (NOT the iso-projected mesh), so a
+    // path measured here is the path the AI actually walked.
+    (window as unknown as { __dungeonFoes?: (policy?: string) => unknown }).__dungeonFoes = (policy?: string) =>
+      state.zombies
+        .filter((z) => z.mode !== "dead")
+        .map((z) => ({
+          nid: z.nid,
+          kind: z.kind,
+          ztype: z.ztype ?? null,
+          movement: movementOf(z),
+          x: z.x,
+          z: z.z,
+          hp: z.hp,
+          mode: z.mode,
+          aggro: z.aggro,
+          speed: z.speed,
+          commit: z.moveCommit ?? 0,
+        }))
+        .filter((e) => !policy || e.movement === policy);
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;
