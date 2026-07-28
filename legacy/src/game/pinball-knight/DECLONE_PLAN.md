@@ -86,7 +86,35 @@ outcomes, the softer the failure ledger must be.**
 
 ---
 
-## 2. Wave 1 — The Spine (cross-cutting plumbing, all pure improvements)
+## 2. Wave 1 — The Spine ✅ SHIPPED 2026-07-27 (`ed5678e`, `0ac0eed`)
+
+Everything in the table below is live. **Do not re-propose any of it.** Gates
+at ship: 1631 tests green, 0 tsc errors in `pinball-knight`, coop-determinism
+and floor-pipeline green, `next build` clean, and a real headless run (bot
+launched, combo climbed to 21, speeds 13–18.4 u/s, descend fired the flawless
+heart hp 6→7) with **zero non-WebSocket console errors**. The `ws://…/ws` 403
+seen in that run is pre-existing and unrelated (server.mjs vs realtime.mjs).
+
+Two deviations from the plan as written, both deliberate:
+
+- **§1.2 exempts the best card.** Softening the whole stack made a SINGLE card
+  under-deliver its printed value (a +50% card paying +44%), and
+  `describeModifier` regenerates every card's text from its own modifier — so
+  the card would have been lying about itself, the exact failure the card-level
+  system exists to prevent. The curve is now `best × soften(raw/best)`: one
+  card is exact, the pile bends. Three tests that pinned raw multiplicative
+  stacking were rewritten to the new contract.
+- **§1.6 inverted.** The plan said "bounces sustain, kills grow", which is
+  Hotline Miami's rule for a KILL combo. Applied literally to a BOUNCE combo it
+  would have turned `bounceCombo` into a kill counter and invalidated every
+  curve calibrated on it. Shipped inverted instead — bounces still grow the
+  count, and a momentum kill REFRESHES the window — which captures the actual
+  insight (the productive action must not drop your chain) without gutting the
+  system.
+
+Also shipped beyond the plan: the grade line now prints flow and combo on the
+way out (`FLOOR GRADE A · flow 34% · combo ×21 · +25g`), because a grade axis
+the player cannot see is the same bug as the silent vault.
 
 | # | Change | Files | Notes |
 |---|---|---|---|
