@@ -120,6 +120,7 @@ import {
 } from "../constants";
 import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
 import { MOVEMENT_BY_KIND } from "./enemy-rules";
+import { clipForSteer } from "../render/tell-clips";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../engine/collision";
@@ -489,7 +490,11 @@ export function updateZombies(dt: number): void {
         z.windupT = 0;
       }
       cancelCommit(z);
-      z.anim.play("idle");
+      // `stumble` is the recoil clip (render/cel-painter.ts). It holds its last
+      // frame rather than looping, so a long stagger reads as "still rocked"
+      // instead of as a second hit landing. Families that have not authored one
+      // fall back to `idle` in the animator, which is what this line used to be.
+      z.anim.play("stumble");
       if (z.flashT <= 0) z.sprite.setTint(STAGGER_TINT);
       syncActorMesh(z);
       continue;
@@ -807,15 +812,21 @@ export function updateZombies(dt: number): void {
       z.z = res.z;
     }
 
-    if ((vx !== 0 || vz !== 0) && !steer.hold) {
+    // A policy's TELL may also name a POSE, not just a tint (render/tell-clips.ts).
+    // The tint alone made a crouching leaper, a stalking pack-hunter and a
+    // committed ambusher play the same clip in three colours; the clip is the
+    // half of the telegraph that reads at a glance across a lit room.
+    const moving = vx !== 0 || vz !== 0;
+    const tellClip = clipForSteer(steer, moving);
+    if (moving && !steer.hold) {
       z.anim.setFacing(facingFromWorld(vx, vz, "S"));
-      z.anim.play("walk");
+      z.anim.play(tellClip ?? "walk");
     } else {
       // `hold` is a policy STANDING STILL on purpose (an ambusher in wait, a
       // leaper mid-crouch). It must read as stillness, not as a walk cycle in
       // place, or the telegraph the whole policy rests on is invisible.
-      if (steer.hold && (vx !== 0 || vz !== 0)) z.anim.setFacing(facingFromWorld(vx, vz, "S"));
-      z.anim.play("idle");
+      if (steer.hold && moving) z.anim.setFacing(facingFromWorld(vx, vz, "S"));
+      z.anim.play(tellClip ?? "idle");
     }
 
     syncActorMesh(z);

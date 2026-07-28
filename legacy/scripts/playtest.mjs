@@ -285,6 +285,14 @@ const glInfo = await page.evaluate(() => {
 log(`▶ renderer: ${glInfo}`);
 const looksSoftware = /swiftshader|llvmpipe|software/i.test(glInfo);
 
+// NB the `null` second argument in every waitForFunction below is load-bearing.
+// Playwright's signature is waitForFunction(fn, ARG, OPTIONS) — passing the
+// options object in the second slot hands it to the page function as data and
+// silently leaves the timeout at Playwright's 30s default. That is what these
+// calls did, so the documented 120s/60s waits were never in force: a headless
+// boot measures 32-36s to the hooks on this box (the jungle room mounts first
+// and takes ~11s of it), which put the run right on a 30s cliff and made
+// "✗ dungeon hooks never appeared" a coin flip on unchanged code.
 log("▶ waiting for the dungeon to boot…");
 // The hooks install when the scene mounts; the PLAYER only exists once a run
 // has begun. `?autostart=1` drops straight into floor 1, but fall back to the
@@ -292,15 +300,16 @@ log("▶ waiting for the dungeon to boot…");
 try {
   await page.waitForFunction(
     () => typeof window.__dungeonBot === "function" && typeof window.__dungeonPlayer === "function",
+    null,
     { timeout: 120_000 },
   );
   // Now wait for an ACTIVE player. Without this the bot starts against the
   // lobby and immediately self-stops with "player inactive".
-  await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, { timeout: 60_000 })
+  await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, null, { timeout: 60_000 })
     .catch(async () => {
       log("▶ still in the lobby — starting the run explicitly");
       await page.evaluate(() => window.__dungeonStartRun?.());
-      await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, { timeout: 60_000 });
+      await page.waitForFunction(() => window.__dungeonPlayer()?.active === true, null, { timeout: 60_000 });
     });
 } catch {
   console.error(

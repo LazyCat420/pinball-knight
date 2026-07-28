@@ -225,6 +225,107 @@ function celShade(ctx: CanvasRenderingContext2D): void {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// TELEGRAPH CLIPS — the poses a policy's TELL needs.
+//
+// entities/movement.ts ships six intents that each declare a telegraph, and
+// until this wave every one of those telegraphs was a TINT and nothing else.
+// A tint is legible but thin: a crouching leaper, a stalking pack-hunter and an
+// ambusher that has just committed all played the same `idle`, and a staggered
+// monster played `idle` pale — the single most frequent piece of feedback in
+// the game had no animation whatsoever.
+//
+// Two of the four tells need a real POSE and get one on the rig (the leaper's
+// crouch, the pack-hunter's stalk). The other two are BODY DISPLACEMENTS —
+// a stagger is the whole figure rocked off its feet, an ambusher's spring is
+// the whole figure thrown forward — and those are built here as transforms of
+// an actor's own existing art, pivoting about the feet.
+//
+// That is not a shortcut, it is how a 2D animator would do it: the read is the
+// silhouette moving through an arc, not new draughtsmanship. It also makes the
+// two clips affordable across families that share nothing else, which matters
+// because stagger applies to every family in the bestiary and pose art does not.
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * Re-frame an existing painted frame: rotate by `tilt` and shift by (dx, dy)
+ * about the FEET, so the figure pivots where it touches the floor instead of
+ * sliding. Rotating about the cel centre would lift a heavy actor off the
+ * ground on the way past.
+ */
+function reframed(base: FramePaint, tilt: number, dx: number, dy: number): FramePaint {
+  return (ctx) => {
+    ctx.save();
+    ctx.translate(CX + dx, GROUND + dy);
+    ctx.rotate(tilt);
+    ctx.translate(-CX, -GROUND);
+    base(ctx);
+    ctx.restore();
+  };
+}
+
+/**
+ * STUMBLE — three beats of a body absorbing a hit, built off the actor's own
+ * idle pose: rocked hard away from the blow, a deeper sag as the weight
+ * arrives, then a partial recovery that HOLDS (the animator does not loop this
+ * clip). The knight's attack already proved the shape — fast into the extreme,
+ * slow out of it — so the first frame is the biggest displacement, not the
+ * middle one.
+ *
+ * Reads at 72px because the whole SILHOUETTE moves: a 5px lean plus a 3px sink
+ * on a 40px-tall figure is an unmistakable change of outline, where a re-posed
+ * arm would be two pixels nobody sees during a fight.
+ */
+function stumbleFrames(base: FramePaint): FramePaint[] {
+  return [reframed(base, 0.26, 5, 1), reframed(base, 0.19, 7, 3), reframed(base, 0.08, 3, 1)];
+}
+
+/**
+ * WAKE — the ambusher's spring and the strafer's dart: rear back a touch
+ * (anticipation, one frame, because the burst is the point and a long wind-up
+ * would contradict "it never moved and then it was on you"), then throw the
+ * whole body forward and hold the lunge for the rest of the burst.
+ *
+ * Forward is -x in the E profile, which is the facing the sheet is authored
+ * for; S/N read the same lean as a squash toward the camera. Close enough at
+ * this size, and it costs nothing to be wrong about.
+ */
+function wakeFrames(base: FramePaint): FramePaint[] {
+  return [reframed(base, 0.1, 3, 2), reframed(base, -0.24, -6, -2), reframed(base, -0.34, -9, 0)];
+}
+
+/**
+ * Fill in `wake` and `stumble` for any actor that has not authored them, off
+ * its own idle art. Applied once in boot/sheets.ts to every MONSTER atlas.
+ *
+ * The alternative was to let the animator's fallback chain send them to `idle`,
+ * which is what the game did before this wave — and the reason that is not good
+ * enough is a number: stagger fires on a proportion of every damage event
+ * (entities/stagger.ts, 78% on fodder at speed), so it is now the most frequent
+ * feedback in the game. "Only the four families I hand-posed react to being
+ * hit" is not a shippable answer to that.
+ *
+ * Bespoke clips WIN — the zombie rig, the spider and the magnet author their
+ * own and keep them. This only reaches families that would otherwise have
+ * nothing.
+ *
+ * Built ONCE off the E-profile idle and shared by all three facings, for the
+ * same reason the zombie's are: every frame here is a `crushToGrid` at boot and
+ * a bigger atlas for every actor to clone. Three facings of a 0.3s recoil is
+ * three times the cost for a distinction nobody can see at 72px.
+ */
+export function withRecoil(p: ActorPaints): ActorPaints {
+  const base = p.E.idle?.[0] ?? p.S.idle?.[0];
+  if (!base) return p;
+  const stumble = stumbleFrames(base);
+  const wake = wakeFrames(base);
+  const out = { ...p } as ActorPaints;
+  for (const dir of ["S", "N", "E"] as Dir[]) {
+    out[dir] = { ...p[dir], stumble: p[dir].stumble ?? stumble, wake: p[dir].wake ?? wake };
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════════
 // HELD WEAPONS — drawn in a local frame: grip at the origin, business
 // end pointing UP (-y). The knight painter translates/rotates this to
 // the hand, so one drawing serves every pose in every direction.
@@ -1206,6 +1307,13 @@ interface ZPose {
   roll?: number;
   /** Extra downward sag on the hands, px — the dead-weight arm droop. */
   droop?: number;
+  /**
+   * 0..1+ sink into the legs, straight through to the rig's own `crouch`
+   * channel. `dead` already used it internally; exposing it is what lets a
+   * leaper's wind-up be a REAL coil (hips and shoulders drop, feet stay
+   * planted) rather than the same standing pose in a different colour.
+   */
+  crouch?: number;
   dead?: boolean;
 }
 
@@ -1451,7 +1559,7 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   // Lean the whole upper body forward around the feet (the shamble) — bigger in
   // profile where it reads, subtle head-on.
   const lean = (dir === "E" ? 1 : 0.45) * (0.5 + lurch * 4);
-  const sk = buildSkeleton(d3, { bob, stride, lean, swing, roll, crouch: dead ? 0.4 : 0 }, ZOMBIE_RIG);
+  const sk = buildSkeleton(d3, { bob, stride, lean, swing, roll, crouch: dead ? 0.4 : pose.crouch ?? 0 }, ZOMBIE_RIG);
 
   // ── the long trailing RAG, drawn BEHIND everything ──
   // A silhouette break that costs nothing to read: a single wide strip of cloth
@@ -1749,6 +1857,32 @@ function zombieDeath(v: ZVariant): FramePaint[] {
 
 /** Build a full zombie painter set for one cosmetic variant. */
 export function makeZombiePaints(v: ZVariant): ActorPaints {
+  // ── The three SHARED telegraph clips ──────────────────────────────────
+  //
+  // Authored once, in the E profile, and handed to all three facings — the same
+  // trick the steel ball uses (see atlas-size.test.ts), and here it is not an
+  // optimisation, it is what makes the clips affordable at all.
+  //
+  // The zombie rig ships NINE cosmetic variant sheets, so every frame added to
+  // it is nine frames of `crushToGrid` (72×72 pixels × a 32-entry palette
+  // search, each) at boot AND nine bigger atlases, each of which every live
+  // actor clones a texture from. Per-facing telegraph clips cost 39 frames a
+  // variant; the first version of this shipped that and pushed the headless
+  // boot past `playtest.mjs`'s wait, which is how it was caught.
+  //
+  // `wait` below is deliberately NOT shared: it is a LOOPING gait an actor
+  // holds for as long as its pack is short-handed, and a stalker walking north
+  // in its side profile is a bug you would see immediately. These three are
+  // all under half a second, and the read is the silhouette's ARC, not which
+  // way the face points.
+  const crouchClip = [
+    zombieFrame("E", { bob: -2, stride: 0, lurch: 0.12, crouch: 0.15, swing: -0.3, droop: -2 }, v),
+    zombieFrame("E", { bob: 1, stride: 0, lurch: 0.28, crouch: 1.1, swing: -0.6, droop: -4 }, v),
+    zombieFrame("E", { bob: 2, stride: 0, lurch: 0.36, crouch: 1.6, swing: -0.8, droop: -6 }, v),
+  ];
+  const wakeClip = wakeFrames(zombieFrame("E", { bob: 0, stride: 0.6, lurch: 0.22, swing: -0.6, droop: -3 }, v));
+  const stumbleClip = stumbleFrames(zombieFrame("E", { bob: 1, stride: -0.2, lurch: 0.06, swing: 0.4, droop: 4 }, v));
+
   const dirClips = (dir: Dir, lurchBase: number, lurchWobble: number) => ({
     // Idle breathes AND sags: the arms droop a little on the settle frame, so a
     // standing zombie is never a completely static image.
@@ -1777,6 +1911,44 @@ export function makeZombiePaints(v: ZVariant): ActorPaints {
       zombieFrame(dir, { bob: 1, stride: -1, lurch: lurchBase - 0.03, swing: 1, roll: -0.5, droop: 1.5 }, v),
     ],
     death: zombieDeath(v),
+
+    // ── CROUCH: the LEAPER's wind-up (the Flailer sub-type, and any family
+    // that runs the policy). This is the one telegraph a player has to read
+    // under pressure — LEAP_WINDUP is 0.45s and what follows is a 3.4× burst
+    // along a locked arc — so the pose is built to be unmistakable in
+    // SILHOUETTE, not in detail: the hips and shoulders sink hard while the
+    // feet stay planted, the lean goes steep so the head drops below the
+    // shoulder line, and the arms pull in. A figure that was upright a moment
+    // ago is now a compressed wedge.
+    //
+    // Frame 0 rises slightly BEFORE the sink. That half-beat of anticipation is
+    // what makes the coil read as a decision rather than as a dropped frame,
+    // and it is the same trick the knight's attack windup uses.
+    crouch: crouchClip,
+
+    // ── WAIT: the PACK-HUNTER's stalk (the Midget sub-type). It is NOT
+    // standing still — the policy shadows you at PACK_HOLD_RANGE at half speed
+    // — so this is a gait, and it has to be distinguishable from the walk above
+    // at a glance or the green tint is doing all the work.
+    //
+    // Everything about it is the walk's opposite: the walk is a lopsided
+    // 6-beat step-DRAG with the arms hanging dead; this is an even 4-beat with
+    // SHORT strides (|stride| <= 0.45 against the walk's 1.0), a permanent
+    // half-crouch, a wide lateral sway and the arms held UP and forward
+    // (negative droop) instead of trailing. A wary sidle, not a shamble.
+    wait: [
+      zombieFrame(dir, { bob: 1, stride: 0.45, lurch: lurchBase + 0.06, crouch: 0.55, swing: -0.45, roll: 0.9, droop: -3 }, v),
+      zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase + 0.1, crouch: 0.75, swing: 0, roll: 0.2, droop: -4 }, v),
+      zombieFrame(dir, { bob: 1, stride: -0.45, lurch: lurchBase + 0.06, crouch: 0.55, swing: 0.45, roll: -0.9, droop: -3 }, v),
+      zombieFrame(dir, { bob: 2.5, stride: 0, lurch: lurchBase + 0.1, crouch: 0.75, swing: 0, roll: -0.2, droop: -4 }, v),
+    ],
+
+    // ── WAKE / STUMBLE: whole-body displacements off a standing pose. See
+    // wakeFrames/stumbleFrames — the ambusher's spring out of stillness and the
+    // recoil off a staggering blow are arcs the silhouette travels, and both
+    // want to apply to every family, not just this rig.
+    wake: wakeClip,
+    stumble: stumbleClip,
   });
 
   return {
@@ -1935,6 +2107,15 @@ const SPIDER_DEATH: FramePaint[] = [
 
 /** The giant-spider painter set. No variants (yet) — one menacing look. */
 export function makeSpiderPaints(): ActorPaints {
+  // Shared across facings — see the note in makeZombiePaints. A spider is
+  // nearly radially symmetric anyway; its facing lives in the leg scissor.
+  const crouchClip = [
+    spiderFrame("E", { step: 0.5, bob: -2 }),
+    spiderFrame("E", { step: 0.25, bob: 5 }),
+    spiderFrame("E", { step: 0, bob: 8 }),
+  ];
+  const wakeClip = wakeFrames(spiderFrame("E", { step: 0.25, bob: 1 }));
+  const stumbleClip = stumbleFrames(spiderFrame("E", { step: 0.5, bob: 2 }));
   const dirClips = (dir: Dir) => ({
     idle: [spiderFrame(dir, { step: 0, bob: 0 }), spiderFrame(dir, { step: 0.5, bob: 1 })],
     walk: [
@@ -1944,6 +2125,13 @@ export function makeSpiderPaints(): ActorPaints {
       spiderFrame(dir, { step: 0.75, bob: 2 }),
     ],
     death: SPIDER_DEATH,
+    // The HOUND runs the leaper policy on this sheet (spawn/factory.ts tints it
+    // red). A spider has no hips to sink, so its coil is the body DROPPING onto
+    // its legs — bob is positive-down here, so the abdomen settles toward the
+    // floor while the legs stay planted, which is exactly a spider gathering.
+    crouch: crouchClip,
+    wake: wakeClip,
+    stumble: stumbleClip,
   });
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };
 }
@@ -2734,10 +2922,17 @@ function magnetFrame(dir: Dir, step: number, dead = false): FramePaint {
   };
 }
 export function makeMagnetPaints(): ActorPaints {
+  const wakeClip = wakeFrames(magnetFrame("E", 1)); // shared across facings
+  const stumbleClip = stumbleFrames(magnetFrame("E", 0.3));
   const dc = (dir: Dir) => ({
     idle: [magnetFrame(dir, 0.3), magnetFrame(dir, -0.3)],
     walk: [magnetFrame(dir, 1), magnetFrame(dir, -1)],
     death: [magnetFrame(dir, 0.4), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true), magnetFrame(dir, 0, true)],
+    // The SAPPER runs the ambusher policy on this sheet. Its whole tell is that
+    // it never moved — so the spring out of that stillness is the only frame
+    // the player gets, and it has to be a big one.
+    wake: wakeClip,
+    stumble: stumbleClip,
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }

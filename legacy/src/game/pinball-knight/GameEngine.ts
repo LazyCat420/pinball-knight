@@ -64,6 +64,10 @@ import {
   FPS_BALL,
   FPS_EQUIP,
   FPS_FORGE,
+  FPS_CROUCH,
+  FPS_WAIT,
+  FPS_WAKE,
+  FPS_STUMBLE,
 } from "./constants";
 import { configureEngine } from "./engine/config";
 import { setEnginePalette } from "./engine/palette-source";
@@ -134,6 +138,10 @@ export function installEngine(): void {
       ball: FPS_BALL,
       equip: FPS_EQUIP,
       forge: FPS_FORGE,
+      crouch: FPS_CROUCH,
+      wait: FPS_WAIT,
+      wake: FPS_WAKE,
+      stumble: FPS_STUMBLE,
     },
   });
 

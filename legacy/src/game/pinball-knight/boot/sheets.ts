@@ -9,7 +9,7 @@
  */
 import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
-import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints } from "../render/cel-painter";
+import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet } from "../render/knight-sheets";
@@ -51,25 +51,39 @@ export function paintMenuPortrait(canvas: HTMLCanvasElement): void {
  * Build every monster atlas once per session. A handful of atlases is cheap;
  * the zombie VARIANTS exist so a horde doesn't read as clones.
  */
+/**
+ * Every monster atlas goes through `withRecoil`, which fills in the `wake` and
+ * `stumble` telegraph clips for any family that has not hand-posed them.
+ *
+ * It is applied HERE, at the one place every monster sheet is built, rather
+ * than inside each `make*Paints` (fourteen edits, and the fifteenth monster
+ * would be the one that forgot) or inside `buildSpriteSheet` (which the KNIGHT
+ * also goes through, and the knight is never staggered — it would be nine dead
+ * cells on the atlas that is already closest to the texture ceiling).
+ */
+function monsterSheet(paints: ActorPaints): SpriteSheet {
+  return buildSpriteSheet(withRecoil(paints));
+}
+
 export function buildMonsterSheets(): void {
   // ── Sprite sheets (the knight's is per-weapon) ──
   // A small pool of cosmetic zombie variants (ripped rags, gore, stumps, tone)
   // so a horde doesn't read as clones. Each spawn picks one by seed. Built once
   // per session — a handful of atlases is cheap.
-  state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => buildSpriteSheet(makeZombiePaints(v)));
+  state.zombieVariantSheets = ZOMBIE_VARIANTS.map((v) => monsterSheet(makeZombiePaints(v)));
   state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
-  state.spiderSheet = buildSpriteSheet(makeSpiderPaints());
-  state.bruteSheet = buildSpriteSheet(makeBrutePaints());
-  state.spitterSheet = buildSpriteSheet(makeSpitterPaints());
-  state.ghostSheet = buildSpriteSheet(makeGhostPaints());
-  state.batSheet = buildSpriteSheet(makeBatPaints());
-  state.slimeSheet = buildSpriteSheet(makeSlimePaints());
-  state.bossSheet = buildSpriteSheet(makeBossPaints());
+  state.spiderSheet = monsterSheet(makeSpiderPaints());
+  state.bruteSheet = monsterSheet(makeBrutePaints());
+  state.spitterSheet = monsterSheet(makeSpitterPaints());
+  state.ghostSheet = monsterSheet(makeGhostPaints());
+  state.batSheet = monsterSheet(makeBatPaints());
+  state.slimeSheet = monsterSheet(makeSlimePaints());
+  state.bossSheet = monsterSheet(makeBossPaints());
   // Wave-B bespoke monster atlases (were tinted reskins).
-  state.goblinSheet = buildSpriteSheet(makeGoblinPaints());
-  state.pinSheet = buildSpriteSheet(makePinPaints());
-  state.golemSheet = buildSpriteSheet(makeGolemPaints());
-  state.chomperSheet = buildSpriteSheet(makeChomperPaints());
-  state.magnetSheet = buildSpriteSheet(makeMagnetPaints());
-  state.webspinnerSheet = buildSpriteSheet(makeWebspinnerPaints());
+  state.goblinSheet = monsterSheet(makeGoblinPaints());
+  state.pinSheet = monsterSheet(makePinPaints());
+  state.golemSheet = monsterSheet(makeGolemPaints());
+  state.chomperSheet = monsterSheet(makeChomperPaints());
+  state.magnetSheet = monsterSheet(makeMagnetPaints());
+  state.webspinnerSheet = monsterSheet(makeWebspinnerPaints());
 }

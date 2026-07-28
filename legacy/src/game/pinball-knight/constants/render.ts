@@ -267,6 +267,25 @@ export const FPS_FORGE = 7;
 export const FPS_RUN = 10;
 export const RUN_RATE_RAMP = 0.6; // full spool plays the run clip 1.6× faster
 
+// ── Telegraph clips ─────────────────────────────────────────────
+//
+// Each of these is paced so the clip RUNS OUT exactly when its mechanic does,
+// and then holds. A telegraph that loops back to its first frame mid-window is
+// a telegraph that lies about how much time you have left.
+/** Leaper crouch: 3 frames across LEAP_WINDUP (0.45s) → the last frame lands
+ *  on the release. */
+export const FPS_CROUCH = 7;
+/** Pack-hunter stalk: a 4-frame LOOP, deliberately slower than the walk (8) —
+ *  half speed on the feet (PACK_STALK_MULT) should read as half speed. */
+export const FPS_WAIT = 5;
+/** Ambusher spring / strafer dart: 3 frames in 0.3s of a 1.2s burst, then held
+ *  in the committed lunge pose for the rest of it. */
+export const FPS_WAKE = 10;
+/** Stagger recoil: 3 frames in 0.33s, inside even the shortest stagger
+ *  (STAGGER_TIME_MIN 0.25s is one frame short, which is correct — a glancing
+ *  stagger should look clipped). */
+export const FPS_STUMBLE = 9;
+
 // ── Torch light pool ────────────────────────────────────────────
 /**
  * Every torch gets a flame mesh, but only the nearest N to the player carry a

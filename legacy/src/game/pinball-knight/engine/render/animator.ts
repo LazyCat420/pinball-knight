@@ -41,6 +41,14 @@ function fpsFor(clip: ClipName): number {
       return a.equip;
     case "forge":
       return a.forge;
+    case "crouch":
+      return a.crouch;
+    case "wait":
+      return a.wait;
+    case "wake":
+      return a.wake;
+    case "stumble":
+      return a.stumble;
   }
 }
 
@@ -55,6 +63,38 @@ const LOOPS: Record<ClipName, boolean> = {
   steelball: true,
   equip: false,
   forge: false,
+  // A telegraph HOLDS its end pose. A crouch that looped back to "just starting
+  // to crouch" would restate the wind-up the player is already reading, and a
+  // stagger that looped would read as a second hit landing.
+  crouch: false,
+  wake: false,
+  stumble: false,
+  // The stalk is a gait, not a beat — it loops like the walk it replaces.
+  wait: true,
+};
+
+/**
+ * What to play when an actor does not author the clip that was asked for.
+ *
+ * The four telegraph clips are authored on the sheets that actually run those
+ * policies (the zombie rig, the spider, the magnet) rather than on all
+ * twenty-two families. Without a fallback the rest would resolve to an EMPTY
+ * index list, and `apply()` bails on empty — so the actor would freeze on
+ * whatever frame it happened to be on. That is strictly worse than the tint-only
+ * telegraph this wave is replacing, and it would only show up on the families
+ * nobody thought to check.
+ *
+ * So an unauthored clip degrades to the clip the game played BEFORE it existed:
+ * a stagger with no stumble art plays `idle` pale, exactly as it used to. The
+ * RATE and the LOOP FLAG follow the resolved clip too — falling back to `walk`
+ * but keeping `wake`'s one-shot flag would freeze a bursting ambusher's legs
+ * halfway through a stride, which is not "unchanged", it is a new bug.
+ */
+const CLIP_FALLBACK: Partial<Record<ClipName, ClipName>> = {
+  crouch: "idle",
+  wait: "walk",
+  wake: "walk",
+  stumble: "idle",
 };
 
 /** Facing → (authored direction, whether to mirror). */
@@ -118,13 +158,14 @@ export class Animator {
     if (indices.length <= 1) return;
     if (this.finished) return;
 
+    const played = this.resolved();
     this.timer += dt;
-    const step = 1 / (fpsFor(this.clip) * this.rate);
+    const step = 1 / (fpsFor(played) * this.rate);
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;
       if (this.frameIdx >= indices.length) {
-        if (LOOPS[this.clip]) {
+        if (LOOPS[played]) {
           this.frameIdx = 0;
         } else {
           // Hold the last frame — a death that snapped back to frame 0 would be
@@ -140,9 +181,20 @@ export class Animator {
     this.apply();
   }
 
+  /**
+   * The clip whose frames will actually play: the requested one if this sheet
+   * authors it, else the fallback (once — the chain is one hop deep by design,
+   * since every fallback target is a clip every actor has).
+   */
+  private resolved(): ClipName {
+    const { dir } = resolve(this.facing);
+    if (this.sprite.sheet.clips.get(`${dir}:${this.clip}`)?.length) return this.clip;
+    return CLIP_FALLBACK[this.clip] ?? this.clip;
+  }
+
   private indices(): number[] {
     const { dir } = resolve(this.facing);
-    return this.sprite.sheet.clips.get(`${dir}:${this.clip}`) ?? [];
+    return this.sprite.sheet.clips.get(`${dir}:${this.resolved()}`) ?? [];
   }
 
   private apply(): void {

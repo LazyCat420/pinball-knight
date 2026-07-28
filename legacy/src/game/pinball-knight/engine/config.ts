@@ -100,6 +100,10 @@ export interface AnimConfig {
   ball: number;
   equip: number;
   forge: number;
+  crouch: number;
+  wait: number;
+  wake: number;
+  stumble: number;
 }
 
 export interface EngineConfig {
@@ -164,6 +168,10 @@ export const engineConfig: EngineConfig = {
     ball: 14,
     equip: 8,
     forge: 7,
+    crouch: 7,
+    wait: 5,
+    wake: 10,
+    stumble: 9,
   },
 };
 
