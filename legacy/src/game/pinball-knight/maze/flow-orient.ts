@@ -158,6 +158,33 @@ export function flowDrop(g: Grid, phi: Int32Array, i: number, j: number, di: num
 }
 
 /**
+ * Open tiles along a ray from (i,j), up to `max`.
+ *
+ * The other half of `flowDrop`, and it belongs beside it: that one answers "how
+ * much progress does this shove make", this one answers "is there anywhere to
+ * make it". Every consumer of the Φ contract needs both, and until now each one
+ * carried its own copy — `decorate.launchRunway` and `flow-loops.runway` are the
+ * same eight lines, the latter with a comment saying so ("Matches decorate's
+ * MIN_RUNWAY — the same physical claim"). A comment is not a compiler.
+ *
+ * STAIRS COUNT AS RUNWAY. `flow-loops` already accepted them and `decorate` did
+ * not, which made decorate's launchers under-count by a tile whenever the exit
+ * sat in their lane — the one tile on the floor a shove is most entitled to
+ * reach. Unifying on the permissive reading is a behaviour change, and a small
+ * deliberate one: it can only lengthen a runway, never shorten one, so it can
+ * only turn a repair OFF, never on.
+ */
+export function openRunway(g: Grid, i: number, j: number, di: number, dj: number, max = 8): number {
+  let n = 0;
+  for (let s = 1; s <= max; s++) {
+    const t = at(g, i + di * s, j + dj * s);
+    if (t !== T_FLOOR && t !== T_STAIRS) break;
+    n++;
+  }
+  return n;
+}
+
+/**
  * The steepest downhill cardinal from a tile, or null if the tile is a local
  * minimum (only the stairs and unreachable pockets should be).
  *

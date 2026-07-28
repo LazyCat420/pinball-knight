@@ -45,7 +45,7 @@
  * DOM- and three-free; no rng, so co-op peers repair identically.
  */
 import { type Grid, type TilePos, at, idx, T_FLOOR, T_STAIRS } from "./generator";
-import { flowDrop, isDownhill, phiAt, UNREACHED } from "./flow-orient";
+import { flowDrop, isDownhill, openRunway, phiAt, UNREACHED } from "./flow-orient";
 
 /** The subset of a part spot this pass reads and writes. Structural rather than
  *  the full `PinballPartSpot`, so decorate can hand its array straight over
@@ -84,13 +84,9 @@ function open(g: Grid, i: number, j: number): boolean {
   return t === T_FLOOR || t === T_STAIRS;
 }
 
+/** @see openRunway — this module's copy was the original of the two. */
 function runway(g: Grid, i: number, j: number, di: number, dj: number): number {
-  let n = 0;
-  for (let s = 1; s <= 8; s++) {
-    if (!open(g, i + di * s, j + dj * s)) break;
-    n++;
-  }
-  return n;
+  return openRunway(g, i, j, di, dj, 8);
 }
 
 /** Can this part be re-aimed at all? A vault ramp fires into rock on purpose
@@ -99,15 +95,38 @@ function movable(p: FlowPart): boolean {
   return !p.vault && !p.chute && LAUNCHERS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1;
 }
 
+/** The cardinal a float heading is nearest to; ties to x, never rng (co-op). */
+function snapCardinal(tx: number, tz: number): readonly [number, number] {
+  return Math.abs(tx) >= Math.abs(tz) ? [Math.sign(tx) || 1, 0] : [0, Math.sign(tz) || 1];
+}
+
 /**
- * Where does this part throw you — which other launcher, if any, does the ball
- * meet first along the fire ray?
+ * Can this part be MEASURED — a strictly wider question than `movable`.
+ *
+ * "cardinal" = a launcher the repair passes can also re-aim. "tangent" = a
+ * `boostcurve`, which throws along a float vector no cardinal repair can
+ * rewrite, but which still shoves the player somewhere and therefore still
+ * belongs in any honest count of where the floor's launchers point.
+ */
+function countableKind(p: FlowPart): "cardinal" | "tangent" | null {
+  if (p.vault || p.chute) return null;
+  if (movable(p)) return "cardinal";
+  if (p.kind === "boostcurve" && Math.hypot(p.dirI, p.dirJ) > 1e-6) return "tangent";
+  return null;
+}
+
+/**
+ * Which way a part actually THROWS you.
  *
  * A corner booster is entered on `dir` and leaves on `dir2`, so its outgoing
  * ray is the SECOND leg. Getting this wrong would hide exactly the loops the
  * new part can form, so it is read off the part rather than assumed.
+ *
+ * Exported so the piece gate (maze/piece-rules.ts) judges a part by the same
+ * vector the loop breaker re-aims. Two answers to "which way does this fire" is
+ * how a gate and a repair come to disagree about the same floor.
  */
-function exitRay(p: FlowPart): readonly [number, number] {
+export function exitRay(p: FlowPart): readonly [number, number] {
   if (p.kind === "boostcorner" && Math.abs(p.dir2I) + Math.abs(p.dir2J) === 1) return [p.dir2I, p.dir2J];
   return [p.dirI, p.dirJ];
 }
@@ -275,10 +294,20 @@ export function countUphill(g: Grid, phi: Int32Array, parts: FlowPart[]): { uphi
   let uphill = 0;
   let total = 0;
   for (const p of parts) {
-    if (!movable(p)) continue;
+    // COUNTING IS NOT MOVING, and the two need different predicates.
+    //
+    // `movable` demands a unit cardinal because a re-aim has to write one back.
+    // A `boostcurve` carries a float TANGENT, so it can never be movable — and
+    // gating the census on movability meant the one launch kind with no repair
+    // pass at all was also the one kind no measurement could see. That is how a
+    // defect stays invisible: not because the number was wrong, but because the
+    // population excluded it. Count it via its snapped cardinal; still never
+    // re-aim it.
+    const countable = countableKind(p);
+    if (!countable) continue;
     if (phiAt(g, phi, p.i, p.j) >= UNREACHED) continue;
     total++;
-    const [di, dj] = exitRay(p);
+    const [di, dj] = countable === "tangent" ? snapCardinal(p.dirI, p.dirJ) : exitRay(p);
     if (!isDownhill(g, phi, p.i, p.j, di, dj)) uphill++;
   }
   return { uphill, total };

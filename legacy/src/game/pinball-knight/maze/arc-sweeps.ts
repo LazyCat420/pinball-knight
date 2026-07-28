@@ -31,6 +31,7 @@ import { type Grid, type TilePos, T_WALL, T_FLOOR, T_CRACKED, at, setTile, isWal
 import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type KickBand, type LaneBand } from "../engine/tile-shape";
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 import { junctionClear } from "./arc-contract";
+import { flowDrop, isDownhill, openRunway, phiAt } from "./flow-orient";
 
 /**
  * Fillet radii tried largest-first at every qualifying corner.
@@ -107,6 +108,35 @@ export const LANE_BAND_FRAC = 0.94;
 export const LANE_MAX_PER_FLOOR = 16;
 /** Only sweeps with at least this much arc are worth a lane (rad). */
 export const LANE_MIN_SPAN = 0.9;
+
+// ── WHERE A RAIL PUTS YOU (see orientArcRails) ───────────────────────────────
+/**
+ * Where the ball's CENTRE sits while it rides a rail, in tiles.
+ *
+ * PLAYER_R exactly, and it is not an estimate: `resolveArcFeature` reports a
+ * concave contact at `d = f.r − r_ball` and a convex one at `d = f.r + r_ball`,
+ * so this IS the radius the collider used. The number is duplicated rather than
+ * imported to keep this module's stated split intact — authoring knobs here,
+ * feel numbers in constants.ts — and a test asserts the two agree.
+ */
+export const RAIL_RIDE_INSET = 0.3;
+/**
+ * Open tiles a rail's EXIT must have ahead of it.
+ *
+ * Deliberately larger than decorate's MIN_RUNWAY (3) and flow-loops' equivalent,
+ * and the difference is measured rather than felt. Those two size a BOOSTER. A
+ * rail hands you off at ARC_LANE_MIN_EXIT = 10 u/s as a FLOOR, and typically
+ * well above it. At 10 u/s three tiles is 0.30 s of travel — the chevrons say
+ * "this way" and 0.3 s later you are in the wall. Five tiles is 0.50 s, which is
+ * past ARC_LANE_COOLDOWN (0.45 s): the rail has finished with you before the
+ * runway has. That is the whole derivation — runway ≥ exit speed × cooldown.
+ */
+export const RAIL_MIN_RUNWAY = 5;
+/** How far past the band's end the exit tile is sampled, in tiles. One tile
+ *  clears the fillet's own block; the walk extends to two in case the rim is
+ *  stair-stepped, then gives up rather than guess. */
+const RAIL_EXIT_STEP = 1.0;
+const RAIL_EXIT_MAX = 2.0;
 
 /** A fresh, ready band covering `span` radians centred inside [a0, a0+total]. */
 function centredBand(a0: number, total: number, frac: number): KickBand {
@@ -387,8 +417,17 @@ export function authorArcSweeps(g: Grid, start: TilePos, occupied: Occupied, rng
         // BOOSTER LANE on the concave bowls — the inside of a bend, which is the
         // line a speed strip should reward. Mutually exclusive with rubber by
         // construction (that branch is convex-only), so a face is never both.
-        // Direction is a coin flip: both ways round a symmetric bowl are a real
-        // racing line, and fixing one is what makes the lane one-way.
+        //
+        // ⚠️ THE COIN FLIP IS NO LONGER THE DECISION — it is the TIE-BREAK.
+        // `orientArcRails` runs at the end of the geometry layer and re-derives
+        // `cw` from Φ and from whether the exit has anywhere to go, keeping this
+        // roll only when both ways round score equal. It has to be that way
+        // round: the old comment here argued a concave bowl is symmetric so
+        // either direction is a legitimate racing line, which is true of the
+        // BOWL and false of the floor beyond it — one exit opens onto the room
+        // and the other onto whatever the maze put there. The roll stays because
+        // on a genuinely symmetric pocket it is still the honest answer, and
+        // because removing it would re-roll every floor's layout for nothing.
         if (concave && lanes < LANE_MAX_PER_FLOOR && plan.feature.span >= LANE_MIN_SPAN && rng() < LANE_CHANCE) {
           plan.feature.lanes = [centredLane(plan.feature.a0, plan.feature.span, LANE_BAND_FRAC, rng() < 0.5)];
           lanes++;
@@ -494,4 +533,152 @@ export function stampOrbitIsland(g: Grid, start: TilePos, occupied: Occupied, rn
     }
   }
   return site;
+}
+
+// ── RAILS COME UNDER THE Φ CONTRACT ──────────────────────────────────────────
+//
+// Live QA of floor 5, with a screenshot: chevroned rails firing into walls.
+// Two independent causes, either one sufficient.
+//
+//  1. THE DIRECTION WAS A COIN FLIP. `authorArcSweeps` above rolled `rng() < 0.5`
+//     for `cw`. The argument in centredLane's comment — a concave bowl is
+//     symmetric, so both ways round are a legitimate racing line — is true of the
+//     BOWL and false of the FLOOR BEYOND IT: one exit opens onto the room, the
+//     other onto whatever the maze happened to put there.
+//
+//  2. NOTHING EVER LOOKED PAST THE EXIT. `planFillet`'s clearance ring proves
+//     exactly ONE open tile past the block. A rail hands you off at
+//     ARC_LANE_MIN_EXIT (10 u/s) as a floor.
+//
+// And the reason neither was caught: a rail is a `LaneBand` on an `ArcFeature`,
+// not a `PinballPartSpot`. The entire Φ apparatus — flow-orient, flow-loops,
+// breakLaunchDuels, openLaunchTargets — iterates parts. It has never seen a rail.
+// So the one-way-road family that the floor's fastest surface belongs to was the
+// only launch family with no orientation contract at all.
+
+/**
+ * Where a rail SPITS YOU OUT, and which way — or null when it spits you at rock.
+ *
+ * Two answers, both needed. The exact tangent is what the ball actually leaves
+ * along (and what `laneTangent` hands the physics); the CARDINAL it snaps to is
+ * what the Φ predicates take, because they are 4-connected on purpose — see
+ * flow-orient's header: the parts fire on cardinals, so a diagonal-aware field
+ * would report gradients no pad can follow.
+ *
+ * ⚠️ THE SNAP IS SAFE FOR A CHECKABLE REASON, not a hopeful one. A band covers
+ * `LANE_BAND_FRAC` of its feature centred inside it, so it ends
+ * `(1 − LANE_BAND_FRAC)/2 · span` short of the span boundary — at the shipped
+ * 0.94 over a quadrant that is 2.7°, and a quadrant boundary is exactly where a
+ * fillet's tangent IS cardinal. The error bound is pinned by a test so that
+ * widening the band cannot silently invalidate the Φ tests downstream.
+ */
+export function railExit(
+  g: Grid,
+  f: ArcFeature,
+  l: LaneBand,
+  cw: boolean,
+): { i: number; j: number; di: number; dj: number; tx: number; tz: number } | null {
+  // The end you leave by: the far end going clockwise, the near end otherwise.
+  const aE = cw ? l.a0 + l.span : l.a0;
+  const s = cw ? 1 : -1;
+  const tx = -Math.sin(aE) * s;
+  const tz = Math.cos(aE) * s;
+  // The ride radius the COLLIDER uses, not the nominal one — a concave bowl is
+  // ridden inside its circle and a convex guide outside it.
+  const rr = f.solidOut ? f.r - RAIL_RIDE_INSET : f.r + RAIL_RIDE_INSET;
+  const ex = f.cx + Math.cos(aE) * rr;
+  const ez = f.cz + Math.sin(aE) * rr;
+  // Step along the tangent until we are off the feature's own block and on a
+  // tile that exists. Two tiles, then give up: a rim we cannot walk off in two
+  // is a rim whose exit we should not be guessing at.
+  for (let d = RAIL_EXIT_STEP; d <= RAIL_EXIT_MAX + 1e-9; d += RAIL_EXIT_STEP) {
+    const i = Math.floor(ex + tx * d);
+    const j = Math.floor(ez + tz * d);
+    if (i < 0 || j < 0 || i >= g.w || j >= g.h) return null;
+    if (!isWalkable(g, i, j)) continue;
+    const [di, dj] = Math.abs(tx) >= Math.abs(tz) ? [Math.sign(tx), 0] : [0, Math.sign(tz)];
+    if (di === 0 && dj === 0) return null; // degenerate tangent
+    return { i, j, di, dj, tx, tz };
+  }
+  return null;
+}
+
+/** How good is this direction round the bowl? −1 = disqualified. */
+function scoreRail(g: Grid, phi: Int32Array, f: ArcFeature, l: LaneBand, cw: boolean): number {
+  const x = railExit(g, f, l, cw);
+  if (!x) return -1;
+  // THE SCREENSHOT'S DEFECT: somewhere to go.
+  if (openRunway(g, x.i, x.j, x.di, x.dj, RAIL_MIN_RUNWAY) < RAIL_MIN_RUNWAY) return -1;
+  // THE Φ CONTRACT, extended to the family that was never in it.
+  if (!isDownhill(g, phi, x.i, x.j, x.di, x.dj)) return -1;
+  // Rank by how much floor the hand-off actually covers, plus the drop across
+  // the bowl itself. The exit ray is weighted 4× deliberately: a rail whose two
+  // ends sit on the same Φ contour but which DELIVERS you six tiles down the
+  // floor is still a good rail; the reverse is not.
+  const entry = railExit(g, f, l, !cw);
+  const entryDrop = entry ? phiAt(g, phi, entry.i, entry.j) - phiAt(g, phi, x.i, x.j) : 0;
+  return flowDrop(g, phi, x.i, x.j, x.di, x.dj, RAIL_MIN_RUNWAY) * 4 + Math.max(0, entryDrop);
+}
+
+/**
+ * Bring every rail on the floor under the Φ contract: derive `cw` from the flow
+ * field, prove the exit has runway, and DROP the band when neither way round
+ * qualifies.
+ *
+ * ── Why a pass, and not a parameter to the authors ────────────────────────
+ *
+ * Two different functions put LaneBands on this grid — `authorArcSweeps` here on
+ * the concave fillets, and `authorArteryBanks` on the racing line — and only one
+ * of them ever had an opinion about direction (`arcForBend` returns
+ * `cw = turn > 0`, which is right, and survives as the tie-break below). Handing
+ * `phi` to each author separately would give the floor two owners of one
+ * decision, which is exactly what moving the curve families into the geometry
+ * layer was paid for to remove (track-floor.ts). One pass, over `g.arcs`.
+ *
+ * ── Why at the END of the geometry layer ──────────────────────────────────
+ *
+ * A rail's exit runway is a property of the FINISHED floor. Between the sweeps
+ * and here, `authorArteryBanks` converts floor→wall, `carveDoorways` converts
+ * wall→floor, `removeWallStubs` opens more, and `compactArcs` rewrites the
+ * band's own a0/span. Judging a runway any earlier measures a grid that does not
+ * ship — which is the same staleness that forced decorate's runway re-aim into
+ * existence (see its comment there).
+ *
+ * ── What it does NOT do ───────────────────────────────────────────────────
+ *
+ * It never writes a tile, a shape or an arcIdx, and it never draws from rng.
+ * Only `feature.lanes`. That is what makes it safe to insert mid-pipeline: a
+ * floor generated before and after is byte-identical in geometry and in rng
+ * consumption, so no pinned layout test re-rolls. A test asserts it.
+ */
+export function orientArcRails(g: Grid, phi: Int32Array): { kept: number; flipped: number; dropped: number } {
+  let kept = 0;
+  let flipped = 0;
+  let dropped = 0;
+  for (const f of g.arcs ?? []) {
+    if (!f.lanes || f.lanes.length === 0) continue;
+    const keep: LaneBand[] = [];
+    for (const l of f.lanes) {
+      const asAuthored = scoreRail(g, phi, f, l, l.cw);
+      const reversed = scoreRail(g, phi, f, l, !l.cw);
+      if (asAuthored < 0 && reversed < 0) {
+        dropped++;
+        continue;
+      }
+      // TIE KEEPS THE AUTHORED DIRECTION. That is not indifference: it preserves
+      // `arcForBend`'s turn-following answer on every artery bank (the author
+      // that was already correct), and on a genuinely symmetric bowl it leaves
+      // the rolled coin meaningful instead of replacing variety with a rule.
+      if (reversed > asAuthored) {
+        l.cw = !l.cw;
+        flipped++;
+      } else {
+        kept++;
+      }
+      keep.push(l);
+    }
+    if (keep.length === 0) f.lanes = undefined;
+    else f.lanes = keep;
+  }
+  return { kept, flipped, dropped };
 }

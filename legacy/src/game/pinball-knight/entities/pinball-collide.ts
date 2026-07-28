@@ -516,9 +516,18 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     // The knock-on: every generator pass that reasons about facings gates on
     // `Math.abs(dirI) + Math.abs(dirJ) === 1`, so this kind is excluded from
     // the duel breaker, the runway re-aim and the loop breaker automatically.
-    // It cannot form a cardinal duel, and its arc is a piece of authored
-    // geometry rather than a placement guess, so there is nothing for them to
-    // repair.
+    // It cannot form a cardinal duel, so that exclusion is correct.
+    //
+    // ⚠️ WHAT USED TO BE CLAIMED HERE — "its arc is a piece of authored geometry
+    // rather than a placement guess, so there is nothing for them to repair" —
+    // WAS NOT TRUE, and it is the sentence that let the defect sit. No
+    // ArcFeature is involved anywhere in this kind. The heading comes from
+    // `smoothTangent` over a ROUTE, i.e. over the lattice staircase a Φ descent
+    // leaves behind, and it is exactly as much of a placement guess as any
+    // booster's. It just cannot be repaired afterwards, which is the opposite of
+    // not needing to be. The gate therefore lives at authoring time, in
+    // `layStationSpine` (`curveOk`), where the tangent is checked for runway and
+    // downhill on its own vector rather than on the cardinal step beneath it.
     if (d2 > CURVE_BOOST_RADIUS * CURVE_BOOST_RADIUS) return;
     const len = Math.hypot(part.dirX, part.dirZ) || 1;
     p.momX = part.dirX / len;

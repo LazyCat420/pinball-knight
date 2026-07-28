@@ -36,7 +36,8 @@ import { DEFAULT_TRACK_PROFILE, trackNodeCounts, type TrackProfile } from "./arc
 import { uncarveDeadEnds, removeWallStubs, healRoadTerminations } from "./track-socket";
 import { carveLaunchChute, chuteTiles, resealChute, type LaunchChute } from "./track-launch";
 import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN } from "./floor-rules";
-import { authorArcSweeps, stampOrbitIsland } from "./arc-sweeps";
+import { authorArcSweeps, stampOrbitIsland, orientArcRails } from "./arc-sweeps";
+import { buildFlowField } from "./flow-orient";
 import { compactArcs } from "./arc-contract";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, type Doorway } from "./doorways";
@@ -614,6 +615,26 @@ export function buildTrackFloor(
   }
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
+
+  // ── AND THE RAILS COME UNDER THE Φ CONTRACT, LAST ───────────────────────
+  //
+  // Here, and not with the sweeps at `authorArcSweeps` above, for three reasons
+  // that are each independently sufficient:
+  //
+  //  · Φ needs ONE SINK and it is the stairs — which only exist as of the line
+  //    above. `endsEarly` was provisional; `ends` is what ships.
+  //  · A rail's exit runway is a property of the FINISHED grid. Between the
+  //    sweeps and here the artery banks converted floor→wall, the doorways
+  //    converted wall→floor, `removeWallStubs` opened more, and `compactArcs`
+  //    rewrote the bands' own a0/span. Judging earlier judges a floor that does
+  //    not ship.
+  //  · `authorArteryBanks` authors rails TOO. A phi-aware `authorArcSweeps`
+  //    would leave that second author unchecked — the two-owner problem, in the
+  //    rail layer.
+  //
+  // Writes only `feature.lanes`: no tile, no shape, no arcIdx, no rng. So it
+  // cannot perturb a layout, and `orientArcRails`' own test pins that.
+  orientArcRails(grid, buildFlowField(grid, ends.stairs));
 
   // A high-bias floor that opened centrally: was a peripheral option ever on
   // the table? `edgeBest` is the band's best, so "no" means impossible, not

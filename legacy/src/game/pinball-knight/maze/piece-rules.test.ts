@@ -15,6 +15,19 @@ import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
 import { levelConfig } from "../constants";
 import { checkPieces, summarise, pieceCensus, PIECE_RULES } from "./piece-rules";
 import { findArcJunctions, backedFraction, trimArcToBacking, junctionCheck } from "./arc-contract";
+import { buildFlowField } from "./flow-orient";
+import { decorateMaze } from "./decorate";
+import {
+  PARTS_BASE,
+  PARTS_PER_LEVEL,
+  PARTS_MAX,
+  TARGETS_PER_FLOOR,
+  TRAPDOORS_PER_FLOOR,
+  VAULT_RAMPS_PER_FLOOR,
+  HAZARDS_BASE,
+  HAZARDS_PER_LEVEL,
+  HAZARDS_MAX,
+} from "../constants";
 
 function floorAt(level: number, seed: number, archIndex?: number) {
   const cfg = levelConfig(level);
@@ -118,7 +131,7 @@ describe("the piece registry", () => {
           const { f, arch } = floorAt(level, seed, a);
           if (!f) continue;
           floors++;
-          const v = checkPieces(f.grid, f.mask);
+          const v = checkPieces(f.grid, f.mask, { phi: buildFlowField(f.grid, f.stairs) });
           if (v.length) bad.push(`L${level} ${arch.id} seed=${seed}:\n${summarise(v)}`);
         }
       }
@@ -218,5 +231,101 @@ describe("the arc contract itself", () => {
       expect(b.a0).toBeGreaterThanOrEqual(t!.a0 - 1e-6);
       expect(b.a0 + b.span).toBeLessThanOrEqual(t!.a0 + t!.span + 1e-6);
     }
+  });
+});
+
+describe("the piece gate on a DECORATED floor", () => {
+  /** `buildTrackFloor` + `decorateMaze`, i.e. the floor the player is given. */
+  function decorated(level: number, seed: number, archIndex?: number) {
+    const { f, arch } = floorAt(level, seed, archIndex);
+    if (!f) return null;
+    const cfg = levelConfig(level);
+    // A fresh stream: this test is about the FINISHED floor, not about
+    // reproducing core.ts's exact rng consumption (which floor-density covers).
+    const rng = mulberry32((seed ^ 0x5bf03635) >>> 0);
+    const partBudget = Math.min(PARTS_BASE + (level - 1) * PARTS_PER_LEVEL, PARTS_MAX) + Math.floor(cfg.floorTiles / 2000);
+    const plan = decorateMaze(f.grid, rng, 12, 20, partBudget, [], {
+      targets: TARGETS_PER_FLOOR,
+      trapdoors: TRAPDOORS_PER_FLOOR,
+      vaultRamps: VAULT_RAMPS_PER_FLOOR,
+      hazards: Math.min(HAZARDS_BASE + (level - 1) * HAZARDS_PER_LEVEL, HAZARDS_MAX),
+      launchBreaks: cfg.launchBreaks,
+      endpoints: { start: f.start, stairs: f.stairs },
+      strictLaunchers: true,
+      chute: f.chute ?? null,
+      orbit: f.orbit ?? null,
+      wallsAuthored: true,
+      floor: level,
+    });
+    return { f, arch, plan };
+  }
+
+  it("every piece still obeys its rules after decorateMaze has run", () => {
+    // ── WHY A SEPARATE SWEEP FROM THE ONE ABOVE ───────────────────────────
+    //
+    // That one runs on `buildTrackFloor`'s output, which is not what ships.
+    // Two whole classes of piece had never been judged by anything at all:
+    //   · every part on the floor — 210-260 of them, against ~50 arc features;
+    //   · every wall reshaped by `assignCornerShapes`, the LAST tile mutation
+    //     in the pipeline, which runs after the launch break-throughs and the
+    //     secret cracks have moved the walls it reads.
+    //
+    // 30 floors rather than 150: `decorateMaze` is roughly 40x the cost of the
+    // geometry pass. The geometry sweep DELIBERATELY stays at 150 — that is
+    // where the 1.3%-defect-passing-on-lucky-seeds lesson was learned, and
+    // shrinking it to pay for this block would undo it.
+    const bad: string[] = [];
+    let floors = 0;
+    let parts = 0;
+    for (let a = 0; a < ARCHETYPES.length; a++) {
+      for (const level of [1, 6, 12]) {
+        for (let s = 0; s < 2; s++) {
+          const seed = 0x31f7 + s * 7717 + level * 313 + a * 4441;
+          const d = decorated(level, seed, a);
+          if (!d) continue;
+          floors++;
+          parts += d.plan.parts.length;
+          const v = checkPieces(d.f.grid, d.f.mask, {
+            phi: buildFlowField(d.f.grid, d.plan.stairs),
+            parts: d.plan.parts,
+          });
+          if (v.length) bad.push(`L${level} ${d.arch.id} seed=${seed}:\n${summarise(v)}`);
+        }
+      }
+    }
+    expect(floors, "sweep too small to be worth running").toBeGreaterThan(24);
+    expect(parts / floors, "no furniture reached the gate — it would pass vacuously").toBeGreaterThan(50);
+    expect(`${bad.length}/${floors} floors:\n${bad.slice(0, 4).join("\n")}`).toBe(`0/${floors} floors:\n`);
+  }, 300000);
+
+  it("the furniture rules are actually reachable — a broken part IS caught", () => {
+    // A gate nobody has ever seen fire is a gate you cannot trust. Plant one
+    // part standing in a wall and one route part firing backwards, and require
+    // both to be reported — otherwise "0 violations" above means nothing.
+    const d = decorated(6, 0x31f7 + 6 * 313, 0)!;
+    expect(d).toBeTruthy();
+    const phi = buildFlowField(d.f.grid, d.plan.stairs);
+    // A plain one-leg launcher, so reversing `dir` really does reverse the
+    // throw — a deflector's `dir` is its ENTRY leg and flipping it would change
+    // nothing the gate looks at.
+    const onFloor = d.plan.parts.find((p) => p.spine && p.kind === "booster" && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1)!;
+    expect(onFloor).toBeTruthy();
+    const planted = [
+      { ...onFloor, kind: "booster", i: 0, j: 0, dirI: 1, dirJ: 0 },
+      { ...onFloor, dirI: -onFloor.dirI, dirJ: -onFloor.dirJ },
+    ];
+    const v = checkPieces(d.f.grid, d.f.mask, { phi, parts: planted });
+    expect(v.some((x) => x.label === "furniture" && x.rule === PIECE_RULES.furniture[0])).toBe(true);
+    expect(v.some((x) => x.label === "furniture" && x.rule === PIECE_RULES.furniture[2])).toBe(true);
+  });
+
+  it("reports nothing rather than passing silently when handed no content", () => {
+    // The `doorways-are-uniform` doctrine: a gate that returns "clean" because
+    // it was given nothing to look at reads as coverage and is worse than no
+    // gate. Absent phi/parts must mean SKIPPED, not PASSED.
+    const d = decorated(6, 0x31f7 + 6 * 313, 0)!;
+    const broken = [{ ...d.plan.parts[0], kind: "booster", i: 0, j: 0, dirI: 1, dirJ: 0 }];
+    expect(checkPieces(d.f.grid, d.f.mask).some((x) => x.label === "furniture")).toBe(false);
+    expect(checkPieces(d.f.grid, d.f.mask, { parts: broken }).some((x) => x.label === "furniture")).toBe(true);
   });
 });

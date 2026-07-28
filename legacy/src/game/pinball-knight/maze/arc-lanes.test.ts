@@ -10,6 +10,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { laneBandAt, laneTangent, angleInSpan, type ArcFeature, type LaneBand } from "../engine/tile-shape";
+import { orientArcRails, railExit, RAIL_RIDE_INSET, LANE_BAND_FRAC } from "./arc-sweeps";
+import { buildFlowField, isDownhill } from "./flow-orient";
+import { type Grid, T_FLOOR, T_WALL, T_STAIRS } from "./generator";
+import { PLAYER_R } from "../constants";
 
 const HALF_PI = Math.PI / 2;
 
@@ -147,5 +151,159 @@ describe("laneBandAt — spans and cooldown", () => {
     const p = onArc(0.5);
     const t = laneTangent(f, f.lanes![0], p.x, p.z);
     expect(laneBandAt(f, p.x, p.z, t.tx, t.tz)).not.toBeNull();
+  });
+});
+
+// ── ORIENTATION: which way round the bowl the rail actually throws ──────────
+//
+// Everything above tests the lane's RUNTIME grain — given a cw, who gets
+// grabbed. These test where that cw comes from, which until this wave was
+// `rng() < 0.5` with nothing checking what lay past the exit.
+
+describe("railExit — where a rail spits you out", () => {
+  /** An open floor grid with a solid border, for exit-tile lookups. */
+  function openGrid(w = 24, h = 24): Grid {
+    const g: Grid = { w, h, t: new Uint8Array(w * h), shapes: new Uint8Array(w * h) };
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) g.t[j * w + i] = T_FLOOR;
+    return g;
+  }
+
+  it("leaves a quarter-turn along the cardinal at the end it exits by", () => {
+    // The SE quadrant of a circle centred at (12,12): a0 = 0 spans to π/2.
+    // Going clockwise you leave at π/2 — the SOUTH point — heading WEST.
+    // Going the other way you leave at 0 — the EAST point — heading NORTH.
+    // Pinned because every gate below trusts this snap.
+    const g = openGrid();
+    const f: ArcFeature = { cx: 12, cz: 12, r: 3, a0: 0, span: HALF_PI, solidOut: true };
+    const cwExit = railExit(g, f, lane(true), true)!;
+    expect(cwExit).toBeTruthy();
+    expect([cwExit.di, cwExit.dj]).toEqual([-1, 0]);
+    const ccwExit = railExit(g, f, lane(false), false)!;
+    expect(ccwExit).toBeTruthy();
+    expect([ccwExit.di, ccwExit.dj]).toEqual([0, -1]);
+  });
+
+  it("rides at the radius the COLLIDER uses, inside a bowl and outside a guide", () => {
+    // Not a restatement of the constant: it pins that concave and convex inset
+    // in OPPOSITE directions, which is the half of the contract a single
+    // `toBe(PLAYER_R)` assertion would miss.
+    const g = openGrid();
+    const concave: ArcFeature = { cx: 12, cz: 12, r: 4, a0: 0, span: HALF_PI, solidOut: true };
+    const convex: ArcFeature = { cx: 12, cz: 12, r: 4, a0: 0, span: HALF_PI };
+    const cd = Math.hypot(railExit(g, concave, lane(true), true)!.i + 0.5 - 12, railExit(g, concave, lane(true), true)!.j + 0.5 - 12);
+    const vd = Math.hypot(railExit(g, convex, lane(true), true)!.i + 0.5 - 12, railExit(g, convex, lane(true), true)!.j + 0.5 - 12);
+    expect(cd).toBeLessThan(vd);
+  });
+
+  it("RAIL_RIDE_INSET is the player's collision radius, not an estimate", () => {
+    // arc-sweeps duplicates the number to keep its authoring/feel split; this is
+    // the assertion that stops the two drifting.
+    expect(RAIL_RIDE_INSET).toBe(PLAYER_R);
+  });
+
+  it("the tangent-to-cardinal snap error stays inside (1 - LANE_BAND_FRAC)/2 x span", () => {
+    // The whole reason `railExit` may hand a CARDINAL to the 4-connected Φ
+    // predicates. At the shipped 0.94 over a quadrant that is 2.7 degrees;
+    // widening the band would break the argument, and this fails when it does.
+    const bound = ((1 - LANE_BAND_FRAC) / 2) * HALF_PI;
+    expect(bound).toBeLessThan(0.05); // ~2.9 degrees
+    const a0 = 0;
+    const band = { a0: a0 + bound, span: HALF_PI * LANE_BAND_FRAC, cw: true, cooldownT: 0, hitT: -1 };
+    const aE = band.a0 + band.span;
+    // The exact tangent at the exit, against the cardinal it snaps to.
+    const tx = -Math.sin(aE);
+    const tz = Math.cos(aE);
+    const [sx, sz] = Math.abs(tx) >= Math.abs(tz) ? [Math.sign(tx), 0] : [0, Math.sign(tz)];
+    const err = Math.acos(Math.min(1, Math.abs(tx * sx + tz * sz)));
+    expect(err).toBeLessThanOrEqual(bound + 1e-9);
+  });
+});
+
+describe("orientArcRails", () => {
+  function grid(w: number, h: number): Grid {
+    const g: Grid = { w, h, t: new Uint8Array(w * h), shapes: new Uint8Array(w * h) };
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) g.t[j * w + i] = T_FLOOR;
+    return g;
+  }
+
+  it("drops a rail whose exits are both walled in", () => {
+    // A bowl in a sealed pocket: nothing past either end, so neither way round
+    // is a racing line and the honest answer is no rail at all.
+    const g = grid(24, 24);
+    for (let j = 0; j < 24; j++) for (let i = 0; i < 24; i++) if (i > 14 || j > 14 || i < 9 || j < 9) g.t[j * 24 + i] = T_WALL;
+    const f: ArcFeature = { cx: 12, cz: 12, r: 3, a0: 0, span: HALF_PI, solidOut: true, lanes: [lane(true)] };
+    g.arcs = [f];
+    const phi = buildFlowField(g, { i: 12, j: 12 });
+    const stats = orientArcRails(g, phi);
+    expect(stats.dropped).toBe(1);
+    expect(f.lanes).toBeUndefined();
+  });
+
+  it("flips a rail whose authored direction throws away from the stairs", () => {
+    // One long east-west hall with the exit at the WEST end, so Φ falls westward
+    // everywhere. A rail authored to throw east is throwing you back up the
+    // floor; the pass must turn it round rather than drop it.
+    const g = grid(40, 12);
+    g.t[6 * 40 + 2] = T_STAIRS;
+    const phi = buildFlowField(g, { i: 2, j: 6 });
+    // The SE quadrant, as pinned above: cw leaves WEST (down-Φ, toward the
+    // exit), ccw leaves NORTH (across the contour, so not downhill). Authored
+    // ccw, i.e. the wrong way — which is exactly what a coin flip produces half
+    // the time, and what nothing on this floor could previously detect.
+    const f: ArcFeature = { cx: 20, cz: 6, r: 3, a0: 0, span: HALF_PI, solidOut: true, lanes: [lane(false, HALF_PI)] };
+    g.arcs = [f];
+    const before = f.lanes![0].cw;
+    expect(before).toBe(false);
+    const stats = orientArcRails(g, phi);
+    expect(stats.dropped).toBe(0);
+    expect(f.lanes).toBeTruthy();
+    // Whichever way it started, it must end up throwing DOWN-Φ.
+    const x = railExit(g, f, f.lanes![0], f.lanes![0].cw)!;
+    expect(x).toBeTruthy();
+    expect(isDownhill(g, phi, x.i, x.j, x.di, x.dj)).toBe(true);
+    expect(stats.flipped + stats.kept).toBe(1);
+    if (stats.flipped === 1) expect(f.lanes![0].cw).toBe(!before);
+  });
+
+  it("NEVER writes a tile, a shape or an arcIdx", () => {
+    // ── THE ASSERTION THAT MAKES THIS PASS SAFE TO INSERT MID-PIPELINE.
+    //
+    // It runs between the arc fixed point and the relaxation bookkeeping in
+    // buildTrackFloor. If it could touch geometry it would re-roll every floor
+    // in the game and invalidate every pinned layout test; because it only ever
+    // writes `feature.lanes`, floors before and after are byte-identical.
+    const g = grid(30, 30);
+    g.arcs = [
+      { cx: 10, cz: 10, r: 3, a0: 0, span: HALF_PI, solidOut: true, lanes: [lane(true)] },
+      { cx: 20, cz: 20, r: 2, a0: Math.PI, span: HALF_PI, solidOut: true, lanes: [lane(false)] },
+    ];
+    g.arcIdx = new Int16Array(30 * 30).fill(-1);
+    const tiles = Uint8Array.from(g.t);
+    const shapes = Uint8Array.from(g.shapes);
+    const arcIdx = Int16Array.from(g.arcIdx);
+    orientArcRails(g, buildFlowField(g, { i: 5, j: 5 }));
+    expect(Array.from(g.t)).toEqual(Array.from(tiles));
+    expect(Array.from(g.shapes)).toEqual(Array.from(shapes));
+    expect(Array.from(g.arcIdx!)).toEqual(Array.from(arcIdx));
+    // …and the features' own geometry is untouched too — only `lanes`.
+    expect(g.arcs.map((f) => [f.cx, f.cz, f.r, f.a0, f.span])).toEqual([
+      [10, 10, 3, 0, HALF_PI],
+      [20, 20, 2, Math.PI, HALF_PI],
+    ]);
+  });
+
+  it("is idempotent — running it twice changes nothing more", () => {
+    // A pass that keeps flipping on re-entry would mean the score is not a
+    // function of the finished grid, which is the property the gate relies on.
+    const g = grid(40, 12);
+    g.t[6 * 40 + 2] = T_STAIRS;
+    g.arcs = [{ cx: 20, cz: 6, r: 3, a0: 0, span: HALF_PI, solidOut: true, lanes: [lane(false, HALF_PI)] }];
+    const phi = buildFlowField(g, { i: 2, j: 6 });
+    orientArcRails(g, phi);
+    const cw1 = g.arcs[0].lanes?.[0].cw;
+    const second = orientArcRails(g, phi);
+    expect(second.flipped).toBe(0);
+    expect(second.dropped).toBe(0);
+    expect(g.arcs[0].lanes?.[0].cw).toBe(cw1);
   });
 });

@@ -21,7 +21,7 @@ import { chuteTiles, type LaunchChute } from "./track-launch";
 // module's public surface and callers/tests import it from decorate.
 export { traceArtery };
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
-import { buildFlowField, descend, flowDrop, isDownhill, phiAt, steepestDown, UNREACHED } from "./flow-orient";
+import { buildFlowField, descend, flowDrop, isDownhill, openRunway, phiAt, steepestDown, UNREACHED } from "./flow-orient";
 import { breakFlowLoops } from "./flow-loops";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
@@ -281,7 +281,19 @@ function classifyTopology(g: Grid, p: TilePos, rng: () => number): TopoSpot | nu
 //   · a curved booster's heading is a TANGENT, not a cardinal, so it fails the
 //     `|dirI| + |dirJ| === 1` guard every one of these consumers applies —
 //     out by construction, and listed here only so that is on purpose.
-// maze/flow-loops.ts handles both, via its own `exitRay`.
+//
+// ⚠️ THE LINE THAT USED TO SIT HERE — "maze/flow-loops.ts handles both, via its
+// own exitRay" — WAS FALSE FOR HALF OF IT, and it is the reason the hole
+// survived. `flow-loops`' LAUNCHERS set contains `boostcorner` and its `exitRay`
+// correctly reads `dir2`; it does NOT contain `boostcurve`, and `movable()`
+// there additionally demands a unit cardinal, which a tangent can never be. So
+// `boostcurve` is skipped by openLaunchTargets, by the runway re-aim, by
+// breakLaunchDuels AND by breakFlowLoops — every repair pass on the floor.
+//
+// That is deliberate and should stay: a cardinal-shaped repair has nothing
+// legal to do to a tangent part. What it means is that a curved booster's
+// AUTHORING gate is the only gate it will ever get, so that gate has to check
+// the vector it actually throws along — see `curveOk` in layStationSpine.
 const LAUNCH_KINDS = new Set<string>(["ramp", "booster", "spring", "slingshot", "flipper", "jumppad"]);
 const MIN_RUNWAY = 3; // open tiles ahead a launch part needs, or it fires into a wall
 /**
@@ -571,14 +583,16 @@ function distAt(g: Grid, dist: Int32Array, i: number, j: number): number {
   return dist[idx(g, i, j)];
 }
 
-/** Count consecutive open (floor) tiles stepping (di,dj) from (i,j), capped. */
+/** Count consecutive open tiles stepping (di,dj) from (i,j), capped.
+ *
+ *  @see openRunway — this was the third copy of those eight lines (decorate's,
+ *  flow-loops', and flow-orient's own `flowDrop` walking the same ray). Note it
+ *  now counts the STAIRS tile as runway, which it did not before: a lane that
+ *  ends at the exit is the one lane a shove is most entitled to reach, and the
+ *  old reading called it a wall. Can only lengthen a runway, so it can only
+ *  turn a repair off, never on. */
 function launchRunway(g: Grid, i: number, j: number, di: number, dj: number): number {
-  let n = 0;
-  for (let s = 1; s <= 8; s++) {
-    if (at(g, i + di * s, j + dj * s) !== T_FLOOR) break;
-    n++;
-  }
-  return n;
+  return openRunway(g, i, j, di, dj, 8);
 }
 
 const BAND_OFFSETS = [[0, 0], [1, 0], [0, 1], [1, 1]] as const;
@@ -620,15 +634,13 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
   }
   let opened = 0;
 
-  /** Floor-run length stepping (di,dj) from (i,j), capped at 6. */
-  const runway = (i: number, j: number, di: number, dj: number): number => {
-    let n = 0;
-    for (let s = 1; s <= 6; s++) {
-      if (at(g, i + di * s, j + dj * s) !== T_FLOOR) break;
-      n++;
-    }
-    return n;
-  };
+  /** Floor-run length stepping (di,dj) from (i,j), capped at 6 — the fourth copy
+   *  of the same eight lines, now delegating. The cap stays 6 rather than
+   *  openRunway's default 8 because this pass only ever compares against
+   *  MIN_RUNWAY (3) and walking further is wasted work on every part on the
+   *  floor. Counts the stairs tile, matching `firstWall` below, which has always
+   *  treated T_STAIRS as "the lane opens" rather than as a wall. */
+  const runway = (i: number, j: number, di: number, dj: number): number => openRunway(g, i, j, di, dj, 6);
   /** First WALL tile within 6 stepping (di,dj); null if it opens (floor/stairs/crack). */
   const firstWall = (i: number, j: number, di: number, dj: number): TilePos | null => {
     for (let s = 1; s <= 6; s++) {
@@ -1239,6 +1251,8 @@ function smoothTangent(route: TilePos[], k: number, di: number, dj: number): [nu
   return [vx / len, vz / len];
 }
 
+
+
 /**
  * ALTERNATE ROUTES — the other ways down the floor.
  *
@@ -1453,6 +1467,28 @@ function layStationSpine(
         // The gates above still use the CARDINAL step: runway and downhill are
         // properties of the route, and keeping them cardinal means the no-loops
         // guarantee is unaffected by the cosmetic-looking choice made here.
+        // ⚠️ KNOWN GAP, DELIBERATELY LEFT FOR THE ROUTE-GEOMETRY WAVE.
+        //
+        // `diagOpen` proves ONE tile along a vector the player's momentum is
+        // then set to (`pinball-collide.boostcurve` reads dirX/dirZ straight
+        // into momX/momZ), and this is the only gate a `boostcurve` will ever
+        // get: it is absent from LAUNCH_KINDS and from flow-loops' LAUNCHERS, so
+        // openLaunchTargets, the runway re-aim, breakLaunchDuels and
+        // breakFlowLoops all skip it — correctly, since a cardinal repair has
+        // nothing legal to do to a tangent.
+        //
+        // Tightening it here was tried and MEASURED WORSE, and the reason is
+        // this pass's shape rather than the gate's strength. Rejecting a tile
+        // makes the loop SLIDE, so a run that is diagonal along its whole length
+        // loses every pad in it — 1322 → 1127 route pads over 45 seeds and the
+        // chain rate 0.74 → 0.65. That is the "8-tile hole" this loop's own
+        // comment above warns about, arriving by a new door.
+        //
+        // The cause is that runs are segmented on the LATTICE, so 62% of them
+        // are one tile long and the pass is placing pads on a staircase at all.
+        // The gate belongs on top of the accumulated-tangent segmentation that
+        // replaces it — a real straight can carry a real curved pad — not bolted
+        // to the version being replaced. Measured, not assumed; see the wave note.
         const tan = smoothTangent(spine, t, di, dj);
         const off = Math.abs(tan[0] * dj - tan[1] * di); // |sin| between tangent and step
         const diagOpen = at(g, p.i + Math.sign(tan[0]), p.j + Math.sign(tan[1])) === T_FLOOR;
@@ -2541,7 +2577,23 @@ export function decorateMaze(
       bestD = [di, dj];
       bestDown = down;
     }
-    if (bestD && bestRun >= MIN_RUNWAY) {
+    // ── A ROUTE PART MAY NOT BE SAVED BY POINTING IT UPHILL ─────────────────
+    //
+    // "Downhill first, longest second" ranks correctly but does not REFUSE, so
+    // when no direction is both open and downhill the loop above still returns
+    // the longest uphill lane and this pass installs it. On a loose corridor
+    // part that is the right trade — it is furniture, and 12% of it kicks back
+    // on purpose. On a SPINE part it is not: the routes are the floor's one-way
+    // structure, and a road that shoves you back up itself is the "speed-up
+    // that sends you home" complaint with extra steps.
+    //
+    // Found by the furniture piece gate on decorated floors — 3 of 30, one part
+    // each — which is exactly the class of defect that survives because every
+    // pass upstream is individually right. Placement gated on downhill; this
+    // pass then overwrote it. Demote instead, using the same ladder as the
+    // no-runway case below.
+    const routeUphill = p.spine && bestD !== null && !bestDown;
+    if (bestD && bestRun >= MIN_RUNWAY && !routeUphill) {
       p.dirI = bestD[0];
       p.dirJ = bestD[1];
     } else {
