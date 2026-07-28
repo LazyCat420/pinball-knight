@@ -9,7 +9,57 @@ import {
   comboZone,
   frenzyIntensity,
   comboDamageMult,
+  momentumT,
+  momentumScaled,
 } from "./combo-curve";
+import { PINBALL_MAX_SPEED as V_MAX, MOMENTUM_T_FLOOR } from "../constants";
+
+describe("momentumT — the shared momentum ramp", () => {
+  it("reads 0 at or below a walk and exactly 1 at terminal speed", () => {
+    expect(momentumT(0)).toBe(0);
+    expect(momentumT(MOMENTUM_T_FLOOR)).toBe(0);
+    expect(momentumT(MOMENTUM_T_FLOOR - 3)).toBe(0);
+    expect(momentumT(V_MAX)).toBeCloseTo(1);
+  });
+
+  it("never escapes [0,1], however absurd the input", () => {
+    for (const v of [-1e6, -1, 0, 5, 22, 1e6]) {
+      const t = momentumT(v);
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("rises monotonically, so every extra unit of speed is worth something", () => {
+    let prev = -1;
+    for (let v = MOMENTUM_T_FLOOR; v <= V_MAX; v += 0.5) {
+      const t = momentumT(v);
+      expect(t).toBeGreaterThan(prev);
+      prev = t;
+    }
+  });
+
+  it("is CONCAVE — the first half of the speed range buys more than the second", () => {
+    const mid = (MOMENTUM_T_FLOOR + V_MAX) / 2;
+    expect(momentumT(mid)).toBeGreaterThan(0.5);
+  });
+
+  it("replaces the old cliff: the former gate speed is a partial, not a binary", () => {
+    // The whole point of the wave. 8 u/s used to award 100% of every momentum
+    // multiplier and 7.9 awarded 0%.
+    const t = momentumT(8);
+    expect(t).toBeGreaterThan(0.4);
+    expect(t).toBeLessThan(0.8);
+  });
+
+  it("momentumScaled is neutral at a walk and full at terminal speed", () => {
+    expect(momentumScaled(2, MOMENTUM_T_FLOOR)).toBeCloseTo(1);
+    expect(momentumScaled(2, V_MAX)).toBeCloseTo(2);
+    expect(momentumScaled(1, V_MAX)).toBe(1); // a 1× multiplier stays 1×
+  });
+});
+
 import {
   PINBALL_MAX_SPEED,
   PINBALL_CORNER_RESTITUTION,

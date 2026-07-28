@@ -26,6 +26,26 @@ export const SCORE_PER_KILL = 25;
 /** Smallest nudge — gold is already its own reward via the wallet. */
 export const SCORE_PER_GOLD = 1;
 
+/**
+ * THE SHOT LAYER.
+ *
+ * The machine has an entire second skill system — named combos, orbit laps,
+ * jackpots — and until now NONE of it reached the leaderboard. It paid gold,
+ * gold scored 1 point each, and that was the whole connection. A run that
+ * played the table like a table and a run that walked it scored the same.
+ *
+ * These are priced as tiebreakers, deliberately below one floor: a named combo
+ * is worth about four kills, a flawless floor about eight. Depth still
+ * dominates everything, because depth is still the game.
+ */
+export const SCORE_PER_NAMED_SHOT = 100;
+export const SCORE_PER_ORBIT_LAP = 60;
+export const SCORE_PER_JACKPOT = 80;
+/** Flow is 0..1; a floor ridden at terminal speed is worth ~a third of a floor. */
+export const SCORE_PER_FLOW = 300;
+/** Untouched floors — the hardest thing the game asks for. */
+export const SCORE_PER_FLAWLESS = 200;
+
 export interface RunStats {
   /** Deepest floor REACHED (1-based), not the floor cleared. */
   deepestFloor: number;
@@ -36,6 +56,16 @@ export interface RunStats {
   gold: number;
   /** Wall-clock seconds for the run. */
   durationS: number;
+  /** Named combos completed across the run. */
+  namedShots?: number;
+  /** Orbit laps completed across the run. */
+  orbitLaps?: number;
+  /** Jackpots fired across the run. */
+  jackpots?: number;
+  /** Best per-floor flow (0..1 average momentum) this run. */
+  bestFlow?: number;
+  /** Floors cleared without taking a hit. */
+  flawlessFloors?: number;
 }
 
 /**
@@ -49,7 +79,12 @@ export function scoreRun(s: RunStats): number {
       s.deepestFloor * SCORE_PER_FLOOR +
         s.bestCombo * SCORE_PER_COMBO +
         s.kills * SCORE_PER_KILL +
-        s.gold * SCORE_PER_GOLD,
+        s.gold * SCORE_PER_GOLD +
+        (s.namedShots ?? 0) * SCORE_PER_NAMED_SHOT +
+        (s.orbitLaps ?? 0) * SCORE_PER_ORBIT_LAP +
+        (s.jackpots ?? 0) * SCORE_PER_JACKPOT +
+        Math.max(0, Math.min(1, s.bestFlow ?? 0)) * SCORE_PER_FLOW +
+        (s.flawlessFloors ?? 0) * SCORE_PER_FLAWLESS,
     ),
   );
 }
@@ -68,5 +103,10 @@ export function runDetail(s: RunStats): Record<string, unknown> {
     kills: s.kills,
     gold: s.gold,
     seconds: Math.round(s.durationS),
+    shots: s.namedShots ?? 0,
+    laps: s.orbitLaps ?? 0,
+    jackpots: s.jackpots ?? 0,
+    flow: Math.round((s.bestFlow ?? 0) * 100), // percent, so the row stays integer-flat
+    flawless: s.flawlessFloors ?? 0,
   };
 }

@@ -32,9 +32,46 @@ import {
   COMBO_GOLD_TIER,
   COMBO_ZONE_CRUISE,
   COMBO_ZONE_FRENZY,
+  MOMENTUM_T_FLOOR,
+  MOMENTUM_T_K,
 } from "../constants";
 
 export type ComboZone = "launch" | "cruise" | "frenzy";
+
+/**
+ * Part 0 — THE MOMENTUM RAMP. How fast are you, on a 0..1 dial?
+ *
+ * 0 at a walk (MOMENTUM_T_FLOOR), 1 at PINBALL_MAX_SPEED, concave in between:
+ *
+ *   t(v) = r·(1+k) / (r + k·S)   where r = v − floor, S = Vmax − floor
+ *
+ * Normalised so t(Vmax) is exactly 1 and hyperbolic so nothing downstream can
+ * make it run away — multiply it by whatever you like, it cannot exceed 1.
+ *
+ * This is the shared replacement for the binary `momSpeed > CARD_PINBALL_SPEED`
+ * checks that used to be scattered across combat: pinball cards, the skill
+ * tree's momentum nodes and the wrecking ball all read this instead, so
+ * "momentum build" finally means a build that wants EVERY extra unit of speed.
+ *
+ * With the shipped constants (floor 4.2, k 0.22, cap 22):
+ * 4.2→0.00, 6→0.36, 8→0.61, 12→0.82, 16→0.92, 22→1.00.
+ */
+export function momentumT(speed: number): number {
+  const span = PINBALL_MAX_SPEED - MOMENTUM_T_FLOOR;
+  const r = speed - MOMENTUM_T_FLOOR;
+  if (r <= 0 || span <= 0) return 0;
+  return Math.min(1, (r * (1 + MOMENTUM_T_K)) / (r + MOMENTUM_T_K * span));
+}
+
+/**
+ * Apply a momentum-scaled multiplier: full `mult` at terminal speed, 1× (no
+ * effect) at a walk, the concave ramp in between. Every caller that used to
+ * write `if (speed > GATE) dmg *= mult` should call this instead.
+ */
+export function momentumScaled(mult: number, speed: number): number {
+  if (mult === 1) return 1;
+  return 1 + (mult - 1) * momentumT(speed);
+}
 
 /**
  * Part 1 — logarithmic ceiling on the speed a WALL/CORNER bounce can EARN:

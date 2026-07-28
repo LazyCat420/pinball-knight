@@ -738,6 +738,21 @@ export const state = {
   pausedRunS: 0,
   /** True once this run's score has been posted, so death can't double-submit. */
   runScoreSubmitted: false,
+  // ── Run-scoped SHOT ledger ──
+  // The machine's whole shot layer — orbits, lane banks, jackpots and named
+  // combos — used to pay gold and nothing else, so a run that played the table
+  // beautifully scored identically to one that walked it. These are the run
+  // totals the leaderboard now reads (see run-score.ts).
+  /** Named combos completed this run (each name pays once per FLOOR). */
+  runNamedShots: 0,
+  /** Orbit laps completed this run. */
+  runOrbitLaps: 0,
+  /** Jackpots fired this run. */
+  runJackpots: 0,
+  /** Best per-floor FLOW (0..1 average momentum) reached this run. */
+  runBestFlow: 0,
+  /** Floors cleared this run without taking a single hit. */
+  runFlawlessFloors: 0,
 
   // ── Per-floor score ledger (reset by startLevel; graded by descend) ──
   /** Seconds spent on the current floor — also the Death Dealer's fuse. */
@@ -748,6 +763,19 @@ export const state = {
   levelHordeSize: 0,
   /** Best pinball bounce combo reached this floor (the style axis). */
   levelBestCombo: 0,
+  // ── FLOW: the grade's pace axis (see gradeFloor in core.ts) ──
+  // Pace used to be raw wall-clock, which graded a brisk WALK exactly like a
+  // beautifully carried line — the one thing the game is actually about was
+  // the one thing the grade could not see. Flow is the time-weighted average
+  // of `momentumT(momSpeed)` over the floor: integral / elapsed.
+  /** ∫ momentumT(speed) dt over this floor. */
+  levelFlowSum: 0,
+  /** Seconds of that integral (sim time, so pauses don't dilute it). */
+  levelFlowT: 0,
+  /** Hits taken this floor — 0 at the stairs earns the flawless heart. */
+  levelHitsTaken: 0,
+  /** Jackpots fired this floor. */
+  jackpots: 0,
   /** True once this floor's Death Dealer has spawned (one per floor). */
   reaperOut: false,
   /** True once the pre-spawn warning toast has shown. */
@@ -1227,6 +1255,15 @@ export function resetState(): void {
   state.levelStartKills = 0;
   state.levelHordeSize = 0;
   state.levelBestCombo = 0;
+  state.levelFlowSum = 0;
+  state.levelFlowT = 0;
+  state.levelHitsTaken = 0;
+  state.jackpots = 0;
+  state.runNamedShots = 0;
+  state.runOrbitLaps = 0;
+  state.runJackpots = 0;
+  state.runBestFlow = 0;
+  state.runFlawlessFloors = 0;
   state.reaperOut = false;
   state.exitLocked = false;
   state.reaperWarned = false;

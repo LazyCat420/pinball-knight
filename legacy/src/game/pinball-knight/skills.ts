@@ -17,6 +17,14 @@
  */
 import type { AbilityId } from "./abilities";
 
+/**
+ * Hard ceiling on the stacked move-speed multiplier, applied once in
+ * `aggregateSkills`. Today's tree tops out at 1.04³ ≈ 1.125, so this is
+ * headroom rather than a nerf — it exists so the NEXT contributor can't
+ * quietly multiply past a speed the physics was never tuned for.
+ */
+export const MOVE_SPEED_MULT_CAP = 1.5;
+
 export type SkillId = string;
 export type SkillBranch = "steel" | "flipper" | "arcana";
 
@@ -122,6 +130,19 @@ export function aggregateSkills(ranks: Record<SkillId, number>, base?: SkillModi
     if (!def || !r || r <= 0) continue;
     fold(a, def.modifier, Math.min(r, def.maxRank));
   }
+  // ── THE MOBILITY CLAMP ── one clamp, here, at the aggregate.
+  //
+  // Move speed is the only stat that feeds the physics rather than the damage
+  // maths, and this game's whole feel lives in it. The lesson is already
+  // written in this repo's history: the booster corner-jam, where a damping
+  // guard could never beat a speed FLOOR applied somewhere else in the stack.
+  // A per-source clamp has the same hole — three sources each "safely" under
+  // the limit still multiply past it.
+  //
+  // So every mobility contributor (tree ranks, legacy perks, and whatever a
+  // later wave adds — boots are the obvious next one) folds in raw, and the
+  // ceiling is applied exactly once, on the way out.
+  a.moveSpeedMult = Math.min(MOVE_SPEED_MULT_CAP, a.moveSpeedMult);
   return a;
 }
 

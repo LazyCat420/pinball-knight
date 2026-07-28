@@ -271,7 +271,11 @@ export function castAbility(slot: 0 | 1): boolean {
       const len = Math.hypot(fx, fz) || 1;
       p.momX = fx / len;
       p.momZ = fz / len;
-      p.momSpeed = FLIPPER_LAUNCH_SPEED;
+      // max(), NOT assignment. This used to overwrite momentum outright, so
+      // casting the game's signature SPEED ability while already travelling
+      // faster than FLIPPER_LAUNCH_SPEED made you SLOWER — you paid mana to
+      // brake. A launch can only ever launch.
+      p.momSpeed = Math.max(p.momSpeed, FLIPPER_LAUNCH_SPEED);
       p.turboT = Math.max(p.turboT, 0.9); // ride it out with no friction
       p.iframes = Math.max(p.iframes, 0.35);
       // The launch IGNITES: flame ghosts + embers while riding, and a burning

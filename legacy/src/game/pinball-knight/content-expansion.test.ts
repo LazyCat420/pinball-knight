@@ -23,10 +23,14 @@ describe("expansion cards", () => {
     expect(aggregateCards(["flailerjaw", "bloodpact", "flailerjaw"]).critChance).toBe(1);
   });
 
-  it("STORM set (2+ bolt cards) resonates for +25% damage", () => {
-    const solo = aggregateCards(["tempestcrown"]).damageMult; // 1.4
-    const set = aggregateCards(["tempestcrown", "wispspark"]).damageMult; // 1.4 × 1.25
-    expect(set).toBeCloseTo(solo * 1.25);
+  it("STORM set (2+ bolt cards) resonates for a real damage gain", () => {
+    // The +25% set bonus folds into the stack rather than riding on top of it
+    // (see softenAggregate) — committing two sockets pays, but it pays on the
+    // same diminishing curve as everything else you pile on.
+    const solo = aggregateCards(["tempestcrown"]).damageMult; // 1.4, exact
+    const set = aggregateCards(["tempestcrown", "wispspark"]).damageMult;
+    expect(set).toBeGreaterThan(solo);
+    expect(set).toBeLessThanOrEqual(solo * 1.25);
   });
 
   it("ASSASSIN set (2+ crit cards) deepens crit multiplier by +0.5", () => {
@@ -34,11 +38,14 @@ describe("expansion cards", () => {
     expect(aggregateCards(["flailerjaw", "goblintooth"]).critMult).toBeCloseTo(3.0);
   });
 
-  it("ATTUNED set (2+ marble cards) amplifies material synergy ×1.3", () => {
+  it("ATTUNED set (2+ marble cards) amplifies material synergy", () => {
     const a = CARDS.crystalshard.modifier.materialMult!;
     const b = CARDS.golemcore.modifier.materialMult!;
     const two = aggregateCards(["crystalshard", "golemcore"]).materialMult;
-    expect(two).toBeCloseTo(a * b * 1.3);
+    // Strictly better than either card alone, strictly under the raw product ×
+    // the set bonus — the stack curve, with the best card left exact.
+    expect(two).toBeGreaterThan(Math.max(a, b));
+    expect(two).toBeLessThan(a * b * 1.3);
   });
 
   it("cursed cards carry a real drawback (durability < 1)", () => {

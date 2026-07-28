@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CARDS, CARD_IDS, aggregateCards, cardFitsKind, cardsOfRarity, cardsOfSource, rollCardDrop, COMMON_DROP_CHANCE } from "./cards";
+import { CARDS, CARD_IDS, aggregateCards, cardFitsKind, cardsOfRarity, cardsOfSource, rollCardDrop, COMMON_DROP_CHANCE, CARD_STACK_SOFT_CAP } from "./cards";
 
 describe("cards", () => {
   it("every card has a valid rarity, kind and at least one effect", () => {
@@ -27,10 +27,31 @@ describe("cards", () => {
     expect(2 * agg.damageMult + agg.damageFlat).toBeCloseTo(2 * mult + flat);
   });
 
-  it("stacks the same card's multiplier multiplicatively", () => {
+  // ── THE STACK CONTRACT (de-clone wave) ──
+  // Sockets used to multiply raw, which is the shape that makes card systems
+  // explode once levels and shine scale every delta. The stack now runs through
+  // a hyperbolic curve, with the single BEST card exempt so a card never lies
+  // about its own printed value. These three tests pin all of it.
+  it("gives ONE card exactly its printed multiplier", () => {
     const one = CARDS.spidersilk.modifier.damageMult!;
-    const agg = aggregateCards(["spidersilk", "spidersilk"]);
-    expect(agg.damageMult).toBeCloseTo(one * one);
+    expect(aggregateCards(["spidersilk"]).damageMult).toBeCloseTo(one);
+  });
+
+  it("stacks a second copy for LESS than raw multiplication, but still more", () => {
+    const one = CARDS.spidersilk.modifier.damageMult!;
+    const two = aggregateCards(["spidersilk", "spidersilk"]).damageMult;
+    expect(two).toBeGreaterThan(one); // a second card is still worth socketing
+    expect(two).toBeLessThan(one * one); // …but not the full raw product
+  });
+
+  it("cannot run away no matter how deep the stack", () => {
+    // Four copies of the strongest damage card stay under best × (1 + CAP).
+    const strongest = Object.values(CARDS)
+      .map((c) => c.modifier.damageMult ?? 1)
+      .reduce((a, b) => Math.max(a, b), 1);
+    const id = (Object.values(CARDS).find((c) => c.modifier.damageMult === strongest) ?? CARDS.spidersilk).id;
+    const deep = aggregateCards([id, id, id, id]).damageMult;
+    expect(deep).toBeLessThan(strongest * (1 + CARD_STACK_SOFT_CAP));
   });
 
   it("collects on-hit + pinball flags", () => {

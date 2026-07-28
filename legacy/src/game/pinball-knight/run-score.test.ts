@@ -58,6 +58,45 @@ describe("run scoring", () => {
   it("returns whole numbers", () => {
     expect(Number.isInteger(scoreRun({ ...base, deepestFloor: 3, gold: 7 }))).toBe(true);
   });
+
+  /**
+   * THE SHOT LAYER. Orbits, named combos and jackpots are an entire second
+   * skill system that used to pay gold and nothing else, so a run that played
+   * the machine like a machine scored the same as one that walked it.
+   */
+  describe("the shot layer", () => {
+    const at5: RunStats = { ...base, deepestFloor: 5 };
+
+    it("pays for every shot-layer axis", () => {
+      const plain = scoreRun(at5);
+      expect(scoreRun({ ...at5, namedShots: 1 })).toBeGreaterThan(plain);
+      expect(scoreRun({ ...at5, orbitLaps: 1 })).toBeGreaterThan(plain);
+      expect(scoreRun({ ...at5, jackpots: 1 })).toBeGreaterThan(plain);
+      expect(scoreRun({ ...at5, bestFlow: 1 })).toBeGreaterThan(plain);
+      expect(scoreRun({ ...at5, flawlessFloors: 1 })).toBeGreaterThan(plain);
+    });
+
+    it("treats the fields as optional, so an old stats blob still scores", () => {
+      expect(scoreRun(at5)).toBe(scoreRun({ ...at5, namedShots: 0, orbitLaps: 0, jackpots: 0 }));
+    });
+
+    it("clamps flow to 0..1 so a bad integral can't mint points", () => {
+      expect(scoreRun({ ...at5, bestFlow: 99 })).toBe(scoreRun({ ...at5, bestFlow: 1 }));
+      expect(scoreRun({ ...at5, bestFlow: -5 })).toBe(scoreRun({ ...at5, bestFlow: 0 }));
+    });
+
+    it("still puts DEPTH above a perfect floor's entire shot yield", () => {
+      const perfectFloor = scoreRun({
+        ...at5,
+        namedShots: 3,
+        orbitLaps: 2,
+        jackpots: 1,
+        bestFlow: 1,
+        flawlessFloors: 1,
+      });
+      expect(scoreRun({ ...base, deepestFloor: 7 })).toBeGreaterThan(perfectFloor);
+    });
+  });
 });
 
 describe("run detail blob", () => {

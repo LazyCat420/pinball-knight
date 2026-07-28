@@ -21,7 +21,7 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
-import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ } from "../constants";
+import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
 const C_STEEL = PALETTE_HEX[20];
@@ -1162,9 +1162,14 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     if (sheen) sheen.emissiveIntensity = 0.16 + 0.1 * Math.sin(animT * 1.7 + part.i * 2);
   },
 
-  spinpad: (part, { frozen }) => {
+  spinpad: (part) => {
+    // Reads the SAME phase function the collision handler does, off the same
+    // sim clock — the rotor you see IS the deflection you get. Deliberately not
+    // gated on `frozen` any more: the pad's angle is now a readout the player
+    // aims with, and a spinner that looks stopped while it is still turning
+    // would be lying about the shot.
     const rotor = part.mesh.userData.rotor as THREE.Group | undefined;
-    if (rotor) rotor.rotation.y = frozen ? rotor.rotation.y : animT * 3.4 + part.i;
+    if (rotor) rotor.rotation.y = spinPadPhase(state.elapsed, part.i);
   },
 
   slingshot: (part) => {

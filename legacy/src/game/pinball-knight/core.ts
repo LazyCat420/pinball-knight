@@ -169,8 +169,8 @@ import {
   REAPER_SPEED_BASE,
   REAPER_SCALE,
   REAPER_TINT,
-  GRADE_TIME_FAST,
-  GRADE_TIME_OK,
+  GRADE_FLOW_FULL,
+  GRADE_FLOW_OK,
   GRADE_KILLS_FULL,
   GRADE_KILLS_OK,
   GRADE_COMBO_FULL,
@@ -249,7 +249,7 @@ import { loadBestDepth, saveBestDepth } from "./best-depth";
 import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, localKnightId, type CorpseItem } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
-import { frenzyIntensity } from "./entities/combo-curve";
+import { frenzyIntensity, momentumT } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
@@ -1384,6 +1384,10 @@ function buildLevel(level: number): void {
 
   state.levelHordeSize = state.zombies.length;
   state.levelBestCombo = 0;
+  state.levelFlowSum = 0;
+  state.levelFlowT = 0;
+  state.levelHitsTaken = 0;
+  state.jackpots = 0;
   state.reaperOut = false;
   state.reaperWarned = false;
   // Wave A/E/F floor state: the target objective, the frenzy meter, the
@@ -1989,19 +1993,48 @@ function descend(): void {
   awardFloorXp(state.level, grade); // character XP, scaled by the grade
   state.goldRun += GOLD_PER_DESCENT + gold;
   addGold(GOLD_PER_DESCENT + gold, "dungeon-game");
+  // Run-scoped shot ledger for the leaderboard (see run-score.ts) — banked on
+  // the way out, because startLevel is about to wipe the per-floor half.
+  state.runJackpots += state.jackpots;
+  state.runOrbitLaps += state.orbitLaps;
+  state.runNamedShots += Object.keys(state.namedPaid).length;
+  state.runBestFlow = Math.max(state.runBestFlow, floorFlow());
+  // ── THE FLAWLESS FLOOR ──
+  // Clear a floor without being hit once and keep a heart, permanently, for
+  // the rest of the run. The game teaches one skill above all others — read
+  // the table, carry your line, don't get touched — and until now it paid
+  // nothing for the perfect execution of it. Deliberately a MAX-hp gain
+  // rather than a heal, so it compounds into the runs that go deep.
+  if (state.levelHitsTaken === 0) {
+    state.runFlawlessFloors += 1;
+    state.bonusMaxHp += 1; // the same run-scoped seam playerMaxHp() already reads
+    if (state.player) state.player.hp = Math.min(playerMaxHp(), state.player.hp + 1);
+    showToast("🛡 FLAWLESS FLOOR", "untouched — the vessel holds one more heart");
+    state.hudDirty = true;
+  }
   // A great floor unlocks a BONUS vault room on the next one (Wave F glue).
   state.bonusRoomNext = BONUS_ROOM_GRADES.includes(grade);
+  // …and SAYS so. This reward has existed silently since Wave F: the next
+  // floor quietly carved an extra room and the player was never told, so the
+  // single strongest reason to chase an S was invisible.
+  if (state.bonusRoomNext) showToast(`✦ GRADE ${grade}`, "the deep floor opens a VAULT for you");
   sfxStairs();
   const nextLevel = state.level + 1;
   const kills = state.kills;
   const bestCombo = state.levelBestCombo;
   const floorCleared = state.level;
+  // Captured HERE, because startLevel wipes the ledger before the note shows.
+  // Flow is a grade axis now, so it has to be legible — an invisible axis is
+  // the same bug as the silent bonus room above, and players cannot learn to
+  // chase a number the game never prints.
+  const flowPct = Math.round(floorFlow() * 100);
+  const gradeLine = `FLOOR GRADE ${grade} · flow ${flowPct}% · combo ×${bestCombo}${gold > 0 ? ` · +${gold}g` : ""}`;
 
   // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
   const toTavern = (): void => {
     if (!state.container) {
       startLevel(nextLevel);
-      showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+      showPickupNote(gradeLine);
       return;
     }
     enterTavern(state.container, {
@@ -2009,7 +2042,7 @@ function descend(): void {
       onDescend: () => {
         armFloorLoading(nextLevel, () => {
           startLevel(nextLevel);
-          showPickupNote(gold > 0 ? `FLOOR GRADE ${grade} · +${gold}g bonus` : `FLOOR GRADE ${grade}`);
+          showPickupNote(gradeLine);
         });
       },
       // The tavern's game menu (Esc/I) carries the same confirmed ABANDON as
@@ -2063,15 +2096,30 @@ function spawnReaper(): void {
 }
 
 /**
- * Grade the floor being left: pace (time), carnage (share of the horde
- * killed) and style (best bounce combo), two marks each → S/A/B/C/D and a
- * gold bonus. The "play it again, but cooler" hook.
+ * The floor's FLOW: the time-weighted average of the momentum ramp over the
+ * floor, in 0..1. Exported shape for the HUD and the descent card.
+ */
+export function floorFlow(): number {
+  if (state.levelFlowT <= 0) return 0;
+  return state.levelFlowSum / state.levelFlowT;
+}
+
+/**
+ * Grade the floor being left: FLOW (how much speed you actually carried),
+ * carnage (share of the horde killed) and style (best bounce combo), two marks
+ * each → S/A/B/C/D and a gold bonus. The "play it again, but cooler" hook.
+ *
+ * Both the pace and style axes were rebuilt in the de-clone wave. Pace was raw
+ * wall-clock, so walking a floor briskly scored the same as riding it, and
+ * style capped at combo 8 — the exact point where the combo curve starts being
+ * interesting. Both now measure the thing the game is actually about.
  */
 function gradeFloor(): { grade: string; gold: number } {
   const kills = state.kills - state.levelStartKills;
   const share = kills / Math.max(1, state.levelHordeSize);
+  const flow = floorFlow();
   let pts = 0;
-  pts += state.levelT <= GRADE_TIME_FAST ? 2 : state.levelT <= GRADE_TIME_OK ? 1 : 0;
+  pts += flow >= GRADE_FLOW_FULL ? 2 : flow >= GRADE_FLOW_OK ? 1 : 0;
   pts += share >= GRADE_KILLS_FULL ? 2 : share >= GRADE_KILLS_OK ? 1 : 0;
   pts += state.levelBestCombo >= GRADE_COMBO_FULL ? 2 : state.levelBestCombo >= GRADE_COMBO_OK ? 1 : 0;
   const grade = pts >= 6 ? "S" : pts >= 5 ? "A" : pts >= 3 ? "B" : pts >= 2 ? "C" : "D";
@@ -2103,6 +2151,11 @@ function simulate(dt: number): void {
 
   // ── The floor clock: feeds the grade's pace axis and the Death Dealer. ──
   state.levelT += dt;
+  // FLOW — the grade's pace axis. Integrate the momentum ramp over sim time, so
+  // "pace" measures the speed you actually CARRIED rather than the stopwatch.
+  // A brisk walk integrates to ~0; a floor ridden at terminal speed to ~1.
+  state.levelFlowSum += momentumT(p.momSpeed) * dt;
+  state.levelFlowT += dt;
   if (p.bounceCombo > state.levelBestCombo) state.levelBestCombo = p.bounceCombo;
   // Run-scoped twin of the line above — levelBestCombo is wiped every descent,
   // so without this the leaderboard would only ever see the FINAL floor's combo.

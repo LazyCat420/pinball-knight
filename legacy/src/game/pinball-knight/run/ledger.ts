@@ -58,14 +58,28 @@ function beginRunProgression(): void {
   if (state.player) state.player.hp = playerMaxHp();
 }
 
-/** Gather the run-scoped ledger into the shape `run-score.ts` grades. */
+/**
+ * Gather the run-scoped ledger into the shape `run-score.ts` grades.
+ *
+ * The shot totals are BANKED at each descent and reset by `startLevel`, so the
+ * live figure is always "everything banked, plus whatever the current floor has
+ * managed so far". That matters because this is called on DEATH — the floor you
+ * died on is exactly the floor that never got to bank, and dropping it would
+ * silently delete the best floor of most runs.
+ */
 function currentRunStats(): RunStats {
+  const liveFlow = state.levelFlowT > 0 ? state.levelFlowSum / state.levelFlowT : 0;
   return {
     deepestFloor: state.runDeepestFloor,
     bestCombo: state.runBestCombo,
     kills: state.kills,
     gold: state.goldRun,
     durationS: state.runStartMs > 0 ? Math.max(0, (performance.now() - state.runStartMs) / 1000 - state.pausedRunS) : 0,
+    namedShots: state.runNamedShots + Object.keys(state.namedPaid).length,
+    orbitLaps: state.runOrbitLaps + state.orbitLaps,
+    jackpots: state.runJackpots + state.jackpots,
+    bestFlow: Math.max(state.runBestFlow, liveFlow),
+    flawlessFloors: state.runFlawlessFloors,
   };
 }
 

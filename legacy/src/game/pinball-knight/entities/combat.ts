@@ -39,7 +39,6 @@ import {
   PIN_STRIKE_GOLD,
   WEB_TIME,
   CARD_PINBALL_SPEED,
-  PINBALL_MAX_SPEED,
   MOMENTUM_WEAPON_MAX,
   CARD_CHILL_TIME,
   CARD_BURN_TIME,
@@ -54,7 +53,7 @@ import {
   WISP_BLINK_DIST,
   COMBO_ZONE_CRUISE,
 } from "../constants";
-import { comboKillGold, comboDamageMult } from "./combo-curve";
+import { comboKillGold, comboDamageMult, momentumScaled, comboWindow } from "./combo-curve";
 import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
 import { screenDirToWorld } from "../engine/camera";
@@ -85,7 +84,10 @@ export function playerDamage(base: number): number {
   if (w && w.cards && w.cards.length) {
     const agg = aggregateCards(w.cards);
     dmg = dmg * agg.damageMult + agg.damageFlat;
-    if (agg.pinballMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= agg.pinballMult;
+    // PINBALL SYNERGY, on the shared ramp. This used to be a cliff at
+    // CARD_PINBALL_SPEED — nothing at 7.9 u/s, the whole multiplier at 8.1, and
+    // no reason to ever go faster. Now it scales the whole way to terminal.
+    if (agg.pinballMult > 1 && p) dmg *= momentumScaled(agg.pinballMult, p.momSpeed);
     // MARBLE SYNERGY: bonus while any material is riding (Elementalist/Attunement).
     if (agg.materialMult > 1 && p && p.material && p.materialT > 0) dmg *= agg.materialMult;
     // CRIT roll: a real chance for an amplified hit (Keen Mind / Assassin / …).
@@ -99,12 +101,14 @@ export function playerDamage(base: number): number {
   // 1x at a standstill to MOMENTUM_WEAPON_MAX at terminal speed.
   const wd = WEAPONS[activeWeapon().id];
   if (wd.momentumScaling && p && p.momSpeed > 0) {
-    const t = Math.min(1, p.momSpeed / PINBALL_MAX_SPEED);
-    dmg *= 1 + (MOMENTUM_WEAPON_MAX - 1) * t;
+    // Was its own bespoke linear ramp (speed/PINBALL_MAX_SPEED); folded onto
+    // the shared curve so the weapon, the cards and the tree all agree on what
+    // "fast" is worth.
+    dmg *= momentumScaled(MOMENTUM_WEAPON_MAX, p.momSpeed);
   }
   const skills = skillAgg();
   dmg *= skills.damageMult;
-  if (skills.pinballDamageMult > 1 && p && p.momSpeed > CARD_PINBALL_SPEED) dmg *= skills.pinballDamageMult;
+  if (skills.pinballDamageMult > 1 && p) dmg *= momentumScaled(skills.pinballDamageMult, p.momSpeed);
   // THE CHAIN ITSELF (combo-curve Part 7). Every lever the bounce combo drove
   // before this was speed, economy or screen juice — a 100x chain hit exactly
   // as hard as an 8x one unless you had drafted a pinballMult card. This is the
@@ -769,6 +773,19 @@ function killZombie(z: Zombie): void {
       addGold(bonus, "dungeon-game");
     }
     showPickupNote(`💥 STYLE KILL +${bonus}g${p.bounceCombo >= 3 ? ` · combo ×${p.bounceCombo}` : ""}`);
+    // ── A KILL SUSTAINS THE CHAIN ──
+    // Kills used to have no relationship with the bounce combo at all: the
+    // window ran on bounces alone, so wading into a pack and killing four
+    // things — the most productive play available — DROPPED a chain you had
+    // earned, purely because swinging isn't bouncing. Hotline Miami shipped
+    // exactly this regression in HM2 (it stopped letting non-kill actions hold
+    // the timer) and it is the one change its players complained about.
+    //
+    // Inverted for a game whose verb is bouncing, not killing: bounces still
+    // GROW the count, and a kill landed with momentum REFRESHES the window. It
+    // cannot start a chain from nothing and it cannot inflate one — it just
+    // means combat no longer punishes you for being good at it.
+    if (p.bounceCombo > 0) p.bounceComboT = Math.max(p.bounceComboT, comboWindow(p.bounceCombo));
   }
   if (state.fpsActive) {
     // Rampage kills build a streak (reset by a lull, tracked in fps.ts) and
@@ -868,6 +885,10 @@ export function hitPlayer(z: Zombie): void {
   }
   p.hp -= absorbed.hpDamage;
 
+  // FLAWLESS-FLOOR tally. Counted on the CONTACT, not on `hpDamage`, so armour
+  // soaking the bite still breaks the streak — the reward is for not being
+  // touched, and letting a helmet launder a hit would make it a gear check.
+  state.levelHitsTaken += 1;
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0xff5555);
@@ -922,6 +943,7 @@ export function hitPlayerRanged(damage: number, srcX: number, srcZ: number): voi
     sfxBreak();
   }
   p.hp -= absorbed.hpDamage;
+  state.levelHitsTaken += 1; // flawless-floor tally (see hitPlayer)
   p.iframes = PLAYER_IFRAMES;
   p.flashT = FLASH_TIME;
   p.sprite.setTint(0x8fc46b); // acid-green flash, not the usual red bite

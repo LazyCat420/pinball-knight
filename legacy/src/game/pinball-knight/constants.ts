@@ -766,14 +766,31 @@ export const NAMED_CHAIN_MAX = 5;
  * NAMED COMBOS — ordered LONGEST FIRST, so the biggest sequence a chain
  * satisfies is the one that pays. Each pays once per floor, which is what
  * keeps hearing its name an event rather than background noise.
+ *
+ * THE SHOT VOCABULARY. For a long time only seven part interactions ever
+ * called `recordShot` — ramp, bank, orbit, lane(s), target, trapdoor, skill —
+ * so eighteen of the twenty-three part kinds were completely invisible to this
+ * table. You could catapult off a flipper, bank a mirror and light the whole
+ * bumper set and the named-combo system would not have noticed any of it.
+ *
+ * The vocabulary now also carries `bumper` (only when a bumper LIGHTS — every
+ * pop would drown the chain), `jackpot`, `flipper`, `mirror`, `sling` and
+ * `spin`, and the table below spends them. Note the chain only remembers
+ * NAMED_CHAIN_MAX identities, so long recipes have to be run clean.
  */
 export const NAMED_COMBOS: ReadonlyArray<{ name: string; icon: string; shots: string[]; gold: number }> = [
   { name: "GRAND TOUR", icon: "👑", shots: ["ramp", "orbit", "lanes", "bank"], gold: 120 },
-  { name: "THE CIRCUIT", icon: "🌀", shots: ["orbit", "orbit"], gold: 90 },
-  { name: "LANE RUNNER", icon: "⋯", shots: ["ramp", "lanes"], gold: 60 },
-  { name: "ORBIT RUNNER", icon: "↻", shots: ["ramp", "orbit"], gold: 70 },
-  { name: "SHARPSHOOTER", icon: "🎯", shots: ["skill", "target"], gold: 55 },
+  { name: "PINBALL WIZARD", icon: "🧙", shots: ["bumper", "bumper", "jackpot"], gold: 150 },
+  { name: "THE GAUNTLET", icon: "🥊", shots: ["flipper", "mirror", "target"], gold: 100 },
   { name: "BANK JOB", icon: "🏦", shots: ["bank", "bank", "bank"], gold: 50 },
+  { name: "THE CIRCUIT", icon: "🌀", shots: ["orbit", "orbit"], gold: 90 },
+  { name: "TRICK SHOT", icon: "🪞", shots: ["mirror", "mirror"], gold: 80 },
+  { name: "SLING RUNNER", icon: "🌠", shots: ["sling", "orbit"], gold: 75 },
+  { name: "ORBIT RUNNER", icon: "↻", shots: ["ramp", "orbit"], gold: 70 },
+  { name: "KICKOFF", icon: "🦿", shots: ["flipper", "ramp"], gold: 65 },
+  { name: "LANE RUNNER", icon: "⋯", shots: ["ramp", "lanes"], gold: 60 },
+  { name: "SHARPSHOOTER", icon: "🎯", shots: ["skill", "target"], gold: 55 },
+  { name: "ROULETTE", icon: "🎡", shots: ["spin", "target"], gold: 55 },
 ];
 
 export const SHOT_LIGHT_MIN_SPEED = 5; // below this you're walking, not shooting
@@ -1067,6 +1084,30 @@ export const RAIL_SPARK_HZ = 26;
 export const RAIL_GOLD_HZ = 6;
 // ── Cards (cards.ts) — on-hit status tuning + the pinball-synergy speed gate ──
 export const CARD_PINBALL_SPEED = 8; // momSpeed above which pinball-synergy cards fire
+
+/**
+ * THE MOMENTUM RAMP (`momentumT`, entities/combo-curve.ts) — the one curve that
+ * turns "are you fast?" from a yes/no into a dial.
+ *
+ * Every momentum-scaling system in the game used to read the same binary gate,
+ * `momSpeed > CARD_PINBALL_SPEED`: nothing at 7.9 u/s, everything at 8.1, and
+ * not one point more at terminal speed. Eight out of a 22 ceiling is 36% — so
+ * a "momentum build" was fully switched on at barely a third of top speed and
+ * had no reason to ever go faster. That single constant was the flattest number
+ * in the codebase.
+ *
+ * The ramp replaces the cliff: 0 at a walk, climbing CONCAVELY (most of the
+ * gain is bought early, the way every other curve in combo-curve.ts works) and
+ * reaching exactly 1 at PINBALL_MAX_SPEED. Hyperbolic, so it is structurally
+ * incapable of running away no matter what multiplies it — the same reason the
+ * booster corner-jam fix had to live at the aggregate rather than in a guard.
+ *
+ * This deliberately REDISTRIBUTES rather than adds: below the old gate you now
+ * get something where you got nothing, and at the old gate you get ~61% where
+ * you got 100%. Full value is earned at full speed. That is the point.
+ */
+export const MOMENTUM_T_FLOOR = PLAYER_SPEED; // at or below a walk the ramp reads 0
+export const MOMENTUM_T_K = 0.22; // curvature; smaller = more front-loaded
 export const CARD_CHILL_TIME = 2.5; // seconds an enemy stays chilled
 export const CARD_CHILL_SLOW = 0.5; // movement multiplier while chilled
 export const CARD_BURN_TIME = 3.0; // seconds an enemy burns
@@ -1115,6 +1156,23 @@ export const OIL_COOLDOWN = 0.4; // re-trigger lockout after a slick launch
  */
 export const SPINPAD_SPEED = 11;
 export const SPINPAD_COOLDOWN = 0.8;
+/**
+ * THE TURNTABLE'S SPIN RATE (rad/s), and the phase both the physics and the
+ * renderer read.
+ *
+ * The spinpad used to fling you at `Math.random() * 2π` — unaimable, unlearnable
+ * and a live RNG draw inside a physics path that co-op has to replay. It is now
+ * a rotating deflector: it turns your entry heading by however far the pad has
+ * spun. That only works if what you SEE is exactly what the physics uses, so
+ * both sides call this one function; the rotor mesh's rotation and the exit
+ * angle are the same number by construction and cannot drift.
+ *
+ * The `+ i` de-synchronises neighbouring pads without a random seed.
+ */
+export const SPINPAD_SPIN_RATE = 3.4;
+export function spinPadPhase(elapsed: number, i: number): number {
+  return elapsed * SPINPAD_SPIN_RATE + i;
+}
 /**
  * SLINGSHOT GATE — two posts with a band between them. Passing through with
  * momentum PINGS you out (×mult + add, min exit); a walking touch launches you
@@ -1393,8 +1451,33 @@ export const GRADE_TIME_FAST = 75; // seconds — under this scores full pace ma
 export const GRADE_TIME_OK = 140;
 export const GRADE_KILLS_FULL = 0.6; // horde share for full carnage marks
 export const GRADE_KILLS_OK = 0.25;
-export const GRADE_COMBO_FULL = 8; // best bounce combo for full style marks
-export const GRADE_COMBO_OK = 4;
+/**
+ * STYLE — the bounce-combo axis, RESCALED.
+ *
+ * It used to top out at 8, which is exactly `COMBO_ZONE_CRUISE`: the number
+ * where the combo curve stops being a formality and the game flips into its
+ * flow state. So the grade stopped measuring precisely where the interesting
+ * part of the system began, and an 8× chain and an 80× chain earned identical
+ * marks. The ladder now runs well past the cruise gate.
+ */
+export const GRADE_COMBO_FULL = 24; // best bounce combo for full style marks
+export const GRADE_COMBO_OK = 8;
+/**
+ * FLOW — the pace axis, replacing raw wall-clock.
+ *
+ * Clock time graded a brisk WALK exactly like a carried line, so the one thing
+ * the game is about was the one thing the grade could not see. Flow is the
+ * time-weighted average of the momentum ramp across the floor (0 = walked it,
+ * 1 = rode the whole thing at terminal speed). Sitting still to farm now costs
+ * pace marks on its own, which is the pressure the per-floor Death Dealer
+ * timer used to be carrying.
+ *
+ * Calibrated against real floors: a lot of any floor is unavoidably spent at
+ * walking speed (fighting, looting, doorways), so 0.30 average is genuinely
+ * "kept it moving" and 0.15 is "moved with purpose".
+ */
+export const GRADE_FLOW_FULL = 0.3;
+export const GRADE_FLOW_OK = 0.15;
 /** Gold paid per grade on descent, S first. */
 export const GRADE_GOLD: Record<string, number> = { S: 40, A: 25, B: 15, C: 8, D: 0 };
 

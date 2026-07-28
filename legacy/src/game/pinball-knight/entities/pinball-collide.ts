@@ -72,6 +72,7 @@ import {
   OIL_COOLDOWN,
   SPINPAD_SPEED,
   SPINPAD_COOLDOWN,
+  spinPadPhase,
   SLING_SPEED_MULT,
   SLING_ADD,
   SLING_MIN_EXIT,
@@ -205,6 +206,8 @@ function fireJackpot(): void {
   // reset every bumper so the floor can be re-lit for another jackpot
   for (const part of state.pinballParts) if (part.kind === "bumper") part.hits = 0;
   state.bumpersLit = 0;
+  state.jackpots += 1;
+  recordShot("jackpot");
 }
 
 /**
@@ -362,6 +365,10 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
       addGold(BUMPER_LIT_GOLD, "dungeon-game");
     }
     if (nowLit) {
+      // Only the LIGHTING pop earns a shot identity. Recording every bumper
+      // contact would flood the five-deep chain and bury the shots that mean
+      // something — lighting one is an event, tapping one is traffic.
+      recordShot("bumper");
       state.bumpersLit += 1;
       const need = Math.min(state.bumperTotal || JACKPOT_BUMPERS, JACKPOT_BUMPERS);
       if (state.bumpersLit >= need) fireJackpot();
@@ -624,11 +631,28 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
   },
 
   spinpad: ({ part, p, d2 }) => {
-    // The slot machine: a random-direction fling at speed.
+    // THE TURNTABLE. This used to be the slot machine — `Math.random()` picked
+    // a heading and flung you at it. That made it the one part in the machine
+    // you could neither aim nor learn: no skill expression, no setup, and a
+    // live `Math.random()` sitting in a physics path that co-op replays.
+    //
+    // Now it's a rotating deflector. The pad carries a spin PHASE that turns at
+    // a fixed rate, and the exit is your entry heading rotated by wherever the
+    // phase has got to. Everything a player needs is on screen — the pad's
+    // rotation is drawn — so the shot becomes "time your entry", which is what
+    // a real spinner asks of you. Deterministic, so it replays identically in
+    // co-op, and `recordShot` finally gives it an identity to chain from.
     if (d2 > 0.45 * 0.45) return;
-    const ang = Math.random() * Math.PI * 2;
-    p.momX = Math.cos(ang);
-    p.momZ = Math.sin(ang);
+    const inLen = Math.hypot(p.momX, p.momZ);
+    // Standing on it with no heading: fall back to the pad's own facing rather
+    // than reaching for a random one.
+    const ix = inLen > 0.01 ? p.momX / inLen : part.dirX;
+    const iz = inLen > 0.01 ? p.momZ / inLen : part.dirZ;
+    const turn = spinPadPhase(state.elapsed, part.i);
+    const cs = Math.cos(turn);
+    const sn = Math.sin(turn);
+    p.momX = ix * cs - iz * sn;
+    p.momZ = ix * sn + iz * cs;
     p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, SPINPAD_SPEED));
     onPartTrigger();
     part.cooldownT = SPINPAD_COOLDOWN;
@@ -636,6 +660,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     state.vfx?.sparks(part.x, 0.3, part.z, p.momX, p.momZ, 10);
     requestShake(0.14);
     sfxSpin();
+    recordShot("spin");
   },
 
   slingshot: ({ part, p, d2, inMomentum }) => {
@@ -657,6 +682,8 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.35, part.z, p.momX, p.momZ, 9);
     sfxSpring();
+    // The momentum PING is the shot; the standing-start nudge is just a nudge.
+    if (inMomentum) recordShot("sling");
   },
 
   lamp: ({ part, d2 }) => {
@@ -757,6 +784,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     state.vfx?.sparks(part.x, 0.5, part.z, ex, ez, 16);
     requestShake(0.22);
     sfxSpring();
+    recordShot("flipper");
   },
 
   mirror: ({ part, p, d2, inMomentum }) => {
@@ -778,6 +806,7 @@ export const PART_HANDLERS: Record<PinballPartKind, PartHandler> = {
     part.hitT = 0;
     state.vfx?.sparks(part.x, 0.4, part.z, p.momX, p.momZ, 8);
     sfxRoll();
+    recordShot("mirror");
   },
 
   pit: ({ part, p, d2 }) => {

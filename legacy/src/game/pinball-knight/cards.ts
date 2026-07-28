@@ -451,6 +451,10 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
     materialMult: 1, critChance: 0, critMult: 2, lifesteal: 0, pierce: 0,
   };
   if (!cards) return agg;
+  // The single strongest card per softened field — see softenAggregate. Tracked
+  // during the fold so the exemption reads off the same `cardDef` (levelled)
+  // values the aggregate does.
+  const best = { damage: 1, pinball: 1, material: 1 };
   for (const id of cards) {
     // cardDef, not CARDS — a socketed card carries its own LEVEL, and folding
     // the base modifier here would silently throw away every level the player
@@ -458,14 +462,23 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
     const m = cardDef(id)?.modifier;
     if (!m) continue;
     if (m.damageFlat) agg.damageFlat += m.damageFlat;
-    if (m.damageMult) agg.damageMult *= m.damageMult;
+    if (m.damageMult) {
+      agg.damageMult *= m.damageMult;
+      best.damage = Math.max(best.damage, m.damageMult);
+    }
     if (m.cooldownMult) agg.cooldownMult *= m.cooldownMult;
     if (m.durabilityMult) agg.durabilityMult *= m.durabilityMult;
     if (m.onHit === "chill") agg.chill = true;
     if (m.onHit === "burn") agg.burn = true;
-    if (m.pinballMult) agg.pinballMult *= m.pinballMult;
+    if (m.pinballMult) {
+      agg.pinballMult *= m.pinballMult;
+      best.pinball = Math.max(best.pinball, m.pinballMult);
+    }
     if (m.bolt) agg.bolt = true;
-    if (m.materialMult) agg.materialMult *= m.materialMult;
+    if (m.materialMult) {
+      agg.materialMult *= m.materialMult;
+      best.material = Math.max(best.material, m.materialMult);
+    }
     if (m.critChance) agg.critChance += m.critChance;
     if (m.critMult) agg.critMult = Math.max(agg.critMult, m.critMult);
     if (m.lifesteal) agg.lifesteal += m.lifesteal;
@@ -487,6 +500,71 @@ export function aggregateCards(cards: CardId[] | undefined): CardAggregate {
   if (crit >= 2) agg.critMult += 0.5; // ASSASSIN set: deeper crits
   if (material >= 2) agg.materialMult *= 1.3; // ATTUNED set: stronger synergy
   agg.critChance = Math.min(1, agg.critChance);
+  return softenAggregate(agg, best);
+}
+
+/**
+ * TWO-BUCKET STAT MATH — the diminishing-returns pass every aggregate goes
+ * through on its way out.
+ *
+ * Sockets multiply raw: four +30% damage cards used to be a flat 2.86×, and
+ * the same four at card level 10 (`CARD_LEVEL_STEP` scales each delta) close
+ * on 6×. That is the shape that makes card systems explode, and it is the one
+ * failure mode every reference game in `docs/game-dev-rules/game-research/`
+ * independently guarded against: farmable bonuses go through a CONCAVE curve,
+ * and un-curved multiplication is reserved for slot-limited structures.
+ *
+ * So the STACK is folded through the same hyperbolic curve `momentumT` uses —
+ * the house diminishing-returns shape:
+ *
+ *   effective = best × soften(raw / best)
+ *   soften(x) = 1 + over / (1 + over/CAP)      where over = x − 1
+ *
+ * Note what is divided out first: the single BEST card in the socket keeps its
+ * printed value exactly, and only what the others pile on top of it bends. That
+ * is not a rounding detail, it is the contract — `describeModifier` regenerates
+ * every card's text from its own modifier, so a card that reads "+50% while a
+ * marble rides" and then quietly delivered +44% would be the card lying about
+ * itself, which is precisely what the card-level system was built to prevent.
+ * One card does what it says. Four cards do not do four times what one says.
+ *
+ * Two +20% cards land at ×1.43 instead of ×1.44; four +30% cards at ×2.50
+ * instead of ×2.86; the level-10 version of that same set at ×4.4 instead of
+ * ×6.6. The stack can approach best×5 but never reach it, so no future card,
+ * level, shine or set bonus can make this run away — the same structural
+ * argument as the booster corner-jam fix: a curve that cannot exceed its
+ * asymptote beats a guard that tries to catch a number after it has blown up.
+ *
+ * Two rules it deliberately does NOT apply:
+ *  · PENALTIES STAY LINEAR. A drawback below 1× bites at full value (a level-10
+ *    drawback card is SUPPOSED to hurt more — `scaleModifier` scales deltas in
+ *    both directions on purpose). Softening downsides would quietly delete the
+ *    cost half of every trade-off card.
+ *  · Set bonuses run BEFORE this, so their multiplier bends with the stack. A
+ *    set bonus is a reward for committing sockets, not an exemption from the
+ *    rule that committing sockets has diminishing returns.
+ */
+export const CARD_STACK_SOFT_CAP = 4; // the pile-on approaches +400% of the best card, never reaches it
+
+function soften(raw: number): number {
+  if (raw <= 1) return raw; // penalties and neutral values pass through untouched
+  const over = raw - 1;
+  return 1 + over / (1 + over / CARD_STACK_SOFT_CAP);
+}
+
+/** `best × soften(raw/best)` — the best single card is exempt, the pile bends. */
+function softenStack(raw: number, best: number): number {
+  if (raw <= 1 || best <= 1) return raw;
+  return best * soften(raw / best);
+}
+
+function softenAggregate(agg: CardAggregate, best: { damage: number; pinball: number; material: number }): CardAggregate {
+  agg.damageMult = softenStack(agg.damageMult, best.damage);
+  agg.pinballMult = softenStack(agg.pinballMult, best.pinball);
+  agg.materialMult = softenStack(agg.materialMult, best.material);
+  // critMult takes the MAX across sockets rather than a product, so it is
+  // already self-limiting; cooldownMult and durabilityMult are inverted
+  // (lower is better) and clamped by `scaleModifier` at the card level.
   return agg;
 }
 
