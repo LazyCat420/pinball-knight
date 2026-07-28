@@ -23,16 +23,7 @@ const CACHE_CAP = 10;
 export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
 
-/** Hand-made sprite-forge atlases (public/dungeon/sprites/knight-<id>.*) are
- * not gear-aware, so when one exists it overrides EVERY look of that weapon. */
-const handmade = new Map<WeaponId, SpriteSheet>();
-export function setHandmadeOverride(weapon: WeaponId, sheet: SpriteSheet): void {
-  handmade.set(weapon, sheet);
-}
-
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {
-  const made = handmade.get(weapon);
-  if (made) return made;
   const key = lookKey(weapon, look);
   pinned.set(consumer, key);
 

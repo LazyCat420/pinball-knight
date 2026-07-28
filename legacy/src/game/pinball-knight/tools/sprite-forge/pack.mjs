@@ -17,8 +17,23 @@
  *   <name>.png   — all frames in ONE horizontal strip (the game's contract)
  *   <name>.json  — { frames, clips: { "S:idle": [0,1,...] } }
  *
- * Frame paths are resolved relative to the spec file. The in-game loader
- * (render/atlas-loader.ts) picks the pair up automatically on next launch.
+ * Frame paths are resolved relative to the spec file.
+ *
+ * ── THE RUNTIME HALF IS NOT WIRED (2026-07-28) ──────────────────────────────
+ * `engine/render/atlas-loader.ts` used to fetch that pair at boot and hand it to
+ * `setHandmadeOverride`. It was deleted, because `public/dungeon/sprites/` has
+ * never existed: the loader fetched a manifest that does not exist on every
+ * single launch, and in dev a missing public file answers 200 with the Next.js
+ * HTML shell, so `res.ok` passed and `res.json()` threw into the catch — the
+ * "missing art is a silent fallback" contract worked by accident rather than by
+ * design. Two wasted requests per boot, on a boot already measured at 32-36s
+ * headless, for a migration nobody has started.
+ *
+ * This packer is kept because it is the half with the hard problem in it (the
+ * pixelize + strip-packing). When there is art to load, restore the loader —
+ * `git show <this commit>^:src/game/pinball-knight/engine/render/atlas-loader.ts`
+ * is 93 lines and its contract (single-row strip, "S:idle" clip keys, cell
+ * height === sprite.pixelGrid) is unchanged.
  *
  * Usage: node tools/sprite-forge/pack.mjs characters/knight.json
  */

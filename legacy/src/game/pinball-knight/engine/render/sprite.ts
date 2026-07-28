@@ -149,10 +149,16 @@ export function blobTexture(): THREE.CanvasTexture {
  * automatically as a child.
  */
 /**
- * The per-actor blob mesh. Still used when no pool is installed — the intro
- * scene and unit tests build sprites with no dungeon scene around them, and a
- * pool is a floor-scoped resource. `installBlobPool` swaps in the instanced
- * path for the dungeon, where the actor count actually matters.
+ * The per-actor blob mesh — the ONLY contact-shadow path there is.
+ *
+ * This comment used to promise an `installBlobPool` that "swaps in the
+ * instanced path for the dungeon, where the actor count actually matters".
+ * There was no such function. `engine/render/blob-pool.ts` existed, was 169
+ * lines, was covered by its own test, and had zero call sites anywhere — so
+ * every actor on every floor has always allocated its own blob mesh, and this
+ * note told the next reader not to worry about it. The pool is deleted; if the
+ * 175-actor case ever needs instancing, it should be written against the code
+ * that is actually running rather than found in a comment.
  */
 function makeContactBlob(parent: THREE.Mesh): THREE.Mesh {
   const blob = new THREE.Mesh(blobGeometry(), blobMaterial());

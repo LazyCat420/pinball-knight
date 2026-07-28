@@ -38,7 +38,6 @@ import { tickJuice, resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./engine/touch-controls";
 import { updateShots, rotateLanes } from "./shots";
-import { loadAtlasSheet } from "./engine/render/atlas-loader";
 import { createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
 import { installEngine } from "./GameEngine";
@@ -52,7 +51,6 @@ import { getSettings } from "./settings-save";
 import { clearPickupToasts } from "./pickup-toast";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
-import { setHandmadeOverride } from "./render/knight-sheets";
 import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
@@ -438,19 +436,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   installDevHooks({
     startLevel, descend, onPlayerDeath, openShop, applyPotion,
     debugSpawn, debugClearEnemies, exitDungeonGame, tearGraveHole,
-  });
-
-  // Hand-made pixel art overrides the procedural painters the moment it
-  // exists: drop sprite-forge output at public/dungeon/sprites/knight-<id>.*
-  // and the knight upgrades on next launch. Missing art = silent fallback.
-  void loadAtlasSheet("knight-sword").then((sheet) => {
-    if (!sheet || !state.active) return;
-    // Hand-made art isn't gear-aware, so it overrides EVERY sword look.
-    setHandmadeOverride("sword", sheet);
-    if (activeWeapon().id === "sword" && state.player) {
-      state.player.sprite.setSheet(sheet);
-      state.player.silhouette?.syncMap();
-    }
   });
 
   // Level-up fanfare: toast + modifier sting; the tree lives in the menu (I).
