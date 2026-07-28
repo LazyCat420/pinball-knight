@@ -31,6 +31,7 @@ import { exploredCount, exploredFraction } from "../fog";
 import { POTIONS, POTION_IDS, WEAPONS, freshWeapon } from "../items";
 import type { PotionId, WeaponId } from "../items";
 import { isFloorMapOpen } from "../map-overlay";
+import { secretDoorsInFlight } from "../secrets";
 import { at, tileCenter } from "../maze/generator";
 import { measureDoorway } from "../maze/doorways";
 import { spawnCardDrop } from "../economy/loot";
@@ -647,6 +648,12 @@ export function installDevHooks(deps: DevHookDeps): void {
       state.pinballParts.filter((p) => p.kind === "gravepit").map((p) => ({ i: p.i, j: p.j, x: p.x, z: p.z }));
     (window as unknown as { __dungeonSecrets?: () => unknown }).__dungeonSecrets = () =>
       state.maze?.secrets.map((s) => ({ i: s.i, j: s.j, x: s.x, z: s.z })) ?? [];
+    // Dev: the REVOLVING DOORS mid-swing (secrets.ts). An animation is the one
+    // thing the unit tests cannot honestly cover — they drive a hand-built group
+    // and would pass while the real band, parented into the maze group, never
+    // turns. Poll this across frames after a smash: `deg` must climb and the
+    // entry must disappear when the sweep ends.
+    (window as unknown as { __dungeonSecretDoors?: () => unknown }).__dungeonSecretDoors = () => secretDoorsInFlight();
     (window as unknown as { __dungeonFloor?: () => unknown }).__dungeonFloor = () => ({
       levelT: state.levelT,
       // Where the floor began — a harness asserts NOTHING sends you back here.
