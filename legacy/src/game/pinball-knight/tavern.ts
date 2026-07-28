@@ -205,15 +205,29 @@ function rollBarOffers(): void {
   // chance at a legendary or a mythic — so the shelf sometimes shows a pull you
   // have to save the whole run for, not just cheap chips.
   const pool: CardId[] = [];
+  // DISTINCT cards, by base. Each slot used to roll independently, so with five
+  // cards per rarity and a 50% weight on commons the shelf showed the same card
+  // twice about a third of the time — three slots, two choices, and the dealer
+  // looked broken rather than unlucky.
+  const taken = new Set<CardId>();
   for (let k = 0; k < 3; k++) {
-    const r = Math.random();
-    const rarity: CardRarity = r < 0.5 ? "common" : r < 0.82 ? "rare" : r < 0.95 ? "epic" : r < 0.99 ? "legendary" : "mythic";
-    const bag = cardsOfRarity(rarity);
-    // Levelled off how DEEP the run has been, not off floor 1. A twenty-floor
-    // run coming back up to a shelf of level-1 chips would make the dealer
-    // strictly worse than the dungeon, and the shelf would stop being a reason
-    // to hold gold.
-    pool.push(cardKey(bag[Math.floor(Math.random() * bag.length)], rollCardLevel(state.runDeepestFloor), rollShiny()));
+    // Bounded retry rather than a filtered bag: the rarity roll is the thing
+    // that makes the shelf interesting, so it is re-rolled too, and a run of
+    // collisions gives up rather than looping (a duplicate beats an empty slot).
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const r = Math.random();
+      const rarity: CardRarity = r < 0.5 ? "common" : r < 0.82 ? "rare" : r < 0.95 ? "epic" : r < 0.99 ? "legendary" : "mythic";
+      const bag = cardsOfRarity(rarity);
+      const base = bag[Math.floor(Math.random() * bag.length)];
+      if (taken.has(base) && attempt < 11) continue;
+      taken.add(base);
+      // Levelled off how DEEP the run has been, not off floor 1. A twenty-floor
+      // run coming back up to a shelf of level-1 chips would make the dealer
+      // strictly worse than the dungeon, and the shelf would stop being a reason
+      // to hold gold.
+      pool.push(cardKey(base, rollCardLevel(state.runDeepestFloor), rollShiny()));
+      break;
+    }
   }
   barOffers = pool;
 }

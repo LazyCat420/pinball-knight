@@ -45,7 +45,7 @@ import { RARITY_HEX, cardDef, cardPower, modifierRows, type CardDef, type CardId
 import { KIND_INFO } from "../bestiary";
 import { monsterPortrait, portraitScale } from "./monster-portrait";
 import { drawGlyph, glyphPip, glyphSparkle, sigilFor, type Glyph } from "./card-glyphs";
-import { elementFor, metalFor, styleFor, type CardStyle, type Metal } from "./card-styles";
+import { elementFor, metalFor, styleForCard, type CardStyle, type Metal } from "./card-styles";
 import { mulberry32 } from "../../../utils/rng";
 
 /** Real trading-card proportions (63mm × 88mm). */
@@ -254,7 +254,9 @@ function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   const level = c.level ?? 1;
   const shiny = !!c.shiny;
   const tier = TIER[c.rarity];
-  const st = styleFor(c.source);
+  // The card's own tint of its material, not the family's flat palette — see
+  // styleForCard. Two bone cards side by side were rendering the same colour.
+  const st = styleForCard(c.source, c.base ?? c.id);
   const metal = metalFor(tier);
   const el = elementFor(c.modifier); // the element MARK (a path, never an emoji)
   // Seeded off the BASE, so every copy of a card shares one grain: the level is
@@ -270,13 +272,34 @@ function paintFace(canvas: HTMLCanvasElement, id: CardId): void {
   ctx.clip();
 
   // ── CARD STOCK ──
-  // The material's own two-stop base, then its grain painter. No rainbow, no
-  // element gradient: the stock says which monster family this is.
-  const stock = ctx.createLinearGradient(0, 0, W * 0.4, H);
-  stock.addColorStop(0, st.stock[0]);
+  // The material, tinted for THIS card (styleForCard). No rainbow and no
+  // element gradient: the stock says which monster family this is, and the
+  // per-card tint keeps two cards of one family from being the same swatch.
+  //
+  // FIVE stops, not two. A two-stop ramp across a card this size is read by the
+  // eye as a flat field — the whole complaint that "the cards are just solid
+  // colours" was, mechanically, this gradient. Alternating the light and dark
+  // ends along the diagonal gives the surface somewhere to turn, so the stock
+  // has visible structure everywhere instead of only at its two corners.
+  const stock = ctx.createLinearGradient(0, 0, W * 0.75, H);
+  stock.addColorStop(0, st.stock[1]);
+  stock.addColorStop(0.28, st.stock[0]);
+  stock.addColorStop(0.52, st.stock[1]);
+  stock.addColorStop(0.78, st.stock[0]);
   stock.addColorStop(1, st.stock[1]);
   ctx.fillStyle = stock;
   ctx.fillRect(0, 0, W, H);
+
+  // A broad cross-light from the upper left, at right angles to the ramp above.
+  // Two gradients crossing is what stops the card reading as a single sheet of
+  // colour — it is the difference between "printed stock" and "a fill".
+  const cross = ctx.createLinearGradient(0, 0, W, H * 0.35);
+  cross.addColorStop(0, "rgba(255,255,255,0.055)");
+  cross.addColorStop(0.45, "rgba(255,255,255,0.012)");
+  cross.addColorStop(1, "rgba(0,0,0,0.16)");
+  ctx.fillStyle = cross;
+  ctx.fillRect(0, 0, W, H);
+
   st.grain(ctx, 0, 0, W, H, rand);
 
   // A vignette, so the card has a lit centre and dark edges like a printed
@@ -781,5 +804,6 @@ export function cardTier(id: CardId): number {
 
 /** The card's printed style — the DOM layer keys its hover glow off this. */
 export function cardStyle(id: CardId): CardStyle {
-  return styleFor(cardDef(id)?.source);
+  const c = cardDef(id);
+  return styleForCard(c?.source, c?.base ?? id);
 }
