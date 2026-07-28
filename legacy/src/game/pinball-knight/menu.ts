@@ -23,7 +23,8 @@
 import { state, activeWeapon, WEAPON_SLOTS } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type GearSlot } from "./items";
 import { STASH_MAX, cardDef, cardFitsKind, socketCard, lowerRarity, cardsOfRarity, reKeyCard } from "./cards";
-import { ABILITIES, ABILITY_IDS, type AbilityId } from "./abilities";
+import { ABILITIES, ABILITY_IDS, abilityRank, abilityRankCost, type AbilityId } from "./abilities";
+import { ABILITY_RANK_MAX, ABILITY_RANK_STEP, ABILITY_RANK_RULE } from "./constants";
 import { getBalance, spendGold } from "../../utils/gold-wallet";
 import { GOLD, iconTag, holoCard, paintHoloCards, injectCardStyles, weaponPanel, btn } from "./ui-cards";
 import { getSettings, saveSettings, type DungeonSettings } from "./settings-save";
@@ -32,7 +33,23 @@ import { loadBestDepth } from "./best-depth";
 import { SKILLS, SKILL_IDS, SKILL_BRANCHES, canLearn, xpForLevel, type SkillBranch } from "./skills";
 import { REAGENTS, REAGENT_IDS } from "./reagents";
 import { buildBestiary, bestiaryProgress } from "./bestiary";
-import { spendSkillPoint, unlockedAbilities, invalidateSkillAgg } from "./skill-runtime";
+import { spendSkillPoint, spendAbilityRank, unlockedAbilities, invalidateSkillAgg } from "./skill-runtime";
+
+/**
+ * What each ability GAINS at rank 2, printed on its row.
+ *
+ * A rule the player cannot see before buying it is a rule that may as well not
+ * exist — this repo already lost a mechanic that way (secret walls that had no
+ * supply and no tell). One line each, in the menu, before the points are spent.
+ */
+const ABILITY_RANK_RULE_TEXT: Record<AbilityId, string> = {
+  flippercharge: "invulnerable for the whole ride",
+  arcanepulse: "plants a lightning rod",
+  magnetaura: "the field drags the horde in",
+  timecrawl: "lays a ring of frost runes",
+  bladestorm: "the blades shred enemy shots",
+  slickfield: "adds a tar core",
+};
 import { LEGACY_PERKS, PERK_IDS, perkRank, addPerkRank } from "./legacy";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "./pixel-fonts";
 
@@ -245,15 +262,27 @@ function skillsBody(): string {
     const has = unlocked.includes(id);
     const onQ = state.abilitySlots[0] === id;
     const onE = state.abilitySlots[1] === id;
+    // Ranks live on the ability row rather than in the tree columns: they are
+    // bought with the same points, so the opportunity cost has to be visible
+    // right next to the thing the points would otherwise buy.
+    const rank = abilityRank(id);
+    const maxed = rank >= ABILITY_RANK_MAX;
+    const cost = abilityRankCost(rank);
+    const pips = Array.from({ length: ABILITY_RANK_MAX }, (_, i) => `<span class="gmenu-pip ${i < rank ? "on" : ""}"></span>`).join("");
+    const rankBtn = maxed
+      ? `<span style="color:${GOLD};font-size:9px;letter-spacing:1px">MAX</span>`
+      : `<button data-act="abrank:${id}" class="gmenu-toggle ${state.skillPoints >= cost ? "on" : "off"}" title="rank ${rank + 1} — ${cost} point${cost === 1 ? "" : "s"}">+${cost}pt</button>`;
     const controls = has
-      ? `<button data-act="abq:${id}" class="gmenu-toggle ${onQ ? "on" : "off"}">Q</button>
+      ? `<span class="gmenu-pips">${pips}</span>${rankBtn}
+         <button data-act="abq:${id}" class="gmenu-toggle ${onQ ? "on" : "off"}">Q</button>
          <button data-act="abe:${id}" class="gmenu-toggle ${onE ? "on" : "off"}">E</button>`
       : `<span style="color:#6c5a3e;font-size:9px;letter-spacing:1px">🔒 unlock in ARCANA</span>`;
+    const ruleAt = has && rank < ABILITY_RANK_RULE ? ` · rank ${ABILITY_RANK_RULE}: ${ABILITY_RANK_RULE_TEXT[id]}` : "";
     return `<div class="gmenu-row" style="${has ? "" : "opacity:.55"}">
       <span style="font-size:20px;filter:drop-shadow(0 0 6px ${a.color})">${a.icon}</span>
       <span style="display:flex;flex-direction:column;line-height:1.2">
-        <b style="color:${a.color};font-size:12px">${a.label}</b>
-        <span style="color:#9a8f77;font-size:9px">${a.detail} · ${a.cost} mana · ${a.cooldown}s cd</span>
+        <b style="color:${a.color};font-size:12px">${a.label}${rank > 0 ? ` <span style="color:${GOLD}">+${Math.round(ABILITY_RANK_STEP * rank * 100)}%</span>` : ""}</b>
+        <span style="color:#9a8f77;font-size:9px">${a.detail} · ${a.cost} mana · ${a.cooldown}s cd${ruleAt}</span>
       </span>
       <span style="flex:1"></span>
       ${controls}
@@ -264,7 +293,7 @@ function skillsBody(): string {
     <div class="gmenu-tree">${cols}</div>
     <div class="gmenu-h" style="color:${GOLD}">LEGACY — permanent, bought with banked gold, survives death</div>
     ${perks}
-    <div class="gmenu-h">ACTIVE ABILITIES — assign to Q / E</div>${rows}`;
+    <div class="gmenu-h">ACTIVE ABILITIES — assign to Q / E, or invest points for power</div>${rows}`;
 }
 
 /**
@@ -600,6 +629,20 @@ function handle(act: string, ds: { idx?: string; w?: string; suffix?: string }):
     invalidateSkillAgg();
     state.hudDirty = true;
     flash(`${def.icon} ${def.label} — yours forever`);
+    render();
+    return;
+  }
+
+  // ── Skills: invest a point into an ability's ranks ──
+  if (act === "abrank") {
+    const id = raw as AbilityId;
+    if (!ABILITIES[id]) {
+      flash("couldn't read that ability");
+      return;
+    }
+    const res = spendAbilityRank(id);
+    if (!res.ok) flash(res.why ?? "can't rank that yet");
+    else flash(`${ABILITIES[id].icon} ${ABILITIES[id].label} — rank ${abilityRank(id)}`);
     render();
     return;
   }

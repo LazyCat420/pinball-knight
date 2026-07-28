@@ -22,7 +22,7 @@ import { state } from "./state";
 import { createFace, renderFace, setFaceHealth } from "./hud-face";
 import { createMinimap, renderMinimap, disposeMinimap } from "./hud-minimap";
 import { toggleFloorMap } from "./map-overlay";
-import { ABILITIES, type AbilityId } from "./abilities";
+import { ABILITIES, abilityRank, canCast, type AbilityId } from "./abilities";
 import { playerMaxHp, playerManaMax } from "./skill-runtime";
 import { POTIONS, WEAPONS, type WeaponId } from "./items";
 import { ensureWolfFonts } from "./ui";
@@ -50,7 +50,7 @@ let buffStripEl: HTMLDivElement | null = null;
 let weaponEl: HTMLDivElement | null = null;
 let statsEl: HTMLDivElement | null = null;
 let beltEls: HTMLDivElement[] = [];
-let skillSlots: Array<{ ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; wrap: HTMLDivElement }> = [];
+let skillSlots: Array<{ ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; rank: HTMLDivElement; wrap: HTMLDivElement }> = [];
 let cardSlotEl: HTMLDivElement | null = null;
 let faceFrameEl: HTMLDivElement | null = null;
 
@@ -266,7 +266,7 @@ function makeFaceFrame(): HTMLDivElement {
   return frame;
 }
 
-function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; wrap: HTMLDivElement } {
+function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTMLDivElement; cost: HTMLDivElement; rank: HTMLDivElement; wrap: HTMLDivElement } {
   const wrap = document.createElement("div");
   wrap.style.cssText = `position:relative;width:42px;height:42px;
     background:#17140e;border:2px solid #5a4a2c;box-shadow:${BEVEL}`;
@@ -280,8 +280,13 @@ function makeSkillSlot(key: string): { ring: CanvasRenderingContext2D; icon: HTM
   keyBadge.style.cssText = `position:absolute;left:2px;top:1px;font-family:${PX_LABEL};font-size:7px;color:#e8d9a8;text-shadow:1px 1px 0 #000`;
   const cost = document.createElement("div");
   cost.style.cssText = `position:absolute;right:2px;bottom:0;font-family:${PX_NUM};font-size:14px;line-height:1;color:#6fd0e8;text-shadow:1px 1px 0 #000`;
-  wrap.append(ring, icon, keyBadge, cost);
-  return { ring: ring.getContext("2d")!, icon, cost, wrap };
+  // Invested ranks, top-right. Points spent into an ability are otherwise
+  // invisible during play — the one place the player checks mid-fight is this
+  // slot, so the investment has to be legible here or it may as well not exist.
+  const rank = document.createElement("div");
+  rank.style.cssText = `position:absolute;right:2px;top:1px;font-family:${PX_LABEL};font-size:7px;color:#f0c860;text-shadow:1px 1px 0 #000`;
+  wrap.append(ring, icon, keyBadge, cost, rank);
+  return { ring: ring.getContext("2d")!, icon, cost, rank, wrap };
 }
 
 function makeCardSlot(): HTMLDivElement {
@@ -605,16 +610,22 @@ export function refreshDiablo(): void {
     if (!id) {
       s.icon.textContent = "";
       s.cost.textContent = "";
+      s.rank.textContent = "";
       continue;
     }
     const def = ABILITIES[id];
     const cd = state.abilityCd[id] ?? 0;
-    const affordable = (p?.mana ?? 0) >= def.cost && cd <= 0;
+    const rank = abilityRank(id);
+    // "Affordable" has to ask the ability layer, not the mana bar: under the
+    // Blood Price keystone an empty pool still casts, and greying out a slot
+    // the player can demonstrably use is the HUD lying about the game.
+    const affordable = canCast(i as 0 | 1);
     s.icon.textContent = def.icon;
     s.icon.style.opacity = affordable ? "1" : "0.4";
     s.cost.textContent = String(def.cost);
-    s.cost.style.color = (p?.mana ?? 0) >= def.cost ? "#6fd0e8" : "#8a94a6";
-    s.wrap.title = `${def.label} — ${def.detail} (${def.cost} mana)`;
+    s.cost.style.color = (p?.mana ?? 0) >= def.cost ? "#6fd0e8" : affordable ? "#a83244" : "#8a94a6";
+    s.rank.textContent = rank > 0 ? "•".repeat(rank) : "";
+    s.wrap.title = `${def.label} — ${def.detail} (${def.cost} mana${rank > 0 ? `, rank ${rank}` : ""})`;
   }
 
   for (let i = 0; i < beltEls.length; i++) {
