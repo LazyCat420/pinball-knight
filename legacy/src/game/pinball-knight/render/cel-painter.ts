@@ -1396,18 +1396,24 @@ function vrand(seed: number, step: number): number {
  * and the hue second, so two zombies in a horde read apart at a glance.
  */
 export const ZOMBIE_VARIANTS: ZVariant[] = [
+  // `rag` MUST be a leather index (26-28). Two variants used to reach outside
+  // that band — one to stone dark (2) and one to arcane dark (29) — for
+  // variety, and those two indices were the whole reason a cool grey-blue and a
+  // slate tone appeared in a body whose vocabulary is flesh, cloth and ink.
+  // Cloth variety comes from the leather ramp's own three steps; a zombie's
+  // trousers are not made of stone.
   { skin: 7, rag: 26, gore: 1, stump: null, legStump: null, bandage: false, spur: "R", bone: "ribs", tatter: 22, seed: 1 },
   { skin: 8, rag: 27, gore: 2, stump: "L", legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 0, seed: 2 },
-  { skin: 6, rag: 2, gore: 3, stump: null, legStump: null, bandage: true, spur: "L", bone: "spine", tatter: 30, seed: 3 },
-  { skin: 9, rag: 28, gore: 0, stump: "R", legStump: null, bandage: false, spur: "L", bone: "ribs", tatter: 14, seed: 4 },
-  { skin: 7, rag: 29, gore: 2, stump: null, legStump: null, bandage: true, spur: null, bone: "skull", tatter: 34, seed: 5 },
+  { skin: 6, rag: 28, gore: 3, stump: null, legStump: null, bandage: true, spur: "L", bone: "spine", tatter: 30, seed: 3 },
+  { skin: 9, rag: 26, gore: 0, stump: "R", legStump: null, bandage: false, spur: "L", bone: "ribs", tatter: 14, seed: 4 },
+  { skin: 7, rag: 27, gore: 2, stump: null, legStump: null, bandage: true, spur: null, bone: "skull", tatter: 34, seed: 5 },
   // ── SUB-TYPE silhouettes (zombie-types.ts) ──
   // ADDED, not substituted: the five above are the intact pool and still carry
   // the plurality of spawns. These exist so a Hobbler/Crawler/Flailer has art
   // matching its stat story — `variantIndicesFor` filters down to them.
   { skin: 8, rag: 26, gore: 2, stump: null, legStump: "L", bandage: true, spur: "R", bone: "ribs", tatter: 10, seed: 6 },
   { skin: 6, rag: 27, gore: 3, stump: null, legStump: "R", bandage: false, spur: "L", bone: "spine", tatter: 18, seed: 7 },
-  { skin: 7, rag: 2, gore: 3, stump: null, legStump: "both", bandage: false, spur: "L", bone: "ribs", tatter: 6, seed: 8 },
+  { skin: 7, rag: 28, gore: 3, stump: null, legStump: "both", bandage: false, spur: "L", bone: "ribs", tatter: 6, seed: 8 },
   { skin: 9, rag: 28, gore: 3, stump: "both", legStump: null, bandage: false, spur: "R", bone: "skull", tatter: 26, seed: 9 },
 ];
 
@@ -1474,21 +1480,126 @@ function zombieRamp(v: ZVariant): Ramp {
  */
 type ZAccent = "bone" | "wound" | "none";
 
+// ══════════════════════════════════════════════════════════════════
+// FLAT MASSES — the zombie's own painting primitives.
+//
+// WHY THE ZOMBIE DOES NOT USE limbShaded/plateShaded.
+//
+// Those helpers auto-shade: every part they draw lays down a shade base, a
+// selout ink, a mid fill, a warm rim along the top-left silhouette, and a
+// cross-family bounce along the bottom-right. Five colours per part, chosen by
+// the helper. That is exactly right for the knight, whose plate armour SHOULD
+// have a specular rim and a bounce, and whose 10 parts of steel all resolve
+// into the same two ramps.
+//
+// It is wrong for a corpse. Measured on the shipped sprite: 74 distinct colours
+// inside the 1149 pixels a zombie occupies at its real 72px grid. Sprites of
+// the era this art aims at use five to eight. No amount of removing DETAILS
+// fixes that, because the count is structural — ten body parts × five
+// helper-chosen colours is already seventy before a single accent is drawn.
+//
+// So the zombie paints FLAT MASSES with hand-placed shading: one fill, one
+// shade band where the artist puts it, one ink. Three colours per part, from a
+// ramp the caller controls, and the shade goes where the form turns rather than
+// where a generic upper-left key implies. That is what pixel art actually is,
+// and it is the only way to hold a six-colour budget.
+//
+// The palette these draw from is deliberately tiny — see ZPal.
+// ══════════════════════════════════════════════════════════════════
+
 /**
- * OLD bone, not chrome.
- *
- * The shared `R_BONE` is [20,21,22] — steel-white, topping out at luma 204,
- * which is brighter than anything else on a rot-green body by a wide margin.
- * Used for a whole cranium it stopped being an accent and became the subject:
- * measured at 105px of #c8ccd4 plus 33px of #eef1f5 on a 420px figure, i.e. the
- * single largest non-flesh mass on the sprite, and the reason a zombie read as
- * a grey-headed thing rather than a green one.
- *
- * [19,20,21] is the same family one step down: still the biggest value jump
- * available against the rot band, still unmistakably bone, but it sits under
- * the glowing eyes instead of shouting over them.
+ * The zombie's entire colour vocabulary. Six entries, and nothing else may be
+ * painted on the body.
  */
-const R_DEAD_BONE: Ramp = [19, 20, 21] as const;
+interface ZPal {
+  /** Flesh: darkest, mid, lightest. The body is built from these three. */
+  fleshDark: number;
+  fleshMid: number;
+  fleshLit: number;
+  /** Cloth — trousers and the trailing rag. ONE value, not a ramp. */
+  cloth: number;
+  /** Selout outline. */
+  ink: number;
+  /** The variant's single accent (bone or wound), or -1 for none. */
+  accent: number;
+}
+
+function zombiePal(v: ZVariant): ZPal {
+  const r = zombieRamp(v);
+  return {
+    fleshDark: r[0],
+    fleshMid: r[1],
+    fleshLit: r[2],
+    cloth: v.rag,
+    ink: 1,
+    // Bone is index 20, NOT the shared R_BONE's 22. Steel-white at luma 204 on
+    // a rot-green body stopped being an accent and became the subject — 138px
+    // of it on a ~420px figure, the largest non-flesh mass on the sprite.
+    accent: accentFor(v) === "bone" ? 20 : accentFor(v) === "wound" ? 11 : -1,
+  };
+}
+
+/**
+ * A flat capsule limb: ink outline, flat fill, and ONE shade band along the
+ * underside. No rim, no bounce, no gradient.
+ *
+ * The shade is a second capsule offset down-and-right and drawn narrower, which
+ * leaves the fill showing along the top edge — a hand-placed two-tone tube
+ * rather than five auto-generated bands.
+ */
+function zFlatLimb(ctx: CanvasRenderingContext2D, a: Pt, b: Pt, w: number, fill: number, shade: number, ink: number): void {
+  line(ctx, [[a[0], a[1]], [b[0], b[1]]], w + 3, C(ink));
+  line(ctx, [[a[0], a[1]], [b[0], b[1]]], w, C(fill));
+  line(ctx, [[a[0] + 1.5, a[1] + 2], [b[0] + 1.5, b[1] + 2]], w * 0.5, C(shade));
+}
+
+/** A flat polygon mass: ink outline, flat fill. Shading is the caller's job. */
+function zFlatPoly(ctx: CanvasRenderingContext2D, pts: Pt[], fill: number, ink: number): void {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = C(ink);
+  ctx.stroke();
+  ctx.fillStyle = C(fill);
+  ctx.fill();
+}
+
+/** A flat ellipse mass: ink outline, flat fill. */
+function zFlatEll(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, fill: number, ink: number, rot = 0): void {
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = C(ink);
+  ctx.stroke();
+  ctx.fillStyle = C(fill);
+  ctx.fill();
+}
+
+/**
+ * A shade band clipped INSIDE a shape that was already filled.
+ *
+ * This is the hand-placed half of the two-tone read: the caller says which
+ * region of a mass is in shadow and the band lands only there. `pts` is the
+ * clip (the mass), `band` the shadow region.
+ */
+function zShadeIn(ctx: CanvasRenderingContext2D, clip: Pt[], band: Pt[], shade: number): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(clip[0][0], clip[0][1]);
+  for (let i = 1; i < clip.length; i++) ctx.lineTo(clip[i][0], clip[i][1]);
+  ctx.closePath();
+  ctx.clip();
+  ctx.beginPath();
+  ctx.moveTo(band[0][0], band[0][1]);
+  for (let i = 1; i < band.length; i++) ctx.lineTo(band[i][0], band[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = C(shade);
+  ctx.fill();
+  ctx.restore();
+}
 
 function accentFor(v: ZVariant): ZAccent {
   // Bone reads loudest (it is the biggest value jump available against green),
@@ -1555,41 +1666,51 @@ const ZOMBIE_RIG: RigConfig = {
 function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: boolean, v: ZVariant): void {
   const [x, y] = head;
   const skin = zombieRamp(v);
+  const pal = zombiePal(v);
   const tilt = dir === "E" ? 0.32 : 0.14;
-  // A "skull" variant wears its cranium bare — bone-white against the green
-  // body is the biggest value jump available in this palette, and it's the one
-  // light note that keeps the head from merging into the torso.
-  const cranium = v.bone === "skull" ? R_DEAD_BONE : skin;
-
+  // The head keeps the SAME six-colour budget as the body: bone if this variant
+  // wears its cranium bare, otherwise flesh. Two tones and an ink, flat.
+  const bare = v.bone === "skull" && pal.accent === 20;
+  const skFill = bare ? 20 : pal.fleshMid;
+  const skShade = bare ? 19 : pal.fleshDark;
   // ── hanging mandible, drawn FIRST so the cranium overlaps its hinge ──
   // Offset forward and asymmetrically so it juts off the oval instead of
   // sitting inside it. Slightly narrower than the cranium = reads as a jaw.
   if (!dead) {
     const jx = dir === "E" ? x + 6 : x + 2;
-    plateShaded(ctx, [[jx - 8, y + 4], [jx + 8, y + 4], [jx + 6, y + 18], [jx - 5, y + 20]], cranium);
+    zFlatPoly(ctx, [[jx - 8, y + 4], [jx + 8, y + 4], [jx + 6, y + 18], [jx - 5, y + 20]], skShade, pal.ink);
   }
 
-  // skull — a gaunt oval
-  ellShaded(ctx, x, y, 12, 13, cranium, tilt);
+  // skull — a gaunt oval, flat, with the shade on the turning-away side
+  zFlatEll(ctx, x, y, 12, 13, skFill, pal.ink, tilt);
+  // The shade goes on the side turning AWAY from the light. In profile the head
+  // faces +x, so the shaded side is the BACK of the skull (−x); head-on it is
+  // the right cheek. Getting this backwards in profile put the shade on the
+  // same side as the eye socket and the two merged into one hollow.
+  const shadeBand: Pt[] =
+    dir === "E"
+      ? [[x - 14, y - 14], [x - 5, y - 14], [x - 6, y + 14], [x - 14, y + 14]]
+      : [[x + 4, y - 14], [x + 14, y - 14], [x + 14, y + 14], [x + 2, y + 14]];
+  zShadeIn(ctx, [[x - 13, y - 14], [x + 13, y - 14], [x + 13, y + 14], [x - 13, y + 14]], shadeBand, skShade);
   // The mangy scalp patch is gone: 6×4 cel px of shade tone sitting on top of
   // the cranium's own shade band, which at played size is one ambiguous pixel
   // that only softened the head's outline.
 
   if (dir === "N") {
     // back of the skull: a weeping wound + a couple of hair mats, no face
-    ellShaded(ctx, x + 2, y - 1, 4, 5, 11, 0, { rim: false });
-    figDetail(ctx, [[x - 6, y - 6], [x - 4, y + 4]], 2, skin[0]);
+    zFlatEll(ctx, x + 2, y - 1, 4, 5, 11, pal.ink);
+    line(ctx, [[x - 6, y - 6], [x - 4, y + 4]], 2, C(pal.fleshDark));
     return;
   }
 
   const ex = dir === "E" ? x + 4 : x;
   if (dead) {
     // x-ed out eyes
-    figDetail(ctx, [[ex - 7, y - 4], [ex - 2, y + 1]], 2.5, 1);
-    figDetail(ctx, [[ex - 2, y - 4], [ex - 7, y + 1]], 2.5, 1);
+    line(ctx, [[ex - 7, y - 4], [ex - 2, y + 1]], 2.5, C(1));
+    line(ctx, [[ex - 2, y - 4], [ex - 7, y + 1]], 2.5, C(1));
     if (dir === "S") {
-      figDetail(ctx, [[ex + 3, y - 4], [ex + 8, y + 1]], 2.5, 1);
-      figDetail(ctx, [[ex + 8, y - 4], [ex + 3, y + 1]], 2.5, 1);
+      line(ctx, [[ex + 3, y - 4], [ex + 8, y + 1]], 2.5, C(1));
+      line(ctx, [[ex + 8, y - 4], [ex + 3, y + 1]], 2.5, C(1));
     }
     return;
   }
@@ -1601,9 +1722,14 @@ function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: bo
   // round: a void that reaches the head's outline stops reading as a hollow
   // face and starts reading as a bucket helm.
   if (dir === "E") {
-    plateShaded(ctx, [[ex - 6, y - 5], [ex + 8, y - 4], [ex + 7, y + 7], [ex - 5, y + 6]], 1, { ink: 1, rim: false });
+    // PROFILE: the void has to leave a skull BEHIND it. `ex` is already x+4, so
+    // a mass running ex-6..ex+8 spans x-2..x+12 across a 12-radius head — it ate
+    // the cranium and the head rendered as a hollow "C" with no back to it, an
+    // artifact only visible in the walk clip. Kept forward of centre and
+    // narrower, it reads as a sunken eye socket in a skull that still exists.
+    zFlatPoly(ctx, [[ex - 2, y - 5], [ex + 7, y - 4], [ex + 6, y + 6], [ex - 1, y + 5]], 1, 1);
   } else {
-    plateShaded(ctx, [[ex - 9, y - 6], [ex + 9, y - 6], [ex + 8, y + 8], [ex - 8, y + 8]], 1, { ink: 1, rim: false });
+    zFlatPoly(ctx, [[ex - 9, y - 6], [ex + 9, y - 6], [ex + 8, y + 8], [ex - 8, y + 8]], 1, 1);
   }
   // Glowing pupils sunk INSIDE the void. Mismatched sizes — a symmetrical pair
   // reads as a face, a mismatched pair reads as a ruined one.
@@ -1617,8 +1743,13 @@ function zombieHead(ctx: CanvasRenderingContext2D, head: Pt, dir: Dir3, dead: bo
   // points of light have to stay POINTS: 2.6/2.2 lands each as roughly one
   // bright output pixel with a hot core, which is exactly what an eye should be
   // at this resolution.
-  figGlow(ctx, ex - 5, y - 1, 2.6, 16, 17);
-  if (dir === "S") figGlow(ctx, ex + 5, y - 1, 2.2, 16, 17);
+  // In profile the socket now sits forward of centre (see the void mass above),
+  // so the single visible eye moves with it or it lands on solid skull.
+  if (dir === "E") figGlow(ctx, ex + 2, y - 1, 2.4, 16, 17);
+  else {
+    figGlow(ctx, ex - 5, y - 1, 2.6, 16, 17);
+    figGlow(ctx, ex + 5, y - 1, 2.2, 16, 17);
+  }
   // The bone tooth row is gone. Bone-white directly under two lit eyes put
   // three competing bright marks inside a head that is ~9 output pixels across,
   // and the teeth lost — they read as a pale smudge that filled in the jaw and
@@ -1637,9 +1768,9 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   const droop = pose.droop ?? 0;
   const d3 = dir as Dir3;
   const skin = zombieRamp(v);
-  const dark = skin[0];
   const flesh = skin[1];
-  const rag: Ramp = [Math.max(26, v.rag - 1), v.rag, Math.min(28, v.rag + 1)] as const;
+  // SIX COLOURS, and the body may use no others. See ZPal.
+  const pal = zombiePal(v);
   const stumpL = v.stump === "L" || v.stump === "both";
   const stumpR = v.stump === "R" || v.stump === "both";
 
@@ -1680,39 +1811,69 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   // has lost both, and neither stat story reads unless the art agrees.
   const legGoneL = v.legStump === "L" || v.legStump === "both";
   const legGoneR = v.legStump === "R" || v.legStump === "both";
-  if (dir === "E") {
-    if (legGoneL) legStumpShaded(ctx, sk.hip, sk.kneeL, 9, skin[0]);
-    else legShaded(ctx, sk.hip, sk.kneeL, sk.footL, 9, skin[0], dark, d3);
-    if (legGoneR) legStumpShaded(ctx, sk.hip, sk.kneeR, 10, rag);
-    else legShaded(ctx, sk.hip, sk.kneeR, sk.footR, 10, rag, flesh, d3);
-  } else {
-    if (legGoneL) legStumpShaded(ctx, sk.hipL, sk.kneeL, 10, rag);
-    else legShaded(ctx, sk.hipL, sk.kneeL, sk.footL, 10, rag, dark, d3);
-    if (legGoneR) legStumpShaded(ctx, sk.hipR, sk.kneeR, 10, rag);
-    else legShaded(ctx, sk.hipR, sk.kneeR, sk.footR, 10, rag, dark, d3);
-  }
-  if (dir !== "N") rags(ctx, v, CX - 2, sk.hip[1] + 8, 2); // trouser cuffs
+  // FLAT masses. `legShaded` paints a leg AND a boot, each with its own fill,
+  // shade, rim and bounce — eight colours for two legs before anything else is
+  // drawn. These are trousers over shanks: one cloth value, one flesh value,
+  // one ink, and a shade band on the underside of each.
+  const legPair: Array<[Pt, Pt, Pt, boolean]> =
+    dir === "E"
+      ? [
+          [sk.hip, sk.kneeL, sk.footL, legGoneL],
+          [sk.hip, sk.kneeR, sk.footR, legGoneR],
+        ]
+      : [
+          [sk.hipL, sk.kneeL, sk.footL, legGoneL],
+          [sk.hipR, sk.kneeR, sk.footR, legGoneR],
+        ];
+  legPair.forEach(([hip, knee, foot, gone], i) => {
+    if (gone) {
+      const cut: Pt = [hip[0] + (knee[0] - hip[0]) * 0.62, hip[1] + (knee[1] - hip[1]) * 0.62];
+      zFlatLimb(ctx, hip, cut, 10, pal.cloth, pal.fleshDark, pal.ink);
+      zFlatEll(ctx, cut[0], cut[1], 5, 4, 11, pal.ink);
+      return;
+    }
+    // thigh in cloth, shank in flesh — the trouser ends mid-calf, which is one
+    // more silhouette break and costs no extra colour.
+    zFlatLimb(ctx, hip, knee, 10, pal.cloth, pal.fleshDark, pal.ink);
+    zFlatLimb(ctx, knee, foot, 8, pal.fleshMid, pal.fleshDark, pal.ink);
+    // A foot, flat. The far leg is drawn a step darker so the two read apart.
+    zFlatEll(ctx, foot[0] + 1, foot[1] - 1, 6, 4, i === 0 ? pal.fleshMid : pal.fleshDark, pal.ink);
+  });
 
   // ── torso — a hunched ribcage barrel ──
   // `backlight: 30` (arcane mid) rims the shadow side, exactly as the knight's
   // cuirass and helm do. It's nearly free and it's what stops the body fusing
   // into the dark floor — a green mass on a near-black floor has almost no
   // edge contrast without it.
+  // FLAT, with the shade band placed by hand down the RIGHT third of the chest.
+  //
+  // `plateShaded` would give this five colours (shade base, ink, mid, warm rim,
+  // bounce) and put the light where its generic upper-left key says. A torso is
+  // the biggest single mass on the figure, so that one call was the largest
+  // contributor to the 74-colour count. Two tones and an ink, with the shadow
+  // where the ribcage actually turns away, reads as more sculpted and costs a
+  // third as much.
   const t = zombieTorsoPts(sk, dir);
-  // NO backlight here. `backlight: 30` is arcane mid — a cool grey-blue from
-  // outside the body's colour vocabulary — and on a sprite that occupies ~420
-  // pixels the rim plus its bounce partner accounted for ~19% of them. On the
-  // knight, who is already steel-and-stone, that rim costs nothing. On a
-  // rot-green corpse it is a fifth and sixth hue that the eye reads as grime,
-  // and it was a large part of why the figure looked muddy rather than painted.
-  plateShaded(ctx, t, skin);
+  zFlatPoly(ctx, t, pal.fleshMid, pal.ink);
+  const tx = sk.chest[0];
+  const ty = sk.chest[1];
+  const hy2 = sk.hip[1] + 2;
+  // Which side is in shadow depends on which way the body FACES. Head-on the
+  // light comes from the upper left, so the right of the chest is dark. In
+  // profile the figure faces +x and the shaded side is its BACK (−x) — using
+  // the head-on band there shaded the chest and lit the spine, which read as a
+  // very dark body with an oddly bright back edge.
+  const torsoBand: Pt[] =
+    dir === "E"
+      ? [[tx - 14, ty - 12], [tx - 3, ty - 12], [tx - 4, hy2 + 6], [tx - 14, hy2 + 6]]
+      : [[tx + 3, ty - 12], [tx + 26, ty - 12], [tx + 26, hy2 + 6], [tx + 1, hy2 + 6]];
+  zShadeIn(ctx, t, torsoBand, pal.fleshDark);
 
   // ── exposed BONE ──
   // The old version drew ribs as three 1.8px arcs. At 128→52 that is 0.7 of a
   // pixel: they vanished completely, which is a large part of why the torso
-  // crushed to a featureless quad. They're now SOLID bone-white masses in
-  // R_DEAD_BONE [20,21,22] — a value family the zombie never used, and the only
-  // thing bright enough to separate the torso from the limbs after the crush.
+  // crushed to a featureless quad. They are SOLID bone masses now — the only
+  // value bright enough to separate the torso from the limbs after the crush.
   // ONE accent, not five. See accentFor: a variant shows bone OR a wound OR
   // neither, so the mark it does carry is the only bright thing on the body and
   // therefore actually reads at 44px.
@@ -1722,7 +1883,7 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
     // A gut wound big enough to survive the crush. The old one was 5×4 cel px
     // — under two output pixels — and it competed with four other accents for
     // those two pixels. Alone and at this size it is a legible dark hole.
-    ellShaded(ctx, sk.chest[0] + 3, sk.hip[1] - 7, 8, 7, 11, 0, { rim: false });
+    zFlatEll(ctx, sk.chest[0] + 3, sk.hip[1] - 7, 8, 7, 11, 1);
   }
   // The bandage was a fifth competing value across the chest and never resolved
   // as cloth — it read as a light smear over the torso's only clean area.
@@ -1746,20 +1907,20 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
   const sw = swing * 7; // lead/trail offset in the swing plane
   if (dir === "E") {
     // both arms out toward +x, one higher; they scissor fore/aft on the swing
-    zombieArm(ctx, [sk.chest[0] + 2, sk.chest[1]], [sk.chest[0] + armReach + sw, armY - 6 - swing * 3 + droop], skin, flesh, stumpR);
-    zombieArm(ctx, [sk.chest[0], sk.chest[1] + 4], [sk.chest[0] + armReach - 3 - sw, armY + 8 + swing * 3 + droop], skin[0], flesh, stumpL);
+    zombieArm(ctx, [sk.chest[0] + 2, sk.chest[1]], [sk.chest[0] + armReach + sw, armY - 6 - swing * 3 + droop], pal, stumpR);
+    zombieArm(ctx, [sk.chest[0], sk.chest[1] + 4], [sk.chest[0] + armReach - 3 - sw, armY + 8 + swing * 3 + droop], pal, stumpL);
   } else if (dir === "S") {
     // Reaching toward the camera — but ASYMMETRICALLY. A symmetrical pair of
     // arms reads as a person standing; one arm hanging eight pixels lower than
     // the other, off a dropped shoulder, reads as a body that no longer holds
     // itself up. Asymmetry is the cheapest undead cue there is and it survives
     // any amount of downscaling, because it is a property of the OUTLINE.
-    zombieArm(ctx, [sk.shoulderL[0], sk.shoulderL[1] + 5], [sk.shoulderL[0] - 7 - sw * 0.5, armY + 30 - sw + droop], skin, flesh, stumpL);
-    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 3 + sw * 0.5, armY + 20 + sw + droop], skin, flesh, stumpR);
+    zombieArm(ctx, [sk.shoulderL[0], sk.shoulderL[1] + 5], [sk.shoulderL[0] - 7 - sw * 0.5, armY + 30 - sw + droop], pal, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 3 + sw * 0.5, armY + 20 + sw + droop], pal, stumpR);
   } else {
     // from behind: both droop outward
-    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 8 - sw * 0.5, armY + 26 - sw + droop], skin[0], dark, stumpL);
-    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 8 + sw * 0.5, armY + 26 + sw + droop], skin[0], dark, stumpR);
+    zombieArm(ctx, sk.shoulderL, [sk.shoulderL[0] - 8 - sw * 0.5, armY + 26 - sw + droop], pal, stumpL);
+    zombieArm(ctx, sk.shoulderR, [sk.shoulderR[0] + 8 + sw * 0.5, armY + 26 + sw + droop], pal, stumpR);
   }
 
   // ── the BROKEN BLADE — an asymmetric bone spur through one shoulder ──
@@ -1785,8 +1946,8 @@ function zombieStanding(ctx: CanvasRenderingContext2D, dir: Dir, pose: ZPose, v:
     const sx = (sd < 0 ? sk.shoulderL : sk.shoulderR)[0];
     const sy = sk.shoulderL[1];
     // the torn flesh it punched through — a dark blood collar at the base
-    ellShaded(ctx, sx + sd * 2, sy + 2, 7, 5, 11, 0, { rim: false });
-    plateShaded(ctx, [[sx - sd * 10, sy + 4], [sx - sd * 2, sy - 9], [sx + sd * 8, sy - 4], [sx + sd * 6, sy + 8]], R_DEAD_BONE);
+    zFlatEll(ctx, sx + sd * 2, sy + 2, 7, 5, 11, 1);
+    zFlatPoly(ctx, [[sx - sd * 10, sy + 4], [sx - sd * 2, sy - 9], [sx + sd * 8, sy - 4], [sx + sd * 6, sy + 8]], 20, 1);
   }
 
   // Gore splatter is DEAD ART on a living zombie. Each speck is 1.6-4 cel px,
@@ -1814,68 +1975,61 @@ function zombieBone(ctx: CanvasRenderingContext2D, sk: Skeleton, dir: Dir, v: ZV
     // From behind, all three variants show the spine — but "spine" shows it as
     // a bared vertebral column in bone rather than a shaded groove.
     if (v.bone === "spine") {
-      plateShaded(ctx, [[c[0] - 4, c[1] - 2], [c[0] + 4, c[1] - 2], [c[0] + 3, sk.hip[1]], [c[0] - 3, sk.hip[1]]], R_DEAD_BONE);
-      for (let i = 0; i < 3; i++) figDetail(ctx, [[c[0] - 5, c[1] + 4 + i * 7], [c[0] + 5, c[1] + 4 + i * 7]], 2.4, skin[0]);
+      zFlatPoly(ctx, [[c[0] - 4, c[1] - 2], [c[0] + 4, c[1] - 2], [c[0] + 3, sk.hip[1]], [c[0] - 3, sk.hip[1]]], 20, 1);
+      for (let i = 0; i < 3; i++) line(ctx, [[c[0] - 5, c[1] + 4 + i * 7], [c[0] + 5, c[1] + 4 + i * 7]], 2.4, C(skin[0]));
     } else {
-      figDetail(ctx, [[c[0], c[1]], [c[0] - 1, sk.hip[1]]], 3, skin[0]);
+      line(ctx, [[c[0], c[1]], [c[0] - 1, sk.hip[1]]], 3, C(skin[0]));
     }
     return;
   }
 
   // Front / profile. Bone sits on the lit side so it catches the key light.
-  const bx = dir === "E" ? c[0] + 1 : c[0] - 6;
+  // The profile torso spans c[0]−10 … c[0]+13, so an 18-wide rib plate centred
+  // at c[0]+1 hangs off the front edge and the ribs read as white bars floating
+  // beside the body rather than as bone showing THROUGH it. In profile the
+  // plate is narrower and sits well inboard.
+  const bx = dir === "E" ? c[0] - 1 : c[0] - 6;
+  const bw = dir === "E" ? 6 : 9;
   if (v.bone === "ribs") {
     // A torn-open ribcage: one solid bone PLATE with dark gaps cut across it.
     // Carving gaps out of a light mass survives the crush; drawing light lines
     // on a dark mass does not (thin light strokes are the first thing to go).
-    plateShaded(ctx, [[bx - 9, c[1] + 1], [bx + 9, c[1] + 3], [bx + 7, c[1] + 21], [bx - 8, c[1] + 19]], R_DEAD_BONE);
-    figDetail(ctx, [[bx - 9, c[1] + 8], [bx + 8, c[1] + 10]], 3.4, 6); // gap between ribs
-    figDetail(ctx, [[bx - 9, c[1] + 15], [bx + 8, c[1] + 17]], 3.4, 6);
+    zFlatPoly(ctx, [[bx - bw, c[1] + 1], [bx + bw, c[1] + 3], [bx + bw - 2, c[1] + 21], [bx - bw + 1, c[1] + 19]], 20, 1);
+    line(ctx, [[bx - bw, c[1] + 8], [bx + bw - 1, c[1] + 10]], 3.4, C(6)); // gap between ribs
+    line(ctx, [[bx - bw, c[1] + 15], [bx + bw - 1, c[1] + 17]], 3.4, C(6));
   } else if (v.bone === "spine") {
     // A collarbone yoke — a broad bone band across the top of the chest.
-    plateShaded(ctx, [[c[0] - 14, c[1] - 2], [c[0] + 14, c[1] - 2], [c[0] + 11, c[1] + 7], [c[0] - 11, c[1] + 7]], R_DEAD_BONE);
-    figDetail(ctx, [[c[0], c[1] - 2], [c[0], c[1] + 7]], 3, 6); // sternal notch
+    zFlatPoly(ctx, [[c[0] - 14, c[1] - 2], [c[0] + 14, c[1] - 2], [c[0] + 11, c[1] + 7], [c[0] - 11, c[1] + 7]], 20, 1);
+    line(ctx, [[c[0], c[1] - 2], [c[0], c[1] + 7]], 3, C(6)); // sternal notch
   } else {
     // "skull" variants carry their bone up top; the torso gets a bare sternum
     // slab so there's still a light anchor at body height.
-    plateShaded(ctx, [[bx - 5, c[1] + 3], [bx + 5, c[1] + 3], [bx + 4, c[1] + 20], [bx - 4, c[1] + 20]], R_DEAD_BONE);
+    zFlatPoly(ctx, [[bx - 5, c[1] + 3], [bx + 5, c[1] + 3], [bx + 4, c[1] + 20], [bx - 4, c[1] + 20]], 20, 1);
   }
-}
-
-/**
- * An AMPUTATED leg: the thigh only, ending in a bleeding cap where the knee was.
- *
- * Deliberately mirrors `zombieArm`'s stump branch (the same 5px blood cap in ink
- * 11) so a lost leg and a lost arm read as the same kind of injury. Cut SHORT of
- * the knee joint — a stump that runs the full thigh length still reads as a leg
- * bent behind the body, which defeats the whole point.
- */
-function legStumpShaded(ctx: CanvasRenderingContext2D, hip: Pt, knee: Pt, w: number, m: Ramp | number): void {
-  const cut: Pt = [hip[0] + (knee[0] - hip[0]) * 0.62, hip[1] + (knee[1] - hip[1]) * 0.62];
-  limbShaded(ctx, hip, cut, w, m);
-  ellShaded(ctx, cut[0], cut[1], 5.5, 5, 11, 0, { rim: false }); // bleeding stump cap
 }
 
 /** A zombie arm shoulder→hand with a grasping claw or a bleeding stump. */
-function zombieArm(ctx: CanvasRenderingContext2D, sh: Pt, hand: Pt, m: Ramp | number, handM: Ramp | number, stump: boolean): void {
+function zombieArm(ctx: CanvasRenderingContext2D, sh: Pt, hand: Pt, pal: ZPal, stump: boolean): void {
   if (stump) {
     const mid: Pt = [(sh[0] + hand[0]) / 2, (sh[1] + hand[1]) / 2];
-    limbShaded(ctx, sh, mid, 8, m);
-    ellShaded(ctx, mid[0], mid[1], 5, 5, 11, 0, { rim: false }); // bleeding stump cap
+    zFlatLimb(ctx, sh, mid, 8, pal.fleshMid, pal.fleshDark, pal.ink);
+    zFlatEll(ctx, mid[0], mid[1], 5, 5, 11, pal.ink); // bleeding stump cap
     return;
   }
   const elbow: Pt = [(sh[0] + hand[0]) / 2 + 1, (sh[1] + hand[1]) / 2 - 2];
-  limbShaded(ctx, sh, elbow, 8, m);
-  limbShaded(ctx, elbow, hand, 7, m);
+  // Upper arm in the mid tone, forearm one step DARKER. A limb that recedes
+  // from the body is a two-value read for free, and it means the elbow shows as
+  // a value break rather than needing a drawn joint.
+  zFlatLimb(ctx, sh, elbow, 8, pal.fleshMid, pal.fleshDark, pal.ink);
+  zFlatLimb(ctx, elbow, hand, 7, pal.fleshDark, pal.fleshDark, pal.ink);
   // Grasping claw — TWO fat splayed fingers, not three thin ones. At 1.6px the
   // old fingers were well under one output pixel and the hand crushed to a
   // featureless dot; at 3.6px they clear the grid and the claw actually reads
   // as a claw. Fewer, bolder shapes is the whole lesson of the 128→52 crush.
-  ellShaded(ctx, hand[0], hand[1], 4.5, 4.5, handM, 0, { rim: false });
+  zFlatEll(ctx, hand[0], hand[1], 4.5, 4.5, pal.fleshMid, pal.ink);
   const dir = Math.sign(hand[0] - sh[0]) || 1;
-  const clawInk = typeof handM === "number" ? handM : handM[0];
   for (const i of [-1, 1]) {
-    figDetail(ctx, [[hand[0], hand[1]], [hand[0] + dir * 7, hand[1] + i * 5]], 3.6, clawInk);
+    line(ctx, [[hand[0], hand[1]], [hand[0] + dir * 7, hand[1] + i * 5]], 3.6, C(pal.fleshDark));
   }
 }
 
