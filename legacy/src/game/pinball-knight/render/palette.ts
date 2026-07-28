@@ -59,6 +59,7 @@
  */
 
 import { clamp } from "../../../utils/math";
+import { setEnginePalette } from "../engine/palette-source";
 
 export const PALETTE_HEX: number[] = [
   // ── Stone / void (0-5) ──
@@ -187,4 +188,33 @@ export function shadeFor(fillIndex: number, amt = 0.5): string {
   const [r, g, b] = rgb(fillIndex);
   const cool = [31, 61, 82]; // toward arcane-dark 29
   return css([r + (cool[0] - r) * amt - 12, g + (cool[1] - g) * amt - 8, b + (cool[2] - b) * amt]);
+}
+
+/**
+ * Install this palette into the engine's palette slot.
+ *
+ * WHY THIS EXISTS. `engine/render/figure.ts` — which paints every limb, plate
+ * and head of every actor — reads its colours through `enginePalette`, and that
+ * source DEFAULTS TO A 16-STEP GREYSCALE until something installs the real one.
+ * `GameEngine` does it at dungeon boot, so anything that paints a sprite
+ * WITHOUT booting the dungeon gets a greyscale figure and no error: the card
+ * portraits render as grey robots rather than rotted green corpses, and nothing
+ * anywhere reports a problem.
+ *
+ * That is not hypothetical. It cost a full debugging pass — a sprite was
+ * declared broken and nearly rewritten — before the cause turned out to be a
+ * render harness that had simply never installed the palette. The card surfaces
+ * are one cold-start away from the same bug in the shipped game.
+ *
+ * Idempotent and cheap, so any surface that paints a sprite can just call it.
+ */
+export function installPalette(): void {
+  setEnginePalette({
+    size: PALETTE_SIZE,
+    toFloatArray: paletteToFloatArray,
+    hex: () => PALETTE_HEX,
+    css: paletteCss,
+    // Arcane mid — the tone an actor is silhouetted in behind a wall.
+    occlusionIndex: 30,
+  });
 }

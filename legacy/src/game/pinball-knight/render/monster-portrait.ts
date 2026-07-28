@@ -45,6 +45,7 @@ import {
   type FramePaint,
 } from "./cel-painter";
 import { SPRITE_PX } from "../constants";
+import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
 
@@ -147,6 +148,12 @@ export function monsterPortrait(kind: EnemyKind, sub?: ZombieType): HTMLCanvasEl
   const key = sub ? `${kind}:${sub}` : kind;
   const hit = _cache.get(key);
   if (hit !== undefined) return hit;
+
+  // The engine's palette slot defaults to GREYSCALE until something installs
+  // the real one, and the card surfaces paint portraits without booting the
+  // dungeon — so a cold-started tavern would draw grey robots instead of rotted
+  // corpses, silently. See installPalette.
+  installPalette();
 
   const spec = KIND_PORTRAIT[kind];
   const cv = spec ? scratch() : null;
