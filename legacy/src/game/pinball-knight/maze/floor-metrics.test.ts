@@ -77,7 +77,7 @@ describe("floor gate — every generated floor is legal", () => {
       }
     }
     expect(failures.join("\n")).toBe("");
-  });
+  }, 300000);
 
   it("every archetype is legal at every depth it can appear at", () => {
     const failures: string[] = [];
@@ -98,7 +98,7 @@ describe("floor gate — every generated floor is legal", () => {
       }
     }
     expect(failures.join("\n")).toBe("");
-  });
+  }, 300000);
 
   it("the stairs are always reachable and always ON the walkable surface", () => {
     for (let level = 1; level <= 8; level++) {
@@ -112,7 +112,7 @@ describe("floor gate — every generated floor is legal", () => {
       expect(route[0]).toEqual({ i: f!.start.i, j: f!.start.j });
       expect(route[route.length - 1]).toEqual({ i: f!.stairs.i, j: f!.stairs.j });
     }
-  });
+  }, 300000);
 });
 
 describe("archetypes are distinguishable — the acceptance test for a variety feature", () => {
@@ -156,7 +156,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
       // must carry several times the independent loops.
       expect(cavern.rank).toBeGreaterThan(spine.rank * 2);
     }
-  });
+  }, 300000);
 
   it("the Great Hall is the most open floor and the Warrens the least", () => {
     for (const level of [4, 12]) {
@@ -167,7 +167,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
       // share — a dense maze opens plenty of tiles, just not as track.
       expect(hall.lane).toBeGreaterThan(warrens.lane * 1.4);
     }
-  });
+  }, 300000);
 
   it("the Great Hall owns the floor's biggest ROOM, not just its widest road", () => {
     // The defect this catches, and it shipped for two waves: the Great Hall
@@ -193,7 +193,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
         `L${level}: the Great Hall's biggest room is ${hall.chamber.toFixed(3)} of the floor, behind ${others[0].id} at ${others[0].chamber.toFixed(3)}`,
       ).toBeGreaterThan(others[0].chamber);
     }
-  });
+  }, 300000);
 
   it("no two archetypes produce the same floor", () => {
     // The blind test: gather each archetype's (lane, rank) signature at one
@@ -210,7 +210,7 @@ describe("archetypes are distinguishable — the acceptance test for a variety f
         ).toBe(true);
       }
     }
-  });
+  }, 300000);
 });
 
 describe("the network scales with the floor", () => {
@@ -240,5 +240,5 @@ describe("the network scales with the floor", () => {
       expect(n).toBeGreaterThan(0);
       expect(lane / n, `level ${level} lane share`).toBeGreaterThan(0.1);
     }
-  });
+  }, 300000);
 });

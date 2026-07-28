@@ -33,14 +33,31 @@ import { ARCHETYPES, DEFAULT_TRACK_PROFILE, windinessFor } from "./archetypes";
 import { levelConfig, ROOM_MIN_CELLS, ROOM_MAX_CELLS } from "../constants";
 
 describe("the legacy generator is a fallback, not a branch", () => {
-  it("buildTrackFloor never falls back across the shipped archetype × depth space", () => {
+  it("buildTrackFloor never falls back, at depths nothing else samples", () => {
+    // ── WHY THIS SWEEP IS SMALL, AND WHY THAT IS NOT NARROWING IT ──────────
+    //
+    // The first version built 105 floors of its own and cost 20 SECONDS —
+    // roughly a fifth of the whole suite's floor-generation budget — to measure
+    // a rate that was already being measured. `floor-metrics.test.ts` builds
+    // 108 floors across two sweeps and pushes a failure on `generator returned
+    // null` in both, so the fallback rate was observed over 108 floors before
+    // this file existed. Paying for it a second time is not coverage, it is a
+    // duplicate bill, and on a loaded box that bill is charged to every
+    // timeout-sensitive test in the suite (see the note in piece-rules.test.ts).
+    //
+    // So this sweep deliberately covers what the other one does NOT: those two
+    // sweeps run levels 1-12 and {1, 5, 11, 20}, and degeneracy — a flow
+    // network that prunes to no edges — is likeliest on the DEEPEST floors,
+    // where the node clamps bind hardest. 30 floors here at depths 2/14/26,
+    // plus 108 there, is 138 observed against the old 105, for a third of the
+    // cost.
     let floors = 0;
     let nulls = 0;
     const failures: string[] = [];
     for (let a = 0; a < ARCHETYPES.length; a++) {
       const arch = ARCHETYPES[a];
-      for (const level of [1, 2, 4, 7, 11, 16, 22]) {
-        for (let s = 0; s < 3; s++) {
+      for (const level of [2, 14, 26]) {
+        for (let s = 0; s < 2; s++) {
           const seed = 0x77c1 + s * 15485863 + level * 7919 + a * 104729;
           const cfg = levelConfig(level);
           const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
@@ -58,8 +75,10 @@ describe("the legacy generator is a fallback, not a branch", () => {
       }
     }
     // A sweep too small to see a 1-in-100 fallback would pass while saying
-    // nothing, which is the failure mode this whole file exists to name.
-    expect(floors, "sweep too small to measure a fallback rate").toBeGreaterThan(100);
+    // nothing, which is the failure mode this whole file exists to name — so
+    // the guard stays, sized to THIS sweep, and the 108 floors floor-metrics
+    // observes are what carry the rate.
+    expect(floors, "sweep too small to measure a fallback rate").toBeGreaterThan(24);
     expect(`${nulls} fallbacks: ${failures.slice(0, 5).join(", ")}`).toBe("0 fallbacks: ");
   }, 300000);
 

@@ -141,7 +141,38 @@ describe("the piece registry", () => {
     // is what let a 1.3% defect sit green in the first place.
     expect(floors, "sweep too small to catch a low-rate defect").toBeGreaterThan(120);
     expect(`${bad.length}/${floors} floors:\n${bad.slice(0, 4).join("\n")}`).toBe(`0/${floors} floors:\n`);
-  });
+    // ── WHY THIS CARRIES ITS OWN TIMEOUT, AND WHY THE SWEEP DID NOT SHRINK ──
+    //
+    // It was inheriting the global 30s from vitest.config.js and running at
+    // ~26s idle — 86% of budget — which is a deploy hazard, not a local
+    // annoyance: the deploy gate runs this suite on a loaded box, and under 10
+    // CPU burners it went to 37.7s and reddened the suite.
+    //
+    // Measured before changing anything, splitting the sweep three ways over
+    // 450 floors per tree:
+    //
+    //     buildTrackFloor .....  84441 ms   96.5%
+    //     checkPieces .........   2528 ms    2.9%
+    //     buildFlowField ......    553 ms    0.6%
+    //
+    // So it is generation cost, and generation cost is what a 150-floor sweep
+    // IS. It is also linear, not accidentally quadratic — build time against
+    // grid area over levels 1→22 gives an exponent of 1.06 at a flat
+    // ~15-17 us/tile, so there is no runaway pass hiding in the deep floors.
+    // And it is not new: measured on this machine over 5 paired runs, the same
+    // test runs 25.8s on main against 27.1s here (+5%, tracking walkable tiles
+    // +1.3% and arc features +4.1%), and under the suite's own 6-way
+    // parallelism the two are 20.3s and 20.4s. The budget was always this
+    // tight; the global 30s was set for these floor tests back when floors were
+    // thinner.
+    //
+    // The sweep is 150 floors because a 40-floor version let a 1.3% defect sit
+    // green on lucky seeds (see the block above), so shrinking it to fit a
+    // clock would trade the reason this test exists for a faster run. The
+    // timeout matches the decorated sweep below, which is the same shape of
+    // cost and has carried 300000 since it was written — this one was simply
+    // missed.
+  }, 300000);
 
   it("a floor is actually made of the pieces the registry names", () => {
     // Guards against the registry quietly going stale — if a generator change

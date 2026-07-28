@@ -78,7 +78,7 @@ describe("the launch chute", () => {
     // free-air launch. But it should be the overwhelming norm, and if it ever
     // stops being, the fallback is quietly shipping instead of the feature.
     expect(withChute / floors).toBeGreaterThan(0.9);
-  });
+  }, 300000);
 
   it("is SEALED — no pass may open its side walls", () => {
     const leaks: string[] = [];
@@ -105,7 +105,7 @@ describe("the launch chute", () => {
       }
     }
     expect(leaks.slice(0, 10).join("\n")).toBe("");
-  });
+  }, 300000);
 
   it("carries boosters aimed down the lane, and nothing else", () => {
     const bad: string[] = [];
@@ -174,7 +174,7 @@ describe("the launch chute", () => {
       }
     }
     expect([...new Set(bad)].slice(0, 10).join("\n")).toBe("");
-  });
+  }, 300000);
 
   it("keeps its shape when the floor has no room for it — null, never a stub", () => {
     // A 6x6 cell floor is far too small for an 8-tile sealed run beside a
