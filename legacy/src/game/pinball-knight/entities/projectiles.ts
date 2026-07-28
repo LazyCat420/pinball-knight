@@ -412,7 +412,11 @@ export function updateProjectiles(dt: number): void {
           applyCardOnHit(z);
         }
       } else {
-        damageZombie(z, pr.damage, pr.vx, pr.vz, pr.kind === "arrow" ? 0.5 : 0.3);
+        // `"ranged"` is what the "dodges-ranged" sub-type exception reads: a
+        // Runner sidesteps an arrow it would eat from a swing. The FLAME cone
+        // above stays `steel` on purpose — a wall of fire is not something you
+        // step off the line of.
+        damageZombie(z, pr.damage, pr.vx, pr.vz, pr.kind === "arrow" ? 0.5 : 0.3, false, "ranged");
         applyCardOnHit(z);
         // PIERCE: keep flying through this foe (one per frame, so a fast shot
         // threads a line of enemies) until the pierce budget is spent.

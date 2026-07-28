@@ -210,6 +210,165 @@ export const HULK_MIN_OPEN_NEIGHBOURS = 3;
 export const AGGRO_TILES = 9;
 /** Zombies shove each other apart below this distance, so a horde doesn't stack into one sprite. */
 export const SEPARATION_R = 0.55;
+/**
+ * Inside this range a grounded foe abandons the flow field and steers STRAIGHT
+ * at the knight. The field only knows tile centres, so door-frame shuffling at
+ * close range looks robotic. Was a private const in entities/zombie.ts; it moved
+ * here when the steering became a dispatch table (entities/movement.ts), because
+ * the baseline every other policy deviates from is a tuning number, not a
+ * detail of one function.
+ */
+export const DIRECT_STEER_RANGE = 1.6;
+
+// ── MOMENTUM GATES → CURVES (DECLONE §6.2) ──────────────────────
+/**
+ * `soft` for each enemy gate: the fraction of the effect delivered AT the old
+ * binary bar. Below the bar it ramps up to this; above it, on to 1 at terminal
+ * speed. `soft = 0` would reproduce the old wall exactly (see momentumGate).
+ */
+/** GOBLIN: rubber. Any momentum at all lands for at least this, ramping to full. */
+export const GOBLIN_GATE_SOFT = 0.5;
+/** GOLEM: masonry chips below smash-speed instead of ignoring you outright. */
+export const GOLEM_GATE_SOFT = 0.25;
+/** CRYSTALBACK: a graze throws a shard or two; a full ram throws the reflector. */
+export const CRYSTAL_GATE_SOFT = 0.3;
+/** CHOMPER: knockback multiplier at terminal speed (was a flat ×3 at any speed). */
+export const CHOMPER_SHOVE_MAX = 3;
+/** Below this gate factor the blow reads as a CLINK — the teaching moment survives. */
+export const GATE_MIN_FACTOR = 0.02;
+
+// ── SUB-TYPE EXCEPTIONS (ZombieTypeDef.exception) ───────────────
+/** "dodges-ranged": the fraction of arrows that miss. Entropy, never dice. */
+export const DODGE_RANGED_CHANCE = 0.5;
+/** "speed-only": the momentumT a KILLING blow needs. Below it, it wears to 1 hp. */
+export const SPEED_ONLY_T = 0.45;
+
+// ── BESTIARY MILESTONES (bestiary.ts) ───────────────────────────
+/**
+ * Kill counts per family that earn a card-affinity tier. Log-ish spacing so the
+ * first one lands inside a floor or two (progress must be visible before the
+ * screen is worth opening) and the last is a genuine farm.
+ */
+export const BESTIARY_MILESTONES = [10, 30, 75, 150];
+/** Affinity multiplier gained per tier… */
+export const BESTIARY_AFFINITY_STEP = 0.25;
+/** …and the cap. An uncapped farm bonus makes one family the only one worth killing. */
+export const BESTIARY_AFFINITY_MAX = 2;
+
+// ── STAGGER / ENTROPY (entities/stagger.ts) ─────────────────────
+/**
+ * Doom's pain chance, priced in momentum. See entities/stagger.ts for the why;
+ * these are the three numbers the shape needs.
+ */
+/** What a hit at a dead stop is worth, as a fraction of the family's pain chance.
+ *  Small but non-zero, so a heavy weapon still rocks things occasionally — the
+ *  rest of the stat is bought with speed. */
+export const STAGGER_SPEED_FLOOR = 0.15;
+/** Seconds a stagger holds at walking pace… */
+export const STAGGER_TIME_MIN = 0.25;
+/** …and at terminal speed. A fast hit lands more often AND holds longer. */
+export const STAGGER_TIME_MAX = 0.6;
+/**
+ * The entropy accumulator's trigger threshold (PoE's is 100; the units are
+ * arbitrary and only the ratio matters). Chance × this accrues per event; the
+ * event fires when the counter crosses it, and the threshold is SUBTRACTED
+ * rather than the counter zeroed, so leftover entropy carries and the long-run
+ * rate is exactly the printed chance.
+ */
+export const ENTROPY_FULL = 100;
+/** A staggered actor's tint — pale and washed out: it is not in the fight. */
+export const STAGGER_TINT = 0xbcbcd0;
+
+// ── MOVEMENT POLICIES (entities/movement.ts) ────────────────────
+/**
+ * The steering vocabulary's tuning. Every number here answers "how far off the
+ * chase line does this intent take you", because a movement type that measures
+ * the same as `chase` is a label, not a behaviour — the colocated tests assert
+ * exactly that, and these are the knobs they move.
+ *
+ * All of it rides the EXISTING flow field + moveCircle substrate. Nothing in
+ * this block funds a second pathfinder.
+ */
+
+/** FLANKER: how far off the direct line it approaches, at full deviation (rad). */
+export const FLANK_ANGLE = 1.0; // ~57°, enough to arrive from the side of a corridor mouth
+/** Inside this it gives up the angle and commits straight in — it must still land its bite. */
+export const FLANK_CLOSE = 1.8;
+/** Beyond this the deviation is at FLANK_ANGLE; between the two it fades linearly. */
+export const FLANK_FAR = 7.0;
+
+/** STRAFER: the range it wants to hold (world units, floored by its own reach). */
+export const STRAFE_RANGE = 3.4;
+/** How hard it corrects back onto that range — bigger = looser circle. */
+export const STRAFE_BAND = 1.6;
+/** Seconds of circling between darts. The cadence IS the tell. */
+export const STRAFE_DART_CD = 3.2;
+/** Seconds a dart lasts before it drops back to circling. */
+export const STRAFE_DART_TIME = 0.85;
+/** Speed multiplier while darting — the commit has to look like a commit. */
+export const STRAFE_DART_MULT = 1.6;
+/** Seconds of hot tint before the dart releases: the window you get to react in. */
+export const STRAFE_TELL_LEAD = 0.5;
+
+/** AMBUSHER: it springs when it has line of sight AND you are inside this. */
+export const AMBUSH_RANGE = 5.0;
+/** Speed multiplier for the opening burst out of hiding. */
+export const AMBUSH_BURST_MULT = 1.6;
+/** Seconds the burst lasts. After it, it is an ordinary chaser forever. */
+export const AMBUSH_BURST_TIME = 1.2;
+
+/** ORBITER: the ring radius it opens at. */
+export const ORBIT_RADIUS = 3.6;
+/** Radial correction band — bigger = a lazier, wobblier ring. */
+export const ORBIT_BAND = 1.2;
+/**
+ * World units per second the ring TIGHTENS by. An orbiter that held its radius
+ * forever would be scenery you can ignore; the spiral makes "it's circling" and
+ * "and it's closing" the same readable motion.
+ */
+export const ORBIT_TIGHTEN = 0.18;
+
+/** LEAPER: it will pounce from inside this range… */
+export const LEAP_RANGE = 5.5;
+/** …but not from point-blank, where a pounce would just be a walk. */
+export const LEAP_MIN_RANGE = 1.2;
+/** Seconds of rooted crouch before release. THE window the player reads. */
+export const LEAP_WINDUP = 0.45;
+/** Seconds the pounce lasts. */
+export const LEAP_TIME = 0.5;
+/** Speed multiplier during the pounce. */
+export const LEAP_SPEED_MULT = 3.4;
+/**
+ * Radians per second the locked heading rotates during the pounce — this is
+ * what makes it an ARC. A straight dash is beaten by one sidestep; an arc bends
+ * toward where you were going, so it has to be READ. The heading is locked at
+ * crouch-exit and never re-aimed, which is what makes a leap baitable.
+ */
+export const LEAP_CURVE = 1.5;
+/** Seconds of recovery before it may crouch again. */
+export const LEAP_CD = 2.2;
+/** Speed multiplier while merely closing the gap — it saves itself for the leap. */
+export const LEAP_CRUISE_MULT = 0.75;
+
+/**
+ * LINE-OF-SIGHT probe (entities/zombie.ts `hasLineOfSight`). Only the ambusher
+ * and the leaper ask, and only inside this range — a probe is a walk along a
+ * segment and the horde budget is 175 actors.
+ */
+export const LOS_PROBE_RANGE = 6.0;
+/** Sample spacing along the probe. Below a tile, so a doorframe cannot be missed. */
+export const LOS_PROBE_STEP = 0.35;
+
+/** PACK-HUNTER: neighbours of the same policy within this count toward the quorum. */
+export const PACK_RANGE = 5.5;
+/** How many (including itself) it needs before it will engage at all. */
+export const PACK_MIN = 3;
+/** The range it shadows you at while it waits for numbers. */
+export const PACK_HOLD_RANGE = 5.0;
+/** Speed multiplier while stalking — it paces you rather than racing you. */
+export const PACK_STALK_MULT = 0.5;
+/** Speed multiplier once the quorum lands and the whole pack goes at once. */
+export const PACK_RUSH_MULT = 1.3;
 /** The BFS flow field is recomputed on this cadence, not per frame — one BFS serves every zombie. */
 export const FLOW_INTERVAL = 0.25;
 

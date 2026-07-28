@@ -1610,7 +1610,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       const dx = z.x - p.x;
       const dz = z.z - p.z;
       if (dx * dx + dz * dz > (PLAYER_R + ZOMBIE_R + 0.15) * (PLAYER_R + ZOMBIE_R + 0.15)) continue;
-      damageZombie(z, dmg, p.momX, p.momZ, ramKb);
+      // `"bounce"` — a BODY RAM, not a swing. The "bounce-immune" sub-type
+      // exception (DECLONE §6.2) needs to tell the two apart: a Lurcher eats
+      // steel and shrugs off being run over.
+      damageZombie(z, dmg, p.momX, p.momZ, ramKb, false, "bounce");
       applyCardOnHit(z);
       hit = true;
     }

@@ -6,6 +6,25 @@
  * at the player instead (the field only knows tile centres, and door-frame
  * shuffling at close range looks robotic). A cheap pairwise separation shove
  * keeps the horde from stacking into a single sprite.
+ *
+ * ── STEERING IS A DISPATCH TABLE, NOT A CASCADE ──
+ *
+ * Which of those lines a given monster walks is decided ONCE, by a lookup in
+ * `MOVEMENT_HANDLERS` (entities/movement.ts), keyed by the actor's
+ * `MovementKind`. Before that table this function was a ~470-line if/else chain
+ * on `z.kind` in which every branch eventually reached the same three lines of
+ * shared steering — twenty-two families and eight zombie sub-types all
+ * approaching along one line at different speeds.
+ *
+ * What still lives here is everything the table deliberately does not own:
+ *   · the ATTACK machine (windup → bite / glob / summon / slam / charge),
+ *   · STATUS overlays that layer on top of any intent — the oil skid, the
+ *     shadow lure, chill, the bat's wobble, the hobbler's limp, separation,
+ *   · the whole-frame owners (`updatePin`, `updateGhost`), which are selected
+ *     by movement kind rather than by `z.kind` so they cannot drift apart.
+ *
+ * Intent and affliction are different axes; collapsing them is how the cascade
+ * grew in the first place.
  */
 import { state, type Zombie, type EnemyKind } from "../state";
 import { ZOMBIE_TYPES } from "../zombie-types";
@@ -26,7 +45,6 @@ import {
   SPITTER_WINDUP,
   SPITTER_COOLDOWN,
   SPITTER_FIRE_RANGE,
-  SPITTER_KITE_RANGE,
   GHOST_R,
   GHOST_CONTACT_RANGE,
   GHOST_ATTACK_WINDUP,
@@ -53,6 +71,10 @@ import {
   REAPER_SPEED_MAX,
   AGGRO_TILES,
   SEPARATION_R,
+  STAGGER_TINT,
+  PACK_RANGE,
+  LOS_PROBE_RANGE,
+  LOS_PROBE_STEP,
   GOBLIN_R,
   GOBLIN_KICK_SPEED,
   GOBLIN_KICK_COOLDOWN,
@@ -86,7 +108,7 @@ import {
   LIMP_AMP,
   LIMP_FREQ,
   HOUND_R, HOUND_CONTACT_RANGE, HOUND_ATTACK_WINDUP, HOUND_ATTACK_COOLDOWN,
-  HOUND_CHARGE_RANGE, HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
+  HOUND_CHARGE_SPEED, HOUND_CHARGE_TIME,
   BLOATER_R, BLOATER_CONTACT_RANGE, BLOATER_ATTACK_WINDUP, BLOATER_ATTACK_COOLDOWN,
   NECRO_R, NECRO_CONTACT_RANGE, NECRO_ATTACK_WINDUP, NECRO_ATTACK_COOLDOWN, NECRO_SUMMON_CD, NECRO_SUMMON_MAX,
   WARDEN_R, WARDEN_CONTACT_RANGE, WARDEN_ATTACK_WINDUP, WARDEN_ATTACK_COOLDOWN, WARDEN_SHIELD_RADIUS, WARDEN_SHIELD_HP, WARDEN_PULSE_CD,
@@ -96,10 +118,12 @@ import {
   MIMIC_R, MIMIC_CONTACT_RANGE, MIMIC_ATTACK_WINDUP, MIMIC_ATTACK_COOLDOWN, MIMIC_WAKE_RANGE,
   BRUTE_HP,
 } from "../constants";
+import { MOVEMENT_HANDLERS, needsLos, needsPack, isCommitted, cancelCommit, type MovementKind, type Steer } from "./movement";
+import { MOVEMENT_BY_KIND } from "./enemy-rules";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../engine/collision";
-import { worldToTile, tileCenter, idx } from "../maze/generator";
+import { worldToTile, tileCenter, idx, isWalkable, type Grid } from "../maze/generator";
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
@@ -108,14 +132,14 @@ import { spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
-interface EnemyStats {
+export interface EnemyStats {
   bodyR: number;
   contactRange: number;
   windup: number;
   cooldown: number;
   ranged: boolean; // spitter: attacks from afar instead of biting
 }
-const STATS: Record<EnemyKind, EnemyStats> = {
+export const STATS: Record<EnemyKind, EnemyStats> = {
   zombie: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   spider: { bodyR: SPIDER_R, contactRange: SPIDER_CONTACT_RANGE, windup: SPIDER_ATTACK_WINDUP, cooldown: SPIDER_ATTACK_COOLDOWN, ranged: false },
   brute: { bodyR: BRUTE_R, contactRange: BRUTE_CONTACT_RANGE, windup: BRUTE_ATTACK_WINDUP, cooldown: BRUTE_ATTACK_COOLDOWN, ranged: false },
@@ -143,6 +167,21 @@ const STATS: Record<EnemyKind, EnemyStats> = {
   mimic: { bodyR: MIMIC_R, contactRange: MIMIC_CONTACT_RANGE, windup: MIMIC_ATTACK_WINDUP, cooldown: MIMIC_ATTACK_COOLDOWN, ranged: false },
 };
 
+/**
+ * Which policy this actor steers with: the family's row in `MOVEMENT_BY_KIND`
+ * (entities/enemy-rules.ts), overridable by a zombie SUB-TYPE. One place, so no
+ * second dispatch can exist anywhere.
+ *
+ * The override is the reason sub-types stopped being "the same monster at a
+ * different speed": a Runner flanks, a Crawler ambushes, a Flailer leaps and a
+ * Midget will not engage without a quorum — all off one optional field in a
+ * multiplier bundle, with no new `EnemyKind` and therefore no new rows in the
+ * six exhaustive Record tables (or the art they would each need).
+ */
+export function movementOf(z: Zombie): MovementKind {
+  return (z.ztype ? ZOMBIE_TYPES[z.ztype].movement : undefined) ?? MOVEMENT_BY_KIND[z.kind];
+}
+
 /** World velocity → the facing the ART thinks in (screen-relative). */
 export function facingFromWorld(wx: number, wz: number, fallback: Facing): Facing {
   const s = worldDirToScreen(wx, wz);
@@ -165,8 +204,83 @@ function lerpTint(target: number, k: number): number {
   return (r << 16) | (gg << 8) | b;
 }
 
-/** Straight-line pursuit inside this range; flow field beyond it. */
-const DIRECT_STEER_RANGE = 1.6;
+/**
+ * The shared BFS flow field's preferred heading for one actor, as a unit vector
+ * — (0,0) when there is no field, or the actor already stands on the player's
+ * tile. This is the ONE pathfinding substrate every policy steers on; a handler
+ * that wanted its own would be building a second pathfinder, which is exactly
+ * what the movement table exists to prevent.
+ */
+function flowHeading(g: Grid, z: Zombie): { flowX: number; flowZ: number } {
+  if (!state.flowField) return { flowX: 0, flowZ: 0 };
+  const t = worldToTile(g, z.x, z.z);
+  const next = flowStep(g, state.flowField, t.i, t.j);
+  if (!next) return { flowX: 0, flowZ: 0 };
+  const c = tileCenter(g, next.i, next.j);
+  const dx = c.x - z.x;
+  const dz = c.z - z.z;
+  const d = Math.hypot(dx, dz) || 1;
+  return { flowX: dx / d, flowZ: dz / d };
+}
+
+/**
+ * Is there a clear straight line of floor between two world points?
+ *
+ * Walked in fixed steps rather than by tile-DDA on purpose: the maze's walls are
+ * a tile grid but its actors are not, and an ambusher springing through a
+ * doorframe it cannot actually see through is the single thing that would make
+ * the policy read as broken. Sampling errs toward "no sight", which errs toward
+ * the ambusher staying hidden — the safe failure for a trap.
+ *
+ * Only ever called for the two policies that need it (`needsLos`), inside
+ * LOS_PROBE_RANGE, and never for an actor that has already committed.
+ */
+function hasLineOfSight(g: Grid, ax: number, az: number, bx: number, bz: number): boolean {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const d = Math.hypot(dx, dz);
+  if (d <= LOS_PROBE_STEP) return true;
+  const steps = Math.ceil(d / LOS_PROBE_STEP);
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const c = worldToTile(g, ax + dx * t, az + dz * t);
+    if (!isWalkable(g, c.i, c.j)) return false;
+  }
+  return true;
+}
+
+/** No pack around: the answer for every policy that never asks. */
+const NO_PACK = { packNear: 0, packCommitted: false };
+
+/**
+ * How much backup this actor has: living, awake foes within PACK_RANGE, itself
+ * included — ANY of them, not just other pack-hunters. `packCommitted` is
+ * narrower on purpose (a fellow pack-hunter that has already gone), because
+ * that is what propagates the surge across the group in one frame.
+ *
+ * Counting only same-policy neighbours was the first version, and a headless
+ * census on a live floor killed it: four pack-hunters spawned on a ring held at
+ * 4.99 units and never engaged, because a 12%-weight sub-type is scattered far
+ * wider than 5.5 units in a real maze. That is the "passes every test, never
+ * occurs" failure, and the fix is also the better fantasy — the thing is not
+ * waiting for other midgets, it is waiting to not be alone.
+ *
+ * O(n) per pack-hunter, which is why `needsPack` gates it: the horde budget is
+ * 175 actors and only one sub-type ever asks.
+ */
+function packCensus(z: Zombie, move: MovementKind): { packNear: number; packCommitted: boolean } {
+  let near = 0;
+  let committed = false;
+  for (const o of state.zombies) {
+    if (o.mode === "dead" || !o.aggro) continue;
+    const om = movementOf(o);
+    if (om === "inert") continue; // a rack of bowling pins is not backup
+    if (Math.hypot(o.x - z.x, o.z - z.z) > PACK_RANGE) continue;
+    near++;
+    if (om === move && (o.moveCommit ?? 0) > 0) committed = true;
+  }
+  return { packNear: near, packCommitted: committed };
+}
 
 /** One groan per window, not one per zombie — a chorus is just noise. */
 let _groanCooldown = 0;
@@ -235,6 +349,11 @@ export function updateZombies(dt: number): void {
     updateFlash(z, dt);
     if (z.mode === "dead") continue; // the death clip plays out; the corpse stays
 
+    // The ONE steering decision. Everything below that branches on this reads
+    // the policy, never the family — so a kind can never be handled by two
+    // different movement rules in two different places in this function.
+    const move = movementOf(z);
+
     // ── FREEZE RAY ── the whole machine holds its breath. Enemies stop
     // mid-stride, iced blue; timers don't tick, so nobody bites out of a thaw.
     if (state.freezeT > 0) {
@@ -251,10 +370,10 @@ export function updateZombies(dt: number): void {
       mat.opacity = z.vulnT > 0 || z.mode === "windup" ? 0.92 : 0.55;
     }
 
-    // ── BOWLING PIN ── never chases, never bites. It stands in formation
-    // until something knocks it: then it SLIDES (velocity set by combat),
-    // chains into pins it hits, and a wall slam finishes it.
-    if (z.kind === "pin") {
+    // ── INERT (the BOWLING PIN) ── never chases, never bites. It stands in
+    // formation until something knocks it: then it SLIDES (velocity set by
+    // combat), chains into pins it hits, and a wall slam finishes it.
+    if (move === "inert") {
       updatePin(z, dt);
       continue;
     }
@@ -358,6 +477,24 @@ export function updateZombies(dt: number): void {
       continue;
     }
 
+    // ── STAGGERED (entities/stagger.ts) ── the hit rocked it: no steering, no
+    // attack, no leap. It drops whatever it was committed to, which is the
+    // whole point — stagger is CROWD CONTROL, and a control effect that leaves
+    // the wind-up running controls nothing. Placed before the aggro gate and
+    // before the phase branch so ghosts freeze mid-drift too.
+    if ((z.staggerT ?? 0) > 0) {
+      z.staggerT = Math.max(0, (z.staggerT ?? 0) - dt);
+      if (z.mode === "windup" || z.mode === "charge") {
+        z.mode = "chase";
+        z.windupT = 0;
+      }
+      cancelCommit(z);
+      z.anim.play("idle");
+      if (z.flashT <= 0) z.sprite.setTint(STAGGER_TINT);
+      syncActorMesh(z);
+      continue;
+    }
+
     // ── Aggro ──
     if (!z.aggro && state.flowField) {
       const t = worldToTile(g, z.x, z.z);
@@ -376,11 +513,13 @@ export function updateZombies(dt: number): void {
       continue;
     }
 
-    // ── GHOST / REAPER ── float STRAIGHT AT the player THROUGH walls (no flow
-    // field, no moveCircle, no separation), hovering with a bob. Their own
-    // self-contained update so none of the grounded steering applies. The
+    // ── PHASE (GHOST / REAPER) ── float STRAIGHT AT the player THROUGH walls
+    // (no flow field, no moveCircle, no separation), hovering with a bob. Their
+    // own self-contained update so none of the grounded stages apply — but it
+    // asks the SAME dispatch table for its heading, so "through walls" is a
+    // property of the frame owner and not a second copy of the steering. The
     // REAPER additionally accelerates FOREVER — the floor timer closing in.
-    if (z.kind === "ghost" || z.kind === "reaper") {
+    if (move === "phase") {
       if (z.kind === "reaper") z.speed = Math.min(REAPER_SPEED_MAX, z.speed + REAPER_SPEED_RAMP * dt);
       updateGhost(z, dt);
       continue;
@@ -499,7 +638,7 @@ export function updateZombies(dt: number): void {
         z.cooldown = attackCooldown;
         if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null); // drop the telegraph on release
         if (p.hp > 0) {
-          if (z.kind === "hound" || z.kind === "mimic") {
+          if (z.kind === "mimic") {
             startCharge(z, pdx, pdz, pdist); // the windup ends in a DASH, not a bite
             continue;
           } else if (z.kind === "brute") {
@@ -533,62 +672,51 @@ export function updateZombies(dt: number): void {
     if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
 
     z.mode = "chase";
-    // HOUND telegraphs its charge from RANGE (not just contact) — the windup
-    // then releases into a dash (see the windup branch).
-    if (z.kind === "hound" && z.cooldown <= 0 && pdist <= HOUND_CHARGE_RANGE && p.hp > 0) {
-      z.mode = "windup";
-      z.windupT = 0;
-      continue;
-    }
+    // ── Is this actor mid-COMMIT? ──
+    // A leaper's pounce is a locked arc; letting a contact windup fire out of it
+    // would cancel the very attack the crouch telegraphed. The HOUND used to own
+    // a bespoke straight-line charge trigger here (windup at HOUND_CHARGE_RANGE,
+    // release into a dash); the `leaper` policy replaces it with a telegraphed
+    // ARC, which is the de-clone — a straight dash is beaten by one sidestep,
+    // an arc has to be read.
+    const committed = isCommitted(move, z);
     // Melee bites in contact range; a spitter fires from anywhere in its long
     // fire range (contactRange for it is SPITTER_FIRE_RANGE). The goblin never
     // bites — its contact behaviour is the bumper kick above.
-    if (z.kind !== "goblin" && pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
+    if (!committed && z.kind !== "goblin" && pdist <= contactRange && z.cooldown <= 0 && p.hp > 0) {
       z.mode = "windup";
       z.windupT = 0;
+      cancelCommit(z); // a bite out of a crouch: the leap is off
       continue;
     }
 
-    // ── Steering ──
-    // A spitter KITES: too close → back away to keep firing distance; in the
-    // sweet spot → hold and shoot; too far → path in via the flow field like
-    // any other enemy.
-    let vx = 0;
-    let vz = 0;
-    if (ranged) {
-      if (pdist < SPITTER_KITE_RANGE && pdist > 1e-4) {
-        vx = -pdx / pdist; // retreat
-        vz = -pdz / pdist;
-      } else if (pdist <= contactRange) {
-        // in fire range and not too close: hold position and shoot
-      } else if (state.flowField) {
-        const t = worldToTile(g, z.x, z.z);
-        const next = flowStep(g, state.flowField, t.i, t.j);
-        if (next) {
-          const c = tileCenter(g, next.i, next.j);
-          const dx = c.x - z.x;
-          const dz = c.z - z.z;
-          const d = Math.hypot(dx, dz) || 1;
-          vx = dx / d;
-          vz = dz / d;
-        }
-      }
-    } else if (pdist <= DIRECT_STEER_RANGE) {
-      if (pdist > 1e-4) {
-        vx = pdx / pdist;
-        vz = pdz / pdist;
-      }
-    } else if (state.flowField) {
-      const t = worldToTile(g, z.x, z.z);
-      const next = flowStep(g, state.flowField, t.i, t.j);
-      if (next) {
-        const c = tileCenter(g, next.i, next.j);
-        const dx = c.x - z.x;
-        const dz = c.z - z.z;
-        const d = Math.hypot(dx, dz) || 1;
-        vx = dx / d;
-        vz = dz / d;
-      }
+    // ── STEERING: one dispatch, one policy (entities/movement.ts) ──
+    // The handler gets plain numbers and hands back a heading; nothing about
+    // the maze, the sprite or the horde reaches it.
+    // Line of sight and the pack census are the only two inputs a policy needs
+    // that cost anything, so both are gated on the policies that read them and
+    // on a cheap range pre-check. Everything else is arithmetic already to hand.
+    const wantsLos = needsLos(move) && pdist <= LOS_PROBE_RANGE && !committed;
+    const steer: Steer = MOVEMENT_HANDLERS[move](z, {
+      dt,
+      pdx,
+      pdz,
+      pdist,
+      ...flowHeading(g, z),
+      contactRange,
+      los: wantsLos ? hasLineOfSight(g, z.x, z.z, p.x, p.z) : false,
+      ...(needsPack(move) ? packCensus(z, move) : NO_PACK),
+    });
+    let vx = steer.vx;
+    let vz = steer.vz;
+
+    // ── THE TELEGRAPH ── a policy declares its tell; this paints it. A movement
+    // the player cannot see coming is indistinguishable from no movement at all,
+    // so the tell is part of the mechanic, not decoration on top of it. A live
+    // hit flash (flashT) still owns the tint — it is the more urgent message.
+    if (z.flashT <= 0) {
+      if (steer.tell) z.sprite.setTint(lerpTint(steer.tell.color, steer.tell.k));
+      else z.sprite.setTint(z.baseTint ?? null);
     }
 
     // ── SHADOW LURE ── a shadow-clone decoy has this foe's attention: it walks
@@ -654,8 +782,10 @@ export function updateZombies(dt: number): void {
     }
 
     // Golems and chompers are FURNITURE WITH TEETH: rooted, never shoved by
-    // the horde's separation pass — they hold their chokepoint.
-    const rooted = z.kind === "golem" || z.kind === "chomper";
+    // the horde's separation pass — they hold their chokepoint. The flag comes
+    // off the steer (the `rooted` policy) rather than off a kind test, so a
+    // family becomes furniture by changing one table column.
+    const rooted = steer.rooted === true;
     // The HOBBLER's LIMP: lurch forward, drag the bad leg, lurch again. The phase
     // is seeded from the nid (core.makeZombie) rather than wall-clock, so it is
     // per-actor distinct AND identical on every co-op peer. Floored at 0 because
@@ -664,18 +794,27 @@ export function updateZombies(dt: number): void {
     const gait = sub?.gait === "limp"
       ? Math.max(0, 1 + LIMP_AMP * Math.sin((z.bobT ?? 0) * LIMP_FREQ + (z.gaitPhase ?? 0)))
       : 1;
-    const mx = rooted ? 0 : (vx * z.speed * chillMul * gait + sx * 1.5) * dt;
-    const mz = rooted ? 0 : (vz * z.speed * chillMul * gait + sz * 1.5) * dt;
+    // A policy that LOCKS a line (a committed pounce) must not be shoved off it
+    // by the separation pass — the arc is the mechanic, and a horde nudging it
+    // sideways would make the telegraph a lie.
+    const shove = steer.locked ? 0 : 1.5;
+    const mult = steer.mult ?? 1;
+    const mx = rooted ? 0 : (vx * z.speed * chillMul * gait * mult + sx * shove) * dt;
+    const mz = rooted ? 0 : (vz * z.speed * chillMul * gait * mult + sz * shove) * dt;
     if (mx !== 0 || mz !== 0) {
       const res = moveCircle(g, z.x, z.z, bodyR, mx, mz);
       z.x = res.x;
       z.z = res.z;
     }
 
-    if (vx !== 0 || vz !== 0) {
+    if ((vx !== 0 || vz !== 0) && !steer.hold) {
       z.anim.setFacing(facingFromWorld(vx, vz, "S"));
       z.anim.play("walk");
     } else {
+      // `hold` is a policy STANDING STILL on purpose (an ambusher in wait, a
+      // leaper mid-crouch). It must read as stillness, not as a walk cycle in
+      // place, or the telegraph the whole policy rests on is invisible.
+      if (steer.hold && (vx !== 0 || vz !== 0)) z.anim.setFacing(facingFromWorld(vx, vz, "S"));
       z.anim.play("idle");
     }
 
@@ -739,13 +878,27 @@ function updateGhost(z: Zombie, dt: number): void {
     return;
   }
 
-  if (pdist > 1e-4) {
-    const nx = pdx / pdist;
-    const nz = pdz / pdist;
+  // The heading comes from the SAME dispatch table the grounded horde uses
+  // (the `phase` policy) — what makes a ghost a ghost is that this function
+  // integrates the result without moveCircle, not that it computes a different
+  // direction.
+  const drift = MOVEMENT_HANDLERS.phase(z, {
+    dt,
+    pdx,
+    pdz,
+    pdist,
+    flowX: 0,
+    flowZ: 0,
+    contactRange: st.contactRange,
+    los: true, // it passes through walls; sight lines are never its problem
+    packNear: 0,
+    packCommitted: false,
+  });
+  if (drift.vx !== 0 || drift.vz !== 0) {
     // NO moveCircle — the ghost passes through walls. Just integrate position.
-    z.x += nx * z.speed * dt;
-    z.z += nz * z.speed * dt;
-    z.anim.setFacing(facingFromWorld(nx, nz, "S"));
+    z.x += drift.vx * z.speed * dt;
+    z.z += drift.vz * z.speed * dt;
+    z.anim.setFacing(facingFromWorld(drift.vx, drift.vz, "S"));
   }
   z.anim.play("walk");
   syncGhostMesh(z);

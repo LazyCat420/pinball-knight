@@ -395,6 +395,35 @@ export interface Zombie extends Actor {
   slideVZ?: number;
   /** GHOST only: seconds left materialized (vulnerable). Immune while ≤ 0. */
   vulnT?: number;
+  /**
+   * MOVEMENT scratch (entities/movement.ts). These four are the ONLY state a
+   * steering policy owns, and they are deliberately generic: `moveT` is a
+   * strafer's dart cadence, an orbiter's spiral clock and a leaper's recovery
+   * timer, because a per-policy field on every actor would put six dead numbers
+   * on every zombie in a 175-actor horde.
+   *
+   * `movePhase` is the per-actor asymmetry (which way a flanker peels, which way
+   * an orbiter rings), derived from `nid` at spawn — NOT Math.random, so two
+   * co-op peers watching the same horde see the same arcs.
+   */
+  movePhase?: number;
+  moveCommit?: number;
+  moveT?: number;
+  moveDirX?: number;
+  moveDirZ?: number;
+  /**
+   * STAGGER (entities/stagger.ts) — Doom's pain chance, paid with a PoE entropy
+   * accumulator instead of dice. `painEntropy` banks chance × 100 per impact and
+   * fires when it crosses 100; `staggerT` is the frozen window it buys.
+   * `dodgeEntropy` is the same machinery for the `dodges-ranged` sub-type
+   * exception, kept as a SEPARATE counter so a sub-type that both staggers and
+   * dodges cannot have one stream starve the other.
+   *
+   * Counters, not rolls, so a co-op peer and a replay agree by construction.
+   */
+  painEntropy?: number;
+  staggerT?: number;
+  dodgeEntropy?: number;
 }
 
 /**

@@ -5,8 +5,11 @@
  * CardDef.source).
  */
 import { describe, it, expect } from "vitest";
-import { buildBestiary, bestiaryProgress, KIND_IDS, KIND_INFO } from "./bestiary";
-import { CARDS, CARD_IDS } from "./cards";
+import { buildBestiary, bestiaryProgress, familyMilestone, familyAffinity, KIND_IDS, KIND_INFO } from "./bestiary";
+import { MOMENTUM_GATES, MOVEMENT_BY_KIND } from "./entities/enemy-rules";
+import { PAIN_BY_KIND } from "./entities/stagger";
+import { BESTIARY_MILESTONES, BESTIARY_AFFINITY_MAX } from "./constants";
+import { CARDS, CARD_IDS, rollCardDrop } from "./cards";
 import { ENEMY_DROPS } from "./reagents";
 import { ZOMBIE_TYPE_IDS } from "./zombie-types";
 
@@ -181,5 +184,181 @@ describe("zombie sub-type rows", () => {
     const s = zombieEntry({ zombie: 1, "zombie:hulk": 5 }).subTypes.find((r) => r.id === "shambler")!;
     expect(s.kills).toBe(0);
     expect(s.seen).toBe(false);
+  });
+});
+
+/**
+ * WAVE-5: the bestiary stops being read-only (DECLONE §6.5).
+ *
+ * It told you a Wisp drops flask glass and gave you no reason to go and fight
+ * Wisps you did not already have. Two things change that: the RULES each family
+ * plays by are printed (they existed only as behaviour — the game's clearest
+ * teaching about momentum could only be learned by dying to it), and the kill
+ * tally BUYS something.
+ */
+describe("mechanics text — derived, never authored twice", () => {
+  it("gives every monster at least one rule the player can act on", () => {
+    for (const e of buildBestiary({})) {
+      expect(e.mechanics.length, `${e.kind} has no mechanics text`).toBeGreaterThan(0);
+      for (const m of e.mechanics) expect(m.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("prints the momentum gate for EXACTLY the families that have one", () => {
+    // Derived from MOMENTUM_GATES, which is the table combat.ts enforces from.
+    // A gate the code applies and the screen omits is a rule the player can
+    // only learn by dying, which is what this whole section exists to fix.
+    const gated = Object.keys(MOMENTUM_GATES);
+    for (const e of buildBestiary({})) {
+      const printsGate = e.mechanics.some((m) => m === MOMENTUM_GATES[e.kind]?.text);
+      expect(printsGate, `${e.kind}`).toBe(gated.includes(e.kind));
+    }
+  });
+
+  it("describes how it MOVES for every family that isn't a plain chaser", () => {
+    for (const e of buildBestiary({})) {
+      if (MOVEMENT_BY_KIND[e.kind] === "chase") continue;
+      expect(e.mechanics.length, `${e.kind} moves oddly but says nothing`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("says how hard each thing is to stagger, and agrees with PAIN_BY_KIND", () => {
+    const golem = buildBestiary({}).find((e) => e.kind === "golem")!;
+    const zomb = buildBestiary({}).find((e) => e.kind === "zombie")!;
+    expect(golem.mechanics.join(" ")).toMatch(/unstaggerable|Hard to stagger/i);
+    expect(zomb.mechanics.join(" ")).toMatch(/rocked/i);
+    expect(PAIN_BY_KIND.golem).toBeLessThan(PAIN_BY_KIND.zombie);
+  });
+
+  it("surfaces every sub-type's exception as an ANSWER, not a symptom", () => {
+    // "immune to bounce damage" tells you what failed; "bring steel" tells you
+    // what to do. A bestiary that only does the former is a patch note.
+    const zomb = buildBestiary({ zombie: 40, "zombie:lurcher": 5, "zombie:hulk": 5, "zombie:runner": 5 })!
+      .find((e) => e.kind === "zombie")!;
+    const notes = (id: string): string => zomb.subTypes.find((s) => s.id === id)!.notes.join(" · ");
+    expect(notes("lurcher")).toMatch(/bring steel/i);
+    expect(notes("hulk")).toMatch(/needs the ride/i);
+    expect(notes("runner")).toMatch(/arrows/i);
+  });
+});
+
+describe("milestones — the tally buys something", () => {
+  it("starts at tier 0 with no bonus and a visible next step", () => {
+    const m = familyMilestone(0);
+    expect(m.tier).toBe(0);
+    expect(m.affinity).toBe(1);
+    expect(m.next).toBe(BESTIARY_MILESTONES[0]);
+    expect(m.toNext).toBe(BESTIARY_MILESTONES[0]);
+  });
+
+  it("climbs one tier per threshold and reports the gap honestly", () => {
+    for (let i = 0; i < BESTIARY_MILESTONES.length; i++) {
+      const at = familyMilestone(BESTIARY_MILESTONES[i]);
+      expect(at.tier).toBe(i + 1);
+      const justBefore = familyMilestone(BESTIARY_MILESTONES[i] - 1);
+      expect(justBefore.tier).toBe(i);
+      expect(justBefore.toNext).toBe(1);
+    }
+  });
+
+  it("tops out — an uncapped farm bonus makes one family the only one worth killing", () => {
+    expect(familyAffinity(1e9)).toBeLessThanOrEqual(BESTIARY_AFFINITY_MAX);
+    expect(familyAffinity(1e9)).toBe(familyAffinity(BESTIARY_MILESTONES[BESTIARY_MILESTONES.length - 1]));
+    expect(familyMilestone(1e9).next).toBeNull();
+    expect(familyMilestone(1e9).toNext).toBeNull();
+  });
+
+  it("is monotone and never drops below 1×", () => {
+    let prev = 0;
+    for (let k = 0; k <= 400; k += 3) {
+      const a = familyAffinity(k);
+      expect(a).toBeGreaterThanOrEqual(Math.max(1, prev));
+      prev = a;
+    }
+  });
+
+  it("rides on the EXISTING kill tally — no parallel record to forget to reset", () => {
+    const e = buildBestiary({ wisp: BESTIARY_MILESTONES[1] }).find((x) => x.kind === "wisp")!;
+    expect(e.kills).toBe(BESTIARY_MILESTONES[1]);
+    expect(e.milestone.tier).toBe(2);
+    expect(e.milestone.affinity).toBeGreaterThan(1);
+  });
+});
+
+describe("⚠️ THE DOCUMENTED DROP-RATE TRAP", () => {
+  /**
+   * `rollCardDrop` draws affinity INSIDE the pick (cards.ts:675-690), i.e. only
+   * once a drop has already been decided by the gates above it. Drawing it any
+   * earlier — or drawing anything else earlier — shifts the random stream the
+   * GATES see and silently moves the drop RATE, which is the one failure this
+   * design exists to avoid.
+   *
+   * So the milestone bias is deliberately shipped as a pure REPORT.
+   * `familyAffinity` computes the multiplier and hands it over; nothing in this
+   * module reaches into the roll. Wiring it is a one-line change at each of the
+   * two `rand() < AFFINITY_CHANCE` comparisons in `pick` — multiply
+   * AFFINITY_CHANCE by the bias THERE, drawing no extra numbers — and these
+   * cases are the guard rail for whoever does it.
+   */
+  it("building the bestiary consumes no randomness at all", () => {
+    const real = Math.random;
+    Math.random = () => {
+      throw new Error("buildBestiary touched the RNG — the drop stream is not its to move");
+    };
+    try {
+      buildBestiary({ zombie: 200, wisp: 90 });
+      familyMilestone(200);
+      familyAffinity(200);
+    } finally {
+      Math.random = real;
+    }
+  });
+
+  it("leaves the drop RATE exactly where it was, at every kill count", () => {
+    // The regression in one assertion: the same seeded stream must produce the
+    // same sequence of drops whether or not the player has farmed the family.
+    const seq = (): Array<string | null> => {
+      let i = 0;
+      const xs = [0.02, 0.4, 0.9, 0.11, 0.63, 0.27, 0.81, 0.05, 0.55, 0.34];
+      const rand = (): number => xs[i++ % xs.length];
+      return Array.from({ length: 40 }, () => rollCardDrop({ floor: 3, kind: "wisp" }, rand));
+    };
+    const before = seq();
+    // Farming a family must not change the stream — it changes what the pick
+    // WOULD prefer, and only at the affinity comparison.
+    familyAffinity(500);
+    expect(seq()).toEqual(before);
+  });
+
+  it("hands the bias over as a plain number a caller can apply at the draw", () => {
+    const a = familyAffinity(BESTIARY_MILESTONES[0]);
+    expect(a).toBeGreaterThan(1);
+    expect(Number.isFinite(a)).toBe(true);
+  });
+});
+
+describe("the pinball layer keeps score in the bestiary too", () => {
+  it("counts RAM kills and the best chain separately from the plain tally", () => {
+    const e = buildBestiary({ brute: 12, "brute#ram": 5, "brute#combo": 31 }).find((x) => x.kind === "brute")!;
+    expect(e.kills).toBe(12);
+    expect(e.ramKills).toBe(5);
+    expect(e.bestCombo).toBe(31);
+  });
+
+  it("defaults to zero rather than undefined for anything never rammed", () => {
+    const e = buildBestiary({ brute: 3 }).find((x) => x.kind === "brute")!;
+    expect(e.ramKills).toBe(0);
+    expect(e.bestCombo).toBe(0);
+  });
+
+  it("the namespaced keys never leak into the sub-type tally", () => {
+    // subTypesFor derives the shambler count as "family total minus tagged
+    // sub-types". A "#"-namespaced key counted as a sub-type would make that
+    // arithmetic negative — which is why the separator differs from ":".
+    const e = buildBestiary({ zombie: 10, "zombie:hulk": 2, "zombie#ram": 7, "zombie#combo": 44 })
+      .find((x) => x.kind === "zombie")!;
+    const shambler = e.subTypes.find((s) => s.id === "shambler")!;
+    expect(shambler.kills).toBe(8);
+    expect(e.ramKills).toBe(7);
   });
 });

@@ -273,7 +273,9 @@ export function updateMultiBall(dt: number): void {
       if (dx * dx + dz * dz > reachSq) continue;
       if (!canRam(e.hitCd, z)) continue;
       const inv = Math.hypot(dx, dz) || 1;
-      damageZombie(z, dmg, dx / inv, dz / inv, BALL_RAM_KNOCKBACK * 0.6);
+      // Same tool as the knight's own ram, so the "bounce-immune" exception
+      // cannot be laundered by sending an echo-knight instead.
+      damageZombie(z, dmg, dx / inv, dz / inv, BALL_RAM_KNOCKBACK * 0.6, false, "bounce");
       e.hitCd.set(z, MULTIBALL_RAM_COOLDOWN);
       state.vfx?.sparks(e.x, 0.55, e.z, dx / inv, dz / inv, 4);
     }

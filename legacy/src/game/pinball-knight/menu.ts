@@ -312,8 +312,36 @@ function bestiaryBody(): string {
           .join("") +
         `</div>`
       : "";
-    return `<div style="display:flex;flex-wrap:wrap;gap:8px">${drops}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">${cards}</div>${subs}`;
+    // THE RULES IT PLAYS BY. These were behaviour-only until now: nothing on
+    // any screen said a golem needs smash-speed or that ramming a crystalback
+    // sprays shards back into you, so the game's clearest teaching about
+    // momentum could only be learned by dying to it.
+    // How you have been killing them. A ram tally next to a sword tally is the
+    // pinball layer and the ARPG layer finally scoring the same fight.
+    const style =
+      e.ramKills > 0 || e.bestCombo > 0
+        ? `<span style="font-size:10px;color:#6c5a3e">${e.ramKills > 0 ? `· ${e.ramKills} run down` : ""}${e.bestCombo > 0 ? ` · best chain ×${e.bestCombo}` : ""}</span>`
+        : "";
+    const mech = e.mechanics.length
+      ? `<div style="display:flex;flex-direction:column;gap:1px;margin-top:3px">` +
+        e.mechanics.map((m) => `<span style="font-size:10px;color:#a89b7d">· ${m}</span>`).join("") +
+        `</div>`
+      : "";
+    return `${mech}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">${drops}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:3px">${cards}</div>${style}${subs}`;
+  };
+
+  /**
+   * The kill tally, now that it BUYS something. A count with no consequence is
+   * a statistic; a count with a next threshold on it is a reason to go back.
+   */
+  const tally = (e: ReturnType<typeof buildBestiary>[number]): string => {
+    if (!e.seen) return `<span style="color:#6c5a3e;font-size:10px">unmet</span>`;
+    const m = e.milestone;
+    const aff = m.affinity > 1 ? ` <span style="color:${GOLD}">·${m.affinity.toFixed(2)}× its card</span>` : "";
+    const next = m.toNext !== null ? ` <span style="color:#6c5a3e">(${m.toNext} to next)</span>` : "";
+    return `<span style="color:#9a8f77;font-size:10px;white-space:nowrap">×${e.kills}${aff}${next}</span>`;
   };
 
   const body = entries
@@ -322,7 +350,7 @@ function bestiaryBody(): string {
       <div style="display:flex;align-items:baseline;gap:6px">
         <b style="color:${e.seen ? "#e8dcc0" : "#6c5a3e"};font-size:12px">${e.icon} ${e.label}</b>
         <span style="color:#9a8f77;font-size:10px;flex:1">${e.blurb}</span>
-        <span style="color:#6c5a3e;font-size:10px">${e.seen ? `×${e.kills}` : "unmet"}</span>
+        ${tally(e)}
       </div>
       ${rowsFor(e)}
     </div>`,
@@ -330,7 +358,7 @@ function bestiaryBody(): string {
     .join("");
 
   return `<div class="gmenu-h" style="color:${GOLD}">BESTIARY — ${p.seen}/${p.total} monsters met</div>
-    <div style="color:#9a8f77;font-size:10px;margin-bottom:2px">A monster's materials brew at the Tavern Alchemist; its card is its power, socketed into a weapon or armour. Every zombie shape drops its own card.</div>
+    <div style="color:#9a8f77;font-size:10px;margin-bottom:2px">A monster's materials brew at the Tavern Alchemist; its card is its power, socketed into a weapon or armour. Every zombie shape drops its own card. Keep killing a family and its card grows more likely to drop.</div>
     ${body}`;
 }
 
