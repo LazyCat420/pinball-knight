@@ -69,7 +69,7 @@ import { stampPrefabs, stampLandmark, pickFocusCells, themeFor, themeIndexFor } 
 import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
-import { buildMaze } from "./maze/build";
+import { buildMaze, setMazeBiome } from "./maze/build";
 import { bfsDistances, bfsDistancesOwned } from "./engine/flow-field";
 import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
@@ -883,6 +883,11 @@ function buildLevel(level: number): void {
   // Depth grading: each biome down shifts the fill palette a family over.
   const biome = biomeFor(level);
   tintLights(biome);
+  // ...and the STONE changes family with it, not just the light on it. A grade
+  // cannot move a quantized palette entry onto a different one, so the masonry
+  // painters remap their own three stone tones per biome (maze/build.ts
+  // BIOME_STONE). Must run before buildMaze — the textures bake it in.
+  setMazeBiome(themeIndexFor(level, state.runSeed));
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.

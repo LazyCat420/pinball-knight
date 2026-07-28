@@ -936,11 +936,14 @@ function knightTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
  * forward tumble. Direction of spin follows facing so a westward roll turns
  * the other way from an eastward one.
  */
-function knightRollFrame(dir: Dir, t: number, weapon: WeaponId, look: KnightLook): FramePaint {
+function knightRollFrame(dir: Dir, t: number, weapon: WeaponId, look: KnightLook, tuckOverride?: number): FramePaint {
   const base = (ctx: CanvasRenderingContext2D) => knightFrame(ctx, dir, { bob: 4, stride: 0, roll: 0.3 }, weapon, look);
   const spinDir = dir === "N" ? -1 : 1; // N faces away → tumble reads reversed
   const angle = spinDir * t * Math.PI * 2; // one full rotation across the roll
-  const tuck = 0.72 + 0.12 * Math.sin(t * Math.PI); // squash to a ball mid-roll
+  // `tuckOverride` is how the ENTRY and EXIT frames are authored: a nearly
+  // untucked figure at zero rotation, so the clip has a dip before the spin and
+  // a rise out of it instead of snapping from standing to fully balled.
+  const tuck = tuckOverride ?? 0.72 + 0.12 * Math.sin(t * Math.PI); // squash to a ball mid-roll
   return (ctx) => {
     ctx.save();
     // pivot about the feet line, tuck (scale down), then spin
@@ -1239,14 +1242,27 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
           F(dir, { bob: 0.3, stride: 0, plumeLag: 0.3 }),
         ],
 
-    // ── ROLL: a 4-frame forward tumble — duck, spin a full turn about the
-    // feet, pop back up. i-frames cover the front half (see player.ts); the
-    // spin is fastest through the middle two frames where the tuck is tightest. ──
+    // ── ROLL: a 6-frame forward tumble — DIP, spin a full turn about the feet,
+    // RISE. i-frames cover the front half (see player.ts); the spin is fastest
+    // through the middle where the tuck is tightest.
+    //
+    // It was four frames, and all four were already mid-tumble: the knight
+    // snapped from standing to fully balled and back again, so the roll had a
+    // spin but no arc — the two poses a viewer needs in order to read WEIGHT
+    // (the crouch that loads it, the rise that spends it) were the two that
+    // weren't drawn. The entry and exit frames are barely tucked and unrotated,
+    // which is what turns a spinning sprite into a body throwing itself forward.
+    //
+    // FPS_ROLL went 10 → 14 with the two extra frames, so the clip still covers
+    // ROLL_DURATION (0.42s) — a roll animation that outlasts its i-frames is a
+    // lie about how long you are safe. ──
     roll: [
-      knightRollFrame(dir, 0.12, weapon, look),
-      knightRollFrame(dir, 0.4, weapon, look),
-      knightRollFrame(dir, 0.68, weapon, look),
-      knightRollFrame(dir, 0.92, weapon, look),
+      knightRollFrame(dir, 0, weapon, look, 0.96), // dip — load the tumble
+      knightRollFrame(dir, 0.14, weapon, look),
+      knightRollFrame(dir, 0.38, weapon, look),
+      knightRollFrame(dir, 0.62, weapon, look),
+      knightRollFrame(dir, 0.86, weapon, look),
+      knightRollFrame(dir, 1, weapon, look, 0.94), // rise — spend it
     ],
 
     // ── EQUIP: the tavern gear-hoist — crouch, raise the weapon overhead

@@ -167,7 +167,7 @@ export const engineConfig: EngineConfig = {
     run: 10,
     attack: 12,
     death: 6,
-    roll: 10,
+    roll: 14,
     ball: 14,
     equip: 8,
     forge: 7,

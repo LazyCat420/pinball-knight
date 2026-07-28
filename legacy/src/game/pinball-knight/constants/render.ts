@@ -266,8 +266,16 @@ export const FPS_IDLE = 3;
 export const FPS_WALK = 8;
 export const FPS_ATTACK = 12;
 export const FPS_DEATH = 6;
-/** Roll clip: 4 tuck/spin frames across ~ROLL_DURATION (0.42s) → ~10fps. */
-export const FPS_ROLL = 10;
+/**
+ * Roll clip: 6 frames across ~ROLL_DURATION (0.42s) → 14fps.
+ *
+ * Was 4 frames at 10fps, all four of them mid-tumble — the knight snapped from
+ * standing to fully balled and back, so the roll had a spin but no ARC. The two
+ * frames added are the dip that loads it and the rise that spends it, and the
+ * rate moves with them: a roll animation that outlasts its i-frames (0.42s) is
+ * a lie about how long you are safe.
+ */
+export const FPS_ROLL = 14;
 /** The tavern one-shots: the gear-hoist flourish and the anvil hammer loop. */
 export const FPS_EQUIP = 8;
 export const FPS_FORGE = 7;

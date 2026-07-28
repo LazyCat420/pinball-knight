@@ -78,10 +78,17 @@ const textureCache = new Map<string, THREE.CanvasTexture>();
  * affect every user, so use `cachedTiled` when the repeat varies.
  */
 function cachedTexture(key: string, make: () => THREE.CanvasTexture): THREE.CanvasTexture {
-  const hit = textureCache.get(key);
+  // The BIOME is part of every key. The masonry painters bake their stone
+  // colours in (see BIOME_STONE), so a shared key would hand floor 2 the rock
+  // floor 1 was built out of and the remap would look like it was never wired.
+  // Textures that carry no stone colour (normal maps, the surface washes) pay a
+  // rebuild per biome they are seen in — four at most, once each, against a
+  // cache that already outlives every floor.
+  const k = `${biomeIdx}|${key}`;
+  const hit = textureCache.get(k);
   if (hit) return hit;
   const tex = make();
-  textureCache.set(key, tex);
+  textureCache.set(k, tex);
   return tex;
 }
 
@@ -223,7 +230,54 @@ function capHeight(x: number, y: number): number {
   return 0.6;
 }
 
-const css = (i: number) => `#${PALETTE_HEX[i].toString(16).padStart(6, "0")}`;
+/**
+ * BIOME STONE REMAP — descending should change what the dungeon is MADE OF, not
+ * how brightly it is lit.
+ *
+ * A depth's colour identity was one thing: `tintLights`, three light colours on
+ * an otherwise identical grey-stone floor. That is a grade, and a grade cannot
+ * change a hue very far before it just looks like a coloured lamp pointed at
+ * grey stone — which is exactly what it looked like, because the masonry
+ * textures are painted from FIXED palette indices and no light tint can move a
+ * quantized palette entry onto a different one.
+ *
+ * So the masonry's own three stone tones are remapped per biome. Only entries
+ * 2/3/4 (stone dark / mid / light) move; ink, torch, moss, timber and every prop
+ * colour stay put, so the dungeon is recognisably the same place built out of a
+ * different rock. `tintLights` still runs — the two now agree instead of one
+ * doing all the work.
+ *
+ * Each row is picked to hold the ORIGINAL's value spread (roughly 0.18 / 0.30 /
+ * 0.45 luma). A biome that is merely darker is not a different biome, it is a
+ * readability problem, and this floor is already the darkest thing on screen.
+ */
+const BIOME_STONE: ReadonlyArray<readonly [number, number, number]> = [
+  [2, 3, 4], // 0 The Cold Crypt — the baseline: cold grey masonry
+  [6, 7, 8], // 1 The Rotting Warren — mossed-through stone, near-identical values
+  [10, 27, 24], // 2 The Bloodworks — dried blood in the grooves over warm sandstone
+  [29, 30, 4], // 3 The Arcane Deep — cold blue rock, neutral stone highlights
+];
+let biomeIdx = 0;
+
+/**
+ * Set the stone family for the floor about to be built. Called from startLevel
+ * alongside `tintLights`, and BEFORE `buildMaze` — the textures bake the colour
+ * in, so changing it afterwards does nothing until the next descent.
+ *
+ * Every cached texture key carries the biome (see `cachedTexture`), or floor 2
+ * would silently reuse floor 1's masonry and the whole system would look like
+ * it had never been wired.
+ */
+export function setMazeBiome(index: number): void {
+  const n = BIOME_STONE.length;
+  biomeIdx = (((index | 0) % n) + n) % n;
+}
+
+const css = (i: number) => {
+  const s = BIOME_STONE[biomeIdx];
+  const j = i === 2 ? s[0] : i === 3 ? s[1] : i === 4 ? s[2] : i;
+  return `#${PALETTE_HEX[j].toString(16).padStart(6, "0")}`;
+};
 
 /**
  * Flagstone floor. The texture spans FLOOR_BLOCK tiles of noise per repeat —
