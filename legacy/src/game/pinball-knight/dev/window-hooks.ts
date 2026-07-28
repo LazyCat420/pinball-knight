@@ -20,7 +20,7 @@ import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
-import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R } from "../constants";
+import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { bossEngaged } from "../boss";
@@ -112,12 +112,16 @@ export function installDevHooks(deps: DevHookDeps): void {
     // Dev: force a weapon into the active slot (QA the bow/gun/etc. without hunting
     // for a pickup). `__dungeonGive('bow')`.
     // Dev: bind any ability to a Q/E slot (QA a skill without the tree grind).
-    // `__dungeonAbility(1, 'slickfield')`.
-    (window as unknown as { __dungeonAbility?: (slot: number, id: string) => boolean }).__dungeonAbility = (slot: number, id: string) => {
+    // `__dungeonAbility(1, 'slickfield')`, or with ranks: `(1, 'slickfield', 3)`.
+    // The rank argument exists because the interesting half of an ability's
+    // behaviour now only appears at rank 2 (a rod, a rune ring, a tar core),
+    // and a harness that can only cast rank 0 can never see it.
+    (window as unknown as { __dungeonAbility?: (slot: number, id: string, rank?: number) => boolean }).__dungeonAbility = (slot: number, id: string, rank?: number) => {
       if (!(id in ABILITIES) || (slot !== 0 && slot !== 1)) return false;
       const aid = id as AbilityId;
       if (!state.unlockedAbilities.includes(aid)) state.unlockedAbilities.push(aid);
       state.abilitySlots[slot] = aid;
+      if (typeof rank === "number") state.abilityRanks[aid] = Math.max(0, Math.min(ABILITY_RANK_MAX, Math.floor(rank)));
       state.hudDirty = true;
       return true;
     };

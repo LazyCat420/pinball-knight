@@ -44,6 +44,28 @@ export interface SkillModifier {
   xpMult?: number;
   /** Unlocks an active ability for the Q/E slots (rank 1 only). */
   unlockAbility?: AbilityId;
+
+  // ── Momentum-aware smalls ──────────────────────────────────────────────
+  // These are the tree's answer to "what game is this?". Both are FARMABLE, so
+  // both aggregate ADDITIVELY (DECLONE §1.2) and both are scaled downstream by
+  // `momentumT` — worth nothing at a standstill, worth their printed value at
+  // terminal speed, concave in between. Nothing here can run away, because
+  // momentumT is structurally incapable of exceeding 1.
+  /** Extra fraction of cooldown-decay RATE at terminal speed (0.35 = +35%). */
+  momentumCooldownRate?: number;
+  /** Extra fraction of ability POWER at terminal speed (0.15 = +15%). */
+  momentumAbilityPower?: number;
+
+  // ── Keystones ──────────────────────────────────────────────────────────
+  // A keystone is a RULE CHANGE plus a STRUCTURAL DRAWBACK (the PoE lesson),
+  // never a bigger number. Each of the three is a boolean because there is
+  // nothing to scale: you either play by the new rule or you do not.
+  /** Casts you cannot afford fire anyway and cost a heart. Drawback: −30 mana. */
+  bloodPrice?: boolean;
+  /** You burn the floor whenever you are fast. Drawback: your own fire bites. */
+  cinderWake?: boolean;
+  /** The table is your only battery. Drawback: the clock stops refilling it. */
+  dynamo?: boolean;
 }
 
 export interface SkillNodeDef {
@@ -67,12 +89,36 @@ export const SKILLS: Record<SkillId, SkillNodeDef> = {
   whetstone: { id: "whetstone", label: "Whetstone", icon: "🗡️", branch: "steel", row: 0, maxRank: 3, cost: 1, description: "+6% damage per rank", modifier: { damageMult: 1.06 } },
   ironheart: { id: "ironheart", label: "Iron Heart", icon: "❤️", branch: "steel", row: 1, maxRank: 2, cost: 1, requires: ["whetstone"], description: "+1 max heart per rank", modifier: { maxHpFlat: 1 } },
   juggernaut: { id: "juggernaut", label: "Juggernaut", icon: "🛡️", branch: "steel", row: 2, maxRank: 2, cost: 2, requires: ["ironheart"], description: "+10% damage per rank", modifier: { damageMult: 1.1 } },
+  /**
+   * KEYSTONE — BLOOD PRICE. The rule: an empty pool stops being a wall. A cast
+   * you cannot afford in mana goes off anyway and takes a heart.
+   *
+   * The drawback is structural, not a tax: −30 max mana, permanently, which is
+   * what GUARANTEES you meet the new rule instead of merely being allowed to.
+   * A steel node that reaches into the arcana economy is the point — the
+   * survival branch buys you the right to spend survival.
+   */
+  bloodprice: { id: "bloodprice", label: "Blood Price", icon: "🩸", branch: "steel", row: 3, maxRank: 1, cost: 3, requires: ["juggernaut"], description: "KEYSTONE — cast with an empty pool, paying 1 heart. −30 max mana, forever.", modifier: { bloodPrice: true, manaMaxFlat: -30 } },
 
   // ── FLIPPER — momentum, mobility, gold ──
   greasedgreaves: { id: "greasedgreaves", label: "Greased Greaves", icon: "👢", branch: "flipper", row: 0, maxRank: 3, cost: 1, description: "+4% move speed per rank", modifier: { moveSpeedMult: 1.04 } },
   ballbearings: { id: "ballbearings", label: "Ball Bearings", icon: "🪩", branch: "flipper", row: 1, maxRank: 2, cost: 1, requires: ["greasedgreaves"], description: "+15% damage while riding momentum, per rank", modifier: { pinballDamageMult: 1.15 } },
   coinmagnet: { id: "coinmagnet", label: "Coin Magnet", icon: "🪙", branch: "flipper", row: 1, maxRank: 2, cost: 1, requires: ["greasedgreaves"], description: "coins worth +10% per rank", modifier: { goldMult: 1.1 } },
   wreckingball: { id: "wreckingball", label: "Wrecking Ball", icon: "💥", branch: "flipper", row: 2, maxRank: 1, cost: 2, requires: ["ballbearings"], description: "+25% damage while riding momentum", modifier: { pinballDamageMult: 1.25 } },
+  /** Cooldowns recover on the SPEEDOMETER, not only the clock. Nothing at a
+   *  walk, +35%/rank at terminal — the first tree node that pays you for the
+   *  thing the game is actually about. */
+  overdrive: { id: "overdrive", label: "Overdrive", icon: "⏩", branch: "flipper", row: 3, maxRank: 2, cost: 1, requires: ["ballbearings"], description: "abilities cool down up to +35% faster per rank — scaled by your speed", modifier: { momentumCooldownRate: 0.35 } },
+  /**
+   * KEYSTONE — CINDER WAKE. The rule: once you are past half the momentum ramp
+   * you are ON FIRE, permanently, not only during a Flipper Charge. The horde
+   * burns on the line you take.
+   *
+   * The drawback is the same sentence read backwards: your own fire stops being
+   * harmless. The lane you just laid is a lane you can drive back into, and on
+   * a maze floor you will. You cannot take the trail without taking the trap.
+   */
+  cinderwake: { id: "cinderwake", label: "Cinder Wake", icon: "🔥", branch: "flipper", row: 4, maxRank: 1, cost: 3, requires: ["wreckingball"], description: "KEYSTONE — burn the floor whenever you are fast. Your own fire burns YOU.", modifier: { cinderWake: true } },
 
   // ── ARCANA — mana, cooldowns, ability unlocks ──
   manawell: { id: "manawell", label: "Mana Well", icon: "🔮", branch: "arcana", row: 0, maxRank: 2, cost: 1, description: "+15 max mana per rank", modifier: { manaMaxFlat: 15 } },
@@ -80,6 +126,27 @@ export const SKILLS: Record<SkillId, SkillNodeDef> = {
   unlockmagnet: { id: "unlockmagnet", label: "Magnet Aura", icon: "🧲", branch: "arcana", row: 1, maxRank: 1, cost: 1, requires: ["manawell"], description: "unlock the Magnet Aura ability", modifier: { unlockAbility: "magnetaura" } },
   unlocktimecrawl: { id: "unlocktimecrawl", label: "Time Crawl", icon: "⏳", branch: "arcana", row: 2, maxRank: 1, cost: 2, requires: ["unlockmagnet"], description: "unlock the Time Crawl ability", modifier: { unlockAbility: "timecrawl" } },
   unlockbladestorm: { id: "unlockbladestorm", label: "Blade Storm", icon: "🌪️", branch: "arcana", row: 2, maxRank: 1, cost: 2, requires: ["swiftcasting"], description: "unlock the Blade Storm ability", modifier: { unlockAbility: "bladestorm" } },
+  /**
+   * The node ABILITY_FX_PLAN §5 said shipped and never did. Slick Field was
+   * handed out free in `state.unlockedAbilities` while the plan described an
+   * arcana unlock, so the branch whose stated job is "UNLOCKING the locked
+   * active abilities" quietly had a hole in it. There are two Q/E slots and two
+   * default abilities: a third free one was not a gift, it was an unowned node.
+   */
+  unlockslick: { id: "unlockslick", label: "Slick Field", icon: "🛢️", branch: "arcana", row: 1, maxRank: 1, cost: 1, requires: ["manawell"], description: "unlock the Slick Field ability", modifier: { unlockAbility: "slickfield" } },
+  /** Your spells hit as hard as you are travelling. Additive with ability ranks
+   *  (both are farmable), momentum-scaled so it is worth nothing standing still. */
+  kineticfocus: { id: "kineticfocus", label: "Kinetic Focus", icon: "🎯", branch: "arcana", row: 3, maxRank: 2, cost: 1, requires: ["swiftcasting"], description: "+15% ability power per rank — scaled by your speed", modifier: { momentumAbilityPower: 0.15 } },
+  /**
+   * KEYSTONE — DYNAMO. The rule: mana stops arriving on a wall clock. The TABLE
+   * is the battery — every bounce pays 3.2× the normal trickle.
+   *
+   * The drawback is total and structural: stand still and the pool never comes
+   * back, no matter how long you wait. This is the one node that decides what
+   * kind of run you are having, because it makes every ability in the game a
+   * function of how well you are riding rather than of how long you have lived.
+   */
+  dynamo: { id: "dynamo", label: "Dynamo", icon: "🔋", branch: "arcana", row: 4, maxRank: 1, cost: 3, requires: ["kineticfocus"], description: "KEYSTONE — bounces pay 3.2× mana. Mana no longer regenerates on its own.", modifier: { dynamo: true } },
 };
 
 export const SKILL_IDS: SkillId[] = Object.keys(SKILLS);
@@ -95,11 +162,21 @@ export interface SkillAggregate {
   goldMult: number;
   pinballDamageMult: number;
   xpMult: number;
+  /** Additive fraction of extra cooldown-decay rate at terminal speed. */
+  momentumCooldownRate: number;
+  /** Additive fraction of extra ability power at terminal speed. */
+  momentumAbilityPower: number;
+  /** Keystone: an unaffordable cast fires and costs a heart. */
+  bloodPrice: boolean;
+  /** Keystone: burn the floor at speed, and be burnt by it. */
+  cinderWake: boolean;
+  /** Keystone: the table is the only mana source. */
+  dynamo: boolean;
   unlocked: AbilityId[];
 }
 
 export function neutralAggregate(): SkillAggregate {
-  return { damageMult: 1, moveSpeedMult: 1, maxHpFlat: 0, manaMaxFlat: 0, cooldownMult: 1, goldMult: 1, pinballDamageMult: 1, xpMult: 1, unlocked: [] };
+  return { damageMult: 1, moveSpeedMult: 1, maxHpFlat: 0, manaMaxFlat: 0, cooldownMult: 1, goldMult: 1, pinballDamageMult: 1, xpMult: 1, momentumCooldownRate: 0, momentumAbilityPower: 0, bloodPrice: false, cinderWake: false, dynamo: false, unlocked: [] };
 }
 
 /** Fold one modifier into an aggregate `times` ranks over. */
@@ -113,6 +190,19 @@ function fold(a: SkillAggregate, m: SkillModifier, times: number): void {
     if (m.goldMult) a.goldMult *= m.goldMult;
     if (m.pinballDamageMult) a.pinballDamageMult *= m.pinballDamageMult;
     if (m.xpMult) a.xpMult *= m.xpMult;
+    // ADDITIVE, deliberately — these are farmable ranks, and DECLONE §1.2 puts
+    // farmable bonuses in the additive bucket. They are also multiplied by
+    // `momentumT` ≤ 1 downstream, so the stack is bounded twice over.
+    if (m.momentumCooldownRate) a.momentumCooldownRate += m.momentumCooldownRate;
+    if (m.momentumAbilityPower) a.momentumAbilityPower += m.momentumAbilityPower;
+  }
+  if (times > 0) {
+    // Keystones are latched, not counted: maxRank is 1 and a rule cannot be
+    // taken twice. Written as an OR so a legacy base and a tree rank granting
+    // the same keystone agree instead of racing.
+    if (m.bloodPrice) a.bloodPrice = true;
+    if (m.cinderWake) a.cinderWake = true;
+    if (m.dynamo) a.dynamo = true;
   }
   if (m.unlockAbility && times > 0 && !a.unlocked.includes(m.unlockAbility)) a.unlocked.push(m.unlockAbility);
 }

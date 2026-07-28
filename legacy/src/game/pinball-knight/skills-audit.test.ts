@@ -144,20 +144,21 @@ describe("each modifier reaches a real downstream system", () => {
 
   it("NO node has a modifier that the aggregate silently drops", () => {
     // Guards against adding a SkillModifier field that fold() forgets to apply.
+    //
+    // Written as a walk over the aggregate's OWN KEYS rather than a hand-listed
+    // set of comparisons. The hand-listed version had the same blind spot as
+    // the bug it was guarding against: adding a field to SkillAggregate and
+    // forgetting to add it here made the test pass on a node that did nothing.
+    // It caught its first real case the day the keystones landed — by failing
+    // for the wrong reason.
+    const neutral = aggregateSkills({});
+    const keys = Object.keys(neutral) as Array<keyof typeof neutral>;
     for (const id of SKILL_IDS) {
       const m = SKILLS[id].modifier;
       const agg = aggregateSkills({ [id]: 1 });
-      const neutral = aggregateSkills({});
-      const changed =
-        agg.damageMult !== neutral.damageMult ||
-        agg.moveSpeedMult !== neutral.moveSpeedMult ||
-        agg.maxHpFlat !== neutral.maxHpFlat ||
-        agg.manaMaxFlat !== neutral.manaMaxFlat ||
-        agg.cooldownMult !== neutral.cooldownMult ||
-        agg.goldMult !== neutral.goldMult ||
-        agg.pinballDamageMult !== neutral.pinballDamageMult ||
-        agg.xpMult !== neutral.xpMult ||
-        agg.unlocked.length !== neutral.unlocked.length;
+      const changed = keys.some((k) =>
+        k === "unlocked" ? agg.unlocked.length !== neutral.unlocked.length : agg[k] !== neutral[k],
+      );
       expect(changed, `${id} has modifier ${JSON.stringify(m)} but changes NOTHING in the aggregate`).toBe(true);
     }
   });
