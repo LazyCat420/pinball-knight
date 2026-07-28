@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { CARDS, CARD_IDS, aggregateCards, cardFitsKind, cardsOfRarity, cardsOfSource, rollCardDrop, COMMON_DROP_CHANCE, CARD_STACK_SOFT_CAP } from "./cards";
+import { familyAffinity } from "./bestiary";
+import { BESTIARY_MILESTONES } from "./constants";
 
 describe("cards", () => {
   it("every card has a valid rarity, kind and at least one effect", () => {
@@ -166,7 +168,11 @@ describe("monster affinity (CardDef.source)", () => {
    * a silent buff to every kill in the game.
    */
   it("does NOT change the total drop rate", () => {
-    const count = (kind?: "ghost"): number => {
+    // "spider", not "ghost": ghost's only card is EPIC, so at floor 1 — where
+    // only commons drop — the affinity branch finds an empty pool, never draws,
+    // and this test passes without exercising the stream it exists to guard.
+    // Spider has a common (spidersilk), so the affinity rand() actually fires.
+    const count = (kind?: "spider"): number => {
       const rand = lcg(99);
       let drops = 0;
       for (let k = 0; k < 40000; k++) {
@@ -174,7 +180,7 @@ describe("monster affinity (CardDef.source)", () => {
       }
       return drops;
     };
-    const withAffinity = count("ghost");
+    const withAffinity = count("spider");
     const without = count(undefined);
     // Same gates, same base rate. Allow a little slack: the affinity branch
     // consumes extra draws from the shared stream, which reshuffles WHICH kills
@@ -313,5 +319,72 @@ describe("sub-type affinity", () => {
     let n = 0;
     for (let k = 0; k < 20000; k++) if (rollCardDrop({ boss: false, floor: 2, kind: "spider" }, rand)) n++;
     expect(n).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE BESTIARY EARN (DECLONE §6.5). `familyAffinity` used to be computed by
+ * bestiary.ts and read by nothing: the screen printed a milestone reward that
+ * did not exist. Wiring it is the one change in this file that could move every
+ * drop rate in the game at once, so it gets three tests — two that it is SAFE,
+ * and one that it is not a no-op, because a bias that passes both safety tests
+ * by doing nothing is the same bug in a better disguise.
+ */
+describe("bestiary affinity earn", () => {
+  const ownShare = (affinity: number, seed: number): { drops: number; own: number } => {
+    const rand = lcg(seed);
+    let drops = 0;
+    let own = 0;
+    for (let k = 0; k < 40000; k++) {
+      const id = rollCardDrop({ boss: false, floor: 1, kind: "spider", affinity }, rand);
+      if (!id) continue;
+      drops++;
+      if (CARDS[id]?.source === "spider") own++;
+    }
+    return { drops, own };
+  };
+
+  it("is bit-identical to the unwired path when the family is unfarmed", () => {
+    // affinity 1 (and omitting it) must reproduce the OLD stream exactly —
+    // same draws, same order, same cards. This is what lets the wire ship
+    // without re-tuning anything that was balanced before it.
+    const seq = (opts: Parameters<typeof rollCardDrop>[0]): string => {
+      const rand = lcg(7);
+      const out: string[] = [];
+      for (let k = 0; k < 5000; k++) out.push(rollCardDrop(opts, rand) ?? "-");
+      return out.join(",");
+    };
+    const base = { boss: false, floor: 1, kind: "spider" } as const;
+    expect(seq({ ...base, affinity: 1 })).toBe(seq(base));
+  });
+
+  it("does NOT change the drop rate, even at a maxed bestiary", () => {
+    // The documented trap, at the strongest multiplier the system can produce.
+    // The earn multiplies a THRESHOLD, never adds a draw, so the gates upstream
+    // see an unchanged stream — assert that rather than trusting the reasoning.
+    const maxed = familyAffinity(BESTIARY_MILESTONES[BESTIARY_MILESTONES.length - 1]);
+    expect(maxed).toBeGreaterThan(1);
+    const cold = ownShare(1, 99).drops;
+    const hot = ownShare(maxed, 99).drops;
+    expect(Math.abs(hot - cold) / cold).toBeLessThan(0.02);
+  });
+
+  it("actually biases toward the family's own cards once earned", () => {
+    // The capability, not the mechanism. Averaged over seeds because a single
+    // LCG run can drift a couple of points either way on its own.
+    let coldOwn = 0;
+    let coldDrops = 0;
+    let hotOwn = 0;
+    let hotDrops = 0;
+    const maxed = familyAffinity(BESTIARY_MILESTONES[BESTIARY_MILESTONES.length - 1]);
+    for (const seed of [11, 23, 47]) {
+      const c = ownShare(1, seed);
+      const h = ownShare(maxed, seed);
+      coldOwn += c.own;
+      coldDrops += c.drops;
+      hotOwn += h.own;
+      hotDrops += h.drops;
+    }
+    expect(hotOwn / hotDrops).toBeGreaterThan(coldOwn / coldDrops + 0.05);
   });
 });

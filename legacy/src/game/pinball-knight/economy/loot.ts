@@ -6,6 +6,7 @@
  * module deliberately does NOT wrap — a kill credits coins and rolls loot as
  * two independent things.
  */
+import { familyAffinity } from "../bestiary";
 import { cardBase, cardDef, rollCardInstance } from "../cards";
 import { COIN_BURST_SPREAD, COIN_BURST_VY, COIN_DROP_SCALE, COIN_REST_Y, COIN_SPAWN_Y } from "../constants";
 import { updateCoins } from "./coins";
@@ -53,7 +54,22 @@ export function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKi
   // rollCardInstance, not rollCardDrop: the card that lands on the floor carries
   // the LEVEL rolled off this floor and its shiny flag, so a floor-17 Spider
   // Silk is a genuinely better card than the floor-1 one (cards.ts §instances).
-  const id = rollCardInstance({ boss, floor: state.level, legendaryAllowed: !state.legendaryDropped, mythicAllowed: !state.mythicDropped, kind, subType, dropMult });
+  //
+  // AFFINITY EARN: the bestiary milestone this family has cleared. Read from the
+  // FAMILY tally ("zombie"), not the sub-type one ("zombie:hulk"), because that
+  // is the number `familyMilestone` shows the player on the bestiary screen —
+  // a printed threshold that paid out against a different counter than the one
+  // it displayed would be worse than not paying out at all.
+  const id = rollCardInstance({
+    boss,
+    floor: state.level,
+    legendaryAllowed: !state.legendaryDropped,
+    mythicAllowed: !state.mythicDropped,
+    kind,
+    subType,
+    dropMult,
+    affinity: familyAffinity(state.killsByKind[kind] ?? 0),
+  });
   if (!id) return;
   const rarity = cardDef(id)?.rarity;
   if (rarity === "legendary") state.legendaryDropped = true;

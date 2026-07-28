@@ -659,6 +659,12 @@ export function rollCardDrop(
     /** Zombie SUB-TYPE of the slain foe, when it had one (zombie-types.ts). */
     subType?: ZombieType;
     dropMult?: number;
+    /**
+     * Bestiary earn, as a multiplier on AFFINITY_CHANCE (1 = unearned). From
+     * `familyAffinity(killsByKind[kind])` — see the pick below for why it is
+     * taken here and not anywhere earlier.
+     */
+    affinity?: number;
   },
   rand: () => number = Math.random,
 ): CardId | null {
@@ -671,7 +677,16 @@ export function rollCardDrop(
    * the random stream the gates see and change the drop RATE as a side effect,
    * which is the one failure mode this design exists to avoid. `cards.test.ts`
    * pins the rate against exactly that regression.
+   *
+   * The bestiary earn (`opts.affinity`) is applied HERE, as a multiplier on the
+   * THRESHOLD — never as an extra draw and never a step earlier. That is what
+   * keeps the trap shut: the number of `rand()` calls and their positions are
+   * identical whether the multiplier is 1 or 2, so farming a family can only
+   * change WHICH card lands, never WHETHER one does. Clamped to 1 because
+   * AFFINITY_CHANCE 0.7 × BESTIARY_AFFINITY_MAX 2 = 1.4, and a comparison
+   * against a threshold above 1 is a certainty wearing a probability's clothes.
    */
+  const affinityChance = Math.min(1, AFFINITY_CHANCE * (opts.affinity ?? 1));
   const pick = (pool: CardId[]): CardId => {
     if (opts.kind) {
       // SUB-TYPE first: a Hulk should drop the Hulk card, not just "a zombie
@@ -681,13 +696,13 @@ export function rollCardDrop(
       const sub = opts.subType
         ? pool.filter((id) => CARDS[id].source === opts.kind && CARDS[id].subType === opts.subType)
         : [];
-      if (sub.length > 0 && rand() < AFFINITY_CHANCE) return sub[Math.floor(rand() * sub.length)];
+      if (sub.length > 0 && rand() < affinityChance) return sub[Math.floor(rand() * sub.length)];
       // Family match, excluding cards that belong to a DIFFERENT sub-type — a
       // Midget must never hand you the Hulk card just for being a zombie.
       const own = pool.filter(
         (id) => CARDS[id].source === opts.kind && (!CARDS[id].subType || CARDS[id].subType === opts.subType),
       );
-      if (own.length > 0 && rand() < AFFINITY_CHANCE) return own[Math.floor(rand() * own.length)];
+      if (own.length > 0 && rand() < affinityChance) return own[Math.floor(rand() * own.length)];
     }
     // NON-AFFINITY fallback. A sub-typed card must never arrive from a monster
     // that is not that sub-type — a Hulk handing you the Midget card breaks the
