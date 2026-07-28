@@ -225,18 +225,71 @@ combined.
 
 ---
 
-## 8. Still open
+## 8. Next — CORRIDOR MOUTHS (the `throat` third), spec'd for a fresh pair of hands
 
-- **The count band.** §6 of the old plan wrote down 25–40 per floor from v2,
-  which authored a door at every section pair whether or not there was a
-  threshold there. This pass authors only where a real opening exists to make
-  uniform, so the honest number is 9.9. The gate asserts 4–30 as an
-  amplification guard; if the siting rules change, re-derive it, do not port it.
-- **`throat` (89 of 266 declined).** A long 1-wide corridor between two sections
-  is a genuine narrow exit that this pass deliberately does not touch. Fixing it
-  means authoring a doorway at each MOUTH of the corridor rather than at its
-  midpoint — a different siting rule, and a real feature rather than a tuning
-  change.
-- **`arc` (76).** The circuit's own fillets win over a doorway, which is the
-  right precedence. Whether the *scavenged* sweeps should also win is worth
-  asking now that `occupied` fences them.
+**89 of the 266 declined narrow openings are the same shape**, and it is the
+largest single bucket: a 1-wide corridor running between two sections, longer
+than `MAX_DOORWAY_DEPTH`. Today the pass sites a door at the connection's
+midpoint, finds the throat never reaches daylight within 4 tiles, and declines —
+correctly, because widening the whole corridor is how attempt 1 carved floors
+open (§3).
+
+But a player meets that corridor at its **ends**, and both ends are exactly the
+thing the QA complaint names: a 1-tile slot in the wall of a room. **The doorway
+belongs at each mouth, not at the midpoint.**
+
+### The change
+
+`planDoorways` currently emits one site per boundary component, at that
+component's narrowest cross-section. Add a second siting rule for the case the
+first one declines:
+
+1. When a connection's throat exceeds `MAX_DOORWAY_DEPTH`, walk the corridor
+   from the meeting tile **toward each section** until the tile's owning label
+   is that section (`sectionTerritory` already gives you this) — that tile's
+   predecessor is the MOUTH.
+2. Emit a `DoorwaySite` at each mouth, travel axis along the corridor, `want`
+   from the section that mouth opens into (not `min` of the pair — a mouth
+   belongs to the room it is a hole in).
+3. Everything downstream is unchanged: `resolveDoorway` still rounds up to the
+   vocabulary, still requires jambs, still refuses arc spans and secrets.
+
+### Why this is not a repeat of v1
+
+The self-amplification trap (§3) is about re-deriving what counts as a ROOM.
+This does not: sections stay labelled once, and a mouth is defined by the
+section labels, not by clearance. The mouths of a corridor are a fixed set the
+moment the labels exist, so a second `planDoorways` on the carved floor must
+return the same sites — pin that, it is the property that matters.
+
+### Acceptance
+
+- [ ] `doorways.test.ts`: a fixture with two rooms joined by a 10-tile 1-wide
+      corridor authors TWO doorways, one at each mouth, and does NOT widen the
+      corridor between them (assert the midpoint's cross-section is unchanged).
+- [ ] Re-plan after carving authors no additional work (the §3 pin, extended to
+      the new rule).
+- [ ] `throat` rejections fall by ≥ 50% on the 78-floor census, and
+      **`openShare` stays under 0.65** — if the corridor itself starts widening,
+      this rule has become v1 and must be reverted, not tuned.
+- [ ] narrow section connections (the A/B in §1) improve on 3.41; report the new
+      number against a control built with the pass disabled, **same builder, same
+      seeds**.
+- [ ] `piece-rules`, `floor-metrics`, `floor-rules`, `track-launch` green; full
+      suite green.
+- [ ] verified with `__dungeonDoorways()` in the running game, not from the
+      generator's own numbers.
+
+### Do NOT start here
+
+- **The count band.** §6 of the original plan wrote down 25–40 per floor from a
+  rule that authored a door at every section pair whether or not a threshold
+  existed there. The honest number for this pass is 9.9 and the gate asserts
+  4–30 as an amplification guard. This change will raise it; **re-derive the
+  band from measurement, do not port the old one.**
+- **`arc` (76 declined).** The circuit's own fillets win over a doorway and that
+  precedence is deliberate (`arc-contract.yields`). Whether the *scavenged*
+  sweeps should also win is a real question, but it is a change to the arc
+  layer's priority, not to doorways.
+- **`jamb` (50).** These are one-tile partitions. They cannot hold a doorway,
+  and the check that says so is what took drift from 17% to 1.3% (§5).
