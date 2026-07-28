@@ -420,7 +420,7 @@ export function damageZombie(
     // which is the SAME table the bestiary prints from — so what the screen
     // teaches and what the code enforces cannot drift apart.
     const g2 = MOMENTUM_GATES[z.kind]!;
-    const f = momentumGate(momentum, g2.bar, g2.soft);
+    const f = momentum <= g2.minSpeed ? 0 : momentumGate(momentum, g2.bar, g2.soft);
     if (f <= GATE_MIN_FACTOR) {
       state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
       state.shakeT = Math.max(state.shakeT, 0.05);
@@ -448,9 +448,21 @@ export function damageZombie(
     if (exc === "bounce-immune" && src === "bounce") {
       // The shove still lands — it is immune to the DAMAGE, not to physics, and
       // being punted across the room is the honest feedback for "wrong tool".
+      // It RETURNS rather than falling through with damage 0: the rest of the
+      // funnel refreshes hitstop and prints a floating "0", and a ram that
+      // freezes the sim to tell you it did nothing is a worse bug than the one
+      // the exception is worth.
+      if (push > 0) {
+        const d = Math.hypot(dirx, dirz) || 1;
+        const res = moveCircle(g, z.x, z.z, ZOMBIE_R, (dirx / d) * push, (dirz / d) * push);
+        z.x = res.x;
+        z.z = res.z;
+        syncActorMesh(z);
+      }
       state.vfx?.sparks(z.x, 0.55, z.z, dirx, dirz, 5);
+      z.aggro = true;
       sfxHit();
-      damage = 0;
+      return;
     } else if (exc === "dodges-ranged" && src === "ranged") {
       // Entropy, not dice (entities/stagger.ts): a reliable fraction of arrows
       // miss, never an unlucky streak of five.

@@ -244,12 +244,23 @@ describe("momentumGate — the enemy gates as curves (DECLONE §6.2)", () => {
     expect(momentumGate(BAR + 0.01, BAR, 0)).toBeGreaterThan(0);
   });
 
-  it("a gate AT the walk floor degenerates to the bare momentum ramp", () => {
-    // The goblin's rule was only ever "carry SOME speed", so its curve should
-    // be momentumT itself and not acquire a second breakpoint.
+  it("a gate AT the walk floor LIFTS the ramp to start at `soft`", () => {
+    // The goblin's rule was only ever "carry SOME speed" — never "exceed
+    // walking speed" — so a bar with no knee to place must not re-impose one.
+    //
+    // The first version returned the bare ramp here, which is 0 below
+    // MOMENTUM_T_FLOOR, and quietly made goblins near-immortal to anything
+    // slower than a sprint. A headless soak found it as the bot being
+    // ping-ponged in a corner by something it could not kill: 6/13 runs
+    // reporting a stuck episode against 1/9 on the baseline.
     for (const v of [0, 5, 8, 14, 22]) {
-      expect(momentumGate(v, MOMENTUM_T_FLOOR, 0.25)).toBeCloseTo(momentumT(v), 6);
+      expect(momentumGate(v, MOMENTUM_T_FLOOR, 0.25)).toBeCloseTo(0.25 + 0.75 * momentumT(v), 6);
     }
+    // Half damage the instant you are moving at all; full at terminal.
+    expect(momentumGate(1, MOMENTUM_T_FLOOR, 0.5)).toBeCloseTo(0.5, 6);
+    expect(momentumGate(PINBALL_MAX_SPEED, MOMENTUM_T_FLOOR, 0.5)).toBeCloseTo(1, 6);
+    // soft = 0 still gives the bare ramp, so the old shape stays expressible.
+    for (const v of [0, 8, 22]) expect(momentumGate(v, MOMENTUM_T_FLOOR, 0)).toBeCloseTo(momentumT(v), 6);
   });
 
   it("stays in [0,1] for nonsense inputs", () => {

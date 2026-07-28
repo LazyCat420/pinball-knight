@@ -203,7 +203,14 @@ export function momentumGate(speed: number, gateSpeed: number, soft: number): nu
   const t = momentumT(speed);
   const tg = momentumT(gateSpeed);
   const s = Math.max(0, Math.min(1, soft));
-  if (tg <= 0) return t; // no bar to clear: the ramp IS the gate
+  // A bar at or below the walk floor has no knee to place — `momentumT` is
+  // already 0 there — so the curve is the ramp lifted to start at `soft`. That
+  // is what "carry SOME speed" means: the moment you are moving you are past
+  // the rule, and how MUCH you are moving decides the rest. Returning the bare
+  // ramp here (the first version) quietly re-imposed a walk-speed wall on the
+  // one enemy whose rule was never about walk speed, and a headless soak caught
+  // it as near-immortal goblins pinning the bot in corners.
+  if (tg <= 0) return s + (1 - s) * t;
   if (t <= 0) return 0;
   if (t <= tg) return (s * t) / tg;
   if (tg >= 1) return s; // a bar at terminal speed can never be cleared

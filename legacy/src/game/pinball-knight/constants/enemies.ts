@@ -226,6 +226,8 @@ export const DIRECT_STEER_RANGE = 1.6;
  * binary bar. Below the bar it ramps up to this; above it, on to 1 at terminal
  * speed. `soft = 0` would reproduce the old wall exactly (see momentumGate).
  */
+/** GOBLIN: rubber. Any momentum at all lands for at least this, ramping to full. */
+export const GOBLIN_GATE_SOFT = 0.5;
 /** GOLEM: masonry chips below smash-speed instead of ignoring you outright. */
 export const GOLEM_GATE_SOFT = 0.25;
 /** CRYSTALBACK: a graze throws a shard or two; a full ram throws the reflector. */

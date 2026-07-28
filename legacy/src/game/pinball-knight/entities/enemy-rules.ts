@@ -15,7 +15,7 @@
  */
 import type { EnemyKind } from "../state";
 import type { MovementKind } from "./movement";
-import { SECRET_BREAK_SPEED, CARD_PINBALL_SPEED, MOMENTUM_T_FLOOR, GOLEM_GATE_SOFT, CRYSTAL_GATE_SOFT } from "../constants";
+import { SECRET_BREAK_SPEED, CARD_PINBALL_SPEED, MOMENTUM_T_FLOOR, GOBLIN_GATE_SOFT, GOLEM_GATE_SOFT, CRYSTAL_GATE_SOFT } from "../constants";
 
 /**
  * WHICH WAY EACH FAMILY WALKS (entities/movement.ts).
@@ -63,6 +63,17 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
 /** One family's momentum rule: where the old binary bar was, and how soft the
  *  curve through it is (see `momentumGate` in combo-curve.ts). */
 export interface MomentumGate {
+  /**
+   * At or below this speed the blow is a CLINK and lands for nothing.
+   *
+   * Separate from `bar` because the two are different questions. `bar` is where
+   * the curve has its knee; `minSpeed` is the rule the enemy TEACHES, and for
+   * the goblin that rule was always "a standing poke does nothing" — not "you
+   * must exceed walking speed". Folding the two together made goblins nearly
+   * immortal below 4.2 u/s, which a headless soak found as the bot being
+   * ping-ponged in a corner by something it could not kill.
+   */
+  minSpeed: number;
   /** The speed the old switch flipped at — still the landmark, no longer a wall. */
   bar: number;
   /** Fraction of the effect delivered AT the bar. 0 would restore the wall. */
@@ -82,21 +93,25 @@ export interface MomentumGate {
  */
 export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
   goblin: {
+    minSpeed: 0,
     bar: MOMENTUM_T_FLOOR,
-    soft: 0,
-    text: "Rubber: a standing poke does nothing. Damage scales the whole way from a walk to top speed.",
+    soft: GOBLIN_GATE_SOFT,
+    text: "Rubber: a standing poke does nothing at all. Anything carried on momentum lands, and lands harder the faster you arrive.",
   },
   golem: {
+    minSpeed: 0,
     bar: SECRET_BREAK_SPEED,
     soft: GOLEM_GATE_SOFT,
     text: `Masonry: below smash-speed (${SECRET_BREAK_SPEED} u/s) you only chip it — about a quarter of your damage. Above it, every extra unit of speed still pays.`,
   },
   chomper: {
+    minSpeed: 0,
     bar: MOMENTUM_T_FLOOR,
     soft: 0,
     text: "Rooted in the chokepoint. Knockback scales with your speed to ×3 at terminal — a hard arrival SHOVES it off the road.",
   },
   crystalback: {
+    minSpeed: 0,
     bar: CARD_PINBALL_SPEED,
     soft: CRYSTAL_GATE_SOFT,
     text: "A reflector that taxes momentum: ramming it sprays shards back INTO you, and the spray scales with how fast you hit it. A graze throws one; a full ram throws the lot.",
