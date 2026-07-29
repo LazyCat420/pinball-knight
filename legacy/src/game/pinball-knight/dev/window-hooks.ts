@@ -23,6 +23,7 @@ import { resetPickupSweep } from "../economy/pickups";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
+import { installMonsterLab } from "./monster-lab";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
@@ -497,6 +498,11 @@ export function installDevHooks(deps: DevHookDeps): void {
     // rather than a gameplay toggle: disabling floor progression to make
     // testing convenient would mean testing a game that is not the shipped one.
     // `__dungeonFreshRun()` then reload.
+    // Dev: MONSTER LAB — the discoverable index over the hooks below.
+    // `__lab()` prints the menu and the whole roster; `__lab.spawn(kind)`
+    // bypasses level gates so no monster needs its floor reached to be seen.
+    installMonsterLab({ startLevel, debugSpawn, debugClearEnemies });
+
     (window as unknown as { __dungeonFreshRun?: () => boolean }).__dungeonFreshRun = () => {
       clearResumeFloor();
       return true;
