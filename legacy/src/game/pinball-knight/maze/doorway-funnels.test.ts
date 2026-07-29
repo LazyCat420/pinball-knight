@@ -15,6 +15,7 @@ import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
 import { bfsDistances } from "../engine/flow-field";
 import { isWalkable, idx, T_STAIRS, at } from "./generator";
 import { parabolicJaws } from "./conic-fit";
+import { authorDoorwayFunnels } from "./doorway-funnels";
 
 const SEEDS = [1, 12345, 424242];
 const LEVELS = [1, 5, 12];
@@ -72,29 +73,47 @@ describe("doorway funnels, with the switch on", () => {
   it("commits both arms of a doorway or neither", () => {
     // A lone arm is a diagonal deflector beside an opening, and it measured
     // WORSE than a square threshold (-2.3pp capture, +3.7pp rejection). Arms
-    // are committed as a pair; the strand guard may still unwind one, so this
-    // asserts the authoring rule on a floor where nothing was unwound.
-    for (const f of floors(true)) {
-      const funnels = (f.grid.arcs ?? []).filter((a) => a.owner === "funnel");
-      if (funnels.length === 0) continue;
-      // Arms come in chains of FUNNEL_SEGMENTS; a complete pair is an even
-      // number of features per doorway. Cheap proxy for the pairing rule, and
-      // the one an odd-count bug would break.
-      expect(funnels.length % 2).toBe(0);
+    // are committed as a pair.
+    //
+    // Asserted on the JAW count from the pass itself, not on the feature count
+    // from the grid: since each arm keeps only its buildable PREFIX the two
+    // arms of a pair routinely have different numbers of links, so feature
+    // parity says nothing. Jaws come in twos; features do not have to.
+    let sawAny = false;
+    for (const s of SEEDS) {
+      for (const l of LEVELS) {
+        const f = buildHeadlessFloor(l, s, false)!;
+        const r = authorDoorwayFunnels(f.grid, f.doorways, f.start);
+        // The strand guard unwinds individual jaws, which can legitimately
+        // leave an odd count; the authoring rule is only observable when it
+        // did not have to.
+        if (r.reverted > 0) continue;
+        expect(r.jaws % 2, `level ${l} seed ${s} committed an odd number of jaws`).toBe(0);
+        if (r.jaws > 0) sawAny = true;
+      }
     }
+    expect(sawAny, "no sampled floor built a jaw — the pass is not firing").toBe(true);
   });
 
-  it("is genuinely off by default — floors are byte-identical without the switch", () => {
-    // The whole reason a default-off feature is safe to keep in the tree.
+  it("the switch genuinely switches — a funnelled floor differs from a plain one", () => {
+    // Funnels are ON by default now. What still has to hold is that the
+    // counterfactual the census depends on is real: `funnels: false` must
+    // produce the floor the pass would otherwise have changed, not a
+    // near-miss, or every paired measurement is comparing two treatments.
+    let differed = 0;
     for (const s of SEEDS) {
       for (const l of LEVELS) {
         const off = buildHeadlessFloor(l, s, false)!;
-        const plain = buildHeadlessFloor(l, s)!;
-        expect(Array.from(plain.grid.t)).toEqual(Array.from(off.grid.t));
-        expect(Array.from(plain.grid.shapes)).toEqual(Array.from(off.grid.shapes));
-        expect((plain.grid.arcs ?? []).length).toBe((off.grid.arcs ?? []).length);
+        const on = buildHeadlessFloor(l, s, true)!;
+        const onFunnels = (on.grid.arcs ?? []).filter((a) => a.owner === "funnel").length;
+        expect((off.grid.arcs ?? []).filter((a) => a.owner === "funnel")).toHaveLength(0);
+        if (onFunnels > 0) {
+          differed++;
+          expect(Array.from(on.grid.shapes)).not.toEqual(Array.from(off.grid.shapes));
+        }
       }
     }
+    expect(differed, "no sampled floor built a funnel — the pass is not firing").toBeGreaterThan(0);
   });
 });
 

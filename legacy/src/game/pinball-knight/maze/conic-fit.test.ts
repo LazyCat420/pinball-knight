@@ -222,7 +222,11 @@ describe("the parabola collects — every parallel ray lands on the mouth", () =
     for (const w of [3, 5, 7]) {
       const j = parabolicJaws({ x: 0, z: 0 }, { x: 1, z: 0 }, w, 12);
       expect(j.curvedDepth).toBeGreaterThan(0);
-      expect(j.curvedDepth).toBeLessThan(12);
+      // ≤, not <: with MAX_ARC_RADIUS raised for gentle throats the chain can
+      // now reach the full depth it was asked for. What must never happen is
+      // reaching FURTHER than asked, which is what a caller sizes its wall
+      // claim against.
+      expect(j.curvedDepth).toBeLessThanOrEqual(12 + 1e-9);
       // Every emitted arc is genuinely curved — nothing masquerading as a wall.
       for (const f of [...j.left, ...j.right]) expect(f.r).toBeLessThanOrEqual(MAX_ARC_RADIUS);
     }

@@ -77,10 +77,18 @@ export interface ConicSample {
  * with a rounding error, and it is worse than a straight wall: `backedAt` and
  * `arcSweepGeometry` would sample a band whose centre is far off the grid, so
  * every floating-point cancellation lands in the collider. Past this the
- * segment is dropped and the square tiles own that stretch, which is what they
- * are already good at.
+ * segment is dropped and the square tiles own that stretch.
+ *
+ * ⚠️ RAISED FROM 40, and the old value was silently deciding a design question.
+ * A funnel jaw wants to lean in GENTLY (see `THROAT_ANGLE_DEG`), and a gentle
+ * parabola is a flat one: below about a 20° throat every segment exceeded 40
+ * and was dropped, so the sweep over throat angles reported "none built" for
+ * exactly the settings the physics says are best. A cap meant to reject
+ * degenerate geometry was rejecting the target instead. 160 tiles is still far
+ * short of the precision cliff — a grid is ~130 tiles across, and hypot on
+ * centres a few hundred tiles out is exact to ~1e-13.
  */
-export const MAX_ARC_RADIUS = 40;
+export const MAX_ARC_RADIUS = 160;
 
 /** Smallest radius worth emitting — below a ball diameter a "curve" is a notch. */
 export const MIN_ARC_RADIUS = 0.75;
@@ -254,7 +262,7 @@ export function ellipseSamples(e: Ellipse, t0: number, t1: number, n: number): C
  * `u0 … u1` selects which stretch of one arm to build. Both arms come from one
  * call each, with u ranges of opposite sign.
  */
-export function parabolaSamples(focus: Pt, axis: Pt, f: number, u0: number, u1: number, n: number): ConicSample[] {
+export function parabolaSamples(focus: Pt, axis: Pt, f: number, u0: number, u1: number, n: number, s0 = f): ConicSample[] {
   const ax = axis.x;
   const az = axis.z;
   const px = -az; // across
@@ -267,7 +275,7 @@ export function parabolaSamples(focus: Pt, axis: Pt, f: number, u0: number, u1: 
   const denom = n > 0 ? n : 1;
   for (let k = 0; k <= n; k++) {
     const u = u0 + ((u1 - u0) * k) / denom;
-    const s = f - (u * u) / (4 * f);
+    const s = s0 - (u * u) / (4 * f);
     // Tangent d/du = (−u/2f, 1) in (s,u); the inward normal (toward the axis,
     // which is where the centre of curvature is) is (−1, −u/2f) normalised.
     let ns = -1;
@@ -286,51 +294,109 @@ export function parabolaSamples(focus: Pt, axis: Pt, f: number, u0: number, u1: 
 }
 
 /**
+ * THE THROAT ANGLE, in degrees — how steeply a jaw leans in where it meets the
+ * jamb. The single most important number in this file.
+ *
+ * ── Why 45° (the "natural" choice) is the WRONG one ──────────────────────
+ *
+ * Tying the focal length to the opening as `f = w/4` puts the focus exactly on
+ * the mouth and the arms exactly on the jambs, which is elegant, and it forces
+ * the wall to meet the jamb at 45°. Built and measured, it made things WORSE:
+ * −2.4pp capture and **+7.6pp rejection** on the doorways that got one.
+ *
+ * Two reasons, and both are about a ball rather than a ray.
+ *
+ * A CONVERGING CHANNEL IS A WEDGE. Every reflection off a wall leaning in at
+ * angle α turns the ball a further 2α away from the axis, so a ball that bounces
+ * more than about π/2α times inside the taper is turned around and posted back
+ * out the way it came. Steep walls reject; that is what a wedge does. Ray optics
+ * never sees this because a ray reflects once.
+ *
+ * FOCUSING TO A POINT IS THE WRONG OBJECTIVE. A parabola gathers parallel rays
+ * onto its focus, so with the focus ON the threshold a ball reflected at the
+ * jamb arrives at the middle of the mouth travelling almost exactly ACROSS the
+ * passage — it reaches the doorway and crosses it sideways into the far jamb. A
+ * ball has to pass THROUGH a plane, which is a condition on its direction, not
+ * only on where it arrives.
+ *
+ * Both point the same way: lean the wall in gently, and put the focus well
+ * BEYOND the threshold so the ball is still travelling forward as it crosses.
+ *
+ * ── Where 30° comes from ─────────────────────────────────────────────────
+ *
+ * A sweep, then a re-run on eight seeds and eight levels that were held out of
+ * the sweep, paired per doorway against the same floor with the flare removed.
+ * Capture delta on the doorways that got one:
+ *
+ *      20°  +8.1pp   (31 doorways)      32°  +11.0pp  (135)  ← here
+ *      25°  +6.7pp   (59)               35°   +7.9pp  (105)
+ *      28°  +9.9pp   (78)               40°   +6.6pp  (114)
+ *      30°  +9.5pp   (74)               45°   +7.2pp  (116)
+ *
+ * Positive across the whole range once lanes are on, peaking around the low
+ * thirties — a broad plateau, so the exact value is not delicate
+ * — which is the point of reporting the shape of the curve rather than the
+ * winner. What IS delicate is the direction: before booster lanes were added,
+ * everything above 30° was actively HARMFUL (45° cost −0.7pp capture and added
+ * +2.9pp rejection) exactly as the wedge argument predicts. The lane is what
+ * makes the steeper end survivable, because a carry does not steepen the ball's
+ * angle the way a bounce does. Change one without re-measuring the other and
+ * this number stops meaning anything.
+ */
+export const THROAT_ANGLE_DEG = 32;
+
+/**
  * Both jaws of a parabolic funnel feeding an opening of width `w`.
  *
- * `depth` is how far back up the corridor the flare reaches, in tiles; the
- * catchment half-width there is `sqrt(4f(f + depth))`, so a 3-wide door
- * (f = 0.75) flared 5 tiles back gathers from 8.3 tiles across — a 2.8×
- * catchment for an opening that has not been widened by one tile.
+ * The arms pass through the jambs at the threshold — so the funnel never
+ * widens the opening the doorway vocabulary authored — and lean in at
+ * `throatDeg` there. From that pair of constraints everything else follows:
  *
- * ⚠️ THE FLARE STOPS BEING CURVED BEFORE IT STOPS BEING USEFUL, and the depth
- * you ask for is not the depth you get in arcs. A parabola's radius of
- * curvature is `2f·(1 + (u/2f)²)^1.5`, which grows fast: for a 3-wide door it
- * passes `MAX_ARC_RADIUS` about 4 tiles out, and every segment past that is
- * dropped as too flat to be a curve. That is the right outcome, not a
- * shortfall — out there the jaw IS a straight taper, and the square tiles the
- * grid is made of render and collide it for free. The arcs are spent where the
- * bend actually is, which is the throat.
+ *     f  = (w/4)·tan(throat)          focal length
+ *     s0 = w²/(16f)                   vertex, out beyond the threshold
+ *     focus at s = s0 − f             where parallel approaches are gathered
  *
- * `curvedDepth` reports how far back the arcs really reach so a caller can size
- * its wall claim to it rather than to `depth`.
+ * At 45° this collapses to the old `f = w/4` with the focus on the mouth. Below
+ * it the focus slides forward into the next room, which is the point: a ball
+ * reflected off the jaw crosses the threshold still heading forward, aimed at
+ * something on the far side, rather than arriving at the mouth sideways.
  *
- * Returned as two chains, left arm and right arm, because the caller has to
- * site and gate them against the grid independently: one jaw may have stone to
- * sit in where the other does not, and half a funnel is still a funnel.
+ * `depth` is how far back up the corridor to reach. The arcs will not get that
+ * far and are not meant to — a parabola's radius of curvature grows as
+ * `(1 + k²)^1.5`, so the far taper is straight and the square tiles collide and
+ * render it for free. `curvedDepth` reports the real reach.
+ *
+ * Returned as two chains because the caller sites and gates them against the
+ * grid; `focusAhead` is how far beyond the threshold the focus sits, which the
+ * lane pass needs to aim its boost.
  */
 export function parabolicJaws(
-  focus: Pt,
+  mouth: Pt,
   axis: Pt,
   w: number,
   depth: number,
   segments = 4,
-): { left: ArcFeature[]; right: ArcFeature[]; curvedDepth: number } {
-  const f = w / 4;
-  // s = f − u²/4f  ⇒  u = sqrt(4f(f − s)); the flare ends at s = −depth.
-  const uThroat = 2 * f; // where the arm meets the jamb, at s = 0
-  const asked = Math.sqrt(4 * f * (f + depth));
-  // Clip the sample range to where the curve is still tight enough to emit,
-  // rather than sampling into the flat tail and letting every one of those
-  // segments be dropped — which would silently spend the segment budget on
-  // nothing and leave the throat, the part that matters, coarsely fitted.
+  throatDeg: number = THROAT_ANGLE_DEG,
+): { left: ArcFeature[]; right: ArcFeature[]; curvedDepth: number; focusAhead: number } {
+  const t = Math.tan((Math.max(1, Math.min(80, throatDeg)) * Math.PI) / 180);
+  const f = (w / 4) * t;
+  const s0 = (w * w) / (16 * f);
+  const uThroat = w / 2; // the arm meets the jamb, by construction
+  // s = s0 − u²/4f, so the flare reaches s = −depth at:
+  const asked = Math.sqrt(4 * f * (s0 + depth));
+  // Clip to where the curve is still tight enough to emit as an arc rather than
+  // sampling into the flat tail and having every segment dropped — that would
+  // spend the segment budget on nothing and leave the throat coarsely fitted.
   //   R(u) = 2f(1 + (u/2f)²)^1.5 ≤ MAX_ARC_RADIUS
   const kMax = Math.sqrt(Math.max(0, Math.cbrt((MAX_ARC_RADIUS / (2 * f)) ** 2) - 1));
-  const uEnd = Math.min(asked, Math.max(uThroat * 1.05, 2 * f * kMax));
+  const uEnd = Math.min(asked, Math.max(uThroat * 1.02, 2 * f * kMax));
+  const mk = (a: number, b: number): ArcFeature[] =>
+    arcChainFromSamples(parabolaSamples(mouth, axis, f, a, b, segments, s0), true, "funnel");
   return {
-    left: arcChainFromSamples(parabolaSamples(focus, axis, f, -uThroat, -uEnd, segments), true, "funnel"),
-    right: arcChainFromSamples(parabolaSamples(focus, axis, f, uThroat, uEnd, segments), true, "funnel"),
-    curvedDepth: (uEnd * uEnd) / (4 * f) - f,
+    left: mk(-uThroat, -uEnd),
+    right: mk(uThroat, uEnd),
+    curvedDepth: (uEnd * uEnd) / (4 * f) - s0,
+    focusAhead: s0 - f,
   };
 }
 

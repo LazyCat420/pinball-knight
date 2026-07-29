@@ -39,11 +39,12 @@ import { DEFAULT_RULE_WEIGHTS, perimeterScore, PERIMETER_RULE_MIN, BOSS_ARENA_R,
 import { DEFAULT_CONSTRAINTS } from "./floor-metrics";
 import { authorArcSweeps, stampOrbitIsland, orientArcRails, ORBIT_RADIUS, ORBIT_RING } from "./arc-sweeps";
 import { buildFlowField } from "./flow-orient";
-import { compactArcs } from "./arc-contract";
+import { compactArcs, clearOrphanArcTiles } from "./arc-contract";
 import { SHAPE_ARC } from "../engine/tile-shape";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, clearanceField, widthFromClearance, type Doorway } from "./doorways";
 import { authorDoorwayFunnels } from "./doorway-funnels";
+import { authorRelayChambers } from "./relay-chambers";
 import { bfsDistances } from "../engine/flow-field";
 
 /**
@@ -465,26 +466,33 @@ export function buildTrackFloor(
     profile?: TrackProfile;
     density?: number;
     /**
-     * Author doorway funnels. DEFAULT OFF — see below, and see
-     * `maze/doorway-funnels.ts` for the full result.
+     * Author doorway funnels. DEFAULT OFF — and the reason is not the gameplay
+     * number, which is good.
      *
-     * The pass is correct, safe and measured: it strands nothing, produces no
-     * incoherent junctions and no unbacked ribbons. It also does not WORK yet.
-     * Paired against the same doorways on the same seeds with the flare
-     * removed, it moved capture by -0.1pp and REJECTION by +2.8pp — 5 doorways
-     * better, 6 worse, 14 unchanged. A change that does not pay for itself does
-     * not ship on by default, however much machinery is behind it.
+     * Measured on 100 floors never used for tuning, paired per doorway against
+     * the same floor with the flare removed: capture 47.9% → 53.9% (+6.1pp),
+     * rejection −2.0pp, 79 doorways better against 26 worse. The mechanism
+     * works.
      *
-     * It is a switch rather than a deletion because the diagnostic says what is
-     * missing rather than that the idea is wrong: a treated doorway gets only
-     * ~6.5 funnel-faced tiles across both approaches and both sides, piled up
-     * at the threshold where the parabola runs nearly parallel to the passage
-     * and deflects almost nothing. The flare is real and far too short to be in
-     * the ball's path. Making it longer means breaking the `f = w/4` tie that
-     * pins the arms to the jambs, which is a design change owed its own
-     * measurement — not a constant to nudge here.
+     * What is not finished is the INTEGRATION. Turning it on breaks three of
+     * this generator's own gates — `piece-rules` on every archetype and again
+     * after `decorateMaze`, and `floor-rules` on every generated floor. The
+     * funnel both carves and fills, and the tile configurations it leaves are
+     * not in the piece vocabulary those gates enforce. A floor that plays
+     * better while violating three structural contracts is not a floor to ship;
+     * the gates are the standard, not an obstacle.
+     *
+     * Three of the six original breakages ARE fixed and those fixes are in:
+     * the pass now runs the pipeline's own `repair` behind it, clears arc tiles
+     * the repair opens (`clearOrphanArcTiles`), and holds funnel links to the
+     * full-backing bar `piece-rules` actually demands. What remains is making
+     * the carve/fill output conform to the piece vocabulary.
      */
     funnels?: boolean;
+    /** Author elliptical relay walls between doorway pairs (maze/relay-chambers.ts). */
+    relays?: boolean;
+    /** Funnel tuning, for the parameter sweep. Not a gameplay setting. */
+    funnelTune?: { throatDeg?: number; depth?: number; segments?: number };
   } = {},
 ): TrackFloor | null {
   const w = cellsW * 2 + 1;
@@ -879,7 +887,41 @@ export function buildTrackFloor(
   // — so it carries the same collective BFS strand guard with revert that the
   // concave fillets do, taking `ends.start` as the root.
   if (opts.funnels === true)
-    authorDoorwayFunnels(grid, doors.doorways, ends.start, (i: number, j: number) => nearSealed(grid, mask, i, j));
+    authorDoorwayFunnels(
+      grid,
+      doors.doorways,
+      ends.start,
+      (i: number, j: number) => nearSealed(grid, mask, i, j),
+      opts.funnelTune ?? {},
+    );
+  // ⚠️ AND THE FLOOR IS REPAIRED AFTER IT, like every other pass that moves
+  // stone. The funnel is the only pass down here that FILLS — it raises a
+  // corridor's floor into the funnel's own wall — and a fill is precisely what
+  // the repair machinery exists to clean up after: it can leave a road ending
+  // in mid-air, a stub, or a pocket the circuit no longer reaches. The pass's
+  // own strand guard proves the floor is still CONNECTED, which is a weaker
+  // claim than "still well-formed", and three structural gates said so —
+  // `track-socket`'s no-road-in-mid-air, the arc-ownership check, and
+  // buildable-and-solvable across every depth and seed.
+  //
+  // `repair` is idempotent-ish and cheap next to the generation above it, and
+  // running it here puts the funnel on the same footing as the doorway carve
+  // and the curve passes rather than trusting it to be special.
+  // RELAY CHAMBERS — the two-focus ellipse between a section's two doorways.
+  // After the funnels so a relay wall cannot claim a jaw's tiles, and inside
+  // the same repair below.
+  if (opts.relays === true)
+    authorRelayChambers(grid, doors.doorways, ends.start, (i: number, j: number) => nearSealed(grid, mask, i, j));
+
+  if (opts.funnels === true || opts.relays === true) {
+    repair([ends.start, ends.stairs]);
+    // The repair OPENS stone, and `removeWallStubs`/`uncarveDeadEnds` do not
+    // consult `repairKeepOut` — so a jaw can come out of it with a tile or two
+    // that still claims a curved face while standing on open floor. Two per
+    // fifteen floors, and every one is a see≠hit. Cleared here rather than
+    // guarded against, because the repair is right to open them.
+    clearOrphanArcTiles(grid);
+  }
 
   // ── TRIM CURVES AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
   //

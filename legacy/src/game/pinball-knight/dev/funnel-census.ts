@@ -46,10 +46,22 @@
  */
 import { moveCircle } from "../engine/collision";
 import { tileCenter } from "../engine/grid";
-import { isWalkable, type Grid } from "../maze/generator";
+import { isWalkable, idx, type Grid } from "../maze/generator";
 import type { Doorway } from "../maze/doorways";
-import { PLAYER_R, PINBALL_WALL_RESTITUTION, PINBALL_MAX_SPEED, PINBALL_FRICTION, FIXED_STEP } from "../constants";
+import {
+  PLAYER_R,
+  PINBALL_WALL_RESTITUTION,
+  PINBALL_MAX_SPEED,
+  PINBALL_FRICTION,
+  FIXED_STEP,
+  ARC_LANE_MULT,
+  ARC_LANE_ADD,
+  ARC_LANE_MIN_EXIT,
+  ARC_LANE_MIN_SPEED,
+  ARC_LANE_COOLDOWN,
+} from "../constants";
 import { comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul } from "../entities/combo-curve";
+import { SHAPE_ARC } from "../engine/tile-shape";
 import { buildHeadlessFloor } from "./headless-floor";
 
 // ── Sampling grid ─────────────────────────────────────────────────────────
@@ -106,6 +118,26 @@ function stepBall(g: Grid, b: Ball, dt: number): boolean {
   b.x = res.x;
   b.z = res.z;
   let hit = false;
+
+  // ── BOOSTER LANE ── the curve does not bounce the ball, it CARRIES it.
+  //
+  // Modelled because the funnel's lanes are half the mechanism and a harness
+  // blind to them would report the shape's effect and call it the feature's.
+  // Mirrors `updatePinball`'s one-shot lane branch: the exit direction is the
+  // lane's live tangent, the speed is the lane's floor, and the band goes on
+  // cooldown so a single curve cannot be farmed. The RAIL (held, continuous)
+  // is deliberately not modelled — it needs steering input, which this harness
+  // has none of.
+  if (res.hitLane && b.speed >= ARC_LANE_MIN_SPEED && res.hitLane.band.cooldownT <= 0) {
+    const lane = res.hitLane;
+    b.speed = Math.min(PINBALL_MAX_SPEED, Math.max(b.speed * ARC_LANE_MULT + ARC_LANE_ADD, ARC_LANE_MIN_EXIT));
+    b.dx = lane.tx;
+    b.dz = lane.tz;
+    lane.band.cooldownT = ARC_LANE_COOLDOWN;
+    b.combo += 1;
+    b.speed = Math.max(0, b.speed - PINBALL_FRICTION * comboFrictionMul(b.combo) * dt);
+    return true;
+  }
 
   if (res.hitN) {
     const { nx, nz } = res.hitN;
@@ -199,10 +231,17 @@ export function fireSample(
     combo: 0,
   };
 
+  // Lane cooldowns are MUTABLE STATE ON THE GRID (the same fields the renderer
+  // ticks), so one sample can leave a band spent and silently change the next.
+  // Reset every band this doorway could touch before each shot, or the sampling
+  // order becomes part of the measurement.
+  for (const a of g.arcs ?? []) for (const l of a.lanes ?? []) l.cooldownT = 0;
+
   const halfW = d.w / 2;
   const steps = Math.ceil(TIMEOUT_S / FIXED_STEP);
   let bounces = 0;
   for (let n = 0; n < steps; n++) {
+    for (const a of g.arcs ?? []) for (const l of a.lanes ?? []) l.cooldownT = Math.max(0, l.cooldownT - FIXED_STEP);
     if (stepBall(g, b, FIXED_STEP)) bounces++;
     const rx = b.x - c.x;
     const rz = b.z - c.z;
@@ -259,19 +298,42 @@ export interface DoorwayResult {
 }
 
 /**
- * How near a funnel arc must be to count as "this doorway's".
+ * How far from the mouth a funnel tile still counts as this doorway's, in tiles.
  *
- * A jaw's far end sits about `FUNNEL_DEPTH` tiles back up the corridor, so the
- * radius has to clear that; much wider and a funnel on a NEIGHBOURING doorway
- * would mark this one as treated and blur the very split it exists to make.
+ * Sized to `FUNNEL_DEPTH` plus a tile of slack: a jaw reaches back about that
+ * far and no further.
  */
 const FUNNEL_NEAR = 6;
 
-/** Is there a funnel jaw attached to this doorway? */
+/**
+ * Is there a funnel jaw attached to this doorway?
+ *
+ * ⚠️ ASKED OF THE TILES, NOT THE ARC CENTRES, and the first version got this
+ * badly wrong. It measured the distance from the doorway to each funnel
+ * feature's CENTRE — but a jaw's arcs have radii of 7 to 23 tiles, because a
+ * parabola flattens fast, so their centres sit far off in the rock and the test
+ * marked every doorway within ~25 tiles as treated. It reported 25 treated
+ * doorways where there were 7, and the paired counterfactual it fed was
+ * therefore diluted with two thirds untreated doorways — which is exactly the
+ * dilution the pairing existed to remove.
+ *
+ * A curve is WHERE ITS TILES ARE. Nothing else about an arc feature is local.
+ */
 function hasFunnel(g: Grid, d: Doorway): boolean {
-  for (const f of g.arcs ?? []) {
-    if (f.owner !== "funnel") continue;
-    if (Math.hypot(f.cx - (d.i + 0.5), f.cz - (d.j + 0.5)) <= FUNNEL_NEAR + f.r) return true;
+  const funnel = new Set<number>();
+  (g.arcs ?? []).forEach((a, i) => {
+    if (a.owner === "funnel") funnel.add(i);
+  });
+  if (!funnel.size || !g.arcIdx) return false;
+  const r = FUNNEL_NEAR;
+  for (let dj = -r; dj <= r; dj++) {
+    for (let di = -r; di <= r; di++) {
+      const i = d.i + di;
+      const j = d.j + dj;
+      if (i < 0 || j < 0 || i >= g.w || j >= g.h) continue;
+      const k = idx(g, i, j);
+      if (g.shapes[k] === SHAPE_ARC && funnel.has(g.arcIdx[k])) return true;
+    }
   }
   return false;
 }

@@ -657,6 +657,16 @@ export function orientArcRails(g: Grid, phi: Int32Array): { kept: number; flippe
   let dropped = 0;
   for (const f of g.arcs ?? []) {
     if (!f.lanes || f.lanes.length === 0) continue;
+    // A FUNNEL LANE IS NOT A RAIL AND Φ HAS NO OPINION ON IT.
+    //
+    // Every other lane is oriented by the floor's flow toward the stairs, which
+    // is right for a bank on the racing line. A funnel lane's direction is
+    // decided by the doorway it feeds — it carries the ball THROUGH the
+    // opening — and that is a local fact about two rooms, not about where the
+    // exit is. Worse, a doorway is funnelled from BOTH sides, so one of the two
+    // always opposes Φ and would be flipped into carrying balls away from the
+    // door it was built to serve, or dropped outright.
+    if (f.owner === "funnel") continue;
     const keep: LaneBand[] = [];
     for (const l of f.lanes) {
       const asAuthored = scoreRail(g, phi, f, l, l.cw);
