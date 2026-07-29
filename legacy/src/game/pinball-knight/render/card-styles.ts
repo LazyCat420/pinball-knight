@@ -535,6 +535,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   chomper: "bone",
   bloater: "bone",
   hound: "bone",
+  sporeling: "bone",
 
   // The incorporeal — ink stock, cold blue.
   ghost: "ink",

@@ -40,6 +40,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   ghost: { label: "Ghost", icon: "👻", blurb: "drifts through walls; untouchable until it strikes" },
   bat: { label: "Bat", icon: "🦇", blurb: "wobbles in on a drunken line — hard to swat" },
   slime: { label: "Slime", icon: "🟢", blurb: "splits into two fast minis when killed" },
+  sporeling: { label: "Sporeling", icon: "🍄", blurb: "a walking fruiting body; it bursts a spore cloud when it dies" },
   reaper: { label: "Death Dealer", icon: "☠️", blurb: "cannot be hurt. It only ever gets faster" },
   goblin: { label: "Goblin", icon: "👺", blurb: "kicks you off your line; shrugs off a standing poke" },
   pin: { label: "Bowling Pin", icon: "🎳", blurb: "does not fight. It scores — and it chains" },

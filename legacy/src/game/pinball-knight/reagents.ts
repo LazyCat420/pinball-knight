@@ -98,6 +98,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   chomper: [{ id: "slimegel", chance: 0.14 }, { id: "fang", chance: 0.1 }],
   magnet: [{ id: "lodestone", chance: 0.16 }],
   webspinner: [{ id: "silk", chance: 0.28 }],
+  sporeling: [{ id: "rotflesh", chance: 0.22 }, { id: "slimegel", chance: 0.12 }],
   // ── Expansion roster ──
   hound: [{ id: "fang", chance: 0.24 }, { id: "hide", chance: 0.1 }],
   bloater: [{ id: "venomsac", chance: 0.24 }, { id: "slimegel", chance: 0.14 }],

@@ -48,6 +48,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   pin: "inert",
   golem: "rooted",
   chomper: "rooted",
+  sporeling: "chase",
   magnet: "chase",
   webspinner: "kite",
   hound: "leaper",

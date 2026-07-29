@@ -10,6 +10,7 @@
 import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
 import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
+import { makeSporelingPaints } from "../render/monsters/sporeling";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet } from "../render/knight-sheets";
@@ -89,7 +90,7 @@ function monsterSheet(paints: ActorPaints): SpriteSheet {
  */
 export type SheetKey =
   | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
-  | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner";
+  | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling";
 
 /**
  * EnemyKind → the atlas that kind draws with, for callers that hold a kind
@@ -103,6 +104,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
   spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
+  sporeling: "sporeling",
 };
 
 /** key → (paint the atlas, read it off state, write it back). */
@@ -120,6 +122,7 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   chomper: { make: makeChomperPaints, get: () => state.chomperSheet, set: (s) => { state.chomperSheet = s; } },
   magnet: { make: makeMagnetPaints, get: () => state.magnetSheet, set: (s) => { state.magnetSheet = s; } },
   webspinner: { make: makeWebspinnerPaints, get: () => state.webspinnerSheet, set: (s) => { state.webspinnerSheet = s; } },
+  sporeling: { make: makeSporelingPaints, get: () => state.sporelingSheet, set: (s) => { state.sporelingSheet = s; } },
 };
 
 /**
@@ -146,7 +149,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "brute", "slime", "bat", "golem", "magnet", "spitter", "webspinner"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "brute", "slime", "bat", "golem", "magnet", "spitter", "webspinner", "sporeling"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.

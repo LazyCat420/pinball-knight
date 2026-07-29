@@ -42,7 +42,7 @@ afterAll(() => {
 
 const ALL_KEYS: SheetKey[] = [
   "spider", "brute", "spitter", "ghost", "bat", "slime", "boss",
-  "goblin", "pin", "golem", "chomper", "magnet", "webspinner",
+  "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
 ];
 
 /** Put every atlas field back to null — the state a spawn sees before the

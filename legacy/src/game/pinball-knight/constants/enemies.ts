@@ -79,6 +79,16 @@ export const GOBLIN_SPEED_FACTOR = 1.2;
 export const GOBLIN_KICK_SPEED = 9; // the bounce it hands the player
 export const GOBLIN_KICK_COOLDOWN = 0.6;
 export const GOBLIN_RATIO = 5;
+/**
+ * SPORELING — a fungal shambler. Tankier and a shade slower than a zombie, with
+ * no special movement: it is a BODY, there to make floor 1 read as a dungeon
+ * with more than one thing living in it. Ratio 6 / residue 3 is a free slot in
+ * the horde roll (see spawn/factory.ts — every kind claims a distinct
+ * `hash % RATIO === n` pair so two kinds never contend for the same slot).
+ */
+export const SPORELING_RATIO = 6;
+export const SPORELING_FROM_LEVEL = 1;
+export const SPORELING_SPEED_FACTOR = 0.85;
 export const GOBLIN_FROM_LEVEL = 1; // 2→1 playtest 07-23: floor 1 was zombies-only
 /**
  * BOWLING PIN CREW — six 1-HP pins spawned in triangle formation. They don't

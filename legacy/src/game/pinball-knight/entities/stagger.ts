@@ -76,6 +76,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   slime: 0.55,
   reaper: 0,
   goblin: 0.6,
+  sporeling: 0.5,
   pin: 0,
   golem: 0.05,
   chomper: 0.15,
