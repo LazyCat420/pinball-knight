@@ -28,6 +28,7 @@
  * depth. Rally decides WHERE; delve decides how strong you get there.
  */
 import type { PeerInfo } from "./presence";
+import { applyFloorLock } from "../game/pinball-knight/dev/floor-lock";
 
 /** Parse the `dungeon:<n>` scene tag. Returns 0 for the tavern or a bad tag. */
 export function floorOfScene(scene: string): number {
@@ -97,6 +98,13 @@ export function rallyFloor(peers: PeerInfo[], myFloor = 0): FloorPop | null {
  * still means that floor; everything else funnels the pool together.
  */
 export function resolveDescendFloor(peers: PeerInfo[], resumeFloor = 0, explicit?: number): number {
+  // The dev floor lock clamps the RESULT rather than short-circuiting, so with
+  // the flag off (the default, and always in production) this function behaves
+  // exactly as it always has and the rally logic below is untouched.
+  return applyFloorLock(resolveDescendFloorRaw(peers, resumeFloor, explicit));
+}
+
+function resolveDescendFloorRaw(peers: PeerInfo[], resumeFloor: number, explicit?: number): number {
   if (explicit && explicit > 0) return explicit;
   const rally = rallyFloor(peers, 0);
   if (rally) return rally.floor;
