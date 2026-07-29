@@ -12,7 +12,7 @@
  * ("dungeon" / "tavern") pins the last key it fetched.
  */
 import { state } from "../state";
-import { buildSpriteSheet, type SpriteSheet } from "../engine/render/sprite";
+import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
 import { makeKnightPaints } from "./cel-painter";
 import type { WeaponId } from "../items";
 import { lookKey, type KnightLook } from "./knight-look";
@@ -27,16 +27,73 @@ export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: She
   const key = lookKey(weapon, look);
   pinned.set(consumer, key);
 
-  let sheet = state.playerSheets.get(key);
-  if (sheet) {
-    // Refresh recency: Map preserves insertion order, so delete + re-set makes
-    // iteration order double as the LRU order.
-    state.playerSheets.delete(key);
-    state.playerSheets.set(key, sheet);
-    return sheet;
-  }
+  const cached = touch(key);
+  if (cached) return cached;
 
-  sheet = buildSpriteSheet(makeKnightPaints(weapon, look));
+  const sheet = buildSpriteSheet(makeKnightPaints(weapon, look));
+  return commit(key, sheet);
+}
+
+/** Cache hit + LRU recency refresh, or null. */
+function touch(key: string): SpriteSheet | null {
+  const sheet = state.playerSheets.get(key);
+  if (!sheet) return null;
+  // Refresh recency: Map preserves insertion order, so delete + re-set makes
+  // iteration order double as the LRU order.
+  state.playerSheets.delete(key);
+  state.playerSheets.set(key, sheet);
+  return sheet;
+}
+
+/**
+ * The knight's atlas, WITHOUT ever painting it on a frame the player can see.
+ *
+ * `applyWeaponArt` runs from the rAF loop and calls this every frame; on a
+ * weapon or gear change the old code went straight to `buildSpriteSheet`, which
+ * is ~100 crushed frames in one synchronous call. Profiled over a 30 s bot run
+ * that was 857 ms of hitch time — the second largest contributor after the
+ * monster backfill, and unlike the backfill it landed mid-combat, because gear
+ * changes when a cuirass shatters.
+ *
+ * So a miss starts an incremental build and returns null. The caller keeps
+ * drawing the sheet it already has (the previous weapon's) for the handful of
+ * frames the paint takes, which is a far better trade than a freeze: the swap
+ * animation covers it, and a wrong-sprite frame is worth ~1/60 s of a wrong
+ * SILHOUETTE where the alternative is a quarter-second where nothing moves.
+ *
+ * Returns the sheet on the frame it completes, and on every frame after.
+ */
+export function requestKnightSheet(
+  weapon: WeaponId,
+  look: KnightLook,
+  consumer: SheetConsumer,
+  budgetMs: number,
+): SpriteSheet | null {
+  const key = lookKey(weapon, look);
+  pinned.set(consumer, key);
+
+  const cached = touch(key);
+  if (cached) return cached;
+
+  // A different key mid-build (two swaps in quick succession) restarts rather
+  // than finishing art nobody asked for any more. The abandoned build's texture
+  // is disposed here; nothing has drawn it.
+  if (building && building.key !== key) {
+    building.build.sheet.texture.dispose();
+    building = null;
+  }
+  if (!building) building = { key, build: startSpriteSheet(makeKnightPaints(weapon, look)) };
+
+  if (!building.build.step(budgetMs)) return null;
+  const done = building.build.sheet;
+  building = null;
+  return commit(key, done);
+}
+
+let building: { key: string; build: SheetBuild } | null = null;
+
+/** Insert into the cache and evict down to the cap. */
+function commit(key: string, sheet: SpriteSheet): SpriteSheet {
   state.playerSheets.set(key, sheet);
 
   if (state.playerSheets.size > CACHE_CAP) {

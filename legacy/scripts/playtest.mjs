@@ -40,8 +40,8 @@
  */
 import { chromium } from "playwright";
 import { parseArgs } from "node:util";
-import { spawn, execSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { connectRealGpu, closeHostBrowser, rewriteForHostBrowser } from "./lib/host-chrome.mjs";
 
 const { values: a } = parseArgs({
   options: {
@@ -89,80 +89,9 @@ const MAX_FRAME_MS = Number(a["max-frame-ms"]);
 const CDP_PORT = Number(a["cdp-port"]);
 const log = (...m) => console.log(...m);
 
-/** Windows Chrome locations, as seen from WSL2. */
-const WIN_CHROME = [
-  "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-  "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-  "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-];
-
-/** True when a CDP endpoint is already answering on the port. */
-async function cdpAlive(port) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/json/version`, {
-      signal: AbortSignal.timeout(1500),
-    });
-    return r.ok;
-  } catch {
-    return false;
-  }
-}
-
-let spawnedHostBrowser = null;
-
-/**
- * Launch (or reuse) a real-GPU browser and connect over CDP. Falls back to the
- * bundled Chromium — loudly — if no host browser can be found, so a --gpu run
- * on a machine without one still produces results instead of dying.
- */
-async function connectRealGpu() {
-  if (await cdpAlive(CDP_PORT)) {
-    log(`▶ reusing existing CDP browser on :${CDP_PORT}`);
-    return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
-  }
-  const exe = WIN_CHROME.find((p) => existsSync(p));
-  if (!exe) return null;
-
-  log(`▶ launching host browser for real-GPU timings\n    ${exe}`);
-  spawnedHostBrowser = spawn(
-    exe,
-    [
-      a.headed ? "--new-window" : "--headless=new",
-      ...(a.sound ? [] : ["--mute-audio"]),
-      `--remote-debugging-port=${CDP_PORT}`,
-      "--remote-allow-origins=*",
-      // A dedicated profile dir keeps this from colliding with the user's
-      // everyday Chrome session (which would refuse the debugging port).
-      "--user-data-dir=C:\\Temp\\bdb-playtest",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "about:blank",
-    ],
-    { detached: true, stdio: "ignore" },
-  );
-  spawnedHostBrowser.unref();
-
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    if (await cdpAlive(CDP_PORT)) {
-      return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
-    }
-  }
-  return null;
-}
-
-function closeHostBrowser() {
-  if (!spawnedHostBrowser) return;
-  try {
-    // The detached Windows process is not ours to signal from WSL; ask Windows.
-    execSync(
-      `powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE '%bdb-playtest%'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
-      { stdio: "ignore", timeout: 20_000 },
-    );
-  } catch {
-    /* best effort — a stray headless browser is not worth failing the run */
-  }
-}
+// The launch/connect/teardown dance for the host's real Chrome lives in
+// scripts/lib/host-chrome.mjs — it is shared with scripts/lag-profile.mjs, and
+// two copies of the WSL2 port-forwarding rules is one copy too many.
 
 // ── Connect ────────────────────────────────────────────────────────────────
 let browser = null;
@@ -170,7 +99,7 @@ let backend = "software (SwiftShader)";
 let realGpu = false;
 
 if (a.gpu) {
-  browser = await connectRealGpu();
+  browser = await connectRealGpu({ port: CDP_PORT, headed: a.headed, sound: a.sound, log });
   if (browser) {
     backend = "REAL GPU (host browser via CDP)";
     realGpu = true;
@@ -226,10 +155,6 @@ async function shutdown(code) {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-// WSL2 + host browser: Windows forwards its own localhost into WSL, but it
-// cannot reach the WSL subnet IP (the default firewall drops it). So when we are
-// driving the HOST browser at a WSL-local address, rewrite the host to localhost
-// — that is the path Windows actually routes.
 let targetUrl = a.url;
 // ── SILENCE BY DEFAULT ──
 // `?playtest=1` puts audio-manager into global-mute at module load, before any
@@ -247,16 +172,9 @@ let targetUrl = a.url;
   if (a.seed !== undefined) u.searchParams.set("seed", a.seed);
   targetUrl = targetUrl.startsWith("http") ? u.toString() : `${u.pathname}${u.search}`;
 }
-if (realGpu) {
-  // Rebuild from targetUrl, NOT a.url — the block above already added playtest,
-  // mute, gpu and seed, and re-deriving from a.url would silently drop them.
-  const u = new URL(targetUrl, "http://localhost");
-  if (u.hostname !== "localhost" && /^(127\.|0\.0\.0\.0|10\.|100\.|172\.|192\.168\.)/.test(u.hostname)) {
-    u.hostname = "localhost";
-    targetUrl = u.toString();
-    log(`▶ rewrote host → localhost for the host browser (WSL2 port forwarding)`);
-  }
-}
+// Rewrite from targetUrl, NOT a.url — the block above already added playtest,
+// mute, gpu and seed, and re-deriving from a.url would silently drop them.
+if (realGpu) targetUrl = rewriteForHostBrowser(targetUrl, log);
 if (a.backend === "webgpu" && !realGpu) {
   // Fail loudly rather than measure a lie: without a host browser this run
   // would silently fall back to WebGL2 and report it as a WebGPU result.

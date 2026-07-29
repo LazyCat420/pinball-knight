@@ -420,6 +420,35 @@ let _crushCtx: CanvasRenderingContext2D | null = null;
  * readback each time. Measured together, reuse + the hint cut the crush loop by
  * 46% (LOAD_PLAN.md §4) — far more than the palette snap everyone reaches for.
  */
+/**
+ * A 2D context for a canvas that will be CRUSHED — i.e. one whose pixels
+ * `crushInto` is about to read back with `getImageData`.
+ *
+ * ⚠️ THE HINT BELONGS ON THE SOURCE. That is the opposite of the intuition (a
+ * paint box is only ever *written*), and it is where the time was.
+ *
+ * MEASURED (host Chrome, RTX 3090 Ti, 400 crushes of a 128px paint box down to
+ * the 72px grid, timing the readback alone):
+ *
+ *     source canvas GPU-backed          getImageData  2.271 ms   (total 971 ms)
+ *     source canvas willReadFrequently  getImageData  0.109 ms   (total  62 ms)
+ *                                                    ────────    ──────────────
+ *                                                        20.8x          15.7x
+ *
+ * Without the hint the source lives in GPU memory, so reading it is a
+ * synchronous GPU→CPU transfer — and the whole cost lands on the getImageData
+ * line, which is why reading this code has repeatedly concluded the palette
+ * maths was the expense. It never was. `_paintCanvas` already carries the hint;
+ * the other two crush sources in this file are `renderPaintCanvas` and
+ * `staticTexture`, and they go through here so the rule has one home.
+ *
+ * Painting gets faster too (0.074 ms → 0.028 ms per frame): these are 128px
+ * boxes full of small fills, a shape the software rasteriser wins.
+ */
+function crushableContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+  return canvas.getContext("2d", { willReadFrequently: true });
+}
+
 function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   if (!_crushCanvas || _crushCanvas.width !== g) {
@@ -683,7 +712,7 @@ export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
-  const ctx = canvas.getContext("2d");
+  const ctx = crushableContext(canvas);
   if (!ctx) return null;
   paintInArtSpace(ctx, paint);
   // Ship the crushed canvas AT ITS NATIVE SIZE.
@@ -780,6 +809,36 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
  * replace the texture without touching the animator.
  */
 export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
+  return startSpriteSheet(paints).finish();
+}
+
+/**
+ * An atlas being painted a slice at a time.
+ *
+ * WHY THIS EXISTS. Painting an atlas is ~100 frames of vector art, each crushed
+ * to the palette, in ONE synchronous call — and every caller reached for it from
+ * somewhere the player was watching: the rAF loop on a weapon swap, or an idle
+ * callback whose advisory deadline it blew through by 5x. Profiled over a 30 s
+ * bot run (`scripts/lag-profile.mjs`), atlas painting owned 60% of all hitch
+ * time, split 2,046 ms on the monster backfill and 857 ms on the knight.
+ *
+ * The sheet handle is valid the moment the build starts; unpainted cells are
+ * transparent. That is safe ONLY because no owner hands a sheet out before
+ * calling `finish()` on it. Keep that invariant — a half-painted atlas on screen
+ * is an invisible monster, and nothing throws.
+ */
+export interface SheetBuild {
+  /** Usable immediately. Cells not yet painted are transparent. */
+  readonly sheet: SpriteSheet;
+  readonly done: boolean;
+  /** Paint frames until `budgetMs` is spent. Returns true when finished. */
+  step(budgetMs: number): boolean;
+  /** Paint everything that is left, right now. */
+  finish(): SpriteSheet;
+}
+
+/** The same atlas, painted incrementally. See {@link SheetBuild}. */
+export function startSpriteSheet(paints: ActorPaints): SheetBuild {
   const flat: FramePaint[] = [];
   const clips = new Map<string, number[]>();
   /** FramePaint → its slot in `flat`, so identical frames pack once. */
@@ -843,8 +902,6 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for sprite atlas");
 
-  flat.forEach((paint, i) => paintFrame(ctx, paint, i % cols, Math.floor(i / cols)));
-
   const texture = new THREE.CanvasTexture(canvas);
   celFilters(texture);
   texture.wrapS = THREE.RepeatWrapping; // needed for the flip trick below
@@ -852,7 +909,43 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   // Show exactly one CELL at a time.
   texture.repeat.set(1 / cols, 1 / rows);
 
-  return { texture, clips, frameCount: flat.length, cols, rows };
+  const sheet: SpriteSheet = { texture, clips, frameCount: flat.length, cols, rows };
+  let next = 0;
+
+  const paintUntil = (limit: number): boolean => {
+    while (next < flat.length) {
+      paintFrame(ctx, flat[next], next % cols, Math.floor(next / cols));
+      next++;
+      // Checked AFTER a frame, never before: a zero budget must still make
+      // progress, or a caller that always arrives with a spent deadline would
+      // poll this build forever without it ever finishing.
+      if (performance.now() >= limit) break;
+    }
+    const done = next >= flat.length;
+    // ── UPLOAD ONCE, AT THE END ──
+    //
+    // Marking the texture dirty per slice cost more than the freeze it was
+    // meant to remove. `needsUpdate` re-uploads the WHOLE atlas, which for the
+    // knight is 8136x144 — so slicing an atlas into 40 pieces turned one upload
+    // into forty, and measured p95 frame time went 18.2 ms → 30.4 ms with the
+    // median unmoved: the signature of work spread across frames rather than
+    // removed. Nothing renders a partial sheet (see SheetBuild), so there is
+    // nothing to show until it is finished.
+    if (done) texture.needsUpdate = true;
+    return done;
+  };
+
+  return {
+    sheet,
+    get done() {
+      return next >= flat.length;
+    },
+    step: (budgetMs) => paintUntil(performance.now() + budgetMs),
+    finish: () => {
+      paintUntil(Infinity);
+      return sheet;
+    },
+  };
 }
 
 /**
@@ -1089,7 +1182,7 @@ function staticTexture(paint: FramePaint): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
-  const ctx = canvas.getContext("2d");
+  const ctx = crushableContext(canvas);
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
   paintInArtSpace(ctx, paint);
 

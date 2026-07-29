@@ -23,6 +23,7 @@ import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
+import { isRenderHeld } from "../run/floor-hold";
 import { buyShopRow } from "../economy/shop";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
@@ -791,6 +792,19 @@ export function installDevHooks(deps: DevHookDeps): void {
     // play is a material family the prewarm never saw, compiled mid-combat.
     // That compile is a stall the player feels, so a harness needs to be able
     // to catch the rise on the exact frame it happens.
+    /**
+     * Is the descent screen holding the display right now?
+     *
+     * FOR FRAME-PACING HARNESSES, and load-bearing for them. A profiler that
+     * samples rAF deltas cannot tell a stutter from a descent: the loop returns
+     * before it renders or simulates while held (sim/loop.ts), so those frames
+     * are long BY DESIGN and the player is looking at a progress bar, not a
+     * dropped frame. Counted as hitches they dominate the tail — the worst
+     * frame in a 30 s run is reliably `warmFloorPipelines`, which is the warm-up
+     * doing exactly its job. Every "worst frame" figure quoted for this game
+     * before 2026-07-29 includes them.
+     */
+    (window as unknown as { __dungeonHeld?: () => boolean }).__dungeonHeld = () => isRenderHeld();
     (window as unknown as { __dungeonRenderInfo?: () => unknown }).__dungeonRenderInfo = () => {
       const r = state.renderer;
       if (!r) return null;

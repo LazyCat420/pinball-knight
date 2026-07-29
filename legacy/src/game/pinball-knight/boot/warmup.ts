@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import { state } from "../state";
 import { warmFloorFxReveal } from "../entities/floor-fx";
+import { setShadowsThrottled } from "./lighting";
 import type { FloorLoading } from "../floor-loading";
 
 /**
@@ -78,6 +79,43 @@ export function warmUnits(scene: THREE.Scene): THREE.Object3D[] {
   return units;
 }
 
+/**
+ * Draw one COMPLETE frame — post-process chain, shadow depth pass and all —
+ * while the descent screen still covers the display.
+ *
+ * ── WHY compileAsync IS NOT ENOUGH ──
+ *
+ * `compileAsync` warms the pipelines for the objects it walks, as seen from the
+ * camera it is handed. It does not warm the SHADOW pass, and it does not build
+ * everything the real render path touches. Measured on a real GPU with a V8
+ * sampling profile sliced to the hitch frames (`scripts/lag-profile.mjs`), the
+ * single worst frame of a 30 s run — 970 ms, and the FIRST frame after the
+ * descent screen closed, so the player sees the floor appear and then freeze —
+ * was three's NodeBuilder building shader graphs, alongside
+ * `createRenderPipeline renderPipeline_ShadowMaterial_930` ×20. Twenty shadow
+ * pipelines, created after a warm-up whose entire job is to have created them.
+ *
+ * A render is the only thing that provably warms what a render needs. It costs
+ * the same time it was going to cost anyway; the difference is that here it is
+ * spent under a progress bar rather than on the first frame of play.
+ *
+ * TWO frames, not one: `tickShadowThrottle` re-renders the shadow depth pass on
+ * alternate frames, so a single warm frame can land on the half that skips it —
+ * which is exactly the case this exists to cover. `setShadowsThrottled(true)`
+ * forces the first one rather than relying on the counter's parity.
+ */
+async function warmFirstFrame(): Promise<void> {
+  const { renderer, scene, camera, pixelPass } = state;
+  if (!renderer || !scene || !camera || !pixelPass) return;
+  for (let i = 0; i < 2; i++) {
+    setShadowsThrottled(true);
+    pixelPass.render(scene, camera);
+    // Let the GPU actually retire the work before the second pass, and give the
+    // descent screen's own rAF a turn so the bar is not frozen at 100%.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+  }
+}
+
 export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   const renderer = state.renderer;
   const scene = state.scene;
@@ -142,6 +180,7 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
       await renderer.compileAsync(children[i], camera, scene);
     }
     load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
+    await warmFirstFrame();
   } catch {
     // A failed precompile is a slow first frame, not a broken floor — the
     // renderer will compile lazily exactly as it did before. Never strand the
