@@ -36,7 +36,7 @@ import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { tickJuice, resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
-import { createTouchControls, isTouchDevice, type TouchControls } from "./engine/touch-controls";
+import { installTouchControls, isTouchDevice, type TouchControls } from "./gui/touch";
 import { updateShots } from "./shots";
 import { createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
@@ -248,7 +248,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   // it on for testing the layout from a desktop browser.
   const forceTouch = typeof location !== "undefined" && /[?&]touch=1/.test(location.search);
   if (state.container && (forceTouch || isTouchDevice())) {
-    touchControls = createTouchControls(state.container, state.input.pad);
+    touchControls = installTouchControls(state.input.pad, () => state.pixelPass?.sizing() ?? null);
   }
 
   state.onKeyDown = handleKey;

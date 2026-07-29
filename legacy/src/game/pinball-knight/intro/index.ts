@@ -20,6 +20,8 @@
  * Skips: any key/click, the SKIP button, `?no-intro=1`, `__skipDungeonIntro`,
  * or prefers-reduced-motion.
  */
+import { introChromeScreen, setIntroFade, setIntroTitle } from "../gui/screens/intro-chrome";
+import { close as closeUiScreen, push as pushUiScreen } from "../gui/stack";
 import * as THREE from "three";
 import { state } from "../state";
 import { buildMaze } from "../maze/build";
@@ -245,22 +247,12 @@ export function runPinballIntro(onDone: () => void): void {
   const KS = Math.max(2, Math.round((KH * S) / SPRITE_PIXEL_GRID)); // integer sprite scale
   const KREAL = SPRITE_PIXEL_GRID * KS; // knight height, real px
 
-  // DOM bits: skip button always; title banner appears at the title phase.
-  const styleEl = document.createElement("style");
-  styleEl.textContent = "@keyframes pk-blink{0%,55%{opacity:1}56%,100%{opacity:0}}";
-  document.head.appendChild(styleEl);
-  const skipBtn = document.createElement("button");
-  skipBtn.textContent = "SKIP ▸";
-  skipBtn.style.cssText = `position:absolute;right:18px;bottom:14px;z-index:9600;background:rgba(0,0,0,.45);color:#cfd6c8;border:1px solid rgba(207,214,200,.4);padding:8px 14px;cursor:pointer;font:10px ${PIXEL_FONT_LABEL};letter-spacing:1px;`;
-  overlay.appendChild(skipBtn);
-  const banner = document.createElement("div");
-  banner.style.cssText = `position:absolute;left:0;right:0;bottom:7%;z-index:9500;text-align:center;color:#e8c869;display:none;font:16px ${PIXEL_FONT_LABEL};text-shadow:0 3px 0 #000,0 0 18px rgba(232,200,105,.35);pointer-events:none;`;
-  banner.innerHTML = `PINBALL KNIGHT<div style="margin-top:14px;font-size:9px;color:#cfd6c8;animation:pk-blink 1.1s step-end infinite">PRESS ANY KEY</div>`;
-  overlay.appendChild(banner);
-  const fadeEl = document.createElement("div");
-  fadeEl.style.cssText =
-    "position:absolute;inset:0;z-index:9700;background:#000;opacity:0;transition:opacity .38s ease;pointer-events:none;";
-  overlay.appendChild(fadeEl);
+  // Chrome (skip button, title, fade) is an in-game screen — see
+  // gui/screens/intro-chrome.ts. The two canvases above stay: they are this
+  // sequence's rendering surface, not interface.
+  setIntroTitle(false);
+  setIntroFade(0);
+  pushUiScreen(introChromeScreen(() => finish()));
 
   // ── Lifecycle ──
   let phase: Phase = "run";
@@ -284,9 +276,7 @@ export function runPinballIntro(onDone: () => void): void {
     window.removeEventListener("pointerdown", onSkipPointer, true);
     c2d.remove();
     kc.remove(); // no-op if beginShatter already retired it
-    skipBtn.remove();
-    banner.remove();
-    styleEl.remove();
+    closeUiScreen("intro-chrome");
     ballSprite.mesh.removeFromParent();
     ballSprite.dispose();
     for (const e of echoes) {
@@ -313,7 +303,7 @@ export function runPinballIntro(onDone: () => void): void {
   function finish(): void {
     if (finishing) return;
     finishing = true;
-    fadeEl.style.opacity = "1";
+    setIntroFade(1);
     window.setTimeout(() => {
       if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
       (window as unknown as { __dungeonIntroPhase?: string | null }).__dungeonIntroPhase = null;
@@ -321,10 +311,7 @@ export function runPinballIntro(onDone: () => void): void {
       if (state.active) {
         sfxLevelStart();
         onDone();
-        fadeEl.style.opacity = "0";
-        window.setTimeout(() => fadeEl.remove(), 450);
-      } else {
-        fadeEl.remove();
+        setIntroFade(0);
       }
     }, 400);
   }
@@ -334,13 +321,15 @@ export function runPinballIntro(onDone: () => void): void {
     e.stopImmediatePropagation();
     finish();
   }
-  function onSkipPointer(e: PointerEvent): void {
-    if (e.target === skipBtn) return; // the button's own click handles it
+  function onSkipPointer(): void {
+    // No element to exclude any more: the SKIP button is painted, and the UI
+    // layer resolves its own hit test before this ever fires. Either way the
+    // action is the same, so a double-fire is harmless — `finish()` guards on
+    // `finishing`.
     finish();
   }
   window.addEventListener("keydown", onSkipKey, true);
   window.addEventListener("pointerdown", onSkipPointer, true);
-  skipBtn.onclick = finish;
 
   // ── 2D painters ──
   function paintOverworld(t: number, frozen: boolean, bonkT: number): void {
@@ -639,7 +628,7 @@ export function runPinballIntro(onDone: () => void): void {
         if (pt >= SWEEP_DUR) {
           phase = "title";
           pt = 0;
-          banner.style.display = "block";
+    setIntroTitle(true);
         }
         break;
       case "title":
