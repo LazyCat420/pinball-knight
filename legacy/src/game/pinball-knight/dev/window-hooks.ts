@@ -22,7 +22,7 @@ import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
-import { floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
+import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
@@ -74,7 +74,7 @@ export function installDevHooks(deps: DevHookDeps): void {
   //   `__dungeonAtlas(which)` → data URL of that actor's full sprite strip
   //   `__dungeonClips(which)` → the clip table ("S:idle"→[0,1], …) so a harness
   //                             can slice + label individual named frames.
-  // `which` ∈ spider|brute|spitter|ghost|boss|knight|zombie.
+  // `which` ∈ spider|brute|spitter|ghost|boss|knight|zombie|sporeling|….
     const sheetFor = (which: string): SpriteSheet | null =>
       which === "spider" ? state.spiderSheet :
       which === "brute" ? state.bruteSheet :
@@ -89,6 +89,7 @@ export function installDevHooks(deps: DevHookDeps): void {
       which === "chomper" ? state.chomperSheet :
       which === "magnet" ? state.magnetSheet :
       which === "webspinner" ? state.webspinnerSheet :
+      which === "sporeling" ? state.sporelingSheet :
       which === "knight" ? (state.playerArtKey ? state.playerSheets.get(state.playerArtKey) : null) ?? null :
       state.zombieVariantSheets[0] ?? null;
     (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
@@ -489,6 +490,18 @@ export function installDevHooks(deps: DevHookDeps): void {
     };
     // Dev: jump straight to a depth. The merchant, the magician and the reaper
     // all gate on level, so a harness that can't change floors can't test them.
+    // Dev: forget the persisted resume floor so the NEXT boot starts at floor 1.
+    // The tavern plunger offers the floor you last died on (corpse-run.ts
+    // RESUME_KEY), which is correct for players and a nuisance when you are
+    // reloading all day to look at one floor-1 monster. Deliberately a hook
+    // rather than a gameplay toggle: disabling floor progression to make
+    // testing convenient would mean testing a game that is not the shipped one.
+    // `__dungeonFreshRun()` then reload.
+    (window as unknown as { __dungeonFreshRun?: () => boolean }).__dungeonFreshRun = () => {
+      clearResumeFloor();
+      return true;
+    };
+
     (window as unknown as { __dungeonLevel?: (n: number) => boolean }).__dungeonLevel = (n: number) => {
       if (state.gameOver || !Number.isFinite(n) || n < 1) return false;
       startLevel(Math.floor(n));
