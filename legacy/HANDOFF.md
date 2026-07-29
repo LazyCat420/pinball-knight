@@ -2,6 +2,82 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+> ⚠️ NOT collapsed this session, deliberately. The shared checkout had ANOTHER
+> session's uncommitted WebGPU work in it (`package.json`, `core.ts`,
+> `main.ts`, `render/backend.ts`, `scripts/webgpu-check.mjs`) and the
+> `bdb-mapgen` worktree was live, so the "collapse to the live state" note
+> further down still does not apply. Prepended instead.
+
+## ✅ LIVE NOW — `3da7693` · card pickups (2026-07-29)
+
+**Deployed to synology as `HEAD@3da7693`, container healthy,
+`10.0.0.16:5174/dungeon` → 200, and re-verified AGAINST THE LIVE CONTAINER:
+16 cards taken in a row, none stranded, no sprite left in the scene.**
+
+### What the report was, and what it actually was
+
+> "when i pick up a card it's still on the map"
+
+**It was not a rendering leak, and that is the whole lesson here.** Every pickup
+kind unparents and disposes its sprite through `removeGroundItem`; a headless
+soak (120s of bot play with cards flowing + four descents) shows zero orphan
+billboards. The card was simply **never picked up**:
+
+- `state.cardStash` was capped at `STASH_MAX = 10`.
+- **Nothing drains that stash mid-run** — only the Tavern and the pause menu do.
+- Past the cap `pickUpCard` returned false and `checkPickups` LEFT the card on
+  the floor, drawn identically to one you could still take.
+
+So from the tenth card on, every card for the rest of the run was stranded, and
+the knight could run over it forever. At depth 5 / ~190 kills that is every card
+on the floor — which is exactly what the reporting screenshot showed. The only
+tell was one line in a busy corner rail: `🃏 stash full — visit the Tavern`.
+
+### What shipped
+
+- **The stash is uncapped.** `STASH_MAX` is deleted. Every former cap site now
+  just pushes: this pickup path, the Tavern's buy and un-socket guards, and the
+  shatter-insurance / salvage card rescue — the last two could silently EAT
+  cards the player had paid to protect.
+- **`pickUpCard` tries the off-hand weapon's sockets** before falling through to
+  the stash. A card refused while the weapon on your back had an empty slot for
+  it was the same defect in miniature.
+- **Card drop rate 8% → 1%**, with a debug lever for the other direction:
+  ` panel → **LOOT → "CARDS 100%"** (`state.dbgCardDropAlways`, or
+  `__dungeonDebug({cardDrops: true})` from a script) forces the COMMON gate.
+- **`__dungeonItems()`** — new hook. Reports `state.groundItems` BESIDE the
+  scene graph, so "not picked up" and "still rendered" can be told apart.
+
+### Gotchas
+
+- **`guaranteed` is applied AFTER the gate's `rand()`, never instead of it.**
+  Written as `opts.guaranteed || rand() < t` it would skip the draw, shift the
+  shared random stream, and every other roll (which card, the boss rarities)
+  would differ between a debug run and a real one — i.e. the debug run would be
+  testing a game that does not ship. Pinned by a test in `cards.test.ts`.
+- **Unowned quads in `__dungeonItems()` are not automatically leaks.** The
+  floor's props are quads (subtract `props`), and so is the merchant NPC from
+  floor 2 on. A soak that ignores both reads a steady "+1 orphan" that is just
+  the shopkeeper standing there. **A real leak GROWS with pickups or descents;
+  a constant is furniture.**
+- The deploy hit the known `canvas.node` gate failure from a clean worktree
+  (2 suites failed to LOAD, all 569 tests that ran passed). Fixed the documented
+  way: copy `node_modules/.pnpm/canvas@3.2.3/node_modules/canvas/build` in from
+  the main checkout, re-run. Do not try to race the copy into the first run.
+- Deployed from a **detached worktree at the merged SHA** with `--skip-pull`,
+  because the shared checkout was dirty with another session's WebGPU work and
+  `deploy.sh` copies the WORKING TREE, not `git HEAD`. Success banner reads
+  `HEAD@3da7693` (not `main@…`), which is how you confirm the clean copy shipped.
+
+### Open
+
+- Nothing from this fix. `pickup-removal.test.ts` guards both properties (40
+  cards in a row all clear the floor — it fails at card #11 against the old cap;
+  and every walk-over kind leaves the scene empty and disposed).
+- Worth knowing: the Tavern and pause-menu stash UIs now print `STASH (n)` with
+  no denominator. If the stash is ever meant to have a *soft* limit, that label
+  is where it would go back.
+
 ## ✅ MAP GENERATION — three waves, merged to main as `a354889` (2026-07-27)
 
 Live QA of **floor 5**: "boosters just going into walls … the section in the
