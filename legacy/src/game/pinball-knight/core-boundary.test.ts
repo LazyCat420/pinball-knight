@@ -51,6 +51,9 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *   2764  Wave 0 — installed. Added 11 lines on purpose (the floor-seed import
  *         and the `captureFloorCensus()` call) to buy the instruments the later
  *         waves are gated on.
+ *   1038  Wave 4 — buildLevel (717 lines) split at the line where the floor
+ *         stops being locals and becomes state.grid. Ten values cross that
+ *         boundary; everything else is consumed before it.
  *   1671  Wave 3 — run/{deps,descend,death}.ts, input/keymap.ts, spawn/reaper.ts.
  *         Only THREE symbols cross back into core (startLevel, armFloorLoading,
  *         exitDungeonGame); they are pushed in via setRunDeps rather than
@@ -64,7 +67,7 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
  *         not configured for v9.
  */
-const CORE_MAX_LINES = 1671;
+const CORE_MAX_LINES = 1038;
 
 /**
  * Line count, measured the way `wc -l` measures it.
