@@ -8,10 +8,37 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > now. Collapsing 1500 lines I have not read would delete their notes. Prepended
 > instead — someone with the whole picture should collapse this.
 
-## ✅ LIVE NOW — `5bf8d39` · PINBALL KNIGHT HAS NO DOM UI (2026-07-29)
+## ✅ LIVE NOW — `03a23ce` · NO DOM UI ANYWHERE (2026-07-29)
 
-**Deployed to synology as `main@5bf8d39`. `10.0.0.16:5174/dungeon` → 200.
-tsc clean over the game subtree, 1419 tests pass across 125 files.**
+**Deployed to synology as `main@03a23ce`. `10.0.0.16:5174/dungeon` → 200.
+tsc clean, 1934 tests pass across 167 files.**
+
+Two follow-ups landed after the first pass, both worth reading:
+
+**1. The WALKABLE TAVERN's own overlays were still DOM** and had been missed —
+the first sweep guarded `src/game/pinball-knight/` only. The station prompt,
+the pool arrival banner, the run summary, the lobby pill + "who's down there"
+board and the whole GAMBLER CABINET are now painted
+(`scenes/tavern/scene-screens.ts`, and the cabinet inside
+`scenes/tavern/gambler/index.ts`). `scenes/tavern/ui.ts` is deleted. The guard
+now covers `src/scenes/` too, exempting only the site boot sequence
+(`app-bootstrap.ts`, `intro-scene.ts`) — those run before any renderer exists,
+so there is no pass to composite into.
+
+**2. `stack.remove()` exists now, and the distinction matters.** `close(id)`
+TRUNCATES — it drops the named screen and everything above it, which is right
+for a modal and the child it raised. That is wrong for the bottom-of-stack
+layers (HUD, toasts, touch pad, station prompt). The tavern raised its prompt
+and then called `close("hud")`, which found the HUD at index 0 and took the
+prompt with it: the scene rendered perfectly and had NO interface at all. Use
+`remove()` for always-on layers, `close()` for sheets. Pinned by a test.
+
+**3. The deploy gate was testing other people's worktrees.** vitest's default
+exclude does not cover `.claude/worktrees/`, so `deploy.sh` was running every
+parallel session's uncommitted code — 222 test files instead of ~167 — and
+aborted twice on failures in three checkouts that were mid-edit by someone else
+and were not being deployed. It also caused the load that makes
+`floor-pipeline` hit its 30s timeout. Fixed in `vitest.config.js`.
 
 Every screen — the knight menu, the tavern and its four vendors, the shop, the
 death screen, the floor haul, both HUDs, toasts, the floor map, the descent
