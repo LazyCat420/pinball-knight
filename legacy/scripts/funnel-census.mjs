@@ -39,6 +39,7 @@ const { values } = parseArgs({
     seeds: { type: "string", default: "1,12345,987654321,424242" },
     out: { type: "string" },
     diff: { type: "string", multiple: true },
+    "diff-b": { type: "string" },
     json: { type: "boolean", default: false },
   },
 });
@@ -57,6 +58,11 @@ function report(r, label) {
   L.push("");
   L.push(`  dead-on    ${pct(r.deadOnRate).padStart(7)}   HARNESS SELF-CHECK — straight down the middle`);
   L.push(`  unusable   ${String(r.unusableDirs).padStart(7)}   approach dirs with no standing room (of ${r.doorways * 2})`);
+  L.push("");
+  L.push("  TREATED vs UNTREATED  (the aggregate dilutes this by ~10x)");
+  for (const [name, sp] of [["funnelled", r.split.funnelled], ["plain", r.split.plain]]) {
+    L.push(`    ${name.padEnd(10)} ${String(sp.doorways).padStart(4)} doors  capture ${pct(sp.captureRate).padStart(7)}  rejected ${pct(sp.rejectRate).padStart(7)}`);
+  }
   L.push("");
   L.push("  by doorway width");
   for (const w of Object.keys(r.byWidth).sort((a, b) => a - b)) {

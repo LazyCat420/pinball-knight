@@ -43,6 +43,7 @@ import { compactArcs } from "./arc-contract";
 import { SHAPE_ARC } from "../engine/tile-shape";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
 import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, clearanceField, widthFromClearance, type Doorway } from "./doorways";
+import { authorDoorwayFunnels } from "./doorway-funnels";
 import { bfsDistances } from "../engine/flow-field";
 
 /**
@@ -457,7 +458,34 @@ export function buildTrackFloor(
   cellsW: number,
   cellsH: number,
   rng: () => number,
-  opts: { linkChance?: number; fill?: number; minLoops?: number; profile?: TrackProfile; density?: number } = {},
+  opts: {
+    linkChance?: number;
+    fill?: number;
+    minLoops?: number;
+    profile?: TrackProfile;
+    density?: number;
+    /**
+     * Author doorway funnels. DEFAULT OFF — see below, and see
+     * `maze/doorway-funnels.ts` for the full result.
+     *
+     * The pass is correct, safe and measured: it strands nothing, produces no
+     * incoherent junctions and no unbacked ribbons. It also does not WORK yet.
+     * Paired against the same doorways on the same seeds with the flare
+     * removed, it moved capture by -0.1pp and REJECTION by +2.8pp — 5 doorways
+     * better, 6 worse, 14 unchanged. A change that does not pay for itself does
+     * not ship on by default, however much machinery is behind it.
+     *
+     * It is a switch rather than a deletion because the diagnostic says what is
+     * missing rather than that the idea is wrong: a treated doorway gets only
+     * ~6.5 funnel-faced tiles across both approaches and both sides, piled up
+     * at the threshold where the parabola runs nearly parallel to the passage
+     * and deflects almost nothing. The flare is real and far too short to be in
+     * the ball's path. Making it longer means breaking the `f = w/4` tie that
+     * pins the arms to the jambs, which is a design change owed its own
+     * measurement — not a constant to nudge here.
+     */
+    funnels?: boolean;
+  } = {},
 ): TrackFloor | null {
   const w = cellsW * 2 + 1;
   const h = cellsH * 2 + 1;
@@ -822,6 +850,36 @@ export function buildTrackFloor(
   // until the full-width cross-section is already open on both sides, so every
   // column of an opening ends on floor and the cut creates no dead ends.
   const doors = carveDoorways(grid, doorSites, { mask, spanMask: arcSpanMask(grid) });
+
+  // ── AND THEN FLARE THEM, SO THE BALL CAN ACTUALLY GET THROUGH ───────────
+  //
+  // A uniform opening is not yet a usable one. `scripts/funnel-census.mjs`
+  // fires balls at every doorway on real floors from every position and angle a
+  // player could arrive at: 54.0% get through and 27.9% are sent back the way
+  // they came, and it is the NARROW doorways that lose (3 wide: 45.1%; 7 wide:
+  // 63.5%). `doorway-funnels.ts` gives the worst of them parabolic jaws — focus
+  // on the mouth, so a corridor's worth of parallel approaches is gathered onto
+  // the opening.
+  //
+  // HERE, and the position is doing three things:
+  //
+  //  · after `carveDoorways`, because the jaws are fitted to the size that was
+  //    actually built. `resolveDoorway` steps 7 down to 5 down to 3 when the
+  //    wide one will not fit, and f = w/4 is what puts the arms on the jambs —
+  //    a funnel built for the size that was ASKED for misses them.
+  //  · before the compaction/de-stub fixed point below, so a nub the flare
+  //    leaves is cleaned like any other and the jaws' backing is certified by
+  //    the same `compactArcs` that certifies every other face. Running after it
+  //    would ship exactly the unbacked-ribbon defect that loop exists to stop.
+  //  · before the rail pass, so a jaw is eligible for a booster lane like any
+  //    other curve — a lane on a jaw CARRIES the ball through the door rather
+  //    than bouncing it at the door.
+  //
+  // It both carves and FILLS — a funnel's arm is wall the corridor did not have
+  // — so it carries the same collective BFS strand guard with revert that the
+  // concave fillets do, taking `ends.start` as the root.
+  if (opts.funnels === true)
+    authorDoorwayFunnels(grid, doors.doorways, ends.start, (i: number, j: number) => nearSealed(grid, mask, i, j));
 
   // ── TRIM CURVES AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
   //

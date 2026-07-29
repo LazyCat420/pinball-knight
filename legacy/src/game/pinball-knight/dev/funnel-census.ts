@@ -243,6 +243,37 @@ export interface DoorwayResult {
    * with a clear approach, the census is measuring itself, not the geometry.
    */
   deadOn: { samples: number; captured: number };
+  /**
+   * Does this doorway actually carry a funnel jaw?
+   *
+   * ⚠️ THE AGGREGATE IS NOT THE MEASUREMENT, and reporting it alone is how a
+   * change like this gets wrongly abandoned — or wrongly shipped. Funnels land
+   * on a handful of doorways per floor; the other ~150 in the census are
+   * untouched, and averaging over all of them dilutes whatever the treated ones
+   * did by more than an order of magnitude. Splitting on treatment is the only
+   * way to see the effect at all, and it is the same discipline a signed split
+   * bought elsewhere in this repo, where a net of ~0 was hiding a -3.29% and a
+   * +4.42% cancelling each other out.
+   */
+  funnelled: boolean;
+}
+
+/**
+ * How near a funnel arc must be to count as "this doorway's".
+ *
+ * A jaw's far end sits about `FUNNEL_DEPTH` tiles back up the corridor, so the
+ * radius has to clear that; much wider and a funnel on a NEIGHBOURING doorway
+ * would mark this one as treated and blur the very split it exists to make.
+ */
+const FUNNEL_NEAR = 6;
+
+/** Is there a funnel jaw attached to this doorway? */
+function hasFunnel(g: Grid, d: Doorway): boolean {
+  for (const f of g.arcs ?? []) {
+    if (f.owner !== "funnel") continue;
+    if (Math.hypot(f.cx - (d.i + 0.5), f.cz - (d.j + 0.5)) <= FUNNEL_NEAR + f.r) return true;
+  }
+  return false;
 }
 
 /**
@@ -265,6 +296,7 @@ export function censusDoorway(g: Grid, d: Doorway): DoorwayResult {
     medBounces: 0,
     unusableDirs: 0,
     deadOn: { samples: 0, captured: 0 },
+    funnelled: hasFunnel(g, d),
   };
   const capturedBounces: number[] = [];
 
@@ -330,6 +362,11 @@ export interface CensusReport {
   unusableDirs: number;
   /** Harness self-check: capture rate of the dead-on, zero-lateral shot. */
   deadOnRate: number;
+  /** The treated/untreated split — see `DoorwayResult.funnelled`. */
+  split: {
+    funnelled: { doorways: number; samples: number; captureRate: number; rejectRate: number };
+    plain: { doorways: number; samples: number; captureRate: number; rejectRate: number };
+  };
   /** Capture rate split by the doorway's vocabulary width. */
   byWidth: Record<number, { doorways: number; samples: number; captureRate: number; medBounces: number }>;
   /** Worst doorways by capture rate — where an authoring pass would pay. */
@@ -370,6 +407,10 @@ export function runFunnelCensus(levels: readonly number[], runSeeds: readonly nu
   let deadOnCaptured = 0;
   const bounces: number[] = [];
   const byWidth: CensusReport["byWidth"] = {};
+  const split = {
+    funnelled: { doorways: 0, samples: 0, captureRate: 0, rejectRate: 0 },
+    plain: { doorways: 0, samples: 0, captureRate: 0, rejectRate: 0 },
+  };
   const worst: CensusReport["worst"] = [];
 
   for (const f of perFloor) {
@@ -394,6 +435,11 @@ export function runFunnelCensus(levels: readonly number[], runSeeds: readonly nu
       // Accumulate the count here; converted to a rate below.
       bw.captureRate += d.captured;
       if (d.medBounces >= 0) bw.medBounces += d.medBounces;
+      const sp = d.funnelled ? split.funnelled : split.plain;
+      sp.doorways++;
+      sp.samples += d.samples;
+      sp.captureRate += d.captured; // counts here; converted to a rate below
+      sp.rejectRate += d.rejected;
       worst.push({ level: f.level, runSeed: f.runSeed, w: d.w, captureRate: d.captured / d.samples });
     }
   }
@@ -401,6 +447,10 @@ export function runFunnelCensus(levels: readonly number[], runSeeds: readonly nu
     const bw = byWidth[Number(k)];
     bw.captureRate = bw.samples ? bw.captureRate / bw.samples : 0;
     bw.medBounces = bw.doorways ? bw.medBounces / bw.doorways : -1;
+  }
+  for (const sp of [split.funnelled, split.plain]) {
+    sp.captureRate = sp.samples ? sp.captureRate / sp.samples : 0;
+    sp.rejectRate = sp.samples ? sp.rejectRate / sp.samples : 0;
   }
   worst.sort((a, b) => a.captureRate - b.captureRate);
 
@@ -415,6 +465,7 @@ export function runFunnelCensus(levels: readonly number[], runSeeds: readonly nu
     medBounces: median(bounces),
     unusableDirs,
     deadOnRate: deadOnSamples ? deadOnCaptured / deadOnSamples : 0,
+    split,
     byWidth,
     worst: worst.slice(0, 12),
     perFloor,
