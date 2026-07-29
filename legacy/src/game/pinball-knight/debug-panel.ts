@@ -77,16 +77,41 @@ export const SPAWNABLE: Array<{ kind: string; label: string }> = (KIND_IDS as En
  * spawn the newest monster hides exactly the kind you most need to look at.
  */
 import { debugScreen } from "./gui/screens/debug";
-import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "./gui/stack";
+import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen, screens as uiScreens } from "./gui/stack";
+
+/**
+ * The live ` toggle, parked here so the KEYMAP can reach it.
+ *
+ * It used to be handed back to `core.ts` and nowhere else, and core stored it
+ * in a variable called `debugPanelDispose` — so the console had a documented
+ * key ("press ` / ~ to toggle", said in three files), a working screen, and no
+ * caller. Pressing ` did nothing for as long as that was true. Registering it
+ * in the module the keymap can import is what actually connects the two.
+ */
+let liveToggle: (() => void) | null = null;
 
 /** Returns the ` toggle, exactly as the DOM version did. */
 export function createDebugPanel(_container: HTMLElement | null, actions: DebugActions): () => void {
-  return () => {
-    if (uiIsOpen("debug")) closeUiScreen("debug");
-    else pushUiScreen(debugScreen(actions));
+  liveToggle = () => {
+    if (uiIsOpen("debug")) {
+      closeUiScreen("debug");
+      return;
+    }
+    // Never stack the console on top of the menu, the shop or the haul screen.
+    // Closing still works from anywhere above, so the console can't get stuck
+    // open behind something else.
+    if (uiScreens().some((s) => s.id !== "hud")) return;
+    pushUiScreen(debugScreen(actions));
   };
+  return liveToggle;
+}
+
+/** Toggle the console — the ` key's entry point (input/keymap.ts). */
+export function toggleDebugPanel(): void {
+  liveToggle?.();
 }
 
 export function disposeDebugPanel(): void {
   closeUiScreen("debug");
+  liveToggle = null;
 }

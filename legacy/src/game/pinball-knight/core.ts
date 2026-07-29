@@ -98,7 +98,7 @@ import { applyMaterial, isMaterial } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { rollMagicianClock } from "./entities/npc";
 import { tickCombatTimers } from "./entities/combat";
-import { createDebugPanel } from "./debug-panel";
+import { createDebugPanel, disposeDebugPanel } from "./debug-panel";
 import { createInput } from "./engine/input";
 import { updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
 import { tickAbilities } from "./abilities";
@@ -152,7 +152,9 @@ import { applyPotion } from "./economy/shop";
 
 /** The on-screen touch pad, when this device gets one (see createTouchControls). */
 let touchControls: TouchControls | null = null;
-let debugPanelDispose: (() => void) | null = null;
+/** The ` toggle. NOT a dispose — its old name said so and teardown CALLED it,
+ *  which pushed the debug screen while the run was being torn down. */
+let toggleDebugPanel: (() => void) | null = null;
 
 
 export function isDungeonGameActive(): boolean {
@@ -221,7 +223,7 @@ export function launchDungeonGame(onExit?: () => void): void {
 
   // Debug/god-mode console (press ` to toggle). State toggles live on `state`;
   // the one-shot actions route through core's private helpers here.
-  debugPanelDispose = createDebugPanel(state.container, {
+  toggleDebugPanel = createDebugPanel(state.container, {
     heal: () => {
       if (!state.player) return;
       state.player.hp = playerMaxHp();
@@ -588,8 +590,8 @@ export function exitDungeonGame(): void {
   if (state.animFrameId !== null) cancelAnimationFrame(state.animFrameId);
   if (state.onKeyDown) window.removeEventListener("keydown", state.onKeyDown);
   if (state.onResize) window.removeEventListener("resize", state.onResize);
-  debugPanelDispose?.();
-  debugPanelDispose = null;
+  disposeDebugPanel();
+  toggleDebugPanel = null;
   state.input?.dispose();
   touchControls?.dispose();
   touchControls = null;

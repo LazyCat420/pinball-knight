@@ -72,8 +72,8 @@ export const MAX_RENDER_W = 1920;
 export const MAX_RENDER_H = 1080;
 
 /**
- * Pixels per world unit. FIXED at 96 — one tile (1 world unit) is always
- * exactly 96 render pixels, at every window size.
+ * Pixels per world unit. FIXED at 80 — one tile (1 world unit) is always
+ * exactly 80 render pixels, at every window size.
  *
  * This is load-bearing and must NOT be made adaptive: sprite crispness depends
  * on `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` (asserted in
@@ -92,33 +92,37 @@ export const MAX_RENDER_H = 1080;
  * (filtering has been NEAREST throughout) but detail authored below the grid
  * and quantized into confetti.
  *
- * Raising PPU to 96 raises SPRITE_PIXEL_GRID to 108 with it (the identity
- * above), so an actor is drawn with 2.25x the texels — a head is ~30 across and
- * a face has room for actual features. Three things make this cheap:
+ * Raising PPU to 80 raises SPRITE_PIXEL_GRID to 90 with it (the identity
+ * above), so an actor is drawn with 1.56x the texels and a face has room for
+ * actual features. Three things make this cheap:
  *
  *   · SPRITE_UNITS is unchanged at 1.125, so the world is untouched. Colliders,
  *     reach, spacing and every tuned distance mean exactly what they did.
  *   · The render target does not grow — renderW/renderH still come from the
  *     window. The frustum SHRINKS instead (20 tiles across at 1920 rather than
- *     30), so per-frame GPU cost is identical. This buys detail with atlas
+ *     24), so per-frame GPU cost is identical. This buys detail with atlas
  *     memory and boot paint, not with framerate.
- *   · 20 tiles at 1920 is the framing this game was designed around; see the
- *     RENDER_W note, which calls out losing it as the price of integer scaling.
- *     This gets it back.
+ *   · The camera only tightens a little: 24 tiles across at 1920 rather than
+ *     30. PPU IS THE ZOOM as much as it is the fidelity dial, and the two
+ *     cannot be separated — that is the real constraint on this number. 96
+ *     (20 tiles) was tried first and played as too close to read the map from;
+ *     64 is the blurry original. 80 is the compromise, and the only nearby
+ *     value that works at all: the identity forces grid = 1.125 x PPU, and 72
+ *     and 88 give ODD grids (81, 99).
  *
- * The cost is real and it is paid at BOOT: 2.25x the texels per atlas cell, and
+ * The cost is real and it is paid at BOOT: 1.56x the texels per atlas cell, and
  * a larger supersample buffer to feed them. Measured in LOAD_PERF_PLAN terms,
  * that is where to look if boot regresses.
  */
-export const PPU = 96;
+export const PPU = 80;
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
  * frustum is re-derived from the current render size by pixel-pass.ts, so
  * treat these as the floor (20×11.25 tiles), not as the running value.
  */
-export const VIEW_W = RENDER_W / PPU; // 13.33 tiles across at the 1280 reference
-export const VIEW_H = RENDER_H / PPU; // 7.5 tiles down
+export const VIEW_W = RENDER_W / PPU; // 16 tiles across at the 1280 reference
+export const VIEW_H = RENDER_H / PPU; // 9 tiles down
 
 // ── Camera ──────────────────────────────────────────────────────
 /**
@@ -175,7 +179,7 @@ export const ART_PX = 128; // painter coordinate space, unitless
  * The supersample is there to anti-alias curved outlines before the crush, and
  * 2x does that; 3x costs 40% more paint for a second decimal place.
  */
-export const SPRITE_PX = 216; // rasterisation buffer per frame, px = 2 × grid
+export const SPRITE_PX = 180; // rasterisation buffer per frame, px = 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -196,7 +200,7 @@ export const SPRITE_PX = 216; // rasterisation buffer per frame, px = 2 × grid
  * deliberately pixel-art. Must stay an integer multiple of PPU's reciprocal —
  * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
  */
-export const SPRITE_PIXEL_GRID = 108;
+export const SPRITE_PIXEL_GRID = 90;
 
 /**
  * Actor plane size, world units.

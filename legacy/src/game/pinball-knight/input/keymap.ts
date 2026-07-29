@@ -20,6 +20,7 @@ import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { openMenu } from "../gui/screens/menu";
 import { WEAPONS } from "../items";
 import { showPickupNote } from "../ui";
+import { toggleDebugPanel } from "../debug-panel";
 
 /** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */
 export function selectSlot(slot: number): void {
@@ -52,6 +53,18 @@ export function handleKey(e: KeyboardEvent): void {
   // the interact key there.
   if (isTavernSceneOpen()) return;
 
+
+  // ` / ~ — THE DEBUG CONSOLE.
+  //
+  // Checked BEFORE the `uiPauses` gate below, and that ordering is the whole
+  // point: the console is itself a pausing screen, so a ` routed after that
+  // gate could open the panel and then never close it. `toggleDebugPanel`
+  // refuses to stack on top of another modal, so this stays safe up here.
+  if (e.key === "`" || e.key === "~") {
+    e.preventDefault();
+    toggleDebugPanel();
+    return;
+  }
 
   // ── An IN-GAME screen owns the keyboard. ──
   // It has already handled this event in `gui/input.ts` (window capture phase,
@@ -107,6 +120,6 @@ export function handleKey(e: KeyboardEvent): void {
       break;
 
     // Everything else (spawn, descend, boss, reaper, FX toggles, fill-rampage,
-    // teleport) lives in the ` debug panel now — no more scattered letter keys.
+    // teleport) lives in the ` debug panel, handled at the top of this function.
   }
 }
