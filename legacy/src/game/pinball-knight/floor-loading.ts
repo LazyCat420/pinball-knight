@@ -26,6 +26,8 @@
  * the same visual language — the track-first circuit look, gold arteries on
  * cold stone — and the player learns nothing from studying it.
  */
+import { inGameUiEnabled } from "./gui/flag";
+import { isFloorLoadingOpen as uiLoadingOpen, openFloorLoading as openUiFloorLoading } from "./gui/screens/floor-loading";
 import { ensurePixelFonts } from "./pixel-fonts";
 
 const LABEL = "'Press Start 2P', ui-monospace, monospace";
@@ -122,6 +124,7 @@ function growLabyrinth(w: number, h: number): Uint8Array {
 let host: HTMLDivElement | null = null;
 
 export function isFloorLoadingOpen(): boolean {
+  if (inGameUiEnabled()) return uiLoadingOpen();
   return host !== null;
 }
 
@@ -130,6 +133,7 @@ export function isFloorLoadingOpen(): boolean {
  * responsible for closing it, including on a failure path.
  */
 export function openFloorLoading(container: HTMLElement, level: number): FloorLoading {
+  if (inGameUiEnabled()) return openUiFloorLoading(level);
   ensurePixelFonts();
   // Never stack two. A second descent while one is up replaces it.
   if (host) host.remove();

@@ -21,7 +21,6 @@ import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { paintMenuPortrait } from "../boot/sheets";
 import { inGameUiEnabled } from "../gui/flag";
 import { openMenu } from "../gui/screens/menu";
-import { top as topScreen } from "../gui/stack";
 import { WEAPONS } from "../items";
 import { showPickupNote } from "../ui";
 
@@ -69,7 +68,7 @@ export function handleKey(e: KeyboardEvent): void {
   // which runs before this handler and calls stopPropagation), so the only job
   // left here is to make sure the gameplay switch below never sees the key.
   // Without this the same Esc would close the screen AND be read as gameplay.
-  if (topScreen()) {
+  if (state.uiPauses) {
     e.preventDefault();
     return;
   }

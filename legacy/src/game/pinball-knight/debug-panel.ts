@@ -11,6 +11,9 @@
  * one-shot actions (heal, spawn, descend…) are injected as callbacks so this
  * module stays decoupled from core's private functions.
  */
+import { inGameUiEnabled } from "./gui/flag";
+import { debugScreen } from "./gui/screens/debug";
+import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "./gui/stack";
 import { state } from "./state";
 import type { EnemyKind } from "./state";
 import { KIND_IDS, KIND_INFO } from "./bestiary";
@@ -97,6 +100,14 @@ let refreshToggles: (() => void) | null = null;
 
 /** Build + mount the debug panel (hidden until ` is pressed). Returns a disposer. */
 export function createDebugPanel(container: HTMLElement, actions: DebugActions): () => void {
+  if (inGameUiEnabled()) {
+    // The ` key toggles; return the same toggle the DOM version returns so the
+    // caller's key binding is unchanged.
+    return () => {
+      if (uiIsOpen("debug")) closeUiScreen("debug");
+      else pushUiScreen(debugScreen(actions));
+    };
+  }
   const el = document.createElement("div");
   el.id = "dungeon-debug-panel";
   el.style.cssText = `
@@ -320,6 +331,7 @@ function chips(parent: HTMLElement, items: Array<{ label: string; title: string;
 }
 
 export function disposeDebugPanel(): void {
+  closeUiScreen("debug");
   if (onKey) window.removeEventListener("keydown", onKey);
   onKey = null;
   panelEl?.remove();

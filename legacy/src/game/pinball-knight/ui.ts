@@ -4,6 +4,8 @@
  * These are DOM overlays, so they sit OUTSIDE the pixel pipeline and aren't
  * quantized. Styled to match the palette so they don't clash with the art.
  */
+import { inGameUiEnabled } from "./gui/flag";
+import { pushBanner, pushToast as pushUiToast } from "./gui/screens/toasts";
 import { state, WEAPON_SLOTS } from "./state";
 import { SPRINT_RIDE_THRESHOLD, BOOTS_SPEED_FACTOR } from "./constants";
 import { playerMaxHp } from "./skill-runtime";
@@ -593,6 +595,7 @@ let toastHideTimer = 0;
 let toastRemoveTimer = 0;
 
 export function showToast(text: string, subtext = ""): void {
+  if (inGameUiEnabled()) return pushBanner(text, subtext);
   if (!state.container) return;
   // Evict any live toast immediately so messages never stack/overlap.
   if (activeToast) {
@@ -649,6 +652,7 @@ export function showToast(text: string, subtext = ""): void {
  * read as "notice", not "toast" (`showToast` is the big centre banner).
  */
 export function showPickupNote(text: string): void {
+  if (inGameUiEnabled()) return pushUiToast(text);
   showPickupToast(text);
 }
 

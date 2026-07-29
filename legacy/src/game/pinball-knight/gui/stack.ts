@@ -73,15 +73,27 @@ export function isOpen(id: string): boolean {
  * already a `state` field, so this is the shape that file already expects. When
  * the DOM overlays are gone the whole expression collapses to this flag.
  */
+/**
+ * Whether the UI should own the keyboard right now.
+ *
+ * NOT "is any screen open". The HUD, the toasts and the floor map are all
+ * screens and all stay open during play — gating capture on mere openness meant
+ * the UI swallowed WASD, Space and every gameplay key the moment the HUD
+ * existed, which is a game that renders perfectly and cannot be played.
+ *
+ * A screen wants the keyboard exactly when it pauses the world. That is the
+ * same condition, and keeping it as one expression is what stops the two from
+ * drifting apart.
+ */
 function syncPause(): void {
   state.uiPauses = stack.some((s) => s.pauses);
-  // Arm the input listeners THE INSTANT a screen opens, not on the next painted
-  // frame. Deferring it to the driver means every key pressed between "the
-  // screen opened" and "the loop got round to rendering" is dropped on the
-  // floor — and while a human cannot usually type that fast, a gamepad tap, a
-  // held key, or anything that opens a screen programmatically absolutely can.
-  // It presented as a flaky off-by-one in the focus cursor.
-  setUiInputLive(stack.length > 0);
+  // Arm the listeners THE INSTANT a pausing screen opens, not on the next
+  // painted frame. Deferring it to the driver means every key pressed between
+  // "the screen opened" and "the loop got round to rendering" is dropped — and
+  // while a human cannot usually type that fast, a gamepad tap or anything that
+  // opens a screen programmatically absolutely can. It presented as a flaky
+  // off-by-one in the focus cursor.
+  setUiInputLive(state.uiPauses);
 }
 
 export function push(s: UiScreen): void {

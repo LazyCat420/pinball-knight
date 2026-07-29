@@ -91,6 +91,20 @@ describe("screen stack", () => {
     expect(isOpen("menu")).toBe(true);
   });
 
+  it("does NOT pause — and so does not capture input — for the HUD", () => {
+    // The regression this pins: the HUD is a screen and is open for the whole
+    // run. Gating keyboard CAPTURE on "any screen is open" made the UI swallow
+    // WASD and Space the moment the HUD existed — a game that renders perfectly
+    // and cannot be played. Capture follows this flag, so this flag is the test.
+    push(screen("hud", false));
+    push(screen("toasts", false));
+    push(screen("floor-map", false));
+    expect(state.uiPauses).toBe(false);
+    // ...and a real sheet on top of all three does pause.
+    push(screen("menu", true));
+    expect(state.uiPauses).toBe(true);
+  });
+
   it("leaves the sim unpaused after clearScreens, whatever was open", () => {
     // The teardown path. A stale `uiPauses` after a run ends would freeze the
     // NEXT run before it started — the failure mode that is hardest to trace

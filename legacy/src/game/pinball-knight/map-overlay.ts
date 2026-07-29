@@ -10,6 +10,9 @@
  * map you never read; leaving the sim running means checking it mid-run is a
  * decision with a cost, which is the interesting version.
  */
+import { inGameUiEnabled } from "./gui/flag";
+import { floorMapScreen } from "./gui/screens/floor-map";
+import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "./gui/stack";
 import { state } from "./state";
 import { drawFloorMap, fitScale } from "./map-render";
 import { exploredFraction } from "./fog";
@@ -33,6 +36,7 @@ const LEGEND: Array<[string, string]> = [
 ];
 
 export function isFloorMapOpen(): boolean {
+  if (inGameUiEnabled()) return uiIsOpen("floor-map");
   return el !== null;
 }
 
@@ -129,6 +133,7 @@ export function openFloorMap(container: HTMLElement): void {
 }
 
 export function closeFloorMap(): void {
+  if (inGameUiEnabled()) return closeUiScreen("floor-map");
   if (!el) return;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
@@ -141,6 +146,14 @@ export function closeFloorMap(): void {
 
 /** Toggle. Returns true if the map is open afterwards. */
 export function toggleFloorMap(container: HTMLElement): boolean {
+  if (inGameUiEnabled()) {
+    if (uiIsOpen("floor-map")) {
+      closeUiScreen("floor-map");
+      return false;
+    }
+    pushUiScreen(floorMapScreen());
+    return true;
+  }
   if (el) {
     closeFloorMap();
     return false;

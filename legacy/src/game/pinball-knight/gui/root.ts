@@ -17,6 +17,7 @@ import { beginFrame, commit, fontsAreReady, markDirty, setUiActive, syncSize, ui
 import { beginUi, emptyUiInput, moveFocus, clampFocus, type UiFrame } from "./im";
 import { setUiInputLive, takeFrame } from "./input";
 import { pop, screens, top } from "./stack";
+import { state } from "../state";
 
 /**
  * True while the UI wants a repaint every frame.
@@ -46,7 +47,9 @@ export function drawUiFrame(pass: PixelPass): void {
 
   const list = screens();
   const open = list.length > 0;
-  setUiInputLive(open);
+  // Input capture follows the PAUSE flag, not openness — see `syncPause`. The
+  // HUD is a screen and is open all run; it must not eat the movement keys.
+  setUiInputLive(state.uiPauses);
   pass.setUiEnabled(open);
 
   if (!open) {

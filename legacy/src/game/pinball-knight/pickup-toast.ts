@@ -22,6 +22,8 @@
  * than queueing — during a horde clear you want the last four things you picked
  * up, not a four-second-stale backlog.
  */
+import { inGameUiEnabled } from "./gui/flag";
+import { clearToasts, pushCardToast, pushToast } from "./gui/screens/toasts";
 import { paintCard, cardTier, CARD_W, CARD_H } from "./render/holo-card";
 import { RARITY_HEX, cardDef, type CardId } from "./cards";
 import { state } from "./state";
@@ -128,6 +130,7 @@ function killRow(el: HTMLElement): void {
 
 /** Drop every row on the floor immediately (game teardown). */
 export function clearPickupToasts(): void {
+  if (inGameUiEnabled()) return clearToasts();
   for (const el of [...rows]) killRow(el);
   if (typeof document !== "undefined") document.getElementById(RAIL_ID)?.remove();
 }
@@ -159,6 +162,7 @@ function push(el: HTMLElement, holdMs: number): void {
  * `ui.showPickupNote` funnels into.
  */
 export function showPickupToast(text: string): void {
+  if (inGameUiEnabled()) return pushToast(text);
   if (typeof document === "undefined" || !state.container) return;
   ensurePixelFonts();
   const el = document.createElement("div");
@@ -181,6 +185,7 @@ export function showPickupToast(text: string): void {
  * the end of the floor, not an interruption in the middle of one.
  */
 export function showCardToast(id: CardId, note: string): void {
+  if (inGameUiEnabled()) return pushCardToast(id, note);
   if (typeof document === "undefined" || !state.container) return;
   const def = cardDef(id);
   if (!def) return;
