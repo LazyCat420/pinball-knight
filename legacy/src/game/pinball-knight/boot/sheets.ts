@@ -129,15 +129,17 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
  * Built before the first playable frame.
  *
  * Floor 1's spawn gates (`constants/enemies.ts`, `constants/pinball.ts`) admit
- * exactly goblin, pin, spider and hound — and hound is a TINTED RESKIN of the
- * spider atlas, so it needs no sheet of its own. Everything else is gated at
- * level ≥ 2 and has a whole floor's worth of idle time to arrive.
+ * goblin, pin, spider, sporeling and hound — and hound is a TINTED RESKIN of
+ * the spider atlas, so it needs no sheet of its own. Everything else is gated
+ * at level ≥ 2 and has a whole floor's worth of idle time to arrive.
  *
  * ⚠️ If a `*_FROM_LEVEL` is ever lowered to 1, add its key here. Getting that
  * wrong is not a crash — `sheetFor` will build it on the spawn — it just moves
- * that one atlas back onto a gameplay frame.
+ * that one atlas back onto a gameplay frame. `sporeling` (SPORELING_FROM_LEVEL
+ * = 1) shipped in BACKFILL and was exactly that miss; the registry-drift check
+ * in scripts/hooks now cross-reads the FROM_LEVEL constants against this list.
  */
-const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin"];
+const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling"];
 
 /**
  * Build order for the idle backfill: roughly the order the floor gates admit
@@ -149,7 +151,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "brute", "slime", "bat", "golem", "magnet", "spitter", "webspinner", "sporeling"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "brute", "slime", "bat", "golem", "magnet", "spitter", "webspinner"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.

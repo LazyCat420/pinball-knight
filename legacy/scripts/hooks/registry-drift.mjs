@@ -27,6 +27,15 @@
  *                         so the irregular names (CRYSTAL_/NECRO_/WEBSPIN_) come
  *                         from the code rather than a convention we'd have to
  *                         guess at.
+ *   E. debug spawn route — every kind the ` panel offers a chip for must have a
+ *                         construction path in `makeDebugEnemy`: the zombie /
+ *                         reaper special cases, a RESKIN entry, or a `case` in
+ *                         spawnKind. Otherwise the chip routes to spawnKind's
+ *                         `default: return null` and the click does NOTHING.
+ *                         This is check B's blind spot — B only walks the biome
+ *                         weight tables, so `sporeling` (2026-07-28), which has
+ *                         a bespoke atlas and a horde-cascade line but no
+ *                         spawnKind arm, passed A–D while its chip was dead.
  *
  * Exit 0 = clean, 1 = drift found (details on stdout).
  */
@@ -133,9 +142,15 @@ for (const file of files) {
 
 // ── C. EXPANSION_SKIN ↔ KIND_PORTRAIT ───────────────────────────────────────
 {
-  const skinBlock = blockAt(read("spawn/factory.ts"), read("spawn/factory.ts").indexOf("const EXPANSION_SKIN"));
+  // Anchored at the `=` in both cases. Both tables are declared
+  // `Partial<Record<EnemyKind, { … }>>`, so opening at the first `{` after the
+  // NAME lands inside the type annotation and the span closes there — which
+  // parsed EXPANSION_SKIN as ZERO entries and made this whole check a silent
+  // no-op (it looped over `{}` and compared nothing) until 2026-07-29.
+  const factorySrc = read("spawn/factory.ts");
+  const skinBlock = blockAt(factorySrc, factorySrc.indexOf("=", factorySrc.indexOf("const EXPANSION_SKIN")));
   const portraitSrc = read("render/monster-portrait.ts");
-  const portraitBlock = blockAt(portraitSrc, portraitSrc.indexOf("const KIND_PORTRAIT"));
+  const portraitBlock = blockAt(portraitSrc, portraitSrc.indexOf("=", portraitSrc.indexOf("const KIND_PORTRAIT")));
   const entries = (block) => {
     const out = {};
     for (const m of block.matchAll(/(\w+):\s*\{([^}]*)\}/g)) {
@@ -200,6 +215,40 @@ for (const file of files) {
   }
 }
 
+// ── E. every debug-panel chip actually builds something ─────────────────────
+//
+// The panel derives its chips from the bestiary (`KIND_IDS`), which is itself
+// exhaustive over EnemyKind — so a chip EXISTS for every kind automatically and
+// debug-panel.test.ts passes. But the click routes
+// debugSpawnEnemy → makeDebugEnemy → spawnKind, and that last hop is a `switch`
+// with a `default: return null`. A kind that reaches the default is a chip that
+// silently does nothing, which is worse than a missing chip: the panel says the
+// monster is spawnable and the floor stays empty.
+{
+  const factory = read("spawn/factory.ts");
+  const swBlock = blockAt(factory, factory.indexOf("export function spawnKind"));
+  const cases = new Set([...swBlock.matchAll(/case\s+"([^"]+)"/g)].map((x) => x[1]));
+  // Anchor at the `=`, not the declaration: RESKIN's type annotation is
+  // `Partial<Record<EnemyKind, { sheet … }>>`, so the first `{` after the name
+  // belongs to the TYPE and the span would close on it — capturing one entry.
+  // (Check D reads ESSENTIAL the same way, for the same reason.)
+  const reskin = new Set(
+    [...blockAt(factory, factory.indexOf("=", factory.indexOf("export const RESKIN"))).matchAll(/(\w+):\s*\{/g)].map((x) => x[1]),
+  );
+  // makeDebugEnemy's own special cases: "zombie" picks a variant sheet directly,
+  // and debugSpawn intercepts "reaper" before makeDebugEnemy (it's a floor-wide
+  // singleton with a summon ritual, not a thing you place N of).
+  const SPECIAL_CASED = new Set(["zombie", "reaper"]);
+
+  for (const kind of UNIONS.EnemyKind) {
+    if (SPECIAL_CASED.has(kind) || reskin.has(kind) || cases.has(kind)) continue;
+    fail(
+      "E",
+      `"${kind}" has a debug-panel chip (KIND_IDS is exhaustive) but no construction path — not RESKIN, not special-cased, and no spawnKind case. Clicking it hits spawnKind's \`default: return null\` and spawns nothing`,
+    );
+  }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────
 if (!problems.length) {
   console.log("registry-drift: clean");
@@ -210,9 +259,10 @@ const LABEL = {
   B: "themed spawn reachability",
   C: "EXPANSION_SKIN ↔ KIND_PORTRAIT",
   D: "floor-1 atlas preload",
+  E: "debug-panel spawn route",
 };
 console.log(`registry-drift: ${problems.length} problem(s)\n`);
-for (const check of ["A", "B", "C", "D"]) {
+for (const check of ["A", "B", "C", "D", "E"]) {
   const hits = problems.filter((p) => p.check === check);
   if (!hits.length) continue;
   console.log(`  [${check}] ${LABEL[check]}`);

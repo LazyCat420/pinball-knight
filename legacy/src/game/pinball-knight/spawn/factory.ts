@@ -278,6 +278,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= BAT_FROM_LEVEL ? makeZombie(sheetFor("bat"), x, z, baseSpeed * BAT_SPEED_FACTOR, { kind: "bat" }) : null;
     case "slime":
       return level >= SLIME_FROM_LEVEL ? makeZombie(sheetFor("slime"), x, z, baseSpeed * SLIME_SPEED_FACTOR, { kind: "slime" }) : null;
+    case "sporeling":
+      return level >= SPORELING_FROM_LEVEL ? makeZombie(sheetFor("sporeling"), x, z, baseSpeed * SPORELING_SPEED_FACTOR, { kind: "sporeling" }) : null;
     case "goblin":
       return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
     case "chomper":
