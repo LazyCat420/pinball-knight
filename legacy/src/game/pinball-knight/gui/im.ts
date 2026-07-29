@@ -99,14 +99,32 @@ export interface UiInput {
   pointer: { x: number; y: number; inside: boolean; down: boolean; pressed: boolean; released: boolean };
   /** True only if the pointer moved this frame — see `focusFollowsMouse`. */
   pointerMoved: boolean;
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
+  /**
+   * Directional input, as a PRESS COUNT for this frame rather than a boolean.
+   *
+   * Counting is not fussiness. Presses accumulate between painted frames, and
+   * the frame rate while a screen is open is neither high nor steady — the sim
+   * is paused, so nothing else is driving the loop, and a loaded machine has
+   * been measured delivering as few as 2 UI frames a second. A boolean (or the
+   * Set that first backed one) silently COLLAPSES every repeat inside one
+   * frame: tapping Down three times quickly moved the cursor once, and how many
+   * were lost depended on machine load. That is the worst kind of input bug —
+   * intermittent, unreproducible, and indistinguishable from a missed keypress.
+   */
+  up: number;
+  down: number;
+  left: number;
+  right: number;
+  nextTab: number;
+  prevTab: number;
+  /**
+   * Activation stays BOOLEAN, deliberately. Losing a repeat here is harmless;
+   * double-applying one is not — two accepts in a frame would buy two skill
+   * ranks from one perceived press. Collapse is the safe direction for actions
+   * and the unsafe direction for navigation, so they differ.
+   */
   accept: boolean;
   cancel: boolean;
-  nextTab: boolean;
-  prevTab: boolean;
   /** Wheel/stick scroll in UI pixels for this frame. */
   scroll: number;
   /** Digits 1-9 pressed this frame, or 0. Tab jumps, belt slots, shop rows. */
@@ -117,14 +135,14 @@ export function emptyUiInput(): UiInput {
   return {
     pointer: { x: -1, y: -1, inside: false, down: false, pressed: false, released: false },
     pointerMoved: false,
-    up: false,
-    down: false,
-    left: false,
-    right: false,
+    up: 0,
+    down: 0,
+    left: 0,
+    right: 0,
+    nextTab: 0,
+    prevTab: 0,
     accept: false,
     cancel: false,
-    nextTab: false,
-    prevTab: false,
     scroll: 0,
     digit: 0,
   };
@@ -451,8 +469,10 @@ export function tabs(f: UiFrame, r: Rect, labels: readonly string[], active: num
     if (st.focused) focusRing(f, tr);
     if (st.activated) next = i;
   }
-  if (f.input.nextTab) next = (active + 1) % labels.length;
-  if (f.input.prevTab) next = (active - 1 + labels.length) % labels.length;
+  // Counted, so holding a shoulder button through a slow frame does not drop
+  // steps. `+ labels.length * n` keeps the modulo positive for any count.
+  if (f.input.nextTab) next = (next + f.input.nextTab) % labels.length;
+  if (f.input.prevTab) next = (next - f.input.prevTab + labels.length * (f.input.prevTab + 1)) % labels.length;
   if (f.input.digit >= 1 && f.input.digit <= labels.length) next = f.input.digit - 1;
   return next;
 }

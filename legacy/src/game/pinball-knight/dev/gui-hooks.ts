@@ -19,8 +19,9 @@
  * asymmetric marker (a block in the TOP-LEFT eighth plus a bar down the LEFT
  * edge) so orientation can be read off the screen instead of guessed at.
  */
-import { paintOrientationProbe, uiCtx } from "../gui/layer";
+import { fontsAreReady, paintOrientationProbe, uiCtx } from "../gui/layer";
 import { clearScreens, pop, push, screens, top } from "../gui/stack";
+import { uiStats } from "../gui/root";
 import { settingsScreen } from "../gui/screens/settings";
 
 export function installGuiHooks(): void {
@@ -31,6 +32,9 @@ export function installGuiHooks(): void {
     top: top()?.id ?? null,
     focus: top()?.focus ?? -1,
     paused: screens().some((s) => s.pauses),
+    frames: uiStats.frames,
+    painted: uiStats.painted,
+    fonts: fontsAreReady(),
   });
 
   const api = gui as unknown as Record<string, unknown>;
@@ -47,8 +51,19 @@ export function installGuiHooks(): void {
     return gui();
   };
   api.probe = (): string => {
-    paintOrientationProbe();
-    return "probe painted — the gold block belongs TOP-LEFT, the cyan bar down the LEFT edge";
+    // A SCREEN, not a one-shot paint. The driver clears and repaints the layer
+    // every frame and disables the composite when the stack is empty, so a
+    // fire-and-forget paint is erased before it is ever presented — which looks
+    // exactly like "the composite does not work" and would have sent this
+    // investigation somewhere very wrong.
+    push({
+      id: "probe",
+      pauses: true,
+      focus: 0,
+      scroll: 0,
+      paint: () => paintOrientationProbe(),
+    });
+    return "probe screen pushed — the gold block belongs TOP-LEFT, the cyan bar down the LEFT edge";
   };
   api.shot = (): string | null => {
     const ctx = uiCtx();

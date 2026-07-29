@@ -27,10 +27,30 @@
 import { screenToUi, type UiSizing } from "./coords";
 import { emptyUiInput, type UiInput } from "./im";
 
-/** Held keys, by the lowercased `KeyboardEvent.key`. */
+/**
+ * Normalise a `KeyboardEvent.key` to ONE casing.
+ *
+ * Every key is lowercased, named keys included. The first cut lowercased only
+ * single-character keys and left `"ArrowDown"`/`"Enter"`/`"Escape"` as-is,
+ * which meant the nav tables (written in lowercase) matched letters and NOTHING
+ * else: the menu opened, painted, held focus — and ignored every arrow, Enter
+ * and Escape. Nothing threw, and mouse input still worked, so it read as "the
+ * keyboard is not wired up yet" rather than as a one-line casing bug. One rule
+ * for every key removes the whole class.
+ */
+function normKey(key: string): string {
+  return key.toLowerCase();
+}
+
+/** Held keys, by the normalised `KeyboardEvent.key`. */
 const held = new Set<string>();
-/** Keys that went down since the last `takeFrame()`. */
-const tapped = new Set<string>();
+/**
+ * Keys that went down since the last `takeFrame()`, AND HOW MANY TIMES.
+ *
+ * A Set here loses repeats — see the note on `UiInput.up`. The count is what
+ * makes navigation independent of the frame rate.
+ */
+const tapped = new Map<string, number>();
 
 let pointerClientX = -1;
 let pointerClientY = -1;
@@ -76,8 +96,8 @@ export function installUiInput(): void {
     "keydown",
     (e) => {
       if (!live) return;
-      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (!held.has(k)) tapped.add(k);
+      const k = normKey(e.key);
+      if (!held.has(k)) tapped.set(k, (tapped.get(k) ?? 0) + 1);
       held.add(k);
       // Tab would move DOM focus out of the canvas and Space would scroll the
       // page; both are meaningful UI keys here.
@@ -90,7 +110,7 @@ export function installUiInput(): void {
   window.addEventListener(
     "keyup",
     (e) => {
-      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const k = normKey(e.key);
       held.delete(k);
       if (live) {
         e.preventDefault();
@@ -257,9 +277,15 @@ const NAV_RIGHT = ["arrowright", "d"];
 const ACCEPT = ["enter", " "];
 const CANCEL = ["escape"];
 
+/** Total presses across a set of synonymous keys (arrows and WASD). */
+function tapCount(keys: readonly string[]): number {
+  let n = 0;
+  for (const k of keys) n += tapped.get(k) ?? 0;
+  return n;
+}
+
 function anyTapped(keys: readonly string[]): boolean {
-  for (const k of keys) if (tapped.has(k)) return true;
-  return false;
+  return tapCount(keys) > 0;
 }
 
 /**
@@ -273,15 +299,16 @@ export function takeFrame(sizing: UiSizing, winW: number, winH: number, nowMs: n
   const input = emptyUiInput();
   const pad = readUiPad(nowMs);
 
-  input.up = anyTapped(NAV_UP) || pad.up;
-  input.down = anyTapped(NAV_DOWN) || pad.down;
-  input.left = anyTapped(NAV_LEFT) || pad.left;
-  input.right = anyTapped(NAV_RIGHT) || pad.right;
+  input.up = tapCount(NAV_UP) + (pad.up ? 1 : 0);
+  input.down = tapCount(NAV_DOWN) + (pad.down ? 1 : 0);
+  input.left = tapCount(NAV_LEFT) + (pad.left ? 1 : 0);
+  input.right = tapCount(NAV_RIGHT) + (pad.right ? 1 : 0);
   input.accept = anyTapped(ACCEPT) || pad.accept;
   input.cancel = anyTapped(CANCEL) || pad.cancel;
   // Shift+Tab walks backwards, the convention every other tabbed UI uses.
-  input.nextTab = (tapped.has("Tab") && !held.has("Shift")) || pad.nextTab;
-  input.prevTab = (tapped.has("Tab") && held.has("Shift")) || pad.prevTab;
+  const tabTaps = tapped.get("tab") ?? 0;
+  input.nextTab = (held.has("shift") ? 0 : tabTaps) + (pad.nextTab ? 1 : 0);
+  input.prevTab = (held.has("shift") ? tabTaps : 0) + (pad.prevTab ? 1 : 0);
 
   input.digit = 0;
   for (let d = 1; d <= 9; d++) {

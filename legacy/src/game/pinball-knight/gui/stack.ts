@@ -22,6 +22,7 @@
  * convention to be preserved by hand.
  */
 import { state } from "../state";
+import { setUiInputLive } from "./input";
 import type { UiFrame } from "./im";
 
 export interface UiScreen {
@@ -74,6 +75,13 @@ export function isOpen(id: string): boolean {
  */
 function syncPause(): void {
   state.uiPauses = stack.some((s) => s.pauses);
+  // Arm the input listeners THE INSTANT a screen opens, not on the next painted
+  // frame. Deferring it to the driver means every key pressed between "the
+  // screen opened" and "the loop got round to rendering" is dropped on the
+  // floor — and while a human cannot usually type that fast, a gamepad tap, a
+  // held key, or anything that opens a screen programmatically absolutely can.
+  // It presented as a flaky off-by-one in the focus cursor.
+  setUiInputLive(stack.length > 0);
 }
 
 export function push(s: UiScreen): void {

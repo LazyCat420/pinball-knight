@@ -112,9 +112,24 @@ export function fontsAreReady(): boolean {
 /**
  * Match the canvas to the pass's current grid. Cheap and idempotent.
  *
- * `tex.dispose()` frees the GPU allocation while KEEPING the texture object —
- * the same trick `resize()` uses on the render targets, and for the same
- * reason: every binding that points at this texture stays valid.
+ * ── DO NOT `dispose()` THE TEXTURE HERE ──
+ * The obvious move is `tex.dispose()`, mirroring what `pixel-pass.resize()`
+ * does to its render targets. It is wrong, and it fails in the most expensive
+ * way available: SILENTLY and TOTALLY.
+ *
+ * A render target's `setSize()` reallocates while keeping the same texture
+ * object, so bindings stay valid. `Texture.dispose()` is a different thing — it
+ * tears down the backend resource, and under the node renderer the material's
+ * bind group still references the destroyed GPU texture. Sampling it yields
+ * zeroes, so `uiTexel.a` is 0, so `mix(col, ui.rgb, 0)` is the identity and the
+ * UI composites to nothing. Every counter says the UI painted (it did — the
+ * canvas was perfect), the screen shows no UI, and nothing anywhere errors.
+ * Measured 2026-07-28: `__gui()` reported `painted: 210` while the layer dump
+ * showed a correct image and the frame showed none of it.
+ *
+ * `needsUpdate` is the correct signal. three re-uploads the canvas and
+ * reallocates the backing GPU texture when its dimensions change, without ever
+ * invalidating the object the node graph bound at build time.
  */
 export function syncSize(sizing: UiSizing): void {
   const c = ensureCanvas();
@@ -124,7 +139,7 @@ export function syncSize(sizing: UiSizing): void {
   // Resetting the backing store clears it AND resets context state (transform,
   // smoothing, font). Re-pin what we rely on.
   if (ctx) ctx.imageSmoothingEnabled = false;
-  tex?.dispose();
+  if (tex) tex.needsUpdate = true;
   dirty = true;
 }
 

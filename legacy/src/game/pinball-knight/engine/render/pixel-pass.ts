@@ -335,12 +335,21 @@ function finalNode(
   // blend with no conversion. The texture MUST be tagged LinearSRGBColorSpace
   // by the caller so three does not "helpfully" decode it — see gui/layer.ts.
   //
-  // UV: `rtUv()`, the same flipped UV as every other sample in this shader.
-  // The UI texture keeps three's default flipY=true, which puts canvas row 0 at
-  // v=1; screen-top is uv().y=0; so the flip is what lands row 0 at the top.
-  // Judge this with an ASYMMETRIC probe (`__gui.probe()`), never with a centred
-  // menu — this repo shipped a v-flip fix twice by eyeballing symmetric content.
-  const uiTexel: TSLNode = texture(uiTex, rtUv());
+  // UV: plain `uv()`, NOT the `rtUv()` every other sample in this shader uses.
+  //
+  // That looks inconsistent and is the opposite — it is the same rule applied
+  // honestly. This file's model is ONE V-FLIP PER RENDER-TARGET HOP: the node
+  // renderer flips render targets, so every RT sample here compensates with
+  // `rtUv()`. The UI layer is not a render target. It is an UPLOADED canvas
+  // texture, which has taken zero RT hops, so it needs zero compensation.
+  //
+  // MEASURED, not reasoned (2026-07-28). With `rtUv()` the probe's cyan left-
+  // edge bar appeared correctly while its top-left gold block landed at the
+  // BOTTOM — where the DOM HUD happened to cover it, so the frame looked
+  // simply "empty" rather than "upside down". That is the exact trap this repo
+  // fell into twice before: symmetric or occluded content hides a flip. Judge
+  // this with `__gui.probe()` and check the GOLD BLOCK, never a centred menu.
+  const uiTexel: TSLNode = texture(uiTex, uv());
   col = mix(col, uiTexel.rgb, uiTexel.a.mul(u.ui));
 
   // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the

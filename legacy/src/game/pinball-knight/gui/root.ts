@@ -29,7 +29,18 @@ import { pop, screens, top } from "./stack";
  * matters, so the frame budget is otherwise empty. Revisit only if the HUD
  * (which is open during play, in P3) shows up in the profiler.
  */
+/**
+ * How many times the driver has run, and how many of those painted.
+ *
+ * A canvas UI has two silent failure modes that look identical from the outside
+ * (a blank screen): the driver never runs, or it runs and the composite eats
+ * the result. `__gui().frames` tells them apart in one query instead of a
+ * bisect — worth the two counters.
+ */
+export const uiStats = { frames: 0, painted: 0 };
+
 export function drawUiFrame(pass: PixelPass): void {
+  uiStats.frames++;
   const sizing = pass.sizing();
   syncSize(sizing);
 
@@ -64,8 +75,10 @@ export function drawUiFrame(pass: PixelPass): void {
     // widgets this screen registered. Doing it before would use last frame's
     // count and wrap early on any screen whose row count changed.
     s.focus = clampFocus(f.focus, f.count);
-    if (input.down) s.focus = moveFocus(f, 1);
-    else if (input.up) s.focus = moveFocus(f, -1);
+    // The COUNT is the delta. Three quick Downs move three rows even if all
+    // three landed between two painted frames.
+    const delta = input.down - input.up;
+    if (delta !== 0) s.focus = moveFocus(f, delta);
 
     if (input.cancel) {
       const handled = s.onCancel?.(s) ?? false;
@@ -73,6 +86,7 @@ export function drawUiFrame(pass: PixelPass): void {
     }
   }
 
+  uiStats.painted++;
   markDirty();
   commit();
 }
