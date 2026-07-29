@@ -33,9 +33,22 @@ function fpsFor(clip: ClipName): number {
       return a.death;
     case "roll":
       return a.roll;
-    // steelball shares the ball cadence — it's the same ride, different skin.
+    // steelball and the six MARBLE BODIES share the ball cadence — it's the
+    // same ride, different substance. The spin is a quarter turn per frame in
+    // every case, so a material that rolled at its own rate would read as the
+    // ball changing SPEED when you picked it up.
     case "ball":
     case "steelball":
+    case "diamondball":
+    case "waterball":
+    case "stoneball":
+    case "stormball":
+    case "shadowball":
+    case "lavaball":
+    // The ricochet forms ride the ball cadence too — they are the same
+    // four-beat spin, drawn as a bolt / a beam instead of a sphere.
+    case "boltform":
+    case "laserform":
       return a.ball;
     case "equip":
       return a.equip;
@@ -61,6 +74,15 @@ const LOOPS: Record<ClipName, boolean> = {
   roll: false,
   ball: true,
   steelball: true,
+  // A rolling sphere never stops rolling — every marble body loops.
+  diamondball: true,
+  waterball: true,
+  stoneball: true,
+  stormball: true,
+  shadowball: true,
+  lavaball: true,
+  boltform: true,
+  laserform: true,
   equip: false,
   forge: false,
   // A telegraph HOLDS its end pose. A crouch that looped back to "just starting

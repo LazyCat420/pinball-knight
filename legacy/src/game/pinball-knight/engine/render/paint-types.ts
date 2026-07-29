@@ -44,6 +44,29 @@ export type ClipName =
   | "run"
   | "ball"
   | "steelball"
+  /**
+   * MARBLE BODIES — one clip per `MarbleMaterial`. The material axis used to
+   * render the plain `ball` (the tucked knight) with a tinted trail, so the six
+   * materials were told apart only by the colour of their afterimages. Each is
+   * now its own sphere, painted from `MARBLE_SKINS` (render/cel-painter.ts).
+   *
+   * They share the `ball` cadence — same ride, different substance — and, like
+   * `steelball`, they are authored ONCE and handed to all three facings by
+   * reference, because a sphere looks the same from every angle.
+   */
+  | "diamondball"
+  | "waterball"
+  | "stoneball"
+  | "stormball"
+  | "shadowball"
+  | "lavaball"
+  /**
+   * RICOCHET FORMS (entities/ricochet-form.ts) — the two seconds where the ball
+   * is not yours. Not marble bodies: while these run you are not a sphere at
+   * all, which is why they are their own clips rather than another skin.
+   */
+  | "boltform"
+  | "laserform"
   | "equip"
   | "forge"
   /** Leaper wind-up: a loaded crouch, held. The one tell you must read fast. */

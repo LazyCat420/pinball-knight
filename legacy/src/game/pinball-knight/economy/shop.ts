@@ -8,13 +8,14 @@
 import { addGold, getBalance, spendGold } from "../../../utils/gold-wallet";
 import { sfxBumper, sfxFreeze } from "../audio";
 import { spawnMultiBall } from "../entities/multiball";
+import { enterRicochetForm } from "../entities/ricochet-form";
 import { rippleGlobe } from "../hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "../hud-face";
 import { ELIXIR_MAXHP_BONUS, POTIONS, REGEN_TICK_INTERVAL, freshWeapon, type PotionId } from "../items";
 import { at } from "../maze/generator";
 import { playerMaxHp } from "../skill-runtime";
 import { state } from "../state";
-import { openShopOverlay, refreshShopOverlay, showPickupNote, type ShopEntry } from "../ui";
+import { openShopOverlay, refreshShopOverlay, showPickupNote, showToast, type ShopEntry } from "../ui";
 
 /**
  * The Rolling Cart Merchant's wares. Prices are flat (gold is plentiful in a
@@ -110,6 +111,13 @@ export function applyPotion(id: PotionId): void {
     state.goldRun += def.gold;
     addGold(def.gold, "dungeon-game");
     state.vfx?.sparks(p.x, 0.7, p.z, 0, 0, 8);
+  }
+  // ✨ LASER: an instant hand-off, not a timed buff — the ricochet form owns
+  // its own clock, so this sits with the heal/gold instants above rather than
+  // in the duration block below (its POTIONS duration is deliberately 0).
+  if (id === "laser") {
+    enterRicochetForm("laser");
+    showToast("✨ LASER", "no steering. no brakes.");
   }
   if (def.duration > 0) {
     if (id === "rage") p.rageT = def.duration;

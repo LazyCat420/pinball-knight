@@ -26,7 +26,7 @@ import { tickCombatTimers } from "../entities/combat";
 import { momentumT } from "../entities/combo-curve";
 import { updateFloorFx, updateGrooveHop } from "../entities/floor-fx";
 import { simulateHazards } from "../entities/hazards";
-import { updateMaterial } from "../entities/marble";
+import { updateMaterial, updateSquash, updateVampire, updatePhaseEject } from "../entities/marble";
 import { updateMultiBall } from "../entities/multiball";
 import { updateNpcs } from "../entities/npc";
 import { updatePlayer } from "../entities/player";
@@ -147,6 +147,9 @@ export function simulate(dt: number): void {
   updateFloorFx(dt); // marble scars (slick/fire) tick status/damage to overlappers
   updateGrooveHop(dt); // the little airborne arc when the ball clears a rut's lip
   updateMaterial(dt); // marble material + fusion timers
+  updateSquash(dt); // impact deformation recovery (water/lava)
+  updateVampire(dt); // shadow lifesteal cooldown
+  updatePhaseEject(dt); // shadow: never leave the player sealed inside masonry
   simulateHazards(dt); // boxing-glove punches (player launch + lane damage)
   updateNpcs(dt); // the Magician's clock, witch/frog touches, ember trails
   updateMultiBall(dt); // 🔮 echo knights: trail the player, ram what they touch
