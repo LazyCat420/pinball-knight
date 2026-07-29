@@ -12,6 +12,8 @@
  * module stays decoupled from core's private functions.
  */
 import { state } from "./state";
+import type { EnemyKind } from "./state";
+import { KIND_IDS, KIND_INFO } from "./bestiary";
 import { WEAPONS } from "./items";
 import { POTIONS, POTION_IDS } from "./items";
 
@@ -48,29 +50,35 @@ const MATERIALS_DBG: Array<{ id: string; label: string }> = [
   { id: "lava", label: "🔥 Lava" },
 ];
 
-const SPAWNABLE: Array<{ kind: string; label: string }> = [
-  { kind: "zombie", label: "🧟 Zombie" },
-  { kind: "spider", label: "🕷️ Spider" },
-  { kind: "brute", label: "💪 Brute" },
-  { kind: "spitter", label: "🤮 Spitter" },
-  { kind: "ghost", label: "👻 Ghost" },
-  { kind: "bat", label: "🦇 Bat" },
-  { kind: "slime", label: "🟢 Slime" },
-  { kind: "goblin", label: "👺 Goblin" },
-  { kind: "pin", label: "🎳 Pin" },
-  { kind: "golem", label: "🗿 Golem" },
-  { kind: "chomper", label: "🪴 Chomper" },
-  { kind: "magnet", label: "🧲 Crawler" },
-  { kind: "webspinner", label: "🕸️ Spinner" },
-  { kind: "hound", label: "🐕 Hound" },
-  { kind: "bloater", label: "🤢 Bloater" },
-  { kind: "necromancer", label: "💀 Necro" },
-  { kind: "warden", label: "🛡️ Warden" },
-  { kind: "wisp", label: "🔮 Wisp" },
-  { kind: "sapper", label: "⚡ Sapper" },
-  { kind: "crystalback", label: "💎 Crystal" },
-  { kind: "mimic", label: "🪞 Mimic" },
-];
+/**
+ * The spawn chips, DERIVED from the bestiary roster.
+ *
+ * This list used to be hand-written, and drifted twice: `reaper` was never in
+ * it, and `sporeling` (2026-07-28) was missing on the day it shipped — the
+ * exact failure mode as `__dungeonAtlas`'s hardcoded `which` chain. A debug
+ * panel that cannot spawn the newest monster is worse than no panel, because
+ * the one kind you most need to look at is the one kind it hides.
+ *
+ * So the roster comes from bestiary.ts `KIND_IDS` (itself derived from
+ * `KIND_INFO`, which IS compile-enforced exhaustive over `EnemyKind`) and a new
+ * kind appears here automatically. `LABEL_OVERRIDE` keeps the few chip names
+ * that deliberately differ from the bestiary label — the panel is narrow, and
+ * "Crawler" fits where "Magnet Crawler" does not.
+ */
+const LABEL_OVERRIDE: Partial<Record<EnemyKind, string>> = {
+  magnet: "Crawler",
+  webspinner: "Spinner",
+  necromancer: "Necro",
+  crystalback: "Crystal",
+  pin: "Pin",
+  golem: "Golem",
+  reaper: "Reaper",
+};
+
+export const SPAWNABLE: Array<{ kind: string; label: string }> = (KIND_IDS as EnemyKind[]).map((kind) => {
+  const info = KIND_INFO[kind];
+  return { kind, label: `${info.icon} ${LABEL_OVERRIDE[kind] ?? info.label}` };
+});
 
 const PX_LABEL = `'Press Start 2P', ui-monospace, monospace`;
 const PX_NUM = `'VT323', 'Courier New', monospace`;
