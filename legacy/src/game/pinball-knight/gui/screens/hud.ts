@@ -1,0 +1,293 @@
+/**
+ * THE HUD, in the game.
+ *
+ * Replaces `hud-diablo.ts` (the iso strategy bar), `hud-wolf.ts` (the rampage
+ * bar) and the loose readouts that lived in `ui.ts` — boss bar, plunger meter,
+ * combo, FPS.
+ *
+ * ── THIS SCREEN DOES NOT PAUSE ──
+ * Every other screen freezes the sim. The HUD is open for the whole run, so
+ * `pauses: false`, and it sits at the BOTTOM of the stack: pushed once when a
+ * run starts, painted under everything, and never given input. It is the one
+ * screen for which "most modal first" means "not modal at all".
+ *
+ * ── THE FACE AND MINIMAP ARE NOT REWRITTEN ──
+ * `hud-face.ts` and `hud-minimap.ts` were already canvas painters that happened
+ * to be mounted in the DOM: a fixed backing store, `pixelated` rendering, and a
+ * `lastSig` repaint guard. All of that still applies, so they are re-hosted
+ * rather than ported — their canvases stop being DOM children and become blits
+ * into the UI layer. The minimap's guard matters MORE here, not less: without
+ * it the map redraws a few thousand `fillRect`s per frame for output that is
+ * usually identical.
+ *
+ * The `hud.ts` trick of physically MOVING the face's DOM node between the two
+ * HUDs (so health and expression never reset on a swap) is no longer needed:
+ * the face's state was never in the node, only its pixels were, and now nothing
+ * owns a node at all.
+ */
+import { state } from "../../state";
+import { ABILITIES, abilityRank, canCast } from "../../abilities";
+import { canRampage } from "../../fps";
+import { bossEngaged } from "../../boss";
+import { WEAPONS } from "../../items";
+import { playerMaxHp } from "../../skill-runtime";
+import { createFace, renderFace, setFaceHealth } from "../../hud-face";
+import { createMinimap, renderMinimap } from "../../hud-minimap";
+import { UI, GRID } from "../theme";
+import { bar, fillRect, rect, strokeRect, text, type Rect, type UiFrame } from "../im";
+import { drawIcon, glyph, itemIcon } from "../icons";
+import type { UiScreen } from "../stack";
+
+const PANEL_H = 92;
+const TILE = 44;
+
+/** A framed HUD cell — the bevelled stone look, in two fills. */
+function cell(f: UiFrame, r: Rect, label?: string): void {
+  fillRect(f, r, UI.well);
+  strokeRect(f, r, UI.sheetEdge);
+  if (label) text(f, label, r.x + r.w / 2, r.y + r.h - 10, { size: 8, colour: UI.textDim, align: "center" });
+}
+
+/**
+ * A liquid globe. Two arcs and a fill line — the DOM version animated a ripple
+ * across the surface; that survives as a sine offset on the fill line, which is
+ * the part that actually reads at this size.
+ */
+function globe(f: UiFrame, r: Rect, t: number, colour: string, value: number, time: number): void {
+  const g = f.g;
+  const cx = r.x + r.w / 2;
+  const cy = r.y + r.h / 2;
+  const rad = Math.min(r.w, r.h) / 2 - 1;
+
+  g.save();
+  g.beginPath();
+  g.arc(cx, cy, rad, 0, Math.PI * 2);
+  g.clip();
+  fillRect(f, r, UI.well);
+  const level = cy + rad - Math.max(0, Math.min(1, t)) * rad * 2;
+  g.fillStyle = colour;
+  g.beginPath();
+  g.moveTo(r.x, level);
+  // One sine period across the globe: enough to read as liquid, cheap enough
+  // that it costs nothing to do every frame.
+  for (let x = 0; x <= r.w; x += 2) {
+    g.lineTo(r.x + x, level + Math.sin(x / 7 + time * 3) * 1.5);
+  }
+  g.lineTo(r.x + r.w, r.y + r.h);
+  g.lineTo(r.x, r.y + r.h);
+  g.closePath();
+  g.fill();
+  g.restore();
+
+  g.strokeStyle = UI.sheetEdge;
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(cx, cy, rad, 0, Math.PI * 2);
+  g.stroke();
+  text(f, String(Math.round(value)), cx, cy - 4, { size: 8, colour: UI.text, align: "center" });
+}
+
+export function hudScreen(): UiScreen {
+  // Re-host the two existing painters. They allocate their own fixed backing
+  // stores and are idempotent, so calling create* here is safe on every run.
+  const face = createFace();
+  const minimap = createMinimap();
+  let time = 0;
+
+  return {
+    id: "hud",
+    pauses: false,
+    focus: 0,
+    scroll: 0,
+    paint(f) {
+      // The HUD never takes input, so it never registers a focusable. That is
+      // what keeps the focus cursor of whatever sheet is open above it correct.
+      const p = state.player;
+      if (!p) return;
+      time += 1 / 60;
+
+      // ── RAMPAGE MODE ──
+      // `hud-wolf.ts` was a separate DOM panel that slid in while the other slid
+      // out. Painted, it is simply a different layout for the same frame — no
+      // second panel to build, park and re-parent a face between.
+      if (state.hudMode === "wolf" || state.fpsActive) {
+        paintWolf(f, p);
+        return;
+      }
+
+      const panel = rect(0, f.h - PANEL_H, f.w, PANEL_H);
+      fillRect(f, panel, UI.sheet);
+      fillRect(f, rect(panel.x, panel.y, panel.w, 1), UI.sheetEdgeLit);
+
+      let x = Math.max(GRID, (f.w - 980) / 2);
+      const y = panel.y + GRID;
+      const h = PANEL_H - GRID * 2;
+
+      // ── SKILLS: the two ability slots, with cost and rank ──
+      const skills = rect(x, y, TILE * 2 + 12, h);
+      cell(f, skills, "SKILLS");
+      for (let i = 0; i < 2; i++) {
+        const id = state.abilitySlots[i];
+        const tr = rect(skills.x + 4 + i * (TILE + 4), skills.y + 4, TILE, TILE);
+        fillRect(f, tr, UI.sheet);
+        strokeRect(f, tr, UI.wellEdge);
+        if (!id) continue;
+        const def = ABILITIES[id];
+        // "Affordable" asks the ability layer, NOT the mana bar: under the Blood
+        // Price keystone an empty pool still casts, and greying out a slot the
+        // player can demonstrably use is the HUD lying about the game.
+        const ok = canCast(i as 0 | 1);
+        drawIcon(f.g, glyph("spark", 16, ok ? UI.arcane : UI.textFaint), tr.x + 14, tr.y + 8, 16);
+        text(f, String(def.cost), tr.x + 3, tr.y + TILE - 11, {
+          size: 8,
+          colour: (p.mana ?? 0) >= def.cost ? UI.arcane : ok ? UI.danger : UI.textDim,
+        });
+        const rank = abilityRank(id);
+        if (rank > 0) text(f, "•".repeat(rank), tr.x + TILE - 4, tr.y + 3, { size: 8, colour: UI.gold, align: "right" });
+        // Cooldown sweep: a dark curtain falling as the ability comes back.
+        const cd = state.abilityCd[id] ?? 0;
+        if (cd > 0) {
+          const frac = Math.max(0, Math.min(1, cd / def.cooldown));
+          f.g.fillStyle = "rgba(11,13,18,0.72)";
+          f.g.fillRect(tr.x, tr.y, tr.w, Math.round(tr.h * frac));
+        }
+      }
+      x += skills.w + 6;
+
+      // ── WEAPON + AMMO ──
+      const wpn = rect(x, y, 92, h);
+      cell(f, wpn, "WEAPON");
+      const w = state.weaponSlots[state.activeSlot];
+      if (w) {
+        const def = WEAPONS[w.id];
+        drawIcon(f.g, itemIcon(w.id), wpn.x + 6, wpn.y + 6, 28);
+        text(f, def.label.toUpperCase(), wpn.x + 38, wpn.y + 8, { size: 8, colour: UI.text, max: 50 });
+        const dur = Number.isFinite(w.durability) ? `${w.durability}` : "∞";
+        text(f, dur, wpn.x + 38, wpn.y + 22, { size: 8, colour: UI.textDim });
+      }
+      x += wpn.w + 6;
+
+      // ── LIFE · FACE · MANA ──
+      const maxHp = playerMaxHp();
+      setFaceHealth(p.hp, maxHp);
+      const life = rect(x, y, h, h);
+      globe(f, life, p.hp / Math.max(1, maxHp), UI.danger, p.hp, time);
+      x += life.w + 4;
+
+      const faceBox = rect(x, y, h, h);
+      fillRect(f, faceBox, UI.well);
+      renderFace(1 / 60);
+      f.g.imageSmoothingEnabled = false;
+      f.g.drawImage(face, faceBox.x + 2, faceBox.y + 2, faceBox.w - 4, faceBox.h - 4);
+      strokeRect(f, faceBox, UI.sheetEdge, 2);
+      x += faceBox.w + 4;
+
+      const mana = rect(x, y, h, h);
+      globe(f, mana, (p.mana ?? 0) / 100, UI.arcane, p.mana ?? 0, time);
+      x += mana.w + 6;
+
+      // ── SCORE / DEPTH / KILLS / RAMPAGE ──
+      const stats = rect(x, y, 120, h);
+      cell(f, stats);
+      const statRow = (label: string, value: string, row: number, colour: string): void => {
+        text(f, label, stats.x + 6, stats.y + 6 + row * 22, { size: 8, colour: UI.textDim });
+        text(f, value, stats.x + stats.w - 6, stats.y + 6 + row * 22, { size: 8, colour, align: "right" });
+      };
+      statRow("DEPTH", String(state.level), 0, UI.gold);
+      statRow("KILLS", String(state.kills), 1, UI.good);
+      // `ultCharge` is the ultimate meter, 0..1 — the same value `canRampage()`
+      // gates on, so the number the player reads is the number the game checks.
+      statRow("RAGE", `${Math.round(state.ultCharge * 100)}%`, 2, canRampage() ? UI.gold : UI.danger);
+      x += stats.w + 6;
+
+      // ── BELT ──
+      const belt = rect(x, y, TILE * 4 + 18, h);
+      cell(f, belt, "BELT · 1-4");
+      for (let i = 0; i < 4; i++) {
+        const slot = state.belt[i];
+        const tr = rect(belt.x + 4 + i * (TILE + 3), belt.y + 4, TILE, TILE);
+        fillRect(f, tr, UI.sheet);
+        strokeRect(f, tr, UI.wellEdge);
+        text(f, String(i + 1), tr.x + 2, tr.y + 2, { size: 8, colour: UI.textFaint });
+        if (!slot) continue;
+        drawIcon(f.g, itemIcon(slot.id), tr.x + 12, tr.y + 12, 24);
+        if (slot.count > 1) {
+          text(f, String(slot.count), tr.x + TILE - 3, tr.y + TILE - 11, { size: 8, colour: UI.text, align: "right" });
+        }
+      }
+      x += belt.w + 6;
+
+      // ── MINIMAP ──
+      const map = rect(x, y, h, h);
+      cell(f, map);
+      renderMinimap();
+      f.g.imageSmoothingEnabled = false;
+      f.g.drawImage(minimap, map.x + 2, map.y + 2, map.w - 4, map.h - 4);
+      text(f, "M", map.x + map.w - 4, map.y + 2, { size: 8, colour: UI.textFaint, align: "right" });
+
+      // ── BOSS BAR — only while a boss is actually engaged ──
+      // `bossEngaged()` rather than "a boss exists": the bar appearing before
+      // the fight starts spoils the reveal the antechamber is built around.
+      const boss = bossEngaged() ? state.zombies.find((z) => z.boss) : undefined;
+      if (boss && boss.maxHp) {
+        const bb = rect(f.w / 2 - 200, 16, 400, 14);
+        bar(f, bb, boss.hp / boss.maxHp, UI.danger);
+        text(f, "BOSS", bb.x + bb.w / 2, bb.y + 3, { size: 8, colour: UI.text, align: "center" });
+      }
+
+      // ── COMBO — transient, above the panel ──
+      if (p.bounceCombo > 1) {
+        text(f, `x${p.bounceCombo} COMBO`, GRID * 2, panel.y - 20, { size: 8, colour: UI.gold });
+      }
+
+      // ── PLUNGER — only while parked to launch ──
+      if (state.plungerArmed || state.plungerCharging) {
+        const pm = rect(f.w / 2 - 150, panel.y - 22, 300, 10);
+        bar(f, pm, state.plungerPower, UI.gold);
+      }
+    },
+  };
+}
+
+
+/**
+ * The rampage bar + crosshair — the combat layer.
+ *
+ * Wide, flat, and centred on the three numbers that matter while you are
+ * shooting: health, the streak, and how long is left. The iso panel's belt,
+ * minimap and skill slots are all deliberately absent — none of them are usable
+ * in first person, and drawing them would be the HUD showing controls the
+ * player cannot press.
+ */
+function paintWolf(f: UiFrame, p: NonNullable<typeof state.player>): void {
+  const h = 64;
+  const panel = rect(0, f.h - h, f.w, h);
+  fillRect(f, panel, UI.sheet);
+  fillRect(f, rect(panel.x, panel.y, panel.w, 1), UI.sheetEdgeLit);
+
+  const maxHp = playerMaxHp();
+  setFaceHealth(p.hp, maxHp);
+
+  const cx = f.w / 2;
+  const big = (label: string, value: string, x: number, colour: string): void => {
+    text(f, value, x, panel.y + 14, { size: 16, colour, align: "center" });
+    text(f, label, x, panel.y + 40, { size: 8, colour: UI.textDim, align: "center" });
+  };
+  big("HEALTH", String(p.hp), cx - 220, UI.danger);
+  big("STREAK", String(state.fpsStreak), cx - 80, UI.gold);
+  big("TIME", `${Math.max(0, Math.ceil(state.fpsTimer))}`, cx + 80, UI.arcane);
+  big("KILLS", String(state.kills), cx + 220, UI.good);
+
+  // The crosshair. Four ticks around a gap, so it never occludes what it aims
+  // at — a solid dot at this scale covers an entire distant enemy.
+  const yMid = (f.h - h) / 2;
+  f.g.fillStyle = UI.focus;
+  for (const [dx, dy, w, hh] of [
+    [-9, -1, 6, 2],
+    [3, -1, 6, 2],
+    [-1, -9, 2, 6],
+    [-1, 3, 2, 6],
+  ]) {
+    f.g.fillRect(Math.round(cx + dx), Math.round(yMid + dy), w, hh);
+  }
+}

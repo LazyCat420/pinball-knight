@@ -8,12 +8,22 @@
  * swap). fps.ts calls setHUDMode('wolf') on rampage entry and ('diablo') on exit.
  */
 import { state } from "./state";
+import { inGameUiEnabled } from "./gui/flag";
+import { hudScreen } from "./gui/screens/hud";
+import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "./gui/stack";
 import { createDiabloHUD, renderDiablo, refreshDiablo, disposeDiabloHUD } from "./hud-diablo";
 import { createWolfHUD, updateWolfHUD, disposeWolfHUD } from "./hud-wolf";
 import { disposeFace } from "./hud-face";
 
 /** Build both HUDs (face auto-mounts into the Diablo frame) and set the start mode. */
 export function mountHUDs(container: HTMLElement): void {
+  if (inGameUiEnabled()) {
+    // One screen replaces BOTH panels. The Diablo/Wolf split existed because
+    // two DOM panels had to be built up-front and slid in and out; a painted
+    // HUD just draws whichever layout the mode calls for.
+    if (!uiIsOpen("hud")) pushUiScreen(hudScreen());
+    return;
+  }
   createDiabloHUD(container); // this also creates + mounts the shared face
   createWolfHUD(container);
   setHUDMode(state.hudMode);
@@ -31,6 +41,12 @@ export function mountHUDs(container: HTMLElement): void {
  */
 export function setHUDMode(mode: "diablo" | "wolf"): void {
   state.hudMode = mode;
+  // The in-game HUD reads `state.hudMode` while it paints, so there is nothing
+  // to slide and no face node to re-parent — the mode change IS the whole job.
+  if (inGameUiEnabled()) {
+    state.hudDirty = true;
+    return;
+  }
   const diablo = document.getElementById("dungeon-hud-diablo");
   const wolf = document.getElementById("dungeon-hud");
   const face = document.getElementById("dungeon-hud-face");
@@ -61,16 +77,19 @@ export function setHUDMode(mode: "diablo" | "wolf"): void {
  * per rendered frame with the real elapsed seconds.
  */
 export function renderHUD(dt: number): void {
+  if (inGameUiEnabled()) return; // painted by the UI layer, per frame
   renderDiablo(dt);
 }
 
 /** Rebuild the discrete HUD content (belt tiles, skill icons, bar numbers). */
 export function refreshHUD(): void {
+  if (inGameUiEnabled()) return; // immediate mode — nothing to refresh
   refreshDiablo();
   updateWolfHUD();
 }
 
 export function disposeHUDs(): void {
+  closeUiScreen("hud");
   disposeDiabloHUD();
   disposeWolfHUD();
   disposeFace();
