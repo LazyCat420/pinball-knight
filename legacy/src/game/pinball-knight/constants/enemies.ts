@@ -249,6 +249,19 @@ export const ROTORTAIL_TIMBER_DAMAGE = 2;
  *  than the bat so the two are distinguishable in a crowd by altitude alone. */
 export const ROTORTAIL_HOVER_Y = 0.85;
 /**
+ * The SPRING RECOIL: how fast the jester throws the knight when a melee blow is
+ * refused by its momentum gate.
+ *
+ * Above the goblin's 9 on purpose. The goblin pops you as an annoyance and then
+ * chases; the jester pops you back into the lane its plate is already
+ * ricocheting down, so the shove has to cover real ground for the pairing to
+ * read as a trap rather than as a stumble.
+ */
+export const JESTER_SPRING_KICK = 11;
+/** Fraction of your damage that lands AT the bar. Matches the goblin's, so the
+ *  two rubber families teach ONE rule about momentum rather than two. */
+export const JESTER_GATE_SOFT = 0.5;
+/**
  * GHOST MATERIALIZE WINDOW — ghosts are now IMMUNE to damage while drifting
  * (steel passes through ectoplasm); they materialize — and can be hurt —
  * while winding up their touch and for this long after it lands. Fight it
