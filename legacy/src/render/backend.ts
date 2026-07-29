@@ -25,9 +25,42 @@ export interface BackendSelection {
   requested: BackendChoice;
 }
 
-/** True when the browser exposes a WebGPU adapter entry point at all. */
+/**
+ * True when the browser exposes a WebGPU adapter entry point at all.
+ *
+ * ⚠️ THIS IS NOT A WEBGPU AVAILABILITY CHECK, and treating it as one is how a
+ * machine with a working GPU ends up rendering through WebGL2 without anyone
+ * noticing. `navigator.gpu` can be PRESENT while `requestAdapter()` resolves to
+ * NULL — Playwright's bundled Chromium on WSL2 does exactly that. The app then
+ * asks for WebGPU, three.js is refused an adapter, prints one easily-missed
+ * warning, and silently continues on WebGL2.
+ *
+ * Only `probeWebGPUAdapter()` answers the real question. This stays because the
+ * synchronous answer is still the right gate for "should we even try", and
+ * `selectBackend()` is called before an await is possible.
+ */
 export function hasWebGPU(): boolean {
   return typeof navigator !== "undefined" && (navigator as any).gpu != null;
+}
+
+/**
+ * Ask for a real adapter — the only trustworthy WebGPU check.
+ *
+ * Async, so it cannot gate `selectBackend()` (the renderer is constructed
+ * synchronously). It exists so boot can VERIFY the choice after the fact and
+ * say something loud when the entry point lied, rather than leaving a silent
+ * downgrade to be discovered in a profile months later.
+ */
+export async function probeWebGPUAdapter(): Promise<{ ok: boolean; detail: string }> {
+  if (!hasWebGPU()) return { ok: false, detail: "navigator.gpu absent" };
+  try {
+    const adapter = await (navigator as any).gpu.requestAdapter();
+    if (!adapter) return { ok: false, detail: "requestAdapter() returned null — no usable adapter" };
+    const info = adapter.info ? `${adapter.info.vendor}/${adapter.info.architecture}` : "adapter (no info)";
+    return { ok: true, detail: info };
+  } catch (err) {
+    return { ok: false, detail: `requestAdapter() threw: ${String((err as Error)?.message ?? err).slice(0, 80)}` };
+  }
 }
 
 function readRequested(): BackendChoice {
@@ -45,6 +78,46 @@ function readRequested(): BackendChoice {
  * explicit force that silently ran the other backend would corrupt an A/B
  * measurement, which is the one thing this helper exists to protect.
  */
+/**
+ * Report which backend the renderer ACTUALLY resolved, after `init()`.
+ *
+ * Console + `window.__renderBackendResolved` only. This must never render
+ * anything: it is a debugging aid for us, and the site's visitors should have
+ * no idea it exists. `scripts/webgpu-check.mjs` reads the same globals.
+ *
+ * The distinction it exists to expose: `__renderBackend` is what we ASKED for,
+ * this is what we GOT. They disagree exactly when the silent fallback fires,
+ * which is the case nobody notices on their own.
+ */
+export async function reportResolvedBackend(renderer: unknown): Promise<void> {
+  const backend = (renderer as { backend?: { isWebGPUBackend?: boolean; isWebGLBackend?: boolean } })?.backend;
+  const resolved: "webgpu" | "webgl" | "unknown" = backend?.isWebGPUBackend
+    ? "webgpu"
+    : backend?.isWebGLBackend
+      ? "webgl"
+      : "unknown";
+
+  if (typeof window !== "undefined") {
+    (window as any).__renderBackendResolved = resolved;
+  }
+
+  const requested = typeof window !== "undefined" ? (window as any).__renderBackend : undefined;
+
+  if (resolved === "webgpu") {
+    console.log(`[backend] ✔ resolved WEBGPU`);
+    return;
+  }
+
+  // A downgrade is the whole reason this function exists — say so at a level
+  // that survives a busy console, and say WHY, because "no adapter" and "we
+  // asked for WebGL" are completely different problems.
+  const probe = await probeWebGPUAdapter();
+  console.error(
+    `[backend] ✖ resolved ${resolved.toUpperCase()} (requested ${String(requested ?? "?").toUpperCase()}) — ` +
+      `WebGPU probe: ${probe.detail}`,
+  );
+}
+
 export function selectBackend(): BackendSelection {
   const requested = readRequested();
   const available = hasWebGPU();

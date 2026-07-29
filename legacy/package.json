@@ -17,7 +17,9 @@
     "playtest:soak": "node scripts/playtest.mjs --mode bounce --secs 300 --profile",
     "playtest:watch": "node scripts/playtest.mjs --watch --shots",
     "audit": "node scripts/audit-checklist.mjs",
-    "audit:gpu": "node scripts/audit-checklist.mjs --gpu"
+    "audit:gpu": "node scripts/audit-checklist.mjs --gpu",
+    "webgpu:check": "node scripts/webgpu-check.mjs",
+    "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

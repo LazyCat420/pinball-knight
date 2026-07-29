@@ -812,6 +812,48 @@ function armFloorLoading(level: number, then: () => void): void {
  * prevent. The two reveals below put one representative of each into the walk;
  * pipelines are keyed by material content, so one warms the whole pool.
  */
+/**
+ * Split the scene into units small enough that compiling one is a tickable step.
+ *
+ * ── WHY THIS IS NOT JUST `scene.children` ──
+ *
+ * `compileAsync` is awaited per unit, and the descent bar can only advance
+ * BETWEEN awaits. So the bar's smoothness is bounded by the LARGEST unit, not
+ * by how many there are. Measured cold on a real GPU (nvidia/ampere, WebGPU
+ * backend), instrumenting every call:
+ *
+ *     268 compileAsync calls, 4,520 ms total
+ *     └─ ONE Group, 187 descendants ......... 3,915 ms   ← 87% of the whole warmup
+ *        next most expensive Mesh ...........   134 ms
+ *
+ * That single group is the freeze. With one await covering 87% of the work the
+ * bar necessarily sits on one number for ~4 s and then sweeps the rest
+ * instantly — "smooth until it sticks near the end, then lags hard". Ticking
+ * before the await (see the loop below) fixed WHERE the number stalls but could
+ * not fix the stall itself, because there was nothing to tick between.
+ *
+ * So a group that big is expanded into its children and those become the units.
+ * The threshold is a size, not a name: whichever group happens to be the maze
+ * this build is not something to hard-code.
+ *
+ * Depth is capped at one expansion. Recursing to individual meshes would make
+ * hundreds of tiny awaits whose scheduling overhead exceeds the compile, and
+ * pipelines are keyed by material content anyway — the win is in breaking up
+ * the one pathological group, not in maximal granularity.
+ */
+function warmUnits(scene: THREE.Scene): THREE.Object3D[] {
+  /** Above this many descendants, a single await is too coarse to report on. */
+  const SPLIT_ABOVE = 24;
+  const units: THREE.Object3D[] = [];
+  for (const child of scene.children) {
+    let n = 0;
+    child.traverse(() => n++);
+    if (n > SPLIT_ABOVE && child.children.length > 1) units.push(...child.children);
+    else units.push(child);
+  }
+  return units;
+}
+
 async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   const renderer = state.renderer;
   const scene = state.scene;
@@ -821,17 +863,36 @@ async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   // to the scene here, and must be in the list the loop iterates.
   const restoreVfx = state.vfx?.warmupReveal();
   const restoreFloorFx = warmFloorFxReveal(scene);
-  const children = [...scene.children];
+  const children = warmUnits(scene);
   const CAPTIONS = ["FORGING THE MACHINE", "LIGHTING THE TORCHES", "WAKING THE HORDE", "SETTING THE TABLE"];
   try {
     for (let i = 0; i < children.length; i++) {
+      // ── TICK BEFORE THE AWAIT, NOT AFTER ──
+      //
+      // The old loop reported progress only every 16th child, AFTER its compile
+      // resolved. That assumed every child costs about the same. Measured on a
+      // real GPU (nvidia/ampere, WebGPU backend) it is nowhere near:
+      //
+      //     0% → 30%   294 ms   (buildLevel)
+      //    30% → 34%  1424 ms   ← the FIRST compile batch, one single tick
+      //    34% → 100%   ~90 ms   (the other 16 batches, a tick each)
+      //
+      // Cold, that first plateau was ~8.3 s. So the bar spent almost the entire
+      // descent frozen on one number while the expensive batch ran, then swept
+      // through the cheap remainder — which is exactly the "smooth until it
+      // sticks near the end, then lags hard" report. The bar was not lying about
+      // being nearly done; it simply could not move during the one wait that
+      // mattered.
+      //
+      // Ticking first means the number on screen is always the work IN FLIGHT.
+      // The DOM write is not the expense the old comment feared either: these
+      // are ~17 writes across a multi-second descent, and `phase()` early-outs
+      // once closed.
+      const f = i / children.length;
+      load.phase(CAPTIONS[Math.min(CAPTIONS.length - 1, Math.floor(f * CAPTIONS.length))], 0.3 + 0.7 * f);
       await renderer.compileAsync(children[i], camera, scene);
-      // Throttled: a DOM write per child would cost more than the compile.
-      if (i % 16 === 0 || i === children.length - 1) {
-        const f = (i + 1) / children.length;
-        load.phase(CAPTIONS[Math.min(CAPTIONS.length - 1, Math.floor(f * CAPTIONS.length))], 0.3 + 0.7 * f);
-      }
     }
+    load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
   } catch {
     // A failed precompile is a slow first frame, not a broken floor — the
     // renderer will compile lazily exactly as it did before. Never strand the
