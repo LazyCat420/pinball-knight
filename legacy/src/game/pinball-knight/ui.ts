@@ -652,7 +652,21 @@ export function showPickupNote(text: string): void {
   showPickupToast(text);
 }
 
-export function showGameOver(opts: { onRetry: () => void; onLeave: () => void; droppedCount?: number }): HTMLDivElement {
+/**
+ * The death screen and the THREE ways out of it.
+ *
+ * `onTavern` banks the run and walks back to the hub; `onRetry` drops straight
+ * back into the floor you just died on (where your kit is lying); `onExit`
+ * leaves the game entirely. Retry is its own button because routing every death
+ * through the tavern made "go again" a three-click trip through a scene the
+ * player did not ask to see.
+ */
+export function showGameOver(opts: {
+  onTavern: () => void;
+  onRetry: () => void;
+  onExit: () => void;
+  droppedCount?: number;
+}): HTMLDivElement {
   const el = document.createElement("div");
   el.style.cssText = `
     position: fixed; inset: 0; z-index: 10002;
@@ -733,28 +747,28 @@ export function showGameOver(opts: { onRetry: () => void; onLeave: () => void; d
   nameRow.appendChild(nameInput);
   el.appendChild(nameRow);
 
-  // Death sends you to the TAVERN now, not back to floor 1 — the button says
-  // where you are actually going, because "descend again" would read as a
-  // restart and this is the opposite of one.
-  const retry = document.createElement("button");
-  retry.style.cssText = btn("#f0a63c");
-  retry.textContent = "🍺 BACK TO THE TAVERN";
-  retry.addEventListener("click", (e) => {
-    e.stopPropagation();
-    opts.onRetry();
-  });
-
-  const leave = document.createElement("button");
-  leave.style.cssText = btn("#6b7688");
-  leave.textContent = "← CRAWL BACK OUT";
-  leave.addEventListener("click", (e) => {
-    e.stopPropagation();
-    opts.onLeave();
-  });
+  // Each button says where it actually SENDS you. "Descend again" would have
+  // read as a restart from floor 1, and none of these three are that: the
+  // tavern is the hub, the retry is the floor you just lost on, and the exit is
+  // the only one that ends the session.
+  const mkBtn = (accent: string, label: string, onClick: () => void): HTMLButtonElement => {
+    const b = document.createElement("button");
+    b.style.cssText = btn(accent);
+    b.textContent = label;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return b;
+  };
 
   const row = document.createElement("div");
-  row.appendChild(retry);
-  row.appendChild(leave);
+  // Wraps: three buttons at this letter-spacing overflow a narrow window, and a
+  // clipped EXIT is a player stuck on the death screen.
+  row.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;max-width:96vw";
+  row.appendChild(mkBtn("#f0a63c", "🍺 TAVERN", opts.onTavern));
+  row.appendChild(mkBtn("#8fc46b", "⟲ RETRY MAZE", opts.onRetry));
+  row.appendChild(mkBtn("#6b7688", "✕ EXIT GAME", opts.onExit));
   el.appendChild(row);
 
   state.container?.appendChild(el);
