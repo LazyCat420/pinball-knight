@@ -20,6 +20,15 @@
  *     a tidy billiard path, which is the opposite of "bounces around like
  *     crazy" — the jitter is the effect.
  *
+ * WHERE THE TWO FLAVOURS DIVERGE — and it is only in how they read, not in what
+ * they do. Bouncing off walls is not enough to make the ✨ laser look like one:
+ * between two walls the path is a straight line, and at LASER_SPEED that drew as
+ * a long beam sliding sideways across the room. So the laser also KINKS in
+ * mid-air (`zigPeriod`) and stamps a cross at every corner (`vfx.laserMark`),
+ * which turns it into a dot darting along a zigzag, punching out laser crosses.
+ * The ⚡ bolt keeps the straight legs and the long ribbon: it is a thing being
+ * thrown around a room, and the smooth arc between bounces is its read.
+ *
  * It owns the player the way the plunger and the trapdoor ride do:
  * `updateRicochet` returns true and `updatePlayer` returns early.
  */
@@ -39,6 +48,10 @@ import {
   LASER_DURATION,
   LASER_SPEED,
   LASER_DAMAGE,
+  LASER_ZIG_PERIOD,
+  LASER_ZIG_ANGLE,
+  LASER_MARK_STEP,
+  LASER_TRAIL_LIFE,
 } from "../constants";
 import { sfxBumper, sfxSpin } from "../audio";
 
@@ -62,6 +75,21 @@ interface FlavorSpec {
   label: string;
   blurb: string;
   sfx: () => void;
+  /**
+   * ── THE ZIGZAG ──
+   * Seconds between mid-air heading kinks; 0 means the form travels straight
+   * between walls. Only the laser kinks, and that is the whole difference in
+   * how the two read: the bolt is a thing being BOUNCED around the room, the
+   * laser is a point of light DARTING, which needs corners the walls cannot
+   * supply often enough. See LASER_ZIG_PERIOD for why straight was wrong.
+   */
+  zigPeriod: number;
+  /** Kink size in radians, sign alternating (see LASER_ZIG_ANGLE). */
+  zigAngle: number;
+  /** World units between stamped laser crosses; 0 stamps none. */
+  markStep: number;
+  /** How long each trail point lives — the length of the tail it drags. */
+  trailLife: number;
 }
 
 export const RICOCHET_FLAVORS: Record<RicochetFlavor, FlavorSpec> = {
@@ -74,18 +102,49 @@ export const RICOCHET_FLAVORS: Record<RicochetFlavor, FlavorSpec> = {
     label: "⚡ LIGHTNING",
     blurb: "you are the bolt — hold on",
     sfx: sfxBumper,
+    // The bolt keeps the long unbroken ribbon: it is being thrown around the
+    // room by the walls, and a smooth arc between two bounces is the read.
+    zigPeriod: 0,
+    zigAngle: 0,
+    markStep: 0,
+    trailLife: 0.45,
   },
   laser: {
     duration: LASER_DURATION,
     speed: LASER_SPEED,
     damage: LASER_DAMAGE,
-    tint: 0xff5ad0,
+    /**
+     * BLOOD LIGHT (palette entry 13), not the free-hand magenta this was.
+     *
+     * Everything drawn here goes through the screen-space palette snap, and
+     * that snap is LUMA-WEIGHTED against 32 entries with no magenta in them.
+     * Shot on a real adapter, 0xff5ad0 brightened past the quantiser's midpoint
+     * landed on STEEL — the cross chain came out grey. 13 is the palette's only
+     * hot pink and is what render/cel-painter.ts already names as the laser's
+     * colour; being an exact entry, it snaps to itself.
+     */
+    tint: 0xd95763,
     clip: "laserform",
     label: "✨ LASER",
     blurb: "no steering. no brakes.",
     sfx: sfxSpin,
+    zigPeriod: LASER_ZIG_PERIOD,
+    zigAngle: LASER_ZIG_ANGLE,
+    markStep: LASER_MARK_STEP,
+    trailLife: LASER_TRAIL_LIFE,
   },
 };
+
+/**
+ * Zigzag + stamp bookkeeping. Module-local rather than player state because
+ * there is exactly one player and exactly one form, both are reset by
+ * `enterRicochetForm`, and neither belongs in a saved run.
+ */
+let zigT = 0;
+/** Flipped every kink so the heading SAWS instead of drifting. */
+let zigSign = 1;
+/** Distance travelled since the last stamped cross. */
+let markD = 0;
 
 /** True while a ricochet form owns the player. */
 export function inRicochetForm(): boolean {
@@ -120,6 +179,9 @@ export function enterRicochetForm(flavor: RicochetFlavor): void {
     p.momZ = Math.sin(a);
   }
   p.momSpeed = spec.speed;
+  zigT = spec.zigPeriod;
+  zigSign = Math.random() < 0.5 ? 1 : -1;
+  markD = 0;
   // A fresh form must not inherit the previous one's tail — the trail is a
   // keep-alive ribbon, not a per-cast object.
   state.vfx?.trailClear();
@@ -177,6 +239,26 @@ export function updateRicochet(dt: number): boolean {
   const steps = 3;
   const sub = dt / steps;
   for (let s = 0; s < steps; s++) {
+    // ── THE ZIGZAG. Kink the heading BEFORE the move, so the corner lands at
+    // the position the mark is stamped at. The sign alternates, which is the
+    // difference between a saw-tooth that still crosses the room and a random
+    // walk that mills around in one spot; the magnitude is jittered so the
+    // path is not a machined chevron.
+    if (spec.zigPeriod > 0) {
+      zigT -= sub;
+      if (zigT <= 0) {
+        zigT += spec.zigPeriod;
+        zigSign = -zigSign;
+        const a = Math.atan2(p.momZ, p.momX) + zigSign * spec.zigAngle * (0.7 + Math.random() * 0.6);
+        p.momX = Math.cos(a);
+        p.momZ = Math.sin(a);
+        // Stamp the corner itself. The kinks are the thing that reads as a
+        // zigzag, so they get a mark whatever the distance cadence says.
+        state.vfx?.laserMark(p.x, TRAIL_Y, p.z, p.momX, p.momZ, spec.tint, 0.52);
+        markD = 0;
+      }
+    }
+
     const step = spec.speed * sub;
     const res = moveCircle(g, p.x, p.z, PLAYER_R, p.momX * step, p.momZ * step);
     const stuck = Math.abs(res.x - (p.x + p.momX * step)) > 1e-3 || Math.abs(res.z - (p.z + p.momZ * step)) > 1e-3;
@@ -188,7 +270,23 @@ export function updateRicochet(dt: number): boolean {
       p.momX = d.x;
       p.momZ = d.z;
       state.vfx?.sparks(p.x, 0.4, p.z, n.nx, n.nz, 6);
+      // A wall bounce is the sharpest corner there is — mark it biggest.
+      if (spec.markStep > 0) {
+        state.vfx?.laserMark(p.x, TRAIL_Y, p.z, p.momX, p.momZ, spec.tint, 0.66);
+        markD = 0;
+      }
       p.bounceCombo++; // it is still a rally — the combo should feel it
+    }
+    // ── THE MARKS. A cross stamped every fixed step of DISTANCE (not time), so
+    // the chain has the same spacing whatever the speed. With the corners above
+    // this is what makes the laser read as a rapid run of crosses along a
+    // zigzag rather than one long line drawn across the room.
+    if (spec.markStep > 0) {
+      markD += step;
+      if (markD >= spec.markStep) {
+        markD = 0;
+        state.vfx?.laserMark(p.x, TRAIL_Y, p.z, p.momX, p.momZ, spec.tint);
+      }
     }
     // ── THE TRAIL. Pushed per SUBSTEP, not per frame: at bolt speed the ball
     // crosses more than a tile per 60Hz step and can bounce inside one, so a
@@ -198,7 +296,7 @@ export function updateRicochet(dt: number): boolean {
     // This is also what tells the player which way they are going. The form's
     // sprite is a camera-facing billboard — its art cannot rotate — so the
     // heading has to be carried by the path itself.
-    state.vfx?.trail(p.x, TRAIL_Y, p.z, spec.tint);
+    state.vfx?.trail(p.x, TRAIL_Y, p.z, spec.tint, spec.trailLife);
   }
   p.momSpeed = spec.speed;
 

@@ -53,19 +53,19 @@ describe("vfx.warmupReveal exposes one representative per pool", () => {
     const vfx = createVfx(scene);
 
     const before = snapshotFlags(scene);
-    // Seven pools ship their slots invisible (slash, bolt, TRAIL, ring, blade,
-    // sigil, damage text) and the dash ghost has no live instance at load time,
-    // so it gets a prototype. Anything less than 8 means a family is still
-    // cold — and a cold family pays its shader compile the first time it
-    // appears, which for the trail is mid-ricochet.
+    // Eight pools ship their slots invisible (slash, bolt, TRAIL, LASER MARKS,
+    // ring, blade, sigil, damage text) and the dash ghost has no live instance
+    // at load time, so it gets a prototype. Anything less than 9 means a family
+    // is still cold — and a cold family pays its shader compile the first time
+    // it appears, which for the trail and the marks is mid-ricochet.
     const hiddenBefore = [...before.values()].filter((s) => !s.visible).length;
-    expect(hiddenBefore).toBeGreaterThanOrEqual(8);
+    expect(hiddenBefore).toBeGreaterThanOrEqual(9);
 
     const restore = vfx.warmupReveal();
     const during = snapshotFlags(scene);
 
     const revealed = [...during.entries()].filter(([o, s]) => s.visible && !before.get(o)!.visible);
-    expect(revealed).toHaveLength(8);
+    expect(revealed).toHaveLength(9);
     // Unculled matters as much as visible: _projectObject frustum-tests meshes,
     // and a pool slot sitting at the origin is off-camera on most floors.
     for (const [o] of revealed) expect(o.frustumCulled, `${o.type} still frustum-culled`).toBe(false);

@@ -1066,6 +1066,32 @@ export const BOLT_DAMAGE = 3;
 export const LASER_DURATION = 2.2;
 export const LASER_SPEED = 32;
 export const LASER_DAMAGE = 4;
+/**
+ * THE ZIGZAG. Seconds between mid-air heading kinks.
+ *
+ * Bouncing off walls alone does not make a laser: between two walls the path is
+ * a straight line, and at this speed the ribbon drew that line as a long beam
+ * sliding sideways across the room — the exact thing "become a beam" should not
+ * look like. The kink puts a corner in the path every few hundredths of a
+ * second, so the ball reads as a point of light darting, and the marks it stamps
+ * (vfx.laserMark) read as a rapid chain of laser crosses.
+ *
+ * 0.055s at LASER_SPEED is a 1.8-unit leg — under two tiles, so the zigzag is
+ * visible at played scale without turning into a vibrating blur.
+ */
+export const LASER_ZIG_PERIOD = 0.055;
+/** How far each kink turns, radians. Applied with ALTERNATING sign, so the
+ *  heading saws between two directions and still crosses the room — a signed
+ *  random walk would just wander in place. */
+export const LASER_ZIG_ANGLE = 0.85;
+/** World units of travel between stamped laser crosses. Roughly half a leg, so
+ *  a leg carries a couple of marks and the corners stay the densest part. */
+export const LASER_MARK_STEP = 0.85;
+/** Seconds a laser trail point lives. Much shorter than the bolt's ribbon: the
+ *  laser is a DOT with a stub of tail, and the marks carry the path from there.
+ *  0.12s is ~4 units at LASER_SPEED — a stub you read as attached to the ball,
+ *  where 0.2 was still long enough to draw as a line between the crosses. */
+export const LASER_TRAIL_LIFE = 0.12;
 
 // ── 🔥 LAVA: MELTS masonry (entities/wall-erosion.ts) ────────────
 // Walls used to be binary — fast enough to smash, or nothing. Lava introduces

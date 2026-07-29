@@ -1719,6 +1719,14 @@ function marbleFrame(skin: MarbleSkin, spin: number, frame: number): FramePaint 
  * out as a hard-edged disc. The real glow is the additive, bloom-fed ribbon;
  * what the sprite contributes is a bright opaque core and a flare, which is
  * what survives the cutout.
+ *
+ * THE TWO ARE NOT THE SAME SIZE, and that is the point. The ⚡ bolt is a mass of
+ * crackling light — a big star, wide discs, filaments. The ✨ laser is a DOT: a
+ * small hot point with a tight four-arm sparkle and nothing else, because its
+ * spectacle is not the ball, it is the zigzag chain of crosses the ball leaves
+ * behind it (vfx `laserMark`). Painting the laser as big as the bolt buried
+ * that chain under its own sprite — the ball has to be the smallest bright
+ * thing on screen for the trail to be the effect.
  */
 function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
   const cy = GROUND - 26;
@@ -1736,15 +1744,17 @@ function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
 
     // ── Outer flare: a symmetric star. Symmetric is the whole point — a shape
     // with a long axis would re-introduce the direction lie the streak had.
-    const spikes = kind === "bolt" ? 8 : 6;
+    // The laser gets FOUR short arms rather than the bolt's eight long ones:
+    // a tight sparkle on a dot, not a corona.
+    const spikes = kind === "bolt" ? 8 : 4;
     ctx.rotate((frame / 4) * Math.PI * 0.25); // slow spin, no preferred heading
     for (let i = 0; i < spikes; i++) {
       const a = (i / spikes) * Math.PI * 2;
-      const len = (kind === "bolt" ? 15 : 13) * pulse * (0.72 + rnd(i) * 0.5);
+      const len = (kind === "bolt" ? 15 : 9.5) * pulse * (0.72 + rnd(i) * 0.5);
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = kind === "bolt" ? 2.4 : 1.9;
       ctx.lineCap = "round";
       ctx.strokeStyle = pc(glowC);
       ctx.stroke();
@@ -1752,13 +1762,21 @@ function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
 
     // ── Body: two concentric opaque discs. Opaque because the cutout eats
     // anything softer, and two flat steps because that is how this game draws
-    // falloff everywhere else.
+    // falloff everywhere else. The laser's are roughly half the bolt's radius.
+    // Sized by looking at the CRUSHED sheet, not the 128px cel: at played size
+    // (scripts/marble-sheet.mjs, the @52/@40 columns) a 5.4px glow crushed to a
+    // 2px smudge with no white left in it — a dot you lose, not a dot you
+    // follow. 7/5/3.4 keeps a lit core pixel at 40px while still reading half
+    // the bolt's size next to it.
+    const rGlow = kind === "bolt" ? 10 : 7;
+    const rBody = kind === "bolt" ? 7 : 5;
+    const rCore = kind === "bolt" ? 4.2 : 3.4;
     ctx.beginPath();
-    ctx.arc(0, 0, 10 * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, rGlow * pulse, 0, Math.PI * 2);
     ctx.fillStyle = pc(glowC);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(0, 0, 7 * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, rBody * pulse, 0, Math.PI * 2);
     ctx.fillStyle = pc(bodyC);
     ctx.fill();
 
@@ -1766,7 +1784,7 @@ function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
     // bloom pass latches onto, so it is what makes the form read as GLOWING
     // rather than as a coloured ball.
     ctx.beginPath();
-    ctx.arc(0, 0, 4.2 * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, rCore * pulse, 0, Math.PI * 2);
     ctx.fillStyle = pc(coreC);
     ctx.fill();
 
