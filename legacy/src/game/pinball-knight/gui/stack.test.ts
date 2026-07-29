@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { state } from "../state";
-import { push, pop, close, clearScreens, screens, top, isOpen, type UiScreen } from "./stack";
+import { push, pop, close, remove, clearScreens, screens, top, isOpen, type UiScreen } from "./stack";
 
 function screen(id: string, pauses = true): UiScreen {
   return { id, pauses, focus: 0, scroll: 0, paint: () => {} };
@@ -82,6 +82,22 @@ describe("screen stack", () => {
     push({ ...screen("d"), onClose: onClose3 });
     clearScreens();
     expect(onClose3).toHaveBeenCalledTimes(1);
+  });
+
+  it("remove() takes ONE screen out and leaves what was above it", () => {
+    // The distinction that cost a silent bug: `close` truncates (right for a
+    // modal and its children), `remove` excises (right for the bottom-of-stack
+    // layers). The tavern raised its station prompt and then closed the HUD —
+    // `close` found the HUD at index 0 and took the prompt with it, so the
+    // scene rendered perfectly with no interface at all.
+    push(screen("hud", false));
+    push(screen("toasts", false));
+    push(screen("station-prompt", false));
+    remove("hud");
+    expect(screens().map((s) => s.id)).toEqual(["toasts", "station-prompt"]);
+    // ...whereas close() on the same stack takes everything above it.
+    close("toasts");
+    expect(screens()).toHaveLength(0);
   });
 
   it("close() on an id that is not open is a no-op", () => {

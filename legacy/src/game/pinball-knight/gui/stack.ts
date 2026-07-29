@@ -112,7 +112,30 @@ export function pop(): UiScreen | null {
   return s;
 }
 
-/** Pop until `id` is gone. Safe if it was never there. */
+/**
+ * Remove exactly ONE screen, wherever it sits. Safe if it was never there.
+ *
+ * The counterpart to `close()`, and the distinction is load-bearing. `close()`
+ * truncates — it drops the named screen AND everything above it — which is
+ * right for a modal sheet, because closing a parent must close the child it
+ * raised. It is WRONG for the always-on layers (the HUD, the toasts, the touch
+ * pad, the tavern's station prompt), which sit at the bottom and are
+ * independent of whatever is stacked over them.
+ *
+ * Measured 2026-07-29: the tavern raised its station prompt and then called
+ * `hideDungeonHud(true)` → `close("hud")`, which found the HUD at index 0 and
+ * truncated the whole stack — silently taking the prompt and the lobby board
+ * with it. The tavern rendered perfectly and had no interface at all.
+ */
+export function remove(id: string): void {
+  const i = stack.findIndex((s) => s.id === id);
+  if (i < 0) return;
+  stack[i].onClose?.();
+  stack.splice(i, 1);
+  syncPause();
+}
+
+/** Pop until `id` is gone — it AND everything above it. See `remove()`. */
 export function close(id: string): void {
   const i = stack.findIndex((s) => s.id === id);
   if (i < 0) return;

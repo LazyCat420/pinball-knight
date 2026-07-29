@@ -20,7 +20,8 @@ import { syncSize, uiTexture } from "../../game/pinball-knight/gui/layer";
 import { installUiInput } from "../../game/pinball-knight/gui/input";
 import { drawUiFrame } from "../../game/pinball-knight/gui/root";
 import { openMenu } from "../../game/pinball-knight/gui/screens/menu";
-import { close as closeUiScreen, isOpen as uiIsOpen } from "../../game/pinball-knight/gui/stack";
+import { close as closeUiScreen, isOpen as uiIsOpen, remove as removeUiScreen } from "../../game/pinball-knight/gui/stack";
+import { mountHUDs } from "../../game/pinball-knight/hud";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
 import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
@@ -39,11 +40,21 @@ import {
 } from "../../game/pinball-knight/constants";
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
-import { createStationFx, createStationPrompt, refreshFocus, type StationFx, type StationPrompt } from "./stations";
+import { createStationFx, refreshFocus, type StationFx } from "./stations";
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
-import { showRunSummary, closeRunSummary, isRunSummaryOpen, createLobbyHud, showTavernBanner, clearTavernBanner, type LobbyHud } from "./ui";
+import {
+  createLobbyHud,
+  createStationPrompt,
+  clearTavernBanner,
+  closeRunSummary,
+  isRunSummaryOpen,
+  showRunSummary,
+  showTavernBanner,
+  type LobbyHud,
+  type StationPrompt,
+} from "./scene-screens";
 import { onPeerArrive, onPeerDepart, peers } from "../../net/presence";
 import { groupByFloor } from "./join-board";
 import { resolveDescendFloor } from "../../net/rally";
@@ -184,13 +195,22 @@ let ballAngle = 0;
  *
  * None of it applies in the tavern (there is no health to watch, no ammo to
  * spend, no ability to fire), and leaving it up made the hub read as "the
- * dungeon, paused" rather than as somewhere you had arrived. Resolved by DOM id
- * because the HUD modules can be double-instantiated by the dev bundler.
+ * dungeon, paused" rather than as somewhere you had arrived.
+ *
+ * It used to resolve the two panels BY DOM ID and set `display:none`, with a
+ * note that the HUD modules could be double-instantiated by the dev bundler so
+ * a module reference was unreliable. Both panels are gone: the HUD is one
+ * painted screen, so hiding it is closing it, and there is no id to resolve and
+ * no double-instantiation to work around.
  */
 function hideDungeonHud(hidden: boolean): void {
-  for (const id of ["dungeon-hud-diablo", "dungeon-hud"]) {
-    const el = document.getElementById(id);
-    if (el) el.style.display = hidden ? "none" : "";
+  // `remove`, NOT `close`: these are bottom-of-stack layers, and `close` would
+  // truncate everything raised above them (the station prompt, the lobby board).
+  if (hidden) {
+    removeUiScreen("hud");
+    removeUiScreen("toasts");
+  } else {
+    mountHUDs();
   }
 }
 
@@ -248,7 +268,7 @@ function interact(): void {
     return;
   }
   if (s.action.kind === "summary") {
-    showRunSummary(host, tavern.stats, () => {
+    showRunSummary(tavern.stats, () => {
       tavern.openStation = null;
     });
     return;
@@ -561,7 +581,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   room = buildRoom(scene);
   props = buildProps(scene);
   fx = createStationFx(scene);
-  prompt = createStationPrompt(container);
+  prompt = createStationPrompt();
 
   resetGamblerVisit(); // the round limit is PER VISIT, so clear it on entry
   // Read the run ONCE: the stats are handed in at entry and nothing in the
@@ -586,7 +606,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // reachable, so an offline / public visitor also just plays solo.
   isLobby = !!opts.lobby;
   if (isLobby) {
-    lobbyHud = createLobbyHud(container);
+    lobbyHud = createLobbyHud();
     // JOIN a floor someone else is already on. Same descend path as the
     // plunger, just with an explicit destination instead of your own resume
     // floor — that one substitution is the whole co-op story.
@@ -707,10 +727,10 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // re-entry replaces the hook instead of stacking one per visit; both are
   // dropped in closeTavern so a banner can't fire into a torn-down container.
   onPeerArrive("tavern", (p) => {
-    if (tavern.container) showTavernBanner(tavern.container, "🛡️ A knight has arrived", `${p.name} joined the pool`);
+    showTavernBanner("A KNIGHT HAS ARRIVED", `${p.name} joined the pool`);
   });
   onPeerDepart("tavern", (p) => {
-    if (tavern.container) showTavernBanner(tavern.container, "💀 A knight has left", `${p.name} is gone`);
+    showTavernBanner("A KNIGHT HAS LEFT", `${p.name} is gone`);
   });
 
   last = performance.now();
