@@ -42,6 +42,13 @@ import {
 } from "../constants";
 import { sfxBumper, sfxSpin } from "../audio";
 
+/**
+ * Height the trail is drawn at. Chest height rather than the floor: the ribbon
+ * should read as the ball's own path through the air, and at y≈0 it looked like
+ * a scorch mark painted on the ground.
+ */
+const TRAIL_Y = 0.45;
+
 export type RicochetFlavor = "bolt" | "laser";
 
 interface FlavorSpec {
@@ -113,6 +120,9 @@ export function enterRicochetForm(flavor: RicochetFlavor): void {
     p.momZ = Math.sin(a);
   }
   p.momSpeed = spec.speed;
+  // A fresh form must not inherit the previous one's tail — the trail is a
+  // keep-alive ribbon, not a per-cast object.
+  state.vfx?.trailClear();
   state.vfx?.burst(p.x, 0.5, p.z, spec.tint, 24, 6);
   state.shakeT = Math.max(state.shakeT, 0.3);
   state.hitstopT = Math.max(state.hitstopT, 0.06);
@@ -180,6 +190,15 @@ export function updateRicochet(dt: number): boolean {
       state.vfx?.sparks(p.x, 0.4, p.z, n.nx, n.nz, 6);
       p.bounceCombo++; // it is still a rally — the combo should feel it
     }
+    // ── THE TRAIL. Pushed per SUBSTEP, not per frame: at bolt speed the ball
+    // crosses more than a tile per 60Hz step and can bounce inside one, so a
+    // once-a-frame sample would cut every corner off the path and draw a
+    // straight line through the wall it just hit.
+    //
+    // This is also what tells the player which way they are going. The form's
+    // sprite is a camera-facing billboard — its art cannot rotate — so the
+    // heading has to be carried by the path itself.
+    state.vfx?.trail(p.x, TRAIL_Y, p.z, spec.tint);
   }
   p.momSpeed = spec.speed;
 
@@ -196,9 +215,11 @@ export function updateRicochet(dt: number): boolean {
     }
   }
 
-  // ── The trail. This is most of what sells the form: a dense ribbon of
-  // afterimages in the flavour's hue.
-  state.vfx?.ghost(p.sprite.mesh, spec.tint, 0.22, 0.55);
+  // A sparse afterimage of the CORE on top of the ribbon — the ribbon is the
+  // path, this is the thing travelling along it. Much thinner than the old
+  // every-frame ghost, which was doing the trail's job badly: a stack of
+  // billboard copies reads as smear, not as a beam.
+  if (p.ricochetTickT <= 0) state.vfx?.ghost(p.sprite.mesh, spec.tint, 0.18, 0.4);
 
   if (p.ricochetT === 0) {
     // Hand back control as a fast ride rather than a dead stop — being frozen
