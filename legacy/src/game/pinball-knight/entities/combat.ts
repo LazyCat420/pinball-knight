@@ -58,6 +58,7 @@ import {
   JESTER_DISC_DAMAGE,
   ROTORTAIL_TIMBER_DAMAGE,
   JESTER_SPRING_KICK,
+  CROAKER_BEAM_DAMAGE,
   PINBALL_MAX_SPEED,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
@@ -1037,6 +1038,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sporeling: ZOMBIE_DAMAGE,
   // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
   jester: JESTER_DISC_DAMAGE,
+  // Melee fallback only — the beams carry CROAKER_BEAM_DAMAGE themselves.
+  croaker: CROAKER_BEAM_DAMAGE,
   // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // ── Expansion roster ──

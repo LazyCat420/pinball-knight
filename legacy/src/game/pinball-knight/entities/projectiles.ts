@@ -29,6 +29,10 @@ import {
   JESTER_DISC_SPEED,
   JESTER_DISC_DAMAGE,
   JESTER_DISC_LIFE,
+  CROAKER_BEAM_SPEED,
+  CROAKER_BEAM_DAMAGE,
+  CROAKER_FIRE_RANGE,
+  CROAKER_BEAM_SPREAD,
   ROTORTAIL_TIMBER_SPEED,
   ROTORTAIL_TIMBER_DAMAGE,
   ROTORTAIL_FIRE_RANGE,
@@ -114,6 +118,22 @@ function timberAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMate
   _timberMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[27] }); // leather dark — wood
   return { geo: _timberGeo, mat: _timberMat };
 }
+let _beamGeo: THREE.BoxGeometry | null = null;
+let _beamMat: THREE.MeshBasicMaterial | null = null;
+/**
+ * A croaker eye-beam. A LONG thin box, not a ball.
+ *
+ * Every other hostile shot in the game is a sphere or a plate, and the shape is
+ * how a player tells at a glance what is coming at them. Length along the
+ * flight line also does the job a tracer does: at CROAKER_BEAM_SPEED a round
+ * projectile moves most of its own diameter per frame and reads as a
+ * stroboscopic dotted line, where a 0.5-long shaft reads as a continuous bolt.
+ */
+function beamAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
+  _beamGeo ??= new THREE.BoxGeometry(0.05, 0.05, 0.5);
+  _beamMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[13] }); // blood light
+  return { geo: _beamGeo, mat: _beamMat };
+}
 let _crystalMat: THREE.MeshBasicMaterial | null = null;
 function crystalAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
   _shardGeo ??= new THREE.BoxGeometry(0.12, 0.12, 0.12);
@@ -135,11 +155,14 @@ export function disposeProjectileAssets(): void {
   _crystalMat?.dispose();
   _discGeo?.dispose();
   _discMat?.dispose();
+  _beamGeo?.dispose();
+  _beamMat?.dispose();
   _timberGeo?.dispose();
   _timberMat?.dispose();
   _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
+  _beamGeo = _beamMat = null;
   _timberGeo = _timberMat = null;
 }
 
@@ -305,6 +328,51 @@ export function hurlTimber(x: number, z: number, dx: number, dz: number): void {
     mesh,
     dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
   });
+}
+
+/**
+ * The CROAKER's twin eye-beams, fired as a PAIR straddling the aim line.
+ *
+ * The spread is the mechanic. One beam down the middle would be a spitter with
+ * a different colour; two beams at ±CROAKER_BEAM_SPREAD leave a gap on the
+ * exact line between the frog and the player, so a straight sprint at it
+ * threads them and any lateral drift eats one. That inverts the usual advice —
+ * against this one you close head-on rather than strafe — which is what makes
+ * it worth having next to the spitter's volley (harder to sidestep) and the
+ * jester's single ricochet (impossible to hide from).
+ *
+ * Beams die on masonry. The FROG is what bounces off walls, not its shot; both
+ * ricocheting would be a room nobody can read.
+ */
+export function fireEyeBeams(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = beamAssets();
+  const life = CROAKER_FIRE_RANGE / CROAKER_BEAM_SPEED;
+  for (const ang of [-CROAKER_BEAM_SPREAD, CROAKER_BEAM_SPREAD]) {
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const bx = dx * c - dz * s;
+    const bz = dx * s + dz * c;
+    const mesh = new THREE.Mesh(geo, mat);
+    const sx = x + bx * MUZZLE_OFFSET;
+    const sz = z + bz * MUZZLE_OFFSET;
+    mesh.position.set(sx, PROJECTILE_Y, sz);
+    mesh.rotation.y = Math.atan2(bx, bz); // long axis down the flight line
+    state.scene.add(mesh);
+    state.projectiles.push({
+      kind: "beam",
+      x: sx,
+      z: sz,
+      vx: bx * CROAKER_BEAM_SPEED,
+      vz: bz * CROAKER_BEAM_SPEED,
+      life,
+      maxLife: life,
+      damage: CROAKER_BEAM_DAMAGE,
+      hostile: true,
+      mesh,
+      dispose: () => {},
+    });
+  }
 }
 
 /**
@@ -512,8 +580,8 @@ export function updateProjectiles(dt: number): void {
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             // Acid splashes green; a steel plate strikes sparks; a log throws
-            // splinters, which are sparks in everything but name.
-            if (pr.kind === "disc" || pr.kind === "timber") {
+            // splinters, which are sparks in everything but name; a beam scorches.
+            if (pr.kind === "disc" || pr.kind === "timber" || pr.kind === "beam") {
               state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 8);
             } else state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
           }

@@ -30,7 +30,7 @@ import {
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
-import { type Grid, isWalkable, tileCenter, at, shapeAt, surfaceAt, T_CRACKED, idx } from "./generator";
+import { type Grid, isWalkable, isLowWall, tileCenter, at, shapeAt, surfaceAt, T_CRACKED, idx } from "./generator";
 import { wallSurface, floorSurface, WALL_STONE, FLOOR_STONE, FLOOR_ICE, FLOOR_SAND, FLOOR_STEEL } from "../engine/surfaces";
 import { isRound, isShaped, isArc, shapeCorners, roundCenter, type TileShape, type ArcFeature } from "../engine/tile-shape";
 import { buildArcKickers, type ArcKickerVisual } from "../render/arc-kickers";
@@ -1228,10 +1228,10 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
         }
       }
       if (!exposed) continue;
-      // The Diablo rule, isometric edition: the camera sits to the world's
-      // south-east, so a wall occludes corridors to its NORTH and WEST. Floor
-      // on either of those sides makes this a camera-side rim → knee-high.
-      const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
+      // The Diablo rule, isometric edition — see engine/grid.ts isLowWall. It
+      // lives there rather than here because the croaker's hop reads it too,
+      // and a frog clearing a wall this file drew full-height is a bug.
+      const rim = isLowWall(grid, i, j);
       const cc = tileCenter(grid, i, j);
       const c = { x: cc.x, z: cc.z, i, j };
       // A SHAPED tile (slant prism / round shell) is built below, never a box.
@@ -1475,7 +1475,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
         const i = s.i + di;
         const j = s.j + dj;
-        const rim = isWalkable(grid, i, j - 1) || isWalkable(grid, i - 1, j);
+        const rim = isLowWall(grid, i, j);
         const faceMat = crackMats.get(rim)!;
         const mesh = new THREE.Mesh(rim ? lowGeo : fullGeo, [faceMat, faceMat, capMat, capMat, faceMat, faceMat]);
         mesh.castShadow = true;

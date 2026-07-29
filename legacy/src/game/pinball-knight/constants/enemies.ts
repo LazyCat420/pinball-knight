@@ -249,6 +249,68 @@ export const ROTORTAIL_TIMBER_DAMAGE = 2;
  *  than the bat so the two are distinguishable in a crowd by altitude alone. */
 export const ROTORTAIL_HOVER_Y = 0.85;
 /**
+ * CROAKER — a spotted frog that hops off walls and fires twin eye-beams.
+ *
+ * Three rules, and they compose into one idea: THIS THING DOES NOT RESPECT THE
+ * MAZE. Every other monster is a prisoner of the corridor graph — the flow
+ * field is the whole of their world. The croaker is the first that routes
+ * around it, and both of its movement rules exist to sell that:
+ *
+ *   · IT HOPS KNEE-HIGH WALLS. A camera-side rim (engine/grid.ts `isLowWall`)
+ *     is a real obstacle to the horde and a kerb to a frog. This is why it is
+ *     worth having: the player's mental model of "I am safe behind this" is
+ *     built from wall HEIGHT, which is already on screen, so the exception is
+ *     legible before it is experienced rather than after.
+ *   · ITS LEAP RICOCHETS. A full-height wall does not stop the hop, it turns
+ *     it — so a croaker arrives on a vector nothing else in the game can, and
+ *     backing into a corner is actively worse against this one.
+ *
+ * The beams are the reason you must not just ignore it: they are FAST and
+ * paired, so it punishes standing in one place while you deal with the horde,
+ * which is exactly the habit the two movement rules are trying to break.
+ *
+ * Ratio 17 / residue 8 is a fresh pair — no other kind uses ratio 17 (see
+ * spawn/factory.ts, where every kind claims a distinct `hash % RATIO === n`).
+ */
+export const CROAKER_HP = 3;
+export const CROAKER_R = 0.32;
+export const CROAKER_SPEED_FACTOR = 0.75; // it hops; between hops it is slow
+export const CROAKER_RATIO = 17;
+export const CROAKER_FROM_LEVEL = 2;
+/** Beam reach. Shorter than the rotortail's timber — it wants to be mid-range,
+ *  because the leap is how it closes and the beam is how it punishes stillness. */
+export const CROAKER_FIRE_RANGE = 6.5;
+/** The eyes visibly charge across this. A fast projectile with no tell is
+ *  indistinguishable from random damage. */
+export const CROAKER_WINDUP = 0.45;
+export const CROAKER_COOLDOWN = 2.0;
+/** FAST — this is a laser, and the tell is the charge, not the flight time. */
+export const CROAKER_BEAM_SPEED = 13;
+export const CROAKER_BEAM_DAMAGE = 1;
+/** Half-angle between the twin beams, radians. Wide enough that a dead-on
+ *  approach can slip BETWEEN them, which is the skill the pair rewards. */
+export const CROAKER_BEAM_SPREAD = 0.13;
+
+/** ── THE HOP ── */
+/** How far a hop travels before it lands, seconds at CROAKER_HOP_SPEED. */
+export const CROAKER_HOP_TIME = 0.42;
+export const CROAKER_HOP_SPEED = 8.5;
+/** Gathered-and-held tell before the hop releases. */
+export const CROAKER_HOP_WINDUP = 0.3;
+/** Rest between hops. It is a hop, not a hover — the gaps are when you kill it. */
+export const CROAKER_HOP_CD = 1.1;
+/** It only bothers hopping when you are at least this far away. */
+export const CROAKER_HOP_MIN_RANGE = 2.2;
+/**
+ * How many walls one hop may ricochet off before it ends.
+ *
+ * Two, not unlimited: a frog that keeps bouncing until its timer expires is a
+ * pinball, and the player cannot form any expectation about where it lands.
+ * Two bounces is enough for "it came around the corner at me" and few enough
+ * that the arc is still followable.
+ */
+export const CROAKER_HOP_BOUNCES = 2;
+/**
  * The SPRING RECOIL: how fast the jester throws the knight when a melee blow is
  * refused by its momentum gate.
  *

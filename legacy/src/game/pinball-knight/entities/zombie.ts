@@ -47,6 +47,15 @@ import {
   JESTER_FIRE_RANGE,
   JESTER_WINDUP,
   JESTER_COOLDOWN,
+  CROAKER_HOP_SPEED,
+  CROAKER_HOP_TIME,
+  CROAKER_HOP_CD,
+  CROAKER_HOP_MIN_RANGE,
+  CROAKER_HOP_BOUNCES,
+  CROAKER_R,
+  CROAKER_FIRE_RANGE,
+  CROAKER_WINDUP,
+  CROAKER_COOLDOWN,
   ROTORTAIL_R,
   ROTORTAIL_FIRE_RANGE,
   ROTORTAIL_WINDUP,
@@ -134,12 +143,12 @@ import { clipForSteer } from "../render/tell-clips";
 import { spawnFloorFx } from "./floor-fx";
 import { comboWindow } from "./combo-curve";
 import { moveCircle, wallContact } from "../engine/collision";
-import { worldToTile, tileCenter, idx, isWalkable, type Grid } from "../maze/generator";
+import { worldToTile, tileCenter, idx, isWalkable, isLowWall, type Grid } from "../maze/generator";
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
-import { flingPlate, hurlTimber, spitGlob, spitWeb } from "./projectiles";
+import { fireEyeBeams, flingPlate, hurlTimber, spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -171,6 +180,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sporeling: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP * 1.15, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   // Spring-loaded harlequin — ranged, and its contactRange IS its fire range.
   jester: { bodyR: JESTER_R, contactRange: JESTER_FIRE_RANGE, windup: JESTER_WINDUP, cooldown: JESTER_COOLDOWN, ranged: true },
+  // Laser frog — ranged, and its contactRange IS its beam reach.
+  croaker: { bodyR: CROAKER_R, contactRange: CROAKER_FIRE_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: true },
   rotortail: { bodyR: ROTORTAIL_R, contactRange: ROTORTAIL_FIRE_RANGE, windup: ROTORTAIL_WINDUP, cooldown: ROTORTAIL_COOLDOWN, ranged: true },
   // ── Expansion roster (bespoke branches below carry the behaviour) ──
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
@@ -552,6 +563,87 @@ export function updateZombies(dt: number): void {
     const pdz = p.z - z.z;
     const pdist = Math.hypot(pdx, pdz);
 
+    // ── CROAKER HOP ── the one thing in the game that does not respect the
+    // maze. Airborne it ignores knee-high walls entirely and RICOCHETS off the
+    // rest; grounded it gathers, aims, and launches.
+    //
+    // It owns its own movement while airborne (like the hound's charge and the
+    // ghost's phase), because the shared steering pipeline resolves against the
+    // grid with `moveCircle`, and both of this creature's rules are exceptions
+    // to exactly that resolution. Trying to express "passes through some walls
+    // and bounces off others" as a steering HEADING is the wrong seam — the
+    // policy hands back a direction, and what is special here is the collision.
+    if (z.kind === "croaker") {
+      z.hopCd = Math.max(0, (z.hopCd ?? 0) - dt);
+
+      if ((z.hopT ?? 0) > 0) {
+        z.hopT = (z.hopT ?? 0) - dt;
+        const hx = z.hopDirX ?? 0;
+        const hz = z.hopDirZ ?? 0;
+        z.anim.setFacing(facingFromWorld(hx, hz, "S"));
+        z.anim.play("run", { force: true }); // the stretched airborne pose
+        const step = CROAKER_HOP_SPEED * dt;
+
+        // Resolve each axis SEPARATELY against the grid, so a wall reflects only
+        // the blocked component — the same shape as the ricocheting shard in
+        // projectiles.ts, which is what makes a hop into a corner come back out
+        // along the other axis instead of stopping dead.
+        let bounced = false;
+        const nx = z.x + hx * step;
+        const tx = worldToTile(g, nx, z.z);
+        // A knee-high rim is a kerb to a frog: pass straight over it. Full
+        // masonry turns the hop.
+        if (!isWalkable(g, tx.i, tx.j) && !isLowWall(g, tx.i, tx.j)) {
+          z.hopDirX = -hx;
+          bounced = true;
+        } else z.x = nx;
+        const nz = z.z + hz * step;
+        const tz = worldToTile(g, z.x, nz);
+        if (!isWalkable(g, tz.i, tz.j) && !isLowWall(g, tz.i, tz.j)) {
+          z.hopDirZ = -hz;
+          bounced = true;
+        } else z.z = nz;
+
+        if (bounced) {
+          z.hopBounces = (z.hopBounces ?? 0) - 1;
+          state.vfx?.sparks(z.x, 0.5, z.z, z.hopDirX ?? 0, z.hopDirZ ?? 0, 7);
+          state.shakeT = Math.max(state.shakeT, 0.05);
+          // `stumble` IS the wall-splat clip (render/monsters/croaker.ts) — the
+          // ricochet has to be a visible event, or a monster changing direction
+          // in mid-air reads as a pathing bug rather than as a bounce.
+          z.anim.play("stumble", { force: true });
+          if ((z.hopBounces ?? 0) <= 0) z.hopT = 0;
+        }
+        syncActorMesh(z);
+        if ((z.hopT ?? 0) <= 0) {
+          z.hopT = 0;
+          z.hopCd = CROAKER_HOP_CD;
+          state.vfx?.dust(z.x, 0.04, z.z);
+        }
+        continue;
+      }
+
+      // Grounded: gather and launch, but only when there is somewhere to go.
+      // Hopping in the player's face would just be a worse chase — the leap is
+      // for CROSSING things, so it is gated on distance.
+      if (
+        (z.hopCd ?? 0) <= 0 &&
+        z.mode !== "windup" &&
+        pdist > CROAKER_HOP_MIN_RANGE &&
+        p.hp > 0 &&
+        (z.moveCommit ?? 0) <= 0
+      ) {
+        z.hopT = CROAKER_HOP_TIME;
+        z.hopBounces = CROAKER_HOP_BOUNCES;
+        z.hopDirX = pdist > 1e-4 ? pdx / pdist : 1;
+        z.hopDirZ = pdist > 1e-4 ? pdz / pdist : 0;
+        z.anim.play("crouch", { force: true });
+        state.vfx?.dust(z.x, 0.04, z.z);
+        continue;
+      }
+      // otherwise fall through to normal kiting/steering below
+    }
+
     // ── BUMPER GOBLIN ── it never bites: contact POPS the knight away like a
     // bumper (combo tick and all), and the goblin recoils the other way. The
     // annoyance is the point; momentum is the answer.
@@ -682,6 +774,11 @@ export function updateZombies(dt: number): void {
                 // hoist followed by a shot you have time to walk out of, so a
                 // spread (or a fast one) would delete the mechanic.
                 hurlTimber(z.x, z.z, ux, uz);
+              } else if (z.kind === "croaker") {
+                // TWO beams, straddling the aim line — see fireEyeBeams. The
+                // gap between them is on the exact line to the player, so this
+                // one is answered by closing head-on rather than by strafing.
+                fireEyeBeams(z.x, z.z, ux, uz);
               } else if (z.kind === "jester") {
                 // ONE plate, straight down the line — no spread. The spitter's
                 // volley is hard to sidestep on purpose; the jester's is easy to

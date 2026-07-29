@@ -83,6 +83,27 @@ export function isWalkable(g: Grid, i: number, j: number): boolean {
   return t === T_FLOOR || t === T_STAIRS;
 }
 
+/**
+ * Is this wall tile KNEE-HIGH?
+ *
+ * The Diablo rule, isometric edition (see constants/world.ts WALL_H/WALL_LOW):
+ * the camera sits to the world's south-east, so a wall occludes corridors to
+ * its NORTH and WEST. Floor on either of those sides makes it a camera-side rim
+ * and it renders at WALL_LOW instead of WALL_H.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT A LINE IN THE RENDERER ───────────────────
+ * It was written out twice inside maze/build.ts, which was fine while it was
+ * purely a rendering decision. It stopped being one when the CROAKER learned to
+ * hop knee-high walls: gameplay now asks the same question, and a frog sailing
+ * over a wall the renderer drew full-height would read as a straightforward
+ * bug — the player's evidence for "I can be jumped" is the wall's own height on
+ * screen. One predicate, two readers, no way for them to disagree.
+ */
+export function isLowWall(g: Grid, i: number, j: number): boolean {
+  if (isWalkable(g, i, j)) return false;
+  return isWalkable(g, i, j - 1) || isWalkable(g, i - 1, j);
+}
+
 /** Per-tile shape (tile-shape.ts). Out of bounds → 0 (SHAPE_FULL). */
 export function shapeAt(g: Grid, i: number, j: number): number {
   if (i < 0 || j < 0 || i >= g.w || j >= g.h) return 0;

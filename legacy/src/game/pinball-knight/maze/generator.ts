@@ -31,6 +31,7 @@ export {
   at,
   setTile,
   isWalkable,
+  isLowWall,
   shapeAt,
   setShape,
   ensureArcs,

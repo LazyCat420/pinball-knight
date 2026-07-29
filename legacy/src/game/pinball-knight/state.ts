@@ -320,6 +320,7 @@ export type EnemyKind =
   | "chomper"
   | "sporeling"
   | "jester"
+  | "croaker"
   | "rotortail"
   | "magnet"
   | "webspinner"
@@ -406,6 +407,16 @@ export interface Zombie extends Actor {
   chargeT?: number;
   chargeDirX?: number;
   chargeDirZ?: number;
+  /** CROAKER hop: seconds of airtime left (>0 = airborne), and the locked
+   *  heading. Separate from chargeT because a hop and a charge differ in the
+   *  one way that matters — a charge ENDS on a wall, a hop bounces off it. */
+  hopT?: number;
+  hopDirX?: number;
+  hopDirZ?: number;
+  /** Ricochets left in the current hop (CROAKER_HOP_BOUNCES at launch). */
+  hopBounces?: number;
+  /** Cooldown before the next hop may be gathered. */
+  hopCd?: number;
   /** WARDEN shield: absorb-HP remaining (a Warden aura tops this up). */
   shieldHp?: number;
   /** BRUTE / enrage: true once it crossed its low-HP rage threshold. */
@@ -1074,6 +1085,7 @@ export const state = {
 
   sporelingSheet: null as SpriteSheet | null,
   jesterSheet: null as SpriteSheet | null,
+  croakerSheet: null as SpriteSheet | null,
   rotortailSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
 

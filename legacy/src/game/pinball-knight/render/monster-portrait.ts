@@ -50,6 +50,7 @@ import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-type
 import type { EnemyKind } from "../state";
 import { makeSporelingPaints } from "./monsters/sporeling";
 import { makeJesterPaints } from "./monsters/jester";
+import { makeCroakerPaints } from "./monsters/croaker";
 import { makeRotortailPaints } from "./monsters/rotortail";
 import { makeHoundPaints } from "./monsters/hound";
 
@@ -78,6 +79,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number
   slime: { paints: makeSlimePaints, tint: null, scale: 1.0 },
   sporeling: { paints: makeSporelingPaints, tint: null, scale: 1.0 },
   jester: { paints: makeJesterPaints, tint: null, scale: 1.0 },
+  croaker: { paints: makeCroakerPaints, tint: null, scale: 1.0 },
   rotortail: { paints: makeRotortailPaints, tint: null, scale: 1.0 },
   hound: { paints: makeHoundPaints, tint: null, scale: 1.05 },
   reaper: { paints: makeReaperPaints, tint: null, scale: 1.05 },
