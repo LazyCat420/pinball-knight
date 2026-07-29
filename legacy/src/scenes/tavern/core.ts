@@ -14,6 +14,13 @@ import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game
 import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
 import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
 import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../../game/pinball-knight/tavern";
+import { inGameUiEnabled } from "../../game/pinball-knight/gui/flag";
+import { tavernScreen } from "../../game/pinball-knight/gui/screens/tavern";
+import { push as pushUiScreen } from "../../game/pinball-knight/gui/stack";
+import { consumeTavernFx } from "../../game/pinball-knight/economy/tavern-shop";
+import { syncSize, uiTexture } from "../../game/pinball-knight/gui/layer";
+import { installUiInput } from "../../game/pinball-knight/gui/input";
+import { drawUiFrame } from "../../game/pinball-knight/gui/root";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../../game/pinball-knight/menu";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
 import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
@@ -257,7 +264,7 @@ function interact(): void {
     });
     return;
   }
-  openVendorCounter(host, s.action.vendor, tavern.stats, () => {
+  const onCounterClosed = (): void => {
     tavern.openStation = null;
     // You socketed a card at that counter — put it on the blade in the vice.
     props?.syncViceCards();
@@ -265,7 +272,9 @@ function interact(): void {
     // Gear buys: hoist the new plate overhead, and re-dress mid-hoist so the
     // shine and the flourish arrive together. Smith work (repair / new slot /
     // forge): hammer the anvil, with an ember burst per beat.
-    const fx = consumePendingTavernFx();
+    // Both implementations queue their flourishes independently; drain both so
+    // the knight animates whichever counter the player actually used.
+    const fx = [...consumePendingTavernFx(), ...consumeTavernFx()];
     if (fx.includes("gear")) {
       playTavernOneShot("equip", () => refreshTavernPlayerArt());
       refreshTavernPlayerArt();
@@ -280,7 +289,21 @@ function interact(): void {
     } else {
       refreshTavernPlayerArt(); // no flourish, but never leave stale art
     }
-  });
+  };
+  if (inGameUiEnabled()) {
+    pushUiScreen(
+      tavernScreen({
+        stats: tavern.stats,
+        onDescend: () => {},
+        // COUNTER MODE: one vendor, and "back" returns to the walkable room
+        // rather than to a flat room view that does not exist here.
+        vendor: s.action.vendor,
+        onClose: onCounterClosed,
+      }),
+    );
+    return;
+  }
+  openVendorCounter(host, s.action.vendor, tavern.stats, onCounterClosed);
 }
 
 function frame(now: number): void {
@@ -590,7 +613,23 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     outline: OUTLINE_DEFAULT,
     bloom: BLOOM_DEFAULT,
     ao: AO_DEFAULT,
+    uiTexture: uiTexture(),
   });
+  // The walkable tavern owns a SECOND pixel pass, so it needs the same UI wiring
+  // the dungeon's `boot/renderer.ts` does. Without this the in-game screens
+  // paint into the layer and composite nowhere, because the pass rendering this
+  // scene never samples them — a vendor counter that opens, pauses the world and
+  // draws nothing.
+  syncSize(pixelPass.sizing());
+  installUiInput();
+  {
+    const renderScene = pixelPass.render.bind(pixelPass);
+    const pass = pixelPass;
+    pixelPass.render = (scene3, camera3) => {
+      drawUiFrame(pass);
+      renderScene(scene3, camera3);
+    };
+  }
   onKey = (e: KeyboardEvent): void => {
     if (!tavern.active) return;
     const t = e.target as HTMLElement | null;

@@ -24,6 +24,9 @@ import { clearScreens, pop, push, screens, top } from "../gui/stack";
 import { uiStats } from "../gui/root";
 import { settingsScreen } from "../gui/screens/settings";
 import { menuScreen } from "../gui/screens/menu";
+import { tavernScreen } from "../gui/screens/tavern";
+import { gameOverScreen } from "../gui/screens/game-over";
+import { shopScreen } from "../gui/screens/shop";
 
 export function installGuiHooks(): void {
   if (typeof window === "undefined") return;
@@ -49,6 +52,34 @@ export function installGuiHooks(): void {
     // Tab is selected by simulating the digit the tab strip already listens
     // for, so the hook cannot drift from what a player's keypress does.
     if (tab) (window as unknown as { __guiTab?: string }).__guiTab = tab;
+    return gui();
+  };
+  api.tavern = (vendor?: string): unknown => {
+    push(
+      tavernScreen({
+        stats: { grade: "B", floor: 1, kills: 0, bestCombo: 0 },
+        onDescend: () => {},
+        ...(vendor ? { vendor: vendor as "cards" | "weapons" | "armor" | "potions", onClose: () => {} } : {}),
+      }),
+    );
+    return gui();
+  };
+  api.dead = (): unknown => {
+    push(gameOverScreen({ onRetry: () => {}, onLeave: () => {}, droppedCount: 3 }));
+    return gui();
+  };
+  api.shop = (): unknown => {
+    push(
+      shopScreen(
+        [
+          { id: "health", label: "Health Potion", icon: "", price: 15, detail: "restores 3 hearts" },
+          { id: "rage", label: "Rage Potion", icon: "", price: 28, detail: "double damage" },
+        ],
+        () => 100,
+        () => {},
+        () => {},
+      ),
+    );
     return gui();
   };
   api.close = (): unknown => {

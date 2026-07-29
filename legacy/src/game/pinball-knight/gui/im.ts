@@ -129,6 +129,16 @@ export interface UiInput {
   scroll: number;
   /** Digits 1-9 pressed this frame, or 0. Tab jumps, belt slots, shop rows. */
   digit: number;
+  /**
+   * Printable characters typed this frame, in order, plus "\b" for backspace.
+   *
+   * The death screen asks for a leaderboard name, which was an `<input>` in the
+   * DOM version — complete with a `keydown` stopPropagation so that typing a
+   * name did not walk the knight around behind the death screen. On canvas
+   * there is no input element to borrow, so text entry is a widget and this is
+   * its feed. Empty on almost every frame.
+   */
+  typed: string;
 }
 
 export function emptyUiInput(): UiInput {
@@ -145,6 +155,7 @@ export function emptyUiInput(): UiInput {
     cancel: false,
     scroll: 0,
     digit: 0,
+    typed: "",
   };
 }
 
@@ -536,4 +547,43 @@ export function scrollToShow(view: Rect, widget: Rect, offset: number): number {
   if (top < offset) return Math.max(0, top - ROW_H);
   if (bottom > offset + view.h) return bottom - view.h + ROW_H;
   return offset;
+}
+
+
+/**
+ * A single-line text field.
+ *
+ * Deliberately minimal: no selection, no cursor movement, no clipboard. The one
+ * place the game asks for text is a leaderboard name of at most `max`
+ * characters, and every additional affordance is another thing to get wrong on
+ * a surface with no native input. Typing appends, backspace removes, and the
+ * field only accepts input while it holds focus — so the same keys are inert
+ * everywhere else and cannot leak into gameplay.
+ *
+ * Returns the (possibly updated) value; the caller owns the storage.
+ */
+export function textField(f: UiFrame, r: Rect, value: string, opts: { max?: number; upper?: boolean } = {}): string {
+  const st = focusable(f, r);
+  well(f, r);
+  strokeRect(f, r, st.focused ? UI.focus : UI.wellEdge);
+
+  let next = value;
+  if (st.focused && f.input.typed) {
+    for (const ch of f.input.typed) {
+      if (ch === "\b") next = next.slice(0, -1);
+      else if (next.length < (opts.max ?? 16)) next += ch;
+    }
+    if (opts.upper) next = next.toUpperCase();
+  }
+
+  const shown = opts.upper ? next.toUpperCase() : next;
+  text(f, shown, r.x + 6, r.y + (r.h - 8) / 2, { size: 8, colour: UI.text, max: r.w - 20 });
+  // A caret, only while focused. Blinking is deliberately omitted: the UI
+  // repaints every frame and a blink would be one more thing pinned to
+  // wall-clock time in a screen that pauses the game.
+  if (st.focused) {
+    const w = f.g.measureText(shown).width;
+    fillRect(f, rect(r.x + 6 + w + 2, r.y + (r.h - 10) / 2, 1, 10), UI.focus);
+  }
+  return next;
 }

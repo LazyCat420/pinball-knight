@@ -10,6 +10,9 @@
  */
 import { openTavernScene, closeTavern, isTavernSceneOpen } from "./core";
 import { openTavern as openDomTavern } from "../../game/pinball-knight/tavern";
+import { inGameUiEnabled } from "../../game/pinball-knight/gui/flag";
+import { tavernScreen } from "../../game/pinball-knight/gui/screens/tavern";
+import { push as pushUiScreen } from "../../game/pinball-knight/gui/stack";
 import { installEngine } from "../../game/pinball-knight/GameEngine";
 import type { TavernStats } from "./state";
 
@@ -44,6 +47,12 @@ export function enterTavern(container: HTMLElement, opts: OpenTavernOptions): "s
   // overwrites the same config object — so doing it on both paths is safe.
   installEngine();
   if (openTavernScene(container, opts)) return "scene";
+  // Fallback when the walkable scene cannot run: the flat tavern sheet. Same
+  // economy either way — only the presentation differs.
+  if (inGameUiEnabled()) {
+    pushUiScreen(tavernScreen({ stats: opts.stats, onDescend: opts.onDescend }));
+    return "dom";
+  }
   openDomTavern(container, { stats: opts.stats, onDescend: opts.onDescend });
   return "dom";
 }

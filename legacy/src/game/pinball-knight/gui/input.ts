@@ -59,6 +59,8 @@ let pointerDown = false;
 let pointerPressed = false;
 let pointerReleased = false;
 let wheelDelta = 0;
+/** Printable characters typed since the last frame — see `UiInput.typed`. */
+let typedBuf = "";
 let installed = false;
 
 /** Set by the driver so the listeners can cheaply ignore everything while closed. */
@@ -74,6 +76,7 @@ export function setUiInputLive(on: boolean): void {
     pointerPressed = false;
     pointerReleased = false;
     wheelDelta = 0;
+    typedBuf = "";
     padPrev = null;
     repeatDir = 0;
   }
@@ -99,6 +102,11 @@ export function installUiInput(): void {
       const k = normKey(e.key);
       if (!held.has(k)) tapped.set(k, (tapped.get(k) ?? 0) + 1);
       held.add(k);
+      // Printable characters, for the one text field the game has. Repeats DO
+      // count here (unlike the tap map) because holding backspace to clear a
+      // name is expected behaviour.
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) typedBuf += e.key;
+      else if (e.key === "Backspace") typedBuf += "\b";
       // Tab would move DOM focus out of the canvas and Space would scroll the
       // page; both are meaningful UI keys here.
       e.preventDefault();
@@ -331,12 +339,14 @@ export function takeFrame(sizing: UiSizing, winW: number, winH: number, nowMs: n
   // notch of a typical wheel is ~100px. Divide so one notch is a couple of rows
   // rather than half the sheet.
   input.scroll = Math.round(wheelDelta / sizing.scale / 4);
+  input.typed = typedBuf;
 
   tapped.clear();
   pointerPressed = false;
   pointerReleased = false;
   pointerMoved = false;
   wheelDelta = 0;
+  typedBuf = "";
   return input;
 }
 

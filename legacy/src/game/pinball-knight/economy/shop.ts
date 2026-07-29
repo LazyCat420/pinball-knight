@@ -15,6 +15,9 @@ import { at } from "../maze/generator";
 import { playerMaxHp } from "../skill-runtime";
 import { state } from "../state";
 import { openShopOverlay, refreshShopOverlay, showPickupNote, type ShopEntry } from "../ui";
+import { inGameUiEnabled } from "../gui/flag";
+import { shopScreen } from "../gui/screens/shop";
+import { close as closeUiScreen, push as pushUiScreen } from "../gui/stack";
 
 /**
  * The Rolling Cart Merchant's wares. Prices are flat (gold is plentiful in a
@@ -46,13 +49,20 @@ export function openShop(): void {
     if (addToBelt(pid)) showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — belted`);
     else applyPotion(pid);
     state.hudDirty = true;
+    // The in-game shop reads the balance every frame, so there is nothing to
+    // refresh — this call is a no-op there and stays only for the DOM path.
     refreshShopOverlay(state.shopEl, getBalance());
   };
+  if (inGameUiEnabled()) {
+    pushUiScreen(shopScreen(SHOP_STOCK, getBalance, buy, () => {}));
+    return;
+  }
   state.shopEl = openShopOverlay(state.container, SHOP_STOCK, getBalance(), buy, closeShop);
 }
 
 /** Close the shop overlay and resume the sim. */
 export function closeShop(): void {
+  closeUiScreen("shop");
   state.shopEl?.remove();
   state.shopEl = null;
 }

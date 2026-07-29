@@ -13,6 +13,9 @@ import { addPile, canLoot, localKnightId, pilesOnFloor, type CorpseItem } from "
 import { sweepCoins } from "../economy/coins";
 import { submitRunScore, beginRunLedger } from "./ledger";
 import { showGameOver, showToast } from "../ui";
+import { inGameUiEnabled } from "../gui/flag";
+import { gameOverScreen } from "../gui/screens/game-over";
+import { push as pushUiScreen } from "../gui/stack";
 import { sfxGameOver } from "../audio";
 import { coopAnnounceDeath } from "../coop";
 import { createStaticSprite } from "../engine/render/sprite";
@@ -148,7 +151,7 @@ export function onPlayerDeath(): void {
   // feature: the tavern sends you back to where your stuff is.
   saveResumeFloor(state.level);
 
-  state.gameOverEl = showGameOver({
+  const gameOverOpts = {
     droppedCount: dropped.length,
     // Death now returns you to the TAVERN with an empty pack, rather than
     // restarting at floor 1. The kit is not gone — it is on the floor above,
@@ -160,7 +163,12 @@ export function onPlayerDeath(): void {
       returnToTavern();
     },
     onLeave: () => runDeps().exitDungeonGame(),
-  });
+  };
+  if (inGameUiEnabled()) {
+    pushUiScreen(gameOverScreen(gameOverOpts));
+    return;
+  }
+  state.gameOverEl = showGameOver(gameOverOpts);
 }
 
 /**
