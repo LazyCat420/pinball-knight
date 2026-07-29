@@ -59,6 +59,12 @@ export function loop(now: number): void {
   // run the world for the several seconds the player cannot see or act.
   if (isRenderHeld()) return;
   profBegin("FRAME (total)");
+  // Zero the per-frame render counters BEFORE anything draws.
+  //
+  // three only calls `info.reset()` from inside `setAnimationLoop`, and this
+  // game drives its own rAF — so nothing here had ever reset them, and
+  // `info.render.drawCalls` accumulated for the life of the page.
+  state.renderer?.info.reset();
 
   // Clamped BOTH ways: MAX_FRAME is tab-out protection, and the 0 floor guards
   // against a first RAF timestamp that lags performance.now() (headless/pre-
@@ -298,7 +304,18 @@ export function loop(now: number): void {
     state.pixelPass.render(state.scene, renderCam);
     profEnd("pixelPass.render");
     if (state.renderer) {
-      profCount("draw calls", state.renderer.info.render.calls);
+      // `render.calls` is "render calls SINCE THE APP STARTED" (three's own
+      // docstring) — a monotonic counter, not a per-frame measure. Profiling it
+      // produced a straight ramp that read as a plausible draw-call
+      // distribution: avg was exactly (min+max)/2 and p95 exactly 0.95×max,
+      // because percentiles of a ramp are just points on the line. Every
+      // draw-call number ever quoted for this game came from that field.
+      //
+      // `drawCalls` is the per-frame one, and it only means anything because of
+      // the `info.reset()` at the top of this function.
+      profCount("draw calls", state.renderer.info.render.drawCalls);
+      profCount("render passes", state.renderer.info.render.frameCalls);
+      profCount("triangles", state.renderer.info.render.triangles);
       // THE warm-up gate. `memory.programs` counts distinct COMPILED shader
       // programs (three: common/Info.js createProgram). It should be flat from
       // the moment the descent screen closes — every rise during play is a
