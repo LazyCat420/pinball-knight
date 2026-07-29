@@ -52,7 +52,7 @@ function clearAllSheets(): void {
   state.ghostSheet = null; state.batSheet = null; state.slimeSheet = null;
   state.bossSheet = null; state.goblinSheet = null; state.pinSheet = null;
   state.golemSheet = null; state.chomperSheet = null; state.magnetSheet = null;
-  state.webspinnerSheet = null;
+  state.webspinnerSheet = null; state.sporelingSheet = null;
 }
 
 describe("sheetFor builds on demand", () => {

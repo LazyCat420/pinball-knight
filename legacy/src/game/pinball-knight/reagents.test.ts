@@ -5,12 +5,19 @@
  */
 import { describe, it, expect } from "vitest";
 import { REAGENTS, REAGENT_IDS, ENEMY_DROPS, rollReagentDrops, type ReagentId } from "./reagents";
-import type { EnemyKind } from "./state";
+import { KIND_IDS } from "./bestiary";
 
-const ALL_KINDS: EnemyKind[] = [
-  "zombie", "spider", "brute", "spitter", "ghost", "bat", "slime",
-  "reaper", "goblin", "pin", "golem", "chomper", "magnet", "webspinner",
-];
+/**
+ * The roster, DERIVED — `KIND_IDS` is `Object.keys(KIND_INFO)`, and `KIND_INFO`
+ * is a `Record<EnemyKind, …>`, so this list cannot fall behind the union
+ * without failing to compile first.
+ *
+ * It used to be hand-listed here, and by the time anyone looked it named 14 of
+ * 23 kinds — missing sporeling and the whole expansion roster. The suite went
+ * on passing the entire time, because a completeness test that hand-lists what
+ * it checks only ever proves the list agrees with itself.
+ */
+const ALL_KINDS = KIND_IDS;
 
 /** A deterministic RNG that always returns the same value — makes each entry's
  * independent roll (rand() < chance) fully predictable. */
