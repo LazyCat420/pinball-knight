@@ -1,173 +1,191 @@
 # Pinball Knight — the "a little laggy" investigation
 
-**Status: diagnosed at the symptom level, root cause NOT yet found.** Written
-2026-07-28 as a handoff. Everything below was measured on real WebGPU
-(nvidia/ampere, host Chrome over CDP), not inferred.
+**Status: root cause found and fixed (2026-07-29).** The frame-pacing tail is
+gone: worst frame ~600–1300 ms → ~55–85 ms, hitches over 33 ms 8–171 → 2–5,
+measured interleaved on real WebGPU (nvidia/ampere, host Chrome over CDP).
 
-Read the "already disproven" section before forming a theory. Three plausible
-causes have already been tested and killed, and two of them cost a session each.
-
----
-
-## The symptom, quantified
-
-Frame *pacing* over a 45s bot run (`mode: mixed`, seed 42). Pacing, not
-averages — the mean looks healthy while the game stutters:
-
-```
-p50  7.9ms      p95 24.6ms      p99 35.5ms
-12.3% of frames miss 60Hz   ·   45 hitches >33ms   ·   11 >100ms
-worst frames: 888ms, 633ms, 593ms, 557ms, 487ms
-```
-
-A 7.9ms median with 12% dropped frames is exactly what "a little laggy" feels
-like. **The tail is the bug. Do not optimise the mean.**
+The steady-state cost did NOT move, and was never the problem. `dropped >16.7ms`
+is ~5–10% before and after; that is a 12 ms median against a 16.7 ms budget, not
+a stutter.
 
 ---
 
-## Instruments that now exist (all shipped)
+## What it turned out to be
 
-| what | where | notes |
+Everything in the tail was **sprite atlas painting on a frame the player could
+see**, plus one uncovered first frame:
+
+| cause | share of hitch time | fix |
 |---|---|---|
-| **GPU time** | `# GPU render (µs)` in the playtest profile | WebGPU timestamp queries. Armed by `?profile=1` / `?playtest=1`. **This is the only GPU-truthful number in the codebase.** |
-| **Per-frame draw calls** | `# draw calls`, `# triangles`, `# render passes` | Were reading a CUMULATIVE counter until 2026-07-28; any pre-existing figure quoted anywhere is wrong by ~12x. |
-| **Renderer counters** | `__dungeonRenderInfo()` | `{programs, textures, geometries, drawCalls}`, so a harness can catch a compile on the exact frame. |
-| **Scene size** | `sceneObjects` / `sceneMeshes` in `__dungeonCensus()` | Build-time snapshot — it does NOT track live adds/removes. Don't use it for before/after within one floor. |
-| **Floor determinism** | `scripts/floor-census.mjs` | Unrelated to lag, but it is the gate for any change touching `buildLevel`. |
+| The palette crush read its source canvas back off the GPU | a 20.8× multiplier on all of the below | `crushableContext` in `engine/render/sprite.ts` |
+| Monster atlas backfill built a WHOLE atlas per idle callback | 2,046 ms / 36% | `SheetBuild` slices; `boot/sheets.ts` uses `deadline.timeRemaining()` |
+| Knight re-dress built a whole atlas inside the rAF loop | 857 ms / 15% | `requestKnightSheet`; the old sheet stays on screen until the new one is painted |
+| UI icons + coin/reagent sprites rasterised on first use | 267 ms + ~150 ms | same crush fix; now ~1/20th the cost |
+| First rendered frame after a descent: 20 shadow pipelines + three's NodeBuilder | the single worst frame, ~970 ms | `warmFirstFrame` in `boot/warmup.ts` |
 
-Run the standard profile with:
+### The crush was reading the GPU back, once per frame of every atlas
+
+`crushInto` downscales a 128 px paint box to the 72 px grid and reads the result
+with `getImageData`. The destination context had `willReadFrequently: true`. The
+**source** did not, so it lived in GPU memory and every read was a synchronous
+GPU→CPU transfer. Measured, 400 crushes:
+
+```
+source canvas GPU-backed          getImageData  2.271 ms    total 971 ms
+source canvas willReadFrequently  getImageData  0.109 ms    total  62 ms
+                                                ────────    ────────────
+                                                    20.8x         15.7x
+```
+
+The whole cost landed on the `getImageData` line, which is why reading this code
+kept concluding the palette maths was expensive. It never was — and a previous
+session spent itself on the palette snap because of it. `_paintCanvas` was fixed
+independently by the sprite-sharpening wave; `renderPaintCanvas` and
+`staticTexture` were still on the slow path and now go through
+`crushableContext`, so the rule has one home.
+
+### An atlas per idle callback is not "idle work"
+
+`requestIdleCallback` never offers more than 50 ms and normally far less. An
+atlas was ~275 ms of paint. Every single callback overran by 5× and landed as
+exactly the long task the backfill was written to avoid. The unit of work is now
+a slice of FRAMES sized by `deadline.timeRemaining()` (capped at 3 ms), and a
+half-painted atlas is never handed out — `sheetFor` finishes it on the spot.
+
+### compileAsync does not warm the shadow pass
+
+The worst frame in every run was the FIRST frame after the descent screen
+closed: the floor appears, then freezes. The profile named it — three's
+NodeBuilder building shader graphs, alongside `createRenderPipeline
+renderPipeline_ShadowMaterial_930` **×20**. Twenty shadow pipelines created
+after a warm-up whose entire job is to have created them.
+
+`warmFloorPipelines` now ends by drawing two complete frames — post-process
+chain, shadow depth pass and all — while the descent screen still covers the
+display. A render is the only thing that provably warms what a render needs. The
+time is the same; it is spent under a progress bar instead of on the first frame
+of play.
+
+---
+
+## The method — use this, not a suspect list
+
+The previous handoff ended with a ranked list of suspects to probe one at a
+time. Two of the first three had already been wrong, at a session each. A V8
+sampling profile over the run already contains the answer; it only has to be
+**sliced to the frames that hitched**.
 
 ```bash
-npm run playtest:gpu -- --secs 25 --seed 42 --url http://localhost:<port>/dungeon
+node scripts/lag-profile.mjs --secs 30 --seed 42 --url http://localhost:5199/dungeon
 ```
 
-⚠️ `scripts/playtest.mjs` pins a **1280×720** viewport, so every stock timing
-describes a 720p window. A hook (`sun/.claude/hooks/guard_webgpu.py`) blocks any
-agent harness run that would land on WebGL/SwiftShader.
+It runs the bot on real WebGPU, samples the main thread via CDP `Profiler`,
+records the rAF timeline and every blocking WebGPU call in-page
+(`scripts/lib/lag-probe.mjs`), and prints self time, inclusive time and **call
+paths** for the hitch frames against the same aggregation over the healthy ones.
+The leaderboard says what is slow; only the call path says who asked for it, and
+who asked is the thing you can change. It found the cause on the first run.
+
+Two details that make it trustworthy:
+
+- **The clocks are pinned by measurement, not assumption.** `__lagSync` burns CPU
+  inside a uniquely-named function at both ends of the run; matching that block
+  in the profile gives the offset, and the disagreement between the two markers
+  is printed as the alignment error.
+- **Descent frames are excluded.** See below.
+
+### ⚠️ Descent frames are not hitches — every earlier number included them
+
+While the loading screen holds the display the loop renders and simulates
+nothing (`sim/loop.ts`), so those frames are long *by design* and the player is
+watching a progress bar. Counted as hitches they OWN the tail: the worst frame
+of a 30 s run is reliably `warmFloorPipelines` doing its job. `__dungeonHeld()`
+(dev/window-hooks.ts) exposes the flag and the harness drops those windows.
+
+**Every "worst frame" figure quoted for this game before 2026-07-29 — including
+the 888 ms in the previous handoff — includes descent frames.**
 
 ---
 
-## What is TRUE (measured)
+## Results
 
-1. **The GPU is idle.** `GPU render = 267µs p50 / 294µs p95`. Six passes, ~250
-   draw calls, the whole post-process chain: 0.27ms of a 16.7ms budget.
-   **Renderer optimisation cannot help.** Do not spend time on the shader.
+Five interleaved A/B pairs, same session, same seed, 30 s bot runs. Interleaved
+because this box runs other agents' dev servers and between-run variance is
+larger than most effects — a single before/after pair proves nothing here.
 
-2. **The cost is CPU-side.** `pixelPass.render` ~4.7ms and `FRAME (total)`
-   ~5.6ms both bracket CPU *submission* and return before the GPU finishes.
+```
+                  main                            with the fix
+hitches >33ms     8, 171, 22, 14, 33              2, 5, 3, 3, 4
+worst frame (ms)  764, 1297, 588, 1121, 848       61, 67, 85, 648, 54
+p99 (ms)          18.4, 107.5, 30.3, 24.3, 36.4   18.4, 24.2, 18.4, 18.3, 18.3
+dropped >16.7ms   4.9–37.7%                       4.7–9.9%   ← unchanged, see above
+```
 
-3. **The scene is object-heavy**: 1378 scene objects / 1186 meshes on floor 5,
-   to issue ~250 draws. three walks all of them per frame to cull and sort.
-   Plausible contributor to the steady-state CPU cost; NOT the source of the
-   hitches.
-
-4. **Shader programs climb 2 → 129** over a run, with big rises clustered around
-   3-8s and a trickle afterwards. This *correlates* with the hitches — but see
-   disproven #3.
+The art is unchanged, and that is checked rather than assumed: ten atlases,
+3.0 M texels, **0 differing texels** between main and the change (the crush
+swaps a GPU rasteriser for a software one, and a one-texel AA difference can
+cross a palette Voronoi boundary).
 
 ---
 
-## ALREADY DISPROVEN — do not re-litigate
+## Traps found while fixing it — do not re-walk
 
-**1. "The post-process shader is too heavy."**
-Killed by the GPU timestamp: 0.27ms. Also tested directly — 1920×1080 renders
-2.25× the pixels of 1280×720 and measured the *same* wall time (4.4ms vs 4.7ms
-p50). It is not fragment-bound. Capping `MAX_RENDER_W/H` buys nothing, and would
-cost field of view: PPU is pinned at 64 so render width IS the FOV (see the long
-note in `constants/render.ts`).
+**1. `texture.needsUpdate` per slice costs more than the freeze it removes.** The
+first version of the incremental builder marked the texture dirty after every
+slice. `needsUpdate` re-uploads the WHOLE atlas — 8136×144 for the knight — so
+slicing into 40 pieces turned one upload into forty. Measured p95 went 18.2 →
+30.4 ms with the median unmoved: the signature of work *spread* across frames
+rather than removed. Nothing renders a partial sheet, so the upload happens
+once, at the end.
 
-**2. "Fold the luma weight into the palette snap to save 96 multiplies/pixel."**
-Arithmetically tempting, and WRONG: it flips the winner on 12 of the 496 exact
-midpoints between palette pairs, while 200,000 random samples show zero
-disagreements. Guarded by `engine/render/palette-snap.test.ts`. Moot anyway
-given #1.
+**2. A 6 ms slice inside the rAF loop is still too big.** The frame already costs
+~12 ms. The knight re-dress budget is 2 ms.
 
-**3. ⚠️ "The hitches are synchronous pipeline creation."**
-This was my leading theory and it is FALSE. Intercepting
-`GPUDevice.prototype.createRenderPipeline` from the page shows **96 pipelines
-created after the loading screen closes, costing 8ms of blocking IN TOTAL.**
-Dawn defers the real compile, so the call returns fast. `info.memory.programs`
-rising is therefore a *correlate*, not the cause — it marks the moment new
-material families first appear, and something else on that same frame is what
-actually costs 600ms.
-
-**4. "Bind the pixel pass's render target during warm-up so pipelines get the
-right attachment formats."** Tested: total programs fell 129 → 101 (so it does
-affect pipeline keys) but frame pacing got **worse** — 26.1% dropped vs 12.3%,
-p95 35.5ms vs 24.6ms. Reverted, not shipped.
-
-**Partially true and already shipped:** `compileAsync` frustum-tests every mesh,
-so the warm-up only compiled what was on camera at the spawn point. Culling is
-now disabled for the warm-up walk (`boot/warmup.ts`). This removed the *trickle*
-— last mid-play compile moved 31.7s → 9.2s — but did NOT touch the big early
-burst.
+**3. `requestIdleCallback`'s deadline is the input, not a formality.** The first
+version used a fixed 4 ms and ignored `timeRemaining()`. Ask the browser.
 
 ---
 
-## The open question
+## Still true, still disproven (carried forward)
 
-**What actually costs 600ms on the frames where new material families first
-appear, given that pipeline creation is only 8ms of it?**
+1. **The GPU is idle.** `GPU render = 267 µs p50 / 294 µs p95` for six passes and
+   ~250 draws. Renderer optimisation cannot help. Do not spend time on the
+   shader.
+2. **The post-process shader is not the problem.** 1920×1080 renders 2.25× the
+   pixels of 1280×720 in the same wall time. Not fragment-bound.
+3. **Folding the luma weight into the palette snap is WRONG** — it flips the
+   winner on 12 of the 496 exact midpoints while 200,000 random samples show
+   none. Guarded by `engine/render/palette-snap.test.ts`.
+4. **Synchronous pipeline creation was never the cost.** 96 pipelines after the
+   loading screen, 8 ms of blocking in total; Dawn defers the real compile. What
+   *is* expensive on those frames is three's NodeBuilder — the JS-side shader
+   graph build — which is why `warmFirstFrame` targets a render rather than a
+   pipeline count.
+5. **Binding the pixel pass's render target during warm-up made pacing worse**
+   (26.1% dropped vs 12.3%). Reverted, not shipped.
 
-Ranked suspects, cheapest to test first:
+## What is NOT fixed
 
-1. **Texture upload / atlas construction.** `gpu textures` runs ~100-160 and
-   `render/sprite.ts` clones a texture PER ACTOR (its own comment calls this
-   "the ONE genuinely per-actor allocation… why the horde cannot simply become a
-   single InstancedMesh"). `boot/sheets.ts` builds atlases lazily and backfills
-   on idle, so a sheet can be painted — canvas `fillText`, per-actor canvas —
-   and uploaded mid-play. **Test:** wrap `GPUQueue.prototype.writeTexture` and
-   `copyExternalImageToTexture` the same way the pipeline probe wrapped
-   `createRenderPipeline`, and attribute time per call.
-2. **First *use* of a pipeline** (as opposed to its creation). Dawn may finish
-   compilation lazily at first draw. **Test:** compare the frame a pipeline is
-   created against the frame it is first drawn.
-3. **GC.** Heavy per-frame allocation: `entities/floor-fx.ts` does
-   `new THREE.Mesh(discGeo(), matFor(kind).clone())` per stamp (~50/s while
-   grooving), plus per-coin/per-projectile scene adds. **Test:**
-   `performance.measureUserAgentSpecificMemory()` or a long-run allocation
-   profile in devtools.
+- **three's NodeBuilder is still the largest remaining block in the tail**, on
+  the frames where a genuinely new material family first appears mid-play. It is
+  now a ~55–85 ms frame rather than a ~970 ms one, so it is below the threshold
+  of complaint — but it is the next thing if the tail ever matters again.
+- **Everything here was measured under `next dev`.** A production build has not
+  been profiled; dev-mode chunk loading is a plausible contributor to the
+  remaining `(idle)` and `(program)` samples.
+- **Path-dependent floor generation** (same seed, different floor depending on
+  route) is unrelated to lag and still open. It is a co-op desync risk.
 
-### The probe that found #3, reuse it
+## Verifying a future change
 
-```js
-await page.addInitScript(() => {
-  const w = window; w.__pipes = { sync: [], async: 0, t0: performance.now() };
-  const hook = () => {
-    if (!window.GPUDevice) return false;
-    const proto = window.GPUDevice.prototype;
-    const orig = proto.createRenderPipeline;
-    proto.createRenderPipeline = function (desc) {
-      const a = performance.now();
-      const r = orig.call(this, desc);
-      w.__pipes.sync.push({ label: desc?.label, ms: performance.now() - a });
-      return r;
-    };
-    return true;
-  };
-  if (!hook()) { const i = setInterval(() => hook() && clearInterval(i), 5); }
-});
-```
-
-Point it at `writeTexture` / `copyExternalImageToTexture` next. three labels its
-descriptors, so the labels name the culprit directly.
-
----
-
-## Verification for any fix
-
-A fix must move the **pacing** numbers, not the averages:
+Move the **pacing tail**, not the averages, and interleave A/B in one session:
 
 ```
-dropped >16.7ms   from 12.3%   ->  ?
-hitches >33ms     from 45      ->  ?
-worst frame       from ~888ms  ->  ?
+hitches >33ms   from 2-5      ->  ?
+worst frame     from ~55-85ms ->  ?
+p99             from ~18ms    ->  ?
 ```
 
-Measure by sampling rAF deltas over a 45s bot run, interleaved A/B against the
-baseline **in the same session** — this box runs other agents' dev servers and
-the between-run variance is large (`pixelPass` alone ranged 3.6-8.5ms on
-unchanged code). A single before/after pair proves nothing here.
-
-Also re-run `scripts/floor-census.mjs --diff` if anything touches `buildLevel`,
-and keep `npm test` (161 files) and `npx tsc --noEmit` green.
+Re-run `scripts/floor-census.mjs --diff` if anything touches `buildLevel`, and
+keep `npm test` (126 files, 1430 tests), `npx tsc --noEmit` and
+`scripts/hooks/registry-drift.mjs` green.

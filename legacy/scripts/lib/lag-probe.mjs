@@ -37,6 +37,7 @@ export function installLagProbe() {
     hot: [],
     longtasks: [],
     sync: [],
+    held: [],
     capped: false,
   };
   w.__lag = lag;
@@ -45,10 +46,19 @@ export function installLagProbe() {
   // An independent rAF chain. Callbacks registered by different code run in the
   // same frame batch, so these timestamps are the game's frame boundaries even
   // though the game drives its own loop.
+  //
+  // `held` marks the frames where the DESCENT SCREEN owns the display. The game
+  // loop returns before rendering or simulating while a floor's pipelines warm
+  // (sim/loop.ts), so those frames are long by design and the player is watching
+  // a progress bar. Counted as hitches they OWN the tail — the worst frame in a
+  // 30s run is reliably the warm-up doing its job — and every conclusion drawn
+  // from a "worst frame" figure that included them was drawn about the loading
+  // screen.
   let frame = 0;
   const hotFor = (i) => (lag.hot[i] ??= {});
   const tick = (t) => {
     frame = lag.frames.push(t) - 1;
+    if (window.__dungeonHeld?.()) lag.held.push(frame);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -140,6 +150,7 @@ export function installLagProbe() {
     hot: lag.hot,
     longtasks: lag.longtasks,
     sync: lag.sync,
+    held: lag.held,
     capped: lag.capped,
   });
 }

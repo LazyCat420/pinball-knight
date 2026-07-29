@@ -883,7 +883,6 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
   let next = 0;
 
   const paintUntil = (limit: number): boolean => {
-    const from = next;
     while (next < flat.length) {
       paintFrame(ctx, flat[next], next % cols, Math.floor(next / cols));
       next++;
@@ -892,10 +891,18 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
       // poll this build forever without it ever finishing.
       if (performance.now() >= limit) break;
     }
-    // Only when something was actually painted — a needless `needsUpdate` is a
-    // full re-upload of an atlas that can be 8136x144.
-    if (next > from) texture.needsUpdate = true;
-    return next >= flat.length;
+    const done = next >= flat.length;
+    // ── UPLOAD ONCE, AT THE END ──
+    //
+    // Marking the texture dirty per slice cost more than the freeze it was
+    // meant to remove. `needsUpdate` re-uploads the WHOLE atlas, which for the
+    // knight is 8136x144 — so slicing an atlas into 40 pieces turned one upload
+    // into forty, and measured p95 frame time went 18.2 ms → 30.4 ms with the
+    // median unmoved: the signature of work spread across frames rather than
+    // removed. Nothing renders a partial sheet (see SheetBuild), so there is
+    // nothing to show until it is finished.
+    if (done) texture.needsUpdate = true;
+    return done;
   };
 
   return {

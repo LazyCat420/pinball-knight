@@ -237,9 +237,21 @@ const frames = probe.frames;
 // Ignore everything before the run began: the sync burn and any boot tail.
 const runStart = probe.sync[0]?.b ?? frames[0];
 const runEnd = probe.sync[1]?.a ?? frames[frames.length - 1];
+// DESCENT FRAMES ARE NOT HITCHES. While the loading screen holds the display
+// the loop renders and simulates nothing, so those frames are long by design
+// and the player is watching a progress bar. They are dropped from the pacing
+// numbers AND from the attribution — otherwise the tail is just the warm-up.
+const heldFrames = new Set(probe.held ?? []);
 const windows = [];
+let heldSkipped = 0;
 for (let i = 1; i < frames.length; i++) {
   if (frames[i - 1] < runStart || frames[i] > runEnd) continue;
+  // Both ends: the frame AFTER a held one is the one that carries the descent's
+  // last long gap.
+  if (heldFrames.has(i) || heldFrames.has(i - 1)) {
+    heldSkipped++;
+    continue;
+  }
   windows.push({ from: frames[i - 1], to: frames[i], ms: frames[i] - frames[i - 1] });
 }
 const hitches = windows.filter((w) => w.ms > HITCH);
@@ -350,7 +362,7 @@ const gpuTotalMs = [...gpuHitch.values()].reduce((s, e) => s + e.ms, 0);
 // ── Report ─────────────────────────────────────────────────────────────────
 log("\n══ LAG ATTRIBUTION ═══════════════════════════════════════════════════");
 log(`renderer:        ${glInfo}`);
-log(`frames:          ${windows.length} over ${((runEnd - runStart) / 1000).toFixed(1)}s`);
+log(`frames:          ${windows.length} over ${((runEnd - runStart) / 1000).toFixed(1)}s   (${heldSkipped} descent frames excluded${heldSkipped === 0 ? " — is __dungeonHeld present?" : ""})`);
 log(`pacing:          p50 ${pct(sortedMs, 50).toFixed(1)}ms   p95 ${pct(sortedMs, 95).toFixed(1)}ms   p99 ${pct(sortedMs, 99).toFixed(1)}ms`);
 log(
   `dropped >16.7ms: ${((100 * windows.filter((w) => w.ms > 16.7).length) / windows.length).toFixed(1)}%   ` +

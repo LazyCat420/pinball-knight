@@ -24,12 +24,13 @@ import { activeWeapon, state } from "../state";
 /**
  * Paint budget per frame for a knight re-dress, inside the rAF loop.
  *
- * Larger than the idle backfill's slice (4 ms) on purpose: this one is a
- * VISIBLE swap the player is waiting on, and it is bounded — ~100 frames at
- * ~0.15 ms each finishes in about a fifth of a second. The backfill has a whole
- * floor to work in and should never take frame time from this.
+ * This one genuinely spends frame time — it is a VISIBLE swap the player is
+ * waiting on, so it cannot wait for idle the way the monster backfill can. Kept
+ * to 2 ms because the frame it is added to already costs ~12 ms: 6 ms was
+ * measured pushing p95 past the 16.7 ms budget, which is the same mistake as
+ * doing it all at once, just quieter.
  */
-const WEAPON_ART_SLICE_MS = 6;
+const WEAPON_ART_SLICE_MS = 2;
 
 export function playerSheetFor(id: WeaponId): SpriteSheet {
   return getKnightSheet(id, lookFromGear(state.gear), "dungeon");
@@ -231,8 +232,17 @@ export function buildMonsterSheets(): void {
   startBackfill();
 }
 
-/** Paint budget per idle callback. See the docblock on `startBackfill`. */
-const BACKFILL_SLICE_MS = 4;
+/**
+ * Ceiling on one backfill slice, even when the browser offers more.
+ *
+ * `requestIdleCallback` will hand out up to 50 ms, which is three frames. The
+ * deadline is the right input — it is the browser's own answer to "how much of
+ * this frame is spare" — but it is a permission, not a target, and taking all
+ * of it is how a "background" task becomes a stutter.
+ */
+const BACKFILL_SLICE_CAP_MS = 3;
+/** Below this the callback is not worth the wake-up; wait for a better frame. */
+const BACKFILL_SLICE_MIN_MS = 1;
 
 /**
  * Warm the remaining atlases a SLICE at a time.
@@ -247,24 +257,30 @@ const BACKFILL_SLICE_MS = 4;
  * this path — `step › sheetFor › monsterSheet › buildSpriteSheet` — was 2,046 ms
  * of hitch time, the largest single contributor to the game's frame-pacing tail.
  *
- * So the unit of work is a slice of FRAMES, not an atlas. `SheetBuild` keeps the
- * position; a partial atlas is never handed out (`sheetFor` finishes it first).
- * 4 ms leaves room inside a 16.7 ms frame for the callback to be late and still
- * not drop it — rIC fires when the frame has time, not when it has none.
+ * So the unit of work is a slice of FRAMES, not an atlas, and the size of the
+ * slice comes from `deadline.timeRemaining()` — the browser's own answer to how
+ * much of this frame is spare — capped, because rIC's 50 ms allowance is three
+ * frames. A partial atlas is never handed out (`sheetFor` finishes it first).
  */
 function startBackfill(): void {
   stopSheetBackfill();
   const queue = [...BACKFILL];
-  const idle: (cb: () => void) => number =
+  /** The slice this callback may spend. Fixed when there is no rIC to ask. */
+  const idle: (cb: (spareMs: number) => void) => number =
     typeof requestIdleCallback === "function"
-      ? (cb) => requestIdleCallback(() => cb()) as unknown as number
-      : (cb) => setTimeout(cb, 200) as unknown as number;
+      ? (cb) => requestIdleCallback((d) => cb(d.timeRemaining())) as unknown as number
+      : (cb) => setTimeout(() => cb(BACKFILL_SLICE_CAP_MS), 200) as unknown as number;
 
-  const step = () => {
+  const step = (spareMs: number) => {
     backfillHandle = null;
     // The run can end mid-backfill. Building then would allocate an atlas onto
     // a torn-down state that nothing will ever dispose.
     if (!state.active) return;
+    // Too little room to be worth painting into — come back on a better frame.
+    if (spareMs < BACKFILL_SLICE_MIN_MS) {
+      backfillHandle = idle(step);
+      return;
+    }
     if (!current) {
       const key = queue.shift();
       if (!key) return;
@@ -277,7 +293,7 @@ function startBackfill(): void {
       inFlight.set(key, current.build);
     }
     const { key, build } = current;
-    if (build.step(BACKFILL_SLICE_MS)) {
+    if (build.step(Math.min(spareMs, BACKFILL_SLICE_CAP_MS))) {
       BUILDERS[key].set(build.sheet);
       inFlight.delete(key);
       current = null;
