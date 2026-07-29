@@ -72,24 +72,53 @@ export const MAX_RENDER_W = 1920;
 export const MAX_RENDER_H = 1080;
 
 /**
- * Pixels per world unit. FIXED at 64 — one tile (1 world unit) is always
- * exactly 64 render pixels, at every window size.
+ * Pixels per world unit. FIXED at 96 — one tile (1 world unit) is always
+ * exactly 96 render pixels, at every window size.
  *
  * This is load-bearing and must NOT be made adaptive: sprite crispness depends
  * on `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` (asserted in
  * render/sprite-scale.test.ts), which is what maps one stored art pixel onto
  * one render pixel. The ortho frustum is what flexes with the window instead —
  * pixel-pass.ts resizes it to renderW/PPU × renderH/PPU on every resize.
+ *
+ * ── WHY 96 AND NOT 64 (2026-07-29, "the faces look blurry") ─────────────────
+ * PPU is the FIDELITY dial, and 64 was spending the window on field of view
+ * instead of on detail. At 64 a 1920-wide target showed 30 tiles and an actor
+ * was 72 render pixels tall — which sounds fine until you count what a FACE
+ * gets out of that: a head about 20 texels across, so an eye is two, a brow is
+ * one, and a whisker is none. Sub-texel features do not become pixels; they
+ * tint their host texel by a fraction, which the palette snap then rounds to
+ * some arbitrary neighbour. That is what "blurry" was — not a soft filter
+ * (filtering has been NEAREST throughout) but detail authored below the grid
+ * and quantized into confetti.
+ *
+ * Raising PPU to 96 raises SPRITE_PIXEL_GRID to 108 with it (the identity
+ * above), so an actor is drawn with 2.25x the texels — a head is ~30 across and
+ * a face has room for actual features. Three things make this cheap:
+ *
+ *   · SPRITE_UNITS is unchanged at 1.125, so the world is untouched. Colliders,
+ *     reach, spacing and every tuned distance mean exactly what they did.
+ *   · The render target does not grow — renderW/renderH still come from the
+ *     window. The frustum SHRINKS instead (20 tiles across at 1920 rather than
+ *     30), so per-frame GPU cost is identical. This buys detail with atlas
+ *     memory and boot paint, not with framerate.
+ *   · 20 tiles at 1920 is the framing this game was designed around; see the
+ *     RENDER_W note, which calls out losing it as the price of integer scaling.
+ *     This gets it back.
+ *
+ * The cost is real and it is paid at BOOT: 2.25x the texels per atlas cell, and
+ * a larger supersample buffer to feed them. Measured in LOAD_PERF_PLAN terms,
+ * that is where to look if boot regresses.
  */
-export const PPU = 64;
+export const PPU = 96;
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
  * frustum is re-derived from the current render size by pixel-pass.ts, so
  * treat these as the floor (20×11.25 tiles), not as the running value.
  */
-export const VIEW_W = RENDER_W / PPU; // 20 tiles across
-export const VIEW_H = RENDER_H / PPU; // 11.25 tiles down
+export const VIEW_W = RENDER_W / PPU; // 13.33 tiles across at the 1280 reference
+export const VIEW_H = RENDER_H / PPU; // 7.5 tiles down
 
 // ── Camera ──────────────────────────────────────────────────────
 /**
@@ -113,16 +142,40 @@ export const CAMERA_DIST = 24; // irrelevant to scale (ortho), just needs to cle
 
 // ── Sprites ─────────────────────────────────────────────────────
 /**
- * The AUTHORING box. Cel frames are painted at 128px — `cel-painter.ts` and
- * `figure.ts` place every coordinate in this space, so it is a coordinate
- * system, not a resolution, and changing it would move all the art.
+ * The AUTHORING box — the COORDINATE SYSTEM every painter writes in.
  *
- * It is NOT the size the art is stored or displayed at. The paint is crushed
- * once to SPRITE_PIXEL_GRID and the atlas holds it at that size; see
- * `sprite.ts`. The 128px supersample still earns its keep — painting at ~2×
- * the grid is what keeps a curved outline from aliasing when it is downscaled.
+ * `cel-painter.ts` and `figure.ts` place every coordinate in this space (CX=64,
+ * GROUND=118), so it is a coordinate system, not a resolution, and changing it
+ * would move all the art. It is deliberately NOT the size anything is painted,
+ * stored or displayed at.
+ *
+ * Split out from SPRITE_PX on 2026-07-29. The two were one constant, which
+ * silently welded the art's coordinate space to the supersample buffer's size —
+ * so the buffer could not be resized without moving every limb in the game.
+ * They are now independent: author here, rasterise at SPRITE_PX, store at
+ * SPRITE_PIXEL_GRID.
  */
-export const SPRITE_PX = 128; // painted art size per frame, px
+export const ART_PX = 128; // painter coordinate space, unitless
+
+/**
+ * The SUPERSAMPLE buffer — the size a frame is actually rasterised at, before
+ * the crush down to SPRITE_PIXEL_GRID.
+ *
+ * MUST be an exact integer multiple of SPRITE_PIXEL_GRID. That is the whole
+ * reason this constant exists separately from ART_PX. The old pairing painted
+ * at 128 and crushed to 72, a ratio of 1.7778: every output texel averaged a
+ * fractional span of source pixels, so the box filter's boundaries fell BETWEEN
+ * source pixels and a hard edge in the art was guaranteed to smear across two
+ * texels no matter where it sat. At 216 → 108 the ratio is exactly 2, every
+ * output texel is exactly 4 source pixels, and an edge that lands on an even
+ * source pixel stays a single-texel edge.
+ *
+ * 2x rather than 3x is a measured choice: interleaved over five rounds, one
+ * 45-frame sheet paints in 94.8 ms at 128, 106.8 ms at 144 and 133.1 ms at 216.
+ * The supersample is there to anti-alias curved outlines before the crush, and
+ * 2x does that; 3x costs 40% more paint for a second decimal place.
+ */
+export const SPRITE_PX = 216; // rasterisation buffer per frame, px = 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -143,7 +196,7 @@ export const SPRITE_PX = 128; // painted art size per frame, px
  * deliberately pixel-art. Must stay an integer multiple of PPU's reciprocal —
  * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
  */
-export const SPRITE_PIXEL_GRID = 72;
+export const SPRITE_PIXEL_GRID = 108;
 
 /**
  * Actor plane size, world units.

@@ -26,7 +26,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas } from "canvas";
 import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "./palette";
 import { setEnginePalette } from "../engine/palette-source";
-import { crushToGrid, invalidatePaletteCaches, buildSpriteSheet } from "../engine/render/sprite";
+import { crushToGrid, invalidatePaletteCaches, buildSpriteSheet, paintInArtSpace } from "../engine/render/sprite";
 import { makeSpiderPaints, makeGoblinPaints, withRecoil, ITEM_PAINTS } from "./cel-painter";
 import { SPRITE_PX, SPRITE_PIXEL_GRID } from "../constants";
 import type { SpriteSheet } from "../engine/render/sprite";
@@ -49,12 +49,13 @@ afterAll(() => {
   (globalThis as { document?: unknown }).document = realDoc;
 });
 
-/** Paint one FramePaint onto a fresh SPRITE_PX box, the way paintFrame does. */
+/** Paint one FramePaint onto a fresh SPRITE_PX box, THROUGH the same helper
+ *  paintFrame uses — not a local copy of it. */
 function paintBox(paint: FramePaint): HTMLCanvasElement {
   const cv = createCanvas(SPRITE_PX, SPRITE_PX) as unknown as HTMLCanvasElement;
   const ctx = (cv as unknown as { getContext(k: string): CanvasRenderingContext2D }).getContext("2d");
   ctx.imageSmoothingEnabled = true;
-  paint(ctx);
+  paintInArtSpace(ctx, paint);
   return cv;
 }
 

@@ -112,21 +112,60 @@ export function clearTextureCache(): void {
   textureCache.clear();
 }
 
+/**
+ * AUTHORED tile-texture space: one world tile is this many texture pixels as
+ * the painters below draw it.
+ *
+ * This used to be PPU itself, which quietly welded the tile ART to the camera's
+ * zoom — every seam offset, chip position and shadow row in this file is a
+ * number tuned against a 64px tile. Raising PPU to 96 for sprite fidelity would
+ * have re-flowed all of them. Now the painters keep drawing at 64 and
+ * `pixelTexture` rasterises at the camera's density instead, so the pattern is
+ * identical and only the resolution goes up.
+ */
+const TILE_PX = 64;
+
+/**
+ * Round up to the next power of two.
+ *
+ * Every size fed to `pixelTexture` goes through this, because that function
+ * mipmaps with RepeatWrapping and a non-power-of-two texture in that
+ * combination is undefined in WebGL1 and renders BLACK. The sizes used to be
+ * powers of two by luck — they were derived from PPU, and PPU was 64. Raising
+ * PPU to 96 turned the floor into 768 and the walls into 96, which is exactly
+ * the kind of change that looks fine in review and ships a black floor.
+ *
+ * Rounding UP rather than down on purpose: these are density figures for a
+ * fidelity pass, so the error should land on the side of more texels.
+ */
+function potCeil(n: number): number {
+  return 2 ** Math.ceil(Math.log2(Math.max(1, n)));
+}
+
 function pixelTexture(
-  size: number,
+  authoredPx: number,
   paint: (ctx: CanvasRenderingContext2D) => void,
   repeatX: number,
   repeatY: number,
 ): THREE.CanvasTexture {
+  // Rasterise at the CAMERA's density, rounded up to a power of two, but let
+  // the painter keep drawing in its authored space. Exactly the split sprite.ts
+  // makes between ART_PX and SPRITE_PX, and for the same reason: the tile art's
+  // coordinates (block seams every 22px, a 3px contact-shadow row) are tuned
+  // numbers, and they must not move because the camera got closer.
+  const size = potCeil((authoredPx * PPU) / TILE_PX);
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  ctx.scale(size / authoredPx, size / authoredPx);
   paint(ctx);
+  ctx.restore();
 
   const tex = new THREE.CanvasTexture(canvas);
-  // Cel round: smooth filtering + mipmaps (all sizes here are powers of two).
+  // Cel round: smooth filtering + mipmaps (potCeil guarantees powers of two).
   // Nearest-filtered texels were half of what still read as "pixel art", and
   // mipmapping kills the moiré the tilted camera used to make of the floor.
   tex.magFilter = THREE.LinearFilter;
@@ -197,15 +236,15 @@ function normalTexture(
 // ── Height fields (mirror the diffuse painters above) ────────────
 /** Flagstones: mortar seams are grooves, each stone domes gently to its centre. */
 function floorHeight(x: number, y: number): number {
-  const lx = x % PPU;
-  const ly = y % PPU;
-  const d = Math.min(lx, PPU - lx, ly, PPU - ly);
+  const lx = x % TILE_PX;
+  const ly = y % TILE_PX;
+  const d = Math.min(lx, TILE_PX - lx, ly, TILE_PX - ly);
   if (d < 1.5) return 0.12; // mortar groove
   return 0.5 + (Math.min(d, 12) / 12) * 0.22; // dome toward the stone's middle
 }
 /** Wall face: mirrors the masonry layout — trim proud, mortar grooved, skirting recessed. */
 function wallHeight(x: number, y: number): number {
-  if (y >= PPU - 3) return 0.05; // contact shadow row — deepest
+  if (y >= TILE_PX - 3) return 0.05; // contact shadow row — deepest
   if (y >= 51) return 0.3; // skirting sits back
   if (y < 7) {
     // trim course: proud band with dentil grooves
@@ -221,11 +260,11 @@ function wallHeight(x: number, y: number): number {
 /** Wall cap: bordered square — the border is a groove, the interior sits proud,
  * and the carved inner panel line reads as a shallow chisel cut. */
 function capHeight(x: number, y: number): number {
-  if (x < 2 || x > PPU - 2 || y < 2 || y > PPU - 2) return 0.15;
+  if (x < 2 || x > TILE_PX - 2 || y < 2 || y > TILE_PX - 2) return 0.15;
   const onPanel =
-    (Math.abs(x - 10) < 1.5 || Math.abs(x - (PPU - 10)) < 1.5) && y >= 9 && y <= PPU - 9;
+    (Math.abs(x - 10) < 1.5 || Math.abs(x - (TILE_PX - 10)) < 1.5) && y >= 9 && y <= TILE_PX - 9;
   const onPanelH =
-    (Math.abs(y - 10) < 1.5 || Math.abs(y - (PPU - 10)) < 1.5) && x >= 9 && x <= PPU - 9;
+    (Math.abs(y - 10) < 1.5 || Math.abs(y - (TILE_PX - 10)) < 1.5) && x >= 9 && x <= TILE_PX - 9;
   if (onPanel || onPanelH) return 0.4;
   return 0.6;
 }
@@ -292,7 +331,7 @@ const css = (i: number) => {
 const FLOOR_BLOCK = 8;
 
 function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture {
-  const size = PPU * FLOOR_BLOCK;
+  const size = TILE_PX * FLOOR_BLOCK;
   return pixelTexture(
     size,
     (ctx) => {
@@ -317,20 +356,20 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
       for (let tj = 0; tj < FLOOR_BLOCK; tj++) {
         for (let ti = 0; ti < FLOOR_BLOCK; ti++) {
           const h = noise(ti * 3.7, tj * 5.1, 42);
-          const x0 = ti * PPU;
-          const y0 = tj * PPU;
+          const x0 = ti * TILE_PX;
+          const y0 = tj * TILE_PX;
 
           // Patchwork: some flagstones are simply a different cut of stone.
           const patch = noise(ti * 7.3, tj * 2.9, 61);
           if (patch < 0.14) {
             ctx.fillStyle = css(2);
-            ctx.fillRect(x0 + 1, y0 + 1, PPU - 2, PPU - 2);
+            ctx.fillRect(x0 + 1, y0 + 1, TILE_PX - 2, TILE_PX - 2);
           } else if (patch > 0.9) {
             ctx.fillStyle = css(4);
-            ctx.fillRect(x0 + 1, y0 + 1, PPU - 2, PPU - 2);
+            ctx.fillRect(x0 + 1, y0 + 1, TILE_PX - 2, TILE_PX - 2);
             for (let k = 0; k < 40; k++) {
-              const sx = x0 + 1 + Math.floor(noise(ti + k, tj, 63) * (PPU - 2));
-              const sy = y0 + 1 + Math.floor(noise(ti, tj + k, 65) * (PPU - 2));
+              const sx = x0 + 1 + Math.floor(noise(ti + k, tj, 63) * (TILE_PX - 2));
+              const sy = y0 + 1 + Math.floor(noise(ti, tj + k, 65) * (TILE_PX - 2));
               ctx.fillStyle = css(3);
               ctx.fillRect(sx, sy, 1, 1);
             }
@@ -339,8 +378,8 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
           // Mosaic medallion — an inlaid arcane diamond, rare enough to be a
           // landmark ("I've passed this one before").
           if (h > 0.4 && h < 0.455) {
-            const cx = x0 + PPU / 2;
-            const cy = y0 + PPU / 2;
+            const cx = x0 + TILE_PX / 2;
+            const cy = y0 + TILE_PX / 2;
             const ring = (r: number, col: string): void => {
               ctx.strokeStyle = col;
               ctx.lineWidth = 2;
@@ -362,8 +401,8 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
 
           if (h > 0.82) {
             // moss creep — soft green mottling over the stone
-            for (let y = 2; y < PPU - 2; y++) {
-              for (let x = 2; x < PPU - 2; x++) {
+            for (let y = 2; y < TILE_PX - 2; y++) {
+              for (let x = 2; x < TILE_PX - 2; x++) {
                 const m = noise(x0 + x, y0 + y, 77);
                 if (m > 0.55) {
                   ctx.fillStyle = css(m > 0.8 ? 7 : 6);
@@ -374,16 +413,16 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
           } else if (h < 0.1) {
             // cracked flagstone — a dark jagged diagonal
             let cx = 3 + Math.floor(noise(ti, tj, 9) * 8);
-            for (let y = 4; y < PPU - 4; y++) {
+            for (let y = 4; y < TILE_PX - 4; y++) {
               ctx.fillStyle = css(1);
               ctx.fillRect(x0 + cx, y0 + y, 1, 1);
               cx += noise(cx, y0 + y, 11) > 0.5 ? 1 : noise(cx, y0 + y, 12) > 0.5 ? -1 : 0;
-              cx = clamp(cx, 2, PPU - 3);
+              cx = clamp(cx, 2, TILE_PX - 3);
             }
           } else if (h > 0.76) {
             // sunken tile — a shade darker, catches the eye like wear
             ctx.fillStyle = "rgba(11, 13, 18, 0.28)";
-            ctx.fillRect(x0 + 1, y0 + 1, PPU - 2, PPU - 2);
+            ctx.fillRect(x0 + 1, y0 + 1, TILE_PX - 2, TILE_PX - 2);
           }
         }
       }
@@ -391,7 +430,7 @@ function makeFloorTexture(repeatX: number, repeatY: number): THREE.CanvasTexture
       // Mortar seams at one-tile pitch, with a light chip under each horizontal
       // seam so the flagstones read as bevelled rather than printed.
       for (let i = 0; i < FLOOR_BLOCK; i++) {
-        const p = i * PPU;
+        const p = i * TILE_PX;
         ctx.fillStyle = css(1);
         ctx.fillRect(0, p, size, 1);
         ctx.fillRect(p, 0, 1, size);
@@ -425,12 +464,12 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
    * face; deterministic (hash noise) like everything else here.
    */
   const paintCrack = (ctx: CanvasRenderingContext2D): void => {
-    let cx = PPU / 2 - 3;
-    for (let y = 2; y < PPU - 2; y++) {
+    let cx = TILE_PX / 2 - 3;
+    for (let y = 2; y < TILE_PX - 2; y++) {
       ctx.fillStyle = css(0);
       ctx.fillRect(cx, y, 2, 1);
       // a thin side-branch halfway down
-      if (y === Math.floor(PPU / 2)) {
+      if (y === Math.floor(TILE_PX / 2)) {
         let bx = cx;
         for (let k = 0; k < 12; k++) {
           bx += 1;
@@ -438,7 +477,7 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
         }
       }
       cx += noise(cx, y, 57) > 0.5 ? 1 : noise(cx, y, 58) > 0.5 ? -1 : 0;
-      cx = clamp(cx, 6, PPU - 8);
+      cx = clamp(cx, 6, TILE_PX - 8);
       // gold glints scattered along the crack lips
       if (noise(cx, y, 59) > 0.82) {
         ctx.fillStyle = css(16);
@@ -448,20 +487,20 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
   };
 
   return pixelTexture(
-    PPU,
+    TILE_PX,
     (ctx) => {
       ctx.fillStyle = css(2);
-      ctx.fillRect(0, 0, PPU, PPU);
+      ctx.fillRect(0, 0, TILE_PX, TILE_PX);
 
       if (low) {
         // Knee wall: one course of small blocks + top highlight + base shadow.
         ctx.fillStyle = css(1);
-        for (let bx = 0; bx <= PPU; bx += 22) ctx.fillRect(bx, 0, 1, PPU);
-        ctx.fillRect(0, 28, PPU, 1);
+        for (let bx = 0; bx <= TILE_PX; bx += 22) ctx.fillRect(bx, 0, 1, TILE_PX);
+        ctx.fillRect(0, 28, TILE_PX, 1);
         ctx.fillStyle = css(4);
-        ctx.fillRect(0, 0, PPU, 2); // top catch-light
+        ctx.fillRect(0, 0, TILE_PX, 2); // top catch-light
         ctx.fillStyle = css(0);
-        ctx.fillRect(0, PPU - 4, PPU, 4);
+        ctx.fillRect(0, TILE_PX - 4, TILE_PX, 4);
         if (cracked) paintCrack(ctx);
         return;
       }
@@ -475,7 +514,7 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
       courseTop.forEach((cy, course) => {
         const ch = course === 0 ? 22 : SKIRT_Y - cy;
         const off = course % 2 === 0 ? 0 : BLOCK_W / 2;
-        for (let bx = -BLOCK_W; bx < PPU + BLOCK_W; bx += BLOCK_W) {
+        for (let bx = -BLOCK_W; bx < TILE_PX + BLOCK_W; bx += BLOCK_W) {
           const x0 = bx + off;
           const h = noise(x0, cy, mossy ? 31 : 17);
           // block body — mostly dark stone, the odd lighter replacement block
@@ -504,34 +543,34 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
         }
         // mortar line between courses
         ctx.fillStyle = css(1);
-        ctx.fillRect(0, cy, PPU, 1);
+        ctx.fillRect(0, cy, TILE_PX, 1);
       });
 
       // ── carved trim course along the top ──
       ctx.fillStyle = css(3);
-      ctx.fillRect(0, 0, PPU, TRIM_H);
+      ctx.fillRect(0, 0, TILE_PX, TRIM_H);
       ctx.fillStyle = css(4);
-      ctx.fillRect(0, 0, PPU, 1); // top catch-light
+      ctx.fillRect(0, 0, TILE_PX, 1); // top catch-light
       ctx.fillStyle = css(1);
-      ctx.fillRect(0, TRIM_H - 1, PPU, 1);
-      for (let dx = 3; dx < PPU; dx += 8) {
+      ctx.fillRect(0, TRIM_H - 1, TILE_PX, 1);
+      for (let dx = 3; dx < TILE_PX; dx += 8) {
         ctx.fillStyle = css(1);
         ctx.fillRect(dx, 2, 2, TRIM_H - 4); // dentil notches
       }
 
       // ── skirting base course ──
       ctx.fillStyle = css(1);
-      ctx.fillRect(0, SKIRT_Y, PPU, PPU - SKIRT_Y);
+      ctx.fillRect(0, SKIRT_Y, TILE_PX, TILE_PX - SKIRT_Y);
       ctx.fillStyle = css(3);
-      ctx.fillRect(0, SKIRT_Y, PPU, 1); // ledge highlight
+      ctx.fillRect(0, SKIRT_Y, TILE_PX, 1); // ledge highlight
       ctx.fillStyle = css(2);
-      for (let bx = 8; bx < PPU; bx += 16) ctx.fillRect(bx, SKIRT_Y + 3, 1, 6); // joints
+      for (let bx = 8; bx < TILE_PX; bx += 16) ctx.fillRect(bx, SKIRT_Y + 3, 1, 6); // joints
 
       if (mossy) {
         // Damp rot climbing from the floor — denser at the bottom.
-        for (let y = PPU / 2; y < PPU; y++) {
-          const density = (y - PPU / 2) / (PPU / 2);
-          for (let x = 0; x < PPU; x++) {
+        for (let y = TILE_PX / 2; y < TILE_PX; y++) {
+          const density = (y - TILE_PX / 2) / (TILE_PX / 2);
+          for (let x = 0; x < TILE_PX; x++) {
             if (noise(x, y, 21) < density * 0.5) {
               ctx.fillStyle = css(noise(x, y, 23) > 0.6 ? 7 : 6);
               ctx.fillRect(x, y, 1, 1);
@@ -542,7 +581,7 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
 
       // Contact shadow along the bottom of the face — grounds the wall.
       ctx.fillStyle = css(0);
-      ctx.fillRect(0, PPU - 3, PPU, 3);
+      ctx.fillRect(0, TILE_PX - 3, TILE_PX, 3);
 
       if (cracked) paintCrack(ctx);
     },
@@ -560,14 +599,14 @@ function makeWallTexture(mossy = false, low = false, cracked = false): THREE.Can
  */
 function makeCapTexture(): THREE.CanvasTexture {
   return pixelTexture(
-    PPU,
+    TILE_PX,
     (ctx) => {
       ctx.fillStyle = css(2);
-      ctx.fillRect(0, 0, PPU, PPU);
+      ctx.fillRect(0, 0, TILE_PX, TILE_PX);
 
       // sparse chips
-      for (let y = 2; y < PPU - 2; y++) {
-        for (let x = 2; x < PPU - 2; x++) {
+      for (let y = 2; y < TILE_PX - 2; y++) {
+        for (let x = 2; x < TILE_PX - 2; x++) {
           if (noise(x, y, 13) > 0.96) {
             ctx.fillStyle = css(3);
             ctx.fillRect(x, y, 1, 1);
@@ -577,23 +616,23 @@ function makeCapTexture(): THREE.CanvasTexture {
 
       // tile border — the grid line
       ctx.fillStyle = css(1);
-      ctx.fillRect(0, 0, PPU, 1);
-      ctx.fillRect(0, PPU - 1, PPU, 1);
-      ctx.fillRect(0, 0, 1, PPU);
-      ctx.fillRect(PPU - 1, 0, 1, PPU);
+      ctx.fillRect(0, 0, TILE_PX, 1);
+      ctx.fillRect(0, TILE_PX - 1, TILE_PX, 1);
+      ctx.fillRect(0, 0, 1, TILE_PX);
+      ctx.fillRect(TILE_PX - 1, 0, 1, TILE_PX);
       // top bevel just inside the border (north edge catches the "light")
       ctx.fillStyle = css(4);
-      ctx.fillRect(1, 1, PPU - 2, 1);
+      ctx.fillRect(1, 1, TILE_PX - 2, 1);
 
       // carved inner panel — an inset square with nicked corners, so caps
       // read as dressed stone instead of blank slabs
       ctx.strokeStyle = css(1);
       ctx.lineWidth = 1;
-      ctx.strokeRect(9.5, 9.5, PPU - 19, PPU - 19);
+      ctx.strokeRect(9.5, 9.5, TILE_PX - 19, TILE_PX - 19);
       ctx.strokeStyle = css(3);
-      ctx.strokeRect(10.5, 10.5, PPU - 21, PPU - 21);
+      ctx.strokeRect(10.5, 10.5, TILE_PX - 21, TILE_PX - 21);
       ctx.fillStyle = css(1);
-      for (const [cx, cy] of [[9, 9], [PPU - 11, 9], [9, PPU - 11], [PPU - 11, PPU - 11]] as const) {
+      for (const [cx, cy] of [[9, 9], [TILE_PX - 11, 9], [9, TILE_PX - 11], [TILE_PX - 11, TILE_PX - 11]] as const) {
         ctx.fillRect(cx, cy, 2, 2);
       }
     },
@@ -1123,7 +1162,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   const floorTex = cachedTiled("floor", () => makeFloorTexture(1, 1), grid.w / FLOOR_BLOCK, grid.h / FLOOR_BLOCK);
   const floorNorm = cachedTiled(
     "floor-norm",
-    () => normalTexture(PPU * FLOOR_BLOCK, floorHeight, 1, 1, 2.0),
+    () => normalTexture(TILE_PX * FLOOR_BLOCK, floorHeight, 1, 1, 2.0),
     grid.w / FLOOR_BLOCK,
     grid.h / FLOOR_BLOCK,
   );
@@ -1262,7 +1301,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   }
 
   const capTex = cachedTexture("cap", makeCapTexture);
-  const capNorm = cachedTexture("cap-norm", () => normalTexture(PPU, capHeight, 1, 1, 2.5));
+  const capNorm = cachedTexture("cap-norm", () => normalTexture(TILE_PX, capHeight, 1, 1, 2.5));
   const capMat = track(
     new THREE.MeshStandardMaterial({
       map: capTex,
@@ -1313,11 +1352,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const faceTex = cachedTexture(`wall-${mossy}-${low}`, () => makeWallTexture(mossy, low));
     const lowHeight = (x: number, y: number): number => {
       if (y < 2) return 0.7; // top catch-light sits proud
-      if (y >= PPU - 4) return 0.1;
+      if (y >= TILE_PX - 4) return 0.1;
       if (Math.abs(y - 28) < 1.5 || x % 22 < 1.5) return 0.2; // joints
       return 0.5;
     };
-    const faceNorm = cachedTexture(`wall-norm-${low}`, () => normalTexture(PPU, low ? lowHeight : wallHeight, 1, 1, 2.5));
+    const faceNorm = cachedTexture(`wall-norm-${low}`, () => normalTexture(TILE_PX, low ? lowHeight : wallHeight, 1, 1, 2.5));
     const faceMat = track(
       new THREE.MeshStandardMaterial({
         map: faceTex,
@@ -1359,7 +1398,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       track(
         new THREE.MeshStandardMaterial({
           map: cachedTexture(`wall-false-${low}`, () => makeWallTexture(false, low)),
-          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(TILE_PX, wallHeight, 1, 1, 2.5)),
           normalScale: new THREE.Vector2(1, 1),
           roughness: 0.92,
           metalness: 0,
@@ -1415,7 +1454,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
       const sweepMat = track(
         new THREE.MeshStandardMaterial({
           map: cachedTexture("wall-false-false", () => makeWallTexture(false, false)),
-          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(PPU, wallHeight, 1, 1, 2.5)),
+          normalMap: cachedTexture("wall-norm-tall", () => normalTexture(TILE_PX, wallHeight, 1, 1, 2.5)),
           normalScale: new THREE.Vector2(1, 1),
           roughness: 0.92,
           metalness: 0,
@@ -1454,7 +1493,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const crackMats = new Map<boolean, THREE.MeshStandardMaterial>();
     for (const low of [false, true]) {
       const tex = cachedTexture(`wall-cracked-${low}`, () => makeWallTexture(false, low, true));
-      const norm = cachedTexture(`wall-norm-crack-${low}`, () => normalTexture(PPU, low ? capHeight : wallHeight, 1, 1, 2.5));
+      const norm = cachedTexture(`wall-norm-crack-${low}`, () => normalTexture(TILE_PX, low ? capHeight : wallHeight, 1, 1, 2.5));
       crackMats.set(
         low,
         track(

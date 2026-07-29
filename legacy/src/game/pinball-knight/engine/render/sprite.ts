@@ -27,7 +27,7 @@ import { engineConfig } from "../config";
 // is correct for geometry that is itself built once and shared (the sprite
 // quads below); a game that wants different sprite metrics must inject before
 // the first sprite is created, which the boot path guarantees.
-const { px: SPRITE_PX, units: SPRITE_UNITS, pixelGrid: SPRITE_PIXEL_GRID, maxAtlasWidth: MAX_ATLAS_WIDTH } =
+const { px: SPRITE_PX, artPx: ART_PX, units: SPRITE_UNITS, pixelGrid: SPRITE_PIXEL_GRID, maxAtlasWidth: MAX_ATLAS_WIDTH } =
   engineConfig.sprite;
 const { tilt: CAMERA_TILT, yaw: CAMERA_YAW } = engineConfig.camera;
 
@@ -685,8 +685,7 @@ export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
   canvas.height = SPRITE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  ctx.imageSmoothingEnabled = true;
-  paint(ctx);
+  paintInArtSpace(ctx, paint);
   // Ship the crushed canvas AT ITS NATIVE SIZE.
   //
   // This used to upscale ×3 to 216px on the reasoning that 72px "would be tiny
@@ -698,6 +697,38 @@ export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
   // phase, differently per item. It also cost 2.8× the pixels through a
   // synchronous PNG encode for every shop entry.
   return crushToGrid(canvas);
+}
+
+/**
+ * SUPERSAMPLE FACTOR — how many buffer pixels one art unit spans.
+ *
+ * Painters place coordinates in ART_PX space (CX=64, GROUND=118) and know
+ * nothing about the buffer they land in. This is the one scale that reconciles
+ * them, and it lives here rather than in the painters precisely so the buffer
+ * can be resized — to make SPRITE_PX/SPRITE_PIXEL_GRID an exact integer — with
+ * no art moving. Every site that hands a painter a context must apply it.
+ */
+const SS = SPRITE_PX / ART_PX;
+
+/**
+ * Hand a painter a context in ART space.
+ *
+ * `save`/`restore` around the transform is not optional: painters translate,
+ * rotate and clip freely, and several of them (the rotortail's whole body tilt,
+ * the jester's spring) leave a transform set on purpose mid-frame.
+ *
+ * EXPORTED so tests can drive the real thing. Two suites used to hand-roll
+ * "paint one frame the way paintFrame does", and the moment the buffer stopped
+ * being the art's coordinate space both of them were silently comparing against
+ * a path production no longer takes. A harness that re-implements the code it
+ * checks only tests itself.
+ */
+export function paintInArtSpace(ctx: CanvasRenderingContext2D, paint: FramePaint): void {
+  ctx.save();
+  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  paint(ctx);
+  ctx.restore();
 }
 
 /**
@@ -728,14 +759,13 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
   // Non-negotiable on a reused canvas: painters draw a character on a
   // transparent field and do not clear first, so without this every frame is
   // composited on top of the previous one.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, SPRITE_PX, SPRITE_PX);
-  // Painters mutate transform/alpha/composite freely. save/restore keeps one
-  // frame's leftover state from bleeding into the next now that they share a
-  // context — with a fresh canvas per frame this was free.
-  ctx.save();
-  ctx.imageSmoothingEnabled = true;
-  paint(ctx);
-  ctx.restore();
+  // Painters mutate transform/alpha/composite freely. The save/restore inside
+  // paintInArtSpace keeps one frame's leftover state from bleeding into the
+  // next now that they share a context — with a fresh canvas per frame this
+  // was free.
+  paintInArtSpace(ctx, paint);
   // The strip cell is the GRID, not the paint box — the crushed art goes in at
   // its native size and is never scaled again between here and the screen.
   // Shared crush target: blitted on this line, never retained. See the warning
@@ -1061,8 +1091,7 @@ function staticTexture(paint: FramePaint): THREE.CanvasTexture {
   canvas.height = SPRITE_PX;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
-  ctx.imageSmoothingEnabled = true;
-  paint(ctx);
+  paintInArtSpace(ctx, paint);
 
   // Upload the CRUSHED canvas, not the 128px paint box — one texel per render
   // pixel at zoom 1, same rule as the actor atlas. NB the tavern runs a camera

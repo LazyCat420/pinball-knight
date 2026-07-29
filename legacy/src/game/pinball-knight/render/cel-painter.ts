@@ -25,7 +25,7 @@
  * Only three directions are authored — W is E flipped horizontally at runtime.
  */
 import { paletteCss, inkFor, shadeFor, highlightFor, PALETTE_HEX } from "./palette";
-import { SPRITE_PX } from "../constants";
+import { ART_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
 import { REAGENTS, REAGENT_IDS } from "../reagents";
@@ -64,7 +64,7 @@ import {
 export type { FramePaint, Dir, ClipName, ActorPaints } from "../engine/render/paint-types";
 import type { FramePaint, Dir, ClipName, ActorPaints } from "../engine/render/paint-types";
 
-const PX = SPRITE_PX; // 128 — all coordinates below live in this box
+const PX = ART_PX; // 128 — all coordinates below live in this box
 const C = paletteCss;
 const INK = C(1);
 const INK_W = 3;

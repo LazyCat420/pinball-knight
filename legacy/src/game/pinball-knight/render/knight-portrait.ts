@@ -9,7 +9,7 @@
  */
 import { makeKnightPaints } from "./cel-painter";
 import { crushToGrid } from "../engine/render/sprite";
-import { SPRITE_PX } from "../constants";
+import { SPRITE_PX, ART_PX } from "../constants";
 import type { WeaponId } from "../items";
 import type { KnightLook } from "./knight-look";
 
@@ -26,7 +26,11 @@ export function renderKnightPortrait(canvas: HTMLCanvasElement, weapon: WeaponId
   sctx.imageSmoothingEnabled = true;
   const idle = makeKnightPaints(weapon, look).S.idle;
   if (!idle || !idle[0]) return;
+  // Painters author in ART_PX; the buffer is SPRITE_PX. Same reconciliation the
+  // atlas path does in sprite.ts's paintInArtSpace.
+  sctx.setTransform(SPRITE_PX / ART_PX, 0, 0, SPRITE_PX / ART_PX, 0, 0);
   idle[0](sctx);
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
 
   // …then the same crush the in-world sheets get, upscaled with hard pixels.
   const crushed = crushToGrid(scratch);

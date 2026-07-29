@@ -24,6 +24,23 @@
  * cel-painter's constant so figures share the floor with the old props/items.
  */
 import { enginePalette } from "../palette-source";
+import { engineConfig } from "../config";
+
+/**
+ * ONE STORED TEXEL, in art units — the finest mark that can survive the crush.
+ *
+ * Painters author in ART_PX and the atlas stores SPRITE_PIXEL_GRID, so this is
+ * the exchange rate between "a number in this file" and "a pixel the player
+ * sees". It is the single most useful number in the module and it was missing,
+ * which is how a face came to be built out of 0.5-texel strokes.
+ *
+ * A mark thinner than this does NOT render as a thin mark. It renders as a
+ * FRACTIONAL TINT of whatever texel it lands in, and the palette snap then
+ * rounds that tint to whichever of 32 entries happens to be nearest — which for
+ * a blend of two unrelated ramps is frequently a third, unrelated hue. That is
+ * the confetti that reads as "blurry" at gameplay distance.
+ */
+export const TEXEL = (): number => engineConfig.sprite.artPx / engineConfig.sprite.pixelGrid;
 
 // Delegates rather than aliasing `enginePalette.css` directly: the game
 // installs its palette after this module is imported, so capturing the
@@ -347,8 +364,18 @@ export function rrectShaded(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.restore();
 }
 
-/** An un-outlined detail line (seams, ribs, string). Accepts a Mat or bare index. */
+/**
+ * An un-outlined detail line (seams, ribs, string). Accepts a Mat or bare index.
+ *
+ * The width is FLOORED AT ONE TEXEL. Every caller in the roster asks for
+ * something between 1.0 and 2.6 art units, and at the stored grid the thin end
+ * of that range is a fraction of a pixel — so those calls were not drawing thin
+ * seams, they were tinting their neighbours and feeding the palette snap noise.
+ * Clamping costs the widest callers nothing and converts the thinnest from
+ * confetti into an actual one-pixel line, which is what they were asking for.
+ */
 export function detail(ctx: CanvasRenderingContext2D, pts: Pt[], w: number, m: Mat): void {
+  w = Math.max(w, TEXEL());
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.beginPath();

@@ -44,7 +44,7 @@ import {
   type ActorPaints,
   type FramePaint,
 } from "./cel-painter";
-import { SPRITE_PX } from "../constants";
+import { ART_PX } from "../constants";
 import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
@@ -55,7 +55,7 @@ import { makeRotortailPaints } from "./monsters/rotortail";
 import { makeHoundPaints } from "./monsters/hound";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
-const PX = SPRITE_PX;
+const PX = ART_PX;
 
 /**
  * Which painter each monster wears, plus the tint and display scale that make

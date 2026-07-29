@@ -4,7 +4,7 @@
  * they're the parts that carry the actual design rules.
  */
 import { describe, it, expect } from "vitest";
-import { formatDamage, damageTextStyle, damageTextFrame, POOL_SIZE } from "../engine/render/damage-text";
+import { formatDamage, damageTextStyle, damageTextFrame, POOL_SIZE, HEAD_WORLD_H, GLYPH_WORLD_H } from "../engine/render/damage-text";
 
 describe("formatDamage", () => {
   it("rounds fractional damage to a whole number", () => {
@@ -51,11 +51,12 @@ describe("damageTextStyle", () => {
 
   it("keeps every number smaller than the knight's head", () => {
     // The head is the reference: a damage number annotates the fight, it does
-    // not cover it. Derived the same way the renderer derives it — helm dome is
-    // 26px in the 128px cel box, on a 1.1 world-unit actor plane; the glyph is
-    // FONT_PX 24 of a 64px texture on a 64/PPU quad.
-    const HEAD_WORLD_H = (26 / 128) * 1.1;
-    const GLYPH_WORLD_H = (24 / 64) * (64 / 64);
+    // not cover it. IMPORTED, not re-derived. This block used to hard-code
+    // `(26 / 128) * 1.1` and `(24 / 64) * (64 / 64)` — its own copies of
+    // SPRITE_UNITS and PPU, and the first was already stale (the real value has
+    // been 1.125). Re-deriving a production quantity in the test that guards it
+    // means the guard drifts silently the moment either number moves, which is
+    // exactly what happened when PPU went to 96.
 
     // Sweep the whole damage range including absurd values, every kind — and
     // measure at the POP PEAK, because a number is at its biggest the instant it

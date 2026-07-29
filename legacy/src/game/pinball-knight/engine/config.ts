@@ -65,6 +65,9 @@ export interface SpriteConfig {
    * Hard cap on atlas width. Exceeding the GPU limit silently yields a BLANK
    * texture rather than an error, so this is a real ceiling, not a hint.
    */
+  /** Painter coordinate space. Frames are rasterised at `px` and scaled from
+   *  this, so the art's coordinates are independent of the buffer's size. */
+  artPx: number;
   maxAtlasWidth: number;
 }
 
@@ -127,7 +130,7 @@ export const engineConfig: EngineConfig = {
     tilt: (38 * Math.PI) / 180,
     yaw: (45 * Math.PI) / 180,
     dist: 24,
-    ppu: 64,
+    ppu: 96,
     deadzone: 0.7,
     lerp: 6,
   },
@@ -140,10 +143,17 @@ export const engineConfig: EngineConfig = {
     hitstopChainFloor: 0.25,
     hitstopMaxPending: 0.09,
   },
+  // MUST mirror constants/render.ts. The game installs its own config over
+  // these at boot, so a drift here is invisible in play and shows up only where
+  // nothing installs one — i.e. in tests, which then measure a pipeline the
+  // game does not run. That is exactly how this block was found: SPRITE_PX went
+  // to 216 in constants while these still said 128, and two suites compared
+  // real output against a 128-space paint.
   sprite: {
-    px: 128,
-    pixelGrid: 72,
-    units: 72 / 64,
+    px: 216,
+    pixelGrid: 108,
+    units: 108 / 96,
+    artPx: 128,
     maxAtlasWidth: 8192,
   },
   post: {

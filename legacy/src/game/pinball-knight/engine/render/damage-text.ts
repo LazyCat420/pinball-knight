@@ -34,7 +34,7 @@ import { awaitPixelFonts, labelFont } from "../../../../pixel/pixel-font";
 
 // Local aliases for the injected tuning — see the note in sprite.ts.
 const { yaw: CAMERA_YAW, tilt: CAMERA_TILT, ppu: PPU } = engineConfig.camera;
-const { px: SPRITE_PX, units: SPRITE_UNITS } = engineConfig.sprite;
+const { artPx: ART_PX, units: SPRITE_UNITS } = engineConfig.sprite;
 
 /**
  * Who took the hit. Convention: damage the player DEALS reads light (white →
@@ -77,10 +77,10 @@ const FONT_PX = 24;
 export const POP_PEAK = 1.45;
 
 const HEAD_PX = 26;
-const HEAD_WORLD_H = (HEAD_PX / SPRITE_PX) * SPRITE_UNITS;
+export const HEAD_WORLD_H = (HEAD_PX / ART_PX) * SPRITE_UNITS;
 
 /** Glyph height at scale 1: FONT_PX of a TEX_H-tall texture on a QUAD_H quad. */
-const GLYPH_WORLD_H = (FONT_PX / TEX_H) * QUAD_H;
+export const GLYPH_WORLD_H = (FONT_PX / TEX_H) * QUAD_H;
 
 /**
  * Ceiling for the LARGEST number in the game (a saturated crit): 85% of head

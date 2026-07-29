@@ -39,7 +39,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas } from "canvas";
 import { PALETTE_HEX, PALETTE_SIZE, paletteToFloatArray, paletteCss } from "./palette";
 import { setEnginePalette } from "../engine/palette-source";
-import { crushToGrid, invalidatePaletteCaches, snapColor } from "../engine/render/sprite";
+import { crushToGrid, invalidatePaletteCaches, snapColor, paintInArtSpace } from "../engine/render/sprite";
 import { makeKnightPaints, makeSpiderPaints, makeGoblinPaints, ITEM_PAINTS } from "./cel-painter";
 import { FULL_PLATE } from "./knight-look";
 import { SPRITE_PX, SPRITE_PIXEL_GRID } from "../constants";
@@ -124,7 +124,9 @@ describe("the palette snap lookup table", () => {
     const allowed = new Set(PALETTE_HEX);
     for (const f of frames) {
       const cv = createCanvas(SPRITE_PX, SPRITE_PX);
-      f(cv.getContext("2d") as unknown as CanvasRenderingContext2D);
+      // Through the production helper: painters author in ART_PX, the buffer is
+      // SPRITE_PX, and only paintInArtSpace knows how to reconcile the two.
+      paintInArtSpace(cv.getContext("2d") as unknown as CanvasRenderingContext2D, f);
       const out = (crushToGrid(cv as unknown as HTMLCanvasElement) as unknown as {
         getContext: (s: string) => { getImageData: (a: number, b: number, c: number, d: number) => ImageData };
       }).getContext("2d").getImageData(0, 0, SPRITE_PIXEL_GRID, SPRITE_PIXEL_GRID).data;

@@ -40,6 +40,7 @@ import {
   SHAKE_CHAIN_FLOOR,
   SHAKE_CHAIN_WINDOW,
   SPRITE_PX,
+  ART_PX,
   SPRITE_PIXEL_GRID,
   SPRITE_UNITS,
   MAX_ATLAS_WIDTH,
@@ -111,6 +112,7 @@ export function installEngine(): void {
     },
     sprite: {
       px: SPRITE_PX,
+      artPx: ART_PX,
       pixelGrid: SPRITE_PIXEL_GRID,
       units: SPRITE_UNITS,
       maxAtlasWidth: MAX_ATLAS_WIDTH,
