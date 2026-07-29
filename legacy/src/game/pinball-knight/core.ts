@@ -495,6 +495,13 @@ export function launchDungeonGame(onExit?: () => void): void {
     nextFloor: () => {
       if (!state.gameOver) descend();
     },
+    // Straight to a floor, up or down — `descend()` is the real game flow
+    // (banks coins, grades the floor, opens the tavern) and only ever goes
+    // deeper, which made it the wrong verb for a debug floor control.
+    gotoFloor: (n: number) => {
+      if (state.gameOver || !Number.isFinite(n) || n < 1) return;
+      startLevel(Math.floor(n));
+    },
     nextBoss: () => {
       if (state.gameOver) return;
       const next = (Math.floor(state.level / BOSS_EVERY) + 1) * BOSS_EVERY;

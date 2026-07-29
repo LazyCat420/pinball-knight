@@ -14,6 +14,7 @@
 import { state } from "./state";
 import type { EnemyKind } from "./state";
 import { KIND_IDS, KIND_INFO } from "./bestiary";
+import { floorLock, setFloorLock } from "./dev/floor-lock";
 import { WEAPONS } from "./items";
 import { POTIONS, POTION_IDS } from "./items";
 
@@ -28,6 +29,13 @@ export interface DebugActions {
   killAll(): void;
   clearEnemies(): void;
   nextFloor(): void;
+  /**
+   * Jump straight to a floor. Distinct from `nextFloor`, which calls the real
+   * `descend()` — that banks coins, grades the floor and opens the TAVERN, so
+   * as a debug "go to a floor" button it went somewhere else entirely, and
+   * never went UP.
+   */
+  gotoFloor(n: number): void;
   nextBoss(): void;
   spawnReaper(): void;
   teleportStairs(): void;
@@ -147,11 +155,52 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   gbtn("🔫 Rampage", actions.fillRampage);
   gbtn("💀 Kill All", actions.killAll);
   gbtn("🧹 Clear", actions.clearEnemies);
-  gbtn("⬇️ Floor", actions.nextFloor);
   gbtn("👑 Boss Lv", actions.nextBoss);
   gbtn("☠ Reaper", actions.spawnReaper);
   gbtn("⇩ Stairs", actions.teleportStairs);
   gbtn("🎨 Ring", actions.spawnRing);
+
+  // ── FLOOR ──
+  // `⬇️ Floor` used to be the only control here and it called the real
+  // `descend()`, which banks coins, grades the floor and opens the TAVERN —
+  // so the debug button for "change floor" went to the tavern and could never
+  // go UP. These jump directly instead.
+  section("FLOOR");
+  {
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px";
+    const jump = (label: string, delta: number): void => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.style.cssText = baseBtn + `background:#1a1e26;border-color:#2f6f8f;color:#cfe6f2`;
+      b.onclick = () => actions.gotoFloor(Math.max(1, state.level + delta));
+      row.appendChild(b);
+    };
+    jump("⬆️ -1", -1);
+    jump("⬇️ +1", 1);
+    const go = document.createElement("button");
+    go.textContent = "# Go to";
+    go.style.cssText = baseBtn + `background:#1a1e26;border-color:#2f6f8f;color:#cfe6f2`;
+    go.onclick = () => {
+      const raw = window.prompt(`Go to which floor? (currently ${state.level})`, String(state.level));
+      const n = Number.parseInt(raw ?? "", 10);
+      if (Number.isFinite(n) && n >= 1) actions.gotoFloor(n);
+    };
+    row.appendChild(go);
+    el.appendChild(row);
+  }
+  // Pin every descent to the floor you are on. Persisted, because it exists to
+  // survive the reloads it is used for — and loud in the console on each clamp
+  // so it is never mistaken for a progression bug.
+  addToggle(
+    "LOCK FLOOR",
+    () => floorLock() !== null,
+    (v) => {
+      setFloorLock(v ? state.level : null);
+      if (v) console.warn(`[floor-lock] ON — every descent goes to floor ${state.level}`);
+      else console.warn("[floor-lock] OFF — normal progression");
+    },
+  );
 
   // ── Pixel FX toggles (moved off the old F/K/O keys) ──
   section("PIXEL FX");
