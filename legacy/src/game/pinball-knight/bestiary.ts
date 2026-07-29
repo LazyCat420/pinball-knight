@@ -44,6 +44,7 @@ export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: 
   jester: { label: "Jester", icon: "🤡", blurb: "fires the plate off its head — and the plate ricochets" },
   croaker: { label: "Croaker", icon: "🐸", blurb: "twin eye-beams; hops knee-high walls and bounces its leap off the rest" },
   rotortail: { label: "Rotortail", icon: "🪵", blurb: "circles overhead and drops timber; a solid hit stalls its rotor" },
+  stiltneck: { label: "Stiltneck", icon: "💣", blurb: "slings a lit bomb from nine tiles out — the blast catches its own horde too" },
   reaper: { label: "Death Dealer", icon: "☠️", blurb: "cannot be hurt. It only ever gets faster" },
   goblin: { label: "Goblin", icon: "👺", blurb: "kicks you off your line; shrugs off a standing poke" },
   pin: { label: "Bowling Pin", icon: "🎳", blurb: "does not fight. It scores — and it chains" },

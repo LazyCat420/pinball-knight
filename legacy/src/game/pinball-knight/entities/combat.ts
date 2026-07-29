@@ -57,6 +57,7 @@ import {
   SPEED_ONLY_T,
   JESTER_DISC_DAMAGE,
   ROTORTAIL_TIMBER_DAMAGE,
+  STILTNECK_BLAST_DAMAGE,
   JESTER_SPRING_KICK,
   CROAKER_BEAM_DAMAGE,
   PINBALL_MAX_SPEED,
@@ -1042,6 +1043,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   croaker: CROAKER_BEAM_DAMAGE,
   // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
+  // Melee fallback only — the bomb's blast carries STILTNECK_BLAST_DAMAGE.
+  stiltneck: STILTNECK_BLAST_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,

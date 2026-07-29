@@ -61,6 +61,10 @@ import {
   ROTORTAIL_WINDUP,
   ROTORTAIL_COOLDOWN,
   ROTORTAIL_HOVER_Y,
+  STILTNECK_R,
+  STILTNECK_FIRE_RANGE,
+  STILTNECK_WINDUP,
+  STILTNECK_COOLDOWN,
   SPITTER_COOLDOWN,
   SPITTER_FIRE_RANGE,
   GHOST_R,
@@ -148,7 +152,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
-import { fireEyeBeams, flingPlate, hurlTimber, spitGlob, spitWeb } from "./projectiles";
+import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -183,6 +187,9 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   // Laser frog — ranged, and its contactRange IS its beam reach.
   croaker: { bodyR: CROAKER_R, contactRange: CROAKER_FIRE_RANGE, windup: CROAKER_WINDUP, cooldown: CROAKER_COOLDOWN, ranged: true },
   rotortail: { bodyR: ROTORTAIL_R, contactRange: ROTORTAIL_FIRE_RANGE, windup: ROTORTAIL_WINDUP, cooldown: ROTORTAIL_COOLDOWN, ranged: true },
+  // Bomb-slinger — the roster's longest reach and its longest wind-up, and the
+  // two are the same design decision. Its contactRange IS the sling's range.
+  stiltneck: { bodyR: STILTNECK_R, contactRange: STILTNECK_FIRE_RANGE, windup: STILTNECK_WINDUP, cooldown: STILTNECK_COOLDOWN, ranged: true },
   // ── Expansion roster (bespoke branches below carry the behaviour) ──
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
@@ -774,6 +781,14 @@ export function updateZombies(dt: number): void {
                 // hoist followed by a shot you have time to walk out of, so a
                 // spread (or a fast one) would delete the mechanic.
                 hurlTimber(z.x, z.z, ux, uz);
+              } else if (z.kind === "stiltneck") {
+                // ONE bomb, straight down the line, exactly like the timber —
+                // and for the opposite reason. The timber is a single shot
+                // because it must be dodgeable; this is a single shot because
+                // its BLAST already covers the ground a spread would, and two
+                // overlapping explosions is not a harder problem, just a louder
+                // one.
+                slingBomb(z.x, z.z, ux, uz);
               } else if (z.kind === "croaker") {
                 // TWO beams, straddling the aim line — see fireEyeBeams. The
                 // gap between them is on the exact line to the player, so this

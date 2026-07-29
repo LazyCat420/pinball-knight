@@ -562,6 +562,8 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   // Amphibian — chitin stock, with the ooze and the arthropods.
   croaker: "chitin",
   rotortail: "iron",
+  // Ordnance. The card is a bomb casing before it is an animal.
+  stiltneck: "iron",
   warden: "iron",
   sapper: "iron",
   magnet: "iron",

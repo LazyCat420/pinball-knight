@@ -83,6 +83,11 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   // and the sag that follows is the reward for reaching something that shoots
   // from out of reach. See render/monsters/rotortail.ts's `stumble` clip.
   rotortail: 0.8,
+  // THE HIGHEST IN THE ROSTER, past the bat. It is a heavy body balanced on four
+  // lashed poles, and pain chance is momentum-scaled — so "arrive fast and it
+  // goes over" needs no new mechanic, only this number and a `stumble` clip that
+  // shows the poles splaying (render/monsters/stiltneck.ts).
+  stiltneck: 0.9,
   pin: 0,
   golem: 0.05,
   chomper: 0.15,
