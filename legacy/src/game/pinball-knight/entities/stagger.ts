@@ -77,6 +77,11 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   reaper: 0,
   goblin: 0.6,
   sporeling: 0.5,
+  jester: 0.7,
+  // Second only to the bat. A hit does not just hurt it, it stalls the rotor —
+  // and the sag that follows is the reward for reaching something that shoots
+  // from out of reach. See render/monsters/rotortail.ts's `stumble` clip.
+  rotortail: 0.8,
   pin: 0,
   golem: 0.05,
   chomper: 0.15,

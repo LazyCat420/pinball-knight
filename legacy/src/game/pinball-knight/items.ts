@@ -24,7 +24,7 @@ export type WeaponId =
   | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
-export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard";
+export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard" | "disc" | "timber";
 
 export interface WeaponDef {
   id: WeaponId;
@@ -357,6 +357,7 @@ export const GEAR_SLOTS: GearSlot[] = ["helmet", "armor", "boots"];
 
 export type PotionId =
   | "health"
+  | "laser"
   | "rage"
   | "haste"
   | "shield"
@@ -409,6 +410,11 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   // Iron Core), and flat walls kick you back FASTER (old Spring Legs). One
   // strong, unmistakable button instead of three thin overlapping buffs.
   ballform: { id: "ballform", label: "Ball Form", icon: "🪩", color: 0xf0a63c, heal: 0, duration: 14, description: "you ARE the pinball" },
+  // ✨ LASER: you become a beam for a couple of seconds — ricocheting off every
+  // wall at enormous speed, cutting whatever you cross, and STEERING NOTHING.
+  // `duration: 0` because it is not a buff with a countdown: it hands control
+  // to the ricochet form (entities/ricochet-form.ts), which owns its own clock.
+  laser: { id: "laser", label: "Laser", icon: "✨", color: 0xff5ad0, heal: 0, duration: 0, description: "become a beam · NO steering" },
   // Freeze Ray: the whole machine holds its breath — thread the bumper room.
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6, description: "the floor holds its breath" },
   // Multi-Ball: the pinball classic — two ghost knights peel off you, trail
@@ -436,7 +442,7 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   elixir: { id: "elixir", label: "Elixir of Life", icon: "🌟", color: 0xff8fae, heal: 0, duration: 0, description: "full heal · +2 max hearts (run)" },
 };
 
-export const POTION_IDS: PotionId[] = ["health", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "regen", "venomcoat", "stoneskin", "static", "greed", "elixir"];
+export const POTION_IDS: PotionId[] = ["health", "laser", "rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "regen", "venomcoat", "stoneskin", "static", "greed", "elixir"];
 
 /** Multipliers applied while a buff is active. */
 export const RAGE_DAMAGE_MULT = 2;

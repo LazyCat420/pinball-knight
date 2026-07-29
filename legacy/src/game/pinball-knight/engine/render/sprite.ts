@@ -560,7 +560,16 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
   // Every clip an actor might author. `roll` is knight-only; actors that don't
   // define a clip are skipped (the `if (!list) continue` below), so listing
   // them all here is harmless and keeps new clips from silently vanishing.
-  const clipNames: ClipName[] = ["idle", "walk", "run", "attack", "death", "roll", "ball", "steelball", "equip", "forge", "crouch", "wait", "wake", "stumble"];
+  const clipNames: ClipName[] = [
+    "idle", "walk", "run", "attack", "death", "roll", "ball", "steelball",
+    // The six MARBLE BODIES. Cheap despite the count: each is authored once and
+    // handed to all three facings by reference, so the dedupe below packs 4
+    // frames per material rather than 12.
+    "diamondball", "waterball", "stoneball", "stormball", "shadowball", "lavaball",
+    // The ricochet forms (bolt / laser) — same one-off authoring, same sharing.
+    "boltform", "laserform",
+    "equip", "forge", "crouch", "wait", "wake", "stumble",
+  ];
 
   for (const dir of dirs) {
     for (const clip of clipNames) {

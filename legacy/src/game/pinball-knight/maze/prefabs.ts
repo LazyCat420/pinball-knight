@@ -362,7 +362,7 @@ export const THEMES: FloorTheme[] = [
     pool: ["gauntlet", "bullring", "slingway", "switchback", "squeeze"],
     landmarks: ["grinder", "pachinko"],
     deal: ["glove", "bumper", "flipper", "spring", "glove", "oil", "bumper", "slingshot", "spinpad"],
-    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2, bloater: 2, hound: 2 },
+    enemies: { brute: 3, goblin: 3, pin: 2, chomper: 2, bloater: 2, hound: 2, jester: 2, rotortail: 2 },
   },
   {
     // The Arcane Deep — the parlor floors: teleports, mirrors, trick lanes.

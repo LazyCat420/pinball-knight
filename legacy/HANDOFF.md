@@ -8,7 +8,91 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > `bdb-mapgen` worktree was live, so the "collapse to the live state" note
 > further down still does not apply. Prepended instead.
 
-## ✅ LIVE NOW — `3da7693` · card pickups (2026-07-29)
+## ✅ LIVE NOW — `8a4bfa7` · the JESTER, a new monster (2026-07-29)
+
+**Deployed to synology as `main@8a4bfa7`. Container `braindeadbot-client` is
+`Up (healthy)`, `restarts=0`, `10.0.0.16:5174/dungeon` → 200.
+tsc clean, `registry-drift` clean, 1361 tests pass (was 1355 — +6 art tests).**
+
+### What it is
+
+A **spring-loaded harlequin** that walks you down, loads the coil spring on its
+head, and fires the star-stamped plate off it. Built from a supplied reference
+sheet the way `sporeling` and `hound` were: as a **parametric painter**
+(`render/monsters/jester.ts`), NOT by importing or filtering the reference's
+pixels. See `monsters-are-painters-not-images` — filtering buys one facing, a
+foreign palette and a foreign lighting model; authoring buys N/S/E, phase-driven
+animation and Cold Crypt by construction, with no quantization step at all.
+
+Try it without waiting for a spawn: **`__lab.only("jester")`** in the console.
+
+### The two ideas worth keeping
+
+1. **The silhouette IS the mechanic.** Everything else on the roster is a blob
+   with limbs. The jester is a vertical stack that CHANGES HEIGHT — body, coil,
+   plate. `SPRING_LOAD` (7) compresses on the wind-up, `SPRING_FIRE` (30)
+   extends on the release, `SPRING_IDLE` (18) sits between. A player reads the
+   threat off the creature's height at any facing with no colour cue. This is
+   pinned by a test, because a proportion tweak that flattened the range would
+   keep the monster WORKING while quietly making it unreadable — the failure
+   mode nothing else in the repo can catch.
+2. **The coil is a projected helix, not stacked rings.** Sample
+   `x = cx + rw·sin(2πNt)`, `y = climb + rw·k·cos(2πNt)`, then stroke the runs
+   where `cos < 0` BEFORE the runs where `cos > 0`. Correct occlusion with no
+   depth buffer and no per-ring bookkeeping, and it stays correct at every
+   extension because it is a property of the parameterisation, not of a pose.
+   The death frame reuses the same function with 2.2 turns and a huge lean — a
+   spring that lost its tension is just a low-turn coil.
+
+### Gameplay
+
+`kite` movement, `ranged: true`, gated at level 2, ratio 11 / residue 4 (a
+FRESH pair — no other kind uses ratio 11, so it cannot contend in the horde
+roll). Weighted into the **bloodworks** biome.
+
+It fires **one** plate straight down the line — no spread, unlike the spitter's
+volley. The plate is the game's **first hostile RICOCHET**: `kind: "disc"` rides
+the golem-shard integration path (reflect the blocked axis, die by fuse) with
+`hostile` set. **Breaking line of sight does not beat it**; closing the distance
+does — which is exactly what `kite` is trying to prevent. That is the tension.
+
+### Gotchas
+
+- **The plate's ink edge nearly shipped sheared off.** `SPRING_FIRE` was 32,
+  which put the top of the tallest frame of the most important clip on row 0 of
+  the 128px cel. It is 30 now, with ~3px of margin. If you raise the spring, or
+  `PLATE_R`, or `CROWN_Y`, re-render and look — nothing fails when a cel clips.
+- **Do not count exact palette matches when measuring a cel.** Canvas
+  antialiases every ellipse and stroke, so ~60% of a painted cel matches no
+  palette entry literally, and the undercount is WORST on thin features (the
+  coil, the eye diamonds) — i.e. exactly what you are usually measuring.
+  `jester.test.ts` snaps to nearest under the same luma-weighted metric
+  `engine/render/sprite.ts` uses (0.3/0.59/0.11). Exact-matching reported the
+  warm-ramp share as 5.3%; snapped, it is 11.1%.
+- **Two art bugs here were VALUE bugs, not shape bugs**, and both looked like
+  "the drawing is wrong" until measured:
+  - a bone face on a bone ruff fused into one white mass with a nose floating in
+    it. Fixed physically — the collar casts a shadow on the neck and the
+    greasepaint is a brighter tone than the linen.
+  - the plate's field filled with its ramp's SHADE (`rim: false`), so the
+    reference's bright red plate came out maroon. The rim stays ON for the field
+    and OFF for the edge stack.
+- **Horns angled UP read as ARMS RAISED**, in every clip, at every facing. They
+  droop now. Nothing reads a downward limb off a skull as an arm.
+- The `warm > 9%` and `steel above head > 90` thresholds in `jester.test.ts` are
+  real measurements with headroom (11.1% and 120), not round numbers. If you
+  change the motley or the coil, expect to re-measure rather than to loosen.
+
+### Where the reasoning lives
+
+`render/monsters/jester.ts` header (palette + silhouette argument),
+`constants/enemies.ts` `JESTER_*` block (why ricochet, why ratio 11),
+`jester.test.ts` header (what is worth asserting and what is not).
+The registry checklist is `adding-an-enemykind-ten-registries`.
+
+---
+
+## ✅ PREVIOUSLY LIVE — `3da7693` · card pickups (2026-07-29)
 
 **Deployed to synology as `HEAD@3da7693`, container healthy,
 `10.0.0.16:5174/dungeon` → 200, and re-verified AGAINST THE LIVE CONTAINER:

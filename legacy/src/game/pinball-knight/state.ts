@@ -21,6 +21,7 @@ import type { InputHandle } from "./engine/input";
 import type { WeaponState, WeaponId, GearState, ProjectileKind, ItemRarity } from "./items";
 import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT, PLAYER_MAX_HP, MANA_MAX } from "./constants";
 import type { AbilityId } from "./abilities";
+import type { RicochetFlavor } from "./entities/ricochet-form";
 
 /** One quick-use belt slot: a stack of an identical usable (potion). */
 export interface BeltSlot {
@@ -95,6 +96,33 @@ export interface Player extends Actor {
   fuseT: number;
   /** Throttle so on-bounce emission fires at most every MATERIAL_EMIT_COOLDOWN. */
   materialEmitT: number;
+
+  // ── SQUASH & STRETCH (materialSquash) — the fluid materials deform on impact.
+  /** Seconds left in the current squash; 0 = the ball is round. */
+  squashT: number;
+  /** Peak amplitude of this squash, 0..1 (material × impact speed). */
+  squashAmp: number;
+  /** The impact normal in SCREEN space, unit. The sprite is a camera-facing
+   *  billboard, so the world normal is meaningless to it — what decides whether
+   *  the ball flattens sideways or vertically is where the wall was ON SCREEN. */
+  squashHx: number;
+  squashHy: number;
+  /** 🌑 Shadow lifesteal cooldown. Without it a ram through a packed corridor
+   *  is a full heal, and the glass form becomes the safest in the game. */
+  vampCdT: number;
+  /** 🌑 How long the player has been inside masonry with phasing NOT active.
+   *  Past SHADOW_PHASE_GRACE the eject fires — a run that ends sealed inside a
+   *  wall is unrecoverable, so this net is not optional. */
+  phaseStuckT: number;
+
+  // ── RICOCHET FORM (entities/ricochet-form.ts) — ⚡ bolt / ✨ laser.
+  /** Seconds left of uncontrolled ricochet. >0 means this form OWNS the player:
+   *  updatePlayer returns early, input is ignored entirely. */
+  ricochetT: number;
+  /** Which flavour is running. Only meaningful while ricochetT > 0. */
+  ricochetFlavor: RicochetFlavor;
+  /** Cadence timer between pass-through damage ticks. */
+  ricochetTickT: number;
 
   // ── Craft-only brews (Alchemist; see recipes.ts / applyPotion) ──
   /** Seconds left on Regen Salve (heals over time). 0 = inactive. */
@@ -274,6 +302,8 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead" | "charge" | "slam
  *             real momentum snaps the tether.
  *  - webspinner: ranged web shot — no damage, hard slow; any pinball part
  *             touch shakes the web off.
+ *  - rotortail: AIRBORNE BOMBARDIER — circles at altitude and hurls a slow,
+ *             heavy timber. Fragile, and a solid hit stalls its rotor.
  */
 export type EnemyKind =
   | "zombie"
@@ -289,6 +319,8 @@ export type EnemyKind =
   | "golem"
   | "chomper"
   | "sporeling"
+  | "jester"
+  | "rotortail"
   | "magnet"
   | "webspinner"
   // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──
@@ -941,6 +973,13 @@ export const state = {
   // The level
   grid: null as Grid | null,
   /**
+   * WALL EROSION (entities/wall-erosion.ts) — tile "i,j" → partial damage 0..1.
+   * A tile in here is still SOLID and still collides; it is simply part-melted.
+   * At 1 the entry is dropped and smashWallAt opens the wall for real. Cleared
+   * on every descent: a new floor is new masonry.
+   */
+  wallErosion: new Map<string, number>(),
+  /**
    * Which tiles of this floor have been seen. MUST be re-allocated per floor —
    * levelConfig() changes the grid dimensions every level, so a fog buffer
    * carried across a descent would be both wrongly sized and a spoiler.
@@ -1034,6 +1073,9 @@ export const state = {
   webspinnerSheet: null as SpriteSheet | null,
 
   sporelingSheet: null as SpriteSheet | null,
+  jesterSheet: null as SpriteSheet | null,
+  rotortailSheet: null as SpriteSheet | null,
+  houndSheet: null as SpriteSheet | null,
 
   // AI
   flowField: null as Int32Array | null,
@@ -1214,6 +1256,15 @@ export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
     fuseMaterial: null,
     fuseT: 0,
     materialEmitT: 0,
+    squashT: 0,
+    squashAmp: 0,
+    squashHx: 0,
+    squashHy: 0,
+    vampCdT: 0,
+    phaseStuckT: 0,
+    ricochetT: 0,
+    ricochetFlavor: "bolt",
+    ricochetTickT: 0,
     regenT: 0,
     regenTickT: 0,
     venomCoatT: 0,

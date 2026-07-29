@@ -65,7 +65,7 @@ export function installGuiHooks(): void {
     return gui();
   };
   api.dead = (): unknown => {
-    push(gameOverScreen({ onRetry: () => {}, onLeave: () => {}, droppedCount: 3 }));
+    push(gameOverScreen({ onTavern: () => {}, onRetry: () => {}, onExit: () => {}, droppedCount: 3 }));
     return gui();
   };
   api.shop = (): unknown => {

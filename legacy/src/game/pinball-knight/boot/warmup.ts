@@ -87,6 +87,31 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   // to the scene here, and must be in the list the loop iterates.
   const restoreVfx = state.vfx?.warmupReveal();
   const restoreFloorFx = warmFloorFxReveal(scene);
+  // ── THE OTHER HALF OF THE HIDDEN HALF ──
+  //
+  // `compileAsync` walks `_projectObject`, which FRUSTUM-TESTS every mesh
+  // (three: common/Renderer.js). The camera sees ~20x11 tiles of a ~4000-tile
+  // floor, so the warm-up was compiling the fraction of the floor that happened
+  // to be on screen at the spawn point and skipping the rest — and the rest
+  // then compiled lazily, mid-play, the moment the player walked into view of
+  // it.
+  //
+  // Measured before this (real WebGPU, nvidia/ampere, 40s bot run): programs
+  // climbed 2 -> 129, with 62 of them compiling in ONE 628ms frame at 4.3s,
+  // after the descent screen had already closed, plus 479/578/618ms frames
+  // behind it and a trickle at 18.8s / 24.5s / 31.7s as the bot reached new
+  // parts of the maze. 12.3% of frames missed 60Hz.
+  //
+  // Turning culling off for the duration makes the walk visit everything. It is
+  // restored in the `finally` below — leaving it off would make the whole maze
+  // draw every frame forever, trading a load stall for a permanent one.
+  const culling: Array<[THREE.Object3D, boolean]> = [];
+  scene.traverse((o) => {
+    if (o.frustumCulled) {
+      culling.push([o, o.frustumCulled]);
+      o.frustumCulled = false;
+    }
+  });
   const children = warmUnits(scene);
   const CAPTIONS = ["FORGING THE MACHINE", "LIGHTING THE TORCHES", "WAKING THE HORDE", "SETTING THE TABLE"];
   try {
@@ -126,5 +151,6 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
     // world for the whole floor, so this runs even if the compile threw.
     restoreVfx?.();
     restoreFloorFx();
+    for (const [o, was] of culling) o.frustumCulled = was;
   }
 }

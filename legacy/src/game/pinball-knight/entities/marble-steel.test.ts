@@ -20,6 +20,7 @@ import {
   materialRamKnockback,
   materialRamDamageMult,
   materialWallBreakCost,
+  MATERIAL_LIST,
 } from "./marble";
 import {
   WALL_BREAK_SPEED,
@@ -99,7 +100,14 @@ describe("the ball is STEEL while Ball Form is up", () => {
 describe("a material pickup REPLACES steel rather than stacking on it", () => {
   // Regression: the first pass returned steel from every `default:` branch,
   // which silently made diamond/storm/shadow/lava heavy too.
-  const neutralMaterials: MarbleMaterial[] = ["diamond", "shadow", "lava"];
+  // DERIVED, not hand-listed. The old literal was `["diamond","shadow","lava"]`
+  // — correct when it was written, and quietly incomplete forever after: it is
+  // the COMPLEMENT of the mass materials, so every material added since should
+  // have appeared here and none did. Deriving it means a 7th material is
+  // asserted neutral by default, and if it actually carries a mass override the
+  // author has to come here and say so, which is the conversation we want.
+  const MASS = ["water", "stone", "storm"];
+  const neutralMaterials = MATERIAL_LIST.filter((m) => !MASS.includes(m));
 
   it("leaves non-mass materials at neutral friction and steering", () => {
     for (const m of neutralMaterials) {

@@ -26,7 +26,14 @@ import { UI, GRID, ROW_H } from "../theme";
 import { button, cutTop, rect, scrim, text, textField } from "../im";
 import { pop, type UiScreen } from "../stack";
 
-export function gameOverScreen(opts: { onRetry: () => void; onLeave: () => void; droppedCount?: number }): UiScreen {
+export function gameOverScreen(opts: {
+  /** Back to the hub with an empty pack — the kit is on the floor above. */
+  onTavern: () => void;
+  /** Straight back down to the floor you died on, where your pile is. */
+  onRetry: () => void;
+  onExit: () => void;
+  droppedCount?: number;
+}): UiScreen {
   let name = getPlayerName();
 
   return {
@@ -35,7 +42,7 @@ export function gameOverScreen(opts: { onRetry: () => void; onLeave: () => void;
     focus: 0,
     scroll: 0,
     // Death is not dismissable. Esc must not drop you back into a dungeon you
-    // are dead in — the two buttons are the only ways out.
+    // are dead in — the three buttons are the only ways out.
     onCancel: () => true,
     paint(f, self) {
       scrim(f);
@@ -101,15 +108,24 @@ export function gameOverScreen(opts: { onRetry: () => void; onLeave: () => void;
       });
 
       cutTop(col, GRID);
+      // THREE ways out, laid in one row. RETRY MAZE is the same reset minus the
+      // hub: the floor is regenerated from the run seed, so it is a fresh maze
+      // at the same depth — a retry, not a rewind.
       const buttons = cutTop(col, ROW_H + 6);
-      if (button(f, rect(buttons.x + buttons.w / 2 - 230, buttons.y, 220, ROW_H), "BACK TO THE TAVERN")) {
+      const bw = Math.floor((buttons.w - 16) / 3);
+      if (button(f, rect(buttons.x, buttons.y, bw, ROW_H), "TAVERN", { good: true })) {
+        pop();
+        opts.onTavern();
+        return;
+      }
+      if (button(f, rect(buttons.x + bw + 8, buttons.y, bw, ROW_H), "RETRY MAZE")) {
         pop();
         opts.onRetry();
         return;
       }
-      if (button(f, rect(buttons.x + buttons.w / 2 + 10, buttons.y, 220, ROW_H), "CRAWL BACK OUT")) {
+      if (button(f, rect(buttons.x + (bw + 8) * 2, buttons.y, bw, ROW_H), "EXIT GAME", { danger: true })) {
         pop();
-        opts.onLeave();
+        opts.onExit();
         return;
       }
       self.focus = f.focus;

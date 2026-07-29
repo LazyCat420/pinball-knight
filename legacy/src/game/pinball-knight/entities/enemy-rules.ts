@@ -49,6 +49,11 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   golem: "rooted",
   chomper: "rooted",
   sporeling: "chase",
+  jester: "kite",
+  // Shares the bat's policy and nothing else: the bat orbits to be a melee
+  // nuisance you cannot line a swing up on, this orbits so its firing solution
+  // keeps changing while it hauls a log overhead. One is a fly, one is artillery.
+  rotortail: "orbiter",
   magnet: "chase",
   webspinner: "kite",
   hound: "leaper",

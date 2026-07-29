@@ -26,6 +26,18 @@ import { installUiInput } from "../gui/input";
 import { drawUiFrame } from "../gui/root";
 
 /**
+ * Whether to arm GPU timestamp queries this session.
+ *
+ * `?profile=1` asks for them; `?playtest=1` implies it so the headless harness
+ * always collects them without every caller having to remember the flag.
+ */
+export function gpuTimingWanted(): boolean {
+  if (typeof window === "undefined") return false;
+  const q = new URLSearchParams(window.location.search);
+  return q.get("profile") === "1" || q.get("playtest") === "1";
+}
+
+/**
  * False until `WebGPURenderer.init()` resolves — `render()` THROWS before that.
  *
  * Never reset on teardown, exactly as before: a new `installRenderer()` sets it
@@ -51,7 +63,23 @@ export function installRenderer(): void {
   // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
   // WebGPURenderer drives BOTH backends; ?gpu=webgl forces the WebGL2 one.
   // init() is awaited by the caller (launchDungeonGame) before the first frame.
-  state.renderer = new WebGPURenderer({ antialias: false, alpha: false, forceWebGL: selectBackend().forceWebGL });
+  // ── GPU TIMING ──
+  // `trackTimestamp` wraps each render pass in a WebGPU timestamp query, which
+  // is the ONLY way to learn what the GPU actually spent. Every timing this
+  // game reported before it — `pixelPass.render`, `FRAME (total)` — brackets
+  // CPU-side SUBMISSION and returns long before the GPU has finished; a heavy
+  // shader and a trivial one submit in about the same time.
+  //
+  // Opt-in via `?profile=1` (and implied by `?playtest=1`) rather than always
+  // on: the query pool costs a little memory and a resolve per frame, and a
+  // player never reads the number. Silently ignored when the adapter lacks the
+  // `timestamp-query` feature, so this can never fail a boot.
+  state.renderer = new WebGPURenderer({
+    antialias: false,
+    alpha: false,
+    forceWebGL: selectBackend().forceWebGL,
+    trackTimestamp: gpuTimingWanted(),
+  });
   // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
   // ("called before the backend is initialized"). launchDungeonGame stays sync
   // because neither caller awaits it (main.ts:328, mouse-room.ts:3053) — making

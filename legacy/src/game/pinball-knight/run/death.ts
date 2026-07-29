@@ -150,18 +150,70 @@ export function onPlayerDeath(): void {
   // feature: the tavern sends you back to where your stuff is.
   saveResumeFloor(state.level);
 
+  const deathFloor = state.level;
+  // The screen pops itself; all that is left is clearing the run's own flag.
+  const dismiss = (): void => {
+    state.gameOver = false;
+  };
+
   const gameOverOpts = {
     droppedCount: dropped.length,
-    // Death now returns you to the TAVERN with an empty pack, rather than
+    // Death returns you to the TAVERN with an empty pack, rather than
     // restarting at floor 1. The kit is not gone — it is on the floor above,
     // and the tavern's plunger offers the trip back.
-    onRetry: () => {
-      state.gameOver = false;
+    onTavern: () => {
+      dismiss();
       returnToTavern();
     },
-    onLeave: () => runDeps().exitDungeonGame(),
+    // RETRY MAZE is the same reset, minus the hub: straight back down to the
+    // floor you died on, which is also where your pile is. The floor is
+    // regenerated from the run seed, so this is a fresh maze at the same depth
+    // — a "retry", not a rewind.
+    onRetry: () => {
+      dismiss();
+      resetKnightAfterDeath();
+      if (!state.container) {
+        runDeps().startLevel(deathFloor);
+        return;
+      }
+      runDeps().armFloorLoading(deathFloor, () => {
+        adoptPoolSeedWhenItArrives(descendInto(deathFloor));
+      });
+    },
+    onExit: () => runDeps().exitDungeonGame(),
   };
   pushUiScreen(gameOverScreen(gameOverOpts));
+}
+
+/**
+ * Strip the knight back to bare hands for the next attempt.
+ *
+ * Safe ONLY after `collectCorpseItems` has written the carried kit to a pile —
+ * this is the step that makes death cost the gear rather than delete it. Wallet
+ * gold and legacy perks survive, as they always have.
+ *
+ * Shared by both ways back in (tavern and retry) so the two paths cannot drift:
+ * a retry that skipped, say, `beginRunLedger` would post its score against the
+ * dead run's ledger.
+ */
+function resetKnightAfterDeath(): void {
+  state.kills = 0;
+  state.goldRun = 0;
+  state.weaponSlots = [freshWeapon("sword"), null];
+  state.activeSlot = 0;
+  state.gear = {};
+  state.cardStash = [];
+  // The cards found on the floor you died on are lying on your corpse now, not
+  // in your hand — there is no haul to reveal on the way out.
+  state.floorHaul = [];
+  resetCombatJuice();
+  if (state.player) {
+    Object.assign(state.player, freshPlayerFields());
+    state.player.sprite.setTint(null);
+    state.player.hp = playerMaxHp(); // after fresh fields
+  }
+  beginRunLedger(); // the next descent is a NEW run for the board
+  state.hudDirty = true;
 }
 
 /**
@@ -174,25 +226,8 @@ export function onPlayerDeath(): void {
  * written them to a pile.
  */
 export function returnToTavern(): void {
-  state.kills = 0;
-  state.goldRun = 0;
-  state.weaponSlots = [freshWeapon("sword"), null];
-  state.activeSlot = 0;
-  state.gear = {};
-  state.cardStash = [];
-  // The cards found on the floor you died on are lying on your corpse now, not
-  // in your hand — there is no haul to reveal on the way to the tavern.
-  state.floorHaul = [];
-  resetCombatJuice();
-  if (state.player) {
-    Object.assign(state.player, freshPlayerFields());
-    state.player.sprite.setTint(null);
-    state.player.hp = playerMaxHp(); // after fresh fields
-  }
-  beginRunLedger(); // the next descent is a NEW run for the board
-  state.hudDirty = true;
-
   const deathFloor = state.level;
+  resetKnightAfterDeath();
   if (!state.container) {
     runDeps().startLevel(1);
     return;

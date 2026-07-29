@@ -55,10 +55,19 @@ import {
   GATE_MIN_FACTOR,
   DODGE_RANGED_CHANCE,
   SPEED_ONLY_T,
+  JESTER_DISC_DAMAGE,
+  ROTORTAIL_TIMBER_DAMAGE,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
 import { MOMENTUM_GATES } from "./enemy-rules";
+// CYCLE NOTE: marble.ts already imports damageZombie from here, so this closes
+// a mutual import. It is safe because both sides are hoisted FUNCTION
+// DECLARATIONS called at simulation time, not module-evaluation time — nothing
+// here reads a marble binding while either module is still initialising. (This
+// is why the pair works where ui.ts's MATERIAL_CHIP had to be inlined: ui
+// evaluates a table at module scope.)
+import { materialResistsDrain } from "./marble";
 import { moveCircle } from "../engine/collision";
 import type { Facing } from "../engine/render/animator";
 import { screenDirToWorld } from "../engine/camera";
@@ -969,6 +978,10 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   magnet: MAGNET_DAMAGE,
   webspinner: ZOMBIE_DAMAGE,
   sporeling: ZOMBIE_DAMAGE,
+  // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
+  jester: JESTER_DISC_DAMAGE,
+  // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
+  rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,
@@ -1041,7 +1054,10 @@ export function hitPlayer(z: Zombie): void {
   if (z.kind === "brute") state.shakeT = Math.max(state.shakeT, 0.35); // heavy slam
   // SAPPER: the bite DRAINS your active marble material — a hard counter that
   // makes a material a resource to protect, not just spend.
-  if (z.kind === "sapper" && p.material && p.materialT > 0) {
+  // 💎 DIAMOND CANNOT BE BROKEN — including by the one enemy built to break
+  // marbles. Every other material is fair game, which is what makes diamond's
+  // immunity a reason to pick it rather than a line of flavour text.
+  if (z.kind === "sapper" && p.material && p.materialT > 0 && !materialResistsDrain()) {
     p.material = null;
     p.materialT = 0;
     p.fuseMaterial = null;
@@ -1049,6 +1065,11 @@ export function hitPlayer(z: Zombie): void {
     state.hudDirty = true;
     state.vfx?.sparks(p.x, 0.7, p.z, 0, 1, 12);
     showToast("⚡ MATERIAL DRAINED", "the sapper stole your marble");
+  } else if (z.kind === "sapper" && materialResistsDrain()) {
+    // The bite lands and FAILS — say so, or an immunity is indistinguishable
+    // from the sapper's drain simply not having fired.
+    state.vfx?.sparks(p.x, 0.7, p.z, 0, 1, 8);
+    showToast("💎 UNBREAKABLE", "the sapper cannot cut diamond");
   }
 }
 

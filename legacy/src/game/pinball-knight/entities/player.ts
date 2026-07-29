@@ -182,7 +182,19 @@ import {
   materialSlam,
   materialBumperMult,
   materialBumperScatterMult,
+  materialClip,
+  noteSquash,
+  squashScale,
+  materialCutsThrough,
+  materialRamCutMult,
+  materialContactKnockback,
+  materialRamCooldown,
+  shadowSlayerMult,
+  shadowVampire,
+  phaseMove,
+  lavaMeltIfActive,
 } from "./marble";
+import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
 import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../audio";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 
@@ -1256,7 +1268,10 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   const step = p.momSpeed * speedMul * dt;
   const wantX = p.x + p.momX * step;
   const wantZ = p.z + p.momZ * step;
-  const res = moveCircle(g, p.x, p.z, materialPlayerR(), p.momX * step, p.momZ * step);
+  // 🌑 SHADOW phases: the step is applied free, so `blocked` reads false and
+  // the reflection below never fires — a ball inside a wall must not bounce off
+  // the wall it is inside. The maze SHELL still stops it (phaseMove clamps).
+  const res = phaseMove(g, p.x, p.z, materialPlayerR(), p.momX * step, p.momZ * step);
   const blockedX = Math.abs(res.x - wantX) > 1e-3;
   const blockedZ = Math.abs(res.z - wantZ) > 1e-3;
   p.x = res.x;
@@ -1354,6 +1369,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       state.vfx?.sparks(p.x + nx * PLAYER_R, 0.4, p.z + nz * PLAYER_R, lane.tx, lane.tz, 18);
       requestShake(0.14);
       emitMaterialOnBounce(nx, nz);
+      noteSquash(nx, nz, p.momSpeed);
+      lavaMeltIfActive(nx, nz, p.momSpeed);
       sfxBumper();
     } else if (vn < 0) {
       p.momX -= 2 * vn * nx;
@@ -1389,6 +1406,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         requestShake(0.2);
         requestHitstop(0.04);
         emitMaterialOnBounce(nx, nz);
+        noteSquash(nx, nz, p.momSpeed);
+        lavaMeltIfActive(nx, nz, p.momSpeed);
         sfxBumper();
       } else {
         // SURFACE (surfaces.ts): what this slant is MADE of scales the plain
@@ -1405,6 +1424,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         requestShake(0.1 + Math.min(0.12, p.bounceCombo * 0.02));
         requestHitstop(0.02);
         emitMaterialOnBounce(nx, nz);
+        noteSquash(nx, nz, p.momSpeed);
+        lavaMeltIfActive(nx, nz, p.momSpeed);
         sfxRoll();
       }
     }
@@ -1485,6 +1506,8 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     requestShake((corner ? 0.18 : 0.1) + Math.min(0.12, p.bounceCombo * 0.02));
     requestHitstop(corner ? 0.05 : 0.02);
     emitMaterialOnBounce(sx, sz);
+    noteSquash(sx, sz, p.momSpeed);
+    lavaMeltIfActive(sx, sz, p.momSpeed);
     sfxRoll();
   }
 
@@ -1599,11 +1622,17 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // The ball's own MASS rides on every ram — steel by default, more for
     // Stone. This is what makes running things over feel like weight rather
     // than a shoulder barge.
+    // 💎 A fast diamond CUTS instead of ramming: an edge concentrates the same
+    // mass into less area, so it bites harder and does not shove.
+    const cutting = materialCutsThrough();
     const dmg = playerDamage(
-      Math.max(2, w.damage * 1.5) * (p.ironT > 0 ? IRONCORE_RAM_MULT : 1) * (isBall ? materialRamDamageMult() : 1),
+      Math.max(2, w.damage * 1.5) *
+        (p.ironT > 0 ? IRONCORE_RAM_MULT : 1) *
+        (isBall ? materialRamDamageMult() * materialRamCutMult() : 1),
     );
-    // Stone shoves hard; water flows through with barely a nudge.
-    const ramKb = materialRamKnockback();
+    // Stone shoves hard; water flows through with barely a nudge; a cut shoves
+    // not at all — the foe is sliced where it stands.
+    const ramKb = materialContactKnockback();
     let hit = false;
     for (const z of state.zombies) {
       if (z.mode === "dead") continue;
@@ -1613,13 +1642,25 @@ function updatePinball(dt: number, input: InputHandle): boolean {
       // `"bounce"` — a BODY RAM, not a swing. The "bounce-immune" sub-type
       // exception (DECLONE §6.2) needs to tell the two apart: a Lurcher eats
       // steel and shrugs off being run over.
-      damageZombie(z, dmg, p.momX, p.momZ, ramKb, false, "bounce");
+      //
+      // 🌑 Shadow multiplies against the wall-phasers (ghost/reaper/wisp): the
+      // enemies you cannot corner are answered by BECOMING one.
+      damageZombie(z, playerDamage(dmg * shadowSlayerMult(z.kind)), p.momX, p.momZ, ramKb, false, "bounce");
       applyCardOnHit(z);
+      shadowVampire(); // …and shadow feeds on what it touches (cooldowned)
+      if (cutting) {
+        // The slice itself: a thin bright arc across the foe, along the line of
+        // travel. Without it a cut is invisible — the only tell would be that
+        // nothing got knocked back, which reads as a bug.
+        state.vfx?.sparks(z.x, 0.55, z.z, p.momX, p.momZ, 5);
+      }
       hit = true;
     }
     if (hit) {
-      p.ramT = BALL_RAM_COOLDOWN;
-      requestShake(0.18);
+      // A ram hits one clump and waits; a cut re-arms almost instantly, which
+      // is what opens a corridor straight through a crowd.
+      p.ramT = materialRamCooldown();
+      requestShake(cutting ? 0.08 : 0.18);
     }
   }
 
@@ -1636,16 +1677,32 @@ function updatePinball(dt: number, input: InputHandle): boolean {
   p.anim.setFacing(p.facing);
   if (isBall) {
     p.anim.setRate(1 + p.momSpeed * 0.1);
-    // The 🪩 Ball Form potion is the ONLY thing that draws you as an actual
-    // chrome sphere — "you ARE the pinball" earns its own silhouette. The
-    // everyday overcharge ride stays the spinning tucked knight.
-    p.anim.play(p.ironT > 0 ? "steelball" : "ball");
+    // WHAT THE BALL IS MADE OF, in priority order:
+    //   1. a marble MATERIAL — its own painted sphere (MARBLE_SKINS),
+    //   2. the 🪩 Ball Form potion — the chrome ball bearing,
+    //   3. neither — the everyday overcharge ride, a spinning tucked knight.
+    //
+    // Material outranks steel for the same reason it outranks steel in the
+    // physics hooks: a pickup REPLACES the ball's substance. Drawing a chrome
+    // sphere while the lava physics were running was the visual half of the
+    // bug marble-steel.test.ts exists to prevent.
+    p.anim.play(materialClip() ?? (p.ironT > 0 ? "steelball" : "ball"));
     // …and only a ball THAT heavy engraves the floor it crosses.
     if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed, p.momX, p.momZ);
   } else {
     p.anim.setRate(1.4);
     p.anim.play("roll");
   }
+  // SQUASH: a water marble flattens against the wall it just hit and snaps
+  // back. Applied to the billboard's scale rather than baked into the frames
+  // because it depends on the IMPACT ANGLE, which no fixed frame can know.
+  //
+  // OUTSIDE the ball branch on purpose: squashScale() is [1,1] once recovered,
+  // so this is also what RESTORES the scale. Left inside, a ride that ended
+  // mid-squash would drop the knight back on his feet still flattened, and
+  // nothing would ever round him out again.
+  const [sqx, sqy] = squashScale();
+  p.sprite.mesh.scale.set(sqx, sqy, 1);
   state.vfx?.dust(p.x, 0.05, p.z);
 
   // Exit only when the momentum has genuinely bled off. (Overcharge no longer
@@ -1766,6 +1823,16 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   p.webbedT = Math.max(0, p.webbedT - dt);
   updateFlash(p, dt);
   updateBuffTells(dt); // every timed buff has a look, not just a HUD tile
+
+  // ── RICOCHET FORM ── ⚡ bolt / ✨ laser. Checked FIRST among the owners: it
+  // is the one state that ignores input entirely, so anything that reads the
+  // stick below must not get a look in while it runs.
+  if (updateRicochet(dt)) {
+    syncActorMesh(p);
+    p.anim.play(ricochetSpec()!.clip);
+    p.anim.update(dt);
+    return;
+  }
 
   // ── Plunger ── the floor opens parked in the launch chute; the pull/release
   // owns the player until the ball is fired into play.

@@ -83,9 +83,18 @@ describe("the four telegraph clips are authored where their policies run", () =>
     // A clip authored in cel-painter but absent from `buildSpriteSheet`'s
     // clipNames list is art that renders nowhere, and nothing throws.
     const src = readFileSync(new URL("../engine/render/sprite.ts", import.meta.url), "utf8");
-    const line = src.split("\n").find((l) => l.includes("const clipNames"))!;
+    // Read the whole BRACKETED LIST, not the declaration's line. It used to
+    // find the single line containing `const clipNames` and search that — which
+    // silently became a no-op check the moment the list outgrew one line (the
+    // six marble bodies did it), reporting "does not pack crouch" about a list
+    // that packs it fine two lines down.
+    // Anchor past the `=`, or the first `[` found is the one in the TYPE
+    // annotation `ClipName[]` and the span is the empty string "[]" — the same
+    // trap registry-drift.mjs documents for its ESSENTIAL and RESKIN reads.
+    const from = src.indexOf("[", src.indexOf("=", src.indexOf("const clipNames")));
+    const list = src.slice(from, src.indexOf("]", from) + 1);
     for (const clip of ["crouch", "wait", "wake", "stumble"]) {
-      expect(line, `buildSpriteSheet does not pack "${clip}"`).toContain(`"${clip}"`);
+      expect(list, `buildSpriteSheet does not pack "${clip}"`).toContain(`"${clip}"`);
     }
   });
 });
