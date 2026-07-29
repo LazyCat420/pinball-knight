@@ -51,6 +51,9 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *   2764  Wave 0 — installed. Added 11 lines on purpose (the floor-seed import
  *         and the `captureFloorCensus()` call) to buy the instruments the later
  *         waves are gated on.
+ *    611  Wave 5 — sim/{simulate,loop,paused}.ts and run/floor-hold.ts. core.ts
+ *         is now what it always claimed to be: launch, the floor lifecycle, and
+ *         teardown. 2764 → 611 over five waves, every one census-verified.
  *   1038  Wave 4 — buildLevel (717 lines) split at the line where the floor
  *         stops being locals and becomes state.grid. Ten values cross that
  *         boundary; everything else is consumed before it.
@@ -67,7 +70,7 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
  *         not configured for v9.
  */
-const CORE_MAX_LINES = 1038;
+const CORE_MAX_LINES = 611;
 
 /**
  * Line count, measured the way `wc -l` measures it.
