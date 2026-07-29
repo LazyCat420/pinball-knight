@@ -23,6 +23,7 @@ import { fontsAreReady, paintOrientationProbe, uiCtx } from "../gui/layer";
 import { clearScreens, pop, push, screens, top } from "../gui/stack";
 import { uiStats } from "../gui/root";
 import { settingsScreen } from "../gui/screens/settings";
+import { menuScreen } from "../gui/screens/menu";
 
 export function installGuiHooks(): void {
   if (typeof window === "undefined") return;
@@ -40,6 +41,14 @@ export function installGuiHooks(): void {
   const api = gui as unknown as Record<string, unknown>;
   api.settings = (): unknown => {
     push(settingsScreen());
+    return gui();
+  };
+  api.menu = (tab?: string): unknown => {
+    const m = menuScreen(() => {});
+    push(m);
+    // Tab is selected by simulating the digit the tab strip already listens
+    // for, so the hook cannot drift from what a player's keypress does.
+    if (tab) (window as unknown as { __guiTab?: string }).__guiTab = tab;
     return gui();
   };
   api.close = (): unknown => {

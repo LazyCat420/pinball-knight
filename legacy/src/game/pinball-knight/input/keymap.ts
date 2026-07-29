@@ -19,6 +19,9 @@ import { showToast } from "../ui";
 import { sfxPickup } from "../audio";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { paintMenuPortrait } from "../boot/sheets";
+import { inGameUiEnabled } from "../gui/flag";
+import { openMenu } from "../gui/screens/menu";
+import { top as topScreen } from "../gui/stack";
 import { WEAPONS } from "../items";
 import { showPickupNote } from "../ui";
 
@@ -61,6 +64,16 @@ export function handleKey(e: KeyboardEvent): void {
     return;
   }
 
+  // ── An IN-GAME screen owns the keyboard. ──
+  // It has already handled this event in `gui/input.ts` (window capture phase,
+  // which runs before this handler and calls stopPropagation), so the only job
+  // left here is to make sure the gameplay switch below never sees the key.
+  // Without this the same Esc would close the screen AND be read as gameplay.
+  if (topScreen()) {
+    e.preventDefault();
+    return;
+  }
+
   // ── Game menu is open: Esc/I close, Tab/arrows cycle tabs, 1-5 jump. ──
   if (state.menuEl) {
     const k = e.key.toLowerCase();
@@ -98,7 +111,9 @@ export function handleKey(e: KeyboardEvent): void {
     case "i":
       e.preventDefault();
       closeFloorMap(); // the menu freezes the world; a stale map under it lies
-      if (state.container) {
+      if (inGameUiEnabled()) {
+        openMenu(() => runDeps().exitDungeonGame());
+      } else if (state.container) {
         openGameMenu(state.container, { onAbandon: () => runDeps().exitDungeonGame(), paintPortrait: paintMenuPortrait });
       }
       return;

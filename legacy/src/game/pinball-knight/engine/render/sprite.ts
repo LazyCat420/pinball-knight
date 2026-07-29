@@ -470,11 +470,26 @@ function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: nu
  * crush is not free.
  */
 export function renderPaintIcon(paint: FramePaint): string {
+  const crushed = renderPaintCanvas(paint);
+  return crushed ? crushed.toDataURL() : "";
+}
+
+/**
+ * The same rasterisation, stopping at the CANVAS.
+ *
+ * The in-game UI draws icons with `drawImage` straight onto its layer, so
+ * encoding a PNG and decoding it back through an `Image` — which is what
+ * `renderPaintIcon` exists to produce for DOM `<img>` — would be pure waste,
+ * and worse, ASYNCHRONOUS: an immediate-mode UI paints and returns in one pass,
+ * so an icon that is not ready *now* is an icon that is missing this frame.
+ * Handing back the canvas keeps the whole path synchronous.
+ */
+export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
+  if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
   // Ship the crushed canvas AT ITS NATIVE SIZE.
@@ -487,7 +502,7 @@ export function renderPaintIcon(paint: FramePaint): string {
   // 7.2 — so a 2px highlight survives or vanishes depending on its sub-pixel
   // phase, differently per item. It also cost 2.8× the pixels through a
   // synchronous PNG encode for every shop entry.
-  return crushToGrid(canvas).toDataURL();
+  return crushToGrid(canvas);
 }
 
 /**
