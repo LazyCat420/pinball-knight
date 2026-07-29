@@ -29,6 +29,7 @@ import { buildTrackFloor as trackFloor } from "./track-floor";
 import { decorateMaze } from "./decorate";
 import { bfsDistances } from "../engine/flow-field";
 import { levelConfig } from "../constants";
+import { floorRng } from "./floor-seed";
 
 const rngFor = (s: number): (() => number) => mulberry32((s * 2654435761) >>> 0);
 
@@ -277,7 +278,7 @@ describe("track floor through the REAL decorate pipeline", () => {
     for (const level of [1, 2, 3, 5, 8, 13, 20, 30, 40]) {
       for (const runSeed of [1, 12345, 0xc0ffee]) {
         const label = `L${level} run ${runSeed}`;
-        const rng = mulberry32((runSeed ^ (level * 0x9e3779b9)) >>> 0);
+        const rng = floorRng(runSeed, level);
         const cfg = levelConfig(level);
         const f = trackFloor(cfg.cellsW, cfg.cellsH, rng);
         expect(f, `${label}: no floor`).not.toBeNull();

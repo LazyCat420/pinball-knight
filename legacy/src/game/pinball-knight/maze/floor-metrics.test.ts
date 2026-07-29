@@ -30,12 +30,13 @@ import {
 import { measureFloor, checkFloor, formatMetrics, traceRoute } from "./floor-metrics";
 import { levelConfig } from "../constants";
 import { bfsDistances } from "../engine/flow-field";
+import { floorRng } from "./floor-seed";
 
 /** Build a floor exactly the way core.ts startLevel does. */
 function liveFloor(level: number, seed: number) {
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
-  const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(seed, level);
   const windiness = windinessFor(level, arch, rng);
   const f = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
     profile: arch.track,
@@ -48,7 +49,7 @@ function liveFloor(level: number, seed: number) {
 function archFloor(archIndex: number, level: number, seed: number) {
   const cfg = levelConfig(level);
   const arch = ARCHETYPES[archIndex];
-  const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(seed, level);
   const windiness = windinessFor(level, arch, rng);
   return {
     arch,

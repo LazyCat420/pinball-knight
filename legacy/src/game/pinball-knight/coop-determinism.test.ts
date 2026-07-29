@@ -15,11 +15,12 @@ import { describe, it, expect } from "vitest";
 import { pickZombieType, ZOMBIE_TYPES, ZOMBIE_TYPE_IDS } from "./zombie-types";
 import { accrue, painChance, PAIN_BY_KIND, type EntropyHolder } from "./entities/stagger";
 import { PINBALL_MAX_SPEED } from "./constants";
+import { floorSeed } from "./maze/floor-seed";
 
 /** The hash `spawnHordeMember` derives per spawn tile, reproduced faithfully. */
 function spawnHashes(runSeed: number, level: number, n: number): number[] {
   // mulberry32, the generator core.ts seeds each floor with.
-  let a = (runSeed ^ (level * 0x9e3779b9)) >>> 0;
+  let a = floorSeed(runSeed, level);
   const rng = (): number => {
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;

@@ -17,6 +17,7 @@ import { checkPieces, summarise, pieceCensus, PIECE_RULES } from "./piece-rules"
 import { findArcJunctions, backedFraction, trimArcToBacking, junctionCheck } from "./arc-contract";
 import { buildFlowField } from "./flow-orient";
 import { decorateMaze } from "./decorate";
+import { floorRng } from "./floor-seed";
 import {
   PARTS_BASE,
   PARTS_PER_LEVEL,
@@ -32,7 +33,7 @@ import {
 function floorAt(level: number, seed: number, archIndex?: number) {
   const cfg = levelConfig(level);
   const arch = archIndex === undefined ? archetypeFor(level) : ARCHETYPES[archIndex];
-  const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(seed, level);
   const windiness = windinessFor(level, arch, rng);
   return {
     arch,

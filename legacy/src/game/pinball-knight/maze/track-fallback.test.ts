@@ -31,6 +31,7 @@ import { mulberry32, thickenWalls, generateMaze, carveRooms, isWalkable } from "
 import { buildTrackFloor } from "./track-floor";
 import { ARCHETYPES, DEFAULT_TRACK_PROFILE, windinessFor } from "./archetypes";
 import { levelConfig, ROOM_MIN_CELLS, ROOM_MAX_CELLS } from "../constants";
+import { floorRng } from "./floor-seed";
 
 describe("the legacy generator is a fallback, not a branch", () => {
   it("buildTrackFloor never falls back, at depths nothing else samples", () => {
@@ -60,7 +61,7 @@ describe("the legacy generator is a fallback, not a branch", () => {
         for (let s = 0; s < 2; s++) {
           const seed = 0x77c1 + s * 15485863 + level * 7919 + a * 104729;
           const cfg = levelConfig(level);
-          const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+          const rng = floorRng(seed, level);
           const windiness = windinessFor(level, arch, rng);
           const t = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
             profile: arch.track,

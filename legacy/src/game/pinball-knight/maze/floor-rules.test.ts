@@ -26,13 +26,14 @@ import { bfsDistances } from "../engine/flow-field";
 import { levelConfig } from "../constants";
 import { FLOOR_RULES, DEFAULT_RULE_WEIGHTS, checkFloorRules, perimeterScore, maxReach, type FloorRuleContext, BOSS_ARENA_R, BOSS_ARENA_MIN_WIDTH } from "./floor-rules";
 import { measureDoorway, DOORWAY_WIDTHS } from "./doorways";
+import { floorRng } from "./floor-seed";
 
 const RUN_SEEDS = [1, 12345, 0xc0ffee, 987654321, 424242, 7777];
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 17, 20, 25];
 
 /** Build one floor exactly as `core.ts startLevel` does, and its rule context. */
 function floorContext(level: number, runSeed: number): FloorRuleContext | null {
-  const rng = mulberry32((runSeed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(runSeed, level);
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
   const windiness = windinessFor(level, arch, rng);

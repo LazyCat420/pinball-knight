@@ -31,13 +31,14 @@ import { floorBudgets, levelConfig } from "../constants";
 import { walkableCount } from "./floor-metrics";
 import { buildTrackFloor } from "./track-floor";
 import { paintBands, bandOf } from "./surface-paint";
+import { floorRng } from "./floor-seed";
 
 const ROOM_MIN_CELLS = 3;
 const ROOM_MAX_CELLS = 6;
 
 /** Mirrors core.ts startLevel's build order exactly. */
 function buildFloor(level: number, runSeed: number) {
-  const rng = mulberry32((runSeed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(runSeed, level);
   const l = Math.max(1, level);
   const cellsW = Math.min(17 + Math.ceil(l * 1.4), 33);
   const cellsH = Math.min(12 + l, 25);
@@ -239,7 +240,7 @@ describe("SURFACE_BANDS is bit-identical in the only sense that matters", () => 
   function liveFloor(archIndex: number, level: number, seed: number) {
     const cfg = levelConfig(level);
     const arch = ARCHETYPES[archIndex];
-    const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+    const rng = floorRng(seed, level);
     const windiness = windinessFor(level, arch, rng);
     return {
       arch,

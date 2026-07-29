@@ -57,7 +57,8 @@ import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal, faceOnSpecial } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
-import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, mulberry32, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
+import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
+import { floorRng } from "./maze/floor-seed";
 import { computeArcCorners } from "./engine/collision";
 import { decorateMaze, widenMainArtery, pickEndpoints, type PrefabAnchor } from "./maze/decorate";
 import { paintSurfaces, paintBands } from "./maze/surface-paint";
@@ -254,6 +255,7 @@ import { runPinballIntro } from "./intro";
 import { frenzyIntensity, momentumT } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
+import { captureFloorCensus } from "./dev/floor-census";
 import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
 import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
 import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets, sheetFor, stopSheetBackfill, SHEET_KEY_BY_KIND } from "./boot/sheets";
@@ -951,7 +953,9 @@ function buildLevel(level: number): void {
 
   // One deterministic stream per (run, level): a refresh mid-run rerolls the
   // run, but a single level is internally consistent and replayable.
-  const rng = mulberry32((state.runSeed ^ (level * 0x9e3779b9)) >>> 0);
+  // The mix lives in maze/floor-seed.ts because every peer and a dozen tests
+  // must derive it identically — see that file's header.
+  const rng = floorRng(state.runSeed, level);
   // FLOOR ARCHETYPE: the macro layout — Warrens / Spine / Great Hall / Cavern /
   // Ring Keep. On the shipping branch it is `arch.track` (a TrackProfile) that
   // does the work; `arch.seeds` shapes the LEGACY grid and nothing else.
@@ -1620,6 +1624,13 @@ function buildLevel(level: number): void {
     sfxModifier();
   }
   if (bonusRoom) showPickupNote("🏆 BONUS VAULT unlocked on this floor");
+
+  // Fingerprint what this build authored, BEFORE the player gets a frame to
+  // disturb it. This is the gate for decomposing buildLevel: its ~20 phases
+  // share one RNG stream, so reordering any two draws silently produces a
+  // different floor that renders fine and breaks no test. See
+  // dev/floor-census.ts and scripts/floor-census.mjs.
+  captureFloorCensus();
 }
 
 /** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */

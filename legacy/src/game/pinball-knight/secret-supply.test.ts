@@ -35,13 +35,14 @@ import { nearSealed } from "./maze/track-socket";
 import { checkPieces, summarise } from "./maze/piece-rules";
 import { stampSecretBands, pruneSealedBands } from "./secrets";
 import { levelConfig, TARGETS_PER_FLOOR } from "./constants";
+import { floorRng } from "./maze/floor-seed";
 
 const SEEDS = [1, 12345, 0xc0ffee, 424242];
 const LEVELS = [1, 2, 3, 5, 8, 12, 17, 25];
 
 /** One floor, built exactly as `core.ts startLevel` builds it. */
 function floor(level: number, seed: number) {
-  const rng = mulberry32((seed ^ (level * 0x9e3779b9)) >>> 0);
+  const rng = floorRng(seed, level);
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
   const windiness = windinessFor(level, arch, rng);

@@ -24,6 +24,7 @@ import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } fr
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
+import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
@@ -755,6 +756,12 @@ export function installDevHooks(deps: DevHookDeps): void {
       elapsed: state.elapsed,
       level: state.level,
     });
+    // Dev: the FLOOR CENSUS — a fingerprint of what `buildLevel` authored.
+    // Read from the snapshot taken at the end of the build, NOT recomputed from
+    // live state: everything in it moves (the merchant rolls, zombies chase,
+    // doors swing), and a live read makes two runs of the same seed disagree.
+    // See dev/floor-census.ts.
+    (window as unknown as { __dungeonCensus?: () => unknown }).__dungeonCensus = () => lastFloorCensus();
     // Dev: hurl the player into a pinball ride (headless secret-wall/physics
     // tests — spooling a real sprint with synthetic key events is flaky).
     (window as unknown as { __dungeonLaunch?: (dirX: number, dirZ: number, speed: number) => boolean }).__dungeonLaunch = (dirX: number, dirZ: number, speed: number) => {
