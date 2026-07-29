@@ -333,9 +333,23 @@ export function trimArcToBacking(g: Grid, f: ArcFeature): ArcFeature | null {
   // A link that fails backing outright is still dropped, and that is safe: its
   // tiles revert to SHAPE_FULL, which is honest solid stone. The funnel simply
   // has a square stretch in it — degraded, never see≠hit.
-  if (f.span >= Math.PI * 2 - 1e-6 || f.owner === "island" || f.owner === "funnel") {
+  if (f.span >= Math.PI * 2 - 1e-6 || f.owner === "island") {
     return backedFraction(g, f) > 0.5 ? f : null;
   }
+  // A CHAIN LINK IS ALL-OR-NOTHING, AND THE BAR IS THE GATE'S BAR.
+  //
+  // Trimming a funnel link's span is not available: consecutive links share a
+  // tangent EXACTLY because their ends sit on a common normal line, and moving
+  // an end puts a kink in the middle of what the eye reads as one curve. So the
+  // only choices are keep it whole or drop it.
+  //
+  // The threshold is 0.999 rather than the island's 0.5 because that is what
+  // `piece-rules.test.ts` demands of every curved wall on a live floor — "has
+  // stone behind it" means ALL of it. A 60%-backed link kept by a laxer rule
+  // here is a curved ribbon with one end in open air, which is the exact defect
+  // that gate exists to catch. A dropped link costs nothing: its tiles revert
+  // to plain stone and the funnel simply has a square stretch in it.
+  if (f.owner === "funnel") return backedFraction(g, f) > 0.999 ? f : null;
   const n = Math.max(4, Math.ceil(f.r * f.span * SAMPLES_PER_TILE));
   const step = f.span / n;
   let bestStart = -1;
@@ -482,6 +496,33 @@ export function compactArcs(g: Grid, minTiles = MIN_ARC_TILES): number {
   const dropped = arcs.length - next.length;
   g.arcs = next;
   return dropped;
+}
+
+/**
+ * Strip the arc face from tiles that are no longer wall.
+ *
+ * A tile carrying `SHAPE_ARC` while being walkable claims curved collision on
+ * open floor — the see≠hit class, and the one `findOrphanArcTiles` exists to
+ * detect. It happens whenever a pass that OPENS stone runs after a pass that
+ * published a face: `repairKeepOut` steers `connectAll` around arc tiles, but
+ * `removeWallStubs` and `uncarveDeadEnds` have no such opinion, so a funnel jaw
+ * repaired afterwards can lose two or three of its tiles to them.
+ *
+ * Safe by construction, for the same reason `compactArcs` is: resetting the
+ * SHAPE of an already-open tile changes no tile's walkability, so it cannot
+ * affect connectivity. Any feature left owning nothing is collected by the next
+ * `compactArcs`.
+ *
+ * Returns the number of tiles cleared.
+ */
+export function clearOrphanArcTiles(g: Grid): number {
+  let n = 0;
+  for (const t of findOrphanArcTiles(g)) {
+    setShape(g, t.i, t.j, SHAPE_FULL);
+    if (g.arcIdx) g.arcIdx[idx(g, t.i, t.j)] = -1;
+    n++;
+  }
+  return n;
 }
 
 /** Arc tiles that are no longer wall — a curve claiming collision on open floor. */

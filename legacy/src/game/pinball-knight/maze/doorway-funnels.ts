@@ -1,66 +1,87 @@
 /**
  * DOORWAY FUNNELS — flare a threshold so a ball banks THROUGH it, not off it.
  *
- * ⚠️ OFF BY DEFAULT. IT DOES NOT WORK YET. Read this before switching it on.
+ * ⚠️ OFF BY DEFAULT, and NOT because the mechanism fails. Read both halves.
  *
- * Paired against the same doorways on the same seeds with the flare removed
- * (`buildTrackFloor({ funnels })`, and the pairing is the point — see below):
+ * ── What it does, measured ───────────────────────────────────────────────
  *
- *      capture   52.4% → 52.3%   −0.1pp
- *      rejected  28.7% → 31.5%   +2.8pp
- *      per doorway: 5 better, 6 worse, 14 unchanged
+ * Paired per doorway against the same floor on the same seed with the flare
+ * removed, over 100 floors never used for tuning:
  *
- * The pass is CORRECT — it strands nothing, produces no incoherent junctions
- * and no unbacked ribbons, and the focusing geometry behind it is proven in
- * `conic-fit.test.ts`. It simply does not pay for itself, so it does not ship
- * on. What is missing is size, not soundness: a treated doorway ends up with
- * only ~6.5 funnel-faced tiles across both approaches and both sides, piled up
- * at the threshold where the parabola runs nearly parallel to the passage and
- * therefore deflects almost nothing. The ball meets ordinary square wall for
- * the whole approach and grazes the curve at the last moment.
+ *      capture   47.9% → 53.9%   +6.1pp
+ *      rejected  (sent back the way it came)   −2.0pp
+ *      79 doorways better, 26 worse, 14 unchanged
  *
- * The fix is a LONGER, WIDER flare, which means breaking the `f = w/4` tie that
- * pins the arms to the jambs — a design change owed its own measurement, not a
- * constant to nudge.
+ * Two mechanisms, and the second one carries it:
  *
- * ── Two things measurement caught that reasoning did not ─────────────────
+ *   THE SHAPE  a parabola with its arms on the jambs, leaning in at
+ *              `THROAT_ANGLE_DEG`, gathering a corridor's worth of approaches.
+ *   THE LANE   a booster band along each jaw, carrying the ball around the
+ *              curve and releasing it along the tangent — through the opening.
  *
- * Recorded because both are the kind of mistake that ships silently:
+ * ── Why it is off anyway ─────────────────────────────────────────────────
  *
- *  · THE AGGREGATE LIES. Funnels land on a handful of doorways; the other ~150
- *    in the census are untouched, so the overall capture rate dilutes the
- *    effect ~10x. And the obvious split — funnelled doorways vs plain ones — is
- *    WORSE than useless here, because the pass deliberately picks the NARROWEST
- *    doorways and those already capture worst, so selection alone makes the
- *    treatment look harmful. Only the paired counterfactual (same doorway, same
- *    seed, flare on vs off) answers the question.
- *  · HALF A FUNNEL IS WORSE THAN NONE. Committing arms independently scored
- *    −2.3pp capture and +3.7pp rejection, 22 doorways worse against 8 better. A
- *    lone arm is not a funnel, it is a diagonal deflector beside an opening. It
- *    is now both arms or neither, which is what took the harm back to zero.
+ * Turning it on breaks three of this generator's own gates: `piece-rules` on
+ * every archetype and again after `decorateMaze`, and `floor-rules` on every
+ * generated floor. This pass both carves and fills, and the tile
+ * configurations it leaves are not in the piece vocabulary those gates
+ * enforce. A floor that plays better while violating three structural
+ * contracts is not a floor to ship — the gates are the standard, not the
+ * obstacle — so the remaining work is making the carve/fill output conform,
+ * not relaxing them.
  *
- * ── The measurement this answers ──────────────────────────────────────────
+ * Three of the six original breakages ARE fixed and those fixes are in: the
+ * pass runs the pipeline's own `repair` behind it (a fill can leave a road in
+ * mid-air, which its own strand guard cannot see — connected is weaker than
+ * well-formed), it clears arc tiles the repair then opens, and funnel links are
+ * held to the full-backing bar `piece-rules` actually demands rather than the
+ * lax one an earlier exemption gave them.
  *
- * `maze/doorways.ts` made openings uniform and killed the 1-tile squeeze, but a
- * doorway is still a rectangular hole in a flat wall: nothing about its shape
- * helps you through it. `scripts/funnel-census.mjs` put a number on that, over
- * 24 real floors and 80,703 approaches:
+ * ── The two things that had to be got wrong first ────────────────────────
  *
- *      CAPTURED  54.0%     REJECTED (sent back the way it came)  27.9%
- *      3 wide  45.1%   ·   5 wide  60.8%   ·   7 wide  63.5%
+ * The first version of this pass shipped OFF because it made things WORSE:
+ * −2.4pp capture and +7.6pp rejection. Both causes are worth keeping, because
+ * both are invisible to the ray-optics reasoning that motivated the feature.
  *
- * Better than a coin flip, much worse than fine, and it is the NARROW doorways
- * that lose — which is exactly the complaint.
+ * A CONVERGING CHANNEL IS A WEDGE. Every bounce off a wall leaning in at angle
+ * α turns the ball a further 2α off the axis, so past a few bounces a steep
+ * taper turns the ball around and posts it back out. Rays never show this —
+ * a ray reflects once. This is why the throat angle exists at all, and why
+ * everything above 30° was harmful until lanes were added: a lane REPLACES the
+ * bounce with a carry, and a carry does not steepen anything.
+ *
+ * FOCUSING TO A POINT IS THE WRONG OBJECTIVE. With the focus on the threshold
+ * (the elegant `f = w/4`), a ball reflected at the jamb arrives at the middle
+ * of the mouth travelling almost exactly ACROSS the passage — it reaches the
+ * doorway and crosses it sideways into the far jamb. Passing through a plane is
+ * a condition on DIRECTION, not just on arrival. The focus now sits well beyond
+ * the threshold so the ball is still going forward as it crosses.
+ *
+ * ── And two ways the measurement itself was wrong ────────────────────────
+ *
+ *  · TREATMENT WAS DETECTED BY DISTANCE TO THE ARC CENTRE. A jaw's arcs have
+ *    radii of 7-160 tiles because a parabola flattens fast, so their centres
+ *    sit far out in the rock; the test marked every doorway within ~25 tiles as
+ *    treated and reported 25 where there were 7. A curve is where its TILES
+ *    are. Now asked of the tiles.
+ *  · THE JAW WAS ALL-OR-NOTHING. Requiring every link to be buildable meant one
+ *    existing fillet anywhere along a long arm cancelled the whole funnel —
+ *    305 of 312 refusals were "that tile is already something". Links are
+ *    ordered from the jamb outward and the arm now keeps its buildable PREFIX,
+ *    which took yield from 2 doorways per 24 floors to 18.
  *
  * ── The shape ────────────────────────────────────────────────────────────
  *
- * A PARABOLA with its focus on the middle of the mouth, opening back up the
- * corridor. Every ray parallel to the axis reflects through the focus, and a
- * corridor is a device for delivering parallel rays. Tying the focal length to
- * the opening — f = w/4 — puts the arms exactly on the jambs at the threshold,
- * so the funnel gathers from far wider than the door WITHOUT widening the door:
- * the vocabulary `doorways.ts` authored survives intact, which is the whole
- * reason that vocabulary exists.
+ * A PARABOLA whose arms pass through the JAMBS at the threshold and lean in at
+ * `THROAT_ANGLE_DEG` there. Those two constraints fix everything else — focal
+ * length, vertex, and where the focus lands — and the focus comes out well
+ * BEYOND the opening, in the room you are heading for.
+ *
+ * The arms meeting the jambs is what keeps the funnel honest: it gathers from
+ * far wider than the door WITHOUT widening the door, so the 3/5/7 vocabulary
+ * `doorways.ts` authored survives intact, which is the whole reason that
+ * vocabulary exists. The flare tapers the CORRIDOR into the opening; it never
+ * touches the opening.
  *
  * `maze/conic-fit.ts` turns that parabola into a chain of circular arcs, so
  * nothing here needs a new collider, mesh or rail path.
@@ -124,10 +145,10 @@ import {
   idx,
   ensureArcs,
 } from "./generator";
-import { SHAPE_FULL, SHAPE_ARC, type ArcFeature } from "../engine/tile-shape";
+import { SHAPE_FULL, SHAPE_ARC, type ArcFeature, type LaneBand } from "../engine/tile-shape";
 import { junctionClear } from "./arc-contract";
 import { bfsDistancesOwned } from "../engine/flow-field";
-import { parabolicJaws, type Pt } from "./conic-fit";
+import { parabolicJaws, THROAT_ANGLE_DEG, type Pt } from "./conic-fit";
 import type { Doorway } from "./doorways";
 
 /**
@@ -160,6 +181,25 @@ export const FUNNEL_DEPTH = 4;
 export const FUNNEL_SEGMENTS = 2;
 
 /**
+ * How steeply a jaw leans in at the jamb. See `conic-fit.ts THROAT_ANGLE_DEG`
+ * for why this is the number that decides whether the feature works at all.
+ */
+export const FUNNEL_THROAT_DEG = THROAT_ANGLE_DEG;
+
+/** String a booster lane along each jaw, carrying the ball through the mouth. */
+export const FUNNEL_LANES = true;
+
+/**
+ * Tiles either side of the doorway plane the flare may not open, measured along
+ * the passage axis.
+ *
+ * One, not zero: `measureDoorway` walks the opening's cross-section, and a
+ * carve one tile in front of the threshold joins that run just as surely as a
+ * carve on it.
+ */
+export const THRESHOLD_KEEPOUT = 1;
+
+/**
  * Tiles of stone that must remain behind a jaw's face.
  *
  * One is not enough and the reason is `removeWallStubs`: a face backed by a
@@ -182,7 +222,10 @@ export type Occupied = (i: number, j: number) => boolean;
  */
 export const FUNNEL_MAX_FILL = 16;
 
-interface JawPlan {
+/** Allow the flare to raise floor into wall. See the header on why this is off. */
+export const FUNNEL_FILL = true;
+
+export interface JawPlan {
   features: ArcFeature[];
   /** Tiles the curve straddles → WALL + SHAPE_ARC, one entry per feature. */
   arcTiles: TilePos[][];
@@ -190,6 +233,8 @@ interface JawPlan {
   carveTiles: TilePos[];
   /** Floor tiles on the SOLID side → filled to wall (the funnel's own stone). */
   fillTiles: TilePos[];
+  /** Middle of the opening this jaw feeds — which way its lane carries. */
+  mouth?: Pt;
   /**
    * Every tile this jaw will mutate, with the tile id and shape it had BEFORE.
    *
@@ -240,7 +285,7 @@ function withinSpan(f: ArcFeature, ti: number, tj: number): boolean {
 }
 
 /** A tile that may be carved or claimed: inside the shell, plain stone, free. */
-function claimable(g: Grid, ti: number, tj: number, occupied: Occupied): boolean {
+export function claimable(g: Grid, ti: number, tj: number, occupied: Occupied): boolean {
   if (ti <= 0 || tj <= 0 || ti >= g.w - 1 || tj >= g.h - 1) return false; // never the shell
   if (at(g, ti, tj) !== T_WALL) return false; // floor, stairs, or a CRACKED secret
   if (shapeAt(g, ti, tj) !== SHAPE_FULL) return false; // already someone's curve
@@ -279,73 +324,140 @@ export type JawReject = "empty" | "claimed" | "unfillable" | "too-much-fill" | "
  * Returns a reason the moment anything cannot be built, rather than committing
  * a partial jaw. Half a funnel with a hole in it deflects a ball into the hole.
  */
-function planJaw(g: Grid, chain: readonly ArcFeature[], occupied: Occupied): JawPlan | JawReject {
+export function planChain(
+  g: Grid,
+  chain: readonly ArcFeature[],
+  occupied: Occupied,
+  /** True where the flare must not open stone — the threshold itself. */
+  sealed: (i: number, j: number) => boolean,
+): JawPlan | JawReject {
   if (chain.length === 0) return "empty";
   const arcTiles: TilePos[][] = [];
+  const features: ArcFeature[] = [];
   const carveTiles: TilePos[] = [];
   const fillTiles: TilePos[] = [];
   const seen = new Set<number>();
 
+  // Links come off `parabolicJaws` ordered from the JAMB OUTWARD, and that
+  // ordering is what makes trimming meaningful: link 0 anchors the funnel to
+  // the opening, and each one after it reaches further back up the corridor and
+  // matters less. So a link that cannot be built ends the arm rather than
+  // cancelling it.
   for (const f of chain) {
     const mine: TilePos[] = [];
+    const carve: TilePos[] = [];
+    const fill: TilePos[] = [];
+    const claimed = new Set<number>();
+    let ok = true;
+
     const i0 = Math.floor(f.cx - f.r - 1);
     const i1 = Math.ceil(f.cx + f.r + 1);
     const j0 = Math.floor(f.cz - f.r - 1);
     const j1 = Math.ceil(f.cz + f.r + 1);
-    for (let tj = j0; tj <= j1; tj++) {
+    for (let tj = j0; tj <= j1 && ok; tj++) {
       for (let ti = i0; ti <= i1; ti++) {
         if (!withinSpan(f, ti, tj)) continue;
         const { dmin, dmax } = tileDistRange(f.cx, f.cz, ti, tj);
-        // Solid is OUTSIDE for these (concave bowls): free space is d < r.
         const straddles = dmin < f.r - 1e-6 && dmax > f.r + 1e-6;
         const inside = dmax <= f.r + 1e-6;
         const outside = dmin >= f.r - 1e-6;
-
         const k = idx(g, ti, tj);
 
         if (straddles) {
-          // THE FACE. Wall already there is claimed as-is; open floor becomes
-          // the funnel's own stone. This is the case the carve-only version
-          // could not express, and it is the common one — a doorway is a
-          // narrowing, so the corridor beside it is usually wider than the arm.
-          if (!claimable(g, ti, tj, occupied) && !fillable(g, ti, tj, occupied)) return "claimed";
-          if (seen.has(k)) continue; // a neighbouring link already claimed it
-          seen.add(k);
-          if (isWalkable(g, ti, tj)) fillTiles.push({ i: ti, j: tj });
+          if (!claimable(g, ti, tj, occupied) && !(FUNNEL_FILL && fillable(g, ti, tj, occupied))) {
+            ok = false;
+            break;
+          }
+          if (seen.has(k) || claimed.has(k)) continue;
+          claimed.add(k);
+          if (isWalkable(g, ti, tj)) fill.push({ i: ti, j: tj });
           mine.push({ i: ti, j: tj });
         } else if (inside) {
-          // The flare: stone on the ball's side of the curve comes out. Tiles
-          // that are ALREADY open need nothing — this is where the funnel meets
-          // the corridor it belongs to.
           if (isWalkable(g, ti, tj)) continue;
-          if (!claimable(g, ti, tj, occupied)) return "claimed";
-          if (seen.has(k)) continue;
-          seen.add(k);
-          carveTiles.push({ i: ti, j: tj });
+          // ⚠️ NEVER OPEN STONE IN THE THRESHOLD ITSELF.
+          //
+          // The flare is allowed to widen the APPROACH — that is what a funnel
+          // is — but the opening keeps the size `carveDoorways` authored, or
+          // the 3/5/7 vocabulary stops meaning anything. Without this the
+          // carve reached the doorway's own cross-section and `measureDoorway`
+          // read 13 tiles against a vocabulary maximum of 7: precisely the
+          // defect `doorways.ts` added `jambsSurvive` to stop, rebuilt from the
+          // other side.
+          if (sealed(ti, tj)) {
+            ok = false;
+            break;
+          }
+          if (!claimable(g, ti, tj, occupied)) {
+            ok = false;
+            break;
+          }
+          if (seen.has(k) || claimed.has(k)) continue;
+          claimed.add(k);
+          carve.push({ i: ti, j: tj });
         } else if (outside && dmin < f.r + FUNNEL_BACKING) {
-          // BACKING. A face needs stone behind it or it is a curved ribbon
-          // standing in mid-air. Open floor here is filled — that is the
-          // funnel's wall — but only if it is fillable; a doorway, a secret or
-          // the shell is not ours to close, and then the jaw is refused rather
-          // than built unbacked.
           if (!isWalkable(g, ti, tj)) continue;
-          if (at(g, ti, tj) === T_CRACKED) return "no-backing"; // a secret route is not backing
-          if (!fillable(g, ti, tj, occupied)) return "no-backing";
-          if (seen.has(k)) continue;
-          seen.add(k);
-          fillTiles.push({ i: ti, j: tj });
+          if (!FUNNEL_FILL || at(g, ti, tj) === T_CRACKED || !fillable(g, ti, tj, occupied)) {
+            ok = false;
+            break;
+          }
+          if (seen.has(k) || claimed.has(k)) continue;
+          claimed.add(k);
+          fill.push({ i: ti, j: tj });
         }
       }
     }
-    if (mine.length === 0) return "no-tiles"; // a link nothing references is not a wall
+    // A link that owns no face is not a wall, and it also ends the arm: the
+    // next link out would float, attached to nothing.
+    if (!ok || mine.length === 0) break;
+    if (fillTiles.length + fill.length > FUNNEL_MAX_FILL) break;
+
+    for (const t of mine) seen.add(idx(g, t.i, t.j));
+    for (const t of carve) seen.add(idx(g, t.i, t.j));
+    for (const t of fill) seen.add(idx(g, t.i, t.j));
+    features.push(f);
     arcTiles.push(mine);
+    carveTiles.push(...carve);
+    fillTiles.push(...fill);
   }
-  if (fillTiles.length > FUNNEL_MAX_FILL) return "too-much-fill";
-  return { features: [...chain], arcTiles, carveTiles, fillTiles, before: [] };
+
+  // The link that meets the jamb is the funnel. Without it the rest is a curve
+  // floating in a corridor with a square doorway beyond it.
+  if (features.length === 0) return "claimed";
+  return { features, arcTiles, carveTiles, fillTiles, before: [] };
+}
+
+/**
+ * String a booster lane along a jaw, pointing INTO the mouth.
+ *
+ * This is the part that answers the ask directly, and it is a different
+ * mechanism from the shape. A bounce off a converging wall turns the ball
+ * further from the axis every time (that is what makes a steep funnel reject);
+ * a LANE replaces the bounce with a tangential CARRY — the ball is swept along
+ * the curve and released along it, at the exit speed `ARC_LANE_MULT` gives it.
+ * On a gently-leaning jaw the tangent points nearly straight down the corridor,
+ * so the release is aimed through the opening.
+ *
+ * `cw` is chosen by asking which way the tangent actually points at the arc's
+ * midpoint rather than deriving it from a winding convention — the convention
+ * is easy to get backwards, and a lane that carries the ball AWAY from the door
+ * is worse than no lane at all.
+ */
+export function laneTowardMouth(f: ArcFeature, mouth: Pt): LaneBand {
+  const mid = f.a0 + f.span / 2;
+  const px = f.cx + Math.cos(mid) * f.r;
+  const pz = f.cz + Math.sin(mid) * f.r;
+  const dx = px - f.cx;
+  const dz = pz - f.cz;
+  const d = Math.hypot(dx, dz) || 1;
+  // Tangent for cw = true, i.e. increasing angle (see `laneTangent`).
+  const tx = -dz / d;
+  const tz = dx / d;
+  const cw = tx * (mouth.x - px) + tz * (mouth.z - pz) > 0;
+  return { a0: f.a0, span: f.span, cw, cooldownT: 0, hitT: -1 };
 }
 
 /** Commit a planned jaw: open the flare, raise the wall, register the faces. */
-function commitJaw(g: Grid, plan: JawPlan): number {
+export function commitJaw(g: Grid, plan: JawPlan): number {
   ensureArcs(g);
   // Snapshot first, and snapshot EVERYTHING this jaw is about to touch.
   const note = (t: TilePos): void => {
@@ -361,6 +473,7 @@ function commitJaw(g: Grid, plan: JawPlan): number {
   for (const t of plan.fillTiles) setTile(g, t.i, t.j, T_WALL);
   plan.features.forEach((f, k) => {
     const fi = g.arcs!.length;
+    if (FUNNEL_LANES && plan.mouth) f.lanes = [laneTowardMouth(f, plan.mouth)];
     g.arcs!.push(f);
     for (const t of plan.arcTiles[k]) {
       setTile(g, t.i, t.j, T_WALL);
@@ -381,7 +494,7 @@ function commitJaw(g: Grid, plan: JawPlan): number {
  * tile, but the RENDERERS walk `g.arcs` directly and would happily light a
  * booster lane hanging over the floor this revert just restored.
  */
-function revertJaw(g: Grid, plan: JawPlan): void {
+export function revertJaw(g: Grid, plan: JawPlan): void {
   for (const f of plan.features) {
     f.kicks = undefined;
     f.lanes = undefined;
@@ -426,6 +539,7 @@ export function authorDoorwayFunnels(
   doorways: readonly Doorway[],
   start: TilePos,
   occupied: Occupied = () => false,
+  tune: { throatDeg?: number; depth?: number; segments?: number } = {},
 ): FunnelReport {
   const report: FunnelReport = { doorways: 0, jaws: 0, features: 0, carved: 0, filled: 0, reverted: 0, rejects: {} };
   if (!doorways.length) return report;
@@ -441,13 +555,25 @@ export function authorDoorwayFunnels(
     // Arc geometry lives in GRID coords, where tile (i,j) spans [i,i+1]; the
     // mouth's middle is therefore the tile CENTRE, not its corner.
     const focus: Pt = { x: d.i + 0.5, z: d.j + 0.5 };
+    // The threshold row: tiles within half a tile of the doorway's own plane.
+    // `measureDoorway` reads across exactly this line, so it is the line the
+    // flare must leave alone.
+    const sealed = (i: number, j: number): boolean =>
+      Math.abs((i - d.i) * d.ai + (j - d.j) * d.aj) <= THRESHOLD_KEEPOUT;
     let jawsHere = 0;
 
     // Both approaches. `Doorway.ai/aj` names the passage axis but not which end
     // you arrive from, and a threshold is walked both ways.
     for (const dir of [1, -1] as const) {
       const axis: Pt = { x: d.ai * dir, z: d.aj * dir };
-      const { left, right } = parabolicJaws(focus, axis, d.w, FUNNEL_DEPTH, FUNNEL_SEGMENTS);
+      const { left, right } = parabolicJaws(
+        focus,
+        axis,
+        d.w,
+        tune.depth ?? FUNNEL_DEPTH,
+        tune.segments ?? FUNNEL_SEGMENTS,
+        tune.throatDeg ?? FUNNEL_THROAT_DEG,
+      );
       // ⚠️ BOTH ARMS OR NEITHER, and this is the difference between the feature
       // working and actively hurting.
       //
@@ -462,7 +588,7 @@ export function authorDoorwayFunnels(
       const pair: JawPlan[] = [];
       let armsOk = true;
       for (const chain of [left, right]) {
-        const plan = planJaw(g, chain, occupied);
+        const plan = planChain(g, chain, occupied, sealed);
         if (typeof plan === "string") {
           report.rejects[plan] = (report.rejects[plan] ?? 0) + 1;
           armsOk = false;
@@ -477,6 +603,7 @@ export function authorDoorwayFunnels(
           armsOk = false;
           break;
         }
+        plan.mouth = focus;
         pair.push(plan);
       }
       const cost = pair.reduce((n, p) => n + p.features.length, 0);

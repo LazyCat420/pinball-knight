@@ -38,7 +38,13 @@ export interface HeadlessFloor {
 }
 
 /** Build one floor exactly as `core.ts startLevel` does. Null if the generator declined. */
-export function buildHeadlessFloor(level: number, runSeed: number, funnels = false): HeadlessFloor | null {
+export function buildHeadlessFloor(
+  level: number,
+  runSeed: number,
+  funnels = false,
+  funnelTune: { throatDeg?: number; depth?: number; segments?: number } = {},
+  relays = false,
+): HeadlessFloor | null {
   const rng = floorRng(runSeed, level);
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
@@ -58,6 +64,8 @@ export function buildHeadlessFloor(level: number, runSeed: number, funnels = fal
     profile: arch.track,
     density: Math.max(0.35, Math.min(0.85, windiness)),
     funnels,
+    funnelTune,
+    relays,
   });
   if (!track) return null;
   return {
