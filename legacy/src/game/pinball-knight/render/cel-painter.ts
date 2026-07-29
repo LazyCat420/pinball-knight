@@ -24,11 +24,15 @@
  *
  * Only three directions are authored — W is E flipped horizontally at runtime.
  */
-import { paletteCss, inkFor, shadeFor, highlightFor } from "./palette";
+import { paletteCss, inkFor, shadeFor, highlightFor, PALETTE_HEX } from "./palette";
 import { SPRITE_PX } from "../constants";
 import { WEAPONS, type WeaponId } from "../items";
 import { CARDS, CARD_IDS, RARITY_HEX } from "../cards";
 import { REAGENTS, REAGENT_IDS } from "../reagents";
+// TYPE-ONLY: `state` is the root module and pulls in half the game. A value
+// import here would close a cycle through render/ at module-load time; the type
+// is erased, so this costs nothing and still compile-enforces MARBLE_SKINS.
+import type { MarbleMaterial } from "../state";
 import { FULL_PLATE, type KnightLook } from "./knight-look";
 import type { ArmorStyleId } from "../armor-styles";
 import {
@@ -1164,6 +1168,644 @@ function knightSteelBallFrame(dir: Dir, spin: number, _weapon: WeaponId, look: K
   };
 }
 
+// ══════════════════════════════════════════════════════════════════
+// MARBLE BODIES — one sphere per MarbleMaterial.
+//
+// The material axis (entities/marble.ts) shipped its physics long before it
+// had a body: all six drew the plain `ball` clip — the tucked knight — and were
+// told apart only by the hue of their trail ghosts. You could not look at the
+// ball and say what it was made of.
+//
+// These are PARAMETRIC, in the same spirit as the monster roster: one frame
+// painter driven by a MarbleSkin, not six hand-copied spheres. `steelBallFrame`
+// above is ~175 lines for a single material; six more of those would be a
+// thousand lines of near-duplicate canvas code that drift apart the first time
+// anyone tunes the lighting.
+//
+// What separates the six is the TREATMENT — the surface pass drawn clipped to
+// the sphere and rotated by `spin`. The silhouette stays a perfect circle
+// (that's what keeps it reading as a rolling ball); everything that says
+// "diamond" or "lava" happens inside that circle.
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * The surface pass. Each is a different answer to "why does this read as that
+ * material?", and the answer is rarely the colour:
+ *
+ *   facet — hard flat planes meeting at sharp edges. A diamond has no curve.
+ *   fluid — one continuous surface with an internal line that LAGS the spin.
+ *   rough — no specular at all. Absence of highlight is what says stone.
+ *   arc   — the body is dim and the ENERGY on it is bright, re-seeded per frame.
+ *   void  — inverted lighting: darkest where the highlight should be.
+ *   crust — dark plates with light leaking from BETWEEN them, not off them.
+ */
+type MarbleTreatment = "facet" | "fluid" | "rough" | "arc" | "void" | "crust";
+
+interface MarbleSkin {
+  treatment: MarbleTreatment;
+  /** Body gradient top (lit) → bottom (grounded). Four stops, hard-ish steps. */
+  ramp: [string, string, string, string];
+  /** The rim arc — the silhouette read against a dark dungeon. */
+  rim: string;
+  /** Specular strength, 0..1. Zero is a legitimate value (stone). */
+  gloss: number;
+  /** Radius in px. Mass reads as SIZE before it reads as anything else. */
+  r: number;
+  /** Ground-shadow width multiplier — a boulder sits heavier than a droplet. */
+  weight: number;
+  /** The treatment's own colour: facet fringe, seam glow, filament, mote. */
+  accent: string;
+  /**
+   * The catchlight's colour. NOT always white: a steel-white highlight on the
+   * void body made shadow look like it had a hole punched in it, and on lava it
+   * read as a cold blob sitting in the magma. What a surface returns is the
+   * light it is MADE of.
+   */
+  spec: string;
+}
+
+/**
+ * A palette entry as an rgba() string.
+ *
+ * EVERY colour in a marble skin goes through this, and that is load-bearing.
+ * The first pass authored the skins in free-hand hex (#d8f6ff for diamond,
+ * #6fc4e8 for water, #b06fe8 for shadow) and they looked right at 128px — but
+ * the screen-space quantizer snaps every painted pixel to the 32-entry palette,
+ * and this palette has no purple, no magenta, and a big ROT GREEN block at
+ * 6-9. Pale cyans land on rot light; violets land on skin/leather brown. The
+ * rendered contact sheet had a green water marble and a brown shadow marble.
+ *
+ * So the skins below are built out of the ramps the palette actually has:
+ *   arcane 29-31  the only blue        → water, diamond's depths
+ *   steel 19-22   19 is the ONLY violet → shadow's rim, diamond's highlights
+ *   torch 14-18   the only warmth      → lava, storm's filaments
+ *   stone 0-5     greys                → stone
+ *   blood 10-13   the only hot pink    → the laser
+ * Anything outside those is a colour this game cannot draw.
+ */
+function pc(i: number, a = 1): string {
+  const hex = PALETTE_HEX[i];
+  return `rgba(${(hex >> 16) & 0xff}, ${(hex >> 8) & 0xff}, ${hex & 0xff}, ${a})`;
+}
+
+export const MARBLE_SKINS: Record<MarbleMaterial, MarbleSkin> = {
+  // 💎 Cut, not polished. Built on the STEEL highlights (21-22) with arcane
+  // depths (29-31) — the palette's coldest, brightest ramp, which is as close
+  // to "white fire" as 32 colours get.
+  diamond: {
+    treatment: "facet",
+    ramp: [pc(22), pc(21), pc(31), pc(29)],
+    rim: pc(22, 0.95),
+    gloss: 1,
+    r: 19,
+    weight: 0.85,
+    accent: pc(31),
+    spec: pc(22),
+  },
+  // 💧 The arcane ramp IS the water ramp — 31 → 30 → 29 is the only blue this
+  // game has. The highlight is steel 22 rather than a free white so it stays at
+  // the cold end and cannot drift toward the rot greens on the snap.
+  water: {
+    treatment: "fluid",
+    ramp: [pc(31), pc(30), pc(29), pc(1)],
+    rim: pc(31, 0.9),
+    gloss: 0.45,
+    r: 20,
+    weight: 0.9,
+    accent: pc(22),
+    spec: pc(22),
+  },
+  // 🪨 The stone ramp, straight. `gloss: 0` is deliberate and load-bearing: the
+  // moment a rock gets a highlight it reads as a polished marble rather than a
+  // chunk of the floor.
+  stone: {
+    treatment: "rough",
+    ramp: [pc(5), pc(4), pc(3), pc(2)],
+    rim: pc(5, 0.6),
+    gloss: 0,
+    r: 22,
+    weight: 1.25,
+    accent: pc(2),
+    spec: pc(5),
+  },
+  // ⚡ A dim storm body so the FILAMENTS carry the whole read. Those are flame
+  // core 18 — the palette's brightest warm, and the only entry that can pass
+  // for white-hot electricity.
+  storm: {
+    treatment: "arc",
+    ramp: [pc(20), pc(19), pc(29), pc(1)],
+    rim: pc(18, 0.95),
+    gloss: 0.6,
+    r: 19,
+    weight: 0.8,
+    accent: pc(18),
+    spec: pc(18),
+  },
+  // 🌑 "Glowing dark purple" — with a caveat worth stating plainly: this
+  // palette HAS no purple. Steel dark 19 (0x544e63) is its only violet-leaning
+  // entry, called "warm violet-slate" in the palette source. So the body is
+  // void black 0/1 and the rim is 19 lifted by 20: against a near-black sphere
+  // 19 reads as a violet glow, where a true purple simply snaps to skin-brown
+  // and reads as mud — which is exactly what the first pass, authored at
+  // #b06fe8, actually rendered.
+  shadow: {
+    treatment: "void",
+    ramp: [pc(0), pc(1), pc(2), pc(19)],
+    rim: pc(19, 1),
+    gloss: 0.25,
+    r: 20,
+    weight: 0.7,
+    accent: pc(20),
+    spec: pc(20),
+  },
+  // 🔥 Torch 14-18 is the only warm ramp there is, and it happens to be exactly
+  // a basalt-and-magma ramp: 14 ember for the cold crust, 18 flame core for the
+  // seams between the plates.
+  lava: {
+    treatment: "crust",
+    ramp: [pc(15), pc(14), pc(26), pc(0)],
+    rim: pc(16, 0.9),
+    gloss: 0.35,
+    r: 21,
+    weight: 1.05,
+    accent: pc(17),
+    spec: pc(18),
+  },
+};
+
+/**
+ * Stable per-frame jitter. The atlas is painted once at boot, so `Math.random`
+ * here would bake ONE arbitrary result and be untestable and unreproducible —
+ * a floor that re-seeds differently across a reload is exactly the class of bug
+ * the maze census gate exists to catch. This is a plain integer hash instead:
+ * same (seed, i) always paints the same lightning bolt.
+ */
+function marbleJitter(seed: number, i: number): number {
+  let h = (seed * 374761393 + i * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** The treatment pass, drawn already clipped to the sphere and centred on it. */
+function paintTreatment(ctx: CanvasRenderingContext2D, skin: MarbleSkin, spin: number, frame: number): void {
+  const R = skin.r;
+  const rnd = (i: number) => marbleJitter(frame * 97 + 1, i);
+
+  switch (skin.treatment) {
+    // ── FACET: flat planes from the centre out, alternating bright/dark so the
+    // edges between them are visible. A gemstone is a POLYHEDRON — the giveaway
+    // is that adjacent planes differ in tone with no blend between them.
+    case "facet": {
+      const n = 9;
+      ctx.rotate(spin);
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * Math.PI * 2;
+        const a1 = ((i + 1) / n) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, R, a0, a1);
+        ctx.closePath();
+        // Facets facing "up-left" catch the light; the tone steps, never ramps.
+        const face = Math.cos(a0 + Math.PI * 0.75);
+        // OPAQUE, and each one an exact palette entry: a facet is a flat plane
+        // of a single tone. Painting them as translucent washes over the body
+        // generated exactly the mid-luminance blends the snap mis-routes.
+        ctx.fillStyle = face > 0.45 ? pc(22) : face > -0.2 ? pc(21) : pc(29);
+        ctx.fill();
+      }
+      // Prismatic fringe: white light splitting on two edges. Two hues only —
+      // a full rainbow reads as an oil slick, not a diamond.
+      for (let i = 0; i < 2; i++) {
+        const a = ((i * 4 + 1) / n) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R);
+        ctx.lineWidth = 1.6;
+        // The "prismatic" split, within what the palette can express: the only
+        // two hues that survive next to a cold white are arcane 31 and the
+        // violet end of steel 19. A literal rainbow snapped to rot green.
+        ctx.strokeStyle = i === 0 ? pc(19, 0.75) : pc(31, 0.7);
+        ctx.stroke();
+      }
+      // The girdle: a bright ring where a cut stone's widest edge sits.
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.58, 0, Math.PI * 2);
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = pc(22, 0.6);
+      ctx.stroke();
+      break;
+    }
+
+    // ── FLUID: a single internal surface line. It LAGS the spin (×0.35) so the
+    // body turns faster than its contents — the read that says "this is liquid
+    // held in a ball" rather than "this is a blue marble".
+    case "fluid": {
+      ctx.save();
+      ctx.rotate(spin * 0.35);
+      // Meniscus: a shallow arc across the body with a bright top edge.
+      ctx.beginPath();
+      ctx.ellipse(0, R * 0.1, R * 0.92, R * 0.34, 0, 0, Math.PI * 2);
+      ctx.fillStyle = pc(30);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(0, R * 0.1, R * 0.92, R * 0.34, 0, Math.PI, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = pc(22);
+      ctx.stroke();
+      ctx.restore();
+      // Refracted caustic: the bright spot sits LOW. Light entering the top of
+      // a clear sphere converges below its centre — putting it up top would
+      // make it a reflection, and the ball would read as glass, not water.
+      const cg = ctx.createRadialGradient(0, R * 0.42, 0, 0, R * 0.42, R * 0.5);
+      cg.addColorStop(0, pc(22));
+      cg.addColorStop(0.5, pc(22));
+      cg.addColorStop(0.51, pc(22, 0));
+      ctx.fillStyle = cg;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // Interior bubbles, drifting with the lagged rotation.
+      for (let i = 0; i < 3; i++) {
+        const a = spin * 0.35 + rnd(i) * Math.PI * 2;
+        const d = R * (0.3 + rnd(i + 9) * 0.45);
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 1.1 + rnd(i + 18) * 1.3, 0, Math.PI * 2);
+        ctx.fillStyle = pc(22);
+        ctx.fill();
+      }
+      break;
+    }
+
+    // ── ROUGH: craters and grain. Each pit is a dark ellipse with a LIT lip on
+    // the side facing the light — that lip is what turns a dark smudge into a
+    // dent, and without it the ball looks dirty rather than pitted.
+    case "rough": {
+      ctx.rotate(spin);
+      for (let i = 0; i < 5; i++) {
+        const a = rnd(i) * Math.PI * 2;
+        const d = R * (0.18 + rnd(i + 5) * 0.62);
+        const px = Math.cos(a) * d;
+        const py = Math.sin(a) * d;
+        const pr = 2.2 + rnd(i + 10) * 3.4;
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fillStyle = pc(2, 0.65);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(px, py, pr, Math.PI * 0.9, Math.PI * 1.85);
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = pc(5, 0.5);
+        ctx.stroke();
+      }
+      // Grain speckle — cheap, and it keeps the large flat mass from reading as
+      // plastic after the palette quantizer flattens the gradient.
+      for (let i = 0; i < 22; i++) {
+        const a = rnd(i + 40) * Math.PI * 2;
+        const d = R * Math.sqrt(rnd(i + 60)) * 0.95;
+        ctx.fillStyle = rnd(i + 80) > 0.5 ? pc(5, 0.28) : pc(2, 0.35);
+        ctx.fillRect(Math.cos(a) * d, Math.sin(a) * d, 1.4, 1.4);
+      }
+      // A chipped edge: one flat bitten out of the rim. A perfectly round rock
+      // is a marble; the chip is what makes it look BROKEN off something.
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(2.1) * R, Math.sin(2.1) * R);
+      ctx.lineTo(Math.cos(2.8) * R, Math.sin(2.8) * R);
+      ctx.lineTo(Math.cos(2.45) * R * 0.72, Math.sin(2.45) * R * 0.72);
+      ctx.closePath();
+      ctx.fillStyle = pc(1, 0.55);
+      ctx.fill();
+      break;
+    }
+
+    // ── ARC: filaments from the core to the rim, re-seeded per FRAME (not per
+    // spin) so the lightning jumps rather than rotates. Electricity does not
+    // roll with the ball, and animating it that way killed the effect.
+    case "arc": {
+      const bolts = 4;
+      for (let b = 0; b < bolts; b++) {
+        const a = rnd(b) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        const steps = 4;
+        for (let s = 1; s <= steps; s++) {
+          const t = s / steps;
+          const jit = (rnd(b * 8 + s) - 0.5) * 0.9 * (1 - t * 0.4);
+          ctx.lineTo(Math.cos(a + jit) * R * t, Math.sin(a + jit) * R * t);
+        }
+        // Two passes: a wide dim glow, then a thin white-hot core inside it.
+        ctx.lineJoin = "round";
+        ctx.lineWidth = 3.2;
+        ctx.strokeStyle = pc(16, 0.45);
+        ctx.stroke();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = pc(18, 1);
+        ctx.stroke();
+      }
+      // Core flare — the filaments have to come FROM something.
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.42);
+      core.addColorStop(0, pc(18, 0.85));
+      core.addColorStop(0.5, pc(17, 0.35));
+      core.addColorStop(1, pc(16, 0));
+      ctx.fillStyle = core;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      break;
+    }
+
+    // ── VOID: the inversion. A dark radial sits where every other body puts its
+    // highlight, so the sphere absorbs the room's light instead of returning
+    // it, and violet motes fall INWARD.
+    case "void": {
+      const hole = ctx.createRadialGradient(-R * 0.3, -R * 0.34, 0, -R * 0.3, -R * 0.34, R * 1.1);
+      hole.addColorStop(0, pc(0, 0.95));
+      hole.addColorStop(0.55, pc(1, 0.6));
+      hole.addColorStop(1, pc(19, 0));
+      ctx.fillStyle = hole;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // Inward motes: drawn as short streaks pointing at the centre, so the eye
+      // reads them as being PULLED in rather than sitting on the surface.
+      ctx.rotate(spin * 0.6);
+      for (let i = 0; i < 7; i++) {
+        const a = rnd(i) * Math.PI * 2;
+        const d = R * (0.45 + rnd(i + 7) * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+        ctx.lineTo(Math.cos(a) * (d - 3.5), Math.sin(a) * (d - 3.5));
+        ctx.lineWidth = 1.3;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = pc(20, 0.35 + rnd(i + 14) * 0.55);
+        ctx.stroke();
+      }
+      break;
+    }
+
+    // ── CRUST: the glow is painted FIRST and the dark plates go over it, so the
+    // light genuinely leaks from between them. Drawing seams as bright lines on
+    // top instead gave a cracked rock with paint in the cracks.
+    case "crust": {
+      const molten = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+      molten.addColorStop(0, pc(18));
+      molten.addColorStop(0.35, pc(17));
+      molten.addColorStop(0.75, pc(15));
+      molten.addColorStop(1, pc(14));
+      ctx.fillStyle = molten;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // Plates: wedges inset from each other, leaving the molten layer showing
+      // through as seams. They rotate; the glow above does not.
+      ctx.save();
+      ctx.rotate(spin);
+      const plates = 7;
+      for (let i = 0; i < plates; i++) {
+        const a0 = (i / plates) * Math.PI * 2 + 0.055;
+        const a1 = ((i + 1) / plates) * Math.PI * 2 - 0.055;
+        const inset = R * (0.1 + rnd(i) * 0.12);
+        ctx.beginPath();
+        ctx.arc(0, 0, R - inset * 0.35, a0, a1);
+        ctx.arc(0, 0, inset, a1, a0, true);
+        ctx.closePath();
+        ctx.fillStyle = i % 2 === 0 ? pc(26) : pc(0);
+        ctx.fill();
+        // Cooled highlight on the plate's leading edge — basalt is glassy.
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = pc(14, 0.65);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // A hot pool at the base: the melt pools DOWN, and that asymmetry is what
+      // stops the ball reading as a uniformly glowing sphere.
+      const pool = ctx.createRadialGradient(0, R * 0.5, 0, 0, R * 0.5, R * 0.62);
+      pool.addColorStop(0, pc(17, 0.6));
+      pool.addColorStop(1, pc(17, 0));
+      ctx.fillStyle = pool;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      break;
+    }
+  }
+}
+
+/**
+ * One frame of a marble body. `spin` rolls the surface; the silhouette is a
+ * fixed circle. Shares `steelBallFrame`'s anatomy — shadow, body, treatment,
+ * specular, rim, ink outline, speed streak — because they are the same object
+ * made of different stuff, and having them diverge structurally would show up
+ * as the ball changing SIZE when you picked a material up.
+ */
+function marbleFrame(skin: MarbleSkin, spin: number, frame: number): FramePaint {
+  const R = skin.r;
+  const cy = GROUND - R - 1; // resting on the floor line, like every ball clip
+  return (ctx) => {
+    groundShadow(ctx, CX, GROUND + 3, 19 * skin.weight);
+
+    // ── Body: HARD-STOPPED bands, not a ramp. This is load-bearing, and it is
+    // the same trick steelBallFrame uses ("doubling up the stops is what buys
+    // that snap") — but here it fixes a colour bug, not just a style one.
+    //
+    // The palette snap is LUMA-WEIGHTED, so the green channel carries 0.587 of
+    // the distance. A mid-luminance cyan is therefore matched mostly on its G
+    // value, and the rot-green ramp (6-9) sits closer in G than the arcane ramp
+    // it belongs to: a soft cyan gradient snapped 27% of the water marble onto
+    // ROT GREEN, measured. Every intermediate tone a soft ramp invents is a
+    // chance to land on the wrong ramp entirely.
+    //
+    // Doubling each stop collapses the blend regions to a pixel, so almost
+    // every texel is one of the four authored palette colours and there is
+    // nothing in between to mis-snap.
+    const body = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+    body.addColorStop(0, skin.ramp[0]);
+    body.addColorStop(0.3, skin.ramp[0]);
+    body.addColorStop(0.31, skin.ramp[1]);
+    body.addColorStop(0.55, skin.ramp[1]);
+    body.addColorStop(0.56, skin.ramp[2]);
+    body.addColorStop(0.8, skin.ramp[2]);
+    body.addColorStop(0.81, skin.ramp[3]);
+    body.addColorStop(1, skin.ramp[3]);
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = body;
+    ctx.fill();
+
+    // ── Treatment, clipped to the sphere so nothing escapes the silhouette.
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.translate(CX, cy);
+    paintTreatment(ctx, skin, spin, frame);
+    ctx.restore();
+
+    // ── Specular. Skipped entirely at gloss 0 — stone earns its dullness by
+    // having no highlight at all, not a faint one.
+    if (skin.gloss > 0) {
+      // An OPAQUE cel highlight, not a translucent bloom. A soft white wash
+      // over a saturated body is the single biggest generator of the
+      // mid-luminance tones the luma-weighted snap misroutes — on water it was
+      // worth several percent of the ball landing on rot green. It is also just
+      // more correct for this art style: cel shading is flat shapes with hard
+      // edges, and the specular is a shape like any other.
+      const hx = CX + Math.cos(spin) * R * 0.3;
+      const hy = cy - R * 0.44 + Math.sin(spin) * R * 0.14;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(CX, cy, R, 0, Math.PI * 2);
+      ctx.clip();
+      // Size carries the gloss instead of opacity: a matte-ish body gets a
+      // small tight catchlight, a mirror gets a broad one.
+      ctx.beginPath();
+      ctx.ellipse(hx, hy, R * (0.16 + 0.2 * skin.gloss), R * (0.11 + 0.15 * skin.gloss), -0.5, 0, Math.PI * 2);
+      ctx.fillStyle = skin.spec;
+      ctx.fill();
+      // A second, dimmer plate below it reads as the falloff a single flat
+      // shape cannot express — two flat tones, not a gradient.
+      if (skin.gloss > 0.4) {
+        ctx.beginPath();
+        ctx.ellipse(hx - R * 0.1, hy + R * 0.22, R * 0.14 * skin.gloss, R * 0.09 * skin.gloss, -0.5, 0, Math.PI * 2);
+        ctx.fillStyle = pc(21);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // ── Rim: the material's own colour along the top-left edge. This is the
+    // single strongest identity cue at gameplay distance — at 1:1 the treatment
+    // is a few pixels, but the rim outlines the whole ball.
+    ctx.beginPath();
+    ctx.arc(CX, cy, R - 0.8, Math.PI * 1.02, Math.PI * 1.78);
+    ctx.lineWidth = 1.9;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = skin.rim;
+    ctx.stroke();
+
+    // ── Outline in the palette's ink, so it shares a colour space with every
+    // other actor after quantize.
+    ctx.beginPath();
+    ctx.arc(CX, cy, R, 0, Math.PI * 2);
+    // Thicker than the steel ball's 1.6 on purpose: this ring is what the
+    // anti-aliased silhouette edge blends INTO. Against transparency, a cold
+    // body's fringe lands on the rot ramp under the luma-weighted snap; against
+    // ink it lands on the body's own dark end.
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = paletteCss(1);
+    ctx.stroke();
+
+    // ── Speed streak, tinted by the material — the same motion-blur arc the
+    // steel ball carries, so all seven balls read as one family.
+    const sweep = 2.2;
+    ctx.beginPath();
+    ctx.arc(CX, cy, R + 2.5, spin, spin + sweep);
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = skin.accent;
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+}
+
+/**
+ * ⚡ LIGHTNING BOLT / ✨ LASER — the two RICOCHET FORMS.
+ *
+ * Not marble bodies: while these run you are not a sphere, so drawing them as
+ * one more skin would undercut the whole point. Both are elongated ALONG their
+ * travel and blown out at the core, because the read that says "this is energy,
+ * not an object" is a white-hot centre with colour only in the falloff.
+ *
+ * `beam` is the laser (a clean capsule with a hard core) and the bolt is the
+ * same silhouette broken into a jagged zigzag — one painter, two paths, for the
+ * same reason the marbles share one.
+ */
+function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
+  const cy = GROUND - 26;
+  // The bolt rides the torch ramp; the laser rides BLOOD 12-13, which is the
+  // only saturated hot hue in the palette — there is no magenta to reach for.
+  const glowC = kind === "bolt" ? 16 : 12;
+  const bodyC = kind === "bolt" ? 17 : 13;
+  const coreC = kind === "bolt" ? 18 : 22;
+  const rnd = (i: number) => marbleJitter(frame * 131 + 7, i);
+  return (ctx) => {
+    // No ground shadow: neither of these is a body resting on the floor, and
+    // giving them one made them read as an object being dragged.
+    ctx.save();
+    ctx.translate(CX, cy);
+    // A slight per-frame roll so the form visibly CHURNS in place rather than
+    // sitting as a static decal while the world moves past it.
+    ctx.rotate((rnd(0) - 0.5) * 0.5);
+
+    // ── Glow envelope, drawn first and widest.
+    const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
+    halo.addColorStop(0, pc(glowC, 0.55));
+    halo.addColorStop(0.45, pc(glowC, 0.22));
+    halo.addColorStop(1, pc(glowC, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(-32, -32, 64, 64);
+
+    if (kind === "laser") {
+      // A capsule: soft outer, saturated middle, white core. Three passes of
+      // the same line at shrinking width is what gives a beam its bloom.
+      for (const [w, col] of [
+        [11, pc(glowC, 0.45)],
+        [6, pc(bodyC, 0.9)],
+        [2.4, pc(coreC, 1)],
+      ] as Array<[number, string]>) {
+        ctx.beginPath();
+        ctx.moveTo(-24, 0);
+        ctx.lineTo(24, 0);
+        ctx.lineWidth = w;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = col;
+        ctx.stroke();
+      }
+      // Leading spark — the end that is going somewhere.
+      ctx.beginPath();
+      ctx.arc(24, 0, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = pc(coreC, 1);
+      ctx.fill();
+    } else {
+      // The bolt: the same span, walked as a jagged polyline that re-seeds per
+      // frame. Drawn twice — a fat dim pass for the discharge glow, then a thin
+      // white-hot core inside it.
+      const pts: Array<[number, number]> = [];
+      const segs = 6;
+      for (let i = 0; i <= segs; i++) {
+        const t = i / segs;
+        pts.push([-26 + t * 52, (rnd(i + 1) - 0.5) * 22 * Math.sin(t * Math.PI)]);
+      }
+      for (const [w, col] of [
+        [9, pc(glowC, 0.4)],
+        [4, pc(bodyC, 0.9)],
+        [1.6, pc(coreC, 1)],
+      ] as Array<[number, string]>) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (const [x, y] of pts.slice(1)) ctx.lineTo(x, y);
+        ctx.lineWidth = w;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.strokeStyle = col;
+        ctx.stroke();
+      }
+      // Forked branches — a bolt that never splits reads as a drawn line.
+      for (let b = 0; b < 2; b++) {
+        const at = pts[2 + b * 2];
+        ctx.beginPath();
+        ctx.moveTo(at[0], at[1]);
+        ctx.lineTo(at[0] + (rnd(b + 20) - 0.5) * 16, at[1] + (rnd(b + 30) - 0.5) * 26);
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = pc(bodyC, 0.85);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+}
+
+/** The four frames of a ricochet form — authored once, shared by facing. */
+export function ricochetFormFrames(kind: "bolt" | "laser"): FramePaint[] {
+  return [0, 1, 2, 3].map((i) => ricochetFrame(kind, i));
+}
+
+/** The four rolling frames for one material — authored once, shared by facing. */
+export function marbleBallFrames(m: MarbleMaterial): FramePaint[] {
+  const skin = MARBLE_SKINS[m];
+  return [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((spin, i) => marbleFrame(skin, spin, i));
+}
+
 /** Build the full painter set for the knight holding `weapon`, dressed as `look`. */
 export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE): ActorPaints {
   const ranged = WEAPONS[weapon].kind === "ranged";
@@ -1172,6 +1814,16 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
   // facings. Building them per-direction produced 12 byte-identical frames and
   // pushed the atlas strip past the GPU's 8192px limit, which silently
   // downscales the whole sheet and blanks every sprite in the game.
+  // Same reasoning for the six marble bodies: authored once, shared by facing.
+  const marbleFrames: Record<MarbleMaterial, FramePaint[]> = {
+    diamond: marbleBallFrames("diamond"),
+    water: marbleBallFrames("water"),
+    stone: marbleBallFrames("stone"),
+    storm: marbleBallFrames("storm"),
+    shadow: marbleBallFrames("shadow"),
+    lava: marbleBallFrames("lava"),
+  };
+  const ricochetFrames = { bolt: ricochetFormFrames("bolt"), laser: ricochetFormFrames("laser") };
   const steelBallFrames: FramePaint[] = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map((spin) =>
     knightSteelBallFrame("S", spin, weapon, look),
   );
@@ -1297,6 +1949,20 @@ export function makeKnightPaints(weapon: WeaponId, look: KnightLook = FULL_PLATE
     // ── STEEL BALL: the 🪩 Ball Form potion only — an actual chrome sphere.
     // Kept as its own clip so the everyday overcharge ride above is untouched. ──
     steelball: steelBallFrames,
+
+    // ── MARBLE BODIES: one per material, same reference-sharing trick as the
+    // steel ball above (authored once outside dirClips, handed to all three
+    // facings, deduped by buildSpriteSheet into 4 atlas frames apiece). ──
+    diamondball: marbleFrames.diamond,
+    waterball: marbleFrames.water,
+    stoneball: marbleFrames.stone,
+    stormball: marbleFrames.storm,
+    shadowball: marbleFrames.shadow,
+    lavaball: marbleFrames.lava,
+
+    // ── RICOCHET FORMS: not a sphere at all — a bolt and a beam. ──
+    boltform: ricochetFrames.bolt,
+    laserform: ricochetFrames.laser,
   });
 
   return { S: dirClips("S"), N: dirClips("N"), E: dirClips("E") };

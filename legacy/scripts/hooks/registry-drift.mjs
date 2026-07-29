@@ -85,6 +85,7 @@ const files = walk(GAME);
 const UNIONS = {
   EnemyKind: unionMembers(read("state.ts"), "EnemyKind"),
   SheetKey: unionMembers(read("boot/sheets.ts"), "SheetKey"),
+  MarbleMaterial: unionMembers(read("state.ts"), "MarbleMaterial"),
 };
 
 // ── A. union coverage ───────────────────────────────────────────────────────
@@ -249,6 +250,85 @@ for (const file of files) {
   }
 }
 
+// ── F. marble-material registries ───────────────────────────────────────────
+//
+// `MarbleMaterial` has exactly ONE compile-enforced table (`MATERIALS`, a
+// `Record<MarbleMaterial, MaterialMeta>`). Everything else that must know all
+// six is a hand-maintained array literal, an `||` chain, an object literal
+// annotated `Record<string, …>`, or — since MARBLE FORMS — a clip name that
+// only exists as a string in four separate registries. tsc sees none of it.
+//
+// The failure mode is not a crash: a material missing from MATERIAL_LIST simply
+// never drops, one missing from the ClipName union silently renders the KNIGHT
+// instead of the marble, and one missing from `isMaterial` can't be granted from
+// the debug panel. Each looks like "that material is just rare".
+{
+  const materials = UNIONS.MarbleMaterial;
+
+  /** The bracketed span introduced by `anchor`, opened at its first `=`. */
+  const valueSpan = (src, anchor, open, close, file) => {
+    const at = src.indexOf(anchor);
+    if (at < 0) {
+      fail("F", `${file}: could not find "${anchor}" — the drift check itself is stale, fix it before trusting a clean run`);
+      return null;
+    }
+    // Anchor past the `=` so a `Record<…>`/`X[]` TYPE annotation's own brackets
+    // don't close the span early (checks D and E dodge the same trap).
+    return spanAt(src, src.indexOf("=", at), open, close);
+  };
+
+  // Each entry: the span that must name every material, and what breaks if it
+  // doesn't. `token` builds the string we look for inside that span.
+  const REGISTRIES = [
+    { file: "entities/marble.ts", anchor: "export const MATERIAL_LIST", open: "[", close: "]", why: "the material never drops or rolls" },
+    { file: "constants/pinball.ts", anchor: "export const MATERIAL_DURATION", open: "{", close: "}", why: "its pickup timer is undefined" },
+    { file: "ui.ts", anchor: "const MATERIAL_CHIP", open: "{", close: "}", why: "the buff strip shows no chip for it" },
+    { file: "hud-diablo.ts", anchor: "const M: Record<string, { icon: string; color: string; max: number; label: string }>", open: "{", close: "}", why: "the HUD tile is missing" },
+    { file: "debug-panel.ts", anchor: "const MATERIALS_DBG", open: "[", close: "]", why: "the debug grant chip is missing" },
+    { file: "render/cel-painter.ts", anchor: "export const MARBLE_SKINS", open: "{", close: "}", why: "it has no painted body" },
+  ];
+
+  for (const { file, anchor, open, close, why } of REGISTRIES) {
+    const src = read(file);
+    const span = valueSpan(src, anchor, open, close, file);
+    if (span == null) continue;
+    const listed = new Set([...span.matchAll(/"?([a-z]+)"?\s*[:,\]]/g)].map((x) => x[1]));
+    const missing = materials.filter((m) => !listed.has(m) && !span.includes(`"${m}"`));
+    if (missing.length) fail("F", `${file}: ${anchor.replace(/^(export )?const /, "")} is missing ${missing.join(", ")} — ${why}`);
+  }
+
+  // `isMaterial` is an `||` chain, not a table — its own shape, its own read.
+  {
+    const src = read("entities/marble.ts");
+    const body = blockAt(src, src.indexOf("export function isMaterial"));
+    const missing = materials.filter((m) => !body.includes(`"${m}"`));
+    if (missing.length) fail("F", `entities/marble.ts: isMaterial() is missing ${missing.join(", ")} — the debug grant and the pickup route both reject it as an unknown id`);
+  }
+
+  // The pickup sprite lives in a run of ITEM_PAINTS entries under one comment,
+  // not in a table of its own.
+  {
+    const src = read("render/cel-painter.ts");
+    const at = src.indexOf("// Marble materials —");
+    const span = at < 0 ? "" : src.slice(at, at + 600);
+    const missing = materials.filter((m) => !new RegExp(`\\b${m}:`).test(span));
+    if (missing.length) fail("F", `render/cel-painter.ts: the ITEM_PAINTS marble run is missing ${missing.join(", ")} — its floor pickup draws as the fallback, so you cannot tell what you are about to grab`);
+  }
+
+  // ── The four CLIP registries. A material's body is `<material>ball`, and it
+  // must be declared in all four or the ball silently falls back to the knight.
+  const CLIP_REGISTRIES = [
+    { file: "engine/render/paint-types.ts", label: "the ClipName union", why: "the clip cannot be named at all" },
+    { file: "engine/render/animator.ts", label: "the cadence switch + LOOPS", why: "it has no frame timing and would not loop" },
+    { file: "engine/render/sprite.ts", label: "buildSpriteSheet's clipNames", why: "the frames are never packed into the atlas" },
+  ];
+  for (const { file, label, why } of CLIP_REGISTRIES) {
+    const src = read(file);
+    const missing = materials.filter((m) => !src.includes(`${m}ball`));
+    if (missing.length) fail("F", `${file}: ${label} is missing ${missing.map((m) => `"${m}ball"`).join(", ")} — ${why}, so the material renders as the plain knight`);
+  }
+}
+
 // ── report ──────────────────────────────────────────────────────────────────
 if (!problems.length) {
   console.log("registry-drift: clean");
@@ -260,9 +340,10 @@ const LABEL = {
   C: "EXPANSION_SKIN ↔ KIND_PORTRAIT",
   D: "floor-1 atlas preload",
   E: "debug-panel spawn route",
+  F: "marble-material registries",
 };
 console.log(`registry-drift: ${problems.length} problem(s)\n`);
-for (const check of ["A", "B", "C", "D", "E"]) {
+for (const check of ["A", "B", "C", "D", "E", "F"]) {
   const hits = problems.filter((p) => p.check === check);
   if (!hits.length) continue;
   console.log(`  [${check}] ${LABEL[check]}`);

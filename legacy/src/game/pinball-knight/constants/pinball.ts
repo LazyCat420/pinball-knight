@@ -1002,6 +1002,101 @@ export const FIRE_PUDDLE_LIFE = 3;
 export const FIRE_PUDDLE_RADIUS = 0.8;
 export const MATERIAL_SELF_HARM_DMG = 1; // player dmg per tick on own hazard (toggle)
 
+// ── SQUASH & STRETCH — the ball DEFORMS on wall contact ──────────
+// Only the two fluid materials deform. That contrast is the whole point: if
+// diamond and stone squashed too, "made of water" would stop meaning anything.
+export const WATER_SQUASH = 1; // a droplet flattens hard and snaps back
+export const LAVA_SQUASH = 0.5; // a crusted shell over liquid — it gives, it doesn't splat
+/** Seconds for a squash to recover. Short: past ~0.25s it reads as a wobble. */
+export const SQUASH_RECOVER = 0.18;
+/**
+ * Peak compression along the contact at full amplitude (0.3 = 30% flatter).
+ * The bulge across it is the RECIPROCAL (≈1.43), so the deformation preserves
+ * area exactly; at 0.4 the reciprocal bulge (1.67) read as a water balloon.
+ */
+export const SQUASH_DEPTH = 0.3;
+/** Min impact speed (u/s) that deforms at all — a gentle roll into a wall doesn't. */
+export const SQUASH_MIN_SPEED = 5;
+
+// ── 💎 DIAMOND: CUTS, and cannot be broken ───────────────────────
+// The hardest thing in the dungeon does not bounce off flesh — it goes through.
+/** Momentum (u/s) at which diamond stops ramming and starts CUTTING. */
+export const DIAMOND_CUT_SPEED = 7;
+/** Damage multiplier on a cut vs an ordinary ram — an edge concentrates force. */
+export const DIAMOND_CUT_DMG_MULT = 1.6;
+/**
+ * Ram re-hit cooldown while cutting, vs BALL_RAM_COOLDOWN.
+ * This is the mechanic: a ram hits one clump and pauses, a cut opens a LINE
+ * through a crowd. At the normal cooldown diamond just felt like a ram that
+ * did more damage.
+ */
+export const DIAMOND_CUT_COOLDOWN = 0.05;
+/** A cut delivers no knockback — the foe is sliced where it stands, not shoved. */
+export const DIAMOND_CUT_KNOCKBACK = 0;
+
+// ── 🪨 STONE: smashes masonry by MASS ────────────────────────────
+// Deliberately well above diamond's 8/4 and below the bare 15/7: diamond breaks
+// walls by being HARD (it barely needs to be moving), stone by being HEAVY (it
+// has to be thrown). If these matched, the two would feel like one material.
+export const STONE_WALL_BREAK_SPEED = 11;
+export const STONE_SECRET_BREAK_SPEED = 5.5;
+
+// ── RICOCHET FORM (entities/ricochet-form.ts) ────────────────────
+// A few seconds where the ball is NOT yours: input ignored, high fixed speed,
+// every wall contact deflecting randomly. Shared by ⚡ storm's lightning bolt
+// and the ✨ laser potion — same behaviour, two flavours.
+/** How wide the random deflection is on each bounce, radians (±half this).
+ *  A clean mirror reflection traces a tidy billiard path, which is the exact
+ *  opposite of "bounces around like crazy" — the jitter IS the effect. */
+export const RICOCHET_DEFLECT_JITTER = 1.6;
+/** Extra reach past the two bodies before a pass-through hit lands. */
+export const RICOCHET_HIT_RADIUS = 0.35;
+/** Seconds between damage ticks — without it a foe is hit every frame. */
+export const RICOCHET_TICK = 0.12;
+/** Momentum handed back when the form ends. Not zero: freezing the player in
+ *  place the instant it lapses would waste every bit of speed it built. */
+export const RICOCHET_EXIT_SPEED = 9;
+
+// ⚡ Lightning bolt — storm's special (fires off the material slam).
+export const BOLT_DURATION = 2.5;
+export const BOLT_SPEED = 26;
+export const BOLT_DAMAGE = 3;
+
+// ✨ Laser — its own potion. Faster, hits harder, and shorter to pay for it.
+export const LASER_DURATION = 2.2;
+export const LASER_SPEED = 32;
+export const LASER_DAMAGE = 4;
+
+// ── 🔥 LAVA: MELTS masonry (entities/wall-erosion.ts) ────────────
+// Walls used to be binary — fast enough to smash, or nothing. Lava introduces
+// PARTIAL wall damage, which is a system, not a constant: see wall-erosion.ts.
+/** Erosion added per qualifying lava wall-bounce, before the speed scale.
+ *  ~4-5 solid hits to breach: "a little bit", per the ask — a melted shortcut
+ *  should feel earned, not incidental. */
+export const LAVA_MELT_PER_HIT = 0.18;
+/** Below this impact speed lava leaves scorch marks but does no structural harm. */
+export const LAVA_MELT_MIN_SPEED = 6;
+/** Extra erosion per u/s above the minimum — a hard slam melts deeper. */
+export const LAVA_MELT_SPEED_SCALE = 0.03;
+/** How far a fully-eroded wall has visibly slumped, as a fraction of its height. */
+export const WALL_EROSION_MELT_SAG = 0.55;
+/** Embers thrown off a melt hit. */
+export const WALL_EROSION_EMBERS = 5;
+
+// ── 🌑 SHADOW: phases, slays the phasers, and feeds ──────────────
+/**
+ * Seconds of "you are inside masonry" tolerated before the eject fires.
+ * Phasing OUT of a wall is the whole point; being STUCK in one when the
+ * material lapses is an unrecoverable run, so the eject is not optional.
+ */
+export const SHADOW_PHASE_GRACE = 0.15;
+/** Damage multiplier vs the wall-phasing roster (ghost/reaper/wisp). */
+export const SHADOW_SLAYER_MULT = 4;
+/** HP restored per ram while shadow is up. */
+export const SHADOW_LIFESTEAL = 1;
+/** Min seconds between lifesteal procs — without it a crowd is a full heal. */
+export const SHADOW_LIFESTEAL_CD = 1.2;
+
 // ══ EXPANSION ROSTER (CONTENT_EXPANSION_PLAN.md) ══════════════════
 // Reuse existing sprite sheets (tinted) — art is borrowed; behavior is bespoke.
 // 🐕 Hound — charger

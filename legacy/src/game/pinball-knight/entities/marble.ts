@@ -17,7 +17,7 @@
  * spawnFloorFx (new floor scars), damageZombie + the pounce dust-ring for the
  * shockwave, and vfx.ghost for the aura tint.
  */
-import { state, type MarbleMaterial } from "../state";
+import { state, type MarbleMaterial, type EnemyKind } from "../state";
 import {
   MATERIAL_DURATION,
   MATERIAL_FUSION_TIME,
@@ -97,11 +97,34 @@ import {
   LAVA_SLAM_FIRE_LIFE,
   FIRE_PUDDLE_RADIUS,
   FIRE_PUDDLE_LIFE,
+  WATER_SQUASH,
+  LAVA_SQUASH,
+  SQUASH_RECOVER,
+  SQUASH_DEPTH,
+  SQUASH_MIN_SPEED,
+  STONE_WALL_BREAK_SPEED,
+  STONE_SECRET_BREAK_SPEED,
+  DIAMOND_CUT_SPEED,
+  DIAMOND_CUT_DMG_MULT,
+  DIAMOND_CUT_COOLDOWN,
+  DIAMOND_CUT_KNOCKBACK,
+  SHADOW_SLAYER_MULT,
+  SHADOW_LIFESTEAL,
+  SHADOW_LIFESTEAL_CD,
+  SHADOW_PHASE_GRACE,
+  BALL_RAM_COOLDOWN,
 } from "../constants";
+import { worldDirToScreen } from "../engine/camera";
+import { playerMaxHp } from "../skill-runtime";
 import { PALETTE_HEX } from "../render/palette";
-import { moveCircle } from "../engine/collision";
+import type { ClipName } from "../engine/render/paint-types";
+import { moveCircle, type MoveResult } from "../engine/collision";
+import { isWalkable, tileCenter, worldToTile, type Grid } from "../engine/grid";
+import { showToast } from "../ui";
 import { spawnShardBurst } from "./projectiles";
 import { spawnFloorFx } from "./floor-fx";
+import { lavaMeltWall } from "./wall-erosion";
+import { enterRicochetForm } from "./ricochet-form";
 import { damageZombie } from "./combat";
 import { sfxFreeze, sfxSpring, sfxHeavy, sfxBumper, sfxSpin, sfxFlame } from "../audio";
 
@@ -222,10 +245,21 @@ export function materialBumperScatterMult(): number {
   return activeMaterial() === "shadow" ? SHADOW_BUMPER_SCATTER_MULT : 1;
 }
 
-/** Effective wall-break thresholds (diamond punches through far more easily). */
+/**
+ * Effective wall-break thresholds.
+ *
+ * Two different reasons a ball goes through a wall, and they must not converge:
+ * DIAMOND breaks masonry by being HARD, so it needs almost no speed (8/4);
+ * STONE breaks it by being HEAVY, so it still has to be thrown (11/5.5). Give
+ * them the same numbers and you have one material with two skins.
+ */
 export function materialBreakSpeeds(): { secret: number; wall: number } {
-  if (activeMaterial() === "diamond") {
+  const m = activeMaterial();
+  if (m === "diamond") {
     return { secret: DIAMOND_SECRET_BREAK_SPEED, wall: DIAMOND_WALL_BREAK_SPEED };
+  }
+  if (m === "stone") {
+    return { secret: STONE_SECRET_BREAK_SPEED, wall: STONE_WALL_BREAK_SPEED };
   }
   // Ball Form: steel bites masonry harder than a tumbling knight does.
   if (steelBall()) return { secret: STEEL_SECRET_BREAK_SPEED, wall: STEEL_WALL_BREAK_SPEED };
@@ -309,6 +343,309 @@ export function materialBumperMult(): number {
 /** Speed ceiling for the current material (stone tops out lower). */
 export function materialMaxSpeed(): number {
   return activeMaterial() === "stone" ? STONE_MAX_SPEED : PINBALL_MAX_SPEED;
+}
+
+/**
+ * The animation clip for the active material's BODY, or null to fall through to
+ * steel / the plain knight.
+ *
+ * Derived from the material name rather than a seventh lookup table — the clip
+ * union names them `<material>ball` precisely so this stays one line and cannot
+ * fall out of step. registry-drift check F verifies the other end: that the
+ * clip actually exists in the union, the animator and the atlas.
+ *
+ * Note this reads `activeMaterial()`, so it honours the dbgMaterialEnabled
+ * toggle — turning materials off in the debug panel restores the old knight.
+ */
+export function materialClip(): ClipName | null {
+  const m = activeMaterial();
+  return m ? (`${m}ball` as ClipName) : null;
+}
+
+/**
+ * How much the ball DEFORMS when it hits a wall, 0..1.
+ *
+ * The contrast is the point: a droplet smooshes, a diamond and a rock do not,
+ * and running the same squash on all six would make every material feel like
+ * jelly. Lava sits between — a crusted shell over a liquid interior gives a
+ * little, but it doesn't splat.
+ */
+export function materialSquash(): number {
+  switch (activeMaterial()) {
+    case "water": return WATER_SQUASH;
+    case "lava": return LAVA_SQUASH;
+    default: return 0;
+  }
+}
+
+/**
+ * Record an impact so the ball deforms. `nx,nz` is the WORLD contact normal;
+ * `speed` gates it so a gentle roll into masonry doesn't wobble.
+ *
+ * The normal is converted to SCREEN space here rather than at render time
+ * because the impact is a moment and the camera is not: storing the world
+ * normal and projecting it each frame would make a squash rotate if the view
+ * ever moved mid-recovery.
+ *
+ * Called from the four ride bounce sites next to emitMaterialOnBounce — but
+ * deliberately NOT from inside it, because that emitter is throttled and
+ * speed-gated for VFX spam, and a ball that only smooshed every 0.12s would
+ * visibly skip deformations during a fast rally.
+ */
+export function noteSquash(nx: number, nz: number, speed: number): void {
+  const amp = materialSquash();
+  if (amp <= 0 || speed < SQUASH_MIN_SPEED) return;
+  const p = state.player;
+  if (!p) return;
+  const s = worldDirToScreen(nx, nz);
+  const len = Math.hypot(s.x, s.z) || 1;
+  p.squashHx = s.x / len;
+  p.squashHy = s.z / len;
+  // Scale with impact: a hard slam flattens the droplet, a graze dimples it.
+  // Full amplitude by roughly twice the gate speed.
+  p.squashAmp = amp * Math.min(1, speed / (SQUASH_MIN_SPEED * 2));
+  p.squashT = SQUASH_RECOVER;
+}
+
+/**
+ * The sprite's non-uniform scale for this frame: `[scaleX, scaleY]`.
+ *
+ * Compresses along the impact and bulges across it, so the ball's apparent
+ * AREA stays roughly constant — a ball that only squashed would read as
+ * shrinking on every hit.
+ *
+ * ── Why this picks a DOMINANT AXIS instead of blending the two ──
+ * The sprite is a camera-facing billboard whose geometry origin is at the
+ * FEET, so the only deformation available is an axis-aligned scale — rotating
+ * the quad to line up with the impact would swing the ball around its feet
+ * rather than squash it in place.
+ *
+ * The first version blended: `1 − d·|hx| + d·|hy|` per axis. That reads fine
+ * until you notice this camera is a 45° isometric, which maps EVERY
+ * axis-aligned world normal — i.e. every wall in the maze — to a screen vector
+ * with |hx| = |hy|. The two terms then cancel exactly and the scale comes back
+ * [1, 1]: the squash was invisible in the one case that occurs all the time,
+ * and nothing about it threw.
+ *
+ * So: squash along whichever screen axis the impact leans toward, ties going
+ * to x. At 45° that is off by an eighth-turn from the true contact direction,
+ * which is not detectable on a radially symmetric ball — where "no
+ * deformation at all" very much is.
+ *
+ * The recovery is a half-sine rather than a linear ramp: deformation peaks on
+ * contact and eases out, where a linear decay looks mechanical.
+ */
+export function squashScale(): [number, number] {
+  const p = state.player;
+  if (!p || p.squashT <= 0) return [1, 1];
+  const t = p.squashT / SQUASH_RECOVER; // 1 at impact → 0 recovered
+  const d = SQUASH_DEPTH * p.squashAmp * Math.sin(t * Math.PI * 0.5);
+  // EXACTLY area-preserving: the bulge is the reciprocal of the squash, not
+  // `1 + d`. The naive pair multiplies out to 1 − d², so at full depth the ball
+  // quietly lost ~16% of its apparent size on every impact — a squash that also
+  // shrinks reads as the ball being knocked further away.
+  const flat = 1 - d;
+  const bulge = 1 / flat;
+  return Math.abs(p.squashHx) >= Math.abs(p.squashHy) ? [flat, bulge] : [bulge, flat];
+}
+
+/** Tick the squash recovery. Cheap enough to run unconditionally. */
+export function updateSquash(dt: number): void {
+  const p = state.player;
+  if (p && p.squashT > 0) p.squashT = Math.max(0, p.squashT - dt);
+}
+
+// ── 💎 Diamond: the CUT ─────────────────────────────────────────
+
+/**
+ * True while diamond is up and moving fast enough to CUT rather than ram.
+ *
+ * The distinction is not cosmetic. A ram shoves one clump and then sits on
+ * BALL_RAM_COOLDOWN; a cut carries no knockback and re-arms almost instantly,
+ * so a fast diamond opens a corridor straight through a crowd. That is the
+ * fantasy — "cuts like a diamond through enemies" — and the cooldown, not the
+ * damage number, is what delivers it.
+ */
+export function materialCutsThrough(): boolean {
+  const p = state.player;
+  return activeMaterial() === "diamond" && !!p && p.momSpeed >= DIAMOND_CUT_SPEED;
+}
+
+/** Ram damage multiplier — an edge concentrates the same mass into less area. */
+export function materialRamCutMult(): number {
+  return materialCutsThrough() ? DIAMOND_CUT_DMG_MULT : 1;
+}
+
+/** Knockback for this contact. A cut does not shove: it slices where it stands. */
+export function materialContactKnockback(): number {
+  return materialCutsThrough() ? DIAMOND_CUT_KNOCKBACK : materialRamKnockback();
+}
+
+/** Seconds before the ram can hit again — a cut re-arms almost immediately. */
+export function materialRamCooldown(): number {
+  return materialCutsThrough() ? DIAMOND_CUT_COOLDOWN : BALL_RAM_COOLDOWN;
+}
+
+/**
+ * Diamond cannot be broken — including by the one enemy built to break it.
+ *
+ * The `sapper` (ANTI-MATERIAL) strips your marble on contact. Every other
+ * material is fair game; diamond is the answer to it, which is what makes
+ * "can't break" a mechanic rather than a line of flavour text.
+ */
+export function materialResistsDrain(): boolean {
+  return activeMaterial() === "diamond";
+}
+
+// ── 🌑 Shadow: the slayer and the feed ──────────────────────────
+
+/**
+ * The roster shadow deletes: everything that phases through walls or blinks out
+ * of a swing. Shadow becomes the counter to the enemies you cannot otherwise
+ * corner — you fight them by BEING one.
+ *
+ * `reaper` is included deliberately even though it is normally damage-immune;
+ * combat.ts gates that separately, so this multiplier only lands if the reaper's
+ * own immunity is not in force.
+ */
+const SHADOW_PREY = new Set<EnemyKind>(["ghost", "reaper", "wisp"]);
+
+/** Damage multiplier against `kind` — 1 for anything shadow doesn't hunt. */
+export function shadowSlayerMult(kind: EnemyKind): number {
+  return activeMaterial() === "shadow" && SHADOW_PREY.has(kind) ? SHADOW_SLAYER_MULT : 1;
+}
+
+/**
+ * Drain a hit foe for health. Cooldowned: without it, one ram through a packed
+ * corridor is a full heal, which turns shadow from a risky glass form into the
+ * safest material in the game.
+ */
+export function shadowVampire(): void {
+  if (activeMaterial() !== "shadow") return;
+  const p = state.player;
+  if (!p || p.vampCdT > 0) return;
+  const max = playerMaxHp();
+  if (p.hp >= max) return;
+  p.hp = Math.min(max, p.hp + SHADOW_LIFESTEAL);
+  p.vampCdT = SHADOW_LIFESTEAL_CD;
+  state.hudDirty = true;
+  // Violet motes pulled INTO the ball — the same inward read as the void body.
+  state.vfx?.burst(p.x, 0.6, p.z, 0xb06fe8, 8, 2.5);
+}
+
+/** Tick the lifesteal cooldown. */
+export function updateVampire(dt: number): void {
+  const p = state.player;
+  if (p && p.vampCdT > 0) p.vampCdT = Math.max(0, p.vampCdT - dt);
+}
+
+// ── 🔥 Lava: melting masonry ────────────────────────────────────
+
+/**
+ * Melt the wall this bounce hit, if lava is what we are made of.
+ *
+ * The material gate lives HERE rather than in wall-erosion.ts so that module
+ * stays generic — it erodes walls by an amount and knows nothing about
+ * marbles, which is what lets a future borer or acid hazard reuse it.
+ */
+export function lavaMeltIfActive(nx: number, nz: number, speed: number): void {
+  if (activeMaterial() !== "lava") return;
+  lavaMeltWall(nx, nz, speed);
+}
+
+// ── 🌑 Shadow: phasing through walls ────────────────────────────
+
+/** True while the shadow marble is up — the ball is not solid to masonry. */
+export function materialPhasesWalls(): boolean {
+  return activeMaterial() === "shadow";
+}
+
+/**
+ * The ride/walk sweep, honouring phasing.
+ *
+ * While shadow is up the step is applied FREE — no collision resolve at all —
+ * except for the maze SHELL, which stays solid. Phasing out of the level would
+ * put the player in unbuilt space with no floor, no grid and no way back; the
+ * shell is the one wall shadow does not beat.
+ *
+ * Returns the same shape as moveCircle so the ride's blocked-detection (which
+ * compares the result against the intended landing spot) reads a clean pass
+ * through and skips the reflection — a phasing ball must not bounce off the
+ * wall it is currently inside.
+ */
+export function phaseMove(g: Grid, x: number, z: number, r: number, dx: number, dz: number): MoveResult {
+  if (!materialPhasesWalls()) return moveCircle(g, x, z, r, dx, dz);
+  // Free move, then clamp inside the shell ring. The grid's world origin is
+  // centred (see moveCircle), so the interior spans ±(size/2 − 1) minus the
+  // ball's own radius.
+  const limX = g.w / 2 - 1 - r;
+  const limZ = g.h / 2 - 1 - r;
+  // Every contact field is null/0: a phasing ball touched NOTHING, so the
+  // kicker bands, booster lanes and surface reads downstream must all read as
+  // "no contact". Returning a partial object here would have the ride pick up
+  // last frame's rubber and kick a ball that is currently inside a wall.
+  return {
+    x: Math.max(-limX, Math.min(limX, x + dx)),
+    z: Math.max(-limZ, Math.min(limZ, z + dz)),
+    hitN: null,
+    hitKick: null,
+    hitLane: null,
+    hitSurface: 0,
+  };
+}
+
+/**
+ * EJECT — the safety net that makes phasing shippable.
+ *
+ * Shadow lapses on a timer, and if it lapses while the ball is inside masonry
+ * the run is over in the worst possible way: alive, unstuck-able, with no
+ * message. This runs every step and, the moment phasing is NOT active but the
+ * player is standing in a non-walkable tile, walks outward for the nearest
+ * walkable tile and puts them on it.
+ *
+ * The grace window exists so this cannot fight a legitimate frame of overlap
+ * (the collision resolve leaves the ball fractionally inside a wall all the
+ * time); only a sustained illegal position triggers a move.
+ */
+export function updatePhaseEject(dt: number): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g) return;
+  if (materialPhasesWalls()) {
+    p.phaseStuckT = 0;
+    return;
+  }
+  const t = worldToTile(g, p.x, p.z);
+  if (isWalkable(g, t.i, t.j)) {
+    p.phaseStuckT = 0;
+    return;
+  }
+  p.phaseStuckT += dt;
+  if (p.phaseStuckT < SHADOW_PHASE_GRACE) return;
+  p.phaseStuckT = 0;
+
+  // Expanding ring search for the closest walkable tile. Bounded: past this
+  // radius we are not in a wall, we are in a sealed vault, and teleporting
+  // across the level would be worse than the stall.
+  for (let rad = 1; rad <= 8; rad++) {
+    let best: { x: number; z: number; d: number } | null = null;
+    for (let di = -rad; di <= rad; di++) {
+      for (let dj = -rad; dj <= rad; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== rad) continue; // ring only
+        if (!isWalkable(g, t.i + di, t.j + dj)) continue;
+        const c = tileCenter(g, t.i + di, t.j + dj);
+        const d = (c.x - p.x) ** 2 + (c.z - p.z) ** 2;
+        if (!best || d < best.d) best = { x: c.x, z: c.z, d };
+      }
+    }
+    if (best) {
+      p.x = best.x;
+      p.z = best.z;
+      state.vfx?.burst(p.x, 0.5, p.z, 0xb06fe8, 14, 3);
+      showToast("🌑 PHASED OUT", "the shadow set you down outside the wall");
+      return;
+    }
+  }
 }
 
 // ── Emitters ────────────────────────────────────────────────────
@@ -463,6 +800,12 @@ export function materialSlam(): void {
       state.shakeT = Math.max(state.shakeT, 0.4);
     } else if (m === "storm") {
       thunderclap(p.x, p.z);
+      // ⚡ STORM'S SPECIAL: the clap is the wind-up, and then you BECOME the
+      // bolt — 2.5 seconds of uncontrolled ricochet. Fired from the slam
+      // because the slam is already storm's committed, deliberate input; giving
+      // it a new button would have made the loudest thing in the material set
+      // the one thing you never press by accident.
+      enterRicochetForm("bolt");
     } else if (m === "shadow") {
       voidImplosion(p.x, p.z);
     } else if (m === "lava") {
