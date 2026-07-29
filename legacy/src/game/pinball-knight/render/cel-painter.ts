@@ -1701,93 +1701,90 @@ function marbleFrame(skin: MarbleSkin, spin: number, frame: number): FramePaint 
 /**
  * ⚡ LIGHTNING BOLT / ✨ LASER — the two RICOCHET FORMS.
  *
- * Not marble bodies: while these run you are not a sphere, so drawing them as
- * one more skin would undercut the whole point. Both are elongated ALONG their
- * travel and blown out at the core, because the read that says "this is energy,
- * not an object" is a white-hot centre with colour only in the falloff.
+ * A COMPACT, RADIALLY SYMMETRIC CORE — deliberately not a beam.
  *
- * `beam` is the laser (a clean capsule with a hard core) and the bolt is the
- * same silhouette broken into a jagged zigzag — one painter, two paths, for the
- * same reason the marbles share one.
+ * The first version drew each of these as a long streak lying along the x
+ * axis, which was wrong in a way that only shows up in motion: an actor sprite
+ * is a camera-facing billboard, so its art cannot rotate to face travel. A
+ * painted beam therefore points east no matter which way the ball is actually
+ * going, and at ricochet speed it visibly contradicts the path every second.
+ *
+ * The heading is now carried by the TRAIL RIBBON (render/vfx.ts `trail`), which
+ * is drawn from the ball's real path and is always correct. That frees the
+ * sprite to be the one thing a billboard can honestly be: a bright object with
+ * no orientation at all, travelling along that path.
+ *
+ * NOTE ON GLOW: the actor material runs `alphaTest: 0.5`, so anything painted
+ * under half alpha is DISCARDED, not blended — a soft falloff halo would come
+ * out as a hard-edged disc. The real glow is the additive, bloom-fed ribbon;
+ * what the sprite contributes is a bright opaque core and a flare, which is
+ * what survives the cutout.
  */
 function ricochetFrame(kind: "bolt" | "laser", frame: number): FramePaint {
   const cy = GROUND - 26;
-  // The bolt rides the torch ramp; the laser rides BLOOD 12-13, which is the
-  // only saturated hot hue in the palette — there is no magenta to reach for.
-  const glowC = kind === "bolt" ? 16 : 12;
+  // The bolt rides the torch ramp; the laser rides BLOOD 12-13, the only
+  // saturated hot hue in the palette — there is no magenta to reach for.
+  const glowC = kind === "bolt" ? 15 : 12;
   const bodyC = kind === "bolt" ? 17 : 13;
   const coreC = kind === "bolt" ? 18 : 22;
   const rnd = (i: number) => marbleJitter(frame * 131 + 7, i);
+  // Pulse across the four frames so the core throbs instead of sitting static.
+  const pulse = 1 + 0.16 * Math.sin((frame / 4) * Math.PI * 2);
   return (ctx) => {
-    // No ground shadow: neither of these is a body resting on the floor, and
-    // giving them one made them read as an object being dragged.
     ctx.save();
     ctx.translate(CX, cy);
-    // A slight per-frame roll so the form visibly CHURNS in place rather than
-    // sitting as a static decal while the world moves past it.
-    ctx.rotate((rnd(0) - 0.5) * 0.5);
 
-    // ── Glow envelope, drawn first and widest.
-    const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
-    halo.addColorStop(0, pc(glowC, 0.55));
-    halo.addColorStop(0.45, pc(glowC, 0.22));
-    halo.addColorStop(1, pc(glowC, 0));
-    ctx.fillStyle = halo;
-    ctx.fillRect(-32, -32, 64, 64);
-
-    if (kind === "laser") {
-      // A capsule: soft outer, saturated middle, white core. Three passes of
-      // the same line at shrinking width is what gives a beam its bloom.
-      for (const [w, col] of [
-        [11, pc(glowC, 0.45)],
-        [6, pc(bodyC, 0.9)],
-        [2.4, pc(coreC, 1)],
-      ] as Array<[number, string]>) {
-        ctx.beginPath();
-        ctx.moveTo(-24, 0);
-        ctx.lineTo(24, 0);
-        ctx.lineWidth = w;
-        ctx.lineCap = "round";
-        ctx.strokeStyle = col;
-        ctx.stroke();
-      }
-      // Leading spark — the end that is going somewhere.
+    // ── Outer flare: a symmetric star. Symmetric is the whole point — a shape
+    // with a long axis would re-introduce the direction lie the streak had.
+    const spikes = kind === "bolt" ? 8 : 6;
+    ctx.rotate((frame / 4) * Math.PI * 0.25); // slow spin, no preferred heading
+    for (let i = 0; i < spikes; i++) {
+      const a = (i / spikes) * Math.PI * 2;
+      const len = (kind === "bolt" ? 15 : 13) * pulse * (0.72 + rnd(i) * 0.5);
       ctx.beginPath();
-      ctx.arc(24, 0, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = pc(coreC, 1);
-      ctx.fill();
-    } else {
-      // The bolt: the same span, walked as a jagged polyline that re-seeds per
-      // frame. Drawn twice — a fat dim pass for the discharge glow, then a thin
-      // white-hot core inside it.
-      const pts: Array<[number, number]> = [];
-      const segs = 6;
-      for (let i = 0; i <= segs; i++) {
-        const t = i / segs;
-        pts.push([-26 + t * 52, (rnd(i + 1) - 0.5) * 22 * Math.sin(t * Math.PI)]);
-      }
-      for (const [w, col] of [
-        [9, pc(glowC, 0.4)],
-        [4, pc(bodyC, 0.9)],
-        [1.6, pc(coreC, 1)],
-      ] as Array<[number, string]>) {
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = pc(glowC);
+      ctx.stroke();
+    }
+
+    // ── Body: two concentric opaque discs. Opaque because the cutout eats
+    // anything softer, and two flat steps because that is how this game draws
+    // falloff everywhere else.
+    ctx.beginPath();
+    ctx.arc(0, 0, 10 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = pc(glowC);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, 7 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = pc(bodyC);
+    ctx.fill();
+
+    // ── Core: blown out, and the brightest thing on screen. This is what the
+    // bloom pass latches onto, so it is what makes the form read as GLOWING
+    // rather than as a coloured ball.
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.2 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = pc(coreC);
+    ctx.fill();
+
+    if (kind === "bolt") {
+      // Crackle: short filaments jumping off the core, re-seeded per frame so
+      // it sputters. Drawn radially — again, no preferred direction.
+      for (let b = 0; b < 3; b++) {
+        const a = rnd(b + 20) * Math.PI * 2;
         ctx.beginPath();
-        ctx.moveTo(pts[0][0], pts[0][1]);
-        for (const [x, y] of pts.slice(1)) ctx.lineTo(x, y);
-        ctx.lineWidth = w;
+        ctx.moveTo(Math.cos(a) * 5, Math.sin(a) * 5);
+        for (let k = 1; k <= 3; k++) {
+          const aa = a + (rnd(b * 7 + k) - 0.5) * 1.1;
+          const rr = 5 + k * 4.5;
+          ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
+        }
+        ctx.lineWidth = 1.3;
         ctx.lineJoin = "round";
-        ctx.lineCap = "round";
-        ctx.strokeStyle = col;
-        ctx.stroke();
-      }
-      // Forked branches — a bolt that never splits reads as a drawn line.
-      for (let b = 0; b < 2; b++) {
-        const at = pts[2 + b * 2];
-        ctx.beginPath();
-        ctx.moveTo(at[0], at[1]);
-        ctx.lineTo(at[0] + (rnd(b + 20) - 0.5) * 16, at[1] + (rnd(b + 30) - 0.5) * 26);
-        ctx.lineWidth = 1.4;
-        ctx.strokeStyle = pc(bodyC, 0.85);
+        ctx.strokeStyle = pc(coreC);
         ctx.stroke();
       }
     }
