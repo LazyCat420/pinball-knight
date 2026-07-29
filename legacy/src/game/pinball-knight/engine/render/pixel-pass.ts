@@ -473,15 +473,33 @@ export function computeRenderSizing(winW: number, winH: number): RenderSizing {
   const wantW = evenCeil(w / scale);
   const wantH = evenCeil(h / scale);
 
-  // FLOOR at the reference. A window smaller than 1280x720 would otherwise
-  // shrink the render target and hand the player a cropped view of the level —
-  // the minimum logical resolution is a design guarantee, not an optimisation.
-  // Below the floor the canvas is LARGER than the window and overflows (the
-  // container clips it), which keeps the intended field of view intact.
-  // CEILING at MAX_RENDER_*; only that clamp counts as `capped`, because it is
-  // the only one that stops us covering the window.
-  const renderW = Math.min(Math.max(wantW, RENDER_W), MAX_RENDER_W);
-  const renderH = Math.min(Math.max(wantH, RENDER_H), MAX_RENDER_H);
+  // ── THE FLOOR IS GONE, AND ON PURPOSE (2026-07-29) ──
+  //
+  // There used to be a FLOOR at the 1280x720 reference, justified as "the
+  // minimum logical resolution is a design guarantee": below it the canvas was
+  // deliberately LARGER than the window and allowed to overflow, so the player
+  // never saw less than the designed field of view.
+  //
+  // That guarantee shipped a bug. The canvas is CENTRED (see `resize`), so an
+  // oversized one gets a NEGATIVE `top` — and the HUD is anchored to the
+  // frame's bottom edge, not the viewport's, so it slides straight out of the
+  // window. Measured on a 1920x1080 screen:
+  //
+  //     browser zoom   CSS window   canvas      top    HUD
+  //     150%           1280x720     1280x720      0    fine
+  //     175%           1097x617     1280x720    -52    bottom 52px cut
+  //     200%            960x540     1280x720    -90    GONE
+  //
+  // The same arithmetic applies to any window shorter than 720 CSS px, browser
+  // zoom or not. Seeing slightly less of the level is a compromise; a HUD you
+  // cannot see is a broken game, so the target now tracks the window and the
+  // canvas always fits inside it.
+  //
+  // CEILING at MAX_RENDER_* still applies, and is still the only clamp that
+  // counts as `capped`, because it is the only one that stops us covering the
+  // window.
+  const renderW = Math.min(wantW, MAX_RENDER_W);
+  const renderH = Math.min(wantH, MAX_RENDER_H);
 
   return {
     scale,

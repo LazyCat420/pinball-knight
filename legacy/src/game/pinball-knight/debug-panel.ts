@@ -97,10 +97,18 @@ export function createDebugPanel(_container: HTMLElement | null, actions: DebugA
       closeUiScreen("debug");
       return;
     }
-    // Never stack the console on top of the menu, the shop or the haul screen.
-    // Closing still works from anywhere above, so the console can't get stuck
-    // open behind something else.
-    if (uiScreens().some((s) => s.id !== "hud")) return;
+    // Never stack the console on top of a MODAL — the menu, the shop, the haul
+    // screen. Closing still works from anywhere, so it can't get stuck open
+    // behind something else.
+    //
+    // The predicate is `pauses`, NOT an id whitelist. The first cut said
+    // `some(s => s.id !== "hud")` and the console then refused to open at all,
+    // because a normal play stack is ["hud", "toasts"] — `toasts` is a second
+    // permanent non-pausing overlay, and an id whitelist silently forgot it.
+    // `pauses` is the property that actually means "a modal owns the screen",
+    // it already exists on every screen, and it cannot drift as screens are
+    // added. See debug-toggle.test.ts.
+    if (uiScreens().some((s) => s.pauses)) return;
     pushUiScreen(debugScreen(actions));
   };
   return liveToggle;

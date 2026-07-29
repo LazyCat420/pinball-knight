@@ -75,11 +75,21 @@ describe("computeRenderSizing", () => {
     }
   });
 
-  it("never shows less of the level than the reference resolution", () => {
+  it("NEVER hands back a canvas bigger than the window", () => {
+    // This replaced "never shows less of the level than the reference", which
+    // asserted a FLOOR at 1280x720 and allowed the canvas to overflow a smaller
+    // window. That guarantee shipped a bug: the canvas is centred, so an
+    // oversized one gets a negative `top`, and the HUD — anchored to the
+    // frame's bottom edge — slides out of the viewport. At 200% browser zoom on
+    // a 1080p screen it was gone completely.
+    //
+    // Fitting is now the invariant, and it is the stronger one: a slightly
+    // smaller view is a compromise, an invisible HUD is a broken game.
     for (const [w, h] of WINDOWS) {
       const s = computeRenderSizing(w, h);
-      expect(s.renderW, `${w}x${h}`).toBeGreaterThanOrEqual(RENDER_W);
-      expect(s.renderH, `${w}x${h}`).toBeGreaterThanOrEqual(RENDER_H);
+      if (s.capped) continue; // MAX_RENDER_* letterboxes on purpose
+      expect(s.outW, `${w}x${h} canvas wider than the window`).toBeLessThanOrEqual(Math.ceil(w) + 1);
+      expect(s.outH, `${w}x${h} canvas taller than the window`).toBeLessThanOrEqual(Math.ceil(h) + 1);
     }
   });
 
@@ -113,9 +123,12 @@ describe("computeRenderSizing", () => {
   it("falls back to scale 1 below the reference floor", () => {
     const s = computeRenderSizing(800, 600);
     expect(s.scale).toBe(1);
-    // Still never smaller than the reference — the floor wins over "fill".
-    expect(s.renderW).toBe(RENDER_W);
-    expect(s.renderH).toBe(RENDER_H);
+    // The target TRACKS the window now — see the fitting test above. The old
+    // assertion here was `renderW === RENDER_W` (1280 on an 800px window),
+    // which is precisely the overflow that pushed the HUD off-screen.
+    expect(s.renderW).toBe(800);
+    expect(s.renderH).toBe(600);
+    expect(s.outW).toBeLessThanOrEqual(800);
   });
 
   it("clamps a pathological ultrawide and reports it as capped", () => {
@@ -149,8 +162,10 @@ describe("computeRenderSizing", () => {
     const s = computeRenderSizing(1920.6, 1080.4);
     expect(Number.isInteger(s.scale)).toBe(true);
     expect(s.renderW % 2).toBe(0);
+    // A degenerate window must not divide by zero or allocate a 0-wide target.
     const tiny = computeRenderSizing(0, 0);
     expect(tiny.scale).toBe(1);
-    expect(tiny.renderW).toBe(RENDER_W);
+    expect(tiny.renderW).toBeGreaterThan(0);
+    expect(tiny.renderW % 2).toBe(0);
   });
 });

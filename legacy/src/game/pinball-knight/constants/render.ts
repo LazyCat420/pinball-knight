@@ -72,8 +72,8 @@ export const MAX_RENDER_W = 1920;
 export const MAX_RENDER_H = 1080;
 
 /**
- * Pixels per world unit. FIXED at 80 — one tile (1 world unit) is always
- * exactly 80 render pixels, at every window size.
+ * Pixels per world unit. FIXED at 72 — one tile (1 world unit) is always
+ * exactly 72 render pixels, at every window size.
  *
  * This is load-bearing and must NOT be made adaptive: sprite crispness depends
  * on `SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID` (asserted in
@@ -102,19 +102,28 @@ export const MAX_RENDER_H = 1080;
  *     window. The frustum SHRINKS instead (20 tiles across at 1920 rather than
  *     24), so per-frame GPU cost is identical. This buys detail with atlas
  *     memory and boot paint, not with framerate.
- *   · The camera only tightens a little: 24 tiles across at 1920 rather than
- *     30. PPU IS THE ZOOM as much as it is the fidelity dial, and the two
- *     cannot be separated — that is the real constraint on this number. 96
- *     (20 tiles) was tried first and played as too close to read the map from;
- *     64 is the blurry original. 80 is the compromise, and the only nearby
- *     value that works at all: the identity forces grid = 1.125 x PPU, and 72
- *     and 88 give ODD grids (81, 99).
+ *   · The camera barely tightens: 26.7 tiles across at 1920 rather than 30.
+ *
+ * PPU IS THE ZOOM as much as it is the fidelity dial, and at a fixed window
+ * size the two TRADE DIRECTLY — tiles-on-screen x pixels-per-actor is a
+ * constant budget. That is the real constraint on this number and it cannot be
+ * engineered away; it can only be spent. Playtested down the ladder:
+ *
+ *     PPU   grid   tiles@1920   texel area vs the old 72-grid
+ *      96    108         20.0   2.25x   — too close to read the map from
+ *      80     90         24.0   1.56x   — still too close
+ *      72     81         26.7   1.27x   — here
+ *      64     72         30.0   1.00x   — the original, and the blurry one
+ *
+ * An ODD grid (81) is fine: the evenness requirement in pixel-pass.ts is on
+ * renderW/renderH, so that the ortho frustum's centre lands on a whole texel.
+ * Nothing requires the ATLAS CELL to be even.
  *
  * The cost is real and it is paid at BOOT: 1.56x the texels per atlas cell, and
  * a larger supersample buffer to feed them. Measured in LOAD_PERF_PLAN terms,
  * that is where to look if boot regresses.
  */
-export const PPU = 80;
+export const PPU = 72;
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
@@ -179,7 +188,7 @@ export const ART_PX = 128; // painter coordinate space, unitless
  * The supersample is there to anti-alias curved outlines before the crush, and
  * 2x does that; 3x costs 40% more paint for a second decimal place.
  */
-export const SPRITE_PX = 180; // rasterisation buffer per frame, px = 2 × grid
+export const SPRITE_PX = 162; // rasterisation buffer per frame, px = 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -200,7 +209,7 @@ export const SPRITE_PX = 180; // rasterisation buffer per frame, px = 2 × grid
  * deliberately pixel-art. Must stay an integer multiple of PPU's reciprocal —
  * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
  */
-export const SPRITE_PIXEL_GRID = 90;
+export const SPRITE_PIXEL_GRID = 81;
 
 /**
  * Actor plane size, world units.

@@ -130,7 +130,7 @@ export const engineConfig: EngineConfig = {
     tilt: (38 * Math.PI) / 180,
     yaw: (45 * Math.PI) / 180,
     dist: 24,
-    ppu: 80,
+    ppu: 72,
     deadzone: 0.7,
     lerp: 6,
   },
@@ -150,9 +150,9 @@ export const engineConfig: EngineConfig = {
   // to 216 in constants while these still said 128, and two suites compared
   // real output against a 128-space paint.
   sprite: {
-    px: 180,
-    pixelGrid: 90,
-    units: 90 / 80,
+    px: 162,
+    pixelGrid: 81,
+    units: 81 / 72,
     artPx: 128,
     maxAtlasWidth: 8192,
   },
