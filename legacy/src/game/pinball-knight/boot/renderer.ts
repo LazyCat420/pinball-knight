@@ -1,0 +1,89 @@
+/**
+ * The renderer and the pixel pass.
+ *
+ * Extracted verbatim from `launchDungeonGame`. Two comments in here cost real
+ * debugging and must not be summarised away: the ASYNC-INIT gate (why
+ * `launchDungeonGame` can stay synchronous) and the note that the shadow
+ * throttle is PER-LIGHT, not per-renderer.
+ *
+ * ## Why `rendererReady` lives here now
+ *
+ * It is set in this block and read by the render gate in `loop()`. Rather than
+ * leave a module `let` behind in core.ts for a flag this file owns, the flag
+ * moves with the code and core reads it through `isRendererReady()`. That keeps
+ * "who decides the renderer is usable" in one file — which is the whole point
+ * of the split, and cheaper than an exported mutable binding.
+ */
+import * as THREE from "three";
+import { WebGPURenderer } from "three/webgpu";
+import { selectBackend } from "../../../render/backend";
+import { state } from "../state";
+import { createPixelPass } from "../engine/render/pixel-pass";
+import { PALETTE_HEX } from "../render/palette";
+import { BLOOM_DEFAULT, AO_DEFAULT } from "../constants";
+
+/**
+ * False until `WebGPURenderer.init()` resolves — `render()` THROWS before that.
+ *
+ * Never reset on teardown, exactly as before: a new `installRenderer()` sets it
+ * false again on the way in, so there is no window where a stale `true` could
+ * let a frame render against a disposed backend.
+ */
+let rendererReady = false;
+
+/** Whether the backend has finished initialising and `render()` is safe. */
+export function isRendererReady(): boolean {
+  return rendererReady;
+}
+
+/**
+ * Build the renderer, attach it to the container, and build the pixel pass.
+ *
+ * MUST run after `installEngine()` and after settings are applied: the pixel
+ * pass reads the saved look at construction.
+ */
+export function installRenderer(): void {
+  // ── Renderer ──
+  // No MSAA: the quantize pass flattens colour anyway, and the depth-edge
+  // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
+  // WebGPURenderer drives BOTH backends; ?gpu=webgl forces the WebGL2 one.
+  // init() is awaited by the caller (launchDungeonGame) before the first frame.
+  state.renderer = new WebGPURenderer({ antialias: false, alpha: false, forceWebGL: selectBackend().forceWebGL });
+  // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
+  // ("called before the backend is initialized"). launchDungeonGame stays sync
+  // because neither caller awaits it (main.ts:328, mouse-room.ts:3053) — making
+  // it async would silently reorder their teardown. So the loop skips frames
+  // until this resolves; see the rendererReady gate in the render block.
+  rendererReady = false;
+  void state.renderer.init().then(() => {
+    rendererReady = true;
+  });
+  state.renderer.setClearColor(PALETTE_HEX[0]);
+  // One shadow-casting directional light needs the shadow map on. PCFSoft gives
+  // a slightly feathered edge that survives the palette quantizer as a soft
+  // band rather than a hard jagged step.
+  state.renderer.shadowMap.enabled = true;
+  state.renderer.shadowMap.type = THREE.PCFShadowMap;
+  // The full shadow depth pass re-rendered every frame is a heavy fixed cost;
+  // the loop re-flags the light on alternate frames instead (30 Hz shadows —
+  // invisible under the pixel quantizer, halves the shadow pass).
+  //
+  // THIS THROTTLE IS PER-LIGHT, NOT PER-RENDERER. WebGPURenderer.shadowMap is
+  // only { enabled, transmitted, type } — it has no autoUpdate/needsUpdate, so
+  // the old renderer-level flags would have gone SILENTLY dead here and shadows
+  // would quietly re-render every frame. three's WebGPU path gates on the light
+  // instead (nodes/lighting/ShadowNode.js: `shadow.needsUpdate || shadow.autoUpdate`),
+  // which setShadowsThrottled() below drives. See throttleShadows() in the loop.
+  // The overlay is built immediately above this in launchDungeonGame; the
+  // assertion documents that ordering rather than inventing a fallback.
+  state.container?.appendChild(state.renderer.domElement);
+
+  state.pixelPass = createPixelPass(state.renderer, {
+    quantize: state.quantize,
+    dither: state.dither,
+    scanline: state.scanline,
+    outline: state.outline,
+    bloom: BLOOM_DEFAULT,
+    ao: AO_DEFAULT,
+  });
+}

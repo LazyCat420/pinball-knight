@@ -27,7 +27,7 @@ import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend } from "../../render/backend";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
-import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind, type MarbleMaterial } from "./state";
+import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { createPixelPass } from "./engine/render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createAimIndicator } from "./render/aim-indicator";
@@ -44,19 +44,22 @@ import { installEngine, FixedStepLoop } from "./GameEngine";
 import { BIOMES, biomeFor as biomeForSeed } from "./boot/biomes";
 import { readSeedParam } from "./boot/seed-param";
 import { warmFloorPipelines } from "./boot/warmup";
+import { installRenderer, isRendererReady } from "./boot/renderer";
+import { installScene } from "./boot/scene";
+import { installDevWiring, installGameplayWiring } from "./boot/wiring";
 import { floorFlow, gradeFloor } from "./run/grade";
 import { tearGraveHole } from "./run/grave-hole";
 import { Animator } from "./engine/render/animator";
 import { ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
-import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
+import { snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
 import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter } from "./ui";
 import { advanceCardReader, dismissCardReader, showCardHaul } from "./card-reader";
 import { getSettings } from "./settings-save";
 import { clearPickupToasts } from "./pickup-toast";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
-import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, playerMaxHp } from "./skill-runtime";
+import { awardFloorXp, awardDebugXp as debugGrantXp, playerMaxHp } from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal } from "./hud-face";
@@ -78,13 +81,13 @@ import { rollModifier } from "./maze/modifiers";
 import { buildMaze, setMazeBiome } from "./maze/build";
 import { bfsDistancesOwned } from "./engine/flow-field";
 import { updatePlayer, resetPlayerMotion } from "./entities/player";
-import { updateZombies, setSummonHandler } from "./entities/zombie";
-import { updateProjectiles, golemShards } from "./entities/projectiles";
-import { updateFloorFx, spawnFloorFx, updateGrooveHop } from "./entities/floor-fx";
+import { updateZombies } from "./entities/zombie";
+import { updateProjectiles } from "./entities/projectiles";
+import { updateFloorFx, updateGrooveHop } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
-import { updateNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie, setCoopCombatBridge, hitPlayerRanged } from "./entities/combat";
+import { updateNpcs, spawnFrog, spawnMerchant, rollMagicianClock } from "./entities/npc";
+import { syncActorMesh, resetCombatJuice, tickCombatTimers } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./engine/input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
@@ -128,18 +131,11 @@ import {
   BOSS_GOLD,
   FIXED_STEP,
   MAX_FRAME,
-  GOLD_PER_KILL,
   PPU,
   WALL_H,
-  FOG_NEAR,
-  FOG_FAR,
-  BLOOM_DEFAULT,
-  AO_DEFAULT,
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
-  BLOATER_BURST_RADIUS,
-  FIRE_PUDDLE_LIFE,
   FINISHER_FLASH_T,
   FINISHER_FLASH_MAX,
   floorBudgets,
@@ -153,8 +149,8 @@ import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
 import { updateSecretDoors, disposeSecretDoors, stampSecretBands, pruneSealedBands } from "./secrets";
 import { nearSealed } from "./maze/track-socket";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop } from "./coop";
-import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, coopAnnounceDeath, isCoop } from "./coop";
+import { stopPresence, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { resolveDescendFloor, regroupTarget } from "../../net/rally";
 import { applyDelveCatchUp } from "./delve";
 import { createFog, revealAround } from "./fog";
@@ -168,17 +164,17 @@ import { frenzyIntensity, momentumT } from "./entities/combo-curve";
 import { profBegin, profEnd, profCount, profFrame } from "./engine/profiler";
 import { installDevHooks } from "./dev/window-hooks";
 import { captureFloorCensus } from "./dev/floor-census";
-import { debugTeleportToStairs, debugSpawnRing, debugSpawn, debugSpawnEnemy, debugKillAll, debugClearEnemies, setDebugActionDeps } from "./dev/debug-actions";
-import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
-import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets, sheetFor, stopSheetBackfill, SHEET_KEY_BY_KIND } from "./boot/sheets";
+import { debugTeleportToStairs, debugSpawnRing, debugSpawnEnemy, debugKillAll, debugClearEnemies } from "./dev/debug-actions";
+import { tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
+import { playerSheetFor, applyWeaponArt, paintMenuPortrait, sheetFor, stopSheetBackfill } from "./boot/sheets";
 import { beginRunLedger, submitRunScore } from "./run/ledger";
 import { nearestOpenTile } from "./maze/nearest-open-tile";
-import { makeZombie, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, queueMini, queueSummon, resetZombieNid } from "./spawn/factory";
+import { makeZombie, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, resetZombieNid } from "./spawn/factory";
 import { nextItemNid, resetItemNid } from "./economy/ground-items";
 import { spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
 import { dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
 import { checkPickups, resetPickupSweep } from "./economy/pickups";
-import { openShop, closeShop, applyPotion, useBeltSlot } from "./economy/shop";
+import { closeShop, applyPotion, useBeltSlot } from "./economy/shop";
 
 /**
  * The 60Hz clock. One instance for the whole session; `reset()` is called from
@@ -189,8 +185,6 @@ import { openShop, closeShop, applyPotion, useBeltSlot } from "./economy/shop";
  */
 const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
 
-/** False until WebGPURenderer.init() resolves — render() throws before that. */
-let rendererReady = false;
 /** The on-screen touch pad, when this device gets one (see createTouchControls). */
 let touchControls: TouchControls | null = null;
 let debugPanelDispose: (() => void) | null = null;
@@ -233,92 +227,15 @@ export function launchDungeonGame(onExit?: () => void): void {
   state.container.addEventListener("click", (e) => e.stopPropagation());
   document.body.appendChild(state.container);
 
-  // ── Renderer ──
-  // No MSAA: the quantize pass flattens colour anyway, and the depth-edge
-  // outline wants clean depth values. Colour/tonemapping is set by createPixelPass.
-  // WebGPURenderer drives BOTH backends; ?gpu=webgl forces the WebGL2 one.
-  // init() is awaited by the caller (launchDungeonGame) before the first frame.
-  state.renderer = new WebGPURenderer({ antialias: false, alpha: false, forceWebGL: selectBackend().forceWebGL });
-  // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
-  // ("called before the backend is initialized"). launchDungeonGame stays sync
-  // because neither caller awaits it (main.ts:328, mouse-room.ts:3053) — making
-  // it async would silently reorder their teardown. So the loop skips frames
-  // until this resolves; see the rendererReady gate in the render block.
-  rendererReady = false;
-  void state.renderer.init().then(() => {
-    rendererReady = true;
-  });
-  state.renderer.setClearColor(PALETTE_HEX[0]);
-  // One shadow-casting directional light needs the shadow map on. PCFSoft gives
-  // a slightly feathered edge that survives the palette quantizer as a soft
-  // band rather than a hard jagged step.
-  state.renderer.shadowMap.enabled = true;
-  state.renderer.shadowMap.type = THREE.PCFShadowMap;
-  // The full shadow depth pass re-rendered every frame is a heavy fixed cost;
-  // the loop re-flags the light on alternate frames instead (30 Hz shadows —
-  // invisible under the pixel quantizer, halves the shadow pass).
-  //
-  // THIS THROTTLE IS PER-LIGHT, NOT PER-RENDERER. WebGPURenderer.shadowMap is
-  // only { enabled, transmitted, type } — it has no autoUpdate/needsUpdate, so
-  // the old renderer-level flags would have gone SILENTLY dead here and shadows
-  // would quietly re-render every frame. three's WebGPU path gates on the light
-  // instead (nodes/lighting/ShadowNode.js: `shadow.needsUpdate || shadow.autoUpdate`),
-  // which setShadowsThrottled() below drives. See throttleShadows() in the loop.
-  state.container.appendChild(state.renderer.domElement);
+  // Renderer + pixel pass, and the async-init gate — boot/renderer.ts.
+  installRenderer();
 
-  state.pixelPass = createPixelPass(state.renderer, {
-    quantize: state.quantize,
-    dither: state.dither,
-    scanline: state.scanline,
-    outline: state.outline,
-    bloom: BLOOM_DEFAULT,
-    ao: AO_DEFAULT,
-  });
+  // Scene, fog, lights, VFX, aim decal, camera, monster atlases — boot/scene.ts.
+  installScene();
 
-  // ── Scene ──
-  state.scene = new THREE.Scene();
-  state.scene.background = new THREE.Color(PALETTE_HEX[0]);
-  // Far (upper) corridors fade into the void — see FOG_NEAR/FOG_FAR.
-  state.scene.fog = new THREE.Fog(PALETTE_HEX[0], FOG_NEAR, FOG_FAR);
-
-  // The lighting rig (ambient/hemi/lamp/key + shadow config) — boot/lighting.ts.
-  buildLights(BIOMES[0]);
-
-  // ── VFX (sparks / blood / embers / dust / slashes) ──
-  // Lives for the whole session (not per level); drawn into the scene so it
-  // gets pixelated, quantized and bloomed with everything else.
-  state.vfx = createVfx(state.scene);
-
-  // ── Pinball aim indicator ──
-  // Ground decal showing heading vs steer while rolling; hidden otherwise, so
-  // it costs nothing visually outside ball form.
-  state.aimIndicator = createAimIndicator();
-  state.scene.add(state.aimIndicator.group);
-
-  // ── Camera ──
-  state.camera = createDungeonCamera();
-  aimCamera(state.camera, 0, 0.5, 0);
-
-  // ── Sprite sheets ── boot/sheets.ts builds every monster atlas.
-  buildMonsterSheets();
-
-  // Dev / QA `window.__dungeon*` hooks — see dev/window-hooks.ts. Everything a
-  // headless harness drives (spawning, god-mode, pad injection, art QA) lives
-  // there; the core-owned actions it needs are passed in, so the dependency
-  // only ever points core → dev.
-  // The debug VERBS (dev/debug-actions.ts) need one core-owned action; wire it
-  // before installDevHooks, which exposes those verbs to the harness.
-  setDebugActionDeps({ spawnReaper });
-  installDevHooks({
-    startLevel, descend, onPlayerDeath, openShop, applyPotion,
-    debugSpawn, debugClearEnemies, exitDungeonGame, tearGraveHole,
-  });
-
-  // Level-up fanfare: toast + modifier sting; the tree lives in the menu (I).
-  setLevelUpHandler((level, points) => {
-    showToast(`LEVEL ${level}`, `+1 skill point · ${points} unspent — press I`);
-    sfxModifier();
-  });
+  // Dev/QA hooks + the level-up fanfare — boot/wiring.ts.
+  const wiringDeps = { spawnReaper, dropBossReward, startLevel, descend, onPlayerDeath, exitDungeonGame };
+  installDevWiring(wiringDeps);
 
   // ── HUD + input ──
   // Dual HUD: the Diablo panel (iso) + the Wolfenstein bar (rampage). mountHUDs
@@ -402,116 +319,8 @@ export function launchDungeonGame(onExit?: () => void): void {
     spawnEnemy: (kind, count) => debugSpawnEnemy(kind as EnemyKind, count),
   });
 
-  // A slain overlord drops its reward here (kept out of combat.ts to avoid a
-  // circular import).
-  setBossDefeatedHandler(dropBossReward);
-
-  // ── Co-op wiring ── the hooks coop.ts drives the shared world through, and
-  // the bridge combat.ts forwards replica damage over. All injected here so
-  // neither module imports core (no cycles).
-  setCoopHooks({
-    spawnGhost: (nid, kind, x, z, boss) => {
-      // Snapshot said an enemy exists that we don't have — build a rendering
-      // body for it. Sheet by kind, zombie-sheet fallback for exotic kinds.
-      // Through sheetFor, not the raw state fields: atlases are built lazily
-      // (boot/sheets.ts), and a PEER can be a floor deeper than us — so the one
-      // monster we have never met is exactly the one whose sheet the backfill
-      // may not have reached. Reading the field would draw it as a zombie.
-      const sheet =
-        kind === "reaper" || boss
-          ? reaperSheet()
-          : SHEET_KEY_BY_KIND[kind as string]
-            ? sheetFor(SHEET_KEY_BY_KIND[kind as string])
-            : state.zombieSheet;
-      if (!sheet) return null;
-      const z2 = makeZombie(sheet, x, z, 0, { kind, boss });
-      z2.nid = nid; // adopt the authority's id (makeZombie minted a local one)
-      bumpZombieNid(nid);
-      // The Death Dealer's warning toast fires in spawnReaper — authority-only.
-      // Without this, the replica player meets an immune scythe ghost with NO
-      // explanation and reads it as a broken boss (exactly what live QA did).
-      if (kind === "reaper") {
-        showToast("☠ THE DEATH DEALER ☠", "it cannot be slain — take the stairs");
-        state.shakeT = Math.max(state.shakeT, 0.3);
-      }
-      if (boss) {
-        // The Reaper King's ghost looms like the real thing.
-        z2.baseTint = REAPER_TINT;
-        z2.sprite.setTint(REAPER_TINT);
-        z2.sprite.mesh.scale.multiplyScalar(1.55);
-      }
-      state.zombies.push(z2);
-      return z2;
-    },
-    spawnGhostItem: (nid, kind, id, x, z) => {
-      // A CARD arrives over the wire as an instance id ("spidersilk#4s") and
-      // ITEM_PAINTS is keyed by card KIND, so the raw id misses. cardBase is a
-      // no-op on every other kind's id.
-      const paint = ITEM_PAINTS[id] ?? ITEM_PAINTS[cardBase(id)];
-      if (!paint || !state.scene) return null;
-      const sprite = createStaticSprite(paint);
-      sprite.mesh.position.set(x, 0, z);
-      state.scene.add(sprite.mesh);
-      const it: GroundItem = { nid, kind, id, x, z, sprite, bobPhase: Math.random() * 6 };
-      state.groundItems.push(it);
-      return it;
-    },
-    removeZombie: (z) => {
-      state.scene?.remove(z.sprite.mesh);
-      z.sprite.dispose();
-    },
-    removeItem: (it) => {
-      state.scene?.remove(it.sprite.mesh);
-      it.sprite.dispose();
-    },
-    onRemoteKill: (x, z, kind, boss) => {
-      // The authority killed something on our floor: gibs + SHARED kill gold
-      // (co-op pays every knight — gold is per-client, not split).
-      if (kind === "ghost") state.vfx?.sparks(x, 0.6, z, 0, 0, 22);
-      else state.vfx?.blood(x, 0.6, z, "green", 20);
-      spawnCoin(x, z, boss ? BOSS_GOLD : GOLD_PER_KILL);
-      if (boss) state.shakeT = Math.max(state.shakeT, 0.4);
-    },
-    applyDamage: (z, dmg, dx, dz, push) => {
-      // A replica's hit, already gated by THEIR momentum — apply it raw
-      // (force), except the untouchable Death Dealer.
-      if (z.kind === "reaper") return;
-      damageZombie(z, dmg, dx, dz, push, true);
-    },
-    hurtPlayer: (dmg, srcX, srcZ) => hitPlayerRanged(dmg, srcX, srcZ),
-    tearHole: (x, z, name) => tearGraveHole(x, z, name),
-  });
-  setCoopCombatBridge({ isReplica, forward: coopForwardDamage, onKill: coopBroadcastKill });
-  // A new knight joining the pool is announced wherever you are standing. Keyed
-  // "dungeon" so re-entering replaces the hook rather than stacking one per
-  // descend; presence drops it on stopPresence.
-  onPeerArrive("dungeon", (p) => {
-    showToast("🛡️ A KNIGHT HAS ARRIVED", `${p.name} joined the pool`);
-  });
-  // A slain big slime queues two minis, spawned after combat resolution.
-  setSlimeSplitHandler(queueMini);
-  setCardRollHandler(dropCardMaybe);
-  // Every kill drops magnet-collected coins on the floor.
-  setCoinDropHandler(spawnCoin);
-  // …and a chance at themed alchemy reagents (RO-style loot).
-  setReagentDropHandler(dropReagentsMaybe);
-  // A shattered brick golem sprays ricochet shards.
-  setGolemShatterHandler((x, z) => {
-    golemShards(x, z);
-    // Elite reward: a shattered brick golem sometimes yields a marble — biased
-    // toward STONE (beat stone with stone), else a random material.
-    if (Math.random() < 0.5) {
-      const m: MarbleMaterial = Math.random() < 0.6 ? "stone" : MATERIAL_LIST[Math.floor(Math.random() * MATERIAL_LIST.length)];
-      spawnMaterialDrop(x, z, m);
-    }
-  });
-  // A BLOATER bursts into a burning puddle on death.
-  setBloaterBurstHandler((x, z) => spawnFloorFx("fire", x, z, BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE, true));
-  // A NECROMANCER raises an add — deferred past the horde loop (like slime split).
-  setSummonHandler(queueSummon);
-  // Catching the rolling merchant opens its shop.
-  setMerchantCaughtHandler(openShop);
-  resetCombatJuice();
+  // The gameplay callback bus — boot/wiring.ts.
+  installGameplayWiring(wiringDeps);
 
   state.onResize = () => state.pixelPass?.resize();
   window.addEventListener("resize", state.onResize);
@@ -2371,7 +2180,7 @@ function loop(now: number): void {
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
   // rendererReady: skip frames until the async backend init resolves. Simulation
   // above has already run, so a couple of dropped frames at launch cost nothing.
-  if (state.scene && renderCam && state.pixelPass && rendererReady) {
+  if (state.scene && renderCam && state.pixelPass && isRendererReady()) {
     // Shadow throttle: per-light autoUpdate is off (see renderer setup); render
     // the shadow depth pass on alternate frames only.
     if (state.renderer) tickShadowThrottle();

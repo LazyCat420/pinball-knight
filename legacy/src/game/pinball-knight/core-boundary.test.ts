@@ -51,13 +51,16 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *   2764  Wave 0 — installed. Added 11 lines on purpose (the floor-seed import
  *         and the `captureFloorCensus()` call) to buy the instruments the later
  *         waves are gated on.
+ *   2254  Wave 2 — boot/renderer.ts, boot/scene.ts and boot/wiring.ts. The
+ *         wiring is TWO functions because the callback bus was never one block:
+ *         the dev half runs before the HUD is built and the gameplay half after.
  *   2445  Wave 1 — FixedStepLoop adopted; biomes, seed-param, warmup, grade and
  *         grave-hole moved out; and 166 dead import names deleted, 153 of which
  *         had been dangling since the previous decomposition. Nothing had ever
  *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
  *         not configured for v9.
  */
-const CORE_MAX_LINES = 2445;
+const CORE_MAX_LINES = 2254;
 
 /**
  * Line count, measured the way `wc -l` measures it.
