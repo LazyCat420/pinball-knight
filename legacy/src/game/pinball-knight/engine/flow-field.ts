@@ -105,6 +105,39 @@ export function bfsDistancesOwned(g: Grid, si: number, sj: number): Int32Array {
   return bfsDistances(g, si, sj).slice();
 }
 
+/**
+ * The horde's flow field, seeded from a point that may not be walkable.
+ *
+ * ⚠️ THE SEED IS SNAPPED, and that is the whole point of this function. The
+ * knight is a BALL, and shaped walls (slants, rounds, arc slices) are stored
+ * as `T_WALL` while being transparent to the square sweep — engine/collision
+ * `blocksSquare` only blocks on `SHAPE_FULL`. So a ball riding a curve
+ * legitimately has its centre inside a tile that `isWalkable` rejects.
+ *
+ * Seed the BFS there and it bails at the first line, returning a field that is
+ * -1 EVERYWHERE. Every monster then fails the `d >= 0` aggro test at once, so
+ * the entire floor freezes for as long as the ball hugs that curve — which is
+ * indistinguishable, in play, from the AI being broken.
+ *
+ * Snapping to the nearest open tile costs one small ring scan on the frames it
+ * is needed and nothing on the frames it is not.
+ */
+export function hordeFlowField(g: Grid, si: number, sj: number): Int32Array {
+  if (isWalkable(g, si, sj)) return bfsDistancesOwned(g, si, sj);
+  // A local ring scan rather than maze/nearest-open-tile: engine/ does not
+  // import maze/ anywhere, and a shaped tile is always adjacent to the floor
+  // it was carved from, so r <= 2 finds it.
+  for (let r = 1; r <= 2; r++) {
+    for (let dj = -r; dj <= r; dj++) {
+      for (let di = -r; di <= r; di++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; // ring shell only
+        if (isWalkable(g, si + di, sj + dj)) return bfsDistancesOwned(g, si + di, sj + dj);
+      }
+    }
+  }
+  return bfsDistancesOwned(g, si, sj); // genuinely walled in — nothing to snap to
+}
+
 const STEPS: ReadonlyArray<readonly [number, number]> = [
   [0, -1],
   [1, 0],

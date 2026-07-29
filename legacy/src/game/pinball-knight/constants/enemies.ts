@@ -216,8 +216,41 @@ export const CRAWLER_PITCH = 1.15;
  */
 export const HULK_MIN_OPEN_NEIGHBOURS = 3;
 
-/** Flow-field distance (in tiles) at which a zombie notices you. Once aggroed, always aggroed. */
+/**
+ * Flow-field distance (in tiles) at which a zombie notices you. Once aggroed,
+ * always aggroed.
+ *
+ * ⚠️ A FLOOR-RELATIVE quantity — see `aggroTiles()`. This raw constant is the
+ * floor of the range and is no longer read directly by the aggro gate.
+ *
+ * Why: spawn placement is relative to floor size (`maze/decorate.ts`,
+ * `minSpawnDist = max(5, floor(maxDist * 0.3))`), so it doubled when 137f32c
+ * quadrupled floor AREA — that commit rescaled zombie counts, torches, rooms,
+ * secrets and even FROG_TRAIL_TILES ("scaled with 4× floors"), but left this
+ * at 9. The result measured on a live floor 1: median monster sat 53 path
+ * tiles from the knight against a radius of 9, so 2.7% of the horde could
+ * ever wake and the other 97% stood idle for the whole floor.
+ *
+ * A bigger fixed number would drift again the next time floors resize, so the
+ * radius now DERIVES from the grid the same way the spawn rule does.
+ */
 export const AGGRO_TILES = 9;
+
+/**
+ * The aggro radius for a given floor, in path tiles.
+ *
+ * Tied to the grid's half-diagonal so it tracks floor size automatically. The
+ * 0.45 factor is set against the spawn rule it has to reach: spawns land at
+ * ≥ 0.3 × maxDist, and maxDist runs a little under the half-diagonal on these
+ * looping-track floors, so 0.45 clears the nearest spawn band with margin
+ * while still leaving the far side of the map asleep until you travel to it.
+ *
+ * Never below AGGRO_TILES — a small floor must not end up with a radius
+ * tighter than the hand-tuned original.
+ */
+export function aggroTiles(gridW: number, gridH: number): number {
+  return Math.max(AGGRO_TILES, Math.round(Math.hypot(gridW, gridH) * 0.5 * 0.45));
+}
 /** Zombies shove each other apart below this distance, so a horde doesn't stack into one sprite. */
 export const SEPARATION_R = 0.55;
 /**

@@ -84,7 +84,7 @@ import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze, setMazeBiome } from "./maze/build";
-import { bfsDistancesOwned } from "./engine/flow-field";
+import { hordeFlowField } from "./engine/flow-field";
 import { updatePlayer, resetPlayerMotion } from "./entities/player";
 import { updateZombies } from "./entities/zombie";
 import { updateProjectiles } from "./entities/projectiles";
@@ -1267,7 +1267,7 @@ function simulate(dt: number): void {
   if (state.flowTimer <= 0) {
     state.flowTimer = FLOW_INTERVAL;
     const pt = worldToTile(g, p.x, p.z);
-    state.flowField = bfsDistancesOwned(g, pt.i, pt.j); // RETAINED on state across frames
+    state.flowField = hordeFlowField(g, pt.i, pt.j); // snapped seed; RETAINED across frames
   }
 
   // ── Buff timers tick down; HUD refreshes each whole second so the

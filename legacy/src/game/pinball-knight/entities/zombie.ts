@@ -70,6 +70,7 @@ import {
   REAPER_SPEED_RAMP,
   REAPER_SPEED_MAX,
   AGGRO_TILES,
+  aggroTiles,
   SEPARATION_R,
   STAGGER_TINT,
   PACK_RANGE,
@@ -503,10 +504,13 @@ export function updateZombies(dt: number): void {
     }
 
     // ── Aggro ──
+    // The radius is FLOOR-RELATIVE (constants/enemies.ts aggroTiles): spawn
+    // placement scales with floor size, so a fixed radius silently stopped
+    // reaching the horde when floors grew 4×.
     if (!z.aggro && state.flowField) {
       const t = worldToTile(g, z.x, z.z);
       const d = state.flowField[idx(g, t.i, t.j)];
-      if (d >= 0 && d <= AGGRO_TILES) {
+      if (d >= 0 && d <= aggroTiles(g.w, g.h)) {
         z.aggro = true;
         if (_groanCooldown <= 0) {
           _groanCooldown = 1.2;
