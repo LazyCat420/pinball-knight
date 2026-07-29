@@ -466,6 +466,180 @@ class BoltPool {
 }
 
 /**
+ * TRAIL RIBBON — the streak a ricochet form drags behind it.
+ *
+ * Built for the ⚡ bolt / ✨ laser forms (entities/ricochet-form.ts), where the
+ * ball crosses the room several times a second. Two problems it solves at once:
+ *
+ *  1. **Direction.** The form's sprite is a camera-facing billboard, so its art
+ *     cannot point anywhere — a beam painted horizontally stays horizontal no
+ *     matter which way the ball is travelling, which is exactly how it looked.
+ *     The trail is drawn from the ball's ACTUAL path, so it is always right, and
+ *     that lets the sprite itself be a small orientation-free core.
+ *  2. **Cost.** The obvious build — one short segment per substep out of
+ *     BoltPool — burns a draw call per segment and would need a pool three
+ *     times the size. This is ONE ring buffer of points drawn as three strands:
+ *     3 draw calls for the whole trail, however long it is.
+ *
+ * Thickness is faked by offsetting two flanking strands perpendicular to the
+ * path: WebGL does not honour `linewidth` above 1, so a "wide" line has to be
+ * more than one line. The tail fade is VERTEX COLOUR rather than opacity —
+ * under additive blending, fading a vertex toward black IS fading it out, and
+ * that gives a per-point falloff a single material opacity cannot.
+ *
+ * KEEP-ALIVE, like `blades`: push points while the form runs, stop pushing and
+ * it fades out on its own.
+ */
+/**
+ * Ring-buffer capacity. MEASURED, not guessed: the forms push one point per
+ * physics substep — 3 per frame at 60Hz, so 180/s. At 64 the buffer wrapped in
+ * 0.36s, which is SHORTER than TRAIL_LIFE, so points always died by being
+ * overwritten and the age check never ran. TRAIL_LIFE was decorative and the
+ * trail was quietly capacity-bound at a length nobody chose.
+ *
+ * 96 puts the binding constraint back on time (180 × 0.45 = 81 points), so the
+ * tuning knob below is the one that actually controls the trail's length.
+ */
+const TRAIL_POINTS = 96;
+const TRAIL_LIFE = 0.45; // seconds a point survives — the trail's LENGTH
+const TRAIL_OFFSET = 0.09; // perpendicular offset of the flanking strands
+
+export class TrailRibbon {
+  readonly group: THREE.Group;
+  private strands: THREE.Line[] = [];
+  private posAttrs: THREE.BufferAttribute[] = [];
+  private colAttrs: THREE.BufferAttribute[] = [];
+  /** Ring buffer of path points + their age. */
+  private px = new Float32Array(TRAIL_POINTS);
+  private py = new Float32Array(TRAIL_POINTS);
+  private pz = new Float32Array(TRAIL_POINTS);
+  private age = new Float32Array(TRAIL_POINTS);
+  private alive = 0;
+  private head = 0;
+  private color = new THREE.Color(0xffffff);
+
+  constructor() {
+    this.group = new THREE.Group();
+    for (let s = 0; s < 3; s++) {
+      const geo = new THREE.BufferGeometry();
+      const pos = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3);
+      const col = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3);
+      pos.setUsage(THREE.DynamicDrawUsage);
+      col.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute("position", pos);
+      geo.setAttribute("color", col);
+      const mat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        blending: THREE.AdditiveBlending,
+        opacity: 1,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      line.renderOrder = 13;
+      line.frustumCulled = false; // the path moves; skip the cull test
+      this.strands.push(line);
+      this.posAttrs.push(pos);
+      this.colAttrs.push(col);
+      this.group.add(line);
+    }
+  }
+
+  /** Append one path point. Call per SUBSTEP so bounces keep their corners. */
+  push(x: number, y: number, z: number, color: number): void {
+    this.color.setHex(color);
+    this.px[this.head] = x;
+    this.py[this.head] = y;
+    this.pz[this.head] = z;
+    this.age[this.head] = 0;
+    this.head = (this.head + 1) % TRAIL_POINTS;
+    if (this.alive < TRAIL_POINTS) this.alive++;
+  }
+
+  /** Drop every point immediately (entering a new form). */
+  clear(): void {
+    this.alive = 0;
+    this.head = 0;
+    for (const l of this.strands) l.visible = false;
+  }
+
+  update(dt: number): void {
+    if (this.alive === 0) return;
+    // Walk oldest → newest so the strip is drawn in path order; anything past
+    // its life is simply not emitted, which shortens the tail from the back.
+    let n = 0;
+    const start = (this.head - this.alive + TRAIL_POINTS) % TRAIL_POINTS;
+    const live: number[] = [];
+    for (let k = 0; k < this.alive; k++) {
+      const i = (start + k) % TRAIL_POINTS;
+      this.age[i] += dt;
+      if (this.age[i] < TRAIL_LIFE) live.push(i);
+    }
+    // Points die from the OLDEST end only, so the survivors are always the
+    // newest `live.length` — i.e. the range [head − live.length, head).
+    // `head` is the WRITE cursor and must NOT move here: rewinding it to
+    // `start + live.length` would put the cursor back inside the live range and
+    // the next pushes would overwrite the trail's own tail.
+    this.alive = live.length;
+    if (live.length < 2) {
+      for (const l of this.strands) l.visible = false;
+      return;
+    }
+
+    for (let s = 0; s < 3; s++) {
+      const pos = this.posAttrs[s];
+      const col = this.colAttrs[s];
+      // Strand 0 is the core (no offset, near-white); 1 and 2 flank it to fake
+      // a thickness WebGL will not give us through linewidth.
+      const side = s === 0 ? 0 : s === 1 ? 1 : -1;
+      n = 0;
+      for (let k = 0; k < live.length; k++) {
+        const i = live[k];
+        // Perpendicular to the local path direction, on the ground plane.
+        const j = live[Math.min(k + 1, live.length - 1)];
+        const h = live[Math.max(k - 1, 0)];
+        const dx = this.px[j] - this.px[h];
+        const dz = this.pz[j] - this.pz[h];
+        const d = Math.hypot(dx, dz) || 1;
+        const ox = (-dz / d) * TRAIL_OFFSET * side;
+        const oz = (dx / d) * TRAIL_OFFSET * side;
+        pos.setXYZ(n, this.px[i] + ox, this.py[i], this.pz[i] + oz);
+        // Fade toward BLACK along the tail — under additive blending that is
+        // the fade. `t` is 1 at the head (newest) and 0 at the tail.
+        const t = 1 - this.age[i] / TRAIL_LIFE;
+        const f = t * t * (s === 0 ? 1 : 0.55);
+        if (s === 0) {
+          // The core burns out to white at the head so the beam has a hot line
+          // through it rather than being one flat colour.
+          col.setXYZ(n, Math.min(1, this.color.r + t * 0.6) * f, Math.min(1, this.color.g + t * 0.6) * f, Math.min(1, this.color.b + t * 0.6) * f);
+        } else {
+          col.setXYZ(n, this.color.r * f, this.color.g * f, this.color.b * f);
+        }
+        n++;
+      }
+      pos.needsUpdate = true;
+      col.needsUpdate = true;
+      this.strands[s].geometry.setDrawRange(0, n);
+      this.strands[s].visible = n >= 2;
+    }
+  }
+
+  /** See `warmupReveal` — strand 0 stands in for the ribbon at prewarm time. */
+  warmupTarget(): THREE.Object3D {
+    return this.strands[0];
+  }
+
+  dispose(): void {
+    for (const l of this.strands) {
+      l.geometry.dispose();
+      (l.material as THREE.Material).dispose();
+    }
+  }
+}
+
+/**
  * Shockwave ring — a flat expanding annulus on the floor. Additive, bloom-fed,
  * with a sin(π·t) opacity bell so it peaks mid-expansion and dissolves at the
  * rim. Expansion is ease-out (fast launch, decelerating edge) — a pressure wave.
@@ -860,6 +1034,18 @@ export interface VfxSystem {
   /** A jagged thunderbolt running `length` blocks along (dirx,dirz) from (x,y,z). */
   bolt(x: number, y: number, z: number, dirx: number, dirz: number, length: number): void;
   /**
+   * Append a point to the TRAIL RIBBON — the glowing streak a ricochet form
+   * drags behind it. A KEEP-ALIVE call like `blades`: push a point per physics
+   * substep while the form runs, stop pushing and the tail fades out by itself.
+   *
+   * This is what carries the form's DIRECTION. Its sprite is a camera-facing
+   * billboard and cannot point anywhere, so the path has to be drawn, not
+   * implied by the art.
+   */
+  trail(x: number, y: number, z: number, color: number): void;
+  /** Drop the trail instantly — entering a form must not inherit the last one's tail. */
+  trailClear(): void;
+  /**
    * A flat shockwave ring expanding along the floor to `maxRadius` over
    * `duration` seconds (opacity bells with sin(π·t)). `delay` holds it hidden
    * first — the Arcane Pulse purple chaser rides 70ms behind the white core.
@@ -930,6 +1116,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   const alpha = new ParticlePool(400, THREE.NormalBlending);
   const slashes = new SlashPool();
   const bolts = new BoltPool();
+  const trail = new TrailRibbon();
   const rings = new RingPool();
   const bladeRing = new BladeRing(slashTexture());
   const sigils = new SigilPool();
@@ -959,6 +1146,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   scene.add(alpha.points);
   scene.add(slashes.group);
   scene.add(bolts.group);
+  scene.add(trail.group);
   scene.add(rings.group);
   scene.add(bladeRing.group);
   scene.add(sigils.group);
@@ -1041,6 +1229,12 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     bolt(x, y, z, dirx, dirz, length) {
       bolts.spawn(x, y, z, dirx, dirz, length);
     },
+    trail(x, y, z, color) {
+      trail.push(x, y, z, color);
+    },
+    trailClear() {
+      trail.clear();
+    },
     ring(x, z, color, maxRadius, duration, opts) {
       rings.spawn(x, z, color, maxRadius, duration, opts);
     },
@@ -1077,6 +1271,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       const targets: THREE.Object3D[] = [
         slashes.warmupTarget(),
         bolts.warmupTarget(),
+        trail.warmupTarget(),
         rings.warmupTarget(),
         bladeRing.warmupTarget(),
         sigils.warmupTarget(),
@@ -1103,6 +1298,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       alpha.update(dt);
       slashes.update(dt);
       bolts.update(dt);
+      trail.update(dt);
       rings.update(dt);
       bladeRing.update(dt);
       sigils.update(dt);
@@ -1124,6 +1320,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       scene.remove(alpha.points);
       scene.remove(slashes.group);
       scene.remove(bolts.group);
+      scene.remove(trail.group);
       scene.remove(rings.group);
       scene.remove(bladeRing.group);
       scene.remove(sigils.group);
@@ -1132,6 +1329,7 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       ghostProto.geometry.dispose();
       (ghostProto.material as THREE.Material).dispose();
       ghostProtoTex.dispose();
+      trail.dispose();
       additive.dispose();
       alpha.dispose();
       slashes.dispose();
