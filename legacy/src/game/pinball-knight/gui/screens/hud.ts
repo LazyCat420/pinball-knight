@@ -31,15 +31,36 @@ import { canRampage } from "../../fps";
 import { bossEngaged } from "../../boss";
 import { WEAPONS } from "../../items";
 import { playerMaxHp } from "../../skill-runtime";
-import { createFace, renderFace, setFaceHealth } from "../../hud-face";
+import { FACE_PX, createFace, renderFace, setFaceHealth } from "../../hud-face";
 import { createMinimap, renderMinimap } from "../../hud-minimap";
 import { UI, GRID } from "../theme";
 import { bar, fillRect, rect, strokeRect, text, type Rect, type UiFrame } from "../im";
 import { drawIcon, glyph, itemIcon } from "../icons";
 import type { UiScreen } from "../stack";
 
-const PANEL_H = 92;
+/** Exported so `hud-face.test.ts` can check the face fits its slot exactly. */
+export const PANEL_H = 92;
+/** The margin `blitFace` leaves inside the face's cell, on every side. */
+export const FACE_BOX_INSET = 4;
 const TILE = 44;
+
+/**
+ * Blit the mugshot at a WHOLE multiple of its own pixel grid.
+ *
+ * The face is pixel art with `imageSmoothingEnabled` off, so a fractional
+ * `drawImage` scale is not "slightly soft" — it is a nearest-neighbour resample
+ * that DELETES rows and columns. The previous code drew a 120px face into
+ * `faceBox.w - 4` = 72px, dropping two of every five, which is why one-pixel
+ * details (the eye catch-light, the nostrils, the helmet cracks) came and went.
+ * `hud-face.test.ts` pins the geometry so this stays exact; the `max(1, …)`
+ * only exists so a future smaller panel degrades instead of drawing nothing.
+ */
+function blitFace(f: UiFrame, face: HTMLCanvasElement, box: Rect): void {
+  const s = Math.max(1, Math.floor((box.w - FACE_BOX_INSET) / FACE_PX));
+  const d = FACE_PX * s;
+  f.g.imageSmoothingEnabled = false;
+  f.g.drawImage(face, Math.round(box.x + (box.w - d) / 2), Math.round(box.y + (box.h - d) / 2), d, d);
+}
 
 /** A framed HUD cell — the bevelled stone look, in two fills. */
 function cell(f: UiFrame, r: Rect, label?: string): void {
@@ -177,8 +198,7 @@ export function hudScreen(): UiScreen {
       const faceBox = rect(x, y, h, h);
       fillRect(f, faceBox, UI.well);
       renderFace(1 / 60);
-      f.g.imageSmoothingEnabled = false;
-      f.g.drawImage(face, faceBox.x + 2, faceBox.y + 2, faceBox.w - 4, faceBox.h - 4);
+      blitFace(f, face, faceBox);
       strokeRect(f, faceBox, UI.sheetEdge, 2);
       x += faceBox.w + 4;
 

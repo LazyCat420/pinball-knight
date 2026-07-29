@@ -11,6 +11,7 @@
  *   __gui.settings()   push the settings screen
  *   __gui.close()      pop the top screen
  *   __gui.probe()      the ORIENTATION probe — see below
+ *   __gui.face()       the mugshot's contact sheet: every tier × every mood
  *   __gui.shot()       the UI layer as a data URL, for headless diffing
  *
  * `probe()` is the one that matters most. This repo shipped a v-flip "fix"
@@ -19,6 +20,7 @@
  * asymmetric marker (a block in the TOP-LEFT eighth plus a bar down the LEFT
  * edge) so orientation can be read off the screen instead of guessed at.
  */
+import { faceContactSheet } from "../hud-face";
 import { fontsAreReady, paintOrientationProbe, uiCtx } from "../gui/layer";
 import { clearScreens, pop, push, screens, top } from "../gui/stack";
 import { uiStats } from "../gui/root";
@@ -89,6 +91,33 @@ export function installGuiHooks(): void {
   api.clear = (): unknown => {
     clearScreens();
     return gui();
+  };
+  api.face = (): string => {
+    // The mugshot's contact sheet, as a SCREEN for the same reason `probe()` is
+    // one: a fire-and-forget paint is cleared before it is ever presented.
+    const sheet = faceContactSheet();
+    push({
+      id: "face",
+      pauses: true,
+      focus: 0,
+      scroll: 0,
+      paint: (f) => {
+        f.g.fillStyle = "#0b0d12";
+        f.g.fillRect(0, 0, f.w, f.h);
+        // Whole-number scale only — this is pixel art, and judging it through a
+        // fractional resample is exactly the bug the sheet exists to catch.
+        const s = Math.max(1, Math.floor(Math.min(f.w / sheet.width, f.h / sheet.height)));
+        f.g.imageSmoothingEnabled = false;
+        f.g.drawImage(
+          sheet,
+          Math.round((f.w - sheet.width * s) / 2),
+          Math.round((f.h - sheet.height * s) / 2),
+          sheet.width * s,
+          sheet.height * s,
+        );
+      },
+    });
+    return "face sheet pushed — columns are moods, rows are health tiers (fresh → dead)";
   };
   api.probe = (): string => {
     // A SCREEN, not a one-shot paint. The driver clears and repaints the layer
