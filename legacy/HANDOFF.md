@@ -2,11 +2,100 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-> ⚠️ NOT collapsed this session, deliberately. The shared checkout had ANOTHER
-> session's uncommitted WebGPU work in it (`package.json`, `core.ts`,
-> `main.ts`, `render/backend.ts`, `scripts/webgpu-check.mjs`) and the
-> `bdb-mapgen` worktree was live, so the "collapse to the live state" note
-> further down still does not apply. Prepended instead.
+> ⚠️ STILL NOT collapsed, same call as last session and for the same reason:
+> `main` moved TWICE underneath this work (the rotortail, then the ricochet
+> trail) while it was in flight, so other sessions are live in this repo right
+> now. Collapsing 1500 lines I have not read would delete their notes. Prepended
+> instead — someone with the whole picture should collapse this.
+
+## ✅ LIVE NOW — `5bf8d39` · PINBALL KNIGHT HAS NO DOM UI (2026-07-29)
+
+**Deployed to synology as `main@5bf8d39`. `10.0.0.16:5174/dungeon` → 200.
+tsc clean over the game subtree, 1419 tests pass across 125 files.**
+
+Every screen — the knight menu, the tavern and its four vendors, the shop, the
+death screen, the floor haul, both HUDs, toasts, the floor map, the descent
+screen, the debug panel, the intro chrome and the on-screen touch controls — is
+now painted onto a canvas composited **inside the pixel pass**. The UI snaps to
+the same 32-colour palette and wears the same dither and scanlines as the art.
+
+Deleted outright: `menu.ts`, `tavern.ts`, `hud-diablo.ts`, `hud-wolf.ts`,
+`ui-cards.ts`, `engine/touch-controls.ts`. Reduced to DOM-free delegates:
+`ui.ts`, `card-reader.ts`, `map-overlay.ts`, `floor-loading.ts`,
+`debug-panel.ts`, `pickup-toast.ts`.
+
+### The new shape
+
+| file | what it is |
+|---|---|
+| `gui/layer.ts` | the canvas + `CanvasTexture` the pass samples |
+| `gui/im.ts` | immediate-mode toolkit — layout, focus, widgets |
+| `gui/stack.ts` | the screen stack; owns `state.uiPauses` |
+| `gui/input.ts` | edge-triggered keyboard/pad/mouse snapshot |
+| `gui/root.ts` | the per-frame driver |
+| `gui/screens/*` | one file per screen |
+| `economy/tavern-shop.ts` | every tavern price and action, extracted from `tavern.ts` |
+
+Composite point: `engine/render/pixel-pass.ts`, **after the ink outline, before
+the flash**. The comment there explains why both neighbours matter — an outline
+downstream of the UI would ink the scene *through* an open menu.
+
+### What got better, not just moved
+
+- **Gamepad and touch navigation** work in every menu. The DOM versions had none.
+- **Modality is game state.** Eight `HTMLDivElement | null` fields collapsed to
+  one `state.uiPauses`, written only by `gui/stack.ts`. `isSimPaused()` in
+  `sim/paused.ts` is one expression.
+- **Widget identity is call order**, so the `data-idx` shadowing bug that made
+  the skill tree "select everything then nothing" is structurally impossible.
+- **Icons are the game's real sprites** (`gui/icons.ts` → `ITEM_PAINTS` through
+  the same palette crush). No emoji anywhere — `holo-card.ts` already recorded
+  that `fillText` emoji broke headless renders.
+- `core.ts` grew by **zero** lines through the whole migration.
+
+### Three bugs the verification caught that reading would not have
+
+- **The composite was v-flipped.** With `rtUv()` the probe's cyan left-edge bar
+  looked right while its top-left gold block landed at the *bottom*, where the
+  DOM HUD covered it — so the frame just looked empty. Rule: one flip per
+  RENDER-TARGET hop, and an uploaded canvas texture has zero.
+- **Key presses were eaten.** `tapped` was a `Set`, so repeats between two
+  painted frames collapsed into one. Nav input is counted now.
+- **The always-on HUD swallowed gameplay keys**, because capture was gated on
+  "a screen is open" rather than "a screen pauses". Pinned by a test.
+
+### Guards and tooling
+
+- `gui/no-dom.test.ts` fails the build if interface is rebuilt out of elements.
+  Two exemptions, both justified in the file: `core.ts` (the renderer's host
+  div) and `intro/index.ts` (its 2D rendering surface).
+- `scripts/gui-shot.mjs` screenshots the UI on a real WebGPU adapter (host
+  Chrome over CDP). In the console: `__gui()` reports stack/focus/frame
+  counters, `__gui.probe()` paints the asymmetric orientation marker, and
+  `__gui.shot()` dumps the layer canvas — the one measurement that separates
+  "the UI never painted" from "the composite ate it".
+
+### Open items from this work
+
+1. **Card hover FX are gone.** `ui-cards.ts` spent ~200 lines on rarity-scaled
+   tilt, pointer-tracked glare, prismatic foil, parallax and a mythic sparkle
+   field. It was a deliberate rarity TELL. Cards are flat now. Rebuilding tilt +
+   glare as canvas transforms is very achievable — all affine transforms and
+   gradients — and is the biggest visual regression of this change.
+2. **Bestiary and skill tree lost density.** 8px Press Start 2P on a 1280×720
+   grid fits fewer rows than 9–13px CSS text; both scroll. A layout pass aimed
+   at those two tabs specifically is worth it.
+3. **The intro's two 2D canvases are still DOM.** Converting them means
+   re-projecting a 480-wide virtual space onto the pixel grid.
+4. **The layer uploads a full-grid texture every frame while the HUD is up**
+   (~5.8 MB/frame at 1600×900). Not measured as a problem — the sim is paused
+   behind every screen that matters — but the HUD is up during play, so look
+   here first if the profiler ever points this way. `gui/layer.ts` already has
+   the `dirty` flag to build on.
+5. **Production runs WebGL2, not WebGPU.** Pre-existing and unrelated: the NAS
+   serves http-over-IP, so `navigator.gpu` is absent. `gui-shot.mjs
+   --allow-webgl` says so loudly. All verification above was on a real NVIDIA
+   adapter locally.
 
 ## ✅ LIVE NOW — `8a4bfa7` · the JESTER, a new monster (2026-07-29)
 
