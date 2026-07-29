@@ -8,6 +8,116 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > now. Collapsing 1500 lines I have not read would delete their notes. Prepended
 > instead — someone with the whole picture should collapse this.
 
+## ✅ LIVE NOW — `a1f0c40` · the CROAKER, sharper sprites, jester spring (2026-07-29)
+
+**Deployed to synology, container healthy, `restarts=0`,
+`10.0.0.16:5174/dungeon` → 200. tsc clean, registry-drift clean, 1443 tests.**
+
+Three things shipped, plus one repo-wide fix that was blocking everybody.
+
+### 1. THE CROAKER — a laser frog that does not respect the maze
+
+`__lab.only("croaker")`. Kites, gated at level 2, weighted into the **warren**
+biome. Every other monster is a prisoner of the corridor graph; this is the
+first one that routes around it.
+
+- **It hops KNEE-HIGH walls.** A camera-side rim is an obstacle to the horde and
+  a kerb to a frog. The reason this is worth having rather than arbitrary: the
+  player's model of "I am safe behind this" is built from wall HEIGHT, which is
+  already on screen, so the exception is legible before it is experienced.
+- **Its leap RICOCHETS** off full masonry — capped at two bounces, because
+  unlimited is a pinball and nobody can predict where it lands.
+- **Twin eye-beams straddling the aim line.** The gap is on the exact line to
+  the player, so you answer this one by closing HEAD-ON, which is the opposite
+  of the advice for the spitter standing next to it.
+
+Both movement rules are exceptions to COLLISION, not steering — hence a bespoke
+branch in `updateZombies` rather than a movement policy.
+
+**`isLowWall` now lives in `engine/grid.ts`.** It was written out twice inside
+`maze/build.ts`, which was fine while it was purely a rendering decision. It
+stopped being one the moment gameplay asked the same question: a frog clearing a
+wall the renderer drew full-height is a plain bug, and one function for both
+readers is the only defence.
+
+### 2. THE JESTER SPRINGS YOU OFF
+
+A melee blow refused by its momentum gate now THROWS the knight — the goblin's
+bumper pop moved from CONTACT to the refused SWING, so what it punishes is
+committing to melee rather than standing close. Land it at momentum and you
+compressed the coil past its travel, so nothing throws you. Same sentence as the
+damage rule, which is what makes the pair learnable.
+
+`MOMENTUM_GATES` gained `gatesDamage`. The check in combat.ts used to name
+`goblin`/`golem` inline — a second roster to keep in step with the table the
+bestiary prints from.
+
+### 3. THE CRUSH PIPELINE (`engine/render/sprite.ts` `crushInto`)
+
+"Very blurry, should look like Ragnarok Online." The display path was already
+right, so the softness was in the ART — found by dumping the shipped atlas cell
+and magnifying it, NOT by screenshotting the game. Four changes:
+
+- **Dither deleted.** Ordered dither assumes the entries either side of a value
+  are adjacent TONES. Cold Crypt is eight ramps in different hue families and
+  the snap is luma-weighted, so a uniform r/g/b bias lands in a different
+  FAMILY — steel picked up rot-green, bone picked up arcane cyan. Chroma
+  confetti, not stipple.
+- **Premultiplied box downscale** replacing `drawImage`, which mixed RGB against
+  an undefined transparent surround and put a dark fringe on every actor. Also
+  removes the dependency on which engine baked the atlas.
+- **Unsharp at the grid**, putting back the selout ink the downscale averaged
+  into the fill it exists to separate.
+- **Selout on the SHADOW-side rim only** — figure.ts lights from a fixed
+  upper-left key, so darkening the up/left rim would be painting shadow onto the
+  light source. Replacing edge pixels ate 1px spider legs; adding ink outside
+  fattened everything.
+
+⚠️ **This composes with `c82c433` (2.25× texels, 216→108).** That session
+diagnosed the REMAINING blur after this as sub-texel features and raised the
+resolution; 216/108 is an exact 2:1, so the box filter's taps are a clean
+two-tap box. Rendered side by side afterwards the combination is clean, no
+over-sharpen halos — but `SHARPEN_AMOUNT` (1.3) was tuned against the old
+1.78:1 downscale, so if the grid moves again, re-render and look rather than
+assuming it still holds.
+
+### 4. ⚠️ THE registry-drift GATE WAS BLOCKING EVERY EDIT IN THE REPO
+
+`799e911 delete the DOM UI (P5)` removed `hud-diablo.ts`, which check F read by
+name. `read()` throws on ENOENT and `post-edit.sh` treats any non-zero exit as
+BLOCKING — so since that merge the checker refused every edit anywhere in the
+repo with a Node stack trace. Fixed: a missing registry FILE now reports as
+drift instead of throwing.
+
+**And the underlying finding, which is NOT fixed and is not mine:** the three
+marble-material surfaces were deleted, not moved — `hud-diablo.ts`'s HUD tiles,
+`ui.ts`'s `MATERIAL_CHIP` buff strip, and `debug-panel.ts`'s `MATERIALS_DBG`
+grant chips. The canvas HUD does not display a marble material at all. The
+materials still ship (all six behaviours from `d459244`), so a player carrying
+Lava or Diamond gets the physics with **no on-screen indication**, and there is
+no debug affordance to grant one for testing. Restore those three drift rows
+WITH the display.
+
+### Gotchas
+
+- **`git stash pop` is REPO-WIDE and will pop another session's stash.** There
+  were seven concurrent worktrees on this checkout tonight. `git stash push --
+  <path>` on a clean tree silently creates nothing, and the following `pop` then
+  applies whoever was on top — it dumped another session's 19-file WIP into this
+  worktree as conflicts. Nothing was lost (they had it back), but use
+  `git diff > patch` for the stash-and-retest trick instead.
+- **`maze/floor-pipeline.test.ts` is FLAKY under full-suite load**, and it flaked
+  on two different tests on two different branches tonight. Both times it passed
+  3/3 in isolation and the full suite passed on a re-run. Consistent with the
+  known path-dependent floor-gen bug — do not chase it as a regression without
+  running it in isolation first.
+- **A blank atlas used to pass the whole suite.** A normalisation slip in the new
+  downscale made every texel transparent and 1,386 tests stayed green.
+  `snap-lut.test.ts` now asserts the crush emits pixels and that they are
+  palette colours.
+
+---
+
 ## ✅ LIVE NOW — `03a23ce` · NO DOM UI ANYWHERE (2026-07-29)
 
 **Deployed to synology as `main@03a23ce`. `10.0.0.16:5174/dungeon` → 200.
