@@ -302,6 +302,8 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead" | "charge" | "slam
  *             real momentum snaps the tether.
  *  - webspinner: ranged web shot — no damage, hard slow; any pinball part
  *             touch shakes the web off.
+ *  - rotortail: AIRBORNE BOMBARDIER — circles at altitude and hurls a slow,
+ *             heavy timber. Fragile, and a solid hit stalls its rotor.
  */
 export type EnemyKind =
   | "zombie"
@@ -318,6 +320,7 @@ export type EnemyKind =
   | "chomper"
   | "sporeling"
   | "jester"
+  | "rotortail"
   | "magnet"
   | "webspinner"
   // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──
@@ -1070,6 +1073,7 @@ export const state = {
 
   sporelingSheet: null as SpriteSheet | null,
   jesterSheet: null as SpriteSheet | null,
+  rotortailSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
 
   // AI

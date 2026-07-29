@@ -100,6 +100,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   webspinner: [{ id: "silk", chance: 0.28 }],
   sporeling: [{ id: "rotflesh", chance: 0.22 }, { id: "slimegel", chance: 0.12 }],
   jester: [{ id: "steelpin", chance: 0.26 }, { id: "glass", chance: 0.1 }],
+  rotortail: [{ id: "hide", chance: 0.24 }, { id: "ironshard", chance: 0.12 }],
   // ── Expansion roster ──
   hound: [{ id: "fang", chance: 0.24 }, { id: "hide", chance: 0.1 }],
   bloater: [{ id: "venomsac", chance: 0.24 }, { id: "slimegel", chance: 0.14 }],

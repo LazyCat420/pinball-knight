@@ -559,6 +559,7 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   goblin: "iron",
   // A wound spring and a stamped plate — the jester is MACHINERY in motley.
   jester: "iron",
+  rotortail: "iron",
   warden: "iron",
   sapper: "iron",
   magnet: "iron",

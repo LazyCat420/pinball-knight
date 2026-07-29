@@ -24,7 +24,7 @@ export type WeaponId =
   | "gun" | "bow" | "flamethrower";
 
 export type WeaponKind = "melee" | "ranged";
-export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard" | "disc";
+export type ProjectileKind = "bullet" | "arrow" | "flame" | "glob" | "web" | "shard" | "disc" | "timber";
 
 export interface WeaponDef {
   id: WeaponId;

@@ -47,6 +47,11 @@ import {
   JESTER_FIRE_RANGE,
   JESTER_WINDUP,
   JESTER_COOLDOWN,
+  ROTORTAIL_R,
+  ROTORTAIL_FIRE_RANGE,
+  ROTORTAIL_WINDUP,
+  ROTORTAIL_COOLDOWN,
+  ROTORTAIL_HOVER_Y,
   SPITTER_COOLDOWN,
   SPITTER_FIRE_RANGE,
   GHOST_R,
@@ -134,7 +139,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
-import { flingPlate, spitGlob, spitWeb } from "./projectiles";
+import { flingPlate, hurlTimber, spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -166,6 +171,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   sporeling: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP * 1.15, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
   // Spring-loaded harlequin — ranged, and its contactRange IS its fire range.
   jester: { bodyR: JESTER_R, contactRange: JESTER_FIRE_RANGE, windup: JESTER_WINDUP, cooldown: JESTER_COOLDOWN, ranged: true },
+  rotortail: { bodyR: ROTORTAIL_R, contactRange: ROTORTAIL_FIRE_RANGE, windup: ROTORTAIL_WINDUP, cooldown: ROTORTAIL_COOLDOWN, ranged: true },
   // ── Expansion roster (bespoke branches below carry the behaviour) ──
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
@@ -670,6 +676,12 @@ export function updateZombies(dt: number): void {
               const uz = pdz / pdist;
               if (z.kind === "webspinner") {
                 spitWeb(z.x, z.z, ux, uz);
+              } else if (z.kind === "rotortail") {
+                // ONE timber, slow and heavy, straight down the line. It is
+                // meant to be dodgeable — the whole design is a long visible
+                // hoist followed by a shot you have time to walk out of, so a
+                // spread (or a fast one) would delete the mechanic.
+                hurlTimber(z.x, z.z, ux, uz);
               } else if (z.kind === "jester") {
                 // ONE plate, straight down the line — no spread. The spitter's
                 // volley is hard to sidestep on purpose; the jester's is easy to
@@ -851,6 +863,14 @@ export function updateZombies(dt: number): void {
     // A bat FLIES: lift its billboard off the floor with a quick flutter-bob.
     if (z.kind === "bat") {
       z.sprite.mesh.position.y = BAT_HOVER_Y + Math.sin((z.bobT ?? 0) * 9) * 0.06;
+    }
+    // So does a ROTORTAIL, higher and slower — a rotor holds a heavy body on a
+    // long lazy bob where a wing beats. The two flyers are told apart in a crowd
+    // by ALTITUDE and CADENCE before either sprite is legible, which is the whole
+    // reason this is its own branch rather than a shared constant.
+    if (z.kind === "rotortail") {
+      z.bobT = (z.bobT ?? 0) + dt;
+      z.sprite.mesh.position.y = ROTORTAIL_HOVER_Y + Math.sin(z.bobT * 2.6) * 0.1;
     }
   }
 }

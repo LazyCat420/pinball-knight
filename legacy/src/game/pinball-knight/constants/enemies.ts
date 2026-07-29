@@ -201,6 +201,54 @@ export const JESTER_DISC_DAMAGE = 1;
  *  room does not fill up with discs. */
 export const JESTER_DISC_LIFE = 2.2;
 /**
+ * ROTORTAIL — an airborne bombardier: it rings you at altitude and drops timber.
+ *
+ * The roster's third ranged family, and the one that answers a question the
+ * other two do not. A spitter's glob dies on the masonry and a jester's plate
+ * bounces off it; a rotortail's timber is SLOW and BIG and thrown from a
+ * circling platform, so neither cover nor closing is automatically the answer —
+ * you have to move THROUGH its ring, and you have a long, visible windup in
+ * which to decide to.
+ *
+ * `orbiter` movement is what makes that true. It shares the policy with the bat
+ * and shares nothing else: the bat orbits to be a melee nuisance you cannot
+ * line a swing up on, this orbits so that its firing solution is always
+ * changing while it hauls a log over its head. One is a fly, one is artillery.
+ *
+ * THE TRADE: it is fragile in the air. ROTORTAIL_HP is low and PAIN_BY_KIND
+ * gives it the roster's second-highest pain chance, so almost any solid hit
+ * stalls the rotor and it visibly sags (render/monsters/rotortail.ts `stumble`).
+ * A monster that shoots from out of reach must be punishing to reach and cheap
+ * to finish once you have.
+ *
+ * Ratio 13 / residue 6 is a fresh pair — no other kind uses ratio 13 at all, so
+ * this cannot contend with an existing slot in the horde roll (see
+ * spawn/factory.ts, where every kind claims a distinct `hash % RATIO === n`).
+ */
+export const ROTORTAIL_HP = 2;
+export const ROTORTAIL_R = 0.3;
+/** Slower than a spitter on the ground plane: it is a circling gun platform,
+ *  not a chaser, and speed on top of range would make it unanswerable. */
+export const ROTORTAIL_SPEED_FACTOR = 0.85;
+export const ROTORTAIL_RATIO = 13;
+export const ROTORTAIL_FROM_LEVEL = 3;
+/** Between the spitter's 6 and the jester's 7.5 — it throws from across a room
+ *  but not from off-screen; a timber you never saw launched is not a mechanic. */
+export const ROTORTAIL_FIRE_RANGE = 7;
+/** The longest tell in the roster. It has to HOIST the thing first, and the
+ *  hoist is the pose the whole design rests on being readable. */
+export const ROTORTAIL_WINDUP = 0.75;
+export const ROTORTAIL_COOLDOWN = 2.8;
+/** SLOW — the point of the timber is that you can see it coming and move. Half
+ *  the jester's plate, and below every player marble speed, so walking out of
+ *  its line always works if you started walking. */
+export const ROTORTAIL_TIMBER_SPEED = 4.4;
+/** Heavy: double a spitter glob. Slow and telegraphed buys the damage. */
+export const ROTORTAIL_TIMBER_DAMAGE = 2;
+/** How high off the floor it flies, world units (cf. BAT_HOVER_Y = 0.5). Higher
+ *  than the bat so the two are distinguishable in a crowd by altitude alone. */
+export const ROTORTAIL_HOVER_Y = 0.85;
+/**
  * GHOST MATERIALIZE WINDOW — ghosts are now IMMUNE to damage while drifting
  * (steel passes through ectoplasm); they materialize — and can be hurt —
  * while winding up their touch and for this long after it lands. Fight it

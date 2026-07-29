@@ -56,6 +56,7 @@ import {
   DODGE_RANGED_CHANCE,
   SPEED_ONLY_T,
   JESTER_DISC_DAMAGE,
+  ROTORTAIL_TIMBER_DAMAGE,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -979,6 +980,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   sporeling: ZOMBIE_DAMAGE,
   // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
   jester: JESTER_DISC_DAMAGE,
+  // Melee fallback only — the timber carries ROTORTAIL_TIMBER_DAMAGE itself.
+  rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,

@@ -12,6 +12,7 @@ import { type WeaponId } from "../items";
 import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
 import { makeSporelingPaints } from "../render/monsters/sporeling";
 import { makeJesterPaints } from "../render/monsters/jester";
+import { makeRotortailPaints } from "../render/monsters/rotortail";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
@@ -93,7 +94,7 @@ function monsterSheet(paints: ActorPaints): SpriteSheet {
 export type SheetKey =
   | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
-  | "hound" | "jester";
+  | "hound" | "jester" | "rotortail";
 
 /**
  * EnemyKind → the atlas that kind draws with, for callers that hold a kind
@@ -107,7 +108,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
   spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
-  sporeling: "sporeling", hound: "hound", jester: "jester",
+  sporeling: "sporeling", hound: "hound", jester: "jester", rotortail: "rotortail",
 };
 
 /** key → (paint the atlas, read it off state, write it back). */
@@ -128,6 +129,7 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   sporeling: { make: makeSporelingPaints, get: () => state.sporelingSheet, set: (s) => { state.sporelingSheet = s; } },
   hound: { make: makeHoundPaints, get: () => state.houndSheet, set: (s) => { state.houndSheet = s; } },
   jester: { make: makeJesterPaints, get: () => state.jesterSheet, set: (s) => { state.jesterSheet = s; } },
+  rotortail: { make: makeRotortailPaints, get: () => state.rotortailSheet, set: (s) => { state.rotortailSheet = s; } },
 };
 
 /**
@@ -158,7 +160,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "brute", "slime", "bat", "golem", "magnet", "spitter", "webspinner"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
