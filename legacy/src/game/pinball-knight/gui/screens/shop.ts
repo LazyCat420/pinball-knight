@@ -32,10 +32,15 @@ export function shopScreen(
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. 800x450 is the design floor every sheet in this
+    // game now targets, so on a desktop grid they all come out at 2x and at the
+    // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
+    // different games stapled together.
+    design: { w: 800, h: 450 },
     onClose,
     paint(f, self) {
       scrim(f);
-      const body = sheet(f, 520, Math.min(560, 140 + stock.length * 34));
+      const body = sheet(f, 520, Math.min(424, 140 + stock.length * 34));
 
       const head = cutTop(body, 30);
       text(f, "ROLLING CART", head.x, head.y, { size: 16, colour: UI.gold });

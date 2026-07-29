@@ -31,18 +31,112 @@
  * floor, not the ceiling.
  */
 import { ITEM_PAINTS } from "../render/cel-painter";
-import { renderPaintCanvas } from "../engine/render/sprite";
+import { crushToGrid, renderPaintCanvas } from "../engine/render/sprite";
+import { monsterPortrait } from "../render/monster-portrait";
+import type { EnemyKind } from "../state";
 import { UI } from "./theme";
 
 const itemCache = new Map<string, HTMLCanvasElement | null>();
+const monsterCache = new Map<string, HTMLCanvasElement | null>();
 
-/** The game's actual sprite for an item id, or null if it has no painter. */
+/** Every icon this module hands out is square and this many pixels on a side. */
+export const ICON_PX = 72;
+
+/**
+ * Re-frame a sprite so the SUBJECT fills the icon.
+ *
+ * ── WHY AN ICON OF A SPRITE IS NOT THE SPRITE ──
+ * A sprite's frame is an ACTOR BOX. It is sized for the tallest thing that can
+ * stand in it and its origin is the creature's feet, so a bat, a coin and a
+ * sword each occupy some small, differently-placed part of a mostly empty
+ * square. Blitting that square into a 20px chip spends most of the chip on
+ * transparency: measured on this roster the painted content is 25-45% of the
+ * frame's width, so a "20px icon" was drawing a 6-9px creature. That is the
+ * literal cause of "the icons just look like dots" — not the box size, the
+ * FRAMING inside it.
+ *
+ * So: find the opaque bounding box, pad it slightly, and fit that square into
+ * `ICON_PX`. Subjects then fill their chips and — because the crop is square
+ * and centred — a bat and a brute still read at the same scale relative to one
+ * another, which is what stops the roster looking like a ransom note.
+ *
+ * The fit is a FILTERED resample (smoothing on), which is the one place in this
+ * UI that is deliberately not nearest-neighbour. It happens ONCE per icon, into
+ * a cache, from a source with more detail than the destination — the same trade
+ * `crushToGrid` already makes for every in-world sprite. What must stay
+ * nearest is the final blit to the screen, and that is `drawIcon`'s job, at an
+ * exact integer ratio off this canvas.
+ */
+function reframe(src: HTMLCanvasElement | null): HTMLCanvasElement | null {
+  if (!src || typeof document === "undefined") return null;
+  const sctx = src.getContext("2d", { willReadFrequently: true });
+  if (!sctx) return null;
+
+  let x0 = src.width;
+  let y0 = src.height;
+  let x1 = -1;
+  let y1 = -1;
+  const { data } = sctx.getImageData(0, 0, src.width, src.height);
+  for (let y = 0; y < src.height; y++) {
+    for (let x = 0; x < src.width; x++) {
+      // 8 rather than 0: the crush leaves a halo of near-zero alpha around
+      // every silhouette, and cropping to THAT is cropping to the whole frame.
+      if (data[(y * src.width + x) * 4 + 3] < 8) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < x0 || y1 < y0) return null; // nothing painted
+
+  // Square the crop around the subject's centre, so nothing is stretched.
+  const pad = 2;
+  const side = Math.max(x1 - x0, y1 - y0) + 1 + pad * 2;
+  const cx = (x0 + x1 + 1) / 2;
+  const cy = (y0 + y1 + 1) / 2;
+
+  const out = document.createElement("canvas");
+  out.width = ICON_PX;
+  out.height = ICON_PX;
+  const g = out.getContext("2d");
+  if (!g) return null;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, cx - side / 2, cy - side / 2, side, side, 0, 0, ICON_PX, ICON_PX);
+  return out;
+}
+
+/** The game's actual sprite for an item id, re-framed as an icon. */
 export function itemIcon(id: string): HTMLCanvasElement | null {
   let c = itemCache.get(id);
   if (c === undefined) {
     const paint = ITEM_PAINTS[id];
-    c = paint ? renderPaintCanvas(paint) : null;
+    c = paint ? reframe(renderPaintCanvas(paint)) : null;
     itemCache.set(id, c);
+  }
+  return c;
+}
+
+/**
+ * The monster itself, as an icon — the same cel the horde is drawn from.
+ *
+ * `monsterPortrait` hands back the painter's native 128px actor box. That goes
+ * through `crushToGrid` first — the same alpha-weighted area downscale every
+ * in-world sprite gets — and then through `reframe`, so the creature fills the
+ * chip. Both steps matter: without the crush a 128px cel nearest-sampled to 18
+ * is confetti, and without the reframe an 18px chip is mostly the empty air a
+ * standing monster leaves above its own head.
+ *
+ * The chain is deliberately the same one `itemIcon` uses, so weapons, potions
+ * and monsters arrive at the UI on one grid, at one apparent scale.
+ */
+export function monsterIcon(kind: EnemyKind): HTMLCanvasElement | null {
+  let c = monsterCache.get(kind);
+  if (c === undefined) {
+    const portrait = monsterPortrait(kind);
+    c = portrait ? reframe(crushToGrid(portrait)) : null;
+    monsterCache.set(kind, c);
   }
   return c;
 }
@@ -61,7 +155,20 @@ export type GlyphId =
   | "steel" // steel branch
   | "flipper" // flipper branch
   | "skull" // kills / danger
-  | "chevron"; // generic marker
+  | "chevron" // generic marker
+  // ── The dev console's vocabulary. Abstract verbs with no item behind them,
+  //    so they are geometry like the rest of the set above. ──
+  | "heart" // heal
+  | "plus" // grant points
+  | "flame" // rage / rampage
+  | "burst" // kill everything
+  | "erase" // clear the room
+  | "stairs" // teleport to the stairs
+  | "descend" // next floor
+  | "crown" // boss
+  | "scythe" // the reaper
+  | "circle" // spawn a ring
+  | "layers"; // jump to a depth
 
 const glyphCache = new Map<string, HTMLCanvasElement>();
 
@@ -198,26 +305,104 @@ function drawGlyph(g: CanvasRenderingContext2D, id: GlyphId, s: number, colour: 
       g.lineTo(u(0.32), u(0.8));
       g.stroke();
       break;
+    case "heart":
+      // Two shoulders and a wedge, in blocks. A bezier heart at 16px resolves
+      // to a lump; stacked bars keep the notch at the top readable.
+      bar(0.14, 0.24, 0.28, 0.2);
+      bar(0.58, 0.24, 0.28, 0.2);
+      bar(0.14, 0.44, 0.72, 0.16);
+      bar(0.24, 0.6, 0.52, 0.14);
+      bar(0.38, 0.74, 0.24, 0.14);
+      break;
+    case "plus":
+      bar(0.42, 0.14, 0.16, 0.72);
+      bar(0.14, 0.42, 0.72, 0.16);
+      break;
+    case "flame":
+      bar(0.42, 0.08, 0.16, 0.24);
+      bar(0.3, 0.3, 0.4, 0.2);
+      bar(0.2, 0.48, 0.6, 0.3);
+      bar(0.32, 0.78, 0.36, 0.12);
+      break;
+    case "burst":
+      // A star of rays — "everything, at once".
+      bar(0.46, 0.02, 0.08, 0.96);
+      bar(0.02, 0.46, 0.96, 0.08);
+      for (const [x, y] of [
+        [0.16, 0.16],
+        [0.72, 0.16],
+        [0.16, 0.72],
+        [0.72, 0.72],
+      ]) {
+        bar(x, y, 0.12, 0.12);
+      }
+      break;
+    case "erase":
+      // A box with its contents struck through: the room, emptied.
+      g.strokeRect(u(0.14) + 0.5, u(0.14) + 0.5, u(0.72), u(0.72));
+      g.beginPath();
+      g.moveTo(u(0.24), u(0.24));
+      g.lineTo(u(0.76), u(0.76));
+      g.moveTo(u(0.76), u(0.24));
+      g.lineTo(u(0.24), u(0.76));
+      g.stroke();
+      break;
+    case "stairs":
+      bar(0.1, 0.68, 0.28, 0.14);
+      bar(0.32, 0.48, 0.28, 0.14);
+      bar(0.54, 0.28, 0.28, 0.14);
+      bar(0.76, 0.12, 0.16, 0.14);
+      break;
+    case "descend":
+      bar(0.42, 0.06, 0.16, 0.5);
+      g.beginPath();
+      g.moveTo(u(0.2), u(0.52));
+      g.lineTo(u(0.8), u(0.52));
+      g.lineTo(u(0.5), u(0.92));
+      g.closePath();
+      g.fill();
+      break;
+    case "crown":
+      bar(0.1, 0.62, 0.8, 0.2);
+      g.beginPath();
+      g.moveTo(u(0.1), u(0.62));
+      g.lineTo(u(0.1), u(0.2));
+      g.lineTo(u(0.3), u(0.42));
+      g.lineTo(u(0.5), u(0.12));
+      g.lineTo(u(0.7), u(0.42));
+      g.lineTo(u(0.9), u(0.2));
+      g.lineTo(u(0.9), u(0.62));
+      g.closePath();
+      g.fill();
+      break;
+    case "scythe":
+      g.beginPath();
+      g.arc(u(0.6), u(0.34), u(0.34), Math.PI, Math.PI * 1.75);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(u(0.6), u(0.3));
+      g.lineTo(u(0.34), u(0.94));
+      g.stroke();
+      break;
+    case "circle":
+      g.beginPath();
+      g.arc(u(0.5), u(0.5), u(0.34), 0, Math.PI * 2);
+      g.stroke();
+      bar(0.44, 0.44, 0.12, 0.12);
+      break;
+    case "layers":
+      bar(0.12, 0.2, 0.76, 0.12);
+      bar(0.12, 0.44, 0.76, 0.12);
+      bar(0.12, 0.68, 0.76, 0.12);
+      break;
   }
 }
 
 /**
- * Draw an icon into the UI layer, letterboxed into a square box.
+ * Blitting lives in `im.ts` and is re-exported here.
  *
- * Item sprites are 72px native and menu boxes are 16-32px, so they are always
- * MINIFIED. `imageSmoothingEnabled = false` on the destination keeps that a
- * nearest-sample rather than a blur — the same rule `renderPaintIcon`'s comment
- * fought over for the DOM icons, and the reason sizes here should stay near
- * integer divisors of 72 where it matters.
+ * It is a pure canvas operation with no dependency on this file's art sources,
+ * and `button()` needs it — so putting it here would have meant either a cycle
+ * or a second copy of the divisor rule. One implementation, two names for it.
  */
-export function drawIcon(
-  g: CanvasRenderingContext2D,
-  icon: HTMLCanvasElement | null,
-  x: number,
-  y: number,
-  size: number,
-): void {
-  if (!icon) return;
-  g.imageSmoothingEnabled = false;
-  g.drawImage(icon, Math.round(x), Math.round(y), size, size);
-}
+export { drawIcon, exactIconSize } from "./im";

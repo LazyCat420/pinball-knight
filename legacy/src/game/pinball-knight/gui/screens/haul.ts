@@ -17,10 +17,15 @@ import { stackHaul, type HaulEntry } from "../../card-reader";
 import { isShinyCard } from "../../cards";
 import { UI, GRID, ROW_H } from "../theme";
 import { beginScroll, button, cutTop, endScroll, focusRing, focusable, rect, scrim, sheet, strokeRect, text } from "../im";
-import { cardFace, CARD_W, CARD_H } from "../card-face";
+import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, type UiScreen } from "../stack";
 
-const FACE_W = 88;
+// 140, not 88. This screen exists to be READ — the whole point of it is the
+// disposition note under each card and the card's own title and stat lines —
+// and at 88 the 512px face was downscaled 5.8x, which left the type as texture.
+// Five of these plus their gutters is 740 of the 748 available, and the screen
+// had an empty lower half to spend.
+const FACE_W = 140;
 const FACE_H = Math.round((CARD_H / CARD_W) * FACE_W);
 
 export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone: () => void): UiScreen {
@@ -34,10 +39,15 @@ export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone:
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. 800x450 is the design floor every sheet in this
+    // game now targets, so on a desktop grid they all come out at 2x and at the
+    // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
+    // different games stapled together.
+    design: { w: 800, h: 450 },
     onClose: onDone,
     paint(f, self) {
       scrim(f);
-      const body = sheet(f, 860, 600);
+      const body = sheet(f, 780, 424);
 
       const head = cutTop(body, 30);
       text(f, `FLOOR ${floor} HAUL`, head.x + head.w / 2, head.y, { size: 16, colour: UI.gold, align: "center" });
@@ -62,7 +72,7 @@ export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone:
         const row = Math.floor(i / perRow);
         const cell = rect(sc.inner.x + col * (FACE_W + GRID), sc.inner.y + row * (FACE_H + 34), FACE_W, FACE_H);
         const st = focusable(f, cell);
-        const face = cardFace(s.id);
+        const face = cardFaceAt(s.id, cell.w);
         if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
         // A fresh card and a shiny both deserve a frame, and a shiny that is
         // also fresh should read as the rarer of the two — so shiny wins.

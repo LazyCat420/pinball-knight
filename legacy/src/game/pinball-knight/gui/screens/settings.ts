@@ -52,10 +52,10 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
   const body = { x: r.x + GRID, y: r.y, w: r.w - GRID * 2, h: r.h };
   const knob = cutRight(body, 64);
 
-  text(f, row.label, body.x, body.y + 6, { size: 8, colour: UI.text, max: body.w - GRID });
-  text(f, row.hint, body.x, body.y + 20, { size: 8, colour: UI.textDim, max: body.w - GRID });
+  text(f, row.label, body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
+  text(f, row.hint, body.x, body.y + 17, { size: 8, colour: UI.textDim, max: body.w - GRID });
 
-  if (toggle(f, { x: knob.x, y: knob.y + (knob.h - 20) / 2, w: 56, h: 20 }, on, row.labels ?? ["ON", "OFF"])) {
+  if (toggle(f, { x: knob.x, y: knob.y + (knob.h - 18) / 2, w: 56, h: 18 }, on, row.labels ?? ["ON", "OFF"])) {
     // Write the RAW value — `invert` is a presentation concern only. Storing the
     // inverted value would silently flip the meaning of the persisted setting
     // for every other reader of settings-save.
@@ -67,8 +67,12 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
 function section(f: UiFrame, body: Rect, title: string, rows: Row[]): void {
   heading(f, cutTop(body, ROW_H), title);
   for (const row of rows) {
-    settingRow(f, cutTop(body, 40), row);
-    cutTop(body, 4);
+    // 32, not 40: two 8px lines plus a pixel of air. At the 2x design zoom the
+    // sheet is a fixed 424 tall, and six rows at 40 ran the last one under the
+    // footer — which is a control the player cannot reach, not a cosmetic
+    // overlap.
+    settingRow(f, cutTop(body, 32), row);
+    cutTop(body, 3);
   }
   cutTop(body, GRID);
 }
@@ -79,9 +83,14 @@ export function settingsScreen(): UiScreen {
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. 800x450 is the design floor every sheet in this
+    // game now targets, so on a desktop grid they all come out at 2x and at the
+    // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
+    // different games stapled together.
+    design: { w: 800, h: 450 },
     paint(f, self) {
       scrim(f);
-      const body = sheet(f, 560, 480);
+      const body = sheet(f, 560, 424);
 
       const head = cutTop(body, ROW_H + GRID);
       text(f, "SETTINGS", head.x, head.y, { size: 16, colour: UI.gold });

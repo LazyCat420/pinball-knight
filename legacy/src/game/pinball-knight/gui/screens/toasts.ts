@@ -17,9 +17,12 @@
  * not silently expire the toasts it is showing you — which the timeout version
  * did, and is why a card pickup read during a pause could vanish mid-read.
  */
+import { state } from "../../state";
+import { screenToUi } from "../coords";
 import { UI, GRID } from "../theme";
 import { fillRect, rect, strokeRect, text, type UiFrame } from "../im";
-import { cardFace, CARD_W, CARD_H } from "../card-face";
+import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
+import { PANEL_H as HUD_PANEL_H } from "./hud";
 import type { CardId } from "../../cards";
 import type { UiScreen } from "../stack";
 
@@ -76,8 +79,25 @@ interface Floater {
 const floaters: Floater[] = [];
 const FLOAT_MS = 900;
 
+/**
+ * `sx`/`sy` arrive in WINDOW pixels — `worldToScreenPx` projects through the
+ * camera and then measures the canvas with `getBoundingClientRect`. This layer
+ * paints in UI pixels. The two agreed only while the pass happened to be at
+ * scale 1 with no letterbox, which is the common case and therefore the worst
+ * kind of latent bug: correct on the machine it was written on, and off by the
+ * upscale factor on anything larger.
+ *
+ * Converted at PUSH time rather than at paint time so a floater carries one
+ * meaning for its whole life, and so a resize mid-flight cannot re-interpret a
+ * number that was already placed.
+ */
 export function pushFloatingCombo(combo: number, sx: number, sy: number): void {
-  floaters.push({ text: `x${combo}`, x: sx, y: sy, born: performance.now() });
+  const sizing = state.pixelPass?.sizing();
+  const p =
+    sizing && typeof window !== "undefined"
+      ? screenToUi(sx, sy, sizing, window.innerWidth, window.innerHeight)
+      : { x: sx, y: sy };
+  floaters.push({ text: `x${combo}`, x: p.x, y: p.y, born: performance.now() });
   // Bounded: a long chain can raise these faster than they expire, and an
   // unbounded array here would grow for the whole run.
   if (floaters.length > 24) floaters.splice(0, floaters.length - 24);
@@ -97,13 +117,19 @@ export function toastScreen(): UiScreen {
     pauses: false,
     focus: 0,
     scroll: 0,
+    // Matched to the HUD's box on purpose. These two are the only screens open
+    // during play, they sit on the same edges of the same frame, and a toast at
+    // half the HUD's type size reads as a different game's notification.
+    design: { w: 800, h: 450 },
     paint(f) {
       const now = performance.now();
       // Expire from the front; the array is in raise order so the oldest is
       // always index 0 and one splice clears every lapsed row.
       while (queue.length && queue[0].until < now) queue.shift();
 
-      let y = f.h - 128;
+      // Clear of the HUD panel, in this screen's own units — the two share a
+      // design box, so one number is right for both.
+      let y = f.h - HUD_PANEL_H - 24;
       for (let i = queue.length - 1; i >= 0; i--) {
         const t = queue[i];
         const left = t.until - now;
@@ -119,7 +145,7 @@ export function toastScreen(): UiScreen {
         strokeRect(f, r, t.card ? UI.gold : UI.sheetEdge);
         if (t.card) {
           const fw = Math.round((CARD_W / CARD_H) * (h - 8));
-          const face = cardFace(t.card);
+          const face = cardFaceAt(t.card, fw);
           if (face) f.g.drawImage(face, r.x + 4, r.y + 4, fw, h - 8);
           text(f, t.text, r.x + fw + 10, r.y + h / 2 - 4, { size: 8, colour: UI.text, max: r.w - fw - 16 });
         } else {

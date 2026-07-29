@@ -8,6 +8,105 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > now. Collapsing 1500 lines I have not read would delete their notes. Prepended
 > instead — someone with the whole picture should collapse this.
 
+## ✅ LIVE NOW — the UI pass: scroll, zoom, icons, the descent screen (2026-07-29)
+
+**tsc clean, registry-drift clean, 1508 tests. Verified through the real pixel
+pass on host Chrome with `scripts/ui-probe.mjs` — every claim below is from a
+screenshot or a state read, not from reading the code.**
+
+### The two bugs behind "the debug buttons don't work"
+
+Both lived in `beginScroll`, both silent, and the second was hiding under the
+first.
+
+1. **The scroll region never scrolled.** It laid content out at `r.y + offset`
+   while translating the context by `-offset` — an exact cancellation. `offset`
+   advanced, the clamp behaved, the scrollbar thumb slid down its track, and
+   every row stayed exactly where it was. Measured: `__gui().scroll` read 175
+   with two screenshots pixel-identical. Anything below the fold of any list was
+   unreachable by any means.
+2. **Hit testing did not move with the paint.** Once (1) was fixed, widget rects
+   are in CONTENT space and the pointer arrives in SCREEN space, so every click
+   inside a scrolled list lands `offset` pixels off. `UiFrame.originY` +
+   `UiFrame.clip` reconcile them, and the clip also stops a row scrolled out of
+   view from answering a click that hits the chrome above it.
+
+Pinned in `gui/im.test.ts`. End-to-end proof: CLEAR ROOM took 81 enemies to 0,
+then a scroll of 575 and a click on SPIDER spawned exactly one spider.
+
+### `UiScreen.design` — the readability fix, and the standardisation
+
+Text was 8px Press Start 2P on a 1600-wide grid: one device pixel per font
+pixel, which is as small as this UI can physically be. Every screen now declares
+the box it was authored for, and the driver hands it the largest INTEGER zoom
+that still fits (`screenZoom`, capped at 4, floored at 1). Whole numbers only —
+a fractional magnification of a nearest-sampled layer is the same "game-wide
+mush" `pixel-pass.ts` already documents.
+
+On a 1600x900 grid: descent screen and intro 3x, everything else 2x. Screens
+that omit `design` stay at 1x, so adding it is opt-in and reversible.
+
+**800x450 is now the design floor for every sheet.** menu/tavern/haul were
+880-940 wide and had to come down to 780x424 to earn the zoom; settings rows went
+40→32 because six of them ran the last control under the footer.
+
+Mixed zooms are legal and used — the floor map paints at 1x (a half-resolution
+floor plan magnified back is a worse map) while the HUD is at 2x, so it derives
+the HUD's real height via `screenZoom(HUD_DESIGN, …)` rather than the hardcoded
+108 it had, which was only ever right at one zoom.
+
+### The icons were dots because of FRAMING, not size
+
+A sprite's frame is an ACTOR BOX — sized for the tallest thing that can stand in
+it, origin at the feet. The painted subject is 25-45% of it, so a "20px icon"
+was drawing a 6-9px creature. `gui/icons.ts:reframe` crops to the opaque
+bounding box and fits that square to 72px, once, into a cache. The debug
+console's monster roster went from thirty identical specks to thirty
+recognisable creatures.
+
+### Every fractional blit in the UI, closed
+
+`exactIconSize` snaps an icon to a size its source divides EXACTLY, and
+`drawIcon` centres the result — smoothing is off, so a non-integer ratio is not
+a soft filter, it deletes whole rows. Fixed at four sites that all had it:
+
+| what | was | now |
+|---|---|---|
+| HUD weapon icon | 72 → 28 (2.57:1) | 72 → 36 (2:1) |
+| HUD belt items | 72 → 24 | 72 → 36, in a 40px tile |
+| HUD minimap | 116 → 72 (1.61:1) | 116 → 58 (2:1) |
+| card faces, 7 sites | 512 → 44-180, nearest | `cardFaceAt(id, w)`, filtered, cached by width |
+
+The rule the whole pass turns on: **a filtered downscale is right when it lands
+in a cache and wrong when it lands on the screen.**
+
+### The descent screen was empty
+
+The DOM→canvas port dropped the labyrinth, the caption, the divider and the
+percentage, keeping a title and a bar on a flat black field. All of it is back
+(`gui/screens/floor-loading.ts`), at 3x, with the maze regrown per descent and
+the progress sweep energising it left to right.
+
+### The debug console is a LEFT DOCK
+
+Every button on it changes the world and the point is to watch what that does; a
+centred sheet covered the arena, so the loop was press → close → look → reopen.
+Docked, with the game's own art on every weapon, material and monster row.
+
+### Still DOM, and NOT the game's
+
+`#gold-hud-badge` / `#gold-popup-container` (`src/utils/gold-hud.ts`) are the
+arcade SITE's currency badge — shared by every game, outside
+`src/game/pinball-knight/`, and the only HTML left floating over the dungeon.
+Verified at runtime: the element list is byte-identical with a menu open and
+closed, so the game itself adds nothing.
+
+### Left undone
+- The card hover FX (tilt/glare/foil) are still not rebuilt — unchanged from the
+  original migration's handoff.
+- `scripts/ui-probe.mjs` is new: `--steps 'eval:…|clickui:x,y|wheel:x,y,dy|shot:name'`
+  against host Chrome. It is how the above was verified; keep it.
+
 ## ✅ LIVE NOW — `a1f0c40` · the CROAKER, sharper sprites, jester spring (2026-07-29)
 
 **Deployed to synology, container healthy, `restarts=0`,

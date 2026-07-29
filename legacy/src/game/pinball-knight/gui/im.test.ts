@@ -13,7 +13,22 @@
  *     frame, so a level-triggered accept would fire on all of them.
  */
 import { describe, it, expect, vi } from "vitest";
-import { beginUi, emptyUiInput, focusable, moveFocus, clampFocus, hit, rect, cutTop, cutRight, inset, scrollToShow, type UiInput } from "./im";
+import {
+  beginUi,
+  beginScroll,
+  clampFocus,
+  cutTop,
+  cutRight,
+  emptyUiInput,
+  exactIconSize,
+  focusable,
+  hit,
+  inset,
+  moveFocus,
+  rect,
+  scrollToShow,
+  type UiInput,
+} from "./im";
 
 /**
  * A context stub. `focusable()` and the focus math never touch the canvas —
@@ -192,5 +207,76 @@ describe("scrollToShow", () => {
 
   it("leaves the offset alone when the widget is already visible", () => {
     expect(scrollToShow(view, rect(0, 150, 10, 20), 40)).toBe(40);
+  });
+});
+
+/**
+ * SCROLLING, which was two separate silent failures at once.
+ *
+ * Both were invisible from anywhere except a screenshot of a LONG list, and
+ * neither threw, logged, or corrupted any state that a caller could inspect:
+ * `offset` advanced correctly, the clamp behaved, and the scrollbar thumb slid
+ * down its track the whole time.
+ */
+describe("beginScroll", () => {
+  const view = rect(0, 100, 200, 100);
+
+  it("lays content out at the view's origin, so the translate actually moves it", () => {
+    // The first cut returned `r.y + offset` while translating the context by
+    // `-offset`. That is an exact cancellation — every row lands back where it
+    // started and the region never scrolls at all. Measured on the debug
+    // console: `__gui().scroll` read 175 while two screenshots were identical.
+    const f = frame(emptyUiInput());
+    const { inner } = beginScroll(f, view, 1000, 40);
+    expect(inner.y).toBe(view.y);
+  });
+
+  it("moves hit testing with the paint", () => {
+    // A row at CONTENT y 380 is on screen at y 180 when the region is scrolled
+    // by 200. Without `originY` the pointer (screen space) is compared against
+    // the rect (content space) and every click lands `offset` pixels off —
+    // which is what "the debug buttons do nothing" actually was.
+    const input = emptyUiInput();
+    input.pointer = { ...input.pointer, x: 10, y: 185, inside: true, pressed: true };
+    const f = frame(input);
+    beginScroll(f, view, 1000, 200);
+    expect(focusable(f, rect(0, 380, 50, 20)).hovered).toBe(true);
+  });
+
+  it("does not answer for rows scrolled outside the view", () => {
+    // Clipping hides them; without the clip rect they would still be clickable,
+    // which is an invisible button sitting over the panel's own chrome.
+    const input = emptyUiInput();
+    input.pointer = { ...input.pointer, x: 10, y: 50, inside: true, pressed: true };
+    const f = frame(input);
+    beginScroll(f, view, 1000, 200);
+    expect(focusable(f, rect(0, 250, 50, 20)).hovered).toBe(false);
+  });
+});
+
+/**
+ * Icon blits are integer-ratio or they are not blits — see `exactIconSize`.
+ */
+describe("exactIconSize", () => {
+  it("snaps down to a divisor rather than resampling fractionally", () => {
+    // 72/28 = 2.57: the ratio that deleted rows out of the shop icons.
+    expect(exactIconSize(72, 28)).toBe(24);
+    expect(exactIconSize(72, 20)).toBe(18);
+    expect(exactIconSize(116, 60)).toBe(58);
+  });
+
+  it("is the identity when the art is already the size asked for", () => {
+    expect(exactIconSize(16, 16)).toBe(16);
+  });
+
+  it("upscales only by whole multiples", () => {
+    expect(exactIconSize(16, 33)).toBe(32);
+  });
+
+  it("never returns a size larger than the box", () => {
+    for (const want of [7, 9, 11, 13, 17, 19, 23, 29, 31, 37, 41]) {
+      expect(exactIconSize(72, want)).toBeLessThanOrEqual(want);
+      expect(exactIconSize(72, want)).toBeGreaterThan(0);
+    }
   });
 });

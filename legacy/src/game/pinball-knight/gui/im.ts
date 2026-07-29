@@ -167,6 +167,38 @@ export interface UiFrame {
   h: number;
   input: UiInput;
   /**
+   * Device texels per UI pixel for this screen — see `UiScreen.design`.
+   *
+   * Screens never read it: `w`/`h` are already in the screen's own units and
+   * the context carries the matching transform. It is here so a screen that
+   * blits a fixed-size canvas can reason about how big the result really is.
+   */
+  scale: number;
+  /**
+   * Y translation currently applied to the context, in UI pixels.
+   *
+   * ── WHY HIT TESTING NEEDS THIS ──
+   * `beginScroll` translates the CONTEXT by `-offset` and hands back an inner
+   * rect at `y + offset`, so a widget's rect is in CONTENT space while the
+   * pointer arrives in SCREEN space. At offset 0 the two agree, which is
+   * exactly why this was invisible: every click worked until the list was
+   * scrolled, and then every click was wrong by the scroll amount — hitting
+   * the row `offset` pixels above the one under the cursor, or nothing at all.
+   * Measured on the debug console, whose monster grid is only reachable by
+   * scrolling: the buttons painted, highlighted on hover, and did nothing.
+   *
+   * `focusable` adds this back before testing, so both live in content space.
+   */
+  originY: number;
+  /**
+   * The active clip, in CONTENT space, or null for the whole frame.
+   *
+   * Drawing is clipped by canvas2D; hit testing is not. Without this a row
+   * scrolled just past the top of its viewport still answers to the pointer —
+   * an invisible button under the panel's heading.
+   */
+  clip: Rect | null;
+  /**
    * Index of the focused widget. Persisted BY THE SCREEN across frames — see
    * `ScreenState.focus` — because it must survive the repaint that a click
    * causes, and because each screen keeps its own cursor.
@@ -182,6 +214,17 @@ export interface UiFrame {
   clips: number;
 }
 
+/**
+ * Start a frame for one screen.
+ *
+ * `scale` is the screen's zoom (see `UiScreen.design`). It is applied as a
+ * CONTEXT TRANSFORM rather than baked into every coordinate, so a screen is
+ * written once, in its own units, and the driver decides how many device texels
+ * each of those units gets. With `imageSmoothingEnabled` off and whole-number
+ * coordinates the result is a nearest-neighbour magnification — one UI pixel is
+ * exactly `scale × scale` texels, which is the only way a UI can get physically
+ * bigger without getting blurrier.
+ */
 export function beginUi(
   g: CanvasRenderingContext2D,
   w: number,
@@ -189,11 +232,12 @@ export function beginUi(
   input: UiInput,
   focus: number,
   fonts: boolean,
+  scale = 1,
 ): UiFrame {
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.setTransform(scale, 0, 0, scale, 0, 0);
   g.imageSmoothingEnabled = false;
   g.textBaseline = "top";
-  return { g, w, h, input, focus, count: 0, consumed: false, fonts, clips: 0 };
+  return { g, w, h, input, scale, originY: 0, clip: null, focus, count: 0, consumed: false, fonts, clips: 0 };
 }
 
 /**
@@ -219,7 +263,12 @@ export function focusable(f: UiFrame, r: Rect, opts: { disabled?: boolean } = {}
   if (opts.disabled) return { index, focused: false, hovered: false, activated: false };
 
   const p = f.input.pointer;
-  const hovered = p.inside && hit(r, p.x, p.y);
+  // Into CONTENT space, where `r` lives — see `UiFrame.originY`. And only if
+  // the point is actually inside the region that is DRAWING right now, so a
+  // scrolled-away row cannot answer to a click that lands on the chrome above
+  // it.
+  const py = p.y + f.originY;
+  const hovered = p.inside && (f.clip === null || hit(f.clip, p.x, py)) && hit(r, p.x, py);
 
   // THE MOUSE MOVES FOCUS, it does not bypass it. If a click could activate a
   // widget the focus ring is not on, the two input models would disagree about
@@ -364,6 +413,54 @@ export function wrap(f: UiFrame, s: string, max: number, size: 8 | 16 | 24 | 32 
   return lines;
 }
 
+// ── Icon blitting ─────────────────────────────────────────────────────────────
+
+/**
+ * The largest size ≤ `want` at which `native` divides EXACTLY.
+ *
+ * ── WHY A FRACTIONAL ICON BLIT IS NOT "SLIGHTLY SOFT" ──
+ * The destination has smoothing off, so a non-integer ratio is not a filter at
+ * all — it is a nearest-neighbour resample that DELETES whole rows and columns.
+ * A 72px sprite drawn at 28 keeps 28 of every 72 rows, so a 1px highlight
+ * survives or vanishes depending on its sub-pixel phase and the same icon loses
+ * different details in different boxes. This repo has paid for that twice
+ * already: the HUD mugshot at 120→72, and the shop icons at 216→28.
+ *
+ * Snapping DOWN rather than rounding is deliberate — an icon that grew past its
+ * box would overlap whatever sits beside it, and a box is a layout promise. The
+ * cost is a few pixels of padding, which `drawIcon` centres.
+ */
+export function exactIconSize(native: number, want: number): number {
+  if (native <= 0 || want <= 0) return 0;
+  // Upscaling: whole multiples only, for the same reason.
+  if (want >= native) return native * Math.max(1, Math.floor(want / native));
+  for (let n = Math.ceil(native / want); n <= native; n++) {
+    if (native % n === 0) return native / n;
+  }
+  return 1;
+}
+
+/**
+ * Draw an icon centred in a square box, at an exact integer ratio.
+ *
+ * Item sprites and monster chips are 72px native; procedural glyphs are
+ * rasterised at the size asked for, so for those `native === want` and the snap
+ * is the identity.
+ */
+export function drawIcon(
+  g: CanvasRenderingContext2D,
+  icon: HTMLCanvasElement | null,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  if (!icon) return;
+  const d = exactIconSize(icon.width, size);
+  if (d <= 0) return;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(icon, Math.round(x + (size - d) / 2), Math.round(y + (size - d) / 2), d, d);
+}
+
 // ── Widgets ───────────────────────────────────────────────────────────────────
 
 /** The full-screen dim behind a modal sheet. */
@@ -394,23 +491,52 @@ export function sheet(f: UiFrame, w: number, h: number): Rect {
   return inset(r, GRID * 2);
 }
 
+/**
+ * A button.
+ *
+ * `icon` is the reason this takes options rather than being two functions. A
+ * screen that hand-rolls "draw an icon, then draw a label next to it" has to
+ * re-derive the inset, the vertical centring and the label's `max` width, and
+ * three screens doing that arrived at three different paddings. One widget with
+ * an optional mark keeps the whole UI on one metric — and, because the icon
+ * shifts the label, an iconned button cannot silently overprint its own art.
+ *
+ * A button WITH an icon left-aligns its label; without one it centres. Centring
+ * a label in the space left over next to a mark reads as a typo, because the
+ * text sits at a different x on every row depending on how long it is.
+ */
 export function button(
   f: UiFrame,
   r: Rect,
   label: string,
-  opts: { disabled?: boolean; danger?: boolean; good?: boolean } = {},
+  opts: {
+    disabled?: boolean;
+    danger?: boolean;
+    good?: boolean;
+    icon?: HTMLCanvasElement | null;
+    /** Square edge of the icon box, in UI pixels. Defaults to the row's height. */
+    iconSize?: number;
+  } = {},
 ): boolean {
   const st = focusable(f, r, { disabled: opts.disabled });
   const accent = opts.danger ? UI.danger : opts.good ? UI.good : UI.gold;
   const fg = opts.disabled ? UI.textFaint : accent;
   fillRect(f, r, opts.disabled ? UI.well : UI.sheet);
   strokeRect(f, r, fg);
-  text(f, label, r.x + r.w / 2, r.y + (r.h - 8) / 2, {
-    size: 8,
-    colour: fg,
-    align: "center",
-    max: r.w - GRID,
-  });
+
+  if (opts.icon) {
+    const size = opts.iconSize ?? Math.max(8, r.h - 6);
+    drawIcon(f.g, opts.icon, r.x + 3, r.y + (r.h - size) / 2, size);
+    const tx = r.x + size + 8;
+    text(f, label, tx, r.y + (r.h - 8) / 2, { size: 8, colour: fg, max: r.x + r.w - tx - 4 });
+  } else {
+    text(f, label, r.x + r.w / 2, r.y + (r.h - 8) / 2, {
+      size: 8,
+      colour: fg,
+      align: "center",
+      max: r.w - GRID,
+    });
+  }
   if (st.focused) focusRing(f, r);
   return st.activated;
 }
@@ -514,14 +640,30 @@ export function beginScroll(f: UiFrame, r: Rect, contentH: number, offset: numbe
   f.g.beginPath();
   f.g.rect(px(r.x), px(r.y), px(r.w), px(r.h));
   f.g.clip();
-  f.g.translate(0, -Math.round(next));
+  const shift = Math.round(next);
+  f.g.translate(0, -shift);
+  // Hit testing has to move with the paint, or every click inside a scrolled
+  // list lands `shift` pixels off — see `UiFrame.originY`. Both are recorded in
+  // CONTENT space, matching the rect handed back below.
+  f.originY = shift;
+  f.clip = rect(r.x, r.y + shift, r.w, r.h);
 
-  return { inner: rect(r.x, r.y + Math.round(next), r.w, contentH), offset: next };
+  // ── THE INNER RECT STARTS AT `r.y`, NOT AT `r.y + shift` ──
+  // Offsetting the layout by `+shift` while the context is translated by
+  // `-shift` is an exact cancellation: every row lands back where it started
+  // and the region NEVER SCROLLS. Everything around it looked healthy —
+  // `offset` advanced, the thumb slid down the track, the clamp behaved — so
+  // the only symptom was that the bottom of a long list could not be reached
+  // by any means. Measured on the debug console (2026-07-29): `__gui().scroll`
+  // read 175 while two consecutive screenshots were pixel-identical.
+  return { inner: rect(r.x, r.y, r.w, contentH), offset: next };
 }
 
 export function endScroll(f: UiFrame, r: Rect, contentH: number, offset: number): void {
   f.g.restore();
   f.clips--;
+  f.originY = 0;
+  f.clip = null;
   // The scrollbar is a bare 2px track — a real one would need hit testing and
   // drag, and a pad user can never touch it. It exists only to say "there is
   // more", which is the one thing losing `overflow:auto` actually cost.

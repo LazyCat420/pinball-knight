@@ -37,6 +37,33 @@ export interface UiScreen {
   focus: number;
   /** Scroll offset for the screen's main region, if it has one. */
   scroll: number;
+  /**
+   * The logical box this screen was authored for, in UI pixels.
+   *
+   * ── WHY EVERY SCREEN DOES NOT SHARE ONE SCALE ──
+   * The UI layer is the pixel-pass grid, which on a desktop is 1600–1920 across.
+   * Text on that grid is 8px Press Start 2P — one device pixel per font pixel,
+   * which is as small as this UI can physically be, and it is what "the menus
+   * are unreadable" means. The fix is to magnify by a whole number, and the
+   * only question is BY HOW MUCH.
+   *
+   * A single global factor cannot answer that. The descent screen holds four
+   * lines and would happily take 3x; the tavern is a 940x640 sheet and takes
+   * none. Picking one number either leaves the sparse screens tiny or clips the
+   * dense ones.
+   *
+   * So the screen declares the box it needs and the driver hands it the largest
+   * INTEGER zoom at which that box still fits the grid. Sparse screens come out
+   * big, dense screens come out unchanged, and neither can overflow. Screens
+   * that omit this stay at 1x — which is the pre-existing behaviour, so adding
+   * the field to a screen is opt-in and reversible.
+   *
+   * Whole numbers only, and that is not negotiable: the layer is nearest-
+   * sampled pixel art and a x1.5 magnification makes every UI pixel
+   * alternately 1 or 2 texels wide, which is the exact "game-wide mush" the
+   * renderer's own integer-scale note in pixel-pass.ts was written to kill.
+   */
+  design?: { w: number; h: number };
   /** Paint one frame and handle its own input. */
   paint(f: UiFrame, self: UiScreen): void;
   /** Called when the screen is popped, for any teardown it owns. */

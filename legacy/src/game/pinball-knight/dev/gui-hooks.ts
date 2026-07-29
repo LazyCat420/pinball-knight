@@ -24,6 +24,9 @@ import { faceContactSheet } from "../hud-face";
 import { fontsAreReady, paintOrientationProbe, uiCtx } from "../gui/layer";
 import { clearScreens, pop, push, screens, top } from "../gui/stack";
 import { uiStats } from "../gui/root";
+import { state } from "../state";
+import { toggleDebugPanel } from "../debug-panel";
+import { openFloorLoading } from "../gui/screens/floor-loading";
 import { settingsScreen } from "../gui/screens/settings";
 import { menuScreen } from "../gui/screens/menu";
 import { tavernScreen } from "../gui/screens/tavern";
@@ -37,6 +40,10 @@ export function installGuiHooks(): void {
     open: screens().map((s) => s.id),
     top: top()?.id ?? null,
     focus: top()?.focus ?? -1,
+    // The scroll offset of the top screen. A canvas list gives no scrollbar to
+    // read in devtools, so "did the wheel reach the UI at all" is otherwise
+    // indistinguishable from "the wheel reached it and the clamp ate it".
+    scroll: top()?.scroll ?? 0,
     paused: screens().some((s) => s.pauses),
     frames: uiStats.frames,
     painted: uiStats.painted,
@@ -44,6 +51,33 @@ export function installGuiHooks(): void {
   });
 
   const api = gui as unknown as Record<string, unknown>;
+  /**
+   * The pass's CURRENT grid, which is the UI's coordinate system.
+   *
+   * A harness that wants to click a widget has to convert window px → UI px,
+   * and the only correct source for that conversion is the pass's own sizing
+   * (see the warning on `PixelPass.sizing`). Exposing it here is what stops
+   * every test script from recomputing `computeRenderSizing(window…)` and
+   * drifting from the live value for a frame after each resize.
+   */
+  api.sizing = (): unknown => state.pixelPass?.sizing() ?? null;
+  /** The ` console, without a keypress — for headless shots of the panel. */
+  api.debug = (): unknown => {
+    toggleDebugPanel();
+    return gui();
+  };
+  /**
+   * The descent screen, held open.
+   *
+   * It normally lives for the length of one floor build, which is far too
+   * short to photograph. This pushes it and leaves it up; `__gui.close()`
+   * dismisses it.
+   */
+  api.loading = (level = 3): unknown => {
+    const h = openFloorLoading(level);
+    h.phase("CARVING", 0.42);
+    return gui();
+  };
   api.settings = (): unknown => {
     push(settingsScreen());
     return gui();

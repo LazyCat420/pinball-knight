@@ -39,9 +39,55 @@ export function cardFace(id: CardId): HTMLCanvasElement | null {
   return c;
 }
 
+const scaled = new Map<string, HTMLCanvasElement>();
+
+/**
+ * The face, PRE-SCALED to `w` UI pixels wide.
+ *
+ * ── WHY NOT JUST `drawImage(face, x, y, w, h)` ──
+ * A card is painted at 512x716 and the UI shows it between 44 and 180 wide. The
+ * UI context has `imageSmoothingEnabled = false` — correct for sprites and the
+ * whole reason the interface shares the art's pixel grid — so that blit is a
+ * ~5.8:1 NEAREST resample. It keeps roughly one pixel in six, which on card art
+ * whose whole job is to carry a title, a rarity band and three stat lines
+ * destroys exactly the part that had to be read. Every one of the seven call
+ * sites was doing it, at a different ratio each.
+ *
+ * So the resample happens ONCE, here, FILTERED, into a cache keyed by width;
+ * call sites then blit 1:1 and the UI's nearest-sampling never touches it. This
+ * is the same trade `gui/icons.ts` makes in `reframe`, and the same rule: a
+ * filtered downscale is right when it lands in a cache, and wrong when it lands
+ * on the screen.
+ */
+export function cardFaceAt(id: CardId, w: number): HTMLCanvasElement | null {
+  const width = Math.max(1, Math.round(w));
+  const key = `${id}:${width}`;
+  const hit = scaled.get(key);
+  if (hit) return hit;
+  const src = cardFace(id);
+  if (!src || typeof document === "undefined") return null;
+
+  const out = document.createElement("canvas");
+  out.width = width;
+  out.height = Math.round((CARD_H / CARD_W) * width);
+  const g = out.getContext("2d");
+  if (!g) return null;
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, 0, 0, out.width, out.height);
+  scaled.set(key, out);
+  return out;
+}
+
+/** The height a `cardFaceAt(id, w)` canvas will have. Layout wants this first. */
+export function cardFaceHeight(w: number): number {
+  return Math.round((CARD_H / CARD_W) * Math.round(w));
+}
+
 /** Drop the cache — card art depends on level/shine encoded in the id. */
 export function clearCardFaceCache(): void {
   cache.clear();
+  scaled.clear();
 }
 
 export { CARD_W, CARD_H };

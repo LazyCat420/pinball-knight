@@ -41,6 +41,10 @@ export function gameOverScreen(opts: {
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. The sheet is 560x380 and this is the one screen a
+    // player reads while not doing anything else, so it takes the zoom: on a
+    // desktop grid the run summary and the three buttons come out at 2x.
+    design: { w: 600, h: 420 },
     // Death is not dismissable. Esc must not drop you back into a dungeon you
     // are dead in — the three buttons are the only ways out.
     onCancel: () => true,

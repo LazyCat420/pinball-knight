@@ -38,26 +38,65 @@ import { bar, fillRect, rect, strokeRect, text, type Rect, type UiFrame } from "
 import { drawIcon, glyph, itemIcon } from "../icons";
 import type { UiScreen } from "../stack";
 
-/** Exported so `hud-face.test.ts` can check the face fits its slot exactly. */
-export const PANEL_H = 92;
-/** The margin `blitFace` leaves inside the face's cell, on every side. */
-export const FACE_BOX_INSET = 4;
-const TILE = 44;
+/**
+ * The box this screen is authored for — see `UiScreen.design`.
+ *
+ * ── WHY THE HUD IS ZOOMED AND THE MENUS ARE NOT ──
+ * On a 1600x900 grid this resolves to 2x, so every number, icon and meter below
+ * is drawn at twice the texels it used to be. That is the whole point: the belt
+ * and ability slots are the two things a player reads WHILE FIGHTING, at a
+ * glance, and at 1x a potion sprite in a 44px tile was a 24px smudge that read
+ * as a coloured dot. Doubling the tile without doubling the art would only have
+ * made a bigger smudge, so both move together — 36px of a 72px sprite instead
+ * of 24, magnified 2x, is 3x the apparent detail.
+ *
+ * The sheets (menu, tavern, haul) stay at 1x because they are lists: their
+ * problem is fitting thirty rows, not reading one. The HUD has eight cells.
+ */
+export const DESIGN = { w: 800, h: 450 };
 
 /**
- * Blit the mugshot at a WHOLE multiple of its own pixel grid.
+ * Panel height, in the HUD's own units. Doubled by the design zoom on a desktop
+ * grid, so this is ~150 device pixels — up from 92, but well short of the 184
+ * that keeping the old number would have cost.
+ */
+export const PANEL_H = 76;
+/** The margin `blitFace` leaves inside the face's cell, on every side. */
+export const FACE_BOX_INSET = 4;
+/**
+ * The mugshot's cell, which is TALLER THAN THE PANEL and rises above it.
+ *
+ * The face is the one element here whose size is not free: `FACE_PX` is its
+ * backing store and the blit must be a whole multiple of it (below), so the
+ * cell has a hard floor of `FACE_PX + inset` = 76. Sizing the whole panel
+ * around that floor is what the old 92px panel did, and at 2x it would have
+ * eaten a fifth of the screen. Letting the portrait break the panel's top edge
+ * instead is both cheaper and the older idiom — the mugshot has poked out of
+ * the status bar since Doom.
+ */
+export const FACE_BOX = FACE_PX + FACE_BOX_INSET;
+const TILE = 40;
+/** Item sprites are 72px native, so 36 is an exact 2:1 — see `exactIconSize`. */
+const ITEM_ICON = 36;
+
+/**
+ * How many times over the mugshot's own grid fits in a box of `w` UI pixels.
  *
  * The face is pixel art with `imageSmoothingEnabled` off, so a fractional
  * `drawImage` scale is not "slightly soft" — it is a nearest-neighbour resample
- * that DELETES rows and columns. The previous code drew a 120px face into
+ * that DELETES rows and columns. An earlier version drew a 120px face into
  * `faceBox.w - 4` = 72px, dropping two of every five, which is why one-pixel
  * details (the eye catch-light, the nostrils, the helmet cracks) came and went.
- * `hud-face.test.ts` pins the geometry so this stays exact; the `max(1, …)`
- * only exists so a future smaller panel degrades instead of drawing nothing.
+ * `hud-face.test.ts` pins this against `FACE_BOX` so it stays exact; the
+ * `max(1, …)` only exists so a future smaller panel degrades instead of drawing
+ * nothing at all.
  */
+export function faceBlitScale(w: number): number {
+  return Math.max(1, Math.floor((w - FACE_BOX_INSET) / FACE_PX));
+}
+
 function blitFace(f: UiFrame, face: HTMLCanvasElement, box: Rect): void {
-  const s = Math.max(1, Math.floor((box.w - FACE_BOX_INSET) / FACE_PX));
-  const d = FACE_PX * s;
+  const d = FACE_PX * faceBlitScale(box.w);
   f.g.imageSmoothingEnabled = false;
   f.g.drawImage(face, Math.round(box.x + (box.w - d) / 2), Math.round(box.y + (box.h - d) / 2), d, d);
 }
@@ -120,6 +159,7 @@ export function hudScreen(): UiScreen {
     pauses: false,
     focus: 0,
     scroll: 0,
+    design: DESIGN,
     paint(f) {
       // The HUD never takes input, so it never registers a focusable. That is
       // what keeps the focus cursor of whatever sheet is open above it correct.
@@ -140,16 +180,29 @@ export function hudScreen(): UiScreen {
       fillRect(f, panel, UI.sheet);
       fillRect(f, rect(panel.x, panel.y, panel.w, 1), UI.sheetEdgeLit);
 
-      let x = Math.max(GRID, (f.w - 980) / 2);
       const y = panel.y + GRID;
       const h = PANEL_H - GRID * 2;
+      const GAP = 5;
+      // Cell widths, summed so the row can be CENTRED rather than pinned to a
+      // hardcoded total. The old code centred against a literal 980 and then
+      // clamped to the left margin — so on any grid narrower than that the row
+      // silently started overflowing the right edge instead of shrinking, which
+      // is how the minimap ended up off screen.
+      // `wpn` is sized for the longest weapon name at 8px Press Start 2P, whose
+      // cell is exactly 8 wide — "FLAMER" is 6 glyphs, so 48px of label after
+      // the icon and its gutter. Guessing narrower ellipsised the name of the
+      // weapon you are holding, which is the one string on the bar that has to
+      // be readable at a glance.
+      const W = { skills: TILE * 2 + 12, wpn: ITEM_ICON + 8 + 52, globe: h, face: FACE_BOX, stats: 100, belt: TILE * 4 + 15, map: h };
+      const total = Object.values(W).reduce((a, b) => a + b, 0) + W.globe + GAP * 7;
+      let x = Math.max(GRID, Math.round((f.w - total) / 2));
 
       // ── SKILLS: the two ability slots, with cost and rank ──
-      const skills = rect(x, y, TILE * 2 + 12, h);
+      const skills = rect(x, y, W.skills, h);
       cell(f, skills, "SKILLS");
       for (let i = 0; i < 2; i++) {
         const id = state.abilitySlots[i];
-        const tr = rect(skills.x + 4 + i * (TILE + 4), skills.y + 4, TILE, TILE);
+        const tr = rect(skills.x + 4 + i * (TILE + 4), skills.y + 3, TILE, TILE);
         fillRect(f, tr, UI.sheet);
         strokeRect(f, tr, UI.wellEdge);
         if (!id) continue;
@@ -158,7 +211,10 @@ export function hudScreen(): UiScreen {
         // Price keystone an empty pool still casts, and greying out a slot the
         // player can demonstrably use is the HUD lying about the game.
         const ok = canCast(i as 0 | 1);
-        drawIcon(f.g, glyph("spark", 16, ok ? UI.arcane : UI.textFaint), tr.x + 14, tr.y + 8, 16);
+        // The mark fills the tile rather than sitting as a 16px pip in the
+        // middle of it. A glyph is rasterised at whatever size it is asked for,
+        // so this is a bigger DRAWING, not a magnified small one.
+        drawIcon(f.g, glyph("spark", 28, ok ? UI.arcane : UI.textFaint), tr.x + (TILE - 28) / 2, tr.y + 3, 28);
         text(f, String(def.cost), tr.x + 3, tr.y + TILE - 11, {
           size: 8,
           colour: (p.mana ?? 0) >= def.cost ? UI.arcane : ok ? UI.danger : UI.textDim,
@@ -173,76 +229,82 @@ export function hudScreen(): UiScreen {
           f.g.fillRect(tr.x, tr.y, tr.w, Math.round(tr.h * frac));
         }
       }
-      x += skills.w + 6;
+      x += skills.w + GAP;
 
       // ── WEAPON + AMMO ──
-      const wpn = rect(x, y, 92, h);
+      const wpn = rect(x, y, W.wpn, h);
       cell(f, wpn, "WEAPON");
       const w = state.weaponSlots[state.activeSlot];
       if (w) {
         const def = WEAPONS[w.id];
-        drawIcon(f.g, itemIcon(w.id), wpn.x + 6, wpn.y + 6, 28);
-        text(f, def.label.toUpperCase(), wpn.x + 38, wpn.y + 8, { size: 8, colour: UI.text, max: 50 });
+        drawIcon(f.g, itemIcon(w.id), wpn.x + 4, wpn.y + 4, ITEM_ICON);
+        text(f, def.label.toUpperCase(), wpn.x + ITEM_ICON + 8, wpn.y + 6, { size: 8, colour: UI.text, max: 52 });
         const dur = Number.isFinite(w.durability) ? `${w.durability}` : "∞";
-        text(f, dur, wpn.x + 38, wpn.y + 22, { size: 8, colour: UI.textDim });
+        text(f, dur, wpn.x + ITEM_ICON + 8, wpn.y + 20, { size: 8, colour: UI.textDim });
       }
-      x += wpn.w + 6;
+      x += wpn.w + GAP;
 
       // ── LIFE · FACE · MANA ──
       const maxHp = playerMaxHp();
       setFaceHealth(p.hp, maxHp);
-      const life = rect(x, y, h, h);
+      const life = rect(x, y, W.globe, h);
       globe(f, life, p.hp / Math.max(1, maxHp), UI.danger, p.hp, time);
       x += life.w + 4;
 
-      const faceBox = rect(x, y, h, h);
+      // The portrait is bottom-aligned to the other cells and therefore rises
+      // ABOVE the panel — see `FACE_BOX`. Its own backdrop is drawn first so the
+      // part that overhangs is not a floating head on the level.
+      const faceBox = rect(x, y + h - FACE_BOX, FACE_BOX, FACE_BOX);
       fillRect(f, faceBox, UI.well);
       renderFace(1 / 60);
       blitFace(f, face, faceBox);
       strokeRect(f, faceBox, UI.sheetEdge, 2);
       x += faceBox.w + 4;
 
-      const mana = rect(x, y, h, h);
+      const mana = rect(x, y, W.globe, h);
       globe(f, mana, (p.mana ?? 0) / 100, UI.arcane, p.mana ?? 0, time);
-      x += mana.w + 6;
+      x += mana.w + GAP;
 
       // ── SCORE / DEPTH / KILLS / RAMPAGE ──
-      const stats = rect(x, y, 120, h);
+      const stats = rect(x, y, W.stats, h);
       cell(f, stats);
       const statRow = (label: string, value: string, row: number, colour: string): void => {
-        text(f, label, stats.x + 6, stats.y + 6 + row * 22, { size: 8, colour: UI.textDim });
-        text(f, value, stats.x + stats.w - 6, stats.y + 6 + row * 22, { size: 8, colour, align: "right" });
+        text(f, label, stats.x + 5, stats.y + 6 + row * 16, { size: 8, colour: UI.textDim });
+        text(f, value, stats.x + stats.w - 5, stats.y + 6 + row * 16, { size: 8, colour, align: "right" });
       };
       statRow("DEPTH", String(state.level), 0, UI.gold);
       statRow("KILLS", String(state.kills), 1, UI.good);
       // `ultCharge` is the ultimate meter, 0..1 — the same value `canRampage()`
       // gates on, so the number the player reads is the number the game checks.
       statRow("RAGE", `${Math.round(state.ultCharge * 100)}%`, 2, canRampage() ? UI.gold : UI.danger);
-      x += stats.w + 6;
+      x += stats.w + GAP;
 
       // ── BELT ──
-      const belt = rect(x, y, TILE * 4 + 18, h);
+      const belt = rect(x, y, W.belt, h);
       cell(f, belt, "BELT · 1-4");
       for (let i = 0; i < 4; i++) {
         const slot = state.belt[i];
-        const tr = rect(belt.x + 4 + i * (TILE + 3), belt.y + 4, TILE, TILE);
+        const tr = rect(belt.x + 3 + i * (TILE + 3), belt.y + 3, TILE, TILE);
         fillRect(f, tr, UI.sheet);
         strokeRect(f, tr, UI.wellEdge);
         text(f, String(i + 1), tr.x + 2, tr.y + 2, { size: 8, colour: UI.textFaint });
         if (!slot) continue;
-        drawIcon(f.g, itemIcon(slot.id), tr.x + 12, tr.y + 12, 24);
+        drawIcon(f.g, itemIcon(slot.id), tr.x + (TILE - ITEM_ICON) / 2, tr.y + (TILE - ITEM_ICON) / 2, ITEM_ICON);
         if (slot.count > 1) {
           text(f, String(slot.count), tr.x + TILE - 3, tr.y + TILE - 11, { size: 8, colour: UI.text, align: "right" });
         }
       }
-      x += belt.w + 6;
+      x += belt.w + GAP;
 
       // ── MINIMAP ──
-      const map = rect(x, y, h, h);
+      // Through `drawIcon`, not a raw `drawImage` fitted to the cell: the
+      // backing store is 116px and the cell is 60, and 116/60 is the fractional
+      // resample this file's own `blitFace` note is about. `drawIcon` takes the
+      // exact 2:1 (58px) and centres the result.
+      const map = rect(x, y, W.map, h);
       cell(f, map);
       renderMinimap();
-      f.g.imageSmoothingEnabled = false;
-      f.g.drawImage(minimap, map.x + 2, map.y + 2, map.w - 4, map.h - 4);
+      drawIcon(f.g, minimap, map.x, map.y, map.w);
       text(f, "M", map.x + map.w - 4, map.y + 2, { size: 8, colour: UI.textFaint, align: "right" });
 
       // ── BOSS BAR — only while a boss is actually engaged ──

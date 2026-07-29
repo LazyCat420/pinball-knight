@@ -65,7 +65,7 @@ import {
   type UiFrame,
 } from "../im";
 import { drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
-import { cardFace, CARD_W, CARD_H } from "../card-face";
+import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
 import { settingsScreen } from "./settings";
 
@@ -254,7 +254,7 @@ function cardsTab(f: UiFrame, body: Rect, m: MenuState): void {
       const id = w.cards?.[ci];
       const st = focusable(f, cell);
       if (id) {
-        const face = cardFace(id);
+        const face = cardFaceAt(id, cell.w);
         if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
         else well(f, cell);
         // Clicking a socketed card un-sockets it, at the armory's price.
@@ -281,7 +281,7 @@ function cardsTab(f: UiFrame, body: Rect, m: MenuState): void {
     const rowIdx = Math.floor(i / perRow);
     const cell = rect(body.x + col * (CARD_SLOT_W + 6), body.y + rowIdx * (CARD_SLOT_H + 6), CARD_SLOT_W, CARD_SLOT_H);
     const st = focusable(f, cell);
-    const face = cardFace(stash[i]);
+    const face = cardFaceAt(stash[i], cell.w);
     if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
     else well(f, cell);
     if (i === m.picked) strokeRect(f, inset(cell, -1), UI.gold, 2);
@@ -601,6 +601,11 @@ export function menuScreen(onAbandon: () => void): UiScreen {
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. 800x450 is the design floor every sheet in this
+    // game now targets, so on a desktop grid they all come out at 2x and at the
+    // SAME zoom as each other — a menu at 1x next to a HUD at 2x reads as two
+    // different games stapled together.
+    design: { w: 800, h: 450 },
     onCancel(self) {
       // An armed ABANDON disarms on Esc rather than closing — otherwise the
       // key that armed it could also dismiss the warning it raised.
@@ -613,7 +618,7 @@ export function menuScreen(onAbandon: () => void): UiScreen {
     },
     paint(f, self) {
       scrim(f);
-      const outer = sheet(f, 880, 620);
+      const outer = sheet(f, 780, 424);
 
       // Header: title, purse, tabs.
       const head = cutTop(outer, 34);

@@ -80,7 +80,7 @@ import {
   type UiFrame,
 } from "../im";
 import { drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
-import { cardFace, CARD_W, CARD_H } from "../card-face";
+import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, type UiScreen } from "../stack";
 
 export type VendorId = "cards" | "weapons" | "armor" | "potions";
@@ -265,7 +265,7 @@ function cardsBody(f: UiFrame, body: Rect, u: TavernUi): void {
     const price = PRICE_CARD[cardDef(id)!.rarity];
     const afford = getBalance() >= price;
     const st = focusable(f, cell, { disabled: !afford });
-    const face = cardFace(id);
+    const face = cardFaceAt(id, cell.w);
     if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
     else well(f, cell);
     text(f, `${price}g`, cell.x + cell.w / 2, cell.y + cell.h + 4, {
@@ -297,7 +297,7 @@ function cardsBody(f: UiFrame, body: Rect, u: TavernUi): void {
       const id = w.cards?.[ci];
       const st = focusable(f, cell);
       if (id) {
-        const face = cardFace(id);
+        const face = cardFaceAt(id, cell.w);
         if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
         if (st.activated) say(u, unsocketCard(wi, ci));
       } else {
@@ -323,7 +323,7 @@ function cardsBody(f: UiFrame, body: Rect, u: TavernUi): void {
     const row = Math.floor(i / perRow);
     const cell = rect(body.x + col * (CARD_SLOT_W + 6), body.y + row * (CARD_SLOT_H + 18), CARD_SLOT_W, CARD_SLOT_H);
     const st = focusable(f, cell);
-    const face = cardFace(state.cardStash[i]);
+    const face = cardFaceAt(state.cardStash[i], cell.w);
     if (face) f.g.drawImage(face, cell.x, cell.y, cell.w, cell.h);
     else well(f, cell);
     if (i === u.picked) strokeRect(f, inset(cell, -1), UI.gold, 2);
@@ -493,6 +493,11 @@ export function tavernScreen(d: {
     pauses: true,
     focus: 0,
     scroll: 0,
+    // See `UiScreen.design`. 800x450 is the design floor every sheet in this
+    // game now targets, so on a desktop grid they all come out at 2x and at the
+    // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
+    // different games stapled together.
+    design: { w: 800, h: 450 },
     onCancel() {
       if (u.vendor && !counterMode) {
         // Back to the room, not out of the tavern.
@@ -506,7 +511,7 @@ export function tavernScreen(d: {
     onClose: d.onClose,
     paint(f, self) {
       scrim(f);
-      const outer = sheet(f, 940, 640);
+      const outer = sheet(f, 780, 424);
 
       const head = cutTop(outer, 32);
       text(f, "THE TAVERN", head.x, head.y, { size: 16, colour: UI.gold });

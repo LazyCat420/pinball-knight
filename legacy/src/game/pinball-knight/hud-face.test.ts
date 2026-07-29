@@ -26,8 +26,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas } from "canvas";
 import { PALETTE_HEX } from "./render/palette";
-import { GRID as UI_GRID } from "./gui/theme";
-import { FACE_BOX_INSET, PANEL_H } from "./gui/screens/hud";
+import { FACE_BOX, FACE_BOX_INSET, faceBlitScale } from "./gui/screens/hud";
 
 const realDoc = (globalThis as { document?: unknown }).document;
 beforeAll(() => {
@@ -76,10 +75,17 @@ const TIERS: Array<[string, number]> = [
 describe("the HUD blits the face at a whole multiple of its pixel grid", () => {
   it("divides exactly — a fractional scale would delete rows of the art", async () => {
     const { FACE_PX } = await face();
-    // Exactly what `blitFace` measures: the panel's inner height, less the inset.
-    const box = PANEL_H - UI_GRID * 2 - FACE_BOX_INSET;
-    expect(box).toBeGreaterThanOrEqual(FACE_PX);
-    expect(box % FACE_PX).toBe(0);
+    // Asserted through the FUNCTION the HUD actually blits with, against the
+    // cell the HUD actually gives it. An earlier version of this test
+    // re-derived the box from the panel height, and the day the portrait was
+    // allowed to overhang the panel that derivation stopped describing the
+    // geometry while continuing to pass — a test that measures its own copy of
+    // the layout can only ever agree with itself.
+    const drawn = FACE_PX * faceBlitScale(FACE_BOX);
+    expect(drawn).toBeGreaterThanOrEqual(FACE_PX);
+    expect(drawn % FACE_PX).toBe(0);
+    // And it fits, with the declared margin still around it.
+    expect(drawn).toBeLessThanOrEqual(FACE_BOX - FACE_BOX_INSET);
   });
 
   it("the backing store is square and matches the declared grid", async () => {

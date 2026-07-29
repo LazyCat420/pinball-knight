@@ -11,6 +11,7 @@
  * Here it is a property of the stack, and these tests pin it.
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { MAX_UI_ZOOM, screenZoom } from "./root";
 import { state } from "../state";
 import { push, pop, close, remove, clearScreens, screens, top, isOpen, type UiScreen } from "./stack";
 
@@ -130,5 +131,42 @@ describe("screen stack", () => {
     clearScreens();
     expect(state.uiPauses).toBe(false);
     expect(top()).toBeNull();
+  });
+});
+
+/**
+ * THE DESIGN ZOOM — see `UiScreen.design` and `screenZoom`.
+ *
+ * The rule that matters is WHOLE NUMBERS. A fractional magnification of a
+ * nearest-sampled layer makes every UI pixel alternately 1 or 2 texels wide,
+ * which is the same "game-wide mush" the renderer's own integer-scale note in
+ * pixel-pass.ts exists to prevent — and it would arrive silently, as "the menu
+ * looks a bit off" rather than as a bug in anything.
+ */
+describe("screenZoom", () => {
+  it("is 1 for a screen that declares nothing, which is the old behaviour", () => {
+    expect(screenZoom(undefined, 1600, 900)).toBe(1);
+  });
+
+  it("takes the largest WHOLE zoom at which the design box still fits", () => {
+    expect(screenZoom({ w: 800, h: 450 }, 1600, 900)).toBe(2);
+    expect(screenZoom({ w: 480, h: 270 }, 1600, 900)).toBe(3);
+    // 940x640 does not fit twice into 1600x900 — a sheet that dense stays 1x
+    // rather than being clipped.
+    expect(screenZoom({ w: 940, h: 640 }, 1600, 900)).toBe(1);
+  });
+
+  it("is bounded by the TIGHTER axis, so nothing is ever clipped", () => {
+    // Twice as wide as it needs, but only just tall enough: still 1x.
+    expect(screenZoom({ w: 400, h: 700 }, 1600, 900)).toBe(1);
+  });
+
+  it("never drops below 1, even on a grid smaller than the design box", () => {
+    // Clipping is visible and fixable; a fractional shrink is neither.
+    expect(screenZoom({ w: 800, h: 450 }, 640, 360)).toBe(1);
+  });
+
+  it("is capped, so a tiny design box on a huge grid is not six giant words", () => {
+    expect(screenZoom({ w: 100, h: 60 }, 3840, 2160)).toBe(MAX_UI_ZOOM);
   });
 });

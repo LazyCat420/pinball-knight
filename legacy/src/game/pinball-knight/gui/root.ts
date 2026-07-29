@@ -14,7 +14,7 @@
  */
 import type { PixelPass } from "../engine/render/pixel-pass";
 import { beginFrame, commit, fontsAreReady, markDirty, setUiActive, syncSize, uiSize } from "./layer";
-import { beginUi, emptyUiInput, moveFocus, clampFocus, type UiFrame } from "./im";
+import { beginUi, emptyUiInput, moveFocus, clampFocus, type UiFrame, type UiInput } from "./im";
 import { setUiInputLive, takeFrame } from "./input";
 import { pop, screens, top } from "./stack";
 import { state } from "../state";
@@ -39,6 +39,42 @@ import { state } from "../state";
  * bisect — worth the two counters.
  */
 export const uiStats = { frames: 0, painted: 0 };
+
+/**
+ * The biggest whole-number zoom at which `design` still fits the grid.
+ *
+ * Clamped at 4 so a screen with a tiny design box on a huge grid does not turn
+ * into six enormous words; and at 1 from below, because a screen that does not
+ * fit at 1x is not made to fit by refusing to draw it — it clips, which is
+ * visible and fixable, where a fractional scale would silently mush the whole
+ * layer (see the note on `UiScreen.design`).
+ */
+export const MAX_UI_ZOOM = 4;
+
+export function screenZoom(design: { w: number; h: number } | undefined, gridW: number, gridH: number): number {
+  if (!design || design.w <= 0 || design.h <= 0) return 1;
+  const fit = Math.min(Math.floor(gridW / design.w), Math.floor(gridH / design.h));
+  return Math.max(1, Math.min(MAX_UI_ZOOM, fit));
+}
+
+/**
+ * The pointer, in one screen's units.
+ *
+ * The snapshot arrives in GRID pixels and a zoomed screen thinks in its own,
+ * so the position (and the wheel, which is a distance in the same units) has to
+ * be divided before the screen ever sees it. Cloned rather than mutated because
+ * screens at different zooms are painted from the same snapshot in one frame,
+ * and scaling it in place would apply the top screen's zoom to everything
+ * underneath it.
+ */
+function scaleInput(input: UiInput, zoom: number): UiInput {
+  if (zoom === 1) return input;
+  return {
+    ...input,
+    pointer: { ...input.pointer, x: input.pointer.x / zoom, y: input.pointer.y / zoom },
+    scroll: Math.round(input.scroll / zoom),
+  };
+}
 
 export function drawUiFrame(pass: PixelPass): void {
   uiStats.frames++;
@@ -70,7 +106,16 @@ export function drawUiFrame(pass: PixelPass): void {
     // is a property of the data rather than a cascade of `if (el)` checks that
     // has to be maintained by hand (see input/keymap.ts's warning about order).
     const isTop = s === active;
-    const f: UiFrame = beginUi(g, w, h, isTop ? input : emptyUiInput(), s.focus, fontsAreReady());
+    const zoom = screenZoom(s.design, w, h);
+    const f: UiFrame = beginUi(
+      g,
+      Math.floor(w / zoom),
+      Math.floor(h / zoom),
+      isTop ? scaleInput(input, zoom) : emptyUiInput(),
+      s.focus,
+      fontsAreReady(),
+      zoom,
+    );
     s.paint(f, s);
     if (!isTop) continue;
 
