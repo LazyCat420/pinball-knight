@@ -28,6 +28,7 @@
  * hardcoded list to fall out of date (the `__dungeonAtlas` trap).
  */
 import { KIND_IDS, KIND_INFO } from "../bestiary";
+import { floorLock, setFloorLock } from "./floor-lock";
 import { state } from "../state";
 import type { EnemyKind } from "../state";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
@@ -66,6 +67,8 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         '  __lab.only("sporeling")       clear the room, then 3 — art QA',
         "  __lab.ring()                  ONE OF EVERY KIND in a ring",
         "  __lab.floor(5)                jump to a floor",
+        "  __lab.lock() / __lab.lock(3)  PIN every descent to that floor",
+        "  __lab.unlock()                back to normal progression",
         "  __lab.clear()                 clear all enemies",
         "  __lab.kinds()                 roster as an array",
         "",
@@ -131,6 +134,23 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
       debugClearEnemies();
       return true;
     },
+
+    /** Pin every descent to one floor (default 1) and go there now. Survives
+     *  reloads — that is the point — so `unlock()` when you are done. */
+    lock: (floor = 1) => {
+      const n = setFloorLock(floor);
+      console.log(`[lab] floor lock ON — every descent goes to floor ${n}. __lab.unlock() to clear.`);
+      if (!state.gameOver && n) startLevel(n);
+      return n;
+    },
+
+    unlock: () => {
+      setFloorLock(null);
+      console.log("[lab] floor lock OFF — normal progression");
+      return true;
+    },
+
+    lockState: (): number | null => floorLock(),
   });
 
   (window as unknown as { __lab?: typeof lab }).__lab = lab;
