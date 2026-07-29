@@ -31,30 +31,35 @@ import { state, resetState, freshPlayerFields, activeWeapon, type Zombie, type G
 import { createPixelPass } from "./engine/render/pixel-pass";
 import { createVfx } from "./render/vfx";
 import { createAimIndicator } from "./render/aim-indicator";
-import { createPinballParts, updatePinballParts, updatePlungerRig, spawnPinballPart } from "./render/pinball-parts";
+import { createPinballParts, updatePinballParts, updatePlungerRig } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";
 import { updateArcLanes } from "./render/arc-lanes";
 import { tickJuice, resetJuice } from "./engine/juice";
 import { railCap } from "./entities/rail";
 import { createTouchControls, isTouchDevice, type TouchControls } from "./engine/touch-controls";
-import { updateShots, rotateLanes } from "./shots";
-import { createActorSprite, createStaticSprite, createOcclusionSilhouette, type SpriteSheet } from "./engine/render/sprite";
+import { updateShots } from "./shots";
+import { createActorSprite, createStaticSprite, createOcclusionSilhouette } from "./engine/render/sprite";
 import { reaperSheet } from "./render/reaper-sheet";
-import { installEngine } from "./GameEngine";
+import { installEngine, FixedStepLoop } from "./GameEngine";
+import { BIOMES, biomeFor as biomeForSeed } from "./boot/biomes";
+import { readSeedParam } from "./boot/seed-param";
+import { warmFloorPipelines } from "./boot/warmup";
+import { floorFlow, gradeFloor } from "./run/grade";
+import { tearGraveHole } from "./run/grave-hole";
 import { Animator } from "./engine/render/animator";
-import { ZOMBIE_VARIANTS, ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
+import { ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
 import { createDungeonCamera, aimCamera, snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, setFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter, openShopOverlay, refreshShopOverlay, type ShopEntry } from "./ui";
+import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter } from "./ui";
 import { advanceCardReader, dismissCardReader, showCardHaul } from "./card-reader";
 import { getSettings } from "./settings-save";
 import { clearPickupToasts } from "./pickup-toast";
 import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
-import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, invalidateSkillAgg, playerMaxHp, skillAgg } from "./skill-runtime";
+import { awardFloorXp, awardDebugXp as debugGrantXp, setLevelUpHandler, playerMaxHp } from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
-import { faceOnHeal, faceOnSpecial } from "./hud-face";
+import { faceOnHeal } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
 import { generateMaze, thickenWalls, carveRooms, crackSecretWalls, tileCenter, worldToTile, at, isWalkable, type Grid, type TilePos, T_STAIRS } from "./maze/generator";
@@ -71,86 +76,32 @@ import { archetypeFor, windinessFor } from "./maze/archetypes";
 import { resolveSpawnPoints, type DebugSpawnSpec, type DebugSpawnResult } from "./debug-spawn";
 import { rollModifier } from "./maze/modifiers";
 import { buildMaze, setMazeBiome } from "./maze/build";
-import { bfsDistances, bfsDistancesOwned } from "./engine/flow-field";
-import { updatePlayer, resetPlayerMotion, debugCurSpeed, debugWallNormal } from "./entities/player";
+import { bfsDistancesOwned } from "./engine/flow-field";
+import { updatePlayer, resetPlayerMotion } from "./entities/player";
 import { updateZombies, setSummonHandler } from "./entities/zombie";
 import { updateProjectiles, golemShards } from "./entities/projectiles";
-import { updateFloorFx, clearFloorFx, spawnFloorFx, updateGrooveHop, warmFloorFxReveal } from "./entities/floor-fx";
-import { updateMaterial, applyMaterial, isMaterial, MATERIALS, MATERIAL_LIST } from "./entities/marble";
+import { updateFloorFx, spawnFloorFx, updateGrooveHop } from "./entities/floor-fx";
+import { updateMaterial, applyMaterial, isMaterial, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
-import { updateNpcs, disposeNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
+import { updateNpcs, spawnFrog, spawnMerchant, setMerchantCaughtHandler, rollMagicianClock } from "./entities/npc";
 import { syncActorMesh, setBossDefeatedHandler, setSlimeSplitHandler, setGolemShatterHandler, setBloaterBurstHandler, setCardRollHandler, setCoinDropHandler, setReagentDropHandler, resetCombatJuice, tickCombatTimers, damageZombie, setCoopCombatBridge, hitPlayerRanged } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./engine/input";
 import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
-import { castAbility, tickAbilities, ABILITIES, type AbilityId } from "./abilities";
-import { spawnMultiBall, updateMultiBall } from "./entities/multiball";
+import { castAbility, tickAbilities } from "./abilities";
+import { updateMultiBall } from "./entities/multiball";
 import {
   levelConfig,
   FLOW_INTERVAL,
   TIMECRAWL_FACTOR,
   GOLD_PER_DESCENT,
-  PLAYER_MAX_HP,
-  ZOMBIE_HP,
-  ZOMBIE_R,
-  CRAWLER_PITCH,
-  HULK_MIN_OPEN_NEIGHBOURS,
-  SPIDER_HP,
-  SPIDER_SPEED_FACTOR,
-  SPIDER_RATIO,
-  SPIDER_FROM_LEVEL,
-  BRUTE_HP,
   BRUTE_SPEED_FACTOR,
-  BRUTE_RATIO,
-  BRUTE_FROM_LEVEL,
-  THEME_HORDE_BIAS,
-  SPITTER_HP,
-  SPITTER_SPEED_FACTOR,
-  SPITTER_RATIO,
-  SPITTER_FROM_LEVEL,
-  GHOST_HP,
-  GHOST_SPEED_FACTOR,
-  GHOST_RATIO,
-  GHOST_FROM_LEVEL,
-  BAT_HP,
-  BAT_SPEED_FACTOR,
-  BAT_RATIO,
-  BAT_FROM_LEVEL,
-  SLIME_HP,
-  SLIME_SPEED_FACTOR,
-  SLIME_RATIO,
-  SLIME_FROM_LEVEL,
-  SLIME_MINI_HP,
-  SLIME_MINI_SPEED_MULT,
-  SLIME_MINI_SCALE,
-  GOBLIN_HP,
-  GOBLIN_SPEED_FACTOR,
-  GOBLIN_RATIO,
-  GOBLIN_FROM_LEVEL,
-  PIN_HP,
-  PIN_CREW_SIZE,
   PIN_FROM_LEVEL,
-  GOLEM_HP,
-  GOLEM_RATIO,
-  GOLEM_FROM_LEVEL,
-  CHOMPER_HP,
-  CHOMPER_RATIO,
-  CHOMPER_FROM_LEVEL,
-  MAGNET_HP,
-  MAGNET_SPEED_FACTOR,
-  MAGNET_RATIO,
-  MAGNET_FROM_LEVEL,
-  WEBSPIN_HP,
-  WEBSPIN_SPEED_FACTOR,
-  WEBSPIN_RATIO,
-  WEBSPIN_FROM_LEVEL,
   TARGETS_PER_FLOOR,
   TRAPDOORS_PER_FLOOR,
   VAULT_RAMPS_PER_FLOOR,
   FOG_RADIUS,
   PLUNGER_SKILL_RANGE,
-  BOOTS_SPEED_FACTOR,
-  MAGICIAN_FROM_LEVEL,
   MERCHANT_SPAWN_MIN_RING,
   HAZARDS_BASE,
   HAZARDS_PER_LEVEL,
@@ -170,47 +121,14 @@ import {
   REAPER_SPEED_BASE,
   REAPER_SCALE,
   REAPER_TINT,
-  GRADE_FLOW_FULL,
-  GRADE_FLOW_OK,
-  GRADE_KILLS_FULL,
-  GRADE_KILLS_OK,
-  GRADE_COMBO_FULL,
-  GRADE_COMBO_OK,
-  GRADE_GOLD,
   BOSS_EVERY,
   KING_HP_BASE,
   KING_HP_PER_FLOOR,
-  BOSS_BASE_HP,
-  BOSS_HP_PER_TIER,
   BOSS_SPEED_FACTOR,
   BOSS_GOLD,
   FIXED_STEP,
   MAX_FRAME,
-  PICKUP_RANGE,
-  COIN_MAGNET_RANGE,
-  COIN_AURA_RANGE_MULT,
-  COIN_MAGNET_TIME,
-  COIN_CHEST_Y,
-  COIN_MAGNET_ARC,
-  COIN_BURST_VY,
-  COIN_GRAVITY,
-  COIN_BOUNCE,
-  COIN_BURST_SPREAD,
-  COIN_BURST_DRAG,
-  COIN_SETTLE_VY,
-  COIN_ARM_TIME,
-  COIN_REST_Y,
-  COIN_SPAWN_Y,
-  COIN_MAX_PER_DROP,
-  COIN_LIVE_CAP,
-  COIN_STACK_VALUE,
-  COIN_DROP_SCALE,
-  COIN_STACK_DROP_SCALE,
   GOLD_PER_KILL,
-  GRAVEPIT_BLAST_RADIUS,
-  GRAVEPIT_BLAST_LIFE,
-  GRAVEPIT_BLAST_DAMAGE,
-  DROP_CLEAR_RANGE,
   PPU,
   WALL_H,
   FOG_NEAR,
@@ -220,20 +138,14 @@ import {
   FLAME_FPS,
   FLAME_FRAMES,
   MOTE_RATE,
-  HOUND_HP, HOUND_SPEED_FACTOR, HOUND_FROM_LEVEL,
-  BLOATER_HP, BLOATER_SPEED_FACTOR, BLOATER_FROM_LEVEL,
-  NECRO_HP, NECRO_SPEED_FACTOR, NECRO_FROM_LEVEL,
-  WARDEN_HP, WARDEN_SPEED_FACTOR, WARDEN_FROM_LEVEL,
-  WISP_HP, WISP_SPEED_FACTOR, WISP_FROM_LEVEL,
-  SAPPER_HP, SAPPER_SPEED_FACTOR, SAPPER_FROM_LEVEL,
-  CRYSTAL_HP, CRYSTAL_FROM_LEVEL,
-  MIMIC_HP, MIMIC_SPEED_FACTOR, MIMIC_FROM_LEVEL,
-  BLOATER_BURST_RADIUS, FIRE_PUDDLE_LIFE,
-  FINISHER_FLASH_T, FINISHER_FLASH_MAX,
+  BLOATER_BURST_RADIUS,
+  FIRE_PUDDLE_LIFE,
+  FINISHER_FLASH_T,
+  FINISHER_FLASH_MAX,
   floorBudgets,
 } from "./constants";
-import { addGold, getBalance, spendGold } from "../../utils/gold-wallet";
-import { WEAPONS, GEAR, POTIONS, POTION_IDS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, ELIXIR_MAXHP_BONUS, type WeaponId, type WeaponState, type GearSlot, type PotionId } from "./items";
+import { addGold } from "../../utils/gold-wallet";
+import { WEAPONS, POTIONS, freshWeapon, REGEN_HEAL_PER_TICK, REGEN_TICK_INTERVAL, type WeaponId, type PotionId } from "./items";
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { cardBase } from "./cards";
 import { enterTavern, isTavernSceneOpen, closeTavern } from "../../scenes/tavern";
@@ -241,15 +153,15 @@ import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
 import { updateSecretDoors, disposeSecretDoors, stampSecretBands, pruneSealedBands } from "./secrets";
 import { nearSealed } from "./maze/track-socket";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopItemTaken, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop, enemyAuthorityIsMe } from "./coop";
+import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, setCoopHooks, coopForwardDamage, coopBroadcastKill, coopAnnounceDeath, isCoop } from "./coop";
 import { stopPresence, onPeerArrive, myId, peers, poolStatus, startPresence } from "../../net/presence";
 import { resolveDescendFloor, regroupTarget } from "../../net/rally";
 import { applyDelveCatchUp } from "./delve";
-import { createFog, revealAround, exploredCount, exploredFraction } from "./fog";
-import { toggleFloorMap, closeFloorMap, isFloorMapOpen } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxPickup, sfxCoin, sfxFreeze, sfxBumper, sfxLevelStart, sfxModifier, sfxBossReveal, sfxHeavy } from "./audio";
-import { loadBestDepth, saveBestDepth } from "./best-depth";
-import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, floorsWithPiles, clearPile, canLoot, localKnightId, type CorpseItem } from "./corpse-run";
+import { createFog, revealAround } from "./fog";
+import { toggleFloorMap, closeFloorMap } from "./map-overlay";
+import { sfxStairs, sfxGameOver, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
+import { saveBestDepth } from "./best-depth";
+import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, canLoot, localKnightId, type CorpseItem } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity, momentumT } from "./entities/combo-curve";
@@ -261,12 +173,21 @@ import { buildLights, tintLights, followPlayer, tickShadowThrottle, clearLights 
 import { playerSheetFor, applyWeaponArt, paintMenuPortrait, buildMonsterSheets, sheetFor, stopSheetBackfill, SHEET_KEY_BY_KIND } from "./boot/sheets";
 import { beginRunLedger, submitRunScore } from "./run/ledger";
 import { nearestOpenTile } from "./maze/nearest-open-tile";
-import { makeZombie, spawnKind, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, makeReskin, queueMini, queueSummon, resetZombieNid, RESKIN } from "./spawn/factory";
-import { removeGroundItem, nextItemNid, resetItemNid } from "./economy/ground-items";
-import { creditGold, spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
-import { dropWeapon, dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
+import { makeZombie, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, bumpZombieNid, queueMini, queueSummon, resetZombieNid } from "./spawn/factory";
+import { nextItemNid, resetItemNid } from "./economy/ground-items";
+import { spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
+import { dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
 import { checkPickups, resetPickupSweep } from "./economy/pickups";
 import { openShop, closeShop, applyPotion, useBeltSlot } from "./economy/shop";
+
+/**
+ * The 60Hz clock. One instance for the whole session; `reset()` is called from
+ * `exitDungeonGame` only, mirroring the single place `resetState()` zeroes
+ * `state.accumulator`. Note the level change deliberately does NOT reset it —
+ * `startLevel` re-bases `lastTime` but has never dropped banked time, and this
+ * extraction is not the place to change that.
+ */
+const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
 
 /** False until WebGPURenderer.init() resolves — render() throws before that. */
 let rendererReady = false;
@@ -277,55 +198,8 @@ let debugPanelDispose: (() => void) | null = null;
 /** Last sprint-spool+overcharge fill (in 20ths) the HUD painted — repaint only when it changes. */
 let meterBlocksShown = -1;
 
-/**
- * Named depth BIOMES — descending should feel like passing through distinct
- * places, not the same maze re-tinted. Each biome carries a name + a one-line
- * flavour (shown on descent) and its own colour grade. They cycle every 4
- * floors, getting a fresh "chapter" feel as you go deeper.
- */
-interface Biome {
-  name: string;
-  flavour: string;
-  amb: number;
-  sky: number;
-  ground: number;
-}
-const BIOMES: Biome[] = [
-  { name: "The Cold Crypt", flavour: "damp stone · the dead stir", amb: 0x6b7d99, sky: 0x8fa3bd, ground: 0x1e2430 },
-  { name: "The Rotting Warren", flavour: "moss and marrow · things breed here", amb: 0x6d8a78, sky: 0x8fbda6, ground: 0x1e2a22 },
-  { name: "The Bloodworks", flavour: "the walls weep red · tread carefully", amb: 0x8a6f74, sky: 0xbd949a, ground: 0x2a1e20 },
-  { name: "The Arcane Deep", flavour: "cold light · something old is awake", amb: 0x6f74a0, sky: 0x97a0e0, ground: 0x1e2233 },
-];
-
-/**
- * The biome for a given depth. Indexed through `themeIndexFor` — NOT a plain
- * modulo — because BIOMES and THEMES are paired one-to-one by index, so a
- * floor's colour grade matches the furniture pool it was dealt. The per-run
- * shuffle lives in that one function; both sides must read it or they drift.
- */
-function biomeFor(level: number): Biome {
-  return BIOMES[themeIndexFor(level, state.runSeed)];
-}
-
 export function isDungeonGameActive(): boolean {
   return state.active;
-}
-
-/** The knight's atlas for the held weapon DRESSED IN the current gear — the
- * shared LRU cache in render/knight-sheets does the building. */
-
-/**
- * `?seed=<int>` — pin the run seed so a floor regenerates identically.
- * Returns null when absent or unparseable, so the caller falls back to random.
- */
-function readSeedParam(): number | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("seed");
-  if (raw === null) return null;
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return null;
-  // Match the random path's range: a non-negative 31-bit int.
-  return Math.abs(n) % 0x7fffffff;
 }
 
 export function launchDungeonGame(onExit?: () => void): void {
@@ -798,123 +672,6 @@ function armFloorLoading(level: number, then: () => void): void {
   requestAnimationFrame(() => requestAnimationFrame(then));
 }
 
-/**
- * Compile this floor's render pipelines while the descent screen is up.
- *
- * Done per top-level scene child rather than in one `compileAsync(scene)` call
- * so the bar reports real progress instead of sitting at 30% for six seconds.
- * The three-argument form is the documented way to precompile a loose 3D object
- * ("if the first argument is a 3D object, targetScene must represent the scene
- * the object is going to be added to") and it keeps the pipeline cache keys
- * matching the ones `render()` will look up.
- *
- * Sequential, never concurrent: compileAsync saves and restores renderer state
- * around itself, so two in flight at once clobber each other's render context.
- *
- * THE HIDDEN HALF. compileAsync walks `_projectObject`, which returns early on
- * `object.visible === false` and frustum-tests meshes (three:
- * common/Renderer.js). Every pooled effect — slash, bolt, ring, blade, sigil,
- * damage number — is built INVISIBLE, and the dash ghost and the five floor-fx
- * decal materials are not built until they are first used. So for a long time
- * this function walked right past all of them, and the first of each in a run
- * still compiled cold, mid-fight, which is precisely the stall it exists to
- * prevent. The two reveals below put one representative of each into the walk;
- * pipelines are keyed by material content, so one warms the whole pool.
- */
-/**
- * Split the scene into units small enough that compiling one is a tickable step.
- *
- * ── WHY THIS IS NOT JUST `scene.children` ──
- *
- * `compileAsync` is awaited per unit, and the descent bar can only advance
- * BETWEEN awaits. So the bar's smoothness is bounded by the LARGEST unit, not
- * by how many there are. Measured cold on a real GPU (nvidia/ampere, WebGPU
- * backend), instrumenting every call:
- *
- *     268 compileAsync calls, 4,520 ms total
- *     └─ ONE Group, 187 descendants ......... 3,915 ms   ← 87% of the whole warmup
- *        next most expensive Mesh ...........   134 ms
- *
- * That single group is the freeze. With one await covering 87% of the work the
- * bar necessarily sits on one number for ~4 s and then sweeps the rest
- * instantly — "smooth until it sticks near the end, then lags hard". Ticking
- * before the await (see the loop below) fixed WHERE the number stalls but could
- * not fix the stall itself, because there was nothing to tick between.
- *
- * So a group that big is expanded into its children and those become the units.
- * The threshold is a size, not a name: whichever group happens to be the maze
- * this build is not something to hard-code.
- *
- * Depth is capped at one expansion. Recursing to individual meshes would make
- * hundreds of tiny awaits whose scheduling overhead exceeds the compile, and
- * pipelines are keyed by material content anyway — the win is in breaking up
- * the one pathological group, not in maximal granularity.
- */
-function warmUnits(scene: THREE.Scene): THREE.Object3D[] {
-  /** Above this many descendants, a single await is too coarse to report on. */
-  const SPLIT_ABOVE = 24;
-  const units: THREE.Object3D[] = [];
-  for (const child of scene.children) {
-    let n = 0;
-    child.traverse(() => n++);
-    if (n > SPLIT_ABOVE && child.children.length > 1) units.push(...child.children);
-    else units.push(child);
-  }
-  return units;
-}
-
-async function warmFloorPipelines(load: FloorLoading): Promise<void> {
-  const renderer = state.renderer;
-  const scene = state.scene;
-  const camera = state.camera;
-  if (!renderer || !scene || !camera) return;
-  // Reveal BEFORE snapshotting children: the floor-fx proxies parent themselves
-  // to the scene here, and must be in the list the loop iterates.
-  const restoreVfx = state.vfx?.warmupReveal();
-  const restoreFloorFx = warmFloorFxReveal(scene);
-  const children = warmUnits(scene);
-  const CAPTIONS = ["FORGING THE MACHINE", "LIGHTING THE TORCHES", "WAKING THE HORDE", "SETTING THE TABLE"];
-  try {
-    for (let i = 0; i < children.length; i++) {
-      // ── TICK BEFORE THE AWAIT, NOT AFTER ──
-      //
-      // The old loop reported progress only every 16th child, AFTER its compile
-      // resolved. That assumed every child costs about the same. Measured on a
-      // real GPU (nvidia/ampere, WebGPU backend) it is nowhere near:
-      //
-      //     0% → 30%   294 ms   (buildLevel)
-      //    30% → 34%  1424 ms   ← the FIRST compile batch, one single tick
-      //    34% → 100%   ~90 ms   (the other 16 batches, a tick each)
-      //
-      // Cold, that first plateau was ~8.3 s. So the bar spent almost the entire
-      // descent frozen on one number while the expensive batch ran, then swept
-      // through the cheap remainder — which is exactly the "smooth until it
-      // sticks near the end, then lags hard" report. The bar was not lying about
-      // being nearly done; it simply could not move during the one wait that
-      // mattered.
-      //
-      // Ticking first means the number on screen is always the work IN FLIGHT.
-      // The DOM write is not the expense the old comment feared either: these
-      // are ~17 writes across a multi-second descent, and `phase()` early-outs
-      // once closed.
-      const f = i / children.length;
-      load.phase(CAPTIONS[Math.min(CAPTIONS.length - 1, Math.floor(f * CAPTIONS.length))], 0.3 + 0.7 * f);
-      await renderer.compileAsync(children[i], camera, scene);
-    }
-    load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
-  } catch {
-    // A failed precompile is a slow first frame, not a broken floor — the
-    // renderer will compile lazily exactly as it did before. Never strand the
-    // player behind the descent screen over it.
-  } finally {
-    // Non-negotiable: leaving a pool slot visible parks a stray quad in the
-    // world for the whole floor, so this runs even if the compile threw.
-    restoreVfx?.();
-    restoreFloorFx();
-  }
-}
-
-/** Build (or rebuild) a depth: maze, decoration, geometry, actors, loot. */
 function buildLevel(level: number): void {
   if (!state.scene) return;
 
@@ -943,7 +700,7 @@ function buildLevel(level: number): void {
   const cfg = levelConfig(level);
 
   // Depth grading: each biome down shifts the fill palette a family over.
-  const biome = biomeFor(level);
+  const biome = biomeForSeed(level, state.runSeed);
   tintLights(biome);
   // ...and the STONE changes family with it, not just the light on it. A grade
   // cannot move a quantized palette entry onto a different one, so the masonry
@@ -2110,60 +1867,6 @@ function returnToTavern(): void {
   });
 }
 
-/**
- * A knight left the pool: detonate their body and tear a LETHAL hole where they
- * stood. Runs on every client — the floor authority calls it directly and
- * broadcasts, replicas call it from the mirrored `hole` act (coop.ts) — so the
- * hole exists once, in the same place, in everyone's world.
- *
- * The position is SNAPPED to a tile centre. Two reasons, and both matter:
- * the departing peer's last-known pose is whatever 15Hz `move` frame arrived
- * before they dropped, so it can sit fractionally inside a wall; and snapping
- * makes the hole land somewhere a player can actually be, rather than half
- * under a wall band where it would be an invisible instant-death trap.
- */
-function tearGraveHole(x: number, z: number, name: string): void {
-  const g = state.grid;
-  if (!g || !state.scene) return;
-  let t = worldToTile(g, x, z);
-  if (!isWalkable(g, t.i, t.j)) {
-    // They died against (or inside) geometry — put the hole on the nearest tile
-    // a knight could stand on instead. n=1 is the ORDINAL of the first walkable
-    // tile found, not a distance (see nearestOpenTile).
-    const open = nearestOpenTile(g, t.i, t.j, 1);
-    if (!open) return; // nowhere sane to put it — better no hole than a bad one
-    t = open;
-  }
-  // Never stack a second hole on a tile that already has one: a departing pool
-  // can re-use the same doorway, and two colliders on one spot is just waste.
-  if (state.pinballParts.some((p) => p.kind === "gravepit" && p.i === t.i && p.j === t.j)) return;
-  const c = tileCenter(g, t.i, t.j);
-
-  // ── The detonation ──
-  state.vfx?.burst(c.x, 0.5, c.z, PALETTE_HEX[12], 34, 5.5);
-  state.vfx?.ring(c.x, c.z, PALETTE_HEX[11], GRAVEPIT_BLAST_RADIUS, GRAVEPIT_BLAST_LIFE);
-  state.vfx?.blood(c.x, 0.6, c.z, "red", 26);
-  state.shakeT = Math.max(state.shakeT, 0.55);
-  state.hitstopT = Math.max(state.hitstopT, 0.06);
-  sfxHeavy();
-  // The blast damages ENEMIES only. A player standing next to the departure
-  // point could not have seen it coming, and killing them for someone else's
-  // disconnect is punishment without agency — the HOLE is the lasting threat.
-  for (const zmb of state.zombies) {
-    if (zmb.mode === "dead") continue;
-    const dx = zmb.x - c.x;
-    const dz = zmb.z - c.z;
-    const d = Math.hypot(dx, dz);
-    if (d > GRAVEPIT_BLAST_RADIUS) continue;
-    const inv = d > 1e-3 ? 1 / d : 0;
-    damageZombie(zmb, GRAVEPIT_BLAST_DAMAGE, dx * inv, dz * inv, 1.1, true);
-  }
-
-  // ── The scar ──
-  spawnPinballPart("gravepit", c.x, c.z, g, state.scene);
-  showToast("💀 A KNIGHT HAS FALLEN", `${name} left the pool — mind the hole`);
-}
-
 function descend(): void {
   // BANK ANY COINS STILL ON THE FLOOR before the tavern opens.
   //
@@ -2291,33 +1994,6 @@ function spawnReaper(): void {
  * The floor's FLOW: the time-weighted average of the momentum ramp over the
  * floor, in 0..1. Exported shape for the HUD and the descent card.
  */
-export function floorFlow(): number {
-  if (state.levelFlowT <= 0) return 0;
-  return state.levelFlowSum / state.levelFlowT;
-}
-
-/**
- * Grade the floor being left: FLOW (how much speed you actually carried),
- * carnage (share of the horde killed) and style (best bounce combo), two marks
- * each → S/A/B/C/D and a gold bonus. The "play it again, but cooler" hook.
- *
- * Both the pace and style axes were rebuilt in the de-clone wave. Pace was raw
- * wall-clock, so walking a floor briskly scored the same as riding it, and
- * style capped at combo 8 — the exact point where the combo curve starts being
- * interesting. Both now measure the thing the game is actually about.
- */
-function gradeFloor(): { grade: string; gold: number } {
-  const kills = state.kills - state.levelStartKills;
-  const share = kills / Math.max(1, state.levelHordeSize);
-  const flow = floorFlow();
-  let pts = 0;
-  pts += flow >= GRADE_FLOW_FULL ? 2 : flow >= GRADE_FLOW_OK ? 1 : 0;
-  pts += share >= GRADE_KILLS_FULL ? 2 : share >= GRADE_KILLS_OK ? 1 : 0;
-  pts += state.levelBestCombo >= GRADE_COMBO_FULL ? 2 : state.levelBestCombo >= GRADE_COMBO_OK ? 1 : 0;
-  const grade = pts >= 6 ? "S" : pts >= 5 ? "A" : pts >= 3 ? "B" : pts >= 2 ? "C" : "D";
-  return { grade, gold: GRADE_GOLD[grade] ?? 0 };
-}
-
 /**
  * True while ANY modal surface owns the screen: the merchant shop, the DOM
  * tavern, the walkable tavern scene, the card reader, or the in-game menu.
@@ -2490,19 +2166,20 @@ function loop(now: number): void {
   // freeze the limiter exactly when it is needed.
   tickJuice(frame);
 
-  state.accumulator += frame;
   profBegin("sim (fixed steps)");
-  let simSteps = 0;
-  if (state.hitstopT > 0) {
-    state.hitstopT = Math.max(0, state.hitstopT - frame);
-    state.accumulator = Math.min(state.accumulator, FIXED_STEP);
-  } else {
-    while (state.accumulator >= FIXED_STEP) {
-      state.accumulator -= FIXED_STEP;
-      simulate(FIXED_STEP);
-      simSteps++;
-    }
-  }
+  // The accumulator lives in FixedStepLoop (GameEngine.ts), which was extracted
+  // and unit-tested but — until now — never constructed: this block hand-rolled
+  // the identical arithmetic beside it. Passing the ALREADY-CLAMPED `frame` is
+  // deliberate; the clamp is idempotent, and computing it here keeps `tickJuice`
+  // above running on the same value it always did.
+  const stepped = simLoop.step(frame, state.hitstopT, simulate);
+  state.hitstopT = stepped.hitstopT;
+  // Mirror the private accumulator back onto state. NOT bookkeeping: the
+  // headless harness reads `state.accumulator` as its loop-health diagnostic
+  // (dev/window-hooks.ts). Without this line it would read a frozen 0 forever
+  // while every test stayed green.
+  state.accumulator = simLoop.accumulator;
+  const simSteps = stepped.simSteps;
   profEnd("sim (fixed steps)");
   // A frame that runs 2+ fixed steps is CATCHING UP from a slow previous frame.
   // A rising count here means the lag is self-reinforcing (slow frame → more
@@ -2760,5 +2437,9 @@ export function exitDungeonGame(): void {
   clearInputOwner();
 
   resetState();
+  // resetState() zeroes state.accumulator; the loop owns the real one, so it
+  // has to be zeroed in the same breath or the next run's first frame writes
+  // the dead run's banked time straight back over it.
+  simLoop.reset();
   onExit?.();
 }

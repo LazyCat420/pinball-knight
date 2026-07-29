@@ -47,13 +47,17 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
 /**
  * The ceiling. **Only ever lower this.**
  *
- * 2764 = the measured size when the ratchet was installed. Wave 0 ADDED 11 lines
- * to this file on purpose (the floor-seed import and pointer comment, and the
- * `captureFloorCensus()` call at the end of `buildLevel`) — it buys the
- * instruments the later waves are gated on. Every wave after this one only
- * subtracts.
+ * History, so the direction of travel is legible:
+ *   2764  Wave 0 — installed. Added 11 lines on purpose (the floor-seed import
+ *         and the `captureFloorCensus()` call) to buy the instruments the later
+ *         waves are gated on.
+ *   2445  Wave 1 — FixedStepLoop adopted; biomes, seed-param, warmup, grade and
+ *         grave-hole moved out; and 166 dead import names deleted, 153 of which
+ *         had been dangling since the previous decomposition. Nothing had ever
+ *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
+ *         not configured for v9.
  */
-const CORE_MAX_LINES = 2764;
+const CORE_MAX_LINES = 2445;
 
 /**
  * Line count, measured the way `wc -l` measures it.
