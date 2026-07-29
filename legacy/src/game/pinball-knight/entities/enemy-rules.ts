@@ -55,6 +55,11 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   // nuisance you cannot line a swing up on, this orbits so its firing solution
   // keeps changing while it hauls a log overhead. One is a fly, one is artillery.
   rotortail: "orbiter",
+  // A fourth kiter, and the one the policy was actually written for: it wants a
+  // firing band and it walks slowly enough that holding one is a real decision
+  // rather than a formality. The spitter kites to stay alive; this kites because
+  // its shot needs GROUND between the two of you to land on.
+  stiltneck: "kite",
   magnet: "chase",
   webspinner: "kite",
   hound: "leaper",

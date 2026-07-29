@@ -249,6 +249,87 @@ export const ROTORTAIL_TIMBER_DAMAGE = 2;
  *  than the bat so the two are distinguishable in a crowd by altitude alone. */
 export const ROTORTAIL_HOVER_Y = 0.85;
 /**
+ * STILTNECK — a spotted, long-necked beast walking on four lashed timber
+ * stilts, with a pannier of lit bombs strapped over its withers. It takes one
+ * in its teeth, whips its whole neck round like a shepherd's sling, and lets go.
+ *
+ * ── WHAT IT ADDS THAT THE OTHER FOUR RANGED FAMILIES DO NOT ─────────────────
+ *
+ * Spitter, jester, croaker and rotortail all fire something that either hits
+ * you or does not: a glob dies on the masonry, a plate ricochets past, a beam
+ * misses, a timber lands. Every one of them is answered by NOT BEING ON A LINE.
+ *
+ * The bomb is the first hostile shot with a FUSE instead of a flight. It is
+ * armed at release and it detonates at the first of: your body, a wall, or the
+ * fuse running out — and it always detonates as a BLAST, not as a point hit. So
+ * sidestepping the projectile is no longer the whole answer; you have to clear
+ * the ground it is going to land on. That is a different verb from every other
+ * shot in the game, and it is the one this family exists to teach.
+ *
+ * ── THE BLAST IS INDISCRIMINATE, AND THAT IS THE COUNTER ────────────────────
+ *
+ * `detonate` hurts the HORDE as well as the knight — the only hostile damage in
+ * the game that does. A stiltneck firing into a pack kills the pack, so the
+ * play is to keep the pack between you and it rather than to clear the pack
+ * first. Nothing else in the roster rewards standing behind other monsters, and
+ * it is worth the one exception in the projectile path to have a monster that
+ * makes the horde a resource.
+ *
+ * ── THE TRADE: IT IS ON STILTS ──────────────────────────────────────────────
+ *
+ * The longest reach in the roster (9, past the jester's 7.5 — a sling throws
+ * further than an arm) is paid for with the longest tell, the slowest walk, and
+ * PAIN_BY_KIND's highest entry. Pain chance is momentum-scaled, so "arrive fast
+ * and it goes over" is already the rule the existing system enforces; the art
+ * just has to show four thin poles and a very high centre of mass, and it does.
+ *
+ * Ratio 19 / residue 9 is a fresh pair — no other kind uses ratio 19, and no
+ * kind claims residue 9 at all (see spawn/factory.ts, where every kind claims a
+ * distinct `hash % RATIO === n`).
+ */
+export const STILTNECK_HP = 3;
+/** Thin body, wide stance. The collider tracks the BODY, not the stilt span —
+ *  a 0.5 radius would wedge it in the 1-tile corridors it has to walk down. */
+export const STILTNECK_R = 0.3;
+/** The slowest walker with legs. Stilts do not hurry, and a long-range shooter
+ *  that can also reposition quickly has no window in which to be killed. */
+export const STILTNECK_SPEED_FACTOR = 0.62;
+export const STILTNECK_RATIO = 19;
+/** Deeper than the other three bombardiers (rotortail 3, jester 2, croaker 2):
+ *  a shot with an area of effect is not something to meet on your first floors,
+ *  before you own the movement to leave an area. */
+export const STILTNECK_FROM_LEVEL = 4;
+/** The longest reach in the roster, past the jester's 7.5. A sling is a lever
+ *  the length of a neck, and the range IS the family's claim. */
+export const STILTNECK_FIRE_RANGE = 9;
+/** The longest tell in the roster, past the rotortail's 0.75 — and it is long
+ *  because it has TWO readable beats: the neck goes back to the pannier for a
+ *  bomb, and only then does it wind. Range this long has to be seen coming. */
+export const STILTNECK_WINDUP = 1.0;
+export const STILTNECK_COOLDOWN = 3.2;
+/** Mid-fast. Deliberately NOT the rotortail's crawl: the timber is dodged by
+ *  walking out of its line, and this one is not dodged by that at all, so
+ *  making it slow as well would just be time spent watching it arrive. */
+export const STILTNECK_BOMB_SPEED = 6.5;
+/** Seconds of fuse from release. The bomb explodes on the player, on a wall, or
+ *  when this expires — whichever comes first. At BOMB_SPEED that is a little
+ *  over the fire range, so a bomb thrown at maximum reach bursts in the air
+ *  right about where you were standing rather than falling harmlessly short. */
+export const STILTNECK_BOMB_FUSE = 1.5;
+/** Blast radius, world units (a tile is 1). Big enough that "I dodged it" is
+ *  not automatically true, small enough that one step of commitment clears it. */
+export const STILTNECK_BLAST_RADIUS = 1.6;
+/** Blast damage — matched to the rotortail's timber. Both are the heavy end of
+ *  hostile fire; this one is simply harder to not be standing in. */
+export const STILTNECK_BLAST_DAMAGE = 2;
+/** What the blast does to a MONSTER caught in it. Higher than what it does to
+ *  the knight on purpose: the "bait it into the horde" play has to be worth
+ *  actually doing, and the horde has no armour to absorb it. */
+export const STILTNECK_BLAST_ENEMY_DAMAGE = 3;
+/** Outward shove on a monster caught in the blast, world units. It reads as an
+ *  explosion rather than as damage numbers appearing in a crowd. */
+export const STILTNECK_BLAST_PUSH = 0.35;
+/**
  * CROAKER — a spotted frog that hops off walls and fires twin eye-beams.
  *
  * Three rules, and they compose into one idea: THIS THING DOES NOT RESPECT THE

@@ -14,6 +14,7 @@ import { makeSporelingPaints } from "../render/monsters/sporeling";
 import { makeJesterPaints } from "../render/monsters/jester";
 import { makeCroakerPaints } from "../render/monsters/croaker";
 import { makeRotortailPaints } from "../render/monsters/rotortail";
+import { makeStiltneckPaints } from "../render/monsters/stiltneck";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
@@ -117,7 +118,7 @@ function startMonsterSheet(paints: ActorPaints): SheetBuild {
 export type SheetKey =
   | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
-  | "hound" | "jester" | "croaker" | "rotortail";
+  | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck";
 
 /**
  * EnemyKind → the atlas that kind draws with, for callers that hold a kind
@@ -132,6 +133,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
   sporeling: "sporeling", hound: "hound", jester: "jester", croaker: "croaker", rotortail: "rotortail",
+  stiltneck: "stiltneck",
 };
 
 /** key → (paint the atlas, read it off state, write it back). */
@@ -154,6 +156,7 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   jester: { make: makeJesterPaints, get: () => state.jesterSheet, set: (s) => { state.jesterSheet = s; } },
   croaker: { make: makeCroakerPaints, get: () => state.croakerSheet, set: (s) => { state.croakerSheet = s; } },
   rotortail: { make: makeRotortailPaints, get: () => state.rotortailSheet, set: (s) => { state.rotortailSheet = s; } },
+  stiltneck: { make: makeStiltneckPaints, get: () => state.stiltneckSheet, set: (s) => { state.stiltneckSheet = s; } },
 };
 
 /**
@@ -184,7 +187,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.

@@ -36,6 +36,12 @@ import {
   ROTORTAIL_TIMBER_SPEED,
   ROTORTAIL_TIMBER_DAMAGE,
   ROTORTAIL_FIRE_RANGE,
+  STILTNECK_BOMB_SPEED,
+  STILTNECK_BOMB_FUSE,
+  STILTNECK_BLAST_RADIUS,
+  STILTNECK_BLAST_DAMAGE,
+  STILTNECK_BLAST_ENEMY_DAMAGE,
+  STILTNECK_BLAST_PUSH,
   CURVE_ACCEL,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
@@ -118,6 +124,24 @@ function timberAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMate
   _timberMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[27] }); // leather dark — wood
   return { geo: _timberGeo, mat: _timberMat };
 }
+let _bombGeo: THREE.SphereGeometry | null = null;
+let _bombMat: THREE.MeshBasicMaterial | null = null;
+/**
+ * The stiltneck's bomb. A SPHERE, and a black one.
+ *
+ * Every other hostile shot in the game is either a light colour (acid green,
+ * pale silk, blood-red plate/beam) or a long brown bar. This one is the palette
+ * void — the darkest thing available — because the read the player needs is not
+ * "something is flying at me" but "THAT is the thing with the fuse", and it has
+ * to survive being one of six objects in the air during a fight. It is also a
+ * touch bigger than a glob: the bomb's danger is its RADIUS, and a projectile
+ * that hurts a wider area than it occupies should at least look heavy.
+ */
+function bombAssets(): { geo: THREE.SphereGeometry; mat: THREE.MeshBasicMaterial } {
+  _bombGeo ??= new THREE.SphereGeometry(0.18, 10, 8);
+  _bombMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[1] }); // ink — iron casing
+  return { geo: _bombGeo, mat: _bombMat };
+}
 let _beamGeo: THREE.BoxGeometry | null = null;
 let _beamMat: THREE.MeshBasicMaterial | null = null;
 /**
@@ -159,11 +183,14 @@ export function disposeProjectileAssets(): void {
   _beamMat?.dispose();
   _timberGeo?.dispose();
   _timberMat?.dispose();
+  _bombGeo?.dispose();
+  _bombMat?.dispose();
   _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
   _discGeo = _discMat = null;
   _beamGeo = _beamMat = null;
   _timberGeo = _timberMat = null;
+  _bombGeo = _bombMat = null;
 }
 
 /**
@@ -328,6 +355,116 @@ export function hurlTimber(x: number, z: number, dx: number, dz: number): void {
     mesh,
     dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
   });
+}
+
+/**
+ * The STILTNECK's bomb: the roster's only shot with a FUSE instead of a flight.
+ *
+ * Every other hostile projectile is answered by the same verb — do not be on the
+ * line. This one is not, because its `life` is not "range ÷ speed" the way every
+ * other entry in this file computes it; it is STILTNECK_BOMB_FUSE, a wall-clock
+ * countdown that started the moment the neck let go. Reaching the end of it is
+ * not the shot expiring, it is the shot GOING OFF (see `updateProjectiles`,
+ * where `kind === "bomb"` is the one case that detonates instead of despawning
+ * quietly). A wall is the same story. So the bomb always ends in a blast, and
+ * the only question is where you are standing when it does.
+ */
+export function slingBomb(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = bombAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "bomb",
+    x: sx,
+    z: sz,
+    vx: dx * STILTNECK_BOMB_SPEED,
+    vz: dz * STILTNECK_BOMB_SPEED,
+    life: STILTNECK_BOMB_FUSE,
+    maxLife: STILTNECK_BOMB_FUSE,
+    damage: STILTNECK_BLAST_DAMAGE,
+    hostile: true,
+    mesh,
+    dispose: () => {}, // shared geo/mat, torn down in disposeProjectileAssets
+  });
+}
+
+/**
+ * A bomb goes off at (x,z): one blast, everything inside STILTNECK_BLAST_RADIUS.
+ *
+ * ── THE BLAST IS INDISCRIMINATE, AND THAT IS THE MECHANIC ──────────────────
+ *
+ * This is the only hostile damage in the game that also hurts the HORDE. Every
+ * other enemy shot takes the `pr.hostile` early-out above and never looks at
+ * `state.zombies` at all, which is the right default — a room where monsters
+ * casually kill each other has no threat in it. The exception is bought here on
+ * purpose and paid for by the stiltneck's whole cost sheet (deepest gate,
+ * slowest walk, longest tell): it turns the pack between you and the thrower
+ * from an obstacle into COVER YOU CAN DETONATE, and it is the only play in the
+ * game that rewards deliberately not clearing a crowd.
+ *
+ * Two details that are not decoration:
+ *   · The reaper is skipped explicitly. `damageZombie(force = true)` is used
+ *     here so the blast ignores momentum gates — an explosion does not care how
+ *     fast the KNIGHT happens to be moving, and without `force` a bomb landing
+ *     in a pack of goblins while the player stood still would clink off every
+ *     one of them. But `force` also bypasses the Death Dealer's immunity, which
+ *     is not a rule this monster gets to break.
+ *   · Damage falls off with distance for the player only. The knight is asked to
+ *     read a radius and commit to leaving it, so the edge of the blast has to be
+ *     survivable or the read is worthless; the horde has no such contract and
+ *     eats the full number, which keeps the bait play worth setting up.
+ */
+export function detonate(x: number, z: number): void {
+  const r = STILTNECK_BLAST_RADIUS;
+  const r2 = r * r;
+
+  // ── The show ── a hot ring on the floor plus a fireball, so the radius that
+  // was just applied is a radius the player SAW. A blast with no footprint is
+  // damage arriving from nowhere, which is the one thing a telegraphed monster
+  // must never produce.
+  state.vfx?.ring(x, z, PALETTE_HEX[16], r, 0.35);
+  state.vfx?.burst(x, PROJECTILE_Y, z, PALETTE_HEX[17], 22, 7);
+  state.vfx?.sparks(x, PROJECTILE_Y, z, 0, 0, 10);
+  state.shakeT = Math.max(state.shakeT, 0.22);
+
+  const p = state.player;
+  if (p && p.hp > 0) {
+    const d2 = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z);
+    if (d2 <= r2) {
+      // Linear falloff to half at the rim, ROUNDED, with a floor of 1 so a graze
+      // still costs something — a blast that can land for 0 reads as the radius
+      // being a lie.
+      //
+      // `ceil` was the obvious choice here and it silently deleted the whole
+      // falloff. STILTNECK_BLAST_DAMAGE is 2, so the scaled value only drops
+      // below 1.0 in the last one-hundredth of the radius and `ceil` rounded
+      // every other graze straight back up to 2. The comment said "the rim is
+      // survivable"; the code charged full price everywhere inside it. With
+      // `round` the inner half of the blast does 2 and the outer half does 1,
+      // which is a difference the player can actually feel and act on.
+      const t = 1 - Math.sqrt(d2) / r;
+      hitPlayerRanged(Math.max(1, Math.round(STILTNECK_BLAST_DAMAGE * (0.5 + 0.5 * t))), x, z);
+    }
+  }
+
+  const g = state.grid;
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead") continue;
+    if (zb.kind === "reaper") continue; // it cannot be harmed — `force` must not change that
+    const dx = zb.x - x;
+    const dz = zb.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > r2) continue;
+    // Shove outward from the seat of the blast. Degenerate only if a monster is
+    // exactly on it, in which case any direction will do.
+    const d = Math.sqrt(d2) || 1;
+    damageZombie(zb, STILTNECK_BLAST_ENEMY_DAMAGE, dx / d, dz / d, STILTNECK_BLAST_PUSH, true, "ranged");
+    state.vfx?.blood(zb.x, PROJECTILE_Y, zb.z, "red", 5);
+  }
 }
 
 /**
@@ -507,6 +644,10 @@ export function updateProjectiles(dt: number): void {
     const pr = state.projectiles[i];
     pr.life -= dt;
     if (pr.life <= 0) {
+      // For every other projectile `life` is range ÷ speed and running out means
+      // the shot fell short. For a BOMB it is the fuse, and running out is the
+      // whole point — a bomb nobody dodged still goes off where it got to.
+      if (pr.kind === "bomb") detonate(pr.x, pr.z);
       despawn(i);
       continue;
     }
@@ -551,6 +692,11 @@ export function updateProjectiles(dt: number): void {
         if (pr.kind === "arrow" || pr.kind === "bullet") {
           state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 6);
         }
+        // A bomb against masonry is a bomb going off against masonry. This is
+        // what stops "break line of sight" from being the free answer it is
+        // against the spitter and the rotortail: duck behind a corner at close
+        // range and the blast comes round it anyway.
+        if (pr.kind === "bomb") detonate(pr.x, pr.z);
         despawn(i);
         continue;
       }
@@ -559,6 +705,17 @@ export function updateProjectiles(dt: number): void {
       // motion cue on a projectile this slow — without it the log reads as a
       // static prop sliding across the floor.
       if (pr.kind === "timber") pr.mesh.rotation.y += dt * 7;
+
+      // FUSE BURN: the bomb sheds sparks the whole way in, faster as the fuse
+      // shortens. The trail is the countdown made visible — the player has to be
+      // able to tell a bomb that is about to go off from one that just left, and
+      // a black sphere has no other way of saying it. It also pulses bigger on
+      // the last third, which is the beat that says "leave now".
+      if (pr.kind === "bomb") {
+        const burn = 1 - pr.life / pr.maxLife;
+        state.vfx?.sparks(pr.x, PROJECTILE_Y + 0.15, pr.z, -pr.vx * 0.02, -pr.vz * 0.02, burn > 0.66 ? 2 : 1);
+        pr.mesh.scale.setScalar(1 + Math.max(0, burn - 0.6) * 0.9);
+      }
 
       // ARROW TRAIL: a faint glowing streak shed behind the shaft each frame,
       // drifting backward so it reads as motion (Wolfenstein arrow juice).
@@ -577,6 +734,12 @@ export function updateProjectiles(dt: number): void {
           if (pr.kind === "web") {
             if (p.iframes <= 0) webPlayer();
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
+          } else if (pr.kind === "bomb") {
+            // Contact does NOT deal `pr.damage` — it sets the fuse to zero. The
+            // hit and the near-miss are the same event for this projectile, and
+            // routing both through `detonate` is what guarantees the player can
+            // never learn a rule about one that is false about the other.
+            detonate(pr.x, pr.z);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
             // Acid splashes green; a steel plate strikes sparks; a log throws

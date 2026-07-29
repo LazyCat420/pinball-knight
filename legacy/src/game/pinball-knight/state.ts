@@ -304,6 +304,9 @@ export type ZombieMode = "idle" | "chase" | "windup" | "dead" | "charge" | "slam
  *             touch shakes the web off.
  *  - rotortail: AIRBORNE BOMBARDIER — circles at altitude and hurls a slow,
  *             heavy timber. Fragile, and a solid hit stalls its rotor.
+ *  - stiltneck: SIEGE BOMBARDIER — slings a lit bomb from the pannier on its
+ *             back. The only hostile shot with a FUSE and a BLAST, and the only
+ *             one that hurts the horde too.
  */
 export type EnemyKind =
   | "zombie"
@@ -322,6 +325,7 @@ export type EnemyKind =
   | "jester"
   | "croaker"
   | "rotortail"
+  | "stiltneck"
   | "magnet"
   | "webspinner"
   // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──
@@ -1087,6 +1091,7 @@ export const state = {
   jesterSheet: null as SpriteSheet | null,
   croakerSheet: null as SpriteSheet | null,
   rotortailSheet: null as SpriteSheet | null,
+  stiltneckSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
 
   // AI
