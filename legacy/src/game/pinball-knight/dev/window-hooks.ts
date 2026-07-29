@@ -777,6 +777,21 @@ export function installDevHooks(deps: DevHookDeps): void {
     // doors swing), and a live read makes two runs of the same seed disagree.
     // See dev/floor-census.ts.
     (window as unknown as { __dungeonCensus?: () => unknown }).__dungeonCensus = () => lastFloorCensus();
+    // Dev: the renderer's live counters. `programs` is the one that matters —
+    // it should be FLAT once the descent screen closes, and every rise during
+    // play is a material family the prewarm never saw, compiled mid-combat.
+    // That compile is a stall the player feels, so a harness needs to be able
+    // to catch the rise on the exact frame it happens.
+    (window as unknown as { __dungeonRenderInfo?: () => unknown }).__dungeonRenderInfo = () => {
+      const r = state.renderer;
+      if (!r) return null;
+      return {
+        programs: r.info.memory.programs,
+        textures: r.info.memory.textures,
+        geometries: r.info.memory.geometries,
+        drawCalls: r.info.render.drawCalls,
+      };
+    };
     // Dev: hurl the player into a pinball ride (headless secret-wall/physics
     // tests — spooling a real sprint with synthetic key events is flaky).
     (window as unknown as { __dungeonLaunch?: (dirX: number, dirZ: number, speed: number) => boolean }).__dungeonLaunch = (dirX: number, dirZ: number, speed: number) => {

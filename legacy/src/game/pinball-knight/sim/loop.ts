@@ -17,7 +17,7 @@ import { FixedStepLoop } from "../GameEngine";
 import { simulate } from "./simulate";
 import { isSimPaused } from "./paused";
 import { isRenderHeld } from "../run/floor-hold";
-import { isRendererReady } from "../boot/renderer";
+import { isRendererReady, gpuTimingWanted } from "../boot/renderer";
 import { FIXED_STEP, MAX_FRAME } from "../constants";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { followPlayer, tickShadowThrottle } from "../boot/lighting";
@@ -46,6 +46,13 @@ import { showPickupNote, spawnFloatingCombo, updateBossBar, updatePlungerMeter }
 const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
 
 /** Drop banked simulation time. Call beside `resetState()`. */
+/**
+ * One timestamp resolve in flight at a time. The resolve is a GPU readback; if
+ * a new one is issued every frame they queue up behind each other and the
+ * numbers drift further and further behind the frame that produced them.
+ */
+let gpuResolveInFlight = false;
+
 export function resetSimClock(): void {
   simLoop.reset();
 }
@@ -313,6 +320,30 @@ export function loop(now: number): void {
       //
       // `drawCalls` is the per-frame one, and it only means anything because of
       // the `info.reset()` at the top of this function.
+      // ── THE GPU NUMBER ──
+      // Everything else in this profile is CPU submission. This is the only
+      // figure that reflects what the GPU actually spent, read back from the
+      // timestamp queries armed in boot/renderer.ts.
+      //
+      // The resolve is ASYNC and lands a frame or two late, which is fine for a
+      // distribution and is why it is recorded outside the frame's own bracket.
+      // Guarded so an adapter without `timestamp-query` (or a build with
+      // profiling off) simply reports nothing instead of throwing every frame.
+      if (gpuTimingWanted() && !gpuResolveInFlight) {
+        gpuResolveInFlight = true;
+        void state.renderer
+          .resolveTimestampsAsync("render")
+          .then(() => {
+            const ms = state.renderer?.info.render.timestamp ?? 0;
+            if (ms > 0) profCount("GPU render (µs)", Math.round(ms * 1000));
+          })
+          .catch(() => {
+            /* adapter without timestamp-query — stay silent, never spam */
+          })
+          .finally(() => {
+            gpuResolveInFlight = false;
+          });
+      }
       profCount("draw calls", state.renderer.info.render.drawCalls);
       profCount("render passes", state.renderer.info.render.frameCalls);
       profCount("triangles", state.renderer.info.render.triangles);

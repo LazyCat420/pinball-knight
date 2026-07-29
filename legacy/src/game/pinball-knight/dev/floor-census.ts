@@ -45,6 +45,9 @@ export interface FloorCensus {
   props: number;
   doorways: number;
   rooms: number;
+  /** Scene-graph descendants, and how many of them are drawable meshes. */
+  sceneObjects: number;
+  sceneMeshes: number;
 }
 
 let last: FloorCensus | null = null;
@@ -79,6 +82,17 @@ function fold(parts: Array<string | number>): number {
  * Snapshot the floor. Call at the END of the level build, after every phase has
  * placed what it places and before the player has had a frame to disturb it.
  */
+/** Walk the scene once and count what the renderer will have to walk per frame. */
+function countScene(): { sceneObjects: number; sceneMeshes: number } {
+  let sceneObjects = 0;
+  let sceneMeshes = 0;
+  state.scene?.traverse((o) => {
+    sceneObjects++;
+    if ((o as { isMesh?: boolean }).isMesh) sceneMeshes++;
+  });
+  return { sceneObjects, sceneMeshes };
+}
+
 export function captureFloorCensus(): void {
   const g = state.grid;
   const byKind: Record<string, number> = {};
@@ -109,6 +123,11 @@ export function captureFloorCensus(): void {
     parts: { n: state.pinballParts.length, byKind: partsByKind, sum: fold(state.pinballParts.flatMap((p) => [p.kind, p.x, p.z])) },
     items: { n: state.groundItems.length, sum: fold(state.groundItems.flatMap((it) => [String(it.kind ?? ""), it.x, it.z])) },
     npcs: { n: state.npcs.length, sum: fold(state.npcs.flatMap((n) => [n.kind, n.x, n.z])) },
+    // The CPU walks EVERY descendant each frame to cull and sort, so this — not
+    // the draw-call count — is what per-frame submission cost scales with. The
+    // logical counts above hide it: one pinball "part" is a Group of 3-13
+    // meshes, so 99 parts is well over a thousand objects.
+    ...countScene(),
     props: state.props?.length ?? 0,
     doorways: state.doorways?.length ?? 0,
     rooms: state.levelRooms?.length ?? 0,
