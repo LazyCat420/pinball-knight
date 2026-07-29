@@ -557,6 +557,8 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
 
   // The wrought and the warlike — iron work.
   goblin: "iron",
+  // A wound spring and a stamped plate — the jester is MACHINERY in motley.
+  jester: "iron",
   warden: "iron",
   sapper: "iron",
   magnet: "iron",

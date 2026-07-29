@@ -289,6 +289,7 @@ export type EnemyKind =
   | "golem"
   | "chomper"
   | "sporeling"
+  | "jester"
   | "magnet"
   | "webspinner"
   // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──
@@ -1033,6 +1034,7 @@ export const state = {
   webspinnerSheet: null as SpriteSheet | null,
 
   sporelingSheet: null as SpriteSheet | null,
+  jesterSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
 
   // AI

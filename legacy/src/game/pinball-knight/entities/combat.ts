@@ -55,6 +55,7 @@ import {
   GATE_MIN_FACTOR,
   DODGE_RANGED_CHANCE,
   SPEED_ONLY_T,
+  JESTER_DISC_DAMAGE,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -969,6 +970,8 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   magnet: MAGNET_DAMAGE,
   webspinner: ZOMBIE_DAMAGE,
   sporeling: ZOMBIE_DAMAGE,
+  // Melee fallback only — the plate carries JESTER_DISC_DAMAGE itself.
+  jester: JESTER_DISC_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,

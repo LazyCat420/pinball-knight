@@ -26,6 +26,9 @@ import {
   GOLEM_SHARD_SPEED,
   GOLEM_SHARD_DAMAGE,
   GOLEM_SHARD_LIFE,
+  JESTER_DISC_SPEED,
+  JESTER_DISC_DAMAGE,
+  JESTER_DISC_LIFE,
   CURVE_ACCEL,
 } from "../constants";
 import { PALETTE_HEX } from "../render/palette";
@@ -81,6 +84,20 @@ function shardAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial }
   _shardMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[20] }); // stone chip
   return { geo: _shardGeo, mat: _shardMat };
 }
+let _discGeo: THREE.CylinderGeometry | null = null;
+let _discMat: THREE.MeshBasicMaterial | null = null;
+/**
+ * The jester's plate. A flat CYLINDER, not a sphere — every other projectile in
+ * the game is a ball or a chip, and the one thing a player has to recognise
+ * about this one at speed is that it is the thing that was on the monster's
+ * head. Cylinder's default axis is +Y, so it spawns lying flat and spinning
+ * about its own axis reads as a thrown discus with no extra transform.
+ */
+function discAssets(): { geo: THREE.CylinderGeometry; mat: THREE.MeshBasicMaterial } {
+  _discGeo ??= new THREE.CylinderGeometry(0.19, 0.19, 0.05, 12);
+  _discMat ??= new THREE.MeshBasicMaterial({ color: PALETTE_HEX[12] }); // blood mid
+  return { geo: _discGeo, mat: _discMat };
+}
 let _crystalMat: THREE.MeshBasicMaterial | null = null;
 function crystalAssets(): { geo: THREE.BoxGeometry; mat: THREE.MeshBasicMaterial } {
   _shardGeo ??= new THREE.BoxGeometry(0.12, 0.12, 0.12);
@@ -100,8 +117,11 @@ export function disposeProjectileAssets(): void {
   _shardGeo?.dispose();
   _shardMat?.dispose();
   _crystalMat?.dispose();
+  _discGeo?.dispose();
+  _discMat?.dispose();
   _bulletGeo = _bulletMat = _arrowGeo = _arrowMat = _flameGeo = _globGeo = _globMat = null;
   _webMat = _shardGeo = _shardMat = _crystalMat = null;
+  _discGeo = _discMat = null;
 }
 
 /**
@@ -189,6 +209,39 @@ export function spitWeb(x: number, z: number, dx: number, dz: number): void {
     life: SPITTER_FIRE_RANGE / WEB_GLOB_SPEED,
     maxLife: SPITTER_FIRE_RANGE / WEB_GLOB_SPEED,
     damage: 0,
+    hostile: true,
+    mesh,
+    dispose: () => {},
+  });
+}
+
+/**
+ * The JESTER's plate: fired off its own head, and the only HOSTILE projectile
+ * that ricochets.
+ *
+ * It rides the `shard` integration path (reflect the blocked axis, die by fuse)
+ * with `hostile` set, which is the whole feature — a spitter's glob is beaten by
+ * stepping behind a corner, and this is not. Damage is carried on the projectile
+ * rather than looked up per hit so a plate already in the air keeps the stats it
+ * was fired with, exactly like every other shot here.
+ */
+export function flingPlate(x: number, z: number, dx: number, dz: number): void {
+  if (!state.scene) return;
+  const { geo, mat } = discAssets();
+  const mesh = new THREE.Mesh(geo, mat);
+  const sx = x + dx * MUZZLE_OFFSET;
+  const sz = z + dz * MUZZLE_OFFSET;
+  mesh.position.set(sx, PROJECTILE_Y, sz);
+  state.scene.add(mesh);
+  state.projectiles.push({
+    kind: "disc",
+    x: sx,
+    z: sz,
+    vx: dx * JESTER_DISC_SPEED,
+    vz: dz * JESTER_DISC_SPEED,
+    life: JESTER_DISC_LIFE,
+    maxLife: JESTER_DISC_LIFE,
+    damage: JESTER_DISC_DAMAGE,
     hostile: true,
     mesh,
     dispose: () => {},
@@ -335,16 +388,24 @@ export function updateProjectiles(dt: number): void {
     // ── Shards RICOCHET: resolve each axis against the grid and reflect the
     // blocked component (they die by fuse, not by wall). Everything else
     // integrates straight and dies where it lands. ──
-    if (pr.kind === "shard") {
+    if (pr.kind === "shard" || pr.kind === "disc") {
       const nx = pr.x + pr.vx * dt;
       const nz = pr.z + pr.vz * dt;
       const tx = worldToTile(g, nx, pr.z);
-      if (!isWalkable(g, tx.i, tx.j)) pr.vx = -pr.vx;
+      const hitX = !isWalkable(g, tx.i, tx.j);
+      if (hitX) pr.vx = -pr.vx;
       else pr.x = nx;
       const tz = worldToTile(g, pr.x, nz);
-      if (!isWalkable(g, tz.i, tz.j)) pr.vz = -pr.vz;
+      const hitZ = !isWalkable(g, tz.i, tz.j);
+      if (hitZ) pr.vz = -pr.vz;
       else pr.z = nz;
-      pr.mesh.rotation.y += dt * 12; // tumbling chip
+      // The plate spins fast and SPARKS off the masonry. The spark is not
+      // decoration: a hostile ricochet that bounces silently is a hit the
+      // player never saw coming, so every reflection announces itself.
+      pr.mesh.rotation.y += dt * (pr.kind === "disc" ? 26 : 12);
+      if (pr.kind === "disc" && (hitX || hitZ)) {
+        state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, pr.vx, pr.vz, 4);
+      }
     } else {
       // CURVE SHOT: apply the lateral bend, then re-point the mesh down the new
       // heading so the art follows the arc.
@@ -386,7 +447,9 @@ export function updateProjectiles(dt: number): void {
             state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, 0, 0, 5);
           } else {
             hitPlayerRanged(pr.damage, pr.x, pr.z);
-            state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
+            // Acid splashes green; a steel plate strikes sparks.
+            if (pr.kind === "disc") state.vfx?.sparks(pr.x, PROJECTILE_Y, pr.z, -pr.vx, -pr.vz, 8);
+            else state.vfx?.blood(pr.x, PROJECTILE_Y, pr.z, "green", 6);
           }
           despawn(i);
           continue;

@@ -43,6 +43,10 @@ import {
   BRUTE_ATTACK_COOLDOWN,
   SPITTER_R,
   SPITTER_WINDUP,
+  JESTER_R,
+  JESTER_FIRE_RANGE,
+  JESTER_WINDUP,
+  JESTER_COOLDOWN,
   SPITTER_COOLDOWN,
   SPITTER_FIRE_RANGE,
   GHOST_R,
@@ -130,7 +134,7 @@ import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
-import { spitGlob, spitWeb } from "./projectiles";
+import { flingPlate, spitGlob, spitWeb } from "./projectiles";
 import { sfxGroan, sfxGoblin } from "../audio";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
@@ -160,6 +164,8 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   webspinner: { bodyR: WEBSPIN_R, contactRange: SPITTER_FIRE_RANGE, windup: SPITTER_WINDUP, cooldown: SPITTER_COOLDOWN, ranged: true },
   // Fungal shambler — zombie cadence, a touch slower on the wind-up.
   sporeling: { bodyR: ZOMBIE_R, contactRange: ZOMBIE_CONTACT_RANGE, windup: ZOMBIE_ATTACK_WINDUP * 1.15, cooldown: ZOMBIE_ATTACK_COOLDOWN, ranged: false },
+  // Spring-loaded harlequin — ranged, and its contactRange IS its fire range.
+  jester: { bodyR: JESTER_R, contactRange: JESTER_FIRE_RANGE, windup: JESTER_WINDUP, cooldown: JESTER_COOLDOWN, ranged: true },
   // ── Expansion roster (bespoke branches below carry the behaviour) ──
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },
@@ -664,6 +670,12 @@ export function updateZombies(dt: number): void {
               const uz = pdz / pdist;
               if (z.kind === "webspinner") {
                 spitWeb(z.x, z.z, ux, uz);
+              } else if (z.kind === "jester") {
+                // ONE plate, straight down the line — no spread. The spitter's
+                // volley is hard to sidestep on purpose; the jester's is easy to
+                // sidestep on purpose, because what makes it dangerous is where
+                // it goes AFTER it misses.
+                flingPlate(z.x, z.z, ux, uz);
               } else {
                 for (const ang of [-0.32, 0, 0.32]) {
                   const c = Math.cos(ang);
