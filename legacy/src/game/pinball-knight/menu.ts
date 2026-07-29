@@ -22,7 +22,7 @@
  */
 import { state, activeWeapon, WEAPON_SLOTS } from "./state";
 import { WEAPONS, GEAR, GEAR_SLOTS, POTIONS, weaponSlotCount, type GearSlot } from "./items";
-import { STASH_MAX, cardDef, cardFitsKind, socketCard, lowerRarity, cardsOfRarity, reKeyCard } from "./cards";
+import { cardDef, cardFitsKind, socketCard, lowerRarity, cardsOfRarity, reKeyCard } from "./cards";
 import { ABILITIES, ABILITY_IDS, abilityRank, abilityRankCost, type AbilityId } from "./abilities";
 import { ABILITY_RANK_MAX, ABILITY_RANK_STEP, ABILITY_RANK_RULE } from "./constants";
 import { getBalance, spendGold } from "../../utils/gold-wallet";
@@ -189,7 +189,7 @@ function cardsBody(): string {
     <div class="gmenu-h">YOUR WEAPONS — pick a stash card, then click a ＋ slot</div>
     <div style="color:#9a8f77;font-size:9px;margin-bottom:4px">un-socketing drops the card one rarity tier, same as the armory · buying & forging live at the Tavern</div>
     ${weapons}
-    <div class="gmenu-h">STASH (${stash.length}/${STASH_MAX})</div>
+    <div class="gmenu-h">STASH (${stash.length})</div>
     <div style="display:flex;flex-wrap:wrap;margin-top:4px">${stashHtml}</div>`;
 }
 
@@ -586,10 +586,6 @@ function handle(act: string, ds: { idx?: string; w?: string; suffix?: string }):
   if (act === "unsocket") {
     const w = state.weaponSlots[wIdx];
     if (!w || !w.cards || !w.cards[idx]) return;
-    if (state.cardStash.length >= STASH_MAX) {
-      flash("stash full");
-      return;
-    }
     const removed = w.cards.splice(idx, 1)[0];
     // Same respec cost as the tavern: one rarity tier down, commons crumble.
     const lower = lowerRarity(cardDef(removed)!.rarity);

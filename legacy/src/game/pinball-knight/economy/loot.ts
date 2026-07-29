@@ -69,6 +69,10 @@ export function dropCardMaybe(x: number, z: number, boss: boolean, kind: EnemyKi
     subType,
     dropMult,
     affinity: familyAffinity(state.killsByKind[kind] ?? 0),
+    // ` panel → LOOT → "CARDS 100%". The live rate is 1%, which is correct for
+    // play and useless for testing the card path: reaching the socket screen or
+    // the floor haul by grinding a 1-in-100 roll is not a test, it is a wait.
+    guaranteed: state.dbgCardDropAlways,
   });
   if (!id) return;
   const rarity = cardDef(id)?.rarity;

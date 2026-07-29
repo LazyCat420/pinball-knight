@@ -331,6 +331,56 @@ export function installDevHooks(deps: DevHookDeps): void {
       spawnCardDrop(p.x + dx, p.z + dz, id);
       return true;
     };
+    // Dev: THE FLOOR'S ITEMS AS THE SCENE ACTUALLY HOLDS THEM.
+    //
+    // `state.groundItems` is the LIST; the scene graph is what the player sees.
+    // "I picked it up and it's still lying there" is precisely a disagreement
+    // between the two, and nothing else reads the second one back — so this
+    // walks the scene and reports every flat billboard alongside whether a live
+    // ground item owns it, so the two can be diffed across a pickup.
+    //
+    // READ IT RIGHT: unowned quads are not automatically leaks. The floor's
+    // PROPS are quads (hence `props` in the result, to subtract), and so is the
+    // merchant NPC from floor 2 on — a soak that ignores both reads a steady
+    // "+1 orphan" that is just the shopkeeper standing there. A real leak GROWS
+    // with pickups or descents; a constant is furniture.
+    (window as unknown as { __dungeonItems?: () => unknown }).__dungeonItems = () => {
+      const owned = new Set<unknown>();
+      for (const it of state.groundItems) owned.add(it.sprite.mesh);
+      // Every flat billboard the sprite factory made (renderOrder 5): items,
+      // props, litter. Anything here that no live ground item owns is either a
+      // prop (fine) or a pickup that never left the scene (the bug).
+      const quads: unknown[] = [];
+      state.scene?.traverse((o) => {
+        const m = o as unknown as { isMesh?: boolean; renderOrder?: number; position?: { x: number; y: number; z: number } };
+        if (!m.isMesh || m.renderOrder !== 5) return;
+        quads.push({
+          x: Math.round((m.position?.x ?? 0) * 100) / 100,
+          y: Math.round((m.position?.y ?? 0) * 100) / 100,
+          z: Math.round((m.position?.z ?? 0) * 100) / 100,
+          ownedByItem: owned.has(o),
+        });
+      });
+      return {
+        list: state.groundItems.map((it) => ({
+          kind: it.kind,
+          id: it.id,
+          nid: it.nid,
+          x: Math.round(it.x * 100) / 100,
+          z: Math.round(it.z * 100) / 100,
+          blocked: !!it.blockedUntilAway,
+          corpse: it.corpseOwner,
+          coin: it.coin ? { phase: it.coin.phase, magT: Math.round(it.coin.magT * 100) / 100, age: Math.round(it.coin.age * 10) / 10 } : null,
+          parented: !!(it.sprite.mesh as unknown as { parent?: unknown }).parent,
+        })),
+        quads,
+        props: state.props.length,
+        sceneChildren: state.scene?.children.length ?? 0,
+        stash: state.cardStash.slice(),
+        haul: state.floorHaul.length,
+        player: state.player ? { x: state.player.x, z: state.player.z } : null,
+      };
+    };
     // Dev: take the stairs from wherever you are. `descend` has been in the dep
     // bag since the extraction with nothing calling it; this is what it was for.
     // Grading, the floor-haul screen and the tavern hand-off all hang off this
@@ -593,9 +643,14 @@ export function installDevHooks(deps: DevHookDeps): void {
         if (f.god !== undefined) state.godMode = f.god;
         if (f.mana !== undefined) state.infMana = f.mana;
         if (f.noCd !== undefined) state.noCooldown = f.noCd;
+        // The ` panel's LOOT → "CARDS 100%". Reachable from a script because
+        // the live rate is 1%: without this a harness testing the card path
+        // waits on a 1-in-100 roll per kill, which is how the full-stash pickup
+        // refusal survived to reach a player at depth 5.
+        if (f.cardDrops !== undefined) state.dbgCardDropAlways = f.cardDrops;
         state.hudDirty = true;
       }
-      return { god: state.godMode, mana: state.infMana, noCd: state.noCooldown };
+      return { god: state.godMode, mana: state.infMana, noCd: state.noCooldown, cardDrops: state.dbgCardDropAlways };
     };
     // Dev: the BOOSTER rubber on the curved walls — world mid-point of each
     // band plus its live cooldown/flash, so a harness can warp beside one, fire

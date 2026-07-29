@@ -11,7 +11,7 @@
 import { myId } from "../../../net/presence";
 import { sfxCoin, sfxPickup } from "../audio";
 import { presentCardPickup } from "../card-reader";
-import { STASH_MAX, cardDef, socketCard, type CardId } from "../cards";
+import { cardDef, socketCard, type CardId } from "../cards";
 import {
   BOOTS_SPEED_FACTOR,
   CARD_PICKUP_RANGE,
@@ -36,32 +36,37 @@ import { REAGENTS, type ReagentId } from "../reagents";
 import { state, type GroundItem, type MarbleMaterial } from "../state";
 import { showPickupNote } from "../ui";
 
-/** Walk over a card: socket into the active weapon if it fits + has room, else
- * stash it for the Tavern. Returns false (leave it) only if the stash is full.
+/**
+ * Walk over a card: socket it into the active weapon if it fits and has room,
+ * otherwise stash it for the Tavern. ALWAYS takes the card.
  *
- * Nothing here opens a modal any more. `presentCardPickup` files the card into
- * the floor haul and flashes a corner toast; the faces are read as one screen
- * when the floor is cleared. Picking up a card mid-bounce must not cost you the
- * bounce. */
-export function pickUpCard(it: GroundItem): boolean {
+ * There is no refusal path any more. This used to return false once the stash
+ * hit STASH_MAX (10) and the caller would leave the card lying on the floor —
+ * see the note where that constant used to live in cards.ts. The stash is
+ * uncapped, so every card the knight runs over comes off the floor.
+ *
+ * Nothing here opens a modal. `presentCardPickup` files the card into the floor
+ * haul and flashes a corner toast; the faces are read as one screen when the
+ * floor is cleared. Picking up a card mid-bounce must not cost you the bounce.
+ */
+export function pickUpCard(it: GroundItem): void {
   const id = it.id as CardId;
   const def = cardDef(id);
-  if (!def) return true;
-  const active = state.weaponSlots[state.activeSlot];
-  if (active && socketCard(active, id)) {
-    presentCardPickup(id, `SOCKETED INTO ${WEAPONS[active.id].icon} ${WEAPONS[active.id].label.toUpperCase()}`);
-    faceOnSpecial();
-    return true;
+  if (!def) return;
+  // The ACTIVE hand first, then the off-hand: a card refused into the stash
+  // while the weapon on your back had an empty slot for it was the same defect
+  // in miniature — a pickup the player cannot see the reason for.
+  const order = [state.activeSlot, 1 - state.activeSlot];
+  for (const s of order) {
+    const w = state.weaponSlots[s];
+    if (w && socketCard(w, id)) {
+      presentCardPickup(id, `SOCKETED INTO ${WEAPONS[w.id].icon} ${WEAPONS[w.id].label.toUpperCase()}`);
+      faceOnSpecial();
+      return;
+    }
   }
-  if (state.cardStash.length < STASH_MAX) {
-    state.cardStash.push(id);
-    presentCardPickup(id, `STASHED FOR THE TAVERN — ${state.cardStash.length}/${STASH_MAX}`);
-    return true;
-  }
-  // Refusal, not a pickup. The NOTE is the caller's job — it owns the per-item
-  // cooldown, without which resting on a card you can't take builds a DOM node
-  // every frame.
-  return false;
+  state.cardStash.push(id);
+  presentCardPickup(id, `STASHED FOR THE TAVERN — ${state.cardStash.length} HELD`);
 }
 
 /**
@@ -215,15 +220,7 @@ export function checkPickups(dt: number): void {
         applyPotion(pid);
       }
     } else if (it.kind === "card") {
-      if (!pickUpCard(it)) {
-        // Stash full — leave the card on the floor, and say so at most once
-        // every PICKUP_NOTE_COOLDOWN seconds however long you loiter on it.
-        if (!it.noteCd) {
-          showPickupNote(`🃏 stash full — visit the Tavern`);
-          it.noteCd = PICKUP_NOTE_COOLDOWN;
-        }
-        continue;
-      }
+      pickUpCard(it);
     } else if (it.kind === "material") {
       // Marble materials apply on contact (held one at a time; a 2nd opens a
       // fusion window). Not brewable, not belted — the ball IS the material.

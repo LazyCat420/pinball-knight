@@ -186,11 +186,63 @@ describe("monster affinity (CardDef.source)", () => {
     // consumes extra draws from the shared stream, which reshuffles WHICH kills
     // drop without changing HOW OFTEN they do.
     expect(Math.abs(withAffinity - without) / without).toBeLessThan(0.12);
-    // …and both must sit near the advertised ~8%. A loose band on purpose: this
+    // …and both must sit near the advertised rate. A loose band on purpose: this
     // asserts the RATE hasn't been restructured, and the small LCG above has its
     // own sampling bias — tightening it would test the generator, not the code.
     expect(without / 40000).toBeGreaterThan(COMMON_DROP_CHANCE * 0.8);
     expect(without / 40000).toBeLessThan(COMMON_DROP_CHANCE * 1.2);
+  });
+
+  // ── The ` panel's "CARDS 100%" lever ──
+  //
+  // The live rate is 1%, which is right for play and useless for testing the
+  // card path — reaching the socket screen or the floor haul through a 1-in-100
+  // roll is a wait, not a test. `guaranteed` is what makes that path reachable,
+  // and the two properties below are what keep it a TEST lever rather than a
+  // second drop table.
+  describe("the guaranteed-drop debug lever", () => {
+    it("drops on every single kill", () => {
+      const rand = lcg(11);
+      for (let k = 0; k < 500; k++) {
+        expect(rollCardDrop({ boss: false, floor: 1, guaranteed: true }, rand)).not.toBeNull();
+      }
+    });
+
+    it("still spends the gate's draw — the flag never short-circuits rand()", () => {
+      // THE TRAP THIS GUARDS. Written as `opts.guaranteed || rand() < t` the
+      // flag would SKIP the gate's draw, shifting the shared random stream — so
+      // every other roll downstream (which card, the boss rarities) would
+      // silently differ between a debug run and a real one, and the debug run
+      // would be exercising a game that does not ship.
+      //
+      // At floor 1, non-boss, with no `kind`: every kill spends exactly one
+      // draw on the common gate, and a kill that drops spends one more on the
+      // pick. So draws == kills + drops, whichever way the flag is set.
+      const stats = (guaranteed: boolean): { draws: number; drops: number } => {
+        const base = lcg(7);
+        let draws = 0;
+        const counting = (): number => {
+          draws++;
+          return base();
+        };
+        let drops = 0;
+        for (let k = 0; k < 2000; k++) if (rollCardDrop({ boss: false, floor: 1, guaranteed }, counting)) drops++;
+        return { draws, drops };
+      };
+      const on = stats(true);
+      const off = stats(false);
+      expect(on.drops).toBe(2000); // the lever does what it says
+      expect(on.draws).toBe(2000 + on.drops);
+      expect(off.draws).toBe(2000 + off.drops);
+    });
+
+    it("is OFF by default — an absent flag is the live 1% rate", () => {
+      const rand = lcg(11);
+      let drops = 0;
+      for (let k = 0; k < 20000; k++) if (rollCardDrop({ boss: false, floor: 1 }, rand)) drops++;
+      expect(drops / 20000).toBeLessThan(0.03);
+      expect(drops).toBeGreaterThan(0);
+    });
   });
 
   it("scales the common drop with the sub-type loot multiplier, but caps it", () => {

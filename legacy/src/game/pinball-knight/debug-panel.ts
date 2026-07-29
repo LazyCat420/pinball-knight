@@ -171,6 +171,13 @@ export function createDebugPanel(container: HTMLElement, actions: DebugActions):
   addToggle("SELF-HARM", () => state.dbgMaterialSelfHarm, (v) => (state.dbgMaterialSelfHarm = v));
   addToggle("FLOOR-1 DROPS", () => state.dbgMaterialFloor1Spawn, (v) => (state.dbgMaterialFloor1Spawn = v));
 
+  // ── Loot ──
+  // The live card rate is 1%; this makes every kill drop one so the pickup,
+  // socket, floor-haul and tavern paths are reachable in seconds instead of by
+  // grinding. Session-only, like every toggle in this panel.
+  section("LOOT");
+  addToggle("CARDS 100%", () => state.dbgCardDropAlways, (v) => (state.dbgCardDropAlways = v));
+
   // ── Spawn enemy ──
   // PACK SIZE first: one monster is enough to look at a sprite and not enough
   // to test anything else. The multiplier rides every chip below it, so "×8

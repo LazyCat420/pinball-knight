@@ -1157,6 +1157,18 @@ export const state = {
   /** R&D: drop all three materials near the floor-1 spawn. */
   dbgMaterialFloor1Spawn: true,
 
+  /**
+   * R&D: every kill drops a card (forces the COMMON gate in rollCardDrop).
+   *
+   * OFF by default, and it must stay off — the live rate is COMMON_DROP_CHANCE
+   * (1%). This exists because the card path (pickup → socket → floor haul →
+   * tavern) is otherwise only reachable by grinding a 1-in-100 roll, and the
+   * bug this shipped alongside — cards refused by a full stash and left lying
+   * on the floor — took a real player at depth 5 to find precisely because no
+   * harness could get enough cards to hit it.
+   */
+  dbgCardDropAlways: false,
+
   // Listeners
   input: null as InputHandle | null,
   onKeyDown: null as ((e: KeyboardEvent) => void) | null,

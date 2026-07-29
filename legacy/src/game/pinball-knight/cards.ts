@@ -182,9 +182,23 @@ export const CARDS: Record<CardId, CardDef> = {
 
 export const CARD_IDS: CardId[] = Object.keys(CARDS);
 
-/** How many unsocketed cards the run can carry. One source of truth — the
- * pickup path (core.ts), the Tavern dealer and the menu all read this. */
-export const STASH_MAX = 10;
+/**
+ * THE STASH IS UNCAPPED. This constant is gone, and the note is what replaces
+ * it — because the cap did not read as a cap, it read as a broken pickup.
+ *
+ * It used to be 10, and nothing drains the stash mid-run (only the Tavern and
+ * the pause menu do). So the moment a run banked its tenth card, EVERY card for
+ * the rest of that run was refused by `pickUpCard` and left lying on the floor,
+ * drawn identically to a card you could still take. Reported as "I pick up a
+ * card and it's still on the map" — the knight ran over them again and again
+ * and nothing happened, which is exactly what a cap with no visible state looks
+ * like from inside the game. At depth 5 with ~190 kills that was every card on
+ * the floor.
+ *
+ * Every former cap site (this pickup path, the Tavern's buy/un-socket guards,
+ * the shatter/salvage card rescue) now simply pushes. Nothing silently drops a
+ * card on the floor or into the void any more.
+ */
 
 const BY_RARITY: Record<CardRarity, CardId[]> = {
   common: CARD_IDS.filter((id) => CARDS[id].rarity === "common"),
@@ -717,9 +731,15 @@ export function cardsOfSource(kind: EnemyKind): CardId[] {
  */
 export const AFFINITY_CHANCE = 0.7;
 
-/** Base chance any kill drops a common card. Cards must stay RARE, and this is
- * the number that keeps them so — exported so the tests can pin it. */
-export const COMMON_DROP_CHANCE = 0.08;
+/**
+ * Base chance any kill drops a common card. Cards must stay RARE, and this is
+ * the number that keeps them so — exported so the tests can pin it.
+ *
+ * 1%, down from 8%. A card is a run-shaping pull, and at 8% a busy floor buried
+ * the knight in them; the `guaranteed` lever below is what makes the pickup and
+ * socket paths testable without needing the rate to carry that load.
+ */
+export const COMMON_DROP_CHANCE = 0.01;
 
 /**
  * MYTHIC — the top of the table, and until now UNREACHABLE from play.
@@ -771,6 +791,19 @@ export function rollCardDrop(
      * taken here and not anywhere earlier.
      */
     affinity?: number;
+    /**
+     * DEBUG: every kill drops. Wired to the ` panel's "CARD DROPS 100%" toggle
+     * via `state.dbgCardDropAlways` (read in economy/loot.ts, so this module
+     * stays pure and stays testable).
+     *
+     * It forces the COMMON gate only — the boss/gold rarity gates above still
+     * roll for themselves, so a guaranteed run still shows the real rarity
+     * ladder rather than a floor of commons. And it is applied AFTER the gate's
+     * own `rand()`, never instead of it: the number of draws and their order
+     * are identical either way, so flipping the toggle cannot shift the random
+     * stream the other gates see.
+     */
+    guaranteed?: boolean;
   },
   rand: () => number = Math.random,
 ): CardId | null {
@@ -841,9 +874,11 @@ export function rollCardDrop(
   if (opts.boss && rand() < 0.5) {
     return pick(cardsOfRarity("rare"));
   }
-  // Common: any enemy, ~8%, weighted by the sub-type's loot multiplier and
+  // Common: any enemy, ~1%, weighted by the sub-type's loot multiplier and
   // clamped so a big multiplier can never make a "rare" drop a certainty.
-  if (rand() < Math.min(0.5, COMMON_DROP_CHANCE * (opts.dropMult ?? 1))) {
+  // `rand()` is drawn FIRST and unconditionally — see `guaranteed` in the opts.
+  const roll = rand();
+  if (roll < Math.min(0.5, COMMON_DROP_CHANCE * (opts.dropMult ?? 1)) || opts.guaranteed) {
     return pick(cardsOfRarity("common"));
   }
   return null;

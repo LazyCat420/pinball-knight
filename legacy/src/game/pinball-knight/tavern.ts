@@ -30,7 +30,7 @@ import { sfxBreak } from "./audio";
 import { renderKnightPortrait } from "./render/knight-portrait";
 import { lookFromGear } from "./render/knight-look";
 import { ARMOR_STYLES, ELEMENTAL_STYLE_IDS, activeStyle, isStyleUnlocked, unlockStyle, setActiveStyle, styleGearGrant, type ArmorStyleId } from "./armor-styles";
-import { CARD_LEVEL_MAX, RARITY_HEX, STASH_MAX, cardBase, cardDef, cardKey, cardsOfRarity, cardFitsKind, parseCard, reKeyCard, rollCardLevel, rollShiny, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
+import { CARD_LEVEL_MAX, RARITY_HEX, cardBase, cardDef, cardKey, cardsOfRarity, cardFitsKind, parseCard, reKeyCard, rollCardLevel, rollShiny, socketCard, lowerRarity, type CardDef, type CardId, type CardRarity } from "./cards";
 import { REAGENTS, REAGENT_IDS, type ReagentId } from "./reagents";
 import { RECIPES, RECIPE_IDS, canCraft, craftCost, type RecipeDef } from "./recipes";
 import { getBalance, spendGold, addGold } from "../../utils/gold-wallet";
@@ -362,7 +362,7 @@ function injectTavernStyles(): void {
 function cardsBody(): string {
   const stash = state.cardStash;
   const offers = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">${barOffers
-    .map((id, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${holoCard(id, { size: "lg" })}${btn(`buycard:${i}`, "Buy", PRICE_CARD[cardDef(id)!.rarity], stash.length >= STASH_MAX)}</div>`)
+    .map((id, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">${holoCard(id, { size: "lg" })}${btn(`buycard:${i}`, "Buy", PRICE_CARD[cardDef(id)!.rarity])}</div>`)
     .join("")}</div>`;
   const weapons = state.weaponSlots.map((w, i) => (w ? weaponPanel(w, i) : "")).join("");
   const stashHtml = stash.length
@@ -374,7 +374,7 @@ function cardsBody(): string {
     <div style="margin:8px 0">${btn("reroll-bar", "🔄 Reroll stock", PRICE_REROLL_BAR)}</div>
     <div style="border-top:1px solid #4a3d28;padding-top:8px;margin-top:4px;color:#c9c1ad;font-size:11px;letter-spacing:.5px">YOUR WEAPONS — pick a stash card, then click a ＋ slot</div>
     ${weapons}
-    <div style="margin-top:8px;color:#c9c1ad;font-size:10px;letter-spacing:.5px">STASH (${stash.length}/${STASH_MAX})</div>
+    <div style="margin-top:8px;color:#c9c1ad;font-size:10px;letter-spacing:.5px">STASH (${stash.length})</div>
     <div style="display:flex;flex-wrap:wrap;margin-top:4px">${stashHtml}</div>`;
 }
 
@@ -799,7 +799,6 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
   if (act === "unsocket") {
     const w = state.weaponSlots[wIdx];
     if (!w || !w.cards || !w.cards[idx]) return;
-    if (state.cardStash.length >= STASH_MAX) { flash("stash full"); return; }
     const removed = w.cards.splice(idx, 1)[0];
     // respec cost: the card drops one rarity tier (a random card of the lower
     // rarity); a common just crumbles to dust.
@@ -822,7 +821,6 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
   if (act === "buycard") {
     const id = barOffers[idx];
     if (!id) return;
-    if (state.cardStash.length >= STASH_MAX) { flash("stash full"); return; }
     if (!pay(PRICE_CARD[cardDef(id)!.rarity])) { flash("not enough gold"); return; }
     state.cardStash.push(id);
     barOffers.splice(idx, 1);
@@ -867,7 +865,10 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
       const saved = insuredCards(held, w.insured ?? 0, (id) => CARD_RANK.indexOf(cardDef(id)?.rarity as CardRarity));
       const lost = held.length - saved.length;
       state.weaponSlots[activeWeaponSlotIndex()] = null;
-      for (const id of saved) if (state.cardStash.length < STASH_MAX) state.cardStash.push(id);
+      // Every insured card comes back — the clamp that used to sit here could
+      // silently eat cards the player had PAID to protect once the stash was
+      // full, which is the worst possible place for a silent cap.
+      for (const id of saved) state.cardStash.push(id);
       sfxBreak();
       flash(
         saved.length > 0
@@ -918,7 +919,7 @@ function handle(act: string, ds: { idx?: string; w?: string }): void {
     const gold = salvageValue(w);
     const back = w.cards ?? [];
     let kept = 0;
-    for (const id of back) if (state.cardStash.length < STASH_MAX) { state.cardStash.push(id); kept++; }
+    for (const id of back) { state.cardStash.push(id); kept++; }
     state.weaponSlots[activeWeaponSlotIndex()] = null;
     state.goldRun += gold;
     addGold(gold, "dungeon-game");
