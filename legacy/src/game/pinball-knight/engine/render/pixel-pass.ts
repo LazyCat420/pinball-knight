@@ -283,7 +283,8 @@ function finalNode(
   // silhouette change is 0.25 and up. Under it the screen goes inky and the
   // pixel art turns to mud, which is the failure this term has to avoid more
   // than it has to catch every edge.
-  const dc = depthAt(0, 0);
+  // `c0` above is already `depthAt(0, 0)`; this used to fetch it a second time.
+  const dc = c0;
   const e = max(
     max(depthAt(1, 0).sub(dc).abs(), depthAt(-1, 0).sub(dc).abs()),
     max(depthAt(0, 1).sub(dc).abs(), depthAt(0, -1).sub(dc).abs()),
@@ -295,7 +296,9 @@ function finalNode(
   const LUMA = vec3(0.3, 0.59, 0.11);
   const lumaAt = (ox: number, oy: number): TSLNode =>
     dot(sqrt(max(texture(diffuse, vUv.add(vec2(ox, oy).div(res))).rgb, vec3(0, 0, 0))), LUMA);
-  const lc = lumaAt(0, 0);
+  // lumaAt(0, 0) would re-fetch `texture(diffuse, vUv)` — which `plain` above
+  // already holds. Same texel, same filter, same result; one fetch fewer.
+  const lc = dot(sqrt(max(plain, vec3(0, 0, 0))), LUMA);
   const le = max(
     max(lumaAt(1, 0).sub(lc).abs(), lumaAt(-1, 0).sub(lc).abs()),
     max(lumaAt(0, 1).sub(lc).abs(), lumaAt(0, -1).sub(lc).abs()),
@@ -329,9 +332,24 @@ function finalNode(
   // ── Snap to the nearest palette entry, luma-weighted. Unrolled over the 32
   // colours: the palette is a compile-time constant here, so this becomes a
   // flat min-reduction with no uniform array indexing.
+  //
+  // Entry 0 seeds the reduction instead of a 1e9 sentinel: the first iteration
+  // could never lose against 1e9, so its compare and two selects were dead work.
+  //
+  // ⚠️ DO NOT fold the luma weight into the palette to save the per-entry
+  // multiply. It looks free — the palette is a compile-time constant, so
+  // `pc * w` would fold at graph-build time and `col * w` is loop-invariant,
+  // removing 96 multiplies per pixel. It is not free: `(a-b)*w` and `a*w - b*w`
+  // round differently in the last place, and that flips the winner on 12 of the
+  // 496 exact midpoints between palette pairs (measured — see
+  // palette-snap.test.ts). A random sample of 200,000 colours finds ZERO
+  // disagreements, which is exactly how this would have shipped. Ties are not
+  // rare here either: the ordered dither above deliberately nudges colours to
+  // sit BETWEEN two entries, so near-ties are the design, not an edge case.
   let best: TSLNode = vec3(palette[0], palette[1], palette[2]);
-  let bestDist: TSLNode = float(1e9);
-  for (let i = 0; i < PALETTE_SIZE; i++) {
+  const d0 = col.sub(best).mul(vec3(0.3, 0.59, 0.11));
+  let bestDist: TSLNode = dot(d0, d0);
+  for (let i = 1; i < PALETTE_SIZE; i++) {
     const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
     const d = col.sub(pc).mul(vec3(0.3, 0.59, 0.11));
     const dist = dot(d, d);
