@@ -700,6 +700,16 @@ export const state = {
   cardReaderEl: null as HTMLDivElement | null,
   /** The in-game menu (Esc/I) while it's open (null = closed; sim pauses). See menu.ts. */
   menuEl: null as HTMLDivElement | null,
+  /**
+   * True while any IN-GAME screen that pauses is open — the canvas-native
+   * replacement for the four `*El` flags above.
+   *
+   * Maintained solely by `gui/stack.ts` (`syncPause`); nothing else may write
+   * it. It joins the same expression in `core.isSimPaused()` so the DOM screens
+   * and the in-game screens share one pause contract during the migration; when
+   * the last overlay is gone that expression collapses to this flag alone.
+   */
+  uiPauses: false,
   /** The first-person rampage overlay (crosshair + gun + red vignette). */
   fpsOverlayEl: null as HTMLDivElement | null,
   /** Last frame's bounce combo, so a rise fires the flash exactly once per step. */

@@ -1228,7 +1228,7 @@ function buildLevel(level: number): void {
  * run duration doesn't count time spent reading.
  */
 export function isSimPaused(): boolean {
-  return !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl) || isTavernSceneOpen();
+  return !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl || state.uiPauses) || isTavernSceneOpen();
 }
 
 /** One 60Hz simulation step. */

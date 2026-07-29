@@ -175,6 +175,8 @@ interface FinalUniforms {
   ao: TSLUniform<number>;
   aoRadius: TSLUniform<number>;
   vignette: TSLUniform<number>;
+  /** 0 while nothing is on the UI layer — see the composite in `finalNode`. */
+  ui: TSLUniform<number>;
   aberration: TSLUniform<number>;
   flash: TSLUniform<number>;
   resolution: TSLUniform<THREE.Vector2>;
@@ -196,6 +198,7 @@ function finalNode(
   diffuse: THREE.Texture,
   bloomTex: THREE.Texture,
   depth: THREE.Texture,
+  uiTex: THREE.Texture,
   palette: Float32Array,
   u: FinalUniforms,
 ): TSLNode {
@@ -310,6 +313,35 @@ function finalNode(
   const depthEdge: TSLNode = e.greaterThan(float(0.35 / 200)).select(float(1), float(0));
   const inked = max(depthEdge, colourEdge).greaterThan(float(0.5)).select(float(0.45), float(1));
   col = col.mul(mix(float(1), inked, u.outline));
+
+  // ── The in-game UI, composited HERE and nowhere else.
+  //
+  // This position is the whole design of the in-game UI, so it is worth being
+  // explicit about both neighbours:
+  //
+  // AFTER the ink outline (and therefore after AO), because both of those read
+  // the DEPTH texture. The UI is a flat 2D layer with no geometry and writes no
+  // depth, so an outline pass that ran after it would ink the SCENE BEHIND the
+  // menu straight through the sheet — edges of walls crawling across a paused
+  // inventory screen. Sitting downstream of the depth-driven passes means the
+  // UI simply cannot interact with them.
+  //
+  // BEFORE dither → palette snap → scanlines, because that is the entire point:
+  // the menu snaps to the same 32 colours and wears the same scanlines as the
+  // art, instead of floating above the game as un-quantized DOM did.
+  //
+  // COLOUR: `col` has already been through the hand-written linear→sRGB
+  // transfer above, and canvas2D authors in sRGB, so this is a like-for-like
+  // blend with no conversion. The texture MUST be tagged LinearSRGBColorSpace
+  // by the caller so three does not "helpfully" decode it — see gui/layer.ts.
+  //
+  // UV: `rtUv()`, the same flipped UV as every other sample in this shader.
+  // The UI texture keeps three's default flipY=true, which puts canvas row 0 at
+  // v=1; screen-top is uv().y=0; so the flip is what lands row 0 at the top.
+  // Judge this with an ASYMMETRIC probe (`__gui.probe()`), never with a centred
+  // menu — this repo shipped a v-flip fix twice by eyeballing symmetric content.
+  const uiTexel: TSLNode = texture(uiTex, rtUv());
+  col = mix(col, uiTexel.rgb, uiTexel.a.mul(u.ui));
 
   // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the
   // palette's bright ramp like everything else.
@@ -443,6 +475,16 @@ export interface PixelPass {
    * computed size and does nothing expensive when that is unchanged.
    */
   resize(): void;
+  /**
+   * The CURRENT grid. The UI layer sizes its canvas from this and the pointer
+   * mapping converts through it, so both must read the pass's own value rather
+   * than recompute `computeRenderSizing(window…)` — a second copy of that call
+   * is a second source of truth that drifts for one frame after every resize,
+   * which is exactly long enough for a click to land in the wrong place.
+   */
+  sizing(): Readonly<RenderSizing>;
+  /** Composite the UI layer at all. Off costs nothing; see `finalNode`. */
+  setUiEnabled(on: boolean): void;
   setQuantize(on: boolean): void;
   setDither(on: boolean): void;
   setScanline(on: boolean): void;
@@ -468,6 +510,19 @@ export function createPixelPass(
     outline: boolean;
     bloom: boolean;
     ao: boolean;
+    /**
+     * The in-game UI layer, composited late in `finalNode`.
+     *
+     * INJECTED, not imported: `engine/purity.test.ts` forbids the engine from
+     * reaching into game content, and the UI's canvas, screens and input all
+     * live in the game. The engine only ever knows "there is a texture the size
+     * of my grid, blend it in near the end".
+     *
+     * Must be a stable object for the lifetime of the pass — the node graph
+     * binds it at build time. `gui/layer.ts` guarantees that and reallocates
+     * behind it on resize.
+     */
+    uiTexture: THREE.Texture;
   },
 ): PixelPass {
   // We want fat honest pixels, so devicePixelRatio is deliberately ignored.
@@ -554,6 +609,9 @@ export function createPixelPass(
     ao: uniform(opts.ao ? AO_STRENGTH : 0),
     aoRadius: uniform(AO_RADIUS),
     vignette: uniform(VIGNETTE),
+    // Off until a screen opens. The composite is a texture fetch per pixel over
+    // the whole grid; there is no reason to pay it while the player is playing.
+    ui: uniform(0),
     aberration: uniform(0),
     flash: uniform(0),
     // MUST track the render target. A stale resolution silently misaligns the
@@ -568,6 +626,7 @@ export function createPixelPass(
     sceneTarget.texture,
     bloomA.texture,
     depthTexture,
+    opts.uiTexture,
     enginePalette.toFloatArray(),
     finalUniforms,
   );
@@ -712,6 +771,10 @@ export function createPixelPass(
     target: sceneTarget,
     render,
     resize,
+    sizing: () => sizing,
+    setUiEnabled: (on) => {
+      finalUniforms.ui.value = on ? 1 : 0;
+    },
     setQuantize: (on) => {
       finalUniforms.quantize.value = on ? 1 : 0;
     },

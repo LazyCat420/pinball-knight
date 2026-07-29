@@ -21,6 +21,9 @@ import { state } from "../state";
 import { createPixelPass } from "../engine/render/pixel-pass";
 import { PALETTE_HEX } from "../render/palette";
 import { BLOOM_DEFAULT, AO_DEFAULT } from "../constants";
+import { uiTexture, syncSize } from "../gui/layer";
+import { installUiInput } from "../gui/input";
+import { drawUiFrame } from "../gui/root";
 
 /**
  * False until `WebGPURenderer.init()` resolves — `render()` THROWS before that.
@@ -78,12 +81,42 @@ export function installRenderer(): void {
   // assertion documents that ordering rather than inventing a fallback.
   state.container?.appendChild(state.renderer.domElement);
 
-  state.pixelPass = createPixelPass(state.renderer, {
+  const pass = createPixelPass(state.renderer, {
     quantize: state.quantize,
     dither: state.dither,
     scanline: state.scanline,
     outline: state.outline,
     bloom: BLOOM_DEFAULT,
     ao: AO_DEFAULT,
+    // The in-game UI's canvas, handed to the engine as a plain texture. This is
+    // the injection `engine/purity.test.ts` requires: the engine composites it
+    // without knowing what a menu is.
+    uiTexture: uiTexture(),
   });
+  // The layer's canvas must match the grid the pass just derived, before the
+  // first frame — otherwise the first paint lands on a 1x1 canvas and the UI is
+  // a single stretched texel until something triggers a resize.
+  syncSize(pass.sizing());
+  installUiInput();
+
+  /**
+   * COMPOSE the UI drive into `render` rather than asking the loop to call it.
+   *
+   * The UI texture has to be uploaded before the pass composites, and the pass
+   * composites inside `render()`. Leaving that to the call site means the
+   * ordering is enforced by a comment in `core.ts` — and `core.ts` is at its
+   * decomposition ratchet, so the natural place to write that comment is a
+   * place we are not allowed to grow. Wrapping the method puts the ordering
+   * next to the injection it depends on, and makes it impossible for a future
+   * caller to render without first painting.
+   *
+   * This is plain composition, not prototype surgery: `createPixelPass` returns
+   * an object literal, so `render` is an own property like any other.
+   */
+  const renderScene = pass.render.bind(pass);
+  pass.render = (scene, camera) => {
+    drawUiFrame(pass);
+    renderScene(scene, camera);
+  };
+  state.pixelPass = pass;
 }

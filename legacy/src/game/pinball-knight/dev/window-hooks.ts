@@ -24,6 +24,7 @@ import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } fr
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
+import { installGuiHooks } from "./gui-hooks";
 import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
@@ -554,6 +555,10 @@ export function installDevHooks(deps: DevHookDeps): void {
     //   __dungeonBotStop()
     // Reports stuck episodes, deaths, peak combo and any thrown errors.
     installBotHooks();
+    // Dev: THE IN-GAME UI — a canvas UI has no elements panel, so everything
+    // devtools used to give us for the DOM overlays is a hook instead.
+    //   __gui()  __gui.settings()  __gui.close()  __gui.probe()  __gui.shot()
+    installGuiHooks();
     // Dev: ONE OF EACH zombie sub-type in a ring — the silhouette check.
     //   __zombieTypes()          ring at 3 tiles, posed, not aggroed
     //   __zombieTypes(4)         wider ring
