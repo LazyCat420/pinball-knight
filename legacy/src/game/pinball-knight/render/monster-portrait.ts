@@ -48,6 +48,7 @@ import { SPRITE_PX } from "../constants";
 import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
+import { makeSporelingPaints } from "./monsters/sporeling";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = SPRITE_PX;
@@ -72,6 +73,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number
   ghost: { paints: makeGhostPaints, tint: null, scale: 1.0 },
   bat: { paints: makeBatPaints, tint: null, scale: 1.0 },
   slime: { paints: makeSlimePaints, tint: null, scale: 1.0 },
+  sporeling: { paints: makeSporelingPaints, tint: null, scale: 1.0 },
   reaper: { paints: makeReaperPaints, tint: null, scale: 1.05 },
   goblin: { paints: makeGoblinPaints, tint: null, scale: 1.0 },
   pin: { paints: makePinPaints, tint: null, scale: 0.85 },

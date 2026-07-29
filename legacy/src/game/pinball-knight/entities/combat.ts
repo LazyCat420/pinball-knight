@@ -968,6 +968,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   chomper: CHOMPER_DAMAGE,
   magnet: MAGNET_DAMAGE,
   webspinner: ZOMBIE_DAMAGE,
+  sporeling: ZOMBIE_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,
