@@ -47,9 +47,15 @@ if [ -n "$ts_errors" ]; then
 fi
 
 # ── blocking: registry drift ─────────────────────────────────────────────────
+# The checker is resolved from the WORKTREE being edited, not from wherever this
+# hook was loaded, so a branch that predates it simply has no checker — and an
+# older worktree must not be unable to accept an edit because a tool it has
+# never heard of is missing. Absent checker = skip, not block.
 NODE="$(hk_node)"
-if [ -n "$NODE" ] && ! drift="$("$NODE" scripts/hooks/registry-drift.mjs 2>&1)"; then
-  blocking+="$drift"$'\n\n'
+if [ -n "$NODE" ] && [ -f scripts/hooks/registry-drift.mjs ]; then
+  if ! drift="$("$NODE" scripts/hooks/registry-drift.mjs 2>&1)"; then
+    blocking+="$drift"$'\n\n'
+  fi
 fi
 
 # ── advisory: tests for the edited file's directory ──────────────────────────
