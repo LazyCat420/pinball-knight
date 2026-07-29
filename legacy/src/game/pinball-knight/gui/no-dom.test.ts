@@ -25,6 +25,13 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const GAME_DIR = join(__dirname, "..");
+/**
+ * The tavern SCENE is in scope too. Its overlays (station prompt, arrival
+ * banner, run summary, lobby board, the gambler cabinet) were the last
+ * interface in the app built out of elements, and they sat on top of the
+ * scene's OWN pixel pass — the exact thing this migration exists to stop.
+ */
+const SCENES_DIR = join(__dirname, "..", "..", "..", "scenes");
 
 /**
  * Files exempt from the rule, each for a stated reason. Keep this list SHORT
@@ -66,18 +73,26 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
-describe("no DOM UI", () => {
-  const files = tsFiles(GAME_DIR);
+/**
+ * The SITE boot sequence is exempt, and structurally so: the DOS boot screen
+ * and the toucan flight run BEFORE any renderer or pixel pass exists, so there
+ * is literally nothing to composite into. They are also not part of the game.
+ */
+const SCENE_ALLOWED = ["app-bootstrap.ts", "intro-scene.ts"];
 
-  it("finds the game sources (guards against the walker matching nothing)", () => {
-    expect(files.length).toBeGreaterThan(50);
+describe("no DOM UI", () => {
+  const files = [...tsFiles(GAME_DIR), ...tsFiles(SCENES_DIR)];
+
+  it("finds the sources (guards against the walker matching nothing)", () => {
+    expect(files.length).toBeGreaterThan(80);
   });
 
   it("builds no interface out of elements", () => {
     const violations: string[] = [];
     for (const file of files) {
-      const rel = relative(GAME_DIR, file).split("\\").join("/");
-      if (ALLOWED.some((a) => a.file === rel)) continue;
+      const inScenes = file.startsWith(SCENES_DIR);
+      const rel = relative(inScenes ? SCENES_DIR : GAME_DIR, file).split("\\").join("/");
+      if (inScenes ? SCENE_ALLOWED.includes(rel) : ALLOWED.some((a) => a.file === rel)) continue;
       const src = stripComments(readFileSync(file, "utf8"));
       for (const { re, what } of BANNED) {
         if (re.test(src)) violations.push(`${rel}: ${what}`);

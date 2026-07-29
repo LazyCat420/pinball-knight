@@ -57,6 +57,8 @@ import {
   SPEED_ONLY_T,
   JESTER_DISC_DAMAGE,
   ROTORTAIL_TIMBER_DAMAGE,
+  JESTER_SPRING_KICK,
+  PINBALL_MAX_SPEED,
 } from "../constants";
 import { comboKillGold, comboDamageMult, momentumScaled, comboWindow, momentumT, momentumGate } from "./combo-curve";
 import { painBase, painChance, staggerTime, accrue } from "./stagger";
@@ -375,6 +377,46 @@ export function syncActorMesh(a: { sprite: { mesh: { position: { set(x: number, 
  */
 export type DamageSource = "steel" | "bounce" | "ranged";
 
+/** What a gate-refused blow says, per family. A refused hit MUST announce
+ *  itself — a hit that lands for nothing and says nothing reads as a bug. */
+const GATE_REFUSED_TOAST: Partial<Record<EnemyKind, string>> = {
+  golem: "🧱 IT SHRUGS OFF STEEL",
+  goblin: "🟢 IT BOUNCES OFF STEEL",
+  jester: "🤡 THE SPRING THROWS YOU OFF",
+};
+
+/**
+ * The jester's spring recoil: hurl the knight away from it and tick the bounce
+ * combo, exactly as a bumper would.
+ *
+ * The combo tick matters — without it this is a punishment, and with it the
+ * refused swing still FEEDS the ride. That is the difference between a monster
+ * that stops you and a monster that redirects you, and redirection is what this
+ * game is about.
+ */
+function springOffJester(z: Zombie): void {
+  const p = state.player;
+  const g = state.grid;
+  if (!p || !g || p.hp <= 0) return;
+  const dx = p.x - z.x;
+  const dz = p.z - z.z;
+  const d = Math.hypot(dx, dz);
+  // Degenerate only if the knight is exactly on the jester; push it off along
+  // its own travel so the launch is never a silent no-op.
+  const nx = d > 1e-4 ? dx / d : p.momX || 1;
+  const nz = d > 1e-4 ? dz / d : p.momZ || 0;
+  p.momX = nx;
+  p.momZ = nz;
+  p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed, JESTER_SPRING_KICK));
+  p.bounceCombo += 1;
+  p.bounceComboT = comboWindow(p.bounceCombo);
+  // i-frames so being thrown does not deliver you straight into the plate that
+  // is already in the air.
+  p.iframes = Math.max(p.iframes, 0.25);
+  state.vfx?.sparks(z.x, 0.7, z.z, nx, nz, 12);
+  state.shakeT = Math.max(state.shakeT, 0.16);
+}
+
 export function damageZombie(
   z: Zombie,
   damage: number,
@@ -424,19 +466,34 @@ export function damageZombie(
   // The clink survives at the bottom of the curve, because the teaching moment
   // is what made these two worth having: a hit that lands for nothing has to
   // SAY so, or the rule is invisible.
-  if (!force && (z.kind === "goblin" || z.kind === "golem")) {
-    // The bar and the softness come from MOMENTUM_GATES (entities/enemy-rules.ts),
-    // which is the SAME table the bestiary prints from — so what the screen
-    // teaches and what the code enforces cannot drift apart.
-    const g2 = MOMENTUM_GATES[z.kind]!;
-    const f = momentum <= g2.minSpeed ? 0 : momentumGate(momentum, g2.bar, g2.soft);
+  // The bar, the softness and WHICH KINDS THIS OWNS all come from
+  // MOMENTUM_GATES (entities/enemy-rules.ts), which is the SAME table the
+  // bestiary prints from — so what the screen teaches and what the code
+  // enforces cannot drift apart. `gatesDamage` used to be a `z.kind === …` list
+  // right here, which is a second roster to keep in step by hand.
+  const gate = force ? undefined : MOMENTUM_GATES[z.kind];
+  if (gate?.gatesDamage) {
+    const f = momentum <= gate.minSpeed ? 0 : momentumGate(momentum, gate.bar, gate.soft);
     if (f <= GATE_MIN_FACTOR) {
       state.vfx?.sparks(z.x, 0.5, z.z, dirx, dirz, 4);
       state.shakeT = Math.max(state.shakeT, 0.05);
       if (!_gateHintShown) {
         _gateHintShown = true;
-        showToast(z.kind === "golem" ? "🧱 IT SHRUGS OFF STEEL" : "🟢 IT BOUNCES OFF STEEL", "hit it at PINBALL SPEED");
+        showToast(GATE_REFUSED_TOAST[z.kind] ?? "🟢 IT BOUNCES OFF STEEL", "hit it at PINBALL SPEED");
       }
+      // ── THE JESTER SPRINGS YOU OFF ──
+      // Refusing the blow is not enough for this one: the coil on its head is
+      // the whole creature, so a swing it catches has to VISIBLY go somewhere.
+      // It throws the knight away along the line from monster to player — the
+      // goblin's bumper pop (entities/zombie.ts), moved from CONTACT to the
+      // refused SWING, because what the jester punishes is committing to melee
+      // rather than merely standing close.
+      //
+      // Only on the refused hit, deliberately. Land it at momentum and you
+      // compressed the spring past its travel, so there is nothing left to
+      // throw you with — which is the same sentence as the damage rule and is
+      // what makes the pair learnable instead of two separate facts.
+      if (z.kind === "jester") springOffJester(z);
       sfxHit();
       return;
     }

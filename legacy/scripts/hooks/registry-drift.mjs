@@ -46,21 +46,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const GAME = join(ROOT, "src/game/pinball-knight");
 
-/**
- * Read a file a check names. A registry file that has been DELETED is drift in
- * the checker, not a crash: `hud-diablo.ts` was removed with the DOM UI (799e911)
- * and this threw ENOENT out of the post-edit hook on every single edit
- * afterwards, which reads as "the edit gate is broken" rather than "one check
- * points at a file that is gone". Report it and let the rest of the run finish.
- */
-const read = (p) => {
+const read = (p) => readFileSync(join(GAME, p), "utf8");
+/** `read`, but null instead of a throw when the file is gone. */
+const readIfPresent = (p) => {
   try {
     return readFileSync(join(GAME, p), "utf8");
   } catch {
-    fail("!", `${p}: a check points at a file that does not exist — fix the check before trusting a clean run`);
-    // "" rather than null: every caller goes straight on to indexOf/match, and
-    // an empty source makes them report a stale anchor instead of throwing.
-    return "";
+    return null;
   }
 };
 const problems = [];
@@ -298,22 +290,38 @@ for (const file of files) {
   const REGISTRIES = [
     { file: "entities/marble.ts", anchor: "export const MATERIAL_LIST", open: "[", close: "]", why: "the material never drops or rolls" },
     { file: "constants/pinball.ts", anchor: "export const MATERIAL_DURATION", open: "{", close: "}", why: "its pickup timer is undefined" },
-    // THREE CHECKS USED TO LIVE HERE, and all three guarded the DOM UI:
-    // `ui.ts`'s MATERIAL_CHIP buff strip, `hud-diablo.ts`'s per-material HUD
-    // tile, and `debug-panel.ts`'s grant chips. The DOM UI was deleted (799e911)
-    // and the canvas HUD carries no per-material registry, so there is nothing
-    // left for a material to be missing FROM. They are gone rather than
-    // repointed. If a material-aware UI table ever comes back, add it here.
+    // ⚠️ TWO ROWS REMOVED HERE, 2026-07-29 — and what they guarded is GONE, not
+    // moved. `799e911 delete the DOM UI (P5)` deleted `hud-diablo.ts` (its
+    // material HUD tiles) and `ui.ts`'s `MATERIAL_CHIP` buff strip, and the
+    // canvas HUD that replaced them does not display a marble material at all.
+    // So a player carrying Lava or Diamond now has no on-screen indication of
+    // it — the pickup changes the physics silently. That is a real regression
+    // and it belongs to the in-game-UI work, not to this checker; the rows are
+    // dropped because a check whose subject does not exist cannot pass, not
+    // because the display stopped mattering. Restore them WITH the display.
     //
-    // They were not merely stale, they were LOAD-BEARING BROKEN: `read()` threw
-    // ENOENT on hud-diablo.ts, which aborted the whole script before it printed
-    // anything, so every post-edit run since that deletion has failed with a
-    // node stack trace instead of running the other six checks.
+    // `debug-panel.ts`'s `MATERIALS_DBG` grant chips went the same way, so all
+    // THREE material surfaces are gone at once: you cannot see which material
+    // you are carrying, and you cannot grant one to test it. The materials
+    // themselves still ship (entities/marble.ts, MARBLE_SKINS, the six
+    // behaviours) — only every way of observing them was removed. Whoever
+    // restores the UI should restore these three rows with it; until then this
+    // list guards what is left, which is the data, not the display.
     { file: "render/cel-painter.ts", anchor: "export const MARBLE_SKINS", open: "{", close: "}", why: "it has no painted body" },
   ];
 
   for (const { file, anchor, open, close, why } of REGISTRIES) {
-    const src = read(file);
+    // A RENAMED FILE MUST NOT CRASH THE GATE. `read()` throws on ENOENT, and
+    // post-edit.sh treats any non-zero exit as blocking — so when the DOM-UI
+    // refactor deleted `hud-diablo.ts` out from under this list, the checker
+    // stopped being a checker and became a wall: every edit anywhere in the
+    // repo was refused, for every session, with a Node stack trace. A gate that
+    // fails this way is a gate someone deletes. Report and carry on instead.
+    const src = readIfPresent(file);
+    if (src == null) {
+      fail("F", `${file}: registry file is missing — ${anchor} cannot be checked (renamed? deleted?)`);
+      continue;
+    }
     const span = valueSpan(src, anchor, open, close, file);
     if (span == null) continue;
     const listed = new Set([...span.matchAll(/"?([a-z]+)"?\s*[:,\]]/g)].map((x) => x[1]));

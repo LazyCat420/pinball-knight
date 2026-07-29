@@ -69,56 +69,12 @@ export function createStationFx(scene: THREE.Scene): StationFx {
   };
 }
 
-/** The single contextual prompt, parked at the bottom of the screen. */
-export interface StationPrompt {
-  el: HTMLElement;
-  show(s: Station): void;
-  hide(): void;
-  dispose(): void;
-}
-
-export function createStationPrompt(host: HTMLElement): StationPrompt {
-  const el = document.createElement("div");
-  el.id = "tavern-prompt";
-  el.style.cssText = [
-    "position:absolute",
-    "left:50%",
-    "bottom:8%",
-    "transform:translateX(-50%)",
-    "padding:10px 18px",
-    "background:rgba(10,12,16,0.86)",
-    "border:2px solid #544e63",
-    "color:#e8e2d4",
-    "font-family:'Press Start 2P',monospace",
-    "font-size:11px",
-    "letter-spacing:1px",
-    "text-align:center",
-    "pointer-events:none",
-    "opacity:0",
-    "transition:opacity 120ms linear",
-    "z-index:10006",
-    "image-rendering:pixelated",
-  ].join(";");
-  host.appendChild(el);
-
-  return {
-    el,
-    show(s: Station): void {
-      const accent = `#${s.accent.toString(16).padStart(6, "0")}`;
-      el.style.borderColor = accent;
-      el.innerHTML =
-        `<div style="color:${accent}">[E] ${s.label.toUpperCase()}</div>` +
-        `<div style="font-size:8px;color:#9a8f77;margin-top:6px;letter-spacing:0">${s.blurb}</div>`;
-      el.style.opacity = "1";
-    },
-    hide(): void {
-      el.style.opacity = "0";
-    },
-    dispose(): void {
-      el.remove();
-    },
-  };
-}
+/**
+ * The station prompt moved to `scene-screens.ts` — it is painted inside the
+ * pixel pass now, like every other readout in the app. Its `StationPrompt`
+ * interface lives there too, so this file is back to being about stations
+ * rather than about an element.
+ */
 
 /** Recompute focus from the player's position. Returns true if it changed. */
 export function refreshFocus(next: Station | null): boolean {

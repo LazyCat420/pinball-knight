@@ -10,6 +10,9 @@
  * cosmetic bug, but a game that could move gold directly would be able to
  * bypass the stake caps and the per-visit round limit.
  */
+import { UI, ROW_H } from "../../../game/pinball-knight/gui/theme";
+import { button, cutTop, fillRect, rect, scrim, sheet, strokeRect, text } from "../../../game/pinball-knight/gui/im";
+import { close, isOpen, push } from "../../../game/pinball-knight/gui/stack";
 import { getBalance, spendGold, addGold } from "../../../utils/gold-wallet";
 import { ensurePixelFonts, awaitPixelFonts } from "../../../pixel/pixel-font";
 import {
@@ -91,11 +94,6 @@ export interface CasinoGame {
 
 const wallet: TableDeps = { getBalance, spendGold, addGold };
 
-let el: HTMLDivElement | null = null;
-let canvas: HTMLCanvasElement | null = null;
-let ctx: CanvasRenderingContext2D | null = null;
-let raf = 0;
-let last = 0;
 let table: TableState = createTableState();
 let game: CasinoGame | null = null;
 let stake = 10;
@@ -107,8 +105,6 @@ let onClosed: (() => void) | null = null;
  * otherwise. See `startRound` — this is what stops a teardown eating the stake.
  */
 let forfeitRound: (() => void) | null = null;
-/** Repaint guard for the game-control row — see the loop. */
-let lastControlSig = "";
 
 /** The games on offer. */
 const GAMES: Array<{ id: GameId; name: string; make: () => CasinoGame }> = [
@@ -119,7 +115,7 @@ const GAMES: Array<{ id: GameId; name: string; make: () => CasinoGame }> = [
 ];
 
 export function isGamblerOpen(): boolean {
-  return el !== null;
+  return isOpen("gambler");
 }
 
 /** Reset the per-visit round limit. Called when the tavern opens. */
@@ -130,93 +126,54 @@ export function resetGamblerVisit(): void {
 /**
  * Show a message in the cabinet's flash line.
  *
- * Writes to the DOM here rather than leaving it to the caller. The first version
- * only set the variable, and the single caller that also happened to update the
- * element was the WIN path — so every refusal ("table limit", "not enough gold",
- * "that's enough from you tonight") was computed and then silently discarded.
- * A rejected bet that says nothing just reads as a dead button.
+ * The DOM version had to WRITE the element here, because an earlier cut only set
+ * the variable and the one caller that also updated the element was the WIN
+ * path — so every refusal ("table limit", "not enough gold", "that's enough
+ * from you tonight") was computed and silently discarded, and a rejected bet
+ * read as a dead button. Immediate mode removes the whole hazard: the painter
+ * reads `flash` every frame, so setting it IS showing it.
  */
 function say(msg: string): void {
   flash = msg;
   flashT = 2.2;
-  const f = el?.querySelector("#gb-flash");
-  if (f) f.textContent = msg;
 }
 
-function refreshChrome(): void {
-  if (!el) return;
-  const purse = el.querySelector("#gb-purse");
-  if (purse) purse.textContent = `${getBalance()}g`;
-  const rounds = el.querySelector("#gb-rounds");
-  if (rounds) rounds.textContent = `${roundsLeft(table)}/${ROUNDS_PER_VISIT}`;
-  const net = el.querySelector("#gb-net") as HTMLElement | null;
-  if (net) {
-    const n = table.net;
-    net.textContent = n === 0 ? "EVEN" : n > 0 ? `UP ${n}g` : `DOWN ${-n}g`;
-    net.style.color = n > 0 ? "#55e0c0" : n < 0 ? "#c0455a" : "#8a8578";
-  }
-  // Re-render the stake row so unaffordable steps drop out as the purse changes.
-  const row = el.querySelector("#gb-stakes");
-  if (row) row.innerHTML = stakeRow();
-  const ctrls = el.querySelector("#gb-controls");
-  if (ctrls) ctrls.innerHTML = controlRow();
-}
+/**
+ * Kept as a NO-OP so the call sites read the same.
+ *
+ * In the DOM cabinet this re-rendered the purse, the round counter, the net
+ * ticker, the stake row and the control row, and every one of those was a place
+ * to forget a call — the control row was in fact forgotten, which is why the
+ * loop below grew a signature check to catch what `refreshChrome` missed. The
+ * painter now reads all five from live state every frame.
+ */
+function refreshChrome(): void {}
 
-/** The current game's own buttons, if it has any. */
-function controlRow(): string {
-  const list = game?.controls?.() ?? [];
-  if (list.length === 0) return "";
-  return list
-    .map(
-      (c) =>
-        `<button data-ctrl="${c.id}" ${c.disabled ? "disabled" : ""} style="font-family:'Press Start 2P',monospace;font-size:8px;padding:5px 7px;
-          cursor:${c.disabled ? "default" : "pointer"};opacity:${c.disabled ? 0.4 : 1};
-          background:${c.on ? COLD : "#12161f"};color:${c.on ? "#04141a" : "#c9c1ad"};
-          border:2px solid ${c.on ? COLD : "#544e63"}">${c.label}</button>`,
-    )
-    .join("");
-}
+// ── THE CABINET, painted ─────────────────────────────────────────────────────
+//
+// The DOM cabinet was a fixed overlay holding a title, a purse, a blurb, a
+// canvas, a flash line and four rows of buttons, driven by its own
+// `requestAnimationFrame`. All of it is one screen now, and the games render
+// straight into a detached canvas that gets blitted into the UI layer — so the
+// cabinet goes through the pixel pass like everything else, and the separate
+// RAF is gone (the UI driver already runs per frame).
 
-function stakeRow(): string {
-  const opts = stakeOptions(getBalance());
-  if (opts.length === 0) return `<span style="color:#c0455a">TOO POOR TO PLAY</span>`;
-  stake = clampStake(stake, getBalance());
-  return opts
-    .map(
-      (s) =>
-        `<button data-stake="${s}" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:6px 9px;cursor:pointer;
-          background:${s === stake ? GOLD : "#1a1f2b"};color:${s === stake ? "#1a1206" : "#c9c1ad"};
-          border:2px solid ${s === stake ? GOLD : "#544e63"}">${s}g</button>`,
-    )
-    .join("");
-}
+/** The games' render target. Detached — a pixel buffer, never parented. */
+let canvas: HTMLCanvasElement | null = null;
+let ctx: CanvasRenderingContext2D | null = null;
+let lastPaint = 0;
+const GAME_W = 520;
+const GAME_H = 200;
 
-function loop(now: number): void {
-  if (!el || !ctx || !canvas) return;
-  raf = requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000 || 0);
-  last = now;
-
-  if (flashT > 0) {
-    flashT -= dt;
-    if (flashT <= 0) {
-      flash = "";
-      const f = el.querySelector("#gb-flash");
-      if (f) f.textContent = "";
-    }
-  }
-
-  game?.render(ctx, canvas.width, canvas.height, dt);
-
-  // Blackjack's controls appear and disappear as the hand progresses (HIT/STAND
-  // only exist while it's your turn), so the row has to track the game rather
-  // than only refreshing on a click.
-  const sig = JSON.stringify(game?.controls?.() ?? []);
-  if (sig !== lastControlSig) {
-    lastControlSig = sig;
-    const ctrls = el.querySelector("#gb-controls");
-    if (ctrls) ctrls.innerHTML = controlRow();
-  }
+function gameCanvas(): HTMLCanvasElement | null {
+  if (canvas) return canvas;
+  if (typeof document === "undefined") return null;
+  canvas = document.createElement("canvas");
+  canvas.width = GAME_W;
+  canvas.height = GAME_H;
+  ctx = canvas.getContext("2d");
+  if (ctx) ctx.imageSmoothingEnabled = false;
+  return canvas;
 }
 
 function startRound(): void {
@@ -288,171 +245,144 @@ function selectGame(id: GameId): void {
   forfeitRound = null;
   game?.dispose?.();
   game = def.make();
-  if (!el) return;
-  const title = el.querySelector("#gb-title");
-  if (title) title.textContent = game.name;
-  const blurb = el.querySelector("#gb-blurb");
-  if (blurb) blurb.textContent = game.blurb;
-  el.querySelectorAll("[data-game]").forEach((b) => {
-    const on = (b as HTMLElement).dataset.game === id;
-    (b as HTMLElement).style.borderColor = on ? COLD : "#544e63";
-    (b as HTMLElement).style.color = on ? COLD : "#8a8578";
-  });
-  // Must refresh: the new game's own controls (roulette's bet buttons, and
-  // later blackjack's hit/stand) live in #gb-controls, which only refreshChrome
-  // populates. Without this the row stays empty and the game is unplayable.
-  refreshChrome();
+  // Nothing to poke: the painter reads `game.name`, `game.blurb`, the selected
+  // id and `game.controls()` live. The DOM version had to remember to refresh
+  // the control row here or roulette's bet buttons never appeared.
 }
 
-export function openGambler(host: HTMLElement, onClose: () => void): void {
-  if (el) return;
+export function openGambler(_host: HTMLElement | null, onClose: () => void): void {
+  if (isOpen("gambler")) return;
   ensurePixelFonts();
   onClosed = onClose;
+  selectGame("slots");
+  lastPaint = performance.now();
 
-  el = document.createElement("div");
-  el.id = "tavern-gambler";
-  el.style.cssText = [
-    "position:fixed",
-    "inset:0",
-    "z-index:10007",
-    "background:rgba(8,6,10,0.86)",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-    "font:400 13px ui-monospace,Menlo,monospace",
-    "color:#e8e2d4",
-    "user-select:none",
-  ].join(";");
-
-  const gameBtns = GAMES.map(
-    (g) =>
-      `<button data-game="${g.id}" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:7px 10px;cursor:pointer;
-        background:#12161f;color:#8a8578;border:2px solid #544e63">${g.name}</button>`,
-  ).join("");
-
-  el.innerHTML = `
-    <div style="width:min(560px,94vw);background:${INK};border:2px solid ${GOLD};box-shadow:0 0 44px rgba(240,192,64,.16);padding:16px 18px">
-      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">
-        <b id="gb-title" style="font-family:'Press Start 2P',monospace;font-size:13px;color:${GOLD};letter-spacing:1px">SLOTS</b>
-        <span style="flex:1"></span>
-        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578">PURSE</span>
-        <b id="gb-purse" style="font-family:'Press Start 2P',monospace;font-size:10px;color:${GOLD}">0g</b>
-      </div>
-      <div id="gb-blurb" style="font-size:10px;color:#8a8578;margin-bottom:10px"></div>
-
-      <canvas id="gb-canvas" width="520" height="200"
-        style="width:100%;image-rendering:pixelated;display:block;background:#05070b;border:2px solid #2a3040"></canvas>
-
-      <div id="gb-flash" style="height:16px;margin:8px 0;font-family:'Press Start 2P',monospace;font-size:9px;color:${GOLD};letter-spacing:1px"></div>
-
-      <div id="gb-controls" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
-
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578;margin-right:4px">STAKE</span>
-        <span id="gb-stakes" style="display:flex;gap:6px">${stakeRow()}</span>
-        <span style="flex:1"></span>
-        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:#8a8578">ROUNDS</span>
-        <b id="gb-rounds" style="font-family:'Press Start 2P',monospace;font-size:9px;color:#c9c1ad">-</b>
-        <b id="gb-net" style="font-family:'Press Start 2P',monospace;font-size:9px;margin-left:8px">EVEN</b>
-      </div>
-
-      <div style="display:flex;gap:6px;align-items:center">
-        <span style="display:flex;gap:6px">${gameBtns}</span>
-        <span style="flex:1"></span>
-        <button data-act="play" style="font-family:'Press Start 2P',monospace;font-size:10px;padding:9px 16px;cursor:pointer;
-          background:${GOLD};color:#1a1206;border:2px solid ${GOLD}">PLAY</button>
-        <button data-act="leave" style="font-family:'Press Start 2P',monospace;font-size:9px;padding:9px 12px;cursor:pointer;
-          background:#1a1f2b;color:#c9c1ad;border:2px solid #544e63">LEAVE</button>
-      </div>
-    </div>`;
-
-  el.addEventListener("click", (e) => {
-    // NB: every clickable attribute must be listed here. `data-ctrl` was added to
-    // the handler below but not to this selector, so every game-control click
-    // (roulette's bet buttons) was silently dropped by closest() returning null.
-    const t = (e.target as HTMLElement).closest("[data-act],[data-stake],[data-game],[data-ctrl]") as HTMLElement | null;
-    if (!t) return;
-    if (t.dataset.stake) {
-      stake = clampStake(Number(t.dataset.stake), getBalance());
-      refreshChrome();
-      return;
-    }
-    // SWITCHING GAMES OR LEAVING MID-ROUND USED TO EAT THE STAKE.
-    //
-    // `placeBet` spends the gold the instant you press PLAY, and every game
-    // calls `resolve()` from inside its own `render()`. Swapping the game (or
-    // closing the cabinet) disposes the old one and stops its render loop — so
-    // `resolve()` never fired, `settle()` never ran, and the stake was simply
-    // gone: no payout, no round counted, no entry in the net ticker. Stake 100g
-    // on roulette, click BLACKJACK while the wheel is turning, lose 100g to
-    // nothing at all. Every game was exposed.
-    //
-    // Refuse the switch while a round is live rather than trying to unwind it.
-    // A forfeit-refund would be kinder but it has to be exactly-once against
-    // `settle()`, and a game that is mid-animation is the worst place to try to
-    // prove that; "you can't leave the table mid-spin" is also just true of a
-    // real casino.
-    if (t.dataset.game || t.dataset.act === "leave") {
+  push({
+    id: "gambler",
+    pauses: true,
+    focus: 0,
+    scroll: 0,
+    onCancel() {
+      // Leaving mid-round used to EAT THE STAKE: `placeBet` spends the instant
+      // PLAY is pressed and every game calls `resolve()` from its own render, so
+      // disposing mid-animation meant no payout, no round counted, no ticker
+      // entry. Refuse rather than try to unwind — proving an exactly-once
+      // forfeit against `settle()` mid-animation is the worst place to try.
       if (game?.busy()) {
         say("FINISH THE ROUND FIRST");
-        return;
+        return true;
       }
-    }
-    if (t.dataset.game) {
-      selectGame(t.dataset.game as GameId);
-      return;
-    }
-    if (t.dataset.ctrl) {
-      game?.onControl?.(t.dataset.ctrl);
-      refreshChrome();
-      return;
-    }
-    if (t.dataset.act === "play") startRound();
-    else if (t.dataset.act === "leave") closeGambler();
+      return false;
+    },
+    onClose() {
+      forfeitRound?.();
+      forfeitRound = null;
+      game?.dispose?.();
+      game = null;
+      const done = onClosed;
+      onClosed = null;
+      done?.();
+    },
+    paint(f, self) {
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - lastPaint) / 1000 || 0);
+      lastPaint = now;
+      if (flashT > 0 && (flashT -= dt) <= 0) flash = "";
+
+      scrim(f);
+      const body = sheet(f, 600, 420);
+
+      // ── Header: title, purse ──
+      const head = cutTop(body, 30);
+      text(f, game?.name ?? "", head.x, head.y, { size: 16, colour: UI.gold });
+      text(f, `PURSE ${getBalance()}g`, head.x + head.w, head.y + 8, { size: 8, colour: UI.gold, align: "right" });
+      const blurbRow = cutTop(body, 16);
+      text(f, game?.blurb ?? "", blurbRow.x, blurbRow.y, { size: 8, colour: UI.textDim, max: blurbRow.w });
+
+      // ── The game's own frame, blitted ──
+      const cv = gameCanvas();
+      if (cv && ctx) {
+        game?.render(ctx, GAME_W, GAME_H, dt);
+        const view = cutTop(body, GAME_H + 8);
+        const box = rect(view.x + (view.w - GAME_W) / 2, view.y, GAME_W, GAME_H);
+        fillRect(f, box, UI.well);
+        f.g.imageSmoothingEnabled = false;
+        f.g.drawImage(cv, Math.round(box.x), Math.round(box.y));
+        strokeRect(f, box, UI.wellEdge, 2);
+      }
+
+      const flashRow = cutTop(body, 16);
+      if (flash) text(f, flash, flashRow.x, flashRow.y, { size: 8, colour: UI.gold });
+
+      // ── The game's own controls ──
+      const ctrls = game?.controls?.() ?? [];
+      if (ctrls.length) {
+        const row = cutTop(body, 26);
+        let cx = row.x;
+        for (const c of ctrls) {
+          const w = Math.max(56, c.label.length * 9 + 12);
+          if (button(f, rect(cx, row.y, w, 22), c.label, { disabled: c.disabled, good: c.on })) {
+            game?.onControl?.(c.id);
+          }
+          cx += w + 5;
+        }
+      }
+
+      // ── Stake ──
+      const stakeRow_ = cutTop(body, 26);
+      text(f, "STAKE", stakeRow_.x, stakeRow_.y + 7, { size: 8, colour: UI.textDim });
+      const opts = stakeOptions(getBalance());
+      if (!opts.length) {
+        text(f, "TOO POOR TO PLAY", stakeRow_.x + 56, stakeRow_.y + 7, { size: 8, colour: UI.danger });
+      } else {
+        stake = clampStake(stake, getBalance());
+        let sx = stakeRow_.x + 56;
+        for (const s_ of opts) {
+          if (button(f, rect(sx, stakeRow_.y, 52, 22), `${s_}g`, { good: s_ === stake })) {
+            stake = clampStake(s_, getBalance());
+          }
+          sx += 57;
+        }
+      }
+      const n = table.net;
+      text(
+        f,
+        `${roundsLeft(table)}/${ROUNDS_PER_VISIT}   ${n === 0 ? "EVEN" : n > 0 ? `UP ${n}g` : `DOWN ${-n}g`}`,
+        stakeRow_.x + stakeRow_.w,
+        stakeRow_.y + 7,
+        { size: 8, colour: n > 0 ? UI.good : n < 0 ? UI.danger : UI.textDim, align: "right" },
+      );
+
+      // ── Game picker + PLAY / LEAVE ──
+      const foot = rect(body.x, body.y + body.h - ROW_H, body.w, ROW_H);
+      let gx = foot.x;
+      for (const g of GAMES) {
+        if (button(f, rect(gx, foot.y, 92, ROW_H), g.name, { good: g.id === game?.id })) {
+          if (game?.busy()) say("FINISH THE ROUND FIRST");
+          else selectGame(g.id);
+        }
+        gx += 95;
+      }
+      if (button(f, rect(foot.x + foot.w - 168, foot.y, 80, ROW_H), "PLAY", { good: true })) startRound();
+      if (button(f, rect(foot.x + foot.w - 84, foot.y, 84, ROW_H), "LEAVE")) {
+        if (game?.busy()) say("FINISH THE ROUND FIRST");
+        else close("gambler");
+      }
+      self.focus = f.focus;
+    },
   });
 
-  host.appendChild(el);
-  canvas = el.querySelector("#gb-canvas");
-  ctx = canvas?.getContext("2d") ?? null;
-  if (ctx) ctx.imageSmoothingEnabled = false;
-
-  selectGame("slots");
-  refreshChrome();
-
-  // WAIT FOR THE FONT before the first canvas frame.
+  // WAIT FOR THE FONT before the first frame that draws text.
   //
   // `pixel-font.ts` is explicit that injecting the @font-face is not enough for
-  // canvas: `ctx.font = "12px 'Press Start 2P'"` before the face has loaded
-  // falls back to a smooth system mono, silently. DOM users are fine because
-  // font-display:swap repaints them — canvas users are not. `map-renderer.ts`
-  // and `damage-text.ts` both await; the gambler was the only canvas in the
-  // repo that didn't, so every cabinet opened with a few frames of the wrong
-  // typeface in a game whose whole look is the pixel grid.
-  //
-  // This is the same class of bug `symbols.ts` records in its header, where the
-  // slot glyphs silently fell back and rendered as smooth vector shapes.
-  void awaitPixelFonts().then(() => {
-    if (!el) return; // closed again while we were waiting
-    last = performance.now();
-    raf = requestAnimationFrame(loop);
-  });
+  // canvas: setting `ctx.font` before the face has loaded falls back to a smooth
+  // system mono, silently. The gambler was the only canvas in the repo that did
+  // not await, so every cabinet opened with a few frames of the wrong typeface
+  // in a game whose whole look is the pixel grid. The UI layer awaits the same
+  // promise for its own text; this keeps the GAMES' internal text honest too.
+  void awaitPixelFonts();
 }
 
 export function closeGambler(): void {
-  if (!el) return;
-  // Settle any live round BEFORE the game is disposed. `closeTavern()` calls
-  // this directly, so it is not covered by the LEAVE button's busy guard.
-  forfeitRound?.();
-  forfeitRound = null;
-  if (raf) cancelAnimationFrame(raf);
-  raf = 0;
-  game?.dispose?.();
-  game = null;
-  el.remove();
-  el = null;
-  canvas = null;
-  ctx = null;
-  const done = onClosed;
-  onClosed = null;
-  done?.();
+  close("gambler");
 }

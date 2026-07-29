@@ -15,7 +15,7 @@
  */
 import type { EnemyKind } from "../state";
 import type { MovementKind } from "./movement";
-import { SECRET_BREAK_SPEED, CARD_PINBALL_SPEED, MOMENTUM_T_FLOOR, GOBLIN_GATE_SOFT, GOLEM_GATE_SOFT, CRYSTAL_GATE_SOFT } from "../constants";
+import { SECRET_BREAK_SPEED, CARD_PINBALL_SPEED, MOMENTUM_T_FLOOR, GOBLIN_GATE_SOFT, GOLEM_GATE_SOFT, CRYSTAL_GATE_SOFT, JESTER_GATE_SOFT } from "../constants";
 
 /**
  * WHICH WAY EACH FAMILY WALKS (entities/movement.ts).
@@ -86,6 +86,19 @@ export interface MomentumGate {
   soft: number;
   /** What the bestiary prints. Written as a RULE the player can act on. */
   text: string;
+  /**
+   * Whether `damageZombie` scales the blow by this gate.
+   *
+   * Not every row does. `chomper` and `crystalback` are in this table because
+   * they teach a momentum rule the bestiary must print, but neither has its
+   * DAMAGE gated — the chomper's momentum scales knockback and the
+   * crystalback's scales the shard spray back at you. So the check in combat.ts
+   * needs to know which rows it owns, and it used to know by naming
+   * `goblin`/`golem` inline. That literal list was one edit away from drifting
+   * out of step with the table the bestiary prints from, which is the exact
+   * failure this table was created to prevent — so the table says it now.
+   */
+  gatesDamage?: boolean;
 }
 
 /**
@@ -102,12 +115,21 @@ export const MOMENTUM_GATES: Partial<Record<EnemyKind, MomentumGate>> = {
     minSpeed: 0,
     bar: MOMENTUM_T_FLOOR,
     soft: GOBLIN_GATE_SOFT,
+    gatesDamage: true,
     text: "Rubber: a standing poke does nothing at all. Anything carried on momentum lands, and lands harder the faster you arrive.",
+  },
+  jester: {
+    minSpeed: 0,
+    bar: MOMENTUM_T_FLOOR,
+    soft: JESTER_GATE_SOFT,
+    gatesDamage: true,
+    text: "Spring-loaded: a standing swing is caught by the coil and THROWN BACK at you. Arrive with momentum and you compress it past its travel — then it lands, and lands harder the faster you came.",
   },
   golem: {
     minSpeed: 0,
     bar: SECRET_BREAK_SPEED,
     soft: GOLEM_GATE_SOFT,
+    gatesDamage: true,
     text: `Masonry: below smash-speed (${SECRET_BREAK_SPEED} u/s) you only chip it — about a quarter of your damage. Above it, every extra unit of speed still pays.`,
   },
   chomper: {

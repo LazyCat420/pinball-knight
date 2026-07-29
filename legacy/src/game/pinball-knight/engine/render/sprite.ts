@@ -301,29 +301,72 @@ export function invalidatePaletteCaches(): void {
 }
 
 /**
- * 4×4 ordered (Bayer) dither matrix, centred to −0.5..+0.5. Nudging each pixel's
- * colour by a per-position bias BEFORE the palette snap makes a smooth tonal
- * ramp break into a stippled checker between two palette steps — the classic
- * pixel-art tone blend — instead of a hard band or a smeared gradient. This is
- * the biggest lever against the "flash-game airbrush" read on large surfaces.
- */
-const BAYER4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-].map((row) => row.map((v) => (v / 16 - 0.5)));
-/**
- * Dither amplitude in 0-255 colour units.
+ * ── WHY THERE IS NO DITHER HERE ANY MORE (2026-07-29) ───────────────────────
  *
- * Pulled back from 26 (2026-07-19). Ordered dither earns its keep on large
- * flat surfaces, but on a small ANIMATED character it mostly reads as noise —
- * and worse, the pattern crawls between frames, which is exactly the "muddy"
- * artifact it was supposed to prevent. At the old 52px grid it was also doing
- * work the resolution couldn't support. Kept, gently, to break banding on the
- * broad shaded areas; dropped low enough that it no longer stipples a face.
+ * A 4×4 ordered (Bayer) dither used to bias each pixel BEFORE the palette snap,
+ * on the standard argument that it breaks a smooth ramp into a stippled checker
+ * between two palette steps instead of a hard band. Amplitude had already been
+ * walked down 26 → 10 because it "reads as noise on a small animated character".
+ *
+ * It is gone entirely now, because the argument does not hold for THIS palette.
+ * Ordered dither assumes the two entries either side of a value are adjacent
+ * TONES. Cold Crypt's 32 colours are not a tone ramp — they are eight short
+ * ramps in different hue families, and the snap is luma-weighted (0.3/0.59/0.11),
+ * so green dominates the distance. Adding the SAME bias to r, g and b moves a
+ * colour along the grey diagonal, and the nearest entry to the biased value is
+ * routinely in a different FAMILY: steel plate picks up rot-green, bone picks up
+ * arcane cyan. That is not a stipple, it is chroma confetti — and it is exactly
+ * the "confetti on the plate" artifact figure.ts's ramp comment describes,
+ * arriving from the dither instead of from computed tints.
+ *
+ * Side by side over the knight, jester, spider and slime at the shipping grid,
+ * amplitude 0 was cleaner than 6, which was cleaner than 10, at every one.
+ * Tone blending now comes from the material RAMPS the painters already declare,
+ * which land on real palette entries and quantize with no noise at all.
+ *
+ * If a large smooth surface ever genuinely needs blending, the fix is a dither
+ * that steps along ONE ramp (bias toward the neighbouring index in the same
+ * family), not a uniform RGB nudge.
  */
-const DITHER_AMP = 10;
+
+/**
+ * Unsharp-mask amount applied at the SHIPPING grid, after the downscale.
+ *
+ * The downscale is the blur: 128/72 is 1.78, so every internal boundary lands
+ * across two output pixels as a gradient, and the painters' 3.2px selout ink
+ * averages into the fill it was supposed to separate. The result reads as a
+ * soft airbrushed figure however carefully the cel was authored — the ink is
+ * still THERE, it is just spread too thin to survive the snap.
+ *
+ * A local contrast pass at 72px puts it back: each pixel is pushed away from
+ * the mean of its four neighbours, which re-darkens the outline and re-brightens
+ * the fill either side of it, so the snap lands them on DIFFERENT palette
+ * entries instead of the same one. 1.3 is where the outline returns without the
+ * bright fills clipping into a halo.
+ */
+const SHARPEN_AMOUNT = 1.3;
+
+/**
+ * How far a shadow-side silhouette pixel is pulled toward the outline colour.
+ *
+ * The definition half of the Ragnarok-ish read is a hard dark edge, and after
+ * the crush the sprite has none — the outermost kept pixel is whatever the
+ * downscale averaged. Three variants were rendered side by side:
+ *
+ *   · replace the edge pixel with ink → eats thin features. A spider leg is one
+ *     pixel wide at this grid, so every pixel of it is an edge pixel and the leg
+ *     becomes a black line.
+ *   · add ink OUTSIDE the silhouette → fattens everything and grows the sprite.
+ *   · darken only the DOWN/RIGHT rim, partially → this.
+ *
+ * Directional is the one that is actually principled rather than merely the
+ * least bad: `figure.ts` lights every part from a FIXED upper-left key, so the
+ * up/left rim is the lit edge and darkening it would be painting shadow onto the
+ * light source. Restricting the pass to the shadow side gives thin features an
+ * edge on one side and leaves their highlight on the other, which is what makes
+ * them read as lit rather than as outlined.
+ */
+const SELOUT_SHADOW = 0.6;
 
 /**
  * THE CRUSH PASS (2026-07-14 Castlevania round; reworked 2026-07-19).
@@ -363,36 +406,6 @@ const DITHER_AMP = 10;
  * next line. That is where the win is anyway: 824 of the ~830 crushes in a load
  * are atlas frames.
  */
-/**
- * A 2D context for a canvas that will be CRUSHED — i.e. one whose pixels are
- * about to be read back by `crushInto`.
- *
- * ⚠️ `willReadFrequently` belongs on the SOURCE, not just on the destination.
- * That is the whole point of this helper, and it is the opposite of the
- * intuition (the source is only ever *written*).
- *
- * MEASURED (host Chrome, RTX 3090 Ti, 400 crushes of a 128px paint box down to
- * the 72px grid, timing `getImageData` alone):
- *
- *     paint canvas GPU-backed   → getImageData  2.271 ms   (total 971 ms)
- *     paint canvas willRead…    → getImageData  0.109 ms   (total  62 ms)
- *                                              ────────    ──────────────
- *                                                  20.8x          15.7x
- *
- * The destination context already had the hint, so the readback itself was
- * cheap; what cost 2.2 ms was the `drawImage` FROM an accelerated canvas, whose
- * GPU→CPU transfer `getImageData` then blocked on. The time landed on the
- * getImageData line, which is why every previous read of this code — including
- * the docblock right below, and a whole session spent on the palette snap —
- * concluded the palette maths was the expense. It never was.
- *
- * Painting gets faster too (0.074 ms → 0.028 ms per frame): these are 128px
- * boxes full of small fills, which is a shape the software rasteriser wins.
- */
-function crushableContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
-  return canvas.getContext("2d", { willReadFrequently: true });
-}
-
 let _crushCanvas: HTMLCanvasElement | null = null;
 let _crushCtx: CanvasRenderingContext2D | null = null;
 
@@ -406,20 +419,43 @@ let _crushCtx: CanvasRenderingContext2D | null = null;
  * `getImageData`'d on every single call, which on a GPU-backed canvas forces a
  * readback each time. Measured together, reuse + the hint cut the crush loop by
  * 46% (LOAD_PLAN.md §4) — far more than the palette snap everyone reaches for.
- *
- * ── AND THEN THE OTHER 15x ──
- * That 46% was the DESTINATION half only. The hint was missing from the paint
- * canvas this reads FROM, so `drawImage` was still pulling every frame back off
- * the GPU and `getImageData` was blocking on the transfer. Putting the hint on
- * both ends took the readback from 2.271 ms to 0.109 ms. See crushableContext.
  */
+/**
+ * A 2D context for a canvas that will be CRUSHED — i.e. one whose pixels
+ * `crushInto` is about to read back with `getImageData`.
+ *
+ * ⚠️ THE HINT BELONGS ON THE SOURCE. That is the opposite of the intuition (a
+ * paint box is only ever *written*), and it is where the time was.
+ *
+ * MEASURED (host Chrome, RTX 3090 Ti, 400 crushes of a 128px paint box down to
+ * the 72px grid, timing the readback alone):
+ *
+ *     source canvas GPU-backed          getImageData  2.271 ms   (total 971 ms)
+ *     source canvas willReadFrequently  getImageData  0.109 ms   (total  62 ms)
+ *                                                    ────────    ──────────────
+ *                                                        20.8x          15.7x
+ *
+ * Without the hint the source lives in GPU memory, so reading it is a
+ * synchronous GPU→CPU transfer — and the whole cost lands on the getImageData
+ * line, which is why reading this code has repeatedly concluded the palette
+ * maths was the expense. It never was. `_paintCanvas` already carries the hint;
+ * the other two crush sources in this file are `renderPaintCanvas` and
+ * `staticTexture`, and they go through here so the rule has one home.
+ *
+ * Painting gets faster too (0.074 ms → 0.028 ms per frame): these are 128px
+ * boxes full of small fills, a shape the software rasteriser wins.
+ */
+function crushableContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+  return canvas.getContext("2d", { willReadFrequently: true });
+}
+
 function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   if (!_crushCanvas || _crushCanvas.width !== g) {
     _crushCanvas = document.createElement("canvas");
     _crushCanvas.width = g;
     _crushCanvas.height = g;
-    _crushCtx = crushableContext(_crushCanvas);
+    _crushCtx = _crushCanvas.getContext("2d", { willReadFrequently: true });
   }
   const sctx = _crushCtx!;
   // The previous frame's pixels are still there and the incoming art has a
@@ -435,60 +471,212 @@ export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
   const small = document.createElement("canvas");
   small.width = g;
   small.height = g;
-  const sctx = crushableContext(small)!;
+  const sctx = small.getContext("2d", { willReadFrequently: true })!;
   crushInto(sctx, src, g);
   return small;
 }
 
-/** The crush itself — downscale, hard alpha cutout, dither, palette snap. */
-function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: number): void {
-  sctx.imageSmoothingEnabled = true;
-  sctx.imageSmoothingQuality = "high";
-  sctx.drawImage(src, 0, 0, g, g);
-  const im = sctx.getImageData(0, 0, g, g);
-  const d = im.data;
-  // Hoisted out of the per-pixel loop below: this runs for every texel of every
-  // frame of every atlas.
+/**
+ * SEPARABLE AREA-AVERAGE DOWNSCALE, PREMULTIPLIED.
+ *
+ * This replaced `drawImage(src, 0, 0, g, g)` with `imageSmoothingQuality:
+ * "high"`, for two reasons.
+ *
+ * 1. **Edge darkening.** The canvas downscale mixes RGB across a boundary
+ *    between an opaque pixel and the transparent surround. The surround's RGB
+ *    is undefined (in practice 0), so every silhouette pixel is pulled toward
+ *    black and the figure comes out with a dark fringe and a duller fill.
+ *    Weighting by alpha and dividing it back out is the correct filter, and it
+ *    is visibly brighter and cleaner across the whole roster.
+ * 2. **It is the host's filter, not ours.** `"high"` is a hint; Skia, Cairo and
+ *    Gecko each pick their own kernel, so the shipped art depended on which
+ *    engine baked the atlas. A box filter is the same picture everywhere.
+ *
+ * Cost was the objection — boot time is a tracked concern here and this is a JS
+ * loop where there was a native call. It is separable (one horizontal pass, one
+ * vertical) and 128/72 reduces to 16/9, so the tap weights repeat every 9 output
+ * pixels and are computed ONCE per size. Measured over 830 frames — one
+ * `/dungeon` load's worth — the whole current crush is 354 ms and this filter is
+ * 143 ms of replacement, not addition.
+ */
+interface AxisTaps { starts: Int32Array; counts: Int32Array; offs: Int32Array; ws: Float64Array }
+const _tapCache = new Map<string, AxisTaps>();
+function axisTaps(src: number, dst: number): AxisTaps {
+  const key = `${src}:${dst}`;
+  const hit = _tapCache.get(key);
+  if (hit) return hit;
+  const k = src / dst;
+  const starts = new Int32Array(dst);
+  const counts = new Int32Array(dst);
+  const offs = new Int32Array(dst);
+  const ws: number[] = [];
+  for (let o = 0; o < dst; o++) {
+    const a = o * k;
+    const b = (o + 1) * k;
+    starts[o] = Math.floor(a);
+    offs[o] = ws.length;
+    let n = 0;
+    for (let i = Math.floor(a); i < Math.ceil(b); i++) {
+      ws.push((Math.min(b, i + 1) - Math.max(a, i)) / k);
+      n++;
+    }
+    counts[o] = n;
+  }
+  const taps: AxisTaps = { starts, counts, offs, ws: Float64Array.from(ws) };
+  _tapCache.set(key, taps);
+  return taps;
+}
+
+/** Scratch buffers for the crush. Reused — see the canvas-reuse note above; the
+ *  same 1,828-allocations-per-load argument applies to these. */
+let _rowBuf: Float64Array | null = null;
+let _pixBuf: Float64Array | null = null;
+
+/**
+ * Nearest palette index for one colour, under the luma-weighted metric.
+ *
+ * Exported ONLY so `render/snap-lut.test.ts` can assert the table against the
+ * scan directly. That test used to prove the claim by restating the entire
+ * surrounding crush pipeline and diffing whole frames — which meant a change to
+ * the DOWNSCALE broke a test about the LOOKUP TABLE, and the mirror had to be
+ * hand-maintained in lockstep forever. Same hand-mirror trap as the `ALL_KEYS`
+ * roster in boot/lazy-sheets.test.ts. Testing this function directly is both a
+ * stronger guarantee (a dense sweep of the colour cube, not whatever colours a
+ * few frames happened to contain) and one that cannot rot.
+ */
+export function snapColor(r: number, g: number, b: number): number {
   const PAL_RGB = palRgb();
-  const LUT = snapLut();
+  const best = snapLut()[
+    (((r / LUT_STEP) | 0) << (LUT_BITS * 2)) | (((g / LUT_STEP) | 0) << LUT_BITS) | ((b / LUT_STEP) | 0)
+  ];
+  if (best !== LUT_SCAN) return best;
+  // This cell straddles a Voronoi boundary — the table cannot prove an answer
+  // for it, so pay for the exact one.
+  let bestDist = Infinity;
+  let out = 0;
+  for (let p = 0; p < PAL_RGB.length; p++) {
+    const dr = (r - PAL_RGB[p][0]) * 0.3;
+    const dg = (g - PAL_RGB[p][1]) * 0.59;
+    const db = (b - PAL_RGB[p][2]) * 0.11;
+    const dist = dr * dr + dg * dg + db * db;
+    if (dist < bestDist) { bestDist = dist; out = p; }
+  }
+  return out;
+}
+
+/** The crush itself — downscale, hard alpha cutout, sharpen, selout, snap. */
+function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: number): void {
+  const sw = src.width;
+  const sh = src.height;
+  const sctx2 = src.getContext("2d");
+  if (!sctx2) throw new Error("[dungeon] crush source has no 2D context");
+  const sd = sctx2.getImageData(0, 0, sw, sh).data;
+
+  const tx = axisTaps(sw, g);
+  const ty = axisTaps(sh, g);
+  if (!_rowBuf || _rowBuf.length < g * sh * 4) _rowBuf = new Float64Array(g * sh * 4);
+  if (!_pixBuf || _pixBuf.length < g * g * 4) _pixBuf = new Float64Array(g * g * 4);
+  const row = _rowBuf;
+  const pix = _pixBuf;
+
+  // ── horizontal pass: sw×sh → g×sh, RGB weighted by alpha ──
+  for (let y = 0; y < sh; y++) {
+    const ro = y * sw * 4;
+    const to = y * g * 4;
+    for (let x = 0; x < g; x++) {
+      const st = tx.starts[x];
+      const n = tx.counts[x];
+      const wo = tx.offs[x];
+      let r = 0, gg = 0, b = 0, a = 0;
+      for (let t = 0; t < n; t++) {
+        const i = ro + (st + t) * 4;
+        const al = sd[i + 3] * tx.ws[wo + t];
+        r += sd[i] * al;
+        gg += sd[i + 1] * al;
+        b += sd[i + 2] * al;
+        a += al;
+      }
+      const o = to + x * 4;
+      row[o] = r; row[o + 1] = gg; row[o + 2] = b; row[o + 3] = a;
+    }
+  }
+  // ── vertical pass: g×sh → g×g, then un-premultiply ──
+  for (let y = 0; y < g; y++) {
+    const st = ty.starts[y];
+    const n = ty.counts[y];
+    const wo = ty.offs[y];
+    for (let x = 0; x < g; x++) {
+      let r = 0, gg = 0, b = 0, a = 0;
+      for (let t = 0; t < n; t++) {
+        const i = ((st + t) * g + x) * 4;
+        const w = ty.ws[wo + t];
+        r += row[i] * w; gg += row[i + 1] * w; b += row[i + 2] * w; a += row[i + 3] * w;
+      }
+      const o = (y * g + x) * 4;
+      pix[o] = a > 0 ? r / a : 0;
+      pix[o + 1] = a > 0 ? gg / a : 0;
+      pix[o + 2] = a > 0 ? b / a : 0;
+      // Alpha stays in 0-255: `keep` below tests it against the 128 cutout, and
+      // normalising here made every pixel transparent — a crush that produced
+      // an entirely blank atlas, which is why this pipeline gets rendered and
+      // looked at rather than reasoned about.
+      pix[o + 3] = a;
+    }
+  }
+
+  const im = sctx.createImageData(g, g);
+  const d = im.data;
+  const PAL_RGB = palRgb();
+
+  // A HARD alpha edge (crisp silhouette, not a soft anti-aliased fringe) is
+  // half the "authored pixel art" read — the cutout lands the outline on whole
+  // pixels instead of a smeared halo. Kept as a separate array because the
+  // sharpen and selout passes below both need to know the silhouette.
+  const keep = new Uint8Array(g * g);
+  for (let i = 0; i < g * g; i++) keep[i] = pix[i * 4 + 3] >= 128 ? 1 : 0;
+
+  // ── SHARPEN (see SHARPEN_AMOUNT) ──
+  // Alpha-aware: a transparent neighbour contributes the CENTRE value, so the
+  // silhouette rim is sharpened against the figure rather than against the void
+  // — otherwise every edge pixel blows out into a bright halo.
+  const at = (x: number, y: number, ch: number, cx: number, cy: number): number =>
+    x < 0 || y < 0 || x >= g || y >= g || !keep[y * g + x] ? pix[(cy * g + cx) * 4 + ch] : pix[(y * g + x) * 4 + ch];
+  for (let y = 0; y < g; y++) {
+    for (let x = 0; x < g; x++) {
+      const i = (y * g + x) * 4;
+      if (!keep[y * g + x]) { d[i + 3] = 0; continue; }
+      for (let ch = 0; ch < 3; ch++) {
+        const c0 = pix[i + ch];
+        const blur = (at(x - 1, y, ch, x, y) + at(x + 1, y, ch, x, y) + at(x, y - 1, ch, x, y) + at(x, y + 1, ch, x, y) + 4 * c0) / 8;
+        const v = c0 + (c0 - blur) * SHARPEN_AMOUNT;
+        d[i + ch] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+      d[i + 3] = 255;
+    }
+  }
+
+  // ── SELOUT on the shadow-side rim (see SELOUT_SHADOW) ──
+  // Read from a copy: a pixel darkened here must not feed the next pixel's test.
+  const ink = PAL_RGB[1];
+  const pre = new Uint8ClampedArray(d);
+  const K = (x: number, y: number): number => (x < 0 || y < 0 || x >= g || y >= g ? 0 : keep[y * g + x]);
+  for (let y = 0; y < g; y++) {
+    for (let x = 0; x < g; x++) {
+      if (!K(x, y)) continue;
+      if (K(x + 1, y) && K(x, y + 1)) continue; // interior, or a lit up-left rim
+      const i = (y * g + x) * 4;
+      for (let ch = 0; ch < 3; ch++) {
+        d[i + ch] = pre[i + ch] * (1 - SELOUT_SHADOW) + ink[ch] * SELOUT_SHADOW;
+      }
+    }
+  }
+
+  // ── palette snap ──
   for (let py = 0; py < g; py++) {
     for (let px = 0; px < g; px++) {
       const i = (py * g + px) * 4;
-      // A HARD alpha edge (crisp silhouette, not a soft anti-aliased fringe) is
-      // half the "authored pixel art" read — raise the cutout so the outline
-      // lands on whole pixels instead of a smeared halo.
-      if (d[i + 3] < 128) {
-        d[i + 3] = 0;
-        continue;
-      }
-      // Ordered-dither bias for this pixel position, applied before the snap so
-      // ramps stipple between two palette steps instead of banding/smearing.
-      const bias = BAYER4[py & 3][px & 3] * DITHER_AMP;
-      // Clamp BEFORE the table lookup: the dither bias can push a channel past
-      // either end, and an out-of-range index would silently read 0 (void
-      // black) — a bug that renders.
-      const cr = d[i] + bias < 0 ? 0 : d[i] + bias > 255 ? 255 : d[i] + bias;
-      const cg = d[i + 1] + bias < 0 ? 0 : d[i + 1] + bias > 255 ? 255 : d[i + 1] + bias;
-      const cb = d[i + 2] + bias < 0 ? 0 : d[i + 2] + bias > 255 ? 255 : d[i + 2] + bias;
-      let best = LUT[
-        (((cr / LUT_STEP) | 0) << (LUT_BITS * 2)) | (((cg / LUT_STEP) | 0) << LUT_BITS) | ((cb / LUT_STEP) | 0)
-      ];
-      if (best === LUT_SCAN) {
-        // This cell straddles a Voronoi boundary — the table cannot prove an
-        // answer for it, so pay for the exact one.
-        let bestDist = Infinity;
-        best = 0;
-        for (let p = 0; p < PAL_RGB.length; p++) {
-          const dr = (cr - PAL_RGB[p][0]) * 0.3;
-          const dg = (cg - PAL_RGB[p][1]) * 0.59;
-          const db = (cb - PAL_RGB[p][2]) * 0.11;
-          const dist = dr * dr + dg * dg + db * db;
-          if (dist < bestDist) {
-            bestDist = dist;
-            best = p;
-          }
-        }
-      }
+      if (!d[i + 3]) continue;
+      const best = snapColor(d[i], d[i + 1], d[i + 2]);
       d[i] = PAL_RGB[best][0];
       d[i + 1] = PAL_RGB[best][1];
       d[i + 2] = PAL_RGB[best][2];
@@ -524,7 +712,7 @@ export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
-  const ctx = crushableContext(canvas); // a crush source — see crushableContext
+  const ctx = crushableContext(canvas);
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
@@ -558,10 +746,11 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
     _paintCanvas = document.createElement("canvas");
     _paintCanvas.width = SPRITE_PX;
     _paintCanvas.height = SPRITE_PX;
-    // A CRUSH SOURCE — see crushableContext. This one canvas paints all ~830
-    // atlas frames of a load, so the hint is worth more here than anywhere else
-    // in the file.
-    _paintCtx = crushableContext(_paintCanvas);
+    // `willReadFrequently`: the crush now reads this canvas back with
+    // `getImageData` on every single frame (it filters the source pixels itself
+    // rather than handing them to `drawImage`), and on a GPU-backed canvas an
+    // un-hinted readback forces a stall each time.
+    _paintCtx = _paintCanvas.getContext("2d", { willReadFrequently: true });
     if (!_paintCtx) throw new Error("[dungeon] could not get 2D context for sprite frame");
   }
   const ctx = _paintCtx!;
@@ -584,19 +773,29 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
 }
 
 /**
+ * Build one atlas for an actor. Frames are packed in a stable order and the
+ * clip table records where each one landed. Every painter set with the same
+ * clip structure produces the SAME layout — which is what lets a weapon swap
+ * replace the texture without touching the animator.
+ */
+export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
+  return startSpriteSheet(paints).finish();
+}
+
+/**
  * An atlas being painted a slice at a time.
  *
  * WHY THIS EXISTS. Painting an atlas is ~100 frames of vector art, each crushed
- * to the palette; even after the readback fix (see crushableContext) that is
- * tens of milliseconds in ONE synchronous call, and every caller that reached
- * for it did so from somewhere the player was watching — the rAF loop, or an
- * idle callback whose advisory deadline it blew straight through. Profiled over
- * a 30s bot run, atlas painting owned 60% of all hitch time.
+ * to the palette, in ONE synchronous call — and every caller reached for it from
+ * somewhere the player was watching: the rAF loop on a weapon swap, or an idle
+ * callback whose advisory deadline it blew through by 5x. Profiled over a 30 s
+ * bot run (`scripts/lag-profile.mjs`), atlas painting owned 60% of all hitch
+ * time, split 2,046 ms on the monster backfill and 857 ms on the knight.
  *
  * The sheet handle is valid the moment the build starts; unpainted cells are
- * transparent. That is safe ONLY because nothing renders a sheet before its
- * owner hands it out, and every hand-out path calls `finish()` first. Keep that
- * invariant — a half-painted atlas on screen is an invisible monster.
+ * transparent. That is safe ONLY because no owner hands a sheet out before
+ * calling `finish()` on it. Keep that invariant — a half-painted atlas on screen
+ * is an invisible monster, and nothing throws.
  */
 export interface SheetBuild {
   /** Usable immediately. Cells not yet painted are transparent. */
@@ -606,16 +805,6 @@ export interface SheetBuild {
   step(budgetMs: number): boolean;
   /** Paint everything that is left, right now. */
   finish(): SpriteSheet;
-}
-
-/**
- * Build one atlas for an actor. Frames are packed in a stable order and the
- * clip table records where each one landed. Every painter set with the same
- * clip structure produces the SAME layout — which is what lets a weapon swap
- * replace the texture without touching the animator.
- */
-export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
-  return startSpriteSheet(paints).finish();
 }
 
 /** The same atlas, painted incrementally. See {@link SheetBuild}. */
@@ -699,11 +888,11 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
       paintFrame(ctx, flat[next], next % cols, Math.floor(next / cols));
       next++;
       // Checked AFTER a frame, never before: a zero budget must still make
-      // progress, or a caller that always passes a spent deadline would spin on
-      // this build forever without ever finishing it.
+      // progress, or a caller that always arrives with a spent deadline would
+      // poll this build forever without it ever finishing.
       if (performance.now() >= limit) break;
     }
-    // Only when something was actually painted — an unnecessary needsUpdate is a
+    // Only when something was actually painted — a needless `needsUpdate` is a
     // full re-upload of an atlas that can be 8136x144.
     if (next > from) texture.needsUpdate = true;
     return next >= flat.length;
@@ -956,7 +1145,7 @@ function staticTexture(paint: FramePaint): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = SPRITE_PX;
   canvas.height = SPRITE_PX;
-  const ctx = crushableContext(canvas); // a crush source — see crushableContext
+  const ctx = crushableContext(canvas);
   if (!ctx) throw new Error("[dungeon] could not get 2D context for item sprite");
   ctx.imageSmoothingEnabled = true;
   paint(ctx);

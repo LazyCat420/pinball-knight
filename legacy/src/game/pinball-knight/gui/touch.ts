@@ -31,7 +31,7 @@ import type { UiSizing } from "./coords";
 import { screenToUi } from "./coords";
 import { UI } from "./theme";
 import { text, type UiFrame } from "./im";
-import { isOpen, push, close, type UiScreen } from "./stack";
+import { isOpen, push, remove, type UiScreen } from "./stack";
 
 /** How far the thumb travels for full deflection, in UI pixels. */
 const STICK_THROW = 52;
@@ -229,7 +229,7 @@ export function installTouchControls(pad: VirtualPad, sizingOf: () => UiSizing |
       }
     },
     dispose() {
-      close("touch");
+      remove("touch");
       window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

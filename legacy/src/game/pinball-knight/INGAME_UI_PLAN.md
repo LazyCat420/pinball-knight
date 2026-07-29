@@ -10,6 +10,24 @@ renderer, through the pixel pass, driven by the same input the game already has.
 **Decided up front (2026-07-28):** all of it, and it renders THROUGH the pixel
 pass. Nothing stays DOM.
 
+**SHIPPED 2026-07-29 as `main@5bf8d39`.** All five phases are done and the DOM
+UI is deleted. `gui/no-dom.test.ts` now enforces it. What this plan predicted
+and what actually happened differ in three places worth reading before trusting
+any other prediction in here:
+
+  · The composite needed PLAIN `uv()`, not `rtUv()`. The rule is one flip per
+    RENDER-TARGET hop and an uploaded canvas has taken none. The plan asserted
+    the opposite, confidently, with reasoning — and the probe disproved it.
+  · Two input bugs the design did not anticipate: repeats collapsing in a Set,
+    and keyboard capture gated on openness rather than on pausing (which the
+    always-on HUD turned into "the game cannot be played").
+  · The tavern needed its economy EXTRACTED first (`economy/tavern-shop.ts`).
+    The plan treated it as a layout port; its twenty-four handlers were welded
+    to `innerHTML` and `render()` calls and had to be separated before anything
+    could be drawn.
+
+Outstanding: the card hover FX are not rebuilt — see HANDOFF.md.
+
 ---
 
 ## What is actually there

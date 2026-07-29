@@ -31,6 +31,16 @@ const { values: a } = parseArgs({
     boot: { type: "string", default: "14" },
     /** Keys to press after the action, comma separated: "ArrowDown,Enter". */
     keys: { type: "string" },
+    /**
+     * Smoke-test on the WebGL fallback DELIBERATELY.
+     *
+     * Production is http-over-IP, so `navigator.gpu` is absent and everyone
+     * gets WebGL2. Judging the RENDERER on that path is forbidden here; this
+     * flag exists only to confirm a DEPLOY serves and the UI composites, and it
+     * says so in the output so no screenshot taken with it can be mistaken for
+     * a WebGPU verification.
+     */
+    "allow-webgl": { type: "boolean", default: false },
     /** Also dump the UI layer's own canvas, unmodified by the pass. */
     "layer-out": { type: "string" },
   },
@@ -112,8 +122,11 @@ await page.waitForTimeout(Number(a.boot) * 1000);
 
 const backend = await page.evaluate(() => window.__renderBackendResolved ?? "unknown");
 if (backend !== "webgpu") {
-  console.error(`✘ resolved backend is ${backend}, not webgpu — refusing to judge the UI on the fallback path`);
-  process.exit(2);
+  if (!a["allow-webgl"]) {
+    console.error(`✘ resolved backend is ${backend}, not webgpu — refusing to judge the UI on the fallback path`);
+    process.exit(2);
+  }
+  console.warn(`⚠ backend is ${backend}, NOT webgpu — smoke test only, do not judge the renderer from this`);
 }
 
 const ok = await page.evaluate((expr) => {

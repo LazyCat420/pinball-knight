@@ -23,7 +23,7 @@ import { state } from "./state";
 import { disposeFace } from "./hud-face";
 import { hudScreen } from "./gui/screens/hud";
 import { toastScreen } from "./gui/screens/toasts";
-import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "./gui/stack";
+import { isOpen as uiIsOpen, push as pushUiScreen, remove as removeUiScreen } from "./gui/stack";
 
 /**
  * Raise the HUD and the transient text layer. Idempotent — the stack refuses a
@@ -54,7 +54,7 @@ export function renderHUD(_dt: number): void {}
 export function refreshHUD(): void {}
 
 export function disposeHUDs(): void {
-  closeUiScreen("toasts");
-  closeUiScreen("hud");
+  removeUiScreen("toasts");
+  removeUiScreen("hud");
   disposeFace();
 }
