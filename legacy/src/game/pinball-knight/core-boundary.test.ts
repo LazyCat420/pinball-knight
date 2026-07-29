@@ -51,6 +51,10 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *   2764  Wave 0 — installed. Added 11 lines on purpose (the floor-seed import
  *         and the `captureFloorCensus()` call) to buy the instruments the later
  *         waves are gated on.
+ *   1671  Wave 3 — run/{deps,descend,death}.ts, input/keymap.ts, spawn/reaper.ts.
+ *         Only THREE symbols cross back into core (startLevel, armFloorLoading,
+ *         exitDungeonGame); they are pushed in via setRunDeps rather than
+ *         imported, which is what keeps the graph acyclic.
  *   2254  Wave 2 — boot/renderer.ts, boot/scene.ts and boot/wiring.ts. The
  *         wiring is TWO functions because the callback bus was never one block:
  *         the dev half runs before the HUD is built and the gameplay half after.
@@ -60,7 +64,7 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
  *         not configured for v9.
  */
-const CORE_MAX_LINES = 2254;
+const CORE_MAX_LINES = 1671;
 
 /**
  * Line count, measured the way `wc -l` measures it.

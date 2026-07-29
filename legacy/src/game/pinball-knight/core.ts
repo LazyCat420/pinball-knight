@@ -47,19 +47,24 @@ import { warmFloorPipelines } from "./boot/warmup";
 import { installRenderer, isRendererReady } from "./boot/renderer";
 import { installScene } from "./boot/scene";
 import { installDevWiring, installGameplayWiring } from "./boot/wiring";
+import { setRunDeps } from "./run/deps";
+import { descend, descendInto, dropBossReward, adoptPoolSeedWhenItArrives } from "./run/descend";
+import { onPlayerDeath, spawnCorpsePiles } from "./run/death";
+import { spawnReaper } from "./spawn/reaper";
+import { handleKey } from "./input/keymap";
 import { floorFlow, gradeFloor } from "./run/grade";
 import { tearGraveHole } from "./run/grave-hole";
 import { Animator } from "./engine/render/animator";
 import { ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
 import { snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
-import { showToast, showGameOver, showControlsHint, showPickupNote, createFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter } from "./ui";
-import { advanceCardReader, dismissCardReader, showCardHaul } from "./card-reader";
+import { showToast, showControlsHint, showPickupNote, createFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter } from "./ui";
+import { dismissCardReader } from "./card-reader";
 import { getSettings } from "./settings-save";
 import { clearPickupToasts } from "./pickup-toast";
-import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, applySettingsLive } from "./menu";
+import { applySettingsLive } from "./menu";
 import { lookFromGear, lookKey } from "./render/knight-look";
-import { awardFloorXp, awardDebugXp as debugGrantXp, playerMaxHp } from "./skill-runtime";
+import { awardDebugXp as debugGrantXp, playerMaxHp } from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
 import { rippleGlobe } from "./hud-diablo";
 import { faceOnHeal } from "./hud-face";
@@ -87,17 +92,16 @@ import { updateFloorFx, updateGrooveHop } from "./entities/floor-fx";
 import { updateMaterial, applyMaterial, isMaterial, MATERIAL_LIST } from "./entities/marble";
 import { simulateHazards } from "./entities/hazards";
 import { updateNpcs, spawnFrog, spawnMerchant, rollMagicianClock } from "./entities/npc";
-import { syncActorMesh, resetCombatJuice, tickCombatTimers } from "./entities/combat";
+import { syncActorMesh, tickCombatTimers } from "./entities/combat";
 import { createDebugPanel } from "./debug-panel";
 import { createInput } from "./engine/input";
-import { canRampage, enterRampage, updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
-import { castAbility, tickAbilities } from "./abilities";
+import { updateFps, aimFpsCamera, billboardEnemiesToFps } from "./fps";
+import { tickAbilities } from "./abilities";
 import { updateMultiBall } from "./entities/multiball";
 import {
   levelConfig,
   FLOW_INTERVAL,
   TIMECRAWL_FACTOR,
-  GOLD_PER_DESCENT,
   BRUTE_SPEED_FACTOR,
   PIN_FROM_LEVEL,
   TARGETS_PER_FLOOR,
@@ -110,7 +114,6 @@ import {
   HAZARDS_PER_LEVEL,
   HAZARDS_MAX,
   MERCHANT_FROM_LEVEL,
-  BONUS_ROOM_GRADES,
   PARTS_BASE,
   TRACK_FIRST,
   SURFACE_BANDS,
@@ -120,15 +123,10 @@ import {
   ROOM_MAX_CELLS,
   REAPER_AFTER,
   REAPER_WARNING,
-  REAPER_HP,
-  REAPER_SPEED_BASE,
-  REAPER_SCALE,
-  REAPER_TINT,
   BOSS_EVERY,
   KING_HP_BASE,
   KING_HP_PER_FLOOR,
   BOSS_SPEED_FACTOR,
-  BOSS_GOLD,
   FIXED_STEP,
   MAX_FRAME,
   PPU,
@@ -149,15 +147,15 @@ import { openFloorLoading, type FloorLoading } from "./floor-loading";
 import { spawnBoss, updateBoss, disposeBoss, bossEngaged } from "./boss";
 import { updateSecretDoors, disposeSecretDoors, stampSecretBands, pruneSealedBands } from "./secrets";
 import { nearSealed } from "./maze/track-socket";
-import { initCoop, updateCoop, endCoop, isReplica, setCoopFloor, coopSeed, coopAnnounceDeath, isCoop } from "./coop";
-import { stopPresence, myId, peers, poolStatus, startPresence } from "../../net/presence";
-import { resolveDescendFloor, regroupTarget } from "../../net/rally";
+import { updateCoop, endCoop, isReplica, setCoopFloor, coopSeed } from "./coop";
+import { stopPresence, peers, startPresence } from "../../net/presence";
+import { resolveDescendFloor } from "../../net/rally";
 import { applyDelveCatchUp } from "./delve";
 import { createFog, revealAround } from "./fog";
-import { toggleFloorMap, closeFloorMap } from "./map-overlay";
-import { sfxStairs, sfxGameOver, sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
+import { closeFloorMap } from "./map-overlay";
+import { sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
 import { saveBestDepth } from "./best-depth";
-import { addPile, saveResumeFloor, loadResumeFloor, pilesOnFloor, canLoot, localKnightId, type CorpseItem } from "./corpse-run";
+import { loadResumeFloor } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";
 import { runPinballIntro } from "./intro";
 import { frenzyIntensity, momentumT } from "./entities/combo-curve";
@@ -166,15 +164,15 @@ import { installDevHooks } from "./dev/window-hooks";
 import { captureFloorCensus } from "./dev/floor-census";
 import { debugTeleportToStairs, debugSpawnRing, debugSpawnEnemy, debugKillAll, debugClearEnemies } from "./dev/debug-actions";
 import { tintLights, followPlayer, tickShadowThrottle, clearLights } from "./boot/lighting";
-import { playerSheetFor, applyWeaponArt, paintMenuPortrait, sheetFor, stopSheetBackfill } from "./boot/sheets";
-import { beginRunLedger, submitRunScore } from "./run/ledger";
+import { playerSheetFor, applyWeaponArt, sheetFor, stopSheetBackfill } from "./boot/sheets";
+import { beginRunLedger } from "./run/ledger";
 import { nearestOpenTile } from "./maze/nearest-open-tile";
 import { makeZombie, spawnHordeMember, spawnPinCrew, drainPendingMinis, drainPendingSummons, resetZombieNid } from "./spawn/factory";
 import { nextItemNid, resetItemNid } from "./economy/ground-items";
-import { spawnCoin, sweepCoins, updateCoins } from "./economy/coins";
+import { sweepCoins, updateCoins } from "./economy/coins";
 import { dropCardMaybe, dropReagentsMaybe, spawnMaterialDrop } from "./economy/loot";
 import { checkPickups, resetPickupSweep } from "./economy/pickups";
-import { closeShop, applyPotion, useBeltSlot } from "./economy/shop";
+import { applyPotion } from "./economy/shop";
 
 /**
  * The 60Hz clock. One instance for the whole session; `reset()` is called from
@@ -234,6 +232,9 @@ export function launchDungeonGame(onExit?: () => void): void {
   installScene();
 
   // Dev/QA hooks + the level-up fanfare — boot/wiring.ts.
+  // The lifecycle actions run/ and input/ call back into. Wired BEFORE the dev
+  // hooks, which expose several of them to the harness.
+  setRunDeps({ startLevel, armFloorLoading, exitDungeonGame });
   const wiringDeps = { spawnReaper, dropBossReward, startLevel, descend, onPlayerDeath, exitDungeonGame };
   installDevWiring(wiringDeps);
 
@@ -1199,605 +1200,21 @@ function buildLevel(level: number): void {
   captureFloorCensus();
 }
 
-/** Tab / 1 / 2 — switch hands. Switching to an empty slot is allowed (fists). */
-function selectSlot(slot: number): void {
-  if (slot === state.activeSlot || state.gameOver) return;
-  state.activeSlot = slot;
-  // Cancel any in-flight swing/charge on the swap. A ranged fire animation left
-  // running when you switch to a melee weapon would otherwise strand the attack
-  // timeline (melee path expects p.move) and freeze the knight in the fire
-  // frame — the "gun back to sword breaks the animation" bug. Reset to a clean
-  // idle so the new weapon starts fresh.
-  const p = state.player;
-  if (p) {
-    p.attackT = -1;
-    p.move = null;
-    p.chargeT = -1;
-    p.comboStep = 0;
-    p.comboWindowT = 0;
-    p.anim.setRate(1);
-    p.anim.play("idle", { force: true });
-  }
-  const w = WEAPONS[activeWeapon().id];
-  showPickupNote(`${w.icon} ${w.label.toUpperCase()} in hand`);
-  state.hudDirty = true;
-}
-
-function handleKey(e: KeyboardEvent): void {
-  if (!state.active) return;
-  // The walkable tavern owns the keyboard while it is up. Without this the
-  // dungeon still fires abilities underneath it — `e` is Q/E ability here and
-  // the interact key there.
-  if (isTavernSceneOpen()) return;
-
-  // ── The floor-haul screen is up: Space/Enter/Escape continue to the tavern,
-  // everything else is swallowed (including the map — the floor is over). ──
-  if (state.cardReaderEl) {
-    if (e.key === " " || e.key === "Enter" || e.key === "Escape") advanceCardReader();
-    e.preventDefault();
-    return;
-  }
-
-  // ── Game menu is open: Esc/I close, Tab/arrows cycle tabs, 1-5 jump. ──
-  if (state.menuEl) {
-    const k = e.key.toLowerCase();
-    if (k === "escape" || k === "i") closeGameMenu();
-    else if (k === "tab" || k === "arrowright") cycleMenuTab(1);
-    else if (k === "arrowleft") cycleMenuTab(-1);
-    else if (/^[1-5]$/.test(k)) menuTabByIndex(Number(k) - 1);
-    e.preventDefault();
-    return;
-  }
-  // M — the floor map. Free inside the dungeon now that the site map yields the
-  // key for the run (see map/map-overlay.setMapSuppressed).
-  if (e.key === "m" || e.key === "M") {
-    e.preventDefault();
-    if (state.container) toggleFloorMap(state.container);
-    return;
-  }
-
-  // ── Shop is open: number keys buy, Escape/enter leaves; nothing else. ──
-  if (state.shopEl) {
-    if (e.key === "Escape") {
-      closeShop();
-    } else if (/^[1-9]$/.test(e.key)) {
-      const rows = state.shopEl.querySelectorAll("[data-shop-row]");
-      (rows[Number(e.key) - 1] as HTMLElement | undefined)?.click();
-    }
-    e.preventDefault();
-    return;
-  }
-
-  switch (e.key.toLowerCase()) {
-    // Esc/I open the menu (leaving the run is the menu's confirmed ABANDON
-    // button now — a reflexive Esc must not vaporize a good run).
-    case "escape":
-    case "i":
-      e.preventDefault();
-      closeFloorMap(); // the menu freezes the world; a stale map under it lies
-      if (state.container) {
-        openGameMenu(state.container, { onAbandon: exitDungeonGame, paintPortrait: paintMenuPortrait });
-      }
-      return;
-
-    // ── Weapon slots (plain 1/2) · quick-use belt (Shift+1..4) ──
-    case "tab":
-      e.preventDefault(); // don't let focus walk out of the game
-      selectSlot(1 - state.activeSlot);
-      break;
-    // ── Quick-use belt potions (plain 1..4) ──
-    case "1": useBeltSlot(0); break;
-    case "2": useBeltSlot(1); break;
-    case "3": useBeltSlot(2); break;
-    case "4": useBeltSlot(3); break;
-
-    // ── RAMPAGE: the FPS ultimate (only when the meter is full) ──
-    case "r":
-      if (canRampage()) enterRampage();
-      break;
-
-    // ── Q/E active skills (Diablo HUD). In rampage Q/E steer the FPS camera. ──
-    case "q":
-      if (!state.fpsActive) castAbility(0);
-      break;
-    case "e":
-      if (!state.fpsActive) castAbility(1);
-      break;
-
-    // Everything else (spawn, descend, boss, reaper, FX toggles, fill-rampage,
-    // teleport) lives in the ` debug panel now — no more scattered letter keys.
-  }
-}
-
-function dropBossReward(x: number, z: number): void {
-  // The windfall drops as a FISTFUL of coins (spawnCoin caps the count and
-  // self-credits when headless) — the milestone should be something you watch
-  // fly into you, not a number that appears. Deliberately ahead of the scene
-  // guard: the gold must land even in a headless harness.
-  spawnCoin(x, z, BOSS_GOLD);
-  if (!state.scene) return;
-  showToast("OVERLORD SLAIN", `+${BOSS_GOLD} gold · the way down is clear`);
-  const drops: Array<{ id: string; dx: number; dz: number }> = [
-    { id: "health", dx: -0.5, dz: 0 },
-    { id: "gold", dx: 0.5, dz: 0 },
-  ];
-  for (const d of drops) {
-    const sprite = createStaticSprite(ITEM_PAINTS[d.id]);
-    const px = x + d.dx;
-    const pz = z + d.dz;
-    sprite.mesh.position.set(px, 0, pz);
-    state.scene.add(sprite.mesh);
-    state.groundItems.push({ nid: nextItemNid(), kind: "potion", id: d.id, x: px, z: pz, sprite, bobPhase: Math.random() * 6 });
-  }
-  state.hudDirty = true;
-}
 
 
-/**
- * How long we keep WATCHING for the shared seed after a floor has been built.
- *
- * MEASURED, not guessed: with two clients connecting at once under software
- * rendering, the second one's handshake completed at ~2.0s (the first's at
- * ~1.6s). A 1.2s budget expired while that client was still `connecting`, so it
- * kept a private floor — the bug this reconciliation exists to fix. 5s leaves
- * real headroom on a slow link.
- *
- * Nothing is blocked while this runs (see adoptPoolSeedWhenItArrives), so a
- * generous window costs an offline player only a handful of cheap frame checks.
- */
-const POOL_SEED_WAIT_MS = 5000;
-
-/**
- * How long after landing we keep watching for a pool-mate who descended in the
- * same breath (see regroupWithPoolWhenTheyLand).
- *
- * Sized off the SAME measurement as POOL_SEED_WAIT_MS — a second client's
- * handshake can take ~2s, and until it lands neither knight is in the other's
- * roster. Past this window a player is playing the floor, and moving them is
- * worse than letting them regroup through the join board.
- */
-const REGROUP_WINDOW_MS = 6000;
-
-/**
- * Resolve once the pool seed is known — or once the wait times out.
- *
- * ⚠️ It is NOT enough to check `isCoop()` and bail when it's false. At the
- * moment a run begins the socket is often still OPENING: `isCoop()` reads false,
- * an early return fires, and the floor is generated from a local seed a
- * heartbeat before `welcome` would have supplied the shared one. That is the
- * exact race this function exists to close, so it waits for the seed itself and
- * lets the TIMEOUT — not a connection probe — decide when to give up.
- *
- * Returns immediately only when the seed is already in hand. On timeout it
- * resolves anyway rather than rejecting: an offline player, or one whose backend
- * is slow, must get a private floor rather than a hang.
- */
-/**
- * Adopt the shared seed if it shows up AFTER the floor was already built, and
- * rebuild that floor so it matches everyone else's.
- *
- * ⚠️ WHY NOT BLOCK THE DESCENT INSTEAD. The obvious version — await the seed,
- * then generate — was built first and was WRONG: it holds the whole game behind
- * a network round-trip, and under software rendering the polling chain that
- * implemented it got starved and never resolved at all, so the run simply never
- * started (the harness saw hooks present but `active` forever undefined).
- * Blocking a boot on a backend that may not answer is a bad trade regardless of
- * how the wait is written.
- *
- * So the descent is never delayed. The floor is generated at once from a local
- * seed; if `welcome` lands later and disagrees, we rebuild the CURRENT floor
- * against the shared seed. A solo player never pays anything, and a pool player
- * gets a one-off regeneration in the first moments instead of a hang.
- *
- * Only ever fires while still on the floor the run started on: rebuilding under
- * someone who has already descended would teleport them into a fresh maze.
- */
-/**
- * 🪜 THE ONE WAY DOWN from the tavern — used by the plunger, the join board and
- * the retry-after-death path alike.
- *
- * Descending is no longer personal. `resolveDescendFloor` sends you to the floor
- * the POOL is on, because the alternative (everyone to their own resume depth)
- * is what made two players who entered one after the other play two separate
- * games: the server relays world/act to same-scene peers only, so two floors are
- * two worlds and every co-op feature — shared enemies, shared loot, scaled boss
- * — silently never fired. An explicit join-board pick still wins; your own
- * resume floor is the fallback when the pool is all still in the tavern.
- *
- * Arriving deep with a level-1 knight is made survivable by `applyDelveCatchUp`,
- * not by keeping the pool apart.
- *
- * Returns the floor actually entered.
- */
-function descendInto(explicit?: number): number {
-  const target = resolveDescendFloor(peers(), loadResumeFloor(), explicit);
-  startLevel(target); // startLevel adopts the shared pool seed (coopSeed) if connected
-  initCoop(); // spin up dungeon-scene pool presence (no-op offline)
-  grantDelveBoon(target);
-  regroupWithPoolWhenTheyLand(target);
-  return target;
-}
-
-/** Scale a knight who DROPPED to this depth up to what the depth expects, and
- *  say so. No-op on floor 1 and for anyone who walked down honestly. */
-function grantDelveBoon(target: number): void {
-  const boon = applyDelveCatchUp(target);
-  if (!boon) return;
-  const p = state.player;
-  if (p && boon.hearts > 0) p.hp = Math.min(playerMaxHp(), p.hp + boon.hearts);
-  const bits = [
-    boon.levels > 0 ? `+${boon.levels} LVL` : "",
-    boon.hearts > 0 ? `+${boon.hearts} ❤` : "",
-    boon.upgrade > 0 ? `+${boon.upgrade} BLADE` : "",
-  ].filter(Boolean);
-  showToast(`⚗️ DELVER'S BOON · FLOOR ${target}`, bits.join("  ·  ") || "kitted for the depth");
-}
-
-/**
- * Converge with the pool when two knights descended in the same breath.
- *
- * Both resolved their target against a roster that did not know about the other
- * yet, so they can land on different floors — the exact "we entered one after
- * the other and got separate games" failure, just compressed into one second.
- * A moment later both rosters agree and `regroupTarget` (which counts the
- * caller's OWN floor) returns the same answer on both machines, so exactly one
- * of them moves.
- *
- * Same shape and the same reasoning as `adoptPoolSeedWhenItArrives`: never block
- * the descent on the network, generate at once, reconcile if the pool disagrees,
- * and only ever while the player is still standing on the floor they arrived on
- * — regrouping someone mid-fight would be worse than being apart.
- */
-function regroupWithPoolWhenTheyLand(startedOnLevel: number): void {
-  const started = performance.now();
-  const tick = (): void => {
-    if (!state.active || !isCoop()) return;
-    if (state.level !== startedOnLevel) return; // they moved on — leave them alone
-    const target = regroupTarget(peers(), state.level);
-    if (target !== null) {
-      showToast("🧲 REGROUPING", `the pool is on floor ${target}`);
-      startLevel(target);
-      grantDelveBoon(target);
-      // Re-arm the seed watcher: the one the descent started gives up the
-      // moment `state.level` changes, and a floor rebuilt while `welcome` is
-      // still in flight would keep a private maze on the floor we just moved to.
-      adoptPoolSeedWhenItArrives(target);
-      return;
-    }
-    if (performance.now() - started > REGROUP_WINDOW_MS) return;
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-function adoptPoolSeedWhenItArrives(startedOnLevel: number): void {
-  if (coopSeed() !== null) return; // already shared — nothing to reconcile
-  const started = performance.now();
-  const tick = (): void => {
-    if (!state.active) return;
-    const seed = coopSeed();
-    if (seed !== null) {
-      // Someone else's world is authoritative. Rebuild only if we actually
-      // disagree, and only if the player hasn't moved on to another floor.
-      if ((seed >>> 0) !== state.runSeed && state.level === startedOnLevel) {
-        startLevel(startedOnLevel);
-      }
-      return;
-    }
-    if (poolStatus() === "closed" || performance.now() - started > POOL_SEED_WAIT_MS) return;
-    // requestAnimationFrame, NOT setTimeout: under software rendering the timer
-    // queue is starved hard enough that a 30ms chain stalls outright, while RAF
-    // is tied to the frames the game is already producing.
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-/**
- * Lay out every corpse pile stored for this floor as ground items.
- *
- * ⚠️ THE POSITION IS NOT TRUSTWORTHY. Floors are regenerated from the run seed
- * every time you enter them, so the tile you died on may now be solid wall (or
- * off-grid entirely, if the maze came out smaller). A pile inside a wall is gear
- * the player can see and never reach — the exact failure this feature exists to
- * prevent. So the saved spot is a HINT: `nearestOpenTile` walks out to the
- * closest standable tile, the same fix `tearGraveHole` uses for departed peers.
- *
- * Items fan out around that tile so a ten-item pile reads as a scatter of loot
- * rather than one sprite with nine hidden underneath it.
- */
-function spawnCorpsePiles(grid: Grid, level: number): void {
-  if (!state.scene) return;
-  const me = myId();
-  for (const pile of pilesOnFloor(level)) {
-    let t = worldToTile(grid, pile.x, pile.z);
-    if (!isWalkable(grid, t.i, t.j)) {
-      const open = nearestOpenTile(grid, t.i, t.j, 1);
-      if (!open) continue; // this floor has nowhere to put it — try again next visit
-      t = open;
-    }
-    const centre = tileCenter(grid, t.i, t.j);
-    pile.items.forEach((item, n) => {
-      // A CARD in a pile is an INSTANCE id ("spidersilk#4s") and ITEM_PAINTS is
-      // keyed by card KIND, so the raw lookup misses and the `!paint` guard
-      // below would drop the item silently — invisible on the floor AND
-      // unrecoverable. cardBase is a no-op on every other kind's id.
-      const paint = ITEM_PAINTS[item.id] ?? ITEM_PAINTS[cardBase(item.id)];
-      if (!paint) return; // an id from an older build — skip the sprite, keep the save
-      const sprite = createStaticSprite(paint);
-      // Fan out on a small ring; index 0 sits dead centre on the death spot.
-      const ang = (n / Math.max(1, pile.items.length)) * Math.PI * 2;
-      const r = n === 0 ? 0 : 0.34;
-      const x = centre.x + Math.cos(ang) * r;
-      const z = centre.z + Math.sin(ang) * r;
-      sprite.mesh.position.set(x, 0, z);
-      state.scene!.add(sprite.mesh);
-      state.groundItems.push({
-        kind: item.kind,
-        id: item.id,
-        x,
-        z,
-        sprite,
-        bobPhase: Math.random() * Math.PI * 2,
-        durability: item.durability,
-        rarity: item.rarity,
-        cards: item.cards,
-        upgrade: item.upgrade,
-        // OWNER-ONLY. Monster loot stays shared with the pool; a corpse is not
-        // loot, it's the player's own run sitting on the floor. Checked at the
-        // pickup funnel so the pile still RENDERS for everyone.
-        corpseOwner: pile.owner,
-        corpseId: pile.id,
-      });
-    });
-    if (canLoot(pile, me)) {
-      showToast("⚰️ YOUR KIT IS HERE", `${pile.items.length} item${pile.items.length === 1 ? "" : "s"} from a previous death`);
-    }
-  }
-}
-
-/**
- * Serialize everything the knight is carrying into a corpse pile.
- *
- * Weapons and cards carry their full identity (durability, rarity, sockets,
- * upgrade level) because losing a +3 legendary and recovering a plain one would
- * be worse than losing it outright. Gear is a bare slot→durability map in this
- * codebase (see items.GearState), so that is all there is to carry.
- *
- * The starting sword is deliberately INCLUDED. It is worth little, but a pile
- * that silently omits part of what you were holding teaches players not to
- * trust the mechanic, and that distrust costs more than the sword.
- */
-function collectCorpseItems(): CorpseItem[] {
-  const items: CorpseItem[] = [];
-  for (const w of state.weaponSlots) {
-    if (!w || w.id === "fists") continue;
-    items.push({ kind: "weapon", id: w.id, durability: w.durability, rarity: w.rarity, cards: w.cards, upgrade: w.upgrade });
-  }
-  for (const [slot, dur] of Object.entries(state.gear)) {
-    if (typeof dur !== "number" || dur <= 0) continue;
-    items.push({ kind: "gear", id: slot, durability: dur });
-  }
-  for (const id of state.cardStash) items.push({ kind: "card", id });
-  return items;
-}
-
-function onPlayerDeath(): void {
-  if (state.gameOver) return;
-  state.gameOver = true;
-  coopAnnounceDeath(); // final pose w/ mode:"death" — peers stop colliding with the body
-  // Bank the loose change before the run is scored — the run tally on the death
-  // screen should include coins that were still mid-flight when you died.
-  sweepCoins();
-  // Fire-and-forget at the call site is fine ONLY because submitRunScore itself
-  // awaits and logs; the death screen must not wait on the network to appear.
-  void submitRunScore();
-  sfxGameOver();
-  state.player?.sprite.setTint(0x6b7688); // drained
-
-  // ── Drop the kit where you fell ──
-  // Recorded BEFORE the inventory is cleared below, and persisted immediately:
-  // a player who closes the tab on the death screen must still find their pile
-  // when they come back, or the promise only holds for players who are polite
-  // about how they quit.
-  const dropped = collectCorpseItems();
-  const p = state.player;
-  // The STABLE knight id, not `myId()`. The pool socket id is minted per
-  // connection, so a pile stamped with it became unlootable the moment you
-  // reconnected — your own kit, refused as "another knight's".
-  addPile(state.level, p?.x ?? 0, p?.z ?? 0, localKnightId(), dropped);
-  // The floor you DIED on — not the deepest you reached. That difference is the
-  // feature: the tavern sends you back to where your stuff is.
-  saveResumeFloor(state.level);
-
-  state.gameOverEl = showGameOver({
-    droppedCount: dropped.length,
-    // Death now returns you to the TAVERN with an empty pack, rather than
-    // restarting at floor 1. The kit is not gone — it is on the floor above,
-    // and the tavern's plunger offers the trip back.
-    onRetry: () => {
-      state.gameOverEl?.remove();
-      state.gameOverEl = null;
-      state.gameOver = false;
-      returnToTavern();
-    },
-    onLeave: () => exitDungeonGame(),
-  });
-}
-
-/**
- * Wake up in the tavern after a death: the run's carried kit is now lying on the
- * floor you died on, so the knight is reset to bare hands and sent to the hub.
- *
- * Wallet gold and legacy perks survive (they always have). What is new is that
- * losing the run no longer loses the gear — `state.cardStash` and the weapon and
- * gear slots are cleared here only because `collectCorpseItems` has already
- * written them to a pile.
- */
-function returnToTavern(): void {
-  state.kills = 0;
-  state.goldRun = 0;
-  state.weaponSlots = [freshWeapon("sword"), null];
-  state.activeSlot = 0;
-  state.gear = {};
-  state.cardStash = [];
-  // The cards found on the floor you died on are lying on your corpse now, not
-  // in your hand — there is no haul to reveal on the way to the tavern.
-  state.floorHaul = [];
-  resetCombatJuice();
-  if (state.player) {
-    Object.assign(state.player, freshPlayerFields());
-    state.player.sprite.setTint(null);
-    state.player.hp = playerMaxHp(); // after fresh fields
-  }
-  beginRunLedger(); // the next descent is a NEW run for the board
-  state.hudDirty = true;
-
-  const deathFloor = state.level;
-  if (!state.container) {
-    startLevel(1);
-    return;
-  }
-  // A death drops you into the hub in LOBBY mode, exactly like first entry: it
-  // is where the pool gathers, and someone who just died is precisely the player
-  // who wants to see whether anyone is on a floor worth joining.
-  enterTavern(state.container, {
-    stats: { grade: "-", floor: deathFloor, kills: 0, bestCombo: 0 },
-    // Same single entry as first boot: rally onto the pool's floor, catch the
-    // knight up to that depth, then reconcile the seed. `descendInto` also
-    // re-runs initCoop — the death teardown dropped the dungeon-scene presence
-    // subscriptions, and without re-installing them you descend into a floor
-    // where no pool-mate is ever drawn.
-    onDescend: (floor?: number) => {
-      adoptPoolSeedWhenItArrives(descendInto(floor));
-    },
-    onAbandon: () => exitDungeonGame(),
-    lobby: true,
-  });
-}
-
-function descend(): void {
-  // BANK ANY COINS STILL ON THE FLOOR before the tavern opens.
-  //
-  // Every other sweep site is a teardown (startLevel, death, exit), and the
-  // tavern is not one — `startLevel` only runs when you LEAVE it, via
-  // `onDescend` below. So without this, gold you killed for but never walked
-  // over is missing from the purse in the one place gold is spendable: you
-  // clear a floor, leave ~30g of coins lying in the maze, and the shop and the
-  // gambler both read a balance that doesn't include it. `maxStake()` shrinks
-  // too, so you can't even bet what you should be able to. It lands one floor
-  // late, after you've already spent.
-  //
-  // A straight regression from making coins physical — before that, a kill was
-  // banked the instant it happened.
-  sweepCoins();
-
-  // Grade the floor being left BEFORE startLevel resets the ledger.
-  const { grade, gold } = gradeFloor();
-  awardFloorXp(state.level, grade); // character XP, scaled by the grade
-  state.goldRun += GOLD_PER_DESCENT + gold;
-  addGold(GOLD_PER_DESCENT + gold, "dungeon-game");
-  // Run-scoped shot ledger for the leaderboard (see run-score.ts) — banked on
-  // the way out, because startLevel is about to wipe the per-floor half.
-  state.runJackpots += state.jackpots;
-  state.runOrbitLaps += state.orbitLaps;
-  state.runNamedShots += Object.keys(state.namedPaid).length;
-  state.runBestFlow = Math.max(state.runBestFlow, floorFlow());
-  // ── THE FLAWLESS FLOOR ──
-  // Clear a floor without being hit once and keep a heart, permanently, for
-  // the rest of the run. The game teaches one skill above all others — read
-  // the table, carry your line, don't get touched — and until now it paid
-  // nothing for the perfect execution of it. Deliberately a MAX-hp gain
-  // rather than a heal, so it compounds into the runs that go deep.
-  if (state.levelHitsTaken === 0) {
-    state.runFlawlessFloors += 1;
-    state.bonusMaxHp += 1; // the same run-scoped seam playerMaxHp() already reads
-    if (state.player) state.player.hp = Math.min(playerMaxHp(), state.player.hp + 1);
-    showToast("🛡 FLAWLESS FLOOR", "untouched — the vessel holds one more heart");
-    state.hudDirty = true;
-  }
-  // A great floor unlocks a BONUS vault room on the next one (Wave F glue).
-  state.bonusRoomNext = BONUS_ROOM_GRADES.includes(grade);
-  // …and SAYS so. This reward has existed silently since Wave F: the next
-  // floor quietly carved an extra room and the player was never told, so the
-  // single strongest reason to chase an S was invisible.
-  if (state.bonusRoomNext) showToast(`✦ GRADE ${grade}`, "the deep floor opens a VAULT for you");
-  sfxStairs();
-  const nextLevel = state.level + 1;
-  const kills = state.kills;
-  const bestCombo = state.levelBestCombo;
-  const floorCleared = state.level;
-  // Captured HERE, because startLevel wipes the ledger before the note shows.
-  // Flow is a grade axis now, so it has to be legible — an invisible axis is
-  // the same bug as the silent bonus room above, and players cannot learn to
-  // chase a number the game never prints.
-  const flowPct = Math.round(floorFlow() * 100);
-  const gradeLine = `FLOOR GRADE ${grade} · flow ${flowPct}% · combo ×${bestCombo}${gold > 0 ? ` · +${gold}g` : ""}`;
-
-  // ── Between-floor TAVERN hub ── spend the run's gold + cards, then descend.
-  const toTavern = (): void => {
-    if (!state.container) {
-      startLevel(nextLevel);
-      showPickupNote(gradeLine);
-      return;
-    }
-    enterTavern(state.container, {
-      stats: { grade, floor: floorCleared, kills, bestCombo },
-      onDescend: () => {
-        armFloorLoading(nextLevel, () => {
-          startLevel(nextLevel);
-          showPickupNote(gradeLine);
-        });
-      },
-      // The tavern's game menu (Esc/I) carries the same confirmed ABANDON as
-      // the dungeon's; the tavern closes itself first, then this ends the run.
-      onAbandon: () => exitDungeonGame(),
-    });
-  };
-
-  // ── THE FLOOR HAUL ──
-  // Every card found on this floor, read as one screen on the way out. This is
-  // the ONLY place card faces are shown at size: mid-fight they are a corner
-  // toast, because a modal in the middle of a bounce chain is an interruption
-  // the player never asked for.
-  //
-  // The haul takes the same `cardReaderEl` pause the tavern takes, so `descend`
-  // cannot re-fire from the stairs underneath it, and `toTavern` runs on its
-  // dismissal. Emptied here whether or not it is shown — a haul carried into
-  // the next floor would be revealed twice.
-  const haul = state.floorHaul;
-  state.floorHaul = [];
-  if (getSettings().haulReveal) showCardHaul(haul, floorCleared, toTavern);
-  else toTavern();
-}
 
 
-/**
- * Spawn the DEATH DEALER: an unkillable blood-red reaper that enters a dozen
- * tiles out from the player (through the walls — it doesn't care) and drifts
- * straight at them, accelerating forever. One per floor; the stairs erase it.
- */
-function spawnReaper(): void {
-  const p = state.player;
-  if (!p || isReplica()) return; // replica floors get the authority's reaper via snapshot
-  state.reaperOut = true;
-  const a = Math.random() * Math.PI * 2;
-  // Bespoke hooded-and-scythed art (was the ghost sheet dyed with REAPER_TINT).
-  const reaper = makeZombie(reaperSheet(), p.x + Math.cos(a) * 12, p.z + Math.sin(a) * 12, REAPER_SPEED_BASE, {
-    kind: "reaper",
-    hp: REAPER_HP,
-  });
-  reaper.aggro = true;
-  // The sheet is already painted blood-dark, so the tint is now only a faint
-  // wash — enough that telegraph/flash clears restore the reaper's colour
-  // rather than white, without washing the new art flat.
-  reaper.baseTint = REAPER_TINT;
-  reaper.sprite.setTint(REAPER_TINT);
-  reaper.sprite.mesh.scale.multiplyScalar(REAPER_SCALE);
-  state.zombies.push(reaper);
-  showToast("☠ THE DEATH DEALER ☠", "it cannot be slain — take the stairs");
-  state.shakeT = Math.max(state.shakeT, 0.3);
-}
+
+
+
+
+
+
+
+
+
+
+
 
 /**
  * The floor's FLOW: the time-weighted average of the momentum ramp over the
