@@ -16,10 +16,20 @@ import { makeRotortailPaints } from "../render/monsters/rotortail";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
-import { getKnightSheet } from "../render/knight-sheets";
-import { buildSpriteSheet, type SpriteSheet } from "../engine/render/sprite";
+import { getKnightSheet, requestKnightSheet } from "../render/knight-sheets";
+import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
+
+/**
+ * Paint budget per frame for a knight re-dress, inside the rAF loop.
+ *
+ * Larger than the idle backfill's slice (4 ms) on purpose: this one is a
+ * VISIBLE swap the player is waiting on, and it is bounded — ~100 frames at
+ * ~0.15 ms each finishes in about a fifth of a second. The backfill has a whole
+ * floor to work in and should never take frame time from this.
+ */
+const WEAPON_ART_SLICE_MS = 6;
 
 export function playerSheetFor(id: WeaponId): SpriteSheet {
   return getKnightSheet(id, lookFromGear(state.gear), "dungeon");
@@ -31,9 +41,15 @@ export function playerSheetFor(id: WeaponId): SpriteSheet {
  * mid-fight all re-dress the knight with no extra hooks. */
 export function applyWeaponArt(): void {
   const id = activeWeapon().id;
-  const key = lookKey(id, lookFromGear(state.gear));
+  const look = lookFromGear(state.gear);
+  const key = lookKey(id, look);
   if (key === state.playerArtKey || !state.player) return;
-  state.player.sprite.setSheet(playerSheetFor(id));
+  // Paint at most WEAPON_ART_SLICE_MS of the new atlas per frame and keep the
+  // current one on screen until it is finished — see requestKnightSheet. A miss
+  // used to build the whole thing here, inside the rAF loop.
+  const sheet = requestKnightSheet(id, look, "dungeon", WEAPON_ART_SLICE_MS);
+  if (!sheet) return;
+  state.player.sprite.setSheet(sheet);
   state.player.silhouette?.syncMap();
   state.playerArtKey = key;
   // ── SKILL CARDS (cards.ts grantsAbility) ──
@@ -63,6 +79,11 @@ export function paintMenuPortrait(canvas: HTMLCanvasElement): void {
  */
 function monsterSheet(paints: ActorPaints): SpriteSheet {
   return buildSpriteSheet(withRecoil(paints));
+}
+
+/** The same rule, for the incremental path. Both go through `withRecoil`. */
+function startMonsterSheet(paints: ActorPaints): SheetBuild {
+  return startSpriteSheet(withRecoil(paints));
 }
 
 /**
@@ -166,12 +187,22 @@ const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "brute", "slime", "b
  * Get an atlas, building it if the backfill hasn't reached it yet.
  *
  * Every spawn path goes through this, so no monster can appear without its art
- * regardless of how far the idle queue got.
+ * regardless of how far the idle queue got — including an atlas the backfill is
+ * halfway through, which is finished on the spot rather than handed over with
+ * transparent cells in it.
  */
 export function sheetFor(key: SheetKey): SpriteSheet {
   const b = BUILDERS[key];
   const hit = b.get();
   if (hit) return hit;
+  const partial = inFlight.get(key);
+  if (partial) {
+    inFlight.delete(key);
+    if (current?.key === key) current = null;
+    const s = partial.finish();
+    b.set(s);
+    return s;
+  }
   const built = monsterSheet(b.make());
   b.set(built);
   return built;
@@ -179,6 +210,9 @@ export function sheetFor(key: SheetKey): SpriteSheet {
 
 /** Idle handle, so a teardown mid-backfill doesn't paint into a dead session. */
 let backfillHandle: number | null = null;
+/** Atlases the backfill has started but not finished. See `sheetFor`. */
+const inFlight = new Map<SheetKey, SheetBuild>();
+let current: { key: SheetKey; build: SheetBuild } | null = null;
 
 /**
  * Build the atlases the first floor needs, then queue the rest for idle time.
@@ -197,12 +231,26 @@ export function buildMonsterSheets(): void {
   startBackfill();
 }
 
+/** Paint budget per idle callback. See the docblock on `startBackfill`. */
+const BACKFILL_SLICE_MS = 4;
+
 /**
- * Warm the remaining atlases one per idle callback.
+ * Warm the remaining atlases a SLICE at a time.
  *
- * One per callback, never a batch: each is ~275 ms of paint on the slow column
- * of the measurement, and `requestIdleCallback`'s deadline is advisory — a
- * batch would blow through it and land as exactly the long task this avoids.
+ * ── ONE ATLAS PER CALLBACK WAS STILL TOO MUCH ──
+ *
+ * This used to build a whole atlas per idle callback, on the reasoning that a
+ * batch would blow through `requestIdleCallback`'s advisory deadline. One
+ * already did: an atlas was ~275 ms of paint, and rIC never offers more than
+ * 50 ms, so every single callback overran by 5x and landed as the long task it
+ * was written to avoid. Profiled over a 30 s bot run (scripts/lag-profile.mjs),
+ * this path — `step › sheetFor › monsterSheet › buildSpriteSheet` — was 2,046 ms
+ * of hitch time, the largest single contributor to the game's frame-pacing tail.
+ *
+ * So the unit of work is a slice of FRAMES, not an atlas. `SheetBuild` keeps the
+ * position; a partial atlas is never handed out (`sheetFor` finishes it first).
+ * 4 ms leaves room inside a 16.7 ms frame for the callback to be late and still
+ * not drop it — rIC fires when the frame has time, not when it has none.
  */
 function startBackfill(): void {
   stopSheetBackfill();
@@ -217,9 +265,23 @@ function startBackfill(): void {
     // The run can end mid-backfill. Building then would allocate an atlas onto
     // a torn-down state that nothing will ever dispose.
     if (!state.active) return;
-    const key = queue.shift();
-    if (!key) return;
-    sheetFor(key);
+    if (!current) {
+      const key = queue.shift();
+      if (!key) return;
+      // `sheetFor` may have finished this one already while the queue waited.
+      if (BUILDERS[key].get()) {
+        backfillHandle = idle(step);
+        return;
+      }
+      current = { key, build: startMonsterSheet(BUILDERS[key].make()) };
+      inFlight.set(key, current.build);
+    }
+    const { key, build } = current;
+    if (build.step(BACKFILL_SLICE_MS)) {
+      BUILDERS[key].set(build.sheet);
+      inFlight.delete(key);
+      current = null;
+    }
     backfillHandle = idle(step);
   };
   backfillHandle = idle(step);
@@ -227,6 +289,12 @@ function startBackfill(): void {
 
 /** Cancel a backfill in flight. Called from teardown. */
 export function stopSheetBackfill(): void {
+  // Drop any half-painted atlas WITH the callback. Keeping it would leave the
+  // next session's `sheetFor` able to finish a build whose texture belongs to
+  // the renderer this teardown is disposing.
+  for (const b of inFlight.values()) b.sheet.texture.dispose();
+  inFlight.clear();
+  current = null;
   if (backfillHandle == null) return;
   if (typeof cancelIdleCallback === "function") cancelIdleCallback(backfillHandle);
   else clearTimeout(backfillHandle);
