@@ -16,6 +16,9 @@
  * back up into core.ts and no cycle can form.
  */
 import { state } from "../state";
+import type { EnemyKind } from "../state";
+import { SHEET_KEY_BY_KIND, sheetFor as sheetForKey } from "../boot/sheets";
+import { EXPANSION_SKIN } from "../spawn/factory";
 import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
@@ -76,24 +79,36 @@ export function installDevHooks(deps: DevHookDeps): void {
   //   `__dungeonAtlas(which)` → data URL of that actor's full sprite strip
   //   `__dungeonClips(which)` → the clip table ("S:idle"→[0,1], …) so a harness
   //                             can slice + label individual named frames.
-  // `which` ∈ spider|brute|spitter|ghost|boss|knight|zombie|sporeling|….
-    const sheetFor = (which: string): SpriteSheet | null =>
-      which === "spider" ? state.spiderSheet :
-      which === "brute" ? state.bruteSheet :
-      which === "spitter" ? state.spitterSheet :
-      which === "ghost" ? state.ghostSheet :
-      which === "bat" ? state.batSheet :
-      which === "slime" ? state.slimeSheet :
-      which === "boss" ? state.bossSheet :
-      which === "goblin" ? state.goblinSheet :
-      which === "pin" ? state.pinSheet :
-      which === "golem" ? state.golemSheet :
-      which === "chomper" ? state.chomperSheet :
-      which === "magnet" ? state.magnetSheet :
-      which === "webspinner" ? state.webspinnerSheet :
-      which === "sporeling" ? state.sporelingSheet :
-      which === "knight" ? (state.playerArtKey ? state.playerSheets.get(state.playerArtKey) : null) ?? null :
-      state.zombieVariantSheets[0] ?? null;
+  // `which` ∈ any EnemyKind, plus "knight" | "boss" | "zombie".
+  //
+  // ── WHY THIS READS A REGISTRY AND NOT A `which` CHAIN ──────────────────────
+  // It used to be a hand-written ternary chain listing 14 names, and it had
+  // drifted: NONE of the expansion roster (hound, bloater, wisp, mimic,
+  // crystalback, sapper, necromancer, warden) was in it, so all eight fell off
+  // the end onto the ZOMBIE atlas — silently. Art QA on any of them was
+  // inspecting a zombie and reporting on it as though it were the monster, which
+  // is worse than the hook simply not existing. That is the same failure the
+  // debug panel's hardcoded chip list had, and the reason the panel now derives
+  // its roster from the bestiary.
+  //
+  // So resolve through the SAME tables the game spawns from: SHEET_KEY_BY_KIND
+  // for the bespoke atlases, EXPANSION_SKIN for the kinds that genuinely borrow
+  // one. A new kind joins automatically; a kind with no art returns null
+  // (an HONEST "there is nothing to look at") instead of a zombie.
+    const sheetFor = (which: string): SpriteSheet | null => {
+      if (which === "knight") {
+        return (state.playerArtKey ? state.playerSheets.get(state.playerArtKey) : null) ?? null;
+      }
+      if (which === "zombie") return state.zombieVariantSheets[0] ?? null;
+      if (which === "boss") return sheetForKey("boss");
+      const key = SHEET_KEY_BY_KIND[which];
+      if (key) return sheetForKey(key);
+      // A borrowed atlas is a real answer — it IS what that kind wears — but it
+      // has to come from the skin table rather than from falling off the end.
+      const borrowed = EXPANSION_SKIN[which as EnemyKind];
+      if (borrowed) return borrowed.sheet();
+      return null; // unknown name: say so, don't hand back a zombie
+    };
     (window as unknown as { __dungeonAtlas?: (which: string) => string | null }).__dungeonAtlas = (which: string) => {
       const img = sheetFor(which)?.texture.image as HTMLCanvasElement | undefined;
       return img ? img.toDataURL("image/png") : null;

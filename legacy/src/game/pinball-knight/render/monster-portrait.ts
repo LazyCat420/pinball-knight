@@ -49,6 +49,7 @@ import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
 import { makeSporelingPaints } from "./monsters/sporeling";
+import { makeHoundPaints } from "./monsters/hound";
 
 /** The box every cel painter draws into (128) — portraits blit out of this. */
 const PX = SPRITE_PX;
@@ -74,6 +75,7 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number
   bat: { paints: makeBatPaints, tint: null, scale: 1.0 },
   slime: { paints: makeSlimePaints, tint: null, scale: 1.0 },
   sporeling: { paints: makeSporelingPaints, tint: null, scale: 1.0 },
+  hound: { paints: makeHoundPaints, tint: null, scale: 1.05 },
   reaper: { paints: makeReaperPaints, tint: null, scale: 1.05 },
   goblin: { paints: makeGoblinPaints, tint: null, scale: 1.0 },
   pin: { paints: makePinPaints, tint: null, scale: 0.85 },
@@ -83,8 +85,8 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number
   webspinner: { paints: makeWebspinnerPaints, tint: null, scale: 1.05 },
 
   // ── Expansion roster: borrowed sheet + tint. These MUST stay in step with
-  //    core.ts EXPANSION_SKIN, or the card lies about what you're hunting. ──
-  hound: { paints: makeSpiderPaints, tint: 0xc23a2a, scale: 1.05 },
+  //    core.ts EXPANSION_SKIN, or the card lies about what you're hunting.
+  //    (`hound` graduated to bespoke art — it sits with the core roster above.) ──
   bloater: { paints: makeSlimePaints, tint: 0xb6c24a, scale: 1.3 },
   necromancer: { paints: makeSpitterPaints, tint: 0x8a5cd0, scale: 1.05 },
   warden: { paints: makeBrutePaints, tint: 0x4f8fdb, scale: 1.05 },

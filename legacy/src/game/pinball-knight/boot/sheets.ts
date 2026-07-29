@@ -11,6 +11,7 @@ import { CARDS } from "../cards";
 import { type WeaponId } from "../items";
 import { ZOMBIE_VARIANTS, makeBatPaints, makeBossPaints, makeBrutePaints, makeChomperPaints, makeGhostPaints, makeGoblinPaints, makeGolemPaints, makeMagnetPaints, makePinPaints, makeSlimePaints, makeSpiderPaints, makeSpitterPaints, makeWebspinnerPaints, makeZombiePaints, withRecoil, type ActorPaints } from "../render/cel-painter";
 import { makeSporelingPaints } from "../render/monsters/sporeling";
+import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet } from "../render/knight-sheets";
@@ -90,7 +91,8 @@ function monsterSheet(paints: ActorPaints): SpriteSheet {
  */
 export type SheetKey =
   | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
-  | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling";
+  | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
+  | "hound";
 
 /**
  * EnemyKind → the atlas that kind draws with, for callers that hold a kind
@@ -104,7 +106,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
   spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
-  sporeling: "sporeling",
+  sporeling: "sporeling", hound: "hound",
 };
 
 /** key → (paint the atlas, read it off state, write it back). */
@@ -123,15 +125,18 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   magnet: { make: makeMagnetPaints, get: () => state.magnetSheet, set: (s) => { state.magnetSheet = s; } },
   webspinner: { make: makeWebspinnerPaints, get: () => state.webspinnerSheet, set: (s) => { state.webspinnerSheet = s; } },
   sporeling: { make: makeSporelingPaints, get: () => state.sporelingSheet, set: (s) => { state.sporelingSheet = s; } },
+  hound: { make: makeHoundPaints, get: () => state.houndSheet, set: (s) => { state.houndSheet = s; } },
 };
 
 /**
  * Built before the first playable frame.
  *
  * Floor 1's spawn gates (`constants/enemies.ts`, `constants/pinball.ts`) admit
- * goblin, pin, spider, sporeling and hound — and hound is a TINTED RESKIN of
- * the spider atlas, so it needs no sheet of its own. Everything else is gated
- * at level ≥ 2 and has a whole floor's worth of idle time to arrive.
+ * goblin, pin, spider, sporeling and hound — and every one of those now owns a
+ * bespoke atlas, so every one of them is listed here. (`hound` used to be a
+ * TINTED RESKIN of the spider sheet and needed none; it graduated to its own
+ * art in render/monsters/hound.ts.) Everything else is gated at level ≥ 2 and
+ * has a whole floor's worth of idle time to arrive.
  *
  * ⚠️ If a `*_FROM_LEVEL` is ever lowered to 1, add its key here. Getting that
  * wrong is not a crash — `sheetFor` will build it on the spawn — it just moves
@@ -139,7 +144,7 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
  * = 1) shipped in BACKFILL and was exactly that miss; the registry-drift check
  * in scripts/hooks now cross-reads the FROM_LEVEL constants against this list.
  */
-const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling"];
+const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
 
 /**
  * Build order for the idle backfill: roughly the order the floor gates admit

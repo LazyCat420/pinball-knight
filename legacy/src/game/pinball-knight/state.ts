@@ -1033,6 +1033,7 @@ export const state = {
   webspinnerSheet: null as SpriteSheet | null,
 
   sporelingSheet: null as SpriteSheet | null,
+  houndSheet: null as SpriteSheet | null,
 
   // AI
   flowField: null as Int32Array | null,

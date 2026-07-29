@@ -55,8 +55,10 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
 
 /** Expansion-roster reused-sheet map: which existing atlas + tint + scale each
  *  new kind borrows (art is placeholder; behavior in zombie.ts carries identity). */
-const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
-  hound: { sheet: () => sheetFor("spider"), tint: 0xc23a2a, scale: 1.05 }, // red hunting hound
+export const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; tint: number; scale: number }>> = {
+  // NB `hound` used to live here as a red-tinted SPIDER. It now has a bespoke
+  // atlas (render/monsters/hound.ts) and so belongs in RESKIN below — its art
+  // carries its own identity and must not be recoloured.
   bloater: { sheet: () => sheetFor("slime"), tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
   necromancer: { sheet: () => sheetFor("spitter"), tint: 0x8a5cd0, scale: 1.05 }, // purple caster
   warden: { sheet: () => sheetFor("brute"), tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
@@ -84,6 +86,9 @@ export function makeExpansion(kind: EnemyKind, x: number, z: number, speed: numb
  * `RESKIN` keeps its name so the debug ring + spawn table read unchanged.
  */
 export const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null; scale: number }>> = {
+  // A long low quadruped: scaled up slightly so its LENGTH reads at gameplay
+  // distance, which is the cue you dodge a charge by.
+  hound: { sheet: () => sheetFor("hound"), scale: 1.05 },
   goblin: { sheet: () => sheetFor("goblin"), scale: 1.0 },
   pin: { sheet: () => sheetFor("pin"), scale: 0.85 },
   golem: { sheet: () => sheetFor("golem"), scale: 1.12 },
@@ -291,7 +296,7 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
     case "webspinner":
       return level >= WEBSPIN_FROM_LEVEL ? makeReskin("webspinner", x, z, baseSpeed * WEBSPIN_SPEED_FACTOR) : null;
     case "hound":
-      return level >= HOUND_FROM_LEVEL ? makeExpansion("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
+      return level >= HOUND_FROM_LEVEL ? makeReskin("hound", x, z, baseSpeed * HOUND_SPEED_FACTOR) : null;
     case "bloater":
       return level >= BLOATER_FROM_LEVEL ? makeExpansion("bloater", x, z, baseSpeed * BLOATER_SPEED_FACTOR) : null;
     case "necromancer":
