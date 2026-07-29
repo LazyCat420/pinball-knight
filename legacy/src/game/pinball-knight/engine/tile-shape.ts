@@ -231,12 +231,19 @@ export interface ArcFeature {
    *   "track"  — a fillet on the grown circuit. The lane was CARVED to this
    *              radius, so the curve is the racing line; it never yields.
    *   "island" — the orbit island's full circle. One feature by design.
+   *   "funnel" — one link of a CHAIN approximating a conic (maze/conic-fit.ts),
+   *              flaring a doorway so a ball banks through it instead of off it.
+   *              Never yields, and — the part that is not obvious — must never
+   *              be judged link-by-link: a chain link is meaningless alone, so
+   *              `compactArcs` exempts it from the tile floor the way it
+   *              exempts an island, and a partial trim would break the exact
+   *              tangent continuity the chain is built on.
    *   "sweep"  — a scavenged corner fillet. Decoration; yields.
    *
    * Absent is read as "sweep", so an untagged feature is the one that gives way
    * rather than the one that survives — the safe default if a new author forgets.
    */
-  owner?: "track" | "island" | "sweep";
+  owner?: "track" | "island" | "funnel" | "sweep";
   /**
    * KICKER BANDS strung along this face — the pinball rubber (see KickBand).
    * Absent/empty = the whole sweep is plain stone. Authored by arc-sweeps.ts.
