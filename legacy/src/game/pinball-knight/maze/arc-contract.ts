@@ -83,7 +83,7 @@ export const SURFACE_TOL = 0.75;
  * the same reason, because the tempting "simplification" is to treat all
  * features alike and it silently breaks the thing the floor is built around.
  */
-export type ArcOwner = "track" | "island" | "sweep";
+export type ArcOwner = "track" | "island" | "funnel" | "sweep";
 
 /** May this feature be dropped to resolve an incoherent junction? */
 export function yields(f: ArcFeature): boolean {
@@ -321,7 +321,19 @@ export const MIN_ARC_LEN = 1.6;
  * no longer an island, and its backing is guaranteed by the stamp anyway.
  */
 export function trimArcToBacking(g: Grid, f: ArcFeature): ArcFeature | null {
-  if (f.span >= Math.PI * 2 - 1e-6 || f.owner === "island") {
+  // ALL-OR-NOTHING for an island and for a CHAIN LINK, for the same reason from
+  // opposite directions. An island trimmed to an arc is no longer an island. A
+  // funnel link is one segment of a conic (maze/conic-fit.ts) whose whole value
+  // is that consecutive links share a tangent EXACTLY — trimming one link's
+  // span moves its end off the shared normal line, and the chain acquires a
+  // kink in the middle of what the eye reads as one curve. Both have their
+  // backing guaranteed by the stamp that authored them, so there is nothing for
+  // a trim to fix.
+  //
+  // A link that fails backing outright is still dropped, and that is safe: its
+  // tiles revert to SHAPE_FULL, which is honest solid stone. The funnel simply
+  // has a square stretch in it — degraded, never see≠hit.
+  if (f.span >= Math.PI * 2 - 1e-6 || f.owner === "island" || f.owner === "funnel") {
     return backedFraction(g, f) > 0.5 ? f : null;
   }
   const n = Math.max(4, Math.ceil(f.r * f.span * SAMPLES_PER_TILE));
@@ -426,9 +438,23 @@ export function compactArcs(g: Grid, minTiles = MIN_ARC_TILES): number {
   //
   // A full-circle island is exempt from the tile floor: it is one feature by
   // design and its rim is thin, so judging it by the same count as a quarter
-  // fillet would delete the floor's centrepiece.
+  // fillet would delete the floor's centrepiece. A funnel LINK is exempt for
+  // the mirror-image reason: the meaningful object is the CHAIN, and a chain of
+  // five links across twelve tiles is a perfectly good curve made of features
+  // that individually own two tiles each. Judged link-by-link the tile floor
+  // would eat the middle of every funnel and leave its ends.
+  //
+  // ⚠️ EXEMPT FROM THE FLOOR, NOT FROM THE FLOOR BEING NON-ZERO. The first
+  // version of this exemption read `chained(f) || count >= minTiles`, which
+  // also protected features owning NOTHING — and something does produce those:
+  // `doorway-funnels.ts` reverts a batch by restoring its tiles, which leaves
+  // its features in `g.arcs` orphaned and expecting exactly this pass to
+  // collect them. They survived, and since `arcSweepGeometry` walks `g.arcs`
+  // directly rather than following tiles, every one was drawn — a curved ribbon
+  // over the open floor the revert had just restored, on 11 floors in 24.
+  const chained = (f: ArcFeature): boolean => f.owner === "island" || f.owner === "funnel";
   const trimmed = arcs.map((f) => trimArcToBacking(g, f));
-  const keep = arcs.map((f, fi) => trimmed[fi] !== null && (f.owner === "island" || count[fi] >= minTiles));
+  const keep = arcs.map((f, fi) => trimmed[fi] !== null && count[fi] >= (chained(f) ? 1 : minTiles));
   if (keep.every(Boolean) && trimmed.every((t, fi) => t === arcs[fi])) return 0;
 
   const remap = new Int32Array(arcs.length).fill(-1);
