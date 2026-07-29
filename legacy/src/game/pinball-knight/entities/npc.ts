@@ -44,6 +44,7 @@ import { createStaticSprite } from "../engine/render/sprite";
 import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";
+import { isOpen as uiIsOpen } from "../gui/stack";
 import { sfxCackle, sfxRibbit, sfxPickup, sfxCartBell } from "../audio";
 
 /** Catching the merchant opens its shop — core registers the handler. */
@@ -334,7 +335,7 @@ function updateMerchant(n: Npc, dist: number, dt: number): void {
     if (dist < MERCHANT_BELL_RANGE) sfxCartBell(1 - dist / MERCHANT_BELL_RANGE);
   }
 
-  if (dist <= MERCHANT_CATCH_RANGE && !state.shopEl && n.cooldownT <= 0) {
+  if (dist <= MERCHANT_CATCH_RANGE && !uiIsOpen("shop") && n.cooldownT <= 0) {
     n.vx = 0;
     n.vz = 0;
     n.shopped = true;

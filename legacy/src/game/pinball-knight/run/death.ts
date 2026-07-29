@@ -12,8 +12,7 @@ import { descendInto, adoptPoolSeedWhenItArrives } from "./descend";
 import { addPile, canLoot, localKnightId, pilesOnFloor, type CorpseItem } from "../corpse-run";
 import { sweepCoins } from "../economy/coins";
 import { submitRunScore, beginRunLedger } from "./ledger";
-import { showGameOver, showToast } from "../ui";
-import { inGameUiEnabled } from "../gui/flag";
+import { showToast } from "../ui";
 import { gameOverScreen } from "../gui/screens/game-over";
 import { push as pushUiScreen } from "../gui/stack";
 import { sfxGameOver } from "../audio";
@@ -157,18 +156,12 @@ export function onPlayerDeath(): void {
     // restarting at floor 1. The kit is not gone — it is on the floor above,
     // and the tavern's plunger offers the trip back.
     onRetry: () => {
-      state.gameOverEl?.remove();
-      state.gameOverEl = null;
       state.gameOver = false;
       returnToTavern();
     },
     onLeave: () => runDeps().exitDungeonGame(),
   };
-  if (inGameUiEnabled()) {
-    pushUiScreen(gameOverScreen(gameOverOpts));
-    return;
-  }
-  state.gameOverEl = showGameOver(gameOverOpts);
+  pushUiScreen(gameOverScreen(gameOverOpts));
 }
 
 /**

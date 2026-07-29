@@ -8,16 +8,15 @@
 import { addGold, getBalance, spendGold } from "../../../utils/gold-wallet";
 import { sfxBumper, sfxFreeze } from "../audio";
 import { spawnMultiBall } from "../entities/multiball";
-import { rippleGlobe } from "../hud-diablo";
+import { rippleGlobe } from "../gui/globe-ripple";
 import { faceOnHeal, faceOnSpecial } from "../hud-face";
 import { ELIXIR_MAXHP_BONUS, POTIONS, REGEN_TICK_INTERVAL, freshWeapon, type PotionId } from "../items";
 import { at } from "../maze/generator";
 import { playerMaxHp } from "../skill-runtime";
 import { state } from "../state";
-import { openShopOverlay, refreshShopOverlay, showPickupNote, type ShopEntry } from "../ui";
-import { inGameUiEnabled } from "../gui/flag";
+import { showPickupNote, type ShopEntry } from "../ui";
 import { shopScreen } from "../gui/screens/shop";
-import { close as closeUiScreen, push as pushUiScreen } from "../gui/stack";
+import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from "../gui/stack";
 
 /**
  * The Rolling Cart Merchant's wares. Prices are flat (gold is plentiful in a
@@ -37,8 +36,22 @@ const SHOP_STOCK: ShopEntry[] = [
 ];
 
 /** Open the merchant's shop overlay and PAUSE the sim while it's up. */
+/**
+ * Buy row `i` directly.
+ *
+ * Exists for the dev hook, which used to reach into the DOM and synthesise a
+ * click on the row element. With no elements to click, the shortcut has to be a
+ * real function — and making it one means the hook exercises the SAME path a
+ * number key does, instead of a mouse event that only resembled it.
+ */
+export function buyShopRow(i: number): void {
+  pendingBuy?.(i);
+}
+
+let pendingBuy: ((i: number) => void) | null = null;
+
 export function openShop(): void {
-  if (state.shopEl || !state.container) return;
+  if (uiIsOpen("shop") || !state.container) return;
   const buy = (i: number): void => {
     const entry = SHOP_STOCK[i];
     if (!entry || getBalance() < entry.price) return;
@@ -49,22 +62,16 @@ export function openShop(): void {
     if (addToBelt(pid)) showPickupNote(`${POTIONS[pid].icon} ${POTIONS[pid].label.toUpperCase()} — belted`);
     else applyPotion(pid);
     state.hudDirty = true;
-    // The in-game shop reads the balance every frame, so there is nothing to
-    // refresh — this call is a no-op there and stays only for the DOM path.
-    refreshShopOverlay(state.shopEl, getBalance());
+    // Nothing to refresh: the in-game shop reads the balance while it paints.
   };
-  if (inGameUiEnabled()) {
-    pushUiScreen(shopScreen(SHOP_STOCK, getBalance, buy, () => {}));
-    return;
-  }
-  state.shopEl = openShopOverlay(state.container, SHOP_STOCK, getBalance(), buy, closeShop);
+  pendingBuy = buy;
+  pushUiScreen(shopScreen(SHOP_STOCK, getBalance, buy, () => {}));
 }
 
 /** Close the shop overlay and resume the sim. */
 export function closeShop(): void {
   closeUiScreen("shop");
-  state.shopEl?.remove();
-  state.shopEl = null;
+  pendingBuy = null;
 }
 
 /**

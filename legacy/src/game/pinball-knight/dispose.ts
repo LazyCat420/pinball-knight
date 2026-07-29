@@ -10,6 +10,8 @@ import { disposeMultiBall } from "./entities/multiball";
 import { disposePinballParts } from "./render/pinball-parts";
 import { disposeLampPuzzle } from "./lamp-puzzle";
 import { disposeHUDs } from "./hud";
+import { clearScreens } from "./gui/stack";
+import { disposeUiLayer } from "./gui/layer";
 
 /**
  * Tear down one depth: the maze geometry, the horde (including corpses), any
@@ -112,14 +114,10 @@ export function disposeAll(): void {
     state.renderer.dispose();
   }
 
-  state.gameOverEl?.remove();
-  state.shopEl?.remove();
-  state.tavernEl?.remove();
-  state.tavernEl = null;
-  disposeHUDs(); // removes the Diablo + Wolf panels and the shared face
-  state.fpsOverlayEl?.remove();
-  state.bossBarEl?.remove();
-  state.plungerMeterEl?.remove();
+  // Every overlay this used to remove one node at a time is now a screen.
+  clearScreens();
+  disposeHUDs();
+  disposeUiLayer();
   state.container?.remove();
   // The FPS perspective camera holds no GPU resources of its own — just drop it.
   state.fpsCamera = null;

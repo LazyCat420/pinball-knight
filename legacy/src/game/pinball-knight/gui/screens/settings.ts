@@ -12,7 +12,7 @@
  * settings panel itself was exempt from.
  */
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
-import { applySettingsLive } from "../../menu";
+import { applySettingsLive } from "../apply-settings";
 import { UI, GRID, ROW_H, PAD } from "../theme";
 import { button, cutTop, cutRight, heading, rect, scrim, sheet, text, toggle, well, type Rect, type UiFrame } from "../im";
 import type { UiScreen } from "../stack";

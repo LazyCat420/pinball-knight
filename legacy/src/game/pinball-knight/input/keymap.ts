@@ -10,7 +10,6 @@
 import { state, activeWeapon } from "../state";
 import { runDeps } from "../run/deps";
 import { advanceCardReader } from "../card-reader";
-import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex } from "../menu";
 import { toggleFloorMap, closeFloorMap } from "../map-overlay";
 import { useBeltSlot, closeShop } from "../economy/shop";
 import { canRampage, enterRampage } from "../fps";
@@ -18,8 +17,6 @@ import { castAbility } from "../abilities";
 import { showToast } from "../ui";
 import { sfxPickup } from "../audio";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
-import { paintMenuPortrait } from "../boot/sheets";
-import { inGameUiEnabled } from "../gui/flag";
 import { openMenu } from "../gui/screens/menu";
 import { WEAPONS } from "../items";
 import { showPickupNote } from "../ui";
@@ -55,13 +52,6 @@ export function handleKey(e: KeyboardEvent): void {
   // the interact key there.
   if (isTavernSceneOpen()) return;
 
-  // ── The floor-haul screen is up: Space/Enter/Escape continue to the tavern,
-  // everything else is swallowed (including the map — the floor is over). ──
-  if (state.cardReaderEl) {
-    if (e.key === " " || e.key === "Enter" || e.key === "Escape") advanceCardReader();
-    e.preventDefault();
-    return;
-  }
 
   // ── An IN-GAME screen owns the keyboard. ──
   // It has already handled this event in `gui/input.ts` (window capture phase,
@@ -73,16 +63,6 @@ export function handleKey(e: KeyboardEvent): void {
     return;
   }
 
-  // ── Game menu is open: Esc/I close, Tab/arrows cycle tabs, 1-5 jump. ──
-  if (state.menuEl) {
-    const k = e.key.toLowerCase();
-    if (k === "escape" || k === "i") closeGameMenu();
-    else if (k === "tab" || k === "arrowright") cycleMenuTab(1);
-    else if (k === "arrowleft") cycleMenuTab(-1);
-    else if (/^[1-5]$/.test(k)) menuTabByIndex(Number(k) - 1);
-    e.preventDefault();
-    return;
-  }
   // M — the floor map. Free inside the dungeon now that the site map yields the
   // key for the run (see map/map-overlay.setMapSuppressed).
   if (e.key === "m" || e.key === "M") {
@@ -91,17 +71,6 @@ export function handleKey(e: KeyboardEvent): void {
     return;
   }
 
-  // ── Shop is open: number keys buy, Escape/enter leaves; nothing else. ──
-  if (state.shopEl) {
-    if (e.key === "Escape") {
-      closeShop();
-    } else if (/^[1-9]$/.test(e.key)) {
-      const rows = state.shopEl.querySelectorAll("[data-shop-row]");
-      (rows[Number(e.key) - 1] as HTMLElement | undefined)?.click();
-    }
-    e.preventDefault();
-    return;
-  }
 
   switch (e.key.toLowerCase()) {
     // Esc/I open the menu (leaving the run is the menu's confirmed ABANDON
@@ -110,11 +79,7 @@ export function handleKey(e: KeyboardEvent): void {
     case "i":
       e.preventDefault();
       closeFloorMap(); // the menu freezes the world; a stale map under it lies
-      if (inGameUiEnabled()) {
-        openMenu(() => runDeps().exitDungeonGame());
-      } else if (state.container) {
-        openGameMenu(state.container, { onAbandon: () => runDeps().exitDungeonGame(), paintPortrait: paintMenuPortrait });
-      }
+      openMenu(() => runDeps().exitDungeonGame());
       return;
 
     // ── Weapon slots (plain 1/2) · quick-use belt (Shift+1..4) ──

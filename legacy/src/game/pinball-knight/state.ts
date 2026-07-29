@@ -690,34 +690,25 @@ export const state = {
 
   // DOM
   container: null as HTMLDivElement | null,
-  gameOverEl: null as HTMLDivElement | null,
-  /** The merchant's shop overlay while it's open (null = closed; sim pauses). */
-  shopEl: null as HTMLDivElement | null,
-  /** The between-floor TAVERN hub overlay while it's open (null = closed; sim
-   * pauses, exactly like the shop). See tavern.ts. */
-  tavernEl: null as HTMLDivElement | null,
-  /** The modal card reader while it's open (null = closed; sim pauses). See card-reader.ts. */
-  cardReaderEl: null as HTMLDivElement | null,
-  /** The in-game menu (Esc/I) while it's open (null = closed; sim pauses). See menu.ts. */
-  menuEl: null as HTMLDivElement | null,
   /**
-   * True while any IN-GAME screen that pauses is open — the canvas-native
-   * replacement for the four `*El` flags above.
+   * True while any open screen PAUSES the world.
    *
-   * Maintained solely by `gui/stack.ts` (`syncPause`); nothing else may write
-   * it. It joins the same expression in `core.isSimPaused()` so the DOM screens
-   * and the in-game screens share one pause contract during the migration; when
-   * the last overlay is gone that expression collapses to this flag alone.
+   * This one boolean replaces eight `HTMLDivElement | null` fields
+   * (`gameOverEl`, `shopEl`, `tavernEl`, `cardReaderEl`, `menuEl`,
+   * `fpsOverlayEl`, `bossBarEl`, `plungerMeterEl`). Modality used to be stored
+   * in the DOM: `isSimPaused()` asked whether four particular nodes existed, so
+   * the most consequential boolean in the game — the one `simulate()` early-
+   * returns on — lived in the document tree. A screen that forgot to null its
+   * element froze the world forever; one that nulled it early let monsters move
+   * under an open menu.
+   *
+   * Maintained SOLELY by `gui/stack.ts` (`syncPause`); nothing else may write
+   * it. It also gates keyboard capture — see the note there on why "a screen is
+   * open" and "the UI owns the keyboard" must not be the same question.
    */
   uiPauses: false,
-  /** The first-person rampage overlay (crosshair + gun + red vignette). */
-  fpsOverlayEl: null as HTMLDivElement | null,
   /** Last frame's bounce combo, so a rise fires the flash exactly once per step. */
   prevBounceCombo: 0,
-  /** The boss health bar (top-centre, shown only when a boss lives). */
-  bossBarEl: null as HTMLDivElement | null,
-  /** The plunger power meter (bottom-centre, shown only while parked to launch). */
-  plungerMeterEl: null as HTMLDivElement | null,
   /** Set by anything that changes a HUD number; core repaints once per frame at most. */
   hudDirty: true,
 
@@ -1290,18 +1281,8 @@ export function resetState(): void {
   state.active = false;
   state.onExitCallback = null;
   state.container = null;
-  state.gameOverEl = null;
-  state.shopEl = null;
-  state.tavernEl?.remove();
-  state.tavernEl = null;
-  state.cardReaderEl?.remove();
-  state.cardReaderEl = null;
-  state.menuEl?.remove();
-  state.menuEl = null;
-  state.fpsOverlayEl = null;
+  state.uiPauses = false;
   state.prevBounceCombo = 0;
-  state.bossBarEl = null;
-  state.plungerMeterEl = null;
   state.hudDirty = true;
   state.renderer = null;
   state.scene = null;

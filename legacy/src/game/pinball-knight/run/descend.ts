@@ -25,8 +25,6 @@ import { addGold } from "../../../utils/gold-wallet";
 import { showToast, showPickupNote } from "../ui";
 import { sfxStairs } from "../audio";
 import { enterTavern } from "../../../scenes/tavern";
-import { showCardHaul } from "../card-reader";
-import { inGameUiEnabled } from "../gui/flag";
 import { haulScreen } from "../gui/screens/haul";
 import { push as pushUiScreen } from "../gui/stack";
 import { gradeFloor } from "./grade";
@@ -305,9 +303,6 @@ export function descend(): void {
   // the next floor would be revealed twice.
   const haul = state.floorHaul;
   state.floorHaul = [];
-  if (getSettings().haulReveal) {
-    if (inGameUiEnabled()) pushUiScreen(haulScreen(haul, floorCleared, toTavern));
-    else showCardHaul(haul, floorCleared, toTavern);
-  }
+  if (getSettings().haulReveal) pushUiScreen(haulScreen(haul, floorCleared, toTavern));
   else toTavern();
 }

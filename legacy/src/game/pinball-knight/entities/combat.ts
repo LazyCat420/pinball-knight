@@ -923,7 +923,7 @@ function killZombie(z: Zombie): void {
     state.fpsTimer += 0.4; // small reward: a good streak lasts a touch longer
     state.shakeT = Math.max(state.shakeT, 0.18);
     state.hitstopT = Math.max(state.hitstopT, 0.03); // a crisp micro-freeze per frag
-    updateFpsStreak(state.fpsOverlayEl, state.fpsStreak);
+    updateFpsStreak();
   } else {
     // Charge the rampage ultimate from ordinary kills only.
     state.ultCharge = Math.min(1, state.ultCharge + ULT_CHARGE_PER_KILL);

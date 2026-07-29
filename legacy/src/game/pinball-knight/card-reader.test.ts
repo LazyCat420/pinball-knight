@@ -40,16 +40,20 @@ describe("a card pickup never interrupts the fight", () => {
   beforeEach(() => {
     state.floorHaul = [];
     state.seenCards = new Set();
-    state.cardReaderEl = null;
+    state.uiPauses = false;
   });
 
   // THE regression this whole change exists to prevent. Picking up a card at
   // 22 u/s used to open a modal that froze the sim until the player pressed
-  // Space. Whatever else presentCardPickup does, it must not set the pause
-  // handle — `core.isSimPaused` reads exactly this field.
+  // Space. Whatever else presentCardPickup does, it must not raise anything
+  // that pauses — `core.isSimPaused` reads exactly this flag.
+  //
+  // The handle changed name (`cardReaderEl` → `uiPauses`) when modality stopped
+  // being stored as a DOM node, but the invariant is identical and so is the
+  // failure it guards.
   it("opens nothing that pauses the sim", () => {
     presentCardPickup(CARD_IDS[0], "STASHED");
-    expect(state.cardReaderEl).toBeNull();
+    expect(state.uiPauses).toBe(false);
   });
 
   it("files each pickup into the floor haul, in order, with its note", () => {

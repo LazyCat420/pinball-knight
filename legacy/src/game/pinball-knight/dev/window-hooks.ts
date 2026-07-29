@@ -20,11 +20,13 @@ import { ABILITIES, type AbilityId } from "../abilities";
 import { cardDef } from "../cards";
 import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
+import { buyShopRow } from "../economy/shop";
 import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
 import { installGuiHooks } from "./gui-hooks";
+import { isOpen as uiIsOpen } from "../gui/stack";
 import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
@@ -396,7 +398,7 @@ export function installDevHooks(deps: DevHookDeps): void {
       const at_ = g && s ? tileCenter(g, s.i, s.j) : null;
       if (state.gameOver || !state.player) return null;
       descend();
-      return { from: state.level, stairs: at_, locked: state.exitLocked, haulShown: !!state.cardReaderEl };
+      return { from: state.level, stairs: at_, locked: state.exitLocked, haulShown: uiIsOpen("haul") };
     };
     // Dev: apply a potion directly (QA the Wave-F kit — freeze/turbo/curveshot/…
     // without hunting for a flask). `__dungeonPotion('freeze')`.
@@ -450,7 +452,7 @@ export function installDevHooks(deps: DevHookDeps): void {
     // Called with no argument it deals a representative spread: a stack of
     // three, a levelled copy, and a shiny.
     (window as unknown as { __dungeonHaul?: (ids?: string[], floor?: number) => boolean }).__dungeonHaul = (ids?: string[], floor?: number) => {
-      if (!state.container || state.cardReaderEl) return false;
+      if (!state.container || uiIsOpen("haul")) return false;
       const spread = ids ?? [
         "spidersilk", "spidersilk", "spidersilk",
         "batwingchip#3", "batwingchip#3",
@@ -466,7 +468,7 @@ export function installDevHooks(deps: DevHookDeps): void {
     // Dev: open the between-floor TAVERN without clearing a floor first — it's
     // where the holo cards live, and QA'ing them shouldn't need a full run.
     (window as unknown as { __dungeonTavern?: () => boolean }).__dungeonTavern = () => {
-      if (!state.container || state.tavernEl || isTavernSceneOpen()) return false;
+      if (!state.container || uiIsOpen("tavern") || isTavernSceneOpen()) return false;
       enterTavern(state.container, {
         stats: { grade: "A", floor: state.level, kills: state.kills, bestCombo: state.levelBestCombo },
         onDescend: () => startLevel(state.level + 1),
@@ -525,9 +527,11 @@ export function installDevHooks(deps: DevHookDeps): void {
     };
     // Dev: force the merchant's shop open, and buy row i (shop-flow QA).
     (window as unknown as { __dungeonShop?: (buy?: number) => unknown }).__dungeonShop = (buy?: number) => {
+      // The DOM version bought a row by SYNTHESISING A CLICK on its element.
+      // There are no elements; `buyShopRow` is the same path a keypress takes.
       if (buy === undefined) openShop();
-      else if (state.shopEl) (state.shopEl.querySelectorAll("[data-shop-row]")[buy] as HTMLElement | undefined)?.click();
-      return { open: !!state.shopEl };
+      else buyShopRow(buy);
+      return { open: uiIsOpen("shop") };
     };
     // Dev: the still-intact secret bands + the floor ledger (secret/reaper/grade QA).
     // ── Dev SPAWN CONSOLE ── the scriptable counterpart to the ` panel's enemy
@@ -753,7 +757,7 @@ export function installDevHooks(deps: DevHookDeps): void {
       freezeT: state.freezeT,
       npcs: state.npcs.map((n) => n.kind),
       partKinds: Array.from(new Set(state.pinballParts.map((pt) => pt.kind))),
-      shopOpen: !!state.shopEl,
+      shopOpen: uiIsOpen("shop"),
       magicianT: state.magicianT,
       // Loop diagnostics (accumulator health for the harness).
       accumulator: state.accumulator,

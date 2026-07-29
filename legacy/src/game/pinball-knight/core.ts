@@ -58,15 +58,15 @@ import { Animator } from "./engine/render/animator";
 import { ITEM_PAINTS, PROP_PAINTS } from "./render/cel-painter";
 import { variantIndicesFor, type ZombieType } from "./zombie-types";
 import { snapCameraTo, updateFollowCamera, worldToScreenPx } from "./engine/camera";
-import { showToast, showControlsHint, showPickupNote, createFpsOverlay, spawnFloatingCombo, createBossBar, updateBossBar, createPlungerMeter, updatePlungerMeter } from "./ui";
+import { showToast, showPickupNote, spawnFloatingCombo } from "./ui";
 import { dismissCardReader } from "./card-reader";
 import { getSettings } from "./settings-save";
 import { clearPickupToasts } from "./pickup-toast";
-import { applySettingsLive } from "./menu";
+import { applySettingsLive } from "./gui/apply-settings";
 import { lookFromGear, lookKey } from "./render/knight-look";
 import { awardDebugXp as debugGrantXp, playerMaxHp } from "./skill-runtime";
 import { mountHUDs, renderHUD, refreshHUD } from "./hud";
-import { rippleGlobe } from "./hud-diablo";
+import { rippleGlobe } from "./gui/globe-ripple";
 import { faceOnHeal } from "./hud-face";
 import { PALETTE_HEX } from "./render/palette";
 import { disposeAll, disposeLevel } from "./dispose";
@@ -242,9 +242,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   // Dual HUD: the Diablo panel (iso) + the Wolfenstein bar (rampage). mountHUDs
   // builds both and mounts the shared face.
   mountHUDs(state.container);
-  state.fpsOverlayEl = createFpsOverlay(state.container);
-  state.bossBarEl = createBossBar(state.container);
-  state.plungerMeterEl = createPlungerMeter(state.container);
   state.input = createInput(state.container);
   // ON-SCREEN PAD for phones/tablets. Built only where it is wanted — a mouse
   // user must never get thumb buttons over their game — but `?touch=1` forces
@@ -253,7 +250,6 @@ export function launchDungeonGame(onExit?: () => void): void {
   if (state.container && (forceTouch || isTouchDevice())) {
     touchControls = createTouchControls(state.container, state.input.pad);
   }
-  showControlsHint(state.container);
 
   state.onKeyDown = handleKey;
   window.addEventListener("keydown", state.onKeyDown);
@@ -1228,7 +1224,7 @@ function buildLevel(level: number): void {
  * run duration doesn't count time spent reading.
  */
 export function isSimPaused(): boolean {
-  return !!(state.shopEl || state.tavernEl || state.cardReaderEl || state.menuEl || state.uiPauses) || isTavernSceneOpen();
+  return state.uiPauses || isTavernSceneOpen();
 }
 
 /** One 60Hz simulation step. */
@@ -1589,10 +1585,6 @@ function loop(now: number): void {
   // minimum of 56 BFS steps away. Gating on engagement (boss.ts, THE LEASH)
   // makes the announcement mean what it says. `bossEngaged` answers for
   // replicas too, off the streamed BossAux.
-  const boss = state.zombies.find((z) => z.boss && z.mode !== "dead");
-  const seen = boss && (bossEngaged() || boss.hp < (boss.maxHp ?? boss.hp));
-  updateBossBar(state.bossBarEl, seen ? boss.hp : null, seen ? boss.maxHp ?? null : null);
-  updatePlungerMeter(state.plungerMeterEl);
 
   const renderCam = state.fpsActive && state.fpsCamera ? state.fpsCamera : state.camera;
   // rendererReady: skip frames until the async backend init resolves. Simulation

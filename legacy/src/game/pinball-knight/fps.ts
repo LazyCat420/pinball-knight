@@ -80,7 +80,7 @@ export function enterRampage(): void {
   // contact blobs (whose orientation is baked against the iso tilt).
   for (const z of state.zombies) z.sprite.setBlobVisible(false);
   billboardEnemiesToFps();
-  setFpsOverlay(state.fpsOverlayEl, true);
+  setFpsOverlay();
   // Swap the Diablo strategy panel down and the Wolfenstein combat bar up; the
   // shared face rides across into the wolf bar's socket.
   setHUDMode("wolf");
@@ -111,9 +111,9 @@ export function exitRampage(): void {
     faceCameraIso(z.sprite.mesh);
     z.sprite.setBlobVisible(true);
   }
-  updateFpsStreak(state.fpsOverlayEl, 0); // clear the combo readout
+  updateFpsStreak(); // clear the combo readout
   state.fpsStreak = 0;
-  setFpsOverlay(state.fpsOverlayEl, false);
+  setFpsOverlay();
   // Slide the Wolfenstein bar back down and the Diablo panel back up.
   setHUDMode("diablo");
   state.hudDirty = true;
@@ -175,7 +175,7 @@ export function updateFps(dt: number, input: InputHandle): void {
     state.fpsStreakT += dt;
     if (state.fpsStreakT > STREAK_WINDOW) {
       state.fpsStreak = 0;
-      updateFpsStreak(state.fpsOverlayEl, 0); // hide the combo readout
+      updateFpsStreak(); // hide the combo readout
       state.hudDirty = true;
     }
   }
@@ -246,7 +246,7 @@ export function fpsShoot(): void {
   state.fpsShotCd = FPS_SHOT_COOLDOWN;
   state.fpsFlashT = 0.06;
   state.fpsKick = Math.min(0.1, state.fpsKick + 0.045); // per-shot recoil punch
-  flashFpsMuzzle(state.fpsOverlayEl);
+  flashFpsMuzzle();
   sfxGun();
 
   const fwd = forwardXZ();

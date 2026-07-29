@@ -13,15 +13,14 @@ import { selectBackend } from "../../render/backend";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/engine/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
 import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
-import { openVendorCounter, isVendorCounterOpen, consumePendingTavernFx } from "../../game/pinball-knight/tavern";
-import { inGameUiEnabled } from "../../game/pinball-knight/gui/flag";
 import { tavernScreen } from "../../game/pinball-knight/gui/screens/tavern";
 import { push as pushUiScreen } from "../../game/pinball-knight/gui/stack";
 import { consumeTavernFx } from "../../game/pinball-knight/economy/tavern-shop";
 import { syncSize, uiTexture } from "../../game/pinball-knight/gui/layer";
 import { installUiInput } from "../../game/pinball-knight/gui/input";
 import { drawUiFrame } from "../../game/pinball-knight/gui/root";
-import { openGameMenu, closeGameMenu, cycleMenuTab, menuTabByIndex, isGameMenuOpen } from "../../game/pinball-knight/menu";
+import { openMenu } from "../../game/pinball-knight/gui/screens/menu";
+import { close as closeUiScreen, isOpen as uiIsOpen } from "../../game/pinball-knight/gui/stack";
 import { state as dungeonState, activeWeapon } from "../../game/pinball-knight/state";
 import { renderKnightPortrait } from "../../game/pinball-knight/render/knight-portrait";
 import { lookFromGear } from "../../game/pinball-knight/render/knight-look";
@@ -197,7 +196,7 @@ function hideDungeonHud(hidden: boolean): void {
 
 /** True while any overlay owns the screen — movement and interaction freeze. */
 function panelOpen(): boolean {
-  return isVendorCounterOpen() || isRunSummaryOpen() || isGamblerOpen() || isGameMenuOpen();
+  return uiIsOpen("tavern") || isRunSummaryOpen() || isGamblerOpen() || uiIsOpen("menu");
 }
 
 /**
@@ -207,26 +206,22 @@ function panelOpen(): boolean {
  * tavern — the one place you most want to review a loadout.
  */
 function openTavernMenu(): void {
-  const host = tavern.container;
-  if (!host || panelOpen()) return;
+  if (!tavern.container || panelOpen()) return;
   prompt?.hide();
-  openGameMenu(host, {
-    onAbandon: () => {
-      // Leave the run from the tavern: tear this scene down first, then hand
-      // the exit to the dungeon (wired at enterTavern time).
-      const leave = tavern.onAbandon;
-      closeTavern();
-      leave?.();
-    },
-    paintPortrait: (canvas) => renderKnightPortrait(canvas, activeWeapon().id, lookFromGear(dungeonState.gear)),
+  // No z-index dance any more. The DOM menu's stylesheet put it at 10004, which
+  // was chosen against the DUNGEON canvas; this scene's canvas sits at 10005, so
+  // the menu was present in the DOM and buried under the room, and the fix was a
+  // hand-set 10008. The in-game menu composites INSIDE the frame, so there is no
+  // stacking context to lose to.
+  openMenu(() => {
+    // Leave the run from the tavern: tear this scene down first, then hand the
+    // exit to the dungeon (wired at enterTavern time).
+    const leave = tavern.onAbandon;
+    closeTavern();
+    leave?.();
   });
-  // The menu sheet's stylesheet z-index (10004) was chosen against the DUNGEON
-  // canvas; this scene's canvas sits at 10005, which buried the menu under the
-  // room — present in the DOM, invisible on screen. Lift it above the canvas
-  // (and above the vendor counters' 10007, though the two can never stack —
-  // panelOpen() gates this open).
-  if (dungeonState.menuEl) dungeonState.menuEl.style.zIndex = "10008";
 }
+
 
 /** Act on the focused station. */
 function interact(): void {
@@ -274,7 +269,7 @@ function interact(): void {
     // forge): hammer the anvil, with an ember burst per beat.
     // Both implementations queue their flourishes independently; drain both so
     // the knight animates whichever counter the player actually used.
-    const fx = [...consumePendingTavernFx(), ...consumeTavernFx()];
+    const fx = consumeTavernFx();
     if (fx.includes("gear")) {
       playTavernOneShot("equip", () => refreshTavernPlayerArt());
       refreshTavernPlayerArt();
@@ -290,7 +285,7 @@ function interact(): void {
       refreshTavernPlayerArt(); // no flourish, but never leave stale art
     }
   };
-  if (inGameUiEnabled()) {
+  {
     pushUiScreen(
       tavernScreen({
         stats: tavern.stats,
@@ -301,9 +296,7 @@ function interact(): void {
         onClose: onCounterClosed,
       }),
     );
-    return;
   }
-  openVendorCounter(host, s.action.vendor, tavern.stats, onCounterClosed);
 }
 
 function frame(now: number): void {
@@ -634,14 +627,12 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     if (!tavern.active) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    // ── Game menu is open: Esc/I close, Tab/arrows cycle, 1-5 jump — the same
-    // routing the dungeon gives it. Everything else is swallowed.
-    if (isGameMenuOpen()) {
-      const k = e.key.toLowerCase();
-      if (k === "escape" || k === "i") closeGameMenu();
-      else if (k === "tab" || k === "arrowright") cycleMenuTab(1);
-      else if (k === "arrowleft") cycleMenuTab(-1);
-      else if (/^[1-5]$/.test(k)) menuTabByIndex(Number(k) - 1);
+    // ── An in-game screen owns the keyboard. ──
+    // It has already handled this event in `gui/input.ts` (window capture
+    // phase, before this handler), so the only job left is to keep the key out
+    // of the scene's own bindings. The Esc/I/Tab/1-5 routing this block used to
+    // duplicate now lives in ONE place for both the dungeon and the tavern.
+    if (dungeonState.uiPauses) {
       e.preventDefault();
       return;
     }
@@ -757,9 +748,10 @@ export function closeTavern(): void {
 
   closeRunSummary();
   closeGambler();
-  // Menu teardown is guarded by its own open-check; abandoning FROM the menu
-  // already closed it, but a descend scripted while it's up must not leak it.
-  if (isGameMenuOpen()) closeGameMenu();
+  // Abandoning FROM the menu already closed it, but a descend scripted while
+  // it is up must not leak it.
+  closeUiScreen("menu");
+  closeUiScreen("tavern");
   prompt?.dispose();
   fx?.dispose();
   props?.dispose();

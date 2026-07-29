@@ -58,6 +58,35 @@ export function pushBanner(title: string, sub = "", ms = 2400): void {
   banner = { title, sub, until: performance.now() + ms };
 }
 
+/**
+ * FLOATING COMBO NUMBERS.
+ *
+ * `ui.spawnFloatingCombo` used to append an absolutely-positioned div per hit
+ * and animate it with a CSS transition. Here they are a small pool of
+ * screen-space numbers that rise and fade — same read, and now inside the pixel
+ * pass, so a x7 combo snaps to the gold ramp like everything else instead of
+ * being the one un-quantized thing on screen at the loudest moment in the game.
+ */
+interface Floater {
+  text: string;
+  x: number;
+  y: number;
+  born: number;
+}
+const floaters: Floater[] = [];
+const FLOAT_MS = 900;
+
+export function pushFloatingCombo(combo: number, sx: number, sy: number): void {
+  floaters.push({ text: `x${combo}`, x: sx, y: sy, born: performance.now() });
+  // Bounded: a long chain can raise these faster than they expire, and an
+  // unbounded array here would grow for the whole run.
+  if (floaters.length > 24) floaters.splice(0, floaters.length - 24);
+}
+
+export function clearFloatingCombos(): void {
+  floaters.length = 0;
+}
+
 const TOAST_W = 260;
 const ROW_H = 30;
 const CARD_TOAST_H = 54;
@@ -96,6 +125,19 @@ export function toastScreen(): UiScreen {
         } else {
           text(f, t.text, r.x + GRID, r.y + (h - 8) / 2, { size: 8, colour: UI.text, max: r.w - GRID * 2 });
         }
+        f.g.globalAlpha = 1;
+      }
+
+      // Floating combos: rise 30px over their life and fade out.
+      for (let i = floaters.length - 1; i >= 0; i--) {
+        const fl = floaters[i];
+        const age = (now - fl.born) / FLOAT_MS;
+        if (age >= 1) {
+          floaters.splice(i, 1);
+          continue;
+        }
+        f.g.globalAlpha = 1 - age;
+        text(f, fl.text, fl.x, fl.y - age * 30, { size: 16, colour: UI.gold, align: "center" });
         f.g.globalAlpha = 1;
       }
 
