@@ -12,7 +12,7 @@ import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { spawnPinballPart } from "../render/pinball-parts";
 import { damageZombie } from "../entities/combat";
 import { showToast } from "../ui";
-import { sfxHeavy } from "../audio";
+import { sfxHeavy } from "../sfx";
 import { PALETTE_HEX } from "../render/palette";
 import { GRAVEPIT_BLAST_RADIUS, GRAVEPIT_BLAST_LIFE, GRAVEPIT_BLAST_DAMAGE } from "../constants";
 

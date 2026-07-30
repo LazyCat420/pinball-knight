@@ -16,7 +16,7 @@ import { SHAPE_FULL } from "./engine/tile-shape";
 import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast } from "./ui";
-import { sfxBreak, sfxHeavy } from "./audio";
+import { sfxBreak, sfxHeavy } from "./sfx";
 import { WITCH_CHANCE, WALL_BREAK_DEPTH } from "./constants";
 import { spawnWitch } from "./entities/npc";
 

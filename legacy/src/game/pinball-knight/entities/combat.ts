@@ -290,7 +290,7 @@ let onSlimeSplit: ((x: number, z: number, speed: number) => void) | null = null;
 export function setSlimeSplitHandler(fn: (x: number, z: number, speed: number) => void): void {
   onSlimeSplit = fn;
 }
-import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../audio";
+import { sfxHit, sfxZombieDie, sfxHurt, sfxBreak } from "../sfx";
 import { showToast, showPickupNote, updateFpsStreak } from "../ui";
 import { faceOnDamage } from "../hud-face";
 

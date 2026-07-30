@@ -38,7 +38,7 @@ import { damageZombie } from "./entities/combat";
 import type { InputHandle } from "./engine/input";
 import { setFpsOverlay, flashFpsMuzzle, updateFpsStreak } from "./ui";
 import { setHUDMode } from "./hud";
-import { sfxGun } from "./audio";
+import { sfxGun } from "./sfx";
 import { clamp } from "../../utils/math";
 
 /** How long a streak survives without a fresh kill before it resets, seconds. */

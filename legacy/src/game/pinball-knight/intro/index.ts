@@ -33,7 +33,7 @@ import { lookFromGear } from "../render/knight-look";
 import { createActorSprite, type ActorSprite } from "../engine/render/sprite";
 import { SPRITE_PIXEL_GRID, CAMERA_DIST, DIR_HEIGHT, SHADOW_AREA, FOG_NEAR, FOG_FAR, WALL_H } from "../constants";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "../pixel-fonts";
-import { sfxRoll, sfxBreak, sfxBumper, sfxCoin, sfxLevelStart } from "../audio";
+import { sfxRoll, sfxBreak, sfxBumper, sfxCoin, sfxLevelStart } from "../sfx";
 
 // ── Choreography (seconds) ──
 const RUN_DUR = 2.3; // sprint, jump at the end…

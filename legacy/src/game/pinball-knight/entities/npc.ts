@@ -45,7 +45,7 @@ import { NPC_PAINTS } from "../render/cel-painter";
 import { syncActorMesh } from "./combat";
 import { showToast, showPickupNote } from "../ui";
 import { isOpen as uiIsOpen } from "../gui/stack";
-import { sfxCackle, sfxRibbit, sfxPickup, sfxCartBell } from "../audio";
+import { sfxCackle, sfxRibbit, sfxPickup, sfxCartBell } from "../sfx";
 
 /** Catching the merchant opens its shop — core registers the handler. */
 let onMerchantCaught: (() => void) | null = null;

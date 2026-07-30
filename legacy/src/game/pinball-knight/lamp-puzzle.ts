@@ -18,7 +18,7 @@ import { type Grid, tileCenter } from "./maze/generator";
 import { createStaticSprite } from "./engine/render/sprite";
 import { ITEM_PAINTS } from "./render/cel-painter";
 import { showToast, showPickupNote } from "./ui";
-import { sfxTarget, sfxBossReveal, sfxCoin } from "./audio";
+import { sfxTarget, sfxBossReveal, sfxCoin } from "./sfx";
 
 const CHEST_UNLIT = 0x6b1f2a; // dim blood-iron while sealed
 const CHEST_LIT = 0xf0c040; // gold as braziers light

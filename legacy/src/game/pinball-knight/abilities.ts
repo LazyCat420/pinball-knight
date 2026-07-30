@@ -76,7 +76,7 @@ import {
   TIMECRAWL_FIELD_R,
   TIMECRAWL_SMEAR,
 } from "./constants";
-import { sfxSpin, sfxBumper, sfxFreeze, sfxSwing } from "./audio";
+import { sfxSpin, sfxBumper, sfxFreeze, sfxSwing } from "./sfx";
 import { clamp } from "../../utils/math";
 
 export type AbilityId = "flippercharge" | "arcanepulse" | "magnetaura" | "timecrawl" | "bladestorm" | "slickfield";

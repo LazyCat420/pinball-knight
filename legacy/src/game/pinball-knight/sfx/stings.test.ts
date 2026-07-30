@@ -7,7 +7,7 @@
  * environment has no audio at all.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import * as sfx from "./audio";
+import * as sfx from "./index";
 
 /** Every exported sting, so a newly added one can't silently skip these checks. */
 const STINGS = Object.entries(sfx).filter(([n, v]) => n.startsWith("sfx") && typeof v === "function") as Array<
@@ -40,7 +40,14 @@ function fakeCtx() {
   };
 }
 
-vi.mock("../../utils/audio-manager", () => ({ getAudioCtx: () => (globalThis as any).__ctx ?? null }));
+vi.mock("../../../utils/audio-manager", () => ({
+  getAudioCtx: () => (globalThis as any).__ctx ?? null,
+  // bus.ts routes through the master node; returning null makes it fall
+  // back to ctx.destination, which is the pre-mixer graph these baselines
+  // were recorded against.
+  getSfxMaster: () => null,
+  setMasterVolume: () => {},
+}));
 
 beforeEach(() => {
   (globalThis as any).__ctx = null;

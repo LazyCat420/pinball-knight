@@ -6,7 +6,7 @@
  * the SAME `applyPotion` — two paths would drift.
  */
 import { addGold, getBalance, spendGold } from "../../../utils/gold-wallet";
-import { sfxBumper, sfxFreeze } from "../audio";
+import { sfxBumper, sfxFreeze } from "../sfx";
 import { spawnMultiBall } from "../entities/multiball";
 import { enterRicochetForm } from "../entities/ricochet-form";
 import { rippleGlobe } from "../gui/globe-ripple";

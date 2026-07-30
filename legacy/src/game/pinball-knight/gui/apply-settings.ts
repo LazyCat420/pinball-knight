@@ -10,7 +10,7 @@
  */
 import { state } from "../state";
 import { getSettings } from "../settings-save";
-import { setSfxMuted } from "../audio";
+import { setSfxMuted } from "../sfx";
 
 export function applySettingsLive(): void {
   const s = getSettings();

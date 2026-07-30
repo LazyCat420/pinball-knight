@@ -15,7 +15,7 @@ import { submitRunScore, beginRunLedger } from "./ledger";
 import { showToast } from "../ui";
 import { gameOverScreen } from "../gui/screens/game-over";
 import { push as pushUiScreen } from "../gui/stack";
-import { sfxGameOver } from "../audio";
+import { sfxGameOver } from "../sfx";
 import { coopAnnounceDeath } from "../coop";
 import { createStaticSprite } from "../engine/render/sprite";
 import { ITEM_PAINTS } from "../render/cel-painter";

@@ -153,7 +153,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
 import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
-import { sfxGroan, sfxGoblin } from "../audio";
+import { sfxGroan, sfxGoblin } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 export interface EnemyStats {

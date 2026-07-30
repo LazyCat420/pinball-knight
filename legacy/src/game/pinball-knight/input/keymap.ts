@@ -15,7 +15,6 @@ import { useBeltSlot, closeShop } from "../economy/shop";
 import { canRampage, enterRampage } from "../fps";
 import { castAbility } from "../abilities";
 import { showToast } from "../ui";
-import { sfxPickup } from "../audio";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { openMenu } from "../gui/screens/menu";
 import { WEAPONS } from "../items";

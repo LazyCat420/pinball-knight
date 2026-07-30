@@ -53,7 +53,7 @@ import {
   LASER_MARK_STEP,
   LASER_TRAIL_LIFE,
 } from "../constants";
-import { sfxBumper, sfxSpin } from "../audio";
+import { sfxBumper, sfxSpin } from "../sfx";
 
 /**
  * Height the trail is drawn at. Chest height rather than the floor: the ribbon

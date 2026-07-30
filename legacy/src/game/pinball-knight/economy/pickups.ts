@@ -9,7 +9,7 @@
  * in the economy calls back into it.
  */
 import { myId } from "../../../net/presence";
-import { sfxCoin, sfxPickup } from "../audio";
+import { sfxCoin, sfxPickup } from "../sfx";
 import { presentCardPickup } from "../card-reader";
 import { cardDef, socketCard, type CardId } from "../cards";
 import {

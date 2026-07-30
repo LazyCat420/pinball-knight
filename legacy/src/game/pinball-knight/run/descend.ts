@@ -23,7 +23,7 @@ import { applyDelveCatchUp } from "../delve";
 import { sweepCoins } from "../economy/coins";
 import { addGold } from "../../../utils/gold-wallet";
 import { showToast, showPickupNote } from "../ui";
-import { sfxStairs } from "../audio";
+import { sfxStairs } from "../sfx";
 import { enterTavern } from "../../../scenes/tavern";
 import { haulScreen } from "../gui/screens/haul";
 import { push as pushUiScreen } from "../gui/stack";

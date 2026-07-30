@@ -35,7 +35,7 @@ import {
 } from "./constants";
 import { addGold } from "../../utils/gold-wallet";
 import { showToast, showPickupNote } from "./ui";
-import { sfxTarget, sfxSpring, sfxBumper } from "./audio";
+import { sfxTarget, sfxSpring, sfxBumper } from "./sfx";
 
 /** Bank the gold in both the run ledger and the wallet — one place, one rule. */
 function pay(amount: number): void {

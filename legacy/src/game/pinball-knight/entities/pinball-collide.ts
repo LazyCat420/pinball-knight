@@ -115,7 +115,7 @@ import { screenDirToWorld } from "../engine/camera";
 import { syncActorMesh, damageZombie } from "./combat";
 import { materialBumperMult, materialBumperScatterMult, tryWaterSteam, stoneMagstripCap, stoneIgnoresOil, stoneBridgesPit, lavaVaporizesOil } from "./marble";
 import { requestShake, requestHitstop } from "../engine/juice";
-import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../audio";
+import { sfxRoll, sfxBumper, sfxSpring, sfxSpin, sfxTarget, sfxHurt, sfxHeavy } from "../sfx";
 
 /**
  * The player-owned behaviours a part can trigger. Passed in rather than imported

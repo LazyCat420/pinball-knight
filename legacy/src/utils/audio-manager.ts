@@ -85,6 +85,65 @@ export function isGloballyMuted(): boolean {
   return _silenced;
 }
 
+/**
+ * MASTER VOLUME — one gain node between every sound and the speakers.
+ *
+ * This lives here, next to the global mute, rather than inside a single game's
+ * folder, and for the same reason the mute does: `getAudioCtx()` is the one
+ * chokepoint the whole app shares. A master gain owned by
+ * `game/pinball-knight/sfx/` could only ever scale that game's stings, so
+ * turning the volume down and then walking into the tavern would still be loud —
+ * a bug a player finds in about five minutes.
+ *
+ * Nothing is forced through it: every existing caller still connects straight to
+ * `ctx.destination` and is unaffected. Sources opt in by connecting to
+ * `getSfxMaster()` instead, which is how the dungeon's `sfx/bus.ts` routes.
+ * Re-pointing the tavern and the gambler is then one line per `connect`.
+ */
+let _master: GainNode | null = null;
+let _masterOwner: unknown = null;
+let _masterVolume = 1;
+
+/** 0..1, with a perceptual curve applied at the node. */
+export function setMasterVolume(v: number): void {
+  _masterVolume = Math.max(0, Math.min(1, v));
+  if (_master) {
+    // v² is much closer to how loudness is heard than a linear fader: a linear
+    // 0.5 sounds barely quieter than full, which makes the slider feel broken.
+    _master.gain.value = _masterVolume * _masterVolume;
+  }
+}
+
+export function masterVolume(): number {
+  return _masterVolume;
+}
+
+/**
+ * The master gain node, created lazily on the live context.
+ *
+ * Returns null exactly when `getAudioCtx()` does (no window, globally muted), so
+ * callers keep their existing fail-silent shape. If the context is ever replaced
+ * the node is rebuilt — a GainNode belongs to one AudioContext and connecting
+ * across two throws.
+ */
+export function getSfxMaster(): AudioNode | null {
+  const c = getAudioCtx();
+  if (!c) return null;
+  try {
+    if (!_master || _masterOwner !== c) {
+      _masterOwner = c;
+      _master = c.createGain();
+      _master!.gain.value = _masterVolume * _masterVolume;
+      _master!.connect(c.destination);
+    }
+    return _master;
+  } catch {
+    // A context that refuses a GainNode must not silence the game — the caller
+    // falls back to `destination`.
+    return null;
+  }
+}
+
 export function getAudioCtx(): any {
   if (typeof window === "undefined") return null;
   if (_silenced) return null;

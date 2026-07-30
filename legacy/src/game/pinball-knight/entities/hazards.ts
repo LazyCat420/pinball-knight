@@ -30,7 +30,7 @@ import {
 import { comboWindow } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
 import { tryDiamondDischarge, waterQuenchesFire } from "./marble";
-import { sfxBumper, sfxFlame } from "../audio";
+import { sfxBumper, sfxFlame } from "../sfx";
 
 /** A shared clock the electric-plate phase reads (mirrors pinball-parts' animT). */
 let hazT = 0;

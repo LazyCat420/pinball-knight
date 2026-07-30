@@ -9,7 +9,6 @@
 import { state } from "../state";
 import { spawnBoss } from "../boss";
 import { showToast } from "../ui";
-import { sfxBossReveal } from "../audio";
 import { tileCenter } from "../maze/generator";
 import { REAPER_HP, REAPER_SCALE, REAPER_SPEED_BASE, REAPER_TINT } from "../constants";
 import { isReplica } from "../coop";

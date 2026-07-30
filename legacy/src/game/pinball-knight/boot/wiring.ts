@@ -24,7 +24,7 @@ import { setDebugActionDeps, debugSpawn, debugClearEnemies } from "../dev/debug-
 import { installDevHooks } from "../dev/window-hooks";
 import { setLevelUpHandler } from "../skill-runtime";
 import { showToast } from "../ui";
-import { sfxModifier } from "../audio";
+import { sfxModifier } from "../sfx";
 import { openShop, applyPotion } from "../economy/shop";
 import { tearGraveHole } from "../run/grave-hole";
 import {

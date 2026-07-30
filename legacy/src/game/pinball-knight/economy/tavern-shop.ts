@@ -38,7 +38,7 @@ import {
   type GearSlot,
   type PotionId,
 } from "../items";
-import { sfxBreak } from "../audio";
+import { sfxBreak } from "../sfx";
 import { ARMOR_STYLES, isStyleUnlocked, unlockStyle, setActiveStyle, styleGearGrant, type ArmorStyleId } from "../armor-styles";
 import {
   CARD_LEVEL_MAX,

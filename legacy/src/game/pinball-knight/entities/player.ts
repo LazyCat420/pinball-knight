@@ -195,7 +195,7 @@ import {
   lavaMeltIfActive,
 } from "./marble";
 import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../audio";
+import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";

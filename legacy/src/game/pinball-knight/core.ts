@@ -121,7 +121,7 @@ import { resolveDescendFloor } from "../../net/rally";
 import { applyDelveCatchUp } from "./delve";
 import { createFog } from "./fog";
 import { closeFloorMap } from "./map-overlay";
-import { sfxLevelStart, sfxModifier, sfxBossReveal } from "./audio";
+import { sfxLevelStart, sfxModifier, sfxBossReveal } from "./sfx";
 import { saveBestDepth } from "./best-depth";
 import { loadResumeFloor } from "./corpse-run";
 import { getPlayerName } from "../../services/player-name";

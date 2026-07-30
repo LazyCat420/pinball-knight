@@ -24,7 +24,7 @@
  * sfxBumper, sfxCoin) and without the pin this test compares dice.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as sfx from "./audio";
+import * as sfx from "./index";
 
 /** Generated from the pre-move implementation. Do NOT regenerate to make a
  *  failure go away — a change here means the game sounds different. */
@@ -107,8 +107,12 @@ function probeCtx() {
   };
 }
 
-vi.mock("../../utils/audio-manager", () => ({
+vi.mock("../../../utils/audio-manager", () => ({
   getAudioCtx: () => (globalThis as Record<string, unknown>).__ctx ?? null,
+  // bus.ts routes through the master node; null makes it fall back to
+  // ctx.destination, which is the pre-mixer graph the baseline recorded.
+  getSfxMaster: () => null,
+  setMasterVolume: () => {},
 }));
 
 beforeEach(() => {

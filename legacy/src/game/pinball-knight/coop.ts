@@ -36,7 +36,7 @@ import { state, type Zombie, type GroundItem, type EnemyKind } from "./state";
 import { RemotePartyRenderer } from "./render/remote-party";
 import { bossNetState, applyRemoteBossAux, updateBossReplica, adoptBoss, bossActive, disposeBoss, type BossAux } from "./boss";
 import { PINBALL_MAX_SPEED } from "./constants";
-import { sfxBumper } from "./audio";
+import { sfxBumper } from "./sfx";
 
 const SNAP_INTERVAL = 0.1; // authority world snapshots at 10Hz
 const GHOST_LERP = 10; // replica zombie interpolation rate
