@@ -194,12 +194,62 @@ interface FinalUniforms {
  * a `mix(off, on, flag)` where the flag is already 0/1. Same result, no
  * divergence, and the uniform stays pokeable from JS.
  */
+/**
+ * How many rows of shadow the quantizer can walk.
+ *
+ * The longest family ramp is stone (6 entries) and every family terminates at
+ * void, so six walks take ANY entry to black — palette-shading.test.ts asserts
+ * exactly that of the deepest row. More rows would be dead texture; fewer would
+ * make the darkest shadow in the game arbitrary rather than black.
+ */
+const SHADE_ROWS = 6;
+
+/**
+ * The pre-baked shaded palette: PALETTE_SIZE wide, SHADE_ROWS+1 tall, texel
+ * (i, s) = palette entry i walked s rows down its own ramp.
+ *
+ * NearestFilter and NO colour-space decode: it holds the same sRGB bytes the
+ * shader's min-reduction compares against, and letting three "helpfully" decode
+ * it would put the lookup in a different space from the snap that chose it.
+ */
+function buildShadedPalette(palette: Float32Array): THREE.DataTexture {
+  const n = Math.floor(palette.length / 3);
+  // Built from the INJECTED one-step table rather than imported from the game:
+  // `engine/` may not depend on game content (engine-boundary.test.ts), and a
+  // colour ramp is art direction. The walk is defined in render/palette-shading.
+  const down = enginePalette.shadeDown?.() ?? new Uint8Array(n);
+  const rows = new Uint8Array((SHADE_ROWS + 1) * n);
+  for (let i = 0; i < n; i++) rows[i] = i;
+  for (let s = 1; s <= SHADE_ROWS; s++) {
+    for (let i = 0; i < n; i++) rows[s * n + i] = down[rows[(s - 1) * n + i]] ?? 0;
+  }
+  const data = new Uint8Array(n * (SHADE_ROWS + 1) * 4);
+  for (let s = 0; s <= SHADE_ROWS; s++) {
+    for (let i = 0; i < n; i++) {
+      const src = rows[s * n + i];
+      const o = (s * n + i) * 4;
+      data[o] = Math.round(palette[src * 3] * 255);
+      data[o + 1] = Math.round(palette[src * 3 + 1] * 255);
+      data[o + 2] = Math.round(palette[src * 3 + 2] * 255);
+      data[o + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, n, SHADE_ROWS + 1, THREE.RGBAFormat);
+  tex.minFilter = THREE.NearestFilter;
+  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function finalNode(
   diffuse: THREE.Texture,
   bloomTex: THREE.Texture,
   depth: THREE.Texture,
   uiTex: THREE.Texture,
   palette: Float32Array,
+  shadedPal: THREE.Texture,
   u: FinalUniforms,
 ): TSLNode {
   // Diffuse, depth and bloom are all render targets, so all three are sampled
@@ -245,7 +295,14 @@ function finalNode(
   }
   // Void/sky (depth >= 0.999) is excluded — nothing there to occlude.
   const aoTerm = c0.greaterThanEqual(0.999).select(float(0), occ.div(16));
-  col = col.mul(float(1).sub(aoTerm.mul(u.ao)));
+  // ⚠️ AO does NOT multiply the colour any more. Every multiplicative darkening
+  // term in this shader accumulates into `light` and is spent at the quantizer
+  // as a walk down the palette ROW — see the lookup at the snap. Multiplying
+  // here is what made a shadowed floor change HUE: the darkened value snapped to
+  // whichever family the luma-weighted metric happened to favour, and this
+  // palette's eight families are far apart. Measured: 24 of 32 entries leave
+  // their family before 0.35, and the tavern floor (28) leaves it at 0.95.
+  let light: TSLNode = float(1).sub(aoTerm.mul(u.ao));
 
   // ── Bloom, added in LINEAR so bright torch cores bleed a warm halo.
   col = col.add(texture(bloomTex, vUv).rgb.mul(u.bloom));
@@ -262,7 +319,7 @@ function finalNode(
   // ── Vignette, BEFORE the quantizer so the falloff snaps to darker steps.
   const q = vUv.sub(0.5);
   const vig = smoothstep(0.85, 0.32, dot(q, q).mul(2)); // 1 centre → 0 corners
-  col = col.mul(mix(float(1), vig, u.vignette));
+  light = light.mul(mix(float(1), vig, u.vignette));
 
   // ── Ink outline — the cel-shading move. TWO edge terms, because a depth
   // edge alone is blind to the case that matters most.
@@ -350,7 +407,11 @@ function finalNode(
     .mul(float(1).sub(allWarm));
   const depthEdge: TSLNode = e.greaterThan(float(0.35 / 200)).select(float(1), float(0));
   const inked = max(depthEdge, colourEdge).greaterThan(float(0.5)).select(float(0.45), float(1));
-  col = col.mul(mix(float(1), inked, u.outline));
+  // The outline is darkening too, so it rides `light` with everything else —
+  // and this is a bonus rather than a compromise: driving a pixel hard down its
+  // own ramp lands it on ink at the bottom, which is exactly what an ink outline
+  // is. It can no longer produce a dark version of some OTHER material.
+  light = light.mul(mix(float(1), inked, u.outline));
 
   // ── The in-game UI, composited HERE and nowhere else.
   //
@@ -389,6 +450,10 @@ function finalNode(
   // this with `__gui.probe()` and check the GOLD BLOCK, never a centred menu.
   const uiTexel: TSLNode = texture(uiTex, uv());
   col = mix(col, uiTexel.rgb, uiTexel.a.mul(u.ui));
+  // The UI is not IN the world, so it must not be lit by it. An opaque menu
+  // pixel is forced back to full light, or the corners of a paused inventory
+  // would dim under the vignette that happens to be behind them.
+  light = mix(light, float(1), uiTexel.a.mul(u.ui));
 
   // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the
   // palette's bright ramp like everything else.
@@ -410,7 +475,13 @@ function finalNode(
   // frame wore per-pixel confetti (the "colors are off" look). Half a step
   // still breaks AO/lighting banding — gradients dither at ramp boundaries —
   // but can no longer hop families from a standing start.
-  col = col.add(b.mul(1 / PALETTE_SIZE).mul(u.dither));
+  // ⚠️ THE DITHER NO LONGER TOUCHES THE COLOUR — it is applied to the target
+  // LUMA at the quantizer instead, where it can only move a pixel between two
+  // rungs of its OWN ramp. Nudging the colour before a material snap moves it in
+  // a space whose neighbours are other MATERIALS, which is what wore the frame
+  // in per-pixel confetti and forced the amplitude down to half a step on
+  // 2026-07-30 — and that halving is what then exposed the lighting banding.
+  // Dithering in the right space removes the trade entirely.
 
   // ── Snap to the nearest palette entry, luma-weighted. Unrolled over the 32
   // colours: the palette is a compile-time constant here, so this becomes a
@@ -432,6 +503,7 @@ function finalNode(
   let best: TSLNode = vec3(palette[0], palette[1], palette[2]);
   const d0 = col.sub(best).mul(vec3(0.3, 0.59, 0.11));
   let bestDist: TSLNode = dot(d0, d0);
+  let bestIdx: TSLNode = float(0);
   for (let i = 1; i < PALETTE_SIZE; i++) {
     const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
     const d = col.sub(pc).mul(vec3(0.3, 0.59, 0.11));
@@ -439,8 +511,43 @@ function finalNode(
     const closer = dist.lessThan(bestDist);
     best = closer.select(pc, best);
     bestDist = closer.select(dist, bestDist);
+    // The winning INDEX, carried alongside the winning colour. A colour cannot
+    // be walked down a ramp; only an index can.
+    bestIdx = closer.select(float(i), bestIdx);
   }
-  col = mix(col, best, u.quantize);
+
+  // ── INDEXED LIGHTING ───────────────────────────────────────────────────────
+  //
+  // The reduction above ran on the UNLIT colour, so `bestIdx` is the MATERIAL —
+  // stone, rot, leather — chosen before any shadow could drag it into a
+  // neighbouring family. Lighting is then spent by walking that entry down its
+  // own ramp, via the pre-baked shaded-palette texture (row s = entry shaded s
+  // steps; see render/palette-shading.ts, where the walk is defined and tested
+  // in plain node).
+  //
+  // ⚠️ THE ROW IS CHOSEN BY MATCHING LUMA, NOT BY SCALING THE SHADE AMOUNT.
+  // That distinction is the whole reason the first attempt at this failed. A
+  // linear map (`row = shade * ROWS`) puts most of the frame on row 0 — AO only
+  // fires in corners and the vignette only at the edges — so the scene rendered
+  // at full unshaded brightness and the dungeon went from cold blue-green to
+  // bright grey-brown. Matching luma is SELF-CALIBRATING instead: the target is
+  // what the old multiply would have produced, and the ramp rung nearest that
+  // target is chosen, so the frame's brightness tracks the multiply as closely
+  // as the material's own ramp allows. No constant to tune.
+  const LUMA_W = vec3(0.3, 0.59, 0.11);
+  // Dither the TARGET, where a nudge can only move a pixel between two rungs of
+  // its own ramp. 0.03 is roughly half a typical ramp step in luma.
+  const target = dot(best, LUMA_W).mul(light).add(b.mul(0.03).mul(u.dither));
+  let shaded: TSLNode = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(0.5).div(SHADE_ROWS + 1))).rgb;
+  let bestGap: TSLNode = dot(shaded, LUMA_W).sub(target).abs();
+  for (let s = 1; s <= SHADE_ROWS; s++) {
+    const rowRgb = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(s + 0.5).div(SHADE_ROWS + 1))).rgb;
+    const gap = dot(rowRgb, LUMA_W).sub(target).abs();
+    const nearer = gap.lessThan(bestGap);
+    shaded = nearer.select(rowRgb, shaded);
+    bestGap = nearer.select(gap, bestGap);
+  }
+  col = mix(col.mul(light), shaded, u.quantize);
 
   // ── Scanlines: every other ROW of the render target, dimmed.
   const line: TSLNode = mod(floor(vUv.y.mul(res.y)), 2);
@@ -987,6 +1094,7 @@ export function createPixelPass(
     depthTexture,
     opts.uiTexture,
     enginePalette.toFloatArray(),
+    buildShadedPalette(enginePalette.toFloatArray()),
     finalUniforms,
   );
 

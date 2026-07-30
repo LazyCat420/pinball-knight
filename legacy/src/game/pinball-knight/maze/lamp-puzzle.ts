@@ -25,8 +25,14 @@ export interface LampPuzzlePlan {
   loot: string[];
 }
 
-/** Loot tables — all POTION ids (ground items spawn as kind:"potion"). */
-const LOOT_TABLES: readonly (readonly string[])[] = [
+/**
+ * Loot tables — all POTION ids (ground items spawn as kind:"potion").
+ *
+ * Exported so `potion-supply.test.ts` can count this as a supply route: a vault
+ * payout is a real way to obtain a potion, and a guard that only knew about the
+ * floor pool and the shops would call these ids unreachable.
+ */
+export const LOOT_TABLES: readonly (readonly string[])[] = [
   ["gold", "gold", "health"],
   ["gold", "shield", "health"],
   ["gold", "haste", "gold"],

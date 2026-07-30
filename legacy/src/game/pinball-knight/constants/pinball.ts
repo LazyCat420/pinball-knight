@@ -1069,29 +1069,56 @@ export const LASER_DAMAGE = 4;
 /**
  * THE ZIGZAG. Seconds between mid-air heading kinks.
  *
- * Bouncing off walls alone does not make a laser: between two walls the path is
- * a straight line, and at this speed the ribbon drew that line as a long beam
- * sliding sideways across the room — the exact thing "become a beam" should not
- * look like. The kink puts a corner in the path every few hundredths of a
- * second, so the ball reads as a point of light darting, and the marks it stamps
- * (vfx.laserMark) read as a rapid chain of laser crosses.
+ * ── IT WAS 0.055s / 0.85rad, AND THAT WAS RIGHT FOR THE OLD TRAIL ──
+ * Bouncing off walls alone does not make a laser IF ALL YOU DRAW IS A STUB:
+ * between two walls the path is a straight line, and with a 0.12s tail at this
+ * speed that line drew as a short beam sliding sideways across the room. A kink
+ * every few hundredths of a second fixed it — the ball read as a point of light
+ * darting, and the crosses it stamped carried the path.
  *
- * 0.055s at LASER_SPEED is a 1.8-unit leg — under two tiles, so the zigzag is
- * visible at played scale without turning into a vibrating blur.
+ * The beam grid (2026-07-29, on request) removes the premise. With the whole
+ * cast's path held on screen the straight legs ARE the effect — that is what a
+ * spy-movie laser lattice IS — and the old kink rate turned it into a scribble:
+ * shot on a real adapter, a 35-corner saw-tooth milled around one corner of the
+ * room instead of crossing it, and the accumulated path read as a ball of wool.
+ *
+ * So the kink is kept but demoted: 0.30s is a ~9.6-unit leg at LASER_SPEED
+ * (most of a room crossing) and 0.16rad is a visible lean rather than a turn.
+ * The path still is not machined — the legs bend and no two crossings are
+ * parallel — while the walls do the rest of the work, which is what was wanted.
+ * Both numbers are compared A/B in the same room in the wave notes.
  */
-export const LASER_ZIG_PERIOD = 0.055;
+export const LASER_ZIG_PERIOD = 0.3;
 /** How far each kink turns, radians. Applied with ALTERNATING sign, so the
- *  heading saws between two directions and still crosses the room — a signed
- *  random walk would just wander in place. */
-export const LASER_ZIG_ANGLE = 0.85;
+ *  heading saws about a mean direction and still crosses the room — a signed
+ *  random walk would just wander in place. Small since the beam grid landed:
+ *  see LASER_ZIG_PERIOD. */
+export const LASER_ZIG_ANGLE = 0.16;
 /** World units of travel between stamped laser crosses. Roughly half a leg, so
  *  a leg carries a couple of marks and the corners stay the densest part. */
 export const LASER_MARK_STEP = 0.85;
-/** Seconds a laser trail point lives. Much shorter than the bolt's ribbon: the
- *  laser is a DOT with a stub of tail, and the marks carry the path from there.
- *  0.12s is ~4 units at LASER_SPEED — a stub you read as attached to the ball,
- *  where 0.2 was still long enough to draw as a line between the crosses. */
-export const LASER_TRAIL_LIFE = 0.12;
+/**
+ * Seconds a laser trail point lives — i.e. how long the beam it has already
+ * drawn stays on the floor.
+ *
+ * ── THIS WAS 0.12, AND THE REVERSAL IS THE POINT (2026-07-29, on request) ──
+ * The original brief was "a DOT with a stub of tail", with the marks
+ * (`vfx.laserMark`) carrying the path, because an EARLY cut drew the path as one
+ * long line sliding sideways across the room and that is not what a bolt of
+ * light darting looks like.
+ *
+ * The ask now is the spy-movie laser GRID: the beam bounces off the walls and
+ * the beams it has already laid stay up, so what you see accumulates into a
+ * lattice you have to look at. That needs the opposite of a stub — near the
+ * whole cast, held bright (TRAIL_FADE_HOLD) rather than tapered.
+ *
+ * 1.9 against LASER_DURATION 2.2 keeps the oldest legs alive almost to the end
+ * of the form while still dying back visibly once it lapses, so the lattice
+ * fades out instead of blinking off. It also sets the ribbon's capacity
+ * requirement: 180 points/sec × 1.9 = 342, which is why TRAIL_POINTS is 448 and
+ * why a test now ties the two together.
+ */
+export const LASER_TRAIL_LIFE = 1.9;
 
 // ── 🔥 LAVA: MELTS masonry (entities/wall-erosion.ts) ────────────
 // Walls used to be binary — fast enough to smash, or nothing. Lava introduces

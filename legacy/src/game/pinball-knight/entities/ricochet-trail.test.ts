@@ -19,6 +19,7 @@ import { state } from "../state";
 import { enterRicochetForm, updateRicochet, RICOCHET_FLAVORS } from "./ricochet-form";
 import { setTile, type Grid } from "../engine/grid";
 import { T_WALL, T_FLOOR } from "../maze/generator";
+import { LASER_DURATION, LASER_TRAIL_LIFE, LASER_ZIG_ANGLE, LASER_ZIG_PERIOD } from "../constants";
 
 function makeGrid(size: number, fill: number = T_FLOOR): Grid {
   return { w: size, h: size, t: new Uint8Array(size * size).fill(fill), shapes: new Uint8Array(size * size) };
@@ -26,7 +27,7 @@ function makeGrid(size: number, fill: number = T_FLOOR): Grid {
 
 /** Records every trail point and laser mark pushed, so the path can be inspected. */
 function fakeVfx() {
-  const points: Array<{ x: number; z: number; color: number; life?: number }> = [];
+  const points: Array<{ x: number; z: number; color: number; life?: number; style?: string }> = [];
   const marks: Array<{ x: number; z: number; dirx: number; dirz: number }> = [];
   let clears = 0;
   return {
@@ -34,7 +35,8 @@ function fakeVfx() {
     marks,
     clears: () => clears,
     vfx: {
-      trail: (x: number, _y: number, z: number, color: number, life?: number) => points.push({ x, z, color, life }),
+      trail: (x: number, _y: number, z: number, color: number, life?: number, style?: string) =>
+        points.push({ x, z, color, life, style }),
       laserMark: (x: number, _y: number, z: number, dirx: number, dirz: number) => marks.push({ x, z, dirx, dirz }),
       trailClear: () => {
         clears++;
@@ -149,16 +151,40 @@ describe("the ricochet trail carries the direction the sprite cannot", () => {
     expect(rec.clears()).toBeGreaterThanOrEqual(2);
   });
 
-  it("gives the laser a SHORTER tail than the bolt — a dot with a stub, not a beam", () => {
+  /**
+   * ── THIS ASSERTION USED TO SAY THE OPPOSITE ──
+   * It read "gives the laser a SHORTER tail than the bolt — a dot with a stub,
+   * not a beam", pinning the original brief: the marks carried the path and the
+   * ribbon was a 0.12s stub, because an early cut drew one long line sliding
+   * across the room.
+   *
+   * The brief CHANGED on request (2026-07-29): the laser should leave the
+   * spy-movie beam grid — the legs it has already drawn stay up and accumulate
+   * into a lattice. So the laser now holds the LONGER life of the two, and the
+   * property worth pinning is no longer "which is shorter" but that the two
+   * flavours still differ in BOTH knobs the ribbon carries per point. One
+   * object serves two reads; if it ever stops carrying them per point, one of
+   * the two silently becomes the other.
+   */
+  it("gives the laser a LONGER, HELD tail than the bolt's tapered streak", () => {
     enterRicochetForm("bolt");
     updateRicochet(1 / 60);
-    const boltLife = rec.points[0].life!;
+    const bolt = rec.points[0];
     enterRicochetForm("laser");
     updateRicochet(1 / 60);
-    const laserLife = rec.points[0].life!;
-    // The ribbon is one object serving two reads. If it ever stops carrying a
-    // per-point life the laser silently grows the bolt's room-long streak back.
-    expect(laserLife).toBeLessThan(boltLife);
+    const laser = rec.points[0];
+    expect(laser.life!).toBeGreaterThan(bolt.life!);
+    // The STYLE is the other half: a long life drawn in the bolt's language is a
+    // dim thin smear, not a lattice — see TRAIL_STYLES.
+    expect(laser.style).toBe("beam");
+    expect(bolt.style).toBe("taper");
+  });
+
+  it("keeps the whole cast's path alive — the lattice is the effect", () => {
+    // The life has to cover most of the cast or the oldest legs are gone before
+    // the newest are drawn, and "it bounces off the walls and the beams stay
+    // up" is the entire ask.
+    expect(LASER_TRAIL_LIFE / LASER_DURATION).toBeGreaterThan(0.75);
   });
 
   it("stops feeding the trail once the form lapses", () => {
@@ -174,11 +200,18 @@ describe("the ricochet trail carries the direction the sprite cannot", () => {
 /**
  * THE ZIGZAG — why the laser turns without touching anything.
  *
- * Bouncing off walls is not enough to make a laser read as one. Between two
- * walls the path is a straight line, and at LASER_SPEED the ribbon drew that
- * line honestly: a long beam sliding sideways across the room. These tests pin
- * the fix at the level it lives — the PATH, in an open room where every corner
- * in it must have come from the form itself.
+ * Originally the whole "it is a laser" read: with only a 0.12s stub of tail, a
+ * straight leg between two walls drew as a beam sliding sideways, so the form
+ * kinked its own heading nine times a second.
+ *
+ * The beam grid (2026-07-29) made the straight legs the effect instead, and the
+ * kink was demoted to a lean — 0.3s and 0.16rad. The PROPERTY these tests exist
+ * for survives that and is still worth pinning: the laser bends its own path and
+ * the bolt does not, so a room with no walls in reach can tell them apart. What
+ * changed is that the thresholds are now DERIVED from the two constants instead
+ * of hardcoding the rate they had when the tests were written — the version that
+ * did assert "≥6 corners of ≥0.3rad in 0.5s", which is not a property, it is a
+ * transcription of one tuning.
  */
 describe("the laser zigzags on its own; the bolt does not", () => {
   /** Corners in a recorded path: how many times it turned by more than `min`. */
@@ -198,9 +231,24 @@ describe("the laser zigzags on its own; the bolt does not", () => {
     return n;
   }
 
-  /** A room with no walls in reach — every turn recorded here is the form's. */
+  /**
+   * A room with no walls in reach — every turn recorded here is the form's.
+   *
+   * ── THE SIZE IS LOAD-BEARING, AND world (0,0) IS THE MIDDLE ──
+   * `moveCircle` maps world to grid with `gx = x + g.w / 2`, so the origin is
+   * the room's CENTRE and the clearance in every direction is half the width.
+   * At 61 that is 30 units, which was fine for a 0.5s run (16 units of path) and
+   * stopped being fine the moment the zigzag test ran long enough to measure a
+   * slower kink rate: 1.2s of laser is 38 units, the ball reached the boundary,
+   * and `bounceCombo` going to 1 made the failure point at the kink rate rather
+   * than at the room. 121 gives 60 units of clearance — more than a full cast.
+   *
+   * (Moving the START to `ROOM / 2` to "centre" it does the opposite: that is
+   * grid coordinate 121, i.e. straight into the far wall. Ten bounces, instantly.)
+   */
+  const ROOM = 121;
   function openRoom() {
-    state.grid = makeGrid(61);
+    state.grid = makeGrid(ROOM);
     state.player!.x = 0;
     state.player!.z = 0;
     state.player!.momX = 1;
@@ -211,12 +259,16 @@ describe("the laser zigzags on its own; the bolt does not", () => {
   it("puts corners in the path with no wall anywhere near", () => {
     openRoom();
     enterRicochetForm("laser");
-    for (let i = 0; i < 30; i++) updateRicochet(1 / 60); // 0.5s
+    // Long enough for several kinks AT THE CURRENT PERIOD, so the test scales
+    // with the tuning instead of expiring on it.
+    const secs = LASER_ZIG_PERIOD * 4;
+    for (let i = 0; i < Math.ceil(secs * 60); i++) updateRicochet(1 / 60);
     // Nothing was hit, so nothing external bent the path.
     expect(state.player!.bounceCombo).toBe(0);
-    // 0.5s at LASER_ZIG_PERIOD (0.055) is ~9 kinks; allow for the sub-step
-    // boundary and a slack frame at each end.
-    expect(corners(rec.points)).toBeGreaterThanOrEqual(6);
+    // Each kink turns LASER_ZIG_ANGLE × (0.7 … 1.3); half of it is a threshold
+    // no kink can miss and no straight leg can reach.
+    const turned = corners(rec.points, LASER_ZIG_ANGLE * 0.5);
+    expect(turned, `expected ~4 kinks in ${secs.toFixed(2)}s, saw ${turned}`).toBeGreaterThanOrEqual(2);
   });
 
   it("still crosses the room — a saw-tooth, not a random walk on the spot", () => {

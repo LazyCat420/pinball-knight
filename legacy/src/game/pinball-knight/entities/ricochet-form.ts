@@ -54,6 +54,7 @@ import {
   LASER_TRAIL_LIFE,
 } from "../constants";
 import { sfxBumper, sfxSpin } from "../sfx";
+import type { TrailStyleName } from "../render/vfx";
 
 /**
  * Height the trail is drawn at. Chest height rather than the floor: the ribbon
@@ -90,6 +91,15 @@ interface FlavorSpec {
   markStep: number;
   /** How long each trail point lives — the length of the tail it drags. */
   trailLife: number;
+  /**
+   * Which visual language the ribbon draws this form in (TRAIL_STYLES, vfx.ts).
+   *
+   * The bolt TAPERS: a streak being dragged, brightest at the ball. The laser is
+   * a BEAM, because its tail is not a tail — it is the grid it has already laid,
+   * and a lattice that dims, thins and fringes as fast as it is drawn is just a
+   * longer stub.
+   */
+  trailStyle: TrailStyleName;
 }
 
 export const RICOCHET_FLAVORS: Record<RicochetFlavor, FlavorSpec> = {
@@ -108,6 +118,7 @@ export const RICOCHET_FLAVORS: Record<RicochetFlavor, FlavorSpec> = {
     zigAngle: 0,
     markStep: 0,
     trailLife: 0.45,
+    trailStyle: "taper",
   },
   laser: {
     duration: LASER_DURATION,
@@ -132,6 +143,7 @@ export const RICOCHET_FLAVORS: Record<RicochetFlavor, FlavorSpec> = {
     zigAngle: LASER_ZIG_ANGLE,
     markStep: LASER_MARK_STEP,
     trailLife: LASER_TRAIL_LIFE,
+    trailStyle: "beam",
   },
 };
 
@@ -296,7 +308,7 @@ export function updateRicochet(dt: number): boolean {
     // This is also what tells the player which way they are going. The form's
     // sprite is a camera-facing billboard — its art cannot rotate — so the
     // heading has to be carried by the path itself.
-    state.vfx?.trail(p.x, TRAIL_Y, p.z, spec.tint, spec.trailLife);
+    state.vfx?.trail(p.x, TRAIL_Y, p.z, spec.tint, spec.trailLife, spec.trailStyle);
   }
   p.momSpeed = spec.speed;
 

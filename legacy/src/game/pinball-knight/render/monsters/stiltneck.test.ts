@@ -341,13 +341,32 @@ describe("it is the warm one", () => {
     };
     const neck = share(12, 46);   // nothing but creature
     const shins = share(96, 112); // nothing but timber
-    // 0.25, measured at 0.27 after the 07-29 rebalance (was 0.19 in the version
-    // that shipped brown). The band holds the whole head — dark ossicones, the
-    // void bomb in the bite frames' reach, the cold eye — so "mostly gold"
-    // lands in the high twenties, not past half; the gate is set to catch a
-    // relapse, not to flatter the current number.
-    expect(neck, `neck torch share ${neck.toFixed(3)}`).toBeGreaterThan(0.25);
+    // ── WHY THIS IS A RATIO NOW, AND NOT `neck > 0.25` ──
+    //
+    // The absolute bound was calibrated at 0.27 on 07-29 — while the crush's
+    // unsharp mask was inflating it. That pass brightens borderline blends UP,
+    // which walks them into the torch ramp (14-18) instead of letting them
+    // settle on leather (26-28); measured, it was worth about +0.06 on this
+    // band alone. So 0.25 was never a statement about the ART. It was a
+    // statement about the art PLUS a filter artifact, and it would move again
+    // the next time anything upstream of the snap changed.
+    //
+    // It was also measuring the wrong thing. A zoomed atlas crop with this
+    // band marked shows cel 12-26 is the HEAD — muzzle, cold eye, ossicones,
+    // mouth line — which is legitimately the darkest, busiest region on the
+    // creature, and cel 26-46 is unbroken gold neck. Penalising the head for
+    // having features is not a warmth test.
+    //
+    // The property the test actually wants is in its own comment above: the
+    // neck must be DECISIVELY WARMER THAN THE SHINS. That is scale-free, so no
+    // upstream filter change can drift it, and it is the comparison that
+    // failed in the version that shipped brown. The absolute floor stays as an
+    // anti-vacuity companion — a ratio alone passes trivially if the shins
+    // round to zero — set from an artifact-free measurement (0.243 with the
+    // sharpen off) rather than from a number the sharpen was propping up.
     expect(shins, `shin torch share ${shins.toFixed(3)}`).toBeLessThan(0.08);
+    expect(neck, `neck torch ${neck.toFixed(3)} vs shins ${shins.toFixed(3)}`).toBeGreaterThan(shins * 3);
+    expect(neck, `neck torch share ${neck.toFixed(3)}`).toBeGreaterThan(0.22);
   });
 
   it("carries DARK ordnance — the bomb is the value break, not a colour", () => {

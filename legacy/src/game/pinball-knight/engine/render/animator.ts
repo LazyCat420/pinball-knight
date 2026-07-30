@@ -182,7 +182,13 @@ export class Animator {
 
     const played = this.resolved();
     this.timer += dt;
-    const step = 1 / (fpsFor(played) * this.rate);
+    // Frames per authored beat. A clip that declares `beats` keeps its CYCLE
+    // DURATION no matter how many in-betweens it gains, so a 4-frame walk taken
+    // to 8 gets smoother rather than half-speed — which would be foot-sliding,
+    // since monsters never call setRate and their world speed is unchanged.
+    const beats = this.sprite.sheet.beats?.[played];
+    const smooth = beats && beats > 0 ? indices.length / beats : 1;
+    const step = 1 / (fpsFor(played) * this.rate * smooth);
     while (this.timer >= step) {
       this.timer -= step;
       this.frameIdx++;

@@ -72,6 +72,7 @@ import {
   inset,
   rect,
   scrim,
+  scrollToShow,
   sheet,
   strokeRect,
   text,
@@ -114,7 +115,11 @@ interface TavernUi {
   alchTab: "buy" | "brew";
   flash: string;
   flashUntil: number;
-  scroll: number;
+  // NB: the scroll offset is NOT here. It lives on `UiScreen.scroll`, which is
+  // the field the stack declares for exactly this and the one `__gui().scroll`
+  // reads (`dev/gui-hooks.ts` → `top()?.scroll`). A private copy here kept the
+  // region working while reporting a flat 0 to the probe — the one readout you
+  // reach for when a list will not scroll.
 }
 
 const CARD_SLOT_W = 56;
@@ -447,26 +452,11 @@ const VENDOR_BODY: Record<VendorId, (f: UiFrame, body: Rect, u: TavernUi) => voi
   weapons: weaponsBody,
 };
 
-/** Rough content height per vendor, for the scroll region. */
-function vendorHeight(v: VendorId): number {
-  switch (v) {
-    case "potions":
-      return 60 + POTION_STOCK.length * 33 + RECIPE_IDS.length * 35 + 120;
-    case "armor":
-      return ROW_H * 2 + GEAR_SLOTS.length * 37 + ELEMENTAL_STYLE_IDS.length * 35 + 120;
-    case "cards":
-      return (
-        ROW_H * 3 +
-        CARD_SLOT_H +
-        60 +
-        state.weaponSlots.filter(Boolean).length * (CARD_SLOT_H + 28) +
-        Math.ceil(state.cardStash.length / 8) * (CARD_SLOT_H + 18) +
-        120
-      );
-    case "weapons":
-      return ROW_H + 44 + 5 * 30 + 80;
-  }
-}
+/**
+ * Padding under the last row, so the bottom of a counter is not flush with the
+ * bottom of the view.
+ */
+const BODY_TAIL = GRID * 2;
 
 export function tavernScreen(d: {
   onDescend: () => void;
@@ -483,8 +473,26 @@ export function tavernScreen(d: {
     alchTab: "buy",
     flash: "",
     flashUntil: 0,
-    scroll: 0,
   };
+  /**
+   * Content height per vendor, MEASURED off the previous frame's layout.
+   *
+   * This used to be `vendorHeight()`, a hand-written formula per vendor, and it
+   * disagreed with what the bodies actually paint — badly. The Alchemist's summed
+   * BOTH its tabs, so the shelf (six rows, ~284px) declared 938px and scrolled
+   * into 650px of void with a scrollbar thumb sized for content that was not
+   * there; the weaponsmith's `ROW_H + 44 + 5 * 30 + 80` counted five rows for a
+   * body that paints six. `cutTop` already advances `body` by exactly what each
+   * row consumes, so the distance it travelled IS the content height — the
+   * counting and the drawing cannot disagree when there is only one of them.
+   *
+   * The debug console reached the same conclusion the same way; its note says a
+   * formula that forgets a section "fails in exactly the same silent way the
+   * constant did". Per vendor, because switching counters changes the content
+   * completely, and the first frame of each runs with 0 — no scrollbar, offset
+   * clamped to 0 — which is exactly right for a counter that just opened.
+   */
+  const measuredH: Partial<Record<VendorId, number>> = {};
   const counterMode = d.vendor !== undefined;
   rollBarOffers();
 
@@ -572,12 +580,25 @@ export function tavernScreen(d: {
         // calls below — `u.vendor` is mutable and the compiler is right to
         // widen it again after the button handler above could have cleared it.
         const vid = v.id;
-        const contentH = vendorHeight(vid);
-        const sc = beginScroll(f, view, contentH, u.scroll);
+        const contentH = measuredH[vid] ?? 0;
+        const sc = beginScroll(f, view, contentH, self.scroll);
         const body = { ...sc.inner };
         VENDOR_BODY[vid](f, body, u);
+        // How far `cutTop` walked `body` down IS the content height — see
+        // `measuredH`. Read before `endScroll` so the scrollbar it draws this
+        // frame and the height measured for the next come from one number.
+        measuredH[vid] = body.y - sc.inner.y + BODY_TAIL;
         endScroll(f, view, contentH, sc.offset);
-        u.scroll = sc.offset;
+        // ── THE REGION FOLLOWS THE CURSOR ──
+        // `beginScroll` only advances from the mouse wheel, and only while the
+        // pointer is inside the region. Every counter here is taller than the
+        // view (measured: the Alchemist paints to y=380 in a 338-tall box, and a
+        // real card stash takes the dealer far past that), so without this the
+        // rows below the fold were mouse-only: the D-pad walked the focus ring
+        // off the bottom, the highlight vanished, and Enter fired a button that
+        // could not be seen. Reads as frozen, which is why `scrollToShow` was
+        // written — it just was never called by anything until now.
+        self.scroll = f.focusRect ? scrollToShow(view, f.focusRect, sc.offset) : sc.offset;
       }
 
       text(f, "ESC / B — BACK   ↑↓ MOVE   ENTER / A PICK", foot.x, foot.y + 8, { size: 8, colour: UI.textFaint });

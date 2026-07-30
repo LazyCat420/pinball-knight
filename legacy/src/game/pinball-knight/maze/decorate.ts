@@ -216,7 +216,19 @@ const GEAR_ITEMS = ["helmet", "armor", "boots"];
 // from the pool. Health is guaranteed so the run stays survivable; the rest add
 // "do I chug it now?" decisions. Ids → POTIONS (the consolidated pinball kit:
 // ball form / freeze / multi-ball, alongside the combat buffs).
-const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots"];
+/**
+ * ⚠️ EVERY ID HERE NEEDS AN `ITEM_PAINTS` ENTRY. A ground item's sprite is built
+ * with `createStaticSprite(ITEM_PAINTS[id])` and that lookup is unguarded, so an
+ * id with no painter does not draw a placeholder — it kills the floor build and
+ * you get a black screen with a working HUD. `potion-supply.test.ts` holds this
+ * pool (and the other three supply routes) to that.
+ *
+ * ✨ laser joined on 2026-07-29. It had been a finished mechanic with no supply
+ * anywhere in the game — not here, not the cart, not the tavern, not a recipe —
+ * so `applyPotion`'s laser branch and the whole ricochet form it hands you to
+ * were unreachable in a real run.
+ */
+export const POTION_POOL = ["rage", "haste", "shield", "gold", "ballform", "freeze", "multiball", "curveshot", "magnetboots", "laser"];
 type RolledItem = { kind: "weapon" | "gear" | "potion"; id: string };
 
 function rollLevelItems(rng: () => number): RolledItem[] {

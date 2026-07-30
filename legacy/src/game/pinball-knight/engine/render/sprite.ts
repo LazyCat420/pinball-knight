@@ -181,6 +181,10 @@ export interface SpriteSheet {
    *  the GPU's max texture width. */
   cols: number;
   rows: number;
+  /** Authored beats per clip — see `ActorPaints.beats`. Optional, because most
+   *  sheets play 1:1 with their frame count and a required field would break
+   *  every fake sheet the suite constructs. */
+  beats?: Partial<Record<ClipName, number>>;
 }
 
 /** Nearest filtering — authored pixels must stay square on screen. */
@@ -344,7 +348,13 @@ export function invalidatePaletteCaches(): void {
  * entries instead of the same one. 1.3 is where the outline returns without the
  * bright fills clipping into a halo.
  */
+/**
+ * ⚠️ STILL 1.3, BUT NOT FOR THE REASON WRITTEN ABOVE. See the measurement table
+ * on `CRUSH_DEFAULTS`: this pass is a net colour GENERATOR, and the only thing
+ * currently holding it in place is that the stiltneck's gold read depends on it.
+ */
 const SHARPEN_AMOUNT = 1.3;
+
 
 /**
  * How far a shadow-side silhouette pixel is pulled toward the outline colour.
@@ -367,6 +377,127 @@ const SHARPEN_AMOUNT = 1.3;
  * them read as lit rather than as outlined.
  */
 const SELOUT_SHADOW = 0.6;
+/**
+ * ⚠️ THE PREMISE OF THE DOCSTRING ABOVE IS DEAD. It reasons from "128/72 is
+ * 1.78, so every internal boundary lands across two output pixels as a
+ * gradient". That downscale no longer exists: `SPRITE_PX = PPU*9/4` and
+ * `SPRITE_PIXEL_GRID = PPU*9/8`, so the ratio is EXACTLY 2 at every camera rung
+ * and the filter is an exact 2x2 box. The pass may still be earning its keep —
+ * `INK_W` is 3.2 art units, i.e. 1.57 texels at the shipped rung, so the ink
+ * still straddles — but it is no longer justified by the reason written down.
+ *
+ * The form is the part that is not defensible. The loop below sharpens EACH
+ * CHANNEL INDEPENDENTLY and unbounded, then hands the result to a LUMA-WEIGHTED
+ * snap. That moves a colour off the grey diagonal by an amount that depends on
+ * how far each channel individually sits from its neighbourhood mean, and the
+ * snap then follows the exaggerated chroma to whichever family is nearest. It is
+ * a stronger version of exactly the failure the dither postmortem documents a
+ * few lines below: "the nearest entry to the biased value is routinely in a
+ * different FAMILY — that is not a stipple, it is chroma confetti".
+ *
+ * `sharpenLuma` is the third arm. It computes the unsharp on luma alone and
+ * scales all three channels by `L'/L`, which keeps the edge contrast but CANNOT
+ * change hue family: a scaled RGB triple moves along a ray from the origin, and
+ * this palette's eight families are separated by hue, not by brightness.
+ */
+export interface CrushOptions {
+  /** Unsharp amount at the grid. 0 makes the pass a copy. */
+  sharpen: number;
+  /** Sharpen luma only (scale RGB by one factor) instead of per-channel. */
+  sharpenLuma: boolean;
+  /** Shadow-rim blend toward ink. 0 skips the pass and its scratch copy. */
+  selout: number;
+}
+
+/**
+ * MEASURED 2026-07-29, and the answer was not the expected one.
+ *
+ * Five arms over the whole 20-actor roster at the shipped rung (63), through the
+ * real `paintInArtSpace` → `crushToGrid` path. `invented` = palette indices in
+ * the atlas the painter never asked for, measured against the pre-crush buffer.
+ *
+ *   arm                        entries  isolated%  runLen  invented  INK SHARE
+ *   A  per-channel 1.3 (was)     22.9      26.2     1.73     295      21.82%
+ *   B  sharpen OFF               20.1      22.5     1.82     238      22.84%
+ *   C  per-channel 0.65          21.8      23.8     1.80     271      23.38%
+ *   D  luma-only 1.3             21.9      26.4     1.73     276      21.75%
+ *
+ * ⚠️ THE FALSIFIER FIRED BACKWARDS. This pass exists to stop the 3.2-unit selout
+ * ink averaging into the fill it separates, so removing it had to COST ink or the
+ * stated rationale was wrong. Removing it GAINS ink: 21.82% → 22.84%. The pass
+ * was not protecting the outline, it was eating it — brightening the fill texels
+ * either side of the ink until the blended rim snapped off index 1 onto something
+ * lighter. Every noise metric agrees, and a nearest-upscaled contact sheet across
+ * eight monsters shows the speckle gone from the stiltneck's coat and the
+ * rotortail's pelt with no loss of silhouette (the hard alpha cutout and the
+ * selout do that work, not this).
+ *
+ * Two predictions this killed, recorded so they are not re-proposed:
+ *   · "amplitude is not the mechanism, per-channel is" — false. C sits neatly
+ *     between A and B on every metric; the effect is monotonic in amount.
+ *   · "luma-only keeps the edge without inventing hues" — false. D is within
+ *     noise of A (26.4 vs 26.2 isolated). The mechanism is local-contrast
+ *     amplification itself, not chroma drift, so restricting the direction of
+ *     the push changes nothing. `sharpenLuma` is kept only as a measurement arm.
+ *
+ * The original docstring's premise was already dead — it reasons from a 1.78
+ * fractional downscale, and the ratio has been exactly 2 since the SPRITE_PX
+ * split.
+ *
+ * ⚠️ IT TOOK AN ART FIX TO LAND. Arm B first failed the stiltneck's warmth
+ * guard, because that creature did not reach gold on its own art — it reached
+ * gold because this pass brightened borderline blends UP into the torch ramp
+ * (14-18) instead of letting them settle on leather (26-28), worth about +0.06
+ * on its neck band. Removing the pass re-opened the "brown giraffe" b4409e4
+ * fixed. Sweeping the amount, BEFORE the art fix:
+ *
+ *   sharpen   neck torch (then gated > 0.25)   torch vs leather
+ *   0.0            0.211  FAIL                  0.229 vs 0.270  FAIL
+ *   0.65           0.246  FAIL                  pass
+ *   0.9            0.250  FAIL (exactly on)     pass
+ *   1.3            pass                         pass
+ *
+ * A downstream asset had come to depend on an upstream defect. So the stiltneck
+ * was fixed IN THE ART — markings moved onto the coat's own dark rung, the horn
+ * knob off the timber ramp, and the neck's ink skirt thinned from 1.5 texels a
+ * side to one — which took it to torch 0.266 vs leather 0.251 above the pool
+ * with the sharpen off, and the guard was rewritten to compare neck against
+ * SHINS (scale-free) rather than against an absolute share the sharpen had been
+ * propping up. Only then did this go to 0.
+ *
+ * Do not restore it without re-running the bench: `CRUSH_AB=1`.
+ */
+const CRUSH_DEFAULTS: CrushOptions = {
+  sharpen: 0,
+  sharpenLuma: false,
+  selout: SELOUT_SHADOW,
+};
+
+let CRUSH: CrushOptions = { ...CRUSH_DEFAULTS };
+
+/**
+ * Run `fn` with crush variants applied, then restore. TESTS AND `scripts/` ONLY.
+ *
+ * This is a measurement seam, not a setting. The alternative — threading an
+ * options argument — would have to cross five signatures (`startSpriteSheet` →
+ * `paintFrame` → `crushToGridShared` → `crushInto` → `snapColor`) to run an
+ * experiment, and would leave all five permanently documenting a variant nobody
+ * ships. A scoped try/finally has no persistent state for a settings screen to
+ * bind to, which is most of the enforcement; `registry-drift.mjs` is the rest.
+ *
+ * HARD LINE: this carries variants UNDER MEASUREMENT, never shipped non-default.
+ * Per-sheet production data (a palette lock) belongs on the sheet build options,
+ * so this seam can never quietly become the transport for real content.
+ */
+export function withCrushOptions<T>(over: Partial<CrushOptions>, fn: () => T): T {
+  const prev = CRUSH;
+  CRUSH = { ...prev, ...over };
+  try {
+    return fn();
+  } finally {
+    CRUSH = prev;
+  }
+}
 
 /**
  * THE CRUSH PASS (2026-07-14 Castlevania round; reworked 2026-07-19).
@@ -466,8 +597,28 @@ function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
   return _crushCanvas;
 }
 
-export function crushToGrid(src: HTMLCanvasElement): HTMLCanvasElement {
-  const g = SPRITE_PIXEL_GRID;
+/**
+ * Crush to a caller-owned canvas.
+ *
+ * `grid` OVERRIDES THE OUTPUT RESOLUTION, FOR TESTS ONLY. It exists because
+ * `SPRITE_PIXEL_GRID` is a PLAYER SETTING — five camera rungs, 90/81/72/63/54,
+ * derived from `CAMERA_ZOOMS` and captured at MODULE LOAD (constants/render.ts
+ * documents at length why it cannot be live). Two consequences:
+ *
+ *   · `configureEngine` CANNOT pin it. This module destructures
+ *     `engineConfig.sprite` into consts at import and never re-derives, unlike
+ *     `camera.ts` which registers an `onConfigChange`. Configuring after import
+ *     changes nothing here, silently.
+ *   · A census that asserts on the ambient value turns itself OFF for anyone who
+ *     picked a different camera — the same trap `atlas-size.test.ts` calls out.
+ *     Art thresholds are pixel SHARES, and a share moves with the crush ratio.
+ *
+ * So the seam is a defaulted parameter: production still takes the module-load
+ * capture, and a test can run the REAL filter at any rung. `axisTaps` already
+ * caches per `${src}:${dst}`, so extra rungs cost one tap table each.
+ */
+export function crushToGrid(src: HTMLCanvasElement, grid: number = SPRITE_PIXEL_GRID): HTMLCanvasElement {
+  const g = grid;
   const small = document.createElement("canvas");
   small.width = g;
   small.height = g;
@@ -635,21 +786,38 @@ function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: nu
   const keep = new Uint8Array(g * g);
   for (let i = 0; i < g * g; i++) keep[i] = pix[i * 4 + 3] >= 128 ? 1 : 0;
 
-  // ── SHARPEN (see SHARPEN_AMOUNT) ──
+  // ── SHARPEN (OFF by default — see the table on CRUSH_DEFAULTS) ──
   // Alpha-aware: a transparent neighbour contributes the CENTRE value, so the
   // silhouette rim is sharpened against the figure rather than against the void
   // — otherwise every edge pixel blows out into a bright halo.
   const at = (x: number, y: number, ch: number, cx: number, cy: number): number =>
     x < 0 || y < 0 || x >= g || y >= g || !keep[y * g + x] ? pix[(cy * g + cx) * 4 + ch] : pix[(y * g + x) * 4 + ch];
+  const amount = CRUSH.sharpen;
+  const lumaOnly = CRUSH.sharpenLuma;
+  const clamp255 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
   for (let y = 0; y < g; y++) {
     for (let x = 0; x < g; x++) {
       const i = (y * g + x) * 4;
       if (!keep[y * g + x]) { d[i + 3] = 0; continue; }
-      for (let ch = 0; ch < 3; ch++) {
-        const c0 = pix[i + ch];
-        const blur = (at(x - 1, y, ch, x, y) + at(x + 1, y, ch, x, y) + at(x, y - 1, ch, x, y) + at(x, y + 1, ch, x, y) + 4 * c0) / 8;
-        const v = c0 + (c0 - blur) * SHARPEN_AMOUNT;
-        d[i + ch] = v < 0 ? 0 : v > 255 ? 255 : v;
+      if (lumaOnly) {
+        // One factor for all three channels, so the colour can only move along a
+        // ray from the origin — same edge contrast, no hue-family hop.
+        const l0 = pix[i] * 0.3 + pix[i + 1] * 0.59 + pix[i + 2] * 0.11;
+        let blur = 0;
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          blur += at(x + dx, y + dy, 0, x, y) * 0.3 + at(x + dx, y + dy, 1, x, y) * 0.59 + at(x + dx, y + dy, 2, x, y) * 0.11;
+        }
+        blur = (blur + 4 * l0) / 8;
+        // A black texel has no ray to scale along; leave it, rather than
+        // dividing by ~0 and detonating the channel ratio.
+        const k = l0 > 1e-3 ? clamp255(l0 + (l0 - blur) * amount) / l0 : 1;
+        for (let ch = 0; ch < 3; ch++) d[i + ch] = clamp255(pix[i + ch] * k);
+      } else {
+        for (let ch = 0; ch < 3; ch++) {
+          const c0 = pix[i + ch];
+          const blur = (at(x - 1, y, ch, x, y) + at(x + 1, y, ch, x, y) + at(x, y - 1, ch, x, y) + at(x, y + 1, ch, x, y) + 4 * c0) / 8;
+          d[i + ch] = clamp255(c0 + (c0 - blur) * amount);
+        }
       }
       d[i + 3] = 255;
     }
@@ -657,16 +825,19 @@ function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: nu
 
   // ── SELOUT on the shadow-side rim (see SELOUT_SHADOW) ──
   // Read from a copy: a pixel darkened here must not feed the next pixel's test.
-  const ink = PAL_RGB[1];
-  const pre = new Uint8ClampedArray(d);
-  const K = (x: number, y: number): number => (x < 0 || y < 0 || x >= g || y >= g ? 0 : keep[y * g + x]);
-  for (let y = 0; y < g; y++) {
-    for (let x = 0; x < g; x++) {
-      if (!K(x, y)) continue;
-      if (K(x + 1, y) && K(x, y + 1)) continue; // interior, or a lit up-left rim
-      const i = (y * g + x) * 4;
-      for (let ch = 0; ch < 3; ch++) {
-        d[i + ch] = pre[i + ch] * (1 - SELOUT_SHADOW) + ink[ch] * SELOUT_SHADOW;
+  const shadow = CRUSH.selout;
+  if (shadow > 0) {
+    const ink = PAL_RGB[1];
+    const pre = new Uint8ClampedArray(d);
+    const K = (x: number, y: number): number => (x < 0 || y < 0 || x >= g || y >= g ? 0 : keep[y * g + x]);
+    for (let y = 0; y < g; y++) {
+      for (let x = 0; x < g; x++) {
+        if (!K(x, y)) continue;
+        if (K(x + 1, y) && K(x, y + 1)) continue; // interior, or a lit up-left rim
+        const i = (y * g + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          d[i + ch] = pre[i + ch] * (1 - shadow) + ink[ch] * shadow;
+        }
       }
     }
   }
@@ -736,8 +907,13 @@ export function renderPaintCanvas(paint: FramePaint): HTMLCanvasElement | null {
  * them, and it lives here rather than in the painters precisely so the buffer
  * can be resized — to make SPRITE_PX/SPRITE_PIXEL_GRID an exact integer — with
  * no art moving. Every site that hands a painter a context must apply it.
+ *
+ * Now derived inside `paintInArtSpace` from its `px` argument rather than held
+ * as a module const, because the const was a MODULE-LOAD CAPTURE and that is
+ * exactly what made the shipped rung untestable: `SPRITE_PX` is a player camera
+ * setting read from localStorage at import, so a census could only ever measure
+ * whichever rung the test process happened to boot at. Kept as the default.
  */
-const SS = SPRITE_PX / ART_PX;
 
 /**
  * Hand a painter a context in ART space.
@@ -751,10 +927,15 @@ const SS = SPRITE_PX / ART_PX;
  * being the art's coordinate space both of them were silently comparing against
  * a path production no longer takes. A harness that re-implements the code it
  * checks only tests itself.
+ *
+ * `px` OVERRIDES THE BUFFER SIZE, FOR TESTS ONLY — see the note on
+ * `crushToGrid`'s `grid` parameter for why this seam exists at all and why
+ * `configureEngine` cannot provide it.
  */
-export function paintInArtSpace(ctx: CanvasRenderingContext2D, paint: FramePaint): void {
+export function paintInArtSpace(ctx: CanvasRenderingContext2D, paint: FramePaint, px: number = SPRITE_PX): void {
+  const s = px / ART_PX;
   ctx.save();
-  ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  ctx.setTransform(s, 0, 0, s, 0, 0);
   ctx.imageSmoothingEnabled = true;
   paint(ctx);
   ctx.restore();
@@ -808,8 +989,8 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
  * clip structure produces the SAME layout — which is what lets a weapon swap
  * replace the texture without touching the animator.
  */
-export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
-  return startSpriteSheet(paints).finish();
+export function buildSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = {}): SpriteSheet {
+  return startSpriteSheet(paints, opts).finish();
 }
 
 /**
@@ -896,7 +1077,116 @@ export interface SheetBuild {
 }
 
 /** The same atlas, painted incrementally. See {@link SheetBuild}. */
-export function startSpriteSheet(paints: ActorPaints): SheetBuild {
+/**
+ * PER-SPRITE PALETTE LOCK — the RO/SNES palette-row model, derived not declared.
+ *
+ * The 32-entry master palette is the WORLD's budget. An individual creature does
+ * not need all of it, and the ones that spend the most look the worst: the atlas
+ * census is near-monotonic in entry count, with the cleanest actor (golem, 15)
+ * at 6.9% orphan pixels and the busiest (jester, 32) at 34.9%.
+ *
+ * The complication is that a creature's colour count is NOT a matter of artist
+ * discipline. Measured: the rotortail's painter declares 18 indices and its
+ * atlas contains 26 — the downscale blends across texel boundaries and the
+ * nearest-of-32 lookup sends each blend wherever the luma-weighted metric
+ * points, frequently into another material family. A "use fewer colours" rule
+ * cannot reach those, because they are chosen after the artist is finished.
+ *
+ * So the budget is enforced where the colours are actually decided: census the
+ * FINISHED atlas, keep the entries that carry the sprite, and remap the rest
+ * onto the nearest keeper. Entries then obey the cap by construction.
+ *
+ * DERIVED, NOT DECLARED, and that is a deliberate choice over hand-authoring a
+ * subset per monster. A declared list covers only the kinds someone remembered
+ * to write one for, and rots the moment a painter edits a ramp; the derived list
+ * covers every sheet including the knight's, needs no registry, and — because it
+ * is a pure function of a deterministic atlas — is reproducible. Its risk is
+ * evicting a low-count intentional colour, which is what the two force-keeps
+ * below exist for, and what `lockEviction` reports so a test can assert it.
+ *
+ * Cost is one pass over a finished atlas, on the same code path that already
+ * does exactly that for tinted reskins.
+ */
+export interface LockReport {
+  kept: number[];
+  evicted: number[];
+}
+
+/** Last lock's eviction list, for tests. Not part of the render path. */
+let _lastLock: LockReport | null = null;
+export function lockEviction(): LockReport | null {
+  return _lastLock;
+}
+
+function lockSheetPalette(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, cap: number): void {
+  const PAL_RGB = palRgb();
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const byRgb = new Map<number, number>();
+  for (let i = 0; i < PAL_RGB.length; i++) {
+    byRgb.set((PAL_RGB[i][0] << 16) | (PAL_RGB[i][1] << 8) | PAL_RGB[i][2], i);
+  }
+  const counts = new Uint32Array(PAL_RGB.length);
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    const hit = byRgb.get((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    if (hit !== undefined) counts[hit]++;
+  }
+  const present: number[] = [];
+  for (let i = 0; i < counts.length; i++) if (counts[i] > 0) present.push(i);
+  if (present.length <= cap) { _lastLock = { kept: present, evicted: [] }; return; }
+
+  const luma = (i: number): number => 0.3 * PAL_RGB[i][0] + 0.59 * PAL_RGB[i][1] + 0.11 * PAL_RGB[i][2];
+  const keep = new Set<number>();
+  // Ink and void first: index 1 is a quarter of every actor's pixels, and
+  // losing it would dissolve the outline the whole read depends on.
+  for (const i of [0, 1]) if (counts[i] > 0) keep.add(i);
+  // The brightest present entry, whatever its count. Glow cores (17/18/31) are
+  // a handful of texels — an eye, a fuse spark — and lose every popularity
+  // contest while carrying the creature's focal point.
+  keep.add(present.reduce((a, b) => (luma(b) > luma(a) ? b : a)));
+  for (const i of [...present].sort((a, b) => counts[b] - counts[a])) {
+    if (keep.size >= cap) break;
+    keep.add(i);
+  }
+
+  // Remap every non-keeper onto its nearest keeper, under the SAME
+  // luma-weighted metric the snap used to choose it. This is a family collapse,
+  // not a re-quantisation: everything the master snap sent to rot-green lands on
+  // the same rot-green keeper, so the sprite loses tones, never hues.
+  const row = new Uint8Array(PAL_RGB.length);
+  for (let i = 0; i < PAL_RGB.length; i++) {
+    if (keep.has(i)) { row[i] = i; continue; }
+    let best = -1;
+    let bestDist = Infinity;
+    for (const k of keep) {
+      const dr = (PAL_RGB[i][0] - PAL_RGB[k][0]) * 0.3;
+      const dg = (PAL_RGB[i][1] - PAL_RGB[k][1]) * 0.59;
+      const db = (PAL_RGB[i][2] - PAL_RGB[k][2]) * 0.11;
+      const dist = dr * dr + dg * dg + db * db;
+      if (dist < bestDist) { bestDist = dist; best = k; }
+    }
+    row[i] = best;
+  }
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    const hit = byRgb.get((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    if (hit === undefined) continue;
+    const to = row[hit];
+    d[i] = PAL_RGB[to][0];
+    d[i + 1] = PAL_RGB[to][1];
+    d[i + 2] = PAL_RGB[to][2];
+  }
+  ctx.putImageData(img, 0, 0);
+  _lastLock = { kept: [...keep].sort((a, b) => a - b), evicted: present.filter((i) => !keep.has(i)) };
+}
+
+export interface SheetBuildOptions {
+  /** Cap the atlas's distinct palette entries. See lockSheetPalette. */
+  lockEntries?: number;
+}
+
+export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = {}): SheetBuild {
   const flat: FramePaint[] = [];
   const clips = new Map<string, number[]>();
   /** FramePaint → its slot in `flat`, so identical frames pack once. */
@@ -967,7 +1257,7 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
   // Show exactly one CELL at a time.
   texture.repeat.set(1 / cols, 1 / rows);
 
-  const sheet: SpriteSheet = { texture, clips, frameCount: flat.length, cols, rows };
+  const sheet: SpriteSheet = { texture, clips, frameCount: flat.length, cols, rows, beats: paints.beats };
   let next = 0;
 
   const paintUntil = (limit: number): boolean => {
@@ -989,7 +1279,15 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
     // median unmoved: the signature of work spread across frames rather than
     // removed. Nothing renders a partial sheet (see SheetBuild), so there is
     // nothing to show until it is finished.
-    if (done) texture.needsUpdate = true;
+    if (done) {
+      // The one moment the atlas is complete and before it reaches the GPU.
+      // Deliberately NOT inside the crush: a per-cell lock cannot see the
+      // sheet's own histogram, and wrapping the CALLER would silently miss the
+      // frames that arrive later through `step()` from an idle callback —
+      // first slice locked, rest not.
+      if (opts.lockEntries) lockSheetPalette(canvas, ctx, opts.lockEntries);
+      texture.needsUpdate = true;
+    }
     return done;
   };
 

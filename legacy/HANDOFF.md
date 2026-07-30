@@ -7,6 +7,334 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the ✨ laser leaves a beam grid, not just sparks (2026-07-30)
+
+**Deployed `main@78b34ef`, container healthy, 0 restarts. 1662 tests pass, 0 tsc
+errors, registry-drift clean. Tuned off five zoomed WebGPU captures.**
+
+Asked for: "make sure it leaves a ghost trail — like in those spy movies where
+the lasers are bouncing off the walls."
+
+**It already had a trail; the trail was 0.12 SECONDS.** At LASER_SPEED that is a
+four-unit stub stuck to the ball, with the path carried by the stamped crosses —
+the original brief, written when an early cut drew one long line sliding sideways
+across a room. So what was on screen was exactly what was designed: sparks.
+
+Three things had to move together, and any one alone would have looked broken:
+
+- `LASER_TRAIL_LIFE` 0.12 → **1.9s** against a 2.2s cast, so the legs laid at the
+  start are still lit at the end.
+- `TRAIL_CAPACITY` 96 → **448**. The ribbon is a ring buffer fed 180 points/sec,
+  so 96 holds 0.53s — raising the life alone would have silently repeated the bug
+  this buffer already had once, where points died by being OVERWRITTEN and the
+  life constant was decorative. **Worse the second time: a capacity-bound beam
+  still looks like a beam, it just never gets longer.** Now a test
+  (`trail-capacity.test.ts`) asserts capacity ≥ rate × the longest life asked for.
+- **The zigzag is demoted**, 0.055s/0.85rad → 0.3s/0.16rad. It existed because a
+  stub on a straight leg read as a sliding beam; with the whole path held, the
+  straight legs ARE the effect, and the old rate made the lattice a ball of wool
+  (a 35-corner saw-tooth milling in one corner instead of crossing the room).
+
+`TRAIL_STYLES` now names the ribbon's **two** languages. `taper` is the ⚡ bolt's,
+byte-for-byte what it shipped with. `beam` was measured, and each wrong guess
+failed quietly and differently:
+
+- thin, no brightness floor → **brown scribbles**. Additive blending does not
+  guarantee a brighter pixel after the palette snap: a dim red line over the
+  crypt's blue-grey floor makes mud, and the luma-weighted nearest match for mud
+  is sometimes DARKER than the floor. It read as ink, not light. Hence `floor:
+  0.5` — live bands stay hot.
+- core whitened 0.75 → **white planks**. Whitening past the tint clips all three
+  channels; the beam loses its colour and three strands read as a board.
+
+### A test that had been passing for the wrong reason
+
+The open-room zigzag fixture started the ball at world (0,0) in a **61**-wide
+grid. `moveCircle` maps world → grid with `+g.w/2`, so that IS the centre — with
+30 units of clearance, which a 0.5s run never reached and a 1.2s run does. Room
+is 121 now, and the corner assertions derive their thresholds from
+LASER_ZIG_PERIOD / LASER_ZIG_ANGLE instead of transcribing one tuning. **Watch for
+this shape elsewhere:** several fixtures in this subtree hardcode a rate that was
+current when they were written.
+
+## ✅ LIVE NOW — the tavern counter that pauses the world is drawn again (2026-07-30)
+
+**Deployed `main@3bd68f1`, container healthy, 0 restarts. 192 files / 2163 tests
+pass, tsc clean, registry-drift clean. Verified on a real WebGPU adapter.**
+
+Reported as: walked up to "Trade — potions for the belt" and **it froze**. It did,
+hard, with no way out — and so did the other three counters, the run summary, the
+menu and the casino cabinet.
+
+**The optimisation outlived the thing it was written against.**
+`scenes/tavern/core.ts`'s loop had, from the Gambler pass:
+
+```
+if (frozen) return;   // skip the 3D pass while a full-screen panel is up
+if (scene && camera) pixelPass.render(scene, camera);
+```
+
+Skipping the room is still right (82% scrim, player frozen, and drawing it starved
+the cabinet at ~2fps — with its dt clamped to 0.05 that stretched a 2.6s roulette
+spin to 26s). But that `return` was written when panels were **DOM overlays the
+browser composited itself**. The P2 migration moved every panel INSIDE this pass
+and hung `drawUiFrame` off `pixelPass.render`. From then on the early return
+skipped the panel's own paint *and its input handling*, every frame. Esc is handled
+inside `drawUiFrame`, and the scene's key handler yields whenever `uiPauses` is
+set — so nothing was left that could close what nothing was left to draw.
+
+Fixed with `pixelPass.presentUi()`, the pass's existing "frame that is nothing but
+the UI" path, wrapped for the UI drive exactly as `boot/renderer.ts` wraps it.
+Keeps the whole point of the skip (no scene, no bloom chain), panel live. **The
+room no longer reads through the scrim while a panel is open** — at 82% that is a
+small, deliberate loss. The decision is now `scenes/tavern/present.ts` so the
+invariant (*frozen NEVER presents nothing*) is assertable without a WebGPU device.
+
+**The proxy that would have lied:** `__gui()` reported the counter `open` and
+`paused` in both the broken and fixed builds. What separates them is
+`__gui().painted` — frozen at 447 before, climbing 462 → 530 → 656 after — and
+three screenshots that were **byte-identical** before. Ask whether the UI is being
+*driven*, not whether it is *open*.
+
+### Two more input faults, found auditing the rest of the tavern
+
+**The counters never scrolled to follow the focus cursor.** `beginScroll` advances
+only from the mouse WHEEL with the pointer inside the region, and the counters are
+taller than their box (measured: the Alchemist paints to y=380 in a 338-tall design
+box). Every row below the fold was **mouse-only** — the D-pad walked the ring off
+the bottom and Enter fired a button nobody could see. `scrollToShow` was written
+for exactly this in the P0 foundation commit and **called by nothing for five
+months**, because nothing could get it the focused widget's rect;
+`UiFrame.focusRect` now carries it. Wired for the tavern only — `menu`,
+`settings`, `debug` and `haul` all still have the gap, and now have the plumbing.
+
+**A disabled row swallowed the cursor.** It keeps its focus index (call order is
+identity) but can never be `focused`, so landing on one drew no ring and ignored
+Enter. The weaponsmith greys out REPAIR / ADD SOCKET / INSURE on your purse — so
+**being broke was exactly when the counter stopped answering the pad.**
+`moveFocus` steps over them, and the driver settles every frame so a row that
+greys out *under* the cursor releases it.
+
+**`vendorHeight()` is gone.** Hand-written arithmetic that disagreed with the
+bodies: the Alchemist's summed BOTH tabs — 938px declared for a ~284px shelf, so
+650px of void and a scrollbar thumb sized for content that was not there — and the
+weaponsmith's counted five rows for six. Replaced with the measurement the debug
+console already uses: how far `cutTop` walked `body` IS the content height. The
+scroll offset also moved to `UiScreen.scroll`, which is what `__gui().scroll`
+reads; the private copy reported a flat 0 to the one probe you check when a list
+will not scroll.
+
+Both fixes' tests were confirmed to **fail against the old code** before landing
+(5 failures each). Repro recipe: `__dungeonTavern()`, wait ~6s for the tavern's
+second WebGPU renderer, then `__gui.tavern("potions")`. **The wait is
+load-bearing** — with no settle the scene renders nothing at all, `presentMode`
+returns `"none"` on `rendererReady`, and you photograph the frozen dungeon and
+misread it as the bug.
+
+## ✅ LIVE NOW — the ✨ laser potion can be obtained, drawn and sold (2026-07-30)
+
+**Deployed `main@310a6ca`, container healthy, 0 restarts. 147 files / 1630 tests
+pass, 0 tsc errors, registry-drift clean. Verified on a real WebGPU adapter.**
+
+Follow-up to the console work below — "fix the laser then what's wrong with it?"
+
+**NOTHING WAS WRONG WITH THE MECHANIC.** `applyPotion` had its branch,
+`enterRicochetForm("laser")` was implemented, palette-tuned and covered by
+`ricochet-trail.test.ts`, and its ⚡ bolt twin is reachable through the storm
+marble. What was wrong is that **nothing could give you one** — no floor pool, no
+cart row, no tavern row, no recipe, no lamp vault table — and it had **no
+`ITEM_PAINTS` entry**, so adding it to a pool without a sprite would not have
+been a missing icon: `createStaticSprite(ITEM_PAINTS[id])` is unguarded, and that
+is the black-screen-with-a-working-HUD floor-build crash cel-painter.ts already
+documents happening once, for weapons.
+
+Fixed: a painter, `POTION_POOL`, and a 30g cart row. `POTIONS.laser.color` moves
+0xff5ad0 → 0xd95763 to match what the game actually draws.
+
+**The sprite is not `potionItem(pink)`.** No magenta exists in this palette, and
+following the form onto blood 13 would have produced the HEALTH flask. It borrows
+the vessel and diverges where the form does: blood DARK liquid under a
+steel-HIGHLIGHT four-arm star — the same 4-spike sparkle `ricochetFrame` draws
+around the ball. VALUE separates it, not hue; the first cut (blood mid, two short
+arms) read as "a slightly darker health potion" at 40px.
+
+### Two things this turned up
+
+**The cart was sized for six wares.** `Math.min(322, 120 + stock.length * 30)`
+counted 30 per row where a row costs 33, and 322 was already the tallest sheet a
+338px design box can hold — so ware seven printed **through the footer** with its
+price clipped by the LEAVE button. Height is derived from its parts now and the
+box from a stated `DESIGN_ROWS`; `shop-fit.test.ts` holds the stock to the budget
+AND the box under 450, because growing the box past that silently drops the whole
+shop from 2x to 1x.
+
+**Supply is not covered by behaviour tests.** `potion-supply.test.ts` asks the
+question none of the existing tests did — *can the player get one* — per potion,
+per route; asserts every id has a painter; and drives the real `decorateMaze`
+over 40 seeds to prove a laser reaches an actual floor rather than just a pool.
+Confirmed as a real guard: with the fix reverted, 3 of its assertions fail.
+
+`scripts/potion-sheet.mjs` (new) renders every flask crushed at 64/40/18, the way
+foe-sheet/marble-sheet do. **Its localStorage shim is load-bearing** — importing
+`ITEM_PAINTS` pulls in the card/reagent graph, which reads a saved profile at
+module scope, and `setContent` pages have an opaque origin where that throws.
+
+## ✅ LIVE NOW — the ` console hands out potions, spells and skill ranks (2026-07-30)
+
+**Deployed `main@10c9acd`, container healthy. 144 files / 1616 tests pass in the
+game subtree, 0 tsc errors, registry-drift clean. Verified with four WebGPU
+captures through `scripts/gui-shot.mjs`, not from the repo.**
+
+Report: "add the skills to the debug as well like the lasers and the other
+powerups, they are missing from the debugger." They were. The panel could hand
+you any weapon, any material and any monster, and not one potion or one spell —
+`applyPotion` had been on `DebugActions` all along with **no chip calling it**.
+
+Three sections, all rosters derived (`POTION_IDS` / `ABILITY_IDS` / `SKILL_IDS`):
+
+- **POWERUPS** — all 17 potions, one click each.
+- **ABILITIES** — a bind button per ability (goes on Q, the old Q slides to E)
+  plus a rank chip that **cycles 0→1→2→3→0**. Rank 2 is where each ability gains
+  an extra rule, and judging a rule means seeing the cast without it.
+- **SKILL TREE** — one row per node with its rank, three branch sections, ranks
+  cycle and **revoke**. Unlock nodes wear the ability's own mark; keystones show
+  red until taken. `MAX ALL` skips keystones (`isKeystone`, derived from the
+  modifier's SHAPE, not an id list) so it cannot hand you −30 mana and no mana
+  regen while you are looking at something else.
+- **FILL MANA** in KNIGHT — a separate pool from the rampage meter, so "why won't
+  Time Crawl fire" now has an answer inside the console.
+
+**✨ LASER had no supply anywhere in the game** — a finished mechanic
+(`applyPotion` → `enterRicochetForm`) that nothing could give you. FIXED in
+`main@310a6ca`, see the entry above; the console chip draws its real sprite now
+rather than the tinted-glyph fallback (the fallback stays, for the next potion
+that arrives without art).
+
+### Two bugs the screenshots found and the tests could not
+
+**Every caption budget was wrong.** They were derived from a body width of 222;
+it is 212. `BALL FORM`, `MULTIBALL` and `MAX SKILLS` shipped ellipsized, and
+nothing failed — `ellipsize` is a *silent success*, so the button works, the
+panel works, and only a picture disagrees. `CHIP_CHARS`/`ROW_CHARS`/
+`BIND_CHARS`/`HEAD_CHARS` now state the arithmetic and `debug-console.test.ts`
+holds every caption (including the hand-written ones) to it.
+
+**The same wrong number had been hiding five truncated MONSTER names** since they
+shipped: `SPORELI…`, `ROTORTA…`, `STILTNE…`, `DEATH D…`, `BRICK G…`.
+`debug-panel.test.ts` asserts ≤16 characters, which is nearly twice the dock's
+real capacity, so the guard passed while the panel trimmed. Fixed in
+`LABEL_OVERRIDE`. **`debug-panel.test.ts`'s 16 and its `SPAWNABLE` roster are now
+redundant with the live path — `SPAWNABLE` is exported but drawn by nothing.
+Worth deleting; not deleted.**
+
+`contentH` is **measured off the layout** now instead of computed by a formula
+the body has to be kept in sync with. Confirmed at max scroll: `MIMIC`, the last
+row, is reachable.
+
+## ✅ LIVE NOW — the camera setting has a route, and browser zoom stops rerolling the field of view (2026-07-30)
+
+**Deployed `main@70e5c1b`, container healthy, 0 restarts. 185 files / 2101 tests
+pass, 0 tsc errors in the game subtree, registry-drift clean. Verified in the
+public bundle, not just the repo: `{id:"options",label:"OPTIONS",icon:"gear"}` is
+in the shipped tab strip and the shipped baseline reads `outerWidth`.**
+
+One report — "why does the resolution keep changing over and over" plus "no way to
+change resolution when I hit esc" — and two unrelated bugs under it.
+
+### The camera setting had NO ROUTE. Do not go looking for a rendering bug.
+
+Esc → `keymap.ts` → `openMenu()` → `menuScreen`, whose tab strip had FIVE tabs and
+none of them settings. `openMenuSettings()` was exported and **called by nothing
+for its entire life** (introduced in `3d307e4`, never referenced again).
+`menu.ts`'s own docblock has said "six tabs" the whole time, `moveFocus`'s
+docblock says "a six-tab menu", and `icons.ts` has carried a `gear` glyph
+commented "settings tab". The only way in was `__gui.settings()` from the dev
+console — so `cameraZoom`, which shipped in `b202e1d` specifically to END the
+zoom churn, landed in a screen no player could open.
+
+**A screen with no caller is not a feature, and nothing in the suite could tell.**
+`settingsScreen()` was correct: right rows, right persistence, five rungs, a
+reload button. Every test of it passed. That is the whole lesson —
+`gui/screens/options-tab.test.ts` now asserts the ROUTE (Esc lands on the menu,
+the strip contains OPTIONS, pressing 6 paints the camera control) rather than the
+screen's contents.
+
+**CAMERA is FIRST in the body now, not last.** In a six-tab menu the scroll view
+is 216 tall against 370 of content, and the camera row was the last 32 pixels of
+it — below the fold, on the screen the player opened looking for it. One
+un-hinted scroll away is barely better than unreachable. `settingsBody` /
+`settingsContentHeight` are SHARED with the standalone sheet, not copied.
+
+### Browser zoom was only HALF cancelled — and this is the churn
+
+`cancelBrowserZoom` compared dpr against the value at PAGE LOAD, so the zoom
+SINCE load was divided out and the zoom AT load went straight into the grid. The
+old comment called that "the right failure: consistent, and it cannot drift
+mid-session". **It is not consistent — it rerolls on every reload**, and the
+CAMERA row offers a RELOAD button, so the one control that existed to fix the
+zoom was also what rerolled it. One physical 1872x932 window at `wider`, varying
+only the zoom it was loaded at:
+
+```
+loaded at   grid        tiles across   drawing buffer
+ 100%       1872x932        33.4          1.7 Mpx
+  80%       1170x584        20.9          2.7 Mpx   <- 37% tighter
+  67%       1398x696        25.0          3.9 Mpx
+  50%       1872x932        33.4          7.0 Mpx
+  33%       1892x942        33.8         16.0 Mpx
+  25%       1498x746        26.8         27.9 Mpx
+  20%       1560x778        27.9         43.7 Mpx
+```
+
+Non-monotonic, and the buffer runs away because `scale` climbs to cover a CSS
+window that is not physically there. **The guard made it worse: `z > 0.2`
+EXCLUDES exactly 20%**, a real Vivaldi step, so at that one level cancellation
+switched itself off and the game sized off a 9360px window — 26x the pixels for
+the same screen, which is the CPU-pegged / FPS-unreported state it was reported
+in.
+
+The baseline is now the dpr the page WOULD have at 100%, recovered by dividing
+out the load-time zoom that `outerWidth / innerWidth` reveals (page zoom moves
+innerWidth and leaves the OS window alone). Floor drops to 0.1.
+
+#### The 2% snap tolerance is MEASURED, and the harness is why
+
+The failure directions are not symmetric: reject a real zoom and the baseline
+degrades to the previous behaviour; believe a ratio that is NOT a zoom and the
+game resizes the grid for a window that does not exist. Both rows from a real
+Chrome over CDP:
+
+```
+real window, 100%                  1712/1696 = 1.0094  ->  1     ok
+same, viewport overridden to 1600  1712/1600 = 1.07     ->  1.1   WRONG
+```
+
+**Playwright's `setViewportSize` overrides `innerWidth` and leaves `outerWidth`
+on the actual browser window**, so the ratio is meaningless in every headless
+shot this repo takes. At a 5% tolerance 1.07 reads as "110% zoom" and every
+screenshot renders 10% more level than the game. 16px of window border is 0.94%,
+so 2% clears the real case and rejects the emulated one. Also note `screen.width`
+reports a fake 800x600 in headless Chrome — it is useless as a cross-check.
+
+### The old zoom tests set their own context
+
+They passed throughout, because they hand `zoom` in as an argument — pinning the
+SINK and never the source — and their ZOOMS list stopped at 0.5, above both broken
+rungs. The new cases call `snapZoomStep` / `zoomBaseline` / `browserZoom` with the
+numbers a browser actually reports and walk the full chain. Negative controls
+were run: restoring the old baseline and guard fails 3 of them; removing the
+OPTIONS tab fails 5 of 6 reachability cases.
+
+### Not fixed, and deliberately
+
+`PPU` still applies on RELOAD only — it is a module-level const that half the
+engine destructures and the sprite atlas is rasterised from it at boot. And the
+default rung is still `wider` (56); with the zoom fix in, that window is 33.4
+tiles across rather than 27.9, so re-judge the default from there rather than
+moving it again on top of a broken measurement.
+
+---
+
 ## ✅ LIVE NOW — the dead face shows bone (2026-07-30)
 
 **1573 tests in the game subtree, tsc clean, registry-drift clean, shot through
