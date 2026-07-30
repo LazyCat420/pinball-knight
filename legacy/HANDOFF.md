@@ -7,6 +7,58 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🎨 SHIPPED — the palette snap was choosing the family from the LIT colour (2026-07-30)
+
+`eb4a9c6`. The second half of the maze-colour fix, and the same bug as the first:
+the quantizer's min-reduction ran on the diffuse render target, so the scene's own
+three.js lighting picked each pixel's MATERIAL before indexed lighting could walk
+it down a ramp. The scene target now has an **albedo attachment** (MRT,
+`diffuseColor`), the snap reads that, and the row search reads the lit luma —
+`alb` says which ramp, `col` says how far along it.
+
+**Read `src/game/pinball-knight/MAZE_COLOUR_PLAN.md`** — rewritten around what was
+measured. The short version:
+
+- The defect was **51.5%** of (material × shading situation) pairs landing in the
+  wrong family. The "cheap things to try first" that the old plan recommended —
+  desaturate the torch, whiten it, raise the ambient — move that by **3 to 5
+  points**. Do not spend a wave on them.
+- The mechanism is the **darkening**, not the torch hue. Ambient at 3.5 is a 0.4×
+  multiply after `BRDF_Lambert`, and this palette's families are far enough apart
+  that 0.4× relocates most of them.
+- That number needs no GPU. `render/light-crossing.ts` computes it exactly, in
+  the suite, because the snap is a pure function of (albedo, light) and both are
+  constants in this repo. **Reach for it before shooting screenshots.**
+
+In-game, pinned seeds, real NVIDIA adapter — each biome's masonry in caps:
+Cold Crypt **STONE 5.7 → 23.4** · Warren **ROT 10.0 → 27.1** (seed 777: 9.8 → 30.4)
+· Arcane Deep **ARCANE 2.7 → 24.5** (it was rendering grey) · Bloodworks
+46.8 → 45.9 and tavern 13.0 → 13.9, both unchanged, both natural controls. Frame
+cost within noise (median 6.0 → 6.1 ms, over-16.7ms frames 1.6% → 1.7%).
+
+### Three things that will bite whoever touches this next
+
+1. **A scene material with a `fragmentNode` renders as a HOLE.** It skips three's
+   `setupDiffuseColor`, so the albedo attachment gets nothing and the object snaps
+   to void — no error, nothing in the suite can see it. Use `colorNode` instead;
+   `render/mrt-coverage.test.ts` fails if one appears.
+2. **`compileAsync` must run inside `pixelPass.withSceneContext`.** three bakes
+   the MRT into the material's build, so warming without it fills a cache nothing
+   reads and every material recompiles mid-play — the exact stall `boot/warmup.ts`
+   exists to prevent, arriving silently.
+3. **`biome-ab.mjs`'s descent-card guard failed again during this wave** and I
+   nearly wrote up a census of a loading screen (the Warren "before" read 26.7%
+   LEATHER). The old guard asked "is the bottom band lit" — a proxy. It now asks
+   whether the health orb is there: 2691-2705 px of entry 31 on every real floor,
+   zero on the card. If it rejects a shot, raise `--boot`; do not weaken it.
+
+Next in the backlog (§4 of the plan): the ink outline still reads the LIT buffer,
+and now that the albedo exists the honest version is an albedo edge — which also
+settles the warmth-gate question that has been open for two waves. Left out of
+this wave deliberately, so the A/B measured one thing.
+
+---
+
 ## 🔭 PICK UP HERE — open items from the UI-input sweep (2026-07-30)
 
 The two UI-input waves further down (**the tavern counter freeze**, and
