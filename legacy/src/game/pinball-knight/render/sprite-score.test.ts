@@ -44,7 +44,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas, loadImage } from "canvas";
-import { readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { crushToGrid } from "../engine/render/sprite";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../testkit/atlas-census";
@@ -66,10 +66,32 @@ function pngsUnder(path: string): string[] {
     : [path];
 }
 
+/** What `sprite_frames.py` writes beside its frames. */
+interface Manifest {
+  artPx: number;
+  cx: number;
+  ground: number;
+  dirs: Record<string, { scale: number; frames: Record<string, { w: number; h: number }> }>;
+}
+
+/** The importer's manifest, if the candidate came from `sprite_frames.py`. */
+function readManifest(path: string): Manifest | null {
+  if (!statSync(path).isDirectory()) return null;
+  const file = join(path, "manifest.json");
+  if (!existsSync(file)) return null;
+  return JSON.parse(readFileSync(file, "utf8")) as Manifest;
+}
+
+/** Facing from a frame filename: `E-walk0.png` → `E`. */
+function dirOf(file: string): string {
+  return (file.split("/").pop() ?? "").split("-")[0];
+}
+
 describe.skipIf(!IN)("candidate sprite score", () => {
   it("scores every candidate through the production crush", async () => {
     const files = pngsUnder(IN!);
     expect(files.length, `no PNGs under ${IN}`).toBeGreaterThan(0);
+    const manifest = readManifest(IN!);
 
     const G = SHIPPED_GRID;
     const px = bufferFor(G);
@@ -86,10 +108,15 @@ describe.skipIf(!IN)("candidate sprite score", () => {
       const buf = createCanvas(px, px);
       const ctx = buf.getContext("2d");
       ctx.clearRect(0, 0, px, px);
-      const groundY = px * (118 / 128);
-      const maxH = px * (110 / 128);
-      const maxW = px * (108 / 128);
-      const k = Math.min(maxW / src.width, maxH / src.height);
+      const unit = px / 128; // buffer pixels per art unit
+      const groundY = 118 * unit;
+      // ONE resample, always. When the importer left a manifest, its uniform
+      // art-units-per-source-pixel scale is used directly, so the frame goes
+      // from its NATIVE size straight into the crush buffer. Without a manifest
+      // (a bare PNG dropped in by hand) fall back to fitting the art box, which
+      // is still a single transform.
+      const m = manifest?.dirs?.[dirOf(file)];
+      const k = m ? m.scale * unit : Math.min((108 * unit) / src.width, (110 * unit) / src.height);
       const w = src.width * k;
       const h = src.height * k;
       ctx.imageSmoothingEnabled = true;
