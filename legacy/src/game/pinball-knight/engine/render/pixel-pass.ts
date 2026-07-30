@@ -403,7 +403,14 @@ function finalNode(
     return fract(a.x.div(2).add(a.y.mul(a.y).mul(0.75)));
   };
   const b = bayer2(fc.mul(0.5)).mul(0.25).add(bayer2(fc)).sub(0.5);
-  col = col.add(b.mul(2 / PALETTE_SIZE).mul(u.dither));
+  // AMPLITUDE 1/PALETTE_SIZE, halved from 2/ on 2026-07-30 and A/B'd in-game.
+  // The old width assumed evenly spaced palette steps; this palette's ramps
+  // are close WITHIN a family and far BETWEEN families, so a full-step nudge
+  // regularly pushed lit floor pixels across a family boundary and the whole
+  // frame wore per-pixel confetti (the "colors are off" look). Half a step
+  // still breaks AO/lighting banding — gradients dither at ramp boundaries —
+  // but can no longer hop families from a standing start.
+  col = col.add(b.mul(1 / PALETTE_SIZE).mul(u.dither));
 
   // ── Snap to the nearest palette entry, luma-weighted. Unrolled over the 32
   // colours: the palette is a compile-time constant here, so this becomes a
