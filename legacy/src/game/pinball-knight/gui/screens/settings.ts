@@ -141,6 +141,53 @@ function section(f: UiFrame, body: Rect, title: string, rows: Row[]): void {
   cutTop(body, GRID);
 }
 
+/**
+ * The scrollable height of the settings body, DERIVED from the sections rather
+ * than written down, so adding a row cannot make a scrollbar lie. Exported
+ * because the menu's OPTIONS tab has to declare the same number to
+ * `beginScroll` — two hand-kept copies is how a scroll region silently stops
+ * reaching its last row.
+ */
+export function settingsContentHeight(): number {
+  // Mirrors `settingsBody` block for block, in the same order, so the two can be
+  // read side by side. The camera block is 32 rather than 35 because it is a
+  // single row with no 3px inter-row gap after it — the old expression rounded
+  // that up and quietly claimed three pixels of scroll travel into blank space.
+  const camera = ROW_H + 32 + GRID;
+  const sectionH = (n: number): number => ROW_H + n * 35 + GRID;
+  return camera + sectionH(SOUND.length) + sectionH(LOOK.length) + sectionH(CARDS.length);
+}
+
+/**
+ * Every settings section, painted into `flow` (which is consumed top-down).
+ *
+ * Split out of `settingsScreen` so the knight menu's OPTIONS tab paints the
+ * SAME rows rather than a second copy of them. It has to be the same code: this
+ * screen carries the only control for `cameraZoom`, and a duplicate that drifts
+ * is how the camera setting would go back to being unreachable.
+ */
+export function settingsBody(f: UiFrame, flow: Rect): void {
+  // CAMERA IS FIRST, and that is not a cosmetic ordering. It was last, under
+  // three sections and 340 content pixels, in a scroll view 216 pixels tall —
+  // so the one control the player was hunting for ("no way to change the
+  // resolution") was the one control that was off the bottom of the sheet until
+  // you thought to scroll. A setting below the fold of the screen it lives on is
+  // barely better than the unreachable screen it used to live on.
+  heading(f, cutTop(flow, ROW_H), "CAMERA");
+  cameraRow(f, cutTop(flow, 32));
+  cutTop(flow, GRID);
+  section(f, flow, "Sound", SOUND);
+  section(f, flow, "Pixel look", LOOK);
+  section(f, flow, "Cards", CARDS);
+}
+
+/**
+ * The standalone sheet.
+ *
+ * The player's route in is the knight menu's OPTIONS tab (Esc → OPTIONS), not
+ * this. It stays because `__gui.settings()` photographs it and because the
+ * screen predates the tab; if a second route is ever wanted, this is it.
+ */
 export function settingsScreen(): UiScreen {
   return {
     id: "settings",
@@ -167,18 +214,10 @@ export function settingsScreen(): UiScreen {
       const foot = rect(body.x, body.y + body.h - ROW_H, body.w, ROW_H);
       const view = rect(body.x, body.y, body.w, body.h - ROW_H - GRID);
 
-      // Derived, so adding a row cannot make the scrollbar lie: each section is
-      // a heading plus its rows at 32 + 3.
-      const rowsH = (n: number): number => ROW_H + n * 35;
-      const contentH = rowsH(SOUND.length) + rowsH(LOOK.length) + rowsH(CARDS.length) + rowsH(1) + GRID * 4;
+      const contentH = settingsContentHeight();
 
       const sc = beginScroll(f, view, contentH, self.scroll);
-      const flow: Rect = { ...sc.inner };
-      section(f, flow, "Sound", SOUND);
-      section(f, flow, "Pixel look", LOOK);
-      section(f, flow, "Cards", CARDS);
-      heading(f, cutTop(flow, ROW_H), "CAMERA");
-      cameraRow(f, cutTop(flow, 32));
+      settingsBody(f, { ...sc.inner });
       endScroll(f, view, contentH, sc.offset);
       self.scroll = sc.offset;
 

@@ -86,15 +86,19 @@ export function getSettings(): DungeonSettings {
       if (typeof p.scanline === "boolean") d.scanline = p.scanline;
       if (typeof p.outline === "boolean") d.outline = p.outline;
       if (typeof p.haulReveal === "boolean") d.haulReveal = p.haulReveal;
-      // Membership-checked, not just typeof: this one indexes a table and ends
-      // up as PPU, so a stale or hand-edited value would make the whole render
-      // pipeline NaN rather than merely look wrong.
-      if (typeof p.cameraZoom === "string" && p.cameraZoom in CAMERA_ZOOMS) d.cameraZoom = p.cameraZoom;
       // MIGRATION: a player who had turned the old modal card reader OFF was
       // saying "stop showing me cards", so carry that across rather than
       // greeting them with a brand-new screen they already opted out of. Read
       // only when haulReveal itself is absent, so a later explicit choice wins.
+      //
+      // This `else` used to be chained to the cameraZoom check below, which is
+      // the wrong `if` — the migration only ran for a blob that had no camera
+      // setting, and stopped running for everyone the moment they saved one.
       else if ((p as Partial<{ readerPolicy: ReaderPolicy }>).readerPolicy === "never") d.haulReveal = false;
+      // Membership-checked, not just typeof: this one indexes a table and ends
+      // up as PPU, so a stale or hand-edited value would make the whole render
+      // pipeline NaN rather than merely look wrong.
+      if (typeof p.cameraZoom === "string" && p.cameraZoom in CAMERA_ZOOMS) d.cameraZoom = p.cameraZoom;
     }
   } catch (_e) {
     // Blocked storage → defaults, session-only.

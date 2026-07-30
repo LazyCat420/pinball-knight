@@ -470,7 +470,14 @@ export interface RenderSizing {
    * element must use it rather than `scale` — see `cancelBrowserZoom` below.
    */
   cssScale: number;
-  /** The browser-zoom factor this sizing was computed against. 1 at page load. */
+  /**
+   * The browser-zoom factor this sizing was computed against.
+   *
+   * NOT necessarily 1 at page load — a page opened at 80% zoom starts at 0.8,
+   * which is the whole point: the load-time zoom has to be divided back out too,
+   * or the field of view depends on what the zoom happened to be when you hit
+   * reload. See `cancelBrowserZoom`.
+   */
   browserZoom: number;
   /** True when MAX_RENDER_* clamped the target, so outW/outH no longer cover the window. */
   capped: boolean;
@@ -497,22 +504,143 @@ export interface RenderSizing {
  * thing it should: the same frame is presented across more or fewer physical
  * pixels, so the picture gets sharper or softer, never differently composed.
  *
- * ── WHY THE BASELINE IS CAPTURED, NOT ASSUMED TO BE 1 ──
+ * ── WHY THE BASELINE IS NOT THE RAW dpr, AND NOT THE dpr AT LOAD EITHER ──
  * `devicePixelRatio` is ALSO 2 on a Retina panel at 100% zoom. Treating the raw
  * value as zoom would quadruple the render target on every HiDPI laptop — the
  * opposite of the "fat honest pixels, dpr deliberately ignored" decision this
- * file makes on purpose. Only the CHANGE since load is zoom, so only the change
- * is cancelled. A page loaded already-zoomed bakes that in and is then stable,
- * which is the right failure: consistent, and it cannot drift mid-session.
+ * file makes on purpose. So the zoom has to be measured against a baseline.
+ *
+ * That baseline used to be simply `devicePixelRatio` AT PAGE LOAD, with the note
+ * that a page loaded already-zoomed "bakes that in and is then stable, which is
+ * the right failure: consistent, and it cannot drift mid-session". It is not
+ * consistent, and this is the bug behind "why does the resolution keep changing"
+ * (2026-07-30). Only the zoom SINCE LOAD was cancelled, so the load-time zoom
+ * still went straight into the grid — and the field of view with it. Measured on
+ * one physical 1872x932 window at the `wider` rung, varying only the zoom the
+ * page was LOADED at:
+ *
+ *     loaded at   CSS window   grid        tiles across   drawing buffer
+ *      100%       1872x932     1872x932        33.4          1.7 Mpx
+ *       80%       2340x1165    1170x584        20.9          2.7 Mpx   -37%
+ *       67%       2794x1391    1398x696        25.0          3.9 Mpx
+ *       50%       3744x1864    1872x932        33.4          7.0 Mpx
+ *       33%       5673x2824    1892x942        33.8         16.0 Mpx
+ *       25%       7488x3728    1498x746        26.8         27.9 Mpx
+ *       20%       9360x4660    1560x778        27.9         43.7 Mpx
+ *
+ * Non-monotonic, up to 37% tighter than 100%, and the buffer runs away at the
+ * far end because `scale` climbs to cover a CSS window that is not physically
+ * there. And the CAMERA row in the settings screen offers a RELOAD button, so
+ * the one control that exists to fix the zoom was also the thing that rerolled
+ * it. The old guard made it worse still: `z > 0.2` EXCLUDES exactly 20%, which
+ * is a real Vivaldi zoom step, so at that one level cancellation switched itself
+ * off entirely and the game sized off a 9360px window.
+ *
+ * The baseline is now the dpr this page WOULD have at 100% zoom, derived by
+ * dividing out the zoom it was loaded at. `outerWidth / innerWidth` is what
+ * reveals that: page zoom moves `innerWidth` (CSS px of the viewport) and leaves
+ * `outerWidth` (the OS window) alone, so their ratio IS the zoom, up to a few
+ * pixels of window border. Snapping to the rungs a browser actually offers
+ * removes that noise — see `snapZoomStep`.
  */
-const BASE_DPR = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+/**
+ * The zoom levels a desktop browser actually offers, smallest first. Chrome
+ * bottoms out at 25%; Vivaldi goes to 20%, which is where this was reported.
+ *
+ * A closed set is what makes the `outerWidth / innerWidth` measurement usable:
+ * the ratio carries a few pixels of window-border noise, but the rungs are 10%
+ * apart at the tightest, so the nearest one is unambiguous.
+ */
+const ZOOM_STEPS = [0.2, 0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+
+/**
+ * How close to a rung the measured ratio has to be, in log space, before it is
+ * believed. 2%.
+ *
+ * ── WHY IT IS THIS TIGHT, MEASURED NOT GUESSED ──
+ * The two ways to be wrong here are NOT symmetric. Reject a real zoom and the
+ * baseline falls back to raw dpr, which is exactly the behaviour that shipped
+ * before this function existed — no worse than before. Accept a ratio that is
+ * not a zoom and the game invents one, resizing the grid for a window that is
+ * not there — strictly worse than before. So the bar is set to make the second
+ * mistake hard, and the tolerance is derived from real numbers rather than from
+ * the gaps between rungs:
+ *
+ *     window                          outer/inner   nearest rung   log err
+ *     real Chrome window, 100%        1712/1696       1            0.0094  ✔
+ *     the same under CDP viewport
+ *       emulation (1600 override)     1712/1600       1.1          0.0276  ✘
+ *
+ * That second row is this repo's OWN screenshot harness (`scripts/ui-probe.mjs`
+ * and every playwright test): Playwright overrides `innerWidth` and leaves
+ * `outerWidth` on the real browser window, so the ratio is meaningless. At the
+ * 5% tolerance the gaps between rungs would have allowed, 1.07 reads as "110%
+ * zoom" and every headless shot silently renders 10% more level than the game.
+ * The first row's 16px of window border is 0.94%, so 2% clears the real case
+ * with margin and rejects the emulated one.
+ *
+ * The cost is that a genuine zoom on a NARROW window can fall below the bar —
+ * 16px of border is 3.2% of a 500px viewport — and there the baseline degrades
+ * to dpr-at-load. That is the safe direction.
+ */
+const ZOOM_SNAP_TOLERANCE = 0.02;
+
+/**
+ * Nearest browser zoom rung to `ratio`, or 1 if it is not near any of them.
+ *
+ * Distance is measured in LOG space because the rungs are multiplicative — 0.2
+ * and 0.25 are 0.05 apart in absolute terms and would lose every tie to the
+ * dense cluster around 1. Falling back to 1 rather than to the raw ratio is
+ * deliberate: an unrecognised ratio means the measurement is not measuring zoom
+ * (an iframe, where `outerWidth` belongs to a different window; a headless
+ * context where it is 0 or where the viewport has been overridden), and 1 is the
+ * old behaviour.
+ */
+export function snapZoomStep(ratio: number): number {
+  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+  let best = 1;
+  let bestErr = Infinity;
+  for (const s of ZOOM_STEPS) {
+    const err = Math.abs(Math.log(ratio / s));
+    if (err < bestErr) {
+      bestErr = err;
+      best = s;
+    }
+  }
+  return bestErr <= ZOOM_SNAP_TOLERANCE ? best : 1;
+}
+
+/**
+ * The `devicePixelRatio` this page would report at 100% zoom.
+ *
+ * Pure, and takes its three inputs rather than reading `window`, so a test can
+ * drive it with a real browser's numbers. `cancelBrowserZoom` is the only thing
+ * that touches `window`; everything a test needs to pin lives in here.
+ */
+export function zoomBaseline(dpr: number, outerW: number, innerW: number): number {
+  const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  if (!Number.isFinite(outerW) || !Number.isFinite(innerW) || outerW <= 0 || innerW <= 0) return d;
+  return d / snapZoomStep(outerW / innerW);
+}
+
+/** The live zoom factor: current dpr against the 100%-zoom baseline. */
+export function browserZoom(dpr: number, baseline: number): number {
+  const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+  const z = d / baseline;
+  // Guard against a nonsense ratio from a display hot-swap: a wild value here
+  // would resize the render target rather than merely look wrong. The floor is
+  // 0.1, BELOW the tightest zoom any browser offers — the old `> 0.2` sat ON a
+  // real rung and disabled cancellation at exactly the level it was needed.
+  return Number.isFinite(z) && z >= 0.1 && z <= 8 ? z : 1;
+}
+
+const BASE_DPR =
+  typeof window === "undefined" ? 1 : zoomBaseline(window.devicePixelRatio || 1, window.outerWidth, window.innerWidth);
 
 export function cancelBrowserZoom(): number {
   if (typeof window === "undefined") return 1;
-  const z = (window.devicePixelRatio || 1) / BASE_DPR;
-  // Guard against a nonsense ratio from a display hot-swap: a wild value here
-  // would resize the render target rather than merely look wrong.
-  return Number.isFinite(z) && z > 0.2 && z < 8 ? z : 1;
+  return browserZoom(window.devicePixelRatio || 1, BASE_DPR);
 }
 
 /** Round UP to the next even number. */
@@ -557,10 +685,10 @@ function evenCeil(v: number): number {
  * KEEP the integer scale and letterbox instead — crispness is the invariant.
  */
 export function computeRenderSizing(winW: number, winH: number, zoom = 1): RenderSizing {
-  // The window in ZOOM-CANCELLED pixels — see `cancelBrowserZoom`. At page load
-  // `zoom` is 1 and this is exactly `innerWidth/innerHeight`; after a ctrl +/-
-  // it is the same physical window measured in the same units it had before, so
-  // every number derived below is unchanged and the game does not move.
+  // The window in ZOOM-CANCELLED pixels — see `cancelBrowserZoom`. `winW * zoom`
+  // is the PHYSICAL viewport, in the units it would have at 100% zoom, whatever
+  // the zoom is now and whatever it was when the page loaded. So every number
+  // derived below is invariant under ctrl +/- AND under a reload while zoomed.
   const w = Math.max(1, Math.floor(winW * zoom));
   const h = Math.max(1, Math.floor(winH * zoom));
 
