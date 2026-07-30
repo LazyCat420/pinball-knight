@@ -63,8 +63,35 @@ gate that enforces them, so the comparison can be settled instead of
 argued. Run `render/sprite-score.test.ts` on the output and read the
 verdict; do not adopt a sheet because a preview looked good at 8x.
 
-Deps: pillow, numpy, scipy. Env: TOOLS_SERVICE_URL (default
-http://192.168.86.2:5590), SPRITE_USERNAME.
+── RUNNING IT ───────────────────────────────────────────────────────
+
+tools-service lives on the NAS at http://10.0.0.16:5590 (the Paper
+Harvest default, 192.168.86.2, is a different box and does not answer
+here). `/health` answers 200.
+
+Deps do not install system-wide on this box — PEP 668 marks the
+interpreter externally managed — so use a venv rather than
+`--break-system-packages`:
+
+    python3 -m venv .scratch/venv
+    .scratch/venv/bin/pip install pillow numpy scipy
+    .scratch/venv/bin/python scripts/sprite_frames.py generate ratking
+
+scipy is optional: it is used only to drop stray floating alpha blobs
+after slicing, and the script degrades to keeping them if it is absent.
+
+⚠️ STATUS 2026-07-29: generation is BLOCKED UPSTREAM, and not by
+anything in this repo. `/creative/generate-image` returns 502 wrapping
+
+    Prism API error: 500 GOOGLE_CLOUD_GEMINI_API_KEY is not set
+
+i.e. tools-service reaches Prism and Prism has no image-model
+credential configured. Nothing here can work around that — it needs the
+key set on the Prism side. Everything downstream of the call (slicing,
+registration, palette snap, census) is written and exercised; feed it a
+sheet with `from-sheet` to run the whole pipeline without the service.
+
+Env: TOOLS_SERVICE_URL, SPRITE_USERNAME.
 """
 
 import argparse
@@ -90,7 +117,7 @@ REPO = Path(__file__).resolve().parent.parent
 SPRITES_DIR = REPO / "scripts" / "sprites"
 WORK_DIR = SPRITES_DIR / "work"
 
-TOOLS_URL = os.environ.get("TOOLS_SERVICE_URL", "http://192.168.86.2:5590")
+TOOLS_URL = os.environ.get("TOOLS_SERVICE_URL", "http://10.0.0.16:5590")
 USERNAME = os.environ.get("SPRITE_USERNAME", "rodrigo")
 
 # ── The registration contract, from constants/render.ts ──────────────
