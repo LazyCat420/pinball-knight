@@ -49,6 +49,7 @@ import {
   endScroll,
   fillRect,
   focusable,
+  followFocus,
   focusRing,
   key,
   heading,
@@ -653,10 +654,21 @@ export function menuScreen(onAbandon: () => void): UiScreen {
       drawIcon(f.g, glyph("coin", 8, UI.gold), head.x + 132, head.y + 10, 8);
       text(f, `${getBalance()}g`, head.x + 146, head.y + 10, { size: 8, colour: UI.gold });
 
-      // Tab focus/scroll are per-tab, so restore this tab's cursor before the
-      // body paints and stash it again after.
+      // ── `m.focuses` IS THE PARKED CURSOR, NOT THE LIVE ONE ──
+      // This used to open with `f.focus = m.focuses[prevTab]`, which threw away
+      // the cursor every frame and made **the whole menu un-navigable by keyboard
+      // or pad**. The round trip: the driver writes navigation to `self.focus`
+      // (`moveFocus`, in `gui/root.ts`, AFTER the paint), `beginUi` hands it back
+      // as `f.focus` — and this line overwrote it with the value stashed at the
+      // END of the previous paint, i.e. the value from BEFORE that navigation. Its
+      // own stash was the thing that undid it. Measured: with Down held, the
+      // settings sheet's cursor walks 0→7 and this menu's stayed at 0 for every
+      // frame, on all six tabs.
+      //
+      // The live cursor belongs to the driver. `m.focuses` only has to remember
+      // where you were on the tabs you are NOT on, so it is written below and read
+      // only on an actual tab change — index N of GEAR means nothing in BESTIARY.
       const prevTab = m.tab;
-      f.focus = m.focuses[prevTab];
 
       const tabBar = cutTop(outer, 22);
       const nextTab = tabStrip(f, tabBar, m.tab);
@@ -696,7 +708,17 @@ export function menuScreen(onAbandon: () => void): UiScreen {
           break;
       }
       endScroll(f, view, contentH, scrolled.offset);
-      m.scrolls[m.tab] = scrolled.offset;
+      // The region follows the cursor — see `followFocus`. Per tab, because each
+      // tab keeps its own offset: the bestiary is a long grid and the equipment
+      // paperdoll is not, and sharing one number would scroll a short tab to a
+      // position that does not exist in it.
+      m.scrolls[m.tab] = followFocus(f, view, scrolled.offset);
+      // Mirror onto the field `UiScreen` declares for it, which is the one
+      // `__gui().scroll` reads (`dev/gui-hooks.ts` → `top()?.scroll`). The per-tab
+      // map is the real storage — six tabs cannot share one number — but a screen
+      // that never writes `self.scroll` reports a flat 0 to the probe, and that is
+      // the readout you reach for precisely when a list will not scroll.
+      self.scroll = m.scrolls[m.tab];
 
       // Footer: hints + the two-step ABANDON.
       text(f, `ESC/B CLOSE   TAB CYCLE   1-${TABS.length} JUMP   ↑↓ MOVE   ENTER/A PICK`, foot.x, foot.y + 8, {

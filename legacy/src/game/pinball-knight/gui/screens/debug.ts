@@ -69,6 +69,7 @@ import {
   cutTop,
   endScroll,
   fillRect,
+  followFocus,
   rect,
   strokeRect,
   text,
@@ -527,7 +528,11 @@ export function debugScreen(actions: ConsoleActions): UiScreen {
       contentH = body.y - sc.inner.y;
 
       endScroll(f, view, contentH, sc.offset);
-      self.scroll = sc.offset;
+      // The region follows the cursor — see `followFocus`. This dock is the case
+      // its `focusClipped` guard exists for: CLOSE below is registered OUTSIDE the
+      // region and sits below it, so scrolling by its rect would run the whole
+      // monster grid to the bottom every time the cursor reached the footer.
+      self.scroll = followFocus(f, view, sc.offset);
 
       // ── The foot, outside the scroll region so it never scrolls away ──
       fillRect(f, rect(0, foot.y - GRID / 2, DOCK_W - 1, 1), UI.sheetEdge);
