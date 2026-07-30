@@ -8,6 +8,62 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > `truetint` are live in this repo right now. Collapsing 1500 lines I have not
 > read would delete their notes. Prepended instead.
 
+## ✅ LIVE NOW — the death screen shows the face that died (2026-07-29)
+
+**tsc clean on the subtree, registry-drift clean, 1557 tests, shot through the
+real pixel pass on a WebGPU adapter. Deployed, container healthy, 0 restarts.**
+
+`YOU ARE DEAD` was two words over a stat line. The knight's mugshot now sits
+under the title, at zero health — helm gone, beard matted red, x-ed out eyes —
+in the same plate the HUD frames it in. It is the face the player watched come
+apart over the whole run, so the screen closes that thread instead of opening a
+new one.
+
+### `deadFace()` is a COPY of the HUD's canvas, and has to be
+
+`hud-face.ts` is a SINGLETON with live state. Two things break a direct blit:
+
+1. It carries the last painted frame's head turn and pain recoil, so the death
+   screen would show a corpse mid-flinch, glancing wherever the killing blow
+   came from — a different picture every run, none of them intended.
+2. **The HUD is still painted BEHIND this screen off that same backing store.**
+   Two consumers at two states is a race the death screen loses on every frame
+   the HUD repaints.
+
+So it snapshots the singleton, forces `hp=0` square on, paints, copies the
+pixels out, and puts the live face back — the same borrow `faceContactSheet`
+does — then caches. `disposeFace()` drops the cache with the canvas it came
+from. `hud-face.test.ts` pins the restore: the live canvas must be byte
+identical across a `deadFace()` call.
+
+### The screen's height is now nearly spent — read this before adding a row
+
+`gameOverScreen` used to lay out in a fixed 380-tall column, top-aligned. It now
+MEASURES its block and centres it, with every row height in one `H` table that
+both the sum and the `cutTop` calls read (they were typed twice; that drifts
+silently, and a screen that measures one height and paints another centres
+itself against a total it does not have).
+
+With the portrait and the drop notice both showing the block is **320 of the 338
+this screen declares in `design`**, and the top-margin floor eats most of the
+rest. Paddings were trimmed to buy the portrait its 88px. The driver picks the
+zoom from the DECLARATION, so an overflowing block still gets its zoom and
+simply loses its bottom off the grid — nothing would have said so.
+
+`gui/screens/game-over.test.ts` is the guard: it paints at exactly the design
+size with a recording context and fails if any fill or blit lands below the
+bottom edge. Raising `design.h` is the honest alternative and it is not free —
+338 is what puts the 2x step at a 676-tall grid, and every notch up drops
+shorter windows to 1x, where the whole screen halves.
+
+### Still open
+
+The dead-tier art itself. `paintDamage` runs after `paintEyes`, so at the dead
+tier the gore is painted OVER the x-eyes — the one cue that says "dead" — and at
+72px under a title that is the largest this face has ever been drawn. It reads,
+but it reads muddy. Reordering is a two-line change confined to `mood === "dead"`
+and was left alone here because it changes the HUD's art, not this screen's.
+
 ## ✅ LIVE NOW — the camera is a setting, and the default moved out (2026-07-29)
 
 **tsc clean, 1547 tests, verified through the real pixel pass.**
