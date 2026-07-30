@@ -7,6 +7,97 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🔭 PICK UP HERE — open items from the UI-input sweep (2026-07-30)
+
+The two UI-input waves further down (**the tavern counter freeze**, and
+**scroll-follow + the un-navigable knight menu**) are deployed and verified. These
+are the things I MEASURED BUT DID NOT FIX, in the order I would do them.
+
+### 1. `menu.ts`'s `contentHeight()` over-declares — five of six tabs
+
+Same class as the tavern's late `vendorHeight()`: a hand-written formula per tab
+that disagrees with what the bodies paint, so the region scrolls into void and the
+scrollbar thumb is sized for content that is not there.
+
+MEASURED on a fresh run, by saturating the wheel and comparing the reachable travel
+against the lowest thing painted inside the clip:
+
+| tab | declared | painted | slack |
+|---|---|---|---|
+| bestiary | 1482 | 818 | **+664** |
+| stats | 494 | 187 | **+307** |
+| cards | 324 | 147 | **+177** |
+| skills | 855 | 808 | +47 |
+| gear | 337 | 297 | +40 |
+| options | 370 | 359 | +11 — derived from `settingsContentHeight()`, fine |
+
+⚠️ `cards` and `bestiary` are STATE-DEPENDENT (`state.cardStash`,
+`buildBestiary(state.killsByKind)`), so a fresh run is their low end — whether the
+formula is also wrong at full discovery is **UNVERIFIED**. The other rows are
+static and simply wrong.
+
+Fix with the pattern `debug.ts` and `tavern.ts` both use now: delete the formula,
+measure `body.y - sc.inner.y` after the body paints, keep it per tab. ~10 lines.
+`gui/screens/tavern.test.ts` has an assertion to copy — *"matches what the counter
+paints, so there is no void below it"*.
+
+### 2. The intro drives the pass in only THREE of its phases
+
+`intro/index.ts` calls `pixelPass.render()` in `shatter`, `sweep` and `title` — but
+NOT in `run`, which paints to the intro's own 2D canvases instead. `drawUiFrame` is
+wrapped around `pixelPass.render`, so during `run` the `intro-chrome` screen —
+**which owns the SKIP button** — is neither painted nor given input.
+
+VERIFIED: the three call sites and the missing one. **NOT VERIFIED:** whether SKIP
+is actually dead on screen during `run`; it may be that nothing is meant to be
+visible then. *Check before fixing.* This is the third loop in this repo with the
+shape behind both of today's freezes — `scenes/tavern/present.ts` explains why
+`presentUi()`, not "render anyway", is the answer when a loop must skip the scene.
+
+### 3. The structural guard only walks `gui/screens/`
+
+`scroll-follow.test.ts` asserts every file calling `beginScroll` also calls
+`followFocus`. That covers every caller outside `im.ts` today (confirmed by grep),
+but a scrolling screen added under `scenes/` — the natural home for another
+`scene-screens.ts` — would sit outside the walk and pass silently. Widen the
+directory when that happens, not before.
+
+### 4. Two workarounds that are now OPTIONAL rather than forced
+
+- **`settings.ts` puts CAMERA first.** Its note says that control was "the one the
+  player was hunting for" because it sat below the fold. The fold is keyboard-
+  reachable now, so the ordering is a free design choice. No action — just do not
+  read it as a constraint.
+- **The walkable tavern's room no longer reads through the scrim** while a panel is
+  open (`presentUi` composites over a CLEARED target) — a deliberate trade against
+  a hard freeze. If the room is wanted back, do NOT revert `presentUi`: give
+  `run-summary` a `design` box so its sheet fills the frame like every other panel,
+  which makes the loss invisible.
+
+### Probe recipes that cost me time to work out
+
+```
+node scripts/ui-probe.mjs --url "http://localhost:<port>/dungeon?no-intro=1&gpu=webgpu" \
+  --boot 14 --steps 'eval:__dungeonTavern()|wait:6000|eval:__gui.tavern("potions")|...'
+```
+
+- `eval:` steps carry **NO delay of their own**. Chain `wait:` explicitly.
+- ⚠️ The walkable tavern owns a **SECOND WebGPU renderer**. Until its async init
+  lands, `presentMode` returns `"none"` and the scene presents nothing — with no
+  settle you photograph the frozen DUNGEON and misread it as the bug. Wait ~6s.
+- `__gui().painted` is the honest "is the UI alive" signal — `open`/`paused` read
+  identically in a working and a frozen build. Two byte-identical screenshots
+  seconds apart is the cheapest falsifier there is.
+- `__gui.menu()` / `__gui.tavern(vendor)` / `__gui.settings()` raise a screen
+  without playing to it; `__dungeonTavern()` opens the walkable hub.
+- ⚠️ Testing a focus cursor: **press, never assign.** Assigning `screen.focus`
+  teleports it somewhere no player reaches in one step and `moveFocus` then walks it
+  further off any disabled run (measured: assigning 24 landed on 30), so the region
+  is permanently one jump behind and you get a failure the game does not have. Three
+  paints per step — move, compute, apply.
+- The dev server on **5174 is usually another session's**. Start your own on a free
+  port or you will be testing their working tree.
+
 ## ✅ LIVE NOW — `sfx/` and `fx/`: two folders, and fire/water rebuilt as WebGPU shaders (2026-07-30)
 
 **Deployed `main@1bc8542` at 08:51Z, container healthy 11h, 0 restarts, HTTP 200
