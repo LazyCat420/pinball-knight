@@ -375,9 +375,31 @@ src/objects/dungeon-game/
 ├── camera.ts           # top-down / slight-tilt follow cam
 ├── input.ts            # WASD + mouse, and mobile touch controls
 ├── ui.ts               # HUD: health orb, level, kill count
-├── audio.ts            # WebAudio SFX, procedural (see mouse-game/audio.ts)
+│
+├── sfx/                # EVERY SOUND. Procedural — zero audio files in the repo.
+│   ├── bus.ts          # the mixer: mute gates, volume, per-category gain
+│   ├── synth.ts        # beep() + burst() — the only two primitives
+│   ├── gate.ts         # gate() + voice(), keyed on the AUDIO clock
+│   ├── registry.ts     # name → sting, for the audition panel. NOT a call path.
+│   └── combat|weapons|pinball|monsters|world|run.ts   # the 28 stings
+│
+├── fx/                 # EVERY VISUAL EFFECT.
+│   ├── color.ts        # palette index → LINEAR rgb (the scene buffer is linear)
+│   ├── elements/       # TSL/WebGPU shader materials
+│   │   ├── noise.ts    # fbm, domain warp, disc mask, bandRamp
+│   │   ├── fire.ts     # domain-warped flame, silhouette from the NOISE
+│   │   └── water.ts    # ripple normals, Schlick fresnel, caustics, torch glint
+│   └── floor/decals.ts # which kinds wear a shader, and their per-frame clock
+│
 └── dispose.ts          # tear down geometry, materials, textures, listeners
 ```
+
+`sfx/` and `fx/` are siblings on purpose: one is the home for everything you hear,
+the other for everything transient you see. Note the split of responsibility for
+the ground decals — `entities/floor-fx.ts` keeps the SIMULATION (burn damage,
+chill, skid, oil ignition, all of it asserted by `floor-fx.test.ts`) and `fx/`
+owns only the LOOK. `fx/` deliberately holds nothing a test in `entities/`
+asserts on.
 
 ---
 
@@ -617,7 +639,34 @@ React 19 + TypeScript + ESLint. Trust the code).
 - **Audio is fully synthesized** — there are zero audio files in the repo. SFX go
   through Web Audio, following `src/utils/audio-manager.ts` and
   `mouse-game/audio.ts`. Sword swings, zombie groans and hits all get oscillators
-  and noise bursts. (Which, conveniently, is *very* 8-bit.)
+  and noise bursts. (Which, conveniently, is *very* 8-bit.) Every sound lives in
+  `sfx/`, called by NAMED IMPORT — there is a name→sting registry but it exists
+  for the debug audition panel, not for gameplay.
+  - **Fail-silent is a contract.** Audio must never be able to break the game, so
+    every sting no-ops on a null context and every node creation is wrapped.
+  - **Throttle at the CALL SITE**, never inside a sting (`sfx/gate.ts`).
+    `sfxFlame` is the flamethrower, the fire vent AND the lava marble; gating it
+    centrally to calm one silences the others.
+  - **A green playtest says nothing about audio.** `?playtest=1` and `?mute=1`
+    force global mute at module load, so all 28 stings no-op for the whole run.
+    What IS automated: `sfx/snapshot.test.ts` pins every pitch and gain (so a
+    refactor can be proven inaudible) and `sfx/bus.test.ts` proves nothing
+    bypasses the mixer. The rest is headphones.
+- **Elemental effects are TSL shaders, and they band to palette indices.** The
+  pixel pass snaps every pixel to the nearest of 32 colours by a LUMA-WEIGHTED
+  metric, so a smooth free-hex gradient lands wherever that metric points — a warm
+  wash has measured 26.8% ROT GREEN in this repo. `fx/elements/noise.ts`'s
+  `bandRamp` quantises each shader's own field at palette entries, which makes the
+  snap a no-op and turns the quantizer from a hazard into the look.
+  - **Never clock a shader on TSL's `time`.** It is fed by `nodeFrame.update()`,
+    which three calls only from its INTERNAL rAF loop — and this game drives its
+    own and never calls `setAnimationLoop` (the same root cause as the
+    drawCall-accumulation bug in `sim/loop.ts`). A shader on `time` renders a
+    perfectly static flame with zero errors, and a screenshot passes it. Use the
+    explicit uniform poked from the frame loop, and prove motion with
+    `scripts/fx-motion.mjs` — which has a FROZEN control precisely because
+    "the frames differ" is also satisfied by camera drift or a stray particle.
+  - `__fx()` in the console is the effects lab (`__lab` is monster-only).
 - Emoji-prefixed `console.log` for lifecycle tracing.
 - Tests are colocated `*.test.ts`, and only **pure-logic** modules get tested —
   three.js rendering does not. For this game that means the natural test surface is
