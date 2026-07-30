@@ -50,13 +50,24 @@
  * gradient is the classic pixel-art water read, and it is a no-op under the
  * pass's palette snap.
  */
-import { dot, exp, float, length, max, mix, normalize, pow, saturate, sin, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { dot, exp, float, length, max, normalize, pow, saturate, sin, smoothstep, uniform, vec2, vec3, vec4 } from "three/tsl";
 import { bandRamp, discMask, discP, noise01, type TSLNode } from "./noise";
 import { elementMaterial, type ElementMaterial } from "./element";
 import { CAMERA_TILT, CAMERA_YAW } from "../../constants";
 
 /** Deep → shallow → foam. Arcane 29-31 plus steel highlight for the crest. */
 export const WATER_RAMP = [1, 29, 30, 31, 22] as const;
+
+/**
+ * Where the bands change. Tuned so a puddle reads DEEP BLUE at rest.
+ *
+ * The first version used equal widths and rendered solid foam-white — the lit
+ * field spends most of its range above 0.5, so equal bands put the top colour
+ * everywhere. These push the two bright entries (31 arcane light, 22 foam) up
+ * where only a caustic hit or a specular crest reaches them, which is what makes
+ * them read as highlights rather than as the base colour.
+ */
+const WATER_STOPS = [0.14, 0.32, 0.70, 0.90] as const;
 
 /**
  * Surface → eye, for a flat +Y disc under this game's fixed orthographic camera.
@@ -132,8 +143,12 @@ export function createWaterMaterial(opts: WaterOpts = {}): WaterMaterial {
   const v = vec3(V_EYE[0], V_EYE[1], V_EYE[2]);
 
   // ── 3. FRESNEL (Schlick). See the header for why this is worth 3.4×.
+  // SATURATED, not gained. Schlick's (1-cos)^5 is unbounded in practice once the
+  // normal swings past grazing, and an ungained-but-unclamped term here summed
+  // past 1 on its own — which is how the first version rendered a solid white
+  // puddle. Clamp first, weight second.
   const ndv = max(float(0.0), dot(n, v));
-  const fres = pow(ndv.oneMinus(), float(5.0)).mul(0.98).add(0.02).mul(6.0);
+  const fres = saturate(pow(ndv.oneMinus(), float(5.0)).mul(0.98).add(0.02).mul(4.0));
 
   // ── 5. TORCH GLINT — Blinn-Phong half-vector against the nearest torch.
   // `uTorchPos` is a world position but the disc is small, so treating the
@@ -142,26 +157,45 @@ export function createWaterMaterial(opts: WaterOpts = {}): WaterMaterial {
   const half = normalize(l.add(v));
   const spec = pow(max(float(0.0), dot(n, half)), float(48.0)).mul(uTorch);
 
-  // ── 4. CAUSTICS — two counter-drifting cell fields, multiplied.
+  // ── 4. CAUSTICS — two counter-drifting cell fields, multiplied. The product
+  // is what gives the sparse travelling WEB; either field alone is a blobby
+  // overlay. `pow` sharpens it so only the brightest crossings survive.
   const flow = vec2(t.mul(0.16 * speed), t.mul(-0.11 * speed));
   const k1 = noise01(vec3(c.mul(6.0).add(flow), t.mul(0.3 * speed)));
   const k2 = noise01(vec3(c.mul(9.5).sub(flow.mul(1.7)), t.mul(0.4 * speed)));
-  const caustics = pow(k1.mul(k2), float(3.0)).mul(float(caustic * 3.0));
+  const caustics = saturate(pow(k1.mul(k2), float(2.2)).mul(float(caustic * 4.0)));
 
-  // The rim also draws the puddle's boundary, which a player needs in order to
-  // read it as a hazard rather than as floor decoration.
-  const rim = mix(float(0.0), float(0.7), discMask(r, 0.99, 0.84).oneMinus());
+  // The rim draws the puddle's BOUNDARY — a player has to be able to read the
+  // edge to treat it as a hazard. It must brighten toward the outside: the first
+  // version had this inverted and added a constant 0.7 across the entire disc,
+  // which on its own put every pixel in the top band.
+  const rim = smoothstep(float(0.72), float(0.98), r).mul(0.55);
 
+  /**
+   * The lit field, with an explicit CONSTANT BASE.
+   *
+   * The base term is load-bearing and was missing at first. Without it the
+   * additive terms alone averaged ~0.17, which sits on the very first band
+   * boundary — so a puddle at rest rendered in ink (palette 1) and, being
+   * translucent, just darkened whatever floor was underneath. On a mossy green
+   * biome that read as a green stain, with no blue in it anywhere.
+   *
+   * 0.22 puts the resting surface in the middle of arcane mid (palette 30) — an
+   * actual readable blue — and leaves 31 and 22 for crests and caustics. Every
+   * term is clamped before it is weighted, and at rest the sum lands near 0.4
+   * rather than pinning at either end of the ramp.
+   */
   const lit = saturate(
-    H(c).mul(0.5).add(0.5).mul(0.55)
-      .add(fres.mul(0.22))
-      .add(rim.mul(0.30))
-      .add(spec.mul(0.5))
-      .add(caustics.mul(0.28))
+    float(0.22)
+      .add(H(c).mul(0.5).add(0.5).mul(0.34))
+      .add(fres.mul(0.14))
+      .add(rim.mul(0.24))
+      .add(spec.mul(0.28))
+      .add(caustics.mul(0.20))
       .mul(uIntensity),
   );
 
-  const col = bandRamp(lit, WATER_RAMP);
+  const col = bandRamp(lit, WATER_RAMP, WATER_STOPS);
 
   // A puddle is a SURFACE: its silhouette stays a disc. This is the deliberate
   // opposite of fire, where the noise field owns the outline — water with a

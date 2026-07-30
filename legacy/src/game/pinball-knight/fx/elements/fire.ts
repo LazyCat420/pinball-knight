@@ -46,6 +46,18 @@ import { elementMaterial, type ElementMaterial } from "./element";
 /** Dark → hot. The whole torch ramp, which is the only warmth in this palette. */
 export const FIRE_RAMP = [14, 15, 16, 17, 18] as const;
 
+/**
+ * Where the bands change. Tuned so the flame is mostly ORANGE with a small
+ * white core.
+ *
+ * Equal-width bands put 18 (flame core, near-white) on a fifth of the field, and
+ * with additive blending plus bloom on top that renders as a white smear with
+ * orange debris around it — which is what the first version looked like. Pushing
+ * 17 and 18 up to 0.74/0.90 keeps the near-whites for the genuinely hottest
+ * pixels, so the bloom halo comes off a core instead of off the whole pool.
+ */
+const FIRE_STOPS = [0.26, 0.50, 0.74, 0.90] as const;
+
 export interface FireOpts {
   /** How the quad is hung. See term 2 in the header — this is not cosmetic. */
   orientation?: "floor" | "billboard";
@@ -61,7 +73,12 @@ export interface FireOpts {
 }
 
 export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
-  const { orientation = "floor", cutoff = 0.42, scale = 3.0 } = opts;
+  // `scale` 3.0 was too fine: at 72 render pixels per world unit a feature that
+  // small survives the palette snap as confetti, and the pool read as scattered
+  // embers rather than as one burning thing. 2.0 keeps features wide enough to
+  // hold an interior. `cutoff` came down with it so the body stays CONNECTED —
+  // tongues should detach from a mass, not float on their own.
+  const { orientation = "floor", cutoff = 0.16, scale = 2.0 } = opts;
 
   const uTime = uniform(0);
   const uOpacity = uniform(1);
@@ -91,14 +108,36 @@ export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
   // The heat field. `sub(r * 0.55)` is a radial bias — without it the noise is
   // uniformly distributed across the quad and the result is plasma soup with no
   // hot centre. With it, the core is reliably the hottest thing.
-  const heat = n.mul(discMask(r)).mul(uIntensity).sub(r.mul(0.55));
+  /**
+   * TWO FIELDS FROM ONE NOISE, and keeping them separate is the fix for both
+   * ways this went wrong.
+   *
+   * `body` answers "is there fire here" and drives the ALPHA. `hot` answers "how
+   * hot is it" and drives the RAMP. Driving both from one value forces a bad
+   * trade: gain it enough to reach the white core and the silhouette swells to
+   * fill the disc; keep the silhouette tight and the ramp never leaves its
+   * darkest band, which rendered the pool as dull brown patches with no core at
+   * all. Both of those were shipped and looked wrong in different directions.
+   *
+   * The radial bias stays gentle (0.30) so the shape survives out to a decent
+   * radius; the concentration comes from `hot`'s gain instead, which brightens
+   * the middle without shrinking the flame.
+   */
+  const body = n.mul(discMask(r, 0.45)).sub(r.mul(0.30));
+  // Gain 1.15, not 2.4. `body` peaks around 0.8, so a 2.4 gain saturated almost
+  // the whole interior into the top two bands and the pool rendered as a pale
+  // cream blob — the palette's warmest colours spent on every pixel, which
+  // leaves nothing for a core to be brighter THAN. At 1.15 the body sits in
+  // 15-16 (the oranges), 17 appears on the peaks, and 18 needs body > 0.78,
+  // which is rare enough to read as the hot heart of the fire.
+  const hot = saturate(body.mul(1.15).mul(uIntensity));
 
-  const col = bandRamp(saturate(heat), FIRE_RAMP);
+  const col = bandRamp(hot, FIRE_RAMP, FIRE_STOPS);
 
   // A narrow smoothstep, not a hard `step`: one texel of softness stops the
   // edge crawling under the Bayer dither, while still being tight enough that
   // the silhouette reads as flame rather than as fog.
-  const alpha = smoothstep(float(cutoff), float(cutoff + 0.12), heat).mul(uOpacity);
+  const alpha = smoothstep(float(cutoff), float(cutoff + 0.10), body).mul(uOpacity);
 
   material.colorNode = vec4(col, alpha);
 

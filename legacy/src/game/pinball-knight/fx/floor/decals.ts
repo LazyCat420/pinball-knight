@@ -43,10 +43,18 @@ const FACTORIES: Partial<Record<FloorFxKind, () => ElementMaterial>> = {
   slick: () => createWaterMaterial(),
 };
 
-/** Peak alpha per shader kind, carried over from the materials these replace. */
+/**
+ * Peak alpha per shader kind.
+ *
+ * Water is raised from the flat tint's 0.45 to 0.62. The old value was chosen
+ * for a SOLID colour, where 45% of one blue still reads as blue; a banded
+ * surface at 45% lets the floor's own hue through strongly enough to win — on a
+ * mossy biome the puddle came out green. 0.62 keeps some floor showing (it is a
+ * shallow puddle, not paint) while letting the water's own ramp dominate.
+ */
 const ALPHA: Partial<Record<FloorFxKind, number>> = {
   fire: 0.85,
-  slick: 0.45,
+  slick: 0.62,
 };
 
 /** True when `kind` wears a shader rather than a painted canvas. */
@@ -168,12 +176,36 @@ export function setElementTorch(level: number, x?: number, y?: number, z?: numbe
 }
 
 /**
+ * Freeze the visual clock.
+ *
+ * This lives in the shipped tick rather than in the dev lab because the lab
+ * CANNOT do it correctly from outside. The lab's first attempt re-pinned `uTime`
+ * from its own `requestAnimationFrame` callback, which is registered after the
+ * game loop's — so each frame the loop advanced the clock and rendered, and only
+ * then did the lab reset it. The rendered frames still moved. The measurement
+ * that depends on this (`scripts/fx-motion.mjs`) reported a frozen control that
+ * kept moving, and its signal-to-noise gate went red until this existed.
+ *
+ * A gate on the increment is the only version that actually holds the frame.
+ */
+let clockFrozen = false;
+
+export function setElementClockFrozen(v: boolean): void {
+  clockFrozen = v;
+}
+
+export function isElementClockFrozen(): boolean {
+  return clockFrozen;
+}
+
+/**
  * Advance every live decal's visual clock. Called once per RENDERED frame from
  * `sim/loop.ts` with REAL frame time — the same clock the particles use, so a
  * flame keeps licking through a hit-freeze instead of holding a pose for 100ms
  * every time the player connects a hit.
  */
 export function tickElements(dt: number): void {
+  if (clockFrozen) return;
   for (const el of live) {
     el.uTime.value += dt;
     const w = el as { uTorch?: { value: number }; uTorchPos?: { value: { x: number; y: number; z: number } } };

@@ -107,23 +107,34 @@ export function worley01(sample: TSLNode): TSLNode {
 }
 
 /**
- * Quantise `t` (expected 0..1) into `ramp.length` hard bands and return the
- * palette colour for the band it lands in, LINEAR.
+ * Quantise `t` (expected 0..1) into hard bands and return the palette colour for
+ * the band it lands in, LINEAR.
  *
  * Implemented as a chain of `mix(prev, next, step(threshold, t))`. `step` is
  * monotonic in `t`, so every threshold below `t` fires and the LAST one wins —
- * which is exactly a lookup, with no branching and no array indexing in the
- * shader.
+ * exactly a lookup, with no branching and no array indexing in the shader.
  *
  * Pass the ramp DARK→BRIGHT. Read the module header for why this exists at all.
+ *
+ * `thresholds` (length `ramp.length - 1`, ascending, 0..1) is where the bands
+ * change. **Supply it.** Equal-width bands are almost never what you want,
+ * because the field being banded is not uniformly distributed: the first version
+ * of these shaders used equal widths and water came out solid FOAM WHITE while
+ * fire was mostly white core, because both fields spend most of their range in
+ * the top half. Where the thresholds sit IS the art direction — a brightest band
+ * that starts at 0.92 is a rare hot tip, one that starts at 0.80 is a washout.
  */
-export function bandRamp(t: TSLNode, ramp: readonly number[]): TSLNode {
+export function bandRamp(t: TSLNode, ramp: readonly number[], thresholds?: readonly number[]): TSLNode {
   if (ramp.length === 0) throw new Error("bandRamp: empty ramp");
+  if (thresholds && thresholds.length !== ramp.length - 1) {
+    throw new Error(`bandRamp: ${ramp.length} colours need ${ramp.length - 1} thresholds, got ${thresholds.length}`);
+  }
   const c0 = palLin(ramp[0]!);
   let col: TSLNode = vec3(c0[0], c0[1], c0[2]);
   for (let i = 1; i < ramp.length; i++) {
     const c = palLin(ramp[i]!);
-    col = mix(col, vec3(c[0], c[1], c[2]), step(float(i / ramp.length), t));
+    const at = thresholds ? thresholds[i - 1]! : i / ramp.length;
+    col = mix(col, vec3(c[0], c[1], c[2]), step(float(at), t));
   }
   return col;
 }

@@ -29,6 +29,8 @@ import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } fr
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
+import { installFxLab } from "./fx-lab";
+import { FLOOR_FX_KINDS, clearFloorFx, spawnFloorFx } from "../entities/floor-fx";
 import { installGuiHooks } from "./gui-hooks";
 import { isOpen as uiIsOpen } from "../gui/stack";
 import { lastFloorCensus } from "./floor-census";
@@ -522,6 +524,11 @@ export function installDevHooks(deps: DevHookDeps): void {
     // `__lab()` prints the menu and the whole roster; `__lab.spawn(kind)`
     // bypasses level gates so no monster needs its floor reached to be seen.
     installMonsterLab({ startLevel, debugSpawn, debugClearEnemies });
+
+    // Dev: FX LAB — the same idea for effects. `__lab` is monster-only, so
+    // before this there was no way to put a fire puddle in front of the camera
+    // on demand, which made the elemental shaders impossible to A/B.
+    installFxLab({ spawnFloorFx, clearFloorFx, floorFxKinds: FLOOR_FX_KINDS });
 
     (window as unknown as { __dungeonFreshRun?: () => boolean }).__dungeonFreshRun = () => {
       clearResumeFloor();
