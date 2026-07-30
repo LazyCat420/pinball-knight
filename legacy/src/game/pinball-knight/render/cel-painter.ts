@@ -4018,6 +4018,78 @@ function potionItem(liquid: string): FramePaint {
 }
 
 /**
+ * ✨ THE LASER FLASK — the one potion that had no sprite at all.
+ *
+ * It could not be found, bought or brewed, so nothing ever needed to draw it;
+ * and because `createStaticSprite(ITEM_PAINTS[id])` has no guard, putting it in
+ * a supply table without this would not have been a missing icon — it would
+ * have been the black-screen-with-a-working-HUD failure this file's ITEM_PAINTS
+ * comment already describes ("e is not a function", the whole floor build dead).
+ *
+ * ── WHY IT IS NOT JUST `potionItem(pink)` ──
+ * Two reasons, and they are the same reason.
+ *
+ * There is NO MAGENTA in this palette. `POTIONS.laser.color` was 0xff5ad0, a
+ * free hex, and the snap is luma-weighted: shot on a real adapter the laser's
+ * own VFX at that value came out STEEL GREY, which is why
+ * `entities/ricochet-form.ts` moved the form onto blood 12/13 — the only
+ * saturated hot hue there is. A flask following it would then be `potionItem`
+ * with health's liquid, i.e. a HEALTH FLASK, and "the red one" already means
+ * hearts to anyone who has played five minutes.
+ *
+ * So it borrows the vessel and diverges where the FORM diverges: the liquid is
+ * blood MID (a step under health's), the core is blown out to steel highlight
+ * instead of the warm flame core every other brew glows with, and four short
+ * arms punch out of that core — the same 4-spike sparkle `ricochetFrame` draws
+ * around the ball while you ARE the laser (`spikes = 4`, against the bolt's 8).
+ * The thing on the floor is the thing you become.
+ *
+ * The arms stay INSIDE the glass on purpose: `gui/icons.ts` reframes an icon to
+ * its opaque bounding box, so a star poking out of the vessel would shrink the
+ * flask itself in every chip that draws it.
+ */
+function laserItem(): FramePaint {
+  return (ctx) => {
+    groundShadow(ctx, 64, 104, 18);
+    rrect(ctx, 59, 60, 10, 12, 2, F(2)); // glass neck
+    rrect(ctx, 58, 54, 12, 8, 2, F(27)); // cork
+    ell(ctx, 64, 88, 17, 17, F(2)); // glass
+    // Liquid, clipped to the body exactly as potionItem does it.
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(64, 88, 13, 13, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = C(11); // blood DARK — see the value note below
+    ctx.fillRect(48, 84, 32, 20);
+    // ── THE STAR, and it is sized off the 40px view, not the 128px cel.
+    //
+    // The first cut was blood MID liquid with two short 13-coloured arms, and at
+    // played size it read as "a slightly darker health potion" — which is the
+    // one thing this sprite must not be. Both flasks are red at 18px, so hue
+    // cannot be doing the work: the separation has to be VALUE (the tight-palette
+    // lesson from the white-beard-vs-chainmail pass). Blood dark under a
+    // steel-HIGHLIGHT star is the widest value gap this palette can put inside a
+    // flask, and it survives the crush because both ends are exact entries.
+    //
+    // Four arms, diagonal (the vertical/horizontal axes are where every flask's
+    // glass glint already lives), reaching nearly the full liquid radius — the
+    // same 4-spike sparkle `ricochetFrame` draws around the ball while you ARE
+    // the laser, against the bolt's eight.
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + (i / 4) * Math.PI * 2;
+      line(ctx, [[64, 90], [64 + Math.cos(a) * 11, 90 + Math.sin(a) * 11]], 3, F(22));
+    }
+    ctx.restore();
+    // Core: blown out to STEEL HIGHLIGHT, not the flame core every other brew
+    // glows with. This is the pixel the bloom pass latches onto, and it is what
+    // says "light", not "medicine".
+    ell(ctx, 64, 90, 4, 4, F(22));
+    line(ctx, [[56, 82], [60, 78]], 3, F(22)); // glass highlight
+    celShade(ctx);
+  };
+}
+
+/**
  * The greed idol — a squat golden statuette on a coin pile, unmistakably
  * "treasure" and not a flask. Warm gold (torch ramp) so it glints and blooms.
  */
@@ -4189,6 +4261,8 @@ export const ITEM_PAINTS: Record<string, FramePaint> = {
   coin: coinItem(), // the per-kill coin drop
   coinStack: coinStackItem(), // the high-value tier (COIN_STACK_VALUE and up)
   // The pinball power-ups — same flask, signature liquids.
+  // ✨ laser is the exception and has its own painter: see laserItem().
+  laser: laserItem(),
   ballform: potionItem("#f0a63c"),
   freeze: potionItem("#bfe8ff"),
   multiball: potionItem("#b06fe8"),

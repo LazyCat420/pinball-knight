@@ -23,7 +23,7 @@ import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen } from
  * The Rolling Cart Merchant's wares. Prices are flat (gold is plentiful in a
  * good run); everything routes through applyPotion / freshWeapon on buy.
  */
-const SHOP_STOCK: ShopEntry[] = [
+export const SHOP_STOCK: ShopEntry[] = [
   // Potion rows take their blurb from POTIONS[].description — one source of truth.
   { id: "health", label: "Health", icon: "❤️", price: 12, detail: POTIONS.health.description },
   { id: "shield", label: "Shield", icon: "🛡️", price: 18, detail: `${POTIONS.shield.duration}s ${POTIONS.shield.description}` },
@@ -31,6 +31,12 @@ const SHOP_STOCK: ShopEntry[] = [
   { id: "multiball", label: "Multi-Ball", icon: "🔮", price: 26, detail: `${POTIONS.multiball.duration}s ${POTIONS.multiball.description}` },
   { id: "curveshot", label: "Curve Shot", icon: "🌀", price: 20, detail: `${POTIONS.curveshot.duration}s ${POTIONS.curveshot.description}` },
   { id: "magnetboots", label: "Magnet Boots", icon: "🧲", price: 24, detail: `${POTIONS.magnetboots.duration}s ${POTIONS.magnetboots.description}` },
+  // ✨ Laser. Priciest row on the cart, and the only one whose blurb carries no
+  // duration — it is not a buff with a countdown, it hands you to the ricochet
+  // form, which owns its own two-and-a-bit seconds (POTIONS.laser.duration is 0
+  // for exactly that reason, so the `${duration}s` prefix the others use would
+  // print "0s" here).
+  { id: "laser", label: "Laser", icon: "✨", price: 30, detail: POTIONS.laser.description },
   // Weapons are gone from the cart (2026-07-20): they drop in the maze and the
   // tavern forges them — the rolling cart's identity is the mid-floor top-up
   // of TEMPORARY power, which is also what keeps it distinct from the tree.

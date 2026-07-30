@@ -414,7 +414,13 @@ export const POTIONS: Record<PotionId, PotionDef> = {
   // wall at enormous speed, cutting whatever you cross, and STEERING NOTHING.
   // `duration: 0` because it is not a buff with a countdown: it hands control
   // to the ricochet form (entities/ricochet-form.ts), which owns its own clock.
-  laser: { id: "laser", label: "Laser", icon: "✨", color: 0xff5ad0, heal: 0, duration: 0, description: "become a beam · NO steering" },
+  // `color` is BLOOD LIGHT, not the 0xff5ad0 magenta it carried until
+  // 2026-07-29. This palette has no magenta at all: the form's own VFX were on
+  // that free hex once, and shot on a real adapter the luma-weighted snap put
+  // them on STEEL GREY (see entities/ricochet-form.ts). The form rides blood
+  // 12/13, so the swatch says blood too — a colour field that disagrees with
+  // what the game draws is worse than no colour field.
+  laser: { id: "laser", label: "Laser", icon: "✨", color: 0xd95763, heal: 0, duration: 0, description: "become a beam · NO steering" },
   // Freeze Ray: the whole machine holds its breath — thread the bumper room.
   freeze: { id: "freeze", label: "Freeze", icon: "❄️", color: 0xbfe8ff, heal: 0, duration: 6, description: "the floor holds its breath" },
   // Multi-Ball: the pinball classic — two ghost knights peel off you, trail
