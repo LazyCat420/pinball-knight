@@ -9,7 +9,7 @@
  * convert by hand, and doing it in one place is the only way the fx/ tree and
  * the particle pools stay in agreement.
  *
- * `render/vfx.ts` had these two functions privately first; this module is the
+ * `render/vfx.ts` (now `fx/system.ts`) had these two functions privately first; this module is the
  * shared home so a second copy never drifts from it.
  */
 import { PALETTE_HEX } from "../render/palette";

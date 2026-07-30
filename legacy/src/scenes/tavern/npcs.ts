@@ -21,7 +21,7 @@
 import * as THREE from "three";
 import { createStaticSprite } from "../../game/pinball-knight/engine/render/sprite";
 import { NPC_PAINTS } from "../../game/pinball-knight/render/cel-painter";
-import type { VfxSystem } from "../../game/pinball-knight/render/vfx";
+import type { VfxSystem } from "../../game/pinball-knight/fx/system";
 import { KEEPER_SPOTS } from "./layout";
 
 /** How a keeper idles. */

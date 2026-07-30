@@ -1709,7 +1709,7 @@ function marbleFrame(skin: MarbleSkin, spin: number, frame: number): FramePaint 
  * painted beam therefore points east no matter which way the ball is actually
  * going, and at ricochet speed it visibly contradicts the path every second.
  *
- * The heading is now carried by the TRAIL RIBBON (render/vfx.ts `trail`), which
+ * The heading is now carried by the TRAIL RIBBON (fx/system.ts `trail`), which
  * is drawn from the ball's real path and is always correct. That frees the
  * sprite to be the one thing a billboard can honestly be: a bright object with
  * no orientation at all, travelling along that path.

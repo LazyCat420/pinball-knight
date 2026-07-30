@@ -24,7 +24,7 @@
  * That is right for damage ticks and wrong for a flame: a fire that holds
  * perfectly still for 100ms every time you connect a hit reads as a dropped
  * frame. So the visual clock is advanced from `sim/loop.ts` on real frame time,
- * for the same reason `render/vfx.ts` ticks its particles there — and the two now
+ * for the same reason `fx/system.ts` ticks its particles there — and the two now
  * agree, which they did not before.
  */
 import type * as THREE from "three";

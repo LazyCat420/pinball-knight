@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { LaserMarkField } from "./vfx";
+import { LaserMarkField } from "../system";
 
 /** The live vertices, grouped four-at-a-time into (segment A, segment B). */
 function arms(f: LaserMarkField): Array<{ a: THREE.Vector3; b: THREE.Vector3; mid: THREE.Vector3 }> {

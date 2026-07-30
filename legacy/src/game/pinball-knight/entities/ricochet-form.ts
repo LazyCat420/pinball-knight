@@ -54,7 +54,7 @@ import {
   LASER_TRAIL_LIFE,
 } from "../constants";
 import { sfxBumper, sfxSpin } from "../sfx";
-import type { TrailStyleName } from "../render/vfx";
+import type { TrailStyleName } from "../fx/system";
 
 /**
  * Height the trail is drawn at. Chest height rather than the floor: the ribbon

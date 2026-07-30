@@ -5,7 +5,7 @@
  * material supplies the quad corners itself, so adding `positionLocal` leaks the
  * ±0.5 corner into the centre in UNSCALED WORLD UNITS — every particle becomes a
  * ~1-world-unit slab regardless of its size. That is documented in
- * `render/vfx.ts` because it already happened once there; a new pool copying the
+ * `fx/pools/particle-pool.ts` because it already happened once there; a new pool copying the
  * wiring is exactly where it would happen again, so the wiring is asserted.
  */
 import * as THREE from "three";

@@ -20,7 +20,7 @@
  * catches is invisible in a screenshot precisely because the effect still works.
  */
 import { describe, expect, it } from "vitest";
-import { TRAIL_CAPACITY, TRAIL_PUSH_RATE } from "./vfx";
+import { TRAIL_CAPACITY, TRAIL_PUSH_RATE } from "../fx/system";
 import { RICOCHET_FLAVORS } from "../entities/ricochet-form";
 import { BOLT_DURATION, LASER_DURATION } from "../constants";
 

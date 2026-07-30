@@ -234,7 +234,7 @@ export class DamageTextPool {
       canvas.width = TEX_W;
       canvas.height = TEX_H;
       // Slot 0's mesh is `warmupTarget()`, which the descent-screen prewarm hands
-      // to `compileAsync` (see warmupReveal in render/vfx.ts). So the pool's
+      // to `compileAsync` (see warmupReveal in fx/system.ts). So the pool's
       // canvases are bound as textures LONG before the first hit paints one, and
       // an unpainted canvas cannot be uploaded — see canvas-backing.ts for the
       // WebGPU error that produced. Nothing here is drawn; it just makes the
@@ -287,7 +287,7 @@ export class DamageTextPool {
   /**
    * Slot 0, for the descent-screen prewarm. Every slot carries an identical
    * material descriptor (only the canvas contents differ), so compiling one
-   * covers all POOL_SIZE of them — see `warmupReveal` in render/vfx.ts.
+   * covers all POOL_SIZE of them — see `warmupReveal` in fx/system.ts.
    */
   warmupTarget(): THREE.Object3D {
     return this.slots[0].mesh;

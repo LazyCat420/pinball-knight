@@ -64,7 +64,7 @@ import { loadResumeFloor } from "../../game/pinball-knight/corpse-run";
 import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActive, poolOnlineCount } from "./multiplayer";
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
-import { createVfx, type VfxSystem } from "../../game/pinball-knight/render/vfx";
+import { createVfx, type VfxSystem } from "../../game/pinball-knight/fx/system";
 import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;

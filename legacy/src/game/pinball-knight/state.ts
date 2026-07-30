@@ -8,7 +8,7 @@ import type { ZombieType } from "./zombie-types";
 import type * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import type { PixelPass } from "./engine/render/pixel-pass";
-import type { VfxSystem } from "./render/vfx";
+import type { VfxSystem } from "./fx/system";
 import type { AimIndicator } from "./render/aim-indicator";
 import type { ActorSprite, SpriteSheet } from "./engine/render/sprite";
 import type { Animator, Facing } from "./engine/render/animator";

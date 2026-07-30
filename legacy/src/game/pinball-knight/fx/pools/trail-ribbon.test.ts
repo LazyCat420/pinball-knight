@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { TrailRibbon } from "./vfx";
+import { TrailRibbon } from "../system";
 
 /** The live vertex positions of the core strand, in path order. */
 function corePath(t: TrailRibbon): Array<[number, number]> {

@@ -29,7 +29,7 @@ import { selectBackend } from "../../render/backend";
 import { setInputOwner, clearInputOwner } from "../../utils/input-manager";
 import { state, resetState, type EnemyKind } from "./state";
 import { createPixelPass } from "./engine/render/pixel-pass";
-import { createVfx } from "./render/vfx";
+import { createVfx } from "./fx/system";
 import { createAimIndicator } from "./render/aim-indicator";
 import { createPinballParts } from "./render/pinball-parts";
 import { updateArcKickers } from "./render/arc-kickers";

@@ -48,7 +48,7 @@ function snapshotFlags(root: THREE.Object3D): Map<THREE.Object3D, { visible: boo
 
 describe("vfx.warmupReveal exposes one representative per pool", () => {
   it("reveals exactly the pooled families the prewarm would otherwise skip", async () => {
-    const { createVfx } = await import("./render/vfx");
+    const { createVfx } = await import("./fx/system");
     const scene = new THREE.Scene();
     const vfx = createVfx(scene);
 
@@ -81,7 +81,7 @@ describe("vfx.warmupReveal exposes one representative per pool", () => {
   });
 
   it("restores the ORIGINAL flags, not the three.js defaults", async () => {
-    const { createVfx } = await import("./render/vfx");
+    const { createVfx } = await import("./fx/system");
     const scene = new THREE.Scene();
     const vfx = createVfx(scene);
 

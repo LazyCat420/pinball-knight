@@ -13,7 +13,7 @@
  * plain object allocation, next to nothing beside the `THREE.Mesh` the same
  * spawn already creates. And it does NOT multiply pipelines — three keys the
  * compiled pipeline on material CONTENT, so N structurally-identical graphs
- * share one. (This is the same fact `render/vfx.ts` relies on to warm every pool
+ * share one. (This is the same fact `fx/system.ts` relies on to warm every pool
  * slot by revealing one.)
  *
  * ── WHY `MeshBasicNodeMaterial` ──────────────────────────────────────────────

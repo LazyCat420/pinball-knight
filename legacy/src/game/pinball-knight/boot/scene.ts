@@ -12,7 +12,7 @@
  */
 import * as THREE from "three";
 import { state } from "../state";
-import { createVfx } from "../render/vfx";
+import { createVfx } from "../fx/system";
 import { createAimIndicator } from "../render/aim-indicator";
 import { createDungeonCamera, aimCamera } from "../engine/camera";
 import { buildLights } from "./lighting";
