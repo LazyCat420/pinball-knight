@@ -32,8 +32,12 @@ afterAll(() => { restore(); });
 interface Arm { name: string; opts: Partial<CrushOptions> }
 
 const ARMS: Arm[] = [
-  { name: "A today (per-channel 1.3)", opts: {} },
-  { name: "B sharpen off", opts: { sharpen: 0 } },
+  // Arm A is whatever ships. Since 2026-07-29 that IS sharpen 0, so A and B
+  // agree — keep both: A drifts with the default, B is pinned, and the day they
+  // stop matching is the day someone changed the default without re-benching.
+  { name: "A shipped defaults", opts: {} },
+  { name: "B sharpen off (pinned)", opts: { sharpen: 0 } },
+  { name: "R per-channel 1.3 (retired)", opts: { sharpen: 1.3 } },
   { name: "C sharpen 0.65", opts: { sharpen: 0.65 } },
   { name: "D luma-only 1.3", opts: { sharpen: 1.3, sharpenLuma: true } },
   { name: "E luma-only, selout off", opts: { sharpen: 1.3, sharpenLuma: true, selout: 0 } },
