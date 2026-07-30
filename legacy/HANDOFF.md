@@ -7,6 +7,56 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the ✨ laser leaves a beam grid, not just sparks (2026-07-30)
+
+**Deployed `main@78b34ef`, container healthy, 0 restarts. 1662 tests pass, 0 tsc
+errors, registry-drift clean. Tuned off five zoomed WebGPU captures.**
+
+Asked for: "make sure it leaves a ghost trail — like in those spy movies where
+the lasers are bouncing off the walls."
+
+**It already had a trail; the trail was 0.12 SECONDS.** At LASER_SPEED that is a
+four-unit stub stuck to the ball, with the path carried by the stamped crosses —
+the original brief, written when an early cut drew one long line sliding sideways
+across a room. So what was on screen was exactly what was designed: sparks.
+
+Three things had to move together, and any one alone would have looked broken:
+
+- `LASER_TRAIL_LIFE` 0.12 → **1.9s** against a 2.2s cast, so the legs laid at the
+  start are still lit at the end.
+- `TRAIL_CAPACITY` 96 → **448**. The ribbon is a ring buffer fed 180 points/sec,
+  so 96 holds 0.53s — raising the life alone would have silently repeated the bug
+  this buffer already had once, where points died by being OVERWRITTEN and the
+  life constant was decorative. **Worse the second time: a capacity-bound beam
+  still looks like a beam, it just never gets longer.** Now a test
+  (`trail-capacity.test.ts`) asserts capacity ≥ rate × the longest life asked for.
+- **The zigzag is demoted**, 0.055s/0.85rad → 0.3s/0.16rad. It existed because a
+  stub on a straight leg read as a sliding beam; with the whole path held, the
+  straight legs ARE the effect, and the old rate made the lattice a ball of wool
+  (a 35-corner saw-tooth milling in one corner instead of crossing the room).
+
+`TRAIL_STYLES` now names the ribbon's **two** languages. `taper` is the ⚡ bolt's,
+byte-for-byte what it shipped with. `beam` was measured, and each wrong guess
+failed quietly and differently:
+
+- thin, no brightness floor → **brown scribbles**. Additive blending does not
+  guarantee a brighter pixel after the palette snap: a dim red line over the
+  crypt's blue-grey floor makes mud, and the luma-weighted nearest match for mud
+  is sometimes DARKER than the floor. It read as ink, not light. Hence `floor:
+  0.5` — live bands stay hot.
+- core whitened 0.75 → **white planks**. Whitening past the tint clips all three
+  channels; the beam loses its colour and three strands read as a board.
+
+### A test that had been passing for the wrong reason
+
+The open-room zigzag fixture started the ball at world (0,0) in a **61**-wide
+grid. `moveCircle` maps world → grid with `+g.w/2`, so that IS the centre — with
+30 units of clearance, which a 0.5s run never reached and a 1.2s run does. Room
+is 121 now, and the corner assertions derive their thresholds from
+LASER_ZIG_PERIOD / LASER_ZIG_ANGLE instead of transcribing one tuning. **Watch for
+this shape elsewhere:** several fixtures in this subtree hardcode a rate that was
+current when they were written.
+
 ## ✅ LIVE NOW — the tavern counter that pauses the world is drawn again (2026-07-30)
 
 **Deployed `main@3bd68f1`, container healthy, 0 restarts. 192 files / 2163 tests
