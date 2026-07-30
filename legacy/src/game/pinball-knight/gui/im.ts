@@ -208,6 +208,41 @@ export interface UiFrame {
   count: number;
   /** Set when a widget consumed `accept`, so nothing downstream double-fires. */
   consumed: boolean;
+  /**
+   * Rect of the widget that held focus this frame, in CONTENT space — or null if
+   * the cursor landed on nothing (an empty screen, or a focus index past the end
+   * before `clampFocus` runs).
+   *
+   * ── WHY THE FRAME HAS TO CARRY THIS ──
+   * `scrollToShow` needs the focused widget's geometry, and only `focusable`
+   * knows it: the layout is immediate-mode, so a rect exists for the few lines
+   * between being cut and being painted and is then gone. Without this a
+   * scrolling screen can only guess, so none of them scrolled to follow the
+   * cursor — the D-pad walked the ring off the bottom of the region, the
+   * highlight vanished, and Enter fired a button nobody could see. That is the
+   * failure `scrollToShow`'s own comment was written about, and it shipped
+   * uncalled for five months because nothing carried the rect to it.
+   *
+   * MEASURED (2026-07-29): the Alchemist's counter paints down to y=380 in a
+   * 338-tall design box, so its last row — the Empty Flask — sat below the fold
+   * on every machine, reachable by mouse wheel and by nothing else.
+   */
+  focusRect: Rect | null;
+  /**
+   * Indices that registered as DISABLED this frame.
+   *
+   * A disabled widget keeps its index (call order is identity — renumbering as
+   * rows grey out is how a focus cursor starts jumping) but can never be
+   * `focused`. So it is a hole: the cursor could step onto one, and that frame
+   * drew no focus ring anywhere and ignored Enter. Two Downs across a pair of
+   * greyed-out rows read as the screen having died — the same "my input does
+   * nothing" symptom as a screen that is not being painted at all.
+   *
+   * The tavern makes this constant rather than theoretical: the weaponsmith
+   * disables REPAIR / ADD SOCKET / INSURE on the gold you are holding, so being
+   * broke is exactly when the counter stops responding to the pad.
+   */
+  disabledIdx: Set<number>;
   /** Whether the pixel fonts are up yet; text() falls back until they are. */
   fonts: boolean;
   /** Current clip stack depth, for `pushClip`/`popClip` balance assertions. */
@@ -237,7 +272,22 @@ export function beginUi(
   g.setTransform(scale, 0, 0, scale, 0, 0);
   g.imageSmoothingEnabled = false;
   g.textBaseline = "top";
-  return { g, w, h, input, scale, originY: 0, clip: null, focus, count: 0, consumed: false, fonts, clips: 0 };
+  return {
+    g,
+    w,
+    h,
+    input,
+    scale,
+    originY: 0,
+    clip: null,
+    focus,
+    count: 0,
+    consumed: false,
+    focusRect: null,
+    disabledIdx: new Set(),
+    fonts,
+    clips: 0,
+  };
 }
 
 /**
@@ -260,7 +310,16 @@ export interface WidgetState {
 
 export function focusable(f: UiFrame, r: Rect, opts: { disabled?: boolean } = {}): WidgetState {
   const index = f.count++;
-  if (opts.disabled) return { index, focused: false, hovered: false, activated: false };
+  if (opts.disabled) {
+    // A disabled widget STILL TAKES ITS INDEX — call order is identity, and
+    // renumbering when a row greys out would make the cursor jump. But it can
+    // never be `focused`, so it must not be a place the cursor can rest either:
+    // it draws no ring and answers no key, so a cursor parked on one is a screen
+    // with no visible selection that ignores Enter. `moveFocus` reads this to
+    // step over it. See `UiFrame.disabledIdx`.
+    f.disabledIdx.add(index);
+    return { index, focused: false, hovered: false, activated: false };
+  }
 
   const p = f.input.pointer;
   // Into CONTENT space, where `r` lives — see `UiFrame.originY`. And only if
@@ -278,6 +337,10 @@ export function focusable(f: UiFrame, r: Rect, opts: { disabled?: boolean } = {}
   if (hovered && f.input.pointerMoved) f.focus = index;
 
   const focused = f.focus === index;
+  // Hand the focused widget's geometry to the frame so a scrolling screen can
+  // follow the cursor — see `UiFrame.focusRect`. Recorded here because this is
+  // the only moment the rect and the focus state are both known.
+  if (focused) f.focusRect = r;
   const activated =
     (!f.consumed && focused && f.input.accept) || (hovered && p.pressed);
   if (activated) f.consumed = true;
@@ -285,16 +348,36 @@ export function focusable(f: UiFrame, r: Rect, opts: { disabled?: boolean } = {}
 }
 
 /**
- * Move the focus cursor and keep it in range.
+ * Move the focus cursor and keep it in range, skipping what cannot be focused.
  *
  * Called AFTER a screen has painted, when `f.count` is the true widget count.
  * Wrapping rather than clamping because a six-tab menu wants Down from the last
  * row to return to the first — a cursor that sticks at the bottom reads as
  * broken input rather than as a boundary.
+ *
+ * ── WHY IT STEPS OVER DISABLED ROWS, AND WHY delta 0 STILL SETTLES ──
+ * A disabled widget holds its index but can never be `focused` (see
+ * `UiFrame.disabledIdx`), so landing on one produced a frame with no focus ring
+ * and no response to Enter. `delta === 0` settles for the same reason from the
+ * other direction: a row can go disabled BETWEEN frames — spend the gold its
+ * button needed and the cursor you left on it is now resting in a hole — so the
+ * driver calls this every frame, not only when a key was pressed.
+ *
+ * The scan is bounded by `f.count`: a screen whose every widget is disabled has
+ * nowhere to go, and must return rather than loop.
  */
 export function moveFocus(f: UiFrame, delta: number): number {
   if (f.count === 0) return 0;
-  return (f.focus + delta + f.count * 2) % f.count;
+  const wrap = (i: number): number => (i + f.count * 2) % f.count;
+  const step = delta === 0 ? 1 : Math.sign(delta);
+  let at = wrap(f.focus + delta);
+  // `delta` may cross several rows at once (three quick Downs between two
+  // painted frames), and each landing spot may itself be a hole.
+  for (let guard = 0; guard < f.count; guard++) {
+    if (!f.disabledIdx.has(at)) return at;
+    at = wrap(at + step);
+  }
+  return wrap(f.focus + delta); // every widget is disabled — nothing to pick
 }
 
 /** Keep a persisted cursor valid when a screen's widget count changes. */

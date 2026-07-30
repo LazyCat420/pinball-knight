@@ -41,6 +41,7 @@ import {
 import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, refreshFocus, type StationFx } from "./stations";
+import { presentMode } from "./present";
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
@@ -455,17 +456,17 @@ function frame(now: number): void {
   vfx?.update(dt);
 
   // ── Render ──
-  // Skip the 3D pass entirely while a full-screen panel is up. The room is
-  // almost fully obscured by the overlay and the player is frozen, so it is
-  // redrawing a near-static image at full cost — and it was STARVING the panel:
-  // the casino cabinet's canvas ran at ~2fps behind the tavern's pixel pass,
-  // which turned a 2.6s wheel spin into 26 seconds of wall clock.
-  if (frozen) return;
-  // rendererReady: the async backend init has to land before any render() call,
-  // which throws otherwise. A few skipped frames on entry are invisible.
-  if (tavern.scene && tavern.camera && rendererReady) {
-    if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
-    else tavern.renderer?.render(tavern.scene, tavern.camera);
+  switch (presentMode(rendererReady, frozen)) {
+    case "none":
+      return;
+    case "ui-only":
+      pixelPass?.presentUi();
+      return;
+    case "scene":
+      if (tavern.scene && tavern.camera) {
+        if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
+        else tavern.renderer?.render(tavern.scene, tavern.camera);
+      }
   }
 }
 
@@ -641,6 +642,17 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     pixelPass.render = (scene3, camera3) => {
       drawUiFrame(pass);
       renderScene(scene3, camera3);
+    };
+    // The UI-ONLY present takes the SAME wrapper, for the same reason and exactly
+    // as `boot/renderer.ts` does it: it is a composite, so the layer has to be
+    // painted and uploaded before it runs. `frame()` uses this path for every
+    // frame a panel is open, so an unwrapped `presentUi` would composite whatever
+    // the UI canvas happened to hold last — which is a panel that never repaints
+    // and never sees a keypress.
+    const presentUiOnly = pixelPass.presentUi.bind(pixelPass);
+    pixelPass.presentUi = () => {
+      drawUiFrame(pass);
+      presentUiOnly();
     };
   }
   onKey = (e: KeyboardEvent): void => {
