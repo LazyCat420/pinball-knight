@@ -79,6 +79,15 @@ keeps past `alphaTest`):
 | rotortail | 29 | 39.0 | 1.44 | bad |
 | **jester** | **31** | **41.8** | **1.36** | **worst — matches the eye** |
 
+> ⚠️ **THE TABLE ABOVE IS AT THE WRONG RUNG — superseded, see §8.** It was taken
+> at grid 81 (`normal`, PPU 72). The shipped default is `wider`, PPU 56, **grid
+> 63**, so one texel is **2.032** art units, not 1.580. It also covers 7 of 20
+> actors. §8 has the measured roster at the shipped rung, reproducible with one
+> command. Two consequences of the rung error worth carrying: the eye glows are
+> **1.28–2.36 texels** at 63 (so a naive despeckle deletes them — the claim in
+> §4 Wave 1a that they "are 2+ texels" is false), and `BOUNCE_W` 1.9 is **0.93
+> texels**, i.e. the bounce band is itself sub-texel on every material.
+
 Near-monotonic in `entries`. The brute is *already* at the 16-18 budget every
 pixel-art guide recommends; the jester spends 31 of 32.
 
@@ -285,6 +294,85 @@ the impact frame** for weight; idles read better at 4-6 fps with 3+ frames.
   Wave 1a treats the symptom. The deeper fix is for painters to stop asking for
   sub-texel marks at all — consider making `detail()` *throw* in dev when asked
   for less than one texel, so the pressure lands at authoring time.
+
+## 8. MEASURED 2026-07-29 — the seam, the real baseline, and one dead theory
+
+Wave 1's measurement half is **shipped**. Everything below is reproducible in
+about three seconds; do not re-derive it by reading code.
+
+**The tooling.**
+
+| piece | what it is |
+|---|---|
+| `render/atlas-census.ts` | pure metrics — `censusCell`, `declaredSet`, `invented`, `formatNoise` |
+| `testkit/atlas-census.ts` | node-canvas harness driving the REAL `paintInArtSpace` → `crushToGrid`; `ROSTER` is `Record<SheetKey,…>` so tsc enforces completeness |
+| `testkit/testkit-boundary.test.ts` | keeps node-canvas and `withCrushOptions` out of shipped code |
+| `withCrushOptions()` in `sprite.ts` | scoped try/finally variant seam; defaults byte-identical to today |
+| `crushToGrid(src, grid?)`, `paintInArtSpace(ctx, paint, px?)` | defaults-only params so a test can pin ANY camera rung. `configureEngine` **cannot** — `sprite.ts` destructures `engineConfig.sprite` into consts at import and never re-derives |
+
+```
+CRUSH_AB=1     npx vitest run src/game/pinball-knight/render/crush-variants   # the table
+CRUSH_SHEET=/abs/x.png npx vitest run src/game/pinball-knight/render/crush-sheet  # the picture
+```
+
+**The real baseline (grid 63, E facing, idle + 2 walk frames, 20 actors).**
+Roster mean: **entries 22.9 · isolated 26.2% · runLen 1.73**. Worst offenders are
+not the ones §2 named: `chomper` 31/38.2/1.36, `jester` 32/40.5/1.40, `croaker`
+32/34.2/1.57, `stiltneck` 30/34.4/1.39, `rotortail` 29/39.9/1.43, `sporeling`
+29/27.3/1.68. Cleanest: `golem` 15/6.9/2.64, `brute` 18/12.1/2.28.
+
+**The unsharp mask is a net colour GENERATOR — and its stated rationale is
+inverted.** Five arms over the full roster:
+
+| arm | entries | isolated% | runLen | invented | **ink share** |
+|---|---|---|---|---|---|
+| A per-channel 1.3 (shipped) | 22.9 | 26.2 | 1.73 | 295 | 21.82% |
+| **B sharpen OFF** | **20.1** | **22.5** | **1.82** | **238** | **22.84%** |
+| C per-channel 0.65 | 21.8 | 23.8 | 1.80 | 271 | 23.38% |
+| D luma-only 1.3 | 21.9 | 26.4 | 1.73 | 276 | 21.75% |
+
+The pass exists to stop the selout ink averaging into the fill, so removing it had
+to COST ink. It **gains** ink. It was eating the outline, not protecting it.
+
+Two predictions died here; do not re-propose them. *"Amplitude is not the
+mechanism, per-channel is"* — false, C sits neatly between A and B, the effect is
+monotonic in amount. *"Luma-only keeps the edge without inventing hues"* — false,
+D is within noise of A. The mechanism is local-contrast amplification itself.
+
+**Why arm B is not shipped yet.** The stiltneck's gold read is propped up by it:
+
+    sharpen  0.0 → neck torch 0.211 FAIL, torch 0.229 vs leather 0.270 FAIL
+             0.65 → 0.246 FAIL      0.9 → 0.250 FAIL (exactly on)      1.3 → pass
+
+The stiltneck does not reach gold on its own art; the sharpen brightens borderline
+blends up into the torch ramp instead of letting them fall to leather. That is the
+"brown giraffe" failure `b4409e4` fixed. **Fix the art first, re-run the sweep,
+then take arm B** — do not loosen the stiltneck bound, it has been retuned twice
+already for camera rungs.
+
+**A finding nobody was looking for: half the roster is not painted in the
+palette at all.** `declaredSet` measures exact-palette pixels in the pre-crush
+buffer. The `render/monsters/` painters declare 13–18 indices as expected. The
+older `cel-painter.ts` ones declare almost nothing — **spider declares ZERO**,
+brute 6, spitter 4, ghost 4 — because they paint in raw `rgba()`/hex (~30 such
+literals in `cel-painter.ts`). So §3's root cause 4 is far larger than "three
+washes in rotortail": for those actors, *every* atlas colour is one the pipeline
+chose. Wave 1c should be scoped against `cel-painter.ts`, not just the six new
+monsters, and `invented` should be read as "undeclared" for them.
+
+**Corrections to the counts in §4/§6.** Seven non-1.0 RESKIN scales, not five
+(adds `magnet` 0.95, `webspinner` 1.05). Six `rgba()` washes in `render/monsters/`,
+not three (adds `hound.ts:377`, `sporeling.ts:214`), plus a raw hex at
+`rotortail.ts:272` that is palette index 27's own value hardcoded.
+
+**Wave 3 as written ships a bug.** `Animator.update` uses ONE global fps per clip
+and monsters never call `setRate` — only the player and remote-party do. Walk
+4→8 at `FPS_WALK` 8 doubles the cycle to 1.0 s while world speed is unchanged:
+foot-sliding. Add `beats?: Partial<Record<ClipName, number>>` to `ActorPaints`
+(carried to `SpriteSheet`, applied as `fps × indices.length / beats[clip]`) and
+pin every current cycle duration BEFORE the mechanism lands. The impact-hold-by-
+repeated-closure trick is verified real: `startSpriteSheet` dedupes by object
+reference while `clips` keeps the duplicate index.
 
 ## 7. Definition of done
 
