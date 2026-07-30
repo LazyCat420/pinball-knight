@@ -31,6 +31,9 @@ import type * as THREE from "three";
 import type { FloorFxKind } from "../../state";
 import { createFireMaterial } from "../elements/fire";
 import { createWaterMaterial } from "../elements/water";
+import { createFrostMaterial } from "../elements/frost";
+import { createOilMaterial, createTarMaterial } from "../elements/goo";
+import { createRodMaterial } from "../elements/rod";
 import type { ElementMaterial } from "../elements/element";
 
 /**
@@ -41,6 +44,10 @@ import type { ElementMaterial } from "../elements/element";
 const FACTORIES: Partial<Record<FloorFxKind, () => ElementMaterial>> = {
   fire: () => createFireMaterial({ orientation: "floor" }),
   slick: () => createWaterMaterial(),
+  frost: () => createFrostMaterial(),
+  oil: () => createOilMaterial(),
+  tar: () => createTarMaterial(),
+  rod: () => createRodMaterial(),
 };
 
 /**
@@ -55,6 +62,12 @@ const FACTORIES: Partial<Record<FloorFxKind, () => ElementMaterial>> = {
 const ALPHA: Partial<Record<FloorFxKind, number>> = {
   fire: 0.85,
   slick: 0.62,
+  // Carried over from the painted materials, except where a banded surface needs
+  // more presence than a flat tint did at the same number (see slick above).
+  oil: 0.85, // near-opaque: it must HIDE the floor to read as a pool, not a stain
+  tar: 0.95, // the most opaque thing on the floor — nothing shows through tar
+  frost: 0.7,
+  rod: 0.9,
 };
 
 /** True when `kind` wears a shader rather than a painted canvas. */

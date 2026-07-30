@@ -627,8 +627,16 @@ export function updateFloorFx(dt: number): void {
     // than applying a status, which is why a rank-2 Arcane Pulse changes how a
     // room is fought instead of just how hard it is hit.
     if (fx.kind === "rod") {
-      fx.mesh.scale.setScalar(fx.radius * (1 + Math.sin(age * 11) * 0.14));
-      (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * Math.min(1, frac * 4);
+      // The 11Hz hum used to be a scale pulse on the quad. It is now inside the
+      // rod shader, where it can drive the ring and the core independently
+      // instead of resizing the whole stake — so the CPU only holds the radius.
+      if (hasElementShader("rod")) {
+        fx.mesh.scale.setScalar(fx.radius);
+        setElementOpacity(fx.mesh, elementAlpha("rod", 0.9) * Math.min(1, frac * 4));
+      } else {
+        fx.mesh.scale.setScalar(fx.radius * (1 + Math.sin(age * 11) * 0.14));
+        (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * Math.min(1, frac * 4);
+      }
       if (state.vfx && Math.random() < dt * 6) state.vfx.sparks(fx.x, 0.5, fx.z, 0, 0.8, 2);
       if (ticked) rodZap(fx);
       continue;
@@ -646,14 +654,18 @@ export function updateFloorFx(dt: number): void {
         : 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
     const fade = Math.min(1, frac * 3); // back third: shrink with the fade
     fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
-    // Spinning the quad was the other stand-in. A shader surface that also spins
-    // reads as a record player, so `slick` no longer turns — its ripples travel.
-    if (fx.kind === "slick" && !shader) fx.mesh.rotation.z += dt * 0.6;
-    else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
-    else if (fx.kind === "frost") fx.mesh.rotation.z += dt * 0.09; // a crystal creeping, not a puddle turning
-    // Tar deliberately does NOT turn. It is the one substance here that is
-    // supposed to look like it has already stopped.
-    const alpha = fx.kind === "oil" ? 0.75 : fx.kind === "tar" ? 0.95 : fx.kind === "frost" ? 0.7 : elementAlpha(fx.kind, 0.45);
+    // Spinning the quad was the other stand-in for motion. A shader surface that
+    // ALSO spins reads as a record player — the ripples travel one way while the
+    // whole disc rotates another — so every shader-backed kind stops turning and
+    // gets its movement from its own field instead. Oil swirls in its warp, frost
+    // grows from `uAge` rather than rotating, and tar was always meant to look
+    // like it had already stopped.
+    if (!shader) {
+      if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
+      else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
+      else if (fx.kind === "frost") fx.mesh.rotation.z += dt * 0.09; // a crystal creeping
+    }
+    const alpha = elementAlpha(fx.kind, fx.kind === "oil" ? 0.75 : fx.kind === "tar" ? 0.95 : fx.kind === "frost" ? 0.7 : 0.45);
     if (shader) {
       // A node material's alpha comes from its graph, so `material.opacity` is a
       // silent no-op here — it would fade nothing and the decal would sit at

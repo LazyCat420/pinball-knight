@@ -16,6 +16,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
 import { beforeEach, describe, expect, it } from "vitest";
+import { FLOOR_FX_KINDS } from "../../entities/floor-fx";
+import type { FloorFxKind } from "../../state";
 import {
   attachElement,
   clearElements,
@@ -57,7 +59,50 @@ describe("the shader registry", () => {
   });
 
   it("reports its kinds so the prewarm sweep can find them", () => {
-    expect(elementShaderKinds().sort()).toEqual(["fire", "slick"]);
+    expect(elementShaderKinds().sort()).toEqual(["fire", "frost", "oil", "rod", "slick", "tar"]);
+  });
+
+  it("covers every FLUID kind — only the two non-substances are left on canvas", () => {
+    // Stated as a complement rather than a list, so adding a new FloorFxKind
+    // forces a decision here instead of silently defaulting to the canvas path.
+    // `groove` is a CUT in stone and `shard-field` is glitter; neither is a
+    // substance with a surface, so neither wants a fluid shader.
+    const canvas = FLOOR_FX_KINDS().filter((k: FloorFxKind) => !hasElementShader(k));
+    expect(canvas.sort()).toEqual(["groove", "shard-field"]);
+  });
+
+  it("builds a working material for every registered kind", () => {
+    // The registry is the only thing standing between a kind and a black quad:
+    // a factory that throws or returns a graph three cannot compile shows up as
+    // nothing rendered, with no error.
+    for (const kind of elementShaderKinds()) {
+      const el = makeElementMaterial(kind);
+      expect(el, `${kind} produced no material`).not.toBeNull();
+      expect(el!.material.colorNode, `${kind} built no colour graph`).toBeTruthy();
+      expect(el!.material.transparent).toBe(true);
+      expect(el!.material.depthWrite).toBe(false);
+      el!.dispose();
+    }
+  });
+
+  it("keeps tar the most opaque and additive reserved for the glowing kinds", () => {
+    // Tar's whole job is to look inert and hide the floor; oil's is to look
+    // inviting. If tar ever becomes the more translucent of the two, the pair
+    // stops teaching the player anything.
+    expect(elementAlpha("tar", 0)).toBeGreaterThan(elementAlpha("slick", 0));
+    const additive = 2; // THREE.AdditiveBlending
+    const normal = 1; // THREE.NormalBlending
+    const blendOf = (k: "fire" | "frost" | "rod" | "oil" | "tar" | "slick") => {
+      const el = makeElementMaterial(k)!;
+      const b = el.material.blending;
+      el.dispose();
+      return b;
+    };
+    // Glowing: fire, frost (glows COLD) and the rod all feed the bloom.
+    for (const k of ["fire", "frost", "rod"] as const) expect(blendOf(k), k).toBe(additive);
+    // Surfaces: additive water would read as lava, additive oil as a lava slick,
+    // and additive tar would defeat the entire point of tar.
+    for (const k of ["slick", "oil", "tar"] as const) expect(blendOf(k), k).toBe(normal);
   });
 
   it("keeps fire's peak alpha well above water's", () => {
