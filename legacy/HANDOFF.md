@@ -7,6 +7,80 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the tavern counter that pauses the world is drawn again (2026-07-30)
+
+**Deployed `main@3bd68f1`, container healthy, 0 restarts. 192 files / 2163 tests
+pass, tsc clean, registry-drift clean. Verified on a real WebGPU adapter.**
+
+Reported as: walked up to "Trade — potions for the belt" and **it froze**. It did,
+hard, with no way out — and so did the other three counters, the run summary, the
+menu and the casino cabinet.
+
+**The optimisation outlived the thing it was written against.**
+`scenes/tavern/core.ts`'s loop had, from the Gambler pass:
+
+```
+if (frozen) return;   // skip the 3D pass while a full-screen panel is up
+if (scene && camera) pixelPass.render(scene, camera);
+```
+
+Skipping the room is still right (82% scrim, player frozen, and drawing it starved
+the cabinet at ~2fps — with its dt clamped to 0.05 that stretched a 2.6s roulette
+spin to 26s). But that `return` was written when panels were **DOM overlays the
+browser composited itself**. The P2 migration moved every panel INSIDE this pass
+and hung `drawUiFrame` off `pixelPass.render`. From then on the early return
+skipped the panel's own paint *and its input handling*, every frame. Esc is handled
+inside `drawUiFrame`, and the scene's key handler yields whenever `uiPauses` is
+set — so nothing was left that could close what nothing was left to draw.
+
+Fixed with `pixelPass.presentUi()`, the pass's existing "frame that is nothing but
+the UI" path, wrapped for the UI drive exactly as `boot/renderer.ts` wraps it.
+Keeps the whole point of the skip (no scene, no bloom chain), panel live. **The
+room no longer reads through the scrim while a panel is open** — at 82% that is a
+small, deliberate loss. The decision is now `scenes/tavern/present.ts` so the
+invariant (*frozen NEVER presents nothing*) is assertable without a WebGPU device.
+
+**The proxy that would have lied:** `__gui()` reported the counter `open` and
+`paused` in both the broken and fixed builds. What separates them is
+`__gui().painted` — frozen at 447 before, climbing 462 → 530 → 656 after — and
+three screenshots that were **byte-identical** before. Ask whether the UI is being
+*driven*, not whether it is *open*.
+
+### Two more input faults, found auditing the rest of the tavern
+
+**The counters never scrolled to follow the focus cursor.** `beginScroll` advances
+only from the mouse WHEEL with the pointer inside the region, and the counters are
+taller than their box (measured: the Alchemist paints to y=380 in a 338-tall design
+box). Every row below the fold was **mouse-only** — the D-pad walked the ring off
+the bottom and Enter fired a button nobody could see. `scrollToShow` was written
+for exactly this in the P0 foundation commit and **called by nothing for five
+months**, because nothing could get it the focused widget's rect;
+`UiFrame.focusRect` now carries it. Wired for the tavern only — `menu`,
+`settings`, `debug` and `haul` all still have the gap, and now have the plumbing.
+
+**A disabled row swallowed the cursor.** It keeps its focus index (call order is
+identity) but can never be `focused`, so landing on one drew no ring and ignored
+Enter. The weaponsmith greys out REPAIR / ADD SOCKET / INSURE on your purse — so
+**being broke was exactly when the counter stopped answering the pad.**
+`moveFocus` steps over them, and the driver settles every frame so a row that
+greys out *under* the cursor releases it.
+
+**`vendorHeight()` is gone.** Hand-written arithmetic that disagreed with the
+bodies: the Alchemist's summed BOTH tabs — 938px declared for a ~284px shelf, so
+650px of void and a scrollbar thumb sized for content that was not there — and the
+weaponsmith's counted five rows for six. Replaced with the measurement the debug
+console already uses: how far `cutTop` walked `body` IS the content height. The
+scroll offset also moved to `UiScreen.scroll`, which is what `__gui().scroll`
+reads; the private copy reported a flat 0 to the one probe you check when a list
+will not scroll.
+
+Both fixes' tests were confirmed to **fail against the old code** before landing
+(5 failures each). Repro recipe: `__dungeonTavern()`, wait ~6s for the tavern's
+second WebGPU renderer, then `__gui.tavern("potions")`. **The wait is
+load-bearing** — with no settle the scene renders nothing at all, `presentMode`
+returns `"none"` on `rendererReady`, and you photograph the frozen dungeon and
+misread it as the bug.
+
 ## ✅ LIVE NOW — the ✨ laser potion can be obtained, drawn and sold (2026-07-30)
 
 **Deployed `main@310a6ca`, container healthy, 0 restarts. 147 files / 1630 tests
