@@ -7,6 +7,54 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the ✨ laser potion can be obtained, drawn and sold (2026-07-30)
+
+**Deployed `main@310a6ca`, container healthy, 0 restarts. 147 files / 1630 tests
+pass, 0 tsc errors, registry-drift clean. Verified on a real WebGPU adapter.**
+
+Follow-up to the console work below — "fix the laser then what's wrong with it?"
+
+**NOTHING WAS WRONG WITH THE MECHANIC.** `applyPotion` had its branch,
+`enterRicochetForm("laser")` was implemented, palette-tuned and covered by
+`ricochet-trail.test.ts`, and its ⚡ bolt twin is reachable through the storm
+marble. What was wrong is that **nothing could give you one** — no floor pool, no
+cart row, no tavern row, no recipe, no lamp vault table — and it had **no
+`ITEM_PAINTS` entry**, so adding it to a pool without a sprite would not have
+been a missing icon: `createStaticSprite(ITEM_PAINTS[id])` is unguarded, and that
+is the black-screen-with-a-working-HUD floor-build crash cel-painter.ts already
+documents happening once, for weapons.
+
+Fixed: a painter, `POTION_POOL`, and a 30g cart row. `POTIONS.laser.color` moves
+0xff5ad0 → 0xd95763 to match what the game actually draws.
+
+**The sprite is not `potionItem(pink)`.** No magenta exists in this palette, and
+following the form onto blood 13 would have produced the HEALTH flask. It borrows
+the vessel and diverges where the form does: blood DARK liquid under a
+steel-HIGHLIGHT four-arm star — the same 4-spike sparkle `ricochetFrame` draws
+around the ball. VALUE separates it, not hue; the first cut (blood mid, two short
+arms) read as "a slightly darker health potion" at 40px.
+
+### Two things this turned up
+
+**The cart was sized for six wares.** `Math.min(322, 120 + stock.length * 30)`
+counted 30 per row where a row costs 33, and 322 was already the tallest sheet a
+338px design box can hold — so ware seven printed **through the footer** with its
+price clipped by the LEAVE button. Height is derived from its parts now and the
+box from a stated `DESIGN_ROWS`; `shop-fit.test.ts` holds the stock to the budget
+AND the box under 450, because growing the box past that silently drops the whole
+shop from 2x to 1x.
+
+**Supply is not covered by behaviour tests.** `potion-supply.test.ts` asks the
+question none of the existing tests did — *can the player get one* — per potion,
+per route; asserts every id has a painter; and drives the real `decorateMaze`
+over 40 seeds to prove a laser reaches an actual floor rather than just a pool.
+Confirmed as a real guard: with the fix reverted, 3 of its assertions fail.
+
+`scripts/potion-sheet.mjs` (new) renders every flask crushed at 64/40/18, the way
+foe-sheet/marble-sheet do. **Its localStorage shim is load-bearing** — importing
+`ITEM_PAINTS` pulls in the card/reagent graph, which reads a saved profile at
+module scope, and `setContent` pages have an opaque origin where that throws.
+
 ## ✅ LIVE NOW — the ` console hands out potions, spells and skill ranks (2026-07-30)
 
 **Deployed `main@10c9acd`, container healthy. 144 files / 1616 tests pass in the
@@ -32,12 +80,11 @@ Three sections, all rosters derived (`POTION_IDS` / `ABILITY_IDS` / `SKILL_IDS`)
 - **FILL MANA** in KNIGHT — a separate pool from the rampage meter, so "why won't
   Time Crawl fire" now has an answer inside the console.
 
-**✨ LASER has no supply anywhere in the game.** Not in `POTION_POOL`, not in
-`SHOP_STOCK`, not in `RECIPES`, and no `ITEM_PAINTS` entry — a finished mechanic
-(`applyPotion` → `enterRicochetForm`) that nothing can give you. The console is
-now the only route, and its chip falls back to a flask glyph tinted with
-`PotionDef.color`. **If it should be findable, it needs a pool entry and a
-sprite — that is still open.**
+**✨ LASER had no supply anywhere in the game** — a finished mechanic
+(`applyPotion` → `enterRicochetForm`) that nothing could give you. FIXED in
+`main@310a6ca`, see the entry above; the console chip draws its real sprite now
+rather than the tinted-glyph fallback (the fallback stays, for the next potion
+that arrives without art).
 
 ### Two bugs the screenshots found and the tests could not
 
