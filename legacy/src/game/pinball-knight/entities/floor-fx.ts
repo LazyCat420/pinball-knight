@@ -57,6 +57,18 @@ import {
 import { PALETTE_HEX } from "../render/palette";
 import { skillAgg } from "../skill-runtime";
 import { damageZombie, hitPlayerRanged } from "./combat";
+import {
+  attachElement,
+  clearElements,
+  elementAlpha,
+  hasElementShader,
+  makeElementMaterial,
+  releaseElement,
+  setElementAge,
+  setElementIntensity,
+  setElementOpacity,
+} from "../fx/floor/decals";
+import type { ElementMaterial } from "../fx/elements/element";
 
 const FLOOR_Y = 0.03; // just above the floor plane
 
@@ -295,6 +307,10 @@ function matFor(kind: FloorFxKind): THREE.MeshBasicMaterial {
  * material content, and a clone matches its source).
  */
 const _warmProxies: THREE.Mesh[] = [];
+/** The shader materials the proxies wear, held so teardown can dispose them.
+ *  They are NOT registered for the visual tick — a hidden proxy has no clock to
+ *  advance, and registering them would keep them alive past `clearElements`. */
+const _warmElements: ElementMaterial[] = [];
 
 /**
  * Force all five kinds' materials into existence, reveal one proxy each, and
@@ -303,7 +319,15 @@ const _warmProxies: THREE.Mesh[] = [];
 export function warmFloorFxReveal(scene: THREE.Scene): () => void {
   if (!_warmProxies.length) {
     for (const kind of FLOOR_FX_KINDS()) {
-      const m = new THREE.Mesh(discGeo(), matFor(kind)); // shared material, NOT a clone
+      // Shader kinds warm a REAL element material, not the painted one they
+      // replaced. Pipelines are keyed by material CONTENT, so one proxy graph
+      // warms every structurally-identical instance the run will ever spawn —
+      // which is the whole reason a per-instance material costs one pipeline.
+      // Warming `matFor()` here instead would compile a shader nothing draws and
+      // leave the first fire of a run to compile in the middle of a fight.
+      const el = hasElementShader(kind) ? makeElementMaterial(kind) : null;
+      const m = new THREE.Mesh(discGeo(), el ? el.material : matFor(kind)); // shared material, NOT a clone
+      if (el) _warmElements.push(el);
       m.rotation.x = -Math.PI / 2;
       m.visible = false;
       _warmProxies.push(m);
@@ -325,6 +349,12 @@ export function warmFloorFxReveal(scene: THREE.Scene): () => void {
 export function disposeFloorFxAssets(): void {
   for (const m of _warmProxies) m.removeFromParent();
   _warmProxies.length = 0; // geometry + materials are the shared ones, disposed below
+  // The proxies' shader materials are NOT in `_mats`, so the sweep below cannot
+  // reach them — they need their own line or they leak one graph per kind per
+  // teardown.
+  for (const el of _warmElements) el.dispose();
+  _warmElements.length = 0;
+  clearElements();
   _discGeo?.dispose();
   _discGeo = null;
   for (const k of Object.keys(_mats) as FloorFxKind[]) {
@@ -347,7 +377,12 @@ export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: nu
   // would leak a mesh and a material per stamp, ~50/s under the ball.
   while (state.floorFx.length >= FLOOR_FX_MAX) despawn(0);
   // Its own material instance so opacity can fade independently of siblings.
-  const mesh = new THREE.Mesh(discGeo(), matFor(kind).clone());
+  // Shader-backed kinds build a fresh node graph rather than cloning: a
+  // NodeMaterial clone SHARES its uniform nodes, which would fuse every decal's
+  // fade and phase together. See fx/elements/element.ts.
+  const el = makeElementMaterial(kind);
+  const mesh = new THREE.Mesh(discGeo(), el ? el.material : matFor(kind).clone());
+  if (el) attachElement(mesh, el);
   mesh.rotation.x = -Math.PI / 2; // lay flat on the floor
   mesh.position.set(x, FLOOR_Y, z);
   mesh.scale.setScalar(radius);
@@ -362,7 +397,9 @@ export function spawnFloorFx(kind: FloorFxKind, x: number, z: number, radius: nu
     maxLife: life,
     tick: 0,
     mesh,
-    dispose: () => (mesh.material as THREE.Material).dispose(),
+    // Both paths dispose exactly one material per decal, so the eviction
+    // contract (asserted in load-warmup.test.ts) is unchanged by the shaders.
+    dispose: el ? () => releaseElement(mesh) : () => (mesh.material as THREE.Material).dispose(),
   });
 }
 
@@ -597,19 +634,37 @@ export function updateFloorFx(dt: number): void {
       continue;
     }
     const grow = age < 0.18 ? 0.35 + (age / 0.18) * 0.75 : 1.1 - Math.min(0.1, (age - 0.18) * 0.5);
-    // Fire FLICKERS (fast, deep pulse); liquids breathe slowly.
-    const pulse = fx.kind === "fire"
-      ? 1 + Math.sin(age * 13 + fx.x * 3.1 + fx.z * 1.7) * 0.12
-      : 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
+    const shader = hasElementShader(fx.kind);
+    // The scale pulse was a STAND-IN for motion the surface did not have: the
+    // same shape, resized. A shader decal genuinely changes shape, so it keeps
+    // only `grow` — the spawn pop, which is a gameplay tell — and the flicker
+    // moves into the noise field where it belongs. Painted kinds keep the pulse.
+    const pulse = shader
+      ? 1
+      : fx.kind === "fire"
+        ? 1 + Math.sin(age * 13 + fx.x * 3.1 + fx.z * 1.7) * 0.12
+        : 1 + Math.sin(age * 5 + fx.x * 3.1 + fx.z * 1.7) * 0.05;
     const fade = Math.min(1, frac * 3); // back third: shrink with the fade
     fx.mesh.scale.setScalar(fx.radius * grow * pulse * (0.6 + 0.4 * fade));
-    if (fx.kind === "slick") fx.mesh.rotation.z += dt * 0.6;
+    // Spinning the quad was the other stand-in. A shader surface that also spins
+    // reads as a record player, so `slick` no longer turns — its ripples travel.
+    if (fx.kind === "slick" && !shader) fx.mesh.rotation.z += dt * 0.6;
     else if (fx.kind === "oil") fx.mesh.rotation.z += dt * 0.2; // heavier liquid, lazier swirl
     else if (fx.kind === "frost") fx.mesh.rotation.z += dt * 0.09; // a crystal creeping, not a puddle turning
     // Tar deliberately does NOT turn. It is the one substance here that is
     // supposed to look like it has already stopped.
-    const alpha = fx.kind === "oil" ? 0.75 : fx.kind === "fire" ? 0.85 : fx.kind === "tar" ? 0.95 : fx.kind === "frost" ? 0.7 : 0.45;
-    (fx.mesh.material as THREE.MeshBasicMaterial).opacity = alpha * fade;
+    const alpha = fx.kind === "oil" ? 0.75 : fx.kind === "tar" ? 0.95 : fx.kind === "frost" ? 0.7 : elementAlpha(fx.kind, 0.45);
+    if (shader) {
+      // A node material's alpha comes from its graph, so `material.opacity` is a
+      // silent no-op here — it would fade nothing and the decal would sit at
+      // full strength until it despawned.
+      setElementOpacity(fx.mesh, alpha * fade);
+      setElementAge(fx.mesh, age);
+      // A pool that has been burning a while is hotter than one just lit.
+      if (fx.kind === "fire") setElementIntensity(fx.mesh, 0.8 + 0.4 * Math.min(1, age * 2));
+    } else {
+      (fx.mesh.material as THREE.MeshBasicMaterial).opacity = alpha * fade;
+    }
 
     // ── Ambient emission ── FIRE actually burns: a steady per-frame stream of
     // rising embers plus the odd upward spark burst, scaled by pool size so a

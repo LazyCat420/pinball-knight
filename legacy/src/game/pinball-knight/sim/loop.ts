@@ -35,6 +35,7 @@ import { updateArcKickers } from "../render/arc-kickers";
 import { updateArcLanes } from "../render/arc-lanes";
 import { updatePinballParts, updatePlungerRig } from "../render/pinball-parts";
 import { updateShots } from "../shots";
+import { setElementTorch, tickElements } from "../fx/floor/decals";
 import {showPickupNote, spawnFloatingCombo} from "../ui";
 
 /**
@@ -154,6 +155,17 @@ export function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   profBegin("vfx.update");
   state.vfx?.update(frame);
+  // The elemental shaders' clock, on the SAME real-time basis and for the same
+  // reason: a flame that holds a pose for 100ms every time the player connects a
+  // hit reads as a dropped frame.
+  //
+  // This must never be replaced by TSL's own `time` uniform. That is fed by
+  // `nodeFrame.update()`, which three calls from its INTERNAL rAF loop — and
+  // this game drives its own rAF and never calls setAnimationLoop. The
+  // drawCall-accumulation bug noted further up this file is the same root cause,
+  // measured. A shader clocked on `time` would render a perfectly static flame
+  // with zero errors, and a single-frame screenshot would pass it.
+  tickElements(frame);
   profEnd("vfx.update");
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
   if (state.maze) updateArcKickers(state.maze.arcKickers, frame, state.elapsed); // curved-wall booster rubber
@@ -241,6 +253,14 @@ export function loop(now: number): void {
       // bloom pass gives them a warm halo. Only the closest few are lit anyway.
       if (anchor && Math.random() < 7 * frame) {
         state.vfx?.ember(anchor.x, WALL_H * 0.62 + 0.34, anchor.z);
+      }
+      // Hand the NEAREST torch to the elemental shaders. This array is already
+      // sorted by distance for the light pool, so the water surface gets its
+      // specular light source — position and flicker — for the cost of one
+      // uniform and no extra sort. It is what makes a puddle read as a wet
+      // surface in a lit room rather than a blue disc lying on the floor.
+      if (i === 0 && anchor) {
+        setElementTorch(light.intensity / 6, anchor.x, WALL_H * 0.62 + 0.3, anchor.z);
       }
     });
   }
