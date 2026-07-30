@@ -30,7 +30,7 @@ import {
 import { comboWindow } from "./combo-curve";
 import { damageZombie, hitPlayerRanged } from "./combat";
 import { tryDiamondDischarge, waterQuenchesFire } from "./marble";
-import { sfxBumper, sfxFlame } from "../sfx";
+import { gate, sfxBumper, sfxFlame } from "../sfx";
 
 /** A shared clock the electric-plate phase reads (mirrors pinball-parts' animT). */
 let hazT = 0;
@@ -110,7 +110,16 @@ export function simulateHazards(dt: number): void {
         if (!waterQuenchesFire(p.x, p.z)) {
           hitPlayerRanged(VENT_DAMAGE, part.x, part.z);
           state.vfx?.ember(p.x, 0.4, p.z);
-          if (Math.random() < 0.3) sfxFlame();
+          // AUDIBLE FIX. This was `if (Math.random() < 0.3) sfxFlame()`, which
+          // looked like a throttle and was not one: it sits after
+          // `ventCd = VENT_BURN_COOLDOWN` two lines up, so the burn is ALREADY
+          // rate-limited. The random was therefore a 70% chance that a vent which
+          // just damaged you made no sound at all — an unheard damage event, which
+          // reads as taking damage from nowhere.
+          //
+          // The gate is belt-and-braces against a future caller that reaches here
+          // more often than the cooldown allows.
+          if (gate("vent-flame", 0.25)) sfxFlame();
         }
       }
       for (const z of state.zombies) {

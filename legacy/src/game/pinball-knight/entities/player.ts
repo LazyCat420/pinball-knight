@@ -195,7 +195,7 @@ import {
   lavaMeltIfActive,
 } from "./marble";
 import { updateRicochet, ricochetSpec, enterRicochetForm } from "./ricochet-form";
-import { sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
+import { gate, sfxSwing, sfxGun, sfxBow, sfxFlame, sfxRoll, sfxHeavy, sfxTrapdoor, sfxSpring, sfxBumper } from "../sfx";
 import { comboSpeedCeil, comboCornerRestitution, comboCornerAdd, comboWindow, comboFrictionMul, comboZone } from "./combo-curve";
 
 import { touchPinballParts, overMagStrip, onPartTrigger, type PinballDeps } from "./pinball-collide";
@@ -1544,7 +1544,14 @@ function updatePinball(dt: number, input: InputHandle): boolean {
         addGold(1, "dungeon-game");
       }
       // A steady low rumble while held, not a per-frame bang.
-      if (p.rail.rideT > 0.12 && railSparkT < dt) sfxRoll();
+      //
+      // This used to read `railSparkT < dt`, piggybacking the VFX spark
+      // accumulator. It worked, but it coupled the audio's tempo to a PARTICLE
+      // rate: retuning RAIL_SPARK_HZ for how the sparks looked silently retimed
+      // the rumble, with nothing at either site to say so. The gate makes the
+      // audio's own rate explicit — it still derives from RAIL_SPARK_HZ, so the
+      // sound is unchanged today, but the two can now diverge on purpose.
+      if (p.rail.rideT > 0.12 && gate("rail-rumble", 1 / RAIL_SPARK_HZ)) sfxRoll();
     } else if (step.released) {
       // EXIT FLOURISH — the payoff read. A burst along the exit tangent plus a
       // kick of shake, so leaving a rail at overspeed feels like being fired

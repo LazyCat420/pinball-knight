@@ -153,7 +153,7 @@ import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
 import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
 import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
-import { sfxGroan, sfxGoblin } from "../sfx";
+import { gate, sfxGroan, sfxGoblin } from "../sfx";
 
 /** Per-family combat tuning, looked up once per zombie per frame. */
 export interface EnemyStats {
@@ -316,9 +316,6 @@ function packCensus(z: Zombie, move: MovementKind): { packNear: number; packComm
   return { packNear: near, packCommitted: committed };
 }
 
-/** One groan per window, not one per zombie — a chorus is just noise. */
-let _groanCooldown = 0;
-
 /** NECROMANCER summon hook (injected by core to defer the spawn past the loop,
  *  like slime-split — spawning mid-iteration would corrupt the horde array). */
 let onSummon: ((x: number, z: number) => void) | null = null;
@@ -376,8 +373,6 @@ export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
   if (!g || !p) return;
-
-  _groanCooldown = Math.max(0, _groanCooldown - dt);
 
   for (const z of state.zombies) {
     updateFlash(z, dt);
@@ -549,10 +544,16 @@ export function updateZombies(dt: number): void {
       const d = state.flowField[idx(g, t.i, t.j)];
       if (d >= 0 && d <= aggroTiles(g.w, g.h)) {
         z.aggro = true;
-        if (_groanCooldown <= 0) {
-          _groanCooldown = 1.2;
-          sfxGroan();
-        }
+        // One shared gate instead of a module-local cooldown counter. Behaviour
+        // is identical at 1.2s; what changes is that the timer no longer needs
+        // its own `let` and its own decrement in the update loop, and it now
+        // keys on the audio clock like every other throttle.
+        //
+        // The OTHER sfxGroan site (the mimic waking up) stays deliberately
+        // ungated: it is one-shot per mimic, and gating it would swallow the
+        // wake-up of a second mimic in the same room — the one moment the sound
+        // is actually load-bearing information.
+        if (gate("zombie-groan", 1.2)) sfxGroan();
       }
     }
     if (!z.aggro) {
