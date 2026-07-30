@@ -152,6 +152,24 @@ export const SKILLS: Record<SkillId, SkillNodeDef> = {
 export const SKILL_IDS: SkillId[] = Object.keys(SKILLS);
 export const SKILL_BRANCHES: SkillBranch[] = ["steel", "flipper", "arcana"];
 
+/**
+ * Is this node a KEYSTONE — a rule change with a structural drawback?
+ *
+ * Derived from the modifier's SHAPE, not from a list of ids, and that is the
+ * point: every keystone flag is a `boolean` (there is nothing to scale about a
+ * rule you either play by or you do not) and every other field is a number or
+ * an ability id. So the next keystone is classified correctly on the day it is
+ * written, which a hand-kept list of three ids would not be.
+ *
+ * The dev console reads this so that "give me every skill" cannot silently hand
+ * you −30 max mana, a floor that burns you, and no mana regen while you are
+ * trying to look at something else — the same "nobody should debug a bug that
+ * is this flag" rule the floor lock is written to.
+ */
+export function isKeystone(def: SkillNodeDef): boolean {
+  return Object.values(def.modifier).some((v) => typeof v === "boolean");
+}
+
 /** The combined effect of every rank taken (plus an optional legacy base). */
 export interface SkillAggregate {
   damageMult: number;

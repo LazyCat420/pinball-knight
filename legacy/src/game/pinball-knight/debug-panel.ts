@@ -41,6 +41,7 @@ export interface DebugActions {
   teleportStairs(): void;
   spawnRing(): void;
   giveWeapon(id: string): void;
+  /** Drink one — instants fire now, timed buffs (re)start their clock. */
   applyPotion(id: string): void;
   applyMaterial(id: string): void;
   /** Spawn `count` of a kind. >1 arranges them in a ring around the knight, so
@@ -77,6 +78,7 @@ export const SPAWNABLE: Array<{ kind: string; label: string }> = (KIND_IDS as En
  * spawn the newest monster hides exactly the kind you most need to look at.
  */
 import { debugScreen } from "./gui/screens/debug";
+import { debugSkillActions } from "./dev/debug-actions";
 import { close as closeUiScreen, isOpen as uiIsOpen, push as pushUiScreen, screens as uiScreens } from "./gui/stack";
 
 /**
@@ -109,7 +111,10 @@ export function createDebugPanel(_container: HTMLElement | null, actions: DebugA
     // it already exists on every screen, and it cannot drift as screens are
     // added. See debug-toggle.test.ts.
     if (uiScreens().some((s) => s.pauses)) return;
-    pushUiScreen(debugScreen(actions));
+    // Core's verbs, plus the skill/ability/mana ones that need nothing from core
+    // and are therefore mixed in here rather than routed through it — see
+    // `SkillDebugActions`.
+    pushUiScreen(debugScreen({ ...actions, ...debugSkillActions() }));
   };
   return liveToggle;
 }
