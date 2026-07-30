@@ -452,6 +452,9 @@ tavern, seeds chosen so each biome lands at depth 1.
 > document has several canvases and `#room-canvas-element` comes first, which
 > made the guard's own first version report 0.0% for scenes that were fine.
 
+**Next dev: `src/game/pinball-knight/MAZE_COLOUR_PLAN.md`** — ranked backlog,
+the measurement recipe, and the four traps the harness already pays for.
+
 ### STILL OPEN — the material index is chosen from the LIT colour
 
 `pixel-pass.ts` snaps on the diffuse target, which already carries the scene's
