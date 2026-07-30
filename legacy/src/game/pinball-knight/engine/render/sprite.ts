@@ -181,6 +181,10 @@ export interface SpriteSheet {
    *  the GPU's max texture width. */
   cols: number;
   rows: number;
+  /** Authored beats per clip — see `ActorPaints.beats`. Optional, because most
+   *  sheets play 1:1 with their frame count and a required field would break
+   *  every fake sheet the suite constructs. */
+  beats?: Partial<Record<ClipName, number>>;
 }
 
 /** Nearest filtering — authored pixels must stay square on screen. */
@@ -1253,7 +1257,7 @@ export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = 
   // Show exactly one CELL at a time.
   texture.repeat.set(1 / cols, 1 / rows);
 
-  const sheet: SpriteSheet = { texture, clips, frameCount: flat.length, cols, rows };
+  const sheet: SpriteSheet = { texture, clips, frameCount: flat.length, cols, rows, beats: paints.beats };
   let next = 0;
 
   const paintUntil = (limit: number): boolean => {

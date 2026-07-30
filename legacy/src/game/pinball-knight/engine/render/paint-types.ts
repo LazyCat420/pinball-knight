@@ -79,4 +79,27 @@ export type ClipName =
   | "stumble";
 
 /** An actor's full art table: per direction, per clip, a list of frames. */
-export type ActorPaints = Record<Dir, Partial<Record<ClipName, FramePaint[]>>>;
+export interface ActorPaints extends Record<Dir, Partial<Record<ClipName, FramePaint[]>>> {
+  /**
+   * How many BEATS a clip was AUTHORED as, per clip. Frame count divided by
+   * beats scales that clip's playback rate, so adding in-betweens changes
+   * SMOOTHNESS and never DURATION.
+   *
+   * Absent ⇒ 1:1 with the frame count, i.e. exactly today's behaviour.
+   *
+   * ⚠️ WHY THIS IS PER-ACTOR AND NOT A GLOBAL NOMINAL TABLE. There is no
+   * nominal. At the single global FPS_WALK the roster's walk counts are knight
+   * 8, zombie 6, most monsters 4, and pin/magnet/bat/chomper 2 — cycle
+   * durations of 1.0s / 0.75s / 0.5s / 0.25s. Any constant N retimes everyone
+   * whose count is not N: `NOMINAL.walk = 4` would double the knight's leg
+   * speed and halve the pin's flap. It is worse on one-shots, where crouch and
+   * wake are paced to END on a mechanic window (LEAP_WINDUP, the wake burst) —
+   * a nominal-driven retime desyncs a telegraph from the thing it advertises,
+   * silently.
+   *
+   * It also has to live at the TOP LEVEL rather than per-direction, because
+   * `withRecoil` spreads the top level and replaces only the Dir keys — a
+   * per-direction field would be silently dropped for the recoil variant.
+   */
+  beats?: Partial<Record<ClipName, number>>;
+}
