@@ -35,9 +35,42 @@
  *
  * The tables are hand-authored rather than derived by "nearest darker entry",
  * because nearest-darker is the very metric that produces the table above.
+ *
+ * ── ⚠️ NOT YET WIRED INTO THE PIXEL PASS. ONE ATTEMPT FAILED; READ THIS FIRST ──
+ *
+ * 2026-07-29. The obvious wiring is: stop multiplying `col` by AO and vignette,
+ * accumulate them as a `shade` scalar instead, have the quantizer's unrolled
+ * min-reduction also carry the winning INDEX, then look up a pre-baked
+ * PALETTE_SIZE x (rows+1) shaded-palette texture. That much compiles, respects
+ * the engine/game boundary (inject `shadeDown` through `PaletteSource`, do not
+ * import game code from `engine/`), and passes the whole suite.
+ *
+ * It also renders wrong, verified on a real WebGPU adapter at seed 777. Two
+ * distinct defects, both worth knowing before trying again:
+ *
+ * 1. **Dithering the shade ROW is not the free win it looks like.** The idea was
+ *    that a Bayer nudge on the row index can only move a pixel along its own
+ *    ramp, so the amplitude could go back up without confetti. True, and
+ *    irrelevant: one ROW is an enormous step (stone light → stone mid) next to
+ *    the old 1/32 colour nudge, and `floor(shade*rows + b + 0.5)` flips roughly
+ *    a third of a FLAT region a whole row. The result is heavy speckle. If the
+ *    row walk is ever dithered it must be on a sub-row quantity, not the row.
+ *
+ * 2. **Removing the multiplies loses the scene's grading, and the row walk does
+ *    not replace it.** With AO and vignette spent as at most six discrete rows,
+ *    most of the frame lands on row 0 and renders at full unshaded brightness:
+ *    the dungeon went from cold blue-green to bright grey-brown, because the
+ *    palette's UNSHADED entries are stone-light and leather and that is exactly
+ *    what everything then snapped to. The multiply was carrying far more of the
+ *    look than "a shadow term" suggests.
+ *
+ * So the next attempt needs a CALIBRATION step, not just a mechanism: measure
+ * the distribution of the old `lightMul` over a real frame first, and choose the
+ * shade→row mapping so the frame's mean and spread are preserved. A hybrid is
+ * probably right — keep a gentle multiply for sub-row gradation, spend the row
+ * walk on the part that would otherwise cross a family boundary. Screenshot
+ * every iteration on a real adapter; the suite cannot see any of this.
  */
-
-import { PALETTE_HEX } from "./palette";
 
 /**
  * Family spans, light → dark, as they are laid out in `palette.ts`.
@@ -62,7 +95,15 @@ export function familyOf(idx: number): number {
   return -1;
 }
 
-export const PALETTE_N = PALETTE_HEX.length;
+/**
+ * Entry count, derived from FAMILIES rather than imported from `palette.ts`.
+ *
+ * Not a style choice: `palette.ts` installs these tables, so importing back the
+ * other way is a cycle. FAMILIES is the right source anyway — a palette entry
+ * that belongs to no ramp cannot be shaded, and the partition test upstream
+ * asserts the two agree.
+ */
+export const PALETTE_N = FAMILIES.reduce((n, f) => n + f.length, 0);
 
 /**
  * One step DARKER, staying inside the entry's own family.
