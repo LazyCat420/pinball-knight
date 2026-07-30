@@ -2,10 +2,268 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-> ⚠️ STILL NOT collapsed, for the same reason as the last four sessions:
+> ⚠️ STILL NOT collapsed, for the same reason as the last five sessions:
 > `bdb-mapgen` (fix/map-generation-rules) and `bdb-mobile`
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
+
+## ✅ LIVE NOW — `sfx/` and `fx/`: two folders, and fire/water rebuilt as WebGPU shaders (2026-07-30)
+
+**Deployed `main@1bc8542` at 08:51Z, container healthy 11h, 0 restarts, HTTP 200
+on `https://braindeadbot.com/dungeon`. 168 files / 1785 tests, scoped tsc 0,
+registry-drift clean. Every visual claim below was measured on a real NVIDIA
+Ampere adapter through host Chrome over CDP.**
+
+Asked for: an SFX folder organised with all the sounds, an FX folder for the
+effects, fire/water made more realistic, and all of it on WebGPU.
+
+`audio.ts` (409 lines, flat) and `render/vfx.ts` (1700 lines, ten pooled effects
+plus a composition root) are both **gone**.
+
+### WHAT WAS ACTUALLY WRONG WITH FIRE AND WATER
+
+Neither used a shader **at all**. Fire was ten overlapping orange circles under a
+five-stop radial gradient, painted once into a 128px canvas and animated by
+scaling the quad — every frame the SAME SHAPE at a different size. Water was the
+only floor kind with no texture whatsoever: a bare tinted disc whose entire
+animation was `mesh.rotation.z += dt * 0.6`. A comment beside it claimed a flat
+tint "worked for water".
+
+Both were STAMPS. A stamp can be scaled, faded and spun; none of those is what
+fluid does, which is change SHAPE. That is a per-pixel function of time.
+
+### THE TREE NOW
+
+```
+sfx/   bus · synth · gate · registry · combat|weapons|pinball|monsters|world|run
+fx/    index.ts (READ THIS FIRST) · system · color · puffs · heat
+       pools/     8 families + shared.ts
+       elements/  fire · water · frost · goo(oil+tar) · rod · noise · element
+       floor/     decals.ts — which kind wears a shader + its per-frame clock
+```
+
+- Every FLUID is a shader. Only `groove` (a CUT in stone) and `shard-field`
+  (glitter) stay on Canvas2D, and `decals.test.ts` states that as a COMPLEMENT so
+  a new `FloorFxKind` forces a decision instead of defaulting to canvas.
+- Torches too — the 4-frame flip-book is deleted. **One shared material for every
+  torch on a floor**, decorrelated by WORLD POSITION, so there is no per-torch
+  texture, material or phase. Net reduction in pipeline count.
+- New: smoke, steam, heat shimmer, and one gameplay rule (slick × fire quench).
+
+### FIVE RULES THAT ARE NOT VISIBLE FROM THE CODE
+
+All five are in `fx/index.ts` and `BLUEPRINT.md`. The two starred ones were
+learned by shipping the bug.
+
+1. **Band to palette indices.** The pass snaps to the nearest of 32 by a
+   LUMA-WEIGHTED metric, so a free-hex gradient lands wherever that metric points
+   (a warm wash has measured 26.8% ROT GREEN here). `bandRamp` quantises each
+   shader's own field AT palette entries, making the snap a no-op. Banding is the
+   look, not a compromise.
+2. ⭐ **Banding is NOT enough for anything additive.** What the pass snaps is
+   `effect + scene`, which is nobody's palette entry. Fire's dim ember band summed
+   with cool stone into a mauve that routed to BLOOD LIGHT — it rendered **pink**
+   with every band still individually correct. Fix: scale an additive effect's
+   colour by its own intensity so its cool edge adds nothing.
+3. ⭐ **Judge over MORE THAN ONE backdrop.** Both of the worst bugs here were the
+   effect colliding with what happened to be behind it (see also: smoke, below).
+4. **Never clock a shader on TSL's `time`.** It is fed by `nodeFrame.update()`,
+   which three calls only from its own internal rAF — and this game drives its own
+   and never calls `setAnimationLoop`. A shader on `time` renders a perfectly
+   STATIC image with zero errors and a screenshot passes it. Use the explicit
+   uniform poked from `sim/loop.ts` on REAL frame time.
+5. **Every new material family must join `boot/warmup.ts`** — the frame is
+   pipeline-count-bound, so an unwarmed material compiles cold mid-combat.
+
+### THE MEASUREMENT TRAP, WHICH COST MORE THAN THE SHADERS
+
+**A whole-frame diff cannot see a subtle effect in this game.** The torch
+PointLights flicker off `state.elapsed`, which advances on every rendered frame
+**whether or not the sim is paused**. Ambient noise floor: ~1.2–1.8% of channels.
+
+That produced, in one session:
+- a **false PASS** — fire's first motion proof "passed" while measuring the knight
+  and the torches, not the shader;
+- a **false FAIL** — the shimmer A/B read 2× clear and looked broken when it worked;
+- a **false ABSENCE** — invisible smoke diffed *lower* than a no-op control.
+
+So: **always run the no-op control**, and **always measure a CROP around the
+subject** — ask the page where it projected (`__fx.screen()`) and refuse to
+measure a subject that is not fully on screen. If a subtle effect still will not
+separate, make it absurd first (a 200px puff proved the puff pipeline worked at
+all) and calibrate down.
+
+### THE TOOLING — a prerequisite, not an afterthought
+
+`__lab` is monster-only and cannot place a decal, so an A/B of these shaders was
+impossible before this existed.
+
+```
+__fx()                       the menu + which kinds are shader-backed
+__fx.grid() / .pair(a,b)     contact sheet / two side by side
+__fx.spawn(kind, dx, dz)     life 999, does not fade (a fading decal cannot be
+                             compared frame to frame)
+__fx.puff("smoke"|"steam")   particles — not in list(), not affected by freeze()
+__fx.freeze() / .thaw()      pin the visual clock — THE negative control
+__fx.pause(true)             stop the sim; rendering + fx clock continue
+__fx.screen()                where each decal actually projects, in CSS px
+__fx.heat(on) / .heatDropped()
+__fx.puffs()                 live counts + whether the pools are parented
+
+scripts/fx-motion.mjs        proves a shader is not frozen, with a frozen control
+scripts/fx-shot.mjs          full-frame contact sheet at real resolution
+scripts/heat-ab.mjs          the shimmer A/B (it has nothing of its own to see)
+scripts/fx-probe.mjs         ask the page a question instead of guessing
+```
+
+`__fx.freeze()` gates the increment INSIDE the tick. The obvious implementation —
+re-pinning `uTime` from a rAF callback — does not work: callbacks run in
+registration order and the game loop registers first, so every frame advanced the
+clock and RENDERED before the hold reset it. It reported "frozen" while the frames
+kept moving, which made the negative control useless.
+
+### MEASURED, on nvidia/ampere
+
+| check | result |
+|---|---|
+| fire motion (signal/noise vs frozen control) | **16.3×** |
+| water motion | **20.2×** |
+| heat shimmer (OFF→ON vs OFF→OFF) | **3.00 vs 0.85** |
+| renderer/console errors | 0 |
+
+### THE FOUR BUGS I SHIPPED AND CAUGHT
+
+Worth reading before touching `fx/` — three of them render *nothing* and throw
+*nothing*.
+
+1. **`uv()` on a `SpriteNodeMaterial` gives alpha 0.** Puffs rendered as
+   absolutely nothing. Use `positionGeometry.xy`, which is what the material
+   builds its own quad from.
+2. **Smoke was painted from the floor's palette entries.** I picked stone dark /
+   stone mid / steel dark because that is what smoke IS — those are the exact
+   entries the Cold Crypt's walls and floor use. Now pale (4/5/20), which is also
+   the honest physics: smoke in a dark room is visible because it SCATTERS
+   torchlight.
+3. **Puff size 16–26px was below the legibility floor.** A spark is a point of
+   light and reads at 3–5px; a puff whose alpha is a noise threshold needs enough
+   texels for the HOLES to read. Now 44–74.
+4. **`bandRamp` needs ramps ASCENDING IN LUMA, and luma order ≠ palette-name
+   order.** "Steel dark" sounds like a highlight next to "arcane dark" but
+   measures 0.082 against arcane light's 0.543, so oil's ramp fell off a cliff at
+   the top. The test now checks all six ramps and names the offending indices.
+
+Every guard added here was **fault-injected and seen red** before being trusted.
+
+---
+
+## 🔜 NEXT — in the order I would do them
+
+### 1. The tavern is not covered by the volume slider (the one a player will find)
+`sfx/bus.ts` routes through a master gain that lives in `utils/audio-manager.ts`
+**specifically so this is a one-line-per-`connect` fix** — that module is the
+app's single audio chokepoint. But `scenes/tavern/audio.ts` (and
+`gambler/`, `blackjack-`, `darts-`, `roulette-audio.ts`) still connect straight to
+`ctx.destination`. Set the volume to 0, walk into the tavern, and the hearth still
+roars. Re-point those `connect` calls at `getSfxMaster()`.
+
+### 2. Category trims are all 1.0, deliberately
+The mechanism ships; no value is tuned. `pinball` is by far the densest category
+(18 call sites in `entities/pinball-collide.ts` alone). Shipping a non-unity trim
+inside the folder move would have made the diff unreviewable by ear — but that
+means nobody has actually balanced these. Do it as its own commit, by ear, with
+`sfx/snapshot.test.ts` regenerated deliberately rather than to make red go away.
+
+### 3. The SFX audition panel was designed and not built
+`sfx/registry.ts` exists almost entirely for it (`SFX`, `SFX_NAMES`,
+`SFX_CATEGORY`, `playSfx`). `gui/screens/debug.ts` already has a `chips()` helper
+that renders icon grids and self-measures its content height, so a 28-chip
+section is ~15 lines. **This is the only way audio becomes human-verifiable at
+all** — see the warning below.
+
+### 4. Ambience loops
+`sfx/bus.ts` already has an `ambience` category with nothing on it. The new
+elemental effects want sustained sound (fire crackle, water lapping, steam hiss)
+and there is currently NO loop support — every sting is one-shot.
+- Model it on `scenes/tavern/audio.ts:43-125`, which is proven in-repo: cancel
+  scheduled values, ramp to 0, stop AFTER the fade (or the tail is a click).
+- **Do NOT reuse `startWaterSound`/`stopWaterSound`** — global singleton, hard-coded
+  timbre, no intensity, `setTimeout`-based stop, `console.error`s (violating the
+  fail-silent contract), and connects to `destination`.
+- Make it **poll-driven**: `ambience(id, level)` called every frame while the
+  effect is alive, reaped after ~250ms of silence. Then floor descent, death,
+  pause and entity despawn need NO hooks — nothing refreshes, so the voice dies.
+- One thing that DOES need a hook: a `visibilitychange` listener. There is
+  currently none anywhere in the game, and rAF stops on tab-hide, so a loop would
+  keep sounding into a hidden tab. **An ambience loop is the first sound in this
+  game that can outlive the frame loop.**
+
+### 5. Heat shimmer is a LOOK toggle, not a perf one
+`setHeatEnabled` says so in its own doc. The ALU is compiled into `finalMat`
+unconditionally, so `heat = 0` still evaluates two noise octaves and eight
+distance tests per pixel. Making it actually free needs a build-time flag in
+`opts` (like `bloom`) and a material rebuild on toggle. **Measure `finalMat`'s
+compile time first** — it is the one shader that must compile before any frame
+reaches the screen, so growing it lengthens boot for every player. I did not
+measure that regression; it is the biggest unquantified risk I am leaving.
+
+### 6. Deliberately NOT converted, with reasons
+- **The brazier bead** (`pinball-parts.ts` `lamp`). It is a STATE INDICATOR that
+  happens to be flame-shaped: cold arcane unlit, shot-colour when aimed, gold when
+  lit, and that colour is the lamp puzzle's feedback. The fire shader bands into
+  the torch ramp by construction; a switchable ramp would make every flame
+  configurable to serve one three-state indicator.
+- **`groove` and `shard-field`.** A cut in stone and glitter — neither is a fluid.
+  `groove` also stamps ~50 decals/sec, the one place per-instance graph building
+  would cost something.
+- **The marble ball's `fluid`/`crust` cel treatments.** They paint sprite ATLAS
+  frames consumed by the animator; shader-izing means abandoning that machinery
+  for a ball that is ~20px on screen.
+
+---
+
+## ⚠️ THINGS THAT WILL WASTE YOUR TIME IF YOU DO NOT KNOW THEM
+
+- **A green playtest says NOTHING about audio.** `?playtest=1` and `?mute=1` force
+  global mute at module load, so `getAudioCtx()` returns null for the entire run
+  and all 28 stings no-op. Every green playtest is green about sound by
+  **vacuity**. Never cite one as evidence. What IS automated:
+  `sfx/snapshot.test.ts` pins every pitch and gain (so a refactor is *provably*
+  inaudible) and `sfx/bus.test.ts` proves nothing bypasses the mixer — including a
+  negative control that reproduces a bypass. The rest is headphones.
+- **`sfx*` is a namespace, enforced only by a reflective test.** Both audio tests
+  discover stings via `startsWith("sfx")`. A getter called `sfxVolume` was swept up
+  and called as if it were a sound; it is now `getSfxVolume`. Do not add a
+  non-sting export starting with `sfx`.
+- **Volume 0 is a HARD gate** checked before any node is created. The bus degrades
+  to `ctx.destination` if node creation throws, and without the early gate that
+  fallback would play at FULL VOLUME exactly when the player asked for silence.
+- **A NodeMaterial's alpha comes from its graph**, so `material.opacity = x` is a
+  silent no-op on a shader decal. Every fade goes through `setElementOpacity`.
+- **Per-instance materials, not `.clone()`.** A `NodeMaterial` clone shares its
+  uniform NODES, so cloning fuses every decal's fade and phase together. Pipelines
+  are content-keyed, so N instances still cost one.
+- **Torch flames need `depthWrite: true` and `alphaTest: 0.4`.** `NodeMaterial`
+  honours `material.alphaTest` even with a custom `colorNode`. Both are
+  load-bearing: the flame's silhouette lives in the depth buffer and the pixel
+  pass's ink outline draws around it. Dropping either keeps the flame rendering
+  while silently deleting its outline.
+- **`engine/` must never learn what a fire puddle is.** `setHeat` takes plain
+  `Float32Array`s for exactly this reason; a `setHeat(fx: FloorFx[])` signature
+  would fail `engine/purity.test.ts`.
+- **The rtUv v-flip.** Anything projected to screen for the pass needs
+  `1 - (y*0.5+0.5)`. Get it wrong and the effect lands MIRRORED and still looks
+  plausible. `fx/heat.test.ts` places its probe off-centre in BOTH axes on
+  purpose — a centred probe passes under a mirror, which is worse than no test.
+- **`npm run lint` is broken** (next lint removed in Next 16, ESLint 9 has no flat
+  config). **`tsc` does not run at build** (`ignoreBuildErrors`) and repo-wide has
+  thousands of pre-existing errors — use the SCOPED gate:
+  `npx tsc --noEmit 2>&1 | grep -c 'game/pinball-knight'` must be **0**.
+- **Verify the backend, do not infer it.** `npm run webgpu:check` drives host
+  Windows Chrome over CDP; Playwright's bundled Chromium in WSL exposes
+  `navigator.gpu` but `requestAdapter()` returns null and it silently falls back to
+  WebGL2. Read `window.__renderBackendResolved`.
+
+---
 
 ## ✅ LIVE NOW — the maze colours: the boot path never installed the shade table (2026-07-30)
 
