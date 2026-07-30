@@ -985,8 +985,8 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
  * clip structure produces the SAME layout — which is what lets a weapon swap
  * replace the texture without touching the animator.
  */
-export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
-  return startSpriteSheet(paints).finish();
+export function buildSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = {}): SpriteSheet {
+  return startSpriteSheet(paints, opts).finish();
 }
 
 /**
@@ -1073,7 +1073,116 @@ export interface SheetBuild {
 }
 
 /** The same atlas, painted incrementally. See {@link SheetBuild}. */
-export function startSpriteSheet(paints: ActorPaints): SheetBuild {
+/**
+ * PER-SPRITE PALETTE LOCK — the RO/SNES palette-row model, derived not declared.
+ *
+ * The 32-entry master palette is the WORLD's budget. An individual creature does
+ * not need all of it, and the ones that spend the most look the worst: the atlas
+ * census is near-monotonic in entry count, with the cleanest actor (golem, 15)
+ * at 6.9% orphan pixels and the busiest (jester, 32) at 34.9%.
+ *
+ * The complication is that a creature's colour count is NOT a matter of artist
+ * discipline. Measured: the rotortail's painter declares 18 indices and its
+ * atlas contains 26 — the downscale blends across texel boundaries and the
+ * nearest-of-32 lookup sends each blend wherever the luma-weighted metric
+ * points, frequently into another material family. A "use fewer colours" rule
+ * cannot reach those, because they are chosen after the artist is finished.
+ *
+ * So the budget is enforced where the colours are actually decided: census the
+ * FINISHED atlas, keep the entries that carry the sprite, and remap the rest
+ * onto the nearest keeper. Entries then obey the cap by construction.
+ *
+ * DERIVED, NOT DECLARED, and that is a deliberate choice over hand-authoring a
+ * subset per monster. A declared list covers only the kinds someone remembered
+ * to write one for, and rots the moment a painter edits a ramp; the derived list
+ * covers every sheet including the knight's, needs no registry, and — because it
+ * is a pure function of a deterministic atlas — is reproducible. Its risk is
+ * evicting a low-count intentional colour, which is what the two force-keeps
+ * below exist for, and what `lockEviction` reports so a test can assert it.
+ *
+ * Cost is one pass over a finished atlas, on the same code path that already
+ * does exactly that for tinted reskins.
+ */
+export interface LockReport {
+  kept: number[];
+  evicted: number[];
+}
+
+/** Last lock's eviction list, for tests. Not part of the render path. */
+let _lastLock: LockReport | null = null;
+export function lockEviction(): LockReport | null {
+  return _lastLock;
+}
+
+function lockSheetPalette(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, cap: number): void {
+  const PAL_RGB = palRgb();
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const byRgb = new Map<number, number>();
+  for (let i = 0; i < PAL_RGB.length; i++) {
+    byRgb.set((PAL_RGB[i][0] << 16) | (PAL_RGB[i][1] << 8) | PAL_RGB[i][2], i);
+  }
+  const counts = new Uint32Array(PAL_RGB.length);
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    const hit = byRgb.get((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    if (hit !== undefined) counts[hit]++;
+  }
+  const present: number[] = [];
+  for (let i = 0; i < counts.length; i++) if (counts[i] > 0) present.push(i);
+  if (present.length <= cap) { _lastLock = { kept: present, evicted: [] }; return; }
+
+  const luma = (i: number): number => 0.3 * PAL_RGB[i][0] + 0.59 * PAL_RGB[i][1] + 0.11 * PAL_RGB[i][2];
+  const keep = new Set<number>();
+  // Ink and void first: index 1 is a quarter of every actor's pixels, and
+  // losing it would dissolve the outline the whole read depends on.
+  for (const i of [0, 1]) if (counts[i] > 0) keep.add(i);
+  // The brightest present entry, whatever its count. Glow cores (17/18/31) are
+  // a handful of texels — an eye, a fuse spark — and lose every popularity
+  // contest while carrying the creature's focal point.
+  keep.add(present.reduce((a, b) => (luma(b) > luma(a) ? b : a)));
+  for (const i of [...present].sort((a, b) => counts[b] - counts[a])) {
+    if (keep.size >= cap) break;
+    keep.add(i);
+  }
+
+  // Remap every non-keeper onto its nearest keeper, under the SAME
+  // luma-weighted metric the snap used to choose it. This is a family collapse,
+  // not a re-quantisation: everything the master snap sent to rot-green lands on
+  // the same rot-green keeper, so the sprite loses tones, never hues.
+  const row = new Uint8Array(PAL_RGB.length);
+  for (let i = 0; i < PAL_RGB.length; i++) {
+    if (keep.has(i)) { row[i] = i; continue; }
+    let best = -1;
+    let bestDist = Infinity;
+    for (const k of keep) {
+      const dr = (PAL_RGB[i][0] - PAL_RGB[k][0]) * 0.3;
+      const dg = (PAL_RGB[i][1] - PAL_RGB[k][1]) * 0.59;
+      const db = (PAL_RGB[i][2] - PAL_RGB[k][2]) * 0.11;
+      const dist = dr * dr + dg * dg + db * db;
+      if (dist < bestDist) { bestDist = dist; best = k; }
+    }
+    row[i] = best;
+  }
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 127) continue;
+    const hit = byRgb.get((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+    if (hit === undefined) continue;
+    const to = row[hit];
+    d[i] = PAL_RGB[to][0];
+    d[i + 1] = PAL_RGB[to][1];
+    d[i + 2] = PAL_RGB[to][2];
+  }
+  ctx.putImageData(img, 0, 0);
+  _lastLock = { kept: [...keep].sort((a, b) => a - b), evicted: present.filter((i) => !keep.has(i)) };
+}
+
+export interface SheetBuildOptions {
+  /** Cap the atlas's distinct palette entries. See lockSheetPalette. */
+  lockEntries?: number;
+}
+
+export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = {}): SheetBuild {
   const flat: FramePaint[] = [];
   const clips = new Map<string, number[]>();
   /** FramePaint → its slot in `flat`, so identical frames pack once. */
@@ -1166,7 +1275,15 @@ export function startSpriteSheet(paints: ActorPaints): SheetBuild {
     // median unmoved: the signature of work spread across frames rather than
     // removed. Nothing renders a partial sheet (see SheetBuild), so there is
     // nothing to show until it is finished.
-    if (done) texture.needsUpdate = true;
+    if (done) {
+      // The one moment the atlas is complete and before it reaches the GPU.
+      // Deliberately NOT inside the crush: a per-cell lock cannot see the
+      // sheet's own histogram, and wrapping the CALLER would silently miss the
+      // frames that arrive later through `step()` from an idle callback —
+      // first slice locked, rest not.
+      if (opts.lockEntries) lockSheetPalette(canvas, ctx, opts.lockEntries);
+      texture.needsUpdate = true;
+    }
     return done;
   };
 
