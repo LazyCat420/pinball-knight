@@ -21,7 +21,7 @@ import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { themeFor } from "../maze/prefabs";
 import { Animator } from "../engine/render/animator";
 import { ZOMBIE_VARIANTS } from "../render/cel-painter";
-import { createActorSprite, type SpriteSheet } from "../engine/render/sprite";
+import { bakeTintedSheet, createActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { sheetFor } from "../boot/sheets";
 import { state, type EnemyKind, type Zombie } from "../state";
 import { ZOMBIE_TYPES, pickZombieType, typeHp, variantIndicesFor, type ZombieType } from "../zombie-types";
@@ -72,15 +72,29 @@ export const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteShee
   mimic: { sheet: () => sheetFor("golem"), tint: 0xd9a441, scale: 0.8 }, // gold treasure-crate
 };
 
-/** Spawn an expansion enemy from its reused sheet + tint; null if art missing. */
+/**
+ * Spawn an expansion enemy from its borrowed sheet, re-dyed by BAKING.
+ *
+ * This used to `setTint(skin.tint)` — a live GPU multiply that pushed every
+ * palette-exact texel OFF the palette, for the screen quantizer to reassign
+ * per pixel (the sapper read as flat yellow mush, the necromancer as blood
+ * red). The tint is now baked into a palette-snapped copy of the atlas once
+ * per kind (`bakeTintedSheet`), so an expansion monster is as palette-true as
+ * a hand-painted one. `baseTint` stays unset on purpose: the dye lives in the
+ * art now, so a damage flash restores to null instead of re-applying it.
+ */
 export function makeExpansion(kind: EnemyKind, x: number, z: number, speed: number): Zombie | null {
   const skin = EXPANSION_SKIN[kind];
-  const sheet = skin?.sheet();
-  if (!skin || !sheet) return null;
+  if (!skin) return null;
+  let sheet = state.expansionSheets[kind];
+  if (!sheet) {
+    const base = skin.sheet();
+    if (!base) return null;
+    sheet = bakeTintedSheet(base, skin.tint);
+    state.expansionSheets[kind] = sheet;
+  }
   const z2 = makeZombie(sheet, x, z, speed, { kind });
   z2.sprite.mesh.scale.multiplyScalar(skin.scale);
-  z2.baseTint = skin.tint;
-  z2.sprite.setTint(skin.tint);
   return z2;
 }
 

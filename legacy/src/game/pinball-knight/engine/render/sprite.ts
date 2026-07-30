@@ -813,6 +813,64 @@ export function buildSpriteSheet(paints: ActorPaints): SpriteSheet {
 }
 
 /**
+ * A sheet re-dyed by `tint` and snapped back to the palette — the fix for the
+ * tinted-reskin monsters rendering as noise.
+ *
+ * The expansion roster (wisp, sapper, necromancer, …) borrows another
+ * monster's atlas and used to recolour it with `sprite.setTint`: a per-pixel
+ * GPU multiply by a free RGB value. Every atlas texel is a palette entry, so
+ * every MULTIPLIED texel is an off-palette colour — and the screen quantizer
+ * then reassigns each one to whatever family happens to be nearest under the
+ * luma-weighted metric. Measured on screen 2026-07-30: the sapper (magnet ×
+ * 0xf0e05a) read as flat yellow with its ink dissolved, and the necromancer
+ * (spitter × 0x8a5cd0) came out BLOOD RED on a warm floor. Same failure as
+ * the free-hex marbles in [palette-snap-is-luma-weighted], institutionalised
+ * in a spawn table.
+ *
+ * Baking does the same multiply ONCE, on the CPU, and then snaps each pixel
+ * through the same LUT the crush uses — so the tinted monster is exactly as
+ * palette-true as a hand-painted one, its selout ink snaps back to real ink
+ * instead of a muddy blend, and the post chain has nothing to reinterpret.
+ * The multiply matches what the GPU did (sRGB component product), so each
+ * kind keeps its established identity, just expressed in palette entries.
+ *
+ * Alpha is untouched: the crush's hard cutout already decided the silhouette,
+ * and re-deciding it here would move edges.
+ */
+export function bakeTintedSheet(src: SpriteSheet, tint: number): SpriteSheet {
+  const srcCanvas = src.texture.image as HTMLCanvasElement;
+  const canvas = document.createElement("canvas");
+  canvas.width = srcCanvas.width;
+  canvas.height = srcCanvas.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("[dungeon] could not get 2D context for tinted atlas");
+  ctx.drawImage(srcCanvas, 0, 0);
+
+  const tr = ((tint >> 16) & 0xff) / 255;
+  const tg = ((tint >> 8) & 0xff) / 255;
+  const tb = (tint & 0xff) / 255;
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  const PAL_RGB = palRgb();
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;
+    const p = snapColor(d[i] * tr, d[i + 1] * tg, d[i + 2] * tb);
+    d[i] = PAL_RGB[p][0];
+    d[i + 1] = PAL_RGB[p][1];
+    d[i + 2] = PAL_RGB[p][2];
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  celFilters(texture);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1 / src.cols, 1 / src.rows);
+  // The clip map is layout data and the layout is identical — share it.
+  return { texture, clips: src.clips, frameCount: src.frameCount, cols: src.cols, rows: src.rows };
+}
+
+/**
  * An atlas being painted a slice at a time.
  *
  * WHY THIS EXISTS. Painting an atlas is ~100 frames of vector art, each crushed

@@ -88,6 +88,16 @@ export function disposeAll(): void {
   state.bossSheet = null;
   for (const s of [state.goblinSheet, state.pinSheet, state.golemSheet, state.chomperSheet, state.magnetSheet, state.webspinnerSheet]) s?.texture.dispose();
   state.goblinSheet = state.pinSheet = state.golemSheet = state.chomperSheet = state.magnetSheet = state.webspinnerSheet = null;
+  // The bespoke sheets that arrived AFTER this block was written were never
+  // added to it — six atlases (~4131x81 canvas textures each) leaked per
+  // launch/exit cycle, found 2026-07-30 while adding the baked tints below.
+  for (const s of [state.sporelingSheet, state.jesterSheet, state.croakerSheet, state.rotortailSheet, state.stiltneckSheet, state.houndSheet]) s?.texture.dispose();
+  state.sporelingSheet = state.jesterSheet = state.croakerSheet = state.rotortailSheet = state.stiltneckSheet = state.houndSheet = null;
+  // The baked TINTED expansion atlases (spawn/factory.ts makeExpansion) — each
+  // owns its own CanvasTexture over its own canvas, distinct from the base
+  // sheet it was dyed from, so each is its own leak if skipped here.
+  for (const s of Object.values(state.expansionSheets)) s?.texture.dispose();
+  state.expansionSheets = {};
 
   disposeProjectileAssets();
   disposeFloorFxAssets();

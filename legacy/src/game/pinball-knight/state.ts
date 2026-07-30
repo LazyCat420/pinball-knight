@@ -1093,6 +1093,11 @@ export const state = {
   rotortailSheet: null as SpriteSheet | null,
   stiltneckSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
+  /** Baked TINTED atlases for the expansion roster (spawn/factory.ts
+   * makeExpansion): borrowed sheet × tint, re-snapped to the palette so the
+   * monster is palette-exact instead of a GPU multiply the quantizer mangles.
+   * Keyed by EnemyKind; reset with the rest of the sheets in dispose.ts. */
+  expansionSheets: {} as Partial<Record<EnemyKind, SpriteSheet>>,
 
   // AI
   flowField: null as Int32Array | null,
