@@ -59,52 +59,67 @@ this wave deliberately, so the A/B measured one thing.
 
 ---
 
-## 🔭 PICK UP HERE — open items from the UI-input sweep (2026-07-30)
+## ✅ SHIPPED — items 1 and 2 of the UI-input sweep's pick-up list (2026-07-30, `main@6036a63`)
 
-The two UI-input waves further down (**the tavern counter freeze**, and
-**scroll-follow + the un-navigable knight menu**) are deployed and verified. These
-are the things I MEASURED BUT DID NOT FIX, in the order I would do them.
+Deployed and verified live on braindeadbot.com on a real NVIDIA Ampere adapter
+(WebGPU backend, container healthy, 0 restarts). 2331 tests green, scoped tsc 0,
+registry-drift clean, `core.ts` back at its 595-line ratchet.
 
-### 1. `menu.ts`'s `contentHeight()` over-declares — five of six tabs
+### 1. `menu.ts` now MEASURES its scroll extent — and the state-dependent tabs were worse than the note said
 
-Same class as the tavern's late `vendorHeight()`: a hand-written formula per tab
-that disagrees with what the bodies paint, so the region scrolls into void and the
-scrollbar thumb is sized for content that is not there.
+`contentHeight(tab)` is gone. The per-tab height is `body.y - sc.inner.y +
+BODY_TAIL`, read before `endScroll`, exactly as `tavern.ts` and `debug.ts` do it.
+A row added to a tab now measures itself.
 
-MEASURED on a fresh run, by saturating the wheel and comparing the reachable travel
-against the lowest thing painted inside the clip:
+**The unverified half of the old note resolves the OTHER way.** It flagged a fresh
+run as the low end of `cards`/`bestiary`. At full discovery the bestiary formula
+does not over-declare, it **UNDER**-declares — 1482 against 1654 painted — so the
+bottom of the list was unreachable by any means. That is why
+`gui/screens/menu-scroll.test.ts` asserts a PAIR per tab (can reach the lowest
+painted thing; can scroll no further than it). A one-sided "no void" test would
+have gone on agreeing with the over-declared formula.
 
-| tab | declared | painted | slack |
-|---|---|---|---|
-| bestiary | 1482 | 818 | **+664** |
-| stats | 494 | 187 | **+307** |
-| cards | 324 | 147 | **+177** |
-| skills | 855 | 808 | +47 |
-| gear | 337 | 297 | +40 |
-| options | 370 | 359 | +11 — derived from `settingsContentHeight()`, fine |
+⚠️ **A tab body that paints an ABSOLUTE grid must cut past it.** `cardsTab`'s stash
+indexes off `body.y` instead of cutting, so measuring the flow cursor alone stopped
+at the STASH heading and stranded every row of cards. It now cuts explicitly, and
+the test pins it with a 14-card stash. Any new tab has the same obligation — the
+flow cursor IS the measurement, including on early-return paths.
 
-⚠️ `cards` and `bestiary` are STATE-DEPENDENT (`state.cardStash`,
-`buildBestiary(state.killsByKind)`), so a fresh run is their low end — whether the
-formula is also wrong at full discovery is **UNVERIFIED**. The other rows are
-static and simply wrong.
+Falsifier: against the pre-fix `menu.ts` the new test file fails 5 of 26. Live max
+scroll per tab afterwards (fresh run): gear 135, cards 18, skills 645, bestiary
+655 (was ~1266 reachable), stats 84, options 274. Screenshots at max scroll show
+the last row flush with one row of tail air on bestiary, stats and options.
 
-Fix with the pattern `debug.ts` and `tavern.ts` both use now: delete the formula,
-measure `body.y - sc.inner.y` after the body paints, keep it per tab. ~10 lines.
-`gui/screens/tavern.test.ts` has an assertion to copy — *"matches what the counter
-paints, so there is no void below it"*.
+Cross-check that the measurement is right, not just smaller: on OPTIONS it lands on
+456 = `settingsContentHeight()`'s 440 + the 16px tail, i.e. it agrees exactly with
+the one formula that was already correct.
 
-### 2. The intro drives the pass in only THREE of its phases
+### 2. The intro's SKIP button is not a live bug — NOTHING CALLS THE INTRO
 
-`intro/index.ts` calls `pixelPass.render()` in `shatter`, `sweep` and `title` — but
-NOT in `run`, which paints to the intro's own 2D canvases instead. `drawUiFrame` is
-wrapped around `pixelPass.render`, so during `run` the `intro-chrome` screen —
-**which owns the SKIP button** — is neither painted nor given input.
+The mechanism in the old note was right and the instinct to check first was the
+right one. `core.ts` imports `runPinballIntro` and **never invokes it**: the
+walkable tavern lobby is the entry, and both routes to a floor — the plunger's
+`onDescend` and `__dungeonStartRun` — go straight to `armFloorLoading`.
 
-VERIFIED: the three call sites and the missing one. **NOT VERIFIED:** whether SKIP
-is actually dead on screen during `run`; it may be that nothing is meant to be
-visible then. *Check before fixing.* This is the third loop in this repo with the
-shape behind both of today's freezes — `scenes/tavern/present.ts` explains why
-`presentUi()`, not "render anyway", is the answer when a loop must skip the scene.
+VERIFIED BOTH WAYS: grep finds one import and zero call sites repo-wide, and a run
+started live on braindeadbot.com left `__dungeonIntroPhase` null for a 30-second
+sample. ⚠️ The probe emulated `prefers-reduced-motion: no-preference` first —
+headless Chrome reports `reduce` and `shouldSkipIntro()` honours it, so without
+that the intro would have been skipped by the harness and the probe would have
+proven nothing.
+
+What made it read as live was `intro/index.ts`'s own docblock, which claimed "Runs
+in launchDungeonGame BEFORE startLevel(1)". That line is now replaced with what is
+true, plus the two things a reviver needs: the `run`/`bonk` phases really do not
+drive the pass, AND fixing that is not one line, because during those phases the
+intro's two 2D canvases sit opaque at z-index 9000/9001 over the renderer — a
+presented UI frame would paint SKIP *underneath* the gag. The skip ACTION was never
+missing; it is on window listeners and fires from frame one.
+
+**No code was deleted.** 644 lines of working title sequence are still there and
+still importable; if it is wanted back, that is a design call, not a bug fix.
+
+## 🔭 PICK UP HERE — what is still open
 
 ### 3. The structural guard only walks `gui/screens/`
 
@@ -148,7 +163,20 @@ node scripts/ui-probe.mjs --url "http://localhost:<port>/dungeon?no-intro=1&gpu=
   is permanently one jump behind and you get a failure the game does not have. Three
   paints per step — move, compute, apply.
 - The dev server on **5174 is usually another session's**. Start your own on a free
-  port or you will be testing their working tree.
+  port or you will be testing their working tree. Better still, when the change is
+  already deployed, point the probe at **`https://braindeadbot.com/dungeon`** and
+  skip the server entirely — that is what verified both items above.
+- ⚠️ `wheel:ux,uy,dy` converts through the GLOBAL `__gui.sizing()`, which is NOT a
+  screen's own design zoom. `wheel:400,240` looked like the middle of the knight
+  menu and was landing on the TAB STRIP: seven bursts, `__gui().scroll` still 0,
+  which reads exactly like "the region will not scroll". Park it deep inside the
+  body (700,500 at 1600x900) and confirm `scroll` moved before believing anything.
+- ⚠️ Probing anything the INTRO owns: headless Chrome reports
+  `prefers-reduced-motion: reduce` and `shouldSkipIntro()` honours it, so the intro
+  never runs and every shot is of the dungeon. `page.emulateMedia({ reducedMotion:
+  "no-preference" })` first, or the probe cannot fail.
+- Tabs are entered with `key:Digit4` etc. — the menu reads `f.input.digit`, and the
+  switch takes effect on the NEXT frame, so chain a `wait:` after it.
 
 ## ✅ LIVE NOW — `sfx/` and `fx/`: two folders, and fire/water rebuilt as WebGPU shaders (2026-07-30)
 
