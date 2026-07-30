@@ -139,7 +139,26 @@ export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
   // the silhouette reads as flame rather than as fog.
   const alpha = smoothstep(float(cutoff), float(cutoff + 0.10), body).mul(uOpacity);
 
-  material.colorNode = vec4(col, alpha);
+  /**
+   * SCALE THE EMISSION BY THE HEAT — and this is a correctness fix, not a taste
+   * one.
+   *
+   * Banding to palette entries (see `noise.ts`) guarantees the SHADER's output is
+   * an exact palette colour. Under additive blending that is NOT enough: what the
+   * pixel pass snaps is `fire + floor`, and the sum is nobody's palette entry.
+   *
+   * That bit for real. When the scene lighting changed underneath this shader, the
+   * dim outer body — a desaturated ember brown — summed with a cool dark floor
+   * tile into a mauve that the luma-weighted snap routed to BLOOD LIGHT. The fire
+   * rendered pink, with every band still individually on-palette.
+   *
+   * Multiplying by `hot` makes the effect behave like an actual emitter: the cool
+   * edge adds nearly nothing (additive-dark is invisible, so the floor shows
+   * through unchanged) and only the genuinely hot region contributes enough to
+   * move the composite. That keeps the sum inside the warm family regardless of
+   * what is behind it, which is the property the banding alone could not provide.
+   */
+  material.colorNode = vec4(col.mul(hot), alpha);
 
   return {
     material,
