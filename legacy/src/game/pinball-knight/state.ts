@@ -1252,6 +1252,37 @@ export function activeWeapon(): WeaponState {
   return state.weaponSlots[state.activeSlot] ?? { id: "fists", durability: Infinity };
 }
 
+/**
+ * THE CHUTE IS COVER — nothing on the floor can SEE the knight until the ball
+ * is in play.
+ *
+ * A floor opens PARKED in the plunger chute (`updatePlunger`, entities/player.ts)
+ * and stays there for as long as the player takes to pull it — which, if they
+ * are reading the HUD or picking an aim line, is a long time. Every acquisition
+ * check in the game measures against the knight's CURRENT position, so while
+ * parked the whole horde within the (floor-relative, and therefore large — see
+ * `aggroTiles`) aggro radius woke up and walked to the chute. Launch into a
+ * reception committee, every floor, with no way to decline it: the knight has
+ * i-frames in the chute but no movement, so you cannot even leave.
+ *
+ * The fix is a perception gate rather than a movement gate. Enemies are not
+ * frozen — they simply have no target to acquire, so they hold whatever state
+ * they were in, and the instant the plunger fires the normal radius check runs
+ * and the floor wakes around wherever the ball actually went.
+ *
+ * Read by every path that ACQUIRES: the grunt aggro gate and the mimic's wake
+ * (entities/zombie.ts) and the Reaper King's leash (boss.ts). Deliberately NOT
+ * read by retaliation (entities/combat.ts) — being hit always wakes a monster,
+ * and that path cannot fire from the chute anyway.
+ *
+ * Co-op note: this reads the LOCAL knight's parked flag, which matches the rest
+ * of the model — `state.flowField` is one BFS seeded from the local player, so
+ * the horde has only ever hunted this client's knight.
+ */
+export function playerIsVisibleToEnemies(): boolean {
+  return !state.plungerArmed;
+}
+
 export function freshPlayerFields(): Omit<Player, keyof Actor | "silhouette"> {
   return {
     hp: PLAYER_MAX_HP,

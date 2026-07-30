@@ -23,7 +23,7 @@
  * (guarded by the caller), replicas render the streamed state.
  */
 import * as THREE from "three";
-import { state, type Zombie } from "./state";
+import { state, playerIsVisibleToEnemies, type Zombie } from "./state";
 import { showToast } from "./ui";
 import { PINBALL_MAX_SPEED, REAPER_SCALE, REAPER_TINT, BRUTE_R } from "./constants";
 import { tileCenter, idx, worldToTile, type Grid, type TilePos } from "./maze/generator";
@@ -357,7 +357,12 @@ export function updateBoss(dt: number): void {
     if (d >= 0 && d < 0x3fffffff) pathD = d;
   }
   if (!boss.engaged) {
-    if (pathD <= KING_WAKE_TILES) {
+    // "He has seen you" must be TRUE when the toast says it: a knight still
+    // parked in the plunger chute has not been seen by anything yet
+    // (`playerIsVisibleToEnemies`, state.ts). On a small floor the chute can
+    // sit inside KING_WAKE_TILES of his post, and waking him there burned the
+    // stirs-toast before the ball was even in play.
+    if (pathD <= KING_WAKE_TILES && playerIsVisibleToEnemies()) {
       boss.engaged = true;
       showToast("☠ THE KING STIRS", "he has seen you");
     }

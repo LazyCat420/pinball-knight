@@ -26,7 +26,7 @@
  * Intent and affliction are different axes; collapsing them is how the cascade
  * grew in the first place.
  */
-import { state, type Zombie, type EnemyKind } from "../state";
+import { state, playerIsVisibleToEnemies, type Zombie, type EnemyKind } from "../state";
 import { ZOMBIE_TYPES } from "../zombie-types";
 import {
   ZOMBIE_R,
@@ -455,10 +455,13 @@ export function updateZombies(dt: number): void {
     }
 
     // ── MIMIC ── dormant + item-like until you step close, then it BURSTS into
-    // a charge. While dormant it neither chases nor is aggro'd.
+    // a charge. While dormant it neither chases nor is aggro'd. A mimic sited
+    // near the chute must not burst on the parked knight either
+    // (`playerIsVisibleToEnemies`) — you didn't step close, the floor opened
+    // with you already there.
     if (z.dormant) {
       const dd = Math.hypot(p.x - z.x, p.z - z.z);
-      if (dd <= MIMIC_WAKE_RANGE && p.hp > 0) {
+      if (dd <= MIMIC_WAKE_RANGE && p.hp > 0 && playerIsVisibleToEnemies()) {
         z.dormant = false;
         z.aggro = true;
         if (z.flashT <= 0) z.sprite.setTint(z.baseTint ?? null);
@@ -537,7 +540,11 @@ export function updateZombies(dt: number): void {
     // The radius is FLOOR-RELATIVE (constants/enemies.ts aggroTiles): spawn
     // placement scales with floor size, so a fixed radius silently stopped
     // reaching the horde when floors grew 4×.
-    if (!z.aggro && state.flowField) {
+    //
+    // Nothing acquires while the knight is parked in the plunger chute — see
+    // `playerIsVisibleToEnemies` (state.ts) for why the whole floor used to
+    // gather at the launch point while the player took their time aiming.
+    if (!z.aggro && state.flowField && playerIsVisibleToEnemies()) {
       const t = worldToTile(g, z.x, z.z);
       const d = state.flowField[idx(g, t.i, t.j)];
       if (d >= 0 && d <= aggroTiles(g.w, g.h)) {
