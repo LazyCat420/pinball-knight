@@ -130,6 +130,10 @@ export function disposeFace(): void {
   ctx = null;
   scratch = null;
   sctx = null;
+  // The death portrait was copied off the canvas being dropped here. Keeping it
+  // would be harmless today and wrong the moment the art or palette changes
+  // under a reload, which is the one thing dispose exists to make impossible.
+  deadCanvas = null;
   painT = healT = specialT = 0;
   lookX = lookY = 0;
   turn = 0;
@@ -230,6 +234,72 @@ export function renderFace(dt: number): void {
   if (sig === lastSig) return;
   lastSig = sig;
   paint();
+}
+
+/**
+ * THE DEAD FACE, as a standalone image — the death screen's portrait.
+ *
+ * `YOU ARE DEAD` was words alone, and the mugshot already paints exactly what
+ * those words mean: the helm gone, the beard matted red, two x-ed out eyes. It
+ * is also the face the player has watched come apart all run, so putting it
+ * under the title states the ending in the vocabulary the HUD spent that run
+ * teaching, rather than in a second one invented for the occasion.
+ *
+ * A COPY, not the live canvas, and both halves of that matter:
+ *
+ *  · The singleton carries whatever head turn and pain recoil the last painted
+ *    frame left in it. Blitting it straight would put a corpse mid-flinch,
+ *    glancing off to one side, under the title — and WHICH of those you got
+ *    would depend on where the killing blow came from.
+ *  · The HUD is still painted BEHIND this screen and owns that canvas. Two
+ *    consumers of one backing store at two different states is a race, and the
+ *    death screen would lose it on every frame the HUD repaints.
+ *
+ * So this borrows the singleton exactly as `faceContactSheet` does — snapshot,
+ * force the state, paint, copy the pixels out, put it back — and caches the
+ * result, because the picture has no state of its own to track.
+ */
+let deadCanvas: HTMLCanvasElement | null = null;
+
+export function deadFace(): HTMLCanvasElement | null {
+  if (deadCanvas) return deadCanvas;
+  if (typeof document === "undefined") return null;
+  const live = createFace();
+  if (!ctx) return null;
+
+  const saved = { hp, maxHp, painT, healT, specialT, turn, lookX, lookY, blinkFor, lastSig };
+  hp = 0;
+  painT = healT = specialT = 0;
+  // Square on and unflinching. `turn`/`look` belong to the idle scan, and a
+  // dead man does not check his flanks.
+  turn = 0;
+  lookX = lookY = 0;
+  blinkFor = 0;
+  paint(); // straight to the painter — renderFace's repaint guard would eat this
+
+  const out = document.createElement("canvas");
+  out.width = PX;
+  out.height = PX;
+  const copy = out.getContext("2d");
+  if (copy) {
+    copy.imageSmoothingEnabled = false;
+    copy.drawImage(live, 0, 0);
+    deadCanvas = out;
+  }
+
+  hp = saved.hp;
+  maxHp = saved.maxHp;
+  painT = saved.painT;
+  healT = saved.healT;
+  specialT = saved.specialT;
+  turn = saved.turn;
+  lookX = saved.lookX;
+  lookY = saved.lookY;
+  blinkFor = saved.blinkFor;
+  lastSig = ""; // force the HUD's next frame to repaint over the borrowed state
+  paint();
+  lastSig = saved.lastSig;
+  return deadCanvas;
 }
 
 function exprNow(): Mood {
