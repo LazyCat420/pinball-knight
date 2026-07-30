@@ -2,13 +2,110 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
-> ⚠️ STILL NOT collapsed, same call as last session and for the same reason:
-> `main` moved TWICE underneath this work (the rotortail, then the ricochet
-> trail) while it was in flight, so other sessions are live in this repo right
-> now. Collapsing 1500 lines I have not read would delete their notes. Prepended
-> instead — someone with the whole picture should collapse this.
+> ⚠️ STILL NOT collapsed, same call as the last three sessions and for the same
+> reason: `main` moved underneath this work while it was in flight (the zoom-cancel
+> commit landed mid-session and had to be merged in), and `bdb-cam` /
+> `truetint` are live in this repo right now. Collapsing 1500 lines I have not
+> read would delete their notes. Prepended instead.
 
-## ✅ LIVE NOW — browser zoom cancelled, UI 20% down, camera out, ability marks (2026-07-29)
+## ✅ LIVE NOW — the descent screen actually reaches the glass; the chrome is chiselled (2026-07-29)
+
+**416e91d · tsc clean · registry-drift clean · 2052 tests · verified on a real
+WebGPU adapter WITH a negative control.**
+
+### The descent screen was never on screen
+
+Reported as "black on maze entry". The screen itself was healthy the whole time
+and every diagnostic said so — pushed onto the stack, `isFloorLoadingOpen()`
+true, `__gui().screens` listing it, its `paint` correct, its bar wall-clocked.
+
+The canvas UI is painted **by the frame loop**, and `loop()` opened with a bare
+`return` while the descent hold was up. That was right when the descent screen
+was a DOM overlay the browser composited on its own. It became a black screen
+the moment the screen moved onto the canvas: **the one screen whose entire job
+is to be visible while the loop is blocked was the one screen the loop refused
+to draw.** `armFloorLoading` had the same shape — it waited two frames for a
+paint that, post-migration, nothing was going to perform. On the FIRST descent
+of a session there is no running loop at all and the tavern has just disposed
+its own canvas, so that frozen frame is black; on later descents it is a still
+of the floor you just left.
+
+The fix is not "render anyway" — rendering the scene during a descent triggers
+the lazy pipeline compile storm `warmFloorPipelines` exists to schedule, which
+is the entire reason the hold is there. `PixelPass.presentUi()` composites the
+UI over a **cleared** scene+bloom target and touches no scene material.
+
+| | UI frames composited per HELD frame |
+|---|---|
+| before | **0.004** (2 across 508 — the two `armFloorLoading` squeezed out) |
+| after | **1.001** (762 across 761) |
+
+`scripts/descent-probe.mjs` is that measurement, kept. It drives a real descent
+and samples `__gui().painted` while `__dungeonHeld()` is true. ⚠️ Its first
+threshold was `gained > 0` and it **PASSED the broken build** — two is greater
+than zero. The bar is "keeps up", not "moves at all". Run it against any future
+change to the hold:
+
+```
+node scripts/descent-probe.mjs --url "http://localhost:5301/dungeon?no-intro=1&gpu=webgpu"
+```
+
+`armFloorLoading` moved to `run/floor-hold.ts`. `deps.ts` justified keeping it in
+core because it "writes the floorLoad and renderHeldForLoad module flags" —
+those flags ARE the two `let`s at the top of floor-hold.ts, so the extraction
+that moved them left the reason behind. Core ratchet 611 → 595.
+
+### The chrome is id-software plate now, not hairlines on black
+
+`im.ts` gains the shape those menus are built from: `bevel()` (two-tone chisel),
+`key()` (raised face + keyline + inner chisel), `well()` (the same, sunken),
+`cursorMark()` (a blocky selector), and `bar()` now fills in **cells**. Every
+screen inherits it through `theme.ts` + `im.ts`; only `menu.ts`'s hand-rolled
+tab strip needed touching, because it paints its own rows to carry a glyph.
+
+**⚠️ TWO TRAPS, both found by looking at pixels rather than at code.**
+
+1. **The panel body rendered GREEN.** It was set to `stone dark` — a plainly
+   grey `#2b303b`. The UI composites *before the ordered dither* as well as
+   before the palette snap, and the snap is luma-weighted, so a flat fill is not
+   guaranteed to arrive as itself. Swept over all 32 entries at the shader's own
+   amplitude and metric, exactly three pairs are unstable:
+
+   ```
+    0 void black  ↔  1 outline        (both near-black — invisible)
+    2 STONE DARK  ↔  6 ROT SHADOW     ← the green panel
+   23 skin shadow ↔ 28 leather mid    (both mid-brown — invisible)
+   ```
+
+   The plate moved to `leather shadow`, which is stable, warmer, and closer to
+   the source anyway. **`gui/theme.test.ts` is that sweep, kept**, with the
+   crossing that caused it as its own negative control. Re-run it before moving
+   any UI colour.
+
+2. **A 1px accent stroke overwrites a 1px bevel completely.** Every button
+   rendered flat with a coloured outline. Invisible in review — both calls were
+   plainly present and plainly correct on their own. The keyline is drawn inside
+   `key()` now, on the outer ring, with the chisel one pixel in.
+
+### Where to look
+
+- `src/game/pinball-knight/engine/render/pixel-pass.ts` — `presentUi()`
+- `src/game/pinball-knight/run/floor-hold.ts` — the hold + `armFloorLoading`
+- `src/game/pinball-knight/sim/loop.ts` — the held branch
+- `src/game/pinball-knight/gui/theme.ts` / `im.ts` — the chrome vocabulary
+- `src/game/pinball-knight/run/floor-hold.test.ts` — 7 tests; 3 fail against the
+  pre-fix code (verified by reverting)
+
+### Not done
+
+- The **selector chevron** (`cursorMark`) is wired into `button()` only. Toggles,
+  tabs and hand-rolled rows still say "focused" with the ring alone.
+- The descent labyrinth backdrop is unchanged — it is good, and its docblock
+  explains why it is not the real floor. Left alone deliberately.
+
+---
+
+## ✅ ALSO LIVE — browser zoom cancelled, UI 20% down, camera out, ability marks (2026-07-29)
 
 **tsc clean, 1537 tests, verified through the real pixel pass on host Chrome.**
 
