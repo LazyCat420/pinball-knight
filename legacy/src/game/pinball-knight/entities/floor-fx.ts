@@ -30,6 +30,8 @@ import {
   OIL_ZOMBIE_T,
   OIL_MARBLE_T,
   OIL_IGNITE_LIFE,
+  SLICK_BOIL_RATE,
+  FIRE_QUENCH_RATE,
   PINBALL_MAX_SPEED,
   GROOVE_MIN_SPEED,
   GROOVE_SPACING,
@@ -691,6 +693,13 @@ export function updateFloorFx(dt: number): void {
         if (Math.random() < dt * 60 * 0.35 * density) state.vfx.ember(ex, 0.1, ez);
         if (Math.random() < dt * 60 * 0.12 * density) state.vfx.ember(fx.x, 0.35, fx.z); // inner tongue, higher
         if (Math.random() < dt * 2.2) state.vfx.sparks(ex, 0.15, ez, 0, 0.6, 2); // crackle pop
+        // A DYING fire smokes. Past the two-thirds mark the embers thin out and
+        // smoke takes over, so a pool that is about to go out looks like it —
+        // which is information (that tile is about to stop hurting the horde)
+        // delivered without a HUD element.
+        if (frac < 0.35 && Math.random() < dt * 3.0 * density) {
+          state.vfx.smoke(ex, 0.2, ez, 1, fx.radius * 0.4);
+        }
       } else if (fx.kind === "frost") {
         // Cold vapour rolling off the rune — the ONLY reason a frost tile reads
         // as active rather than as a decal someone painted on the floor.
@@ -814,6 +823,42 @@ export function updateFloorFx(dt: number): void {
     despawn(i);
     spawnFloorFx("fire", x, z, radius, OIL_IGNITE_LIFE);
     state.vfx?.burst(x, 0.3, z, PALETTE_HEX[16], 24, 4); // whoosh — the pool catches
+    state.vfx?.smoke(x, 0.35, z, 9, radius * 0.6); // burning oil is filthy
     state.shakeT = Math.max(state.shakeT, 0.15);
+  }
+
+  /**
+   * ── QUENCH ── a water slick lying on a fire BOILS OFF, and both pay for it.
+   *
+   * The mirror of the ignition pass above, and new: the ignition rule only ever
+   * handled oil × fire, so dropping a slick onto a burning pool did precisely
+   * nothing. That was a hole in a set of interactions the player is otherwise
+   * taught to reason about — oil feeds fire, so water ought to fight it.
+   *
+   * Both sides lose life rather than either despawning outright. A slick that
+   * deleted a fire would make water a hard counter and flatten the decision; a
+   * fire that ignored water would make the slick pointless. Trading life means
+   * SIZE decides the outcome, which is something the player can influence.
+   *
+   * Its own pass, for the same reason as the ignition: mutating lifetimes while
+   * the main loop is walking its index is how an off-by-one despawn happens.
+   */
+  for (const s of state.floorFx) {
+    if (s.kind !== "slick") continue;
+    for (const f of state.floorFx) {
+      if (f.kind !== "fire") continue;
+      const dx = f.x - s.x;
+      const dz = f.z - s.z;
+      const rr = f.radius + s.radius;
+      if (dx * dx + dz * dz > rr * rr) continue;
+      // `- 1` because the main loop has already taken one dt off each this frame;
+      // these are the EXTRA drain, so the constants read as multipliers.
+      s.life -= dt * (SLICK_BOIL_RATE - 1);
+      f.life -= dt * (FIRE_QUENCH_RATE - 1);
+      if (Math.random() < dt * 14) {
+        state.vfx?.steam((s.x + f.x) / 2, 0.18, (s.z + f.z) / 2, 3, 1.8);
+      }
+      break; // one fire is enough to boil this slick; don't stack the drain
+    }
   }
 }

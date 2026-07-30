@@ -23,6 +23,7 @@ import { attribute, float, mul, vec4 } from "three/tsl";
 import { PALETTE_HEX } from "./palette";
 import { CAMERA_YAW, CAMERA_TILT, PPU } from "../constants";
 import { DamageTextPool, type DamageTextKind } from "../engine/render/damage-text";
+import { SMOKE, STEAM, makeSmokePool, makeSteamPool } from "../fx/puffs";
 
 function toLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -1338,6 +1339,25 @@ export interface VfxSystem {
   /** A puff of floor dust (footsteps, landings). */
   dust(x: number, y: number, z: number): void;
   /**
+   * SMOKE — a dirty rising volume that occludes. Burning oil, a dying fire, a
+   * wall crumbling.
+   *
+   * Puffs ERODE rather than fade: their alpha is a hard threshold on a noise
+   * field that rises with age, so they break into holes and shreds. A fading
+   * alpha would visibly POP between the palette's four greys instead of
+   * dissipating — see `fx/puffs.ts`.
+   */
+  smoke(x: number, y: number, z: number, count?: number, spread?: number): void;
+  /**
+   * STEAM — the pale, additive, faster-rising cousin. Water hitting something
+   * hot: the lava marble, a fire the player has just quenched, a slick boiling off
+   * a burning pool.
+   *
+   * Additive so the core blooms, which is the one cue that separates it from
+   * smoke at a glance.
+   */
+  steam(x: number, y: number, z: number, count?: number, speed?: number): void;
+  /**
    * A TINTED radial burst — additive glow particles flying outward from a
    * point. The magic/material cousin of sparks(): the caller picks the colour,
    * and a fraction of white-hot cores pushes it over the bloom threshold so the
@@ -1422,6 +1442,14 @@ export interface VfxSystem {
    *
    * Pipelines are cached by material CONTENT, so one slot warms all of them.
    */
+  /**
+   * Live puff counts + whether the pools are parented, for `__fx.puffs()`.
+   *
+   * Added while debugging invisible smoke. A screenshot cannot distinguish "never
+   * spawned", "spawned but not in the scene", and "in the scene but fully
+   * transparent" — and guessing between those three is how an afternoon goes.
+   */
+  puffDebug(): { smoke: number; steam: number; smokeParented: boolean; steamParented: boolean };
   warmupReveal(): () => void;
   update(dt: number): void;
   dispose(): void;
@@ -1441,6 +1469,11 @@ interface Ghost {
 export function createVfx(scene: THREE.Scene): VfxSystem {
   const additive = new ParticlePool(500, THREE.AdditiveBlending);
   const alpha = new ParticlePool(400, THREE.NormalBlending);
+  // Smoke and steam are their own pools rather than a colour parameter on the
+  // two above: their alpha ERODES instead of fading, and they RISE instead of
+  // falling. See fx/puffs.ts.
+  const smokePool = makeSmokePool();
+  const steamPool = makeSteamPool();
   const slashes = new SlashPool();
   const bolts = new BoltPool();
   const trail = new TrailRibbon();
@@ -1472,6 +1505,12 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
   ghostProto.visible = false;
   scene.add(additive.points);
   scene.add(alpha.points);
+  // Both puff meshes are visible with frustumCulled = false, exactly like the
+  // particle pools, so `compileAsync` walks them during the descent prewarm and
+  // they do NOT need adding to `warmupReveal`'s reveal list (which would also
+  // break the exact-count assertion in load-warmup.test.ts).
+  scene.add(smokePool.points);
+  scene.add(steamPool.points);
   scene.add(slashes.group);
   scene.add(bolts.group);
   scene.add(trail.group);
@@ -1535,6 +1574,34 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
           x, y, z,
           rnd(-1, 1), rnd(0.3, 1), rnd(-1, 1),
           C_DUST, rnd(3, 5), rnd(0.25, 0.5), 3, 2,
+        );
+      }
+    },
+    smoke(x, y, z, count = 5, spread = 0.5) {
+      for (let i = 0; i < count; i++) {
+        smokePool.spawn(
+          x + rnd(-spread, spread), y, z + rnd(-spread, spread),
+          rnd(-0.35, 0.35), rnd(0.1, 0.4), rnd(-0.35, 0.35),
+          SMOKE.colors[Math.floor(Math.random() * SMOKE.colors.length)]!,
+          rnd(SMOKE.size[0], SMOKE.size[1]),
+          rnd(SMOKE.life[0], SMOKE.life[1]),
+          SMOKE.rise, SMOKE.drag,
+        );
+      }
+    },
+    steam(x, y, z, count = 8, speed = 2) {
+      for (let i = 0; i < count; i++) {
+        // A shallow outward fan as well as a rise: steam off a hot surface
+        // billows sideways before it climbs, which is what distinguishes it from
+        // smoke rising off a fire in a still room.
+        const a = Math.random() * Math.PI * 2;
+        steamPool.spawn(
+          x, y, z,
+          Math.cos(a) * rnd(0.2, 1) * speed * 0.4, rnd(0.4, 1.1) * speed * 0.5, Math.sin(a) * rnd(0.2, 1) * speed * 0.4,
+          STEAM.colors[Math.floor(Math.random() * STEAM.colors.length)]!,
+          rnd(STEAM.size[0], STEAM.size[1]),
+          rnd(STEAM.life[0], STEAM.life[1]),
+          STEAM.rise, STEAM.drag,
         );
       }
     },
@@ -1627,9 +1694,19 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
         }
       };
     },
+    puffDebug() {
+      return {
+        smoke: smokePool.liveCount(),
+        steam: steamPool.liveCount(),
+        smokeParented: smokePool.points.parent !== null,
+        steamParented: steamPool.points.parent !== null,
+      };
+    },
     update(dt) {
       additive.update(dt);
       alpha.update(dt);
+      smokePool.update(dt);
+      steamPool.update(dt);
       slashes.update(dt);
       bolts.update(dt);
       trail.update(dt);
@@ -1653,6 +1730,8 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
     dispose() {
       scene.remove(additive.points);
       scene.remove(alpha.points);
+      scene.remove(smokePool.points);
+      scene.remove(steamPool.points);
       scene.remove(slashes.group);
       scene.remove(bolts.group);
       scene.remove(trail.group);
@@ -1669,6 +1748,8 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       marks.dispose();
       additive.dispose();
       alpha.dispose();
+      smokePool.dispose();
+      steamPool.dispose();
       slashes.dispose();
       bolts.dispose();
       rings.dispose();

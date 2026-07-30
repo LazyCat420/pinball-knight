@@ -924,9 +924,14 @@ export function tryWaterSteam(): boolean {
   }
   // Erupt along your current heading (or straight up-lane if stalled).
   p.momSpeed = Math.max(p.momSpeed, WATER_STEAM_LAUNCH);
-  // A white scald cloud + a low blue splash.
+  // A white scald FLASH, a low blue splash, and then the steam it leaves behind.
+  // The bursts are the impact — bright, instant, gone. The steam is the
+  // aftermath, and it is the half that was missing: the reaction has always been
+  // called "water → steam" and there was no steam in it, only a white spark
+  // burst borrowed from the impact pool.
   state.vfx?.burst(p.x, 0.4, p.z, 0xffffff, 20, 5);
   state.vfx?.burst(p.x, 0.12, p.z, MATERIALS.water.tint, 10, 3);
+  state.vfx?.steam(p.x, 0.3, p.z, 16, 3);
   spawnFloorFx("slick", p.x, p.z, WATER_SLICK_RADIUS, WATER_SLICK_LIFE);
   state.shakeT = Math.max(state.shakeT, 0.3);
   sfxSpring();
@@ -950,6 +955,9 @@ export function lavaVaporizesOil(x: number, z: number): boolean {
   if (!reactingAs("lava")) return false;
   spawnFloorFx("fire", x, z, FIRE_PUDDLE_RADIUS, FIRE_PUDDLE_LIFE);
   state.vfx?.burst(x, 0.2, z, MATERIALS.lava.tint, 10, 3);
+  // Burning oil makes BLACK smoke, which is the read that separates this from
+  // simply setting the floor alight.
+  state.vfx?.smoke(x, 0.25, z, 7, 0.6);
   return true;
 }
 
@@ -968,6 +976,9 @@ export function stoneBridgesPit(): boolean {
 export function waterQuenchesFire(x: number, z: number): boolean {
   if (!reactingAs("water")) return false;
   state.vfx?.burst(x, 0.3, z, 0xffffff, 8, 3);
+  // Quenching a fire is the single most steam-shaped event in the game, and it
+  // used to be eight white sparks.
+  state.vfx?.steam(x, 0.25, z, 10, 2.2);
   return true;
 }
 

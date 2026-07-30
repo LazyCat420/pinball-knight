@@ -91,6 +91,71 @@ describe("oil ignition", () => {
 });
 
 /**
+ * QUENCH — water slick × fire, the mirror of ignition above.
+ *
+ * New because the ignition rule only ever handled oil × fire, so a slick dropped
+ * onto a burning pool did precisely nothing. That is a hole in a set of
+ * interactions the player is otherwise taught to reason about: if oil FEEDS fire,
+ * water ought to fight it.
+ */
+describe("water quenches fire", () => {
+  const DT = 0.016;
+
+  it("boils the slick off fast and damps the fire while they overlap", () => {
+    spawnFloorFx("slick", 0, 0, 0.9, 10);
+    spawnFloorFx("fire", 0.8, 0, 0.7, 10);
+    updateFloorFx(DT);
+    const slick = state.floorFx.find((f) => f.kind === "slick")!;
+    const fire = state.floorFx.find((f) => f.kind === "fire")!;
+    // Both drained by more than the plain dt the main loop already took.
+    expect(10 - slick.life).toBeGreaterThan(DT);
+    expect(10 - fire.life).toBeGreaterThan(DT);
+  });
+
+  it("costs the SLICK more than the fire — water buys time, it is not a counter", () => {
+    // The asymmetry is the design: equal rates would turn every fire into "did
+    // you bring water", which replaces a decision rather than adding one.
+    spawnFloorFx("slick", 0, 0, 0.9, 10);
+    spawnFloorFx("fire", 0.8, 0, 0.7, 10);
+    updateFloorFx(DT);
+    const slick = state.floorFx.find((f) => f.kind === "slick")!;
+    const fire = state.floorFx.find((f) => f.kind === "fire")!;
+    expect(10 - slick.life).toBeGreaterThan(10 - fire.life);
+  });
+
+  it("deals NO damage of its own — this is an interaction, not an attack", () => {
+    // The obvious wrong implementation reaches for the burn-tick path fire
+    // already has. A slick standing alone must never hurt anything, quench or no.
+    const z = fakeZombie(0.2, 0);
+    state.zombies = [z];
+    const hp0 = z.hp;
+    spawnFloorFx("slick", 0, 0, 1.2, 10);
+    for (let i = 0; i < 60; i++) updateFloorFx(DT);
+    expect(z.hp, "a lone slick damaged a zombie").toBe(hp0);
+  });
+
+  it("leaves a distant pair alone", () => {
+    spawnFloorFx("slick", 0, 0, 0.6, 10);
+    spawnFloorFx("fire", 9, 9, 0.6, 10);
+    updateFloorFx(DT);
+    const slick = state.floorFx.find((f) => f.kind === "slick")!;
+    // Only the main loop's own dt came off.
+    expect(10 - slick.life).toBeCloseTo(DT, 5);
+  });
+
+  it("does not disturb the oil ignition rule next door", () => {
+    // Both passes walk `state.floorFx`; the quench must not consume the fire that
+    // the ignition pass is about to use.
+    spawnFloorFx("oil", 0, 0, OIL_SLICK_RADIUS, OIL_SLICK_LIFE);
+    spawnFloorFx("slick", 5, 0, 0.8, 10);
+    spawnFloorFx("fire", 1.0, 0, 0.55, 3.5);
+    updateFloorFx(DT);
+    expect(state.floorFx.filter((f) => f.kind === "oil")).toHaveLength(0);
+    expect(state.floorFx.some((f) => f.kind === "fire" && f.maxLife === OIL_IGNITE_LIFE)).toBe(true);
+  });
+});
+
+/**
  * THE DEFERRED THREE, cashed in (ABILITY_FX_PLAN "deliberately deferred").
  *
  * Frost Runes, Tar Pit and Lightning Rod were predicted to be new FloorFxKinds

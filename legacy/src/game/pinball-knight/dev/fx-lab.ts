@@ -194,6 +194,32 @@ export function installFxLab(deps: FxLabDeps): void {
 
     live: () => liveElementCount(),
 
+    /** Live puff counts + whether the pools are parented. */
+    puffs: () => state.vfx?.puffDebug() ?? null,
+
+    /**
+     * Puff the smoke or steam pool in front of the knight.
+     *
+     * Separate from `spawn` because these are PARTICLES, not decals — they do not
+     * appear in `__fx.list()`, they do not respond to `freeze()`, and they cannot
+     * be given a 999s life. Anything that wants to look at them has to keep
+     * calling; `__fx.puff("smoke", 40)` is a one-liner that fills a frame.
+     */
+    puff: (which: "smoke" | "steam" = "smoke", count = 20, dx = -1.5, dz = 1.5) => {
+      const p = state.player;
+      if (!p) {
+        console.warn("[fx] no player — start a run first (__dungeonStartRun())");
+        return null;
+      }
+      const fn = which === "steam" ? state.vfx?.steam : state.vfx?.smoke;
+      if (!fn) {
+        console.warn("[fx] no vfx system yet");
+        return null;
+      }
+      fn.call(state.vfx, p.x + dx, 0.25, p.z + dz, count, 1.2);
+      return { which, count, x: p.x + dx, z: p.z + dz };
+    },
+
     /**
      * Where each live decal actually lands on screen, in CSS pixels.
      *

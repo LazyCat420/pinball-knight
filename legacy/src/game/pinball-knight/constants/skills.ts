@@ -161,6 +161,21 @@ export const OIL_STEER_BLEND = 1.1; // per-second heading blend while oiled (low
 export const OIL_MARBLE_T = 0.35; // p.oilT topped to this while the ball crosses oil
 export const OIL_IGNITE_LIFE = 8; // seconds an ignited pool burns
 
+/**
+ * ── QUENCH: water slick × fire ──────────────────────────────────────────────
+ *
+ * The mirror of oil ignition. Both are MULTIPLIERS on the normal life drain, so
+ * "3" means the slick burns off three times as fast as it otherwise would.
+ *
+ * Asymmetric on purpose. The slick loses faster than the fire, so a small puddle
+ * dropped on a big blaze mostly just evaporates — water is a way to BUY TIME and
+ * shrink a fire, not a hard counter that deletes it. Making them equal turned
+ * every fire into "did you bring water", which is the decision this is meant to
+ * add to rather than replace.
+ */
+export const SLICK_BOIL_RATE = 3.5;
+export const FIRE_QUENCH_RATE = 2.0;
+
 // ── Katana finisher presentation ──
 export const FINISHER_FLASH_T = 0.14; // seconds of full-screen white flash on connect
 export const FINISHER_FLASH_MAX = 0.75; // peak flash intensity fed to the pixel pass
