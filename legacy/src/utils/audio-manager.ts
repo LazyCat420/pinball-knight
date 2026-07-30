@@ -144,6 +144,39 @@ export function getSfxMaster(): AudioNode | null {
   }
 }
 
+/**
+ * Context for a sound that follows the master volume, or null to stay silent.
+ *
+ * `_masterVolume <= 0` is a HARD gate, checked BEFORE any node is created, for
+ * the same reason `sfx/bus.ts` has one: `sfxDestination()` degrades to
+ * `ctx.destination` if the master node cannot be built, and without this gate
+ * that fallback would play at FULL VOLUME exactly when the player asked for
+ * silence. Every caller already fail-silents on a null context, so the gate
+ * costs them nothing.
+ *
+ * The five tavern/gambler audio files each had a byte-identical private `ctx()`;
+ * this is that helper, with the gate, in one place.
+ */
+export function sfxCtx(): AudioContext | null {
+  if (_masterVolume <= 0) return null;
+  try {
+    const c = getAudioCtx();
+    if (!c) return null;
+    if (c.state === "suspended") c.resume();
+    return c;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where a master-routed sound connects. Use in place of `ctx.destination` so the
+ * volume slider reaches it. Safe only downstream of `sfxCtx()`'s gate.
+ */
+export function sfxDestination(c: AudioContext): AudioNode {
+  return getSfxMaster() ?? c.destination;
+}
+
 export function getAudioCtx(): any {
   if (typeof window === "undefined") return null;
   if (_silenced) return null;

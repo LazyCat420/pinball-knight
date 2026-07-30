@@ -30,18 +30,7 @@
  * copying ~35 lines is the cheaper mistake than reaching across and widening
  * another game's public surface to get at them.
  */
-import { getAudioCtx } from "../../../utils/audio-manager";
-
-function ctx(): AudioContext | null {
-  try {
-    const c = getAudioCtx();
-    if (!c) return null;
-    if (c.state === "suspended") c.resume();
-    return c;
-  } catch {
-    return null;
-  }
-}
+import { sfxCtx as ctx, sfxDestination } from "../../../utils/audio-manager";
 
 function note(
   c: AudioContext,
@@ -58,7 +47,7 @@ function note(
   g.gain.linearRampToValueAtTime(opts.gain, t + 0.006);
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   osc.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   osc.start(t);
   osc.stop(t + opts.dur + 0.02);
   osc.onended = () => {
@@ -88,7 +77,7 @@ function thump(
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   src.connect(f);
   f.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   src.start(t);
   src.onended = () => {
     src.disconnect();
@@ -159,7 +148,7 @@ export function sfxThrow(): void {
     g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
     src.connect(bp);
     bp.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     src.start(t);
     src.onended = () => {
       src.disconnect();

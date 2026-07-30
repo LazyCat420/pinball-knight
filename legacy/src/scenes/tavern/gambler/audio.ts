@@ -30,18 +30,7 @@
  * YouTube intro-music player. Every gain below is therefore absolute, and
  * chosen to sit under the tavern's room tone rather than over it.
  */
-import { getAudioCtx } from "../../../utils/audio-manager";
-
-function ctx(): AudioContext | null {
-  try {
-    const c = getAudioCtx();
-    if (!c) return null;
-    if (c.state === "suspended") c.resume();
-    return c;
-  } catch {
-    return null;
-  }
-}
+import { sfxCtx as ctx, sfxDestination } from "../../../utils/audio-manager";
 
 /**
  * Schedule one note and clean it up after itself.
@@ -79,7 +68,7 @@ function note(
   g.gain.linearRampToValueAtTime(opts.gain, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   osc.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   osc.start(t);
   osc.stop(t + opts.dur + 0.02);
   osc.onended = () => {
@@ -110,7 +99,7 @@ function thump(
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   src.connect(f);
   f.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   src.start(t);
   src.onended = () => {
     src.disconnect();
@@ -186,7 +175,7 @@ export function sfxReelSpin(): ReelSpin {
     bedGain.gain.linearRampToValueAtTime(0.03, t + 0.08);
     src.connect(bp);
     bp.connect(bedGain);
-    bedGain.connect(c.destination);
+    bedGain.connect(sfxDestination(c));
 
     // ── Tick ── a square LFO gating a buzz, so you hear individual stops go by.
     const buzz = c.createOscillator();
@@ -202,7 +191,7 @@ export function sfxReelSpin(): ReelSpin {
     lfo.connect(lfoDepth);
     lfoDepth.connect(tickGain.gain);
     buzz.connect(tickGain);
-    tickGain.connect(c.destination);
+    tickGain.connect(sfxDestination(c));
 
     src.start(t);
     buzz.start(t);
@@ -298,7 +287,7 @@ export function sfxNearMiss(): void {
     out.gain.setValueAtTime(0.0008, t);
     out.gain.exponentialRampToValueAtTime(0.055, t + dur * 0.85);
     out.gain.exponentialRampToValueAtTime(0.0008, t + dur);
-    out.connect(c.destination);
+    out.connect(sfxDestination(c));
 
     // Tremolo, accelerating — the "heartbeat" under the rise.
     const trem = c.createGain();
@@ -391,7 +380,7 @@ export function sfxJackpotJingle(): void {
     out.gain.linearRampToValueAtTime(0.045, t + 0.02);
     out.gain.setValueAtTime(0.045, t + 0.6);
     out.gain.exponentialRampToValueAtTime(0.0008, t + 0.86);
-    out.connect(c.destination);
+    out.connect(sfxDestination(c));
 
     const vib = c.createOscillator();
     vib.type = "sine";

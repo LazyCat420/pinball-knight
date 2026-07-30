@@ -11,18 +11,7 @@
  *
  * Fail-silent throughout: audio must never be able to break the room.
  */
-import { getAudioCtx } from "../../utils/audio-manager";
-
-function ctx(): AudioContext | null {
-  try {
-    const c = getAudioCtx();
-    if (!c) return null;
-    if (c.state === "suspended") c.resume();
-    return c;
-  } catch {
-    return null;
-  }
-}
+import { sfxCtx as ctx, sfxDestination } from "../../utils/audio-manager";
 
 interface Bed {
   stop(): void;
@@ -78,7 +67,7 @@ export function startTavernAmbience(): void {
 
     fire.connect(fireFilter);
     fireFilter.connect(fireGain);
-    fireGain.connect(c.destination);
+    fireGain.connect(sfxDestination(c));
 
     // ── Machinery ── a low hum, the dungeon running somewhere below.
     const hum = c.createOscillator();
@@ -88,7 +77,7 @@ export function startTavernAmbience(): void {
     humGain.gain.setValueAtTime(0, c.currentTime);
     humGain.gain.linearRampToValueAtTime(0.022, c.currentTime + FADE);
     hum.connect(humGain);
-    humGain.connect(c.destination);
+    humGain.connect(sfxDestination(c));
 
     fire.start();
     lfo.start();
@@ -156,7 +145,7 @@ export function sfxAnvil(): void {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
     src.connect(bp);
     bp.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     src.start(t);
     src.onended = () => {
       src.disconnect();
@@ -174,7 +163,7 @@ export function sfxAnvil(): void {
     og.gain.linearRampToValueAtTime(0.05, t + 0.006);
     og.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
     osc.connect(og);
-    og.connect(c.destination);
+    og.connect(sfxDestination(c));
     osc.start(t);
     osc.stop(t + 0.36);
     osc.onended = () => {
@@ -214,7 +203,7 @@ export function sfxDart(): void {
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
     src.connect(lp);
     lp.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     src.start(t);
     src.onended = () => {
       src.disconnect();
@@ -232,7 +221,7 @@ export function sfxDart(): void {
     og.gain.linearRampToValueAtTime(0.04, t + 0.004);
     og.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
     osc.connect(og);
-    og.connect(c.destination);
+    og.connect(sfxDestination(c));
     osc.start(t);
     osc.stop(t + 0.13);
     osc.onended = () => {
@@ -266,7 +255,7 @@ export function sfxKeeperGreet(): void {
     g.gain.linearRampToValueAtTime(0.026, t + 0.08);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
     osc.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     osc.start(t);
     osc.stop(t + 0.32);
     osc.onended = () => {
@@ -293,7 +282,7 @@ export function sfxStationFocus(): void {
     g.gain.linearRampToValueAtTime(0.035, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
     osc.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     osc.start(t);
     osc.stop(t + 0.16);
     osc.onended = () => {
@@ -321,7 +310,7 @@ export function sfxPlunger(): void {
     g.gain.linearRampToValueAtTime(0.07, t + 0.02);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
     osc.connect(g);
-    g.connect(c.destination);
+    g.connect(sfxDestination(c));
     osc.start(t);
     osc.stop(t + 0.52);
     osc.onended = () => {

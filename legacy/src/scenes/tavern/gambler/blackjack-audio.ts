@@ -31,18 +31,7 @@
  * a success flag — a browser that hasn't seen a user gesture yet legitimately
  * produces silence, and that is not an error.
  */
-import { getAudioCtx } from "../../../utils/audio-manager";
-
-function ctx(): AudioContext | null {
-  try {
-    const c = getAudioCtx();
-    if (!c) return null;
-    if (c.state === "suspended") c.resume();
-    return c;
-  } catch {
-    return null;
-  }
-}
+import { sfxCtx as ctx, sfxDestination } from "../../../utils/audio-manager";
 
 /**
  * THE TABLE'S OUTPUT BUS.
@@ -70,7 +59,7 @@ function bus(c: AudioContext): GainNode {
     busCtx = c;
     busNode = c.createGain();
     busNode.gain.value = 1;
-    busNode.connect(c.destination);
+    busNode.connect(sfxDestination(c));
   }
   return busNode;
 }

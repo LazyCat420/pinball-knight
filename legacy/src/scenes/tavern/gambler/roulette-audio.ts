@@ -25,18 +25,7 @@
  *   · the impacts: one hard metallic strike on a deflector, then a scatter of
  *     softer, higher clicks across the frets, then the seat.
  */
-import { getAudioCtx } from "../../../utils/audio-manager";
-
-function ctx(): AudioContext | null {
-  try {
-    const c = getAudioCtx();
-    if (!c) return null;
-    if (c.state === "suspended") c.resume();
-    return c;
-  } catch {
-    return null;
-  }
-}
+import { sfxCtx as ctx, sfxDestination } from "../../../utils/audio-manager";
 
 /** Schedule one note and clean it up after itself. */
 function note(
@@ -55,7 +44,7 @@ function note(
   g.gain.linearRampToValueAtTime(opts.gain, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   osc.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   osc.start(t);
   osc.stop(t + opts.dur + 0.02);
   osc.onended = () => {
@@ -86,7 +75,7 @@ function thump(
   g.gain.exponentialRampToValueAtTime(0.0008, t + opts.dur);
   src.connect(f);
   f.connect(g);
-  g.connect(c.destination);
+  g.connect(sfxDestination(c));
   src.start(t);
   src.onended = () => {
     src.disconnect();
@@ -139,7 +128,7 @@ export function sfxWheelSpin(): RouletteSound {
     humGain.gain.linearRampToValueAtTime(0.026, t + 0.25);
     hum.connect(lp);
     lp.connect(humGain);
-    humGain.connect(c.destination);
+    humGain.connect(sfxDestination(c));
 
     // ── Ball rattle ── the same noise, band-passed high and chopped by the LFO.
     const rat = c.createBufferSource();
@@ -160,7 +149,7 @@ export function sfxWheelSpin(): RouletteSound {
     lfoDepth.connect(ratGain.gain);
     rat.connect(bp);
     bp.connect(ratGain);
-    ratGain.connect(c.destination);
+    ratGain.connect(sfxDestination(c));
 
     hum.start(t);
     rat.start(t);

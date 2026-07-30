@@ -61,6 +61,10 @@ import { ABILITIES, ABILITY_IDS, abilityRank, type AbilityId } from "../../abili
 import { ABILITY_RANK_MAX } from "../../constants";
 import { POTIONS, POTION_IDS, type PotionId } from "../../items";
 import { SKILLS, SKILL_IDS, SKILL_BRANCHES, isKeystone, type SkillBranch, type SkillId } from "../../skills";
+import { SFX_CATEGORY, SFX_NAMES, playSfx, type SfxName } from "../../sfx/registry";
+import type { SfxCategory } from "../../sfx/bus";
+import { ambience, getSfxVolume, isSfxMuted, setSfxMuted, setSfxVolume, type AmbienceId } from "../../sfx";
+import { isGloballyMuted, setGlobalMute } from "../../../../utils/audio-manager";
 import { UI, GRID, ROW_H } from "../theme";
 import {
   beginScroll,
@@ -221,6 +225,88 @@ export const SECTION = {
 export const SKILL_ACTS = { max: "MAX ALL", clear: "CLEAR" } as const;
 
 /**
+ * ── THE AUDITION PANEL ───────────────────────────────────────────────────────
+ *
+ * `sfx/registry.ts` exists almost entirely for this, and said so in its header
+ * for two days while nothing called it. The reason it has to exist:
+ *
+ * **A green playtest says NOTHING about audio.** `?playtest=1` and `?mute=1`
+ * force global mute at module load, so `getAudioCtx()` returns null for the
+ * whole run and all 28 stings no-op. Every automated run is green about sound by
+ * VACUITY. What IS automated is that the graph is right (`sfx/bus.test.ts`) and
+ * that no pitch or gain moved (`sfx/snapshot.test.ts`) — neither can hear. The
+ * only instrument for "does this sound like a sword" is a person with
+ * headphones, and a person needs a way to fire all 28 without playing for them.
+ *
+ * ── THE HEADING IS THE POINT OF THE THREE ROWS ABOVE THE CHIPS ───────────────
+ * There are THREE independent ways this panel can be silent — the app-wide gate
+ * (`?mute=1`/`?playtest=1`/`__setMute`), this game's own mute, and volume 0 —
+ * and pressing a chip looks identical under all of them. Without a readout, the
+ * first minute of every audition session is spent asking "is it broken or is it
+ * off". So the heading names which gate is closed, and each one has a control
+ * here to open it, INCLUDING the app gate: opening the console in a harness run
+ * (`?playtest=1`) and wanting to hear it is exactly when you cannot reach a URL.
+ */
+const SFX_STEPS = [0, 0.25, 0.5, 1] as const;
+
+/**
+ * Sting names that do not fit a two-column chip. Same budget, same reason, same
+ * failure mode as `POTION_LABEL` and `LABEL_OVERRIDE` — `ellipsize` is a silent
+ * success, so "ZOMBIEDI…" would ship and only a screenshot would say otherwise.
+ */
+const SFX_LABEL: Partial<Record<SfxName, string>> = {
+  zombieDie: "Z-DIE",
+  levelStart: "START",
+  bossReveal: "BOSS",
+};
+
+/**
+ * A sting's chip mark: its BUS, not its sound.
+ *
+ * Twenty-eight chips all wearing one speaker glyph would be twenty-eight
+ * identical rows — the "which one is the Croaker" complaint the monster roster
+ * already fixed. The category is the useful grouping (it is what a trim would
+ * move together), and every mark here is already in the set, so the panel
+ * invents no art.
+ */
+const CAT_MARK: Record<SfxCategory, GlyphId> = {
+  combat: "sword",
+  weapons: "burst",
+  pinball: "flipper",
+  monsters: "skull",
+  world: "coin",
+  run: "stairs",
+  ambience: "droplet",
+};
+
+export function sfxChipLabel(name: SfxName): string {
+  return (SFX_LABEL[name] ?? name).toUpperCase();
+}
+
+/** Which gate is closed, or the level if none is. Read `HEAD_CHARS` wide. */
+export function soundHeading(): string {
+  if (isGloballyMuted()) return "SOUND — APP MUTED";
+  if (isSfxMuted()) return "SOUND — MUTED";
+  return `SOUND — VOL ${Math.round(getSfxVolume() * 100)}%`;
+}
+
+/** The audition panel's own captions, held to the row budget by the test. */
+export const SOUND_ACTS = { wake: "UNMUTE THE APP", mute: "MUTE SFX", unmute: "UNMUTE SFX" } as const;
+
+/**
+ * The sustained beds, which cannot be auditioned by a one-shot chip.
+ *
+ * `ambience(id, level)` is a POLL, not a trigger: it has to be called every
+ * frame or the voice fades itself out. So these are LATCHES — while one is lit
+ * this screen's paint refreshes it, and closing the panel stops the refresh and
+ * lets it die. That is not a workaround; it is the cheapest possible
+ * demonstration that the dead-man's switch in `sfx/ambience.ts` works, and it is
+ * the only way to hear a bed without setting fire to a room.
+ */
+export const BED_LABEL: Record<AmbienceId, string> = { fire: "FIRE BED", water: "WATERBED" };
+const BED_IDS = ["fire", "water"] as const;
+
+/**
  * The caption on a monster chip — the bestiary label, with the narrow-dock
  * override where one exists ("Crawler" fits where "Magnet Crawler" does not).
  */
@@ -303,6 +389,8 @@ function section(f: UiFrame, body: Rect, label: string): void {
 
 export function debugScreen(actions: ConsoleActions): UiScreen {
   let spawnCount = 1;
+  /** Which sustained beds are latched on — see `BED_LABEL`. */
+  const beds: Record<AmbienceId, boolean> = { fire: false, water: false };
   /** Last frame's measured content height — see the comment at `beginScroll`. */
   let contentH = 0;
 
@@ -355,13 +443,22 @@ export function debugScreen(actions: ConsoleActions): UiScreen {
         }
       };
 
-      /** A grid of icon chips, `cols` across. */
+      /**
+       * A grid of icon chips, `cols` across.
+       *
+       * `goodOf` is what makes a LATCH usable. Every other chip here is a verb —
+       * press it, something happens, the button goes back to looking the same.
+       * The bed chips hold a state, and a latch with no lit state is a switch
+       * you can only read by listening, which for an AUDIO panel is exactly the
+       * thing that cannot be relied on.
+       */
       const chips = (
         items: readonly string[],
         cols: number,
         iconOf: (id: string) => HTMLCanvasElement | null,
         nameOf: (id: string) => string,
         run: (id: string) => void,
+        goodOf?: (id: string) => boolean,
       ): void => {
         const lines = Math.ceil(items.length / cols);
         const cw = Math.floor((body.w + GAP) / cols);
@@ -371,7 +468,15 @@ export function debugScreen(actions: ConsoleActions): UiScreen {
             const i = line * cols + c;
             if (i >= items.length) continue;
             const id = items[i];
-            if (button(f, rect(r.x + c * cw, r.y, cw - GAP, ROW), nameOf(id), { icon: iconOf(id), iconSize: ROW_ICON })) run(id);
+            if (
+              button(f, rect(r.x + c * cw, r.y, cw - GAP, ROW), nameOf(id), {
+                icon: iconOf(id),
+                iconSize: ROW_ICON,
+                good: goodOf?.(id) ?? false,
+              })
+            ) {
+              run(id);
+            }
           }
         }
       };
@@ -521,6 +626,72 @@ export function debugScreen(actions: ConsoleActions): UiScreen {
         (id) => monsterIcon(id as EnemyKind),
         (id) => monsterChipLabel(id as EnemyKind),
         (id) => actions.spawnEnemy(id, spawnCount),
+      );
+
+      cutTop(body, GRID);
+
+      // ── SOUND ──
+      // Last on purpose. Everything above changes the WORLD and is pressed
+      // repeatedly mid-fight; this is an instrument you sit down with, like the
+      // monster contact sheet directly above it.
+      section(f, body, soundHeading());
+      {
+        const r = cutTop(body, ROW + GAP);
+        const cw = Math.floor((body.w + GAP) / SFX_STEPS.length);
+        const vol = getSfxVolume();
+        for (const [i, v] of SFX_STEPS.entries()) {
+          // Compared with a tolerance, not `===`: the slider in Settings writes
+          // continuous values, so an exact match would light nothing at all
+          // whenever the player had touched it.
+          if (button(f, rect(r.x + i * cw, r.y, cw - GAP, ROW), `${Math.round(v * 100)}%`, { good: Math.abs(vol - v) < 0.01 })) {
+            setSfxVolume(v);
+          }
+        }
+      }
+      {
+        const r = cutTop(body, ROW + GAP);
+        const line = rect(r.x, r.y, r.w, ROW);
+        if (isGloballyMuted()) {
+          // The app gate outranks this game's, so it is the only control offered
+          // while it is closed — un-muting SFX under it would change nothing and
+          // read as a broken button.
+          if (button(f, line, SOUND_ACTS.wake, { icon: glyph("spark", ROW_ICON, UI.good), iconSize: ROW_ICON, good: true })) {
+            setGlobalMute(false);
+          }
+        } else {
+          const muted = isSfxMuted();
+          if (
+            button(f, line, muted ? SOUND_ACTS.unmute : SOUND_ACTS.mute, {
+              icon: glyph(muted ? "spark" : "erase", ROW_ICON, muted ? UI.good : UI.danger),
+              iconSize: ROW_ICON,
+              danger: !muted,
+              good: muted,
+            })
+          ) {
+            setSfxMuted(!muted);
+          }
+        }
+      }
+      // The latched beds, refreshed HERE, every frame, for as long as one is
+      // lit — see `BED_LABEL`.
+      chips(
+        BED_IDS as readonly string[],
+        2,
+        (id) => glyph(id === "fire" ? "flame" : "droplet", ROW_ICON, id === "fire" ? UI.gold : UI.arcane),
+        (id) => BED_LABEL[id as AmbienceId],
+        (id) => {
+          beds[id as AmbienceId] = !beds[id as AmbienceId];
+        },
+        (id) => beds[id as AmbienceId],
+      );
+      for (const id of BED_IDS) if (beds[id]) ambience(id, 1);
+
+      chips(
+        SFX_NAMES as readonly string[],
+        2,
+        (id) => glyph(CAT_MARK[SFX_CATEGORY[id as SfxName]], ROW_ICON, UI.textDim),
+        (id) => sfxChipLabel(id as SfxName),
+        (id) => playSfx(id as SfxName),
       );
 
       // What the rows above actually consumed, for the next frame's scrollbar

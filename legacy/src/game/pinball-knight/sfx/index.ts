@@ -50,6 +50,14 @@
 export { setSfxMuted, isSfxMuted, setSfxVolume, getSfxVolume, resetBus } from "./bus";
 export type { SfxCategory, Bus } from "./bus";
 export { gate, voice, resetGates } from "./gate";
+/**
+ * The sustained beds. NOT `sfx`-prefixed, and that is deliberate twice over:
+ * they are not stings (the reflective tests in `stings/snapshot/bus.test.ts`
+ * discover call-once sounds by that prefix and would fire a LOOP), and the verb
+ * is a poll rather than a trigger.
+ */
+export { ambience, resetAmbience, ambienceVoices } from "./ambience";
+export type { AmbienceId } from "./ambience";
 export { SFX, SFX_CATEGORY, SFX_NAMES, playSfx } from "./registry";
 export type { SfxName, SfxTrigger } from "./registry";
 

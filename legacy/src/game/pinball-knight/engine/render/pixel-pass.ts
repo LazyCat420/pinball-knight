@@ -1207,6 +1207,29 @@ export interface PixelPass {
    * tests per pixel. If that ever needs to actually go away it has to become a
    * build-time flag in `opts` (like `bloom`) and rebuild the material, and this
    * comment is here so nobody assumes it already is one.
+   *
+   * ── AND THE COST OF CARRYING IT IS NOW MEASURED (2026-07-30) ──
+   * `finalMat` is the one shader that must be ready before any frame reaches the
+   * screen, so anything it grows lands on every player's boot. That was left
+   * unquantified when the shimmer shipped. Measured since, on nvidia/ampere
+   * through host Chrome (WebGPU), by compiling a fresh copy of this exact graph
+   * with `compileAsync` on a quiet main thread — five rounds, arms interleaved
+   * and the order alternated each round, a unique trailing multiply per call so
+   * no arm could hit the pipeline cache the shipped material had already filled:
+   *
+   *     with the warp    46 ms median   [70, 58, 46, 45, 43]
+   *     without it       45 ms median   [45, 54, 39, 59, 42]
+   *     POSITIVE CONTROL — the warp applied EIGHT times:
+   *                      61 ms median   [63, 58, 62, 58, 61]
+   *
+   * So the instrument does see ALU (~2 ms per extra warp, +16 ms at ×8), and the
+   * one warp we actually ship costs ~1-2 ms of a ~45 ms compile: real, and far
+   * below the run-to-run spread. The control is the point — without it "+1 ms"
+   * is indistinguishable from a bench that cannot see shader size at all.
+   *
+   * That is why this is still a runtime uniform. Making it build-time would buy
+   * ~1 ms of boot and cost the LIVE settings toggle (the material would have to
+   * be rebuilt on every change), which is a bad trade at this price.
    */
   setHeatEnabled(on: boolean): void;
   /**

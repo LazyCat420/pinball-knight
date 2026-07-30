@@ -12,6 +12,7 @@ import { disposeLampPuzzle } from "./lamp-puzzle";
 import { disposeHUDs } from "./hud";
 import { clearScreens } from "./gui/stack";
 import { disposeUiLayer } from "./gui/layer";
+import { resetAmbience } from "./sfx/ambience";
 
 /**
  * Tear down one depth: the maze geometry, the horde (including corpses), any
@@ -123,6 +124,12 @@ export function disposeAll(): void {
     // that silently stopped protecting against context exhaustion.
     state.renderer.dispose();
   }
+
+  // The sustained beds. They would fade themselves out within HOLD seconds
+  // anyway — that is the point of the dead-man's switch in `sfx/ambience.ts` —
+  // but a full teardown should not leave a looping source node alive against a
+  // context the next launch will replace.
+  resetAmbience();
 
   // Every overlay this used to remove one node at a time is now a screen.
   clearScreens();

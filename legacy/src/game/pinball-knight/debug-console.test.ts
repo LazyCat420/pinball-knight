@@ -29,16 +29,23 @@ import { SKILLS, SKILL_IDS, SKILL_BRANCHES, isKeystone } from "./skills";
 import { KIND_IDS } from "./bestiary";
 import { invalidateSkillAgg, playerManaMax, unlockedAbilities } from "./skill-runtime";
 import {
+  BED_LABEL,
   BIND_CHARS,
   CHIP_CHARS,
   HEAD_CHARS,
   ROW_CHARS,
   SECTION,
   SKILL_ACTS,
+  SOUND_ACTS,
   monsterChipLabel,
   potionChipLabel,
+  sfxChipLabel,
   skillChipLabel,
+  soundHeading,
 } from "./gui/screens/debug";
+import { SFX_NAMES } from "./sfx/registry";
+import { setSfxMuted, setSfxVolume } from "./sfx";
+import { setGlobalMute } from "../../utils/audio-manager";
 import {
   debugCycleAbilityRank,
   debugCycleSkillRank,
@@ -100,6 +107,44 @@ describe("console captions fit the dock", () => {
     for (const b of SKILL_BRANCHES) expect(b.toUpperCase().length).toBeLessThanOrEqual(HEAD_CHARS);
     for (const c of Object.values(SKILL_ACTS)) {
       expect(c.length, `chip "${c}" overflows a half-row button`).toBeLessThanOrEqual(CHIP_CHARS);
+    }
+  });
+
+  it("gives every sting a caption that fits a two-column chip", () => {
+    // Same silent failure as the potions: `ellipsize` trims "ZOMBIEDI…" and the
+    // panel keeps working. The audition panel is the ONE place a sting's name is
+    // ever read, so a trimmed one costs the whole point of the section.
+    for (const name of SFX_NAMES) {
+      const label = sfxChipLabel(name);
+      expect(label.length, `sting "${label}" (${name}) overflows the chip — add an SFX_LABEL override`).toBeLessThanOrEqual(
+        CHIP_CHARS,
+      );
+    }
+  });
+
+  it("keeps the sound heading inside the dock in all three silent states", () => {
+    // The heading is the panel's answer to "is it broken or is it off", so it
+    // must be readable in exactly the states where that question is asked.
+    setGlobalMute(false);
+    setSfxMuted(false);
+    setSfxVolume(1);
+    expect(soundHeading()).toBe("SOUND — VOL 100%");
+    setSfxMuted(true);
+    expect(soundHeading()).toBe("SOUND — MUTED");
+    setSfxMuted(false);
+    setGlobalMute(true);
+    expect(soundHeading()).toBe("SOUND — APP MUTED");
+    setGlobalMute(false);
+    for (const v of [0, 0.25, 0.5, 1]) {
+      setSfxVolume(v);
+      expect(soundHeading().length, `"${soundHeading()}" CLIPS off the dock`).toBeLessThanOrEqual(HEAD_CHARS);
+    }
+    for (const c of Object.values(SOUND_ACTS)) {
+      expect(c.length, `sound control "${c}" overflows its row`).toBeLessThanOrEqual(ROW_CHARS);
+    }
+    // The bed latches sit in the same two-column grid as the stings.
+    for (const c of Object.values(BED_LABEL)) {
+      expect(c.length, `bed chip "${c}" overflows the chip`).toBeLessThanOrEqual(CHIP_CHARS);
     }
   });
 

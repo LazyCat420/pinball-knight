@@ -56,6 +56,7 @@ import {
   LIGHTNING_ROD_DAMAGE,
   LIGHTNING_ROD_TICK,
 } from "../constants";
+import { ambience, type AmbienceId } from "../sfx/ambience";
 import { PALETTE_HEX } from "../render/palette";
 import { skillAgg } from "../skill-runtime";
 import { damageZombie, hitPlayerRanged } from "./combat";
@@ -861,4 +862,55 @@ export function updateFloorFx(dt: number): void {
       break; // one fire is enough to boil this slick; don't stack the drain
     }
   }
+
+  pollAmbience();
+}
+
+/**
+ * Which puddles hum, and as what. Anything absent is silent by design — see
+ * `sfx/ambience.ts` for why `steam`, `frost`, `tar` and `rod` are not beds.
+ */
+const AMBIENCE_BED: Partial<Record<FloorFxKind, AmbienceId>> = {
+  fire: "fire",
+  slick: "water",
+  oil: "water",
+};
+
+/**
+ * How far from a puddle's EDGE it can still be heard, in world units.
+ *
+ * Measured against the arena rather than chosen: the camera shows ~14 units
+ * across at the default rung, so 6 makes a pool audible about when it comes on
+ * screen and inaudible from the far side of a room. Falloff is squared, so most
+ * of the level is spent in the last couple of units — walking INTO a fire is
+ * heard as arriving, not as a fader being pushed.
+ */
+const AMBIENCE_RANGE = 6;
+
+/**
+ * Refresh the sustained beds for this frame.
+ *
+ * A POLL, not a start/stop: every live puddle adds its share and the total is
+ * handed over once per kind. Nothing here has to know about floor descent,
+ * death, the pause menu or a hidden tab — when this stops being called the
+ * voices fade themselves out on the audio clock. See `sfx/ambience.ts`.
+ */
+function pollAmbience(): void {
+  const p = state.player;
+  if (!p) return;
+  let fire = 0;
+  let water = 0;
+  for (const fx of state.floorFx) {
+    const bed = AMBIENCE_BED[fx.kind];
+    if (!bed) continue;
+    const dx = p.x - fx.x;
+    const dz = p.z - fx.z;
+    const edge = Math.max(0, Math.sqrt(dx * dx + dz * dz) - fx.radius);
+    if (edge >= AMBIENCE_RANGE) continue;
+    const near = 1 - edge / AMBIENCE_RANGE;
+    if (bed === "fire") fire += near * near;
+    else water += near * near;
+  }
+  ambience("fire", fire);
+  ambience("water", water);
 }
