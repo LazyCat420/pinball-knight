@@ -301,7 +301,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   // the run — solo, or together as a formed party. Descending consumes the
   // session baton (no-op for a solo/offline run), seeds the shared floor, and
   // only THEN starts the dungeon loop on floor 1. (The title intro is no longer
-  // the entry — the lobby is; `runPinballIntro` remains available for reuse.)
+  // the entry — `runPinballIntro` has NO CALLER; its docblock opens by saying so.)
   // ── Open the pool socket NOW, not when the tavern opens ──
   // Presence used to be started only by the tavern lobby (initTavernPool), which
   // made the CONNECTION owned by a screen rather than the session. Any path that

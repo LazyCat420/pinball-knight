@@ -69,7 +69,7 @@ import {
 import { abilityIcon, drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
-import { settingsBody, settingsContentHeight } from "./settings";
+import { settingsBody } from "./settings";
 
 /**
  * What each ability GAINS at rank 2, printed on its row.
@@ -131,6 +131,13 @@ interface MenuState {
   scrolls: Record<MenuTab, number>;
   /** Focus is also per-tab, for the same reason. */
   focuses: Record<MenuTab, number>;
+  /**
+   * LAST FRAME'S MEASURED CONTENT HEIGHT, per tab — see the note over the
+   * `beginScroll` call. Seeded at 0: the first paint of a tab declares nothing,
+   * flows from the top (which is where a freshly opened tab sits anyway), and
+   * the measurement it takes is what the frame after it scrolls by.
+   */
+  measured: Record<MenuTab, number>;
 }
 
 function newMenuState(): MenuState {
@@ -142,6 +149,7 @@ function newMenuState(): MenuState {
     flashUntil: 0,
     scrolls: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0, options: 0 },
     focuses: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0, options: 0 },
+    measured: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0, options: 0 },
   };
 }
 
@@ -290,6 +298,9 @@ function cardsTab(f: UiFrame, body: Rect, m: MenuState): void {
   heading(f, cutTop(body, ROW_H), `STASH (${stash.length})`);
   if (!stash.length) {
     text(f, "no stashed cards — kill enemies to find them", body.x, body.y + 4, { size: 8, colour: UI.textFaint });
+    // Every exit from a tab body has to leave the flow cursor below what it drew
+    // — the scroll extent is `body.y` after this returns.
+    cutTop(body, 14);
     return;
   }
   const perRow = Math.max(1, Math.floor(body.w / (CARD_SLOT_W + 6)));
@@ -305,6 +316,11 @@ function cardsTab(f: UiFrame, body: Rect, m: MenuState): void {
     if (st.focused) focusRing(f, cell);
     if (st.activated) m.picked = m.picked === i ? -1 : i;
   }
+  // The stash is an ABSOLUTE grid — it indexes off `body.y` instead of cutting,
+  // so the flow cursor would otherwise stop at the STASH heading and the whole
+  // grid would sit outside the measured height. That is the last row of cards
+  // becoming unreachable, not a cosmetic short scroll.
+  cutTop(body, Math.ceil(stash.length / perRow) * (CARD_SLOT_H + 6));
 }
 
 function socketPicked(m: MenuState, wIdx: number): void {
@@ -588,6 +604,8 @@ function statsTab(f: UiFrame, body: Rect): void {
   const held = REAGENT_IDS.filter((id) => (state.reagents[id] ?? 0) > 0);
   if (!held.length) {
     text(f, "no reagents — slay monsters to gather them", body.x + 4, body.y + 4, { size: 8, colour: UI.textFaint });
+    // See `cardsTab` — the flow cursor is the measurement, on every exit path.
+    cutTop(body, 14);
     return;
   }
   for (const id of held) {
@@ -599,27 +617,11 @@ function statsTab(f: UiFrame, body: Rect): void {
 
 // ── The screen ────────────────────────────────────────────────────────────────
 
-/** Rough content heights per tab, for the scroll region. */
-function contentHeight(tab: MenuTab): number {
-  switch (tab) {
-    case "equipment":
-      return ROW_H * 3 + WEAPON_SLOTS * 44 + GEAR_SLOTS.length * 39 + 60;
-    case "cards":
-      return ROW_H * 2 + WEAPON_SLOTS * (CARD_SLOT_H + 30) + Math.ceil(state.cardStash.length / 8) * (CARD_SLOT_H + 6) + 60;
-    case "skills": {
-      const tallest = Math.max(...SKILL_BRANCHES.map((b) => SKILL_IDS.filter((id) => SKILLS[id].branch === b).length));
-      return 40 + tallest * 40 + ROW_H * 2 + PERK_IDS.length * 33 + ABILITY_IDS.length * 37 + 60;
-    }
-    case "bestiary":
-      return ROW_H + 14 + buildBestiary(state.killsByKind).length * 52 + 40;
-    case "stats":
-      return ROW_H * 2 + 9 * 18 + REAGENT_IDS.length * 16 + 60;
-    case "options":
-      // Asked, not restated: the settings screen derives this from its own
-      // section list, so a row added there scrolls here too.
-      return settingsContentHeight();
-  }
-}
+/**
+ * Air below the last row, so the bottom of the content is not flush with the
+ * bottom of the view. Same constant and same reason as the tavern's `BODY_TAIL`.
+ */
+const BODY_TAIL = GRID * 2;
 
 export function menuScreen(onAbandon: () => void): UiScreen {
   const m = newMenuState();
@@ -684,7 +686,23 @@ export function menuScreen(onAbandon: () => void): UiScreen {
       const foot = rect(outer.x, outer.y + outer.h - ROW_H, outer.w, ROW_H);
       const view = rect(outer.x, outer.y, outer.w, outer.h - ROW_H - GRID);
 
-      const contentH = contentHeight(m.tab);
+      // ── THE SCROLL EXTENT IS MEASURED, NOT DECLARED ──
+      // This was `contentHeight(tab)`: one hand-written formula per tab, and it
+      // disagreed with what the bodies paint on FIVE OF SIX. Measured on a fresh
+      // run by saturating the wheel and comparing the reachable travel against
+      // the lowest thing painted inside the clip — bestiary 1482 declared vs 818
+      // painted, stats 494 vs 187, cards 324 vs 147, skills 855 vs 808, gear 337
+      // vs 297. The player's symptom is the same one the tavern's `vendorHeight()`
+      // had: the region scrolls hundreds of pixels into void and the scrollbar
+      // thumb is sized for content that is not there.
+      //
+      // How far `cutTop` walked `body` down IS the content height, so the number
+      // cannot drift from the paint — a row added to a tab measures itself. It is
+      // last frame's measurement because the height is only known once the body
+      // has painted, and `beginScroll` needs it before that. The tab bodies must
+      // therefore leave the flow cursor BELOW everything they draw; the two that
+      // paint absolute grids (`cardsTab`'s stash) now cut past them explicitly.
+      const contentH = m.measured[m.tab];
       const scrolled = beginScroll(f, view, contentH, m.scrolls[m.tab]);
       const body = { ...scrolled.inner };
       switch (m.tab) {
@@ -707,6 +725,10 @@ export function menuScreen(onAbandon: () => void): UiScreen {
           settingsBody(f, body);
           break;
       }
+      // Read BEFORE `endScroll`, while `body` is still the remainder, and so the
+      // scrollbar drawn this frame and the height measured for the next come from
+      // one number.
+      m.measured[m.tab] = body.y - scrolled.inner.y + BODY_TAIL;
       endScroll(f, view, contentH, scrolled.offset);
       // The region follows the cursor — see `followFocus`. Per tab, because each
       // tab keeps its own offset: the bestiary is a long grid and the equipment

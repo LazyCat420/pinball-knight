@@ -172,10 +172,15 @@ function section(f: UiFrame, body: Rect, title: string, rows: Row[]): void {
 
 /**
  * The scrollable height of the settings body, DERIVED from the sections rather
- * than written down, so adding a row cannot make a scrollbar lie. Exported
- * because the menu's OPTIONS tab has to declare the same number to
- * `beginScroll` — two hand-kept copies is how a scroll region silently stops
- * reaching its last row.
+ * than written down, so adding a row cannot make a scrollbar lie.
+ *
+ * The menu's OPTIONS tab used to import this to declare the same number. It no
+ * longer does: that tab MEASURES how far `settingsBody` walked the flow cursor,
+ * which is the same technique one step further on — it needs no mirror at all
+ * (see the note over `beginScroll` in `menu.ts`, and the five tabs whose
+ * hand-written formulae were wrong by up to 664px). Still exported because the
+ * standalone sheet below declares it, and `options-tab.test.ts` bounds a span
+ * against it.
  */
 export function settingsContentHeight(): number {
   // Mirrors `settingsBody` block for block, in the same order, so the two can be

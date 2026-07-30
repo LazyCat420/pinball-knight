@@ -12,13 +12,37 @@
  *      while the camera tilts up from side-on and pulls out until the title
  *      reads. PRESS ANY KEY.
  *
- * Runs in launchDungeonGame BEFORE startLevel(1): the renderer/scene/camera
- * exist, the game loop does not. The intro drives its own RAF (registered on
- * state.animFrameId so exitDungeonGame cancels it), builds its letter maze
- * straight through the REAL buildMaze() and parks it on state.maze — the
- * normal startLevel → disposeLevel path tears it down, no special casing.
- * Skips: any key/click, the SKIP button, `?no-intro=1`, `__skipDungeonIntro`,
- * or prefers-reduced-motion.
+ * ⚠️ NOTHING CALLS THIS. `core.ts` imports `runPinballIntro` and never invokes
+ * it — the walkable tavern lobby is the entry now (see the note over
+ * `beginRun`), and both routes into a floor, the plunger's `onDescend` and
+ * `__dungeonStartRun`, go straight to `armFloorLoading`. VERIFIED BOTH WAYS on
+ * 2026-07-30: grep finds one import and zero call sites repo-wide, and a live
+ * run started on braindeadbot.com left `__dungeonIntroPhase` null for its whole
+ * 30-second sample (the probe emulated `prefers-reduced-motion: no-preference`
+ * first, because headless Chrome reports `reduce` and `shouldSkipIntro()`
+ * honours it — without that the probe would have proven nothing).
+ *
+ * The line above used to read "Runs in launchDungeonGame BEFORE startLevel(1)",
+ * and a sweep of the UI-input path reasonably read a real defect out of it: the
+ * loop below drives `pixelPass.render()` in `shatter`, `sweep` and `title` but
+ * NOT in `run` or `bonk`, and `drawUiFrame` is wrapped around that call — so
+ * `intro-chrome`, which owns the SKIP button, is neither painted nor given input
+ * for the first 2.6 seconds. That asymmetry is real and it is the same shape as
+ * the two freezes fixed the same day, but it is UNREACHABLE, and it is not the
+ * one-line fix it looks like: during `run`/`bonk` the two 2D canvases above
+ * (z-index 9000/9001, `inset:0`, opaque sky gradient) cover the renderer's
+ * canvas completely, so presenting a UI frame would paint SKIP *underneath* the
+ * gag. Reviving this sequence means painting the skip affordance into `c2d`, or
+ * accepting that the first 2.6s has none. The ACTION is not what is missing —
+ * `onSkipKey`/`onSkipPointer` are window listeners and fire from frame one.
+ *
+ * If it is revived: it expects to run in launchDungeonGame BEFORE startLevel(1),
+ * where the renderer/scene/camera exist and the game loop does not. It drives
+ * its own RAF (registered on state.animFrameId so exitDungeonGame cancels it),
+ * builds its letter maze straight through the REAL buildMaze() and parks it on
+ * state.maze — the normal startLevel → disposeLevel path tears it down, no
+ * special casing. Skips: any key/click, the SKIP button, `?no-intro=1`,
+ * `__skipDungeonIntro`, or prefers-reduced-motion.
  */
 import { introChromeScreen, setIntroFade, setIntroTitle } from "../gui/screens/intro-chrome";
 import { close as closeUiScreen, push as pushUiScreen } from "../gui/stack";
