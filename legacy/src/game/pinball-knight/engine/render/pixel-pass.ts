@@ -41,6 +41,7 @@ import * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import { NodeMaterial } from "three/webgpu";
 import {
+  diffuseColor,
   dot,
   float,
   floor,
@@ -50,7 +51,9 @@ import {
   min,
   mix,
   mod,
+  mrt,
   mx_fractal_noise_float,
+  output,
   pow,
   screenCoordinate,
   smoothstep,
@@ -292,8 +295,34 @@ function heatWarp(base: TSLNode, u: FinalUniforms, res: TSLNode): TSLNode {
 const SHADE_ROWS = 6;
 
 /**
- * The pre-baked shaded palette: PALETTE_SIZE wide, SHADE_ROWS+1 tall, texel
- * (i, s) = palette entry i walked s rows down its own ramp.
+ * How many rows of HIGHLIGHT the quantizer can walk — the ramp above the
+ * material's own entry.
+ *
+ * These did not exist while the snap ran on the lit colour, and their absence
+ * was invisible: a torch-lit surface had already been snapped to some brighter
+ * family's entry, so it never needed to walk up its own. Snapping on ALBEDO
+ * makes them load-bearing. Measured over the four biomes and 48 shading
+ * situations (`render/light-crossing.ts`), the frame's luma runs from 0.38x to
+ * 1.35x of its albedo's: without upward rows everything above unity clamps at
+ * the identity row, the torches stop brightening anything they light, and the
+ * dungeon reads flat.
+ *
+ * Four, because the longest ramp above any entry is the torch family's
+ * 14→15→16→17→18. Fewer would make a flame core unreachable from an ember;
+ * more would be dead texture, since every other ramp saturates in two or three.
+ */
+const SHADE_UP_ROWS = 4;
+
+/** Texture height: the highlight rows, the material itself, then the shadow rows. */
+const SHADE_TOTAL_ROWS = SHADE_UP_ROWS + 1 + SHADE_ROWS;
+
+/**
+ * The pre-baked shaded palette: PALETTE_SIZE wide, SHADE_TOTAL_ROWS tall.
+ *
+ * Row `SHADE_UP_ROWS` is the material itself. Rows above it are the entry walked
+ * UP its own ramp (brightest first, at row 0); rows below are the entry walked
+ * DOWN. So "row index increases with darkness" throughout, and the shader's row
+ * search is one loop over the whole column.
  *
  * NearestFilter and NO colour-space decode: it holds the same sRGB bytes the
  * shader's min-reduction compares against, and letting three "helpfully" decode
@@ -301,17 +330,26 @@ const SHADE_ROWS = 6;
  */
 function buildShadedPalette(palette: Float32Array): THREE.DataTexture {
   const n = Math.floor(palette.length / 3);
-  // Built from the INJECTED one-step table rather than imported from the game:
+  // Built from the INJECTED one-step tables rather than imported from the game:
   // `engine/` may not depend on game content (engine-boundary.test.ts), and a
   // colour ramp is art direction. The walk is defined in render/palette-shading.
   const down = enginePalette.shadeDown?.() ?? new Uint8Array(n);
-  const rows = new Uint8Array((SHADE_ROWS + 1) * n);
-  for (let i = 0; i < n; i++) rows[i] = i;
-  for (let s = 1; s <= SHADE_ROWS; s++) {
+  // An IDENTITY fallback, not `i+1`: a palette with no up-ramp declared should
+  // lose its highlights, not gain a walk into whatever entry happens to sit next
+  // in the array. Losing them is a visible flatness; inventing them is the
+  // cross-family bug this whole file exists to stop.
+  const up = enginePalette.shadeUp?.() ?? Uint8Array.from({ length: n }, (_, i) => i);
+  const rows = new Uint8Array(SHADE_TOTAL_ROWS * n);
+  const ID = SHADE_UP_ROWS;
+  for (let i = 0; i < n; i++) rows[ID * n + i] = i;
+  for (let s = ID + 1; s < SHADE_TOTAL_ROWS; s++) {
     for (let i = 0; i < n; i++) rows[s * n + i] = down[rows[(s - 1) * n + i]] ?? 0;
   }
-  const data = new Uint8Array(n * (SHADE_ROWS + 1) * 4);
-  for (let s = 0; s <= SHADE_ROWS; s++) {
+  for (let s = ID - 1; s >= 0; s--) {
+    for (let i = 0; i < n; i++) rows[s * n + i] = up[rows[(s + 1) * n + i]] ?? i;
+  }
+  const data = new Uint8Array(n * SHADE_TOTAL_ROWS * 4);
+  for (let s = 0; s < SHADE_TOTAL_ROWS; s++) {
     for (let i = 0; i < n; i++) {
       const src = rows[s * n + i];
       const o = (s * n + i) * 4;
@@ -321,7 +359,7 @@ function buildShadedPalette(palette: Float32Array): THREE.DataTexture {
       data[o + 3] = 255;
     }
   }
-  const tex = new THREE.DataTexture(data, n, SHADE_ROWS + 1, THREE.RGBAFormat);
+  const tex = new THREE.DataTexture(data, n, SHADE_TOTAL_ROWS, THREE.RGBAFormat);
   tex.minFilter = THREE.NearestFilter;
   tex.magFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
@@ -332,6 +370,7 @@ function buildShadedPalette(palette: Float32Array): THREE.DataTexture {
 
 function finalNode(
   diffuse: THREE.Texture,
+  albedoTex: THREE.Texture,
   bloomTex: THREE.Texture,
   depth: THREE.Texture,
   uiTex: THREE.Texture,
@@ -371,10 +410,38 @@ function finalNode(
 
   // ── Chromatic aberration: split R/B outward from centre. `uAberration = 0`
   // must reduce to EXACTLY the single-tap fetch, so it is a mix, not a scale.
+  // ⚠️ The split is applied to the ALBEDO, not to the lit diffuse. Hue is chosen
+  // from the albedo now (see the snap below), so splitting the lit buffer would
+  // move only the luma and the frenzy fringe would be invisible after the snap.
   const off = sceneUv.sub(0.5).mul(u.aberration);
   const plain = texture(diffuse, sceneUv).rgb;
-  const split = vec3(texture(diffuse, sceneUv.add(off)).r, plain.g, texture(diffuse, sceneUv.sub(off)).b);
-  let col: TSLNode = mix(plain, split, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
+  let col: TSLNode = plain;
+
+  // ── THE ALBEDO TARGET — the material, before any light touched it.
+  //
+  // MRT attachment 1, written by every material as its `diffuseColor` (see
+  // `sceneMrt` at the bottom of this file). This is what makes the pass
+  // "indexed lighting" in the sense the design cites rather than in name only:
+  // the FAMILY is chosen from what a surface IS, and every lighting term in the
+  // game — the scene's own lights included — is spent as a walk along that
+  // family's ramp.
+  //
+  // Measured, and this is the whole reason the attachment exists: snapping on
+  // the lit buffer put 51.5% of (material x shading situation) pairs into a
+  // family their albedo does not belong to (`render/light-crossing.ts`). Not
+  // mostly from the torches' hue — from the sheer DARKENING. Ambient at 3.5
+  // becomes a ~0.4x multiply after BRDF_Lambert, and this palette's eight
+  // families are far enough apart that 0.4x relocates most of them. The cheap
+  // fixes that were on the table (desaturate the torch, whiten it, raise the
+  // ambient) each move that number by three to five points. There was nothing
+  // cheaper to try.
+  const albPlain = texture(albedoTex, sceneUv).rgb;
+  const albSplit = vec3(
+    texture(albedoTex, sceneUv.add(off)).r,
+    albPlain.g,
+    texture(albedoTex, sceneUv.sub(off)).b,
+  );
+  let alb: TSLNode = mix(albPlain, albSplit, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
 
   // ── Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner
   // has neighbours CLOSER than the centre; sample a ring at two radii and
@@ -408,13 +475,22 @@ function finalNode(
   col = col.add(texture(bloomTex, sceneUv).rgb.mul(u.bloom));
 
   // ── Accurate linear → sRGB transfer (done by hand; see the file header).
-  const lo: TSLNode = col.mul(12.92);
-  const hi: TSLNode = pow(max(col, vec3(0, 0, 0)), vec3(1 / 2.4, 1 / 2.4, 1 / 2.4)).mul(1.055).sub(0.055);
+  // BOTH buffers go through it: the palette is sRGB, and the snap now compares
+  // the albedo against it while the row search compares the lit luma. Two
+  // quantities in two different transfer functions would silently mis-rank the
+  // rows — the lit side is a luma and the difference would read as "the shading
+  // is a bit off", not as a colour-space bug.
   // step() is typed float-only, but GLSL step() is COMPONENTWISE on vec3 and
   // that is exactly what the original shader relied on for the per-channel
   // sRGB knee. The graph handles vec3 fine; only the .d.ts is narrow.
-  const knee: TSLNode = (step as TSLNode)(vec3(0.0031308, 0.0031308, 0.0031308), col);
-  col = mix(lo, hi, knee);
+  const toSrgb = (c: TSLNode): TSLNode => {
+    const lo: TSLNode = c.mul(12.92);
+    const hi: TSLNode = pow(max(c, vec3(0, 0, 0)), vec3(1 / 2.4, 1 / 2.4, 1 / 2.4)).mul(1.055).sub(0.055);
+    const knee: TSLNode = (step as TSLNode)(vec3(0.0031308, 0.0031308, 0.0031308), c);
+    return mix(lo, hi, knee);
+  };
+  col = toSrgb(col);
+  alb = toSrgb(alb);
 
   // ── Vignette, BEFORE the quantizer so the falloff snaps to darker steps.
   const q = vUv.sub(0.5);
@@ -550,14 +626,24 @@ function finalNode(
   // this with `__gui.probe()` and check the GOLD BLOCK, never a centred menu.
   const uiTexel: TSLNode = texture(uiTex, uv());
   col = mix(col, uiTexel.rgb, uiTexel.a.mul(u.ui));
+  // ⚠️ AND INTO THE ALBEDO. The snap chooses the family from `alb`, so a menu
+  // that was only mixed into `col` would be drawn in the material of whatever
+  // scene it happens to cover: a gold label over a blood wall would snap to
+  // blood and merely be brighter. The UI's own canvas colours ARE its albedo —
+  // it is an unlit 2D sheet — so this is the same mix, not a correction to it.
+  alb = mix(alb, uiTexel.rgb, uiTexel.a.mul(u.ui));
   // The UI is not IN the world, so it must not be lit by it. An opaque menu
   // pixel is forced back to full light, or the corners of a paused inventory
   // would dim under the vignette that happens to be behind them.
   light = mix(light, float(1), uiTexel.a.mul(u.ui));
 
   // ── Full-screen flash BEFORE dither/quantize, so the wash snaps to the
-  // palette's bright ramp like everything else.
+  // palette's bright ramp like everything else. Into the albedo as well, for
+  // the same reason as the UI: a flash that only raised the lit luma would walk
+  // each material to its OWN highlight and the screen would go pastel-coloured
+  // rather than white.
   col = mix(col, vec3(1, 1, 1), u.flash);
+  alb = mix(alb, vec3(1, 1, 1), u.flash);
 
   // ── Bayer 4x4 ordered dither. Nudges each pixel up/down the ramp before the
   // snap, buying back apparent colour depth so gradients don't band.
@@ -600,13 +686,16 @@ function finalNode(
   // disagreements, which is exactly how this would have shipped. Ties are not
   // rare here either: the ordered dither above deliberately nudges colours to
   // sit BETWEEN two entries, so near-ties are the design, not an edge case.
+  //
+  // ⚠️ IT RUNS ON `alb`, NOT ON `col`. That one substitution is this pass's
+  // whole colour correctness — see the albedo tap above for the number.
   let best: TSLNode = vec3(palette[0], palette[1], palette[2]);
-  const d0 = col.sub(best).mul(vec3(0.3, 0.59, 0.11));
+  const d0 = alb.sub(best).mul(vec3(0.3, 0.59, 0.11));
   let bestDist: TSLNode = dot(d0, d0);
   let bestIdx: TSLNode = float(0);
   for (let i = 1; i < PALETTE_SIZE; i++) {
     const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
-    const d = col.sub(pc).mul(vec3(0.3, 0.59, 0.11));
+    const d = alb.sub(pc).mul(vec3(0.3, 0.59, 0.11));
     const dist = dot(d, d);
     const closer = dist.lessThan(bestDist);
     best = closer.select(pc, best);
@@ -626,17 +715,14 @@ function finalNode(
   // render/palette-shading.ts, where the walk is defined and tested in plain
   // node).
   //
-  // ⚠️ "AS LIT" IS NOT "UNLIT", AND THE DIFFERENCE IS STILL A REAL BUG. `col`
-  // here is the diffuse render target: the scene's own three.js lighting —
-  // coloured ambient at 3.5, hemi, the cold key light, and six flame-orange
-  // torch PointLights at intensity 6 — is already multiplied into it. That is
-  // the SAME cross-family multiply this machinery exists to prevent, arriving
-  // from the dominant light source instead of from AO, so torch-lit stone can
-  // still snap into leather/ember. BLUEPRINT.md records the extreme version of
-  // it (torches at intensity 18 turned the cold crypt into a cosy burrow).
-  // Fixing it properly needs an albedo/material target so the snap sees unlit
-  // colour and the whole lighting chain collapses into `light`. Not done here;
-  // do not read this block as though it were.
+  // The reduction above ran on the ALBEDO, so `bestIdx` is the material itself —
+  // stone, rot, leather — and NO lighting term can move it. That was not true
+  // until 2026-07-30: the snap read the lit buffer, so the scene's own three.js
+  // lighting (coloured ambient at 3.5, hemi, the cold key light, six
+  // flame-orange torch PointLights at intensity 6) chose the family before AO,
+  // the vignette or the ink outline ever got a say. BLUEPRINT.md records the
+  // extreme version — torches at intensity 18 turned the cold crypt into a cosy
+  // burrow — but the ordinary version was already 51.5% of the palette.
   //
   // ⚠️ THE ROW IS CHOSEN BY MATCHING LUMA, NOT BY SCALING THE SHADE AMOUNT.
   // That distinction is the whole reason the first attempt at this failed. A
@@ -648,13 +734,30 @@ function finalNode(
   // target is chosen, so the frame's brightness tracks the multiply as closely
   // as the material's own ramp allows. No constant to tune.
   const LUMA_W = vec3(0.3, 0.59, 0.11);
+  // ── THE TARGET IS THE LIT LUMA, AND THAT IS THE OTHER HALF OF THE FIX.
+  //
+  // It used to be `luma(best) * light` — the luma of the SNAPPED colour, which
+  // was itself chosen from the lit buffer, so the scene's lighting reached the
+  // row search only by having already bent the family. Reading `col` directly
+  // makes the split honest: `alb` says WHICH ramp, `col` says HOW FAR ALONG it,
+  // and every light in the game — the three.js rig, the bloom halo, AO, the
+  // vignette, the ink outline — arrives as one scalar on one axis.
+  //
+  // The bloom is the free win here. It is still added in linear BEFORE this, as
+  // it must be, but it can no longer push a neighbouring pixel into the torch
+  // family: it raises the lit luma, which walks the pixel UP its own ramp.
+  // `MAZE_COLOUR_PLAN.md` wanted the bloom moved after the snap to get that;
+  // moving it there would have broken the pass's central invariant (every
+  // presented pixel IS a palette entry), and it turns out not to be necessary.
+  //
   // Dither the TARGET, where a nudge can only move a pixel between two rungs of
   // its own ramp. 0.03 is roughly half a typical ramp step in luma.
-  const target = dot(best, LUMA_W).mul(light).add(b.mul(0.03).mul(u.dither));
-  let shaded: TSLNode = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(0.5).div(SHADE_ROWS + 1))).rgb;
+  const target = dot(col, LUMA_W).mul(light).add(b.mul(0.03).mul(u.dither));
+  // The row search now spans HIGHLIGHTS as well as shadows — see SHADE_UP_ROWS.
+  let shaded: TSLNode = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(0.5).div(SHADE_TOTAL_ROWS))).rgb;
   let bestGap: TSLNode = dot(shaded, LUMA_W).sub(target).abs();
-  for (let s = 1; s <= SHADE_ROWS; s++) {
-    const rowRgb = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(s + 0.5).div(SHADE_ROWS + 1))).rgb;
+  for (let s = 1; s < SHADE_TOTAL_ROWS; s++) {
+    const rowRgb = texture(shadedPal, vec2(bestIdx.add(0.5).div(PALETTE_SIZE), float(s + 0.5).div(SHADE_TOTAL_ROWS))).rgb;
     const gap = dot(rowRgb, LUMA_W).sub(target).abs();
     const nearer = gap.lessThan(bestGap);
     shaded = nearer.select(rowRgb, shaded);
@@ -1049,6 +1152,24 @@ export interface PixelPass {
    */
   presentUi(): void;
   /**
+   * Run `fn` with the renderer in exactly the state `render()` draws the scene
+   * in — the scene target bound and the MRT declared.
+   *
+   * ── WHY A PRECOMPILE HAS TO BORROW THE RENDER STATE ──
+   *
+   * three bakes the MRT into the node material's build (`NodeMaterial.setup`
+   * swaps the result node for the MRT node when `renderer.getMRT()` is set), so
+   * a material compiled with no MRT declared produces a DIFFERENT program from
+   * the one the frame will ask for. `compileAsync` called outside this wrapper
+   * therefore warms pipelines nothing will ever look up, and every material
+   * compiles again — lazily, mid-play — on the first real frame.
+   *
+   * That is not a hypothetical: it is precisely the stall `boot/warmup.ts`
+   * exists to prevent, and it would have come back silently, as a performance
+   * regression with no error and nothing in the suite able to see it.
+   */
+  withSceneContext<T>(fn: () => T): T;
+  /**
    * Re-derive the render size for a new window size. Unlike the old fixed-RT
    * version this CAN reallocate the render targets, so it guards on the
    * computed size and does nothing expensive when that is unchanged.
@@ -1152,6 +1273,15 @@ export function createPixelPass(
   const depthTexture = new THREE.DepthTexture(sizing.renderW, sizing.renderH);
   depthTexture.type = THREE.UnsignedIntType;
 
+  /**
+   * TWO colour attachments: the lit frame, and the ALBEDO the materials were
+   * before any light touched them.
+   *
+   * The names are not decoration — three resolves an MRT output to a slot by
+   * matching the key in `mrt({...})` against `textures[i].name`, so a typo here
+   * does not error, it silently writes nothing to the albedo and the whole
+   * screen snaps to void.
+   */
   const sceneTarget = new THREE.WebGLRenderTarget(sizing.renderW, sizing.renderH, {
     minFilter: THREE.NearestFilter,
     magFilter: THREE.NearestFilter,
@@ -1159,7 +1289,37 @@ export function createPixelPass(
     depthBuffer: true,
     stencilBuffer: false,
     depthTexture,
+    count: 2,
   });
+  sceneTarget.textures[0].name = "output";
+  sceneTarget.textures[1].name = "albedo";
+
+  /**
+   * ── THE MRT DECLARATION ────────────────────────────────────────────────────
+   *
+   * `diffuseColor` is the node every three material assigns in `setupDiffuseColor`:
+   * `color * map * vertexColor`, in the linear working space, before any light,
+   * shadow, AO or fog. For a `MeshStandardMaterial` that is the masonry's own
+   * tone; for the unlit `MeshBasicMaterial` the sprites use it is the atlas texel,
+   * which is already a palette entry; for the seven `colorNode` effect materials
+   * in `fx/` it is the colour they compute, which is the right albedo for a flame.
+   *
+   * ⚠️ THE ONE MATERIAL SHAPE THIS DOES NOT COVER is a raw `NodeMaterial` with a
+   * `fragmentNode`, which takes three's fragment-output shortcut and never runs
+   * `setupDiffuseColor` at all. Such a material would write an unassigned albedo
+   * and render as void. There are none in the scene today — the only
+   * `fragmentNode`s in this repo are the post quads in this file, which do not
+   * draw into `sceneTarget` — and `mrt-coverage.test.ts` fails if one appears.
+   * If you need one, give it a `colorNode` instead, or set its own
+   * `material.mrtNode = mrt({ output, albedo: <its colour> })`.
+   *
+   * Blending: `MRTNode` defaults every output other than `output` to NO
+   * blending, so a 30%-alpha decal or an additive spark writes its albedo
+   * opaquely rather than smearing it into the surface underneath. That is what
+   * we want — the family should come from the material a pixel most belongs to,
+   * not from a weighted average of two materials that would land in a third.
+   */
+  const sceneMrt = mrt({ output: output, albedo: diffuseColor });
 
   // Bloom works at half resolution — cheaper, and a wider blur for free. These
   // track the render size (exactly half, since renderW/H are guaranteed even)
@@ -1184,7 +1344,11 @@ export function createPixelPass(
   const brightMat = new NodeMaterial();
   brightMat.depthTest = false;
   brightMat.depthWrite = false;
-  brightMat.fragmentNode = brightNode(sceneTarget.texture, uniform(BLOOM_THRESHOLD));
+  // The LIT frame, explicitly — `.texture` is an alias for `.textures[0]` and
+  // would keep working, but the bright-pass reading slot 0 rather than the
+  // albedo is a decision (torches bloom because they are BRIGHT, not because of
+  // what they are made of), and it should not rest on which slot came first.
+  brightMat.fragmentNode = brightNode(sceneTarget.textures[0], uniform(BLOOM_THRESHOLD));
 
   // The blur runs TWICE per frame over DIFFERENT sources (bloomA then bloomB),
   // and a node graph binds its texture at build time — so this needs one
@@ -1233,7 +1397,8 @@ export function createPixelPass(
   finalMat.depthTest = false;
   finalMat.depthWrite = false;
   finalMat.fragmentNode = finalNode(
-    sceneTarget.texture,
+    sceneTarget.textures[0],
+    sceneTarget.textures[1],
     bloomA.texture,
     depthTexture,
     opts.uiTexture,
@@ -1363,10 +1528,18 @@ export function createPixelPass(
   function render(scene: THREE.Scene, camera: THREE.Camera): void {
     syncCameraFrustum(camera);
 
-    // 1. Scene → linear target (+ depth).
+    // 1. Scene → linear target (+ depth), writing lit AND albedo.
+    //
+    // The MRT is scoped to this one call and cleared straight after, matching
+    // what three's own PostProcessing does. It has to be: every other draw in
+    // this file is a fullscreen quad into a SINGLE-attachment target, and an MRT
+    // declaration left standing would have those quads describing two outputs
+    // for one attachment.
     renderer.setRenderTarget(sceneTarget);
+    renderer.setMRT(sceneMrt);
     renderer.clear();
     renderer.render(scene, camera);
+    renderer.setMRT(null);
 
     // 2. Bloom chain (skipped when strength is 0).
     if (finalUniforms.bloom.value > 0.001) {
@@ -1399,10 +1572,26 @@ export function createPixelPass(
 
   resize();
 
+  function withSceneContext<T>(fn: () => T): T {
+    renderer.setRenderTarget(sceneTarget);
+    renderer.setMRT(sceneMrt);
+    try {
+      return fn();
+    } finally {
+      // Restored even if the compile throws — `warmFloorPipelines` deliberately
+      // swallows compile failures and plays on, and a leaked MRT would then have
+      // every fullscreen quad in this file describing two outputs for one
+      // attachment.
+      renderer.setMRT(null);
+      renderer.setRenderTarget(null);
+    }
+  }
+
   return {
     target: sceneTarget,
     render,
     presentUi,
+    withSceneContext,
     resize,
     sizing: () => sizing,
     setUiEnabled: (on) => {

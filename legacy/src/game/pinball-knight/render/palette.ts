@@ -60,7 +60,7 @@
 
 import { clamp } from "../../../utils/math";
 import { setEnginePalette } from "../engine/palette-source";
-import { SHADE_DOWN } from "./palette-shading";
+import { SHADE_DOWN, SHADE_UP } from "./palette-shading";
 
 export const PALETTE_HEX: number[] = [
   // ── Stone / void (0-5) ──
@@ -222,5 +222,11 @@ export function installPalette(): void {
     // (26, leather shadow, would shade to 25, skin light — BRIGHTER, and a
     // different material). See render/palette-shading.ts.
     shadeDown: () => SHADE_DOWN,
+    // And how it BRIGHTENS. The pass needs both because the scene's lighting
+    // runs from 0.38x to 1.35x of albedo luma (measured — render/light-crossing
+    // .ts), so a torch-lit surface has to be able to walk UP its own ramp. The
+    // fallback here would be `i+1`, which on this palette leaves the family just
+    // as fast as `i-1` did.
+    shadeUp: () => SHADE_UP,
   });
 }

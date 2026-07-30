@@ -44,6 +44,28 @@ export interface PaletteSource {
    * art harnesses need, since they never run the pixel pass.
    */
   shadeDown?: () => Uint8Array;
+  /**
+   * One step LIGHTER for each entry, staying inside that entry's own ramp — the
+   * inverse of `shadeDown` within a family, saturating at the family's brightest.
+   *
+   * ── WHY A DARKENING TABLE IS NOT ENOUGH ──
+   * Indexed lighting spends the frame's light as a walk along the material's own
+   * ramp, and the light in this game runs BOTH WAYS around unity. Measured over
+   * the four biomes and 48 shading situations (`render/light-crossing.ts`), the
+   * ratio of lit luma to albedo luma spans 0.38 to 1.35: an open floor renders
+   * at under half its own albedo, and a surface next to a torch renders above it.
+   *
+   * With only a downward table the bright half has nowhere to go. Every
+   * torch-lit surface clamps at row 0, the torch stops making anything brighter
+   * than the material already was, and the dungeon reads flat — the torches
+   * become bloom halos around nothing.
+   *
+   * OPTIONAL, and its absence is a real degradation rather than a neutral
+   * default: without it the pass gets an identity table and lighting above unity
+   * is thrown away. The fallback exists so the pass can run standalone, not
+   * because it is a reasonable art direction.
+   */
+  shadeUp?: () => Uint8Array;
 }
 
 const FALLBACK_N = 16;
@@ -74,6 +96,13 @@ function descendingChain(n: number): Uint8Array {
   return t;
 }
 
+/** Fallback brightening: one step up the greyscale ramp, saturating at white. */
+function ascendingChain(n: number): Uint8Array {
+  const t = new Uint8Array(n);
+  for (let i = 0; i < n; i++) t[i] = Math.min(n - 1, i + 1);
+  return t;
+}
+
 /**
  * Live palette. Mutated in place rather than reassigned so modules that read it
  * at construction see whatever the game installed.
@@ -85,6 +114,7 @@ export const enginePalette: PaletteSource = {
   css: (i) => `#${(greyscaleHex()[i] ?? 0).toString(16).padStart(6, "0")}`,
   occlusionIndex: FALLBACK_N - 1,
   shadeDown: () => descendingChain(FALLBACK_N),
+  shadeUp: () => ascendingChain(FALLBACK_N),
 };
 
 /** Install the game's palette. Call before the pixel pass is created. */
@@ -97,4 +127,5 @@ export function setEnginePalette(src: PaletteSource): void {
   // Sized to the palette being installed — a stale table from a smaller palette
   // would index past its end and shade everything it could not find to black.
   enginePalette.shadeDown = src.shadeDown ?? (() => descendingChain(src.size));
+  enginePalette.shadeUp = src.shadeUp ?? (() => ascendingChain(src.size));
 }

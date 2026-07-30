@@ -120,7 +120,8 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
   const renderer = state.renderer;
   const scene = state.scene;
   const camera = state.camera;
-  if (!renderer || !scene || !camera) return;
+  const pixelPass = state.pixelPass;
+  if (!renderer || !scene || !camera || !pixelPass) return;
   // Reveal BEFORE snapshotting children: the floor-fx proxies parent themselves
   // to the scene here, and must be in the list the loop iterates.
   const restoreVfx = state.vfx?.warmupReveal();
@@ -177,7 +178,20 @@ export async function warmFloorPipelines(load: FloorLoading): Promise<void> {
       // once closed.
       const f = i / children.length;
       load.phase(CAPTIONS[Math.min(CAPTIONS.length - 1, Math.floor(f * CAPTIONS.length))], 0.3 + 0.7 * f);
-      await renderer.compileAsync(children[i], camera, scene);
+      // ── COMPILE IN THE FRAME'S OWN RENDER CONTEXT ──
+      //
+      // The scene target is MULTI-ATTACHMENT (lit + albedo, since the palette
+      // snap moved onto the albedo) and three bakes the MRT declaration into the
+      // node material's build. A material compiled with no MRT set produces a
+      // different program from the one `render()` looks up, so this whole
+      // function would warm a cache nothing reads and every material would
+      // compile again on the first real frame — the exact stall it exists to
+      // prevent, arriving as a silent perf regression.
+      //
+      // The wrapper is awaited INSIDE, not around the loop: `compileAsync` saves
+      // and restores renderer state around itself, so the target and MRT have to
+      // be re-established for each call rather than set once outside.
+      await pixelPass.withSceneContext(() => renderer.compileAsync(children[i], camera, scene));
     }
     load.phase(CAPTIONS[CAPTIONS.length - 1], 1);
     await warmFirstFrame();

@@ -24,26 +24,47 @@ import { existsSync, mkdirSync } from "node:fs";
 import sharp from "sharp";
 
 /**
- * Fraction of the bottom 12% of a shot that is lit.
+ * Is the bottom band a real HUD, or the descent card again?
  *
- * The HUD only paints once the floor is PRESENTED. During the descent that
- * band is void — which is the one cheap signal that separates a real floor
- * from the loading card, since the card is drawn inside the canvas and no DOM
- * query can see it.
+ * ── A BRIGHTNESS THRESHOLD IS NOT ENOUGH, MEASURED TWICE ─────────────────────
+ *
+ * The first version of this guard asked only "is the bottom 12% of the shot
+ * lit", threshold 3%. That is a PROXY for "the HUD painted", and on 2026-07-30
+ * it let a descent card through: at seed 1 the card floats over brown masonry
+ * that reaches into the band, which scored 5.5% and passed. The resulting
+ * census reported the Rotting Warren as 26.7% LEATHER — a completely healthy
+ * looking number, measured off a loading screen, and it would have been written
+ * down as a finding about the biome.
+ *
+ * So the guard now asks a POSITIVE question instead: is the health orb there?
+ * It is painted in palette entry 31 (arcane light) and nothing on the descent
+ * card uses that colour. Measured over twelve shots, the separation is not
+ * marginal — every real floor had 2691-2705 orb pixels and the card had ZERO:
+ *
+ *     coldcrypt/warren/bloodworks/arcanedeep/seed777, both variants   ~2700
+ *     warren-before (the descent card)                                   0
+ *     tavern (hub — no DEPTH/KILLS HUD at all)                           0
+ *
+ * Brightness is kept as a second, weaker condition rather than dropped: an orb
+ * count alone would pass a frame that is nothing BUT a HUD, which is what a
+ * torn-down floor looks like.
  */
-async function hudLit(file) {
+const ORB_HEX = 0x6fd0e8; // palette 31, arcane light — the health orb's fill
+
+async function hudSignal(file) {
   const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
   const ch = info.channels;
   const y0 = Math.floor(info.height * 0.88);
-  let lit = 0, n = 0;
+  let lit = 0, n = 0, orb = 0;
   for (let y = y0; y < info.height; y++) {
     for (let x = 0; x < info.width; x++) {
       const p = (y * info.width + x) * ch;
       if (data[p] + data[p + 1] + data[p + 2] > 90) lit++;
+      if (((data[p] << 16) | (data[p + 1] << 8) | data[p + 2]) === ORB_HEX) orb++;
       n++;
     }
   }
-  return lit / n;
+  return { lit: lit / n, orb };
 }
 
 /**
@@ -117,7 +138,7 @@ const { values: a } = parseArgs({
     after: { type: "string", default: "5312" },
     "cdp-port": { type: "string", default: "9347" },
     out: { type: "string", default: "/tmp/shots" },
-    boot: { type: "string", default: "9" },
+    boot: { type: "string", default: "16" },
     only: { type: "string" }, // comma list of labels to run
   },
 });
@@ -247,14 +268,25 @@ for (const scene of SCENES) {
       // The hub has no DEPTH/KILLS HUD, so the guard does not apply there —
       // and the hub never shows a descent card either, which is why it is safe
       // to skip rather than to weaken the test for everyone.
-      const hud = scene.mode === "hub" ? 1 : await hudLit(path);
-      if (!(hud > 0.03)) {
-        console.error(`✘ ${scene.label}/${variant}: HUD band ${(hud * 100).toFixed(1)}% lit — still on the descent card, NOT a floor. Raise --boot.`);
+      const hud = scene.mode === "hub" ? { lit: 1, orb: 9999 } : await hudSignal(path);
+      // 300 against a measured 2700-vs-0 split, and 12% against 18-21% vs 5.5%.
+      // Both bars sit far from every observed value on either side, because the
+      // cost of the two mistakes is not symmetric: rejecting a good shot says so
+      // out loud and you raise --boot, while accepting a bad one produces a
+      // complete, healthy-looking census of a loading screen.
+      if (!(hud.orb > 300 && hud.lit > 0.12)) {
+        console.error(
+          `✘ ${scene.label}/${variant}: HUD band ${(hud.lit * 100).toFixed(1)}% lit, ${hud.orb} orb px — ` +
+            `still on the descent card, NOT a floor. Raise --boot.`,
+        );
         results.push({ ...scene, variant, ok: false, reason: "descent-card", hud });
         await page.close();
         continue;
       }
-      console.log(`✔ ${scene.label.padEnd(11)} ${variant.padEnd(6)} adapter=${adapter} hud=${(hud * 100).toFixed(1)}%  ${path}`);
+      console.log(
+        `✔ ${scene.label.padEnd(11)} ${variant.padEnd(6)} adapter=${adapter} ` +
+          `hud=${(hud.lit * 100).toFixed(1)}% orb=${hud.orb}  ${path}`,
+      );
       results.push({ ...scene, variant, backend, adapter, path, hud, ok: true, errs: errs.slice(0, 2) });
     } catch (e) {
       console.error(`✘ ${scene.label}/${variant}: ${e.message}`);
