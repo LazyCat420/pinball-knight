@@ -33,39 +33,58 @@ describe("sliceSheet — rows", () => {
 });
 
 describe("sliceSheet — cells", () => {
-  it("DEFECT: a ruled sheet does not recover its cell counts", () => {
-    const { data, w, h } = buildSheet({ rows: RAGGED, ruled: true });
-    const shape = shapeOf(sliceSheet(data, w, h));
-    // Measured: 9/7/9/5/7 against a truth of 4/6/4/2/3. Two causes, both fixed
-    // in grid.ts and both reproduced by this fixture:
-    //
-    //  1. A "vertical rule" is tested by HEIGHT alone, so a figure's own solid
-    //     core — 44 px of body spanning the whole band — is erased as though it
-    //     were a border, and the figure splits around the hole it just made.
-    //  2. RULE_FILL is measured against the SHEET width. A ragged sheet's short
-    //     rows never reach 70% of it, so their ruled borders survive and weld
-    //     the whole row together. (This is the documented "1/6/1/1/1".)
-    expect(shape).not.toBe(TRUTH);
-  });
-
-  it("DEFECT: an unruled sheet — the format we ask generators for — slices to nothing", () => {
+  it("recovers ragged cell counts from an unruled sheet, with no sidecar", () => {
     const { data, w, h } = buildSheet({ rows: RAGGED, ruled: false, gutter: 12 });
-    // The canonical target format: transparent background, no grid lines, no
-    // captions in gutters, clear space between cells. Today it returns ZERO
-    // cells, because cause (1) above erases every opaque column in the band:
-    // measured 176 of 176 columns stripped as "vertical rules".
-    //
-    // Constraining a rule to be tall AND NARROW (<= 3 px) makes this fixture
-    // slice to exactly 4/6/4/2/3 — measured. That is grid.ts's first job.
-    expect(shapeOf(sliceSheet(data, w, h))).toBe("");
+    // THE CANONICAL TARGET FORMAT — transparent, no grid lines, no gutter
+    // labels, clear space between cells. It used to slice to NOTHING: the
+    // height-only rule test stripped 176 of 176 opaque columns and erased every
+    // figure. Requiring a rule to be narrow as well fixes it exactly.
+    expect(shapeOf(sliceSheet(data, w, h))).toBe(TRUTH);
   });
 
-  it("a transparent column inside a pose is not what splits it", () => {
-    // One cell, legs apart. The leg gap is blamed in the shipped comments for
-    // splitting figures; it is not the cause. The figure vanishes entirely,
-    // gap or no gap — the erasure above happens first.
-    const withGap = buildSheet({ rows: [1], ruled: false, captions: false });
-    expect(sliceSheet(withGap.data, withGap.w, withGap.h).length).toBe(0);
+  it("an indented row divides on its own extent", () => {
+    const { data, w, h } = buildSheet({ rows: RAGGED, ruled: false, gutter: 12, indentRow: 3 });
+    expect(shapeOf(sliceSheet(data, w, h))).toBe(TRUTH);
+  });
+
+  it("a transparent column inside a pose does not split it", () => {
+    // Legs apart, one cell. The leg gap was blamed in the shipped comments for
+    // splitting figures. It never was the cause — and now that the figure is
+    // not being erased first, it demonstrably does not split anything.
+    const { data, w, h } = buildSheet({ rows: [1], ruled: false, captions: false });
+    const rows = sliceSheet(data, w, h);
+    expect(rows.length).toBe(1);
+    expect(rows[0].cells.length).toBe(1);
+  });
+
+  it("a figure's solid core is not mistaken for a rule at any sheet scale", () => {
+    // 3x everything. Scale used to matter: with a width-only cap the 21px strips
+    // where the figure's head overlaps its legs were stripped as rules and every
+    // pose split into three — 12/18/12/6/9. The rectangle gate removes the
+    // question, because an unruled sheet never runs the vertical pass at all.
+    const { data, w, h } = buildSheet({ rows: RAGGED, ruled: false, gutter: 36, cellW: 300, cellH: 360 });
+    expect(shapeOf(sliceSheet(data, w, h))).toBe(TRUTH);
+  });
+
+  /**
+   * THE LAYOUTS A GENERATOR ACTUALLY EMITS, all against one truth.
+   *
+   * Every one of these returned something wrong before: the unruled cases
+   * sliced to nothing, the ruled ones to 9/7/9/5/7. Kept as a table because the
+   * point is that layout stopped mattering — the recipe no longer has to carry
+   * a cell count for any of them.
+   */
+  const LAYOUTS: [string, Parameters<typeof buildSheet>[0]][] = [
+    ["ruled, shared borders", { ruled: true, gutter: 0 }],
+    ["ruled, gutter", { ruled: true, gutter: 12 }],
+    ["ruled, indented row", { ruled: true, gutter: 0, indentRow: 3 }],
+    ["ruled, touching figures", { ruled: true, gutter: 0, touchingRow: 1 }],
+    ["unruled, touching figures", { ruled: false, gutter: 12, touchingRow: 1 }],
+    ["unruled, no gutter", { ruled: false, gutter: 0 }],
+  ];
+  it.each(LAYOUTS)("slices %s to the true cell counts", (_label, spec) => {
+    const { data, w, h } = buildSheet({ rows: RAGGED, ...spec });
+    expect(shapeOf(sliceSheet(data, w, h))).toBe(TRUTH);
   });
 });
 

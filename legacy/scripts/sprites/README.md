@@ -20,31 +20,41 @@ crush and real census, so what it reports is what will ship.
 
 W is never authored — the engine draws it as E with a negative texture repeat.
 
-## The sidecar — write one, it takes ten seconds
+## The sidecar — one line, and usually only one
 
     scripts/sprites/inbox/ratking-E.json
-    { "rows": ["idle", "attack", "walk", "stumble", "death"],
-      "cells": [4, 6, 4, 2, 3] }
+    { "rows": ["idle", "attack", "walk", "stumble", "death"] }
 
-`rows` names each row's clip. `cells` says how many frames are in each row.
-
-**`cells` is not optional in practice on a ruled sheet.** Auto-slicing finds
-the rows reliably and the cells unreliably: measured on a sheet with ruled cell
-borders and ragged rows, it returned 5/12/5/2/1 where the truth was 4/6/4/2/3.
-It splits on border remnants, splits again inside a figure wherever a pose
-leaves a transparent column (between the legs, either side of a spring), and
-merges neighbours whose art touches. Those pull in opposite directions, so no
-gap threshold fixes all three. Given the count, cells divide exactly, because
-real sheets are laid out on a regular pitch.
+`rows` names each row's clip, in reading order. Those names have to be clips the
+animator packs — note that **stagger is `stumble`, not `hurt`**, which is what
+every reference sheet prints above that row.
 
 Run it once without a sidecar: it reports the rows it found and prints the
 sidecar for you to fill in.
 
+`cells` (a per-row frame count) is an OVERRIDE and you should not normally need
+it. It used to be mandatory on a ruled sheet, because slicing returned
+5/12/5/2/1 where the truth was 4/6/4/2/3 — but that was two defects in the
+slicer, not a property of sheets. Fixed. All six layouts in `slice.test.ts`
+(ruled, unruled, shared borders, gutters, indented rows, touching figures) now
+slice to the true counts with no override. Reach for `cells` only when two poses
+genuinely touch with no gap between them, which no threshold can recover.
+
+## What a sheet must be
+
+- **Transparent background.** This is the one hard requirement and the one an
+  AI generator will not meet: diffusion models have no alpha channel, so every
+  generated sheet arrives on an opaque white or cream field and slices into a
+  single cell. Key it out first.
+- **One body scale across every frame**, and feet on a consistent line. Frames
+  are registered by bounding box, so debris below the feet lifts the character
+  and an off-centre effect shifts the body the other way.
+- **No labels in a left gutter.** Captions under a row are detected and dropped;
+  a label beside a row shares that row's band, defeats the caption test, clears
+  the fragment filter, and imports as a frame.
+
 ## Known limits
 
-- **Ruled borders leave thin remnants** at cell edges on some frames. They are
-  a few texels and they do land in the census. The fix is to use the detected
-  border lines AS the grid instead of stripping them; not done yet.
 - **Sheets are judged, not adopted.** Frames are written and scored; nothing in
   the game loads them yet — monsters are still painter functions. Wiring an
   image-backed painter is the next step.

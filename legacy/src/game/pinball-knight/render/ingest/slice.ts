@@ -29,27 +29,40 @@ export const MIN_CELL = 12;
  * cell — which is why this exists rather than being defensive programming.
  * Art never spans a whole sheet dimension; a ruled line always does.
  *
- * ⚠️ THE SECOND SENTENCE IS FALSE AS APPLIED, and it is the bug. Measured on
- * `fixtures.ts` (see slice.test.ts):
+ * ⚠️ FILL ALONE IS NOT THE TEST, and believing it was cost this module its
+ * whole reputation. Measured on `fixtures.ts` (see slice.test.ts):
  *
- *   · FILL IS NOT ENOUGH — a rule is also THIN. A figure's own solid core is a
- *     column of opaque pixels spanning the whole band, so this test erases it.
- *     On an unruled sheet, 176 of 176 opaque columns were stripped: the figures
- *     vanished and the sheet sliced to NOTHING. The shipped comments blame the
- *     art for "splitting inside a figure wherever a pose leaves a transparent
- *     column"; the slicer manufactures that column itself.
+ *   · A RULE IS ALSO THIN. A figure's own solid core is a column of opaque
+ *     pixels spanning the whole band, so a height-only test erases it. On an
+ *     unruled sheet, 176 of 176 opaque columns were stripped: the figures
+ *     vanished and the sheet sliced to NOTHING. The old comments blamed the art
+ *     for "splitting inside a figure wherever a pose leaves a transparent
+ *     column" — between the legs, either side of a spring. It does not: the
+ *     slicer manufactured that column itself, then split around the hole.
  *
- *   · THE DENOMINATOR IS WRONG — fill is measured against the SHEET width, but
+ *   · THE DENOMINATOR WAS WRONG. Fill was measured against the SHEET width, but
  *     a ragged sheet's short rows are nowhere near it. A 4-cell row inside a
- *     6-cell sheet fills 56%, so its borders survive and weld the row into one
- *     cell. That is the documented "1/6/1/1/1", and it reproduces exactly.
+ *     6-cell sheet fills 56%, so its borders survived and welded the row into
+ *     one cell. That is the documented "1/6/1/1/1", and it reproduced exactly.
  *
- * Requiring a rule to be tall AND ≤3px wide, and measuring fill against the
- * row's own extent, slices the unruled fixture to exactly 4/6/4/2/3. `grid.ts`
- * carries that fix; this constant is left as-is so the characterisation tests
- * keep describing what shipped.
+ * Both are fixed below. `RULE_MAX_W` adds the width test; the per-band passes
+ * now measure against the row's own extent.
  */
 export const RULE_FILL = 0.7;
+
+/**
+ * A vertical rule may be at most this fraction of the band's HEIGHT in width.
+ *
+ * Scale-free on purpose. An absolute "3px" is a guess about the source
+ * resolution and breaks the first time a sheet arrives upscaled 4x with 8px
+ * borders. Expressed against the band, a ruled border is 1-3px of a ~120px cell
+ * (1-2.5%) and a figure's core is 44px (37%) — measured on the fixture, that is
+ * a 15x margin either side of this threshold, which is what makes it a
+ * separation rather than a tuned constant.
+ */
+export const RULE_MAX_W = 0.1;
+/** ...but never below this, so a short band cannot make the cap sub-pixel. */
+export const RULE_MIN_W = 3;
 
 /**
  * Bands shorter than this fraction of the median band are CAPTIONS.
@@ -142,16 +155,78 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
     // content and welds the row back together.
     const band = new Uint8Array(w * bandH);
     for (let y = 0; y < bandH; y++) for (let x = 0; x < w; x++) band[y * w + x] = at(x, y0 + y) ? 1 : 0;
+
+    // ── Fill is measured against THIS ROW's extent, not the sheet's.
+    //
+    // A ragged sheet's short rows never reach 70% of the sheet width, so their
+    // ruled borders used to survive and weld the row into a single cell. The
+    // row's own bounding box is the only denominator that means the same thing
+    // for a 2-cell row and a 6-cell one.
+    let bx0 = w;
+    let bx1 = -1;
+    for (let y = 0; y < bandH; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!band[y * w + x]) continue;
+        if (x < bx0) bx0 = x;
+        if (x > bx1) bx1 = x;
+      }
+    }
+    const rowW = bx1 - bx0 + 1;
+
+    let ruled = false;
     for (let y = 0; y < bandH; y++) {
       let n = 0;
       for (let x = 0; x < w; x++) n += band[y * w + x];
-      if (n >= w * RULE_FILL) for (let x = 0; x < w; x++) band[y * w + x] = 0;
+      if (n < rowW * RULE_FILL) continue;
+      for (let x = 0; x < w; x++) band[y * w + x] = 0;
+      ruled = true;
     }
-    for (let x = 0; x < w; x++) {
-      let n = 0;
-      for (let y = 0; y < bandH; y++) n += band[y * w + x];
-      if (n >= bandH * RULE_FILL) for (let y = 0; y < bandH; y++) band[y * w + x] = 0;
+
+    // ── A CELL BORDER IS A RECTANGLE: no vertical rules without horizontal ones.
+    //
+    // This gate is what makes the vertical pass safe, and skipping it is what
+    // made the old code erase entire figures. On an UNRULED sheet there are no
+    // rules to find, so any column the vertical test flags is art by
+    // construction — and it flagged all of it (176 of 176 columns, sheet sliced
+    // to nothing). No width threshold rescues that, because there is no second
+    // population to separate from: measured on a 3x-scale fixture, a cap of 10%
+    // of the band still ate the 21px strips where the figure's head overlaps its
+    // legs and split every pose into three (12/18/12/6/9 against 4/6/4/2/3).
+    //
+    // A frame is drawn as a box. If this band contained no horizontal rule, it
+    // has no frame, and the vertical pass has nothing legitimate to do.
+    // (A sheet separated by vertical lines ALONE would be missed — it also
+    // slices correctly on alpha gaps, so nothing is lost by not handling it.)
+    if (ruled) {
+      // ── A vertical rule is SPANNING *AND* NARROW.
+      //
+      // Fill alone is not enough. A ruled frame inflates the band past the art
+      // it contains — 118px of frame around a 95px figure — which drops the 70%
+      // gate to 82.6 and lets the few narrow columns of the figure that DO clear
+      // it be stripped, punching holes through the middle of the pose
+      // (measured: 4/7/5/3/4). A border runs the full height of its cell, so it
+      // is opaque at BOTH band edges; art is inset and never reaches them.
+      //
+      // Candidates are cleared as RUNS, not columns: two neighbouring cells'
+      // borders touch and read as one 2px rule, which is still a rule.
+      const capW = Math.max(RULE_MIN_W, bandH * RULE_MAX_W);
+      const tall: boolean[] = [];
+      for (let x = 0; x < w; x++) {
+        let n = 0;
+        for (let y = 0; y < bandH; y++) n += band[y * w + x];
+        tall.push(n >= bandH * RULE_FILL && band[x] === 1 && band[(bandH - 1) * w + x] === 1);
+      }
+      for (let x = 0; x < w; ) {
+        if (!tall[x]) { x++; continue; }
+        let end = x;
+        while (end + 1 < w && tall[end + 1]) end++;
+        if (end - x + 1 <= capW) {
+          for (let xx = x; xx <= end; xx++) for (let y = 0; y < bandH; y++) band[y * w + xx] = 0;
+        }
+        x = end + 1;
+      }
     }
+
     const inBand = (x: number, y: number): boolean => band[(y - y0) * w + x] === 1;
     const colProfile: boolean[] = [];
     for (let x = 0; x < w; x++) {
@@ -195,25 +270,24 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
 /**
  * Re-cut a band into exactly `n` equal columns across its own opaque extent.
  *
- * ⚠️ THIS EXISTS BECAUSE AUTO-SLICING A RULED SHEET DOES NOT WORK, and pretending
- * otherwise would be worse than asking for one number. Measured on a fixture
- * built to match a real supplied sheet (ruled cells, ragged rows 4/6/4/2/3, one
- * row indented), alpha-slicing returned 5/12/5/2/1: it splits on the border
- * remnants, splits AGAIN inside a figure wherever a pose leaves a transparent
- * column — between the legs, either side of a spring — and merges neighbours
- * whose art touches. Those three failure modes pull in opposite directions, so
- * no gap threshold fixes all of them.
+ * ── THIS IS NO LONGER THE NORMAL PATH ────────────────────────────────────────
  *
- * Cells on a real sheet are laid out on a regular pitch, so given the count, an
- * equal division across the band's extent is exact. An indented row divides
- * correctly too, because the extent is the row's own bounding box, not the
- * sheet's.
+ * It was written because auto-slicing a ruled sheet "does not work" — measured
+ * at 5/12/5/2/1 against a truth of 4/6/4/2/3 — and the recipe therefore had to
+ * carry a cell count for every row. That diagnosis was wrong. The slicer was
+ * erasing figures and welding rows (see `RULE_FILL`); with those two defects
+ * fixed, all six layouts in slice.test.ts — ruled, unruled, shared borders,
+ * gutters, indented, touching figures — slice to 4/6/4/2/3 with no count at all.
+ *
+ * Kept as an OVERRIDE for the sheet that still fools the alpha pass: two poses
+ * genuinely touching with no gap between them read as one cell, and no
+ * threshold recovers that from pixels alone.
  *
  * ⚠️ IT DIVIDES THE INK EXTENT, NOT THE CELL EXTENT. A row whose first pose is
  * narrow and inset, or whose last pose stops short of its cell, has an ink
  * extent smaller than its true grid extent — so the pitch is slightly wrong and
- * the error ACCUMULATES across the row. `grid.ts` exists to remove this: the
- * ruled borders are the true pitch, and the ink is not.
+ * the error ACCUMULATES across the row. Prefer letting the slicer find the
+ * cells; reach for this only when it visibly cannot.
  */
 export function equalCells(band: SheetRow, n: number): Cell[] {
   const x0 = Math.min(...band.cells.map((c) => c[0]));

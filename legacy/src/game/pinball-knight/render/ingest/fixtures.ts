@@ -62,6 +62,20 @@ const CAPTION_H = 9;
 const CAPTION_GAP = 10;
 const LABEL_W = 52;
 
+/**
+ * Clear space between one row's band and the next, ALWAYS — independent of
+ * `gutter`, which is the space between CELLS.
+ *
+ * ⚠️ Load-bearing, and it cost an hour to find. Without it a captioned row's
+ * label sits flush against the next row's frame, the two merge into a single
+ * band, and the band is then taller than the frame inside it — so that frame's
+ * borders no longer touch the band's top edge and the spanning test in slice.ts
+ * stops recognising them. The row then welds. A real sheet leaves air on both
+ * sides of a caption; a fixture that does not is testing a malformed sheet and
+ * blaming the slicer.
+ */
+const ROW_GAP = 14;
+
 export interface Sheet {
   data: Uint8ClampedArray;
   w: number;
@@ -84,7 +98,7 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
   const bandH = s.cellH + (s.captions ? CAPTION_GAP + CAPTION_H : 0);
   // +1 cell of slack on the right so an indented row still fits.
   const w = s.margin * 2 + gutterPad + (maxCells + 1) * (s.cellW + s.gutter);
-  const h = s.margin * 2 + s.rows.length * (bandH + s.gutter);
+  const h = s.margin * 2 + s.rows.length * (bandH + ROW_GAP);
   const data = new Uint8ClampedArray(w * h * 4);
 
   const px = (x: number, y: number, r: number, g: number, b: number, a = 255): void => {
@@ -124,7 +138,7 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
   };
 
   s.rows.forEach((count, ri) => {
-    const bandTop = s.margin + ri * (bandH + s.gutter);
+    const bandTop = s.margin + ri * (bandH + ROW_GAP);
     const indent = ri === s.indentRow ? 1 : 0;
     const rowLeft = s.margin + gutterPad + indent * (s.cellW + s.gutter);
     const overhang = ri === s.touchingRow ? Math.floor(s.gutter / 2) + 6 : 0;
