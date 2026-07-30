@@ -38,7 +38,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas } from "canvas";
 import { makeStiltneckPaints } from "./stiltneck";
 import { makeRotortailPaints } from "./rotortail";
-
+import { paintInArtSpace, crushToGrid } from "../../engine/render/sprite";
+import { SPRITE_PX, SPRITE_PIXEL_GRID } from "../../constants";
 import { PALETTE_HEX, installPalette } from "../palette";
 import type { ActorPaints, Dir, FramePaint } from "../../engine/render/paint-types";
 
@@ -63,6 +64,51 @@ function paint(f: FramePaint): ImageData {
   f(ctx);
   return (ctx as unknown as { getImageData: (a: number, b: number, c: number, d: number) => ImageData })
     .getImageData(0, 0, CEL, CEL);
+}
+
+/** The stored grid, and the scale from authored cel coords into it. */
+const G = SPRITE_PIXEL_GRID;
+const AT = G / CEL;
+
+/**
+ * One frame through the REAL pipeline — paintInArtSpace at SPRITE_PX, then the
+ * exact crush the game ships — returning the 81-texel atlas cell.
+ *
+ * Every census below runs on THIS, not on the authored cel. The first version
+ * of this file measured the 128px cel, and the creature it approved (13 green
+ * tests) shipped brown: at the stored grid the spots/mane/ink consume the neck,
+ * which the cel-level census cannot see. The cel is a sketch; the atlas is the
+ * product. Same lesson as `copy-the-harness-you-compare-against` — assert on
+ * the path production takes, or the suite tests a picture nobody renders.
+ */
+function paintAtlas(f: FramePaint): ImageData {
+  const buf = createCanvas(SPRITE_PX, SPRITE_PX);
+  const bctx = buf.getContext("2d") as unknown as CanvasRenderingContext2D;
+  paintInArtSpace(bctx, f);
+  const cell = crushToGrid(buf as unknown as HTMLCanvasElement);
+  return (cell.getContext("2d") as unknown as { getImageData: (a: number, b: number, c: number, d: number) => ImageData })
+    .getImageData(0, 0, G, G);
+}
+
+/** Exact per-index counts over an atlas-cell region. The crush emits EXACT
+ *  palette RGB (verified against a live `__dungeonAtlas` dump: 100% of opaque
+ *  pixels), so this is equality, not nearest-match — and only pixels the GPU
+ *  keeps (alphaTest 0.5 ⇒ alpha > 127) are counted. */
+function censusAtlas(img: ImageData, x0 = 0, y0 = 0, x1 = G, y1 = G): number[] {
+  const out = new Array(PALETTE_HEX.length).fill(0);
+  for (let y = Math.max(0, y0); y < Math.min(G, y1); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(G, x1); x++) {
+      const i = (y * G + x) * 4;
+      if (img.data[i + 3] <= 127) continue;
+      for (let p = 0; p < PAL_RGB.length; p++) {
+        if (img.data[i] === PAL_RGB[p][0] && img.data[i + 1] === PAL_RGB[p][1] && img.data[i + 2] === PAL_RGB[p][2]) {
+          out[p]++;
+          break;
+        }
+      }
+    }
+  }
+  return out;
 }
 
 interface Box { w: number; h: number; painted: number; y0: number; y1: number; x0: number; x1: number }
@@ -236,38 +282,48 @@ describe("the silhouette is the mechanic", () => {
 });
 
 describe("it is the warm one", () => {
-  it("spends the TORCH RAMP on a body — the census said nobody did", () => {
-    const img = paint(P.E.idle![0]);
+  it("spends the TORCH RAMP on a body — measured on the ATLAS, not the cel", () => {
     // Above the shadow pool, so the floor wash is not in the denominator.
-    const c = census(img, 0, 0, CEL, 100);
+    const c = censusAtlas(paintAtlas(P.E.idle![0]), 0, 0, G, Math.round(100 * AT));
     const painted = c.reduce((s, n) => s + n, 0);
     const torch = sum(c, [14, 15, 16, 17, 18]) / painted;
-    // render/palette.ts's census puts the torch ramp at 2.26% of ALL actor
-    // pixels across the whole roster — and about a quarter of any actor here is
-    // selout ink, which no amount of art direction changes. So the bar is a
-    // MULTIPLE of the roster figure rather than an absolute majority: at ~7x it
-    // is unambiguously the creature's own colour and nobody else's.
-    expect(torch, "torch-ramp share of the stiltneck").toBeGreaterThan(0.15);
+    const leather = sum(c, [26, 27, 28]) / painted;
+    // The two gates that would have caught the first shipped version (torch
+    // 17.8% vs leather 19.1% on the live atlas — a BROWN creature):
+    expect(torch, `atlas torch share ${torch.toFixed(3)}`).toBeGreaterThan(0.2);
+    expect(torch, `torch ${torch.toFixed(3)} vs leather ${leather.toFixed(3)}`).toBeGreaterThan(leather);
+  });
+
+  it("wears no FIELD of palette 18 — that entry blooms", () => {
+    // BLOOM_THRESHOLD is 0.7 in linear luma; 18 sits at ~0.90, so any body
+    // region painted 18 glows like a torch core in-game and the quantizer
+    // shreds the halo into speckle. The fuse sparks are the only 18 this
+    // creature is allowed — a handful of pixels, not a surface.
+    const c = censusAtlas(paintAtlas(P.E.idle![0]));
+    const painted = c.reduce((s, n) => s + n, 0);
+    expect(c[18] / painted, `palette-18 share ${(c[18] / painted).toFixed(4)}`).toBeLessThan(0.02);
   });
 
   it("is a GOLD animal wearing BROWN gear, not a brown animal", () => {
-    // Compared WITHIN the creature, band against band — the only comparison
-    // antialiasing cannot skew. Every ink edge on a gold shape blends toward
-    // LEATHER under the luma-weighted snap (a half-blend of ink 0x171a22 and
-    // flame-dark 0xd97b29 lands nearer 27 than anything else), so an absolute
-    // gold-versus-brown ratio measures outline density rather than art
-    // direction, and it says "brown" for a creature that is plainly gold on
-    // screen. Both bands here carry the same kind of edges, so if the neck is
-    // not far warmer than the shins, the animal really has stopped being gold.
-    const img = paint(P.E.idle![0]);
+    // Band against band on the ATLAS: the neck strip is nothing but creature,
+    // the shin strip nothing but timber. If the neck is not decisively warmer
+    // than the shins, the animal has stopped being gold — which is exactly the
+    // state the first shipped version was in and the cel-level version of this
+    // test could not see.
+    const img = paintAtlas(P.E.idle![0]);
     const share = (y0: number, y1: number): number => {
-      const c = census(img, 0, y0, CEL, y1);
-      return sum(c, [14, 15, 16, 17, 18]) / c.reduce((s, n) => s + n, 0);
+      const c = censusAtlas(img, 0, Math.round(y0 * AT), G, Math.round(y1 * AT));
+      return sum(c, [14, 15, 16, 17, 18]) / Math.max(1, c.reduce((s, n) => s + n, 0));
     };
     const neck = share(12, 46);   // nothing but creature
     const shins = share(96, 112); // nothing but timber
-    expect(neck, `neck torch share ${neck.toFixed(3)}`).toBeGreaterThan(0.15);
-    expect(shins, `shin torch share ${shins.toFixed(3)}`).toBeLessThan(0.03);
+    // 0.25, measured at 0.27 after the 07-29 rebalance (was 0.19 in the version
+    // that shipped brown). The band holds the whole head — dark ossicones, the
+    // void bomb in the bite frames' reach, the cold eye — so "mostly gold"
+    // lands in the high twenties, not past half; the gate is set to catch a
+    // relapse, not to flatter the current number.
+    expect(neck, `neck torch share ${neck.toFixed(3)}`).toBeGreaterThan(0.25);
+    expect(shins, `shin torch share ${shins.toFixed(3)}`).toBeLessThan(0.08);
   });
 
   it("carries DARK ordnance — the bomb is the value break, not a colour", () => {

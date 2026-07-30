@@ -297,14 +297,18 @@ function finalNode(
   // end, so a linear threshold would fire on highlights and never on the
   // shadowed silhouettes that need it.
   const LUMA = vec3(0.3, 0.59, 0.11);
-  const lumaAt = (ox: number, oy: number): TSLNode =>
-    dot(sqrt(max(texture(diffuse, vUv.add(vec2(ox, oy).div(res))).rgb, vec3(0, 0, 0))), LUMA);
-  // lumaAt(0, 0) would re-fetch `texture(diffuse, vUv)` — which `plain` above
-  // already holds. Same texel, same filter, same result; one fetch fewer.
-  const lc = dot(sqrt(max(plain, vec3(0, 0, 0))), LUMA);
+  // The four neighbour taps are shared between the luma edge and the warmth
+  // gate below, so they are fetched once here rather than inside each helper.
+  const nbTap = (ox: number, oy: number): TSLNode =>
+    texture(diffuse, vUv.add(vec2(ox, oy).div(res))).rgb;
+  const nbs: TSLNode[] = [nbTap(1, 0), nbTap(-1, 0), nbTap(0, 1), nbTap(0, -1)];
+  const lumaOf = (c: TSLNode): TSLNode => dot(sqrt(max(c, vec3(0, 0, 0))), LUMA);
+  // lumaOf on a re-fetch of (0,0) would duplicate `plain` — same texel, same
+  // filter, same result; one fetch fewer.
+  const lc = lumaOf(plain);
   const le = max(
-    max(lumaAt(1, 0).sub(lc).abs(), lumaAt(-1, 0).sub(lc).abs()),
-    max(lumaAt(0, 1).sub(lc).abs(), lumaAt(0, -1).sub(lc).abs()),
+    max(lumaOf(nbs[0]).sub(lc).abs(), lumaOf(nbs[1]).sub(lc).abs()),
+    max(lumaOf(nbs[2]).sub(lc).abs(), lumaOf(nbs[3]).sub(lc).abs()),
   );
   // Void/sky is excluded the same way the AO ring excludes it: the edge where
   // the level meets nothing is already the strongest depth edge on the screen,
@@ -312,7 +316,38 @@ function finalNode(
   // Comparisons yield bool nodes, which carry no arithmetic — every one is
   // `select`ed to 0/1 before it meets a multiply.
   const notVoid: TSLNode = dc.lessThan(0.999).select(float(1), float(0));
-  const colourEdge: TSLNode = le.greaterThan(u.edgeThreshold).select(float(1), float(0)).mul(notVoid).mul(u.colourOutline);
+  // ── THE WARMTH GATE: no colour-edge ink INSIDE the warm family. ──
+  //
+  // The colour term exists for same-depth SILHOUETTES (an actor on the floor it
+  // stands on). It cannot tell those from same-depth PATTERNING — and the first
+  // creature authored out of the torch ramp (the stiltneck, 2026-07-29) showed
+  // the failure at full size: its giraffe blotches are ~0.47 luma steps, so
+  // every spot, mane and strap boundary got the 0.45× ink and the monster read
+  // as noise. Measured in a seeded A/B, this term was the largest remaining
+  // source of its in-game mangling after the art itself was fixed.
+  //
+  // The fix keys on what a silhouette IS: a boundary between the figure and a
+  // room that is not the figure's colour. This dungeon's environment is cold —
+  // stone, steel, rot — so a neighbourhood where the centre AND all four taps
+  // sit in the warm arc (r ≥ g: torch/skin/leather/blood; rot green fails it
+  // because green dominates) can only be the INSIDE of something warm, and its
+  // luma steps are highlights or markings, not edges. Any true silhouette
+  // includes at least one cold tap, so it keeps its ink automatically — which
+  // is also why the zombie-on-flowstone case this term was built for is
+  // untouched: rot-on-rot is not warm-on-warm under r ≥ g.
+  //
+  // In LINEAR on purpose: r ≥ g survives any monotone per-channel transfer, so
+  // gating before the sqrt costs nothing and reads the taps already fetched.
+  const warmOf = (c: TSLNode): TSLNode => (step as TSLNode)(c.g, c.r);
+  const allWarm: TSLNode = warmOf(plain)
+    .mul(warmOf(nbs[0]))
+    .mul(warmOf(nbs[1]))
+    .mul(warmOf(nbs[2]))
+    .mul(warmOf(nbs[3]));
+  const colourEdge: TSLNode = le.greaterThan(u.edgeThreshold).select(float(1), float(0))
+    .mul(notVoid)
+    .mul(u.colourOutline)
+    .mul(float(1).sub(allWarm));
   const depthEdge: TSLNode = e.greaterThan(float(0.35 / 200)).select(float(1), float(0));
   const inked = max(depthEdge, colourEdge).greaterThan(float(0.5)).select(float(0.45), float(1));
   col = col.mul(mix(float(1), inked, u.outline));
