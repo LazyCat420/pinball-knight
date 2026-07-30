@@ -75,7 +75,7 @@ const EXTRACTED_DIRS = ["boot", "dev", "spawn", "economy", "run", "sim", "input"
  *         reported them: `tsc` does not run `noUnusedLocals` here and eslint is
  *         not configured for v9.
  */
-const CORE_MAX_LINES = 611;
+const CORE_MAX_LINES = 595;
 
 /**
  * Line count, measured the way `wc -l` measures it.

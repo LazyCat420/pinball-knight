@@ -44,7 +44,7 @@ import { installEngine } from "./GameEngine";
 import { BIOMES } from "./boot/biomes";
 import { readSeedParam } from "./boot/seed-param";
 import { warmFloorPipelines } from "./boot/warmup";
-import { installRenderer } from "./boot/renderer";
+import { installRenderer, presentUiFrame } from "./boot/renderer";
 import { installScene } from "./boot/scene";
 import { installDevWiring, installGameplayWiring } from "./boot/wiring";
 import { setRunDeps } from "./run/deps";
@@ -55,7 +55,7 @@ import { authorFloor } from "./spawn/floor-authoring";
 import { populateFloor } from "./spawn/floor-populate";
 import { loop, resetSimClock } from "./sim/loop";
 import { isSimPaused } from "./sim/paused";
-import { currentFloorLoad, holdForFloorLoad, releaseFloorLoad } from "./run/floor-hold";
+import { armFloorLoading, currentFloorLoad, holdForFloorLoad, releaseFloorLoad } from "./run/floor-hold";
 import { handleKey } from "./input/keymap";
 import { floorFlow, gradeFloor } from "./run/grade";
 import { tearGraveHole } from "./run/grave-hole";
@@ -401,11 +401,14 @@ export function launchDungeonGame(onExit?: () => void): void {
  */
 function startLevel(level: number): void {
   // A descent that pre-armed the screen (beginRun, the tavern's onDescend) has
-  // one up already and it has had a frame to paint. Anything else — a co-op
-  // regroup, a seed disagreement, a dev hook — raises it here, accepting that
-  // it cannot paint until the synchronous build below lets go of the thread.
+  // one up already and it has been presented. Anything else — a co-op regroup,
+  // a seed disagreement, a dev hook — raises it here and pushes ONE frame
+  // itself. There is no rAF to wait for from inside a synchronous call, but GPU
+  // submission is async: the compositor picks the frame up while `buildLevel`
+  // blocks the thread, which is exactly the window it is needed for.
   if (!currentFloorLoad() && state.container) {
     holdForFloorLoad(openFloorLoading(state.container, level));
+    presentUiFrame();
   }
   buildLevel(level);
   const load = currentFloorLoad();
@@ -422,23 +425,6 @@ function startLevel(level: number): void {
 
 /** The live descent screen, or null when the game is not entering a floor. */
 /** While true the loop simulates and renders nothing — see startLevel. */
-
-/**
- * Raise the descent screen and give it a frame to paint BEFORE `then` blocks
- * the thread building the floor. Used by the player-facing entries; without it
- * the overlay is created and then immediately starved of a paint for the whole
- * of `buildLevel`, so the descent still opens on a frozen black screen.
- */
-function armFloorLoading(level: number, then: () => void): void {
-  if (!state.container) {
-    then();
-    return;
-  }
-  holdForFloorLoad(openFloorLoading(state.container, level));
-  // Two frames: one for the browser to lay the overlay out, one for its own
-  // canvas loop to draw the first labyrinth frame.
-  requestAnimationFrame(() => requestAnimationFrame(then));
-}
 
 function buildLevel(level: number): void {
   if (!state.scene) return;

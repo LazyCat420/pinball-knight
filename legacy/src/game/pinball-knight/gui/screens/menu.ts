@@ -50,6 +50,7 @@ import {
   fillRect,
   focusable,
   focusRing,
+  key,
   heading,
   inset,
   pips,
@@ -706,10 +707,13 @@ function tabStrip(f: UiFrame, r: Rect, active: MenuTab): MenuTab {
     const tr = rect(r.x + i * tw, r.y, tw - 3, r.h);
     const st = focusable(f, tr);
     const on = t.id === active;
-    fillRect(f, tr, on ? UI.sheetEdge : UI.well);
-    strokeRect(f, tr, on ? UI.gold : UI.wellEdge);
-    drawIcon(f.g, glyph(t.icon, 12, on ? UI.gold : UI.text), tr.x + 6, tr.y + 5, 12);
-    text(f, t.label, tr.x + 22, tr.y + 7, { size: 8, colour: on ? UI.gold : UI.textDim, max: tr.w - 26 });
+    // Same physical vocabulary as `im.tabs()` — this strip hand-rolls its paint
+    // only so it can carry a per-tab glyph, and it must not become the one
+    // control in the game that is still flat. The active tab is PRESSED IN.
+    if (on) key(f, tr, { face: UI.selectFace, edge: UI.gold, sunken: true });
+    else key(f, tr, { edge: UI.wellEdge });
+    drawIcon(f.g, glyph(t.icon, 12, on ? UI.focus : UI.text), tr.x + 6, tr.y + 5, 12);
+    text(f, t.label, tr.x + 22, tr.y + 7, { size: 8, colour: on ? UI.focus : UI.textDim, max: tr.w - 26 });
     if (st.focused) focusRing(f, tr);
     if (st.activated) next = t.id;
   }
