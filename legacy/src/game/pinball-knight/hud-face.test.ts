@@ -165,6 +165,70 @@ describe("the face reads the health tier", () => {
   });
 });
 
+describe("the death screen's portrait", () => {
+  /** Every pixel of a canvas, as a comparable string. */
+  const bytesOf = (cv: HTMLCanvasElement): string => {
+    const ctx = (cv as unknown as { getContext(t: "2d"): CanvasRenderingContext2D }).getContext("2d");
+    return Buffer.from(ctx.getImageData(0, 0, cv.width, cv.height).data).toString("base64");
+  };
+
+  it("is a full dead portrait on the mugshot's own grid", async () => {
+    const m = await face();
+    m.disposeFace();
+    const dead = m.deadFace();
+    expect(dead).not.toBeNull();
+    // Same grid as the live face, because `game-over.ts` blits it at 1:1 —
+    // anything else is the fractional resample the whole file is about.
+    expect(`${dead?.width}x${dead?.height}`).toBe(`${m.FACE_PX}x${m.FACE_PX}`);
+
+    const shot = bytesOf(dead as HTMLCanvasElement);
+    const data = Buffer.from(shot, "base64");
+    const PALETTE = new Set(PALETTE_HEX);
+    let opaque = 0;
+    const stray = new Set<number>();
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 8) continue;
+      opaque++;
+      const hex = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+      if (!PALETTE.has(hex)) stray.add(hex);
+    }
+    expect(opaque).toBeGreaterThan(3000); // a portrait, not an empty plate
+    expect([...stray]).toEqual([]);
+  });
+
+  it("is the dead face, not whatever the run ended on", async () => {
+    const m = await face();
+    m.disposeFace();
+    // A live face in rude health. The portrait must not be a picture of THIS.
+    m.createFace();
+    m.setFaceHealth(100, 100);
+    m.renderFace(1 / 60);
+    const alive = bytesOf(m.createFace());
+    expect(bytesOf(m.deadFace() as HTMLCanvasElement)).not.toBe(alive);
+  });
+
+  it("puts the live face back exactly as it found it", async () => {
+    const m = await face();
+    m.disposeFace();
+    const live = m.createFace();
+    m.setFaceHealth(100, 100);
+    m.renderFace(1 / 60);
+    const before = bytesOf(live);
+    // The portrait drives the singleton to build itself. The HUD is painted
+    // behind the death screen off that same canvas, so anything left behind
+    // here is a corpse in the status bar — or a live face on the death screen,
+    // depending on which one repainted last.
+    m.deadFace();
+    expect(bytesOf(live)).toBe(before);
+  });
+
+  it("is built once", async () => {
+    const m = await face();
+    m.disposeFace();
+    expect(m.deadFace()).toBe(m.deadFace());
+  });
+});
+
 describe("the face looks around on its own", () => {
   it("turns without needing to be hit", async () => {
     const m = await face();
