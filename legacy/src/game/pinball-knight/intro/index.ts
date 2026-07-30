@@ -49,6 +49,7 @@ import { close as closeUiScreen, push as pushUiScreen } from "../gui/stack";
 import * as THREE from "three";
 import { state } from "../state";
 import { buildMaze } from "../maze/build";
+import { disposeLevel } from "../dispose";
 import { tileCenter } from "../maze/generator";
 import type { LevelPlan } from "../maze/decorate";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./title-grid";
@@ -87,9 +88,31 @@ const smooth = (u: number): number => {
   return t * t * (3 - 2 * t);
 };
 
+/**
+ * ONCE PER PAGE LOAD.
+ *
+ * `launchDungeonGame` runs again every time the player re-enters the dungeon
+ * from the site, and a title sequence on the second entry of one visit is a
+ * sequence you sit through rather than watch. A fresh load is a fresh visit; a
+ * reload replays it, which is also how you look at it while working on it.
+ * Deliberately NOT persisted — a `localStorage` flag would mean nobody ever sees
+ * this again, including whoever has to change it.
+ */
+let played = false;
+
 function shouldSkipIntro(): boolean {
+  if (played) return true;
   try {
-    if (new URLSearchParams(window.location.search).get("no-intro") === "1") return true;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("no-intro") === "1") return true;
+    // ⚠️ AUTOSTART MUST SKIP IT, and not for politeness. `?autostart=1` schedules
+    // `closeTavern() + beginRun()` one frame after launch — that would start a
+    // floor while the intro's RAF still owns `state.animFrameId`, and the two
+    // loops would fight over the frame. It is also the entry every harness uses
+    // (`playtest.mjs`, `__dungeonBot`), so leaving the intro in front of it adds
+    // 11 seconds to every measured run and lets the intro's key listener eat the
+    // bot's first input.
+    if (q.get("autostart") === "1") return true;
     if ((window as unknown as { __skipDungeonIntro?: boolean }).__skipDungeonIntro) return true;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return true;
   } catch {
@@ -104,6 +127,7 @@ export function runPinballIntro(onDone: () => void): void {
     onDone();
     return;
   }
+  played = true;
   ensurePixelFonts();
 
   const overlay = document.getElementById("dungeon-game-overlay") ?? document.body;
@@ -136,6 +160,10 @@ export function runPinballIntro(onDone: () => void): void {
     plazas: [],
   };
   state.maze = buildMaze(scene, grid, plan, []); // disposeLevel reclaims it
+  // Held so teardown can tell the LETTER grid from a real floor — see
+  // `cleanupVisuals`. Identity, not a boolean: if a run started underneath this
+  // sequence, `state.maze` is that run's level and disposing it would gut it.
+  const introMaze = state.maze;
   // buildMaze always erects the stairs kit (pit, pylons, arcane beam) at
   // plan.stairs; ours is buried in the border wall but the beam still pokes
   // above it. Hide everything parked on that tile.
@@ -321,7 +349,19 @@ export function runPinballIntro(onDone: () => void): void {
     }
     camera!.zoom = 1;
     camera!.updateProjectionMatrix();
-    // state.maze (the letter grid) is left for startLevel's disposeLevel.
+    // ── THE LETTER GRID IS DISPOSED HERE, NOT LEFT FOR startLevel ──
+    // It used to be left in place because the next thing to run was startLevel(1),
+    // whose disposeLevel would take it. The intro now hands off to the TAVERN
+    // LOBBY, which can be sat in indefinitely — so the maze spelling "PINBALL
+    // KNIGHT" would stay resident in the scene and in VRAM for the whole lobby
+    // session, and would be visible on any path that presents the dungeon scene
+    // while it is up. disposeLevel is safe this early: the horde, the loot and
+    // the props are all still empty, and it is what startLevel would have called.
+    //
+    // ⚠️ ONLY IF IT IS STILL OURS. On the abort path below a run has already
+    // built a real floor over `state.maze`, and disposing that would strip the
+    // walls out from under a live game.
+    if (state.maze === introMaze) disposeLevel();
   }
 
   function finish(): void {
@@ -338,6 +378,28 @@ export function runPinballIntro(onDone: () => void): void {
         setIntroFade(0);
       }
     }, 400);
+  }
+
+  /**
+   * A RUN STARTED UNDERNEATH THIS SEQUENCE — stand down, hand over the frame.
+   *
+   * `__dungeonStartRun()` guards on `state.player`, which is null until a floor
+   * is built, so nothing stops it firing mid-intro; the same is true of any
+   * other path that reaches `beginRun` without the lobby. Two RAF loops would
+   * then both be writing `state.animFrameId`, and worse, `finish()` would
+   * eventually raise the tavern LOBBY over a live run.
+   *
+   * Not `finish()`: no fade, no `sfxLevelStart`, and above all no `onDone`. And
+   * NOT `cancelAnimationFrame` — by now that id belongs to the run's loop, so
+   * cancelling it would freeze the game. Returning without re-arming is what
+   * stops this loop.
+   */
+  function abortForRun(): void {
+    if (finishing) return;
+    finishing = true;
+    setIntroFade(0);
+    (window as unknown as { __dungeonIntroPhase?: string | null }).__dungeonIntroPhase = null;
+    cleanupVisuals();
   }
 
   function onSkipKey(e: KeyboardEvent): void {
@@ -471,6 +533,23 @@ export function runPinballIntro(onDone: () => void): void {
     const coins = frozen ? "01" : "00";
     ctx.strokeText(`COIN x${coins}`, BW - 110, 24);
     ctx.fillText(`COIN x${coins}`, BW - 110, 24);
+
+    // ── THE SKIP AFFORDANCE FOR THE PHASES THAT HAVE NO UI LAYER ──
+    // `intro-chrome` owns a real SKIP button, but it is painted by `drawUiFrame`,
+    // which only runs inside `pixelPass.render()` — and `run`/`bonk` do not call
+    // it, because the visual here is these 2D canvases and not the 3D scene.
+    // Presenting a UI frame anyway would not help: this canvas is z-index 9000
+    // with an opaque sky, so the button would land UNDERNEATH the gag.
+    //
+    // So the affordance is painted here, in the surface the player is actually
+    // looking at, and it names what genuinely works: `onSkipKey`/`onSkipPointer`
+    // are window listeners and fire from the first frame. The button takes over
+    // at `shatter`, where the pass starts being driven.
+    ctx.globalAlpha = 0.75;
+    ctx.font = `8px ${PIXEL_FONT_LABEL}`;
+    ctx.strokeText("ANY KEY — SKIP", 16, BH - 14);
+    ctx.fillText("ANY KEY — SKIP", 16, BH - 14);
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
@@ -605,6 +684,12 @@ export function runPinballIntro(onDone: () => void): void {
   // ── Main loop ──
   function tick(now: number): void {
     if (!state.active || cleaned) return;
+    // See `abortForRun`. Checked before the RAF is re-armed, so this loop simply
+    // stops rather than racing the run's.
+    if (state.player) {
+      abortForRun();
+      return;
+    }
     // Dev/QA probe — headless harnesses poll this instead of guessing timings.
     (window as unknown as { __dungeonIntroPhase?: string | null }).__dungeonIntroPhase = phase;
     state.animFrameId = requestAnimationFrame(tick);

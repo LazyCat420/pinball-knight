@@ -361,12 +361,12 @@ export function launchDungeonGame(onExit?: () => void): void {
       beginRun();
     });
   }
-  enterTavern(state.container, {
+  runPinballIntro(() => void enterTavern(state.container!, { // title sequence, then the lobby; `!` — narrowing is lost in the callback
     stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
     onDescend: beginRun,
     onAbandon: () => exitDungeonGame(),
     lobby: true, // the entry hall IS the multiplayer lobby
-  });
+  }));
 }
 
 
