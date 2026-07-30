@@ -440,29 +440,31 @@ export interface CrushOptions {
  * fractional downscale, and the ratio has been exactly 2 since the SPRITE_PX
  * split.
  *
- * ⚠️ SO WHY IS IT STILL 1.3? Because ONE monster's identity is propped up by it,
- * and shipping arm B would re-create a bug this repo already fixed. Sweeping the
- * amount against `render/monsters/stiltneck.test.ts`:
+ * ⚠️ IT TOOK AN ART FIX TO LAND. Arm B first failed the stiltneck's warmth
+ * guard, because that creature did not reach gold on its own art — it reached
+ * gold because this pass brightened borderline blends UP into the torch ramp
+ * (14-18) instead of letting them settle on leather (26-28), worth about +0.06
+ * on its neck band. Removing the pass re-opened the "brown giraffe" b4409e4
+ * fixed. Sweeping the amount, BEFORE the art fix:
  *
- *   sharpen   neck torch (gate > 0.25)      torch vs leather (gate torch >)
- *   0.0            0.211  FAIL               0.229 vs 0.270  FAIL
- *   0.65           0.246  FAIL               pass
- *   0.9            0.250  FAIL (exactly on)  pass
- *   1.3            pass                      pass
+ *   sharpen   neck torch (then gated > 0.25)   torch vs leather
+ *   0.0            0.211  FAIL                  0.229 vs 0.270  FAIL
+ *   0.65           0.246  FAIL                  pass
+ *   0.9            0.250  FAIL (exactly on)     pass
+ *   1.3            pass                         pass
  *
- * The stiltneck does not reach gold on its own art. It reaches gold because this
- * pass brightens borderline blends UP into the torch ramp (14-18) instead of
- * letting them fall to leather (26-28). That is the "brown giraffe" failure
- * b4409e4 fixed, and turning the sharpen off re-opens it. The fix is to make the
- * stiltneck warm IN THE ART, re-run the sweep, and only then take arm B —
- * loosening the stiltneck bound instead would hollow out a test already retuned
- * twice for camera rungs.
+ * A downstream asset had come to depend on an upstream defect. So the stiltneck
+ * was fixed IN THE ART — markings moved onto the coat's own dark rung, the horn
+ * knob off the timber ramp, and the neck's ink skirt thinned from 1.5 texels a
+ * side to one — which took it to torch 0.266 vs leather 0.251 above the pool
+ * with the sharpen off, and the guard was rewritten to compare neck against
+ * SHINS (scale-free) rather than against an absolute share the sharpen had been
+ * propping up. Only then did this go to 0.
  *
- * Worth ~2.8 entries, 3.7pp isolated and 57 invented colours across the roster
- * when it lands. Do not adopt it by argument; re-run the bench.
+ * Do not restore it without re-running the bench: `CRUSH_AB=1`.
  */
 const CRUSH_DEFAULTS: CrushOptions = {
-  sharpen: SHARPEN_AMOUNT,
+  sharpen: 0,
   sharpenLuma: false,
   selout: SELOUT_SHADOW,
 };

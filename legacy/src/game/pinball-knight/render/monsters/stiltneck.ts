@@ -111,8 +111,30 @@ const R_BOMB: Ramp = [0, 1, 2];
 const R_EYE: Ramp = [29, 30, 31];
 
 /** Spot fill. Painted with `figDetail` (no ink) so blotches stay marks on the
- *  coat rather than becoming a second set of outlined shapes. */
-const SPOT = 27;
+ *  coat rather than becoming a second set of outlined shapes.
+ *
+ *  ⚠️ 14 (EMBER), NOT 27 (leather dark) — and this is a value decision, not a
+ *  hue one. 14 is the coat's OWN shadow rung (`R_COAT_DK` is [14,15,16]), which
+ *  is what a giraffe's markings actually are: a darker value of the same coat.
+ *  27 is the timber the creature's STILTS are made of, so every blotch was
+ *  spending the animal's surface on the gear's material, and the atlas censused
+ *  more leather than torch on the one creature whose identity is "the gold one".
+ *  The previous round fought that by DELETING spots (six → five, and only every
+ *  other neck segment); moving them in-family is the fix that lets the pattern
+ *  come back if it ever wants to.
+ *
+ *  Measured on the atlas at the shipped rung with the sharpen OFF, together
+ *  with the two companion changes (horn knob off the timber ramp, and the neck
+ *  tube's ink skirt thinned to one texel a side):
+ *
+ *      above the shadow pool   torch 0.229 → 0.266,  leather 0.270 → 0.251
+ *      neck band               torch 0.211 → 0.243
+ *
+ *  The creature stops being brown-dominant and becomes torch-dominant, and a
+ *  zoomed atlas crop shows it reading MORE like a giraffe, not less: 14 against
+ *  16 is a bigger VALUE step than 27 against 16 was, which is how markings are
+ *  supposed to separate — see [[separate-on-value-not-hue-in-a-tight-palette]]. */
+const SPOT = 14;
 /** Fuse spark core / halo. The roster's glow vocabulary, on the one part of this
  *  creature dark enough for it to register. */
 const SPARK_CORE = 16;
@@ -219,7 +241,13 @@ function neckTube(ctx: CanvasRenderingContext2D, pts: Pt[]): void {
       figDetail(ctx, [[pts[i][0] + ox, pts[i][1] + oy], [pts[i + 1][0] + ox, pts[i + 1][1] + oy]], wAt(i) * mul + add, idx);
     }
   };
-  pass(1, 1, 0, 0, 6.4);        // selout ink
+  // The additive term is the ink SKIRT either side of the tube, so it is a
+  // TEXEL COUNT, not taste: one texel is 2.03 art units at the shipped rung, so
+  // +6.4 put 3.2 units — over 1.5 texels — of outline on each side of a coat
+  // only ~6 texels wide. The neck band censused 33.6% ink against 24.1% coat:
+  // the outline outweighed the animal it outlines. +4.2 is a hair over one
+  // texel a side, which is what a selout is supposed to be.
+  pass(1, 1, 0, 0, 4.2);        // selout ink
   pass(1, 15, 1.6, 1.6);        // shade, offset down-right
   pass(0.82, 16, 0, 0);         // mid fill
   pass(0.34, 17, -1.4, -1.6);   // warm rim, offset up-left toward the key
@@ -474,7 +502,12 @@ function drawHead(ctx: CanvasRenderingContext2D, tip: Pt, tangent: number, dir: 
   for (const s of [-1, 1]) {
     const ox = 2 + s * 4;
     limbShaded(ctx, [ox, -7], [ox - 1, -13], 2.4, R_COAT_DK);
-    ellShaded(ctx, ox - 1, -14, 2, 1.8, R_WOOD, 0, { rim: false });
+    // The knob is HORN, not timber. It was R_WOOD, which put the stilts'
+    // material on the animal's own skull — inside the band the warmth gate
+    // measures, where a ~2-unit ball is a meaningful share of a head that is
+    // only ~11 units long. R_ROPE keeps it a distinct warm-neutral against the
+    // coat without leaving the creature's own hue territory.
+    ellShaded(ctx, ox - 1, -14, 2, 1.8, R_ROPE, 0, { rim: false });
   }
   // Ear, swept back off the skull. COAT ramp, not the far-side one: this is
   // the near ear on a lit head, and in the atlas census the darker ramp was
