@@ -7,6 +7,135 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🔊 LIVE NOW — the volume slider reaches the tavern, the stings can be auditioned, and the beds hum (2026-07-30, `main@491682c`)
+
+Deployed and verified live on `https://braindeadbot.com/dungeon` — container
+healthy, 0 restarts, HTTP 200, `__renderBackendResolved = webgpu` on a real
+NVIDIA Ampere adapter. 218 files / 2372 tests green, scoped tsc 0, registry-drift
+clean.
+
+Four of the five items the sound wave left behind. The fifth (category trims) is
+still open and still needs ears — see below.
+
+### 1. The tavern is under the volume slider — 23 `connect` sites
+
+Set the volume to 0, walk into the tavern, and the hearth still roared. The five
+tavern/gambler audio files each connected straight to `ctx.destination`, so the
+master gain in `utils/audio-manager.ts` could only ever scale the dungeon.
+
+Their five **byte-identical** private `ctx()` helpers are now one `sfxCtx()`, and
+that is where the `volume <= 0` **hard gate** lives — the same gate `sfx/bus.ts`
+carries and for the same reason: `sfxDestination()` degrades to `ctx.destination`
+if the master node cannot be built, and without the gate that fallback plays at
+FULL VOLUME exactly when the player asked for silence.
+
+`scenes/tavern/audio-routing.test.ts` drives the **real** `audio-manager` — unlike
+`sfx/bus.test.ts`, which stubs it — and asserts one node reaches `destination`,
+that volume 0 builds no node at all, and (negative control) that a rogue connect
+is visible to the first assertion. **Falsified**: re-introduce one bypass and 2
+tests go red; restored, green. The cue list in that file is explicit and
+cross-checked against each module's `sfx*` exports, so a cue added to any of the
+five and not listed there fails the suite instead of quietly going untested.
+
+### 2. The audition panel `sfx/registry.ts` has existed for since the folder split
+
+Bottom of the ` console. 28 sting chips grouped by their bus mark, the four
+volume steps, the mute latch, and — the part that saves the most time — a heading
+that names **which of the three gates is closed**: `SOUND — VOL 100%` /
+`SOUND — MUTED` / `SOUND — APP MUTED`. All three look identical from a chip that
+does nothing, and the app gate is reachable from here (`UNMUTE THE APP`), which is
+the one you cannot fix from the URL once the page is up.
+
+Verified in-browser, not by assertion: pressing a chip created **3** audio nodes;
+setting 0% and pressing the same chip created **none**.
+
+### 3. Ambience beds — `sfx/ambience.ts`, poll-driven, with a dead-man's switch
+
+`ambience(id, level)` is called every frame while a source is alive, and every
+call **re-arms a fade to silence 0.35 s out**. Refresh it and the fade never
+happens; stop calling and the voice dies on the audio clock.
+
+That is the whole design, and it is why there is no `stop()` anywhere. Floor
+descent, death, the pause menu, `dispose()`, and the one with no callback at all —
+a **hidden tab**, where rAF stops dead and the audio context does not — are the
+same event from here. A start/stop design needs a hook at every one of those and
+leaks sound the first time somebody adds a seventh.
+
+⚠️ The fade is **scheduled on `AudioParam`, never `setTimeout`**. A JS timer does
+not fire in a throttled background tab, which is exactly what
+`utils/audio-manager.ts`'s `stopWaterSound` gets wrong — do not copy it.
+
+Driven from `updateFloorFx` by proximity to the puddle's EDGE (squared falloff,
+6 world units, ~the width of the visible arena): fire pools crackle, slick and oil
+lap. Six fires in a room are one sound, louder — the caller accumulates and the
+level is clamped. Verified live: latching the bed chip created **ONE** looping
+source across 2.5 s of frames, and unlatching created none.
+
+### 4. Heat shimmer's boot cost — MEASURED, and deliberately not changed
+
+This was flagged last session as *"the largest unquantified item I am handing
+over"*. It is quantified now. A fresh copy of the composite compiled with
+`compileAsync` on a quiet main thread, five rounds, arms interleaved and the order
+alternated each round, a unique trailing multiply per call so no arm could hit the
+pipeline cache the shipped material had already filled:
+
+| arm | median | runs |
+|---|---|---|
+| with the warp | 46 ms | 70, 58, 46, 45, 43 |
+| without it | 45 ms | 45, 54, 39, 59, 42 |
+| **positive control — the warp ×8** | **61 ms** | 63, 58, 62, 58, 61 |
+
+The control is the point: without it, "+1 ms" is indistinguishable from a bench
+that cannot see shader size at all. It can — ~2 ms per warp — and the one warp we
+ship costs **~1-2 ms of a ~45 ms compile**.
+
+So `setHeatEnabled` **stays a runtime uniform**. Making it build-time buys ~1 ms
+of boot and costs the live settings toggle (the material would have to be rebuilt
+on every change). The numbers are recorded next to `setHeatEnabled` so nobody
+re-opens this on a hunch; the temporary `opts.heat` flag and the instrument are
+reverted and are not in the tree.
+
+### 🔜 NEXT
+
+1. **Category trims are still all 1.0.** `sfx/bus.ts`'s `TRIM` ships unity, so
+   nothing is balanced. `pinball` is by far the densest category (18 call sites in
+   `entities/pinball-collide.ts` alone). This is a BY EAR commit — the audition
+   panel above is now the tool for it, and `sfx/snapshot.test.ts` should be
+   regenerated deliberately rather than to make red go away. It is the only item
+   of the five I did not do, because doing it without ears would be guessing.
+2. **The beds have no distance panning and no torch source.** Every floor has
+   torches and they are silent; a fire bed keyed off the nearest torch would make
+   an empty room feel lit rather than dead. `ambience()` takes any number of
+   callers — the poll is the whole API.
+3. **`steam` is deliberately not a bed** (it is the slick-quenches-fire EVENT, and
+   already has its puff). If it ever wants a hiss, it wants a one-shot, not a loop.
+
+### ⚠️ WHAT WILL BITE
+
+- **A green playtest still says nothing about audio.** `?playtest=1` forces global
+  mute at module load. Everything above was verified by counting nodes created on
+  a real `AudioContext` in a real browser, which is the cheapest honest instrument
+  I found — `window.__n++` on `createOscillator`/`createBufferSource`, drive the
+  UI, read the count. Reach for it before you reach for headphones.
+- **`sfx*` is a namespace enforced only by a reflective test.** `ambience`,
+  `resetAmbience` and `ambienceVoices` are deliberately NOT `sfx`-prefixed: the
+  discovery in `stings/snapshot/bus.test.ts` calls everything it finds, and it
+  would fire a LOOP with no way to stop it.
+- **A latch with no lit state is unusable on an audio panel.** The bed chips are
+  the console's first stateful chips; `chips()` grew a `goodOf` predicate for
+  exactly that. A verb chip and a latch chip that look identical can only be told
+  apart by listening, which is the thing that cannot be relied on here.
+- **Two sessions fixed `menu.ts`'s scroll extent simultaneously.** Mine is dropped
+  in favour of `6036a63`, which shipped first and is better (it caught that the
+  bestiary UNDER-declares at full discovery — a fresh-run headless probe cannot
+  see that). The two independently landed on the same three tab bodies that paint
+  below their last `cutTop`, which is a good sign about the diagnosis and a bad
+  sign about the cost: **read the top of this file and `git log origin/main`
+  before starting an item, not after.** The pick-up list is worked by more than
+  one session at a time.
+
+---
+
 ## 🎨 SHIPPED — the palette snap was choosing the family from the LIT colour (2026-07-30)
 
 `eb4a9c6`. The second half of the maze-colour fix, and the same bug as the first:
