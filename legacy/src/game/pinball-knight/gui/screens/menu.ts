@@ -68,7 +68,7 @@ import {
 import { abilityIcon, drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
-import { settingsScreen } from "./settings";
+import { settingsBody, settingsContentHeight } from "./settings";
 
 /**
  * What each ability GAINS at rank 2, printed on its row.
@@ -87,13 +87,28 @@ const ABILITY_RANK_RULE_TEXT: Record<AbilityId, string> = {
   slickfield: "adds a tar core",
 };
 
-type MenuTab = "equipment" | "cards" | "skills" | "bestiary" | "stats";
+type MenuTab = "equipment" | "cards" | "skills" | "bestiary" | "stats" | "options";
+/**
+ * OPTIONS IS THE SIXTH TAB, AND ITS ABSENCE WAS A BUG (2026-07-30).
+ *
+ * The docblock at the top of this file has said "six tabs" since the port, and
+ * `icons.ts` has carried a `"gear"` glyph commented "settings tab" — but the
+ * strip only ever had five, `openMenuSettings()` was exported and called by
+ * nothing, and the only route to the settings screen was `__gui.settings()` in
+ * the dev console. So `cameraZoom` — the one control over how far back the
+ * camera sits — shipped into a screen no player could open, which is exactly how
+ * it was reported: "no way to change resolution when I hit esc".
+ *
+ * Six labels fit: Press Start 2P is monospace at 8px, so the longest ("OPTIONS")
+ * is 56px inside the 68px a sixth-of-584 tab leaves after its glyph.
+ */
 const TABS: Array<{ id: MenuTab; label: string; icon: GlyphId }> = [
   { id: "equipment", label: "GEAR", icon: "sword" },
   { id: "cards", label: "CARDS", icon: "card" },
   { id: "skills", label: "SKILLS", icon: "spark" },
   { id: "bestiary", label: "BEAST", icon: "book" },
   { id: "stats", label: "STATS", icon: "scroll" },
+  { id: "options", label: "OPTIONS", icon: "gear" },
 ];
 
 const BRANCH_META: Record<SkillBranch, { label: string; colour: string; icon: GlyphId }> = {
@@ -124,8 +139,8 @@ function newMenuState(): MenuState {
     abandonArmed: false,
     flash: "",
     flashUntil: 0,
-    scrolls: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0 },
-    focuses: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0 },
+    scrolls: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0, options: 0 },
+    focuses: { equipment: 0, cards: 0, skills: 0, bestiary: 0, stats: 0, options: 0 },
   };
 }
 
@@ -598,6 +613,10 @@ function contentHeight(tab: MenuTab): number {
       return ROW_H + 14 + buildBestiary(state.killsByKind).length * 52 + 40;
     case "stats":
       return ROW_H * 2 + 9 * 18 + REAGENT_IDS.length * 16 + 60;
+    case "options":
+      // Asked, not restated: the settings screen derives this from its own
+      // section list, so a row added there scrolls here too.
+      return settingsContentHeight();
   }
 }
 
@@ -672,12 +691,15 @@ export function menuScreen(onAbandon: () => void): UiScreen {
         case "stats":
           statsTab(f, body);
           break;
+        case "options":
+          settingsBody(f, body);
+          break;
       }
       endScroll(f, view, contentH, scrolled.offset);
       m.scrolls[m.tab] = scrolled.offset;
 
       // Footer: hints + the two-step ABANDON.
-      text(f, "ESC/B CLOSE   TAB CYCLE   1-5 JUMP   ↑↓ MOVE   ENTER/A PICK", foot.x, foot.y + 8, {
+      text(f, `ESC/B CLOSE   TAB CYCLE   1-${TABS.length} JUMP   ↑↓ MOVE   ENTER/A PICK`, foot.x, foot.y + 8, {
         size: 8,
         colour: UI.textFaint,
       });
@@ -731,12 +753,13 @@ function tabStrip(f: UiFrame, r: Rect, active: MenuTab): MenuTab {
   return next;
 }
 
-/** Open the menu, or the settings sheet layered over it. */
+/**
+ * Open the menu. Esc/I both land here — see input/keymap.ts.
+ *
+ * There is no `openMenuSettings()` any more. It existed, was exported, and was
+ * called by nothing for its entire life; settings are the OPTIONS tab now, which
+ * is a route a player can actually find.
+ */
 export function openMenu(onAbandon: () => void): void {
   push(menuScreen(onAbandon));
-}
-
-/** SETTINGS is its own screen, layered over the menu — see gui/screens/settings.ts. */
-export function openMenuSettings(): void {
-  push(settingsScreen());
 }
