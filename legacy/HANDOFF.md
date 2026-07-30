@@ -7,6 +7,73 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the knight menu can be navigated at all (2026-07-30)
+
+**Deployed `main@89b7eef`, container healthy, 0 restarts. 205 files / 2257 tests
+pass, tsc clean, registry-drift clean. Verified on a real WebGPU adapter.**
+
+Closes the open item the tavern entry below left — wire `scrollToShow` into the
+four screens that still had the gap. Doing it surfaced something worse.
+
+### THE MENU IGNORED THE KEYBOARD AND THE PAD. ENTIRELY.
+
+`menu.ts` opened its paint with `f.focus = m.focuses[prevTab]` and closed it with
+`m.focuses[prevTab] = f.focus`. But the driver applies navigation AFTER the paint
+(`moveFocus`, in `gui/root.ts`) and hands it back via `self.focus` → `f.focus` —
+so that opening line overwrote every keypress with the value stashed *before* it.
+**Its own stash undid it, every frame, on all six tabs.**
+
+MEASURED, Down held for eight frames: the settings sheet's cursor walks
+`0,1,2,3,4,5,6,7`; the knight menu's read `0,0,0,0,0,0,0,0`. Live after the fix,
+12 Downs on OPTIONS move focus 0 → 12 and scroll 0 → 188, landing the ring on the
+last row of the settings body — which no keyboard could reach before.
+
+`m.focuses` is the PARKED cursor for the tabs you are *not* on. The live one
+belongs to the driver, so the read is gone and the write stays.
+
+### `followFocus` — the scroll-follow, in ONE place
+
+`menu`, `settings`, `debug`, `haul` and `tavern` now each end their region with
+`self.scroll = followFocus(f, view, sc.offset)`. Wrapping it stops the fix being
+subtly wrong in five files, and adds a guard the tavern's hand-rolled version did
+not have: **`UiFrame.focusClipped`**, which records whether the focused widget was
+registered *inside* the region. Scrolling by a chrome rect is wrong in both
+directions — a tab strip above snaps the list to the top, and `debug.ts`'s CLOSE
+button sits BELOW its region, so the cursor reaching the footer would have run the
+whole monster grid to the bottom.
+
+Menu scroll is now also mirrored onto `self.scroll`. The per-tab map is the real
+storage (six tabs cannot share one number), but `__gui().scroll` reads
+`top()?.scroll` — so the probe you check when a list will not scroll was reporting
+a flat 0. Same defect the tavern had.
+
+### The test has two halves because the bug did
+
+`scroll-follow.test.ts`. The behavioural half drives **Down presses** through every
+widget of all five screens. It does NOT assign `screen.focus`: assignment teleports
+the cursor somewhere no player reaches in one step, and `moveFocus` then walks it
+further to clear any disabled run — measured, an assignment of 24 landed on 30 —
+so the region is permanently one jump behind and the test reports a failure the
+game does not have. **Three paints per step**, because immediate mode costs a frame
+at every hand-off: one to move the cursor, one to compute its scroll, one to apply
+it. Asserting on frame two fails all five screens.
+
+The STRUCTURAL half asserts every file calling `beginScroll` also calls
+`followFocus`, because the original failure was not arithmetic — it was five
+screens that never made the call, and a behavioural test only covers what someone
+remembered to list. **A sixth scrolling screen fails on the day it is written.** It
+carries its own anti-vacuity guard: a glob matching nothing would pass it.
+
+⚠️ **Two fixture traps, both of which fake a green run.** `stackHaul` groups by id,
+so 24 copies of one card collapse into a SINGLE cell — one focusable, no scrolling,
+every assertion vacuous. And `cardDef` does not know an invented base, so
+`cardKey("ember", …)` yields a haul that renders nothing. Both fixtures derive real
+ids from `cardsOfRarity` now. Anything testing a card list should.
+
+Verified by reverting: each of the five screens fails its own case individually,
+removing a call outright also trips the structural guard, and restoring the menu's
+focus clobber fails the menu case.
+
 ## ✅ LIVE NOW — the ✨ laser leaves a beam grid, not just sparks (2026-07-30)
 
 **Deployed `main@78b34ef`, container healthy, 0 restarts. 1662 tests pass, 0 tsc
@@ -105,8 +172,9 @@ box). Every row below the fold was **mouse-only** — the D-pad walked the ring 
 the bottom and Enter fired a button nobody could see. `scrollToShow` was written
 for exactly this in the P0 foundation commit and **called by nothing for five
 months**, because nothing could get it the focused widget's rect;
-`UiFrame.focusRect` now carries it. Wired for the tavern only — `menu`,
-`settings`, `debug` and `haul` all still have the gap, and now have the plumbing.
+`UiFrame.focusRect` now carries it. **The other four screens are done too — see
+the entry above**, which is also where the worse bug hiding under them is written
+up.
 
 **A disabled row swallowed the cursor.** It keeps its focus index (call order is
 identity) but can never be `focused`, so landing on one drew no ring and ignored
