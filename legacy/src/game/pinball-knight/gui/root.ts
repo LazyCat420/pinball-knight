@@ -130,8 +130,13 @@ export function drawUiFrame(pass: PixelPass): void {
     s.focus = clampFocus(f.focus, f.count);
     // The COUNT is the delta. Three quick Downs move three rows even if all
     // three landed between two painted frames.
-    const delta = input.down - input.up;
-    if (delta !== 0) s.focus = moveFocus(f, delta);
+    //
+    // Called even at delta 0, which is not a no-op: `moveFocus` also steps the
+    // cursor off a row that went DISABLED since the last frame. Without that,
+    // spending the gold a button needed left the cursor resting on a widget that
+    // draws no ring and answers no key — a counter that looks dead while you are
+    // broke. See `moveFocus`.
+    s.focus = moveFocus(f, input.down - input.up);
 
     if (input.cancel) {
       const handled = s.onCancel?.(s) ?? false;
