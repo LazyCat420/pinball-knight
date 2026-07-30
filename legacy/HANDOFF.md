@@ -7,7 +7,127 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
-## ✅ LIVE NOW — the knight menu can be navigated at all (2026-07-30)
+## ✅ LIVE NOW — the maze colours: the boot path never installed the shade table (2026-07-30)
+
+**Deployed `main@9caa89a`, container healthy, 0 restarts. 2268 tests pass, scoped
+tsc clean, registry-drift clean. Verified on a real NVIDIA adapter, all four
+biomes at pinned seeds.**
+
+Reported as "the colors in the maze are all screwed up", with a tavern shot as a
+second example. It was not the sprite pipeline and no palette shrank — the
+32-entry master palette is untouched and the 20-entry cap is scoped to monster
+atlases.
+
+### INDEXED LIGHTING SHIPPED WITHOUT ITS TABLE
+
+`setEnginePalette` treats `shadeDown` as OPTIONAL and falls back to
+`descendingChain(size)` — `i → i-1`. That is right for the engine's neutral
+greyscale default and wrong for this palette, whose 32 entries are eight
+material families laid out back to back. `installEngine()` hand-built its own
+`PaletteSource` literal instead of calling `installPalette()`, and that literal
+never carried the field. `render/palette.ts` warns about this exact fallback in a
+comment. Nothing enforced it.
+
+`launchDungeonGame` calls `installEngine()` immediately before
+`createPixelPass()` bakes the table into a texture, so the fallback was not
+merely possible — **it is what every session got.** The only caller passing the
+real table is a lazy monster-portrait path, and the launch overwrites it.
+
+MEASURED, both tables through the pass's own luma-matching row walk:
+
+```
+ColdCrypt   shipped == correct, byte for byte
+Warren      rotMid  → stoneLt → rotDk → stoneMid   (grey masonry, green biome)
+Bloodworks  bloodSh → bloodSh x7                   (never darkens at all)
+            skinMid → steelDk (violet) → skinSh x4
+ArcaneDeep  arcMid  → leathMid → leathDk           (cold blue shades WARM BROWN)
+```
+
+### WHY IT SURVIVED REVIEW — TWICE, AND THE SECOND ONE IS THE LESSON
+
+1. Stone is entries 0-5 in descending order, so `i-1` **is** the stone ramp. The
+   Cold Crypt, the one all-stone biome, is bit identical under both tables.
+2. **The bug was read as the fix.** At the verification seed 777,
+   `themeIndexFor(1, 777)` is 1 — floor 1 is the Rotting Warren, whose masonry
+   is *authored* rot green. `51bbd77` recorded "the green and blue checkerboard
+   on floor 1 — it was never moss ... it is now correctly grey." It WAS moss.
+   The broken table greyed it out. Re-shot at the same seed: rot goes 2.0% →
+   9.8% of on-palette pixels. The moss is back.
+
+### IN-GAME, PINNED SEEDS, REAL ADAPTER
+
+| biome | seed | family share of on-palette pixels, before → after |
+|---|---|---|
+| Cold Crypt | 6 | leather **37.2 → 6.7** — the brown checkerboard is gone |
+| Rotting Warren | 1 | rot **2.1 → 10.0** |
+| Bloodworks | 2 | blood **5.8 → 46.9**, leather 50.7 → 6.5 |
+| Arcane Deep | 3 | arcane 1.0 → 2.6, leather 24.7 → 5.9 |
+
+The frame also got much darker everywhere (Cold Crypt void/ink 50.5 → 82.1%) and
+that is the fix working: under `i-1`, **no non-stone family could reach ink** —
+leather bottomed out at leather-shadow, blood never moved at all — so every
+shadow on wood, skin, blood and arcane was a muddy mid-tone instead of black.
+
+### ALSO FIXED — the Bloodworks row was three materials
+
+`BIOME_STONE[2]` was `[10, 27, 24]`: blood + leather + skin. A wall's mortar,
+face and highlight each walked a different ramp and never agreed, and the dark
+tone (luma 0.113) sat so near ink that mortar read black before any shadow
+reached it. Now `[11, 12, 13]` — one blood ramp with 10 spare below it, which is
+what "the walls weep red" always promised.
+
+⚠️ **This is the one taste call in the change.** The Bloodworks is now
+emphatically red (46.9% of on-palette pixels). If that is too much, `[10,11,12]`
+is the darker, less saturated alternative — one line in `maze/build.ts`, and
+`render/palette-install.test.ts` will tell you if a row breaks the rules.
+
+### GATES ADDED
+
+`render/palette-install.test.ts` asserts the **boot path** hands over a table
+that never brightens, never leaves a family except into ink/void, and reaches
+void from every entry — with the `i-1` chain as an explicit negative control so
+the invariant cannot go unfalsifiable. Plus: every biome row's dark and mid must
+share a family, and every row must hold the Cold Crypt's value spread.
+`BIOME_STONE` is exported for it. Existing `palette-shading.test.ts` proves the
+table is right; nothing proved anyone *received* it.
+
+`scripts/biome-ab.mjs` — the same floor on two ports, all four biomes plus the
+tavern, seeds chosen so each biome lands at depth 1.
+
+> **Its guard is the reusable part.** `__dungeonPlayer().active` goes true while
+> the DESCENT CARD is still up — the card is drawn inside the canvas, the loop is
+> HELD during generation, and no DOM query can see it. This harness's first run
+> produced six complete, healthy-looking palette censuses **of a loading
+> screen**. The HUD only paints once a floor is presented, so a shot whose bottom
+> band is unlit is now rejected. Measure the saved PNG, not the page: the
+> document has several canvases and `#room-canvas-element` comes first, which
+> made the guard's own first version report 0.0% for scenes that were fine.
+
+### STILL OPEN — the material index is chosen from the LIT colour
+
+`pixel-pass.ts` snaps on the diffuse target, which already carries the scene's
+own lighting: coloured ambient ×3.5, hemi, the cold key, and six flame-orange
+torch PointLights at intensity 6. That is the same cross-family multiply this
+machinery exists to prevent, arriving from the dominant light source instead of
+from AO — torch-lit stone can still snap into leather/ember. `BLUEPRINT.md:576`
+records the extreme version (torches at 18 turned the cold crypt into a cosy
+burrow). The comment claiming the snap "ran on the UNLIT colour" is corrected;
+the defect needs an albedo/material target and its own wave. **Measure it now
+that the fallback is no longer masking it.**
+
+A warmth-gate brightness term was planned and **dropped on measurement**: the
+colour edge fires above a 0.26 luma step and no masonry pair reaches it (tavern
+leather 0.095 / 0.100). The one pair that did was the OLD Bloodworks mid→light
+at 0.279, and it is gone. Warm PROPS against warm floors are still a real
+candidate — that needs a seeded A/B, not a guessed constant.
+
+Not touched, named so they are not rediscovered: the surface wash textures
+hardcode off-palette `rgba()` (`maze/build.ts:797-870`); `stoneMat`/`stepMat`
+read `PALETTE_HEX[3]`/`[2]` directly so pilasters and stairs ignore the biome
+remap; `FLOOR_SURFACES[].hex` is dead; shaped walls share the tall-wall texture
+so they never get the mossy/cracked variants.
+
+## ✅ SHIPPED — the knight menu can be navigated at all (2026-07-30)
 
 **Deployed `main@89b7eef`, container healthy, 0 restarts. 205 files / 2257 tests
 pass, tsc clean, registry-drift clean. Verified on a real WebGPU adapter.**
