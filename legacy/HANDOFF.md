@@ -7,6 +7,79 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the chute is cover: nothing sees you until you launch (2026-07-30)
+
+**1576 tests / 142 files pass in the game subtree, 0 tsc errors there,
+registry-drift clean. Measured live in a real browser on both sides of the fix,
+same floor.**
+
+Reported from play: *"when we start the monsters shouldn't be able to see the
+user until they launch from the starting point — that way they don't all go to
+where the user is if they are idle at the start of the maze."* They were right,
+and it was worse than a nuisance: a parked knight **cannot move**
+(`updatePlunger` owns the player and returns early), so the reception committee
+could not be declined.
+
+Cause: a floor opens PARKED in the plunger chute and every acquisition check
+measures the knight's CURRENT position. `aggroTiles()` is floor-relative and
+reaches up to 0.75× the grid diagonal, so a big slice of the horde woke the
+instant the floor existed and walked to the launch point while the player read
+the HUD.
+
+A/B on the identical floor (`?seed=4242`, 88 monsters, spawn at `-3,8`), zero
+input in both runs:
+
+| | awake at park | after 10s parked | after launch |
+|---|---|---|---|
+| `main` | **19** | 19, closing — nearest 1.86 → 1.48 tiles | 19 |
+| fix | **0** | 0, mean distance unchanged | **19** |
+
+Same 19 either way. This delays PERCEPTION; it does not thin the horde.
+
+### The shape of the fix
+
+`playerIsVisibleToEnemies()` in `state.ts` — one predicate, `!state.plungerArmed`
+— read by the three paths that ACQUIRE:
+
+- the grunt aggro gate (`entities/zombie.ts`)
+- the mimic's wake (same file — a mimic sited by the chute was bursting on a
+  knight who never stepped close; the floor opened with you already there)
+- the Reaper King's leash (`boss.ts`), whose **"he has seen you"** toast was
+  firing at a knight nothing had seen — on a small floor the chute can sit
+  inside `KING_WAKE_TILES` of his post
+
+Deliberately NOT read by retaliation in `entities/combat.ts`: being hit always
+wakes a monster, and that path cannot fire from the chute anyway (`updatePlunger`
+refreshes `p.iframes` every frame while parked).
+
+### The trap worth keeping
+
+It is a **perception** gate, not a freeze. The obvious cheap version — skip
+`updateZombies` while parked — passes every stealth assertion and silently
+stalls wind-ups, burn ticks and stagger recovery on monsters that are already
+hunting. `plunger-stealth.test.ts` pins the distinction with a pre-aggroed
+monster that must still close in, and its "the setup is honest" test guards the
+sample so the stealth case can't pass by drifting out of aggro range instead.
+Negative control run: stubbing the predicate to `true` fails 4 of the 6.
+
+**Not changed, worth a decision:** `state.levelT` ticks while you sit in the
+chute, so idling long enough still spawns the REAPER (`REAPER_AFTER`), and the
+reaper sets `aggro` directly and phases through walls. Parking is now safe from
+the horde, not from the floor timer.
+
+Two harness notes for whoever probes this next:
+
+- `window.__dungeonBot()` **starts the bot** — it is the runner, not a snapshot.
+  The read-only snapshot with `plungerArmed` is `__dungeonPlayer()`. Calling the
+  wrong one made my first probe pull its own plunger at t≈10s and read as "the
+  gate leaks after ten seconds".
+- `node_modules/node_modules` in the primary checkout is a stray absolute
+  symlink to the checkout itself (left over 2026-07-28). Harmless in place;
+  `cp -al` it into a worktree and Turbopack dies with *"Symlink
+  [project]/node_modules/node_modules is invalid, it points out of the
+  filesystem root"*. Delete it in the copy. `cp -al` of the 1.3G tree takes ~5s
+  and, unlike a symlink, `next dev` accepts it.
+
 ## ✅ LIVE NOW — public runs reach the shared leaderboard (2026-07-30)
 
 **181 files / 2069 tests pass, registry-drift clean, 0 tsc errors in the game
