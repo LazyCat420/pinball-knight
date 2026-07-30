@@ -124,15 +124,20 @@ export function installFxLab(deps: FxLabDeps): void {
      * is ONE screenshot rather than ten hand-placed ones — and the lattice is
      * fixed so the two screenshots are actually comparable.
      */
-    grid: (spacing = 3) => {
+    grid: (spacing = 2.4) => {
       clearFloorFx();
       const roster = floorFxKinds();
       const cols = Math.ceil(Math.sqrt(roster.length));
+      const rows = Math.ceil(roster.length / cols);
       const placed: Array<{ kind: string; dx: number; dz: number }> = [];
       roster.forEach((kind, i) => {
+        // Centred on the player in BOTH axes. An earlier version ran the rows
+        // away from the camera (`dz = 2 + row * spacing`), which pushed the back
+        // row far up-screen where the descent banner covers it — so the contact
+        // sheet was missing exactly the kinds it existed to show.
         const dx = ((i % cols) - (cols - 1) / 2) * spacing;
-        const dz = 2 + Math.floor(i / cols) * spacing;
-        placeAt(kind, dx, dz, LAB_RADIUS, LAB_LIFE);
+        const dz = (Math.floor(i / cols) - (rows - 1) / 2) * spacing;
+        placeAt(kind, dx, dz, LAB_RADIUS * 0.8, LAB_LIFE);
         placed.push({ kind, dx, dz });
       });
       return placed;

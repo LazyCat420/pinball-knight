@@ -383,12 +383,23 @@ src/objects/dungeon-game/
 │   ├── registry.ts     # name → sting, for the audition panel. NOT a call path.
 │   └── combat|weapons|pinball|monsters|world|run.ts   # the 28 stings
 │
-├── fx/                 # EVERY VISUAL EFFECT.
+├── fx/                 # EVERY VISUAL EFFECT. `fx/index.ts` is the entry point.
+│   ├── system.ts       # createVfx() — composition root + the public face
 │   ├── color.ts        # palette index → LINEAR rgb (the scene buffer is linear)
+│   ├── puffs.ts        # smoke + steam: alpha that ERODES rather than fades
+│   ├── heat.ts         # what is hot, projected to screen for the shimmer
+│   ├── pools/          # one file per effect family + shared.ts
+│   │   ├── particle-pool.ts  sparks, blood, embers, motes, dust, bursts
+│   │   ├── slash-pool.ts · bolt-pool.ts · ring-pool.ts · sigil-pool.ts
+│   │   ├── trail-ribbon.ts · laser-mark-field.ts · blade-ring.ts
+│   │   └── shared.ts   # PARTICLE_SCALE, rnd, the linear palette picks
 │   ├── elements/       # TSL/WebGPU shader materials
 │   │   ├── noise.ts    # fbm, domain warp, disc mask, bandRamp
 │   │   ├── fire.ts     # domain-warped flame, silhouette from the NOISE
-│   │   └── water.ts    # ripple normals, Schlick fresnel, caustics, torch glint
+│   │   ├── water.ts    # ripple normals, Schlick fresnel, caustics, torch glint
+│   │   ├── frost.ts    # Worley facets + a growth front (angular, not round)
+│   │   ├── goo.ts      # oil AND tar — one graph, three params, opposite reads
+│   │   └── rod.ts      # a humming pinpoint stake
 │   └── floor/decals.ts # which kinds wear a shader, and their per-frame clock
 │
 └── dispose.ts          # tear down geometry, materials, textures, listeners
@@ -658,6 +669,14 @@ React 19 + TypeScript + ESLint. Trust the code).
   wash has measured 26.8% ROT GREEN in this repo. `fx/elements/noise.ts`'s
   `bandRamp` quantises each shader's own field at palette entries, which makes the
   snap a no-op and turns the quantizer from a hazard into the look.
+  - **Banding is not enough for anything ADDITIVE.** What the pass snaps is
+    `effect + scene`, and that sum is nobody's palette entry. Scale an additive
+    effect's colour by its own intensity so its dim edge cannot tint what is
+    behind it — fire rendered PINK before it did.
+  - **Judge an effect over MORE THAN ONE backdrop.** Both of the worst bugs here
+    were an effect colliding with what happened to be behind it: pink fire (a
+    desaturated ember band summing with cool stone) and invisible smoke (painted
+    from the same palette entries as the floor).
   - **Never clock a shader on TSL's `time`.** It is fed by `nodeFrame.update()`,
     which three calls only from its INTERNAL rAF loop — and this game drives its
     own and never calls `setAnimationLoop` (the same root cause as the
@@ -666,7 +685,13 @@ React 19 + TypeScript + ESLint. Trust the code).
     explicit uniform poked from the frame loop, and prove motion with
     `scripts/fx-motion.mjs` — which has a FROZEN control precisely because
     "the frames differ" is also satisfied by camera drift or a stray particle.
-  - `__fx()` in the console is the effects lab (`__lab` is monster-only).
+  - `__fx()` in the console is the effects lab (`__lab` is monster-only). Capture
+    scripts: `fx-motion.mjs` (proves a shader is not frozen, with a frozen
+    control), `fx-shot.mjs` (full-frame contact sheet), `heat-ab.mjs` (the shimmer
+    A/B — it has nothing of its own to look at), `fx-probe.mjs` (ask the page
+    instead of guessing). Each measures a CROP around the subject: a whole-frame
+    diff is dominated by torch flicker, which advances even while the sim is
+    paused, and that has produced a false PASS and a false FAIL already.
 - Emoji-prefixed `console.log` for lifecycle tracing.
 - Tests are colocated `*.test.ts`, and only **pure-logic** modules get tested —
   three.js rendering does not. For this game that means the natural test surface is
