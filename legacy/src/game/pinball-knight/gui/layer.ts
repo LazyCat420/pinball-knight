@@ -33,6 +33,7 @@
  */
 import * as THREE from "three";
 import { awaitPixelFonts, ensurePixelFonts } from "../pixel-fonts";
+import { forceBackingStore } from "../engine/render/canvas-backing";
 import type { UiSizing } from "./coords";
 
 let canvas: HTMLCanvasElement | null = null;
@@ -69,6 +70,9 @@ function ensureCanvas(): HTMLCanvasElement {
   canvas.height = 1;
   ctx = canvas.getContext("2d", { alpha: true });
   if (ctx) ctx.imageSmoothingEnabled = false;
+  // A canvas nothing has painted into has no backing store, and the pass binds
+  // this texture whether or not a screen is open — see canvas-backing.ts.
+  forceBackingStore(canvas);
   ensurePixelFonts();
   void awaitPixelFonts().then(() => {
     fontsReady = true;
@@ -139,6 +143,9 @@ export function syncSize(sizing: UiSizing): void {
   // Resetting the backing store clears it AND resets context state (transform,
   // smoothing, font). Re-pin what we rely on.
   if (ctx) ctx.imageSmoothingEnabled = false;
+  // A resize DEALLOCATES the store, so the next upload is of a canvas with none
+  // if no screen paints first. Same rule as on creation — canvas-backing.ts.
+  forceBackingStore(c);
   if (tex) tex.needsUpdate = true;
   dirty = true;
 }

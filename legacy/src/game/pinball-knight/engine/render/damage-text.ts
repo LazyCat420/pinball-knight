@@ -31,6 +31,7 @@
 import * as THREE from "three";
 import { engineConfig } from "../config";
 import { awaitPixelFonts, labelFont } from "../../../../pixel/pixel-font";
+import { forceBackingStore } from "./canvas-backing";
 
 // Local aliases for the injected tuning — see the note in sprite.ts.
 const { yaw: CAMERA_YAW, tilt: CAMERA_TILT, ppu: PPU } = engineConfig.camera;
@@ -232,6 +233,13 @@ export class DamageTextPool {
       const canvas = document.createElement("canvas");
       canvas.width = TEX_W;
       canvas.height = TEX_H;
+      // Slot 0's mesh is `warmupTarget()`, which the descent-screen prewarm hands
+      // to `compileAsync` (see warmupReveal in render/vfx.ts). So the pool's
+      // canvases are bound as textures LONG before the first hit paints one, and
+      // an unpainted canvas cannot be uploaded — see canvas-backing.ts for the
+      // WebGPU error that produced. Nothing here is drawn; it just makes the
+      // canvas real.
+      forceBackingStore(canvas);
       const tex = new THREE.CanvasTexture(canvas);
       // NEAREST both ways: this is pixel art, it must never be smoothed.
       tex.magFilter = THREE.NearestFilter;
