@@ -102,7 +102,14 @@ describe.skipIf(!IN)("candidate sprite score", () => {
 
       // ANTI-VACUITY: a fully transparent or failed load scores as a perfect
       // sprite on every metric here.
-      expect(st.opaque, `${file}: crushed to an EMPTY cell`).toBeGreaterThan(300);
+      //
+      // 100, not 300 — measured. A death SPRAWL is a legitimately tiny frame:
+      // the jester's flattened corpse crushes to 299 opaque texels and tripped a
+      // 300 guard, which would have read as "the harness is broken" when the
+      // pose was simply small. The failure this catches is a blank or unloaded
+      // cell, and that is zero, so the bound only has to be clear of the
+      // smallest REAL pose.
+      expect(st.opaque, `${file}: crushed to an EMPTY cell`).toBeGreaterThan(100);
       expect(st.unmatched, `${file}: off-palette texels after the snap`).toBe(0);
 
       const invented = st.counts.reduce((n, c, i) => n + (c > 0 && !declared.has(i) ? 1 : 0), 0);
@@ -146,3 +153,30 @@ describe.skipIf(!IN)("candidate sprite score", () => {
     }
   }, 300_000);
 });
+
+/**
+ * ── MEASURED 2026-07-29: THE IMPORT ROUTE ITSELF COSTS FIDELITY ──
+ *
+ * Control run, using `render/sheet-emit.test.ts` to lay the JESTER'S OWN PAINTED
+ * FRAMES out as a sheet and feeding them through the generated-art importer.
+ * Same art, two paths, at the shipped rung:
+ *
+ *     direct painter path      entries 32     isolated 34.9%   runLen 1.50
+ *     through the importer     entries 27.2   isolated 42.7%   runLen 1.34
+ *
+ * Fewer colours and MORE noise, which is the signature of blur rather than of
+ * discipline. The painter path resamples once (art space → atlas). The import
+ * path resamples three times: painted at cell resolution, LANCZOS-fitted onto
+ * the registration canvas, then drawn into the crush buffer. Each blur is
+ * converted into invented colours by the snap — 21-23 per frame against the
+ * painter path's ~15.
+ *
+ * So a generated sprite is handicapped BEFORE the model draws anything: it has
+ * to be better than a painter's art by this margin simply to break even. When
+ * the image service is available, subtract this control from whatever the model
+ * scores — otherwise the pipeline gets blamed for the drawing, or vice versa.
+ *
+ * The obvious lead if that margin matters: import at the crush buffer's exact
+ * size and skip the intermediate canvas, so the route resamples once like the
+ * painters do.
+ */
