@@ -111,5 +111,11 @@ export async function submitRunScore(): Promise<void> {
     "pinball-knight",
     runDetail(stats),
   );
-  if (!ok) console.warn("[dungeon] leaderboard rejected the run score");
+  // The run is ALREADY on the local board (score-service writes that first), so
+  // this is "the shared board did not take it", not "the score is lost". The
+  // specific reason — a 4xx body, or the fetch that never landed — is logged by
+  // score-service on the line above this one; don't restate it as a guess. This
+  // used to fire after every public run because the submit was skipped entirely
+  // and reported as a rejection (see saveLeaderboardScore).
+  if (!ok) console.warn("[dungeon] the shared leaderboard did not accept the run — saved locally; see the [ScoreService] line above");
 }

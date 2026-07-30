@@ -3,7 +3,7 @@
  * Handles server persistence with a localStorage fallback for offline or offline-mode play.
  */
 
-import { BACKEND_API_URL, isRemoteBackendEnabled } from "./api-config";
+import { leaderboardBase } from "./api-config";
 
 export interface LeaderboardEntry {
   name: string;
@@ -83,11 +83,13 @@ interface BackendScoreItem {
  * Fetch the leaderboard from the backend service. Falls back to cached local storage.
  */
 export async function fetchLeaderboard(game: GameId = DEFAULT_GAME): Promise<LeaderboardEntry[]> {
-  // Skip the network entirely when the backend isn't reachable from this origin
-  // (public site pointed at a private LAN backend) — use the local board.
-  if (!isRemoteBackendEnabled()) return getLeaderboard(game);
+  // No `isRemoteBackendEnabled()` gate any more. It used to skip the network on
+  // a public origin because the baked backend address is a LAN one — which meant
+  // public visitors only ever saw their OWN localStorage board. `leaderboardBase`
+  // now points them at their own origin, where server/scores-proxy.mjs does the
+  // hop. A failure still falls back to the local board, just below.
   try {
-    const response = await fetch(`${BACKEND_API_URL}/api/scores?game=${encodeURIComponent(game)}`);
+    const response = await fetch(`${leaderboardBase()}/api/scores?game=${encodeURIComponent(game)}`);
     if (response.ok) {
       const data = await response.json();
       const rawScores: BackendScoreItem[] = data.scores || [];
@@ -158,12 +160,16 @@ export async function saveLeaderboardScore(
     console.error("[ScoreService] Error saving leaderboard locally:", error);
   }
 
-  // Local board is already saved above; only push to the server when it's
-  // actually reachable from here, otherwise we'd just spam failed requests.
-  if (!isRemoteBackendEnabled()) return false;
-
+  // The submit is ALWAYS attempted now. This used to bail out silently on a
+  // public origin (the baked backend address is a LAN one), and returning `false`
+  // from a path that never sent a request is what made the dungeon print
+  // "leaderboard rejected the run score" after every single public run — a
+  // rejection that could not have happened, for a score no server ever saw.
+  // `leaderboardBase()` sends public pages to their own origin instead, where
+  // server/scores-proxy.mjs forwards it. Every `false` below now has a reason,
+  // and each one logs it.
   try {
-    const response = await fetch(`${BACKEND_API_URL}/api/scores`, {
+    const response = await fetch(`${leaderboardBase()}/api/scores`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...scoreEntry, game, detail }),

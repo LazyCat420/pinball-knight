@@ -68,3 +68,27 @@ export function isRemoteBackendEnabled(): boolean {
   // Private/loopback backend: only when we're on the LAN/dev origin too.
   return isPrivateHost(window.location.hostname);
 }
+
+/**
+ * Base URL for the LEADERBOARD specifically — `""` means same-origin.
+ *
+ * The leaderboard is the one backend route with a server-side hop of its own:
+ * `server/scores-proxy.mjs` forwards `/api/scores` to braindeadbot-service from
+ * INSIDE the container, where the baked LAN address actually resolves. So a
+ * public page does not need `isRemoteBackendEnabled()` to be true — it asks its
+ * own origin and the server does the reaching.
+ *
+ * That is why the board is no longer localStorage-only for public visitors, and
+ * why "[dungeon] leaderboard rejected the run score" stopped being printed for
+ * runs that were never submitted in the first place.
+ *
+ * A PRIVATE origin (LAN, `next dev`) keeps calling the service DIRECTLY: under
+ * `next dev` there is no custom server, so there is no proxy to call, and on the
+ * LAN the direct hop is one fewer moving part. Both reach the same rows.
+ */
+export function leaderboardBase(): string {
+  if (typeof window === "undefined") return BACKEND_API_URL;
+  // Public page → our own origin, and let the server forward it.
+  if (!isPrivateHost(window.location.hostname)) return "";
+  return BACKEND_API_URL;
+}
