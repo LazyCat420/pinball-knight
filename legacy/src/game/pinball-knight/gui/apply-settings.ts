@@ -27,4 +27,5 @@ export function applySettingsLive(): void {
   state.pixelPass?.setDither(s.dither);
   state.pixelPass?.setScanline(s.scanline);
   state.pixelPass?.setOutline(s.outline);
+  state.pixelPass?.setHeatEnabled(s.heatShimmer);
 }

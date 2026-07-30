@@ -37,6 +37,7 @@
  */
 import * as THREE from "three";
 import { state, type FloorFxKind } from "../state";
+import { droppedHeatSources } from "../fx/heat";
 import {
   elementOf,
   elementShaderKinds,
@@ -196,6 +197,23 @@ export function installFxLab(deps: FxLabDeps): void {
 
     /** Live puff counts + whether the pools are parented. */
     puffs: () => state.vfx?.puffDebug() ?? null,
+
+    /**
+     * Force the heat shimmer on or off, bypassing the setting.
+     *
+     * The A/B this exists for cannot be done any other way: the shimmer warps the
+     * SCENE, so "is it working" is a question about pixels that belong to the
+     * floor and the walls, not about pixels the effect drew. Two frames with the
+     * same fire and the shimmer toggled is the only comparison that isolates it.
+     */
+    heat: (on = true) => {
+      state.pixelPass?.setHeatEnabled(on);
+      return on ? "shimmer ON" : "shimmer OFF";
+    },
+
+    /** How many heat sources the cap dropped last frame — a silent top-8 cap
+     *  would read as "covered everything". */
+    heatDropped: () => droppedHeatSources(),
 
     /**
      * Puff the smoke or steam pool in front of the knight.

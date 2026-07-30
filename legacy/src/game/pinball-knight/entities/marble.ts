@@ -171,7 +171,9 @@ function steelBall(): boolean {
 }
 
 /** True when materials are globally enabled and a player currently has one. */
-function activeMaterial(): MarbleMaterial | null {
+/** Exported so `fx/heat.ts` can ask whether the knight is currently ON FIRE
+ *  without re-deriving the three conditions and drifting from them. */
+export function activeMaterial(): MarbleMaterial | null {
   if (!state.dbgMaterialEnabled) return null;
   const p = state.player;
   return p && p.materialT > 0 ? p.material : null;

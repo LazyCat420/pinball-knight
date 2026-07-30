@@ -64,6 +64,7 @@ const LOOK: Row[] = [
   { key: "dither", label: "Dither", hint: "ordered dithering between palette steps" },
   { key: "scanline", label: "Scanlines", hint: "CRT scanline overlay" },
   { key: "outline", label: "Outline", hint: "depth-edge ink outline" },
+  { key: "heatShimmer", label: "Heat shimmer", hint: "air bends around fire — the only effect that warps the scene" },
 ];
 
 const CARDS: Row[] = [

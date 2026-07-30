@@ -36,6 +36,7 @@ import { updateArcLanes } from "../render/arc-lanes";
 import { updatePinballParts, updatePlungerRig } from "../render/pinball-parts";
 import { updateShots } from "../shots";
 import { setElementTorch, tickElements } from "../fx/floor/decals";
+import { pushHeatField } from "../fx/heat";
 import {showPickupNote, spawnFloatingCombo} from "../ui";
 
 /**
@@ -45,6 +46,15 @@ import {showPickupNote, spawnFloatingCombo} from "../ui";
  * `startLevel` re-bases `lastTime` but has never dropped banked time.
  */
 const simLoop = new FixedStepLoop({ fixedStep: FIXED_STEP, maxFrame: MAX_FRAME });
+
+/**
+ * The shimmer's own clock, in REAL seconds.
+ *
+ * Separate from `state.elapsed` because that one is also the sim's wall clock and
+ * is booked against pause time; the haze should keep moving while a menu is open
+ * for the same reason the flames do.
+ */
+let heatT = 0;
 
 /** Drop banked simulation time. Call beside `resetState()`. */
 /**
@@ -200,6 +210,13 @@ export function loop(now: number): void {
     // there is nothing per-torch left to step. REAL frame time, like every other
     // fx clock, so torches keep licking through a hit-freeze.
     state.maze.flame.uTime.value += frame;
+    // Heat shimmer: collect what is hot, project it, hand the pass eight points.
+    // Real frame time again, and after the flame tick so a vent that started
+    // roaring this frame is already in the list.
+    if (state.pixelPass && state.camera) {
+      heatT += frame;
+      pushHeatField(state.camera, state.pixelPass, heatT, PPU);
+    }
     // Ambient dust motes drifting through the air near the player.
     if (Math.random() < MOTE_RATE * frame) {
       state.vfx?.mote(p.x + (Math.random() - 0.5) * 7, 0.15 + Math.random() * 0.9, p.z + (Math.random() - 0.5) * 5);

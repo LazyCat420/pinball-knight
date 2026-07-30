@@ -49,6 +49,16 @@ export interface DungeonSettings {
    * and every returning player hears exactly what they heard before.
    */
   volume: number;
+  /**
+   * Heat shimmer — the screen-space refraction around fire.
+   *
+   * Its own toggle, alongside the other post effects, because it is the one
+   * elemental effect that moves pixels that are not its own: it warps the SCENE
+   * behind and around a flame. That is exactly the sort of thing someone will
+   * want off, and it also makes motion sickness a real consideration where a
+   * static palette snap is not.
+   */
+  heatShimmer: boolean;
   quantize: boolean;
   dither: boolean;
   scanline: boolean;
@@ -70,6 +80,7 @@ export function defaultSettings(): DungeonSettings {
   return {
     muted: false,
     volume: 1,
+    heatShimmer: true,
     quantize: QUANTIZE_DEFAULT,
     dither: DITHER_DEFAULT,
     scanline: SCANLINE_DEFAULT,
@@ -92,6 +103,7 @@ export function getSettings(): DungeonSettings {
       // Shape-validate field by field — a stale or hand-edited blob must not
       // be able to poison the pixel pass with a non-boolean.
       if (typeof p.muted === "boolean") d.muted = p.muted;
+      if (typeof p.heatShimmer === "boolean") d.heatShimmer = p.heatShimmer;
       // RANGE-checked and snapped, not just typeof — this one ends up as a
       // GainNode.value, and a NaN there silences the graph permanently in some
       // implementations rather than merely sounding wrong. Snapping also means a

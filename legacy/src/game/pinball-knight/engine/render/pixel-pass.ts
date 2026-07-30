@@ -45,9 +45,12 @@ import {
   float,
   floor,
   fract,
+  length,
   max,
+  min,
   mix,
   mod,
+  mx_fractal_noise_float,
   pow,
   screenCoordinate,
   smoothstep,
@@ -179,7 +182,91 @@ interface FinalUniforms {
   ui: TSLUniform<number>;
   aberration: TSLUniform<number>;
   flash: TSLUniform<number>;
+  /** Master heat-shimmer gain, 0 = off. */
+  heat: TSLUniform<number>;
+  /** Peak displacement, in RENDER pixels. */
+  heatPixels: TSLUniform<number>;
+  /** Seconds. Poked from the frame loop — NOT TSL's `time`, which this app never
+   *  advances (see the note on the elemental shaders' clock). */
+  heatTime: TSLUniform<number>;
+  /** xy = RT-UV centre, z = radius in UV. An unused slot has z = 0. */
+  heatSpots: TSLUniform<THREE.Vector3>[];
   resolution: TSLUniform<THREE.Vector2>;
+}
+
+/**
+ * How many heat sources the shimmer is unrolled over.
+ *
+ * Unrolled rather than looped, matching this file's existing idiom (a 16-tap AO
+ * ring, a 32-way palette snap): the count is a compile-time constant and an
+ * unused slot has radius 0, so it contributes exactly nothing. Eight is enough
+ * for every fire a player can reasonably have on screen; `fx/heat.ts` keeps the
+ * strongest eight and LOGS when it drops any, because a silent top-N cap reads as
+ * "covered everything".
+ */
+const HEAT_SPOTS = 8;
+
+/**
+ * Peak shimmer displacement, in RENDER pixels.
+ *
+ * Small on purpose. At `PPU` render pixels per world unit a displacement of more
+ * than a couple of pixels stops reading as heat and starts reading as a broken
+ * frame — the geometry visibly tears rather than wavers. 2.5 is about the largest
+ * value where the effect still looks like air.
+ */
+const HEAT_PIXELS = 2.5;
+
+/**
+ * ── HEAT SHIMMER ───────────────────────────────────────────────────────────
+ *
+ * Returns a WARPED scene UV. Applied to the scene taps only — colour, depth and
+ * bloom — and deliberately NOT to the vignette, the dither or the scanlines.
+ *
+ * ── WHY IT WARPS THE FETCH, BEFORE EVERYTHING ────────────────────────────────
+ * Shimmer is a REFRACTION: physically it offsets what you would see, so it has to
+ * displace the scene lookup rather than smear the result. Three consequences, and
+ * the third is the one that makes it work at all:
+ *
+ * 1. It costs no extra pass. It perturbs the `rtUv()` coordinate the chain was
+ *    already going to sample.
+ * 2. There is nothing downstream to re-fetch — the whole chain is one shader with
+ *    one output — so "after the quantize" would mean a second full pass over the
+ *    presented image. Resampling an already-snapped frame with LinearFilter
+ *    invents off-palette blends and with NearestFilter gives wobbling stair-steps.
+ *    Either way the pass's central invariant (every presented pixel IS a palette
+ *    entry) dies.
+ * 3. Warping BEFORE the quantize is what makes it read. The displaced geometry
+ *    gets re-dithered and re-snapped on the true pixel grid, so the shimmer
+ *    appears as pixels SWAPPING PALETTE BANDS — which is the authentic retro
+ *    heat-haze look, and the only version that survives 32 colours.
+ *
+ * All scene taps share one warped UV so the SSAO ring and the outline's
+ * neighbour taps stay registered with the colour they shade — an ink line that
+ * stayed straight while its fill wobbled would read as a bug.
+ */
+function heatWarp(base: TSLNode, u: FinalUniforms, res: TSLNode): TSLNode {
+  const t = u.heatTime;
+  // Sampled in SCREEN space, so the haze does not swim with the camera. Two
+  // octaves is plenty for a 1-2 pixel displacement.
+  const sp = base.mul(vec2(26.0, 14.0));
+  const n1 = mx_fractal_noise_float(vec3(sp, t.mul(1.7)), 2, 2.0, 0.5);
+  const n2 = mx_fractal_noise_float(vec3(sp.add(9.4), t.mul(2.1)), 2, 2.0, 0.5);
+
+  let amp: TSLNode = float(0);
+  for (let i = 0; i < HEAT_SPOTS; i++) {
+    const s = u.heatSpots[i]!;
+    const d = length(base.sub(vec2(s.x, s.y)));
+    // `step` on the radius zeroes unused slots: smoothstep(0, 0, d) is degenerate
+    // and would otherwise contribute a full-strength wobble everywhere.
+    amp = amp.add(smoothstep(s.z, float(0), d).mul(step(float(0.0001), s.z)));
+  }
+  amp = min(amp, float(1.6)).mul(u.heat);
+
+  // Biased UPWARD (the -0.35 on the second channel): rising air, not a wobbling
+  // lens. Kept to a couple of render pixels — at 72 px/unit anything larger reads
+  // as a glitch rather than as heat.
+  const off = vec2(n1.mul(0.55), n2.sub(0.35)).mul(amp).mul(u.heatPixels).div(res);
+  return base.add(off);
 }
 
 /**
@@ -259,6 +346,19 @@ function finalNode(
   const vUv = rtUv();
   const res = u.resolution;
 
+  /**
+   * The WARPED scene coordinate. Every tap that reads the SCENE — colour, depth,
+   * bloom — goes through this; every tap that draws a DISPLAY artefact (the
+   * vignette's `q`, the dither's `screenCoordinate`, the scanline's row, and the
+   * UI composite) deliberately does not.
+   *
+   * That split is the whole correctness story. The vignette is a lens and the
+   * scanlines are a CRT: they live in front of the picture, not in it, so warping
+   * them would wobble the monitor instead of the air. The UI is a 2D sheet
+   * composited on top and must never move — see the note at the UI mix below.
+   */
+  const sceneUv = heatWarp(vUv, u, res);
+
   // Derived from the array actually handed in, not from a module constant: the
   // palette is injected by the game, so its size is only known here. The
   // unrolled snap below depends on this being the real count — a stale size
@@ -267,13 +367,13 @@ function finalNode(
 
   // Depth sampling helper — matches `depthAt(texelOffset)` in the GLSL.
   const depthAt = (ox: number, oy: number): TSLNode =>
-    texture(depth, vUv.add(vec2(ox, oy).div(res))).x;
+    texture(depth, sceneUv.add(vec2(ox, oy).div(res))).x;
 
   // ── Chromatic aberration: split R/B outward from centre. `uAberration = 0`
   // must reduce to EXACTLY the single-tap fetch, so it is a mix, not a scale.
-  const off = vUv.sub(0.5).mul(u.aberration);
-  const plain = texture(diffuse, vUv).rgb;
-  const split = vec3(texture(diffuse, vUv.add(off)).r, plain.g, texture(diffuse, vUv.sub(off)).b);
+  const off = sceneUv.sub(0.5).mul(u.aberration);
+  const plain = texture(diffuse, sceneUv).rgb;
+  const split = vec3(texture(diffuse, sceneUv.add(off)).r, plain.g, texture(diffuse, sceneUv.sub(off)).b);
   let col: TSLNode = mix(plain, split, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
 
   // ── Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner
@@ -289,7 +389,7 @@ function finalNode(
       const rad = r === 1 ? 0.5 : 1.0;
       // uAoRadius is a uniform, so the offset must be built as nodes.
       const d = vec2(Math.cos(a) * rad, Math.sin(a) * rad).mul(u.aoRadius);
-      const diff = c0.sub(texture(depth, vUv.add(d.div(res))).x);
+      const diff = c0.sub(texture(depth, sceneUv.add(d.div(res))).x);
       occ = occ.add(step(float(0.00015), diff).mul(float(1).sub(smoothstep(0.004, 0.02, diff))));
     }
   }
@@ -305,7 +405,7 @@ function finalNode(
   let light: TSLNode = float(1).sub(aoTerm.mul(u.ao));
 
   // ── Bloom, added in LINEAR so bright torch cores bleed a warm halo.
-  col = col.add(texture(bloomTex, vUv).rgb.mul(u.bloom));
+  col = col.add(texture(bloomTex, sceneUv).rgb.mul(u.bloom));
 
   // ── Accurate linear → sRGB transfer (done by hand; see the file header).
   const lo: TSLNode = col.mul(12.92);
@@ -357,7 +457,7 @@ function finalNode(
   // The four neighbour taps are shared between the luma edge and the warmth
   // gate below, so they are fetched once here rather than inside each helper.
   const nbTap = (ox: number, oy: number): TSLNode =>
-    texture(diffuse, vUv.add(vec2(ox, oy).div(res))).rgb;
+    texture(diffuse, sceneUv.add(vec2(ox, oy).div(res))).rgb;
   const nbs: TSLNode[] = [nbTap(1, 0), nbTap(-1, 0), nbTap(0, 1), nbTap(0, -1)];
   const lumaOf = (c: TSLNode): TSLNode => dot(sqrt(max(c, vec3(0, 0, 0))), LUMA);
   // lumaOf on a re-fetch of (0,0) would duplicate `plain` — same texel, same
@@ -964,6 +1064,30 @@ export interface PixelPass {
   setFrenzyFx(intensity: number): void;
   /** Full-screen white flash [0,1] — the katana-finisher beat. 0 = off. */
   setFlash(intensity: number): void;
+  /**
+   * Turn the heat shimmer on or off.
+   *
+   * HONEST NOTE: this is a LOOK toggle, not a performance one. The shimmer's ALU
+   * is compiled into `finalMat` unconditionally, so gating it at runtime saves
+   * nothing — a `heat` of 0 still evaluates two noise octaves and eight distance
+   * tests per pixel. If that ever needs to actually go away it has to become a
+   * build-time flag in `opts` (like `bloom`) and rebuild the material, and this
+   * comment is here so nobody assumes it already is one.
+   */
+  setHeatEnabled(on: boolean): void;
+  /**
+   * Screen-space heat sources for the shimmer.
+   *
+   * PLAIN NUMBERS ONLY, and that is a boundary, not a style: `engine/` imports
+   * zero game content (`engine/purity.test.ts`), so a `setHeat(fx: FloorFx[])`
+   * signature would make the engine learn what a fire puddle is and fail that
+   * test. The game projects and ranks; the engine just warps.
+   *
+   * `xs`/`ys` are RT UV (0..1, v already matched to `rtUv()` — see `fx/heat.ts`
+   * for the flip that is easy to omit and impossible to see), `rs` a UV radius.
+   * `n` slots are used; the rest are zeroed. `t` is the shimmer clock in seconds.
+   */
+  setHeat(xs: Float32Array, ys: Float32Array, rs: Float32Array, n: number, t: number): void;
   dispose(): void;
 }
 
@@ -1071,6 +1195,13 @@ export function createPixelPass(
     outline: uniform(opts.outline ? 1 : 0),
     colourOutline: uniform(opts.outline ? 1 : 0),
     edgeThreshold: uniform(OUTLINE_EDGE_THRESHOLD),
+    // Shimmer defaults OFF. The ALU cost is paid regardless (a runtime gate does
+    // not remove instructions), so this is a look toggle, not a perf one — see
+    // `setHeatEnabled` for the honest note about that.
+    heat: uniform(0),
+    heatPixels: uniform(HEAT_PIXELS),
+    heatTime: uniform(0),
+    heatSpots: Array.from({ length: HEAT_SPOTS }, () => uniform(new THREE.Vector3())),
     bloom: uniform(opts.bloom ? BLOOM_STRENGTH : 0),
     ao: uniform(opts.ao ? AO_STRENGTH : 0),
     aoRadius: uniform(AO_RADIUS),
@@ -1289,6 +1420,23 @@ export function createPixelPass(
     },
     setFlash: (intensity) => {
       finalUniforms.flash.value = Math.max(0, Math.min(1, intensity));
+    },
+    setHeatEnabled: (on) => {
+      finalUniforms.heat.value = on ? 1 : 0;
+    },
+    setHeat: (xs, ys, rs, n, t) => {
+      finalUniforms.heatTime.value = t;
+      const used = Math.min(n, HEAT_SPOTS);
+      for (let i = 0; i < HEAT_SPOTS; i++) {
+        const v = finalUniforms.heatSpots[i]!.value;
+        if (i < used) {
+          v.set(xs[i]!, ys[i]!, rs[i]!);
+        } else {
+          // Radius 0 is what the shader's `step` guard reads as "unused". Leaving
+          // a stale radius here would keep a dead fire shimmering.
+          v.set(0, 0, 0);
+        }
+      }
     },
     dispose: () => {
       depthTexture.dispose();
