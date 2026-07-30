@@ -1,5 +1,0 @@
-{
-  "creature": "a hulking rat king in rusted plate armour, hunched, with a long dragging tail and a notched cleaver",
-  "clips": null,
-  "_note": "clips:null takes DEFAULT_CLIPS (idle 2, walk 4, attack 3, death 4) — the counts the current roster ships. Add a `clips` array to author your own; frame counts feed the animator's cadence."
-}
