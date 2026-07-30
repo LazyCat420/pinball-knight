@@ -374,6 +374,37 @@ pin every current cycle duration BEFORE the mechanism lands. The impact-hold-by-
 repeated-closure trick is verified real: `startSpriteSheet` dedupes by object
 reference while `clips` keeps the duplicate index.
 
+## 9. SHIPPED 2026-07-29 — the waves, and what remains
+
+| wave | state |
+|---|---|
+| Measurement seam, testkit, census, noise gate | **shipped** |
+| Unsharp mask retired (roster 22.9→20.1 entries) | **shipped** |
+| Stiltneck warmth fixed in the ART (it was propped up by the sharpen) | **shipped** |
+| Indexed lighting — shadows walk palette rows | **shipped** (2nd attempt) |
+| Per-sprite palette lock, cap 20 | **shipped** |
+| `beats` — clips gain in-betweens without retiming | **shipped** (mechanism) |
+| 6-8 frame walks on the stiffest monsters | **open** — art work |
+| `detail()` sub-texel floor, 7 non-1.0 RESKIN scales, 6 rgba washes | **open** |
+| AI-generated sprites vs painters | **open** — generator + judge landed, service unreachable |
+
+**Roster noise, before → after:** entries 22.9 → 20.1 (and capped at 20 by the
+lock), isolated 26.2% → 22.5%, runLen 1.73 → 1.82, invented colours 295 → 238.
+
+**The two findings worth carrying forward.** First, the unsharp mask running
+before the palette snap was a colour GENERATOR whose own stated justification
+was inverted — removing it *gains* ink share. Check a filter's falsifier, not
+just the metric you hope improves. Second, lighting was a multiply resolved by
+a nearest-of-32 snap, and 24 of 32 entries leave their material family before
+0.35 — the tavern floor at 0.95. The green and blue floor tiles on floor 1 were
+never moss; they were lit STONE thrown into the rot family.
+
+**Indexed lighting took two attempts.** The first mapped shade linearly to a row
+index, which put most of the frame on row 0 and rendered the dungeon bright
+grey-brown. The second chooses the row by MATCHING LUMA against what the old
+multiply would have produced — self-calibrating, no constant to tune. Verified
+on a real WebGPU adapter, tavern and floor 1.
+
 ## 7. Definition of done
 
 1. `isolated%` under 15 and `entries` ≤ 16 for every monster, gated in CI.
