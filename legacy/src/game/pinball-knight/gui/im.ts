@@ -659,6 +659,69 @@ export function toggle(f: UiFrame, r: Rect, on: boolean, labels: [string, string
   return st.activated;
 }
 
+/**
+ * A stepped SLIDER. Returns the new value 0..1 (unchanged if nothing happened).
+ *
+ * ── BUILT ON `bar()` ON PURPOSE ──────────────────────────────────────────────
+ * `bar()` was already the exact rendering this wants — a track of whole lit
+ * cells, sized to divide evenly so no cell lands on a fractional pixel. It was
+ * simply not interactive. So this is `bar()` plus a focus ring, a knob and an
+ * input reading, rather than a second fill routine that would drift from it.
+ *
+ * ── STEPPED, NOT CONTINUOUS ──────────────────────────────────────────────────
+ * The value snaps to `steps` notches. A continuous fader on this surface is a
+ * lie: the track is ~100 UI pixels wide and every intermediate position renders
+ * as the same cell count, so dragging would move a number nobody can see change.
+ * Notches also mean a hand-edited settings blob always lands somewhere legal.
+ *
+ * ── THE FIRST CONSUMER OF `input.left` / `input.right` ───────────────────────
+ * Those two have been populated for both keyboard and pad since the input layer
+ * was written, edge-counted like the rest, and read by absolutely nothing. This
+ * is the first widget to use them — which is why there is no conflict to resolve
+ * with any existing screen.
+ *
+ * They are PRESS COUNTS, not booleans, and that is load-bearing here for the
+ * reason spelled out on `UiInput`: a paused screen can be running at 2 frames a
+ * second on a loaded machine, and a boolean would silently collapse three taps
+ * into one step. Volume is exactly the control where that feels broken.
+ *
+ * `accept` steps right and wraps at the top, mirroring the camera-distance
+ * cycler in the settings screen, so one control works from keyboard, pad and
+ * mouse without a drag gesture — nothing else in this UI drags, and a slider
+ * that needed to would be the odd one out.
+ */
+export function slider(f: UiFrame, r: Rect, value: number, opts: { steps?: number } = {}): number {
+  const steps = opts.steps ?? 10;
+  const st = focusable(f, r);
+  const snap = (v: number) => Math.max(0, Math.min(1, Math.round(v * steps) / steps));
+  let out = snap(value);
+
+  if (st.focused) {
+    for (let i = 0; i < f.input.left; i++) out = snap(out - 1 / steps);
+    for (let i = 0; i < f.input.right; i++) out = snap(out + 1 / steps);
+    // Wrap on accept so the control is reachable with one button.
+    if (st.activated) out = out >= 1 ? 0 : snap(out + 1 / steps);
+  }
+  // Click/drag anywhere on the track jumps to that notch. Dragging off the track
+  // stops tracking, which is acceptable — see the note above about gestures.
+  if (st.hovered && f.input.pointer.down && r.w > 4) {
+    out = snap((f.input.pointer.x - r.x) / r.w);
+  }
+
+  const track = cutLeft(r, r.w - 34);
+  bar(f, track, out, st.focused ? UI.focus : UI.gold);
+  if (st.focused) focusRing(f, track);
+  // The numeric read-out is not decoration: a row of lit cells at 8px does not
+  // tell you WHICH notch is current, and "is it at 6 or 7" is the only question
+  // a volume control gets asked.
+  text(f, `${Math.round(out * 100)}%`, r.x + r.w, r.y + (r.h - 8) / 2, {
+    size: 8,
+    colour: st.focused ? UI.focus : UI.textDim,
+    align: "right",
+  });
+  return out;
+}
+
 /** A rank meter: `filled` of `total` small squares, laid along the row. */
 export function pips(f: UiFrame, r: Rect, filled: number, total: number): void {
   const size = 6;

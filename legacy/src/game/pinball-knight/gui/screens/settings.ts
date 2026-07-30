@@ -12,7 +12,7 @@
  * settings panel itself was exempt from.
  */
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
-import { CAMERA_ZOOM, CAMERA_ZOOMS, CAMERA_ZOOM_ORDER, type CameraZoom } from "../../constants";
+import { CAMERA_ZOOM, CAMERA_ZOOMS, CAMERA_ZOOM_ORDER, VOLUME_STEPS, type CameraZoom } from "../../constants";
 import { applySettingsLive } from "../apply-settings";
 import { UI, GRID, ROW_H, PAD } from "../theme";
 import {
@@ -27,6 +27,7 @@ import {
   sheet,
   text,
   toggle,
+  slider,
   well,
   type Rect,
   type UiFrame,
@@ -41,10 +42,21 @@ interface Row {
   /** Some rows read inverted — `muted` shows as "Sound FX: ON". */
   invert?: boolean;
   labels?: [string, string];
+  /**
+   * Which control the row wears. Absent = a toggle.
+   *
+   * A discriminant rather than a hand-rolled row, deliberately:
+   * `settingsContentHeight()` derives the scroll extent from `SOUND.length`, and
+   * its own comment warns that the hand-kept mirror is how "a scroll region
+   * silently stops reaching its last row". The camera cycler needed hand
+   * arithmetic there; this must not.
+   */
+  kind?: "slider";
 }
 
 const SOUND: Row[] = [
   { key: "muted", label: "Sound FX", hint: "every sting is synthesized — this is the only switch", invert: true, labels: ["ON", "MUTED"] },
+  { key: "volume", label: "Volume", hint: "independent of the switch above — muting keeps your level", kind: "slider" },
 ];
 
 const LOOK: Row[] = [
@@ -61,15 +73,30 @@ const CARDS: Row[] = [
 /** One settings row: label + hint on the left, a toggle pinned right. */
 function settingRow(f: UiFrame, r: Rect, row: Row): void {
   const s = getSettings();
-  const raw = s[row.key] as boolean;
-  const on = row.invert ? !raw : raw;
 
   well(f, r);
   const body = { x: r.x + GRID, y: r.y, w: r.w - GRID * 2, h: r.h };
-  const knob = cutRight(body, 64);
+  // Reserve the control's column BEFORE the text is measured. `cutRight` mutates
+  // `body`, so the order is load-bearing: cutting after the text is drawn leaves
+  // the label and hint sized to the full row and the control lands on top of
+  // them. A slider needs more room than a toggle — 56px of track is five cells.
+  const knob = cutRight(body, row.kind === "slider" ? 118 : 64);
 
   text(f, row.label, body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
   text(f, row.hint, body.x, body.y + 17, { size: 8, colour: UI.textDim, max: body.w - GRID });
+
+  if (row.kind === "slider") {
+    const cur = s[row.key] as number;
+    const next = slider(f, { x: knob.x, y: knob.y + (knob.h - 14) / 2, w: 110, h: 14 }, cur, { steps: VOLUME_STEPS });
+    if (next !== cur) {
+      saveSettings({ [row.key]: next } as Partial<DungeonSettings>);
+      applySettingsLive();
+    }
+    return;
+  }
+
+  const raw = s[row.key] as boolean;
+  const on = row.invert ? !raw : raw;
 
   if (toggle(f, { x: knob.x, y: knob.y + (knob.h - 18) / 2, w: 56, h: 18 }, on, row.labels ?? ["ON", "OFF"])) {
     // Write the RAW value — `invert` is a presentation concern only. Storing the

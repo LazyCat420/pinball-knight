@@ -10,11 +10,15 @@
  */
 import { state } from "../state";
 import { getSettings } from "../settings-save";
-import { setSfxMuted } from "../sfx";
+import { setSfxMuted, setSfxVolume } from "../sfx";
 
 export function applySettingsLive(): void {
   const s = getSettings();
   setSfxMuted(s.muted);
+  // Independent of the mute, on purpose: un-muting restores the level the player
+  // chose rather than jumping to full. Both are pushed on every call so a boot
+  // with a persisted volume is at the right level before the first sting.
+  setSfxVolume(s.volume);
   state.quantize = s.quantize;
   state.dither = s.dither;
   state.scanline = s.scanline;

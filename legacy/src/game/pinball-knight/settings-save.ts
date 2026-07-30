@@ -15,6 +15,7 @@ import {
   CAMERA_ZOOMS,
   CAMERA_ZOOM_DEFAULT,
   SETTINGS_KEY,
+  VOLUME_STEPS,
   type CameraZoom,
 } from "./constants";
 
@@ -39,6 +40,15 @@ export type ReaderPolicy = "always" | "smart" | "never";
 
 export interface DungeonSettings {
   muted: boolean;
+  /**
+   * SFX loudness, 0..1, snapped to `VOLUME_STEPS` notches.
+   *
+   * Kept INDEPENDENT of `muted`: turning sound off and back on must restore the
+   * level the player chose rather than jumping to full. Absent from every blob
+   * saved before this existed, which is the correct outcome — it defaults to 1
+   * and every returning player hears exactly what they heard before.
+   */
+  volume: number;
   quantize: boolean;
   dither: boolean;
   scanline: boolean;
@@ -59,6 +69,7 @@ export interface DungeonSettings {
 export function defaultSettings(): DungeonSettings {
   return {
     muted: false,
+    volume: 1,
     quantize: QUANTIZE_DEFAULT,
     dither: DITHER_DEFAULT,
     scanline: SCANLINE_DEFAULT,
@@ -81,6 +92,13 @@ export function getSettings(): DungeonSettings {
       // Shape-validate field by field — a stale or hand-edited blob must not
       // be able to poison the pixel pass with a non-boolean.
       if (typeof p.muted === "boolean") d.muted = p.muted;
+      // RANGE-checked and snapped, not just typeof — this one ends up as a
+      // GainNode.value, and a NaN there silences the graph permanently in some
+      // implementations rather than merely sounding wrong. Snapping also means a
+      // hand-edited blob always lands on a notch the slider can display.
+      if (typeof p.volume === "number" && Number.isFinite(p.volume) && p.volume >= 0 && p.volume <= 1) {
+        d.volume = Math.round(p.volume * VOLUME_STEPS) / VOLUME_STEPS;
+      }
       if (typeof p.quantize === "boolean") d.quantize = p.quantize;
       if (typeof p.dither === "boolean") d.dither = p.dither;
       if (typeof p.scanline === "boolean") d.scanline = p.scanline;

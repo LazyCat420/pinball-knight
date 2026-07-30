@@ -15,3 +15,4 @@ export * from "./constants/skills";
 export * from "./constants/maze";
 export * from "./constants/economy";
 export * from "./constants/level";
+export * from "./constants/audio";
