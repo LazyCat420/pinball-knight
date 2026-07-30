@@ -530,15 +530,40 @@ function finalNode(
   // end, so a linear threshold would fire on highlights and never on the
   // shadowed silhouettes that need it.
   const LUMA = vec3(0.3, 0.59, 0.11);
-  // The four neighbour taps are shared between the luma edge and the warmth
-  // gate below, so they are fetched once here rather than inside each helper.
+  // ── THE NEIGHBOUR TAPS READ THE ALBEDO, NOT THE LIT FRAME (2026-07-30) ──
+  //
+  // This term is a cheap stand-in for a PALETTE-INDEX edge: "will these two
+  // pixels quantize to different entries?". Since the snap moved onto the albedo
+  // the taps have to move with it, or the stand-in is measuring a quantity the
+  // snap no longer reads.
+  //
+  // ⚠️ IT WAS NOT INKING SHADOW BOUNDARIES, and the plan that scheduled this
+  // change said it was. Measured before touching anything: across four biomes
+  // and every entry, the largest luma step ONE material can show across an
+  // adjacent-pixel lighting boundary is 0.153 — a hard key-light shadow edge is
+  // 0.136, a torch pool edge 0.153, a wall face against a wall top 0.076. All of
+  // them are under the 0.26 threshold, and the false-edge rate is 0/120 in every
+  // case. The threshold was already doing that job.
+  //
+  // The real defect is the opposite one: the darkening COMPRESSES material
+  // contrast, so true silhouettes lose their ink. Of the cross-family material
+  // boundaries that this term exists to catch, at threshold 0.26:
+  //
+  //     read on the lit frame     29.1% caught   (median step 0.161)
+  //     read on the albedo        46.9% caught   (median step 0.243)
+  //
+  // Which is the complaint the block below already records — "an actor standing
+  // on the floor plane, a prop against a wall it is touching… lose their edge
+  // entirely" — arriving with a number and a cause.
   const nbTap = (ox: number, oy: number): TSLNode =>
-    texture(diffuse, sceneUv.add(vec2(ox, oy).div(res))).rgb;
+    texture(albedoTex, sceneUv.add(vec2(ox, oy).div(res))).rgb;
   const nbs: TSLNode[] = [nbTap(1, 0), nbTap(-1, 0), nbTap(0, 1), nbTap(0, -1)];
   const lumaOf = (c: TSLNode): TSLNode => dot(sqrt(max(c, vec3(0, 0, 0))), LUMA);
-  // lumaOf on a re-fetch of (0,0) would duplicate `plain` — same texel, same
-  // filter, same result; one fetch fewer.
-  const lc = lumaOf(plain);
+  // The centre tap is the albedo's own, and it is `albPlain` rather than `alb`:
+  // `alb` has the chromatic-aberration split folded in, and an edge detector that
+  // saw the fringe would ink it. Both are LINEAR here — the sqrt below is this
+  // term's own rough gamma, applied to whichever buffer it reads.
+  const lc = lumaOf(albPlain);
   const le = max(
     max(lumaOf(nbs[0]).sub(lc).abs(), lumaOf(nbs[1]).sub(lc).abs()),
     max(lumaOf(nbs[2]).sub(lc).abs(), lumaOf(nbs[3]).sub(lc).abs()),
@@ -571,8 +596,17 @@ function finalNode(
   //
   // In LINEAR on purpose: r ≥ g survives any monotone per-channel transfer, so
   // gating before the sqrt costs nothing and reads the taps already fetched.
+  //
+  // ⚠️ AND ON THE ALBEDO, WHICH IS WHAT MAKES THE PREMISE TRUE AGAIN. "This
+  // dungeon's environment is cold" is a claim about MATERIALS, and it was being
+  // tested against LIT pixels — so a warm light made cold things warm and the
+  // gate suppressed ink it had no business suppressing. Measured over the four
+  // biomes with a torch in range: 81 of 120 entries read as warm on the lit
+  // frame, including **Cold Crypt stone**, against 64 of 120 on the albedo. The
+  // gate was quietly switching itself off across a third of the palette in
+  // torchlight, and its own justification says it must not.
   const warmOf = (c: TSLNode): TSLNode => (step as TSLNode)(c.g, c.r);
-  const allWarm: TSLNode = warmOf(plain)
+  const allWarm: TSLNode = warmOf(albPlain)
     .mul(warmOf(nbs[0]))
     .mul(warmOf(nbs[1]))
     .mul(warmOf(nbs[2]))

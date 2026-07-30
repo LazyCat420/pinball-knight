@@ -165,6 +165,34 @@ Cold Crypt **STONE 5.7 → 23.4** · Warren **ROT 10.0 → 27.1** (seed 777: 9.8
 46.8 → 45.9 and tavern 13.0 → 13.9, both unchanged, both natural controls. Frame
 cost within noise (median 6.0 → 6.1 ms, over-16.7ms frames 1.6% → 1.7%).
 
+### Backlog items 1-4 are also shipped (`d0bbb5b`) — and two weren't what the plan said
+
+- **The outline was NOT inking shadow boundaries.** The plan said it was; measured
+  first, the worst luma step one material shows across a lighting boundary is
+  0.153 against a 0.26 threshold — 0/120 false edges. The real defect was the
+  reverse: the darkening compressed material contrast so TRUE silhouettes lost
+  their ink (29.1% caught on the lit frame, 46.9% on the albedo). Threshold
+  0.26 → **0.40**, picked to hold ink density flat, and the census confirms it did.
+- **The warmth gate's premise was false in torchlight.** "This environment is
+  cold" is a claim about materials, tested on lit pixels: 81/120 entries read warm
+  on the lit frame — *including Cold Crypt stone* — vs 64/120 on the albedo.
+- **The wash-literal claim was wrong.** All eleven `rgba()` literals match the
+  index their comment names. Rewriting them would have been work justified by a
+  stale note. The real hazard is drift, now pinned by
+  `render/palette-literals.test.ts` (both scans self-test; both were falsified by
+  hand before being trusted).
+- **`stoneMat`/`stepMat` take `css()`** so masonry props follow the biome (Warren
+  rot +1418 px, Bloodworks blood +1180). **`FLOOR_SURFACES[].hex` deleted** — but
+  ⚠️ `WallSurfaceDef.hex` with the same name is **LIVE**; do not finish that cleanup.
+
+**Next in the backlog, and it is a design change not a constant edit:** the wall
+tints cannot express what they name. Rubber/ice/mud/brass are `setColorAt`
+instance tints that MULTIPLY the biome masonry, and a multiply can only darken —
+so brass reads *leather* in the Cold Crypt and ice reads *blood/skin* in the
+Bloodworks. A brass bumper is brown; ice is pink. Fix is to set the albedo to a
+chosen palette entry rather than scale it. Table of what each currently resolves
+to is in §4 of the plan.
+
 ### Three things that will bite whoever touches this next
 
 1. **A scene material with a `fragmentNode` renders as a HOLE.** It skips three's

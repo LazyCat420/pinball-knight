@@ -35,7 +35,9 @@ describe("surface tables", () => {
     expect(f.frictionMult).toBe(1);
     expect(f.steerMult).toBe(1);
     expect(f.walkMult).toBe(1);
-    expect(f.hex).toBe(0xffffff);
+    // No floor `hex` any more — the field was dead and carried four off-palette
+    // colours next to a pass that snaps the albedo. See the note on
+    // FLOOR_SURFACES. The WALL tint above is live and still asserted.
   });
 
   it("never returns undefined for an unknown or missing id", () => {

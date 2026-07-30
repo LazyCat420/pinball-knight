@@ -1523,7 +1523,14 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // grid. Everything below is hash-keyed off the tile coords, so a level
   // dresses itself identically on every rebuild.
 
-  const stoneMat = track(new THREE.MeshStandardMaterial({ color: PALETTE_HEX[3], roughness: 0.9 }));
+  // `css(3)`, NOT `PALETTE_HEX[3]`. A pilaster is masonry, so it has to take the
+  // biome's rock like every other piece of masonry — and `css()` is the only
+  // thing that applies the BIOME_STONE remap for 2/3/4. Reading the raw palette
+  // left every column, arch and plinth cold grey on floors whose walls are rot
+  // green, blood red or arcane blue, which read as unpainted geometry. It was
+  // easy to miss while the whole frame was snapping into stone anyway; the
+  // albedo target made it obvious.
+  const stoneMat = track(new THREE.MeshStandardMaterial({ color: css(3), roughness: 0.9 }));
 
   // Pilasters: engaged columns on tall south faces — shaft + capital + plinth.
   const pilasterAt = southFaces.filter((f) => (f.i * 31 + f.j * 17) % PILASTER_EVERY === 0);
@@ -1632,7 +1639,11 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // so it reads instantly as "that's the way down", uncanny not cosy. ──
   const sc = tileCenter(grid, plan.stairs.i, plan.stairs.j);
   const voidMat = track(new THREE.MeshBasicMaterial({ color: PALETTE_HEX[0] }));
-  const stepMat = track(new THREE.MeshLambertMaterial({ color: PALETTE_HEX[2] }));
+  // `css(2)` for the same reason as `stoneMat` — the stairs down are cut from
+  // the floor's own rock. `voidMat` above deliberately keeps `PALETTE_HEX[0]`:
+  // the pit is a hole in the world, not masonry, and void is the one entry no
+  // biome remaps.
+  const stepMat = track(new THREE.MeshLambertMaterial({ color: css(2) }));
   const pitGeo = track(new THREE.PlaneGeometry(1, 1));
   const pit = new THREE.Mesh(pitGeo, voidMat);
   pit.rotation.x = -Math.PI / 2;

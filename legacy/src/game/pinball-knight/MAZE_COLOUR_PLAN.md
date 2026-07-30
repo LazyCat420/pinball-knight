@@ -181,37 +181,93 @@ as a silent performance regression with nothing in the suite able to see it.
 
 ---
 
-## 4. Ranked backlog after that
+## 4. The backlog — items 1-4 are DONE; what the measurements changed
 
-1. **The ink outline still reads the LIT buffer.** Its colour-edge term is a
-   cheap stand-in for a palette-index edge, and now that the albedo exists the
-   honest version is an albedo edge — which would also stop a shadow boundary on
-   flat floor from inking itself. Deliberately not changed in the same wave, so
-   the A/B measured one thing. It brings the warmth gate with it: that gate exists
-   because a warm creature's own markings were being inked, and its premise ("this
-   dungeon's environment is cold") stopped being true when `BIOME_STONE` gained
-   warm rows. On albedo taps the premise becomes checkable rather than assumed.
-   Expect the threshold to need re-tuning — albedo steps are larger than lit
-   steps, because the darkening no longer compresses them.
-2. **Surface wash textures hardcode off-palette `rgba()`** (`maze/build.ts`
-   ~797-870). Each has a comment naming a palette index the literal does not
-   match, so a palette edit silently desyncs them and the biome remap can never
-   reach them. Strictly worse than before: an off-palette albedo is snapped with
-   no lighting to blur where it lands.
-3. **`stoneMat` and `stepMat`** (`build.ts` ~1537 / ~1646) read `PALETTE_HEX[3]`
-   / `[2]` directly instead of `css(3)` / `css(2)`, so pilasters, architecture
-   props and stairs stay cold grey in every biome. Much more visible now that the
-   masonry around them is correctly coloured.
-4. **`FLOOR_SURFACES[].hex` is dead** (`engine/surfaces.ts` ~191-201) — superseded
-   by `makeSurfaceWashTexture`; the doc comment still claims it is live.
-5. **Shaped walls share the tall-wall texture** (`build.ts` ~1400, ~1456), so
+Items 1-4 of the previous backlog shipped. Two of them were not what the plan
+said they were, which is worth recording as carefully as the fixes.
+
+**1. ✅ The ink outline and the warmth gate now read the ALBEDO** — but not for
+the reason this document gave. It claimed the term was inking shadow boundaries.
+It was not. Measured first, across four biomes and every entry, the largest luma
+step ONE material can show across an adjacent-pixel lighting boundary:
+
+| boundary | worst step | fires at 0.26 |
+|---|---|---|
+| hard key-light shadow edge | 0.136 | 0/120 |
+| torch pool edge | 0.153 | 0/120 |
+| torch core edge | 0.126 | 0/120 |
+| wall face vs wall top | 0.076 | 0/120 |
+
+Zero false edges. The threshold was already doing that job. **The real defect is
+the opposite one:** the darkening compresses material contrast, so TRUE
+silhouettes lose their ink — of the cross-family boundaries this term exists to
+catch, the lit frame caught 29.1% and the albedo catches 46.9%. Which is exactly
+the complaint the shader block already recorded ("an actor standing on the floor
+plane… lose their edge entirely"), finally with a cause.
+
+`OUTLINE_EDGE_THRESHOLD` went 0.26 → **0.40**, chosen so the ink DENSITY is
+unchanged (27.6% vs 29.1% caught) — the ink moves onto material boundaries
+without also changing how much of it there is. Confirmed in the A/B: void/ink
+share held on every scene (67.1→67.0, 62.1→62.1, 45.5→45.4, 58.1→58.2,
+59.2→59.1, 81.7→81.7).
+
+The warmth gate's premise is now true again. It asserts "this dungeon's
+environment is cold", which is a claim about MATERIALS, and it was being tested
+against LIT pixels: with a torch in range, **81 of 120 entries read as warm on
+the lit frame — including Cold Crypt stone — against 64 of 120 on the albedo.**
+The gate was switching itself off across a third of the palette in torchlight.
+
+**2. ⚠️ The wash-literal claim was FALSE.** This document said each `rgba()` in
+`makeSurfaceWashTexture` "has a comment naming a palette index that the literal
+does not match". Checked before rewriting: **all eleven match.** Acting on the
+note would have been a rewrite of working code justified by a stale claim.
+
+The hazard behind it is real but it is DRIFT, not a current mismatch — the
+literals are decimal strings for canvas2D, so nothing connects them to
+`PALETTE_HEX`. That is now pinned by `render/palette-literals.test.ts` (one test
+instead of one refactor), which also covers item 3 structurally and carries
+self-tests so neither scan can pass vacuously.
+
+**3. ✅ `stoneMat` and `stepMat` take `css()`**, so pilasters, architecture props
+and stairs are cut from the floor's own rock. Measured per entry in the A/B:
+Warren rot-shadow +1418 px against stone-dark −969; Bloodworks blood +1180
+against stone-dark −453. The Cold Crypt correctly shows nothing, because biome 0
+maps 2/3/4 to themselves.
+
+**4. ✅ `FLOOR_SURFACES[].hex` deleted.** It had zero readers and carried four
+off-palette colours — a loaded gun beside a pass that snaps the albedo.
+**`WallSurfaceDef.hex` is NOT dead**: `build.ts` reads it per instance. Do not
+"finish the cleanup" by deleting that one.
+
+### What is left, re-ranked
+
+1. **The wall tints cannot express what they name** (found while checking item 4).
+   Rubber, ice, mud and brass are `setColorAt` instance tints, so they MULTIPLY
+   the biome masonry — and a multiply can only darken. Measured, as the albedo
+   snap now sees them:
+
+   | tint | Cold Crypt | Warren | Bloodworks |
+   |---|---|---|---|
+   | Brass `0xd8a63c` | **leather** | stone/rot | blood |
+   | Ice `0x9fd8ef` | arcane | arcane | **blood/skin** |
+   | Rubber `0xd9584f` | blood | **leather** | blood |
+   | Mud `0x6b5a3e` | **stone/ink** | stone/rot | blood |
+
+   A brass bumper is brown in the crypt and grey in the warren; ice is *pink* in
+   the Bloodworks. The tints are also all four off-palette. This is not the
+   crossing bug — a tint is SUPPOSED to change the material — it is that a
+   multiplicative tint is the wrong mechanism for naming one. The fix is to pick
+   a palette entry per surface and set the albedo rather than scale it, which is
+   a design change, not a constant edit. Ranked first because it is the largest
+   remaining place where a surface renders as a material nobody chose.
+2. **Shaped walls share the tall-wall texture** (`build.ts` ~1400, ~1456), so
    slant prisms, round shells and arc sweeps never get mossy/cracked variants.
-6. **Transparent surfaces write albedo opaquely.** `MRTNode` defaults every output
+3. **Transparent surfaces write albedo opaquely.** `MRTNode` defaults every output
    other than `output` to no blending, which is what we want — the family should
    come from the material a pixel most belongs to, not a weighted average of two
-   that lands in a third — but it means a low-alpha fog quad or decal fully
-   replaces the albedo underneath. Nothing visible in the six A/B scenes; worth a
-   look if a decal ever reads as the wrong material.
+   that lands in a third — but a low-alpha fog quad or decal fully replaces the
+   albedo underneath. Nothing visible across twelve A/B scenes; worth a look if a
+   decal ever reads as the wrong material.
 
 ---
 
