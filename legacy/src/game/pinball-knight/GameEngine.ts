@@ -72,15 +72,7 @@ import {
   FPS_STUMBLE,
 } from "./constants";
 import { configureEngine } from "./engine/config";
-import { setEnginePalette } from "./engine/palette-source";
-import { PALETTE_HEX, PALETTE_SIZE, paletteCss, paletteToFloatArray } from "./render/palette";
-
-/**
- * Palette index used to tint the player's silhouette when a wall is between
- * them and the camera. 30 is the arcane mid — it reads as "you, behind the
- * wall" rather than as another actor.
- */
-const OCCLUSION_PALETTE_INDEX = 30;
+import { installPalette } from "./render/palette";
 
 /**
  * Push the game's configuration into the engine.
@@ -149,13 +141,23 @@ export function installEngine(): void {
     },
   });
 
-  setEnginePalette({
-    size: PALETTE_SIZE,
-    toFloatArray: paletteToFloatArray,
-    hex: () => PALETTE_HEX,
-    css: paletteCss,
-    occlusionIndex: OCCLUSION_PALETTE_INDEX,
-  });
+  // ONE installer, called from here — not a second `setEnginePalette` literal
+  // built to match. This used to be a hand-copied PaletteSource, and it drifted:
+  // it never carried `shadeDown`, so `setEnginePalette` fell back to the
+  // `i → i-1` chain meant for the neutral greyscale default. On THIS palette
+  // that chain walks out of every material family (26 leather shadow → 25 skin
+  // light: a different material, and BRIGHTER), and the pixel pass bakes it into
+  // the shaded-palette texture at `createPixelPass` — which `launchDungeonGame`
+  // reaches immediately after this call. Indexed lighting therefore shipped
+  // shading the whole dungeon across families, which is the exact failure it was
+  // built to remove.
+  //
+  // The Cold Crypt hid it: stone is entries 0-5 in descending order, so `i-1`
+  // IS the stone ramp, and stone is the one biome that was screenshotted.
+  //
+  // See render/palette-install.test.ts. Prefer calling an installer over
+  // re-describing what it installs.
+  installPalette();
 }
 
 /** What one tick of the loop did — returned so callers can profile it. */
