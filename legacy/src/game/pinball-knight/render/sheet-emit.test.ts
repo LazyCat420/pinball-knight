@@ -33,29 +33,51 @@ afterAll(() => { restore(); });
 describe.skipIf(!OUT)("sheet fixture", () => {
   it("emits a 4-column sheet of painted frames on transparency", () => {
     const P = makeJesterPaints();
-    const frames: FramePaint[] = [
-      ...(P.E.idle ?? []).slice(0, 2),
-      ...(P.E.walk ?? []).slice(0, 4),
-      ...(P.E.attack ?? []).slice(0, 3),
-      ...(P.E.death ?? []).slice(0, 4),
+    // RAGGED ROWS, ON PURPOSE, with a row that does not start at column 1 —
+    // matching a real supplied sheet (4 / 6 / 4 / 2 / 3, HURT indented). A
+    // fixture with tidy equal rows would not exercise the slicer's actual job.
+    const pick = (clip: FramePaint[] | undefined, n: number): FramePaint[] =>
+      Array.from({ length: n }, (_, i) => (clip ?? [])[i % Math.max(1, (clip ?? []).length)]).filter(Boolean);
+    const ROWS: { label: string; frames: FramePaint[]; indent: number }[] = [
+      { label: "IDLE", frames: pick(P.E.idle, 4), indent: 0 },
+      { label: "SPRING ATTACK", frames: pick(P.E.attack, 6), indent: 0 },
+      { label: "WALK", frames: pick(P.E.walk, 4), indent: 0 },
+      { label: "HURT", frames: pick(P.E.death, 2), indent: 1 },
+      { label: "DEATH", frames: pick(P.E.death, 3), indent: 0 },
     ];
-    expect(frames.length, "painter did not supply the default clip table").toBe(13);
+    const frames = ROWS.flatMap((r) => r.frames);
+    expect(frames.length, "fixture rows did not fill").toBe(19);
 
     // A generous cell: the model is told to leave a wide margin, and the
     // importer slices on alpha rather than on a grid, so the gap between cells
     // just has to exceed its min-gap.
-    const CELL = 320;
-    const cols = 4;
-    const rows = Math.ceil(frames.length / cols);
-    const sheet = createCanvas(cols * CELL, rows * CELL);
+    const CELL = 260;
+    const CAPTION = 34;
+    const cols = Math.max(...ROWS.map((r) => r.frames.length + r.indent));
+    const sheet = createCanvas(cols * CELL, ROWS.length * (CELL + CAPTION));
     const ctx = sheet.getContext("2d") as unknown as CanvasRenderingContext2D;
-    frames.forEach((f, i) => {
-      const cell = createCanvas(CELL, CELL);
-      const cctx = cell.getContext("2d") as unknown as CanvasRenderingContext2D;
-      // Painted in ART space at cell resolution — smooth vector art, never
-      // crushed. Feeding the importer pre-pixelated input would flatter it.
-      paintInArtSpace(cctx, f, CELL);
-      ctx.drawImage(cell as unknown as HTMLCanvasElement, (i % cols) * CELL, Math.floor(i / cols) * CELL);
+    ctx.textAlign = "center";
+    ROWS.forEach((row, ri) => {
+      const top = ri * (CELL + CAPTION);
+      row.frames.forEach((f, ci) => {
+        const x = (ci + row.indent) * CELL;
+        // RULED CELL BORDER — opaque, spanning the sheet, exactly the thing that
+        // makes a naive alpha-slice return one giant cell.
+        ctx.strokeStyle = "#9aa4b4";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, top + 1, CELL - 2, CELL - 2);
+        const cell = createCanvas(CELL, CELL);
+        const cctx = cell.getContext("2d") as unknown as CanvasRenderingContext2D;
+        // Painted in ART space at cell resolution — smooth vector art, never
+        // crushed. Feeding the importer pre-pixelated input would flatter it.
+        paintInArtSpace(cctx, f, CELL);
+        ctx.drawImage(cell as unknown as HTMLCanvasElement, x, top);
+      });
+      // ROW CAPTION, on the background between rows — the other thing a naive
+      // slicer imports as a pose.
+      ctx.fillStyle = "#2b303b";
+      ctx.font = "bold 22px sans-serif";
+      ctx.fillText(row.label, (cols * CELL) / 2, top + CELL + 24);
     });
 
     // Anti-vacuity: a blank sheet slices into zero cells and every downstream

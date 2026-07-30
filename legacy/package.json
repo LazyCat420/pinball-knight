@@ -19,7 +19,8 @@
     "audit": "node scripts/audit-checklist.mjs",
     "audit:gpu": "node scripts/audit-checklist.mjs --gpu",
     "webgpu:check": "node scripts/webgpu-check.mjs",
-    "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon"
+    "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon",
+    "sprites": "vitest run src/game/pinball-knight/render/sprite-ingest"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
