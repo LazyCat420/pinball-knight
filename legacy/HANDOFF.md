@@ -7,6 +7,110 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the camera setting has a route, and browser zoom stops rerolling the field of view (2026-07-30)
+
+**Deployed `main@70e5c1b`, container healthy, 0 restarts. 185 files / 2101 tests
+pass, 0 tsc errors in the game subtree, registry-drift clean. Verified in the
+public bundle, not just the repo: `{id:"options",label:"OPTIONS",icon:"gear"}` is
+in the shipped tab strip and the shipped baseline reads `outerWidth`.**
+
+One report — "why does the resolution keep changing over and over" plus "no way to
+change resolution when I hit esc" — and two unrelated bugs under it.
+
+### The camera setting had NO ROUTE. Do not go looking for a rendering bug.
+
+Esc → `keymap.ts` → `openMenu()` → `menuScreen`, whose tab strip had FIVE tabs and
+none of them settings. `openMenuSettings()` was exported and **called by nothing
+for its entire life** (introduced in `3d307e4`, never referenced again).
+`menu.ts`'s own docblock has said "six tabs" the whole time, `moveFocus`'s
+docblock says "a six-tab menu", and `icons.ts` has carried a `gear` glyph
+commented "settings tab". The only way in was `__gui.settings()` from the dev
+console — so `cameraZoom`, which shipped in `b202e1d` specifically to END the
+zoom churn, landed in a screen no player could open.
+
+**A screen with no caller is not a feature, and nothing in the suite could tell.**
+`settingsScreen()` was correct: right rows, right persistence, five rungs, a
+reload button. Every test of it passed. That is the whole lesson —
+`gui/screens/options-tab.test.ts` now asserts the ROUTE (Esc lands on the menu,
+the strip contains OPTIONS, pressing 6 paints the camera control) rather than the
+screen's contents.
+
+**CAMERA is FIRST in the body now, not last.** In a six-tab menu the scroll view
+is 216 tall against 370 of content, and the camera row was the last 32 pixels of
+it — below the fold, on the screen the player opened looking for it. One
+un-hinted scroll away is barely better than unreachable. `settingsBody` /
+`settingsContentHeight` are SHARED with the standalone sheet, not copied.
+
+### Browser zoom was only HALF cancelled — and this is the churn
+
+`cancelBrowserZoom` compared dpr against the value at PAGE LOAD, so the zoom
+SINCE load was divided out and the zoom AT load went straight into the grid. The
+old comment called that "the right failure: consistent, and it cannot drift
+mid-session". **It is not consistent — it rerolls on every reload**, and the
+CAMERA row offers a RELOAD button, so the one control that existed to fix the
+zoom was also what rerolled it. One physical 1872x932 window at `wider`, varying
+only the zoom it was loaded at:
+
+```
+loaded at   grid        tiles across   drawing buffer
+ 100%       1872x932        33.4          1.7 Mpx
+  80%       1170x584        20.9          2.7 Mpx   <- 37% tighter
+  67%       1398x696        25.0          3.9 Mpx
+  50%       1872x932        33.4          7.0 Mpx
+  33%       1892x942        33.8         16.0 Mpx
+  25%       1498x746        26.8         27.9 Mpx
+  20%       1560x778        27.9         43.7 Mpx
+```
+
+Non-monotonic, and the buffer runs away because `scale` climbs to cover a CSS
+window that is not physically there. **The guard made it worse: `z > 0.2`
+EXCLUDES exactly 20%**, a real Vivaldi step, so at that one level cancellation
+switched itself off and the game sized off a 9360px window — 26x the pixels for
+the same screen, which is the CPU-pegged / FPS-unreported state it was reported
+in.
+
+The baseline is now the dpr the page WOULD have at 100%, recovered by dividing
+out the load-time zoom that `outerWidth / innerWidth` reveals (page zoom moves
+innerWidth and leaves the OS window alone). Floor drops to 0.1.
+
+#### The 2% snap tolerance is MEASURED, and the harness is why
+
+The failure directions are not symmetric: reject a real zoom and the baseline
+degrades to the previous behaviour; believe a ratio that is NOT a zoom and the
+game resizes the grid for a window that does not exist. Both rows from a real
+Chrome over CDP:
+
+```
+real window, 100%                  1712/1696 = 1.0094  ->  1     ok
+same, viewport overridden to 1600  1712/1600 = 1.07     ->  1.1   WRONG
+```
+
+**Playwright's `setViewportSize` overrides `innerWidth` and leaves `outerWidth`
+on the actual browser window**, so the ratio is meaningless in every headless
+shot this repo takes. At a 5% tolerance 1.07 reads as "110% zoom" and every
+screenshot renders 10% more level than the game. 16px of window border is 0.94%,
+so 2% clears the real case and rejects the emulated one. Also note `screen.width`
+reports a fake 800x600 in headless Chrome — it is useless as a cross-check.
+
+### The old zoom tests set their own context
+
+They passed throughout, because they hand `zoom` in as an argument — pinning the
+SINK and never the source — and their ZOOMS list stopped at 0.5, above both broken
+rungs. The new cases call `snapZoomStep` / `zoomBaseline` / `browserZoom` with the
+numbers a browser actually reports and walk the full chain. Negative controls
+were run: restoring the old baseline and guard fails 3 of them; removing the
+OPTIONS tab fails 5 of 6 reachability cases.
+
+### Not fixed, and deliberately
+
+`PPU` still applies on RELOAD only — it is a module-level const that half the
+engine destructures and the sprite atlas is rasterised from it at boot. And the
+default rung is still `wider` (56); with the zoom fix in, that window is 33.4
+tiles across rather than 27.9, so re-judge the default from there rather than
+moving it again on top of a broken measurement.
+
+---
+
 ## ✅ LIVE NOW — the dead face shows bone (2026-07-30)
 
 **1573 tests in the game subtree, tsc clean, registry-drift clean, shot through
