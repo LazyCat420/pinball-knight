@@ -39,7 +39,7 @@
  * still feeds the bloom exactly as the old white gradient centre did — the halo
  * around a fire is not lost in this change.
  */
-import { float, length, saturate, smoothstep, uniform, vec3, vec4 } from "three/tsl";
+import { float, length, positionWorld, saturate, smoothstep, uniform, vec3, vec4 } from "three/tsl";
 import { bandRamp, discMask, discP, fbm01, warp, type TSLNode } from "./noise";
 import { elementMaterial, type ElementMaterial } from "./element";
 
@@ -70,6 +70,35 @@ export interface FireOpts {
   /** Feature size. Bigger = finer detail, which at 72 px/unit turns to fizz
    *  fast — the value here is tuned to leave features ~4+ texels wide. */
   scale?: number;
+  /**
+   * Decorrelate by WORLD POSITION instead of by the `uSeed` uniform.
+   *
+   * This is what lets ONE shared material serve every torch on a floor. A uniform
+   * is per-material, so per-torch variation would otherwise mean one material per
+   * torch — which is what the flip-book did (a cloned texture AND a material each)
+   * and what made a corridor of torches expensive.
+   *
+   * Folding the world position into the noise sample makes every instance differ
+   * BY CONSTRUCTION, with no per-instance state to allocate, poke or dispose. The
+   * flip-book achieved the same thing with a hand-rolled `phase` per torch; this
+   * gets it for free and cannot fall out of sync.
+   */
+  worldSeed?: boolean;
+  /**
+   * Writes depth. TRUE for the torch billboard, FALSE for a floor decal.
+   *
+   * Load-bearing for the torch: the flame's silhouette is in the depth buffer, so
+   * the pixel pass's depth-edge ink outline draws round it and the SSAO shades it.
+   * Turning this off silently deletes the flame's outline — it keeps rendering,
+   * just without the ink line that makes it read as part of this art style.
+   */
+  depthWrite?: boolean;
+  /**
+   * Hard alpha cutoff. `NodeMaterial` honours `material.alphaTest` even with a
+   * custom `colorNode` (it discards where `a <= alphaTest`), which is what keeps
+   * the depth silhouette crisp rather than a soft translucent smear.
+   */
+  alphaTest?: number;
 }
 
 export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
@@ -78,7 +107,14 @@ export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
   // embers rather than as one burning thing. 2.0 keeps features wide enough to
   // hold an interior. `cutoff` came down with it so the body stays CONNECTED —
   // tongues should detach from a mass, not float on their own.
-  const { orientation = "floor", cutoff = 0.16, scale = 2.0 } = opts;
+  const {
+    orientation = "floor",
+    cutoff = 0.16,
+    scale = 2.0,
+    worldSeed = false,
+    depthWrite = false,
+    alphaTest = 0,
+  } = opts;
 
   const uTime = uniform(0);
   const uOpacity = uniform(1);
@@ -86,10 +122,17 @@ export function createFireMaterial(opts: FireOpts = {}): ElementMaterial {
   const uSeed = uniform(0);
 
   const material = elementMaterial(true); // fire ADDS light
+  material.depthWrite = depthWrite;
+  if (alphaTest > 0) material.alphaTest = alphaTest;
 
   const p = discP();
   const r = length(p);
-  const t = uTime.add(uSeed);
+  // World position folded in where asked, so N instances of ONE material all
+  // burn differently. `positionWorld.xz` scaled by a non-round number keeps
+  // neighbouring torches from landing on the same phase.
+  const t = worldSeed
+    ? uTime.add(uSeed).add(positionWorld.x.mul(3.7)).add(positionWorld.z.mul(2.3))
+    : uTime.add(uSeed);
 
   // Warp first, then advect. Warping the ALREADY-advected point would drag the
   // warp along with the flow and cancel most of the curl.

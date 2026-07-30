@@ -21,6 +21,8 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
+import { createFireMaterial } from "../fx/elements/fire";
+import type { ElementMaterial } from "../fx/elements/element";
 import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
 
 const C_STEEL_DK = PALETTE_HEX[19];
@@ -748,15 +750,33 @@ function buildFireVent(dirX: number, dirZ: number): THREE.Group {
   const barrel = new THREE.Mesh(cylGeo(0.1, 0.13, 0.3, 10), std(C_STEEL));
   barrel.rotation.z = Math.PI / 2;
   barrel.position.set(-0.1, 0.28, 0);
-  // the flame plume, scaled by the anim when it roars
-  const plume = new THREE.Mesh(coneGeo(0.22, 1.0, 10), stdOwn(0xf0a63c, 0xf0a63c, 0.9));
+  /**
+   * The flame plume keeps its CONE and gets the fire shader as its material.
+   *
+   * A cone rather than a camera-facing billboard because this jet has a DIRECTION
+   * — it fires down a lane, and which lane is gameplay information the player
+   * reads before stepping into it. A billboard cannot point along an arbitrary
+   * lane and face the camera at the same time, so the geometry stays 3D.
+   *
+   * The shader's "billboard" orientation advects along -v in UV space, which on a
+   * cone runs ALONG THE AXIS — so the flame travels out from the nozzle, which is
+   * exactly what a jet does. The emissive-standard material it replaces could only
+   * pulse its brightness.
+   */
+  const plumeFx = createFireMaterial({
+    orientation: "billboard",
+    worldSeed: true,
+    cutoff: 0.14,
+    scale: 1.7,
+  });
+  const plume = new THREE.Mesh(coneGeo(0.22, 1.0, 10), plumeFx.material);
   plume.rotation.z = -Math.PI / 2;
   plume.position.set(0.6, 0.28, 0);
   plume.scale.setScalar(0.001);
   gp.add(mount, barrel, plume);
   gp.rotation.y = yawFor(dirX, dirZ);
   gp.userData.plume = plume;
-  gp.userData.plumeMat = plume.material;
+  gp.userData.plumeFx = plumeFx;
   return gp;
 }
 
@@ -1284,15 +1304,26 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     }
     // the plume roars during the active window, sputters just before
     const plume = part.mesh.userData.plume as THREE.Mesh | undefined;
-    const mat = part.mesh.userData.plumeMat as THREE.MeshStandardMaterial | undefined;
+    const fx = part.mesh.userData.plumeFx as ElementMaterial | undefined;
     let scale = 0.001;
     if (part.hitT >= 0) {
       const t = part.hitT;
       if (t < VENT_WARN) scale = 0.15 + 0.1 * Math.sin(t * 40); // sputter tell
       else if (t < VENT_WARN + VENT_ACTIVE) scale = 1 + 0.15 * Math.sin(t * 25); // roar
     }
+    // The scale animation STAYS. It is the tell — the sputter warns and the roar
+    // commits — and a player has to be able to read it from across a room, which
+    // is a silhouette job, not a brightness job. What the shader replaces is the
+    // emissive pulse that used to stand in for the flame itself.
     if (plume) plume.scale.setScalar(scale);
-    if (mat) mat.emissiveIntensity = scale > 0.5 ? 1 : 0.3;
+    if (fx) {
+      fx.uTime.value += dt;
+      // Sputtering is a guttering flame, roaring is a jet. Feeding the same scale
+      // into intensity means the two read differently in COLOUR as well as size:
+      // the sputter sits in the low bands (ember/dark) and only the roar reaches
+      // the white core.
+      fx.uIntensity.value = scale > 0.5 ? 1.15 : 0.55;
+    }
   },
 
   magstrip: (part, { frozen }) => {
@@ -1313,6 +1344,15 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   lamp: (part) => {
     // A brazier: a cold arcane flicker while unlit; a bright leaping GOLD flame
     // once lit (part.lit set by the puzzle). Bowl warms to match.
+    //
+    // DELIBERATELY NOT converted to the fire shader, unlike the torches and the
+    // vent. This bead is a STATE INDICATOR that happens to be flame-shaped: it
+    // reads cold arcane when unlit, the shot colour when aimed, and gold when
+    // lit, and that colour IS the puzzle's feedback. The fire shader bands into
+    // the torch ramp by construction — giving it a switchable ramp to serve one
+    // three-state indicator would make every other flame configurable to solve a
+    // problem only this one has. An emissive bead is the right tool for a lamp.
+
     const flameMat = part.mesh.userData.flameMat as THREE.MeshStandardMaterial | undefined;
     const bowlMat = part.mesh.userData.bowlMat as THREE.MeshStandardMaterial | undefined;
     const flame = part.mesh.userData.flame as THREE.Object3D | undefined;

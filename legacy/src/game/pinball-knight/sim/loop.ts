@@ -23,7 +23,7 @@ import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { followPlayer, tickShadowThrottle } from "../boot/lighting";
 import { applyWeaponArt } from "../boot/sheets";
 import { bossEngaged } from "../boss";
-import { FINISHER_FLASH_MAX, FINISHER_FLASH_T, FLAME_FPS, FLAME_FRAMES, MOTE_RATE, PPU, WALL_H } from "../constants";
+import { FINISHER_FLASH_MAX, FINISHER_FLASH_T, MOTE_RATE, PPU, WALL_H } from "../constants";
 import { updateFollowCamera, worldToScreenPx } from "../engine/camera";
 import { tickJuice } from "../engine/juice";
 import { profBegin, profCount, profEnd, profFrame } from "../engine/profiler";
@@ -194,12 +194,12 @@ export function loop(now: number): void {
   }
 
   if (p && state.maze) {
-    // Flip-book flames — every torch, lit or not, licks at FLAME_FPS with its
-    // own phase so a corridor of torches never synchronizes.
-    for (const f of state.maze.flames) {
-      const idx = Math.floor(state.elapsed * FLAME_FPS + f.phase * FLAME_FRAMES) % FLAME_FRAMES;
-      f.tex.offset.x = idx / FLAME_FRAMES;
-    }
+    // Torch flames: ONE uniform for every torch on the floor. This replaced a
+    // per-torch loop stepping a 4-frame strip's `tex.offset.x`; the shader
+    // decorrelates by world position, so a corridor still never synchronises but
+    // there is nothing per-torch left to step. REAL frame time, like every other
+    // fx clock, so torches keep licking through a hit-freeze.
+    state.maze.flame.uTime.value += frame;
     // Ambient dust motes drifting through the air near the player.
     if (Math.random() < MOTE_RATE * frame) {
       state.vfx?.mote(p.x + (Math.random() - 0.5) * 7, 0.15 + Math.random() * 0.9, p.z + (Math.random() - 0.5) * 5);

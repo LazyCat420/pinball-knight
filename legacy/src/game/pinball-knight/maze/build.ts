@@ -17,6 +17,8 @@
  * a forward renderer, and far torches can't be seen lighting anything anyway.
  */
 import * as THREE from "three";
+import { createFireMaterial } from "../fx/elements/fire";
+import type { ElementMaterial } from "../fx/elements/element";
 import { PALETTE_HEX } from "../render/palette";
 import {
   WALL_H,
@@ -26,7 +28,6 @@ import {
   PILASTER_EVERY,
   BANNER_EVERY,
   CLUTTER_EVERY,
-  FLAME_FRAMES,
   CAMERA_YAW,
   CAMERA_TILT,
 } from "../constants";
@@ -872,49 +873,6 @@ function makeSurfaceWashTexture(floorId: number): THREE.CanvasTexture {
   );
 }
 
-/**
- * Torch flame flip-book: FLAME_FRAMES teardrop frames in one horizontal strip.
- * Layered palette tongues (ember → core) with a per-frame lean and tip lick —
- * the classic Castlevania wall-torch. Drawn bright so the bloom pass halos it.
- */
-function makeFlameTexture(): THREE.CanvasTexture {
-  const F = 32;
-  const canvas = document.createElement("canvas");
-  canvas.width = F * FLAME_FRAMES;
-  canvas.height = F;
-  const ctx = canvas.getContext("2d")!;
-  const lean = [0, 2.5, 0.5, -2.5];
-  const lick = [0, 3, 1, 3];
-  for (let f = 0; f < FLAME_FRAMES; f++) {
-    const ox = f * F + F / 2;
-    const base = F - 4;
-    const tongue = (w: number, h: number, col: string, dx: number): void => {
-      ctx.beginPath();
-      ctx.moveTo(ox - w + dx * 0.3, base);
-      ctx.quadraticCurveTo(ox - w + dx * 0.6, base - h * 0.55, ox + dx, base - h);
-      ctx.quadraticCurveTo(ox + w + dx * 0.6, base - h * 0.55, ox + w + dx * 0.3, base);
-      ctx.closePath();
-      ctx.fillStyle = col;
-      ctx.fill();
-    };
-    const L = lean[f % lean.length];
-    tongue(8, 24 + lick[f % lick.length], css(15), L);
-    tongue(6, 18 + lick[(f + 1) % lick.length], css(16), L * 0.7);
-    tongue(4, 12, css(17), L * 0.45);
-    tongue(2, 7, css(18), L * 0.25);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  // Default flipY stays TRUE. "The flame burned downward" was the pixel pass
-  // flipping the whole presented frame (rtUv in engine/render/pixel-pass.ts) —
-  // this texture, like every other, was never wrong.
-  return tex;
-}
-
 export interface TorchAnchor {
   x: number;
   z: number;
@@ -926,8 +884,17 @@ export interface MazeHandle {
   torchAnchors: TorchAnchor[];
   /** The shared PointLight pool — core parks these on the nearest anchors. */
   lightPool: THREE.PointLight[];
-  /** Flip-book flame textures — core advances their frame offset each frame. */
-  flames: Array<{ tex: THREE.Texture; phase: number }>;
+  /**
+   * The torch flame's SHADER CLOCK — one handle for every torch on the floor.
+   *
+   * Was `Array<{tex, phase}>`: one cloned texture per torch, whose `offset.x` the
+   * frame loop stepped through a 4-frame strip. The shader self-animates and
+   * decorrelates by world position, so all the loop has to do is advance one
+   * `uTime`. Kept on the maze handle rather than registered with `fx/floor/decals`
+   * because the maze already owns disposing it, and two owners is how a leak
+   * starts.
+   */
+  flame: ElementMaterial;
   /** The stairs beacon — core pulses its opacity + feeds it rising motes so
    *  the way down reads as living energy, not a static prop. */
   stairsBeam: { mat: THREE.MeshBasicMaterial; mesh: THREE.Mesh; x: number; z: number };
@@ -1699,9 +1666,38 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   // Animated flip-book flame, billboarded to the fixed iso camera. Basic
   // (unlit) so a flame is always the brightest thing on screen — the bloom
   // pass turns that brightness into a halo.
-  const flameStrip = cachedTexture("flame", makeFlameTexture);
+  /**
+   * ONE flame material for every torch on the floor.
+   *
+   * The flip-book needed a cloned texture AND a material per torch, purely so
+   * each could hold its own `tex.offset.x`. The shader decorrelates by WORLD
+   * POSITION (`worldSeed`), so a corridor of torches all burn differently out of
+   * a single material and a single uniform — which makes this a net reduction in
+   * both pipeline count and per-floor allocation, not just a look change.
+   *
+   * `depthWrite` stays TRUE and `alphaTest` stays 0.4, matching what the
+   * MeshBasicMaterial did. Both are load-bearing: the flame's silhouette lives in
+   * the depth buffer, so the pixel pass's depth-edge ink outline draws around it.
+   * Dropping either keeps the flame rendering while silently deleting its outline.
+   */
+  const flameFx = createFireMaterial({
+    orientation: "billboard",
+    worldSeed: true,
+    depthWrite: true,
+    alphaTest: 0.4,
+    // A tighter cutoff than the floor pools use. Two reasons: a sconce flame
+    // should read small and bright rather than as a spreading body of fire, and
+    // the dimmest band is the one that composites badly — ember (14) is a
+    // desaturated brown, so additively over cool stone it drifts toward the blood
+    // family. Culling it here keeps the torch inside the torch ramp. Same class of
+    // problem as the pink-fire incident documented in fire.ts, handled by not
+    // emitting the offending band at all rather than by another global rule.
+    cutoff: 0.3,
+    scale: 2.6,
+  });
+  flameFx.material.side = THREE.DoubleSide;
+  disposables.push(flameFx.material);
   const flameGeo = track(new THREE.PlaneGeometry(0.3, 0.34));
-  const flames: Array<{ tex: THREE.Texture; phase: number }> = [];
 
   const torchAnchors: TorchAnchor[] = [];
   for (const t of plan.torches) {
@@ -1719,21 +1715,19 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     sconce.castShadow = true;
     group.add(sconce);
 
-    // Each flame clones the strip so its flip-book frame is independent.
-    const tex = flameStrip.clone();
-    tex.needsUpdate = true;
-    tex.repeat.set(1 / FLAME_FRAMES, 1);
-    disposables.push(tex);
-    const flameMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
-    disposables.push(flameMat);
-    const flame = new THREE.Mesh(flameGeo, flameMat);
+    // Every torch shares one material — see `flameFx` above. No clone, no
+    // per-torch phase to track: the shader reads its own world position.
+    const flame = new THREE.Mesh(flameGeo, flameFx.material);
+    // Billboarding stays BAKED rather than switching to TSL's `billboarding()`.
+    // The camera is fixed-ortho, so this is exact, and it is pixel-grid aligned;
+    // a per-frame lookAt would reintroduce sub-pixel drift on a sprite whose
+    // whole style depends on landing on texel boundaries.
     flame.rotation.order = "YXZ";
     flame.rotation.y = CAMERA_YAW;
     flame.rotation.x = -CAMERA_TILT;
     flame.position.set(x, wallH * 0.62 + 0.3, z);
     flame.renderOrder = 8;
     group.add(flame);
-    flames.push({ tex, phase: noise(t.i, t.j, 91) });
 
     torchAnchors.push({ x: x - t.di * 0.2, z: z - t.dj * 0.2 });
   }
@@ -1755,7 +1749,7 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     group,
     torchAnchors,
     lightPool,
-    flames,
+    flame: flameFx,
     stairsBeam,
     secrets,
     wallAt,
