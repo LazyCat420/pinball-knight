@@ -7,6 +7,59 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the ` console hands out potions, spells and skill ranks (2026-07-30)
+
+**Deployed `main@10c9acd`, container healthy. 144 files / 1616 tests pass in the
+game subtree, 0 tsc errors, registry-drift clean. Verified with four WebGPU
+captures through `scripts/gui-shot.mjs`, not from the repo.**
+
+Report: "add the skills to the debug as well like the lasers and the other
+powerups, they are missing from the debugger." They were. The panel could hand
+you any weapon, any material and any monster, and not one potion or one spell —
+`applyPotion` had been on `DebugActions` all along with **no chip calling it**.
+
+Three sections, all rosters derived (`POTION_IDS` / `ABILITY_IDS` / `SKILL_IDS`):
+
+- **POWERUPS** — all 17 potions, one click each.
+- **ABILITIES** — a bind button per ability (goes on Q, the old Q slides to E)
+  plus a rank chip that **cycles 0→1→2→3→0**. Rank 2 is where each ability gains
+  an extra rule, and judging a rule means seeing the cast without it.
+- **SKILL TREE** — one row per node with its rank, three branch sections, ranks
+  cycle and **revoke**. Unlock nodes wear the ability's own mark; keystones show
+  red until taken. `MAX ALL` skips keystones (`isKeystone`, derived from the
+  modifier's SHAPE, not an id list) so it cannot hand you −30 mana and no mana
+  regen while you are looking at something else.
+- **FILL MANA** in KNIGHT — a separate pool from the rampage meter, so "why won't
+  Time Crawl fire" now has an answer inside the console.
+
+**✨ LASER has no supply anywhere in the game.** Not in `POTION_POOL`, not in
+`SHOP_STOCK`, not in `RECIPES`, and no `ITEM_PAINTS` entry — a finished mechanic
+(`applyPotion` → `enterRicochetForm`) that nothing can give you. The console is
+now the only route, and its chip falls back to a flask glyph tinted with
+`PotionDef.color`. **If it should be findable, it needs a pool entry and a
+sprite — that is still open.**
+
+### Two bugs the screenshots found and the tests could not
+
+**Every caption budget was wrong.** They were derived from a body width of 222;
+it is 212. `BALL FORM`, `MULTIBALL` and `MAX SKILLS` shipped ellipsized, and
+nothing failed — `ellipsize` is a *silent success*, so the button works, the
+panel works, and only a picture disagrees. `CHIP_CHARS`/`ROW_CHARS`/
+`BIND_CHARS`/`HEAD_CHARS` now state the arithmetic and `debug-console.test.ts`
+holds every caption (including the hand-written ones) to it.
+
+**The same wrong number had been hiding five truncated MONSTER names** since they
+shipped: `SPORELI…`, `ROTORTA…`, `STILTNE…`, `DEATH D…`, `BRICK G…`.
+`debug-panel.test.ts` asserts ≤16 characters, which is nearly twice the dock's
+real capacity, so the guard passed while the panel trimmed. Fixed in
+`LABEL_OVERRIDE`. **`debug-panel.test.ts`'s 16 and its `SPAWNABLE` roster are now
+redundant with the live path — `SPAWNABLE` is exported but drawn by nothing.
+Worth deleting; not deleted.**
+
+`contentH` is **measured off the layout** now instead of computed by a formula
+the body has to be kept in sync with. Confirmed at max scroll: `MIMIC`, the last
+row, is reachable.
+
 ## ✅ LIVE NOW — the camera setting has a route, and browser zoom stops rerolling the field of view (2026-07-30)
 
 **Deployed `main@70e5c1b`, container healthy, 0 restarts. 185 files / 2101 tests
