@@ -165,6 +165,81 @@ describe("the face reads the health tier", () => {
   });
 });
 
+describe("the dead tier is a picture, not the end of a ramp", () => {
+  /**
+   * The face's own 36x36 grid, as palette INDICES.
+   *
+   * Every assertion below is about where a material is, so they need the cells
+   * rather than the pixels. Sampling the top-left texel of each cell is exact:
+   * the painter only ever fills whole cells at `SCALE`.
+   */
+  async function cells(frac: number): Promise<number[][]> {
+    const m = await face();
+    m.disposeFace();
+    const cv = m.createFace();
+    m.setFaceHealth(Math.round(frac * 100), 100);
+    m.renderFace(1 / 60);
+    const ctx = (cv as unknown as { getContext(t: "2d"): CanvasRenderingContext2D }).getContext("2d");
+    const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
+    const N = 36;
+    const s = cv.width / N;
+    const out: number[][] = [];
+    for (let y = 0; y < N; y++) {
+      const row: number[] = [];
+      for (let x = 0; x < N; x++) {
+        const i = (y * s * cv.width + x * s) * 4;
+        row.push(PALETTE_HEX.indexOf((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]));
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  const count = (grid: number[][], pred: (i: number, x: number, y: number) => boolean): number =>
+    grid.reduce((n, row, y) => n + row.filter((i, x) => pred(i, x, y)).length, 0);
+
+  it("carries LESS gore than the tier before it", async () => {
+    // The point of the rework. `dead` used to be `dying` plus another layer, so
+    // it was the noisiest cell on the sheet: 106 blood cells against dying's 86,
+    // most of them loose single pixels including three SWEAT beads on a corpse.
+    // A purpose-drawn pass is 67 — fewer marks, each of them a shape.
+    const dying = await cells(0.12);
+    const dead = await cells(0);
+    const gore = (g: number[][]): number => count(g, (i) => i >= 10 && i <= 13);
+    expect(gore(dead)).toBeLessThan(gore(dying));
+  });
+
+  it("shows bone where hair can never reach", async () => {
+    // The skull, asserted where nothing else on the stone ramp can be: the far
+    // cheek and jaw, below the eyes and outboard of the nose. The fringe stops
+    // at y12 and the beard is on the leather ramp, so a stone-ramp cell down
+    // here is bone or it is nothing. 19 cells at death, 1 at every living tier
+    // — which is the anti-vacuity half: delete `paintDeath` and this goes to 1.
+    const inJaw = (i: number, x: number, y: number): boolean => i >= 2 && i <= 5 && y >= 18 && x >= 20;
+    expect(count(await cells(0), inJaw)).toBeGreaterThan(10);
+    expect(count(await cells(0.12), inJaw)).toBeLessThan(4);
+  });
+
+  it("keeps both x-eyes whole and on something they can be read against", async () => {
+    // The x is the one mark that MEANS dead. It survived before (19 of its 20
+    // cells did), but it sat on lit skin ringed by splatter, which is a dark
+    // mark among dark marks. Both halves are pinned: every cell of both x's is
+    // ink, and every one of them sits on the socket floor — so a future pass
+    // cannot quietly take the hollow away and leave the mark floating.
+    const g = await cells(0);
+    let ink = 0;
+    for (const ox of [11, 20]) {
+      for (let i = 0; i < 5; i++) {
+        if (g[14 + i][ox + i] === 1) ink++;
+        if (g[14 + i][ox + 4 - i] === 1) ink++;
+      }
+      // The socket floor, sampled beside the x rather than under it.
+      expect(g[16][ox + 1]).toBe(23); // skin shadow — the mid the ink reads on
+    }
+    expect(ink).toBe(20);
+  });
+});
+
 describe("the death screen's portrait", () => {
   /** Every pixel of a canvas, as a comparable string. */
   const bytesOf = (cv: HTMLCanvasElement): string => {

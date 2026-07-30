@@ -357,6 +357,18 @@ const C = {
   //                        light) was tried first and a saturated cyan pixel on
   //                        a skin field does not read as sweat, it reads as a
   //                        gemstone stuck to his face.
+  // ── bone: the STONE ramp again, and named separately ON PURPOSE.
+  //    These are the same four entries the hair below uses — 2-5 — which is
+  //    exactly why they need their own names: on this head they are the two
+  //    materials most likely to be confused for one another, and a rename or a
+  //    reshade of the hair must not silently drag the skull with it. What keeps
+  //    them apart on screen is not colour, it is CONTACT: bare bone is only
+  //    ever painted inside a torn blood rim, so it never shares an edge with the
+  //    fringe. See `paintDeath`. ──
+  boneHi: P(5), //       5  stone highlight — the lit facet of the frontal bone
+  bone: P(4), //         4  stone light    — its body
+  boneSh: P(3), //       3  stone mid      — where it turns into the temple
+  boneDeep: P(2), //     2  stone dark     — the socket behind it
   // ── hair: the STONE ramp (matte, cool), never the steel the helm wears ──
   hairDk: P(2), //       2  stone dark
   hair: P(3), //         3  stone mid
@@ -559,7 +571,13 @@ function paintScalp(stage: number): void {
   cell(10, 2, 16, 2, C.hair);
   cell(10, 2, 7, 1, C.hairHi);
   cell(21, 2, 5, 2, C.hairDk);
-  for (const x of [11, 14, 17, 20, 23]) px(x, 1, x % 2 ? C.hairWhite : C.hairHi);
+  // Two TUFTS standing off the crown, not five loose pixels along the top row.
+  // Single pixels spaced two apart do not read as hair from a distance, they
+  // read as damage to the image — the same failure the beard's stubble pass
+  // records, and the same fix: fewer, bigger, shaped.
+  cell(12, 1, 2, 1, C.hairHi);
+  cell(19, 1, 3, 1, C.hair);
+  px(20, 0, C.hairHi);
   sym(8, 3, 2, 7, C.hairDk);
   sym(9, 4, 1, 5, C.hair);
   // matted blood, following the fringe down rather than sitting in the middle
@@ -992,11 +1010,17 @@ function paintMouth(mood: Mood): void {
       for (let x = 14; x < 23; x += 2) px(x, 24, C.gum);
       symPx(12, 25, C.skinLo);
       break;
-    case "dead": // slack, tongue lolling
+    case "dead": // the jaw fallen open, teeth showing
+      // It was a dark cavity with a 4x2 slab of bright red in it, which at this
+      // size is a brick, not a tongue. Teeth instead: they are the one thing in
+      // a slack mouth that has a shape, and on this face they also rhyme with
+      // the bone through the brow — see `paintDeath`.
       cell(14, 23, 8, 3, C.mouthDk);
-      cell(15, 23, 6, 1, C.bloodSh);
-      cell(16, 25, 4, 2, C.bloodMid);
-      px(17, 26, C.bloodHi);
+      cell(15, 23, 6, 1, C.bloodSh); // the upper gum, in shadow
+      cell(15, 24, 2, 1, C.teeth);
+      px(18, 24, C.teeth);
+      px(20, 24, C.teeth);
+      cell(17, 25, 2, 1, C.bloodMid); // what is left of the tongue
       break;
     case "dying": // open, gasping
       cell(14, 23, 8, 3, C.mouthDk);
@@ -1028,6 +1052,8 @@ function paintMouth(mood: Mood): void {
  */
 function paintDamage(tier: Expr): void {
   if (tier === "fresh") return;
+  // DEAD is not "dying, plus more". See `paintDeath`.
+  if (tier === "dead") return void paintDeath();
 
   // steady — a first cheek scratch.
   cell(11, 20, 4, 1, C.blood);
@@ -1066,6 +1092,156 @@ function paintDamage(tier: Expr): void {
   px(22, 12, C.sweat);
   px(12, 18, C.sweat);
   px(16, 9, C.sweat);
+}
+
+/**
+ * DEAD — drawn as its own picture, not as `dying` with more blood on it.
+ *
+ * The tier cascade above is right for the five LIVING tiers: each adds to the
+ * one before, so the face carries a history. Run all the way to the end it is
+ * wrong twice over.
+ *
+ * **It was noise.** Five layers of accumulated wounds put twenty-odd loose
+ * single pixels across a 36-cell face — including three SWEAT beads, on a
+ * corpse. At 36px scattered pixels do not read as detail, they read as dirt on
+ * the screen, and they destroy the shapes underneath them. That is the same
+ * lesson `paintBeard` records from its own second pass, arrived at again.
+ *
+ * **And it had nothing to say.** Death was the dying face with two x's on it.
+ * The death screen now draws this at 72px under the title — the largest this
+ * face is ever shown — so it is the one tier that has to hold up as a picture
+ * rather than as the end of a ramp.
+ *
+ * So: a small number of shaped wounds, and one new thing to look at — the
+ * SKULL, through the far brow. It goes there and not on the cheek or the jaw
+ * because the far brow is the only region of this head with nothing else
+ * competing in it: the fringe stops at the hairline, the far temple is already
+ * the darkest skin on the face (so bare bone reads at maximum contrast), and it
+ * lands directly above the far eye, which turns the wound and the socket under
+ * it into ONE form instead of two unrelated marks.
+ *
+ * Bone is the stone ramp, which is also the hair's ramp — see the note over
+ * `C.bone`. What keeps them apart is that bone is only ever painted INSIDE a
+ * torn blood rim, so the two never share an edge.
+ */
+function paintDeath(): void {
+  // ── 1. SUNKEN. The cheapest and most universal cue there is, and it costs
+  // four spans: the cheeks hollow and the sockets deepen. Drawn first, so
+  // everything below sits on a face that has already stopped. ──
+  cell(11, 20, 4, 2, C.skinLo); // near cheek, fallen in
+  cell(21, 20, 3, 2, C.skinLo); // far cheek
+  cell(10, 24, 2, 2, C.skinLo); // and the jaw behind the beard
+  cell(23, 24, 2, 2, C.skinLo);
+
+  // DRAINED. The catch-lights down the nose and across the brow are entry 17 —
+  // FLAME light, the torch ramp — which is the one thing on this face that
+  // reads as lit from inside. A corpse keeps its form and loses its warmth, so
+  // they come down one step to skin light. It is four spans and it does more
+  // for "dead" than any amount of extra blood, because it changes the whole
+  // face rather than adding another mark to it.
+  cell(11, 10, 5, 1, C.skinHi);
+  cell(16, 14, 1, 4, C.skinHi);
+  cell(16, 18, 2, 1, C.skinHi);
+  px(11, 18, C.skinHi);
+
+  // ── 2. THE SKULL — the far cheek torn back off the teeth ──
+  //
+  // Three placements were tried and the first two are worth recording, because
+  // they failed for the same reason and it is not the one that was expected.
+  //
+  //   · A torn PATCH over the far brow read as a plate of armour riveted to his
+  //     head. Shaping it into a lozenge did not help.
+  //   · A full bone ORBIT around the far eye — brow ridge, void, cheekbone —
+  //     read as a grey window cut into the face.
+  //
+  // Neither is a colour problem. Both are made of straight grey bars, and this
+  // head already contains a material that is made of straight grey bars: the
+  // helm. Bone has to arrive as something the eye can NAME, and the two shapes
+  // that carry "skull" on their own at this size are a socket and a row of
+  // TEETH. Teeth win because they can be small: the cheek is opened over the
+  // back of the jaw, the tooth row simply continues out past the corner of the
+  // mouth, and eleven cells do what thirty could not. It also puts the wound on
+  // the side of the face the light has already turned away from, so the bone
+  // reads as the brightest thing there without competing with the near cheek.
+  //
+  // The rim goes down FIRST, so the bone is painted inside it and the two
+  // cannot disagree about where the edge is. It is BRIGHT: the earlier rims
+  // were `blood` on the far temple's shadow, three luma apart, so the torn edge
+  // that was supposed to sell the whole thing could not be seen at all.
+  cell(21, 18, 5, 1, C.bloodMid); // the top of the tear
+  cell(21, 19, 1, 6, C.blood); // its inboard edge, down past the mouth
+  cell(21, 20, 1, 3, C.bloodMid);
+  px(21, 25, C.bloodSh);
+  cell(22, 25, 4, 1, C.blood); // and the bottom, along the jaw
+  px(23, 26, C.bloodSh);
+  px(25, 19, C.bloodSh);
+
+  // The cheekbone and the rising edge of the jaw behind it. The top outboard
+  // corner is stepped off rather than squared, which is the whole difference
+  // between a broken edge and a cut one.
+  //
+  // It is painted on `bone`/`boneSh` and NOT on `boneHi`, which is held back
+  // for the teeth alone. Entry 5 is the brightest thing on this whole head
+  // after the torchlit brow, so spending it on the cheekbone put the eye on a
+  // grey blob; spending it on the teeth puts the eye on the one shape that
+  // says what the blob IS.
+  cell(22, 19, 3, 1, C.bone);
+  cell(22, 20, 4, 2, C.bone);
+  cell(25, 20, 1, 2, C.boneSh);
+  cell(22, 22, 3, 1, C.boneSh); // turning under, into the hollow of the cheek
+  px(24, 21, C.boneDeep); // a chip out of it
+
+  // The teeth, carrying on out of the mouth. A dark gum line first, so they
+  // have something to stand against — a light row laid straight on bare bone is
+  // one grey mass. SOLID ROWS with a single seam each, not alternating pixels:
+  // a checkerboard of light and dark at one-cell pitch is not teeth at this
+  // size, it is static, which is what the first pass of this drew.
+  cell(21, 23, 5, 2, C.ink);
+  cell(22, 23, 4, 1, C.boneHi);
+  px(24, 23, C.boneSh);
+  cell(22, 24, 3, 1, C.bone);
+  px(23, 24, C.boneSh);
+
+  // ── 3. The wounds worth keeping from the living tiers, as SHAPES ──
+  cell(10, 10, 2, 5, C.blood); // the near temple gash, now the only one
+  cell(10, 10, 1, 5, C.bloodSh);
+  px(11, 12, C.bloodMid);
+  cell(14, 26, 3, 1, C.bloodHi); // the split lip
+  cell(13, 27, 2, 1, C.blood);
+  // A run out of the near corner of the mouth. Bright, because it crosses the
+  // darkest mass on the face and the blood ramp's dark end is nine luma off the
+  // beard's — the same argument the beard's own comment makes about the helm.
+  cell(14, 27, 1, 2, C.bloodMid);
+  px(14, 29, C.blood);
+
+  // ── 4. THE EYES, LAST — and a HOLLOW for them to sit in ──
+  //
+  // The order was wrong before (eyes, then damage) but that was not the defect
+  // it looked like. Measured on the old art, the splatter overpainted exactly
+  // ONE of the twenty cells the two x's are made of: they were not buried, they
+  // were UNREADABLE, which is a different problem with a different fix. An x in
+  // ink on lit skin, ringed by five tiers of accumulated red, is a dark mark
+  // among dark marks — nothing tells the eye it is the one that matters.
+  //
+  // So the fix is the socket, not the order: a lid shadow, a mid floor and a
+  // rim, which puts a bounded dark shape under each x and nothing else near it.
+  // Painting them last is then just insurance, and it is free.
+  //
+  // The floor has to be a MID value. Ink on the sunken-cheek shadow this pass
+  // paints at step 1 is four luma of contrast — the x would vanish into its own
+  // socket.
+  // No rim above: the brow is already a dark row at y12, and a second dark row
+  // under it turned the pair into sunglasses — three stacked dark rows across
+  // the whole width of the face, which is a bar, not two eyes.
+  const socket = (x: number): void => {
+    cell(x, 14, 5, 5, C.skinDk);
+    cell(x, 14, 5, 1, C.skinDeep); // the dead lid, still half over it
+    cell(x + 1, 19, 3, 1, C.skinLo);
+  };
+  socket(11);
+  socket(20);
+  drawX(11, 14);
+  drawX(20, 14);
 }
 
 /**
@@ -1146,9 +1322,9 @@ export function faceContactSheet(): HTMLCanvasElement {
   return sheet;
 }
 
-function drawX(gx: number, gy: number): void {
+function drawX(gx: number, gy: number, colour: string = C.pupil): void {
   for (let i = 0; i < 5; i++) {
-    px(gx + i, gy + i, C.pupil);
-    px(gx + 4 - i, gy + i, C.pupil);
+    px(gx + i, gy + i, colour);
+    px(gx + 4 - i, gy + i, colour);
   }
 }
