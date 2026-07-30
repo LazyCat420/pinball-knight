@@ -33,6 +33,7 @@
 import { ITEM_PAINTS } from "../render/cel-painter";
 import { crushToGrid, renderPaintCanvas } from "../engine/render/sprite";
 import { monsterPortrait } from "../render/monster-portrait";
+import { ABILITIES, type AbilityId } from "../abilities";
 import type { EnemyKind } from "../state";
 import { UI } from "./theme";
 
@@ -168,7 +169,23 @@ export type GlyphId =
   | "crown" // boss
   | "scythe" // the reaper
   | "circle" // spawn a ring
-  | "layers"; // jump to a depth
+  | "layers" // jump to a depth
+  // ── ONE PER ABILITY ──
+  // Not decoration. The HUD's two cast slots drew `spark` for EVERY ability, so
+  // both slots showed the same mark and the only thing telling Flipper Charge
+  // from Time Crawl was the mana number underneath. A slot is meant to be read
+  // at a glance mid-fight; a shared glyph makes that impossible by construction.
+  //
+  // `AbilityDef.icon` already held an emoji per ability and has been dead since
+  // the DOM menu was deleted — it cannot come back, for the reason at the top of
+  // this file. These are its replacement, and `ABILITY_GLYPH` below is the
+  // compile-enforced mapping so a new ability cannot ship without a mark.
+  | "launch" // flippercharge — a chevron shoved forward off a flipper bar
+  | "burstRing" // arcanepulse — concentric rings going out
+  | "magnet" // magnetaura — a horseshoe with poles
+  | "hourglass" // timecrawl
+  | "blades" // bladestorm — crescents orbiting a hub
+  | "droplet"; // slickfield — a spill
 
 const glyphCache = new Map<string, HTMLCanvasElement>();
 
@@ -395,7 +412,128 @@ function drawGlyph(g: CanvasRenderingContext2D, id: GlyphId, s: number, colour: 
       bar(0.12, 0.44, 0.76, 0.12);
       bar(0.12, 0.68, 0.76, 0.12);
       break;
+
+    // ── The ability set ──
+    // Each is drawn to be told apart by SILHOUETTE at 16px, not by detail: a
+    // slot is read in peripheral vision while something is trying to kill you.
+    // So one is a wedge, one is rings, one is a horseshoe, one is an hourglass,
+    // one is crescents, one is a teardrop — no two share an outline.
+    case "launch":
+      // A wedge shoved off a bar: the flipper, and the direction it throws you.
+      bar(0.08, 0.72, 0.84, 0.16);
+      g.beginPath();
+      g.moveTo(u(0.5), u(0.08));
+      g.lineTo(u(0.86), u(0.5));
+      g.lineTo(u(0.62), u(0.5));
+      g.lineTo(u(0.62), u(0.68));
+      g.lineTo(u(0.38), u(0.68));
+      g.lineTo(u(0.38), u(0.5));
+      g.lineTo(u(0.14), u(0.5));
+      g.closePath();
+      g.fill();
+      break;
+    case "burstRing": {
+      // Two rings and a core — the 360° tell. Rings, not a star, so it cannot be
+      // confused with `spark` or `burst` in the dev console.
+      const core = Math.max(1, Math.round(s * 0.12));
+      g.beginPath();
+      g.arc(u(0.5), u(0.5), Math.max(1, core), 0, Math.PI * 2);
+      g.fill();
+      for (const r of [0.26, 0.42]) {
+        g.beginPath();
+        g.arc(u(0.5), u(0.5), u(r), 0, Math.PI * 2);
+        g.stroke();
+      }
+      break;
+    }
+    case "magnet":
+      // A horseshoe, poles DOWN, with the two tips capped — the cap is what
+      // stops it reading as a plain arch at this size.
+      g.beginPath();
+      g.arc(u(0.5), u(0.52), u(0.32), Math.PI, 0);
+      g.stroke();
+      bar(0.18, 0.52, 0.14, 0.3);
+      bar(0.68, 0.52, 0.14, 0.3);
+      bar(0.18, 0.76, 0.14, 0.12);
+      bar(0.68, 0.76, 0.14, 0.12);
+      break;
+    case "hourglass":
+      bar(0.16, 0.08, 0.68, 0.1);
+      bar(0.16, 0.82, 0.68, 0.1);
+      g.beginPath();
+      g.moveTo(u(0.22), u(0.18));
+      g.lineTo(u(0.78), u(0.18));
+      g.lineTo(u(0.5), u(0.5));
+      g.closePath();
+      g.fill();
+      g.beginPath();
+      g.moveTo(u(0.5), u(0.5));
+      g.lineTo(u(0.78), u(0.82));
+      g.lineTo(u(0.22), u(0.82));
+      g.closePath();
+      g.fill();
+      break;
+    case "blades": {
+      // Three crescents around a hub, matching the orbiting blades actually
+      // drawn in the world — the slot's mark and the effect should be the same
+      // shape, or the glow is teaching the wrong thing.
+      g.beginPath();
+      g.arc(u(0.5), u(0.5), Math.max(1, Math.round(s * 0.1)), 0, Math.PI * 2);
+      g.fill();
+      for (let i = 0; i < 3; i++) {
+        const a0 = (i * 2 * Math.PI) / 3;
+        g.beginPath();
+        g.arc(u(0.5), u(0.5), u(0.34), a0, a0 + 1.1);
+        g.stroke();
+      }
+      break;
+    }
+    case "droplet":
+      // A teardrop over a puddle — the spill, not the barrel. A barrel at 16px
+      // is a rectangle and reads as a crate.
+      g.beginPath();
+      g.moveTo(u(0.5), u(0.06));
+      g.lineTo(u(0.76), u(0.44));
+      g.arc(u(0.5), u(0.5), u(0.28), -0.35, Math.PI + 0.35);
+      g.closePath();
+      g.fill();
+      bar(0.1, 0.82, 0.8, 0.1);
+      break;
   }
+}
+
+/**
+ * The mark for each ability, exhaustive over `AbilityId`.
+ *
+ * `Record<AbilityId, GlyphId>` on purpose: adding an ability without giving it a
+ * mark becomes a COMPILE ERROR rather than a slot that silently falls back to a
+ * generic symbol — which is precisely the state this table was written to end,
+ * and the same rule the nine other `Record<EnemyKind, …>` tables enforce for
+ * monsters.
+ */
+export const ABILITY_GLYPH: Record<AbilityId, GlyphId> = {
+  flippercharge: "launch",
+  arcanepulse: "burstRing",
+  magnetaura: "magnet",
+  timecrawl: "hourglass",
+  bladestorm: "blades",
+  slickfield: "droplet",
+};
+
+/**
+ * An ability's mark, in the ability's OWN colour.
+ *
+ * `AbilityDef.color` has been carried on every ability all along and documented
+ * as "the glow colour for the skill slot" — it was simply never read once the
+ * DOM menu went. Using it is what makes the two slots distinguishable by colour
+ * as well as by silhouette, at zero cost.
+ *
+ * `disabled` overrides the colour rather than dimming it: a slot you cannot
+ * cast has to be legible as OFF at a glance, and a darkened tint of six
+ * different hues is six different shades of ambiguous.
+ */
+export function abilityIcon(id: AbilityId, size = 16, disabled = false): HTMLCanvasElement | null {
+  return glyph(ABILITY_GLYPH[id], size, disabled ? UI.textFaint : ABILITIES[id].color);
 }
 
 /**

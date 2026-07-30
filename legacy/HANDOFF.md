@@ -8,6 +8,118 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > now. Collapsing 1500 lines I have not read would delete their notes. Prepended
 > instead — someone with the whole picture should collapse this.
 
+## ✅ LIVE NOW — browser zoom cancelled, UI 20% down, camera out, ability marks (2026-07-29)
+
+**tsc clean, 1537 tests, verified through the real pixel pass on host Chrome.**
+
+### Browser zoom no longer changes the game
+
+Ctrl +/- moves `innerWidth` and `devicePixelRatio` by reciprocal amounts; the
+window's PHYSICAL size does not move. Sizing off `innerWidth` alone read that as
+a resize and re-derived everything from it. Measured on 1920x1080 before this:
+
+| zoom | what happened |
+|---|---|
+| 90% | game letterboxed — 106px bars L/R, 60 T/B |
+| 80% | 240px bars |
+| 125% | HUD dropped 167 → 95 device px in one keypress |
+
+`cancelBrowserZoom()` compares `devicePixelRatio` against the value **at page
+load** and divides the change back out. The baseline matters: dpr is also 2 on a
+Retina panel at 100%, and treating the raw value as zoom would quadruple the
+render target on every HiDPI laptop — the opposite of this file's deliberate
+"fat honest pixels, dpr ignored" choice. Only the CHANGE is zoom.
+
+`RenderSizing` gains `cssScale = scale / browserZoom`. That distinction is now
+load-bearing in three places and each was a real bug waiting: the canvas is
+SIZED in CSS px, the pointer ARRIVES in CSS px, and the wheel delta is in CSS
+px, while the drawing buffer is device px. Pinned by
+`render-sizing.test.ts` — the grid must be byte-identical across twelve zoom
+steps for five window sizes, not merely similar, because a one-pixel difference
+still flips an integer design zoom across a boundary.
+
+Verified in a real browser via CDP `Emulation.setDeviceMetricsOverride`
+(`scripts/ui-probe.mjs --steps 'dpr:1.5'`): CSS window 1141x619 → 2140x1161
+across the range, render grid pinned at 1712x928 throughout, screenshots
+compositionally identical.
+
+### The letterbox band
+
+`MAX_RENDER_*` clamped the GRID after `scale` had already been chosen against
+the unclamped size, so `out` came out smaller than the window and the gap was
+black bars — for the ENTIRE 1921..2559 CSS band. Now the ceiling raises the
+SCALE instead, and only while the resulting grid stays ≥1024x576; below that
+(a 7680x1080 ultrawide would reach 1920x270, four tiles of vertical view) bars
+are correct and the clamp still takes over. Ceiling itself went 1920x1080 →
+2160x1216 to cover the common band without a bump.
+
+### UI 20% smaller, and the zoom stops flipping
+
+Design boxes 800x450 → **600x338, capped at 2x**. Both halves matter:
+
+- The box is what makes it smaller. Where old and new resolve to the same zoom
+  the UI is exactly **0.80x** its previous device size. Where they differ the new
+  one is BIGGER — and those are precisely the grids where the old box fell to 1x
+  and the HUD rendered at half size.
+- The cap is what stops it growing. Uncapped, the sheets would jump 2x → 3x at a
+  1920 grid: 50% growth from one browser-zoom notch.
+
+HUD refit to the 584-unit content width: `PANEL_H` 76→61, `TILE` 40→30,
+`ITEM_ICON` 36→24, and the weapon's NAME became the cell caption (52 units
+cheaper than a label column, and strictly more informative than the word
+"WEAPON" next to a picture of a sword). Minimap store 116 → **120** — purely for
+its divisors, since 116 = 2·2·29 and `exactIconSize` could only take 29 in the
+smaller cell.
+
+### Camera out 12.5%, not 15%
+
+`PPU` 72 → 64. PPU is the zoom (`world visible = renderW / PPU`) AND the
+denominator of `SPRITE_UNITS`, and `SPRITE_PIXEL_GRID = SPRITE_UNITS × PPU` must
+be a whole number of texels or every sprite samples between them. With
+`SPRITE_UNITS` held at 9/8 that makes PPU a multiple of 8, so the ladder is 72 →
+64 (+12.5%) or 72 → 56 (+28.6%); 72 × 0.85 = 61.2 is not on it. **56 would take
+the sprite grid to 63, under the ≥64 floor `sprite-scale.test.ts` asserts** — so
+if more zoom-out is wanted, that test and the fidelity call behind it have to be
+revisited deliberately.
+
+`SPRITE_PIXEL_GRID` 81→72 and `SPRITE_PX` 162→144 move WITH it. Holding the grid
+at 81 would keep sprites their old screen size while the level shrank — every
+actor 12.5% larger than its own collider, visibly overlapping walls it does not
+touch. Zooming out costs texels; there is no arrangement where it does not.
+
+### The skill slots showed the same symbol for every ability
+
+`hud.ts` drew `glyph("spark")` for BOTH cast slots, so the only thing separating
+Flipper Charge from Time Crawl was the mana number underneath. `AbilityDef`
+has carried `icon` (an emoji) and `color` all along, dead since the DOM menu was
+deleted — emoji cannot come back (font-stack dependent, see `gui/icons.ts`), so
+there are now six real glyphs and `ABILITY_GLYPH: Record<AbilityId, GlyphId>`
+makes a new ability without a mark a COMPILE error. Each is told apart by
+SILHOUETTE at 16px — wedge / rings / horseshoe / hourglass / crescents /
+teardrop, no two sharing an outline — and tinted with the ability's own
+`color`. The menu's ability rows had no mark at all; they have the same one now.
+
+### The beard read as chainmail
+
+A VALUE collision, not a hue one: beard body at the worn tiers was palette 3
+(luma 78.0) and the helm's gorget/cracks are palette 19 (luma 80.8) — **2.8
+apart** — while the "grey strands" used palette 21, which IS one of the four
+colours the helmet is painted in. Stone and steel are 3° apart in hue, so grey
+on grey has nothing but value to separate it.
+
+Beard and moustache moved to the warm LEATHER ramp (26/27, luma 30.4/53.9,
+hue 24° against the cool ramps' ~215°): 27–50 luma below the LOWEST steel entry,
+so hue and value both separate and neither has to hold alone. The far side is
+pinned a step darker because `paintSkin` runs a `skinDeep` column down x24-25 in
+that same entry — mirrored flat, the far sideburn would have been painted the
+exact colour of the shadow it sits in.
+
+### Left undone
+- Exactly 15% camera-out is not reachable; see the ladder above.
+- The mugshot did NOT shrink with the rest of the HUD — `FACE_PX` is 72 and the
+  blit must be a whole multiple, so its cell has a hard 76-unit floor. It is now
+  proportionally the largest thing on the bar.
+
 ## ✅ LIVE NOW — the UI pass: scroll, zoom, icons, the descent screen (2026-07-29)
 
 **tsc clean, registry-drift clean, 1508 tests. Verified through the real pixel

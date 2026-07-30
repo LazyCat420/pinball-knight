@@ -53,7 +53,7 @@ export interface FloorLoading {
  * screen a player stares at with nothing else to do. On a 1600x900 grid this
  * resolves to 3x: depth numerals 72 texels tall instead of 24.
  */
-export const DESIGN = { w: 480, h: 270 };
+export const DESIGN = { w: 480, h: 270, max: 3 };
 
 /** Cell states in the throwaway labyrinth drawn behind the bar. */
 const WALL = 0;

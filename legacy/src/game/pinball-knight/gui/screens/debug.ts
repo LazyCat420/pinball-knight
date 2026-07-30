@@ -62,7 +62,14 @@ import { pop, type UiScreen } from "../stack";
  * this panel exists to let you watch, and reserving it in the design box is
  * what stops a future row from creeping across the screen.
  */
-export const DESIGN = { w: 560, h: 360 };
+/**
+ * 560x340 capped at 2x. The dock is a fixed 232 of the width, so the design box
+ * is really a statement about how much of the screen the console is allowed to
+ * cover: at 2x on a 1712-wide grid that is 27%, and the arena — the thing this
+ * panel exists to let you watch — keeps the rest. A smaller box would zoom to
+ * 3x and hand the dock 41%.
+ */
+export const DESIGN = { w: 560, h: 340, max: 2 };
 
 /** How wide the dock is, in UI pixels. */
 const DOCK_W = 232;

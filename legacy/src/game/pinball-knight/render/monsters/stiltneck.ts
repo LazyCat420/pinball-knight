@@ -84,10 +84,16 @@ const R_COAT: Ramp = [15, 16, 17];
 /** Far-side limbs and the neck's shadow side: one rung down, so near reads in
  *  front of far without changing family. */
 const R_COAT_DK: Ramp = [14, 15, 16];
-/** Belly, muzzle, inner ear: one rung UP from the coat. A giraffe's underside is
- *  cream, and staying inside the ramp is what keeps it from reading as a second
- *  creature stuck to the first. */
-const R_BELLY: Ramp = [16, 17, 18];
+/** Belly, muzzle, inner ear: brighter than the coat's mid but capped at 17.
+ *
+ *  NOT [16,17,18], and the cap is a POST-CHAIN constraint, not taste. The
+ *  pixel pass blooms anything over BLOOM_THRESHOLD 0.7 in linear luma; palette
+ *  18 sits at ~0.90 and 17 at ~0.72, so a belly field of 18 glows like a torch
+ *  core and the quantizer then shreds the halo into speckle (measured in-game
+ *  2026-07-29 — the "white blobs" on the first shipped stiltneck were its own
+ *  muzzle blooming). 18 is for EMITTERS: the fuse spark, torches, nothing that
+ *  is meat. 17's overshoot past the threshold is k≈0.07 — invisible. */
+const R_BELLY: Ramp = [15, 16, 17];
 /** Stilts, pannier, straps: the palette's only wood. Bounces cold (BOUNCE_FOR
  *  [26]=4), which is the entire reason four 5px poles stay visible on a floor. */
 const R_WOOD: Ramp = [26, 27, 28];
@@ -251,13 +257,16 @@ function neckLat(dir: Dir): number {
  * than in the idle clip.
  */
 const SPOT_FIELD: Array<[number, number, number, number]> = [
-  // dx, dy, length, angle
+  // dx, dy, length, angle. FIVE, not six — at the 81-texel grid each blotch is
+  // a ~3x2-texel mark on a barrel ~28 texels wide, and the live-atlas census
+  // showed the marks (plus their neighbours' ink) outweighing the coat they
+  // decorate. The giraffe read needs the pattern to be legible, which means
+  // GOLD BETWEEN THE SPOTS more than it means spots.
   [-0.58, -0.32, 4, 0.4],
-  [-0.08, -0.5, 5, -0.3],
-  [0.48, -0.28, 4, 0.6],
-  [-0.5, 0.3, 4, -0.5],
-  [0.42, 0.26, 4, -0.4],
-  [0.05, 0, 4, 0.9],
+  [-0.05, -0.5, 4, -0.3],
+  [0.5, -0.26, 4, 0.6],
+  [-0.45, 0.32, 4, -0.5],
+  [0.4, 0.28, 4, -0.4],
 ];
 
 function spotBody(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number): void {
@@ -271,17 +280,23 @@ function spotBody(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: num
   for (const [fx, fy, len, ang] of SPOT_FIELD) {
     const x = cx + fx * rx;
     const y = cy + fy * ry;
-    figDetail(ctx, [[x - Math.cos(ang) * len * 0.5, y - Math.sin(ang) * len * 0.5], [x + Math.cos(ang) * len * 0.5, y + Math.sin(ang) * len * 0.5]], 5.5, SPOT);
+    figDetail(ctx, [[x - Math.cos(ang) * len * 0.5, y - Math.sin(ang) * len * 0.5], [x + Math.cos(ang) * len * 0.5, y + Math.sin(ang) * len * 0.5]], 4.6, SPOT);
   }
   ctx.restore();
 }
 
-/** Spots down the neck: one per interior segment, sized to sit inside the tube. */
+/** Spots down the neck: ALTERNATE interior segments, not every one.
+ *
+ *  The neck tube is ~7 texels wide at the stored grid. A spot per segment plus
+ *  the mane plus two selout edges left roughly two texels of actual coat per
+ *  row — the live atlas censused the neck at more leather than torch, on the
+ *  one creature whose whole identity is "the gold one". Half the spots reads
+ *  MORE like a giraffe, because the pattern needs ground to sit on. */
 function spotNeck(ctx: CanvasRenderingContext2D, pts: Pt[]): void {
-  for (let i = 1; i < pts.length - 1; i++) {
+  for (let i = 1; i < pts.length - 1; i += 2) {
     const [x, y] = pts[i];
     const side = i % 2 === 0 ? 1 : -1;
-    figDetail(ctx, [[x - 1.4, y - side * 0.7], [x + 1.4, y + side * 0.7]], 4.6, SPOT);
+    figDetail(ctx, [[x - 1.2, y - side * 0.6], [x + 1.2, y + side * 0.6]], 3.8, SPOT);
   }
 }
 
@@ -458,11 +473,13 @@ function drawHead(ctx: CanvasRenderingContext2D, tip: Pt, tangent: number, dir: 
   // pair of ears alone does not.
   for (const s of [-1, 1]) {
     const ox = 2 + s * 4;
-    limbShaded(ctx, [ox, -7], [ox - 1, -13], 2.6, R_COAT_DK);
-    ellShaded(ctx, ox - 1, -14, 2.4, 2.2, R_WOOD, 0, { rim: false });
+    limbShaded(ctx, [ox, -7], [ox - 1, -13], 2.4, R_COAT_DK);
+    ellShaded(ctx, ox - 1, -14, 2, 1.8, R_WOOD, 0, { rim: false });
   }
-  // Ear, swept back off the skull.
-  plateShaded(ctx, [[-2, -4], [-11, -9], [-13, -3], [-4, 1]], R_COAT_DK, { rim: false });
+  // Ear, swept back off the skull. COAT ramp, not the far-side one: this is
+  // the near ear on a lit head, and in the atlas census the darker ramp was
+  // reading as one more brown mass on the creature's most-looked-at band.
+  plateShaded(ctx, [[-2, -4], [-11, -9], [-13, -3], [-4, 1]], R_COAT, { rim: false });
   // Muzzle: the pale band, and the only place the belly ramp appears above the
   // body. A giraffe's face is dark-eyed and light-nosed and the light nose is
   // what stops the head reading as a golden blob at distance.
@@ -679,8 +696,8 @@ function stiltneckFrame(
       const dx = x1 - x0;
       const dy = y1 - y0;
       const d = Math.hypot(dx, dy) || 1;
-      const off = 3.6 - i * 0.2;
-      figDetail(ctx, [[x0 + (dy / d) * off, y0 - (dx / d) * off], [x1 + (dy / d) * off, y1 - (dx / d) * off]], 2.6, 14);
+      const off = 3.8 - i * 0.2;
+      figDetail(ctx, [[x0 + (dy / d) * off, y0 - (dx / d) * off], [x1 + (dy / d) * off, y1 - (dx / d) * off]], 2, 14);
     }
     spotNeck(ctx, pts);
 

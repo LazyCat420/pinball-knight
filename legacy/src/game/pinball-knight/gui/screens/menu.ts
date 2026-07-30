@@ -65,7 +65,7 @@ import {
   type Rect,
   type UiFrame,
 } from "../im";
-import { drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
+import { abilityIcon, drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
 import { settingsScreen } from "./settings";
@@ -433,16 +433,23 @@ function skillsTab(f: UiFrame, body: Rect, m: MenuState): void {
     const rankBox = cutRight(row, 44);
     const pipBox = cutRight(row, 40);
 
-    text(f, `${a.label}${rank > 0 ? `  +${Math.round(ABILITY_RANK_STEP * rank * 100)}%` : ""}`, row.x + GRID, row.y + 4, {
+    // The ability's own mark, in its own colour — the same glyph the HUD's cast
+    // slot draws, so a player who learns the shape in the menu recognises it in
+    // the bar. This row had NO mark at all, which made a six-row list of
+    // similar-length sentences the only way to find the one you wanted.
+    const ROW_MARK = 20;
+    drawIcon(f.g, abilityIcon(id, ROW_MARK, !has), row.x + 5, row.y + (r.h - ROW_MARK) / 2, ROW_MARK);
+    const textX = row.x + ROW_MARK + 10;
+    text(f, `${a.label}${rank > 0 ? `  +${Math.round(ABILITY_RANK_STEP * rank * 100)}%` : ""}`, textX, row.y + 4, {
       size: 8,
       colour: has ? UI.text : UI.textFaint,
-      max: row.w - GRID,
+      max: row.x + row.w - textX,
     });
     const ruleAt = has && rank < ABILITY_RANK_RULE ? ` · rank ${ABILITY_RANK_RULE}: ${ABILITY_RANK_RULE_TEXT[id]}` : "";
-    text(f, `${a.detail} · ${a.cost} mana · ${a.cooldown}s cd${ruleAt}`, row.x + GRID, row.y + 19, {
+    text(f, `${a.detail} · ${a.cost} mana · ${a.cooldown}s cd${ruleAt}`, textX, row.y + 19, {
       size: 8,
       colour: UI.textDim,
-      max: row.w - GRID,
+      max: row.x + row.w - textX,
     });
 
     if (!has) {
@@ -606,7 +613,7 @@ export function menuScreen(onAbandon: () => void): UiScreen {
     // game now targets, so on a desktop grid they all come out at 2x and at the
     // SAME zoom as each other — a menu at 1x next to a HUD at 2x reads as two
     // different games stapled together.
-    design: { w: 800, h: 450 },
+    design: { w: 600, h: 338, max: 2 },
     onCancel(self) {
       // An armed ABANDON disarms on Esc rather than closing — otherwise the
       // key that armed it could also dismiss the warning it raised.
@@ -619,7 +626,7 @@ export function menuScreen(onAbandon: () => void): UiScreen {
     },
     paint(f, self) {
       scrim(f);
-      const outer = sheet(f, 780, 424);
+      const outer = sheet(f, 584, 322);
 
       // Header: title, purse, tabs.
       const head = cutTop(outer, 34);

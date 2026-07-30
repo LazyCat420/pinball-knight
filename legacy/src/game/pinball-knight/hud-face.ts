@@ -38,9 +38,13 @@
  * entries (23-25), which is not enough tones to sculpt a face. 26-28 are the
  * same hue family one step darker, and the quantizer routes deep skin there
  * anyway, so they are used deliberately as the shadow end rather than by
- * accident. The hair takes the STONE ramp and the helm the STEEL ramp — matte
+ * accident. The BROWS take the STONE ramp and the helm the STEEL ramp — matte
  * grey against specular grey — because putting both on steel is what merged
- * them before.
+ * them before. The BEARD is not grey at all any more; it borrows leather along
+ * with the skin, for the reason spelled out over `paintBeard`. Stone and steel
+ * are three degrees of hue apart, so a grey mass beside the helm has nothing
+ * but value to separate it, and a beard is exactly the size of mass that loses
+ * that argument.
  *
  * **The outline is derived, not authored.** The head is painted onto a scratch
  * canvas, and any empty cell touching a painted one is inked with entry 1. That
@@ -286,11 +290,23 @@ const C = {
   // ── hair: the STONE ramp (matte, cool), never the steel the helm wears ──
   hairDk: P(2), //       2  stone dark
   hair: P(3), //         3  stone mid
-  hairHi: P(4), //       4  stone light
+  hairHi: P(4), //       4  stone light      — luma 117.0
   hairWhite: P(5), //    5  stone highlight
-  hairSilver: P(21), // 21  steel light — a handful of strands, no more
+  hairSilver: P(21), // 21  steel light — SCALP ONLY, and only at stages where
+  //                        the helm is already off the head. It is one of the
+  //                        four colours the helm itself is painted in, so on
+  //                        anything that shares a frame with armour it is not a
+  //                        highlight, it is the armour. It used to be in the
+  //                        beard; see `paintBeard`.
   scalp: P(24), //      24  skin mid — the bald pate
   scalpHi: P(25), //    25  skin light
+  // ── beard: the warm LEATHER ramp. 26/27 are the same two entries the skin
+  //    borrows above (`skinLo`/`skinDeep`) — named twice on purpose, because
+  //    here they are hair and there they are shadow, and a rename on one side
+  //    must not silently drag the other with it. ──
+  beardSh: P(26), //    26  leather shadow — luma 30.4
+  beard: P(27), //      27  leather dark   — luma 53.9
+  beardGrey: P(28), //  28  leather mid    — luma 79.0, the warm greying strands
 };
 
 // ── Draw plumbing ──
@@ -759,74 +775,120 @@ function paintNose(): void {
  * The moustache. Split under the nose and swept out past the corners of the
  * mouth, which is the shape that makes the LIP legible — a bar straight across
  * merges with the beard and the mouth disappears into one dark mass.
+ *
+ * It sits directly on top of the beard, so it is on the LEATHER ramp for the
+ * same reasons and moves whenever the beard moves. Left on stone it would have
+ * been a grey bar hanging over a brown beard: two different men's facial hair.
  */
 function paintMoustache(tier: Expr): void {
-  const grey = tier === "fresh" || tier === "steady" ? C.hairHi : C.hairWhite;
-  sym(12, 21, 6, 2, C.hairDk);
-  sym(12, 21, 4, 1, C.hair);
-  symPx(12, 22, C.hair); // the ends droop past the corners of the mouth
+  // Greys the same way the beard does: warm first, and only the worn tiers earn
+  // the genuinely cool strand.
+  const grey = tier === "fresh" || tier === "steady" ? C.beardGrey : C.hairHi;
+  sym(12, 21, 6, 2, C.beardSh);
+  sym(12, 21, 4, 1, C.beard);
+  symPx(12, 22, C.beard); // the ends droop past the corners of the mouth
   symPx(13, 21, grey);
-  cell(17, 21, 2, 1, C.skinDeep); // the philtrum split
+  // The philtrum split. It used to be `skinDeep` — which IS entry 27 — against a
+  // stone-dark moustache at 47.7: six luma, so the two halves were never
+  // actually split. Against leather shadow (30.4) the skin shadow the nose
+  // already throws at y20 (entry 23, 75.3) carries on down and reads as a gap.
+  cell(17, 21, 2, 1, C.skinDk);
 }
 
 /**
- * The beard — cropped grey STUBBLE hugging the jaw, and no more than that.
+ * The beard — cropped STUBBLE hugging the jaw, and no more than that.
  *
- * It took two passes to get here and both failures are worth recording, because
- * the second one is not obvious.
+ * It took three passes to get here and all three failures are worth recording,
+ * because each fix caused the next one.
  *
- * A full beard painted in `hairDk` read as a second piece of armour and the
- * mouth vanished into it. The fix for THAT — lighten it, put it on the stone
- * ramp's bright end — produced a white beard that read as CHAINMAIL, because
- * this palette's only two grey ramps (stone 2-5, steel 19-22) are barely a hue
- * apart. A large grey mass next to a steel helm is a grey mass next to a grey
- * mass, whichever end of whichever ramp it sits on.
+ * 1. A full beard painted in `hairDk` read as a second piece of armour and the
+ *    mouth vanished into it.
+ * 2. The fix for that — lighten it, put it on the stone ramp's bright end —
+ *    produced a white beard that read as CHAINMAIL. This palette's only two
+ *    grey ramps are three degrees of hue apart (stone mid 214°, steel mid
+ *    217°), so grey-on-grey has nothing but VALUE to separate it.
+ * 3. So it went dark instead, still on stone, and it STILL read as a
+ *    continuation of the helmet — and this one is the interesting failure,
+ *    because "dark stone against bright steel" sounds like it settles the value
+ *    argument and does not. The helm is not one value. Its shadow entries are
+ *    down in the beard's range: beard body at the worn tiers was entry 3, luma
+ *    78.0, and the gorget / brim shadow / every crack in the dome is entry 19,
+ *    luma 80.8. **2.8 luma apart.** Worse, the "grey strands" scattered on top
+ *    used entry 21 — steel light — so the beard was quite literally being
+ *    picked out in one of the helm's own four colours.
  *
- * So the beard is small, and it is DARK. Both matter. Small, because grey reads
- * as hair when there is a little of it against a lot of skin — and the third of
- * the portrait it used to occupy goes back to being FACE, which is the whole
- * point of a mugshot that shows damage; you cannot paint a split lip on a beard.
- * Dark, because in a palette this tight the separation has to come from VALUE
- * rather than hue: the helm's steel sits at the bright end of its ramp, so the
- * beard takes the dark end of its own and the two can never be confused, which
- * is precisely what a light grey beard could not manage no matter which of the
- * two grey ramps it was drawn from. The greys survive as strands on top.
+ * The way out is to stop competing on a single axis. The beard is now on the
+ * warm LEATHER ramp (hue 24°, against the cool ramps' ~215°), at 30.4/53.9 —
+ * which is also 27 to 50 luma below the LOWEST steel entry, not just below the
+ * bright ones. Hue and value both, so neither has to hold alone.
+ *
+ * It stays small, which was the one thing pass 2 got right: hair reads as hair
+ * when there is a little of it against a lot of skin, and the third of the
+ * portrait it used to occupy goes back to being FACE — you cannot paint a split
+ * lip on a beard, and a mugshot that shows damage is the whole point.
+ *
+ * The far side is painted a step darker than the near side rather than mirrored
+ * flat. That is the same upper-left key the rest of the head is lit by, and it
+ * is load-bearing: `paintSkin` runs a `skinDeep` column down x24-25, which is
+ * entry 27 — the same entry as the worn beard body. Mirrored, the whole
+ * far-side sideburn and the outer column of the far jaw band would be painted
+ * the exact colour of the shadow they sit in and simply cease to exist at four
+ * of the six tiers. Pinning the far side to 26 puts 23.5 luma back under it.
  */
 function paintBeard(tier: Expr): void {
   const worn = tier !== "fresh" && tier !== "steady";
-  const body = worn ? C.hair : C.hairDk;
+  // Lightens as he wears down — an unkempt beard catches more light than a
+  // trimmed one. Fresh sits at the bottom of the ramp so there is somewhere for
+  // it to go, and so the strands have something to be seen against.
+  const body = worn ? C.beard : C.beardSh;
 
-  // sideburns — a narrow strip in front of the ear, under the cheek guard
-  sym(10, 16, 2, 6, body);
+  // ── The near (lit) side: sideburn, then the jaw line following the taper.
+  // A clean two-cell band and nothing inboard of it. An earlier pass filled the
+  // chin and then broke it up with scattered pixels, which did not read as
+  // stubble — it read as noise, and noise at 36px destroys every shape.
+  cell(10, 16, 2, 6, body); // in front of the ear, under the cheek guard
+  cell(11, 22, 2, 3, body);
+  cell(12, 25, 2, 2, body);
+  cell(13, 27, 2, 2, body);
 
-  // The jaw line, following the taper: a clean two-cell band, and nothing
-  // inboard of it. An earlier pass filled the chin and then broke it up with
-  // scattered pixels, which did not read as stubble — it read as noise, and
-  // noise at 36px destroys every shape it touches.
-  sym(11, 22, 2, 3, body);
-  sym(12, 25, 2, 2, body);
-  sym(13, 27, 2, 2, body);
+  // ── The far (shadow) side. Same spans, mirrored by hand, one step darker —
+  // see the note above about the `skinDeep` column it lands on.
+  cell(24, 16, 2, 6, C.beardSh);
+  cell(23, 22, 2, 3, C.beardSh);
+  cell(22, 25, 2, 2, C.beardSh);
+  cell(21, 27, 2, 2, C.beardSh);
 
   // the chin tuft, a narrow point rather than a full chin
   cell(16, 28, 4, 3, body);
-  cell(16, 27, 4, 1, C.hairDk); // where it meets the lower lip
+  cell(18, 28, 2, 3, C.beardSh); // its far half turns with the rest of the head
+  cell(16, 27, 4, 1, C.beardSh); // where it meets the lower lip
 
-  // Grey strands ON the dark mass. This is where the age reads, and it works
-  // only because the mass underneath is dark enough to show them.
-  px(10, 18, C.hairHi);
-  px(25, 20, C.hairHi);
-  px(11, 23, C.hairHi);
-  px(24, 23, C.hairHi);
-  px(17, 29, C.hairHi);
-  px(11, 20, C.hairWhite);
-  px(18, 30, C.hairWhite);
+  // Greying strands ON the dark mass. This is where the age reads, and it works
+  // only because the mass underneath is dark enough to show them. Most of them
+  // are WARM (leather mid, 79.0 — 48.6 above the fresh body): a warm strand on a
+  // warm beard is a lighter hair, where a cool one is a stray thread of mail.
+  px(10, 18, C.beardGrey);
+  px(25, 20, C.beardGrey); // and the far sideburn's only tell that it is there
+  px(11, 23, C.beardGrey);
+  px(24, 23, C.beardGrey);
+  px(17, 29, C.beardGrey);
+  // Two genuinely COOL strands, stone light, and one more below once he is
+  // worn. Three pixels is the whole budget: this is the colour that turned the
+  // beard into chainmail when it was the mass, and the colour that makes him
+  // look sixty when it is three pixels. (The first of these is under the cheek
+  // scratch from `steady` onward, so it is really a fresh-tier detail.)
+  px(11, 20, C.hairHi);
+  px(18, 30, C.hairHi);
 
   if (!worn) return;
   // Greyer, and creeping further up the cheek, once he has been at it a while.
-  px(12, 21, C.hairSilver);
-  px(23, 22, C.hairSilver);
-  px(13, 26, C.hairHi);
-  px(19, 30, C.hairWhite);
+  // These four were the last two `hairSilver` (entry 21 — the HELM's own steel
+  // light) and two more stone; all four are now warm or, at the very brightest,
+  // the same stone light the two-pixel budget above allows.
+  px(12, 21, C.beardGrey);
+  px(23, 22, C.beardGrey);
+  px(13, 26, C.beardGrey);
+  px(19, 30, C.hairHi);
 }
 
 /**

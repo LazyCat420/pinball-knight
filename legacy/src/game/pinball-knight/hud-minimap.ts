@@ -28,11 +28,20 @@
 import { state } from "./state";
 import { drawFloorMap, mapSignature } from "./map-render";
 
-/** Backing store, in device pixels. Square, so the window is symmetric. */
-const PX = 116;
+/**
+ * Backing store, in device pixels. Square, so the window is symmetric.
+ *
+ * 120 rather than 116 for its DIVISORS. The HUD blits this through `drawIcon`,
+ * which snaps to a size the source divides exactly — and 116 factors as
+ * 2·2·29, so between 58 and 4 there is nothing. In the resized HUD's 45-unit
+ * cell that forced a 29px map: a quarter of the pixels, for the sake of four
+ * pixels of backing store. 120 gives 60/40/30/24/20/15/12/10, so the map lands
+ * on 40 there and degrades in small steps everywhere else.
+ */
+const PX = 120;
 /** Tiles either side of the player to show. 11 → a 23×23 window. */
 const WINDOW = 11;
-/** Whole pixels per tile: PX / (WINDOW*2+1) = 5.04 → 5. */
+/** Whole pixels per tile: PX / (WINDOW*2+1) = 5.2 → 5. */
 const TILE_PX = Math.floor(PX / (WINDOW * 2 + 1));
 
 let canvas: HTMLCanvasElement | null = null;

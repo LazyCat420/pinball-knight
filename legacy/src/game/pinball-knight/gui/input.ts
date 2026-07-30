@@ -338,7 +338,10 @@ export function takeFrame(sizing: UiSizing, winW: number, winH: number, nowMs: n
   // Wheel deltas are in CSS pixels; the UI grid is `scale` times coarser, and a
   // notch of a typical wheel is ~100px. Divide so one notch is a couple of rows
   // rather than half the sheet.
-  input.scroll = Math.round(wheelDelta / sizing.scale / 4);
+  // `cssScale`, not `scale`: a wheel delta arrives in CSS pixels, the same unit
+  // the pointer does. Under browser zoom the two differ and a notch would
+  // scroll a different number of rows at each zoom level.
+  input.scroll = Math.round(wheelDelta / sizing.cssScale / 4);
   input.typed = typedBuf;
 
   tapped.clear();

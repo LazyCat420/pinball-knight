@@ -497,7 +497,7 @@ export function tavernScreen(d: {
     // game now targets, so on a desktop grid they all come out at 2x and at the
     // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
     // different games stapled together.
-    design: { w: 800, h: 450 },
+    design: { w: 600, h: 338, max: 2 },
     onCancel() {
       if (u.vendor && !counterMode) {
         // Back to the room, not out of the tavern.
@@ -511,7 +511,7 @@ export function tavernScreen(d: {
     onClose: d.onClose,
     paint(f, self) {
       scrim(f);
-      const outer = sheet(f, 780, 424);
+      const outer = sheet(f, 584, 322);
 
       const head = cutTop(outer, 32);
       text(f, "THE TAVERN", head.x, head.y, { size: 16, colour: UI.gold });

@@ -104,10 +104,13 @@ export const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null
   // Slightly under size: the rotor makes the sprite wide, and at 1.0 the disc
   // read as the creature's body rather than as the thing bolted on top of it.
   rotortail: { sheet: () => sheetFor("rotortail"), scale: 0.95 },
-  // Scaled UP, unlike everything else in this table. Height is the whole read on
-  // this one — four thin poles under a high centre of mass — and at 1.0 it stood
-  // level with the horde it is supposed to be shooting over.
-  stiltneck: { sheet: () => sheetFor("stiltneck"), scale: 1.12 },
+  // 1.0, and the 1.12 it shipped with is worth an epitaph: any non-integer mesh
+  // scale breaks the sprite identity (1 stored texel = 1 render pixel, see
+  // constants/render.ts SPRITE_UNITS * PPU === SPRITE_PIXEL_GRID), so every
+  // ~8th texel row/column rendered doubled — "uneven pixels", visible as
+  // moiré crawling on the coat. The tall read never needed the multiplier;
+  // the creature already fills its cel to the margins.
+  stiltneck: { sheet: () => sheetFor("stiltneck"), scale: 1.0 },
 };
 
 /** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
