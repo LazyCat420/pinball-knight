@@ -290,11 +290,33 @@ function capHeight(x: number, y: number): number {
  * Each row is picked to hold the ORIGINAL's value spread (roughly 0.18 / 0.30 /
  * 0.45 luma). A biome that is merely darker is not a different biome, it is a
  * readability problem, and this floor is already the darkest thing on screen.
+ *
+ * ── SECOND CONSTRAINT, ADDED AFTER INDEXED LIGHTING LANDED ────────────────────
+ *
+ * A row's DARK and MID must come from the SAME palette family. Since `51bbd77`
+ * the pixel pass shades by walking an entry down its own family ramp, and these
+ * three tones share one wall texture — mortar, face, highlight. Pick them from
+ * different families and the wall's own tones diverge in HUE as it darkens,
+ * because each walks a different ramp.
+ *
+ * The Bloodworks was the row that broke it: `[10, 27, 24]` was blood + leather +
+ * skin, three materials pretending to be one rock, and its dark tone (0.113) sat
+ * so close to ink that mortar read black before any shadow reached it. It is now
+ * the blood ramp proper — which is also what the biome's own flavour line
+ * promises, and what the brown-and-pink row never delivered.
+ *
+ * The LIGHT tone is exempt and the Arcane Deep uses it: arcane jumps 0.368 →
+ * 0.712 with nothing at the baseline's 0.458, so its highlight borrows neutral
+ * stone. That is a value problem, not a bloom one — 31's linear luma is 0.509,
+ * comfortably under BLOOM_THRESHOLD. Highlights are sparse and shade least, so
+ * the seam stays cosmetic.
+ *
+ * Gated by render/palette-install.test.ts.
  */
-const BIOME_STONE: ReadonlyArray<readonly [number, number, number]> = [
+export const BIOME_STONE: ReadonlyArray<readonly [number, number, number]> = [
   [2, 3, 4], // 0 The Cold Crypt — the baseline: cold grey masonry
   [6, 7, 8], // 1 The Rotting Warren — mossed-through stone, near-identical values
-  [10, 27, 24], // 2 The Bloodworks — dried blood in the grooves over warm sandstone
+  [11, 12, 13], // 2 The Bloodworks — the walls weep red: one blood ramp, 10 spare below
   [29, 30, 4], // 3 The Arcane Deep — cold blue rock, neutral stone highlights
 ];
 let biomeIdx = 0;

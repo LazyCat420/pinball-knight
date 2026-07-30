@@ -618,12 +618,25 @@ function finalNode(
 
   // ── INDEXED LIGHTING ───────────────────────────────────────────────────────
   //
-  // The reduction above ran on the UNLIT colour, so `bestIdx` is the MATERIAL —
-  // stone, rot, leather — chosen before any shadow could drag it into a
-  // neighbouring family. Lighting is then spent by walking that entry down its
-  // own ramp, via the pre-baked shaded-palette texture (row s = entry shaded s
-  // steps; see render/palette-shading.ts, where the walk is defined and tested
-  // in plain node).
+  // The reduction above ran BEFORE this pass's own darkening terms, so `bestIdx`
+  // is the material as lit — stone, rot, leather — chosen before AO, the
+  // vignette or the ink outline could drag it into a neighbouring family.
+  // Lighting is then spent by walking that entry down its own ramp, via the
+  // pre-baked shaded-palette texture (row s = entry shaded s steps; see
+  // render/palette-shading.ts, where the walk is defined and tested in plain
+  // node).
+  //
+  // ⚠️ "AS LIT" IS NOT "UNLIT", AND THE DIFFERENCE IS STILL A REAL BUG. `col`
+  // here is the diffuse render target: the scene's own three.js lighting —
+  // coloured ambient at 3.5, hemi, the cold key light, and six flame-orange
+  // torch PointLights at intensity 6 — is already multiplied into it. That is
+  // the SAME cross-family multiply this machinery exists to prevent, arriving
+  // from the dominant light source instead of from AO, so torch-lit stone can
+  // still snap into leather/ember. BLUEPRINT.md records the extreme version of
+  // it (torches at intensity 18 turned the cold crypt into a cosy burrow).
+  // Fixing it properly needs an albedo/material target so the snap sees unlit
+  // colour and the whole lighting chain collapses into `light`. Not done here;
+  // do not read this block as though it were.
   //
   // ⚠️ THE ROW IS CHOSEN BY MATCHING LUMA, NOT BY SCALING THE SHADE AMOUNT.
   // That distinction is the whole reason the first attempt at this failed. A

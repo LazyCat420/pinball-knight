@@ -31,7 +31,7 @@ import { beginUi, clampFocus, emptyUiInput, type UiFrame } from "../im";
 import type { UiScreen } from "../stack";
 import { ROW_H } from "../theme";
 import { state } from "../../state";
-import { cardKey } from "../../cards";
+import { cardKey, cardsOfRarity } from "../../cards";
 import type { VendorId } from "./tavern";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -225,7 +225,9 @@ describe("the card dealer with a real stash", () => {
     // The dealer's height is a function of the stash, so an empty run tests the
     // shortest possible version of the one counter that grows without bound.
     const stash = state.cardStash;
-    state.cardStash = Array.from({ length: 14 }, () => cardKey("ember", 1, false));
+    // A real base from the roster — `cardDef` must know it or the faces and the
+    // rarity lookups silently fall back.
+    state.cardStash = Array.from({ length: 14 }, () => cardKey(cardsOfRarity("common")[0], 1, false));
     try {
       const screen = await openCounter("cards");
       const total = paint(screen).f.count;

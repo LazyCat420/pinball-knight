@@ -16,7 +16,7 @@
 import { stackHaul, type HaulEntry } from "../../card-reader";
 import { isShinyCard } from "../../cards";
 import { UI, GRID, ROW_H } from "../theme";
-import { beginScroll, button, cutTop, endScroll, focusRing, focusable, rect, scrim, sheet, strokeRect, text } from "../im";
+import { beginScroll, button, cutTop, endScroll, focusRing, focusable, followFocus, rect, scrim, sheet, strokeRect, text } from "../im";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, type UiScreen } from "../stack";
 
@@ -92,7 +92,10 @@ export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone:
         }
       }
       endScroll(f, view, contentH, sc.offset);
-      self.scroll = sc.offset;
+      // The region follows the cursor — see `followFocus`. The haul is a grid of
+      // every card a floor handed out, so it is the screen most likely to be
+      // several screenfuls tall.
+      self.scroll = followFocus(f, view, sc.offset);
 
       text(f, "SPACE / ENTER / ESC — CONTINUE", foot.x, foot.y + 8, { size: 8, colour: UI.textFaint });
       if (button(f, rect(foot.x + foot.w - 120, foot.y, 120, ROW_H), "CONTINUE")) pop();

@@ -36,40 +36,46 @@
  * The tables are hand-authored rather than derived by "nearest darker entry",
  * because nearest-darker is the very metric that produces the table above.
  *
- * ── ⚠️ NOT YET WIRED INTO THE PIXEL PASS. ONE ATTEMPT FAILED; READ THIS FIRST ──
+ * ── WIRED, AND THE ONE THING THAT MUST STAY TRUE ─────────────────────────────
  *
- * 2026-07-29. The obvious wiring is: stop multiplying `col` by AO and vignette,
- * accumulate them as a `shade` scalar instead, have the quantizer's unrolled
- * min-reduction also carry the winning INDEX, then look up a pre-baked
- * PALETTE_SIZE x (rows+1) shaded-palette texture. That much compiles, respects
- * the engine/game boundary (inject `shadeDown` through `PaletteSource`, do not
- * import game code from `engine/`), and passes the whole suite.
+ * Live since `51bbd77`: `engine/render/pixel-pass.ts` bakes these tables into a
+ * PALETTE_SIZE x (rows+1) shaded-palette texture in `buildShadedPalette`, and
+ * the quantizer's unrolled min-reduction carries the winning INDEX so lighting
+ * can be spent as a row walk. `shadeDown` is injected through `PaletteSource`
+ * rather than imported, because `engine/` may not depend on game content and a
+ * colour ramp is art direction.
  *
- * It also renders wrong, verified on a real WebGPU adapter at seed 777. Two
- * distinct defects, both worth knowing before trying again:
+ * ⚠️ **THE PASS ONLY GETS THIS TABLE IF THE BOOT PATH HANDS IT OVER, AND FOR A
+ * DAY IT DID NOT.** `setEnginePalette` treats `shadeDown` as optional and falls
+ * back to `i → i-1` — right for the neutral greyscale default, catastrophic
+ * here. `installEngine()` built its own PaletteSource literal, omitted the
+ * field, and every shipped session shaded across families: rot masonry greyed
+ * out, arcane blue shaded to leather brown, blood never darkened at all. The
+ * Cold Crypt hid it for a day because stone is entries 0-5 in descending order,
+ * so `i-1` IS the stone ramp — and stone was the biome that got screenshotted.
+ * There is now ONE installer (`installPalette`) and a test that the boot path
+ * calls it: `render/palette-install.test.ts`. Do not add a second literal.
  *
- * 1. **Dithering the shade ROW is not the free win it looks like.** The idea was
- *    that a Bayer nudge on the row index can only move a pixel along its own
- *    ramp, so the amplitude could go back up without confetti. True, and
+ * ── TWO DEFECTS FROM THE FIRST ATTEMPT, KEPT BECAUSE THEY STILL CONSTRAIN ────
+ *
+ * 1. **Dithering the shade ROW is not the free win it looks like.** A Bayer
+ *    nudge on the row index can only move a pixel along its own ramp, so the
+ *    amplitude could in principle go back up without confetti. True, and
  *    irrelevant: one ROW is an enormous step (stone light → stone mid) next to
- *    the old 1/32 colour nudge, and `floor(shade*rows + b + 0.5)` flips roughly
- *    a third of a FLAT region a whole row. The result is heavy speckle. If the
- *    row walk is ever dithered it must be on a sub-row quantity, not the row.
+ *    a 1/32 colour nudge, and `floor(shade*rows + b + 0.5)` flips roughly a
+ *    third of a FLAT region a whole row — heavy speckle. The shipped pass
+ *    therefore dithers the TARGET LUMA, a sub-row quantity. If the row walk is
+ *    ever dithered directly, that is the constraint it has to respect.
  *
- * 2. **Removing the multiplies loses the scene's grading, and the row walk does
- *    not replace it.** With AO and vignette spent as at most six discrete rows,
- *    most of the frame lands on row 0 and renders at full unshaded brightness:
- *    the dungeon went from cold blue-green to bright grey-brown, because the
- *    palette's UNSHADED entries are stone-light and leather and that is exactly
- *    what everything then snapped to. The multiply was carrying far more of the
- *    look than "a shadow term" suggests.
+ * 2. **Removing the multiplies loses the scene's grading, and a linear
+ *    shade→row map does not replace it.** With AO and vignette spent as at most
+ *    six discrete rows, most of the frame lands on row 0 and renders unshaded:
+ *    the dungeon went bright grey-brown. The shipped pass picks the row by
+ *    MATCHING LUMA against what the old multiply would have produced, which is
+ *    self-calibrating and has no constant to tune. Do not "simplify" it back
+ *    into a scale.
  *
- * So the next attempt needs a CALIBRATION step, not just a mechanism: measure
- * the distribution of the old `lightMul` over a real frame first, and choose the
- * shade→row mapping so the frame's mean and spread are preserved. A hybrid is
- * probably right — keep a gentle multiply for sub-row gradation, spend the row
- * walk on the part that would otherwise cross a family boundary. Screenshot
- * every iteration on a real adapter; the suite cannot see any of this.
+ * Screenshot every iteration on a real adapter; the suite cannot see any of this.
  */
 
 /**

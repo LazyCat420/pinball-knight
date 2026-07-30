@@ -71,8 +71,8 @@ import {
   heading,
   inset,
   rect,
+  followFocus,
   scrim,
-  scrollToShow,
   sheet,
   strokeRect,
   text,
@@ -596,9 +596,8 @@ export function tavernScreen(d: {
         // real card stash takes the dealer far past that), so without this the
         // rows below the fold were mouse-only: the D-pad walked the focus ring
         // off the bottom, the highlight vanished, and Enter fired a button that
-        // could not be seen. Reads as frozen, which is why `scrollToShow` was
-        // written — it just was never called by anything until now.
-        self.scroll = f.focusRect ? scrollToShow(view, f.focusRect, sc.offset) : sc.offset;
+        // could not be seen. See `followFocus`.
+        self.scroll = followFocus(f, view, sc.offset);
       }
 
       text(f, "ESC / B — BACK   ↑↓ MOVE   ENTER / A PICK", foot.x, foot.y + 8, { size: 8, colour: UI.textFaint });
