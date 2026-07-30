@@ -27,6 +27,23 @@ export interface PaletteSource {
    * engine does not have to know that this game's arcane mid is entry 30.
    */
   occlusionIndex: number;
+  /**
+   * One step DARKER for each entry, staying inside that entry's own colour ramp.
+   *
+   * Supplied by the game because a "ramp" is art direction: the engine cannot
+   * know that 26-28 are one wood and 14-18 are one flame. Without it, shading
+   * has to be a multiply resolved by a nearest-colour snap — which walks a
+   * darkened colour ACROSS families rather than down its own ramp, and is why a
+   * shadowed floor used to change hue instead of getting darker.
+   *
+   * Must terminate: repeated application from any entry has to reach a fixed
+   * point (black), or the deepest shadow in the scene is arbitrary.
+   *
+   * OPTIONAL — defaults to the predecessor chain `i → i-1`, which is correct for
+   * a plain greyscale ramp and is all the standalone fallback and the headless
+   * art harnesses need, since they never run the pixel pass.
+   */
+  shadeDown?: () => Uint8Array;
 }
 
 const FALLBACK_N = 16;
@@ -50,6 +67,13 @@ function greyscaleFloats(): Float32Array {
   return out;
 }
 
+/** Fallback shading: one step down the ramp, saturating at black (a fixed point). */
+function descendingChain(n: number): Uint8Array {
+  const t = new Uint8Array(n);
+  for (let i = 0; i < n; i++) t[i] = Math.max(0, i - 1);
+  return t;
+}
+
 /**
  * Live palette. Mutated in place rather than reassigned so modules that read it
  * at construction see whatever the game installed.
@@ -60,6 +84,7 @@ export const enginePalette: PaletteSource = {
   hex: greyscaleHex,
   css: (i) => `#${(greyscaleHex()[i] ?? 0).toString(16).padStart(6, "0")}`,
   occlusionIndex: FALLBACK_N - 1,
+  shadeDown: () => descendingChain(FALLBACK_N),
 };
 
 /** Install the game's palette. Call before the pixel pass is created. */
@@ -69,4 +94,7 @@ export function setEnginePalette(src: PaletteSource): void {
   enginePalette.hex = src.hex;
   enginePalette.css = src.css;
   enginePalette.occlusionIndex = src.occlusionIndex;
+  // Sized to the palette being installed — a stale table from a smaller palette
+  // would index past its end and shade everything it could not find to black.
+  enginePalette.shadeDown = src.shadeDown ?? (() => descendingChain(src.size));
 }

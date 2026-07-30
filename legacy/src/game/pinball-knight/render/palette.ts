@@ -60,6 +60,7 @@
 
 import { clamp } from "../../../utils/math";
 import { setEnginePalette } from "../engine/palette-source";
+import { SHADE_DOWN } from "./palette-shading";
 
 export const PALETTE_HEX: number[] = [
   // ── Stone / void (0-5) ──
@@ -216,5 +217,10 @@ export function installPalette(): void {
     css: paletteCss,
     // Arcane mid — the tone an actor is silhouetted in behind a wall.
     occlusionIndex: 30,
+    // How this palette darkens. Without it the pixel pass falls back to `i-1`,
+    // which on THIS palette walks straight out of each family into the next
+    // (26, leather shadow, would shade to 25, skin light — BRIGHTER, and a
+    // different material). See render/palette-shading.ts.
+    shadeDown: () => SHADE_DOWN,
   });
 }

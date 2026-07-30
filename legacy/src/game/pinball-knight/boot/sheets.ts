@@ -80,13 +80,24 @@ export function paintMenuPortrait(canvas: HTMLCanvasElement): void {
  * also goes through, and the knight is never staggered — it would be nine dead
  * cells on the atlas that is already closest to the texture ceiling).
  */
+/**
+ * Every monster atlas is capped at 20 distinct palette entries.
+ *
+ * 20, not the 16 the SNES-era guidance suggests, because the number was
+ * MEASURED rather than borrowed: the cleanest actor in this roster censuses 15
+ * entries and the one nobody complains about sits at 18, while the painters
+ * themselves declare 13-24. A 16 cap would evict colours the busiest creatures
+ * genuinely author; 20 removes only what the downscale invented on top.
+ */
+const LOCK = { lockEntries: 20 };
+
 function monsterSheet(paints: ActorPaints): SpriteSheet {
-  return buildSpriteSheet(withRecoil(paints));
+  return buildSpriteSheet(withRecoil(paints), LOCK);
 }
 
 /** The same rule, for the incremental path. Both go through `withRecoil`. */
 function startMonsterSheet(paints: ActorPaints): SheetBuild {
-  return startSpriteSheet(withRecoil(paints));
+  return startSpriteSheet(withRecoil(paints), LOCK);
 }
 
 /**
