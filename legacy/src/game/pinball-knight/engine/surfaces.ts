@@ -188,16 +188,32 @@ export interface FloorSurfaceDef {
   steerMult: number;
   /** Multiplier on ordinary walking speed (momentum not engaged). */
   walkMult: number;
-  /** Floor tint, sRGB hex. Identity white leaves the authored texture alone. */
-  hex: number;
 }
 
+/**
+ * ⚠️ NO `hex` HERE, AND THAT IS THE FIX (2026-07-30).
+ *
+ * There used to be a "floor tint, sRGB hex" field carrying four off-palette
+ * colours (`0xa8dcf0`, `0xc9ab6e`, `0xa9b4c4`, `0x8fae86` — not one of them a
+ * palette entry). It had ZERO readers: `makeSurfaceWashTexture` superseded it,
+ * and the flat wash it used to drive was removed as "a big saturated rectangle"
+ * long before that. The doc comment still described it as live.
+ *
+ * Deleted rather than left, because a dead field of off-palette colours is a
+ * loaded gun next to a pass that now snaps the ALBEDO: the next person to wire
+ * it back up would tint the floor with colours the palette cannot express, and
+ * the frame would resolve them to whatever family the metric liked.
+ *
+ * `WallSurfaceDef.hex` is NOT dead — `build.ts` reads it per instance to tint
+ * rubber/ice/mud/brass walls. Do not "clean up" that one to match; see the
+ * backlog note in MAZE_COLOUR_PLAN.md about what those tints actually resolve to.
+ */
 export const FLOOR_SURFACES: readonly FloorSurfaceDef[] = [
-  { id: FLOOR_STONE, label: "Stone", frictionMult: 1, steerMult: 1, walkMult: 1, hex: 0xffffff },
-  { id: FLOOR_ICE, label: "Ice", frictionMult: 0.12, steerMult: 0.25, walkMult: 1.05, hex: 0xa8dcf0 },
-  { id: FLOOR_SAND, label: "Sand", frictionMult: 2.4, steerMult: 1.15, walkMult: 0.82, hex: 0xc9ab6e },
-  { id: FLOOR_STEEL, label: "Steel", frictionMult: 0.62, steerMult: 0.9, walkMult: 1.08, hex: 0xa9b4c4 },
-  { id: FLOOR_GRIP, label: "Flowstone", frictionMult: 1.1, steerMult: 1.6, walkMult: 1, hex: 0x8fae86 },
+  { id: FLOOR_STONE, label: "Stone", frictionMult: 1, steerMult: 1, walkMult: 1 },
+  { id: FLOOR_ICE, label: "Ice", frictionMult: 0.12, steerMult: 0.25, walkMult: 1.05 },
+  { id: FLOOR_SAND, label: "Sand", frictionMult: 2.4, steerMult: 1.15, walkMult: 0.82 },
+  { id: FLOOR_STEEL, label: "Steel", frictionMult: 0.62, steerMult: 0.9, walkMult: 1.08 },
+  { id: FLOOR_GRIP, label: "Flowstone", frictionMult: 1.1, steerMult: 1.6, walkMult: 1 },
 ];
 
 /** Floor response for a surface id. Unknown/undefined → stone. */

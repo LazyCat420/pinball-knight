@@ -353,8 +353,31 @@ export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
  * produce steps around 0.05-0.12, while a material change or a silhouette
  * against the floor is 0.25 and up. Below ~0.2 the whole screen inks and the
  * art turns to mush; that failure is worse than missing an edge.
+ *
+ * ── RE-TUNED 2026-07-30, BECAUSE THE TERM CHANGED WHAT IT READS ──
+ *
+ * 0.26 was measured against the LIT frame. The term now samples the ALBEDO
+ * (see `pixel-pass.ts`), and material steps are LARGER there — the lighting was
+ * compressing them by rendering everything at roughly 0.4x. Leaving the number
+ * alone would have been the subtler mistake: same constant, different space,
+ * and the screen inks harder for a reason nothing in the code would explain.
+ *
+ * Measured over the cross-family material boundaries this term exists to catch:
+ *
+ *     threshold   caught on the LIT frame   caught on the ALBEDO
+ *       0.26              29.1%                    46.9%
+ *       0.34              16.8%                    36.0%
+ *       0.40              10.1%                    27.6%
+ *
+ * 0.40 on the albedo reproduces the ink DENSITY 0.26 on the lit frame produced
+ * (27.6% against 29.1%), which is the conservative choice: the ink now lands on
+ * material boundaries instead of on a lighting-contaminated mixture, without
+ * also changing how much of it there is. Two variables, one wave.
+ *
+ * The frame is the judge, not this table: `--census`'s void/ink share IS the ink
+ * density, so an A/B that holds it roughly flat is what confirms the number.
  */
-export const OUTLINE_EDGE_THRESHOLD = 0.26;
+export const OUTLINE_EDGE_THRESHOLD = 0.4;
 
 // ── Lighting & depth (the "make the 3D read as 3D" pass) ────────
 /**
