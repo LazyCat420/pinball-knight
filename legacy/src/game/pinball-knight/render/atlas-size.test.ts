@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
 import { makeKnightPaints, ITEM_PAINTS, type ClipName } from "./cel-painter";
 import { FULL_PLATE } from "./knight-look";
 import { WEAPONS, PICKUP_WEAPONS, type WeaponId } from "../items";
-import { SPRITE_PIXEL_GRID, MAX_ATLAS_WIDTH } from "../constants";
+import { SPRITE_PIXEL_GRID, MAX_ATLAS_WIDTH, CAMERA_ZOOMS } from "../constants";
 
 const CLIPS: ClipName[] = ["idle", "walk", "run", "attack", "death", "roll", "ball", "steelball", "equip", "forge"];
 
@@ -55,10 +55,33 @@ describe("the knight atlas fits on the GPU", () => {
 
   it("would NOT fit as a single row — the grid is load-bearing, not decorative", () => {
     // If this ever passes, the grid stopped being necessary and someone may be
-    // tempted to revert it. It is currently ~124 frames against a 113 ceiling.
+    // tempted to revert it.
+    //
+    // Measured against the WIDEST cell the game can ship, not the ambient one.
+    // The cell size is now a function of the player's camera setting (see
+    // `CAMERA_ZOOMS`), and at the far end of that ladder — a 54px cell — 130
+    // frames come to 7020px and a single row genuinely would fit. Asserting on
+    // the ambient value therefore turns this guard OFF for anyone who picked a
+    // wide camera, which is the precise failure mode the anti-vacuity note
+    // above is about. The packer has to be right at every rung, so the guard
+    // asks about the rung that needs it.
+    const widestCell = (Math.max(...Object.values(CAMERA_ZOOMS)) * 9) / 8;
     const a = pack("sword");
-    expect(a.frames * SPRITE_PIXEL_GRID).toBeGreaterThan(MAX_ATLAS_WIDTH);
-    expect(a.rows).toBeGreaterThan(1);
+    expect(a.frames * widestCell).toBeGreaterThan(MAX_ATLAS_WIDTH);
+  });
+
+  it("wraps at every camera rung it needs to, and never truncates at any of them", () => {
+    // The real invariant, swept across the whole ladder rather than sampled at
+    // whichever cell size this test run happened to boot with.
+    const a = pack("sword");
+    for (const ppu of Object.values(CAMERA_ZOOMS)) {
+      const cell = (ppu * 9) / 8;
+      const cols = Math.min(a.frames, Math.floor(MAX_ATLAS_WIDTH / cell));
+      const rows = Math.max(1, Math.ceil(a.frames / cols));
+      expect(cols * cell, `PPU ${ppu}: atlas ${cols * cell}px wide`).toBeLessThanOrEqual(MAX_ATLAS_WIDTH);
+      expect(rows * cell, `PPU ${ppu}: atlas ${rows * cell}px tall`).toBeLessThanOrEqual(MAX_ATLAS_WIDTH);
+      expect(cols * rows, `PPU ${ppu}: grid truncates frames`).toBeGreaterThanOrEqual(a.frames);
+    }
   });
 
   it("shares identical frames instead of packing duplicates", () => {

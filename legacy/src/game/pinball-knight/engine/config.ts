@@ -123,6 +123,16 @@ export interface EngineConfig {
  * Live config. Mutated in place by `configureEngine` rather than reassigned,
  * so modules that captured a reference at import time see the update.
  */
+/**
+ * The camera distance these defaults describe.
+ *
+ * MUST equal `CAMERA_ZOOMS[CAMERA_ZOOM_DEFAULT]` in constants/render.ts, and
+ * `config-mirror.test.ts` asserts it — this file cannot import that one (the
+ * engine does not depend on the game), so the link is a test rather than a
+ * type. Everything sprite-shaped below derives from it.
+ */
+const DEFAULT_PPU = 56;
+
 export const engineConfig: EngineConfig = {
   camera: {
     viewW: 20,
@@ -130,7 +140,7 @@ export const engineConfig: EngineConfig = {
     tilt: (38 * Math.PI) / 180,
     yaw: (45 * Math.PI) / 180,
     dist: 24,
-    ppu: 64,
+    ppu: DEFAULT_PPU,
     deadzone: 0.7,
     lerp: 6,
   },
@@ -150,9 +160,16 @@ export const engineConfig: EngineConfig = {
   // to 216 in constants while these still said 128, and two suites compared
   // real output against a 128-space paint.
   sprite: {
-    px: 144,
-    pixelGrid: 72,
-    units: 72 / 64,
+    // DERIVED from DEFAULT_PPU, not typed out. Three hand-written numbers that
+    // all have to move together whenever the camera default moves is three
+    // chances to leave one behind, and the failure is silent in the worst way:
+    // the GAME installs its own config at boot so play is fine, while every
+    // test that does not boot the game measures a pipeline nobody runs. That is
+    // not hypothetical — it is what a mismatched mirror did here on 2026-07-29,
+    // presenting as three unrelated art-census failures.
+    px: (DEFAULT_PPU * 9) / 4,
+    pixelGrid: (DEFAULT_PPU * 9) / 8,
+    units: 9 / 8,
     artPx: 128,
     maxAtlasWidth: 8192,
   },

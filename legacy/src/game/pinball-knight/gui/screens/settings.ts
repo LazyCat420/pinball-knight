@@ -12,9 +12,25 @@
  * settings panel itself was exempt from.
  */
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
+import { CAMERA_ZOOM, CAMERA_ZOOMS, CAMERA_ZOOM_ORDER, type CameraZoom } from "../../constants";
 import { applySettingsLive } from "../apply-settings";
 import { UI, GRID, ROW_H, PAD } from "../theme";
-import { button, cutTop, cutRight, heading, rect, scrim, sheet, text, toggle, well, type Rect, type UiFrame } from "../im";
+import {
+  beginScroll,
+  button,
+  cutTop,
+  cutRight,
+  endScroll,
+  heading,
+  rect,
+  scrim,
+  sheet,
+  text,
+  toggle,
+  well,
+  type Rect,
+  type UiFrame,
+} from "../im";
 import type { UiScreen } from "../stack";
 import { pop } from "../stack";
 
@@ -64,6 +80,54 @@ function settingRow(f: UiFrame, r: Rect, row: Row): void {
   }
 }
 
+/**
+ * The camera row — a CYCLER, not a toggle, and the one control here that does
+ * not take effect until the page reloads.
+ *
+ * Both of those are forced by what the setting actually is. `PPU` is the zoom
+ * AND the denominator of the sprite grid, so it only has legal values every 8
+ * apart (see `CAMERA_ZOOMS`) — a slider would imply a continuum that does not
+ * exist and would land the art between texels. And it is resolved at module
+ * load, because the sprite atlas is rasterised once from it; changing it live
+ * would leave the frustum and the atlas disagreeing about the size of a texel.
+ *
+ * So the row says so, plainly, and offers the reload rather than leaving the
+ * player to work out why the camera did not move. `CAMERA_ZOOM` is the value
+ * the RUNNING game booted with; `s.cameraZoom` is the value that will be used
+ * next time. Showing both is what makes "pending" legible instead of "broken".
+ */
+function cameraRow(f: UiFrame, r: Rect): void {
+  const s = getSettings();
+  const chosen = s.cameraZoom;
+  const pending = chosen !== CAMERA_ZOOM;
+
+  well(f, r);
+  const body = { x: r.x + GRID, y: r.y, w: r.w - GRID * 2, h: r.h };
+  const reload = cutRight(body, pending ? 66 : 0);
+  const knob = cutRight(body, 74);
+
+  text(f, "Camera distance", body.x, body.y + 5, { size: 8, colour: UI.text, max: body.w - GRID });
+  text(
+    f,
+    pending ? `${chosen.toUpperCase()} — RELOAD TO APPLY` : `${CAMERA_ZOOMS[chosen]} px per tile · more zoom, fewer texels`,
+    body.x,
+    body.y + 17,
+    { size: 8, colour: pending ? UI.gold : UI.textDim, max: body.w - GRID },
+  );
+
+  if (button(f, { x: knob.x, y: knob.y + (knob.h - 18) / 2, w: 70, h: 18 }, chosen.toUpperCase())) {
+    const i = CAMERA_ZOOM_ORDER.indexOf(chosen);
+    const next: CameraZoom = CAMERA_ZOOM_ORDER[(i + 1) % CAMERA_ZOOM_ORDER.length];
+    saveSettings({ cameraZoom: next });
+  }
+  if (pending && button(f, { x: reload.x, y: reload.y + (reload.h - 18) / 2, w: 62, h: 18 }, "RELOAD", { good: true })) {
+    // The run is not lost: the resume-floor system puts the player back on the
+    // floor they were on. That is the only reason this is a button and not a
+    // warning to go and do it themselves.
+    if (typeof location !== "undefined") location.reload();
+  }
+}
+
 function section(f: UiFrame, body: Rect, title: string, rows: Row[]): void {
   heading(f, cutTop(body, ROW_H), title);
   for (const row of rows) {
@@ -95,19 +159,34 @@ export function settingsScreen(): UiScreen {
       const head = cutTop(body, ROW_H + GRID);
       text(f, "SETTINGS", head.x, head.y, { size: 16, colour: UI.gold });
 
-      section(f, body, "Sound", SOUND);
-      section(f, body, "Pixel look", LOOK);
-      section(f, body, "Cards", CARDS);
-
-      // Footer pinned to the bottom of the sheet, not to the flow — a footer
-      // that drifts up when a section is short reads as a layout bug.
+      // Footer pinned to the bottom of the SHEET, taken out of the space before
+      // anything flows into it — a footer that drifts up when a section is
+      // short reads as a layout bug, and one that gets overrun when a section
+      // is added reads as a broken screen. The camera section was the fourth,
+      // and the fourth is where this stopped fitting.
       const foot = rect(body.x, body.y + body.h - ROW_H, body.w, ROW_H);
+      const view = rect(body.x, body.y, body.w, body.h - ROW_H - GRID);
+
+      // Derived, so adding a row cannot make the scrollbar lie: each section is
+      // a heading plus its rows at 32 + 3.
+      const rowsH = (n: number): number => ROW_H + n * 35;
+      const contentH = rowsH(SOUND.length) + rowsH(LOOK.length) + rowsH(CARDS.length) + rowsH(1) + GRID * 4;
+
+      const sc = beginScroll(f, view, contentH, self.scroll);
+      const flow: Rect = { ...sc.inner };
+      section(f, flow, "Sound", SOUND);
+      section(f, flow, "Pixel look", LOOK);
+      section(f, flow, "Cards", CARDS);
+      heading(f, cutTop(flow, ROW_H), "CAMERA");
+      cameraRow(f, cutTop(flow, 32));
+      endScroll(f, view, contentH, sc.offset);
+      self.scroll = sc.offset;
+
       text(f, "ESC / B  CLOSE     ↑↓  MOVE     ENTER / A  TOGGLE", foot.x, foot.y + 8, {
         size: 8,
         colour: UI.textFaint,
       });
       if (button(f, { x: foot.x + foot.w - 96, y: foot.y, w: 96, h: ROW_H }, "CLOSE")) pop();
-      void self;
       void PAD;
     },
   };

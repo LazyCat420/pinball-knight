@@ -7,9 +7,27 @@
  * toggles (which are deliberately session-only). The menu's Settings tab is
  * the only writer; core applies them once at launch.
  */
-import { QUANTIZE_DEFAULT, DITHER_DEFAULT, SCANLINE_DEFAULT, OUTLINE_DEFAULT } from "./constants";
+import {
+  QUANTIZE_DEFAULT,
+  DITHER_DEFAULT,
+  SCANLINE_DEFAULT,
+  OUTLINE_DEFAULT,
+  CAMERA_ZOOMS,
+  CAMERA_ZOOM_DEFAULT,
+  SETTINGS_KEY,
+  type CameraZoom,
+} from "./constants";
 
-const KEY = "pinball-knight-settings";
+/**
+ * The key lives in `constants/render.ts`, not here.
+ *
+ * That looks backwards — this module owns settings — and it is deliberate:
+ * `PPU` is resolved from this same blob at MODULE LOAD, before anything can
+ * import this file, so the reader has to sit further down the graph. One
+ * declaration, imported both ways round, is what stops the two readers drifting
+ * onto different keys and the camera setting silently never being read.
+ */
+const KEY = SETTINGS_KEY;
 
 /**
  * RETIRED. Card pickups no longer interrupt the fight at all, so the setting
@@ -28,6 +46,14 @@ export interface DungeonSettings {
   /** Show the FLOOR HAUL screen (every card found on the floor, laid out at
    * once) on the way to the tavern. Off = the cards just arrive in the stash. */
   haulReveal: boolean;
+  /**
+   * How far back the camera sits — see `CAMERA_ZOOMS`.
+   *
+   * The ONLY setting here that does not apply live, and the type says nothing
+   * about that, so the settings screen has to. `PPU` and the sprite atlas are
+   * both resolved from it at module load and cannot be moved apart afterwards.
+   */
+  cameraZoom: CameraZoom;
 }
 
 export function defaultSettings(): DungeonSettings {
@@ -38,6 +64,7 @@ export function defaultSettings(): DungeonSettings {
     scanline: SCANLINE_DEFAULT,
     outline: OUTLINE_DEFAULT,
     haulReveal: true,
+    cameraZoom: CAMERA_ZOOM_DEFAULT,
   };
 }
 
@@ -59,6 +86,10 @@ export function getSettings(): DungeonSettings {
       if (typeof p.scanline === "boolean") d.scanline = p.scanline;
       if (typeof p.outline === "boolean") d.outline = p.outline;
       if (typeof p.haulReveal === "boolean") d.haulReveal = p.haulReveal;
+      // Membership-checked, not just typeof: this one indexes a table and ends
+      // up as PPU, so a stale or hand-edited value would make the whole render
+      // pipeline NaN rather than merely look wrong.
+      if (typeof p.cameraZoom === "string" && p.cameraZoom in CAMERA_ZOOMS) d.cameraZoom = p.cameraZoom;
       // MIGRATION: a player who had turned the old modal card reader OFF was
       // saying "stop showing me cards", so carry that across rather than
       // greeting them with a brand-new screen they already opted out of. Read

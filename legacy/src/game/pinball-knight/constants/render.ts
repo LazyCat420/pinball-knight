@@ -140,7 +140,88 @@ export const MAX_RENDER_H = 1216;
  * a larger supersample buffer to feed them. Measured in LOAD_PERF_PLAN terms,
  * that is where to look if boot regresses.
  */
-export const PPU = 64;
+/**
+ * ── THE CAMERA ZOOM LADDER, AND WHY IT HAS RUNGS ──
+ *
+ * PPU is the zoom, and it is also the denominator of `SPRITE_UNITS`. Since
+ * `SPRITE_PIXEL_GRID = SPRITE_UNITS x PPU` has to be a whole number of texels —
+ * or every sprite samples between texels, which is the mush this whole pipeline
+ * exists to prevent — and `SPRITE_UNITS` is 9/8, PPU must be a MULTIPLE OF 8.
+ * There is no continuous zoom slider available here; there are rungs.
+ *
+ *     setting   PPU   grid   tiles @1712   vs NORMAL
+ *     close      80     90      21.4       -11%  (the old pre-2026-07 framing)
+ *     normal     72     81      23.8         —
+ *     wide       64     72      26.8       +12.5%
+ *     wider      56     63      30.6       +28.6%   ← default
+ *     widest     48     54      35.7       +50%
+ *
+ * The right-hand column is the price: grid is texels per actor, and it falls
+ * with the zoom because the actor is physically smaller on screen. `widest` at
+ * 54 is the resolution the note under SPRITE_PIXEL_GRID calls "the awkward
+ * middle" — it is offered because a player fighting at speed may want the
+ * field of view more than the faces, but it is not the default.
+ *
+ * DEFAULT IS `wider`. Playtested at speed: at `normal` the knight outruns what
+ * is on screen, which is a control problem rather than a taste one — you cannot
+ * steer around a wall you cannot see yet.
+ */
+export type CameraZoom = "close" | "normal" | "wide" | "wider" | "widest";
+
+export const CAMERA_ZOOMS: Record<CameraZoom, number> = {
+  close: 80,
+  normal: 72,
+  wide: 64,
+  wider: 56,
+  widest: 48,
+};
+
+/** Display order for the settings cycler — closest first. */
+export const CAMERA_ZOOM_ORDER: CameraZoom[] = ["close", "normal", "wide", "wider", "widest"];
+
+export const CAMERA_ZOOM_DEFAULT: CameraZoom = "wider";
+
+/**
+ * The settings blob's storage key.
+ *
+ * Declared HERE rather than in `settings-save.ts`, which is the module that
+ * owns settings, because the dependency has to run the other way: `PPU` is a
+ * module-level const that half the engine captures at import time, so it must
+ * resolve before anything else loads — and `settings-save.ts` already imports
+ * this file for the render defaults. Two copies of a storage key is how a
+ * setting silently stops being read.
+ */
+export const SETTINGS_KEY = "pinball-knight-settings";
+
+/**
+ * The saved zoom, read straight from storage at module load.
+ *
+ * ── WHY THIS CANNOT BE LIVE ──
+ * `PPU` is destructured into module-level aliases all over the engine
+ * (`pixel-pass.ts` does it at line ~100), and `SPRITE_PIXEL_GRID` sizes the
+ * sprite ATLAS, which is rasterised once at boot. Changing either after load
+ * would leave the frustum and the atlas disagreeing about how big a texel is.
+ * So the setting is resolved exactly once, here, before any of that runs, and
+ * the settings screen tells the player it applies on reload rather than lying
+ * with a control that half-works.
+ */
+function savedCameraZoom(): CameraZoom {
+  if (typeof localStorage === "undefined") return CAMERA_ZOOM_DEFAULT;
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return CAMERA_ZOOM_DEFAULT;
+    const parsed = JSON.parse(raw) as { cameraZoom?: unknown };
+    const z = parsed.cameraZoom;
+    return typeof z === "string" && z in CAMERA_ZOOMS ? (z as CameraZoom) : CAMERA_ZOOM_DEFAULT;
+  } catch {
+    // Blocked storage, private mode, a hand-edited blob: fall back rather than
+    // take the whole render pipeline down over a preference.
+    return CAMERA_ZOOM_DEFAULT;
+  }
+}
+
+export const CAMERA_ZOOM: CameraZoom = savedCameraZoom();
+export const PPU = CAMERA_ZOOMS[CAMERA_ZOOM];
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
@@ -205,7 +286,10 @@ export const ART_PX = 128; // painter coordinate space, unitless
  * The supersample is there to anti-alias curved outlines before the crush, and
  * 2x does that; 3x costs 40% more paint for a second decimal place.
  */
-export const SPRITE_PX = 144; // rasterisation buffer per frame, px = 2 × grid
+// Written from PPU rather than from SPRITE_PIXEL_GRID only because the grid is
+// declared further down this file; the identity `SPRITE_PX === 2 * grid` is the
+// one that matters and `sprite-scale.test.ts` asserts it directly.
+export const SPRITE_PX = (PPU * 9) / 4; // rasterisation buffer, always 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -235,7 +319,7 @@ export const SPRITE_PX = 144; // rasterisation buffer per frame, px = 2 × grid
  * it does not touch. Zooming out costs texels; there is no arrangement of these
  * numbers where it does not.
  */
-export const SPRITE_PIXEL_GRID = 72;
+export const SPRITE_PIXEL_GRID = (PPU * 9) / 8;
 
 /**
  * Actor plane size, world units.

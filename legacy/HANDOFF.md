@@ -8,7 +8,76 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > `truetint` are live in this repo right now. Collapsing 1500 lines I have not
 > read would delete their notes. Prepended instead.
 
-## ✅ LIVE NOW — the descent screen actually reaches the glass; the chrome is chiselled (2026-07-29)
+## ✅ LIVE NOW — the camera is a setting, and the default moved out (2026-07-29)
+
+**tsc clean, 1547 tests, verified through the real pixel pass.**
+
+### CAMERA DISTANCE is now a player setting
+
+Settings → CAMERA. Five rungs, `close` / `normal` / `wide` / `wider` / `widest`.
+**Default is `wider`** (PPU 56, ~30.6 tiles across a 1712 grid, +28.6% on the
+old `normal`). Reported reason: at `normal` the knight outruns what is on
+screen, which is a control problem rather than a taste one.
+
+|          | PPU | grid | tiles @1712 |
+|---|---|---|---|
+| close    | 80 | 90 | 21.4 |
+| normal   | 72 | 81 | 23.8 |
+| wide     | 64 | 72 | 26.8 |
+| **wider**| **56** | **63** | **30.6** |
+| widest   | 48 | 54 | 35.7 |
+
+**There are rungs and not a slider** because PPU is the zoom AND the denominator
+of `SPRITE_UNITS`, and `SPRITE_PIXEL_GRID = SPRITE_UNITS x PPU` has to be whole
+texels. With `SPRITE_UNITS` at 9/8 that means PPU in multiples of 8. `grid` is
+the price — texels per actor falls with the zoom, because the actor is
+physically smaller on screen. That is arithmetic, not a regression.
+
+**It applies on RELOAD, and the row says so.** `PPU` is destructured into
+module-level aliases across the engine and `SPRITE_PIXEL_GRID` sizes the sprite
+atlas, which is rasterised once at boot; changing either live leaves the frustum
+and the atlas disagreeing about the size of a texel. The row shows the pending
+value in gold and offers a RELOAD button rather than a control that half works —
+the run is not lost, the resume-floor system puts you back.
+
+### THREE TESTS WERE SECRETLY MEASURING A PLAYER PREFERENCE
+
+Making the grid a setting turned up a class of test bug worth knowing about.
+
+**1. `engine/config.ts`'s mirror cannot be hand-written any more.** Its defaults
+duplicate `constants/render.ts` on purpose (the engine does not import the
+game), and the file's own comment has said "MUST mirror" since the split with
+nothing enforcing it. The game calls `installEngine()` at boot and overwrites
+them, so PLAY is unaffected and a screenshot proves nothing — only code that
+does NOT boot the game reads them, i.e. every unit test. A mismatched mirror
+presented as **three failures in two unrelated files** (`crush-reuse`,
+`stiltneck`), none of which mentioned configuration. The sprite block now
+derives from one `DEFAULT_PPU`, and `engine/config-mirror.test.ts` asserts the
+link the comment only requested.
+
+**2. `atlas-size.test.ts`'s anti-vacuity guard turned itself off.** "Would NOT
+fit as a single row" was measured against the ambient cell; at a 54px cell 130
+frames come to 7020px and a single row genuinely fits, so the guard silently
+stopped guarding for anyone on a wide camera. It now asks about the WIDEST cell
+the game can ship, and a new case sweeps the packer across every rung.
+
+**3. `stiltneck.test.ts`'s colour censuses were coin tosses.** Shares of painted
+pixels move with the crush ratio even when the art does not. Measured on
+unchanged paints: torch share 0.191 at grid 90, 0.198 at 81, 0.20+ at 72 and 63
+— against a hard `> 0.2`. Green at the rung it was authored against and red one
+step either side. Bounds widened to 0.18 / 0.025 with the per-rung measurements
+recorded inline; both still say what the tests exist to say.
+
+**The generalisable rule: an art-QA threshold measured at the ambient resolution
+is not a threshold once the resolution is a preference.** Pin the resolution or
+widen the bound to cover the ladder — and note that `configureEngine()` CANNOT
+pin it after the fact, because `sprite.ts` captures its config at module load.
+
+### Also
+- The settings sheet is a scroll region now; the camera section was the fourth
+  and the fourth is where it stopped fitting.
+
+## ✅ ALSO LIVE — the descent screen actually reaches the glass; the chrome is chiselled (2026-07-29)
 
 **416e91d · tsc clean · registry-drift clean · 2052 tests · verified on a real
 WebGPU adapter WITH a negative control.**

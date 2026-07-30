@@ -13,7 +13,7 @@
  * Nobody had written it down, so it survived for months.
  */
 import { describe, it, expect } from "vitest";
-import { PPU, SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID } from "../constants";
+import { PPU, SPRITE_PX, SPRITE_UNITS, SPRITE_PIXEL_GRID, CAMERA_ZOOMS } from "../constants";
 
 describe("sprite scale invariants", () => {
   it("maps exactly one stored art pixel to one render pixel", () => {
@@ -39,8 +39,34 @@ describe("sprite scale invariants", () => {
   });
 
   it("holds a grid resolution that can actually carry facial detail", () => {
-    // ~52px is the awkward middle: too big to read as charmingly minimal, too
-    // small for a face. ~72px is where characters stop looking low-res.
-    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(64);
+    // Was >= 64, written when PPU was a single fixed number. The camera zoom is
+    // now a PLAYER SETTING, and grid falls with it because a smaller actor on
+    // screen cannot carry more texels than it covers — that is arithmetic, not
+    // a regression. 54 is the floor of the offered ladder (`widest`, PPU 48);
+    // anything below it would be a new rung, which is a deliberate decision and
+    // should have to change this line to happen.
+    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(54);
+  });
+});
+
+/**
+ * EVERY RUNG, not just the one that happens to be selected.
+ *
+ * The invariants above only ever see the CURRENT setting, so a rung that breaks
+ * them would ship invisibly and only fail for the players who chose it — the
+ * worst possible distribution for a rendering bug. These assert the whole
+ * table, so adding a zoom level with an illegal PPU is a red test rather than a
+ * bug report from one person.
+ */
+describe("every camera zoom rung is legal", () => {
+  it.each(Object.entries(CAMERA_ZOOMS))("%s (PPU %i) yields a whole texel grid", (_name, ppu) => {
+    // SPRITE_UNITS is 9/8, so grid = 9*PPU/8 and PPU must be a multiple of 8.
+    expect(ppu % 8).toBe(0);
+    const grid = (ppu * 9) / 8;
+    expect(Number.isInteger(grid)).toBe(true);
+    // The supersample buffer stays exactly 2x, so the crush is a clean box.
+    expect(Number.isInteger(grid * 2)).toBe(true);
+    // And the plane still maps one stored texel to one render pixel.
+    expect((grid / ppu) * ppu).toBe(grid);
   });
 });
