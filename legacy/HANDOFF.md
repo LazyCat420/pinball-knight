@@ -7,6 +7,60 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## ✅ LIVE NOW — the dead face shows bone (2026-07-30)
+
+**1573 tests in the game subtree, tsc clean, registry-drift clean, shot through
+the real pixel pass on a WebGPU adapter.**
+
+Follow-up to the death-screen portrait below. At 72px under the title the dead
+tier did not hold up, and the reported complaint — "sloppy pixels" — was exact.
+
+### `dead` is now its own picture, not `dying` plus one more layer
+
+The damage cascade is right for the five LIVING tiers: each adds to the one
+before, so the face carries a history. Run to the end it put **106 blood cells
+across a 36-cell face**, most of them loose single pixels, including three
+**sweat beads on a corpse**. At this size scattered pixels do not read as
+detail, they read as dirt on the screen.
+
+`paintDeath()` draws it deliberately: 67 blood cells, each a shape. The face is
+sunken, and the two catch-lights down the nose and across the brow come off
+entry 17 — FLAME light, the torch ramp — down to skin light. **That one change
+does more for "dead" than any amount of extra blood**, because it changes the
+whole face instead of adding another mark to it.
+
+### The skull took three placements, and the first two failed identically
+
+| placement | read as |
+|---|---|
+| torn patch over the far brow | a plate of armour riveted to his head |
+| full bone ORBIT around the far eye | a grey window cut into the face |
+| **far cheek torn back off the TEETH** | ✅ |
+
+Neither failure was a colour problem, which is where the time went. Both were
+built out of straight grey bars, and **this head already contains a material
+made of straight grey bars** — the helm. Bone has to arrive as something the
+eye can NAME, and at 36 cells the only two shapes that carry "skull" alone are
+a socket and a tooth row. Teeth win because they can be small: the tooth row
+carries on out past the corner of the mouth and eleven cells do what thirty
+could not. `boneHi` (entry 5, the brightest thing on the head) is held back for
+the teeth alone — spent on the cheekbone it put the eye on a grey blob.
+
+### CORRECTION to the note below: the x-eyes were not buried
+
+The previous handoff said the gore was painted over them. Measured: the splatter
+overpainted **exactly one of their twenty cells**. They were not buried, they
+were *unreadable* — an ink x on lit skin ringed by five tiers of red is a dark
+mark among dark marks. The fix is the SOCKET (a lid shadow, a mid floor, a rim),
+not the draw order; painting them last is free insurance on top. Worth keeping
+because it is a whole class of mistake: "the fix that follows from the diagnosis
+you did not check".
+
+Three new assertions in `hud-face.test.ts`, each verified to fail without the
+fix: dead carries less gore than dying, stone-ramp cells appear in the far jaw
+where the fringe cannot reach (19 vs 1), and both x's are whole AND sitting on a
+mid-value floor.
+
 ## ✅ LIVE NOW — public runs reach the shared leaderboard (2026-07-30)
 
 **181 files / 2069 tests pass, registry-drift clean, 0 tsc errors in the game
