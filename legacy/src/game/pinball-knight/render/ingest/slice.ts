@@ -125,7 +125,34 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
     for (let x = 0; x < w; x++) n += solid[y * w + x];
     if (n >= w * RULE_FILL) for (let x = 0; x < w; x++) solid[y * w + x] = 0;
   }
-  // ⚠️ VERTICAL RULES ARE STRIPPED PER-BAND, NOT SHEET-WIDE, and that is the
+  // ── The OUTER frame's sides, and only those.
+  //
+  // A frame drawn around the whole sheet puts ink in every row, so the row
+  // profile never breaks and the entire sheet reads as ONE band — measured, a
+  // ruled 5-row sheet with an outer frame sliced to a single row of 3.
+  //
+  // This is safe here and catastrophic one paragraph down (see below) because
+  // of the threshold: an outer frame spans ~100% of the sheet height, where a
+  // CELL border in a 5-row sheet spans about 18%. Requiring near-total height
+  // AND a narrow run catches the frame and cannot touch anything else.
+  const frameCap = Math.max(RULE_MIN_W, h * 0.01);
+  const fullH: boolean[] = [];
+  for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let y = 0; y < h; y++) n += solid[y * w + x];
+    fullH.push(n >= h * 0.98);
+  }
+  for (let x = 0; x < w; ) {
+    if (!fullH[x]) { x++; continue; }
+    let end = x;
+    while (end + 1 < w && fullH[end + 1]) end++;
+    if (end - x + 1 <= frameCap) {
+      for (let xx = x; xx <= end; xx++) for (let y = 0; y < h; y++) solid[y * w + xx] = 0;
+    }
+    x = end + 1;
+  }
+
+  // ⚠️ CELL BORDERS ARE STRIPPED PER-BAND, NOT SHEET-WIDE, and that is the
   // whole difference between this working and not. A cell border is only as
   // tall as ITS ROW, so against the full sheet height a 5-row sheet's border
   // fills about 18% — nowhere near any sensible threshold — and survives. It

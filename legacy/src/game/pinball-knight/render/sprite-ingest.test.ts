@@ -46,6 +46,7 @@ import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from 
 import { sliceSheet, equalCells, type Cell } from "./ingest/slice";
 import { crushCell, registerCell, sheetScale } from "./ingest/register";
 import { labelRows, parseName, unknownClips } from "./ingest/labels";
+import { matte, rgbHex, type MatteOptions } from "./ingest/matte";
 
 const ROOT = join(__dirname, "..", "..", "..", "..", "scripts", "sprites");
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
@@ -70,11 +71,35 @@ afterAll(() => { restore(); });
  * font this code had never seen. Rows are reported when the sidecar is missing,
  * so writing one takes a few seconds and is checkable.
  */
-function readSidecar(dir: string, base: string): { rows?: string[]; cells?: number[] } | null {
+function readSidecar(dir: string, base: string): Sidecar | null {
   const file = join(dir, `${base}.json`);
   if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, "utf8")) as { rows?: string[]; cells?: number[] };
+  return JSON.parse(readFileSync(file, "utf8")) as Sidecar;
 }
+
+interface Sidecar {
+  rows?: string[];
+  cells?: number[];
+  /** Background keying options — see render/ingest/matte.ts. */
+  matte?: MatteOptions;
+}
+
+/** Share of the sheet that is already transparent. */
+function clearShare(data: Uint8ClampedArray): number {
+  let n = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] === 0) n++;
+  return n / (data.length / 4);
+}
+
+/**
+ * Below this much transparency the sheet has no usable alpha and is matted.
+ *
+ * Not zero: a generator sometimes emits a few stray transparent pixels, and a
+ * hand-keyed sheet always has a large clear field. 5% separates "someone keyed
+ * this" from "this arrived as a flat JPEG-alike with an opaque background",
+ * which is every sheet a diffusion model produces.
+ */
+const OPAQUE_BELOW = 0.05;
 
 describe("sprite inbox", () => {
   it("processes every sheet in the inbox", async () => {
@@ -96,11 +121,37 @@ describe("sprite inbox", () => {
 
     for (const file of sheets) {
       const { name, dir } = parseName(file);
+      const side = readSidecar(INBOX, file.replace(/\.png$/i, ""));
       const sheet = await loadImage(join(INBOX, file));
       const sc = createCanvas(sheet.width, sheet.height);
       const sctx = sc.getContext("2d");
       sctx.drawImage(sheet, 0, 0);
-      const sdata = sctx.getImageData(0, 0, sheet.width, sheet.height).data as unknown as Uint8ClampedArray;
+      const img = sctx.getImageData(0, 0, sheet.width, sheet.height);
+      let sdata = img.data as unknown as Uint8ClampedArray;
+
+      // ── MATTE FIRST, if the sheet arrived opaque.
+      //
+      // Every sheet an image generator produces does: diffusion models have no
+      // alpha channel to write, so the background is a flat white or cream
+      // field. Slicing finds cells by alpha, so without this the sheet returns
+      // one cell and the run aborts before anything else is measured.
+      let matteLine = "";
+      if (clearShare(sdata) < OPAQUE_BELOW) {
+        const res = matte(sdata, sheet.width, sheet.height, side?.matte);
+        const r = res.report;
+        expect(r.failures, `${file}: ${r.failures.join(" / ")}`).toEqual([]);
+        sdata = res.data;
+        // Put the keyed pixels back on the canvas — `registerCell` blits from
+        // this, so the source it samples has to be the matted one.
+        img.data.set(sdata as unknown as Uint8ClampedArray);
+        sctx.putImageData(img, 0, 0);
+        matteLine =
+          `MATTE  bg ${rgbHex(r.bg)} (${(r.bgConfidence * 100).toFixed(0)}% of the border) — ` +
+          `keyed ${(r.keyedPct * 100).toFixed(1)}%` +
+          (r.autoKeyed.length ? `, ${r.autoKeyed.length} sealed pocket(s) opened` : "") +
+          (r.enclosed.length ? `, ${r.enclosed.length} pocket(s) LEFT OPAQUE` : "") + "\n" +
+          r.warnings.map((x) => `⚠ ${x}`).join("\n") + (r.warnings.length ? "\n" : "");
+      }
 
       const rows = sliceSheet(sdata, sheet.width, sheet.height);
       // A sheet that slices into one cell is usually a solid background that was
@@ -110,7 +161,6 @@ describe("sprite inbox", () => {
       expect(found, `${file}: sliced into ${found} cell(s) — is the background transparent?`)
         .toBeGreaterThan(1);
 
-      const side = readSidecar(INBOX, file.replace(/\.png$/i, ""));
       const named = side?.rows;
       // An explicit per-row cell count OVERRIDES the auto-slice. On a ruled
       // sheet it is the difference between right and roughly-right.
@@ -131,7 +181,9 @@ describe("sprite inbox", () => {
       const stats: NoiseRow[] = [];
       const previews: ImageData[] = [];
       for (let i = 0; i < cells.length; i++) {
-        const buf = registerCell(sheet as unknown as CanvasImageSource, cells[i], k, px);
+        // Blit from the CANVAS, not the decoded image: after matting they
+        // differ, and the image still has its opaque background.
+        const buf = registerCell(sc as unknown as CanvasImageSource, cells[i], k, px);
         const bctx = buf.getContext("2d");
         if (!bctx) throw new Error("[ingest] no 2D context for the cel buffer");
         const declared = declaredSet(bctx.getImageData(0, 0, px, px).data, pal);
@@ -177,6 +229,7 @@ describe("sprite inbox", () => {
 
       summary.push(
         `\n═══ ${name} (${dir}) — ${rows.length} rows [${shape}], ${cells.length} frames\n` +
+          matteLine +
           (named
             ? unknown.length
               ? `⚠ not ClipNames the animator packs: ${unknown.join(", ")}\n`

@@ -41,6 +41,18 @@ export interface SheetSpec {
   opaqueBg?: [number, number, number];
   /** Draw the row label in the LEFT GUTTER instead of under the row. */
   gutterLabels?: boolean;
+  /**
+   * Paint a patch of the BACKGROUND COLOUR inside each figure's body.
+   *
+   * The clown's ruff, gloves and face against a cream field — art that a global
+   * "remove everything near white" key destroys, and that a border flood fill
+   * cannot reach. The one property matting has to get right.
+   */
+  interiorLight?: boolean;
+  /** A ruled frame around the whole sheet, so the CORNERS are border, not field. */
+  sheetFrame?: boolean;
+  /** Shade the background as a left-to-right ramp — a sheet that cannot be keyed. */
+  gradientBg?: boolean;
 }
 
 export const DEFAULT_SPEC: SheetSpec = {
@@ -115,10 +127,19 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
   };
 
   if (s.opaqueBg) rect(0, 0, w, h, s.opaqueBg);
+  if (s.gradientBg) {
+    const base = s.opaqueBg ?? [240, 237, 230];
+    for (let x = 0; x < w; x++) {
+      const k = Math.round((x / w) * 60) - 30;
+      for (let y = 0; y < h; y++) px(x, y, base[0] + k, base[1] + k, base[2] + k);
+    }
+  }
 
   const INK: [number, number, number] = [40, 30, 30];
   const BODY: [number, number, number] = [200, 60, 50];
   const HEAD: [number, number, number] = [230, 200, 90];
+  /** The "white glove": exactly the field colour, but inside the silhouette. */
+  const LIGHT: [number, number, number] = s.opaqueBg ?? [240, 237, 230];
 
   const figure = (cx: number, top: number, f: Figure): void => {
     const bw = Math.floor(s.cellW * 0.44) + f.overhang * 2;
@@ -135,6 +156,8 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
     const ly = top + hh + bh;
     rect(cx - (bw >> 1), ly, lw, lh, BODY);
     rect(cx + (bw >> 1) - lw, ly, lw, lh, BODY);
+    // The ruff/glove: field-coloured, but walled in by the body on every side.
+    if (s.interiorLight) rect(cx - 6, top + hh + 6, 12, 10, LIGHT);
   };
 
   s.rows.forEach((count, ri) => {
@@ -158,6 +181,10 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
       rect(capLeft, bandTop + s.cellH + CAPTION_GAP, 60, CAPTION_H, INK);
     }
   });
+
+  // Drawn LAST so it is not overpainted: this is what puts a border colour in
+  // every corner, which is why the background estimate samples the whole ring.
+  if (s.sheetFrame) frame(0, 0, w, h, INK);
 
   return { data, w, h };
 }
