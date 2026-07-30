@@ -229,6 +229,21 @@ export interface UiFrame {
    */
   focusRect: Rect | null;
   /**
+   * Whether the focused widget was registered INSIDE a scroll region.
+   *
+   * `focusRect` alone is not enough to scroll by, because a screen registers
+   * chrome as well as content: a tab strip above the region, a CLOSE button in
+   * the footer below it. Both are always visible and neither should move the
+   * list. Scrolling by their rect does something clearly wrong in each
+   * direction — chrome ABOVE computes a negative offset and snaps the region to
+   * the top, chrome BELOW runs it to the very bottom. Highlighting CLOSE would
+   * jump the body to its end.
+   *
+   * `f.clip` is exactly the right test and it is already maintained: it is
+   * non-null only between `beginScroll` and `endScroll`. See `followFocus`.
+   */
+  focusClipped: boolean;
+  /**
    * Indices that registered as DISABLED this frame.
    *
    * A disabled widget keeps its index (call order is identity — renumbering as
@@ -284,6 +299,7 @@ export function beginUi(
     count: 0,
     consumed: false,
     focusRect: null,
+    focusClipped: false,
     disabledIdx: new Set(),
     fonts,
     clips: 0,
@@ -340,7 +356,10 @@ export function focusable(f: UiFrame, r: Rect, opts: { disabled?: boolean } = {}
   // Hand the focused widget's geometry to the frame so a scrolling screen can
   // follow the cursor — see `UiFrame.focusRect`. Recorded here because this is
   // the only moment the rect and the focus state are both known.
-  if (focused) f.focusRect = r;
+  if (focused) {
+    f.focusRect = r;
+    f.focusClipped = f.clip !== null;
+  }
   const activated =
     (!f.consumed && focused && f.input.accept) || (hovered && p.pressed);
   if (activated) f.consumed = true;
@@ -899,6 +918,35 @@ export function scrollToShow(view: Rect, widget: Rect, offset: number): number {
   if (top < offset) return Math.max(0, top - ROW_H);
   if (bottom > offset + view.h) return bottom - view.h + ROW_H;
   return offset;
+}
+
+/**
+ * The one line a scrolling screen needs: `self.scroll = followFocus(f, view, sc.offset)`.
+ *
+ * ── WHY THIS EXISTS RATHER THAN FIVE COPIES OF THE SAME TERNARY ──
+ * `scrollToShow` shipped in the P0 UI commit and was called by NOTHING for five
+ * months, because the focused widget's rect had nowhere to live in an
+ * immediate-mode layout (see `UiFrame.focusRect`). Every scrolling screen paid
+ * for that: the D-pad walked the ring off the bottom of the region, the highlight
+ * vanished, and Enter fired a button nobody could see — which reads as the UI
+ * having frozen. `settings.ts` did not fix it, it ROUTED AROUND it: the note over
+ * `settingsBody` explains that CAMERA was moved to first because it was "the one
+ * control the player was hunting for" and it sat below the fold. Reordering rows
+ * to dodge a broken scroll region only works until the next row is added.
+ *
+ * Wrapping the two guards here is what stops the fix being subtly wrong in four
+ * places: the cursor must be inside the region (`focusClipped` — chrome above or
+ * below it must not drag the list, see that field) and there must be a cursor at
+ * all (`focusRect` is null on an empty screen, or when the focus index landed on
+ * a disabled row).
+ *
+ * Call it AFTER the body has painted, with the SAME `view` handed to
+ * `beginScroll` — that rect is in screen space and `focusRect` is in content
+ * space, which is the pair `scrollToShow` is written against.
+ */
+export function followFocus(f: UiFrame, view: Rect, offset: number): number {
+  if (!f.focusRect || !f.focusClipped) return offset;
+  return scrollToShow(view, f.focusRect, offset);
 }
 
 

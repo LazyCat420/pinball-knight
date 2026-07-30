@@ -21,6 +21,7 @@ import {
   cutTop,
   cutRight,
   endScroll,
+  followFocus,
   heading,
   rect,
   scrim,
@@ -219,7 +220,11 @@ export function settingsScreen(): UiScreen {
       const sc = beginScroll(f, view, contentH, self.scroll);
       settingsBody(f, { ...sc.inner });
       endScroll(f, view, contentH, sc.offset);
-      self.scroll = sc.offset;
+      // The region follows the cursor — see `followFocus`. This screen is the
+      // reason that helper carries a warning: CAMERA was moved to the top (note
+      // above `settingsBody`) because it was below the fold and unreachable, which
+      // is a workaround for exactly this, not a fix for it.
+      self.scroll = followFocus(f, view, sc.offset);
 
       text(f, "ESC / B  CLOSE     ↑↓  MOVE     ENTER / A  TOGGLE", foot.x, foot.y + 8, {
         size: 8,
