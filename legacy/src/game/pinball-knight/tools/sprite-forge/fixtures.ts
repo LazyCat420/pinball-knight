@@ -53,6 +53,15 @@ export interface SheetSpec {
   sheetFrame?: boolean;
   /** Shade the background as a left-to-right ramp — a sheet that cannot be keyed. */
   gradientBg?: boolean;
+  /**
+   * Darken alternate 8px squares by this much — a TRANSPARENCY CHECKERBOARD
+   * baked into the pixels.
+   *
+   * What both real sheets turned out to be: jester alternates rgb(252)/rgb(243)
+   * and beaver rgb(253)/rgb(246). The background is two colours, not one, and a
+   * fixed tolerance leaves every darker square behind as opaque speckle.
+   */
+  checkerBg?: number;
 }
 
 export const DEFAULT_SPEC: SheetSpec = {
@@ -127,10 +136,23 @@ export function buildSheet(over: Partial<SheetSpec> = {}): Sheet {
   };
 
   if (s.opaqueBg) rect(0, 0, w, h, s.opaqueBg);
+  if (s.checkerBg) {
+    const base = s.opaqueBg ?? [240, 237, 230];
+    const k = s.checkerBg;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (((x >> 3) + (y >> 3)) % 2 === 0) continue;
+        px(x, y, base[0] - k, base[1] - k, base[2] - k);
+      }
+    }
+  }
   if (s.gradientBg) {
     const base = s.opaqueBg ?? [240, 237, 230];
     for (let x = 0; x < w; x++) {
-      const k = Math.round((x / w) * 60) - 30;
+      // A STRONG ramp, deliberately. A gentle one is genuinely keyable — the
+      // fill reaches all of it at one tolerance — so it must not fail, and a
+      // fixture that ramps by ±30 would be asserting the wrong thing.
+      const k = Math.round((x / w) * 180) - 90;
       for (let y = 0; y < h; y++) px(x, y, base[0] + k, base[1] + k, base[2] + k);
     }
   }

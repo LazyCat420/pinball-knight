@@ -99,7 +99,27 @@ export interface MatteReport {
   failures: string[];
 }
 
-export const DEFAULT_TOLERANCE = 12;
+/**
+ * How far from the background colour a pixel can be and still be keyed.
+ *
+ * GENEROUS ON PURPOSE, and safe because the guard against eating art is
+ * CONNECTIVITY, not colour distance. A pixel is only ever keyed if the fill can
+ * walk to it from the sheet edge, so art enclosed by an outline is protected at
+ * any tolerance at all — the clown's gloves sit 2.0 from the background and
+ * survive a tolerance of 40 untouched. The only thing at risk is art that is
+ * both background-coloured AND unenclosed, which the preview shows immediately.
+ *
+ * The value is what real sheets need. Measured on jester, whose furniture is a
+ * grey outer frame at distance 26.2 and a dashed cell grid: the sheet welds into
+ * one cell at every tolerance up to 24, and slices correctly at 36 and above.
+ * Across that entire sweep the keyed share moves 75.7% -> 78.8%, so what the
+ * extra tolerance removes is furniture, not art.
+ *
+ * A per-sheet value derived from the border band was tried first and is worse:
+ * the frame is only ~9% of that band, so any sensible coverage target picks a
+ * tolerance that leaves it standing.
+ */
+export const DEFAULT_TOLERANCE = 40;
 /**
  * Enclosed pockets at least this share of the sheet are keyed automatically.
  *
@@ -108,8 +128,17 @@ export const DEFAULT_TOLERANCE = 12;
  * below the structure and 9x above the art.
  */
 export const AUTO_KEY_AREA = 0.002;
-/** Below this share of the border ring, the estimate is a guess, not a mode. */
-const MIN_BG_CONFIDENCE = 0.5;
+/**
+ * The fill must be able to reach at least this much of the border band.
+ *
+ * Not a loose sanity check — a tight one, because the residue is what bites.
+ * Measured on jester at tolerance 12: 88.8% of the border was reachable, and
+ * the missing 11% survived as an opaque SPECKLE MESH threaded through the whole
+ * background, welding every cell together so the sheet still sliced to one.
+ * Anything under ~0.9 fails that way. At their own suggested tolerances the two
+ * real sheets reach 99.9% and 100%.
+ */
+const MIN_BG_CONFIDENCE = 0.9;
 /** A fill outside this band did not do what matting is supposed to do. */
 const MIN_KEYED = 0.05;
 const MAX_KEYED = 0.95;
@@ -133,8 +162,8 @@ const MAX_KEYED = 0.95;
  * `keyedPct` gate rejects rather than shipping a sheet nobody matted.
  */
 export function estimateBackground(
-  data: Uint8ClampedArray, w: number, h: number,
-): { bg: Rgb; confidence: number } {
+  data: Uint8ClampedArray, w: number, h: number, tol: number = DEFAULT_TOLERANCE,
+): { bg: Rgb; confidence: number; suggestedTolerance: number } {
   const depth = Math.max(2, Math.min(12, Math.round(Math.min(w, h) * 0.01)));
   const inBand = (x: number, y: number): boolean =>
     x < depth || y < depth || x >= w - depth || y >= h - depth;
@@ -155,7 +184,7 @@ export function estimateBackground(
       total++;
     }
   }
-  if (!total) return { bg: [0, 0, 0], confidence: 0 };
+  if (!total) return { bg: [0, 0, 0], confidence: 0, suggestedTolerance: tol };
 
   let best = 0;
   let bestN = 0;
@@ -173,10 +202,36 @@ export function estimateBackground(
       sr += data[i]; sg += data[i + 1]; sb += data[i + 2]; n++;
     }
   }
-  return {
-    bg: [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)],
-    confidence: bestN / total,
+  const bg: Rgb = [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)];
+
+  // ── CONFIDENCE IS MEASURED BY TOLERANCE, NOT BY EXACT COLOUR.
+  //
+  // Counting the modal bucket's share says "no dominant colour" for a
+  // background that is perfectly keyable. Both real sheets tested arrive with a
+  // faint transparency CHECKERBOARD baked into the pixels — jester alternates
+  // rgb(252) and rgb(243), beaver rgb(253) and rgb(246) — so the mode is 44%
+  // and 53% and the gate rejected them. Within a tolerance of 8 the same bands
+  // are 84% and 100% uniform.
+  //
+  // The quantity that matters is the one the fill actually uses: how much of
+  // the border is reachable at the tolerance in play.
+  const share = (t: number): number => {
+    let k = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!inBand(x, y)) continue;
+        const i = (y * w + x) * 4;
+        if (data[i + 3] === 0) continue;
+        if (colourDist(data[i], data[i + 1], data[i + 2], bg[0], bg[1], bg[2]) <= t) k++;
+      }
+    }
+    return k / total;
   };
+  // The smallest tolerance that would cover the band — so a failure can say
+  // what to change instead of only that something is wrong.
+  const ladder = [4, 8, 12, 16, 24, 32, 48, 64];
+  const suggestedTolerance = ladder.find((t) => share(t) >= 0.95) ?? ladder[ladder.length - 1];
+  return { bg, confidence: share(tol), suggestedTolerance };
 }
 
 /**
@@ -187,7 +242,7 @@ export function matte(
   data: Uint8ClampedArray, w: number, h: number, opts: MatteOptions = {},
 ): { data: Uint8ClampedArray; report: MatteReport } {
   const tol = opts.tolerance ?? DEFAULT_TOLERANCE;
-  const est = estimateBackground(data, w, h);
+  const est = estimateBackground(data, w, h, tol);
   const bg = opts.bg ?? est.bg;
   const warnings: string[] = [];
   const failures: string[] = [];
@@ -302,8 +357,11 @@ export function matte(
   // ── Refuse to guess.
   if (est.confidence < MIN_BG_CONFIDENCE && !opts.bg) {
     failures.push(
-      `border ring has no dominant colour (${(est.confidence * 100).toFixed(0)}% agree) — ` +
-        `a gradient or vignette background cannot be keyed. Set one explicitly, or re-export flat.`,
+      `only ${(est.confidence * 100).toFixed(0)}% of the border is within tolerance ${tol} of ` +
+        `${rgbHex(bg)} — a gradient or vignette cannot be keyed. ` +
+        (est.suggestedTolerance > tol
+          ? `Try { "matte": { "tolerance": ${est.suggestedTolerance} } } — that covers 95% of it.`
+          : `Set a background colour explicitly, or re-export the sheet flat.`),
     );
   }
   if (keyedPct < MIN_KEYED) {

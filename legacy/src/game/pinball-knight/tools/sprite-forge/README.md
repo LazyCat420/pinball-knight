@@ -1,16 +1,31 @@
-# Sprite inbox
+# Sprite forge
 
-Drop sprite sheets here, run one command, get scored game-ready frames.
+Drop sprite sheets in `inbox/`, run one command, get scored game-ready frames.
 
-    cp mysheet.png scripts/sprites/inbox/ratking-E.png
+    cp mysheet.png src/game/pinball-knight/tools/sprite-forge/inbox/ratking-E.png
     npm run sprites
 
-Output lands in `work/<name>/`: one PNG per frame at the atlas grid, plus
-`preview.png` (nearest-upscaled, so it shows atlas truth rather than a
-flattering smooth preview).
+Output lands in `work/<name>/` (gitignored): one PNG per frame at the atlas
+grid, `preview.png` (nearest-upscaled, so it shows atlas truth rather than a
+flattering smooth preview), and `work/report.txt` — vitest swallows console
+output, so the report is written to disk.
 
 No network, no API key, no Python. It shares the game's real palette, real
 crush and real census, so what it reports is what will ship.
+
+## The stages
+
+| file | job |
+|---|---|
+| `matte.ts` | opaque background → alpha, by flood fill from the border |
+| `slice.ts` | matted sheet → rows of cells |
+| `register.ts` | cell → the painters' contract, then the real crush |
+| `labels.ts` | row → clip name |
+| `inbox.test.ts` | the node edge: finds files, decodes, writes output |
+| `fixtures.ts` | synthetic sheets for the tests |
+
+Everything except `inbox.test.ts` is pure — pixels in, pixels out, no
+filesystem and no node-canvas — so a browser tool can drive the same code.
 
 ## Naming
 
@@ -22,7 +37,7 @@ W is never authored — the engine draws it as E with a negative texture repeat.
 
 ## The sidecar — one line, and usually only one
 
-    scripts/sprites/inbox/ratking-E.json
+    tools/sprite-forge/inbox/ratking-E.json
     { "rows": ["idle", "attack", "walk", "stumble", "death"] }
 
 `rows` names each row's clip, in reading order. Those names have to be clips the

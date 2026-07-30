@@ -1,22 +1,22 @@
 /**
  * SPRITE INBOX — drop sheets in a folder, get scored game-ready frames.
  *
- *     cp mysheet.png scripts/sprites/inbox/ratking-E.png
+ *     cp mysheet.png tools/sprite-forge/inbox/ratking-E.png
  *     npm run sprites
  *
- * Reads every PNG in `scripts/sprites/inbox/`, slices each into frames, puts
+ * Reads every PNG in `tools/sprite-forge/inbox/`, slices each into frames, puts
  * them on the painters' registration contract, runs them through the REAL crush,
  * censuses the result against the painted roster, and writes both the frames and
- * a nearest-upscaled preview to `scripts/sprites/work/<name>/`.
+ * a nearest-upscaled preview to `tools/sprite-forge/work/<name>/`.
  *
  * Nothing here talks to a network. There is no generation step and no API key.
  *
  * ── WHERE THE PIPELINE ACTUALLY LIVES ──
  *
- * `render/ingest/` — slicing, labelling and registration are plain functions
- * over pixel buffers, with no filesystem and no node-canvas import. This file is
- * now only the NODE EDGE: it finds the files, decodes them, and writes the
- * output. The browser refiner at `/sprites` drives the same functions with the
+ * Slicing (`slice.ts`), matting (`matte.ts`), labelling and registration are
+ * plain functions over pixel buffers, with no filesystem and no node-canvas
+ * import. This file is only the NODE EDGE: it finds the files, decodes them,
+ * and writes the output. A browser refiner drives the same functions with the
  * same arguments, which is the only way "what the tool shows" and "what CI
  * scores" can be guaranteed to agree.
  *
@@ -41,14 +41,14 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas, loadImage } from "canvas";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../testkit/atlas-census";
-import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from "./atlas-census";
-import { sliceSheet, equalCells, type Cell } from "./ingest/slice";
-import { crushCell, registerCell, sheetScale } from "./ingest/register";
-import { labelRows, parseName, unknownClips } from "./ingest/labels";
-import { matte, rgbHex, type MatteOptions } from "./ingest/matte";
+import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
+import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from "../../render/atlas-census";
+import { sliceSheet, equalCells, type Cell } from "./slice";
+import { crushCell, registerCell, sheetScale } from "./register";
+import { labelRows, parseName, unknownClips } from "./labels";
+import { matte, rgbHex, type MatteOptions } from "./matte";
 
-const ROOT = join(__dirname, "..", "..", "..", "..", "scripts", "sprites");
+const ROOT = __dirname;
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
 const WORK = process.env.SPRITE_WORK ?? join(ROOT, "work");
 
@@ -62,8 +62,8 @@ afterAll(() => { restore(); });
 /**
  * Row → clip names, from an optional sidecar beside the sheet.
  *
- *     scripts/sprites/inbox/ratking-E.png
- *     scripts/sprites/inbox/ratking-E.json   { "rows": ["idle","attack","walk","stumble","death"] }
+ *     tools/sprite-forge/inbox/ratking-E.png
+ *     tools/sprite-forge/inbox/ratking-E.json   { "rows": ["idle","attack","walk","stumble","death"] }
  *
  * A sidecar rather than reading the sheet's own captions, because the captions
  * are pixels — OCR'ing "SPRING ATTACK" to guess a ClipName would be a guess
@@ -80,7 +80,7 @@ function readSidecar(dir: string, base: string): Sidecar | null {
 interface Sidecar {
   rows?: string[];
   cells?: number[];
-  /** Background keying options — see render/ingest/matte.ts. */
+  /** Background keying options — see matte.ts. */
   matte?: MatteOptions;
 }
 
@@ -243,6 +243,10 @@ describe("sprite inbox", () => {
           `→ ${outDir}  (frames + preview.png)`,
       );
     }
+    // Written as well as logged: vitest swallows console output unless a test
+    // fails, so the one artifact you actually want to read after a run was the
+    // one you could not see.
+    writeFileSync(join(WORK, "report.txt"), summary.join("\n").replace(/\[[0-9;]*m/g, ""));
     console.log(summary.join("\n"));
   }, 600_000);
 });

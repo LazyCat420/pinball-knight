@@ -80,9 +80,21 @@ describe("matte", () => {
   });
 
   it("refuses a gradient background rather than keying half of it", () => {
+    // Half-keyed is the dangerous outcome, not a harmless one: whatever the
+    // fill cannot reach survives as a speckle mesh that welds every cell.
     const { data, w, h } = buildSheet({ rows: RAGGED, opaqueBg: CREAM, gradientBg: true });
     const { report } = matte(data, w, h);
-    expect(report.failures.join(" ")).toContain("no dominant colour");
+    expect(report.failures.join(" ")).toContain("of the border is within tolerance");
+  });
+
+  it("raises its own tolerance for a checkerboarded background", () => {
+    // What both real sheets arrive with: a faint transparency checker baked in.
+    // A fixed tolerance leaves the darker squares behind; the tolerance is
+    // measured from the sheet instead.
+    const { data, w, h } = buildSheet({ rows: RAGGED, opaqueBg: CREAM, checkerBg: 9 });
+    const { report } = matte(data, w, h);
+    expect(report.failures).toEqual([]);
+    expect(report.bgConfidence).toBeGreaterThan(0.95);
   });
 
   it("refuses a sheet that is already transparent", () => {
