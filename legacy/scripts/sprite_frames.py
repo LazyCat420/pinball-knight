@@ -124,7 +124,6 @@ USERNAME = os.environ.get("SPRITE_USERNAME", "rodrigo")
 ART_PX = 128        # the painters' coordinate space
 CX = 64             # horizontal centre
 GROUND = 118        # the ground line every painter stands its actor on
-GEN_PX = 512        # what we normalize to; the engine rasterises from here
 
 # The Cold Crypt palette (render/palette.ts). Duplicated deliberately:
 # this script must run in plain python with no bundler, and a stale copy
@@ -359,24 +358,33 @@ def census(image):
     return {"entries": entries, "isolated": isolated_pct, "runLen": run_len, "families": families}
 
 
-def normalize(crops):
-    """Compose onto GEN_PX² on the PAINTERS' contract: centred at CX,
-    feet on GROUND, one uniform scale across every frame so the flipbook
-    holds size."""
-    k = GEN_PX / ART_PX
-    ground = GROUND * k
+def plan_registration(crops):
+    """ONE uniform scale, in ART UNITS per source pixel, that fits the tallest
+    and widest frame inside the painters' box.
+
+    ⚠️ THIS RETURNS A NUMBER AND RESIZES NOTHING, and that is the whole point.
+    The first version composed every frame onto a 512px canvas here, which meant
+    the art was resampled on the way OUT (LANCZOS onto the canvas) and again on
+    the way IN (drawn into the crush buffer) before the atlas downscale. Three
+    resamples where the painters have one.
+
+    Measured, feeding this pipeline the JESTER'S OWN PAINTED FRAMES so the art is
+    held constant and only the route varies:
+
+        direct painter path      entries 32     isolated 34.9%   runLen 1.50
+        importer, 3 resamples    entries 27.2   isolated 42.7%   runLen 1.34
+
+    Fewer colours and MORE noise is the signature of blur: each resample softens
+    a boundary, and the 32-colour snap converts every softened boundary into
+    invented colour. So the frames are now written at NATIVE size beside a
+    manifest, and the consumer applies scale and registration in a single
+    transform — the same single resample the painters get.
+    """
     max_h = max(c.height for c in crops)
     max_w = max(c.width for c in crops)
-    scale = min((110 * k) / max_h, (108 * k) / max_w)
-    out = []
-    for crop in crops:
-        w, h = round(crop.width * scale), round(crop.height * scale)
-        art = crop.resize((w, h), Image.LANCZOS)
-        canvas = Image.new("RGBA", (GEN_PX, GEN_PX), (0, 0, 0, 0))
-        canvas.alpha_composite(art, ((GEN_PX - w) // 2, round(ground) - h))
-        out.append(canvas)
-    print(f"uniform scale {scale:.3f}, feet at y={ground:.0f}/{GEN_PX}")
-    return out
+    scale = min(110 / max_h, 108 / max_w)
+    print(f"uniform scale {scale:.4f} art units/px, feet on GROUND={GROUND}/{ART_PX}")
+    return scale
 
 
 def process(name, config, sheets):
@@ -387,22 +395,29 @@ def process(name, config, sheets):
     clips = config["clips"]
     labels = [f"{c['name']}{i}" for c in clips for i in range(c["frames"])]
 
+    manifest = {"artPx": ART_PX, "cx": CX, "ground": GROUND, "dirs": {}}
     for direction, sheet in sheets.items():
         crops = [clean(c, f"{direction}:{labels[i]}") for i, c in enumerate(slice_sheet(sheet, len(labels)))]
-        frames = normalize(crops)
+        scale = plan_registration(crops)
+        manifest["dirs"][direction] = {"scale": scale, "frames": {}}
         print(f"\n{direction}  frame        entries  isolated%  runLen  families")
-        for label, frame in zip(labels, frames):
-            snapped, _ = snap(frame)
-            stats = census(frame)
-            snapped.save(out_dir / f"{direction}-{label}.png")
+        for label, crop in zip(labels, crops):
+            # NATIVE size, unsnapped — the consumer resamples once and the crush
+            # does the palette. Snapping here would ALSO pre-pixelate the input,
+            # which flatters the judge (see sprite-score.test.ts).
+            crop.save(out_dir / f"{direction}-{label}.png")
+            manifest["dirs"][direction]["frames"][label] = {"w": crop.width, "h": crop.height}
+            stats = census(crop)
             fam = " ".join(f"{k}:{v}" for k, v in sorted(stats["families"].items(), key=lambda p: -p[1])[:4])
             print(
                 f"   {label:<12} {stats['entries']:>7} {stats['isolated']:>10.1f} "
                 f"{stats['runLen']:>7.2f}  {fam}"
             )
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(
-        f"\nWrote {out_dir}. NOW JUDGE IT THROUGH THE REAL CRUSH — these numbers "
-        f"are on the {GEN_PX}px frame, and the product is 63 texels:\n"
+        f"\nWrote {out_dir} (native-size frames + manifest.json).\n"
+        "The numbers above are on the SOURCE frame; the product is 63 texels, so "
+        "judge it through the real crush:\n"
         f"  SPRITE_IN={out_dir} npx vitest run src/game/pinball-knight/render/sprite-score"
     )
 
