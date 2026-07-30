@@ -2,6 +2,160 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+> ⚠️ STILL NOT collapsed, for the same reason as the last four sessions:
+> `bdb-mapgen` (fix/map-generation-rules) and `bdb-mobile`
+> (feat/mobile-touch-controls) are live worktrees in this repo right now, and
+> collapsing 2100 lines I have not read would delete their notes. Prepended.
+
+## ✅ LIVE NOW — public runs reach the shared leaderboard (2026-07-30)
+
+**181 files / 2069 tests pass, registry-drift clean, 0 tsc errors in the game
+subtree. Deployed `main@4a540c6`, container healthy, 0 restarts. Verified through
+the public edge, not just locally.**
+
+Three console lines from a real braindeadbot.com session. One was not a bug, one
+was a lie hiding a missing feature, one was a blank canvas.
+
+### The `wss://braindeadbot.com/ws failed` pair was A DEPLOY, not a defect
+
+Do not go looking for it in the socket code. The container was recreated at
+`02:42:32Z` (image `latest` built 19:42 local, `RestartCount 0` — a deploy, not
+a crash) and was listening again at `02:42:35.24`. **Three seconds of downtime
+against `BACKOFF_MS = [1000, 2000, 4000]` is exactly two failed reconnects and
+then a success**, which is exactly what the log shows.
+
+The trap here is that a headers-only probe proves nothing — the documented Next
+failure mode in `server/realtime.mjs` destroys the socket ~10ms AFTER the 101,
+and `curl` exits before that. Hold the connection instead:
+
+```
+node wsprobe.mjs wss://braindeadbot.com/ws https://braindeadbot.com
+  101 → OPEN → welcome + room:state → still open at 8s
+```
+
+Also note `curl` must be given `--http1.1`. Over h2 the edge drops the
+`Connection: Upgrade` headers and answers `/ws` with the app shell — a 200 full
+of HTML that looks exactly like a broken endpoint and is not one.
+
+**Any deploy bounces every live session this way, including the deploy of this
+change.** That is the cost of shipping while someone is playing.
+
+### `[dungeon] leaderboard rejected the run score` — a rejection that never happened
+
+`NEXT_PUBLIC_BACKEND_URL` is inlined at `next build` as `10.0.0.16:5175`. On a
+public page `isRemoteBackendEnabled()` is therefore false, so
+`saveLeaderboardScore` **returned `false` without sending anything**, and
+`run/ledger.ts` reported that as a rejection. Every public run, every death.
+
+The warning was the small half. The real finding: **public runs had never
+reached the shared board at all**, and public visitors were reading their own
+localStorage while 8 real rows sat in braindeadbot-service.
+
+Fixed the way `/ws` already was — server-side, in `server/scores-proxy.mjs`.
+`/api/scores` is forwarded from inside the container, where the LAN address does
+resolve:
+
+```
+docker exec braindeadbot-client wget -O- http://10.0.0.16:5175/api/scores
+  → {"game":"pinball-knight","scores":[...]}
+```
+
+**That contradicts the docblock in `server/realtime.mjs`** which says the service
+is "unreachable from inside this container". It was true of the ws tunnel. It is
+not true of plain HTTP. The note has been corrected in `scores-proxy.mjs`; do not
+re-derive the old conclusion from the old comment.
+
+`src/services/api-config.ts` gained `leaderboardBase()`: `""` (same-origin) on a
+public page, the baked URL on a private one. Private stays direct on purpose —
+under `next dev` there is no custom server, so there is no proxy to ask.
+
+#### It is an ALLOWLIST, and that is load-bearing
+
+`shouldProxy` matches `/api/scores` exactly. A blanket `/api/*` proxy would have
+published TTS synthesis and youtube-sync to the open internet as a side effect
+of fixing the leaderboard. `scores-proxy.test.mjs` pins the refusals alongside
+the forwards.
+
+Writes are public and unauthenticated (a deliberate trade — one shared board is
+the point), so: 20 POSTs/min/IP, 8KB body cap, GET/POST only. The service
+already bounds name (1-12 chars), score (≤1e8) and detail (≤2000 bytes), so the
+row shape is not this proxy's problem. **The bucket keys on
+`socket.remoteAddress`, not `X-Forwarded-For`** — everything arrives via the
+edge, so it is one global bucket rather than per-visitor. Wrong in the safe
+direction; if you ever want per-visitor limits, that needs a trusted-proxy hop
+count, not a header read.
+
+`isRemoteBackendEnabled()` is untouched and still gates youtube-sync and TTS.
+Splitting the leaderboard off that gate is the entire fix — pairing them is what
+made the public board local-only.
+
+#### Side effect worth knowing: raccoon-tornado, ski and pirate-surf too
+
+They share `score-service`, so all three now submit AND read from the shared
+board on the public site instead of silently going local. Same code path, same
+proxy, no per-game work.
+
+### `CopyExternalImageToTexture(): Browser fails extracting valid resource`
+
+A canvas allocates its GPU resource on **first paint**, not on creation, and two
+canvases here are bound as textures before anything paints them:
+
+1. The damage-number pool's slot 0 **is** `warmupTarget()`, handed straight to
+   `compileAsync` by the descent prewarm (`warmupReveal` in `render/vfx.ts`).
+2. The UI layer's canvas is reallocated blank by `syncSize` — a resize
+   DEALLOCATES the store — and stays blank until a screen opens.
+
+`engine/render/canvas-backing.ts` is the fix, and the shape of it is the lesson:
+
+```ts
+ctx.save();
+ctx.fillStyle = "#000000";
+ctx.fillRect(0, 0, 1, 1);   // OPAQUE on purpose
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+ctx.restore();
+```
+
+**The opaque pixel is not decoration.** A transparent fill is a legal no-op a
+browser may elide, and eliding it leaves the canvas exactly as resource-less as
+it started — the bug wearing a fix's clothes. `save/restore` is load-bearing
+too: `layer.ts` hands its context to every screen in the game.
+
+Player-visible impact of the old behaviour: none (the first real `spawn`
+repaints and re-uploads). It was a console error indistinguishable from an
+upload that mattered, on the load path, once per dungeon load.
+
+### Ruled out — do not re-investigate these
+
+- **A 0×0 sprite atlas.** `buildSpriteSheet` would produce `cols = 0` and
+  `rows = NaN` for a frameless actor, which IS a latent hazard, but a probe over
+  all 19 monster painters + 6 zombie variants + every weapon showed non-zero
+  frames everywhere. Not the cause. `atlas-size.test.ts` still only guards the
+  CEILING, so the lower bound remains unpinned if anyone wants it.
+- **Peer nameplates** (`remote-party.ts`): `measureText + pad*2` is never 0, and
+  `sanitizeName` never returns empty.
+- **Icon reframing** (`gui/icons.ts`): already returns null on an empty bbox.
+
+### Left alone deliberately
+
+`THREE.Clock` → `THREE.Timer` (5 sites in main.ts / mahjong / cosmic-pool /
+raccoon-intro). Timer needs an explicit `update()` per frame and `getDelta()`
+differs, so it is an animation-loop change in four unrelated games for one
+console notice. `RGBELoader` → `HDRLoader` WAS done — r180 made the former a
+deprecation shim over the latter, so it was a drop-in.
+
+`AudioContext was not allowed to start` (×13) is Chrome's pre-gesture rule, and
+`powerPreference is currently ignored on Windows` is a Chrome notice. Neither is
+actionable here.
+
+### One row I created and removed
+
+Proving the write path against the LIVE service inserted `id=10, name="???",
+score=0` (the service defaults a missing name/score rather than rejecting).
+Backed up `lazycat.db` on the NAS, deleted that row, confirmed 8 rows and a
+clean board. The backup is
+`/volume1/docker/braindeadbot-service/data/lazycat.db.bak-20260729-201629`.
+`id=1 name=DEPLOY score=1234` is someone else's older test row, still there.
+
 > ⚠️ STILL NOT collapsed, same call as the last three sessions and for the same
 > reason: `main` moved underneath this work while it was in flight (the zoom-cancel
 > commit landed mid-session and had to be merged in), and `bdb-cam` /
