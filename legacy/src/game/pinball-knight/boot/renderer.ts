@@ -52,6 +52,26 @@ export function isRendererReady(): boolean {
 }
 
 /**
+ * Push ONE frame of pure UI to the screen, right now.
+ *
+ * The escape hatch for every moment the game must show a screen without drawing
+ * the world: the descent, where the frame loop is deliberately held while a
+ * floor's pipelines compile (`run/floor-hold.ts`), and the two frames
+ * `armFloorLoading` buys before it blocks the thread inside `buildLevel`.
+ *
+ * Safe to call at any time — it no-ops before the backend resolves and when
+ * there is no pass — so callers never have to reason about boot ordering.
+ * Returns whether a frame actually went out, which is what the tests assert on:
+ * "the screen was raised" and "a frame carrying it reached the screen" are
+ * different claims, and only the second one is the bug this repo had.
+ */
+export function presentUiFrame(): boolean {
+  if (!rendererReady || !state.pixelPass) return false;
+  state.pixelPass.presentUi();
+  return true;
+}
+
+/**
  * Build the renderer, attach it to the container, and build the pixel pass.
  *
  * MUST run after `installEngine()` and after settings are applied: the pixel
@@ -145,6 +165,15 @@ export function installRenderer(): void {
   pass.render = (scene, camera) => {
     drawUiFrame(pass);
     renderScene(scene, camera);
+  };
+  // The UI-only present takes the SAME wrapper, for the same reason: it is a
+  // composite, so the layer has to be uploaded before it runs. A held frame
+  // that skipped this would present whatever the UI canvas held last — which on
+  // the first descent of a session is nothing at all.
+  const presentUiOnly = pass.presentUi.bind(pass);
+  pass.presentUi = () => {
+    drawUiFrame(pass);
+    presentUiOnly();
   };
   state.pixelPass = pass;
 }

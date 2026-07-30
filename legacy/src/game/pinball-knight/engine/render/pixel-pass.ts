@@ -666,6 +666,34 @@ export interface PixelPass {
   target: THREE.WebGLRenderTarget;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
   /**
+   * Present a frame that is NOTHING BUT THE UI — no scene, no bloom chain.
+   *
+   * ── WHY THIS EXISTS ──
+   * There is exactly one moment in the game when a frame must reach the screen
+   * and the scene must NOT be drawn: a descent. `warmFloorPipelines` compiles a
+   * floor's shaders deliberately, in batches, behind the descent screen, and
+   * rendering the scene during that would trigger the lazy compile storm the
+   * warm-up exists to schedule. So the frame loop refuses to render while the
+   * hold is up (`isRenderHeld`).
+   *
+   * That was correct when the descent screen was DOM — the browser composited it
+   * independently of anything three did. It became a black screen the moment the
+   * screen moved onto the canvas, because the canvas UI is painted by the very
+   * loop that is held. The one screen whose entire job is to be visible while
+   * the loop is blocked was the one screen the loop refused to draw.
+   *
+   * This is the way out: composite the UI over a CLEARED target. The only
+   * pipeline it can touch is the final composite's own — one shader, which has
+   * to compile before any frame reaches the screen anyway, so paying for it here
+   * (behind the loading screen) is strictly better than paying for it after.
+   *
+   * Both sources the composite samples are cleared, not left stale: the UI layer
+   * covers the grid only to `floor(grid / zoom) * zoom`, so a screen at a zoom
+   * that does not divide the grid leaves a one-or-two pixel margin. Uncleared,
+   * that margin shows a strip of the floor that was just torn down.
+   */
+  presentUi(): void;
+  /**
    * Re-derive the render size for a new window size. Unlike the old fixed-RT
    * version this CAN reallocate the render targets, so it guards on the
    * computed size and does nothing expensive when that is unchanged.
@@ -970,11 +998,24 @@ export function createPixelPass(
     blit(finalMat, null);
   }
 
+  /** See `PixelPass.presentUi`. Deliberately step 3 alone, over a clean slate. */
+  function presentUi(): void {
+    renderer.setRenderTarget(sceneTarget);
+    renderer.clear();
+    // The composite samples the bloom target unconditionally. Skipping the
+    // bloom chain without clearing it would smear the last frame of the floor
+    // being torn down across the descent screen's margins.
+    renderer.setRenderTarget(bloomA);
+    renderer.clear();
+    blit(finalMat, null);
+  }
+
   resize();
 
   return {
     target: sceneTarget,
     render,
+    presentUi,
     resize,
     sizing: () => sizing,
     setUiEnabled: (on) => {

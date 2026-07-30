@@ -30,7 +30,7 @@
  * happening" is the worst available failure. All of it is back.
  */
 import { UI, GRID, C } from "../theme";
-import { fillRect, rect, strokeRect, text, type UiFrame } from "../im";
+import { bar, bevel, fillRect, rect, strokeRect, text, type UiFrame } from "../im";
 import { close, push, type UiScreen } from "../stack";
 
 /**
@@ -262,20 +262,43 @@ export function openFloorLoading(level: number): FloorLoading {
       const cx = Math.round(f.w / 2);
       const top = Math.round(f.h / 2) - 56;
 
+      // ── THE PLATE ──
+      // The title used to float on the darkened labyrinth, which put 24px type
+      // straight onto a busy, moving, half-lit field: the letterforms competed
+      // with the sweep for every pixel of their own edges. A stone slab behind
+      // it is the id-software answer and the correct one — it gives the type a
+      // quiet surface, and it makes the caption block read as ONE object rather
+      // than as four independent things that happen to be centred.
+      // Tall enough to hold the bar and the percentage as well as the type: a
+      // plate that stopped above the bar left the instrument stranded on the
+      // labyrinth, reading as two unrelated widgets that happened to line up.
+      const plate = rect(cx - 152, top - 16, 304, 148);
+      fillRect(f, plate, UI.sheet);
+      bevel(f, plate, { weight: 2 });
+      strokeRect(f, plate, UI.sheetEdge, 1);
+      f.g.fillStyle = UI.rivet;
+      for (const [sx, sy] of [
+        [plate.x + 5, plate.y + 5],
+        [plate.x + plate.w - 7, plate.y + 5],
+        [plate.x + 5, plate.y + plate.h - 7],
+        [plate.x + plate.w - 7, plate.y + plate.h - 7],
+      ]) {
+        f.g.fillRect(sx, sy, 2, 2);
+      }
+
       text(f, "DESCENDING", cx, top, { size: 8, colour: UI.gold, align: "center" });
       text(f, `DEPTH ${s.level}`, cx, top + 20, { size: 24, colour: UI.text, align: "center" });
       divider(f, cx, top + 58, 96);
       text(f, s.label.toUpperCase(), cx, top + 70, { size: 8, colour: UI.arcane, align: "center" });
 
-      // The bar reads as an instrument: a sunken well, a 2px frame, and the
-      // fill inset inside it so the frame is never overdrawn.
-      const track = rect(cx - 128, top + 90, 256, 14);
-      fillRect(f, track, UI.well);
-      strokeRect(f, track, UI.sheetEdge, 2);
-      const fillW = Math.round((track.w - 4) * Math.max(0, Math.min(1, frac)));
-      if (fillW > 0) fillRect(f, rect(track.x + 2, track.y + 2, fillW, track.h - 4), UI.gold);
-      // A lit leading edge, so the bar still has a head when it is barely moving.
-      if (fillW > 2) fillRect(f, rect(track.x + fillW, track.y + 2, 2, track.h - 4), UI.heading);
+      // The bar reads as an INSTRUMENT: a sunken well filled in blocks, the way
+      // a Doom status bar fills. See `bar()` — the segmentation is not only the
+      // house style, it is the only rendering that cannot shimmer as the value
+      // creeps across a fractional pixel boundary, and this is the one bar in
+      // the game a player watches for several uninterrupted seconds.
+      const track = rect(cx - 128, top + 92, 256, 14);
+      bar(f, track, frac);
+      strokeRect(f, track, UI.sheetEdge, 1);
 
       text(f, `${Math.round(frac * 100)}%`, cx, track.y + track.h + GRID, {
         size: 8,

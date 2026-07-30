@@ -17,7 +17,7 @@ import { FixedStepLoop } from "../GameEngine";
 import { simulate } from "./simulate";
 import { isSimPaused } from "./paused";
 import { isRenderHeld } from "../run/floor-hold";
-import { isRendererReady, gpuTimingWanted } from "../boot/renderer";
+import { isRendererReady, gpuTimingWanted, presentUiFrame } from "../boot/renderer";
 import { FIXED_STEP, MAX_FRAME } from "../constants";
 import { isTavernSceneOpen } from "../../../scenes/tavern";
 import { followPlayer, tickShadowThrottle } from "../boot/lighting";
@@ -61,10 +61,25 @@ export function loop(now: number): void {
   if (!state.active) return;
   state.animFrameId = requestAnimationFrame(loop);
   // ── Held during a descent ── the descent screen owns the display while the
-  // floor's pipelines compile (see startLevel). Rendering here would trigger
-  // the lazy compile storm the warm-up exists to schedule, and simulating would
-  // run the world for the several seconds the player cannot see or act.
-  if (isRenderHeld()) return;
+  // floor's pipelines compile (see startLevel). Rendering the SCENE here would
+  // trigger the lazy compile storm the warm-up exists to schedule, and
+  // simulating would run the world for the several seconds the player cannot
+  // see or act.
+  //
+  // ⚠️ But it must still PRESENT. This was a bare `return`, which was right
+  // while the descent screen was a DOM overlay the browser composited on its
+  // own, and became a black screen the moment that screen moved onto the
+  // canvas: the UI is painted from this loop, so a loop that draws nothing
+  // draws no loading screen either. Every descent showed a frozen frame —
+  // black on the first one of a session, where the tavern has just disposed its
+  // own canvas and nothing had ever been presented into the dungeon's.
+  //
+  // `presentUiFrame` composites the UI over a cleared target and touches no
+  // scene material, so the hold keeps the property it exists for.
+  if (isRenderHeld()) {
+    presentUiFrame();
+    return;
+  }
   profBegin("FRAME (total)");
   // Zero the per-frame render counters BEFORE anything draws.
   //

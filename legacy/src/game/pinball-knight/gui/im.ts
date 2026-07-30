@@ -331,10 +331,93 @@ export function strokeRect(f: UiFrame, r: Rect, css: string, weight = 1): void {
   g.fillRect(x + w - weight, y + weight, weight, h - weight * 2);
 }
 
-/** A sunken well: dark fill, dark edge. The background for rows and lists. */
-export function well(f: UiFrame, r: Rect): void {
-  fillRect(f, r, UI.well);
-  strokeRect(f, r, UI.wellEdge);
+/**
+ * THE CHISEL — a two-tone bevel that makes a rect read as raised or sunken.
+ *
+ * ── WHY THIS IS ITS OWN PRIMITIVE ──
+ * It is the single most-repeated shape in an id-software menu and the thing
+ * this UI was missing: every panel, key, tab and well was a flat fill with a
+ * 1px border, which is why the whole interface read as a terminal window rather
+ * than as a machine with parts. A bevel is not decoration here — it is the only
+ * cue that says which things you can press.
+ *
+ * The lit edge goes TOP AND LEFT for a raised surface and bottom-right for a
+ * sunken one, which is the convention every one of these menus used because it
+ * matches a light source above and behind the player. Getting it backwards does
+ * not look "wrong" so much as it makes buttons look like holes, so the two
+ * cases are one boolean rather than two call sites that can drift.
+ *
+ * `weight` is whole pixels, always. A fractional bevel on this surface is not
+ * softer, it is a row of pixels that snap to different palette entries — the
+ * same trap `strokeRect` documents just above.
+ */
+export function bevel(f: UiFrame, r: Rect, opts: { sunken?: boolean; weight?: number } = {}): void {
+  const g = f.g;
+  const w = opts.weight ?? 1;
+  const lit = opts.sunken ? UI.bevelShade : UI.bevelLit;
+  const shade = opts.sunken ? UI.bevelLit : UI.bevelShade;
+  const x = px(r.x);
+  const y = px(r.y);
+  const rw = px(r.w);
+  const rh = px(r.h);
+  g.fillStyle = lit;
+  g.fillRect(x, y, rw, w); // top
+  g.fillRect(x, y, w, rh); // left
+  g.fillStyle = shade;
+  g.fillRect(x, y + rh - w, rw, w); // bottom
+  g.fillRect(x + rw - w, y, w, rh); // right
+}
+
+/**
+ * A raised key: face, keyline, chiselled edge. Buttons, tabs, plates.
+ *
+ * Deliberately separate from `sheet` — a control has to sit PROUD of the panel
+ * it is on, and the two were the same fill before, distinguishable only by a
+ * hairline accent.
+ *
+ * ⚠️ ORDER MATTERS AND IT IS EASY TO GET BACKWARDS. The first version drew the
+ * face, then the bevel, then let the caller stroke its accent colour over the
+ * top — and a 1px stroke on the same rect as a 1px bevel overwrites the bevel
+ * COMPLETELY. Every button rendered as a flat panel with a coloured outline,
+ * which is exactly the look this whole pass exists to replace, and it was
+ * invisible in code review because both calls were plainly present and plainly
+ * correct on their own. Caught by cropping a screenshot and counting pixels.
+ *
+ * So the keyline is drawn HERE, on the outer ring, and the chisel goes one
+ * pixel in where nothing can land on it.
+ */
+export function key(f: UiFrame, r: Rect, opts: { face?: string; edge?: string; sunken?: boolean } = {}): void {
+  fillRect(f, r, opts.face ?? UI.raised);
+  if (opts.edge) strokeRect(f, r, opts.edge);
+  bevel(f, opts.edge ? inset(r, 1) : r, { sunken: opts.sunken });
+}
+
+/** A sunken well: dark fill, chiselled INWARD. The background for rows and lists. */
+export function well(f: UiFrame, r: Rect, edge?: string): void {
+  key(f, r, { face: UI.well, sunken: true, ...(edge ? { edge } : {}) });
+}
+
+/**
+ * THE SELECTOR — a blocky arrowhead pointing at the focused row.
+ *
+ * Doom's flaming skull and Wolfenstein's gun barrel do the same job: they put
+ * the cursor BESIDE the selection instead of drawing a box around it, so the
+ * player's eye tracks one moving mark down the list rather than re-finding a
+ * rectangle each time. On a scanlined, quantized surface that matters more than
+ * it does on a modern one — a 1px ring loses half its pixels to the dim, while
+ * a solid triangle is still a solid triangle.
+ *
+ * Drawn from whole-pixel rows so it stays a crisp staircase at every zoom: no
+ * path, no fill rule, nothing that could antialias.
+ */
+export function cursorMark(f: UiFrame, x: number, cy: number, size = 8): void {
+  const g = f.g;
+  g.fillStyle = UI.cursor;
+  const half = Math.floor(size / 2);
+  for (let i = 0; i < half; i++) {
+    const h = (i + 1) * 2;
+    g.fillRect(px(x + i), px(cy - h / 2), 1, h);
+  }
 }
 
 /**
@@ -480,14 +563,23 @@ export function sheet(f: UiFrame, w: number, h: number): Rect {
   const sw = snap(Math.min(w, f.w - GRID * 2));
   const sh = snap(Math.min(h, f.h - GRID * 2));
   const r = rect(snap((f.w - sw) / 2), snap((f.h - sh) / 2), sw, sh);
+  // Stone plate, chiselled, inside a leather keyline. Three layers rather than
+  // the flat fill + hairline this used to be — see `UI.sheet` for why the body
+  // moved off near-black and onto the stone ramp.
   fillRect(f, r, UI.sheet);
-  strokeRect(f, r, UI.sheetEdge, 2);
-  // A one-pixel lit edge along the top and left reads as a bevel and separates
-  // the sheet from the scrim without a drop shadow (which cannot survive the
-  // palette snap — a soft shadow becomes visible banding).
-  f.g.fillStyle = UI.sheetEdgeLit;
-  f.g.fillRect(px(r.x + 2), px(r.y + 2), px(r.w - 4), 1);
-  f.g.fillRect(px(r.x + 2), px(r.y + 2), 1, px(r.h - 4));
+  bevel(f, inset(r, 1), { weight: 2 });
+  strokeRect(f, r, UI.sheetEdge, 1);
+  // Corner rivets. Four pixels that do more for "this is a fabricated object"
+  // than any amount of border weight — and the only structural use in the game
+  // of the one palette entry nothing else names.
+  const studs: Array<[number, number]> = [
+    [r.x + 4, r.y + 4],
+    [r.x + r.w - 6, r.y + 4],
+    [r.x + 4, r.y + r.h - 6],
+    [r.x + r.w - 6, r.y + r.h - 6],
+  ];
+  f.g.fillStyle = UI.rivet;
+  for (const [sx, sy] of studs) f.g.fillRect(px(sx), px(sy), 2, 2);
   return inset(r, GRID * 2);
 }
 
@@ -520,21 +612,29 @@ export function button(
 ): boolean {
   const st = focusable(f, r, { disabled: opts.disabled });
   const accent = opts.danger ? UI.danger : opts.good ? UI.good : UI.gold;
-  const fg = opts.disabled ? UI.textFaint : accent;
-  fillRect(f, r, opts.disabled ? UI.well : UI.sheet);
-  strokeRect(f, r, fg);
+  const fg = opts.disabled ? UI.textFaint : st.focused ? UI.focus : accent;
+  // A disabled control is SUNKEN (you cannot press it), a live one is RAISED,
+  // and the focused one lights up in blood. Three states, told by the surface
+  // itself rather than by a border colour a scanline can eat.
+  if (opts.disabled) well(f, r, UI.wellEdge);
+  else key(f, r, { face: st.focused ? UI.selectFace : UI.raised, edge: st.focused ? UI.selectEdge : accent });
+
+  // The selector lives in the button's own left padding, so it costs no layout
+  // and cannot overrun a neighbour. It appears on focus; nothing shifts.
+  const gutter = 6;
+  if (st.focused && !opts.disabled) cursorMark(f, r.x + 2, r.y + r.h / 2);
 
   if (opts.icon) {
     const size = opts.iconSize ?? Math.max(8, r.h - 6);
-    drawIcon(f.g, opts.icon, r.x + 3, r.y + (r.h - size) / 2, size);
-    const tx = r.x + size + 8;
+    drawIcon(f.g, opts.icon, r.x + gutter + 1, r.y + (r.h - size) / 2, size);
+    const tx = r.x + gutter + size + 6;
     text(f, label, tx, r.y + (r.h - 8) / 2, { size: 8, colour: fg, max: r.x + r.w - tx - 4 });
   } else {
     text(f, label, r.x + r.w / 2, r.y + (r.h - 8) / 2, {
       size: 8,
       colour: fg,
       align: "center",
-      max: r.w - GRID,
+      max: r.w - GRID * 2,
     });
   }
   if (st.focused) focusRing(f, r);
@@ -545,11 +645,14 @@ export function button(
 export function toggle(f: UiFrame, r: Rect, on: boolean, labels: [string, string] = ["ON", "OFF"]): boolean {
   const st = focusable(f, r);
   const fg = on ? UI.good : UI.textDim;
-  fillRect(f, r, UI.well);
-  strokeRect(f, r, fg);
+  // ON is a key pushed IN, OFF is one standing proud — the switch reads at a
+  // glance from its silhouette, before the label is legible at all.
+  const edge = st.focused ? UI.focus : fg;
+  if (on) well(f, r, edge);
+  else key(f, r, { edge });
   text(f, on ? labels[0] : labels[1], r.x + r.w / 2, r.y + (r.h - 8) / 2, {
     size: 8,
-    colour: fg,
+    colour: st.focused ? UI.focus : fg,
     align: "center",
   });
   if (st.focused) focusRing(f, r);
@@ -567,12 +670,34 @@ export function pips(f: UiFrame, r: Rect, filled: number, total: number): void {
   }
 }
 
-/** A labelled progress/XP bar. `t` is 0..1. */
+/**
+ * A progress/XP bar, filled in BLOCKS rather than as a smooth sweep. `t` is 0..1.
+ *
+ * The segmentation is the id-software tell — a Doom bar is a row of cells that
+ * light up, and it is legible from across a room in a way a continuous fill is
+ * not. It also happens to be the honest rendering here: a smooth fill lands on
+ * a fractional pixel boundary, and a fractional edge on this surface is a
+ * half-lit column that snaps to a different palette entry and shimmers as the
+ * value creeps. Whole cells cannot do that.
+ *
+ * Cells are sized to divide the track EXACTLY, so the last one lands flush with
+ * the frame instead of leaving a ragged pixel or two — the same "no fractional
+ * blits" rule the icon path already enforces.
+ */
 export function bar(f: UiFrame, r: Rect, t: number, colour = UI.gold): void {
   well(f, r);
-  const inner = inset(r, 1);
-  const w = Math.max(0, Math.min(1, t)) * inner.w;
-  if (w > 0) fillRect(f, rect(inner.x, inner.y, Math.round(w), inner.h), colour);
+  const inner = inset(r, 2);
+  if (inner.w <= 0 || inner.h <= 0) return;
+  const frac = Math.max(0, Math.min(1, t));
+  // ~5px cells with a 1px gutter, rounded to whatever divides the track evenly.
+  const cells = Math.max(1, Math.round(inner.w / 6));
+  const cw = inner.w / cells;
+  const lit = Math.round(frac * cells);
+  for (let i = 0; i < lit; i++) {
+    const x = Math.round(inner.x + i * cw);
+    const w = Math.round(inner.x + (i + 1) * cw) - x - 1;
+    if (w > 0) fillRect(f, rect(x, inner.y, w, inner.h), colour);
+  }
 }
 
 /** A section heading with a rule above it. */
@@ -595,11 +720,13 @@ export function tabs(f: UiFrame, r: Rect, labels: readonly string[], active: num
     const tr = rect(r.x + i * tw, r.y, tw - 2, r.h);
     const st = focusable(f, tr);
     const on = i === active;
-    fillRect(f, tr, on ? UI.sheetEdge : UI.well);
-    strokeRect(f, tr, on ? UI.gold : UI.wellEdge);
+    // The ACTIVE tab is the one pressed in — a physical selector, so which page
+    // you are on is readable without comparing two shades of text.
+    if (on) key(f, tr, { face: UI.selectFace, edge: UI.gold, sunken: true });
+    else key(f, tr, { edge: UI.wellEdge });
     text(f, labels[i], tr.x + tr.w / 2, tr.y + (tr.h - 8) / 2, {
       size: 8,
-      colour: on ? UI.gold : UI.textDim,
+      colour: on ? UI.focus : UI.textDim,
       align: "center",
       max: tr.w - 4,
     });
