@@ -51,10 +51,15 @@ export const uiStats = { frames: 0, painted: 0 };
  */
 export const MAX_UI_ZOOM = 4;
 
-export function screenZoom(design: { w: number; h: number } | undefined, gridW: number, gridH: number): number {
+export function screenZoom(
+  design: { w: number; h: number; max?: number } | undefined,
+  gridW: number,
+  gridH: number,
+): number {
   if (!design || design.w <= 0 || design.h <= 0) return 1;
   const fit = Math.min(Math.floor(gridW / design.w), Math.floor(gridH / design.h));
-  return Math.max(1, Math.min(MAX_UI_ZOOM, fit));
+  const ceiling = Math.max(1, Math.min(MAX_UI_ZOOM, design.max ?? MAX_UI_ZOOM));
+  return Math.max(1, Math.min(ceiling, fit));
 }
 
 /**

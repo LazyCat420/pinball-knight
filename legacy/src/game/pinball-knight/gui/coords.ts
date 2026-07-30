@@ -25,8 +25,19 @@
 
 /** The subset of `RenderSizing` this needs. Structural, so the real one fits. */
 export interface UiSizing {
-  /** Integer window-pixels per UI pixel. */
+  /** Integer DEVICE pixels per UI pixel. Not the pointer's unit — see `cssScale`. */
   readonly scale: number;
+  /**
+   * CSS pixels per UI pixel = `scale / browserZoom`.
+   *
+   * The unit a `MouseEvent`'s `clientX` is in, and the unit the canvas element
+   * is sized in. Under browser zoom it is NOT `scale`: at 125% one render pixel
+   * is still `scale` device pixels but only `scale / 1.25` CSS pixels, so
+   * dividing a pointer by `scale` puts every click 25% too far from the centre
+   * of the canvas. Nothing throws; the menu just stops responding near the
+   * edges, which is indistinguishable from a hit-testing bug.
+   */
+  readonly cssScale: number;
   /** The UI grid, in UI pixels. */
   readonly renderW: number;
   readonly renderH: number;
@@ -50,9 +61,14 @@ export interface UiPoint {
  * the paint drift apart by a pixel and nobody can reproduce it.
  */
 export function canvasOrigin(sizing: UiSizing, winW: number, winH: number): { left: number; top: number } {
+  // The canvas's CSS footprint, which is what `resize()` actually writes to
+  // `style.left/top/width/height`. `outW/outH` are the DRAWING BUFFER and are
+  // larger than the CSS box whenever the page is zoomed in.
+  const cssW = Math.round(sizing.renderW * sizing.cssScale);
+  const cssH = Math.round(sizing.renderH * sizing.cssScale);
   return {
-    left: Math.floor((winW - sizing.outW) / 2),
-    top: Math.floor((winH - sizing.outH) / 2),
+    left: Math.floor((winW - cssW) / 2),
+    top: Math.floor((winH - cssH) / 2),
   };
 }
 
@@ -71,8 +87,8 @@ export function screenToUi(
   winH: number,
 ): UiPoint {
   const { left, top } = canvasOrigin(sizing, winW, winH);
-  const x = (clientX - left) / sizing.scale;
-  const y = (clientY - top) / sizing.scale;
+  const x = (clientX - left) / sizing.cssScale;
+  const y = (clientY - top) / sizing.cssScale;
   return {
     x,
     y,

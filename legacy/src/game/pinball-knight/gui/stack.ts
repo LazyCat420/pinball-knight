@@ -63,7 +63,20 @@ export interface UiScreen {
    * alternately 1 or 2 texels wide, which is the exact "game-wide mush" the
    * renderer's own integer-scale note in pixel-pass.ts was written to kill.
    */
-  design?: { w: number; h: number };
+  design?: {
+    w: number;
+    h: number;
+    /**
+     * Ceiling on the zoom this screen will accept, default `MAX_UI_ZOOM`.
+     *
+     * Without it a screen gets BIGGER on a bigger grid, in whole steps: the
+     * sheets sit at 2x on a 1712-wide grid and would jump to 3x at 1920 — a 50%
+     * growth from one browser-zoom notch. A cap is what turns "as big as it
+     * fits" into "as big as it should be", and it costs nothing on the small
+     * grids where the floor is binding anyway.
+     */
+    max?: number;
+  };
   /** Paint one frame and handle its own input. */
   paint(f: UiFrame, self: UiScreen): void;
   /** Called when the screen is popped, for any teardown it owns. */

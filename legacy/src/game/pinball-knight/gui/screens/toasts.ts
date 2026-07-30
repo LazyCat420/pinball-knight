@@ -120,7 +120,7 @@ export function toastScreen(): UiScreen {
     // Matched to the HUD's box on purpose. These two are the only screens open
     // during play, they sit on the same edges of the same frame, and a toast at
     // half the HUD's type size reads as a different game's notification.
-    design: { w: 800, h: 450 },
+    design: { w: 600, h: 338, max: 2 },
     paint(f) {
       const now = performance.now();
       // Expire from the front; the array is in raise order so the oldest is

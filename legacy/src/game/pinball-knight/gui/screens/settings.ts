@@ -87,10 +87,10 @@ export function settingsScreen(): UiScreen {
     // game now targets, so on a desktop grid they all come out at 2x and at the
     // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
     // different games stapled together.
-    design: { w: 800, h: 450 },
+    design: { w: 600, h: 338, max: 2 },
     paint(f, self) {
       scrim(f);
-      const body = sheet(f, 560, 424);
+      const body = sheet(f, 520, 322);
 
       const head = cutTop(body, ROW_H + GRID);
       text(f, "SETTINGS", head.x, head.y, { size: 16, colour: UI.gold });

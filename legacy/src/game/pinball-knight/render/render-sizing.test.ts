@@ -169,3 +169,51 @@ describe("computeRenderSizing", () => {
     expect(tiny.renderW % 2).toBe(0);
   });
 });
+
+/**
+ * BROWSER ZOOM MUST NOT CHANGE THE GAME.
+ *
+ * Ctrl +/- scales `innerWidth` and `devicePixelRatio` by reciprocal amounts, so
+ * the window's physical size is unchanged. Sizing off `innerWidth` alone read
+ * that as a resize and re-derived the frustum and the UI's design zoom from it:
+ * the field of view moved and the HUD stepped between 1x and 2x, both from a
+ * keypress that is supposed to change resolution and nothing else.
+ *
+ * `computeRenderSizing`'s third argument cancels it. The property is that the
+ * ZOOMED window at that factor produces a grid IDENTICAL to the unzoomed one —
+ * not merely similar, because anything that differs by a pixel can still flip
+ * an integer zoom on the far side of a boundary.
+ */
+describe("browser zoom is cancelled", () => {
+  const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5];
+
+  it.each([
+    [1920, 1080],
+    [1712, 929],
+    [1600, 900],
+    [1366, 768],
+    [2560, 1440],
+  ])("gives %ix%i the same grid at every zoom step", (physW, physH) => {
+    const base = computeRenderSizing(physW, physH, 1);
+    for (const z of ZOOMS) {
+      // What the browser reports at that zoom: CSS px shrink as dpr grows.
+      const cssW = physW / z;
+      const cssH = physH / z;
+      const s = computeRenderSizing(cssW, cssH, z);
+      expect({ z, w: s.renderW, h: s.renderH }).toEqual({ z, w: base.renderW, h: base.renderH });
+      // …and the canvas still covers the same CSS window, so no bars appear and
+      // nothing overflows: the ELEMENT shrinks by exactly the zoom factor while
+      // the drawing buffer stays put.
+      expect(s.renderW * s.cssScale).toBeCloseTo(base.outW / z, 6);
+    }
+  });
+
+  it("leaves the drawing buffer alone, so only sharpness changes", () => {
+    const a = computeRenderSizing(1920, 1080, 1);
+    const b = computeRenderSizing(1536, 864, 1.25);
+    expect([b.outW, b.outH]).toEqual([a.outW, a.outH]);
+    expect(b.scale).toBe(a.scale);
+    // The one thing that DOES move: CSS pixels per render pixel.
+    expect(b.cssScale).toBeCloseTo(a.cssScale / 1.25, 6);
+  });
+});

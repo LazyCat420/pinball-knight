@@ -68,8 +68,8 @@ export const RENDER_H = 720;
  * Raising this re-opens the FOV question; it is not a free "use more of the
  * screen" dial. Must stay EVEN (see the even-size rule in pixel-pass.ts).
  */
-export const MAX_RENDER_W = 1920;
-export const MAX_RENDER_H = 1080;
+export const MAX_RENDER_W = 2160;
+export const MAX_RENDER_H = 1216;
 
 /**
  * Pixels per world unit. FIXED at 72 — one tile (1 world unit) is always
@@ -109,11 +109,28 @@ export const MAX_RENDER_H = 1080;
  * constant budget. That is the real constraint on this number and it cannot be
  * engineered away; it can only be spent. Playtested down the ladder:
  *
- *     PPU   grid   tiles@1920   texel area vs the old 72-grid
+ *     PPU   grid   tiles@1920   texel area vs the 72-grid
  *      96    108         20.0   2.25x   — too close to read the map from
  *      80     90         24.0   1.56x   — still too close
- *      72     81         26.7   1.27x   — here
- *      64     72         30.0   1.00x   — the original, and the blurry one
+ *      72     81         26.7   1.27x   — was here
+ *      64     72         30.0   1.00x   — HERE. 12.5% more level on screen.
+ *
+ * MOVED 72 → 64 on request: the camera sat too close. Read the trade honestly —
+ * this is not a free zoom-out, it is 12.5% of the texels on every actor, and
+ * the note above about 64 being "the blurry one" was written about a pipeline
+ * that ALSO crushed to 52 and nearest-upscaled back. That part is gone; what is
+ * left at 64 is one clean resample to a 72-texel cell, which is still the
+ * resolution the paragraph under SPRITE_PIXEL_GRID calls the point where
+ * characters "stop looking low-res".
+ *
+ * WHY NOT EXACTLY 15%. PPU is the denominator of SPRITE_UNITS, and
+ * SPRITE_PIXEL_GRID = SPRITE_UNITS × PPU has to be a whole number of texels or
+ * every sprite samples between texels — the uneven-pixel mush the whole
+ * pipeline exists to avoid, and what `render/sprite-scale.test.ts` guards. With
+ * SPRITE_UNITS held at 9/8 that makes PPU a multiple of 8, so the ladder is
+ * 72 → 64 (+12.5%) or 72 → 56 (+28.6%). 72 × 0.85 = 61.2 is not on it. 64 is
+ * the nearest rung to the 15% asked for, and the only one that keeps the level
+ * readable.
  *
  * An ODD grid (81) is fine: the evenness requirement in pixel-pass.ts is on
  * renderW/renderH, so that the ortho frustum's centre lands on a whole texel.
@@ -123,15 +140,15 @@ export const MAX_RENDER_H = 1080;
  * a larger supersample buffer to feed them. Measured in LOAD_PERF_PLAN terms,
  * that is where to look if boot regresses.
  */
-export const PPU = 72;
+export const PPU = 64;
 
 /**
  * The REFERENCE view, in tiles — the frustum the camera is BORN with. The live
  * frustum is re-derived from the current render size by pixel-pass.ts, so
  * treat these as the floor (20×11.25 tiles), not as the running value.
  */
-export const VIEW_W = RENDER_W / PPU; // 16 tiles across at the 1280 reference
-export const VIEW_H = RENDER_H / PPU; // 9 tiles down
+export const VIEW_W = RENDER_W / PPU; // 20 tiles across at the 1280 reference
+export const VIEW_H = RENDER_H / PPU; // 11.25 tiles down
 
 // ── Camera ──────────────────────────────────────────────────────
 /**
@@ -188,7 +205,7 @@ export const ART_PX = 128; // painter coordinate space, unitless
  * The supersample is there to anti-alias curved outlines before the crush, and
  * 2x does that; 3x costs 40% more paint for a second decimal place.
  */
-export const SPRITE_PX = 162; // rasterisation buffer per frame, px = 2 × grid
+export const SPRITE_PX = 144; // rasterisation buffer per frame, px = 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -209,7 +226,16 @@ export const SPRITE_PX = 162; // rasterisation buffer per frame, px = 2 × grid
  * deliberately pixel-art. Must stay an integer multiple of PPU's reciprocal —
  * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
  */
-export const SPRITE_PIXEL_GRID = 81;
+/*
+ * 81 → 72 with PPU 72 → 64. These two ALWAYS move together: the grid is
+ * SPRITE_UNITS × PPU, and holding it at 81 while the camera pulls back would
+ * make an actor's plane 1.266 world units instead of 1.125 — the sprite would
+ * keep its screen size while the level shrank around it, so every actor would
+ * grow 12.5% relative to its own collider and start visibly overlapping walls
+ * it does not touch. Zooming out costs texels; there is no arrangement of these
+ * numbers where it does not.
+ */
+export const SPRITE_PIXEL_GRID = 72;
 
 /**
  * Actor plane size, world units.
@@ -226,7 +252,7 @@ export const SPRITE_PIXEL_GRID = 81;
  * destructive undersampling. `sprite.test.ts` asserts the identity so a future
  * edit to either number has to keep it.
  */
-export const SPRITE_UNITS = SPRITE_PIXEL_GRID / PPU; // 1.125
+export const SPRITE_UNITS = SPRITE_PIXEL_GRID / PPU; // 72/64 = 1.125, binary-exact
 
 // ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
 export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading

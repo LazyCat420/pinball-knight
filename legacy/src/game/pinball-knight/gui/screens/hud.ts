@@ -35,7 +35,7 @@ import { FACE_PX, createFace, renderFace, setFaceHealth } from "../../hud-face";
 import { createMinimap, renderMinimap } from "../../hud-minimap";
 import { UI, GRID } from "../theme";
 import { bar, fillRect, rect, strokeRect, text, type Rect, type UiFrame } from "../im";
-import { drawIcon, glyph, itemIcon } from "../icons";
+import { abilityIcon, drawIcon, itemIcon } from "../icons";
 import type { UiScreen } from "../stack";
 
 /**
@@ -53,14 +53,18 @@ import type { UiScreen } from "../stack";
  * The sheets (menu, tavern, haul) stay at 1x because they are lists: their
  * problem is fitting thirty rows, not reading one. The HUD has eight cells.
  */
-export const DESIGN = { w: 800, h: 450 };
+export const DESIGN = { w: 600, h: 338, max: 2 };
 
 /**
- * Panel height, in the HUD's own units. Doubled by the design zoom on a desktop
- * grid, so this is ~150 device pixels — up from 92, but well short of the 184
- * that keeping the old number would have cost.
+ * Panel height, in the HUD's own units.
+ *
+ * 76 → 61 on top of the 800x450 → 600x338 design box, which is the "20%
+ * smaller" this pass was asked for: where the old and new boxes resolve to the
+ * SAME zoom, the bar comes out at 0.80x its previous device height. Where they
+ * do not, the new one is bigger — and those are exactly the grids where the old
+ * box fell to 1x and the HUD was half size.
  */
-export const PANEL_H = 76;
+export const PANEL_H = 61;
 /** The margin `blitFace` leaves inside the face's cell, on every side. */
 export const FACE_BOX_INSET = 4;
 /**
@@ -75,9 +79,18 @@ export const FACE_BOX_INSET = 4;
  * the status bar since Doom.
  */
 export const FACE_BOX = FACE_PX + FACE_BOX_INSET;
-const TILE = 40;
-/** Item sprites are 72px native, so 36 is an exact 2:1 — see `exactIconSize`. */
-const ITEM_ICON = 36;
+const TILE = 30;
+/** Item sprites are 72px native, so 24 is an exact 3:1 — see `exactIconSize`. */
+const ITEM_ICON = 24;
+/**
+ * The ability mark's box inside a cast tile.
+ *
+ * Derived from TILE rather than typed, so the two cannot drift: a glyph is
+ * rasterised at exactly the size asked for, so this is a real drawing size, not
+ * a scale factor, and a hardcoded 28 beside a changed TILE would silently
+ * off-centre every slot.
+ */
+const ICON_SKILL = TILE - 12;
 
 /**
  * How many times over the mugshot's own grid fits in a box of `w` UI pixels.
@@ -182,7 +195,7 @@ export function hudScreen(): UiScreen {
 
       const y = panel.y + GRID;
       const h = PANEL_H - GRID * 2;
-      const GAP = 5;
+      const GAP = 4;
       // Cell widths, summed so the row can be CENTRED rather than pinned to a
       // hardcoded total. The old code centred against a literal 980 and then
       // clamped to the left margin — so on any grid narrower than that the row
@@ -193,8 +206,14 @@ export function hudScreen(): UiScreen {
       // the icon and its gutter. Guessing narrower ellipsised the name of the
       // weapon you are holding, which is the one string on the bar that has to
       // be readable at a glance.
-      const W = { skills: TILE * 2 + 12, wpn: ITEM_ICON + 8 + 52, globe: h, face: FACE_BOX, stats: 100, belt: TILE * 4 + 15, map: h };
-      const total = Object.values(W).reduce((a, b) => a + b, 0) + W.globe + GAP * 7;
+      // Summed so the row can be CENTRED rather than pinned to a hardcoded
+      // total, and so this list is the single place the bar's width is decided.
+      // It has to come in under the design box's content width (600 - 2*GRID =
+      // 584) at every zoom, because below that the minimap runs off the right
+      // edge — the one genuine clipping failure the old 754-unit bar had on a
+      // small grid.
+      const W = { skills: TILE * 2 + 10, wpn: ITEM_ICON + 26, globe: h, face: FACE_BOX, stats: 76, belt: TILE * 4 + 13, map: h };
+      const total = Object.values(W).reduce((a, b) => a + b, 0) + W.globe + GAP * 5 + 8;
       let x = Math.max(GRID, Math.round((f.w - total) / 2));
 
       // ── SKILLS: the two ability slots, with cost and rank ──
@@ -211,10 +230,17 @@ export function hudScreen(): UiScreen {
         // Price keystone an empty pool still casts, and greying out a slot the
         // player can demonstrably use is the HUD lying about the game.
         const ok = canCast(i as 0 | 1);
-        // The mark fills the tile rather than sitting as a 16px pip in the
-        // middle of it. A glyph is rasterised at whatever size it is asked for,
-        // so this is a bigger DRAWING, not a magnified small one.
-        drawIcon(f.g, glyph("spark", 28, ok ? UI.arcane : UI.textFaint), tr.x + (TILE - 28) / 2, tr.y + 3, 28);
+        // THE ABILITY'S OWN MARK, in the ability's own colour.
+        //
+        // Both slots used to draw `glyph("spark")`, so a player looking down mid
+        // fight saw two identical symbols and had to read the mana number to
+        // tell Flipper Charge from Time Crawl. The slot exists to be recognised
+        // in peripheral vision; a shared glyph made that impossible.
+        //
+        // The mark fills the tile rather than sitting as a pip in the middle of
+        // it — a glyph is rasterised at whatever size it is asked for, so this
+        // is a bigger DRAWING, not a magnified small one.
+        drawIcon(f.g, abilityIcon(id, ICON_SKILL, !ok), tr.x + (TILE - ICON_SKILL) / 2, tr.y + 2, ICON_SKILL);
         text(f, String(def.cost), tr.x + 3, tr.y + TILE - 11, {
           size: 8,
           colour: (p.mana ?? 0) >= def.cost ? UI.arcane : ok ? UI.danger : UI.textDim,
@@ -232,15 +258,18 @@ export function hudScreen(): UiScreen {
       x += skills.w + GAP;
 
       // ── WEAPON + AMMO ──
+      // The weapon's NAME is the cell's caption, where every other cell has a
+      // fixed word. That is 52 units cheaper than a label column beside the
+      // icon — enough on its own to bring the bar under the design box — and it
+      // is strictly more informative, because "WEAPON" was a caption nobody
+      // needed twice while the icon sat next to it.
       const wpn = rect(x, y, W.wpn, h);
-      cell(f, wpn, "WEAPON");
       const w = state.weaponSlots[state.activeSlot];
+      cell(f, wpn, w ? WEAPONS[w.id].label.toUpperCase() : "WEAPON");
       if (w) {
-        const def = WEAPONS[w.id];
-        drawIcon(f.g, itemIcon(w.id), wpn.x + 4, wpn.y + 4, ITEM_ICON);
-        text(f, def.label.toUpperCase(), wpn.x + ITEM_ICON + 8, wpn.y + 6, { size: 8, colour: UI.text, max: 52 });
+        drawIcon(f.g, itemIcon(w.id), wpn.x + 3, wpn.y + 3, ITEM_ICON);
         const dur = Number.isFinite(w.durability) ? `${w.durability}` : "∞";
-        text(f, dur, wpn.x + ITEM_ICON + 8, wpn.y + 20, { size: 8, colour: UI.textDim });
+        text(f, dur, wpn.x + ITEM_ICON + 6, wpn.y + 10, { size: 8, colour: UI.textDim });
       }
       x += wpn.w + GAP;
 
@@ -269,8 +298,8 @@ export function hudScreen(): UiScreen {
       const stats = rect(x, y, W.stats, h);
       cell(f, stats);
       const statRow = (label: string, value: string, row: number, colour: string): void => {
-        text(f, label, stats.x + 5, stats.y + 6 + row * 16, { size: 8, colour: UI.textDim });
-        text(f, value, stats.x + stats.w - 5, stats.y + 6 + row * 16, { size: 8, colour, align: "right" });
+        text(f, label, stats.x + 5, stats.y + 4 + row * 13, { size: 8, colour: UI.textDim });
+        text(f, value, stats.x + stats.w - 5, stats.y + 4 + row * 13, { size: 8, colour, align: "right" });
       };
       statRow("DEPTH", String(state.level), 0, UI.gold);
       statRow("KILLS", String(state.kills), 1, UI.good);

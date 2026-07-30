@@ -25,7 +25,7 @@ import { pop, type UiScreen } from "../stack";
 // and at 88 the 512px face was downscaled 5.8x, which left the type as texture.
 // Five of these plus their gutters is 740 of the 748 available, and the screen
 // had an empty lower half to spend.
-const FACE_W = 140;
+const FACE_W = 104;
 const FACE_H = Math.round((CARD_H / CARD_W) * FACE_W);
 
 export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone: () => void): UiScreen {
@@ -43,11 +43,11 @@ export function haulScreen(entries: readonly HaulEntry[], floor: number, onDone:
     // game now targets, so on a desktop grid they all come out at 2x and at the
     // SAME zoom as each other — a menu at 1x beside a HUD at 2x reads as two
     // different games stapled together.
-    design: { w: 800, h: 450 },
+    design: { w: 600, h: 338, max: 2 },
     onClose: onDone,
     paint(f, self) {
       scrim(f);
-      const body = sheet(f, 780, 424);
+      const body = sheet(f, 584, 322);
 
       const head = cutTop(body, 30);
       text(f, `FLOOR ${floor} HAUL`, head.x + head.w / 2, head.y, { size: 16, colour: UI.gold, align: "center" });

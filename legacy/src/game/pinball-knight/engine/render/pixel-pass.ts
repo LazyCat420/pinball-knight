@@ -450,12 +450,62 @@ export interface RenderSizing {
   renderW: number;
   /** Render-target height, always EVEN. */
   renderH: number;
-  /** Canvas CSS width  = renderW * scale. */
+  /** Canvas drawing-buffer width  = renderW * scale, in DEVICE pixels. */
   outW: number;
-  /** Canvas CSS height = renderH * scale. */
+  /** Canvas drawing-buffer height = renderH * scale, in DEVICE pixels. */
   outH: number;
+  /**
+   * CSS pixels per render pixel = `scale / browserZoom`.
+   *
+   * The canvas is laid out in CSS pixels and drawn in device pixels, and under
+   * browser zoom those are not the same unit. This is the one number that
+   * converts between them, and EVERYTHING that maps a pointer or sizes the
+   * element must use it rather than `scale` — see `cancelBrowserZoom` below.
+   */
+  cssScale: number;
+  /** The browser-zoom factor this sizing was computed against. 1 at page load. */
+  browserZoom: number;
   /** True when MAX_RENDER_* clamped the target, so outW/outH no longer cover the window. */
   capped: boolean;
+}
+
+/**
+ * ── BROWSER ZOOM MUST NOT CHANGE THE GAME ──
+ *
+ * Ctrl +/- changes `window.innerWidth` (CSS px) and `devicePixelRatio` by
+ * reciprocal amounts; the window's PHYSICAL size does not move. Sizing off
+ * `innerWidth` alone therefore reads a zoom as a resize, and the game responds
+ * by re-deriving everything from it: the frustum widens or narrows (so you see
+ * more or less of the level), and the UI's integer design zoom steps (so the
+ * HUD abruptly halves or doubles). Neither is what a player means by "zoom in".
+ *
+ * Measured on a 1920x1080 monitor before this: 90% zoom put the game in a
+ * letterbox with 106px bars, and 125% dropped the HUD from 167 to 95 device
+ * pixels in one keypress.
+ *
+ * So the zoom is CANCELLED. `devicePixelRatio` is compared against the value at
+ * page load and the ratio is divided back out of the window size, which makes
+ * the render grid — and therefore the field of view, the UI zoom, and every
+ * layout in the game — invariant under ctrl +/-. What zoom still does is the
+ * thing it should: the same frame is presented across more or fewer physical
+ * pixels, so the picture gets sharper or softer, never differently composed.
+ *
+ * ── WHY THE BASELINE IS CAPTURED, NOT ASSUMED TO BE 1 ──
+ * `devicePixelRatio` is ALSO 2 on a Retina panel at 100% zoom. Treating the raw
+ * value as zoom would quadruple the render target on every HiDPI laptop — the
+ * opposite of the "fat honest pixels, dpr deliberately ignored" decision this
+ * file makes on purpose. Only the CHANGE since load is zoom, so only the change
+ * is cancelled. A page loaded already-zoomed bakes that in and is then stable,
+ * which is the right failure: consistent, and it cannot drift mid-session.
+ */
+const BASE_DPR = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+
+export function cancelBrowserZoom(): number {
+  if (typeof window === "undefined") return 1;
+  const z = (window.devicePixelRatio || 1) / BASE_DPR;
+  // Guard against a nonsense ratio from a display hot-swap: a wild value here
+  // would resize the render target rather than merely look wrong.
+  return Number.isFinite(z) && z > 0.2 && z < 8 ? z : 1;
 }
 
 /** Round UP to the next even number. */
@@ -499,14 +549,15 @@ function evenCeil(v: number): number {
  * (7680x1080 would ask for a 7680-wide target). When MAX_RENDER_* bites we
  * KEEP the integer scale and letterbox instead — crispness is the invariant.
  */
-export function computeRenderSizing(winW: number, winH: number): RenderSizing {
-  const w = Math.max(1, Math.floor(winW));
-  const h = Math.max(1, Math.floor(winH));
+export function computeRenderSizing(winW: number, winH: number, zoom = 1): RenderSizing {
+  // The window in ZOOM-CANCELLED pixels — see `cancelBrowserZoom`. At page load
+  // `zoom` is 1 and this is exactly `innerWidth/innerHeight`; after a ctrl +/-
+  // it is the same physical window measured in the same units it had before, so
+  // every number derived below is unchanged and the game does not move.
+  const w = Math.max(1, Math.floor(winW * zoom));
+  const h = Math.max(1, Math.floor(winH * zoom));
 
-  const scale = Math.max(1, Math.floor(Math.min(w / RENDER_W, h / RENDER_H)));
-
-  const wantW = evenCeil(w / scale);
-  const wantH = evenCeil(h / scale);
+  const baseScale = Math.max(1, Math.floor(Math.min(w / RENDER_W, h / RENDER_H)));
 
   // ── THE FLOOR IS GONE, AND ON PURPOSE (2026-07-29) ──
   //
@@ -530,21 +581,86 @@ export function computeRenderSizing(winW: number, winH: number): RenderSizing {
   // cannot see is a broken game, so the target now tracks the window and the
   // canvas always fits inside it.
   //
-  // CEILING at MAX_RENDER_* still applies, and is still the only clamp that
-  // counts as `capped`, because it is the only one that stops us covering the
-  // window.
-  const renderW = Math.min(wantW, MAX_RENDER_W);
-  const renderH = Math.min(wantH, MAX_RENDER_H);
+  // ── THE CEILING RAISES THE SCALE, IT DOES NOT LETTERBOX ──
+  //
+  // MAX_RENDER_* stops a very wide window asking for a runaway target. Clamping
+  // the GRID alone was the wrong way to enforce it, because `scale` had already
+  // been chosen against the unclamped size: `out = renderW * scale` then came
+  // out SMALLER than the window and the difference showed as black bars.
+  //
+  // Measured on a 1920x1080 monitor, which is where it bites hardest — one
+  // press of ctrl+- from 100%:
+  //
+  //     browser zoom   CSS window   scale   grid        out         bars
+  //     100%           1920x1080      1     1920x1080   1920x1080   none
+  //      90%           2133x1200      1     1920x1080   1920x1080   106 x 60
+  //      80%           2400x1350      1     1920x1080   1920x1080   240 x 135
+  //      75%           2560x1440      2     1280x720    2560x1440   none
+  //
+  // So the ENTIRE 1921..2559 x 1081..1439 band — every zoom step between 75%
+  // and 100% — played in a letterboxed window, and the two steps either side of
+  // it did not. That reads as the game breaking when you zoom, which is exactly
+  // what it was reported as.
+  //
+  // Raising `scale` instead is the fix, and it is the same trade the rest of
+  // this function already makes: a bigger upscale means a smaller grid, which
+  // means slightly less of the level on screen — a compromise — where bars are
+  // a defect. The loop terminates because every increment divides `want` down
+  // and MAX_RENDER_* are both well above RENDER_*.
+  // The bump is only allowed while the grid it produces is still a PLAYABLE
+  // resolution. On a 7680x1080 ultrawide, chasing the ceiling with scale alone
+  // reaches 1920x270 — four tiles of vertical view, which fills the window and
+  // is unplayable. There, bars are the right answer and the clamp below takes
+  // over; that is what MAX_RENDER_* was for in the first place.
+  let scale = baseScale;
+  let renderW = evenCeil(w / scale);
+  let renderH = evenCeil(h / scale);
+  while ((renderW > MAX_RENDER_W || renderH > MAX_RENDER_H) && scale < MAX_SCALE) {
+    const nextScale = scale + 1;
+    const nextW = evenCeil(w / nextScale);
+    const nextH = evenCeil(h / nextScale);
+    if (nextW < MIN_BUMP_W || nextH < MIN_BUMP_H) break;
+    scale = nextScale;
+    renderW = nextW;
+    renderH = nextH;
+  }
+  // Only if even MAX_SCALE could not get under the ceiling — a window wider
+  // than MAX_RENDER_W * MAX_SCALE — do we clamp and accept the bars. Nothing
+  // real reaches this; it exists so the return is always well-formed.
+  const cappedW = Math.min(renderW, MAX_RENDER_W);
+  const cappedH = Math.min(renderH, MAX_RENDER_H);
 
   return {
     scale,
-    renderW,
-    renderH,
-    outW: renderW * scale,
-    outH: renderH * scale,
-    capped: renderW < wantW || renderH < wantH,
+    renderW: cappedW,
+    renderH: cappedH,
+    outW: cappedW * scale,
+    outH: cappedH * scale,
+    cssScale: scale / zoom,
+    browserZoom: zoom,
+    capped: cappedW < renderW || cappedH < renderH,
   };
 }
+
+/**
+ * The most an upscale is ever allowed to grow while chasing MAX_RENDER_*.
+ *
+ * A backstop, not a tuning knob: at scale 8 a 1920-wide grid would need a
+ * 15360px window. It exists so the loop above cannot spin on a pathological
+ * window size.
+ */
+const MAX_SCALE = 8;
+
+/**
+ * The smallest grid the scale-bump is allowed to land on.
+ *
+ * Below this the cure is worse than the letterbox: 4:3 of the reference, i.e.
+ * the point where the level stops being readable. A window that cannot be
+ * covered without going under it gets bars instead, which is what the ceiling
+ * existed to do before it started producing them in the ordinary case.
+ */
+const MIN_BUMP_W = 1024;
+const MIN_BUMP_H = 576;
 
 export interface PixelPass {
   target: THREE.WebGLRenderTarget;
@@ -620,7 +736,7 @@ export function createPixelPass(
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
   // Everything below is sized from THIS, and re-sized from it on every resize.
-  let sizing = computeRenderSizing(window.innerWidth, window.innerHeight);
+  let sizing = computeRenderSizing(window.innerWidth, window.innerHeight, cancelBrowserZoom());
 
   // The depth texture feeds the outline and AO passes. We never call setSize on
   // it directly: three re-syncs `depthTexture.image` to the render target's
@@ -740,7 +856,9 @@ export function createPixelPass(
   function resize(): void {
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const next = computeRenderSizing(winW, winH);
+    // Recomputed per resize, not captured once: a ctrl +/- fires `resize`, and
+    // the whole point is that this call absorbs it.
+    const next = computeRenderSizing(winW, winH, cancelBrowserZoom());
 
     // GUARD: resize() now reallocates GPU memory, and browsers fire resize
     // events in bursts while a window is dragged. Only pay for it when the
@@ -759,16 +877,23 @@ export function createPixelPass(
     }
     sizing = next;
 
+    // The DRAWING BUFFER is device pixels; `updateStyle=false` because the CSS
+    // box below is a different unit and three must not overwrite it.
     renderer.setSize(sizing.outW, sizing.outH, false);
 
-    // Centre the canvas. Normally outW/outH cover the window exactly (the whole
-    // point of the adaptive size); bars only appear in the capped case.
+    // Centre the canvas, in CSS PIXELS. `cssScale` rather than `scale`: under
+    // browser zoom one render pixel is `scale` device pixels but only
+    // `scale / browserZoom` CSS pixels, and the element is laid out in CSS. Use
+    // `scale` here and at 125% zoom the canvas is styled 25% too large, spills
+    // its container and gets clipped — the "UI cut off" report, in one line.
+    const cssW = Math.round(sizing.renderW * sizing.cssScale);
+    const cssH = Math.round(sizing.renderH * sizing.cssScale);
     const el = renderer.domElement;
-    el.style.width = `${sizing.outW}px`;
-    el.style.height = `${sizing.outH}px`;
+    el.style.width = `${cssW}px`;
+    el.style.height = `${cssH}px`;
     el.style.position = "absolute";
-    el.style.left = `${Math.floor((winW - sizing.outW) / 2)}px`;
-    el.style.top = `${Math.floor((winH - sizing.outH) / 2)}px`;
+    el.style.left = `${Math.floor((winW - cssW) / 2)}px`;
+    el.style.top = `${Math.floor((winH - cssH) / 2)}px`;
     el.style.imageRendering = "pixelated";
   }
 

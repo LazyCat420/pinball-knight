@@ -132,6 +132,25 @@ for (const step of a.steps.split("|").filter(Boolean)) {
       }
     }, src);
     console.log(`\u25b6 evalfile ${arg} -> ${out}`);
+  } else if (kind === "dpr") {
+    // Emulate a ctrl +/- : devicePixelRatio goes up, the CSS window goes down by
+    // the same factor, and the PHYSICAL window is unchanged. This is what the
+    // browser actually does, and it fires a resize just like the real thing.
+    const zz = Number(arg);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: Math.round(Number(a.w) / zz),
+      height: Math.round(Number(a.h) / zz),
+      deviceScaleFactor: zz,
+      mobile: false,
+    });
+    await page.waitForTimeout(700);
+    const rep = await page.evaluate(() => ({
+      dpr: window.devicePixelRatio,
+      css: [window.innerWidth, window.innerHeight],
+      sizing: window.__gui.sizing(),
+    }));
+    console.log("\u25b6 dpr " + zz + " -> " + JSON.stringify(rep));
   } else if (kind === "wheel") {
     const [ux, uy, dy] = arg.split(",").map(Number);
     const pt = await page.evaluate(

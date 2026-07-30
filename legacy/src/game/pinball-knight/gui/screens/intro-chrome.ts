@@ -44,7 +44,7 @@ export function introChromeScreen(onSkip: () => void): UiScreen {
     // See `UiScreen.design`. Four words and a button, so it takes the largest
     // zoom the grid allows — a title card is the one place in the game where
     // small type has nothing to trade itself against.
-    design: { w: 480, h: 270 },
+    design: { w: 480, h: 270, max: 3 },
     paint(f) {
       if (chrome.showTitle) {
         text(f, "PINBALL KNIGHT", f.w / 2, f.h * 0.78, { size: 32, colour: UI.heading, align: "center" });
