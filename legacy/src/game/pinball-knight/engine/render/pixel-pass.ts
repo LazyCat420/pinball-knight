@@ -287,12 +287,15 @@ function heatWarp(base: TSLNode, u: FinalUniforms, res: TSLNode): TSLNode {
 /**
  * How many rows of shadow the quantizer can walk.
  *
- * The longest family ramp is stone (6 entries) and every family terminates at
- * void, so six walks take ANY entry to black — palette-shading.test.ts asserts
- * exactly that of the deepest row. More rows would be dead texture; fewer would
- * make the darkest shadow in the game arbitrary rather than black.
+ * The longest walk to void is the torch family's — nine half-step entries
+ * (the 2026-07-31 ramp midpoints doubled every family's rung count), then
+ * ink, then void: ten steps. palette-shading.test.ts asserts the deepest row
+ * is saturated at exactly this depth. More rows would be dead texture; fewer
+ * would make the darkest shadow in the game arbitrary rather than black —
+ * which is precisely what keeping this at the old 6 would have done: the
+ * half-step ramps would clamp at what used to be HALF a shadow.
  */
-const SHADE_ROWS = 6;
+const SHADE_ROWS = 10;
 
 /**
  * How many rows of HIGHLIGHT the quantizer can walk — the ramp above the
@@ -307,11 +310,11 @@ const SHADE_ROWS = 6;
  * the identity row, the torches stop brightening anything they light, and the
  * dungeon reads flat.
  *
- * Four, because the longest ramp above any entry is the torch family's
- * 14→15→16→17→18. Fewer would make a flame core unreachable from an ember;
- * more would be dead texture, since every other ramp saturates in two or three.
+ * Eight, because the longest ramp above any entry is the torch family's
+ * ember→core walk, now nine entries after the half-step midpoints. Fewer would
+ * make a flame core unreachable from an ember; more would be dead texture.
  */
-const SHADE_UP_ROWS = 4;
+const SHADE_UP_ROWS = 8;
 
 /** Texture height: the highlight rows, the material itself, then the shadow rows. */
 const SHADE_TOTAL_ROWS = SHADE_UP_ROWS + 1 + SHADE_ROWS;

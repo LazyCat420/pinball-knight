@@ -60,15 +60,27 @@ const HUE = [
   ...Array(4).fill("cold-grey"), // 19-22 steel — same hue as stone, lighter
   ...Array(6).fill("brown"), // 23-28 skin AND leather: one hue, two jobs
   ...Array(3).fill("cyan"), // 29-31 arcane
+  // Ramp midpoints (32-54, 2026-07-31) wear their family's hue — a midpoint
+  // IS its family, half a step darker or lighter. Leaving them off this list
+  // made every landing on one read as "→ undefined", which flagged steel
+  // textDim drifting onto a stone midpoint: a cold-grey landing on cold-grey.
+  ...Array(4).fill("cold-grey"), // 32-35 stone mids
+  ...Array(3).fill("green"), // 36-38 rot mids
+  ...Array(3).fill("red"), // 39-41 blood mids
+  ...Array(4).fill("orange"), // 42-45 torch mids
+  ...Array(3).fill("cold-grey"), // 46-48 steel mids
+  ...Array(2).fill("brown"), // 49-50 skin mids
+  ...Array(2).fill("brown"), // 51-52 leather mids
+  ...Array(2).fill("cyan"), // 53-54 arcane mids
 ];
 
-function snap(c: readonly number[]): number {
+function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB): number {
   let best = 0;
   let bestD = Infinity;
-  for (let i = 0; i < RGB.length; i++) {
+  for (let i = 0; i < rgb.length; i++) {
     let d = 0;
     for (let k = 0; k < 3; k++) {
-      const e = (c[k] - RGB[i][k]) * W[k];
+      const e = (c[k] - rgb[i][k]) * W[k];
       d += e * e;
     }
     if (d < bestD) {
@@ -80,14 +92,14 @@ function snap(c: readonly number[]): number {
 }
 
 /** Every entry this colour can snap to once the dither has had its way. */
-function reachable(index: number): Set<number> {
-  const c = RGB[index];
+function reachable(index: number, rgb: readonly (readonly number[])[] = RGB, dither: number = DITHER): Set<number> {
+  const c = rgb[index];
   const out = new Set<number>();
   // The shader adds a SCALAR to all three channels, so one axis is the whole
   // space of perturbations — 33 samples across it is far denser than the 16
   // distinct values a 4x4 Bayer matrix can actually produce.
   for (let s = -0.5; s <= 0.5001; s += 1 / 32) {
-    out.add(snap([c[0] + s * DITHER, c[1] + s * DITHER, c[2] + s * DITHER]));
+    out.add(snap([c[0] + s * dither, c[1] + s * dither, c[2] + s * dither], rgb));
   }
   return out;
 }
@@ -123,10 +135,19 @@ describe("the UI palette under the dither", () => {
   });
 
   it("still catches the stone-dark → rot-shadow crossing that caused this", () => {
-    // The negative control. If this ever stops finding the crossing, the sweep
-    // has gone blind and the test above is protecting nothing.
+    // The negative control — run against the HISTORICAL 32-entry palette at
+    // its historical amplitude, as a fixture. On the live palette this
+    // crossing is now UNREACHABLE: the 2026-07-31 ramp midpoints put a nearer
+    // in-family entry on both sides of every dither nudge, which is the
+    // grain fix doing exactly what it claims. The control's job is unchanged —
+    // prove the SWEEP can still see a crossing when one exists — so it sweeps
+    // the input that had one.
+    const RGB32 = RGB.slice(0, 32);
     const STONE_DARK = 2;
-    expect([...reachable(STONE_DARK)]).toContain(6); // rot shadow
+    expect([...reachable(STONE_DARK, RGB32, 2 / 32)]).toContain(6); // rot shadow
     expect(HUE[6]).not.toBe(HUE[STONE_DARK]);
+    // And on the live palette the same crossing must stay gone — this line is
+    // the claim the midpoints were shipped for.
+    expect([...reachable(STONE_DARK)]).not.toContain(6);
   });
 });

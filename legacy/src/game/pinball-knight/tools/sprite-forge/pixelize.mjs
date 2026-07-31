@@ -32,6 +32,15 @@ export const PALETTE_HEX = [
   0x6b4436, 0xa9705a, 0xd69f7e, // skin
   0x2a1c14, 0x4a3222, 0x6b4a2e, // leather/wood
   0x1f3d52, 0x2e6d8f, 0x6fd0e8, // arcane
+  // ramp midpoints 32-54 (2026-07-31) — keep in sync with render/palette.ts
+  0x828da0, 0x576375, 0x37404e, 0x21252f, // stone mids 32-35
+  0x74a958, 0x4c7541, 0x2c462b, // rot mids 36-38
+  0xc94151, 0x902535, 0x571520, // blood mids 39-41
+  0xffe6a3, 0xfcbf59, 0xeb8f28, 0xb05916, // torch mids 42-45
+  0xdbdfe5, 0xa8b0be, 0x6f7186, // steel mids 46-48
+  0xc48668, 0x8e5945, // skin mids 49-50
+  0x5d3d25, 0x3b2719, // leather mids 51-52
+  0x49a1c0, 0x235674, // arcane mids 53-54
 ];
 const INK = 1; // outline colour index
 

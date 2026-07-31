@@ -114,9 +114,61 @@ export const PALETTE_HEX: number[] = [
   0x1f3d52, // 29 arcane dark
   0x2e6d8f, // 30 arcane mid
   0x6fd0e8, // 31 arcane light
+
+  // ── Ramp midpoints (32-54), appended 2026-07-31 ────────────────────────────
+  //
+  // One entry between every adjacent pair of each family ramp, APPENDED so
+  // indices 0-31 — which 435 literal references and the occlusion index point
+  // at — do not move. Woven into ramp order by FAMILIES in palette-shading.ts,
+  // which is what actually orders a ramp; this array never did.
+  //
+  // WHY: lighting is an indexed ROW WALK (palette-shading.ts) and the frame
+  // resolves by nearest-of-N snap with dither amplitude 1/PALETTE_SIZE
+  // (pixel-pass.ts). Both graininess complaints trace to STEP SIZE: a ramp of
+  // 4 makes every lighting step a cliff the dither has to bridge with noise.
+  // Doubling the rungs halves the cliff, and the amplitude shrinks with the
+  // count automatically. Player-visible: smoother torch falloff and floor
+  // shading at the same art.
+  //
+  // Midpoints are sRGB pair-means pushed 10% AWAY from grey (luma-preserving),
+  // so a gradient passes through RICHER tones than a straight blend — the
+  // "bolder" half of the request. Existing entries are untouched: painters
+  // were authored against them.
+  0x828da0, // 32 stone 5·4 mid
+  0x576375, // 33 stone 4·3 mid
+  0x37404e, // 34 stone 3·2 mid
+  0x21252f, // 35 stone 2·1 mid
+  0x74a958, // 36 rot 9·8 mid
+  0x4c7541, // 37 rot 8·7 mid
+  0x2c462b, // 38 rot 7·6 mid
+  0xc94151, // 39 blood 13·12 mid
+  0x902535, // 40 blood 12·11 mid
+  0x571520, // 41 blood 11·10 mid
+  0xffe6a3, // 42 torch 18·17 mid
+  0xfcbf59, // 43 torch 17·16 mid
+  0xeb8f28, // 44 torch 16·15 mid
+  0xb05916, // 45 torch 15·14 mid
+  0xdbdfe5, // 46 steel 22·21 mid
+  0xa8b0be, // 47 steel 21·20 mid
+  0x6f7186, // 48 steel 20·19 mid
+  0xc48668, // 49 skin 25·24 mid
+  0x8e5945, // 50 skin 24·23 mid
+  0x5d3d25, // 51 leather 28·27 mid
+  0x3b2719, // 52 leather 27·26 mid
+  0x49a1c0, // 53 arcane 31·30 mid
+  0x235674, // 54 arcane 30·29 mid
 ];
 
-export const PALETTE_SIZE = PALETTE_HEX.length; // 32
+export const PALETTE_SIZE = PALETTE_HEX.length; // 55
+
+/**
+ * The SPRITE ATLAS snaps against the authored entries only. Everything past
+ * this bound is frame-quantizer material (lighting midpoints); letting the
+ * atlas reach it re-answers every painter's colour choices — measured: the
+ * roster blew its confetti budget at all three rungs and the stiltneck's gold
+ * re-hued. See PaletteSource.artSize.
+ */
+export const ART_PALETTE_SIZE = 32;
 
 /** Flat Float32Array of sRGB triplets, for the quantize shader uniform. */
 export function paletteToFloatArray(): Float32Array {
@@ -212,6 +264,7 @@ export function shadeFor(fillIndex: number, amt = 0.5): string {
 export function installPalette(): void {
   setEnginePalette({
     size: PALETTE_SIZE,
+    artSize: ART_PALETTE_SIZE,
     toFloatArray: paletteToFloatArray,
     hex: () => PALETTE_HEX,
     css: paletteCss,

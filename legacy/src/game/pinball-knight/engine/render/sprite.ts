@@ -204,7 +204,14 @@ function celFilters(tex: THREE.CanvasTexture): void {
 // fallback — a bug that renders, so it would not announce itself.
 let _palRgb: number[][] | null = null;
 function palRgb(): number[][] {
-  if (!_palRgb) _palRgb = enginePalette.hex().map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+  // Capped at `artSize`: the atlas snap answers against the AUTHORED entries
+  // only. The ramp midpoints past that bound belong to the frame quantizer —
+  // letting sprites reach them re-answers every painter's colour choices
+  // (see PaletteSource.artSize). The LUT below inherits the cap through here.
+  if (!_palRgb) {
+    const n = enginePalette.artSize ?? enginePalette.size;
+    _palRgb = enginePalette.hex().slice(0, n).map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+  }
   return _palRgb;
 }
 
