@@ -200,6 +200,14 @@ async function gameMode() {
    * arm N's toggles into arm N+1 as an invisible confound.
    */
   const settings = arg("settings", "");
+  /**
+   * `--fresh 1` wipes the origin's storage BEFORE the game boots. Without it a
+   * saved run RESUMES its stored floor and ignores `?seed=` — six seeded arms
+   * ran on the same coldcrypt one morning, and the seventh silently measured a
+   * resumed bloodworks at "the same seed". The resume-floor trap, harness
+   * edition; clear state or say which floor you actually shot.
+   */
+  const fresh = arg("fresh", "0") !== "0";
 
   const alive = async () => {
     try {
@@ -229,13 +237,14 @@ async function gameMode() {
 
   // The imported-art toggle and camera zoom are read at MODULE LOAD, so both
   // have to be written before the game's scripts run, not after boot.
-  await page.addInitScript(({ on, blob }) => {
+  await page.addInitScript(({ on, blob, wipe }) => {
     try {
+      if (wipe) localStorage.clear();
       localStorage.setItem("pinball-knight-imported-art", on ? "1" : "0");
       if (blob) localStorage.setItem("pinball-knight-settings", blob);
       else localStorage.removeItem("pinball-knight-settings");
     } catch {}
-  }, { on: imported, blob: settings || null });
+  }, { on: imported, blob: settings || null, wipe: fresh });
 
   page.on("console", (m) => { if (/imported art|pipeline|error/i.test(m.text())) console.log("[page]", m.text()); });
   await page.goto(url, { waitUntil: "domcontentloaded" });
