@@ -7,6 +7,34 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🎛️ GRAIN: measured, and the palette experiment REVERTED (2026-07-31 evening, `main@9c7c961`)
+
+Full receipts with screenshots: the session report artifact ("Pinball Knight —
+Grain & Sprite Report"). The short version:
+
+- **The grain is ~2/3 the SCANLINE pass** (−39% measured, seed-pinned floor,
+  per-pass toggles), ~1/8 the dither. Both are SHIPPED SETTINGS toggles.
+  Camera zoom moves sprite fidelity, not surface grain.
+- **"More colors" was tried for real** — 23 chroma-boosted ramp midpoints,
+  woven into the shading FAMILIES, deployed. Suite stayed green (2418) and the
+  live frame painted coldcrypt MAROON: the snap weights blue at 0.11, so blood
+  midpoints out-competed stone for warm-lit masonry. Snap pinned to the
+  authored 32 fixed the hue defection; the frame then measured darker+busier
+  (15.7 vs 12.5) because the luma-matched row walk and its dither are tuned
+  around FULL steps. **Reverted at `8bfe298`** — retry needs the row match and
+  dither retuned WITH the density, and the artSize identity/lighting seam from
+  `0f2b7f8`/`5d6a7ef` is the right starting shape.
+- ⚠️ **A resumed save IGNORES `?seed=`.** Six "seed-6 coldcrypt" arms were
+  re-shooting one resumed old floor; TRUE seed-6 depth-1 is a RED biome, and
+  biome-ab.mjs's seed→biome table is stale. `scripts/sandbox.mjs` grew
+  `--fresh 1` (wipes origin storage pre-boot) — use it for every seeded
+  comparison. `--settings '{...}'` boot-swaps the settings blob per arm
+  (replace-or-remove, never merge; the CDP origin is shared).
+- **Queued next:** re-author `makeJesterPaints` to the red/gold design
+  (`samples/jester-portrait.png` + the live sheet are the spec) so painted and
+  imported are the same creature again; the painter is still the OLD white/red
+  jester and only shows as fallback/lab arm.
+
 ## 🃏 NEW JESTER SHEET LIVE — the regenerated source hits painter parity (2026-07-31)
 
 The player regenerated the jester with the authoring rules (value separation,
