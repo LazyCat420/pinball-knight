@@ -66,6 +66,41 @@ export function artScale(cells: readonly Cell[]): number {
 }
 
 /**
+ * The scale the LIVING clips set — death is excluded from the vote.
+ *
+ * `artScale` over every cell let the jester's flat death sprawl (385px wide
+ * against a 227px standing height) set the scale for the whole sheet: the
+ * walking jester rendered at 64 of its 110 available art units — 36 texels at
+ * the 72 grid where a painter uses ~62 — and read as a different, smaller,
+ * blurrier creature. The alive clips are the body the player fights; they are
+ * measured together (so idle→attack→walk still cannot pulse), and a terminal
+ * clip does not get to shrink them.
+ *
+ * Rows with no sidecar name (`row0`, …) count as alive — with no clip names
+ * there is no way to know which row is the sprawl, and the old behaviour is
+ * the only honest fallback.
+ */
+export function aliveScale(rows: readonly ManifestRow[]): number {
+  const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
+  return artScale(alive.length ? alive : rows.flatMap((r) => r.cells));
+}
+
+/**
+ * Per-cell clamp for the frames the alive scale no longer accounts for.
+ *
+ * A death cell drawn at the alive scale may genuinely not fit — the sprawl is
+ * wider than the box. It is clamped to the HARD cel limits (the full 128 and
+ * the ground line), not the alive fit margin: a body collapsing to the floor
+ * reads as foreshortening, and only the frames that actually overflow pay.
+ * Alive cells never hit this clamp — the alive scale was derived from their
+ * own maxima.
+ */
+export function cellScale(cell: Cell, k: number): number {
+  const [x0, y0, x1, y1] = cell;
+  return Math.min(k, ART_BOX / (x1 - x0 + 1), ART_GROUND / (y1 - y0 + 1));
+}
+
+/**
  * Where one cell lands in the art box: centred on its own ink, feet on GROUND.
  *
  * ⚠️ REGISTRATION IS BY BOUNDING BOX. Correct for a grounded pose, wrong in two

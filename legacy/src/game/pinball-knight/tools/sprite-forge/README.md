@@ -19,10 +19,36 @@ crush and real census, so what it reports is what will ship.
 |---|---|
 | `matte.ts` | opaque background → alpha, by flood fill from the border |
 | `slice.ts` | matted sheet → rows of cells |
+| `resample.ts` | cell → its atlas footprint, k-centroid per texel (see below) |
 | `register.ts` | cell → the painters' contract, then the real crush |
 | `labels.ts` | row → clip name |
 | `inbox.test.ts` | the node edge: finds files, decodes, writes output |
 | `fixtures.ts` | synthetic sheets for the tests |
+
+## Scale and the resample — the two fixes that made imports readable
+
+**The LIVING clips set the scale.** It used to be the whole sheet's most
+extreme frame — and the jester's flat death sprawl (385px wide against a 227px
+standing height) shrank the walking jester to 36 texels where its painter uses
+~62. Now `idle/walk/attack/stumble` vote and a `death` cell that overflows is
+clamped alone (`aliveScale`/`cellScale` in `manifest.ts`). Jester +43% on
+screen; the sprawl reads as foreshortening.
+
+**The downscale is k-centroid, not the browser's bilinear.** One smoothed
+`drawImage` at a 3× downscale samples 2×2 and skips most of the source; the
+crush's palette snap then turns the mush into confetti. `resample.ts` computes
+each destination texel from its full coverage: 2-means cluster, dominant
+centroid — the AI-art-community standard (Astropulse's pixeldetector lineage).
+The classic pipelines are the argument: MUGEN and Rivals of Aether art commits
+to a pixel grid and a palette ONCE and is never fractionally resampled after.
+Generated sheets arrive gridless; this is where they commit.
+
+Alternatives stay testable: `scripts/sandbox.mjs` renders painted / bilinear
+(the old path) / nearest (what a LibreSprite / Pixelorama batch resize feeds
+the crush — verified against the real LibreSprite CLI, whose `--scale` is a
+smooth resize in the box/bilinear family) / box / dominant / kcentroid side by
+side with a census per arm. The census CANNOT crown a winner alone: box scores
+lowest because a noise metric rewards blur. Look at the strip.
 
 Everything except `inbox.test.ts` is pure — pixels in, pixels out, no
 filesystem and no node-canvas — so a browser tool can drive the same code.
@@ -96,15 +122,17 @@ live, because an atlas is palette-locked over the whole sheet).
   — both of these painters are busier than the average. `ab.test.ts` is the
   honest one: same creature, same crush, same rung, imported vs its own
   painter. It writes `work/ab.txt` and `work/ab-<name>.png`.
-- **On that comparison the result is SPLIT, and the difference is the art.**
-
-      jester      IMPORTED  isolated 46.0%  runLen 1.25
-                  PAINTED   isolated 38.1%  runLen 1.42   ← painter wins
-      rotortail   IMPORTED  isolated 26.9%  runLen 1.58
-                  PAINTED   isolated 35.2%  runLen 1.43   ← import wins
-
-  Harlequin diamonds are two hues at ONE VALUE and dissolve under a
+- **The isolated% metric is confounded by SIZE.** The 2026-07-31 scale +
+  resample fixes made the strips unambiguously cleaner while isolated% went
+  UP (jester 46.0→50.0, rotortail 26.9→31.5): a 43%-bigger, crisper figure has
+  more edge texels and more deliberate single-texel detail, and the census was
+  calibrated on painter-scale sprites. Judge fidelity from
+  `scripts/sandbox.mjs`'s strip, not from this number moving a few points.
+- Harlequin diamonds are two hues at ONE VALUE and dissolve under a
   luma-weighted snap; the beaver is one brown separated by value and survives.
   Author sheets that separate on VALUE, not hue.
+- The matte leaves ENCLOSED background-coloured pockets opaque by design (515
+  on beaver, 2826 on jester) — white specks INSIDE a silhouette are that, not
+  crush noise.
 - Imported art is inherently a little noisier at the floor: a painter
   re-rasterises vectors at the target size, an image can only be resampled.

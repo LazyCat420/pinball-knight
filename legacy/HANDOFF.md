@@ -7,7 +7,76 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
-## 🖼️ LIVE NOW — generated sprite sheets play as monsters (2026-07-31, `main@8761c8e`)
+## 🔬 SPRITE FIDELITY — the imported jester was half-size and mush; two root causes, both fixed (2026-07-31)
+
+The player's screenshot showed it exactly: imported sprites "crusty/dirty, no
+clean lines", the jester "WAY smaller than the other monsters". Both symptoms
+traced, measured, fixed, and the fixes are visible in one strip:
+`node scripts/sandbox.mjs` → `scratchpad/sandbox/cel-63.png`.
+
+### Root cause 1 — the death sprawl set the scale for the whole sheet
+
+`artScale` fit the sheet's most extreme frame into the art box. The jester's
+flat death sprawl is 385px WIDE (standing height 227px), so k = 108/385 and
+the walking jester got 64 of its 110 art units — **36 texels tall at the 72
+grid, where its painter uses ~62**. That is the whole "way smaller" report.
+Now the LIVING clips vote (`aliveScale`) and a death cell that overflows is
+clamped alone (`cellScale`) — the sprawl reads as foreshortening, and only its
+own frames pay. Jester +43%, rotortail +11%.
+
+### Root cause 2 — one bilinear `drawImage` did the whole 3× downscale
+
+Browser bilinear samples 2×2 per output pixel: at a 3× downscale it SKIPS most
+of the source (mush), mixes RGB across the alpha edge (dark fringe), and the
+palette snap turns soft in-between colours into confetti — and into the WRONG
+HUES (the old strip's jester read torch-orange; reds and creams averaged into
+colours whose nearest palette entry was orange). `resample.ts` now computes
+every destination texel from its full coverage, **k-centroid** per texel
+(2-means, dominant centroid — Astropulse's pixeldetector lineage, the AI-art
+community standard). MUGEN/Rivals is the design argument: pixel art commits to
+a grid + palette once; generated sheets commit HERE.
+
+### The editor question, tested for real
+
+LibreSprite / Pixelorama: hand-pixelling tools, no rigging, not automation
+hosts — but their batch scalers were given a fair run. The actual LibreSprite
+1.1 CLI ran headless (`--batch --scale` on the real jester cell): its scaler
+is a SMOOTH resize — fine picture, but it lands in the same family as the
+box/bilinear arms after our crush, and it cannot commit art to a grid. The
+`nearest` arm covers the other editor default. Both lose to k-centroid in the
+strip. **Verdict: mine the ecosystem's algorithms (k-centroid IS one), skip
+the tools.**
+
+### ⚠️ The census CANNOT judge this wave — the strip can
+
+isolated% went UP (jester 46.0→50.0) while the art got unambiguously better:
+the metric normalises per opaque texel, and a 43%-bigger, crisper sprite has
+more edges and more deliberate single-texel detail. This is
+[art-thresholds-must-not-read-a-setting] wearing a new hat. `ab.test.ts` still
+asserts validity (non-empty, palette-true), deliberately not a fidelity bar.
+
+### The SANDBOX — verify before the player boots (NEW, use it)
+
+`scripts/sandbox.mjs` — two modes:
+- **cel** (default): all six arms (painted / bilinear-old / nearest-editor /
+  box / dominant / kcentroid) through the REAL `importedPaints` →
+  `paintInArtSpace` → `crushToGrid`, nearest-upscaled, census per arm.
+  `--grid 72 --zoom 4` to taste. Nothing re-implemented — the arms call the
+  shipping seam (`importedPaints(sheets, filter)`).
+- **game**: host-Chrome CDP (gui-shot recipe), boots a run, `__lab.only`
+  spawns the kinds, screenshots the floor. `--spawn jester,rotortail --n 6`,
+  `--imported 0` for the painter build of the same creatures.
+
+### Still open
+
+- The jester SOURCE is soft (the generator's output, not the pipeline) — the
+  pipeline now preserves what is there; a sharper source sheet would show it.
+- Matte pockets: 2826 enclosed background-colour pockets on the jester stay
+  opaque by design. If specks INSIDE silhouettes annoy, that is the next dial.
+- A declared per-frame anchor (feet line) remains the eventual registration
+  fix; bbox-bottom-on-GROUND still mis-sits frames with debris under the feet.
+
+## 🖼️ Generated sprite sheets play as monsters (2026-07-31, `main@8761c8e`)
 
 **Go look at them: `/dungeon`, kill things.** `jester` and `rotortail` draw from
 imported art by default. `__lab.imported(false)` + reload puts the painters back

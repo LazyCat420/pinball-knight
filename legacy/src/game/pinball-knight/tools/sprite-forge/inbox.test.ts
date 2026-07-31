@@ -44,7 +44,7 @@ import { join } from "node:path";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
 import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from "../../render/atlas-census";
 import { sliceSheet, equalCells, type Cell } from "./slice";
-import { crushCell, registerCell, sheetScale } from "./register";
+import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
 import { labelRows, parseName, unknownClips } from "./labels";
 import { matte, rgbHex, type MatteOptions } from "./matte";
 import type { SheetManifest } from "./manifest";
@@ -183,7 +183,12 @@ describe("sprite inbox", () => {
       const shape = rows.map((r) => r.cells.length).join("/");
       const labels = labelRows(rows.map((r) => r.cells.length), named);
 
-      const k = sheetScale(cells, px);
+      // The LIVING rows vote on the scale; a death sprawl only clamps itself.
+      // Without sidecar names every row is "alive" — same rule as aliveScale.
+      const aliveCells: Cell[] = named
+        ? rows.flatMap((r, i) => (named[i] === "death" ? [] : r.cells))
+        : cells;
+      const k = sheetScale(aliveCells.length ? aliveCells : cells, px);
       const outDir = join(WORK, name);
       rmSync(outDir, { recursive: true, force: true });
       mkdirSync(outDir, { recursive: true });
@@ -193,7 +198,7 @@ describe("sprite inbox", () => {
       for (let i = 0; i < cells.length; i++) {
         // Blit from the CANVAS, not the decoded image: after matting they
         // differ, and the image still has its opaque background.
-        const buf = registerCell(sc as unknown as CanvasImageSource, cells[i], k, px);
+        const buf = registerCell(sc as unknown as CanvasImageSource, cells[i], cellScalePx(cells[i], k, px), px);
         const bctx = buf.getContext("2d");
         if (!bctx) throw new Error("[ingest] no 2D context for the cel buffer");
         const declared = declaredSet(bctx.getImageData(0, 0, px, px).data, pal);

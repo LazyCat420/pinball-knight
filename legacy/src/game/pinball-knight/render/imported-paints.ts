@@ -18,7 +18,8 @@
  * kind of thing that looks like a feature until a player walks away from the
  * camera and the creature is still staring at them.
  */
-import { ART_BOX, artScale, cellPlacement, type SheetManifest } from "../tools/sprite-forge/manifest";
+import { ART_BOX, aliveScale, cellPlacement, cellScale, type SheetManifest } from "../tools/sprite-forge/manifest";
+import { resampleCell, type ResampleStrategy } from "../tools/sprite-forge/resample";
 import type { ActorPaints, ClipName, Dir, FramePaint } from "../engine/render/paint-types";
 
 /** A decoded sheet plus the rects that cut it up. */
@@ -68,19 +69,97 @@ function decode(src: string): Promise<HTMLImageElement | null> {
 }
 
 /**
+ * The strategy imported cells resample with. `kcentroid` won the three-way
+ * measured in `resample.ts`'s header; `scripts/sandbox.mjs cel` renders all
+ * three side by side if that ever needs re-litigating.
+ *
+ * `bilinear` is not a strategy anyone should ship — it is the pre-fix
+ * one-hop `drawImage` path, kept ONLY so the sandbox can render "what the
+ * game used to do" next to the alternatives without re-implementing it (a
+ * harness that restates the code it compares against only tests itself).
+ */
+export type ImportFilter = ResampleStrategy | "bilinear";
+
+const STRATEGY: ImportFilter = "kcentroid";
+
+/**
  * One cell as a `FramePaint`.
  *
- * `imageSmoothingEnabled` is left ON, matching what `paintInArtSpace` sets and
- * what the forge's own preview path does. It is not a fidelity choice — the
- * crush that follows is a hard palette snap at a lower resolution, so this blit
- * is a downscale into a supersampled buffer, exactly like a painter's curves.
- * Turning it off here would alias the source before the crush ever sees it.
+ * ── WHY NOT ONE `drawImage` ────────────────────────────────────────────────
+ * This used to hand the browser the whole scale in a single smoothed blit.
+ * At the 2.5-3× downscales a sheet arrives at, bilinear samples a 2×2
+ * neighbourhood and SKIPS most of the source — the mush the census measured
+ * as isolated 46%. The cell is now resampled ONCE per destination size by
+ * `resampleCell` (premultiplied area coverage + per-texel k-centroid) and
+ * cached; what `drawImage` gets afterwards is a ~1:1 blit.
+ *
+ * The blit stays in ART UNITS under the CURRENT transform rather than
+ * resetting to identity, because `withRecoil`'s stagger frames run this paint
+ * under a rotation — an identity blit would draw the recoil axis-aligned. The
+ * sub-pixel translation that leaves is the only browser resample left, and the
+ * crush's own box filter absorbs it.
+ *
+ * The cel buffer's size comes from `ctx.canvas.width`: `paintInArtSpace` maps
+ * the whole `ART_BOX` onto the whole buffer, so the buffer edge IS the art
+ * box edge at device scale. Reading the transform instead would double-count
+ * the stagger rotation.
  */
-function cellPaint(image: CanvasImageSource, cell: readonly number[], k: number): FramePaint {
+function cellPaint(
+  image: CanvasImageSource,
+  cell: readonly number[],
+  k: number,
+  cels: Map<string, HTMLCanvasElement>,
+  filter: ImportFilter,
+): FramePaint {
   const p = cellPlacement(cell as [number, number, number, number], k);
+  if (filter === "bilinear") {
+    // The pre-fix path, verbatim — one smoothed drawImage. Sandbox-only.
+    return (ctx) => {
+      ctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+    };
+  }
   return (ctx) => {
-    ctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+    const unit = ctx.canvas.width / ART_BOX;
+    const dw = Math.max(1, Math.round(p.dw * unit));
+    const dh = Math.max(1, Math.round(p.dh * unit));
+    const key = `${p.sx},${p.sy},${dw}x${dh}:${filter}`;
+    let cel = cels.get(key);
+    if (!cel) {
+      cel = buildCel(image, p, dw, dh, filter);
+      cels.set(key, cel);
+    }
+    ctx.drawImage(cel, p.dx, p.dy, dw / unit, dh / unit);
   };
+}
+
+/** Cut the source cell 1:1, resample it properly, hand back a device-px cel. */
+function buildCel(
+  image: CanvasImageSource,
+  p: { sx: number; sy: number; sw: number; sh: number },
+  dw: number,
+  dh: number,
+  strategy: ResampleStrategy,
+): HTMLCanvasElement {
+  const src = document.createElement("canvas");
+  src.width = p.sw;
+  src.height = p.sh;
+  // willReadFrequently: this canvas exists to be read straight back — without
+  // the hint the readback is a GPU stall (see crushableContext in the engine).
+  const sctx = src.getContext("2d", { willReadFrequently: true });
+  if (!sctx) throw new Error("[dungeon] no 2D context for the import cel");
+  sctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, 0, 0, p.sw, p.sh);
+  const out = resampleCell(sctx.getImageData(0, 0, p.sw, p.sh), dw, dh, strategy);
+  const cel = document.createElement("canvas");
+  cel.width = dw;
+  cel.height = dh;
+  const cctx = cel.getContext("2d");
+  if (!cctx) throw new Error("[dungeon] no 2D context for the import cel");
+  // Through createImageData rather than an ImageData constructor: node has no
+  // ImageData global, and this path runs under the node test harness too.
+  const img = cctx.createImageData(dw, dh);
+  img.data.set(out.data);
+  cctx.putImageData(img, 0, 0);
+  return cel;
 }
 
 /**
@@ -91,17 +170,28 @@ function cellPaint(image: CanvasImageSource, cell: readonly number[], k: number)
  * than packed under a name nothing plays. A silently unused clip is how you end
  * up with an actor that has no stagger and no error to explain it.
  */
-function clipsFor(sheet: ImportedSheet, known: ReadonlySet<string>): Partial<Record<ClipName, FramePaint[]>> {
+function clipsFor(
+  sheet: ImportedSheet,
+  known: ReadonlySet<string>,
+  filter: ImportFilter,
+): Partial<Record<ClipName, FramePaint[]>> {
   const all = sheet.manifest.rows.flatMap((r) => r.cells);
   if (!all.length) return {};
-  const k = artScale(all);
+  // The LIVING clips set the scale; a death sprawl only clamps its own frames.
+  // artScale-over-everything let the jester's flat sprawl shrink the walking
+  // jester to 58% of its box — see aliveScale's header for the numbers.
+  const k = aliveScale(sheet.manifest.rows);
+  // Resampled-cel cache, shared across the sheet: three facings reuse the same
+  // FramePaints by reference, but distinct camera-rung buffers (tests drive
+  // several) land distinct entries, keyed by destination size.
+  const cels = new Map<string, HTMLCanvasElement>();
   const out: Partial<Record<ClipName, FramePaint[]>> = {};
   for (const row of sheet.manifest.rows) {
     if (!known.has(row.clip)) {
       console.warn(`[dungeon] ${sheet.manifest.name}: row "${row.clip}" is not a ClipName — dropped.`);
       continue;
     }
-    out[row.clip as ClipName] = row.cells.map((c) => cellPaint(sheet.image, c, k));
+    out[row.clip as ClipName] = row.cells.map((c) => cellPaint(sheet.image, c, cellScale(c, k), cels, filter));
   }
   return out;
 }
@@ -123,10 +213,10 @@ const PLAYABLE: ReadonlySet<ClipName> = new Set<ClipName>([
  * frames from, and what the animator falls back to for any clip an actor does
  * not author. A sheet without one is not a monster, it is a pile of frames.
  */
-export function importedPaints(sheets: readonly ImportedSheet[]): ActorPaints | null {
+export function importedPaints(sheets: readonly ImportedSheet[], filter: ImportFilter = STRATEGY): ActorPaints | null {
   const byDir = new Map<Dir, Partial<Record<ClipName, FramePaint[]>>>();
   for (const s of sheets) {
-    const clips = clipsFor(s, PLAYABLE as ReadonlySet<string>);
+    const clips = clipsFor(s, PLAYABLE as ReadonlySet<string>, filter);
     if (Object.keys(clips).length) byDir.set(s.manifest.dir, clips);
   }
   if (!byDir.size) return null;
