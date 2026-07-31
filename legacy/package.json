@@ -12,6 +12,7 @@
     "lint": "next lint",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:budget": "scripts/with-cores.sh CPUS=4 --wsl -- vitest run",
     "playtest": "node scripts/playtest.mjs",
     "playtest:gpu": "node scripts/playtest.mjs --gpu --profile",
     "playtest:soak": "node scripts/playtest.mjs --mode bounce --secs 300 --profile",

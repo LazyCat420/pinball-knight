@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # with-cores.sh — give a browser perf run its own physical CPU cores.
 #
-#   scripts/with-cores.sh [CPUS=n|CPUS=all] [--timeout SECS] -- <command...>
+#   scripts/with-cores.sh [CPUS=n|CPUS=all] [--wsl] [--timeout SECS] -- <cmd...>
+#
+# TWO MODES, and the difference is not cosmetic:
+#   (default)  a WINDOWS browser run. The mask is applied by the Windows
+#              scheduler to a real process → genuine host-core ISOLATION.
+#   --wsl      a guest-side job (vitest, builds). taskset + BDB_JOBS bound how
+#              MUCH of the box it draws, but NOT which part — see the measured
+#              numbers at the --wsl branch below. Use it to stop a suite
+#              lagging the machine, never to make two guest runs comparable.
 #
 # One flock lock pool at ~/.cache/bdb-cpu-slots/ (machine-global: every
 # worktree's copy of this script contends on the same files), one lock per
@@ -41,17 +49,18 @@ LOCKDIR="${BDB_SLOT_LOCKDIR:-$HOME/.cache/bdb-cpu-slots}"
 mkdir -p "$LOCKDIR"
 
 # ── args ────────────────────────────────────────────────────────────────────
-ASK=1 TIMEOUT=300
+ASK=1 TIMEOUT=300 MODE=win
 while [ $# -gt 0 ]; do
   case "$1" in
     CPUS=all) ASK=all; shift ;;
     CPUS=*)   ASK="${1#CPUS=}"; shift ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
+    --wsl)    MODE=wsl; shift ;;
     --) shift; break ;;
     *) echo "with-cores.sh: unknown arg '$1'" >&2; exit 64 ;;
   esac
 done
-[ $# -gt 0 ] || { echo "usage: with-cores.sh [CPUS=n|all] [--timeout s] -- cmd..." >&2; exit 64; }
+[ $# -gt 0 ] || { echo "usage: with-cores.sh [CPUS=n|all] [--wsl] [--timeout s] -- cmd..." >&2; exit 64; }
 
 # ── topology, from WINDOWS (the scheduler that applies the mask; nproc in
 #    WSL answers for the VM, which can be capped independently) ─────────────
@@ -244,11 +253,43 @@ mask=0
 for ((i = 0; i < ASK; i++)); do
   for ((t = 0; t < SMT; t++)); do mask=$(( mask | (1 << (SMT * (FIRST + i) + t)) )); done
 done
+cpulist=""
+for ((i = 0; i < ASK; i++)); do
+  for ((t = 0; t < SMT; t++)); do cpulist+="${cpulist:+,}$(( SMT * (FIRST + i) + t ))"; done
+done
 export BDB_SLOT_FIRST=$FIRST
 export BDB_SLOT_COUNT=$ASK
 export BDB_CDP_PORT=$(( 9400 + FIRST ))
 export BDB_WIN_AFFINITY_HEX=$(printf '%X' "$mask")
 export BDB_SLOT_DIR="$(printf 'bdb-slot-%02d' "$FIRST")"
+export BDB_SLOT_CPULIST="$cpulist"
+# Physical cores granted. Test runners size their worker pool from this — a
+# process confined by taskset still sees all 24 logical CPUs via nproc and
+# would otherwise spawn 24 workers to timeshare the few it may use.
+export BDB_JOBS=$ASK
 ccd_clean "$FIRST" "$ASK" && ccd_note="" || ccd_note="  [STRADDLES an L3 boundary — do not A/B against another slot]"
+
+if [ "$MODE" = wsl ]; then
+  # WSL-side work: bound CONSUMPTION, do not claim isolation.
+  #
+  # MEASURED on this box, do not re-litigate: pinning a guest process to
+  # vCPUs 20-23 put only 13% of its load on host CPUs 20-23 — an UNPINNED
+  # control put 15% there, and an even smear across 24 predicts 17%. The
+  # Hyper-V root scheduler floats guest vCPU threads across every host core,
+  # so `taskset` in here buys ZERO host-core isolation. Fencing the VM itself
+  # is not available either: vmwp/vmmemWSL affinity reads 0x0 and writes are
+  # denied (protected process).
+  #
+  # What it DOES buy, also measured: 8 spinners confined to 4 vCPUs drew ~4.4
+  # host CPUs where unconfined they drew ~7.5. The cap is honoured almost
+  # exactly, which is what keeps a test suite from making the desktop lag.
+  #
+  # Taking real slot locks matters even without isolation: it makes WSL work
+  # and browser runs contend for ONE budget, so the box cannot be sold twice.
+  echo "with-cores.sh: [wsl] slots $FIRST..$((FIRST + ASK - 1)) of pool 0..$((POOL - 1)) (${PHYS} cores, ${RESERVE} reserved)  cpus $cpulist  jobs $BDB_JOBS" >&2
+  echo "with-cores.sh: [wsl] bounds CONSUMPTION only — guest pinning gives NO host-core isolation, so this run can still land on a pinned browser's cores." >&2
+  exec taskset -c "$cpulist" "$@"
+fi
+
 echo "with-cores.sh: slots $FIRST..$((FIRST + ASK - 1)) of pool 0..$((POOL - 1)) (${PHYS} cores, ${RESERVE} reserved for the desktop)  port $BDB_CDP_PORT  affinity 0x$BDB_WIN_AFFINITY_HEX  dir $BDB_SLOT_DIR${ccd_note}" >&2
 exec "$@"
