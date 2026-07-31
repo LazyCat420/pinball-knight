@@ -208,6 +208,13 @@ async function gameMode() {
    * edition; clear state or say which floor you actually shot.
    */
   const fresh = arg("fresh", "0") !== "0";
+  /**
+   * `--do "__fx.grid()"` — run an expression AFTER the orb gate, instead of
+   * spawning. gui-shot.mjs has the same flag but NOT the gate, and it shot the
+   * descent card on its first fx run (the fourth time this repo has
+   * screenshotted a loading screen). One gated harness beats two ungated ones.
+   */
+  const doExpr = arg("do", "");
 
   const alive = async () => {
     try {
@@ -277,7 +284,19 @@ async function gameMode() {
   const backend = await page.evaluate(() => window.__renderBackendResolved ?? "unknown");
   console.log(`▶ backend=${backend} imported=${imported} orb=${orb}`);
 
-  const spawned = await page.evaluate(({ kinds, n }) => {
+  if (doExpr) {
+    const r = await page.evaluate((expr) => {
+      try {
+        // eslint-disable-next-line no-eval
+        return String(eval(expr));
+      } catch (e) {
+        return `THREW: ${e.message}`;
+      }
+    }, doExpr);
+    console.log(`▶ ${doExpr} → ${r}`);
+  }
+
+  const spawned = kinds.length === 0 || doExpr ? "(none — --do run)" : await page.evaluate(({ kinds, n }) => {
     if (typeof window.__lab !== "function") return "NO __lab";
     for (let i = 0; i < kinds.length; i++) {
       if (i === 0) window.__lab.only(kinds[i], n);

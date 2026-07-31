@@ -7,6 +7,45 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🖤 THE BLACK BOXES — one bug, three symptoms, FIXED (2026-07-31, `main@68f2948`)
+
+Reported from the game: black boxes under the fire trail, under the E-skill
+sigil, and under the player in the tavern. One cause.
+
+`MRTNode` defaults every attachment except `output` to NO BLENDING, and
+pixel-pass kept that default on purpose — "an additive spark should write its
+albedo opaquely rather than smear into the surface underneath". **An unblended
+write stamps the ENTIRE QUAD, including every fragment the player cannot
+see.** The contact shadow is the clearest case: its texture is a radial
+gradient whose RGB is black EVERYWHERE and whose alpha is the only thing that
+varies, so the albedo slot got a full black square, the snap chose void for
+all of it, and every actor stood on a black tile. Additive sparks are the same
+story inverted — "invisible" for an additive pixel means BLACK.
+
+Latent since the albedo attachment landed; **visible only once `eb4a9c6`/
+`d0bbb5b` moved the snap ONTO the albedo.** A fix that is correct in isolation
+armed a bug three commits away in another file. That is the transferable part.
+
+The slot now uses each material's own blending (`setBlendMode("albedo",
+MaterialBlending)`), which is right for both shapes with no per-material
+opt-in: opaque geometry is alpha 1 → src, unchanged; an additive surround is
+alpha ~0 → dst, preserved; a soft decal darkens the albedo by its own alpha,
+which is what a shadow IS. Needs `OES_draw_buffers_indexed` on WebGL2 — probed
+present on the production adapter, and three's fallback without it is the same
+behaviour anyway.
+
+VERIFIED ON PRODUCTION (WebGL, the path players are on): contact shadows clean
+under every actor; `__fx.grid()` shows fire/frost/rod/sigil clean. The one
+remaining black ellipse is `oil` at `dx:-2.4`, which is a BLACK MATERIAL by
+design — check `tar` alongside it before calling that one a bug. Tavern floor
+luma is a uniform 26 on both sides of the knight (the diagonal band there is
+the wall's shadow map, not a box).
+
+⚠️ `scripts/gui-shot.mjs` HAS NO ORB GATE and shot the descent card on the
+first fx run — the fourth loading-screen screenshot this repo has taken. Use
+`scripts/sandbox.mjs --mode game --do "__fx.grid()"`, which is gated; `--do`
+was added for exactly this reason rather than fixing the second harness.
+
 ## 🎛️ GRAIN: measured, and the palette experiment REVERTED (2026-07-31 evening, `main@9c7c961`)
 
 Full receipts with screenshots: the session report artifact ("Pinball Knight —
