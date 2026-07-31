@@ -69,7 +69,7 @@ const { values: a } = parseArgs({
     backend: { type: "string", default: "auto" },
     /** Pin the dungeon run seed so two runs build the identical floor. */
     seed: { type: "string" },
-    "cdp-port": { type: "string", default: "9333" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
     "max-frame-ms": { type: "string", default: "0" },
     /** Enforce --max-frame-ms even under software rendering (not advised). */
     "force-budget": { type: "boolean", default: false },

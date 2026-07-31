@@ -13,7 +13,7 @@ import { existsSync } from "node:fs";
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5301/dungeon?no-intro=1&gpu=webgpu" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     steps: { type: "string", default: "" },
     outdir: { type: "string", default: "/tmp/claude-1000/-home-lazycat-github-projects-sun/7f34d77f-110e-49c6-a4be-b1e682843257/scratchpad/shots" },
     w: { type: "string", default: "1600" },

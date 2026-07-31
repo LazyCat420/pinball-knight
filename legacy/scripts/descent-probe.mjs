@@ -32,7 +32,7 @@ import { existsSync } from "node:fs";
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5301/dungeon?no-intro=1&gpu=webgpu" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     out: { type: "string", default: "/tmp/descent-held.png" },
     /** Floors to descend into after boot, so the deeper (slower) path is covered too. */
     floor: { type: "string", default: "6" },

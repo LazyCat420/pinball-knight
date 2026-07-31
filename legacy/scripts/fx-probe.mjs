@@ -15,7 +15,7 @@ import { parseArgs } from "node:util";
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5199/dungeon" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     do: { type: "string", default: "1" },
     boot: { type: "string", default: "16" },
     "shot-diff": { type: "boolean", default: false },

@@ -51,7 +51,7 @@ const { values: a, positionals } = parseArgs({
     out: { type: "string" },
     diff: { type: "boolean", default: false },
     headed: { type: "boolean", default: false },
-    "cdp-port": { type: "string", default: "9333" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
   },
   allowPositionals: true,
 });

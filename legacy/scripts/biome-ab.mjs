@@ -136,7 +136,7 @@ const { values: a } = parseArgs({
     census: { type: "string" },
     before: { type: "string", default: "5199" },
     after: { type: "string", default: "5312" },
-    "cdp-port": { type: "string", default: "9347" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9347" },
     out: { type: "string", default: "/tmp/shots" },
     boot: { type: "string", default: "16" },
     only: { type: "string" }, // comma list of labels to run

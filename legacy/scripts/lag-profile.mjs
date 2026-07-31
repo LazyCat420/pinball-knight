@@ -58,7 +58,7 @@ const { values: a } = parseArgs({
     "hitch-ms": { type: "string", default: "33" },
     top: { type: "string", default: "22" },
     out: { type: "string", default: "" },
-    "cdp-port": { type: "string", default: "9333" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
     headed: { type: "boolean", default: false },
     /** Allow the run on software rendering. Off: SwiftShader answers a
      *  different question and every number would be a lie. */

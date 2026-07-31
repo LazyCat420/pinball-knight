@@ -25,7 +25,7 @@ import sharp from "sharp";
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5199/dungeon" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     /** Comma-separated pair, e.g. "fire,slick". */
     pair: { type: "string" },
     /** A single kind, centred. */

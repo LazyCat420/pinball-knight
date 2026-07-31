@@ -59,7 +59,7 @@ const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5199/dungeon" },
     kind: { type: "string", default: "fire" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     frames: { type: "string", default: "6" },
     gap: { type: "string", default: "120" },
     /** Minimum mean absolute channel difference between consecutive frames. */

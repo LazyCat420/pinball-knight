@@ -42,7 +42,7 @@ import { existsSync } from "node:fs";
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5174/dungeon?no-intro=1" },
-    "cdp-port": { type: "string", default: "9345" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9345" },
     secs: { type: "string", default: "12" },
     headed: { type: "boolean", default: false },
     /** Report the backend but exit 0 even on WebGL — for local poking. */

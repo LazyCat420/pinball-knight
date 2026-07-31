@@ -25,14 +25,13 @@
  */
 import { chromium } from "playwright";
 import { parseArgs } from "node:util";
-import { spawn, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { connectRealGpu, closeHostBrowser } from "./lib/host-chrome.mjs";
 
 const { values: a } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:5174/dungeon?no-intro=1&autostart=1" },
     gpu: { type: "boolean", default: false },
-    "cdp-port": { type: "string", default: "9333" },
+    "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
     only: { type: "string" },
     headed: { type: "boolean", default: false },
   },
@@ -40,44 +39,6 @@ const { values: a } = parseArgs({
 
 const CDP_PORT = Number(a["cdp-port"]);
 const log = (...m) => console.log(...m);
-
-const WIN_CHROME = [
-  "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-  "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-  "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-];
-
-async function cdpAlive(port) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) });
-    return r.ok;
-  } catch { return false; }
-}
-
-let spawnedHost = null;
-async function connectRealGpu() {
-  if (await cdpAlive(CDP_PORT)) return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
-  const exe = WIN_CHROME.find((p) => existsSync(p));
-  if (!exe) return null;
-  spawnedHost = spawn(exe, [
-    a.headed ? "--new-window" : "--headless=new",
-    `--remote-debugging-port=${CDP_PORT}`, "--remote-allow-origins=*",
-    "--user-data-dir=C:\\Temp\\bdb-playtest", "--no-first-run", "--no-default-browser-check", "about:blank",
-  ], { detached: true, stdio: "ignore" });
-  spawnedHost.unref();
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    if (await cdpAlive(CDP_PORT)) return chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: 120_000 });
-  }
-  return null;
-}
-function closeHost() {
-  if (!spawnedHost) return;
-  try {
-    execSync(`powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE '%bdb-playtest%'\\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
-      { stdio: "ignore", timeout: 20_000 });
-  } catch { /* best effort */ }
-}
 
 // ── The checks ─────────────────────────────────────────────────────────────
 // Each returns {status, detail}. They run in one page, in order, and each is
@@ -321,7 +282,7 @@ const CHECKS = [
 // ── Runner ─────────────────────────────────────────────────────────────────
 let browser = null, realGpu = false;
 if (a.gpu) {
-  browser = await connectRealGpu();
+  browser = await connectRealGpu({ port: CDP_PORT, headed: a.headed, log });
   realGpu = !!browser;
   if (!browser) console.warn("⚠ no host browser for --gpu; using software rendering");
 }
@@ -357,7 +318,7 @@ try {
   await page.waitForFunction(() => window.__dungeonPlayer?.()?.active === true, { timeout: 120_000 });
 } catch (e) {
   console.error(`✗ could not reach a playable dungeon — is the dev server running?\n  ${e.message}`);
-  await browser.close(); closeHost(); process.exit(2);
+  await browser.close(); closeHostBrowser(); process.exit(2);
 }
 // God mode: these checks are about mechanics, not survival. A bot that dies
 // mid-audit would report SKIPs that look like failures.
@@ -385,7 +346,7 @@ await page.evaluate(async () => {
 });
 if (await page.evaluate(() => window.__dungeonPlayer()?.plungerArmed)) {
   console.error("✗ could not leave the launch chute — every check would be meaningless. Aborting.");
-  await browser.close(); closeHost(); process.exit(2);
+  await browser.close(); closeHostBrowser(); process.exit(2);
 }
 
 const picked = a.only ? CHECKS.filter((c) => c.id === a.only) : CHECKS;
@@ -447,5 +408,5 @@ if (pageErrors.length) {
 }
 
 await browser.close();
-closeHost();
+closeHostBrowser();
 process.exit(fail.length || pageErrors.length ? 1 : 0);
