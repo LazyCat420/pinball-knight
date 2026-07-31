@@ -3798,8 +3798,15 @@ function chomperFrame(dir: Dir, open: number, dead = false): FramePaint {
       ellShaded(ctx, 54, GROUND - 14, 12, 8, R_PLANT);
       return;
     }
-    // pot/root base
-    plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_PLANT);
+    // Pot/root base, in LEATHER rather than the plant ramp (2026-07-31).
+    //
+    // The whole creature used to be one green family — pot, stalk, leaves and
+    // both jaws — so at the shipped 63px grid it crushed to a single green blob
+    // and the roster census scored it the noisiest actor in the game (isolated
+    // 38.3%, 17 invented). One material cannot separate a form; a second one
+    // can. Terracotta is also the reading that makes a rooted monster make
+    // sense, so this costs nothing in fiction.
+    plateShaded(ctx, [[52, GROUND], [76, GROUND], [72, GROUND - 12], [56, GROUND - 12]], R_LEATHER);
     // stalk
     limbShaded(ctx, [64, GROUND - 10], [64, GROUND - 34], 7, R_PLANT);
     // leaf pair
@@ -3815,9 +3822,18 @@ function chomperFrame(dir: Dir, open: number, dead = false): FramePaint {
     // red gullet + white fangs when open
     if (open > 0.15) {
       ellShaded(ctx, 64, my, 9, jaw + 2, R_BLOOD, 0, { rim: false });
-      for (const fx of [56, 62, 68, 72]) {
-        figDetail(ctx, [[fx, my - jaw + 2], [fx, my - jaw + 6]], 1.6, 22);
-        figDetail(ctx, [[fx, my + jaw - 2], [fx, my + jaw - 6]], 1.6, 22);
+      // THREE fangs per jaw at 3.2 units, not four at 1.6.
+      //
+      // The cel is 128 units and ships to a 63-texel grid, so a cel unit is
+      // ~0.49 texels: the old 1.6-unit fang was 0.78 of a texel — SUB-TEXEL,
+      // which cannot render as a tooth. It rendered as eight sources of
+      // confetti instead, and the census counted them (17 invented indices,
+      // the joint-worst on the roster). 3.2 units clears 1.5 texels, so a fang
+      // is a fang. Same lesson as `sprite-fidelity-is-ppu-not-filtering`:
+      // detail below the grid is not detail, it is noise.
+      for (const fx of [57, 64, 71]) {
+        figDetail(ctx, [[fx, my - jaw + 2], [fx, my - jaw + 7]], 3.2, 22);
+        figDetail(ctx, [[fx, my + jaw - 2], [fx, my + jaw - 7]], 3.2, 22);
       }
     }
     if (dir !== "N") figGlow(ctx, 64, my, 1.6, 13, 18); // a red glint deep in the throat

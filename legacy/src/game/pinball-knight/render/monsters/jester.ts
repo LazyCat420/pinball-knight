@@ -56,12 +56,29 @@ import { paletteCss } from "../palette";
 import type { ActorPaints, Dir, FramePaint } from "../../engine/render/paint-types";
 
 // ── MATERIALS ───────────────────────────────────────────────────────────────
-/** Motley red — the blood ramp, the palette's only red family. */
-const R_RED: Ramp = [11, 12, 13];
-/** Motley gold — the torch ramp. The census entry nothing was spending. */
-const R_GOLD: Ramp = [15, 16, 17];
-/** Ruff, gloves, stockings, greasepaint: bone, the figure's brightest value. */
-const R_BONE_W: Ramp = [20, 21, 22];
+//
+// ⚠️ RETUNED 2026-07-31 TO MATCH THE SHIPPED SHEET. `public/sprites/jester-S`
+// is this creature's imported art and it is what players see by default; this
+// painter is the fallback and the A/B arm. They had drifted into two different
+// costumes — the sheet is DARK RED + GOLD + CREAM, the painter was bright red +
+// COLD STEEL WHITE — so the lab strip compared a maroon jester against a white
+// one and the difference read as "the pipeline is wrong" when it was only two
+// palettes. Painted and imported have to be the same creature or the A/B
+// measures the costume instead of the conversion.
+//
+// The three ramps below are chosen for VALUE separation, which is the rule this
+// whole session measured: red bottoms out in blood, gold occupies the middle of
+// the torch ramp, cream takes its top. Two clear steps between the motley's
+// gold and the ruff's cream, so the checker still separates from the collar
+// after a luma-weighted snap.
+/** Motley red — blood, one step deeper than before to match the sheet's maroon. */
+const R_RED: Ramp = [10, 11, 12];
+/** Motley gold — the lower torch ramp. The census entry nothing was spending. */
+const R_GOLD: Ramp = [14, 15, 16];
+/** Ruff, gloves, stockings, greasepaint. CREAM, not bone: the sheet's collar is
+ *  warm, and cold steel-white beside a warm motley was the whole mismatch. Sits
+ *  two steps above `R_GOLD`'s top so the scallops keep their edge. */
+const R_BONE_W: Ramp = [16, 17, 18];
 /** Curl-toe shoes: leather-dark, so the feet anchor on the floor. */
 const R_SHOE: Ramp = [26, 27, 28];
 /** The plate's rim and the bells — gold one step darker, so the rim reads as
