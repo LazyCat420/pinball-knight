@@ -7,6 +7,48 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🎨 SPRITE WAVE — jester matched to its sheet, chomper de-confettied (2026-07-31, `main@d0bfcd4`)
+
+Full report with before/after strips: the session artifact "Sprite Quality
+Report". `scripts/roster-sheet.mjs` (new) reproduces the evidence in a second.
+
+**The jester painter was wearing a different costume from its own art.** The
+sheet is dark red + gold + cream; the painter was bright red + COLD STEEL
+WHITE. The lab A/B was therefore comparing a maroon jester against a white one,
+and the difference read as a pipeline defect when it was two palettes. Retuned
+for value separation: blood 10-12, motley gold 14-16, ruff/gloves/stockings to
+CREAM 16-18 (two steps above the gold so the scallops keep their edge). All six
+pinned claims hold.
+
+**The chomper was drawing teeth smaller than a pixel.** A cel unit is ~0.49
+texels at the shipped grid, and the fangs were 1.6 units — 0.78 of a texel, so
+eight sources of confetti rather than eight teeth. Three per jaw at 3.2 units
+now. Its pot was also the same green ramp as the plant, so the whole creature
+crushed to one blob; the pot is leather now. isolated 38.3 → 34.8, invented
+17 → 14.
+
+### ⚠️ THE METRIC POINTS THE WRONG WAY — read this before the next sprite wave
+
+`isolated%` is confounded by SIZE. The cleanest actors in the game are the
+BIGGEST (golem 3.5%, boss 9.7%, brute 11.9%) and the noisiest are the SMALLEST
+(chomper, bat, goblin, pin), because a small sprite is mostly perimeter.
+Ranking by it sends you to redraw monsters for being small. **Rank by `entries`
+and `invented`; use isolated% only to compare a sprite against ITSELF across a
+change.** Third time this session a per-unit noise metric misled — it also
+rewarded blur in the pipeline wave and scored a frame-wide maroon regression as
+"clean".
+
+### Ranked backlog for the rest of the roster
+
+- **9 of 20 monsters declare more than the 20-entry atlas lock** — sporeling
+  (28), croaker (27), chomper (28 after), rotortail (26), goblin/stiltneck (23),
+  hound/magnet (21). The crush, not the artist, picks what gets evicted. Same
+  treatment as the chomper: hunt sub-texel detail and single-material regions.
+- **goblin and spider carry 16-17 invented indices** — most "colours the crush
+  made up" on the roster, despite reading fine.
+- **hound and spitter are dark-on-dark** — poor silhouette against the Cold
+  Crypt floor, which no census here measures. Needs its own probe.
+
 ## 🖤 THE BLACK BOXES — one bug, three symptoms, FIXED (2026-07-31, `main@68f2948`)
 
 Reported from the game: black boxes under the fire trail, under the E-skill
