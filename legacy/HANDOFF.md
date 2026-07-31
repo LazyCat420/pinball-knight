@@ -7,6 +7,26 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🃏 NEW JESTER SHEET LIVE — the regenerated source hits painter parity (2026-07-31)
+
+The player regenerated the jester with the authoring rules (value separation,
+pixel-committed edges, consistent scale): `inbox/jester-S.png` replaced, public
+pair regenerated. Census through the real game path: **imported 40.3% isolated
+vs the painter's 38.2%** — the old sheet was 12pp behind, this one is 2pp, at
+visibly higher character. Sliced 4/4/6/2/4 with no overrides; same sidecar.
+
+- ⚠ The source's soft DROP SHADOWS survive as white blobs at the feet in a few
+  frames (stumble, death) and lift the body a texel or two — bbox registration.
+  Next regeneration: "no drop shadows" in the prompt. A shadow-strip pass or
+  a baseline census gate is the pipeline-side fix if it recurs.
+- ⚠ FOUND A TEST-ORDER RACE: `ab.test.ts` reads `public/sprites/` while
+  `inbox.test.ts` rewrites it, and vitest runs the files in PARALLEL — one
+  `npm run sprites` after swapping a sheet reports the OLD sheet's A/B. Re-run
+  `npx vitest run .../ab.test.ts` alone after any inbox change, or sequence
+  the two files if this bites again.
+- `samples/jester-portrait.png` is a single-pose design reference (1254px) the
+  player generated — the spec for a future hand-written painter upgrade.
+
 ## 🔬 SPRITE FIDELITY — the imported jester was half-size and mush; two root causes, both fixed (2026-07-31)
 
 The player's screenshot showed it exactly: imported sprites "crusty/dirty, no
