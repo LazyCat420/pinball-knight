@@ -39,7 +39,7 @@
  */
 import * as THREE from "three";
 import type { WebGPURenderer } from "three/webgpu";
-import { NodeMaterial } from "three/webgpu";
+import { BlendMode, NodeMaterial } from "three/webgpu";
 import {
   diffuseColor,
   dot,
@@ -1370,13 +1370,51 @@ export function createPixelPass(
    * If you need one, give it a `colorNode` instead, or set its own
    * `material.mrtNode = mrt({ output, albedo: <its colour> })`.
    *
-   * Blending: `MRTNode` defaults every output other than `output` to NO
-   * blending, so a 30%-alpha decal or an additive spark writes its albedo
-   * opaquely rather than smearing it into the surface underneath. That is what
-   * we want — the family should come from the material a pixel most belongs to,
-   * not from a weighted average of two materials that would land in a third.
+   * ── BLENDING: THE ALBEDO SLOT FOLLOWS THE MATERIAL (fixed 2026-07-31) ──────
+   *
+   * `MRTNode` defaults every output other than `output` to NO BLENDING, and
+   * this file used to keep that default with the argument that "a 30%-alpha
+   * decal or an additive spark should write its albedo opaquely rather than
+   * smearing it into the surface underneath". That argument is wrong, and it
+   * shipped a bug you can see from across the room: **every soft-alpha effect
+   * drew a BLACK BOX.**
+   *
+   * The mechanism, in one line: an unblended write stamps the ENTIRE QUAD,
+   * including every fragment the player cannot see. A contact shadow's texture
+   * is a radial gradient whose RGB is black EVERYWHERE and whose alpha is the
+   * only thing that varies, so the albedo attachment received a full black
+   * square, the snap chose void for all of it, and the actor stood on a black
+   * tile. Additive sparks are the same story told in reverse: "invisible" for
+   * an additive pixel means BLACK (adding nothing), so their transparent
+   * surround stamped void too — the discs around the fire trail and the ring
+   * under the E-skill sigil.
+   *
+   * It was invisible until `eb4a9c6`/`d0bbb5b` moved the snap onto the albedo.
+   * Before that the snap read the lit frame, where the blend had already
+   * happened and the surround had already vanished.
+   *
+   * So the slot now uses each material's OWN blending, which makes the
+   * arithmetic come out right for both shapes without a per-material opt-in:
+   *
+   *   opaque geometry   alpha 1, NormalBlending  → src·1 + dst·0 = src, as before
+   *   additive spark    alpha ~0 in the surround → src·0 + dst·1 = dst, PRESERVED
+   *   soft decal/shadow alpha a                  → the albedo darkens by `a`,
+   *                                                which is what a shadow IS
+   *
+   * The old reasoning's fear — "a weighted average of two materials landing in
+   * a third" — is real but bounded: it can only happen where a translucent
+   * effect genuinely covers a surface, and a wrong family under a 40% decal is
+   * a far smaller defect than a void rectangle under every actor in the game.
+   *
+   * ⚠️ Needs `OES_draw_buffers_indexed` on the WebGL2 path (per-attachment
+   * blend funcs). Verified present on the shipped production adapter; without
+   * it three warns once and falls back to the material's blending for ALL
+   * attachments, which is the same behaviour this line asks for anyway.
    */
-  const sceneMrt = mrt({ output: output, albedo: diffuseColor });
+  const sceneMrt = mrt({ output: output, albedo: diffuseColor }).setBlendMode(
+    "albedo",
+    new BlendMode(THREE.MaterialBlending),
+  );
 
   // Bloom works at half resolution — cheaper, and a wider blur for free. These
   // track the render size (exactly half, since renderW/H are guaranteed even)
