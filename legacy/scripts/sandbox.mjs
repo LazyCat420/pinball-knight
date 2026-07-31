@@ -228,10 +228,33 @@ async function gameMode() {
   page.on("console", (m) => { if (/imported art|pipeline|error/i.test(m.text())) console.log("[page]", m.text()); });
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.__dungeonPlayer?.()?.active === true, null, { timeout: 90_000 });
-  await page.waitForTimeout(4000); // idle backfill + applyImportedArt both land in here
+
+  // `active` is TRUE while the descent card is still up — this harness shot a
+  // loading screen on its first outing, the third time this repo has made that
+  // exact mistake. The established gate (biome-ab.mjs) is a POSITIVE signal:
+  // the health orb paints in palette 31 (#6fd0e8) and nothing on the descent
+  // card uses it — measured ~2700 orb pixels on a real floor, ZERO on the card.
+  const { default: sharp } = await import("sharp");
+  const orbPixels = async (buf) => {
+    const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+    let orb = 0;
+    for (let y = Math.floor(info.height * 0.88); y < info.height; y++)
+      for (let x = 0; x < info.width; x++) {
+        const p = (y * info.width + x) * info.channels;
+        if (((data[p] << 16) | (data[p + 1] << 8) | data[p + 2]) === 0x6fd0e8) orb++;
+      }
+    return orb;
+  };
+  let orb = 0;
+  for (let i = 0; i < 45 && orb < 500; i++) {
+    await page.waitForTimeout(1000);
+    orb = await orbPixels(await page.screenshot());
+  }
+  if (orb < 500) throw new Error(`health orb never appeared (${orb} px) — still on the descent card, refusing to shoot it`);
+  await page.waitForTimeout(2500); // idle backfill + applyImportedArt land in here
 
   const backend = await page.evaluate(() => window.__renderBackendResolved ?? "unknown");
-  console.log(`▶ backend=${backend} imported=${imported}`);
+  console.log(`▶ backend=${backend} imported=${imported} orb=${orb}`);
 
   const spawned = await page.evaluate(({ kinds, n }) => {
     if (typeof window.__lab !== "function") return "NO __lab";

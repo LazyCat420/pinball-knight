@@ -65,7 +65,11 @@ asserts validity (non-empty, palette-true), deliberately not a fidelity bar.
   shipping seam (`importedPaints(sheets, filter)`).
 - **game**: host-Chrome CDP (gui-shot recipe), boots a run, `__lab.only`
   spawns the kinds, screenshots the floor. `--spawn jester,rotortail --n 6`,
-  `--imported 0` for the painter build of the same creatures.
+  `--imported 0` for the painter build of the same creatures. Gated on the
+  health ORB (~2700 px of palette 31, 0 on the descent card) because its first
+  outing shot the loading screen — the THIRD time this repo made that exact
+  mistake; `active === true` remains a lie while the card is up. Verified on
+  production post-deploy: orb=2699, both kinds on the floor, knight-height.
 
 ### Still open
 
