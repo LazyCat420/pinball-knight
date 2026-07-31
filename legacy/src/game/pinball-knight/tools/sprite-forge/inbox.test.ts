@@ -46,6 +46,7 @@ import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from 
 import { sliceSheet, equalCells, type Cell } from "./slice";
 import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
 import { labelRows, parseName, unknownClips } from "./labels";
+import { detectPixelGrid } from "./grid";
 import { matte, rgbHex, type MatteOptions } from "./matte";
 import type { SheetManifest } from "./manifest";
 
@@ -188,6 +189,14 @@ describe("sprite inbox", () => {
       const aliveCells: Cell[] = named
         ? rows.flatMap((r, i) => (named[i] === "death" ? [] : r.cells))
         : cells;
+      // THE GATE — is this art reducible, or only resamplable? Measured on the
+      // MATTED pixels (`img.data` was written back above), over the sliced
+      // cells so the flat background cannot dilute the sample.
+      const grid = detectPixelGrid(
+        { width: sheet.width, height: sheet.height, data: sdata },
+        cells as unknown as number[][],
+      );
+
       const k = sheetScale(aliveCells.length ? aliveCells : cells, px);
       const outDir = join(WORK, name);
       rmSync(outDir, { recursive: true, force: true });
@@ -244,6 +253,11 @@ describe("sprite inbox", () => {
         name, dir: dir as SheetManifest["dir"],
         image: `/sprites/${name}-${dir}.png`,
         source: [sheet.width, sheet.height],
+        // The measured lattice, so the RUNTIME can choose between an exact
+        // block reduce and a resample without re-measuring 1.6M pixels on every
+        // boot. Omitted when there is none, so the field's presence means
+        // "this sheet can import 1:1" and nothing weaker.
+        ...(grid.gridded ? { grid: grid.factor } : {}),
         rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
       };
       writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
@@ -259,6 +273,7 @@ describe("sprite inbox", () => {
 
       summary.push(
         `\n═══ ${name} (${dir}) — ${rows.length} rows [${shape}], ${cells.length} frames\n` +
+          `GRID   ${grid.verdict}\n` +
           matteLine +
           (named
             ? unknown.length

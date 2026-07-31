@@ -18,8 +18,10 @@
  * kind of thing that looks like a feature until a player walks away from the
  * camera and the creature is still staring at them.
  */
-import { ART_BOX, aliveScale, cellPlacement, cellScale, type SheetManifest } from "../tools/sprite-forge/manifest";
+import { ART_BOX, aliveScale, cellPlacement, cellScale, fitsArtBox, oneToOneScale, type SheetManifest } from "../tools/sprite-forge/manifest";
+import { blockReduce } from "../tools/sprite-forge/grid";
 import { resampleCell, type ResampleStrategy } from "../tools/sprite-forge/resample";
+import { SPRITE_PIXEL_GRID } from "../constants";
 import type { ActorPaints, ClipName, Dir, FramePaint } from "../engine/render/paint-types";
 
 /** A decoded sheet plus the rects that cut it up. */
@@ -109,6 +111,7 @@ function cellPaint(
   cell: readonly number[],
   k: number,
   cels: Map<string, HTMLCanvasElement>,
+  gridN: number,
   filter: ImportFilter,
 ): FramePaint {
   const p = cellPlacement(cell as [number, number, number, number], k);
@@ -122,10 +125,10 @@ function cellPaint(
     const unit = ctx.canvas.width / ART_BOX;
     const dw = Math.max(1, Math.round(p.dw * unit));
     const dh = Math.max(1, Math.round(p.dh * unit));
-    const key = `${p.sx},${p.sy},${dw}x${dh}:${filter}`;
+    const key = `${p.sx},${p.sy},${dw}x${dh}:${gridN > 1 ? `block${gridN}` : filter}`;
     let cel = cels.get(key);
     if (!cel) {
-      cel = buildCel(image, p, dw, dh, filter);
+      cel = buildCel(image, p, dw, dh, filter, gridN);
       cels.set(key, cel);
     }
     ctx.drawImage(cel, p.dx, p.dy, dw / unit, dh / unit);
@@ -139,6 +142,7 @@ function buildCel(
   dw: number,
   dh: number,
   strategy: ResampleStrategy,
+  gridN: number,
 ): HTMLCanvasElement {
   const src = document.createElement("canvas");
   src.width = p.sw;
@@ -148,7 +152,16 @@ function buildCel(
   const sctx = src.getContext("2d", { willReadFrequently: true });
   if (!sctx) throw new Error("[dungeon] no 2D context for the import cel");
   sctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, 0, 0, p.sw, p.sh);
-  const out = resampleCell(sctx.getImageData(0, 0, p.sw, p.sh), dw, dh, strategy);
+  const pixels = sctx.getImageData(0, 0, p.sw, p.sh);
+  // EXACT when the lattice is real and the destination is its reduction: each
+  // N×N block collapses to the one pixel it already was. `blockReduce` floors,
+  // so a cell whose extent is not a whole number of blocks would come back a
+  // pixel short — the size check keeps those on the resample path rather than
+  // cropping art off the edge of a creature.
+  const reducible = gridN > 1 && Math.round(p.sw / gridN) === dw && Math.round(p.sh / gridN) === dh;
+  const out = reducible
+    ? blockReduce(pixels, gridN, p.sx % gridN, p.sy % gridN)
+    : resampleCell(pixels, dw, dh, strategy);
   const cel = document.createElement("canvas");
   cel.width = dw;
   cel.height = dh;
@@ -174,13 +187,32 @@ function clipsFor(
   sheet: ImportedSheet,
   known: ReadonlySet<string>,
   filter: ImportFilter,
+  atlasGrid: number,
 ): Partial<Record<ClipName, FramePaint[]>> {
   const all = sheet.manifest.rows.flatMap((r) => r.cells);
   if (!all.length) return {};
-  // The LIVING clips set the scale; a death sprawl only clamps its own frames.
-  // artScale-over-everything let the jester's flat sprawl shrink the walking
-  // jester to 58% of its box — see aliveScale's header for the numbers.
-  const k = aliveScale(sheet.manifest.rows);
+  // ── THE SCALE: DERIVED WHEN THE SHEET HAS A LATTICE, FITTED WHEN IT DOES NOT ──
+  //
+  // A gridded sheet gets `oneToOneScale`, which puts exactly one authored pixel
+  // on one atlas texel — the whole point of the gate. It is only honoured if the
+  // figure still FITS the cel at that scale, because shrinking it to fit would
+  // silently give the 1:1 property back, and a sheet authored at the wrong size
+  // has to be re-authored rather than quietly resampled.
+  //
+  // Everything else keeps the old behaviour: the LIVING clips set the scale and
+  // a death sprawl only clamps its own frames (artScale-over-everything let the
+  // jester's flat sprawl shrink the walking jester to 58% of its box).
+  const alive = sheet.manifest.rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
+  const gridN = sheet.manifest.grid ?? 1;
+  const oneToOne = gridN > 1 ? oneToOneScale(gridN, atlasGrid) : 0;
+  const exact = oneToOne > 0 && fitsArtBox(alive.length ? alive : sheet.manifest.rows.flatMap((r) => r.cells), oneToOne);
+  if (oneToOne > 0 && !exact) {
+    console.warn(
+      `[dungeon] ${sheet.manifest.name}: has a ×${gridN} pixel grid but is too large to import 1:1 at ` +
+        `atlas ${atlasGrid} — falling back to a fitted resample. Re-author the sheet smaller to keep 1:1.`,
+    );
+  }
+  const k = exact ? oneToOne : aliveScale(sheet.manifest.rows);
   // Resampled-cel cache, shared across the sheet: three facings reuse the same
   // FramePaints by reference, but distinct camera-rung buffers (tests drive
   // several) land distinct entries, keyed by destination size.
@@ -191,7 +223,9 @@ function clipsFor(
       console.warn(`[dungeon] ${sheet.manifest.name}: row "${row.clip}" is not a ClipName — dropped.`);
       continue;
     }
-    out[row.clip as ClipName] = row.cells.map((c) => cellPaint(sheet.image, c, cellScale(c, k), cels, filter));
+    out[row.clip as ClipName] = row.cells.map((c) =>
+      cellPaint(sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter),
+    );
   }
   return out;
 }
@@ -213,10 +247,14 @@ const PLAYABLE: ReadonlySet<ClipName> = new Set<ClipName>([
  * frames from, and what the animator falls back to for any clip an actor does
  * not author. A sheet without one is not a monster, it is a pile of frames.
  */
-export function importedPaints(sheets: readonly ImportedSheet[], filter: ImportFilter = STRATEGY): ActorPaints | null {
+export function importedPaints(
+  sheets: readonly ImportedSheet[],
+  filter: ImportFilter = STRATEGY,
+  atlasGrid: number = SPRITE_PIXEL_GRID,
+): ActorPaints | null {
   const byDir = new Map<Dir, Partial<Record<ClipName, FramePaint[]>>>();
   for (const s of sheets) {
-    const clips = clipsFor(s, PLAYABLE as ReadonlySet<string>, filter);
+    const clips = clipsFor(s, PLAYABLE as ReadonlySet<string>, filter, atlasGrid);
     if (Object.keys(clips).length) byDir.set(s.manifest.dir, clips);
   }
   if (!byDir.size) return null;

@@ -39,6 +39,12 @@ export interface SheetManifest {
   image: string;
   /** Source pixel dimensions, so a mismatched re-export is caught on load. */
   source: [number, number];
+  /**
+   * The source's intrinsic block size, from `grid.ts`. 1 = no lattice (the art
+   * is continuous and must be RESAMPLED). Greater than 1 means every N×N block
+   * is one authored pixel, which is what makes a 1:1 import possible at all.
+   */
+  grid?: number;
   rows: ManifestRow[];
 }
 
@@ -119,4 +125,37 @@ export function cellPlacement(cell: Cell, k: number): {
     sx: x0, sy: y0, sw, sh,
     dx: (ART_BOX - sw * k) / 2, dy: ART_GROUND - sh * k, dw: sw * k, dh: sh * k,
   };
+}
+
+/**
+ * THE 1:1 SCALE — one authored pixel per atlas texel.
+ *
+ * `artScale` answers a different question: "how big can this figure be without
+ * leaving the art box". That is a FIT, so it lands on whatever fraction the
+ * bounding box implies — measured on the shipped jester, 3.99 source pixels per
+ * texel at the default rung and 2.79 at the closest, never an integer at any of
+ * the five. Fractional means the reduce has to interpolate, which is the whole
+ * reason imported art arrived soft.
+ *
+ * When a sheet HAS a lattice the scale is not a choice, it is arithmetic. One
+ * authored pixel is `gridFactor` source pixels, and it must become exactly one
+ * texel of an `atlasGrid`-texel cell, so:
+ *
+ *     art units per source pixel = ART_BOX / (gridFactor × atlasGrid)
+ *
+ * Nothing about the figure's size enters into it. What the figure's size does
+ * decide is whether the result FITS — `fitsArtBox` below — because a sheet
+ * authored too large for the cel cannot be scaled down without giving up the
+ * 1:1 property, and silently shrinking it is exactly the failure this whole
+ * function exists to remove.
+ */
+export function oneToOneScale(gridFactor: number, atlasGrid: number): number {
+  return ART_BOX / (gridFactor * atlasGrid);
+}
+
+/** Does the sheet's largest living cell still fit the cel at the 1:1 scale? */
+export function fitsArtBox(cells: readonly Cell[], k: number): boolean {
+  const maxW = Math.max(...cells.map(([x0, , x1]) => x1 - x0 + 1));
+  const maxH = Math.max(...cells.map(([, y0, , y1]) => y1 - y0 + 1));
+  return maxW * k <= ART_FIT_W && maxH * k <= ART_FIT_H;
 }
