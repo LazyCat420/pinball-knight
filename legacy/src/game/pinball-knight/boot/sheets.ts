@@ -22,6 +22,11 @@ import { getKnightSheet, requestKnightSheet } from "../render/knight-sheets";
 import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
+import { authoredDirs, importedPaints, loadImportedSheet, type ImportedSheet } from "../render/imported-paints";
+import type { Dir } from "../engine/render/paint-types";
+
+/** The facings a sheet may author. W is drawn as a flipped E. */
+const DIRS: Dir[] = ["S", "N", "E"];
 
 /**
  * Paint budget per frame for a knight re-dress, inside the rAF loop.
@@ -220,9 +225,24 @@ export function sheetFor(key: SheetKey): SpriteSheet {
     b.set(s);
     return s;
   }
-  const built = monsterSheet(b.make());
+  const built = monsterSheet(paintsFor(key));
   b.set(built);
   return built;
+}
+
+/**
+ * IMPORTED ART OVERRIDES, once loaded. Empty until `applyImportedArt` resolves.
+ *
+ * Consulted through `paintsFor` rather than replacing `BUILDERS[key].make`,
+ * because the painter has to stay reachable: it is the fallback when a sheet is
+ * missing, when its dimensions no longer match its manifest, and when the
+ * player turns imported art off.
+ */
+const imported = new Map<SheetKey, ActorPaints>();
+
+/** The art a key builds with: imported if it arrived, painted otherwise. */
+function paintsFor(key: SheetKey): ActorPaints {
+  return imported.get(key) ?? BUILDERS[key].make();
 }
 
 /** Idle handle, so a teardown mid-backfill doesn't paint into a dead session. */
@@ -246,6 +266,90 @@ export function buildMonsterSheets(): void {
   state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
   startBackfill();
+  void applyImportedArt();
+}
+
+/**
+ * SheetKey → the sheet name under `public/sprites/`, for kinds whose art can
+ * come from the forge instead of a painter.
+ *
+ * Both entries are RESKINS of monsters that already exist, deliberately. A new
+ * `EnemyKind` costs nine compile-enforced `Record<EnemyKind,X>` tables plus the
+ * registries `registry-drift.mjs` covers, none of which has anything to do with
+ * whether imported art is viable. Reskinning isolates the art question, and it
+ * gives a direct comparison: both painters were built FROM these exact sheets
+ * as shape specs (see the headers of render/monsters/jester.ts and
+ * rotortail.ts), so painted and imported are the same creature drawn two ways.
+ */
+const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
+  jester: "jester",
+  rotortail: "beaver",
+};
+
+/** Player toggle, read at load. `__lab.imported(false)` then reload to compare. */
+const IMPORTED_KEY = "pinball-knight-imported-art";
+
+export function importedArtEnabled(): boolean {
+  try {
+    return localStorage.getItem(IMPORTED_KEY) !== "0";
+  } catch {
+    return true; // blocked storage is not a reason to change how the game looks
+  }
+}
+
+/**
+ * Load imported sheets and swap them in.
+ *
+ * ── WHY THIS IS NOT AWAITED AT BOOT ─────────────────────────────────────────
+ *
+ * `launchDungeonGame` is synchronous on purpose — boot/renderer.ts explains
+ * that making it async would silently reorder its callers' teardown — and the
+ * loop already has a `rendererReady` gate for work that has not arrived yet.
+ * Blocking the first frame on a fetch would also hold the loop without drawing
+ * the loading screen, which this repo has now done twice.
+ *
+ * So the painters build first and imported art REPLACES them when it lands.
+ * The end state is deterministic (imported always wins once loaded) and there
+ * is never a frame with a missing atlas — the failure mode of loading first
+ * would have been an invisible monster.
+ */
+export async function applyImportedArt(): Promise<void> {
+  if (!importedArtEnabled()) return;
+  for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
+    const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
+      (s): s is ImportedSheet => s !== null,
+    );
+    if (!loaded.length) continue;
+    const paints = importedPaints(loaded);
+    if (!paints) continue;
+    imported.set(key, paints);
+    console.info(
+      `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
+        `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}`,
+    );
+    rebuild(key);
+  }
+}
+
+/**
+ * Rebuild an atlas that was already built, and re-point anything drawing it.
+ *
+ * A sprite holds the SpriteSheet it was created with, so replacing the cached
+ * atlas is not enough — a jester already on the floor would keep drawing the
+ * painted texture until it died. `setSheet` is the same call `applyWeaponArt`
+ * uses for a knight re-dress. (Only the player carries an occlusion silhouette,
+ * so there is no second map to re-sync here.)
+ */
+function rebuild(key: SheetKey): void {
+  const b = BUILDERS[key];
+  if (!b.get() && !inFlight.has(key)) return; // never built; sheetFor will do it
+  inFlight.delete(key);
+  if (current?.key === key) current = null;
+  const sheet = monsterSheet(paintsFor(key));
+  b.set(sheet);
+  for (const z of state.zombies) {
+    if (SHEET_KEY_BY_KIND[z.kind] === key) z.sprite.setSheet(sheet);
+  }
 }
 
 /**
@@ -305,7 +409,7 @@ function startBackfill(): void {
         backfillHandle = idle(step);
         return;
       }
-      current = { key, build: startMonsterSheet(BUILDERS[key].make()) };
+      current = { key, build: startMonsterSheet(paintsFor(key)) };
       inFlight.set(key, current.build);
     }
     const { key, build } = current;
