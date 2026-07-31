@@ -26,7 +26,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { UI } from "./theme";
-import { ART_PALETTE_SIZE, PALETTE_HEX } from "../render/palette";
+import { PALETTE_HEX } from "../render/palette";
 
 /** The shader's weights, verbatim: `col.sub(pc).mul(vec3(0.3, 0.59, 0.11))`. */
 const W = [0.3, 0.59, 0.11] as const;
@@ -60,33 +60,15 @@ const HUE = [
   ...Array(4).fill("cold-grey"), // 19-22 steel — same hue as stone, lighter
   ...Array(6).fill("brown"), // 23-28 skin AND leather: one hue, two jobs
   ...Array(3).fill("cyan"), // 29-31 arcane
-  // Ramp midpoints (32-54, 2026-07-31) wear their family's hue — a midpoint
-  // IS its family, half a step darker or lighter. Leaving them off this list
-  // made every landing on one read as "→ undefined", which flagged steel
-  // textDim drifting onto a stone midpoint: a cold-grey landing on cold-grey.
-  ...Array(4).fill("cold-grey"), // 32-35 stone mids
-  ...Array(3).fill("green"), // 36-38 rot mids
-  ...Array(3).fill("red"), // 39-41 blood mids
-  ...Array(4).fill("orange"), // 42-45 torch mids
-  ...Array(3).fill("cold-grey"), // 46-48 steel mids
-  ...Array(2).fill("brown"), // 49-50 skin mids
-  ...Array(2).fill("brown"), // 51-52 leather mids
-  ...Array(2).fill("cyan"), // 53-54 arcane mids
 ];
 
-// The shipped snap decides identity over the ART palette only (pixel-pass
-// SNAP_N = artSize); midpoints are reachable through lighting rows, never by
-// direct snap. The model mirrors that bound or it sweeps a shader that does
-// not exist — the full-palette sweep was how a frame-wide maroon coldcrypt
-// briefly shipped.
-const RGB_SNAP = RGB.slice(0, ART_PALETTE_SIZE);
-function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB_SNAP): number {
+function snap(c: readonly number[]): number {
   let best = 0;
   let bestD = Infinity;
-  for (let i = 0; i < rgb.length; i++) {
+  for (let i = 0; i < RGB.length; i++) {
     let d = 0;
     for (let k = 0; k < 3; k++) {
-      const e = (c[k] - rgb[i][k]) * W[k];
+      const e = (c[k] - RGB[i][k]) * W[k];
       d += e * e;
     }
     if (d < bestD) {
@@ -98,14 +80,14 @@ function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB_SN
 }
 
 /** Every entry this colour can snap to once the dither has had its way. */
-function reachable(index: number, rgb: readonly (readonly number[])[] = RGB_SNAP, dither: number = DITHER): Set<number> {
-  const c = rgb[index];
+function reachable(index: number): Set<number> {
+  const c = RGB[index];
   const out = new Set<number>();
   // The shader adds a SCALAR to all three channels, so one axis is the whole
   // space of perturbations — 33 samples across it is far denser than the 16
   // distinct values a 4x4 Bayer matrix can actually produce.
   for (let s = -0.5; s <= 0.5001; s += 1 / 32) {
-    out.add(snap([c[0] + s * dither, c[1] + s * dither, c[2] + s * dither], rgb));
+    out.add(snap([c[0] + s * DITHER, c[1] + s * DITHER, c[2] + s * DITHER]));
   }
   return out;
 }
@@ -141,19 +123,10 @@ describe("the UI palette under the dither", () => {
   });
 
   it("still catches the stone-dark → rot-shadow crossing that caused this", () => {
-    // The negative control — run against the HISTORICAL 32-entry palette at
-    // its historical amplitude, as a fixture. On the live palette this
-    // crossing is now UNREACHABLE: the 2026-07-31 ramp midpoints put a nearer
-    // in-family entry on both sides of every dither nudge, which is the
-    // grain fix doing exactly what it claims. The control's job is unchanged —
-    // prove the SWEEP can still see a crossing when one exists — so it sweeps
-    // the input that had one.
-    const RGB32 = RGB.slice(0, 32);
+    // The negative control. If this ever stops finding the crossing, the sweep
+    // has gone blind and the test above is protecting nothing.
     const STONE_DARK = 2;
-    expect([...reachable(STONE_DARK, RGB32, 2 / 32)]).toContain(6); // rot shadow
+    expect([...reachable(STONE_DARK)]).toContain(6); // rot shadow
     expect(HUE[6]).not.toBe(HUE[STONE_DARK]);
-    // And on the live palette the same crossing must stay gone — this line is
-    // the claim the midpoints were shipped for.
-    expect([...reachable(STONE_DARK)]).not.toContain(6);
   });
 });

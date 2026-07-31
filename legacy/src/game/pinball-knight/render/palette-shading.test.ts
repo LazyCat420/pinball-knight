@@ -139,10 +139,7 @@ describe("shadeTable", () => {
   it("is fully saturated by the time the deepest row is reached", () => {
     // The shader clamps its shade term to the table's last row, so that row must
     // be the terminal state or the deepest shadow in the game is arbitrary.
-    // 10 = pixel-pass SHADE_ROWS: the torch family's half-step walk to void
-    // (nine midpointed entries, then ink, then void) is the longest in the
-    // palette. If this fails after a ramp change, SHADE_ROWS is stale too.
-    const steps = 10;
+    const steps = 8;
     const t = shadeTable(steps);
     for (let i = 0; i < PALETTE_SIZE; i++) expect(t[steps * PALETTE_SIZE + i]).toBe(0);
   });

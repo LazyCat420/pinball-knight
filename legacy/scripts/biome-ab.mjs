@@ -88,20 +88,11 @@ const PALETTE_HEX = [
   0x6b4436, 0xa9705a, 0xd69f7e,
   0x2a1c14, 0x4a3222, 0x6b4a2e,
   0x1f3d52, 0x2e6d8f, 0x6fd0e8,
-  // ramp midpoints 32-54 (2026-07-31) — keep in sync with render/palette.ts
-  0x828da0, 0x576375, 0x37404e, 0x21252f, // stone mids 32-35
-  0x74a958, 0x4c7541, 0x2c462b, // rot mids 36-38
-  0xc94151, 0x902535, 0x571520, // blood mids 39-41
-  0xffe6a3, 0xfcbf59, 0xeb8f28, 0xb05916, // torch mids 42-45
-  0xdbdfe5, 0xa8b0be, 0x6f7186, // steel mids 46-48
-  0xc48668, 0x8e5945, // skin mids 49-50
-  0x5d3d25, 0x3b2719, // leather mids 51-52
-  0x49a1c0, 0x235674, // arcane mids 53-54
 ];
 const FAMILIES = {
-  "void/ink": [0, 1], stone: [2, 3, 4, 5, 32, 33, 34, 35], rot: [6, 7, 8, 9, 36, 37, 38], blood: [10, 11, 12, 13, 39, 40, 41],
-  torch: [14, 15, 16, 17, 18, 42, 43, 44, 45], steel: [19, 20, 21, 22, 46, 47, 48], skin: [23, 24, 25, 49, 50],
-  leather: [26, 27, 28, 51, 52], arcane: [29, 30, 31, 53, 54],
+  "void/ink": [0, 1], stone: [2, 3, 4, 5], rot: [6, 7, 8, 9], blood: [10, 11, 12, 13],
+  torch: [14, 15, 16, 17, 18], steel: [19, 20, 21, 22], skin: [23, 24, 25],
+  leather: [26, 27, 28], arcane: [29, 30, 31],
 };
 
 async function familyShares(file) {

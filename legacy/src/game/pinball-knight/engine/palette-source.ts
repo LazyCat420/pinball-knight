@@ -28,18 +28,6 @@ export interface PaletteSource {
    */
   occlusionIndex: number;
   /**
-   * How many leading entries the SPRITE ATLAS may snap to. Defaults to `size`.
-   *
-   * The 2026-07-31 ramp midpoints exist for the FRAME quantizer — finer
-   * lighting steps, smaller dither — and are appended after this bound. The
-   * atlas crush stays on the authored entries, because widening the sprite
-   * snap re-answers every painter's colour choices: measured, it pushed the
-   * roster over its confetti budget at all three rungs and re-hued the
-   * stiltneck's gold before this bound existed. Art identity is the first 32;
-   * lighting resolution is the rest.
-   */
-  artSize?: number;
-  /**
    * One step DARKER for each entry, staying inside that entry's own colour ramp.
    *
    * Supplied by the game because a "ramp" is art direction: the engine cannot
@@ -132,7 +120,6 @@ export const enginePalette: PaletteSource = {
 /** Install the game's palette. Call before the pixel pass is created. */
 export function setEnginePalette(src: PaletteSource): void {
   enginePalette.size = src.size;
-  enginePalette.artSize = src.artSize ?? src.size;
   enginePalette.toFloatArray = src.toFloatArray;
   enginePalette.hex = src.hex;
   enginePalette.css = src.css;

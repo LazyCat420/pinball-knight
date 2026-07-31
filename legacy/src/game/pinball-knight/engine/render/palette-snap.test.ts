@@ -89,13 +89,8 @@ describe("palette snap: why the luma weight is NOT folded into the palette", () 
   const p = paletteFloats();
 
   it("has a real palette to snap against", () => {
-    // Without this a broken import would make every check below vacuous. Pinned
-    // as a floor, not an exact count: the palette grew ramp midpoints on
-    // 2026-07-31 (32 authored + 23 lighting midpoints) and may grow again;
-    // what this guards is "the import produced a real multi-entry palette",
-    // not a size that changes with art direction.
-    expect(p.length % 3).toBe(0);
-    expect(p.length).toBeGreaterThanOrEqual(32 * 3);
+    // Without this a broken import would make every check below vacuous.
+    expect(p.length).toBe(32 * 3);
     expect(p.some((v) => v > 0)).toBe(true);
   });
 

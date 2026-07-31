@@ -85,18 +85,14 @@
  * own darkest entry and then falls through to ink. See `SHADE_DOWN`.
  */
 export const FAMILIES: readonly (readonly number[])[] = [
-  // Midpoint entries (32-54, appended 2026-07-31) are WOVEN into ramp order
-  // here — this table is what orders a ramp, the palette array never did.
-  // Each family now walks half-steps, which halves every lighting cliff and
-  // (via the 1/PALETTE_SIZE amplitude) shrinks the dither with it.
-  [5, 32, 4, 33, 3, 34, 2, 35, 1, 0], // stone / void — 1 is ink, 0 is void
-  [9, 36, 8, 37, 7, 38, 6],           // rot green
-  [13, 39, 12, 40, 11, 41, 10],       // blood
-  [18, 42, 17, 43, 16, 44, 15, 45, 14], // torch
-  [22, 46, 21, 47, 20, 48, 19],       // steel
-  [25, 49, 24, 50, 23],               // skin
-  [28, 51, 27, 52, 26],               // leather / wood
-  [31, 53, 30, 54, 29],               // arcane
+  [5, 4, 3, 2, 1, 0], // stone / void — 1 is ink, 0 is void
+  [9, 8, 7, 6],       // rot green
+  [13, 12, 11, 10],   // blood
+  [18, 17, 16, 15, 14], // torch
+  [22, 21, 20, 19],   // steel
+  [25, 24, 23],       // skin
+  [28, 27, 26],       // leather / wood
+  [31, 30, 29],       // arcane
 ];
 
 /** Family index for a palette entry, for tests and reporting. */

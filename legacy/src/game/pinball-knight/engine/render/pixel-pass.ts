@@ -287,15 +287,12 @@ function heatWarp(base: TSLNode, u: FinalUniforms, res: TSLNode): TSLNode {
 /**
  * How many rows of shadow the quantizer can walk.
  *
- * The longest walk to void is the torch family's — nine half-step entries
- * (the 2026-07-31 ramp midpoints doubled every family's rung count), then
- * ink, then void: ten steps. palette-shading.test.ts asserts the deepest row
- * is saturated at exactly this depth. More rows would be dead texture; fewer
- * would make the darkest shadow in the game arbitrary rather than black —
- * which is precisely what keeping this at the old 6 would have done: the
- * half-step ramps would clamp at what used to be HALF a shadow.
+ * The longest family ramp is stone (6 entries) and every family terminates at
+ * void, so six walks take ANY entry to black — palette-shading.test.ts asserts
+ * exactly that of the deepest row. More rows would be dead texture; fewer would
+ * make the darkest shadow in the game arbitrary rather than black.
  */
-const SHADE_ROWS = 10;
+const SHADE_ROWS = 6;
 
 /**
  * How many rows of HIGHLIGHT the quantizer can walk — the ramp above the
@@ -310,11 +307,11 @@ const SHADE_ROWS = 10;
  * the identity row, the torches stop brightening anything they light, and the
  * dungeon reads flat.
  *
- * Eight, because the longest ramp above any entry is the torch family's
- * ember→core walk, now nine entries after the half-step midpoints. Fewer would
- * make a flame core unreachable from an ember; more would be dead texture.
+ * Four, because the longest ramp above any entry is the torch family's
+ * 14→15→16→17→18. Fewer would make a flame core unreachable from an ember;
+ * more would be dead texture, since every other ramp saturates in two or three.
  */
-const SHADE_UP_ROWS = 8;
+const SHADE_UP_ROWS = 4;
 
 /** Texture height: the highlight rows, the material itself, then the shadow rows. */
 const SHADE_TOTAL_ROWS = SHADE_UP_ROWS + 1 + SHADE_ROWS;
@@ -730,19 +727,7 @@ function finalNode(
   const d0 = alb.sub(best).mul(vec3(0.3, 0.59, 0.11));
   let bestDist: TSLNode = dot(d0, d0);
   let bestIdx: TSLNode = float(0);
-  // ── THE SNAP DECIDES IDENTITY; THE ROWS SPEND LIGHT ────────────────────────
-  //
-  // The min-reduction runs over the ART palette only (`artSize`), not the
-  // full array. The 2026-07-31 ramp midpoints exist as LIGHTING rungs — the
-  // shaded-palette rows below walk through them — but letting the snap land
-  // on them directly was DEPLOYED AND SEEN: the chroma-boosted blood
-  // midpoints sit luma-close to warm-lit masonry (blue is worth 0.11 in this
-  // metric), and seed-6 coldcrypt came back painted maroon, frame-wide, on a
-  // real adapter. Same lesson as the sprite crush's own artSize cap, arriving
-  // through the OTHER consumer: identity choices must be made from the
-  // authored entries; midpoints are only ever STEPS between them.
-  const SNAP_N = Math.min(enginePalette.artSize ?? PALETTE_SIZE, PALETTE_SIZE);
-  for (let i = 1; i < SNAP_N; i++) {
+  for (let i = 1; i < PALETTE_SIZE; i++) {
     const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
     const d = alb.sub(pc).mul(vec3(0.3, 0.59, 0.11));
     const dist = dot(d, d);

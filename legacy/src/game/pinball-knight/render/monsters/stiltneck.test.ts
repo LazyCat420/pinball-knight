@@ -40,7 +40,7 @@ import { makeStiltneckPaints } from "./stiltneck";
 import { makeRotortailPaints } from "./rotortail";
 import { paintInArtSpace, crushToGrid } from "../../engine/render/sprite";
 import { SPRITE_PX, SPRITE_PIXEL_GRID } from "../../constants";
-import { ART_PALETTE_SIZE, PALETTE_HEX, installPalette } from "../palette";
+import { PALETTE_HEX, installPalette } from "../palette";
 import type { ActorPaints, Dir, FramePaint } from "../../engine/render/paint-types";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -177,14 +177,7 @@ function areaCount(img: ImageData, x0: number, y0: number, x1: number, y1: numbe
   return n;
 }
 
-// Classify against the ART palette only. The cel-level census is a nearest-
-// match CLASSIFIER over free-hex painter colours, and the frame-quantizer
-// midpoints (32+, 2026-07-31) sit between the very hues it buckets — letting
-// them in siphons edge pixels out of every family bucket (measured: the E
-// eye's arcane count dropped 13 → 12 with no pixel of art changed). The
-// atlas census below is exact-match and unaffected; ART_PALETTE_SIZE is the
-// same bound the shipped crush snaps against.
-const PAL_RGB = PALETTE_HEX.slice(0, ART_PALETTE_SIZE).map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
+const PAL_RGB = PALETTE_HEX.map((h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255]);
 
 /**
  * Nearest palette entry under the SAME luma-weighted metric the sprite atlas
