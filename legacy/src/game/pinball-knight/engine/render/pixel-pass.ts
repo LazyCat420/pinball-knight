@@ -730,7 +730,19 @@ function finalNode(
   const d0 = alb.sub(best).mul(vec3(0.3, 0.59, 0.11));
   let bestDist: TSLNode = dot(d0, d0);
   let bestIdx: TSLNode = float(0);
-  for (let i = 1; i < PALETTE_SIZE; i++) {
+  // ── THE SNAP DECIDES IDENTITY; THE ROWS SPEND LIGHT ────────────────────────
+  //
+  // The min-reduction runs over the ART palette only (`artSize`), not the
+  // full array. The 2026-07-31 ramp midpoints exist as LIGHTING rungs — the
+  // shaded-palette rows below walk through them — but letting the snap land
+  // on them directly was DEPLOYED AND SEEN: the chroma-boosted blood
+  // midpoints sit luma-close to warm-lit masonry (blue is worth 0.11 in this
+  // metric), and seed-6 coldcrypt came back painted maroon, frame-wide, on a
+  // real adapter. Same lesson as the sprite crush's own artSize cap, arriving
+  // through the OTHER consumer: identity choices must be made from the
+  // authored entries; midpoints are only ever STEPS between them.
+  const SNAP_N = Math.min(enginePalette.artSize ?? PALETTE_SIZE, PALETTE_SIZE);
+  for (let i = 1; i < SNAP_N; i++) {
     const pc = vec3(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]);
     const d = alb.sub(pc).mul(vec3(0.3, 0.59, 0.11));
     const dist = dot(d, d);

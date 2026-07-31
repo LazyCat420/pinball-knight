@@ -26,7 +26,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { UI } from "./theme";
-import { PALETTE_HEX } from "../render/palette";
+import { ART_PALETTE_SIZE, PALETTE_HEX } from "../render/palette";
 
 /** The shader's weights, verbatim: `col.sub(pc).mul(vec3(0.3, 0.59, 0.11))`. */
 const W = [0.3, 0.59, 0.11] as const;
@@ -74,7 +74,13 @@ const HUE = [
   ...Array(2).fill("cyan"), // 53-54 arcane mids
 ];
 
-function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB): number {
+// The shipped snap decides identity over the ART palette only (pixel-pass
+// SNAP_N = artSize); midpoints are reachable through lighting rows, never by
+// direct snap. The model mirrors that bound or it sweeps a shader that does
+// not exist — the full-palette sweep was how a frame-wide maroon coldcrypt
+// briefly shipped.
+const RGB_SNAP = RGB.slice(0, ART_PALETTE_SIZE);
+function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB_SNAP): number {
   let best = 0;
   let bestD = Infinity;
   for (let i = 0; i < rgb.length; i++) {
@@ -92,7 +98,7 @@ function snap(c: readonly number[], rgb: readonly (readonly number[])[] = RGB): 
 }
 
 /** Every entry this colour can snap to once the dither has had its way. */
-function reachable(index: number, rgb: readonly (readonly number[])[] = RGB, dither: number = DITHER): Set<number> {
+function reachable(index: number, rgb: readonly (readonly number[])[] = RGB_SNAP, dither: number = DITHER): Set<number> {
   const c = rgb[index];
   const out = new Set<number>();
   // The shader adds a SCALAR to all three channels, so one axis is the whole
