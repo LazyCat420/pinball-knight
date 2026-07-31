@@ -192,6 +192,14 @@ async function gameMode() {
   const out = arg("out", `scratchpad/sandbox/game-${kinds.join("-")}.png`);
   const imported = arg("imported", "1") !== "0";
   const settle = Number(arg("settle", "1800"));
+  /**
+   * `--settings '{"dither":false,"scanline":false,"cameraZoom":"close"}'` —
+   * REPLACES the saved settings blob for this boot; omit it and the key is
+   * REMOVED so the arm runs game defaults. Replace-or-remove, never merge: the
+   * CDP context shares localStorage across arms, and a merged blob would leak
+   * arm N's toggles into arm N+1 as an invisible confound.
+   */
+  const settings = arg("settings", "");
 
   const alive = async () => {
     try {
@@ -219,11 +227,15 @@ async function gameMode() {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.bringToFront(); // backgrounded pages throttle rAF — see gui-shot.mjs
 
-  // The imported-art toggle is read at MODULE LOAD, so it has to be set before
-  // the game's scripts run, not after boot.
-  await page.addInitScript((on) => {
-    try { localStorage.setItem("pinball-knight-imported-art", on ? "1" : "0"); } catch {}
-  }, imported);
+  // The imported-art toggle and camera zoom are read at MODULE LOAD, so both
+  // have to be written before the game's scripts run, not after boot.
+  await page.addInitScript(({ on, blob }) => {
+    try {
+      localStorage.setItem("pinball-knight-imported-art", on ? "1" : "0");
+      if (blob) localStorage.setItem("pinball-knight-settings", blob);
+      else localStorage.removeItem("pinball-knight-settings");
+    } catch {}
+  }, { on: imported, blob: settings || null });
 
   page.on("console", (m) => { if (/imported art|pipeline|error/i.test(m.text())) console.log("[page]", m.text()); });
   await page.goto(url, { waitUntil: "domcontentloaded" });
