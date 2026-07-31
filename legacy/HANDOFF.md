@@ -7,6 +7,91 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🎬 LIVE NOW — the title intro plays again, and the knight in it was INVISIBLE (2026-07-31, `main@055a333`)
+
+Deployed, container healthy, verified end to end on a real NVIDIA Ampere adapter
+through host Chrome. 2411 tests, scoped tsc 0, registry-drift clean.
+
+`runPinballIntro` was imported by `core.ts` and called by nothing — 668 lines of
+finished title sequence that no player could reach (recorded further down as item
+2 of the UI-input list). It is wired in now: it plays, then hands off to the
+tavern lobby. Live trace: `run@1.0s → bonk@4.0s → shatter@4.3s → sweep@5.3s →
+title@10.4s`, then `screens: ["station-prompt","scene-hud"]` — the lobby.
+
+### THE PART WORTH READING — dead code does not stay correct, it stays UNTESTED
+
+The first live run showed **the knight did not paint at all**. His contact
+shadow, the parallax hills, WORLD 1-1, the ? block and the bonk all rendered
+correctly around an empty rectangle, for the whole 2D act.
+
+Sprite atlases **wrap into rows** once a strip would pass the GPU's 8192px
+texture ceiling — `engine/render/sprite.ts` has carried a comment about that
+since it changed. The intro still cut its frames at `(f * GRID, 0)`. A read
+outside the bitmap does not throw: `getImageData` answers with FULLY TRANSPARENT
+PIXELS. The knight's run and roll clips sit past the first row, so every frame
+came back blank and nothing anywhere reported a problem.
+
+It survived because this file had no caller from the day the packing changed.
+That is the argument against leaving working-but-unreachable code in a repo,
+stated better than I could have stated it in the abstract.
+
+Now `cutFrameStrip(sheetCanvas, frames)` in `engine/render/sprite.ts`, beside the
+packing it has to agree with, deriving the stride from the canvas so a caller
+cannot pass a stale `cols`. `cut-frame-strip.test.ts` uses a synthetic atlas (one
+flat colour per cell) — falsified: the old mapping fails 3 of 5 with *"frame 8
+(row 1) came back transparent"*, which is the live symptom exactly.
+
+### What else the wiring needed
+
+- **`?autostart=1` skips the intro.** Not politeness: it schedules
+  `closeTavern() + beginRun()` one frame after launch, so two RAF loops would
+  both own `state.animFrameId`. It is also the entry `playtest.mjs` and
+  `__dungeonBot` use — 11s added to every measured run, and the intro's keydown
+  listener eating the bot's first input. Verified live: `intro phases seen: NONE`.
+- **`abortForRun()`** for the same hazard by another route — `__dungeonStartRun()`
+  guards on `state.player`, which is null until a floor exists, so nothing stopped
+  it firing mid-sequence. It stands the intro down with no fade, no `onDone`
+  (which would raise the LOBBY over a live run) and **no `cancelAnimationFrame`**,
+  because by then that id belongs to the run's loop. Verified live: started a run
+  during `run`, got a playable floor 1, HUD up, frames advancing, no letter grid
+  left in the scene.
+- **The letter grid is disposed by the intro now.** It used to be left for
+  `startLevel`'s `disposeLevel` — correct when startLevel was next, wrong now that
+  the lobby is, because a lobby can be sat in indefinitely. Guarded by IDENTITY
+  (`state.maze === introMaze`) so the abort path cannot dispose a live floor.
+- **SKIP has an affordance in `run`/`bonk` again.** Those phases do not drive
+  `pixelPass.render()`, so `drawUiFrame` never runs and the real button is not
+  painted. Presenting a UI frame would not have helped — the intro's 2D canvases
+  are z-index 9000/9001 with an opaque sky and would cover it. The hint is painted
+  into the canvas the player is looking at, and it names what actually works (any
+  key — the skip listeners are on `window` and fire from frame one). The real
+  button takes over at `shatter`.
+- Plays **once per page load** (module flag, deliberately not persisted — a
+  `localStorage` flag means nobody ever sees it again, including whoever
+  maintains it). Reload replays it; `?no-intro=1`, `__skipDungeonIntro` and
+  `prefers-reduced-motion` still skip.
+
+### ⚠️ NOT MINE, BUT LIVE — WebGPU pipeline creation is failing on the MRT target
+
+Every live boot logs a handful of:
+
+```
+THREE.WebGPURenderer: Async render pipeline creation failed
+(renderPipeline_MeshBasicMaterial_162): Color target has no corresponding fragment output
+```
+
+— for `MeshBasicMaterial`, `MeshStandardMaterial` and `MeshBasicNodeMaterial`.
+This is the albedo/MRT attachment shape the palette-snap wave documented, but a
+DIFFERENT case from the one it guarded: `mrt-coverage.test.ts` catches scene
+materials carrying a `fragmentNode`, and these are three's own stock materials
+with one fragment output against a two-attachment target.
+
+**It is not the intro.** It reproduces on `?autostart=1`, where the intro never
+runs. Everything I photographed still looks right, so whatever those pipelines
+belong to is either invisible or falling back — but "async pipeline creation
+failed" is not a warning to leave sitting in a live boot. Whoever owns the albedo
+work should look; I did not touch it.
+
 ## 🔊 LIVE NOW — the volume slider reaches the tavern, the stings can be auditioned, and the beds hum (2026-07-30, `main@491682c`)
 
 Deployed and verified live on `https://braindeadbot.com/dungeon` — container
@@ -252,6 +337,11 @@ Cross-check that the measurement is right, not just smaller: on OPTIONS it lands
 the one formula that was already correct.
 
 ### 2. The intro's SKIP button is not a live bug — NOTHING CALLS THE INTRO
+
+> ⏩ **SUPERSEDED the same day** — asked which way to go, the answer was "wire it
+> back in", and it is live: see the 🎬 section at the top. Kept because the
+> reasoning below is what stopped a fix being written for code nothing ran, and
+> because the knight bug found on the first live frame is the receipt for it.
 
 The mechanism in the old note was right and the instinct to check first was the
 right one. `core.ts` imports `runPinballIntro` and **never invokes it**: the
