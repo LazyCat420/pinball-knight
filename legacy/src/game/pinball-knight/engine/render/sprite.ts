@@ -994,6 +994,43 @@ export function buildSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = 
 }
 
 /**
+ * Cut selected frames out of a packed atlas into a single-row strip.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT THREE LINES AT THE CALL SITE ──
+ * Frames WRAP INTO ROWS once a strip would exceed the GPU's texture width (see
+ * the `cols` comment in the builder). A reader that assumes the old single-row
+ * layout reads `(f * GRID, 0)`, runs off the right edge for any frame past the
+ * first row, and gets back FULLY TRANSPARENT PIXELS — no error, no warning, an
+ * actor that simply does not paint. That is precisely what happened to the
+ * title intro's knight, and it went unseen for as long as it did because that
+ * file had no caller.
+ *
+ * The stride is derived from the canvas rather than passed in, so a caller
+ * cannot supply a stale `cols` and reintroduce the same silence.
+ *
+ * The CPU path (`getImageData`) is deliberate: `drawImage` from an atlas wider
+ * than the driver's cap can silently paint nothing, which is the same class of
+ * bug one layer down.
+ */
+export function cutFrameStrip(sheetCanvas: HTMLCanvasElement, frames: readonly number[]): HTMLCanvasElement {
+  const cols = Math.max(1, Math.round(sheetCanvas.width / SPRITE_PIXEL_GRID));
+  const strip = document.createElement("canvas");
+  strip.width = Math.max(1, frames.length) * SPRITE_PIXEL_GRID;
+  strip.height = SPRITE_PIXEL_GRID;
+  const dst = strip.getContext("2d");
+  const src = sheetCanvas.getContext("2d", { willReadFrequently: true });
+  // NOT a silent `if (ctx)`. A null context here is an invisible actor on a
+  // sequence that otherwise looks healthy.
+  if (!dst || !src) throw new Error("[dungeon] could not get a 2D context to cut an atlas strip");
+  frames.forEach((f, i) => {
+    const sx = (f % cols) * SPRITE_PIXEL_GRID;
+    const sy = Math.floor(f / cols) * SPRITE_PIXEL_GRID;
+    dst.putImageData(src.getImageData(sx, sy, SPRITE_PIXEL_GRID, SPRITE_PIXEL_GRID), i * SPRITE_PIXEL_GRID, 0);
+  });
+  return strip;
+}
+
+/**
  * A sheet re-dyed by `tint` and snapped back to the palette — the fix for the
  * tinted-reskin monsters rendering as noise.
  *

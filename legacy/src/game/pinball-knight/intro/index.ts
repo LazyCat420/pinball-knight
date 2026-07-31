@@ -55,7 +55,7 @@ import type { LevelPlan } from "../maze/decorate";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./title-grid";
 import { getKnightSheet } from "../render/knight-sheets";
 import { lookFromGear } from "../render/knight-look";
-import { createActorSprite, type ActorSprite } from "../engine/render/sprite";
+import { createActorSprite, cutFrameStrip, type ActorSprite } from "../engine/render/sprite";
 import { SPRITE_PIXEL_GRID, CAMERA_DIST, DIR_HEIGHT, SHADOW_AREA, FOG_NEAR, FOG_FAR, WALL_H } from "../constants";
 import { ensurePixelFonts, PIXEL_FONT_LABEL } from "../pixel-fonts";
 import { sfxRoll, sfxBreak, sfxBumper, sfxCoin, sfxLevelStart } from "../sfx";
@@ -257,18 +257,20 @@ export function runPinballIntro(onDone: () => void): void {
   // caps at 8192px; the atlas is ~8600) — drawImage from it can silently paint
   // NOTHING. Extract just the frames the 2D bit needs into a small strip via
   // getImageData, which is a CPU path no texture cap can break.
-  const sheetCanvas = sheet.texture.image as HTMLCanvasElement;
+  //
+  // ── THE ATLAS IS A GRID, NOT A STRIP, AND THIS CODE MISSED THE CHANGE ──
+  // It read every frame from `(f * GRID, 0)` — the layout before atlases started
+  // WRAPPING INTO ROWS to stay under the 8192px texture ceiling (see the `cols`
+  // comment in `engine/render/sprite.ts`). A frame past the first row therefore
+  // read off the right edge of the canvas and came back fully transparent, so
+  // THE KNIGHT DID NOT PAINT AT ALL — the star of the sequence was an empty
+  // rectangle above a working contact shadow, for the whole 2D act.
+  //
+  // Nobody could have seen it: this file had no caller from the day the packing
+  // changed until 2026-07-31. Derive the stride from the canvas rather than
+  // taking `sheet.cols`, so the two cannot drift again.
   const neededFrames = [...runFrames, ...rollFrames];
-  const strip = document.createElement("canvas");
-  strip.width = neededFrames.length * SPRITE_PIXEL_GRID;
-  strip.height = SPRITE_PIXEL_GRID;
-  {
-    const sctx = strip.getContext("2d")!;
-    const atlasCtx = sheetCanvas.getContext("2d");
-    neededFrames.forEach((f, i) => {
-      if (atlasCtx) sctx.putImageData(atlasCtx.getImageData(f * SPRITE_PIXEL_GRID, 0, SPRITE_PIXEL_GRID, SPRITE_PIXEL_GRID), i * SPRITE_PIXEL_GRID, 0);
-    });
-  }
+  const strip = cutFrameStrip(sheet.texture.image as HTMLCanvasElement, neededFrames);
   const stripIndex = new Map<number, number>(neededFrames.map((f, i) => [f, i]));
 
   const GROUND_Y = BH - 52;
