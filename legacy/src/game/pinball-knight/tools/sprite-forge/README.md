@@ -57,10 +57,15 @@ genuinely touch with no gap between them, which no threshold can recover.
 
 ## What a sheet must be
 
-- **Transparent background.** This is the one hard requirement and the one an
-  AI generator will not meet: diffusion models have no alpha channel, so every
-  generated sheet arrives on an opaque white or cream field and slices into a
-  single cell. Key it out first.
+- **A background the matte can find.** Diffusion models have no alpha channel,
+  so every generated sheet arrives on an opaque white or cream field — which
+  used to slice into a single cell. `matte.ts` keys it now, flood-filling from
+  the border, so an opaque sheet is no longer a hard stop. What it will NOT
+  key is an ENCLOSED pocket of the background colour, deliberately: a spring's
+  inside should be keyed and a white glove must not be, and no threshold tells
+  them apart. The report counts the pockets it left (both shipped sheets have
+  hundreds) — read that number and look at `preview.png` before trusting a
+  sheet.
 - **One body scale across every frame**, and feet on a consistent line. Frames
   are registered by bounding box, so debris below the feet lifts the character
   and an off-centre effect shifts the body the other way.
@@ -68,11 +73,38 @@ genuinely touch with no gap between them, which no threshold can recover.
   a label beside a row shares that row's band, defeats the caption test, clears
   the fragment filter, and imports as a frame.
 
+## Sheets are ADOPTED now, not just judged
+
+Two of them reach the screen. `boot/sheets.ts` maps `jester → jester-S` and
+`rotortail → beaver-S` in `IMPORTED_ART`; the frames enter as `FramePaint`s —
+the same door the painters use — so the crush, the 20-entry palette lock,
+`withRecoil` and the animator apply without knowing the art came from an image.
+
+**What ships is the MATTED SOURCE plus its cell rects, not baked frames.**
+The atlas cell is 90/81/72/63/54 texels depending on the camera rung, so a
+baked atlas would be wrong at four of the five and rescaling pixel art by
+63/90 destroys it. `public/sprites/<name>-S.png` + `-S.json`; the crush happens
+at runtime exactly as it does for a painter.
+
+`__lab.imported(false)` then RELOAD switches back to the painters (reload, not
+live, because an atlas is palette-locked over the whole sheet).
+
 ## Known limits
 
-- **Sheets are judged, not adopted.** Frames are written and scored; nothing in
-  the game loads them yet — monsters are still painter functions. Wiring an
-  image-backed painter is the next step.
-- The verdict compares against the painted roster (entries 20.1 / isolated
-  22.5% / runLen 1.82). Imported art is inherently a little noisier: a painter
+- The inbox verdict compares against the painted roster AVERAGE (entries 20.1 /
+  isolated 22.5% / runLen 1.82), which is not the right comparison for a reskin
+  — both of these painters are busier than the average. `ab.test.ts` is the
+  honest one: same creature, same crush, same rung, imported vs its own
+  painter. It writes `work/ab.txt` and `work/ab-<name>.png`.
+- **On that comparison the result is SPLIT, and the difference is the art.**
+
+      jester      IMPORTED  isolated 46.0%  runLen 1.25
+                  PAINTED   isolated 38.1%  runLen 1.42   ← painter wins
+      rotortail   IMPORTED  isolated 26.9%  runLen 1.58
+                  PAINTED   isolated 35.2%  runLen 1.43   ← import wins
+
+  Harlequin diamonds are two hues at ONE VALUE and dissolve under a
+  luma-weighted snap; the beaver is one brown separated by value and survives.
+  Author sheets that separate on VALUE, not hue.
+- Imported art is inherently a little noisier at the floor: a painter
   re-rasterises vectors at the target size, an image can only be resampled.

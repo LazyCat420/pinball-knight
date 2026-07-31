@@ -7,7 +7,58 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
-## 🎬 LIVE NOW — the title intro plays again, and the knight in it was INVISIBLE (2026-07-31, `main@055a333`)
+## 🖼️ LIVE NOW — generated sprite sheets play as monsters (2026-07-31, `main@8761c8e`)
+
+**Go look at them: `/dungeon`, kill things.** `jester` and `rotortail` draw from
+imported art by default. `__lab.imported(false)` + reload puts the painters back
+for an A/B by eye; boot logs the swap (`[dungeon] jester: imported art from N
+sheet(s)`).
+
+The forge's loop is closed — a sheet dropped in `inbox/` now reaches the screen.
+Frames enter as `FramePaint`s, the same door painters use, so the crush, the
+20-entry palette lock, `withRecoil`'s stagger frames and the animator all apply
+without knowing the art came from an image. What ships is the MATTED SOURCE plus
+cell rects (`public/sprites/<name>-S.{png,json}`), not baked frames: the atlas
+cell is 90/81/72/63/54 texels depending on the camera rung, so a baked atlas is
+wrong at four of the five.
+
+### ⚠️ THE GAP THIS ENTRY EXISTS TO CLOSE — it was committed at 10:48 and not deployed
+
+`5c989a7`/`8761c8e` sat on `main`, pushed, green, for the whole day while
+production served the 00:30 build. Measured, not assumed:
+`/earth-pixel.png → 200 image/png`, `/sprites/beaver-S.json → 200 text/html`
+(the Next 404 page). The forge's entire point is output reaching the screen, and
+that was true on `main` and false where anyone could see it.
+
+What kept it there: **four untracked files blocking the deploy hook**, and all
+four were garbage — `samples/beaver.png` was md5-identical to the tracked
+`inbox/beaver-S.png`, `samples/jester.png` to `inbox/jester-S.png` (3.4 MB of
+duplicate), plus two WSL `:Zone.Identifier` streams, one with a mangled
+`jester.png.png:` name. Leftovers from dragging sources in from Windows. A
+finished wave was held out of production by drag-and-drop lint. Deleted.
+
+### What the A/B actually says — SPLIT, and the difference is the ART
+
+The inbox verdict compares to the roster AVERAGE (isolated 22.5%), which is the
+wrong comparison for a reskin — both these painters are busier than it.
+`ab.test.ts` is the honest one: same creature, same crush, same rung.
+
+    jester      IMPORTED  isolated 46.0%  runLen 1.25
+                PAINTED   isolated 38.1%  runLen 1.42   ← painter wins
+    rotortail   IMPORTED  isolated 26.9%  runLen 1.58
+                PAINTED   isolated 35.2%  runLen 1.43   ← import wins
+
+Harlequin diamonds are two hues at ONE VALUE and dissolve under a luma-weighted
+snap; the beaver is one brown separated by value and survives. So the jester is
+where imported art looks worst — judge the pipeline on the rotortail, and author
+future sheets to separate on VALUE, not hue.
+
+Also open: the matte leaves ENCLOSED background-coloured pockets opaque by
+design (515 on beaver, 2826 on jester) — a spring's inside should be keyed, a
+white glove must not be, and no threshold tells them apart. If a sheet reads
+crusty in game, that count in `work/report.txt` is the first place to look.
+
+## 🎬 The title intro plays again, and the knight in it was INVISIBLE (2026-07-31, `main@055a333`)
 
 Deployed, container healthy, verified end to end on a real NVIDIA Ampere adapter
 through host Chrome. 2411 tests, scoped tsc 0, registry-drift clean.
