@@ -29,6 +29,7 @@
  */
 import { KIND_IDS, KIND_INFO } from "../bestiary";
 import { floorLock, setFloorLock } from "./floor-lock";
+import { importedArtEnabled } from "../boot/sheets";
 import { state } from "../state";
 import type { EnemyKind } from "../state";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
@@ -151,6 +152,30 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
     },
 
     lockState: (): number | null => floorLock(),
+
+    /**
+     * Imported art on/off, then RELOAD. The A/B this whole pipeline exists for.
+     *
+     * A reload rather than a live swap because the comparison has to be
+     * honest: atlases are palette-locked to 20 entries over the WHOLE sheet, so
+     * a jester rebuilt next to a painted one would be locked against a
+     * different histogram than one built at boot. Same reason the camera rung
+     * applies on reload.
+     */
+    imported: (on?: boolean) => {
+      if (on === undefined) {
+        console.log(`[lab] imported art is ${importedArtEnabled() ? "ON" : "OFF"}`);
+        return importedArtEnabled();
+      }
+      try {
+        localStorage.setItem("pinball-knight-imported-art", on ? "1" : "0");
+      } catch {
+        console.warn("[lab] storage is blocked — cannot persist the toggle");
+        return importedArtEnabled();
+      }
+      console.log(`[lab] imported art ${on ? "ON" : "OFF"} — RELOAD to apply.`);
+      return on;
+    },
   });
 
   (window as unknown as { __lab?: typeof lab }).__lab = lab;

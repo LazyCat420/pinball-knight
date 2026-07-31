@@ -47,10 +47,20 @@ import { sliceSheet, equalCells, type Cell } from "./slice";
 import { crushCell, registerCell, sheetScale } from "./register";
 import { labelRows, parseName, unknownClips } from "./labels";
 import { matte, rgbHex, type MatteOptions } from "./matte";
+import type { SheetManifest } from "./manifest";
 
 const ROOT = __dirname;
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
 const WORK = process.env.SPRITE_WORK ?? join(ROOT, "work");
+/**
+ * Where the GAME reads imported art from.
+ *
+ * `work/` is a review directory — it holds crushed frames at one rung and a
+ * contact sheet, both for looking at. What ships is the MATTED SOURCE plus its
+ * cell rects, because the crush has to happen at runtime against whatever
+ * camera rung the player is on. See `manifest.ts`.
+ */
+const PUBLIC = process.env.SPRITE_PUBLIC ?? join(ROOT, "..", "..", "..", "..", "..", "public", "sprites");
 
 /** Painter roster reference, measured at the shipped rung. */
 const ROSTER = { entries: 20.1, isolatedPct: 22.5, runLen: 1.82 };
@@ -217,6 +227,21 @@ describe("sprite inbox", () => {
         pctx.drawImage(t, 6 + (i % cols) * (G * Z + 6), 6 + Math.floor(i / cols) * (G * Z + 6), G * Z, G * Z);
       });
       writeFileSync(join(outDir, "preview.png"), pv.toBuffer("image/png"));
+
+      // ── SHIP THE MATTED SOURCE, not the crushed frames.
+      //
+      // `sc` is the sheet after keying. Written at full resolution with the cell
+      // rects beside it, so the game can scale each cell into the art box and
+      // crush it at the rung the player is actually on — all five of them.
+      mkdirSync(PUBLIC, { recursive: true });
+      writeFileSync(join(PUBLIC, `${name}-${dir}.png`), sc.toBuffer("image/png"));
+      const manifest: SheetManifest = {
+        name, dir: dir as SheetManifest["dir"],
+        image: `/sprites/${name}-${dir}.png`,
+        source: [sheet.width, sheet.height],
+        rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
+      };
+      writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
 
       const mean = (f: (r: NoiseRow) => number): number => stats.reduce((a, r) => a + f(r), 0) / stats.length;
       const iso = mean((r) => r.isolatedPct);
