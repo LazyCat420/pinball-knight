@@ -37,6 +37,7 @@ import { lastFloorCensus } from "./floor-census";
 import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
+import { multiBallPositions } from "../entities/multiball";
 import { debugCurSpeed, debugWallNormal } from "../entities/player";
 import { railCap } from "../entities/rail";
 import { exploredCount, exploredFraction } from "../fog";
@@ -425,6 +426,14 @@ export function installDevHooks(deps: DevHookDeps): void {
       applyPotion(id as PotionId);
       return true;
     };
+    // Dev: the 🔮 multi-ball echoes — position, facing and the clip each is
+    // ACTUALLY playing. `__dungeonPotion('multiball')` then `__dungeonLaunch()`
+    // and this readback answers "are all three rolling?" as a string compare
+    // instead of a squint at two translucent ghosts stacked on one path.
+    (window as unknown as { __dungeonEchoes?: () => unknown }).__dungeonEchoes = () => ({
+      player: state.player ? { clip: state.player.anim.getClip(), momSpeed: state.player.momSpeed, overcharge: state.player.overcharge } : null,
+      echoes: multiBallPositions(),
+    });
     // Dev: snapshot the live projectiles' velocities so a headless test can
     // confirm the arrow flew toward the aim point, not the movement facing.
     (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>

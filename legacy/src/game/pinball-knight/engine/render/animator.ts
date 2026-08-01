@@ -119,6 +119,24 @@ const CLIP_FALLBACK: Partial<Record<ClipName, ClipName>> = {
   stumble: "idle",
 };
 
+/**
+ * Is this clip a RIDE pose — the knight tucked into a ball, tumbling, or shot
+ * as a ricochet form — rather than a pose on his feet?
+ *
+ * Derived from the clip NAME rather than a hand-kept list, and from the same
+ * convention `materialClip()` builds its clip out of (`${material}ball`), so a
+ * seventh marble body is covered on the day it is painted instead of on the day
+ * somebody remembers this function exists.
+ *
+ * Anything that renders a COPY of the knight needs it: a body derived from its
+ * own velocity renders a hurtling marble as a walk cycle, which is the bug this
+ * exists to prevent (see MIRRORED_CLIPS in render/remote-party.ts, which learnt
+ * the same lesson for co-op peers).
+ */
+export function isRideClip(clip: ClipName): boolean {
+  return clip === "roll" || clip.endsWith("ball") || clip.endsWith("form");
+}
+
 /** Facing → (authored direction, whether to mirror). */
 function resolve(facing: Facing): { dir: Dir; flip: boolean } {
   if (facing === "W") return { dir: "E", flip: true };
@@ -173,6 +191,16 @@ export class Animator {
    */
   setRate(rate: number): void {
     this.rate = Math.max(0.1, rate);
+  }
+
+  /**
+   * The live rate. Exists so an actor that MIRRORS another (the multi-ball
+   * echoes) copies the spin it is actually running rather than re-deriving it
+   * from momentum a second time — two copies of that formula is how one of them
+   * ends up spinning at the wrong speed.
+   */
+  getRate(): number {
+    return this.rate;
   }
 
   update(dt: number): void {

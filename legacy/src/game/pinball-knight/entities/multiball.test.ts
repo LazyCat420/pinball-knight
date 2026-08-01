@@ -14,8 +14,12 @@ import {
   followStep,
   canRam,
   tickRamCooldowns,
+  echoPose,
   type TrailPoint,
 } from "./multiball";
+import { isRideClip } from "../engine/render/animator";
+import type { ClipName } from "../engine/render/paint-types";
+import { MATERIAL_LIST } from "./marble";
 import {
   MULTIBALL_COUNT,
   MULTIBALL_LAGS,
@@ -195,5 +199,40 @@ describe("ram cooldowns", () => {
     for (let i = 0; i < 50; i++) cd.set({ i }, MULTIBALL_RAM_COOLDOWN);
     tickRamCooldowns(cd, MULTIBALL_RAM_COOLDOWN + 0.01);
     expect(cd.size).toBe(0);
+  });
+});
+
+/**
+ * THE POWER-UP IS THREE BALLS, NOT ONE BALL AND TWO JOGGERS. The echoes used to
+ * pick their clip from their own velocity, so a knight in ball form was chased
+ * by two knights on foot — the shipped bug this describe block pins shut.
+ */
+describe("echoPose", () => {
+  it("mirrors every ride pose the knight can be in, at his own spin rate", () => {
+    const ridden: ClipName[] = ["ball", "steelball", "roll", "boltform", "laserform"];
+    // Every marble body too, named the way materialClip() builds it.
+    for (const m of MATERIAL_LIST) ridden.push(`${m}ball` as ClipName);
+    for (const clip of ridden) {
+      expect(isRideClip(clip)).toBe(true);
+      // Moving or not: an echo of a rolling knight rolls. Its own displacement
+      // is irrelevant — that reading is exactly what produced the walk cycle.
+      expect(echoPose(clip, 2.4, true)).toEqual({ clip, rate: 2.4 });
+      expect(echoPose(clip, 2.4, false)).toEqual({ clip, rate: 2.4 });
+    }
+  });
+
+  it("walks and idles off its own motion once the knight is back on his feet", () => {
+    expect(echoPose("idle", 1.4, true)).toEqual({ clip: "walk", rate: 1 });
+    expect(echoPose("idle", 1.4, false)).toEqual({ clip: "idle", rate: 1 });
+    // …and the ride's rate does NOT leak into the walk: setRate is sticky, so a
+    // dismount at rate 2.4 would leave two echoes sprinting on the spot.
+    expect(echoPose("ball", 2.4, true).rate).toBe(2.4);
+    expect(echoPose("walk", 2.4, true).rate).toBe(1);
+  });
+
+  it("does not mistake a pose on the knight's feet for a ride", () => {
+    for (const clip of ["idle", "walk", "run", "attack", "death", "equip", "forge", "crouch", "wait", "wake", "stumble"] as ClipName[]) {
+      expect(isRideClip(clip)).toBe(false);
+    }
   });
 });

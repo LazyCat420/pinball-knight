@@ -18,7 +18,8 @@ import { state, activeWeapon, type Zombie } from "../state";
 import { createActorSprite, type ActorSprite, type SpriteSheet } from "../engine/render/sprite";
 import { getKnightSheet } from "../render/knight-sheets";
 import { lookFromGear } from "../render/knight-look";
-import { Animator, facingFromVelocity, type Facing } from "../engine/render/animator";
+import { Animator, facingFromVelocity, isRideClip, type Facing } from "../engine/render/animator";
+import type { ClipName } from "../engine/render/paint-types";
 import { worldDirToScreen } from "../engine/camera";
 import { syncActorMesh, damageZombie, playerDamage } from "./combat";
 import { WEAPONS, POTIONS } from "../items";
@@ -135,6 +136,27 @@ export function followStep(current: number, target: number, dt: number, rate = M
   return current + (target - current) * f;
 }
 
+/**
+ * What an echo plays this frame, given the knight's live pose and whether the
+ * echo itself is moving.
+ *
+ * THE POINT OF THE POWER-UP IS THREE BALLS. An echo whose clip is derived from
+ * its own velocity plays a WALK CYCLE while the knight is a hurtling marble —
+ * two knights jogging after a ball, which reads as three different things on
+ * screen instead of one thing three times. So whenever he is in a ride pose
+ * (ball, steel ball, any marble body, the tumble, a ricochet form) the echo
+ * mirrors HIS clip at HIS spin rate; on his feet, it falls back to its own
+ * motion, because an echo trailing a standing knight genuinely is walking.
+ *
+ * The rate is copied rather than recomputed for the same reason the clip is:
+ * the spin scales with momentum, and a second copy of that formula here is a
+ * second thing to keep in step (see `Animator.getRate`).
+ */
+export function echoPose(playerClip: ClipName, playerRate: number, moving: boolean): { clip: ClipName; rate: number } {
+  if (isRideClip(playerClip)) return { clip: playerClip, rate: playerRate };
+  return { clip: moving ? "walk" : "idle", rate: 1 };
+}
+
 /** Has this echo's cooldown on that enemy expired (or never started)? */
 export function canRam<K>(cd: Map<K, number>, key: K): boolean {
   return (cd.get(key) ?? 0) <= 0;
@@ -169,9 +191,15 @@ export function multiBallActive(): boolean {
   return echoes.length > 0;
 }
 
-/** Live echo positions — for tests and debug readouts. */
-export function multiBallPositions(): Array<{ x: number; z: number }> {
-  return echoes.map((e) => ({ x: e.x, z: e.z }));
+/**
+ * Live echo POSES — for debug readouts (`__dungeonEchoes()`).
+ *
+ * The clip is in here because "are the echoes rolling?" was a question only a
+ * screenshot could answer, and a screenshot of two ghosts one behind the other
+ * is exactly the picture that hid the walk cycle for a whole release.
+ */
+export function multiBallPositions(): Array<{ x: number; z: number; clip: string; facing: Facing }> {
+  return echoes.map((e) => ({ x: e.x, z: e.z, clip: e.anim.getClip(), facing: e.facing }));
 }
 
 /**
@@ -203,7 +231,11 @@ export function spawnMultiBall(): void {
 
     const anim = new Animator(sprite);
     anim.setFacing(p.facing);
-    anim.play("idle");
+    // Drink it mid-ride and the echoes peel off ALREADY ROLLING — the first
+    // frame they are ever painted is the one they would settle into anyway.
+    const pose = echoPose(p.anim.getClip(), p.anim.getRate(), false);
+    anim.setRate(pose.rate);
+    anim.play(pose.clip);
     const echo: Echo = {
       sprite,
       anim,
@@ -249,19 +281,29 @@ export function updateMultiBall(dt: number): void {
   const reach = PLAYER_R + ZOMBIE_R + 0.15;
   const reachSq = reach * reach;
 
+  // The knight's live pose, read once — every echo wears the same one.
+  const knightClip = p.anim.getClip();
+  const knightRate = p.anim.getRate();
+
   for (const e of echoes) {
     const target = echoTarget(trail, clock, e.lag, e.side);
+    let moving = false;
     if (target) {
       const px = e.x;
       const pz = e.z;
       e.x = followStep(e.x, target.x, dt);
       e.z = followStep(e.z, target.z, dt);
       const s = worldDirToScreen(e.x - px, e.z - pz);
-      const moving = Math.hypot(e.x - px, e.z - pz) > 1e-4;
+      moving = Math.hypot(e.x - px, e.z - pz) > 1e-4;
       e.facing = facingFromVelocity(s.x, s.z, e.facing);
       e.anim.setFacing(e.facing);
-      e.anim.play(moving ? "walk" : "idle");
     }
+    // Outside the `target` guard on purpose: a frame with no trail sample still
+    // has to follow the knight into (and out of) the ball, or an echo that was
+    // walking when the ride started stays walking until it happens to move.
+    const pose = echoPose(knightClip, knightRate, moving);
+    e.anim.setRate(pose.rate);
+    e.anim.play(pose.clip);
     e.anim.update(dt);
     syncActorMesh(e);
 
