@@ -7,6 +7,59 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🔬 THE 1:1 IMPORT PATH — the generator wave (2026-07-31, `main@38a2738`)
+
+Report with all measurements: the session artifact "The 1:1 Import Pipeline".
+
+**The answer to "why does imported art look soft": the sheets are not pixel
+art.** `tools/sprite-forge/grid.ts` measures whether colour changes sit on a
+lattice (the one property a ×N upscale has). The shipped jester sheet: **no
+lattice — best ×5 at 0.4%, need 90% — and only 11% flat neighbours.** It is
+continuous, anti-aliased art that merely looks blocky. There was never anything
+on the source side to be 1:1 with, so no downstream filter could have fixed it.
+
+Three pieces, all shipped and tested (23 new tests, suite 2441):
+
+1. **The gate** (`detectPixelGrid`) — per-factor lattice confidence normalised
+   against chance, weaker axis reported. Plus a FLATNESS measurement, because
+   edge density cannot separate native pixel art from noise (the first version
+   called a noise fixture "pixel art"). Calibrated on real input: synthetic ×6
+   art 0.842, real jester 0.324, noisy 0.009, smooth 0.000 → threshold 0.55.
+2. **`blockReduce`** — each N×N block to its MAJORITY colour (an average
+   invents a colour in neither the fill nor the stray). On AA-softened pixel
+   art: **89.8% exact vs k-centroid 52.2% vs box 48.3%.** On PERFECT pixel art
+   all three hit 100% — worth knowing, because it means the reduce is not what
+   buys fidelity on clean input, the GATE is.
+3. **`oneToOneScale`** — `ART_BOX / (gridFactor × atlasGrid)`. `artScale` fits a
+   bbox and therefore lands fractional at every rung (3.99:1 default, 2.79:1
+   close). The derived scale puts one authored pixel on one texel, proven at all
+   five rungs. Honoured only if the figure FITS; refused loudly otherwise,
+   because shrinking hands the property back silently.
+
+The manifest carries `grid` ONLY when the gate passed, so its presence means
+"can import 1:1" and nothing weaker.
+
+### ⚠️ Known gap, measured not hidden
+
+**The gate is conservative.** AA-softened pixel art scores 69% flat but FAILS
+the lattice test, yet still block-reduces at 89.8%. Those sheets take the
+resample path today. Fix: a sidecar override (`"grid": 8`) so an author who
+knows the factor can declare it. Small, and the next thing to do.
+
+### How to author a sheet that passes
+
+Logical size ~54px tall → generate at ×8 (432px) with **hard edges, no
+anti-aliasing, flat colours**, on flat chroma magenta. Drop in `inbox/`, run
+`npm run sprites`, read the GRID line. NOT PIXEL ART means the sheet is the
+problem.
+
+### The real ceiling on detail
+
+Ragnarok gives each sprite **256 colours**; we give the whole game 32 and lock
+atlases to 20. Per-sprite palettes for IMPORTED creatures is the targeted
+version of "more colours" — unlike the global palette experiment, which
+repainted the world maroon and was reverted (`8bfe298`).
+
 ## 🎨 SPRITE WAVE — jester matched to its sheet, chomper de-confettied (2026-07-31, `main@d0bfcd4`)
 
 Full report with before/after strips: the session artifact "Sprite Quality
