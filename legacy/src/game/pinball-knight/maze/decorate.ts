@@ -22,7 +22,9 @@ import { chuteTiles, type LaunchChute } from "./track-launch";
 export { traceArtery };
 import { bfsDistances, bfsDistancesOwned } from "../engine/flow-field";
 import { buildFlowField, descend, flowDrop, isDownhill, openRunway, phiAt, steepestDown, UNREACHED } from "./flow-orient";
-import { breakFlowLoops } from "./flow-loops";
+import { breakFlowLoops, findFlowCycles, type FlowPart } from "./flow-loops";
+import type { AssemblyRef } from "./assembly";
+import { authorCircuits, type Circuit } from "./circuit";
 import { PICKUP_WEAPONS, rollItemRarity, type ItemRarity } from "../items";
 
 export interface Torch extends TilePos {
@@ -146,6 +148,30 @@ export interface PinballPartSpot extends TilePos {
    */
   lane?: number;
   laneSeq?: number;
+  /**
+   * ASSEMBLY MEMBER: this part belongs to an authored MACHINE placed by
+   * `maze/assembly-place.ts`, and its facings came from that machine's
+   * definition rather than from the topology of the tile it landed on.
+   *
+   * It buys exactly two exemptions, both because the machine's shape IS the
+   * intent: `polishParts` does not de-clump it (a pop nest is three bumpers at
+   * Chebyshev 2 on purpose) and the A1 runway repair does not re-aim it (a
+   * booster that feeds the deflector two tiles ahead is supposed to have a wall
+   * beyond it — the turn is the point).
+   *
+   * It buys NO exemption from `breakLaunchDuels` or `breakFlowLoops`. Those two
+   * guard a genuine soft-lock, and the router earns its place by PRE-checking
+   * them rather than by being excused from them.
+   */
+  asm?: AssemblyRef;
+  /**
+   * CIRCUIT MEMBER: the id of the highway loop this part belongs to.
+   *
+   * Set on machine parts AND on the loose corner/booster fillers laid between
+   * them, which is why it is separate from `asm` — a filler has a circuit but
+   * no machine. See `maze/circuit.ts` for what a circuit guarantees.
+   */
+  circuit?: number;
 }
 
 /**
@@ -186,6 +212,16 @@ export interface LevelPlan {
   plazas: TilePos[];
   /** The Oracle Frog's dead-end perch, if this floor drew one. */
   frog: TilePos | null;
+  /**
+   * The floor's highway loops (maze/circuit.ts), as COMMITTED — a circuit the
+   * acyclicity pre-check rejected is not here.
+   *
+   * Surfaced on the plan rather than kept internal because every question worth
+   * asking about a circuit is about the whole loop (how long is the ring, how
+   * many off-ramps, where it meets the other one) and none of that is
+   * recoverable from the flat part list afterwards.
+   */
+  circuits: Circuit[];
 }
 
 function shuffled<T>(items: readonly T[], rng: () => number): T[] {
@@ -473,6 +509,24 @@ const ALT_ROUTE_MERGE_RUN = 6;
  * the only rule they're exempt from is the anti-clustering spacing, which is
  * the whole point.
  */
+/**
+ * CIRCUITS — how many highway loops a floor gets, and what they may spend.
+ *
+ * Two, not one: the ask was loops that INTERTWINE, so the player can switch
+ * between them. One circuit is a track. Two sharing the artery is a junction
+ * you can choose at, which is the whole point — see `maze/circuit.ts`.
+ *
+ * The ceiling is a DENSITY figure rather than a part count because
+ * `floor-density.ts` caps the floor at 34 parts per 1k and shipping floors
+ * already measure 15.6-28.2. 30 leaves the gate real headroom while letting a
+ * sparse floor spend properly; the hard `CIRCUIT_PARTS_MAX` is the backstop for
+ * a pathological ring that would otherwise eat the whole allowance.
+ */
+const CIRCUITS_DEFAULT = 3;
+/** Share of the corridor budget the loops may take. The rest stays loose
+ *  furniture, so a floor keeps pockets that are not on a highway. */
+const CIRCUIT_BUDGET_SHARE = 0.6;
+const CIRCUIT_PARTS_MAX = 96;
 const CHAIN_LINKS = 4; // parts per chain, including the seed launcher
 const CHAIN_TRIES = 40; // seed candidates to try before giving up on a chain
 const CHAINS_DEFAULT = 1; // secondary shot chain off the spine (the station spine is now the primary route)
@@ -792,8 +846,22 @@ export function openLaunchTargets(g: Grid, parts: PinballPartSpot[], torches: To
 
   // Fix the offenders FIRST (short runway ending at a wall) so they win the crack
   // budget, then do the payoff cracks for the healthy ones. Two ordered passes.
+  // Circuit and machine parts join the spine in the exemption, for the same
+  // reason it has one: a booster that feeds the corner two tiles ahead is
+  // SUPPOSED to have a wall beyond it — the turn is the point, and "re-aim it
+  // at the longest runway" would straighten exactly the twists the loop is made
+  // of. The exemption is from the AESTHETIC repair only; `breakLaunchDuels` and
+  // `breakFlowLoops` still see these parts, because those two guard a soft-lock.
   const launch = shuffled(
-    parts.filter((p) => !p.vault && !p.spine && LAUNCH_KINDS.has(p.kind) && Math.abs(p.dirI) + Math.abs(p.dirJ) === 1),
+    parts.filter(
+      (p) =>
+        !p.vault &&
+        !p.spine &&
+        p.circuit === undefined &&
+        p.asm === undefined &&
+        LAUNCH_KINDS.has(p.kind) &&
+        Math.abs(p.dirI) + Math.abs(p.dirJ) === 1,
+    ),
     rng,
   );
   const remove = new Set<PinballPartSpot>();
@@ -1907,7 +1975,13 @@ function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number, walka
   }
 
   // ── 2. Bumper de-clump ── spine bends first so the route keeps its stations.
-  const bumpers = parts.filter((p) => p.kind === "bumper" && !drop.has(p));
+  // A circuit's bumpers sit where the loop needs a yield — at an interchange or
+  // an off-ramp — and a machine's sit close together on purpose (a pop nest is
+  // three bumpers at Chebyshev 2). Both are authored shapes, so the de-clump
+  // that exists to break up ACCIDENTAL crowding must not see them.
+  const bumpers = parts.filter(
+    (p) => p.kind === "bumper" && !drop.has(p) && p.circuit === undefined && p.asm === undefined,
+  );
   bumpers.sort((x, y) => Number(y.spine ?? false) - Number(x.spine ?? false));
   const kept: PinballPartSpot[] = [];
   for (const b of bumpers) {
@@ -1964,7 +2038,7 @@ export function decorateMaze(
   partBudget = 16, // corridor parts beyond the spine — doubled with the 4× floors
 
   rooms: Room[] = [],
-  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean } = {},
+  extras: { anchors?: PrefabAnchor[]; deal?: PartSpotKind[]; targets?: number; trapdoors?: number; hazards?: number; forceVault?: boolean; boosterLanes?: number; launchBreaks?: number; vaultRamps?: number; chains?: number; rolloverArrays?: number; bonusItems?: number; endpoints?: Endpoints; floor?: number; strictLaunchers?: boolean; chute?: LaunchChute | null; orbit?: { ci: number; cj: number } | null; wallsAuthored?: boolean; circuits?: number; circuitSeed?: number } = {},
 ): LevelPlan {
   // START + STAIRS come from pickEndpoints, which the caller runs ONCE and
   // shares with widenMainArtery so the widened highway leads to the real exit.
@@ -2218,6 +2292,65 @@ export function decorateMaze(
   // archetypes have already seeded their own parts (they don't count against
   // the corridor budget — a bumper chamber shouldn't strip the maze bare). ──
   const parts: PinballPartSpot[] = [...furnished.parts];
+
+  // ── CIRCUITS: the floor's highway loops ────────────────────────────────
+  //
+  // Runs FIRST of the part layers, before the station spine and long before the
+  // corridor deal, for the reason `assembly.ts` gives about authored intent:
+  // parts landing at pass 14 of 20 get de-clumped and re-aimed by passes 17-20,
+  // so a relationship authored late does not survive. A circuit reserves its
+  // tiles and everything downstream fills in around it.
+  //
+  // It is its OWN LAYER — `corridorBudget` is measured after it, the same
+  // convention the spine, banks, hazards and rollovers already follow — so a
+  // circuit never strips the deal; the deal spaces around it.
+  //
+  // The budget is derived from DENSITY HEADROOM rather than picked, because
+  // `floor-density.ts` caps parts at 34 per 1k and shipping floors already run
+  // 15.6-28.2. A constant would be invisible on a sparse floor and would break
+  // the density gate on the busiest seeds only — a flake that reproduces on one
+  // seed in ten and looks like anything but a budget.
+  // HEADROOM MUST SUBTRACT WHAT IS STILL TO COME, not just what is already
+  // placed. Measured with only `parts.length` subtracted: 44 of 60 floors broke
+  // the density band, up to 37.9 parts per 1k against a ceiling of 34 — because
+  // at this point in the pass `parts` holds room furniture ALONE, so "30 per 1k
+  // of room left" was really "30 per 1k plus the entire corridor deal and the
+  // whole station spine". A budget measured against an empty floor is not a
+  // budget.
+  // Because circuits come OUT of the corridor budget (see `corridorBudget`
+  // below), this is a share of that budget rather than a density calculation:
+  // the floor's total is unchanged whatever this number is, so it decides how
+  // much of the floor is LOOP versus loose furniture, not how busy it gets.
+  const circuitHeadroom = Math.round(partBudget * CIRCUIT_BUDGET_SHARE);
+  const circuits = authorCircuits(g, phi, routes, {
+    occupied: (i, j) =>
+      inChute(i, j) ||
+      inRoom({ i, j }) ||
+      items.some((it) => it.i === i && it.j === j) ||
+      parts.some((q) => q.i === i && q.j === j),
+    start,
+    stairs,
+    maxCircuits: extras.circuits ?? CIRCUITS_DEFAULT,
+    budget: Math.min(circuitHeadroom, CIRCUIT_PARTS_MAX),
+    existing: parts,
+  });
+  // COMMIT ONLY IF THE SHOVE GRAPH STAYS ACYCLIC. The circuit layer is not
+  // exempt from the soft-lock guard — it pre-satisfies it. Authoring into a
+  // scratch array is what makes rejection possible at all; a pass that had
+  // already mutated `parts` could only be repaired, not declined.
+  const committed: Circuit[] = [];
+  for (const c of circuits) {
+    const probe = [...parts, ...c.links];
+    if (findFlowCycles(g, probe as unknown as FlowPart[]).length > 0) continue;
+    parts.push(...c.links);
+    committed.push(c);
+  }
+  const circuitPartCount = committed.reduce((a, c) => a + c.links.length, 0);
+  const circuitTiles = new Set<number>();
+  for (const c of committed) for (const t of c.ring) circuitTiles.add(idx(g, t.i, t.j));
+  /** A tile a circuit has claimed — reserved from every later placer, so
+   *  nothing drops a booster across a highway's lane. */
+  const inCircuit = (i: number, j: number): boolean => circuitTiles.has(idx(g, i, j));
   // ── STATION SPINE (path-first): string the connected booster route down the
   // main artery FIRST, so the floor has one legible "boosters feed into each
   // other" route before anything else fills in. It is its OWN LAYER (like the
@@ -2266,13 +2399,28 @@ export function decorateMaze(
   // The chute owns its lane outright (`inChute` above bars the station spine
   // from it), so this pass is the only thing that furnishes it.
   if (chute) layLaunchChute(g, chute, parts, torches);
-  const corridorBudget = partBudget + parts.length;
+  // ── CIRCUITS DISPLACE, THEY DO NOT ADD ─────────────────────────────────
+  //
+  // Every other layer here (spine, banks, hazards, rollovers) is measured
+  // OUTSIDE the corridor budget, so it never strips the deal. Circuits are
+  // deliberately the exception, and they have to be: shipping floors already
+  // measured 15.6-28.2 parts per 1k against a ceiling of 34, so a floor with a
+  // busy seed has no room for a whole new layer — 22 of 60 floors broke the
+  // density band when circuits were budgeted alongside the others rather than
+  // out of the same pot.
+  //
+  // Subtracting them here means the deal gets a smaller allowance and the same
+  // floor comes out the same size, with its furniture organised into loops
+  // instead of scattered. That is the goal stated exactly: the floor does not
+  // get busier, it gets more deliberate.
+  const corridorBudget = partBudget + parts.length - circuitPartCount;
   const byTopo: Record<Topology, TopoSpot[]> = { deadend: [], straight: [], corner: [], junction: [] };
   for (const p of shuffled(floors, rng)) {
     if (p.i === stairs.i && p.j === stairs.j) continue;
     if (Math.abs(p.i - start.i) + Math.abs(p.j - start.j) < 4) continue; // calm start
     if (items.some((it) => it.i === p.i && it.j === p.j)) continue;
     if (inRoom(p)) continue;
+    if (inCircuit(p.i, p.j)) continue;
     const spot = classifyTopology(g, p, rng);
     if (spot) byTopo[spot.topo].push(spot);
   }
@@ -2291,6 +2439,7 @@ export function decorateMaze(
     Math.abs(c.i - start.i) + Math.abs(c.j - start.j) >= 4 &&
     !items.some((it) => it.i === c.i && it.j === c.j) &&
     !inRoom(c) &&
+    !inCircuit(c.i, c.j) &&
     !parts.some((q) => q.i === c.i && q.j === c.j);
 
   for (let chain = 0; chain < chainCount && parts.length < corridorBudget; chain++) {
@@ -3017,5 +3166,5 @@ export function decorateMaze(
     it.rarity = rollItemRarity(floorNo, rng);
   }
 
-  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas };
+  return { start, stairs, spawns, torches, items, props, parts, rooms: furnished.rooms, secrets, frog, plazas, circuits: committed };
 }

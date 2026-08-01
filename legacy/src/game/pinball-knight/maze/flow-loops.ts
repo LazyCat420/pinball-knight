@@ -156,9 +156,9 @@ function rayCardinal(p: FlowPart): readonly [number, number] {
  * another" over a wider population must pass its own `live` — see
  * `successorsOf`, which is the exported door onto exactly this walk.
  */
-function successors(g: Grid, parts: FlowPart[], live: number[]): Map<number, number> {
+function successors(g: Grid, parts: FlowPart[], live: number[], targets?: number[]): Map<number, number> {
   const byTile = new Map<number, number>();
-  for (const n of live) byTile.set(idx(g, parts[n].i, parts[n].j), n);
+  for (const n of targets ?? live) byTile.set(idx(g, parts[n].i, parts[n].j), n);
   const next = new Map<number, number>();
   for (const n of live) {
     const p = parts[n];
@@ -187,16 +187,27 @@ function successors(g: Grid, parts: FlowPart[], live: number[]): Map<number, num
  * `exitRay`'s own comment records why that matters: two answers to "which way
  * does this fire" is how a gate and a repair come to disagree about a floor.
  *
- * The population is `countableKind`'s, not `movable`'s, and the difference is
- * deliberate. The repair needs a part it can WRITE a cardinal back to; a census
- * needs every part that SHOVES. A `boostcurve` throws the player along a float
- * tangent no repair can rewrite — excluding it from the count would hide the one
- * launch kind with no repair pass behind a metric that cannot see it, which is
- * the same defect `countUphill` documents at length.
+ * ── SOURCES AND TARGETS ARE DIFFERENT POPULATIONS, and that is the point ───
+ *
+ * A shove can only START at a part that launches, so the sources are
+ * `countableKind`'s population — wider than `movable`'s, because a `boostcurve`
+ * throws the player along a float tangent no repair can rewrite and excluding
+ * it would hide the one launch kind with no repair pass behind a metric that
+ * cannot see it (the defect `countUphill` documents at length).
+ *
+ * But a shove can END on ANY part. `findFlowCycles` looks launcher-to-launcher
+ * because every member of a soft-lock ring has to re-launch — that is what
+ * makes it a ring. "Does this part feed something" is a different question with
+ * a different answer: a booster that throws the knight into a deflector has fed
+ * it, and the deflector banks him onward. Inheriting the cycle detector's
+ * target set measured launcher-to-LAUNCHER while claiming to measure
+ * launcher-to-part, and it understated the real hand-off rate by a factor of
+ * three — every corner and every bumper in a chain read as "fed nothing".
  */
 export function successorsOf(g: Grid, parts: FlowPart[]): Map<number, number> {
   const live = parts.map((_, n) => n).filter((n) => countableKind(parts[n]) !== null);
-  return successors(g, parts, live);
+  const targets = parts.map((_, n) => n).filter((n) => !parts[n].vault && !parts[n].chute);
+  return successors(g, parts, live, targets);
 }
 
 /**

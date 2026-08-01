@@ -157,6 +157,7 @@ export function runPinballIntro(onDone: () => void): void {
     rooms: [],
     secrets: [],
     frog: null,
+    circuits: [], // the title maze is scenery — no highway loops
     plazas: [],
   };
   state.maze = buildMaze(scene, grid, plan, []); // disposeLevel reclaims it
