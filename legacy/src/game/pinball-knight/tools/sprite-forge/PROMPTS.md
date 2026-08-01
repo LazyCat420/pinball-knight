@@ -119,6 +119,19 @@ tight stack on the wind-up, at double body height on the release. A row of
 jester frames that are all the same height has failed, however good the costume
 looks. Height IS the animation.
 
+**The colour rule, and it is not the one you would guess.** Measured 2026-07-31
+(`scripts/jester-colour-ab.mjs`): the pipeline carries IN-PALETTE art at ΔE 1.57
+and generated art at ΔE 36.8, so the source is the whole problem — but asking
+for the palette does not fix it, because a generator ignores hex lists (16
+requested, 301,541 returned). Three snap techniques were tried and separated by
+2.4%, which is nothing.
+
+**So stop optimising for hue accuracy and optimise for VALUE SEPARATION.** The
+snap will move every colour several steps whatever you do. What survives that is
+contrast between neighbouring materials; what dies is two materials at the same
+brightness. Fewer materials, further apart in value, is worth more than any
+number of correct hexes.
+
     SUBJECT: a grinning harlequin jester whose lower body is a COILED STEEL
     SPRING instead of legs, mounted on a round metal base plate stamped with a
     star. Diamond-lattice motley costume in DARK MAROON RED and GOLD. A large
@@ -126,7 +139,23 @@ looks. Height IS the animation.
     Belled jester cap. Pale mask-like face with CYAN diamond greasepaint over
     the eyes and a bright red nose. Dark brown curl-toe shoes on the base plate.
 
-    PALETTE — use ONLY these, no substitutes:
+    ⚠️ USE AT MOST SIX MATERIALS, and make each one a clearly different
+    BRIGHTNESS from the ones it touches. Read as a greyscale image it must still
+    be legible — if two neighbouring parts would be the same grey, they are
+    wrong however different their colours are. From darkest to lightest:
+
+      1  outline / shoes        near-black
+      2  motley MAROON          dark
+      3  spring steel           mid, cool
+      4  motley GOLD            mid-bright, warm
+      5  ruff / gloves CREAM    bright        (two clear steps above the gold)
+      6  face + specular        brightest
+
+    The maroon and the gold are a diamond checker over the whole torso, so they
+    must differ in BRIGHTNESS as well as hue — a checker of two equally-bright
+    colours turns into one flat mass at sprite size.
+
+    PALETTE — target these, but VALUE SEPARATION above matters more:
     maroon  #3a0f18 #6b1f2a #a83244
     gold    #7a3b12 #d97b29 #f0a63c
     cream   #f0a63c #ffd98a #fff3c8
@@ -135,9 +164,15 @@ looks. Height IS the animation.
     accent  #6fd0e8 (greasepaint)  #d95763 (nose)
     outline #171a22
 
+    ⚠️ NO DETAIL SMALLER THAN 1/20th OF THE FIGURE'S HEIGHT. The creature is
+    about 46 texels tall on screen, so a feature under ~2 texels is not detail,
+    it is noise the crush turns into speckle. Big shapes, few of them: three
+    diamonds across the torso, not twelve. Four bells, not sixteen.
+
     The spring must read as a HELIX, not a grey bar: back half of each coil in
     #4a5364, front half in #8a94a6 with a #c8ccd4 specular. Keep it clear of
-    the base plate rim.
+    the base plate rim. It is the one COOL thing on a warm figure — that is
+    what makes it read as metal.
 
 One image per row. Describe the frames explicitly:
 
