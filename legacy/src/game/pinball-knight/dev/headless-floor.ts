@@ -12,14 +12,25 @@
  * a stage to `startLevel` that changes geometry, add it in both or the census
  * and the gate stop describing the same floor.
  *
+ * ⚠️ BOTH WERE WRONG UNTIL 2026-07-31, in the same way and for the same reason.
+ * This function ran an entire LEGACY maze — `generateMaze`, `carveRooms`,
+ * `stampLandmark`, `pickFocusCells`, `stampPrefabs`, `crackSecretWalls` —
+ * before `buildTrackFloor`. On the track branch, which ships and which
+ * `buildTrackFloor` has declined 0 times in 400 measured floors, none of those
+ * calls happen: that block is `authorFloor`'s `else`. Every one drew from the
+ * shared rng, so the floor built afterwards was not the floor the game builds.
+ * Measured over 15 (level, seed) pairs, the two chains agreed on **0 of 15**.
+ * The shipped order is `floorRng -> rollModifier -> windinessFor ->
+ * buildTrackFloor`, and that is now what this does.
+ *
  * The distinction that matters — and the scar it comes from — is recorded on
  * `maze/floor-pipeline.test.ts`: a harness that RE-IMPLEMENTS the pipeline
  * drifts, and drifts in exactly the direction that hides the bug (that one went
  * three tunings stale while testing a floor nobody had shipped in months).
  * Calling the shipped function is the opposite of that.
  */
-import { generateMaze, carveRooms, crackSecretWalls, type Grid, type TilePos } from "../maze/generator";
-import { stampPrefabs, stampLandmark, pickFocusCells, themeFor } from "../maze/prefabs";
+import { type Grid, type TilePos } from "../maze/generator";
+import { themeFor } from "../maze/prefabs";
 import { archetypeFor, windinessFor } from "../maze/archetypes";
 import { buildTrackFloor } from "../maze/track-floor";
 import { floorRng } from "../maze/floor-seed";
@@ -65,18 +76,10 @@ export function buildHeadlessFloor(
   const rng = floorRng(runSeed, level);
   const cfg = levelConfig(level);
   const arch = archetypeFor(level);
+  // Draws, and `authorFloor` draws it here — see this file's header and
+  // `buildHeadlessPlan` for what omitting it used to cost.
+  rollModifier(level, rng);
   const windiness = windinessFor(level, arch, rng);
-  const raw = generateMaze(cfg.cellsW, cfg.cellsH, rng, cfg.braid * arch.braidMult, windiness, {
-    seeds: arch.seeds(cfg.cellsW, cfg.cellsH, rng) ?? undefined,
-    solidSeeds: arch.solid,
-    braidGradient: arch.braidGradient,
-  });
-  carveRooms(raw, rng, cfg.rooms, 3, 6);
-  const theme = themeFor(level, runSeed);
-  const landmark = stampLandmark(raw, rng, theme);
-  const focus = pickFocusCells(raw, rng);
-  stampPrefabs(raw, rng, Math.min(3 + Math.floor((level - 1) / 2), 6), theme, landmark.claimed, focus);
-  crackSecretWalls(raw, rng, cfg.secrets);
   const track = buildTrackFloor(cfg.cellsW, cfg.cellsH, rng, {
     profile: arch.track,
     density: Math.max(0.35, Math.min(0.85, windiness)),

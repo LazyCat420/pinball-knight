@@ -289,6 +289,12 @@ export const FLOOR_RULES: FloorRule[] = [
     check(ctx) {
       const d = pathTo(ctx, ctx.bossSpot);
       if (d < 0) return { ok: false, detail: "boss tile is unreachable from the spawn" };
+      // `pickTrackEndpoints` settled short of the target — see track-floor.ts.
+      // Rare and counted (2 of 78 real floors), not waved away: the rate cap in
+      // floor-rules.test.ts is what stops this becoming the normal answer.
+      if (ctx.relaxed?.includes("boss-not-near-spawn")) {
+        return { ok: true, detail: `${d} path tiles — RELAXED (endpoint search settled short)` };
+      }
       return { ok: d >= ctx.weights.minBossTiles, detail: `${d} path tiles (floor wants >= ${ctx.weights.minBossTiles})` };
     },
   },
@@ -313,6 +319,9 @@ export const FLOOR_RULES: FloorRule[] = [
       // not silently take this guarantee with it.
       const d = pathTo(ctx, ctx.stairs);
       if (d < 0) return { ok: false, detail: "stairs unreachable from the spawn" };
+      if (ctx.relaxed?.includes("exit-not-near-spawn")) {
+        return { ok: true, detail: `${d} path tiles — RELAXED (endpoint search settled short)` };
+      }
       return { ok: d >= ctx.weights.minBossTiles, detail: `${d} path tiles (floor wants >= ${ctx.weights.minBossTiles})` };
     },
   },

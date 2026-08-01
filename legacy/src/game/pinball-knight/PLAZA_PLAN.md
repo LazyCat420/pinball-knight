@@ -166,11 +166,28 @@ Consequences, stated at the strength the evidence supports:
   for tuning" describes a population the game does not generate, so the
   magnitude should not be quoted as a shipping number.
 
-`buildHeadlessPlan` (A-Wave 0) mirrors `authorFloor` draw for draw and is the
-one faithful harness in the tree. **Fixing the other three is not done** — it is
-deliberately out of this wave's scope because rewriting `floorContext` changes
-every floor the rule gate judges, which is its own wave and plausibly its own
-session. Recorded here so it is not rediscovered.
+**Status: three of four fixed** (`buildHeadlessPlan`, `floorContext`,
+`buildHeadlessFloor`). The way it surfaced is the argument for having done it:
+the floor-size change flipped "perimeterBias actually MOVES the spawn" on the
+drifted gate, while the *same statistic measured on the shipped chain* held
+comfortably — greathall 0.543 against ringkeep 0.556. The gate was reporting a
+regression that did not exist on any floor a player can reach. Fixing the
+harness was the repair; changing the spawn logic would have been damage.
+
+`buildHeadlessFloor` was fixed for the same reason a second time: with bigger
+floors, `doorway-funnels.test.ts` "never widens the opening it feeds" failed
+with an 8-wide doorway against a 7 maximum. On the faithful chain all 8 of its
+tests pass. **That does not clear the funnel pass** — it means the failure was
+about a floor population that does not ship, and the pass remains off by default
+for the three gate breakages already recorded above.
+
+Still drifted: `floor-density.test.ts`'s `liveFloor()` (omits `rollModifier` and
+`stampSecretBands`). Contained — it gates one metric family, and the wider
+`open-space.test.ts` gate beside it runs on the faithful `buildHeadlessPlan`.
+
+**The funnel measurement should be re-run before its numbers are quoted again.**
+The +6.1 pp capture result was paired same-seed, so the *direction* survives, but
+it describes floors the game did not build.
 
 Also noted, minor: `hazards.ts:69-73` hand-rolls the glove's trigger instead of
 calling `onPartTrigger()`, so **the glove does not cleanse webs and does not pay
@@ -282,6 +299,122 @@ parts in it**.
 `biggestSectionRatio` is deliberately not a per-floor band (2 floors sit at 0, so
 it could only pass at 0, and an inert gate is worse than none). It is gated as a
 rate over a sweep, the same idiom `TrackFloor.relaxed` uses.
+
+### A-Wave 0.5 — supply: bigger floors that do not get emptier
+
+Two asks landed together and turned out to be one change. The census said the
+defect was depth-driven part starvation; live QA then said _"we can bounce around
+pretty fast in the maze so we need to make it harder to find the boss"_. Both are
+answered by the floor's size ramp and the budgets that ride it.
+
+**The floors were a quarter of their documented size.** `levelConfig`'s docblock
+claims late floors reach "~266×202 (~54k tiles)". That stopped being true when
+track-first shipped, for exactly the reason the `floorTiles` comment beside it
+already records: the legacy branch built `(2c+1)(2h+1)` and `thickenWalls`
+DOUBLED each side, while `buildTrackFloor` generates at final resolution and
+never thickens. At the old `(66, 50)` the real grid was 133×101 = 13.4k tiles,
+~8.4k walkable. Same 4× bookkeeping error, second constant.
+
+Measured over 3 seeds at L20, geometry only:
+
+| cells | tiles | walkable | pathLen | gen ms |
+|---|---|---|---|---|
+| (66,50) old | 13433 | 8407 | 135 | 252 |
+| (80,60) | 19481 | 12506 | 182 | 261 |
+| **(96,72) shipped** | 27985 | 18627 | **236** | 382 |
+| (132,100) | 53265 | 36109 | 267 | 755 |
+
+`pathLen` is the start→stairs walk — the quantity "harder to find the boss"
+names. **+75%.** (132,100) would restore the documented intent exactly but sits
+*at* the 53k ceiling the perf watchlist was sized against rather than inside it,
+and triples generation cost, so that headroom is left unspent. Ramp rates are
+unchanged, so only the depth at which growth stops moves — L12/L13 → L23/L24 —
+and every shallower floor is bit-identical.
+
+**Then the lever that actually held density, which was not the obvious one.**
+Four candidates were tried against the census:
+
+| lever | verdict |
+|---|---|
+| `PARTS_MAX` 26 → 40 | barely moved `deadShare` — **reverted** |
+| `floorBudgets.partsArea` /600 → /450 | barely moved it — **reverted** |
+| `routeBudget` ceiling 64 → 180 | kept — a ceiling that saturates stops being a ceiling |
+| `plazaCap` 8 → 24 | kept — same failure, same fix |
+| `decorate.ts` `REGION` 24 → 12 | **this is the one that carried it** |
+
+The structural reason is worth keeping: **almost every furniture pass scales with
+a LENGTH, not an area.** The route layer lays pads along the artery, chains
+follow exit rays, the corridor deal is a flat budget. Area grows as the square,
+so on a bigger floor every length-scaled pass thins automatically. The
+sparse-region fill is the only genuinely area-proportional supply on the floor —
+and it was throttled to one part per 576 tiles by a framing rule ("~one screen of
+maze") rather than a coverage one. Sized against the metric instead:
+`REGION = R_DEAD = 12`, so the guarantee and the threshold are the same number.
+It fires only into regions holding no part at all, so it is a floor under the
+density rather than an addition to it.
+
+`routeBudget` and `plazaCap` are the same bug twice: both were absolute caps
+tuned when the deepest floor was ~8.4k walkable, sitting just above what their
+area rule could ask for. Past that size the cap became the binding term and the
+area scaling they exist for stopped applying — precisely where floors got
+biggest.
+
+**Result** — floors 2.2× larger at depth, and less empty than before they grew:
+
+| band | walkable | parts/1k | worstBarren | deadShare |
+|---|---|---|---|---|
+| L1-8 | 4040 | 28.3 | 16.5 t | 1.0% (was 5.3%) |
+| L9-16 | 9155 | 22.7 | 17.7 t | 0.9% (was 6.6%) |
+| L17-24 | 15713 | 19.1 | 18.0 t | 0.8% (was 6.7%) |
+| L25-30 | 18752 | 18.0 | 19.1 t | 1.0% (was 6.4%) |
+
+Overall `deadShare` p50 **5.8% → 0.8%**, max 16.4% → 5.5%; `worstBarren` p50
+23.0 → 17.0 t, p95 34.0 → 25.0 t. `partsPer1k` peaks at 32.5 against
+`floor-density`'s ceiling of 34, with **no floor over it**.
+
+#### What fixing the rule-gate harness exposed — two REAL defects, now visible
+
+Fixing `floorContext` (D6) turned the rule gate onto the floors the game
+actually builds, and two pre-existing defects surfaced immediately. **Neither is
+caused by the size change** — proved by running the fixed harness against the
+OLD (66,50) caps and getting the identical failures, on identical seeds, with
+identical numbers. Both are on L1, which the cap change does not touch.
+
+**1. `pickTrackEndpoints` settles short on some seeds.** Censused over 78 real
+floors the start→stairs walk runs min 26, p5 **57**, median 118 — so
+`minBossTiles: 30` is a well-calibrated floor, roughly two-fold under typical.
+But L1 warrens seed 424242 lands the stairs **26 tiles** from spawn on a floor
+whose reach is **128** — a fifth of the way across, not a small-floor artifact.
+2 of 78 floors are affected.
+
+The rule's own docblock claims "censused over 78 floors … never nearer than 56
+path steps … this rule finds nothing today". That census ran on the drifted
+harness. On real floors the minimum is 26 and **the rule does find something**.
+
+Handled the way every other generator shortfall on this floor is: `track-floor`
+records `boss-not-near-spawn` / `exit-not-near-spawn` in `TrackFloor.relaxed`,
+each measured against its own tile (the king seats up to 2 tiles off the stairs,
+so the two genuinely come apart — seed 7777 has the stairs a legal 30 away and
+the king 29). `floor-rules.test.ts` caps how often any rule may be relaxed at
+12%; this sits at 2.6%. **Making the endpoint search actually hit its target is
+the real fix and is NOT done.**
+
+**2. `perimeterBias` does not move `spine` or `ringkeep`.** Real per-archetype
+mean `perimeterScore` over the same 78 floors:
+
+    cavern 0.728   warrens 0.684   greathall 0.599   spine 0.574   ringkeep 0.541
+
+greathall is the designated central-spawn exemption and comes third of five.
+The assertion "greathall < min(all four peripheral)" was passing only on
+fictional floors; it is now narrowed to the high-bias pair (warrens, cavern),
+which is the separation that genuinely holds and the one the weight exists for.
+**That spine and ringkeep spawn as centrally as the hall is a real open item,
+not a verdict that they should.**
+
+Honest note: shallow floors changed too (L1-8 parts/1k 23.2 → 28.3). `REGION` is
+not depth-scoped, and shallow floors had the same blank stretches in absolute
+terms — 22.4 t worst barren — so this is a fix there as well, not a side effect.
+But they are nearer the density ceiling than they were.
 
 ### A-Wave 1 — chambers become rooms
 

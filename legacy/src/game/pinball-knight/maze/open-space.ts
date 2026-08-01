@@ -334,6 +334,33 @@ export interface OpenSpaceConstraints {
  * have to be set at 0 to pass, and an inert gate is worse than none. It is
  * gated as a RATE over a sweep in `open-space.test.ts` instead — the same
  * idiom `TrackFloor.relaxed` uses for rules the generator may stand down on.
+ *
+ * ── WHAT THE FIRST FIX MOVED, and which lever did it ──────────────────────
+ *
+ * Same census, after `levelConfig`'s (96,72) size cap and the `decorate.ts`
+ * REGION change, with floors at depth now **2.2x larger**:
+ *
+ *   band      walkable  parts/1k   worstBarren   deadShare
+ *   L1-8       4040       28.3       16.5 t        1.0%     (was 23.2 / 22.4 / 5.3%)
+ *   L9-16      9155       22.7       17.7 t        0.9%     (was 18.4 / 25.7 / 6.6%)
+ *   L17-24    15713       19.1       18.0 t        0.8%     (was 17.7 / 23.7 / 6.7%)
+ *   L25-30    18752       18.0       19.1 t        1.0%     (was 17.9 / 24.7 / 6.4%)
+ *
+ * Overall `deadShare` p50 5.8% -> 0.8%, max 16.4% -> 5.5%; `worstBarren` p50
+ * 23.0 -> 17.0 t, p95 34.0 -> 25.0 t. `partsPer1k` peaks at 32.5 against
+ * `floor-density`'s ceiling of 34, with no floor over it.
+ *
+ * **Which lever did the work matters more than the numbers.** Three budget
+ * lifts were tried: `PARTS_MAX`, `floorBudgets.partsArea` and the two saturated
+ * ceilings (`routeBudget`, `plazaCap`). Only the last group plus sizing the
+ * sparse-region fill against `R_DEAD` moved `deadShare`; raising `PARTS_MAX`
+ * and `partsArea` barely touched it and both were reverted. The reason is
+ * structural and worth keeping: **almost every furniture pass scales with a
+ * LENGTH, not an area** — the route layer lays pads along the artery, chains
+ * follow exit rays, the corridor deal is a flat budget. Area grows as the
+ * square, so on a bigger floor every length-scaled pass thins automatically.
+ * The sparse-region fill is the only genuinely area-proportional supply on the
+ * floor, which is why it is the lever that holds density when floors grow.
  */
 export const OPEN_SPACE_BASELINE = {
   floors: 180,
