@@ -1,6 +1,6 @@
 
 import { createCanvas, loadImage } from "canvas";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor, paintAtlas } from "../src/game/pinball-knight/testkit/atlas-census";
 import { censusCell, paletteRgb, declaredSet } from "../src/game/pinball-knight/render/atlas-census";
@@ -28,7 +28,20 @@ function statsFor(imgs: any[], declared: Set<number>): any {
   const union = new Set();
   for (const x of s) for (let i = 0; i < x.counts.length; i++) if (x.counts[i]) union.add(i);
   const invented = [...union].filter((i: number) => declared && !declared.has(i)).length;
-  return { entries: +mean((x) => x.entries).toFixed(2), isolated: +mean((x) => x.isolatedPct).toFixed(1),
+  // ON-SCREEN SIZE, which is what actually decided this comparison and which no
+  // census column reports. The live sheet renders 36x35 with 815 opaque texels;
+  // the committed regen renders 17x38 with 422. A faithful sprite at half the
+  // ink loses to an approximate one at full ink, every time.
+  let bw = 0, bh = 0, fill = 0;
+  for (const im of imgs) {
+    let x0 = GRID, y0 = GRID, x1 = -1, y1 = -1, n = 0;
+    for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++)
+      if (im.data[(y * GRID + x) * 4 + 3] > 127) { n++;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    bw = Math.max(bw, x1 - x0 + 1); bh = Math.max(bh, y1 - y0 + 1); fill += n;
+  }
+  return { inkW: bw, inkH: bh, opaqueMean: Math.round(fill / imgs.length),
+           entries: +mean((x) => x.entries).toFixed(2), isolated: +mean((x) => x.isolatedPct).toFixed(1),
            runLen: +mean((x) => x.runLen).toFixed(2), unionEntries: union.size, invented,
            unmatched: s.reduce((a, x) => a + x.unmatched, 0) };
 }
@@ -52,7 +65,7 @@ const declared = new Set();
 }
 
 // ── the import path, shared by every generated arm ──────────────────────────
-async function importArm(label: string, snapMode: any, sourceCanvas: any, fitGrid?: number, cellCounts?: number[]): Promise<any> {
+async function importArm(label: string, _snap: any, sourceCanvas: any, fitGrid?: number, cellCounts?: number[]): Promise<any> {
   const raw = rawOf(sourceCanvas);
   let data = raw.data;
   const clear = (() => { let n = 0; for (let i = 3; i < data.length; i += 4) if (data[i] === 0) n++;
@@ -74,7 +87,7 @@ async function importArm(label: string, snapMode: any, sourceCanvas: any, fitGri
   const named = rows.map((_: any, i: number) => (i === 0 ? "idle" : "walk"));
   const mrows = rows.map((r: any, i: number) => ({ clip: named[i], cells: r.cells }));
   const c = commitToGrid({ width: raw.width, height: raw.height, data }, mrows, pal,
-    { snap: snapMode, ...(fitGrid ? { fitGrid } : {}) });
+    { ...(fitGrid ? { fitGrid } : {}) });
   const g = detectPixelGrid(c.image, c.rows.flatMap((r) => r.cells));
 
   const cv = toCanvas(Object.assign(createCanvas(c.image.width, c.image.height).getContext("2d")
@@ -131,7 +144,29 @@ function perfectSheet() {
   return cv;
 }
 
-const arms = [];
+const arms: any[] = [];
+
+// ── LIVE: what the game actually renders TODAY. ─────────────────────────────
+//
+// The baseline every other arm has to beat, and the first version of this
+// harness omitted it -- comparing the painter, the painter round-tripped, and a
+// REGENERATED sheet, none of which is on screen. What ships is
+// public/sprites/jester-S.png loaded through its OWN manifest, which carries no
+// `grid` field, so importedPaints takes the fitted-resample path. No commit, no
+// re-slice: the shipped artifact, verbatim.
+{
+  const mf = JSON.parse(readFileSync("public/sprites/jester-S.json", "utf8"));
+  const im = await loadImage("public/sprites/jester-S.png");
+  const cv = createCanvas(im.width, im.height);
+  cv.getContext("2d").drawImage(im, 0, 0);
+  const paints = importedPaints([{ manifest: mf, image: cv as any }]);
+  const imgs: any[] = [];
+  for (const cl of CLIPS) for (const f of ((paints as any)?.S?.[cl] ?? []).slice(0, 4)) imgs.push(paintAtlas(f, GRID));
+  arms.push({ label: "LIVE-ships-today", imgs,
+    grid: mf.grid ? ("grid x" + mf.grid) : "no lattice -> fitted resample",
+    report: null, dE: null, stats: statsFor(imgs, declared) });
+}
+
 arms.push({ label: "A-painted", imgs: paintedImgs, grid: "(painter — no sheet)", report: null,
             stats: statsFor(paintedImgs, declared) });
 // The control must not RESIZE. Measure the painter's own ink height and pick
@@ -148,7 +183,7 @@ arms.push(await importArm("B-perfect-source", "luma", perfectSheet(), fitB));
 const gen = await loadImage(SHEET);
 const genCv = createCanvas(gen.width, gen.height);
 genCv.getContext("2d").drawImage(gen, 0, 0);
-for (const m of ["luma", "lab", "separate"]) arms.push(await importArm("C-gen-" + m, m, genCv, 0, [8, 8]));
+arms.push(await importArm("C-gen-committed", "luma", genCv, 0, [8, 8]));
 
 // ── contact strip ───────────────────────────────────────────────────────────
 const COLS = Math.max(...arms.map((a: any) => a.imgs.length));
