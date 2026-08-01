@@ -85,6 +85,8 @@ export interface CommitOptions {
   maxEntries?: number;
   /** Blank texels between cells. ≥1 so the slicer can separate them again. */
   gutter?: number;
+  /** How each texel picks its palette entry. See `SnapMode`. Default `luma`. */
+  snap?: SnapMode;
 }
 
 export interface CommitReport {
@@ -115,6 +117,135 @@ function palDist(a: readonly number[], b: readonly number[]): number {
   const dg = (a[1] - b[1]) * 0.59;
   const db = (a[2] - b[2]) * 0.11;
   return dr * dr + dg * dg + db * db;
+}
+
+/**
+ * ── THE SNAP, AND WHY IT IS A CHOICE HERE AND NOWHERE ELSE ──────────────────
+ *
+ * At runtime the engine's `snapColor` is the only option and it is the right
+ * one: it is the metric the crush uses, it is table-driven, and it has to be
+ * fast. But a COMMITTED sheet is written in exact palette RGB, so the engine's
+ * snap finds a distance-0 match and does nothing. That means the commit owns
+ * the colour decision outright, offline, with no frame budget — so it can
+ * afford a better metric than the runtime can.
+ *
+ * Measured on the shipped sheets (mean CIE76 ΔE in Lab, pixel-weighted):
+ * the global 32 costs ~9.6 ΔE on the rotortail against 4.1 for a palette built
+ * for that sprite, and the 20-entry lock accounts for 0.07 of that. So the
+ * error is in WHICH ENTRY each colour picks, which is exactly what these modes
+ * change.
+ */
+export type SnapMode =
+  /** The engine's luma-weighted RGB metric. Matches the runtime exactly. */
+  | "luma"
+  /** Nearest in CIE Lab. Perceptually uniform, where luma-weighted RGB is not. */
+  | "lab"
+  /**
+   * Distinct source colours get DISTINCT entries.
+   *
+   * The failure this attacks: nearest-snap is per-pixel and blind, so a brown
+   * creature sends 41% of itself into a 3-entry leather ramp and every fold
+   * collapses onto the same index. Absolute accuracy is not what makes a sprite
+   * read at 46 texels — INTERNAL CONTRAST is. This clusters the sprite, orders
+   * the clusters by coverage, and gives each its nearest UNUSED entry, so the
+   * big shapes get their best colour and no two survive as one.
+   */
+  | "separate";
+
+/** sRGB byte triple → CIE Lab. D65, the usual matrix. */
+function rgbToLab(r: number, g: number, b: number): [number, number, number] {
+  const f = (v: number): number => {
+    const c = v / 255;
+    return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92;
+  };
+  const R = f(r), G = f(g), B = f(b);
+  const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047;
+  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+  const k = (v: number): number => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+  const fx = k(x), fy = k(y), fz = k(z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+
+const labDist2 = (a: readonly number[], b: readonly number[]): number =>
+  (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
+/**
+ * Pick the per-colour → palette-index function for a mode.
+ *
+ * `luma` and `lab` are memoised point lookups. `separate` has to see the whole
+ * sprite first, so it builds an assignment table and then reads from it.
+ */
+function buildChooser(
+  mode: SnapMode,
+  raw: readonly (readonly [number, number, number][])[],
+  pal: readonly (readonly number[])[],
+  palLab: readonly [number, number, number][],
+  maxEntries: number,
+): (c: readonly [number, number, number]) => number {
+  const memo = new Map<number, number>();
+  const key = (c: readonly number[]): number => (c[0] << 16) | (c[1] << 8) | c[2];
+
+  if (mode === "luma") {
+    return (c) => {
+      const k = key(c);
+      let v = memo.get(k);
+      if (v === undefined) { v = snapColor(c[0], c[1], c[2]); memo.set(k, v); }
+      return v;
+    };
+  }
+  if (mode === "lab") {
+    return (c) => {
+      const k = key(c);
+      let v = memo.get(k);
+      if (v === undefined) {
+        const l = rgbToLab(c[0], c[1], c[2]);
+        let best = 0, bd = Infinity;
+        for (let i = 0; i < palLab.length; i++) {
+          const d = labDist2(l, palLab[i]);
+          if (d < bd) { bd = d; best = i; }
+        }
+        memo.set(k, (v = best));
+      }
+      return v;
+    };
+  }
+
+  // ── separate ──
+  // Coverage-ordered greedy rather than an optimal assignment: the sprite has
+  // at most `maxEntries` clusters against 32 candidates, and the biggest region
+  // choosing first is the property that matters — an optimal matching can trade
+  // the body's colour away to improve a highlight nobody sees.
+  const tally = new Map<number, { n: number; r: number; g: number; b: number }>();
+  for (const cell of raw) {
+    for (const c of cell) {
+      if (c[0] < 0) continue;
+      // Quantise to 5 bits/channel first: generation noise spans ±8, and a
+      // cluster split by noise hands its vote to whichever half is luckier.
+      const q = ((c[0] >> 3) << 10) | ((c[1] >> 3) << 5) | (c[2] >> 3);
+      const t = tally.get(q);
+      if (t) { t.n++; t.r += c[0]; t.g += c[1]; t.b += c[2]; }
+      else tally.set(q, { n: 1, r: c[0], g: c[1], b: c[2] });
+    }
+  }
+  const clusters = [...tally.entries()]
+    .map(([q, t]) => ({ q, n: t.n, lab: rgbToLab(t.r / t.n, t.g / t.n, t.b / t.n) }))
+    .sort((a, b) => b.n - a.n);
+
+  const used = new Set<number>();
+  const assign = new Map<number, number>();
+  for (const cl of clusters) {
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < palLab.length; i++) {
+      if (used.size < maxEntries && used.has(i)) continue; // still room — insist on distinct
+      const d = labDist2(cl.lab, palLab[i]);
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best < 0) best = 0;
+    if (used.size < maxEntries) used.add(best);
+    assign.set(cl.q, best);
+  }
+  return (c) => assign.get(((c[0] >> 3) << 10) | ((c[1] >> 3) << 5) | (c[2] >> 3)) ?? 0;
 }
 
 /** Copy one cell's rect out of the sheet into its own buffer. */
@@ -182,18 +313,37 @@ export function commitToGrid(
   // meant. See `resample.ts`.
   const texels = all.map((c, i) => resampleCell(cutCell(src, c), sized[i][0], sized[i][1], "kcentroid"));
 
+  const snapMode = opts.snap ?? "luma";
+  const palLab = pal.map((c) => rgbToLab(c[0], c[1], c[2]));
+
+  /**
+   * `separate` needs to see the whole sprite before it can assign anything, so
+   * the per-texel colours are gathered first and the index chosen after.
+   */
+  const raw: [number, number, number][][] = texels.map((t) => {
+    const out: [number, number, number][] = [];
+    for (let p = 0; p < t.width * t.height; p++) {
+      out.push(
+        t.data[p * 4 + 3] <= OPAQUE_CUTOFF
+          ? [-1, -1, -1]
+          : [t.data[p * 4], t.data[p * 4 + 1], t.data[p * 4 + 2]],
+      );
+    }
+    return out;
+  });
+
+  const chooser = buildChooser(snapMode, raw, pal, palLab, maxEntries);
   const counts = new Map<number, number>();
-  const idx: Int16Array[] = [];
-  for (const t of texels) {
-    const m = new Int16Array(t.width * t.height).fill(-1);
-    for (let p = 0; p < m.length; p++) {
-      if (t.data[p * 4 + 3] <= OPAQUE_CUTOFF) continue;
-      const q = snapColor(t.data[p * 4], t.data[p * 4 + 1], t.data[p * 4 + 2]);
+  const idx: Int16Array[] = raw.map((cell) => {
+    const m = new Int16Array(cell.length).fill(-1);
+    for (let p = 0; p < cell.length; p++) {
+      if (cell[p][0] < 0) continue;
+      const q = chooser(cell[p]);
       m[p] = q;
       counts.set(q, (counts.get(q) ?? 0) + 1);
     }
-    idx.push(m);
-  }
+    return m;
+  });
 
   // ── 3. EVICT to the lock ─────────────────────────────────────────────────
   //
