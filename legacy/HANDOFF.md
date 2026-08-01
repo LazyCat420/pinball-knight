@@ -7,6 +7,83 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🕳️ THE BLANK SPACES + BIGGER FLOORS (2026-07-31, `main@d1c0245`, DEPLOYED)
+
+Roadmap: `src/game/pinball-knight/PLAZA_PLAN.md` (both halves of the ask —
+generation, and the new movers: maw / swingarm / scoop / gate / diverter /
+magpost, each with its registry cost and measurement).
+
+**Asked:** fill the open spaces with pinball logic; and "make the levels larger
+… harder to find the boss".
+
+**Built a metric first, and it refuted my own hypothesis.** `maze/open-space.ts`
+measures DISTRIBUTION (geodesic distance to the nearest part, crossed with
+clearance, so a wide empty corridor reads as transit and an empty room reads as
+a defect). `R_DEAD = 12` tiles derived twice — 0.80 s at `BOOSTER_SPEED`, and
+~2× the spacing `minPartsPer1k` already calls acceptable.
+
+Over 180 real floors the complaint was real (median floor had a **23-tile**
+stretch with nothing in it) but **not the Great Hall**: by archetype the worst
+was **ringkeep 8.8%**, whose `plazaFrac` is 0. The axis was DEPTH.
+
+**Floors were a quarter of their documented size.** `levelConfig` claims late
+floors reach "~266×202 (~54k tiles)"; that assumed `thickenWalls`' 2×/side,
+gone since track-first. Real was 133×101. Same 4× bookkeeping error as the
+`floorTiles` note beside it. Now `(96,72)`: 28k tiles, start→stairs **135 → 236
+(+75%)**, generation 252 → 382 ms. `(132,100)` would restore the full intent but
+sits AT the 53k perf ceiling and triples generation — headroom left unspent.
+
+**The lever that held density was not the obvious one.** `PARTS_MAX` and
+`partsArea` barely moved it and were REVERTED. What worked: unsaturating two
+ceilings (`routeBudget` 64→180, `plazaCap` 8→24 — both absolute caps tuned when
+the deepest floor was 8.4k walkable, so past that the cap became the binding
+term), and sizing the sparse-region fill against the metric (`REGION` 24→12 =
+`R_DEAD`). **Almost every furniture pass scales with a LENGTH, not an area** —
+the route layer follows the artery, chains follow exit rays — so on a bigger
+floor they all thin by themselves. The fill is the only area-proportional supply
+there is. Its ceiling is target-minus-RESERVE, not flat per-1k, because the
+passes after it add a roughly constant ~35 parts.
+
+Result: floors **2.2× larger** at depth and **less empty than before they grew**
+— deadShare p50 5.8% → 0.8%, worstBarren p50 23.0 → 17.0 t, partsPer1k peaks
+31.0 against the density gate's 34.
+
+### ⚠️ NO HARNESS BUILT THE FLOOR THAT SHIPS — fixed 3 of 4
+
+Measured: the shipped chain and `buildHeadlessFloor` agreed on **0 of 15**
+(level, seed) pairs. `buildHeadlessFloor` and `floor-rules.test.ts`
+`floorContext()` both ran a whole LEGACY maze before `buildTrackFloor`; on the
+track branch none of those calls happen, and every one draws rng.
+`floor-density.test.ts` `liveFloor()` drifts the other way (no `rollModifier`,
+no `stampSecretBands`) — **still unfixed, the last one**.
+
+Fixing them exposed two REAL defects, proved pre-existing by re-running the
+fixed harness against the OLD caps and getting identical failures:
+
+1. **`pickTrackEndpoints` settles short** on 2 of 78 floors — L1 warrens seed
+   424242 puts the stairs 26 tiles from spawn on a floor whose reach is 128.
+   `minBossTiles: 30` is well calibrated (real p5 = 57); the rule's own claim
+   that it "finds nothing today" came from the drifted census. Now recorded in
+   `TrackFloor.relaxed` at a 2.6% rate against a 12% cap. **The search itself is
+   NOT fixed.**
+2. **`perimeterBias` does not move `spine` (0.574) or `ringkeep` (0.541)** —
+   both spawn as centrally as the greathall exemption (0.599). The test's
+   assertion is narrowed to the pair it holds against; that is not a verdict
+   that they should.
+
+**Also worth knowing:** the funnel result (+6.1 pp) was measured on the drifted
+harness. Paired same-seed, so the direction survives — the magnitude describes
+floors the game does not build. Re-measure before quoting.
+
+**Instruments:** `scripts/open-space-census.mjs` (`--diff before.json
+after.json`), `dev/headless-floor.ts buildHeadlessPlan` (the one faithful
+harness). 1950 tests pass; registry-drift clean; live container healthy,
+restarts=0.
+
+**Next:** PLAZA_PLAN A-Wave 1 (revive `furnishRooms`, dead on every shipped
+floor) — but re-scope it first, since the census says the defect is not
+Great-Hall-specific.
+
 ## 🔬 THE 1:1 IMPORT PATH — the generator wave (2026-07-31, `main@38a2738`)
 
 Report with all measurements: the session artifact "The 1:1 Import Pipeline".
