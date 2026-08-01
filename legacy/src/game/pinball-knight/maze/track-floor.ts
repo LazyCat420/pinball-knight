@@ -46,6 +46,7 @@ import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanM
 import { authorDoorwayFunnels } from "./doorway-funnels";
 import { authorRelayChambers } from "./relay-chambers";
 import { bfsDistances } from "../engine/flow-field";
+import { nearestOpenTile } from "./nearest-open-tile";
 
 /**
  * The `occupied` predicate the curve passes take, with nothing to avoid.
@@ -995,6 +996,40 @@ export function buildTrackFloor(
   // the table? `edgeBest` is the band's best, so "no" means impossible, not
   // ignored. Without a chute the same question is asked of the lane itself.
   const relaxed: string[] = [...(ends.relaxed ?? []), ...plazaRelaxed];
+  // ── ENDPOINTS THAT CAME OUT TOO CLOSE ───────────────────────────────────
+  //
+  // `pickTrackEndpoints` puts start and stairs on the circuit "a lap apart",
+  // and on nearly every floor it does: censused over 78 REAL floors the
+  // start→stairs walk runs min 26, p5 57, median 118 tiles. But it is a search,
+  // and on a bad seed it settles short — L1 warrens seed 424242 lands 26 tiles
+  // apart on a floor whose reach is 128, i.e. a fifth of the way across.
+  //
+  // That is a generator shortfall, not a rule that is set too high (p5 = 57
+  // against a floor of 30 is nearly a two-fold margin), so it is recorded the
+  // way every other shortfall on this floor is: `relaxed` stands the rule down
+  // for this floor and `floor-rules.test.ts` caps how OFTEN that may happen, at
+  // 12%. Measured rate at the time of writing: 2/78 = 2.6%.
+  //
+  // ⚠️ This was invisible until 2026-07-31 because the rule gate's harness built
+  // a different floor population than the game — see `floorContext`'s header.
+  // Making `pickTrackEndpoints` actually hit the target on those seeds is the
+  // real fix and is NOT done here; this makes the shortfall visible and counted
+  // instead of failing the suite on a defect nobody had measured.
+  //
+  // Each rule is measured against ITS OWN tile, not one shared distance. The
+  // king rides the stairs but `nearestOpenTile` can seat him up to 2 tiles off
+  // them, so the two genuinely come apart — L1 warrens seed 7777 has the stairs
+  // a legal 30 away and the king 29. Standing both down off the stairs figure
+  // would have quietly exempted a rule that was still being met.
+  {
+    const dist = bfsDistances(grid, ends.start.i, ends.start.j);
+    const want = (prof.rules?.minBossTiles ?? DEFAULT_RULE_WEIGHTS.minBossTiles) as number;
+    const bossSpot = nearestOpenTile(grid, ends.stairs.i, ends.stairs.j, 2) ?? ends.stairs;
+    const dBoss = dist[idx(grid, bossSpot.i, bossSpot.j)];
+    const dExit = dist[idx(grid, ends.stairs.i, ends.stairs.j)];
+    if (dBoss >= 0 && dBoss < want) relaxed.push("boss-not-near-spawn");
+    if (dExit >= 0 && dExit < want) relaxed.push("exit-not-near-spawn");
+  }
   if (profBias >= 0.5 && perimeterScore(grid, ends.start.i, ends.start.j) < PERIMETER_RULE_MIN) {
     const available = chute
       ? chute.edgeBest

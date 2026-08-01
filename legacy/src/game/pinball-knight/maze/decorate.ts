@@ -1938,7 +1938,12 @@ function polishParts(g: Grid, parts: PinballPartSpot[], rng: () => number, walka
   // bumpers per floor. Scaling by area keeps the deep floors exactly as they
   // were (the count saturates at 8 by L10) and thins the shallow ones, which is
   // where the crowding actually was.
-  const plazaCap = Math.max(2, Math.min(8, Math.round(walkable / 900)));
+  // The cap is the same shape as `routeBudget`'s and moved for the same reason:
+  // 8 saturated at 7.2k walkable, which every floor past L10 now clears, so the
+  // area scaling this line exists for stopped applying exactly where floors got
+  // biggest. 24 is ~14% above what `walkable/900` can ask for at the (96,72)
+  // ceiling (18.6k walkable => 21).
+  const plazaCap = Math.max(2, Math.min(24, Math.round(walkable / 900)));
   for (const c of shuffled(candidates, rng).slice(0, plazaCap)) {
     // Re-check spacing — an earlier stamp this loop may now be the neighbour.
     if (parts.some((p) => Math.max(Math.abs(p.i - c.i), Math.abs(p.j - c.j)) <= 3)) continue;
@@ -2239,7 +2244,17 @@ export function decorateMaze(
   //
   // PRIMARY ROUTE FIRST — `routes[0]` is the artery — so what a binding budget
   // cuts is always slip-road furniture and the through-line survives intact.
-  const routeBudget = Math.max(12, Math.min(64, Math.round(floors.length / 110)));
+  //
+  // ⚠️ THE CEILING MUST OUTRUN THE RULE, or it stops being a ceiling and becomes
+  // the rule. 64 was set when the deepest floor was ~8.4k walkable, where
+  // `walkable/110` = 76 — so it trimmed the outlier and nothing else, exactly as
+  // intended. At the (96,72) floors this file now sees, `walkable/110` reaches
+  // 169 and a fixed 64 would be the BINDING term on every deep floor, cutting
+  // route furniture from the derived 9.1 per 1k to 3.4 and inverting the
+  // guard's purpose. Measured before it moved: route parts per 1k fell with
+  // depth on every archetype. 180 is ~6% above the new maximum the rule can
+  // ask for, which restores "catches a hostile seed, never the rule".
+  const routeBudget = Math.max(12, Math.min(180, Math.round(floors.length / 110)));
   let routeSpent = 0;
   for (let r = 0; r < routes.length; r++) {
     routeSpent += layStationSpine(g, phi, routes[r], start, stairs, parts, items, inChute, {
@@ -2422,7 +2437,27 @@ export function decorateMaze(
   // yet gets one omni part (bumper, spinpad every third — no fire direction, so
   // none of the runway/orphan invariants apply). One part per empty region:
   // area-proportional by construction, so density now rides the floor size.
-  const REGION = 24; // tiles per coarse cell side (~one screen of maze)
+  //
+  // ── WHY THE REGION IS THE SIZE IT IS (2026-07-31) ─────────────────────
+  //
+  // 24 was "~one screen of maze", which is a framing rule, not a coverage one.
+  // This is the only pass on the floor whose supply is proportional to AREA:
+  // the route layer lays furniture along the artery (1-D, so it scales with
+  // path length), the chains follow exit rays, and the corridor deal is a flat
+  // budget. So when floors grew, everything else scaled with a LENGTH and this
+  // was the one term that could have held density — throttled to one part per
+  // 576 tiles.
+  //
+  // Sized against the metric instead. `maze/open-space.ts` defines R_DEAD = 12
+  // tiles as the distance past which a stretch reads as blank. A region of side
+  // S guaranteed to hold at least one part leaves a worst case of ~0.7·S within
+  // a region and up to ~1.4·S across two adjacent ones, so S = R_DEAD makes the
+  // guarantee and the threshold the same number rather than two unrelated ones.
+  //
+  // This does NOT simply multiply the part count by four: the pass fires only
+  // into regions holding NO part at all, so it is a floor under the density
+  // rather than an addition to it. Dense regions still receive nothing.
+  const REGION = 12; // tiles per coarse cell side — one R_DEAD, see above
   const regW = Math.ceil(g.w / REGION);
   const regionOf = (i: number, j: number): number => Math.floor(j / REGION) * regW + Math.floor(i / REGION);
   const filledRegions = new Set(parts.map((p) => regionOf(p.i, p.j)));
@@ -2433,9 +2468,40 @@ export function decorateMaze(
     if (pool.length === 0) fillPools.set(r, pool);
     pool.push(c);
   }
+  // ── …AND THE CEILING THAT STOPS COVERAGE BECOMING CLUTTER ──────────────
+  //
+  // The fill is a FLOOR under density, so where it meets the ceiling the
+  // ceiling wins. Without this it does not: at REGION = R_DEAD a SMALL floor
+  // has enough regions relative to its area to push past `maxPartsPer1k` on its
+  // own. Measured — L1 ringkeep at ~2.2k walkable came out at 38.8 and 35.4 per
+  // 1k against `floor-density`'s ceiling of 34, while every large floor stayed
+  // in band. Coverage is what a big floor is short of; a small one already has
+  // it, and there the same rule only crowds.
+  //
+  // The ceiling is a TARGET DENSITY MINUS A RESERVE, and the reserve is what
+  // makes it work on both ends of the size range.
+  //
+  // First attempt was a flat per-1k ceiling, and it failed: this pass runs
+  // BEFORE the vault ramps, the hazard layer, the chute pads and the targets,
+  // and those add a roughly CONSTANT number of parts per floor rather than a
+  // per-area one — measured at ~35 on the offending floor. Constant overhead is
+  // 16 per 1k on a 2.1k-tile floor and under 2 per 1k on an 18.7k one, so no
+  // single per-1k figure can both spare the small floor and leave the big one
+  // alone. A flat 28 still landed at 38.8, and tightening it far enough to fix
+  // that would have clawed back the coverage this whole change bought.
+  //
+  // So: aim at FILL_TARGET_PER_1K of the finished floor and hand FILL_RESERVE
+  // parts to the passes downstream. On a 2.1k floor that allows 24 and the
+  // floor finishes near 28 per 1k; on an 18.7k floor it allows 523 against a
+  // floor that finishes around 337, so it never binds where coverage is the
+  // thing actually in short supply.
+  const FILL_TARGET_PER_1K = 30;
+  const FILL_RESERVE = 40;
+  const fillMax = Math.floor((floors.length * FILL_TARGET_PER_1K) / 1000) - FILL_RESERVE;
   let fillCount = 0;
   for (const [r, pool] of fillPools) {
     if (filledRegions.has(r)) continue;
+    if (parts.length >= fillMax) break;
     const cand = pool.find((c) => !parts.some((q) => Math.abs(q.i - c.i) + Math.abs(q.j - c.j) < 3));
     if (!cand) continue;
     parts.push(spotForKind(++fillCount % 3 === 0 ? "spinpad" : "bumper", cand, rng));

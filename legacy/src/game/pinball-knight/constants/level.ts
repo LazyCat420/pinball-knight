@@ -127,10 +127,26 @@ export function floorBudgets(level: number, walkable: number): { zombies: number
     // lands at ~16 per 1k — a 2x margin, which is what pays for corridors being
     // 1-D where the estimate is 2-D. Cap first binds at L8.
     torches: Math.min(Math.round(walkable / 70) + 6, 80),
-    // Near-parity with the old `floorTiles/2000` (which was walkable/627 in
-    // truth), and that is DELIBERATE. The corridor deal is not the density
+    // WAS `walkable / 600`, at near-parity with the old `floorTiles/2000`, and
+    // the comment justifying it said: "The corridor deal is not the density
     // problem — censused at 19-26 parts per 1k walkable and already falling
-    // with depth. Moving it would re-roll every floor for no measured gain.
+    // with depth. Moving it would re-roll every floor for no measured gain."
+    //
+    // The first half of that conceded the defect; the second declined to fix it
+    // for want of a measurement. `maze/open-space.ts` is that measurement, and
+    // over 180 floors it puts the fall at 23.2 parts per 1k over L1-8 against
+    // 17.7 over L17-24, with 5.8% of the median floor sitting more than
+    // R_DEAD (12 tiles) from anything. So the gain is now measured, and the
+    // re-roll is bought rather than spent.
+    //
+    // …and the fix turned out NOT to belong here. Measured: lifting this to
+    // /450 alongside PARTS_MAX moved `deadShare` barely at all, because the
+    // corridor deal is a minority of the floor's furniture. What actually
+    // carried it was sizing the sparse-region fill against R_DEAD
+    // (`decorate.ts` REGION), the one pass whose supply is proportional to
+    // AREA rather than to a path length. Both speculative lifts were reverted
+    // once that landed and the numbers held — so this stays at /600, and the
+    // conceded defect above is fixed somewhere it could actually be fixed.
     partsArea: Math.floor(walkable / 600),
   };
 }
@@ -145,8 +161,41 @@ export function levelConfig(level: number): LevelConfig {
   // floorTiles below; hard caps were re-tuned for the new area — see
   // ROUTE_MATH_PLAN.md §10 for what scales, what's hand-set, and the perf
   // watchlist (zombie draw calls, flow-field O(tiles)).
-  const cellsW = Math.min(34 + Math.ceil(l * 2.8), 66);
-  const cellsH = Math.min(24 + 2 * l, 50);
+  //
+  // ── THE CAPS, AND WHY THEY MOVED (2026-07-31) ──────────────────────────
+  //
+  // The paragraph above says "the caps let late floors reach ~266×202 (~54k
+  // tiles)". That has not been true since track-first shipped, for exactly the
+  // reason `floorTiles` below already documents: the legacy branch built
+  // (2c+1)(2h+1) and `thickenWalls` then DOUBLED each side, while
+  // `buildTrackFloor` generates at final resolution and never thickens. At the
+  // old (66, 50) the real grid was 133×101 = 13.4k tiles, ~8.4k walkable —
+  // **a quarter of the documented intent**, and the same 4× bookkeeping error
+  // that made `floorTiles` 3.2× too big.
+  //
+  // Live QA: "we can bounce around pretty fast in the maze so we need to make
+  // it harder to find the boss." Measured over 3 seeds at L20, geometry only:
+  //
+  //   cells      tiles  walkable  pathLen  gen ms
+  //   (66,50)    13433     8407      135     252
+  //   (80,60)    19481    12506      182     261
+  //   (96,72)    27985    18627      236     382   <- shipped
+  //   (132,100)  53265    36109      267     755
+  //
+  // `pathLen` is the start→stairs walk, which is the quantity "harder to find
+  // the boss" names: +75% at (96,72). Generation is once per descent and stays
+  // inside half a second. (132,100) would restore the documented intent
+  // exactly, but it sits AT the 53k tile ceiling the perf watchlist
+  // (ROUTE_MATH_PLAN.md Part 10) was sized against rather than inside it, and
+  // triples generation cost — so the remaining headroom is deliberately left
+  // unspent.
+  //
+  // The RAMP RATES are unchanged, so only the depth at which growth stops
+  // moves: cellsW capped at L12 and cellsH at L13, and they now cap at L23 and
+  // L24. Every floor shallower than that is bit-identical, which is what keeps
+  // this change scoped to the floors the complaint is about.
+  const cellsW = Math.min(34 + Math.ceil(l * 2.8), 96);
+  const cellsH = Math.min(24 + 2 * l, 72);
   /**
    * PREDICTED walkable tiles. A prediction, and only ever used as one — the
    * shipping path counts the real grid (`core.ts`, `walkableCount`).
