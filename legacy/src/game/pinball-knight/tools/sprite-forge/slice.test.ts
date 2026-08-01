@@ -110,3 +110,49 @@ describe("sliceSheet — the inputs it cannot take", () => {
     expect(after).not.toBe(before);
   });
 });
+
+describe("a row of BROAD creatures is not a ruled line", () => {
+  /**
+   * `frog.png`: five wide frogs per row reach 73% TOTAL ink on their widest
+   * scanlines, over the 70% rule threshold, so those scanlines were erased as
+   * borders — the idle cells came back 57px tall against a ~150px frog and every
+   * frame shipped as a headless dome.
+   *
+   * Contiguity separates them because a rule is a LINE: the frogs' longest
+   * unbroken run is one frog wide (15%), a border's is the whole sheet.
+   */
+  const W = 400, H = 120;
+  const build = (draw: (set: (x: number, y: number) => void) => void): Uint8ClampedArray => {
+    const d = new Uint8ClampedArray(W * H * 4);
+    draw((x, y) => { if (x >= 0 && x < W && y >= 0 && y < H) d[(y * W + x) * 4 + 3] = 255; });
+    return d;
+  };
+
+  it("keeps a scanline that is 75% ink but broken into blobs", () => {
+    // Five blobs of 60px with 20px gaps = 300/400 = 75% ink, longest run 60 (15%).
+    const data = build((set) => {
+      for (let b = 0; b < 5; b++)
+        for (let x = b * 80; x < b * 80 + 60; x++)
+          for (let y = 30; y < 90; y++) set(x, y);
+    });
+    const rows = sliceSheet(data, W, H);
+    expect(rows.length).toBe(1);
+    expect(rows[0].cells.length).toBe(5);
+    // and the FULL height survives — the defect truncated it
+    const [, y0, , y1] = rows[0].cells[0];
+    expect(y1 - y0 + 1).toBeGreaterThanOrEqual(55);
+  });
+
+  it("ANTI-VACUITY: an actual full-width rule is still stripped", () => {
+    // Same blobs, plus a genuine 2px border across the whole sheet. If the rule
+    // test were simply disabled, this row would weld into one cell.
+    const data = build((set) => {
+      for (let b = 0; b < 5; b++)
+        for (let x = b * 80; x < b * 80 + 60; x++)
+          for (let y = 30; y < 90; y++) set(x, y);
+      for (let x = 0; x < W; x++) { set(x, 58); set(x, 59); }
+    });
+    const rows = sliceSheet(data, W, H);
+    expect(rows[0].cells.length, "the ruled line must not weld the row").toBe(5);
+  });
+});

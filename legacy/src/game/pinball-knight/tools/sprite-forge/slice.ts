@@ -118,12 +118,31 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
   const solid = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) solid[i] = data[i * 4 + 3] > 8 ? 1 : 0;
 
-  // ── Strip ruled lines. A full-width row or full-height column of opaque
-  // pixels is a border; art never spans the sheet.
+  // ── Strip ruled lines. A full-width row of opaque pixels is a border.
+  //
+  // ⚠️ MEASURED AS ONE CONTIGUOUS RUN, NOT AS TOTAL INK. Total ink counts a row
+  // of separate figures the same as a line drawn through them, so a sheet of
+  // BROAD creatures busts the threshold on the strength of the creatures alone.
+  // Measured on `frog.png` — five wide frogs per row — the widest scanlines
+  // reach 73% total ink and were erased as borders, so the idle cells came back
+  // 57px tall against a ~150px frog and every frame shipped as a headless dome.
+  //
+  // Longest contiguous run separates them by construction, because a rule is a
+  // LINE and five frogs are five blobs with gaps:
+  //
+  //     ruled border      ~100% contiguous
+  //     frog row            15% contiguous  (73% total ink)
+  //
+  // Same lesson the VERTICAL pass below already learned — "a vertical rule is
+  // SPANNING *AND* NARROW, fill alone is not enough" — never applied up here.
   for (let y = 0; y < h; y++) {
-    let n = 0;
-    for (let x = 0; x < w; x++) n += solid[y * w + x];
-    if (n >= w * RULE_FILL) for (let x = 0; x < w; x++) solid[y * w + x] = 0;
+    let run = 0;
+    let best = 0;
+    for (let x = 0; x < w; x++) {
+      run = solid[y * w + x] ? run + 1 : 0;
+      if (run > best) best = run;
+    }
+    if (best >= w * RULE_FILL) for (let x = 0; x < w; x++) solid[y * w + x] = 0;
   }
   // ── The OUTER frame's sides, and only those.
   //
@@ -200,11 +219,17 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
     }
     const rowW = bx1 - bx0 + 1;
 
+    // Contiguity again, same reason as the sheet-wide pass: this measures against
+    // the ROW's own extent, so a broad-creature row scores even higher here.
     let ruled = false;
     for (let y = 0; y < bandH; y++) {
-      let n = 0;
-      for (let x = 0; x < w; x++) n += band[y * w + x];
-      if (n < rowW * RULE_FILL) continue;
+      let run = 0;
+      let best = 0;
+      for (let x = 0; x < w; x++) {
+        run = band[y * w + x] ? run + 1 : 0;
+        if (run > best) best = run;
+      }
+      if (best < rowW * RULE_FILL) continue;
       for (let x = 0; x < w; x++) band[y * w + x] = 0;
       ruled = true;
     }

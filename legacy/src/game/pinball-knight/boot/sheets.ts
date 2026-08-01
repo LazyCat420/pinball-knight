@@ -284,6 +284,7 @@ export function buildMonsterSheets(): void {
 const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   jester: "jester",
   rotortail: "beaver",
+  croaker: "frog",
 };
 
 /** Player toggle, read at load. `__lab.imported(false)` then reload to compare. */
