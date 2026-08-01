@@ -7,11 +7,47 @@ named `beaver`). See `IMPORTED_ART` in `boot/sheets.ts`.
 ~2900px wide, which no generator gives you in one shot at usable fidelity.
 Strips composite cleanly — `slice.ts` finds rows.
 
-**What to optimise for.** Not the pixel lattice — no generator emits one, and
-the gate will keep saying NOT PIXEL ART. Optimise for **flat fills, a low
-colour count, and poses that actually differ**, because those are the failures
-the census and the eye actually report (jester: 26.6 entries against the
-20-entry atlas lock, 41.5% isolated pixels against the roster's 22.5%).
+## ⛔ READ THIS FIRST — the prompt is not the lever, and that is measured
+
+**A better prompt cannot fix the census. Round 2 proved it.** Do not spend
+generations trying. The prompt below is worth using for POSE and LAYOUT, which
+a generator does obey, and for nothing else.
+
+Round 2 (`jester_test.png`, 2026-07-31) asked in capitals for *"NO
+anti-aliasing"*, *"every region is a FLAT fill of a single solid colour"*, and
+*"AT MOST 16 distinct colours"*. It came back visually excellent — and measured:
+
+| metric | shipped `jester-S` | round 2 | target | |
+|---|---|---|---|---|
+| distinct colours in source | 204,201 | **301,541** | 16 requested | ✗ worse |
+| flat neighbours | 11% | 15% | 55% to pass | ✗ |
+| census `entries` | 26.6 | **30.7** | 20.1 roster / 20 lock | ✗ worse |
+| census `isolated%` | 41.5% | **47.8%** | 22.5% roster | ✗ worse |
+| matte keyed | 79.2% | **61.3%** | — | ✗ worse |
+| GRID lattice | 0.4% | 0.5% | 90% | ✗ |
+
+**301,541 colours against a request for 16.** The art *looks* like flat 16-colour
+pixel art at a glance because it is a continuous-tone RENDERING of that
+appearance — every apparently-flat block is a smooth gradient of hundreds of
+near-identical values. The crush then snaps each of those to a different palette
+index, which is exactly why `entries` went UP.
+
+Not a delivery artifact: JPEG blockiness measured **1.022** (>1.15 would mean
+recompression), so re-exporting as PNG changes nothing. The noise is native to
+the generator. The empty background is genuinely near-flat (172 colours, σ≈1) —
+it is the *artwork* that is continuous.
+
+**What this leaves.** The colour count and the lattice both have to be imposed
+OFFLINE, by a deterministic grid-commit step, not asked for. See
+[[the after-generating section]] below. Generate for pose and layout; let code
+handle the pixels.
+
+---
+
+**What to optimise for.** POSE and LAYOUT — the two things a generator does
+obey. Colour count and flatness are handled downstream; asking for them is
+measured to be worse than useless (it cost a round and moved every metric the
+wrong way).
 
 ---
 
@@ -198,14 +234,30 @@ Sidecar `inbox/beaver-S.json`:
 1. Drop the strips in `inbox/`. If you generated per-row, hand them over to be
    composited into a single `<name>-S.png` — the slicer wants one image.
 2. `npm run sprites`
-3. Read `work/report.txt`. The line that matters is not GRID (it will still
-   fail) but the census:
+3. Read `work/report.txt`. **Do not expect GRID or the census to pass on raw
+   generated art** — round 2 measured both getting worse, not better. What you
+   are checking at this stage is that the SLICE is right (`N rows [a/b/c]`
+   matching your sidecar) and that the poses read.
 
-       MEAN   entries <20  isolated <25%
-       ROSTER entries 20.1 isolated 22.5%
+### The grid-commit step — the only thing that makes the numbers move
 
-   Beating the roster on `entries` and `isolated%` is the win condition for a
-   regenerated sheet. GRID passing needs a grid-commit step, not a better prompt.
+Raw generated art cannot pass, so both properties get imposed offline, once,
+deterministically, before the sheet is treated as final:
+
+1. matte the background (`matte.ts`, already exists)
+2. downscale each cell to its logical texel size with k-centroid
+   (`resample.ts`, already exists)
+3. **snap to a ≤20-entry subset of the Cold Crypt palette** — this makes
+   `entries` satisfy the atlas lock BY CONSTRUCTION rather than by hoping
+4. **nearest-upscale ×8** and write the sheet back
+
+Step 4 is what creates a real lattice, so the sheet then passes the gate and
+`blockReduce` recovers step 3's pixels exactly — a genuine 1:1 import. Steps 3
+and 4 are the missing code; 1 and 2 already ship.
+
+The reason to do it offline rather than let the runtime resample: the artist
+can inspect and repair the committed result, and it happens once instead of at
+every fractional scale.
 
 **Naming.** `<creature>-S.png` is south / toward camera. `-E` is the true side
 profile, `-N` is away. W is never authored — the engine mirrors E.
