@@ -239,25 +239,49 @@ Sidecar `inbox/beaver-S.json`:
    are checking at this stage is that the SLICE is right (`N rows [a/b/c]`
    matching your sidecar) and that the poses read.
 
-### The grid-commit step — the only thing that makes the numbers move
+### The grid-commit step — SHIPPED, and it is what makes the numbers move
 
-Raw generated art cannot pass, so both properties get imposed offline, once,
-deterministically, before the sheet is treated as final:
+Raw generated art cannot pass, so both properties are imposed offline, once,
+deterministically (`commit.ts`). Add `"commit": true` to the sidecar:
 
-1. matte the background (`matte.ts`, already exists)
-2. downscale each cell to its logical texel size with k-centroid
-   (`resample.ts`, already exists)
-3. **snap to a ≤20-entry subset of the Cold Crypt palette** — this makes
-   `entries` satisfy the atlas lock BY CONSTRUCTION rather than by hoping
-4. **nearest-upscale ×8** and write the sheet back
+```json
+{ "rows": ["idle", "walk"], "cells": [8, 8], "commit": true }
+```
 
-Step 4 is what creates a real lattice, so the sheet then passes the gate and
-`blockReduce` recovers step 3's pixels exactly — a genuine 1:1 import. Steps 3
-and 4 are the missing code; 1 and 2 already ship.
+`npm run sprites` then writes a committed copy into `work/<name>/` and prints
+the one command that promotes it. It never touches `inbox/` itself — a commit
+decides which 20 of 32 colours the creature keeps, and an eviction nobody
+looked at is how a creature quietly loses its costume.
 
-The reason to do it offline rather than let the runtime resample: the artist
-can inspect and repair the committed result, and it happens once instead of at
-every fractional scale.
+Measured on round 2's jester (`jester_test.png`):
+
+| | raw | **committed** | painted roster |
+|---|---|---|---|
+| GRID | ✗ no lattice | **✓ ×8 at 100%** | — |
+| census `entries` | 30.7 | **23.2** | 20.1 |
+| census `isolated%` | 47.8% | **34.5%** | 22.5% |
+| census `runLen` | 1.26 | **1.39** | 1.82 |
+| **`invented`** | 30.7 | **3.3** | — |
+| verdict | WORSE | **COMPETITIVE** | — |
+
+**`invented` is the number that matters** — colours the PIPELINE added after the
+artist finished — and it fell 9×. The committed source holds exactly 20 entries;
+the residual ~3 are the engine's own `selout` rim pass, which painted sprites
+pay too. The resample is no longer inventing anything.
+
+**Sizing.** The commit targets the WIDEST camera rung (54 texels), so the figure
+fits at all five and imports 1:1 at every one of them. That caps a standard
+monster at 46 texels tall.
+
+**Two traps it has to work around, both measured:**
+- A committed cell must be a whole number of blocks, so cells are trimmed to
+  their INK before layout — nothing reads the rects the commit emits, because
+  the forge and the game both re-slice the PNG. An untrimmed cell re-sliced to
+  183px against a ×8 lattice and the 1:1 reduce silently became a 3.98:1
+  resample.
+- **Never put a `cells` override in a committed sidecar.** `equalCells` divides
+  a row into N EQUAL columns, which un-does the ink trim and breaks the lattice
+  the same way. The commit verifies its own auto-slice before writing.
 
 **Naming.** `<creature>-S.png` is south / toward camera. `-E` is the true side
 profile, `-N` is away. W is never authored — the engine mirrors E.

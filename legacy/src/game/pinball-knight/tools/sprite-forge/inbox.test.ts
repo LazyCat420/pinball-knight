@@ -47,8 +47,9 @@ import { sliceSheet, equalCells, type Cell } from "./slice";
 import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
 import { labelRows, parseName, unknownClips } from "./labels";
 import { detectPixelGrid } from "./grid";
+import { commitToGrid, type CommitOptions } from "./commit";
 import { matte, rgbHex, type MatteOptions } from "./matte";
-import type { SheetManifest } from "./manifest";
+import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
 
 const ROOT = __dirname;
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
@@ -93,6 +94,15 @@ interface Sidecar {
   cells?: number[];
   /** Background keying options — see matte.ts. */
   matte?: MatteOptions;
+  /**
+   * Write a GRID-COMMITTED copy of this sheet beside the frames — see commit.ts.
+   *
+   * Opt-in rather than automatic, and it does not touch `inbox/`. A commit
+   * decides which 20 of 32 colours the creature keeps; that is an art decision
+   * and it has to be looked at before it becomes the sheet. The run prints the
+   * one command that promotes it.
+   */
+  commit?: boolean | CommitOptions;
 }
 
 /** Share of the sheet that is already transparent. */
@@ -197,7 +207,29 @@ describe("sprite inbox", () => {
         cells as unknown as number[][],
       );
 
-      const k = sheetScale(aliveCells.length ? aliveCells : cells, px);
+      // ── THE SCALE, MIRRORING `importedPaints` EXACTLY.
+      //
+      // ⚠️ This used to be `sheetScale` unconditionally, and that made the whole
+      // report describe a path the game no longer takes. A committed sheet is
+      // built so one authored pixel lands on one atlas texel; measuring it at
+      // the FITTED scale re-introduced the fractional resample the commit exists
+      // to remove, and censused a 20-entry sheet at 29.4 entries. The forge has
+      // to run the shipped decision, not a differently-shaped one.
+      //
+      // `oneToOneScale` is in ART UNITS per source pixel; `sheetScale` is in
+      // DEVICE px per source pixel, so the conversion is the same `px/ART_BOX`
+      // unit `cellPaint` applies.
+      const gridN = grid.gridded ? grid.factor : 1;
+      const oneToOne = gridN > 1 ? oneToOneScale(gridN, G) : 0;
+      const fitCells = aliveCells.length ? aliveCells : cells;
+      const exact = oneToOne > 0 && fitsArtBox(fitCells, oneToOne);
+      if (oneToOne > 0 && !exact) {
+        summary.push(
+          `⚠ ${file}: has a ×${gridN} grid but is too large to import 1:1 at atlas ${G} — ` +
+            `measured on the fitted resample instead. Re-commit it smaller to keep 1:1.`,
+        );
+      }
+      const k = exact ? oneToOne * (px / ART_BOX) : sheetScale(fitCells, px);
       const outDir = join(WORK, name);
       rmSync(outDir, { recursive: true, force: true });
       mkdirSync(outDir, { recursive: true });
@@ -207,7 +239,13 @@ describe("sprite inbox", () => {
       for (let i = 0; i < cells.length; i++) {
         // Blit from the CANVAS, not the decoded image: after matting they
         // differ, and the image still has its opaque background.
-        const buf = registerCell(sc as unknown as CanvasImageSource, cells[i], cellScalePx(cells[i], k, px), px);
+        const buf = registerCell(
+          sc as unknown as CanvasImageSource,
+          cells[i],
+          exact ? k : cellScalePx(cells[i], k, px),
+          px,
+          exact ? px / G : 1,
+        );
         const bctx = buf.getContext("2d");
         if (!bctx) throw new Error("[ingest] no 2D context for the cel buffer");
         const declared = declaredSet(bctx.getImageData(0, 0, px, px).data, pal);
@@ -262,6 +300,54 @@ describe("sprite inbox", () => {
       };
       writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
 
+      // ── THE GRID COMMIT, when the sidecar asks for one.
+      //
+      // Written to `work/`, never to `inbox/`. Promoting it is one copy the
+      // artist makes after LOOKING at it, because the commit evicts colours and
+      // an eviction nobody saw is how a creature quietly loses its costume.
+      let commitLine = "";
+      if (side?.commit) {
+        const copts = typeof side.commit === "object" ? side.commit : {};
+        const c = commitToGrid(
+          { width: sheet.width, height: sheet.height, data: sdata },
+          manifest.rows,
+          pal,
+          copts,
+        );
+        // Prove the claim rather than printing it: a committed sheet that does
+        // not pass the gate it was built to pass is a bug, and it must stop the
+        // run here rather than be discovered on load.
+        const cg = detectPixelGrid(c.image, c.rows.flatMap((r) => r.cells) as unknown as number[][]);
+        expect(cg.gridded, `${file}: the COMMITTED sheet still fails the gate — ${cg.verdict}`).toBe(true);
+        expect(cg.factor, `${file}: committed at ×${c.report.factor} but the gate reads ×${cg.factor}`)
+          .toBe(c.report.factor);
+
+        const cc = createCanvas(c.image.width, c.image.height);
+        const cctx = cc.getContext("2d");
+        const cimg = cctx.createImageData(c.image.width, c.image.height);
+        cimg.data.set(c.image.data as unknown as Uint8ClampedArray);
+        cctx.putImageData(cimg, 0, 0);
+        const cname = `${name}-${dir}.png`;
+        writeFileSync(join(outDir, cname), cc.toBuffer("image/png"));
+        // ⚠️ NO `cells` OVERRIDE on a committed sheet, deliberately.
+        //
+        // `equalCells` divides a row into N EQUAL columns, which is right for a
+        // ruled sheet and destroys a committed one: the cell stops being ink-
+        // tight, so its width stops being a whole number of blocks (measured,
+        // 195px against a ×8 lattice) and the 1:1 reduce degrades to a
+        // fractional resample — the exact defect the commit removes. The commit
+        // already PROVED the auto-slice returns this shape before writing, so
+        // the override has nothing to add and everything to break.
+        writeFileSync(
+          join(outDir, `${name}-${dir}.json`),
+          JSON.stringify({ rows: manifest.rows.map((r) => r.clip) }, null, 1) + "\n",
+        );
+        commitLine =
+          `COMMIT ${c.report.verdict}\n` +
+          `       GATE re-measured on the committed sheet: ${cg.verdict}\n` +
+          `       promote with:  cp ${join(outDir, cname)} ${join(INBOX, cname)}\n`;
+      }
+
       const mean = (f: (r: NoiseRow) => number): number => stats.reduce((a, r) => a + f(r), 0) / stats.length;
       const iso = mean((r) => r.isolatedPct);
       const run = mean((r) => r.runLen);
@@ -274,6 +360,7 @@ describe("sprite inbox", () => {
       summary.push(
         `\n═══ ${name} (${dir}) — ${rows.length} rows [${shape}], ${cells.length} frames\n` +
           `GRID   ${grid.verdict}\n` +
+          commitLine +
           matteLine +
           (named
             ? unknown.length

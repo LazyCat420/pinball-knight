@@ -93,6 +93,7 @@ export function registerCell(
   cell: Cell,
   k: number,
   px: number,
+  align = 1,
 ): HTMLCanvasElement {
   const [x0, y0, x1, y1] = cell;
   const cw = x1 - x0 + 1;
@@ -116,7 +117,19 @@ export function registerCell(
   if (!ctx) throw new Error("[ingest] could not get a 2D context for the cel buffer");
   const img = ctx.createImageData(dw, dh);
   img.data.set(small.data);
-  ctx.putImageData(img, Math.round((px - dw) / 2), Math.round(GROUND * (px / ART_SPACE) - dh));
+  // ⚠️ ALIGN THE ORIGIN TO THE CRUSH'S OWN STRIDE.
+  //
+  // The crush reduces this buffer by `px/grid`, in windows anchored at 0. A cel
+  // landing on an odd offset therefore has every window straddling TWO of its
+  // pixels, and averaging across that boundary invents colours — which is the
+  // whole failure a committed sheet exists to remove. Measured on the committed
+  // jester: centring put the cel at x=41 and the census read 25.7 entries and 6
+  // invented against a source holding exactly 20 and inventing none.
+  //
+  // `align` is 1 (no-op) for a resampled sheet, where there are no authored
+  // block boundaries to preserve and centring is worth more than parity.
+  const snap = (v: number): number => (align > 1 ? Math.round(v / align) * align : Math.round(v));
+  ctx.putImageData(img, snap((px - dw) / 2), snap(GROUND * (px / ART_SPACE) - dh));
   return buf;
 }
 
