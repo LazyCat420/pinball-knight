@@ -34,6 +34,7 @@ import { createWaterMaterial } from "../elements/water";
 import { createFrostMaterial } from "../elements/frost";
 import { createOilMaterial, createTarMaterial } from "../elements/goo";
 import { createRodMaterial } from "../elements/rod";
+import { createMoltenMaterial } from "../elements/molten";
 import type { ElementMaterial } from "../elements/element";
 
 /**
@@ -48,6 +49,10 @@ const FACTORIES: Partial<Record<FloorFxKind, () => ElementMaterial>> = {
   oil: () => createOilMaterial(),
   tar: () => createTarMaterial(),
   rod: () => createRodMaterial(),
+  // The melt scar. Shader-backed for the same reason fire is: what makes it
+  // read as cooling rock is a crack lattice that changes tone over its life,
+  // and a painted canvas can only be one moment of that.
+  molten: () => createMoltenMaterial(),
 };
 
 /**
@@ -68,6 +73,10 @@ const ALPHA: Partial<Record<FloorFxKind, number>> = {
   tar: 0.95, // the most opaque thing on the floor — nothing shows through tar
   frost: 0.7,
   rod: 0.9,
+  // High, and NOT because it glows — because it has to sit IN the floor rather
+  // than tint it. A translucent melt scar shows the intact tile pattern through
+  // the middle of the hole it supposedly burnt.
+  molten: 0.88,
 };
 
 /** True when `kind` wears a shader rather than a painted canvas. */

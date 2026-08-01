@@ -700,7 +700,7 @@ export interface Projectile {
 
 /** Persistent floor scar left by a marble material (see entities/floor-fx.ts).
  *  Ticks status/damage to overlapping enemies (and the player under self-harm). */
-export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod";
+export type FloorFxKind = "slick" | "fire" | "shard-field" | "oil" | "groove" | "frost" | "tar" | "rod" | "molten";
 export interface FloorFx {
   kind: FloorFxKind;
   x: number;

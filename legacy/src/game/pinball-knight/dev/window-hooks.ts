@@ -38,6 +38,7 @@ import { bossEngaged } from "../boss";
 import { syncActorMesh } from "../entities/combat";
 import { movementOf } from "../entities/zombie";
 import { multiBallPositions } from "../entities/multiball";
+import { applyMaterial, isMaterial } from "../entities/marble";
 import { debugCurSpeed, debugWallNormal } from "../entities/player";
 import { railCap } from "../entities/rail";
 import { exploredCount, exploredFraction } from "../fog";
@@ -434,6 +435,16 @@ export function installDevHooks(deps: DevHookDeps): void {
       player: state.player ? { clip: state.player.anim.getClip(), momSpeed: state.player.momSpeed, overcharge: state.player.overcharge } : null,
       echoes: multiBallPositions(),
     });
+    // Dev: apply a marble MATERIAL directly. `__dungeonMaterial('lava')`.
+    // The potions have had `__dungeonPotion` since Wave F; the six materials
+    // were reachable only by finding a pickup or by clicking through the debug
+    // GUI, which makes every claim about how a material LOOKS unfalsifiable
+    // from a harness — you cannot screenshot a body you cannot summon.
+    (window as unknown as { __dungeonMaterial?: (id: string) => boolean }).__dungeonMaterial = (id: string) => {
+      if (!isMaterial(id)) return false;
+      applyMaterial(id);
+      return true;
+    };
     // Dev: snapshot the live projectiles' velocities so a headless test can
     // confirm the arrow flew toward the aim point, not the movement facing.
     (window as unknown as { __dungeonProjectiles?: () => Array<{ kind: string; vx: number; vz: number }> }).__dungeonProjectiles = () =>

@@ -49,6 +49,10 @@ import {
   GROOVE_HOP_MIN_SPEED,
   GROOVE_DEFLECT,
   GROOVE_HOP_COOLDOWN,
+  MELT_MIN_SPEED,
+  MELT_SPACING,
+  MELT_RADIUS,
+  MELT_LIFE,
   FLOOR_FX_MAX,
   CARD_CHILL_TIME,
   TAR_DRAG,
@@ -93,6 +97,7 @@ const KIND_COLOR: Record<FloorFxKind, number> = {
   frost: PALETTE_HEX[31], // prismatic cool — ice
   tar: PALETTE_HEX[26], // leather shadow — a matte brown-black, NOT oil's petrol sheen
   rod: PALETTE_HEX[31], // prismatic cool — the arc's own colour
+  molten: PALETTE_HEX[26], // leather shadow — the CHAR, not the glow. See below.
 };
 
 function discGeo(): THREE.CircleGeometry {
@@ -444,6 +449,51 @@ export function carveGroove(x: number, z: number, speed: number, dirX = 0, dirZ 
   if (state.vfx && Math.random() < 0.3) state.vfx.sparks(x, 0.06, z, 0, 0.4, 2);
 }
 
+// ── THE MELT — the lava ball's trail ─────────────────────────────────────────
+
+/** Same job as the groove's cursor: stamp by DISTANCE travelled, never by
+ *  frame, or the wake is twice as dense at 120fps as at 60. */
+let lastMeltX = 0;
+let lastMeltZ = 0;
+let hasMelt = false;
+
+/**
+ * Melt the floor under a lava ball. Called every frame while it rolls; stamps
+ * once per MELT_SPACING travelled, so the wake is one continuous molten line at
+ * any framerate.
+ *
+ * COSMETIC BY CONSTRUCTION — `spawnFloorFx` with a kind nothing in the overlap
+ * loop reads. It leaves no status, no damage and no physics, unlike its sibling
+ * the groove (which trips foes and rails the ball). Lava's teeth are its fire
+ * puddles; this is the picture of the machine getting hot, and giving the
+ * picture a hitbox would have doubled the material's floor control for free.
+ */
+export function meltFloor(x: number, z: number, speed: number, dirX = 0, dirZ = 0): void {
+  if (speed < MELT_MIN_SPEED) return;
+  if (hasMelt && Math.hypot(x - lastMeltX, z - lastMeltZ) < MELT_SPACING) return;
+  hasMelt = true;
+  lastMeltX = x;
+  lastMeltZ = z;
+  // Faster = a wider bite of floor gone. The same `bite` shape as the groove,
+  // so the two trails scale together and one cannot quietly outgrow the other.
+  const bite = Math.min(1, speed / PINBALL_MAX_SPEED);
+  spawnFloorFx("molten", x, z, MELT_RADIUS * (0.78 + bite * 0.44), MELT_LIFE);
+  // The scar remembers which way the ball went, so the shader could elongate
+  // along it later; carried now because the stamp is the only place that knows.
+  const scar = state.floorFx[state.floorFx.length - 1];
+  if (scar && scar.kind === "molten") {
+    const l = Math.hypot(dirX, dirZ);
+    scar.dirX = l > 1e-6 ? dirX / l : 1;
+    scar.dirZ = l > 1e-6 ? dirZ / l : 0;
+  }
+  // Smoke off the fresh melt — RARE, and small. This is a per-STAMP roll and
+  // the trail lays ~70 stamps a second, so the intuitive "only sometimes" 0.22
+  // was 15 plumes/s: measured on a screenshot, the wake was a bank of grey
+  // blobs with the molten scar completely hidden underneath it. At 0.05 it is
+  // one puff every three tiles, which reads as venting rather than as weather.
+  if (state.vfx && Math.random() < 0.05) state.vfx.smoke(x, 0.12, z, 1, 0.28);
+}
+
 /**
  * What a rut DOES once it exists — the whole reason this isn't a decal.
  *
@@ -591,6 +641,9 @@ function despawn(index: number): void {
 
 export function clearFloorFx(): void {
   hasGroove = false; // a new floor starts unscarred — no seam from the last one
+  hasMelt = false; // …and unmelted. A stale cursor SUPPRESSES the first stamp
+  // of the next floor whenever the player happens to arrive near where the last
+  // one ended, which reads as "the trail sometimes doesn't start".
   for (let i = state.floorFx.length - 1; i >= 0; i--) despawn(i);
 }
 
@@ -621,6 +674,30 @@ export function updateFloorFx(dt: number): void {
       fx.mesh.scale.setScalar(fx.radius);
       (fx.mesh.material as THREE.MeshBasicMaterial).opacity = 0.72 * Math.min(1, frac * 4);
       grooveInteract(fx, dt, ticked);
+      continue;
+    }
+
+    // ── MOLTEN: a burn scar, so it does none of the liquid animation either —
+    // but for the opposite reason to the groove. A rut is INERT and holds still
+    // because nothing about it is alive; a melt holds its SIZE (the floor that
+    // went is gone, it cannot shrink back) while everything about it changes
+    // TEMPERATURE. That is `uAge` in the shader, and it is deliberately not
+    // `uOpacity`: cooling and fading are different, and fading the scar out as
+    // it cools would leave a spotless floor behind a ball that just melted it.
+    if (fx.kind === "molten") {
+      fx.mesh.scale.setScalar(fx.radius);
+      setElementAge(fx.mesh, age);
+      // Held near full for most of the life, then dropped over the last fifth —
+      // by which point the shader has already cooled it to char, so what
+      // disappears is a black mark, not a glowing one.
+      setElementOpacity(fx.mesh, elementAlpha("molten", 0.88) * Math.min(1, frac * 5));
+      // The hot end of the wake breathes heat: a fresh scar is still outgassing.
+      // Gated hard on age so the tail of a long trail is silent — a line of 170
+      // decals all emitting is a fog bank, which is the failure mode the smoke
+      // in `meltFloor` is already rationed against.
+      if (state.vfx && age < 0.7 && Math.random() < dt * 2.5) {
+        state.vfx.ember(fx.x + (Math.random() - 0.5) * fx.radius, 0.08, fx.z + (Math.random() - 0.5) * fx.radius);
+      }
       continue;
     }
 

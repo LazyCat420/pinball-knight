@@ -1018,6 +1018,38 @@ export const LAVA_SLAM_GLOBS = 6; // fire puddles thrown in a ring on the slam
 export const LAVA_SLAM_FIRE_RADIUS = 0.9;
 export const LAVA_SLAM_FIRE_LIFE = 3;
 
+// ── THE MELT: the scar a lava ball leaves in the floor it rolls over ─────────
+// The steel ball's groove, one substance over: stone that briefly went liquid
+// and is setting again behind you. Built on the same stamp-by-DISTANCE rig
+// (see carveGroove), so the wake is one continuous line at any framerate, and
+// on the same floor-fx list, so it inherits eviction and disposal.
+//
+// PURELY COSMETIC, deliberately. Lava already scars the machine with fire
+// puddles on every fast bounce, which is the hazard; a second damaging surface
+// under the ball at ALL times would quietly double the material's floor
+// control. What the melt adds is the read, not the reach.
+/** Below this you are rolling, not melting — a slow lava ball just glows. */
+export const MELT_MIN_SPEED = 7;
+/** World-units between stamps. Tighter than GROOVE_SPACING because a melt has
+ *  no line of its own to follow: the overlap IS the continuity. */
+export const MELT_SPACING = 0.28;
+/** Scar half-width. Wider than the groove's cut — heat spreads, a chisel does
+ *  not — but still narrower than a fire puddle, which is a POOL. */
+export const MELT_RADIUS = 0.46;
+/**
+ * How long a scar stays on the floor. Far shorter than the groove's 26 s: a rut
+ * is structural and the point is that it is still there next lap, while a melt
+ * is a burn that the dungeon's own cold takes back. It also has to be short
+ * enough that the trail cannot monopolise FLOOR_FX_MAX:
+ *
+ *     PINBALL_MAX_SPEED 20 u/s ÷ MELT_SPACING 0.28 u = 71 stamps/s
+ *     71 stamps/s × MELT_LIFE 2.4 s                  = 171 live decals
+ *
+ * — inside the 300 budget with room for the fire puddles and slicks that lava
+ * runs alongside, where a groove-length melt would have evicted all of them.
+ */
+export const MELT_LIFE = 2.4;
+
 // Floor-fx (persistent scars)
 export const FLOORFX_TICK = 0.4; // seconds between floor-fx damage/status ticks
 export const FIRE_PUDDLE_DMG = 1; // per tick (deferred Lava; wired for R&D)

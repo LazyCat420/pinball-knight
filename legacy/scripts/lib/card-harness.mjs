@@ -62,7 +62,20 @@ export async function open(html, { width = 1400, height = 900, scale = 2 } = {})
   page.on("console", (m) => {
     if (m.type() === "error") console.error("[page]", m.text());
   });
-  await page.setContent(html);
+  // SERVED FROM A REAL ORIGIN, not `setContent`.
+  //
+  // `setContent` leaves the document on `about:blank`, which is an OPAQUE
+  // origin: every `localStorage` access throws "Access is denied for this
+  // document". The bundle reaches localStorage at module scope (settings load),
+  // so the whole IIFE died before it could set `window.__marble` — and the only
+  // symptom was `waitForFunction(__ready)` timing out 20 s later, which reads
+  // like a slow render rather than a page that never ran. Every harness in this
+  // file was dead this way, which is worth stating plainly: a broken tool looks
+  // exactly like the art being unmeasurable.
+  await page.route("http://harness.local/*", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }),
+  );
+  await page.goto("http://harness.local/index.html");
   await page.waitForFunction(() => window.__ready, null, { timeout: 20000 });
   await page.waitForTimeout(350);
   return { browser, page };

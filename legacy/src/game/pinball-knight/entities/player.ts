@@ -164,7 +164,7 @@ import { screenDirToWorld, worldDirToScreen, mouseAimDirection } from "../engine
 import { InputHandle } from "../engine/input";
 import { WEAPONS } from "../items";
 import { resolvePlayerAttack, wearActiveWeapon, syncActorMesh, updateFlash, FACING_VEC, damageZombie, playerDamage, applyCardOnHit } from "./combat";
-import { carveGroove } from "./floor-fx";
+import { carveGroove, meltFloor } from "./floor-fx";
 import { aggregateCards } from "../cards";
 import { fireWeapon } from "./projectiles";
 import {
@@ -1804,9 +1804,16 @@ function updatePinball(dt: number, input: InputHandle): boolean {
     // physics hooks: a pickup REPLACES the ball's substance. Drawing a chrome
     // sphere while the lava physics were running was the visual half of the
     // bug marble-steel.test.ts exists to prevent.
-    p.anim.play(materialClip() ?? (p.ironT > 0 ? "steelball" : "ball"));
+    const clip = materialClip();
+    p.anim.play(clip ?? (p.ironT > 0 ? "steelball" : "ball"));
     // …and only a ball THAT heavy engraves the floor it crosses.
     if (p.ironT > 0) carveGroove(p.x, p.z, p.momSpeed, p.momX, p.momZ);
+    // …and only one THAT hot melts it. Gated on the CLIP, not on the material
+    // timer, so the wake exists exactly while the lava sphere is the thing on
+    // screen: a knight tumbling in `roll` with the lava buff still ticking is
+    // not a ball of magma, and leaving a molten line under him would be the
+    // floor reacting to something the player cannot see.
+    if (clip === "lavaball") meltFloor(p.x, p.z, p.momSpeed, p.momX, p.momZ);
   } else {
     p.anim.setRate(1.4);
     p.anim.play("roll");

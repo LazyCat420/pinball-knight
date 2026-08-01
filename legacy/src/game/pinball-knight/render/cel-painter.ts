@@ -1318,12 +1318,34 @@ export const MARBLE_SKINS: Record<MarbleMaterial, MarbleSkin> = {
     accent: pc(20),
     spec: pc(20),
   },
-  // 🔥 Torch 14-18 is the only warm ramp there is, and it happens to be exactly
-  // a basalt-and-magma ramp: 14 ember for the cold crust, 18 flame core for the
-  // seams between the plates.
+  /**
+   * 🔥 MAGMA UNDER BASALT. Rebuilt after a census of the crushed art, because
+   * this body was not warm — it was BROWN:
+   *
+   *     lava  26:22.5%  27:17.5%  1:12.9%  0:10.1%  28:9.9%  24:5.4%  23:5.0%
+   *
+   * Leather shadow, leather dark, leather mid and two skin tones — over 60% of
+   * the ball spent on the palette's WOODEN entries, with the torch ramp (the
+   * only warmth there is) nowhere in the top seven. The old ramp put leather
+   * shadow in the body's third stop and the old plates were painted `pc(26)`,
+   * so the thing rendered as a varnished pinwheel and no amount of animating
+   * the seams was going to fix a colour budget spent on furniture.
+   *
+   * Two rules now, and both are about CONTRAST rather than about warmth:
+   *   · the crust is BASALT — void/outline/stone-dark, a cold near-black. Real
+   *     cooled lava is grey-black; brown crust reads as mud, and worse, brown
+   *     is only a few luma steps from the magma so nothing glowed against it.
+   *   · every warm pixel the ball owns goes into the SEAMS, where it is doing
+   *     the work of saying "there is molten rock inside this".
+   *
+   * The body ramp is what shows through the middle of the plate ring, so it
+   * stays hot the whole way down: flame light → flame → flame dark → ember. It
+   * no longer bottoms out in void, because a black bottom half is exactly what
+   * made this ball look like a hole with a lamp in it.
+   */
   lava: {
     treatment: "crust",
-    ramp: [pc(15), pc(14), pc(26), pc(0)],
+    ramp: [pc(17), pc(16), pc(15), pc(14)],
     rim: pc(16, 0.9),
     gloss: 0.35,
     r: 21,
@@ -1540,41 +1562,150 @@ function paintTreatment(ctx: CanvasRenderingContext2D, skin: MarbleSkin, spin: n
     // light genuinely leaks from between them. Drawing seams as bright lines on
     // top instead gave a cracked rock with paint in the cracks.
     case "crust": {
+      // The molten layer, painted FIRST and never covered completely. Hard
+      // stops rather than a smooth ramp, for the reason the body gradient uses
+      // them: every intermediate tone a soft ramp invents is a chance for the
+      // luma-weighted snap to land it on skin-brown, which is measurably where
+      // this ball's pixels used to go.
+      //
+      // It tops out at 17, NOT 18. Flame core is the palette's near-white, and
+      // spending it on a broad disc gave a ball with a LIGHT BULB in it —
+      // measured at played size, the crushed sprite read as a glowing orb with
+      // a bite out of it rather than as cracked rock. 18 is now reserved for
+      // things that are a few texels wide (the drip beads, the catchlight), so
+      // the eye reads them as the hottest points instead of as the average.
       const molten = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
-      molten.addColorStop(0, pc(18));
-      molten.addColorStop(0.35, pc(17));
-      molten.addColorStop(0.75, pc(15));
-      molten.addColorStop(1, pc(14));
+      molten.addColorStop(0, pc(17));
+      molten.addColorStop(0.42, pc(17));
+      molten.addColorStop(0.43, pc(16));
+      molten.addColorStop(0.78, pc(16));
+      molten.addColorStop(0.79, pc(15));
+      molten.addColorStop(1, pc(15));
       ctx.fillStyle = molten;
       ctx.fillRect(-R, -R, R * 2, R * 2);
-      // Plates: wedges inset from each other, leaving the molten layer showing
-      // through as seams. They rotate; the glow above does not.
+
+      /**
+       * THE PLATES — cooled basalt floating on the melt.
+       *
+       * Five, not seven, and each one a chunk of near-black rock: at 40px a
+       * seven-spoke ring with thin gaps crushes into a pinwheel (which is
+       * exactly what shipped), while five fat plates with wide fissures survive
+       * the crush as recognisable ROCKS with light between them.
+       *
+       * The gap is per-plate and per-FRAME, so the fissures OPEN AND CLOSE as
+       * the ball turns instead of rotating rigidly. That is the difference
+       * between a spinning texture and a crust being pulled apart — the plates
+       * ride a liquid, so their spacing cannot be constant.
+       */
       ctx.save();
       ctx.rotate(spin);
-      const plates = 7;
+      const plates = 5;
       for (let i = 0; i < plates; i++) {
-        const a0 = (i / plates) * Math.PI * 2 + 0.055;
-        const a1 = ((i + 1) / plates) * Math.PI * 2 - 0.055;
-        const inset = R * (0.1 + rnd(i) * 0.12);
+        // 0.10 → 0.30 rad of fissure per side, breathing on the frame clock.
+        const gap = 0.10 + rnd(i) * 0.12 + Math.abs(Math.sin(frame * 1.31 + i * 2.2)) * 0.08;
+        const a0 = (i / plates) * Math.PI * 2 + gap;
+        const a1 = ((i + 1) / plates) * Math.PI * 2 - gap;
+        // How far the plate has sunk into the melt: a plate that sits proud
+        // covers more of the glow than one that has foundered. Kept LOW (the
+        // plates reach well in toward the centre) because the read this body
+        // has to deliver is crust-with-seams; at 0.30+ the plates were a thin
+        // outer ring and everything inside them was molten, which is a fireball.
+        const inset = R * (0.16 + rnd(i + 5) * 0.16);
         ctx.beginPath();
-        ctx.arc(0, 0, R - inset * 0.35, a0, a1);
+        ctx.arc(0, 0, R - R * 0.06, a0, a1);
         ctx.arc(0, 0, inset, a1, a0, true);
         ctx.closePath();
-        ctx.fillStyle = i % 2 === 0 ? pc(26) : pc(0);
+        // BASALT, not leather. 0/1/2 are the palette's cold near-blacks; the
+        // whole point of the crust is to be the dark thing the seams glow
+        // against, and the old brown plates were too close to the magma in
+        // luma for anything to read as glowing at all.
+        ctx.fillStyle = i % 2 === 0 ? pc(1) : pc(2);
         ctx.fill();
-        // Cooled highlight on the plate's leading edge — basalt is glassy.
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = pc(14, 0.65);
+        // The plate's own edge, catching its own light: cooled rock next to a
+        // fissure is the hottest crust there is. One thin ember line, opaque —
+        // a translucent stroke here is what generated the skin-brown mid-tones.
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = pc(14);
         ctx.stroke();
       }
       ctx.restore();
-      // A hot pool at the base: the melt pools DOWN, and that asymmetry is what
-      // stops the ball reading as a uniformly glowing sphere.
-      const pool = ctx.createRadialGradient(0, R * 0.5, 0, 0, R * 0.5, R * 0.62);
-      pool.addColorStop(0, pc(17, 0.6));
-      pool.addColorStop(1, pc(17, 0));
-      ctx.fillStyle = pool;
-      ctx.fillRect(-R, -R, R * 2, R * 2);
+
+      /**
+       * CRACKS ACROSS THE PLATES — hairlines of light that do not follow the
+       * plate boundaries. Without them the crust is five clean shapes, and
+       * cooling rock is never clean; it splits everywhere at once. Re-seeded
+       * per frame so they flicker like something under tension.
+       */
+      ctx.save();
+      ctx.rotate(spin);
+      for (let i = 0; i < 4; i++) {
+        const a = rnd(i + 20) * Math.PI * 2;
+        const d0 = R * (0.34 + rnd(i + 24) * 0.2);
+        const d1 = R * (0.72 + rnd(i + 28) * 0.24);
+        const bend = (rnd(i + 32) - 0.5) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * d0, Math.sin(a) * d0);
+        ctx.lineTo(Math.cos(a + bend * 0.5) * ((d0 + d1) * 0.5), Math.sin(a + bend * 0.5) * ((d0 + d1) * 0.5));
+        ctx.lineTo(Math.cos(a + bend) * d1, Math.sin(a + bend) * d1);
+        ctx.lineWidth = 1 + rnd(i + 36) * 0.8;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = rnd(i + 40) > 0.45 ? pc(17) : pc(16);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      /**
+       * THE MELT POOLS DOWN, and this is the term that says "this thing is
+       * LIQUID inside" rather than "this thing is lit from within". The base of
+       * the ball is where the heat collects, so it gets an opaque hot cap
+       * whose upper edge WOBBLES per frame — a level line that held perfectly
+       * still would read as a painted stripe.
+       */
+      ctx.beginPath();
+      const lip = R * (0.48 + Math.sin(frame * 1.9) * 0.06);
+      ctx.moveTo(-R, lip);
+      for (let i = 0; i <= 6; i++) {
+        const x = -R + (i / 6) * R * 2;
+        ctx.lineTo(x, lip + Math.sin(frame * 2.1 + i * 1.3) * R * 0.05);
+      }
+      ctx.lineTo(R, R);
+      ctx.lineTo(-R, R);
+      ctx.closePath();
+      ctx.fillStyle = pc(16);
+      ctx.fill();
+      // …and the hottest sliver right at the bottom, where the ball is in
+      // contact with the floor it is melting. This is the tell that ties the
+      // sprite to the molten scar it leaves behind.
+      ctx.beginPath();
+      ctx.ellipse(0, R * 0.74, R * 0.62, R * 0.2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = pc(17);
+      ctx.fill();
+
+      /**
+       * DRIPS — molten strands running off the underside, one to three per
+       * frame at different lengths, so the ball is visibly SHEDDING itself.
+       * This is the single strongest "it is melting" cue available to a
+       * silhouette that must stay a perfect circle: the drips live inside the
+       * clip, hanging from the pool rather than escaping the rim.
+       */
+      for (let i = 0; i < 3; i++) {
+        const dx = (rnd(i + 50) - 0.5) * R * 1.1;
+        const len = R * (0.12 + rnd(i + 54) * 0.22);
+        const top = R * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(dx, top);
+        ctx.lineTo(dx, top + len);
+        ctx.lineWidth = 1.4 + rnd(i + 58) * 1.2;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = pc(17);
+        ctx.stroke();
+        // The bead on the end — a drip is a blob on a thread, and the blob is
+        // what survives the crush to 40px when the thread does not.
+        ctx.beginPath();
+        ctx.arc(dx, top + len, 1.2 + rnd(i + 62) * 0.9, 0, Math.PI * 2);
+        ctx.fillStyle = pc(18);
+        ctx.fill();
+      }
       break;
     }
   }

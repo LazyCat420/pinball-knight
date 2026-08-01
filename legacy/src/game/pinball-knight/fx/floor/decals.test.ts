@@ -59,7 +59,7 @@ describe("the shader registry", () => {
   });
 
   it("reports its kinds so the prewarm sweep can find them", () => {
-    expect(elementShaderKinds().sort()).toEqual(["fire", "frost", "oil", "rod", "slick", "tar"]);
+    expect(elementShaderKinds().sort()).toEqual(["fire", "frost", "molten", "oil", "rod", "slick", "tar"]);
   });
 
   it("covers every FLUID kind — only the two non-substances are left on canvas", () => {
@@ -92,7 +92,7 @@ describe("the shader registry", () => {
     expect(elementAlpha("tar", 0)).toBeGreaterThan(elementAlpha("slick", 0));
     const additive = 2; // THREE.AdditiveBlending
     const normal = 1; // THREE.NormalBlending
-    const blendOf = (k: "fire" | "frost" | "rod" | "oil" | "tar" | "slick") => {
+    const blendOf = (k: "fire" | "frost" | "rod" | "oil" | "tar" | "slick" | "molten") => {
       const el = makeElementMaterial(k)!;
       const b = el.material.blending;
       el.dispose();
@@ -103,6 +103,12 @@ describe("the shader registry", () => {
     // Surfaces: additive water would read as lava, additive oil as a lava slick,
     // and additive tar would defeat the entire point of tar.
     for (const k of ["slick", "oil", "tar"] as const) expect(blendOf(k), k).toBe(normal);
+    // …and MOLTEN is a surface too, which is the whole distinction between it
+    // and the fire puddle it sits next to. A melt scar is floor that SLUMPED —
+    // it has to darken the tile. Additive cannot darken anything, so an
+    // additive molten is just a fire puddle wearing a different name, which is
+    // exactly what the lava trail was before this kind existed.
+    expect(blendOf("molten")).toBe(normal);
   });
 
   it("keeps fire's peak alpha well above water's", () => {
