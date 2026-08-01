@@ -56,8 +56,13 @@ const ORBIT: Assembly = {
   ],
   parts: [
     { ci: 1, cj: 0, kind: "booster", dir: E, role: "drive", seq: 0 },
-    { ci: 3, cj: 0, kind: "deflector", dir: S, role: "turn", seq: 1 },
-    { ci: 3, cj: 2, kind: "deflector", dir: W, role: "turn", seq: 2 },
+    // Both bends carry BOTH legs: in along `dir`, out along `dir2`. The upper
+    // corner is entered heading E and leaves heading S; the lower is entered
+    // heading S and leaves heading W. Authored with one leg each, these
+    // resolved to a zero-vector throw — the orbit caught the knight and never
+    // let go. See `TWO_LEG_KINDS` and `corner-missing-leg`.
+    { ci: 3, cj: 0, kind: "deflector", dir: E, dir2: S, role: "turn", seq: 1 },
+    { ci: 3, cj: 2, kind: "deflector", dir: S, dir2: W, role: "turn", seq: 2 },
     { ci: 1, cj: 2, kind: "booster", dir: W, role: "drive", seq: 3 },
   ],
   ports: [
@@ -91,7 +96,11 @@ const RAMP_RETURN: Assembly = {
   ],
   parts: [
     { ci: 0, cj: 0, kind: "ramp", dir: E, role: "drive", seq: 0 },
-    { ci: 2, cj: 1, kind: "deflector", dir: W, role: "turn", seq: 1 },
+    // The bend is at the END of the ramp's run (2,0), not one cell down it.
+    // Authored at (2,1) this sat mid-straight on the descent — a corner part on
+    // a cell with no corner, which is why its single leg looked plausible.
+    // Entered heading E off the ramp, thrown S down to the return lane.
+    { ci: 2, cj: 0, kind: "deflector", dir: E, dir2: S, role: "turn", seq: 1 },
     { ci: 2, cj: 2, kind: "spring", dir: W, role: "drive", seq: 2 },
   ],
   ports: [

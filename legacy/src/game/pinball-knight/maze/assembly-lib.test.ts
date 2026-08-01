@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MACHINES, machineNamed } from "./assembly-lib";
 import { checkAssembly, checkAll } from "./assembly-check";
-import { orientationsOf, portsChain, hasExit, type Assembly, E, W, O } from "./assembly";
+import { orientationsOf, portsChain, hasExit, type Assembly, E, S, W, O } from "./assembly";
 
 describe("the machine library is sound", () => {
   it("every machine passes every authoring rule", () => {
@@ -178,5 +178,56 @@ describe("the validator catches what it claims to", () => {
       h: 1,
     };
     expect(checkAssembly(m).map((p) => p.code)).not.toContain("dead-end-drive");
+  });
+});
+
+/**
+ * THE RULE THAT CAUGHT A SHIPPED BUG.
+ *
+ * `ORBIT` and `RAMP_RETURN` both carried single-legged deflectors, which
+ * `entities/pinball-collide.ts` resolves to a throw along (0,0) — the grab-throw
+ * catches the knight and never releases him. Neither ever ran, because no router
+ * placed them, so nothing contradicted the definitions.
+ *
+ * These are the falsifiers: the rule must FIRE on each broken shape, or the
+ * green above is a rule that has never done anything.
+ */
+describe("corner-missing-leg", () => {
+  const bend = (over: Partial<Assembly["parts"][number]>): Assembly => ({
+    name: "probe",
+    w: 2,
+    h: 2,
+    floor: [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ],
+    parts: [{ ci: 1, cj: 0, kind: "boostcorner", dir: E, dir2: S, role: "turn", ...over }],
+    ports: [{ ci: 0, cj: 0, dir: E, way: "in" }],
+  });
+
+  it("fires on a corner with NO second leg — the shipped bug", () => {
+    expect(checkAssembly(bend({ dir2: undefined })).map((p) => p.code)).toContain("corner-missing-leg");
+  });
+
+  it("fires on a corner whose second leg is the null direction", () => {
+    expect(checkAssembly(bend({ dir2: O })).map((p) => p.code)).toContain("corner-missing-leg");
+  });
+
+  it("fires on legs that are PARALLEL — that is a straight, not a corner", () => {
+    expect(checkAssembly(bend({ dir2: E })).map((p) => p.code)).toContain("corner-missing-leg");
+  });
+
+  it("fires on legs that are OPPOSED — that throws you back the way you came", () => {
+    expect(checkAssembly(bend({ dir2: W })).map((p) => p.code)).toContain("corner-missing-leg");
+  });
+
+  it("fires on a NON-corner kind carrying a dir2 that would be ignored", () => {
+    const m = bend({ kind: "booster", dir2: S, role: "drive" });
+    expect(checkAssembly(m).map((p) => p.code)).toContain("corner-missing-leg");
+  });
+
+  it("stays silent on a well-formed perpendicular bend", () => {
+    expect(checkAssembly(bend({})).map((p) => p.code)).not.toContain("corner-missing-leg");
   });
 });

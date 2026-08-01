@@ -265,3 +265,72 @@ describe("hasExit", () => {
     expect(hasExit(scoop)).toBe(false);
   });
 });
+
+/**
+ * A BEND: entered heading east, thrown south. The second leg is what makes it a
+ * corner rather than a booster, and every assertion below is really asking "did
+ * the second leg travel with the first".
+ */
+const BEND: Assembly = {
+  name: "test-bend",
+  w: 2,
+  h: 2,
+  floor: [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+  ],
+  parts: [{ ci: 1, cj: 0, kind: "boostcorner", dir: E, dir2: S, role: "turn" }],
+  ports: [
+    { ci: 0, cj: 0, dir: E, way: "in", tag: "entry" },
+    { ci: 1, cj: 1, dir: S, way: "out", tag: "exit" },
+  ],
+};
+
+describe("two-leg corners", () => {
+  it("turns dir2 with dir under rotation", () => {
+    // E→S rotated clockwise is S→W. Turning only the first leg would leave a
+    // corner that is entered from one side and fires out of the machine.
+    const r = rotateAssembly(BEND).parts[0];
+    expect(r.dir).toEqual(S);
+    expect(r.dir2).toEqual(W);
+  });
+
+  it("returns dir2 to the start after four rotations", () => {
+    let v = BEND;
+    for (let k = 0; k < 4; k++) v = rotateAssembly(v);
+    expect(v.parts[0].dir2).toEqual(S);
+  });
+
+  it("mirrors dir2 with dir", () => {
+    // E→S mirrored is W→S: the entry flips, the descent does not.
+    const m = mirrorAssembly(BEND).parts[0];
+    expect(m.dir).toEqual(W);
+    expect(m.dir2).toEqual(S);
+  });
+
+  it("keeps the legs perpendicular through every orientation", () => {
+    for (const o of orientationsOf(BEND)) {
+      const p = o.parts[0];
+      expect(p.dir2).toBeDefined();
+      // `+ 0` normalises the signed zero. `(-1)*0 + 0*(-1)` is -0, and
+      // `toBe` is Object.is — the exact trap `nz()` exists for, only arising
+      // here from the ARITHMETIC rather than from a stored component.
+      expect(p.dir.di * p.dir2!.di + p.dir.dj * p.dir2!.dj + 0).toBe(0);
+    }
+  });
+
+  it("distinguishes an S-bend from its mirror by SIGNATURE", () => {
+    // The failure this guards is silent: hash the two the same and every
+    // twisty machine quietly loses half its orientation pool, which shows up
+    // only as floors that feel repetitive.
+    const mirrored = mirrorAssembly(BEND);
+    expect(signatureOf(mirrored)).not.toBe(signatureOf(BEND));
+  });
+
+  it("does not collapse two bends that differ ONLY in the second leg", () => {
+    // Same cell, same entry, opposite exits — genuinely different machines.
+    const other: Assembly = { ...BEND, parts: [{ ...BEND.parts[0], dir2: N }] };
+    expect(signatureOf(other)).not.toBe(signatureOf(BEND));
+  });
+});

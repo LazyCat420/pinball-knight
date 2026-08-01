@@ -90,6 +90,21 @@ export type PartRole =
   /** Structural decoration with no flow role. */
   | "dress";
 
+/**
+ * The kinds that are entered on one leg and leave on ANOTHER, and so cannot be
+ * authored with a single facing.
+ *
+ * `boostcorner` and `deflector` both read `dir2` at runtime
+ * (`entities/pinball-collide.ts`), and a machine is nothing but authored
+ * facings — so a corner with one leg is a machine that does not work. That is
+ * not hypothetical: the library shipped `ORBIT` and `RAMP_RETURN` with
+ * single-legged deflectors, which resolve to `throwDir = (0, 0)` — a grab-throw
+ * along a zero vector, i.e. the knight is caught and never released. It never
+ * surfaced because nothing placed them. `corner-missing-leg` in
+ * `assembly-check.ts` is what stops the next one.
+ */
+export const TWO_LEG_KINDS: ReadonlySet<PartSpotKind> = new Set(["boostcorner", "deflector"]);
+
 /** One part inside an assembly, in the assembly's own cell-local frame. */
 export interface AssemblyPart {
   /** Cell offset from the assembly's top-left, before rotation. */
@@ -98,6 +113,16 @@ export interface AssemblyPart {
   kind: PartSpotKind;
   /** Which way this part fires/faces, in the assembly's frame. `O` = none. */
   dir: Dir;
+  /**
+   * The SECOND leg, for the corner kinds — the way out, where `dir` is the way
+   * in. Required for everything in `TWO_LEG_KINDS` and meaningless elsewhere.
+   *
+   * It rotates and mirrors with `dir`, and it is part of `signatureOf`. Both
+   * are load-bearing: turn the glyphs without turning this vector and an
+   * S-bend's two orientations become the same machine, which silently halves
+   * the orientation pool for exactly the twisty shapes this exists to author.
+   */
+  dir2?: Dir;
   role: PartRole;
   /** Order within the machine — a drop-target bank's 1-2-3, an orbit's lap
    *  order. Undefined for parts whose order is meaningless. */
@@ -236,7 +261,7 @@ export function rotateAssembly(a: Assembly): Assembly {
     floor: a.floor.map(([ci, cj]) => rc(ci, cj)),
     parts: a.parts.map((p) => {
       const [ci, cj] = rc(p.ci, p.cj);
-      return { ...p, ci, cj, dir: rotateDir(p.dir) };
+      return { ...p, ci, cj, dir: rotateDir(p.dir), ...(p.dir2 ? { dir2: rotateDir(p.dir2) } : {}) };
     }),
     ports: a.ports.map((p) => {
       const [ci, cj] = rc(p.ci, p.cj);
@@ -254,7 +279,12 @@ export function mirrorAssembly(a: Assembly): Assembly {
     w: a.w,
     h: a.h,
     floor: a.floor.map(([ci, cj]) => [mc(ci), cj] as const),
-    parts: a.parts.map((p) => ({ ...p, ci: mc(p.ci), dir: mirrorDir(p.dir) })),
+    parts: a.parts.map((p) => ({
+      ...p,
+      ci: mc(p.ci),
+      dir: mirrorDir(p.dir),
+      ...(p.dir2 ? { dir2: mirrorDir(p.dir2) } : {}),
+    })),
     ports: a.ports.map((p) => ({ ...p, ci: mc(p.ci), dir: mirrorDir(p.dir) })),
     wantsRunway: a.wantsRunway,
   };
@@ -306,7 +336,7 @@ export function signatureOf(a: Assembly): string {
     .sort()
     .join(";");
   const parts = a.parts
-    .map((p) => `${p.ci},${p.cj},${p.kind},${p.dir.di},${p.dir.dj}`)
+    .map((p) => `${p.ci},${p.cj},${p.kind},${p.dir.di},${p.dir.dj},${p.dir2?.di ?? ""},${p.dir2?.dj ?? ""}`)
     .sort()
     .join(";");
   const ports = a.ports

@@ -12,7 +12,7 @@
  * library test fails the build rather than shipping a machine that plays badly
  * on every floor it lands on.
  */
-import type { Assembly, AssemblyPart, AssemblyPort } from "./assembly";
+import { TWO_LEG_KINDS, type Assembly, type AssemblyPart, type AssemblyPort } from "./assembly";
 
 export interface AssemblyProblem {
   machine: string;
@@ -24,7 +24,8 @@ export interface AssemblyProblem {
     | "exit-into-rebounder"
     | "no-entry"
     | "dead-end-drive"
-    | "impact-chain";
+    | "impact-chain"
+    | "corner-missing-leg";
   detail: string;
 }
 
@@ -151,6 +152,55 @@ function checkDrivesGoSomewhere(a: Assembly, out: AssemblyProblem[]): void {
   }
 }
 
+/**
+ * A CORNER NEEDS BOTH LEGS, and the failure if it doesn't is silent.
+ *
+ * `boostcorner` and `deflector` are entered on `dir` and leave on `dir2`. Author
+ * one without a second leg and `entities/pinball-collide.ts` resolves the throw
+ * to `(0, 0)` — the deflector's grab-throw catches the knight and hurls him
+ * along a zero vector. Nothing errors; the part simply eats the player.
+ *
+ * Two legs must also be PERPENDICULAR. A corner whose legs are parallel is a
+ * straight (use a booster) and one whose legs are opposed is a part that throws
+ * you back the way you came, which is the launch-duel shape the pipeline spends
+ * real effort breaking.
+ *
+ * This rule exists because the shipped library had the bug in two machines. It
+ * is the reason `checkAll(MACHINES)` is worth running at all: the definitions
+ * looked right, and nothing that placed them existed to prove otherwise.
+ */
+function checkCornerLegs(a: Assembly, out: AssemblyProblem[]): void {
+  for (const p of a.parts) {
+    if (!TWO_LEG_KINDS.has(p.kind)) {
+      if (p.dir2) {
+        out.push({
+          machine: a.name,
+          code: "corner-missing-leg",
+          detail: `${p.kind} at ${p.ci},${p.cj} has a dir2 but is not a corner kind — it will be ignored`,
+        });
+      }
+      continue;
+    }
+    const d2 = p.dir2;
+    if (!d2 || (d2.di === 0 && d2.dj === 0)) {
+      out.push({
+        machine: a.name,
+        code: "corner-missing-leg",
+        detail: `${p.kind} at ${p.ci},${p.cj} has no dir2 — it throws along a ZERO VECTOR and eats the player`,
+      });
+      continue;
+    }
+    // Perpendicular ⇔ the dot product of two cardinals is 0.
+    if (p.dir.di * d2.di + p.dir.dj * d2.dj !== 0) {
+      out.push({
+        machine: a.name,
+        code: "corner-missing-leg",
+        detail: `${p.kind} at ${p.ci},${p.cj} has legs (${p.dir.di},${p.dir.dj}) and (${d2.di},${d2.dj}) — a corner's legs must be perpendicular`,
+      });
+    }
+  }
+}
+
 /** Run every rule over one machine. Empty array = the definition is sound. */
 export function checkAssembly(a: Assembly): AssemblyProblem[] {
   const out: AssemblyProblem[] = [];
@@ -159,6 +209,7 @@ export function checkAssembly(a: Assembly): AssemblyProblem[] {
   checkHasEntry(a, out);
   checkExitLines(a, out);
   checkDrivesGoSomewhere(a, out);
+  checkCornerLegs(a, out);
   return out;
 }
 
