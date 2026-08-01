@@ -72,21 +72,62 @@ export function artScale(cells: readonly Cell[]): number {
 }
 
 /**
- * The scale the LIVING clips set — death is excluded from the vote.
+ * The clips that define a creature's RESTING FOOTPRINT, and therefore vote.
  *
- * `artScale` over every cell let the jester's flat death sprawl (385px wide
- * against a 227px standing height) set the scale for the whole sheet: the
- * walking jester rendered at 64 of its 110 available art units — 36 texels at
- * the 72 grid where a painter uses ~62 — and read as a different, smaller,
- * blurrier creature. The alive clips are the body the player fights; they are
- * measured together (so idle→attack→walk still cannot pulse), and a terminal
- * clip does not get to shrink them.
+ * These are what the player looks at almost all the time, and they are the
+ * poses whose size IS the creature's size. Everything else — a lunge, a
+ * stagger, a sprawl — is a transient that already clamps itself in `cellScale`.
+ */
+const VOTING_CLIPS: ReadonlySet<string> = new Set(["idle", "walk", "run"]);
+
+/**
+ * The scale the LOCOMOTION clips set. Every other clip clamps itself.
  *
- * Rows with no sidecar name (`row0`, …) count as alive — with no clip names
- * there is no way to know which row is the sprawl, and the old behaviour is
- * the only honest fallback.
+ * ── WHY THIS IS NOT JUST "EXCLUDE DEATH" ANYMORE ────────────────────────────
+ *
+ * It was, and the death exclusion was written for a real failure: `artScale`
+ * over every cell let the jester's flat death sprawl (385px wide against a
+ * 227px standing height) set the scale for the whole sheet, and the walking
+ * jester rendered at 64 of its 110 available art units.
+ *
+ * The same defect survived in the ATTACK clip and nobody had measured it. The
+ * jester's spring extends to 216px against a 177px idle, so one transient frame
+ * was scaling all twenty — and the frames the player actually watches paid for
+ * it. Measured across both imported sheets:
+ *
+ *     jester   idle 44.4 → 52.4 texels  (+18.0%),  +33% opaque texels
+ *     beaver   idle 43.0 → 48.9 texels  (+13.6%)
+ *
+ * ── THE COST, MEASURED RATHER THAN FEARED ───────────────────────────────────
+ *
+ * A non-voting clip now clamps, so the creature's own scale can change between
+ * clips — the "flipbook pulse" this function's header has always warned about.
+ * Worst case is the jester's attack at 9.1%, which sounds alarming and is
+ * **0.7 texels** of head-size change (the head is 26 cel units; 7.69 texels at
+ * the idle scale, 6.99 at the clamped attack scale), on a frame that plays
+ * during a fast spring launch. Bounded, sub-texel, and worth +33% ink.
+ *
+ * Note this codebase already accepted exactly this trade for `death`; the
+ * change is that the rule is now stated positively — locomotion votes — rather
+ * than as a growing list of exclusions nobody re-measures.
+ *
+ * ── THE REAL FIX IS UPSTREAM, IN THE ART ────────────────────────────────────
+ *
+ * A sheet whose living frames are all within ~8% of one height needs none of
+ * this: every clip votes, nothing clamps, the pulse is exactly zero and the
+ * figure is as big as the cel allows. That is what `PROMPTS.md` now asks for —
+ * stand at full height and animate DOWNWARD, so the wind-up crouches instead of
+ * the release punching above the envelope.
+ *
+ * Rows with no sidecar name (`row0`, …) cannot be classified, so they all vote
+ * — with no clip names there is no way to know which row is the transient, and
+ * the old behaviour is the only honest fallback.
  */
 export function aliveScale(rows: readonly ManifestRow[]): number {
+  const voting = rows.filter((r) => VOTING_CLIPS.has(r.clip)).flatMap((r) => r.cells);
+  if (voting.length) return artScale(voting);
+  // No locomotion clip was named. Fall back to the previous rule (everything
+  // but death), then to everything — never to an empty vote.
   const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
   return artScale(alive.length ? alive : rows.flatMap((r) => r.cells));
 }
