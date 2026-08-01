@@ -131,14 +131,38 @@ export function exitRay(p: FlowPart): readonly [number, number] {
   return [p.dirI, p.dirJ];
 }
 
-/** Build the successor map: part index → part index it feeds, over `parts`. */
+/**
+ * The CARDINAL a part's shove walks along, for anything that steps the grid a
+ * tile at a time.
+ *
+ * `exitRay` is the honest answer to "which way does this fire" and for a
+ * `boostcurve` that answer is a float TANGENT. Stepping `i + di*s` with a float
+ * lands between tiles — `at()` then reads a rounded-down neighbour, so the walk
+ * silently drifts off the actual fire line rather than failing. Snapping here
+ * keeps `exitRay` truthful for the physics and gives the grid walk something it
+ * can index, which is the same split `countUphill` already makes.
+ */
+function rayCardinal(p: FlowPart): readonly [number, number] {
+  const [di, dj] = exitRay(p);
+  if (Number.isInteger(di) && Number.isInteger(dj)) return [di, dj];
+  return snapCardinal(di, dj);
+}
+
+/**
+ * Build the successor map: part index → part index it feeds, over `parts`.
+ *
+ * ⚠️ `live` is the CARDINAL-LAUNCHER subset (`movable`), because that is the
+ * population the repair can act on. A census wanting "does this part feed
+ * another" over a wider population must pass its own `live` — see
+ * `successorsOf`, which is the exported door onto exactly this walk.
+ */
 function successors(g: Grid, parts: FlowPart[], live: number[]): Map<number, number> {
   const byTile = new Map<number, number>();
   for (const n of live) byTile.set(idx(g, parts[n].i, parts[n].j), n);
   const next = new Map<number, number>();
   for (const n of live) {
     const p = parts[n];
-    const [di, dj] = exitRay(p);
+    const [di, dj] = rayCardinal(p);
     for (let s = 1; s <= RAY; s++) {
       const ni = p.i + di * s;
       const nj = p.j + dj * s;
@@ -151,6 +175,28 @@ function successors(g: Grid, parts: FlowPart[], live: number[]): Map<number, num
     }
   }
   return next;
+}
+
+/**
+ * THE SUCCESSOR MAP, for anything outside this module: part index → the part it
+ * throws the player into, or absent if the shove dies on bare floor.
+ *
+ * Exported because "does this launcher feed another part" is the quantity the
+ * circuit work is judged on, and the alternative — a census re-walking the exit
+ * ray itself — is a second answer to the question this module already answers.
+ * `exitRay`'s own comment records why that matters: two answers to "which way
+ * does this fire" is how a gate and a repair come to disagree about a floor.
+ *
+ * The population is `countableKind`'s, not `movable`'s, and the difference is
+ * deliberate. The repair needs a part it can WRITE a cardinal back to; a census
+ * needs every part that SHOVES. A `boostcurve` throws the player along a float
+ * tangent no repair can rewrite — excluding it from the count would hide the one
+ * launch kind with no repair pass behind a metric that cannot see it, which is
+ * the same defect `countUphill` documents at length.
+ */
+export function successorsOf(g: Grid, parts: FlowPart[]): Map<number, number> {
+  const live = parts.map((_, n) => n).filter((n) => countableKind(parts[n]) !== null);
+  return successors(g, parts, live);
 }
 
 /**
