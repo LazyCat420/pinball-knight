@@ -95,12 +95,13 @@ import {
   TRAPDOOR_RIDE_MIN,
   TRAPDOOR_RIDE_MAX,
   TRAPDOOR_EXIT_SPEED,
-  TRAPDOOR_HEIGHT,
   TRAPDOOR_COOLDOWN,
   TRAPDOOR_OPEN,
   TRAPDOOR_DROP,
   TRAPDOOR_DROP_DEPTH,
-  TRAPDOOR_RISE,
+  TRAPDOOR_BURST,
+  TRAPDOOR_BURST_RISE,
+  TRAPDOOR_POP,
   WEB_SLOW_MULT,
   IRONCORE_RAM_MULT,
   TURBO_STEER_MULT,
@@ -152,6 +153,7 @@ import { HASTE_SPEED_MULT, HASTE_COOLDOWN_MULT } from "../items";
 import { moveCircle, wallContact } from "../engine/collision";
 import { at, T_CRACKED, isWalkable, tileCenter, worldToTile, surfaceAt, type Grid } from "../maze/generator";
 import { wallSurface, floorSurface } from "../engine/surfaces";
+import { PALETTE_HEX } from "../render/palette";
 
 import { showPickupNote, showToast } from "../ui";
 import { addGold } from "../../../utils/gold-wallet";
@@ -727,9 +729,52 @@ function trySmashWallAhead(g: Grid, x: number, z: number, dirX: number, dirZ: nu
 
 // ── Trapdoor hatch drop ─────────────────────────────────────────────────────
 // The beat the teleport was missing: the hatch BANGS open, the knight is drawn
-// onto it and drops through the floor, and only then does the rail take over.
+// onto it and drops through the floor, and only then does the tunnel take over.
 // It owns the player for its whole half-second so the door animation is
 // something you watch happen to you — you can't step off the hatch mid-swing.
+
+/** True while the knight is under the floor with his billboard switched off. */
+let riderHidden = false;
+
+/**
+ * Take the knight OFF SCREEN for the tunnel run. This is the whole difference
+ * between "a trapdoor swallowed me" and "I floated across the room".
+ *
+ * Both meshes, not just the sprite: the occlusion silhouette is a GreaterDepth
+ * pass whose entire job is to draw him THROUGH whatever hides him, so leaving
+ * it on paints a blue knight gliding over the flagstones — the see-through
+ * cheat that would make this change pointless. The floor is ONE opaque plane
+ * across the grid (maze/build.ts), so with the silhouette off, anything below
+ * y=0 is genuinely occluded by the ground.
+ */
+function hideRider(p: Player): void {
+  riderHidden = true;
+  p.sprite.mesh.visible = false;
+  if (p.silhouette) p.silhouette.mesh.visible = false;
+}
+
+/**
+ * The pop-out: the sprite comes back but the silhouette stays off, so while he
+ * is still climbing the last metre the FLOOR CLIPS HIM — a knight growing out
+ * of the stones instead of fading in on top of them.
+ */
+function surfaceRider(p: Player): void {
+  if (state.fpsActive) return; // the rampage hides these two for its own reason
+  p.sprite.mesh.visible = true;
+}
+
+/**
+ * Put him fully back. Called on touchdown, and again as a self-heal from
+ * updatePlayer: a ride cancelled from outside (a grave pit, a death, a floor
+ * change) must never be able to leave the player invisible.
+ */
+function revealRider(p: Player): void {
+  if (!riderHidden) return;
+  riderHidden = false;
+  if (state.fpsActive) return;
+  p.sprite.mesh.visible = true;
+  if (p.silhouette) p.silhouette.mesh.visible = true;
+}
 
 /** The hatch gives way: lock the player in, start the door animation's beat. */
 function startDrop(x: number, z: number): void {
@@ -747,6 +792,12 @@ function startDrop(x: number, z: number): void {
   p.iframes = Math.max(p.iframes, TRAPDOOR_DROP);
   p.anim.setRate(1.4);
   p.anim.play("ball", { force: true });
+  // Kill the X-ray silhouette from the first frame of the fall — otherwise the
+  // knight sinks into the hole and a blue cutout of him stays on the stones.
+  // riderHidden marks the sequence as the owner of his visibility, so
+  // updatePlayer can heal it if anything cancels the ride from outside.
+  riderHidden = true;
+  if (p.silhouette) p.silhouette.mesh.visible = false;
   showToast("🎢 TRAPDOOR!", "the floor gives way — hold on");
   sfxTrapdoor();
 }
@@ -756,6 +807,10 @@ function startDrop(x: number, z: number): void {
  * centre, feet scrabbling) then the floor is gone (you sink out of sight).
  * Handing off to startRide at the bottom is what makes the trapdoor the single
  * teleport in the game — everything else stays where it stands.
+ *
+ * The sink is a real disappearance, not a fade: the floor plane occludes him
+ * from the frame he passes y=0, which is why the silhouette has to be off for
+ * the whole sequence (see hideRider).
  */
 function updateDrop(dt: number): boolean {
   const p = state.player;
@@ -786,11 +841,16 @@ function updateDrop(dt: number): boolean {
   return true;
 }
 
-// ── Trapdoor rollercoaster (Wave D) ─────────────────────────────────────────
-// A trapdoor doesn't teleport — it RIDES: a Catmull-Rom spline flown OVER the
-// maze walls (so no collision question exists), control locked, i-frames on,
-// exiting as a full-speed momentum launch somewhere far. All state mutation
-// happens at the endpoints, so it can never desync combat.
+// ── Trapdoor tunnel run (Wave D) ────────────────────────────────────────────
+// A trapdoor doesn't teleport — it TAKES you somewhere: a Catmull-Rom spline
+// followed BENEATH the floor (so no collision question exists), control locked,
+// i-frames on, sprite hidden, ending in a burst back up through the flagstones
+// and a full-speed momentum launch somewhere far. All state mutation happens at
+// the endpoints, so it can never desync combat.
+//
+// The spline used to be flown OVER the walls with the knight in plain sight,
+// which is exactly what made it read as floating rather than as a trapdoor.
+// Same path, same duration, same launch — the change is that he is UNDER it.
 
 /** Catmull-Rom interpolation across the ride's waypoint list at u ∈ 0..1. */
 function ridePoint(pts: Array<{ x: number; z: number }>, u: number): { x: number; z: number } {
@@ -836,7 +896,7 @@ function pickRideExit(g: Grid): { x: number; z: number } {
   return best ?? { x: p.x, z: p.z };
 }
 
-/** The hole has swallowed you: build the spline and hand the player to the rail. */
+/** The hole has swallowed you: build the spline and hand the player to the tunnel. */
 function startRide(): void {
   const p = state.player;
   const g = state.grid;
@@ -857,63 +917,114 @@ function startRide(): void {
     exit,
   ];
   p.rideT = 0;
+  // The TRANSIT duration only. The pop-out (TRAPDOOR_BURST) runs on the end of
+  // the same clock, parked over the exit — see updateRide.
   p.rideDur = Math.min(TRAPDOOR_RIDE_MAX, Math.max(TRAPDOOR_RIDE_MIN, len / TRAPDOOR_RIDE_SPEED));
-  p.momSpeed = 0; // the rail owns the physics now
+  p.momSpeed = 0; // the tunnel owns the physics now
   p.attackT = -1;
   p.move = null;
   p.chargeT = -1;
   p.rollT = -1;
   p.wallMoveT = -1;
   p.anim.setRate(1.4);
-  // The toast/sfx already fired when the hatch opened (startDrop) — the ride is
+  hideRider(p); // under the stones, and gone until he comes back up through them
+  // The toast/sfx already fired when the hatch opened (startDrop) — the run is
   // the second half of one event, not a new one.
   requestShake(0.2);
 }
 
+/** Cadence timer for the ripples that mark his progress under the flagstones. */
+let tunnelRippleT = 0;
+
 /**
- * Advance an active coaster ride. Owns the player completely: position comes
- * off the spline, height arcs over the walls, i-frames the whole way. Landing
- * hands the flight speed straight to the pinball system — the coaster IS a
- * launcher.
+ * Height of the POP-OUT at `s` ∈ 0..1 through the burst beat: an ease-out climb
+ * from tunnel depth to TRAPDOOR_POP above the floor, then an ease-in fall onto
+ * it. Continuous with the transit at s=0 (-TRAPDOOR_DROP_DEPTH) and lands
+ * exactly on the floor at s=1, so nothing has to snap y back afterwards.
+ */
+function burstHeight(s: number): number {
+  if (s < TRAPDOOR_BURST_RISE) {
+    const r = s / TRAPDOOR_BURST_RISE;
+    return -TRAPDOOR_DROP_DEPTH + (TRAPDOOR_POP + TRAPDOOR_DROP_DEPTH) * (1 - (1 - r) * (1 - r));
+  }
+  const f = (s - TRAPDOOR_BURST_RISE) / (1 - TRAPDOOR_BURST_RISE);
+  return TRAPDOOR_POP * (1 - f * f);
+}
+
+/** The flagstones blow out over the exit tile — the frame he comes back. */
+function burstOut(p: Player): void {
+  surfaceRider(p); // sprite back, silhouette still off: the floor clips his climb
+  state.vfx?.ring(p.x, p.z, PALETTE_HEX[4], 1.7, 0.4);
+  for (let k = 0; k < 10; k++) {
+    state.vfx?.dust(p.x + (Math.random() - 0.5) * 1.2, 0.08 + Math.random() * 0.3, p.z + (Math.random() - 0.5) * 1.2);
+  }
+  state.vfx?.sparks(p.x, 0.25, p.z, 0, 0, 8); // shattered stone going up with him
+  requestShake(0.35);
+  sfxTrapdoor(); // the same bang that took him — this is the other end of it
+}
+
+/**
+ * Advance an active tunnel run. Owns the player completely: position comes off
+ * the spline, i-frames the whole way, and the sprite is switched off until the
+ * burst. Two phases on one clock — transit for `rideDur`, then TRAPDOOR_BURST
+ * of pop-out parked over the exit. Touchdown hands the speed straight to the
+ * pinball system: the trapdoor IS a launcher, it just loads from below.
  */
 function updateRide(dt: number): boolean {
   const p = state.player;
   if (!p || p.rideT < 0) return false;
+  const wasT = p.rideT;
   p.rideT += dt;
+  const burst = p.rideT - p.rideDur; // < 0 while still under the floor
   const u = Math.min(1, p.rideT / p.rideDur);
   const pos = ridePoint(p.ridePts, u);
   const ahead = ridePoint(p.ridePts, Math.min(1, u + 0.03));
   p.x = pos.x;
   p.z = pos.z;
   p.iframes = Math.max(p.iframes, 0.1);
-  // Face along the rail; trail gold ghosts + rail sparks.
+  // Face along the tunnel, so he comes out the way he was travelling.
   const s = worldDirToScreen(ahead.x - pos.x, ahead.z - pos.z);
   if (s.x !== 0 || s.z !== 0) {
     p.facing = facingFromVelocity(s.x, s.z, p.facing);
     p.anim.setFacing(p.facing);
   }
-  spawnAura(dt, 0.05, true, 0.3, 0.5);
-  if (Math.random() < 14 * dt) state.vfx?.sparks(p.x, 0.4, p.z, 0, 0, 3);
 
-  syncActorMesh(p);
-  // FLY over the walls: the arc that makes it a coaster. syncActorMesh pins
-  // y=0; lift after, like the ghosts do.
-  // The rail picks you up UNDER the floor (where the hatch drop left you) and
-  // hauls you out over the first TRAPDOOR_RISE of the ride, so the hand-off
-  // from drop to ride is continuous instead of a pop back to floor level.
-  const h = Math.sin(Math.PI * u) * TRAPDOOR_HEIGHT;
-  const under = Math.max(0, 1 - u / TRAPDOOR_RISE);
-  const rideY = h - TRAPDOOR_DROP_DEPTH * under * under;
+  syncActorMesh(p); // pins y=0; the depth/height below is applied after it
+
+  if (burst < 0) {
+    // ── UNDER THE FLOOR ──────────────────────────────────────────────────────
+    // He is invisible down here, so the disturbance on the stones is the ONLY
+    // readout of where he went — losing the knight entirely for two seconds is
+    // the failure mode of this whole treatment. Dust churns along the line the
+    // camera is chasing, and a ripple every so often reads as something big
+    // moving under the flagstones.
+    p.sprite.mesh.position.y = -TRAPDOOR_DROP_DEPTH;
+    if (Math.random() < 26 * dt) {
+      state.vfx?.dust(p.x + (Math.random() - 0.5) * 0.8, 0.06, p.z + (Math.random() - 0.5) * 0.8);
+    }
+    tunnelRippleT -= dt;
+    if (tunnelRippleT <= 0) {
+      tunnelRippleT = 0.16;
+      state.vfx?.ring(p.x, p.z, PALETTE_HEX[4], 0.85, 0.3, { thin: true, opacity: 0.55 });
+    }
+    return true;
+  }
+
+  // ── THE POP-OUT ────────────────────────────────────────────────────────────
+  if (wasT < p.rideDur) burstOut(p); // the one frame he breaks the surface
+  const rideY = burstHeight(Math.min(1, burst / TRAPDOOR_BURST));
   p.sprite.mesh.position.y = rideY;
   // Same shadow fix as the ramp hop: the blob is a child of the sprite, so
-  // without this it flies the rollercoaster too. Clamped at 0 because while the
-  // rail is still hauling you out from under the floor the elevation is
-  // negative, and a shadow pushed UP through the floor reads worse than none.
+  // without this it would ride up with him. Clamped at 0 because for the first
+  // half of the climb the elevation is still negative, and a shadow pushed UP
+  // through the floor reads worse than none.
   p.sprite.setElevation(Math.max(0, rideY));
+  if (rideY > 0) spawnAura(dt, 0.05, true, 0.3, 0.5); // gold ghosts on the way up
 
-  if (u >= 1) {
+  if (burst >= TRAPDOOR_BURST) {
     p.rideT = -1;
-    // Landing = a launch: the rail hands its speed to the pinball machine.
+    revealRider(p); // he is above ground again — give him his silhouette back
+    // Landing = a launch: the tunnel hands its speed to the pinball machine.
     // Take the exit heading from the LAST spline segment (sampling at u=1 and
     // u+0.03 both clamp to the endpoint → a zero vector that would bleed to a
     // standstill), falling back toward the final control leg if it's tiny.
@@ -1822,6 +1933,12 @@ export function updatePlunger(dt: number, input: InputHandle): boolean {
 export function updatePlayer(dt: number, input: InputHandle): void {
   const p = state.player;
   const g = state.grid;
+  // Self-heal the trapdoor's visibility BEFORE the death/no-grid bail: the
+  // tunnel run switches the knight's billboard off, and every way a ride can be
+  // cancelled from outside (a grave pit, a death, a floor change) just clears
+  // rideT. An invisible knight is a lost run, so healing it must not sit behind
+  // a guard that a dead player skips.
+  if (p && p.rideT < 0 && p.dropT < 0) revealRider(p);
   if (!p || !g || p.hp <= 0) return;
 
   p.cooldown = Math.max(0, p.cooldown - dt);

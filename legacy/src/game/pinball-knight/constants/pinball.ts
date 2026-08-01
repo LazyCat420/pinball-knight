@@ -458,7 +458,8 @@ export const RAMP_STEER_LOCK = 0.25; // seconds of no-steer after a dash panel (
 /**
  * Peak arc height. MUST clear WALL_H (1.1) with daylight to spare — at exactly
  * wall height the knight only grazes the parapet, and only for the single
- * instant at u = 0.5, so a vault read as a scuff. Compare TRAPDOOR_HEIGHT 1.8.
+ * instant at u = 0.5, so a vault read as a scuff. This is the game's ONE
+ * airborne arc over the walls — the trapdoor's ride goes UNDER them.
  */
 export const RAMP_HOP_HEIGHT = 1.75;
 export const RAMP_HOP_MIN = 2.5; // nearest tiles ahead a hop will set down
@@ -766,24 +767,46 @@ export const BANK_SIZE = 3;
 export const BANK_CLEAR_GOLD = 25;
 export const TARGETS_PER_FLOOR = 5;
 /**
- * TRAPDOOR → ROLLERCOASTER — a floor hatch on dead ends, and the floor's ONE
+ * TRAPDOOR → UNDERGROUND RUN — a floor hatch on dead ends, and the floor's ONE
  * AND ONLY way to be moved somewhere you didn't walk to. Step on it: the hatch
  * swings wide (TRAPDOOR_OPEN), you're pulled onto it and fall through
- * (TRAPDOOR_DROP), then the rail takes over — a spline flown OVER the maze
- * walls, control locked, invulnerable — launching you out at spring speed
- * somewhere far. Mechanically a teleport with a ride, so it can't desync
- * combat. Nothing else in the game relocates the knight: pits shove you clear
- * of the rim, and the Magician shuffles the ROOM instead of you.
+ * (TRAPDOOR_DROP), and then you are GONE — carried along a spline BENEATH the
+ * floor (control locked, invulnerable, sprite hidden, only a run of dust on the
+ * flagstones to say where you are) until you BURST back out of the ground
+ * somewhere far (TRAPDOOR_BURST) at spring speed.
+ *
+ * It used to fly that same spline OVER the walls at TRAPDOOR_HEIGHT, and that
+ * is the bug this shape fixes: a knight sailing across the room in plain sight
+ * reads as floating, not as a trapdoor. A trapdoor SWALLOWS you — the floor is
+ * the thing you travel through, which is the whole point of the hatch.
+ *
+ * Mechanically still a teleport with a ride, so it can't desync combat.
+ * Nothing else in the game relocates the knight: pits shove you clear of the
+ * rim, and the Magician shuffles the ROOM instead of you.
  */
 export const TRAPDOOR_OPEN = 0.22; // hatch swings fully open before the floor gives way
 export const TRAPDOOR_DROP = 0.58; // total hatch beat (open + fall through), seconds
-export const TRAPDOOR_DROP_DEPTH = 1.5; // how far below the floor you sink before the rail catches you
-export const TRAPDOOR_RISE = 0.14; // fraction of the ride spent climbing back out of the hole
+export const TRAPDOOR_DROP_DEPTH = 1.5; // how far below the floor you sink — and the depth you are carried at
 export const TRAPDOOR_RIDE_SPEED = 9; // spline traversal speed, u/s
-export const TRAPDOOR_RIDE_MIN = 1.6; // ride duration clamp, seconds
+export const TRAPDOOR_RIDE_MIN = 1.6; // tunnel-run duration clamp, seconds
 export const TRAPDOOR_RIDE_MAX = 3.4;
-export const TRAPDOOR_EXIT_SPEED = 14; // momentum handed over on landing
-export const TRAPDOOR_HEIGHT = 1.8; // peak flight height over the walls
+export const TRAPDOOR_EXIT_SPEED = 14; // momentum handed over on touchdown
+/**
+ * THE POP-OUT. The tunnel run ends parked under the exit tile and the knight
+ * ERUPTS: up through the floor to TRAPDOOR_POP and back down onto it, all
+ * inside TRAPDOOR_BURST seconds, with the flagstones blowing out around him.
+ * Two things ride on these numbers:
+ *  - the climb must last long enough to READ as coming up out of a hole. Below
+ *    y=0 he is genuinely occluded by the floor plane (the one thing that makes
+ *    this look like a hole rather than a fade-in), so the first half of the
+ *    beat is a knight growing out of the ground — that wants a beat, not a
+ *    frame;
+ *  - the apex must clear his own height so the exit reads as a LAUNCH, since
+ *    touchdown hands its speed straight to the pinball machine.
+ */
+export const TRAPDOOR_BURST = 0.5; // pop-out beat: under the floor → apex → touchdown, seconds
+export const TRAPDOOR_BURST_RISE = 0.55; // fraction of that beat spent climbing to the apex
+export const TRAPDOOR_POP = 1.0; // apex above the floor as he bursts back out
 export const TRAPDOORS_PER_FLOOR = 2;
 export const TRAPDOOR_COOLDOWN = 2.5;
 /** Bounce-combo part-hits inside one live combo that trigger FRENZY. */
