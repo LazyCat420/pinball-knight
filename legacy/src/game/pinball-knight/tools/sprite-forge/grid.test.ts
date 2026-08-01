@@ -86,6 +86,36 @@ describe("pixel-grid detection", () => {
   });
 });
 
+describe("cell purity", () => {
+  // The metric taken from Sprite Fusion's Pixel Snapper. It exists because a
+  // grid DETECTOR can be confident about a step size on art that has no grid —
+  // measured, that tool reports step 5.0 at 0.79 spacing regularity on the
+  // shipped jester, whose blocks are 6.8% pure. Purity is the check that
+  // catches it, so both arms are asserted here.
+  it("is ~1 on true pixel art at its own factor", () => {
+    for (const n of [4, 6, 8]) {
+      const r = detectPixelGrid(gridded(n), [BOX]);
+      expect(r.purityFactor, `x${n}`).toBe(n);
+      expect(r.cellPurity, `x${n} purity ${r.cellPurity}`).toBeGreaterThan(0.99);
+    }
+  });
+
+  it("collapses on continuous art — the case a peak detector gets wrong", () => {
+    const r = detectPixelGrid(continuous(), [BOX]);
+    expect(r.gridded).toBe(false);
+    expect(r.cellPurity, `purity ${r.cellPurity}`).toBeLessThan(0.3);
+    expect(r.verdict).toMatch(/Cell purity/);
+  });
+
+  it("ANTI-VACUITY: purity separates the two by a wide margin", () => {
+    // Without this the thresholds above could both pass on a metric that is
+    // simply small everywhere, or large everywhere.
+    const good = detectPixelGrid(gridded(8), [BOX]).cellPurity;
+    const bad = detectPixelGrid(continuous(), [BOX]).cellPurity;
+    expect(good - bad).toBeGreaterThan(0.6);
+  });
+});
+
 describe("block reduce", () => {
   it("is EXACT on true pixel art — reducing ×n recovers the authored pixels", () => {
     const n = 6;

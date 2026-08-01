@@ -55,6 +55,16 @@ export interface GridReport {
   scores: { factor: number; confidence: number }[];
   /** Share of neighbouring pixels that are byte-identical. See the verdict block. */
   flatShare: number;
+  /**
+   * Share of an N×N block that is its own plurality colour, 0..1.
+   *
+   * 1.0 means every block is flat and the reduce is lossless; ~0.07 means the
+   * blocks hold a dozen colours each and there is no lattice to snap to. See
+   * `cellPurity` for why this is reported instead of peak regularity.
+   */
+  cellPurity: number;
+  /** The factor `cellPurity` was measured at — the winner, or the best failing candidate. */
+  purityFactor: number;
   /** True when the art can be block-reduced exactly. */
   gridded: boolean;
   /** One line for the forge report, in the player's language. */
@@ -76,6 +86,63 @@ export const GRID_CONFIDENCE = 0.9;
 
 /** A colour change big enough to be an edge rather than a gradient step. */
 const EDGE = 40;
+
+/**
+ * CELL PURITY — the share of a block that IS its own plurality colour.
+ *
+ * Borrowed from Sprite Fusion's Pixel Snapper, which cuts an image on detected
+ * gradient peaks and takes the plurality colour per cell. Its estimator is
+ * drift-tolerant where ours is not (we score PHASE against a uniform lattice),
+ * so it was worth checking whether it finds a grid we throw away.
+ *
+ * It does not — but the check produced a better metric than the one we had.
+ * Measured, with a synthetic ×8 fixture as the positive control:
+ *
+ *     synthetic ×8 pixel art      step 8.0   regularity 1.00   purity 1.000
+ *     live jester-S               step 5.0   regularity 0.79   purity 0.068
+ *     live beaver-S               step 5.0   regularity 0.85   purity 0.067
+ *     round-2 generated jester    step 4.0   regularity 0.62   purity 0.083
+ *
+ * ⚠️ NOTE WHAT REGULARITY DOES. 0.79 of the peak spacings sit within a pixel of
+ * the median — that reads as a healthy grid, and there is no grid. A tool that
+ * gates on peak regularity alone snaps our sheets to a 5px lattice and emits
+ * mush, confidently and silently. That is the argument for a gate that can
+ * REFUSE, and it is why regularity is deliberately NOT adopted here.
+ *
+ * Purity is adopted because it measures the property that actually matters:
+ * whether a block can collapse to one colour without losing anything. It is
+ * also far easier to read than a phase confidence — "each cell is 7% its own
+ * colour" needs no explaining.
+ */
+function cellPurity(img: RawImage, n: number, boxes: readonly (readonly number[])[]): number {
+  if (n < 2) return 1;
+  const tally = new Map<number, number>();
+  const scores: number[] = [];
+  for (const [bx0, by0, bx1, by1] of boxes) {
+    for (let y = by0; y + n - 1 <= by1; y += n) {
+      for (let x = bx0; x + n - 1 <= bx1; x += n) {
+        tally.clear();
+        let best = 0;
+        let total = 0;
+        for (let dy = 0; dy < n; dy++) {
+          for (let dx = 0; dx < n; dx++) {
+            const i = ((y + dy) * img.width + x + dx) * 4;
+            if (img.data[i + 3] <= 127) continue;
+            const key = (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
+            const c = (tally.get(key) ?? 0) + 1;
+            tally.set(key, c);
+            if (c > best) best = c;
+            total++;
+          }
+        }
+        // Only fully-opaque blocks: a block straddling the silhouette is mostly
+        // background and would score as pure for the wrong reason.
+        if (total === n * n) scores.push(best / total);
+      }
+    }
+  }
+  return scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+}
 
 /**
  * Flat-neighbour share above which un-gridded art is called NATIVE pixel art
@@ -209,7 +276,18 @@ export function detectPixelGrid(img: RawImage, boxes: readonly (readonly number[
       `Re-generate with hard edges, no anti-aliasing, at an integer multiple of the target size.`;
   }
 
-  return { factor, confidence, scores, flatShare: flat, gridded: Boolean(best), verdict };
+  // Purity at the factor the sheet CLAIMS — the winning one if it passed, else
+  // the best-scoring candidate, so a failing sheet still reports how far off it
+  // was rather than reporting nothing.
+  const claimed = best ? factor : scores.reduce((a, b) => (b.confidence > a.confidence ? b : a)).factor;
+  const purity = cellPurity(img, claimed, boxes);
+
+  return {
+    factor, confidence, scores, flatShare: flat, cellPurity: purity, purityFactor: claimed,
+    gridded: Boolean(best),
+    verdict: verdict + ` Cell purity at ×${claimed}: ${(purity * 100).toFixed(1)}%` +
+      (best ? "." : ` — a real lattice is ~100%, so the blocks are ${purity < 0.5 ? "mush" : "close but not flat"}.`),
+  };
 }
 
 /**
