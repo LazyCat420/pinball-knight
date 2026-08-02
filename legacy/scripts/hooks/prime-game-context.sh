@@ -50,6 +50,15 @@ tables in maze/prefabs.ts, EXPANSION_SKIN vs KIND_PORTRAIT, and ESSENTIAL.
 REPO: default branch is `main`, not master. `npm run lint` is broken (next lint
 was removed in Next 16, and ESLint 9 has no flat config here) — do not trust it.
 The suite is 88s, of which maze/ is 59s. deploy.sh ships the WORKING TREE.
+
+ART has three pipelines, pick deliberately: painters (render/monsters/*.ts,
+procedural canvas code, the default for anything animated) · sprite-forge
+(tools/sprite-forge/, whole PNG sheets: matte→slice→resample→register, for
+sanctioned imports like jester/rotortail) · pixel-trace (tools/pixel-trace/,
+`npm run pixels -- trace img.png --grid square32`, an image or a from-scratch
+sketch → a hand-editable JSON grid of characters→hex, for one-off icons
+neither of the other two fits; `--palette coldcrypt` snaps to the real
+dungeon palette). None of the three replaces the others.
 EOF
 
 hk_emit_additional_context "UserPromptSubmit" "$CONTEXT"
