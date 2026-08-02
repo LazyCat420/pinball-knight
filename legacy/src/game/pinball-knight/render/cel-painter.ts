@@ -2143,6 +2143,10 @@ interface ZPose {
    */
   crouch?: number;
   dead?: boolean;
+  /** True to draw red claw swipe slash arcs (ATTACKING row). */
+  slash?: boolean;
+  /** 0..1 intensity scale for claw slash arcs. */
+  slashPower?: number;
 }
 
 // ── Zombie VARIETY ──────────────────────────────────────────────
@@ -2865,6 +2869,29 @@ function zombieTorsoPts(sk: Skeleton, dir: Dir): Pt[] {
   return [[c[0] - sw, c[1] - 1], [c[0] + sw, c[1] - 6], [sk.hipR[0] + 3, hy], [sk.hipL[0] - 3, hy]];
 }
 
+/** Draw red claw trajectory slash arcs for zombie swipe attacks (matching Row 3 ATTACKING). */
+function zombieClawSlash(ctx: CanvasRenderingContext2D, dir: Dir, power = 1.0): void {
+  ctx.save();
+  ctx.lineWidth = 2.4 * power;
+  ctx.lineCap = "round";
+  const cy = GROUND - 22;
+  const colors = [C(11), C(12), C(13)]; // rich crimson blood-red shades
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = colors[i % colors.length];
+    ctx.beginPath();
+    const r = 24 + i * 5;
+    if (dir === "E") {
+      ctx.arc(58, cy + (i - 1) * 3, r, -Math.PI * 0.35, Math.PI * 0.22);
+    } else if (dir === "S") {
+      ctx.arc(64 + (i - 1) * 5, cy + 10, r * 0.8, Math.PI * 0.1, Math.PI * 0.9);
+    } else {
+      ctx.arc(64 + (i - 1) * 5, cy - 10, r * 0.8, Math.PI * 1.1, Math.PI * 1.9);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function zombieFrame(dir: Dir, pose: ZPose, v: ZVariant): FramePaint {
   return (ctx) => {
     groundShadow(ctx, 64, GROUND + 3, 25);
@@ -2872,6 +2899,9 @@ function zombieFrame(dir: Dir, pose: ZPose, v: ZVariant): FramePaint {
     // the soft gradient would only muddy the clean bands (same call the knight
     // dropped). celShade stays on the brute/spitter overlays that draw extra art.
     zombieStanding(ctx, dir, pose, v);
+    if (pose.slash) {
+      zombieClawSlash(ctx, dir, pose.slashPower ?? 1.0);
+    }
   };
 }
 
@@ -2891,13 +2921,20 @@ function zombieDeath(v: ZVariant): FramePaint[] {
   // A gorier variant leaves a bigger stain.
   const pool = 16 + v.gore * 6;
   return [
-    // buckle — knees give, eyes go out
+    // 1. impact recoil — head thrown back with blood spray burst (Row 4 frame 1)
+    (ctx) => {
+      groundShadow(ctx, 64, GROUND + 3, 25);
+      zombieStanding(ctx, "S", { bob: -3, stride: 0, lurch: -0.2, swing: 0.8, dead: true }, v);
+      goreSplatter(ctx, v, 64, GROUND - 32);
+      celShade(ctx);
+    },
+    // 2. buckle — knees give, eyes go out
     (ctx) => {
       groundShadow(ctx, 64, GROUND + 3, 25);
       zombieStanding(ctx, "S", { bob: 8, stride: 0, lurch: 0.14, dead: true }, v);
       celShade(ctx);
     },
-    // fold — the whole figure pitches around the feet
+    // 3. fold — the whole figure pitches around the feet
     (ctx) => {
       groundShadow(ctx, 64, GROUND + 3, 25);
       ctx.save();
@@ -2908,7 +2945,7 @@ function zombieDeath(v: ZVariant): FramePaint[] {
       ctx.restore();
       celShade(ctx);
     },
-    // collapse — nearly flat, first blood
+    // 4. collapse — nearly flat, first blood
     (ctx) => {
       ctx.save();
       ctx.translate(56, GROUND + 2);
@@ -2919,7 +2956,7 @@ function zombieDeath(v: ZVariant): FramePaint[] {
       celShade(ctx);
       bloodPool(ctx, pool * 0.55);
     },
-    // the heap and the stain
+    // 5. the heap and the stain
     (ctx) => {
       bloodPool(ctx, pool);
       goreSplatter(ctx, v, 64, GROUND - 6);
@@ -2956,8 +2993,8 @@ export function makeZombiePaints(v: ZVariant): ActorPaints {
   // way the face points.
   const crouchClip = [
     zombieFrame("E", { bob: -2, stride: 0, lurch: 0.12, crouch: 0.15, swing: -0.3, droop: -2 }, v),
-    zombieFrame("E", { bob: 1, stride: 0, lurch: 0.28, crouch: 1.1, swing: -0.6, droop: -4 }, v),
-    zombieFrame("E", { bob: 2, stride: 0, lurch: 0.36, crouch: 1.6, swing: -0.8, droop: -6 }, v),
+    zombieFrame("E", { bob: 1, stride: 0, lurch: 0.28, crouch: 1.1, swing: -0.6, droop: -4, slash: true, slashPower: 0.6 }, v),
+    zombieFrame("E", { bob: 2, stride: 0, lurch: 0.36, crouch: 1.6, swing: -0.8, droop: -6, slash: true, slashPower: 1.0 }, v),
   ];
   const wakeClip = wakeFrames(zombieFrame("E", { bob: 0, stride: 0.6, lurch: 0.22, swing: -0.6, droop: -3 }, v));
   const stumbleClip = stumbleFrames(zombieFrame("E", { bob: 1, stride: -0.2, lurch: 0.06, swing: 0.4, droop: 4 }, v));
