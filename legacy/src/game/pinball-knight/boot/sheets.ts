@@ -244,7 +244,7 @@ export function sheetFor(key: SheetKey): SpriteSheet {
 const imported = new Map<SheetKey, ActorPaints>();
 
 /** The art a key builds with: imported if it arrived, painted otherwise. */
-function paintsFor(key: SheetKey): ActorPaints {
+export function paintsFor(key: SheetKey): ActorPaints {
   return imported.get(key) ?? BUILDERS[key].make();
 }
 

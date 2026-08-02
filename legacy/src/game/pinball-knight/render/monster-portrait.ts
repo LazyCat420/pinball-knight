@@ -45,6 +45,7 @@ import {
   type FramePaint,
 } from "./cel-painter";
 import { ART_PX } from "../constants";
+import { SHEET_KEY_BY_KIND, paintsFor } from "../boot/sheets";
 import { installPalette } from "./palette";
 import { ZOMBIE_TYPES, variantIndicesFor, type ZombieType } from "../zombie-types";
 import type { EnemyKind } from "../state";
@@ -177,9 +178,15 @@ export function monsterPortrait(kind: EnemyKind, sub?: ZombieType): HTMLCanvasEl
     return null;
   }
 
+  const sheetKey = SHEET_KEY_BY_KIND[kind];
   const paints: ActorPaints =
-    kind === "zombie" && sub ? makeZombiePaints(ZOMBIE_VARIANTS[zombieVariantFor(sub)]) : spec.paints();
-  const frames: FramePaint[] | undefined = paints.S?.idle ?? paints.S?.walk;
+    kind === "zombie" && sub
+      ? makeZombiePaints(ZOMBIE_VARIANTS[zombieVariantFor(sub)])
+      : sheetKey
+        ? paintsFor(sheetKey)
+        : spec.paints();
+  const frames: FramePaint[] | undefined =
+    paints.S?.idle ?? paints.E?.idle ?? paints.S?.walk ?? paints.E?.walk;
   const frame = frames?.[0];
   if (!frame) {
     _cache.set(key, null);
