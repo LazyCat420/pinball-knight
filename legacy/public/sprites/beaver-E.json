@@ -1,7 +1,7 @@
 {
  "name": "beaver",
- "dir": "S",
- "image": "/sprites/beaver-S.png",
+ "dir": "E",
+ "image": "/sprites/beaver-E.png",
  "source": [
   1276,
   1294
