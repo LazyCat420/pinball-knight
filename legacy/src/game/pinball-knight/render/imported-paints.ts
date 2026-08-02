@@ -41,16 +41,21 @@ export interface ImportedSheet {
  */
 export async function loadImportedSheet(name: string, dir: Dir): Promise<ImportedSheet | null> {
   try {
-    const res = await fetch(`/sprites/${name}-${dir}.json`);
+    let res = await fetch(`/sprites/${name}-${dir}.json`);
+    if (!res.ok) {
+      res = await fetch(`./sprites/${name}-${dir}.json`);
+    }
     if (!res.ok) return null;
     const manifest = (await res.json()) as SheetManifest;
     const image = await decode(manifest.image);
     if (!image) return null;
     // A re-export at a different size would silently shift every cell rect.
     const [w, h] = manifest.source;
-    if (image.width !== w || image.height !== h) {
+    const imgW = image.naturalWidth || image.width;
+    const imgH = image.naturalHeight || image.height;
+    if (Math.abs(imgW - w) > 2 || Math.abs(imgH - h) > 2) {
       console.warn(
-        `[dungeon] ${name}-${dir}: sheet is ${image.width}x${image.height} but the manifest ` +
+        `[dungeon] ${name}-${dir}: sheet is ${imgW}x${imgH} but the manifest ` +
           `measured ${w}x${h}. Re-run \`npm run sprites\`. Falling back to the painter.`,
       );
       return null;
