@@ -207,7 +207,7 @@ const ESSENTIAL: SheetKey[] = ["spider", "goblin", "pin", "sporeling", "hound"];
  * ~275 ms spent on an atlas no player ever sees. `sheetFor("boss")` still
  * builds it for the hook.
  */
-const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck"];
+const BACKFILL: SheetKey[] = ["ghost", "chomper", "jester", "croaker", "brute", "slime", "bat", "rotortail", "golem", "magnet", "spitter", "webspinner", "stiltneck", "fish_feet"];
 
 /**
  * Get an atlas, building it if the backfill hasn't reached it yet.
@@ -352,7 +352,6 @@ export async function applyImportedArt(): Promise<void> {
 function rebuild(key: SheetKey): void {
   _clearPortraitCache();
   const b = BUILDERS[key];
-  if (!b.get() && !inFlight.has(key)) return; // never built; sheetFor will do it
   inFlight.delete(key);
   if (current?.key === key) current = null;
   const sheet = monsterSheet(paintsFor(key));
