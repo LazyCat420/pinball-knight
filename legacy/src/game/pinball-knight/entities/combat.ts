@@ -877,7 +877,7 @@ function tallyKill(z: Zombie): void {
   }
 }
 
-function killZombie(z: Zombie): void {
+export function killZombie(z: Zombie): void {
   z.mode = "dead";
   z.staggerT = 0;
   z.windupT = 0;

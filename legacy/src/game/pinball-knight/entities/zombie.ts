@@ -151,7 +151,7 @@ import { worldToTile, tileCenter, idx, isWalkable, isLowWall, type Grid } from "
 import { flowStep } from "../engine/flow-field";
 import { facingFromVelocity, type Facing } from "../engine/render/animator";
 import { worldDirToScreen } from "../engine/camera";
-import { hitPlayer, syncActorMesh, updateFlash, damageZombie } from "./combat";
+import { hitPlayer, syncActorMesh, updateFlash, damageZombie, killZombie } from "./combat";
 import { fireEyeBeams, flingPlate, hurlTimber, slingBomb, spitGlob, spitWeb } from "./projectiles";
 import { gate, sfxGroan, sfxGoblin } from "../sfx";
 
@@ -405,7 +405,13 @@ export function updateZombies(dt: number): void {
   for (let i = state.zombies.length - 1; i >= 0; i--) {
     const z = state.zombies[i];
     updateFlash(z, dt);
+    if (z.hp <= 0 && z.mode !== "dead") {
+      killZombie(z);
+    }
     if (z.mode === "dead") {
+      if (z.anim?.getClip?.() !== "death") {
+        z.anim?.play?.("death", { force: true });
+      }
       z.anim?.update?.(dt);
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
