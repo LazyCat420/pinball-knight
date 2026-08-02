@@ -15,6 +15,7 @@ import { makeJesterPaints } from "../render/monsters/jester";
 import { makeCroakerPaints } from "../render/monsters/croaker";
 import { makeRotortailPaints } from "../render/monsters/rotortail";
 import { makeStiltneckPaints } from "../render/monsters/stiltneck";
+import { makeFishFeetPaints } from "../render/monsters/fish_feet";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
@@ -134,7 +135,7 @@ function startMonsterSheet(paints: ActorPaints): SheetBuild {
 export type SheetKey =
   | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
-  | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck";
+  | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet";
 
 /**
  * EnemyKind → the atlas that kind draws with, for callers that hold a kind
@@ -149,7 +150,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
   sporeling: "sporeling", hound: "hound", jester: "jester", croaker: "croaker", rotortail: "rotortail",
-  stiltneck: "stiltneck",
+  stiltneck: "stiltneck", fish_feet: "fish_feet",
 };
 
 /** key → (paint the atlas, read it off state, write it back). */
@@ -173,6 +174,7 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   croaker: { make: makeCroakerPaints, get: () => state.croakerSheet, set: (s) => { state.croakerSheet = s; } },
   rotortail: { make: makeRotortailPaints, get: () => state.rotortailSheet, set: (s) => { state.rotortailSheet = s; } },
   stiltneck: { make: makeStiltneckPaints, get: () => state.stiltneckSheet, set: (s) => { state.stiltneckSheet = s; } },
+  fish_feet: { make: makeFishFeetPaints, get: () => state.fishFeetSheet, set: (s) => { state.fishFeetSheet = s; } },
 };
 
 /**
@@ -285,6 +287,8 @@ const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   jester: "jester",
   rotortail: "beaver",
   croaker: "frog",
+  stiltneck: "stiltneck",
+  fish_feet: "fish_feet",
 };
 
 /** Player toggle, read at load. `__lab.imported(false)` then reload to compare. */

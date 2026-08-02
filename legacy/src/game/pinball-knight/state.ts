@@ -1092,6 +1092,7 @@ export const state = {
   croakerSheet: null as SpriteSheet | null,
   rotortailSheet: null as SpriteSheet | null,
   stiltneckSheet: null as SpriteSheet | null,
+  fishFeetSheet: null as SpriteSheet | null,
   houndSheet: null as SpriteSheet | null,
   /** Baked TINTED atlases for the expansion roster (spawn/factory.ts
    * makeExpansion): borrowed sheet × tint, re-snapped to the palette so the

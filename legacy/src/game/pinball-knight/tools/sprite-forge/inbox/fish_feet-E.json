@@ -1,0 +1,12 @@
+{
+  "rows": [
+    "walk",
+    "attack",
+    "death"
+  ],
+  "cells": [
+    4,
+    3,
+    4
+  ]
+}
