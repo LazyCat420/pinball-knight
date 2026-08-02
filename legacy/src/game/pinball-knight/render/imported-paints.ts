@@ -263,9 +263,6 @@ export function importedPaints(
   // means the atlas packs them once instead of three times (startSpriteSheet
   // dedupes on FramePaint identity).
   const fallback = byDir.get("S") ?? byDir.get("E") ?? byDir.get("N");
-  if (fallback && !fallback.idle?.length && fallback.walk?.length) {
-    fallback.idle = fallback.walk;
-  }
   if (!fallback?.idle?.length) return null;
   const pick = (d: Dir): Partial<Record<ClipName, FramePaint[]>> => byDir.get(d) ?? fallback;
   return { S: pick("S"), N: pick("N"), E: pick("E") };
