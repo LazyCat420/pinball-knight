@@ -45,6 +45,8 @@ export interface SheetManifest {
    * is one authored pixel, which is what makes a 1:1 import possible at all.
    */
   grid?: number;
+  /** Optional scale multiplier for rendering sizing standardization. */
+  scale?: number;
   rows: ManifestRow[];
 }
 

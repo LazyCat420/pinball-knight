@@ -217,7 +217,8 @@ function clipsFor(
         `atlas ${atlasGrid} — falling back to a fitted resample. Re-author the sheet smaller to keep 1:1.`,
     );
   }
-  const k = exact ? oneToOne : aliveScale(sheet.manifest.rows);
+  const baseK = exact ? oneToOne : aliveScale(sheet.manifest.rows);
+  const k = baseK * (sheet.manifest.scale ?? 1.0);
   // Resampled-cel cache, shared across the sheet: three facings reuse the same
   // FramePaints by reference, but distinct camera-rung buffers (tests drive
   // several) land distinct entries, keyed by destination size.

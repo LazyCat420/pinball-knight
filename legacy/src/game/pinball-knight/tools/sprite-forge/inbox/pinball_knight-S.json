@@ -1,5 +1,6 @@
 {
   "name": "pinball_knight",
   "dir": "S",
+  "scale": 1.3,
   "rows": ["idle", "walk", "roll", "attack", "death"]
 }
