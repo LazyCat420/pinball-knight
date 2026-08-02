@@ -24,6 +24,7 @@ import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet }
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
 import { authoredDirs, importedPaints, loadImportedSheet, type ImportedSheet } from "../render/imported-paints";
+import { _clearPortraitCache } from "../render/monster-portrait";
 import type { Dir } from "../engine/render/paint-types";
 
 /** The facings a sheet may author. W is drawn as a flipped E. */
@@ -330,6 +331,7 @@ export async function applyImportedArt(): Promise<void> {
     const paints = importedPaints(loaded);
     if (!paints) continue;
     imported.set(key, paints);
+    _clearPortraitCache();
     console.info(
       `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
         `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}`,
@@ -348,6 +350,7 @@ export async function applyImportedArt(): Promise<void> {
  * so there is no second map to re-sync here.)
  */
 function rebuild(key: SheetKey): void {
+  _clearPortraitCache();
   const b = BUILDERS[key];
   if (!b.get() && !inFlight.has(key)) return; // never built; sheetFor will do it
   inFlight.delete(key);
