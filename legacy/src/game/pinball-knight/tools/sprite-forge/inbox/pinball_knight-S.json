@@ -1,0 +1,5 @@
+{
+  "name": "pinball_knight",
+  "dir": "S",
+  "rows": ["idle", "walk", "roll", "attack", "death"]
+}
