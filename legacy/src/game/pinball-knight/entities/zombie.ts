@@ -406,7 +406,7 @@ export function updateZombies(dt: number): void {
     const z = state.zombies[i];
     updateFlash(z, dt);
     if (z.mode === "dead") {
-      z.anim.update(dt);
+      z.anim?.update?.(dt);
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;
