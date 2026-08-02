@@ -1373,8 +1373,7 @@ function assignCornerShapes(g: Grid): void {
           wall(i + c.wb[0], j + c.wb[1]) &&
           wall(i + c.diag[0], j + c.diag[1]) &&
           floor(i + c.l1[0], j + c.l1[1]) &&
-          floor(i + c.l2[0], j + c.l2[1]) &&
-          floor(i + c.opp[0], j + c.opp[1])
+          floor(i + c.l2[0], j + c.l2[1])
         ) {
           const ti = i + c.diag[0];
           const tj = j + c.diag[1];
