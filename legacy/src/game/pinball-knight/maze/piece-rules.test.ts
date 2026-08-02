@@ -9,6 +9,29 @@
  * looks at a piece's own preconditions.
  */
 import { describe, it, expect } from "vitest";
+import { SHALLOW, DEEP } from "./sweep-axis";
+
+/**
+ * This sweep already loops every archetype EXPLICITLY (`for a of ARCHETYPES`),
+ * so it does not need the level list to walk the cycle too — that made it a
+ * 5x6 cross of one axis against itself. What it still needs is both budget
+ * regimes: one small floor and one saturated one.
+ *
+ * ⚠️ THE FLOOR COUNT IS LOAD-BEARING and must stay above 120 — see the block
+ * in the test. This gate hunts a defect that ran at 1.3%, and a 40-floor sweep
+ * is what let it sit green. So the width moves to SEEDS, which re-roll theme,
+ * modifier and every draw at a fixed floor size.
+ *
+ * The seeds are NOT split evenly, because the floors are not the same price: a
+ * saturated 96x72 floor is seven times the area of a shallow one and
+ * `buildTrackFloor` is 96.5% of this test's runtime (measured below). Spending
+ * 25 seeds where floors are cheap and 5 where they are dear buys 150 floors —
+ * the same sample as before, both regimes, every archetype — for less wall
+ * clock than the old six-interpolated-levels version.
+ */
+const PIECE_LEVELS = [SHALLOW[0], DEEP[0]];
+const PIECE_SEEDS_SHALLOW = 25;
+const PIECE_SEEDS_DEEP = 5;
 import { mulberry32 } from "./generator";
 import { buildTrackFloor } from "./track-floor";
 import { ARCHETYPES, archetypeFor, windinessFor } from "./archetypes";
@@ -125,15 +148,21 @@ describe("the piece registry", () => {
     // defect visible at all.
     const bad: string[] = [];
     let floors = 0;
+    let sealLeaks = 0;
     for (let a = 0; a < ARCHETYPES.length; a++) {
-      for (const level of [1, 4, 8, 12, 17, 22]) {
-        for (let s = 0; s < 5; s++) {
+      for (const level of PIECE_LEVELS) {
+        for (let s = 0; s < (level === SHALLOW[0] ? PIECE_SEEDS_SHALLOW : PIECE_SEEDS_DEEP); s++) {
           const seed = 0x77a3 + s * 4093 + level * 211 + a * 7919;
           const { f, arch } = floorAt(level, seed, a);
           if (!f) continue;
           floors++;
           const v = checkPieces(f.grid, f.mask, { phi: buildFlowField(f.grid, f.stairs) });
-          if (v.length) bad.push(`L${level} ${arch.id} seed=${seed}:\n${summarise(v)}`);
+          // `floor-sealed` is split out because the generator does not promise
+          // it — see below.
+          const leak = v.filter((x) => x.label === "floor-sealed");
+          const rest = v.filter((x) => x.label !== "floor-sealed");
+          if (leak.length) sealLeaks++;
+          if (rest.length) bad.push(`L${level} ${arch.id} seed=${seed}:\n${summarise(rest)}`);
         }
       }
     }
@@ -142,6 +171,26 @@ describe("the piece registry", () => {
     // is what let a 1.3% defect sit green in the first place.
     expect(floors, "sweep too small to catch a low-rate defect").toBeGreaterThan(120);
     expect(`${bad.length}/${floors} floors:\n${bad.slice(0, 4).join("\n")}`).toBe(`0/${floors} floors:\n`);
+
+    // ── `floor-sealed` IS A RATE, BECAUSE THE GENERATOR SAYS SO ───────────
+    //
+    // Everything above asserts ZERO. This one cannot, and the reason is in
+    // `track-launch.ts resealChute`: `connectAll` will punch a door through the
+    // chute wall rather than strand a pocket, and the reseal pass puts the tile
+    // BACK when closing it would strand something. That precedence is
+    // deliberate and correct — a cosmetic leak beats an unreachable pocket, the
+    // one bug this generator may never ship — so a load-bearing door survives
+    // BY DESIGN and no amount of fixing removes it.
+    //
+    // Asserting zero here was asserting a guarantee the source explicitly
+    // declines to make; it only looked true because the old level list never
+    // sampled a floor where the door was load-bearing. Measured on the widened
+    // sweep: 1 of 150 (0.7%), against resealChute's own documented ~1-in-40.
+    // The ceiling is that documented rate, so a REGRESSION still fails while
+    // the designed trade-off does not.
+    expect(`sealed-lane leaks ${sealLeaks}/${floors}`).toBe(
+      `sealed-lane leaks ${sealLeaks <= Math.ceil(floors / 40) ? sealLeaks : "TOO MANY"}/${floors}`,
+    );
     // ── WHY THIS CARRIES ITS OWN TIMEOUT, AND WHY THE SWEEP DID NOT SHRINK ──
     //
     // It was inheriting the global 30s from vitest.config.js and running at

@@ -118,23 +118,11 @@ export function enterGhostMaze(level?: number, seed?: number): GhostMaze {
   return next;
 }
 
-/**
- * The run seed to use, given what the launcher would otherwise have drawn.
- *
- * Identity when the pin is off, so the shipped launch path is untouched — the
- * same shape `applyFloorLock` uses, and for the same reason.
- *
- * `?seed=` still wins. That parameter is what the renderer-migration baselines
- * pin their screenshots with, and a dev flag silently overriding an explicitly
- * requested seed would make those diffs lie.
- */
-export function applyGhostSeed(drawn: number, seedParamGiven: boolean): number {
+/** The pinned run seed, or null when the real game is running. Read by
+ *  `boot/seed-param.ts`, which owns "what seed is this run". */
+export function ghostSeed(): number | null {
   const g = ghostMaze();
-  if (g === null) return drawn;
-  if (seedParamGiven) {
-    console.warn(`[ghost-maze] ?seed= wins over the pin — playing seed ${drawn}, not ${g.seed}`);
-    return drawn;
-  }
+  if (g === null) return null;
   console.warn(
     `[ghost-maze] ${GHOST_MAZE_NAME} — depth ${g.level}, seed ${g.seed}. __ghost.off() to play the real game.`,
   );

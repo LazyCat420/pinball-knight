@@ -118,7 +118,6 @@ import { nearSealed } from "./maze/track-socket";
 import { endCoop } from "./coop";
 import { stopPresence, peers, startPresence } from "../../net/presence";
 import { resolveDescendFloor } from "../../net/rally";
-import { applyGhostSeed, ghostFloorLabel } from "./dev/ghost-maze";
 import { applyDelveCatchUp } from "./delve";
 import { createFog } from "./fog";
 import { closeFloorMap } from "./map-overlay";
@@ -175,14 +174,7 @@ export function launchDungeonGame(onExit?: () => void): void {
   // every spawn, so a fixed seed is what makes two screenshots comparable —
   // without it each run builds a different floor and a visual diff is noise.
   // Used by the renderer-migration baselines; harmless in normal play.
-  // GHOST MAZE (dev/ghost-maze.ts) pins the seed as well as the depth, because
-  // pinning depth alone is not pinning a floor: `floorRng(runSeed, level)`
-  // means a fresh `Math.random()` here builds a different maze at the same
-  // number. An explicit `?seed=` still wins — the renderer baselines depend on
-  // it, and a dev flag silently overriding a requested seed would make those
-  // diffs lie.
-  const seedParam = readSeedParam();
-  state.runSeed = applyGhostSeed(seedParam ?? ((Math.random() * 0x7fffffff) | 0), seedParam !== null);
+  state.runSeed = readSeedParam() ?? (Math.random() * 0x7fffffff) | 0;
   setInputOwner("dungeon-game");
   // Persisted player settings (menu → Settings) land on state BEFORE the pixel
   // pass is built, so createPixelPass below reads the saved look directly.
@@ -521,15 +513,7 @@ function buildLevel(level: number): void {
   // when the floor's shape is actually unusual, so level 1 reads as it always did.
   const flavour = arch.id === "warrens" ? biome.flavour : `${biome.flavour} · ${arch.flavour}`;
   const sub = level % BOSS_EVERY === 0 ? "☠ a MEGA REAPER KING guards the stairs ☠" : `${flavour}${suffix}`;
-  // The dev pin CAPTIONS ITSELF. A screenshot taken in Ghost Maze must be
-  // impossible to mistake for one from a real run — that is the difference
-  // between a workbench and a flag that silently changes what you are looking
-  // at. Same reason the lock logs on every clamp.
-  const ghostLabel = ghostFloorLabel();
-  showToast(
-    ghostLabel ?? `DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`,
-    ghostLabel ? `${biome.name} · ${arch.label} — dev pin, __ghost.off() to play` : sub,
-  );
+  showToast(`DEPTH ${level} — ${biome.name.toUpperCase()}${shape.toUpperCase()}`, sub);
   // Arrival sting. Paired with the toast rather than the geometry build so the
   // sound and the card land together.
   sfxLevelStart();

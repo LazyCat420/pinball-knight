@@ -32,6 +32,7 @@
 import { UI, GRID, C } from "../theme";
 import { bar, bevel, fillRect, rect, strokeRect, text, type UiFrame } from "../im";
 import { close, push, type UiScreen } from "../stack";
+import { ghostFloorLabel } from "../../dev/ghost-maze";
 
 /**
  * The SAME contract `floor-loading.ts` publishes, so the two are drop-in
@@ -286,10 +287,17 @@ export function openFloorLoading(level: number): FloorLoading {
         f.g.fillRect(sx, sy, 2, 2);
       }
 
-      text(f, "DESCENDING", cx, top, { size: 8, colour: UI.gold, align: "center" });
-      text(f, `DEPTH ${s.level}`, cx, top + 20, { size: 24, colour: UI.text, align: "center" });
+      // GHOST MAZE CAPTIONS ITSELF. A screenshot taken on the dev workbench
+      // must be impossible to mistake for one from a real run — that is the
+      // difference between a workbench and a flag that quietly changes what you
+      // are looking at, and it is the same reason the floor lock logs on every
+      // clamp. Rendered here rather than in `core.ts` because the loading
+      // screen already owns "what is this floor called".
+      const pinned = ghostFloorLabel();
+      text(f, pinned ? "DEV PIN" : "DESCENDING", cx, top, { size: 8, colour: UI.gold, align: "center" });
+      text(f, pinned ? "GHOST MAZE" : `DEPTH ${s.level}`, cx, top + 20, { size: 24, colour: UI.text, align: "center" });
       divider(f, cx, top + 58, 96);
-      text(f, s.label.toUpperCase(), cx, top + 70, { size: 8, colour: UI.arcane, align: "center" });
+      text(f, (pinned ?? s.label).toUpperCase(), cx, top + 70, { size: 8, colour: UI.arcane, align: "center" });
 
       // The bar reads as an INSTRUMENT: a sunken well filled in blocks, the way
       // a Doom status bar fills. See `bar()` — the segmentation is not only the

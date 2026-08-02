@@ -32,6 +32,7 @@ import { walkableCount } from "./floor-metrics";
 import { buildTrackFloor } from "./track-floor";
 import { paintBands, bandOf } from "./surface-paint";
 import { floorRng } from "./floor-seed";
+import { SWEEP_LEVELS, sweepPairs } from "./sweep-axis";
 
 const ROOM_MIN_CELLS = 3;
 const ROOM_MAX_CELLS = 6;
@@ -87,13 +88,18 @@ function buildFloor(level: number, runSeed: number) {
   return { grid, plan, arch, modifier, theme, landmark, stamped, endpoints };
 }
 
-const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 17, 20, 21, 25, 30, 40];
+// Ten levels, not seventeen: five archetypes at each end of the budget range.
+// The old list oversampled L1-10 and then re-measured a constant — L24-40 are
+// byte-identical in `levelConfig`. See maze/sweep-axis.ts, whose own test
+// re-derives the saturation point rather than trusting the list.
+const LEVELS = SWEEP_LEVELS;
 const RUN_SEEDS = [1, 12345, 0xc0ffee, 987654321];
+const PAIRS = sweepPairs(RUN_SEEDS);
 
 describe("whole-floor pipeline", () => {
   it("every depth on every run seed is buildable and solvable start→stairs", () => {
-    for (const runSeed of RUN_SEEDS) {
-      for (const level of LEVELS) {
+    for (const { level, seed: runSeed } of PAIRS) {
+      {
         const { grid, plan } = buildFloor(level, runSeed);
         const label = `L${level} run ${runSeed}`;
         // The stairs must exist and be reachable from the spawn — the one
@@ -114,8 +120,8 @@ describe("whole-floor pipeline", () => {
   });
 
   it("every floor gets its set piece and a usable amount of content", () => {
-    for (const runSeed of RUN_SEEDS) {
-      for (const level of LEVELS) {
+    for (const { level, seed: runSeed } of PAIRS) {
+      {
         const { plan, landmark, theme } = buildFloor(level, runSeed);
         const label = `L${level} run ${runSeed}`;
         expect(landmark.stamped.length, `${label}: no landmark`).toBe(1);
@@ -179,8 +185,8 @@ describe("whole-floor pipeline", () => {
 
   it("the exit is still a genuine trek from the spawn", () => {
     // Randomising the exit must not turn it into "the stairs are 3 tiles away".
-    for (const runSeed of RUN_SEEDS) {
-      for (const level of LEVELS) {
+    for (const { level, seed: runSeed } of PAIRS) {
+      {
         const { grid, plan } = buildFloor(level, runSeed);
         const dist = bfsDistances(grid, plan.start.i, plan.start.j);
         let maxDist = 0;

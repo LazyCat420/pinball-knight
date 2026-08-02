@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   applyGhostLevel,
-  applyGhostSeed,
+  ghostSeed,
   enterGhostMaze,
   ghostFloorLabel,
   ghostMaze,
@@ -9,6 +9,7 @@ import {
   __resetGhostMazeCache,
 } from "./ghost-maze";
 import { buildHeadlessPlan } from "./headless-floor";
+import { readSeedParam } from "../boot/seed-param";
 
 /** A localStorage stand-in — the module reads the real global, and node has
  *  none. Kept dumb on purpose: the thing under test is the pin, not storage. */
@@ -33,7 +34,7 @@ describe("ghost maze", () => {
     // the identity, or every player is silently on the workbench floor.
     expect(ghostMaze()).toBeNull();
     expect(applyGhostLevel(7)).toBe(7);
-    expect(applyGhostSeed(999, false)).toBe(999);
+    expect(ghostSeed()).toBeNull();
     expect(ghostFloorLabel()).toBeNull();
   });
 
@@ -44,15 +45,20 @@ describe("ghost maze", () => {
     enterGhostMaze(5, 1234);
     __resetGhostMazeCache();
     expect(applyGhostLevel(19)).toBe(5);
-    expect(applyGhostSeed(88, false)).toBe(1234);
+    expect(ghostSeed()).toBe(1234);
   });
 
   it("lets an explicit ?seed= win over the pin", () => {
     // The renderer-migration baselines pin their screenshots with ?seed=. A dev
     // flag quietly overriding a requested seed would make those diffs lie.
+    // Precedence lives in `boot/seed-param.ts`, which only consults the pin
+    // when no ?seed= was given — so this asserts the seam it depends on.
     enterGhostMaze(5, 1234);
     __resetGhostMazeCache();
-    expect(applyGhostSeed(4242, true)).toBe(4242);
+    vi.stubGlobal("window", { location: { search: "?seed=4242" } });
+    expect(readSeedParam()).toBe(4242);
+    vi.stubGlobal("window", { location: { search: "" } });
+    expect(readSeedParam()).toBe(1234);
   });
 
   it("captions itself, so a screenshot cannot be mistaken for a real run", () => {

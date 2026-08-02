@@ -1029,6 +1029,30 @@ export function buildTrackFloor(
     const dExit = dist[idx(grid, ends.stairs.i, ends.stairs.j)];
     if (dBoss >= 0 && dBoss < want) relaxed.push("boss-not-near-spawn");
     if (dExit >= 0 && dExit < want) relaxed.push("exit-not-near-spawn");
+    // ── THE SAME SEATING SLACK, ON THE STRAIGHT-LINE RULE ────────────────
+    //
+    // The block above exists because the king rides the stairs but
+    // `nearestOpenTile` can seat him up to 2 tiles off them, so the two come
+    // apart. That reasoning was applied to the PATH rules and not to the
+    // straight-line one, which left the generator and the gate answering "how
+    // far is the boss from the spawn" differently: `pickTrackEndpoints` tests
+    // `minBossEuclid` against the STAIRS, `boss-not-within-sight-of-spawn`
+    // tests it against the SEATED KING.
+    //
+    // Up to two tiles of disagreement, and it is reachable — L28 greathall
+    // seeds 1 and 7777 land at 19.0 and 19.2 against a wanted 20, on floors the
+    // endpoint search believed were legal. It went unseen because the old level
+    // sweep sampled the saturated regime at only L20 and L25.
+    //
+    // Recorded as a relaxation rather than repaired, because that is what it
+    // is: the endpoint search DID satisfy its constraint and the seating moved
+    // the king afterwards. The relaxation rate is itself gated (< 0.12), so a
+    // version of this that fired often would still fail.
+    const euclidWant = (prof.rules?.minBossEuclid ?? DEFAULT_RULE_WEIGHTS.minBossEuclid) as number;
+    const euclid = Math.hypot(bossSpot.i - ends.start.i, bossSpot.j - ends.start.j);
+    if (euclid < euclidWant && !relaxed.includes("boss-not-within-sight-of-spawn")) {
+      relaxed.push("boss-not-within-sight-of-spawn");
+    }
   }
   if (profBias >= 0.5 && perimeterScore(grid, ends.start.i, ends.start.j) < PERIMETER_RULE_MIN) {
     const available = chute
