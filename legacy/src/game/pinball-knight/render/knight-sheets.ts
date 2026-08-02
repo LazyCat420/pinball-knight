@@ -16,12 +16,41 @@ import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet }
 import { makeKnightPaints } from "./cel-painter";
 import type { WeaponId } from "../items";
 import { lookKey, type KnightLook } from "./knight-look";
+import { loadImportedSheet, importedPaints } from "./imported-paints";
+import type { ActorPaints } from "../engine/render/paint-types";
 
 /** Enough for a whole run's weapon/gear churn without rebuild thrash. */
 const CACHE_CAP = 10;
 
 export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
+
+let importedKnightPaints: ActorPaints | null = null;
+
+export function setImportedKnightPaintsForTest(paints: ActorPaints | null): void {
+  importedKnightPaints = paints;
+}
+
+export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
+  if (importedKnightPaints) return importedKnightPaints;
+  try {
+    const sheet = await loadImportedSheet("pinball_knight", "S");
+    if (!sheet) return null;
+    const paints = importedPaints([sheet]);
+    if (paints) {
+      importedKnightPaints = paints;
+      state.playerSheets.clear();
+      console.info("[dungeon] player: imported pinball_knight art loaded");
+    }
+    return paints;
+  } catch {
+    return null;
+  }
+}
+
+function resolvePaints(weapon: WeaponId, look: KnightLook): ActorPaints {
+  return importedKnightPaints ?? makeKnightPaints(weapon, look);
+}
 
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {
   const key = lookKey(weapon, look);
@@ -30,7 +59,7 @@ export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: She
   const cached = touch(key);
   if (cached) return cached;
 
-  const sheet = buildSpriteSheet(makeKnightPaints(weapon, look));
+  const sheet = buildSpriteSheet(resolvePaints(weapon, look));
   return commit(key, sheet);
 }
 
@@ -82,7 +111,7 @@ export function requestKnightSheet(
     building.build.sheet.texture.dispose();
     building = null;
   }
-  if (!building) building = { key, build: startSpriteSheet(makeKnightPaints(weapon, look)) };
+  if (!building) building = { key, build: startSpriteSheet(resolvePaints(weapon, look)) };
 
   if (!building.build.step(budgetMs)) return null;
   const done = building.build.sheet;

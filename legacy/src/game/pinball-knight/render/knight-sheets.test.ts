@@ -50,4 +50,8 @@ describe("knight-sheets", () => {
     expect(sheet).toBeDefined();
     expect(state.playerSheets.size).toBe(1);
   });
+
+  it("exports loadImportedKnightArt function", () => {
+    expect(typeof loadImportedKnightArt).toBe("function");
+  });
 });

@@ -19,7 +19,7 @@ import { makeFishFeetPaints } from "../render/monsters/fish_feet";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
-import { getKnightSheet, requestKnightSheet } from "../render/knight-sheets";
+import { getKnightSheet, requestKnightSheet, loadImportedKnightArt } from "../render/knight-sheets";
 import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
@@ -323,6 +323,7 @@ export function importedArtEnabled(): boolean {
  */
 export async function applyImportedArt(): Promise<void> {
   if (!importedArtEnabled()) return;
+  await loadImportedKnightArt();
   for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
     const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
       (s): s is ImportedSheet => s !== null,
