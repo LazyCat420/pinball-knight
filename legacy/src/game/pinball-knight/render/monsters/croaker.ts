@@ -382,8 +382,9 @@ export function makeCroakerPaints(): ActorPaints {
     ],
     death: [
       croakerFrame(dir, { phase: 0.4, stretch: 0.8, belly: true }),
-      croakerFrame(dir, { phase: 0, stretch: 0.72, belly: true }),
-      croakerFrame(dir, { phase: 0, dead: true }),
+      croakerFrame(dir, { phase: 0.2, stretch: 0.72, belly: true }),
+      croakerFrame(dir, { phase: 0.1, stretch: 0.65, dead: true }),
+      croakerFrame(dir, { phase: 0, stretch: 0.55, dead: true }),
       croakerFrame(dir, { phase: 0, dead: true }),
     ],
   });

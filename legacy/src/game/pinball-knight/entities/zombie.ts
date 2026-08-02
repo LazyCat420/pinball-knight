@@ -369,14 +369,52 @@ function wardenPulse(z: Zombie): void {
   if (shielded > 0) state.vfx?.sparks(z.x, 0.6, z.z, 0, 1, 8);
 }
 
+function detonateCroakerCorpse(z: Zombie, index: number): void {
+  state.zombies.splice(index, 1);
+  if (z.sprite?.mesh?.parent) {
+    z.sprite.mesh.parent.remove(z.sprite.mesh);
+  }
+  state.shakeT = Math.max(state.shakeT, 0.35);
+  state.vfx?.ring(z.x, z.z, 0x22c55e, 1.8, 0.35);
+  state.vfx?.burst(z.x, 0.5, z.z, 0x22c55e, 24, 8);
+  state.vfx?.sparks(z.x, 0.5, z.z, 0, 0, 14);
+  state.vfx?.blood(z.x, 0.5, z.z, "green", 30);
+  state.vfx?.smoke(z.x, 0.4, z.z, 8, 0.8);
+
+  const radius = 1.8;
+  const r2 = radius * radius;
+  for (const zb of state.zombies) {
+    if (zb.mode === "dead" || zb.kind === "reaper") continue;
+    const dx = zb.x - z.x;
+    const dz = zb.z - z.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= r2) {
+      const d = Math.sqrt(d2) || 1;
+      damageZombie(zb, 3, dx / d, dz / d, 0.8, true, "ranged");
+      state.vfx?.blood(zb.x, 0.5, zb.z, "red", 6);
+    }
+  }
+}
+
 export function updateZombies(dt: number): void {
   const g = state.grid;
   const p = state.player;
   if (!g || !p) return;
 
-  for (const z of state.zombies) {
+  for (let i = state.zombies.length - 1; i >= 0; i--) {
+    const z = state.zombies[i];
     updateFlash(z, dt);
-    if (z.mode === "dead") continue; // the death clip plays out; the corpse stays
+    if (z.mode === "dead") {
+      if (z.kind === "croaker" && p && p.hp > 0) {
+        const dx = z.x - p.x;
+        const dz = z.z - p.z;
+        const triggerR = PLAYER_R + CROAKER_R;
+        if (dx * dx + dz * dz <= triggerR * triggerR) {
+          detonateCroakerCorpse(z, i);
+        }
+      }
+      continue; // the death clip plays out; the corpse stays (unless exploded)
+    }
 
     // The ONE steering decision. Everything below that branches on this reads
     // the policy, never the family — so a kind can never be handled by two
