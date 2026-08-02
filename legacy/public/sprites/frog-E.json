@@ -1,7 +1,7 @@
 {
  "name": "frog",
- "dir": "S",
- "image": "/sprites/frog-S.png",
+ "dir": "E",
+ "image": "/sprites/frog-E.png",
  "source": [
   1560,
   1050
