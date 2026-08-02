@@ -879,6 +879,8 @@ function tallyKill(z: Zombie): void {
 
 function killZombie(z: Zombie): void {
   z.mode = "dead";
+  z.staggerT = 0;
+  z.windupT = 0;
   z.anim.play("death", { force: true });
   coopBridge?.onKill(z); // co-op: authority tells the floor (no-op solo/replica)
   // A big slime splits into two fast minis (minis never split again).
@@ -1045,6 +1047,7 @@ const DMG_BY_KIND: Record<EnemyKind, number> = {
   rotortail: ROTORTAIL_TIMBER_DAMAGE,
   // Melee fallback only — the bomb's blast carries STILTNECK_BLAST_DAMAGE.
   stiltneck: STILTNECK_BLAST_DAMAGE,
+  fish_feet: ZOMBIE_DAMAGE,
   // ── Expansion roster ──
   hound: SPIDER_DAMAGE,
   bloater: ZOMBIE_DAMAGE,
