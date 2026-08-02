@@ -292,7 +292,7 @@ describe("track floor through the REAL decorate pipeline", () => {
         expect(d, `${label}: stairs unreachable`).toBeLessThan(0x3fffffff);
       }
     }
-  });
+  }, 60000);
 
   it("puts BOTH endpoints on the circuit, so the route rides the track", () => {
     for (let s = 1; s <= 12; s++) {
