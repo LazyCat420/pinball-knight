@@ -66,8 +66,15 @@ export const ART_FIT_H = 110;
  * to the actor costs the whole creature size.
  */
 export function artScale(cells: readonly Cell[]): number {
-  const maxW = Math.max(...cells.map(([x0, , x1]) => x1 - x0 + 1));
-  const maxH = Math.max(...cells.map(([, y0, , y1]) => y1 - y0 + 1));
+  if (!cells.length) return 1;
+  const widths = cells.map(([x0, , x1]) => x1 - x0 + 1);
+  const heights = cells.map(([, y0, , y1]) => y1 - y0 + 1);
+  const sortedW = [...widths].sort((a, b) => a - b);
+  const medianW = sortedW[Math.floor(sortedW.length / 2)] ?? 0;
+  // Ignore merged/outlier cell widths (> 1.5x median) so a single merged cell doesn't shrink the sheet
+  const filteredW = widths.filter((w) => w <= medianW * 1.5);
+  const maxW = filteredW.length ? Math.max(...filteredW) : Math.max(...widths);
+  const maxH = Math.max(...heights);
   return Math.min(ART_FIT_W / maxW, ART_FIT_H / maxH);
 }
 

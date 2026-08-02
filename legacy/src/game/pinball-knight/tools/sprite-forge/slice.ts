@@ -314,7 +314,33 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
     const real = cells
       .filter((c) => c[2] - c[0] + 1 >= medianW * 0.25 && c[4] > 0)
       .map((c) => [c[0], c[1], c[2], c[3]] as Cell);
-    if (real.length) out.push({ cells: real });
+
+    // Auto-split merged multi-frame cells (width > 1.75x medianW)
+    const splitCells: Cell[] = [];
+    for (const c of real) {
+      const cw = c[2] - c[0] + 1;
+      if (cw > medianW * 1.75 && medianW > 30) {
+        const midStart = Math.floor(c[0] + cw * 0.25);
+        const midEnd = Math.floor(c[2] - cw * 0.25);
+        let minInk = Infinity;
+        let splitX = Math.floor((c[0] + c[2]) / 2);
+        for (let x = midStart; x <= midEnd; x++) {
+          let ink = 0;
+          for (let y = c[1]; y <= c[3]; y++) {
+            if (inBand(x, y)) ink++;
+          }
+          if (ink <= minInk) {
+            minInk = ink;
+            splitX = x;
+          }
+        }
+        splitCells.push([c[0], c[1], splitX - 1, c[3]]);
+        splitCells.push([splitX + 1, c[1], c[2], c[3]]);
+      } else {
+        splitCells.push(c);
+      }
+    }
+    if (splitCells.length) out.push({ cells: splitCells });
   }
   return out;
 }
