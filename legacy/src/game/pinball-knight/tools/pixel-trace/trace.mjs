@@ -90,10 +90,14 @@ function usage(code = 0) {
       `  grids                        every registered grid\n` +
       `  trace IMG [--grid ID]        an image down to true pixels\n` +
       `        [--colours N] [--alpha N] [--palette coldcrypt] [--out FILE]\n` +
+      `        [--no-matte] [--matte-tol N]\n` +
       `  trace-set DIR [--grid ID]    a whole pose directory, as one file\n` +
-      `        [--colours N] [--alpha N] [--palette coldcrypt] [--out FILE]\n` +
+      `        (same flags as trace)\n` +
       `  render CELL.json [--scale N] [--cell POSE] [--out FILE]\n` +
-      `        press an authored cell (or a whole traced set) to a PNG\n\n`,
+      `        [--backdrop checker|dark|none|#rrggbb]\n` +
+      `        press an authored cell (or a whole traced set) to a PNG\n\n` +
+      `The background is keyed out by default (generated art has no alpha).\n` +
+      `Pass --no-matte only for art that already has a real alpha channel.\n\n`,
   );
   process.exitCode = code;
 }
@@ -139,6 +143,78 @@ async function loadRgba(path) {
   ctx.drawImage(img, 0, 0);
   const { data } = ctx.getImageData(0, 0, img.width, img.height);
   return { rgba: data, width: img.width, height: img.height };
+}
+
+/**
+ * Opaque background → alpha, by flood fill from the border.
+ *
+ * ON BY DEFAULT, and that default is the whole point. Diffusion models have
+ * no alpha channel, so essentially every generated reference image arrives on
+ * an opaque white or cream field (sprite-forge's README says the same, and
+ * `matte.ts` exists there for the same reason). Traced without this, the
+ * background is not dropped — it is QUANTISED INTO THE ART, and the cell
+ * comes out a solid rectangle. That failure is invisible in a preview drawn
+ * on white: measured on `samples/fisherman.source.png`, the trace had 0 of
+ * 1024 texels transparent and looked correct until it was pressed onto a dark
+ * backdrop, where it read as a white block with a figure on it. Hence also
+ * the checkerboard in `render`.
+ *
+ * Only pixels REACHABLE from the border are keyed, so an interior region the
+ * same colour as the background (a white shirt) survives. Ported from
+ * sprite-forge/pixelize.mjs; it is a no-op on art that already has alpha,
+ * because a fully-transparent border seed is skipped rather than spread.
+ */
+function matte(data, w, h, tol) {
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  const idx = (x, y) => y * w + x;
+  const near = (i, r, g, b) => {
+    const p = i * 4;
+    const dr = data[p] - r;
+    const dg = data[p + 1] - g;
+    const db = data[p + 2] - b;
+    return dr * dr + dg * dg + db * db <= tol * tol * 3 && data[p + 3] > 8;
+  };
+  const seeds = [];
+  for (let x = 0; x < w; x++) {
+    seeds.push(idx(x, 0));
+    seeds.push(idx(x, h - 1));
+  }
+  for (let y = 0; y < h; y++) {
+    seeds.push(idx(0, y));
+    seeds.push(idx(w - 1, y));
+  }
+  for (const s of seeds) {
+    if (seen[s]) continue;
+    const p = s * 4;
+    const [r, g, b] = [data[p], data[p + 1], data[p + 2]];
+    if (data[p + 3] <= 8) {
+      seen[s] = 1;
+      continue;
+    }
+    stack.push([s, r, g, b]);
+    while (stack.length) {
+      const [ci, cr, cg, cb] = stack.pop();
+      if (seen[ci] || !near(ci, cr, cg, cb)) continue;
+      seen[ci] = 1;
+      data[ci * 4 + 3] = 0;
+      const x = ci % w;
+      const y = (ci / w) | 0;
+      if (x > 0) stack.push([ci - 1, cr, cg, cb]);
+      if (x < w - 1) stack.push([ci + 1, cr, cg, cb]);
+      if (y > 0) stack.push([ci - w, cr, cg, cb]);
+      if (y < h - 1) stack.push([ci + w, cr, cg, cb]);
+    }
+  }
+}
+
+/** Load, and unless `--no-matte`, key the background out first. */
+async function loadForTrace(path, args) {
+  const img = await loadRgba(path);
+  if (!args.includes("--no-matte")) {
+    matte(img.rgba, img.width, img.height, Number(argOf(args, "--matte-tol") ?? 26));
+  }
+  return img;
 }
 
 /**
@@ -333,7 +409,7 @@ async function runTrace(args) {
   // Below this the source pixel is treated as absent, not dark.
   const alphaFloor = Number(argOf(args, "--alpha") ?? 128);
 
-  const { rgba, width, height } = await loadRgba(resolve(file));
+  const { rgba, width, height } = await loadForTrace(resolve(file), args);
   const small = boxDown(rgba, width, height, grid.width, grid.height);
 
   const opaque = [];
@@ -415,7 +491,7 @@ async function runTraceSet(args) {
   const cells = {};
   const skipped = [];
   for (const file of files) {
-    const { rgba, width, height } = await loadRgba(join(root, file));
+    const { rgba, width, height } = await loadForTrace(join(root, file), args);
     const small = boxDown(rgba, width, height, grid.width, grid.height);
     const opaque = [];
     for (let at = 0; at < small.length; at += 4) {
@@ -549,6 +625,30 @@ function runRender(args) {
   const canvas = createCanvas(cols * cellW, rows * cellH);
   const ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
+
+  // A CHECKERBOARD, not white — and this default is load-bearing. A cell whose
+  // background was never keyed out is a solid rectangle, and on a white page
+  // that is indistinguishable from correct art. It shipped that way once. The
+  // checker makes "this has no transparency" the most obvious thing on screen.
+  // `--backdrop dark` presses it onto Cold Crypt stone instead, which is the
+  // second look worth taking: an effect invisible against its own backdrop is
+  // not judged until it is seen against another.
+  const backdrop = argOf(args, "--backdrop") ?? "checker";
+  if (backdrop === "checker") {
+    const sq = Math.max(4, Math.round(scale / 2));
+    for (let y = 0; y * sq < canvas.height; y++) {
+      for (let x = 0; x * sq < canvas.width; x++) {
+        ctx.fillStyle = (x + y) % 2 ? "#c8ccd4" : "#eef1f5";
+        ctx.fillRect(x * sq, y * sq, sq, sq);
+      }
+    }
+  } else if (backdrop === "dark") {
+    ctx.fillStyle = "#2b303b"; // Cold Crypt stone
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (backdrop !== "none") {
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   entries.forEach(([, cell], i) => {
     const ox = (i % cols) * cellW + pad / 2;
