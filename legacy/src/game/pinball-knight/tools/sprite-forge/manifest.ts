@@ -69,13 +69,15 @@ export function artScale(cells: readonly Cell[]): number {
   if (!cells.length) return 1;
   const widths = cells.map(([x0, , x1]) => x1 - x0 + 1);
   const heights = cells.map(([, y0, , y1]) => y1 - y0 + 1);
-  const sortedW = [...widths].sort((a, b) => a - b);
-  const medianW = sortedW[Math.floor(sortedW.length / 2)] ?? 0;
-  // Ignore merged/outlier cell widths (> 1.5x median) so a single merged cell doesn't shrink the sheet
-  const filteredW = widths.filter((w) => w <= medianW * 1.5);
-  const maxW = filteredW.length ? Math.max(...filteredW) : Math.max(...widths);
   const maxH = Math.max(...heights);
-  return Math.min(ART_FIT_W / maxW, ART_FIT_H / maxH);
+  const maxW = Math.max(...widths);
+
+  // Standardize monster sizing by height (ART_FIT_H / maxH) so wide frames don't shrink monsters into tiny figures
+  const scaleByHeight = ART_FIT_H / maxH;
+  // Allow wide frames up to 92% of the ART_BOX (128) width boundary before constraining
+  const maxWidthScale = (ART_BOX * 0.92) / maxW;
+
+  return Math.min(scaleByHeight, maxWidthScale);
 }
 
 /**
