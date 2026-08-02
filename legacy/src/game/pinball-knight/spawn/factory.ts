@@ -47,6 +47,7 @@ const HP_BY_KIND: Record<EnemyKind, number> = {
   croaker: CROAKER_HP,
   rotortail: ROTORTAIL_HP,
   stiltneck: STILTNECK_HP,
+  fish_feet: 35,
   hound: HOUND_HP,
   bloater: BLOATER_HP,
   necromancer: NECRO_HP,
@@ -125,6 +126,7 @@ export const RESKIN: Partial<Record<EnemyKind, { sheet: () => SpriteSheet | null
   // moiré crawling on the coat. The tall read never needed the multiplier;
   // the creature already fills its cel to the margins.
   stiltneck: { sheet: () => sheetFor("stiltneck"), scale: 1.0 },
+  fish_feet: { sheet: () => sheetFor("fish_feet"), scale: 1.0 },
 };
 
 /** Spawn a bespoke Wave-B enemy; returns null if its atlas isn't built. */
@@ -323,6 +325,8 @@ export function spawnKind(kind: EnemyKind, x: number, z: number, baseSpeed: numb
       return level >= ROTORTAIL_FROM_LEVEL ? makeReskin("rotortail", x, z, baseSpeed * ROTORTAIL_SPEED_FACTOR) : null;
     case "stiltneck":
       return level >= STILTNECK_FROM_LEVEL ? makeReskin("stiltneck", x, z, baseSpeed * STILTNECK_SPEED_FACTOR) : null;
+    case "fish_feet":
+      return makeReskin("fish_feet", x, z, baseSpeed * 1.15);
     case "goblin":
       return level >= GOBLIN_FROM_LEVEL ? makeReskin("goblin", x, z, baseSpeed * GOBLIN_SPEED_FACTOR) : null;
     case "chomper":

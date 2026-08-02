@@ -60,6 +60,7 @@ export const MOVEMENT_BY_KIND: Record<EnemyKind, MovementKind> = {
   // rather than a formality. The spitter kites to stay alive; this kites because
   // its shot needs GROUND between the two of you to land on.
   stiltneck: "kite",
+  fish_feet: "chase",
   magnet: "chase",
   webspinner: "kite",
   hound: "leaper",

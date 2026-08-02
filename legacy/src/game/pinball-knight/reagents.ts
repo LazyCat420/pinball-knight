@@ -105,6 +105,7 @@ export const ENEMY_DROPS: Record<EnemyKind, DropEntry[]> = {
   // The casing off a bomb it never got to throw, plus the hide off a very tall
   // animal. Ironshard leads because the ordnance is what it is remembered for.
   stiltneck: [{ id: "ironshard", chance: 0.26 }, { id: "hide", chance: 0.16 }],
+  fish_feet: [{ id: "hide", chance: 0.24 }, { id: "fang", chance: 0.12 }],
   // ── Expansion roster ──
   hound: [{ id: "fang", chance: 0.24 }, { id: "hide", chance: 0.1 }],
   bloater: [{ id: "venomsac", chance: 0.24 }, { id: "slimegel", chance: 0.14 }],

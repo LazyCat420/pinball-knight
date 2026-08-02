@@ -326,6 +326,7 @@ export type EnemyKind =
   | "croaker"
   | "rotortail"
   | "stiltneck"
+  | "fish_feet"
   | "magnet"
   | "webspinner"
   // ── Expansion roster (see CONTENT_EXPANSION_PLAN.md) ──

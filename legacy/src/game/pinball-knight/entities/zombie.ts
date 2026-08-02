@@ -190,6 +190,7 @@ export const STATS: Record<EnemyKind, EnemyStats> = {
   // Bomb-slinger — the roster's longest reach and its longest wind-up, and the
   // two are the same design decision. Its contactRange IS the sling's range.
   stiltneck: { bodyR: STILTNECK_R, contactRange: STILTNECK_FIRE_RANGE, windup: STILTNECK_WINDUP, cooldown: STILTNECK_COOLDOWN, ranged: true },
+  fish_feet: { bodyR: GOBLIN_R, contactRange: 0.8, windup: 0.25, cooldown: GOBLIN_KICK_COOLDOWN, ranged: false },
   // ── Expansion roster (bespoke branches below carry the behaviour) ──
   hound: { bodyR: HOUND_R, contactRange: HOUND_CONTACT_RANGE, windup: HOUND_ATTACK_WINDUP, cooldown: HOUND_ATTACK_COOLDOWN, ranged: false },
   bloater: { bodyR: BLOATER_R, contactRange: BLOATER_CONTACT_RANGE, windup: BLOATER_ATTACK_WINDUP, cooldown: BLOATER_ATTACK_COOLDOWN, ranged: false },

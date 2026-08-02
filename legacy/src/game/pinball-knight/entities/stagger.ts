@@ -88,6 +88,7 @@ export const PAIN_BY_KIND: Record<EnemyKind, number> = {
   // goes over" needs no new mechanic, only this number and a `stumble` clip that
   // shows the poles splaying (render/monsters/stiltneck.ts).
   stiltneck: 0.9,
+  fish_feet: 0.65,
   pin: 0,
   golem: 0.05,
   chomper: 0.15,
