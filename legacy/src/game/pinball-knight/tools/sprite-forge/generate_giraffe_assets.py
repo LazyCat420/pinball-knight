@@ -2,45 +2,34 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw
 
-SRC_PATH = '/home/lazycat/.gemini/antigravity-ide/brain/6bf5388b-ae6b-457a-a4b3-c0018e780d1d/media__1785654440591.jpg'
-OUT_ARTIFACT = '/home/lazycat/.gemini/antigravity-ide/brain/6bf5388b-ae6b-457a-a4b3-c0018e780d1d/giraffe_spritesheet_labeled.png'
-INBOX_DIR = '/home/lazycat/github/projects/sun/braindeadbot-client/src/game/pinball-knight/tools/sprite-forge/inbox'
+SRC_PATH = os.path.join(INBOX_DIR, 'stiltneck-E.png')
+OUT_ARTIFACT = '/home/lazycat/.gemini/antigravity-ide/brain/c8477537-9300-489f-a462-5a9b65032d0e/giraffe_spritesheet_labeled.png'
 
-img = Image.open(SRC_PATH).convert('RGBA')
-w, h = img.size
-cols, rows = 5, 4
-cw, ch = int(w / cols), int(h / rows) # 204, 256
-
-frames = []
-for i in range(20):
-    r = i // cols
-    c = i % cols
-    x1, y1 = c * cw, r * ch
-    x2, y2 = (c + 1) * cw, (r + 1) * ch
-    cell = img.crop((x1, y1, x2, y2))
+if os.path.exists(SRC_PATH):
+    img = Image.open(SRC_PATH).convert('RGBA')
+    w, h = img.size
+    cols = 10
+    rows_count = 4
+    cw = 204
+    ch = 256
+    row_gap = 24
+    row_h = ch + row_gap
     
-    # Remove original corner number
-    cell_arr = np.array(cell)
-    bg_sample = cell_arr[5, 190, :]
-    cell_arr[0:32, 0:40] = bg_sample
-    cell = Image.fromarray(cell_arr)
-    frames.append(cell)
-
-def matte(cell):
-    arr = np.array(cell, dtype=np.float32)
-    r, g, b, a = arr[:,:,0], arr[:,:,1], arr[:,:,2], arr[:,:,3]
-    max_c = np.maximum(np.maximum(r, g), b)
-    min_c = np.minimum(np.minimum(r, g), b)
-    sat = max_c - min_c
-    bright = (r + g + b) / 3.0
-    bg_mask = (bright > 225) & (sat < 20)
-    alpha = np.where(bg_mask, 0.0, 255.0)
-    fringe = (~bg_mask) & (bright > 210) & (sat < 25)
-    alpha[fringe] = (225.0 - bright[fringe]) / 15.0 * 255.0
-    arr[:,:,3] = np.clip(alpha, 0, 255)
-    return Image.fromarray(arr.astype(np.uint8))
-
-matted_frames = [matte(f) for f in frames]
+    matted_frames = []
+    # Row 0: Walk (10 frames)
+    for c in range(10):
+        matted_frames.append(img.crop((c * cw, 0 * row_h, (c + 1) * cw, 0 * row_h + ch)))
+    # Row 1: Attack (5 frames)
+    for c in range(5):
+        matted_frames.append(img.crop((c * cw, 1 * row_h, (c + 1) * cw, 1 * row_h + ch)))
+    # Row 2: Stumble (2 frames)
+    for c in range(2):
+        matted_frames.append(img.crop((c * cw, 2 * row_h, (c + 1) * cw, 2 * row_h + ch)))
+    # Row 3: Death (3 frames)
+    for c in range(3):
+        matted_frames.append(img.crop((c * cw, 3 * row_h, (c + 1) * cw, 3 * row_h + ch)))
+else:
+    raise FileNotFoundError(f"Source image not found at {SRC_PATH}")
 
 # --- 1. BUILD PRESENTATION SHEET (giraffe_spritesheet_labeled.png) ---
 groups = [

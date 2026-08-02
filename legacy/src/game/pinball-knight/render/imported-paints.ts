@@ -242,7 +242,7 @@ function clipsFor(
  * error here rather than a silently missing animation at runtime.
  */
 const PLAYABLE: ReadonlySet<ClipName> = new Set<ClipName>([
-  "idle", "walk", "run", "attack", "death", "crouch", "wait", "wake", "stumble",
+  "idle", "walk", "run", "attack", "death", "crouch", "wait", "wake", "stumble", "roll", "ball",
 ]);
 
 /**

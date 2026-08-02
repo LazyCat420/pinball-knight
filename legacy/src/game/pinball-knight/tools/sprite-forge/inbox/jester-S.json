@@ -1,1 +1,16 @@
-{ "rows": ["idle", "attack", "walk", "stumble", "death"] }
+{
+  "rows": [
+    "idle",
+    "walk",
+    "attack",
+    "stumble",
+    "death"
+  ],
+  "cells": [
+    4,
+    4,
+    4,
+    4,
+    4
+  ]
+}
