@@ -23,6 +23,8 @@
  *   __lab.unlock()    back to normal progression
  */
 
+import { ghostMaze } from "./ghost-maze";
+
 const KEY = "pinball-knight-dev-floor-lock";
 
 /** Memoised so the hot descent path is not a localStorage read. */
@@ -60,6 +62,18 @@ export function setFloorLock(floor: number | null): number | null {
  * logic is untouched.
  */
 export function applyFloorLock(target: number): number {
+  // GHOST MAZE FIRST. It pins depth AND run seed together as one named floor;
+  // the bare lock pins depth alone. Checking it here rather than adding a
+  // second clamp keeps ONE funnel for "which floor do I land on", which is the
+  // property that makes either flag trustworthy — two independent overrides on
+  // the same value is how you get a descent nobody can explain.
+  const ghost = ghostMaze();
+  if (ghost !== null) {
+    if (ghost.level !== target) {
+      console.warn(`[ghost-maze] descent to ${target} → ${ghost.level} (__ghost.off() to clear)`);
+    }
+    return ghost.level;
+  }
   const lock = floorLock();
   if (lock === null || lock === target) return target;
   console.warn(`[floor-lock] descent to ${target} → ${lock} (dev flag; __lab.unlock() to clear)`);

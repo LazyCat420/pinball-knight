@@ -29,6 +29,7 @@ import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX } fr
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
+import { makeGhostCommand } from "./ghost-command";
 import { installFxLab } from "./fx-lab";
 import { FLOOR_FX_KINDS, clearFloorFx, spawnFloorFx } from "../entities/floor-fx";
 import { installGuiHooks } from "./gui-hooks";
@@ -549,6 +550,12 @@ export function installDevHooks(deps: DevHookDeps): void {
     // before this there was no way to put a fire puddle in front of the camera
     // on demand, which made the elemental shaders impossible to A/B.
     installFxLab({ spawnFloorFx, clearFloorFx, floorFxKinds: FLOOR_FX_KINDS });
+
+    // Dev: GHOST MAZE — one NAMED floor to develop against, instead of sixty
+    // forks of the same generator. `__lab.lock()` pins the depth; this pins the
+    // depth AND the run seed, which is what actually makes a floor the same
+    // floor twice. See dev/ghost-maze.ts.
+    (window as unknown as { __ghost?: unknown }).__ghost = makeGhostCommand();
 
     (window as unknown as { __dungeonFreshRun?: () => boolean }).__dungeonFreshRun = () => {
       clearResumeFloor();
