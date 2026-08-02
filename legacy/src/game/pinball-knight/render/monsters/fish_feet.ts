@@ -88,8 +88,9 @@ export function makeFishFeetPaints(): ActorPaints {
     ],
     attack: [
       fishFeetFrame(dir, { phase: 0, kick: false }),
-      fishFeetFrame(dir, { phase: 0.5, kick: true }),
-      fishFeetFrame(dir, { phase: 0, kick: false }),
+      fishFeetFrame(dir, { phase: 0.33, kick: true }),
+      fishFeetFrame(dir, { phase: 0.66, kick: true }),
+      fishFeetFrame(dir, { phase: 1.0, kick: false }),
     ],
     death: [
       fishFeetFrame(dir, { phase: 0, dead: true }),
