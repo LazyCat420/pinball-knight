@@ -406,6 +406,7 @@ export function updateZombies(dt: number): void {
     const z = state.zombies[i];
     updateFlash(z, dt);
     if (z.mode === "dead") {
+      z.anim.update(dt);
       if (z.kind === "croaker" && p && p.hp > 0) {
         const dx = z.x - p.x;
         const dz = z.z - p.z;
@@ -788,7 +789,7 @@ export function updateZombies(dt: number): void {
     if (z.mode === "windup") {
       z.windupT += dt;
       z.anim.setFacing(facingFromWorld(pdx, pdz, "S"));
-      z.anim.play(ranged ? "attack" : "idle"); // spitter shows its rear-back clip
+      z.anim.play(ranged || z.kind === "fish_feet" ? "attack" : "idle"); // show attack clip during windup
 
       // TELEGRAPH: pulse the body toward its attack colour across the windup, so
       // the bite is READABLE and a well-timed dodge-roll's i-frames can pass
