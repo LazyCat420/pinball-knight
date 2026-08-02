@@ -133,7 +133,7 @@ function startMonsterSheet(paints: ActorPaints): SheetBuild {
  * separate memo would be a fresh way to leak 22 atlases across a floor change.
  */
 export type SheetKey =
-  | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
+  | "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet";
 
@@ -146,7 +146,7 @@ export type SheetKey =
  * in spawn/factory.ts instead; anything absent falls back to the zombie sheet.
  */
 export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
-  spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
+  zombie: "zombie", spider: "spider", brute: "brute", spitter: "spitter", ghost: "ghost",
   bat: "bat", slime: "slime", goblin: "goblin", pin: "pin", golem: "golem",
   chomper: "chomper", magnet: "magnet", webspinner: "webspinner",
   sporeling: "sporeling", hound: "hound", jester: "jester", croaker: "croaker", rotortail: "rotortail",
@@ -155,6 +155,7 @@ export const SHEET_KEY_BY_KIND: Record<string, SheetKey> = {
 
 /** key → (paint the atlas, read it off state, write it back). */
 const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteSheet | null; set: (s: SpriteSheet) => void }> = {
+  zombie: { make: () => makeZombiePaints(ZOMBIE_VARIANTS[0]), get: () => state.zombieSheet, set: (s) => { state.zombieSheet = s; } },
   spider: { make: makeSpiderPaints, get: () => state.spiderSheet, set: (s) => { state.spiderSheet = s; } },
   brute: { make: makeBrutePaints, get: () => state.bruteSheet, set: (s) => { state.bruteSheet = s; } },
   spitter: { make: makeSpitterPaints, get: () => state.spitterSheet, set: (s) => { state.spitterSheet = s; } },
@@ -289,6 +290,7 @@ const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   croaker: "frog",
   stiltneck: "stiltneck",
   fish_feet: "fish_feet",
+  zombie: "zombie",
 };
 
 /** Player toggle, read at load. `__lab.imported(false)` then reload to compare. */
@@ -352,6 +354,9 @@ function rebuild(key: SheetKey): void {
   if (current?.key === key) current = null;
   const sheet = monsterSheet(paintsFor(key));
   b.set(sheet);
+  if (key === "zombie") {
+    state.zombieVariantSheets = [sheet];
+  }
   for (const z of state.zombies) {
     if (SHEET_KEY_BY_KIND[z.kind] === key) z.sprite.setSheet(sheet);
   }

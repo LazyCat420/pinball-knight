@@ -41,7 +41,7 @@ afterAll(() => {
 });
 
 const ALL_KEYS: SheetKey[] = [
-  "spider", "brute", "spitter", "ghost", "bat", "slime", "boss",
+  "zombie", "spider", "brute", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
   "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
 ];
@@ -49,6 +49,7 @@ const ALL_KEYS: SheetKey[] = [
 /** Put every atlas field back to null — the state a spawn sees before the
  *  backfill has reached that kind, and after a teardown. */
 function clearAllSheets(): void {
+  state.zombieSheet = null; state.zombieVariantSheets = [];
   state.spiderSheet = null; state.bruteSheet = null; state.spitterSheet = null;
   state.ghostSheet = null; state.batSheet = null; state.slimeSheet = null;
   state.bossSheet = null; state.goblinSheet = null; state.pinSheet = null;
