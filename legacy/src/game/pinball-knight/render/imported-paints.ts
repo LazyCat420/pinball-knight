@@ -218,7 +218,9 @@ function clipsFor(
     );
   }
   const baseK = exact ? oneToOne : aliveScale(sheet.manifest.rows);
-  const k = baseK * (sheet.manifest.scale ?? 1.0);
+  // Apply the manifest's scale multiplier only on the resampled path —
+  // gridded 1:1 sheets must not be rescaled or the pixel-perfect guarantee breaks.
+  const k = exact ? baseK : baseK * (sheet.manifest.scale ?? 1.0);
   // Resampled-cel cache, shared across the sheet: three facings reuse the same
   // FramePaints by reference, but distinct camera-rung buffers (tests drive
   // several) land distinct entries, keyed by destination size.
