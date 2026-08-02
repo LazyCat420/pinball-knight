@@ -29,6 +29,7 @@ interface Pose {
   walkStep?: number;
   kick?: boolean;
   dead?: boolean;
+  deathFrame?: number;
 }
 
 function fishFeetFrame(dir: Dir, pose: Pose): FramePaint {
@@ -60,15 +61,37 @@ function fishFeetFrame(dir: Dir, pose: Pose): FramePaint {
     figDetail(ctx, [[rightFootX - 12, rightFootY + 6], [rightFootX + 12, rightFootY + 6]], 2.5, 1);
     figDetail(ctx, [[rightFootX - 2, rightFootY - 4], [rightFootX - 2, rightFootY + 4]], 4, R_SHOE_WHITE[1]);
 
-    if (pose.dead) {
-      // Slumped fish on the ground
-      ellShaded(ctx, CX, GROUND - 8, bodyW * 1.1, bodyH * 0.8, R_FISH_BACK);
-      // Tail fin
-      figDetail(ctx, [[CX - bodyW / 2 - 8, GROUND - 14], [CX - bodyW / 2, GROUND - 6]], 4, R_FISH_BACK[0]);
-      // X Eye
-      figDetail(ctx, [[CX + 10, GROUND - 12], [CX + 18, GROUND - 4]], 2, 1);
-      figDetail(ctx, [[CX + 18, GROUND - 12], [CX + 10, GROUND - 4]], 2, 1);
-      return;
+    if (pose.dead || pose.deathFrame !== undefined) {
+      const stage = pose.deathFrame ?? 3;
+      if (stage === 0) {
+        // Stumble back (standing tilted)
+        const cyStumble = GROUND - 28;
+        limbShaded(ctx, [CX - 6, cyStumble + 6], [CX - 12, GROUND - 8], 6, R_LEGS);
+        limbShaded(ctx, [CX + 6, cyStumble + 6], [CX + 14, GROUND - 8], 6, R_LEGS);
+        ellShaded(ctx, CX - 4, cyStumble, bodyW, bodyH, R_FISH_BACK);
+        ellShaded(ctx, CX - 4, cyStumble + 4, bodyW * 0.75, bodyH * 0.5, R_FISH_BELLY);
+        return;
+      } else if (stage === 1) {
+        // Knee drop
+        const cyDrop = GROUND - 18;
+        limbShaded(ctx, [CX - 6, cyDrop + 4], [CX - 14, GROUND - 4], 6, R_LEGS);
+        limbShaded(ctx, [CX + 6, cyDrop + 4], [CX + 10, GROUND - 4], 6, R_LEGS);
+        ellShaded(ctx, CX, cyDrop, bodyW, bodyH, R_FISH_BACK);
+        return;
+      } else if (stage === 2) {
+        // Faceplant
+        ellShaded(ctx, CX, GROUND - 12, bodyW * 1.05, bodyH * 0.9, R_FISH_BACK);
+        figDetail(ctx, [[CX + 10, GROUND - 14], [CX + 18, GROUND - 6]], 2, 1);
+        figDetail(ctx, [[CX + 18, GROUND - 14], [CX + 10, GROUND - 6]], 2, 1);
+        return;
+      } else {
+        // Flat fish sprawl on ground
+        ellShaded(ctx, CX, GROUND - 8, bodyW * 1.1, bodyH * 0.8, R_FISH_BACK);
+        figDetail(ctx, [[CX - bodyW / 2 - 8, GROUND - 14], [CX - bodyW / 2, GROUND - 6]], 4, R_FISH_BACK[0]);
+        figDetail(ctx, [[CX + 10, GROUND - 12], [CX + 18, GROUND - 4]], 2, 1);
+        figDetail(ctx, [[CX + 18, GROUND - 12], [CX + 10, GROUND - 4]], 2, 1);
+        return;
+      }
     }
 
     // Fish Tail Fin (Back)
@@ -113,8 +136,10 @@ export function makeFishFeetPaints(): ActorPaints {
       fishFeetFrame(dir, { phase: 1.0, kick: false }),
     ],
     death: [
-      fishFeetFrame(dir, { phase: 0, dead: true }),
-      fishFeetFrame(dir, { phase: 0.5, dead: true }),
+      fishFeetFrame(dir, { phase: 0, deathFrame: 0 }),
+      fishFeetFrame(dir, { phase: 0.33, deathFrame: 1 }),
+      fishFeetFrame(dir, { phase: 0.66, deathFrame: 2 }),
+      fishFeetFrame(dir, { phase: 1.0, deathFrame: 3 }),
     ],
   });
   return { S: dc("S"), N: dc("N"), E: dc("E") };
