@@ -43,7 +43,7 @@ afterAll(() => {
 const ALL_KEYS: SheetKey[] = [
   "spider", "brute", "spitter", "ghost", "bat", "slime", "boss",
   "goblin", "pin", "golem", "chomper", "magnet", "webspinner", "sporeling",
-  "hound", "jester", "croaker", "rotortail", "stiltneck",
+  "hound", "jester", "croaker", "rotortail", "stiltneck", "fish_feet",
 ];
 
 /** Put every atlas field back to null — the state a spawn sees before the
@@ -55,7 +55,7 @@ function clearAllSheets(): void {
   state.golemSheet = null; state.chomperSheet = null; state.magnetSheet = null;
   state.webspinnerSheet = null; state.sporelingSheet = null;
   state.houndSheet = null; state.jesterSheet = null; state.croakerSheet = null; state.rotortailSheet = null;
-  state.stiltneckSheet = null;
+  state.stiltneckSheet = null; state.fishFeetSheet = null;
 }
 
 describe("sheetFor builds on demand", () => {
