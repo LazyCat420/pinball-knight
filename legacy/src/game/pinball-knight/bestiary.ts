@@ -33,7 +33,7 @@ import type { EnemyKind } from "./state";
  * monster is a compile error here rather than a blank row in the bestiary.
  */
 export const KIND_INFO: Record<EnemyKind, { label: string; icon: string; blurb: string }> = {
-  zombie: { label: "Zombie", icon: "🧟", blurb: "slow, dumb, numerous — and it comes in eight shapes" },
+  zombie: { label: "Zombie", icon: "🧟", blurb: "shambles in a drag-limp, aggressive sprint, red claw slash attacks, and blood-splatter collapse" },
   spider: { label: "Spider", icon: "🕷️", blurb: "fast and fragile; spins the silk everything else needs" },
   brute: { label: "Brute", icon: "🦍", blurb: "thick hide, heavy swing, enrages when hurt" },
   spitter: { label: "Spitter", icon: "🤮", blurb: "kites you and lobs acid from range" },
