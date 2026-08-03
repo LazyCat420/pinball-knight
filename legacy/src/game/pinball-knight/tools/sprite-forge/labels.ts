@@ -43,12 +43,23 @@ export function labelsFor(count: number): string[] {
   return count === named.length ? named : Array.from({ length: count }, (_, i) => `f${String(i).padStart(2, "0")}`);
 }
 
-/** Row clip names → per-cell labels, e.g. row `idle` with 3 cells → idle0/1/2. */
+/**
+ * Row clip names → per-cell labels, e.g. row `idle` with 3 cells → idle0/1/2.
+ *
+ * Numbered per CLIP rather than per row, because a clip too long for one row is
+ * authored as two (`["attack", "attack"]`) and `importedPaints` concatenates
+ * them. Restarting at 0 on the second row made both rows write the same
+ * `<dir>-attack0..3.png` filenames, so the review directory showed four frames
+ * where the sheet has eight and the duplicate rows looked like a mistake.
+ */
 export function labelRows(rowCellCounts: readonly number[], rowNames?: readonly string[]): string[] {
   const out: string[] = [];
+  const seen = new Map<string, number>();
   rowCellCounts.forEach((n, ri) => {
     const clip = rowNames?.[ri] ?? `row${ri}`;
-    for (let ci = 0; ci < n; ci++) out.push(`${clip}${ci}`);
+    let next = seen.get(clip) ?? 0;
+    for (let ci = 0; ci < n; ci++) out.push(`${clip}${next++}`);
+    seen.set(clip, next);
   });
   return out;
 }

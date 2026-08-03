@@ -29,6 +29,7 @@ import { makeJesterPaints } from "../render/monsters/jester";
 import { makeCroakerPaints } from "../render/monsters/croaker";
 import { makeRotortailPaints } from "../render/monsters/rotortail";
 import { makeStiltneckPaints } from "../render/monsters/stiltneck";
+import { makeFishFeetPaints } from "../render/monsters/fish_feet";
 import { makeHoundPaints } from "../render/monsters/hound";
 import { CAMERA_ZOOMS } from "../constants/render";
 import type { SheetKey } from "../boot/sheets";
@@ -98,11 +99,17 @@ export function paintAtlas(f: FramePaint, grid: number = SHIPPED_GRID): ImageDat
  * The roster, keyed by `SheetKey` so tsc enforces completeness.
  *
  * A `SheetKey[]` would be checkable only by registry-drift's text scan; a
- * `Record` is a compile error the moment a 20th monster lands. `zombie` has no
- * SheetKey — it is a variant family built from `state.zombieVariantSheets` — so
- * it is appended separately by `rosterSubjects()` rather than smuggled in here.
+ * `Record` is a compile error the moment a 20th monster lands.
+ *
+ * `zombie` is listed here even though it is a VARIANT FAMILY: the family shares
+ * one SheetKey, and `boot/sheets.ts` builds every variant from the same paints,
+ * so variant 0 is the representative the census wants. It used to be appended
+ * by `rosterSubjects()` instead, which meant the one monster every floor-1 run
+ * shows was the one this Record could not enforce.
  */
 export const ROSTER: Record<SheetKey, () => ActorPaints> = {
+  zombie: () => makeZombiePaints(ZOMBIE_VARIANTS[0]),
+  fish_feet: makeFishFeetPaints,
   spider: makeSpiderPaints,
   brute: makeBrutePaints,
   spitter: makeSpitterPaints,
@@ -134,9 +141,7 @@ export interface Subject {
  * `boot/sheets.ts` ships, and the recoil frames are real atlas cells.
  */
 export function rosterSubjects(): Subject[] {
-  const out: Subject[] = Object.entries(ROSTER).map(([key, make]) => ({ key, paints: withRecoil(make()) }));
-  out.push({ key: "zombie", paints: withRecoil(makeZombiePaints(ZOMBIE_VARIANTS[0])) });
-  return out;
+  return Object.entries(ROSTER).map(([key, make]) => ({ key, paints: withRecoil(make()) }));
 }
 
 /**

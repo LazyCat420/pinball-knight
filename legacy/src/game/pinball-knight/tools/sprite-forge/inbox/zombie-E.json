@@ -1,4 +1,4 @@
 {
-  "rows": ["walk", "walk", "attack", "attack", "death", "death"],
+  "rows": ["walk", "idle", "attack", "attack", "stumble", "death"],
   "cells": [4, 4, 4, 4, 4, 4]
 }

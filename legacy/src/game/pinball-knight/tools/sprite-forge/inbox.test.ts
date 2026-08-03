@@ -91,7 +91,12 @@ function readSidecar(dir: string, base: string): Sidecar | null {
 
 interface Sidecar {
   rows?: string[];
-  cells?: number[];
+  /**
+   * Per-SLICED-BAND cell counts. A plain number re-cuts that band into N equal
+   * columns; an array splits it into consecutive clips of those sizes, and
+   * `rows` then names one clip per resulting group rather than per band.
+   */
+  cells?: (number | number[])[];
   /**
    * Render-scale multiplier, copied into the shipped manifest. When absent, a
    * `scale` already present in the published manifest is carried forward —
@@ -198,21 +203,39 @@ describe("sprite inbox", () => {
           r.warnings.map((x) => `⚠ ${x}`).join("\n") + (r.warnings.length ? "\n" : "");
       }
 
-      const rows = sliceSheet(sdata, sheet.width, sheet.height);
+      const sliced = sliceSheet(sdata, sheet.width, sheet.height);
       // A sheet that slices into one cell is usually a solid background that was
       // never keyed out, or ruled lines this did not recognise. Say so plainly:
       // every number downstream would otherwise describe one big rectangle.
-      const found = rows.flatMap((r) => r.cells).length;
+      const found = sliced.flatMap((r) => r.cells).length;
       expect(found, `${file}: sliced into ${found} cell(s) — is the background transparent?`)
         .toBeGreaterThan(1);
 
       const named = side?.rows;
       // An explicit per-row cell count OVERRIDES the auto-slice. On a ruled
       // sheet it is the difference between right and roughly-right.
+      //
+      // A NESTED count splits one sliced band into consecutive clips —
+      // `"cells": [[5, 5], 5, 2, 3]` says the first band holds two animations
+      // of five. Sheets do that whenever two short clips fit side by side, and
+      // a band is a band to the slicer: stiltneck's idle and walk shared one,
+      // so the pair could only be named `walk`, which left it with no `idle`
+      // and therefore no imported art at all.
+      let rows = sliced;
       if (side?.cells) {
-        expect(side.cells.length, `${file}: sidecar lists ${side.cells.length} row counts but ${rows.length} rows were found`)
-          .toBe(rows.length);
-        rows.forEach((r, i) => { r.cells = equalCells(r, side.cells![i]); });
+        expect(side.cells.length, `${file}: sidecar lists ${side.cells.length} row counts but ${sliced.length} rows were found`)
+          .toBe(sliced.length);
+        rows = sliced.flatMap((r, i) => {
+          const spec = side.cells![i];
+          if (!Array.isArray(spec)) return [{ ...r, cells: equalCells(r, spec) }];
+          const total = spec.reduce((a, b) => a + b, 0);
+          // Regroup the AUTO-SLICED cells when the counts already agree: those
+          // rects are ink-tight, and re-cutting the band into equal columns
+          // would straddle the gap the two clips are separated by.
+          const all = r.cells.length === total ? r.cells : equalCells(r, total);
+          let at = 0;
+          return spec.map((n) => ({ ...r, cells: all.slice(at, (at += n)) }));
+        });
       }
       const cells: Cell[] = rows.flatMap((r) => r.cells);
       const shape = rows.map((r) => r.cells.length).join("/");
@@ -384,6 +407,16 @@ describe("sprite inbox", () => {
           : iso < 40 ? "COMPETITIVE — inside the roster's range"
             : "WORSE than the painted roster — too busy for this crush";
       const unknown = unknownClips(named);
+      // ── THE GATE THAT SHIPS A PERFECT REPORT AND NO ART ──
+      //
+      // `importedPaints` returns null when the facing it falls back to has no
+      // `idle` — that is where `withRecoil` derives stagger and wake from, and
+      // where the animator lands for any clip the actor does not author. The
+      // whole sheet is then dropped and the monster keeps its painter, with a
+      // COMPETITIVE verdict sitting in this report saying it shipped. That is
+      // exactly what happened to the zombie: six rows, 24 frames, published to
+      // public/sprites, and never once drawn.
+      const noIdle = named && !named.includes("idle");
 
       summary.push(
         `\n═══ ${name} (${dir}) — ${rows.length} rows [${shape}], ${cells.length} frames\n` +
@@ -396,6 +429,10 @@ describe("sprite inbox", () => {
               : ""
             : `⚠ no row names. Write ${file.replace(/\.png$/i, ".json")}:\n` +
               `    { "rows": [${rows.map((_, i) => `"row${i}"`).join(", ")}] }\n`) +
+          (noIdle
+            ? `⚠ NO "idle" ROW — unless another facing of ${name} authors one, the game will\n` +
+              `  DROP this whole sheet and keep the painter. Name the calmest cycle "idle".\n`
+            : "") +
           `${formatNoise(stats)}\n` +
           `MEAN   entries ${mean((r) => r.entries).toFixed(1)}  isolated ${iso.toFixed(1)}%  runLen ${run.toFixed(2)}\n` +
           `ROSTER entries ${ROSTER.entries}  isolated ${ROSTER.isolatedPct}%  runLen ${ROSTER.runLen}\n` +

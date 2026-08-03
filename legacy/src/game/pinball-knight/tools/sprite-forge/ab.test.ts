@@ -20,25 +20,39 @@ import { join } from "node:path";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
 import { censusCell, paletteRgb, type CellStats } from "../../render/atlas-census";
 import { crushToGrid, paintInArtSpace } from "../../engine/render/sprite";
-import { withRecoil, type ActorPaints } from "../../render/cel-painter";
+import { withRecoil, makeZombiePaints, ZOMBIE_VARIANTS, type ActorPaints } from "../../render/cel-painter";
 import { makeJesterPaints } from "../../render/monsters/jester";
 import { makeRotortailPaints } from "../../render/monsters/rotortail";
+import { makeStiltneckPaints } from "../../render/monsters/stiltneck";
 import { makeKnightPaints } from "../../render/cel-painter";
 import { FULL_PLATE } from "../../render/knight-look";
 import { importedPaints, type ImportedSheet } from "../../render/imported-paints";
 import type { SheetManifest } from "./manifest";
-import type { ClipName, FramePaint } from "../../engine/render/paint-types";
+import type { ClipName, Dir, FramePaint } from "../../engine/render/paint-types";
 
 const PUBLIC = join(__dirname, "..", "..", "..", "..", "..", "public", "sprites");
 const WORK = join(__dirname, "work");
 
-/** Mirrors IMPORTED_ART in boot/sheets.ts — the kinds that can come from a sheet. */
-const PAIRS: { key: string; sheet: string; painted: () => ActorPaints }[] = [
-  { key: "jester", sheet: "jester", painted: makeJesterPaints },
-  { key: "rotortail", sheet: "beaver", painted: makeRotortailPaints },
+/**
+ * Every creature with BOTH a published sheet and a painter — which is a
+ * superset of `IMPORTED_ART` in boot/sheets.ts, on purpose. `stiltneck` is here
+ * and not there: this is the measurement that says the painter wins, so
+ * dropping the pair when the import is switched off would delete the evidence
+ * for the decision.
+ *
+ * `dir` is the facing the sheet AUTHORS, and both sides are read from it: an
+ * E-only creature scored on S would compare its borrowed profile against a
+ * painter's real front view, which is a facing difference reported as a
+ * fidelity one.
+ */
+const PAIRS: { key: string; sheet: string; dir: Dir; painted: () => ActorPaints }[] = [
+  { key: "jester", sheet: "jester", dir: "S", painted: makeJesterPaints },
+  { key: "rotortail", sheet: "beaver", dir: "S", painted: makeRotortailPaints },
+  { key: "zombie", sheet: "zombie", dir: "E", painted: () => makeZombiePaints(ZOMBIE_VARIANTS[0]) },
+  { key: "stiltneck", sheet: "stiltneck", dir: "E", painted: makeStiltneckPaints },
   // The player himself — imported red-plume roster vs the procedural knight.
   // Sword is the starting weapon, so it is the painter most runs actually see.
-  { key: "pinball_knight", sheet: "pinball_knight", painted: () => makeKnightPaints("sword", FULL_PLATE) },
+  { key: "pinball_knight", sheet: "pinball_knight", dir: "S", painted: () => makeKnightPaints("sword", FULL_PLATE) },
 ];
 
 let restore = (): void => {};
@@ -70,13 +84,13 @@ describe("imported vs painted", () => {
     const lines: string[] = [];
 
     for (const pair of PAIRS) {
-      const jsonPath = join(PUBLIC, `${pair.sheet}-S.json`);
+      const jsonPath = join(PUBLIC, `${pair.sheet}-${pair.dir}.json`);
       if (!existsSync(jsonPath)) {
         lines.push(`${pair.key}: no manifest — run \`npm run sprites\` first`);
         continue;
       }
       const manifest = JSON.parse(readFileSync(jsonPath, "utf8")) as SheetManifest;
-      const img = await loadImage(join(PUBLIC, `${pair.sheet}-S.png`));
+      const img = await loadImage(join(PUBLIC, `${pair.sheet}-${pair.dir}.png`));
       const sheet: ImportedSheet = { manifest, image: img as unknown as CanvasImageSource };
       const imported = importedPaints([sheet]);
       expect(imported, `${pair.key}: manifest produced no playable clips`).not.toBeNull();
@@ -85,14 +99,15 @@ describe("imported vs painted", () => {
       // Compare CLIP BY CLIP, and only clips both sides author — an imported
       // sheet with six attack frames against a painted four is not a fidelity
       // difference, and averaging over it would hide one.
-      const clips = (Object.keys(imported!.S) as ClipName[]).filter((c) => painted.S[c]?.length);
+      const D = pair.dir;
+      const clips = (Object.keys(imported![D]) as ClipName[]).filter((c) => painted[D][c]?.length);
 
       const shots: { label: string; img: ImageData }[] = [];
       const iStats: CellStats[] = [];
       const pStats: CellStats[] = [];
       for (const clip of clips) {
-        const iFrames = imported!.S[clip] ?? [];
-        const pFrames = painted.S[clip] ?? [];
+        const iFrames = imported![D][clip] ?? [];
+        const pFrames = painted[D][clip] ?? [];
         const n = Math.min(iFrames.length, pFrames.length);
         for (let i = 0; i < n; i++) {
           const a = crush(iFrames[i]);

@@ -1,12 +1,13 @@
 {
   "rows": [
+    "idle",
     "walk",
     "attack",
     "stumble",
     "death"
   ],
   "cells": [
-    10,
+    [5, 5],
     5,
     2,
     3

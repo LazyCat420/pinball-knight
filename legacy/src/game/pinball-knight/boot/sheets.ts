@@ -289,10 +289,25 @@ const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   jester: "jester",
   rotortail: "beaver",
   croaker: "frog",
-  stiltneck: "stiltneck",
   fish_feet: "fish_feet",
   zombie: "zombie",
 };
+
+/**
+ * `stiltneck` is deliberately ABSENT, and its sheet still ships.
+ *
+ * It was listed here for weeks and never once drew: its published rows were
+ * `walk/attack/stumble/death`, `importedPaints` requires an `idle`, and a null
+ * return is silent by design. So "remove it" costs nothing that was on screen.
+ *
+ * The sidecar now splits its first band into idle+walk, so the import WORKS —
+ * and `ab.test.ts` measured what it looks like: isolated 48.4% against the
+ * painter's 29.5%, the worst margin of the five pairs, and `work/ab-stiltneck.png`
+ * shows why. The figure comes through thin and speckled where the painter is
+ * bold. The painter was authored from this sheet as a shape spec and is simply
+ * the better rendering of it. Re-list it here if the sheet is ever re-authored
+ * at a size this crush can hold.
+ */
 
 /** Player toggle, read at load. `__lab.imported(false)` then reload to compare. */
 const IMPORTED_KEY = "pinball-knight-imported-art";

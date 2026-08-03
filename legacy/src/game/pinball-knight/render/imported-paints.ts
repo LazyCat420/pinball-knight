@@ -231,9 +231,14 @@ function clipsFor(
       console.warn(`[dungeon] ${sheet.manifest.name}: row "${row.clip}" is not a ClipName — dropped.`);
       continue;
     }
-    out[row.clip as ClipName] = row.cells.map((c) =>
+    // APPENDED, not assigned. A long clip is routinely authored as two rows of
+    // four rather than one row of eight — the sheet is only so wide. Assigning
+    // made the second row silently REPLACE the first, so an eight-frame attack
+    // imported as its back half and half the sheet was packed but unreachable.
+    const frames = row.cells.map((c) =>
       cellPaint(sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter),
     );
+    out[row.clip as ClipName] = [...(out[row.clip as ClipName] ?? []), ...frames];
   }
   return out;
 }
@@ -270,9 +275,23 @@ export function importedPaints(
   // A sheet authors one facing; the others reuse it BY REFERENCE, which also
   // means the atlas packs them once instead of three times (startSpriteSheet
   // dedupes on FramePaint identity).
-  const fallback = byDir.get("S") ?? byDir.get("E") ?? byDir.get("N");
-  if (!fallback?.idle?.length) return null;
-  const pick = (d: Dir): Partial<Record<ClipName, FramePaint[]>> => byDir.get(d) ?? fallback;
+  //
+  // The fallback is the first facing that HAS an idle, not simply S. Facings
+  // are authored at different times and a sheet is allowed to be partial: when
+  // stiltneck's S held only walk/attack/stumble/death and its E held the idle,
+  // picking S blindly returned null here and the creature's whole import — both
+  // sheets — was dropped for a clip one of them authored.
+  const ORDER: Dir[] = ["S", "E", "N"];
+  const fallback = ORDER.map((d) => byDir.get(d)).find((c) => c?.idle?.length);
+  if (!fallback) return null;
+  // MERGED per facing rather than chosen: a facing that authors some clips
+  // keeps them and borrows the rest. Replacing wholesale is how the player's
+  // ride clips came back empty (see render/knight-sheets.ts) — the animator
+  // bails on an empty clip, so a partial facing froze instead of degrading.
+  const pick = (d: Dir): Partial<Record<ClipName, FramePaint[]>> => {
+    const own = byDir.get(d);
+    return own ? { ...fallback, ...own } : fallback;
+  };
   return { S: pick("S"), N: pick("N"), E: pick("E") };
 }
 

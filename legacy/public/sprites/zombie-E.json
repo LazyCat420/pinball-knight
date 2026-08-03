@@ -37,7 +37,7 @@
    ]
   },
   {
-   "clip": "walk",
+   "clip": "idle",
    "cells": [
     [
      56,
@@ -124,7 +124,7 @@
    ]
   },
   {
-   "clip": "death",
+   "clip": "stumble",
    "cells": [
     [
      56,

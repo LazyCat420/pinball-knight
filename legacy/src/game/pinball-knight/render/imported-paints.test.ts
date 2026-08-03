@@ -62,6 +62,16 @@ describe("importedPaints", () => {
     expect(Object.keys(p?.S ?? {})).not.toContain("hurt");
   });
 
+  it("joins two rows that name the same clip, in reading order", () => {
+    // A clip too long for one row is authored as two — the zombie's attack is
+    // 4+4. This used to ASSIGN, so the second row replaced the first and the
+    // sheet shipped its back half only.
+    const p = importedPaints([
+      fakeSheet([{ clip: "idle", n: 2 }, { clip: "attack", n: 4 }, { clip: "attack", n: 4 }]),
+    ]);
+    expect(p?.S.attack).toHaveLength(8);
+  });
+
   it("refuses a sheet with no idle", () => {
     // withRecoil derives stagger and wake from idle[0], and the animator falls
     // back to it for any unauthored clip. Without one there is no actor.

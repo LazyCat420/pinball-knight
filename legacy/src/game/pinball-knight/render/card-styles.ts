@@ -561,6 +561,8 @@ export const KIND_STYLE: Record<EnemyKind, StyleId> = {
   jester: "iron",
   // Amphibian — chitin stock, with the ooze and the arthropods.
   croaker: "chitin",
+  // Scaled and wet, so it prints on the same stock as the amphibian.
+  fish_feet: "chitin",
   rotortail: "iron",
   // Ordnance. The card is a bomb casing before it is an animal.
   stiltneck: "iron",
