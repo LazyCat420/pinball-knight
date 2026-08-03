@@ -93,6 +93,7 @@ function usage(code = 0) {
       `        [--colours N] [--alpha N] [--palette coldcrypt] [--out FILE]\n` +
       `        [--no-matte] [--matte-tol N] [--resample kcentroid|box] [--no-crop]\n` +
       `        [--no-despeckle] [--chroma #rrggbb|magenta] [--chroma-tol N]\n` +
+      `        [--no-defringe] [--defringe #rrggbb] [--defringe-band N] [--defringe-range N]\n` +
       `  trace-set DIR [--grid ID]    a whole pose directory, as one file\n` +
       `        (same flags as trace)\n` +
       `  render CELL.json [--scale N] [--cell POSE] [--out FILE]\n` +
@@ -186,6 +187,9 @@ function matte(data, w, h, tol) {
     seeds.push(idx(0, y));
     seeds.push(idx(w - 1, y));
   }
+  // The average colour of what was keyed — defringe needs to know what the
+  // background WAS to recognise a pixel that is halfway to it.
+  let kr = 0, kg = 0, kb = 0, kn = 0;
   for (const s of seeds) {
     if (seen[s]) continue;
     const p = s * 4;
@@ -199,6 +203,7 @@ function matte(data, w, h, tol) {
       const [ci, cr, cg, cb] = stack.pop();
       if (seen[ci] || !near(ci, cr, cg, cb)) continue;
       seen[ci] = 1;
+      kr += data[ci * 4]; kg += data[ci * 4 + 1]; kb += data[ci * 4 + 2]; kn++;
       data[ci * 4 + 3] = 0;
       const x = ci % w;
       const y = (ci / w) | 0;
@@ -208,6 +213,75 @@ function matte(data, w, h, tol) {
       if (y < h - 1) stack.push([ci + w, cr, cg, cb]);
     }
   }
+  return kn ? [Math.round(kr / kn), Math.round(kg / kn), Math.round(kb / kn)] : null;
+}
+
+/**
+ * DEFRINGE — turn the contamination ring back into the alpha it really is.
+ *
+ * The matte stops at the anti-aliased edge: a pixel that is half figure and
+ * half background is nowhere near the background colour, so tolerance leaves
+ * it opaque, and a 1-2px whitened ring survives around the whole silhouette.
+ * Whether that ring is VISIBLE depends on the grid, which is why 32-grids
+ * looked clean and 64-grids dirty: the ring is fixed-width in SOURCE pixels,
+ * so at a ~6.5px texel footprint it is a minority k-centroid outvotes, and
+ * at ~2-3px it wins whole texels and prints as a pale halo. Despeckle rightly
+ * spares it — halo texels arrive in connected runs (allies) and far from the
+ * figure's colours (the accent gate). The fix belongs HERE, in source space,
+ * before any texel exists.
+ *
+ * A blend toward the background IS partial coverage, so recover it as alpha
+ * (the compositing-industry defringe): for opaque pixels within `band` px of
+ * transparency, alpha = clamp(dist(pixel, bg) / range). Mostly-background
+ * ring pixels go transparent, half-blends go half-alpha, and the
+ * premultiplied resampler already knows what partial alpha means. Band-
+ * restricted so a genuinely white interior — a glove, a fish belly — is
+ * never touched; only the silhouette ring is re-read.
+ */
+function defringe(img, bg, band, range) {
+  const { rgba, width, height } = img;
+  // pixels within `band` of transparency, by `band` dilations
+  let edge = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (rgba[(y * width + x) * 4 + 3] > 8) continue;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        if (rgba[(ny * width + nx) * 4 + 3] > 8) edge[ny * width + nx] = 1;
+      }
+    }
+  }
+  for (let pass = 1; pass < band; pass++) {
+    const grown = Uint8Array.from(edge);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!edge[y * width + x]) continue;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          if (rgba[(ny * width + nx) * 4 + 3] > 8) grown[ny * width + nx] = 1;
+        }
+      }
+    }
+    edge = grown;
+  }
+  let touched = 0;
+  for (let i = 0; i < edge.length; i++) {
+    if (!edge[i]) continue;
+    const p = i * 4;
+    const dr = rgba[p] - bg[0];
+    const dg = rgba[p + 1] - bg[1];
+    const db = rgba[p + 2] - bg[2];
+    // Squared falloff: a half-blend keeps only a quarter of its alpha, so a
+    // texel the ring covers entirely still fails the alpha floor instead of
+    // scraping past it at ~50% and printing as a pale halo anyway.
+    const a = Math.min(1, Math.sqrt(dr * dr + dg * dg + db * db) / range) ** 2;
+    const scaled = Math.round(a * rgba[p + 3]);
+    if (scaled < rgba[p + 3]) touched++;
+    rgba[p + 3] = scaled;
+  }
+  return touched;
 }
 
 /**
@@ -255,6 +329,7 @@ function parseHex(s) {
 async function loadForTrace(path, args, grid) {
   let img = await loadRgba(path);
   const chroma = argOf(args, "--chroma");
+  let bg = null;
   if (chroma) {
     const key = parseHex(chroma === "magenta" ? "#ff00ff" : chroma);
     if (!key) {
@@ -262,8 +337,28 @@ async function loadForTrace(path, args, grid) {
       process.exit(2);
     }
     chromaKey(img.rgba, key, Number(argOf(args, "--chroma-tol") ?? 60));
+    bg = key;
   } else if (!args.includes("--no-matte")) {
-    matte(img.rgba, img.width, img.height, Number(argOf(args, "--matte-tol") ?? 26));
+    bg = matte(img.rgba, img.width, img.height, Number(argOf(args, "--matte-tol") ?? 26));
+  }
+  // Defringe defaults ON only under --chroma, and that asymmetry is the
+  // design: against magenta every art colour — including a silver fish — is
+  // 200+ away, so a blend is unambiguous. Against white, PALE ART IS
+  // INDISTINGUISHABLE FROM HALO by colour distance (measured: band 3 /
+  // range 220 hollowed the fish body and shredded its sneakers), so on the
+  // matte path it is strictly opt-in via `--defringe #rrggbb` (naming the
+  // field the edges were blended against), for figures dark against their
+  // field.
+  const override = parseHex(argOf(args, "--defringe") ?? "");
+  if (override) bg = override;
+  const want = override || (chroma && !args.includes("--no-defringe"));
+  if (want && bg) {
+    defringe(
+      img,
+      bg,
+      Number(argOf(args, "--defringe-band") ?? (chroma ? 3 : 2)),
+      Number(argOf(args, "--defringe-range") ?? 160),
+    );
   }
   if (!args.includes("--no-crop")) img = cropToAspect(img, grid);
   return img;

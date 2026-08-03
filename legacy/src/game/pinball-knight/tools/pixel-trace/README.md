@@ -69,6 +69,28 @@ Measured on the stiltneck (flattened onto each field, scored against its
 alpha-channel ground truth): from white, 454 silhouette errors; from
 magenta, 16. Generate sheets on flat magenta `#ff00ff` when you can.
 
+## Defringe — why big grids looked dirtier than small ones
+
+The matte stops at the anti-aliased edge, leaving a 1-2px ring of
+background-blended pixels around the silhouette. The ring is fixed-width in
+SOURCE pixels, so grid size decides its fate: at a ~6.5px texel footprint
+(32-grid) k-centroid outvotes it; at ~2-3px (64-grid) it wins whole texels
+and prints as a pale halo. Bigger grids don't add noise — they RESOLVE
+contamination that was always there. Despeckle rightly spares it (halo
+texels arrive in connected runs, far from the figure's colours).
+
+`defringe` re-reads the ring as what it really is — partial coverage: for
+pixels within `--defringe-band` (default 2, 3 under chroma) of transparency,
+alpha = (distance-to-background / `--defringe-range`)², so half-blends fail
+the alpha floor instead of scraping past it.
+
+**On by default only under `--chroma`** — against magenta every art colour,
+including a silver fish, is 200+ away, so a blend is unambiguous. Against
+white it is strictly opt-in (`--defringe "#fdfbfc"` names the field), because
+PALE ART IS INDISTINGUISHABLE FROM HALO there: measured at band 3 /
+range 220, the fish's silver body hollowed out and its sneakers shredded.
+Use the opt-in only for figures dark against their field.
+
 ## Getting more detail out of a trace
 
 Measured on five real monster frames (see `docs/DETAIL.md`), in order of

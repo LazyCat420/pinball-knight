@@ -117,3 +117,37 @@ aspect to the figure (`square*` for squarish, `tall*` for tall), then pick
 | import-guard on dispatch | ✓ kept |
 | `boxDown` | superseded by k-centroid (kept as `--resample box`) |
 | "deliberately not clever" | kept: local ops only, nothing invented; despeckle is gated, defaultable-off, single-pass; hand-edit remains the contract |
+
+## Addendum: defringe, and why 32-grids looked cleaner than 64-grids
+
+The white halo on big grids is the matte's leftover: a 1-2px ring of
+background-blended pixels the tolerance cannot key (a half-orange pixel is
+nowhere near white). The ring is fixed-width in SOURCE pixels, so the texel
+footprint decides its fate — ~6.5px at a 32-grid (k-centroid outvotes it),
+~2-3px at a 64-grid (it wins whole texels). **Bigger grids don't add noise;
+they resolve contamination that was always there.** Despeckle spares it
+correctly: halo texels have allies and are far from the figure's colours.
+
+`defringe` fixes it in source space — the user's instinct ("clean up before
+we snap into the grid") was right. Pixels within a band of transparency get
+alpha = (dist-to-bg / range)², the compositing-industry soft key.
+
+![parameter sweep on the stiltneck](./defringe-params.png)
+
+Sweep on the stiltneck (pale-edge texels, tall64): none 135 → band2/r160 46
+→ band3/r220 **23**. But the fish refutes making that a default:
+
+![the fish shredded by aggressive defringe](./defringe-fish-damage.png)
+
+Silver is chromatically near white — pale ART is indistinguishable from halo
+by distance-to-background, and band3/r220 hollowed the body and shredded the
+sneakers. Hence the shipped asymmetry: **defringe is ON under `--chroma`**
+(vs magenta, every art colour incl. silver is 200+ away — unambiguous) and
+**opt-in via `--defringe #rrggbb` on the matte path**, for dark-on-light
+figures only.
+
+![fish from white vs from magenta](./defringe-fish-chroma.png)
+
+The pale-figure stress test: fish-from-magenta keeps laces, cigarette and
+outline with the halo gone entirely. The chroma workflow is the real fix —
+white-bg defringe is the manual fallback.
