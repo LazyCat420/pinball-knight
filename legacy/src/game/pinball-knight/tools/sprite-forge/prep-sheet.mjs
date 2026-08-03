@@ -297,7 +297,11 @@ export function sliceClean(data, w, h, cols, rows) {
 }
 
 // ── CLI: report what it finds, or build the sheet ────────────────────────
-const [, , mode, dir, outPath] = process.argv;
+// Guarded on being the ENTRY module: prep-knight.mjs imports the slicing
+// primitives above, and without the guard the import itself ran this block
+// against prep-knight's argv and crashed on `dir === undefined`.
+const isEntry = import.meta.url === new URL(`file://${process.argv[1]}`).href;
+const [, , mode, dir, outPath] = isEntry ? process.argv : [];
 
 /**
  * clip -> source sheet + the CURATED frame indices, in row order.

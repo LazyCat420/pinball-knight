@@ -92,6 +92,14 @@ function readSidecar(dir: string, base: string): Sidecar | null {
 interface Sidecar {
   rows?: string[];
   cells?: number[];
+  /**
+   * Render-scale multiplier, copied into the shipped manifest. When absent, a
+   * `scale` already present in the published manifest is carried forward —
+   * these used to be hand-edits to `public/sprites/*.json`, and every re-run
+   * of the forge silently deleted all of them (measured: beaver 1.21 → gone,
+   * frog 1.55 → gone, stiltneck 0.91 → gone).
+   */
+  scale?: number;
   /** Background keying options — see matte.ts. */
   matte?: MatteOptions;
   /**
@@ -103,6 +111,22 @@ interface Sidecar {
    * one command that promotes it.
    */
   commit?: boolean | CommitOptions;
+}
+
+/**
+ * The `scale` the shipped manifest should carry: the sidecar's if set, else
+ * whatever the already-published manifest carries. Returns a spread-ready
+ * fragment so an absent scale stays ABSENT rather than becoming `scale: null`.
+ */
+function scaleFor(side: Sidecar | null, publishedPath: string): { scale: number } | null {
+  if (typeof side?.scale === "number") return { scale: side.scale };
+  try {
+    const prev = JSON.parse(readFileSync(publishedPath, "utf8")) as SheetManifest;
+    if (typeof prev.scale === "number") return { scale: prev.scale };
+  } catch {
+    /* first publish — nothing to carry */
+  }
+  return null;
 }
 
 /** Share of the sheet that is already transparent. */
@@ -296,6 +320,10 @@ describe("sprite inbox", () => {
         // boot. Omitted when there is none, so the field's presence means
         // "this sheet can import 1:1" and nothing weaker.
         ...(grid.gridded ? { grid: grid.factor } : {}),
+        // Sidecar wins; otherwise a scale someone already shipped survives the
+        // re-run. Building this object fresh every run is what used to delete
+        // every hand-set scale in public/sprites (see the Sidecar docs above).
+        ...(scaleFor(side, join(PUBLIC, `${name}-${dir}.json`)) ?? {}),
         rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
       };
       writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
