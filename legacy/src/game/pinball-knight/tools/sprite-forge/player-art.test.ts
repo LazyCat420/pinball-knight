@@ -29,7 +29,7 @@ import { PALETTE_FAMILIES, PALETTE_HEX } from "../../render/palette";
 import { makeKnightPaints } from "../../render/cel-painter";
 import { FULL_PLATE } from "../../render/knight-look";
 import { importedPaints, type ImportedSheet } from "../../render/imported-paints";
-import type { SheetManifest } from "./manifest";
+import { ART_FIT_H, ART_FIT_W, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
 import type { ClipName, Dir } from "../../engine/render/paint-types";
 
 const PUBLIC = join(__dirname, "..", "..", "..", "..", "..", "public", "sprites");
@@ -110,6 +110,67 @@ describe("the player sprite is as big as the actor standing next to it", () => {
     expect(checked, "no locomotion frames were sampled — the assertion measured nothing").toBeGreaterThanOrEqual(9);
     expect(complaints, `at grid ${SHIPPED_GRID} the painted knight is ${painted.w}×${painted.h} / ${painted.opaque} opaque`)
       .toEqual([]);
+  });
+});
+
+describe("the player sprite is the same actor from every side", () => {
+  /**
+   * The knight is three independently committed sheets, and `commitToGrid`
+   * derives each one's scale from its OWN widest and tallest voting cell. So
+   * nothing in the pipeline makes the three agree — it is an emergent property
+   * of three separate fits, and it broke the moment the E sheet's proportions
+   * differed from the other two.
+   *
+   * Measured when the commit still let a sword swing vote on the scale: E's
+   * attack arc is 244 source px, so WIDTH bound its fit while S and N were
+   * bound by HEIGHT, and the E facing committed 11% shorter (idle 61 texels
+   * against 69). The knight shrank every time he turned to walk sideways.
+   *
+   * 4% is the tolerance: the three sheets are drawn by the same generator at
+   * slightly different framings, so exact equality would be pinning noise, and
+   * the defect this catches was three times larger.
+   */
+  const TOLERANCE = 0.04;
+
+  it("does not change height when he turns", async () => {
+    const heights: { dir: Dir; clip: string; texels: number }[] = [];
+    for (const dir of ["S", "N", "E"] as Dir[]) {
+      const { manifest } = await load(dir);
+      const grid = manifest.grid ?? 1;
+      for (const row of manifest.rows) {
+        if (!["idle", "walk", "run"].includes(row.clip)) continue;
+        const tallest = Math.max(...row.cells.map((c) => (c[3] - c[1] + 1) / grid));
+        heights.push({ dir, clip: row.clip, texels: Math.round(tallest) });
+      }
+    }
+    expect(heights.length, "no locomotion rows were sampled").toBeGreaterThanOrEqual(9);
+    const lo = Math.min(...heights.map((h) => h.texels));
+    const hi = Math.max(...heights.map((h) => h.texels));
+    expect(
+      (hi - lo) / hi,
+      `locomotion heights disagree across facings: ${heights.map((h) => `${h.dir}:${h.clip}=${h.texels}`).join(" ")}`,
+    ).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it("keeps the 1:1 import at the default rung, on every facing", async () => {
+    // The property the whole commit exists for, asserted per SHEET rather than
+    // trusted. A clip that clamps to a looser box than `fitsArtBox` checks
+    // drops its whole sheet to the fitted resample with only a console warning
+    // — which is how the E facing went soft while every other gate stayed green.
+    const soft: string[] = [];
+    for (const dir of ["S", "N", "E"] as Dir[]) {
+      const { manifest } = await load(dir);
+      const grid = manifest.grid ?? 1;
+      expect(grid, `${SHEET}-${dir} is not committed — no pixel grid in the manifest`).toBeGreaterThan(1);
+      const alive = manifest.rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
+      const k = oneToOneScale(grid, SHIPPED_GRID);
+      if (!fitsArtBox(alive as never, k)) {
+        const w = Math.max(...alive.map((c) => c[2] - c[0] + 1)) * k;
+        const h = Math.max(...alive.map((c) => c[3] - c[1] + 1)) * k;
+        soft.push(`${dir}: ${w.toFixed(1)}×${h.toFixed(1)} art units against the ${ART_FIT_W}×${ART_FIT_H} fit box`);
+      }
+    }
+    expect(soft, `these facings fall back to the fitted resample at grid ${SHIPPED_GRID}`).toEqual([]);
   });
 });
 

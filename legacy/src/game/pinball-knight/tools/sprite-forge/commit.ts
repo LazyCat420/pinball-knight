@@ -44,7 +44,7 @@
  */
 import { snapColor } from "../../engine/render/sprite";
 import { resampleCell, type RawImage } from "./resample";
-import { ART_BOX, ART_FIT_H, ART_FIT_W, ART_GROUND, type ManifestRow } from "./manifest";
+import { ART_BOX, ART_FIT_H, ART_FIT_W, ART_GROUND, VOTING_CLIPS, type ManifestRow } from "./manifest";
 import { sliceSheet, type Cell } from "./slice";
 
 export type { RawImage };
@@ -167,6 +167,21 @@ function palDist(a: readonly number[], b: readonly number[]): number {
   return dr * dr + dg * dg + db * db;
 }
 
+/**
+ * The cells that SET the sheet's scale, with the same two fallbacks
+ * `aliveScale` uses — locomotion, then everything but death, then everything.
+ *
+ * Never an empty vote: a sheet that names no locomotion clip (an effect strip,
+ * a boss with only `attack` and `death`) still has to be sized, and falling
+ * through is how it gets sized by something rather than by nothing.
+ */
+function pickVote(rows: readonly ManifestRow[], all: readonly Cell[]): readonly Cell[] {
+  const locomotion = rows.filter((r) => VOTING_CLIPS.has(r.clip)).flatMap((r) => r.cells);
+  if (locomotion.length) return locomotion;
+  const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
+  return alive.length ? alive : all;
+}
+
 /** Copy one cell's rect out of the sheet into its own buffer. */
 function cutCell(src: RawImage, cell: Cell): RawImage {
   const [x0, y0, x1, y1] = cell;
@@ -203,10 +218,30 @@ export function commitToGrid(
 
   // ── 1. TEXEL SIZE ────────────────────────────────────────────────────────
   //
-  // The living clips vote. `ART_FIT_*` are art units out of `ART_BOX`, so the
-  // texel budget at this rung is that fraction of the grid.
-  const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
-  const vote = alive.length ? alive : all;
+  // The LOCOMOTION clips vote. `ART_FIT_*` are art units out of `ART_BOX`, so
+  // the texel budget at this rung is that fraction of the grid.
+  //
+  // ⚠️ THIS WAS "EVERYTHING BUT DEATH", AND THAT IS THE EXACT RULE
+  // `aliveScale` WAS REWRITTEN TO STOP USING — see VOTING_CLIPS in manifest.ts,
+  // where a list of exclusions is documented as growing silently while a list
+  // of voters does not. The runtime learned it; the commit kept the old rule
+  // and repeated the defect on the OTHER AXIS.
+  //
+  // Measured on the knight, whose three facings are three sheets committed
+  // independently. `s` is `min(fitW/maxW, fitH/maxH)`, so the widest voting
+  // cell can bind instead of the tallest — and the E sheet's attack frames
+  // swing a sword through a 244px arc:
+  //
+  //     facing   widest voter   binds on   idle height
+  //       S        ~51 texels    HEIGHT      69
+  //       N        ~53 texels    HEIGHT      69
+  //       E      69 (the swing)  WIDTH       61   <- 11% shorter
+  //
+  // The knight SHRANK every time he turned to walk sideways, which is the one
+  // facing the E sheet was added for. With only idle/walk/run voting, E's
+  // widest voter is ~44 texels, height binds on all three sheets, and the swing
+  // clamps its own frames in `sized` below exactly as a death sprawl does.
+  const vote = pickVote(rows, all);
   // FLOORED, because the budget is spent in whole texels. At grid 72 the raw
   // budget is 61.875 and the tallest cell's `Math.round` below would land on
   // 62 — overflowing the very rung this sizes for. (At the retired grid 54 the
@@ -218,15 +253,39 @@ export function commitToGrid(
   /** Committed texels per source pixel. */
   const s = Math.min(fitW / maxW, fitH / maxH);
 
+  // ── THE CLAMP, AND WHOSE BOX EACH CELL IS CLAMPED TO ─────────────────────
+  //
   // A death cell may genuinely be wider than the living box; it clamps to the
   // HARD cel limits alone, exactly as `cellScale` does at runtime.
+  //
+  // ⚠️ EVERY OTHER NON-VOTING CLIP CLAMPS TO `fit`, NOT TO `hard`, BECAUSE THE
+  // RUNTIME'S 1:1 GATE IS THE STRICTER OF THE TWO. `importedPaints` decides
+  // whether a committed sheet imports 1:1 by running `fitsArtBox` over the
+  // cells it calls ALIVE — everything but `death` — against `ART_FIT_*`. The
+  // hard limits (`ART_BOX`, `ART_GROUND`) are looser, so a clamped attack frame
+  // could sit inside the commit's box and outside the gate's, and the whole
+  // sheet silently dropped to the fitted resample it was committed to avoid.
+  //
+  // Measured the moment locomotion-only voting let the knight's E swing clamp
+  // instead of vote: the sword arc landed at 80×76 texels, `fitsArtBox` read
+  // 121.9 wide against 108 and 115.8 tall against 110, and the E facing went
+  // soft at the default rung — trading the shrink-on-turn for a blur. Clamping
+  // alive cells to `fit` costs that one swing about 8% of its reach and keeps
+  // the property every other frame depends on.
   const hardW = fitGrid;
   const hardH = (ART_GROUND * fitGrid) / ART_BOX;
-  const sized: [number, number][] = all.map((c): [number, number] => {
+  const clip = rows.flatMap((r) => r.cells.map(() => r.clip));
+  const sized: [number, number][] = all.map((c, i): [number, number] => {
     const w = c[2] - c[0] + 1;
     const h = c[3] - c[1] + 1;
-    const k = Math.min(s, hardW / w, hardH / h);
-    return [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
+    // `death` is excluded from the runtime gate, so it alone keeps the hard box.
+    const [capW, capH] = clip[i] === "death" ? [hardW, hardH] : [fitW, fitH];
+    const k = Math.min(s, capW / w, capH / h);
+    // Rounding can push a cell one texel past a floored cap; the cap wins.
+    return [
+      Math.max(1, Math.min(Math.round(capW), Math.round(w * k))),
+      Math.max(1, Math.min(Math.round(capH), Math.round(h * k))),
+    ];
   });
 
   // ── 2. REDUCE, then SNAP ─────────────────────────────────────────────────

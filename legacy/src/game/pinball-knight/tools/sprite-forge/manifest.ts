@@ -89,7 +89,7 @@ export function artScale(cells: readonly Cell[]): number {
  * poses whose size IS the creature's size. Everything else — a lunge, a
  * stagger, a sprawl — is a transient that already clamps itself in `cellScale`.
  */
-const VOTING_CLIPS: ReadonlySet<string> = new Set(["idle", "walk", "run"]);
+export const VOTING_CLIPS: ReadonlySet<string> = new Set(["idle", "walk", "run"]);
 
 /**
  * The scale the LOCOMOTION clips set. Every other clip clamps itself.
