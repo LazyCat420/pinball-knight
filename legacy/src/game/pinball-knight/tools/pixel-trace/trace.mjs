@@ -367,6 +367,39 @@ function paletteFor(opaque, args) {
   return { palette, dist };
 }
 
+/**
+ * Warn when the source's aspect and the grid's aspect disagree.
+ *
+ * `boxDown` maps the whole source onto the whole grid, so a 1:1 image traced
+ * to `tall32` (1:2) comes out stretched 2x vertically — silently, and the
+ * result still looks like deliberate art, just a lankier character. Measured
+ * on the fisherman: a 640x640 source on tall32 elongated the figure with an
+ * empty `warnings` array to report it.
+ *
+ * The tool this was adapted from carried the same warning in world-space
+ * terms (its grids owned a quad size, and it compared quad aspect against the
+ * aspect its sprites were drawn for). These grids own no world geometry, so
+ * the comparison that survives the port is the plain one: pixels in vs texels
+ * out. CROP OR PAD the source to the grid's aspect if you did not mean it.
+ */
+function aspectWarning(width, height, grid, gridId) {
+  const source = width / height;
+  const target = grid.width / grid.height;
+  const stretch = target / source;
+  if (Math.abs(stretch - 1) < 0.02) return [];
+  const axis = stretch > 1 ? "squashed horizontally" : "stretched vertically";
+  return [
+    {
+      code: "ASPECT_STRETCH",
+      message:
+        `source is ${width}x${height} (${source.toFixed(3)}:1) but grid "${gridId}" is ` +
+        `${grid.width}x${grid.height} (${target.toFixed(3)}:1) — the trace is ${axis} by ` +
+        `${(stretch > 1 ? stretch : 1 / stretch).toFixed(2)}x. Crop or pad the source to the ` +
+        `grid's aspect, or pick a grid that matches.`,
+    },
+  ];
+}
+
 function nearestIn(palette, dist, r, g, b) {
   let best = 0;
   let bestDistance = Infinity;
@@ -458,7 +491,10 @@ async function runTrace(args) {
   const out = resolve(argOf(args, "--out") ?? `${id}.json`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(cell, null, 2) + "\n");
-  envelope({ traced: file, grid: gridId, colours: palette.length, out });
+  envelope(
+    { traced: file, grid: gridId, colours: palette.length, out },
+    aspectWarning(width, height, grid, gridId),
+  );
 }
 
 // ─── trace-set ──────────────────────────────────────────────
@@ -490,8 +526,12 @@ async function runTraceSet(args) {
 
   const cells = {};
   const skipped = [];
+  const stretched = [];
   for (const file of files) {
     const { rgba, width, height } = await loadForTrace(join(root, file), args);
+    if (aspectWarning(width, height, grid, gridId).length) {
+      stretched.push(`${file} (${width}x${height})`);
+    }
     const small = boxDown(rgba, width, height, grid.width, grid.height);
     const opaque = [];
     for (let at = 0; at < small.length; at += 4) {
@@ -551,6 +591,14 @@ async function runTraceSet(args) {
   );
 
   const warnings = [];
+  if (stretched.length) {
+    warnings.push({
+      code: "ASPECT_STRETCH",
+      message:
+        `${stretched.length} source(s) do not match grid "${gridId}" ` +
+        `(${grid.width}x${grid.height}) and were stretched to fit: ${stretched.join(", ")}`,
+    });
+  }
   if (skipped.length) {
     warnings.push({
       code: "CELL_EMPTY",
