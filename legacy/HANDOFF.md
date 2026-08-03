@@ -23,7 +23,7 @@ facing→art mapping is correct.
 0.984–0.990 at mean colour delta 6–11 (the same comparison on the S sheet scores
 0.657–0.697 / 55–71). Swinging while walking away played a knight standing still.
 
-Root cause is in `tools/sprite-forge/prep-knight.mjs`'s `PLAN`. The roster
+Root cause is in `tools/sprite-forge/prep/prep-knight.mjs`'s `PLAN`. The roster
 generator fills the away-facing bottom half of EVERY source sheet with the same
 four standing back poses; only `03_walk`, `04_jump` and
 `10_attack_weaponless_6frames` actually animate it. `PLAN.N` assumed "bottom

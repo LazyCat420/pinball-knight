@@ -22,7 +22,7 @@
     "webgpu:check": "node scripts/webgpu-check.mjs",
     "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon",
     "sprites": "vitest run src/game/pinball-knight/tools/sprite-forge",
-    "pixels": "node src/game/pinball-knight/tools/pixel-trace/trace.mjs"
+    "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

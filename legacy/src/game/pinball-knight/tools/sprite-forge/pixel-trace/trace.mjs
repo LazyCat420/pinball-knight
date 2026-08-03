@@ -9,19 +9,19 @@
 // sheet with feet-anchored frames. This is for that gap, and for anything
 // else where an editable text grid beats a baked PNG.
 //
-//   node tools/pixel-trace/trace.mjs grids
+//   node tools/sprite-forge/pixel-trace/trace.mjs grids
 //       every registered grid: dimensions and texel count.
 //
-//   node tools/pixel-trace/trace.mjs trace sheet.png --grid square32
+//   node tools/sprite-forge/pixel-trace/trace.mjs trace sheet.png --grid square32
 //       an image down to true pixels: alpha-aware box-average downsample to
 //       the grid, quantised to a small palette (median-cut by default, or
 //       --palette=coldcrypt to snap to this game's dungeon palette), written
 //       as JSON — rows of characters you paste into code or edit by hand.
 //
-//   node tools/pixel-trace/trace.mjs trace-set dir/ --grid tall32
+//   node tools/sprite-forge/pixel-trace/trace.mjs trace-set dir/ --grid tall32
 //       a whole directory of PNGs, one file per pose, as one JSON module.
 //
-//   node tools/pixel-trace/trace.mjs render cell.json --scale 12
+//   node tools/sprite-forge/pixel-trace/trace.mjs render cell.json --scale 12
 //       press an authored cell (or every cell in a traced set) onto a
 //       magnified PNG. LOOK at it — a grid can be arithmetically perfect
 //       and print a shape with no face.
@@ -43,7 +43,7 @@
 // ── `render` needs no test harness ──────────────────────────────────────
 // The authored cell is just characters and hex strings — pressing it onto
 // a canvas needs nothing but `node-canvas`, already a devDependency here
-// (sprite-forge/pixelize.mjs uses it too). No vitest, no jsdom.
+// (sprite-forge/prep/pixelize.mjs uses it too). No vitest, no jsdom.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { createRequire } from "module";
@@ -67,7 +67,7 @@ const GRIDS = {
 };
 
 /**
- * Cold Crypt palette, copied from sprite-forge/pixelize.mjs for
+ * Cold Crypt palette, copied from sprite-forge/prep/pixelize.mjs for
  * --palette=coldcrypt. Kept as a literal rather than an import so this tool
  * has no dependency on sprite-forge's module staying stable — the two
  * pipelines are deliberately independent.
@@ -164,7 +164,7 @@ async function loadRgba(path) {
  *
  * Only pixels REACHABLE from the border are keyed, so an interior region the
  * same colour as the background (a white shirt) survives. Ported from
- * sprite-forge/pixelize.mjs; it is a no-op on art that already has alpha,
+ * sprite-forge/prep/pixelize.mjs; it is a no-op on art that already has alpha,
  * because a fully-transparent border seed is skipped rather than spread.
  */
 function matte(data, w, h, tol) {
@@ -614,7 +614,7 @@ function hex([r, g, b]) {
  *
  * `--palette coldcrypt` snaps to this game's real 32-colour palette with the
  * same luma-weighted metric the in-game quantizer uses (matches
- * sprite-forge/pixelize.mjs), so traced art that goes through it needs no
+ * sprite-forge/prep/pixelize.mjs), so traced art that goes through it needs no
  * second quantisation pass later. The default is freeform median-cut — this
  * tool is deliberately not tied to one palette.
  */
@@ -977,7 +977,7 @@ async function runTraceSet(args) {
   // whichever worktree ran the tracer into a committed file, so the next
   // worktree regenerates it to a one-line diff that is about nobody. The
   // repo root is derived from this script's own location, which is stable.
-  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
   const from = root.startsWith(REPO + "/") ? root.slice(REPO.length + 1) : root;
   const out = resolve(
     argOf(args, "--out") ?? join(root, `${setId}.traced.json`),

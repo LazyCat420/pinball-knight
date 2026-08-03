@@ -1,5 +1,13 @@
 # Sprite forge
 
+**Everything that makes a sprite for this game lives under this directory.** If
+you are adding a tool that turns art into frames, it goes here — not in
+`scripts/`, not in a sibling `tools/` folder, and not in another repo. That rule
+exists because it was broken: on 2026-08-03 the system was spread across
+`tools/pixel-trace/`, three loose `.mjs` files, a raw sheet drop in the `sun`
+workspace root outside any repo, and a Python port living in a fork of somebody
+else's project. Consolidating it is what this README now describes.
+
 Drop sprite sheets in `inbox/`, run one command, get scored game-ready frames.
 
     cp mysheet.png src/game/pinball-knight/tools/sprite-forge/inbox/ratking-E.png
@@ -10,8 +18,66 @@ grid, `preview.png` (nearest-upscaled, so it shows atlas truth rather than a
 flattering smooth preview), and `work/report.txt` — vitest swallows console
 output, so the report is written to disk.
 
-No network, no API key, no Python. It shares the game's real palette, real
-crush and real census, so what it reports is what will ship.
+No network and no API key. The TypeScript import path needs no Python either —
+`python/` is a separate, optional port (below). It shares the game's real
+palette, real crush and real census, so what it reports is what will ship.
+
+## The folder
+
+    inbox/          sheets waiting to be imported, + their `-S.json` sidecars
+    sources/        the ORIGINAL generated art, per creature per drop. Tracked.
+    samples/        fixtures the docs and comparisons refer to
+    work/           gitignored scratch, rewritten every run — never the only copy
+    docs/           plans and write-ups for specific imports
+
+    *.ts            the import pipeline itself (matte → slice → resample →
+                    register), plus its vitest suites. `npm run sprites`.
+    prep/           what runs BEFORE the inbox: turning a raw generator grid into
+                    a sheet the inbox will accept. `prep-sheet.mjs` (magenta
+                    chroma, generic), `prep-knight.mjs` (green chroma, banners,
+                    two facings), `pixelize.mjs` (superseded by pixel-trace;
+                    still the palette other tools quote).
+    pixel-trace/    the third pipeline — an image or a sketch to a hand-editable
+                    JSON grid of characters→hex, for one-off icons.
+                    `npm run pixels`.
+    python/         a port of gate/matte/slice/resample as an installable
+                    package, for using the pipeline outside the game. Holds no
+                    palette. Pinned to the TypeScript by `test_parity.py`.
+    oracle.mjs      regenerates those pins FROM the TypeScript. The only
+                    sanctioned way to move them.
+
+### Which pipeline
+
+Three of them, and none replaces the others:
+
+| you have | use | why |
+|---|---|---|
+| a whole generated sheet of an animated creature | **sprite-forge** (`npm run sprites`) | scores it against the painted roster and slices it to clips |
+| a raw generator grid that the inbox rejects | **prep/** first, then the inbox | chroma keying, banner/digit removal, scale + baseline normalisation |
+| one static icon, or a from-scratch sketch | **pixel-trace** (`npm run pixels`) | emits an editable grid, not an opaque PNG |
+| anything animated, authored by us | **painters** (`render/monsters/*.ts`) | procedural canvas code, still the default |
+
+### The Python port
+
+    cd python && pip install -e ".[dev]" && pytest
+
+It answers "is this sheet usable, where are its frames, what is wrong with it"
+without the game — useful when preparing art somewhere the repo is not. It
+deliberately does **not** score: a census comparing imported art to a PAINTED
+roster needs this game's real crush and real palette, and a second copy of those
+would go stale. The split is: the port makes the sheet, the game judges it.
+
+Its parity suite pins factor, confidence, purity, the matte report and all 56
+cell rects against the TypeScript. Those pins are stale the moment a sheet is
+regenerated — jester and beaver were regenerated on 08-02 and the pins sat wrong
+until 08-03, in another repo where nobody ran them. When they go red:
+
+    node src/game/pinball-knight/tools/sprite-forge/oracle.mjs
+    cd python && pytest
+
+Read the diff before committing it. A factor or a cell rect moving when you only
+meant to redraw art is the finding, not the noise. Never re-pin from what pytest
+reports as "actual" — that is the port grading its own homework.
 
 ## The stages
 

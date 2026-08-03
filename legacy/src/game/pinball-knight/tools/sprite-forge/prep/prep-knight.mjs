@@ -20,8 +20,8 @@
  * Slicing, bleed-dropping and stacked-pose splitting are prep-sheet's own,
  * imported — the defects they fix are shared.
  *
- *   node src/game/pinball-knight/tools/sprite-forge/prep-knight.mjs report
- *   node src/game/pinball-knight/tools/sprite-forge/prep-knight.mjs build
+ *   node src/game/pinball-knight/tools/sprite-forge/prep/prep-knight.mjs report
+ *   node src/game/pinball-knight/tools/sprite-forge/prep/prep-knight.mjs build
  */
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
@@ -35,8 +35,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // Sources live under sources/, NEVER under work/: `npm run sprites` rm -rf's
 // `work/<name>/` before writing frames there, and when these sheets lived at
 // work/pinball_knight the forge deleted all fourteen of them.
-const SRC = join(HERE, "sources", "pinball_knight-2026-08-02");
-const INBOX = join(HERE, "inbox");
+const SRC = join(HERE, "..", "sources", "pinball_knight-2026-08-02");
+const INBOX = join(HERE, "..", "inbox");
 
 /**
  * Green-family test — high G dominating both other channels, plus the

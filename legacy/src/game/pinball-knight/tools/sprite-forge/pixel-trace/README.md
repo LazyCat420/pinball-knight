@@ -16,11 +16,11 @@ directly (`resolveJsonModule` is on), with nothing at runtime falling back to
 a source image.
 
 ```
-node tools/pixel-trace/trace.mjs grids
-node tools/pixel-trace/trace.mjs trace sheet.png --grid square32 --colours 12
-node tools/pixel-trace/trace.mjs trace sheet.png --grid tall32 --palette coldcrypt
-node tools/pixel-trace/trace.mjs trace-set some-dir/ --grid square32
-node tools/pixel-trace/trace.mjs render cell.json --scale 12
+node tools/sprite-forge/pixel-trace/trace.mjs grids
+node tools/sprite-forge/pixel-trace/trace.mjs trace sheet.png --grid square32 --colours 12
+node tools/sprite-forge/pixel-trace/trace.mjs trace sheet.png --grid tall32 --palette coldcrypt
+node tools/sprite-forge/pixel-trace/trace.mjs trace-set some-dir/ --grid square32
+node tools/sprite-forge/pixel-trace/trace.mjs render cell.json --scale 12
 ```
 
 or via npm: `npm run pixels -- trace sheet.png --grid square32`.
@@ -161,7 +161,7 @@ from the border are keyed.
 ## `--palette coldcrypt`
 
 Snaps to this game's real 32-colour dungeon palette (luma-weighted, same
-metric `sprite-forge/pixelize.mjs` uses) instead of a freeform median-cut
+metric `sprite-forge/prep/pixelize.mjs` uses) instead of a freeform median-cut
 palette, so traced art matches the world it's dropped into with no second
 quantisation pass. Omit it for general-purpose pixel art with its own
 palette.

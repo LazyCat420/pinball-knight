@@ -62,7 +62,7 @@ now names the ratio and the fix, and stays silent on a matching source.
 ## Regenerating
 
 ```sh
-node tools/sprite-forge/pixelize.mjs tools/sprite-forge/samples/fisherman.source.png /tmp/old-32.png --h=32
+node tools/sprite-forge/prep/pixelize.mjs tools/sprite-forge/samples/fisherman.source.png /tmp/old-32.png --h=32
 npm run pixels -- trace tools/sprite-forge/samples/fisherman.source.png --grid square32 --colours 12 --out /tmp/new.json
 npm run pixels -- render /tmp/new.json --scale 9 --backdrop dark --out /tmp/new.png
 ```
