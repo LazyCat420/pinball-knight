@@ -1,0 +1,11 @@
+{
+  "rows": [
+    "idle",
+    "walk",
+    "run",
+    "attack",
+    "stumble",
+    "death",
+    "roll"
+  ]
+}
