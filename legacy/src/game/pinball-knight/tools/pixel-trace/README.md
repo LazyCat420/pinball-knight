@@ -1,5 +1,7 @@
 # pixel-trace
 
+Measured against sprite-forge, with pictures: [docs/COMPARISON.md](docs/COMPARISON.md).
+
 A third way to make pixel art for this game, alongside:
 
 - **Painters** (`render/monsters/*.ts`) — procedural canvas code. The default
