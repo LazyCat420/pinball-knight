@@ -61,7 +61,7 @@ function tsFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (entry === "node_modules") continue;
+    if (entry === "node_modules" || entry === "tools") continue;
     if (statSync(full).isDirectory()) out.push(...tsFiles(full));
     else if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) out.push(full);
   }
