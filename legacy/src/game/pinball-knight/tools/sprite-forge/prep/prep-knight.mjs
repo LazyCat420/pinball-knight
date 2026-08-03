@@ -284,14 +284,16 @@ const PLAN = {
     ["idle", "01_idle", [4, 2], [4, 5, 6, 7]],
     ["walk", "03_walk", [3, 2], [3, 4, 5]],
     ["run", "03_walk", [3, 2], [3, 4, 5]],
-    // NOT `09_attack`'s bottom row. Every generated sheet in this roster fills
-    // its away-facing row with the SAME four standing back poses, and only a
-    // few sheets (03_walk, 04_jump, 10_attack_weaponless_6) animate it. Taking
-    // 09_attack[4..7] published an "attack" that measures IoU 0.98 against this
-    // sheet's own `idle` frame for frame: swinging while walking away played a
-    // knight standing still, and nothing downstream could tell. The weaponless
-    // sheet's bottom row is the roster's ONLY authored back-facing swing.
     ["attack", "10_attack_weaponless_6", [3, 2], [3, 4, 5]],
+    ["stumble", "05_touched_lava", [2, 2], [0, 1]],
+    ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
+    ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
+  ],
+  E: [
+    ["idle", "13_side_profile_E", [6, 3], [0, 1, 2, 3]],
+    ["walk", "13_side_profile_E", [6, 3], [6, 7, 8, 9, 10, 11]],
+    ["run", "13_side_profile_E", [6, 3], [6, 7, 8, 9, 10, 11]],
+    ["attack", "13_side_profile_E", [6, 3], [12, 13, 14, 15]],
     ["stumble", "05_touched_lava", [2, 2], [0, 1]],
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
     ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
@@ -372,7 +374,7 @@ if (mode === "build") {
   // `run` shares the walk frames, so the same sheet region would be
   // transplanted twice; harmless but wasteful — do each frame once.
   const transplanted = new Set();
-  for (const dir of ["S", "N"]) {
+  for (const dir of Object.keys(PLAN)) {
     const rows = [];
     for (const [clip, base, grid, pick, anchor, opts] of PLAN[dir]) {
       const { sheet, frames } = await get(base, grid);
