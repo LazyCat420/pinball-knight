@@ -7,6 +7,64 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🧹 SPRITE-FORGE IS THE ONE SPRITE FOLDER (2026-08-03, `main`, DEPLOYED)
+
+**Asked:** the sprite system had spread out; make `sprite-forge/` the parent for
+all of it, and get it out of the `sun` workspace root.
+
+**Everything that makes a sprite now lives under
+`src/game/pinball-knight/tools/sprite-forge/`.** New sprite tooling goes there —
+not `scripts/`, not a sibling `tools/` folder, not another repo.
+
+    tools/pixel-trace/                    -> sprite-forge/pixel-trace/  (`npm run pixels`)
+    prep-sheet / prep-knight / pixelize   -> sprite-forge/prep/
+    spritefusion-pixel-snapper/spriteforge -> sprite-forge/python/
+    sun/sprites/pinball_knight/           -> sources/pinball_knight-2026-08-02/alt-takes/
+    sun/PLAN_GIRAFFE_SPRITES.md           -> sprite-forge/docs/
+    work/don-quixote/                     -> sources/don_quixote-2026-08-02/
+
+**`work/don-quixote/` held the ONLY copy of 4.8MB of generated art**, in a
+gitignored directory, one `git clean` from gone. Tracked now. `.gitignore` says
+why nothing else may live there. Deleted rather than moved: `pack.mjs` (unwired,
+wrote to a `public/dungeon/sprites/` that does not exist) and
+`generate_giraffe_assets.py` (undefined `INBOX_DIR` — NameError on line 5, so it
+had never run once).
+
+**The move ran the Python port's parity suite for the first time in two days:
+78 passed, 4 FAILED, 2 SILENTLY SKIPPING.** The port was fine — re-measured
+against the current TypeScript it agrees exactly on all three sheets (factor,
+confidence, purity, row shape, all 56 cell rects, the matte report). Only the
+pins had rotted: jester and beaver were regenerated on 08-02, after the 08-01
+pins. Now 84 passed, 0 skipped.
+
+### Gotchas this left behind
+
+- **A `cells` override in an inbox sidecar changes what the manifest MEANS.**
+  jester and beaver carry one, so `public/sprites/<name>-S.json` holds
+  `equalCells` rects — each band re-divided into N equal parts — not what the
+  slicer found. A test comparing slicer output to that manifest is comparing two
+  different quantities; the old one passed only because they coincide on an
+  override-free sheet (frog).
+- **Never re-pin the Python from pytest's "actual".** That makes the suite a
+  tautology. `node src/game/pinball-knight/tools/sprite-forge/oracle.mjs`
+  re-derives the pins by running the TypeScript, then `cd python && pytest`.
+  Read the diff — a factor or cell rect moving when you only meant to redraw art
+  is the finding.
+- **The laser-bridge fixture is gone for good.** It lived only in a deleted
+  `/tmp` session dir; both historical `public/sprites/frog-S.png` versions were
+  checked out and neither is the raw pre-matte sheet. The test paints a bar
+  across a slicer-located seam instead and its docstring says outright that this
+  is the weaker witness.
+- Fixtures resolve from `__file__` now. A `pytest.skip` guarded on an absolute
+  `/tmp` path is a test that stopped running and never said so.
+- The Python copy in `spritefusion-pixel-snapper` is DELETED (snapper `737f836`,
+  pushed). That repo is the upstream Rust snapper again; `cargo check` clean.
+
+**Verified:** `npm run sprites` 80 passed · `pytest` 84 passed / 0 skipped ·
+`npm run pixels`, `prep-knight.mjs report` both work at their new paths · `tsc`
+0 errors in the pinball-knight subtree (pre-existing `asteroids`/`beer-pong`
+errors untouched) · no tracked sprites mutated.
+
 ## 🗡️ THE AWAY-FACING ATTACK WAS THE AWAY-FACING IDLE (2026-08-03, `main@358cc3b`, DEPLOYED)
 
 **Asked:** "no matter what direction I move I'm always facing away from the

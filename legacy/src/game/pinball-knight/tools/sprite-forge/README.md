@@ -63,8 +63,9 @@ Three of them, and none replaces the others:
 
 It was written on 08-01 inside `spritefusion-pixel-snapper`, a fork of somebody
 else's Rust tool, with the stated goal of moving sprite-forge OUT of the game.
-That direction is reversed: this copy is the live one. **A copy still exists in
-that fork and is now stale** — delete it there, or expect the two to diverge.
+That direction is reversed and the copy out there is deleted (snapper `737f836`)
+— this is the only one. Out there nothing ever ran its parity suite, which is
+how the pins went two days stale and two tests skipped silently; see above.
 
 It answers "is this sheet usable, where are its frames, what is wrong with it"
 without the game — useful when preparing art somewhere the repo is not. It
