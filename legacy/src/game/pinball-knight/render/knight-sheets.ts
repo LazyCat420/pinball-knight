@@ -46,6 +46,11 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
     if (paints) {
       importedKnightPaints = paints;
       state.playerSheets.clear();
+      // Clearing the CACHE is not enough: applyWeaponArt early-returns while
+      // the composite weapon+look key matches state.playerArtKey, so the live
+      // sprite kept the painter's sheet until the first gear change. Reset the
+      // key and the next rAF rebuilds through resolvePaints with these clips.
+      state.playerArtKey = null;
       console.info("[dungeon] player: imported pinball_knight art loaded");
     }
     return paints;
