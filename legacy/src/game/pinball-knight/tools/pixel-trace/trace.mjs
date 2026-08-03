@@ -92,6 +92,7 @@ function usage(code = 0) {
       `  trace IMG [--grid ID]        an image down to true pixels\n` +
       `        [--colours N] [--alpha N] [--palette coldcrypt] [--out FILE]\n` +
       `        [--no-matte] [--matte-tol N] [--resample kcentroid|box] [--no-crop]\n` +
+      `        [--no-despeckle] [--chroma #rrggbb|magenta] [--chroma-tol N]\n` +
       `  trace-set DIR [--grid ID]    a whole pose directory, as one file\n` +
       `        (same flags as trace)\n` +
       `  render CELL.json [--scale N] [--cell POSE] [--out FILE]\n` +
@@ -215,9 +216,53 @@ function matte(data, w, h, tol) {
  * matte first is what makes the crop meaningful, since an unmatted image is
  * opaque to its corners and crops to nothing at all.
  */
+/**
+ * CHROMA KEY — for sheets deliberately generated on a chroma field.
+ *
+ * `--chroma "#ff00ff"` keys every pixel within `--chroma-tol` (default 60) of
+ * that colour, ANYWHERE in the image — not just border-reachable ones. That
+ * is the whole point of asking the generator for a chroma background: the
+ * flood matte must leave an ENCLOSED background pocket opaque (a white glove
+ * and a keyed hole are indistinguishable when the background is white), but
+ * a chroma colour is chosen precisely because the art never contains it, so
+ * a global key clears the pocket between a figure's legs safely.
+ *
+ * The tolerance is generous by default because a generator cannot be
+ * prompted into flat colour — the field arrives dithered a few dozen units
+ * wide. Distance is plain RGB: chroma separation is engineered to be huge,
+ * and luma-weighting would only narrow the magenta channel it lives on.
+ */
+function chromaKey(data, key, tol) {
+  const t2 = tol * tol * 3;
+  let keyed = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const dr = data[i] - key[0];
+    const dg = data[i + 1] - key[1];
+    const db = data[i + 2] - key[2];
+    if (dr * dr + dg * dg + db * db <= t2) {
+      data[i + 3] = 0;
+      keyed++;
+    }
+  }
+  return keyed;
+}
+
+function parseHex(s) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(s ?? "");
+  return m ? [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)] : null;
+}
+
 async function loadForTrace(path, args, grid) {
   let img = await loadRgba(path);
-  if (!args.includes("--no-matte")) {
+  const chroma = argOf(args, "--chroma");
+  if (chroma) {
+    const key = parseHex(chroma === "magenta" ? "#ff00ff" : chroma);
+    if (!key) {
+      process.stderr.write(`--chroma wants #rrggbb or "magenta", got "${chroma}"\n`);
+      process.exit(2);
+    }
+    chromaKey(img.rgba, key, Number(argOf(args, "--chroma-tol") ?? 60));
+  } else if (!args.includes("--no-matte")) {
     matte(img.rgba, img.width, img.height, Number(argOf(args, "--matte-tol") ?? 26));
   }
   if (!args.includes("--no-crop")) img = cropToAspect(img, grid);
@@ -533,6 +578,116 @@ function aspectWarning(width, height, grid, gridId) {
   ];
 }
 
+/**
+ * DESPECKLE — the noise pass, run on the quantised grid. On by default;
+ * `--no-despeckle` skips it.
+ *
+ * Measured on the traced stiltneck (64-grid): 653 of 3422 opaque texels had a
+ * colour shared by no neighbour, and they cluster on the silhouette and on
+ * region boundaries — the source's anti-aliased blend pixels each landing on
+ * a different palette entry. That fringe is what reads as "AI noise". The
+ * community tools for this exact job (unfake.js "morphological cleanup",
+ * Pixel Snapper's plurality-per-cell) all converge on neighbourhood
+ * consensus, so:
+ *
+ *   1. TINY-ISLAND REMOVAL — opaque components of ≤2 texels detached from
+ *      everything else become transparent. Unambiguous debris.
+ *   2. NEAR-DUPLICATE SNAP — a texel whose colour is shared by NO neighbour
+ *      adopts its chromatically nearest neighbouring colour, provided that
+ *      colour is CLOSE (luma-weighted). Not a plurality/mode filter, on
+ *      measurement: fringe sits on silhouettes and region boundaries where
+ *      the neighbourhood is mixed, so a plurality rule caught 17 of 653
+ *      fringe texels (fixed 5-of-8) and ~40 (share-scaled) — boundaries
+ *      have no majority to defer to. The property that actually identifies
+ *      quantisation fringe is having a NEAR-DUPLICATE next door: mauve
+ *      beside brown is the quantiser guessing twice at one edge. The
+ *      distance gate alone is the accent protection — a white eye-glint on
+ *      black has no near neighbour and survives. A texel with even one
+ *      same-colour neighbour is a pattern, not a speck, and is never
+ *      touched — that protects outlines, 1-texel rods and dither.
+ *
+ * One pass, not iterated: iterating a consensus filter erodes dither and
+ * outline patterns that are art. What one pass leaves is for the hand-edit
+ * the format exists for.
+ */
+const DESPECKLE_NEAR = 60 * 60; // luma-weighted distance² gate
+const ISLAND_MAX = 2; // components this size or smaller are debris
+
+function despeckle(rows, ink) {
+  const H = rows.length;
+  const W = rows[0].length;
+  const g = rows.map((r) => r.split(""));
+  const rgb = {};
+  for (const [ch, hexCol] of Object.entries(ink)) {
+    rgb[ch] = [
+      parseInt(hexCol.slice(1, 3), 16),
+      parseInt(hexCol.slice(3, 5), 16),
+      parseInt(hexCol.slice(5, 7), 16),
+    ];
+  }
+  const wdist = (a, b) => {
+    const dr = (a[0] - b[0]) * 0.3;
+    const dg = (a[1] - b[1]) * 0.59;
+    const db = (a[2] - b[2]) * 0.11;
+    return dr * dr + dg * dg + db * db;
+  };
+
+  // 1. tiny islands
+  let dropped = 0;
+  const seen = Array.from({ length: H }, () => new Uint8Array(W));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (g[y][x] === "." || seen[y][x]) continue;
+      const comp = [];
+      const stack = [[x, y]];
+      seen[y][x] = 1;
+      while (stack.length) {
+        const [cx, cy] = stack.pop();
+        comp.push([cx, cy]);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          if (seen[ny][nx] || g[ny][nx] === ".") continue;
+          seen[ny][nx] = 1;
+          stack.push([nx, ny]);
+        }
+      }
+      if (comp.length <= ISLAND_MAX) {
+        for (const [cx, cy] of comp) g[cy][cx] = ".";
+        dropped += comp.length;
+      }
+    }
+  }
+
+  // 2. distance-gated mode filter — decisions from a snapshot, applied after,
+  // so a replacement cannot cascade into its neighbour's vote this pass
+  const snap = g.map((r) => [...r]);
+  let changed = 0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const ch = snap[y][x];
+      if (ch === ".") continue;
+      let hasAlly = false;
+      let best = null;
+      let bestD = Infinity;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const nc = snap[ny][nx];
+        if (nc === ".") continue;
+        if (nc === ch) { hasAlly = true; break; }
+        const d = wdist(rgb[ch], rgb[nc]);
+        if (d < bestD) { bestD = d; best = nc; }
+      }
+      if (hasAlly || !best) continue; // an ally makes it a pattern, not a speck
+      if (bestD > DESPECKLE_NEAR) continue; // far from everything = deliberate accent
+      g[y][x] = best;
+      changed++;
+    }
+  }
+  return { rows: g.map((r) => r.join("")), dropped, changed };
+}
+
 function nearestIn(palette, dist, r, g, b) {
   let best = 0;
   let bestDistance = Infinity;
@@ -618,14 +773,25 @@ async function runTrace(args) {
     rows.push(line);
   }
 
+  let finalRows = rows;
+  let cleaned = { dropped: 0, changed: 0 };
+  if (!args.includes("--no-despeckle")) {
+    const d = despeckle(rows, ink);
+    finalRows = d.rows;
+    cleaned = d;
+  }
+
   const id = idFromFile(file);
-  const cell = { id, grid: gridId, ink, rows };
+  const cell = { id, grid: gridId, ink, rows: finalRows };
 
   const out = resolve(argOf(args, "--out") ?? `${id}.json`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(cell, null, 2) + "\n");
   envelope(
-    { traced: file, grid: gridId, colours: palette.length, out },
+    {
+      traced: file, grid: gridId, colours: palette.length,
+      despeckled: cleaned.changed, debrisDropped: cleaned.dropped, out,
+    },
     aspectWarning(width, height, grid, gridId),
   );
 }
@@ -704,15 +870,20 @@ async function runTraceSet(args) {
       rows.push(line);
     }
     if (rows.length === grid.height) {
-      cells[pose] = { id: pose, grid: gridId, ink, rows };
+      const finalRows = args.includes("--no-despeckle") ? rows : despeckle(rows, ink).rows;
+      cells[pose] = { id: pose, grid: gridId, ink, rows: finalRows };
     }
   }
 
   const setId = root.split("/").filter(Boolean).pop();
   // Repo-relative when run from the repo root, so the recorded source
   // doesn't bake in whichever worktree happened to run the tracer.
-  const cwd = process.cwd();
-  const from = root.startsWith(cwd + "/") ? root.slice(cwd.length + 1) : root;
+  // Repo-relative, not cwd-relative: an absolute or cwd-dependent path bakes
+  // whichever worktree ran the tracer into a committed file, so the next
+  // worktree regenerates it to a one-line diff that is about nobody. The
+  // repo root is derived from this script's own location, which is stable.
+  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../..");
+  const from = root.startsWith(REPO + "/") ? root.slice(REPO.length + 1) : root;
   const out = resolve(
     argOf(args, "--out") ?? join(root, `${setId}.traced.json`),
   );

@@ -30,6 +30,45 @@ or via npm: `npm run pixels -- trace sheet.png --grid square32`.
 `square16` (16x16), `square32` (32x32), `tall32` (32x64), `square64` (64x64),
 `tall64` (64x128).
 
+**Pick the grid by the FIGURE's aspect; pick its size by render size.**
+Measured (docs/CLEANUP.md): a wide frog gains zero texels from a tall grid
+(520 on both square32 and tall32 — padding eats the extra rows), and a tall
+stiltneck on `tall32` is texel-for-texel identical to `square64` (862 = 862)
+at half the storage. Wrong-aspect grids only buy padding.
+
+## Noise cleanup — on by default
+
+Traced AI art arrives with a fringe: the source's anti-aliased blend pixels
+each land on a different palette entry, one-off colours ringing the
+silhouette and region boundaries (measured 653 of 3422 texels on the
+stiltneck). Two passes run after quantisation (`--no-despeckle` skips both):
+
+1. **Tiny-island removal** — detached opaque components of ≤2 texels drop.
+2. **Near-duplicate snap** — a texel whose colour no neighbour shares adopts
+   its chromatically nearest neighbouring colour, but only when that colour
+   is CLOSE (luma-weighted). The distance gate is the accent protection: a
+   white eye-glint on black has no near neighbour and survives; mauve fringe
+   beside brown is the quantiser guessing twice at one edge, and dies.
+   Not a plurality filter — fringe lives on boundaries where there is no
+   majority to defer to (a mode filter measured 17/653 caught; this: ~67%).
+
+One pass, never iterated: iterating consensus erodes dither and outlines.
+What it leaves is for the hand-edit the format exists for.
+
+## Chroma backgrounds — ask the generator for magenta
+
+`--chroma magenta` (or any `#rrggbb`, `--chroma-tol N`, default 60) keys every
+pixel near that colour ANYWHERE — replacing the border flood matte. That is
+the point of generating on chroma: the flood matte must leave an enclosed
+white pocket opaque (it can't tell a keyed hole from a white glove), but the
+art never contains magenta, so a global key clears the pocket between a
+figure's legs safely — and interior semi-transparent junk that blends toward
+the field gets keyed too.
+
+Measured on the stiltneck (flattened onto each field, scored against its
+alpha-channel ground truth): from white, 454 silhouette errors; from
+magenta, 16. Generate sheets on flat magenta `#ff00ff` when you can.
+
 ## Getting more detail out of a trace
 
 Measured on five real monster frames (see `docs/DETAIL.md`), in order of
