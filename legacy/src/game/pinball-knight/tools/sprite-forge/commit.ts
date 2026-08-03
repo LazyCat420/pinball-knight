@@ -61,14 +61,21 @@ const OPAQUE_CUTOFF = 127;
 /**
  * The camera rung a commit sizes for, in atlas texels.
  *
- * The WIDEST rung (54), not the default (63), because the fit constraint is the
+ * The WIDEST rung (72), not the default (84), because the fit constraint is the
  * tightest rung and a figure that overflows there would have to be shrunk on
  * load — silently handing back the 1:1 property this whole module exists to
- * establish. `CAMERA_ZOOMS` runs {90, 81, 72, 63, 54}; sizing for 54 fits all
- * five. See `oneToOneScale` — the TEXEL count is rung-independent, so this only
- * decides how much of the cel the figure fills.
+ * establish. `SPRITE_PIXEL_GRID` is `PPU * 3/2`, so `CAMERA_ZOOMS` runs
+ * {120, 108, 96, 84, 72}; sizing for 72 fits all five. See `oneToOneScale` —
+ * the TEXEL count is rung-independent, so this only decides how much of the
+ * cel the figure fills.
+ *
+ * ⚠️ 54 here was the 2026-08-03 "knight is tiny" bug: the value outlived the
+ * 9/8 sprite ladder ({90, 81, 72, 63, 54}) it was written for, and because a
+ * 1:1 import is rung-independent the knight shipped 46 texels tall AT EVERY
+ * ZOOM — 64% of the height a painted actor gets at the default rung. When the
+ * ladder moves, this constant and `commit.test.ts`'s rung arrays move with it.
  */
-export const FIT_GRID = 54;
+export const FIT_GRID = 72;
 
 /** The atlas entry lock every monster sheet is held to. Mirrors `boot/sheets.ts`. */
 export const MAX_ENTRIES = 20;
@@ -85,6 +92,14 @@ export interface CommitOptions {
   maxEntries?: number;
   /** Blank texels between cells. ≥1 so the slicer can separate them again. */
   gutter?: number;
+  /**
+   * Skip the post-evict despeckle pass. On by default: a texel whose colour no
+   * orthogonal neighbour shares is almost always a resample artifact, and one
+   * adoption pass measurably lowers `isolated%` without touching real accents
+   * (the distance gate below protects them). Off for sheets whose art is
+   * legitimately 1-px speckled (sparkles, static).
+   */
+  noDespeckle?: boolean;
   /**
    * Palette entries this sheet may NOT use — a MATERIAL decision, not a colour
    * one. Measured on the knight (2026-08-03, palette-ab): the luma-weighted
@@ -110,6 +125,8 @@ export interface CommitReport {
   evicted: number;
   /** Share of opaque texels whose index CHANGED because of the eviction. */
   evictedShare: number;
+  /** Orphan texels the despeckle pass re-coloured to a neighbour. */
+  despeckled: number;
   /** One line for the forge report. */
   verdict: string;
 }
@@ -168,8 +185,12 @@ export function commitToGrid(
   // texel budget at this rung is that fraction of the grid.
   const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
   const vote = alive.length ? alive : all;
-  const fitW = (ART_FIT_W * fitGrid) / ART_BOX;
-  const fitH = (ART_FIT_H * fitGrid) / ART_BOX;
+  // FLOORED, because the budget is spent in whole texels. At grid 72 the raw
+  // budget is 61.875 and the tallest cell's `Math.round` below would land on
+  // 62 — overflowing the very rung this sizes for. (At the retired grid 54 the
+  // fraction happened to round down, which is why this never fired before.)
+  const fitW = Math.floor((ART_FIT_W * fitGrid) / ART_BOX);
+  const fitH = Math.floor((ART_FIT_H * fitGrid) / ART_BOX);
   const maxW = Math.max(...vote.map(([x0, , x1]) => x1 - x0 + 1));
   const maxH = Math.max(...vote.map(([, y0, , y1]) => y1 - y0 + 1));
   /** Committed texels per source pixel. */
@@ -262,6 +283,54 @@ export function commitToGrid(
       if (r !== undefined) {
         m[p] = r;
         moved++;
+      }
+    }
+  }
+
+  // ── 3a. DESPECKLE — orphan texels adopt a neighbour ──────────────────────
+  //
+  // After the snap and the evict, a texel whose index differs from ALL FOUR
+  // orthogonal opaque neighbours is nearly always a resample artifact — the
+  // census counts exactly these as `isolated%`, and the pixel-art rule it
+  // encodes ("orphan pixels read as noise") is the one practitioners apply by
+  // hand. One pass, read-from-snapshot so order cannot matter: each orphan
+  // adopts the neighbouring colour CHROMATICALLY NEAREST to its own, and only
+  // if that colour is genuinely close (the gate below). The gate is the accent
+  // protection, measured in pixel-trace (`DESPECKLE_NEAR`): a white glint on
+  // dark armor is far from every neighbour and survives; a mauve fringe pixel
+  // beside brown leather is near it and dies. Ported from
+  // `pixel-trace/trace.mjs`, where it caught ~67% of fringe texels against
+  // 2.6% for a plurality filter.
+  //
+  // `palDist` is luma-weighted (weights .3/.59/.11, squared), so 1600 here
+  // corresponds to the plain-RGB 60² gate pixel-trace measured with.
+  const DESPECKLE_NEAR = 1600;
+  let despeckled = 0;
+  if (!opts.noDespeckle) {
+    for (let ci = 0; ci < idx.length; ci++) {
+      const [w, h] = sized[ci];
+      const before = idx[ci].slice();
+      const m = idx[ci];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const q = before[y * w + x];
+          if (q < 0) continue;
+          let bestN = -1;
+          let bd = Infinity;
+          let alone = true;
+          for (const [dx2, dy2] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = x + dx2, ny = y + dy2;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            const nq = before[ny * w + nx];
+            if (nq < 0) continue;
+            if (nq === q) { alone = false; break; }
+            const d = palDist(pal[q], pal[nq]);
+            if (d < bd) { bd = d; bestN = nq; }
+          }
+          if (!alone || bestN < 0 || bd > DESPECKLE_NEAR) continue;
+          m[y * w + x] = bestN;
+          despeckled++;
+        }
       }
     }
   }
@@ -424,11 +493,13 @@ export function commitToGrid(
       entries: entries.size,
       evicted: drop.length,
       evictedShare,
+      despeckled,
       verdict:
         `COMMITTED ×${factor} — figure ${texelW}×${texelH} texels, ${entries.size} palette entries` +
         (drop.length
           ? ` (${drop.length} evicted to meet the ${maxEntries} lock, ${(evictedShare * 100).toFixed(2)}% of opaque texels moved)`
           : ` (under the ${maxEntries} lock with room to spare)`) +
+        (despeckled ? ` [despeckled ${despeckled} orphan texel(s)]` : "") +
         (bans.size ? ` [banned entries: ${[...bans.keys()].sort((a, b) => a - b).join(",")}]` : "") +
         `. This sheet imports 1:1 at every camera rung.`,
     },

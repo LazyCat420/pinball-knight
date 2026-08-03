@@ -231,7 +231,7 @@ describe("the grid commit", () => {
     const factor = 8;
     const r = commitToGrid(generatedSheet(), ROWS, PAL(), { factor });
     const cells = r.rows.flatMap((x) => x.cells);
-    for (const grid of [90, 81, 72, 63, 54]) {
+    for (const grid of [120, 108, 96, 84, 72]) {
       const k = oneToOneScale(factor, grid);
       expect(fitsArtBox(cells, k), `overflows the cel at grid ${grid}`).toBe(true);
     }
@@ -246,7 +246,7 @@ describe("the grid commit", () => {
     const factor = 8;
     const r = commitToGrid(generatedSheet(), ROWS, PAL(), { factor });
     const [x0, y0, x1, y1] = r.rows[0].cells[0];
-    for (const grid of [90, 81, 72, 63, 54]) {
+    for (const grid of [120, 108, 96, 84, 72]) {
       const k = oneToOneScale(factor, grid);
       expect(((x1 - x0 + 1) * k * grid) / ART_BOX).toBeCloseTo((x1 - x0 + 1) / factor, 9);
       expect(((y1 - y0 + 1) * k * grid) / ART_BOX).toBeCloseTo((y1 - y0 + 1) / factor, 9);

@@ -11,7 +11,8 @@
  */
 import { crushToGrid } from "../../engine/render/sprite";
 import { CX, GROUND } from "../../engine/render/figure";
-import { resampleCell } from "./resample";
+import { resampleCell, upscaleExact } from "./resample";
+import { blockReduce } from "./grid";
 import type { Cell } from "./slice";
 
 /**
@@ -94,6 +95,7 @@ export function registerCell(
   k: number,
   px: number,
   align = 1,
+  gridN = 0,
 ): HTMLCanvasElement {
   const [x0, y0, x1, y1] = cell;
   const cw = x1 - x0 + 1;
@@ -108,7 +110,21 @@ export function registerCell(
   const cctx = cut.getContext("2d", { willReadFrequently: true });
   if (!cctx) throw new Error("[ingest] could not get a 2D context for the cell cut");
   cctx.drawImage(source, x0, y0, cw, ch, 0, 0, cw, ch);
-  const small = resampleCell(cctx.getImageData(0, 0, cw, ch), dw, dh);
+  // A COMMITTED cell (`gridN` > 1) is reduced by exact block majority and
+  // replicated back up by whole blocks — the same fast path the runtime takes
+  // in `render/imported-paints.ts` `buildCel`. The forge must not preview a
+  // k-centroid resample of a sheet the game will block-copy: the report has to
+  // describe the pixels that actually ship.
+  const tw = gridN > 1 ? Math.round(cw / gridN) : 0;
+  const th = gridN > 1 ? Math.round(ch / gridN) : 0;
+  const exactUp =
+    gridN > 1 && tw > 0 && th > 0 && cw === tw * gridN && ch === th * gridN &&
+    dw % tw === 0 && dw / tw === dh / th
+      ? dw / tw
+      : 0;
+  const small = exactUp >= 1
+    ? upscaleExact(blockReduce(cctx.getImageData(0, 0, cw, ch), gridN, x0 % gridN, y0 % gridN), exactUp)
+    : resampleCell(cctx.getImageData(0, 0, cw, ch), dw, dh);
 
   const buf = document.createElement("canvas");
   buf.width = px;

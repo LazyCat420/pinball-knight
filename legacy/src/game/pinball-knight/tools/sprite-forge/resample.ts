@@ -86,6 +86,34 @@ const KMEANS_PASSES = 4;
  * crush downstream applies a hard alpha cutout, and it is the right place for
  * that decision. Strategies only decide the COLOUR of each texel.
  */
+/**
+ * Nearest-upscale by a WHOLE factor — exact block replication, no sampling.
+ *
+ * The other half of `blockReduce`: reduce a gridded cell to its authored
+ * texels, replicate each texel `up × up`, and a downstream box filter of the
+ * same factor collapses it back byte-identically. Used by the runtime and the
+ * forge preview so a committed sheet's "1:1 import" is block copies, never a
+ * resample.
+ */
+export function upscaleExact(src: RawImage, up: number): RawImage {
+  if (up === 1) return src;
+  const w = src.width * up;
+  const h = src.height * up;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const sy = (y / up) | 0;
+    for (let x = 0; x < w; x++) {
+      const s = (sy * src.width + ((x / up) | 0)) * 4;
+      const d = (y * w + x) * 4;
+      data[d] = src.data[s];
+      data[d + 1] = src.data[s + 1];
+      data[d + 2] = src.data[s + 2];
+      data[d + 3] = src.data[s + 3];
+    }
+  }
+  return { width: w, height: h, data };
+}
+
 export function resampleCell(src: RawImage, dw: number, dh: number, strategy: ResampleStrategy = "kcentroid"): RawImage {
   const { width: sw, height: sh, data } = src;
   const out: RawImage = { width: dw, height: dh, data: new Uint8ClampedArray(dw * dh * 4) };

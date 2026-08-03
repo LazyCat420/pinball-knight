@@ -165,7 +165,7 @@ number of correct hexes.
     outline #171a22
 
     ⚠️ NO DETAIL SMALLER THAN 1/20th OF THE FIGURE'S HEIGHT. The creature is
-    about 46 texels tall on screen, so a feature under ~2 texels is not detail,
+    about 62 texels tall on screen, so a feature under ~3 texels is not detail,
     it is noise the crush turns into speckle. Big shapes, few of them: three
     diamonds across the torso, not twelve. Four bells, not sixteen.
 
@@ -304,9 +304,9 @@ artist finished — and it fell 9×. The committed source holds exactly 20 entri
 the residual ~3 are the engine's own `selout` rim pass, which painted sprites
 pay too. The resample is no longer inventing anything.
 
-**Sizing.** The commit targets the WIDEST camera rung (54 texels), so the figure
+**Sizing.** The commit targets the WIDEST camera rung (72 texels), so the figure
 fits at all five and imports 1:1 at every one of them. That caps a standard
-monster at 46 texels tall.
+monster at 61 texels tall.
 
 **Two traps it has to work around, both measured:**
 - A committed cell must be a whole number of blocks, so cells are trimmed to

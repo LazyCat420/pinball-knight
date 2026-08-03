@@ -256,15 +256,37 @@ export class Animator {
   private apply(): void {
     const { flip } = resolve(this.facing);
     const indices = this.indices();
-    if (!indices.length) return;
+    // The flip updates even when the clip has no frames to show. Bailing
+    // before it left the sprite on the OLD frame with the OLD mirror, so the
+    // next successful apply() combined a new frame with a stale flip — one
+    // beat of the actor facing the wrong way on every W↔E turn through an
+    // unauthored clip.
     this.sprite.setFlipped(flip);
+    if (!indices.length) return;
     this.sprite.setFrame(indices[Math.min(this.frameIdx, indices.length - 1)]);
   }
 }
 
-/** Velocity → facing. Ties break toward the vertical axis, which reads better. */
+/**
+ * Velocity → facing, with HYSTERESIS on the axis.
+ *
+ * A diagonal exactly on the 45° line otherwise flips between two facings on
+ * frame-to-frame noise — measured on the knight as the body re-rendering
+ * S/E/S/E while the stride carried on, which players read as "the legs turn
+ * but the body doesn't". The current axis keeps the facing until the other
+ * axis clearly dominates (25%); sign reversals WITHIN the axis (S↔N, E↔W)
+ * stay instant, because a turn-around must not lag the stick.
+ */
 export function facingFromVelocity(vx: number, vz: number, fallback: Facing): Facing {
-  if (Math.abs(vx) < 1e-4 && Math.abs(vz) < 1e-4) return fallback;
-  if (Math.abs(vz) >= Math.abs(vx)) return vz > 0 ? "S" : "N";
+  const ax = Math.abs(vx);
+  const az = Math.abs(vz);
+  if (ax < 1e-4 && az < 1e-4) return fallback;
+  const vertical = fallback === "S" || fallback === "N";
+  const MARGIN = 1.25;
+  if (vertical && az * MARGIN >= ax && az >= 1e-4) return vz > 0 ? "S" : "N";
+  if (!vertical && ax * MARGIN >= az && ax >= 1e-4) return vx > 0 ? "E" : "W";
+  // The other axis clearly won (or the current one went dead): switch. Ties
+  // break toward the vertical axis, which reads better.
+  if (az >= ax) return vz > 0 ? "S" : "N";
   return vx > 0 ? "E" : "W";
 }
