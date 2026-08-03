@@ -397,7 +397,13 @@ if (mode === "build") {
     // One scale per SOURCE SHEET from its median frame height — the same rule
     // and the same reasoning as prep-sheet.mjs (drift is between generations,
     // pose variation inside a sheet is signal).
-    const CELL_H = 320;
+    //
+    // 512, not 320: the roster's figures slice out at ~414-486 px, so a 320
+    // cell normalised them to ~250 px — a 0.55× NEAREST downscale that threw
+    // away almost half the source's rows before the forge ever saw it. At 512
+    // the normalise is a mild 0.82-0.96×, and the commit's k-centroid gets
+    // ~6.4 source px per texel to vote with instead of ~4.
+    const CELL_H = 512;
     const TARGET = CELL_H * 0.78;
     // A sheet whose picked frames CHANGE BODY (the roll: knight -> marble)
     // would normalise its median to mid-transformation and render the crouch
@@ -422,7 +428,12 @@ if (mode === "build") {
 
     const out = createCanvas(CELL_W * COLS, CELL_H * rows.length);
     const ox2 = out.getContext("2d");
-    ox2.imageSmoothingEnabled = false;
+    // Smoothed, not nearest: this hop scales CONTINUOUS generated art by a
+    // fraction near 1, where point sampling just deletes rows at random. The
+    // deliberate pixelisation happens once, later, in the commit's k-centroid —
+    // feeding it a nearest-decimated source starves it of the votes it counts.
+    ox2.imageSmoothingEnabled = true;
+    ox2.quality = "best";
 
     rows.forEach((row, ri) => {
       row.frames.forEach((f, ci) => {

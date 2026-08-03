@@ -179,9 +179,9 @@ the same door the painters use — so the crush, the 20-entry palette lock,
 `withRecoil` and the animator apply without knowing the art came from an image.
 
 **What ships is the MATTED SOURCE plus its cell rects, not baked frames.**
-The atlas cell is 90/81/72/63/54 texels depending on the camera rung, so a
+The atlas cell is 120/108/96/84/72 texels depending on the camera rung, so a
 baked atlas would be wrong at four of the five and rescaling pixel art by
-63/90 destroys it. `public/sprites/<name>-S.png` + `-S.json`; the crush happens
+84/120 destroys it. `public/sprites/<name>-S.png` + `-S.json`; the crush happens
 at runtime exactly as it does for a painter.
 
 `__lab.imported(false)` then RELOAD switches back to the painters (reload, not

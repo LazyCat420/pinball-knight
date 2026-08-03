@@ -20,7 +20,7 @@
  */
 import { ART_BOX, aliveScale, cellPlacement, cellScale, fitsArtBox, oneToOneScale, type SheetManifest } from "../tools/sprite-forge/manifest";
 import { blockReduce } from "../tools/sprite-forge/grid";
-import { resampleCell, type ResampleStrategy } from "../tools/sprite-forge/resample";
+import { resampleCell, upscaleExact, type ResampleStrategy } from "../tools/sprite-forge/resample";
 import { SPRITE_PIXEL_GRID } from "../constants";
 import type { ActorPaints, ClipName, Dir, FramePaint } from "../engine/render/paint-types";
 
@@ -118,6 +118,7 @@ function cellPaint(
   cels: Map<string, HTMLCanvasElement>,
   gridN: number,
   filter: ImportFilter,
+  atlasGrid: number,
 ): FramePaint {
   const p = cellPlacement(cell as [number, number, number, number], k);
   if (filter === "bilinear") {
@@ -136,7 +137,27 @@ function cellPaint(
       cel = buildCel(image, p, dw, dh, filter, gridN);
       cels.set(key, cel);
     }
-    ctx.drawImage(cel, p.dx, p.dy, dw / unit, dh / unit);
+    // ⚠️ ALIGN THE ORIGIN TO THE CRUSH'S OWN STRIDE — the runtime twin of
+    // `register.ts`'s snap, and it was missing here. `cellPlacement` puts the
+    // feet at `ART_GROUND` (118), which in device space is `2.765625 × PPU`:
+    // a FRACTIONAL row at four of the five camera rungs (.875 of a pixel at
+    // the default), and centring can land X on an ODD device pixel while the
+    // crush averages 2×2 windows anchored at 0. Either way every authored
+    // pixel straddles a window boundary and the box filter smears it across
+    // two texels — measured as the imported knight arriving soft while the
+    // forge's own preview of the same sheet was crisp. Snapping costs at most
+    // half a texel of position, which the eye cannot see, and buys back the
+    // texel identity the whole import path exists for. The snap is in ART
+    // units derived from device space, so it composes with `withRecoil`'s
+    // rotated stagger transform (where alignment is moot but harmless).
+    const stride = ctx.canvas.width / atlasGrid;
+    let dx = p.dx;
+    let dy = p.dy;
+    if (Number.isInteger(stride) && stride >= 1) {
+      dx = (Math.round((p.dx * unit) / stride) * stride) / unit;
+      dy = (Math.round((p.dy * unit) / stride) * stride) / unit;
+    }
+    ctx.drawImage(cel, dx, dy, dw / unit, dh / unit);
   };
 }
 
@@ -158,14 +179,25 @@ function buildCel(
   if (!sctx) throw new Error("[dungeon] no 2D context for the import cel");
   sctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, 0, 0, p.sw, p.sh);
   const pixels = sctx.getImageData(0, 0, p.sw, p.sh);
-  // EXACT when the lattice is real and the destination is its reduction: each
-  // N×N block collapses to the one pixel it already was. `blockReduce` floors,
-  // so a cell whose extent is not a whole number of blocks would come back a
-  // pixel short — the size check keeps those on the resample path rather than
-  // cropping art off the edge of a creature.
-  const reducible = gridN > 1 && Math.round(p.sw / gridN) === dw && Math.round(p.sh / gridN) === dh;
+  // EXACT when the lattice is real and the destination is a whole multiple of
+  // its reduction: each N×N block collapses to the one authored pixel it
+  // already was, then replicates up to the cel's supersample resolution by
+  // whole blocks, and the crush's box filter collapses those exactly back.
+  //
+  // ⚠️ `dw` is in SUPERSAMPLE device px — the cel buffer is `SPRITE_PX`, which
+  // is 2 × the atlas grid — so the texel count is `dw / up`, not `dw`. The old
+  // check compared `p.sw / gridN` (texels) against `dw` (2 × texels) and could
+  // never be true: every committed sheet silently took the k-centroid resample
+  // it was committed to avoid, and the "1:1 import" was a 4:1 kcentroid plus a
+  // 2:1 box. `blockReduce` floors, so a cell whose extent is not a whole
+  // number of blocks stays on the resample path rather than cropping art off
+  // the edge of a creature.
+  const tw = Math.round(p.sw / gridN);
+  const th = Math.round(p.sh / gridN);
+  const up = gridN > 1 && tw > 0 && th > 0 && dw % tw === 0 && dw / tw === dh / th ? dw / tw : 0;
+  const reducible = up >= 1 && p.sw === tw * gridN && p.sh === th * gridN;
   const out = reducible
-    ? blockReduce(pixels, gridN, p.sx % gridN, p.sy % gridN)
+    ? upscaleExact(blockReduce(pixels, gridN, p.sx % gridN, p.sy % gridN), up)
     : resampleCell(pixels, dw, dh, strategy);
   const cel = document.createElement("canvas");
   cel.width = dw;
@@ -236,7 +268,7 @@ function clipsFor(
     // made the second row silently REPLACE the first, so an eight-frame attack
     // imported as its back half and half the sheet was packed but unreachable.
     const frames = row.cells.map((c) =>
-      cellPaint(sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter),
+      cellPaint(sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter, atlasGrid),
     );
     out[row.clip as ClipName] = [...(out[row.clip as ClipName] ?? []), ...frames];
   }

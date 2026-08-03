@@ -312,6 +312,7 @@ describe("sprite inbox", () => {
           exact ? k : cellScalePx(cells[i], k, px),
           px,
           exact ? px / G : 1,
+          exact ? gridN : 0,
         );
         const bctx = buf.getContext("2d");
         if (!bctx) throw new Error("[ingest] no 2D context for the cel buffer");

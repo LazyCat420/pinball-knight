@@ -56,7 +56,7 @@ const mode = arg("mode", "cel");
 
 // ═══════════════════════════════════════════════════════════════════ CEL MODE
 async function celMode() {
-  const grid = Number(arg("grid", "63")); // SHIPPED_GRID — the default camera rung
+  const grid = Number(arg("grid", "84")); // SHIPPED_GRID — the default camera rung
   const zoom = Number(arg("zoom", "3"));
   const out = arg("out", `scratchpad/sandbox/cel-${grid}.png`);
 
