@@ -46,9 +46,9 @@ describe("engine defaults mirror the game constants", () => {
 
   it("derives every sprite metric from that same rung", () => {
     const ppu = engineConfig.camera.ppu;
-    expect(engineConfig.sprite.pixelGrid).toBe((ppu * 9) / 8);
-    expect(engineConfig.sprite.px).toBe((ppu * 9) / 4);
-    expect(engineConfig.sprite.units).toBe(9 / 8);
+    expect(engineConfig.sprite.pixelGrid).toBe((ppu * 3) / 2);
+    expect(engineConfig.sprite.px).toBe(ppu * 3);
+    expect(engineConfig.sprite.units).toBe(3 / 2);
     // …and the derivation is the same one the game side uses, so a test that
     // reads `SPRITE_PX` from constants and a module that captured it from
     // engineConfig are looking at the same number.

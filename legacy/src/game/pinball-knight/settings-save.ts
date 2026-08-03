@@ -59,6 +59,16 @@ export interface DungeonSettings {
    * static palette snap is not.
    */
   heatShimmer: boolean;
+  /**
+   * RETIRED (2026-08-03). The screen-space pixel filters — palette quantize,
+   * dither, scanlines, depth-edge ink — are permanently off: the sprites are
+   * already palette-locked pixel art at the atlas, and the screen-wide snap only
+   * posterized the environment's lit colours into confetti. The fields survive
+   * so `state`/`pixel-pass` plumbing keeps its shape (and the debug surface can
+   * still poke the uniforms), but they always carry the defaults: getSettings()
+   * deliberately ignores a stored override — every pre-retirement blob has
+   * `true` in all four, and honouring it would keep the old look forever.
+   */
   quantize: boolean;
   dither: boolean;
   scanline: boolean;
@@ -111,10 +121,9 @@ export function getSettings(): DungeonSettings {
       if (typeof p.volume === "number" && Number.isFinite(p.volume) && p.volume >= 0 && p.volume <= 1) {
         d.volume = Math.round(p.volume * VOLUME_STEPS) / VOLUME_STEPS;
       }
-      if (typeof p.quantize === "boolean") d.quantize = p.quantize;
-      if (typeof p.dither === "boolean") d.dither = p.dither;
-      if (typeof p.scanline === "boolean") d.scanline = p.scanline;
-      if (typeof p.outline === "boolean") d.outline = p.outline;
+      // quantize/dither/scanline/outline are deliberately NOT read — see the
+      // RETIRED note on the interface. A stored value (true in every blob saved
+      // before 2026-08-03) must not resurrect the screen-space filters.
       if (typeof p.haulReveal === "boolean") d.haulReveal = p.haulReveal;
       // MIGRATION: a player who had turned the old modal card reader OFF was
       // saying "stop showing me cards", so carry that across rather than

@@ -12,11 +12,11 @@
  * without them.
  *
  * ── WHY THREE RUNGS AND NOT THE AMBIENT ONE ──
- * `SPRITE_PIXEL_GRID` is a PLAYER SETTING (`CAMERA_ZOOMS`: 90/81/72/63/54),
+ * `SPRITE_PIXEL_GRID` is a PLAYER SETTING (`CAMERA_ZOOMS`: 120/108/96/84/72),
  * captured at module load. Asserting on whatever the test process happens to
  * boot at turns this guard OFF for anyone who picked a different camera — the
- * trap `atlas-size.test.ts` documents. 54 / 63 / 90 spans the range; 72 and 81
- * are interior on all three metrics and buy nothing for the runtime.
+ * trap `atlas-size.test.ts` documents. 72 / 84 / 120 spans the range; 96 and
+ * 108 are interior on all three metrics and buy nothing for the runtime.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -28,24 +28,27 @@ beforeAll(() => { restore = installSpriteTestDom(); });
 afterAll(() => { restore(); });
 
 /** The rungs the gate runs at. */
-const RUNGS = [54, SHIPPED_GRID, 90];
+const RUNGS = [72, SHIPPED_GRID, 120];
 
 /**
  * Roster-wide ceilings, per rung.
  *
- * MEASURED 2026-07-29 across all 20 actors, after the unsharp mask was retired
- * (see the table on `CRUSH_DEFAULTS` in engine/render/sprite.ts). Each value is
- * the worst observed, rounded outward for headroom — these are CEILINGS meant to
- * catch a new painter shipping confetti, not a description of the current state.
- * The per-monster ratchet is `noise-baseline.json`'s job, not this one.
+ * RE-MEASURED 2026-08-03 across all 20 actors, after the sprite:tile ratio went
+ * 9/8 → 3/2 and the rung ladder moved to 72/84/120 (see `SPRITE_PIXEL_GRID`).
+ * Each value is the worst observed, rounded outward for headroom — these are
+ * CEILINGS meant to catch a new painter shipping confetti, not a description of
+ * the current state. The per-monster ratchet is `noise-baseline.json`'s job,
+ * not this one.
  *
  * The numbers get worse as the grid gets smaller, because the same art is being
  * crushed harder — which is exactly why a single ambient bound cannot work.
+ * Worst observed at re-measure: 72 → 30/31.2/1.49 · 84 → 32/30.3/1.55 ·
+ * 120 → 32/19.9/1.96.
  */
 const CEILING: Record<number, { entries: number; isolatedPct: number; runLen: number }> = {
-  54: { entries: 34, isolatedPct: 52, runLen: 1.2 },
-  63: { entries: 34, isolatedPct: 45, runLen: 1.25 },
-  90: { entries: 36, isolatedPct: 42, runLen: 1.3 },
+  72: { entries: 32, isolatedPct: 36, runLen: 1.4 },
+  84: { entries: 34, isolatedPct: 35, runLen: 1.45 },
+  120: { entries: 34, isolatedPct: 24, runLen: 1.8 },
 };
 
 describe("sprite noise budget", () => {

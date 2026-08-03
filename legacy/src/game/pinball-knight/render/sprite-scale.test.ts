@@ -42,10 +42,10 @@ describe("sprite scale invariants", () => {
     // Was >= 64, written when PPU was a single fixed number. The camera zoom is
     // now a PLAYER SETTING, and grid falls with it because a smaller actor on
     // screen cannot carry more texels than it covers — that is arithmetic, not
-    // a regression. 54 is the floor of the offered ladder (`widest`, PPU 48);
-    // anything below it would be a new rung, which is a deliberate decision and
-    // should have to change this line to happen.
-    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(54);
+    // a regression. 72 is the floor of the offered ladder (`widest`, PPU 48, at
+    // the 3/2 sprite:tile ratio); anything below it would be a new rung, which
+    // is a deliberate decision and should have to change this line to happen.
+    expect(SPRITE_PIXEL_GRID).toBeGreaterThanOrEqual(72);
   });
 });
 
@@ -60,9 +60,9 @@ describe("sprite scale invariants", () => {
  */
 describe("every camera zoom rung is legal", () => {
   it.each(Object.entries(CAMERA_ZOOMS))("%s (PPU %i) yields a whole texel grid", (_name, ppu) => {
-    // SPRITE_UNITS is 9/8, so grid = 9*PPU/8 and PPU must be a multiple of 8.
-    expect(ppu % 8).toBe(0);
-    const grid = (ppu * 9) / 8;
+    // SPRITE_UNITS is 3/2, so grid = 3*PPU/2 and PPU must be even.
+    expect(ppu % 2).toBe(0);
+    const grid = (ppu * 3) / 2;
     expect(Number.isInteger(grid)).toBe(true);
     // The supersample buffer stays exactly 2x, so the crush is a clean box.
     expect(Number.isInteger(grid * 2)).toBe(true);

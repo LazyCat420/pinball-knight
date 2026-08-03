@@ -167,9 +167,9 @@ export const engineConfig: EngineConfig = {
     // test that does not boot the game measures a pipeline nobody runs. That is
     // not hypothetical — it is what a mismatched mirror did here on 2026-07-29,
     // presenting as three unrelated art-census failures.
-    px: (DEFAULT_PPU * 9) / 4,
-    pixelGrid: (DEFAULT_PPU * 9) / 8,
-    units: 9 / 8,
+    px: DEFAULT_PPU * 3,
+    pixelGrid: (DEFAULT_PPU * 3) / 2,
+    units: 3 / 2,
     artPx: 128,
     maxAtlasWidth: 8192,
   },

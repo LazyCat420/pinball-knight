@@ -380,8 +380,8 @@ const SELOUT_SHADOW = 0.6;
 /**
  * ⚠️ THE PREMISE OF THE DOCSTRING ABOVE IS DEAD. It reasons from "128/72 is
  * 1.78, so every internal boundary lands across two output pixels as a
- * gradient". That downscale no longer exists: `SPRITE_PX = PPU*9/4` and
- * `SPRITE_PIXEL_GRID = PPU*9/8`, so the ratio is EXACTLY 2 at every camera rung
+ * gradient". That downscale no longer exists: `SPRITE_PX = PPU*3` and
+ * `SPRITE_PIXEL_GRID = PPU*3/2`, so the ratio is EXACTLY 2 at every camera rung
  * and the filter is an exact 2x2 box. The pass may still be earning its keep —
  * `INK_W` is 3.2 art units, i.e. 1.57 texels at the shipped rung, so the ink
  * still straddles — but it is no longer justified by the reason written down.

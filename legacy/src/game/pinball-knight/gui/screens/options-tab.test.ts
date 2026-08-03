@@ -128,7 +128,7 @@ describe("the camera setting is reachable from Esc", () => {
     // Camera must be above every other section, which at scroll 0 is what puts
     // it on screen without one.
     const camera = at("Camera distance");
-    for (const later of ["Sound FX", "Palette quantize", "Floor haul screen"]) {
+    for (const later of ["Sound FX", "Heat shimmer", "Floor haul screen"]) {
       expect(camera).toBeLessThan(at(later));
     }
     // …and above the footer, i.e. inside the visible sheet rather than clipped

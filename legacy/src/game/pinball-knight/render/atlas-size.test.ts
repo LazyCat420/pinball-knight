@@ -59,13 +59,12 @@ describe("the knight atlas fits on the GPU", () => {
     //
     // Measured against the WIDEST cell the game can ship, not the ambient one.
     // The cell size is now a function of the player's camera setting (see
-    // `CAMERA_ZOOMS`), and at the far end of that ladder — a 54px cell — 130
-    // frames come to 7020px and a single row genuinely would fit. Asserting on
-    // the ambient value therefore turns this guard OFF for anyone who picked a
-    // wide camera, which is the precise failure mode the anti-vacuity note
-    // above is about. The packer has to be right at every rung, so the guard
-    // asks about the rung that needs it.
-    const widestCell = (Math.max(...Object.values(CAMERA_ZOOMS)) * 9) / 8;
+    // `CAMERA_ZOOMS`), and at the far end of that ladder a small cell means a
+    // single row genuinely would fit. Asserting on the ambient value therefore
+    // turns this guard OFF for anyone who picked a wide camera, which is the
+    // precise failure mode the anti-vacuity note above is about. The packer has
+    // to be right at every rung, so the guard asks about the rung that needs it.
+    const widestCell = (Math.max(...Object.values(CAMERA_ZOOMS)) * 3) / 2;
     const a = pack("sword");
     expect(a.frames * widestCell).toBeGreaterThan(MAX_ATLAS_WIDTH);
   });
@@ -75,7 +74,7 @@ describe("the knight atlas fits on the GPU", () => {
     // whichever cell size this test run happened to boot with.
     const a = pack("sword");
     for (const ppu of Object.values(CAMERA_ZOOMS)) {
-      const cell = (ppu * 9) / 8;
+      const cell = (ppu * 3) / 2;
       const cols = Math.min(a.frames, Math.floor(MAX_ATLAS_WIDTH / cell));
       const rows = Math.max(1, Math.ceil(a.frames / cols));
       expect(cols * cell, `PPU ${ppu}: atlas ${cols * cell}px wide`).toBeLessThanOrEqual(MAX_ATLAS_WIDTH);

@@ -146,15 +146,15 @@ export const MAX_RENDER_H = 1216;
  * PPU is the zoom, and it is also the denominator of `SPRITE_UNITS`. Since
  * `SPRITE_PIXEL_GRID = SPRITE_UNITS x PPU` has to be a whole number of texels —
  * or every sprite samples between texels, which is the mush this whole pipeline
- * exists to prevent — and `SPRITE_UNITS` is 9/8, PPU must be a MULTIPLE OF 8.
+ * exists to prevent — and `SPRITE_UNITS` is 3/2, PPU must be EVEN.
  * There is no continuous zoom slider available here; there are rungs.
  *
  *     setting   PPU   grid   tiles @1712   vs NORMAL
- *     close      80     90      21.4       -11%  (the old pre-2026-07 framing)
- *     normal     72     81      23.8         —
- *     wide       64     72      26.8       +12.5%
- *     wider      56     63      30.6       +28.6%   ← default
- *     widest     48     54      35.7       +50%
+ *     close      80    120      21.4       -11%  (the old pre-2026-07 framing)
+ *     normal     72    108      23.8         —
+ *     wide       64     96      26.8       +12.5%
+ *     wider      56     84      30.6       +28.6%   ← default
+ *     widest     48     72      35.7       +50%
  *
  * The right-hand column is the price: grid is texels per actor, and it falls
  * with the zoom because the actor is physically smaller on screen. `widest` at
@@ -289,7 +289,7 @@ export const ART_PX = 128; // painter coordinate space, unitless
 // Written from PPU rather than from SPRITE_PIXEL_GRID only because the grid is
 // declared further down this file; the identity `SPRITE_PX === 2 * grid` is the
 // one that matters and `sprite-scale.test.ts` asserts it directly.
-export const SPRITE_PX = (PPU * 9) / 4; // rasterisation buffer, always 2 × grid
+export const SPRITE_PX = PPU * 3; // rasterisation buffer, always 2 × grid
 
 /**
  * The STORED art resolution — the atlas cell size, and the real fidelity dial.
@@ -311,15 +311,30 @@ export const SPRITE_PX = (PPU * 9) / 4; // rasterisation buffer, always 2 × gri
  * i.e. SPRITE_PIXEL_GRID / PPU must be exact — see SPRITE_UNITS.
  */
 /*
- * 81 → 72 with PPU 72 → 64. These two ALWAYS move together: the grid is
- * SPRITE_UNITS × PPU, and holding it at 81 while the camera pulls back would
- * make an actor's plane 1.266 world units instead of 1.125 — the sprite would
- * keep its screen size while the level shrank around it, so every actor would
- * grow 12.5% relative to its own collider and start visibly overlapping walls
- * it does not touch. Zooming out costs texels; there is no arrangement of these
- * numbers where it does not.
+ * ── SPRITE:TILE RATIO 9/8 → 3/2 (2026-08-03, "the sprites are crunched too
+ * small") ─────────────────────────────────────────────────────────────────────
+ *
+ * An actor used to stand 1.125 tiles tall — barely taller than the floor tile
+ * it walks on, which is the least pixels a sprite can be given in a tile world.
+ * The genre standard is well above that: LTTP's Link is 1.5 tiles, Chrono
+ * Trigger and Secret of Mana characters run 1.5-2, and Ragnarok's sprites tower
+ * over their floor cells. At 9/8 the whole 128-unit authored cel was crushed to
+ * 63 texels at the default rung, one texel = 2.03 art units — every feature a
+ * painter drew "a couple of units wide" was sub-texel and quantized to
+ * confetti.
+ *
+ * At 3/2 the same rung stores 84 texels (+78% texel area), one texel = 1.52 art
+ * units, and the actor reads at the size the art was actually authored for. The
+ * camera FOV is untouched — tiles-on-screen is PPU's job, not this constant's.
+ * The costs, priced deliberately: colliders and reach are unchanged, so visuals
+ * now overlap walls/tiles the actor does not touch (exactly what RO/SNES do);
+ * atlas cells and the supersample buffer grow ~1.78x in area, paid at boot.
+ *
+ * The identity constraints still bind: grid = SPRITE_UNITS × PPU must be a
+ * whole number (PPU even, satisfied by every rung), and SPRITE_PX = 2 × grid
+ * keeps the crush an exact box filter.
  */
-export const SPRITE_PIXEL_GRID = (PPU * 9) / 8;
+export const SPRITE_PIXEL_GRID = (PPU * 3) / 2;
 
 /**
  * Actor plane size, world units.
@@ -336,13 +351,30 @@ export const SPRITE_PIXEL_GRID = (PPU * 9) / 8;
  * destructive undersampling. `sprite.test.ts` asserts the identity so a future
  * edit to either number has to keep it.
  */
-export const SPRITE_UNITS = SPRITE_PIXEL_GRID / PPU; // 72/64 = 1.125, binary-exact
+export const SPRITE_UNITS = SPRITE_PIXEL_GRID / PPU; // 3/2 = 1.5, binary-exact
 
-// ── Style toggles (hidden debug keys Q/F/K/O in-game) ───────────
-export const QUANTIZE_DEFAULT = true; // snap to the 32-colour palette — banded colour IS cel shading
-export const DITHER_DEFAULT = true; // ordered dither breaks AO/shadow banding before the quantizer (2026-07-14 3D pass)
-export const SCANLINE_DEFAULT = true; // subtle CRT scanlines — 14% row darkening; A/B'd 2026-07-15, adds arcade-cabinet feel with no readability cost
-export const OUTLINE_DEFAULT = true; // depth-edge ink lines (the cel look)
+// ── Style toggles ───────────────────────────────────────────────
+//
+// ── THE SCREEN-SPACE PIXEL FILTERS ARE RETIRED (2026-08-03) ──────────────────
+// All four default OFF, their options rows are gone, and settings-save no
+// longer honours a stored override — every player gets the clean frame.
+//
+// Why: the screen-wide palette snap was re-quantizing ALREADY-QUANTIZED art.
+// Sprites are palette-locked per-sprite at the atlas (the RO/SNES model — that
+// is where the pixel identity lives), so the only thing the screen snap had
+// left to grind was the 3D environment's lit colours, which it posterized into
+// the granular confetti the playtests kept flagging. SNES-era cleanliness comes
+// from clean indexed ASSETS, never from a screen posterize; with the snap off
+// the scene keeps its true lit colours and the sprites stay pixel art.
+// Dither and scanlines existed to serve the snap (break its banding / dress its
+// grid) and retire with it; the depth-edge ink pass goes too — baked selout ink
+// in the figures already carries the outline job.
+// The uniforms and setters survive for the debug surface and any future,
+// better-behaved filter.
+export const QUANTIZE_DEFAULT = false; // screen-space palette snap — retired, see above
+export const DITHER_DEFAULT = false; // ordered dither — only existed to serve the snap
+export const SCANLINE_DEFAULT = false; // CRT scanlines — retired with the rest of the screen dressing
+export const OUTLINE_DEFAULT = false; // depth-edge ink — figures carry baked selout ink instead
 /**
  * Luma step (rough-gamma space, 0..1) a COLOUR edge must exceed before the ink
  * pass darkens it — the second outline term, added because a depth edge cannot

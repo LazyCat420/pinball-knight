@@ -37,14 +37,14 @@ import type { SheetKey } from "../boot/sheets";
 /**
  * The five shipped camera rungs as GRID sizes, derived — never typed out.
  *
- * `SPRITE_PIXEL_GRID = PPU * 9/8`. Asserting on the ambient value instead turns
+ * `SPRITE_PIXEL_GRID = PPU * 3/2`. Asserting on the ambient value instead turns
  * a census OFF for anyone who picked a different camera, which is the trap
  * `atlas-size.test.ts` documents.
  */
-export const RUNGS: number[] = [...new Set(Object.values(CAMERA_ZOOMS).map((ppu) => (ppu * 9) / 8))].sort((a, b) => a - b);
+export const RUNGS: number[] = [...new Set(Object.values(CAMERA_ZOOMS).map((ppu) => (ppu * 3) / 2))].sort((a, b) => a - b);
 
 /** The rung the game actually ships at (`CAMERA_ZOOM_DEFAULT` is "wider", PPU 56). */
-export const SHIPPED_GRID = (56 * 9) / 8;
+export const SHIPPED_GRID = (56 * 3) / 2;
 
 /**
  * `SPRITE_PX` for a given grid. The identity `SPRITE_PX / GRID === 2` holds at

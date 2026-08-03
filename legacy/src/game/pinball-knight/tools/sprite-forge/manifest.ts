@@ -10,10 +10,10 @@
  * ── WHY THE GAME IS NOT HANDED FINISHED FRAMES ──────────────────────────────
  *
  * Because there is no such thing as a finished frame here. `SPRITE_PIXEL_GRID`
- * is `PPU * 9/8` and `CAMERA_ZOOMS` runs {close 80, normal 72, wide 64, wider
- * 56, widest 48}, so the atlas cell is 90, 81, 72, 63 or 54 texels depending on
- * a setting resolved from localStorage at module load. A baked 63px atlas is
- * wrong at four of the five, and rescaling pixel art by 63/90 destroys it.
+ * is `PPU * 3/2` and `CAMERA_ZOOMS` runs {close 80, normal 72, wide 64, wider
+ * 56, widest 48}, so the atlas cell is 120, 108, 96, 84 or 72 texels depending
+ * on a setting resolved from localStorage at module load. A baked 84px atlas is
+ * wrong at four of the five, and rescaling pixel art by 84/120 destroys it.
  *
  * So the shipped artifact is the SOURCE at full resolution, and the crush
  * happens at runtime — which is exactly what a painter does. An imported frame

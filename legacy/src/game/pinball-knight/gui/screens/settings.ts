@@ -6,10 +6,10 @@
  * composite) without needing a single icon, card face or scroll region. If this
  * screen is crisp, on-palette, and drivable from a pad, the foundation is real.
  *
- * It is also the screen where the pixel pass being in the loop is VISIBLE:
- * toggling Palette quantize or Scanlines now changes the menu you are toggling
- * them in. Under the DOM version the settings claimed to control a look the
- * settings panel itself was exempt from.
+ * It is also a screen rendered through the pixel pass rather than DOM — under
+ * the DOM version the settings claimed to control a look the settings panel
+ * itself was exempt from. (The pixel-filter toggles that once demonstrated
+ * this live were retired 2026-08-03 — see settings-save.ts.)
  */
 import { getSettings, saveSettings, type DungeonSettings } from "../../settings-save";
 import { CAMERA_ZOOM, CAMERA_ZOOMS, CAMERA_ZOOM_ORDER, VOLUME_STEPS, type CameraZoom } from "../../constants";
@@ -61,10 +61,10 @@ const SOUND: Row[] = [
 ];
 
 const LOOK: Row[] = [
-  { key: "quantize", label: "Palette quantize", hint: "snap colours to the 32-colour palette" },
-  { key: "dither", label: "Dither", hint: "ordered dithering between palette steps" },
-  { key: "scanline", label: "Scanlines", hint: "CRT scanline overlay" },
-  { key: "outline", label: "Outline", hint: "depth-edge ink outline" },
+  // The screen-space pixel filters (palette quantize, dither, scanlines, ink
+  // outline) were RETIRED 2026-08-03 — rows removed, filters permanently off.
+  // See the note in settings-save.ts; sprites keep their pixel identity at the
+  // atlas, and the screen-wide snap only posterized the environment.
   { key: "heatShimmer", label: "Heat shimmer", hint: "air bends around fire — the only effect that warps the scene" },
 ];
 
