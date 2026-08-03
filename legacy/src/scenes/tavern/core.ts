@@ -65,6 +65,7 @@ import { initTavernPool, updateTavernPool, disposeTavernPool, isMultiplayerActiv
 import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./gambler";
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../../game/pinball-knight/fx/system";
+import { warmTavern, tavernWarmEnabled } from "./warmup";
 import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
@@ -171,6 +172,8 @@ let prompt: StationPrompt | null = null;
 let pixelPass: PixelPass | null = null;
 /** False until WebGPURenderer.init() resolves — render() throws before that. */
 let rendererReady = false;
+/** First scene frame of THIS visit presented — see the perf mark in frame(). */
+let firstPresented = false;
 let onKey: ((e: KeyboardEvent) => void) | null = null;
 let onResize: (() => void) | null = null;
 let npcs: BuiltNpcs | null = null;
@@ -466,6 +469,13 @@ function frame(now: number): void {
       if (tavern.scene && tavern.camera) {
         if (pixelPass) pixelPass.render(tavern.scene, tavern.camera);
         else tavern.renderer?.render(tavern.scene, tavern.camera);
+        // Measurement boundary: stalls BEFORE this mark are covered by the
+        // (black) init gap; stalls AFTER it are frozen frames the player sees.
+        // An injected rAF probe uses this to window its long-frame report.
+        if (!firstPresented) {
+          firstPresented = true;
+          performance.mark("tavern:first-present");
+        }
       }
   }
 }
@@ -504,7 +514,33 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // it async would turn that check into a truthy Promise and the DOM fallback
   // would become unreachable. The loop skips frames until this flips.
   rendererReady = false;
-  void renderer.init().then(() => {
+  void renderer.init().then(async () => {
+    // Warm the room's pipelines BEFORE the first presented frame — the loop
+    // skips presenting until `rendererReady`, so the compile stalls land here
+    // instead of on the first frame a hidden prop or pooled effect draws.
+    // Everything the warm needs (pixelPass, vfx, the built room) exists by
+    // now: this function is fully synchronous after this line, so the
+    // continuation cannot run before it returns. Best-effort — never block
+    // the room over a failed precompile.
+    if (tavernWarmEnabled()) {
+      try {
+        // `tavern.scene === scene` also proves this continuation belongs to
+        // the CURRENT visit — a close+reopen faster than init() resolving
+        // would otherwise warm the new room with the old renderer.
+        if (tavern.active && pixelPass && tavern.scene === scene && tavern.camera) {
+          await warmTavern({
+            renderer,
+            scene,
+            camera: tavern.camera,
+            pixelPass,
+            vfx,
+            active: () => tavern.active && tavern.scene === scene,
+          });
+        }
+      } catch {
+        /* lazy compile on first draw, exactly as before */
+      }
+    }
     rendererReady = true;
   });
 
