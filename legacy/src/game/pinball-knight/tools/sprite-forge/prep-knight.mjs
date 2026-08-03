@@ -267,8 +267,14 @@ function sliceKnight(sheet, cols, rows) {
 const PLAN = {
   S: [
     ["idle", "01_idle", [4, 2], [0, 1, 2, 3]],
-    ["walk", "03_walk", [3, 2], [0, 1, 2]],
-    ["run", "03_walk", [3, 2], [0, 1, 2]],
+    // `face:` — the walk sheet's camera-facing row wears a CLOSED VISOR, and at
+    // 63 texels a grey grille plus a gold chest blob is indistinguishable from
+    // the back's grey helm plus gold shield pin: the player read every walk
+    // toward the camera as walking away. The open-face head from the idle
+    // sheet (frame 0, eyes open) is transplanted onto each walk frame — skin
+    // pixels are the one front-tell that survives the crush.
+    ["walk", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0] }],
+    ["run", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0] }],
     ["attack", "09_attack", [4, 2], [0, 1, 2, 3]],
     ["stumble", "05_touched_lava", [2, 2], [0, 1]],
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
@@ -284,6 +290,53 @@ const PLAN = {
     ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
   ],
 };
+
+/**
+ * Helmet bbox: opaque pixels in the top `frac` of the frame. Both sheets draw
+ * the head as a rigid unit ending at the gorget, so the top ~38% bounds it.
+ */
+function headBox(sheet, f, frac = 0.38) {
+  const yEnd = f.y0 + Math.round(f.h * frac);
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (let y = f.y0; y < yEnd; y++) {
+    for (let x = f.x0; x <= f.x1; x++) {
+      if (sheet.im.data[(y * sheet.width + x) * 4 + 3] > 127) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  return x1 < 0 ? null : { x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+
+/**
+ * Replace the target frame's helmet with the donor's, nearest-scaled to the
+ * target helmet's exact bbox — full coverage, no grille rim left behind, and
+ * the ≤4% aspect distortion disappears under the k-centroid resample.
+ */
+export function transplantHead(target, tf, donor, df) {
+  const tb = headBox(target, tf);
+  const db = headBox(donor, df);
+  if (!tb || !db) return false;
+  for (let y = tb.y0; y <= tb.y1; y++)
+    for (let x = tb.x0; x <= tb.x1; x++) target.im.data[(y * target.width + x) * 4 + 3] = 0;
+  for (let ty = 0; ty < tb.h; ty++) {
+    for (let tx = 0; tx < tb.w; tx++) {
+      const sx = db.x0 + Math.min(db.w - 1, Math.floor((tx * db.w) / tb.w));
+      const sy = db.y0 + Math.min(db.h - 1, Math.floor((ty * db.h) / tb.h));
+      const from = (sy * donor.width + sx) * 4;
+      if (donor.im.data[from + 3] <= 127) continue;
+      const to = ((tb.y0 + ty) * target.width + (tb.x0 + tx)) * 4;
+      target.im.data[to] = donor.im.data[from];
+      target.im.data[to + 1] = donor.im.data[from + 1];
+      target.im.data[to + 2] = donor.im.data[from + 2];
+      target.im.data[to + 3] = donor.im.data[from + 3];
+    }
+  }
+  return true;
+}
 
 const mode = process.argv[2];
 
@@ -309,12 +362,28 @@ if (mode === "build") {
   };
   const median = (a) => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
 
+  // `run` shares the walk frames, so the same sheet region would be
+  // transplanted twice; harmless but wasteful — do each frame once.
+  const transplanted = new Set();
   for (const dir of ["S", "N"]) {
     const rows = [];
-    for (const [clip, base, grid, pick, anchor] of PLAN[dir]) {
+    for (const [clip, base, grid, pick, anchor, opts] of PLAN[dir]) {
       const { sheet, frames } = await get(base, grid);
       const missing = pick.filter((i) => !frames[i]);
       if (missing.length) throw new Error(`${base}: PLAN wants frame(s) ${missing} but only ${frames.length} sliced`);
+      if (opts?.face) {
+        const [donorBase, donorIdx] = opts.face;
+        const donorGrid = Object.values(PLAN).flat().find(([, b]) => b === donorBase)[2];
+        const donor = await get(donorBase, donorGrid);
+        for (const i of pick) {
+          const key = `${base}:${frames[i].x0},${frames[i].y0}`;
+          if (transplanted.has(key)) continue;
+          transplanted.add(key);
+          if (!transplantHead(sheet, frames[i], donor.sheet, donor.frames[donorIdx])) {
+            throw new Error(`${base}[${i}]: face transplant found no head bbox`);
+          }
+        }
+      }
       rows.push({ clip, base, sheet, anchor, frames: pick.map((i) => frames[i]), all: frames });
     }
 
