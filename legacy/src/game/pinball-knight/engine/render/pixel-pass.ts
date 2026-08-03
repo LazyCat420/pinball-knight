@@ -1670,15 +1670,57 @@ export function createPixelPass(
   function withSceneContext<T>(fn: () => T): T {
     renderer.setRenderTarget(sceneTarget);
     renderer.setMRT(sceneMrt);
-    try {
-      return fn();
-    } finally {
-      // Restored even if the compile throws — `warmFloorPipelines` deliberately
-      // swallows compile failures and plays on, and a leaked MRT would then have
-      // every fullscreen quad in this file describing two outputs for one
-      // attachment.
+    // Restored even if the compile throws — `warmFloorPipelines` deliberately
+    // swallows compile failures and plays on, and a leaked MRT would then have
+    // every fullscreen quad in this file describing two outputs for one
+    // attachment.
+    let restored = false;
+    const restore = (): void => {
+      if (restored) return;
+      restored = true;
       renderer.setMRT(null);
       renderer.setRenderTarget(null);
+    };
+    try {
+      const out = fn();
+      // ── WHY THIS CANNOT BE A PLAIN `finally` ───────────────────────────────
+      //
+      // Every caller passes an ASYNC fn: `withSceneContext(() => compileAsync(…))`.
+      // A `finally` restores the moment `fn()` hands back its *promise* — which
+      // is before three has built a single shader. `compileAsync` awaits per
+      // object (`getForRenderAsync`, three r185) specifically to yield to the
+      // main thread, so every build it performs ran with the target already
+      // unbound.
+      //
+      // That matters because `NodeMaterial.setup` reads
+      // `renderer.getRenderTarget()` ONCE and gates the entire MRT block on it
+      // being non-null. A build seeing null emits a 1-output shader, and that
+      // shader is cached under a key the real frame reuses — so the scene pass
+      // binds two attachments against a fragment stage that declares one and
+      // Dawn rejects the pipeline:
+      //   "Color target has no corresponding fragment stage output …
+      //    While validating targets[1]"
+      // followed by an invalid command buffer reaching Queue.Submit.
+      //
+      // So the context must outlive the await, not the call. Measured: 7-8
+      // validation errors per run before, 0 after.
+      if (typeof (out as { then?: unknown } | null)?.then === "function") {
+        return (out as unknown as Promise<unknown>).then(
+          (v) => {
+            restore();
+            return v;
+          },
+          (e) => {
+            restore();
+            throw e;
+          },
+        ) as unknown as T;
+      }
+      restore();
+      return out;
+    } catch (e) {
+      restore();
+      throw e;
     }
   }
 
