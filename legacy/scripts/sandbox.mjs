@@ -64,6 +64,7 @@ async function celMode() {
   const SUBJECTS = [
     { key: "jester", sheet: "jester" },
     { key: "rotortail", sheet: "beaver" },
+    { key: "pinball_knight", sheet: "pinball_knight" },
   ];
 
   // The sheets travel as data URLs — the page is served from a string, so
@@ -83,11 +84,14 @@ import { censusCell, paletteRgb } from "./src/game/pinball-knight/render/atlas-c
 import { importedPaints } from "./src/game/pinball-knight/render/imported-paints";
 import { makeJesterPaints } from "./src/game/pinball-knight/render/monsters/jester";
 import { makeRotortailPaints } from "./src/game/pinball-knight/render/monsters/rotortail";
+import { makeKnightPaints } from "./src/game/pinball-knight/render/cel-painter";
+import { FULL_PLATE } from "./src/game/pinball-knight/render/knight-look";
 // LOAD-BEARING (see foe-sheet.mjs): without the real palette every painter
 // renders on the 16-step greyscale fallback and the strip measures nothing.
 setEnginePalette({ size: PALETTE_SIZE, toFloatArray: paletteToFloatArray, hex: () => PALETTE_HEX, css: paletteCss, occlusionIndex: 30 });
 window.__sb = { paintInArtSpace, crushToGrid, censusCell, paletteRgb, importedPaints,
-  painters: { jester: makeJesterPaints, rotortail: makeRotortailPaints } };
+  painters: { jester: makeJesterPaints, rotortail: makeRotortailPaints,
+    pinball_knight: () => makeKnightPaints("sword", FULL_PLATE) } };
 `);
 
   const html = `<!doctype html><meta charset=utf8>

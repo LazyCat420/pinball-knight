@@ -23,6 +23,8 @@ import { crushToGrid, paintInArtSpace } from "../../engine/render/sprite";
 import { withRecoil, type ActorPaints } from "../../render/cel-painter";
 import { makeJesterPaints } from "../../render/monsters/jester";
 import { makeRotortailPaints } from "../../render/monsters/rotortail";
+import { makeKnightPaints } from "../../render/cel-painter";
+import { FULL_PLATE } from "../../render/knight-look";
 import { importedPaints, type ImportedSheet } from "../../render/imported-paints";
 import type { SheetManifest } from "./manifest";
 import type { ClipName, FramePaint } from "../../engine/render/paint-types";
@@ -34,6 +36,9 @@ const WORK = join(__dirname, "work");
 const PAIRS: { key: string; sheet: string; painted: () => ActorPaints }[] = [
   { key: "jester", sheet: "jester", painted: makeJesterPaints },
   { key: "rotortail", sheet: "beaver", painted: makeRotortailPaints },
+  // The player himself — imported red-plume roster vs the procedural knight.
+  // Sword is the starting weapon, so it is the painter most runs actually see.
+  { key: "pinball_knight", sheet: "pinball_knight", painted: () => makeKnightPaints("sword", FULL_PLATE) },
 ];
 
 let restore = (): void => {};
