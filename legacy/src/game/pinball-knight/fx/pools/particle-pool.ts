@@ -34,6 +34,13 @@ export class ParticlePool {
   private d: PoolData;
   private cursor = 0;
   private readonly n: number;
+  /**
+   * Particles still alive after the last `update()`. Free — the update loop
+   * already visits every slot, so this is a counter on a walk that happens
+   * anyway, not a second scan. The profiler needs it to tell "the pool cost
+   * 0.2ms" apart from "the pool cost 0.2ms with nothing in it".
+   */
+  live = 0;
 
   constructor(count: number, blending: THREE.Blending) {
     this.n = count;
@@ -109,6 +116,10 @@ export class ParticlePool {
     this.cursor = (this.cursor + 1) % this.n;
     this.pos.setXYZ(i, x, y, z);
     this.col.setXYZ(i, color[0], color[1], color[2]);
+    // Colour is spawn-only, so its upload is flagged HERE rather than in
+    // update(). Flagging it per frame there re-uploaded the whole 500-slot
+    // colour buffer every frame to send bytes that had not changed.
+    this.col.needsUpdate = true;
     this.size.setX(i, size);
     this.alpha.setX(i, 1);
     const d = this.d;
@@ -125,6 +136,7 @@ export class ParticlePool {
   update(dt: number): void {
     const d = this.d;
     let any = false;
+    let live = 0;
     for (let i = 0; i < this.n; i++) {
       if (d.life[i] <= 0) continue;
       any = true;
@@ -147,10 +159,13 @@ export class ParticlePool {
       const t = d.life[i] / d.maxLife[i]; // 1 → 0
       this.alpha.setX(i, t);
       this.size.setX(i, d.size0[i] * (0.35 + 0.65 * t)); // shrink as it dies
+      live++;
     }
+    this.live = live;
     if (any) {
+      // Only the attributes this loop actually writes. `col` is spawn-only and
+      // flags itself there.
       this.pos.needsUpdate = true;
-      this.col.needsUpdate = true;
       this.size.needsUpdate = true;
       this.alpha.needsUpdate = true;
     }

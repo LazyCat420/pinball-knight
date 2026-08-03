@@ -23,6 +23,7 @@ import { attribute, float, mul, vec4 } from "three/tsl";
 import { PALETTE_HEX } from "../render/palette";
 import { CAMERA_YAW, CAMERA_TILT } from "../constants";
 import { DamageTextPool, type DamageTextKind } from "../engine/render/damage-text";
+import { profBegin, profCount, profEnd } from "../engine/profiler";
 import { SMOKE, STEAM, makeSmokePool, makeSteamPool } from "./puffs";
 import { linColor } from "./color";
 import { C_BLOOD_G, C_BLOOD_R, C_DUST, C_EMBER, C_SPARK, C_SPARK2, rnd } from "./pools/shared";
@@ -447,10 +448,22 @@ export function createVfx(scene: THREE.Scene): VfxSystem {
       };
     },
     update(dt) {
+      // These four are bucketed apart from the rest because they are exactly
+      // what a compute-shader port would replace: fixed-size ring buffers
+      // simulated in a CPU loop, then re-uploaded as dirty attributes.
+      // docs/webgpu-plan.md's decision gate is written against this number, and
+      // until now there was no way to read it — the old `vfx.update` span in
+      // sim/loop.ts covered all twelve pools plus tickElements.
+      profBegin("vfx.pools");
       additive.update(dt);
       alpha.update(dt);
       smokePool.update(dt);
       steamPool.update(dt);
+      profEnd("vfx.pools");
+      // Counted, not timed: a 0.2ms reading means nothing without knowing
+      // whether anything was alive. `live` is set by the update() above at no
+      // cost, so this is a read of four numbers.
+      profCount("live particles", additive.live + alpha.live + smokePool.live + steamPool.live);
       slashes.update(dt);
       bolts.update(dt);
       trail.update(dt);

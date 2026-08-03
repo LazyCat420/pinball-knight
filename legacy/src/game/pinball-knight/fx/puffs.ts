@@ -84,6 +84,13 @@ export class PuffPool {
   private d: PuffData;
   private cursor = 0;
   private readonly n: number;
+  /**
+   * Puffs still alive after the last `update()`. Free — counted on the walk
+   * `update()` already makes. {@link liveCount} answers the same question with
+   * a fresh scan, which is what `puffDebug()` wants (a console call, any time);
+   * this is what the per-frame profiler wants (every frame, no extra cost).
+   */
+  live = 0;
 
   constructor(count: number, blending: THREE.Blending) {
     this.n = count;
@@ -183,6 +190,11 @@ export class PuffPool {
     this.alpha.setX(i, 1);
     this.age.setX(i, 0);
     this.seed.setX(i, Math.random() * 100);
+    // Colour and seed are spawn-only, so their uploads are flagged HERE rather
+    // than in update(). Flagging them per frame there re-uploaded both whole
+    // buffers every frame to send bytes that had not changed.
+    this.col.needsUpdate = true;
+    this.seed.needsUpdate = true;
     const d = this.d;
     d.vx[i] = vx;
     d.vy[i] = vy;
@@ -197,6 +209,7 @@ export class PuffPool {
   update(dt: number): void {
     const d = this.d;
     let any = false;
+    let live = 0;
     for (let i = 0; i < this.n; i++) {
       if (d.life[i]! <= 0) continue;
       any = true;
@@ -226,14 +239,16 @@ export class PuffPool {
       this.alpha.setX(i, Math.min(1, t * 4));
       // Smoke EXPANDS as it rises, unlike sparks which shrink as they die.
       this.size.setX(i, d.size0[i]! * (1 + 1.6 * (1 - t)));
+      live++;
     }
+    this.live = live;
     if (any) {
+      // Only the attributes this loop actually writes. `col` and `seed` are
+      // spawn-only and flag themselves there.
       this.pos.needsUpdate = true;
-      this.col.needsUpdate = true;
       this.size.needsUpdate = true;
       this.alpha.needsUpdate = true;
       this.age.needsUpdate = true;
-      this.seed.needsUpdate = true;
     }
   }
 

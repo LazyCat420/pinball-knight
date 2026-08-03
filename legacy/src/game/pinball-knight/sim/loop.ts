@@ -165,6 +165,11 @@ export function loop(now: number): void {
   // VFX use REAL frame time so particles keep flying through a hit-freeze.
   profBegin("vfx.update");
   state.vfx?.update(frame);
+  profEnd("vfx.update");
+  // Timed SEPARATELY from the vfx pools above. One span used to cover both, so
+  // the bucket could never answer "what do the particles cost" — the number it
+  // reported was particles plus every elemental shader's uniform poke.
+  profBegin("elements.tick");
   // The elemental shaders' clock, on the SAME real-time basis and for the same
   // reason: a flame that holds a pose for 100ms every time the player connects a
   // hit reads as a dropped frame.
@@ -176,7 +181,7 @@ export function loop(now: number): void {
   // measured. A shader clocked on `time` would render a perfectly static flame
   // with zero errors, and a single-frame screenshot would pass it.
   tickElements(frame);
-  profEnd("vfx.update");
+  profEnd("elements.tick");
   updatePinballParts(frame); // part cooldowns + pop/boing/chevron animations
   if (state.maze) updateArcKickers(state.maze.arcKickers, frame, state.elapsed); // curved-wall booster rubber
   if (state.maze) updateArcLanes(state.maze.arcLanes, frame, state.elapsed); // curved-wall booster lanes
@@ -297,13 +302,15 @@ export function loop(now: number): void {
   // wall shadows fall toward the viewer, into the corridors, not away.
   if (p) followPlayer(p.x, p.z);
 
-  if (state.hudDirty) {
-    state.hudDirty = false;
-    // The DOM rebuild path. Guarded per-element in hud-diablo, but a bounce
-    // still lands here every time the combo ticks.
-    profBegin("refreshHUD (DOM)");
-    profEnd("refreshHUD (DOM)");
-  }
+  // `hudDirty` is VESTIGIAL. It has ~20 writers (abilities, core, lamp-puzzle,
+  // skill-runtime) and this is its only reader, which does nothing but clear
+  // it — the DOM rebuild it used to gate is gone, and the HUD now redraws on
+  // its own. Left in place rather than ripped out because the writers are
+  // spread across files other branches are editing; removing it is its own
+  // change. What is removed here is the profiler span that wrapped the absent
+  // call: `refreshHUD (DOM)` reported ~0ms every run, which read as "the HUD is
+  // free" when it actually meant "nothing was measured".
+  if (state.hudDirty) state.hudDirty = false;
   // Per-frame HUD animation: liquid globes, cooldown rings, the face's blink/
   // wince timers. Cheap even when a panel is slid off-screen.
 
