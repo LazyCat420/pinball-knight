@@ -34,12 +34,11 @@ export function setImportedKnightPaintsForTest(paints: ActorPaints | null): void
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
   if (importedKnightPaints) return importedKnightPaints;
   try {
-    // S and N are both authored (the roster sheets pack front and back rows);
-    // E is not — importedPaints hands it the S clips by reference, and the
-    // engine draws W as E flipped.
+    // S, N, and E are all authored.
     const sheets = (await Promise.all([
       loadImportedSheet("pinball_knight", "S"),
       loadImportedSheet("pinball_knight", "N"),
+      loadImportedSheet("pinball_knight", "E"),
     ])).filter((s): s is NonNullable<typeof s> => s !== null);
     if (!sheets.length) return null;
     const paints = importedPaints(sheets);
