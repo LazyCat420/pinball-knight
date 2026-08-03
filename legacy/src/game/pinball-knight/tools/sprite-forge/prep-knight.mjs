@@ -284,7 +284,14 @@ const PLAN = {
     ["idle", "01_idle", [4, 2], [4, 5, 6, 7]],
     ["walk", "03_walk", [3, 2], [3, 4, 5]],
     ["run", "03_walk", [3, 2], [3, 4, 5]],
-    ["attack", "09_attack", [4, 2], [4, 5, 6, 7]],
+    // NOT `09_attack`'s bottom row. Every generated sheet in this roster fills
+    // its away-facing row with the SAME four standing back poses, and only a
+    // few sheets (03_walk, 04_jump, 10_attack_weaponless_6) animate it. Taking
+    // 09_attack[4..7] published an "attack" that measures IoU 0.98 against this
+    // sheet's own `idle` frame for frame: swinging while walking away played a
+    // knight standing still, and nothing downstream could tell. The weaponless
+    // sheet's bottom row is the roster's ONLY authored back-facing swing.
+    ["attack", "10_attack_weaponless_6", [3, 2], [3, 4, 5]],
     ["stumble", "05_touched_lava", [2, 2], [0, 1]],
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
     ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
