@@ -27,7 +27,32 @@ or via npm: `npm run pixels -- trace sheet.png --grid square32`.
 
 ## Grids
 
-`square16` (16x16), `square32` (32x32), `tall32` (32x64), `square64` (64x64).
+`square16` (16x16), `square32` (32x32), `tall32` (32x64), `square64` (64x64),
+`tall64` (64x128).
+
+## Getting more detail out of a trace
+
+Measured on five real monster frames (see `docs/DETAIL.md`), in order of
+effect:
+
+1. **The k-centroid resample — now the default.** The old box average blends
+   each texel's source pixels, so a red-and-cream edge averages to mauve and
+   the palette snap has to guess. `--resample kcentroid` (ported from
+   sprite-forge's `resample.ts`, the AI-art community standard) 2-means-splits
+   each texel and takes the dominant cluster — edges arrive at the snap still
+   being edges. The frog's red eyes and yellow spots only survive this arm.
+   `--resample box` keeps the old behaviour for A/B.
+2. **Content crop — now the default.** Margin is where the detail budget dies;
+   the bbox is padded (never stretched) to the grid's aspect, so this also
+   retires most ASPECT_STRETCH cases. `--no-crop` restores whole-image mapping.
+3. **A bigger grid.** 32→64 is 4× the texel budget and reads dramatically
+   closer to the source. Use it when the asset will render large.
+4. **More colours** (`--colours`), if median-cut; coldcrypt is fixed at 32.
+
+What no flag can fix: a source that separates on HUE at one value (the
+beaver's brown-on-brown) stays muddy at 32 — k-centroid picks sides only
+where the block is separable. Same lesson as the harlequin diamonds:
+author sources that separate on VALUE.
 
 ## Making art from scratch
 

@@ -63,6 +63,7 @@ const GRIDS = {
   square32: { width: 32, height: 32 },
   tall32: { width: 32, height: 64 },
   square64: { width: 64, height: 64 },
+  tall64: { width: 64, height: 128 },
 };
 
 /**
@@ -90,7 +91,7 @@ function usage(code = 0) {
       `  grids                        every registered grid\n` +
       `  trace IMG [--grid ID]        an image down to true pixels\n` +
       `        [--colours N] [--alpha N] [--palette coldcrypt] [--out FILE]\n` +
-      `        [--no-matte] [--matte-tol N]\n` +
+      `        [--no-matte] [--matte-tol N] [--resample kcentroid|box] [--no-crop]\n` +
       `  trace-set DIR [--grid ID]    a whole pose directory, as one file\n` +
       `        (same flags as trace)\n` +
       `  render CELL.json [--scale N] [--cell POSE] [--out FILE]\n` +
@@ -208,54 +209,186 @@ function matte(data, w, h, tol) {
   }
 }
 
-/** Load, and unless `--no-matte`, key the background out first. */
-async function loadForTrace(path, args) {
-  const img = await loadRgba(path);
+/**
+ * Load, and unless `--no-matte`, key the background out first. Unless
+ * `--no-crop`, then tight-crop to the content padded to the grid's aspect —
+ * matte first is what makes the crop meaningful, since an unmatted image is
+ * opaque to its corners and crops to nothing at all.
+ */
+async function loadForTrace(path, args, grid) {
+  let img = await loadRgba(path);
   if (!args.includes("--no-matte")) {
     matte(img.rgba, img.width, img.height, Number(argOf(args, "--matte-tol") ?? 26));
   }
+  if (!args.includes("--no-crop")) img = cropToAspect(img, grid);
   return img;
 }
 
+/** The `--resample` strategy, validated. */
+function strategyOf(args) {
+  const s = argOf(args, "--resample") ?? "kcentroid";
+  if (s !== "kcentroid" && s !== "box") {
+    process.stderr.write(`no resample strategy "${s}" — kcentroid or box\n`);
+    process.exit(2);
+  }
+  return s;
+}
+
 /**
- * Box-average an RGBA image down to `width` x `height`.
+ * Tight-crop to the opaque content, padded out to the grid's aspect.
  *
- * Averaged rather than sampled: a nearest-neighbour downsample of a
- * photograph keeps whichever pixel happened to land on the grid and
- * throws away the rest, which reads as noise rather than as a smaller
- * picture. Fully transparent source pixels are left out of the colour
- * average so a sprite's edge does not get pulled toward black.
+ * ON BY DEFAULT (`--no-crop` restores whole-image mapping) because margin is
+ * where the detail budget goes to die: the fisherman source is 640² but the
+ * figure is ~380×500, so mapping the whole image onto 32×32 spends a third of
+ * the texels on nothing. Cropping first hands those texels to the figure.
+ *
+ * The bbox is padded — never stretched — to the grid's aspect, centred, which
+ * is exactly the remedy the ASPECT_STRETCH warning tells the user to apply by
+ * hand. With crop on, the warning therefore cannot fire; with `--no-crop` the
+ * whole-image mapping and its warning behave as before.
  */
-function boxDown(src, srcW, srcH, width, height) {
-  const out = new Uint8ClampedArray(width * height * 4);
+function cropToAspect(img, grid) {
+  const { rgba, width, height } = img;
+  let x0 = width, y0 = height, x1 = -1, y1 = -1;
   for (let y = 0; y < height; y++) {
-    const y0 = Math.floor((y * srcH) / height);
-    const y1 = Math.max(y0 + 1, Math.floor(((y + 1) * srcH) / height));
     for (let x = 0; x < width; x++) {
-      const x0 = Math.floor((x * srcW) / width);
-      const x1 = Math.max(x0 + 1, Math.floor(((x + 1) * srcW) / width));
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      let n = 0;
-      for (let sy = y0; sy < y1; sy++) {
-        for (let sx = x0; sx < x1; sx++) {
-          const at = (sy * srcW + sx) * 4;
-          a += src[at + 3];
-          if (src[at + 3] === 0) continue;
-          r += src[at];
-          g += src[at + 1];
-          b += src[at + 2];
-          n++;
+      if (rgba[(y * width + x) * 4 + 3] > 127) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+  }
+  if (x1 < 0) return img; // nothing opaque — leave it for the empty-cell error
+  let cw = x1 - x0 + 1;
+  let ch = y1 - y0 + 1;
+  // pad the SHORT axis out to the grid's aspect, centred on the figure
+  const target = grid.width / grid.height;
+  if (cw / ch < target) cw = Math.ceil(ch * target);
+  else ch = Math.ceil(cw / target);
+  const ox = Math.max(0, Math.round(x0 - (cw - (x1 - x0 + 1)) / 2));
+  const oy = Math.max(0, Math.round(y0 - (ch - (y1 - y0 + 1)) / 2));
+  const out = new Uint8ClampedArray(cw * ch * 4);
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const sx = ox + x;
+      const sy = oy + y;
+      if (sx >= width || sy >= height) continue; // off-canvas padding stays transparent
+      const from = (sy * width + sx) * 4;
+      const to = (y * cw + x) * 4;
+      out[to] = rgba[from];
+      out[to + 1] = rgba[from + 1];
+      out[to + 2] = rgba[from + 2];
+      out[to + 3] = rgba[from + 3];
+    }
+  }
+  return { rgba: out, width: cw, height: ch };
+}
+
+/** k-means passes per texel — blocks are tiny, centroids settle in 2-3. */
+const KMEANS_PASSES = 4;
+
+/**
+ * Dominant centroid of a 2-means split over one texel's covered pixels.
+ * Ported verbatim from sprite-forge/resample.ts (its `kCentroid`): seeds are
+ * the min- and max-luma pixels; null means the block cannot split and the box
+ * average was already right.
+ */
+function kCentroid(px) {
+  const n = px.length / 4;
+  if (n < 2) return null;
+  let lo = 0, hi = 0, loL = Infinity, hiL = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const l = 0.3 * px[i * 4 + 1] + 0.59 * px[i * 4 + 2] + 0.11 * px[i * 4 + 3];
+    if (l < loL) { loL = l; lo = i; }
+    if (l > hiL) { hiL = l; hi = i; }
+  }
+  if (hiL - loL < 1) return null;
+  let c0 = [px[lo * 4 + 1], px[lo * 4 + 2], px[lo * 4 + 3]];
+  let c1 = [px[hi * 4 + 1], px[hi * 4 + 2], px[hi * 4 + 3]];
+  let w0 = 0, w1 = 0;
+  for (let pass = 0; pass < KMEANS_PASSES; pass++) {
+    let a0 = 0, a1 = 0, r0 = 0, g0 = 0, b0 = 0, r1 = 0, g1 = 0, b1 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = px[i * 4], r = px[i * 4 + 1], g = px[i * 4 + 2], b = px[i * 4 + 3];
+      const d0 = (r - c0[0]) ** 2 + (g - c0[1]) ** 2 + (b - c0[2]) ** 2;
+      const d1 = (r - c1[0]) ** 2 + (g - c1[1]) ** 2 + (b - c1[2]) ** 2;
+      if (d0 <= d1) { a0 += w; r0 += r * w; g0 += g * w; b0 += b * w; }
+      else { a1 += w; r1 += r * w; g1 += g * w; b1 += b * w; }
+    }
+    if (a0 <= 0 || a1 <= 0) return null; // degenerate split — box was right
+    c0 = [r0 / a0, g0 / a0, b0 / a0];
+    c1 = [r1 / a1, g1 / a1, b1 / a1];
+    w0 = a0;
+    w1 = a1;
+  }
+  const c = w0 >= w1 ? c0 : c1;
+  return [c[0], c[1], c[2]];
+}
+
+/**
+ * Resample an RGBA image down to `width` x `height`.
+ *
+ * Two strategies, both ported from sprite-forge/resample.ts, which measured
+ * this exact decision (its header has the full argument):
+ *
+ *   kcentroid  DEFAULT. Per texel, 2-means-split the covered source pixels
+ *              and take the dominant cluster's centroid — the AI-art
+ *              community's standard downscaler (Astropulse's pixeldetector
+ *              lineage). A noisy red-and-cream texel picks its red side
+ *              instead of averaging to mauve, so edges arrive at the palette
+ *              snap still being edges. This is where the detail comes from.
+ *
+ *   box        Premultiplied exact-coverage area average. Correct, never
+ *              invents — and averages soft gradients into in-between colours
+ *              the quantiser then has to guess at. Kept as the A/B arm.
+ *
+ * Alpha is always the premultiplied box average regardless of strategy; only
+ * the COLOUR of a texel is strategy-dependent.
+ */
+function resampleDown(src, srcW, srcH, width, height, strategy = "kcentroid") {
+  const out = new Uint8ClampedArray(width * height * 4);
+  const kx = srcW / width;
+  const ky = srcH / height;
+  const px = []; // flat [w, r, g, b] runs for the k-means strategy
+  for (let oy = 0; oy < height; oy++) {
+    const ay = oy * ky;
+    const by = ay + ky;
+    for (let ox = 0; ox < width; ox++) {
+      const ax = ox * kx;
+      const bx = ax + kx;
+      let sumW = 0, sumA = 0, sumR = 0, sumG = 0, sumB = 0;
+      px.length = 0;
+      for (let y = Math.floor(ay); y < Math.ceil(by); y++) {
+        const wy = Math.min(by, y + 1) - Math.max(ay, y);
+        for (let x = Math.floor(ax); x < Math.ceil(bx); x++) {
+          const wx = Math.min(bx, x + 1) - Math.max(ax, x);
+          const w = wx * wy;
+          const i = (y * srcW + x) * 4;
+          const a = src[i + 3] / 255;
+          const aw = a * w;
+          sumW += w;
+          sumA += aw;
+          if (aw <= 0) continue;
+          const r = src[i], g = src[i + 1], b = src[i + 2];
+          sumR += r * aw;
+          sumG += g * aw;
+          sumB += b * aw;
+          if (strategy === "kcentroid") px.push(aw, r, g, b);
         }
       }
-      const cells = (y1 - y0) * (x1 - x0);
-      const to = (y * width + x) * 4;
-      out[to] = n ? r / n : 0;
-      out[to + 1] = n ? g / n : 0;
-      out[to + 2] = n ? b / n : 0;
-      out[to + 3] = a / cells;
+      const j = (oy * width + ox) * 4;
+      out[j + 3] = Math.round((sumA / (sumW || 1)) * 255);
+      if (sumA <= 0) continue;
+      let r = sumR / sumA, g = sumG / sumA, b = sumB / sumA;
+      if (strategy === "kcentroid") {
+        const c = kCentroid(px);
+        if (c) { r = c[0]; g = c[1]; b = c[2]; }
+      }
+      out[j] = Math.round(r);
+      out[j + 1] = Math.round(g);
+      out[j + 2] = Math.round(b);
     }
   }
   return out;
@@ -442,8 +575,8 @@ async function runTrace(args) {
   // Below this the source pixel is treated as absent, not dark.
   const alphaFloor = Number(argOf(args, "--alpha") ?? 128);
 
-  const { rgba, width, height } = await loadForTrace(resolve(file), args);
-  const small = boxDown(rgba, width, height, grid.width, grid.height);
+  const { rgba, width, height } = await loadForTrace(resolve(file), args, grid);
+  const small = resampleDown(rgba, width, height, grid.width, grid.height, strategyOf(args));
 
   const opaque = [];
   for (let at = 0; at < small.length; at += 4) {
@@ -528,11 +661,11 @@ async function runTraceSet(args) {
   const skipped = [];
   const stretched = [];
   for (const file of files) {
-    const { rgba, width, height } = await loadForTrace(join(root, file), args);
+    const { rgba, width, height } = await loadForTrace(join(root, file), args, grid);
     if (aspectWarning(width, height, grid, gridId).length) {
       stretched.push(`${file} (${width}x${height})`);
     }
-    const small = boxDown(rgba, width, height, grid.width, grid.height);
+    const small = resampleDown(rgba, width, height, grid.width, grid.height, strategyOf(args));
     const opaque = [];
     for (let at = 0; at < small.length; at += 4) {
       if (small[at + 3] >= alphaFloor) {
