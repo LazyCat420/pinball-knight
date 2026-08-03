@@ -34,9 +34,15 @@ export function setImportedKnightPaintsForTest(paints: ActorPaints | null): void
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
   if (importedKnightPaints) return importedKnightPaints;
   try {
-    const sheet = await loadImportedSheet("pinball_knight", "S");
-    if (!sheet) return null;
-    const paints = importedPaints([sheet]);
+    // S and N are both authored (the roster sheets pack front and back rows);
+    // E is not — importedPaints hands it the S clips by reference, and the
+    // engine draws W as E flipped.
+    const sheets = (await Promise.all([
+      loadImportedSheet("pinball_knight", "S"),
+      loadImportedSheet("pinball_knight", "N"),
+    ])).filter((s): s is NonNullable<typeof s> => s !== null);
+    if (!sheets.length) return null;
+    const paints = importedPaints(sheets);
     if (paints) {
       importedKnightPaints = paints;
       state.playerSheets.clear();
@@ -48,8 +54,26 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
   }
 }
 
+/**
+ * Imported clips OVER the painter's, never instead of them.
+ *
+ * The sheets author the on-foot clips (idle/walk/attack/…). The painter is
+ * still the only author of the RIDE forms — `ball`, `steelball`, the six
+ * marble bodies, the ricochet forms — and of anything else the sheets skip.
+ * Total replacement (`imported ?? painted`) shipped a knight whose `ball`
+ * clip resolved to an empty frame list: the animator's `apply()` bails on
+ * empty, so entering marble form froze the sprite on its last standing frame.
+ * `ball` has no CLIP_FALLBACK entry — nothing downstream catches this.
+ */
 function resolvePaints(weapon: WeaponId, look: KnightLook): ActorPaints {
-  return importedKnightPaints ?? makeKnightPaints(weapon, look);
+  const painted = makeKnightPaints(weapon, look);
+  if (!importedKnightPaints) return painted;
+  return {
+    S: { ...painted.S, ...importedKnightPaints.S },
+    N: { ...painted.N, ...importedKnightPaints.N },
+    E: { ...painted.E, ...importedKnightPaints.E },
+    ...(painted.beats ? { beats: painted.beats } : {}),
+  };
 }
 
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {
