@@ -15,7 +15,12 @@
  *   5. trim + return          (tight pixel canvas, feet-anchored by caller)
  *
  * This module is pure/among tooling — it never ships in the game bundle.
- * Run `node tools/sprite-forge/pixelize.mjs <in.png> <out.png> [--h=64] [...]`.
+ * Run `node tools/sprite-forge/prep/pixelize.mjs <in.png> <out.png> [--h=64] [...]`.
+ *
+ * SUPERSEDED for new work by tools/sprite-forge/pixel-trace (`npm run pixels`),
+ * which emits an editable grid instead of a finished PNG and measures better on
+ * the same fixture (see pixel-trace/docs/COMPARISON.md). Kept because it still
+ * runs, and because its Cold Crypt palette is the copy other tools quote.
  */
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
