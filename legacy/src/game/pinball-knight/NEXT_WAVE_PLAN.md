@@ -82,37 +82,73 @@ sheet**, which collapses ~350 draw calls to roughly 15-20. A kind with one live
 instance still costs one draw call, so this is a win at horde scale and a wash
 for rare kinds — acceptable.
 
+### ⚠️ CORRECTED 2026-08-02 — `onBeforeCompile` CANNOT WORK HERE
+
+**This track was written against `onBeforeCompile` GLSL chunk patching. That
+mechanism does not exist on this project's renderer, and every section that
+depended on it has been rewritten below.**
+
+In `three@0.185.1`, `onBeforeCompile` is called in exactly ONE place —
+`build/three.module.js:18210`, inside the WebGL renderer. It appears **zero**
+times in `build/three.webgpu.js`; on core (`build/three.core.js:21007`) it is
+an empty no-op stub. Measured with a positive control: the grep that returns 0
+on the WebGPU build returns 1 on the WebGL build, so the scan works.
+
+This client only ever constructs `WebGPURenderer` — even the fallback is
+`WebGPURenderer({ forceWebGL: true })`, not `WebGLRenderer` (`src/render/backend.ts`).
+So the callback would never fire. Worse, it fails **silently in both
+directions**: the plan's own defensive `if (!shader.vertexShader.includes('aFrame'))
+throw` never runs either, because the function holding it is never called. Every
+actor would render stuck at frame 0 with no error anywhere.
+
+The replacement is a TSL `attribute()` on a node material — which is not exotic
+here: `fx/pools/particle-pool.ts:76-78` already drives an `InstancedMesh` of
+quads exactly this way. **The `aFrame` vec4 design below survives unchanged;
+only the plumbing does.**
+
 ### Verified available in three r185
 
-Checked in `node_modules/three`:
+Checked by importing the real modules, not by reading docs:
 
-- `Material.onBeforeCompile` — `materials/Material.js:532`
-- `InstancedMesh.instanceColor` / `setColorAt` — `objects/InstancedMesh.js:62-67`
-- `BufferAttribute.addUpdateRange` / `updateRanges` — `core/BufferAttribute.js:119,181`
-  (partial buffer upload — avoids re-uploading the whole instance buffer when
-  one actor changes frame)
+- TSL exports `attribute`, `instancedBufferAttribute`,
+  **`instancedDynamicBufferAttribute`** (the per-frame-write variant `aFrame`
+  wants), `texture`, `uv`, `instanceIndex`, `instancedMesh`.
+- `three/webgpu` exports `MeshBasicNodeMaterial` and **`MeshLambertNodeMaterial`** —
+  the node twins of the two materials `createActorSprite` already picks between.
+- `InstancedMesh.instanceColor` / `setColorAt` **still feed the node path**:
+  `InstanceNode` reads them and assigns a `vInstanceColor` varying
+  (`three.webgpu.js:18392,18425-18449,18523`). The tint section below therefore
+  still holds.
+- `BufferAttribute.addUpdateRange` / `updateRanges` — partial buffer upload.
 
 ### Implementation sketch
-
-Shader-chunk details below were verified by reading `node_modules/three/src/`
-directly, **not** from forum posts — several widely-copied snippets are wrong
-for r185 (see "the vUv trap" below).
 
 1. **`render/sprite-instances.ts`** (new) — an `InstancedMesh` per sheet, with:
    - `InstancedBufferAttribute` **`aFrame` as a `vec4`** — `(u0, v0, uScale,
      vScale)`. Offset *and* scale per instance costs nothing extra over a vec2
      and is the established idiom; flip becomes a negative `uScale`, so it
      needs no separate attribute.
-   - `onBeforeCompile` **appending after** `#include <uv_vertex>`:
-     ```glsl
-     #include <uv_vertex>
-     #ifdef USE_MAP
-       vMapUv = aFrame.xy + vMapUv * aFrame.zw;
-     #endif
+   - a **`MeshLambertNodeMaterial`** (or `MeshBasicNodeMaterial` when unlit — mirror
+     whichever `createActorSprite` picks today) whose `colorNode` samples the
+     sheet at the per-instance sub-rect:
+     ```ts
+     import { attribute, texture, uv } from "three/tsl";
+     import { MeshLambertNodeMaterial } from "three/webgpu";
+
+     const aFrame = attribute<"vec4">("aFrame", "vec4"); // (u0, v0, uScale, vScale)
+     const mat = new MeshLambertNodeMaterial();
+     mat.colorNode = texture(sheet.texture, uv().mul(aFrame.zw).add(aFrame.xy));
      ```
-     **Append, never replace the chunk.** Replacing it silently drops every
-     other map's UV varying (`vAlphaMapUv`, `vNormalMapUv`…) — harmless today
-     since `map` is the only texture, fatal the moment anyone adds an alphaMap.
+     That is the whole patch. No string replacement, no chunk ordering, no
+     `customProgramCacheKey`, and nothing that can silently no-op — a wrong
+     node is a build error, not a frame-0 sprite. `fx/pools/particle-pool.ts:76-78`
+     is the working precedent in this repo.
+   - ⚠️ **`colorNode`, NEVER `fragmentNode`.** `render/mrt-coverage.test.ts`
+     fails the build on any scene material using `fragmentNode`, and it is right
+     to: a `fragmentNode` material skips `setupDiffuseColor`, so the scene MRT's
+     `albedo` attachment gets nothing and the horde renders as a silhouette-shaped
+     **hole in the floor**. `colorNode` feeds `diffuseColor`, which is exactly
+     what that attachment reads.
    - `instanceColor` via `setColorAt` for the damage-flash tint.
    - slot claim/release/recycle, mirroring `blob-pool.ts`'s proven shape.
 2. **Billboarding is FREE here — do not write a billboard shader.** The
@@ -145,28 +181,33 @@ Two caveats: `instanceColor` is **RGB only** (no per-instance alpha), and
 do — build flash colours with `new THREE.Color().setHex(0xff0000,
 THREE.SRGBColorSpace)` or they look washed out.
 
-### The vUv trap (why old examples fail silently)
+### The vUv trap — NO LONGER APPLIES, and that is the point
 
-three.js renamed `vUv` → `vMapUv` (per-map varyings) around **r151-r152**, so
-every atlas snippet written before then is wrong on r185 and fails *silently* —
-the shader compiles and renders the wrong frame. Related: r185's `uv_vertex`
-uses a `MAP_UV` macro, not a literal `uv`, so hardcoding `uv` only works while
-`map.channel === 0`.
+The original plan carried a long warning about three renaming `vUv` → `vMapUv`
+around r151-r152, about the `MAP_UV` macro, about asserting `.replace()` matched,
+and about `customProgramCacheKey`. **Every one of those hazards is an artefact of
+patching GLSL strings.** On the TSL path there is no chunk, no varying name to
+get wrong, and no cache key to collide — the UV expression is written directly
+in the node graph.
 
-**Always assert the patch matched**, because a no-op `.replace()` is the single
-most common failure mode here:
-```js
-if (!shader.vertexShader.includes('aFrame')) throw new Error('atlas patch failed');
-```
-Also set `customProgramCacheKey` so patched and unpatched materials cannot
-collide in three's program cache.
+Keep this section as the reason the mechanism changed: the old approach carried
+four separate silent-failure modes, and the replacement carries none of them.
+That, not elegance, is why it is worth the rewrite.
 
 ### Texture setup
 
-`NearestFilter` (already used) **plus `ClampToEdgeWrapping`** — the common
-example uses `RepeatWrapping`, which bleeds neighbouring atlas cells at frame
-edges. Leave `texture.offset`/`repeat` at defaults: `mapTransform` folds into
-`vMapUv` and would double-apply.
+`NearestFilter` (already used) **plus `ClampToEdgeWrapping`** — `RepeatWrapping`
+bleeds neighbouring atlas cells at frame edges.
+
+Leave `texture.offset` / `texture.repeat` at their defaults and do **not** clone
+the texture. Both statements now carry more weight than they did:
+
+- The frame offset moves into `aFrame`, so `tex.offset.x` has no job left. It is
+  precisely that field living on the texture object that forces today's
+  per-actor clone (`sprite.ts:1400-1406`), so removing its use is what unlocks
+  sharing one texture across the horde.
+- A non-default `offset`/`repeat` would still be folded in by three's own map
+  transform and **double-apply** on top of the `aFrame` maths.
 
 ### Pitfalls to design against
 
@@ -210,10 +251,18 @@ edges. Leave `texture.offset`/`repeat` at defaults: `mapTransform` folds into
   (note `updateRange` was *removed* in r169; ranges accumulate and need
   `clearUpdateRanges()`), but many small `bufferSubData` calls are often slower
   than one full upload at this size. Just upload the whole buffer.
-- **Custom vertex shaders break shadows/depth prepass.** `onBeforeCompile`
-  patches only that material; shadow maps use `MeshDepthMaterial`, which knows
-  nothing about the UV patch. Only relevant if actors cast shadows — they
-  currently do not.
+- **The shadow pass does not know about `aFrame`.** Unchanged in substance by the
+  TSL rewrite, only in mechanism: three's node renderer swaps in a shadow
+  material via `scene.overrideMaterial` (`ShadowNode.updateShadow`), gated on
+  `material.allowOverride === true` (`three.webgpu.js:62743`). That override has
+  no `colorNode`, so an alpha-cutout silhouette would be wrong. Only relevant if
+  actors cast shadows — they currently do not.
+- **Build the instanced material inside `withSceneContext`.** Anything compiled
+  while no render target is bound skips the MRT block in `NodeMaterial.setup`
+  and emits a one-output shader, which Dawn then rejects against the
+  two-attachment scene target. `pixel-pass.ts` exposes `withSceneContext` for
+  exactly this and now holds it across the await (fixed 2026-08-02); a new
+  material warmed outside it would reintroduce the bug.
 
 ### Expected payoff
 
@@ -224,11 +273,29 @@ as well as draw calls.
 
 ### Effort / risk
 
-Largest remaining item. ~1-2 focused sessions. **Medium-high risk** — it touches
-what every actor looks like, and a subtle UV bug shows as the wrong animation
-frame rather than a crash. Mitigations: the `ActorSprite` interface is
-preserved so it can be feature-flagged and reverted wholesale; assert the
-shader patch matched; and QA the occlusion silhouette explicitly.
+Largest remaining item. ~1-2 focused sessions. **Risk drops from medium-high to
+medium** with the TSL mechanism: the four silent-failure modes of chunk patching
+(unmatched `.replace()`, the `vUv`/`vMapUv` rename, the `MAP_UV` macro, program-cache
+collisions) are all gone, and a malformed node graph fails loudly at build time
+instead of rendering frame 0 forever.
+
+What remains genuinely risky is unchanged and is about *behaviour*, not shaders:
+it touches what every actor looks like, and the `transparent`/`alphaTest` flip
+below moves actors between render passes. Mitigations: the `ActorSprite`
+interface is preserved so the whole thing can be feature-flagged and reverted;
+QA the occlusion silhouette explicitly; and check the horde against
+`render/mrt-coverage.test.ts`'s rule before wiring it in.
+
+### Before starting, re-measure the premise
+
+This track is gated (line 35) on deep floors still chugging. That gate has never
+been evaluated against numbers, and the one adjacent measurement argues for
+caution: `docs/webgpu-plan.md`'s Phase 0 (filled in 2026-08-02) found the GPU
+idle at ~390 µs while `pixelPass.render` — CPU submission — was 84% of the
+frame, with draw calls at 290 p50. Draw-call submission is therefore the right
+*category* of target, which is a point in this track's favour; but run
+`__dungeonProfile(600)` on a deep floor first and write the number down, so the
+payoff below can be checked rather than assumed.
 
 If this ever needs to go further (per-instance culling, sorting, real
 visibility), `agargaro/instanced-mesh` is the maintained library that adds
