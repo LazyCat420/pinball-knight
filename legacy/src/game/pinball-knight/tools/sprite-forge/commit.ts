@@ -61,21 +61,43 @@ const OPAQUE_CUTOFF = 127;
 /**
  * The camera rung a commit sizes for, in atlas texels.
  *
- * The WIDEST rung (72), not the default (84), because the fit constraint is the
- * tightest rung and a figure that overflows there would have to be shrunk on
- * load — silently handing back the 1:1 property this whole module exists to
- * establish. `SPRITE_PIXEL_GRID` is `PPU * 3/2`, so `CAMERA_ZOOMS` runs
- * {120, 108, 96, 84, 72}; sizing for 72 fits all five. See `oneToOneScale` —
- * the TEXEL count is rung-independent, so this only decides how much of the
- * cel the figure fills.
+ * `SPRITE_PIXEL_GRID` is `PPU * 3/2`, so `CAMERA_ZOOMS` runs {120, 108, 96, 84,
+ * 72} and the DEFAULT is 84 (`CAMERA_ZOOM_DEFAULT = "wider"`, PPU 56). This is
+ * the rung to size for. See `oneToOneScale` — the TEXEL count of a committed
+ * sheet is rung-INDEPENDENT, so this constant alone decides the figure's
+ * resolution, everywhere, forever.
  *
- * ⚠️ 54 here was the 2026-08-03 "knight is tiny" bug: the value outlived the
- * 9/8 sprite ladder ({90, 81, 72, 63, 54}) it was written for, and because a
- * 1:1 import is rung-independent the knight shipped 46 texels tall AT EVERY
- * ZOOM — 64% of the height a painted actor gets at the default rung. When the
- * ladder moves, this constant and `commit.test.ts`'s rung arrays move with it.
+ * ⚠️ TWICE NOW THIS HAS BEEN THE "KNIGHT IS TINY" BUG, for two different
+ * reasons, and the second one is the interesting one:
+ *
+ *   · 54 (fixed 2026-08-03) outlived the 9/8 sprite ladder {90, 81, 72, 63, 54}
+ *     it was written for. The knight shipped 46 texels at every zoom.
+ *   · 72 (fixed 2026-08-03, this change) was a deliberate choice of the WIDEST
+ *     rung, on the argument that the tightest fit constraint must hold at all
+ *     five so `fitsArtBox` never falls back. It bought that guarantee with 20%
+ *     of the figure's linear resolution at the rung people actually play:
+ *
+ *         rung   imported (fitGrid 72)   painted actor   share
+ *          120       32×60 texels         68×115          52%
+ *           84       32×60 texels         47× 80          75%   <- DEFAULT
+ *
+ *     Measured through `paintInArtSpace` → `crushToGrid`, both at the same
+ *     rung. The player's report was "the main character is still a blur", and
+ *     it was: 1315 opaque texels against the procedural knight's 2301 standing
+ *     beside him.
+ *
+ * At 84 the budget is `floor(110 × 84 / 128)` = 72 texels — +20% linear, +44%
+ * area — and `fitsArtBox` still passes at 84/96/108/120 (109.71 art units
+ * against the 110 limit at 84, which is what the `Math.floor` below is for).
+ * The WIDEST rung, 72, no longer fits 1:1 and takes the fitted k-centroid
+ * resample every other imported creature already takes. That is the right end
+ * to spend it: `widest` is the rung where the actor is smallest on screen, so
+ * it is where a fractional reduce costs the least — and it is not the default.
+ *
+ * When the ladder moves, this constant and `commit.test.ts`'s rung arrays move
+ * with it.
  */
-export const FIT_GRID = 72;
+export const FIT_GRID = 84;
 
 /** The atlas entry lock every monster sheet is held to. Mirrors `boot/sheets.ts`. */
 export const MAX_ENTRIES = 20;
@@ -501,7 +523,13 @@ export function commitToGrid(
           : ` (under the ${maxEntries} lock with room to spare)`) +
         (despeckled ? ` [despeckled ${despeckled} orphan texel(s)]` : "") +
         (bans.size ? ` [banned entries: ${[...bans.keys()].sort((a, b) => a - b).join(",")}]` : "") +
-        `. This sheet imports 1:1 at every camera rung.`,
+        // Name the rungs rather than claiming all five. The claim was true only
+        // while `FIT_GRID` was the WIDEST rung; sizing for the DEFAULT trades
+        // the two widest rungs for 20% more figure everywhere else, and a
+        // verdict line that overstates the guarantee is how the trade would get
+        // silently reverted by whoever reads it next.
+        `. Imports 1:1 at atlas grid ≥ ${fitGrid}` +
+        (fitGrid > 72 ? `; wider rungs take the fitted resample.` : ` — every camera rung.`),
     },
   };
 }

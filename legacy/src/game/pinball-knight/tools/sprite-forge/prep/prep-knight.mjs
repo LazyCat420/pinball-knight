@@ -237,13 +237,80 @@ async function loadSheet(base) {
   return { im, width: img.width, height: img.height, file };
 }
 
+/** Contiguous true runs of `occ`, at least `min` long. */
+function inkRuns(occ, min) {
+  const out = [];
+  let s = -1;
+  for (let i = 0; i < occ.length; i++) {
+    if (occ[i]) { if (s < 0) s = i; }
+    else if (s >= 0) { if (i - s >= min) out.push([s, i - 1]); s = -1; }
+  }
+  if (s >= 0 && occ.length - s >= min) out.push([s, occ.length - 1]);
+  return out;
+}
+
+/**
+ * A RAGGED sheet: rows found by ink, and each row cut by its OWN ink gaps.
+ *
+ * ⚠️ THIS EXISTS BECAUSE `sliceGrid` FORCES ONE COLUMN COUNT ON EVERY ROW, and
+ * `13_side_profile_E.png` does not have one. It lays out 5 idle poses, 6 walk
+ * poses and 4 attack poses — and it was declared `[6, 3]`, so the cutter
+ * searched ±11% of the sheet width for the emptiest column near each of six
+ * imaginary boundaries and sliced THROUGH the art. The result had the right
+ * total (18) and nothing checked the shape:
+ *
+ *     [1]   5×13    a speck
+ *     [2] 307×214   two poses welded into one frame
+ *     [3]  45×162   a bare sword blade
+ *
+ * The PLAN then picked frames 0-3 / 6-11 / 12-15 out of that, so the published
+ * idle row was a knight, a knight, half a knight and a floating sword — the
+ * player's "the idle is disappearing".
+ *
+ * No grid is forced here, and none is needed: measured on the keyed sheet, the
+ * three bands slice into exactly 5 / 6 / 4 runs of 111-244 px separated by
+ * gaps of 21-81 px, with no fragment and no weld. The swords stay with their
+ * knights because a sword TOUCHES its hand — connectivity is the property that
+ * actually holds, and a column count is not.
+ */
+function sliceRagged(sheet, minRunFrac = 0.02) {
+  const { im, width, height } = sheet;
+  const opaque = (x, y) => im.data[(y * width + x) * 4 + 3] > 127;
+  const rowOcc = new Uint8Array(height);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) if (opaque(x, y)) { rowOcc[y] = 1; break; }
+
+  const out = [];
+  for (const [ry0, ry1] of inkRuns(rowOcc, Math.round(height * 0.04))) {
+    const colOcc = new Uint8Array(width);
+    for (let x = 0; x < width; x++)
+      for (let y = ry0; y <= ry1; y++) if (opaque(x, y)) { colOcc[x] = 1; break; }
+    for (const [cx0, cx1] of inkRuns(colOcc, Math.round(width * minRunFrac))) {
+      let x0 = width, y0 = height, x1 = -1, y1 = -1;
+      for (let y = ry0; y <= ry1; y++)
+        for (let x = cx0; x <= cx1; x++)
+          if (opaque(x, y)) {
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+      if (x1 >= 0) out.push({ x0, y0, x1, y1, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+    }
+  }
+  return out;
+}
+
+/** `cols === 0` selects the ragged slice above; anything else is the grid cut. */
 function sliceKnight(sheet, cols, rows) {
   const { im, width, height } = sheet;
-  for (const c of sliceGrid(im.data, width, height, cols, rows)) {
+  const cut = () => (cols === 0 ? sliceRagged(sheet) : sliceGrid(im.data, width, height, cols, rows));
+  for (const c of cut()) {
     dropBleed(im.data, width, c);
     dropText(im.data, width, c);
   }
-  return sliceGrid(im.data, width, height, cols, rows).flatMap((c) => splitStacked(im.data, width, c));
+  if (cols === 0) return cut();
+  return cut().flatMap((c) => splitStacked(im.data, width, c));
 }
 
 /**
@@ -264,6 +331,24 @@ function sliceKnight(sheet, cols, rows) {
  * (the merge in knight-sheets.ts fills clips per FACING, so a clip missing
  * from the N sheet would fall back to the painter's N, not to imported S).
  */
+/**
+ * The commit block this prep writes into every sidecar it produces.
+ *
+ * ⚠️ IT IS WRITTEN HERE BECAUSE THIS SCRIPT OVERWRITES THE SIDECAR. `build`
+ * rewrites `inbox/pinball_knight-{S,N}.json` wholesale, so a `commit` block
+ * added by hand after a prep run survives exactly until the next one — and then
+ * `npm run sprites` republishes the player UNCOMMITTED and 43,000 colours deep,
+ * with no error anywhere, because publishing an un-gridded sheet is a perfectly
+ * legal thing for the forge to do. The knight's sidecars had already lost it
+ * (checked: `commit` is absent at `92e2eeb`, `a11dfa8` and on `main`); the
+ * committed art only survived because the promoted PNG in `inbox/` still
+ * carried the ×8 lattice for `detectPixelGrid` to find.
+ *
+ * `rot` is banned because the crush's luma-weighted snap discounts blue to
+ * 0.11, so warm-grey armor matches the zombie ramp — see `commit.ts`'s `ban`.
+ */
+const COMMIT = { bans: ["rot"] };
+
 const PLAN = {
   S: [
     ["idle", "01_idle", [4, 2], [0, 1, 2, 3]],
@@ -273,8 +358,18 @@ const PLAN = {
     // toward the camera as walking away. The open-face head from the idle
     // sheet (frame 0, eyes open) is transplanted onto each walk frame — skin
     // pixels are the one front-tell that survives the crush.
-    ["walk", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0] }],
-    ["run", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0] }],
+    //
+    // ⚠️ `faceMirror` — THE DONOR AND THE TARGET FACE OPPOSITE WAYS. The idle
+    // figure stands square to the camera with its head turned to the viewer's
+    // LEFT; the walk row is a ¾ profile STRIDING RIGHT (visor grille on the
+    // right, leading boot to the right). Pasting the donor unflipped shipped a
+    // knight whose head looked back over his shoulder in every walk and run
+    // frame — measured on the published S sheet, face centroid 2.6-3.2 texels
+    // LEFT of the head bbox centre while the feet led 1.3-2.3 texels RIGHT of
+    // the torso. The engine draws W as E flipped, so what the player reported
+    // is the mirror of that: "the feet are left and the head is right".
+    ["walk", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0], faceMirror: true }],
+    ["run", "03_walk", [3, 2], [0, 1, 2], undefined, { face: ["01_idle", 0], faceMirror: true }],
     ["attack", "09_attack", [4, 2], [0, 1, 2, 3]],
     ["stumble", "05_touched_lava", [2, 2], [0, 1]],
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
@@ -289,11 +384,22 @@ const PLAN = {
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
     ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
   ],
+  // ⚠️ RAGGED (`cols: 0`), NOT `[6, 3]`. This sheet lays out 5 idle / 6 walk /
+  // 4 attack poses; declaring six columns cut through the art and published a
+  // bare sword blade as an idle frame — see `sliceRagged`. The picks below
+  // index the ragged slice's 15 frames in reading order, and every one of them
+  // is used: 0-4 idle, 5-10 walk, 11-14 attack.
+  //
+  // No `face:` here. The transplant exists because the S/N walk rows wear a
+  // CLOSED VISOR; this sheet is drawn with the visor up and the face already
+  // points the way the knight walks, which is the property the transplant was
+  // faking. It is also the sheet the engine uses for E and (flipped) W, so it
+  // is where the head/feet agreement is most visible.
   E: [
-    ["idle", "13_side_profile_E", [6, 3], [0, 1, 2, 3]],
-    ["walk", "13_side_profile_E", [6, 3], [6, 7, 8, 9, 10, 11]],
-    ["run", "13_side_profile_E", [6, 3], [6, 7, 8, 9, 10, 11]],
-    ["attack", "13_side_profile_E", [6, 3], [12, 13, 14, 15]],
+    ["idle", "13_side_profile_E", [0, 3], [0, 1, 2, 3, 4]],
+    ["walk", "13_side_profile_E", [0, 3], [5, 6, 7, 8, 9, 10]],
+    ["run", "13_side_profile_E", [0, 3], [5, 6, 7, 8, 9, 10]],
+    ["attack", "13_side_profile_E", [0, 3], [11, 12, 13, 14]],
     ["stumble", "05_touched_lava", [2, 2], [0, 1]],
     ["death", "05_touched_lava", [2, 2], [1, 2, 3]],
     ["roll", "12_roll", [7, 1], [1, 2, 3, 4, 2, 1], 0],
@@ -324,8 +430,14 @@ function headBox(sheet, f, frac = 0.38) {
  * Replace the target frame's helmet with the donor's, nearest-scaled to the
  * target helmet's exact bbox — full coverage, no grille rim left behind, and
  * the ≤4% aspect distortion disappears under the k-centroid resample.
+ *
+ * `mirror` flips the donor horizontally on the way in. A transplant carries the
+ * donor's FACING with it, and a head is the one part of a figure whose facing
+ * the player reads directly — so a donor picked for its open visor rather than
+ * for its heading has to be turned to match the body it lands on. See the
+ * `faceMirror` note in `PLAN`.
  */
-export function transplantHead(target, tf, donor, df) {
+export function transplantHead(target, tf, donor, df, mirror = false) {
   const tb = headBox(target, tf);
   const db = headBox(donor, df);
   if (!tb || !db) return false;
@@ -333,7 +445,8 @@ export function transplantHead(target, tf, donor, df) {
     for (let x = tb.x0; x <= tb.x1; x++) target.im.data[(y * target.width + x) * 4 + 3] = 0;
   for (let ty = 0; ty < tb.h; ty++) {
     for (let tx = 0; tx < tb.w; tx++) {
-      const sx = db.x0 + Math.min(db.w - 1, Math.floor((tx * db.w) / tb.w));
+      const rx = mirror ? tb.w - 1 - tx : tx;
+      const sx = db.x0 + Math.min(db.w - 1, Math.floor((rx * db.w) / tb.w));
       const sy = db.y0 + Math.min(db.h - 1, Math.floor((ty * db.h) / tb.h));
       const from = (sy * donor.width + sx) * 4;
       if (donor.im.data[from + 3] <= 127) continue;
@@ -388,7 +501,7 @@ if (mode === "build") {
           const key = `${base}:${frames[i].x0},${frames[i].y0}`;
           if (transplanted.has(key)) continue;
           transplanted.add(key);
-          if (!transplantHead(sheet, frames[i], donor.sheet, donor.frames[donorIdx])) {
+          if (!transplantHead(sheet, frames[i], donor.sheet, donor.frames[donorIdx], !!opts.faceMirror)) {
             throw new Error(`${base}[${i}]: face transplant found no head bbox`);
           }
         }
@@ -437,7 +550,33 @@ if (mode === "build") {
     ox2.imageSmoothingEnabled = true;
     ox2.quality = "best";
 
+    /**
+     * WHERE EACH POSE WENT — the fact the forge cannot recover from pixels.
+     *
+     * ⚠️ THIS IS THE FIX FOR "THE IDLE IS DISAPPEARING". Downstream, the forge
+     * finds cells by splitting a row at its blank COLUMNS, which is the only
+     * signal a bare PNG carries — and it is wrong for any pose that contains a
+     * blank column. The side-profile (E) knight holds his sword out from the
+     * hip, so a full-height gap runs between blade and body and the row sliced:
+     *
+     *     E idle    4 poses -> 5 cells   286, 9, 275, 169, 82 px wide
+     *     E walk    6 poses -> 7 cells
+     *     E attack  4 poses -> 5 cells
+     *
+     * The 9px cell is a BARE SWORD BLADE, published as an animation frame; the
+     * idle clip played knight, knight, half a knight, a floating sword.
+     *
+     * It cannot be repaired by a better heuristic downstream. Measured on this
+     * layout, the gap either side of a detached blade (118-322 px) sits INSIDE
+     * the range of real frame boundaries (241-463 px), so no threshold and no
+     * merge-the-closest-pair rule separates them. The information is simply not
+     * in the image — but it IS right here, where the pose was placed. Writing
+     * the rect down costs one line and makes the slice exact.
+     */
+    const rects = [];
     rows.forEach((row, ri) => {
+      const rowRects = [];
+      rects.push(rowRects);
       row.frames.forEach((f, ci) => {
         const tmp = createCanvas(f.w, f.h);
         const tx = tmp.getContext("2d");
@@ -462,6 +601,7 @@ if (mode === "build") {
         const px = ci * CELL_W + Math.round((CELL_W - dw) / 2);
         const py = ri * CELL_H + (CELL_H - 10) - dh; // feet on a common baseline
         ox2.drawImage(tmp, px, py, dw, dh);
+        rowRects.push([px, py, px + dw - 1, py + dh - 1]);
       });
     });
 
@@ -469,7 +609,7 @@ if (mode === "build") {
     writeFileSync(png, out.toBuffer("image/png"));
     writeFileSync(
       join(INBOX, `pinball_knight-${dir}.json`),
-      JSON.stringify({ rows: PLAN[dir].map(([clip]) => clip) }, null, 2) + "\n",
+      JSON.stringify({ rows: PLAN[dir].map(([clip]) => clip), rects, commit: COMMIT }, null, 2) + "\n",
     );
     console.log(`${png}  ${out.width}x${out.height}  cell ${CELL_W}x${CELL_H}`);
     rows.forEach((r) => console.log(`  ${r.clip.padEnd(8)} ${String(r.frames.length).padStart(2)} frames  scale ${scaleOf.get(r.base).toFixed(3)}`));

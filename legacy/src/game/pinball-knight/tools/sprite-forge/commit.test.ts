@@ -225,15 +225,28 @@ describe("the grid commit", () => {
     }
   });
 
-  it("the committed figure FITS the cel at the 1:1 scale, at every rung", () => {
-    // Sizing for the widest rung is the point of `FIT_GRID`; assert it actually
-    // buys the property, at all five, rather than only at the one it sized for.
+  it("the committed figure FITS the cel at the 1:1 scale, at FIT_GRID and every closer rung", () => {
+    // `FIT_GRID` names the rung the figure is sized to FILL. Since a committed
+    // sheet's texel count is rung-independent, it then fits every CLOSER rung
+    // for free (same texels, bigger cel) and overflows every wider one.
+    //
+    // Both halves are asserted. The positive half is the property the import
+    // path depends on. The negative half pins the TRADE: `FIT_GRID` is a
+    // resolution/coverage dial, and a change that quietly made 72 fit again
+    // would mean the figure had been shrunk back to where the player called it
+    // a blur. If the ladder or the default rung moves, this list moves.
     const factor = 8;
     const r = commitToGrid(generatedSheet(), ROWS, PAL(), { factor });
     const cells = r.rows.flatMap((x) => x.cells);
-    for (const grid of [120, 108, 96, 84, 72]) {
+    const ladder = [120, 108, 96, 84, 72];
+    expect(ladder).toContain(FIT_GRID);
+    for (const grid of ladder.filter((g) => g >= FIT_GRID)) {
       const k = oneToOneScale(factor, grid);
       expect(fitsArtBox(cells, k), `overflows the cel at grid ${grid}`).toBe(true);
+    }
+    for (const grid of ladder.filter((g) => g < FIT_GRID)) {
+      const k = oneToOneScale(factor, grid);
+      expect(fitsArtBox(cells, k), `unexpectedly fits at grid ${grid} — is the figure too small?`).toBe(false);
     }
     // ...and it is not trivially satisfied by being microscopic.
     expect(r.report.texelH).toBeGreaterThan((ART_FIT_H * FIT_GRID) / ART_BOX / 2);

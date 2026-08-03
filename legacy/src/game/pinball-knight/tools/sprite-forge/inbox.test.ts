@@ -99,6 +99,30 @@ interface Sidecar {
    */
   cells?: (number | number[])[];
   /**
+   * EXACT cell rects per row, `[x0, y0, x1, y1]` inclusive — the slicer is
+   * skipped entirely when this is present.
+   *
+   * `cells` (above) is a COUNT, and a count can only ever ask the slicer to try
+   * again differently. This is the answer itself, and it exists because there
+   * are sheets whose frame boundaries are not recoverable from the pixels at
+   * all: the slicer separates poses at blank columns, so a pose holding a sword
+   * out from the body — the knight's E sheet — splits into a body and a bare
+   * blade, and publishes the blade as an animation frame. Measured on that
+   * layout, an intra-pose gap (118-322 px) is INSIDE the range of a real frame
+   * boundary (241-463 px); there is no threshold, and no merge-the-closest-pair
+   * rule, that separates them.
+   *
+   * The producer of a sheet always knows this. `prep-knight.mjs` composes each
+   * pose at a computed `(px, py, dw, dh)` and used to throw it away; it now
+   * writes it here, and `commit.ts`'s repack writes its own rects the same way,
+   * so both slices in the chain are exact rather than re-derived.
+   *
+   * Rects are trusted as given — they are ink-tight and, on a committed sheet,
+   * lattice-aligned by construction. Re-deriving them is exactly the step this
+   * removes.
+   */
+  rects?: number[][][];
+  /**
    * Render-scale multiplier, copied into the shipped manifest. When absent, a
    * `scale` already present in the published manifest is carried forward —
    * these used to be hand-edits to `public/sprites/*.json`, and every re-run
@@ -223,7 +247,26 @@ describe("sprite inbox", () => {
           r.warnings.map((x) => `⚠ ${x}`).join("\n") + (r.warnings.length ? "\n" : "");
       }
 
-      const sliced = sliceSheet(sdata, sheet.width, sheet.height);
+      // DECLARED rects skip the slicer outright — see `Sidecar.rects`.
+      const declared = side?.rects?.map((cells) => ({ cells: cells.map((c) => [...c] as Cell) }));
+      const sliced = declared ?? sliceSheet(sdata, sheet.width, sheet.height);
+      if (declared) {
+        // A declared rect that has no ink under it means the sidecar and the
+        // PNG came from different runs — a stale `rects` block silently
+        // publishes empty frames, which is the same disappearing-sprite failure
+        // it was written to remove, just from the other direction.
+        const empty: string[] = [];
+        declared.forEach((r, ri) =>
+          r.cells.forEach((c, ci) => {
+            let ink = 0;
+            for (let y = Math.max(0, c[1]); y <= Math.min(sheet.height - 1, c[3]); y++)
+              for (let x = Math.max(0, c[0]); x <= Math.min(sheet.width - 1, c[2]); x++)
+                if (sdata[(y * sheet.width + x) * 4 + 3] > 8) ink++;
+            if (ink === 0) empty.push(`row ${ri} cell ${ci} [${c.join(",")}]`);
+          }),
+        );
+        expect(empty, `${file}: declared rects with no ink under them — is the sidecar stale?`).toEqual([]);
+      }
       // A sheet that slices into one cell is usually a solid background that was
       // never keyed out, or ruled lines this did not recognise. Say so plainly:
       // every number downstream would otherwise describe one big rectangle.
@@ -297,7 +340,15 @@ describe("sprite inbox", () => {
         );
       }
       const k = exact ? oneToOne * (px / ART_BOX) : sheetScale(fitCells, px);
-      const outDir = join(WORK, name);
+      // ⚠️ PER FACING, NOT PER CREATURE. This `rmSync` clears the run's own
+      // stale output, and while the directory was `work/<name>` the two facings
+      // of a two-sheet creature shared it: `pinball_knight-N` was processed
+      // first (readdir order), then `pinball_knight-S` deleted everything N had
+      // just written. The committed sheet the run tells you to promote is
+      // written here, so only one of the two ever existed to promote — and the
+      // frame dumps carry a `<dir>-` prefix, which made the survivor look like
+      // a complete creature rather than half of one.
+      const outDir = join(WORK, `${name}-${dir}`);
       rmSync(outDir, { recursive: true, force: true });
       mkdirSync(outDir, { recursive: true });
 
@@ -401,23 +452,43 @@ describe("sprite inbox", () => {
         cctx.putImageData(cimg, 0, 0);
         const cname = `${name}-${dir}.png`;
         writeFileSync(join(outDir, cname), cc.toBuffer("image/png"));
-        // ⚠️ NO `cells` OVERRIDE on a committed sheet, deliberately.
+        // ⚠️ NO `cells` OVERRIDE on a committed sheet, deliberately — but the
+        // exact `rects` ARE written, and they are not the same thing.
         //
         // `equalCells` divides a row into N EQUAL columns, which is right for a
         // ruled sheet and destroys a committed one: the cell stops being ink-
         // tight, so its width stops being a whole number of blocks (measured,
         // 195px against a ×8 lattice) and the 1:1 reduce degrades to a
-        // fractional resample — the exact defect the commit removes. The commit
-        // already PROVED the auto-slice returns this shape before writing, so
-        // the override has nothing to add and everything to break.
+        // fractional resample — the exact defect the commit removes.
+        //
+        // `rects` are the repack's OWN output, ink-tight and lattice-aligned by
+        // construction, so declaring them re-derives nothing and loses nothing.
+        // Without them the promoted sheet is sliced from scratch a second time
+        // and hits the same blank-column defect the first slice did: the
+        // knight's E sheet came back with a bare sword blade as a frame both
+        // times. The `commit` block is carried too — a promoted sheet that lost
+        // it re-publishes UNCOMMITTED on the next run, 43,000 colours deep and
+        // with no `grid`, which is exactly how the player's sprite silently
+        // reverted to soft art once already.
         writeFileSync(
           join(outDir, `${name}-${dir}.json`),
-          JSON.stringify({ rows: manifest.rows.map((r) => r.clip) }, null, 1) + "\n",
+          JSON.stringify(
+            {
+              rows: manifest.rows.map((r) => r.clip),
+              rects: c.rows.map((r) => r.cells),
+              ...(side.commit !== undefined ? { commit: side.commit } : {}),
+              ...(side.matte ? { matte: side.matte } : {}),
+              ...(side.scale !== undefined ? { scale: side.scale } : {}),
+            },
+            null,
+            1,
+          ) + "\n",
         );
         commitLine =
           `COMMIT ${c.report.verdict}\n` +
           `       GATE re-measured on the committed sheet: ${cg.verdict}\n` +
-          `       promote with:  cp ${join(outDir, cname)} ${join(INBOX, cname)}\n`;
+          `       promote with:  cp ${join(outDir, cname)} ${join(INBOX, cname)} && ` +
+          `cp ${join(outDir, `${name}-${dir}.json`)} ${join(INBOX, `${name}-${dir}.json`)}\n`;
       }
 
       const mean = (f: (r: NoiseRow) => number): number => stats.reduce((a, r) => a + f(r), 0) / stats.length;
