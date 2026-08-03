@@ -50,6 +50,7 @@ import { detectPixelGrid } from "./grid";
 import { commitToGrid, type CommitOptions } from "./commit";
 import { matte, rgbHex, type MatteOptions } from "./matte";
 import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
+import { PALETTE_FAMILIES } from "../../render/palette";
 
 const ROOT = __dirname;
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
@@ -114,8 +115,27 @@ interface Sidecar {
    * decides which 20 of 32 colours the creature keeps; that is an art decision
    * and it has to be looked at before it becomes the sheet. The run prints the
    * one command that promotes it.
+   *
+   * `bans` names palette FAMILIES (see `PALETTE_FAMILIES`) this creature's
+   * materials must not use — e.g. the knight bans "rot" so its grey armor
+   * cannot be snapped zombie-green. Translated to entry indices here, because
+   * the sidecar is authored by a human and the family names are the vocabulary
+   * the palette documents.
    */
-  commit?: boolean | CommitOptions;
+  commit?: boolean | (CommitOptions & { bans?: string[] });
+}
+
+/** Sidecar commit options with family names resolved to palette entries. */
+function commitOpts(side: Sidecar): CommitOptions {
+  if (typeof side.commit !== "object") return {};
+  const { bans, ...rest } = side.commit;
+  if (!bans?.length) return rest;
+  const ban = bans.flatMap((f) => {
+    const fam = PALETTE_FAMILIES[f];
+    if (!fam) throw new Error(`sidecar bans unknown family "${f}" — known: ${Object.keys(PALETTE_FAMILIES).join(", ")}`);
+    return [...fam];
+  });
+  return { ...rest, ban: [...new Set([...(rest.ban ?? []), ...ban])] };
 }
 
 /**
@@ -358,7 +378,7 @@ describe("sprite inbox", () => {
       // an eviction nobody saw is how a creature quietly loses its costume.
       let commitLine = "";
       if (side?.commit) {
-        const copts = typeof side.commit === "object" ? side.commit : {};
+        const copts = commitOpts(side);
         const c = commitToGrid(
           { width: sheet.width, height: sheet.height, data: sdata },
           manifest.rows,

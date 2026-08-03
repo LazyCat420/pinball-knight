@@ -85,6 +85,17 @@ export interface CommitOptions {
   maxEntries?: number;
   /** Blank texels between cells. ≥1 so the slicer can separate them again. */
   gutter?: number;
+  /**
+   * Palette entries this sheet may NOT use — a MATERIAL decision, not a colour
+   * one. Measured on the knight (2026-08-03, palette-ab): the luma-weighted
+   * snap discounts blue to 0.11, so warm-grey armor matches the rot ramp and
+   * ~12% of crushed texels came out zombie-green. No source-space grade can fix
+   * that (killing the green cast measured IDENTICAL to no grade), because the
+   * intent "this creature owns no rot" is metadata the pixels do not carry.
+   * Banned entries are remapped to their nearest allowed entry under the snap's
+   * own metric, BEFORE the evict, so they never hold a lock slot.
+   */
+  ban?: readonly number[];
 }
 
 export interface CommitReport {
@@ -182,6 +193,27 @@ export function commitToGrid(
   // meant. See `resample.ts`.
   const texels = all.map((c, i) => resampleCell(cutCell(src, c), sized[i][0], sized[i][1], "kcentroid"));
 
+  // The material ban, resolved once: banned entry → nearest allowed entry
+  // under the same metric the snap chose it with. See `CommitOptions.ban`.
+  const bans = new Map<number, number>();
+  if (opts.ban?.length) {
+    const banned = new Set(opts.ban);
+    const allowed = pal.map((_, i) => i).filter((i) => !banned.has(i));
+    if (!allowed.length) throw new Error("[commit] ban covers the whole palette");
+    for (const b of banned) {
+      let best = allowed[0];
+      let bd = Infinity;
+      for (const a of allowed) {
+        const dist = palDist(pal[b], pal[a]);
+        if (dist < bd) {
+          bd = dist;
+          best = a;
+        }
+      }
+      bans.set(b, best);
+    }
+  }
+
   const counts = new Map<number, number>();
   const idx: Int16Array[] = [];
   for (const t of texels) {
@@ -189,8 +221,9 @@ export function commitToGrid(
     for (let p = 0; p < m.length; p++) {
       if (t.data[p * 4 + 3] <= OPAQUE_CUTOFF) continue;
       const q = snapColor(t.data[p * 4], t.data[p * 4 + 1], t.data[p * 4 + 2]);
-      m[p] = q;
-      counts.set(q, (counts.get(q) ?? 0) + 1);
+      const r = bans.get(q) ?? q;
+      m[p] = r;
+      counts.set(r, (counts.get(r) ?? 0) + 1);
     }
     idx.push(m);
   }
@@ -396,6 +429,7 @@ export function commitToGrid(
         (drop.length
           ? ` (${drop.length} evicted to meet the ${maxEntries} lock, ${(evictedShare * 100).toFixed(2)}% of opaque texels moved)`
           : ` (under the ${maxEntries} lock with room to spare)`) +
+        (bans.size ? ` [banned entries: ${[...bans.keys()].sort((a, b) => a - b).join(",")}]` : "") +
         `. This sheet imports 1:1 at every camera rung.`,
     },
   };
