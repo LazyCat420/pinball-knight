@@ -118,6 +118,25 @@ export const PALETTE_HEX: number[] = [
 
 export const PALETTE_SIZE = PALETTE_HEX.length; // 32
 
+/**
+ * The ramp families, by the index ranges documented above. This is sidecar
+ * vocabulary: a sprite-forge sidecar can declare `"bans": ["rot"]` to keep a
+ * creature's materials out of a family the luma-weighted snap would otherwise
+ * reach (measured on the knight: ~12% of crushed armor texels landed on rot
+ * because the metric discounts blue — see commit.ts `CommitOptions.ban`).
+ * Void/ink are not listed: no sheet may ban the outline.
+ */
+export const PALETTE_FAMILIES: Readonly<Record<string, readonly number[]>> = {
+  stone: [2, 3, 4, 5],
+  rot: [6, 7, 8, 9],
+  blood: [10, 11, 12, 13],
+  torch: [14, 15, 16, 17, 18],
+  steel: [19, 20, 21, 22],
+  skin: [23, 24, 25],
+  leather: [26, 27, 28],
+  arcane: [29, 30, 31],
+};
+
 /** Flat Float32Array of sRGB triplets, for the quantize shader uniform. */
 export function paletteToFloatArray(): Float32Array {
   const out = new Float32Array(PALETTE_SIZE * 3);

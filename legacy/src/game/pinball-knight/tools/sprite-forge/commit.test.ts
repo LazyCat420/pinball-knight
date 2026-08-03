@@ -183,6 +183,34 @@ describe("the grid commit", () => {
     expect(tight.report.verdict).toMatch(/evicted/);
   });
 
+  it("a BANNED family never appears, and its texels land somewhere allowed", () => {
+    // The knight measurement (palette-ab, 2026-08-03): the luma-weighted snap
+    // sends warm-grey armor onto the rot ramp, and only an explicit ban fixes
+    // it. First prove the fixture REACHES the banned entries unbanned — a ban
+    // of colours the sheet never used would pass vacuously.
+    const pal = PAL();
+    const free = commitToGrid(generatedSheet(), ROWS, pal, { maxEntries: 999 });
+    const rgbOf = (i: number): number => (pal[i][0] << 16) | (pal[i][1] << 8) | pal[i][2];
+    const used = new Set<number>();
+    for (let i = 0; i < free.image.data.length; i += 4) {
+      if (free.image.data[i + 3] === 0) continue;
+      used.add((free.image.data[i] << 16) | (free.image.data[i + 1] << 8) | free.image.data[i + 2]);
+    }
+    const ban = pal.map((_, i) => i).filter((i) => used.has(rgbOf(i))).slice(0, 3);
+    expect(ban.length, "fixture uses too few entries to exercise a ban").toBe(3);
+
+    const banned = commitToGrid(generatedSheet(), ROWS, pal, { maxEntries: 999, ban });
+    const banRgb = new Set(ban.map(rgbOf));
+    let opaque = 0;
+    for (let i = 0; i < banned.image.data.length; i += 4) {
+      if (banned.image.data[i + 3] === 0) continue;
+      opaque++;
+      expect(banRgb.has((banned.image.data[i] << 16) | (banned.image.data[i + 1] << 8) | banned.image.data[i + 2])).toBe(false);
+    }
+    expect(opaque).toBeGreaterThan(0); // the remap moved texels, not deleted them
+    expect(banned.report.verdict).toMatch(/banned entries/);
+  });
+
   it("every committed pixel is an EXACT palette colour", () => {
     // `atlas-census` reports anything else as `unmatched`, and the inbox run
     // asserts that is zero — so an off-palette texel here fails much later and
