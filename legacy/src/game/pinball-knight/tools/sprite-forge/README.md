@@ -61,6 +61,11 @@ Three of them, and none replaces the others:
 
     cd python && pip install -e ".[dev]" && pytest
 
+It was written on 08-01 inside `spritefusion-pixel-snapper`, a fork of somebody
+else's Rust tool, with the stated goal of moving sprite-forge OUT of the game.
+That direction is reversed: this copy is the live one. **A copy still exists in
+that fork and is now stale** — delete it there, or expect the two to diverge.
+
 It answers "is this sheet usable, where are its frames, what is wrong with it"
 without the game — useful when preparing art somewhere the repo is not. It
 deliberately does **not** score: a census comparing imported art to a PAINTED
