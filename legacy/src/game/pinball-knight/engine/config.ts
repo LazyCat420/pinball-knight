@@ -92,6 +92,10 @@ export interface PostConfig {
   frenzyVignette: number;
   /** Peak chromatic-aberration split, UV units. */
   frenzyAberration: number;
+  /** Luma rungs the cel grade's posterize snaps to (sRGB luma, across 0..1). */
+  celSteps: number;
+  /** Saturation multiplier about each pixel's own luma; 1 = unchanged. */
+  celSaturation: number;
 }
 
 /** Frames per second for each named clip. */
@@ -187,6 +191,8 @@ export const engineConfig: EngineConfig = {
     outlineEdgeThreshold: 0.26,
     frenzyVignette: 0.48,
     frenzyAberration: 0.006,
+    celSteps: 10,
+    celSaturation: 1.35,
   },
   anim: {
     idle: 3,

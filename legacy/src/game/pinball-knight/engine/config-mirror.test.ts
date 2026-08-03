@@ -34,6 +34,8 @@ import {
   SPRITE_PIXEL_GRID,
   SPRITE_UNITS,
   ART_PX,
+  CEL_STEPS,
+  CEL_SATURATION,
 } from "../constants";
 
 describe("engine defaults mirror the game constants", () => {
@@ -64,5 +66,15 @@ describe("engine defaults mirror the game constants", () => {
     expect(engineConfig.post.renderH).toBe(RENDER_H);
     expect(engineConfig.post.maxRenderW).toBe(MAX_RENDER_W);
     expect(engineConfig.post.maxRenderH).toBe(MAX_RENDER_H);
+  });
+
+  it("mirrors the cel grade, which is the whole look and has no other guard", () => {
+    // `pixel-pass.ts` destructures these at MODULE LOAD, before the game gets to
+    // call installEngine() — so the shipped frame is graded with whatever the
+    // mirror says, not with what constants/render.ts says. Drift here would not
+    // fail a test or throw: it would just quietly ship a different look, which
+    // is the one failure this suite cannot see and a player can.
+    expect(engineConfig.post.celSteps).toBe(CEL_STEPS);
+    expect(engineConfig.post.celSaturation).toBe(CEL_SATURATION);
   });
 });

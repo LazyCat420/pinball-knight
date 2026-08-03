@@ -102,6 +102,8 @@ const {
   outlineEdgeThreshold: OUTLINE_EDGE_THRESHOLD,
   frenzyVignette: FRENZY_VIGNETTE,
   frenzyAberration: FRENZY_ABERRATION,
+  celSteps: CEL_STEPS,
+  celSaturation: CEL_SATURATION,
 } = engineConfig.post;
 const { ppu: PPU } = engineConfig.camera;
 
@@ -175,6 +177,12 @@ interface FinalUniforms {
   outline: TSLUniform<number>;
   /** 0/1 — is the colour-edge outline term live? */
   colourOutline: TSLUniform<number>;
+  /** 0/1 — is the cel grade (luma posterize + saturation) live? */
+  cel: TSLUniform<number>;
+  /** Luma rungs the posterize snaps to. */
+  celSteps: TSLUniform<number>;
+  /** Saturation multiplier about each pixel's own luma. */
+  celSaturation: TSLUniform<number>;
   /** Luma step (in rough-gamma space) a colour edge must exceed to be inked. */
   edgeThreshold: TSLUniform<number>;
   bloom: TSLUniform<number>;
@@ -797,7 +805,32 @@ function finalNode(
     shaded = nearer.select(rowRgb, shaded);
     bestGap = nearer.select(gap, bestGap);
   }
-  col = mix(col.mul(light), shaded, u.quantize);
+  // ── THE CEL GRADE — what bands the frame now that the snap is retired.
+  //
+  // Runs on the LIT colour, after every darkening term has landed in `light`,
+  // and it is the LAST thing before the scanlines because it has to see the
+  // final pixel: posterizing before AO or the vignette would just have those
+  // gradients smeared back across the bands it drew.
+  //
+  // 1. POSTERIZE. Round the luma to `celSteps` rungs and rescale the pixel's own
+  //    RGB onto the rounded value. Chroma rides along untouched, so a torch pool
+  //    stays orange and a rot floor stays green — the grade can brighten or
+  //    darken a pixel but it can never move it to another material, which is the
+  //    one thing the screen-wide palette snap could not promise.
+  //    `max(lum, 1e-4)` guards the rescale: a pure-black pixel has no direction
+  //    to be scaled along, and 0/0 would present as NaN — which the node
+  //    renderer paints as black anyway, but only by luck.
+  // 2. SATURATE. Push the result away from its own grey. `clamp` after, so an
+  //    already-vivid pixel flattens to the primary instead of wrapping.
+  const litCol = col.mul(light);
+  const CEL_LUMA = vec3(0.2126, 0.7152, 0.0722);
+  const lum = max(dot(litCol, CEL_LUMA), float(0.0001));
+  const banded = floor(lum.mul(u.celSteps).add(0.5)).div(u.celSteps);
+  const posterized = litCol.mul(banded.div(lum));
+  const grey = dot(posterized, CEL_LUMA);
+  const celCol = mix(vec3(grey, grey, grey), posterized, u.celSaturation).clamp(0, 1);
+
+  col = mix(mix(litCol, celCol, u.cel), shaded, u.quantize);
 
   // ── Scanlines: every other ROW of the render target, dimmed.
   const line: TSLNode = mod(floor(vUv.y.mul(res.y)), 2);
@@ -1225,6 +1258,16 @@ export interface PixelPass {
   setOutline(on: boolean): void;
   setBloom(on: boolean): void;
   setAo(on: boolean): void;
+  /** The cel grade on/off — see CEL_DEFAULT in constants/render.ts. */
+  setCel(on: boolean): void;
+  /**
+   * Retune the grade live: luma rungs and saturation multiplier.
+   *
+   * Both are uniforms rather than folded constants specifically so the look can
+   * be A/B'd on a real adapter without a rebuild — which is how the shipped
+   * numbers were chosen. Reachable from the console as `__dungeonCel`.
+   */
+  setCelGrade(steps: number, saturation: number): void;
   /**
    * Frenzy FX (combo Part 2): drive the vignette pull + chromatic aberration
    * from a [0,1] intensity. 0 restores the baseline vignette and zero split.
@@ -1291,6 +1334,12 @@ export function createPixelPass(
     outline: boolean;
     bloom: boolean;
     ao: boolean;
+    /**
+     * The cel grade — luma posterize + saturation, the art direction that
+     * replaced the retired palette snap. See CEL_DEFAULT in constants/render.ts
+     * for what it is for and what was measured against it.
+     */
+    cel: boolean;
     /**
      * The in-game UI layer, composited late in `finalNode`.
      *
@@ -1467,6 +1516,9 @@ export function createPixelPass(
     outline: uniform(opts.outline ? 1 : 0),
     colourOutline: uniform(opts.outline ? 1 : 0),
     edgeThreshold: uniform(OUTLINE_EDGE_THRESHOLD),
+    cel: uniform(opts.cel ? 1 : 0),
+    celSteps: uniform(CEL_STEPS),
+    celSaturation: uniform(CEL_SATURATION),
     // Shimmer defaults OFF. The ALU cost is paid regardless (a runtime gate does
     // not remove instructions), so this is a look toggle, not a perf one — see
     // `setHeatEnabled` for the honest note about that.
@@ -1776,6 +1828,16 @@ export function createPixelPass(
     },
     setAo: (on) => {
       finalUniforms.ao.value = on ? AO_STRENGTH : 0;
+    },
+    setCel: (on) => {
+      finalUniforms.cel.value = on ? 1 : 0;
+    },
+    setCelGrade: (steps, saturation) => {
+      // Rungs below 1 would divide the luma by zero-ish and present as a white
+      // frame; saturation is left unclamped on purpose so the debug surface can
+      // overshoot deliberately while looking for the ceiling.
+      finalUniforms.celSteps.value = Math.max(1, steps);
+      finalUniforms.celSaturation.value = Math.max(0, saturation);
     },
     setFrenzyFx: (intensity) => {
       const t = Math.max(0, Math.min(1, intensity));

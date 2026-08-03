@@ -20,7 +20,7 @@ import { selectBackend } from "../../../render/backend";
 import { state } from "../state";
 import { createPixelPass } from "../engine/render/pixel-pass";
 import { PALETTE_HEX } from "../render/palette";
-import { BLOOM_DEFAULT, AO_DEFAULT } from "../constants";
+import { BLOOM_DEFAULT, AO_DEFAULT, CEL_DEFAULT } from "../constants";
 import { uiTexture, syncSize } from "../gui/layer";
 import { installUiInput } from "../gui/input";
 import { drawUiFrame } from "../gui/root";
@@ -136,6 +136,7 @@ export function installRenderer(): void {
     outline: state.outline,
     bloom: BLOOM_DEFAULT,
     ao: AO_DEFAULT,
+    cel: CEL_DEFAULT,
     // The in-game UI's canvas, handed to the engine as a plain texture. This is
     // the injection `engine/purity.test.ts` requires: the engine composites it
     // without knowing what a menu is.

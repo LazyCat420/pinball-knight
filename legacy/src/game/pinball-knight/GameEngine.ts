@@ -57,6 +57,8 @@ import {
   OUTLINE_EDGE_THRESHOLD,
   FRENZY_VIGNETTE,
   FRENZY_ABERRATION,
+  CEL_STEPS,
+  CEL_SATURATION,
   FPS_IDLE,
   FPS_WALK,
   FPS_RUN,
@@ -123,6 +125,8 @@ export function installEngine(): void {
       outlineEdgeThreshold: OUTLINE_EDGE_THRESHOLD,
       frenzyVignette: FRENZY_VIGNETTE,
       frenzyAberration: FRENZY_ABERRATION,
+      celSteps: CEL_STEPS,
+      celSaturation: CEL_SATURATION,
     },
     anim: {
       idle: FPS_IDLE,

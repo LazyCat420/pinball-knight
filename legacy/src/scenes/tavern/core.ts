@@ -36,6 +36,9 @@ import {
   OUTLINE_DEFAULT,
   BLOOM_DEFAULT,
   AO_DEFAULT,
+  CEL_DEFAULT,
+  CEL_STEPS,
+  CEL_SATURATION,
   PPU,
 } from "../../game/pinball-knight/constants";
 import { buildRoom, type BuiltRoom } from "./build";
@@ -663,6 +666,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     outline: OUTLINE_DEFAULT,
     bloom: BLOOM_DEFAULT,
     ao: AO_DEFAULT,
+    cel: CEL_DEFAULT,
     uiTexture: uiTexture(),
   });
   // The walkable tavern owns a SECOND pixel pass, so it needs the same UI wiring
@@ -762,6 +766,19 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
     tavern.player.z = z;
     tavern.player.speed = 0;
     return true;
+  };
+  // Dev/QA: the cel grade, live. The room owns its OWN pixel pass, so the
+  // dungeon's `__dungeonCel` cannot reach it — and the tavern is the scene the
+  // grade's numbers were chosen against (it is the one room that is all flat
+  // floor and soft lamplight, i.e. the worst case for a smooth gradient).
+  (window as unknown as { __tavernCel?: (steps?: number, sat?: number) => unknown }).__tavernCel = (steps, sat) => {
+    if (!pixelPass) return null;
+    if (steps === 0) pixelPass.setCel(false);
+    else if (steps != null) {
+      pixelPass.setCel(true);
+      pixelPass.setCelGrade(steps, sat ?? CEL_SATURATION);
+    }
+    return { steps: steps ?? CEL_STEPS, saturation: sat ?? CEL_SATURATION };
   };
   // Dev/QA: leave the tavern without descending, so a harness can re-enter it
   // after changing run state (e.g. socketing a card) and see the room rebuild.

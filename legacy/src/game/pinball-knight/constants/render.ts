@@ -375,6 +375,82 @@ export const QUANTIZE_DEFAULT = false; // screen-space palette snap — retired,
 export const DITHER_DEFAULT = false; // ordered dither — only existed to serve the snap
 export const SCANLINE_DEFAULT = false; // CRT scanlines — retired with the rest of the screen dressing
 export const OUTLINE_DEFAULT = false; // depth-edge ink — figures carry baked selout ink instead
+
+/**
+ * ── THE CEL GRADE (2026-08-03, "the soft glow makes everything look blurry") ──
+ *
+ * Retiring the palette snap left NOTHING banding the frame. What the player
+ * then saw was the raw lit render: smooth continuous light falloff across every
+ * floor and wall, and the ambient + hemi mix pulling each material toward grey.
+ * Measured on the tavern (seed 777, real WebGPU adapter, the frame the report
+ * came with): the floor carries one unbroken gradient corner to corner. No
+ * pixel is out of focus — the SHADING is what reads as blur, because a smooth
+ * gradient is what a blur looks like.
+ *
+ * The obvious undo — turn `QUANTIZE_DEFAULT` back on — was tried FIRST and
+ * measured, and it is not the fix. Seeded A/B, same adapter:
+ *
+ *     tavern   bold and flat, no gradient          ✔ what the report asked for
+ *     maze     rot-green family's ramp reaches void in two rungs, so the
+ *              checkerboard goes hard black-on-green and the walls vanish  ✘
+ *
+ * plus the ordered dither's per-pixel confetti over every floor — which is the
+ * look the 2026-08-03 playtest rejected in the first place.
+ *
+ * So the banding is done on LUMA, not on the palette. Two terms, both applied
+ * to the already-sRGB lit colour at the end of `finalNode`:
+ *
+ *   POSTERIZE  round the luma to `CEL_STEPS` rungs and rescale the pixel's own
+ *              chroma onto it. A gradient becomes flat bands; hue is untouched,
+ *              so torchlight stays warm and no pixel can be relocated into
+ *              another material's family — which is exactly what the
+ *              screen-wide snap did and why it is not coming back.
+ *   SATURATE   push each pixel away from its own grey. The ambient + hemi mix
+ *              is what greyed the materials; this buys the boldness back
+ *              without touching the lighting rig, which every biome tints.
+ *
+ * Neither term can produce confetti: both are monotone functions of the pixel's
+ * OWN value, so two neighbours that were close stay close. That is the property
+ * the palette snap could not have — its output space is other materials.
+ */
+export const CEL_DEFAULT = true;
+/**
+ * Luma rungs the posterize snaps to, across 0..1.
+ *
+ * Counted in sRGB luma, NOT linear: the composite has already run its
+ * linear→sRGB transfer by the time the grade sees the pixel, so equal steps here
+ * are roughly equal PERCEPTUAL steps and the dungeon's dark end gets rungs where
+ * the eye can see them. In linear the same count would spend most of its rungs
+ * on highlights this game does not have.
+ */
+/**
+ * ── 10 IS A MEASURED NUMBER, AND IT WAS NOT THE FIRST GUESS ──
+ * Swept live through `__tavernCel` / `__dungeonCel` on a real WebGPU adapter,
+ * seed 777, judging the tavern (all flat floor and lamplight — the worst case
+ * for a gradient) and floor 1 (a checkerboard — the worst case for over-banding)
+ * from the SAME build:
+ *
+ *      5   tavern flat, but the walls collapse into one another and the dark
+ *          half of the room goes to black; detail the art drew is gone
+ *      8   tavern ideal — and it MERGES THE MAZE'S CHECKERBOARD. Adjacent tiles
+ *          differ by less than a rung, so the floor grid dissolves into one
+ *          field of moss and the level's readability goes with it
+ *     10   both: tavern floor still flat bands, checkerboard still legible  ←
+ *     12   the tavern's gradient is visibly back; the grade stops doing its job
+ *
+ * Floor 1 is what pins the ceiling here, and nothing in the tavern would have
+ * revealed it — a one-room A/B would have shipped 8.
+ */
+export const CEL_STEPS = 10;
+/**
+ * Saturation multiplier about each pixel's own luma. 1 = unchanged.
+ *
+ * Clamped in the shader, so a value that would drive a channel past 1 flattens
+ * to the primary rather than wrapping. 1.35 and 1.5-1.6 are close in both test
+ * scenes; the lower one is taken because the clamp is the failure mode that
+ * cannot be undone downstream — a clipped channel has lost its hue.
+ */
+export const CEL_SATURATION = 1.35;
 /**
  * Luma step (rough-gamma space, 0..1) a COLOUR edge must exceed before the ink
  * pass darkens it — the second outline term, added because a depth edge cannot
