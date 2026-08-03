@@ -7,6 +7,74 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🗡️ THE AWAY-FACING ATTACK WAS THE AWAY-FACING IDLE (2026-08-03, `main@358cc3b`, DEPLOYED)
+
+**Asked:** "no matter what direction I move I'm always facing away from the
+camera… the frames in sprite-forge are not being used."
+
+**Measured first. The import was NOT broken.** The running game logs
+`[dungeon] player: imported pinball_knight art loaded`, `__dungeonClips("knight")`
+returns the imported shape (`S:walk [4,5,6]`, not the painter's 8), and
+`facingFromVelocity` was verified live: stick right → facing `E`/`walk`, stick
+left → `W`/`walk`. S rows draw a front knight, N rows a back knight. The
+facing→art mapping is correct.
+
+**What WAS broken: `N:attack` was `N:idle`, frame for frame.** Silhouette IoU
+0.984–0.990 at mean colour delta 6–11 (the same comparison on the S sheet scores
+0.657–0.697 / 55–71). Swinging while walking away played a knight standing still.
+
+Root cause is in `tools/sprite-forge/prep-knight.mjs`'s `PLAN`. The roster
+generator fills the away-facing bottom half of EVERY source sheet with the same
+four standing back poses; only `03_walk`, `04_jump` and
+`10_attack_weaponless_6frames` actually animate it. `PLAN.N` assumed "bottom
+half = the same animation from behind" and took `09_attack_one_hand[4..7]`.
+`N.attack` now comes from `10_attack_weaponless_6frames[3,4,5]` — the roster's
+only authored back-facing swing. After: IoU 0.57–0.76 / delta 37–54, and
+frame-to-frame motion inside the row drops 0.949/0.963/0.986 → 0.553/0.597.
+Confirmed in the running game: `N:attack [83,84,85]`, three distinct poses.
+
+**The guard: `tools/sprite-forge/mislabel.test.ts`.** Normalises every published
+cell into a fixed box and compares OPAQUE MASKS — cells are cropped to content,
+so a raw pixel diff reports 100% on a one-pixel bbox change (the first pass at
+this measured "no duplicates" on the very sheet that had them). Reverting the
+sheet makes it fail with the exact complaint; it is not vacuous. Intentional
+reuse goes in `ALIASED` with the reason.
+
+### Open items
+- **E and W are not authored at all.** `importedPaints` hands `E` the `S` clips
+  by reference and the engine draws `W` as `E` flipped, so moving sideways shows
+  the FRONT view mirrored — there is no side profile in the roster. This is the
+  most likely remaining source of "every direction looks the same".
+- **`run` is byte-identical to `walk`** in both facings (0% differing pixels),
+  by design — the animator ramps playback rate — but it is physically duplicated,
+  costing 6 atlas cells on a sheet already 7623px of an 8192px row.
+- **`fish_feet` idle ≡ walk**, byte-identical, in both published facings: its
+  source ships two identical bands. Declared in `ALIASED`; deleting the row is
+  NOT the fix (no `idle` → `importedPaints` returns null → the whole creature
+  falls back to its painter, the way stiltneck shipped invisible for weeks).
+  Also `fish_feet-E.png` and `fish_feet-S.png` are the same file byte for byte.
+- **9 of the 14 sheets in `sources/pinball_knight-2026-08-02/` are never read**
+  by `PLAN`: `00_spawn_drop_in`, `02_tired_idle`, `04_jump`, `06_throw`,
+  `07_thumbs_up`, `08_idle_yawning`, `09_hold_read_letter`,
+  `10_attack_weaponless_4frames`, `10_attack_weaponless_6frames` (top row).
+  `04_jump` has a real back row; `10_attack_weaponless_4frames` is a front
+  1-handed swing with an OPEN FACE.
+- **`ab.test.ts` is flaky under a full parallel `vitest run`**: it reads
+  `public/sprites/*.png` while `inbox.test.ts` is rewriting them, and fails with
+  `error while reading from input stream`. Passes alone and on a re-run. Not
+  caused by this change.
+
+### Gotchas
+- `work/pinball_knight/` holds only `S-*.png`. That is not evidence the N sheet
+  is unused — the forge `rm -rf`s `work/<name>/` per sheet and the inbox is read
+  alphabetically, so N is written and then overwritten by S. `work/` is OUTPUT.
+- The painter's atlas builds FIRST and imported art replaces it a beat later. A
+  harness that reads `__dungeonClips("knight")` too early gets the painter's
+  table (`S:walk` with 8 frames) and will conclude the import never landed.
+- A parked knight cannot turn. Fire the plunger before trusting any facing probe.
+
+---
+
 ## 🕳️ THE BLANK SPACES + BIGGER FLOORS (2026-07-31, `main@d1c0245`, DEPLOYED)
 
 Roadmap: `src/game/pinball-knight/PLAZA_PLAN.md` (both halves of the ask —
