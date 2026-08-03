@@ -18,6 +18,23 @@
  * they are fullscreen blits with no geometry and no material colour — but they
  * never draw into the scene target, so they are the one exemption.
  *
+ * ── WHAT THIS TEST CANNOT SEE (learned the hard way, 2026-08-02) ─────────────
+ *
+ * A source scan only catches albedo failures that are visible in the SOURCE.
+ * It is blind to the other way a material loses its albedo output: being BUILT
+ * at a moment when no render target is bound. `NodeMaterial.setup` reads
+ * `renderer.getRenderTarget()` once and gates the whole MRT block on it, so
+ * such a build emits a 1-output shader — for a perfectly ordinary stock
+ * `MeshBasicMaterial` with nothing odd about its source at all. That shipped
+ * here for months as 9-13 Dawn validation failures per run and ~10 discarded
+ * command buffers, and this file passed green throughout.
+ *
+ * The gate for THAT class is `pnpm playtest:gpu`, which exits non-zero on
+ * renderer errors. It needs a real adapter, so it cannot live in this suite —
+ * but it is the check that actually covers the attachment, and it passes as of
+ * the `presentUi`/`withSceneContext` target-restore fixes. Do not read a green
+ * run of this file as "the albedo attachment is fine".
+ *
  * ── THIS TEST CAN FAIL, AND HERE IS THE PROOF ────────────────────────────────
  * A scan that greps for a pattern is worthless if the pattern is absent
  * everywhere; it passes on an empty repo and on a broken one alike. The first

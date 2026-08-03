@@ -1621,6 +1621,10 @@ export function createPixelPass(
   }
 
   function render(scene: THREE.Scene, camera: THREE.Camera): void {
+    // Same reason as `presentUi` below: `warmFirstFrame` calls this while a warm
+    // may still be in flight, and the composite blit ends on the canvas. Null
+    // during normal play, so this only does anything mid-warm.
+    const entry = renderer.getRenderTarget();
     syncCameraFrustum(camera);
 
     // 1. Scene → linear target (+ depth), writing lit AND albedo.
@@ -1651,10 +1655,28 @@ export function createPixelPass(
 
     // 3. Composite + cel quantize → screen.
     blit(finalMat, null);
+    if (entry !== null) renderer.setRenderTarget(entry);
   }
 
   /** See `PixelPass.presentUi`. Deliberately step 3 alone, over a clean slate. */
   function presentUi(): void {
+    // ── WHY THE ENTRY TARGET IS SAVED AND PUT BACK ─────────────────────────
+    //
+    // This runs EVERY FRAME of the descent — and the descent is exactly when
+    // `warmFloorPipelines` is sitting inside `withSceneContext`, awaiting
+    // `compileAsync`. That await yields to the main thread, so these UI frames
+    // are interleaved with three's shader builds.
+    //
+    // `blit(finalMat, null)` leaves the render target on the CANVAS. A build
+    // landing in that window reads `renderer.getRenderTarget() === null` in
+    // `NodeMaterial.setup`, which gates the entire MRT block, and emits a
+    // 1-output shader — cached, and later rejected against the 2-attachment
+    // scene target. The MRT itself is still correctly held by
+    // `withSceneContext`; it is only the TARGET that this function stole.
+    //
+    // Measured: the surviving failures all showed `mrt=true, rt=null`, which is
+    // the fingerprint of precisely this interleaving and of nothing else.
+    const entry = renderer.getRenderTarget();
     renderer.setRenderTarget(sceneTarget);
     renderer.clear();
     // The composite samples the bloom target unconditionally. Skipping the
@@ -1663,6 +1685,9 @@ export function createPixelPass(
     renderer.setRenderTarget(bloomA);
     renderer.clear();
     blit(finalMat, null);
+    // Null during normal play (nothing to restore), sceneTarget while a warm is
+    // in flight — so this is a no-op except in the one case that matters.
+    if (entry !== null) renderer.setRenderTarget(entry);
   }
 
   resize();
