@@ -443,14 +443,55 @@ export const CEL_DEFAULT = true;
  */
 export const CEL_STEPS = 10;
 /**
+ * ── THE RUNGS ARE NOT EVENLY SPACED, AND THAT IS THE WHOLE FIX ──────────────
+ * (2026-08-03, "the map looks grainy — you're using the least colours possible")
+ *
+ * Rung k lands at `(k / CEL_STEPS) ^ (1 / CEL_CURVE)`. At 1 the rungs are even,
+ * which is what shipped and what made the map look like noise.
+ *
+ * The reported symptom was "a filter making it red and grainy", and the grain is
+ * NOT the banding — it is a CRUSH. Evenly spaced, ten rungs put the first one at
+ * luma 0.1, so every pixel dimmer than 0.05 is presented as PURE BLACK. This
+ * dungeon lives almost entirely under 0.35 and the flagstone painter
+ * (maze/build.ts `makeFloorTexture`) scatters single-pixel speckle one palette
+ * step away from the stone body, so that boundary runs straight through the
+ * floor texture. Measured on the Bloodworks masonry (entries 11 and 12 adjacent)
+ * across the lighting range a torch-lit floor spans:
+ *
+ *     spacing      speckle crushed to black    worst pair amplification
+ *     even (1.0)        11% of the range       ∞   — one side IS black
+ *     curve 0.5          0% of the range       1.41x
+ *
+ * A neighbour pair the art drew at 1.59:1 was being shown at ∞:1 over a ninth of
+ * the floor, per pixel, on a texture designed to be subtle. That reads as dirt.
+ *
+ * 0.5 also spends the rungs where the picture is: six of eleven land under luma
+ * 0.35 against four evenly (and three of those four are above anything the scene
+ * reaches). The absolute step shrinks toward black — 0.01, 0.03, 0.05 … 0.19 —
+ * so shading stays BOLD in the torch pools, which is where cel shading is meant
+ * to be bold, and stops manufacturing contrast in the shadows.
+ *
+ * Live A/B without a rebuild: `__dungeonCel(steps, sat, curve)` / `__tavernCel`.
+ * `__dungeonCel(10, 1.35, 1)` is exactly the pre-2026-08-03 look.
+ */
+export const CEL_CURVE = 0.5;
+/**
  * Saturation multiplier about each pixel's own luma. 1 = unchanged.
  *
  * Clamped in the shader, so a value that would drive a channel past 1 flattens
- * to the primary rather than wrapping. 1.35 and 1.5-1.6 are close in both test
- * scenes; the lower one is taken because the clamp is the failure mode that
- * cannot be undone downstream — a clipped channel has lost its hue.
+ * to the primary rather than wrapping. The clamp is the failure mode that cannot
+ * be undone downstream — a clipped channel has lost its hue — so this is set
+ * under, not over.
+ *
+ * WAS 1.35, lowered with the curve above. 1.35 was chosen to buy boldness back
+ * from an ambient+hemi mix that greys the materials, and it did, but it was also
+ * doing a second job it should not have been: amplifying the chroma of a frame
+ * whose luma had just been crushed into three levels. With the rungs spaced
+ * properly the picture carries its own contrast, and the same 1.35 on top of it
+ * pushed the Bloodworks — a biome that is already one blood ramp for all of its
+ * masonry (maze/build.ts BIOME_STONE) — to a flat screaming red.
  */
-export const CEL_SATURATION = 1.35;
+export const CEL_SATURATION = 1.15;
 /**
  * Luma step (rough-gamma space, 0..1) a COLOUR edge must exceed before the ink
  * pass darkens it — the second outline term, added because a depth edge cannot

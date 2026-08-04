@@ -103,6 +103,7 @@ const {
   frenzyVignette: FRENZY_VIGNETTE,
   frenzyAberration: FRENZY_ABERRATION,
   celSteps: CEL_STEPS,
+  celCurve: CEL_CURVE,
   celSaturation: CEL_SATURATION,
 } = engineConfig.post;
 const { ppu: PPU } = engineConfig.camera;
@@ -181,6 +182,8 @@ interface FinalUniforms {
   cel: TSLUniform<number>;
   /** Luma rungs the posterize snaps to. */
   celSteps: TSLUniform<number>;
+  /** Exponent the rungs are spaced on; 1 = evenly. See the grade in `finalNode`. */
+  celCurve: TSLUniform<number>;
   /** Saturation multiplier about each pixel's own luma. */
   celSaturation: TSLUniform<number>;
   /** Luma step (in rough-gamma space) a colour edge must exceed to be inked. */
@@ -820,12 +823,42 @@ function finalNode(
   //    `max(lum, 1e-4)` guards the rescale: a pure-black pixel has no direction
   //    to be scaled along, and 0/0 would present as NaN — which the node
   //    renderer paints as black anyway, but only by luck.
+  //
+  //    ⚠️ THE RUNGS ARE SPACED ON A CURVE, NOT EVENLY (2026-08-03). Evenly is
+  //    what made the map grainy, and it is worth being precise about the
+  //    mechanism because "posterize looks blocky" is not the failure. With
+  //    `celSteps = 10` spaced evenly across 0..1, the FIRST rung is luma 0.1 —
+  //    so every pixel dimmer than 0.05 is crushed to PURE BLACK. This dungeon
+  //    lives almost entirely under 0.35, and the flagstone painter puts
+  //    single-pixel speckle one palette step apart (build.ts `makeFloorTexture`),
+  //    so that boundary runs straight through the floor texture. Measured on the
+  //    Bloodworks masonry (11/12 side by side) across the lighting range a
+  //    torch-lit floor actually spans:
+  //
+  //                        speckle crushed to black   worst pair amplification
+  //      even rungs              11% of the range     ∞  (one side IS black)
+  //      curve 0.5                0% of the range     1.41x
+  //
+  //    A neighbour pair the art drew at 1.59:1 was being presented at ∞:1 on a
+  //    ninth of the floor. That is the "grain" — not the banding, the CRUSH.
+  //
+  //    `celCurve` is the exponent the luma is banded in: rungs land at
+  //    `(k/steps)^(1/curve)`, so 0.5 puts six of eleven rungs under luma 0.35
+  //    (evenly spaced puts four, three of which the scene never reaches) and the
+  //    absolute step SHRINKS toward black instead of staying a flat 0.1. Bands
+  //    stay bold where the light is, which is where cel shading is supposed to
+  //    be bold, and go subtle in shadow, where a hard step reads as dirt.
+  //    `curve = 1` is exactly the old even spacing, for an A/B.
   // 2. SATURATE. Push the result away from its own grey. `clamp` after, so an
   //    already-vivid pixel flattens to the primary instead of wrapping.
   const litCol = col.mul(light);
   const CEL_LUMA = vec3(0.2126, 0.7152, 0.0722);
   const lum = max(dot(litCol, CEL_LUMA), float(0.0001));
-  const banded = floor(lum.mul(u.celSteps).add(0.5)).div(u.celSteps);
+  const curved = pow(lum, u.celCurve);
+  const bandedCurved = floor(curved.mul(u.celSteps).add(0.5)).div(u.celSteps);
+  // Back out of the curve. `max(…, 1e-6)` because `pow(0, 1/curve)` is 0/0-shaped
+  // on some backends: rung 0 must be black, not NaN.
+  const banded = pow(max(bandedCurved, float(0.000001)), float(1).div(u.celCurve));
   const posterized = litCol.mul(banded.div(lum));
   const grey = dot(posterized, CEL_LUMA);
   const celCol = mix(vec3(grey, grey, grey), posterized, u.celSaturation).clamp(0, 1);
@@ -1261,13 +1294,17 @@ export interface PixelPass {
   /** The cel grade on/off — see CEL_DEFAULT in constants/render.ts. */
   setCel(on: boolean): void;
   /**
-   * Retune the grade live: luma rungs and saturation multiplier.
+   * Retune the grade live: luma rungs, saturation multiplier, rung spacing.
    *
-   * Both are uniforms rather than folded constants specifically so the look can
-   * be A/B'd on a real adapter without a rebuild — which is how the shipped
+   * All three are uniforms rather than folded constants specifically so the look
+   * can be A/B'd on a real adapter without a rebuild — which is how the shipped
    * numbers were chosen. Reachable from the console as `__dungeonCel`.
+   *
+   * `curve` omitted keeps the current value, so an existing two-argument call
+   * retunes the rungs without silently resetting the spacing. Pass 1 for the
+   * evenly-spaced rungs that shipped before 2026-08-03.
    */
-  setCelGrade(steps: number, saturation: number): void;
+  setCelGrade(steps: number, saturation: number, curve?: number): void;
   /**
    * Frenzy FX (combo Part 2): drive the vignette pull + chromatic aberration
    * from a [0,1] intensity. 0 restores the baseline vignette and zero split.
@@ -1518,6 +1555,7 @@ export function createPixelPass(
     edgeThreshold: uniform(OUTLINE_EDGE_THRESHOLD),
     cel: uniform(opts.cel ? 1 : 0),
     celSteps: uniform(CEL_STEPS),
+    celCurve: uniform(CEL_CURVE),
     celSaturation: uniform(CEL_SATURATION),
     // Shimmer defaults OFF. The ALU cost is paid regardless (a runtime gate does
     // not remove instructions), so this is a look toggle, not a perf one — see
@@ -1832,12 +1870,15 @@ export function createPixelPass(
     setCel: (on) => {
       finalUniforms.cel.value = on ? 1 : 0;
     },
-    setCelGrade: (steps, saturation) => {
+    setCelGrade: (steps, saturation, curve) => {
       // Rungs below 1 would divide the luma by zero-ish and present as a white
       // frame; saturation is left unclamped on purpose so the debug surface can
       // overshoot deliberately while looking for the ceiling.
       finalUniforms.celSteps.value = Math.max(1, steps);
       finalUniforms.celSaturation.value = Math.max(0, saturation);
+      // The shader raises the luma to this and then to its reciprocal, so 0 is a
+      // divide-by-zero and the floor is not cosmetic. Undefined = leave it alone.
+      if (curve !== undefined) finalUniforms.celCurve.value = Math.max(0.05, curve);
     },
     setFrenzyFx: (intensity) => {
       const t = Math.max(0, Math.min(1, intensity));

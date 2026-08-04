@@ -25,7 +25,7 @@ import { showCardHaul } from "../card-reader";
 import { resetPickupSweep } from "../economy/pickups";
 import { isRenderHeld } from "../run/floor-hold";
 import { buyShopRow } from "../economy/shop";
-import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX, CEL_STEPS, CEL_SATURATION } from "../constants";
+import { MAGICIAN_FROM_LEVEL, PINBALL_MAX_SPEED, ZOMBIE_R, ABILITY_RANK_MAX, CEL_STEPS, CEL_CURVE, CEL_SATURATION } from "../constants";
 import { coopSeed, enemyAuthorityIsMe, isCoop } from "../coop";
 import { clearResumeFloor, floorsWithPiles, loadResumeFloor, pilesOnFloor } from "../corpse-run";
 import { installMonsterLab } from "./monster-lab";
@@ -850,23 +850,26 @@ export function installDevHooks(deps: DevHookDeps): void {
       };
     };
     /**
-     * Dev/QA: retune the CEL GRADE live — `__dungeonCel(steps, saturation)`,
+     * Dev/QA: retune the CEL GRADE live — `__dungeonCel(steps, saturation, curve)`,
      * `__dungeonCel(0)` to switch it off for an A/B.
      *
-     * Both knobs are shader uniforms rather than folded constants precisely so
-     * a look can be judged without a rebuild; the shipped 8 / 1.35 were picked
+     * All three knobs are shader uniforms rather than folded constants precisely
+     * so a look can be judged without a rebuild; the shipped numbers were picked
      * through this hook on a real adapter. `src/scenes/tavern/core.ts` carries
      * the same hook as `__tavernCel`, because the tavern owns a second pass.
+     *
+     * `__dungeonCel(10, 1.35, 1)` restores the evenly-spaced rungs that shipped
+     * before 2026-08-03 — the A/B the curve was chosen against. See CEL_CURVE.
      */
-    (window as unknown as { __dungeonCel?: (steps?: number, sat?: number) => unknown }).__dungeonCel = (steps, sat) => {
+    (window as unknown as { __dungeonCel?: (steps?: number, sat?: number, curve?: number) => unknown }).__dungeonCel = (steps, sat, curve) => {
       const pass = state.pixelPass;
       if (!pass) return null;
       if (steps === 0) pass.setCel(false);
       else if (steps != null) {
         pass.setCel(true);
-        pass.setCelGrade(steps, sat ?? CEL_SATURATION);
+        pass.setCelGrade(steps, sat ?? CEL_SATURATION, curve ?? CEL_CURVE);
       }
-      return { steps: steps ?? CEL_STEPS, saturation: sat ?? CEL_SATURATION };
+      return { steps: steps ?? CEL_STEPS, saturation: sat ?? CEL_SATURATION, curve: curve ?? CEL_CURVE };
     };
     // Dev: hurl the player into a pinball ride (headless secret-wall/physics
     // tests — spooling a real sprint with synthetic key events is flaky).

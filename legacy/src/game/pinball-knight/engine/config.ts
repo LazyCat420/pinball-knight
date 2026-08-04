@@ -94,6 +94,9 @@ export interface PostConfig {
   frenzyAberration: number;
   /** Luma rungs the cel grade's posterize snaps to (sRGB luma, across 0..1). */
   celSteps: number;
+  /** Exponent the rungs are spaced on — rung k lands at `(k/steps)^(1/curve)`.
+   *  1 = evenly spaced; below 1 concentrates them in the dark end. */
+  celCurve: number;
   /** Saturation multiplier about each pixel's own luma; 1 = unchanged. */
   celSaturation: number;
 }
@@ -192,7 +195,8 @@ export const engineConfig: EngineConfig = {
     frenzyVignette: 0.48,
     frenzyAberration: 0.006,
     celSteps: 10,
-    celSaturation: 1.35,
+    celCurve: 0.5,
+    celSaturation: 1.15,
   },
   anim: {
     idle: 3,
