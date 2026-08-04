@@ -51,6 +51,8 @@ import { resampleCell, type RawImage } from "./resample";
 import { ART_BOX, ART_FIT_H, ART_FIT_W, ART_GROUND, VOTING_CLIPS, type ManifestRow } from "./manifest";
 import { sliceSheet, type Cell } from "./slice";
 import { makeSnapper, type SnapMetric } from "./colour";
+import { derivePalette } from "./palette-derive";
+import { synthCell, type SynthOptions } from "./synth";
 
 export type { RawImage };
 
@@ -197,6 +199,42 @@ export interface CommitOptions {
    * the whole point.
    */
   minRegion?: number;
+  /**
+   * How the source becomes texels.
+   *
+   * `vote` (default) is the shipped path: k-centroid reduce, one winner per
+   * texel. `synth` decides REGIONS first and colours them — see `synth.ts` for
+   * why that is a different question and not a better filter.
+   */
+  mode?: "vote" | "synth";
+  /** Tuning for `mode: "synth"`. Ignored otherwise. */
+  synth?: SynthOptions;
+  /**
+   * Give this sheet ITS OWN palette of `derive` entries instead of snapping to
+   * the game's shared 32.
+   *
+   * The count includes the pinned ink, so `derive: 20` is the same lock the
+   * shared path runs under — 20 slots, spent on one creature. See
+   * `palette-derive.ts`. `ban` is meaningless here (a derived palette has no
+   * `rot` ramp to wander onto) and is ignored with a note in the verdict.
+   */
+  derive?: number;
+  /**
+   * The art is ALREADY at final texel resolution — import it untouched.
+   *
+   * No scale vote, no resample, no presharpen: each source pixel IS one texel.
+   * This is the path for art authored at the size it ships at, which is how the
+   * sprites this pipeline is measured against are made. The sheet still gets a
+   * palette (shared or derived) because a generator cannot be asked for a fixed
+   * colour count — that was measured, twice — but nothing about its GEOMETRY is
+   * decided here.
+   *
+   * ⚠️ IT THROWS RATHER THAN SHRINKING. A native sheet whose figure is larger
+   * than the cel budget cannot be scaled down without giving up the one
+   * property it was authored for, and silently resampling it would leave the
+   * artist reading a report about a path their art did not take.
+   */
+  native?: boolean;
 }
 
 export interface CommitReport {
@@ -221,6 +259,16 @@ export interface CommitResult {
   image: RawImage;
   rows: ManifestRow[];
   report: CommitReport;
+  /**
+   * The palette the sheet's texels actually sit on.
+   *
+   * Present ALWAYS, not only when derived: the runtime needs to know what to
+   * snap this sheet against, and "it is the shared one" is a fact that should
+   * be written down rather than assumed by whoever reads the manifest next.
+   */
+  palette: number[][];
+  /** True when `palette` is this sheet's own rather than the game's. */
+  derived: boolean;
 }
 
 /**
@@ -363,7 +411,12 @@ export function commitToGrid(
   const maxEntries = opts.maxEntries ?? MAX_ENTRIES;
   const gutter = Math.max(1, opts.gutter ?? 1);
   const metric: SnapMetric = opts.metric ?? DEFAULT_METRIC;
-  const preAmt = opts.presharpen ?? DEFAULT_PRESHARPEN;
+  const mode = opts.mode ?? "vote";
+  const native = opts.native ?? false;
+  // Neither pass has anything to sharpen FOR. `presharpen` exists to give the
+  // k-centroid a decisive vote to count; `synth` counts region labels and
+  // `native` counts nothing at all, so the pass would only add halos.
+  const preAmt = native || mode === "synth" ? 0 : opts.presharpen ?? DEFAULT_PRESHARPEN;
   const minRegion = opts.minRegion ?? DEFAULT_MIN_REGION;
 
   const all: Cell[] = rows.flatMap((r) => r.cells);
@@ -394,6 +447,38 @@ export function commitToGrid(
   // facing the E sheet was added for. With only idle/walk/run voting, E's
   // widest voter is ~44 texels, height binds on all three sheets, and the swing
   // clamps its own frames in `sized` below exactly as a death sprawl does.
+  // ── NATIVE: THE ART ALREADY DECIDED ITS OWN SIZE ─────────────────────────
+  //
+  // Every line below this point about voting, fitting and clamping exists to
+  // answer "how many texels should this figure be", and a sheet authored at
+  // final resolution has already answered it. So the whole block is skipped and
+  // the answer is checked instead: if the figure does not fit the cel, the art
+  // is wrong and it says so. See `CommitOptions.native`.
+  //
+  // ⚠️ `death` IS MEASURED AGAINST THE HARD BOX, like everywhere else. The
+  // runtime's 1:1 gate (`fitsArtBox` in `importedPaints`) excludes death cells,
+  // and a sprawl is genuinely wider than a standing pose — holding it to the
+  // alive box rejected a sheet the game would have imported perfectly. Caught
+  // by the bench on the first native run: a 71-texel sprawl against a 70-texel
+  // alive cap, on art whose living frames were nowhere near either limit.
+  if (native) {
+    const aliveCells = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
+    const deathCells = rows.filter((r) => r.clip === "death").flatMap((r) => r.cells);
+    const check = (cells: readonly Cell[], capW: number, capH: number, what: string): void => {
+      if (!cells.length) return;
+      const nw = Math.max(...cells.map(([x0, , x1]) => x1 - x0 + 1));
+      const nh = Math.max(...cells.map(([, y0, , y1]) => y1 - y0 + 1));
+      if (nw <= capW && nh <= capH) return;
+      throw new Error(
+        `[commit] native sheet's ${what} cells are ${nw}×${nh} texels but the budget at atlas grid ` +
+          `${fitGrid} is ${capW}×${capH}. Native art is imported 1:1 or not at all — re-author it ` +
+          `smaller rather than letting the forge resample the one property it was authored for.`,
+      );
+    };
+    check(aliveCells.length ? aliveCells : all, Math.floor((ART_FIT_W * fitGrid) / ART_BOX), Math.floor((ART_FIT_H * fitGrid) / ART_BOX), "living");
+    check(deathCells, fitGrid, Math.floor((ART_GROUND * fitGrid) / ART_BOX), "death");
+  }
+
   const vote = pickVote(rows, all);
   // FLOORED, because the budget is spent in whole texels. At grid 72 the raw
   // budget is 61.875 and the tallest cell's `Math.round` below would land on
@@ -431,6 +516,7 @@ export function commitToGrid(
   const sized: [number, number][] = all.map((c, i): [number, number] => {
     const w = c[2] - c[0] + 1;
     const h = c[3] - c[1] + 1;
+    if (native) return [w, h];
     // `death` is excluded from the runtime gate, so it alone keeps the hard box.
     const [capW, capH] = clip[i] === "death" ? [hardW, hardH] : [fitW, fitH];
     const k = Math.min(s, capW / w, capH / h);
@@ -446,9 +532,24 @@ export function commitToGrid(
   // k-centroid rather than a box average: an average of a soft edge invents a
   // colour in neither side, and the snap downstream then has to guess which was
   // meant. See `resample.ts`.
-  const texels = all.map((c, i) =>
-    resampleCell(presharpen(cutCell(src, c), preAmt, sized[i][1]), sized[i][0], sized[i][1], "kcentroid"),
-  );
+  const texels = all.map((c, i) => {
+    const cut = cutCell(src, c);
+    // Native art is already texels — the "reduce" is the identity, and running
+    // a 1:1 k-centroid over it would still round-trip every pixel through a
+    // vote it cannot lose but can tie.
+    if (native) return cut;
+    if (mode === "synth") return synthCell(cut, sized[i][0], sized[i][1], opts.synth);
+    return resampleCell(presharpen(cut, preAmt, sized[i][1]), sized[i][0], sized[i][1], "kcentroid");
+  });
+
+  // ── 2a. THE PALETTE — the game's, or this creature's ──────────────────────
+  //
+  // Derived AFTER the reduce, deliberately: the thing being coloured is the
+  // reduced figure, and a three-pixel specular the reduce is about to average
+  // away must not win one of twenty slots. See `palette-derive.ts`.
+  const derived = (opts.derive ?? 0) > 0;
+  const derivedPal = derived ? derivePalette(texels, Math.min(opts.derive!, maxEntries)) : null;
+  const effPal: readonly (readonly number[])[] = derivedPal ? derivedPal.rgb : pal;
 
   // ⚠️ THE BAN IS APPLIED BY NOT OFFERING THE ENTRY, not by remapping after.
   //
@@ -459,10 +560,15 @@ export function commitToGrid(
   // warm-grey texel that landed on rot-mid was then moved to whatever sat
   // nearest rot-mid, which is not the same question as what sits nearest the
   // texel. Snapping to the allowed set answers the right question once.
-  const banned = new Set(opts.ban ?? []);
-  const allowed = new Set(pal.map((_, i) => i).filter((i) => !banned.has(i)));
+  //
+  // A DERIVED palette cannot be banned and does not need to be: `ban` names a
+  // FAMILY of the shared palette ("this creature owns no rot"), and a palette
+  // clustered out of the creature's own texels has no family to disown. The
+  // option is dropped rather than half-honoured, and the verdict says so.
+  const banned = new Set(derived ? [] : opts.ban ?? []);
+  const allowed = new Set(effPal.map((_, i) => i).filter((i) => !banned.has(i)));
   if (!allowed.size) throw new Error("[commit] ban covers the whole palette");
-  const snapper = makeSnapper(pal, metric, allowed);
+  const snapper = makeSnapper(effPal, metric, allowed);
 
   const counts = new Map<number, number>();
   const idx: Int16Array[] = [];
@@ -709,7 +815,7 @@ export function commitToGrid(
           for (let x = 0; x < tw; x++) {
             const q = m[y * tw + x];
             if (q < 0) continue;
-            const [r, gg, b] = pal[q];
+            const [r, gg, b] = effPal[q];
             for (let by = 0; by < factor; by++) {
               let o = (((oy + y) * factor + by) * W + (tx + x) * factor) * 4;
               for (let bx = 0; bx < factor; bx++, o += 4) {
@@ -782,6 +888,8 @@ export function commitToGrid(
   return {
     image: out,
     rows: outRows,
+    palette: effPal.map((c) => [...c]),
+    derived,
     report: {
       factor,
       texelH,
@@ -791,13 +899,18 @@ export function commitToGrid(
       evictedShare,
       despeckled,
       verdict:
-        `COMMITTED ×${factor} — figure ${texelW}×${texelH} texels, ${entries.size} palette entries` +
+        `COMMITTED ×${factor}${native ? " NATIVE" : mode === "synth" ? " SYNTH" : ""} — figure ` +
+        `${texelW}×${texelH} texels, ${entries.size} palette entries` +
         (drop.length
           ? ` (${drop.length} evicted to meet the ${maxEntries} lock, ${(evictedShare * 100).toFixed(2)}% of opaque texels moved)`
           : ` (under the ${maxEntries} lock with room to spare)`) +
         (despeckled ? ` [despeckled ${despeckled}]` : "") +
         (flattened ? ` [flattened ${flattened} texel(s) of sub-${minRegion} regions]` : "") +
         (banned.size ? ` [banned entries: ${[...banned].sort((a, b) => a - b).join(",")}]` : "") +
+        (derived
+          ? ` [PER-SPRITE palette, ${effPal.length} entries derived from the sheet]`
+          : ` [shared Cold-Crypt palette]`) +
+        (derived && opts.ban?.length ? ` [ban ignored — a derived palette has no families]` : "") +
         ` [snap: ${metric}]` +
         // Name the rungs rather than claiming all five. The claim was true only
         // while `FIT_GRID` was the WIDEST rung; sizing for the DEFAULT trades

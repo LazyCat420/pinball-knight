@@ -51,6 +51,7 @@ import { commitToGrid, type CommitOptions } from "./commit";
 import { matte, rgbHex, type MatteOptions } from "./matte";
 import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
 import { PALETTE_FAMILIES } from "../../render/palette";
+import { hexOf, rgbOfHex } from "./palette-derive";
 
 const ROOT = __dirname;
 const INBOX = process.env.SPRITE_INBOX ?? join(ROOT, "inbox");
@@ -149,6 +150,17 @@ interface Sidecar {
    * the palette documents.
    */
   commit?: boolean | (CommitOptions & { bans?: string[] });
+  /**
+   * THIS SHEET'S OWN PALETTE, `#rrggbb` — written by a `derive` commit and
+   * carried on the promoted sheet.
+   *
+   * ⚠️ IT MUST TRAVEL WITH THE PNG. A committed sheet's texels sit on these
+   * colours and on nothing else; a promoted sheet that lost this field is
+   * measured against the shared 32, every texel reads as off-palette, and the
+   * run fails on `unmatched` with nothing pointing at the missing field. That
+   * is the same promotion trap the `commit` block already documents.
+   */
+  palette?: string[];
 }
 
 /** Sidecar commit options with family names resolved to palette entries. */
@@ -350,6 +362,14 @@ describe("sprite inbox", () => {
       // written here, so only one of the two ever existed to promote — and the
       // frame dumps carry a `<dir>-` prefix, which made the survivor look like
       // a complete creature rather than half of one.
+      // ── THIS SHEET'S OWN COLOURS, if it declared any ──────────────────────
+      //
+      // Appended to the shared palette rather than replacing it, exactly as the
+      // runtime does (`SheetBuildOptions.sheetPalette`) — the forge has to
+      // measure the decision the game makes, not a differently-shaped one.
+      const ownPal = side?.palette?.length ? side.palette.map(rgbOfHex) : null;
+      const snapPal = ownPal ? [...pal, ...ownPal] : pal;
+
       const outDir = join(WORK, `${name}-${dir}`);
       rmSync(outDir, { recursive: true, force: true });
       mkdirSync(outDir, { recursive: true });
@@ -369,10 +389,10 @@ describe("sprite inbox", () => {
         );
         const bctx = buf.getContext("2d");
         if (!bctx) throw new Error("[ingest] no 2D context for the cel buffer");
-        const declared = declaredSet(bctx.getImageData(0, 0, px, px).data, pal);
+        const declared = declaredSet(bctx.getImageData(0, 0, px, px).data, snapPal);
 
-        const img = crushCell(buf, G);
-        const st = censusCell(img.data, G, pal);
+        const img = crushCell(buf, G, ownPal ?? undefined);
+        const st = censusCell(img.data, G, snapPal);
         expect(st.opaque, `${file} ${labels[i]}: crushed to an EMPTY cell`).toBeGreaterThan(20);
         expect(st.unmatched, `${file} ${labels[i]}: off-palette texels after the snap`).toBe(0);
 
@@ -439,6 +459,10 @@ describe("sprite inbox", () => {
         // re-run. Building this object fresh every run is what used to delete
         // every hand-set scale in public/sprites (see the Sidecar docs above).
         ...(scaleFor(side, join(PUBLIC, `${name}-${dir}.json`)) ?? {}),
+        // The sheet's own palette, so the runtime can append it to the shared
+        // one for this actor's atlas. Absent means "shared palette", which is
+        // every sheet committed before 2026-08-04.
+        ...(side?.palette?.length ? { palette: side.palette } : {}),
         rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
       };
       if (PUBLISH) {
@@ -499,6 +523,9 @@ describe("sprite inbox", () => {
               rows: manifest.rows.map((r) => r.clip),
               rects: c.rows.map((r) => r.cells),
               ...(side.commit !== undefined ? { commit: side.commit } : {}),
+              // Without this the promoted sheet is measured against the shared
+              // palette it is no longer on — see `Sidecar.palette`.
+              ...(c.derived ? { palette: c.palette.map(hexOf) } : {}),
               ...(side.matte ? { matte: side.matte } : {}),
               ...(side.scale !== undefined ? { scale: side.scale } : {}),
             },

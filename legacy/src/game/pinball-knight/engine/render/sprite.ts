@@ -580,7 +580,7 @@ function crushableContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D |
   return canvas.getContext("2d", { willReadFrequently: true });
 }
 
-function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
+function crushToGridShared(src: HTMLCanvasElement, pal?: readonly (readonly number[])[]): HTMLCanvasElement {
   const g = SPRITE_PIXEL_GRID;
   if (!_crushCanvas || _crushCanvas.width !== g) {
     _crushCanvas = document.createElement("canvas");
@@ -593,7 +593,7 @@ function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
   // transparent surround — without this every sprite inherits the last one's
   // silhouette as a halo.
   sctx.clearRect(0, 0, g, g);
-  crushInto(sctx, src, g);
+  crushInto(sctx, src, g, pal);
   return _crushCanvas;
 }
 
@@ -617,13 +617,17 @@ function crushToGridShared(src: HTMLCanvasElement): HTMLCanvasElement {
  * capture, and a test can run the REAL filter at any rung. `axisTaps` already
  * caches per `${src}:${dst}`, so extra rungs cost one tap table each.
  */
-export function crushToGrid(src: HTMLCanvasElement, grid: number = SPRITE_PIXEL_GRID): HTMLCanvasElement {
+export function crushToGrid(
+  src: HTMLCanvasElement,
+  grid: number = SPRITE_PIXEL_GRID,
+  pal?: readonly (readonly number[])[],
+): HTMLCanvasElement {
   const g = grid;
   const small = document.createElement("canvas");
   small.width = g;
   small.height = g;
   const sctx = small.getContext("2d", { willReadFrequently: true })!;
-  crushInto(sctx, src, g);
+  crushInto(sctx, src, g, pal);
   return small;
 }
 
@@ -695,6 +699,33 @@ let _pixBuf: Float64Array | null = null;
  * stronger guarantee (a dense sweep of the colour cube, not whatever colours a
  * few frames happened to contain) and one that cannot rot.
  */
+/**
+ * The same nearest-entry question against an ARBITRARY palette — no table.
+ *
+ * Deliberately not given a LUT of its own. The table upstream exists because
+ * the shared palette snaps ~1000 frames per boot across the whole monster
+ * roster; a sheet palette snaps only the frames of the ONE actor that declared
+ * it (an imported creature is 20-60 frames), so the scan is a few million
+ * operations against a 262KB table build plus 8.4M to fill it. Paying for a
+ * cache that turns over per actor would be slower AND more memory.
+ *
+ * Almost every texel here is an exact hit: a committed sheet's colours ARE
+ * entries of this list, so the loop finds distance zero and the metric never
+ * matters. The texels it does decide are the ones `selout` blended toward ink.
+ */
+function snapColorIn(pal: readonly (readonly number[])[], r: number, g: number, b: number): number {
+  let bestDist = Infinity;
+  let out = 0;
+  for (let p = 0; p < pal.length; p++) {
+    const dr = (r - pal[p][0]) * 0.3;
+    const dg = (g - pal[p][1]) * 0.59;
+    const db = (b - pal[p][2]) * 0.11;
+    const dist = dr * dr + dg * dg + db * db;
+    if (dist < bestDist) { bestDist = dist; out = p; }
+  }
+  return out;
+}
+
 export function snapColor(r: number, g: number, b: number): number {
   const PAL_RGB = palRgb();
   const best = snapLut()[
@@ -716,7 +747,12 @@ export function snapColor(r: number, g: number, b: number): number {
 }
 
 /** The crush itself — downscale, hard alpha cutout, sharpen, selout, snap. */
-function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: number): void {
+function crushInto(
+  sctx: CanvasRenderingContext2D,
+  src: HTMLCanvasElement,
+  g: number,
+  sheetPal?: readonly (readonly number[])[],
+): void {
   const sw = src.width;
   const sh = src.height;
   const sctx2 = src.getContext("2d");
@@ -777,7 +813,11 @@ function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: nu
 
   const im = sctx.createImageData(g, g);
   const d = im.data;
-  const PAL_RGB = palRgb();
+  // The shared palette ALWAYS, plus this actor's own entries when it declared
+  // any. Appending rather than replacing is what lets one atlas hold both an
+  // imported sheet and the painted frames it merged with — see
+  // `SheetBuildOptions.sheetPalette`.
+  const PAL_RGB = sheetPal?.length ? [...palRgb(), ...sheetPal] : palRgb();
 
   // A HARD alpha edge (crisp silhouette, not a soft anti-aliased fringe) is
   // half the "authored pixel art" read — the cutout lands the outline on whole
@@ -847,7 +887,11 @@ function crushInto(sctx: CanvasRenderingContext2D, src: HTMLCanvasElement, g: nu
     for (let px = 0; px < g; px++) {
       const i = (py * g + px) * 4;
       if (!d[i + 3]) continue;
-      const best = snapColor(d[i], d[i + 1], d[i + 2]);
+      // The table is built for the shared palette alone; an actor that appended
+      // its own entries has to be scanned. See `snapColorIn`.
+      const best = sheetPal?.length
+        ? snapColorIn(PAL_RGB, d[i], d[i + 1], d[i + 2])
+        : snapColor(d[i], d[i + 1], d[i + 2]);
       d[i] = PAL_RGB[best][0];
       d[i + 1] = PAL_RGB[best][1];
       d[i + 2] = PAL_RGB[best][2];
@@ -953,7 +997,13 @@ let _paintCanvas: HTMLCanvasElement | null = null;
 let _paintCtx: CanvasRenderingContext2D | null = null;
 
 /** Paint one frame on a scratch canvas and blit it into the strip at `index`. */
-function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: number, row: number): void {
+function paintFrame(
+  strip: CanvasRenderingContext2D,
+  paint: FramePaint,
+  col: number,
+  row: number,
+  pal?: readonly (readonly number[])[],
+): void {
   if (!_paintCanvas) {
     _paintCanvas = document.createElement("canvas");
     _paintCanvas.width = SPRITE_PX;
@@ -980,7 +1030,7 @@ function paintFrame(strip: CanvasRenderingContext2D, paint: FramePaint, col: num
   // its native size and is never scaled again between here and the screen.
   // Shared crush target: blitted on this line, never retained. See the warning
   // on crushToGridShared.
-  strip.drawImage(crushToGridShared(_paintCanvas), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
+  strip.drawImage(crushToGridShared(_paintCanvas, pal), col * SPRITE_PIXEL_GRID, row * SPRITE_PIXEL_GRID);
 }
 
 /**
@@ -1221,6 +1271,28 @@ function lockSheetPalette(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext
 export interface SheetBuildOptions {
   /** Cap the atlas's distinct palette entries. See lockSheetPalette. */
   lockEntries?: number;
+  /**
+   * EXTRA colours this actor's frames may snap to — a PER-SPRITE PALETTE.
+   *
+   * The shared 32 are a dungeon's palette: eight ramps that have to serve stone,
+   * rot, blood, torchlight, steel, skin, leather and arcane at once, and an
+   * imported creature gets 20 of them to be a whole character in. The sprites
+   * this art is measured against — Ragnarok Online, Golden Sun — carry their own
+   * palette per sprite, and that is most of the remaining gap (measured: the
+   * snap alone costs the imported knight 28% of his saturation).
+   *
+   * ⚠️ ADDITIVE, NOT A REPLACEMENT, and that is load-bearing. An actor's atlas
+   * is not all imported: `knight-sheets.ts` MERGES imported clips with painted
+   * ones per facing, so the same atlas holds a committed sheet's armour and a
+   * procedural marble. Replacing the palette would snap the painter's frames
+   * onto the armour's twenty colours. Appending costs nothing instead — a
+   * committed texel already sits EXACTLY on one of these entries, so its nearest
+   * match is itself at distance zero whatever else is in the list, and the
+   * painted frames keep the whole shared palette they were authored against.
+   *
+   * sRGB triplets, 0-255. Comes from a sheet manifest's `palette` field.
+   */
+  sheetPalette?: readonly (readonly number[])[];
 }
 
 export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = {}): SheetBuild {
@@ -1299,7 +1371,7 @@ export function startSpriteSheet(paints: ActorPaints, opts: SheetBuildOptions = 
 
   const paintUntil = (limit: number): boolean => {
     while (next < flat.length) {
-      paintFrame(ctx, flat[next], next % cols, Math.floor(next / cols));
+      paintFrame(ctx, flat[next], next % cols, Math.floor(next / cols), opts.sheetPalette);
       next++;
       // Checked AFTER a frame, never before: a zero budget must still make
       // progress, or a caller that always arrives with a spent deadline would

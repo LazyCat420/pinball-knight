@@ -36,7 +36,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // `work/<name>/` before writing frames there, and when these sheets lived at
 // work/pinball_knight the forge deleted all fourteen of them.
 const SRC = join(HERE, "..", "sources", "pinball_knight-2026-08-02");
-const INBOX = join(HERE, "..", "inbox");
+/**
+ * Where the prepped sheets land. `SPRITE_INBOX` overrides it — the same
+ * variable `inbox.test.ts` already honours.
+ *
+ * ⚠️ THE DEFAULT OVERWRITES TRACKED ART. `inbox/pinball_knight-*.png` are the
+ * COMMITTED sheets (20 colours on a ×8 lattice), promoted there deliberately;
+ * a plain `build` replaces them with the raw prep output and the next run
+ * re-commits an already-committed sheet. Anything that wants the RAW sheet —
+ * the matrix bench does, because a commit arm measured on committed art is
+ * measuring itself — must redirect this rather than write into the inbox:
+ *
+ *     SPRITE_INBOX=.../work/raw node prep/prep-knight.mjs build
+ */
+const INBOX = process.env.SPRITE_INBOX ?? join(HERE, "..", "inbox");
 
 /**
  * Green-family test — high G dominating both other channels, plus the

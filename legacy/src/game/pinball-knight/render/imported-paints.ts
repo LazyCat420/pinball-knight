@@ -327,6 +327,36 @@ export function importedPaints(
   return { S: pick("S"), N: pick("N"), E: pick("E") };
 }
 
+/**
+ * The union of every loaded sheet's own palette, or `undefined` if none declared one.
+ *
+ * UNION, because a creature's three facings are three sheets committed
+ * INDEPENDENTLY and each clustered its own colours — the S sheet's armour grey
+ * and the N sheet's armour grey are two different bytes. They all land in one
+ * atlas, so the snap has to be offered all of them; anything less and a facing
+ * gets re-quantised onto another facing's palette, which is the same "the
+ * creature changes colour when he turns" defect the scale vote produced on the
+ * size axis.
+ *
+ * Deduped on the packed RGB so three facings that agree cost one entry.
+ */
+export function sheetPalette(sheets: readonly ImportedSheet[]): number[][] | undefined {
+  const seen = new Set<number>();
+  const out: number[][] = [];
+  for (const s of sheets) {
+    for (const hex of s.manifest.palette ?? []) {
+      const h = hex.replace("#", "");
+      const rgb = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+      if (rgb.some((v) => Number.isNaN(v))) continue;
+      const key = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(rgb);
+    }
+  }
+  return out.length ? out : undefined;
+}
+
 /** Which facings a creature actually authored — for the boot log. */
 export function authoredDirs(sheets: readonly ImportedSheet[]): Dir[] {
   return sheets.map((s) => s.manifest.dir);

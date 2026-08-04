@@ -320,3 +320,60 @@ monster at 61 texels tall.
 
 **Naming.** `<creature>-S.png` is south / toward camera. `-E` is the true side
 profile, `-N` is away. W is never authored — the engine mirrors E.
+
+---
+
+## Generating AT FINAL RESOLUTION — the native path (2026-08-04)
+
+Everything above assumes the generator hands you a big painting and the forge
+reduces it. There is a second door now, and it is the one the sprites this art
+is measured against actually come through: **art authored at the size it
+ships at**, imported with no reduce at all.
+
+    inbox/<creature>-S.json:  { "commit": { "native": true, "derive": 20 } }
+
+`native` skips the scale vote, the resample and the presharpen. One source
+pixel becomes one atlas texel. Nothing decides anything about your pixels.
+
+### The size, exactly
+
+At the default camera rung the cel budget is **70 × 72 texels** for living
+frames (84 × 72 for a death sprawl). So:
+
+    a standing figure:   ~60-70 px tall, ~30-45 px wide
+    the tallest frame:   72 px, and that is a hard ceiling
+
+**It throws rather than shrinking.** A native sheet whose figure does not fit is
+rejected with the measured numbers, because scaling it down would give away the
+one property it was authored for — and a report saying "imported 1:1" over art
+that was quietly resampled is worse than no native path at all.
+
+### What still gets imposed, and why you still must not ask for it
+
+The colour count. `derive: 20` clusters the sheet's own colours into a
+twenty-entry palette **belonging to that creature**, and that is not negotiable
+by prompt: round 2 asked in capitals for "AT MOST 16 distinct colours" and came
+back with 301,541. A generator emits a continuous-tone RENDERING of flat art at
+whatever resolution you ask for. Asking for 70 px does not change that — it
+changes how many pixels the noise is spread over, which is the entire point.
+
+So the native path is not "the generator does the pixel art now". It is: **you
+decide the geometry, the forge decides the colours, and nothing resamples.**
+
+### If you are not regenerating
+
+`"commit": { "mode": "synth", "derive": 20 }` is the same idea applied to art
+you already have — regions are decided at final resolution and coloured flat,
+instead of each texel being voted on independently. Measured against the
+shipped path on the knight (`matrix.test.ts`):
+
+| | isolated% | mosaic% | saturation vs source |
+|---|---|---|---|
+| vote + shared (shipped) | 6.0 | 25.4 | 0.67 |
+| vote + per-sprite | 4.7 | 21.6 | 0.74 |
+| synth + shared | 2.5 | 18.0 | 0.65 |
+| **synth + per-sprite** | **2.2** | **17.8** | **0.74** |
+
+The two levers fix different defects and compose: the palette is what stops the
+knight's chin snapping onto the torch ramp, the synthesis is what stops his
+armour arriving as a mosaic.
