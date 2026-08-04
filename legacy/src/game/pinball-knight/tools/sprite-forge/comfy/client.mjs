@@ -13,11 +13,18 @@
  *   GET  /object_info     node schemas — used to FAIL LOUDLY when a node
  *                         class this driver builds is missing or renamed
  *   GET  /system_stats    liveness + VRAM
+ *   POST /interrupt       stop the RUNNING prompt (there is no cancel-by-id;
+ *                         check /queue first — see interrupt())
+ *   GET  /queue           running + pending prompt ids, full payloads
+ *   POST /free            drop cached models — the 24GB card cannot hold the
+ *                         Qwen and Wan stacks resident at once
  *
- * Completion is polled via /history rather than the websocket: no extra
- * dependency, and a sprite job is seconds-to-minutes, so 500ms polling is
- * nothing. If a driver ever needs per-node progress, that is the one reason
- * to add the /ws client.
+ * COMPLETION is still polled via /history: a poll survives a dev-server
+ * reload and a dropped socket, so it stays the source of truth for "done".
+ * PROGRESS rides the websocket (watchProgress below) because that is the
+ * only place ComfyUI reports per-node state — but it is advisory: job state
+ * must key off /history, never off progress traffic, which is documented to
+ * trail completion (ComfyUI#9330).
  */
 
 /**
@@ -73,11 +80,16 @@ export async function uploadImage(path, name) {
   return j.subfolder ? `${j.subfolder}/${j.name}` : j.name;
 }
 
-export async function queuePrompt(graph) {
+/** @param {Record<string, any>} graph @param {{clientId?: string|null}} [opts] */
+export async function queuePrompt(graph, { clientId = null } = {}) {
+  // client_id routes this prompt's websocket events to watchProgress's
+  // socket — without it ComfyUI only broadcasts global queue counts (the
+  // Krita plugin's founding bug, krita-ai-diffusion#2059).
+  const body = clientId ? { prompt: graph, client_id: clientId } : { prompt: graph };
   const r = await fetch(`${BASE}/prompt`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ prompt: graph }),
+    body: JSON.stringify(body),
   });
   const j = await r.json();
   if (!r.ok || j.error) {
@@ -85,6 +97,113 @@ export async function queuePrompt(graph) {
     throw new Error(`[comfy] /prompt rejected the graph: ${JSON.stringify(j, null, 1)}`);
   }
   return j.prompt_id;
+}
+
+/**
+ * Stop work on a prompt. ComfyUI has no cancel-by-id: /interrupt kills
+ * whatever is RUNNING and /queue{delete} removes PENDING entries, so the
+ * caller has to look first. The check-then-act race (it finishes or starts
+ * between the look and the kill) is inherent to the protocol (#8835) —
+ * both outcomes are benign: a stray interrupt of the next prompt is the
+ * one hazard, so only interrupt when the id matches queue_running.
+ */
+export async function cancelPrompt(promptId) {
+  const q = await queueState();
+  if (q.running.some((p) => p.promptId === promptId)) {
+    const r = await fetch(`${BASE}/interrupt`, { method: "POST" });
+    if (!r.ok) throw new Error(`[comfy] /interrupt -> ${r.status}`);
+    return "interrupted";
+  }
+  const r = await fetch(`${BASE}/queue`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ delete: [promptId] }),
+  });
+  if (!r.ok) throw new Error(`[comfy] /queue delete -> ${r.status}`);
+  return "dequeued";
+}
+
+/** Running + pending prompts. Entries are [number, prompt_id, graph, extra…]. */
+export async function queueState() {
+  const r = await fetch(`${BASE}/queue`);
+  if (!r.ok) throw new Error(`[comfy] /queue -> ${r.status}`);
+  const j = await r.json();
+  const strip = (e) => ({ promptId: e[1] });
+  return {
+    running: (j.queue_running ?? []).map(strip),
+    pending: (j.queue_pending ?? []).map(strip),
+  };
+}
+
+/**
+ * Drop cached models. The card cannot hold the Qwen and Wan stacks at once,
+ * and ComfyUI keeps everything it ever loaded; call this when SWITCHING
+ * legs, never routinely — the price is the next run going cold (~450s Wan).
+ */
+export async function freeMemory() {
+  const r = await fetch(`${BASE}/free`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ unload_models: true, free_memory: true }),
+  });
+  if (!r.ok) throw new Error(`[comfy] /free -> ${r.status}`);
+}
+
+/**
+ * Per-node progress + live sampler previews over the websocket.
+ *
+ * Advisory by contract: waitFor()/history stays the authority on done/error.
+ * Uses the global WebSocket (Node 22+, every browser); where it is missing
+ * this becomes a no-op and the caller simply has no progress bar. Returns
+ * a close() function; the caller closes when history reports terminal.
+ *
+ * onProgress({node, value, max}) fires per sampler step and node change;
+ * onPreview(buf, mime) fires with the latest live preview image IF the
+ * server was started with --preview-method (binary frame: 4-byte type
+ * big-endian [1 = image], 4-byte format [1 JPEG, 2 PNG], then the bytes).
+ */
+export function watchProgress(promptId, clientId, { onProgress, onPreview } = {}) {
+  const WS = globalThis.WebSocket;
+  if (!WS) return () => {};
+  const wsUrl = `${BASE}`.replace(/^http/, "ws") + `/ws?clientId=${clientId}`;
+  let ws;
+  try {
+    ws = new WS(wsUrl);
+  } catch {
+    return () => {};
+  }
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === "string") {
+      let msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
+      const d = msg.data ?? {};
+      if (d.prompt_id && d.prompt_id !== promptId) return;
+      if (msg.type === "progress" && onProgress) {
+        onProgress({ node: d.node ?? null, value: d.value ?? 0, max: d.max ?? 1 });
+      } else if (msg.type === "executing" && onProgress && d.node) {
+        onProgress({ node: d.node, value: 0, max: 1 });
+      }
+    } else if (onPreview && ev.data instanceof ArrayBuffer && ev.data.byteLength > 8) {
+      const view = new DataView(ev.data);
+      if (view.getUint32(0) === 1) {
+        const mime = view.getUint32(4) === 2 ? "image/png" : "image/jpeg";
+        onPreview(Buffer.from(ev.data, 8), mime);
+      }
+    }
+  };
+  ws.onerror = () => {};
+  return () => {
+    try {
+      ws.close();
+    } catch {
+      /* already dead */
+    }
+  };
 }
 
 /**

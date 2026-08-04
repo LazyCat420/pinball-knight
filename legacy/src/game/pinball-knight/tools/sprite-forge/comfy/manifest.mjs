@@ -112,6 +112,27 @@ export const LEGS = [
         ],
       },
       {
+        id: "rot-lora-angles",
+        role: "LoRA — deterministic camera angles (optional)",
+        required: false,
+        options: [
+          {
+            id: "fal-multi-angle",
+            name: "fal Multiple-Angles (96 poses)",
+            file: "loras/qwen-image-edit-2511-multiple-angles-lora.safetensors",
+            bytes: 295140688,
+            url: HF(
+              "fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA",
+              "qwen-image-edit-2511-multiple-angles-lora.safetensors",
+            ),
+            license: "Apache-2.0",
+            note:
+              "Fixed grammar \"<sks> [view] eye-level shot medium shot\" at strength 0.9 — " +
+              "turns freeform rotation prompting into deterministic angle control (96 trained poses).",
+          },
+        ],
+      },
+      {
         id: "rot-lora-style",
         role: "LoRA — pixel art style lock (optional)",
         required: false,
@@ -125,6 +146,35 @@ export const LEGS = [
             kind: "civitai",
             license: "Civitai: commercial OK (Sell granted)",
             note: "Keeps edits pixel-styled at strength 0.6-1.0. Needs your Civitai API key (Settings).",
+          },
+        ],
+      },
+      {
+        id: "rot-lora-styletransfer",
+        role: "LoRA — style transfer between figures (optional)",
+        required: false,
+        options: [
+          {
+            id: "dx8152-style-transfer",
+            name: "dx8152 Style Transfer",
+            file: "loras/style-transfer-1_20.safetensors",
+            bytes: 236117040,
+            url: HF("dx8152/Qwen-Image-Edit-2511-Style-Transfer", "style-transfer-1_20.safetensors"),
+            license: "Apache-2.0",
+            note:
+              "Prompt \"Change the style of Figure 1 to the style of Figure 2\" — lets edit/pixelize " +
+              "restyle against a style reference. The 1_20 epoch is what the author's own workflow loads.",
+          },
+          {
+            id: "render-it",
+            name: "AmirKerr Render It (alpha)",
+            file: "loras/Qwen_Edit_Image_Render_It_Alpha.safetensors",
+            bytes: 590058832,
+            url: HF("AmirKerr/Render_It", "Qwen_Edit_Image_Render_It_Alpha.safetensors"),
+            license: "Apache-2.0",
+            note:
+              "Trigger \"Render this pixelart, …\" — Euler/Beta at ~25 steps. Alpha, trained on the " +
+              "older Qwen-Image-Edit base, so expect rough edges on 2511.",
           },
         ],
       },
@@ -275,7 +325,10 @@ export const LEGS = [
             id: "pix3lwalk",
             name: "pix3lwalk walk cycles (high-noise half)",
             file: "loras/pixel_walk_lora_v1_high_noise.safetensors",
-            bytes: 150000000,
+            // Civitai API sizeKB 149857 — the old 150000000 guess was 2.3% off
+            // and the install check is ±1%, which would grade a good download
+            // as "broken file".
+            bytes: 153453624,
             url: "https://civitai.com/api/download/models/2445934",
             kind: "civitai",
             license: "Civitai: commercial OK (Sell granted)",
