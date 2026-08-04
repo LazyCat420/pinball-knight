@@ -60,7 +60,12 @@ function generatedSheet(): RawImage {
         // the entry lock with nothing to evict and the test vacuous.
         const t = (y - y0) / (y1 - y0);
         const a = f * 1.05 + ((x - x0) / (x1 - x0)) * 3.4;
-        const v = 0.35 + 0.65 * (1 - t);
+        // Value spans nearly the whole range, not 0.35-1.0: the palette's ramps
+        // run from a near-black void to a near-white flame core, and a fixture
+        // that never goes dark or bright cannot reach the entries at either end —
+        // which is how it came to bust the 20-lock only under the metric that
+        // SCATTERS colours across ramps (see the anti-vacuity test below).
+        const v = 0.10 + 0.90 * (1 - t);
         const i = (y * SW + x) * 4;
         img.data[i] = v * (128 + 120 * Math.sin(a)) + rnd() * 22;
         img.data[i + 1] = v * (128 + 120 * Math.sin(a + 2.09)) + rnd() * 22;
@@ -167,6 +172,14 @@ describe("the grid commit", () => {
     // land under 20 anyway, and a broken eviction would ship green. Round 2's
     // real sheet censused at 30.7 entries; the fixture has to bust it too or it
     // is not standing in for the problem.
+    //
+    // ⚠️ THE METRIC CHANGES THIS NUMBER, which is itself the finding. On the
+    // pre-2026-08-03 luma snap the old fixture busted the lock easily, because a
+    // brightness-only match SCATTERS one material across every ramp that shares
+    // its value. Under `oklab` the same input consolidated to 19 entries and this
+    // test went vacuous — colours landing on their own ramp is the whole point of
+    // the change. The fixture's value range was widened to reach the palette's
+    // dark and bright ends so it stands in for a real sheet under BOTH metrics.
     const free = commitToGrid(generatedSheet(), ROWS, PAL(), { maxEntries: 999 });
     expect(free.report.entries).toBeGreaterThan(MAX_ENTRIES);
     expect(free.report.evicted).toBe(0);

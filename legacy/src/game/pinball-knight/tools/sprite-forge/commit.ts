@@ -37,15 +37,20 @@
  * eviction inside a frame budget. Committing once writes an artifact that can
  * be diffed, censused and rejected.
  *
- * Pure: pixels in, pixels out. No filesystem, no node-canvas. `snapColor` comes
- * from the engine on purpose — re-implementing the metric is how a tool starts
- * measuring something the game does not do (`register.ts` imports the real
- * crush for the same reason).
+ * Pure: pixels in, pixels out. No filesystem, no node-canvas.
+ *
+ * ⚠️ THE SNAP NO LONGER COMES FROM THE ENGINE, and that is deliberate. It used
+ * to call the engine's `snapColor` so a tool could not drift from the game's own
+ * metric. But the engine's snap runs per frame on a LUT and is tuned for the 3D
+ * pass; the commit runs once, offline, on a few thousand texels, and can afford
+ * a perceptual metric the runtime cannot. Since a committed sheet arrives at the
+ * atlas already sitting on exact palette colours, the runtime crush snaps it to
+ * itself — the two never disagree about a shipped texel. See `colour.ts`.
  */
-import { snapColor } from "../../engine/render/sprite";
 import { resampleCell, type RawImage } from "./resample";
 import { ART_BOX, ART_FIT_H, ART_FIT_W, ART_GROUND, VOTING_CLIPS, type ManifestRow } from "./manifest";
 import { sliceSheet, type Cell } from "./slice";
+import { makeSnapper, type SnapMetric } from "./colour";
 
 export type { RawImage };
 
@@ -133,6 +138,44 @@ export interface CommitOptions {
    * own metric, BEFORE the evict, so they never hold a lock slot.
    */
   ban?: readonly number[];
+  /**
+   * Which colour metric decides "nearest palette entry". See `colour.ts`.
+   *
+   * `oklab` is the default; `luma` is the legacy sRGB brightness match, kept as
+   * the A/B control arm.
+   *
+   * ⚠️ THE METRIC IS THE SMALL HALF. It was chased first, on the measurement
+   * that the snap costs the knight 28% of his saturation — and swapping it
+   * recovers almost none of that (75% of source against luma's 77%). What the
+   * snap cannot do is invent colours a 20-of-32 palette does not have; the
+   * saturation goes to the PALETTE, not to how the palette is searched.
+   *
+   * `oklab` ships anyway, on a smaller and more defensible claim: it keeps a
+   * material on its own ramp. The knight's brow arrives as skin rather than as
+   * flame, his straps as leather rather than as ember, and it consolidates
+   * where luma scatters (the commit.test fixture fell 21+ entries → 19 on the
+   * same input). See `snap-metric.test.ts` for the arms, including the one that
+   * scored best on every family metric and was REJECTED by looking at it.
+   */
+  metric?: SnapMetric;
+  /**
+   * Local-contrast boost applied to the source cell BEFORE the reduce.
+   *
+   * ⚠️ BEFORE, WHICH IS THE WHOLE POINT. Sharpening after a downscale can only
+   * exaggerate the texels the reduce already chose — it cannot recover a feature
+   * the reduce averaged away, and at this scale it mostly manufactures halos.
+   * Sharpening BEFORE changes what the k-centroid has to VOTE on: an eye that is
+   * a slightly-darker smudge across three source pixels becomes a decisively
+   * darker one, and wins its texel instead of tying with the cheek.
+   *
+   * Unsharp on LUMA only, with RGB scaled by L'/L, so a boosted pixel moves
+   * along a ray from the origin and cannot change hue family. `sprite.ts`
+   * already learned that lesson the expensive way — its per-channel sharpen
+   * measured as "chroma confetti" and was set to 0.
+   *
+   * 0 disables the pass entirely. See `presharpen-ab` in snap-metric.test.ts.
+   */
+  presharpen?: number;
 }
 
 export interface CommitReport {
@@ -159,13 +202,18 @@ export interface CommitResult {
   report: CommitReport;
 }
 
-/** Luma-weighted distance between two palette entries — the snap's own metric. */
-function palDist(a: readonly number[], b: readonly number[]): number {
-  const dr = (a[0] - b[0]) * 0.3;
-  const dg = (a[1] - b[1]) * 0.59;
-  const db = (a[2] - b[2]) * 0.11;
-  return dr * dr + dg * dg + db * db;
-}
+/**
+ * Default local-contrast boost before the reduce. See `CommitOptions.presharpen`.
+ */
+export const DEFAULT_PRESHARPEN = 0.9;
+
+/**
+ * The metric every commit uses unless its sidecar says otherwise.
+ *
+ * `oklab` since 2026-08-03. See `colour.ts` for the measurement that moved it
+ * off the legacy luma match, and `snap-metric.test.ts` for the arms.
+ */
+export const DEFAULT_METRIC: SnapMetric = "oklab";
 
 /**
  * The cells that SET the sheet's scale, with the same two fallbacks
@@ -180,6 +228,67 @@ function pickVote(rows: readonly ManifestRow[], all: readonly Cell[]): readonly 
   if (locomotion.length) return locomotion;
   const alive = rows.filter((r) => r.clip !== "death").flatMap((r) => r.cells);
   return alive.length ? alive : all;
+}
+
+/**
+ * Unsharp mask on LUMA, radius scaled to the REDUCTION the cell is about to take.
+ *
+ * The radius has to track the reduce or the pass is meaningless: boosting detail
+ * finer than one output texel just adds noise the k-centroid then votes away,
+ * and boosting detail much coarser than a texel shades whole limbs. One output
+ * texel covers `src.height / th` source rows, so that is the neighbourhood.
+ */
+function presharpen(src: RawImage, amount: number, th: number): RawImage {
+  if (amount <= 0 || th <= 0) return src;
+  const rad = Math.max(1, Math.round(src.height / th / 2));
+  const { width: w, height: h, data } = src;
+  const lum = new Float32Array(w * h);
+  for (let p = 0; p < w * h; p++) {
+    lum[p] = 0.3 * data[p * 4] + 0.59 * data[p * 4 + 1] + 0.11 * data[p * 4 + 2];
+  }
+  // Separable box blur, alpha-aware: a transparent neighbour must not drag the
+  // rim toward zero, or every silhouette edge grows a bright halo.
+  const tmp = new Float32Array(w * h);
+  const blur = new Float32Array(w * h);
+  const opaque = (p: number): boolean => data[p * 4 + 3] > OPAQUE_CUTOFF;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0, n = 0;
+      for (let k = -rad; k <= rad; k++) {
+        const xx = x + k;
+        if (xx < 0 || xx >= w) continue;
+        const p = y * w + xx;
+        if (!opaque(p)) continue;
+        s += lum[p]; n++;
+      }
+      tmp[y * w + x] = n ? s / n : lum[y * w + x];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) {
+      let s = 0, n = 0;
+      for (let k = -rad; k <= rad; k++) {
+        const yy = y + k;
+        if (yy < 0 || yy >= h) continue;
+        const p = yy * w + x;
+        if (!opaque(p)) continue;
+        s += tmp[p]; n++;
+      }
+      blur[y * w + x] = n ? s / n : tmp[y * w + x];
+    }
+  }
+  const out: RawImage = { width: w, height: h, data: new Uint8ClampedArray(data) };
+  for (let p = 0; p < w * h; p++) {
+    if (!opaque(p)) continue;
+    const L = lum[p];
+    if (L <= 0.5) continue;
+    const boosted = L + amount * (L - blur[p]);
+    const k = Math.max(0, boosted) / L;
+    out.data[p * 4] = data[p * 4] * k;
+    out.data[p * 4 + 1] = data[p * 4 + 1] * k;
+    out.data[p * 4 + 2] = data[p * 4 + 2] * k;
+  }
+  return out;
 }
 
 /** Copy one cell's rect out of the sheet into its own buffer. */
@@ -212,6 +321,8 @@ export function commitToGrid(
   const fitGrid = opts.fitGrid ?? FIT_GRID;
   const maxEntries = opts.maxEntries ?? MAX_ENTRIES;
   const gutter = Math.max(1, opts.gutter ?? 1);
+  const metric: SnapMetric = opts.metric ?? DEFAULT_METRIC;
+  const preAmt = opts.presharpen ?? DEFAULT_PRESHARPEN;
 
   const all: Cell[] = rows.flatMap((r) => r.cells);
   if (!all.length) throw new Error("[commit] no cells");
@@ -293,28 +404,23 @@ export function commitToGrid(
   // k-centroid rather than a box average: an average of a soft edge invents a
   // colour in neither side, and the snap downstream then has to guess which was
   // meant. See `resample.ts`.
-  const texels = all.map((c, i) => resampleCell(cutCell(src, c), sized[i][0], sized[i][1], "kcentroid"));
+  const texels = all.map((c, i) =>
+    resampleCell(presharpen(cutCell(src, c), preAmt, sized[i][1]), sized[i][0], sized[i][1], "kcentroid"),
+  );
 
-  // The material ban, resolved once: banned entry → nearest allowed entry
-  // under the same metric the snap chose it with. See `CommitOptions.ban`.
-  const bans = new Map<number, number>();
-  if (opts.ban?.length) {
-    const banned = new Set(opts.ban);
-    const allowed = pal.map((_, i) => i).filter((i) => !banned.has(i));
-    if (!allowed.length) throw new Error("[commit] ban covers the whole palette");
-    for (const b of banned) {
-      let best = allowed[0];
-      let bd = Infinity;
-      for (const a of allowed) {
-        const dist = palDist(pal[b], pal[a]);
-        if (dist < bd) {
-          bd = dist;
-          best = a;
-        }
-      }
-      bans.set(b, best);
-    }
-  }
+  // ⚠️ THE BAN IS APPLIED BY NOT OFFERING THE ENTRY, not by remapping after.
+  //
+  // It used to snap against the whole palette and then hop each banned index to
+  // its nearest allowed neighbour. Two hops through a lossy metric compound its
+  // error — and worse, the hop was computed between two PALETTE entries, so the
+  // colour that actually got measured (the texel) never entered into it. A
+  // warm-grey texel that landed on rot-mid was then moved to whatever sat
+  // nearest rot-mid, which is not the same question as what sits nearest the
+  // texel. Snapping to the allowed set answers the right question once.
+  const banned = new Set(opts.ban ?? []);
+  const allowed = new Set(pal.map((_, i) => i).filter((i) => !banned.has(i)));
+  if (!allowed.size) throw new Error("[commit] ban covers the whole palette");
+  const snapper = makeSnapper(pal, metric, allowed);
 
   const counts = new Map<number, number>();
   const idx: Int16Array[] = [];
@@ -322,8 +428,7 @@ export function commitToGrid(
     const m = new Int16Array(t.width * t.height).fill(-1);
     for (let p = 0; p < m.length; p++) {
       if (t.data[p * 4 + 3] <= OPAQUE_CUTOFF) continue;
-      const q = snapColor(t.data[p * 4], t.data[p * 4 + 1], t.data[p * 4 + 2]);
-      const r = bans.get(q) ?? q;
+      const r = snapper.snap(t.data[p * 4], t.data[p * 4 + 1], t.data[p * 4 + 2]);
       m[p] = r;
       counts.set(r, (counts.get(r) ?? 0) + 1);
     }
@@ -346,7 +451,7 @@ export function commitToGrid(
     let best = keep[0];
     let bd = Infinity;
     for (const k of keep) {
-      const dist = palDist(pal[d], pal[k]);
+      const dist = snapper.dist(d, k);
       if (dist < bd) {
         bd = dist;
         best = k;
@@ -405,7 +510,7 @@ export function commitToGrid(
             const nq = before[ny * w + nx];
             if (nq < 0) continue;
             if (nq === q) { alone = false; break; }
-            const d = palDist(pal[q], pal[nq]);
+            const d = snapper.dist(q, nq);
             if (d < bd) { bd = d; bestN = nq; }
           }
           if (!alone || bestN < 0 || bd > DESPECKLE_NEAR) continue;
@@ -581,7 +686,8 @@ export function commitToGrid(
           ? ` (${drop.length} evicted to meet the ${maxEntries} lock, ${(evictedShare * 100).toFixed(2)}% of opaque texels moved)`
           : ` (under the ${maxEntries} lock with room to spare)`) +
         (despeckled ? ` [despeckled ${despeckled} orphan texel(s)]` : "") +
-        (bans.size ? ` [banned entries: ${[...bans.keys()].sort((a, b) => a - b).join(",")}]` : "") +
+        (banned.size ? ` [banned entries: ${[...banned].sort((a, b) => a - b).join(",")}]` : "") +
+        ` [snap: ${metric}]` +
         // Name the rungs rather than claiming all five. The claim was true only
         // while `FIT_GRID` was the WIDEST rung; sizing for the DEFAULT trades
         // the two widest rungs for 20% more figure everywhere else, and a
