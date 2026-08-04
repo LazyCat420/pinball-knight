@@ -297,7 +297,8 @@ describe("the face", () => {
         .map(([f, n]) => `${f} ${((n / tot) * 100).toFixed(0)}%`);
       lines.push(`${arm.key} ${arm.label.padEnd(20)} ${top.join("  ")}`);
     }
-    writeFileSync(join(HERE, "work", "snap-ab", "face.txt"), lines.join("\n") + "\n");
+    mkdirSync(OUT, { recursive: true });
+    writeFileSync(join(OUT, "face.txt"), lines.join("\n") + "\n");
   }, 300000);
 });
 
