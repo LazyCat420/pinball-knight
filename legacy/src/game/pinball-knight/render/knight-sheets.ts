@@ -16,7 +16,7 @@ import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet }
 import { makeKnightPaints } from "./cel-painter";
 import type { WeaponId } from "../items";
 import { lookKey, type KnightLook } from "./knight-look";
-import { loadImportedSheet, importedPaints } from "./imported-paints";
+import { loadImportedSheet, importedPaints, sheetPalette } from "./imported-paints";
 import type { ActorPaints } from "../engine/render/paint-types";
 
 /** Enough for a whole run's weapon/gear churn without rebuild thrash. */
@@ -26,9 +26,29 @@ export type SheetConsumer = "dungeon" | "tavern";
 const pinned = new Map<SheetConsumer, string>();
 
 let importedKnightPaints: ActorPaints | null = null;
+/**
+ * The imported sheets' own colours, appended to the shared palette when this
+ * actor's atlas is crushed. Null while the knight is purely painted — the
+ * painter authors against the shared palette and needs nothing extra.
+ */
+let importedKnightPalette: number[][] | null = null;
 
 export function setImportedKnightPaintsForTest(paints: ActorPaints | null): void {
   importedKnightPaints = paints;
+  if (!paints) importedKnightPalette = null;
+}
+
+/**
+ * Build options for a knight atlas.
+ *
+ * ⚠️ THE PALETTE APPLIES EVEN THOUGH MOST FRAMES ARE PAINTED. `resolvePaints`
+ * merges imported clips over the painter's, so one atlas holds both, and the
+ * appended entries are what keep the imported frames off the shared ramps
+ * without taking the shared ramps away from the marble forms. See
+ * `SheetBuildOptions.sheetPalette`.
+ */
+function knightBuildOpts(): { sheetPalette?: number[][] } {
+  return importedKnightPalette ? { sheetPalette: importedKnightPalette } : {};
 }
 
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
@@ -44,6 +64,7 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
     const paints = importedPaints(sheets);
     if (paints) {
       importedKnightPaints = paints;
+      importedKnightPalette = sheetPalette(sheets) ?? null;
       state.playerSheets.clear();
       // Clearing the CACHE is not enough: applyWeaponArt early-returns while
       // the composite weapon+look key matches state.playerArtKey, so the live
@@ -87,7 +108,7 @@ export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: She
   const cached = touch(key);
   if (cached) return cached;
 
-  const sheet = buildSpriteSheet(resolvePaints(weapon, look));
+  const sheet = buildSpriteSheet(resolvePaints(weapon, look), knightBuildOpts());
   return commit(key, sheet);
 }
 
@@ -139,7 +160,7 @@ export function requestKnightSheet(
     building.build.sheet.texture.dispose();
     building = null;
   }
-  if (!building) building = { key, build: startSpriteSheet(resolvePaints(weapon, look)) };
+  if (!building) building = { key, build: startSpriteSheet(resolvePaints(weapon, look), knightBuildOpts()) };
 
   if (!building.build.step(budgetMs)) return null;
   const done = building.build.sheet;

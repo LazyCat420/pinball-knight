@@ -57,6 +57,46 @@ Three of them, and none replaces the others:
 | one static icon, or a from-scratch sketch | **pixel-trace** (`npm run pixels`) | emits an editable grid, not an opaque PNG |
 | anything animated, authored by us | **painters** (`render/monsters/*.ts`) | procedural canvas code, still the default |
 
+### How a sheet becomes texels, and whose colours they land on
+
+Two independent choices, set in the sidecar's `commit` block. They compose, and
+the measurements below are from `matrix.test.ts` on the knight — six arms, every
+one through the real commit and the real crush.
+
+    "commit": { "mode": "synth", "derive": 20 }
+
+**`mode`** — how a source pixel becomes a texel.
+
+| | what it does | when |
+|---|---|---|
+| `vote` (default) | k-centroid reduce: each texel takes the dominant colour under it | art you are not re-authoring, and the only path with a presharpen |
+| `synth` | decides REGIONS first (SLIC over the source), colours each flat, draws a 1-texel outline | anything that arrives as a mosaic — see `synth.ts` |
+| `native` | no reduce at all: one source pixel IS one texel | art authored at final resolution. Throws rather than shrinking |
+
+**`derive: N`** — give the sheet its OWN N-entry palette instead of spending N of
+the shared 32. The runtime APPENDS it for that actor's atlas rather than
+replacing the shared palette, so an actor whose imported clips merge with
+painted ones (the knight's marble forms) keeps both. See `palette-derive.ts`.
+
+    arm                        isolated%   mosaic%   saturation vs source
+    vote + shared (shipped)        6.0       25.4          0.67
+    vote + per-sprite              4.7       21.6          0.74
+    synth + shared                 2.5       18.0          0.65
+    synth + per-sprite             2.2       17.8          0.74
+    native (round-trip)            1.6       18.3          0.80
+
+The palette buys colour fidelity (the knight's chin stops snapping onto the
+torch ramp), the synthesis buys structure (the armour stops arriving as 2-4
+texel patches). Neither substitutes for the other.
+
+⚠️ **The bench reads `work/raw/`, never `inbox/`.** The inbox sheets are the
+COMMITTED ones that already shipped — 20 colours on a ×8 lattice — and running
+commit arms over those measures each arm against its own output. Rebuild the raw
+sheets first:
+
+    SPRITE_INBOX=$PWD/work/raw node prep/prep-knight.mjs build
+    RUN_MATRIX=1 npx vitest run matrix
+
 ### The Python port
 
     cd python && pip install -e ".[dev]" && pytest

@@ -47,6 +47,19 @@ export interface SheetManifest {
   grid?: number;
   /** Optional scale multiplier for rendering sizing standardization. */
   scale?: number;
+  /**
+   * THIS SHEET'S OWN PALETTE — `#rrggbb`, in the order the commit derived it.
+   *
+   * Present only when the sheet was committed with `derive`, and then it is the
+   * complete list of colours its texels sit on. The runtime APPENDS these to
+   * the shared palette for this actor's atlas (`SheetBuildOptions.sheetPalette`)
+   * rather than replacing it — see that field for why an actor's atlas is not
+   * necessarily all imported.
+   *
+   * Absent means the sheet is on the shared Cold-Crypt palette, which is what
+   * every sheet before 2026-08-04 is.
+   */
+  palette?: string[];
   rows: ManifestRow[];
 }
 

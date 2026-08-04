@@ -20,10 +20,10 @@ import { makeHoundPaints } from "../render/monsters/hound";
 import { lookFromGear, lookKey } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
 import { getKnightSheet, requestKnightSheet, loadImportedKnightArt } from "../render/knight-sheets";
-import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SpriteSheet } from "../engine/render/sprite";
+import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOptions, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
-import { authoredDirs, importedPaints, loadImportedSheet, type ImportedSheet } from "../render/imported-paints";
+import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type ImportedSheet } from "../render/imported-paints";
 import { _clearPortraitCache } from "../render/monster-portrait";
 import type { Dir } from "../engine/render/paint-types";
 
@@ -98,13 +98,27 @@ export function paintMenuPortrait(canvas: HTMLCanvasElement): void {
  */
 const LOCK = { lockEntries: 20 };
 
-function monsterSheet(paints: ActorPaints): SpriteSheet {
-  return buildSpriteSheet(withRecoil(paints), LOCK);
+/**
+ * A creature's own palette entries, when its imported sheets declared any.
+ *
+ * Keyed by SheetKey and populated in `applyImportedArt`, so a monster that is
+ * still painted has no entry and builds against the shared palette alone. See
+ * `SheetBuildOptions.sheetPalette`.
+ */
+const importedPalettes = new Map<SheetKey, number[][]>();
+
+function buildOpts(key?: SheetKey): SheetBuildOptions {
+  const pal = key ? importedPalettes.get(key) : undefined;
+  return pal ? { ...LOCK, sheetPalette: pal } : LOCK;
+}
+
+function monsterSheet(paints: ActorPaints, key?: SheetKey): SpriteSheet {
+  return buildSpriteSheet(withRecoil(paints), buildOpts(key));
 }
 
 /** The same rule, for the incremental path. Both go through `withRecoil`. */
-function startMonsterSheet(paints: ActorPaints): SheetBuild {
-  return startSpriteSheet(withRecoil(paints), LOCK);
+function startMonsterSheet(paints: ActorPaints, key?: SheetKey): SheetBuild {
+  return startSpriteSheet(withRecoil(paints), buildOpts(key));
 }
 
 /**
@@ -229,7 +243,7 @@ export function sheetFor(key: SheetKey): SpriteSheet {
     b.set(s);
     return s;
   }
-  const built = monsterSheet(paintsFor(key));
+  const built = monsterSheet(paintsFor(key), key);
   b.set(built);
   return built;
 }
@@ -347,6 +361,8 @@ export async function applyImportedArt(): Promise<void> {
     const paints = importedPaints(loaded);
     if (!paints) continue;
     imported.set(key, paints);
+    const pal = sheetPalette(loaded);
+    if (pal) importedPalettes.set(key, pal);
     _clearPortraitCache();
     console.info(
       `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
@@ -370,7 +386,7 @@ function rebuild(key: SheetKey): void {
   const b = BUILDERS[key];
   inFlight.delete(key);
   if (current?.key === key) current = null;
-  const sheet = monsterSheet(paintsFor(key));
+  const sheet = monsterSheet(paintsFor(key), key);
   b.set(sheet);
   if (key === "zombie") {
     state.zombieVariantSheets = [sheet];
@@ -437,7 +453,7 @@ function startBackfill(): void {
         backfillHandle = idle(step);
         return;
       }
-      current = { key, build: startMonsterSheet(paintsFor(key)) };
+      current = { key, build: startMonsterSheet(paintsFor(key), key) };
       inFlight.set(key, current.build);
     }
     const { key, build } = current;

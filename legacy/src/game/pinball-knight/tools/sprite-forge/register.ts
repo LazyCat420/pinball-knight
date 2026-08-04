@@ -150,8 +150,13 @@ export function registerCell(
 }
 
 /** The pre-crush buffer through the REAL crush, at `grid` texels. */
-export function crushCell(buf: HTMLCanvasElement, grid: number): ImageData {
-  const cell = crushToGrid(buf, grid);
+export function crushCell(
+  buf: HTMLCanvasElement,
+  grid: number,
+  /** This sheet's own palette entries, appended to the shared ones. */
+  pal?: readonly (readonly number[])[],
+): ImageData {
+  const cell = crushToGrid(buf, grid, pal);
   const ctx = cell.getContext("2d");
   if (!ctx) throw new Error("[ingest] could not get a 2D context for the crushed cell");
   return ctx.getImageData(0, 0, grid, grid);
