@@ -64,6 +64,8 @@ const WORK = process.env.SPRITE_WORK ?? join(ROOT, "work");
  * camera rung the player is on. See `manifest.ts`.
  */
 const PUBLIC = process.env.SPRITE_PUBLIC ?? join(ROOT, "..", "..", "..", "..", "..", "public", "sprites");
+/** Authoring run (`npm run sprites`) rather than a measurement run. */
+const PUBLISH = !!process.env.FORGE_PUBLISH;
 
 /** Painter roster reference, measured at the shipped rung. */
 const ROSTER = { entries: 20.1, isolatedPct: 22.5, runLen: 1.82 };
@@ -404,8 +406,26 @@ describe("sprite inbox", () => {
       // `sc` is the sheet after keying. Written at full resolution with the cell
       // rects beside it, so the game can scale each cell into the art box and
       // crush it at the rung the player is actually on — all five of them.
-      mkdirSync(PUBLIC, { recursive: true });
-      writeFileSync(join(PUBLIC, `${name}-${dir}.png`), sc.toBuffer("image/png"));
+      //
+      // ⚠️ ONLY WHEN ASKED. Publishing is an AUTHORING action and this is a
+      // TEST FILE, so a plain `vitest run` used to rewrite tracked art under
+      // `public/sprites/` as a side effect of measuring it. Two costs, both
+      // paid for real:
+      //
+      //   · a green run left a dirty tree that looked like someone's unfinished
+      //     art, and `deploy.sh` ships the WORKING TREE.
+      //   · it RACED the rest of the suite. `published.test.ts` reads the same
+      //     PNGs, vitest shards run in parallel, and a reader landing mid-write
+      //     gets `error while reading from input stream` from node-canvas. It
+      //     aborted two deploys of this very change, and the first time it was
+      //     dismissed as flaky because a retry passed.
+      //
+      // `npm run sprites` sets FORGE_PUBLISH; the deploy gate does not, and
+      // then this file only MEASURES the art that is already committed.
+      if (PUBLISH) {
+        mkdirSync(PUBLIC, { recursive: true });
+        writeFileSync(join(PUBLIC, `${name}-${dir}.png`), sc.toBuffer("image/png"));
+      }
       const manifest: SheetManifest = {
         name, dir: dir as SheetManifest["dir"],
         image: `/sprites/${name}-${dir}.png`,
@@ -421,7 +441,9 @@ describe("sprite inbox", () => {
         ...(scaleFor(side, join(PUBLIC, `${name}-${dir}.json`)) ?? {}),
         rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
       };
-      writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
+      if (PUBLISH) {
+        writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
+      }
 
       // ── THE GRID COMMIT, when the sidecar asks for one.
       //

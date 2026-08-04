@@ -21,7 +21,7 @@
     "audit:gpu": "node scripts/audit-checklist.mjs --gpu",
     "webgpu:check": "node scripts/webgpu-check.mjs",
     "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon",
-    "sprites": "vitest run src/game/pinball-knight/tools/sprite-forge",
+    "sprites": "FORGE_PUBLISH=1 vitest run src/game/pinball-knight/tools/sprite-forge",
     "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs"
   },
   "dependencies": {
