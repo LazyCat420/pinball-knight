@@ -20,7 +20,18 @@
  * to add the /ws client.
  */
 
-const BASE = process.env.COMFY_URL ?? "http://127.0.0.1:8188";
+/**
+ * Resolved per call, not at import: the /forge panel's API routes point
+ * this at the user's configured URL via setComfyUrl() after reading
+ * settings, and the CLI keeps its env/default behaviour.
+ */
+let configured = null;
+export function setComfyUrl(url) {
+  configured = url || null;
+}
+const BASE = {
+  toString: () => configured ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188",
+};
 
 export async function systemStats() {
   const r = await fetch(`${BASE}/system_stats`);
