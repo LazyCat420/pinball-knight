@@ -38,6 +38,7 @@ import {
   AO_DEFAULT,
   CEL_DEFAULT,
   CEL_STEPS,
+  CEL_CURVE,
   CEL_SATURATION,
   PPU,
 } from "../../game/pinball-knight/constants";
@@ -771,14 +772,14 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // dungeon's `__dungeonCel` cannot reach it — and the tavern is the scene the
   // grade's numbers were chosen against (it is the one room that is all flat
   // floor and soft lamplight, i.e. the worst case for a smooth gradient).
-  (window as unknown as { __tavernCel?: (steps?: number, sat?: number) => unknown }).__tavernCel = (steps, sat) => {
+  (window as unknown as { __tavernCel?: (steps?: number, sat?: number, curve?: number) => unknown }).__tavernCel = (steps, sat, curve) => {
     if (!pixelPass) return null;
     if (steps === 0) pixelPass.setCel(false);
     else if (steps != null) {
       pixelPass.setCel(true);
-      pixelPass.setCelGrade(steps, sat ?? CEL_SATURATION);
+      pixelPass.setCelGrade(steps, sat ?? CEL_SATURATION, curve ?? CEL_CURVE);
     }
-    return { steps: steps ?? CEL_STEPS, saturation: sat ?? CEL_SATURATION };
+    return { steps: steps ?? CEL_STEPS, saturation: sat ?? CEL_SATURATION, curve: curve ?? CEL_CURVE };
   };
   // Dev/QA: leave the tavern without descending, so a harness can re-enter it
   // after changing run state (e.g. socketing a card) and see the room rebuild.

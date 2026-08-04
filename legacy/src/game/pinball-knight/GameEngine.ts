@@ -58,6 +58,7 @@ import {
   FRENZY_VIGNETTE,
   FRENZY_ABERRATION,
   CEL_STEPS,
+  CEL_CURVE,
   CEL_SATURATION,
   FPS_IDLE,
   FPS_WALK,
@@ -126,6 +127,7 @@ export function installEngine(): void {
       frenzyVignette: FRENZY_VIGNETTE,
       frenzyAberration: FRENZY_ABERRATION,
       celSteps: CEL_STEPS,
+      celCurve: CEL_CURVE,
       celSaturation: CEL_SATURATION,
     },
     anim: {
