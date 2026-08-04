@@ -369,3 +369,75 @@ describe("presharpen sweep", () => {
     writeFileSync(join(OUT3, "report.txt"), lines.join("\n") + "\n");
   }, 600000);
 });
+
+describe("region floor sweep", () => {
+  it("renders the figure and the head at each minRegion", async () => {
+    const pal = PAL();
+    const { img, rows } = await sheet("E");
+    const OUT4 = join(HERE, "work", "flat-ab");
+    mkdirSync(OUT4, { recursive: true });
+    const lines: string[] = [];
+    for (const mr of [0, 3, 4, 6, 9]) {
+      const r = commitToGrid(img, rows, pal, { ban: [...PALETTE_FAMILIES.rot], minRegion: mr });
+      const g = r.report.factor;
+      const full = createCanvas(r.image.width, r.image.height);
+      const fctx = full.getContext("2d");
+      const fimg = fctx.createImageData(r.image.width, r.image.height);
+      fimg.data.set(r.image.data as unknown as Uint8ClampedArray);
+      fctx.putImageData(fimg, 0, 0);
+      const idle = r.rows.find((x) => x.clip === "idle")!;
+      const cells = idle.cells;
+      const W = cells.reduce((a, c) => a + (c[2] - c[0] + 1) / g + 2, 2);
+      const H = Math.max(...cells.map((c) => (c[3] - c[1] + 1) / g)) + 4;
+      const Z = 7;
+      const out = createCanvas(Math.ceil(W) * Z, Math.ceil(H) * Z);
+      const octx = out.getContext("2d");
+      octx.fillStyle = "#14161c"; octx.fillRect(0, 0, out.width, out.height);
+      octx.imageSmoothingEnabled = false;
+      let x = 2;
+      for (const c of cells) {
+        const cw = (c[2] - c[0] + 1) / g, ch = (c[3] - c[1] + 1) / g;
+        octx.drawImage(full as never, c[0], c[1], c[2] - c[0] + 1, c[3] - c[1] + 1,
+          x * Z, (H - 2 - ch) * Z, cw * Z, ch * Z);
+        x += cw + 2;
+      }
+      writeFileSync(join(OUT4, `fig-min${mr}.png`), out.toBuffer("image/png"));
+      const c0 = cells[0];
+      const ch0 = (c0[3] - c0[1] + 1) / g;
+      const hh = Math.round(ch0 * 0.42), ZH = 14;
+      const head = createCanvas(Math.round((c0[2] - c0[0] + 1) / g) * ZH, hh * ZH);
+      const hctx = head.getContext("2d");
+      hctx.fillStyle = "#14161c"; hctx.fillRect(0, 0, head.width, head.height);
+      hctx.imageSmoothingEnabled = false;
+      hctx.drawImage(full as never, c0[0], c0[1], c0[2] - c0[0] + 1, hh * g, 0, 0, head.width, head.height);
+      writeFileSync(join(OUT4, `head-min${mr}.png`), head.toBuffer("image/png"));
+
+      // MEAN REGION SIZE — the number that tracks "flat like an RO sprite".
+      const D = r.image.data, Wd = r.image.width, Hd = r.image.height;
+      const key = (i: number): number => (D[i] << 16) | (D[i + 1] << 8) | D[i + 2];
+      const seen = new Uint8Array(Wd * Hd);
+      let regions = 0, texels = 0, iso = 0;
+      for (let p = 0; p < Wd * Hd; p++) {
+        if (seen[p] || D[p * 4 + 3] <= 127) continue;
+        const k = key(p * 4);
+        const stack = [p]; seen[p] = 1; let n = 0;
+        while (stack.length) {
+          const q = stack.pop()!; n++;
+          const qx = q % Wd, qy = (q / Wd) | 0;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = qx + dx, ny = qy + dy;
+            if (nx < 0 || ny < 0 || nx >= Wd || ny >= Hd) continue;
+            const nn = ny * Wd + nx;
+            if (seen[nn] || D[nn * 4 + 3] <= 127 || key(nn * 4) !== k) continue;
+            seen[nn] = 1; stack.push(nn);
+          }
+        }
+        regions++; texels += n;
+        if (n <= g * g) iso++;   // one authored texel = g*g pixels at this factor
+      }
+      lines.push(`minRegion ${mr}  mean region ${(texels / regions / (g * g)).toFixed(2)} texels  ` +
+        `single-texel regions ${((iso / regions) * 100).toFixed(1)}%  entries ${r.report.entries}`);
+    }
+    writeFileSync(join(OUT4, "report.txt"), lines.join("\n") + "\n");
+  }, 600000);
+});

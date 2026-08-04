@@ -176,6 +176,27 @@ export interface CommitOptions {
    * 0 disables the pass entirely. See `presharpen-ab` in snap-metric.test.ts.
    */
   presharpen?: number;
+  /**
+   * Absorb same-colour REGIONS smaller than this many texels into the
+   * neighbour they share the most border with. 0 disables the pass.
+   *
+   * The despeckle above only ever caught a component of ONE texel with no
+   * matching orthogonal neighbour. What separates a Ragnarok Online or Golden
+   * Sun sprite from ours is not the orphan count — it is that their colour
+   * regions are LARGE and flat, with deliberate one-texel outlines, where a
+   * downsampled painting arrives as a mosaic of 2-4 texel patches that reads as
+   * melting. `isolated%` cannot see that: a 3-texel blob has neighbours of its
+   * own colour, so every texel in it passes the orphan test.
+   *
+   * ⚠️ THE ACCENT GATE IS LOAD-BEARING, AND THE EYE IS THE TEST CASE. A pupil
+   * is a small, high-contrast region — exactly the shape this pass absorbs — so
+   * a component is only absorbed when its colour is CLOSE to the neighbour
+   * taking it (`REGION_NEAR`). A white glint on dark armour and a black pupil
+   * in a tan face are far from everything around them and survive; a
+   * near-identical grey patch beside a slightly different grey dies, which is
+   * the whole point.
+   */
+  minRegion?: number;
 }
 
 export interface CommitReport {
@@ -206,6 +227,26 @@ export interface CommitResult {
  * Default local-contrast boost before the reduce. See `CommitOptions.presharpen`.
  */
 export const DEFAULT_PRESHARPEN = 0.9;
+
+/**
+ * Default region floor in texels. See `CommitOptions.minRegion`.
+ *
+ * Swept 0/3/4/6/9 on the knight (`work/flat-ab/`). Mean region size rises
+ * 6.55 → 8.00 → 8.36 → 8.80 → 9.04 texels; the armour plates visibly
+ * consolidate through 6 and start losing their edges by 9. The eye survives at
+ * every setting, which is the accent gate doing its job.
+ */
+export const DEFAULT_MIN_REGION = 6;
+
+/**
+ * How near a neighbour must be, in the snap's own metric, to absorb a region.
+ *
+ * Same role and the same order of magnitude as `DESPECKLE_NEAR`, and it is what
+ * stops this pass eating the features it is standing next to. Swept on the
+ * knight: below ~0.006 nothing merges and the mosaic survives; above ~0.02 the
+ * pupil and the eye highlight start being absorbed by the face.
+ */
+export const REGION_NEAR = 0.012;
 
 /**
  * The metric every commit uses unless its sidecar says otherwise.
@@ -323,6 +364,7 @@ export function commitToGrid(
   const gutter = Math.max(1, opts.gutter ?? 1);
   const metric: SnapMetric = opts.metric ?? DEFAULT_METRIC;
   const preAmt = opts.presharpen ?? DEFAULT_PRESHARPEN;
+  const minRegion = opts.minRegion ?? DEFAULT_MIN_REGION;
 
   const all: Cell[] = rows.flatMap((r) => r.cells);
   if (!all.length) throw new Error("[commit] no cells");
@@ -521,6 +563,74 @@ export function commitToGrid(
     }
   }
 
+  // ── 3a-bis. FLATTEN — small REGIONS join the neighbour they touch most ───
+  //
+  // See `CommitOptions.minRegion`. Connected components of one palette index,
+  // 4-connected; anything under the floor is absorbed by the bordering index it
+  // shares the most edge with, provided that index is chromatically near
+  // (`REGION_NEAR`) so accents and pupils survive. Repeated until stable,
+  // because absorbing a patch can leave its neighbour still under the floor.
+  let flattened = 0;
+  if (minRegion > 1) {
+    for (let ci = 0; ci < idx.length; ci++) {
+      const [w, h] = sized[ci];
+      const m = idx[ci];
+      for (let pass = 0; pass < 4; pass++) {
+        const comp = new Int32Array(w * h).fill(-1);
+        const members: number[][] = [];
+        let moved = 0;
+        for (let p = 0; p < m.length; p++) {
+          if (m[p] < 0 || comp[p] >= 0) continue;
+          const id = members.length;
+          const cells: number[] = [];
+          const stack = [p];
+          comp[p] = id;
+          while (stack.length) {
+            const q = stack.pop()!;
+            cells.push(q);
+            const qx = q % w, qy = (q / w) | 0;
+            for (const [dx2, dy2] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+              const nx = qx + dx2, ny = qy + dy2;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const n = ny * w + nx;
+              if (comp[n] >= 0 || m[n] !== m[q]) continue;
+              comp[n] = id;
+              stack.push(n);
+            }
+          }
+          members.push(cells);
+        }
+        for (const cells of members) {
+          if (cells.length >= minRegion) continue;
+          const mine = m[cells[0]];
+          // Border length per neighbouring index.
+          const border = new Map<number, number>();
+          for (const q of cells) {
+            const qx = q % w, qy = (q / w) | 0;
+            for (const [dx2, dy2] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+              const nx = qx + dx2, ny = qy + dy2;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const nq = m[ny * w + nx];
+              if (nq < 0 || nq === mine) continue;
+              border.set(nq, (border.get(nq) ?? 0) + 1);
+            }
+          }
+          let best = -1, bestLen = 0, bestD = Infinity;
+          for (const [nq, len] of border) {
+            const d = snapper.dist(mine, nq);
+            if (d > REGION_NEAR) continue;
+            if (len > bestLen || (len === bestLen && d < bestD)) { best = nq; bestLen = len; bestD = d; }
+          }
+          if (best < 0) continue;
+          for (const q of cells) m[q] = best;
+          moved += cells.length;
+        }
+        flattened += moved;
+        if (!moved) break;
+      }
+    }
+  }
+
   // ── 3b. TRIM EACH CELL TO ITS INK ────────────────────────────────────────
   //
   // ⚠️ THE COMMITTED CELL MUST BE A WHOLE NUMBER OF BLOCKS WIDE AND TALL, and a
@@ -685,7 +795,8 @@ export function commitToGrid(
         (drop.length
           ? ` (${drop.length} evicted to meet the ${maxEntries} lock, ${(evictedShare * 100).toFixed(2)}% of opaque texels moved)`
           : ` (under the ${maxEntries} lock with room to spare)`) +
-        (despeckled ? ` [despeckled ${despeckled} orphan texel(s)]` : "") +
+        (despeckled ? ` [despeckled ${despeckled}]` : "") +
+        (flattened ? ` [flattened ${flattened} texel(s) of sub-${minRegion} regions]` : "") +
         (banned.size ? ` [banned entries: ${[...banned].sort((a, b) => a - b).join(",")}]` : "") +
         ` [snap: ${metric}]` +
         // Name the rungs rather than claiming all five. The claim was true only
