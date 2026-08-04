@@ -1,8 +1,8 @@
 /**
  * THE THREE NEW PROPERTIES, held to the same standard as the commit's own.
  *
- * `matrix.test.ts` is a BENCH — it is opt-in, it takes a minute, and its job is
- * to tell a human which arm to pick. These are the properties that must hold on
+ * `bench.test.ts` is a BENCH — it is opt-in, it takes a couple of minutes, and
+ * its job is to render candidates for a human to pick between. These are the properties that must hold on
  * every run afterwards, because each one is something that can rot silently:
  *
  *   1. a derived palette is DETERMINISTIC and pins ink. A published sheet whose

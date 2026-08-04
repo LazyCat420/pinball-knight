@@ -43,12 +43,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
 import { censusCell, declaredSet, formatNoise, paletteRgb, type NoiseRow } from "../../render/atlas-census";
-import { sliceSheet, equalCells, type Cell } from "./slice";
+import { type Cell } from "./slice";
+import { cutSheet, type Sidecar } from "./sheet-cut";
 import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
-import { labelRows, parseName, unknownClips } from "./labels";
+import { parseName, unknownClips } from "./labels";
 import { detectPixelGrid } from "./grid";
 import { commitToGrid, type CommitOptions } from "./commit";
-import { matte, rgbHex, type MatteOptions } from "./matte";
+import { rgbHex } from "./matte";
 import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
 import { PALETTE_FAMILIES } from "../../render/palette";
 import { hexOf, rgbOfHex } from "./palette-derive";
@@ -74,94 +75,6 @@ const ROSTER = { entries: 20.1, isolatedPct: 22.5, runLen: 1.82 };
 let restore = (): void => {};
 beforeAll(() => { restore = installSpriteTestDom(); });
 afterAll(() => { restore(); });
-
-/**
- * Row → clip names, from an optional sidecar beside the sheet.
- *
- *     tools/sprite-forge/inbox/ratking-E.png
- *     tools/sprite-forge/inbox/ratking-E.json   { "rows": ["idle","attack","walk","stumble","death"] }
- *
- * A sidecar rather than reading the sheet's own captions, because the captions
- * are pixels — OCR'ing "SPRING ATTACK" to guess a ClipName would be a guess
- * dressed as a feature, and it would fail silently the first time a sheet used a
- * font this code had never seen. Rows are reported when the sidecar is missing,
- * so writing one takes a few seconds and is checkable.
- */
-function readSidecar(dir: string, base: string): Sidecar | null {
-  const file = join(dir, `${base}.json`);
-  if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, "utf8")) as Sidecar;
-}
-
-interface Sidecar {
-  rows?: string[];
-  /**
-   * Per-SLICED-BAND cell counts. A plain number re-cuts that band into N equal
-   * columns; an array splits it into consecutive clips of those sizes, and
-   * `rows` then names one clip per resulting group rather than per band.
-   */
-  cells?: (number | number[])[];
-  /**
-   * EXACT cell rects per row, `[x0, y0, x1, y1]` inclusive — the slicer is
-   * skipped entirely when this is present.
-   *
-   * `cells` (above) is a COUNT, and a count can only ever ask the slicer to try
-   * again differently. This is the answer itself, and it exists because there
-   * are sheets whose frame boundaries are not recoverable from the pixels at
-   * all: the slicer separates poses at blank columns, so a pose holding a sword
-   * out from the body — the knight's E sheet — splits into a body and a bare
-   * blade, and publishes the blade as an animation frame. Measured on that
-   * layout, an intra-pose gap (118-322 px) is INSIDE the range of a real frame
-   * boundary (241-463 px); there is no threshold, and no merge-the-closest-pair
-   * rule, that separates them.
-   *
-   * The producer of a sheet always knows this. `prep-knight.mjs` composes each
-   * pose at a computed `(px, py, dw, dh)` and used to throw it away; it now
-   * writes it here, and `commit.ts`'s repack writes its own rects the same way,
-   * so both slices in the chain are exact rather than re-derived.
-   *
-   * Rects are trusted as given — they are ink-tight and, on a committed sheet,
-   * lattice-aligned by construction. Re-deriving them is exactly the step this
-   * removes.
-   */
-  rects?: number[][][];
-  /**
-   * Render-scale multiplier, copied into the shipped manifest. When absent, a
-   * `scale` already present in the published manifest is carried forward —
-   * these used to be hand-edits to `public/sprites/*.json`, and every re-run
-   * of the forge silently deleted all of them (measured: beaver 1.21 → gone,
-   * frog 1.55 → gone, stiltneck 0.91 → gone).
-   */
-  scale?: number;
-  /** Background keying options — see matte.ts. */
-  matte?: MatteOptions;
-  /**
-   * Write a GRID-COMMITTED copy of this sheet beside the frames — see commit.ts.
-   *
-   * Opt-in rather than automatic, and it does not touch `inbox/`. A commit
-   * decides which 20 of 32 colours the creature keeps; that is an art decision
-   * and it has to be looked at before it becomes the sheet. The run prints the
-   * one command that promotes it.
-   *
-   * `bans` names palette FAMILIES (see `PALETTE_FAMILIES`) this creature's
-   * materials must not use — e.g. the knight bans "rot" so its grey armor
-   * cannot be snapped zombie-green. Translated to entry indices here, because
-   * the sidecar is authored by a human and the family names are the vocabulary
-   * the palette documents.
-   */
-  commit?: boolean | (CommitOptions & { bans?: string[] });
-  /**
-   * THIS SHEET'S OWN PALETTE, `#rrggbb` — written by a `derive` commit and
-   * carried on the promoted sheet.
-   *
-   * ⚠️ IT MUST TRAVEL WITH THE PNG. A committed sheet's texels sit on these
-   * colours and on nothing else; a promoted sheet that lost this field is
-   * measured against the shared 32, every texel reads as off-palette, and the
-   * run fails on `unmatched` with nothing pointing at the missing field. That
-   * is the same promotion trap the `commit` block already documents.
-   */
-  palette?: string[];
-}
 
 /** Sidecar commit options with family names resolved to palette entries. */
 function commitOpts(side: Sidecar): CommitOptions {
@@ -192,23 +105,6 @@ function scaleFor(side: Sidecar | null, publishedPath: string): { scale: number 
   return null;
 }
 
-/** Share of the sheet that is already transparent. */
-function clearShare(data: Uint8ClampedArray): number {
-  let n = 0;
-  for (let i = 3; i < data.length; i += 4) if (data[i] === 0) n++;
-  return n / (data.length / 4);
-}
-
-/**
- * Below this much transparency the sheet has no usable alpha and is matted.
- *
- * Not zero: a generator sometimes emits a few stray transparent pixels, and a
- * hand-keyed sheet always has a large clear field. 5% separates "someone keyed
- * this" from "this arrived as a flat JPEG-alike with an opaque background",
- * which is every sheet a diffusion model produces.
- */
-const OPAQUE_BELOW = 0.05;
-
 describe("sprite inbox", () => {
   it("processes every sheet in the inbox", async () => {
     if (!existsSync(INBOX)) mkdirSync(INBOX, { recursive: true });
@@ -229,49 +125,40 @@ describe("sprite inbox", () => {
 
     for (const file of sheets) {
       const { name, dir } = parseName(file);
-      const side = readSidecar(INBOX, file.replace(/\.png$/i, ""));
+      // ── ONE LOADER, shared with the bench. See `source-load.ts`. ──────────
+      //
+      // Matte, slice, honour the sidecar's cell counts, name the rows. The
+      // loader RETURNS its problems rather than throwing them, so this file can
+      // turn them into `expect` failures — a bad sheet must stop a publish —
+      // while the bench prints them and keeps comparing the other creatures.
+      const sideFile = join(INBOX, file.replace(/\.png$/i, ".json"));
+      const side: Sidecar | null = existsSync(sideFile)
+        ? (JSON.parse(readFileSync(sideFile, "utf8")) as Sidecar)
+        : null;
       const sheet = await loadImage(join(INBOX, file));
       const sc = createCanvas(sheet.width, sheet.height);
       const sctx = sc.getContext("2d");
       sctx.drawImage(sheet, 0, 0);
-      const img = sctx.getImageData(0, 0, sheet.width, sheet.height);
-      let sdata = img.data as unknown as Uint8ClampedArray;
+      const raw = sctx.getImageData(0, 0, sheet.width, sheet.height);
+      const src = cutSheet(raw.data as unknown as Uint8ClampedArray, sheet.width, sheet.height, side);
+      const sdata = src.data;
+      // ⚠️ WRITE THE KEYED PIXELS BACK. `registerCell` blits from this CANVAS,
+      // not from the array — without this every measurement below runs on the
+      // sheet's original opaque background.
+      raw.data.set(sdata as unknown as Uint8ClampedArray);
+      sctx.putImageData(raw, 0, 0);
+      expect(src.notes, `${file}: ${src.notes.join(" / ")}`).toEqual([]);
+      const found = src.rows.flatMap((r) => r.cells).length;
+      expect(found, `${file}: sliced into ${found} cell(s) — is the background transparent?`)
+        .toBeGreaterThan(1);
 
-      // ── MATTE FIRST, if the sheet arrived opaque.
-      //
-      // Every sheet an image generator produces does: diffusion models have no
-      // alpha channel to write, so the background is a flat white or cream
-      // field. Slicing finds cells by alpha, so without this the sheet returns
-      // one cell and the run aborts before anything else is measured.
-      let matteLine = "";
-      if (clearShare(sdata) < OPAQUE_BELOW) {
-        const res = matte(sdata, sheet.width, sheet.height, side?.matte);
-        const r = res.report;
-        expect(r.failures, `${file}: ${r.failures.join(" / ")}`).toEqual([]);
-        sdata = res.data;
-        // Put the keyed pixels back on the canvas — `registerCell` blits from
-        // this, so the source it samples has to be the matted one.
-        img.data.set(sdata as unknown as Uint8ClampedArray);
-        sctx.putImageData(img, 0, 0);
-        matteLine =
-          `MATTE  bg ${rgbHex(r.bg)} (${(r.bgConfidence * 100).toFixed(0)}% of the border) — ` +
-          `keyed ${(r.keyedPct * 100).toFixed(1)}%` +
-          (r.autoKeyed.length ? `, ${r.autoKeyed.length} sealed pocket(s) opened` : "") +
-          (r.enclosed.length ? `, ${r.enclosed.length} pocket(s) LEFT OPAQUE` : "") + "\n" +
-          r.warnings.map((x) => `⚠ ${x}`).join("\n") + (r.warnings.length ? "\n" : "");
-      }
-
-      // DECLARED rects skip the slicer outright — see `Sidecar.rects`.
-      const declared = side?.rects?.map((cells) => ({ cells: cells.map((c) => [...c] as Cell) }));
-      const sliced = declared ?? sliceSheet(sdata, sheet.width, sheet.height);
-      if (declared) {
-        // A declared rect that has no ink under it means the sidecar and the
-        // PNG came from different runs — a stale `rects` block silently
-        // publishes empty frames, which is the same disappearing-sprite failure
-        // it was written to remove, just from the other direction.
+      // A declared rect with no ink under it means the sidecar and the PNG came
+      // from different runs — a stale `rects` block silently publishes empty
+      // frames, the same disappearing-sprite failure from the other direction.
+      if (side?.rects) {
         const empty: string[] = [];
-        declared.forEach((r, ri) =>
-          r.cells.forEach((c, ci) => {
+        src.rows.forEach((r, ri: number) =>
+          r.cells.forEach((c: Cell, ci: number) => {
             let ink = 0;
             for (let y = Math.max(0, c[1]); y <= Math.min(sheet.height - 1, c[3]); y++)
               for (let x = Math.max(0, c[0]); x <= Math.min(sheet.width - 1, c[2]); x++)
@@ -281,42 +168,21 @@ describe("sprite inbox", () => {
         );
         expect(empty, `${file}: declared rects with no ink under them — is the sidecar stale?`).toEqual([]);
       }
-      // A sheet that slices into one cell is usually a solid background that was
-      // never keyed out, or ruled lines this did not recognise. Say so plainly:
-      // every number downstream would otherwise describe one big rectangle.
-      const found = sliced.flatMap((r) => r.cells).length;
-      expect(found, `${file}: sliced into ${found} cell(s) — is the background transparent?`)
-        .toBeGreaterThan(1);
 
+      const r = src.matte;
+      const matteLine = r
+        ? `MATTE  bg ${rgbHex(r.bg)} (${(r.bgConfidence * 100).toFixed(0)}% of the border) — ` +
+          `keyed ${(r.keyedPct * 100).toFixed(1)}%` +
+          (r.autoKeyed.length ? `, ${r.autoKeyed.length} sealed pocket(s) opened` : "") +
+          (r.enclosed.length ? `, ${r.enclosed.length} pocket(s) LEFT OPAQUE` : "") + "\n" +
+          r.warnings.map((x: string) => `⚠ ${x}`).join("\n") + (r.warnings.length ? "\n" : "")
+        : "";
+
+      const rows: { clip: string; cells: Cell[] }[] = src.rows;
       const named = side?.rows;
-      // An explicit per-row cell count OVERRIDES the auto-slice. On a ruled
-      // sheet it is the difference between right and roughly-right.
-      //
-      // A NESTED count splits one sliced band into consecutive clips —
-      // `"cells": [[5, 5], 5, 2, 3]` says the first band holds two animations
-      // of five. Sheets do that whenever two short clips fit side by side, and
-      // a band is a band to the slicer: stiltneck's idle and walk shared one,
-      // so the pair could only be named `walk`, which left it with no `idle`
-      // and therefore no imported art at all.
-      let rows = sliced;
-      if (side?.cells) {
-        expect(side.cells.length, `${file}: sidecar lists ${side.cells.length} row counts but ${sliced.length} rows were found`)
-          .toBe(sliced.length);
-        rows = sliced.flatMap((r, i) => {
-          const spec = side.cells![i];
-          if (!Array.isArray(spec)) return [{ ...r, cells: equalCells(r, spec) }];
-          const total = spec.reduce((a, b) => a + b, 0);
-          // Regroup the AUTO-SLICED cells when the counts already agree: those
-          // rects are ink-tight, and re-cutting the band into equal columns
-          // would straddle the gap the two clips are separated by.
-          const all = r.cells.length === total ? r.cells : equalCells(r, total);
-          let at = 0;
-          return spec.map((n) => ({ ...r, cells: all.slice(at, (at += n)) }));
-        });
-      }
+      const labels = src.labels;
       const cells: Cell[] = rows.flatMap((r) => r.cells);
       const shape = rows.map((r) => r.cells.length).join("/");
-      const labels = labelRows(rows.map((r) => r.cells.length), named);
 
       // The LIVING rows vote on the scale; a death sprawl only clamps itself.
       // Without sidecar names every row is "alive" — same rule as aliveScale.

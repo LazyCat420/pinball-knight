@@ -51,7 +51,7 @@ import { resampleCell, type RawImage } from "./resample";
 import { ART_BOX, ART_FIT_H, ART_FIT_W, ART_GROUND, VOTING_CLIPS, type ManifestRow } from "./manifest";
 import { sliceSheet, type Cell } from "./slice";
 import { makeSnapper, type SnapMetric } from "./colour";
-import { derivePalette } from "./palette-derive";
+import { derivePalette, INK_RGB } from "./palette-derive";
 import { synthCell, type SynthOptions } from "./synth";
 
 export type { RawImage };
@@ -209,6 +209,22 @@ export interface CommitOptions {
   mode?: "vote" | "synth";
   /** Tuning for `mode: "synth"`. Ignored otherwise. */
   synth?: SynthOptions;
+  /**
+   * Ink the silhouette: every texel with a transparent orthogonal neighbour
+   * becomes the palette's outline entry.
+   *
+   * `synth` already does this as part of its own construction. This makes it
+   * available to the VOTE path, because the two halves of the Ragnarok read —
+   * flat regions, and a deliberate one-texel edge around them — are separable,
+   * and it had never been tested whether the EDGE ALONE is what reads as clean.
+   * A vote-reduced sheet keeps all of its internal texture and gains the rim.
+   *
+   * ⚠️ It costs a texel of silhouette on every limb, which at ~70 texels tall
+   * is visible on thin features. It is also not additive with the runtime's
+   * `selout` pass, which blends the shadow-side rim 60% toward ink: a texel
+   * that is already ink stays ink when selout reaches it.
+   */
+  outline?: boolean;
   /**
    * Give this sheet ITS OWN palette of `derive` entries instead of snapping to
    * the game's shared 32.
@@ -733,6 +749,35 @@ export function commitToGrid(
         }
         flattened += moved;
         if (!moved) break;
+      }
+    }
+  }
+
+  // ── 3c. THE AUTHORED OUTLINE, when asked for ─────────────────────────────
+  //
+  // Read from a SNAPSHOT of which texels are opaque, so an inked texel does not
+  // make its neighbour an edge texel too — that is the difference between an
+  // outline and a creature losing two texels of silhouette on every limb.
+  //
+  // The ink entry is found by asking the snapper, not by hardcoding index 1:
+  // on a derived palette ink sits at 0, on the shared palette at 1, and a
+  // constant here would silently paint the wrong colour on one of the two.
+  if (opts.outline) {
+    const inkIdx = snapper.snap(INK_RGB[0], INK_RGB[1], INK_RGB[2]);
+    for (let ci = 0; ci < idx.length; ci++) {
+      const [w, h] = sized[ci];
+      const m = idx[ci];
+      const solid = new Uint8Array(w * h);
+      for (let p = 0; p < m.length; p++) solid[p] = m[p] >= 0 ? 1 : 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const p = y * w + x;
+          if (!solid[p]) continue;
+          const edge =
+            x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
+            !solid[p - 1] || !solid[p + 1] || !solid[p - w] || !solid[p + w];
+          if (edge) m[p] = inkIdx;
+        }
       }
     }
   }

@@ -37,7 +37,7 @@
  * ── THE KNOBS, SWEPT — AND WHAT THE NUMBERS COULD NOT SEE ───────────────────
  *
  * `regionTexels` × `compactness`, 5 × 3, through the real commit and the real
- * crush (`matrix.test.ts`, `work/matrix/sweep.json` + `sweep-*.png`):
+ * crush (the sweep run of 2026-08-04; re-run it from `bench.test.ts`'s arms):
  *
  *     every one of the fifteen cells:  isolated 2.3-2.8%,  mosaic 17.5-21.4%
  *

@@ -60,8 +60,8 @@ Three of them, and none replaces the others:
 ### How a sheet becomes texels, and whose colours they land on
 
 Two independent choices, set in the sidecar's `commit` block. They compose, and
-the measurements below are from `matrix.test.ts` on the knight — six arms, every
-one through the real commit and the real crush.
+the measurements below are from `bench.test.ts` on the knight — nine candidates
+across six creatures, every one through the real commit and the real crush.
 
     "commit": { "mode": "synth", "derive": 20 }
 
@@ -89,13 +89,20 @@ The palette buys colour fidelity (the knight's chin stops snapping onto the
 torch ramp), the synthesis buys structure (the armour stops arriving as 2-4
 texel patches). Neither substitutes for the other.
 
+⚠️ **Do not rank on these columns.** The PAINTED roster — code-authored pixels
+at final resolution, the thing this pipeline is aiming at — scores 22.1%
+isolated and 49.6% mosaic, worse than every row above. They measure flatness,
+not quality, and they stopped discriminating once imported art dropped under
+~6%. `bench.test.ts` exists to RENDER candidates, across six creatures and every
+movement they author, for a person to choose between.
+
 ⚠️ **The bench reads `work/raw/`, never `inbox/`.** The inbox sheets are the
 COMMITTED ones that already shipped — 20 colours on a ×8 lattice — and running
 commit arms over those measures each arm against its own output. Rebuild the raw
 sheets first:
 
     SPRITE_INBOX=$PWD/work/raw node prep/prep-knight.mjs build
-    RUN_MATRIX=1 npx vitest run matrix
+    RUN_BENCH=1 npx vitest run bench
 
 ### The Python port
 

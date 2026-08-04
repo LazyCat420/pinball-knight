@@ -365,7 +365,7 @@ decide the geometry, the forge decides the colours, and nothing resamples.**
 `"commit": { "mode": "synth", "derive": 20 }` is the same idea applied to art
 you already have — regions are decided at final resolution and coloured flat,
 instead of each texel being voted on independently. Measured against the
-shipped path on the knight (`matrix.test.ts`):
+shipped path on the knight (`bench.test.ts`):
 
 | | isolated% | mosaic% | saturation vs source |
 |---|---|---|---|
