@@ -100,6 +100,7 @@ export function wanI2V({
   seed = 7,
   steps = 20,
   cfg = 3.5,
+  shift = 5.0,
   loraHigh = null,
   loraLow = null,
   loraStrength = 0.8,
@@ -108,9 +109,14 @@ export function wanI2V({
   if (!prompt) throw new Error("[graphs] wanI2V needs a prompt");
   if ((length - 1) % 4 !== 0) throw new Error(`[graphs] wan length must be 4k+1 frames, got ${length}`);
   const half = Math.floor(steps / 2);
+  // ModelSamplingSD3 sets Wan's sigma shift; every working Wan 2.2 workflow
+  // (official template AND the pixel-animate community one) carries it, and
+  // omitting it skews the noise schedule toward mush.
   const g = {
     uh: { class_type: "UnetLoaderGGUF", inputs: { unet_name: MODELS.wanHigh } },
     ul: { class_type: "UnetLoaderGGUF", inputs: { unet_name: MODELS.wanLow } },
+    sh: { class_type: "ModelSamplingSD3", inputs: { model: ["uh", 0], shift } },
+    sl: { class_type: "ModelSamplingSD3", inputs: { model: ["ul", 0], shift } },
     c: { class_type: "CLIPLoader", inputs: { clip_name: MODELS.wanClip, type: "wan", device: "default" } },
     v: { class_type: "VAELoader", inputs: { vae_name: MODELS.wanVae } },
     img: { class_type: "LoadImage", inputs: { image } },
@@ -126,7 +132,7 @@ export function wanI2V({
     kh: {
       class_type: "KSamplerAdvanced",
       inputs: {
-        model: ["uh", 0], positive: ["i2v", 0], negative: ["i2v", 1], latent_image: ["i2v", 2],
+        model: ["sh", 0], positive: ["i2v", 0], negative: ["i2v", 1], latent_image: ["i2v", 2],
         add_noise: "enable", noise_seed: seed, steps, cfg, sampler_name: "euler", scheduler: "simple",
         start_at_step: 0, end_at_step: half, return_with_leftover_noise: "enable",
       },
@@ -134,7 +140,7 @@ export function wanI2V({
     kl: {
       class_type: "KSamplerAdvanced",
       inputs: {
-        model: ["ul", 0], positive: ["i2v", 0], negative: ["i2v", 1], latent_image: ["kh", 0],
+        model: ["sl", 0], positive: ["i2v", 0], negative: ["i2v", 1], latent_image: ["kh", 0],
         add_noise: "disable", noise_seed: seed, steps, cfg, sampler_name: "euler", scheduler: "simple",
         start_at_step: half, end_at_step: steps, return_with_leftover_noise: "disable",
       },
@@ -142,13 +148,15 @@ export function wanI2V({
     dec: { class_type: "VAEDecode", inputs: { samples: ["kl", 0], vae: ["v", 0] } },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };
+  // Chain order matters: unet → lora → sigma shift → sampler. The LoRA
+  // must sit UNDER the shift so ModelSamplingSD3 wraps the patched model.
   if (loraHigh) {
     g.lh = { class_type: "LoraLoaderModelOnly", inputs: { model: ["uh", 0], lora_name: loraHigh, strength_model: loraStrength } };
-    g.kh.inputs.model = ["lh", 0];
+    g.sh.inputs.model = ["lh", 0];
   }
   if (loraLow) {
     g.ll = { class_type: "LoraLoaderModelOnly", inputs: { model: ["ul", 0], lora_name: loraLow, strength_model: loraStrength } };
-    g.kl.inputs.model = ["ll", 0];
+    g.sl.inputs.model = ["ll", 0];
   }
   return g;
 }

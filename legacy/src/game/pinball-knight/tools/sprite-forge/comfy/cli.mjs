@@ -93,13 +93,19 @@ const main = {
     const prompt =
       `Pixel art game sprite ${action}, smooth looping animation, the character stays ` +
       `centered in frame, consistent colors, plain white background.`;
+    // The styly-agents adapter is a whole-model pixel-motion LoRA; its own
+    // reference workflow attaches it to BOTH experts, so we do too. (The
+    // pix3lwalk high-noise-only LoRA is Civitai-gated — swap it in for
+    // loraHigh once a token exists.)
+    const pixelLora = has("no-lora") ? null : "wan2.2_pixel_animate_adapter.safetensors";
     await run(
       wanI2V({
         image,
         prompt,
         length: Number(opt("frames", 21)),
         seed: Number(opt("seed", 7)),
-        loraHigh: has("no-lora") ? null : "pixel_walk_lora_v1_high_noise.safetensors",
+        loraHigh: pixelLora,
+        loraLow: pixelLora,
       }),
       dir,
     );
