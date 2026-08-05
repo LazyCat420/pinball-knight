@@ -207,7 +207,14 @@ export function wanI2V({
   image,
   endImage = null,
   prompt,
-  negative = "static, frozen, watermark, text, extra character, split screen",
+  // Camera terms are in the negative because Wan is a VIDEO model: trained
+  // on footage where the camera lives, it treats a locked-off shot as
+  // boring and adds a slow push-in. A sprite clip needs the opposite —
+  // the character moves, the frame never does.
+  negative =
+    "static, frozen, watermark, text, extra character, split screen, " +
+    "camera zoom, zoom in, zoom out, dolly, camera pan, camera movement, " +
+    "changing scale, character growing, character shrinking, cropped body",
   extraNegative = null,
   width = 640,
   height = 640,

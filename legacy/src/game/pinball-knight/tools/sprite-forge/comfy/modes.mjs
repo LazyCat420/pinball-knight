@@ -290,7 +290,8 @@ export const MODES = [
       const hint = params.hint ? `, ${params.hint}` : "";
       return (
         `Pixel art game sprite moving smoothly from its starting pose to its final pose${hint}, ` +
-        `the character stays centered in frame, consistent colors, plain white background.`
+        `locked-off camera, the character stays the same size and stays centered in frame, ` +
+        `consistent colors, plain white background.`
       );
     },
     build(params, ctx) {

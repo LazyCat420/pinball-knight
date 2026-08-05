@@ -27,6 +27,21 @@ import { postJSON, urlToB64 } from "./api";
  * fixes), the browser crops them onto white. Returned as data URLs so
  * every existing frame action (→ init, fetch, + sheet) works unchanged —
  * fetch() accepts data: URLs.
+ *
+ * ── EVERY CELL COMES OUT ON THE SAME CANVAS, AND THAT IS THE POINT ──────
+ * A pose's bounding box is its own size (measured: 321×365, 267×437,
+ * 288×410, 264×432 for one walk row). Cropped tight, each cell is a
+ * different aspect ratio — and the first/last-frame video node stretches
+ * whatever it is given to ONE square, so two tight crops arrive at two
+ * different scales and the model dutifully interpolates between them.
+ * That reads as a slow zoom-in across the clip, which is exactly what it
+ * looked like.
+ *
+ * So cells are placed, never rescaled: one canvas sized to the widest and
+ * tallest cell, figure centred horizontally, FEET ON A SHARED BASELINE —
+ * the same registration rule the sprite importer uses (see the forge
+ * README on scale and baselines). Identical canvas, identical scale, no
+ * zoom for the model to invent.
  */
 async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]> {
   const b64 = await urlToB64(frameSrc);
@@ -39,15 +54,20 @@ async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]
     img.onerror = rej;
     img.src = `data:image/png;base64,${b64}`;
   });
-  const PAD = 12;
+  const PAD = 24;
+  const cw = Math.max(...rects.map(([x0, , x1]) => x1 - x0)) + PAD * 2;
+  const ch = Math.max(...rects.map(([, y0, , y1]) => y1 - y0)) + PAD * 2;
   return rects.map(([x0, y0, x1, y1]) => {
+    const w = x1 - x0;
+    const h = y1 - y0;
     const cv = document.createElement("canvas");
-    cv.width = x1 - x0 + PAD * 2;
-    cv.height = y1 - y0 + PAD * 2;
+    cv.width = cw;
+    cv.height = ch;
     const ctx = cv.getContext("2d")!;
     ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, PAD, PAD, x1 - x0, y1 - y0);
+    ctx.fillRect(0, 0, cw, ch);
+    // 1:1 blit — centred, bottom-aligned to the shared baseline.
+    ctx.drawImage(img, x0, y0, w, h, Math.round((cw - w) / 2), ch - PAD - h, w, h);
     return cv.toDataURL("image/png");
   });
 }
