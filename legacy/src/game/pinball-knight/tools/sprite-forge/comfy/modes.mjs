@@ -486,6 +486,15 @@ export const MODES = [
         `on a plain white background, identical size and colors in every frame, feet on one shared baseline. ` +
         `Every frame is drawn from the SAME camera angle — ${cam} — the character never turns or rotates ` +
         `between frames, only its pose changes. The four poses, left to right: ${list}. ` +
+        // MEASURED 2026-08-05: without this clause the knight's walk row came
+        // back at 0.61-0.68x the master's body mass — the model had quietly
+        // put his sword away. An edit model asked only for a POSE treats held
+        // equipment as scenery it may drop to make the pose read better, and
+        // a missing weapon is invisible at thumbnail size while being the
+        // whole silhouette in game.
+        `The character keeps everything it is wearing and holding in the reference image — ` +
+        `weapon, shield, cape, helmet, pack — visible in EVERY frame; nothing is dropped, ` +
+        `sheathed, put away or hidden behind the body. ` +
         `Large, clearly different poses — no text, no labels, no numbers in the image.`
       );
     },
