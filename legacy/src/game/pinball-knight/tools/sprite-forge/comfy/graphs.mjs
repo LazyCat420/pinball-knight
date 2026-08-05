@@ -265,16 +265,23 @@ export function wanI2V({
         start_at_step: half, end_at_step: steps, return_with_leftover_noise: "disable",
       },
     },
-    // TILED decode, deliberately: decoding a whole 17-33 frame batch at once
-    // is the pipeline's single biggest system-RAM spike, and on 2026-08-05 it
-    // took the 40GB-capped WSL from 8.9GiB available to 1.5 in ten seconds
-    // (the guard's hard floor caught it — this is the fix, not the floor).
-    // 256px tiles on a 640² frame and ≤16 frames per chunk bound the peak;
-    // seams are a non-issue for art that is about to be crushed to a pixel
-    // grid anyway.
+    // DECODE FENCE + TILED decode. Two measured RAM cliffs live between the
+    // last sampler step and the frames (2026-08-05, guard.log):
+    //   1. decoding a whole 17-33 frame batch at once — bounded by tiling
+    //      (256px tiles, ≤8 frames per temporal chunk; seams are a non-issue
+    //      for art headed into the pixel crush);
+    //   2. the expert→VAE transition itself — "Requested to load WanVAE"
+    //      with an 11.6GB expert still resident cratered the capped VM from
+    //      9GiB available to 1.5 in ten seconds. The KJNodes passthrough
+    //      unloads every model BEFORE the VAE stage loads; the latent rides
+    //      through it, which is what forces the ordering.
+    purge: {
+      class_type: "VRAM_Debug",
+      inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["kl", 0] },
+    },
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["kl", 0], vae: ["v", 0], tile_size: 256, overlap: 32, temporal_size: 16, temporal_overlap: 4 },
+      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: 256, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };
