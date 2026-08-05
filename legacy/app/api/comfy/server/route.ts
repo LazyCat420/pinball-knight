@@ -9,6 +9,7 @@
  */
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   backendPresent,
@@ -17,6 +18,26 @@ import {
 } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/forge-config.mjs";
 
 export const dynamic = "force-dynamic";
+
+const GUARD = () => join(process.cwd(), "src/game/pinball-knight/tools/sprite-forge/comfy/guard.mjs");
+
+/**
+ * The RAM guard lives and dies with the server: no ComfyUI, nothing worth
+ * watching; ComfyUI up without the guard is how the box froze on 08-05.
+ */
+function startGuard() {
+  const p = spawn("node", [GUARD()], { detached: true, stdio: "ignore" });
+  p.unref();
+}
+
+function stopGuard() {
+  try {
+    const pid = Number(readFileSync(join(comfyHome(), "guard.pid"), "utf8"));
+    if (pid > 1) process.kill(pid, "SIGTERM");
+  } catch {
+    /* not running */
+  }
+}
 
 function runScript(script: string): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
@@ -39,7 +60,12 @@ export async function POST(req: Request) {
   const { code, out } = await runScript(action === "start" ? "run.sh" : "stop.sh");
   if (code !== 0) return NextResponse.json({ error: `script exited ${code}: ${out}` }, { status: 500 });
 
+  if (action === "stop") stopGuard();
   if (action === "start") {
+    // Fresh run, fresh verdicts: a stale trip marker would scare the panel.
+    rmSync(join(comfyHome(), "guard-tripped.json"), { force: true });
+    stopGuard();
+    startGuard();
     const url = loadSettings().comfyUrl;
     for (let i = 0; i < 20; i++) {
       try {

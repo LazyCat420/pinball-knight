@@ -141,8 +141,36 @@ async function runJob(id: string, graph: any, clientId: string) {
   persistJob(id);
 }
 
+/**
+ * The job-edge RAM gate: a queue is a promise to allocate 15-25GB later,
+ * so the honest check happens BEFORE queueing, not when the sampler OOMs.
+ * The floor sits above the guard's soft floor on purpose — refusing a new
+ * job is cheaper than interrupting a running one.
+ */
+const RAM_GATE_GIB = Number(process.env.FORGE_RAM_GATE_GIB ?? 10);
+function ramAvailGiB(): number | null {
+  try {
+    const m = /MemAvailable:\s+(\d+) kB/.exec(readFileSync("/proc/meminfo", "utf8"));
+    return m ? Number(m[1]) / 2 ** 20 : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   if (!backendPresent()) return NextResponse.json({ error: "no backend on this machine" }, { status: 404 });
+  const avail = ramAvailGiB();
+  if (avail !== null && avail < RAM_GATE_GIB) {
+    return NextResponse.json(
+      {
+        error:
+          `RAM guard: only ${avail.toFixed(1)}GiB of system RAM is available (floor ${RAM_GATE_GIB}GiB). ` +
+          `A generation stack needs 15-25GB — close whatever is eating RAM (tests, other sessions) or stop/start ` +
+          `the backend to drop cached models, then retry.`,
+      },
+      { status: 503 },
+    );
+  }
   const body = await req.json();
   const mode = modeById(body.mode ?? body.kind); // `kind` — pre-modes clients
   if (!mode) return NextResponse.json({ error: `unknown mode ${body.mode ?? body.kind}` }, { status: 400 });

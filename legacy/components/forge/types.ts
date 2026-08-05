@@ -8,6 +8,14 @@ export type Manifest = {
   backendPresent: boolean;
   comfyHome: string;
   comfy: { reachable: boolean; version?: string; device?: string; vramFreeGiB?: number; vramTotalGiB?: number };
+  ram?: { availGiB: number | null; totalGiB: number | null };
+  guard?: {
+    running: boolean;
+    availGiB?: number;
+    softGiB?: number;
+    hardGiB?: number;
+    tripped?: { when: string; availGiB: number; action: string } | null;
+  };
   settings: { comfyUrl: string; civitaiTokenSet: boolean; chosen: Record<string, string> };
   legs: any[];
 };

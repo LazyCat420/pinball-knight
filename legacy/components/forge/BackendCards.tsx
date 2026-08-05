@@ -12,6 +12,7 @@ import type { Manifest } from "./types";
 
 export function StatusCard({ m, onAction, busy }: { m: Manifest; onAction: (a: "start" | "stop") => void; busy: string | null }) {
   const c = m.comfy;
+  const g = m.guard;
   return (
     <div style={S.card}>
       <h2 style={S.cardTitle}>
@@ -21,13 +22,23 @@ export function StatusCard({ m, onAction, busy }: { m: Manifest; onAction: (a: "
         ) : (
           <span style={S.chip("#dd8f8f", "#281616")}>down</span>
         )}
+        {g?.running && <span style={S.chip("#8fdd9f", "#16281c")}>RAM guard on</span>}
+        {c.reachable && g && !g.running && <span style={S.chip("#ffd9a0", "#2c2416")}>RAM guard NOT running</span>}
       </h2>
       {c.reachable ? (
         <p style={S.note}>
-          {c.device} · VRAM {c.vramFreeGiB} / {c.vramTotalGiB} GiB free · stop it when you are done — the card is shared
+          {c.device} · VRAM {c.vramFreeGiB} / {c.vramTotalGiB} GiB free
+          {m.ram?.availGiB != null && <> · RAM {m.ram.availGiB} / {m.ram.totalGiB} GiB available</>}
+          {" "}· stop it when you are done — the card is shared
         </p>
       ) : (
         <p style={S.note}>server not answering at {m.settings.comfyUrl}</p>
+      )}
+      {g?.tripped && (
+        <p style={{ ...S.note, color: "#dd8f8f" }}>
+          RAM guard tripped {g.tripped.when}: {g.tripped.action} at {g.tripped.availGiB}GiB available. Free some RAM
+          (close test runs / other sessions), then start the server again — starting clears this.
+        </p>
       )}
       <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
         {!c.reachable && (

@@ -9,6 +9,8 @@
  * directly, so there is no CORS story and no token in the page.
  */
 import { NextResponse } from "next/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { LEGS } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/manifest.mjs";
 import {
   backendPresent,
@@ -18,6 +20,34 @@ import {
 } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/forge-config.mjs";
 
 export const dynamic = "force-dynamic";
+
+/** System RAM + the guard's heartbeat/trip record — the freeze telemetry. */
+function ramAndGuard() {
+  let availGiB: number | null = null;
+  let totalGiB: number | null = null;
+  try {
+    const mi = readFileSync("/proc/meminfo", "utf8");
+    availGiB = +(Number(/MemAvailable:\s+(\d+) kB/.exec(mi)?.[1] ?? 0) / 2 ** 20).toFixed(1);
+    totalGiB = +(Number(/MemTotal:\s+(\d+) kB/.exec(mi)?.[1] ?? 0) / 2 ** 20).toFixed(1);
+  } catch {
+    /* not linux — panel just hides the RAM line */
+  }
+  let guard: { running: boolean; availGiB?: number; softGiB?: number; hardGiB?: number } = { running: false };
+  try {
+    const hb = JSON.parse(readFileSync(join(comfyHome(), "guard.json"), "utf8"));
+    // A heartbeat older than 15s is a dead guard, not a running one.
+    guard = { running: Date.now() - hb.at < 15_000, availGiB: hb.availGiB, softGiB: hb.softGiB, hardGiB: hb.hardGiB };
+  } catch {
+    /* no heartbeat */
+  }
+  let tripped: { when: string; availGiB: number; action: string } | null = null;
+  try {
+    tripped = JSON.parse(readFileSync(join(comfyHome(), "guard-tripped.json"), "utf8"));
+  } catch {
+    /* clean */
+  }
+  return { ram: { availGiB, totalGiB }, guard: { ...guard, tripped } };
+}
 
 async function probeComfy(url: string) {
   try {
@@ -53,6 +83,7 @@ export async function GET() {
     backendPresent: present,
     comfyHome: comfyHome(),
     comfy: present ? await probeComfy(settings.comfyUrl) : { reachable: false },
+    ...(present ? ramAndGuard() : {}),
     settings: { comfyUrl: settings.comfyUrl, civitaiTokenSet: !!settings.civitaiToken, chosen: settings.chosen },
     legs,
   });
