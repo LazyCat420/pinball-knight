@@ -49,10 +49,15 @@ async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]
   const rects: number[][] = (cut.rows ?? []).flatMap((r: { cells: number[][] }) => r.cells);
   if (!rects.length) throw new Error(`cut found no cells${cut.warnings?.length ? ` — ${cut.warnings[0]}` : ""}`);
   const img = new Image();
-  await new Promise((res, rej) => {
-    img.onload = res;
-    img.onerror = rej;
-    img.src = `data:image/png;base64,${b64}`;
+  await new Promise<void>((res, rej) => {
+    img.onload = () => res();
+    // An <img> error event is NOT an Error — rejecting with it raw is what
+    // made this failure surface as the word "undefined".
+    img.onerror = () => rej(new Error("the sheet did not decode in the browser"));
+    // urlToB64 hands back a COMPLETE data: URL (FileReader.readAsDataURL),
+    // so prefixing it again built "data:…;base64,data:…" and every cut died
+    // on an unparseable image.
+    img.src = b64.startsWith("data:") ? b64 : `data:image/png;base64,${b64}`;
   });
   // HEADROOM, proportional. Even with the scales matched, the video leg
   // grows the figure ~11% across a clip (measured), and a fixed 24px
@@ -258,7 +263,9 @@ function JobCard({
                       setCells(await cutSheetToCells(frames[0].src, clip));
                     } catch (e: any) {
                       setCutting(null);
-                      return alert(e.message);
+                      // Never surface a bare "undefined": not everything
+                      // thrown in a browser is an Error.
+                      return alert(`cut failed: ${e?.message ?? String(e)}`);
                     }
                     setCutting(null);
                   }}
