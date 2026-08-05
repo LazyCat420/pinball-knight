@@ -14,9 +14,9 @@
  * Rules, in escalation order (rendering is always the sacrifice — a lost
  * frame re-queues, a frozen host loses everything):
  *
- *   SOFT   wsl avail < 2GiB   (instant)  → interrupt + drop cached models
+ *   SOFT   wsl avail < 1.2GiB (instant)  → interrupt + drop cached models
  *          host used > 58GB   (instant)  → same
- *   HARD   wsl avail < 1GiB   (instant)  → stop the ComfyUI server
+ *   HARD   wsl avail < 0.5GiB (instant)  → stop the ComfyUI server
  *          wsl avail < 2.5GiB sustained 60s → stop
  *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
@@ -26,7 +26,7 @@
  * interrupted a WORKING job. With the cap, the host tripwire is the real
  * freeze protection; the WSL floors only catch true runaway.
  *
- *   node guard.mjs [--soft 2] [--hard 1] [--sustain 2.5] [--sustain-secs 60]
+ *   node guard.mjs [--soft 1.2] [--hard 0.5] [--sustain 2.5] [--sustain-secs 60]
  *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
@@ -44,23 +44,21 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? Number(process.argv[i + 1]) : fallback;
 };
-// Floors sit UNDER the measured Wan envelope on the 40GB-capped VM: a
-// healthy Wan job's deepest transient (both experts churning + tiled
-// decode) leaves ~4-6GiB available — the 5GiB soft floor interrupted a
-// working run (2026-08-05, smoke 4). Below these, it is genuinely a
-// runaway; the kernel OOM-killing the comfy python (recoverable) and the
-// HOST tripwire (the real freeze protection) are the layers underneath.
-// The last calibration inch (smoke 6): the fenced decode still bottoms
-// ~2.5GiB for a few seconds, and 16GB of healthy swap sits behind these
-// numbers — a transient at 2 is survivable, a SUSTAINED squeeze is what
-// the 3GiB/30s rule catches.
-// Sustained sits UNDER the post-job resting state: an idle ComfyUI with
-// a Wan stack still cached rests at ~2.8GiB avail, and the 3GiB/30s rule
-// stopped an IDLE healthy server (smoke 7's aftermath). The route now
-// frees models 5min after the queue drains, so resting-low is temporary;
-// 2.5/60s catches anything that STAYS squeezed.
-const SOFT_GIB = arg("soft", 2);
-const HARD_GIB = arg("hard", 1);
+// LAYERS BY ROLE — the product of seven calibration runs on 2026-08-05,
+// every WSL instant-floor strike of which was a false positive on healthy
+// work (load dips to ~8, standalone decode to 2.8, two-leg decode to
+// ~1.5 as cache from 36GB of touched model files lags eviction):
+//   · host freeze is impossible by construction (.wslconfig 40GB cap) and
+//     the HOST tripwire below is the operator's named backstop;
+//   · true WSL runaway is the SUSTAINED rule's job (2.5GiB/60s — resting
+//     with a cached stack is ~2.8 and temporary; the route frees models
+//     5min after the queue drains);
+//   · 16GB of swap absorbs ten-second transients;
+//   · the instant floors are last-inch reflexes ONLY — below 1.2 nothing
+//     healthy has ever been measured, and the alternative is the kernel
+//     OOM-killing comfy (recoverable, but messier than our interrupt).
+const SOFT_GIB = arg("soft", 1.2);
+const HARD_GIB = arg("hard", 0.5);
 const SUSTAIN_GIB = arg("sustain", 2.5);
 const SUSTAIN_SECS = arg("sustain-secs", 60);
 // 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
