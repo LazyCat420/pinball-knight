@@ -51,14 +51,48 @@ function knightBuildOpts(): { sheetPalette?: number[][] } {
   return importedKnightPalette ? { sheetPalette: importedKnightPalette } : {};
 }
 
+/**
+ * WHICH SHEET THE PLAYER WEARS. `pinball_knight` unless someone chose another.
+ *
+ * Read at load like `importedArtEnabled`, and for the same reason: the atlas is
+ * palette-locked over the whole sheet, so swapping mid-run would need a rebuild
+ * of every cached weapon+look variant. `__lab.playAs("frog")` then RELOAD.
+ *
+ * This is the ONE thing that stood between a published sheet and being the
+ * player: `resolvePaints` already merges imported clips over the painter's, and
+ * the painter still authors every ride form (`ball`, the marbles, the ricochet
+ * bodies) that no generated sheet can supply — so an arbitrary creature
+ * degrades exactly the way the knight's own imported art already does.
+ */
+const PLAYER_SHEET_KEY = "pinball-knight-player-sheet";
+export const DEFAULT_PLAYER_SHEET = "pinball_knight";
+
+export function playerSheetName(): string {
+  try {
+    return localStorage.getItem(PLAYER_SHEET_KEY) || DEFAULT_PLAYER_SHEET;
+  } catch {
+    return DEFAULT_PLAYER_SHEET; // blocked storage is not a reason to change the player
+  }
+}
+
+export function setPlayerSheetName(name: string | null): void {
+  try {
+    if (name && name !== DEFAULT_PLAYER_SHEET) localStorage.setItem(PLAYER_SHEET_KEY, name);
+    else localStorage.removeItem(PLAYER_SHEET_KEY);
+  } catch {
+    /* blocked storage — the choice simply does not persist */
+  }
+}
+
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
   if (importedKnightPaints) return importedKnightPaints;
+  const name = playerSheetName();
   try {
     // S, N, and E are all authored.
     const sheets = (await Promise.all([
-      loadImportedSheet("pinball_knight", "S"),
-      loadImportedSheet("pinball_knight", "N"),
-      loadImportedSheet("pinball_knight", "E"),
+      loadImportedSheet(name, "S"),
+      loadImportedSheet(name, "N"),
+      loadImportedSheet(name, "E"),
     ])).filter((s): s is NonNullable<typeof s> => s !== null);
     if (!sheets.length) return null;
     const paints = importedPaints(sheets);
@@ -71,7 +105,7 @@ export async function loadImportedKnightArt(): Promise<ActorPaints | null> {
       // sprite kept the painter's sheet until the first gear change. Reset the
       // key and the next rAF rebuilds through resolvePaints with these clips.
       state.playerArtKey = null;
-      console.info("[dungeon] player: imported pinball_knight art loaded");
+      console.info(`[dungeon] player: imported ${name} art loaded`);
     }
     return paints;
   } catch {

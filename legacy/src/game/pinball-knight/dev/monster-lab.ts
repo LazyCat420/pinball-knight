@@ -30,6 +30,7 @@
 import { KIND_IDS, KIND_INFO } from "../bestiary";
 import { floorLock, setFloorLock } from "./floor-lock";
 import { importedArtEnabled } from "../boot/sheets";
+import { playerSheetName, setPlayerSheetName } from "../render/knight-sheets";
 import { state } from "../state";
 import type { EnemyKind } from "../state";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
@@ -72,6 +73,8 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         "  __lab.unlock()                back to normal progression",
         "  __lab.clear()                 clear all enemies",
         "  __lab.kinds()                 roster as an array",
+        '  __lab.playAs("frog")          PLAY AS a published sheet, then RELOAD',
+        "  __lab.playAs(null)            back to the knight",
         "",
         "  spawn() IGNORES level gates — you never need to reach a",
         "  monster's floor to look at it.",
@@ -175,6 +178,33 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
       }
       console.log(`[lab] imported art ${on ? "ON" : "OFF"} — RELOAD to apply.`);
       return on;
+    },
+
+    /**
+     * PLAY AS a published sheet. `__lab.playAs("frog")` then RELOAD.
+     *
+     * The player's clips come from `resolvePaints`, which merges imported over
+     * PAINTED — so the creature walks, idles, runs and attacks as itself and
+     * still curls into the knight's ball for the ride forms no generated sheet
+     * authors. Reload, not live, for the same reason `imported()` reloads: the
+     * atlas is palette-locked over the whole sheet.
+     *
+     * Call with no argument to see the current choice, `null` to go back to the
+     * knight.
+     */
+    playAs: (name?: string | null) => {
+      if (name === undefined) {
+        console.log(`[lab] player sheet is "${playerSheetName()}"`);
+        return playerSheetName();
+      }
+      setPlayerSheetName(name);
+      const now = playerSheetName();
+      console.log(
+        `[lab] player sheet → "${now}" — RELOAD to apply. ` +
+          `It must be published (public/sprites/${now}-{S,N,E}.json) and have an idle row, ` +
+          `or the painter quietly stays.`,
+      );
+      return now;
     },
   });
 

@@ -21,7 +21,12 @@ export const CLIPS: [ClipName, number][] = [["idle", 2], ["walk", 4], ["attack",
  * compile error instead of a runtime shrug.
  */
 export const KNOWN_CLIPS: ReadonlySet<ClipName> = new Set<ClipName>([
-  "idle", "walk", "attack", "death", "run", "crouch", "wait", "wake", "stumble", "roll",
+  // Kept in step with `PLAYABLE` in render/imported-paints.ts — the runtime's
+  // list of what an imported sheet may name. `ball` was missing here while the
+  // runtime accepted it, so a legitimate player-art row was reported as an
+  // unknown clip and then worked anyway; a forge that cries wolf about a row
+  // the game happily plays is worse than one that says nothing.
+  "idle", "walk", "attack", "death", "run", "crouch", "wait", "wake", "stumble", "roll", "ball",
 ]);
 
 /** `ratking-E.png` → { name: "ratking", dir: "E" }. */

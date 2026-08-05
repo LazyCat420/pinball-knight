@@ -94,7 +94,34 @@ export function SheetTray({
   }
 
   const rowsInUse = useMemo(() => (CLIP_NAMES as readonly string[]).filter((c) => tray.some((f) => f.clip === c)), [tray]);
-  const sidecar = useMemo(() => ({ rows: rowsInUse }), [rowsInUse]);
+
+  /**
+   * THE CRUSH KNOBS, reachable at last.
+   *
+   * The sidecar used to be hardcoded to `{ rows }`, which quietly made the
+   * three decisions that matter most unavailable: whether the sheet gets its
+   * OWN palette, how a source pixel becomes a texel, and how hard the matte
+   * keys. Measured on the frog (2026-08-05), `derive: 20` moved it from 32
+   * shared entries to 20 of its own, isolated texels 24.8% → 16.4%, and the
+   * verdict from "resampled" to "imports 1:1 at atlas grid >= 84" — the
+   * difference between a muddy frog and a crisp one.
+   *
+   * Defaults match what the pipeline does without a sidecar, so the controls
+   * change nothing until touched.
+   */
+  const [derive, setDerive] = useState(20);
+  const [mode, setMode] = useState<"vote" | "synth" | "native">("vote");
+  const [matteTol, setMatteTol] = useState<number | "">("");
+  const sidecar = useMemo(() => {
+    const commit: Record<string, unknown> = {};
+    if (derive > 0) commit.derive = derive;
+    if (mode !== "vote") commit.mode = mode;
+    return {
+      rows: rowsInUse,
+      ...(Object.keys(commit).length ? { commit } : {}),
+      ...(matteTol === "" ? {} : { matte: { tolerance: Number(matteTol) } }),
+    };
+  }, [rowsInUse, derive, mode, matteTol]);
   const stale = "regenerate the sheet after changing the tray";
 
   const move = (key: string, delta: number) => {
@@ -231,7 +258,36 @@ export function SheetTray({
           </div>
         </div>
       ))}
-      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap", alignItems: "center", padding: "8px 10px", background: "#0d0f14", borderRadius: 4 }}>
+        <span style={S.note}>crush</span>
+        <label style={{ ...S.note, display: "flex", alignItems: "center", gap: 4 }} title="give this sheet its OWN palette of N entries instead of spending N of the shared 32 — measured: keeps a creature's colours and can win a 1:1 import">
+          own palette
+          <select style={{ ...S.input, width: 92 }} value={derive} onChange={(e) => { setDerive(Number(e.target.value)); setCrush(null); }}>
+            <option value={0}>shared 32</option>
+            <option value={16}>16 entries</option>
+            <option value={20}>20 entries</option>
+            <option value={24}>24 entries</option>
+          </select>
+        </label>
+        <label style={{ ...S.note, display: "flex", alignItems: "center", gap: 4 }} title="vote = k-centroid (default) · synth = decide regions first, flat fill + outline (for mosaic-ish art) · native = one source pixel IS one texel (throws rather than shrinking)">
+          reduce
+          <select style={{ ...S.input, width: 88 }} value={mode} onChange={(e) => { setMode(e.target.value as typeof mode); setCrush(null); }}>
+            <option value="vote">vote</option>
+            <option value="synth">synth</option>
+            <option value="native">native</option>
+          </select>
+        </label>
+        <label style={{ ...S.note, display: "flex", alignItems: "center", gap: 4 }} title="how far from the border colour still counts as background — raise it when the cut report says the background could not be keyed">
+          matte tol
+          <input
+            style={{ ...S.input, width: 62 }}
+            placeholder="40"
+            value={matteTol}
+            onChange={(e) => { const v = e.target.value; setMatteTol(v === "" ? "" : Number(v)); setCut(null); setCrush(null); }}
+          />
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
         <button style={{ ...S.btn, ...S.btnGreen }} disabled={busy !== null} onClick={doAssemble}>
           {busy === "assemble" ? "assembling…" : sheet ? "re-assemble sheet" : "assemble sheet"}
         </button>
