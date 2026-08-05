@@ -9,7 +9,7 @@
  */
 import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { openSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   backendPresent,
@@ -24,9 +24,18 @@ const GUARD = () => join(process.cwd(), "src/game/pinball-knight/tools/sprite-fo
 /**
  * The RAM guard lives and dies with the server: no ComfyUI, nothing worth
  * watching; ComfyUI up without the guard is how the box froze on 08-05.
+ * Its strikes go to ~/comfy/guard.log — a soft strike leaves no trip
+ * marker, and "Processing interrupted" in comfy.log with nothing saying
+ * WHY cost a debugging round tonight.
  */
 function startGuard() {
-  const p = spawn("node", [GUARD()], { detached: true, stdio: "ignore" });
+  let out: number | "ignore" = "ignore";
+  try {
+    out = openSync(join(comfyHome(), "guard.log"), "a");
+  } catch {
+    /* unwritable comfy home — run silent rather than not at all */
+  }
+  const p = spawn("node", [GUARD()], { detached: true, stdio: ["ignore", out, out] });
   p.unref();
 }
 

@@ -14,20 +14,19 @@
  * Rules, in escalation order (rendering is always the sacrifice — a lost
  * frame re-queues, a frozen host loses everything):
  *
- *   SOFT   wsl avail < 5GiB   (instant)  → interrupt + drop cached models
+ *   SOFT   wsl avail < 3GiB   (instant)  → interrupt + drop cached models
  *          host used > 58GB   (instant)  → same
- *   HARD   wsl avail < 2.5GiB (instant)  → stop the ComfyUI server
- *          wsl avail < 6GiB   sustained 30s → stop
+ *   HARD   wsl avail < 1.5GiB (instant)  → stop the ComfyUI server
+ *          wsl avail < 4GiB   sustained 30s → stop
  *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
- * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig):
- * a normal Wan expert load dips to ~8GiB available for ~20s while the
- * host sits safely in the mid-50s — measured 2026-08-05, and the previous
- * floors (8/4, sustain 10) killed that healthy load. With the cap, the
- * host tripwire is the real protection; these floors only exist to stop
- * WSL-internal OOM thrash.
+ * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig) by
+ * three measured retunes on 2026-08-05: a healthy Wan run's deepest
+ * transient leaves ~4-6GiB available, and every floor above that has
+ * interrupted a WORKING job. With the cap, the host tripwire is the real
+ * freeze protection; the WSL floors only catch true runaway.
  *
- *   node guard.mjs [--soft 5] [--hard 2.5] [--sustain 6] [--sustain-secs 30]
+ *   node guard.mjs [--soft 3] [--hard 1.5] [--sustain 4] [--sustain-secs 30]
  *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
@@ -45,9 +44,15 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? Number(process.argv[i + 1]) : fallback;
 };
-const SOFT_GIB = arg("soft", 5);
-const HARD_GIB = arg("hard", 2.5);
-const SUSTAIN_GIB = arg("sustain", 6);
+// Floors sit UNDER the measured Wan envelope on the 40GB-capped VM: a
+// healthy Wan job's deepest transient (both experts churning + tiled
+// decode) leaves ~4-6GiB available — the 5GiB soft floor interrupted a
+// working run (2026-08-05, smoke 4). Below these, it is genuinely a
+// runaway; the kernel OOM-killing the comfy python (recoverable) and the
+// HOST tripwire (the real freeze protection) are the layers underneath.
+const SOFT_GIB = arg("soft", 3);
+const HARD_GIB = arg("hard", 1.5);
+const SUSTAIN_GIB = arg("sustain", 4);
 const SUSTAIN_SECS = arg("sustain-secs", 30);
 // 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
 // HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
