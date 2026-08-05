@@ -58,7 +58,12 @@ export default function ForgePanel() {
       setDlJobs((await dr.json()).jobs ?? {});
       setGenJobs((await gr.json()).jobs ?? {});
       const xj = await xr.json();
-      if (xj.modes) setModes(xj.modes);
+      // Only replace the modes array when its content really changed —
+      // consumers key field-reset effects off it, and a fresh identity every
+      // poll would churn them.
+      if (xj.modes) {
+        setModes((prev) => (JSON.stringify(prev) === JSON.stringify(xj.modes) ? prev : xj.modes));
+      }
       setTick((t) => t + 1);
     } catch {
       /* dev server hiccup — next poll wins */

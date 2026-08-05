@@ -17,9 +17,15 @@ export const S = {
   wrap: { maxWidth: 1120, margin: "0 auto" } as React.CSSProperties,
   h1: { fontSize: 18, color: "#e8e6df", margin: "0 0 4px" } as React.CSSProperties,
   sub: { color: "#6a7080", margin: "0 0 16px" } as React.CSSProperties,
+  // Longhand border properties EVERYWHERE a variant overrides the colour:
+  // mixing the `border` shorthand with a `borderColor` override makes React
+  // strip the property on rerender (its mixed-shorthand warning) — every
+  // mode-button toggle used to fire a dev-overlay error and lose the border.
   card: {
     background: "#12141b",
-    border: "1px solid #23262f",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#23262f",
     borderRadius: 6,
     padding: "14px 16px",
     marginBottom: 16,
@@ -28,7 +34,9 @@ export const S = {
   btn: {
     background: "#1d2733",
     color: "#9fd0ff",
-    border: "1px solid #2c3a4a",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#2c3a4a",
     borderRadius: 4,
     padding: "4px 10px",
     cursor: "pointer",

@@ -10,7 +10,7 @@
  * fast/quality toggle and an optional pinned seed — everything else that
  * LOOKS like a parameter is really a decision the registry already made.
  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { S, AMBER, GREEN, fmtETA } from "./theme";
 import type { Mode } from "./types";
 import { fileToB64, urlToB64 } from "./api";
@@ -59,10 +59,12 @@ function ImageSlot({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={b64} alt={label} style={{ width: 112, height: 112, objectFit: "contain", background: "#fff", borderRadius: 3, imageRendering: "pixelated" }} />
         ) : (
-          <span style={{ ...S.note, padding: 6 }}>
+          <span style={{ ...S.note, padding: 6, textAlign: "center" }}>
             {label}
             <br />
-            <span style={{ fontSize: 11 }}>{hint ?? "click or drop"}</span>
+            <span style={{ ...S.btn, display: "inline-block", marginTop: 6, pointerEvents: "none" }}>browse…</span>
+            <br />
+            <span style={{ fontSize: 11 }}>{hint ?? "or drop an image here"}</span>
           </span>
         )}
         <input
@@ -126,14 +128,17 @@ export function GenerateCard({
       .catch(() => {});
   }, []);
 
-  // Field defaults land whenever the mode changes; a preset select also
-  // refreshes its prefilled text twin so the editable prompt tracks it.
+  // Field defaults land when the SELECTED MODE changes — keyed by id, never
+  // by object identity: the manifest poll replaces the modes array every few
+  // seconds, and resetting on identity wiped whatever the user was typing.
+  const initedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!mode) return;
+    if (!mode || initedFor.current === mode.id) return;
+    initedFor.current = mode.id;
     const next: Record<string, string> = {};
     for (const f of mode.fields) next[f.id] = f.default ?? "";
     setParams(next);
-  }, [modeId, mode]);
+  }, [mode]);
 
   if (!mode) return null;
   const useFast = fast && mode.fastAvailable;
