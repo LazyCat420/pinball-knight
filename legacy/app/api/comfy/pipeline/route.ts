@@ -78,6 +78,7 @@ import {
   reframeSubject,
 } from "../../../../src/game/pinball-knight/tools/sprite-forge/intake";
 import { qaFrame } from "../../../../src/game/pinball-knight/tools/sprite-forge/intake-qa";
+import { driftFrame, driftClip } from "../../../../src/game/pinball-knight/tools/sprite-forge/drift";
 
 export const dynamic = "force-dynamic";
 
@@ -579,6 +580,66 @@ async function opQa(mod: CanvasMod, body: { frameB64?: string; sourceH?: number;
   return NextResponse.json({ ok: true, ...v });
 }
 
+
+/**
+ * `op:"drift"` — score generated cells against their facing's master.
+ *
+ * The measurement half of a build. `qa` asks whether ONE frame obeys the
+ * geometry contract; it cannot ask about identity, because at intake there is
+ * nothing to compare against. Once a build has an approved master, "is this
+ * still the same creature" stops being a judgement call and becomes a number.
+ *
+ * It lives here rather than in the planner script because `drift.ts` is pure
+ * TypeScript in the no-node layer, and a .mjs script cannot import it without
+ * dragging a build step into the generation path. GPU work is a mode;
+ * measurement is a pipeline op. Every other checkpoint in this route obeys the
+ * same split.
+ *
+ * Takes the cells of ONE clip together, so the cross-frame checks can run too —
+ * a duplicate pose is invisible to any single cell.
+ */
+async function opDrift(
+  mod: CanvasMod,
+  body: { masterB64?: string; cellsB64?: string[]; clip?: string; label?: string },
+) {
+  if (!body.masterB64) return NextResponse.json({ error: "masterB64 is required" }, { status: 400 });
+  if (!body.cellsB64?.length) {
+    return NextResponse.json({ error: "cellsB64 must be a non-empty array" }, { status: 400 });
+  }
+
+  const decode = async (b64: string) => {
+    const dec = await decodeSheet(mod, b64);
+    const raw = dec.ctx.getImageData(0, 0, dec.width, dec.height);
+    return { width: dec.width, height: dec.height, data: raw.data as unknown as Uint8ClampedArray };
+  };
+
+  let master: { width: number; height: number; data: Uint8ClampedArray };
+  let cells: { width: number; height: number; data: Uint8ClampedArray }[];
+  try {
+    master = await decode(body.masterB64);
+    cells = await Promise.all(body.cellsB64.map(decode));
+  } catch (e) {
+    return NextResponse.json(
+      { error: `did not decode as an image: ${e instanceof Error ? e.message : e}` },
+      { status: 400 },
+    );
+  }
+
+  const frames = cells.map((c, i) =>
+    driftFrame(c, master, { clip: body.clip, label: `${body.label ?? body.clip ?? "cell"} key ${i + 1}` }),
+  );
+  const clip = driftClip(cells, { clip: body.clip, label: body.label });
+  // ONE verdict for the row: the worst thing anywhere in it. A row holding a
+  // blocked cell is not "mostly ready" — publishing it ships that cell.
+  const rank: Record<string, number> = { ready: 0, usable: 1, reject: 2 };
+  const level = [...frames.map((f) => f.level), clip.level].reduce(
+    (a, b) => (rank[b] > rank[a] ? b : a),
+    "ready" as (typeof frames)[number]["level"],
+  );
+
+  return NextResponse.json({ ok: true, level, frames, clip });
+}
+
 /** RawImage → a base64 PNG, via a scratch canvas. */
 function toPng(mod: CanvasMod, img: { width: number; height: number; data: Uint8ClampedArray }): string {
   const cv = mod.createCanvas(img.width, img.height);
@@ -655,8 +716,10 @@ export async function POST(req: Request) {
       return opReframe(mod, body as { frameB64?: string; maskB64?: string; stripShelf?: boolean });
     case "qa":
       return opQa(mod, body as { frameB64?: string; sourceH?: number; afterStyle?: boolean });
+    case "drift":
+      return opDrift(mod, body as { masterB64?: string; cellsB64?: string[]; clip?: string; label?: string });
     default:
-      return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage | keep` }, { status: 400 });
+      return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage | keep | prep | reframe | qa | drift` }, { status: 400 });
   }
 }
 

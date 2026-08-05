@@ -15,10 +15,10 @@
  * frame re-queues, a frozen host loses everything):
  *
  *   SOFT   wsl avail < 1.2GiB (instant)  → interrupt + drop cached models
- *          host used > 58GB   (instant)  → same
+ *          host used > 61GB   (instant)  → same
  *   HARD   wsl avail < 0.5GiB (instant)  → stop the ComfyUI server
  *          wsl avail < 2.5GiB sustained 60s → stop
- *          host used > 60GB   sustained ~15s (3 samples) → stop
+ *          host used > 62.5GB sustained ~15s (3 samples) → stop
  *
  * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig) by
  * three measured retunes on 2026-08-05: a healthy Wan run's deepest
@@ -27,7 +27,7 @@
  * freeze protection; the WSL floors only catch true runaway.
  *
  *   node guard.mjs [--soft 1.2] [--hard 0.5] [--sustain 2.5] [--sustain-secs 60]
- *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
+ *                  [--host-soft-used 61] [--host-hard-used 62.5] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
  * hostUsedGB when known), trip record ~/comfy/guard-tripped.json (cleared
@@ -61,11 +61,34 @@ const SOFT_GIB = arg("soft", 1.2);
 const HARD_GIB = arg("hard", 0.5);
 const SUSTAIN_GIB = arg("sustain", 2.5);
 const SUSTAIN_SECS = arg("sustain-secs", 60);
-// 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
-// HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
-// floor would strike legitimate generation on every run.
-const HOST_SOFT_USED_GB = arg("host-soft-used", 58);
-const HOST_HARD_USED_GB = arg("host-hard-used", 60);
+// ── RAISED 58 → 61 ON 2026-08-05, AGAINST A MEASUREMENT ────────────────────
+//
+// The previous note had the right rule and the wrong number. It reasoned "a
+// fully loaded but HEALTHY box peaks ~57GB (40 cap + Windows baseline), so a
+// softer floor would strike legitimate generation on every run" — and then set
+// the floor at 58, one gigabyte above a baseline that has since grown.
+//
+// Measured, three consecutive keyframe runs: Windows non-WSL is **28.7GB**,
+// not the ~17GB assumed. WSL idles at 21.6GB and grows ~12GB to load the Qwen
+// stack, so a healthy generation peaks at **58.9GB** — above the old floor by
+// 0.9GB. The guard therefore interrupted every single keyframe job mid-sample,
+// three times out of three, and reported it as `[comfy] execution failed: []`.
+//
+// This is the SAME defect the WSL-side floors had (they went 3 → 2 → 1.2 GiB
+// for it): a floor calibrated above the workload's real envelope does not
+// protect the box, it just makes the box useless while looking like a bug in
+// whatever it killed.
+//
+// 61 leaves 2.9GB of margin over the measured peak and 2.9GB under the physical
+// ceiling. The real protection was never this instant strike anyway — it is
+// HARD, which requires the pressure to be SUSTAINED across 3 samples (~15s).
+// A transient spike during a model load is exactly what should not trip.
+//
+// ⚠️ If the Windows baseline grows again, RE-MEASURE rather than nudging:
+//     powershell.exe -NoProfile -Command "(Get-Process vmmemWSL).WorkingSet64/1GB"
+//   against Win32_OperatingSystem's used total. The gap is the baseline.
+const HOST_SOFT_USED_GB = arg("host-soft-used", 61);
+const HOST_HARD_USED_GB = arg("host-hard-used", 62.5);
 const POLL_MS = arg("poll", 2000);
 const HOST_POLL_MS = 5000;
 const HOST_HARD_SAMPLES = 3; // 3 × 5s ≈ the "sustained" the freeze needs
