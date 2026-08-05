@@ -79,6 +79,41 @@ class Cell:
         return (self.x0, self.y0, self.x1 + 1, self.y1 + 1)
 
 
+@dataclass
+class Band:
+    """A captioned section: the caption line(s) and the tile rows they govern.
+
+    ── WHY THIS IS NOT "ONE ROW = ONE ANIMATION" ───────────────────────────────
+    Measured on the Paper Mario sheet, both of the obvious rules are wrong:
+
+      · A ROW is not a move. The first captioned section spans TWO tile rows
+        (44 frames under one caption line), while the section below it spans one.
+        The row count per section varies 1-2 across the sheet.
+      · A GAP is not a move boundary. 403 of the 408 within-row gaps measure
+        exactly 1px — animations are BUTTED against each other, not spaced. A
+        gap-splitter finds five boundaries on a sheet with roughly 120 moves.
+
+    What actually delimits a move is its CAPTION, left-aligned above its first
+    tile. So the geometry this class captures — which caption lines govern which
+    tile rows — is measurable, and the split of a band into named moves is left
+    to a hand-authored table. That division is deliberate: an automatic split was
+    tried and rejected. Caption left-edges align with SOME tile left-edge for
+    134 of 430 cells, because a caption is many glyph boxes and only its first
+    glyph means anything — so the rule fires three times too often, and every
+    false fire silently puts frames in the wrong move.
+    """
+
+    index: int
+    caption_y0: int
+    caption_y1: int
+    rows: list[int]
+    cells: list[int]
+
+    @property
+    def y0(self) -> int:
+        return self.caption_y0
+
+
 def _rgb(a: np.ndarray) -> np.ndarray:
     return a[:, :, :3].astype(np.int16)
 
@@ -185,6 +220,90 @@ def _assign_rows(cells: list[Cell]) -> None:
             c.col = i
 
 
+def text_lines(labels: list[tuple[int, int, int, int]]) -> list[tuple[int, int, list[tuple[int, int, int, int]]]]:
+    """Glyph boxes → caption LINES, by vertical overlap.
+
+    Segmentation returns one box per glyph or per touching glyph-cluster — 665 of
+    them on the Paper Mario sheet, for roughly 120 captions. Merging them into
+    words would need a gap threshold, and the measured gap histogram has no
+    valley to put one in (0-8px is letter spacing, and the tail runs continuously
+    past 17). So this groups by LINE only, which needs no threshold, and leaves
+    the word/caption split to the human reading the review sheet.
+    """
+    lines: list[dict] = []
+    for l in sorted(labels, key=lambda b: (b[1], b[0])):
+        lx0, ly0, lx1, ly1 = l
+        for ln in lines:
+            overlap = min(ln["y1"], ly1) - max(ln["y0"], ly0)
+            if overlap >= 0.5 * min(ln["y1"] - ln["y0"], ly1 - ly0):
+                ln["y0"], ln["y1"] = min(ln["y0"], ly0), max(ln["y1"], ly1)
+                ln["items"].append(l)
+                break
+        else:
+            lines.append({"y0": ly0, "y1": ly1, "items": [l]})
+    lines.sort(key=lambda ln: ln["y0"])
+    return [(ln["y0"], ln["y1"], ln["items"]) for ln in lines]
+
+
+def find_bands(cells: list[Cell], labels: list[tuple[int, int, int, int]]) -> list[Band]:
+    """Interleave caption lines with tile rows top-to-bottom into captioned bands.
+
+    Two caption lines with NO tile row between them are one multi-line caption
+    ("Take/ Place Item", "Crouch Burned"), not two sections — so they join the
+    same band rather than opening a new one. Measured on the real sheet this
+    resolves 32 text lines and 22 tile rows into 19 bands.
+    """
+    rows: dict[int, list[Cell]] = {}
+    for c in cells:
+        rows.setdefault(c.row, []).append(c)
+    row_tops = [(r, min(c.y0 for c in v)) for r, v in sorted(rows.items())]
+
+    events: list[tuple[int, int, object]] = []
+    for y0, y1, items in text_lines(labels):
+        events.append((y0, 0, ("line", y0, y1)))
+    for r, top in row_tops:
+        events.append((top, 1, ("row", r, 0)))
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    bands: list[Band] = []
+    for _, _, ev in events:
+        kind = ev[0]
+        if kind == "line":
+            _, y0, y1 = ev
+            # Open a band only if the previous one already claimed a tile row;
+            # otherwise this is the next line of the SAME caption.
+            if bands and not bands[-1].rows:
+                bands[-1].caption_y0 = min(bands[-1].caption_y0, int(y0))
+                bands[-1].caption_y1 = max(bands[-1].caption_y1, int(y1))
+            else:
+                bands.append(Band(index=len(bands), caption_y0=int(y0), caption_y1=int(y1), rows=[], cells=[]))
+        else:
+            _, r, _ = ev
+            if not bands:  # a sheet whose first row has no caption above it
+                bands.append(Band(index=0, caption_y0=-1, caption_y1=-1, rows=[], cells=[]))
+            bands[-1].rows.append(int(r))
+    return bands
+
+
+def assign_band_cells(bands: list[Band], cells: list[Cell]) -> None:
+    """Fill each band's `cells` with indices into `cells`, IN READING ORDER.
+
+    ⚠️ ORDER BY `col`, NEVER BY POSITION IN THE LIST. `find_cells` leaves its
+    list sorted by (y0, x0), and tiles in one visual row do NOT share a y0 — a
+    move whose tiles are a few pixels taller than its neighbours' sorts into a
+    separate y0 group. Reading in list order therefore walks the real sheet's
+    first row as 0,1,13,14,15,2,3,4… and a band's cell order IS its frame order,
+    so the scramble ships as a jumbled walk cycle rather than as an error.
+    """
+    by_row: dict[int, list[tuple[int, int]]] = {}
+    for i, c in enumerate(cells):
+        by_row.setdefault(c.row, []).append((c.col, i))
+    for v in by_row.values():
+        v.sort()
+    for b in bands:
+        b.cells = [i for r in b.rows for _, i in by_row.get(r, [])]
+
+
 def cut_cell(a: np.ndarray, cell: Cell, tile: tuple[int, int, int], bg: tuple[int, int, int]) -> Image.Image | None:
     """One tile → a trimmed RGBA sprite with the tile colour keyed out.
 
@@ -236,6 +355,33 @@ def contact_sheet(
     return out
 
 
+def band_review(img: Image.Image, band: Band, cells: list[Cell], scale: int = 3) -> Image.Image:
+    """One band, cropped from the SOURCE at its own scale, with cells numbered.
+
+    Cropping the source rather than compositing the cut frames is the whole
+    point: it keeps the caption and the tiles in their original x-alignment, so
+    which caption sits above which frames is a thing you can SEE. A montage of
+    the cut frames would destroy exactly the information the naming step needs.
+    """
+    from PIL import ImageDraw
+
+    mine = [cells[i] for i in band.cells]
+    if not mine:
+        return Image.new("RGBA", (1, 1))
+    y0 = band.caption_y0 if band.caption_y0 >= 0 else min(c.y0 for c in mine)
+    y0 = max(y0 - 2, 0)
+    y1 = min(max(c.y1 for c in mine) + 3, img.height)
+    crop = img.crop((0, y0, img.width, y1))
+    crop = crop.resize((crop.width * scale, crop.height * scale), Image.NEAREST)
+    d = ImageDraw.Draw(crop)
+    for i in band.cells:
+        c = cells[i]
+        box = [c.x0 * scale, (c.y0 - y0) * scale, (c.x1 + 1) * scale - 1, (c.y1 - y0 + 1) * scale - 1]
+        d.rectangle(box, outline=(255, 0, 255, 255))
+        d.text((box[0] + 2, box[1] + 1), str(i), fill=(255, 255, 0, 255))
+    return crop
+
+
 def rip(path: Path, out: Path, want_contact: bool = False) -> dict:
     img = Image.open(path).convert("RGBA")
     a = np.array(img)
@@ -247,6 +393,7 @@ def rip(path: Path, out: Path, want_contact: bool = False) -> dict:
 
     frames: list[tuple[str, Image.Image]] = []
     index: list[dict] = []
+    kept: list[Cell] = []
     for c in cells:
         im = cut_cell(a, c, tile, bg)
         if im is None:
@@ -255,6 +402,12 @@ def rip(path: Path, out: Path, want_contact: bool = False) -> dict:
         im.save(out / "cells" / f"{name}.png")
         frames.append((name, im))
         index.append({**asdict(c), "file": f"cells/{name}.png", "w": im.width, "h": im.height})
+        kept.append(c)
+
+    # Bands are built from the KEPT cells: an empty tile produced no frame, and a
+    # band that indexed it would hand the naming step a number with no picture.
+    bands = find_bands(kept, labels)
+    assign_band_cells(bands, kept)
 
     meta = {
         "source": str(path),
@@ -264,12 +417,21 @@ def rip(path: Path, out: Path, want_contact: bool = False) -> dict:
         "rows": (max((c.row for c in cells), default=-1) + 1),
         "frames": len(index),
         "labels": [{"x0": b[0], "y0": b[1], "x1": b[2], "y1": b[3]} for b in labels],
+        "bands": [asdict(b) for b in bands],
         "cells": index,
     }
     (out / "index.json").write_text(json.dumps(meta, indent=1) + "\n")
 
     if want_contact and frames:
         contact_sheet(frames).save(out / "contact.png")
+
+    # The review sheets are what the naming table is written FROM, so they are
+    # not behind --contact: a rip you cannot name is a rip you cannot use.
+    if bands:
+        (out / "bands").mkdir(exist_ok=True)
+        for b in bands:
+            if b.cells:
+                band_review(img, b, kept).save(out / "bands" / f"band_{b.index:02d}.png")
 
     # Crop the labels too — they are the only record of what each band is called,
     # and reading them back off the source means keeping the source around.
@@ -293,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{a.sheet.name}: {meta['size'][0]}x{meta['size'][1]}\n"
         f"  background {tuple(meta['background'])}  tile {tuple(meta['tile'])}\n"
         f"  {meta['frames']} frames in {meta['rows']} rows, {len(meta['labels'])} labels\n"
+        f"  {len(meta['bands'])} captioned bands → bands/band_NN.png, name them in a moves table\n"
         f"  → {a.out}"
     )
     return 0

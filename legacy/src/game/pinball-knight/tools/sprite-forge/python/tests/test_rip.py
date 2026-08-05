@@ -17,6 +17,9 @@ from PIL import Image
 from spriteforge.rip import (
     sheet_background,
     find_cells,
+    find_bands,
+    assign_band_cells,
+    text_lines,
     cut_cell,
     MIN_TILE_SHARE,
 )
@@ -132,6 +135,113 @@ def test_an_empty_tile_returns_nothing_rather_than_a_blank_frame():
     x0, y0, x1, y1 = cells[0].box
     a[y0:y1, x0:x1, :3] = TILE
     assert cut_cell(a, cells[0], tile, BG) is None
+
+
+def build_banded(
+    plan: tuple[tuple[int, tuple[int, ...]], ...] = ((1, (3, 3)), (2, (4,))),
+    tile_w: int = 20,
+    tile_h: int = 24,
+    ragged: bool = False,
+) -> np.ndarray:
+    """A sheet of CAPTIONED BANDS: `(caption_lines, (row_widths...))` per band.
+
+    The real sheet's two structural surprises, both measured: a caption that
+    governs more than one tile row, and a caption written on more than one line.
+    """
+    widest = max(max(rows) for _, rows in plan)
+    w = 8 + widest * (tile_w + 2) + 8
+    h = 8
+    for lines, rows in plan:
+        h += lines * 8 + len(rows) * (tile_h + 2) + 10
+    a = np.zeros((h + 8, w, 4), dtype=np.uint8)
+    a[:, :, :3] = BG
+    a[:, :, 3] = 255
+
+    y = 8
+    for lines, rows in plan:
+        for _ in range(lines):
+            a[y : y + 5, 8 : 8 + 26, :3] = TEXT  # a caption line: no tile colour
+            y += 8
+        for n in rows:
+            x = 8
+            for ci in range(n):
+                # `ragged` makes a run of tiles TALLER, the way one animation's
+                # tiles differ from its neighbours' on a real sheet.
+                top = y - (3 if (ragged and ci >= n // 2) else 0)
+                a[top : y + tile_h, x : x + tile_w, :3] = TILE
+                a[y + 6 : y + tile_h - 4, x + 5 : x + tile_w - 5, :3] = INK
+                x += tile_w + 2
+            y += tile_h + 2
+        y += 10
+    return a
+
+
+def test_a_caption_can_govern_more_than_one_tile_row():
+    # THE STRUCTURE THAT BREAKS "one row = one animation". On the Paper Mario
+    # sheet the first captioned section spans two tile rows and 44 frames; a
+    # row-per-section reader splits that section in half.
+    a = build_banded(plan=((1, (3, 3)),))
+    cells, _, labels = find_cells(a, BG)
+    bands = find_bands(cells, labels)
+    assert len(bands) == 1
+    assert bands[0].rows == [0, 1]
+
+
+def test_stacked_caption_lines_are_one_band_not_two():
+    # "Take/ Place Item" and "Crouch Burned" are single captions written on two
+    # lines. Opening a band per line would invent a section with no frames in it
+    # and shift every subsequent section's frames onto the wrong caption.
+    a = build_banded(plan=((2, (4,)),))
+    cells, _, labels = find_cells(a, BG)
+    bands = find_bands(cells, labels)
+    assert len(bands) == 1
+    assert bands[0].rows == [0]
+
+
+def test_bands_partition_the_sheet_in_reading_order():
+    a = build_banded(plan=((1, (3, 3)), (2, (4,)), (1, (2,))))
+    cells, _, labels = find_cells(a, BG)
+    bands = find_bands(cells, labels)
+    assert [b.rows for b in bands] == [[0, 1], [2], [3]]
+    assert [b.index for b in bands] == [0, 1, 2]
+    # every tile row lands in exactly one band — no frame is orphaned or doubled
+    assert sorted(r for b in bands for r in b.rows) == [0, 1, 2, 3]
+
+
+def test_a_row_with_no_caption_above_it_still_gets_a_band():
+    # A sheet that opens straight into tiles must not drop them on the floor.
+    a = build_banded(plan=((0, (3,)),))
+    cells, _, labels = find_cells(a, BG)
+    bands = find_bands(cells, labels)
+    assert len(bands) == 1
+    assert bands[0].rows == [0]
+    assert bands[0].caption_y0 == -1
+
+
+def test_a_bands_cells_are_in_reading_order_even_when_tiles_are_ragged():
+    # THE SCRAMBLE. find_cells leaves its list sorted by (y0, x0), and tiles in
+    # one visual row do not share a y0 — so a taller run sorts into its own y0
+    # group and list order walks the row as 0,1,13,14,15,2,3,4… A band's cell
+    # order IS its frame order, so this ships as a jumbled walk cycle, not an
+    # error. Caught on the real sheet; pinned here.
+    a = build_banded(plan=((1, (8,)),), ragged=True)
+    cells, _, labels = find_cells(a, BG)
+    bands = find_bands(cells, labels)
+    assign_band_cells(bands, cells)
+    xs = [cells[i].x0 for i in bands[0].cells]
+    assert xs == sorted(xs), f"frames out of reading order: {xs}"
+    assert [cells[i].col for i in bands[0].cells] == list(range(8))
+
+
+def test_text_lines_group_glyphs_by_line_without_a_gap_threshold():
+    # 665 glyph boxes on the real sheet, and the measured x-gap histogram has no
+    # valley to put a word threshold in. Lines need no threshold, so lines are
+    # all this returns.
+    labels = [(0, 10, 4, 16), (6, 10, 10, 16), (40, 10, 44, 16), (0, 30, 4, 36)]
+    lines = text_lines(labels)
+    assert len(lines) == 2
+    assert len(lines[0][2]) == 3  # all three on the y=10 line, however far apart
+    assert len(lines[1][2]) == 1
 
 
 @pytest.mark.parametrize("share", [0.0, MIN_TILE_SHARE / 2])
