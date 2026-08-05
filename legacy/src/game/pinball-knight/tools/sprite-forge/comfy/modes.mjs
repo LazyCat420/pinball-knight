@@ -133,12 +133,22 @@ const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
  * much as the move allows; timid keys are what make motion slide.
  * `clip` files the cut cells under the right game clip, like the animate
  * presets do.
+ *
+ * ── EVERY KEY IS THE SAME CAMERA ────────────────────────────────────────
+ * First measured run (frog, 2026-08-05): the four keys came back
+ * front-facing → side → three-quarter → front, so the in-between animated
+ * a TURN rather than a stride. Asked for "right foot planted far forward"
+ * with no camera pinned, an edit model expresses the stride the easiest
+ * way it can — by rotating the character. `camera` states the viewpoint
+ * once per move and the prompt forbids turning between frames; a walk
+ * reads from the side, a death reads better toward the camera.
  */
 const KEYFRAME_MOVES = [
   {
     id: "walk",
     label: "walk cycle keys",
     clip: "walk",
+    camera: "true side view, facing right, camera at eye level",
     poses: [
       "right foot planted far forward, left leg trailing behind, body leaning into the step",
       "passing pose: left knee lifted high in front, standing tall on the right foot",
@@ -150,6 +160,7 @@ const KEYFRAME_MOVES = [
     id: "run",
     label: "run cycle keys",
     clip: "run",
+    camera: "true side view, facing right, camera at eye level",
     poses: [
       "full sprint stride, right leg extended far forward, left leg kicked back, both feet off the ground",
       "touchdown: right foot landing under the body, left knee driving forward, deep forward lean",
@@ -161,6 +172,7 @@ const KEYFRAME_MOVES = [
     id: "attack",
     label: "attack keys",
     clip: "attack",
+    camera: "three-quarter view, facing right, camera at eye level",
     poses: [
       "ready stance, weapon held low and coiled",
       "wind-up: twisted back, weapon raised high behind the head",
@@ -172,6 +184,7 @@ const KEYFRAME_MOVES = [
     id: "stumble",
     label: "getting-hit keys",
     clip: "stumble",
+    camera: "three-quarter view, facing right, camera at eye level",
     poses: [
       "upright, flinching as if just struck in the chest",
       "reeling backward, arms flung out, one foot lifting",
@@ -183,6 +196,7 @@ const KEYFRAME_MOVES = [
     id: "death",
     label: "death keys",
     clip: "death",
+    camera: "three-quarter view, facing right, camera at eye level",
     poses: [
       "struck hard, arching backward",
       "crumpling, knees buckling under the body",
@@ -190,7 +204,7 @@ const KEYFRAME_MOVES = [
       "lying flat on the ground, fully collapsed",
     ],
   },
-  { id: "custom", label: "custom poses…", clip: "", poses: [] },
+  { id: "custom", label: "custom poses…", clip: "", camera: "the same view as the reference image", poses: [] },
 ];
 
 export const MODES = [
@@ -322,13 +336,20 @@ export const MODES = [
     prompt(params) {
       const move = KEYFRAME_MOVES.find((p) => p.id === params.preset);
       const list = params.preset === "custom" ? String(params.custom ?? "") : move?.poses.map((p, i) => `(${i + 1}) ${p}`).join(", ") ?? "";
+      const cam = move?.camera ?? "the same view as the reference image";
       // Labels stay OUT of the pixels on purpose: the slicer imports
       // beside-row text as a frame (README), and the row's identity
       // already travels on the job as metadata.
+      //
+      // The camera sentence is load-bearing, not decoration: without it
+      // the model expresses a stride by TURNING the character, and the
+      // row comes back as a turnaround instead of a move (measured).
       return (
         `A pixel art sprite sheet: the same character drawn 4 times in a single horizontal row, evenly spaced ` +
         `on a plain white background, identical size and colors in every frame, feet on one shared baseline. ` +
-        `The four poses, left to right: ${list}. Large, clearly different poses — no text, no labels, no numbers in the image.`
+        `Every frame is drawn from the SAME camera angle — ${cam} — the character never turns or rotates ` +
+        `between frames, only its pose changes. The four poses, left to right: ${list}. ` +
+        `Large, clearly different poses — no text, no labels, no numbers in the image.`
       );
     },
     build(params, ctx) {
