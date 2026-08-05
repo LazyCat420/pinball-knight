@@ -46,35 +46,64 @@ end):
 | Stage | What | Status |
 |---|---|---|
 | 0.0 | This document | ✅ done |
-| 0.1 | Knight published art is dead (sidecars, not manifests) | ⬜ blocked — parallel session owns those files |
+| 0.1 | Knight published art is dead (sidecars, not manifests) | ✅ **shipped + verified live `57b0511`** |
 | 0.2 | Sheet tray cannot reach crush controls | ✅ shipped |
 | 0.3 | `KNOWN_CLIPS` missing `ball` | ✅ shipped |
 | 1 | Intake: any image → one clean idle frame | ✅ shipped + proven live |
 | 2 | Move sets from one idle frame | ✅ shipped `a2ada3b` |
-| 3 | Assembly + crush | ✅ shipped (needs 0.2 for full control) |
+| 3 | Assembly + crush | ✅ shipped |
 | 4a | Reskin an existing monster | ✅ works; ⬜ panel should write the map entry |
-| 4b | Playable character | ✅ `__lab.playAs("frog")` |
+| 4b | Playable character | ✅ `__lab.playAs("frog")`; ⬜ surface in `InGameCard` |
 | 4c | Brand-new monster kind | ⬜ |
 | 5 | Verify in game | ✅ shipped `61b39bf` |
+| **6.1** | **Build plan + camera-per-facing** (`build-plan.ts`) | ✅ types shipped `57b0511`; ⬜ **not wired into `modes.mjs`** |
+| **6.2** | **Drift gate** (`drift.ts`) | ✅ shipped + calibrated `57b0511` |
+| **6.3** | **Build planner route** `/api/comfy/build` | ⬜ not started |
+| **6.4** | **Review workspace** (contact sheet, per-cell repair) | ⬜ not started |
+| **6.5** | **Regenerate a character end-to-end through the builder** | ⬜ not started |
 
 ---
 
 ## Stage 0 — Fix what is broken
 
-### 0.1 The knight's published art is dead ⬜
+### 0.1 The knight's published art was dead ✅ `57b0511`
 
-`public/sprites/pinball_knight-{S,N,E}.json` are forge **sidecars** (`rows`/`rects`/
-`commit`), not `SheetManifest`s — no `name`, `dir`, `image`, `source`.
-`loadImportedSheet` (`render/imported-paints.ts:42`) throws on `manifest.source`, returns
-`null`, and the player renders 100% procedurally **with no log line at all**.
-`tools/sprite-forge/player-art.test.ts` parses these as manifests and should be failing.
+**Symptom:** `public/sprites/pinball_knight-{S,N,E}.json` were forge **sidecars**
+(`rows`/`rects`/`commit`), not `SheetManifest`s. `loadImportedSheet`
+(`render/imported-paints.ts:42`) set `img.src = "undefined"`, 404'd, returned `null`, and
+the player rendered 100% procedurally **with no log line at all**.
 
-Introduced by `ef6ebfd`; the correct shape existed at `af36998`.
+That was the third bug in a chain, and the first two are the ones worth remembering.
 
-> [!WARNING]
-> These files are modified in the working tree by a **parallel session**. Coordinate before
-> touching them. Fix = re-publish via `npm run sprites`, then confirm the boot line
-> `[dungeon] player: imported pinball_knight art loaded`.
+**1 — a check that could never pass.** `commitToGrid` widens the gutter until the sheet
+"re-slices to the declared shape". That test assumes **one declared cell is one connected
+blob**. The knight's spin attack opens with the body *and a swung element clear of it* —
+two blobs, one legitimate frame, correctly declared as one cell. `sliceSheet` counts
+blobs, so it reported one cell more than declared **at every gutter in the range**. The
+loop exhausted itself and threw on art that was fine.
+
+**2 — the throw aborted the whole batch.** E's manifest was written; S and N never were.
+One creature's crush problem cost six other sheets their publish.
+
+**3 — so somebody routed around it** by hand-copying the inbox sidecars into
+`public/sprites/`. Hence the symptom.
+
+**Fixes.** `separated()` in `commit.ts` replaces the count-equality test with the
+invariant the gutter actually has to guarantee: every sliced blob nests inside exactly one
+placed cell, and every placed cell holds at least one blob. A two-piece pose passes; two
+figures merged by a tight gutter still fails. `inbox.test.ts` now collects crush failures
+and asserts *after* the loop, so every sheet publishes and the run still goes red. The
+`spin_attack` row — never a `ClipName`, always dropped on import — is renamed `attack`
+(same-named rows append, so the frames survive).
+
+**Result:** crushes at `PIXEL GRID ×8, confidence 100%, block-reduce EXACT`, publishes
+with `grid: 8` on all three facings, sheet 3.5 MB → 189 KB. Verified on the live
+container: `[dungeon] player: imported pinball_knight art loaded`.
+
+> [!IMPORTANT]
+> **A check that cannot pass is worse than no check**, because someone will route around
+> it and the workaround is invisible. Both signs were present for weeks: a test that threw
+> every run, and a published file whose shape no writer in the codebase produces.
 
 ### 0.2 The panel cannot reach the crush controls ✅
 
@@ -281,9 +310,21 @@ one in silence (`render/imported-paints.ts:288-294, 316-318`; the caller's silen
 `continue` is `boot/sheets.ts:364-365`). The stiltneck shipped for weeks and never drew for
 exactly this reason.
 
-⬜ **Open question:** walk/run are authored from a true side view, attack/stumble/death from
-three-quarter. Mixing camera angles inside one published sheet makes a creature teleport
-between clips. Either stage them as separate sheets, or settle on one camera per creature.
+⬜ **Open question — DECIDED, NOT YET WIRED.** walk/run are authored from a true side
+view, attack/stumble/death from three-quarter. Mixing camera angles inside one published
+sheet makes a creature teleport between clips.
+
+The decision (2026-08-05): **one camera per FACING, not per move.** `CAMERA_BY_DIR` in
+`build-plan.ts` holds it — E is side-on, S faces the camera, N faces away, and every clip
+of a facing shares that viewpoint. It costs the attack some three-quarter drama and buys
+two things: the creature never pops mid-combat, and every cell in a facing becomes
+geometrically comparable, which is what makes `drift.ts` mean anything at all.
+
+> [!WARNING]
+> **The constant exists; `modes.mjs` does not read it yet.** `KEYFRAME_MOVES[].camera` is
+> still per-move and still authoritative for anything generated today. Wiring it is 6.1's
+> remaining half: replace that field, thread the facing through `build(params, ctx)`, and
+> keep a per-move override in the type for a deliberate cinematic boss.
 
 ---
 
@@ -378,6 +419,96 @@ The verdict is the boot line the game already prints
 > The harness **must** `browser.close()` (disconnect, not kill) on the way out. A live CDP
 > socket holds node's event loop open forever and the spawning route waits on a process
 > that finished its work.
+
+---
+
+## Stage 6 — The Character Builder ⬜ (foundations shipped)
+
+Everything above makes a character possible. It does not make one CHEAP. Today the GPU is
+the unattended resource and your attention is the scarce one, but the workflow spends them
+the other way round: pick a move, launch, wait, find the job card, cut it into cells, drag
+rows into the tray — then do that seventeen more times for the other moves and facings.
+
+The forge owns every step and nothing owns the CHARACTER. Stage 6 is that missing object.
+
+**The one rule it must not break:** every generated cell branches off the MASTER, never
+off a previous output. Qwen-Image-Edit's identity drift compounds over serial edits, and
+it does so smoothly enough that no single step looks wrong. `KEYFRAME_SET` already obeys
+this; the planner must not be what breaks it.
+
+### 6.1 `build-plan.ts` ✅ types, ⬜ wiring
+
+`CharacterBuild` is a durable record: one approved master per facing, one camera, a set of
+facings, a set of clips, and a row state per `(clip, dir)`. It refuses at PLAN time —
+before any weight loads — what would otherwise fail half an hour later:
+
+| refusal | why it exists |
+|---|---|
+| a name `opStage` would reject | the failure lands on the form field, not after the art |
+| a clip outside `KNOWN_CLIPS` | `hurt` is what every reference sheet prints; the engine calls it `stumble` |
+| no `idle` | `importedPaints` drops such a sheet whole, in silence |
+| skipping `E` | it is the master's own facing |
+
+`jobOrder()` groups a facing's clips together and leads with `idle`. Every job is the
+`qwen` leg, so a build enqueued this way pays **zero** model swaps; interleaving a Wan
+in-between would cost a 13 GB unload each way.
+
+`deriveState()` computes state from the rows rather than storing it twice — a stored state
+and a derived one disagree the moment anything crashes between the two writes, and the
+stored one always wins because it is the one that gets read.
+
+### 6.2 `drift.ts` ✅ shipped, calibrated
+
+`intake-qa.ts` asks whether one frame obeys the geometry contract; it cannot ask about
+identity, because at intake there is nothing to compare against. Once a build has a master,
+"is this still the same creature" becomes a measurement. Nobody honestly reviews 72 cells —
+they check the first six and publish. This hands back the short list instead.
+
+| check | verdict | note |
+|---|---|---|
+| `area` — body mass vs master | **hard** (advisory on off-floor clips) | catches a dropped weapon; death frames legitimately hit 0.61× |
+| `palette` — asymmetric OKLab distance | **hard** | passed clean on every shipping sheet; asymmetric so a back view is not punished for lacking a face |
+| `aspect` — bbox proportions | **advisory only** | see below |
+| `feet` — baseline | advisory | skipped for death/roll/ball/stumble |
+| `distinct` — pairwise IoU across a clip's keys | **hard** | the model returning one pose three times animates as a freeze |
+
+> [!IMPORTANT]
+> **Calibration refuted one of these metrics, which is why calibration exists.**
+> Scored against art the game draws today, bbox aspect came back 28% off (beaver attack),
+> 50% (frog walk) and 251% (jester's last death frame) from their own idle. Nothing had
+> drifted — a stride is genuinely wider than a stand and a collapsed body is genuinely a
+> different rectangle. **Aspect measures pose, not identity.** As a hard gate it would have
+> rejected four of four known-good sheets. Demoted, documented, kept as advisory.
+>
+> The honest limit: reading shipped art to calibrate a gate that judges shipped art
+> measures the pipeline against itself. It proves the gate is not insane. Only a real build
+> whose flagged cells a human agrees were bad can prove it is RIGHT.
+
+### 6.3 The planner route ⬜
+
+`app/api/comfy/build/route.ts` — a PLANNER, not a second scheduler. It converts a build
+into `POST /api/comfy/generate` calls and lets the existing leg-affinity `Sched` order
+them. Persists to `work/builds/<id>/build.json`, mirroring how jobs already persist.
+
+**The one place the existing architecture does not stretch:** a 40-minute build must
+survive a Next.js hot reload. The job engine currently reports reloaded-away jobs as
+`"lost in a dev-server reload — re-roll it"`, which is honest for one job and useless for
+eighteen.
+
+### 6.4 The review workspace ⬜
+
+A `build` tab: rows × facings, each cell green / advisory / blocked, with the master as a
+**ghost overlay** behind the selected cell — identity drift is invisible in a single image
+and obvious against its own reference. Every repair control already exists (`re-roll`,
+`touchup`, `MaskEditor`, `op:"reframe"`); the work is routing them at a cell instead of a
+job. Two invariants: a repair writes a new revision and never overwrites an approved cell,
+and fixes are offered in COST order — free geometry before a 100 s style pass.
+
+### 6.5 End-to-end ⬜
+
+**Not yet done, and the distinction matters:** the knight was *repaired* in `57b0511`, not
+*regenerated*. A full intake → keyframes → cut → crush → publish run through the builder
+has never been executed. Until it has, 6.1–6.4 are untested against real generated art.
 
 ---
 
