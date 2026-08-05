@@ -218,6 +218,47 @@ export const LEGS = [
     ],
   },
   {
+    id: "intake",
+    title: "Intake — any image becomes a usable character frame",
+    blurb:
+      "Cut the subject out of a photo, a render or a screenshot so the rest of the pipeline has " +
+      "the one thing it assumes and never had: a single figure on a keyable field. " +
+      "Core ComfyUI nodes (no custom node) — only the weight is missing.",
+    slots: [
+      {
+        id: "intake-bgremove",
+        role: "Background removal (pick one)",
+        required: false,
+        choice: true,
+        options: [
+          {
+            id: "birefnet",
+            name: "BiRefNet",
+            file: "background_removal/birefnet.safetensors",
+            bytes: 444473596,
+            url: HF("Comfy-Org/BiRefNet", "background_removal/birefnet.safetensors"),
+            license: "MIT",
+            recommended: true,
+            note:
+              "The default. Runs in ~1-2s and coexists with the Qwen stack on 24GB, so intake costs " +
+              "seconds rather than a model swap.",
+          },
+          {
+            id: "lucida",
+            name: "Lucida (BiRefNet finetune)",
+            file: "background_removal/lucida.safetensors",
+            bytes: 884878856,
+            url: HF("Comfy-Org/BiRefNet", "background_removal/lucida.safetensors"),
+            license: "MIT",
+            note:
+              "Trained for transparent objects, glow/VFX and ILLUSTRATIONS — the half of the input " +
+              "distribution a photo-trained segmenter cuts badly. Try it when a drawing comes back chewed.",
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "animation",
     title: "Animation — Wan 2.2 I2V (two experts)",
     blurb:

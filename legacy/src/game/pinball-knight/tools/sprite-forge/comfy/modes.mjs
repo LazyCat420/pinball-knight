@@ -22,7 +22,7 @@
  *   ctx.images          uploaded server-side names {init, end, mask, style}
  *   ctx.seed
  */
-import { qwenEdit, qwenInpaint, wanI2V } from "./graphs.mjs";
+import { bgRemove, qwenEdit, qwenInpaint, wanI2V } from "./graphs.mjs";
 
 /**
  * Lightning distills change the OPERATING POINT — steps and cfg move
@@ -235,6 +235,59 @@ const KEYFRAME_MOVES = [
 const KEYFRAME_SET = KEYFRAME_MOVES.filter((m) => m.id !== "custom");
 
 export const MODES = [
+  {
+    id: "segment",
+    title: "cut out",
+    blurb: "lift the subject off ANY background — a photo, a render, a screenshot — in about a second",
+    // `leg` is the /free key: a new leg id would unload the 13GB Qwen stack
+    // between cutting out and styling, which is exactly the thrash the
+    // leg-affinity scheduler exists to prevent. BiRefNet is 444MB and sits
+    // beside Qwen on a 24GB card.
+    leg: "qwen",
+    needs: { init: true },
+    fields: [],
+    etaS: { quality: 10, fast: 10 },
+    prompt() {
+      return "background removal (no prompt — this is a segmentation model)";
+    },
+    build(params, ctx) {
+      // The panel's radio decides; fall back to whichever is actually on disk
+      // so a box with only Lucida installed still works.
+      const pick = ctx.chosen?.("intake-bgremove");
+      const model = pick === "lucida" || (!ctx.has("birefnet") && ctx.has("lucida")) ? "lucida" : "birefnet";
+      return bgRemove({ image: ctx.images.init, model: `${model}.safetensors` });
+    },
+  },
+  {
+    id: "intake-style",
+    title: "to pixel art",
+    blurb: "the cut-out becomes a sprite — framing is already fixed, so this only changes the LOOK",
+    leg: "qwen",
+    needs: { init: true, style: "optional" },
+    fields: [{ id: "hint", label: "subject (optional)", type: "text", placeholder: "a knight in blue armor…" }],
+    etaS: { quality: 260, fast: 100 },
+    prompt(params, ctx) {
+      // DELIBERATELY NOT asking for "one full-body character, centered, plain
+      // white background" the way `pixelize` does. By the time this runs, the
+      // reframe has GUARANTEED all three — and asking an edit model to centre
+      // an already-centred figure is how it gets moved.
+      const hint = params.hint ? ` of ${params.hint}` : "";
+      const style = ctx.images.style
+        ? " Match the pixel art style, palette and proportions of Figure 2."
+        : " 16-bit game sprite style, crisp pixel clusters, hard palette, no anti-aliasing.";
+      return `Redraw this character as clean pixel art${hint}, same pose, same size, same position.${style}`;
+    },
+    build(params, ctx) {
+      return qwenEdit({
+        image: ctx.images.init,
+        image2: ctx.images.style ?? null,
+        prompt: this.prompt(params, ctx),
+        seed: ctx.seed,
+        unet: ctx.unet("rot-unet") ?? undefined,
+        ...qwenBundle(ctx),
+      });
+    },
+  },
   {
     id: "rotate",
     title: "rotate",

@@ -71,6 +71,13 @@ import {
   CAMERA_ZOOM_DEFAULT,
 } from "../../../../src/game/pinball-knight/constants/render";
 import { backendPresent } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/forge-config.mjs";
+import {
+  INTAKE_PX,
+  flattenOnKey,
+  letterbox,
+  reframeSubject,
+} from "../../../../src/game/pinball-knight/tools/sprite-forge/intake";
+import { qaFrame } from "../../../../src/game/pinball-knight/tools/sprite-forge/intake-qa";
 
 export const dynamic = "force-dynamic";
 
@@ -480,6 +487,109 @@ function opKeep(body: { character?: string; jobId?: string; frames?: unknown }) 
 }
 
 /**
+ * INTAKE OPS — geometry and measurement, deliberately GPU-FREE.
+ *
+ * The split that makes checkpoints cheap: anything costing GPU is a MODE
+ * (comfy/modes.mjs, dispatched by the generate route); anything that is
+ * measurement or geometry is an op here. That is why "re-centre", "strip the
+ * shelf" and "check it again" are instant and can be tried repeatedly, while
+ * only the cut-out and the style pass cost model time.
+ */
+async function opPrep(mod: CanvasMod, body: { imageB64?: string }) {
+  if (!body.imageB64) return NextResponse.json({ error: "imageB64 is required" }, { status: 400 });
+  let dec: DecodedSheet;
+  try {
+    dec = await decodeSheet(mod, body.imageB64);
+  } catch (e) {
+    return NextResponse.json({ error: `did not decode as an image: ${e instanceof Error ? e.message : e}` }, { status: 400 });
+  }
+  const raw = dec.ctx.getImageData(0, 0, dec.width, dec.height);
+  const src = { width: dec.width, height: dec.height, data: raw.data as unknown as Uint8ClampedArray };
+  const { image, scale, dx, dy } = letterbox(src, INTAKE_PX);
+  return NextResponse.json({
+    ok: true,
+    frameB64: toPng(mod, image),
+    transform: { scale, dx, dy, source: [dec.width, dec.height] },
+  });
+}
+
+async function opReframe(
+  mod: CanvasMod,
+  body: { frameB64?: string; maskB64?: string; stripShelf?: boolean; keepExtras?: boolean; subjectH?: number },
+) {
+  if (!body.frameB64) return NextResponse.json({ error: "frameB64 is required" }, { status: 400 });
+  let dec: DecodedSheet;
+  try {
+    dec = await decodeSheet(mod, body.frameB64);
+  } catch (e) {
+    return NextResponse.json({ error: `did not decode as an image: ${e instanceof Error ? e.message : e}` }, { status: 400 });
+  }
+  const raw = dec.ctx.getImageData(0, 0, dec.width, dec.height);
+  const src = { width: dec.width, height: dec.height, data: raw.data as unknown as Uint8ClampedArray };
+
+  // A brushed mask REPLACES the alpha: this is how "BiRefNet ate the sword" is
+  // repaired without spending the GPU again.
+  if (body.maskB64) {
+    try {
+      const m = await decodeSheet(mod, body.maskB64);
+      if (m.width === src.width && m.height === src.height) {
+        const md = m.ctx.getImageData(0, 0, m.width, m.height).data;
+        for (let i = 0; i < src.width * src.height; i++) src.data[i * 4 + 3] = md[i * 4] >= 128 ? 255 : 0;
+      }
+    } catch {
+      /* an unreadable mask is ignored rather than failing the reframe */
+    }
+  }
+
+  try {
+    const framed = reframeSubject(src, {
+      stripShelf: body.stripShelf,
+      keepExtras: body.keepExtras,
+      subjectH: body.subjectH,
+    });
+    const flat = flattenOnKey(framed.image);
+    return NextResponse.json({
+      ok: true,
+      frameB64: toPng(mod, flat),
+      bbox: framed.bbox,
+      feetY: framed.feetY,
+      centreX: framed.centreX,
+      scale: framed.scale,
+      sourceH: framed.sourceH,
+      notes: framed.notes,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+  }
+}
+
+async function opQa(mod: CanvasMod, body: { frameB64?: string; sourceH?: number; afterStyle?: boolean }) {
+  if (!body.frameB64) return NextResponse.json({ error: "frameB64 is required" }, { status: 400 });
+  let dec: DecodedSheet;
+  try {
+    dec = await decodeSheet(mod, body.frameB64);
+  } catch (e) {
+    return NextResponse.json({ error: `did not decode as an image: ${e instanceof Error ? e.message : e}` }, { status: 400 });
+  }
+  const raw = dec.ctx.getImageData(0, 0, dec.width, dec.height);
+  const v = qaFrame(
+    { width: dec.width, height: dec.height, data: raw.data as unknown as Uint8ClampedArray },
+    { sourceH: body.sourceH, afterStyle: body.afterStyle },
+  );
+  return NextResponse.json({ ok: true, ...v });
+}
+
+/** RawImage → a base64 PNG, via a scratch canvas. */
+function toPng(mod: CanvasMod, img: { width: number; height: number; data: Uint8ClampedArray }): string {
+  const cv = mod.createCanvas(img.width, img.height);
+  const ctx = cv.getContext("2d");
+  const id = ctx.createImageData(img.width, img.height);
+  id.data.set(img.data);
+  ctx.putImageData(id, 0, 0);
+  return cv.toBuffer("image/png").toString("base64");
+}
+
+/**
  * Publish the inbox: `npm run sprites`, the one sanctioned edge.
  *
  * That script is `FORGE_PUBLISH=1 vitest run …/sprite-forge`, and the
@@ -539,6 +649,12 @@ export async function POST(req: Request) {
       return opKeep(body as { character?: string; jobId?: string; frames?: unknown });
     case "publish":
       return opPublish();
+    case "prep":
+      return opPrep(mod, body as { imageB64?: string });
+    case "reframe":
+      return opReframe(mod, body as { frameB64?: string; maskB64?: string; stripShelf?: boolean });
+    case "qa":
+      return opQa(mod, body as { frameB64?: string; sourceH?: number; afterStyle?: boolean });
     default:
       return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage | keep` }, { status: 400 });
   }

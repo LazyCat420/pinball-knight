@@ -50,6 +50,40 @@ function chainLoras(g, modelRef, loras, prefix) {
 }
 
 /**
+ * BACKGROUND REMOVAL — the step that makes "any image" true.
+ *
+ * Everything downstream assumes a single figure on a keyable field, and until
+ * now that was a sentence in a prompt rather than a step: `matte.ts` hard-fails
+ * unless 90% of the border band is one colour, so a photograph was rejected
+ * before the pipeline began.
+ *
+ * These are CORE ComfyUI nodes (Comfy-Org/ComfyUI#12747) — no custom node, and
+ * no GPL dependency. Only the weight is a download.
+ *
+ * ⚠️ THE InvertMask IS LOAD-BEARING. `RemoveBackground` returns a FOREGROUND
+ * mask (1 = subject) while core's `JoinImageWithAlpha` computes
+ * `alpha = 1 - mask`. Wire them together directly and you get an image that is
+ * transparent exactly where the character is.
+ *
+ * Both outputs are saved on purpose: the RGBA cutout is what the next stage
+ * reframes, and the raw mask is what QA measures and the brush edits — reading
+ * a mask back out of premultiplied alpha loses its hard edges.
+ */
+export function bgRemove({ image, model = "birefnet.safetensors" } = {}) {
+  if (!image) throw new Error("[graphs] bgRemove needs an uploaded image name");
+  return {
+    bg: { class_type: "LoadBackgroundRemovalModel", inputs: { bg_removal_name: model } },
+    img: { class_type: "LoadImage", inputs: { image } },
+    m: { class_type: "RemoveBackground", inputs: { bg_removal_model: ["bg", 0], image: ["img", 0] } },
+    inv: { class_type: "InvertMask", inputs: { mask: ["m", 0] } },
+    rgba: { class_type: "JoinImageWithAlpha", inputs: { image: ["img", 0], alpha: ["inv", 0] } },
+    cut: { class_type: "SaveImage", inputs: { images: ["rgba", 0], filename_prefix: "spriteforge/intake_cut" } },
+    mi: { class_type: "MaskToImage", inputs: { mask: ["m", 0] } },
+    msk: { class_type: "SaveImage", inputs: { images: ["mi", 0], filename_prefix: "spriteforge/intake_mask" } },
+  };
+}
+
+/**
  * Qwen-Image-Edit: one init image + an instruction → an edited image with
  * the character preserved. This is the rotation / pose-keyframe leg.
  *

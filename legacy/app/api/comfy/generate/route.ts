@@ -377,6 +377,8 @@ export async function POST(req: Request) {
       has,
       lora: (optionId: string) => optionById(optionId)?.file.replace(/^loras\//, "") ?? null,
       unet: (slotId: string) => chosenOption(slotId, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
+      /** The chosen OPTION ID for a pick-one slot — for slots whose file is not a unet. */
+      chosen: (slotId: string) => chosenOption(slotId, settings.chosen)?.id ?? null,
       fast,
       images,
       seed: baseSeed,
