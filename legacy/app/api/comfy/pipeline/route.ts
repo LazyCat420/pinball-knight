@@ -268,9 +268,36 @@ async function opCrush(mod: CanvasMod, body: { sheetB64?: string; sidecar?: Side
       const fitCells = aliveCells.length ? aliveCells : cells;
       const exact = oneToOne > 0 && fitsArtBox(fitCells, oneToOne);
       const k = exact ? oneToOne * (px / ART_BOX) : sheetScale(fitCells, px);
-      // This sheet's own colours, APPENDED to the shared palette — as the runtime does.
-      const ownPal = side.palette?.length ? side.palette.map(rgbOfHex) : null;
-      const snapPal = ownPal ? [...pal, ...ownPal] : pal;
+      // ── WHOSE COLOURS THIS SHEET LANDS ON ────────────────────────────────
+      //
+      // Two sources, and the commit is authoritative. A sidecar may name an
+      // explicit `palette`; a `commit.derive` asks the commit to CLUSTER one
+      // from the sheet's own texels (README: "give the sheet its OWN N-entry
+      // palette instead of spending N of the shared 32"). The preview used to
+      // honour only the first, so a `derive` sidecar previewed against the
+      // shared 32 and looked nothing like what `npm run sprites` would ship —
+      // a preview that quietly disagrees with the pipeline is worse than none.
+      //
+      // So the commit runs FIRST when one is asked for, and the preview snaps
+      // against the palette it actually produced. Derivation stays where it
+      // belongs (after the reduce, inside commit.ts) rather than being
+      // re-implemented here against pre-reduce pixels.
+      let commitText = "";
+      let committedPal: number[][] | null = null;
+      if (side.commit) {
+        try {
+          const c = commitToGrid({ width: dec.width, height: dec.height, data: src.data }, rows, pal, commitOpts(side));
+          commitText = `COMMIT ${c.report.verdict}\n`;
+          if (c.derived) committedPal = c.palette;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          warnings.push(`commit failed: ${msg}`);
+        }
+      }
+      const ownPal = committedPal ?? (side.palette?.length ? side.palette.map(rgbOfHex) : null);
+      // A DERIVED palette replaces the shared one for this actor's atlas; an
+      // explicitly-listed one is appended, which is what the runtime does.
+      const snapPal = committedPal ? committedPal : ownPal ? [...pal, ...ownPal] : pal;
 
       // ── register + REAL crush, per cell ───────────────────────────────────
       const stats: NoiseRow[] = [];
@@ -320,22 +347,8 @@ async function opCrush(mod: CanvasMod, body: { sheetB64?: string; sidecar?: Side
         });
       });
 
-      // ── the commit the sidecar asks for, reported not written ─────────────
-      let commitText = "";
-      if (side.commit) {
-        try {
-          const c = commitToGrid(
-            { width: dec.width, height: dec.height, data: sdata },
-            rows,
-            pal,
-            commitOpts(side),
-          );
-          commitText = `COMMIT ${c.report.verdict}\n`;
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          warnings.push(`commit failed: ${msg}`);
-        }
-      }
+      // (the commit ran BEFORE the crush above — its palette is what these
+      // previews were snapped against)
 
       const mean = (f: (r: NoiseRow) => number): number =>
         stats.reduce((a, r) => a + f(r), 0) / stats.length;
@@ -357,7 +370,11 @@ async function opCrush(mod: CanvasMod, body: { sheetB64?: string; sidecar?: Side
         `${formatNoise(stats)}\n` +
         `MEAN   entries ${mean((r) => r.entries).toFixed(1)}  isolated ${mean((r) => r.isolatedPct).toFixed(1)}%  runLen ${mean((r) => r.runLen).toFixed(2)}\n` +
         `PALETTE ${union.size} entr${union.size === 1 ? "y" : "ies"} used across the sheet` +
-        (ownPal ? ` (own palette: ${ownPal.length} appended)` : "") +
+        (committedPal
+          ? ` (DERIVED palette: ${committedPal.length} entries, this sheet's own)`
+          : ownPal
+            ? ` (own palette: ${ownPal.length} appended)`
+            : "") +
         (warnings.length ? `\n${warnings.map((w) => `⚠ ${w}`).join("\n")}` : "");
 
       return NextResponse.json({
