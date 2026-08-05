@@ -172,6 +172,7 @@ type Sched = {
   parked: Parked[];
   warmedLeg: string | null;
   gateTimer: ReturnType<typeof setTimeout> | null;
+  idleTimer: ReturnType<typeof setTimeout> | null;
 };
 const sched: Sched = (globalThis as any).__forgeSched ?? {
   resident: null,
@@ -179,8 +180,29 @@ const sched: Sched = (globalThis as any).__forgeSched ?? {
   parked: [],
   warmedLeg: null,
   gateTimer: null,
+  idleTimer: null,
 };
 (globalThis as any).__forgeSched = sched;
+
+/**
+ * Idle hygiene: on the 40GB-capped VM an idle ComfyUI with a cached Wan
+ * stack RESTS at ~2.8GiB available — fragile enough that any test run or
+ * build on the box lands in guard territory. Five minutes after the queue
+ * drains, drop the cached models: rapid iteration keeps its warm cache,
+ * a walked-away box returns ~22GiB. resident goes null so the next
+ * dispatch knows nothing needs freeing.
+ */
+function scheduleIdleFree() {
+  if (sched.idleTimer) clearTimeout(sched.idleTimer);
+  sched.idleTimer = setTimeout(() => {
+    sched.idleTimer = null;
+    if (sched.runningId || sched.parked.length) return;
+    sched.resident = null;
+    freeMemory().catch(() => {
+      /* server already down — nothing cached anyway */
+    });
+  }, 5 * 60_000);
+}
 
 /** The chosen model files a leg loads — what prefetch warms. */
 function legFiles(leg: string): string[] {
@@ -230,6 +252,11 @@ function pump() {
     }
     return;
   }
+  // A dispatch is imminent — the warm cache is about to be wanted again.
+  if (sched.idleTimer) {
+    clearTimeout(sched.idleTimer);
+    sched.idleTimer = null;
+  }
   // Drain the resident leg first; switch only when it has nothing left.
   let idx = sched.parked.findIndex((p) => p.leg === sched.resident);
   const switching = idx < 0;
@@ -260,6 +287,7 @@ function pump() {
     } finally {
       sched.runningId = null;
       pump();
+      if (!sched.runningId && !sched.parked.length) scheduleIdleFree();
     }
   })();
 }

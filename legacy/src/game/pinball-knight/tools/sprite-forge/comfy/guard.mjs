@@ -17,7 +17,7 @@
  *   SOFT   wsl avail < 2GiB   (instant)  → interrupt + drop cached models
  *          host used > 58GB   (instant)  → same
  *   HARD   wsl avail < 1GiB   (instant)  → stop the ComfyUI server
- *          wsl avail < 3GiB   sustained 30s → stop
+ *          wsl avail < 2.5GiB sustained 60s → stop
  *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
  * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig) by
@@ -26,7 +26,7 @@
  * interrupted a WORKING job. With the cap, the host tripwire is the real
  * freeze protection; the WSL floors only catch true runaway.
  *
- *   node guard.mjs [--soft 2] [--hard 1] [--sustain 3] [--sustain-secs 30]
+ *   node guard.mjs [--soft 2] [--hard 1] [--sustain 2.5] [--sustain-secs 60]
  *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
@@ -54,10 +54,15 @@ const arg = (name, fallback) => {
 // ~2.5GiB for a few seconds, and 16GB of healthy swap sits behind these
 // numbers — a transient at 2 is survivable, a SUSTAINED squeeze is what
 // the 3GiB/30s rule catches.
+// Sustained sits UNDER the post-job resting state: an idle ComfyUI with
+// a Wan stack still cached rests at ~2.8GiB avail, and the 3GiB/30s rule
+// stopped an IDLE healthy server (smoke 7's aftermath). The route now
+// frees models 5min after the queue drains, so resting-low is temporary;
+// 2.5/60s catches anything that STAYS squeezed.
 const SOFT_GIB = arg("soft", 2);
 const HARD_GIB = arg("hard", 1);
-const SUSTAIN_GIB = arg("sustain", 3);
-const SUSTAIN_SECS = arg("sustain-secs", 30);
+const SUSTAIN_GIB = arg("sustain", 2.5);
+const SUSTAIN_SECS = arg("sustain-secs", 60);
 // 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
 // HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
 // floor would strike legitimate generation on every run.
