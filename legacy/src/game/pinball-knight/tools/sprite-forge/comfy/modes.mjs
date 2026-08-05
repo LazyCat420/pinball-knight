@@ -145,6 +145,23 @@ const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
  */
 const KEYFRAME_MOVES = [
   {
+    // FIRST, and not optional in practice: `importedPaints` requires an
+    // `idle` clip, and a sheet without one is dropped in SILENCE — the
+    // stiltneck shipped for weeks and never once drew for exactly this.
+    // Idle keys are small on purpose; a breathing loop that swings as hard
+    // as a walk reads as a twitch.
+    id: "idle",
+    label: "idle keys (required clip)",
+    clip: "idle",
+    camera: "true side view, facing right, camera at eye level",
+    poses: [
+      "standing at rest, weight settled, body at its lowest",
+      "breathing in: chest and shoulders lifted, body at its tallest, head slightly raised",
+      "standing at rest again, weight settled, a small sway to the other side",
+      "breathing out: shoulders dropping, head tilting slightly down",
+    ],
+  },
+  {
     id: "walk",
     label: "walk cycle keys",
     clip: "walk",
@@ -206,6 +223,16 @@ const KEYFRAME_MOVES = [
   },
   { id: "custom", label: "custom poses…", clip: "", camera: "the same view as the reference image", poses: [] },
 ];
+
+/**
+ * The one-click branch: ONE idle frame in, a keyframe sheet per animation
+ * category out. Every job reads the SAME init — never the previous sheet —
+ * so a row can never inherit another row's drift, and a sheet that already
+ * holds four figures can never be mistaken for a character reference.
+ * Ordered idle-first because idle is the clip the game refuses to import
+ * without.
+ */
+const KEYFRAME_SET = KEYFRAME_MOVES.filter((m) => m.id !== "custom");
 
 export const MODES = [
   {
@@ -324,13 +351,22 @@ export const MODES = [
   {
     id: "keyframes",
     title: "keyframes",
-    blurb: "one sheet of 4 drastically different poses, denoised together so they can't drift — cut it, then in-between pairs",
+    blurb:
+      "ONE idle frame in → a sheet of 4 poses per move, denoised together so they can't drift. " +
+      "The init must be a single standing character, never a sheet.",
     leg: "qwen",
     needs: { init: true },
     fields: [
       { id: "preset", label: "move", type: "select", options: KEYFRAME_MOVES.map((p) => ({ id: p.id, label: p.label })), default: "walk" },
       { id: "custom", label: "custom poses (numbered)", type: "text", placeholder: "(1) crouched low (2) leaping (3) mid-air tuck (4) landing…", showIf: { preset: "custom" } },
     ],
+    // Every row branches off the SAME idle init — no chaining, so no row can
+    // inherit another's drift.
+    batch: {
+      id: "moveset",
+      label: `every move set (${KEYFRAME_SET.length} sheets)`,
+      values: KEYFRAME_SET.map((m) => ({ preset: m.id, custom: "" })),
+    },
     etaS: { quality: 260, fast: 100 },
     presets: KEYFRAME_MOVES,
     prompt(params) {

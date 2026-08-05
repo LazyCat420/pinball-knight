@@ -142,6 +142,25 @@ export function GenerateCard({
     setParams(next);
   }, [mode]);
 
+  /**
+   * Is the init a SHEET rather than a character?
+   *
+   * Feeding a finished keyframe row back in as the reference produces rows
+   * of four frogs each — the model reasonably reads "the character" as
+   * everything in the picture. A sheet is much wider than tall; a standing
+   * character is not. Advisory only: some creatures really are wide, and a
+   * guard that blocks generation on a heuristic would be worse than the
+   * mistake it prevents.
+   */
+  const [initAspect, setInitAspect] = useState(0);
+  useEffect(() => {
+    if (!images.init) return setInitAspect(0);
+    const im = new Image();
+    im.onload = () => setInitAspect(im.width / Math.max(1, im.height));
+    im.src = images.init;
+  }, [images.init]);
+  const initLooksLikeSheet = initAspect > 1.6;
+
   // A frame action elsewhere (→ last, ✎ fix, ↻ pose) steers this card:
   // switch mode and, once its defaults have landed, lay the requested
   // params (e.g. the pose text) on top.
@@ -205,7 +224,15 @@ export function GenerateCard({
       <h2 style={S.cardTitle}>generate</h2>
       {!reachable && <p style={S.note}>server is down — start it in the backend tab first</p>}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <ImageSlot label="init frame" b64={images.init} onSet={(b) => { setImage("init", b); setMask(null); }} onClear={() => { setImage("init", null); setMask(null); }} />
+        <div>
+          <ImageSlot label="init frame" b64={images.init} onSet={(b) => { setImage("init", b); setMask(null); }} onClear={() => { setImage("init", null); setMask(null); }} />
+          {initLooksLikeSheet && (
+            <p style={{ ...S.note, color: AMBER.fg, maxWidth: 150, marginTop: 4 }}>
+              ⚠ this looks like a SHEET, not one character — cut it first and use a single cell, or every pose will
+              come back as a row of copies
+            </p>
+          )}
+        </div>
         {mode.needs.end && (
           <ImageSlot label="last frame" b64={images.end} hint="where the motion ends" onSet={(b) => setImage("end", b)} onClear={() => setImage("end", null)} />
         )}
