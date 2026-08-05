@@ -23,10 +23,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { S } from "./forge/theme";
-import type { Job, Manifest, Mode, TrayFrame } from "./forge/types";
+import type { Job, LibraryState, Manifest, Mode, TrayFrame } from "./forge/types";
 import { del, postJSON, urlToB64 } from "./forge/api";
 import { GenerateCard, type SlotId } from "./forge/GenerateCard";
 import { JobsBoard } from "./forge/JobsBoard";
+import { LibraryCard } from "./forge/LibraryCard";
 import { SheetTray } from "./forge/SheetTray";
 import { ModelsCard, SettingsCard, StatusCard } from "./forge/BackendCards";
 
@@ -44,7 +45,25 @@ export default function ForgePanel() {
   const [mask, setMask] = useState<string | null>(null);
   const [tray, setTray] = useState<TrayFrame[]>([]);
   const [tick, setTick] = useState(0);
+  const [library, setLibrary] = useState<LibraryState>({ projects: [], activeProject: null, characters: [] });
+  const [activeCharacter, setActiveCharacter] = useState<string | null>(null);
   const trayKey = useRef(0);
+
+  // The library scans four directories — refreshed on demand (project change,
+  // keep, stage), not on the status poll.
+  const refreshLibrary = useCallback(async (project?: string) => {
+    try {
+      const q = project ? `?project=${project}` : "";
+      const r = await fetch(`/api/comfy/library${q}`);
+      const j = await r.json();
+      if (j.projects) setLibrary(j);
+    } catch {
+      /* backend absent — the manifest gate reports it */
+    }
+  }, []);
+  useEffect(() => {
+    void refreshLibrary();
+  }, [refreshLibrary]);
 
   const refresh = useCallback(async () => {
     try {
@@ -103,9 +122,25 @@ export default function ForgePanel() {
   };
 
   const launch = async (body: Record<string, unknown>) => {
-    const r = await postJSON("/api/comfy/generate", body);
-    say(`${(r.jobIds ?? [r.jobId]).length} job(s) queued`);
+    const r = await postJSON("/api/comfy/generate", {
+      ...body,
+      project: library.activeProject ?? undefined,
+      character: activeCharacter ?? undefined,
+    });
+    say(`${(r.jobIds ?? [r.jobId]).length} job(s) queued${activeCharacter ? ` under ${activeCharacter}` : ""}`);
     void refresh();
+  };
+
+  const keep = async (id: string, job: Job) => {
+    const character = job.character ?? activeCharacter;
+    if (!character) return say("select a character in the library first — keep needs to know whose art this is");
+    try {
+      const r = await postJSON("/api/comfy/pipeline", { op: "keep", character, jobId: id, frames: job.frames ?? [] });
+      say(`kept ${r.files.length} frame(s) → ${r.dir}`);
+      void refreshLibrary(library.activeProject ?? undefined);
+    } catch (e: any) {
+      say(e.message);
+    }
   };
 
   const reroll = async (id: string, job: Job) => {
@@ -161,6 +196,29 @@ export default function ForgePanel() {
 
         {tab === "generate" && (
           <>
+            <LibraryCard
+              library={library}
+              activeCharacter={activeCharacter}
+              onSelectProject={async (id) => {
+                try {
+                  await postJSON("/api/comfy/settings", { project: id });
+                } catch {
+                  /* settings write is best-effort; the query param still switches */
+                }
+                setActiveCharacter(null);
+                void refreshLibrary(id);
+              }}
+              onSelectCharacter={setActiveCharacter}
+              onInit={async (url) => {
+                setImage("init", await urlToB64(url));
+                setMask(null);
+                say("library art loaded as the init frame");
+              }}
+              onStyle={async (url) => {
+                setImage("style", await urlToB64(url));
+                say("library art loaded as the style ref");
+              }}
+            />
             <GenerateCard
               modes={modes}
               reachable={m.comfy.reachable}
@@ -186,11 +244,20 @@ export default function ForgePanel() {
               onReroll={reroll}
               onUseAsInit={useAsInit}
               onAddToTray={addToTray}
+              onKeep={keep}
             />
           </>
         )}
 
-        {tab === "sheet" && <SheetTray tray={tray} setTray={setTray} say={say} />}
+        {tab === "sheet" && (
+          <SheetTray
+            tray={tray}
+            setTray={setTray}
+            say={say}
+            suggestedName={activeCharacter ? `${activeCharacter}-E` : ""}
+            onStaged={() => void refreshLibrary(library.activeProject ?? undefined)}
+          />
+        )}
 
         {tab === "backend" && (
           <>

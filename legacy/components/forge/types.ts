@@ -51,12 +51,35 @@ export type Job = {
   resolvedPrompt?: string;
   seed?: number;
   fast?: boolean;
+  project?: string;
+  character?: string;
   progress?: Progress;
   hasPreview?: boolean;
   frames?: string[];
   error?: string;
   tookS?: number;
   note?: string;
+};
+
+export type LibraryAsset = { label: string; url: string };
+
+export type LibraryCharacter = {
+  name: string;
+  label: string;
+  icon: string;
+  blurb: string;
+  kind: "player" | "monster" | "art-only";
+  thumb: string | null;
+  published: LibraryAsset[];
+  inbox: LibraryAsset[];
+  sources: { drop: string; files: LibraryAsset[] }[];
+  recent: { jobId: string; label: string; startedAt: number; frames: LibraryAsset[] }[];
+};
+
+export type LibraryState = {
+  projects: { id: string; title: string }[];
+  activeProject: string | null;
+  characters: LibraryCharacter[];
 };
 
 /** A frame the user pulled aside for the sheet, tagged with its clip. */

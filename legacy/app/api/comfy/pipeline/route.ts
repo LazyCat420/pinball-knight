@@ -4,6 +4,8 @@
  *   POST {op:"cut",   sheetB64, sidecar?}            → row/cell report, NO writes
  *   POST {op:"crush", sheetB64, sidecar}             → contact-sheet preview of the REAL crush
  *   POST {op:"stage", name, sheetB64, sidecar, overwrite?} → writes inbox/<name>.{png,json}
+ *   POST {op:"keep",  character, jobId, frames}      → copies generation frames into
+ *                                                      sources/<character>-<date>/ (tracked originals)
  *   GET  ?list=sprites                               → shipped sheets for the style-ref picker
  *
  * This file is the NODE EDGE, exactly like `inbox.test.ts`: it decodes PNGs
@@ -26,7 +28,7 @@
  * module load.
  */
 import { NextResponse } from "next/server";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   cutSheet,
@@ -414,6 +416,50 @@ async function opStage(
   return NextResponse.json({ ok: true, pngPath: relPng, jsonPath: relJson, next: "npm run sprites" });
 }
 
+/**
+ * File a finished generation under its character: copy chosen frames from
+ * the gitignored work/comfy/<job>/ into sources/<character>-<date>/ — the
+ * TRACKED home the repo already uses for original generated art. work/ is
+ * rewritten every run and "never the only copy" (README); this op is how a
+ * keeper stops living there. Copies never overwrite: an index prefix walks
+ * past whatever the drop dir already holds.
+ */
+function opKeep(body: { character?: string; jobId?: string; frames?: unknown }) {
+  const character = String(body.character ?? "");
+  const jobId = String(body.jobId ?? "");
+  const frames = Array.isArray(body.frames) ? body.frames.map(String) : [];
+  if (!/^[a-z0-9_]+$/.test(character)) {
+    return NextResponse.json({ error: "character must be a bare sheet name, e.g. frog" }, { status: 400 });
+  }
+  if (!/^[\w-]+$/.test(jobId)) return NextResponse.json({ error: "bad jobId" }, { status: 400 });
+  if (!frames.length) return NextResponse.json({ error: "frames is required — which ones to keep" }, { status: 400 });
+
+  const jobDir = join(process.cwd(), FORGE_REL, "work", "comfy", jobId);
+  let onDisk: string[];
+  try {
+    onDisk = readdirSync(jobDir);
+  } catch {
+    return NextResponse.json({ error: `unknown job ${jobId}` }, { status: 404 });
+  }
+  const bad = frames.find((f) => !/^[\w.-]+\.png$/.test(f) || !onDisk.includes(f));
+  if (bad) return NextResponse.json({ error: `no such frame ${bad}` }, { status: 404 });
+
+  const date = new Date().toISOString().slice(0, 10);
+  const dropRel = `${FORGE_REL}/sources/${character}-${date}`;
+  const dropAbs = join(process.cwd(), FORGE_REL, "sources", `${character}-${date}`);
+  mkdirSync(dropAbs, { recursive: true });
+  let idx = readdirSync(dropAbs).length;
+  const kept: string[] = [];
+  for (const f of frames) {
+    let dest = `${String(idx).padStart(2, "0")}_${f}`;
+    while (existsSync(join(dropAbs, dest))) dest = `${String(++idx).padStart(2, "0")}_${f}`;
+    copyFileSync(join(jobDir, f), join(dropAbs, dest));
+    kept.push(dest);
+    idx++;
+  }
+  return NextResponse.json({ ok: true, dir: dropRel, files: kept });
+}
+
 // ── handlers ────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -437,8 +483,10 @@ export async function POST(req: Request) {
         mod,
         body as { name?: string; sheetB64?: string; sidecar?: Sidecar; overwrite?: boolean },
       );
+    case "keep":
+      return opKeep(body as { character?: string; jobId?: string; frames?: unknown });
     default:
-      return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage` }, { status: 400 });
+      return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage | keep` }, { status: 400 });
   }
 }
 

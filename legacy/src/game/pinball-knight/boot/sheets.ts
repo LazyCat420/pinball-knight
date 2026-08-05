@@ -299,7 +299,10 @@ export function buildMonsterSheets(): void {
  * as shape specs (see the headers of render/monsters/jester.ts and
  * rotortail.ts), so painted and imported are the same creature drawn two ways.
  */
-const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
+// Exported for the forge library route: the panel groups art by SHEET name
+// but labels it with the game's kind — this map is that bridge, and a copy
+// of it in the forge would be the two-writers drift all over again.
+export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
   jester: "jester",
   rotortail: "beaver",
   croaker: "frog",

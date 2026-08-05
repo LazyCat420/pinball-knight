@@ -42,6 +42,7 @@ function JobCard({
   onReroll,
   onUseAsInit,
   onAddToTray,
+  onKeep,
 }: {
   id: string;
   job: Job;
@@ -50,6 +51,7 @@ function JobCard({
   onReroll: (id: string, job: Job) => void;
   onUseAsInit: (src: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
+  onKeep: (id: string, job: Job) => void;
 }) {
   const [clip, setClip] = useState(clipGuess(job));
   const [showPrompt, setShowPrompt] = useState(false);
@@ -63,6 +65,7 @@ function JobCard({
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={{ color: "#e8e6df" }}>{job.label ?? job.mode}</span>
         <span style={S.chip(c.fg, c.bg)}>{job.state}</span>
+        {job.character && <span style={S.chip(AMBER.fg, AMBER.bg)}>{job.character}</span>}
         {job.fast && <span style={S.chip(AMBER.fg, AMBER.bg)}>fast</span>}
         {job.seed !== undefined && <span style={S.note}>seed {job.seed}</span>}
         {job.state === "running" && elapsed !== null && <span style={S.note}>{elapsed}s</span>}
@@ -81,6 +84,15 @@ function JobCard({
         {job.state !== "running" && job.params && (
           <button style={S.btn} title="same settings, new seed" onClick={() => onReroll(id, job)}>
             ↻ re-roll
+          </button>
+        )}
+        {job.state === "done" && (job.frames?.length ?? 0) > 0 && (
+          <button
+            style={S.btn}
+            title="file these frames under the character's sources/ (tracked) — work/ is scratch"
+            onClick={() => onKeep(id, job)}
+          >
+            ⭐ keep
           </button>
         )}
       </div>
@@ -165,6 +177,7 @@ export function JobsBoard({
   onReroll,
   onUseAsInit,
   onAddToTray,
+  onKeep,
 }: {
   jobs: Record<string, Job>;
   tick: number;
@@ -172,6 +185,7 @@ export function JobsBoard({
   onReroll: (id: string, job: Job) => void;
   onUseAsInit: (src: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
+  onKeep: (id: string, job: Job) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const entries = Object.entries(jobs).sort((a, b) => (b[1].startedAt ?? 0) - (a[1].startedAt ?? 0));
@@ -184,7 +198,7 @@ export function JobsBoard({
         <span style={S.chip(GREY.fg, GREY.bg)}>{entries.filter(([, j]) => j.state === "running").length} running</span>
       </h2>
       {visible.map(([id, j]) => (
-        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onAddToTray={onAddToTray} />
+        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onAddToTray={onAddToTray} onKeep={onKeep} />
       ))}
       {entries.length > 6 && (
         <button style={{ ...S.btn, ...S.btnGhost, marginTop: 8 }} onClick={() => setShowAll(!showAll)}>

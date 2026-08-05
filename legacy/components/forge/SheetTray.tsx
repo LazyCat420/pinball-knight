@@ -65,13 +65,33 @@ async function assemble(tray: TrayFrame[], order: string[]): Promise<{ b64: stri
   return { b64: cv.toDataURL("image/png"), w: cv.width, h: cv.height };
 }
 
-export function SheetTray({ tray, setTray, say }: { tray: TrayFrame[]; setTray: (t: TrayFrame[]) => void; say: (s: string) => void }) {
+export function SheetTray({
+  tray,
+  setTray,
+  say,
+  suggestedName = "",
+  onStaged,
+}: {
+  tray: TrayFrame[];
+  setTray: (t: TrayFrame[]) => void;
+  say: (s: string) => void;
+  /** Prefill from the library's active character, e.g. "frog-E". */
+  suggestedName?: string;
+  onStaged?: () => void;
+}) {
   const [sheet, setSheet] = useState<{ b64: string; w: number; h: number } | null>(null);
   const [cut, setCut] = useState<CutResult | null>(null);
   const [crush, setCrush] = useState<CrushResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(suggestedName);
   const [staged, setStaged] = useState<string | null>(null);
+  const suggestedRef = React.useRef(suggestedName);
+  if (suggestedRef.current !== suggestedName) {
+    // A character change re-suggests only while the field is untouched or
+    // still holding the previous suggestion — typed names are never clobbered.
+    if (name === "" || name === suggestedRef.current) setName(suggestedName);
+    suggestedRef.current = suggestedName;
+  }
 
   const rowsInUse = useMemo(() => (CLIP_NAMES as readonly string[]).filter((c) => tray.some((f) => f.clip === c)), [tray]);
   const sidecar = useMemo(() => ({ rows: rowsInUse }), [rowsInUse]);
@@ -136,6 +156,7 @@ export function SheetTray({ tray, setTray, say }: { tray: TrayFrame[]; setTray: 
       const r = await postJSON("/api/comfy/pipeline", { op: "stage", name, sheetB64: sheet!.b64, sidecar, overwrite });
       setStaged(r.pngPath);
       say(`staged — now run: npm run sprites`);
+      onStaged?.();
     } catch (e: any) {
       if (String(e.message).includes("exists") && !overwrite) {
         if (window.confirm(`${name} already exists in the inbox — overwrite it?`)) return doStage(true);

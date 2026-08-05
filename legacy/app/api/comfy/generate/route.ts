@@ -34,6 +34,7 @@ import {
   assertNodes,
   cancelPrompt,
   fetchImage,
+  freeMemory,
   outputImages,
   queuePrompt,
   setComfyUrl,
@@ -63,6 +64,9 @@ type Job = {
   resolvedPrompt?: string;
   seed?: number;
   fast?: boolean;
+  /** Library filing: which project/character this generation belongs to. */
+  project?: string;
+  character?: string;
   promptId?: string;
   progress?: Progress;
   previewB64?: string;
@@ -164,6 +168,20 @@ export async function POST(req: Request) {
   const baseSeed = Number.isFinite(+body.seed) ? +body.seed : Math.floor(Math.random() * 1e9);
   const fast = !!body.fast && fastAvailable(mode.leg, has);
 
+  // The 24GB card cannot hold both stacks: a rotate leaves ~17GiB of Qwen
+  // resident, and the next animate OOMs loading the Wan expert on top of it
+  // (measured, not hypothetical). Switching legs frees first and eats the
+  // cold start; staying on one leg keeps the warm cache.
+  const g = globalThis as { __forgeLastLeg?: string };
+  if (g.__forgeLastLeg && g.__forgeLastLeg !== mode.leg) {
+    try {
+      await freeMemory();
+    } catch {
+      /* server down surfaces at upload/queue with its own message */
+    }
+  }
+  g.__forgeLastLeg = mode.leg;
+
   // A batch is N independent jobs, not one graph: ComfyUI's FIFO runs them
   // in turn and each gets its own card, cancel and re-roll in the panel.
   const batch = body.batch && mode.batch && mode.batch.id === body.batch ? mode.batch : null;
@@ -200,6 +218,10 @@ export async function POST(req: Request) {
       resolvedPrompt,
       seed: baseSeed,
       fast,
+      // Filing tags flow into job.json, which is what the library scans —
+      // a tagged generation shows up under its character with no file moves.
+      project: typeof body.project === "string" ? body.project : undefined,
+      character: typeof body.character === "string" ? body.character : undefined,
     });
     persistJob(id);
     void runJob(id, graph, clientId);
