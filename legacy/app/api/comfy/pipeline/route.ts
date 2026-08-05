@@ -6,6 +6,7 @@
  *   POST {op:"stage", name, sheetB64, sidecar, overwrite?} → writes inbox/<name>.{png,json}
  *   POST {op:"keep",  character, jobId, frames}      → copies generation frames into
  *                                                      sources/<character>-<date>/ (tracked originals)
+ *   POST {op:"publish"}                              → `npm run sprites`: inbox → public/sprites/
  *   GET  ?list=sprites                               → shipped sheets for the style-ref picker
  *
  * This file is the NODE EDGE, exactly like `inbox.test.ts`: it decodes PNGs
@@ -28,6 +29,7 @@
  * module load.
  */
 import { NextResponse } from "next/server";
+import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -477,6 +479,39 @@ function opKeep(body: { character?: string; jobId?: string; frames?: unknown }) 
   return NextResponse.json({ ok: true, dir: dropRel, files: kept });
 }
 
+/**
+ * Publish the inbox: `npm run sprites`, the one sanctioned edge.
+ *
+ * That script is `FORGE_PUBLISH=1 vitest run …/sprite-forge`, and the
+ * FORGE_PUBLISH gate is the whole point — the deploy gate runs the same
+ * suite WITHOUT it and only measures already-committed art, because a test
+ * that publishes left dirty trees and raced its own readers (see the long
+ * note in inbox.test.ts). Running it from here is the same command a person
+ * would type, triggered explicitly, never on a timer.
+ *
+ * It writes TRACKED files under public/sprites/. That is what publishing is.
+ */
+function opPublish() {
+  return new Promise<NextResponse>((resolve) => {
+    const p = spawn("npm", ["run", "sprites"], { cwd: process.cwd(), env: { ...process.env } });
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.stderr.on("data", (d) => (out += d));
+    p.on("close", (code) => {
+      const tail = out.split("\n").filter((l) => l.trim()).slice(-25).join("\n");
+      const published = [...out.matchAll(/public\/sprites\/([\w-]+\.png)/g)].map((m) => m[1]);
+      resolve(
+        NextResponse.json(
+          code === 0
+            ? { ok: true, published: [...new Set(published)], log: tail }
+            : { error: `npm run sprites exited ${code}`, log: tail },
+          { status: code === 0 ? 200 : 500 },
+        ),
+      );
+    });
+  });
+}
+
 // ── handlers ────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
@@ -502,6 +537,8 @@ export async function POST(req: Request) {
       );
     case "keep":
       return opKeep(body as { character?: string; jobId?: string; frames?: unknown });
+    case "publish":
+      return opPublish();
     default:
       return NextResponse.json({ error: `unknown op "${body.op}" — cut | crush | stage | keep` }, { status: 400 });
   }

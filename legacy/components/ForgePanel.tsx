@@ -29,6 +29,7 @@ import { GenerateCard, type SlotId } from "./forge/GenerateCard";
 import { JobsBoard } from "./forge/JobsBoard";
 import { LibraryCard } from "./forge/LibraryCard";
 import { SheetTray } from "./forge/SheetTray";
+import { InGameCard } from "./forge/InGameCard";
 import { ModelsCard, SettingsCard, StatusCard } from "./forge/BackendCards";
 
 type Tab = "generate" | "sheet" | "backend";
@@ -298,13 +299,17 @@ export default function ForgePanel() {
         )}
 
         {tab === "sheet" && (
-          <SheetTray
-            tray={tray}
-            setTray={setTray}
-            say={say}
-            suggestedName={activeCharacter ? `${activeCharacter}-E` : ""}
-            onStaged={() => void refreshLibrary(library.activeProject ?? undefined)}
-          />
+          <>
+            <SheetTray
+              tray={tray}
+              setTray={setTray}
+              say={say}
+              suggestedName={activeCharacter ? `${activeCharacter}-E` : ""}
+              onStaged={() => void refreshLibrary(library.activeProject ?? undefined)}
+            />
+            {/* Staging ends at the inbox; this is the rest of the road. */}
+            <InGameCard say={say} />
+          </>
         )}
 
         {tab === "backend" && (
