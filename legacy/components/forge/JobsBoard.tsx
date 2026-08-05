@@ -54,9 +54,19 @@ async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]
     img.onerror = rej;
     img.src = `data:image/png;base64,${b64}`;
   });
-  const PAD = 24;
-  const cw = Math.max(...rects.map(([x0, , x1]) => x1 - x0)) + PAD * 2;
-  const ch = Math.max(...rects.map(([, y0, , y1]) => y1 - y0)) + PAD * 2;
+  // HEADROOM, proportional. Even with the scales matched, the video leg
+  // grows the figure ~11% across a clip (measured), and a fixed 24px
+  // margin let that growth crop the head. Margins scale with the figure:
+  // generous above (growth reads as a push-in, so the head goes first),
+  // wide enough at the sides for a full stride, tight under the feet so
+  // the baseline stays where the importer expects it.
+  const maxW = Math.max(...rects.map(([x0, , x1]) => x1 - x0));
+  const maxH = Math.max(...rects.map(([, y0, , y1]) => y1 - y0));
+  const padX = Math.ceil(maxW * 0.18);
+  const padTop = Math.ceil(maxH * 0.2);
+  const padBottom = Math.ceil(maxH * 0.06);
+  const cw = maxW + padX * 2;
+  const ch = maxH + padTop + padBottom;
   return rects.map(([x0, y0, x1, y1]) => {
     const w = x1 - x0;
     const h = y1 - y0;
@@ -67,7 +77,7 @@ async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, cw, ch);
     // 1:1 blit — centred, bottom-aligned to the shared baseline.
-    ctx.drawImage(img, x0, y0, w, h, Math.round((cw - w) / 2), ch - PAD - h, w, h);
+    ctx.drawImage(img, x0, y0, w, h, Math.round((cw - w) / 2), ch - padBottom - h, w, h);
     return cv.toDataURL("image/png");
   });
 }
