@@ -143,6 +143,42 @@ const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
  * once per move and the prompt forbids turning between frames; a walk
  * reads from the side, a death reads better toward the camera.
  */
+/**
+ * THE CAMERA BELONGS TO THE FACING, NOT THE MOVE.
+ *
+ * Every move here used to pin its own viewpoint — walk and run from a true
+ * side, attack and death from three-quarter — because each reads best that way
+ * IN ISOLATION. In isolation is the problem: the game does not play one clip,
+ * it cuts between them, and a creature that walks in profile and attacks in
+ * three-quarter visibly teleports the moment combat starts. Every contact sheet
+ * looked perfect while the sheet as a whole was broken.
+ *
+ * So the viewpoint is a property of the facing being built. An E sheet is
+ * side-on for idle AND attack; an S sheet faces the camera throughout. It costs
+ * the attack some drama and buys two things: the creature never pops, and every
+ * cell in a facing becomes geometrically comparable — which is what lets
+ * `drift.ts` compare them at all. A drift metric across mixed cameras measures
+ * the camera.
+ *
+ * ⚠️ MIRRORED IN `build-plan.ts` as `CAMERA_BY_DIR`, because that file is
+ * TypeScript and this one is plain ESM the route imports directly — neither can
+ * import the other without dragging a build step into the generation path.
+ * `camera-sync.test.ts` asserts the two agree, so a change here that is not
+ * echoed there fails the suite rather than silently splitting the contract.
+ */
+export const CAMERA_BY_DIR = {
+  E: "true side view, facing right, camera at eye level",
+  S: "front view, facing the camera, camera at eye level",
+  N: "back view, facing away from the camera, camera at eye level",
+};
+
+/** The facings a sheet may be authored for. W is drawn by flipping E. */
+export const KEYFRAME_FACINGS = [
+  { id: "E", label: "E — right, the authored side" },
+  { id: "S", label: "S — toward the camera" },
+  { id: "N", label: "N — away from the camera" },
+];
+
 const KEYFRAME_MOVES = [
   {
     // FIRST, and not optional in practice: `importedPaints` requires an
@@ -153,7 +189,7 @@ const KEYFRAME_MOVES = [
     id: "idle",
     label: "idle keys (required clip)",
     clip: "idle",
-    camera: "true side view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "standing at rest, weight settled, body at its lowest",
       "breathing in: chest and shoulders lifted, body at its tallest, head slightly raised",
@@ -165,7 +201,7 @@ const KEYFRAME_MOVES = [
     id: "walk",
     label: "walk cycle keys",
     clip: "walk",
-    camera: "true side view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "right foot planted far forward, left leg trailing behind, body leaning into the step",
       "passing pose: left knee lifted high in front, standing tall on the right foot",
@@ -177,7 +213,7 @@ const KEYFRAME_MOVES = [
     id: "run",
     label: "run cycle keys",
     clip: "run",
-    camera: "true side view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "full sprint stride, right leg extended far forward, left leg kicked back, both feet off the ground",
       "touchdown: right foot landing under the body, left knee driving forward, deep forward lean",
@@ -189,7 +225,7 @@ const KEYFRAME_MOVES = [
     id: "attack",
     label: "attack keys",
     clip: "attack",
-    camera: "three-quarter view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "ready stance, weapon held low and coiled",
       "wind-up: twisted back, weapon raised high behind the head",
@@ -201,7 +237,7 @@ const KEYFRAME_MOVES = [
     id: "stumble",
     label: "getting-hit keys",
     clip: "stumble",
-    camera: "three-quarter view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "upright, flinching as if just struck in the chest",
       "reeling backward, arms flung out, one foot lifting",
@@ -213,7 +249,7 @@ const KEYFRAME_MOVES = [
     id: "death",
     label: "death keys",
     clip: "death",
-    camera: "three-quarter view, facing right, camera at eye level",
+    // camera: now CAMERA_BY_DIR[facing]. Set `cameraOverride` to pin one deliberately.
     poses: [
       "struck hard, arching backward",
       "crumpling, knees buckling under the body",
@@ -221,7 +257,7 @@ const KEYFRAME_MOVES = [
       "lying flat on the ground, fully collapsed",
     ],
   },
-  { id: "custom", label: "custom poses…", clip: "", camera: "the same view as the reference image", poses: [] },
+  { id: "custom", label: "custom poses…", clip: "", cameraOverride: "the same view as the reference image", poses: [] },
 ];
 
 /**
@@ -411,6 +447,10 @@ export const MODES = [
     needs: { init: true },
     fields: [
       { id: "preset", label: "move", type: "select", options: KEYFRAME_MOVES.map((p) => ({ id: p.id, label: p.label })), default: "walk" },
+      // The facing decides the camera for EVERY clip of a sheet. It defaults to
+      // E because that is the facing the intake master is framed in — the only
+      // one that needs no rotation first.
+      { id: "facing", label: "facing (sets the camera)", type: "select", options: KEYFRAME_FACINGS, default: "E" },
       { id: "custom", label: "custom poses (numbered)", type: "text", placeholder: "(1) crouched low (2) leaping (3) mid-air tuck (4) landing…", showIf: { preset: "custom" } },
     ],
     // Every row branches off the SAME idle init — no chaining, so no row can
@@ -419,13 +459,21 @@ export const MODES = [
       id: "moveset",
       label: `every move set (${KEYFRAME_SET.length} sheets)`,
       values: KEYFRAME_SET.map((m) => ({ preset: m.id, custom: "" })),
+      // NB: a batch is one FACING's move set. A whole character is this batch
+      // once per facing, off that facing's own master — which is the planner's
+      // job, not a field on this mode.
     },
     etaS: { quality: 260, fast: 100 },
     presets: KEYFRAME_MOVES,
     prompt(params) {
       const move = KEYFRAME_MOVES.find((p) => p.id === params.preset);
       const list = params.preset === "custom" ? String(params.custom ?? "") : move?.poses.map((p, i) => `(${i + 1}) ${p}`).join(", ") ?? "";
-      const cam = move?.camera ?? "the same view as the reference image";
+      // An explicit per-move override wins; otherwise the FACING decides. A
+      // move with neither (only `custom`) inherits the reference image's view.
+      const cam =
+        move?.cameraOverride ??
+        CAMERA_BY_DIR[String(params.facing ?? "E")] ??
+        CAMERA_BY_DIR.E;
       // Labels stay OUT of the pixels on purpose: the slicer imports
       // beside-row text as a frame (README), and the row's identity
       // already travels on the job as metadata.
