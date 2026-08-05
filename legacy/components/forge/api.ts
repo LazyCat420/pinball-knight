@@ -1,7 +1,14 @@
 /** Tiny fetch layer — every server error becomes a thrown message. */
 
 export async function postJSON(url: string, body: unknown): Promise<any> {
-  const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  let r: Response;
+  try {
+    r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  } catch {
+    // The browser's bare "Failed to fetch" reads like a broken feature; the
+    // usual cause here is the dev server recompiling mid-click.
+    throw new Error("could not reach the dev server (it may have been mid-reload) — try again");
+  }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error ?? `HTTP ${r.status}`);
   return j;
