@@ -71,8 +71,22 @@ const { values: a } = parseArgs({
     seed: { type: "string" },
     "cdp-port": { type: "string", default: process.env.BDB_CDP_PORT ?? "9333" },
     "max-frame-ms": { type: "string", default: "0" },
+    /**
+     * Fail when more than this share of frames miss the 60fps budget.
+     * A p95 gate alone passes a run that hitches badly but rarely; jank is
+     * what the player actually feels. 0 disables.
+     */
+    "max-jank-pct": { type: "string", default: "0" },
     /** Enforce --max-frame-ms even under software rendering (not advised). */
     "force-budget": { type: "boolean", default: false },
+    /**
+     * Render resolution, `WxH`. DEFAULT 1920x1080 — the resolution people
+     * actually play at, and 2.25x the pixels of the 720p this used to use, so
+     * a GPU-bound regression that 720p hides shows up here. A frame time is
+     * only comparable to another frame time at the SAME resolution, so every
+     * report prints it.
+     */
+    viewport: { type: "string", default: "1920x1080" },
   },
 });
 
@@ -86,6 +100,15 @@ if (a.watch) {
 
 const SECS = Number(a.secs);
 const MAX_FRAME_MS = Number(a["max-frame-ms"]);
+const MAX_JANK_PCT = Number(a["max-jank-pct"]);
+const VIEWPORT = (() => {
+  const m = /^(\d+)x(\d+)$/.exec(a.viewport.trim());
+  if (!m) {
+    console.error(`✗ --viewport must look like 1920x1080, got "${a.viewport}"`);
+    process.exit(2);
+  }
+  return { width: Number(m[1]), height: Number(m[2]) };
+})();
 const CDP_PORT = Number(a["cdp-port"]);
 const log = (...m) => console.log(...m);
 
@@ -124,10 +147,10 @@ if (!browser) {
 }
 
 const ctx = realGpu
-  ? browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1280, height: 720 } }))
-  : await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  ? browser.contexts()[0] ?? (await browser.newContext({ viewport: VIEWPORT }))
+  : await browser.newContext({ viewport: VIEWPORT });
 const page = await ctx.newPage();
-await page.setViewportSize({ width: 1280, height: 720 });
+await page.setViewportSize(VIEWPORT);
 
 const pageErrors = [];
 page.on("pageerror", (e) => pageErrors.push(String(e.message || e)));
@@ -184,6 +207,7 @@ if (a.backend === "webgpu" && !realGpu) {
 
 log(`▶ backend: ${backend}`);
 log(`▶ audio: ${a.sound ? "ON (--sound)" : "MUTED"}`);
+log(`▶ viewport: ${VIEWPORT.width}x${VIEWPORT.height}`);
 log(`▶ opening ${targetUrl}`);
 try {
   await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -389,7 +413,21 @@ log(
 if (a.profile && report.profile?.length) {
   log("\n── frame profile (heaviest first) ──");
   console.table(report.profile);
-  log(`p95 frame: ${report.p95FrameMs}ms  (16.67ms = 60fps)`);
+  const f = report.frameStats;
+  if (f) {
+    // The distribution, not one number: a uniformly slow game and a smooth one
+    // that hitches twice a second can share a p95 and need opposite fixes.
+    log(
+      `frame:  p50 ${f.p50}ms   p95 ${f.p95}ms   p99 ${f.p99}ms   worst ${f.worst}ms   ` +
+        `(${f.n} frames, ${f.fps} fps wall-clock)`,
+    );
+    log(
+      `jank:   ${f.jankPct}% of frames over 16.67ms, ${f.stutterPct}% over 33.3ms ` +
+        `— at ${VIEWPORT.width}x${VIEWPORT.height}`,
+    );
+  } else {
+    log(`p95 frame: ${report.p95FrameMs}ms  (16.67ms = 60fps)`);
+  }
   if (looksSoftware) {
     log("NOTE: software rendering — compare stages against each other, not against 16.67ms.");
   }
@@ -427,6 +465,19 @@ if (MAX_FRAME_MS > 0) {
     console.error(`\n✗ p95 frame ${report.p95FrameMs}ms exceeds --max-frame-ms ${MAX_FRAME_MS}ms`);
   } else {
     log(`\n✓ p95 frame ${report.p95FrameMs}ms within budget ${MAX_FRAME_MS}ms`);
+  }
+}
+if (MAX_JANK_PCT > 0) {
+  const jank = report.frameStats?.jankPct;
+  if (looksSoftware && !a["force-budget"]) {
+    log(`⊘ --max-jank-pct skipped under software rendering (use --gpu, or --force-budget to insist).`);
+  } else if (jank === undefined || jank === null) {
+    log(`⊘ --max-jank-pct needs --profile to measure anything.`);
+  } else if (jank > MAX_JANK_PCT) {
+    failed = true;
+    console.error(`✗ ${jank}% of frames missed 60fps, over --max-jank-pct ${MAX_JANK_PCT}%`);
+  } else {
+    log(`✓ jank ${jank}% within --max-jank-pct ${MAX_JANK_PCT}%`);
   }
 }
 

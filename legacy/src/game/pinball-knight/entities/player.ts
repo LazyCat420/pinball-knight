@@ -1960,7 +1960,20 @@ export function updatePlayer(dt: number, input: InputHandle): void {
   // stick below must not get a look in while it runs.
   if (updateRicochet(dt)) {
     syncActorMesh(p);
-    p.anim.play(ricochetSpec()!.clip);
+    // ⚠️ NOT `ricochetSpec()!` — the two disagree for exactly one frame.
+    // `updateRicochet` returns true on the frame it decrements `ricochetT` to
+    // zero (it still has to hand back the exit speed and fire the burst), but
+    // `ricochetSpec()` is gated on `ricochetT > 0` and has already gone null by
+    // then. The assertion threw `Cannot read properties of null (reading
+    // 'clip')` once per ricochet form, killing the frame's remaining work —
+    // caught by a profiled playtest run, invisible in a suite because no test
+    // drives the form to its last frame.
+    //
+    // Keeping the current clip is right for that frame: the form is over, and
+    // the next frame's normal locomotion path picks the walk/idle/ball clip
+    // from the exit speed anyway.
+    const spec = ricochetSpec();
+    if (spec) p.anim.play(spec.clip);
     p.anim.update(dt);
     return;
   }

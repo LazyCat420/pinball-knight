@@ -29,7 +29,7 @@
  * plus the profiler table when `profile` is on.
  */
 import { BTN } from "./engine/gamepad";
-import { getProfileSummary, getP95FrameMs, type ProfileStage } from "./engine/profiler";
+import { getProfileSummary, getP95FrameMs, getFrameStats, type FrameStats, type ProfileStage } from "./engine/profiler";
 
 /** The fake-pad surface installed by core.ts's debug hooks. */
 interface FakePad {
@@ -104,6 +104,12 @@ interface BotReport {
   p95FrameMs: number;
   /** Per-stage profiler summary, heaviest first. Empty unless profiling. */
   profile: ProfileStage[];
+  /**
+   * Whole-frame distribution — p50/p95/p99/worst plus the share of frames that
+   * missed 60fps. `p95FrameMs` above is one number out of this and is kept for
+   * callers that predate it. Null unless the run was started with `profile`.
+   */
+  frameStats: FrameStats | null;
 }
 
 let running = false;
@@ -156,7 +162,7 @@ export function startBot(opts: BotOptions = {}): string {
   const report: BotReport = {
     ranSeconds: 0, mode, decisions: 0, deaths: 0,
     peakCombo: 0, kills: 0, stuckEvents: [], errors: [], notes: [],
-    p95FrameMs: 0, profile: [],
+    p95FrameMs: 0, profile: [], frameStats: null,
   };
 
   p.connect();
@@ -311,6 +317,7 @@ export function startBot(opts: BotOptions = {}): string {
       // Read AFTER stopping: the summary is only computed on stop.
       report.profile = getProfileSummary();
       report.p95FrameMs = getP95FrameMs();
+      report.frameStats = getFrameStats();
     }
 
     /* eslint-disable no-console */

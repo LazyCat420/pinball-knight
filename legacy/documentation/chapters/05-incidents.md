@@ -96,6 +96,54 @@ catching a dropped weapon.
 > and treat a metric that condemns working art as refuted, not as a threshold to
 > nudge.**
 
+## The knight moonwalked, and the engine was innocent
+
+**2026-08-05.** "Walking down or sideways still shows his back." Three earlier
+sessions had gone looking in the facing code; the chain was correct every time,
+and measuring it live (stick → `facingFromVelocity` → `dir:clip` → the E/W flip)
+confirmed all four directions resolve right.
+
+The fault was in the ART, and there was no standard for it to violate. A
+generator asked for "a side profile" picks its own side, and the knight's came
+back facing LEFT under an `E` label. An inverted E is wrong BOTH ways: E draws
+left-facing art, and W — which the engine derives by mirroring E — draws
+right-facing art. Every direction looked like the back of a knight who was
+walking the other way.
+
+Rendering each published E sheet's first walk cell took two minutes and settled
+it: knight and zombie inverted, beaver and fish_feet correct, frog and stiltneck
+not side views at all (front views under an E label — a flip cannot fix those).
+
+> **The rule: a facing bug is an ART question before it is a CODE question, and
+> "which way does this sheet face" is answered by rendering it, not by reading
+> the pipeline.** `dir` is now a documented promise about the screen
+> (`tools/sprite-forge/docs/FACING_STANDARD.md`), art that disagrees declares
+> `mirror` in its sidecar, and the compass fixtures make a wrong answer
+> unmissable rather than plausible.
+
+## A profiled run found a crash the suite could not
+
+**2026-08-05.** The first 1080p profiled playtest failed on
+`Cannot read properties of null (reading 'clip')`. It was not the resolution
+change — it was a one-frame race that had been shipping for as long as ricochet
+form existed.
+
+`updateRicochet` returns true on the frame it decrements `ricochetT` to zero
+(it still owes the exit speed and the burst), but `ricochetSpec()` is gated on
+`ricochetT > 0` and has already gone null. `p.anim.play(ricochetSpec()!.clip)`
+asserted the two could not disagree. They disagree for exactly one frame, once
+per use of the form, and the throw killed the rest of that frame's player
+update.
+
+Nothing in 2100 tests drove the form to its last frame. A bot playing for 25
+seconds did.
+
+> **The rule: a non-null assertion is a claim about a state machine, and the
+> frame a state ENDS is the one where two guards on the same condition drift
+> apart. The regression test has to drive the real update across that boundary
+> — a test that merely proves the disagreement is reachable passes with the bug
+> restored.** (Verified by reverting the fix: green→red, same error text.)
+
 ## Earlier lessons, still load-bearing
 
 | symptom | actual cause |

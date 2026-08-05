@@ -109,6 +109,25 @@ edited source art, not debris.
 
 **Next step:** find out whose they are and either commit or discard them.
 
+## 6b. The perf harness measures at 1080p now — old numbers are not comparable
+
+**Impact:** any frame time recorded before 2026-08-05 was measured at 1280x720
+and cannot be compared with one recorded after. `scripts/playtest.mjs` now
+defaults to `--viewport 1920x1080` (2.25x the pixels, and what people actually
+play at), and every profile line prints the resolution it was measured at.
+
+The report also carries the whole distribution — p50/p95/p99/worst plus the
+share of frames over 16.67ms (`jankPct`) and over 33.3ms (`stutterPct`) — so a
+run says WHICH kind of slow it was. `--max-jank-pct` gates on the hitch rate the
+way `--max-frame-ms` gates on p95; a game that is fine on average and hitches
+twice a second passes the second and fails the first.
+
+**Measured baseline** (nvidia/ampere, host Chrome, 1920x1080, 25s mixed bot):
+p50 6.9ms, p95 18.5ms, p99 30.2ms, 7.8% jank. A **472ms** worst frame showed up
+immediately — invisible in the old p95-only line. Worth chasing next; it is
+almost certainly a first-encounter pipeline compile (see the WebGPU stall notes)
+rather than steady-state cost.
+
 ## 7. Co-op peers still render marble rides as a walk cycle
 
 **Impact:** multiplayer only. `render/remote-party.ts`'s `MIRRORED_CLIPS`

@@ -116,6 +116,58 @@ export function getP95FrameMs(): number {
   return lastSummary.find((s) => s.stage === "FRAME (total)")?.p95 ?? 0;
 }
 
+/** 60fps. The one number every frame stat below is judged against. */
+export const FRAME_BUDGET_MS = 1000 / 60;
+
+/**
+ * What a player actually feels, as opposed to what an average hides.
+ *
+ * A p95 alone cannot tell a uniformly slow game from a smooth one that hitches
+ * twice a second, and those need opposite fixes — see this module's header.
+ * `jankPct` is the share of frames that MISSED the 60fps budget and `worst` is
+ * the single ugliest one; together with p99 they are the numbers to gate on.
+ * Kept as raw whole-frame samples so the percentiles are exact.
+ */
+export interface FrameStats {
+  n: number;
+  fps: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  worst: number;
+  /** Share of frames over FRAME_BUDGET_MS, 0-100. */
+  jankPct: number;
+  /** Share over twice the budget — a visible stutter, not a missed vsync. */
+  stutterPct: number;
+}
+
+let lastFrameStats: FrameStats | null = null;
+
+/** Whole-frame stats from the last completed run, or null if none. */
+export function getFrameStats(): FrameStats | null {
+  return lastFrameStats;
+}
+
+function frameStatsFrom(samples: readonly number[], wallMs: number): FrameStats | null {
+  if (!samples.length) return null;
+  const sorted = [...samples].sort((x, y) => x - y);
+  const over = (limit: number) => (sorted.filter((s) => s > limit).length / sorted.length) * 100;
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return {
+    n: sorted.length,
+    // Wall-clock fps, not 1000/p50 — the gaps BETWEEN frames are part of what
+    // the player sees, and a frame that renders in 4ms but arrives every 33ms
+    // is a 30fps experience however fast its callback was.
+    fps: round(1000 / (wallMs / sorted.length)),
+    p50: round(pct(sorted, 50)),
+    p95: round(pct(sorted, 95)),
+    p99: round(pct(sorted, 99)),
+    worst: round(sorted[sorted.length - 1]),
+    jankPct: round(over(FRAME_BUDGET_MS)),
+    stutterPct: round(over(FRAME_BUDGET_MS * 2)),
+  };
+}
+
 function pct(sorted: number[], p: number): number {
   if (!sorted.length) return 0;
   const i = Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))));
@@ -161,6 +213,7 @@ function stop(): void {
   // Heaviest first — that is the only ordering anyone wants here.
   rows.sort((a, b) => Number(b["avg"]) - Number(a["avg"]));
   lastSummary = rows as unknown as ProfileStage[];
+  lastFrameStats = frameStatsFrom(buckets.get("FRAME (total)")?.samples ?? [], wall);
 
   /* eslint-disable no-console */
   console.log(
@@ -169,7 +222,21 @@ function stop(): void {
       `(budget: 16.67ms/frame for 60fps)`,
   );
   console.log(`[profiler] GPU: ${gpuAdapterLabel()}`);
+  // The RESOLUTION, because a frame time without one is not comparable to any
+  // other frame time — the same scene at 1080p is 2.25× the pixels of 720p.
+  if (typeof window !== "undefined") {
+    console.log(
+      `[profiler] viewport: ${window.innerWidth}x${window.innerHeight} @ DPR ${window.devicePixelRatio ?? 1}`,
+    );
+  }
   console.table(rows);
+  if (lastFrameStats) {
+    const f = lastFrameStats;
+    console.log(
+      `[profiler] FRAME  p50 ${f.p50}ms  p95 ${f.p95}ms  p99 ${f.p99}ms  worst ${f.worst}ms  ` +
+        `— ${f.jankPct}% of frames missed 60fps, ${f.stutterPct}% took over 33ms`,
+    );
+  }
   console.log("[profiler] p95 >> p50 on a stage means HITCHES in that stage, not steady cost.");
   // Loud, and last, so it is the line still on screen after the table scrolls.
   if (isSoftwareAdapter()) {
