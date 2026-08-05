@@ -21,6 +21,7 @@ import { FramePlayer } from "./FramePlayer";
 import { RetryImg } from "./RetryImg";
 
 const STATE_COLOR: Record<Job["state"], { fg: string; bg: string }> = {
+  queued: GREY,
   running: BLUE,
   done: GREEN,
   error: RED,
@@ -68,7 +69,7 @@ function JobCard({
     <div style={{ background: "#0d0f14", borderRadius: 4, padding: "10px 12px", marginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={{ color: "#e8e6df" }}>{job.label ?? job.mode}</span>
-        <span style={S.chip(c.fg, c.bg)}>{job.state}</span>
+        <span style={S.chip(c.fg, c.bg)}>{job.state === "queued" ? `queued · waiting for ${job.leg ?? "gpu"}` : job.state}</span>
         {job.character && <span style={S.chip(AMBER.fg, AMBER.bg)}>{job.character}</span>}
         {job.fast && <span style={S.chip(AMBER.fg, AMBER.bg)}>fast</span>}
         {job.seed !== undefined && <span style={S.note}>seed {job.seed}</span>}
@@ -80,12 +81,12 @@ function JobCard({
             prompt
           </button>
         )}
-        {job.state === "running" && (
+        {(job.state === "running" || job.state === "queued") && (
           <button style={{ ...S.btn, ...S.btnDanger }} onClick={() => onCancel(id)}>
             cancel
           </button>
         )}
-        {job.state !== "running" && job.params && (
+        {job.state !== "running" && job.state !== "queued" && job.params && (
           <button style={S.btn} title="same settings, new seed" onClick={() => onReroll(id, job)}>
             ↻ re-roll
           </button>
@@ -198,7 +199,10 @@ export function JobsBoard({
     <div style={S.card}>
       <h2 style={S.cardTitle}>
         jobs
-        <span style={S.chip(GREY.fg, GREY.bg)}>{entries.filter(([, j]) => j.state === "running").length} running</span>
+        <span style={S.chip(GREY.fg, GREY.bg)}>
+          {entries.filter(([, j]) => j.state === "running").length} running ·{" "}
+          {entries.filter(([, j]) => j.state === "queued").length} queued
+        </span>
       </h2>
       {visible.map(([id, j]) => (
         <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onAddToTray={onAddToTray} onKeep={onKeep} />

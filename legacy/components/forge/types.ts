@@ -51,7 +51,8 @@ export type Mode = {
 export type Progress = { node: string | null; value: number; max: number };
 
 export type Job = {
-  state: "running" | "done" | "error" | "cancelled";
+  state: "queued" | "running" | "done" | "error" | "cancelled";
+  leg?: string;
   mode: string;
   label: string;
   startedAt: number;

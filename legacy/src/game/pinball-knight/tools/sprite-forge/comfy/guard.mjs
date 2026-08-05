@@ -3,29 +3,29 @@
  * RAM GUARD — the failsafe that keeps generation from freezing the box.
  *
  * On 2026-08-05 ComfyUI (model swaps parked in system RAM) plus a test run
- * filled all 64GB and froze the HOST — WSL takes ~47GB of it, and once
- * that balloons the Windows side has nothing left. This process is the
- * dead-man's switch: rendering is always the thing to sacrifice, because
- * a lost frame re-queues and a frozen host loses everything.
+ * filled all 64GB and froze the HOST. WSL only sees its own ~47GiB slice,
+ * so this guard watches BOTH sides:
  *
- *   node guard.mjs                      run with defaults (soft 8, hard 4 GiB)
- *   node guard.mjs --soft 10 --hard 5   custom floors
- *   node guard.mjs --once               one sample + verdict, then exit
+ *   WSL  /proc/meminfo MemAvailable, every 2s — fast, free, catches spikes.
+ *   HOST PowerShell interop (Win32_OperatingSystem), every 5s — the real
+ *        64GB number the freeze actually hit. Skipped quietly where
+ *        interop is unavailable.
  *
- * Two floors on MemAvailable (/proc/meminfo — what the kernel could give
- * out without swapping, the honest number):
+ * Rules, in escalation order (rendering is always the sacrifice — a lost
+ * frame re-queues, a frozen host loses everything):
  *
- *   SOFT  interrupt the running prompt + drop every cached model
- *         (POST /interrupt, POST /free). Generation degrades to a cold
- *         start; the box stays healthy. 30s cooldown between strikes.
- *   HARD  stop the ComfyUI server outright (~/comfy/stop.sh) and leave a
- *         tripped marker the /forge panel surfaces. Whatever is eating
- *         the rest of the RAM, the 20GB+ generation stack is no longer
- *         part of the problem.
+ *   SOFT   wsl avail < 8GiB   (instant)  → interrupt + drop cached models
+ *          host used > 58GB   (instant)  → same
+ *   HARD   wsl avail < 4GiB   (instant)  → stop the ComfyUI server
+ *          wsl avail < 10GiB  sustained 20s → stop
+ *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
- * State for the panel: heartbeat at ~/comfy/guard.json every poll, trip
- * record at ~/comfy/guard-tripped.json (cleared on the next server start).
- * Zero dependencies; killed by pid from ~/comfy/guard.pid.
+ *   node guard.mjs [--soft 8] [--hard 4] [--sustain 10] [--sustain-secs 20]
+ *                  [--host-soft-used 56] [--host-hard-used 60] [--once]
+ *
+ * State for the panel: heartbeat ~/comfy/guard.json each poll (with
+ * hostUsedGB when known), trip record ~/comfy/guard-tripped.json (cleared
+ * by the next server start). Zero dependencies; pid at ~/comfy/guard.pid.
  */
 import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -40,7 +40,16 @@ const arg = (name, fallback) => {
 };
 const SOFT_GIB = arg("soft", 8);
 const HARD_GIB = arg("hard", 4);
+const SUSTAIN_GIB = arg("sustain", 10);
+const SUSTAIN_SECS = arg("sustain-secs", 20);
+// 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
+// HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
+// floor would strike legitimate generation on every run.
+const HOST_SOFT_USED_GB = arg("host-soft-used", 58);
+const HOST_HARD_USED_GB = arg("host-hard-used", 60);
 const POLL_MS = arg("poll", 2000);
+const HOST_POLL_MS = 5000;
+const HOST_HARD_SAMPLES = 3; // 3 × 5s ≈ the "sustained" the freeze needs
 const COOLDOWN_MS = 30_000;
 
 function availGiB() {
@@ -48,10 +57,33 @@ function availGiB() {
   return m ? Number(m[1]) / 2 ** 20 : NaN;
 }
 
+/** Host-side memory via WSL interop; resolves null where unavailable. */
+function hostMem() {
+  return new Promise((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-Command", "Get-CimInstance Win32_OperatingSystem | Select-Object -Property FreePhysicalMemory,TotalVisibleMemorySize | ConvertTo-Json"],
+      { timeout: 4000 },
+      (err, out) => {
+        if (err) return resolve(null);
+        try {
+          const j = JSON.parse(String(out).replace(/\r/g, ""));
+          resolve({ used: (j.TotalVisibleMemorySize - j.FreePhysicalMemory) / 2 ** 20, total: j.TotalVisibleMemorySize / 2 ** 20 });
+        } catch {
+          resolve(null);
+        }
+      },
+    );
+  });
+}
+
 const log = (s) => console.log(`[guard ${new Date().toISOString()}] ${s}`);
 
-async function softStrike(avail) {
-  log(`SOFT floor: ${avail.toFixed(1)}GiB available < ${SOFT_GIB}GiB — interrupting + dropping models`);
+let lastSoft = 0;
+async function softStrike(why) {
+  if (Date.now() - lastSoft < COOLDOWN_MS) return;
+  lastSoft = Date.now();
+  log(`SOFT (${why}) — interrupting + dropping cached models`);
   try {
     await fetch(`${URL}/interrupt`, { method: "POST" });
     await fetch(`${URL}/free`, {
@@ -64,40 +96,98 @@ async function softStrike(avail) {
   }
 }
 
-function hardStrike(avail) {
-  log(`HARD floor: ${avail.toFixed(1)}GiB available < ${HARD_GIB}GiB — stopping ComfyUI`);
+function hardStrike(why, detail) {
+  log(`HARD (${why}) — stopping ComfyUI`);
   writeFileSync(
     join(COMFY, "guard-tripped.json"),
-    JSON.stringify({ when: new Date().toISOString(), availGiB: +avail.toFixed(2), action: "stopped ComfyUI (hard floor)" }, null, 1),
+    JSON.stringify({ when: new Date().toISOString(), ...detail, action: `stopped ComfyUI (${why})` }, null, 1),
   );
   execFile("bash", [join(COMFY, "stop.sh")], (err, out) => log(`stop.sh: ${err ? err.message : String(out).trim()}`));
 }
 
 if (process.argv.includes("--once")) {
   const a = availGiB();
-  console.log(JSON.stringify({ availGiB: +a.toFixed(2), softGiB: SOFT_GIB, hardGiB: HARD_GIB, verdict: a < HARD_GIB ? "HARD" : a < SOFT_GIB ? "SOFT" : "ok" }));
+  const h = await hostMem();
+  console.log(
+    JSON.stringify({
+      wslAvailGiB: +a.toFixed(2),
+      host: h ? { usedGB: +h.used.toFixed(1), totalGB: +h.total.toFixed(1) } : "interop unavailable",
+      verdict:
+        a < HARD_GIB || (h && h.used > HOST_HARD_USED_GB) ? "HARD" : a < SOFT_GIB || (h && h.used > HOST_SOFT_USED_GB) ? "SOFT" : "ok",
+    }),
+  );
   process.exit(0);
 }
 
-log(`watching MemAvailable — soft ${SOFT_GIB}GiB (interrupt+free), hard ${HARD_GIB}GiB (stop server), poll ${POLL_MS}ms`);
+const hostProbe = await hostMem();
+log(
+  `watching — wsl: soft ${SOFT_GIB} / hard ${HARD_GIB} / sustained <${SUSTAIN_GIB}GiB for ${SUSTAIN_SECS}s · ` +
+    (hostProbe
+      ? `host (${hostProbe.total.toFixed(0)}GB): soft >${HOST_SOFT_USED_GB}GB used / hard >${HOST_HARD_USED_GB}GB used sustained ${(HOST_HARD_SAMPLES * HOST_POLL_MS) / 1000}s`
+      : "host: interop unavailable, WSL rules only"),
+);
 writeFileSync(join(COMFY, "guard.pid"), String(process.pid));
-let lastSoft = 0;
-const tick = async () => {
+
+let sustainSince = null;
+let host = hostProbe;
+let hostHardStreak = 0;
+
+const tick = () => {
   const avail = availGiB();
   try {
-    writeFileSync(join(COMFY, "guard.json"), JSON.stringify({ pid: process.pid, at: Date.now(), availGiB: +avail.toFixed(2), softGiB: SOFT_GIB, hardGiB: HARD_GIB }));
+    writeFileSync(
+      join(COMFY, "guard.json"),
+      JSON.stringify({
+        pid: process.pid,
+        at: Date.now(),
+        availGiB: +avail.toFixed(2),
+        softGiB: SOFT_GIB,
+        hardGiB: HARD_GIB,
+        ...(host ? { hostUsedGB: +host.used.toFixed(1), hostTotalGB: +host.total.toFixed(1), hostHardUsedGB: HOST_HARD_USED_GB } : {}),
+      }),
+    );
   } catch {
     /* heartbeat is best-effort */
   }
+
   if (avail < HARD_GIB) {
-    hardStrike(avail);
-  } else if (avail < SOFT_GIB && Date.now() - lastSoft > COOLDOWN_MS) {
-    lastSoft = Date.now();
-    await softStrike(avail);
+    return hardStrike("wsl hard floor", { availGiB: +avail.toFixed(2) });
   }
+  // The creep case: nothing spikes below the hard floor, but the box sits
+  // squeezed — exactly how the freeze looked from inside for its last minute.
+  if (avail < SUSTAIN_GIB) {
+    sustainSince ??= Date.now();
+    if (Date.now() - sustainSince > SUSTAIN_SECS * 1000) {
+      return hardStrike("wsl sustained pressure", {
+        availGiB: +avail.toFixed(2),
+        sustainedS: Math.round((Date.now() - sustainSince) / 1000),
+      });
+    }
+  } else {
+    sustainSince = null;
+  }
+  if (avail < SOFT_GIB) void softStrike(`wsl ${avail.toFixed(1)}GiB available`);
 };
+
+const hostTick = async () => {
+  const h = await hostMem();
+  if (!h) return;
+  host = h;
+  if (h.used > HOST_HARD_USED_GB) {
+    hostHardStreak++;
+    if (hostHardStreak >= HOST_HARD_SAMPLES) {
+      return hardStrike(`host sustained >${HOST_HARD_USED_GB}GB used`, { hostUsedGB: +h.used.toFixed(1) });
+    }
+  } else {
+    hostHardStreak = 0;
+  }
+  if (h.used > HOST_SOFT_USED_GB) void softStrike(`host ${h.used.toFixed(1)}GB used`);
+};
+
 setInterval(tick, POLL_MS);
+if (hostProbe) setInterval(hostTick, HOST_POLL_MS);
 void tick();
+
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, () => {
     try {

@@ -26,7 +26,8 @@
  * uploads in, jobs out.
  */
 import { NextResponse } from "next/server";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -48,6 +49,7 @@ import {
   backendPresent,
   installState,
   loadSettings,
+  modelsDir,
 } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/forge-config.mjs";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +58,9 @@ const WORK = join(process.cwd(), "src/game/pinball-knight/tools/sprite-forge/wor
 
 type Progress = { node: string | null; value: number; max: number };
 type Job = {
-  state: "running" | "done" | "error" | "cancelled";
+  state: "queued" | "running" | "done" | "error" | "cancelled";
+  /** Which model stack this job needs — the scheduler groups by it. */
+  leg?: string;
   mode: string;
   label: string;
   startedAt: number;
@@ -142,6 +146,100 @@ async function runJob(id: string, graph: any, clientId: string) {
 }
 
 /**
+ * LEG-AFFINITY SCHEDULER — the model-switch lag fix.
+ *
+ * A Qwen↔Wan switch costs a full unload + a 12-15GB reload, minutes each
+ * way. ComfyUI's own queue is FIFO and doesn't know legs exist, so a
+ * mixed queue (a move-set batch plus one rotate) used to thrash:
+ * load Wan, unload, load Qwen, unload, load Wan…
+ *
+ * This scheduler runs ONE job at a time and drains every parked job of
+ * the RESIDENT leg before switching; /free happens exactly once per real
+ * switch, never per job. While the resident leg samples (GPU-bound), the
+ * OTHER leg's model files are read into the page cache at idle priority —
+ * page cache is reclaimable (it cannot re-create the freeze; the kernel
+ * evicts it under pressure), so when the switch finally happens the
+ * "reload from disk" is mostly a copy from RAM.
+ *
+ * Parked graphs live in memory only: a dev reload loses them, and GET
+ * reports such jobs as errors with a re-roll hint — recovery would need
+ * re-uploaded images, which is the user's one click anyway.
+ */
+type Parked = { id: string; graph: unknown; clientId: string; leg: string };
+type Sched = { resident: string | null; runningId: string | null; parked: Parked[]; warmedLeg: string | null };
+const sched: Sched = (globalThis as any).__forgeSched ?? { resident: null, runningId: null, parked: [], warmedLeg: null };
+(globalThis as any).__forgeSched = sched;
+
+/** The chosen model files a leg loads — what prefetch warms. */
+function legFiles(leg: string): string[] {
+  const chosen = loadSettings().chosen;
+  const slots = leg === "wan" ? ["anim-high", "anim-low", "anim-te", "anim-vae"] : ["rot-unet", "rot-te", "rot-vae"];
+  return slots
+    .map((s) => chosenOption(s, chosen)?.file)
+    .filter((f): f is string => !!f)
+    .map((f) => join(modelsDir(), f))
+    .filter((p) => existsSync(p));
+}
+
+/**
+ * Idle-priority read of a leg's files into the page cache — OFF by default.
+ *
+ * Measured on 2026-08-05: warming Wan's 24GB while Qwen loaded pushed HOST
+ * used memory to 62GB and the guard (correctly) killed the stack. Inside
+ * WSL the page cache is reclaimable; to Windows the ballooned VM is just
+ * gone — an unconfigured WSL2 never hands cache back. Only enable this
+ * (FORGE_PREFETCH=1) after capping WSL in .wslconfig with
+ * autoMemoryReclaim=gradual, which makes the cache actually returnable.
+ */
+function prefetchLeg(leg: string) {
+  if (process.env.FORGE_PREFETCH !== "1") return;
+  if (sched.warmedLeg === leg) return;
+  sched.warmedLeg = leg;
+  const files = legFiles(leg);
+  if (!files.length) return;
+  // stdio "ignore" wires cat's stdout to /dev/null — the bytes only ever
+  // touch the page cache, which is the entire point.
+  const p = spawn("nice", ["-n", "19", "cat", ...files], { stdio: ["ignore", "ignore", "ignore"], detached: true });
+  p.unref();
+}
+
+function pump() {
+  if (sched.runningId || !sched.parked.length) return;
+  // Drain the resident leg first; switch only when it has nothing left.
+  let idx = sched.parked.findIndex((p) => p.leg === sched.resident);
+  const switching = idx < 0;
+  if (switching) idx = 0;
+  const next = sched.parked.splice(idx, 1)[0];
+  const job = jobs.get(next.id);
+  if (!job || job.state !== "queued") return pump();
+  sched.runningId = next.id;
+  job.state = "running";
+  persistJob(next.id);
+  void (async () => {
+    try {
+      if (switching && sched.resident !== null) {
+        // The 24GB card cannot hold both stacks (measured OOM on 08-04);
+        // exactly one /free per real switch, then the cold start.
+        try {
+          await freeMemory();
+        } catch {
+          /* server down surfaces at queue time with its own message */
+        }
+        sched.warmedLeg = null;
+      }
+      sched.resident = next.leg;
+      // Warm the OTHER pending leg while this one holds the GPU.
+      const other = sched.parked.find((p) => p.leg !== next.leg);
+      if (other) prefetchLeg(other.leg);
+      await runJob(next.id, next.graph, next.clientId);
+    } finally {
+      sched.runningId = null;
+      pump();
+    }
+  })();
+}
+
+/**
  * The job-edge RAM gate: a queue is a promise to allocate 15-25GB later,
  * so the honest check happens BEFORE queueing, not when the sampler OOMs.
  * The floor sits above the guard's soft floor on purpose — refusing a new
@@ -198,21 +296,7 @@ export async function POST(req: Request) {
   const baseSeed = Number.isFinite(+body.seed) ? +body.seed : Math.floor(Math.random() * 1e9);
   const fast = !!body.fast && fastAvailable(mode.leg, has);
 
-  // The 24GB card cannot hold both stacks: a rotate leaves ~17GiB of Qwen
-  // resident, and the next animate OOMs loading the Wan expert on top of it
-  // (measured, not hypothetical). Switching legs frees first and eats the
-  // cold start; staying on one leg keeps the warm cache.
-  const g = globalThis as { __forgeLastLeg?: string };
-  if (g.__forgeLastLeg && g.__forgeLastLeg !== mode.leg) {
-    try {
-      await freeMemory();
-    } catch {
-      /* server down surfaces at upload/queue with its own message */
-    }
-  }
-  g.__forgeLastLeg = mode.leg;
-
-  // A batch is N independent jobs, not one graph: ComfyUI's FIFO runs them
+  // A batch is N independent jobs, not one graph: the scheduler runs them
   // in turn and each gets its own card, cancel and re-roll in the panel.
   const batch = body.batch && mode.batch && mode.batch.id === body.batch ? mode.batch : null;
   const runs: Array<Record<string, unknown>> = batch
@@ -242,7 +326,8 @@ export async function POST(req: Request) {
     const id = `${mode.id}${facet}-${Date.now().toString(36)}-${jobIds.length}`;
     const clientId = randomUUID();
     jobs.set(id, {
-      state: "running",
+      state: "queued",
+      leg: mode.leg,
       mode: mode.id,
       label: `${mode.title}${facet}`,
       startedAt: Date.now(),
@@ -258,9 +343,10 @@ export async function POST(req: Request) {
       character: typeof body.character === "string" ? body.character : undefined,
     });
     persistJob(id);
-    void runJob(id, graph, clientId);
+    sched.parked.push({ id, graph, clientId, leg: mode.leg });
     jobIds.push(id);
   }
+  pump();
   return NextResponse.json({ jobIds, jobId: jobIds[0] });
 }
 
@@ -275,7 +361,13 @@ export async function GET(req: Request) {
     try {
       for (const dir of readdirSync(WORK)) {
         try {
-          all[dir] = JSON.parse(readFileSync(join(WORK, dir, "job.json"), "utf8"));
+          const meta = JSON.parse(readFileSync(join(WORK, dir, "job.json"), "utf8"));
+          // Disk copies of live states are stale by definition — the Map
+          // overwrites survivors below; what remains died in a reload.
+          all[dir] =
+            meta.state === "queued" || meta.state === "running"
+              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it" }
+              : meta;
         } catch {
           all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0 };
         }
@@ -328,10 +420,15 @@ export async function GET(req: Request) {
   const job = jobs.get(id);
   if (!job) {
     // Survive a dev-server reload: job.json + frames on disk rebuild it.
+    // A job that was queued/running when the server reloaded is gone for
+    // good — its graph lived in memory — so report it honestly.
     try {
       const meta = JSON.parse(readFileSync(join(WORK, id, "job.json"), "utf8"));
       const frames = readdirSync(join(WORK, id)).filter((f) => f.endsWith(".png"));
-      return NextResponse.json({ ...meta, frames, note: "recovered from disk" });
+      if ((meta.state === "queued" || meta.state === "running") && !frames.length) {
+        return NextResponse.json({ ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames });
+      }
+      return NextResponse.json({ ...meta, ...(meta.state === "running" ? { state: "done" } : {}), frames, note: "recovered from disk" });
     } catch {
       /* fall through */
     }
@@ -352,6 +449,13 @@ export async function DELETE(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   const job = id ? jobs.get(id) : null;
   if (!id || !job) return NextResponse.json({ error: "unknown job" }, { status: 404 });
+  if (job.state === "queued") {
+    // Never reached ComfyUI — just unpark it.
+    sched.parked = sched.parked.filter((p) => p.id !== id);
+    Object.assign(job, { state: "cancelled" });
+    persistJob(id);
+    return NextResponse.json({ ok: true, how: "unparked" });
+  }
   if (job.state !== "running") return NextResponse.json({ error: `job is ${job.state}` }, { status: 400 });
   const settings = loadSettings();
   setComfyUrl(settings.comfyUrl);
