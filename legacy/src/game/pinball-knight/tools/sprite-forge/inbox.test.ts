@@ -122,6 +122,8 @@ describe("sprite inbox", () => {
     const px = bufferFor(G);
     const pal = paletteRgb();
     const summary: string[] = [];
+    /** Crushes that threw. Reported together at the end — see the catch below. */
+    const commitFailures: string[] = [];
 
     for (const file of sheets) {
       const { name, dir } = parseName(file);
@@ -341,7 +343,24 @@ describe("sprite inbox", () => {
       // artist makes after LOOKING at it, because the commit evicts colours and
       // an eviction nobody saw is how a creature quietly loses its costume.
       let commitLine = "";
-      if (side?.commit) {
+      // ── ONE SHEET'S CRUSH MUST NOT ABORT THE OTHER SIX ──────────────────
+      //
+      // The commit writes to `work/` for manual promotion; it is NOT the path
+      // the game reads. `public/sprites/` was already written above. So a
+      // throw in here used to cost far more than the crush it failed: it
+      // aborted the RUN, and every sheet after the failing one never
+      // published at all.
+      //
+      // That is precisely how the knight's art died. `commitToGrid` threw on
+      // his E sheet, S and N never got their manifests, and someone
+      // hand-copied the inbox sidecars into `public/sprites/` to move on —
+      // which loads as `undefined` and drops the player to the painter in
+      // silence. A batch that stops on its first bad item invites exactly
+      // that kind of manual repair.
+      //
+      // Collected and asserted after the loop instead: every sheet publishes,
+      // and the run still goes RED with all the failures named at once.
+      if (side?.commit) try {
         const copts = commitOpts(side);
         const c = commitToGrid(
           { width: sheet.width, height: sheet.height, data: sdata },
@@ -404,6 +423,10 @@ describe("sprite inbox", () => {
           `       GATE re-measured on the committed sheet: ${cg.verdict}\n` +
           `       promote with:  cp ${join(outDir, cname)} ${join(INBOX, cname)} && ` +
           `cp ${join(outDir, `${name}-${dir}.json`)} ${join(INBOX, `${name}-${dir}.json`)}\n`;
+      } catch (e) {
+        const why = e instanceof Error ? e.message : String(e);
+        commitFailures.push(`${name}-${dir}: ${why}`);
+        commitLine = `⚠ COMMIT FAILED — this sheet published UNCRUSHED; the game still gets it\n  ${why}\n`;
       }
 
       const mean = (f: (r: NoiseRow) => number): number => stats.reduce((a, r) => a + f(r), 0) / stats.length;
@@ -452,5 +475,15 @@ describe("sprite inbox", () => {
     // one you could not see.
     writeFileSync(join(WORK, "report.txt"), summary.join("\n").replace(/\[[0-9;]*m/g, ""));
     console.log(summary.join("\n"));
+
+    // Deferred to here on purpose: every sheet has published by now, so failing
+    // the run costs nobody their art — which is the entire point of collecting
+    // these rather than throwing where they happen.
+    expect(
+      commitFailures,
+      `the crush threw on ${commitFailures.length} sheet(s). Their art IS published, ` +
+        `uncrushed, so the game has them — but they stay soft until this is fixed:\n  ` +
+        commitFailures.join("\n  "),
+    ).toEqual([]);
   }, 600_000);
 });

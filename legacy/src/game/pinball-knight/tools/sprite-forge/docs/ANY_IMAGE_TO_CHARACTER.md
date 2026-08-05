@@ -147,9 +147,16 @@ Sizes below were fetched from the HF API on 2026-08-05, not recalled.
 | BiRefNet | `background_removal/birefnet.safetensors` | 444,473,596 | MIT | the default — installed |
 | Lucida | `background_removal/lucida.safetensors` | 884,878,856 | MIT | finetune for transparent objects, glow/VFX, **illustrations** — our hard half |
 
-Rejected: [`1038lab/ComfyUI-RMBG`](https://github.com/1038lab/ComfyUI-RMBG) is more capable
-but **GPL-3.0**, which fails the bar `comfy/manifest.mjs`'s header sets, and it puts
-non-commercial BRIA models in the same dropdown one click away.
+> [!NOTE]
+> **This section previously "rejected" [`1038lab/ComfyUI-RMBG`](https://github.com/1038lab/ComfyUI-RMBG)
+> over GPL-3.0. That rejection was wrong and is withdrawn** (2026-08-05). It cited a
+> licence bar in `comfy/manifest.mjs`'s header that no one ever set — the comment asserted
+> the rule and the doc cited the comment. GPL-3.0 governs *distributing* a local ComfyUI
+> plugin; it says nothing about the PNGs the plugin produces. **Licences are recorded, not
+> enforced.** The pack is the better tool — one dropdown over RMBG-2.0, BiRefNet, BEN2,
+> INSPYRENET, SDMatte and SAM/SAM2/SAM3 — and SAM3's text-prompted segmentation is the
+> only way to *rescue* a thin feature (a spear, an antenna) that a saliency head ate,
+> rather than accepting the amputation.
 
 **Graph shape** (new builder in `comfy/graphs.mjs` — the only place class names may live):
 

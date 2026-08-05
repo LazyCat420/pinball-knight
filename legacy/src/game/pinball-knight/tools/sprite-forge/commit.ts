@@ -416,6 +416,51 @@ function cutCell(src: RawImage, cell: Cell): RawImage {
  * death sprawl only clamps itself — the same rule as `aliveScale`, and for the
  * same reason: letting a flat sprawl vote shrinks the walking creature.
  */
+/**
+ * Did the layout put every declared cell in its own column band?
+ *
+ * ── WHY THIS IS NOT "the re-slice returns the declared counts" ─────────────
+ *
+ * It used to be, and that test is subtly wrong: it assumes a declared cell is
+ * ONE connected blob. Plenty of real poses are not. The knight's spin attack
+ * opens with the body and a swung element clear of it — two blobs inside one
+ * frame — and every facing of his sheet declares that frame as one cell, which
+ * is correct, because it IS one frame. `sliceSheet` counts blobs, so it will
+ * always report one more cell than declared for that row, at EVERY gutter. The
+ * loop therefore exhausted its range and threw on art that was fine.
+ *
+ * It threw for three sheets, the run aborted before publishing two facings, and
+ * the repair was to hand-copy sidecars into `public/sprites/` — which the loader
+ * reads as `undefined` and silently drops to the painter. A check that cannot
+ * pass is worse than no check, because someone will route around it.
+ *
+ * What the gutter actually has to guarantee is SEPARATION: no two cells the
+ * layout placed may bleed into one another, and no row may vanish. So that is
+ * what gets asserted — every sliced blob nests inside exactly one placed cell,
+ * and every placed cell contains at least one blob. A pose made of two pieces
+ * passes. Two figures merged by too tight a gutter still fails, which is the
+ * defect this loop exists to prevent.
+ */
+function separated(placed: readonly ManifestRow[], got: readonly { cells: Cell[] }[]): boolean {
+  if (got.length !== placed.length) return false;
+  for (let ri = 0; ri < placed.length; ri++) {
+    const cells = placed[ri].cells;
+    const blobs = got[ri].cells;
+    // Every blob must sit inside one placed cell. A blob straddling two means
+    // they merged — exactly the failure a wider gutter fixes.
+    const hits = new Array<number>(cells.length).fill(0);
+    for (const [bx0, , bx1] of blobs) {
+      const owner = cells.findIndex(([cx0, , cx1]) => bx0 >= cx0 && bx1 <= cx1);
+      if (owner < 0) return false;
+      hits[owner]++;
+    }
+    // And every placed cell must have been found. A cell with no blob was
+    // erased — the caption filter, or a frame that is genuinely empty.
+    if (hits.some((n) => n === 0)) return false;
+  }
+  return true;
+}
+
 export function commitToGrid(
   src: RawImage,
   rows: readonly ManifestRow[],
@@ -881,7 +926,7 @@ export function commitToGrid(
     return { image, rows: outRows };
   };
 
-  // ── 5. WIDEN THE GUTTER UNTIL THE SHEET RE-SLICES TO THE SHAPE IT HAS ────
+  // ── 5. WIDEN THE GUTTER UNTIL THE PLACED CELLS ARE SEPARATED ─────────────
   //
   // ⚠️ NOTHING READS THE RECTS RETURNED HERE. The forge and the game both
   // re-slice the committed PNG, so the only rects that matter are the ones
@@ -898,11 +943,13 @@ export function commitToGrid(
   const want = rows.map((r) => r.cells.length);
   let built: { image: RawImage; rows: ManifestRow[] } | null = null;
   const tried: number[] = [];
+  let lastGot: number[] = [];
   for (let g = gutter; g <= gutter + Math.max(8, Math.ceil(Math.max(...sized.map(([w]) => w)))); g++) {
     const cand = layout(g);
     const got = sliceSheet(cand.image.data, cand.image.width, cand.image.height);
     tried.push(g);
-    if (got.length === want.length && got.every((r, i) => r.cells.length === want[i])) {
+    lastGot = got.map((r) => r.cells.length);
+    if (separated(cand.rows, got)) {
       built = cand;
       break;
     }
@@ -912,10 +959,11 @@ export function commitToGrid(
   if (!built) {
     throw new Error(
       `[commit] laid out ${want.length} rows [${want.join("/")}] but no gutter in ` +
-        `${tried[0]}..${tried[tried.length - 1]} re-slices to that shape. Most likely a row is ` +
-        `too SHORT to survive slice.ts's caption filter — a band under CAPTION_RATIO (25%) of ` +
-        `the median band height is read as a caption and dropped. Row texel heights: ` +
-        `[${rowH.join("/")}]. Otherwise the figures may be touching.`,
+        `${tried[0]}..${tried[tried.length - 1]} SEPARATES them — at the widest gutter the ` +
+        `re-slice still found [${lastGot.join("/")}]. Fewer cells than declared means figures ` +
+        `are TOUCHING; fewer ROWS means a band was dropped, most likely by slice.ts's caption ` +
+        `filter (a band under CAPTION_RATIO 25% of the median height). Row texel heights: ` +
+        `[${rowH.join("/")}].`,
     );
   }
   const out = built.image;

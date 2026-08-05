@@ -18,8 +18,16 @@
  *   · A slot with `choice: true` is pick-one (the unet quants); the chosen
  *     option feeds generation. Everything else is install-and-forget.
  *
- * Licenses: every entry is Apache-2.0 or Civitai Sell-granted — the strict
- * bar the user set. Do not add Rent-only entries without a new ruling.
+ * Licences are RECORDED, never a gate. Put whatever a model ships with in
+ * `licence` so the panel can show it; do NOT refuse a model over it and do
+ * not let it decide what gets built. A previous version of this header
+ * claimed a "strict Apache-2.0 / Civitai Sell-granted bar the user set" —
+ * no such ruling was ever made, and later sessions cited that comment back
+ * at themselves to reject the best segmentation pack in the ecosystem over
+ * GPL-3.0, which governs DISTRIBUTING a local ComfyUI plugin and has
+ * nothing to say about the PNGs it produces. Pick the tool that makes the
+ * best sprite. Whether a given weight can be sold under is a per-asset
+ * question for the day something ships, not a filter on the workbench.
  */
 
 const HF = (repo, path) => `https://huggingface.co/${repo}/resolve/main/${path}`;
