@@ -67,6 +67,8 @@ type Job = {
   /** Library filing: which project/character this generation belongs to. */
   project?: string;
   character?: string;
+  /** The game clip the preset targets — pre-selects the sheet tray's dropdown. */
+  clip?: string;
   promptId?: string;
   progress?: Progress;
   previewB64?: string;
@@ -206,7 +208,9 @@ export async function POST(req: Request) {
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
-    const facet = typeof params.facing === "string" ? `-${params.facing}` : "";
+    const facet =
+      typeof params.facing === "string" ? `-${params.facing}` : typeof params.preset === "string" && params.preset !== "custom" ? `-${params.preset}` : "";
+    const preset = mode.presets?.find((p: { id: string }) => p.id === params.preset);
     const id = `${mode.id}${facet}-${Date.now().toString(36)}-${jobIds.length}`;
     const clientId = randomUUID();
     jobs.set(id, {
@@ -218,6 +222,8 @@ export async function POST(req: Request) {
       resolvedPrompt,
       seed: baseSeed,
       fast,
+      // The clip these frames are destined for — the sheet tray's default.
+      clip: preset?.clip || undefined,
       // Filing tags flow into job.json, which is what the library scans —
       // a tagged generation shows up under its character with no file moves.
       project: typeof body.project === "string" ? body.project : undefined,
@@ -261,8 +267,27 @@ export async function GET(req: Request) {
     try {
       const ok = /^[\w.-]+\.png$/.test(frame) && /^[\w-]+$/.test(id) && readdirSync(join(WORK, id)).includes(frame);
       if (!ok) return NextResponse.json({ error: "no such frame" }, { status: 404 });
-      const buf = readFileSync(join(WORK, id, frame));
-      return new NextResponse(new Uint8Array(buf), { headers: { "content-type": "image/png" } });
+      let buf: Buffer = readFileSync(join(WORK, id, frame));
+      // ?w= serves a nearest-neighbour thumbnail: a 56px strip thumb must not
+      // cost a 400KB decode ×21 — that is what made the jobs board drop
+      // images under load. Full-size stays the default.
+      const w = Number(url.searchParams.get("w"));
+      if (Number.isFinite(w) && w >= 16 && w <= 1024) {
+        const mod = await import("canvas");
+        const img = await mod.loadImage(buf);
+        if (img.width > w) {
+          const cv = mod.createCanvas(w, Math.round((img.height / img.width) * w));
+          const ctx = cv.getContext("2d");
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          buf = cv.toBuffer("image/png");
+        }
+      }
+      // A job's frames never change after it finishes — let the browser keep
+      // them instead of refetching megabytes on every poll-driven rerender.
+      return new NextResponse(new Uint8Array(buf), {
+        headers: { "content-type": "image/png", "cache-control": "public, max-age=86400, immutable" },
+      });
     } catch {
       return NextResponse.json({ error: "no such frame" }, { status: 404 });
     }

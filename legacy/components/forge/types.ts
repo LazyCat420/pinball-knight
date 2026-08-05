@@ -53,6 +53,7 @@ export type Job = {
   fast?: boolean;
   project?: string;
   character?: string;
+  clip?: string;
   progress?: Progress;
   hasPreview?: boolean;
   frames?: string[];

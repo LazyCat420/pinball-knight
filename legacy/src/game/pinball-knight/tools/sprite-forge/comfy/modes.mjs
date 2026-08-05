@@ -87,14 +87,26 @@ const FACINGS = [
   { id: "N", label: "away — N", phrase: "away from the camera (back view)", sks: "back view" },
 ];
 
+/**
+ * The move-set preprompts: one entry per base movement a game character
+ * needs. `action` is what gets injected into the animate template; `clip`
+ * is the game clip the frames land under (stagger is `stumble` never
+ * `hurt`; a block maps onto the game's `crouch`). Tune the words HERE —
+ * the one-click batch below and the preset dropdown both read this table.
+ */
 const ANIMATE_PRESETS = [
-  { id: "walk", label: "walk cycle", action: "walking in place, a steady side-view walk cycle", clip: "walk" },
   { id: "idle", label: "idle sway", action: "standing in place, breathing and swaying gently, an idle animation", clip: "idle" },
+  { id: "walk", label: "walk cycle", action: "walking in place, a steady side-view walk cycle", clip: "walk" },
+  { id: "run", label: "run cycle", action: "running in place, a fast side-view run cycle with a forward lean", clip: "run" },
   { id: "attack", label: "attack", action: "attacking with its weapon, one full swing", clip: "attack" },
-  { id: "stumble", label: "stumble (stagger)", action: "recoiling and stumbling backward as if struck", clip: "stumble" },
+  { id: "stumble", label: "getting hit (stagger)", action: "recoiling and stumbling backward as if struck, hurt", clip: "stumble" },
+  { id: "defend", label: "defend (block)", action: "bracing defensively, guarding against an incoming blow, hunkering down", clip: "crouch" },
   { id: "death", label: "death", action: "dying and collapsing to the ground", clip: "death" },
   { id: "custom", label: "custom action…", action: "", clip: "" },
 ];
+
+/** The one-click batch: every base movement, one job each, in this order. */
+const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
 
 export const MODES = [
   {
@@ -146,6 +158,13 @@ export const MODES = [
       { id: "action", label: "action (editable)", type: "text", placeholder: "hopping forward / attacking with claws…", prefillFrom: "preset" },
       { id: "frames", label: "frames", type: "select", options: [{ id: "17", label: "17 — short" }, { id: "21", label: "21 — default" }, { id: "33", label: "33 — long" }], default: "21" },
     ],
+    // action: "" in every batch entry so the preset's own preprompt wins over
+    // whatever the action box holds from the last single run.
+    batch: {
+      id: "moveset",
+      label: `make the full move set (${MOVESET.length} clips)`,
+      values: MOVESET.map((p) => ({ preset: p.id, action: "" })),
+    },
     etaS: { quality: 450, fast: 90 },
     presets: ANIMATE_PRESETS,
     prompt(params, ctx) {

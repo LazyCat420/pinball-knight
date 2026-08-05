@@ -18,6 +18,7 @@ import { S, GREEN, RED, BLUE, AMBER, GREY } from "./theme";
 import type { Job } from "./types";
 import { CLIP_NAMES } from "./types";
 import { FramePlayer } from "./FramePlayer";
+import { RetryImg } from "./RetryImg";
 
 const STATE_COLOR: Record<Job["state"], { fg: string; bg: string }> = {
   running: BLUE,
@@ -27,6 +28,9 @@ const STATE_COLOR: Record<Job["state"], { fg: string; bg: string }> = {
 };
 
 function clipGuess(job: Job): string {
+  // The preset's declared clip travels on the job (defend → crouch etc.);
+  // guessing from the preset id is the fallback for pre-clip jobs on disk.
+  if (job.clip && (CLIP_NAMES as readonly string[]).includes(job.clip)) return job.clip;
   if (job.mode === "animate") {
     const p = String(job.params?.preset ?? "");
     return (CLIP_NAMES as readonly string[]).includes(p) ? p : "walk";
@@ -150,8 +154,7 @@ function JobCard({
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
               {frames.map((f) => (
                 <div key={f.name}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={f.src} alt={f.name} style={{ width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4 }} />
+                  <RetryImg src={`${f.src}&w=256`} alt={f.name} style={{ width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4 }} />
                   <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                     <button style={{ ...S.btn, fontSize: 11 }} title="chain: next generation starts from this frame" onClick={() => onUseAsInit(f.src)}>
                       → init

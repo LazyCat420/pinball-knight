@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { S, BLUE } from "./theme";
+import { RetryImg } from "./RetryImg";
 
 export function FramePlayer({
   frames,
@@ -43,7 +44,7 @@ export function FramePlayer({
         <div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={frames[idx]?.src}
+            src={frames[idx] ? `${frames[idx].src}&w=384` : undefined}
             alt={`frame ${idx}`}
             style={{ width: 192, height: 192, objectFit: "contain", background: "#fff", borderRadius: 4 }}
           />
@@ -119,8 +120,7 @@ export function FramePlayer({
                     opacity: dim ? 0.35 : 1,
                   }}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={f.src} alt={f.name} style={{ width: 56, height: 56, objectFit: "contain", background: "#fff", borderRadius: 2, display: "block" }} />
+                  <RetryImg src={`${f.src}&w=112`} alt={f.name} style={{ width: 56, height: 56, objectFit: "contain", background: "#fff", borderRadius: 2, display: "block" }} />
                 </button>
               );
             })}
