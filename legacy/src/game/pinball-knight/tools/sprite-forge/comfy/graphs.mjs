@@ -265,7 +265,17 @@ export function wanI2V({
         start_at_step: half, end_at_step: steps, return_with_leftover_noise: "disable",
       },
     },
-    dec: { class_type: "VAEDecode", inputs: { samples: ["kl", 0], vae: ["v", 0] } },
+    // TILED decode, deliberately: decoding a whole 17-33 frame batch at once
+    // is the pipeline's single biggest system-RAM spike, and on 2026-08-05 it
+    // took the 40GB-capped WSL from 8.9GiB available to 1.5 in ten seconds
+    // (the guard's hard floor caught it — this is the fix, not the floor).
+    // 256px tiles on a 640² frame and ≤16 frames per chunk bound the peak;
+    // seams are a non-issue for art that is about to be crushed to a pixel
+    // grid anyway.
+    dec: {
+      class_type: "VAEDecodeTiled",
+      inputs: { samples: ["kl", 0], vae: ["v", 0], tile_size: 256, overlap: 32, temporal_size: 16, temporal_overlap: 4 },
+    },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };
   if (endImage) {
