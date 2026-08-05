@@ -185,22 +185,31 @@ const sched: Sched = (globalThis as any).__forgeSched ?? {
 (globalThis as any).__forgeSched = sched;
 
 /**
- * Idle hygiene: on the 40GB-capped VM an idle ComfyUI with a cached Wan
- * stack RESTS at ~2.8GiB available — fragile enough that any test run or
- * build on the box lands in guard territory. Five minutes after the queue
- * drains, drop the cached models: rapid iteration keeps its warm cache,
- * a walked-away box returns ~22GiB. resident goes null so the next
- * dispatch knows nothing needs freeing.
+ * Idle hygiene: on the 40GB-capped VM an idle ComfyUI with cached stacks
+ * rests LOW — ~2.8GiB after one leg, ~1.5-2.4 after a two-leg session,
+ * which sits under the guard's sustained rule (2.5GiB/60s) and tripped
+ * an idle healthy server twice on 08-05. So the grace is conditional:
+ * a drained queue on a squeezed box frees NOW (a warm cache below the
+ * watchdog line is worth less than the fragility), and only a box with
+ * real headroom keeps the 5-minute warm-cache window for rapid
+ * iteration. resident goes null so the next dispatch knows nothing
+ * needs freeing.
  */
+const IDLE_KEEP_WARM_GIB = 4;
+function idleFree() {
+  sched.resident = null;
+  freeMemory().catch(() => {
+    /* server already down — nothing cached anyway */
+  });
+}
 function scheduleIdleFree() {
   if (sched.idleTimer) clearTimeout(sched.idleTimer);
+  const avail = ramAvailGiB();
+  if (avail !== null && avail < IDLE_KEEP_WARM_GIB) return idleFree();
   sched.idleTimer = setTimeout(() => {
     sched.idleTimer = null;
     if (sched.runningId || sched.parked.length) return;
-    sched.resident = null;
-    freeMemory().catch(() => {
-      /* server already down — nothing cached anyway */
-    });
+    idleFree();
   }, 5 * 60_000);
 }
 
