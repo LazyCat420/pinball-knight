@@ -279,9 +279,12 @@ export function wanI2V({
       class_type: "VRAM_Debug",
       inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["kl", 0] },
     },
+    // tile 128: the fence run still drew ~10GB of system RAM at decode
+    // (bottomed 2.5GiB avail) — per-tile staging shrinks with tile area,
+    // and 128px quarters it again. Sub-tile seams don't survive the crush.
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: 256, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: 128, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };

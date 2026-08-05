@@ -14,10 +14,10 @@
  * Rules, in escalation order (rendering is always the sacrifice — a lost
  * frame re-queues, a frozen host loses everything):
  *
- *   SOFT   wsl avail < 3GiB   (instant)  → interrupt + drop cached models
+ *   SOFT   wsl avail < 2GiB   (instant)  → interrupt + drop cached models
  *          host used > 58GB   (instant)  → same
- *   HARD   wsl avail < 1.5GiB (instant)  → stop the ComfyUI server
- *          wsl avail < 4GiB   sustained 30s → stop
+ *   HARD   wsl avail < 1GiB   (instant)  → stop the ComfyUI server
+ *          wsl avail < 3GiB   sustained 30s → stop
  *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
  * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig) by
@@ -26,7 +26,7 @@
  * interrupted a WORKING job. With the cap, the host tripwire is the real
  * freeze protection; the WSL floors only catch true runaway.
  *
- *   node guard.mjs [--soft 3] [--hard 1.5] [--sustain 4] [--sustain-secs 30]
+ *   node guard.mjs [--soft 2] [--hard 1] [--sustain 3] [--sustain-secs 30]
  *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
@@ -50,9 +50,13 @@ const arg = (name, fallback) => {
 // working run (2026-08-05, smoke 4). Below these, it is genuinely a
 // runaway; the kernel OOM-killing the comfy python (recoverable) and the
 // HOST tripwire (the real freeze protection) are the layers underneath.
-const SOFT_GIB = arg("soft", 3);
-const HARD_GIB = arg("hard", 1.5);
-const SUSTAIN_GIB = arg("sustain", 4);
+// The last calibration inch (smoke 6): the fenced decode still bottoms
+// ~2.5GiB for a few seconds, and 16GB of healthy swap sits behind these
+// numbers — a transient at 2 is survivable, a SUSTAINED squeeze is what
+// the 3GiB/30s rule catches.
+const SOFT_GIB = arg("soft", 2);
+const HARD_GIB = arg("hard", 1);
+const SUSTAIN_GIB = arg("sustain", 3);
 const SUSTAIN_SECS = arg("sustain-secs", 30);
 // 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
 // HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
