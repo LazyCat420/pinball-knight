@@ -96,6 +96,11 @@ function usage(code = 0) {
       `        [--no-defringe] [--defringe #rrggbb] [--defringe-band N] [--defringe-range N]\n` +
       `  trace-set DIR [--grid ID]    a whole pose directory, as one file\n` +
       `        (same flags as trace)\n` +
+      `  trace-manifest NAME-DIR      a PUBLISHED forge sheet down to true pixels\n` +
+      `        [--grid ID|auto] [--colours N] [--palette coldcrypt] [--out FILE]\n` +
+      `        [--clips walk,idle] [--alpha N] [--no-despeckle]\n` +
+      `        e.g. trace-manifest pinball_knight-S — every frame of every clip\n` +
+      `        becomes an editable cell keyed walk0, walk1, …\n` +
       `  render CELL.json [--scale N] [--cell POSE] [--out FILE]\n` +
       `        [--backdrop checker|dark|none|#rrggbb]\n` +
       `        press an authored cell (or a whole traced set) to a PNG\n\n` +
@@ -1016,6 +1021,154 @@ async function runTraceSet(args) {
   );
 }
 
+// ─── trace-manifest ─────────────────────────────────────────
+//
+// The bridge between the two pipelines: a sheet the forge already published
+// (matted, sliced, clip-named) traced down to REAL, hand-editable pixels.
+// Every frame of every clip becomes one AuthoredCell keyed `walk0`, `walk1`…
+// in a single traced set that `render` can press back to a contact PNG.
+//
+// This is deliberately a ONE-WAY export for editing and study: nothing at
+// runtime reads the traced set, and re-publishing edited cells back to a
+// sheet is its own future step. What it buys today is per-frame consistency
+// work — the same figure at the same grid with an inspectable palette,
+// instead of squinting at a 3280px PNG.
+
+/** The grid whose aspect best matches the cells — "auto" resolution. */
+function bestGridFor(cells) {
+  const aspects = cells.map(([x0, y0, x1, y1]) => (x1 - x0 + 1) / (y1 - y0 + 1));
+  aspects.sort((a, b) => a - b);
+  const median = aspects[Math.floor(aspects.length / 2)] ?? 1;
+  let best = "square32";
+  let bd = Infinity;
+  for (const [id, g] of Object.entries(GRIDS)) {
+    const d = Math.abs(g.width / g.height - median);
+    if (d < bd) { bd = d; best = id; }
+  }
+  return best;
+}
+
+async function runTraceManifest(args) {
+  const ref = args.find((arg) => !arg.startsWith("--"));
+  if (!ref) {
+    process.stderr.write("trace-manifest: needs a published sheet (e.g. pinball_knight-S) or a manifest path\n");
+    process.exitCode = 2;
+    return;
+  }
+  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
+  const manPath = ref.endsWith(".json") ? resolve(ref) : join(REPO, "public", "sprites", `${ref}.json`);
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manPath, "utf8"));
+  } catch {
+    process.stderr.write(`trace-manifest: cannot read ${manPath}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  const sheetPath = join(dirname(manPath), manifest.image.split("/").pop());
+  const sheet = await loadImage(sheetPath);
+  const sc = createCanvas(sheet.width, sheet.height);
+  const sctx = sc.getContext("2d");
+  sctx.drawImage(sheet, 0, 0);
+
+  const wanted = argOf(args, "--clips")?.split(",").map((s) => s.trim());
+  const rows = manifest.rows.filter((r) => !wanted || wanted.includes(r.clip));
+  if (!rows.length) {
+    process.stderr.write(`trace-manifest: no rows match --clips ${wanted?.join(",")}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  const gridArg = argOf(args, "--grid") ?? "auto";
+  const gridId = gridArg === "auto" ? bestGridFor(rows.flatMap((r) => r.cells)) : gridArg;
+  const grid = GRIDS[gridId];
+  if (!grid) {
+    process.stderr.write(`trace-manifest: no grid "${gridId}"\n`);
+    process.exitCode = 2;
+    return;
+  }
+  const alphaFloor = Number(argOf(args, "--alpha") ?? 128);
+
+  const cells = {};
+  const skipped = [];
+  const counters = {};
+  for (const row of rows) {
+    for (const rect of row.cells) {
+      const [x0, y0, x1, y1] = rect;
+      const w = x1 - x0 + 1;
+      const h = y1 - y0 + 1;
+      const img = sctx.getImageData(x0, y0, w, h);
+      let rgba = img.data;
+      // A mirror-declared sheet faces the opposite of its dir; the traced set
+      // is in SCREEN orientation, so honour the flag here the same way the
+      // game does at draw time.
+      if (manifest.mirror) {
+        const flipped = new Uint8ClampedArray(rgba.length);
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const a = (y * w + x) * 4;
+            const b = (y * w + (w - 1 - x)) * 4;
+            flipped[b] = rgba[a];
+            flipped[b + 1] = rgba[a + 1];
+            flipped[b + 2] = rgba[a + 2];
+            flipped[b + 3] = rgba[a + 3];
+          }
+        }
+        rgba = flipped;
+      }
+      const n = counters[row.clip] ?? 0;
+      counters[row.clip] = n + 1;
+      const pose = `${row.clip}${n}`;
+      const small = resampleDown(rgba, w, h, grid.width, grid.height, strategyOf(args));
+      const opaque = [];
+      for (let at = 0; at < small.length; at += 4) {
+        if (small[at + 3] >= alphaFloor) opaque.push([small[at], small[at + 1], small[at + 2]]);
+      }
+      if (!opaque.length) { skipped.push(pose); continue; }
+      // Per-frame palettes, same reasoning as trace-set: a shared palette
+      // spends its entries on hues only one frame uses.
+      const { palette, dist } = paletteFor(opaque, args);
+      const ink = {};
+      const lines = [];
+      for (let y = 0; y < grid.height; y++) {
+        let line = "";
+        for (let x = 0; x < grid.width; x++) {
+          const at = (y * grid.width + x) * 4;
+          if (small[at + 3] < alphaFloor) { line += "."; continue; }
+          const index = nearestIn(palette, dist, small[at], small[at + 1], small[at + 2]);
+          const char = ALPHABET[index];
+          if (!char) { line = null; break; }
+          ink[char] = hex(palette[index]);
+          line += char;
+        }
+        if (line === null) { skipped.push(`${pose} (>${ALPHABET.length} colours)`); break; }
+        lines.push(line);
+      }
+      if (lines.length !== grid.height) continue;
+      const finalRows = args.includes("--no-despeckle") ? lines : despeckle(lines, ink).rows;
+      cells[pose] = { id: pose, grid: gridId, ink, rows: finalRows };
+    }
+  }
+
+  const setId = ref.endsWith(".json") ? idFromFile(ref) : ref;
+  const from = manPath.startsWith(REPO + "/") ? manPath.slice(REPO.length + 1) : manPath;
+  const out = resolve(argOf(args, "--out") ?? join(dirname(fileURLToPath(import.meta.url)), "work", `${setId}.traced.json`));
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify({ id: setId, grid: gridId, source: from, cells }, null, 2) + "\n");
+
+  const warnings = [];
+  if (skipped.length) {
+    warnings.push({ code: "CELL_EMPTY", message: `${skipped.length} frame(s) skipped: ${skipped.join(", ")}` });
+  }
+  envelope(
+    {
+      set: setId, grid: gridId, mirrorHonoured: !!manifest.mirror,
+      traced: Object.keys(cells).length, clips: Object.keys(counters), out,
+      next: `render the set:  npm run pixels -- render ${out}`,
+    },
+    warnings,
+  );
+}
+
 // ─── render ─────────────────────────────────────────────────
 
 function drawCell(ctx, cell, ox, oy, scale) {
@@ -1125,6 +1278,9 @@ if (invoked) {
       break;
     case "trace-set":
       await runTraceSet(rest);
+      break;
+    case "trace-manifest":
+      await runTraceManifest(rest);
       break;
     case "render":
       runRender(rest);

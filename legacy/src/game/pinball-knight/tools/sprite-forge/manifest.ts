@@ -48,6 +48,16 @@ export interface SheetManifest {
   /** Optional scale multiplier for rendering sizing standardization. */
   scale?: number;
   /**
+   * Draw every cell horizontally FLIPPED: the source art faces the opposite of
+   * `dir`. `dir` is a screen promise (`E` = seen walking right); a generated
+   * "side profile" sheet picks its own side, and relabelling or repainting the
+   * PNG would break the sidecar's declared rects. Carried from the sidecar by
+   * the publish run; honoured in `render/imported-paints.ts`. Note the engine
+   * additionally derives W as E-mirrored at draw time, so a mirrored E sheet
+   * still yields a correct W.
+   */
+  mirror?: boolean;
+  /**
    * THIS SHEET'S OWN PALETTE — `#rrggbb`, in the order the commit derived it.
    *
    * Present only when the sheet was committed with `derive`, and then it is the

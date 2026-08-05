@@ -7,6 +7,7 @@
   4584
  ],
  "grid": 8,
+ "mirror": true,
  "rows": [
   {
    "clip": "idle",

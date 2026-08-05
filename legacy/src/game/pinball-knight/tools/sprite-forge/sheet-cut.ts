@@ -44,6 +44,18 @@ export interface Sidecar {
   matte?: MatteOptions;
   commit?: boolean | (CommitOptions & { bans?: string[] });
   palette?: string[];
+  /**
+   * The art faces the OPPOSITE of the direction in the filename, so the game
+   * must draw every cell horizontally flipped.
+   *
+   * The manifest's `dir` is a promise about the SCREEN — an `E` sheet is what
+   * the player sees walking right — but a generator asked for "a side profile"
+   * picks its own side and the knight's arrived facing left. Mirroring the
+   * pixels in the inbox PNG would break the declared `rects` provenance and be
+   * silently undone by the next re-prep, so the orientation is DECLARED here
+   * and honoured at draw time instead. See docs/FACING_STANDARD.md.
+   */
+  mirror?: boolean;
 }
 
 /**

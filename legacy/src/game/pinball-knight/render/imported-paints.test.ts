@@ -78,6 +78,50 @@ describe("importedPaints", () => {
     expect(importedPaints([fakeSheet([{ clip: "walk", n: 4 }])])).toBeNull();
   });
 
+  it("draws a mirror:true sheet flipped — the ink swaps sides", () => {
+    // The facing standard says `dir` is a SCREEN promise (an E sheet is what
+    // the player sees walking right), but a generated "side profile" picks its
+    // own side — the knight's arrived facing left. The sidecar declares
+    // `mirror` and this is the runtime half of that contract.
+    const lopsided = (): ImportedSheet => {
+      const s = fakeSheet([{ clip: "idle", n: 1 }]);
+      // Stamp an off-centre mark in the cell's left third.
+      const ctx = (s.image as unknown as { getContext(k: "2d"): CanvasRenderingContext2D }).getContext("2d");
+      ctx.fillStyle = "#101418";
+      ctx.fillRect(12, 12, 20, 76);
+      return s;
+    };
+    const inkCentroidX = (sheet: ImportedSheet): number => {
+      const px = bufferFor(SHIPPED_GRID);
+      const buf = createCanvas(px, px);
+      const ctx = buf.getContext("2d") as unknown as CanvasRenderingContext2D;
+      const p = importedPaints([sheet]);
+      paintInArtSpace(ctx, p!.S.idle![0], px);
+      const d = (ctx as unknown as { getImageData(a: number, b: number, c: number, e: number): ImageData })
+        .getImageData(0, 0, px, px).data;
+      let sum = 0;
+      let n = 0;
+      for (let y = 0; y < px; y++) {
+        for (let x = 0; x < px; x++) {
+          const at = (y * px + x) * 4;
+          // Weight by darkness so the mark dominates the flat block around it.
+          if (d[at + 3] > 8 && d[at] < 96) { sum += x; n++; }
+        }
+      }
+      return n ? sum / n / px : 0.5;
+    };
+    const plain = lopsided();
+    const flipped = lopsided();
+    flipped.manifest.mirror = true;
+    const a = inkCentroidX(plain);
+    const b = inkCentroidX(flipped);
+    // The dark mark sat left of centre; mirrored it must sit right of centre,
+    // and the two centroids must reflect around the cell's own middle.
+    expect(a).toBeLessThan(0.5);
+    expect(b).toBeGreaterThan(0.5);
+    expect(Math.abs(a + b - 1)).toBeLessThan(0.04);
+  });
+
   it("reuses the authored facing for the others, BY REFERENCE", () => {
     const p = importedPaints([fakeSheet([{ clip: "idle", n: 2 }])]);
     // Identity, not equality: startSpriteSheet dedupes on FramePaint identity,

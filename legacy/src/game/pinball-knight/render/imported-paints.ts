@@ -119,22 +119,32 @@ function cellPaint(
   gridN: number,
   filter: ImportFilter,
   atlasGrid: number,
+  mirror: boolean,
 ): FramePaint {
   const p = cellPlacement(cell as [number, number, number, number], k);
   if (filter === "bilinear") {
     // The pre-fix path, verbatim — one smoothed drawImage. Sandbox-only.
     return (ctx) => {
-      ctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+      if (!mirror) {
+        ctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, p.dx, p.dy, p.dw, p.dh);
+        return;
+      }
+      ctx.save();
+      ctx.translate(ART_BOX, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(image, p.sx, p.sy, p.sw, p.sh, ART_BOX - p.dx - p.dw, p.dy, p.dw, p.dh);
+      ctx.restore();
     };
   }
   return (ctx) => {
     const unit = ctx.canvas.width / ART_BOX;
     const dw = Math.max(1, Math.round(p.dw * unit));
     const dh = Math.max(1, Math.round(p.dh * unit));
-    const key = `${p.sx},${p.sy},${dw}x${dh}:${gridN > 1 ? `block${gridN}` : filter}`;
+    const key = `${p.sx},${p.sy},${dw}x${dh}:${gridN > 1 ? `block${gridN}` : filter}${mirror ? ":m" : ""}`;
     let cel = cels.get(key);
     if (!cel) {
-      cel = buildCel(image, p, dw, dh, filter, gridN);
+      const built = buildCel(image, p, dw, dh, filter, gridN);
+      cel = mirror ? flipCel(built) : built;
       cels.set(key, cel);
     }
     // ⚠️ ALIGN THE ORIGIN TO THE CRUSH'S OWN STRIDE — the runtime twin of
@@ -159,6 +169,25 @@ function cellPaint(
     }
     ctx.drawImage(cel, dx, dy, dw / unit, dh / unit);
   };
+}
+
+/**
+ * A horizontally mirrored copy of a cel, flipped ONCE at build time.
+ *
+ * The cel is cached, so paying the flip here instead of a per-frame transform
+ * keeps the paint itself a plain blit — and keeps the snap-to-stride logic in
+ * `cellPaint` working on ordinary positive coordinates.
+ */
+function flipCel(cel: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement("canvas");
+  out.width = cel.width;
+  out.height = cel.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) throw new Error("[dungeon] no 2D context for the mirrored cel");
+  ctx.translate(cel.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(cel, 0, 0);
+  return out;
 }
 
 /** Cut the source cell 1:1, resample it properly, hand back a device-px cel. */
@@ -268,7 +297,10 @@ function clipsFor(
     // made the second row silently REPLACE the first, so an eight-frame attack
     // imported as its back half and half the sheet was packed but unreachable.
     const frames = row.cells.map((c) =>
-      cellPaint(sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter, atlasGrid),
+      cellPaint(
+        sheet.image, c, exact ? k : cellScale(c, k), cels, exact ? gridN : 0, filter, atlasGrid,
+        sheet.manifest.mirror === true,
+      ),
     );
     out[row.clip as ClipName] = [...(out[row.clip as ClipName] ?? []), ...frames];
   }

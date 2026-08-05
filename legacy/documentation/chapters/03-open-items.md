@@ -25,28 +25,40 @@ model swaps. `drift.ts` — the per-cell identity gate.
 evidence that the two shipped modules survive contact with real generated art.
 See *What is not built yet*.
 
-## 2. `CAMERA_BY_DIR` is decided but not wired
+## 2. Side-view art quality: two "E" sheets are not side views
 
-**Impact:** every character generated today still mixes cameras, so it visibly
-teleports when it switches clips mid-combat.
+*(The previous item here — "`CAMERA_BY_DIR` is decided but not wired" — is
+RESOLVED: `f4d55f1` wired it into `comfy/modes.mjs` and `camera-sync.test.ts`
+pins the two copies together.)*
 
-Walk and run are authored from a true side view; attack, stumble and death from
-three-quarter. Each reads best that way *in isolation*, and in isolation is the
-problem — the game does not play one clip, it cuts between them.
+**Impact:** `frog-E` and `stiltneck-E` are FRONT views published under an E
+label, so those creatures look the same walking sideways as walking down.
+Found in the 2026-08-05 roster orientation audit
+(`tools/sprite-forge/docs/FACING_STANDARD.md` has the table).
 
-**Decided 2026-08-05:** one camera per **facing**, not per move. E is side-on, S
-faces the camera, N faces away, and every clip of a facing shares that viewpoint.
-It costs the attack some depth and buys two things: the creature never pops, and
-every cell in a facing becomes geometrically comparable — which is what makes the
-drift gate mean anything.
+The knight and zombie had the worse version of this — genuinely inverted
+side views (facing left under an E label), which made them look backwards
+walking BOTH sideways directions since W is E-mirrored. Those are fixed with
+the sidecar/manifest `mirror` flag; front-views cannot be fixed by a flip.
 
-**Status:** the constant lives in `build-plan.ts`. `comfy/modes.mjs` does not
-read it. `KEYFRAME_MOVES[].camera` is still per-move and still authoritative for
-anything generated today.
+**Next step:** regenerate frog-E and stiltneck-E through `/forge` rotate
+(`CAMERA_BY_DIR` pins the camera; the `<sks>` grammar names the direction),
+then re-run the audit render. Any future sheet: verify against
+`FACING_STANDARD.md` before publishing — the compass workflow exists for
+exactly this.
 
-**Next step:** replace that field with a `CAMERA_BY_DIR` lookup, thread the
-facing through `build(params, ctx)`, and keep a per-move override in the type for
-a deliberate cinematic boss.
+## 2b. The E walk cycle plays at half speed
+
+**Impact:** cosmetic but visible. `pinball_knight-E` authors 6 walk/run
+frames where S and N author 3, all playing at the same `walk: 8` fps
+(`engine/config.ts`), so the side-on stride cycle takes twice as long as the
+front/back one. Neither the knight manifests nor `makeKnightPaints` declare
+`beats`, and the animator only normalises cycle duration when `beats`
+exists (`animator.ts`).
+
+**Next step:** either declare `beats` for imported clips in the manifest, or
+have the animator normalise a clip's cycle to a per-clip duration rather
+than per-frame fps when frame counts differ across facings.
 
 ## 3. A 40-minute build cannot survive a dev-server reload
 
@@ -97,7 +109,28 @@ edited source art, not debris.
 
 **Next step:** find out whose they are and either commit or discard them.
 
-## 7. `__dungeonClips("player")` returns null
+## 7. Co-op peers still render marble rides as a walk cycle
+
+**Impact:** multiplayer only. `render/remote-party.ts`'s `MIRRORED_CLIPS`
+lists only `ball/roll/attack/run`, so a PEER riding a marble body or steel
+ball renders as a walk cycle on your screen. The same defect was fixed for
+multi-ball echoes (`isRideClip()` in `engine/render/animator.ts` derives it
+from the clip name); remote-party should use that predicate instead of its
+own list.
+
+## 8. Traced real-pixel sets are export-only
+
+**Impact:** none yet — this is the road, stated so it isn't rediscovered.
+`npm run pixels -- trace-manifest <name>-<dir>` turns any published sheet
+into hand-editable `AuthoredCell` grids (per-frame, palette-snapped,
+mirror-honouring). Nothing turns an EDITED traced set back into a published
+sheet, so edits made in the text format cannot ship. The missing half is a
+`publish-set` mode: traced set → sheet PNG + declared `rects` sidecar →
+inbox, at which point the whole loop (generate → trace → hand-fix texels →
+republish) closes and the traced set becomes the durable source of truth for
+consistency work across facings.
+
+## 9. `__dungeonClips("player")` returns null
 
 **Impact:** cosmetic, affects verification only. The clip-table probe resolves
 through `SHEET_KEY_BY_KIND`, and `"player"` is not an `EnemyKind`, so the query

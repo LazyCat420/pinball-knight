@@ -6,6 +6,7 @@
   1024,
   3072
  ],
+ "mirror": true,
  "rows": [
   {
    "clip": "walk",

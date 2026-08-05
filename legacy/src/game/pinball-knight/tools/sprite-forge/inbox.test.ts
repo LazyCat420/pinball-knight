@@ -331,6 +331,9 @@ describe("sprite inbox", () => {
         // one for this actor's atlas. Absent means "shared palette", which is
         // every sheet committed before 2026-08-04.
         ...(side?.palette?.length ? { palette: side.palette } : {}),
+        // The art faces the opposite of `dir` and must draw flipped — declared
+        // in the sidecar, honoured by imported-paints. See docs/FACING_STANDARD.md.
+        ...(side?.mirror ? { mirror: true } : {}),
         rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells })),
       };
       if (PUBLISH) {
@@ -413,6 +416,9 @@ describe("sprite inbox", () => {
               ...(c.derived ? { palette: c.palette.map(hexOf) } : {}),
               ...(side.matte ? { matte: side.matte } : {}),
               ...(side.scale !== undefined ? { scale: side.scale } : {}),
+              // A promoted sheet that loses its mirror publishes facing the
+              // wrong way again — same survival rule as `commit` above.
+              ...(side.mirror ? { mirror: true } : {}),
             },
             null,
             1,

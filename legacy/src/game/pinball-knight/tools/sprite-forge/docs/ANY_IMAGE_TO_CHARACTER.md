@@ -56,11 +56,15 @@ end):
 | 4b | Playable character | ✅ `__lab.playAs("frog")`; ⬜ surface in `InGameCard` |
 | 4c | Brand-new monster kind | ⬜ |
 | 5 | Verify in game | ✅ shipped `61b39bf` |
-| **6.1** | **Build plan + camera-per-facing** (`build-plan.ts`) | ✅ types shipped `57b0511`; ⬜ **not wired into `modes.mjs`** |
+| **6.1** | **Build plan + camera-per-facing** (`build-plan.ts`) | ✅ types `57b0511`; ✅ **wired into `modes.mjs` `f4d55f1`** (`camera-sync.test.ts` pins the copies) |
 | **6.2** | **Drift gate** (`drift.ts`) | ✅ shipped + calibrated `57b0511` |
 | **6.3** | **Build planner route** `/api/comfy/build` | ⬜ not started |
 | **6.4** | **Review workspace** (contact sheet, per-cell repair) | ⬜ not started |
 | **6.5** | **Regenerate a character end-to-end through the builder** | ⬜ not started |
+| **7.1** | **Facing standard + `mirror`** (sidecar→manifest→draw) | ✅ shipped 2026-08-05 — see `FACING_STANDARD.md`; knight-E + zombie-E declared |
+| **7.2** | **Compass calibration sheets** (`prep/make-compass.mjs` + `compass.test.ts`) | ✅ shipped — `__lab.playAs("compass")` to verify in-game |
+| **7.3** | **Real pixels: `trace-manifest`** (published sheet → editable `AuthoredCell` set) | ✅ shipped — export-only; ⬜ `publish-set` (edited set → sheet) not started |
+| **7.4** | **Regenerate frog-E / stiltneck-E as true side views** | ⬜ — they are front views under an E label (audit in `FACING_STANDARD.md`) |
 
 ---
 
