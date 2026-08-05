@@ -265,12 +265,16 @@ function pump() {
 }
 
 /**
- * The job-edge RAM gate: a queue is a promise to allocate 15-25GB later,
- * so the honest check happens BEFORE queueing, not when the sampler OOMs.
- * The floor sits above the guard's soft floor on purpose — refusing a new
- * job is cheaper than interrupting a running one.
+ * The dispatch-time RAM gate: tightness means the queued job WAITS, so
+ * this floor decides "is the box being eaten by something ELSE" — and it
+ * must sit BELOW the loaded-model steady state or it deadlocks the queue.
+ * Measured on the 40GB-capped VM: a finished Qwen job idles at 9.3-9.5GiB
+ * available (a 10GiB floor waited on headroom that can never appear —
+ * the next dispatch's own /free is what releases it). 6 clears that state
+ * while still catching genuinely external pressure above the guard's
+ * soft floor (5).
  */
-const RAM_GATE_GIB = Number(process.env.FORGE_RAM_GATE_GIB ?? 10);
+const RAM_GATE_GIB = Number(process.env.FORGE_RAM_GATE_GIB ?? 6);
 function ramAvailGiB(): number | null {
   try {
     const m = /MemAvailable:\s+(\d+) kB/.exec(readFileSync("/proc/meminfo", "utf8"));
