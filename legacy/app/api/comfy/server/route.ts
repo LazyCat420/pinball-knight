@@ -35,7 +35,15 @@ function startGuard() {
   } catch {
     /* unwritable comfy home — run silent rather than not at all */
   }
-  const p = spawn("node", [GUARD()], { detached: true, stdio: ["ignore", out, out] });
+  // Spawned through bash, not `spawn("node", [path])`: Turbopack statically
+  // traces node-script spawns and tries to BUNDLE the target ("server
+  // relative imports are not implemented yet"), which failed every `next
+  // build` of main. bash's argv is opaque to the analyzer, and runScript()
+  // below already spawns bash, so this adds no new runtime dependency.
+  const p = spawn("bash", ["-c", 'exec node "$1"', "bash", GUARD()], {
+    detached: true,
+    stdio: ["ignore", out, out],
+  });
   p.unref();
 }
 
