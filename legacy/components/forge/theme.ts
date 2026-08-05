@@ -6,8 +6,17 @@
 import type React from "react";
 
 export const S = {
+  /**
+   * THE PANEL SCROLLS ITSELF. The game's reset.css locks
+   * `html, body { height: 100%; overflow: hidden }` so the dungeon canvas
+   * cannot be scrolled off — and /forge inherits that lock, which left
+   * everything past the first screenful unreachable except by zooming out.
+   * A fixed-height container with its own overflow-y restores scrolling
+   * here without unlocking the body for the game.
+   */
   page: {
-    minHeight: "100vh",
+    height: "100vh",
+    overflowY: "auto",
     background: "#0a0a0f",
     color: "#c8ccd4",
     fontFamily: "ui-monospace, Consolas, monospace",
