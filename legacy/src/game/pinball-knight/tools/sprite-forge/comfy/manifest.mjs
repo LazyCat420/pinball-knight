@@ -194,6 +194,27 @@ export const LEGS = [
           },
         ],
       },
+      {
+        id: "rot-controlnet",
+        role: "ControlNet — hold the pose and the silhouette (optional)",
+        required: false,
+        options: [
+          {
+            id: "qwen-controlnet-union",
+            name: "InstantX Qwen-Image ControlNet-Union",
+            file: "controlnet/qwen_image_controlnet_union.safetensors",
+            bytes: 3536027816,
+            url: HF("InstantX/Qwen-Image-ControlNet-Union", "diffusion_pytorch_model.safetensors"),
+            license: "Apache-2.0",
+            note:
+              "canny / soft-edge / depth / pose in one, at strength 0.4-1.0. The 08-03 report's own remedy for " +
+              "'when prompts drift' — and the same pairing mor-o's 24GB pipeline uses for pose control. " +
+              "Trained on Qwen-Image BASE and community-proven on Edit 2509, so its behaviour on our 2511 quant " +
+              "is the thing to BENCH, not assume. Canny needs no preprocessor (ComfyUI ships the node); depth " +
+              "and openpose maps would need comfyui_controlnet_aux installed as well.",
+          },
+        ],
+      },
     ],
   },
   {
