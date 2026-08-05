@@ -123,6 +123,56 @@ matrix with an **empty benchmark table**, so measure throughput yourself rather
 than assuming; and `llama.cpp` + Qwen3-VL GGUF + mmproj on the Jetson CUDA
 backend has a live garbage-output bug — test that path before building on it.
 
+## Direction work: from a standard to a full four-way roster
+
+The facing standard shipped 2026-08-05
+(`tools/sprite-forge/docs/FACING_STANDARD.md`) and fixed the knight. What it
+did NOT do is give every creature real art for every direction — it made the
+gap legible instead of invisible. In the order it should be walked:
+
+### D1. Regenerate the two front-view "E" sheets — not started
+
+`frog-E` and `stiltneck-E` are camera-facing art published under an E label,
+so those creatures look identical walking sideways and walking down. A mirror
+cannot fix a front view. Regenerate through `/forge` rotate (`CAMERA_BY_DIR`
+already pins one camera per facing; the `<sks>` grammar names the direction),
+then re-render the audit strip in `FACING_STANDARD.md`.
+
+**Done when** every E sheet in that table reads "correct", by looking at it.
+
+### D2. Author N for the monsters — not started
+
+Only the knight has an N sheet. Every monster reuses another facing for it
+(`importedPaints`' `ORDER` fallback, and the boot log says so out loud), so a
+zombie walking away from the camera still faces you. This is deliberate — the
+module refuses to invent facings — but it is a gap, not a resting state.
+
+**Done when** the boot log stops saying "other facings reuse it" for the
+kinds in `IMPORTED_ART`.
+
+### D3. Normalise cycle length across facings — not started
+
+The knight's E walk has 6 frames where S and N have 3, all at one fps, so the
+side-on stride runs at half speed (open items §2b). Either declare `beats` on
+imported clips or normalise a clip's cycle duration when frame counts differ.
+This is the last thing that makes a turn look like a different animation
+rather than the same walk from another angle.
+
+### D4. Close the real-pixel loop — not started
+
+`trace-manifest` exports a published sheet to editable `AuthoredCell` grids
+today. The missing half is `publish-set`: traced set → sheet PNG + declared
+`rects` sidecar → inbox. With it, the loop closes —
+
+    generate → publish → trace to real pixels → hand-fix texels → republish
+
+— and a traced set becomes the durable source of truth for consistency work
+across facings, which is exactly the per-frame surface D1–D3 need. The reason
+to want text: a facing mismatch is a diff, not a re-render.
+
+**Done when** a texel edited by hand in a traced set survives a republish and
+shows up in game.
+
 ## Consistency work, gated on measurement
 
 Do none of these until a real build has run and been culled. Each is justified by
