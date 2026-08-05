@@ -166,8 +166,20 @@ async function runJob(id: string, graph: any, clientId: string) {
  * re-uploaded images, which is the user's one click anyway.
  */
 type Parked = { id: string; graph: unknown; clientId: string; leg: string };
-type Sched = { resident: string | null; runningId: string | null; parked: Parked[]; warmedLeg: string | null };
-const sched: Sched = (globalThis as any).__forgeSched ?? { resident: null, runningId: null, parked: [], warmedLeg: null };
+type Sched = {
+  resident: string | null;
+  runningId: string | null;
+  parked: Parked[];
+  warmedLeg: string | null;
+  gateTimer: ReturnType<typeof setTimeout> | null;
+};
+const sched: Sched = (globalThis as any).__forgeSched ?? {
+  resident: null,
+  runningId: null,
+  parked: [],
+  warmedLeg: null,
+  gateTimer: null,
+};
 (globalThis as any).__forgeSched = sched;
 
 /** The chosen model files a leg loads — what prefetch warms. */
@@ -205,6 +217,19 @@ function prefetchLeg(leg: string) {
 
 function pump() {
   if (sched.runningId || !sched.parked.length) return;
+  // Dispatch-time RAM gate: a dispatch is the moment 15-25GB gets promised,
+  // so tightness here means WAIT (the job stays queued and visible), not
+  // fail — load transients pass in seconds.
+  const avail = ramAvailGiB();
+  if (avail !== null && avail < RAM_GATE_GIB) {
+    if (!sched.gateTimer) {
+      sched.gateTimer = setTimeout(() => {
+        sched.gateTimer = null;
+        pump();
+      }, 15_000);
+    }
+    return;
+  }
   // Drain the resident leg first; switch only when it has nothing left.
   let idx = sched.parked.findIndex((p) => p.leg === sched.resident);
   const switching = idx < 0;
@@ -257,14 +282,16 @@ function ramAvailGiB(): number | null {
 
 export async function POST(req: Request) {
   if (!backendPresent()) return NextResponse.json({ error: "no backend on this machine" }, { status: 404 });
+  // Accepting a job costs nothing until dispatch (the scheduler holds it),
+  // so POST only refuses when the box is ALREADY squeezed past the guard's
+  // own soft floor — everything milder waits in the queue instead.
   const avail = ramAvailGiB();
-  if (avail !== null && avail < RAM_GATE_GIB) {
+  if (avail !== null && avail < 4) {
     return NextResponse.json(
       {
         error:
-          `RAM guard: only ${avail.toFixed(1)}GiB of system RAM is available (floor ${RAM_GATE_GIB}GiB). ` +
-          `A generation stack needs 15-25GB — close whatever is eating RAM (tests, other sessions) or stop/start ` +
-          `the backend to drop cached models, then retry.`,
+          `RAM guard: only ${avail.toFixed(1)}GiB of system RAM is available — the box is squeezed. ` +
+          `Close whatever is eating RAM (tests, other sessions), or stop/start the backend to drop cached models.`,
       },
       { status: 503 },
     );

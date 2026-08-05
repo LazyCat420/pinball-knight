@@ -14,14 +14,21 @@
  * Rules, in escalation order (rendering is always the sacrifice — a lost
  * frame re-queues, a frozen host loses everything):
  *
- *   SOFT   wsl avail < 8GiB   (instant)  → interrupt + drop cached models
+ *   SOFT   wsl avail < 5GiB   (instant)  → interrupt + drop cached models
  *          host used > 58GB   (instant)  → same
- *   HARD   wsl avail < 4GiB   (instant)  → stop the ComfyUI server
- *          wsl avail < 10GiB  sustained 20s → stop
+ *   HARD   wsl avail < 2.5GiB (instant)  → stop the ComfyUI server
+ *          wsl avail < 6GiB   sustained 30s → stop
  *          host used > 60GB   sustained ~15s (3 samples) → stop
  *
- *   node guard.mjs [--soft 8] [--hard 4] [--sustain 10] [--sustain-secs 20]
- *                  [--host-soft-used 56] [--host-hard-used 60] [--once]
+ * WSL floors are calibrated to the 40GB-CAPPED VM (post-.wslconfig):
+ * a normal Wan expert load dips to ~8GiB available for ~20s while the
+ * host sits safely in the mid-50s — measured 2026-08-05, and the previous
+ * floors (8/4, sustain 10) killed that healthy load. With the cap, the
+ * host tripwire is the real protection; these floors only exist to stop
+ * WSL-internal OOM thrash.
+ *
+ *   node guard.mjs [--soft 5] [--hard 2.5] [--sustain 6] [--sustain-secs 30]
+ *                  [--host-soft-used 58] [--host-hard-used 60] [--once]
  *
  * State for the panel: heartbeat ~/comfy/guard.json each poll (with
  * hostUsedGB when known), trip record ~/comfy/guard-tripped.json (cleared
@@ -38,10 +45,10 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? Number(process.argv[i + 1]) : fallback;
 };
-const SOFT_GIB = arg("soft", 8);
-const HARD_GIB = arg("hard", 4);
-const SUSTAIN_GIB = arg("sustain", 10);
-const SUSTAIN_SECS = arg("sustain-secs", 20);
+const SOFT_GIB = arg("soft", 5);
+const HARD_GIB = arg("hard", 2.5);
+const SUSTAIN_GIB = arg("sustain", 6);
+const SUSTAIN_SECS = arg("sustain-secs", 30);
 // 58, not lower: with .wslconfig capping WSL at 40GB, a fully loaded but
 // HEALTHY box peaks ~57GB host used (40 + Windows baseline) — a softer
 // floor would strike legitimate generation on every run.
