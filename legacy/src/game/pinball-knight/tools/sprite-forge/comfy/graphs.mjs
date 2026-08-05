@@ -208,6 +208,7 @@ export function wanI2V({
   endImage = null,
   prompt,
   negative = "static, frozen, watermark, text, extra character, split screen",
+  extraNegative = null,
   width = 640,
   height = 640,
   length = 21,
@@ -241,7 +242,7 @@ export function wanI2V({
     v: { class_type: "VAELoader", inputs: { vae_name: MODELS.wanVae } },
     img: { class_type: "LoadImage", inputs: { image } },
     pos: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: prompt } },
-    neg: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: negative } },
+    neg: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: extraNegative ? `${negative}, ${extraNegative}` : negative } },
     i2v: {
       class_type: endImage ? "WanFirstLastFrameToVideo" : "WanImageToVideo",
       inputs: {

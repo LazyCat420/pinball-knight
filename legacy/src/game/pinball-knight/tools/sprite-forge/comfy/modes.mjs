@@ -96,8 +96,26 @@ const FACINGS = [
  */
 const ANIMATE_PRESETS = [
   { id: "idle", label: "idle sway", action: "standing in place, breathing and swaying gently, an idle animation", clip: "idle" },
-  { id: "walk", label: "walk cycle", action: "walking in place, a steady side-view walk cycle", clip: "walk" },
-  { id: "run", label: "run cycle", action: "running in place, a fast side-view run cycle with a forward lean", clip: "run" },
+  // Walk/run describe MECHANICS, not mood: "walking in place, smooth" reads
+  // as "keep everything anchored" and the model glides the feet along the
+  // floor (measured on the frog, 08-05). Lift-and-plant language plus an
+  // explicit slide ban in `avoid` is what buys visible leg motion.
+  {
+    id: "walk",
+    label: "walk cycle",
+    action:
+      "walking with a springy exaggerated stride, knees lifting high, each foot clearly rising off the ground and planting down again, a full two-step side-view walk cycle",
+    avoid: "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging",
+    clip: "walk",
+  },
+  {
+    id: "run",
+    label: "run cycle",
+    action:
+      "sprinting with a forward lean, knees driving high, feet clearly leaving the ground with a moment of flight in each stride, a full two-step side-view run cycle",
+    avoid: "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging",
+    clip: "run",
+  },
   { id: "attack", label: "attack", action: "attacking with its weapon, one full swing", clip: "attack" },
   { id: "stumble", label: "getting hit (stagger)", action: "recoiling and stumbling backward as if struck, hurt", clip: "stumble" },
   { id: "defend", label: "defend (block)", action: "bracing defensively, guarding against an incoming blow, hunkering down", clip: "crouch" },
@@ -177,9 +195,11 @@ export const MODES = [
       );
     },
     build(params, ctx) {
+      const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
       return wanI2V({
         image: ctx.images.init,
         prompt: this.prompt(params, ctx),
+        extraNegative: preset?.avoid ?? null,
         length: Number(params.frames) || 21,
         seed: ctx.seed,
         unetHigh: ctx.unet("anim-high") ?? undefined,
