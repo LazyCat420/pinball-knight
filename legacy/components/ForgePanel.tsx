@@ -29,10 +29,11 @@ import { GenerateCard, type SlotId } from "./forge/GenerateCard";
 import { JobsBoard } from "./forge/JobsBoard";
 import { LibraryCard } from "./forge/LibraryCard";
 import { SheetTray } from "./forge/SheetTray";
+import { IntakeCard } from "./forge/IntakeCard";
 import { InGameCard } from "./forge/InGameCard";
 import { ModelsCard, SettingsCard, StatusCard } from "./forge/BackendCards";
 
-type Tab = "generate" | "sheet" | "backend";
+type Tab = "intake" | "generate" | "sheet" | "backend";
 
 export default function ForgePanel() {
   const [m, setM] = useState<Manifest | null>(null);
@@ -176,6 +177,39 @@ export default function ForgePanel() {
     void refresh();
   };
 
+  /**
+   * Fire a GPU mode and WAIT for its first output frame.
+   *
+   * Intake is a chain, not a board: the cut-out feeds the reframe feeds the QA,
+   * and there is nothing partial worth showing in between. Everywhere else the
+   * jobs board is the right shape — a rotation is minutes and you want to watch
+   * it — so this variant lives here rather than replacing `launch`.
+   */
+  const launchAndWait = async (body: Record<string, unknown>): Promise<string | null> => {
+    const r = await postJSON("/api/comfy/generate", {
+      ...body,
+      project: library.activeProject ?? undefined,
+      character: activeCharacter ?? undefined,
+    });
+    const id = (r.jobIds ?? [r.jobId])[0];
+    void refresh();
+    for (let i = 0; i < 600; i++) {
+      await new Promise((res) => setTimeout(res, 2000));
+      const s = await (await fetch(`/api/comfy/generate?id=${id}`)).json();
+      if (s.state === "running" || s.state === "queued") continue;
+      if (s.state !== "done" || !s.frames?.length) {
+        say(s.error ?? `job ${s.state}`);
+        return null;
+      }
+      // The cut-out saves BOTH a cutout and a mask; the cutout is the one that
+      // carries alpha, so name-match rather than trusting order.
+      const want = s.frames.find((f: string) => f.includes("cut")) ?? s.frames[0];
+      return urlToB64(`/api/comfy/generate?id=${id}&frame=${want}`);
+    }
+    say("timed out waiting for the job");
+    return null;
+  };
+
   const keep = async (id: string, job: Job) => {
     const character = job.character ?? activeCharacter;
     if (!character) return say("select a character in the library first — keep needs to know whose art this is");
@@ -226,7 +260,7 @@ export default function ForgePanel() {
           </span>
           {runningN > 0 && <span style={S.chip("#9fd0ff", "#16202b")}>{runningN} generating</span>}
           <span style={{ flex: 1 }} />
-          {(["generate", "sheet", "backend"] as Tab[]).map((t) => (
+          {(["intake", "generate", "sheet", "backend"] as Tab[]).map((t) => (
             <button key={t} style={{ ...S.btn, ...(tab === t ? S.btnGreen : {}) }} onClick={() => setTab(t)}>
               {t}
               {t === "sheet" && tray.length > 0 ? ` (${tray.length})` : ""}
@@ -296,6 +330,22 @@ export default function ForgePanel() {
               onKeep={keep}
             />
           </>
+        )}
+
+        {tab === "intake" && (
+          <IntakeCard
+            modes={modes}
+            reachable={m.comfy.reachable}
+            say={say}
+            onLaunch={launchAndWait}
+            onUseAsInit={async (b64) => {
+              setImage("init", b64);
+              setMask(null);
+              setTab("generate");
+              requestMode("keyframes");
+              say("intake frame is the character — keyframes mode");
+            }}
+          />
         )}
 
         {tab === "sheet" && (

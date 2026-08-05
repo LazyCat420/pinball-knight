@@ -47,13 +47,13 @@ end):
 |---|---|---|
 | 0.0 | This document | ✅ done |
 | 0.1 | Knight published art is dead (sidecars, not manifests) | ⬜ blocked — parallel session owns those files |
-| 0.2 | Sheet tray cannot reach crush controls | ⬜ |
-| 0.3 | `KNOWN_CLIPS` missing `ball` | ⬜ |
-| 1 | Intake: any image → one clean idle frame | ⬜ |
+| 0.2 | Sheet tray cannot reach crush controls | ✅ shipped |
+| 0.3 | `KNOWN_CLIPS` missing `ball` | ✅ shipped |
+| 1 | Intake: any image → one clean idle frame | ✅ shipped + proven live |
 | 2 | Move sets from one idle frame | ✅ shipped `a2ada3b` |
 | 3 | Assembly + crush | ✅ shipped (needs 0.2 for full control) |
 | 4a | Reskin an existing monster | ✅ works; ⬜ panel should write the map entry |
-| 4b | Playable character | ⬜ |
+| 4b | Playable character | ✅ `__lab.playAs("frog")` |
 | 4c | Brand-new monster kind | ⬜ |
 | 5 | Verify in game | ✅ shipped `61b39bf` |
 
@@ -76,7 +76,7 @@ Introduced by `ef6ebfd`; the correct shape existed at `af36998`.
 > touching them. Fix = re-publish via `npm run sprites`, then confirm the boot line
 > `[dungeon] player: imported pinball_knight art loaded`.
 
-### 0.2 The panel cannot reach the crush controls ⬜
+### 0.2 The panel cannot reach the crush controls ✅
 
 `components/forge/SheetTray.tsx:97` hardcodes `sidecar = { rows: rowsInUse }`. So
 `commit.derive`, `commit.mode`, matte tolerance and `rects` are unreachable from the UI.
@@ -85,7 +85,7 @@ Measured on the frog (2026-08-05): `derive: 20` took the sheet from 32 → 20 pa
 entries, isolated texels 24.8% → 16.4%, run length 1.58 → 1.74, and the verdict from
 "resampled" to **`imports 1:1 at atlas grid ≥ 84`**. This is not a nicety.
 
-### 0.3 `KNOWN_CLIPS` is missing `ball` ⬜
+### 0.3 `KNOWN_CLIPS` is missing `ball` ✅
 
 `tools/sprite-forge/labels.ts:23` omits it while `PLAYABLE`
 (`render/imported-paints.ts:284`) accepts it — a `ball` row is reported as an unknown clip
@@ -93,7 +93,7 @@ yet works at runtime. Matters for the player path.
 
 ---
 
-## Stage 1 — Intake: any image → one clean idle frame ⬜
+## Stage 1 — Intake: any image → one clean idle frame ✅
 
 The largest piece, and the one that makes "any image" true.
 
@@ -140,12 +140,12 @@ is strict:
 Verified present on this box 2026-08-05 (`/object_info`): `LoadBackgroundRemovalModel`,
 `RemoveBackground`, `InvertMask`, `JoinImageWithAlpha`, `MaskToImage`, `ThresholdMask`,
 `GrowMask` — all core, from [Comfy-Org/ComfyUI#12747](https://github.com/Comfy-Org/ComfyUI/pull/12747).
-The loader's model list is currently **empty**: node support is there, the weight is not.
+Sizes below were fetched from the HF API on 2026-08-05, not recalled.
 
 | model | file | bytes | licence | note |
 |---|---|---|---|---|
-| BiRefNet | `background_removal/birefnet.safetensors` | 465,567,744 | MIT | the default |
-| Lucida | `background_removal/lucida.safetensors` | 926,105,600 | MIT | finetune for transparent objects, glow/VFX, **illustrations** — our hard half |
+| BiRefNet | `background_removal/birefnet.safetensors` | 444,473,596 | MIT | the default — installed |
+| Lucida | `background_removal/lucida.safetensors` | 884,878,856 | MIT | finetune for transparent objects, glow/VFX, **illustrations** — our hard half |
 
 Rejected: [`1038lab/ComfyUI-RMBG`](https://github.com/1038lab/ComfyUI-RMBG) is more capable
 but **GPL-3.0**, which fails the bar `comfy/manifest.mjs`'s header sets, and it puts
@@ -249,10 +249,17 @@ widget `SheetTray.tsx:294-301` already renders).
 Nothing restarts: each card holds its own output, and stepping back keeps everything
 before it.
 
-**Suggested build order** (geometry first so the whole half is testable and demoable
-before any model downloads): `blobs.ts` + `intake.ts` + tests → `reframe`/`qa` ops →
-manifest entry + model download → `graphs.mjs bgRemove` + `segment` mode → `IntakeCard`
-stage 1 → `intake-style` + stage 2.
+> [!TIP]
+> **PROVEN LIVE 2026-08-05.** A 900×1200 photo-like source — gradient sky, textured
+> ground, a distractor rock, a cast shadow, character off-centre at 38% height — was
+> correctly **REJECTED** raw (6 named failures), then `prep` → `segment` (9s on BiRefNet)
+> → `reframe` returned **READY** with all nine checks green: one figure, 72.0% tall,
+> feet at y=921 (want 922), centred at 512, 1.9× upscale. The rock and the shadow are
+> gone. That is the whole claim of this stage.
+
+Build order used (geometry first, so the whole half was testable before any model
+downloaded): `blobs.ts` + `intake.ts` + 15 tests → `reframe`/`qa` ops → manifest entry +
+model download → `graphs.mjs bgRemove` + `segment` mode → `IntakeCard`.
 
 ---
 
@@ -290,7 +297,7 @@ loads, survives `importedPaints`, and has an `idle` on every facing. Sheets publ
 *not* listed are inert — `stiltneck` ships in exactly that state
 (`boot/sheets.ts:313-326`). ⬜ The panel should write this entry.
 
-### 4b. Playable character ⬜ (≈1 day — the path exists)
+### 4b. Playable character ✅ shipped
 
 `render/knight-sheets.ts:93` `resolvePaints` already merges **imported clips over the
 painter's**, and the painter backfills every ride form. The only blocker:
