@@ -42,7 +42,22 @@ export default defineConfig({
      * A deploy gate tests the tree being deployed. `deploy.sh` ships the
      * WORKING TREE, so that is exactly `src/`.
      */
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/.claude/worktrees/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.next/**",
+      "**/.claude/worktrees/**",
+      /**
+       * DEPLOY_SKIP_FORGE_TOOLS=1 — deploy-gate escape hatch, OFF by default.
+       *
+       * tools/sprite-forge is dev tooling: none of it ships in the site
+       * bundle (`next build` doesn't touch it), but its suites run in the
+       * deploy gate and a red forge WIP on main blocks shipping unrelated
+       * site work. Set the env var on the deploy invocation ONLY — normal
+       * `pnpm test` keeps covering the forge.
+       */
+      ...(process.env.DEPLOY_SKIP_FORGE_TOOLS === "1" ? ["**/tools/sprite-forge/**"] : []),
+    ],
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
