@@ -97,6 +97,7 @@ export function GenerateCard({
   setImage,
   mask,
   setMask,
+  modeRequest,
   onLaunch,
   say,
 }: {
@@ -106,6 +107,7 @@ export function GenerateCard({
   setImage: (slot: SlotId, b64: string | null) => void;
   mask: string | null;
   setMask: (b64: string | null) => void;
+  modeRequest: { id: string; params?: Record<string, string>; n: number } | null;
   onLaunch: (body: Record<string, unknown>) => Promise<void>;
   say: (s: string) => void;
 }) {
@@ -139,6 +141,22 @@ export function GenerateCard({
     for (const f of mode.fields) next[f.id] = f.default ?? "";
     setParams(next);
   }, [mode]);
+
+  // A frame action elsewhere (→ last, ✎ fix, ↻ pose) steers this card:
+  // switch mode and, once its defaults have landed, lay the requested
+  // params (e.g. the pose text) on top.
+  const handledReq = useRef(0);
+  useEffect(() => {
+    if (!modeRequest || handledReq.current === modeRequest.n) return;
+    handledReq.current = modeRequest.n;
+    setModeId(modeRequest.id);
+    if (modeRequest.params) {
+      const merge = modeRequest.params;
+      // Defaults for a newly-selected mode apply in the effect above on the
+      // next render; queue the merge behind them.
+      setTimeout(() => setParams((p) => ({ ...p, ...merge })), 0);
+    }
+  }, [modeRequest]);
 
   if (!mode) return null;
   const useFast = fast && mode.fastAvailable;

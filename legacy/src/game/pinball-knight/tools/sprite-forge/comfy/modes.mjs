@@ -126,6 +126,73 @@ const ANIMATE_PRESETS = [
 /** The one-click batch: every base movement, one job each, in this order. */
 const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
 
+/**
+ * Pose scripts for the keyframe-sheet mode: 4 EXTREME poses per move —
+ * the classic animator's keys, not in-betweens. The in-between mode fills
+ * the middles later, so these deliberately disagree with each other as
+ * much as the move allows; timid keys are what make motion slide.
+ * `clip` files the cut cells under the right game clip, like the animate
+ * presets do.
+ */
+const KEYFRAME_MOVES = [
+  {
+    id: "walk",
+    label: "walk cycle keys",
+    clip: "walk",
+    poses: [
+      "right foot planted far forward, left leg trailing behind, body leaning into the step",
+      "passing pose: left knee lifted high in front, standing tall on the right foot",
+      "left foot planted far forward, right leg trailing behind, body leaning into the step",
+      "passing pose: right knee lifted high in front, standing tall on the left foot",
+    ],
+  },
+  {
+    id: "run",
+    label: "run cycle keys",
+    clip: "run",
+    poses: [
+      "full sprint stride, right leg extended far forward, left leg kicked back, both feet off the ground",
+      "touchdown: right foot landing under the body, left knee driving forward, deep forward lean",
+      "full sprint stride mirrored, left leg extended far forward, right leg kicked back, both feet off the ground",
+      "touchdown mirrored: left foot landing under the body, right knee driving forward, deep forward lean",
+    ],
+  },
+  {
+    id: "attack",
+    label: "attack keys",
+    clip: "attack",
+    poses: [
+      "ready stance, weapon held low and coiled",
+      "wind-up: twisted back, weapon raised high behind the head",
+      "strike: weapon swung fully forward and extended, body lunging",
+      "follow-through: weapon past the target, body unwinding off balance",
+    ],
+  },
+  {
+    id: "stumble",
+    label: "getting-hit keys",
+    clip: "stumble",
+    poses: [
+      "upright, flinching as if just struck in the chest",
+      "reeling backward, arms flung out, one foot lifting",
+      "deep backward lean, almost falling, face turned away",
+      "catching balance again, crouched, one hand low for support",
+    ],
+  },
+  {
+    id: "death",
+    label: "death keys",
+    clip: "death",
+    poses: [
+      "struck hard, arching backward",
+      "crumpling, knees buckling under the body",
+      "collapsed onto knees, slumping forward",
+      "lying flat on the ground, fully collapsed",
+    ],
+  },
+  { id: "custom", label: "custom poses…", clip: "", poses: [] },
+];
+
 export const MODES = [
   {
     id: "rotate",
@@ -236,6 +303,42 @@ export const MODES = [
         unetHigh: ctx.unet("anim-high") ?? undefined,
         unetLow: ctx.unet("anim-low") ?? undefined,
         ...wanBundle(ctx),
+      });
+    },
+  },
+  {
+    id: "keyframes",
+    title: "keyframes",
+    blurb: "one sheet of 4 drastically different poses, denoised together so they can't drift — cut it, then in-between pairs",
+    leg: "qwen",
+    needs: { init: true },
+    fields: [
+      { id: "preset", label: "move", type: "select", options: KEYFRAME_MOVES.map((p) => ({ id: p.id, label: p.label })), default: "walk" },
+      { id: "custom", label: "custom poses (numbered)", type: "text", placeholder: "(1) crouched low (2) leaping (3) mid-air tuck (4) landing…", showIf: { preset: "custom" } },
+    ],
+    etaS: { quality: 260, fast: 100 },
+    presets: KEYFRAME_MOVES,
+    prompt(params) {
+      const move = KEYFRAME_MOVES.find((p) => p.id === params.preset);
+      const list = params.preset === "custom" ? String(params.custom ?? "") : move?.poses.map((p, i) => `(${i + 1}) ${p}`).join(", ") ?? "";
+      // Labels stay OUT of the pixels on purpose: the slicer imports
+      // beside-row text as a frame (README), and the row's identity
+      // already travels on the job as metadata.
+      return (
+        `A pixel art sprite sheet: the same character drawn 4 times in a single horizontal row, evenly spaced ` +
+        `on a plain white background, identical size and colors in every frame, feet on one shared baseline. ` +
+        `The four poses, left to right: ${list}. Large, clearly different poses — no text, no labels, no numbers in the image.`
+      );
+    },
+    build(params, ctx) {
+      return qwenEdit({
+        image: ctx.images.init,
+        prompt: this.prompt(params, ctx),
+        width: 1344,
+        height: 768,
+        seed: ctx.seed,
+        unet: ctx.unet("rot-unet") ?? undefined,
+        ...qwenBundle(ctx),
       });
     },
   },

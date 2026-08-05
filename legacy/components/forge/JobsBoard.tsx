@@ -19,6 +19,46 @@ import type { Job } from "./types";
 import { CLIP_NAMES } from "./types";
 import { FramePlayer } from "./FramePlayer";
 import { RetryImg } from "./RetryImg";
+import { postJSON, urlToB64 } from "./api";
+
+/**
+ * Cut a keyframe sheet into per-pose cells, client-side: the pipeline's
+ * cut op finds the rects (the REAL slicer — same failure modes, same
+ * fixes), the browser crops them onto white. Returned as data URLs so
+ * every existing frame action (→ init, fetch, + sheet) works unchanged —
+ * fetch() accepts data: URLs.
+ */
+async function cutSheetToCells(frameSrc: string, clip: string): Promise<string[]> {
+  const b64 = await urlToB64(frameSrc);
+  const cut = await postJSON("/api/comfy/pipeline", { op: "cut", sheetB64: b64, sidecar: { rows: [clip || "idle"] } });
+  const rects: number[][] = (cut.rows ?? []).flatMap((r: { cells: number[][] }) => r.cells);
+  if (!rects.length) throw new Error(`cut found no cells${cut.warnings?.length ? ` — ${cut.warnings[0]}` : ""}`);
+  const img = new Image();
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = rej;
+    img.src = `data:image/png;base64,${b64}`;
+  });
+  const PAD = 12;
+  return rects.map(([x0, y0, x1, y1]) => {
+    const cv = document.createElement("canvas");
+    cv.width = x1 - x0 + PAD * 2;
+    cv.height = y1 - y0 + PAD * 2;
+    const ctx = cv.getContext("2d")!;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, PAD, PAD, x1 - x0, y1 - y0);
+    return cv.toDataURL("image/png");
+  });
+}
+
+/** Pose text for cell i, recovered from the job's own resolved prompt. */
+function poseLine(job: Job, i: number): string {
+  const m = /left to right: (.*?)\. Large/.exec(job.resolvedPrompt ?? "");
+  if (!m) return "";
+  const parts = m[1].split(/\(\d\)\s*/).filter((s) => s.trim());
+  return (parts[i] ?? "").replace(/,\s*$/, "").trim();
+}
 
 const STATE_COLOR: Record<Job["state"], { fg: string; bg: string }> = {
   queued: GREY,
@@ -46,6 +86,9 @@ function JobCard({
   onCancel,
   onReroll,
   onUseAsInit,
+  onUseAsLast,
+  onFixFrame,
+  onRedoPose,
   onAddToTray,
   onKeep,
 }: {
@@ -55,11 +98,16 @@ function JobCard({
   onCancel: (id: string) => void;
   onReroll: (id: string, job: Job) => void;
   onUseAsInit: (src: string) => void;
+  onUseAsLast: (src: string) => void;
+  onFixFrame: (src: string) => void;
+  onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
 }) {
   const [clip, setClip] = useState(clipGuess(job));
   const [showPrompt, setShowPrompt] = useState(false);
+  const [cells, setCells] = useState<string[] | null>(null);
+  const [cutting, setCutting] = useState<string | null>(null);
   const c = STATE_COLOR[job.state] ?? GREY;
   const frames = (job.frames ?? []).map((f) => ({ name: f, src: `/api/comfy/generate?id=${id}&frame=${f}` }));
   const elapsed = job.startedAt ? Math.round((Date.now() - job.startedAt) / 1000) : null;
@@ -168,6 +216,55 @@ function JobCard({
               ))}
             </div>
           )}
+          {job.mode === "keyframes" && (
+            <div style={{ marginTop: 8 }}>
+              {!cells && (
+                <button
+                  style={{ ...S.btn, ...S.btnGreen }}
+                  disabled={cutting !== null}
+                  onClick={async () => {
+                    setCutting("cutting…");
+                    try {
+                      setCells(await cutSheetToCells(frames[0].src, clip));
+                    } catch (e: any) {
+                      setCutting(null);
+                      return alert(e.message);
+                    }
+                    setCutting(null);
+                  }}
+                >
+                  {cutting ?? "✂ cut into keyframes"}
+                </button>
+              )}
+              {cells && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {cells.map((c2, i) => (
+                    <div key={i} style={{ textAlign: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={c2} alt={`key ${i + 1}`} title={poseLine(job, i)} style={{ width: 104, height: 104, objectFit: "contain", background: "#fff", borderRadius: 4, imageRendering: "pixelated" }} />
+                      <div style={{ display: "flex", gap: 3, marginTop: 3, justifyContent: "center", flexWrap: "wrap" }}>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="first frame of an in-between" onClick={() => onUseAsInit(c2)}>
+                          → init
+                        </button>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="LAST frame of an in-between — pins where the motion ends" onClick={() => onUseAsLast(c2)}>
+                          → last
+                        </button>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} onClick={() => onAddToTray([c2], clip)}>
+                          + sheet
+                        </button>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="brush over the wrong part, regenerate only that" onClick={() => onFixFrame(c2)}>
+                          ✎ fix
+                        </button>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="re-render just this pose" onClick={() => onRedoPose(c2, poseLine(job, i))}>
+                          ↻ pose
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -180,6 +277,9 @@ export function JobsBoard({
   onCancel,
   onReroll,
   onUseAsInit,
+  onUseAsLast,
+  onFixFrame,
+  onRedoPose,
   onAddToTray,
   onKeep,
 }: {
@@ -188,6 +288,9 @@ export function JobsBoard({
   onCancel: (id: string) => void;
   onReroll: (id: string, job: Job) => void;
   onUseAsInit: (src: string) => void;
+  onUseAsLast: (src: string) => void;
+  onFixFrame: (src: string) => void;
+  onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
 }) {
@@ -205,7 +308,7 @@ export function JobsBoard({
         </span>
       </h2>
       {visible.map(([id, j]) => (
-        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onAddToTray={onAddToTray} onKeep={onKeep} />
+        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} />
       ))}
       {entries.length > 6 && (
         <button style={{ ...S.btn, ...S.btnGhost, marginTop: 8 }} onClick={() => setShowAll(!showAll)}>

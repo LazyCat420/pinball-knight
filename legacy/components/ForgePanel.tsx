@@ -43,6 +43,8 @@ export default function ForgePanel() {
   const [toast, setToast] = useState<string | null>(null);
   const [images, setImages] = useState<Record<SlotId, string | null>>({ init: null, end: null, style: null });
   const [mask, setMask] = useState<string | null>(null);
+  const [modeRequest, setModeRequest] = useState<{ id: string; params?: Record<string, string>; n: number } | null>(null);
+  const modeReqN = useRef(1);
   const [tray, setTray] = useState<TrayFrame[]>([]);
   const [tick, setTick] = useState(0);
   const [library, setLibrary] = useState<LibraryState>({ projects: [], activeProject: null, characters: [] });
@@ -116,6 +118,48 @@ export default function ForgePanel() {
       setMask(null);
       setTab("generate");
       say("frame loaded as the next init");
+    } catch (e: any) {
+      say(e.message);
+    }
+  };
+
+  // The keyframe workflow's verbs: pin an in-between's end, brush-fix a
+  // cell, or re-render one pose. Each loads the image and STEERS the
+  // generate card to the right mode via modeRequest (a nonce so repeat
+  // clicks re-fire).
+  const requestMode = (id: string, params?: Record<string, string>) =>
+    setModeRequest({ id, params, n: modeReqN.current++ });
+
+  const useAsLast = async (src: string) => {
+    try {
+      setImage("end", await urlToB64(src));
+      setTab("generate");
+      requestMode("inbetween");
+      say("frame pinned as the LAST frame — in-between mode");
+    } catch (e: any) {
+      say(e.message);
+    }
+  };
+
+  const fixFrame = async (src: string) => {
+    try {
+      setImage("init", await urlToB64(src));
+      setMask(null);
+      setTab("generate");
+      requestMode("touchup");
+      say("frame loaded — brush over the wrong part");
+    } catch (e: any) {
+      say(e.message);
+    }
+  };
+
+  const redoPose = async (src: string, pose: string) => {
+    try {
+      setImage("init", await urlToB64(src));
+      setMask(null);
+      setTab("generate");
+      requestMode("edit", { prompt: pose ? `Redraw the character in this pose: ${pose}. Same character, same colors, same size, plain white background.` : "" });
+      say("pose loaded into edit — tweak the wording and generate");
     } catch (e: any) {
       say(e.message);
     }
@@ -226,6 +270,7 @@ export default function ForgePanel() {
               setImage={setImage}
               mask={mask}
               setMask={setMask}
+              modeRequest={modeRequest}
               onLaunch={launch}
               say={say}
             />
@@ -243,6 +288,9 @@ export default function ForgePanel() {
               }}
               onReroll={reroll}
               onUseAsInit={useAsInit}
+              onUseAsLast={useAsLast}
+              onFixFrame={fixFrame}
+              onRedoPose={redoPose}
               onAddToTray={addToTray}
               onKeep={keep}
             />
