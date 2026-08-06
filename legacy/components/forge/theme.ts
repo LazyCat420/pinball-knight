@@ -58,7 +58,13 @@ export const S = {
   input: {
     background: "#0d0f14",
     color: "#c8ccd4",
-    border: "1px solid #2c303b",
+    // Longhand, for the reason given above `card` — and this one was the last
+    // shorthand left. The job card's clip <select> tints its border amber
+    // while no clip is chosen, and that override against a shorthand fired
+    // exactly the warning the note describes, on every clip change.
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#2c303b",
     borderRadius: 4,
     padding: "5px 8px",
     fontFamily: "inherit",

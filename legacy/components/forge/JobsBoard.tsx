@@ -252,6 +252,9 @@ function JobCard({
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
             <span style={S.note}>as clip</span>
             <select
+              // `borderColor` alone is safe because `S.input` is longhand —
+              // see the note above `card` in theme.ts, and the one on `input`
+              // itself, which this override is what finally converted.
               style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
               value={clip}
               onChange={(e) => setClip(e.target.value)}
