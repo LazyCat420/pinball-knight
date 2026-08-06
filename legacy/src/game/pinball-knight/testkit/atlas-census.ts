@@ -112,6 +112,7 @@ export const ROSTER: Record<SheetKey, () => ActorPaints> = {
   fish_feet: makeFishFeetPaints,
   spider: makeSpiderPaints,
   brute: makeBrutePaints,
+  warden: makeBrutePaints,
   spitter: makeSpitterPaints,
   ghost: makeGhostPaints,
   bat: makeBatPaints,

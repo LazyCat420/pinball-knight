@@ -151,7 +151,7 @@ function startMonsterSheet(paints: ActorPaints, key?: SheetKey): SheetBuild {
  * separate memo would be a fresh way to leak 22 atlases across a floor change.
  */
 export type SheetKey =
-  | "zombie" | "spider" | "brute" | "spitter" | "ghost" | "bat" | "slime" | "boss"
+  | "zombie" | "spider" | "brute" | "warden" | "spitter" | "ghost" | "bat" | "slime" | "boss"
   | "goblin" | "pin" | "golem" | "chomper" | "magnet" | "webspinner" | "sporeling"
   | "hound" | "jester" | "croaker" | "rotortail" | "stiltneck" | "fish_feet";
 
@@ -176,6 +176,10 @@ const BUILDERS: Record<SheetKey, { make: () => ActorPaints; get: () => SpriteShe
   zombie: { make: () => makeZombiePaints(ZOMBIE_VARIANTS[0]), get: () => state.zombieSheet, set: (s) => { state.zombieSheet = s; } },
   spider: { make: makeSpiderPaints, get: () => state.spiderSheet, set: (s) => { state.spiderSheet = s; } },
   brute: { make: makeBrutePaints, get: () => state.bruteSheet, set: (s) => { state.bruteSheet = s; } },
+  // The warden paints from the SAME painter and is deliberately NOT in
+  // IMPORTED_ART: it is the brute's tinted reskin, and it must keep the
+  // painted look when the brute's own art is swapped for a forged sheet.
+  warden: { make: makeBrutePaints, get: () => state.wardenSheet, set: (s) => { state.wardenSheet = s; } },
   spitter: { make: makeSpitterPaints, get: () => state.spitterSheet, set: (s) => { state.spitterSheet = s; } },
   ghost: { make: makeGhostPaints, get: () => state.ghostSheet, set: (s) => { state.ghostSheet = s; } },
   bat: { make: makeBatPaints, get: () => state.batSheet, set: (s) => { state.batSheet = s; } },
@@ -306,6 +310,11 @@ export function buildMonsterSheets(): void {
 // but labels it with the game's kind — this map is that bridge, and a copy
 // of it in the forge would be the two-writers drift all over again.
 export const IMPORTED_ART: Partial<Record<SheetKey, string>> = {
+  // The first creature built end to end by the LOCAL pipeline (qwen master →
+  // Wan I2V clips → prep-brute → crush), rather than from a bought sheet.
+  // `warden` is deliberately absent right below: it is the brute's tinted
+  // reskin and keeps the painter, so this entry changes one creature only.
+  brute: "brute",
   jester: "jester",
   rotortail: "beaver",
   croaker: "frog",

@@ -66,7 +66,7 @@ export const EXPANSION_SKIN: Partial<Record<EnemyKind, { sheet: () => SpriteShee
   // carries its own identity and must not be recoloured.
   bloater: { sheet: () => sheetFor("slime"), tint: 0xb6c24a, scale: 1.3 }, // bloated sickly gas-bag
   necromancer: { sheet: () => sheetFor("spitter"), tint: 0x8a5cd0, scale: 1.05 }, // purple caster
-  warden: { sheet: () => sheetFor("brute"), tint: 0x4f8fdb, scale: 1.05 }, // blue guardian
+  warden: { sheet: () => sheetFor("warden"), tint: 0x4f8fdb, scale: 1.05 }, // blue guardian — its OWN key, see sheets.ts
   wisp: { sheet: () => sheetFor("ghost"), tint: 0x6fe8e8, scale: 0.9 }, // cyan will-o-wisp
   sapper: { sheet: () => sheetFor("magnet"), tint: 0xf0e05a, scale: 0.95 }, // yellow charge-thief
   crystalback: { sheet: () => sheetFor("golem"), tint: 0x8fdfff, scale: 1.12 }, // crystalline golem

@@ -2,6 +2,9 @@
 /**
  * sprite-forge ↔ ComfyUI driver CLI.
  *
+ *   Add --file-as <sheet-name> to ANY run to file it under that creature in
+ *   the /forge library (frog, brute, pinball_knight…). Untagged stays unfiled.
+ *
  *   node cli.mjs stats
  *   node cli.mjs rotate  --init frame.png --to "left"        [--out DIR] [--seed N]
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
@@ -60,7 +63,22 @@ function outDir(kind) {
   return dir;
 }
 
-async function run(graph, dir) {
+/**
+ * Every run writes a `job.json` beside its frames, exactly like the panel's
+ * own jobs do.
+ *
+ * Without it a CLI generation is INVISIBLE in /forge: the library route scans
+ * `work/comfy/*` and skips any directory whose job.json is missing or carries
+ * no `character` ("CLI runs have no job.json — they stay unfiled"). So work
+ * done here could never be viewed, re-rolled or cut into a sheet through the
+ * panel — the two halves of the forge could not see each other.
+ *
+ * `--character <sheet-name>` is what files it. Untagged runs still write the
+ * record (so the frames survive and the mode/label are recoverable) and still
+ * stay unfiled, which is the honest state for a generation that belongs to no
+ * creature yet.
+ */
+async function run(graph, dir, meta = {}) {
   await assertNodes(graph);
   const t0 = Date.now();
   const id = await queuePrompt(graph);
@@ -72,7 +90,19 @@ async function run(graph, dir) {
     const buf = await fetchImage(im);
     writeFileSync(join(dir, im.filename.replace(/.*\//, "")), buf);
   }
-  console.log(`${images.length} frame(s) in ${took}s -> ${dir}`);
+  // NB: `--file-as`, not `--character` — `retarget` already owns that flag
+  // for its character IMAGE, and filing a run under a .png path would put
+  // a junk row in the library.
+  const character = opt("file-as");
+  writeFileSync(
+    join(dir, "job.json"),
+    JSON.stringify(
+      { source: "cli", state: "done", startedAt: t0, tookS: Math.round(Number(took)), promptId: id, ...meta, ...(character ? { character } : {}) },
+      null,
+      1,
+    ),
+  );
+  console.log(`${images.length} frame(s) in ${took}s -> ${dir}${character ? `  (filed under ${character})` : ""}`);
   return { images, took };
 }
 
@@ -94,7 +124,7 @@ const main = {
     const prompt =
       `Turn the character to face ${to}. Same character, same colors, same pixel art style, ` +
       `same size and position, plain white background, full body visible.`;
-    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir);
+    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, { mode: "rotate", label: `rotate → ${to}` });
   },
 
   /**
@@ -125,12 +155,13 @@ const main = {
     // `--ref` rides along as Figure 2. With `--denoise` it is the other half of
     // the split: the LATENT carries structure (pose, facing, layout) and the
     // reference carries identity (who this creature is). Neither alone does
-    // both — that is the whole measurement in work/brute/FINDINGS.md.
+    // both — that is the whole measurement in docs/POSE_IS_THE_LATENT.md.
     const ref = opt("ref");
     const image2 = ref ? await uploadImage(ref, basename(ref)) : null;
     await run(
       qwenEdit({ image, image2, prompt, seed: Number(opt("seed", 7)), denoise: Number(opt("denoise", 1)), ...size }),
       dir,
+      { mode: "edit", label: `edit${ref ? " + ref" : ""}` },
     );
   },
 
@@ -165,7 +196,7 @@ const main = {
     const { width, height } = canvasFor(poses);
     const graph = mode.build({ subject, width, height }, { images: { init: image, style: image2 }, seed: Number(opt("seed", 7)), has: () => false, lora: () => null, unet: () => null, fast: false });
     console.log(`canvas ${width}x${height} from the reference row`);
-    await run(graph, dir);
+    await run(graph, dir, { mode: "retarget", label: `retarget → ${subject}` });
   },
 
   /** Move-set clip from one frame; frames come back as separate PNGs. */
@@ -194,6 +225,7 @@ const main = {
         loraLow: pixelLora,
       }),
       dir,
+      { mode: "animate", label: `animate · ${action}`.slice(0, 60) },
     );
   },
 };

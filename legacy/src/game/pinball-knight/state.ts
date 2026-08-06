@@ -1086,6 +1086,16 @@ export const state = {
   spiderSheet: null as SpriteSheet | null,
   /** The brute (tank) atlas. */
   bruteSheet: null as SpriteSheet | null,
+  /**
+   * The warden's atlas — the PAINTED brute, kept separate on purpose.
+   *
+   * The warden is a tinted reskin of the brute and used to call
+   * `sheetFor("brute")` directly. Once the brute could be overridden by
+   * imported art, that one call silently dragged the warden along with it:
+   * changing one creature's art changed two. It now builds from
+   * `makeBrutePaints` under its own key, so the brute's art is the brute's.
+   */
+  wardenSheet: null as SpriteSheet | null,
   /** The spitter (ranged) atlas. */
   spitterSheet: null as SpriteSheet | null,
   /** The floating sheet-ghost atlas. */
@@ -1493,6 +1503,7 @@ export function resetState(): void {
   state.zombieVariantSheets = [];
   state.spiderSheet = null;
   state.bruteSheet = null;
+  state.wardenSheet = null;
   state.spitterSheet = null;
   state.ghostSheet = null;
   state.batSheet = null;
