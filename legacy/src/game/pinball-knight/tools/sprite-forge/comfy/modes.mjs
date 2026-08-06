@@ -511,6 +511,71 @@ export const MODES = [
     },
   },
   {
+    id: "retarget",
+    title: "retarget (pose reference)",
+    blurb:
+      "SHOW the poses instead of describing them: a reference row in, your character out, same poses. " +
+      "Init is the pose row from the library; the style image is your character's approved idle.",
+    leg: "qwen",
+    // Both are REQUIRED, and that is the whole mode. `keyframes` needs only an
+    // init because it describes the poses in words; this one exists precisely
+    // because that does not work, so a run without the character to retarget
+    // onto would just redraw the reference.
+    needs: { init: true, style: true },
+    fields: [
+      { id: "subject", label: "the character (what Figure 2 is)", type: "text", required: true, placeholder: "a hooded skeleton archer…" },
+    ],
+    etaS: { quality: 260, fast: 100 },
+    prompt(params) {
+      const subject = String(params.subject ?? "").trim().replace(/\.$/, "");
+      // FIGURE 1 IS THE POSES, FIGURE 2 IS THE IDENTITY, and saying which is
+      // which is load-bearing — the edit model will happily return Figure 2
+      // standing still if the instruction leaves the roles ambiguous.
+      //
+      // The count and layout are asserted rather than requested: the reference
+      // already HAS them, so this is describing the image the model is looking
+      // at, which it follows far more reliably than a target it must invent.
+      return (
+        `Figure 1 is a pixel art pose reference: one character drawn several times in a row, ` +
+        `each frame a different pose, all from the same camera angle. ` +
+        `Redraw that ENTIRE row as ${subject} — the character in Figure 2 — matching Figure 1 ` +
+        `pose for pose, frame for frame, in the same order, at the same size and spacing, ` +
+        `feet on the same shared baseline, on a plain white background. ` +
+        `Keep Figure 2's colours, proportions and equipment in every frame; ` +
+        `keep Figure 1's poses, framing and facing direction exactly. ` +
+        `The character faces the same way as Figure 1 in every frame and never turns between frames. ` +
+        `No text, no labels, no numbers in the image.`
+      );
+    },
+    build(params, ctx) {
+      // ⚠️ THE CANVAS SHAPE IS LOAD-BEARING, MEASURED 2026-08-06.
+      //
+      // Built without width/height first, so it took the square default — and a
+      // 3-pose row asked for on a 1:1 canvas came back as a 3x3 GRID, nine cells
+      // of which three were the character and the rest invented quadrupeds to
+      // fill the space. The poses were correctly DIFFERENT (the whole point),
+      // but the layout was unusable.
+      //
+      // An edit model lays out to fill what it is given, so the canvas has to
+      // carry the same aspect as the reference row. `keyframes` learnt this and
+      // hardcodes 1344x768 for its 4-up; a retarget row can be any length, so
+      // the caller passes the reference's own shape and this only supplies the
+      // wide default.
+      const width = Number(params.width) || 1344;
+      const height = Number(params.height) || 768;
+      return qwenEdit({
+        image: ctx.images.init,
+        image2: ctx.images.style,
+        prompt: this.prompt(params, ctx),
+        width,
+        height,
+        seed: ctx.seed,
+        unet: ctx.unet("rot-unet") ?? undefined,
+        ...qwenBundle(ctx),
+      });
+    },
+  },
+  {
     id: "edit",
     title: "edit",
     blurb: "free instruction over the whole frame — pose tweaks, gear swaps, cleanup",
