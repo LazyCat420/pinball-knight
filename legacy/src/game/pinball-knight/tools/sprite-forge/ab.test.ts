@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { installSpriteTestDom, SHIPPED_GRID, bufferFor } from "../../testkit/atlas-census";
 import { censusCell, paletteRgb, type CellStats } from "../../render/atlas-census";
 import { crushToGrid, paintInArtSpace } from "../../engine/render/sprite";
-import { withRecoil, makeZombiePaints, ZOMBIE_VARIANTS, type ActorPaints } from "../../render/cel-painter";
+import { withRecoil, makeZombiePaints, makeBrutePaints, ZOMBIE_VARIANTS, type ActorPaints } from "../../render/cel-painter";
 import { makeJesterPaints } from "../../render/monsters/jester";
 import { makeRotortailPaints } from "../../render/monsters/rotortail";
 import { makeStiltneckPaints } from "../../render/monsters/stiltneck";
@@ -46,6 +46,9 @@ const WORK = join(__dirname, "work");
  * fidelity one.
  */
 const PAIRS: { key: string; sheet: string; dir: Dir; painted: () => ActorPaints }[] = [
+  // The first creature the LOCAL pipeline built end to end, so this pair is
+  // the one measurement that is not scoring a bought sheet against a painter.
+  { key: "brute", sheet: "brute", dir: "S", painted: makeBrutePaints },
   { key: "jester", sheet: "jester", dir: "S", painted: makeJesterPaints },
   { key: "rotortail", sheet: "beaver", dir: "S", painted: makeRotortailPaints },
   { key: "zombie", sheet: "zombie", dir: "E", painted: () => makeZombiePaints(ZOMBIE_VARIANTS[0]) },
