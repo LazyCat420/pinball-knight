@@ -12,6 +12,7 @@
  *   node cli.mjs animate --init frame.png --action "walking" [--out DIR] [--seed N]
  *                        [--frames 21] [--no-lora] [--tile 128]
  *   node cli.mjs retarget --poses row.png --character idle.png --subject "a spotted frog"
+ *   node cli.mjs refile  --dir <folder of PNGs> --file-as brute [--label "..."] [--mode animate]
  *
  * Outputs land in work/comfy/<run-name>/ (gitignored, like every other
  * sprite-forge scratch). What comes back is SOFT high-res art — feed it to
@@ -20,7 +21,7 @@
  *
  * Manual tool, not a test: nothing under vitest may ever reach the network.
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
@@ -199,6 +200,40 @@ const main = {
     await run(graph, dir, { mode: "retarget", label: `retarget → ${subject}` });
   },
 
+  /**
+   * File EXISTING frames as a done job, so /forge can see work that was made
+   * before `--file-as` existed (or outside the CLI entirely).
+   *
+   * The brute is the motivating case: its Wan picks and prepped cells were
+   * built before runs wrote job.json, so the jobs board and the library's
+   * "recent" strip could never show them — the `--file-as` fix only covered
+   * runs that had not happened yet. This is the migration half that was
+   * missing. Copies rather than moves: the source directory stays what it
+   * was (a sources drop stays tracked, a prep dir stays a prep dir).
+   */
+  async refile() {
+    const src = opt("dir");
+    const character = opt("file-as");
+    if (!src || !character) throw new Error("refile needs --dir <folder of PNGs> and --file-as <sheet-name>");
+    const frames = readdirSync(src).filter((f) => f.endsWith(".png")).sort();
+    if (!frames.length) throw new Error(`no PNGs in ${src}`);
+    const label = opt("label", `refiled · ${basename(src)}`);
+    const dir = outDir(`refile-${character}-${basename(src).replace(/[^\w-]/g, "_")}`);
+    for (const f of frames) copyFileSync(join(src, f), join(dir, f));
+    // The earliest source mtime, so the jobs board sorts this where the work
+    // actually happened rather than pretending it was made just now.
+    const startedAt = Math.min(...frames.map((f) => Math.round(statSync(join(src, f)).mtimeMs)));
+    writeFileSync(
+      join(dir, "job.json"),
+      JSON.stringify(
+        { source: "refile", state: "done", mode: opt("mode", "cli"), label: label.slice(0, 60), startedAt, character, frames },
+        null,
+        1,
+      ),
+    );
+    console.log(`${frames.length} frame(s) filed under ${character} -> ${dir}`);
+  },
+
   /** Move-set clip from one frame; frames come back as separate PNGs. */
   async animate() {
     const init = opt("init");
@@ -231,7 +266,7 @@ const main = {
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|rotate|edit|animate> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|rotate|edit|animate|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {
