@@ -109,6 +109,18 @@ def build_facing(rip_dir: Path, index: dict, table: dict, facing: str, facing_ro
     }
     if "scale" in table:
         manifest["scale"] = table["scale"]
+    # WHICH WAY THE ART FACES, declared rather than repainted.
+    #
+    # `dir` is a promise about the SCREEN: E means "seen walking right". A ripped
+    # sheet made that choice years ago and it is often the other one — Paper
+    # Mario's overworld art faces LEFT. Flipping the PNG would invalidate every
+    # rect in this sidecar, so the engine flips at cel-build time instead and
+    # this is the flag that asks it to. It composes with the W-is-mirrored-E rule
+    # in animator.ts rather than fighting it: mirrored cel + the draw-time flip
+    # cancels back to left-facing for W, which is what walking left should look
+    # like.
+    if table.get("mirror"):
+        manifest["mirror"] = True
     return sheet, manifest
 
 

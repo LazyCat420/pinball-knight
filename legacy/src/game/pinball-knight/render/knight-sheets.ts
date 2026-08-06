@@ -193,8 +193,32 @@ function resolvePaints(weapon: WeaponId, look: KnightLook): ActorPaints {
   };
 }
 
+/**
+ * THE IDENTITY OF A PLAYER ATLAS — the character, then the gear.
+ *
+ * `lookKey` answers "which weapon and which armour", which was the whole
+ * question while there was only ever one character. It is now the wrong key on
+ * its own, and the failure is silent rather than loud:
+ *
+ * `requestKnightSheet` builds an atlas incrementally across frames and keeps the
+ * partial build in `building`, keyed. Choosing a new character clears the sheet
+ * cache and `state.playerArtKey`, but a build already in flight kept a key that
+ * still MATCHED (the weapon and armour did not change), so it ran to completion
+ * with the previous character's paints, committed under that key, and
+ * `applyWeaponArt` recorded it as current. Mario loaded, said so in the console,
+ * and the knight stayed on screen.
+ *
+ * Putting the sheet name in the key fixes it at the root instead of by clearing
+ * one more thing: a stale build now mismatches, and the existing
+ * `building.key !== key` branch disposes it. Every consumer must use THIS, not
+ * `lookKey`, or the two will disagree about what is on screen.
+ */
+export function playerArtKey(weapon: WeaponId, look: KnightLook): string {
+  return `${playerSheetName()}|${lookKey(weapon, look)}`;
+}
+
 export function getKnightSheet(weapon: WeaponId, look: KnightLook, consumer: SheetConsumer): SpriteSheet {
-  const key = lookKey(weapon, look);
+  const key = playerArtKey(weapon, look);
   pinned.set(consumer, key);
 
   const cached = touch(key);
@@ -239,7 +263,7 @@ export function requestKnightSheet(
   consumer: SheetConsumer,
   budgetMs: number,
 ): SpriteSheet | null {
-  const key = lookKey(weapon, look);
+  const key = playerArtKey(weapon, look);
   pinned.set(consumer, key);
 
   const cached = touch(key);

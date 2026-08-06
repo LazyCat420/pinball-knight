@@ -39,6 +39,8 @@ const CARD_H = 150;
 interface Preview {
   image: CanvasImageSource;
   cell: readonly number[];
+  /** The sheet's own `mirror` flag — the card must show what the game draws. */
+  mirror: boolean;
 }
 
 export function characterSelectScreen(onDone: () => void): UiScreen {
@@ -51,7 +53,12 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
   for (const c of PLAYABLE) {
     void loadImportedSheet(c.sheet, "S").then((s) => {
       const idle = s?.manifest.rows.find((r) => r.clip === "idle");
-      previews.set(c.sheet, s && idle?.cells.length ? { image: s.image, cell: idle.cells[0] } : null);
+      previews.set(
+        c.sheet,
+        s && idle?.cells.length
+          ? { image: s.image, cell: idle.cells[0], mirror: s.manifest.mirror === true }
+          : null,
+      );
     });
   }
 
@@ -121,13 +128,20 @@ export function characterSelectScreen(onDone: () => void): UiScreen {
           const dw = up >= 1 ? sw * up : Math.round(sw / down);
           const dh = up >= 1 ? sh * up : Math.round(sh / down);
           f.g.imageSmoothingEnabled = false;
-          f.g.drawImage(
-            preview.image as CanvasImageSource,
-            cx0, cy0, sw, sh,
-            Math.round(cell.x + (cell.w - dw) / 2),
-            Math.round(cell.y + 34 + (CARD_H - 52 - dh) / 2),
-            dw, dh,
-          );
+          const dx = Math.round(cell.x + (cell.w - dw) / 2);
+          const dy = Math.round(cell.y + 34 + (CARD_H - 52 - dh) / 2);
+          // Honour the sheet's `mirror` exactly as the cel builder does, or the
+          // card shows a character facing the opposite way to the one that walks
+          // out of it — which reads as the wrong art, not as a preview detail.
+          if (preview.mirror) {
+            f.g.save();
+            f.g.translate(dx + dw, dy);
+            f.g.scale(-1, 1);
+            f.g.drawImage(preview.image as CanvasImageSource, cx0, cy0, sw, sh, 0, 0, dw, dh);
+            f.g.restore();
+          } else {
+            f.g.drawImage(preview.image as CanvasImageSource, cx0, cy0, sw, sh, dx, dy, dw, dh);
+          }
         } else {
           // Three different silences, and they must not read alike: the painted
           // default has nothing to preview and that is correct; an imported

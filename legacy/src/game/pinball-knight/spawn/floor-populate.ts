@@ -28,7 +28,8 @@ import { resetPlayerMotion } from "../entities/player";
 import { isWalkable, tileCenter, worldToTile } from "../maze/generator";
 import { nearestOpenTile } from "../maze/nearest-open-tile";
 import { ITEM_PAINTS, PROP_PAINTS } from "../render/cel-painter";
-import { lookFromGear, lookKey } from "../render/knight-look";
+import { lookFromGear } from "../render/knight-look";
+import { playerArtKey } from "../render/knight-sheets";
 import { createPinballParts } from "../render/pinball-parts";
 import { reaperSheet } from "../render/reaper-sheet";
 import { spawnCorpsePiles } from "../run/death";
@@ -61,7 +62,8 @@ export function populateFloor(f: AuthoredFloor): void {
       ...freshPlayerFields(),
     };
     state.player.hp = playerMaxHp(); // legacy hearts land at creation
-    state.playerArtKey = lookKey(weaponId, lookFromGear(state.gear));
+    // Must match what applyWeaponArt compares against — see playerArtKey.
+    state.playerArtKey = playerArtKey(weaponId, lookFromGear(state.gear));
   } else {
     state.player.x = startPos.x;
     state.player.z = startPos.z;

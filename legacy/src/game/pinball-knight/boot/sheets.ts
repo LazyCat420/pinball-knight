@@ -17,9 +17,9 @@ import { makeRotortailPaints } from "../render/monsters/rotortail";
 import { makeStiltneckPaints } from "../render/monsters/stiltneck";
 import { makeFishFeetPaints } from "../render/monsters/fish_feet";
 import { makeHoundPaints } from "../render/monsters/hound";
-import { lookFromGear, lookKey } from "../render/knight-look";
+import { lookFromGear } from "../render/knight-look";
 import { renderKnightPortrait } from "../render/knight-portrait";
-import { getKnightSheet, requestKnightSheet, loadImportedKnightArt } from "../render/knight-sheets";
+import { getKnightSheet, requestKnightSheet, loadImportedKnightArt, playerArtKey } from "../render/knight-sheets";
 import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOptions, type SpriteSheet } from "../engine/render/sprite";
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
@@ -52,7 +52,10 @@ export function playerSheetFor(id: WeaponId): SpriteSheet {
 export function applyWeaponArt(): void {
   const id = activeWeapon().id;
   const look = lookFromGear(state.gear);
-  const key = lookKey(id, look);
+  // `playerArtKey`, not `lookKey`: the CHARACTER is part of what is on screen,
+  // and a key that omits it reports a knight atlas as current after the player
+  // has chosen Mario. See the docblock on playerArtKey.
+  const key = playerArtKey(id, look);
   if (key === state.playerArtKey || !state.player) return;
   // Paint at most WEAPON_ART_SLICE_MS of the new atlas per frame and keep the
   // current one on screen until it is finished — see requestKnightSheet. A miss
