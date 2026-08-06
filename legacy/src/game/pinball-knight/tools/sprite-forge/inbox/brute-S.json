@@ -2,11 +2,11 @@
  "rows": [
   "idle",
   "walk",
-  "death"
+  "attack"
  ],
  "cells": [
   2,
   4,
-  5
+  4
  ]
 }
