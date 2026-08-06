@@ -26,6 +26,67 @@ export const REAPER_ATTACK_COOLDOWN = 1.2;
 export const REAPER_SCALE = 1.4; // bigger than the sheet-ghost it reskins
 export const REAPER_TINT = 0xd94848; // the ghost sheet dyed blood-red
 
+// ── THE TIDE (rolling reinforcements) ───────────────────────────
+/**
+ * A floor used to be a fixed pile of monsters: clear it and the maze became an
+ * empty museum for the rest of the Death Dealer's fuse — nothing to farm, and
+ * the back half of every floor got QUIETER the longer you stayed, which is
+ * backwards. THE TIDE keeps the dungeon feeding you. Reinforcements walk in
+ * from the far side of the maze, sparse at first, then relentless, until the
+ * Dealer arrives and ends the argument.
+ *
+ * Every number below is anchored to REAPER_AFTER, so the ramp IS the floor's
+ * fuse: "how intense this has got" and "how long you have left" are one clock
+ * read two ways, rather than two curves to keep in sync.
+ */
+/** Seconds of quiet before the first reinforcement — long enough that the
+ *  opening horde is unambiguously the fight you are having. */
+export const TIDE_GRACE = 18;
+/** Seconds from the end of grace to FULL intensity. Peaks ~10s before the
+ *  Death Dealer, so the floor crescendos and THEN the fuse blows. */
+export const TIDE_RAMP = REAPER_AFTER - TIDE_GRACE - 10;
+/** Seconds between reinforcement pulses, at intensity 0 → 1. */
+export const TIDE_INTERVAL_CALM = 9;
+export const TIDE_INTERVAL_PEAK = 2.4;
+/** Monsters per pulse, at intensity 0 → 1. */
+export const TIDE_PULSE_CALM = 1;
+export const TIDE_PULSE_PEAK = 4;
+/**
+ * The live-population target, as a SHARE of what the floor opened with, at
+ * intensity 0 → 1.
+ *
+ * A share rather than an absolute is what makes the tide scale with depth for
+ * free: floorBudgets already grows the opening horde with the level, so a
+ * deeper floor gets a deeper tide without a second difficulty curve. The peak
+ * is 1.0 and deliberately not higher — the tide RESTORES the pressure a floor
+ * was built and draw-budgeted for, it never exceeds it, so a floor's
+ * steady-state cost is bounded by the cost it already paid at t=0.
+ */
+export const TIDE_SHARE_CALM = 0.3;
+export const TIDE_SHARE_PEAK = 1.0;
+/** Never surface a reinforcement closer than this to the knight (tiles).
+ *  Comfortably outside AGGRO_TILES, so they WALK in — nothing ever pops into
+ *  existence already swinging at you. */
+export const TIDE_SPAWN_MIN_TILES = 12;
+/** …nor further out than this, or the reinforcement is a hike, not a threat. */
+export const TIDE_SPAWN_MAX_TILES = 34;
+/** Tries to roll a MOBILE reinforcement before accepting whatever came up.
+ *  A chomper/golem/crystalback (speed 0) or a dormant mimic surfaced 20 tiles
+ *  away is dead content — the tide's job is to bring the fight to you. */
+export const TIDE_MOBILE_TRIES = 4;
+/**
+ * Dead bodies kept on the floor.
+ *
+ * killZombie only flips `mode` to "dead"; nothing ever removes a corpse, so
+ * state.zombies has always been monotonically non-decreasing for the life of a
+ * floor. That was survivable when the monster count was fixed at build time
+ * and is NOT once the tide keeps adding: every corpse still costs a mesh, an
+ * anim.update, and a skipped slot in ~20 per-frame full-array scans (the
+ * separation pass alone is O(n²)). This bounds the litter while leaving enough
+ * that a cleared room still reads as a massacre.
+ */
+export const CORPSE_BUDGET = 48;
+
 // ── Bats (fast erratic flyers) ──────────────────────────────────
 /**
  * The speed-check enemy: a cave bat that flits at you FAST on a weaving line

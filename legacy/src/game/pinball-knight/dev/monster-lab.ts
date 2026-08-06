@@ -32,6 +32,8 @@ import { floorLock, setFloorLock } from "./floor-lock";
 import { importedArtEnabled } from "../boot/sheets";
 import { DEFAULT_PLAYER_SHEET, playerSheetName, switchPlayerSheet } from "../render/knight-sheets";
 import { state } from "../state";
+import { tideDemand } from "../spawn/tide";
+import { CORPSE_BUDGET, REAPER_AFTER, TIDE_GRACE, TIDE_RAMP } from "../constants";
 import type { EnemyKind } from "../state";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
 
@@ -73,6 +75,8 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         "  __lab.unlock()                back to normal progression",
         "  __lab.clear()                 clear all enemies",
         "  __lab.kinds()                 roster as an array",
+        "  __lab.tide()                  THE TIDE: ramp, target, live, next pulse",
+        "  __lab.tide(95)                …as it will read 95s into the floor",
         '  __lab.playAs("mario")         PLAY AS a published sheet, live',
         "  __gui.characters()            the character-select screen",
         "  __lab.playAs(null)            back to the knight",
@@ -138,6 +142,33 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
     clear: () => {
       debugClearEnemies();
       return true;
+    },
+
+    /**
+     * THE TIDE, read out loud.
+     *
+     * The tide is invisible by design — reinforcements walk in from beyond the
+     * aggro ring, which is exactly the thing you cannot see happening. Without
+     * a read of the curve, "is it spawning?" and "is it spawning fast enough?"
+     * are the same shrug. Pass a time to SET the floor clock and watch the
+     * whole ramp without waiting out 110 real seconds.
+     */
+    tide: (atSeconds?: number) => {
+      if (atSeconds !== undefined && Number.isFinite(atSeconds)) state.levelT = Math.max(0, atSeconds);
+      const d = tideDemand();
+      const dead = state.zombies.length - d.live;
+      console.log(
+        [
+          "── THE TIDE ─────────────────────────────────────────────",
+          `  floor clock   ${state.levelT.toFixed(1)}s  (grace ${TIDE_GRACE}s, ramp ${TIDE_RAMP}s, Dealer at ${REAPER_AFTER}s)`,
+          `  intensity     ${(d.intensity * 100).toFixed(0)}%`,
+          `  opened with   ${state.tideBase}`,
+          `  target live   ${d.target}`,
+          `  live now      ${d.live}   (+${dead} corpses, budget ${CORPSE_BUDGET})`,
+          `  next pulse    ${d.pulse} in ${Math.max(0, state.tideT).toFixed(1)}s`,
+        ].join("\n"),
+      );
+      return d;
     },
 
     /** Pin every descent to one floor (default 1) and go there now. Survives

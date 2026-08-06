@@ -838,8 +838,20 @@ export const state = {
   levelT: 0,
   /** state.kills as this floor started — the diff is this floor's carnage. */
   levelStartKills: 0,
-  /** Horde size this floor spawned with (the carnage denominator). */
+  /** Horde size this floor spawned with, PLUS everything the tide has walked in
+   *  since — the carnage denominator. It grows with reinforcements on purpose:
+   *  if it didn't, farming a tide would push kills/hordeSize past 1.0 and hand
+   *  out free S grades for standing still. */
   levelHordeSize: 0,
+  // ── THE TIDE: rolling reinforcements (spawn/tide.ts) ──
+  /** Living monsters this floor OPENED with. The tide's live target is a share
+   *  of this, so a deeper floor's bigger horde gets a bigger tide for free —
+   *  and the live count can never exceed what the floor already paid for. */
+  tideBase: 0,
+  /** Seconds until the next reinforcement pulse. */
+  tideT: 0,
+  /** True once the tide has delivered a pulse — gates the one-shot toast. */
+  tideStirred: false,
   /** Best pinball bounce combo reached this floor (the style axis). */
   levelBestCombo: 0,
   // ── FLOW: the grade's pace axis (see gradeFloor in core.ts) ──
@@ -1050,6 +1062,10 @@ export const state = {
   // Actors
   player: null as Player | null,
   zombies: [] as Zombie[],
+  /** The floor's vetted spawn tiles (plan.spawns), kept past the build so the
+   *  tide can reuse them. They are already walkable, out of rooms and off the
+   *  stairs — re-deriving that at runtime would be a second copy of the rule. */
+  tideTiles: [] as TilePos[],
   projectiles: [] as Projectile[],
   /** Persistent floor scars from marble materials (slick/fire/shard-field). */
   floorFx: [] as FloorFx[],
@@ -1402,6 +1418,9 @@ export function resetState(): void {
   state.levelT = 0;
   state.levelStartKills = 0;
   state.levelHordeSize = 0;
+  state.tideBase = 0;
+  state.tideT = 0;
+  state.tideStirred = false;
   state.levelBestCombo = 0;
   state.levelFlowSum = 0;
   state.levelFlowT = 0;
@@ -1463,6 +1482,7 @@ export function resetState(): void {
   state.props = [];
   state.player = null;
   state.zombies = [];
+  state.tideTiles = [];
   state.projectiles = [];
   state.floorFx = [];
   state.pinballParts = [];

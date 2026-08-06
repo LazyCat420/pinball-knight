@@ -35,6 +35,7 @@ import { reaperSheet } from "../render/reaper-sheet";
 import { spawnCorpsePiles } from "../run/death";
 import { playerMaxHp } from "../skill-runtime";
 import { makeZombie, spawnHordeMember, spawnPinCrew } from "../spawn/factory";
+import { armTide } from "../spawn/tide";
 import { type GroundItem, type Zombie, activeWeapon } from "../state";
 
 /** Fill the committed floor with everything that lives on it. */
@@ -354,4 +355,9 @@ export function populateFloor(f: AuthoredFloor): void {
       }
     }
   }
+
+  // ── THE TIDE ── last, because it snapshots the population above as the
+  // ceiling it will keep refilling toward. Anything that adds monsters to a
+  // fresh floor belongs ABOVE this line.
+  armTide(plan.spawns);
 }

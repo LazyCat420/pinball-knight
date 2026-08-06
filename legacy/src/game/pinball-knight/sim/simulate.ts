@@ -43,6 +43,7 @@ import { updateSecretDoors } from "../secrets";
 import { playerMaxHp } from "../skill-runtime";
 import { drainPendingMinis, drainPendingSummons } from "../spawn/factory";
 import { spawnReaper } from "../spawn/reaper";
+import { reapCorpses, tickTide } from "../spawn/tide";
 import { showToast } from "../ui";
 
 export function simulate(dt: number): void {
@@ -156,6 +157,8 @@ export function simulate(dt: number): void {
   tickCombatTimers(dt); // the bowling STRIKE window
   drainPendingMinis(); // slime splits deferred past all combat resolution
   drainPendingSummons(); // necromancer adds, same deferral
+  tickTide(dt); // THE TIDE: reinforcements walk in, ramping toward the Dealer
+  reapCorpses(); // …and the oldest bodies are cleared to pay for them
   if (!isReplica()) updateBoss(dt); // ☠ Reaper King: skulls, slam, portal-on-death
   // Secret bands smashed this run are still swinging — spin them out. Runs on
   // replicas too: the door is pure spectacle, and a replica that smashed a wall
