@@ -22,6 +22,8 @@
     "webgpu:check": "node scripts/webgpu-check.mjs",
     "webgpu:check:local": "node scripts/webgpu-check.mjs --url http://localhost:5174/dungeon",
     "sprites": "FORGE_PUBLISH=1 vitest run src/game/pinball-knight/tools/sprite-forge",
+    "bake:glass": "node scripts/bake-glass-fracture.mjs",
+    "bake:glass:check": "node scripts/bake-glass-fracture.mjs --check",
     "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs"
   },
   "dependencies": {
