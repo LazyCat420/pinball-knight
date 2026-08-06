@@ -156,3 +156,78 @@ first). And when a forge job dies with a bare `execution_interrupted`, read
 Related: `ANY_IMAGE_TO_CHARACTER.md` §6.2 (`drift.ts`, the `distinct` gate),
 `comfy/modes.mjs` (`keyframes`, `retarget`), `comfy/cli.mjs` (`retarget`'s note on
 canvas aspect).
+
+---
+
+# Round three: the ControlNet leg is built, and it does nothing on 2511
+
+**Measured 2026-08-06 on the real backend — 4 runs, ~15 min GPU on the 3090 Ti,
+driving the new `comfy/cli.mjs pose` against the gym-zombie brute master.**
+
+The doc above closed by naming the one mechanism left standing:
+
+> **structural conditioning the sampler is bound to** (ControlNet pose / lineart
+> / depth) with the row as the control image… It is a `graphs.mjs` build plus a
+> model install, and it should be A/B'd on pixel art before it is trusted.
+
+Both halves are now done. `comfyui_controlnet_aux` is installed
+(`OpenposePreprocessor`, lineart, depth, canny all live), `qwenEdit` takes
+`control` / `controlType` / `controlStrength` / `controlStart` / `controlEnd`,
+and `ControlNetApplyAdvanced` wires the map into BOTH conditionings.
+
+**The preprocessors work. The ControlNet does not bind.**
+
+## The measurement
+
+Identity = the brute master (a symmetric standing hulk). Control = a Ragnarok
+zombie mid-stride (hunched, skinny, legs wide). Same seed (11), same prompt,
+same init. If the pose bound at all, the output leans and strides.
+
+Mean per-channel difference over the whole frame, out of 255:
+
+| run | vs no-controlnet |
+|---|---|
+| openpose, strength 0.8, end 0.8 | **1.08** |
+| canny, strength 0.8, end 0.8 | **1.97** |
+| openpose, strength **2.0**, end **1.0** | **1.85** |
+| openpose vs canny | 2.77 |
+
+Every output is the init's standing pose. Nothing strides. And the third row is
+the one that closes it: **2.5x the strength across the full sampling range moves
+the image no more than strength 0.8 did.** A control that were merely too weak
+would respond to being tripled. This one does not respond at all.
+
+`work/comfy/controlmap-openpose-*` proves the input was good — a clean coloured
+skeleton, correctly detected, and visibly THIN where the source is a hulk, which
+is exactly the pose/bulk separation the denoise dial could not make. The map was
+never the problem.
+
+## Why, and it was written down in advance
+
+`comfy/manifest.mjs` on the `rot-controlnet` slot, before any of this ran:
+
+> Trained on Qwen-Image BASE and community-proven on Edit **2509**, so its
+> behaviour on our **2511** quant is the thing to BENCH, not assume.
+
+That was the right instinct and this is the bench. 2511 is a different edit
+model — native multi-reference through `TextEncodeQwenImageEditPlus` — and the
+union ControlNet's hints are not consumed by its conditioning path. The node
+runs, costs its time, and changes nothing.
+
+`mor-o/comfyui-2d-character-pipeline`, whose pairing this was copied from, runs
+its W1 pose stage on **Qwen-Image-Edit 2509**. Same ControlNet, one model
+version back.
+
+## What to do with this
+
+**Do not delete the leg.** It is correct code against a model it does not match,
+and the cost of keeping it is one unused parameter. Do not re-run the four above.
+
+The next move is a MODEL swap, not a graph change: fetch
+`Qwen-Image-Edit-2509` GGUF and point the pose leg at it, leaving 2511 to do the
+identity and style work it is already good at. That is the configuration mor-o
+is known to work in, and it is the only untested variable left — the graph, the
+preprocessors, the maps and the strengths have all now been eliminated.
+
+Until then, pose control remains unavailable, and the Wan leg's free-running
+motion (documented above) is still the only source of genuine movement.

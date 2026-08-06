@@ -204,7 +204,7 @@ export const LEGS = [
       },
       {
         id: "rot-controlnet",
-        role: "ControlNet — hold the pose and the silhouette (optional)",
+        role: "ControlNet — BENCHED 2026-08-06, does not bind on Edit 2511 (see note)",
         required: false,
         options: [
           {
@@ -215,11 +215,16 @@ export const LEGS = [
             url: HF("InstantX/Qwen-Image-ControlNet-Union", "diffusion_pytorch_model.safetensors"),
             license: "Apache-2.0",
             note:
-              "canny / soft-edge / depth / pose in one, at strength 0.4-1.0. The 08-03 report's own remedy for " +
-              "'when prompts drift' — and the same pairing mor-o's 24GB pipeline uses for pose control. " +
-              "Trained on Qwen-Image BASE and community-proven on Edit 2509, so its behaviour on our 2511 quant " +
-              "is the thing to BENCH, not assume. Canny needs no preprocessor (ComfyUI ships the node); depth " +
-              "and openpose maps would need comfyui_controlnet_aux installed as well.",
+              "canny / soft-edge / depth / pose in one. Trained on Qwen-Image BASE and community-proven on Edit " +
+              "2509 — and this slot used to say its behaviour on our 2511 quant was 'the thing to BENCH, not " +
+              "assume'. IT HAS NOW BEEN BENCHED, and the answer is that it does NOT bind: openpose and canny " +
+              "maps at strength 0.8 move the output 1.08 and 1.97 out of 255 against a no-controlnet baseline " +
+              "at the same seed, and strength 2.0 across the full sampling range moves it 1.85 — i.e. tripling " +
+              "the strength does nothing, so it is structural, not tuning. The preprocessors are fine; the " +
+              "maps are clean. 2511 routes conditioning through TextEncodeQwenImageEditPlus and does not " +
+              "consume the hints. See docs/POSE_IS_THE_LATENT.md round three. The fix is a MODEL swap — " +
+              "Qwen-Image-Edit 2509 for the pose leg, which is what mor-o runs — not a graph change. " +
+              "comfyui_controlnet_aux is installed, so openpose/depth/lineart maps are available for when it is.",
           },
         ],
       },

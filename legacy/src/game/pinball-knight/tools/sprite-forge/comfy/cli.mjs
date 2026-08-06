@@ -25,7 +25,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFile
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
-import { qwenEdit, wanI2V } from "./graphs.mjs";
+import { controlMap, qwenEdit, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
@@ -218,6 +218,65 @@ const main = {
   },
 
   /**
+   * Render a control map and STOP, so it can be looked at before any sampling
+   * is paid for.
+   *
+   *   node cli.mjs posemap --init posed.png [--type openpose|canny|lineart|depth]
+   *
+   * An openpose pass that finds no skeleton returns a BLACK frame. ControlNet
+   * then conditions on nothing, the output is indistinguishable from "this
+   * mechanism does not help", and a working lever gets abandoned on the
+   * strength of a failed detection. Look at the map first.
+   */
+  async posemap() {
+    const init = opt("init");
+    if (!init) throw new Error("posemap needs --init <png>");
+    const type = opt("type", "openpose");
+    const dir = outDir(`controlmap-${type}`);
+    const image = await uploadImage(init, basename(init));
+    await run(controlMap({ image, type, resolution: Number(opt("resolution", 1024)) }), dir, {
+      mode: "controlmap",
+      label: `control map · ${type}`,
+    });
+  },
+
+  /**
+   * A posed frame in, the SAME creature in that pose out — the ControlNet leg.
+   *
+   *   node cli.mjs pose --init master.png --control posed.png \
+   *                     --prompt "..." [--type openpose] [--strength 0.8]
+   *
+   * `--init` is the IDENTITY (who this creature is, as conditioning) and
+   * `--control` is the STRUCTURE (where the limbs go, bound to the sampler).
+   * Those are two different slots on purpose: handing a pose in as the init is
+   * the thing POSE_IS_THE_LATENT.md measured failing six ways.
+   */
+  async pose() {
+    const init = opt("init");
+    const controlPath = opt("control");
+    if (!init || !controlPath) throw new Error("pose needs --init <identity png> and --control <posed png>");
+    const type = opt("type", "openpose");
+    const dir = outDir(`pose-${type}`);
+    const image = await uploadImage(init, basename(init));
+    const control = await uploadImage(controlPath, basename(controlPath));
+    const prompt = opt("prompt") ?? "The same character in the pose shown, full body, pixel art, plain white background.";
+    await run(
+      qwenEdit({
+        image,
+        prompt,
+        control,
+        controlType: type,
+        controlStrength: Number(opt("strength", 0.8)),
+        controlEnd: Number(opt("end", 0.8)),
+        seed: Number(opt("seed", 7)),
+        denoise: Number(opt("denoise", 1)),
+      }),
+      dir,
+      { mode: "pose", label: `pose · ${type} @ ${opt("strength", "0.8")}` },
+    );
+  },
+
+  /**
    * File EXISTING frames as a done job, so /forge can see work that was made
    * before `--file-as` existed (or outside the CLI entirely).
    *
@@ -323,7 +382,7 @@ const main = {
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|rotate|edit|animate|refile> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|rotate|edit|animate|posemap|pose|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {

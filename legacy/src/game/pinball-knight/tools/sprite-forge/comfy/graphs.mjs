@@ -28,7 +28,60 @@ export const MODELS = {
   wanClip: "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
   wanVae: "wan_2.1_vae.safetensors",
   pixelWalkLoraHigh: "pixel_walk_lora_v1_high_noise.safetensors",
+  qwenControlNet: "qwen_image_controlnet_union.safetensors",
 };
+
+/**
+ * CONTROL TYPE → the preprocessor node that turns a reference into a map.
+ *
+ * ⚠️ THE CHOICE HERE IS THE WHOLE POINT, not a quality knob. `POSE_IS_THE_LATENT.md`
+ * measured that pose and silhouette are the SAME low-frequency signal in this
+ * graph's latent, so nothing that carries an outline can move one without the
+ * other. That is a statement about what the control map CONTAINS:
+ *
+ *   openpose  a STICK SKELETON — joints and limb vectors, no body width at
+ *             all. The only map here that constrains where the limbs are
+ *             without also constraining how wide the body is, which is
+ *             precisely the separation the denoise dial could not make.
+ *   canny     EDGES — the full outline of whatever body is in the reference.
+ *             Feed it a human and the ControlNet holds the sampler to a
+ *             HUMAN'S proportions; a brute prompt returns a correctly-posed
+ *             skinny figure. This is the doc's runs 2-5 arriving through a
+ *             new door, so canny is here to be BEATEN in the A/B, not used.
+ *   lineart   softer edges, same objection as canny, kept for the comparison.
+ *   depth     volume without identity — worth a column in the same A/B.
+ *
+ * So: openpose is the hypothesis, the rest are the controls it has to beat.
+ */
+export const CONTROL_PREPROCESSORS = {
+  openpose: { node: "OpenposePreprocessor", inputs: { detect_hand: "enable", detect_body: "enable", detect_face: "disable" } },
+  canny: { node: "CannyEdgePreprocessor", inputs: {} },
+  lineart: { node: "LineArtPreprocessor", inputs: {} },
+  depth: { node: "DepthAnythingV2Preprocessor", inputs: {} },
+  /** The reference IS already a control map (a hand-drawn skeleton, a depth pass). */
+  raw: null,
+};
+
+/**
+ * Just the control map, so it can be LOOKED AT before any sampling is paid for.
+ *
+ * A pose map is the one input in this pipeline whose failure is invisible
+ * downstream: an openpose pass that finds no skeleton returns a BLACK frame,
+ * ControlNet then conditions on nothing, and the result is indistinguishable
+ * from "ControlNet does not help" — which is how a mechanism gets wrongly
+ * abandoned. Render it first; a black map is a missing detection, not a
+ * verdict on the mechanism.
+ */
+export function controlMap({ image, type = "openpose", resolution = 1024 } = {}) {
+  if (!image) throw new Error("[graphs] controlMap needs an uploaded image name");
+  const p = CONTROL_PREPROCESSORS[type];
+  if (!p) throw new Error(`[graphs] controlMap has no preprocessor for "${type}"`);
+  return {
+    img: { class_type: "LoadImage", inputs: { image } },
+    pre: { class_type: p.node, inputs: { image: ["img", 0], resolution, ...p.inputs } },
+    out: { class_type: "SaveImage", inputs: { images: ["pre", 0], filename_prefix: "spriteforge/control" } },
+  };
+}
 
 /**
  * Attach a stack of LoRAs between a unet loader and whatever samples from it.
@@ -114,6 +167,14 @@ export function qwenEdit({
   unet = MODELS.qwenUnet,
   /** <1 switches the sampler to a LATENT init — see the structure leg below. */
   denoise = 1,
+  /** Uploaded image the pose comes FROM. See the CONTROL leg at the bottom. */
+  control = null,
+  /** Which map to derive from it — `CONTROL_PREPROCESSORS`. */
+  controlType = "openpose",
+  controlStrength = 0.8,
+  /** Release the constraint before the end so the surface is free to restyle. */
+  controlStart = 0,
+  controlEnd = 0.8,
 } = {}) {
   if (!image) throw new Error("[graphs] qwenEdit needs an uploaded image name");
   if (!prompt) throw new Error("[graphs] qwenEdit needs a prompt");
@@ -177,6 +238,65 @@ export function qwenEdit({
     g.k.inputs.latent_image = ["enc", 0];
     g.k.inputs.denoise = denoise;
     delete g.lat;
+  }
+  // ── THE CONTROL LEG: THE ONLY THING HERE THE SAMPLER IS BOUND TO ─────────
+  //
+  // Everything above reaches the sampler as CONDITIONING (images 1-3) or as a
+  // starting point it is free to leave (the denoise latent). `POSE_IS_THE_LATENT.md`
+  // spent six runs proving neither holds a pose you can also restyle:
+  //
+  //   denoise 1.0  → the latent is discarded; pose lost, body rebuilt
+  //   denoise <1   → the latent is re-rendered; pose kept, body kept too
+  //
+  // and concluded there is no value in between, because pose and silhouette
+  // are ONE signal there. Its closing line names this leg as the mechanism
+  // left standing: structural conditioning applied to the CONDITIONING PAIR,
+  // which ControlNet re-injects at every sampling step. The sampler cannot
+  // walk away from it the way it walks away from a latent — and with an
+  // openpose map, what it cannot walk away from is a SKELETON, which says
+  // where the limbs go and nothing at all about how wide the body is.
+  //
+  // BOTH conditionings go through. Applying to the positive alone lets the
+  // negative disagree about where the figure is, which shows up as a doubled
+  // or smeared limb. The VAE is wired in because Qwen's ControlNet-Union is a
+  // latent-space controlnet and `ControlNetApplyAdvanced` takes a vae as an
+  // optional input for exactly that case.
+  //
+  // `controlEnd` below 1 releases the constraint for the last fraction of
+  // sampling so the surface (flesh, rot, pixel clusters) can resolve without
+  // the map's edges printing through. 0.8 is a STARTING POINT, not a measured
+  // value — it is one of the axes the A/B has to sweep before this is trusted,
+  // which the manifest note and the doc both insist on.
+  if (control) {
+    const p = CONTROL_PREPROCESSORS[controlType];
+    if (p === undefined) throw new Error(`[graphs] unknown controlType "${controlType}"`);
+    g.cimg = { class_type: "LoadImage", inputs: { image: control } };
+    let mapRef = ["cimg", 0];
+    // `raw` means the caller already HAS a control map, and preprocessing it
+    // again would be a second opinion about a picture that is already answer.
+    if (p) {
+      g.cpre = {
+        class_type: p.node,
+        inputs: { image: ["cimg", 0], resolution: Math.max(width, height), ...p.inputs },
+      };
+      mapRef = ["cpre", 0];
+    }
+    g.cnet = { class_type: "ControlNetLoader", inputs: { control_net_name: MODELS.qwenControlNet } };
+    g.cna = {
+      class_type: "ControlNetApplyAdvanced",
+      inputs: {
+        positive: ["pos", 0],
+        negative: ["neg", 0],
+        control_net: ["cnet", 0],
+        image: mapRef,
+        vae: ["v", 0],
+        strength: controlStrength,
+        start_percent: controlStart,
+        end_percent: controlEnd,
+      },
+    };
+    g.k.inputs.positive = ["cna", 0];
+    g.k.inputs.negative = ["cna", 1];
   }
   g.k.inputs.model = chainLoras(g, ["u", 0], loras, "l");
   return g;
