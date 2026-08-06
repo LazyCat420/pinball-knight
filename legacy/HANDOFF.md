@@ -7,6 +7,123 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🪟 THE WINDOW REALLY BREAKS (2026-08-05, `main` @ b8ee2fa, DEPLOYED & VERIFIED LIVE)
+
+**Asked:** make the toucan's window smash real — real glass physics, custom WGSL
+shaders, and handle the loading so it isn't rebuilt on every visit.
+
+**Live on braindeadbot.com, verified through the actual intro on real WebGPU**
+(host Chrome over CDP): shader compiles, both panes draw, zero console errors,
+and the room keeps a window with a real hole in it afterwards.
+
+### What replaced what
+
+The pane used to vanish on impact, revealing a hand-placed remnant of random
+triangles, while 75 identical particles flew off on straight lines and blinked
+out mid-air. It is now one system in `src/shaders/glass/`:
+
+| file | what it owns |
+|---|---|
+| `fracture.ts` | the crack pattern — radial + concentric spiderweb, deterministic |
+| `fracture-geometry.ts` | cells → one buffer + rigid bodies (mass, inertia) |
+| `shard-physics.ts` | the sim: torque, drag, floor, sleep |
+| `glass-material.ts` | the optics, hand-written WGSL **and** a GLSL twin |
+| `pattern-cache.ts` | where the baked pattern comes from, and the memo |
+| `index.ts` | `createShatteredPane()` — the only thing callers touch |
+| `fracture-baked.json` | committed bake, 362 cells, ~40 KB |
+
+`scripts/bake-glass-fracture.mjs` regenerates it (`npm run bake:glass`);
+`npm run bake:glass:check` fails if the committed file is stale.
+
+**The intact pane and the broken pane are THE SAME MESH.** Nothing is swapped at
+impact — shards start at rest with identity rotations, which tiles them back
+into a solid sheet. Breaking it costs no allocation and no material change, only
+a texture write that was already happening. This is why the crack lines land
+exactly where the glass parts, and why the hole and its surviving rim share
+exact edges.
+
+### Open items
+
+1. **The ~4.5 s stall right after the boot click is REAL and PRE-EXISTING.**
+   Measured interleaved A/B, 3 pairs, glass vs main: stall totals
+   5307/5421/5648 ms vs 5471/5562/5900 ms — the glass arm is *not* worse, and
+   p95 is identical (11–13 ms both). But something in `playToucanIntro`'s
+   synchronous setup blocks for four-plus seconds behind the dissolve on both
+   branches. Nobody has chased it. It is the biggest remaining intro win.
+2. **`aEdge` is a fan ramp, not a true distance field.** It is 1 at each shard's
+   centroid and 0 at every boundary vertex, so it averages ~⅓ across a triangle.
+   The shader works around this with two exponents (see below). A real
+   inset/skeleton distance would let one term do the job and would make the edge
+   highlight uniform in width instead of proportional to shard size.
+3. **No secondary fracture.** Shards that hit the sill hard bounce; they do not
+   break again. `shard-physics.ts` has the impact energy at hand if anyone wants
+   it.
+4. **The cabin pane's floor is `world y ≈ -6`, assumed, not measured** from the
+   intro terrain under the cabin. If debris ever visibly rests in mid-air
+   outside the window, that constant in `buildCabinPane()` is why.
+
+### Gotchas that will bite
+
+- **A BACKTICK IN A SHADER COMMENT ENDS THE SHADER.** The WGSL/GLSL sources are
+  template literals, so quoting an identifier the way the rest of this codebase's
+  prose does silently terminates the literal and turns the rest into JavaScript.
+  It happened twice. The parse error points at the comment and never mentions
+  backticks. `glass.test.ts` now guards it.
+- **The GLSL twin is not optional and not decoration.** `render/backend.ts`
+  still resolves to WebGL2 for every visitor without `navigator.gpu`, and
+  `wgslFn` alone hands them a black window with *no thrown error*. The two
+  dialects are checked against each other by signature **and by numeric
+  constant**, because the realistic drift is someone tuning a Fresnel weight
+  against a WebGPU screenshot and never touching the twin.
+- **Do not add the pane hidden and reveal it at impact.** It is a new shader
+  program, and a program compiles the first time it is *drawn*. That is the same
+  path that cost 730/762/712 ms of freeze before the pre-warm existed. The panes
+  are added INTACT during preload and drawn by the two warm renders. A culled or
+  invisible draw compiles nothing.
+- **Never dispose the fracture geometry from a scene teardown.** It lives in the
+  module cache in `pattern-cache.ts`; the next intro needs it. Disposing a cached
+  GPU resource from cleanup is the `forest-env.ts` material-cache bug and it
+  fails silently — the following play renders nothing.
+- **The bake is imported from `src/`, NOT fetched from `public/`, deliberately.**
+  `next.config.js` only sets cache headers for an image/font/audio allowlist; a
+  `.json` in `public/` falls through to the catch-all and is served
+  `no-cache, no-store, must-revalidate` — re-downloaded on *every* visit, which
+  is exactly the cost this was built to remove. From `src/` it rides
+  `/_next/static/` as `immutable`.
+- **The room pane survives the intro on purpose.** Its `anchored` shards are the
+  permanent broken window. It is only torn down (and `fake-glass` restored) when
+  the intro was SKIPPED.
+
+### Two bugs the screenshots caught that the tests could not
+
+Both rendered without a single console error, and both are the reason the
+generator and the shader each got rendered to PNG and *looked at* rather than
+trusted:
+
+1. **The fly-through whited out the entire screen.** At the crossing the camera
+   is centimetres from the pane, so every one of ~100 overlapping shards is seen
+   at a grazing angle where Fresnel → 1. Correct for one sheet of glass,
+   catastrophic for a cloud. Fixed with a proximity fade (`smoothstep(0.06,
+   0.75, camDist)`).
+2. **The shards looked like wet paper.** One shared edge term cannot be both
+   "this shard has substance" and "this edge is bright" on a centroid fan — turn
+   it up for the edge and the glow floods the shard. Split into a broad `body`
+   (^2.2) and a tight `rim` (^9.0).
+
+And two in the generator, both invisible in the statistics and obvious in a
+200×200 PNG: independent per-radial radius jitter makes concentric cracks
+*zigzag* into a mandala (fixed with a smooth low-harmonic wobble), and halving
+the radial count every other band strips the outer pane to four cracks — it is
+the concentric family that thins with distance, not the radial one.
+
+### Verification
+
+Full suite 2543 passed / 5 skipped. `tsc` 5990 errors vs baseline 5991 (one
+fewer; zero new). `glass.test.ts` has 32 tests; the tiling check and the
+dialect-constants check were both fault-injected to confirm they can fail.
+
+---
+
 ## 🧹 SPRITE-FORGE IS THE ONE SPRITE FOLDER (2026-08-03, `main`, DEPLOYED)
 
 **Asked:** the sprite system had spread out; make `sprite-forge/` the parent for
