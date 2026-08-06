@@ -153,6 +153,34 @@ describe("reframeSubject", () => {
   it("throws rather than guessing when segmentation removed everything", () => {
     expect(() => reframeSubject(fill(64, 64, [255, 255, 255], 0))).toThrow(/nothing opaque/i);
   });
+
+  /**
+   * THE WHITE-RECTANGLE BUG, as the pipeline actually produced it.
+   *
+   * A Qwen or Wan frame is fully opaque — the generator has no alpha to write
+   * — so the subject blob was the WHOLE canvas and the reframe scaled that
+   * entire white field to subject height. The published "sprite" was a solid
+   * block with the creature buried in it.
+   *
+   * The fixture is exactly that: a creature composited onto opaque white, the
+   * byte-for-byte shape a generation arrives in. The assertion is on the
+   * SILHOUETTE, not merely on "it did something": a pass here has to mean the
+   * output is figure-shaped, because the old code also returned a frame.
+   */
+  it("keys an opaque generation before measuring it — the white-rectangle bug", () => {
+    const src = flattenOnKey(creature(INTAKE_PX, INTAKE_PX, [300, 200, 720, 880]));
+    // Exactly what comes off the GPU: no transparent pixel anywhere.
+    for (let i = 3; i < src.data.length; i += 4) src.data[i] = 255;
+
+    const framed = reframeSubject(src);
+    const v = qaFrame(flattenOnKey(framed.image));
+    const sil = v.checks.find((c) => c.id === "silhouette")!;
+    expect(sil.pass).toBe(true);
+    // The old behaviour, stated as a number so a regression cannot be quiet:
+    // the block filled 100% of its own box and this figure is nowhere near it.
+    expect(Number.parseFloat(sil.value)).toBeLessThan(80);
+    expect(framed.notes.join(" ")).toMatch(/keyed an opaque frame/i);
+  });
 });
 
 describe("flattenOnKey", () => {
@@ -192,6 +220,31 @@ describe("qaFrame", () => {
     const one = v.checks.find((c) => c.id === "one-figure")!;
     expect(one.pass).toBe(false);
     expect(one.why).toMatch(/bounding box/);
+  });
+
+  /**
+   * THE NEGATIVE CONTROL for `silhouette`, and the reason it had to be added.
+   *
+   * Both frames here are keyed, correctly sized, correctly centred, and land
+   * their feet on the line — so `alpha`, `size`, `feet`, `centre` and `matte`
+   * report identically on the two of them. The ONLY difference is that one is
+   * a creature and the other is a filled rectangle, which is exactly the pair
+   * the old check set could not tell apart: the white-block reframe passed
+   * every one of them. A check that agrees on both states is not a check.
+   */
+  it("tells a figure from a filled block — the state the other checks share", () => {
+    const shaped = qaFrame(flattenOnKey(reframeSubject(creature(INTAKE_PX, INTAKE_PX, [300, 200, 720, 880])).image));
+    const block = qaFrame(flattenOnKey(reframeSubject(figure(INTAKE_PX, INTAKE_PX, [300, 200, 720, 880])).image));
+
+    expect(shaped.checks.find((c) => c.id === "silhouette")!.pass).toBe(true);
+    expect(block.checks.find((c) => c.id === "silhouette")!.pass).toBe(false);
+
+    // …and the checks that CANNOT see it agree on both, which is the point.
+    for (const id of ["alpha", "size", "feet", "centre"]) {
+      const a = shaped.checks.find((c) => c.id === id);
+      const b = block.checks.find((c) => c.id === id);
+      expect(a?.pass, `${id} should not be what separates them`).toBe(b?.pass);
+    }
   });
 
   it("REJECTS an opaque frame — segmentation never ran", () => {

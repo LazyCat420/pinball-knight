@@ -173,6 +173,35 @@ export function qaFrame(img: RawImage, opts: { sourceH?: number; afterStyle?: bo
     fix: "re-frame at a smaller subject height",
   });
 
+  // ── 6b. the subject is a FIGURE, not a filled block ─────────────────────
+  //
+  // THE STATE NO OTHER CHECK HERE CAN SEE. `alpha` and `matte` both branch on
+  // `clearShare` — the transparent share of the WHOLE canvas — which the
+  // reframe's own letterbox padding supplies no matter what the subject is. So
+  // an unkeyed generation, reframed into a solid white rectangle with the
+  // character buried inside it, cleared `alpha` at 49% and was then told by
+  // `matte` that it was "already transparent". Two checks reporting healthy on
+  // a frame with no matte at all, because both were reading the padding.
+  //
+  // A silhouette answers it directly: a real character never fills its own
+  // bounding box — arms, legs and the gaps between them are holes. Measured
+  // over every cell of every published sheet in the roster (brute, jester,
+  // frog, mario, pinball_knight, zombie, beaver), the fullest cell in the
+  // roster is the frog at 0.796 and the roster mean is 0.50. A filled
+  // rectangle is 1.00. The gate sits at 0.92 — clear of the busiest real
+  // sprite by a wide margin, and only reachable by something that is not a
+  // silhouette.
+  const fill = subject.area / Math.max(1, (bx1 - bx0 + 1) * (by1 - by0 + 1));
+  add({
+    id: "silhouette",
+    label: "subject is a figure, not a block",
+    value: `${pct(fill)} of its own bounding box`,
+    want: "< 92%",
+    pass: fill < 0.92,
+    why: "the subject fills its box like a rectangle — the background was never keyed, so the 'sprite' is the whole frame",
+    fix: "run the cut-out step before reframing; a raw generation has no alpha",
+  });
+
   // ── 7. the matte can key it ─────────────────────────────────────────────
   //
   // ONLY ASKED OF AN OPAQUE FRAME. `sheet-cut.ts` mattes exactly when the sheet

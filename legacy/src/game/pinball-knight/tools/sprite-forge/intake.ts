@@ -19,7 +19,19 @@
  * `commit.ts`.
  */
 import { blobs, subjectOf, unionBox, type Blob } from "./blobs";
+import { matte } from "./matte";
 import { resampleCell, type RawImage } from "./resample";
+
+/**
+ * Does this frame carry a real alpha channel, or is it a flat opaque
+ * generation? One transparent pixel anywhere is enough to say "someone keyed
+ * this": a reframed sprite always has a transparent margin, and a diffusion
+ * output never has one.
+ */
+function hasAlpha(data: Uint8ClampedArray): boolean {
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 255) return true;
+  return false;
+}
 
 /**
  * THE CONTRACT, as numbers.
@@ -157,6 +169,39 @@ export function reframeSubject(src: RawImage, opts: ReframeOptions = {}): Framed
   const targetH = opts.subjectH ?? SUBJECT_H;
   const feet = opts.feet ?? FEET;
   const notes: string[] = [];
+
+  // ── AN OPAQUE FRAME IS KEYED BEFORE IT IS MEASURED ─────────────────────────
+  //
+  // Everything below finds the subject by ALPHA. Every raw generation is
+  // OPAQUE — diffusion models have no alpha channel to write, which is the
+  // premise matte.ts opens with — so on a Qwen or Wan frame the "subject" blob
+  // was the entire canvas. The reframe then dutifully scaled that whole white
+  // field to subject height and planted its feet: the output was a white
+  // RECTANGLE with the character somewhere inside it, and every later stage
+  // accepted it.
+  //
+  // Nothing downstream could say so. `qaFrame`'s alpha and matte checks both
+  // branch on the transparent SHARE of the canvas, which this function's own
+  // letterbox padding supplies whether the subject is a sprite or a block —
+  // they reported 49% clear and "already transparent" on a frame with no matte
+  // at all. (The `silhouette` check in intake-qa.ts is the one that can now
+  // tell those two states apart, and it exists because of this bug.)
+  //
+  // Every caller that reframes a GENERATION rather than a cut-out was hit:
+  // `scripts/build-character.mjs`'s rotate step — so the S and N masters of
+  // every unattended build — and any panel intake that skips the cut-out.
+  //
+  // Keying here rather than at the call sites because this is the function
+  // with the alpha requirement; a fix in one route would leave the CLI and the
+  // build script still wrong. The fill is matte's border flood, so an interior
+  // white (a tank top, an eye, the knight's own armour) is unreachable and
+  // survives untouched — see the WHY A FLOOD FILL note in matte.ts. Guarded on
+  // "is anything transparent at all", so an already-keyed frame is passed
+  // through byte-for-byte and the cut-out path is unaffected.
+  if (!hasAlpha(src.data)) {
+    src = { width: src.width, height: src.height, data: matte(src.data, src.width, src.height).data };
+    notes.push("keyed an opaque frame before measuring it — a raw generation carries no alpha");
+  }
 
   const all = blobs(src.data, src.width, src.height);
   const { subject, extras, specks } = subjectOf(all);
