@@ -103,15 +103,30 @@ const STATE_COLOR: Record<Job["state"], { fg: string; bg: string }> = {
   cancelled: GREY,
 };
 
+/**
+ * Which clip this job's frames belong to — or "" when nothing on the job says.
+ *
+ * ⚠️ THIS USED TO GUESS, AND THE GUESS WAS ALWAYS `walk`. An `animate` job
+ * whose preset is `custom` carries clip "" by design (MOVESET's custom entry
+ * declares no clip), and the old fallback turned that into `walk`. So a
+ * custom-action death clip — a creature toppling over and lying still — came
+ * up labelled "walk", and the label is not cosmetic: it is what the frames get
+ * added to the sheet tray AS. A wrong row in the tray becomes a wrong row in
+ * the sidecar becomes a wrong clip in the game.
+ *
+ * "" is the honest answer, and `` renders it as an explicit "— pick a clip —"
+ * that blocks the add buttons until the operator chooses. A prompt is better
+ * than a plausible guess, because the guess is invisible once it is wrong.
+ */
 function clipGuess(job: Job): string {
   // The preset's declared clip travels on the job (defend → crouch etc.);
-  // guessing from the preset id is the fallback for pre-clip jobs on disk.
+  // reading the preset id is the fallback for pre-clip jobs already on disk.
   if (job.clip && (CLIP_NAMES as readonly string[]).includes(job.clip)) return job.clip;
-  if (job.mode === "animate") {
-    const p = String(job.params?.preset ?? "");
-    return (CLIP_NAMES as readonly string[]).includes(p) ? p : "walk";
-  }
-  return "idle";
+  const p = String(job.params?.preset ?? "");
+  if ((CLIP_NAMES as readonly string[]).includes(p)) return p;
+  // A single-frame qwen leg (rotate/edit/cut-out) really is an idle pose —
+  // that is what a master IS — so it keeps a default. Everything else asks.
+  return job.mode === "animate" ? "" : "idle";
 }
 
 function JobCard({
@@ -141,6 +156,23 @@ function JobCard({
 }) {
   const [clip, setClip] = useState(clipGuess(job));
   const [showPrompt, setShowPrompt] = useState(false);
+  /**
+   * THE GUARD LIVES HERE, not on the buttons.
+   *
+   * Four different controls add frames to the tray — "add all", the frame
+   * player's selection, the per-frame "+ sheet", and each cut cell. Disabling
+   * one of them would leave three doors open, and the whole point is that an
+   * unlabelled clip must not reach the tray at all.
+   */
+  const addToTray = (srcs: string[]) => {
+    if (!clip) return;
+    onAddToTray(srcs, clip);
+  };
+  /** Every add control wears the same reason when the clip is unset. */
+  const addProps = clip
+    ? {}
+    : { disabled: true, title: "pick which clip these frames are — the tray files them under it" };
+  const dimmed = clip ? {} : { opacity: 0.45, cursor: "not-allowed" };
   const [cells, setCells] = useState<string[] | null>(null);
   const [cutting, setCutting] = useState<string | null>(null);
   const c = STATE_COLOR[job.state] ?? GREY;
@@ -219,7 +251,14 @@ function JobCard({
         <>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
             <span style={S.note}>as clip</span>
-            <select style={{ ...S.input, width: 110 }} value={clip} onChange={(e) => setClip(e.target.value)}>
+            <select
+              style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
+              value={clip}
+              onChange={(e) => setClip(e.target.value)}
+            >
+              {/* Only offered while nothing is chosen — an unlabelled clip must
+                  be a decision, not a state you can go back to by accident. */}
+              {!clip && <option value="">— pick a clip —</option>}
               {CLIP_NAMES.map((c2) => (
                 <option key={c2} value={c2}>
                   {c2}
@@ -227,13 +266,13 @@ function JobCard({
               ))}
             </select>
             {frames.length > 1 && (
-              <button style={S.btn} onClick={() => onAddToTray(frames.map((f) => f.src), clip)}>
+              <button style={{ ...S.btn, ...dimmed }} {...addProps} onClick={() => addToTray(frames.map((f) => f.src))}>
                 + add all {frames.length}
               </button>
             )}
           </div>
           {frames.length > 6 ? (
-            <FramePlayer frames={frames} onAdd={(srcs) => onAddToTray(srcs, clip)} />
+            <FramePlayer frames={frames} onAdd={addToTray} />
           ) : (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
               {frames.map((f) => (
@@ -243,7 +282,7 @@ function JobCard({
                     <button style={{ ...S.btn, fontSize: 11 }} title="chain: next generation starts from this frame" onClick={() => onUseAsInit(f.src)}>
                       → init
                     </button>
-                    <button style={{ ...S.btn, fontSize: 11 }} onClick={() => onAddToTray([f.src], clip)}>
+                    <button style={{ ...S.btn, fontSize: 11, ...dimmed }} {...addProps} onClick={() => addToTray([f.src])}>
                       + sheet
                     </button>
                   </div>
@@ -286,7 +325,7 @@ function JobCard({
                         <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="LAST frame of an in-between — pins where the motion ends" onClick={() => onUseAsLast(c2)}>
                           → last
                         </button>
-                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} onClick={() => onAddToTray([c2], clip)}>
+                        <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px", ...dimmed }} {...addProps} onClick={() => addToTray([c2])}>
                           + sheet
                         </button>
                         <button style={{ ...S.btn, fontSize: 10, padding: "1px 5px" }} title="brush over the wrong part, regenerate only that" onClick={() => onFixFrame(c2)}>
