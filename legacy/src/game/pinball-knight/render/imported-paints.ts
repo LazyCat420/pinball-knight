@@ -387,9 +387,36 @@ export function importedPaints(
   // bails on an empty clip, so a partial facing froze instead of degrading.
   const pick = (d: Dir): Partial<Record<ClipName, FramePaint[]>> => {
     const own = byDir.get(d);
-    return own ? { ...fallback, ...own } : fallback;
+    return alias(own ? { ...fallback, ...own } : fallback);
   };
   return { S: pick("S"), N: pick("N"), E: pick("E") };
+}
+
+/**
+ * LOCOMOTION IS ONE ANIMATION UNLESS THE SHEET SAYS OTHERWISE.
+ *
+ * An imported clip the sheet does not author falls through to the PAINTER —
+ * `resolvePaints` merges per clip — which for the player means the knight. That
+ * is right for a clip the character genuinely lacks, and wrong for `run`: a
+ * character who walks as himself must not sprint as somebody else, and it was
+ * the loudest of the fallbacks precisely because sprinting is common.
+ *
+ * The obvious repair — publish `walk`'s frames again under `run` — is the thing
+ * `mislabel.test.ts` exists to reject, and rightly: two clip rows made of the
+ * same pixels mean one of them is mislabelled. It is also not what the source
+ * art says. The Paper Mario sheet's caption is literally "Walk / Run": ONE
+ * animation, for both. Many sheets are like that.
+ *
+ * So the reuse belongs at runtime, where it costs nothing and lies about
+ * nothing. The animator already plays `run` at its own frame rate (`fpsFor`),
+ * so the same frames read as a faster gait rather than as a copy — which is how
+ * a walk cycle becomes a run in hand-drawn animation anyway. Aliased BY
+ * REFERENCE, so `startSpriteSheet`'s dedupe packs the frames once and the atlas
+ * does not grow by a single texel.
+ */
+function alias(clips: Partial<Record<ClipName, FramePaint[]>>): Partial<Record<ClipName, FramePaint[]>> {
+  if (!clips.run?.length && clips.walk?.length) return { ...clips, run: clips.walk };
+  return clips;
 }
 
 /**

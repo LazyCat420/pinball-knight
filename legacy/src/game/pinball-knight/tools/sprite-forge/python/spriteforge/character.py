@@ -56,9 +56,21 @@ def frames_for(index: dict, band_i: int, facing_row: int, cols: list[int]) -> li
     if band_i >= len(bands):
         raise SystemExit(f"band {band_i} does not exist (sheet has {len(bands)})")
     band = bands[band_i]
-    if facing_row >= len(band["rows"]):
+    if not band["rows"]:
         return []
-    row = band["rows"][facing_row]
+    # A BAND WITH ONE TILE ROW AUTHORS ONE VIEW, AND EVERY FACING REUSES IT.
+    #
+    # Only some bands hold a facing per row; most hold a single row, and asking
+    # for facing 1 there used to return nothing — so the clip was published for S
+    # and absent for N, and N fell through to the PAINTER. That is the worst of
+    # the three outcomes: not "Mario has no death", but "Mario dies as himself
+    # walking south and as the knight walking north".
+    #
+    # Reusing row 0 is what the engine already does one level up ("A sheet
+    # authors one direction; the other two reuse it" — imported-paints.ts), and
+    # it is right for exactly the clips that need it here: a spin and a corpse
+    # read the same from either side.
+    row = band["rows"][facing_row] if facing_row < len(band["rows"]) else band["rows"][0]
     by_col = {c["col"]: c for c in index["cells"] if c["row"] == row}
     out = []
     for col in cols:
