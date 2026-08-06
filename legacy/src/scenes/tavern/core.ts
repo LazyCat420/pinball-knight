@@ -9,7 +9,7 @@
  */
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
-import { selectBackend } from "../../render/backend";
+import { selectBackend, createGPURenderer } from "../../render/backend";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/engine/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
 import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
@@ -515,11 +515,11 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
 
   let renderer: WebGPURenderer;
   try {
-    renderer = new WebGPURenderer({
+    selectBackend();
+    renderer = createGPURenderer({
       antialias: false,
       alpha: false,
       powerPreference: "high-performance",
-      forceWebGL: selectBackend().forceWebGL,
     });
   } catch {
     return false; // no context — caller keeps the DOM tavern

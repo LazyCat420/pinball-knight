@@ -16,7 +16,7 @@
  */
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
-import { selectBackend } from "../../../render/backend";
+import { selectBackend, createGPURenderer } from "../../../render/backend";
 import { state } from "../state";
 import { createPixelPass } from "../engine/render/pixel-pass";
 import { PALETTE_HEX } from "../render/palette";
@@ -94,10 +94,9 @@ export function installRenderer(): void {
   // on: the query pool costs a little memory and a resolve per frame, and a
   // player never reads the number. Silently ignored when the adapter lacks the
   // `timestamp-query` feature, so this can never fail a boot.
-  state.renderer = new WebGPURenderer({
+  state.renderer = createGPURenderer({
     antialias: false,
     alpha: false,
-    forceWebGL: selectBackend().forceWebGL,
     trackTimestamp: gpuTimingWanted(),
   });
   // Backend creation is ASYNC, and Renderer.render() THROWS if it runs first
