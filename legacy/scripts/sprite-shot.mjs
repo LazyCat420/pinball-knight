@@ -113,6 +113,11 @@ if (!browser) fail(2, "no host browser found — WebGPU is not reachable from WS
 const ctx = browser.contexts()[0] || (await browser.newContext());
 const page = await ctx.newPage();
 await page.setViewportSize({ width: 1280, height: 720 });
+// This run has nobody to click CONFIRM: without the harness flag, the lobby
+// pushes the character-select modal over the dungeon and every screenshot
+// below photographs the modal instead of the creature (run/lobby.ts
+// isHarnessEntry — `no-intro=1` alone deliberately does NOT count as one).
+await page.addInitScript(() => { window.__skipDungeonIntro = true; });
 
 // `boot/sheets.ts` announces every adopted sheet as
 //   [dungeon] <key>: imported art from N sheet(s)
