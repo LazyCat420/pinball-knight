@@ -67,6 +67,31 @@ function knightBuildOpts(): { sheetPalette?: number[][] } {
 const PLAYER_SHEET_KEY = "pinball-knight-player-sheet";
 export const DEFAULT_PLAYER_SHEET = "pinball_knight";
 
+/**
+ * WHO THE PLAYER MAY BE — the character-select roster.
+ *
+ * A `sheet` here is a published name under `public/sprites/`, the same namespace
+ * `loadImportedSheet` reads. Adding a character is one entry plus its sheet; no
+ * `EnemyKind`, no compile-enforced tables, because the player's art is resolved
+ * through `resolvePaints` rather than through the monster registries.
+ *
+ * ⚠️ EVERY ENTRY IS A RESKIN, INCLUDING THE DEFAULT. The painter still authors
+ * the ride forms — `ball`, the marbles, the ricochet bodies — that no imported
+ * sheet supplies, so an entry only ever replaces the on-foot clips. A character
+ * whose sheet lacks `attack` or `death` falls back to the KNIGHT'S art for those
+ * clips, which is visible and deliberate: the alternative is a missing frame.
+ */
+export interface PlayableCharacter {
+  sheet: string;
+  label: string;
+  blurb: string;
+}
+
+export const PLAYABLE: readonly PlayableCharacter[] = [
+  { sheet: DEFAULT_PLAYER_SHEET, label: "PINBALL KNIGHT", blurb: "THE FULL MOVESET" },
+  { sheet: "mario", label: "MARIO", blurb: "HAMMER SWING · NO DEATH CLIP" },
+];
+
 export function playerSheetName(): string {
   try {
     return localStorage.getItem(PLAYER_SHEET_KEY) || DEFAULT_PLAYER_SHEET;
@@ -82,6 +107,39 @@ export function setPlayerSheetName(name: string | null): void {
   } catch {
     /* blocked storage — the choice simply does not persist */
   }
+}
+
+/**
+ * CHOOSE A CHARACTER AND HAVE IT TAKE EFFECT, with no page reload.
+ *
+ * The docblock above says a swap "would need a rebuild of every cached
+ * weapon+look variant", and that is true — but it is also exactly the three
+ * lines `loadImportedKnightArt` already runs on its own success path. The
+ * reload was never load-bearing; it was the cheapest way to reach a state the
+ * loader could already produce. So this drops the module's memo and re-enters
+ * that path, and the next rAF rebuilds through `resolvePaints`.
+ *
+ * The DEFAULT sheet is a real choice, not the absence of one. Selecting the
+ * knight has to clear the memo too, or picking Mario and then picking the
+ * knight back leaves Mario's clips resolved for the rest of the session.
+ *
+ * Returns whether the chosen sheet actually loaded. A false return means the
+ * player is still whoever they were: `loadImportedSheet` resolves to null on
+ * any failure, and a caller that reported success anyway would be promising a
+ * character the atlas never received.
+ */
+export async function switchPlayerSheet(name: string): Promise<boolean> {
+  if (name === playerSheetName() && importedKnightPaints) return true;
+  setPlayerSheetName(name);
+  importedKnightPaints = null;
+  importedKnightPalette = null;
+  // Drop the cached atlases too. They are keyed by weapon+look, NOT by sheet —
+  // so without this the next getKnightSheet call hands back the previous
+  // character's atlas for an unchanged weapon, and the swap silently no-ops.
+  state.playerSheets.clear();
+  state.playerArtKey = null;
+  pinned.clear();
+  return (await loadImportedKnightArt()) !== null;
 }
 
 export async function loadImportedKnightArt(): Promise<ActorPaints | null> {

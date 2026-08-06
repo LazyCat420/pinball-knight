@@ -110,7 +110,8 @@ import { addGold } from "../../utils/gold-wallet";
 import { WEAPONS, POTIONS, freshWeapon, type WeaponId, type PotionId } from "./items";
 import { REAGENTS, rollReagentDrops, type ReagentId } from "./reagents";
 import { cardBase } from "./cards";
-import { enterTavern, closeTavern } from "../../scenes/tavern";
+import { closeTavern } from "../../scenes/tavern";
+import { openLobby } from "./run/lobby";
 import { openFloorLoading } from "./floor-loading";
 import { disposeBoss } from "./boss";
 import { disposeSecretDoors } from "./secrets";
@@ -361,12 +362,9 @@ export function launchDungeonGame(onExit?: () => void): void {
       beginRun();
     });
   }
-  runPinballIntro(() => void enterTavern(state.container!, { // title sequence, then the lobby; `!` — narrowing is lost in the callback
-    stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
-    onDescend: beginRun,
-    onAbandon: () => exitDungeonGame(),
-    lobby: true, // the entry hall IS the multiplayer lobby
-  }));
+  // Title sequence, then the lobby and its character prompt — run/lobby.ts.
+  // `!` — narrowing is lost in the callback.
+  runPinballIntro(() => openLobby(state.container!, { onDescend: beginRun, onAbandon: () => exitDungeonGame() }));
 }
 
 

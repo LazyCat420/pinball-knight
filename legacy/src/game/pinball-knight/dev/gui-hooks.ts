@@ -32,6 +32,7 @@ import { menuScreen } from "../gui/screens/menu";
 import { tavernScreen } from "../gui/screens/tavern";
 import { gameOverScreen } from "../gui/screens/game-over";
 import { shopScreen } from "../gui/screens/shop";
+import { characterSelectScreen } from "../gui/screens/character-select";
 
 export function installGuiHooks(): void {
   if (typeof window === "undefined") return;
@@ -80,6 +81,17 @@ export function installGuiHooks(): void {
   };
   api.settings = (): unknown => {
     push(settingsScreen());
+    return gui();
+  };
+  /**
+   * Re-open the character select at will.
+   *
+   * The lobby asks once per page load, which is right for a player and wrong
+   * for anyone iterating on a sheet: `__lab.playAs` + reload was the old cost,
+   * and answering it with "reload again" would put the cost back.
+   */
+  api.characters = (): unknown => {
+    push(characterSelectScreen(() => {}));
     return gui();
   };
   api.menu = (tab?: string): unknown => {

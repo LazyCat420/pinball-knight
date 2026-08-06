@@ -32,6 +32,8 @@ const SHEETS_TS = join(__dirname, "..", "..", "boot", "sheets.ts");
 /** The facings the loader asks for, in `boot/sheets.ts`'s order. */
 const DIRS: Dir[] = ["S", "N", "E"];
 
+const KNIGHT_SHEETS_TS = join(__dirname, "..", "..", "render", "knight-sheets.ts");
+
 /** `IMPORTED_ART` from the source of truth: SheetKey → sheet name. */
 function importedArt(): [string, string][] {
   const src = readFileSync(SHEETS_TS, "utf8");
@@ -40,14 +42,48 @@ function importedArt(): [string, string][] {
   return [...block[1].matchAll(/(\w+)\s*:\s*"([^"]+)"/g)].map((m) => [m[1], m[2]]);
 }
 
+/**
+ * `PLAYABLE` — the character-select roster, which this gate did NOT cover.
+ *
+ * `IMPORTED_ART` is the MONSTER map, so every check below ran on the roster the
+ * player fights and none of it on the roster the player IS. A player sheet fails
+ * exactly the same way a monster sheet does — `importedPaints` returns null
+ * without an `idle` and the null is silent by design — and that is precisely how
+ * stiltneck shipped invisible for weeks. Offering a character on a select screen
+ * makes the silence worse, not better: the player picks Mario, confirms, and
+ * stays the knight with nothing on screen saying why.
+ */
+function playable(): [string, string][] {
+  const src = readFileSync(KNIGHT_SHEETS_TS, "utf8");
+  const block = /const PLAYABLE[^=]*=\s*\[([\s\S]*?)\];/.exec(src);
+  if (!block) throw new Error("[forge] could not find PLAYABLE in render/knight-sheets.ts");
+  const rows = [...block[1].matchAll(/sheet:\s*(?:"([^"]+)"|(\w+))/g)];
+  return rows.map((m) => {
+    // The default entry names the sheet through DEFAULT_PLAYER_SHEET rather
+    // than a literal, so resolve that one constant rather than skipping it —
+    // skipping would leave the DEFAULT character as the only unchecked one.
+    const name = m[1] ?? /const DEFAULT_PLAYER_SHEET\s*=\s*"([^"]+)"/.exec(src)?.[1];
+    if (!name) throw new Error(`[forge] could not resolve a PLAYABLE sheet name from ${m[0]}`);
+    return [`player:${name}`, name] as [string, string];
+  });
+}
+
 let restore = (): void => {};
 beforeAll(() => { restore = installSpriteTestDom(); });
 afterAll(() => { restore(); });
 
 describe("published sheets", () => {
   it("every kind in IMPORTED_ART loads into playable paints", async () => {
-    const art = importedArt();
-    expect(art.length, "IMPORTED_ART parsed as empty — did the table's shape change?")
+    await expectRosterLoads(importedArt(), "IMPORTED_ART");
+  }, 120_000);
+
+  it("every character in PLAYABLE loads into playable paints", async () => {
+    // Same gate, the other roster. See `playable()` for why it needs one.
+    await expectRosterLoads(playable(), "PLAYABLE");
+  }, 120_000);
+
+  async function expectRosterLoads(art: [string, string][], label: string): Promise<void> {
+    expect(art.length, `${label} parsed as empty — did the table's shape change?`)
       .toBeGreaterThan(0);
 
     for (const [key, name] of art) {
@@ -65,7 +101,7 @@ describe("published sheets", () => {
         expect(Math.abs(image.height - h)).toBeLessThanOrEqual(2);
         sheets.push({ manifest, image: image as unknown as CanvasImageSource });
       }
-      expect(sheets.length, `${key}: IMPORTED_ART points at "${name}" but public/sprites has no such sheet`)
+      expect(sheets.length, `${key}: ${label} points at "${name}" but public/sprites has no such sheet`)
         .toBeGreaterThan(0);
 
       const paints = importedPaints(sheets);
@@ -82,5 +118,5 @@ describe("published sheets", () => {
         expect(paints?.[dir].idle?.length, `${key}: facing ${dir} has an empty idle`).toBeGreaterThan(0);
       }
     }
-  }, 120_000);
+  }
 });

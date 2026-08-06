@@ -1,0 +1,35 @@
+{
+  "_": [
+    "READ OFF .rip/mario/bands/band_NN.png BY EYE. See spriteforge/rip.py for why",
+    "this is hand-authored: caption left-edges align with some tile left-edge for",
+    "134 of 430 cells, so an automatic split fires three times too often and every",
+    "false fire puts frames in the wrong move silently.",
+    "",
+    "`facings` maps a facing to an index into the BAND'S OWN row list. On this",
+    "sheet a captioned band holds the same poses twice: row 0 seen from the front,",
+    "row 1 seen from behind. So one column range names the move in both facings.",
+    "",
+    "Band 0 is the 'Common' section, 22 columns:",
+    "  idle 0-1 · tired idle 2-4 · walk/run 5-7 · before jump 8-9 · jump 10-11",
+    "  fall 12-13 · spin jump 14 · spin fall 15 · spin land 16-18 · sit 19",
+    "  squish 20-21",
+    "Band 6 is 'Smash', where only columns 0 and 4 are Mario — 1-3 are the hammer",
+    "props and 5-7 are the coin burst.",
+    "",
+    "NO `run`. This sheet's caption is literally 'Walk / Run' — one animation for",
+    "both — so publishing run:[5,6,7] made it a byte-identical copy of walk, which",
+    "mislabel.test.ts rejects (IoU 0.95 / dcolour 20). It is right to: two clip",
+    "rows that are the same pixels mean one of them is mislabelled. Run falls back",
+    "to the knight's painted clip instead."
+  ],
+  "name": "mario",
+  "facings": { "S": 0, "N": 1 },
+  "clips": [
+    { "clip": "idle", "band": 0, "cols": [0, 1] },
+    { "clip": "walk", "band": 0, "cols": [5, 6, 7] },
+    { "clip": "attack", "band": 6, "cols": [0, 4] },
+    { "clip": "crouch", "band": 0, "cols": [19] },
+    { "clip": "stumble", "band": 0, "cols": [20, 21] },
+    { "clip": "wait", "band": 0, "cols": [2, 3, 4] }
+  ]
+}

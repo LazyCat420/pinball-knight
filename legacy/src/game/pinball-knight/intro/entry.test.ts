@@ -35,15 +35,28 @@ describe("the route into the intro", () => {
   });
 
   it("raises the lobby INSIDE the intro's callback, so the sequence comes first", () => {
-    // Not just "both appear in the file": `enterTavern` called at the top level
-    // would put the lobby up over a playing intro. It must be what `onDone`
-    // does.
+    // Not just "both appear in the file": raising the lobby at the top level
+    // would put it up over a playing intro. It must be what `onDone` does.
+    //
+    // The lobby is opened through `openLobby` (run/lobby.ts) rather than by
+    // calling `enterTavern` here — core.ts's size ratchet requires new work to
+    // live in the module that owns the concern. This asserts the same ROUTE at
+    // the new seam; the test below pins that the seam really is the tavern, so
+    // the pair cannot be satisfied by an `openLobby` that opens nothing.
     const introAt = src.search(/runPinballIntro\s*\(/);
-    const tavernAt = src.search(/enterTavern\s*\(/);
+    const lobbyAt = src.search(/openLobby\s*\(/);
     expect(introAt).toBeGreaterThan(-1);
-    expect(tavernAt).toBeGreaterThan(introAt);
+    expect(lobbyAt).toBeGreaterThan(introAt);
     // A callback boundary between the two — an arrow or a `function`.
-    expect(src.slice(introAt, tavernAt)).toMatch(/=>|function/);
+    expect(src.slice(introAt, lobbyAt)).toMatch(/=>|function/);
+  });
+
+  it("and the lobby module is the one that actually enters the tavern", () => {
+    // The other half of the route. Without this, `openLobby` could be renamed
+    // onto anything at all and the assertion above would still pass — the
+    // regression worth catching is the lobby not coming up, not the spelling.
+    const lobby = readFileSync(join(__dirname, "..", "run", "lobby.ts"), "utf8");
+    expect(lobby).toMatch(/enterTavern\s*\(/);
   });
 });
 

@@ -30,7 +30,7 @@
 import { KIND_IDS, KIND_INFO } from "../bestiary";
 import { floorLock, setFloorLock } from "./floor-lock";
 import { importedArtEnabled } from "../boot/sheets";
-import { playerSheetName, setPlayerSheetName } from "../render/knight-sheets";
+import { DEFAULT_PLAYER_SHEET, playerSheetName, switchPlayerSheet } from "../render/knight-sheets";
 import { state } from "../state";
 import type { EnemyKind } from "../state";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
@@ -73,7 +73,8 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         "  __lab.unlock()                back to normal progression",
         "  __lab.clear()                 clear all enemies",
         "  __lab.kinds()                 roster as an array",
-        '  __lab.playAs("frog")          PLAY AS a published sheet, then RELOAD',
+        '  __lab.playAs("mario")         PLAY AS a published sheet, live',
+        "  __gui.characters()            the character-select screen",
         "  __lab.playAs(null)            back to the knight",
         "",
         "  spawn() IGNORES level gates — you never need to reach a",
@@ -181,13 +182,18 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
     },
 
     /**
-     * PLAY AS a published sheet. `__lab.playAs("frog")` then RELOAD.
+     * PLAY AS a published sheet. `__lab.playAs("frog")` — LIVE, no reload.
      *
      * The player's clips come from `resolvePaints`, which merges imported over
      * PAINTED — so the creature walks, idles, runs and attacks as itself and
      * still curls into the knight's ball for the ride forms no generated sheet
-     * authors. Reload, not live, for the same reason `imported()` reloads: the
-     * atlas is palette-locked over the whole sheet.
+     * authors.
+     *
+     * This used to end in "then RELOAD", on the reasoning that the atlas is
+     * palette-locked over the whole sheet. The lock is real; the reload was not
+     * the only way to satisfy it. `switchPlayerSheet` drops the memo and the
+     * weapon+look cache and re-enters the loader — the same three lines the
+     * loader already ran on its own success path — and the next rAF rebuilds.
      *
      * Call with no argument to see the current choice, `null` to go back to the
      * knight.
@@ -197,14 +203,16 @@ export function installMonsterLab(deps: MonsterLabDeps): void {
         console.log(`[lab] player sheet is "${playerSheetName()}"`);
         return playerSheetName();
       }
-      setPlayerSheetName(name);
-      const now = playerSheetName();
-      console.log(
-        `[lab] player sheet → "${now}" — RELOAD to apply. ` +
-          `It must be published (public/sprites/${now}-{S,N,E}.json) and have an idle row, ` +
-          `or the painter quietly stays.`,
-      );
-      return now;
+      const want = name ?? DEFAULT_PLAYER_SHEET;
+      void switchPlayerSheet(want).then((ok) => {
+        console.log(
+          ok
+            ? `[lab] player sheet → "${playerSheetName()}" — applied live`
+            : `[lab] "${want}" did not load: it must be published ` +
+                `(public/sprites/${want}-{S,N,E}.json) with an idle row. The painter stays.`,
+        );
+      });
+      return want;
     },
   });
 

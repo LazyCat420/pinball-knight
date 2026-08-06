@@ -378,7 +378,12 @@ def band_review(img: Image.Image, band: Band, cells: list[Cell], scale: int = 3)
         c = cells[i]
         box = [c.x0 * scale, (c.y0 - y0) * scale, (c.x1 + 1) * scale - 1, (c.y1 - y0 + 1) * scale - 1]
         d.rectangle(box, outline=(255, 0, 255, 255))
-        d.text((box[0] + 2, box[1] + 1), str(i), fill=(255, 255, 0, 255))
+        # Label by COLUMN, not by index into the cell list. A move table is
+        # written as a column range, and on a sheet whose band holds a facing
+        # per row (Paper Mario: row 0 front, row 1 back) the SAME range names
+        # the move in every row. The list index is a global id that differs
+        # between the two rows of one move and reads as noise here.
+        d.text((box[0] + 2, box[1] + 1), str(c.col), fill=(255, 255, 0, 255))
     return crop
 
 
