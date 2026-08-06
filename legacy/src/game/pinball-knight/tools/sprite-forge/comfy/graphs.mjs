@@ -272,10 +272,30 @@ export function wanI2V({
   // on footage where the camera lives, it treats a locked-off shot as
   // boring and adds a slow push-in. A sprite clip needs the opposite —
   // the character moves, the frame never does.
+  //
+  // ── THE BACKGROUND TERMS ARE THE SAME ARGUMENT, MEASURED ─────────────────
+  //
+  // Wan free-runs a SCENE from frame 0, and the background is part of the
+  // scene. "plain white background" sits in the POSITIVE prompt, where it is
+  // one clause among many and loses to the action's own semantics — "dying"
+  // reads as dark. Measured 2026-08-06 across five 21-frame clips off one
+  // master: idle and attack settled light and were usable; the walk carrying
+  // the pix3lwalk LoRA and BOTH death runs drove the field to black.
+  //
+  // A black field is not merely ugly, it is UNKEYABLE. `matte()` floods from
+  // the border and stops at the first outline it meets; when the creature's
+  // own outlines are black on black there is no boundary, the fill walks into
+  // the body, and the frame arrives as 13%-tall fragments. That is the whole
+  // of why 0 of 21 walk frames survived while 15 of 21 attack frames did.
+  //
+  // The smoke/glow terms are from the same run: both death clips dissolved
+  // the figure into particle VFX, which a sprite would bake in permanently.
   negative =
     "static, frozen, watermark, text, extra character, split screen, " +
     "camera zoom, zoom in, zoom out, dolly, camera pan, camera movement, " +
-    "changing scale, character growing, character shrinking, cropped body",
+    "changing scale, character growing, character shrinking, cropped body, " +
+    "dark background, black background, changing background, night, shadows, " +
+    "vignette, fog, smoke, glow, particles, sparks, motion blur",
   extraNegative = null,
   width = 640,
   height = 640,
