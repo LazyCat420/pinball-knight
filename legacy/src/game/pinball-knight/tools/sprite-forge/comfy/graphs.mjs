@@ -112,6 +112,8 @@ export function qwenEdit({
   cfg = 2.5,
   loras = [],
   unet = MODELS.qwenUnet,
+  /** <1 switches the sampler to a LATENT init — see the structure leg below. */
+  denoise = 1,
 } = {}) {
   if (!image) throw new Error("[graphs] qwenEdit needs an uploaded image name");
   if (!prompt) throw new Error("[graphs] qwenEdit needs a prompt");
@@ -150,6 +152,31 @@ export function qwenEdit({
     g.img3 = { class_type: "LoadImage", inputs: { image: image3 } };
     g.pos.inputs.image3 = ["img3", 0];
     g.neg.inputs.image3 = ["img3", 0];
+  }
+  // STRUCTURE LEG. Everything above hands the init to the model as
+  // CONDITIONING only — the sampler still starts from `EmptySD3LatentImage` at
+  // denoise 1, so nothing about the init's geometry is binding. That is why
+  // pose is lost three different ways (measured): from a second reference
+  // image (`retarget`), from a sentence (`keyframes`), and even from editing
+  // the very row the poses are drawn in.
+  //
+  // Encoding the init INTO the latent and denoising partially is the other
+  // lever: structure comes from where the sampler starts, identity keeps
+  // coming from the conditioning above. The header's "plain img2img denoise
+  // does not [hold identity]" is an argument against using this ALONE, not
+  // against combining it with the edit conditioning.
+  //
+  // Scaled to the requested canvas first — with a latent init the canvas is
+  // the LATENT's size, so an unscaled encode silently ignores width/height.
+  if (denoise < 1) {
+    g.scl = {
+      class_type: "ImageScale",
+      inputs: { image: ["img", 0], width, height, upscale_method: "nearest-exact", crop: "disabled" },
+    };
+    g.enc = { class_type: "VAEEncode", inputs: { pixels: ["scl", 0], vae: ["v", 0] } };
+    g.k.inputs.latent_image = ["enc", 0];
+    g.k.inputs.denoise = denoise;
+    delete g.lat;
   }
   g.k.inputs.model = chainLoras(g, ["u", 0], loras, "l");
   return g;

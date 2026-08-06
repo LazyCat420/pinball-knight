@@ -5,6 +5,7 @@
  *   node cli.mjs stats
  *   node cli.mjs rotate  --init frame.png --to "left"        [--out DIR] [--seed N]
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
+ *                        [--canvas init|WxH]
  *   node cli.mjs animate --init frame.png --action "walking" [--out DIR] [--seed N]
  *                        [--frames 21] [--no-lora]
  *   node cli.mjs retarget --poses row.png --character idle.png --subject "a spotted frog"
@@ -96,14 +97,41 @@ const main = {
     await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir);
   },
 
-  /** Free-form instruction edit — inpaint-class fixes, pose keyframes. */
+  /**
+   * Free-form instruction edit — inpaint-class fixes, pose keyframes.
+   *
+   * `--canvas init` derives the output canvas from the init's own aspect.
+   * Editing a 4-pose ROW on the square default returns a GRID, for the same
+   * reason `retarget` documents: the canvas aspect dictates the layout, and it
+   * outranks the sentence. Left opt-in so a plain single-figure edit keeps the
+   * square it has always had.
+   */
   async edit() {
     const init = opt("init");
     const prompt = opt("prompt");
     if (!init || !prompt) throw new Error("edit needs --init <png> and --prompt <instruction>");
     const dir = outDir("edit");
     const image = await uploadImage(init, basename(init));
-    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir);
+    const canvas = opt("canvas");
+    let size = {};
+    if (canvas === "init") {
+      size = canvasFor(init);
+      console.log(`canvas ${size.width}x${size.height} from the init's aspect`);
+    } else if (canvas) {
+      const [w, h] = canvas.split("x").map(Number);
+      if (!w || !h) throw new Error(`--canvas takes "init" or WxH, got "${canvas}"`);
+      size = { width: w, height: h };
+    }
+    // `--ref` rides along as Figure 2. With `--denoise` it is the other half of
+    // the split: the LATENT carries structure (pose, facing, layout) and the
+    // reference carries identity (who this creature is). Neither alone does
+    // both — that is the whole measurement in work/brute/FINDINGS.md.
+    const ref = opt("ref");
+    const image2 = ref ? await uploadImage(ref, basename(ref)) : null;
+    await run(
+      qwenEdit({ image, image2, prompt, seed: Number(opt("seed", 7)), denoise: Number(opt("denoise", 1)), ...size }),
+      dir,
+    );
   },
 
   /**
