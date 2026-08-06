@@ -287,6 +287,8 @@ export function wanI2V({
   loraHigh = null,
   loraLow = null,
   loraStrength = 0.8,
+  /** Decode tile edge. Lower it on a loaded box — see the `dec` note. */
+  tileSize = 128,
   lorasHigh = null,
   lorasLow = null,
   unetHigh = MODELS.wanHigh,
@@ -351,9 +353,19 @@ export function wanI2V({
     // tile 128: the fence run still drew ~10GB of system RAM at decode
     // (bottomed 2.5GiB avail) — per-tile staging shrinks with tile area,
     // and 128px quarters it again. Sub-tile seams don't survive the crush.
+    //
+    // 2026-08-06: 2.5GiB of headroom was not enough margin. Three runs at
+    // 21/17/9 frames all died here, and the guard log named the cause —
+    // `SOFT (wsl 0.7-1.1GiB available)`, i.e. the guard's own 1.2GiB floor.
+    // It reads as a mystery interrupt because a SOFT strike writes no
+    // guard-tripped.json (only HARD does), so the absence of that file is
+    // NOT evidence the guard stayed out of it. Frame count did not matter,
+    // which is the tell that the transient is the decode's staging and not
+    // the batch. `tileSize` is now a caller knob so a loaded box can trade
+    // seams — already argued irrelevant under the crush — for headroom.
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: 128, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };

@@ -7,7 +7,7 @@
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
  *                        [--canvas init|WxH]
  *   node cli.mjs animate --init frame.png --action "walking" [--out DIR] [--seed N]
- *                        [--frames 21] [--no-lora]
+ *                        [--frames 21] [--no-lora] [--tile 128]
  *   node cli.mjs retarget --poses row.png --character idle.png --subject "a spotted frog"
  *
  * Outputs land in work/comfy/<run-name>/ (gitignored, like every other
@@ -189,6 +189,7 @@ const main = {
         prompt,
         length: Number(opt("frames", 21)),
         seed: Number(opt("seed", 7)),
+        tileSize: Number(opt("tile", 128)),
         loraHigh: pixelLora,
         loraLow: pixelLora,
       }),

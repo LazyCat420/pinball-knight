@@ -120,14 +120,38 @@ Three attempts (21, 17 and 9 frames, 640², ~8 min each) all died the same way:
 execution_interrupted  node_id: dec  node_type: VAEDecodeTiled
 ```
 
-— after both sampler legs completed, i.e. only the decode fails, reproducibly and
-independent of frame count. Ruled out: node inputs (all valid and in range per
-`/object_info`), canvas size (`wanI2V` already defaults to 640²), and the RAM
-guard (`~/comfy/guard-tripped.json` was never written, and its heartbeat held flat
-at 19GiB WSL / 52.6GB host through all three). The interrupt flag is being set by
-something not yet identified. Until that is found, no new creature can be
-animated here — which is the actual blocker on the brute, and it is upstream of
-everything above.
+**SOLVED, and the first diagnosis was wrong.** It was the RAM guard all along.
+I ruled the guard out because `~/comfy/guard-tripped.json` was never written —
+but **only `hardStrike()` writes that file; `softStrike()` interrupts silently.**
+The absence of that file is not evidence the guard stayed out of it, and treating
+it as evidence cost two more failed runs. `guard.log` had the answer the whole
+time, one strike per attempt:
+
+```
+SOFT (wsl 1.1GiB available) — interrupting + dropping cached models
+SOFT (wsl 0.7GiB available)
+SOFT (wsl 0.8GiB available)
+```
+
+The guard was right. The box genuinely was out of system RAM at decode.
+
+**The real driver is not the decode — it is ComfyUI's own retained RSS.** After
+9h47m and a long run of qwen jobs, the python process held **13.1 GB RSS with
+every model already unloaded** (the `purge` node frees the VRAM; the host
+allocator keeps the pages). That left ~20 GB against a decode that wants ~19, so
+the transient hit the guard's 1.2 GiB floor. Frame count made no difference —
+9 frames failed identically — and neither did dropping the decode tile to 64,
+which is the tell that the batch was never the term that mattered.
+
+**The fix is a restart, not a knob.** Stopping the stale server returned
+20.4 → 31.5 GiB available (an 11 GB reclaim, exactly the retained RSS). On the
+fresh server the same job ran first try: **17 frames in 307s**, identity held
+end to end.
+
+So: before a Wan run on a long-lived server, bounce ComfyUI. `tileSize` is now a
+caller knob anyway (it did not fix this, and it is not the lever to reach for
+first). And when a forge job dies with a bare `execution_interrupted`, read
+`guard.log` before theorising — it names the cause in one line.
 
 Related: `ANY_IMAGE_TO_CHARACTER.md` §6.2 (`drift.ts`, the `distinct` gate),
 `comfy/modes.mjs` (`keyframes`, `retarget`), `comfy/cli.mjs` (`retarget`'s note on
