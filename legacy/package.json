@@ -26,7 +26,8 @@
     "sprites": "FORGE_PUBLISH=1 scripts/ops/pk-run.sh --class test -- vitest run src/game/pinball-knight/tools/sprite-forge",
     "bake:glass": "node scripts/bake-glass-fracture.mjs",
     "bake:glass:check": "node scripts/bake-glass-fracture.mjs --check",
-    "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs"
+    "pixels": "node src/game/pinball-knight/tools/sprite-forge/pixel-trace/trace.mjs",
+    "megamap": "node scripts/mega-map.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
