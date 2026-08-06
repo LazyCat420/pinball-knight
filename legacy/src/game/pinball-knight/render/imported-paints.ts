@@ -47,7 +47,7 @@ export async function loadImportedSheet(name: string, dir: Dir): Promise<Importe
     }
     if (!res.ok) return null;
     const manifest = (await res.json()) as SheetManifest;
-    const image = await decode(manifest.image);
+    const image = await decode(versioned(manifest));
     if (!image) return null;
     // A re-export at a different size would silently shift every cell rect.
     const [w, h] = manifest.source;
@@ -64,6 +64,39 @@ export async function loadImportedSheet(name: string, dir: Dir): Promise<Importe
   } catch {
     return null;
   }
+}
+
+/**
+ * THE IMAGE URL, VERSIONED BY ITS OWN MANIFEST — so a cached PNG can never
+ * outlive the sidecar that describes it.
+ *
+ * ── THE BUG THIS EXISTS FOR, MEASURED IN PRODUCTION ─────────────────────────
+ *
+ * The two halves of a sheet are served with OPPOSITE caching policies:
+ *
+ *     /sprites/x-S.json   no-cache, no-store, must-revalidate
+ *     /sprites/x-S.png    public, max-age=86400, stale-while-revalidate=604800
+ *
+ * So after a sheet is republished at a new size, a returning browser holds a
+ * FRESH manifest and a STALE image — for a day by max-age, and for a further
+ * week under stale-while-revalidate. The size check below then does exactly
+ * what it was written to do, and the character silently reverts to the painter.
+ * Observed live on `mario-S`: manifest 197x352, cached PNG 116x304.
+ *
+ * The check is right; it was just the only line of defence, and it can only
+ * detect the mismatch after it has already happened. Putting a version in the
+ * URL means the stale entry is never consulted: the manifest is uncacheable, so
+ * whatever it names is by definition current, and a republished PNG is a
+ * different URL rather than the same one with different bytes.
+ *
+ * `hash` when the publisher wrote one (it covers a re-export at the SAME size,
+ * which the dimensions cannot see), falling back to the dimensions so every
+ * sheet published before this — jester, beaver, frog, fish_feet, zombie,
+ * stiltneck, pinball_knight — is protected without being re-exported first.
+ */
+export function versioned(m: SheetManifest): string {
+  const tag = m.hash ?? `${m.source[0]}x${m.source[1]}`;
+  return `${m.image}${m.image.includes("?") ? "&" : "?"}v=${tag}`;
 }
 
 function decode(src: string): Promise<HTMLImageElement | null> {

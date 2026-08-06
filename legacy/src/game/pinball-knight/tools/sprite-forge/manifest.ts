@@ -40,6 +40,19 @@ export interface SheetManifest {
   /** Source pixel dimensions, so a mismatched re-export is caught on load. */
   source: [number, number];
   /**
+   * Content tag for the PNG, used as its cache-busting URL version.
+   *
+   * The sidecar is served `no-store` and the image `max-age=86400,
+   * stale-while-revalidate=604800`, so without a versioned URL a returning
+   * browser pairs a fresh manifest with a week-old image. See `versioned()` in
+   * render/imported-paints.ts for the production failure this comes from.
+   *
+   * Optional: sheets published before this fall back to their dimensions, which
+   * catches every resize. Write it when you can — it also catches a re-export at
+   * the SAME size, which dimensions cannot.
+   */
+  hash?: string;
+  /**
    * The source's intrinsic block size, from `grid.ts`. 1 = no lattice (the art
    * is continuous and must be RESAMPLED). Greater than 1 means every N×N block
    * is one authored pixel, which is what makes a 1:1 import possible at all.

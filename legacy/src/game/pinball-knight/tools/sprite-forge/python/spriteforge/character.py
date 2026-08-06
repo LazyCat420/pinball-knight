@@ -31,6 +31,7 @@ without that property simply declare one facing and the engine reuses it.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -143,6 +144,12 @@ def build(rip_dir: Path, table_path: Path, out: Path) -> list[str]:
         sheet, manifest = built
         png = out / f"{table['name']}-{facing}.png"
         sheet.save(png)
+        # THE IMAGE'S CACHE KEY, written AFTER the PNG exists so it is a hash of
+        # the bytes actually shipped rather than of what we meant to ship. The
+        # sidecar is served no-store and the PNG for a day, so this is what stops
+        # a returning browser pairing a fresh manifest with a stale image — see
+        # `versioned()` in render/imported-paints.ts.
+        manifest["hash"] = hashlib.sha256(png.read_bytes()).hexdigest()[:12]
         (out / f"{table['name']}-{facing}.json").write_text(json.dumps(manifest, indent=1) + "\n")
         written.append(f"{png.name} {sheet.width}x{sheet.height} ({len(manifest['rows'])} clips)")
     return written
