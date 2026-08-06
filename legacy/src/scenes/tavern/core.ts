@@ -70,7 +70,7 @@ import { openGambler, closeGambler, isGamblerOpen, resetGamblerVisit } from "./g
 import { buildNpcs, type BuiltNpcs } from "./npcs";
 import { createVfx, type VfxSystem } from "../../game/pinball-knight/fx/system";
 import { warmTavern, tavernWarmEnabled } from "./warmup";
-import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxDart, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
+import { startTavernAmbience, stopTavernAmbience, sfxAnvil, sfxKeeperGreet, sfxStationFocus, sfxPlunger } from "./audio";
 
 const ROOM_CENTER_X = (ROOM.minX + ROOM.maxX) / 2;
 const ROOM_CENTER_Z = (ROOM.minZ + ROOM.maxZ) / 2;
@@ -435,8 +435,22 @@ function frame(now: number): void {
     }
   }
 
-  // ── Keepers ── the work-loop beats drive their own sparks and sound, and the
-  // station focus computed above is what tells them you have walked up.
+  // ── Keepers ── the work-loop beats drive their own sparks, and the station
+  // focus computed above is what tells them you have walked up.
+  //
+  // THE WORK LOOPS ARE SILENT ON PURPOSE. The hammer lands every 2.1s and the
+  // dart every 2.9s, forever, from the frame you walk in — two unprompted
+  // clanks on a fixed period with no variation and no way to get away from
+  // them, since the room is one screen. What reads as "a blacksmith working"
+  // for ten seconds reads as a stuck arcade machine for the ten minutes you
+  // actually spend shopping, and the anvil's 3.2kHz tink is close enough to a
+  // bumper ping that the hub sounded like a pinball table nobody was playing.
+  //
+  // The SPARKS still fly (npcs.ts emits those itself), so the loops still read
+  // as work — they just no longer make the noise. Sound in here is now reserved
+  // for things YOU caused: walking up to a keeper, buying, forging, descending.
+  // The anvil cue is not gone, it moved to the forge purchase below/above
+  // (`onCounterClosed`), where a hammer blow is earned rather than ambient.
   npcs?.update({
     time: tavern.time,
     dt,
@@ -444,9 +458,7 @@ function frame(now: number): void {
     focusId: tavern.focus?.id ?? null,
     playerX: p?.x ?? 0,
     onBeat: (kind) => {
-      if (kind === "anvil") sfxAnvil();
-      else if (kind === "dart") sfxDart();
-      else sfxKeeperGreet();
+      if (kind === "greet") sfxKeeperGreet();
     },
   });
 
