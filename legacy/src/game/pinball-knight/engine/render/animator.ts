@@ -117,6 +117,25 @@ const CLIP_FALLBACK: Partial<Record<ClipName, ClipName>> = {
   wait: "walk",
   wake: "walk",
   stumble: "idle",
+  /**
+   * ATTACK, added when the windup stopped hard-coding `idle` for melee kinds
+   * (entities/zombie.ts). Before that change only ranged families ever asked
+   * for this clip, and every ranged family paints one — so the gap was real but
+   * unreachable.
+   *
+   * It is reachable now, and MOST of the roster falls through it: twelve
+   * painted families author no `attack` at all (zombie, spider, brute, boss,
+   * ghost, reaper, bat, slime, goblin, pin, golem, magnet). Without this entry
+   * every one of them would resolve to an empty index list the moment it wound
+   * up, and `apply()` bails on empty — a horde frozen mid-stride whenever it
+   * decided to swing. That is a far louder bug than the missing animation this
+   * wave set out to fix.
+   *
+   * `idle` is the honest target: it is exactly what those families played
+   * during a windup before, so a family with no attack art is unchanged, and
+   * the colour telegraph that has always carried the read is untouched.
+   */
+  attack: "idle",
 };
 
 /**

@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { installSpriteTestDom } from "../../testkit/atlas-census";
 import { importedPaints, type ImportedSheet } from "../../render/imported-paints";
 import type { SheetManifest } from "./manifest";
+import { BUILD_DIRS, DEFAULT_CLIPS, sheetCoverage } from "./build-plan";
 import type { Dir } from "../../engine/render/paint-types";
 
 const PUBLIC = join(__dirname, "..", "..", "..", "..", "..", "public", "sprites");
@@ -119,4 +120,42 @@ describe("published sheets", () => {
       }
     }
   }
+
+  /**
+   * THE STANDING COVERAGE REPORT — what every published creature still owes
+   * `DEFAULT_CLIPS`, printed as a table rather than asserted.
+   *
+   * A pass/fail gate here would be wrong today and wrong on purpose: the whole
+   * roster predates the spec (`build-plan.ts` was written to describe what
+   * these sheets should have been), and `paintsFor` now merges imported clips
+   * over the painter's, so a partial set is a supported way to ship rather than
+   * a broken one. Failing the suite would say "delete the brute", which is not
+   * the answer.
+   *
+   * What it DOES assert is the one thing that is unambiguously broken: a set
+   * with no `idle` is dropped whole and in silence. `expectRosterLoads` already
+   * catches that from the other direction; this states it in the spec's own
+   * vocabulary so the two can't drift.
+   *
+   * The value is the printout. "brute: 3/18 rows · facings S · no run/stumble/
+   * death" is the sentence that turns a vague "the monsters don't do much" into
+   * a work list, and it re-prints itself on every run, so it cannot go stale
+   * the way a hand-written TODO does.
+   */
+  it("reports each published set's coverage against DEFAULT_CLIPS", () => {
+    const lines: string[] = [];
+    for (const [key, name] of [...importedArt(), ...playable()]) {
+      const manifests: SheetManifest[] = [];
+      for (const dir of DIRS) {
+        const p = join(PUBLIC, `${name}-${dir}.json`);
+        if (existsSync(p)) manifests.push(JSON.parse(readFileSync(p, "utf8")) as SheetManifest);
+      }
+      if (!manifests.length) continue;
+      const cov = sheetCoverage(manifests);
+      lines.push(`  ${key.padEnd(16)} ${cov.summary}`);
+      expect(cov.fatal, `${key}: no idle row — importedPaints drops the whole set`).toBe(false);
+    }
+    expect(lines.length).toBeGreaterThan(0);
+    console.info(`\n[forge] published coverage vs DEFAULT_CLIPS (${DEFAULT_CLIPS.length} clips x ${BUILD_DIRS.length} facings):\n${lines.join("\n")}\n`);
+  }, 60_000);
 });
