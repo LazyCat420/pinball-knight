@@ -14,14 +14,19 @@ cd "$(dirname "$0")/.." || exit 1
 OUT=.stress
 mkdir -p "$OUT"
 N=${1:-10}
-BURNERS=${2:-14}
+# The burners are the POINT here — this harness exists to run the suite under
+# contention — but they used to be a flat 14 spinners, which on a 24-thread box
+# is the desktop and every concurrent session too. Half the box is enough
+# contention to have caught the flake this was written for, and the suite side
+# is metered below so the two together stay inside the budget.
+BURNERS=${2:-$(( $(nproc) / 2 ))}
 fails=0
 for i in $(seq 1 "$N"); do
   pids=()
   for _ in $(seq 1 "$BURNERS"); do
     ( while :; do :; done ) & pids+=($!)
   done
-  npx vitest run > "$OUT/run$i.log" 2>&1
+  scripts/ops/pk-run.sh --class test -- npx vitest run > "$OUT/run$i.log" 2>&1
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null; done
   wait 2>/dev/null
   line=$(grep -E '^ +Tests' "$OUT/run$i.log")

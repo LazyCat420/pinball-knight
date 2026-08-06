@@ -49,7 +49,19 @@ tables in maze/prefabs.ts, EXPANSION_SKIN vs KIND_PORTRAIT, and ESSENTIAL.
 
 REPO: default branch is `main`, not master. `npm run lint` is broken (next lint
 was removed in Next 16, and ESLint 9 has no flat config here) — do not trust it.
-The suite is 88s, of which maze/ is 59s. deploy.sh ships the WORKING TREE.
+The suite is 88s unmetered, of which maze/ is 59s. deploy.sh ships the WORKING
+TREE.
+
+THE BOX IS SHARED — never hand a run every core. `npm test`, `dev`, `playtest*`,
+`audit*`, `webgpu:check*` and `sprites` go through scripts/ops/pk-run.sh, which
+takes flock'd THREAD locks (budget = 20 of this box's 24; 2 physical cores are
+always held back) and, for browser/perf runs, physical CORE-SLOTS via
+with-cores.sh. `npm run ops:status` prints who holds what right now. Measured on
+a loaded box: 186s at the default half-budget grant (10 threads), 237s at 6 —
+so the meter costs wall-clock and buys back a usable desktop and comparable
+timings. Unit-test classes SHRINK on a busy box rather than fail; perf/webgpu
+are exact or exit 75, and **75 means the run never started — it is not a red
+suite**. `npm run test:raw` bypasses everything and is never a timing datapoint.
 
 ART has three pipelines, pick deliberately: painters (render/monsters/*.ts,
 procedural canvas code, the default for anything animated) · sprite-forge

@@ -66,7 +66,23 @@ case "$dir" in
   */maze|*/maze/*) advisory+="tests: skipped ${dir} (59s — covered by the deploy gate)"$'\n' ;;
   *)
     if compgen -G "$dir/*.test.ts" >/dev/null; then
-      if ! out="$(timeout 90 npx vitest run "$dir" 2>&1)"; then
+      # Metered: an edit fires this on every save, and an unmetered vitest sizes
+      # its pool from nproc — one keystroke would take the whole box away from
+      # whatever else is measuring on it. 2 threads, and it goes ahead unmetered
+      # rather than blocking an edit if the meter is missing (older worktree) or
+      # the box is full (advisory checks do not get to hold up a save).
+      runner=(npx vitest run "$dir")
+      if [ -x scripts/ops/pk-run.sh ]; then
+        runner=(env PK_MIN_THREADS=1 scripts/ops/pk-run.sh --class test --threads 2 --timeout 20 -- "${runner[@]}")
+      fi
+      rc=0
+      out="$(timeout 90 "${runner[@]}" 2>&1)" || rc=$?
+      # 75 is the meter refusing to start, NOT a red suite. Reporting it as
+      # "TESTS FAILING" would send someone hunting a bug in code that was never
+      # run — the advisory says what actually happened instead.
+      if [ "$rc" = 75 ]; then
+        advisory+="tests: skipped ${dir} (no thread budget free — run 'npm run ops:status')"$'\n'
+      elif [ "$rc" != 0 ]; then
         advisory+="TESTS FAILING in ${dir}:"$'\n'"$(printf '%s' "$out" | grep -E '^\s*(×|FAIL|→)' | head -15)"$'\n'
       fi
     fi
