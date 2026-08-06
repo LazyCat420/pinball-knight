@@ -85,6 +85,50 @@ pixel art before it is trusted, exactly as the manifest note says.
 
 Do not re-run the five above. Re-read this.
 
+## Round two: the painter as the init, and the surface does not move either
+
+**2026-08-05, same session.** The obvious answer to "the sampler invents neither
+pose nor bulk" is to hand it an init that already has both — and the PAINTER is
+exactly that source, free and at any resolution. `scripts/brute-init.mjs` renders
+any painter's clips to per-clip rows on the magenta key for this.
+
+It does not work either, and the reason completes the picture. Run 6: the painted
+brute's own 4-frame walk row at denoise 0.75, asked only to repaint the surface as
+rotting pixel-art flesh. It came back as **the painter's flat cel art, essentially
+untouched** — no texture, no rot, no pixel detail.
+
+So the dial is not "structure below, surface above". Below the pose threshold the
+sampler re-renders the latent *entirely*, surface included; above it, it discards
+the latent entirely. There is no band where structure is kept and appearance is
+restyled. `denoise` on this graph is closer to a crossfade between "copy the init"
+and "ignore the init" than to a structure/detail split.
+
+What DOES work, and is worth keeping: at denoise 1.0 with a painted brute cell as
+the conditioning image, the model returned an excellent giant zombie brute that
+visibly descends from the painter (green flesh, spurred pauldrons, belly wound).
+Identity conditioning is real. It is only ever ONE pose.
+
+## The Wan leg is the right tool, and it is currently blocked
+
+The frog in `sources/frog-2026-08-05` shipped through `animate` — Wan I2V, a
+VIDEO model, which is the only leg here that generates genuine motion. That, not
+qwen, is how a new creature gets animated.
+
+Three attempts (21, 17 and 9 frames, 640², ~8 min each) all died the same way:
+
+```
+execution_interrupted  node_id: dec  node_type: VAEDecodeTiled
+```
+
+— after both sampler legs completed, i.e. only the decode fails, reproducibly and
+independent of frame count. Ruled out: node inputs (all valid and in range per
+`/object_info`), canvas size (`wanI2V` already defaults to 640²), and the RAM
+guard (`~/comfy/guard-tripped.json` was never written, and its heartbeat held flat
+at 19GiB WSL / 52.6GB host through all three). The interrupt flag is being set by
+something not yet identified. Until that is found, no new creature can be
+animated here — which is the actual blocker on the brute, and it is upstream of
+everything above.
+
 Related: `ANY_IMAGE_TO_CHARACTER.md` §6.2 (`drift.ts`, the `distinct` gate),
 `comfy/modes.mjs` (`keyframes`, `retarget`), `comfy/cli.mjs` (`retarget`'s note on
 canvas aspect).

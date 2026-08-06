@@ -3280,7 +3280,17 @@ function bruteFrame(dir: Dir, pose: ZPose, scale = 1.36, crowned = false): Frame
     zombieStanding(ctx, dir, pose, variant);
     // Slab pauldrons of grown-over muscle/bone on the shoulders.
     const sy = 58 + pose.bob;
-    if (dir !== "N") {
+    if (dir === "E") {
+      // PROFILE. The shoulders are edge-on here, so both pauldrons project onto
+      // nearly the same x as the body (~64) — the 44/84 pair the head-on views
+      // use left the far one hanging in open magenta, a detached blob beside the
+      // brute at every side-facing angle. Far shoulder first, set back (-x) and
+      // slightly higher so it reads as depth rather than as a second lump.
+      ell(ctx, 57, sy - 3, 11, 9, F(7));
+      poly(ctx, [[53, sy - 9], [58, sy - 17], [62, sy - 7]], F(22));
+      ell(ctx, 68, sy, 13, 10, F(7));
+      poly(ctx, [[64, sy - 6], [69, sy - 15], [74, sy - 4]], F(22));
+    } else if (dir !== "N") {
       ell(ctx, 44, sy, 13, 10, F(7));
       ell(ctx, 84, sy, 13, 10, F(7));
       // a bony spur off each shoulder
