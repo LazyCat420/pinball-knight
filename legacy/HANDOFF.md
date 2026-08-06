@@ -7,120 +7,136 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
-## 🪟 THE WINDOW REALLY BREAKS (2026-08-05, `main` @ b8ee2fa, DEPLOYED & VERIFIED LIVE)
+## 🪟 THE WINDOW REALLY BREAKS (2026-08-05, `main` @ df4a028, DEPLOYED & VERIFIED LIVE)
 
 **Asked:** make the toucan's window smash real — real glass physics, custom WGSL
-shaders, and handle the loading so it isn't rebuilt on every visit.
+shaders, handle the loading so it isn't rebuilt every visit. Then: more violent,
+more jagged, make it look like a reference photo of real broken glass, and make
+the still window match the animated one.
 
-**Live on braindeadbot.com, verified through the actual intro on real WebGPU**
-(host Chrome over CDP): shader compiles, both panes draw, zero console errors,
-and the room keeps a window with a real hole in it afterwards.
+**Live on braindeadbot.com, verified through the real intro on real WebGPU.**
+Both panes draw, zero console errors, the room keeps a genuinely broken window.
 
-### What replaced what
-
-The pane used to vanish on impact, revealing a hand-placed remnant of random
-triangles, while 75 identical particles flew off on straight lines and blinked
-out mid-air. It is now one system in `src/shaders/glass/`:
+### The system — `src/shaders/glass/`
 
 | file | what it owns |
 |---|---|
-| `fracture.ts` | the crack pattern — radial + concentric spiderweb, deterministic |
-| `fracture-geometry.ts` | cells → one buffer + rigid bodies (mass, inertia) |
+| `fracture.ts` | crack topology: radial + concentric spiderweb, jagged, deterministic |
+| `fracture-geometry.ts` | cells → one buffer + rigid bodies (mass, inertia, edge distance) |
 | `shard-physics.ts` | the sim: torque, drag, floor, sleep |
-| `glass-material.ts` | the optics, hand-written WGSL **and** a GLSL twin |
+| `glass-material.ts` | the optics + the dense crack web. WGSL **and** a GLSL twin |
 | `pattern-cache.ts` | where the baked pattern comes from, and the memo |
 | `index.ts` | `createShatteredPane()` — the only thing callers touch |
-| `fracture-baked.json` | committed bake, 362 cells, ~40 KB |
+| `fracture-baked.json` | committed bake, ~360 cells, 95 KB |
 
-`scripts/bake-glass-fracture.mjs` regenerates it (`npm run bake:glass`);
-`npm run bake:glass:check` fails if the committed file is stale.
+`npm run bake:glass` regenerates it; `npm run bake:glass:check` fails if stale.
 
-**The intact pane and the broken pane are THE SAME MESH.** Nothing is swapped at
-impact — shards start at rest with identity rotations, which tiles them back
-into a solid sheet. Breaking it costs no allocation and no material change, only
-a texture write that was already happening. This is why the crack lines land
-exactly where the glass parts, and why the hole and its surviving rim share
-exact edges.
+**Two levels of crack, and the split is the important idea.** `fracture.ts`
+carries only the ~180 cells per pane that actually COME APART and get physics.
+The far denser web you see — a hundred-plus hairlines — is drawn procedurally by
+`crackWeb` in the shader, because a pane can be comprehensively cracked and
+still be in one piece. Matching that density with geometry would mean thousands
+of cells, a bake in the megabytes, and a sim to match, for lines that separate
+nothing.
+
+**The intact pane and the broken pane are THE SAME MESH.** Shards start at rest
+with identity rotations, which tiles them back into a solid sheet; `shatter()`
+only assigns velocities. Breaking costs no allocation and no material swap.
 
 ### Open items
 
 1. **The ~4.5 s stall right after the boot click is REAL and PRE-EXISTING.**
-   Measured interleaved A/B, 3 pairs, glass vs main: stall totals
-   5307/5421/5648 ms vs 5471/5562/5900 ms — the glass arm is *not* worse, and
-   p95 is identical (11–13 ms both). But something in `playToucanIntro`'s
-   synchronous setup blocks for four-plus seconds behind the dissolve on both
-   branches. Nobody has chased it. It is the biggest remaining intro win.
-2. **`aEdge` is a fan ramp, not a true distance field.** It is 1 at each shard's
-   centroid and 0 at every boundary vertex, so it averages ~⅓ across a triangle.
-   The shader works around this with two exponents (see below). A real
-   inset/skeleton distance would let one term do the job and would make the edge
-   highlight uniform in width instead of proportional to shard size.
-3. **No secondary fracture.** Shards that hit the sill hard bounce; they do not
-   break again. `shard-physics.ts` has the impact energy at hand if anyone wants
-   it.
-4. **The cabin pane's floor is `world y ≈ -6`, assumed, not measured** from the
-   intro terrain under the cabin. If debris ever visibly rests in mid-air
-   outside the window, that constant in `buildCabinPane()` is why.
+   Measured interleaved A/B against main, 3 pairs: 5307/5421/5648 ms vs
+   5471/5562/5900 ms — the glass arm is not worse, p95 identical. Something in
+   `playToucanIntro`'s synchronous setup blocks for four-plus seconds behind the
+   dissolve, on both branches. Unchased. Biggest remaining intro win.
+2. **No screen-space refraction.** `glassEnv` is analytic (hard horizon, banding,
+   sun disc). Real refraction — `viewportSharedTexture` + `viewportSafeUV` and a
+   projected world-space exit point — is the known next step and would be the
+   single biggest quality gain. It copies the framebuffer per draw, which is
+   only affordable here *because* the whole pane is one draw call. Note the
+   ordering trap: transmissive materials cannot see each other.
+3. **No secondary fracture.** Shards that hit the sill hard bounce; they never
+   break again.
+4. **Order-independent transparency is available and unused.** Non-scattering
+   glass composites as multiply-then-add, and both operations commute — so glass
+   needs no sorting at all. Two-pass, or one pass via WebGPU dual-source
+   blending (`@blend_src`, Chrome 130+). Would remove the depth-sort artifacts
+   on overlapping shards.
+5. **Cabin floor `y ≈ -6` is assumed, not measured** from the intro terrain. If
+   debris ever rests in mid-air outside the window, that constant in
+   `buildCabinPane()` is why.
 
 ### Gotchas that will bite
 
 - **A BACKTICK IN A SHADER COMMENT ENDS THE SHADER.** The WGSL/GLSL sources are
   template literals, so quoting an identifier the way the rest of this codebase's
   prose does silently terminates the literal and turns the rest into JavaScript.
-  It happened twice. The parse error points at the comment and never mentions
-  backticks. `glass.test.ts` now guards it.
-- **The GLSL twin is not optional and not decoration.** `render/backend.ts`
-  still resolves to WebGL2 for every visitor without `navigator.gpu`, and
-  `wgslFn` alone hands them a black window with *no thrown error*. The two
-  dialects are checked against each other by signature **and by numeric
-  constant**, because the realistic drift is someone tuning a Fresnel weight
-  against a WebGPU screenshot and never touching the twin.
-- **Do not add the pane hidden and reveal it at impact.** It is a new shader
-  program, and a program compiles the first time it is *drawn*. That is the same
-  path that cost 730/762/712 ms of freeze before the pre-warm existed. The panes
-  are added INTACT during preload and drawn by the two warm renders. A culled or
-  invisible draw compiles nothing.
+  Happened FOUR times. The parse error points at the comment and never mentions
+  backticks. `glass.test.ts` guards it — but note the guard cannot run when the
+  file does not parse, so the symptom is a suite that fails to load.
+- **The GLSL twin is not optional.** `render/backend.ts` still resolves to WebGL2
+  for every visitor without `navigator.gpu`, and `wgslFn` alone hands them a
+  black window with no thrown error. The dialects are checked against each other
+  by signature, by numeric constant, and by block count.
+- **Do not add the pane hidden and reveal it at impact.** A program compiles the
+  first time it is *drawn*; that path cost 730 ms of freeze before the pre-warm
+  existed. The panes are added INTACT during preload and drawn by the two warm
+  renders. A culled or invisible draw compiles nothing.
 - **Never dispose the fracture geometry from a scene teardown.** It lives in the
-  module cache in `pattern-cache.ts`; the next intro needs it. Disposing a cached
-  GPU resource from cleanup is the `forest-env.ts` material-cache bug and it
-  fails silently — the following play renders nothing.
-- **The bake is imported from `src/`, NOT fetched from `public/`, deliberately.**
+  module cache; the next intro needs it. That is the `forest-env.ts`
+  material-cache bug and it fails silently.
+- **The bake is imported from `src/`, NOT fetched from `public/`.**
   `next.config.js` only sets cache headers for an image/font/audio allowlist; a
-  `.json` in `public/` falls through to the catch-all and is served
-  `no-cache, no-store, must-revalidate` — re-downloaded on *every* visit, which
-  is exactly the cost this was built to remove. From `src/` it rides
-  `/_next/static/` as `immutable`.
-- **The room pane survives the intro on purpose.** Its `anchored` shards are the
-  permanent broken window. It is only torn down (and `fake-glass` restored) when
-  the intro was SKIPPED.
+  `.json` in `public/` gets `no-store` and is re-downloaded every visit. From
+  `src/` it rides `/_next/static/` as `immutable`.
+- **Sutherland–Hodgman is only correct for CONVEX subjects.** The cells stopped
+  being convex when their cracks were roughened, so clipping can emit a
+  zero-width bridge between two lobes. Invisible, still tiles, but its
+  area-weighted centroid lands OUTSIDE the shard — which the sim would use as a
+  centre of mass. `polyCentroid` bbox-checks and falls back to the vertex mean.
+- **A crack must never wander more than a fraction of the way to the next
+  crack.** Uncapped midpoint displacement folded the thin core wedges through
+  themselves.
 
-### Two bugs the screenshots caught that the tests could not
+### Four bugs that rendered without a single console error
 
-Both rendered without a single console error, and both are the reason the
-generator and the shader each got rendered to PNG and *looked at* rather than
-trusted:
+The generator and the shader were each rasterised to PNG and *looked at*; every
+one of these was invisible in the statistics and obvious in a picture.
 
-1. **The fly-through whited out the entire screen.** At the crossing the camera
-   is centimetres from the pane, so every one of ~100 overlapping shards is seen
-   at a grazing angle where Fresnel → 1. Correct for one sheet of glass,
-   catastrophic for a cloud. Fixed with a proximity fade (`smoothstep(0.06,
-   0.75, camDist)`).
-2. **The shards looked like wet paper.** One shared edge term cannot be both
-   "this shard has substance" and "this edge is bright" on a centroid fan — turn
-   it up for the edge and the glow floods the shard. Split into a broad `body`
-   (^2.2) and a tight `rim` (^9.0).
+1. **Independent per-radial radius jitter** makes concentric cracks zigzag into
+   a mandala. Needs a smooth low-harmonic wobble.
+2. **Halving the radial count every other band** strips the outer pane to four
+   cracks. It is the concentric family that thins with distance, not the radial.
+3. **The fly-through whited out the screen.** At the crossing every one of ~100
+   overlapping shards is grazing, where Fresnel → 1. Fixed with a proximity fade.
+4. **Shards looked like wet paper.** Two causes, found a round apart: one shared
+   edge term cannot be both "has substance" and "is bright" on a centroid fan;
+   and Beer-Lambert on the *view* angle over-absorbs fourfold at grazing.
 
-And two in the generator, both invisible in the statistics and obvious in a
-200×200 PNG: independent per-radial radius jitter makes concentric cracks
-*zigzag* into a mandala (fixed with a smooth low-harmonic wobble), and halving
-the radial count every other band strips the outer pane to four cracks — it is
-the concentric family that thins with distance, not the radial one.
+### Why the optics look right now (all four were real defects)
+
+- `R = 2F/(1+F)` — a pane has TWO surfaces; 8.2% at normal incidence, not 4.3%.
+- Beer-Lambert on the **refracted** angle, bounded at 1.33× thickness.
+- Dispersion at the real Abbe number: nd 1.523, Vd 59 → ±0.0044, not ±0.020.
+- No fake specular. `pow(dot(n,h),90)` is roughness 0.38 — satin plastic. The
+  highlight is now a sun disc mirrored from the environment, plus TIR past the
+  41° critical angle.
+
+Underneath all of it: **glass has no appearance of its own.** The first version
+sampled a smooth two-colour gradient — no high-frequency content — so the
+reflected ray and the three dispersed rays landed on the same colour and the
+entire refraction model was invisible. Give the rays something with edges.
+
+**Crack lines need SCREEN-SPACE width** (`fwidth`). A 3 mm crack is a twentieth
+of a pixel at the distance this window is normally viewed: correct up close,
+invisible from across the room.
 
 ### Verification
 
-Full suite 2543 passed / 5 skipped. `tsc` 5990 errors vs baseline 5991 (one
-fewer; zero new). `glass.test.ts` has 32 tests; the tiling check and the
-dialect-constants check were both fault-injected to confirm they can fail.
+Full suite 2543 passed / 5 skipped. `tsc` 5990 = baseline, zero new.
+`glass.test.ts` is 32 tests; the tiling check, the dialect-constants check and
+the backtick guard were each fault-injected to confirm they can fail.
 
 ---
 
