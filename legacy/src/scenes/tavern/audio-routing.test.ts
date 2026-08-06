@@ -207,6 +207,57 @@ describe("the tavern reaches the master gain", () => {
   });
 
   /**
+   * THE SWITCH, not just the slider.
+   *
+   * Routing to the master bought the volume slider and nothing else: the settings
+   * screen's "Sound FX: MUTED" row calls `sfx/bus.ts setSfxMuted`, which used to
+   * set a flag that only `bus()` reads — and no tavern cue goes through `bus()`.
+   * So sound-off silenced the dungeon and left the hub blipping. Driven through
+   * `setSfxMuted` rather than `setMasterMuted` on purpose: the defect was the
+   * wiring between the two, so calling the master directly would test the half
+   * that was never broken.
+   */
+  it("builds NOTHING when the game's sound switch is off", async () => {
+    const g = install();
+    const mgr = await import("../../utils/audio-manager");
+    const bus = await import("../../game/pinball-knight/sfx/bus");
+    mgr.setMasterVolume(1);
+    bus.setSfxMuted(true);
+
+    await playEverything();
+
+    expect(g.created, "the mute switch must reach the tavern").toEqual([]);
+    expect(g.edges).toEqual([]);
+
+    // …and un-muting restores the chosen level, rather than latching silent.
+    bus.setSfxMuted(false);
+    await playEverything();
+    expect(g.created.length).toBeGreaterThan(10);
+  });
+
+  /**
+   * A gate cannot reach a source that is ALREADY looping — the hearth bed starts
+   * on entry and runs until you leave. Muting mid-room has to zero the master.
+   */
+  it("silences the running hearth bed when muted mid-tavern", async () => {
+    install();
+    const mgr = await import("../../utils/audio-manager");
+    const bus = await import("../../game/pinball-knight/sfx/bus");
+    mgr.setMasterVolume(1);
+    bus.setSfxMuted(false);
+
+    const tavern = await import("./audio");
+    tavern.startTavernAmbience(); // the loop is now running
+
+    const master = mgr.getSfxMaster() as unknown as { gain: { value: number } };
+    expect(master.gain.value).toBeGreaterThan(0);
+    bus.setSfxMuted(true);
+    expect(master.gain.value, "a live bed can only be silenced at the master").toBe(0);
+    bus.setSfxMuted(false);
+    expect(master.gain.value).toBe(1);
+  });
+
+  /**
    * THE NEGATIVE CONTROL. The check above passes trivially if the recorder never
    * sees a bypass, so reproduce one and prove the assertion moves.
    */

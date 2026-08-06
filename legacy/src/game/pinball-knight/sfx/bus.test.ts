@@ -58,12 +58,17 @@ function graphCtx() {
  */
 let master: { id: string; connect: (d: { id?: string }) => void } | null = null;
 let volumeSetTo = -1;
+/** What the mute switch pushed at the master — see "the switch leaves this folder". */
+let mutedSetTo: boolean | null = null;
 
 vi.mock("../../../utils/audio-manager", () => ({
   getAudioCtx: () => (globalThis as Record<string, unknown>).__ctx ?? null,
   getSfxMaster: () => master,
   setMasterVolume: (v: number) => {
     volumeSetTo = v;
+  },
+  setMasterMuted: (v: boolean) => {
+    mutedSetTo = v;
   },
 }));
 
@@ -79,11 +84,26 @@ beforeEach(() => {
   setSfxMuted(false);
   setSfxVolume(1);
   volumeSetTo = -1;
+  mutedSetTo = null;
   (globalThis as Record<string, unknown>).__ctx = null;
   master = null;
 });
 
 describe("the bus", () => {
+  /**
+   * `sfxMuted` gates `bus()`, and `bus()` is only this game's 28 stings. The
+   * tavern, the smith and the gambler corner reach the speakers through
+   * `sfxCtx`/`sfxDestination` without ever touching it — so for as long as the
+   * switch stopped here, "Sound FX: MUTED" silenced the dungeon and left the hub
+   * blipping at the player. The master is the one node both paths share.
+   */
+  it("carries the switch out of this folder, to the master", () => {
+    setSfxMuted(true);
+    expect(mutedSetTo, "the mute must reach the master, not just bus()").toBe(true);
+    setSfxMuted(false);
+    expect(mutedSetTo).toBe(false);
+  });
+
   it("returns null when this game is muted, before creating any node", () => {
     const g = graphCtx();
     (globalThis as Record<string, unknown>).__ctx = g.ctx;

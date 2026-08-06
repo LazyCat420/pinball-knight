@@ -81,6 +81,8 @@ vi.mock("../../../utils/audio-manager", () => ({
   getAudioCtx: () => (globalThis as Record<string, unknown>).__ctx ?? null,
   getSfxMaster: () => master,
   setMasterVolume: () => {},
+  // `setSfxMuted` pushes the switch at the master too, so the tavern hears it.
+  setMasterMuted: () => {},
 }));
 
 const { ambience, resetAmbience, ambienceVoices } = await import("./ambience");

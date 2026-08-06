@@ -24,12 +24,15 @@
  * before anyone needs it.
  *
  * ── TWO MUTE LAYERS, BOTH PRESERVED ──────────────────────────────────────────
- * `sfxMuted` is this game's own switch, set from the settings screen. Above it,
- * `getAudioCtx()` returns null whenever the app is globally silenced (`?mute=1`,
- * `?playtest=1`, `window.__setMute`), so the game inherits that for free and
- * neither layer knows about the other.
+ * `sfxMuted` is this game's own switch, set from the settings screen. It gates
+ * `bus()` here AND mutes the master in `utils/audio-manager`, because the game is
+ * bigger than this folder: the tavern and the gambler route through the master
+ * without ever calling `bus()`, and for a while the switch missed all of them.
+ * Above it, `getAudioCtx()` returns null whenever the app is globally silenced
+ * (`?mute=1`, `?playtest=1`, `window.__setMute`), so the game inherits that for
+ * free and neither layer knows about the other.
  */
-import { getAudioCtx, getSfxMaster, setMasterVolume } from "../../../utils/audio-manager";
+import { getAudioCtx, getSfxMaster, setMasterMuted, setMasterVolume } from "../../../utils/audio-manager";
 
 /**
  * Mixer groups. These name where a sound comes from in the GAME, not what it
@@ -61,10 +64,19 @@ export interface Bus {
 let sfxMuted = false;
 let volume = 1;
 
-/** One mute gate for every sting. Set from the menu's Settings tab, persisted
- *  via settings-save.ts, applied by gui/apply-settings.ts. */
+/**
+ * One mute gate for every sting. Set from the menu's Settings tab, persisted
+ * via settings-save.ts, applied by gui/apply-settings.ts.
+ *
+ * It also mutes the MASTER, which is what carries the switch out of this folder.
+ * `sfxMuted` alone only gates `bus()`, i.e. this game's 28 stings — the tavern,
+ * the smith and the gambler reach the speakers through `sfxCtx`/`sfxDestination`
+ * instead, so a player who turned "Sound FX" off still heard the hub blipping at
+ * them. The master is the one node both paths share.
+ */
 export function setSfxMuted(v: boolean): void {
   sfxMuted = v;
+  setMasterMuted(v);
 }
 
 export function isSfxMuted(): boolean {

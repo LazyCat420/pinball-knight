@@ -104,18 +104,58 @@ let _master: GainNode | null = null;
 let _masterOwner: unknown = null;
 let _masterVolume = 1;
 
+/**
+ * THE MUTE SWITCH, at the master rather than in one game's bus.
+ *
+ * The settings screen's "Sound FX: MUTED" row used to set `sfx/bus.ts`'s own
+ * `sfxMuted` flag and nothing else, so it silenced the dungeon's stings and left
+ * the tavern, the smith, the keepers and the whole gambler corner playing at full
+ * volume — the player turns the sound off, walks into the hub, and still hears
+ * the station blip. The volume slider reached them (they route through the
+ * master) but the switch did not, which is the worst possible split: two controls
+ * for the same sound, one of which lies.
+ *
+ * It is a gain of 0 on the master AND a hard gate in `sfxCtx()`, because those
+ * cover different halves. The gate stops new cues before a node is created; the
+ * zeroed gain silences what is ALREADY running — the tavern's hearth bed is a
+ * looping source that no gate can reach once started.
+ *
+ * Deliberately NOT `setGlobalMute`: that one suspends the shared context for the
+ * entire app. This is the game's switch, so it silences what the game routes
+ * through the master and leaves everything else alone.
+ */
+let _masterMuted = false;
+
+/** The level the master node should sit at right now. Mute wins over volume. */
+function masterGainValue(): number {
+  // v² is much closer to how loudness is heard than a linear fader: a linear
+  // 0.5 sounds barely quieter than full, which makes the slider feel broken.
+  return _masterMuted ? 0 : _masterVolume * _masterVolume;
+}
+
 /** 0..1, with a perceptual curve applied at the node. */
 export function setMasterVolume(v: number): void {
   _masterVolume = Math.max(0, Math.min(1, v));
-  if (_master) {
-    // v² is much closer to how loudness is heard than a linear fader: a linear
-    // 0.5 sounds barely quieter than full, which makes the slider feel broken.
-    _master.gain.value = _masterVolume * _masterVolume;
-  }
+  if (_master) _master.gain.value = masterGainValue();
 }
 
 export function masterVolume(): number {
   return _masterVolume;
+}
+
+/**
+ * Mute or unmute every master-routed sound — the dungeon's stings AND the tavern.
+ *
+ * Kept independent of the volume, like the setting it mirrors: un-muting restores
+ * the level the player chose rather than jumping to full.
+ */
+export function setMasterMuted(v: boolean): void {
+  _masterMuted = v;
+  if (_master) _master.gain.value = masterGainValue();
+}
+
+export function isMasterMuted(): boolean {
+  return _masterMuted;
 }
 
 /**
@@ -133,7 +173,7 @@ export function getSfxMaster(): AudioNode | null {
     if (!_master || _masterOwner !== c) {
       _masterOwner = c;
       _master = c.createGain();
-      _master!.gain.value = _masterVolume * _masterVolume;
+      _master!.gain.value = masterGainValue();
       _master!.connect(c.destination);
     }
     return _master;
@@ -158,7 +198,7 @@ export function getSfxMaster(): AudioNode | null {
  * this is that helper, with the gate, in one place.
  */
 export function sfxCtx(): AudioContext | null {
-  if (_masterVolume <= 0) return null;
+  if (_masterMuted || _masterVolume <= 0) return null;
   try {
     const c = getAudioCtx();
     if (!c) return null;
