@@ -32,6 +32,23 @@ import { qwenEdit, wanI2V } from "./graphs.mjs";
 import { MODES } from "./modes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The clip names the animator packs — READ from `labels.ts`, not restated.
+ *
+ * `KNOWN_CLIPS` there is typed `ReadonlySet<ClipName>` precisely so a wrong
+ * name is a compile error, and its own docblock records what a hand-mirror
+ * cost last time (`hurt` for `stumble`, an actor silently missing its
+ * stagger). A second copy in this file would be that mirror again, one level
+ * out and beyond tsc's reach. `published.test.ts` reads `IMPORTED_ART` out of
+ * `boot/sheets.ts` the same way and for the same reason.
+ */
+const CLIP_NAMES = (() => {
+  const src = readFileSync(join(HERE, "..", "labels.ts"), "utf8");
+  const block = /KNOWN_CLIPS[^=]*=\s*new Set<ClipName>\(\[([\s\S]*?)\]\)/.exec(src);
+  if (!block) throw new Error("[forge] could not find KNOWN_CLIPS in labels.ts");
+  return [...block[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]);
+})();
 const args = process.argv.slice(2);
 const cmd = args[0];
 const opt = (name, fallback = undefined) => {
@@ -215,23 +232,63 @@ const main = {
     const src = opt("dir");
     const character = opt("file-as");
     if (!src || !character) throw new Error("refile needs --dir <folder of PNGs> and --file-as <sheet-name>");
-    const frames = readdirSync(src).filter((f) => f.endsWith(".png")).sort();
-    if (!frames.length) throw new Error(`no PNGs in ${src}`);
-    const label = opt("label", `refiled · ${basename(src)}`);
-    const dir = outDir(`refile-${character}-${basename(src).replace(/[^\w-]/g, "_")}`);
-    for (const f of frames) copyFileSync(join(src, f), join(dir, f));
-    // The earliest source mtime, so the jobs board sorts this where the work
-    // actually happened rather than pretending it was made just now.
-    const startedAt = Math.min(...frames.map((f) => Math.round(statSync(join(src, f)).mtimeMs)));
-    writeFileSync(
-      join(dir, "job.json"),
-      JSON.stringify(
-        { source: "refile", state: "done", mode: opt("mode", "cli"), label: label.slice(0, 60), startedAt, character, frames },
-        null,
-        1,
-      ),
-    );
-    console.log(`${frames.length} frame(s) filed under ${character} -> ${dir}`);
+    const all = readdirSync(src).filter((f) => f.endsWith(".png")).sort();
+    if (!all.length) throw new Error(`no PNGs in ${src}`);
+    const mode = opt("mode", "cli");
+    const baseLabel = opt("label", `refiled · ${basename(src)}`);
+
+    // ── ONE JOB PER CLIP, NOT ONE JOB PER DIRECTORY ──────────────────────────
+    //
+    // A job card carries ONE clip selector, and the board defaults it to `idle`
+    // for anything that is not an `animate` run (JobsBoard.tsx `clipGuess`). So
+    // filing a prep directory as a single job labelled every frame in it `idle`
+    // — and a prep directory is exactly where the clips are already SEPARATE:
+    // `S-idle0.png`, `S-walk2.png`, `S-death4.png`. The card then showed a
+    // death sprawl playing under the word "idle", which is worse than not
+    // showing it, because it reads as a generated result rather than a
+    // mislabel.
+    //
+    // The clip token is taken from the filename against CLIP_NAMES, and a
+    // directory with no recognisable tokens stays ONE untagged job — the
+    // honest answer for a folder of loose frames, rather than guessing.
+    const clipOf = (f) => CLIP_NAMES.find((c) => new RegExp(`(^|[^a-z])${c}(\\d|[^a-z]|$)`, "i").test(f)) ?? null;
+    const groups = new Map();
+    for (const f of all) {
+      const c = clipOf(f);
+      const key = c ?? "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(f);
+    }
+    // A single unlabelled group is the no-clip-tokens case: file it as one job.
+    const tagged = [...groups.keys()].some(Boolean);
+    const plan = tagged ? [...groups] : [["", all]];
+
+    for (const [clip, frames] of plan) {
+      const suffix = clip ? `-${clip}` : "";
+      const dir = outDir(`refile-${character}${suffix}-${basename(src).replace(/[^\w-]/g, "_")}`);
+      for (const f of frames) copyFileSync(join(src, f), join(dir, f));
+      // The earliest source mtime, so the jobs board sorts this where the work
+      // actually happened rather than pretending it was made just now.
+      const startedAt = Math.min(...frames.map((f) => Math.round(statSync(join(src, f)).mtimeMs)));
+      writeFileSync(
+        join(dir, "job.json"),
+        JSON.stringify(
+          {
+            source: "refile",
+            state: "done",
+            mode,
+            label: `${baseLabel}${clip ? ` · ${clip}` : ""}`.slice(0, 60),
+            startedAt,
+            character,
+            ...(clip ? { clip } : {}),
+            frames,
+          },
+          null,
+          1,
+        ),
+      );
+      console.log(`${frames.length} frame(s)${clip ? ` as ${clip}` : ""} filed under ${character} -> ${dir}`);
+    }
   },
 
   /** Move-set clip from one frame; frames come back as separate PNGs. */
