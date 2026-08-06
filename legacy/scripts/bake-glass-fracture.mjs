@@ -39,6 +39,13 @@ const bundled = await build({
   write: false,
   platform: "node",
   logLevel: "silent",
+  // `fracture.ts` is pure geometry and reaches no shader today, but it lives in
+  // the glass module and its neighbours all import `./wgsl/*.wgsl`. esbuild has
+  // no loader for that extension and fails the bundle outright when one turns
+  // up in the graph — which would surface here as a bake failure with nothing
+  // to do with baking. Same wiring as next.config.js and vitest.config.js; see
+  // src/types/wgsl.d.ts for the full set.
+  loader: { ".wgsl": "text" },
 });
 const mod = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString("base64")}`

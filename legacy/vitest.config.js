@@ -17,7 +17,30 @@ import path from "path";
  */
 const jobs = Number(process.env.BDB_JOBS) > 0 ? Number(process.env.BDB_JOBS) : undefined;
 
+/**
+ * `import SRC from "./x.wgsl"` — the shader's raw text, the same thing
+ * Turbopack's `type: "raw"` hands the browser build (see next.config.js).
+ *
+ * Vite resolves `.wgsl` to a real file and its fallback loader reads it as
+ * utf-8, but then hands it to the JS pipeline as source — so without this the
+ * failure is a syntax error inside a shader, not a missing module. `enforce:
+ * "pre"` puts this ahead of that pipeline.
+ *
+ * JSON.stringify, not a template literal: it escapes backslashes and newlines,
+ * and shader text is exactly where an unescaped one would silently corrupt the
+ * source rather than fail.
+ */
+const wgslRaw = {
+  name: "wgsl-raw",
+  enforce: "pre",
+  transform(code, id) {
+    if (!id.endsWith(".wgsl")) return null;
+    return { code: `export default ${JSON.stringify(code)};`, map: null };
+  },
+};
+
 export default defineConfig({
+  plugins: [wgslRaw],
   test: {
     ...(jobs ? { maxWorkers: jobs, minWorkers: 1 } : {}),
     // Some suites do heavy per-test work (e.g. floor-pipeline runs full BFS
