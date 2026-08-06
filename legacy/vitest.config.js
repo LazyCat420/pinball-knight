@@ -19,7 +19,9 @@ const jobs = Number(process.env.BDB_JOBS) > 0 ? Number(process.env.BDB_JOBS) : u
 
 /**
  * `import SRC from "./x.wgsl"` — the shader's raw text, the same thing
- * Turbopack's `type: "raw"` hands the browser build (see next.config.js).
+ * `scripts/wgsl-loader.cjs` hands the browser build through Turbopack. Two
+ * loaders for one job, because vite and turbopack share no plugin format; they
+ * are kept honest by `wgsl-contract.test.ts`, which asserts both.
  *
  * Vite resolves `.wgsl` to a real file and its fallback loader reads it as
  * utf-8, but then hands it to the JS pipeline as source — so without this the
