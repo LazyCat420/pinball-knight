@@ -1732,8 +1732,59 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
   disposables.push(flameFx.material);
   const flameGeo = track(new THREE.PlaneGeometry(0.3, 0.34));
 
+  /**
+   * TWO InstancedMeshes for the whole floor's torches, not two meshes each.
+   *
+   * ── WHY, IN ONE NUMBER ──────────────────────────────────────────────────
+   * three issues one draw call per visible mesh, and another per mesh in the
+   * shadow pass. Measured with `__dungeonDraws()` on floor 1: the flames alone
+   * were 11 of the frame's 248 camera draws, with the sconces about as many
+   * again — ~9% of the frame for two props that never move after they are
+   * built. Both already shared one geometry and one material, so instancing is
+   * the only step that was missing.
+   *
+   * ── WHY THE FLAMES STILL BURN DIFFERENTLY ───────────────────────────────
+   * Because the shader reads WORLD POSITION (`worldSeed`, see `flameFx`), and
+   * three folds the instance matrix into `positionLocal` before the world
+   * transform — `positionLocal.assign(instancePosition)`, three r185
+   * nodes/accessors/Instance.js:213 — so `positionWorld` inside the fire graph
+   * is this instance's own. The decorrelation `worldSeed` was built for is
+   * exactly what makes instancing free here: a per-torch uniform would have
+   * forced a material per torch and forbidden this.
+   *
+   * ── THE TRADE, STATED ───────────────────────────────────────────────────
+   * An InstancedMesh culls as ONE bounding sphere, so a floor's worth of
+   * torches is now all-or-nothing: ~46 flames submitted where ~11 were before.
+   * That is the right way round here — GPU time is ~10% of this frame and CPU
+   * submission ~85% (docs/tsl-to-wgsl.md), and these are 0.3-unit quads.
+   */
   const torchAnchors: TorchAnchor[] = [];
-  for (const t of plan.torches) {
+  const torchCount = plan.torches.length;
+  // Guarded: a zero-count InstancedMesh is a draw call describing nothing, and
+  // a floor with no torch anchors is a real (if rare) plan.
+  const sconces = torchCount > 0 ? new THREE.InstancedMesh(sconceGeo, sconceMat, torchCount) : null;
+  const flames = torchCount > 0 ? new THREE.InstancedMesh(flameGeo, flameFx.material, torchCount) : null;
+  if (sconces) {
+    sconces.castShadow = true;
+    sconces.name = "torch-sconces";
+  }
+  if (flames) {
+    flames.renderOrder = 8;
+    flames.name = "torch-flames";
+  }
+  // Billboarding stays BAKED rather than switching to TSL's `billboarding()`.
+  // The camera is fixed-ortho, so this is exact, and it is pixel-grid aligned;
+  // a per-frame lookAt would reintroduce sub-pixel drift on a sprite whose
+  // whole style depends on landing on texel boundaries. Every flame carries the
+  // same rotation, so the quaternion is built once.
+  const flameQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(-CAMERA_TILT, CAMERA_YAW, 0, "YXZ"),
+  );
+  const ONE = new THREE.Vector3(1, 1, 1);
+  const xf = new THREE.Matrix4();
+  const flamePos = new THREE.Vector3();
+
+  plan.torches.forEach((t, i) => {
     const c = tileCenter(grid, t.i, t.j);
     // Mount on the wall face: shifted almost half a tile toward the wall.
     // Sconce height keys off the wall it hangs on — a sconce floating in the
@@ -1743,27 +1794,14 @@ export function buildMaze(scene: THREE.Scene, grid: Grid, plan: LevelPlan, arcs:
     const x = c.x + t.di * 0.41;
     const z = c.z + t.dj * 0.41;
 
-    const sconce = new THREE.Mesh(sconceGeo, sconceMat);
-    sconce.position.set(x, wallH * 0.62, z);
-    sconce.castShadow = true;
-    group.add(sconce);
-
-    // Every torch shares one material — see `flameFx` above. No clone, no
-    // per-torch phase to track: the shader reads its own world position.
-    const flame = new THREE.Mesh(flameGeo, flameFx.material);
-    // Billboarding stays BAKED rather than switching to TSL's `billboarding()`.
-    // The camera is fixed-ortho, so this is exact, and it is pixel-grid aligned;
-    // a per-frame lookAt would reintroduce sub-pixel drift on a sprite whose
-    // whole style depends on landing on texel boundaries.
-    flame.rotation.order = "YXZ";
-    flame.rotation.y = CAMERA_YAW;
-    flame.rotation.x = -CAMERA_TILT;
-    flame.position.set(x, wallH * 0.62 + 0.3, z);
-    flame.renderOrder = 8;
-    group.add(flame);
+    sconces?.setMatrixAt(i, xf.makeTranslation(x, wallH * 0.62, z));
+    flames?.setMatrixAt(i, xf.compose(flamePos.set(x, wallH * 0.62 + 0.3, z), flameQuat, ONE));
 
     torchAnchors.push({ x: x - t.di * 0.2, z: z - t.dj * 0.2 });
-  }
+  });
+
+  if (sconces) group.add(sconces);
+  if (flames) group.add(flames);
 
   // Tight, short-range pools against the strong cold ambient (Phase 0 lesson:
   // wide warm lights turn the cold crypt into a cosy burrow).
