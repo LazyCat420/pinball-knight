@@ -1,13 +1,15 @@
-# brute, 2026-08-07 — the Ragnarok restyle, generated and awaiting curation
+# brute, 2026-08-07 — the Ragnarok restyle, curated and published
 
-Three masters and eleven of twelve motion clips. TRACKED because `work/comfy/`
-is gitignored and that is exactly how the 2026-08-06 build lost the source
-frames for its own `attack` row.
+Three masters, eleven generated motion clips, three more `stumble` clips added
+on 08-07, and the three recipes that turn them into sheets. TRACKED because
+`work/comfy/` is gitignored and that is exactly how the 2026-08-06 build lost
+the source frames for its own `attack` row.
 
     00_master_S.png   the styled front master   (qwen edit,   seed 11)
     01_master_E.png   rotated to the side       (qwen rotate, seed 11)
     01_master_N.png   rotated to the back       (qwen rotate, seed 11)
-    clip_<DIR>_<CLIP>/  6 frames each, first cull (see below)
+    clip_<DIR>_<CLIP>/  the 6-frame cull, plus every frame a recipe picks
+    recipe-<DIR>.json   what shipped, and what it was picked on
 
 ## The recipe
 
@@ -40,10 +42,16 @@ picked from the WALK clip's quietest frames anyway, which is what
 weight-shifting stomp, and its quietest frames ARE the idle sway"), and it
 guarantees the two clips share a body.
 
-`run` and `stumble` are deliberately NOT generated. `alias()` hands `run` the
-walk frames by reference at the run frame rate, and `withRecoil()` synthesizes
-`stumble` from idle frame 0 — see `RUNTIME_COVERED` in build-plan.ts. That is 6
-of 18 runs saved for no player-visible loss.
+`run` is deliberately NOT generated: `alias()` hands it the walk frames by
+reference at the run frame rate — see `RUNTIME_COVERED` in build-plan.ts.
+
+**`stumble` WAS in that list and has been generated after all.** The synthesis
+`withRecoil()` performs is three reframes of idle frame 0 (a shove and a tilt,
+`stumbleFrames` in cel-painter.ts) — the same body, jostled. That is a fine
+default for a creature nobody has looked at, and it is what shipped; watching
+it, the user's verdict was that getting hurt "is still not working correctly",
+which is the honest read: a jostled idle is not a reaction. Three real frames
+now sit in `clip_<DIR>_stumble/`.
 
 ## THE FRAMES HERE ARE A FIRST CULL, NOT A CURATION
 
@@ -59,21 +67,30 @@ auto-picker was written and DELETED because it ranked the crisp init frame
 worst — it was not measuring the defect it claimed to. A human still has to
 look at these and pick 2-6 per clip.
 
-## Next steps
+## THE CURATION, AND WHAT IT WAS PICKED ON
 
-1. **Look at the frames.** Build a contact sheet per clip and pick. Watch for
-   Wan's aperiodic translucent smears — `prep-clips.mjs`'s `ghosting()` scores
-   them, and on the 08-06 clip a smeared frame read 22743 against ~2000 for its
-   crisp neighbours.
-2. **Write a recipe** and run `prep/prep-clips.mjs build`. It never writes a
-   `cells` override (that override is what made the 08-06 walk slide sideways)
-   and it commits onto the x8 lattice with `derive: 20`.
-3. **`npm run sprites`** — now runs `driftRow` as a hard gate and prints
-   `gait peak` beside it, so this walk can be scored against the sway it
-   replaces (08-06 measured 0.05; the frog, a good example, measures 0.45).
-4. **`npm run moveset`** — the contact sheet of every (facing, clip) cropped
-   from the LIVE atlas. Success is that its last line STOPS saying
-   `facings drawing IDENTICAL frames — walk: S=N=E`.
+`recipe-S.json`, `recipe-E.json`, `recipe-N.json` are the record: which frame
+tags went into which row, and why. Rebuild any facing with
+
+    node ../../prep/prep-clips.mjs report recipe-S.json     # the numbers
+    node ../../prep/prep-clips.mjs build  recipe-S.json out.png
+
+Every pick is a frame from the FULL 21, not from the 6-frame cull above — the
+cull is a strided sample and the extremes of a stride are not on a stride.
+Three instruments decided them, none of them taste:
+
+  · `gaitSignals` LEAN (drift.ts) — leg weight left minus right, below the hip.
+    A walk row wants the two extremes and two passes; S runs +0.090 / +0.015 /
+    -0.082 / -0.036 and E runs +0.129 / +0.030 / -0.100 / -0.006.
+    **N never crosses zero** (-0.014 .. -0.077 across all 21): from behind, the
+    legs are inside the silhouette, so its row is a sway out and back instead.
+  · BBOX — what tells an attack from a pose. S's swing is the frame where the
+    box jumps 465 -> 498 wide; N's is 411 -> 517. Stumble is the same read: the
+    body compresses and widens, 478x588 -> 482x556 -> 502x546.
+  · `ghosting()` — Wan's translucent smears. Every transition frame in every
+    death clip is one (g49840 / g8121 / g14949) and every one is skipped.
+
+`clip_E_idle` is the walk's two quietest frames, as predicted above.
 
 ## DO NOT PUBLISH A PARTIAL SET
 
@@ -81,6 +98,13 @@ This brute is a green orc-like creature; the one deployed at `c772aeb` is grey
 and armoured. An E sheet in the new style over an old-style S would make the
 creature CHANGE SPECIES when it turns — strictly worse than the missing-facing
 bug it fixes. All three facings land together.
+
+And it is not only facings. A sheet that omits a CLIP does the same thing one
+axis over: `paintsFor` merges imported over painted per clip, so the 3-row
+sheet that shipped before this pass died as the old painted brute every single
+time. That is the bug this drop exists to close — see
+`published.test.ts`'s coverage table, which said `brute 3/18 rows · facings S ·
+no E/N art · NO DEATH` and is the before-picture.
 
 ## Box notes, both measured the hard way
 
