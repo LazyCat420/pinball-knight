@@ -111,6 +111,28 @@ export const GHOST = {
    * `a-check-that-passes-for-both-states-is-not-a-check`.
    */
   MADS: 3,
+  /**
+   * NOTHING fires below this, however big an outlier it is.
+   *
+   * ── WHY THIS EXISTS, AND WHAT IT COST TO FIND ────────────────────────────
+   *
+   * The A/B that confirmed the decode fix (2026-08-07: temporal_size 8 → 24 on
+   * the same seed and master) came back with EVERY frame between 0.09% and
+   * 0.23% — a clip with no ghosting anywhere. The MAD of a series that flat is
+   * ~0.01%, so `median + 3*MAD` landed at 0.14%, and the relative rule
+   * cheerfully flagged the three frames at 0.16-0.23% as suspicious.
+   *
+   * That is a gate reporting a defect in art that is measurably perfect,
+   * because an outlier test on a clean population finds noise and calls it
+   * signal. `a-differently-shaped-probe-condemns-working-code`. The relative
+   * rule is still worth having — it catches a mild ghost in an otherwise clean
+   * clip — but it must not speak below the level where the defect is visible
+   * at all.
+   *
+   * Set well under SOFT_TOL so the two rules do not collapse into one, and
+   * above the 0.23% ceiling the clean A/B run established.
+   */
+  FLOOR: 0.01,
 } as const;
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
@@ -250,9 +272,13 @@ export function ghostClip(
 
   const flagged: number[] = [];
   const softIdx: number[] = [];
+  // Both rules are floored: the relative one cannot speak about a frame that is
+  // clean in absolute terms, or a flat clean clip reports its own rounding
+  // error as a defect. See GHOST.FLOOR.
+  const outlier = (v: number) => v > cut && v > GHOST.FLOOR;
   pcts.forEach((v, i) => {
-    if (v > GHOST.TOL || (v > cut && v > GHOST.SOFT_TOL)) flagged.push(i);
-    else if (v > GHOST.SOFT_TOL || v > cut) softIdx.push(i);
+    if (v > GHOST.TOL || (outlier(v) && v > GHOST.SOFT_TOL)) flagged.push(i);
+    else if (v > GHOST.SOFT_TOL || outlier(v)) softIdx.push(i);
   });
 
   const matted = scores.some((s) => s.matted);

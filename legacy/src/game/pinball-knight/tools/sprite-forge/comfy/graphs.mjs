@@ -532,6 +532,17 @@ export function wanI2V({
   loraStrength = 0.8,
   /** Decode tile edge. Lower it on a loaded box — see the `dec` note. */
   tileSize = 128,
+  /**
+   * Frames per temporal decode window. `null` means ONE window for the whole
+   * clip, which is the default because anything below `length` puts a
+   * cross-fade seam in the animation at every boundary — measured, see `dec`.
+   *
+   * Pass a number to go back to a windowed decode when the box is too loaded
+   * to afford the single-window transient. That is a headroom trade with a
+   * known cost in ruined frames, not a neutral setting.
+   */
+  temporalSize = null,
+  temporalOverlap = 4,
   lorasHigh = null,
   lorasLow = null,
   unetHigh = MODELS.wanHigh,
@@ -606,9 +617,41 @@ export function wanI2V({
     // which is the tell that the transient is the decode's staging and not
     // the batch. `tileSize` is now a caller knob so a loaded box can trade
     // seams — already argued irrelevant under the crush — for headroom.
+    //
+    // ── THE TEMPORAL AXIS IS NOT THE SPATIAL ONE, AND IT LEAVES MARKS ──────
+    //
+    // 2026-08-07: the dog walk's unusable frames were 4, 5, 8, 12, 13, 16, and
+    // 4/8/12/16 are exactly where `temporal_size: 8` / `temporal_overlap: 4`
+    // makes its windows meet. The decoder CROSS-FADES those windows, so where
+    // a limb moves fast the two decodes disagree and the blend arrives as a
+    // double exposure — frame 16 carries two complete leg positions at half
+    // strength each, which a motion smear cannot do.
+    //
+    // MEASURED, one variable, same seed / master / prompt / canvas:
+    //
+    //     temporal_size  8   worst frame 10.43% ghost, 7 of 21 flagged   435s
+    //     temporal_size 24   worst frame  0.23% ghost, 0 of 21 flagged   556s
+    //
+    // The whole fixed clip is flatter than the CLEANEST frames of the seamed
+    // one. `ghost.ts` scores it, `ghost.test.ts` pins the pair, and
+    // `docs/PLAN_DOG_WALK.md` §1 has the tables.
+    //
+    // The argument that spatial seams "don't survive the crush" does NOT carry
+    // over. A spatial seam is a hairline inside one frame; a temporal seam is a
+    // whole frame the animation cannot use. So the default is ONE window, and
+    // the 28% it costs in wall clock buys back a third of the frames.
+    //
+    // The RAM this spends is the same currency `tileSize` spends. If a loaded
+    // box cannot afford it, the cheap way to buy headroom is a smaller canvas
+    // — which the texel budget wants anyway — not a windowed decode.
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+      inputs: {
+        samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32,
+        // +4 rather than exactly `length` so the window is unambiguously wider
+        // than the clip and no off-by-one reintroduces a single seam at the end.
+        temporal_size: temporalSize ?? length + 4, temporal_overlap: temporalOverlap,
+      },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };

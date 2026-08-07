@@ -559,7 +559,25 @@ const main = {
     // 0/21 usable frames) is exactly the run it exists for.
     if (has("no-lora")) ctx.has = () => false;
     const graph = mode.build(params, ctx);
+    // Post-build patches, same idiom `--tile` already used: the mode owns the
+    // prompt and the LoRA stack, these are the decode/canvas knobs an A/B needs
+    // to vary without inventing a second prompt path.
     if (opt("tile")) graph.dec.inputs.tile_size = Number(opt("tile"));
+    // One window for the whole clip is now the DEFAULT — this flag is how you
+    // go back to a windowed decode on a box too loaded to afford it, and it
+    // reintroduces the cross-fade seams `ghost.ts` flags. It is a headroom
+    // trade with a measured cost in ruined frames, not a tuning knob. See
+    // graphs.mjs's `dec` note and docs/PLAN_DOG_WALK.md §1.
+    if (opt("temporal")) {
+      graph.dec.inputs.temporal_size = Number(opt("temporal"));
+      graph.dec.inputs.temporal_overlap = Number(opt("temporal-overlap", "4"));
+    }
+    if (opt("canvas")) {
+      const [w, h] = String(opt("canvas")).split("x").map(Number);
+      if (!w || !h) throw new Error(`--canvas takes WxH, got "${opt("canvas")}"`);
+      graph.i2v.inputs.width = w;
+      graph.i2v.inputs.height = h;
+    }
     console.log(`prompt: ${mode.prompt(params, ctx)}`);
     await run(graph, dir, {
       mode: "animate",

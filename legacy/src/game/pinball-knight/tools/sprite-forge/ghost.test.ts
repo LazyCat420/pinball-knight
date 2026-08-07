@@ -24,7 +24,10 @@ import { ghostScore, ghostClip, GHOST } from "./ghost";
 import type { RawImage } from "./resample";
 
 const PUBLIC = join(__dirname, "..", "..", "..", "..", "..", "public", "sprites");
+/** The A/B pair. Same seed, same master, same prompt, same 640² canvas — the
+ *  ONLY difference is `temporal_size` 8 vs 24 on VAEDecodeTiled. */
 const DOG = join(__dirname, "work", "comfy", "animate-walk-2026-08-07T20-46-28");
+const DOG_FIXED = join(__dirname, "work", "comfy", "animate-walk-2026-08-07T21-49-40");
 
 async function png(path: string): Promise<RawImage> {
   const img = await loadImage(path);
@@ -127,6 +130,25 @@ describe("ghostClip — names the frames to drop", () => {
     expect(v.level).toBe("ready");
   });
 
+  it("says NOTHING about a uniformly clean clip, however tight its spread", () => {
+    // REGRESSION, and it was found by the experiment rather than by reading:
+    // the decode A/B returned 21 frames between 0.09% and 0.23%, a clip with no
+    // ghosting anywhere. The MAD of a series that flat is ~0.01%, so
+    // `median + 3*MAD` sat at 0.14% and the relative rule flagged the three
+    // frames above it. An outlier test on a clean population finds noise and
+    // calls it signal; GHOST.FLOOR is what stops it.
+    const frames = [1, 1, 1, 1, 1, 1, 1, 1].map((s, i) =>
+      // Vary each frame slightly so the MAD is small but non-zero, which is the
+      // shape that broke it. An identical-frames fixture would not reproduce.
+      frame(s - i * 0.001),
+    );
+    const v = ghostClip(frames);
+    expect(Math.max(...v.pct)).toBeLessThan(GHOST.FLOOR);
+    expect(v.flagged).toEqual([]);
+    expect(v.soft).toEqual([]);
+    expect(v.level).toBe("ready");
+  });
+
   it("still rejects a clip that is UNIFORMLY ghosted, where there are no outliers", () => {
     // The relative rule alone would pass this: every frame is equally bad, so
     // the MAD is ~0 and nothing is an outlier. The absolute floor is what
@@ -187,5 +209,27 @@ describe("ghostClip — the dog walk of 2026-08-07", () => {
     const v = ghostClip(frames);
     const clean = v.pct.filter((_, i) => !v.flagged.includes(i) && !v.soft.includes(i));
     expect(Math.max(...clean)).toBeLessThan(GHOST.SOFT_TOL);
+  });
+
+  const both = existsSync(DOG) && existsSync(DOG_FIXED);
+  const tb = both ? it : it.skip;
+
+  tb("the SAME clip decoded in one temporal window is clean end to end", async () => {
+    // THE EXPERIMENT, pinned. One variable — temporal_size 8 → 24 — and the
+    // worst frame goes 10.43% → 0.23%, with nothing flagged. If a future change
+    // to the metric cannot still tell these two clips apart, the metric has
+    // stopped measuring the thing it was built for.
+    const load = async (d: string) =>
+      ghostClip(await Promise.all(readdirSync(d).filter((f) => f.endsWith(".png")).sort().map((f) => png(join(d, f)))));
+    const seamed = await load(DOG);
+    const whole = await load(DOG_FIXED);
+
+    expect(whole.flagged).toEqual([]);
+    expect(whole.soft).toEqual([]);
+    expect(whole.level).toBe("ready");
+    // The clean clip's WORST frame is below the seamed clip's BEST — the two
+    // populations do not overlap at all.
+    expect(Math.max(...whole.pct)).toBeLessThan(Math.min(...seamed.pct.filter((_, i) => seamed.flagged.includes(i))));
+    expect(Math.max(...whole.pct)).toBeLessThan(GHOST.FLOOR);
   });
 });

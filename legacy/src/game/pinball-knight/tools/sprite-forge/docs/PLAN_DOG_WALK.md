@@ -93,16 +93,45 @@ decoder. This is the same class of error as `PLAN_KEYFRAME_PIPELINE.md` §3
 4. **Gate it either way** (§2). Even a clean decode should be measured, because
    a silent regression here is invisible on a contact sheet.
 
-### The A/B that settles it
+### THE A/B — RUN, AND IT SETTLES IT
 
-One pair, same seed 7, same prompt, same master, ~7 min each:
+⚠️ The pair originally written here changed the canvas AND the temporal size
+together, which would have confounded them. The run that happened changed ONE
+variable: same seed 7, same master, same prompt, same 640x640 canvas, same
+LoRA stack. Only `temporal_size`.
 
-    A  640x640, temporal_size 8,  overlap 4    (today — expect ghosts at 4,8,12,16)
-    B  512x512, temporal_size 24, overlap 4    (expect ghost% flat at ~0.5)
+    A  temporal_size  8   worst frame 10.43%   7 of 21 flagged   435s
+    B  temporal_size 24   worst frame  0.23%   0 of 21 flagged   556s
 
-If B's ghost% is flat, the mechanism is confirmed and the setting is the fix.
-If B still spikes at 4/8/12/16, the mechanism is wrong and the next suspect is
-the sampler's own temporal consistency, not the decoder.
+Every frame of B lands between 0.09% and 0.23%. **B's worst frame is cleaner
+than A's best.** The two populations do not overlap. Frame 12 — 10.43% in A,
+with the hind legs see-through — comes back in B with all four legs solid.
+
+The mechanism is confirmed. It was the decoder's temporal cross-fade: not the
+model, not the sampler, not the prompt, not motion blur. The cost is 28% wall
+clock, and it buys back a third of the frames.
+
+**Shipped as the default.** `wanI2V` now decodes in one window
+(`temporalSize ?? length + 4`). `--temporal N` goes back to a windowed decode
+for a box that cannot afford the transient — a headroom trade with a measured
+cost in ruined frames, not a tuning knob. `inbetween` inherits it.
+
+### THE A/B ALSO CAUGHT A BUG IN THE GATE
+
+B's 21 frames span 0.09-0.23%, so their MAD is ~0.01% and `median + 3*MAD`
+lands at 0.14% — and the relative rule dutifully flagged the three frames above
+it as suspicious. A gate reporting a defect in art that is measurably perfect,
+because an outlier test on a clean population finds noise and calls it signal
+(`a-differently-shaped-probe-condemns-working-code`).
+
+`GHOST.FLOOR` (1%) now floors both rules: nothing fires below the level where
+the defect is visible at all. A's verdict is unchanged — its flagged frames are
+all above 1.5% and its clean ones all below 0.9%. The regression test uses a
+clip with a *small but non-zero* spread, because identical frames would not
+reproduce it.
+
+Worth stating plainly: this was found by running the experiment, not by
+re-reading the code. The clean clip is the control the gate had never seen.
 
 ---
 
