@@ -30,6 +30,16 @@ import { CLIP_NAMES } from "./types";
  * prepended, and a word missing from this list costs a warning, not a run.
  */
 const LORA_TRIGGERS = ["pix3lwalk"];
+
+/**
+ * The facings "all angles" adds, given a clip that already exists facing right.
+ *
+ * E is deliberately absent: the master is authored facing right (the `create`
+ * prompt says "side view facing right") and the first clip IS the E clip, so
+ * re-rotating to E would spend a generation turning a figure to where it
+ * already points — and every hop through Qwen-Image-Edit costs identity.
+ */
+const OTHER_FACINGS = ["S", "N"];
 import { FramePlayer } from "./FramePlayer";
 import { RetryImg } from "./RetryImg";
 import { postJSON, urlToB64 } from "./api";
@@ -155,6 +165,7 @@ function JobCard({
   onRedoPose,
   onAddToTray,
   onKeep,
+  onAllAngles,
 }: {
   id: string;
   job: Job;
@@ -162,15 +173,19 @@ function JobCard({
   /** This job's mode from the registry — carries the move presets. */
   mode?: Mode;
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void | Promise<void>;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string; negative?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
   onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
+  /** Absent when the panel does not offer the chain (keeps the button off). */
+  onAllAngles?: (id: string, job: Job, facings: string[]) => void | Promise<void>;
 }) {
   const [clip, setClip] = useState(clipGuess(job));
+  /** Only true when someone asks to relabel a clip the preset already decided. */
+  const [editClip, setEditClip] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
 
   /**
@@ -208,8 +223,12 @@ function JobCard({
    * Fetched from the registry rather than templated here; see `?resolve=`.
    */
   const [basePrompt, setBasePrompt] = useState(job.resolvedPrompt ?? "");
+  /** Same story for the negative — see `resolvedNegative` on the Job type. */
+  const [baseNegative, setBaseNegative] = useState(job.resolvedNegative ?? "");
+  const [negative, setNegative] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [busy, setBusy] = useState(false);
+  const negativeText = negative ?? baseNegative;
   const promptText = prompt ?? basePrompt;
 
   /**
@@ -222,7 +241,8 @@ function JobCard({
    */
   const moveChanged = move !== startMove;
   const promptChanged = prompt !== null && prompt.trim() !== basePrompt.trim();
-  const isRerun = moveChanged || promptChanged;
+  const negativeChanged = negative !== null && negative.trim() !== baseNegative.trim();
+  const isRerun = moveChanged || promptChanged || negativeChanged;
   const moveLabel = moves?.find((p) => p.id === move)?.label ?? move;
 
   // Ask the registry what the selected move says. Skipped for the move this
@@ -232,6 +252,7 @@ function JobCard({
   useEffect(() => {
     if (!moveChanged) {
       setBasePrompt(job.resolvedPrompt ?? "");
+      setBaseNegative(job.resolvedNegative ?? "");
       return;
     }
     let live = true;
@@ -240,7 +261,9 @@ function JobCard({
     fetch(`/api/comfy/generate?resolve=${encodeURIComponent(job.mode)}&params=${encodeURIComponent(params)}`)
       .then((r) => r.json())
       .then((d) => {
-        if (live && typeof d.prompt === "string") setBasePrompt(d.prompt);
+        if (!live) return;
+        if (typeof d.prompt === "string") setBasePrompt(d.prompt);
+        if (typeof d.negative === "string") setBaseNegative(d.negative);
       })
       .catch(() => {
         /* the button still works — the server resolves it again at launch */
@@ -251,7 +274,7 @@ function JobCard({
     return () => {
       live = false;
     };
-  }, [move, moveChanged, job.mode, job.params, job.resolvedPrompt]);
+  }, [move, moveChanged, job.mode, job.params, job.resolvedPrompt, job.resolvedNegative]);
   /**
    * THE GUARD LIVES HERE, not on the buttons.
    *
@@ -351,6 +374,7 @@ function JobCard({
                         // write the prompt, not echo back a string this card
                         // resolved.
                         prompt: promptChanged ? promptText.trim() : undefined,
+                        negative: negativeChanged ? negativeText.trim() : undefined,
                       }
                     : undefined,
                 );
@@ -360,6 +384,29 @@ function JobCard({
             }}
           >
             {busy ? "queuing…" : isRerun ? `▶ run ${moveLabel}` : "↻ re-roll"}
+          </button>
+        )}
+        {/* ── THE ANGLES, ONLY ONCE THIS ONE IS GOOD ──────────────────────
+            A moveset is 18 Wan jobs. Generating one facing, looking at it, and
+            only then paying for the rest is the order that lets a bad master be
+            caught for the price of a single clip. So this is a button you press
+            after the eye test, not a batch that runs ahead of it.
+
+            Absent while any frame is flagged: every facing branches off this
+            clip's init, so a dissolved limb in the source would be rotated into
+            all of them. */}
+        {job.state === "done" && job.mode === "animate" && (job.frames?.length ?? 0) > 0 && onAllAngles && (
+          <button
+            style={{ ...S.btn, ...(ghostFlagged.size ? { opacity: 0.45 } : {}) }}
+            disabled={ghostFlagged.size > 0}
+            title={
+              ghostFlagged.size
+                ? `${ghostFlagged.size} frame(s) here have a dissolved limb — fix this clip before spending GPU on the other facings`
+                : "rotate this clip's master to S and N, then animate the same move in each — about 27 minutes"
+            }
+            onClick={() => onAllAngles(id, job, OTHER_FACINGS)}
+          >
+            ⟳ all angles
           </button>
         )}
         {job.state === "done" && (job.frames?.length ?? 0) > 0 && (
@@ -402,6 +449,38 @@ function JobCard({
               </span>
             )}
           </div>
+
+          {/* ── THE NEGATIVE ────────────────────────────────────────────────
+              Half the prompt, and on the Wan leg the half doing the most work.
+              It was never recorded, so "show me the prompt that made this" could
+              only ever show the positive — while the clause that stops the feet
+              gliding, the clause that stops the camera pushing in and the clause
+              that stops the background going black all sat in here, invisible.
+              Every one of them was added off a measured failure. */}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={S.note}>negative — what it is told to avoid</span>
+              {negativeChanged && <span style={S.chip(GREEN.fg, GREEN.bg)}>edited</span>}
+              {negativeChanged && (
+                <button style={{ ...S.btn, fontSize: 11 }} onClick={() => setNegative(null)}>
+                  revert
+                </button>
+              )}
+            </div>
+            {baseNegative || negative !== null ? (
+              <textarea
+                style={{ ...S.input, width: "100%", minHeight: 72, fontFamily: "inherit", lineHeight: 1.45, resize: "vertical", color: "#a6adba" }}
+                value={negativeText}
+                spellCheck={false}
+                onChange={(e) => setNegative(e.target.value)}
+              />
+            ) : (
+              <p style={S.note}>
+                not recorded — this job ran before the negative was written into job.json. Change the move or re-run and it
+                will be there.
+              </p>
+            )}
+          </div>
         </div>
       )}
       {job.state === "running" && (
@@ -437,31 +516,60 @@ function JobCard({
       {job.state === "done" && frames.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-            {/* "as clip" read as a generator and it is not one — it files the
-                frames ABOVE under a clip name. Set it to `run` on a walk card
+            {/* ── ONE CONTROL, NOT TWO ──────────────────────────────────────
+                There used to be a `file as` dropdown here AND a move select in
+                the header, and on an attack card both read "attack" — two
+                controls, same word, different meanings. Worse, they invited the
+                reading that this one generates: set it to `run` on a walk card
                 and the sheet plays a walk whenever the creature runs, silently.
-                The move select that DOES generate lives up in the header row,
-                next to the button. */}
-            <span style={S.note} title="where these frames get filed — this does not generate anything">
-              file as
-            </span>
-            <select
-              // `borderColor` alone is safe because `S.input` is longhand —
-              // see the note above `card` in theme.ts, and the one on `input`
-              // itself, which this override is what finally converted.
-              style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
-              value={clip}
-              onChange={(e) => setClip(e.target.value)}
-            >
-              {/* Only offered while nothing is chosen — an unlabelled clip must
-                  be a decision, not a state you can go back to by accident. */}
-              {!clip && <option value="">— pick a clip —</option>}
-              {CLIP_NAMES.map((c2) => (
-                <option key={c2} value={c2}>
-                  {c2}
-                </option>
-              ))}
-            </select>
+
+                But the clip is not a free choice. The preset that MADE these
+                frames declares it (`walk4` → walk, `defend` → crouch), so it is
+                derived, shown as a fact, and only offered as a dropdown in the
+                one case where nothing on the job knows: a `custom` action. The
+                pencil is there because a mislabelled old job should still be
+                fixable without regenerating it. */}
+            {clip && !editClip ? (
+              <>
+                <span style={S.note}>files as</span>
+                <span style={S.chip(GREEN.fg, GREEN.bg)} title="from the preset that generated these frames">
+                  {clip}
+                </span>
+                <button
+                  style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}
+                  title="relabel these frames — only needed if the job was filed wrong"
+                  onClick={() => setEditClip(true)}
+                >
+                  ✎
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={S.note} title="where these frames get filed — this does not generate anything">
+                  files as
+                </span>
+                <select
+                  // `borderColor` alone is safe because `S.input` is longhand —
+                  // see the note above `card` in theme.ts, and the one on `input`
+                  // itself, which this override is what finally converted.
+                  style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
+                  value={clip}
+                  onChange={(e) => {
+                    setClip(e.target.value);
+                    if (e.target.value) setEditClip(false);
+                  }}
+                >
+                  {/* Only offered while nothing is chosen — an unlabelled clip must
+                      be a decision, not a state you can go back to by accident. */}
+                  {!clip && <option value="">— pick a clip —</option>}
+                  {CLIP_NAMES.map((c2) => (
+                    <option key={c2} value={c2}>
+                      {c2}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
             {frames.length > 1 && (
               <button
                 style={{ ...S.btn, ...dimmed }}
@@ -577,19 +685,22 @@ export function JobsBoard({
   onRedoPose,
   onAddToTray,
   onKeep,
+  onAllAngles,
 }: {
   jobs: Record<string, Job>;
   tick: number;
   /** The mode registry — a card reads its own move presets out of it. */
   modes?: Mode[];
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void | Promise<void>;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string; negative?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
   onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
+  /** Absent when the panel does not offer the chain (keeps the button off). */
+  onAllAngles?: (id: string, job: Job, facings: string[]) => void | Promise<void>;
 }) {
   const [showAll, setShowAll] = useState(false);
   const entries = Object.entries(jobs).sort((a, b) => (b[1].startedAt ?? 0) - (a[1].startedAt ?? 0));
@@ -605,7 +716,7 @@ export function JobsBoard({
         </span>
       </h2>
       {visible.map(([id, j]) => (
-        <JobCard key={id} id={id} job={j} tick={tick} mode={modes?.find((m) => m.id === j.mode)} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} />
+        <JobCard key={id} id={id} job={j} tick={tick} mode={modes?.find((m) => m.id === j.mode)} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} onAllAngles={onAllAngles} />
       ))}
       {entries.length > 6 && (
         <button style={{ ...S.btn, ...S.btnGhost, marginTop: 8 }} onClick={() => setShowAll(!showAll)}>

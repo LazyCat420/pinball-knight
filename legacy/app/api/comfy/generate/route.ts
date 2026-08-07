@@ -66,6 +66,8 @@ type Job = {
   startedAt: number;
   params?: Record<string, unknown>;
   resolvedPrompt?: string;
+  /** The NEGATIVE actually sent — read off the built graph, not recomputed. */
+  resolvedNegative?: string;
   seed?: number;
   fast?: boolean;
   /** Library filing: which project/character this generation belongs to. */
@@ -111,6 +113,31 @@ function framesOnDisk(id: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The negative text on a built graph.
+ *
+ * Every graph in `graphs.mjs` names the node `neg`; only the field differs —
+ * `CLIPTextEncode` calls it `text`, `TextEncodeQwenImageEditPlus` calls it
+ * `prompt`. Typed loosely on purpose: a graph is a JSON document whose shape is
+ * a union across four builders, and narrowing it here would mean restating that
+ * union in a second place that then has to be kept in step.
+ */
+function negField(graph: any): "text" | "prompt" | null {
+  const inputs = graph?.neg?.inputs;
+  if (!inputs) return null;
+  if (typeof inputs.text === "string") return "text";
+  if (typeof inputs.prompt === "string") return "prompt";
+  return null;
+}
+function readNegative(graph: any): string | undefined {
+  const k = negField(graph);
+  return k ? (graph.neg.inputs[k] as string) : undefined;
+}
+function setNegative(graph: any, text: string): void {
+  const k = negField(graph);
+  if (k) graph.neg.inputs[k] = text;
 }
 
 async function uploadB64(b64: string, tag: string): Promise<string> {
@@ -467,6 +494,25 @@ export async function POST(req: Request) {
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+
+    /**
+     * THE NEGATIVE — recorded, and editable, because it is half the prompt.
+     *
+     * It was never written down anywhere. `wanI2V` carries a long default (the
+     * camera terms, the scale terms, the background terms) and each mode adds
+     * its preset's `avoid` on top, and none of that reached `job.json` or the
+     * panel. So "show me the prompt that made this image" could only ever show
+     * half of it, and the half that is doing the most work on a video model was
+     * invisible: the reason a walk does not glide is a clause in there.
+     *
+     * Read off the BUILT GRAPH rather than recomputed, so it is literally the
+     * string being sent. Every graph names the node `neg`; only the field
+     * differs — `CLIPTextEncode` calls it `text`, `TextEncodeQwenImageEditPlus`
+     * calls it `prompt`.
+     */
+    const negOverride = typeof body.negative === "string" && body.negative.trim() ? body.negative.trim() : null;
+    if (negOverride) setNegative(graph, negOverride);
+    const resolvedNegative = readNegative(graph);
     const facet =
       typeof params.facing === "string" ? `-${params.facing}` : typeof params.preset === "string" && params.preset !== "custom" ? `-${params.preset}` : "";
     const preset = mode.presets?.find((p: { id: string }) => p.id === params.preset);
@@ -480,6 +526,7 @@ export async function POST(req: Request) {
       startedAt: Date.now(),
       params,
       resolvedPrompt,
+      resolvedNegative,
       seed: baseSeed,
       fast,
       // The clip these frames are destined for — the sheet tray's default.
@@ -537,10 +584,23 @@ export async function GET(req: Request) {
         unet: (s: string) => chosenOption(s, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
         chosen: (s: string) => chosenOption(s, settings.chosen)?.id ?? null,
         fast: false,
-        images: {},
+        // Placeholder names. Modes throw without an init and we only ever read
+        // strings back out — the graph is discarded, never queued.
+        images: { init: "resolve.png", end: "resolve.png", style: "resolve.png", mask: "resolve.png" },
         seed: 0,
       };
-      return NextResponse.json({ prompt: mode.prompt(params, ctx) });
+      const prompt = mode.prompt(params, ctx);
+      // The negative is worth more than the positive on the Wan leg and it is
+      // not derivable from the mode alone — it is assembled inside the graph.
+      // Build one to read it; a mode that cannot build without a real image
+      // simply reports no negative rather than failing the whole lookup.
+      let negative: string | undefined;
+      try {
+        negative = readNegative(mode.build(params, ctx));
+      } catch {
+        /* no negative for this mode/params — the panel just shows the positive */
+      }
+      return NextResponse.json({ prompt, negative });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }

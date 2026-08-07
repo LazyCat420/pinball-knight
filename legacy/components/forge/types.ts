@@ -59,6 +59,13 @@ export type Job = {
   startedAt: number;
   params?: Record<string, string>;
   resolvedPrompt?: string;
+  /**
+   * The NEGATIVE actually sent. Half the prompt and, on the Wan leg, the half
+   * doing the most work — the camera terms, the scale terms, the background
+   * terms and the preset's `avoid` all live here. Absent on jobs generated
+   * before it was recorded.
+   */
+  resolvedNegative?: string;
   seed?: number;
   fast?: boolean;
   project?: string;

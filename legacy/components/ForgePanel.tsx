@@ -210,6 +210,45 @@ export default function ForgePanel() {
     return null;
   };
 
+  /**
+   * ONE GOOD CLIP FACING RIGHT → THE SAME MOVE IN EVERY FACING.
+   *
+   * The workflow this implements is "generate it facing right, look at it, and
+   * only then pay for the other angles" — which is the right way round, because
+   * a moveset is 18 Wan jobs and the first clip tells you whether the master is
+   * worth building on.
+   *
+   * ── WHY IT ROTATES THE INIT AND NOT THE CLIP ────────────────────────────
+   *
+   * The tempting shortcut is to rotate the finished frames. That is a restyle
+   * of a restyle: Qwen-Image-Edit identity drift compounds over serial edits,
+   * which is why PLAN_KEYFRAME_PIPELINE.md's rule is that every facing branches
+   * off the ONE approved master and never off another facing. So both rotations
+   * start from the same init, and each rotated master is then animated fresh.
+   *
+   * Sequential, not parallel: Wan wants most of WSL to itself and the RAM guard
+   * hard-strikes on sustained pressure. Two facings is 2 x (rotate + animate).
+   */
+  const allAngles = async (id: string, job: Job, facings: string[]) => {
+    if (!job.frames?.length) return say("no frames on this job to rotate from");
+    const preset = job.params?.preset;
+    const mins = Math.round((facings.length * (260 + 550)) / 60);
+    if (!confirm(`Generate ${preset ?? "this move"} for ${facings.join(" + ")}?\n\n${facings.length * 2} GPU jobs, roughly ${mins} minutes.\nEach facing is rotated from THIS clip's init, never from another facing.`)) return;
+    // The init this clip was made from is not on the server, so the first frame
+    // is the honest stand-in — it is the same character at the same scale.
+    const master = images.init ?? (await urlToB64(`/api/comfy/generate?id=${id}&frame=${job.frames[0]}`));
+    for (const facing of facings) {
+      say(`${facing}: rotating the master…`);
+      const turned = await launchAndWait({ mode: "rotate", params: { facing }, imageB64: master });
+      if (!turned) return say(`${facing}: rotation failed — stopping before it animates the wrong thing`);
+      say(`${facing}: animating ${preset ?? ""}…`);
+      // `facing` rides along in params so the job label and id carry it; the
+      // animate mode ignores it, the route's `facet` does not.
+      await launch({ mode: job.mode, params: { ...(job.params ?? {}), facing }, imageB64: turned, fast: job.fast });
+    }
+    say(`queued ${facings.length} facing(s) — watch the board`);
+  };
+
   const keep = async (id: string, job: Job) => {
     const character = job.character ?? activeCharacter;
     if (!character) return say("select a character in the library first — keep needs to know whose art this is");
@@ -232,7 +271,7 @@ export default function ForgePanel() {
    * `↻ re-roll` — because "re-roll" on a clip nobody has generated reads as a
    * promise that it is already sitting somewhere.
    */
-  const reroll = async (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => {
+  const reroll = async (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string; negative?: string }) => {
     try {
       /**
        * ── THIS USED TO BE A DEAD CLICK ─────────────────────────────────────
@@ -370,6 +409,7 @@ export default function ForgePanel() {
                 }
               }}
               onReroll={reroll}
+              onAllAngles={allAngles}
               onUseAsInit={useAsInit}
               onUseAsLast={useAsLast}
               onFixFrame={fixFrame}
