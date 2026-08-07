@@ -6,6 +6,8 @@
  *   the /forge library (frog, brute, pinball_knight…). Untagged stays unfiled.
  *
  *   node cli.mjs stats
+ *   node cli.mjs create  --prompt "a mangy dog monster"      [--canvas WxH] [--seed N]
+ *                        [--no-style] [--steps N]        TEXT -> IMAGE, no init
  *   node cli.mjs rotate  --init frame.png --to "left"        [--out DIR] [--seed N]
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
  *                        [--canvas init|WxH]
@@ -25,7 +27,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFile
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
-import { controlMap, qwenEdit, wanI2V } from "./graphs.mjs";
+import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
@@ -222,6 +224,46 @@ const main = {
    * outranks the sentence. Left opt-in so a plain single-figure edit keeps the
    * square it has always had.
    */
+  /**
+   * TEXT → IMAGE. The master, from nothing.
+   *
+   * Every other command here starts from a picture somebody else made — a
+   * photo, a painter's render, another game's sprite. This is step 1 of
+   * docs/PLAN_KEYFRAME_PIPELINE.md, and it is what makes the rest of that plan
+   * mean anything: once the master is ours, every keyframe and in-between
+   * downstream is conditioned on art this pipeline produced at the size it
+   * ships at.
+   *
+   * The style LoRAs are doing more work here than anywhere else in the forge —
+   * there is no init to inherit a look from, so `tarn59-pixel-style` IS the
+   * style decision. `--no-style` turns it off to see what the base model does
+   * unaided, which is the A/B worth having before trusting any of this.
+   *
+   *   node cli.mjs create --prompt "a mangy dog monster, side view" --file-as dog
+   *   node cli.mjs create --prompt "..." --canvas 768x1024 --seed 3
+   */
+  async create() {
+    const prompt = opt("prompt");
+    if (!prompt) throw new Error("create needs --prompt <description>");
+    const dir = outDir("create");
+    const canvas = opt("canvas", "1024x1024");
+    const [width, height] = canvas.split("x").map(Number);
+    if (!width || !height) throw new Error(`--canvas takes WxH, got "${canvas}"`);
+    const ctx = buildCtx({ images: {}, seed: Number(opt("seed", 7)), fast: has("fast"), leg: "qwen" });
+    // Same resolution path the panel uses, so a CLI master and a panel master
+    // are the same picture — the drift this file's header exists to prevent.
+    const loras = has("no-style") || !ctx.has("tarn59-pixel-style")
+      ? []
+      : [{ name: ctx.lora("tarn59-pixel-style"), strength: 0.8 }];
+    const seed = Number(opt("seed", 7));
+    console.log(`create ${width}x${height} seed ${seed}${loras.length ? " + pixel style lock" : " (NO style lora)"}`);
+    await run(
+      qwenText2Image({ prompt, width, height, seed, steps: Number(opt("steps", 20)), loras }),
+      dir,
+      { mode: "create", label: "create", params: { prompt }, resolvedPrompt: prompt, seed },
+    );
+  },
+
   async edit() {
     const init = opt("init");
     const prompt = opt("prompt");
@@ -478,7 +520,7 @@ const main = {
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|create|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {

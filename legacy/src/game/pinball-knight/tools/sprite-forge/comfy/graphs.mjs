@@ -189,6 +189,72 @@ const QWEN_NEGATIVE =
   "cast shadow, drop shadow, ground shadow, shadow under the character, " +
   "reflection, floor, ground plane, platform, pedestal";
 
+/**
+ * TEXT → IMAGE. No init, no conditioning image, nothing to restyle.
+ *
+ * ── WHY THIS IS POSSIBLE WITH THE MODELS ALREADY ON THE SHELF ───────────────
+ *
+ * `PLAN_KEYFRAME_PIPELINE.md` calls step 1 the one real gap, and the reason
+ * looked like a missing model: `models/unet/` holds Qwen-Image-**Edit** and two
+ * Wan **I2V** experts, `checkpoints/` and `diffusion_models/` are empty, and
+ * every entry in MODES declares `needs.init`. The conclusion drawn from that —
+ * that a ~15GB base-model download was required — was WRONG.
+ *
+ * Qwen-Image-Edit is Qwen-Image with image conditioning bolted on. The
+ * transformer underneath is a text-to-image model; the edit variant reaches it
+ * through `TextEncodeQwenImageEditPlus`, which is what binds a source image
+ * into the conditioning. Encode the prompt with a PLAIN `CLIPTextEncode`
+ * instead, start from the `EmptySD3LatentImage` this file already builds, and
+ * the same weights generate from text alone. Nothing is downloaded and nothing
+ * about the edit path changes.
+ *
+ * ── WHAT IT IS FOR ──────────────────────────────────────────────────────────
+ *
+ * The master. Everything downstream of it — keyframes, in-betweens, rotation,
+ * animation — is conditioned on art this pipeline made, at the size it ships
+ * at. That is the whole point of the keyframe plan and the opposite of seeding
+ * a character from a photo, a painter's render or somebody else's sprite.
+ *
+ * The style LoRAs matter MORE here than anywhere else in the forge: this is the
+ * one generation with no init to inherit a look from, so `tarn59-pixel-style`
+ * is carrying the entire style decision. Pass it in `loras` — the caller's
+ * `ctx` already resolves it, exactly as the edit leg does.
+ */
+export function qwenText2Image({
+  prompt,
+  negative = QWEN_NEGATIVE,
+  width = 1024,
+  height = 1024,
+  seed = 7,
+  steps = 20,
+  cfg = 2.5,
+  loras = [],
+  unet = MODELS.qwenUnet,
+} = {}) {
+  if (!prompt) throw new Error("[graphs] qwenText2Image needs a prompt");
+  const g = {
+    u: { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } },
+    c: { class_type: "CLIPLoader", inputs: { clip_name: MODELS.qwenClip, type: "qwen_image", device: "default" } },
+    v: { class_type: "VAELoader", inputs: { vae_name: MODELS.qwenVae } },
+    // PLAIN text encode — no `image1`, which is the single difference from the
+    // edit leg and the reason this needs no init.
+    pos: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: prompt } },
+    neg: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: negative } },
+    lat: { class_type: "EmptySD3LatentImage", inputs: { width, height, batch_size: 1 } },
+    k: {
+      class_type: "KSampler",
+      inputs: {
+        model: ["u", 0], positive: ["pos", 0], negative: ["neg", 0], latent_image: ["lat", 0],
+        seed, steps, cfg, sampler_name: "euler", scheduler: "simple", denoise: 1,
+      },
+    },
+    dec: { class_type: "VAEDecode", inputs: { samples: ["k", 0], vae: ["v", 0] } },
+    out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/create" } },
+  };
+  g.k.inputs.model = chainLoras(g, ["u", 0], loras, "l");
+  return g;
+}
+
 export function qwenEdit({
   image,
   image2 = null,
