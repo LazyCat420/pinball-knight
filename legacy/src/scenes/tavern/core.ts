@@ -10,7 +10,6 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend, createGPURenderer } from "../../render/backend";
-import { startGPURenderer } from "../../render/gpu-init";
 import { createPixelPass, computeRenderSizing, type PixelPass } from "../../game/pinball-knight/engine/render/pixel-pass";
 import { createDungeonCamera, aimCamera } from "../../game/pinball-knight/engine/camera";
 import { createInput, type InputHandle } from "../../game/pinball-knight/engine/input";
@@ -531,28 +530,7 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // it async would turn that check into a truthy Promise and the DOM fallback
   // would become unreachable. The loop skips frames until this flips.
   rendererReady = false;
-  // ⚠️ THE CATCH IS LOAD-BEARING — see src/render/gpu-init.ts.
-  //
-  // This was `void renderer.init().then(...)` with no catch, which was correct
-  // while `init()` could not reject. It can now: `createGPURenderer` nulls
-  // `_getFallback` so a refused adapter REJECTS instead of silently resolving on
-  // WebGL2. The rejection had nowhere to go, `rendererReady` stayed false, and
-  // `presentMode()` returned "none" for every frame the tavern ever ran — a
-  // permanent flat rectangle with no error, no notice and a `__tavernProbe()`
-  // that reported a perfectly healthy room. Reported from the live site
-  // 2026-08-07 as "it doesn't load after the intro".
-  //
-  // `retry` because this is the page's THIRD device (site, dungeon, tavern) and
-  // a refusal there is as likely to be contention as a machine that cannot do
-  // WebGPU — the first is worth one more ask.
-  void startGPURenderer(renderer, { label: "tavern", retry: true }).then(async (ok) => {
-    if (!ok) {
-      // Do not leave the player on a dead canvas they cannot escape. The scene
-      // is torn down so the site underneath is reachable again, and the notice
-      // startGPURenderer raised says why.
-      closeTavern();
-      return;
-    }
+  void renderer.init().then(async () => {
     // Warm the room's pipelines BEFORE the first presented frame — the loop
     // skips presenting until `rendererReady`, so the compile stalls land here
     // instead of on the first frame a hidden prop or pooled effect draws.

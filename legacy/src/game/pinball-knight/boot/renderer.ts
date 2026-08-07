@@ -17,7 +17,6 @@
 import * as THREE from "three";
 import { WebGPURenderer } from "three/webgpu";
 import { selectBackend, createGPURenderer } from "../../../render/backend";
-import { startGPURenderer } from "../../../render/gpu-init";
 import { state } from "../state";
 import { createPixelPass } from "../engine/render/pixel-pass";
 import { PALETTE_HEX } from "../render/palette";
@@ -106,12 +105,8 @@ export function installRenderer(): void {
   // it async would silently reorder their teardown. So the loop skips frames
   // until this resolves; see the rendererReady gate in the render block.
   rendererReady = false;
-  // The catch matters as much as the gate — see src/render/gpu-init.ts. Without
-  // it a refused adapter left `rendererReady` false for ever and this loop
-  // skipped EVERY frame, silently. `retry` because the dungeon is the page's
-  // SECOND device (the site room owns the first).
-  void startGPURenderer(state.renderer, { label: "dungeon", retry: true }).then((ok) => {
-    rendererReady = ok;
+  void state.renderer.init().then(() => {
+    rendererReady = true;
   });
   state.renderer.setClearColor(PALETTE_HEX[0]);
   // One shadow-casting directional light needs the shadow map on. PCFSoft gives
