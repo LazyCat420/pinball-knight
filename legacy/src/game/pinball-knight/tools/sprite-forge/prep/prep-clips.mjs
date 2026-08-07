@@ -58,7 +58,11 @@ const { createCanvas, loadImage } = require("canvas");
 import { writeFileSync, readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { keyChroma } from "./prep-sheet.mjs";
+import { keyChroma, isChroma } from "./prep-sheet.mjs";
+// The REAL matte, not a second copy of it. Node strips the types; this is the
+// same function `npm run sprites` and the panel's cut preview run — see
+// `keyFrame` below for why a magenta-only key was not enough.
+import { matte } from "../matte.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const [, , mode, recipePath, outPath] = process.argv;
@@ -73,14 +77,45 @@ const CELL_H = 320;
 /** Living figures fill this share of the cell; the rest is headroom + gutter. */
 const TARGET = CELL_H * 0.78;
 
+/**
+ * KEY THE BACKGROUND THIS FRAME ACTUALLY HAS.
+ *
+ * `keyChroma` tests for the MAGENTA FAMILY (`g < 60`), which is right for a
+ * sheet the model drew on a #ff00ff field and useless for anything else. The
+ * 08-07 brute run is exactly anything else: measured at the corner, the S
+ * clips sit on lavender (243,169,255 — g=169) and the E/N clips on near-white
+ * (246,248,239). Both sail straight past `g < 60`, so every frame keyed to
+ * NOTHING, the bbox became the full canvas, and the build died on the first
+ * frame it touched.
+ *
+ * Widening the chroma test is the wrong repair twice over: white backgrounds
+ * are not a hue at all, and a global colour key punches holes through art that
+ * happens to match (the reason `matte.ts` exists and the reason it fills from
+ * the BORDER instead). So the fallback is the real matte — the same function
+ * `npm run sprites` runs one stage later — and chroma keeps first refusal
+ * because a true magenta field is unambiguous and free.
+ */
+function keyFrame(data, w, h, file) {
+  // A magenta corner means the generator was given the chroma backdrop; trust
+  // the cheap hue test, which also handles the darker "floor shelf".
+  if (isChroma(data[0], data[1], data[2])) {
+    keyChroma(data);
+    return { how: "chroma" };
+  }
+  const { data: keyed, report } = matte(data, w, h);
+  if (report.failures.length) throw new Error(`${file}: matte refused — ${report.failures.join("; ")}`);
+  data.set(keyed);
+  return { how: `matte bg=${report.bg.join(",")} keyed=${(report.keyedPct * 100).toFixed(0)}%` };
+}
+
 const loadKeyed = async (file) => {
   const img = await loadImage(file);
   const c = createCanvas(img.width, img.height);
   const ctx = c.getContext("2d");
   ctx.drawImage(img, 0, 0);
   const im = ctx.getImageData(0, 0, img.width, img.height);
-  keyChroma(im.data);
-  return { data: im.data, w: img.width, h: img.height };
+  const { how } = keyFrame(im.data, img.width, img.height, file);
+  return { data: im.data, w: img.width, h: img.height, how };
 };
 
 /** Tight alpha bbox — the silhouette, not the canvas. */
@@ -140,7 +175,7 @@ for (const p of recipe.rows) {
 if (mode === "report") {
   for (const r of rows) {
     console.log(`${r.clip.padEnd(8)} ${r.frames.length} frames from ${r.dir}/`);
-    for (const f of r.frames) console.log(`   ${f.file.padEnd(28)} ${f.bb.w}x${f.bb.h}  ghost=${f.ghost}`);
+    for (const f of r.frames) console.log(`   ${f.file.padEnd(28)} ${f.bb.w}x${f.bb.h}  ghost=${String(f.ghost).padEnd(7)} ${f.src.how}`);
   }
   process.exit(0);
 }
