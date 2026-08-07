@@ -37,12 +37,23 @@ import type { RawImage } from "./resample";
 /**
  * THE THRESHOLDS.
  *
- * Every number here is a guess until `drift-calibrate.test.ts` has run it over
- * the published sheets that already work (frog, jester, beaver, zombie). A
- * metric tuned on nothing condemns working art — that failure has happened in
- * this repo before, with a differently-shaped probe that declared healthy code
- * broken. So the calibration test is not optional polish; it is the thing that
- * makes these numbers mean anything.
+ * Every number here is a guess until the calibration half of `drift.test.ts`
+ * has run it over the published sheets that already work (frog, jester,
+ * beaver, zombie). A metric tuned on nothing condemns working art — that
+ * failure has happened in this repo before, with a differently-shaped probe
+ * that declared healthy code broken. So the calibration is not optional
+ * polish; it is the thing that makes these numbers mean anything.
+ *
+ * ⚠️ This used to cite `drift-calibrate.test.ts`, which has never existed. The
+ * calibration it describes is real and does run — it is the second half of
+ * `drift.test.ts`, whose own header calls it "the calibration half". A dangling
+ * citation is worse than none: it reads as a guarantee somebody else is holding.
+ *
+ * ⚠️ A one-sided calibration cannot tell a well-tuned gate from one that passes
+ * everything. `AREA`/`PALETTE`/`FEET` are still one-sided — they only prove
+ * they do not condemn working art. `SWEEP` is the first with a real NEGATIVE
+ * control (the brute as deployed at `e9f64dc`); prefer that shape when adding
+ * a threshold.
  *
  * They are exported so the test can assert against them by name rather than
  * re-typing literals that then drift apart from these.
@@ -80,6 +91,51 @@ export const DRIFT = {
   DUPE_IOU: 0.94,
   /** Colour bins coarser than generation noise (±8 per channel). */
   BIN: 32,
+  /**
+   * ── SWEEP: THE FIGURE TRAVELLING ACROSS ITS OWN CELLS ────────────────────
+   *
+   * `span × |r|`, where `span` is the range of the per-cell centring offset
+   * across a row (ink centroid X minus rect centre X, over rect width) and `r`
+   * is that offset's Pearson correlation with the frame index.
+   *
+   * BOTH terms are load-bearing, and the magnitude alone is not enough. The
+   * knight's E walk swings a single frame 0.11 off centre — bigger than some
+   * genuinely broken rows — but it ZIGZAGS (r = 0.28), which is a sword arm
+   * moving, not the body translating. A monotone RAMP is the tell: the figure
+   * starts at one edge of its box and finishes at the other, so the sprite
+   * slides sideways as the clip plays while the creature's world position is
+   * unchanged. That is the "drifts left when going right" report.
+   *
+   * CALIBRATED 2026-08-06 over every published sheet (see drift.test.ts). The
+   * known-bad is the brute as deployed at `e9f64dc`, whose `cells:[2,4,4]`
+   * override ran `equalCells` and gave every frame a uniform column:
+   *
+   *     brute-S walk    span 0.433  r +1.00  ->  0.433   <- the defect
+   *     brute-S attack  span 0.368  r +1.00  ->  0.367
+   *     compass-N walk  span 0.547  r +1.00  ->  0.547
+   *     zombie-E walk   span 0.295  r +1.00  ->  0.295
+   *     ---------------------------------------------- TOL 0.25
+   *     knight-N attack span 0.145  r +0.98  ->  0.143
+   *     ---------------------------------------------- SOFT 0.12
+   *     mario-S walk    span 0.026  r -0.89  ->  0.023
+   *     frog-S  idle    span 0.008  r -0.81  ->  0.007
+   *     brute-S walk    span 0.013  r -0.14  ->  0.002   <- same art, re-cut
+   *
+   * The last line is the point: identical source frames, re-cut ink-tight by
+   * `commit.ts`, drop from 0.433 to 0.002. The art was never the problem.
+   */
+  SWEEP_TOL: 0.25,
+  SWEEP_SOFT_TOL: 0.12,
+  /**
+   * Spread, in source px, of (rect bottom − lowest ink Y) across a row.
+   *
+   * `registerCell` grounds the CELL's bottom edge, not the figure's feet, so a
+   * row whose rects share one band bottom floats every frame that does not
+   * happen to reach it — the vertical half of the same defect. Every sheet the
+   * slicer cut ink-tight measures 0 here.
+   */
+  GROUND_SPREAD_PX: 12,
+  GROUND_SPREAD_SOFT_PX: 5,
 } as const;
 
 export interface DriftOptions {
@@ -329,6 +385,208 @@ export function driftClip(cells: readonly RawImage[], opts: DriftOptions = {}): 
   });
 
   return finish(checks, opts);
+}
+
+/**
+ * ARE THIS ROW'S RECTS HONEST? — measured on the SHEET, before registration.
+ *
+ * ── WHY THIS CANNOT LIVE WITH THE OTHER TWO ─────────────────────────────────
+ *
+ * `driftFrame` and `driftClip` take REGISTERED cells: `registerCell` has
+ * already centred each one on a shared canvas and put its feet on the contract
+ * line. That is exactly why neither of them can see this defect — registration
+ * is the step that HIDES it. A cell whose rect was wrong arrives at the
+ * animator looking perfectly centred, having quietly taken its neighbours'
+ * offsets with it.
+ *
+ * So this runs one stage earlier, on the raw sheet plus the rects the slicer
+ * (or a sidecar) produced, and asks whether those rects sit on the ink.
+ *
+ * ── THE DEFECT IT EXISTS FOR ────────────────────────────────────────────────
+ *
+ * `equalCells` (slice.ts) divides a row's INK EXTENT into N uniform columns.
+ * Where the figure sits inside its column then varies frame to frame, and
+ * `register.ts:148` centres the COLUMN rather than the ink — so the offset is
+ * preserved into the cel and the sprite slides sideways while the creature's
+ * world position does not move. The vertical twin: every cell in a band shares
+ * the band's bottom edge, so `registerCell` grounds the band, and any frame
+ * whose feet are higher floats.
+ *
+ * Shipped for a year on the brute, invisible to every existing gate: the forge
+ * sliced clean cells, the census scored them, `importedPaints` packed them and
+ * the animator played them. Every stage did its job on rects that were wrong.
+ *
+ * Returns the `QaVerdict` shape the panel already renders, like its two
+ * siblings. `cells` are `[x0, y0, x1, y1]` in SHEET coordinates.
+ */
+export function driftRow(
+  sheet: RawImage,
+  cells: readonly (readonly number[])[],
+  opts: DriftOptions = {},
+): QaVerdict {
+  if (cells.length < 2) {
+    return finish([{
+      id: "rects", label: "the row has cells", value: `${cells.length}`, want: "≥ 2",
+      pass: cells.length > 0, soft: true,
+    }], opts);
+  }
+
+  const off: number[] = [];   // centring offset, as a fraction of rect width
+  const ground: number[] = []; // rect bottom − lowest ink Y, in px
+  for (const c of cells) {
+    const [x0, y0, x1, y1] = c as [number, number, number, number];
+    const w = x1 - x0 + 1;
+    let sx = 0, n = 0, lowest = -1;
+    for (let y = y0; y <= y1; y++) {
+      const row = y * sheet.width;
+      for (let x = x0; x <= x1; x++) {
+        if (sheet.data[(row + x) * 4 + 3] >= OPAQUE_AT) {
+          sx += x; n++;
+          if (y > lowest) lowest = y;
+        }
+      }
+    }
+    // An empty rect is a slice failure, not a drift failure — `inbox.test.ts`
+    // and the caption filter own that. Contribute nothing rather than a NaN.
+    if (!n) continue;
+    off.push((sx / n - (x0 + x1) / 2) / w);
+    ground.push(lowest < 0 ? 0 : y1 - lowest);
+  }
+
+  const checks: QaCheck[] = [];
+  if (off.length >= 2) {
+    const span = Math.max(...off) - Math.min(...off);
+    const r = correlation(off);
+    const sweep = span * Math.abs(r);
+    checks.push({
+      id: "centred",
+      label: "the figure holds its place across the row",
+      value: `sweep ${sweep.toFixed(3)} (span ${span.toFixed(3)} × r ${r >= 0 ? "+" : ""}${r.toFixed(2)})`,
+      want: `< ${DRIFT.SWEEP_TOL}`,
+      pass: sweep < DRIFT.SWEEP_TOL,
+      soft: sweep < DRIFT.SWEEP_TOL && sweep >= DRIFT.SWEEP_SOFT_TOL,
+      ...(sweep >= DRIFT.SWEEP_SOFT_TOL ? {
+        why:
+          `the figure travels ${pct(span)} of its cell width across this row, and does it ` +
+          `monotonically (r ${r.toFixed(2)}) — so the sprite SLIDES sideways as the clip plays ` +
+          `while the creature's world position does not move`,
+        fix:
+          "the rects are not ink-tight. Drop any `cells` override from the sidecar and let the " +
+          "slicer find the cells, or re-cut through `commit.ts`, which repacks ink-tight by construction",
+      } : {}),
+    });
+  }
+
+  if (ground.length >= 2) {
+    const spread = Math.max(...ground) - Math.min(...ground);
+    checks.push({
+      id: "grounded",
+      label: "every cell's bottom edge sits on its own feet",
+      value: `${spread}px spread`,
+      want: `< ${DRIFT.GROUND_SPREAD_PX}px`,
+      pass: spread < DRIFT.GROUND_SPREAD_PX,
+      soft: spread < DRIFT.GROUND_SPREAD_PX && spread >= DRIFT.GROUND_SPREAD_SOFT_PX,
+      ...(spread >= DRIFT.GROUND_SPREAD_SOFT_PX ? {
+        why:
+          `these cells do not end on their own lowest ink, so registerCell grounds the BAND and ` +
+          `the frames that fall short of it float — the sprite bobs`,
+        fix: "same cause as `centred`: the rects share a band edge instead of being cut to each figure",
+      } : {}),
+    });
+  }
+
+  return finish(checks, opts);
+}
+
+/**
+ * GAIT SIGNALS — REPORTED, NEVER GATED. The gate was built and refuted.
+ *
+ * `lean` is the left/right imbalance of the ink in the bottom 40% of each
+ * figure (the legs), as `(L−R)/(L+R)`. The intended gate was "a real walk cycle
+ * changes its leading leg at least once across the row", which would catch a
+ * slide — and `prep-brute.mjs`'s own note admits the brute's walk is exactly
+ * that: "a WEIGHT-SHIFTING SWAY, not a stride… Wan gave the brute almost no
+ * locomotion".
+ *
+ * ── WHY IT IS NOT A GATE ────────────────────────────────────────────────────
+ *
+ * Measured over every published walk/run row, sign changes across the row:
+ *
+ *     pinball_knight-E walk   0 flips   −0.00 −0.18 −0.03 −0.14 −0.34 −0.00
+ *     frog-E walk             0 flips   +0.04 +0.40 +0.45 +0.37 +0.25
+ *     brute-S walk            1 flip    −0.00 +0.05 +0.04 +0.05
+ *     mario-S walk            1 flip    −0.05 −0.02 +0.01
+ *
+ * The knight and the frog — the two sheets held up as the good examples — score
+ * ZERO flips, and the creature the metric was written to catch scores one. It
+ * does not separate. Two reasons, both structural rather than tunable:
+ *
+ *   · The bottom-40% band is not "the legs". A trailing cape, a weapon held
+ *     low, a tail and a hunched arm all land in it, and on most of this roster
+ *     they outweigh the feet.
+ *   · Half the roster does not have an alternating gait to find. The frog HOPS,
+ *     fish_feet waddles, the compass is a needle. Zero flips is CORRECT for
+ *     them, and a gate would condemn all three.
+ *
+ * Amplitude fails the same way: the brute's peak lean is 0.05 (a genuine sway)
+ * and mario's is also 0.05 (a good three-frame walk on a 53px sprite).
+ *
+ * So this ships as an INSTRUMENT, not a gate — the numbers go in the forge
+ * report so a regeneration can be compared against the sway it replaces, which
+ * is the one job it can honestly do. Recorded rather than deleted because the
+ * next person to think of this metric deserves the measurement, not the idea.
+ */
+export function gaitSignals(
+  sheet: RawImage,
+  cells: readonly (readonly number[])[],
+): { lean: number[]; flips: number; peak: number } {
+  const lean: number[] = [];
+  for (const c of cells) {
+    const [x0, y0, x1, y1] = c as [number, number, number, number];
+    let top = -1, bot = -1;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (sheet.data[(y * sheet.width + x) * 4 + 3] >= OPAQUE_AT) {
+          if (top < 0) top = y;
+          bot = y;
+          break;
+        }
+      }
+    }
+    if (top < 0) continue;
+    const hip = top + Math.floor((bot - top) * 0.6);
+    const mid = (x0 + x1) / 2;
+    let L = 0, R = 0;
+    for (let y = hip; y <= bot; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (sheet.data[(y * sheet.width + x) * 4 + 3] >= OPAQUE_AT) (x < mid ? L++ : R++);
+      }
+    }
+    lean.push(L + R ? (L - R) / (L + R) : 0);
+  }
+  let flips = 0;
+  for (let i = 1; i < lean.length; i++) if (lean[i - 1] > 0 !== lean[i] > 0) flips++;
+  return { lean, flips, peak: lean.length ? Math.max(...lean.map(Math.abs)) : 0 };
+}
+
+/**
+ * Pearson correlation of a series against its own index — "is this a ramp?".
+ *
+ * Sign is kept (a leftward sweep is as broken as a rightward one) but callers
+ * take the magnitude; direction is not a defect, monotonicity is.
+ */
+function correlation(ys: readonly number[]): number {
+  const n = ys.length;
+  if (n < 3) return 0; // two points are trivially collinear and say nothing
+  const mx = (n - 1) / 2;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, dx = 0, dy = 0;
+  for (let i = 0; i < n; i++) {
+    const a = i - mx, b = ys[i] - my;
+    num += a * b; dx += a * a; dy += b * b;
+  }
+  const den = Math.sqrt(dx * dy);
+  return den ? num / den : 0;
 }
 
 function alphaMask(img: RawImage): Uint8Array {

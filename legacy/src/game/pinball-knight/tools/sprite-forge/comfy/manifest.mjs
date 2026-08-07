@@ -65,6 +65,40 @@ export const LEGS = [
             license: "Apache-2.0",
             note: "Slightly sharper, ~2GB more VRAM — untested here, may run out of headroom with LoRAs stacked.",
           },
+          {
+            /**
+             * THE POSE MODEL — the one lever left after ControlNet was benched.
+             *
+             * `4689d57` built the ControlNet leg against 2511 and measured it
+             * NON-BINDING: openpose at strength 0.8 moved the image 1.08 per
+             * channel, and at 2.0 across the full sampling range it moved 1.85
+             * — tripling the strength changed almost nothing, which is the tell
+             * that the hints are not being consumed rather than being weak.
+             * 2511 routes conditioning through `TextEncodeQwenImageEditPlus`.
+             * The upstream pipeline this was copied from runs its pose stage on
+             * 2509, which is why this entry exists.
+             *
+             * It matters because `docs/POSE_IS_THE_LATENT.md` closes six failed
+             * runs with "pose control remains unavailable, and the Wan leg's
+             * free-running motion is still the only source of genuine movement".
+             * If ControlNet binds here, `keyframes` becomes viable and a
+             * creature can be posed deliberately instead of curated out of a
+             * video.
+             *
+             * NOT recommended, and not chosen by default: 2511 is the proven
+             * identity/edit model and nothing about the rest of the pipeline has
+             * been re-measured on 2509. Pick it in the panel to A/B the pose leg.
+             */
+            id: "qwen-2509-q4",
+            name: "2509 Q4_K_M (pose / ControlNet)",
+            file: "unet/Qwen-Image-Edit-2509-Q4_K_M.gguf",
+            bytes: 13065746976,
+            url: HF("QuantStack/Qwen-Image-Edit-2509-GGUF", "Qwen-Image-Edit-2509-Q4_K_M.gguf"),
+            license: "Apache-2.0",
+            note:
+              "The older edit model, kept for ONE reason: ControlNet does not bind on 2511 (measured, 4689d57) " +
+              "and the reference pose pipeline runs on 2509. Use it to A/B `cli.mjs pose`; leave 2511 chosen for everything else.",
+          },
         ],
       },
       {

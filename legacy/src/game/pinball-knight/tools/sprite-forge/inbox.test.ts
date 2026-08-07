@@ -49,6 +49,8 @@ import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
 import { parseName, unknownClips } from "./labels";
 import { detectPixelGrid } from "./grid";
 import { commitToGrid, type CommitOptions } from "./commit";
+import { driftRow, gaitSignals } from "./drift";
+import type { QaCheck } from "./intake-qa";
 import { rgbHex } from "./matte";
 import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
 import { PALETTE_FAMILIES } from "../../render/palette";
@@ -71,6 +73,40 @@ const PUBLISH = !!process.env.FORGE_PUBLISH;
 
 /** Painter roster reference, measured at the shipped rung. */
 const ROSTER = { entries: 20.1, isolatedPct: 22.5, runLen: 1.82 };
+
+/**
+ * ROWS THAT ALREADY SHIP WITH DRIFTING RECTS — a backlog, not an exemption.
+ *
+ * Each entry is a row a player can currently watch slide sideways or bob as it
+ * animates, because its rects came from `equalCells` and therefore sit on a
+ * uniform column instead of on the figure. `driftRow` (drift.ts) measures it;
+ * this list is what keeps the gate from failing the run for art that was
+ * already broken before the gate existed.
+ *
+ * ⚠️ THE LIST ONLY SHRINKS. Adding to it is not a fix — it is a decision to
+ * ship a visibly sliding sprite. Removing an entry means the sheet was re-cut
+ * ink-tight, which is what `commit.ts` does for free. Same shape and same
+ * reasoning as `ALIASED` in mislabel.test.ts.
+ *
+ * `brute-S` is deliberately ABSENT even though it was the worst offender
+ * measured (walk sweep 0.433, a perfectly monotone ramp across four frames):
+ * it was re-cut through `commit.ts` in this same wave and now scores 0.002 on
+ * the same source frames. That is the proof the rest of this list is fixable
+ * without regenerating anything.
+ */
+const KNOWN_SWEEP: readonly string[] = [
+  "beaver-E idle", "beaver-E walk", "beaver-E attack",
+  "beaver-S idle", "beaver-S walk", "beaver-S attack",
+  "compass-E walk", "compass-N walk", "compass-S walk",
+  "jester-S idle", "jester-S walk", "jester-S stumble",
+  "stiltneck-E attack", "stiltneck-S walk", "stiltneck-S attack",
+  "zombie-E idle", "zombie-E walk",
+  // These four fail `grounded` rather than `centred` — the vertical twin. Every
+  // cell in the band shares its bottom edge, so `registerCell` grounds the band
+  // and any frame whose feet fall short of it floats. zombie-E's death row is
+  // 20px out, which at its scale is most of a boot.
+  "stiltneck-E death", "zombie-E attack", "zombie-E stumble", "zombie-E death",
+];
 
 let restore = (): void => {};
 beforeAll(() => { restore = installSpriteTestDom(); });
@@ -124,6 +160,10 @@ describe("sprite inbox", () => {
     const summary: string[] = [];
     /** Crushes that threw. Reported together at the end — see the catch below. */
     const commitFailures: string[] = [];
+    /** Every row's sweep/ground numbers, for the report. */
+    const driftLines: string[] = [];
+    /** Rows whose rects do not sit on the ink. Asserted together at the end. */
+    const driftFails: string[] = [];
 
     for (const file of sheets) {
       const { name, dir } = parseName(file);
@@ -340,6 +380,45 @@ describe("sprite inbox", () => {
         writeFileSync(join(PUBLIC, `${name}-${dir}.json`), JSON.stringify(manifest, null, 1) + "\n");
       }
 
+      // ── DO THE RECTS SIT ON THE INK? ────────────────────────────────────
+      //
+      // `drift.ts` existed for a day and was reachable only from the panel
+      // (`app/api/comfy/pipeline/route.ts` opDrift). Nothing in the PUBLISH
+      // path imported it, which is exactly how the brute shipped a walk row
+      // whose figure swept 43% of a cell width across four frames: the forge
+      // sliced it, the census scored it, `importedPaints` packed it and the
+      // animator played it. Every stage did its job on rects that were wrong.
+      //
+      // It runs HERE — on the matted sheet and the rects, before registration
+      // — because `registerCell` re-centres every cell and is therefore the
+      // step that HIDES this. A registered cel always looks centred; it just
+      // took its neighbours' offsets with it.
+      //
+      // `equalised` names the likely cause when it fires. It is deliberately
+      // not a gate of its own — see the docblock on `CutSheet.equalised`.
+      for (const row of manifest.rows) {
+        if (!Array.isArray(row.cells) || row.cells.length < 2) continue;
+        const v = driftRow(
+          { width: sheet.width, height: sheet.height, data: sdata },
+          row.cells,
+          { clip: row.clip, label: `${name}-${dir} ${row.clip}` },
+        );
+        // Gait is INSTRUMENTATION, not a gate — see gaitSignals' docblock for
+        // the calibration that refuted the gate. It rides the same line so a
+        // regenerated walk can be compared against the sway it replaced.
+        const gaitTag = row.clip === "walk" || row.clip === "run"
+          ? `  gait peak ${gaitSignals({ width: sheet.width, height: sheet.height, data: sdata }, row.cells).peak.toFixed(2)}`
+          : "";
+        driftLines.push(`  ${(name + "-" + dir).padEnd(18)} ${row.clip.padEnd(8)} ${v.checks.map((c: QaCheck) => `${c.id} ${c.value}`).join("  ")}${gaitTag}`);
+        const hard = v.checks.filter((c: QaCheck) => !c.pass && !c.soft);
+        if (hard.length) {
+          driftFails.push(
+            `${name}-${dir} ${row.clip}: ${hard.map((c: QaCheck) => `${c.id} = ${c.value} (want ${c.want})`).join("; ")}` +
+              (src.equalised.length ? `\n      this sheet used equalCells for: ${src.equalised.join(", ")}` : ""),
+          );
+        }
+      }
+
       // ── THE GRID COMMIT, when the sidecar asks for one.
       //
       // Written to `work/`, never to `inbox/`. Promoting it is one copy the
@@ -479,6 +558,14 @@ describe("sprite inbox", () => {
     // Written as well as logged: vitest swallows console output unless a test
     // fails, so the one artifact you actually want to read after a run was the
     // one you could not see.
+    if (driftLines.length) {
+      summary.push(
+        `\n=== RECT DRIFT — does the figure hold its place across each row?\n` +
+          `    sweep = how far it travels × how monotonically it does it. A ramp\n` +
+          `    means the sprite slides sideways while the creature does not move.\n` +
+          driftLines.join("\n"),
+      );
+    }
     writeFileSync(join(WORK, "report.txt"), summary.join("\n").replace(/\[[0-9;]*m/g, ""));
     console.log(summary.join("\n"));
 
@@ -490,6 +577,29 @@ describe("sprite inbox", () => {
       `the crush threw on ${commitFailures.length} sheet(s). Their art IS published, ` +
         `uncrushed, so the game has them — but they stay soft until this is fixed:\n  ` +
         commitFailures.join("\n  "),
+    ).toEqual([]);
+
+    // ── RECT DRIFT, with the backlog pinned rather than waived ─────────────
+    //
+    // `KNOWN_SWEEP` is the art that already shipped with this defect. It is a
+    // BACKLOG, not an exemption: each entry is a row a player can currently see
+    // sliding, and the list only shrinks. Nothing new may join it without a
+    // deliberate edit here, which is the point — the same shape as `ALIASED` in
+    // mislabel.test.ts.
+    //
+    // Why a pinned list instead of just failing: eight published sidecars use
+    // `cells` today and six of them predate the gate. Failing the run outright
+    // would block every publish until all six are re-cut, which is how a gate
+    // gets deleted instead of satisfied.
+    const fresh = driftFails.filter((f) => !KNOWN_SWEEP.some((k: string) => f.startsWith(k)));
+    expect(
+      fresh,
+      `${fresh.length} row(s) have rects that do not sit on the ink. The figure will slide ` +
+        `sideways or bob while the creature's world position does not move.\n\n  ` +
+        fresh.join("\n  ") +
+        `\n\nFix: drop the sidecar's \`cells\` override and let the slicer find ink-tight cells, ` +
+        `or re-cut through \`commit.ts\`, which repacks ink-tight by construction. Adding to ` +
+        `KNOWN_SWEEP is not the fix — that list is a backlog of art players can already see sliding.`,
     ).toEqual([]);
   }, 600_000);
 });

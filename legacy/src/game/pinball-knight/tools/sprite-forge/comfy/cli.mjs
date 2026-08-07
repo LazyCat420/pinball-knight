@@ -29,7 +29,48 @@ import { controlMap, qwenEdit, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
-import { MODES } from "./modes.mjs";
+import { MODES, fastAvailable } from "./modes.mjs";
+import { optionById, chosenOption } from "./manifest.mjs";
+import { installState, loadSettings } from "./forge-config.mjs";
+
+/**
+ * THE SAME `ctx` THE PANEL ROUTE BUILDS — LoRAs, unet choices and all.
+ *
+ * ── WHAT THIS REPLACES ──────────────────────────────────────────────────────
+ *
+ * `retarget` used to pass a stub — `has: () => false, lora: () => null,
+ * unet: () => null, fast: false` — which is not "no options", it is EVERY
+ * option silently off. A CLI run therefore had no `tarn59-pixel-style`, no
+ * chosen unet, and no fast bundle, while the identical mode driven from the
+ * panel had all three. Two different pictures from one mode id.
+ *
+ * `animate` was worse: it never reached `MODES` at all. It restated the mode's
+ * prompt verbatim (so `preset.avoid` — the "feet sliding along the ground,
+ * gliding, ice skating, floating" ban that exists precisely because the frog
+ * glided — never applied), hardcoded the pixel LoRA onto BOTH experts (when
+ * `wanBundle` puts `pix3lwalk` on the HIGH expert only), and passed no
+ * `extraNegative`. The file's own header already said "The prompt comes from
+ * the MODE, not from a second copy here."
+ *
+ * Reads the same `~/comfy/forge-settings.json` the panel writes, so a unet
+ * chosen in the UI is honoured on the command line.
+ */
+function buildCtx({ images = {}, seed = 7, fast = false, leg = "qwen" } = {}) {
+  const settings = loadSettings();
+  const has = (optionId) => {
+    const o = optionById(optionId);
+    return o ? installState(o).state === "installed" : false;
+  };
+  return {
+    has,
+    lora: (optionId) => optionById(optionId)?.file.replace(/^loras\//, "") ?? null,
+    unet: (slotId) => chosenOption(slotId, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
+    chosen: (slotId) => chosenOption(slotId, settings.chosen)?.id ?? null,
+    fast: fast && fastAvailable(leg, has),
+    images,
+    seed,
+  };
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -212,7 +253,14 @@ const main = {
     // The canvas takes the REFERENCE ROW's aspect. Asking for a 3-wide row on a
     // square canvas returned a 3x3 grid — see the note in the mode's build().
     const { width, height } = canvasFor(poses);
-    const graph = mode.build({ subject, width, height }, { images: { init: image, style: image2 }, seed: Number(opt("seed", 7)), has: () => false, lora: () => null, unet: () => null, fast: false });
+    // Through the real ctx, not a stub. `has: () => false` is not "no options",
+    // it is every option silently off — so this ran without the pixel-style
+    // LoRA and without the chosen unet while the panel's identical mode had
+    // both, and the two produced different pictures from one mode id.
+    const graph = mode.build(
+      { subject, width, height },
+      buildCtx({ images: { init: image, style: image2 }, seed: Number(opt("seed", 7)), fast: has("fast"), leg: "qwen" }),
+    );
     console.log(`canvas ${width}x${height} from the reference row`);
     await run(graph, dir, { mode: "retarget", label: `retarget → ${subject}` });
   },
@@ -351,38 +399,54 @@ const main = {
   },
 
   /** Move-set clip from one frame; frames come back as separate PNGs. */
+  /**
+   * One motion clip, through the MODE — not through a copy of it.
+   *
+   *   node cli.mjs animate --init master.png --preset walk [--frames 33]
+   *   node cli.mjs animate --init master.png --action "hopping forward"
+   *
+   * `--preset` is what you almost always want: it carries the pose wording the
+   * mode has already been tuned with, AND the per-clip `avoid` negative. The
+   * walk preset's ban on "feet sliding along the ground, gliding, ice skating,
+   * floating, shuffling, legs merging" is the whole reason the frog stopped
+   * gliding; the old hand-copied prompt in this file never applied it.
+   *
+   * `--action` still works and overrides the preset's wording, which is what
+   * the mode's own `action` field does.
+   */
   async animate() {
     const init = opt("init");
+    const preset = opt("preset", "walk");
     const action = opt("action");
-    if (!init || !action) throw new Error("animate needs --init <png> and --action <walking|attacking|jumping ...>");
-    const dir = outDir(`animate-${action.replace(/\s+/g, "_")}`);
+    if (!init) throw new Error("animate needs --init <png> [--preset walk|run|attack|death|idle|stumble|defend] [--action ...]");
+    const label = action || preset;
+    const dir = outDir(`animate-${String(label).replace(/\s+/g, "_")}`);
     const image = await uploadImage(init, basename(init));
-    const prompt =
-      `Pixel art game sprite ${action}, smooth looping animation, the character stays ` +
-      `centered in frame, consistent colors, plain white background.`;
-    // The styly-agents adapter is a whole-model pixel-motion LoRA; its own
-    // reference workflow attaches it to BOTH experts, so we do too. (The
-    // pix3lwalk high-noise-only LoRA is Civitai-gated — swap it in for
-    // loraHigh once a token exists.)
-    const pixelLora = has("no-lora") ? null : "wan2.2_pixel_animate_adapter.safetensors";
-    await run(
-      wanI2V({
-        image,
-        prompt,
-        length: Number(opt("frames", 21)),
-        seed: Number(opt("seed", 7)),
-        tileSize: Number(opt("tile", 128)),
-        loraHigh: pixelLora,
-        loraLow: pixelLora,
-      }),
-      dir,
-      { mode: "animate", label: `animate · ${action}`.slice(0, 60) },
-    );
+    const mode = MODES.find((m) => m.id === "animate");
+    const params = { preset, action: action ?? "", frames: opt("frames", "21") };
+    const ctx = buildCtx({
+      images: { init: image },
+      seed: Number(opt("seed", 7)),
+      fast: has("fast"),
+      leg: "wan",
+    });
+    // `--no-lora` is kept: it is how the pixel adapter gets A/B'd, and commit
+    // 55f78f9's measurement (pix3lwalk drove the background black and produced
+    // 0/21 usable frames) is exactly the run it exists for.
+    if (has("no-lora")) ctx.has = () => false;
+    const graph = mode.build(params, ctx);
+    if (opt("tile")) graph.dec.inputs.tile_size = Number(opt("tile"));
+    console.log(`prompt: ${mode.prompt(params, ctx)}`);
+    await run(graph, dir, {
+      mode: "animate",
+      label: `animate · ${label}`.slice(0, 60),
+      ...(opt("file-as") ? {} : {}),
+    });
   },
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|rotate|edit|animate|posemap|pose|refile> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {
