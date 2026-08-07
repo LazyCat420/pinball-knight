@@ -288,9 +288,15 @@ const imported = new Map<SheetKey, ActorPaints>();
  *
  * Merging per clip fixes every partial import at once rather than per sheet,
  * and it is what makes a partial import a legitimate way to ship: author the
- * clips the generator got right, keep the painter for the rest. The brute keeps
- * its hand-painted death until a death row is generated — which is what the
- * commit message promised.
+ * clips the generator got right, keep the painter for the rest.
+ *
+ * ⚠️ AND IT IS STILL A COSTUME CHANGE, because the two sides are different art.
+ * The brute kept its hand-painted death for exactly as long as it took someone
+ * to watch one die: a green orc that collapses as the old grey armoured brute.
+ * "Falls through to the painter" is not a neutral default when the painter and
+ * the sheet disagree about what the creature IS. Its death and stumble rows
+ * were generated and published on 2026-08-07; a sheet that omits a clip is a
+ * work item, not a shipping state.
  *
  * MERGED PER DIRECTION, because a facing is the unit an import is partial in:
  * a sheet that authors S only must not lose the painter's E walk. (Note that
