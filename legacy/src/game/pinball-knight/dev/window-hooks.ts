@@ -58,6 +58,7 @@ import { enterTavern, isTavernSceneOpen } from "../../../scenes/tavern";
 import { ZOMBIE_TYPE_IDS } from "../zombie-types";
 import type { SpriteSheet } from "../engine/render/sprite";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
+import { drawCensus } from "./draw-census";
 
 /**
  * The core-owned actions the hooks drive. Injected (not imported) to keep the
@@ -922,6 +923,15 @@ export function installDevHooks(deps: DevHookDeps): void {
           commit: z.moveCommit ?? 0,
         }))
         .filter((e) => !policy || e.movement === policy);
+    /**
+     * `__dungeonDraws()` — WHICH objects issue this frame's draw calls.
+     *
+     * `info.render.drawCalls` gives the total; this gives the attribution, and
+     * the two disagree in the direction that matters: a scene mesh count is an
+     * upper bound that ignores culling, and this game culls hard. See
+     * `dev/draw-census.ts` for what it reimplements and why.
+     */
+    (window as unknown as { __dungeonDraws?: () => unknown }).__dungeonDraws = () => drawCensus();
     /**
      * `__dungeonShaders()` — the WGSL three ACTUALLY generated from this
      * codebase's TSL, straight out of the node builder.

@@ -875,6 +875,13 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
     const dir2Z = s.dir2J;
     const mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z });
     mesh.position.set(x, 0, z);
+    // NAMED, and not for debugging alone. A part is a Group of 3-13 meshes and
+    // nothing else in the scene says so, which means a draw-call census can
+    // only file its children under their geometry type — `?ConeGeometry+...`
+    // for a bumper cap, indistinguishable from a stalactite. The name makes the
+    // scene self-describing to `dev/draw-census.ts`, and it is the key
+    // `mergeStaticGroup`'s `skipNames` needs to spare the children that animate.
+    mesh.name = `part:${s.kind}`;
     scene.add(mesh);
     const part: PinballPart = {
       kind: s.kind as PinballPartKind,
