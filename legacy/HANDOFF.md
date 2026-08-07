@@ -7,6 +7,66 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🧭 WHAT IS LEFT AFTER THE WEBGPU MIGRATION — the plan, and its first phase (2026-08-07)
+
+**Asked:** the migration is done; plan what remains and start building it.
+
+**`docs/webgpu-next-plan.md` is the forward plan.** `docs/webgpu-plan.md` is now
+marked SUPERSEDED at the top — it plans *adopting* WebGPU, which happened, and
+leaving two live-looking plans in `docs/` is the same hazard as an inverted
+instruction. Its PHASE 0 measurement and its MRT postscript are still live and
+are why it is kept rather than deleted.
+
+### Four things the plan corrects, each checked against the tree
+
+1. **`tsc` cannot verify a type change here.** Baseline is **6131 errors**
+   (`npx tsc --noEmit | wc -l`, 9s) and `next.config.js` sets
+   `ignoreBuildErrors`. Anything that wants to be an invariant in this repo has
+   to be a source-scan test, like `wgsl-contract.test.ts` and
+   `mrt-coverage.test.ts` already are.
+2. **The app *did* still construct a `WebGLRenderer`** —
+   `app/admin/bird-viewer/page.tsx`. Dev-only and `/admin` is redirected away in
+   production, so not a user bug; it was the one file that made the invariant
+   ungreppable. Now on `createGPURenderer`.
+3. **`room-controller.ts` declared `public renderer: THREE.WebGLRenderer` while
+   holding a `WebGPURenderer`** (built at `main.ts:128`, passed through an
+   untyped `ctx` at `main.ts:296`). Nothing errored because nothing was ever
+   checked — see (1). The cost was a standing licence to call a WebGL-only
+   method and have it typecheck, which `dispose.ts:120` already records once.
+4. **The pinball-part instancing unit is finer than "one material per family".**
+   For `booster`/`ramp`/`boostcorner`/`boostcurve` the *entire* per-frame
+   mutation is `emissiveIntensity` on a few `stdOwn` materials — nothing moves,
+   and the chevrons are the same geometry at the same local offsets on every
+   part. So one `InstancedMesh` per (kind, slot) with a per-instance scalar
+   takes nearly the whole draw-call win **with the JS animator unchanged**.
+   Moving the sine into the shader is a separate increment that buys CPU, not
+   draws.
+
+### Shipped: Phase A — one renderer type, and a test that keeps it
+
+`src/render/renderer-types.ts` (`GpuRenderer`, a plain alias — an interface
+"narrowed to what we use" is a second copy of three's API that nothing checks),
+12 annotations across 7 files, the bird-viewer conversion, and
+`src/render/backend-invariant.test.ts`.
+
+**The test caught three live hits on its first run** and its planted-fixture
+case proves the scanner can fail. Suite 2899 passed. `tsc` is **6131 errors
+before and after, byte-identical apart from line shifts** — which is the
+measurement, not a footnote: the annotation was so unchecked that correcting it
+changes nothing the compiler sees.
+
+⚠️ **`/admin/bird-viewer` now needs a secure context**, because WebGPU does.
+Over `http://` to a bare LAN IP it prints the reason instead of drawing.
+
+### Next, and it is a gate, not a suggestion
+
+**Phase B0: a per-kind draw census before any instancing work.** This repo has
+already been wrong twice about part counts — "instance the torches, ~100 draws"
+was ~22, and a *static* count of `new THREE.Mesh(` calls reports a booster as 3
+meshes when it is 6 (the strips and chevrons are built in `for` loops). Run
+`__dungeonDraws()` and record `culled` next to `draws`: instancing removes the
+cull, so a sparse kind can get **worse**. That is the one way Phase B loses.
+
 ## 🔬 SHADERS INTO FILES, AND THREE MEASUREMENTS THAT KILLED THEIR OWN PLANS (2026-08-06, `main` @ b2f64b4, DEPLOYED)
 
 **Asked:** put the WGSL in `.wgsl` files. Then: why is the dungeon TSL and not

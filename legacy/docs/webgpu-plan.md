@@ -1,5 +1,14 @@
 # WebGPU Migration Plan — braindeadbot-client
 
+> ## ⚠️ SUPERSEDED 2026-08-07 — read `docs/webgpu-next-plan.md` for what is left.
+>
+> This is the plan for **adopting** WebGPU, and that happened. Phases 1–4 below
+> describe work that is done; Phase 6 describes a WebGL reference path that no
+> longer exists. Two parts are still live and are why this file is kept rather
+> than deleted: **PHASE 0**, the measurement that stopped the compute-particle
+> port, and the **MRT postscript** at the bottom, which is a real rendering bug
+> in its own right. Everything between them is history.
+
 Status: **PHASE 0 MEASURED 2026-08-02 — the gate says STOP. Written 2026-07-24.**
 
 The compute-particle port described below is **not worth doing for speed**. The
