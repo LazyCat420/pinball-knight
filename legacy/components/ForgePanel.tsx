@@ -222,13 +222,32 @@ export default function ForgePanel() {
     }
   };
 
-  const reroll = async (id: string, job: Job) => {
+  /**
+   * Run this job's settings again — unchanged (a re-roll) or edited (a new
+   * move, a reworded prompt, or both).
+   *
+   * `edits` is what makes the card's button honest. With none, this is the old
+   * behaviour: same params, fresh seed. With them, it is the FIRST render of
+   * something that has not existed before, and the card says `▶ run` instead of
+   * `↻ re-roll` — because "re-roll" on a clip nobody has generated reads as a
+   * promise that it is already sitting somewhere.
+   */
+  const reroll = async (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => {
     try {
-      // Same mode + params, fresh seed. The init is whatever is loaded NOW —
-      // the server does not keep input images, and the honest fix is loading
-      // the frame you want first (→ init on any output does exactly that).
+      // The init is whatever is loaded NOW — the server does not keep input
+      // images, and the honest fix is loading the frame you want first
+      // (→ init on any output does exactly that).
       if (!images.init) return say("load an init frame first (→ init on a finished frame)");
-      await launch({ mode: job.mode, params: job.params ?? {}, imageB64: images.init, fast: job.fast });
+      await launch({
+        mode: job.mode,
+        params: edits?.params ?? job.params ?? {},
+        imageB64: images.init,
+        fast: job.fast,
+        // Omitted unless the words were actually edited: the registry writes
+        // the prompt, and echoing a resolved string back at it would freeze
+        // this run against a mode that may since have been improved.
+        ...(edits?.prompt ? { prompt: edits.prompt } : {}),
+      });
     } catch (e: any) {
       say(e.message);
     }
@@ -325,6 +344,7 @@ export default function ForgePanel() {
             <JobsBoard
               jobs={genJobs}
               tick={tick}
+              modes={modes}
               onCancel={async (id) => {
                 try {
                   await del(`/api/comfy/generate?id=${id}`);

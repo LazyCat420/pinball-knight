@@ -425,7 +425,13 @@ export const MODES = [
     prompt(params, ctx) {
       const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
       const action = String(params.action || preset?.action || "moving");
-      const trigger = params.preset === "walk" && ctx.has("pix3lwalk") ? "pix3lwalk, " : "";
+      // KEYED ON THE CLIP, NOT THE PRESET ID. `walk4` is a walk and must get
+      // the walk specialist; an id equality test silently dropped it the moment
+      // a second walk preset existed, and a LoRA that loads without its trigger
+      // word is the quietest failure there is — the run succeeds and the
+      // adapter simply does nothing.
+      const isWalk = ANIMATE_PRESETS.find((p) => p.id === params.preset)?.clip === "walk";
+      const trigger = isWalk && ctx.has("pix3lwalk") ? "pix3lwalk, " : "";
       return (
         `${trigger}Pixel art game sprite ${action}, smooth looping animation, the character stays ` +
         `centered in frame, consistent colors, plain white background.`
@@ -459,7 +465,9 @@ export const MODES = [
         seed: ctx.seed,
         unetHigh: ctx.unet("anim-high") ?? undefined,
         unetLow: ctx.unet("anim-low") ?? undefined,
-        ...wanBundle(ctx, { walk: params.preset === "walk" }),
+        // Same clip test as the trigger above — the LoRA and the word that
+        // fires it must never be decided by two different rules.
+        ...wanBundle(ctx, { walk: ANIMATE_PRESETS.find((p) => p.id === params.preset)?.clip === "walk" }),
       });
     },
   },

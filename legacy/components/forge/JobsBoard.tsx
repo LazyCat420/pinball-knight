@@ -13,10 +13,23 @@
  * Job state comes from polling the generate route; the live preview image
  * is refetched only while the server says one exists.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { S, GREEN, RED, BLUE, AMBER, GREY } from "./theme";
-import type { Job } from "./types";
+import type { Job, Mode } from "./types";
 import { CLIP_NAMES } from "./types";
+
+/**
+ * Trigger words that a mode prepends only when its LoRA is installed.
+ *
+ * Listed here so an edited prompt can warn about deleting one. A LoRA that is
+ * loaded but never triggered is the quietest possible failure — the graph is
+ * correct, the run succeeds, the adapter simply does nothing to the picture,
+ * and the only evidence is that the art looks like the base model.
+ *
+ * This is a UI hint, not a gate: `modes.mjs` decides what actually gets
+ * prepended, and a word missing from this list costs a warning, not a run.
+ */
+const LORA_TRIGGERS = ["pix3lwalk"];
 import { FramePlayer } from "./FramePlayer";
 import { RetryImg } from "./RetryImg";
 import { postJSON, urlToB64 } from "./api";
@@ -133,6 +146,7 @@ function JobCard({
   id,
   job,
   tick,
+  mode,
   onCancel,
   onReroll,
   onUseAsInit,
@@ -145,8 +159,10 @@ function JobCard({
   id: string;
   job: Job;
   tick: number;
+  /** This job's mode from the registry — carries the move presets. */
+  mode?: Mode;
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
@@ -156,6 +172,85 @@ function JobCard({
 }) {
   const [clip, setClip] = useState(clipGuess(job));
   const [showPrompt, setShowPrompt] = useState(false);
+
+  /**
+   * ── WHY THIS CARD LAUNCHES WORK AND NOT JUST REPEATS IT ────────────────────
+   *
+   * The only action here used to be "↻ re-roll", which is same-params-new-seed.
+   * So there was no way to say "now do the RUN clip" from a finished walk, and
+   * the nearest-looking control was the `as clip` dropdown — which does not
+   * generate anything, it labels where frames get FILED. Setting it to `run` on
+   * a walk card files walk frames as the run clip, silently, and the sheet then
+   * plays a walk whenever the creature runs.
+   *
+   * So: the move lives here, next to the button, and the button says which of
+   * the two things it is about to do.
+   */
+  const moves = mode?.presets ?? null;
+  const startMove = typeof job.params?.preset === "string" ? job.params.preset : "";
+  const [move, setMove] = useState(startMove);
+  /**
+   * `null` means UNEDITED — let the mode write the prompt.
+   *
+   * Not `""` and not a copy of `resolvedPrompt`: a copy cannot be told apart
+   * from a deliberate edit that happens to match, and an empty string reads as
+   * "the user cleared it". Only `null` says "nobody has touched this", which is
+   * what decides whether the button is a run or a re-roll and whether the
+   * server gets an override at all.
+   */
+  const [prompt, setPrompt] = useState<string | null>(null);
+  /**
+   * What the CURRENTLY SELECTED move resolves to, before any edit.
+   *
+   * Not `job.resolvedPrompt` — that is the prompt of the move this card already
+   * ran. Pick `run` on a finished walk card and the box must show the run
+   * prompt, or you edit one move's words believing they belong to another.
+   * Fetched from the registry rather than templated here; see `?resolve=`.
+   */
+  const [basePrompt, setBasePrompt] = useState(job.resolvedPrompt ?? "");
+  const [resolving, setResolving] = useState(false);
+  const promptText = prompt ?? basePrompt;
+
+  /**
+   * "RE-ROLL" IS ONLY HONEST WHEN NOTHING CHANGED.
+   *
+   * A re-roll is the same settings with a new seed — a second opinion on work
+   * already done. The moment the move or the prompt is edited this is a FIRST
+   * render of something that has never existed, and calling that a re-roll
+   * invites the reading that the clip already exists somewhere.
+   */
+  const moveChanged = move !== startMove;
+  const promptChanged = prompt !== null && prompt.trim() !== basePrompt.trim();
+  const isRerun = moveChanged || promptChanged;
+  const moveLabel = moves?.find((p) => p.id === move)?.label ?? move;
+
+  // Ask the registry what the selected move says. Skipped for the move this
+  // card already ran — its prompt is on the job record and is the exact string
+  // that produced these frames, which a re-resolve could only approximate if
+  // an option has been installed or removed since.
+  useEffect(() => {
+    if (!moveChanged) {
+      setBasePrompt(job.resolvedPrompt ?? "");
+      return;
+    }
+    let live = true;
+    setResolving(true);
+    const params = JSON.stringify({ ...(job.params ?? {}), preset: move });
+    fetch(`/api/comfy/generate?resolve=${encodeURIComponent(job.mode)}&params=${encodeURIComponent(params)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (live && typeof d.prompt === "string") setBasePrompt(d.prompt);
+      })
+      .catch(() => {
+        /* the button still works — the server resolves it again at launch */
+      })
+      .finally(() => {
+        if (live) setResolving(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [move, moveChanged, job.mode, job.params, job.resolvedPrompt]);
   /**
    * THE GUARD LIVES HERE, not on the buttons.
    *
@@ -208,9 +303,51 @@ function JobCard({
             cancel
           </button>
         )}
+        {job.state !== "running" && job.state !== "queued" && job.params && moves && moves.length > 1 && (
+          <select
+            style={{ ...S.input, width: 150 }}
+            value={move}
+            title="which move to generate — NOT where the frames get filed"
+            onChange={(e) => {
+              setMove(e.target.value);
+              // Back to unedited: an edit made for the last move would
+              // otherwise ride along into a different one, which is how you get
+              // a "run" clip whose prompt still says walk.
+              setPrompt(null);
+            }}
+          >
+            {moves.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        )}
         {job.state !== "running" && job.state !== "queued" && job.params && (
-          <button style={S.btn} title="same settings, new seed" onClick={() => onReroll(id, job)}>
-            ↻ re-roll
+          <button
+            style={{ ...S.btn, ...(isRerun ? S.btnGreen : {}) }}
+            title={
+              isRerun
+                ? `generate ${moveLabel || "this"}${promptChanged ? " with the edited prompt" : ""} — this has not been rendered yet`
+                : "same settings, new seed — a second opinion on the clip above"
+            }
+            onClick={() =>
+              onReroll(
+                id,
+                job,
+                isRerun
+                  ? {
+                      params: { ...(job.params ?? {}), preset: move },
+                      // Only send an override when the words were actually
+                      // edited. A move change alone must let the registry write
+                      // the prompt, not echo back a string this card resolved.
+                      prompt: promptChanged ? promptText.trim() : undefined,
+                    }
+                  : undefined,
+              )
+            }
+          >
+            {isRerun ? `▶ run ${moveLabel}` : "↻ re-roll"}
           </button>
         )}
         {job.state === "done" && (job.frames?.length ?? 0) > 0 && (
@@ -223,7 +360,38 @@ function JobCard({
           </button>
         )}
       </div>
-      {showPrompt && <p style={{ ...S.note, whiteSpace: "pre-wrap" }}>{job.resolvedPrompt}</p>}
+      {showPrompt && (
+        <div style={{ marginTop: 8 }}>
+          <textarea
+            style={{ ...S.input, width: "100%", minHeight: 92, fontFamily: "inherit", lineHeight: 1.45, resize: "vertical" }}
+            value={promptText}
+            spellCheck={false}
+            placeholder={resolving ? "resolving…" : "the prompt this run will use"}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+            {promptChanged ? (
+              <>
+                <span style={S.chip(GREEN.fg, GREEN.bg)}>edited</span>
+                <button style={{ ...S.btn, fontSize: 11 }} onClick={() => setPrompt(null)}>
+                  revert to the preset
+                </button>
+              </>
+            ) : (
+              <span style={S.note}>written by the {moveLabel || job.mode} preset — edit it and the button becomes ▶ run</span>
+            )}
+            {/* The trigger word is prepended by the mode only when its LoRA is
+                installed. Editing the prompt is the one way to delete it, and
+                a LoRA that is loaded but never triggered is silent — it just
+                quietly does nothing to the picture. */}
+            {LORA_TRIGGERS.some((t) => basePrompt.includes(t) && !promptText.includes(t)) && (
+              <span style={S.chip(AMBER.fg, AMBER.bg)} title="the LoRA is still loaded but will not fire without its trigger word">
+                ⚠ trigger word removed
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       {job.state === "running" && (
         <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center" }}>
           {job.hasPreview && (
@@ -257,7 +425,14 @@ function JobCard({
       {job.state === "done" && frames.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-            <span style={S.note}>as clip</span>
+            {/* "as clip" read as a generator and it is not one — it files the
+                frames ABOVE under a clip name. Set it to `run` on a walk card
+                and the sheet plays a walk whenever the creature runs, silently.
+                The move select that DOES generate lives up in the header row,
+                next to the button. */}
+            <span style={S.note} title="where these frames get filed — this does not generate anything">
+              file as
+            </span>
             <select
               // `borderColor` alone is safe because `S.input` is longhand —
               // see the note above `card` in theme.ts, and the one on `input`
@@ -381,6 +556,7 @@ function JobCard({
 export function JobsBoard({
   jobs,
   tick,
+  modes,
   onCancel,
   onReroll,
   onUseAsInit,
@@ -392,8 +568,10 @@ export function JobsBoard({
 }: {
   jobs: Record<string, Job>;
   tick: number;
+  /** The mode registry — a card reads its own move presets out of it. */
+  modes?: Mode[];
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
@@ -415,7 +593,7 @@ export function JobsBoard({
         </span>
       </h2>
       {visible.map(([id, j]) => (
-        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} />
+        <JobCard key={id} id={id} job={j} tick={tick} mode={modes?.find((m) => m.id === j.mode)} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} />
       ))}
       {entries.length > 6 && (
         <button style={{ ...S.btn, ...S.btnGhost, marginTop: 8 }} onClick={() => setShowAll(!showAll)}>

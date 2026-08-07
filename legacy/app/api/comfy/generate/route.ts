@@ -439,10 +439,31 @@ export async function POST(req: Request) {
       images,
       seed: baseSeed,
     };
+    /**
+     * AN EDITED PROMPT, WITHOUT A SECOND PROMPT PATH.
+     *
+     * `modes.mjs` is the one registry of prompts and this must not become a
+     * rival to it: the override replaces the mode's `prompt()` for this ONE
+     * job and nothing else. Every mode's `build` calls `this.prompt(params,
+     * ctx)`, so swapping that single method on a shallow copy reaches the
+     * graph, the recorded `resolvedPrompt` and the panel's re-roll alike —
+     * there is no path where the picture and the record disagree.
+     *
+     * What it deliberately does NOT override: `preset.avoid`, which becomes
+     * the negative. Those clauses were each added off a measured failure (the
+     * frog's gliding feet, the death clips dissolving into VFX) and they are
+     * not what a user is editing when they reword an action.
+     *
+     * ⚠️ It DOES let a trigger word be deleted. `pix3lwalk` is prepended by
+     * `animate`'s `prompt()` when the walk LoRA is installed; edit that out
+     * and the LoRA is still loaded but never fires. The panel pre-fills the
+     * resolved prompt so the trigger is there unless it is removed on purpose.
+     */
+    const override = typeof body.prompt === "string" && body.prompt.trim() ? body.prompt.trim() : null;
     let graph, resolvedPrompt;
     try {
-      resolvedPrompt = mode.prompt(params, ctx);
-      graph = mode.build(params, ctx);
+      resolvedPrompt = override ?? mode.prompt(params, ctx);
+      graph = (override ? { ...mode, prompt: () => override } : mode).build(params, ctx);
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
@@ -480,6 +501,51 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   const frame = url.searchParams.get("frame");
+
+  /**
+   * `?resolve=<modeId>&params=<json>` — what prompt WOULD this run use?
+   *
+   * The panel needs it to show an editable prompt for a move that has not been
+   * generated yet. It could have templated the string client-side instead, and
+   * that is precisely the mistake: `modes.mjs` is the one registry of prompts,
+   * a second copy of the template drifts from it silently, and a reimplemented
+   * copy cannot see the original change. So the panel asks the registry.
+   *
+   * Pure and cheap — no ComfyUI, no upload, no job. `has()` reports installed
+   * options because a trigger word like `pix3lwalk` is only prepended when its
+   * LoRA is actually there, and the user must see the prompt that will run.
+   */
+  const resolve = url.searchParams.get("resolve");
+  if (resolve) {
+    const mode = modeById(resolve);
+    if (!mode) return NextResponse.json({ error: `unknown mode ${resolve}` }, { status: 404 });
+    let params: Record<string, unknown> = {};
+    try {
+      params = JSON.parse(url.searchParams.get("params") ?? "{}");
+    } catch {
+      return NextResponse.json({ error: "params must be JSON" }, { status: 400 });
+    }
+    const settings = loadSettings();
+    const has = (optionId: string) => {
+      const o = optionById(optionId);
+      return o ? installState(o).state === "installed" : false;
+    };
+    try {
+      const ctx = {
+        has,
+        lora: (o: string) => optionById(o)?.file.replace(/^loras\//, "") ?? null,
+        unet: (s: string) => chosenOption(s, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
+        chosen: (s: string) => chosenOption(s, settings.chosen)?.id ?? null,
+        fast: false,
+        images: {},
+        seed: 0,
+      };
+      return NextResponse.json({ prompt: mode.prompt(params, ctx) });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+  }
+
   if (!id) {
     // Union of memory and disk: the Map knows live jobs, the disk knows
     // everything that ever finished (job.json survives reloads).
