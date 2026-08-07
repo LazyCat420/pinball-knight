@@ -162,7 +162,7 @@ function JobCard({
   /** This job's mode from the registry — carries the move presets. */
   mode?: Mode;
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
@@ -209,6 +209,7 @@ function JobCard({
    */
   const [basePrompt, setBasePrompt] = useState(job.resolvedPrompt ?? "");
   const [resolving, setResolving] = useState(false);
+  const [busy, setBusy] = useState(false);
   const promptText = prompt ?? basePrompt;
 
   /**
@@ -325,29 +326,40 @@ function JobCard({
         )}
         {job.state !== "running" && job.state !== "queued" && job.params && (
           <button
-            style={{ ...S.btn, ...(isRerun ? S.btnGreen : {}) }}
+            // Launching uploads the init and queues a job — hundreds of ms at
+            // best. Without a visible in-flight state the only feedback is a
+            // toast that may land below the fold, which is how a working button
+            // gets reported as doing nothing.
+            disabled={busy}
+            style={{ ...S.btn, ...(isRerun ? S.btnGreen : {}), ...(busy ? { opacity: 0.5, cursor: "wait" } : {}) }}
             title={
               isRerun
                 ? `generate ${moveLabel || "this"}${promptChanged ? " with the edited prompt" : ""} — this has not been rendered yet`
                 : "same settings, new seed — a second opinion on the clip above"
             }
-            onClick={() =>
-              onReroll(
-                id,
-                job,
-                isRerun
-                  ? {
-                      params: { ...(job.params ?? {}), preset: move },
-                      // Only send an override when the words were actually
-                      // edited. A move change alone must let the registry write
-                      // the prompt, not echo back a string this card resolved.
-                      prompt: promptChanged ? promptText.trim() : undefined,
-                    }
-                  : undefined,
-              )
-            }
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onReroll(
+                  id,
+                  job,
+                  isRerun
+                    ? {
+                        params: { ...(job.params ?? {}), preset: move },
+                        // Only send an override when the words were actually
+                        // edited. A move change alone must let the registry
+                        // write the prompt, not echo back a string this card
+                        // resolved.
+                        prompt: promptChanged ? promptText.trim() : undefined,
+                      }
+                    : undefined,
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
           >
-            {isRerun ? `▶ run ${moveLabel}` : "↻ re-roll"}
+            {busy ? "queuing…" : isRerun ? `▶ run ${moveLabel}` : "↻ re-roll"}
           </button>
         )}
         {job.state === "done" && (job.frames?.length ?? 0) > 0 && (
@@ -571,7 +583,7 @@ export function JobsBoard({
   /** The mode registry — a card reads its own move presets out of it. */
   modes?: Mode[];
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;

@@ -234,14 +234,29 @@ export default function ForgePanel() {
    */
   const reroll = async (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string }) => {
     try {
-      // The init is whatever is loaded NOW — the server does not keep input
-      // images, and the honest fix is loading the frame you want first
-      // (→ init on any output does exactly that).
-      if (!images.init) return say("load an init frame first (→ init on a finished frame)");
+      /**
+       * ── THIS USED TO BE A DEAD CLICK ─────────────────────────────────────
+       *
+       * The server keeps no input images, so a re-run needs an init from the
+       * browser. When none was loaded this returned a toast and nothing else —
+       * and the toast is a line of text that clears itself after six seconds,
+       * so pressing the button looked like pressing nothing. Reported as
+       * "I click run attack and nothing happens", which is exactly right.
+       *
+       * A card that is SHOWING frames always has an init available: its own
+       * first frame. Fall back to it and say which one was used, rather than
+       * refusing to act while the answer is on screen.
+       */
+      let init = images.init;
+      if (!init && job.frames?.length) {
+        init = await urlToB64(`/api/comfy/generate?id=${id}&frame=${job.frames[0]}`);
+        say(`no init loaded — using this job's first frame (${job.frames[0]})`);
+      }
+      if (!init) return say("load an init frame first (→ init on a finished frame)");
       await launch({
         mode: job.mode,
         params: edits?.params ?? job.params ?? {},
-        imageB64: images.init,
+        imageB64: init,
         fast: job.fast,
         // Omitted unless the words were actually edited: the registry writes
         // the prompt, and echoing a resolved string back at it would freeze
