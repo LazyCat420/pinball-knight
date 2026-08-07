@@ -2,6 +2,60 @@
 
 _Replaced on each deploy. Not a log; if something here is done, delete it._
 
+## 🔴 OPEN AND UNSOLVED — /dungeon is blank for the site owner (2026-08-07)
+
+**Read `docs/dungeon-blank-screen-investigation-2026-08-07.md` before touching
+this.** It is the ruled-out matrix and the harness traps. Do not re-run the tests
+that came back green; there are a lot of them.
+
+**State:** `main@2a52eed`. Two revert commits sit on top of `2d61bde`, so the
+served tree is **byte-identical to `edc0261`** (`git diff --name-only edc0261 HEAD`
+is empty). Nothing from that session is live.
+
+**Symptom:** `braindeadbot.com/dungeon` is a flat dark-green rectangle for the
+owner — no canvas, no HUD, no error. In a normal window *and* a private one.
+Never reproduced anywhere else: the deployed build renders end to end on a real
+WebGPU adapter across every intro timing, viewport, DPR, stored setting, descend
+path and entry route tried, in Chrome headless, Chrome headed and Edge headless.
+
+**The mistake that cost the session, stated plainly so it is not repeated:** the
+diagnosis rested on *"a browser I launched works on the owner's machine, theirs
+does not, so it is their profile"* — and **the owner uses Edge while every test
+was Google Chrome**. Check the profile mtimes FIRST:
+
+```bash
+for p in "/mnt/c/Users/<u>/AppData/Local/Google/Chrome/User Data/Default" \
+         "/mnt/c/Users/<u>/AppData/Local/Microsoft/Edge/User Data/Default"; do
+  [ -e "$p/Preferences" ] && echo "$(stat -c '%y' "$p/Preferences" | cut -c1-19)  $p"
+done
+```
+
+Two more rig artefacts that each read as a real bug: a **headed** window sits on
+the user's desktop and eats their keystrokes (a traced spontaneous `E` that
+descended from the tavern was the owner typing to me), and automation never
+performs a **user gesture**, so the DOS boot parked at `SYSTEM READY. PRESS ANY
+KEY` looked like a permanent hang.
+
+**Next, in order:** (1) Dark Reader 4.9.129 is in the owner's Edge with
+`<all_urls>` injection and is the only candidate that survives the private-window
+result — unconfirmed, it stayed inert when loaded headlessly; (2) copy the
+owner's Edge profile and drive it over CDP to finally get their console, which
+was never obtained; (3) restore a WebGL2 fallback so a browser without WebGPU
+degrades instead of blanking (`src/render/WEBGPU_ONLY_HANDOFF.md`).
+
+**Two real defects found on the way, both currently reverted out or unfixed:**
+
+- **Six uncaught `renderer.init()` sites.** `createGPURenderer` nulls
+  `_getFallback` so `init()` *rejects*; every site except `main.ts` is
+  `void renderer.init().then(...)` with no catch, so a refused adapter leaves
+  `rendererReady` false forever and the present gate skips every frame in
+  silence. Proven by fault injection. The fix is `2d61bde`; reverting the revert
+  restores it.
+- **4–5 concurrent rAF loops on `/dungeon`** (measured as callbacks per frame
+  tick). `main.ts:509 animate()` starts at boot and never stops, so the site
+  renderer presents an empty scene every frame underneath the game. Unfixed;
+  this is the answer to "why is the CPU pinned".
+
 > ⚠️ STILL NOT collapsed, for the same reason as the last five sessions:
 > `bdb-mapgen` (fix/map-generation-rules) and `bdb-mobile`
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
