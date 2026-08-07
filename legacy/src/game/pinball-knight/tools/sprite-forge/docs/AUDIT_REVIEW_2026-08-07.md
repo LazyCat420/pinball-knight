@@ -104,6 +104,50 @@ that ship). `intake.test.ts` carries the negative control — two frames
 identical but for an 8px quantisation, where every other check agrees and
 `grid` does not.
 
+## THE ROSTER, MEASURED BY THE CHECK THAT COULD NOT FAIL
+
+First run of `detectPixelGrid` across every published sheet, 2026-08-07. This is
+what the `pass: true` line was hiding:
+
+| sheet | size | rows | gridded | flat neighbours | verdict |
+|---|---|---|---|---|---|
+| `brute-S` | 2392×1368 | 3 | **×8, conf 100%** | — | true lattice, imports 1:1 |
+| `beaver-S` / `-E` | 1276×1294 | 4 | no (×1) | **66%** | native-res pixel art, cell purity 1.6% |
+| `jester-S` | 1476×1600 | 5 | no (×1) | 62% | native-res, cell purity 19.8% |
+| `frog-S` | 1402×1122 | 4 | no (×1) | **37%** | **NOT PIXEL ART** — continuous/anti-aliased |
+
+Three things fall out of it:
+
+1. **The only sheet on a real lattice is the one committed from a human-drawn
+   Ragnarok sprite.** `brute-S` is `55f98e2`'s gym zombie, block-committed at ×8.
+   Nothing generated has ever produced a lattice — which is
+   [[nothing-in-the-forge-generates-pixel-art]] stated in numbers rather than
+   prose.
+2. **The beaver is the best-shaped generated sheet in the tree** at 66% flat
+   neighbours, comfortably over `NATIVE_FLAT_SHARE` (0.55). It reads as
+   native-resolution pixel art; it is simply not on a block grid. That makes it
+   the right subject for the next attempt, which is what it was picked for.
+3. **`frog-S` at 37% is the failure shape** — the same verdict class the rejected
+   08-07 brute drop carried. Anything that measures like the frog should not be
+   published.
+
+Reproduce with `detectPixelGrid` over `public/sprites/<name>.png` + the sidecar's
+`rows[].cells`.
+
+## THE BLOCKER ON "RENDER IT FROM SCRATCH"
+
+**There is no text-to-image model installed.** `~/comfy/ComfyUI/models/unet/`
+holds only `Qwen-Image-Edit-2509`, `qwen-image-edit-2511` and the two Wan 2.2
+**I2V** experts; `checkpoints/` and `diffusion_models/` are empty. Every mode in
+`MODES` declares `needs.init` and `generate/route.ts` hard-rejects a request
+without `imageB64` — but that is downstream of the real problem, which is that
+nothing in the box can turn a prompt into an image.
+
+Step 1 of `PLAN_KEYFRAME_PIPELINE.md` therefore needs a **model download**, not
+just code: a Qwen-Image base (non-edit) or an SD/Flux checkpoint carrying a real
+pixel-art LoRA. That is a disk and bandwidth decision, so it is called out here
+rather than made silently.
+
 ## WHAT TO DO NEXT, IN ORDER
 
 1. **Build step 1 of `PLAN_KEYFRAME_PIPELINE.md` — text-to-image.** Still the
