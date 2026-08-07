@@ -1,6 +1,9 @@
 # What is left after the WebGPU migration — braindeadbot-client
 
-Status: **written 2026-08-07 on `main` @ f339a87. Phase A shipped; B–D open.**
+Status: **2026-08-07. Phase A, B0, B1 and B2 shipped. B3/B4, C and D open.**
+
+Camera draws on the reference floor are **227 → 164** and the booster row is
+**66 → 3**. What that buys in frame time is measured but NOT settled — see B2.
 
 `docs/webgpu-plan.md` is the **pre-migration** plan and is now history — its
 Phases 1–4 describe adopting WebGPU, which happened. Read it only for its
@@ -171,66 +174,119 @@ same thing it measured last week.
    Mechanical is not a reason. **Struck.** They come along only if the booster
    substrate makes them free.
 
-**Unexplained, and recorded rather than guessed at:** the census prints
-`renderer says 0` on every run — `__dungeonRenderInfo()` returns populated
-`memory` counters (programs 116, textures 133, geometries 130) and
-`render.drawCalls: 0`. So the tool's own cross-check line is dead. The
-attribution above is unaffected: `dev/draw-census.ts` reimplements the cull and
-never reads `renderer.info`. Likely `renderAsync` resetting `info.render` at the
-start of a frame the `evaluate()` lands inside, but that is a hypothesis and
-nobody has tested it. `window-hooks.ts:844`.
+**The `renderer says 0` line — hypothesis now CONFIRMED, and it has a fix.**
+The census prints `renderer says 0` on every run: `__dungeonRenderInfo()`
+returns populated `memory` counters and `render.drawCalls: 0`. B2 settled why.
+The *playtest* profiler reads the same counter and gets **349 / 389** — a number
+that matches this census's own camera+shadow total exactly, on both arms of the
+A/B. So the counter works; **what breaks it is reading it from an out-of-frame
+`page.evaluate()`**, after three's per-frame `info.reset()` and before the next
+frame's draws. The attribution was never affected (`dev/draw-census.ts`
+reimplements the cull and never reads `renderer.info`).
 
-### B1 — The instancing substrate
+- [ ] Fix: have `draw-census.mjs` read the value the profiler already samples
+      inside the frame loop, instead of calling `__dungeonRenderInfo()` cold.
+      `window-hooks.ts:844`, `scripts/draw-census.mjs:46`.
 
-- [ ] A `PartInstancer` that owns, per (kind, slot): one `InstancedMesh`, the
-      shared geometry, one material, and a per-instance `Float32` attribute for
-      emissive intensity.
-- [ ] `createPinballParts` keeps building a `THREE.Group` per part for anything
-      *not* yet instanced. Both paths coexist — this migrates one kind at a
-      time, and a half-migrated floor must render correctly.
-- [ ] `PinballPart.mesh` stays. Gameplay, collision (`entities/pinball-collide.ts`),
-      `spawnPinballPart` and `disposePinballParts` must not learn about
-      instancing. **Only the visual representation changes.**
-- [ ] The material is a `MeshStandardNodeMaterial` with an
-      `emissiveNode` reading the instanced attribute.
+### B1 — The instancing substrate ✅ SHIPPED
+### B2 — The booster ✅ SHIPPED — **66 → 3 draws**
 
-  > ⚠️ **It must use `colorNode`/stock material setup and must NEVER use
-  > `fragmentNode`.** A `fragmentNode` material skips
-  > `NodeMaterial.setupDiffuseColor`, writes an unassigned albedo into the MRT,
-  > and renders as a **silhouette-shaped hole** with no error anywhere.
-  > `mrt-coverage.test.ts` guards the source-visible half of this; the material
-  > must also be built inside `withSceneContext` or it emits a 1-output shader
-  > and fails the same way from the other direction. **`npm run playtest:gpu` is
-  > the only check that sees it.**
+`render/part-instancer.ts` + `render/part-instancer.test.ts`. One
+`InstancedMesh` per (kind, slot); `INSTANCED_KINDS` holds `booster` and nothing
+else, because the allowlist is the census's output and not a shape test.
 
-### B2 — Migrate the booster — **B0 confirms this is the whole project**
+**Measured, three floors, real adapter, 1080p — and the accounting is exact:**
 
-- [ ] Three instanced slots: plate, strip, chevron. On seed 42 that is **66
-      draws → 3**, and the census says zero boosters are culled there, so
-      nothing is traded for it. On 777/1337 it is 30→3 and 36→3 against 48 and
-      66 culled — still a win, and the submitted geometry is 6 tiny meshes
-      (a box, two thin boxes, three 3-sided cones), so the extra instances are
-      not a real cost. Say that number out loud after measuring rather than
-      assuming it.
-- [ ] The animator keeps its current maths and writes
-      `attr.array[i] = intensity; attr.needsUpdate = true` per frame.
-- [ ] **Visual parity before perf.** Fixed seed, fixed camera, fixed `animT`;
-      screenshot the same floor before and after and diff. A wave that is a
-      frame out of phase is a bug that looks like a rendering difference.
-- [ ] Re-run the census. State the delta. If it is under ~10 draws, stop and say
-      so rather than continuing down the ranked list on faith.
+| seed | camera draws before | after | Δ | booster |
+|---|---|---|---|---|
+| 42 | 227 | **164** | −63 (−28%) | 66 → 3 |
+| 777 | 165 | **138** | −27 (−16%) | 30 → 3 |
+| 1337 | 159 | **126** | −33 (−21%) | 36 → 3 |
 
-### B3 — The remaining kinds — **mostly struck by B0**
+Every floor's total falls by exactly what the booster row lost — no other row
+moved. `npm run playtest:gpu`: **PASSED, 0 render errors, canvas painting 101
+distinct colours**, which is the check that the node material writes its albedo
+(see the `fragmentNode` warning below — it is the failure this gate exists for).
+
+**Frame time: suggestive, NOT established.** Three interleaved A/B pairs on a
+box another session was using, seed 42, 25 s each:
+
+| pair | baseline p50 | instanced p50 | Δ |
+|---|---|---|---|
+| 1 | 5.6 ms | 4.8 ms | −0.8 |
+| 2 | 6.3 ms | 5.5 ms | −0.8 |
+| 3 | 6.2 ms | 6.2 ms | 0.0 |
+
+Two pairs agree at −0.8 ms (~13%); the third is null and its instanced arm's p95
+nearly doubled (8.1 → 12.7 ms), which is what a contaminated run looks like, not
+a regression. **Do not quote 13%.** The absolute wall-clock fps swung 38 → 97
+across rounds, which is why only the paired differences are readable at all.
+Settle it on an idle box: `npm run ops:status` clear, then the same interleave.
+
+### Four things B2 learned that the next slot family will hit
+
+1. **The layout must be READ, not restated.** The instancer builds one part with
+   the ordinary builder and takes the child transforms off it, so `buildBooster`
+   stays the single source of where a chevron sits. Hard-coding `-0.26 + k*0.26`
+   would have been shorter and would drift the first time the art moved.
+2. **And the prototype has to be checked.** Reading one prototype is only sound
+   if children sit in the same LOCAL place whichever way the part faces.
+   `directionInvariant` builds a second prototype facing elsewhere and refuses
+   the kind if anything moved. A builder that folded facing into its children
+   would otherwise render every instance with the first prototype's geometry,
+   silently.
+3. **A kind whose animator MOVES a child cannot be instanced.** Instance
+   matrices are written once at load, so `lipMesh.scale.y` in `ramp`'s animator
+   would simply stop happening and the part would render correctly-but-inert —
+   the worst failure to notice. The tell is an `Object3D` parked in `userData`,
+   and that is what `animatesGeometry` refuses on. `ramp` is a live example and
+   the test asserts it.
+4. **The bounding sphere is a live trap.** three computes an `InstancedMesh`'s
+   bounding sphere from its instance matrices **on first frustum test, and
+   caches it**. Tested before the matrices are written, every booster on the
+   floor is culled everywhere with nothing logged. `finalise()` computes it once
+   from a known-populated state; a test asserts the radius actually covers the
+   parts.
+
+**One animator body serves both paths.** `PART_ANIMATORS` writes
+`emissiveIntensity` on whatever it finds in `userData`; an instanced part puts
+`EmissiveSink` objects there, which write into the instance attribute.
+`MeshStandardMaterial` satisfies `EmissiveSink` structurally, so the Group path
+needed no adapter and no animator got a branch — two write paths for one
+animation is how they drift.
+
+> ⚠️ **The material must never use `fragmentNode`.** It skips
+> `NodeMaterial.setupDiffuseColor`, writes an unassigned albedo into the scene
+> MRT, and renders as a **silhouette-shaped hole** with no error anywhere.
+> `mrt-coverage.test.ts` guards the source-visible half; `playtest:gpu` is the
+> only check that sees the rendered frame. Note also that `emissiveNode`
+> *replaces* three's `emissive × emissiveIntensity` product rather than
+> multiplying into it, so the per-instance attribute carries exactly what
+> `emissiveIntensity` used to and the colour is folded into the node.
+
+### B3 — The remaining kinds — **mostly struck, and the re-census is done**
 
 The census reordered this list and deleted most of it. What survives:
 
-- [ ] **Re-run the census after B2 before doing anything here.** With the
-      booster's 30–66 gone, the ranking is a different ranking. Do not carry
-      this ordering forward on faith — that is the mistake B0 exists to prevent,
-      and it already caught this list once.
-- [ ] `spinpad` (20/15 on one floor, ~0 on the others) and `electric` (10/0) are
-      the only remaining candidates, and both are floor-dependent. Worth doing
-      *only* if the B1 substrate makes a new kind nearly free.
+**The post-B2 ranking (seed 42, 164 draws total), which is now the live one:**
+
+| kind | draws | culled | verdict |
+|---|---|---|---|
+| spinpad | 20 | 15 | the new #1 part row, and it is floor-dependent (5 and 0 on the other two floors) |
+| bumper | 18 | 75 | still struck — the ratio did not change |
+| rollover | 12 | 12 | marginal |
+| electric | 10 | 0 | small but clean, like the booster was |
+| booster | **3** | 0 | done |
+
+- [ ] **Nothing here is worth a session on its own.** The whole remaining part
+      surface is ~60 draws spread over four kinds, none of which is #1 on more
+      than one floor — where the booster was #1 on all three at 2–3×. The honest
+      read is that Phase B has taken the win that was there, and the next real
+      question is whether draw count is still what the frame is bound by.
+- [ ] If one is done anyway, `electric` (10/0) is the right shape — clean, no
+      cull to lose — and the B1 substrate should make it nearly free: add the
+      kind to `INSTANCED_KINDS` and the prototype guards do the rest. **Re-run
+      the census first anyway**; these numbers are one floor each.
 
 ~~`ramp`, `boostcorner`, `boostcurve` — identical shape, follows mechanically.~~
 **Struck: 0–7 draws across three floors. "Mechanical" is not a reason to spend.**
@@ -328,3 +384,13 @@ THREE and a live scene so no unit test calls it. `deploy.sh` gates on that suite
    run; `?gpu=cpu` exists for diagnostics and never for measuring.
 6. **`npm run playtest:gpu` for anything touching `maze/build.ts`, a material,
    or the MRT.** It is the only gate that sees a rendered frame.
+7. **A worktree needs a real `pnpm install`, not a symlinked `node_modules`.**
+   Turbopack refuses the symlink outright — `Symlink [project]/node_modules is
+   invalid, it points out of the filesystem root` — so `next dev` never starts
+   and no GPU run is possible. `pnpm install --prefer-offline` in the worktree
+   takes ~4 s off the store. Vitest is happy with the symlink, which is why this
+   only bites at the point you try to render something.
+8. **Interleave the A/B; never run all of one arm then all of the other.** Two
+   dev servers, alternate the runs, read only the paired differences. B2's
+   wall-clock fps swung 38 → 97 across three rounds on the same build — an
+   unpaired comparison would have measured the other session, not the change.

@@ -21,6 +21,7 @@ import { state, type PinballPart, type PinballPartKind } from "../state";
 import type { PinballPartSpot } from "../maze/decorate";
 import { tileCenter, worldToTile, type Grid } from "../maze/generator";
 import { PALETTE_HEX } from "./palette";
+import { createPartInstancer, INSTANCED_KINDS, type PartInstancer, type EmissiveSink } from "./part-instancer";
 import { createFireMaterial } from "../fx/elements/fire";
 import type { ElementMaterial } from "../fx/elements/element";
 import { GLOVE_PERIOD, GLOVE_ACTIVE, GLOVE_LANE_LEN, FLIPPER_SWING, ELEC_ON, ELEC_OFF, VENT_PERIOD, VENT_WARN, VENT_ACTIVE, BUMPER_LIT_HITS, TRAPDOOR_OPEN, TRAPDOOR_DROP, SHOT_LIGHT_MIN_SPEED, SHOT_LIGHT_RANGE, SHOT_LIGHT_COS, PART_ANIM_RANGE_SQ, spinPadPhase } from "../constants";
@@ -865,24 +866,78 @@ export const PART_BUILDERS: Record<PinballPartKind, PartBuilder> = {
   lamp: () => buildLamp(),
 };
 
+/**
+ * Live instancers, one per instanced kind on this floor. Empty for a floor whose
+ * plan has none, which is the normal case for every kind but `booster`.
+ */
+const instancers = new Map<PinballPartKind, PartInstancer>();
+
+/**
+ * Stand-in for `part.mesh` on an instanced part.
+ *
+ * It is NOT added to the scene — the InstancedMeshes are what draw. It exists
+ * because `PinballPart.mesh` is the animators' handle on a part's `userData`,
+ * and because `disposePinballParts` removes and releases it (both no-ops on an
+ * empty Object3D). Nothing outside this file reads a part's mesh; checked at
+ * e118e85, when the only `.mesh` hits elsewhere in the game were `sprite.mesh`.
+ */
+function instancedHandle(x: number, z: number, userData: Record<string, unknown>): THREE.Object3D {
+  const o = new THREE.Object3D();
+  o.position.set(x, 0, z);
+  o.userData = userData;
+  return o;
+}
+
 /** Build every part mesh for a level plan and register them on state. */
 export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THREE.Scene): void {
+  // An InstancedMesh's capacity is fixed at construction, so the kind counts
+  // have to be known before the first part is placed.
+  const perKind = new Map<PinballPartKind, number>();
+  for (const s of spots) {
+    if (INSTANCED_KINDS.has(s.kind as PinballPartKind)) {
+      perKind.set(s.kind as PinballPartKind, (perKind.get(s.kind as PinballPartKind) ?? 0) + 1);
+    }
+  }
+  for (const [kind, count] of perKind) {
+    const inst = createPartInstancer(
+      kind,
+      count,
+      () => PART_BUILDERS[kind]({ dirX: 1, dirZ: 0, dir2X: 0, dir2Z: 1 }),
+      () => PART_BUILDERS[kind]({ dirX: 0, dirZ: 1, dir2X: 1, dir2Z: 0 }),
+      releaseOwned,
+    );
+    // null is a normal answer — the kind falls back to a Group per part below.
+    if (!inst) continue;
+    for (const m of inst.meshes) scene.add(m);
+    instancers.set(kind, inst);
+  }
+  const placed = new Map<PinballPartKind, number>();
+
   for (const s of spots) {
     const { x, z } = tileCenter(g, s.i, s.j);
     const dirX = s.dirI;
     const dirZ = s.dirJ;
     const dir2X = s.dir2I;
     const dir2Z = s.dir2J;
-    const mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z });
-    mesh.position.set(x, 0, z);
-    // NAMED, and not for debugging alone. A part is a Group of 3-13 meshes and
-    // nothing else in the scene says so, which means a draw-call census can
-    // only file its children under their geometry type — `?ConeGeometry+...`
-    // for a bumper cap, indistinguishable from a stalactite. The name makes the
-    // scene self-describing to `dev/draw-census.ts`, and it is the key
-    // `mergeStaticGroup`'s `skipNames` needs to spare the children that animate.
-    mesh.name = `part:${s.kind}`;
-    scene.add(mesh);
+    const inst = instancers.get(s.kind as PinballPartKind);
+    let mesh: THREE.Object3D;
+    if (inst) {
+      const index = placed.get(s.kind as PinballPartKind) ?? 0;
+      placed.set(s.kind as PinballPartKind, index + 1);
+      inst.place(index, x, z, yawFor(dirX, dirZ));
+      mesh = instancedHandle(x, z, inst.userDataFor(index, Math.random() * Math.PI * 2));
+    } else {
+      mesh = PART_BUILDERS[s.kind]({ dirX, dirZ, dir2X, dir2Z });
+      mesh.position.set(x, 0, z);
+      // NAMED, and not for debugging alone. A part is a Group of 3-13 meshes and
+      // nothing else in the scene says so, which means a draw-call census can
+      // only file its children under their geometry type — `?ConeGeometry+...`
+      // for a bumper cap, indistinguishable from a stalactite. The name makes the
+      // scene self-describing to `dev/draw-census.ts`, and it is the key
+      // `mergeStaticGroup`'s `skipNames` needs to spare the children that animate.
+      mesh.name = `part:${s.kind}`;
+      scene.add(mesh);
+    }
     const part: PinballPart = {
       kind: s.kind as PinballPartKind,
       i: s.i,
@@ -930,6 +985,12 @@ export function createPinballParts(spots: PinballPartSpot[], g: Grid, scene: THR
  * those counters, which is also why it refuses to spawn a bumper.
  *
  * Returns the part, or null if the grid/scene isn't ready.
+ *
+ * ⚠️ ALWAYS THE GROUP PATH, even for a kind in `INSTANCED_KINDS`. An
+ * InstancedMesh's capacity is fixed when the floor is built, so there is no
+ * slot for a part that did not exist then. A runtime-spawned booster would
+ * simply render as its own six meshes, which is correct and costs six draws —
+ * and today the only runtime spawn is a grave pit, which is not instanced.
  */
 export function spawnPinballPart(kind: PinballPartKind, x: number, z: number, g: Grid, scene: THREE.Scene): PinballPart | null {
   if (kind === "bumper") return null; // would desync the jackpot counters — see above
@@ -1066,8 +1127,8 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   ramp: (part) => {
     // A wave sweeps UP the three arrows (a clear directional "GO" crawl); on
     // trigger the whole ramp flashes bright and the kicker lip pops.
-    const mats = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-    const lipMat = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const mats = part.mesh.userData.chevMats as EmissiveSink[] | undefined;
+    const lipMat = part.mesh.userData.lipMat as EmissiveSink | undefined;
     const lipMesh = part.mesh.userData.lipMesh as THREE.Mesh | undefined;
     const phase = (part.mesh.userData.phase as number) ?? 0;
     const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
@@ -1084,8 +1145,8 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
   booster: (part) => {
     // A fast forward wave chases down the three chevrons (a clear directional
     // "GO →"); the side strips pulse together; a trigger flashes the whole pad.
-    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-    const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
+    const chevs = part.mesh.userData.chevMats as EmissiveSink[] | undefined;
+    const strips = part.mesh.userData.stripMats as EmissiveSink[] | undefined;
     const phase = (part.mesh.userData.phase as number) ?? 0;
     const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
     if (chevs) {
@@ -1103,8 +1164,8 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     // the mesh is half-occluded by the wall it's tucked against. The exit lip
     // flares on a hit, a beat after the last chevron, so a good line reads as a
     // punch rather than a glow.
-    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-    const lip = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const chevs = part.mesh.userData.chevMats as EmissiveSink[] | undefined;
+    const lip = part.mesh.userData.lipMat as EmissiveSink | undefined;
     const phase = (part.mesh.userData.phase as number) ?? 0;
     const flash = part.hitT >= 0 && part.hitT < 0.3 ? 1 - part.hitT / 0.3 : 0;
     if (chevs) {
@@ -1121,8 +1182,8 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     // these sit end to end in one curve, and three fast independent waves side
     // by side strobe rather than flow. The lean rail glows steady to draw the
     // line of the curve itself.
-    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-    const strips = part.mesh.userData.stripMats as THREE.MeshStandardMaterial[] | undefined;
+    const chevs = part.mesh.userData.chevMats as EmissiveSink[] | undefined;
+    const strips = part.mesh.userData.stripMats as EmissiveSink[] | undefined;
     const phase = (part.mesh.userData.phase as number) ?? 0;
     const flash = part.hitT >= 0 && part.hitT < 0.25 ? 1 - part.hitT / 0.25 : 0;
     if (chevs) {
@@ -1139,8 +1200,8 @@ export const PART_ANIMATORS: Record<PinballPartKind, PartAnimator> = {
     // says "this one goes up". On a hit the lip goes white-hot for the whole
     // airtime (see PART_HIT_LIFETIME.jumppad) so the pad is still visibly the
     // source of the flight while the knight is over the wall.
-    const chevs = part.mesh.userData.chevMats as THREE.MeshStandardMaterial[] | undefined;
-    const lip = part.mesh.userData.lipMat as THREE.MeshStandardMaterial | undefined;
+    const chevs = part.mesh.userData.chevMats as EmissiveSink[] | undefined;
+    const lip = part.mesh.userData.lipMat as EmissiveSink | undefined;
     const phase = (part.mesh.userData.phase as number) ?? 0;
     const flash = part.hitT >= 0 && part.hitT < 0.5 ? 1 - part.hitT / 0.5 : 0;
     if (chevs) {
@@ -1438,6 +1499,12 @@ export function updatePinballParts(dt: number): void {
     // they still stamp hitT before this frame's animation reads it.
     PART_ANIMATORS[part.kind](part, { dt, frozen });
   }
+  // ONE upload per instance attribute per frame, after every animator has had
+  // its say. Flagging inside the sink setters instead would re-flag the same
+  // buffer five times a part; flagging unconditionally would re-upload a
+  // floor's worth of boosters on a frame where the player is nowhere near one
+  // (the range gate above skips their animators entirely, so nothing changed).
+  for (const inst of instancers.values()) inst.flush();
 }
 
 /** Remove + dispose every part mesh (per-level teardown). */
@@ -1535,5 +1602,10 @@ export function disposePinballParts(scene: THREE.Scene | null): void {
     scene?.remove(part.mesh);
     releaseOwned(part.mesh);
   }
+  // Instanced kinds own a cloned geometry and a node material per animated slot
+  // — everything else they draw with came from the shared caches and must
+  // survive into the next floor. `PartInstancer.dispose` knows which is which.
+  for (const inst of instancers.values()) inst.dispose(scene);
+  instancers.clear();
   state.pinballParts = [];
 }

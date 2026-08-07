@@ -96,14 +96,62 @@ attribution is unaffected — `dev/draw-census.ts` reimplements the cull and nev
 reads `renderer.info`. Probably `renderAsync` resetting `info.render` at the top
 of the frame the `evaluate()` lands inside. That is a hypothesis; nobody tested it.
 
+### Also shipped: B1 + B2 — the booster instancer. **66 → 3 draws.**
+
+`render/part-instancer.ts`. One `InstancedMesh` per (kind, slot); the whole
+floor's boosters draw in three calls instead of six per part.
+
+| seed | camera draws before | after | Δ | booster |
+|---|---|---|---|---|
+| 42 | 227 | **164** | −63 (−28%) | 66 → 3 |
+| 777 | 165 | **138** | −27 (−16%) | 30 → 3 |
+| 1337 | 159 | **126** | −33 (−21%) | 36 → 3 |
+
+Every total falls by exactly what the booster row lost; no other row moved.
+`playtest:gpu` PASSED — 0 render errors, canvas painting 101 distinct colours,
+which is the check that the new node material writes its albedo.
+
+**FRAME TIME IS NOT SETTLED, AND DO NOT LET THE NEXT WRITE-UP SAY IT IS.** Three
+interleaved A/B pairs (seed 42, 25 s, box shared with two other sessions):
+p50 5.6→4.8, 6.3→5.5, **6.2→6.2**. Two pairs agree at −0.8 ms (~13%); the third
+is null and its instanced arm's p95 nearly doubled (8.1→12.7), which is a
+contaminated run rather than a regression. Wall-clock fps swung 38→97 across
+rounds on the same build. Settle it on an idle box.
+
+### Four things B2 learned, all of which the next slot family will hit
+
+1. **Read the layout off a prototype; never restate it.** The instancer builds
+   one part with the ordinary builder and takes the child transforms off it, so
+   `buildBooster` stays the one source of where a chevron sits.
+2. **And check the prototype.** `directionInvariant` builds a *second* prototype
+   facing elsewhere and refuses the kind if any child moved — otherwise a
+   builder that folded facing into its children would render every instance
+   with the first prototype's geometry, silently.
+3. **A kind whose animator MOVES a child cannot be instanced.** Matrices are
+   written once at load, so `ramp`'s `lipMesh.scale.y` would just stop happening
+   and the part would render correctly-but-inert. `animatesGeometry` refuses on
+   an `Object3D` parked in `userData`; `ramp` is the live example in the test.
+4. ⚠️ **The bounding sphere is a live trap.** three computes an InstancedMesh's
+   sphere from its instance matrices **on first frustum test and caches it** —
+   test it before the matrices are written and every booster on the floor is
+   culled everywhere, with nothing logged. `finalise()` computes it once from a
+   known-populated state.
+
+**`renderer says 0` is solved.** The playtest profiler reads the same counter and
+gets 349/389 — matching the census's own total. The counter works; reading it
+from an out-of-frame `page.evaluate()` is what breaks it, after three's per-frame
+`info.reset()` and before the next frame's draws. Fix is one line in
+`scripts/draw-census.mjs:46`; left undone and written down.
+
 ### Next
 
-**Phase B1/B2 — the booster instancer.** `docs/webgpu-next-plan.md` has the
-substrate design and the two traps that decide whether it works: a new node
-material must never use `fragmentNode` (it skips `setupDiffuseColor`, writes an
-unassigned albedo and renders as a silhouette-shaped **hole**), and it must be
-built inside `withSceneContext` or it emits a 1-output shader and fails the same
-way from the other side. `npm run playtest:gpu` is the only check that sees either.
+**Phase B is largely spent, and that is the finding.** The post-B2 ranking is
+spinpad 20, bumper 18 (still struck — 75 culled), rollover 12, electric 10: ~60
+draws over four kinds, none #1 on more than one floor, where the booster was #1
+on all three at 2–3×. `electric` (10 drawn / 0 culled) is the only clean shape
+left and the substrate should make it nearly free. **The better question is
+whether draw count is still what the frame is bound by** — which is the idle-box
+A/B above, not another instancer.
 
 ## 🔬 SHADERS INTO FILES, AND THREE MEASUREMENTS THAT KILLED THEIR OWN PLANS (2026-08-06, `main` @ b2f64b4, DEPLOYED)
 
