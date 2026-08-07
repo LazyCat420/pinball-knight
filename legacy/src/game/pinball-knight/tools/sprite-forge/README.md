@@ -28,7 +28,14 @@ palette, real crush and real census, so what it reports is what will ship.
     sources/        the ORIGINAL generated art, per creature per drop. Tracked.
     samples/        fixtures the docs and comparisons refer to
     work/           gitignored scratch, rewritten every run — never the only copy
-    docs/           plans and write-ups for specific imports
+    docs/           plans and write-ups for specific imports.
+                    ⚠️ READ `docs/PLAN_KEYFRAME_PIPELINE.md` BEFORE GENERATING A
+                    CREATURE. Nothing here generates pixel art — `commit.ts`
+                    manufactures the lattice at the end, and the grid gate runs
+                    after it, so a smooth painting passes every check and ships
+                    as mush. That plan is the replacement: prompt → master,
+                    master → keyframes, keyframes → in-betweens, gated on the
+                    RAW generation each time.
 
     *.ts            the import pipeline itself (matte → slice → resample →
                     register), plus its vitest suites. `npm run sprites`.

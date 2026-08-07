@@ -1,4 +1,15 @@
-# brute, 2026-08-07 — the Ragnarok restyle, curated and published
+# brute, 2026-08-07 — the Ragnarok restyle. Curated, published, REVERTED.
+
+> ⚠️ **THIS ART IS NOT SHIPPED AND SHOULD NOT BE.** It was curated into three
+> sheets and published on 2026-08-07, looked at, and rejected: the frames are
+> smooth anti-aliased illustration that the crush turns to mush, and the idle
+> clip changes by 14% frame to frame against the shipped sheet's 63% — a still.
+> `public/sprites/brute-S` is back to the `55f98e2` gym zombie.
+>
+> Kept as evidence and as inputs. The recipes below record exactly what was
+> picked and on what, which is why the failure is attributable to the
+> GENERATION rather than to the picking. The replacement pipeline is
+> `../../docs/PLAN_KEYFRAME_PIPELINE.md`.
 
 Three masters, eleven generated motion clips, three more `stumble` clips added
 on 08-07, and the three recipes that turn them into sheets. TRACKED because
