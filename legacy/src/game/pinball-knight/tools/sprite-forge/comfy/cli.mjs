@@ -12,6 +12,7 @@
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
  *                        [--canvas init|WxH]
  *   node cli.mjs animate --init frame.png --action "walking" [--out DIR] [--seed N]
+ *                        [--loop] [--end last.png] [--canvas WxH] [--temporal N]
  *                        [--frames 21] [--no-lora] [--tile 128]
  *   node cli.mjs retarget --poses row.png --character idle.png --subject "a spotted frog"
  *   node cli.mjs refile  --dir <folder of PNGs> --file-as brute [--label "..."] [--mode animate]
@@ -24,6 +25,7 @@
  * Manual tool, not a test: nothing under vitest may ever reach the network.
  */
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
@@ -152,14 +154,92 @@ function outDir(kind) {
  * also reads the directory for frames, so older records self-heal; writing
  * them is still what keeps job.json a complete record on its own.)
  */
+/**
+ * "fetch failed" IS NOT A DIAGNOSIS, and it has now cost three sessions.
+ *
+ * When the guard stops ComfyUI, every call in `client.mjs` fails with node's
+ * bare `TypeError: fetch failed`. That string has been read as a model problem,
+ * a settings problem and a network problem on three separate occasions; it has
+ * never once been any of those. It means the backend is not there.
+ *
+ * The guard hard-strikes on sustained WSL pressure, and it tends to do so
+ * SECONDS AFTER a Wan run finishes — 39s after the 08-07 walk, 45s after the
+ * decode A/B. So the failure lands on the NEXT run, and the run that caused it
+ * looks like the healthy one. Naming that here is the difference between "the
+ * backend is down, restart it" and another session spent theorising.
+ */
+async function requireBackend() {
+  try {
+    await systemStats();
+  } catch (err) {
+    throw new Error(
+      `ComfyUI is not answering on 127.0.0.1:8188 (${err.message}).\n` +
+      `  This is almost always the RAM guard having stopped it — a HARD strike often lands\n` +
+      `  seconds AFTER a Wan run finishes, so the previous run looks fine and this one dies.\n` +
+      `  Check:   tail -5 ~/comfy/guard.log\n` +
+      `  Restart: ~/comfy/run.sh -d`,
+    );
+  }
+}
+
+/** The last few lines of the guard's own log — it names the cause in one line. */
+function guardTail(n = 4) {
+  try {
+    const lines = readFileSync(join(homedir(), "comfy", "guard.log"), "utf8").trimEnd().split("\n");
+    return lines.slice(-n).map((l) => `    ${l}`).join("\n");
+  } catch {
+    return "    (no ~/comfy/guard.log)";
+  }
+}
+
+/**
+ * Turn a mid-run disconnect into the diagnosis instead of `fetch failed`.
+ *
+ * `requireBackend` covers the server being down when we start. The case that
+ * actually costs runs is the server dying DURING one: the job queues fine, the
+ * poll throws a bare `TypeError: fetch failed`, and the log says nothing about
+ * why. Measured 2026-08-07 — two runs lost to a HARD strike on HOST pressure
+ * (Windows at 61.7GB with 118 chrome processes holding 9.9GB of it), which is
+ * not visible from inside WSL at all: `free` showed 26GB available the whole
+ * time. Without the guard log quoted here that looks like a code fault.
+ */
+async function diagnose(err) {
+  const msg = err?.message ?? "";
+  const dropped = /fetch failed|ECONNREFUSED|socket hang up/i.test(msg);
+  // `execution failed:\n[]` — status "error" with NO execution_error message.
+  // A real node failure names the node; an empty list is the signature of an
+  // INTERRUPT, and the only thing that interrupts jobs here is the RAM guard.
+  // This is the exact string that has been read as a model or settings fault.
+  const interrupted = /execution failed:\s*\n?\s*\[\s*\]/.test(msg);
+  if (!dropped && !interrupted) return err;
+  let alive = true;
+  try { await systemStats(); } catch { alive = false; }
+  const what = interrupted
+    ? "ComfyUI reported an error with no failing node — that is an INTERRUPT, not a bad graph"
+    : `ComfyUI ${alive ? "is answering again but dropped this job" : "went away mid-run"}`;
+  return new Error(
+    `${msg}\n  ${what}.\n` +
+    `  The RAM guard is the usual cause, and it strikes on HOST pressure too, which\n` +
+    `  \`free\` inside WSL cannot see — 2026-08-07 lost two runs to Windows sitting at\n` +
+    `  61.7GB while WSL reported 26GB free. Last guard lines:\n${guardTail()}\n` +
+    `  ${alive ? "Backend is up; free host RAM before retrying." : "Restart: ~/comfy/run.sh -d"}`,
+  );
+}
+
 async function run(graph, dir, meta = {}) {
+  await requireBackend();
   await assertNodes(graph);
   const t0 = Date.now();
   const id = await queuePrompt(graph);
   console.log(`queued ${id}`);
-  const history = await waitFor(id);
+  let history, images;
+  try {
+    history = await waitFor(id);
+    images = outputImages(history);
+  } catch (err) {
+    throw await diagnose(err);
+  }
   const took = ((Date.now() - t0) / 1000).toFixed(1);
-  const images = outputImages(history);
   const frames = [];
   for (const im of images) {
     const buf = await fetchImage(im);
@@ -528,6 +608,7 @@ const main = {
    *
    *   node cli.mjs animate --init master.png --preset walk [--frames 33]
    *   node cli.mjs animate --init master.png --action "hopping forward"
+   *   node cli.mjs animate --init midstride.png --preset walk4 --loop   <- a closed cycle
    *
    * `--preset` is what you almost always want: it carries the pose wording the
    * mode has already been tuned with, AND the per-clip `avoid` negative. The
@@ -548,8 +629,19 @@ const main = {
     const image = await uploadImage(init, basename(init));
     const mode = MODES.find((m) => m.id === "animate");
     const params = { preset, action: action ?? "", frames: opt("frames", "21") };
+    /**
+     * `--loop` closes the cycle: the same frame is pinned as first AND last, so
+     * the clip is one period of the gait and frame N leads back into frame 1.
+     * `--end <png>` pins a different last frame, which is the in-betweening
+     * shape (`inbetween` mode) reached from here.
+     *
+     * Give `--loop` a MID-STRIDE init, not the standing master — pinning a
+     * standing pose at both ends animates stand → walk → stand.
+     */
+    const endPath = opt("end");
+    const end = endPath ? await uploadImage(endPath, basename(endPath)) : has("loop") ? image : undefined;
     const ctx = buildCtx({
-      images: { init: image },
+      images: { init: image, ...(end ? { end } : {}) },
       seed: Number(opt("seed", 7)),
       fast: has("fast"),
       leg: "wan",

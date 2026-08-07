@@ -259,9 +259,40 @@ guard-interrupted job with an empty output list. It now writes `state:
 "failed"` and throws, naming `guard.log`. Eighteen unattended Wan jobs could
 previously all report success having produced nothing.
 
-Still to do: `prep-clips` / `driftRow` should refuse a clip containing a
-flagged frame, so a ghost cannot reach `public/sprites/` even if someone
-clicks past the panel. That is the fail-closed half.
+**The fail-closed half is now in `prep-clips`**, scored per row on the RAW
+pixels (`loadKeyed` keeps a raw copy for exactly this). `report` prints the
+per-frame numbers without throwing; `build` refuses. Per row rather than per
+recipe because the relative rule compares a frame against its own clip's
+median, and clips from different runs are different populations.
+
+### AND IT EXPLAINS THE DROP THAT WAS REJECTED ON SIGHT
+
+Pointed at `sources/brute-2026-08-07/recipe-S.json` — the moveset that was
+published on 08-07 and rejected the moment it was seen, the event that caused
+`PLAN_KEYFRAME_PIPELINE.md` to be written:
+
+    idle      0.84%  1.21%                          clean
+    walk     12.14%  9.64%  11.76%  10.33%          ALL FOUR dissolved
+    attack    0.93%  3.78%  11.04%   2.41%          two dissolved, one borderline
+    stumble   2.26%  7.94%   1.50%                  one dissolved
+    death    15.58% 14.08%  44.08%  43.39%          ALL FOUR dissolved
+
+Every row of that drop except one carried dissolved frames, and **the clean row
+is the one with almost no motion** — the idle that measured 14% frame-to-frame
+change, i.e. the row with no fast limbs to land on a seam.
+
+The within-subject control is what makes this a measurement rather than a
+story: `clip_S_idle/wan_00462_.png` and `clip_S_walk/wan_00449_.png` are the
+same creature, same magenta field, same session, same palette. The idle frame
+has hard black outlines and opaque limbs throughout. The walk frame has lost
+its outlines below the waist and its hands are translucent. 0.84% against
+12.14%. The metric is not reacting to "green on magenta".
+
+So the 08-07 rejection was not only a texel-budget problem. A large part of it
+was this decoder seam, present in every moving row, and nothing in the pipeline
+could see it — `detectPixelGrid` ran after the crush, `driftRow` measures rects,
+and `prep-clips`'s own `ghosting()` heuristic scored frames for PICKING without
+ever refusing one.
 
 ---
 

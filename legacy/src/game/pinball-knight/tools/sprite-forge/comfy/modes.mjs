@@ -108,6 +108,39 @@ const ANIMATE_PRESETS = [
     avoid: "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging",
     clip: "walk",
   },
+  /**
+   * THE SAME MECHANICS, FOR AN ANIMAL — because `walk` is written for a biped
+   * and a dog was being asked to perform it.
+   *
+   * The shipped `walk` says "a full TWO-STEP side-view walk cycle", which is
+   * bipedal vocabulary. Handed to a quadruped it is not merely unhelpful, it
+   * describes a different gait: a dog's walk is a FOUR-beat lateral sequence,
+   * and asking for two steps invites the model to animate two of the four legs
+   * and let the others follow. "the legs are mismatching how they are walking"
+   * was the report, and this is the first thing to rule out.
+   *
+   * The anatomy clauses are not decoration. A quadruped's front leg bends
+   * BACKWARD at the elbow and the hind leg bends FORWARD at the hock, which is
+   * the single most common thing generative models get wrong on animals — they
+   * draw four identical knees. The extra-leg ban is here for the same reason
+   * `avoid` exists on `walk`: it is a failure this family of models has.
+   *
+   * Kept OUT of `MOVESET` (see `alt`) so the one-click batch does not generate
+   * two walks and file both under the `walk` clip.
+   */
+  {
+    id: "walk4",
+    label: "walk cycle — four legs",
+    alt: true,
+    action:
+      "walking on four legs in a steady four-beat gait, each paw lifting clearly off the ground and planting down again, " +
+      "front legs and hind legs alternating on opposite sides, elbows bending backward and hocks bending forward, " +
+      "the spine level and the head steady, a full side-view quadruped walk cycle",
+    avoid:
+      "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging, " +
+      "extra legs, five legs, missing leg, bipedal, standing upright, rearing, hopping",
+    clip: "walk",
+  },
   {
     id: "run",
     label: "run cycle",
@@ -123,8 +156,15 @@ const ANIMATE_PRESETS = [
   { id: "custom", label: "custom action…", action: "", clip: "" },
 ];
 
-/** The one-click batch: every base movement, one job each, in this order. */
-const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom");
+/**
+ * The one-click batch: every base movement, one job each, in this order.
+ *
+ * `alt` presets are body-plan variants of a move that is already in the list —
+ * they target the SAME game clip, so including them would generate two takes
+ * and file both under one clip name. They are dropdown choices, not batch
+ * entries.
+ */
+const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom" && !p.alt);
 
 /**
  * Pose scripts for the keyframe-sheet mode: 4 EXTREME poses per move —
@@ -395,6 +435,24 @@ export const MODES = [
       const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
       return wanI2V({
         image: ctx.images.init,
+        /**
+         * A CYCLE HAS TO CLOSE, and until now nothing asked it to.
+         *
+         * `wanI2V` has carried the first/last-frame graph since it was written
+         * and `animate` never passed an end, so every walk this forge has made
+         * free-runs to wherever frame 21 happens to land. Played on a loop that
+         * pops: frame 21 does not lead back into frame 1.
+         *
+         * Pin the SAME image at both ends and the model has to come home. Two
+         * things follow for free — Wan's measured 6-8 frame ease-out of the
+         * init has somewhere to go, and the whole clip becomes one period of
+         * the gait instead of an arbitrary slice of it.
+         *
+         * The init to hand it is a MID-STRIDE frame, not the standing master:
+         * pinning a standing pose at both ends makes the clip stand → walk →
+         * stand, which is not a cycle and burns frames at both ends.
+         */
+        endImage: ctx.images.end ?? null,
         prompt: this.prompt(params, ctx),
         extraNegative: preset?.avoid ?? null,
         length: Number(params.frames) || 21,
