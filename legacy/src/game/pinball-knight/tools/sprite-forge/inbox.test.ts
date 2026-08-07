@@ -49,7 +49,7 @@ import { cellScalePx, crushCell, registerCell, sheetScale } from "./register";
 import { parseName, unknownClips } from "./labels";
 import { detectPixelGrid } from "./grid";
 import { commitToGrid, type CommitOptions } from "./commit";
-import { driftRow } from "./drift";
+import { driftRow, gaitSignals } from "./drift";
 import type { QaCheck } from "./intake-qa";
 import { rgbHex } from "./matte";
 import { ART_BOX, fitsArtBox, oneToOneScale, type SheetManifest } from "./manifest";
@@ -403,7 +403,13 @@ describe("sprite inbox", () => {
           row.cells,
           { clip: row.clip, label: `${name}-${dir} ${row.clip}` },
         );
-        driftLines.push(`  ${(name + "-" + dir).padEnd(18)} ${row.clip.padEnd(8)} ${v.checks.map((c: QaCheck) => `${c.id} ${c.value}`).join("  ")}`);
+        // Gait is INSTRUMENTATION, not a gate — see gaitSignals' docblock for
+        // the calibration that refuted the gate. It rides the same line so a
+        // regenerated walk can be compared against the sway it replaced.
+        const gaitTag = row.clip === "walk" || row.clip === "run"
+          ? `  gait peak ${gaitSignals({ width: sheet.width, height: sheet.height, data: sdata }, row.cells).peak.toFixed(2)}`
+          : "";
+        driftLines.push(`  ${(name + "-" + dir).padEnd(18)} ${row.clip.padEnd(8)} ${v.checks.map((c: QaCheck) => `${c.id} ${c.value}`).join("  ")}${gaitTag}`);
         const hard = v.checks.filter((c: QaCheck) => !c.pass && !c.soft);
         if (hard.length) {
           driftFails.push(

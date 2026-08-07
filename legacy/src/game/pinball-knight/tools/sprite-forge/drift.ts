@@ -499,6 +499,77 @@ export function driftRow(
 }
 
 /**
+ * GAIT SIGNALS — REPORTED, NEVER GATED. The gate was built and refuted.
+ *
+ * `lean` is the left/right imbalance of the ink in the bottom 40% of each
+ * figure (the legs), as `(L−R)/(L+R)`. The intended gate was "a real walk cycle
+ * changes its leading leg at least once across the row", which would catch a
+ * slide — and `prep-brute.mjs`'s own note admits the brute's walk is exactly
+ * that: "a WEIGHT-SHIFTING SWAY, not a stride… Wan gave the brute almost no
+ * locomotion".
+ *
+ * ── WHY IT IS NOT A GATE ────────────────────────────────────────────────────
+ *
+ * Measured over every published walk/run row, sign changes across the row:
+ *
+ *     pinball_knight-E walk   0 flips   −0.00 −0.18 −0.03 −0.14 −0.34 −0.00
+ *     frog-E walk             0 flips   +0.04 +0.40 +0.45 +0.37 +0.25
+ *     brute-S walk            1 flip    −0.00 +0.05 +0.04 +0.05
+ *     mario-S walk            1 flip    −0.05 −0.02 +0.01
+ *
+ * The knight and the frog — the two sheets held up as the good examples — score
+ * ZERO flips, and the creature the metric was written to catch scores one. It
+ * does not separate. Two reasons, both structural rather than tunable:
+ *
+ *   · The bottom-40% band is not "the legs". A trailing cape, a weapon held
+ *     low, a tail and a hunched arm all land in it, and on most of this roster
+ *     they outweigh the feet.
+ *   · Half the roster does not have an alternating gait to find. The frog HOPS,
+ *     fish_feet waddles, the compass is a needle. Zero flips is CORRECT for
+ *     them, and a gate would condemn all three.
+ *
+ * Amplitude fails the same way: the brute's peak lean is 0.05 (a genuine sway)
+ * and mario's is also 0.05 (a good three-frame walk on a 53px sprite).
+ *
+ * So this ships as an INSTRUMENT, not a gate — the numbers go in the forge
+ * report so a regeneration can be compared against the sway it replaces, which
+ * is the one job it can honestly do. Recorded rather than deleted because the
+ * next person to think of this metric deserves the measurement, not the idea.
+ */
+export function gaitSignals(
+  sheet: RawImage,
+  cells: readonly (readonly number[])[],
+): { lean: number[]; flips: number; peak: number } {
+  const lean: number[] = [];
+  for (const c of cells) {
+    const [x0, y0, x1, y1] = c as [number, number, number, number];
+    let top = -1, bot = -1;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (sheet.data[(y * sheet.width + x) * 4 + 3] >= OPAQUE_AT) {
+          if (top < 0) top = y;
+          bot = y;
+          break;
+        }
+      }
+    }
+    if (top < 0) continue;
+    const hip = top + Math.floor((bot - top) * 0.6);
+    const mid = (x0 + x1) / 2;
+    let L = 0, R = 0;
+    for (let y = hip; y <= bot; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (sheet.data[(y * sheet.width + x) * 4 + 3] >= OPAQUE_AT) (x < mid ? L++ : R++);
+      }
+    }
+    lean.push(L + R ? (L - R) / (L + R) : 0);
+  }
+  let flips = 0;
+  for (let i = 1; i < lean.length; i++) if (lean[i - 1] > 0 !== lean[i] > 0) flips++;
+  return { lean, flips, peak: lean.length ? Math.max(...lean.map(Math.abs)) : 0 };
+}
+
+/**
  * Pearson correlation of a series against its own index — "is this a ramp?".
  *
  * Sign is kept (a leftward sweep is as broken as a rightward one) but callers
