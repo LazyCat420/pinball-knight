@@ -7,6 +7,81 @@ _Replaced on each deploy. Not a log; if something here is done, delete it._
 > (feat/mobile-touch-controls) are live worktrees in this repo right now, and
 > collapsing 2100 lines I have not read would delete their notes. Prepended.
 
+## 🔬 SHADERS INTO FILES, AND THREE MEASUREMENTS THAT KILLED THEIR OWN PLANS (2026-08-06, `main` @ b2f64b4, DEPLOYED)
+
+**Asked:** put the WGSL in `.wgsl` files. Then: why is the dungeon TSL and not
+WGSL, and can that make it faster? Then: blueprint it and do it.
+
+**Everything below is deployed.** Five increments, and the interesting part is
+that the measurements repeatedly contradicted the plan they were meant to serve.
+
+### What shipped
+
+| | |
+|---|---|
+| **21 shaders → `.wgsl` files** | `src/shaders/wgsl/`, `src/shaders/glass/wgsl/`, `src/room/wgsl/`. One function per file, named after it. Byte-identical to what they replaced, verified against the pre-split source. |
+| **`docs/tsl-to-wgsl.md`** | The conversion recipe — what converts, what cannot, what it buys. Start here for any shader question. |
+| **Per-pass GPU timestamps** | `recordGpuPasses` in `sim/loop.ts`. `GPU scene`, `GPU composite`, `GPU bloom.*` in the playtest profile, not one lumped total. |
+| **`__dungeonDraws()`** | `dev/draw-census.ts` + `scripts/draw-census.mjs` — which objects issue the draw calls. Nothing did this before. |
+| **Torch instancing** | 248 → 227 camera draws; playtest draw calls p50 460 → 397. |
+| **The frenzy aberration renders again** | It had been drawing nothing since 2026-08-03. |
+| **Two ownership bugs in `merge-static.ts`** | A merged geometry claimed `userData.shared` and leaked; the module-cached bake material was unflagged and would be disposed for everyone. |
+
+### THE LOADER TRAP, if you ever touch how `.wgsl` files load
+
+Turbopack's built-in `type: "raw"` is documented in the Next 16 typings as
+"return raw file contents as a string". **It resolves the import to `undefined`.**
+`next build` succeeds, the chunk ships, and the material reaches the GPU as
+`wgslFn(void 0)` and draws nothing. (`type: "text"` is in the typings and not in
+the runtime's list at all.) They load through `scripts/wgsl-loader.cjs` — four
+lines of our own. `src/shaders/wgsl-contract.test.ts` asserts the rule names that
+loader **and** that the loader emits text, because a shader arriving as
+`undefined` is invisible to every check that reads files off disk.
+
+### THE THREE MEASUREMENTS THAT KILLED THEIR OWN PLANS
+
+Worth reading even if you never touch a shader — each is a trap with a repeat.
+
+1. **The GPU numbers were 3.3× too high.** One contaminated run (a parallel
+   sprite-forge/ComfyUI session hammering the card) put the post composite at
+   1.31 ms. It is **0.39 ms**; the whole six-pass chain is **0.79 ms** against a
+   6.6–9.3 ms frame. Caught by three things, all cheap: repeat the run, check a
+   second resolution scales linearly (720p must be half of 1080p — it is), and
+   reproduce a prior independent record. **Never quote a single GPU run on this
+   box.** That correction voided an entire approved optimisation track.
+2. **Merging the pinball parts returns 2.4%.** Parts are 130 of 248 draws, but
+   `mergeStaticGroup` moves them to 124. A booster is 6 meshes and 5 carry
+   `stdOwn` materials the animator pokes *individually* — **a mesh that animates
+   cannot be merged, and the animation is exactly why parts cost 130 draws.**
+   Do not re-attempt. Cutting that number means moving the wave into the shader
+   with a per-instance attribute, the way `fx/pools/particle-pool.ts` already
+   does — a redesign of the part builders, not a wiring change.
+3. **Draw calls cannot be estimated from an object count.** 753 meshes → 248
+   draws; the cull removes two thirds. The plan said "instance the torches,
+   ~100 draw calls". It was ~22. `__dungeonDraws()` exists so nobody guesses again.
+
+### ⚠️ A CRASH IN `buildMaze` SHIPS GREEN
+
+A local named `at` shadowed the `at()` grid helper imported at `maze/build.ts:34`
+and put its earlier callers in the temporal dead zone. **Every floor threw and
+built nothing — and the full 2892-test suite passed.** `buildMaze` needs THREE
+and a live scene, so no unit test calls it, and `deploy.sh` gates on that suite.
+`npm run playtest:gpu` is the only thing that catches this class. **Run it for
+any change inside that file.**
+
+### Left for the next session
+
+**The frame tail.** p50 is 6.5–9.3 ms at 1080p — there is no steady-state
+problem — but the worst frame is 200–600 ms. `docs/lag-investigation.md` now
+opens with the current numbers and the method. **The first step is not
+profiling: it is re-running on an idle box**, because p99 is unchanged from the
+July fix and every measurement so far shared the machine.
+
+**One art call:** `FRENZY_ABERRATION = 0.006` was last meaningful when the
+fringe travelled through the 32-colour palette snap. On the lit buffer it reads
+as a raw RGB split. Flagged, not changed. `scripts/frenzy-ab.mjs` shoots it at
+four intensities; `__dungeonFrenzy(v)` pins it live.
+
 ## 🪟 THE WINDOW REALLY BREAKS (2026-08-05, `main` @ df4a028, DEPLOYED & VERIFIED LIVE)
 
 **Asked:** make the toucan's window smash real — real glass physics, custom WGSL
@@ -24,7 +99,7 @@ Both panes draw, zero console errors, the room keeps a genuinely broken window.
 | `fracture.ts` | crack topology: radial + concentric spiderweb, jagged, deterministic |
 | `fracture-geometry.ts` | cells → one buffer + rigid bodies (mass, inertia, edge distance) |
 | `shard-physics.ts` | the sim: torque, drag, floor, sleep |
-| `glass-material.ts` | the optics + the dense crack web. WGSL **and** a GLSL twin |
+| `glass-material.ts` | the optics + the dense crack web. Its WGSL now lives in `glass/wgsl/*.wgsl`, one function per file; the GLSL twins are GONE with the WebGL2 backend (2026-08-06) and `glass.test.ts` fails if one comes back |
 | `pattern-cache.ts` | where the baked pattern comes from, and the memo |
 | `index.ts` | `createShatteredPane()` — the only thing callers touch |
 | `fracture-baked.json` | committed bake, ~360 cells, 95 KB |
@@ -69,16 +144,21 @@ only assigns velocities. Breaking costs no allocation and no material swap.
 
 ### Gotchas that will bite
 
-- **A BACKTICK IN A SHADER COMMENT ENDS THE SHADER.** The WGSL/GLSL sources are
-  template literals, so quoting an identifier the way the rest of this codebase's
-  prose does silently terminates the literal and turns the rest into JavaScript.
-  Happened FOUR times. The parse error points at the comment and never mentions
-  backticks. `glass.test.ts` guards it — but note the guard cannot run when the
-  file does not parse, so the symptom is a suite that fails to load.
-- **The GLSL twin is not optional.** `render/backend.ts` still resolves to WebGL2
-  for every visitor without `navigator.gpu`, and `wgslFn` alone hands them a
-  black window with no thrown error. The dialects are checked against each other
-  by signature, by numeric constant, and by block count.
+- ~~**A BACKTICK IN A SHADER COMMENT ENDS THE SHADER.**~~ **RETIRED 2026-08-06.**
+  It ended the template literal and turned the rest of the shader into
+  JavaScript, four separate times. The shaders are now `.wgsl` FILES
+  (`glass/wgsl/*.wgsl`), which have no literal to end. `glass.test.ts` now
+  asserts the WGSL stays in files rather than asserting the absence of
+  backticks. Do not reintroduce an inline shader snippet "just this once".
+- ~~**The GLSL twin is not optional.**~~ **INVERTED 2026-08-06 — a twin is now a
+  BUG.** There is no WebGL2 backend any more: `render/backend.ts` nulls
+  `_getFallback`, so a browser without WebGPU gets a loud
+  unsupported message instead of a silent downgrade. A `glslFn` here would be a
+  code path that CANNOT RUN, and `glass.test.ts` fails if one appears — both in
+  the module and as a stray `.glsl` beside the `.wgsl` files. If WebGL is ever
+  wanted back, restore the backend FIRST.
+  ⚠️ WebGPU is secure-context only, so `http://<lan-ip>:5174` now shows that
+  message instead of the game. Develop on `localhost` or the real domain.
 - **Do not add the pane hidden and reveal it at impact.** A program compiles the
   first time it is *drawn*; that path cost 730 ms of freeze before the pre-warm
   existed. The panes are added INTACT during preload and drawn by the two warm

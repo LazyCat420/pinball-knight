@@ -1,5 +1,42 @@
 # Pinball Knight — the "a little laggy" investigation
 
+> ## ⏭️ RE-MEASURED 2026-08-06 — read this before picking the tail back up
+>
+> Five runs, real GPU (nvidia/ampere), host Chrome over CDP, bot, floor 1, no
+> descents, `?profile=1`:
+>
+> | | 2026-07-29 after the fix | 2026-08-06 |
+> |---|---|---|
+> | **p99** | 18.4, 24.2, 18.4, 18.3, 18.3 | 18.6, 24.5, 25.6, 18.6 |
+> | **worst frame** | 61, 67, 85, **648**, 54 | 202, 281, 356, 413, 605 |
+> | p50 / p95 | — | 6.5–9.3 / 13.6–19.4 |
+>
+> **The distribution did not regress — p99 lands exactly where the fix left it.**
+> What differs is the extreme outlier: one or two frames per run, now reliably
+> 200–600 ms where they were mostly 50–85 ms. Note the fixed column already
+> held a 648 ms outlier, so this is the same residual tail, not a new one.
+>
+> **Do not start by profiling.** Every one of those runs shared the box with
+> another session holding a GPU slot and running vitest, and a 200–400 ms stall
+> is exactly what CPU contention looks like. This session lost a whole
+> conclusion to that mistake once already (the GPU numbers were 3.3× too high
+> from one contaminated run — see `docs/tsl-to-wgsl.md`). **First re-run on a
+> box `npm run ops:status` reports idle.** If the worst frame drops to double
+> digits, the tail is the box and there is nothing to fix.
+>
+> If it does not, THEN `scripts/lag-profile.mjs` — it found the cause on the
+> first run last time. Two things are already ruled out and need not be
+> re-derived:
+>
+> - **These are not descent frames.** `sim/loop.ts` returns on `isRenderHeld()`
+>   *before* `profBegin("FRAME (total)")`, so held frames never enter the
+>   statistic. The ⚠️ further down applies to figures from before that early
+>   return existed.
+> - **It is not the post chain.** Per-pass GPU timestamps (added this session,
+>   `recordGpuPasses` in `sim/loop.ts`) put every shader in the game at
+>   **0.79 ms** of a 6.6–9.3 ms frame. `pixelPass.render` is 5.7–7.6 ms of CPU
+>   *submission*. See `docs/tsl-to-wgsl.md` §0.
+
 **Status: root cause found and fixed (2026-07-29).** The frame-pacing tail is
 gone: worst frame ~600–1300 ms → ~55–85 ms, hitches over 33 ms 8–171 → 2–5,
 measured interleaved on real WebGPU (nvidia/ampere, host Chrome over CDP).
