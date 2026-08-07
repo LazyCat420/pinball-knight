@@ -99,6 +99,34 @@ export interface CutSheet {
    * abandon the other fifty-three.
    */
   notes: string[];
+  /**
+   * Rows whose rects came from `equalCells` rather than from the slicer, named.
+   * Empty when every rect is ink-tight.
+   *
+   * ── WHY THIS IS REPORTED AND NOT THROWN ─────────────────────────────────
+   *
+   * `equalCells` divides a row's INK EXTENT into uniform columns, so the rects
+   * stop sitting on the figures. `register.ts` then centres the COLUMN and
+   * grounds the BAND rather than the ink, and whatever offset each figure has
+   * inside its column is preserved into the cel — the sprite slides sideways
+   * and bobs while the creature's world position does not move. Measured on
+   * the brute as deployed at `e9f64dc`: its walk row swept 43% of a cell width,
+   * monotonically, across four frames.
+   *
+   * The obvious response is to make this fatal. It is the WRONG gate, and
+   * measuring said so: eight published sidecars use `cells` today (beaver,
+   * compass ×3, fish_feet, jester, stiltneck, zombie) and several of them score
+   * clean — a ruled sheet with even pitch is exactly the case the override was
+   * kept for. Failing the MECHANISM would condemn working art, which is this
+   * repo's own recurring defect (a differently-shaped probe declaring healthy
+   * code broken).
+   *
+   * So the hard gate is on the CONSEQUENCE — `driftRow` in drift.ts, which
+   * measures whether the figure actually travels across its cells — and this
+   * list exists to name the likely cause when it fires, and to make an
+   * `equalCells` row visible in the report even when it happens to score fine.
+   */
+  equalised: string[];
 }
 
 /**
@@ -139,6 +167,8 @@ export function cutSheet(
   // An explicit per-row cell count OVERRIDES the auto-slice; a NESTED count
   // splits one sliced band into consecutive clips, because two short clips
   // routinely share a band and a band is a band to the slicer.
+  const named = side?.rows;
+  const equalised: string[] = [];
   let rows = sliced;
   if (side?.cells) {
     if (side.cells.length !== sliced.length) {
@@ -146,19 +176,23 @@ export function cutSheet(
     } else {
       rows = sliced.flatMap((r, i) => {
         const spec = side.cells![i];
-        if (!Array.isArray(spec)) return [{ ...r, cells: equalCells(r, spec) }];
+        if (!Array.isArray(spec)) {
+          equalised.push(`${named?.[i] ?? `row${i}`} → ${spec} equal columns`);
+          return [{ ...r, cells: equalCells(r, spec) }];
+        }
         const total = spec.reduce((a, b) => a + b, 0);
         // Regroup the AUTO-SLICED cells when the counts already agree: those
         // rects are ink-tight, and re-cutting the band into equal columns would
         // straddle the gap the two clips are separated by.
-        const all = r.cells.length === total ? r.cells : equalCells(r, total);
+        const agree = r.cells.length === total;
+        if (!agree) equalised.push(`${named?.[i] ?? `row${i}`} → ${total} equal columns`);
+        const all = agree ? r.cells : equalCells(r, total);
         let at = 0;
         return spec.map((n) => ({ ...r, cells: all.slice(at, (at += n)) }));
       });
     }
   }
 
-  const named = side?.rows;
   return {
     data,
     rows: rows.map((r, ri) => ({ clip: named?.[ri] ?? `row${ri}`, cells: r.cells as Cell[] })),
@@ -166,5 +200,6 @@ export function cutSheet(
     slicedRows: sliced.length,
     matte: matteReport,
     notes,
+    equalised,
   };
 }

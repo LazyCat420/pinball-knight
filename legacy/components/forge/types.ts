@@ -3,6 +3,7 @@
  * in modes.mjs (task registry), generate/route.ts (jobs) and
  * pipeline/route.ts (cut/crush/stage) — these types mirror, never define.
  */
+import type { ClipName } from "@/src/game/pinball-knight/engine/render/paint-types";
 
 export type Manifest = {
   backendPresent: boolean;
@@ -99,8 +100,27 @@ export type TrayFrame = {
   clip: string;
 };
 
-/** Row order the game's sheets use; `stumble` is the stagger clip, not `hurt`. */
-export const CLIP_NAMES = ["idle", "walk", "run", "attack", "stumble", "death", "roll", "crouch", "wait", "wake"] as const;
+/**
+ * Row order the game's sheets use; `stumble` is the stagger clip, not `hurt`.
+ *
+ * ⚠️ TYPED AGAINST `ClipName`, and that is not decoration.
+ *
+ * This shipped as a bare `as const` string list and immediately did what an
+ * untyped hand-mirror does: it was MISSING `ball`, which `KNOWN_CLIPS`
+ * (labels.ts) and `PLAYABLE` (imported-paints.ts) both carry. A `ball` clip
+ * therefore could not be selected in the panel or reach the tray, and nothing
+ * anywhere said so — the exact shape of the `hurt`/`stumble` bug that
+ * `labels.ts` was rewritten to make impossible, one stage earlier.
+ *
+ * It stays a separate literal rather than `[...KNOWN_CLIPS]` because the ORDER
+ * is a real affordance: it is the order rows are laid out in the sheet tray,
+ * and a Set has none. `clip-names.test.ts` asserts the three lists hold the
+ * same members, the way `camera-sync.test.ts` already does for the two copies
+ * of `CAMERA_BY_DIR`.
+ */
+export const CLIP_NAMES = [
+  "idle", "walk", "run", "attack", "stumble", "death", "roll", "ball", "crouch", "wait", "wake",
+] as const satisfies readonly ClipName[];
 
 export type CutResult = {
   ok: boolean;

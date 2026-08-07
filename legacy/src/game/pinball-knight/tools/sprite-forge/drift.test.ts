@@ -23,7 +23,7 @@ import { describe, it, expect } from "vitest";
 import { loadImage, createCanvas } from "canvas";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { driftFrame, driftClip, DRIFT } from "./drift";
+import { driftFrame, driftClip, driftRow, DRIFT } from "./drift";
 import type { SheetManifest } from "./manifest";
 import type { RawImage } from "./resample";
 
@@ -202,6 +202,80 @@ describe("calibration — the gate must not condemn art that already works", () 
     expect(scored, "no published cells were scored — did the sheets move?").toBeGreaterThan(20);
     // Print the offenders so a failure is actionable rather than a bare count.
     expect(measured, `known-good art tripped a HARD drift check:\n  ${measured.join("\n  ")}`).toEqual([]);
+  });
+
+  /**
+   * ── driftRow, AND THE FIRST REAL NEGATIVE CONTROL THIS FILE HAS HAD ───────
+   *
+   * Every other calibration here is one-sided: it proves the gate does not
+   * condemn working art. That cannot distinguish a well-tuned gate from one
+   * that passes everything, which is the failure mode this repo has hit before
+   * — and `drift.ts`'s own header says so.
+   *
+   * `sweep` gets both sides, because a known-bad exists and is still in git:
+   * the brute as deployed at `e9f64dc`, whose `cells:[2,4,4]` sidecar override
+   * ran `equalCells` and gave every frame of a row a uniform column. It is
+   * fixtured here rather than read from `origin/main` so the test does not
+   * depend on the network or on a branch that will move.
+   */
+  it("driftRow separates a uniform-column row from an ink-tight one", async () => {
+    // The measured centring offsets, verbatim, from the two brute sheets.
+    // Deployed: a monotone ramp — the figure starts 22% left of its box and
+    // finishes 21% right of it. Re-cut: the SAME source frames, repacked
+    // ink-tight by commit.ts.
+    const deployedWalk = [-0.22, -0.09, 0.06, 0.21];
+    const recutWalk = [0.0, -0.01, -0.0, -0.0];
+
+    const sweepOf = (offs: number[]) => {
+      const span = Math.max(...offs) - Math.min(...offs);
+      const n = offs.length, mx = (n - 1) / 2;
+      const my = offs.reduce((a, b) => a + b, 0) / n;
+      let num = 0, dx = 0, dy = 0;
+      for (let i = 0; i < n; i++) {
+        const a = i - mx, b = offs[i] - my;
+        num += a * b; dx += a * a; dy += b * b;
+      }
+      return span * Math.abs(num / Math.sqrt(dx * dy));
+    };
+
+    expect(sweepOf(deployedWalk), "the deployed brute's walk must trip the gate")
+      .toBeGreaterThan(DRIFT.SWEEP_TOL);
+    expect(sweepOf(recutWalk), "the same frames re-cut ink-tight must pass cleanly")
+      .toBeLessThan(DRIFT.SWEEP_SOFT_TOL);
+  });
+
+  it("driftRow does not condemn the sheets the game draws today", async () => {
+    // mario and frog are the two the user names as the best examples, and the
+    // knight is the only creature authored in all three facings. If the gate
+    // rejects any of them it is measuring the wrong thing.
+    const CLEAN: [string, string][] = [["mario", "S"], ["frog", "S"], ["frog", "E"], ["pinball_knight", "E"]];
+    const tripped: string[] = [];
+    let scored = 0;
+
+    for (const [name, dir] of CLEAN) {
+      const jsonPath = join(PUBLIC, `${name}-${dir}.json`);
+      if (!existsSync(jsonPath)) continue;
+      const manifest = JSON.parse(readFileSync(jsonPath, "utf8")) as SheetManifest;
+      const img = await loadImage(join(PUBLIC, `${name}-${dir}.png`));
+      const cv = createCanvas(img.width, img.height);
+      const ctx = cv.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const full = ctx.getImageData(0, 0, img.width, img.height);
+      const sheet: RawImage = {
+        width: img.width, height: img.height,
+        data: full.data as unknown as Uint8ClampedArray,
+      };
+      for (const row of manifest.rows) {
+        if (!Array.isArray(row.cells) || row.cells.length < 2) continue;
+        const v = driftRow(sheet, row.cells, { clip: row.clip, label: `${name}-${dir} ${row.clip}` });
+        scored++;
+        const hard = v.checks.filter((c) => !c.pass && !c.soft);
+        if (hard.length) tripped.push(`${name}-${dir} ${row.clip}: ${hard.map((c) => `${c.id}=${c.value}`).join(" ")}`);
+      }
+    }
+
+    expect(scored, "no rows were scored — did the sheets move?").toBeGreaterThan(10);
+    expect(tripped, `art the game draws today tripped a HARD sweep check:\n  ${tripped.join("\n  ")}`).toEqual([]);
   });
 
   it("keeps the soft band tighter than the hard band", () => {
