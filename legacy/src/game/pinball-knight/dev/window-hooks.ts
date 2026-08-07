@@ -922,6 +922,70 @@ export function installDevHooks(deps: DevHookDeps): void {
           commit: z.moveCommit ?? 0,
         }))
         .filter((e) => !policy || e.movement === policy);
+    /**
+     * `__dungeonShaders()` — the WGSL three ACTUALLY generated from this
+     * codebase's TSL, straight out of the node builder.
+     *
+     * TSL is not an alternative to WGSL; it is a graph that COMPILES to WGSL,
+     * and the only way to answer "would hand-written WGSL be leaner here" is
+     * to read what the compiler emitted rather than to guess. Returns every
+     * post-chain program plus a sample of the scene materials.
+     *
+     * `getShaderAsync` compiles for the scene/camera/object triple it is
+     * given, so the post materials go through the pass's OWN quad scene — a
+     * program compiled against the world scene would have different lights,
+     * a different MRT and therefore different code.
+     */
+    (window as unknown as { __dungeonShaders?: () => Promise<unknown> }).__dungeonShaders = async () => {
+      const renderer = state.renderer as unknown as {
+        debug: { getShaderAsync: (s: unknown, c: unknown, o: unknown) => Promise<{ vertexShader: string; fragmentShader: string }> };
+      } | null;
+      const pass = state.pixelPass;
+      if (!renderer || !pass || !state.scene || !state.camera) return null;
+      const out: Record<string, { vertex: number; fragment: number; vertexShader: string; fragmentShader: string }> = {};
+      const take = async (name: string, scene: unknown, camera: unknown, object: unknown) => {
+        try {
+          const s = await renderer.debug.getShaderAsync(scene, camera, object);
+          out[name] = {
+            vertex: s.vertexShader.split("\n").length,
+            fragment: s.fragmentShader.split("\n").length,
+            vertexShader: s.vertexShader,
+            fragmentShader: s.fragmentShader,
+          };
+        } catch (e) {
+          out[name] = { vertex: -1, fragment: -1, vertexShader: "", fragmentShader: String(e) };
+        }
+      };
+
+      const post = pass.debugPost();
+      const restore = post.quad.material;
+      for (const [name, mat] of Object.entries(post.materials)) {
+        post.quad.material = mat;
+        await take(`post:${name}`, post.scene, post.camera, post.quad);
+      }
+      post.quad.material = restore;
+
+      // A sample of the WORLD materials, which are the other population: the
+      // post chain is four big fullscreen programs, the scene is hundreds of
+      // small ones. Distinct materials only — the same material compiled from
+      // two meshes is one program.
+      const seen = new Set<unknown>();
+      let n = 0;
+      const meshes: unknown[] = [];
+      state.scene.traverse((o: unknown) => {
+        const m = o as { isMesh?: boolean; material?: { uuid?: string; type?: string } };
+        if (!m.isMesh || !m.material || seen.has(m.material.uuid)) return;
+        seen.add(m.material.uuid);
+        if (n++ < 6) meshes.push(o);
+      });
+      for (const o of meshes) {
+        const m = (o as { material: { type: string; uuid: string } }).material;
+        await pass.withSceneContext(async () => {
+          await take(`scene:${m.type}:${m.uuid.slice(0, 6)}`, state.scene, state.camera, o);
+        });
+      }
+      return { materialsInScene: seen.size, shaders: out };
+    };
     (window as unknown as { __dungeonPlayer?: () => unknown }).__dungeonPlayer = () => {
       const p = state.player;
       if (!p) return null;

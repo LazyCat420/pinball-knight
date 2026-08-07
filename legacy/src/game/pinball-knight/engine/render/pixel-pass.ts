@@ -1224,6 +1224,22 @@ export interface PixelPass {
   target: THREE.WebGLRenderTarget;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
   /**
+   * The post chain's own scene, camera, quad and materials — for asking the
+   * renderer what WGSL it actually generated from this file's TSL.
+   *
+   * The quad is not in the game scene (it lives in a private ortho scene, so
+   * that nothing in the world can be drawn over it), which means a harness
+   * cannot reach it by traversal. `renderer.debug.getShaderAsync` needs the
+   * exact scene/camera/object triple the pipeline was compiled for, so all
+   * four come out together or the dump describes a different program.
+   */
+  debugPost(): {
+    scene: THREE.Scene;
+    camera: THREE.Camera;
+    quad: THREE.Mesh;
+    materials: Record<string, THREE.Material>;
+  };
+  /**
    * Present a frame that is NOTHING BUT THE UI — no scene, no bloom chain.
    *
    * ── WHY THIS EXISTS ──
@@ -1842,6 +1858,12 @@ export function createPixelPass(
   return {
     target: sceneTarget,
     render,
+    debugPost: () => ({
+      scene: quadScene,
+      camera: quadCam,
+      quad,
+      materials: { final: finalMat, bright: brightMat, blurH: blurMatH, blurV: blurMatV },
+    }),
     presentUi,
     withSceneContext,
     resize,
