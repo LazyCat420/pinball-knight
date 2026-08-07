@@ -42,7 +42,9 @@ export default function ForgePanel() {
   const [genJobs, setGenJobs] = useState<Record<string, Job>>({});
   const [tab, setTab] = useState<Tab>("generate");
   const [busy, setBusy] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; bad: boolean } | null>(null);
+  /** Bumped on every message so a stale expiry cannot wipe a newer one. */
+  const toastN = useRef(0);
   const [images, setImages] = useState<Record<SlotId, string | null>>({ init: null, end: null, style: null });
   const [mask, setMask] = useState<string | null>(null);
   const [modeRequest, setModeRequest] = useState<{ id: string; params?: Record<string, string>; n: number } | null>(null);
@@ -102,9 +104,28 @@ export default function ForgePanel() {
     return () => clearInterval(t);
   }, [refresh, dlJobs, genJobs]);
 
+  /**
+   * ── A FAILURE THAT CLEARS ITSELF IS A FAILURE NOBODY SAW ──────────────────
+   *
+   * `say` was the only channel, and it wiped after six seconds. So a button
+   * that hit a 502 looked identical to a button that did nothing: the reason
+   * appeared, uncounted, and then removed itself. Reported twice as "it queues
+   * then nothing happens", and both times the server had said exactly what was
+   * wrong.
+   *
+   * Successes still expire — they are noise once read. FAILURES STAY until the
+   * next action replaces them, and every one goes to the console as well, so
+   * there is a record after the banner is dismissed.
+   */
   const say = (s: string) => {
-    setToast(s);
-    setTimeout(() => setToast(null), 6000);
+    setToast({ text: s, bad: false });
+    const at = ++toastN.current;
+    setTimeout(() => setToast((t) => (at === toastN.current ? null : t)), 6000);
+  };
+  const fail = (s: string, err?: unknown) => {
+    toastN.current++;
+    setToast({ text: s, bad: true });
+    console.error("[forge]", s, err ?? "");
   };
 
   const setImage = (slot: SlotId, b64: string | null) => setImages((im) => ({ ...im, [slot]: b64 }));
@@ -121,7 +142,7 @@ export default function ForgePanel() {
       setTab("generate");
       say("frame loaded as the next init");
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
@@ -139,7 +160,7 @@ export default function ForgePanel() {
       requestMode("inbetween");
       say("frame pinned as the LAST frame — in-between mode");
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
@@ -151,7 +172,7 @@ export default function ForgePanel() {
       requestMode("touchup");
       say("frame loaded — brush over the wrong part");
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
@@ -163,16 +184,23 @@ export default function ForgePanel() {
       requestMode("edit", { prompt: pose ? `Redraw the character in this pose: ${pose}. Same character, same colors, same size, plain white background.` : "" });
       say("pose loaded into edit — tweak the wording and generate");
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
   const launch = async (body: Record<string, unknown>) => {
+    // Logged without the base64 images — they are megabytes of noise and the
+    // interesting part is always the mode, the params and whether an override
+    // rode along. This is the line that answers "did the click even fire, and
+    // with what", which is the first question every time the board stays empty.
+    const { imageB64: _i, endB64: _e, maskB64: _m, styleB64: _s, ...loggable } = body as Record<string, unknown>;
+    console.info("[forge] launch", { ...loggable, hasInit: !!body.imageB64 });
     const r = await postJSON("/api/comfy/generate", {
       ...body,
       project: library.activeProject ?? undefined,
       character: activeCharacter ?? undefined,
     });
+    console.info("[forge] queued", r.jobIds ?? [r.jobId]);
     say(`${(r.jobIds ?? [r.jobId]).length} job(s) queued${activeCharacter ? ` under ${activeCharacter}` : ""}`);
     void refresh();
   };
@@ -198,7 +226,7 @@ export default function ForgePanel() {
       const s = await (await fetch(`/api/comfy/generate?id=${id}`)).json();
       if (s.state === "running" || s.state === "queued") continue;
       if (s.state !== "done" || !s.frames?.length) {
-        say(s.error ?? `job ${s.state}`);
+        fail(s.error ?? `job ${s.state}`);
         return null;
       }
       // The cut-out saves BOTH a cutout and a mask; the cutout is the one that
@@ -206,7 +234,7 @@ export default function ForgePanel() {
       const want = s.frames.find((f: string) => f.includes("cut")) ?? s.frames[0];
       return urlToB64(`/api/comfy/generate?id=${id}&frame=${want}`);
     }
-    say("timed out waiting for the job");
+    fail("timed out waiting for the job");
     return null;
   };
 
@@ -230,7 +258,7 @@ export default function ForgePanel() {
    * hard-strikes on sustained pressure. Two facings is 2 x (rotate + animate).
    */
   const allAngles = async (id: string, job: Job, facings: string[]) => {
-    if (!job.frames?.length) return say("no frames on this job to rotate from");
+    if (!job.frames?.length) return fail("no frames on this job to rotate from");
     const preset = job.params?.preset;
     const mins = Math.round((facings.length * (260 + 550)) / 60);
     if (!confirm(`Generate ${preset ?? "this move"} for ${facings.join(" + ")}?\n\n${facings.length * 2} GPU jobs, roughly ${mins} minutes.\nEach facing is rotated from THIS clip's init, never from another facing.`)) return;
@@ -240,7 +268,7 @@ export default function ForgePanel() {
     for (const facing of facings) {
       say(`${facing}: rotating the master…`);
       const turned = await launchAndWait({ mode: "rotate", params: { facing }, imageB64: master });
-      if (!turned) return say(`${facing}: rotation failed — stopping before it animates the wrong thing`);
+      if (!turned) return fail(`${facing}: rotation failed — stopping before it animates the wrong thing`);
       say(`${facing}: animating ${preset ?? ""}…`);
       // `facing` rides along in params so the job label and id carry it; the
       // animate mode ignores it, the route's `facet` does not.
@@ -257,7 +285,7 @@ export default function ForgePanel() {
       say(`kept ${r.files.length} frame(s) → ${r.dir}`);
       void refreshLibrary(library.activeProject ?? undefined);
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
@@ -291,7 +319,7 @@ export default function ForgePanel() {
         init = await urlToB64(`/api/comfy/generate?id=${id}&frame=${job.frames[0]}`);
         say(`no init loaded — using this job's first frame (${job.frames[0]})`);
       }
-      if (!init) return say("load an init frame first (→ init on a finished frame)");
+      if (!init) return fail("load an init frame first (→ init on a finished frame)");
       await launch({
         mode: job.mode,
         params: edits?.params ?? job.params ?? {},
@@ -303,7 +331,7 @@ export default function ForgePanel() {
         ...(edits?.prompt ? { prompt: edits.prompt } : {}),
       });
     } catch (e: any) {
-      say(e.message);
+      fail(e.message, e);
     }
   };
 
@@ -379,7 +407,30 @@ export default function ForgePanel() {
           frames in → move sets out · generated art lands in sprite-forge/work/comfy/ · a staged sheet publishes with
           `npm run sprites`
         </p>
-        {toast && <div style={{ ...S.card, borderColor: "#4a3a2c", color: "#ffd9a0" }}>{toast}</div>}
+        {toast && (
+          <div
+            style={{
+              ...S.card,
+              borderColor: toast.bad ? "#5a2c2c" : "#4a3a2c",
+              color: toast.bad ? "#ffb0b0" : "#ffd9a0",
+              // Server messages are multi-line now (the guard log tail rides
+              // along), and collapsing them was hiding the actionable half.
+              whiteSpace: "pre-wrap",
+              fontFamily: toast.bad ? "ui-monospace, monospace" : undefined,
+              fontSize: toast.bad ? 12 : undefined,
+              display: "flex",
+              gap: 12,
+              alignItems: "flex-start",
+            }}
+          >
+            <span style={{ flex: 1 }}>{toast.text}</span>
+            {toast.bad && (
+              <button style={{ ...S.btn, ...S.btnGhost }} onClick={() => setToast(null)}>
+                dismiss
+              </button>
+            )}
+          </div>
+        )}
 
         {tab === "generate" && (
           <>
@@ -405,7 +456,7 @@ export default function ForgePanel() {
                   say("cancelled");
                   void refresh();
                 } catch (e: any) {
-                  say(e.message);
+                  fail(e.message, e);
                 }
               }}
               onReroll={reroll}
@@ -462,7 +513,7 @@ export default function ForgePanel() {
                   const r = await postJSON("/api/comfy/server", { action: a });
                   say(a === "start" ? (r.up ? "server is up" : r.note ?? "starting…") : "server stopped");
                 } catch (e: any) {
-                  say(e.message);
+                  fail(e.message, e);
                 } finally {
                   setBusy(null);
                   void refresh();
@@ -476,7 +527,7 @@ export default function ForgePanel() {
                   await postJSON("/api/comfy/settings", patch);
                   say("settings saved");
                 } catch (e: any) {
-                  say(e.message);
+                  fail(e.message, e);
                 } finally {
                   void refresh();
                 }
@@ -489,7 +540,7 @@ export default function ForgePanel() {
                 try {
                   await postJSON("/api/comfy/download", { optionId: id });
                 } catch (e: any) {
-                  say(e.message);
+                  fail(e.message, e);
                 } finally {
                   void refresh();
                 }
@@ -499,7 +550,7 @@ export default function ForgePanel() {
                   await postJSON("/api/comfy/settings", { chosen: { [slotId]: optionId } });
                   say("selection saved — generation will use it");
                 } catch (e: any) {
-                  say(e.message);
+                  fail(e.message, e);
                 } finally {
                   void refresh();
                 }

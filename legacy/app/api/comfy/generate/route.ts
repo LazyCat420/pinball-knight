@@ -29,7 +29,7 @@ import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
   assertNodes,
@@ -113,6 +113,32 @@ function framesOnDisk(id: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Why the backend is not answering, in the words of the thing that stopped it.
+ *
+ * The RAM guard writes one line per strike naming the cause, and a SOFT strike
+ * writes no `guard-tripped.json` — so the log is the only place it is recorded.
+ * It also strikes on WINDOWS HOST pressure, which `free` inside WSL cannot see:
+ * 2026-08-07 lost several runs with the host at 61.7GB while WSL reported 26GB
+ * available throughout. Without these lines the panel shows "fetch failed" and
+ * the obvious inference — something is broken in the code — is wrong.
+ */
+function guardHint(detail?: string): string {
+  let tail = "";
+  try {
+    const lines = readFileSync(join(homedir(), "comfy", "guard.log"), "utf8").trimEnd().split("\n");
+    tail = lines.slice(-3).join("\n");
+  } catch {
+    tail = "(no ~/comfy/guard.log)";
+  }
+  return (
+    `The RAM guard is the usual cause. It strikes on Windows host memory too, which\n` +
+    `free(1) inside WSL cannot see.\n\n` +
+    `Last guard lines:\n${tail}\n\n` +
+    `Restart:  ~/comfy/run.sh -d${detail ? `\n\n(${detail})` : ""}`
+  );
 }
 
 /**
@@ -437,7 +463,13 @@ export async function POST(req: Request) {
     if (body.maskB64) images.mask = await uploadB64(body.maskB64, "mask");
     if (body.styleB64) images.style = await uploadB64(body.styleB64, "style");
   } catch (e: any) {
-    return NextResponse.json({ error: `ComfyUI unreachable at ${settings.comfyUrl}: ${e.message}` }, { status: 502 });
+    // `ComfyUI unreachable: fetch failed` is true and useless. The cause is
+    // almost always the RAM guard, which names itself in one line in its own
+    // log — and it strikes on WINDOWS host pressure too, which nothing inside
+    // WSL can see. `cli.mjs` learned to quote that log after two sessions read
+    // the bare string as a model or settings fault; the panel had not.
+    console.error("[forge] upload failed — ComfyUI unreachable", e);
+    return NextResponse.json({ error: `ComfyUI is not answering at ${settings.comfyUrl}.\n\n${guardHint(e.message)}` }, { status: 502 });
   }
 
   const has = (optionId: string) => {
