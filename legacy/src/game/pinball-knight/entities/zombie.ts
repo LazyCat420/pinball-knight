@@ -795,7 +795,31 @@ export function updateZombies(dt: number): void {
     if (z.mode === "windup") {
       z.windupT += dt;
       z.anim.setFacing(facingFromWorld(pdx, pdz, "S"));
-      z.anim.play(ranged || z.kind === "fish_feet" ? "attack" : "idle"); // show attack clip during windup
+      // EVERY kind shows its attack clip during the windup, melee included.
+      //
+      // This read `ranged || z.kind === "fish_feet" ? "attack" : "idle"`, and
+      // the trailing comment said "show attack clip during windup" — which it
+      // did, for two of the twenty-two families. Every melee monster played
+      // `idle` and advertised its swing with the colour pulse alone.
+      //
+      // The cost was invisible because it was silent on BOTH sides: a family
+      // with a hand-posed attack (croaker's five frames, the jester's three,
+      // the zombie rig's two rows of four) packed those cells into its atlas
+      // and never drew one, and a family without an attack row lost nothing it
+      // had. So the sheets kept getting authored and the game kept not playing
+      // them. The brute's forged attack row is the case that made it visible —
+      // a creature whose whole reason to exist is a readable haymaker.
+      //
+      // Safe for the families that DON'T author an attack: `Animator.resolved`
+      // falls back per sheet, and any actor missing the row keeps playing what
+      // it plays today. Safe for the ones that do: the clip is one-shot
+      // (LOOPS.attack = false) and holds its final frame, which is the right
+      // shape for a wind-up that ends on a strike.
+      //
+      // The TELEGRAPH BELOW IS UNCHANGED and still owns readability. The pulse
+      // is what the dodge-roll's i-frame timing was tuned against; the clip is
+      // added on top of it, not in place of it.
+      z.anim.play("attack");
 
       // TELEGRAPH: pulse the body toward its attack colour across the windup, so
       // the bite is READABLE and a well-timed dodge-roll's i-frames can pass

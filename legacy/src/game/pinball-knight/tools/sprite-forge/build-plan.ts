@@ -289,3 +289,108 @@ export function deriveState(build: CharacterBuild): BuildState {
   if (rows.every((r) => r.state === "approved")) return "assembled";
   return "review";
 }
+
+/**
+ * WHAT A SHEET SET ON DISK COVERS, AGAINST THE SPEC ABOVE.
+ *
+ * `blockers()` answers this for a live `CharacterBuild` — a thing the planner
+ * owns, in memory, mid-build. Nothing answered it for the artefact that
+ * actually ships: the `public/sprites/*.json` a creature draws from. Those two
+ * are not the same question, because a sheet set can reach `public/` without
+ * ever having been a plan. Every creature in the game today did: jester,
+ * beaver, frog, fish_feet, zombie and brute were all assembled by hand or by a
+ * one-off prep script, and `DEFAULT_CLIPS` was written afterwards to describe
+ * what they SHOULD have been.
+ *
+ * So this measures the gap instead of assuming it away. It is deliberately a
+ * REPORT and not a gate: a partial import is a legitimate way to ship now that
+ * `paintsFor` merges per clip (boot/sheets.ts), so "the brute has no death row"
+ * is a fact to surface, not a build break. The one genuine error — no `idle`,
+ * which makes `importedPaints` drop the whole creature in silence — is called
+ * out as such, because that is the failure with a documented history of
+ * shipping unnoticed for weeks.
+ *
+ * Pure, and typed against `ManifestRow`'s shape structurally rather than
+ * importing `manifest.ts`, so this file keeps its no-node-imports guarantee and
+ * both the runtime boot log and the forge's vitest can call it.
+ */
+/**
+ * Clips an absent row costs NOTHING, because something downstream fills it.
+ *
+ * A report that flags by-design behaviour is a report people stop reading, and
+ * two of the six spec clips are filled automatically:
+ *
+ *   run     → `alias()` in render/imported-paints.ts hands it `walk`'s frames
+ *             BY REFERENCE and the animator plays them at the run frame rate.
+ *             Publishing a real `run` row is the thing `mislabel.test.ts`
+ *             rejects when it turns out to be walk's pixels again — which, on
+ *             most source sheets, it is ("Walk / Run" is one caption).
+ *   stumble → `withRecoil()` in render/cel-painter.ts derives a rocked-back
+ *             pose from idle frame 0 for any family that hasn't posed one, and
+ *             `CLIP_FALLBACK` degrades it to `idle` even if that fails.
+ *
+ * So the clips whose absence is a REAL hole are idle, walk, attack and death.
+ * They are reported separately from the covered two, because "brute has no
+ * death" is a work order and "brute has no run" is not.
+ */
+export const RUNTIME_COVERED: Readonly<Partial<Record<ClipName, string>>> = {
+  run: "aliased from walk",
+  stumble: "synthesized by withRecoil",
+};
+
+export interface SheetCoverage {
+  /** Facings authored on disk, and the ones `BUILD_DIRS` expects but is missing. */
+  facings: { authored: Dir[]; missing: Dir[] };
+  /**
+   * Spec clips with no row anywhere in the set, split by whether that costs
+   * anything. `missing` is the work list; `covered` is filled downstream (see
+   * `RUNTIME_COVERED`); `extra` is authored but outside the spec.
+   */
+  clips: { authored: ClipName[]; missing: ClipName[]; covered: ClipName[]; extra: string[] };
+  /** Rows present ÷ rows the spec asks for (clips × facings). */
+  rows: { have: number; want: number };
+  /** No `idle` on any facing — `importedPaints` returns null and nothing draws. */
+  fatal: boolean;
+  /** One line, ready for a console log or a test name. */
+  summary: string;
+}
+
+export function sheetCoverage(
+  sheets: readonly { dir: Dir; rows: readonly { clip: string }[] }[],
+  clips: readonly ClipSpec[] = DEFAULT_CLIPS,
+  dirs: readonly Dir[] = BUILD_DIRS,
+): SheetCoverage {
+  const want = clips.map((c) => c.clip);
+  const authoredDirs = [...new Set(sheets.map((s) => s.dir))];
+  const seen = new Set(sheets.flatMap((s) => s.rows.map((r) => r.clip)));
+  const authored = want.filter((c) => seen.has(c));
+  const absent = want.filter((c) => !seen.has(c));
+  const missing = absent.filter((c) => !RUNTIME_COVERED[c]);
+  const covered = absent.filter((c) => RUNTIME_COVERED[c]);
+  const extra = [...seen].filter((c) => !want.includes(c as ClipName));
+  // Rows are counted per (clip, facing) — the unit the spec is written in and
+  // the unit a facing-partial creature is short of. An S-only sheet with all
+  // six clips is 6/18, not 6/6: the game renders it facing the camera while it
+  // walks east, which is a real hole even though every clip "exists".
+  let have = 0;
+  for (const s of sheets) {
+    for (const r of s.rows) if (want.includes(r.clip as ClipName)) have++;
+  }
+  const fatal = !seen.has("idle");
+  const missingDirs = dirs.filter((d) => !authoredDirs.includes(d));
+  const parts = [`${have}/${want.length * dirs.length} rows`, `facings ${authoredDirs.join("+") || "none"}`];
+  if (missingDirs.length) parts.push(`no ${missingDirs.join("/")} art`);
+  // The work list first and unqualified; the harmless absences last and marked,
+  // so a skim reads the former and never mistakes the latter for a defect.
+  if (missing.length) parts.push(`NO ${missing.join("/").toUpperCase()}`);
+  if (extra.length) parts.push(`extra ${extra.join("/")}`);
+  if (covered.length) parts.push(`(${covered.map((c) => `${c}: ${RUNTIME_COVERED[c]}`).join(", ")})`);
+  if (fatal) parts.push("NO IDLE — the whole set is dropped");
+  return {
+    facings: { authored: authoredDirs, missing: missingDirs },
+    clips: { authored, missing, covered, extra },
+    rows: { have, want: want.length * dirs.length },
+    fatal,
+    summary: parts.join(" · "),
+  };
+}

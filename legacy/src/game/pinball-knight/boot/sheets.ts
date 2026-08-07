@@ -24,6 +24,7 @@ import { buildSpriteSheet, startSpriteSheet, type SheetBuild, type SheetBuildOpt
 import { syncAbilitySlots } from "../skill-runtime";
 import { activeWeapon, state } from "../state";
 import { authoredDirs, importedPaints, loadImportedSheet, sheetPalette, type ImportedSheet } from "../render/imported-paints";
+import { sheetCoverage } from "../tools/sprite-forge/build-plan";
 import { _clearPortraitCache } from "../render/monster-portrait";
 import type { Dir } from "../engine/render/paint-types";
 
@@ -265,9 +266,52 @@ export function sheetFor(key: SheetKey): SpriteSheet {
  */
 const imported = new Map<SheetKey, ActorPaints>();
 
-/** The art a key builds with: imported if it arrived, painted otherwise. */
+/**
+ * The art a key builds with: imported clips OVER the painter's, never INSTEAD
+ * of them.
+ *
+ * ── THE FALLBACK THAT WASN'T ────────────────────────────────────────────────
+ *
+ * This was `imported.get(key) ?? BUILDERS[key].make()` — all or nothing. The
+ * brute's commit (55f98e2) shipped a sheet with NO death row on the stated
+ * grounds that "a clip an imported sheet does not author falls through to the
+ * PAINTER by design". That is true of the PLAYER, whose `resolvePaints`
+ * (render/knight-sheets.ts) merges per clip. It was never true here, and the
+ * two paths having opposite semantics is exactly why the belief survived
+ * review: the sentence is correct, about the other file.
+ *
+ * What the brute actually got: `killZombie` plays `death`, the imported paints
+ * have no `death`, `death` has no CLIP_FALLBACK entry (only the four telegraph
+ * clips do), so `Animator.indices()` returns empty and `apply()` bails. The
+ * creature FREEZES on whichever frame it was mid-stride on and fades out as a
+ * statue. Silent, and invisible unless you kill one and watch it.
+ *
+ * Merging per clip fixes every partial import at once rather than per sheet,
+ * and it is what makes a partial import a legitimate way to ship: author the
+ * clips the generator got right, keep the painter for the rest. The brute keeps
+ * its hand-painted death until a death row is generated — which is what the
+ * commit message promised.
+ *
+ * MERGED PER DIRECTION, because a facing is the unit an import is partial in:
+ * a sheet that authors S only must not lose the painter's E walk. (Note that
+ * `importedPaints` has already fanned one authored facing out to all three by
+ * reference, so in practice `imported[E]` is populated even for an S-only
+ * sheet — but that is its policy, not ours to assume.)
+ *
+ * `beats` comes from the PAINTER: an imported sheet cannot declare one
+ * (`SheetManifest` has no such field), so taking the imported side's would
+ * always be dropping the painter's authored cadence for `undefined`.
+ */
 export function paintsFor(key: SheetKey): ActorPaints {
-  return imported.get(key) ?? BUILDERS[key].make();
+  const painted = BUILDERS[key].make();
+  const art = imported.get(key);
+  if (!art) return painted;
+  return {
+    S: { ...painted.S, ...art.S },
+    N: { ...painted.N, ...art.N },
+    E: { ...painted.E, ...art.E },
+    ...(painted.beats ? { beats: painted.beats } : {}),
+  };
 }
 
 /** Idle handle, so a teardown mid-backfill doesn't paint into a dead session. */
@@ -379,9 +423,20 @@ export async function applyImportedArt(): Promise<void> {
     const pal = sheetPalette(loaded);
     if (pal) importedPalettes.set(key, pal);
     _clearPortraitCache();
+    // COVERAGE AGAINST THE BUILD SPEC, not just "it loaded".
+    //
+    // The old line said how many sheets arrived and which facings, which reads
+    // as success for any number above zero — the brute logged "1 sheet(s) [S]"
+    // and that was the whole report on a creature carrying 3 of 18 rows. What
+    // is missing is the actionable half: no death row, no E, no N. Now the log
+    // names it, so the next person to look at the console learns what the
+    // creature still owes instead of that it exists.
+    const cov = sheetCoverage(loaded.map((s) => s.manifest));
     console.info(
       `[dungeon] ${key}: imported art from ${loaded.length} sheet(s) ` +
-        `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}`,
+        `[${authoredDirs(loaded).join("/")}]${loaded.length < 3 ? " — other facings reuse it" : ""}\n` +
+        `           coverage: ${cov.summary}` +
+        (cov.clips.missing.length ? ` (${cov.clips.missing.join("/")} fall through to the painter)` : ""),
     );
     rebuild(key);
   }

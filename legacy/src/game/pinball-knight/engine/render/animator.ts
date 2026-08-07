@@ -117,6 +117,50 @@ const CLIP_FALLBACK: Partial<Record<ClipName, ClipName>> = {
   wait: "walk",
   wake: "walk",
   stumble: "idle",
+  /**
+   * ATTACK, added when the windup stopped hard-coding `idle` for melee kinds
+   * (entities/zombie.ts). Before that change only ranged families ever asked
+   * for this clip, and every ranged family paints one — so the gap was real but
+   * unreachable.
+   *
+   * It is reachable now, and MOST of the roster falls through it: twelve
+   * painted families author no `attack` at all (zombie, spider, brute, boss,
+   * ghost, reaper, bat, slime, goblin, pin, golem, magnet). Without this entry
+   * every one of them would resolve to an empty index list the moment it wound
+   * up, and `apply()` bails on empty — a horde frozen mid-stride whenever it
+   * decided to swing. That is a far louder bug than the missing animation this
+   * wave set out to fix.
+   *
+   * `idle` is the honest target: it is exactly what those families played
+   * during a windup before, so a family with no attack art is unchanged, and
+   * the colour telegraph that has always carried the read is untouched.
+   */
+  attack: "idle",
+  /**
+   * RUN, which the PAINTED roster does not have and the IMPORTED roster gets
+   * for free — the asymmetry this closes.
+   *
+   * `alias()` in render/imported-paints.ts already hands `run` the `walk`
+   * frames by reference for any imported sheet, on the reasoning that one
+   * animation serves both gaits at different frame rates (most source sheets
+   * literally caption the row "Walk / Run"). Nothing did the same for a
+   * painter, so `run` resolved to an empty list on 21 of 22 painted families —
+   * measured with scripts/clip-probe.mjs against the live atlas.
+   *
+   * Latent today: the only monster that plays `run` is the croaker's airborne
+   * hop (entities/zombie.ts), and the croaker is imported, so `alias()` covers
+   * it. That is precisely why it is worth fixing now rather than when it bites
+   * — the next leap or charge policy pointed at a painted family would freeze
+   * it mid-air, and the symptom (a monster stuck in the air) would look like a
+   * physics bug, not an art one.
+   *
+   * `walk` and not `idle`, matching `alias()`: a sprinting creature playing its
+   * walk cycle at the run frame rate is how a run is drawn by hand anyway. The
+   * rate follows the resolved clip, so this plays walk's frames at walk's FPS —
+   * a touch slower than a real run would read, and still enormously better than
+   * a frozen frame.
+   */
+  run: "walk",
 };
 
 /**
