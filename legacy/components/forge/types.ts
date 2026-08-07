@@ -70,6 +70,13 @@ export type Job = {
   error?: string;
   tookS?: number;
   note?: string;
+  /**
+   * Per-frame dissolved-limb score, written once when the frames land — see
+   * `sprite-forge/ghost.ts`. ABSENT means "not measured", which is not the
+   * same as "clean": the scorer needs a native PNG decoder and is allowed to
+   * fail soft, so the panel must not draw a green badge from its silence.
+   */
+  ghost?: { pct: number[]; flagged: number[]; soft: number[]; level: string };
 };
 
 export type LibraryAsset = { label: string; url: string };

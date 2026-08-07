@@ -177,6 +177,13 @@ function JobCard({
   const [cutting, setCutting] = useState<string | null>(null);
   const c = STATE_COLOR[job.state] ?? GREY;
   const frames = (job.frames ?? []).map((f) => ({ name: f, src: `/api/comfy/generate?id=${id}&frame=${f}` }));
+  /**
+   * Frames whose limbs dissolved in the decode. Every add path filters against
+   * this set for the same reason the clip guard lives on `addToTray` and not on
+   * the buttons: there are four doors into the tray and a bad frame only has to
+   * find one of them.
+   */
+  const ghostFlagged = new Set(job.ghost?.flagged ?? []);
   const elapsed = job.startedAt ? Math.round((Date.now() - job.startedAt) / 1000) : null;
   const pct = job.progress && job.progress.max > 1 ? Math.round((job.progress.value / job.progress.max) * 100) : null;
 
@@ -269,18 +276,39 @@ function JobCard({
               ))}
             </select>
             {frames.length > 1 && (
-              <button style={{ ...S.btn, ...dimmed }} {...addProps} onClick={() => addToTray(frames.map((f) => f.src))}>
-                + add all {frames.length}
+              <button
+                style={{ ...S.btn, ...dimmed }}
+                {...addProps}
+                title={
+                  ghostFlagged.size
+                    ? `${ghostFlagged.size} frame(s) with a dissolved limb are left out — see the ✗ marks`
+                    : undefined
+                }
+                onClick={() => addToTray(frames.filter((_, i) => !ghostFlagged.has(i)).map((f) => f.src))}
+              >
+                {/* The count names what actually goes in. "add all 21" that
+                    quietly adds 14 is the kind of silent cap that reads as
+                    full coverage when it is not. */}
+                + add {frames.length - ghostFlagged.size}
+                {ghostFlagged.size ? ` clean of ${frames.length}` : ` all`}
               </button>
             )}
           </div>
           {frames.length > 6 ? (
-            <FramePlayer frames={frames} onAdd={addToTray} />
+            <FramePlayer frames={frames} onAdd={addToTray} ghost={job.ghost} />
           ) : (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-              {frames.map((f) => (
+              {frames.map((f, i) => (
                 <div key={f.name}>
-                  <RetryImg src={`${f.src}&w=256`} alt={f.name} style={{ width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4 }} />
+                  <RetryImg
+                    src={`${f.src}&w=256`}
+                    alt={f.name}
+                    title={ghostFlagged.has(i) ? `${f.name} — dissolved limb (ghost ${job.ghost?.pct?.[i]?.toFixed(2)}%)` : f.name}
+                    style={{
+                      width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4,
+                      ...(ghostFlagged.has(i) ? { outline: `2px solid ${RED.fg}`, opacity: 0.6 } : {}),
+                    }}
+                  />
                   <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                     <button style={{ ...S.btn, fontSize: 11 }} title="chain: next generation starts from this frame" onClick={() => onUseAsInit(f.src)}>
                       → init

@@ -79,6 +79,12 @@ type Job = {
   frames?: string[];
   error?: string;
   tookS?: number;
+  /**
+   * Per-frame ghost score — see `sprite-forge/ghost.ts`. Written once, when the
+   * frames land, because that is the only moment they exist un-matted and the
+   * metric's separation collapses after a key (95x → 2x, measured).
+   */
+  ghost?: { pct: number[]; flagged: number[]; soft: number[]; level: string };
 };
 const jobs: Map<string, Job> = (globalThis as any).__forgeGen ?? new Map();
 (globalThis as any).__forgeGen = jobs;
@@ -111,6 +117,44 @@ async function uploadB64(b64: string, tag: string): Promise<string> {
   const tmp = join(tmpdir(), `forge-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
   writeFileSync(tmp, Buffer.from(String(b64).replace(/^data:image\/\w+;base64,/, ""), "base64"));
   return uploadImage(tmp, `forge-${tag}-${Date.now()}.png`);
+}
+
+/**
+ * Score a finished clip for dissolved limbs, ON THE RAW FRAMES.
+ *
+ * ── WHY THIS IS ALLOWED TO FAIL SOFT, AND WHERE THE REAL GATE IS ────────────
+ *
+ * `canvas` is a native module and this runs inside Next's server runtime, which
+ * is exactly the sort of place a .node binary goes missing after a rebuild. The
+ * frames are already paid for by the time we get here, so a decoder that will
+ * not load must not throw away the generation — it degrades to "no ghost data"
+ * and says so in the log.
+ *
+ * That makes this an INSTRUMENT, not the guard. The guard is fail-closed and
+ * lives where art gets published (`prep-clips` / `driftRow`); a missing score
+ * here shows up as a job card with no badges, which reads as "not measured"
+ * rather than "measured clean" because the panel keys off `ghost` being absent.
+ */
+async function scoreGhosts(dir: string, frames: string[]): Promise<Job["ghost"]> {
+  if (frames.length < 2) return undefined;
+  try {
+    const { loadImage, createCanvas } = await import("canvas");
+    const { ghostClip } = await import("@/src/game/pinball-knight/tools/sprite-forge/ghost");
+    const cells = [];
+    for (const name of frames) {
+      const img = await loadImage(join(dir, name));
+      const c = createCanvas(img.width, img.height);
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, img.width, img.height);
+      cells.push({ width: img.width, height: img.height, data: d.data as unknown as Uint8ClampedArray });
+    }
+    const v = ghostClip(cells);
+    return { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
+  } catch (e: any) {
+    console.warn(`[forge] ghost scoring skipped: ${e?.message ?? e}`);
+    return undefined;
+  }
 }
 
 async function runJob(id: string, graph: any, clientId: string) {
@@ -146,6 +190,7 @@ async function runJob(id: string, graph: any, clientId: string) {
       frames.push(name);
     }
     Object.assign(job, { state: "done", frames, tookS: Math.round((Date.now() - t0) / 1000), progress: undefined, previewB64: undefined });
+    job.ghost = await scoreGhosts(dir, frames);
   } catch (e: any) {
     // A cancel surfaces here as an interrupted history or a timeout — keep
     // the cancelled state if DELETE already set it.

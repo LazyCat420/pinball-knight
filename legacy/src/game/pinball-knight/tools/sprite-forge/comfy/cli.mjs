@@ -34,6 +34,10 @@ import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 import { MODES, fastAvailable } from "./modes.mjs";
 import { optionById, chosenOption } from "./manifest.mjs";
 import { installState, loadSettings } from "./forge-config.mjs";
+// The gate runs HERE, on the raw frames, because this is the only place that
+// sees them before anything mattes or crops them — and `ghost.ts` measured its
+// own separation collapsing from 95x to 2x once a matte is applied.
+import { ghostClip } from "../ghost.ts";
 
 /**
  * THE SAME `ctx` THE PANEL ROUTE BUILDS — LoRAs, unet choices and all.
@@ -163,6 +167,46 @@ async function run(graph, dir, meta = {}) {
     writeFileSync(join(dir, name), buf);
     frames.push(name);
   }
+  // ── A RUN THAT PRODUCED NOTHING IS A FAILED RUN ──────────────────────────
+  //
+  // ComfyUI answers a guard-interrupted job with HTTP 200 and an empty output
+  // list, so this used to write `state: "done"` with `frames: []` and exit 0.
+  // `build-character.mjs` fires 18 of these unattended; every one of them could
+  // report success having produced nothing, which is the exact failure mode a
+  // green exit code is supposed to rule out. Read `~/comfy/guard.log` when this
+  // throws — a SOFT strike writes no `guard-tripped.json` and the log is the
+  // only place the cause is named.
+  if (frames.length === 0) {
+    writeFileSync(
+      join(dir, "job.json"),
+      JSON.stringify({ source: "cli", state: "failed", startedAt: t0, tookS: Math.round(Number(took)), promptId: id, frames: [], ...meta }, null, 1),
+    );
+    throw new Error(
+      `no frames after ${took}s — the backend returned an empty output. ` +
+      `Check ~/comfy/guard.log for a SOFT/HARD strike (it writes no guard-tripped.json on SOFT).`,
+    );
+  }
+
+  // ── THE GHOST GATE ───────────────────────────────────────────────────────
+  //
+  // Advisory here, on purpose: the frames are already paid for and dropping
+  // them is a curation decision, not a reason to throw away 435 seconds of
+  // GPU. What this MUST do is refuse to be silent, so the record carries the
+  // per-frame numbers and the panel can exclude the bad cells by default.
+  let ghost = null;
+  if (frames.length > 1) {
+    try {
+      const cells = [];
+      for (const name of frames) cells.push(await rawPng(join(dir, name)));
+      const v = ghostClip(cells, { label: meta.label ?? "clip" });
+      ghost = { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
+      if (v.flagged.length || v.soft.length) console.log(v.report);
+    } catch (err) {
+      // A scoring failure must not lose the frames. Say so and move on.
+      console.warn(`ghost gate skipped: ${err.message}`);
+    }
+  }
+
   // NB: `--file-as`, not `--character` — `retarget` already owns that flag
   // for its character IMAGE, and filing a run under a .png path would put
   // a junk row in the library.
@@ -179,6 +223,7 @@ async function run(graph, dir, meta = {}) {
         frames: frames.sort(),
         ...meta,
         ...(character ? { character } : {}),
+        ...(ghost ? { ghost } : {}),
       },
       null,
       1,
@@ -186,6 +231,16 @@ async function run(graph, dir, meta = {}) {
   );
   console.log(`${images.length} frame(s) in ${took}s -> ${dir}${character ? `  (filed under ${character})` : ""}`);
   return { images, took };
+}
+
+/** Decode a PNG to the `RawImage` the pure QA modules take. */
+async function rawPng(path) {
+  const { loadImage, createCanvas } = await import("canvas");
+  const img = await loadImage(path);
+  const c = createCanvas(img.width, img.height);
+  c.getContext("2d").drawImage(img, 0, 0);
+  const d = c.getContext("2d").getImageData(0, 0, img.width, img.height);
+  return { width: img.width, height: img.height, data: d.data };
 }
 
 const main = {
