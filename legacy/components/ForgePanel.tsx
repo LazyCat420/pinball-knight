@@ -109,9 +109,9 @@ export default function ForgePanel() {
 
   const setImage = (slot: SlotId, b64: string | null) => setImages((im) => ({ ...im, [slot]: b64 }));
 
-  const addToTray = (srcs: string[], clip: string) => {
-    setTray((t) => [...t, ...srcs.map((src) => ({ key: `f${trayKey.current++}`, src, clip }))]);
-    say(`${srcs.length} frame(s) → sheet tray (${clip})`);
+  const addToTray = (srcs: string[], clip: string, facing?: string) => {
+    setTray((t) => [...t, ...srcs.map((src) => ({ key: `f${trayKey.current++}`, src, clip, facing }))]);
+    say(`${srcs.length} frame(s) → sheet tray (${clip}${facing ? ` · ${facing}` : ""})`);
   };
 
   const useAsInit = async (src: string) => {

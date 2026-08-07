@@ -94,11 +94,21 @@ export type LibraryState = {
   characters: LibraryCharacter[];
 };
 
-/** A frame the user pulled aside for the sheet, tagged with its clip. */
+/**
+ * A frame the user pulled aside for the sheet, tagged with its clip — and,
+ * when the source knew it, its FACING.
+ *
+ * A sheet is one facing (`brute-S`), but the library shows `clip_S_walk` and
+ * `clip_E_walk` as two adjacent folders with the same clip name. Adding both
+ * would merge two facings into one `walk` row, and the result is a creature
+ * that spins on the spot as it walks — visible only after publishing. The tag
+ * is what lets the tray say so before the sheet is assembled.
+ */
 export type TrayFrame = {
   key: string;
   src: string;
   clip: string;
+  facing?: string;
 };
 
 /**

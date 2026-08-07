@@ -101,6 +101,7 @@ function FrameGroup({
   title,
   files,
   clip: declared,
+  facing,
   onInit,
   onStyle,
   onSheet,
@@ -108,9 +109,11 @@ function FrameGroup({
   title: string;
   files: { label: string; url: string }[];
   clip: string | null;
+  /** S/E/N when the folder name declares one — the tray checks rows against it. */
+  facing?: string;
   onInit: (url: string) => void;
   onStyle: (url: string) => void;
-  onSheet: (urls: string[], clip: string) => void;
+  onSheet: (urls: string[], clip: string, facing?: string) => void;
 }) {
   const [clip, setClip] = useState(declared ?? "");
   const sheetProps = clip
@@ -136,7 +139,7 @@ function FrameGroup({
           <button
             style={{ ...S.btn, fontSize: 10, padding: "0 6px", ...(clip ? {} : { opacity: 0.45, cursor: "not-allowed" }) }}
             {...sheetProps}
-            onClick={() => onSheet(files.map((f) => f.url), clip)}
+            onClick={() => onSheet(files.map((f) => f.url), clip, facing)}
           >
             + all {files.length}
           </button>
@@ -149,7 +152,7 @@ function FrameGroup({
             {...a}
             onInit={onInit}
             onStyle={onStyle}
-            onSheet={(url) => onSheet([url], clip)}
+            onSheet={(url) => onSheet([url], clip, facing)}
             sheetProps={sheetProps}
           />
         ))}
@@ -246,6 +249,7 @@ export function LibraryCard({
               title={`sources · ${s.drop}${s.group ? ` · ${s.group}` : " (tracked originals)"}`}
               files={s.files}
               clip={s.clip}
+              facing={/clip[_-]([SNE])[_-]/i.exec(s.group ?? "")?.[1]?.toUpperCase()}
               onInit={onInit}
               onStyle={onStyle}
               onSheet={onSheet}

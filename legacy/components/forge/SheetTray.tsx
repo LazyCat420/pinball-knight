@@ -127,17 +127,35 @@ export function SheetTray({
   const [cut, setCut] = useState<CutResult | null>(null);
   const [crush, setCrush] = useState<CrushResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [name, setName] = useState(suggestedName);
   const [staged, setStaged] = useState<string | null>(null);
-  const suggestedRef = React.useRef(suggestedName);
-  if (suggestedRef.current !== suggestedName) {
-    // A character change re-suggests only while the field is untouched or
-    // still holding the previous suggestion — typed names are never clobbered.
-    if (name === "" || name === suggestedRef.current) setName(suggestedName);
-    suggestedRef.current = suggestedName;
-  }
 
   const rowsInUse = useMemo(() => (CLIP_NAMES as readonly string[]).filter((c) => tray.some((f) => f.clip === c)), [tray]);
+
+  /**
+   * ONE SHEET IS ONE FACING. The library hands over `clip_S_walk` and
+   * `clip_E_walk` as adjacent folders with the same clip, so mixing them is
+   * two clicks and the result — a brute that spins as it walks — only shows
+   * up after publishing. Frames tagged with a facing are checked here; untagged
+   * frames (a job card, a hand-picked file) are not counted against it, because
+   * silence is not evidence of a mismatch.
+   */
+  const facings = useMemo(() => [...new Set(tray.map((f) => f.facing).filter(Boolean))] as string[], [tray]);
+  const mixedFacing = facings.length > 1;
+
+  // The suffix follows the frames, not the character card: picking S clips and
+  // staging them as `brute-E` publishes a whole facing wrong, and the field is
+  // prefilled long before the tray has anything in it.
+  const wantName =
+    facings.length === 1 && suggestedName ? suggestedName.replace(/-[ENS]$/, "") + `-${facings[0]}` : suggestedName;
+  const [name, setName] = useState(wantName);
+  const suggestedRef = React.useRef(wantName);
+  if (suggestedRef.current !== wantName) {
+    // A character (or facing) change re-suggests only while the field is
+    // untouched or still holding the previous suggestion — typed names are
+    // never clobbered.
+    if (name === "" || name === suggestedRef.current) setName(wantName);
+    suggestedRef.current = wantName;
+  }
 
   /**
    * THE CRUSH KNOBS, reachable at last.
@@ -261,6 +279,15 @@ export function SheetTray({
       <h2 style={S.cardTitle}>
         sheet
         <span style={S.chip(BLUE.fg, BLUE.bg)}>{tray.length} frame(s)</span>
+        {facings.length === 1 && <span style={S.chip(GREEN.fg, GREEN.bg)}>facing {facings[0]}</span>}
+        {mixedFacing && (
+          <span
+            style={S.chip(RED.fg, RED.bg)}
+            title="a sheet is ONE facing — publish these together and the creature turns as it moves. Drop one facing's frames, stage, then build the other."
+          >
+            ⚠ mixes facings {facings.join(" + ")}
+          </span>
+        )}
         <button style={{ ...S.btn, ...S.btnGhost, marginLeft: 8, fontSize: 11 }} onClick={() => { setTray([]); setSheet(null); setCut(null); setCrush(null); }}>
           clear
         </button>
@@ -272,9 +299,27 @@ export function SheetTray({
             {tray
               .filter((f) => f.clip === clip)
               .map((f, i, row) => (
-                <div key={f.key} style={{ textAlign: "center" }}>
+                <div key={f.key} style={{ textAlign: "center", position: "relative" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={f.src} alt={f.clip} style={{ width: 72, height: 72, objectFit: "contain", background: "#fff", borderRadius: 3 }} />
+                  {f.facing && mixedFacing && (
+                    // Only worth the ink when the rows disagree — a uniform tray
+                    // says its facing once, in the header.
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: 2,
+                        left: 2,
+                        fontSize: 10,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        background: RED.bg,
+                        color: RED.fg,
+                      }}
+                    >
+                      {f.facing}
+                    </span>
+                  )}
                   <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
                     <button style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "0 4px" }} disabled={i === 0} onClick={() => move(f.key, -1)}>
                       ←
