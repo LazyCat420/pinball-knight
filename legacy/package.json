@@ -15,6 +15,7 @@
     "test": "scripts/ops/pk-run.sh --class test -- vitest run",
     "test:raw": "vitest run",
     "test:budget": "scripts/with-cores.sh CPUS=4 --wsl -- vitest run",
+    "moveset": "scripts/ops/pk-run.sh --class webgpu -- node scripts/moveset-lab.mjs",
     "playtest": "scripts/ops/pk-run.sh --class webgpu -- node scripts/playtest.mjs",
     "playtest:gpu": "scripts/ops/pk-run.sh --class webgpu -- node scripts/playtest.mjs --gpu --profile",
     "playtest:soak": "scripts/ops/pk-run.sh --class webgpu -- node scripts/playtest.mjs --mode bounce --secs 300 --profile",

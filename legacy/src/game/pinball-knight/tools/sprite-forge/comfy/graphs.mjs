@@ -152,12 +152,49 @@ export function bgRemove({ image, model = "birefnet.safetensors" } = {}) {
  * callers that attach it must also pass its coupled steps/cfg (modes.mjs
  * owns those bundles; do not scatter them).
  */
+/**
+ * THE SHARED QWEN NEGATIVE.
+ *
+ * ── WHY IT BANS A GROUND SHADOW (2026-08-07) ────────────────────────────────
+ *
+ * The brute's restyled master came back standing on a soft lavender ellipse.
+ * Every positive prompt in `modes.mjs` asks for a "plain white background" and
+ * the model obliged — a cast shadow is not background, it is the subject's
+ * shadow, so nothing in the prompt forbade it.
+ *
+ * It is not cosmetic. Three things downstream take the silhouette as ground
+ * truth and all three are wrong with a shadow attached:
+ *
+ *   · `bbox()` in prep — the ellipse is wider than the figure, so every frame's
+ *     bbox is the shadow's, and the ONE-SCALE-ONE-BASELINE rule then sizes the
+ *     creature off it.
+ *   · `matte()` — a soft-edged gradient against white is the worst case for a
+ *     flood key; it leaves a fringe rather than a clean silhouette.
+ *   · frame SCORING — measured on the 21-frame walk clip: leg-stance spread
+ *     came back 227-242px for all 21 frames, because the constant shadow
+ *     dominated the band the measurement samples. A curation metric that
+ *     cannot see the legs cannot pick a walk cycle.
+ *
+ * Fixed in the NEGATIVE rather than in each mode's positive, deliberately. The
+ * `rotate` mode's prompt becomes a fixed `<sks> … eye-level shot medium shot`
+ * grammar when `fal-multi-angle` is installed — that grammar is what the LoRA
+ * was trained on and appending clauses to it is how it stops binding. One
+ * negative covers style, rotate, keyframes, edit, pixelize and touchup at once.
+ *
+ * Same shape as the fix `4823ec7` made to the Wan negative, which already bans
+ * `shadows` for exactly the same reason on the other leg.
+ */
+const QWEN_NEGATIVE =
+  "blurry, deformed, extra limbs, watermark, text, " +
+  "cast shadow, drop shadow, ground shadow, shadow under the character, " +
+  "reflection, floor, ground plane, platform, pedestal";
+
 export function qwenEdit({
   image,
   image2 = null,
   image3 = null,
   prompt,
-  negative = "blurry, deformed, extra limbs, watermark, text",
+  negative = QWEN_NEGATIVE,
   width = 1024,
   height = 1024,
   seed = 7,
@@ -319,7 +356,7 @@ export function qwenInpaint({
   image,
   mask,
   prompt,
-  negative = "blurry, deformed, extra limbs, watermark, text",
+  negative = QWEN_NEGATIVE,
   seed = 7,
   steps = 20,
   cfg = 2.5,
