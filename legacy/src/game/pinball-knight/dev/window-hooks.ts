@@ -59,6 +59,7 @@ import { ZOMBIE_TYPE_IDS } from "../zombie-types";
 import type { SpriteSheet } from "../engine/render/sprite";
 import type { DebugSpawnSpec, DebugSpawnResult } from "../debug-spawn";
 import { drawCensus } from "./draw-census";
+import { setFrenzyOverride } from "../sim/loop";
 
 /**
  * The core-owned actions the hooks drive. Injected (not imported) to keep the
@@ -923,6 +924,13 @@ export function installDevHooks(deps: DevHookDeps): void {
           commit: z.moveCommit ?? 0,
         }))
         .filter((e) => !policy || e.movement === policy);
+    /**
+     * `__dungeonFrenzy(v)` — pin the combo screen FX at `v` (0..1), `null` to
+     * release. See `setFrenzyOverride` in sim/loop.ts for why pinning the
+     * SOURCE is the only thing that holds.
+     */
+    (window as unknown as { __dungeonFrenzy?: (v: number | null) => void }).__dungeonFrenzy = (v) =>
+      setFrenzyOverride(v);
     /**
      * `__dungeonDraws()` — WHICH objects issue this frame's draw calls.
      *

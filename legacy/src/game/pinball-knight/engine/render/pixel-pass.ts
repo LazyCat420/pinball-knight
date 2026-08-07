@@ -421,12 +421,32 @@ function finalNode(
 
   // ── Chromatic aberration: split R/B outward from centre. `uAberration = 0`
   // must reduce to EXACTLY the single-tap fetch, so it is a mix, not a scale.
-  // ⚠️ The split is applied to the ALBEDO, not to the lit diffuse. Hue is chosen
-  // from the albedo now (see the snap below), so splitting the lit buffer would
-  // move only the luma and the frenzy fringe would be invisible after the snap.
+  // ── FRENZY CHROMATIC ABERRATION, ON THE LIT BUFFER ────────────────────────
+  //
+  // It used to split the ALBEDO instead, and the reason was sound at the time:
+  // while the screen-space palette snap was live it chose HUE from the albedo,
+  // so a split of the lit buffer moved only the luma and the fringe vanished
+  // into the snap. Correct then, exactly inverted now.
+  //
+  // The snap retired on 2026-08-03 (`QUANTIZE_DEFAULT = false`), and with it
+  // the albedo stopped reaching the screen at all — `alb`'s only consumer is
+  // the snap, whose result is `mix(..., u.quantize)` with quantize pinned to 0.
+  // So the effect went on being computed, and ramped every rendered frame by
+  // `setFrenzyFx`, while rendering NOTHING. Nobody had seen it in months.
+  //
+  // Measured back to life on the buffer that is actually presented. Same two
+  // taps: they moved here from the albedo rather than being added, because a
+  // split albedo is now the half that cannot be seen.
   const off = sceneUv.sub(0.5).mul(u.aberration);
   const plain = texture(diffuse, sceneUv).rgb;
-  let col: TSLNode = plain;
+  const split = vec3(
+    texture(diffuse, sceneUv.add(off)).r,
+    plain.g,
+    texture(diffuse, sceneUv.sub(off)).b,
+  );
+  // Gated on the uniform rather than always mixing, so a frame with no combo
+  // running pays nothing for the fringe beyond the two taps.
+  let col: TSLNode = mix(plain, split, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
 
   // ── THE ALBEDO TARGET — the material, before any light touched it.
   //
@@ -446,13 +466,12 @@ function finalNode(
   // fixes that were on the table (desaturate the torch, whiten it, raise the
   // ambient) each move that number by three to five points. There was nothing
   // cheaper to try.
+  // NOT split — see the aberration note above. If the screen-space snap is ever
+  // revived, the fringe has to move BACK here (and `col`'s split comes out),
+  // because a snap that reads hue from a plain albedo would quantise the fringe
+  // straight back out of the picture.
   const albPlain = texture(albedoTex, sceneUv).rgb;
-  const albSplit = vec3(
-    texture(albedoTex, sceneUv.add(off)).r,
-    albPlain.g,
-    texture(albedoTex, sceneUv.sub(off)).b,
-  );
-  let alb: TSLNode = mix(albPlain, albSplit, u.aberration.greaterThan(0.0001).select(float(1), float(0)));
+  let alb: TSLNode = albPlain;
 
   // ── Screen-space AO from the (ortho ⇒ linear) depth buffer. A concave corner
   // has neighbours CLOSER than the centre; sample a ring at two radii and

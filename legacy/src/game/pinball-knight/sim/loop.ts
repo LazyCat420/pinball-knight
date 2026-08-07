@@ -65,6 +65,28 @@ let heatT = 0;
 let gpuResolveInFlight = false;
 
 /**
+ * `__dungeonFrenzy(v)` — pin the frenzy screen FX, or `null` to hand it back.
+ *
+ * The vignette pull and the chromatic-aberration fringe are driven from the
+ * bounce combo and rewritten EVERY rendered frame, so poking
+ * `pixelPass.setFrenzyFx` from a console or a harness is overwritten before the
+ * next frame reaches the screen. Pinning the source is the only way to hold the
+ * effect still long enough to look at it.
+ *
+ * This exists because the aberration spent months rendering nothing (it split a
+ * buffer the retired palette snap had stopped consuming) and NOTHING could have
+ * caught that: it is invisible at combo 0, which is where every screenshot and
+ * every headless run sits. A QA lever for an effect that only appears mid-combo
+ * is the difference between a look bug that gets noticed and one that does not.
+ */
+let frenzyOverride: number | null = null;
+
+/** See `frenzyOverride`. Clamped — the shader's fringe is unbounded above. */
+export function setFrenzyOverride(v: number | null): void {
+  frenzyOverride = v === null ? null : Math.max(0, Math.min(1, v));
+}
+
+/**
  * Split the frame's GPU time across the passes that actually spent it.
  *
  * ── WHY THE TOTAL IS NOT ENOUGH ────────────────────────────────────────────
@@ -393,7 +415,7 @@ export function loop(now: number): void {
   // lapses. sin() on real elapsed time is fine here — it never touches the sim.
   const fBase = frenzyIntensity(combo);
   const fPulse = fBase > 0 ? fBase * (0.78 + 0.22 * Math.sin(state.elapsed * 7)) : 0;
-  state.pixelPass?.setFrenzyFx(fPulse);
+  state.pixelPass?.setFrenzyFx(frenzyOverride ?? fPulse);
 
   // Katana-finisher screen flash: decays on REAL frame time (not sim dt) so it
   // plays through the very hitstop the finisher causes — freeze + white-out
