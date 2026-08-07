@@ -1224,6 +1224,17 @@ export interface PixelPass {
   target: THREE.WebGLRenderTarget;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
   /**
+   * The passes the LAST `render()` issued, in submission order.
+   *
+   * The GPU timestamp pool returns one duration per render context in the order
+   * they were allocated, with no names attached. Zipping that against this list
+   * is what turns "the frame cost 3.7 ms on the GPU" into "the scene cost 2.1
+   * and the composite cost 1.2" — the only form of the number that can point at
+   * something to fix. The bloom chain is conditional, so this is the truth
+   * about what ran rather than a fixed list.
+   */
+  passOrder(): readonly string[];
+  /**
    * The post chain's own scene, camera, quad and materials — for asking the
    * renderer what WGSL it actually generated from this file's TSL.
    *
@@ -1628,9 +1639,24 @@ export function createPixelPass(
   const quad: THREE.Mesh = new THREE.Mesh(quadGeo, finalMat);
   quadScene.add(quad);
 
-  function blit(material: THREE.Material, dest: THREE.WebGLRenderTarget | null): void {
+  /**
+   * The passes this frame issued, in submission order.
+   *
+   * The GPU timestamp pool records one duration per render context and hands
+   * them back in the order they were allocated — which is submission order —
+   * but with no names on them. This is the other half: the names, in the same
+   * order, so `sim/loop.ts` can zip the two and say WHICH pass cost what
+   * instead of reporting one total for the whole frame.
+   *
+   * Reused, never reallocated, and the bloom chain is conditional — so the
+   * length is the truth about what ran this frame, not a fixed list.
+   */
+  const passOrder: string[] = [];
+
+  function blit(material: THREE.Material, dest: THREE.WebGLRenderTarget | null, label = "blit"): void {
     quad.material = material;
     renderer.setRenderTarget(dest);
+    passOrder.push(label);
     renderer.render(quadScene, quadCam);
   }
 
@@ -1732,6 +1758,10 @@ export function createPixelPass(
     // during normal play, so this only does anything mid-warm.
     const entry = renderer.getRenderTarget();
     syncCameraFrustum(camera);
+    // Cleared at the TOP of the frame, not the bottom: the timestamp resolve is
+    // async and reads this a frame or two later, so a list emptied on the way
+    // out would always be read empty.
+    passOrder.length = 0;
 
     // 1. Scene → linear target (+ depth), writing lit AND albedo.
     //
@@ -1743,24 +1773,25 @@ export function createPixelPass(
     renderer.setRenderTarget(sceneTarget);
     renderer.setMRT(sceneMrt);
     renderer.clear();
+    passOrder.push("scene");
     renderer.render(scene, camera);
     renderer.setMRT(null);
 
     // 2. Bloom chain (skipped when strength is 0).
     if (finalUniforms.bloom.value > 0.001) {
-      blit(brightMat, bloomA);
+      blit(brightMat, bloomA, "bloom.bright");
 
       // H then V. Each direction has its own material because a node graph
       // binds its source texture at build time (see the note above).
       blurDir.value.set(BLOOM_RADIUS / BW, 0);
-      blit(blurMatH, bloomB); // reads bloomA
+      blit(blurMatH, bloomB, "bloom.blurH"); // reads bloomA
 
       blurDir.value.set(0, BLOOM_RADIUS / BH);
-      blit(blurMatV, bloomA); // reads bloomB; blurred bloom lands back in bloomA
+      blit(blurMatV, bloomA, "bloom.blurV"); // reads bloomB; blurred bloom lands back in bloomA
     }
 
     // 3. Composite + cel quantize → screen.
-    blit(finalMat, null);
+    blit(finalMat, null, "composite");
     if (entry !== null) renderer.setRenderTarget(entry);
   }
 
@@ -1858,6 +1889,7 @@ export function createPixelPass(
   return {
     target: sceneTarget,
     render,
+    passOrder: () => passOrder,
     debugPost: () => ({
       scene: quadScene,
       camera: quadCam,

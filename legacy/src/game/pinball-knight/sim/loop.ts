@@ -64,6 +64,69 @@ let heatT = 0;
  */
 let gpuResolveInFlight = false;
 
+/**
+ * Split the frame's GPU time across the passes that actually spent it.
+ *
+ * ── WHY THE TOTAL IS NOT ENOUGH ────────────────────────────────────────────
+ * "GPU render: 3.7 ms" cannot be acted on. Six passes ran inside it — the
+ * scene, three bloom quads and the composite — and they have completely
+ * different fixes: the scene is draw calls and geometry, the composite is a
+ * fullscreen fragment shader. Optimising the wrong one is the default outcome
+ * of a single number, and this file has already been the source of one such
+ * mistake (`pixelPass.render` is CPU SUBMISSION, and was read as GPU cost).
+ *
+ * ── HOW THE NAMES GET ATTACHED ─────────────────────────────────────────────
+ * three's timestamp pool keys each duration by `${contextId}:f${frameId}` and
+ * returns them in ALLOCATION order, which is submission order — but with no
+ * names. `pixelPass.passOrder()` is the same sequence with names on it, so the
+ * two zip.
+ *
+ * The resolve lands a frame or two after the frame it describes, so the two
+ * lists can be one frame apart. That mislabels nothing in steady state (the
+ * sequence is identical every frame); when it is NOT identical — the bloom
+ * chain switching off changes the length — the length check drops the sample
+ * rather than attributing the composite's cost to a blur.
+ */
+function recordGpuPasses(): void {
+  const pool = (
+    state.renderer as unknown as {
+      backend?: { timestampQueryPool?: Record<string, { timestamps?: Map<string, number> }> };
+    }
+  )?.backend?.timestampQueryPool?.render;
+  const stamps = pool?.timestamps;
+  const labels = state.pixelPass?.passOrder();
+  if (!stamps || !labels || labels.length === 0) return;
+
+  // Group by frame, keeping submission order inside each. The NEWEST frame is
+  // usually a PARTIAL one — the resolve is fired from inside the frame it is
+  // measuring, so the passes after it have not been allocated yet — which threw
+  // away half of every run's samples when this took the newest frame blindly.
+  // Half a run discarded by a mechanism nobody had explained is not a sampling
+  // rate, it is an unread bias, so this takes the newest COMPLETE frame.
+  const frameOf = (uid: string): number => Number(uid.slice(uid.lastIndexOf(":f") + 2));
+  const byFrame = new Map<number, number[]>();
+  for (const [uid, ms] of stamps) {
+    const f = frameOf(uid);
+    const row = byFrame.get(f);
+    if (row) row.push(ms);
+    else byFrame.set(f, [ms]);
+  }
+
+  let durations: number[] | undefined;
+  let bestFrame = -1;
+  for (const [f, row] of byFrame) {
+    if (row.length === labels.length && f > bestFrame) {
+      bestFrame = f;
+      durations = row;
+    }
+  }
+  if (!durations) return;
+
+  for (let i = 0; i < labels.length; i++) {
+    profCount(`GPU ${labels[i]} (µs)`, Math.round(durations[i]! * 1000));
+  }
+}
+
 export function resetSimClock(): void {
   simLoop.reset();
 }
@@ -375,7 +438,7 @@ export function loop(now: number): void {
       //
       // `drawCalls` is the per-frame one, and it only means anything because of
       // the `info.reset()` at the top of this function.
-      // ── THE GPU NUMBER ──
+      // ── THE GPU NUMBER, AND WHERE IT WENT ──
       // Everything else in this profile is CPU submission. This is the only
       // figure that reflects what the GPU actually spent, read back from the
       // timestamp queries armed in boot/renderer.ts.
@@ -391,6 +454,7 @@ export function loop(now: number): void {
           .then(() => {
             const ms = state.renderer?.info.render.timestamp ?? 0;
             if (ms > 0) profCount("GPU render (µs)", Math.round(ms * 1000));
+            recordGpuPasses();
           })
           .catch(() => {
             /* adapter without timestamp-query — stay silent, never spam */
