@@ -290,17 +290,38 @@ export function qaFrame(img: RawImage, opts: { sourceH?: number; afterStyle?: bo
     });
   }
 
-  // ── 10. pixel-grid verdict — information, never a gate ──────────────────
+  // ── 10. pixel-grid verdict ───────────────────────────────────────────────
+  //
+  // THIS USED TO BE `pass: true`, HARDCODED, LABELLED "information, never a
+  // gate". A check that passes for both states is not a check, and this one had
+  // a job: it is the only thing in the forge that can tell art DRAWN on a pixel
+  // lattice from a smooth painting that will be crushed onto one.
+  //
+  // What it cost, on 2026-08-07: a full brute moveset generated as continuous
+  // anti-aliased art carried a `grid` line reading "continuous — will be
+  // resampled" and still finished READY, because the line could not fail. It
+  // was published and rejected on sight, and reverted in 7035534. Every other
+  // check in this file measures the crush's OUTPUT — coverage, isolated texels,
+  // matte keying — and the crush makes any input look like pixel art, which is
+  // exactly why `commit.ts`'s post-reduce report scored the rejected sheet and
+  // the liked one identically at `×8, confidence 100%, cell purity 100%`.
+  //
+  // SOFT, not hard, and deliberately. Every sanctioned import in the tree today
+  // (jester, rotortail, croaker, fish_feet) came in as continuous art and works;
+  // a hard gate would reject the existing roster to make a point. Soft moves the
+  // verdict from READY to USABLE, which is the honest description — this art can
+  // ship, and it is not what it claims to be.
   if (opts.afterStyle) {
     const grid = detectPixelGrid({ width: w, height: h, data }, [[bx0, by0, bx1, by1]]);
     add({
       id: "grid",
       label: "pixel lattice",
       value: grid.gridded ? `×${grid.factor} — imports 1:1` : "continuous — will be resampled",
-      want: "informational",
-      pass: true,
+      want: "drawn on a lattice",
+      pass: grid.gridded,
       soft: true,
       why: grid.verdict,
+      fix: "this is generated-illustration shape, not pixel art. Nothing downstream can add a lattice that the art does not have — the crush only imposes one. See docs/PLAN_KEYFRAME_PIPELINE.md.",
     });
   }
 
