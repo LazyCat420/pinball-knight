@@ -7,22 +7,14 @@
  * was `__lab.playAs("frog")` followed by a page reload, which is a console
  * incantation and a refresh — not a choice.
  *
- * ── IT IS OPENED FROM THE MENU, NOT ON ENTRY (changed 2026-08-07) ───────────
+ * ── WHY IT SITS ON TOP OF THE TAVERN, NOT BEFORE IT ─────────────────────────
  *
- * `openLobby` used to push this the instant the title sequence ended. Two things
- * were wrong with that, and only the first is cosmetic:
- *
- *   • Every full-screen sheet paints `scrim(f)` — `UI.scrim`, palette 0 at 82%.
- *     Sitting "on top of the tavern" therefore meant sitting on a tavern dimmed
- *     to near-black, and the tavern had barely built anyway. What shipped was a
- *     brown panel floating on nothing, which reads as an OS dialog rather than
- *     as the room the intro just promised. Reported from the live site.
- *   • The answer is STORED. `playerSheetName()` reads localStorage, so on entry
- *     the question is already answered for everyone except a first-time visitor.
- *
- * So the route is now the GEAR tab of the Esc/I menu, under APPEARANCE, beside
- * the plate and the hands — reachable from the tavern and mid-run, and asked for
- * rather than imposed. `dev/gui-hooks.ts` still pushes it directly for QA.
+ * Nothing paints between the intro and the lobby. The GUI stack is drawn by
+ * whoever owns the frame loop, and between `runPinballIntro`'s last frame and
+ * `enterTavern`'s first there is no such owner — a screen pushed in that gap
+ * would be open, correct, and invisible. The tavern calls `drawUiFrame`, so the
+ * select is pushed WITH the lobby and paints over it. That also matches what the
+ * lobby is for: it is the room you stand in before you descend.
  *
  * ── PREVIEWS ARE THE REAL SHEET ─────────────────────────────────────────────
  *

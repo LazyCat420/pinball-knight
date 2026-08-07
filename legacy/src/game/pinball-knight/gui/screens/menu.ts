@@ -70,8 +70,6 @@ import { abilityIcon, drawIcon, glyph, itemIcon, type GlyphId } from "../icons";
 import { cardFaceAt, CARD_W, CARD_H } from "../card-face";
 import { pop, push, type UiScreen } from "../stack";
 import { settingsBody } from "./settings";
-import { characterSelectScreen } from "./character-select";
-import { PLAYABLE, playerSheetName } from "../../render/knight-sheets";
 
 /**
  * What each ability GAINS at rank 2, printed on its row.
@@ -165,35 +163,6 @@ function flash(m: MenuState, msg: string): void {
 function equipmentTab(f: UiFrame, body: Rect, m: MenuState): number {
   let y = 0;
   const line = (h: number): Rect => cutTop(body, h);
-
-  // ── APPEARANCE ──
-  // WHO you play as, on the tab that already answers "what am I wearing".
-  //
-  // This is the only route to the character select, and that is the point. It
-  // used to be a modal `openLobby` pushed the moment the title sequence ended —
-  // a full-screen sheet, and every sheet paints `scrim(f)` at 82%, so the tavern
-  // it was supposed to sit over read as black and the whole thing looked like an
-  // OS dialog instead of the room you were promised. The choice is also stored
-  // (`playerSheetName()` reads localStorage), so entry is the one moment it has
-  // already been answered. Here it is a row you go to when you want it, in the
-  // tavern or mid-run, and no harness can be parked on it.
-  heading(f, line(ROW_H), "APPEARANCE");
-  {
-    const r = line(36);
-    y += 36;
-    well(f, r);
-    const row = { ...r };
-    const btnBox = cutRight(row, 96);
-    // Fall back to the first entry rather than printing the raw sheet name: a
-    // stored choice whose entry was later removed from PLAYABLE is not a label.
-    const cur = PLAYABLE.find((c) => c.sheet === playerSheetName()) ?? PLAYABLE[0];
-    text(f, cur.label, row.x + 4, row.y + 6, { size: 8, colour: UI.text, max: row.w - 8 });
-    text(f, cur.blurb, row.x + 4, row.y + 20, { size: 8, colour: UI.textDim, max: row.w - 8 });
-    if (button(f, { x: btnBox.x, y: btnBox.y + 7, w: 88, h: 22 }, "CHANGE")) {
-      push(characterSelectScreen(() => {}));
-    }
-  }
-  cutTop(body, 4);
 
   heading(f, line(ROW_H), "HANDS — TAB swaps in the field");
   for (let i = 0; i < WEAPON_SLOTS; i++) {

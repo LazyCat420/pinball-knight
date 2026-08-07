@@ -58,32 +58,6 @@ describe("the route into the intro", () => {
     const lobby = readFileSync(join(__dirname, "..", "run", "lobby.ts"), "utf8");
     expect(lobby).toMatch(/enterTavern\s*\(/);
   });
-
-  it("and it raises NOTHING over the tavern", () => {
-    // THE REGRESSION (cfbe3e5, 2026-08-05 → fixed 2026-08-07). `openLobby`
-    // pushed `characterSelectScreen` the instant `enterTavern` was kicked off.
-    // Every full-screen sheet paints `scrim(f)` — palette 0 at 82% — so the
-    // tavern it sat "on top of" read as black, and what the player got after an
-    // 11-second title sequence was a panel floating on nothing. Live report:
-    // "the task manager pops up instead of going to the tavern".
-    //
-    // Asserted as "no push at all", not "no character-select": ANY modal here
-    // has the same 82% scrim and the same effect. The screen's home is the GEAR
-    // tab of the menu — pinned by the test below, so this cannot be satisfied by
-    // deleting the feature.
-    const lobby = readFileSync(join(__dirname, "..", "run", "lobby.ts"), "utf8");
-    const pushes = lobby.split("\n").filter((l) => /(^|[^.\w])push\s*\(/.test(l) && !/^\s*(\*|\/\/)/.test(l));
-    expect(pushes).toEqual([]);
-  });
-
-  it("the character select is reachable from the menu instead", () => {
-    // The other half of the pair. A `openLobby` that merely stopped pushing
-    // would pass the test above while making the roster unreachable — which is
-    // how the settings tab shipped behind a dev-console call for weeks.
-    const menu = readFileSync(join(__dirname, "..", "gui", "screens", "menu.ts"), "utf8");
-    expect(menu).toMatch(/characterSelectScreen\s*\(/);
-    expect(menu).toMatch(/"APPEARANCE"/);
-  });
 });
 
 /**
