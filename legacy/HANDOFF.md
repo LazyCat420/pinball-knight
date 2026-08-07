@@ -58,14 +58,52 @@ changes nothing the compiler sees.
 ⚠️ **`/admin/bird-viewer` now needs a secure context**, because WebGPU does.
 Over `http://` to a bare LAN IP it prints the reason instead of drawing.
 
-### Next, and it is a gate, not a suggestion
+### Also shipped: Phase B0 — the per-kind census, which then rewrote its own plan
 
-**Phase B0: a per-kind draw census before any instancing work.** This repo has
-already been wrong twice about part counts — "instance the torches, ~100 draws"
-was ~22, and a *static* count of `new THREE.Mesh(` calls reports a booster as 3
-meshes when it is 6 (the strips and chevrons are built in `for` loops). Run
-`__dungeonDraws()` and record `culled` next to `draws`: instancing removes the
-cull, so a sparse kind can get **worse**. That is the one way Phase B loses.
+Three floors, real adapter, 1080p, 14 s of bot play each
+(`node scripts/draw-census.mjs --secs 14 --seed <42|777|1337>`). Full table in
+`docs/webgpu-next-plan.md` §B0. Seed 42 reproduces HANDOFF's independent
+"130 of 248" exactly — the cross-check that says the tool still measures the
+same thing.
+
+**draws / culled:**
+
+| kind | 42 | 777 | 1337 |
+|---|---|---|---|
+| **booster** | **66** / 0 | **30** / 48 | **36** / 66 |
+| bumper | 18 / **75** | 9 / **84** | 6 / **69** |
+| spinpad | 20 / 15 | 5 / 25 | 0 / 5 |
+| ramp / boostcorner / boostcurve | 0 / 7 | 0 / 28 | 7 / 10 |
+| all parts | 130 of 227 | 71 of 165 | 64 of 159 |
+
+1. **The booster is the entire project.** #1 on all three floors at 2–3× the
+   runner-up, and on seed 42 it is 66 draws with **zero culled**. 66 → 3.
+2. **Do not instance bumpers.** 6–18 drawn against 69–84 culled — instancing
+   trades ~12 draws for ~85 instances the frustum currently discards for free.
+   Bumper was **second on the plan's list before the census ran**.
+3. **`ramp`/`boostcorner`/`boostcurve` cost nothing** and were on that list as
+   "identical shape, follows mechanically". Mechanical is not a reason to spend.
+
+Two of the three findings deleted work the plan had already scheduled. **Re-run
+the census after the booster lands** — with 30–66 draws gone the ranking is a
+different ranking, and carrying an old ordering forward is exactly what B0
+exists to stop.
+
+**Unexplained, left honest:** the census prints `renderer says 0` every run.
+`__dungeonRenderInfo()` (`dev/window-hooks.ts:844`) returns populated `memory`
+counters and `render.drawCalls: 0`, so the tool's cross-check line is dead. The
+attribution is unaffected — `dev/draw-census.ts` reimplements the cull and never
+reads `renderer.info`. Probably `renderAsync` resetting `info.render` at the top
+of the frame the `evaluate()` lands inside. That is a hypothesis; nobody tested it.
+
+### Next
+
+**Phase B1/B2 — the booster instancer.** `docs/webgpu-next-plan.md` has the
+substrate design and the two traps that decide whether it works: a new node
+material must never use `fragmentNode` (it skips `setupDiffuseColor`, writes an
+unassigned albedo and renders as a silhouette-shaped **hole**), and it must be
+built inside `withSceneContext` or it emits a 1-output shader and fails the same
+way from the other side. `npm run playtest:gpu` is the only check that sees either.
 
 ## 🔬 SHADERS INTO FILES, AND THREE MEASUREMENTS THAT KILLED THEIR OWN PLANS (2026-08-06, `main` @ b2f64b4, DEPLOYED)
 

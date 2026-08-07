@@ -123,7 +123,7 @@ red test out of working code.
 cannot be merged — and the animation is exactly why parts cost 130 draws.
 **Do not re-attempt the merge.** See HANDOFF, measurement 2.
 
-### B0 — Census first, and per-kind. **Nothing else in Phase B starts until this exists.**
+### B0 — Census first, and per-kind ✅ **DONE 2026-08-07 — and it reorders B3**
 
 This repo has already shipped one plan built on an estimated draw count and been
 wrong by 5× ("instance the torches, ~100 draws" — it was ~22). It has now been
@@ -131,17 +131,54 @@ wrong a second way: a **static** count of `new THREE.Mesh(` in `pinball-parts.ts
 reports a booster as 3 meshes. It is 6. The strips and chevrons are built in
 `for` loops, so even the object count cannot be read off the source.
 
-- [ ] Run `__dungeonDraws()` on 3+ floors and record **per part kind**, not just
-      the `part:*` total. `dev/draw-census.ts` already labels by nearest named
-      ancestor and `createPinballParts` already names groups `part:<kind>`, so
-      the data is there — it needs collecting into a table.
-- [ ] Record `culled` alongside `draws`. Instancing removes the cull, so a kind
-      with a high culled count can get *worse*: 100 instances in one draw are
-      100 instances submitted, where 100 separate meshes were 20 draws and 80
-      skips. **This is the one way Phase B can lose, and the census is what
-      predicts it.** Torches won because they are dense and mostly visible.
-- [ ] Rank kinds by `draws`, and take them in that order. Booster is presumed
-      first; the census gets to overrule that.
+Measured on `main` @ f339a87, real adapter (nvidia/ampere through host Chrome),
+1920×1080, 14 s of bot play per run:
+
+    scripts/ops/pk-run.sh --class webgpu -- node scripts/draw-census.mjs \
+      --secs 14 --seed <42|777|1337>
+
+**draws / culled, per kind, three floors:**
+
+| kind | seed 42 | seed 777 | seed 1337 | verdict |
+|---|---|---|---|---|
+| **booster** | **66** / 0 | **30** / 48 | **36** / 66 | **#1 on every floor, by 2–3×. Instance it.** |
+| spinpad | 20 / 15 | 5 / 25 | 0 / 5 | second on one floor only |
+| bumper | 18 / **75** | 9 / **84** | 6 / **69** | **DO NOT instance — see below** |
+| rollover | 12 / 12 | 0 / 24 | 4 / 20 | marginal |
+| electric | 10 / 0 | – | – | clean but small |
+| deflector | 0 / 18 | 12 / 3 | 3 / 12 | floor-dependent |
+| jumppad | 0 / 24 | 8 / 16 | 8 / 16 | floor-dependent |
+| target | 4 / 28 | 4 / 28 | 0 / 32 | ~all culled |
+| ramp | 0 / 7 | 0 / 7 | 7 / 0 | ~nothing |
+| boostcurve / boostcorner / pit / trapdoor / firevent | ≤2 | ≤2 | ≤2 | nothing |
+| **all parts** | **130** of 227 | **71** of 165 | **64** of 159 | |
+
+Seed 42 reproduces HANDOFF's independent "130 of 248" exactly (227 now, after
+torch instancing), which is the cross-check that says the tool is measuring the
+same thing it measured last week.
+
+**Three findings, two of which contradict the plan they were written for:**
+
+1. **Booster is the whole project.** #1 on all three floors at 2–3× the runner-up,
+   and on seed 42 it is **66 draws with ZERO culled** — every booster in the
+   scene is visible. Instancing it is unambiguous.
+2. **Do not instance bumpers.** 6–18 drawn against **69–84 culled**. Instancing
+   collapses ~12 draws and submits ~85 instances that the frustum currently
+   throws away for free. This is the losing case B0 was written to catch, and it
+   was second on the B3 list before the census ran. **Struck.**
+3. **`ramp` / `boostcorner` / `boostcurve` cost nothing** — 0–7 draws across
+   three floors. They were on B3 as "identical shape, follows mechanically".
+   Mechanical is not a reason. **Struck.** They come along only if the booster
+   substrate makes them free.
+
+**Unexplained, and recorded rather than guessed at:** the census prints
+`renderer says 0` on every run — `__dungeonRenderInfo()` returns populated
+`memory` counters (programs 116, textures 133, geometries 130) and
+`render.drawCalls: 0`. So the tool's own cross-check line is dead. The
+attribution above is unaffected: `dev/draw-census.ts` reimplements the cull and
+never reads `renderer.info`. Likely `renderAsync` resetting `info.render` at the
+start of a frame the `evaluate()` lands inside, but that is a hypothesis and
+nobody has tested it. `window-hooks.ts:844`.
 
 ### B1 — The instancing substrate
 
@@ -166,10 +203,15 @@ reports a booster as 3 meshes. It is 6. The strips and chevrons are built in
   > and fails the same way from the other direction. **`npm run playtest:gpu` is
   > the only check that sees it.**
 
-### B2 — Migrate the booster (the 66)
+### B2 — Migrate the booster — **B0 confirms this is the whole project**
 
-- [ ] Three instanced slots: plate, strip, chevron. 66 draws → **3**, if the
-      census agrees the boosters are actually visible together.
+- [ ] Three instanced slots: plate, strip, chevron. On seed 42 that is **66
+      draws → 3**, and the census says zero boosters are culled there, so
+      nothing is traded for it. On 777/1337 it is 30→3 and 36→3 against 48 and
+      66 culled — still a win, and the submitted geometry is 6 tiny meshes
+      (a box, two thin boxes, three 3-sided cones), so the extra instances are
+      not a real cost. Say that number out loud after measuring rather than
+      assuming it.
 - [ ] The animator keeps its current maths and writes
       `attr.array[i] = intensity; attr.needsUpdate = true` per frame.
 - [ ] **Visual parity before perf.** Fixed seed, fixed camera, fixed `animT`;
@@ -178,16 +220,29 @@ reports a booster as 3 meshes. It is 6. The strips and chevrons are built in
 - [ ] Re-run the census. State the delta. If it is under ~10 draws, stop and say
       so rather than continuing down the ranked list on faith.
 
-### B3 — The remaining kinds, in census order
+### B3 — The remaining kinds — **mostly struck by B0**
 
-- [ ] `ramp`, `boostcorner`, `boostcurve` — identical shape to the booster
-      (chevron array + lip), so they follow almost mechanically.
-- [ ] `bumper` — needs a per-instance **colour** as well, not just an intensity
-      (`dome.emissive.setHex` switches between `C_SHOT` / `C_GOLD` / `C_ARCANE`).
-      A `vec3` instanced attribute; do it after the scalar case is proven.
-- [ ] Kinds whose animator moves geometry (`spring` scales a coil, `flipper`,
-      `trapdoor`) need a per-instance matrix write, which is a different and more
-      expensive path. **Take them last, and only if the census says they cost.**
+The census reordered this list and deleted most of it. What survives:
+
+- [ ] **Re-run the census after B2 before doing anything here.** With the
+      booster's 30–66 gone, the ranking is a different ranking. Do not carry
+      this ordering forward on faith — that is the mistake B0 exists to prevent,
+      and it already caught this list once.
+- [ ] `spinpad` (20/15 on one floor, ~0 on the others) and `electric` (10/0) are
+      the only remaining candidates, and both are floor-dependent. Worth doing
+      *only* if the B1 substrate makes a new kind nearly free.
+
+~~`ramp`, `boostcorner`, `boostcurve` — identical shape, follows mechanically.~~
+**Struck: 0–7 draws across three floors. "Mechanical" is not a reason to spend.**
+
+~~`bumper` — a per-instance colour after the scalar case is proven.~~
+**Struck: 6–18 drawn against 69–84 culled. Instancing would trade ~12 draws for
+~85 instances the frustum currently discards for free.** Revisit only if a
+future floor puts many bumpers on screen at once — which the census would show.
+
+~~Kinds whose animator moves geometry (`spring`, `flipper`, `trapdoor`).~~
+**Struck: none of them appear in the census at all.** A per-instance matrix path
+would be built for parts that cost nothing.
 
 ### B4 — Only then, animation into the shader
 
