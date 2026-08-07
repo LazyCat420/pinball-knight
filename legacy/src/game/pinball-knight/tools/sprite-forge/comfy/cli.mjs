@@ -136,6 +136,15 @@ function outDir(kind) {
  * record (so the frames survive and the mode/label are recoverable) and still
  * stay unfiled, which is the honest state for a generation that belongs to no
  * creature yet.
+ *
+ * THE RECORD MUST CARRY `frames`, `params` AND `clip` — they are what make the
+ * panel's job card an editing surface rather than a receipt. Frames draw the
+ * thumbnails (and with them → init / + sheet / ✎ fix), params arm ↻ re-roll,
+ * and clip pre-labels the row the tray files these frames under. A twelve-clip
+ * move-set generated here once landed in /forge as twelve untouchable "done"
+ * lines because this object held none of the three. (The generate route now
+ * also reads the directory for frames, so older records self-heal; writing
+ * them is still what keeps job.json a complete record on its own.)
  */
 async function run(graph, dir, meta = {}) {
   await assertNodes(graph);
@@ -145,9 +154,12 @@ async function run(graph, dir, meta = {}) {
   const history = await waitFor(id);
   const took = ((Date.now() - t0) / 1000).toFixed(1);
   const images = outputImages(history);
+  const frames = [];
   for (const im of images) {
     const buf = await fetchImage(im);
-    writeFileSync(join(dir, im.filename.replace(/.*\//, "")), buf);
+    const name = im.filename.replace(/.*\//, "");
+    writeFileSync(join(dir, name), buf);
+    frames.push(name);
   }
   // NB: `--file-as`, not `--character` — `retarget` already owns that flag
   // for its character IMAGE, and filing a run under a .png path would put
@@ -156,7 +168,16 @@ async function run(graph, dir, meta = {}) {
   writeFileSync(
     join(dir, "job.json"),
     JSON.stringify(
-      { source: "cli", state: "done", startedAt: t0, tookS: Math.round(Number(took)), promptId: id, ...meta, ...(character ? { character } : {}) },
+      {
+        source: "cli",
+        state: "done",
+        startedAt: t0,
+        tookS: Math.round(Number(took)),
+        promptId: id,
+        frames: frames.sort(),
+        ...meta,
+        ...(character ? { character } : {}),
+      },
       null,
       1,
     ),
@@ -183,7 +204,13 @@ const main = {
     const prompt =
       `Turn the character to face ${to}. Same character, same colors, same pixel art style, ` +
       `same size and position, plain white background, full body visible.`;
-    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, { mode: "rotate", label: `rotate → ${to}` });
+    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, {
+      mode: "rotate",
+      label: `rotate → ${to}`,
+      params: { facing: to },
+      resolvedPrompt: prompt,
+      seed: Number(opt("seed", 7)),
+    });
   },
 
   /**
@@ -220,7 +247,7 @@ const main = {
     await run(
       qwenEdit({ image, image2, prompt, seed: Number(opt("seed", 7)), denoise: Number(opt("denoise", 1)), ...size }),
       dir,
-      { mode: "edit", label: `edit${ref ? " + ref" : ""}` },
+      { mode: "edit", label: `edit${ref ? " + ref" : ""}`, params: { prompt }, resolvedPrompt: prompt, seed: Number(opt("seed", 7)) },
     );
   },
 
@@ -440,7 +467,12 @@ const main = {
     await run(graph, dir, {
       mode: "animate",
       label: `animate · ${label}`.slice(0, 60),
-      ...(opt("file-as") ? {} : {}),
+      params,
+      // The preset's declared clip — the panel's tray dropdown reads it, and a
+      // `custom` action declares none, which is the honest "— pick a clip —".
+      clip: mode.presets?.find((p) => p.id === preset)?.clip || undefined,
+      resolvedPrompt: mode.prompt(params, ctx),
+      seed: Number(opt("seed", 7)),
     });
   },
 };

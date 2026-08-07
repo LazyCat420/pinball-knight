@@ -96,6 +96,17 @@ function persistJob(id: string) {
   }
 }
 
+/** The PNGs a job dir really holds, sorted — the truth about its frames. */
+function framesOnDisk(id: string): string[] {
+  try {
+    return readdirSync(join(WORK, id))
+      .filter((f) => f.endsWith(".png"))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
 async function uploadB64(b64: string, tag: string): Promise<string> {
   const tmp = join(tmpdir(), `forge-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
   writeFileSync(tmp, Buffer.from(String(b64).replace(/^data:image\/\w+;base64,/, ""), "base64"));
@@ -430,16 +441,26 @@ export async function GET(req: Request) {
     const all: Record<string, unknown> = {};
     try {
       for (const dir of readdirSync(WORK)) {
+        // THE DIRECTORY IS THE AUTHORITY ON FRAMES, not job.json.
+        //
+        // A job.json is written by two hands: this route (which records
+        // `frames`) and cli.mjs (which, until it was fixed, did not). A row
+        // with no `frames` renders as a bare line — no thumbnails, no
+        // → init / + sheet / re-roll — so an entire CLI-driven move-set
+        // showed up in the panel as twelve "done" lines nobody could touch.
+        // Listing the PNGs costs one readdir and makes both hands' work,
+        // and every older record already on disk, editable.
+        const frames = framesOnDisk(dir);
         try {
           const meta = JSON.parse(readFileSync(join(WORK, dir, "job.json"), "utf8"));
           // Disk copies of live states are stale by definition — the Map
           // overwrites survivors below; what remains died in a reload.
           all[dir] =
-            meta.state === "queued" || meta.state === "running"
-              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it" }
-              : meta;
+            (meta.state === "queued" || meta.state === "running") && !frames.length
+              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames }
+              : { ...meta, ...(meta.state === "running" && frames.length ? { state: "done" } : {}), frames };
         } catch {
-          all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0 };
+          all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0, frames };
         }
       }
     } catch {
@@ -494,7 +515,7 @@ export async function GET(req: Request) {
     // good — its graph lived in memory — so report it honestly.
     try {
       const meta = JSON.parse(readFileSync(join(WORK, id, "job.json"), "utf8"));
-      const frames = readdirSync(join(WORK, id)).filter((f) => f.endsWith(".png"));
+      const frames = framesOnDisk(id);
       if ((meta.state === "queued" || meta.state === "running") && !frames.length) {
         return NextResponse.json({ ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames });
       }
@@ -503,7 +524,7 @@ export async function GET(req: Request) {
       /* fall through */
     }
     try {
-      const frames = readdirSync(join(WORK, id)).filter((f) => f.endsWith(".png"));
+      const frames = framesOnDisk(id);
       if (frames.length) return NextResponse.json({ state: "done", frames, note: "recovered from disk" });
     } catch {
       /* genuinely unknown */

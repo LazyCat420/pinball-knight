@@ -22,6 +22,8 @@ import { NextResponse } from "next/server";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { KIND_INFO, KIND_IDS } from "../../../../src/game/pinball-knight/bestiary";
+import { KNOWN_CLIPS } from "../../../../src/game/pinball-knight/tools/sprite-forge/labels";
+import type { ClipName } from "../../../../src/game/pinball-knight/engine/render/paint-types";
 import { IMPORTED_ART } from "../../../../src/game/pinball-knight/boot/sheets";
 import {
   assetRoots,
@@ -35,6 +37,20 @@ import { backendPresent, loadSettings } from "../../../../src/game/pinball-knigh
 export const dynamic = "force-dynamic";
 
 type Asset = { label: string; url: string };
+/**
+ * A sub-folder's clip, when its name declares one — `clip_S_walk` → `walk`,
+ * and a folder simply called `death` → `death`. The panel uses it to
+ * pre-label the sheet-tray row, so it must come from `KNOWN_CLIPS` and never
+ * from a guess: an unlabelled group is offered as "— pick a clip —", which is
+ * the same rule the jobs board learned when a custom `death` action came up
+ * filed as `walk`.
+ */
+function clipOf(group: string | null): string | null {
+  if (!group) return null;
+  const tail = group.toLowerCase().replace(/^clip[_-][sne][_-]/, "").replace(/^clip[_-]/, "");
+  return KNOWN_CLIPS.has(tail as ClipName) ? tail : null;
+}
+
 type Character = {
   name: string;
   label: string;
@@ -44,7 +60,7 @@ type Character = {
   thumb: string | null;
   published: Asset[];
   inbox: Asset[];
-  sources: { drop: string; files: Asset[] }[];
+  sources: { drop: string; group: string | null; clip: string | null; files: Asset[] }[];
   recent: { jobId: string; label: string; startedAt: number; frames: Asset[] }[];
 };
 
@@ -123,16 +139,31 @@ function buildCharacters(project: string): Character[] {
       const m = /^([a-z0-9_]+)-(\d{4}-\d{2}-\d{2})$/.exec(drop.name);
       if (!m) continue;
       const c = get(m[1]);
-      const files = readdirSync(join(roots.sources, drop.name))
-        .filter((f) => f.endsWith(".png"))
-        .sort()
-        .map((f) => ({ label: f, url: fileUrl(project, "sources", `${drop.name}/${f}`) }));
-      if (files.length) {
-        c.sources.push({ drop: m[2], files });
+      const pngs = (rel: string) =>
+        readdirSync(join(roots.sources, drop.name, rel), { withFileTypes: true })
+          .filter((f) => f.isFile() && f.name.endsWith(".png"))
+          .map((f) => f.name)
+          .sort()
+          .map((f) => ({ label: f, url: fileUrl(project, "sources", `${drop.name}/${rel ? `${rel}/` : ""}${f}`) }));
+      const push = (group: string | null, files: Asset[]) => {
+        if (!files.length) return;
+        c.sources.push({ drop: m[2], group, clip: clipOf(group), files });
         c.thumb ??= files[0].url;
+      };
+      push(null, pngs(""));
+      // A DROP IS NOT FLAT, and the panel used to act as if it were.
+      // A generated move-set files itself as `clip_<DIR>_<clip>/` folders
+      // beside the masters, so a flat scan showed three masters and hid the
+      // sixty-odd clip frames that are the actual work — the frames a
+      // curation pass exists to choose between. One level down is enough:
+      // deeper nesting is not a shape the forge writes.
+      for (const sub of readdirSync(join(roots.sources, drop.name), { withFileTypes: true })) {
+        if (sub.isDirectory()) push(sub.name, pngs(sub.name));
       }
     }
-    for (const c of chars.values()) c.sources.sort((a, b) => (a.drop < b.drop ? 1 : -1));
+    for (const c of chars.values()) {
+      c.sources.sort((a, b) => (a.drop !== b.drop ? (a.drop < b.drop ? 1 : -1) : (a.group ?? "").localeCompare(b.group ?? "")));
+    }
   }
 
   if (existsSync(roots.work)) {
@@ -178,7 +209,27 @@ export async function GET(req: Request) {
     if (!full || !existsSync(full) || !statSync(full).isFile()) {
       return NextResponse.json({ error: "no such asset" }, { status: 404 });
     }
-    return new NextResponse(new Uint8Array(readFileSync(full)), { headers: { "content-type": "image/png" } });
+    let buf: Buffer = readFileSync(full);
+    // ?w= — the same nearest-neighbour thumbnail the generate route serves,
+    // for the same measured reason: a character with a full move-set on disk
+    // is ~130 thumbnails, and at full size that is tens of megabytes of PNG
+    // decode per render. The actions (→ init, → style, + sheet) all use the
+    // unresized URL, so nothing downstream ever sees a shrunk frame.
+    const w = Number(url.searchParams.get("w"));
+    if (Number.isFinite(w) && w >= 16 && w <= 1024) {
+      const mod = await import("canvas");
+      const img = await mod.loadImage(buf);
+      if (img.width > w) {
+        const cv = mod.createCanvas(w, Math.round((img.height / img.width) * w));
+        const ctx = cv.getContext("2d");
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        buf = cv.toBuffer("image/png");
+      }
+    }
+    return new NextResponse(new Uint8Array(buf), {
+      headers: { "content-type": "image/png", "cache-control": "public, max-age=300" },
+    });
   }
 
   return NextResponse.json({ projects, activeProject: project, characters: buildCharacters(project) });

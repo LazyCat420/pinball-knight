@@ -83,7 +83,8 @@ export type LibraryCharacter = {
   thumb: string | null;
   published: LibraryAsset[];
   inbox: LibraryAsset[];
-  sources: { drop: string; files: LibraryAsset[] }[];
+  /** One entry per folder: the drop root (`group: null`) and each sub-folder. */
+  sources: { drop: string; group: string | null; clip: string | null; files: LibraryAsset[] }[];
   recent: { jobId: string; label: string; startedAt: number; frames: LibraryAsset[] }[];
 };
 

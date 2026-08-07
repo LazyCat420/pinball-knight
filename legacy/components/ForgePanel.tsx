@@ -250,6 +250,41 @@ export default function ForgePanel() {
 
   const runningN = Object.values(genJobs).filter((j) => j.state === "running").length;
 
+  /**
+   * The library renders on BOTH working tabs, and that is the curation loop:
+   * on `generate` it is where a run starts, on `sheet` it is the shelf you
+   * pick the keepers off while the tray is on screen beneath it. Choosing
+   * frames used to mean scrolling a jobs board on another tab, which is why
+   * finished art felt read-only.
+   */
+  const libraryCard = (
+    <LibraryCard
+      library={library}
+      activeCharacter={activeCharacter}
+      onSelectProject={async (id) => {
+        try {
+          await postJSON("/api/comfy/settings", { project: id });
+        } catch {
+          /* settings write is best-effort; the query param still switches */
+        }
+        setActiveCharacter(null);
+        void refreshLibrary(id);
+      }}
+      onSelectCharacter={setActiveCharacter}
+      onInit={async (url) => {
+        setImage("init", await urlToB64(url));
+        setMask(null);
+        setTab("generate");
+        say("library art loaded as the init frame");
+      }}
+      onStyle={async (url) => {
+        setImage("style", await urlToB64(url));
+        say("library art loaded as the style ref");
+      }}
+      onSheet={addToTray}
+    />
+  );
+
   return (
     <div style={S.page}>
       <div style={S.wrap}>
@@ -275,29 +310,7 @@ export default function ForgePanel() {
 
         {tab === "generate" && (
           <>
-            <LibraryCard
-              library={library}
-              activeCharacter={activeCharacter}
-              onSelectProject={async (id) => {
-                try {
-                  await postJSON("/api/comfy/settings", { project: id });
-                } catch {
-                  /* settings write is best-effort; the query param still switches */
-                }
-                setActiveCharacter(null);
-                void refreshLibrary(id);
-              }}
-              onSelectCharacter={setActiveCharacter}
-              onInit={async (url) => {
-                setImage("init", await urlToB64(url));
-                setMask(null);
-                say("library art loaded as the init frame");
-              }}
-              onStyle={async (url) => {
-                setImage("style", await urlToB64(url));
-                say("library art loaded as the style ref");
-              }}
-            />
+            {libraryCard}
             <GenerateCard
               modes={modes}
               reachable={m.comfy.reachable}
@@ -350,6 +363,7 @@ export default function ForgePanel() {
 
         {tab === "sheet" && (
           <>
+            {libraryCard}
             <SheetTray
               tray={tray}
               setTray={setTray}
