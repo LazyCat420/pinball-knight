@@ -46,10 +46,27 @@ const cdpAlive = async (port) => {
   }
 };
 
+/**
+ * True when THIS run started the browser, and therefore owes closing it.
+ *
+ * ── THIS IS NOT TIDINESS, IT IS THE CPU BROKER ─────────────────────────────
+ * `pk-run.sh` grants a webgpu run 4 threads and 2 core-slots by holding flocks
+ * on open file descriptors, and releases them when the holding process dies —
+ * there are no pid files and no stale sweep. A DETACHED child inherits those
+ * descriptors. So a Chrome spawned here and left running keeps the whole grant
+ * after the script exits, and the next thing that needs the box waits 300 s and
+ * dies with "the box is full, nothing was started" — which is what it did.
+ *
+ * Reusing an already-open browser must NOT close it: that one belongs to
+ * whoever opened it, and may be a person's window.
+ */
+let weSpawnedIt = false;
+
 async function connectHostGpu() {
   if (await cdpAlive(PORT)) return chromium.connectOverCDP(`http://127.0.0.1:${PORT}`, { timeout: 120_000 });
   const exe = WIN_CHROME.find((p) => existsSync(p));
   if (!exe) return null;
+  weSpawnedIt = true;
   const child = spawn(
     exe,
     [
@@ -80,6 +97,16 @@ if (!browser) {
   process.exit(2);
 }
 
+/** Every exit path goes through here, including the failures below. */
+async function done(code) {
+  try {
+    if (weSpawnedIt) await browser.close();
+  } catch {
+    // A browser that has already gone is the outcome we wanted anyway.
+  }
+  process.exit(code);
+}
+
 const ctx = browser.contexts()[0] || (await browser.newContext());
 const page = await ctx.newPage();
 await page.setViewportSize({ width: 1280, height: 720 });
@@ -97,7 +124,7 @@ const backend = await page.evaluate(() => window.__renderBackendResolved ?? "unk
 console.log("  backend:", backend);
 if (!/webgpu/i.test(String(backend))) {
   console.error("✖ not a WebGPU run — the node builder emits GLSL on the WebGL2 backend, so this dump would be off-topic");
-  process.exit(3);
+  await done(3);
 }
 
 const dump = await page.evaluate(async () => {
@@ -107,7 +134,7 @@ const dump = await page.evaluate(async () => {
 
 if (!dump || dump.error) {
   console.error("✖", dump?.error ?? "no dump — is a floor loaded?");
-  process.exit(4);
+  await done(4);
 }
 
 mkdirSync(a.out, { recursive: true });
@@ -123,4 +150,4 @@ console.table(rows);
 console.log(`distinct materials in the scene: ${dump.materialsInScene}`);
 console.log(`written to ${a.out}`);
 await page.close();
-process.exit(0);
+await done(0);
