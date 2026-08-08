@@ -1,5 +1,8 @@
 # The sprite pipeline playbook
 
+> **Picking up work?** The current job and its order are in
+> *Next: the full dog moveset*. This chapter is the how; that one is the what.
+
 **The ordered procedure for taking a creature from nothing to animating in the
 game, with the gate at each step.** Read *Dead ends* alongside it — this chapter
 says what to do, that one says what not to try again.
