@@ -41,7 +41,7 @@
  * a shield block. Pass `--body biped` for a humanoid.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,37 +105,101 @@ async function freeModels() {
   } catch { /* a benchmark must not die because a housekeeping call failed */ }
 }
 
-/** Newest run directory under work/comfy, so we can read the job.json the CLI wrote. */
+/**
+ * WHERE THE RUN ACTUALLY LANDED — read from the CLI, not guessed.
+ *
+ * `cli.mjs` ends every successful run with a line naming its output dir:
+ *
+ *     21 frame(s) in 451.0s -> /abs/path/animate-walk4-2026-08-08T22-19-38  (filed under dog)
+ *
+ * That is the authority. Parsing it is deterministic and cannot be confused by
+ * anything else on disk.
+ */
+function runDirFromOutput(out) {
+  const m = /->\s+(\S+)/.exec(out ?? "");
+  return m && existsSync(m[1]) ? m[1] : null;
+}
+
+/**
+ * Fallback only, and it sorts by MTIME rather than by name.
+ *
+ * ── WHY THIS BUG COST A WHOLE MATRIX ────────────────────────────────────────
+ *
+ * This used to `dirs.sort()` and take the last, which silently assumes every
+ * directory name ends in a timestamp of identical format. `cli.mjs --out`
+ * breaks that assumption, and two runs from the loop bisect were named
+ * `animate-idle4-LIVE-2026-08-08`. "L" (0x4C) sorts after "2" (0x32), so that
+ * directory won EVERY lookup for the `animate-idle4-` prefix — including for
+ * runs generated hours later.
+ *
+ * The failure was silent and total: the bench recorded a real `tookS` next to
+ * a dir that was not the run, so `job.motion` came back undefined and every
+ * gate column in the matrix was `null`. A three-hour sweep would have produced
+ * a report of dashes, with nothing anywhere saying it had looked in the wrong
+ * place. Caught at 2 rows of 21.
+ *
+ * mtime is what "newest" actually means; the name is a label, not a clock.
+ */
 function newestRun(prefix) {
   const root = join(HERE, "..", "work", "comfy");
-  const dirs = readdirSync(root).filter((d) => d.startsWith(prefix));
+  const dirs = readdirSync(root)
+    .filter((d) => d.startsWith(prefix))
+    .map((d) => join(root, d))
+    .filter((p) => statSync(p).isDirectory());
   if (!dirs.length) return null;
-  dirs.sort();
-  return join(root, dirs[dirs.length - 1]);
+  return dirs.sort((a, b) => statSync(a).mtimeMs - statSync(b).mtimeMs).pop();
 }
 
 /** ── 1. the masters ───────────────────────────────────────────────────────
- * Every facing is rotated from the ONE approved master, never from another
- * facing: Qwen-Image-Edit identity drift compounds over serial edits, so a
- * chain E->S->N puts two generations of drift on N.
+ *
+ * ROTATE THROUGH THE PERPENDICULAR: E -> S (90°), then S -> N (90°).
+ *
+ * The obvious design — branch every facing off the ONE approved master so no
+ * facing inherits another's drift — is what this file did first, and it is
+ * wrong for N specifically. **E -> N in one step does not return a back view.
+ * It returns the E master flipped horizontally**, measured at 0.942 silhouette
+ * IoU against mirrored E, where the same test on a genuine turn scores ~0.52.
+ *
+ * From a side view, "back view" has two readings: turn the animal 180°, or
+ * reflect it. Both put the head where the tail was, and the reflection is a
+ * symmetry of the latent — free — while the true turn means synthesising the
+ * entire unseen far side. The model takes the cheap reading. A FRONT view is
+ * not reachable by any reflection of a side view, so E -> S and S -> N are
+ * both unambiguous.
+ *
+ * The drift argument is still true and is simply outranked: two generations of
+ * mild identity drift is a cost, a mirror is not a back view at all. See
+ * `documentation/chapters/13-turning-a-character-and-the-colours-it-loses.md`.
+ *
+ * Diagonals do NOT need this: all four quarter views are within 90° of E or S.
  */
+const ROTATE_FROM = { S: "E", N: "S", SE: "E", NE: "E", SW: "S", NW: "S" };
 const masters = { E: master };
-for (const f of facings.filter((x) => x !== "E")) {
+// S before N, so N has its source. Any facing whose source is not being built
+// this run falls back to the E master and is flagged in the note.
+const facingOrder = facings.filter((x) => x !== "E").sort((a, b) => (ROTATE_FROM[a] === "E" ? -1 : 1) - (ROTATE_FROM[b] === "E" ? -1 : 1));
+for (const f of facingOrder) {
   if (results[`master:${f}`]?.ok && existsSync(results[`master:${f}`].file)) {
     masters[f] = results[`master:${f}`].file;
     console.log(`master ${f}: reusing ${masters[f]}`);
     continue;
   }
-  console.log(`\n=== master ${f} — rotate ===`);
+  // The source facing, per ROTATE_FROM. Falling back to E when the intended
+  // source was not built is stated out loud rather than done quietly, because
+  // for N that fallback is precisely the run that returns a mirror.
+  const fromId = ROTATE_FROM[f] ?? "E";
+  const from = masters[fromId] ?? master;
+  const viaFallback = !masters[fromId] && fromId !== "E";
+  console.log(`\n=== master ${f} — rotate from ${viaFallback ? `E (WANTED ${fromId}; expect a MIRROR for N)` : fromId} ===`);
   await freeModels();
   try {
-    const out = sh(["cli.mjs", "rotate", "--init", master, "--to", f, "--file-as", character, "--seed", seed]);
+    const out = sh(["cli.mjs", "rotate", "--init", from, "--to", f, "--file-as", character, "--seed", seed]);
     process.stdout.write(out);
-    const dir = newestRun(`rotate-${f}-`);
+    const dir = runDirFromOutput(out) ?? newestRun(`rotate-${f}-`);
     const pngs = dir ? readdirSync(dir).filter((n) => n.endsWith(".png")).sort() : [];
     if (!pngs.length) throw new Error("rotate produced no PNG");
     masters[f] = join(dir, pngs[0]);
-    results[`master:${f}`] = { ok: true, file: masters[f], loraBanner: /fal-multi-angle LoRA/.test(out) };
+    results[`master:${f}`] = { ok: true, file: masters[f], from: fromId, viaFallback, loraBanner: /fal-multi-angle LoRA/.test(out) };
   } catch (err) {
     console.error(`master ${f} FAILED: ${err.message}`);
     results[`master:${f}`] = { ok: false, error: String(err.message).slice(0, 400) };
@@ -163,7 +227,7 @@ for (const facing of facings) {
       if (loop) argv.push("--loop");
       const out = sh(argv);
       process.stdout.write(out);
-      const dir = newestRun(`animate-${preset}-`);
+      const dir = runDirFromOutput(out) ?? newestRun(`animate-${preset}-`);
       const job = dir && existsSync(join(dir, "job.json")) ? JSON.parse(readFileSync(join(dir, "job.json"), "utf8")) : null;
       const m = job?.motion, g = job?.ghost;
       const churn = m?.churn?.length ? [...m.churn].sort((a, b) => a - b)[m.churn.length >> 1] : null;
