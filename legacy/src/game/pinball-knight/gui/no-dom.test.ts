@@ -77,8 +77,23 @@ function stripComments(src: string): string {
  * The SITE boot sequence is exempt, and structurally so: the DOS boot screen
  * and the toucan flight run BEFORE any renderer or pixel pass exists, so there
  * is literally nothing to composite into. They are also not part of the game.
+ *
+ * `tavern/boot-notice.ts` is exempt for exactly the same structural reason, one
+ * layer down, and it is worth spelling out because it is the only exemption
+ * INSIDE a scene that already has a pass. `presentMode` returns "none" until
+ * that scene's backend finishes `init()` — `render()` and `presentUi()` both
+ * throw before it resolves — so the span it covers is a span with no pass to
+ * paint into, and a painted screen there is a screen nobody can ever see.
+ *
+ * Not hypothetical. An `init()` that rejected used to leave /dungeon on a
+ * permanently black screen: no room, no UI layer, and not even the
+ * character-select modal sitting open on top of it. That is the bug this file
+ * exists for, and no painted screen could have reported it.
+ *
+ * It stays SMALL and it stays alone — a loading line and a failure notice,
+ * removed the instant the backend reports either way.
  */
-const SCENE_ALLOWED = ["app-bootstrap.ts", "intro-scene.ts"];
+const SCENE_ALLOWED = ["app-bootstrap.ts", "intro-scene.ts", "tavern/boot-notice.ts"];
 
 describe("no DOM UI", () => {
   const files = [...tsFiles(GAME_DIR), ...tsFiles(SCENES_DIR)];

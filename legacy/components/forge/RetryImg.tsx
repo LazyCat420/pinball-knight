@@ -9,7 +9,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 
-export function RetryImg({ src, alt, style }: { src: string; alt: string; style?: React.CSSProperties }) {
+export function RetryImg({ src, alt, style, title }: { src: string; alt: string; style?: React.CSSProperties; title?: string }) {
   const [attempt, setAttempt] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -21,6 +21,7 @@ export function RetryImg({ src, alt, style }: { src: string; alt: string; style?
     <img
       src={attempt ? `${src}${sep}retry=${attempt}` : src}
       alt={alt}
+      title={title}
       loading="lazy"
       style={style}
       onError={() => {

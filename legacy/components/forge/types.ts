@@ -59,6 +59,13 @@ export type Job = {
   startedAt: number;
   params?: Record<string, string>;
   resolvedPrompt?: string;
+  /**
+   * The NEGATIVE actually sent. Half the prompt and, on the Wan leg, the half
+   * doing the most work — the camera terms, the scale terms, the background
+   * terms and the preset's `avoid` all live here. Absent on jobs generated
+   * before it was recorded.
+   */
+  resolvedNegative?: string;
   seed?: number;
   fast?: boolean;
   project?: string;
@@ -70,6 +77,13 @@ export type Job = {
   error?: string;
   tookS?: number;
   note?: string;
+  /**
+   * Per-frame dissolved-limb score, written once when the frames land — see
+   * `sprite-forge/ghost.ts`. ABSENT means "not measured", which is not the
+   * same as "clean": the scorer needs a native PNG decoder and is allowed to
+   * fail soft, so the panel must not draw a green badge from its silence.
+   */
+  ghost?: { pct: number[]; flagged: number[]; soft: number[]; level: string };
 };
 
 export type LibraryAsset = { label: string; url: string };
@@ -83,7 +97,8 @@ export type LibraryCharacter = {
   thumb: string | null;
   published: LibraryAsset[];
   inbox: LibraryAsset[];
-  sources: { drop: string; files: LibraryAsset[] }[];
+  /** One entry per folder: the drop root (`group: null`) and each sub-folder. */
+  sources: { drop: string; group: string | null; clip: string | null; files: LibraryAsset[] }[];
   recent: { jobId: string; label: string; startedAt: number; frames: LibraryAsset[] }[];
 };
 
@@ -93,11 +108,21 @@ export type LibraryState = {
   characters: LibraryCharacter[];
 };
 
-/** A frame the user pulled aside for the sheet, tagged with its clip. */
+/**
+ * A frame the user pulled aside for the sheet, tagged with its clip — and,
+ * when the source knew it, its FACING.
+ *
+ * A sheet is one facing (`brute-S`), but the library shows `clip_S_walk` and
+ * `clip_E_walk` as two adjacent folders with the same clip name. Adding both
+ * would merge two facings into one `walk` row, and the result is a creature
+ * that spins on the spot as it walks — visible only after publishing. The tag
+ * is what lets the tray say so before the sheet is assembled.
+ */
 export type TrayFrame = {
   key: string;
   src: string;
   clip: string;
+  facing?: string;
 };
 
 /**

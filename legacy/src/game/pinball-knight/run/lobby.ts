@@ -8,6 +8,7 @@
  * lives next to the rest of the run lifecycle.
  */
 import { enterTavern } from "../../../scenes/tavern";
+import { applyImportedMonsterArt } from "../boot/sheets";
 import { push } from "../gui/stack";
 import { characterSelectScreen } from "../gui/screens/character-select";
 import { state } from "../state";
@@ -61,6 +62,23 @@ export interface LobbyOptions {
 }
 
 export function openLobby(container: HTMLElement, opts: LobbyOptions): void {
+  // ── THE MONSTER ATLASES REBUILD HERE, NOT AT BOOT ──
+  //
+  // `applyImportedMonsterArt` is one blocking canvas task per kind, roughly a
+  // second each, and it used to be kicked from `buildMonsterSheets()` at boot —
+  // straight onto the title sequence's frames. Measured on braindeadbot.com:
+  // the intro rendered 4 frames in 2.4 seconds while one of those tasks ran,
+  // and the whole 11.4s sequence took 22s.
+  //
+  // This is the right home for the call rather than `core.ts`: opening the
+  // lobby is a lobby concern, and EVERY entry arrives here — the intro's
+  // `onDone` fires whether the sequence played or was skipped, so `?no-intro=1`,
+  // `?autostart=1` and the playtest bot all still start the load immediately.
+  // Nothing is dropped by moving it, only reordered, and the load was already
+  // asynchronous-and-late by design: the painters draw first and imported art
+  // replaces them when it lands.
+  void applyImportedMonsterArt();
+
   void enterTavern(container, {
     stats: { grade: "-", floor: 0, kills: 0, bestCombo: 0 },
     onDescend: opts.onDescend,

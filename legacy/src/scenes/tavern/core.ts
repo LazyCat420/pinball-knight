@@ -46,6 +46,8 @@ import { buildRoom, type BuiltRoom } from "./build";
 import { buildProps, type BuiltProps } from "./props";
 import { createStationFx, refreshFocus, type StationFx } from "./stations";
 import { presentMode } from "./present";
+import { openBackend } from "./backend-gate";
+import { tavernInitPromise, showTavernBootNotice, hideTavernBootNotice } from "./boot-notice";
 import { createTavernPlayer, updateTavernPlayer, disposeTavernPlayer, refreshTavernPlayerArt, playTavernOneShot } from "./player";
 import { stationAt, ROOM, type Station } from "./layout";
 import { tavern, resetTavernState, readDiorama, type TavernStats, type DioramaState } from "./state";
@@ -530,34 +532,49 @@ export function openTavernScene(container: HTMLElement, opts: TavernOptions): bo
   // it async would turn that check into a truthy Promise and the DOM fallback
   // would become unreachable. The loop skips frames until this flips.
   rendererReady = false;
-  void renderer.init().then(async () => {
-    // Warm the room's pipelines BEFORE the first presented frame — the loop
-    // skips presenting until `rendererReady`, so the compile stalls land here
-    // instead of on the first frame a hidden prop or pooled effect draws.
-    // Everything the warm needs (pixelPass, vfx, the built room) exists by
-    // now: this function is fully synchronous after this line, so the
-    // continuation cannot run before it returns. Best-effort — never block
-    // the room over a failed precompile.
-    if (tavernWarmEnabled()) {
-      try {
-        // `tavern.scene === scene` also proves this continuation belongs to
-        // the CURRENT visit — a close+reopen faster than init() resolving
-        // would otherwise warm the new room with the old renderer.
-        if (tavern.active && pixelPass && tavern.scene === scene && tavern.camera) {
-          await warmTavern({
-            renderer,
-            scene,
-            camera: tavern.camera,
-            pixelPass,
-            vfx,
-            active: () => tavern.active && tavern.scene === scene,
-          });
-        }
-      } catch {
-        /* lazy compile on first draw, exactly as before */
-      }
-    }
-    rendererReady = true;
+  // Up BEFORE the gate, down when it reports ready. The span it covers is the
+  // one span in the game that has no pass to paint into — see boot-notice.ts.
+  showTavernBootNotice("loading");
+  // Everything the warm needs (pixelPass, vfx, the built room) exists by the
+  // time the gate's continuations run: this function is fully synchronous after
+  // this line, so nothing awaited below can start before it returns.
+  //
+  // The choreography itself lives in backend-gate.ts — read its docblock before
+  // changing anything here. Both of the ways this used to end in a permanent
+  // black screen (an uncaught init rejection; an unbounded warm) are asserted
+  // there, and neither is assertable from inside this file.
+  void openBackend({
+    init: () => tavernInitPromise(renderer),
+    warm: tavernWarmEnabled()
+      ? () =>
+          // `tavern.scene === scene` also proves this belongs to the CURRENT
+          // visit — a close+reopen faster than init() resolving would otherwise
+          // warm the new room with the old renderer.
+          tavern.active && pixelPass && tavern.scene === scene && tavern.camera
+            ? warmTavern({
+                renderer,
+                scene,
+                camera: tavern.camera,
+                pixelPass,
+                vfx,
+                active: () => tavern.active && tavern.scene === scene,
+              })
+            : Promise.resolve()
+      : null,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    onReady: () => {
+      rendererReady = true;
+      hideTavernBootNotice();
+    },
+    onFailed: (err) => {
+      // Not recoverable in place: `render()` throws on an uninitialised
+      // backend, and the DOM fallback in index.ts is already unreachable
+      // because `openTavernScene` returned "scene" synchronously long ago. Say
+      // so in the DOM — which the browser composites without any frame loop,
+      // and is therefore the one thing still guaranteed to reach the player.
+      console.error("[tavern] renderer backend failed — the room cannot start", err);
+      showTavernBootNotice("failed");
+    },
   });
 
   tavern.active = true;
@@ -822,6 +839,12 @@ export function closeTavern(): void {
   tavern.active = false;
   if (raf) cancelAnimationFrame(raf);
   raf = 0;
+
+  // The gate's callbacks are the only other thing that removes this, and a
+  // close mid-boot outruns them — `?autostart=1` and __dungeonStartRun both
+  // close the tavern within a frame of opening it. Left up, it is a full-screen
+  // opaque div over the game.
+  hideTavernBootNotice();
 
   if (onKey) window.removeEventListener("keydown", onKey);
   if (onResize) window.removeEventListener("resize", onResize);

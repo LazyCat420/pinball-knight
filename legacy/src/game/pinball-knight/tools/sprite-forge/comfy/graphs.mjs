@@ -208,12 +208,115 @@ export function bgRemove({ image, model = "birefnet.safetensors" } = {}) {
  * callers that attach it must also pass its coupled steps/cfg (modes.mjs
  * owns those bundles; do not scatter them).
  */
+/**
+ * THE SHARED QWEN NEGATIVE.
+ *
+ * ── WHY IT BANS A GROUND SHADOW (2026-08-07) ────────────────────────────────
+ *
+ * The brute's restyled master came back standing on a soft lavender ellipse.
+ * Every positive prompt in `modes.mjs` asks for a "plain white background" and
+ * the model obliged — a cast shadow is not background, it is the subject's
+ * shadow, so nothing in the prompt forbade it.
+ *
+ * It is not cosmetic. Three things downstream take the silhouette as ground
+ * truth and all three are wrong with a shadow attached:
+ *
+ *   · `bbox()` in prep — the ellipse is wider than the figure, so every frame's
+ *     bbox is the shadow's, and the ONE-SCALE-ONE-BASELINE rule then sizes the
+ *     creature off it.
+ *   · `matte()` — a soft-edged gradient against white is the worst case for a
+ *     flood key; it leaves a fringe rather than a clean silhouette.
+ *   · frame SCORING — measured on the 21-frame walk clip: leg-stance spread
+ *     came back 227-242px for all 21 frames, because the constant shadow
+ *     dominated the band the measurement samples. A curation metric that
+ *     cannot see the legs cannot pick a walk cycle.
+ *
+ * Fixed in the NEGATIVE rather than in each mode's positive, deliberately. The
+ * `rotate` mode's prompt becomes a fixed `<sks> … eye-level shot medium shot`
+ * grammar when `fal-multi-angle` is installed — that grammar is what the LoRA
+ * was trained on and appending clauses to it is how it stops binding. One
+ * negative covers style, rotate, keyframes, edit, pixelize and touchup at once.
+ *
+ * Same shape as the fix `4823ec7` made to the Wan negative, which already bans
+ * `shadows` for exactly the same reason on the other leg.
+ */
+const QWEN_NEGATIVE =
+  "blurry, deformed, extra limbs, watermark, text, " +
+  "cast shadow, drop shadow, ground shadow, shadow under the character, " +
+  "reflection, floor, ground plane, platform, pedestal";
+
+/**
+ * TEXT → IMAGE. No init, no conditioning image, nothing to restyle.
+ *
+ * ── WHY THIS IS POSSIBLE WITH THE MODELS ALREADY ON THE SHELF ───────────────
+ *
+ * `PLAN_KEYFRAME_PIPELINE.md` calls step 1 the one real gap, and the reason
+ * looked like a missing model: `models/unet/` holds Qwen-Image-**Edit** and two
+ * Wan **I2V** experts, `checkpoints/` and `diffusion_models/` are empty, and
+ * every entry in MODES declares `needs.init`. The conclusion drawn from that —
+ * that a ~15GB base-model download was required — was WRONG.
+ *
+ * Qwen-Image-Edit is Qwen-Image with image conditioning bolted on. The
+ * transformer underneath is a text-to-image model; the edit variant reaches it
+ * through `TextEncodeQwenImageEditPlus`, which is what binds a source image
+ * into the conditioning. Encode the prompt with a PLAIN `CLIPTextEncode`
+ * instead, start from the `EmptySD3LatentImage` this file already builds, and
+ * the same weights generate from text alone. Nothing is downloaded and nothing
+ * about the edit path changes.
+ *
+ * ── WHAT IT IS FOR ──────────────────────────────────────────────────────────
+ *
+ * The master. Everything downstream of it — keyframes, in-betweens, rotation,
+ * animation — is conditioned on art this pipeline made, at the size it ships
+ * at. That is the whole point of the keyframe plan and the opposite of seeding
+ * a character from a photo, a painter's render or somebody else's sprite.
+ *
+ * The style LoRAs matter MORE here than anywhere else in the forge: this is the
+ * one generation with no init to inherit a look from, so `tarn59-pixel-style`
+ * is carrying the entire style decision. Pass it in `loras` — the caller's
+ * `ctx` already resolves it, exactly as the edit leg does.
+ */
+export function qwenText2Image({
+  prompt,
+  negative = QWEN_NEGATIVE,
+  width = 1024,
+  height = 1024,
+  seed = 7,
+  steps = 20,
+  cfg = 2.5,
+  loras = [],
+  unet = MODELS.qwenUnet,
+} = {}) {
+  if (!prompt) throw new Error("[graphs] qwenText2Image needs a prompt");
+  const g = {
+    u: { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } },
+    c: { class_type: "CLIPLoader", inputs: { clip_name: MODELS.qwenClip, type: "qwen_image", device: "default" } },
+    v: { class_type: "VAELoader", inputs: { vae_name: MODELS.qwenVae } },
+    // PLAIN text encode — no `image1`, which is the single difference from the
+    // edit leg and the reason this needs no init.
+    pos: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: prompt } },
+    neg: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: negative } },
+    lat: { class_type: "EmptySD3LatentImage", inputs: { width, height, batch_size: 1 } },
+    k: {
+      class_type: "KSampler",
+      inputs: {
+        model: ["u", 0], positive: ["pos", 0], negative: ["neg", 0], latent_image: ["lat", 0],
+        seed, steps, cfg, sampler_name: "euler", scheduler: "simple", denoise: 1,
+      },
+    },
+    dec: { class_type: "VAEDecode", inputs: { samples: ["k", 0], vae: ["v", 0] } },
+    out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/create" } },
+  };
+  g.k.inputs.model = chainLoras(g, ["u", 0], loras, "l");
+  return g;
+}
+
 export function qwenEdit({
   image,
   image2 = null,
   image3 = null,
   prompt,
-  negative = "blurry, deformed, extra limbs, watermark, text",
+  negative = QWEN_NEGATIVE,
   width = 1024,
   height = 1024,
   seed = 7,
@@ -375,7 +478,7 @@ export function qwenInpaint({
   image,
   mask,
   prompt,
-  negative = "blurry, deformed, extra limbs, watermark, text",
+  negative = QWEN_NEGATIVE,
   seed = 7,
   steps = 20,
   cfg = 2.5,
@@ -458,6 +561,17 @@ export function wanI2V({
   loraStrength = 0.8,
   /** Decode tile edge. Lower it on a loaded box — see the `dec` note. */
   tileSize = 128,
+  /**
+   * Frames per temporal decode window. `null` means ONE window for the whole
+   * clip, which is the default because anything below `length` puts a
+   * cross-fade seam in the animation at every boundary — measured, see `dec`.
+   *
+   * Pass a number to go back to a windowed decode when the box is too loaded
+   * to afford the single-window transient. That is a headroom trade with a
+   * known cost in ruined frames, not a neutral setting.
+   */
+  temporalSize = null,
+  temporalOverlap = 4,
   lorasHigh = null,
   lorasLow = null,
   unetHigh = MODELS.wanHigh,
@@ -532,9 +646,41 @@ export function wanI2V({
     // which is the tell that the transient is the decode's staging and not
     // the batch. `tileSize` is now a caller knob so a loaded box can trade
     // seams — already argued irrelevant under the crush — for headroom.
+    //
+    // ── THE TEMPORAL AXIS IS NOT THE SPATIAL ONE, AND IT LEAVES MARKS ──────
+    //
+    // 2026-08-07: the dog walk's unusable frames were 4, 5, 8, 12, 13, 16, and
+    // 4/8/12/16 are exactly where `temporal_size: 8` / `temporal_overlap: 4`
+    // makes its windows meet. The decoder CROSS-FADES those windows, so where
+    // a limb moves fast the two decodes disagree and the blend arrives as a
+    // double exposure — frame 16 carries two complete leg positions at half
+    // strength each, which a motion smear cannot do.
+    //
+    // MEASURED, one variable, same seed / master / prompt / canvas:
+    //
+    //     temporal_size  8   worst frame 10.43% ghost, 7 of 21 flagged   435s
+    //     temporal_size 24   worst frame  0.23% ghost, 0 of 21 flagged   556s
+    //
+    // The whole fixed clip is flatter than the CLEANEST frames of the seamed
+    // one. `ghost.ts` scores it, `ghost.test.ts` pins the pair, and
+    // `docs/PLAN_DOG_WALK.md` §1 has the tables.
+    //
+    // The argument that spatial seams "don't survive the crush" does NOT carry
+    // over. A spatial seam is a hairline inside one frame; a temporal seam is a
+    // whole frame the animation cannot use. So the default is ONE window, and
+    // the 28% it costs in wall clock buys back a third of the frames.
+    //
+    // The RAM this spends is the same currency `tileSize` spends. If a loaded
+    // box cannot afford it, the cheap way to buy headroom is a smaller canvas
+    // — which the texel budget wants anyway — not a windowed decode.
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+      inputs: {
+        samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32,
+        // +4 rather than exactly `length` so the window is unambiguously wider
+        // than the clip and no off-by-one reintroduces a single seam at the end.
+        temporal_size: temporalSize ?? length + 4, temporal_overlap: temporalOverlap,
+      },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan" } },
   };
@@ -600,6 +746,9 @@ export function wanTi2v5B({
   shift = 5.0,
   loras = null,
   tileSize = 128,
+  /** Null ⇒ one window for the whole clip. Same contract as `wanI2V`. */
+  temporalSize = null,
+  temporalOverlap = 4,
   unet = MODELS.wanSmall,
   vae = MODELS.wanVae22,
 } = {}) {
@@ -654,7 +803,24 @@ export function wanTi2v5B({
     },
     dec: {
       class_type: "VAEDecodeTiled",
-      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+      inputs: {
+        samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32,
+        // ONE TEMPORAL WINDOW — the same default as `wanI2V`, and for the same
+        // measured reason. See the long note on that node: `temporal_size: 8`
+        // cross-fades its window boundaries and the dog walk's unusable frames
+        // (4, 5, 8, 12, 13, 16) were exactly where those windows met. 10.43%
+        // worst-frame ghost / 7 of 21 flagged, against 0.23% / 0 at one window.
+        //
+        // This builder shipped with `8` hardcoded for one day because it was
+        // written from the pre-fix version of `wanI2V`. A second copy of a
+        // setting is a second copy of its bug, which is why both now read the
+        // same expression and `decode-window.test.ts` pins them together.
+        //
+        // ⚠️ It costs RAM, and this is the leg that can AFFORD it: one 5.4GB
+        // model resident instead of two 12GB experts. On A14B the same default
+        // is in direct tension with the guard floor the decode already dies at.
+        temporal_size: temporalSize ?? length + 4, temporal_overlap: temporalOverlap,
+      },
     },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan5b" } },
   };

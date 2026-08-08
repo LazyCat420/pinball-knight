@@ -288,9 +288,15 @@ const imported = new Map<SheetKey, ActorPaints>();
  *
  * Merging per clip fixes every partial import at once rather than per sheet,
  * and it is what makes a partial import a legitimate way to ship: author the
- * clips the generator got right, keep the painter for the rest. The brute keeps
- * its hand-painted death until a death row is generated — which is what the
- * commit message promised.
+ * clips the generator got right, keep the painter for the rest.
+ *
+ * ⚠️ AND IT IS STILL A COSTUME CHANGE, because the two sides are different art.
+ * The brute kept its hand-painted death for exactly as long as it took someone
+ * to watch one die: a green orc that collapses as the old grey armoured brute.
+ * "Falls through to the painter" is not a neutral default when the painter and
+ * the sheet disagree about what the creature IS. Its death and stumble rows
+ * were generated and published on 2026-08-07; a sheet that omits a clip is a
+ * work item, not a shipping state.
  *
  * MERGED PER DIRECTION, because a facing is the unit an import is partial in:
  * a sheet that authors S only must not lose the painter's E walk. (Note that
@@ -335,7 +341,10 @@ export function buildMonsterSheets(): void {
   state.zombieSheet = state.zombieVariantSheets[0]; // legacy single-sheet handle
   for (const key of ESSENTIAL) sheetFor(key);
   startBackfill();
-  void applyImportedArt();
+  // The PLAYER's imported art only. The monster half is one ~1s blocking task
+  // per kind and it used to land on top of the title sequence — `core.ts` runs
+  // it from the intro's `onDone` instead. See applyImportedArt's docblock.
+  void loadImportedKnightArt();
 }
 
 /**
@@ -408,10 +417,31 @@ export function importedArtEnabled(): boolean {
  * The end state is deterministic (imported always wins once loaded) and there
  * is never a frame with a missing atlas — the failure mode of loading first
  * would have been an invisible monster.
+ *
+ * ── WHY IT IS ALSO SPLIT IN TWO ─────────────────────────────────────────────
+ *
+ * Not awaited is not the same as not blocking. The `await`s below are fetches;
+ * everything between them — `importedPaints`, `sheetPalette`, `rebuild` — is
+ * synchronous canvas work, and it is ONE TASK PER KIND of roughly a second. On
+ * braindeadbot.com those six tasks land squarely on top of the title intro,
+ * which rendered 4 frames in 2.4 seconds while one of them ran.
+ *
+ * The player's own art is cheap and wanted early. The monsters are the
+ * expensive half and nothing on screen before the lobby draws one, so the
+ * caller gets to say WHEN — `core.ts` runs it after the title sequence, and
+ * every entry that skips the sequence (`?no-intro=1`, `?autostart=1`, the
+ * playtest bot) reaches the same call immediately, because they all arrive
+ * through the intro's `onDone`.
  */
 export async function applyImportedArt(): Promise<void> {
   if (!importedArtEnabled()) return;
   await loadImportedKnightArt();
+  await applyImportedMonsterArt();
+}
+
+/** The expensive half — see the note above for why it is the caller's to time. */
+export async function applyImportedMonsterArt(): Promise<void> {
+  if (!importedArtEnabled()) return;
   for (const [key, name] of Object.entries(IMPORTED_ART) as [SheetKey, string][]) {
     const loaded = (await Promise.all(DIRS.map((d) => loadImportedSheet(name, d)))).filter(
       (s): s is ImportedSheet => s !== null,

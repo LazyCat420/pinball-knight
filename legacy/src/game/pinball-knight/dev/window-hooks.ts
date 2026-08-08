@@ -128,6 +128,47 @@ export function installDevHooks(deps: DevHookDeps): void {
       const sheet = sheetFor(which);
       return sheet ? Object.fromEntries(sheet.clips) : null;
     };
+    /**
+     * THE ATLAS *AND* THE GEOMETRY TO CUT IT UP — everything a harness needs
+     * to render a creature's whole moveset, in one call.
+     *
+     * `__dungeonAtlas` hands back the texture and `__dungeonClips` hands back
+     * the frame INDICES, but an index is not a rect: turning one into a crop
+     * needs `cols` and the cell size, and neither hook exposed them. A harness
+     * that guessed the grid would be measuring its own guess.
+     *
+     * With this, `scripts/moveset-lab.mjs` can crop the ACTUAL SHIPPED TEXELS
+     * for every (facing, clip) and lay them out in order — which is what makes
+     * "the S art is playing while he walks east" and "the legs never alternate"
+     * visible in one glance instead of one squint at a gameplay screenshot.
+     *
+     * Deliberately returns the atlas ONCE with an index-keyed clip map, rather
+     * than pre-cropped frames: the atlas is a few hundred KB and the frames
+     * would be tens of copies of it.
+     */
+    (window as unknown as {
+      __dungeonClipCels?: (which: string) => {
+        atlas: string; cols: number; rows: number; frameCount: number;
+        cellW: number; cellH: number; clips: Record<string, number[]>;
+      } | null;
+    }).__dungeonClipCels = (which: string) => {
+      const sheet = sheetFor(which);
+      if (!sheet) return null;
+      const img = sheet.texture.image as HTMLCanvasElement | undefined;
+      if (!img) return null;
+      return {
+        atlas: img.toDataURL("image/png"),
+        cols: sheet.cols,
+        rows: sheet.rows,
+        frameCount: sheet.frameCount,
+        // Derived from the image rather than assumed: the atlas wraps into
+        // rows once a strip would exceed the GPU's max texture width, so the
+        // cell size is a property of the packed image, not of the roster.
+        cellW: Math.round(img.width / sheet.cols),
+        cellH: Math.round(img.height / sheet.rows),
+        clips: Object.fromEntries(sheet.clips),
+      };
+    };
     // Dev telemetry for headless behaviour QA.
     (window as unknown as { __dungeonStats?: () => unknown }).__dungeonStats = () => ({
       projectiles: state.projectiles.length,

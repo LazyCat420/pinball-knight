@@ -33,7 +33,7 @@
  * hostUsedGB when known), trip record ~/comfy/guard-tripped.json (cleared
  * by the next server start). Zero dependencies; pid at ~/comfy/guard.pid.
  */
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -121,10 +121,74 @@ function hostMem() {
 
 const log = (s) => console.log(`[guard ${new Date().toISOString()}] ${s}`);
 
+/**
+ * ── RECLAIM THE PAGE CACHE BEFORE KILLING ANYBODY'S WORK ────────────────────
+ *
+ * MEASURED 2026-08-08, one attack clip, sampled every 3s:
+ *
+ *     host used     35.32 → 60.65 GB   (+25.3)
+ *     comfy RSS      1.02 → 11.11 GB   (+10.1)
+ *     wsl available 31.28 → 23.50 GB   (-7.8 ONLY)
+ *
+ * The host grew 25GB while ComfyUI grew 10 and Linux barely noticed. The
+ * missing ~15GB is PAGE CACHE: a Wan run reads two GGUF experts of 11.2GB
+ * each, 22.4GB per run, and Linux caches every byte. `MemAvailable` counts
+ * that as available because it is reclaimable — so `free` looks healthy
+ * throughout — while Windows sees vmmemWSL balloon by the full amount and
+ * counts it as USED. This is not a leak and it is not ComfyUI: it happens on
+ * every run by construction.
+ *
+ * Which means the host tripwire fires on memory that is FREE FOR THE ASKING.
+ * Interrupting the job is the wrong first move; dropping the cache reclaims
+ * ~15-20GB in about a second and the run continues.
+ *
+ * Needs root, and the guard deliberately does not assume it has any. Without
+ * the sudoers line it logs once, says what to add, and falls through to the
+ * old behaviour — a guard that silently stopped protecting the box because a
+ * privilege was missing would be worse than one that never tried.
+ *
+ *   sudo tee /etc/sudoers.d/bdb-dropcaches <<'EOF'
+ *   lazycat ALL=(root) NOPASSWD: /usr/bin/tee /proc/sys/vm/drop_caches
+ *   EOF
+ *   sudo chmod 0440 /etc/sudoers.d/bdb-dropcaches
+ */
+let cacheDropWarned = false;
+function dropPageCache() {
+  const before = availGiB();
+  try {
+    execFileSync("sudo", ["-n", "/usr/bin/tee", "/proc/sys/vm/drop_caches"], {
+      input: "3\n",
+      stdio: ["pipe", "ignore", "ignore"],
+      timeout: 15_000,
+    });
+  } catch {
+    if (!cacheDropWarned) {
+      cacheDropWarned = true;
+      log(
+        "cannot drop the page cache (no passwordless sudo) — a Wan run's 22GB of model reads " +
+          "will keep counting against the HOST. See the note above dropPageCache in guard.mjs.",
+      );
+    }
+    return null;
+  }
+  const after = availGiB();
+  return { before, after, freedGiB: after - before };
+}
+
 let lastSoft = 0;
 async function softStrike(why) {
   if (Date.now() - lastSoft < COOLDOWN_MS) return;
   lastSoft = Date.now();
+
+  // The cheap reclaim first. `freed` is measured, not assumed, so a drop that
+  // recovers nothing still falls through to the interrupt rather than
+  // congratulating itself — the pressure might be real this time.
+  const dropped = dropPageCache();
+  if (dropped && dropped.freedGiB > 1) {
+    log(`SOFT (${why}) — dropped the page cache, reclaimed ${dropped.freedGiB.toFixed(1)}GiB; letting the job continue`);
+    return;
+  }
+
   log(`SOFT (${why}) — interrupting + dropping cached models`);
   try {
     await fetch(`${URL}/interrupt`, { method: "POST" });

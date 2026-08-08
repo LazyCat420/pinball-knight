@@ -53,6 +53,7 @@ import { disposeLevel } from "../dispose";
 import { tileCenter } from "../maze/generator";
 import type { LevelPlan } from "../maze/decorate";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./title-grid";
+import { introDeltas } from "./clock";
 import { getKnightSheet } from "../render/knight-sheets";
 import { lookFromGear } from "../render/knight-look";
 import { createActorSprite, cutFrameStrip, type ActorSprite } from "../engine/render/sprite";
@@ -294,7 +295,8 @@ export function runPinballIntro(onDone: () => void): void {
   let pt = 0; // time within current phase
   let finishing = false;
   let cleaned = false;
-  let lastNow = performance.now();
+  /** Negative until the first tick stamps it — see the note in `tick`. */
+  let lastNow = -1;
   let simAcc = 0;
   let lastBumperAt = -1;
   let shake = 0;
@@ -813,15 +815,20 @@ export function runPinballIntro(onDone: () => void): void {
     }
     (window as unknown as { __dungeonIntroPhase?: string | null }).__dungeonIntroPhase = phase;
     state.animFrameId = requestAnimationFrame(tick);
-    const dt = Math.min(0.05, (now - lastNow) / 1000);
+    // TWO deltas: `pdt` is real time and drives the choreography, `dt` stays
+    // clamped and drives the ball. Read clock.ts before merging them again —
+    // one number served both, and the intro took 22s instead of 11.4s.
+    const { pdt, dt } = introDeltas(now, lastNow);
     lastNow = now;
-    pt += dt;
+    pt += pdt;
     const nowS = now / 1000;
 
     switch (phase) {
       case "run":
         paintOverworld(pt, false, 0, dt);
-        if (pt >= JUMP_T && pt - dt < JUMP_T) sfxRoll();
+        // Edge-detected against the delta `pt` actually moved by, or a caught-up
+        // frame steps clean over the trigger and the sound never plays.
+        if (pt >= JUMP_T && pt - pdt < JUMP_T) sfxRoll();
         if (pt >= RUN_DUR) {
           phase = "bonk";
           pt = 0;

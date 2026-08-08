@@ -58,7 +58,14 @@ const { createCanvas, loadImage } = require("canvas");
 import { writeFileSync, readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { keyChroma } from "./prep-sheet.mjs";
+import { keyChroma, isChroma } from "./prep-sheet.mjs";
+// The REAL matte, not a second copy of it. Node strips the types; this is the
+// same function `npm run sprites` and the panel's cut preview run — see
+// `keyFrame` below for why a magenta-only key was not enough.
+import { matte } from "../matte.ts";
+// Same gate the CLI and the panel run, not a third copy of the idea — a
+// reimplemented check cannot see the original drift away from it.
+import { ghostClip } from "../ghost.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const [, , mode, recipePath, outPath] = process.argv;
@@ -73,14 +80,55 @@ const CELL_H = 320;
 /** Living figures fill this share of the cell; the rest is headroom + gutter. */
 const TARGET = CELL_H * 0.78;
 
+/**
+ * KEY THE BACKGROUND THIS FRAME ACTUALLY HAS.
+ *
+ * `keyChroma` tests for the MAGENTA FAMILY (`g < 60`), which is right for a
+ * sheet the model drew on a #ff00ff field and useless for anything else. The
+ * 08-07 brute run is exactly anything else: measured at the corner, the S
+ * clips sit on lavender (243,169,255 — g=169) and the E/N clips on near-white
+ * (246,248,239). Both sail straight past `g < 60`, so every frame keyed to
+ * NOTHING, the bbox became the full canvas, and the build died on the first
+ * frame it touched.
+ *
+ * Widening the chroma test is the wrong repair twice over: white backgrounds
+ * are not a hue at all, and a global colour key punches holes through art that
+ * happens to match (the reason `matte.ts` exists and the reason it fills from
+ * the BORDER instead). So the fallback is the real matte — the same function
+ * `npm run sprites` runs one stage later — and chroma keeps first refusal
+ * because a true magenta field is unambiguous and free.
+ */
+function keyFrame(data, w, h, file) {
+  // A magenta corner means the generator was given the chroma backdrop; trust
+  // the cheap hue test, which also handles the darker "floor shelf".
+  if (isChroma(data[0], data[1], data[2])) {
+    keyChroma(data);
+    return { how: "chroma" };
+  }
+  const { data: keyed, report } = matte(data, w, h);
+  if (report.failures.length) throw new Error(`${file}: matte refused — ${report.failures.join("; ")}`);
+  data.set(keyed);
+  return { how: `matte bg=${report.bg.join(",")} keyed=${(report.keyedPct * 100).toFixed(0)}%` };
+}
+
+/**
+ * Load a frame TWICE over: the raw pixels and the keyed ones.
+ *
+ * The raw copy is not waste. `ghost.ts` is the only honest reading of a
+ * dissolved limb and it measured its own separation collapsing from 95x to 2x
+ * once a matte has been applied — the key's soft fringe is the confound. So the
+ * gate has to see the frame as the decoder wrote it, and this is the last place
+ * in the pipeline where that version still exists.
+ */
 const loadKeyed = async (file) => {
   const img = await loadImage(file);
   const c = createCanvas(img.width, img.height);
   const ctx = c.getContext("2d");
   ctx.drawImage(img, 0, 0);
   const im = ctx.getImageData(0, 0, img.width, img.height);
-  keyChroma(im.data);
-  return { data: im.data, w: img.width, h: img.height };
+  const raw = { width: img.width, height: img.height, data: Uint8ClampedArray.from(im.data) };
+  const { how } = keyFrame(im.data, img.width, img.height, file);
+  return { data: im.data, w: img.width, h: img.height, how, raw };
 };
 
 /** Tight alpha bbox — the silhouette, not the canvas. */
@@ -102,13 +150,29 @@ function bbox(data, w, h) {
 /**
  * GHOSTING SCORE — pixels in the near-miss chroma band.
  *
- * Wan blurs hardest in the MIDDLE of a clip: the endpoints are crisp (frame 1
- * is the init, the last has settled) and the frames between carry translucent
- * motion smears. Those smears are art blended over the key colour, so they are
+ * The translucent smears are art blended over the key colour, so they are
  * neither chroma enough to key nor opaque enough to be silhouette — they
  * survive and stretch the bbox to the full canvas. Counting the band is a
  * direct read of the defect, which is why picking is SCORED and not strided:
- * an evenly spaced pick lands squarely on the blurriest frames.
+ * an evenly spaced pick can land squarely on the ruined frames.
+ *
+ * ── THE EXPLANATION THAT USED TO BE HERE WAS WRONG ──────────────────────────
+ *
+ * It said "Wan blurs hardest in the MIDDLE of a clip: the endpoints are crisp".
+ * That is what the defect LOOKS like and it is not what causes it. Measured
+ * 2026-08-07 on a 21-frame walk: the ruined frames were 4, 5, 8, 12, 13, 16 —
+ * `VAEDecodeTiled`'s temporal window boundaries at `temporal_size: 8`, where
+ * the decoder cross-fades two independent decodes of a moving limb. Frame 0
+ * looks crisp because it is the pinned init, not because endpoints are special.
+ *
+ * Decoding in ONE window (now the default in `graphs.mjs`) takes the worst
+ * frame from 10.43% to 0.23% and flags nothing. So this function is a NET, not
+ * the fix, and it should now find nothing on a fresh clip.
+ *
+ * Two limits worth knowing before trusting it: it is magenta-specific (that
+ * band is a near-miss chroma test and reads nothing on a white field), and it
+ * runs AFTER the key, where `ghost.ts` measured the separation collapsing from
+ * 95x to 2x. `ghostClip` below is the gate; this stays for the picking score.
  */
 function ghosting(data) {
   let n = 0;
@@ -137,15 +201,62 @@ for (const p of recipe.rows) {
   rows.push({ ...p, frames });
 }
 
+/**
+ * THE FAIL-CLOSED HALF.
+ *
+ * `/forge` already excludes dissolved frames from the tray and skips them on
+ * playback, but that is a panel behaviour and there are four doors into a
+ * sheet. This is the one every published sprite goes through, and a frame whose
+ * limb dissolved must not reach `public/sprites/` because somebody clicked past
+ * a badge.
+ *
+ * Scored PER ROW rather than over the whole recipe: `ghostClip`'s relative rule
+ * compares a frame against its own clip's median, and clips generated in
+ * different runs are different populations. Pooling them would let a clean
+ * clip's frames raise the bar for a bad one.
+ *
+ * Scored on the RAW pixels — see `loadKeyed`.
+ */
+const ghostVerdicts = rows.map((r) => ({
+  clip: r.clip,
+  v: ghostClip(r.frames.map((f) => f.src.raw), { label: `${recipe.name ?? "sheet"} ${r.clip}` }),
+}));
+const ghostBad = ghostVerdicts.filter((g) => g.v.flagged.length);
+
 if (mode === "report") {
   for (const r of rows) {
     console.log(`${r.clip.padEnd(8)} ${r.frames.length} frames from ${r.dir}/`);
-    for (const f of r.frames) console.log(`   ${f.file.padEnd(28)} ${f.bb.w}x${f.bb.h}  ghost=${f.ghost}`);
+    const g = ghostVerdicts.find((x) => x.clip === r.clip);
+    r.frames.forEach((f, i) => {
+      const pct = g ? `${(g.v.pct[i] * 100).toFixed(2)}%` : "—";
+      const mark = g?.v.flagged.includes(i) ? " ✗ DISSOLVED" : g?.v.soft.includes(i) ? " ! borderline" : "";
+      console.log(`   ${f.file.padEnd(28)} ${f.bb.w}x${f.bb.h}  ghost=${pct.padEnd(8)} chroma=${String(f.ghost).padEnd(7)} ${f.src.how}${mark}`);
+    });
+  }
+  if (ghostBad.length) {
+    console.log("");
+    for (const g of ghostBad) console.log(g.v.report);
   }
   process.exit(0);
 }
 if (mode !== "build") throw new Error(`unknown mode ${mode}`);
 if (!outPath) throw new Error("build needs an output path");
+
+// REFUSE, before anything is composited. `report` above prints the same numbers
+// without throwing, which is the door for looking at a flagged frame and
+// deciding it is a false positive — the recipe's `pick` is then the place to
+// say so, by picking a different frame.
+if (ghostBad.length) {
+  const where = ghostBad
+    .map((g) => `${g.clip}: ${g.v.flagged.map((i) => rows.find((r) => r.clip === g.clip).frames[i].file).join(", ")}`)
+    .join("\n  ");
+  throw new Error(
+    `refusing to build — ${ghostBad.length} clip(s) pick a frame whose limb dissolved in the decode:\n  ${where}\n` +
+    `  These play as a morph, not a motion. Re-pick, or regenerate: a windowed VAE decode\n` +
+    `  is the usual cause and one temporal window is now the default (graphs.mjs \`dec\`).\n` +
+    `  \`prep-clips.mjs report <recipe>\` prints the per-frame scores without throwing.`,
+  );
+}
 
 const median = (a) => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
 

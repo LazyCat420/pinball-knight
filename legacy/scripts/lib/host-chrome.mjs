@@ -129,6 +129,12 @@ export async function connectRealGpu({ port = ENV_PORT ?? 9333, headed = false, 
   const exe = WIN_CHROME.find((p) => existsSync(p));
   if (!exe) return null;
 
+  // Armed before the spawn, so a browser started here is collected even if the
+  // caller dies between now and its own teardown. Reaping runs at the same
+  // moment because this is the one point every harness passes through.
+  armReaper();
+  reapStaleProfiles({ log });
+
   const chromeArgs = [
     headed ? "--new-window" : "--headless=new",
     ...(sound ? [] : ["--mute-audio"]),
@@ -186,6 +192,81 @@ export function closeHostBrowser() {
     /* best effort — a stray headless browser is not worth failing the run */
   }
   launchedThisRun = false;
+}
+
+/**
+ * ── CLOSING ON THE HAPPY PATH IS NOT CLOSING ────────────────────────────────
+ *
+ * `closeHostBrowser()` was correct and was only ever reached when a harness
+ * ran to completion and remembered to call it. Every Ctrl-C, every throw, every
+ * agent that walked away from a probe left a detached Windows browser alive
+ * forever — and the browser is DETACHED and `unref()`d precisely so that it
+ * outlives us, so nothing else was going to collect it.
+ *
+ * Measured 2026-08-07: **18 headless Chrome instances and 2 Edge instances**
+ * still running, 164 processes holding **9.0 GB**, plus **92 abandoned profile
+ * directories in C:\Temp using 24.5 GB of disk**. Names like `bdb-descend-9385`
+ * and `bdb-audio-9411` come from one-off debug scripts that no longer exist, so
+ * this was never one harness misbehaving — it is every caller of this file, and
+ * the count grew across sessions (47 → 122 → 163 processes) until it was eating
+ * enough host RAM to make the sprite forge's own RAM guard strike every Wan run.
+ *
+ * The fix belongs HERE rather than in seventeen callers, and it has to fire on
+ * the paths a caller cannot: process exit, both interrupt signals, and an
+ * unhandled throw.
+ *
+ * `exit` handlers must be synchronous — `killByUserDataDir` uses `execSync`,
+ * which is why this works at all. On the signal paths we re-raise the default
+ * behaviour after cleaning up rather than swallowing the signal.
+ */
+let reaperArmed = false;
+function armReaper() {
+  if (reaperArmed) return;
+  reaperArmed = true;
+  process.on("exit", () => closeHostBrowser());
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(sig, () => {
+      closeHostBrowser();
+      process.exit(sig === "SIGINT" ? 130 : 143);
+    });
+  }
+  process.on("uncaughtException", (err) => {
+    closeHostBrowser();
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+/**
+ * Delete abandoned `C:\Temp\bdb-*` profile directories — the ones no live
+ * browser is using.
+ *
+ * DIRECTORIES ONLY, NEVER PROCESSES. A concurrent run holds its own slot dir
+ * and this file's whole teardown design rests on "a run can only ever kill its
+ * own slot's browsers" (see `userDataDirName`). A reaper that killed by name
+ * would break exactly the parallel harnesses the slot broker exists to enable,
+ * so live dirs are read off the process list and skipped.
+ *
+ * Failure is silent by design: this is housekeeping, and no probe should fail
+ * because a leftover directory was locked.
+ */
+export function reapStaleProfiles({ log = () => {} } = {}) {
+  try {
+    const out = psRun(
+      `$live = @(${BROWSERS} | ForEach-Object {
+         if ($_.CommandLine -match '--user-data-dir=\\"?([^\\" ]+)') { Split-Path $matches[1] -Leaf }
+       } | Sort-Object -Unique)
+       $gone = Get-ChildItem 'C:\\Temp' -Directory -Filter 'bdb-*' -ErrorAction SilentlyContinue |
+               Where-Object { $live -notcontains $_.Name }
+       $gone | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+       $gone.Count`,
+      { timeout: 60_000 },
+    ).trim();
+    const n = Number(out);
+    if (n > 0) log(`▶ reaped ${n} abandoned browser profile dir(s) from C:\\Temp`);
+  } catch {
+    /* housekeeping only — never fail a run over it */
+  }
 }
 
 /**

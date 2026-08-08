@@ -29,7 +29,7 @@ import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import {
   assertNodes,
@@ -66,6 +66,8 @@ type Job = {
   startedAt: number;
   params?: Record<string, unknown>;
   resolvedPrompt?: string;
+  /** The NEGATIVE actually sent — read off the built graph, not recomputed. */
+  resolvedNegative?: string;
   seed?: number;
   fast?: boolean;
   /** Ran on the small animation leg (TI2V-5B) rather than the A14B expert pair. */
@@ -81,6 +83,12 @@ type Job = {
   frames?: string[];
   error?: string;
   tookS?: number;
+  /**
+   * Per-frame ghost score — see `sprite-forge/ghost.ts`. Written once, when the
+   * frames land, because that is the only moment they exist un-matted and the
+   * metric's separation collapses after a key (95x → 2x, measured).
+   */
+  ghost?: { pct: number[]; flagged: number[]; soft: number[]; level: string };
 };
 const jobs: Map<string, Job> = (globalThis as any).__forgeGen ?? new Map();
 (globalThis as any).__forgeGen = jobs;
@@ -98,10 +106,110 @@ function persistJob(id: string) {
   }
 }
 
+/** The PNGs a job dir really holds, sorted — the truth about its frames. */
+function framesOnDisk(id: string): string[] {
+  try {
+    return readdirSync(join(WORK, id))
+      .filter((f) => f.endsWith(".png"))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Why the backend is not answering, in the words of the thing that stopped it.
+ *
+ * The RAM guard writes one line per strike naming the cause, and a SOFT strike
+ * writes no `guard-tripped.json` — so the log is the only place it is recorded.
+ * It also strikes on WINDOWS HOST pressure, which `free` inside WSL cannot see:
+ * 2026-08-07 lost several runs with the host at 61.7GB while WSL reported 26GB
+ * available throughout. Without these lines the panel shows "fetch failed" and
+ * the obvious inference — something is broken in the code — is wrong.
+ */
+function guardHint(detail?: string): string {
+  let tail = "";
+  try {
+    const lines = readFileSync(join(homedir(), "comfy", "guard.log"), "utf8").trimEnd().split("\n");
+    tail = lines.slice(-3).join("\n");
+  } catch {
+    tail = "(no ~/comfy/guard.log)";
+  }
+  return (
+    `The RAM guard is the usual cause. It strikes on Windows host memory too, which\n` +
+    `free(1) inside WSL cannot see.\n\n` +
+    `Last guard lines:\n${tail}\n\n` +
+    `Restart:  ~/comfy/run.sh -d${detail ? `\n\n(${detail})` : ""}`
+  );
+}
+
+/**
+ * The negative text on a built graph.
+ *
+ * Every graph in `graphs.mjs` names the node `neg`; only the field differs —
+ * `CLIPTextEncode` calls it `text`, `TextEncodeQwenImageEditPlus` calls it
+ * `prompt`. Typed loosely on purpose: a graph is a JSON document whose shape is
+ * a union across four builders, and narrowing it here would mean restating that
+ * union in a second place that then has to be kept in step.
+ */
+function negField(graph: any): "text" | "prompt" | null {
+  const inputs = graph?.neg?.inputs;
+  if (!inputs) return null;
+  if (typeof inputs.text === "string") return "text";
+  if (typeof inputs.prompt === "string") return "prompt";
+  return null;
+}
+function readNegative(graph: any): string | undefined {
+  const k = negField(graph);
+  return k ? (graph.neg.inputs[k] as string) : undefined;
+}
+function setNegative(graph: any, text: string): void {
+  const k = negField(graph);
+  if (k) graph.neg.inputs[k] = text;
+}
+
 async function uploadB64(b64: string, tag: string): Promise<string> {
   const tmp = join(tmpdir(), `forge-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}.png`);
   writeFileSync(tmp, Buffer.from(String(b64).replace(/^data:image\/\w+;base64,/, ""), "base64"));
   return uploadImage(tmp, `forge-${tag}-${Date.now()}.png`);
+}
+
+/**
+ * Score a finished clip for dissolved limbs, ON THE RAW FRAMES.
+ *
+ * ── WHY THIS IS ALLOWED TO FAIL SOFT, AND WHERE THE REAL GATE IS ────────────
+ *
+ * `canvas` is a native module and this runs inside Next's server runtime, which
+ * is exactly the sort of place a .node binary goes missing after a rebuild. The
+ * frames are already paid for by the time we get here, so a decoder that will
+ * not load must not throw away the generation — it degrades to "no ghost data"
+ * and says so in the log.
+ *
+ * That makes this an INSTRUMENT, not the guard. The guard is fail-closed and
+ * lives where art gets published (`prep-clips` / `driftRow`); a missing score
+ * here shows up as a job card with no badges, which reads as "not measured"
+ * rather than "measured clean" because the panel keys off `ghost` being absent.
+ */
+async function scoreGhosts(dir: string, frames: string[]): Promise<Job["ghost"]> {
+  if (frames.length < 2) return undefined;
+  try {
+    const { loadImage, createCanvas } = await import("canvas");
+    const { ghostClip } = await import("@/src/game/pinball-knight/tools/sprite-forge/ghost");
+    const cells = [];
+    for (const name of frames) {
+      const img = await loadImage(join(dir, name));
+      const c = createCanvas(img.width, img.height);
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, img.width, img.height);
+      cells.push({ width: img.width, height: img.height, data: d.data as unknown as Uint8ClampedArray });
+    }
+    const v = ghostClip(cells);
+    return { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
+  } catch (e: any) {
+    console.warn(`[forge] ghost scoring skipped: ${e?.message ?? e}`);
+    return undefined;
+  }
 }
 
 async function runJob(id: string, graph: any, clientId: string) {
@@ -137,6 +245,7 @@ async function runJob(id: string, graph: any, clientId: string) {
       frames.push(name);
     }
     Object.assign(job, { state: "done", frames, tookS: Math.round((Date.now() - t0) / 1000), progress: undefined, previewB64: undefined });
+    job.ghost = await scoreGhosts(dir, frames);
   } catch (e: any) {
     // A cancel surfaces here as an interrupted history or a timeout — keep
     // the cancelled state if DELETE already set it.
@@ -376,7 +485,13 @@ export async function POST(req: Request) {
     if (body.maskB64) images.mask = await uploadB64(body.maskB64, "mask");
     if (body.styleB64) images.style = await uploadB64(body.styleB64, "style");
   } catch (e: any) {
-    return NextResponse.json({ error: `ComfyUI unreachable at ${settings.comfyUrl}: ${e.message}` }, { status: 502 });
+    // `ComfyUI unreachable: fetch failed` is true and useless. The cause is
+    // almost always the RAM guard, which names itself in one line in its own
+    // log — and it strikes on WINDOWS host pressure too, which nothing inside
+    // WSL can see. `cli.mjs` learned to quote that log after two sessions read
+    // the bare string as a model or settings fault; the panel had not.
+    console.error("[forge] upload failed — ComfyUI unreachable", e);
+    return NextResponse.json({ error: `ComfyUI is not answering at ${settings.comfyUrl}.\n\n${guardHint(e.message)}` }, { status: 502 });
   }
 
   const has = (optionId: string) => {
@@ -419,13 +534,53 @@ export async function POST(req: Request) {
       images,
       seed: baseSeed,
     };
+    /**
+     * AN EDITED PROMPT, WITHOUT A SECOND PROMPT PATH.
+     *
+     * `modes.mjs` is the one registry of prompts and this must not become a
+     * rival to it: the override replaces the mode's `prompt()` for this ONE
+     * job and nothing else. Every mode's `build` calls `this.prompt(params,
+     * ctx)`, so swapping that single method on a shallow copy reaches the
+     * graph, the recorded `resolvedPrompt` and the panel's re-roll alike —
+     * there is no path where the picture and the record disagree.
+     *
+     * What it deliberately does NOT override: `preset.avoid`, which becomes
+     * the negative. Those clauses were each added off a measured failure (the
+     * frog's gliding feet, the death clips dissolving into VFX) and they are
+     * not what a user is editing when they reword an action.
+     *
+     * ⚠️ It DOES let a trigger word be deleted. `pix3lwalk` is prepended by
+     * `animate`'s `prompt()` when the walk LoRA is installed; edit that out
+     * and the LoRA is still loaded but never fires. The panel pre-fills the
+     * resolved prompt so the trigger is there unless it is removed on purpose.
+     */
+    const override = typeof body.prompt === "string" && body.prompt.trim() ? body.prompt.trim() : null;
     let graph, resolvedPrompt;
     try {
-      resolvedPrompt = mode.prompt(params, ctx);
-      graph = mode.build(params, ctx);
+      resolvedPrompt = override ?? mode.prompt(params, ctx);
+      graph = (override ? { ...mode, prompt: () => override } : mode).build(params, ctx);
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+
+    /**
+     * THE NEGATIVE — recorded, and editable, because it is half the prompt.
+     *
+     * It was never written down anywhere. `wanI2V` carries a long default (the
+     * camera terms, the scale terms, the background terms) and each mode adds
+     * its preset's `avoid` on top, and none of that reached `job.json` or the
+     * panel. So "show me the prompt that made this image" could only ever show
+     * half of it, and the half that is doing the most work on a video model was
+     * invisible: the reason a walk does not glide is a clause in there.
+     *
+     * Read off the BUILT GRAPH rather than recomputed, so it is literally the
+     * string being sent. Every graph names the node `neg`; only the field
+     * differs — `CLIPTextEncode` calls it `text`, `TextEncodeQwenImageEditPlus`
+     * calls it `prompt`.
+     */
+    const negOverride = typeof body.negative === "string" && body.negative.trim() ? body.negative.trim() : null;
+    if (negOverride) setNegative(graph, negOverride);
+    const resolvedNegative = readNegative(graph);
     const facet =
       typeof params.facing === "string" ? `-${params.facing}` : typeof params.preset === "string" && params.preset !== "custom" ? `-${params.preset}` : "";
     const preset = mode.presets?.find((p: { id: string }) => p.id === params.preset);
@@ -439,6 +594,7 @@ export async function POST(req: Request) {
       startedAt: Date.now(),
       params,
       resolvedPrompt,
+      resolvedNegative,
       seed: baseSeed,
       fast,
       small,
@@ -465,22 +621,106 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const id = url.searchParams.get("id");
   const frame = url.searchParams.get("frame");
+
+  /**
+   * `?resolve=<modeId>&params=<json>` — what prompt WOULD this run use?
+   *
+   * The panel needs it to show an editable prompt for a move that has not been
+   * generated yet. It could have templated the string client-side instead, and
+   * that is precisely the mistake: `modes.mjs` is the one registry of prompts,
+   * a second copy of the template drifts from it silently, and a reimplemented
+   * copy cannot see the original change. So the panel asks the registry.
+   *
+   * Pure and cheap — no ComfyUI, no upload, no job. `has()` reports installed
+   * options because a trigger word like `pix3lwalk` is only prepended when its
+   * LoRA is actually there, and the user must see the prompt that will run.
+   */
+  const resolve = url.searchParams.get("resolve");
+  if (resolve) {
+    const mode = modeById(resolve);
+    if (!mode) return NextResponse.json({ error: `unknown mode ${resolve}` }, { status: 404 });
+    let params: Record<string, unknown> = {};
+    try {
+      params = JSON.parse(url.searchParams.get("params") ?? "{}");
+    } catch {
+      return NextResponse.json({ error: "params must be JSON" }, { status: 400 });
+    }
+    const settings = loadSettings();
+    const has = (optionId: string) => {
+      const o = optionById(optionId);
+      return o ? installState(o).state === "installed" : false;
+    };
+    try {
+      const ctx = {
+        has,
+        lora: (o: string) => optionById(o)?.file.replace(/^loras\//, "") ?? null,
+        unet: (s: string) => chosenOption(s, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
+        chosen: (s: string) => chosenOption(s, settings.chosen)?.id ?? null,
+        fileOf: (o: string) => optionById(o)?.file.replace(/^[^/]+\//, "") ?? null,
+        fast: false,
+        /**
+         * A PREVIEW DESCRIBES THE A14B LEG, ALWAYS, AND SAYS SO BY BEING FALSE.
+         *
+         * This ctx is built by hand rather than shared with POST's, and a field
+         * missing here does not fail — it reads as `undefined`, which
+         * `buildWanClip` treats as "not small" and silently previews the wrong
+         * leg's prompt and negative. Stating it explicitly is the difference
+         * between a default and an omission.
+         *
+         * It is `false` rather than plumbed because `?resolve=` takes no body:
+         * the caller cannot ask for a leg, so inventing one would be a preview
+         * of a run nobody requested. If the panel ever needs a 5B preview it
+         * must pass the flag, and this line is where it lands.
+         */
+        small: false,
+        // Placeholder names. Modes throw without an init and we only ever read
+        // strings back out — the graph is discarded, never queued.
+        images: { init: "resolve.png", end: "resolve.png", style: "resolve.png", mask: "resolve.png" },
+        seed: 0,
+      };
+      const prompt = mode.prompt(params, ctx);
+      // The negative is worth more than the positive on the Wan leg and it is
+      // not derivable from the mode alone — it is assembled inside the graph.
+      // Build one to read it; a mode that cannot build without a real image
+      // simply reports no negative rather than failing the whole lookup.
+      let negative: string | undefined;
+      try {
+        negative = readNegative(mode.build(params, ctx));
+      } catch {
+        /* no negative for this mode/params — the panel just shows the positive */
+      }
+      return NextResponse.json({ prompt, negative });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+  }
+
   if (!id) {
     // Union of memory and disk: the Map knows live jobs, the disk knows
     // everything that ever finished (job.json survives reloads).
     const all: Record<string, unknown> = {};
     try {
       for (const dir of readdirSync(WORK)) {
+        // THE DIRECTORY IS THE AUTHORITY ON FRAMES, not job.json.
+        //
+        // A job.json is written by two hands: this route (which records
+        // `frames`) and cli.mjs (which, until it was fixed, did not). A row
+        // with no `frames` renders as a bare line — no thumbnails, no
+        // → init / + sheet / re-roll — so an entire CLI-driven move-set
+        // showed up in the panel as twelve "done" lines nobody could touch.
+        // Listing the PNGs costs one readdir and makes both hands' work,
+        // and every older record already on disk, editable.
+        const frames = framesOnDisk(dir);
         try {
           const meta = JSON.parse(readFileSync(join(WORK, dir, "job.json"), "utf8"));
           // Disk copies of live states are stale by definition — the Map
           // overwrites survivors below; what remains died in a reload.
           all[dir] =
-            meta.state === "queued" || meta.state === "running"
-              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it" }
-              : meta;
+            (meta.state === "queued" || meta.state === "running") && !frames.length
+              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames }
+              : { ...meta, ...(meta.state === "running" && frames.length ? { state: "done" } : {}), frames };
         } catch {
-          all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0 };
+          all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0, frames };
         }
       }
     } catch {
@@ -535,7 +775,7 @@ export async function GET(req: Request) {
     // good — its graph lived in memory — so report it honestly.
     try {
       const meta = JSON.parse(readFileSync(join(WORK, id, "job.json"), "utf8"));
-      const frames = readdirSync(join(WORK, id)).filter((f) => f.endsWith(".png"));
+      const frames = framesOnDisk(id);
       if ((meta.state === "queued" || meta.state === "running") && !frames.length) {
         return NextResponse.json({ ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames });
       }
@@ -544,7 +784,7 @@ export async function GET(req: Request) {
       /* fall through */
     }
     try {
-      const frames = readdirSync(join(WORK, id)).filter((f) => f.endsWith(".png"));
+      const frames = framesOnDisk(id);
       if (frames.length) return NextResponse.json({ state: "done", frames, note: "recovered from disk" });
     } catch {
       /* genuinely unknown */

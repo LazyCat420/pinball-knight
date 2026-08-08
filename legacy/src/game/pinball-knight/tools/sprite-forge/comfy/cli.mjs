@@ -6,10 +6,13 @@
  *   the /forge library (frog, brute, pinball_knight…). Untagged stays unfiled.
  *
  *   node cli.mjs stats
+ *   node cli.mjs create  --prompt "a mangy dog monster"      [--canvas WxH] [--seed N]
+ *                        [--no-style] [--steps N]        TEXT -> IMAGE, no init
  *   node cli.mjs rotate  --init frame.png --to "left"        [--out DIR] [--seed N]
  *   node cli.mjs edit    --init frame.png --prompt "..."     [--out DIR] [--seed N]
  *                        [--canvas init|WxH]
  *   node cli.mjs animate --init frame.png --action "walking" [--out DIR] [--seed N]
+ *                        [--loop] [--end last.png] [--canvas WxH] [--temporal N]
  *                        [--frames 21] [--no-lora] [--tile 128]
  *   node cli.mjs retarget --poses row.png --character idle.png --subject "a spotted frog"
  *   node cli.mjs refile  --dir <folder of PNGs> --file-as brute [--label "..."] [--mode animate]
@@ -22,16 +25,21 @@
  * Manual tool, not a test: nothing under vitest may ever reach the network.
  */
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
-import { controlMap, qwenEdit, wanI2V } from "./graphs.mjs";
+import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
 import { MODES, fastAvailable, smallAvailable } from "./modes.mjs";
 import { optionById, chosenOption } from "./manifest.mjs";
 import { installState, loadSettings } from "./forge-config.mjs";
+// The gate runs HERE, on the raw frames, because this is the only place that
+// sees them before anything mattes or crops them — and `ghost.ts` measured its
+// own separation collapsing from 95x to 2x once a matte is applied.
+import { ghostClip } from "../ghost.ts";
 
 /**
  * THE SAME `ctx` THE PANEL ROUTE BUILDS — LoRAs, unet choices and all.
@@ -143,19 +151,149 @@ function outDir(kind) {
  * record (so the frames survive and the mode/label are recoverable) and still
  * stay unfiled, which is the honest state for a generation that belongs to no
  * creature yet.
+ *
+ * THE RECORD MUST CARRY `frames`, `params` AND `clip` — they are what make the
+ * panel's job card an editing surface rather than a receipt. Frames draw the
+ * thumbnails (and with them → init / + sheet / ✎ fix), params arm ↻ re-roll,
+ * and clip pre-labels the row the tray files these frames under. A twelve-clip
+ * move-set generated here once landed in /forge as twelve untouchable "done"
+ * lines because this object held none of the three. (The generate route now
+ * also reads the directory for frames, so older records self-heal; writing
+ * them is still what keeps job.json a complete record on its own.)
  */
+/**
+ * "fetch failed" IS NOT A DIAGNOSIS, and it has now cost three sessions.
+ *
+ * When the guard stops ComfyUI, every call in `client.mjs` fails with node's
+ * bare `TypeError: fetch failed`. That string has been read as a model problem,
+ * a settings problem and a network problem on three separate occasions; it has
+ * never once been any of those. It means the backend is not there.
+ *
+ * The guard hard-strikes on sustained WSL pressure, and it tends to do so
+ * SECONDS AFTER a Wan run finishes — 39s after the 08-07 walk, 45s after the
+ * decode A/B. So the failure lands on the NEXT run, and the run that caused it
+ * looks like the healthy one. Naming that here is the difference between "the
+ * backend is down, restart it" and another session spent theorising.
+ */
+async function requireBackend() {
+  try {
+    await systemStats();
+  } catch (err) {
+    throw new Error(
+      `ComfyUI is not answering on 127.0.0.1:8188 (${err.message}).\n` +
+      `  This is almost always the RAM guard having stopped it — a HARD strike often lands\n` +
+      `  seconds AFTER a Wan run finishes, so the previous run looks fine and this one dies.\n` +
+      `  Check:   tail -5 ~/comfy/guard.log\n` +
+      `  Restart: ~/comfy/run.sh -d`,
+    );
+  }
+}
+
+/** The last few lines of the guard's own log — it names the cause in one line. */
+function guardTail(n = 4) {
+  try {
+    const lines = readFileSync(join(homedir(), "comfy", "guard.log"), "utf8").trimEnd().split("\n");
+    return lines.slice(-n).map((l) => `    ${l}`).join("\n");
+  } catch {
+    return "    (no ~/comfy/guard.log)";
+  }
+}
+
+/**
+ * Turn a mid-run disconnect into the diagnosis instead of `fetch failed`.
+ *
+ * `requireBackend` covers the server being down when we start. The case that
+ * actually costs runs is the server dying DURING one: the job queues fine, the
+ * poll throws a bare `TypeError: fetch failed`, and the log says nothing about
+ * why. Measured 2026-08-07 — two runs lost to a HARD strike on HOST pressure
+ * (Windows at 61.7GB with 118 chrome processes holding 9.9GB of it), which is
+ * not visible from inside WSL at all: `free` showed 26GB available the whole
+ * time. Without the guard log quoted here that looks like a code fault.
+ */
+async function diagnose(err) {
+  const msg = err?.message ?? "";
+  const dropped = /fetch failed|ECONNREFUSED|socket hang up/i.test(msg);
+  // `execution failed:\n[]` — status "error" with NO execution_error message.
+  // A real node failure names the node; an empty list is the signature of an
+  // INTERRUPT, and the only thing that interrupts jobs here is the RAM guard.
+  // This is the exact string that has been read as a model or settings fault.
+  const interrupted = /execution failed:\s*\n?\s*\[\s*\]/.test(msg);
+  if (!dropped && !interrupted) return err;
+  let alive = true;
+  try { await systemStats(); } catch { alive = false; }
+  const what = interrupted
+    ? "ComfyUI reported an error with no failing node — that is an INTERRUPT, not a bad graph"
+    : `ComfyUI ${alive ? "is answering again but dropped this job" : "went away mid-run"}`;
+  return new Error(
+    `${msg}\n  ${what}.\n` +
+    `  The RAM guard is the usual cause, and it strikes on HOST pressure too, which\n` +
+    `  \`free\` inside WSL cannot see — 2026-08-07 lost two runs to Windows sitting at\n` +
+    `  61.7GB while WSL reported 26GB free. Last guard lines:\n${guardTail()}\n` +
+    `  ${alive ? "Backend is up; free host RAM before retrying." : "Restart: ~/comfy/run.sh -d"}`,
+  );
+}
+
 async function run(graph, dir, meta = {}) {
+  await requireBackend();
   await assertNodes(graph);
   const t0 = Date.now();
   const id = await queuePrompt(graph);
   console.log(`queued ${id}`);
-  const history = await waitFor(id);
+  let history, images;
+  try {
+    history = await waitFor(id);
+    images = outputImages(history);
+  } catch (err) {
+    throw await diagnose(err);
+  }
   const took = ((Date.now() - t0) / 1000).toFixed(1);
-  const images = outputImages(history);
+  const frames = [];
   for (const im of images) {
     const buf = await fetchImage(im);
-    writeFileSync(join(dir, im.filename.replace(/.*\//, "")), buf);
+    const name = im.filename.replace(/.*\//, "");
+    writeFileSync(join(dir, name), buf);
+    frames.push(name);
   }
+  // ── A RUN THAT PRODUCED NOTHING IS A FAILED RUN ──────────────────────────
+  //
+  // ComfyUI answers a guard-interrupted job with HTTP 200 and an empty output
+  // list, so this used to write `state: "done"` with `frames: []` and exit 0.
+  // `build-character.mjs` fires 18 of these unattended; every one of them could
+  // report success having produced nothing, which is the exact failure mode a
+  // green exit code is supposed to rule out. Read `~/comfy/guard.log` when this
+  // throws — a SOFT strike writes no `guard-tripped.json` and the log is the
+  // only place the cause is named.
+  if (frames.length === 0) {
+    writeFileSync(
+      join(dir, "job.json"),
+      JSON.stringify({ source: "cli", state: "failed", startedAt: t0, tookS: Math.round(Number(took)), promptId: id, frames: [], ...meta }, null, 1),
+    );
+    throw new Error(
+      `no frames after ${took}s — the backend returned an empty output. ` +
+      `Check ~/comfy/guard.log for a SOFT/HARD strike (it writes no guard-tripped.json on SOFT).`,
+    );
+  }
+
+  // ── THE GHOST GATE ───────────────────────────────────────────────────────
+  //
+  // Advisory here, on purpose: the frames are already paid for and dropping
+  // them is a curation decision, not a reason to throw away 435 seconds of
+  // GPU. What this MUST do is refuse to be silent, so the record carries the
+  // per-frame numbers and the panel can exclude the bad cells by default.
+  let ghost = null;
+  if (frames.length > 1) {
+    try {
+      const cells = [];
+      for (const name of frames) cells.push(await rawPng(join(dir, name)));
+      const v = ghostClip(cells, { label: meta.label ?? "clip" });
+      ghost = { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
+      if (v.flagged.length || v.soft.length) console.log(v.report);
+    } catch (err) {
+      // A scoring failure must not lose the frames. Say so and move on.
+      console.warn(`ghost gate skipped: ${err.message}`);
+    }
+  }
+
   // NB: `--file-as`, not `--character` — `retarget` already owns that flag
   // for its character IMAGE, and filing a run under a .png path would put
   // a junk row in the library.
@@ -163,13 +301,33 @@ async function run(graph, dir, meta = {}) {
   writeFileSync(
     join(dir, "job.json"),
     JSON.stringify(
-      { source: "cli", state: "done", startedAt: t0, tookS: Math.round(Number(took)), promptId: id, ...meta, ...(character ? { character } : {}) },
+      {
+        source: "cli",
+        state: "done",
+        startedAt: t0,
+        tookS: Math.round(Number(took)),
+        promptId: id,
+        frames: frames.sort(),
+        ...meta,
+        ...(character ? { character } : {}),
+        ...(ghost ? { ghost } : {}),
+      },
       null,
       1,
     ),
   );
   console.log(`${images.length} frame(s) in ${took}s -> ${dir}${character ? `  (filed under ${character})` : ""}`);
   return { images, took };
+}
+
+/** Decode a PNG to the `RawImage` the pure QA modules take. */
+async function rawPng(path) {
+  const { loadImage, createCanvas } = await import("canvas");
+  const img = await loadImage(path);
+  const c = createCanvas(img.width, img.height);
+  c.getContext("2d").drawImage(img, 0, 0);
+  const d = c.getContext("2d").getImageData(0, 0, img.width, img.height);
+  return { width: img.width, height: img.height, data: d.data };
 }
 
 const main = {
@@ -190,7 +348,13 @@ const main = {
     const prompt =
       `Turn the character to face ${to}. Same character, same colors, same pixel art style, ` +
       `same size and position, plain white background, full body visible.`;
-    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, { mode: "rotate", label: `rotate → ${to}` });
+    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, {
+      mode: "rotate",
+      label: `rotate → ${to}`,
+      params: { facing: to },
+      resolvedPrompt: prompt,
+      seed: Number(opt("seed", 7)),
+    });
   },
 
   /**
@@ -202,6 +366,46 @@ const main = {
    * outranks the sentence. Left opt-in so a plain single-figure edit keeps the
    * square it has always had.
    */
+  /**
+   * TEXT → IMAGE. The master, from nothing.
+   *
+   * Every other command here starts from a picture somebody else made — a
+   * photo, a painter's render, another game's sprite. This is step 1 of
+   * docs/PLAN_KEYFRAME_PIPELINE.md, and it is what makes the rest of that plan
+   * mean anything: once the master is ours, every keyframe and in-between
+   * downstream is conditioned on art this pipeline produced at the size it
+   * ships at.
+   *
+   * The style LoRAs are doing more work here than anywhere else in the forge —
+   * there is no init to inherit a look from, so `tarn59-pixel-style` IS the
+   * style decision. `--no-style` turns it off to see what the base model does
+   * unaided, which is the A/B worth having before trusting any of this.
+   *
+   *   node cli.mjs create --prompt "a mangy dog monster, side view" --file-as dog
+   *   node cli.mjs create --prompt "..." --canvas 768x1024 --seed 3
+   */
+  async create() {
+    const prompt = opt("prompt");
+    if (!prompt) throw new Error("create needs --prompt <description>");
+    const dir = outDir("create");
+    const canvas = opt("canvas", "1024x1024");
+    const [width, height] = canvas.split("x").map(Number);
+    if (!width || !height) throw new Error(`--canvas takes WxH, got "${canvas}"`);
+    const ctx = buildCtx({ images: {}, seed: Number(opt("seed", 7)), fast: has("fast"), leg: "qwen" });
+    // Same resolution path the panel uses, so a CLI master and a panel master
+    // are the same picture — the drift this file's header exists to prevent.
+    const loras = has("no-style") || !ctx.has("tarn59-pixel-style")
+      ? []
+      : [{ name: ctx.lora("tarn59-pixel-style"), strength: 0.8 }];
+    const seed = Number(opt("seed", 7));
+    console.log(`create ${width}x${height} seed ${seed}${loras.length ? " + pixel style lock" : " (NO style lora)"}`);
+    await run(
+      qwenText2Image({ prompt, width, height, seed, steps: Number(opt("steps", 20)), loras }),
+      dir,
+      { mode: "create", label: "create", params: { prompt }, resolvedPrompt: prompt, seed },
+    );
+  },
+
   async edit() {
     const init = opt("init");
     const prompt = opt("prompt");
@@ -227,7 +431,7 @@ const main = {
     await run(
       qwenEdit({ image, image2, prompt, seed: Number(opt("seed", 7)), denoise: Number(opt("denoise", 1)), ...size }),
       dir,
-      { mode: "edit", label: `edit${ref ? " + ref" : ""}` },
+      { mode: "edit", label: `edit${ref ? " + ref" : ""}`, params: { prompt }, resolvedPrompt: prompt, seed: Number(opt("seed", 7)) },
     );
   },
 
@@ -411,6 +615,7 @@ const main = {
    *
    *   node cli.mjs animate --init master.png --preset walk [--frames 33]
    *   node cli.mjs animate --init master.png --action "hopping forward"
+   *   node cli.mjs animate --init midstride.png --preset walk4 --loop   <- a closed cycle
    *
    * `--preset` is what you almost always want: it carries the pose wording the
    * mode has already been tuned with, AND the per-clip `avoid` negative. The
@@ -431,8 +636,19 @@ const main = {
     const image = await uploadImage(init, basename(init));
     const mode = MODES.find((m) => m.id === "animate");
     const params = { preset, action: action ?? "", frames: opt("frames", "21") };
+    /**
+     * `--loop` closes the cycle: the same frame is pinned as first AND last, so
+     * the clip is one period of the gait and frame N leads back into frame 1.
+     * `--end <png>` pins a different last frame, which is the in-betweening
+     * shape (`inbetween` mode) reached from here.
+     *
+     * Give `--loop` a MID-STRIDE init, not the standing master — pinning a
+     * standing pose at both ends animates stand → walk → stand.
+     */
+    const endPath = opt("end");
+    const end = endPath ? await uploadImage(endPath, basename(endPath)) : has("loop") ? image : undefined;
     const ctx = buildCtx({
-      images: { init: image },
+      images: { init: image, ...(end ? { end } : {}) },
       seed: Number(opt("seed", 7)),
       fast: has("fast"),
       // --small: TI2V-5B, ~13.6GB of reads instead of ~31. Silently a no-op if
@@ -450,18 +666,41 @@ const main = {
     // 0/21 usable frames) is exactly the run it exists for.
     if (has("no-lora")) ctx.has = () => false;
     const graph = mode.build(params, ctx);
+    // Post-build patches, same idiom `--tile` already used: the mode owns the
+    // prompt and the LoRA stack, these are the decode/canvas knobs an A/B needs
+    // to vary without inventing a second prompt path.
     if (opt("tile")) graph.dec.inputs.tile_size = Number(opt("tile"));
+    // One window for the whole clip is now the DEFAULT — this flag is how you
+    // go back to a windowed decode on a box too loaded to afford it, and it
+    // reintroduces the cross-fade seams `ghost.ts` flags. It is a headroom
+    // trade with a measured cost in ruined frames, not a tuning knob. See
+    // graphs.mjs's `dec` note and docs/PLAN_DOG_WALK.md §1.
+    if (opt("temporal")) {
+      graph.dec.inputs.temporal_size = Number(opt("temporal"));
+      graph.dec.inputs.temporal_overlap = Number(opt("temporal-overlap", "4"));
+    }
+    if (opt("canvas")) {
+      const [w, h] = String(opt("canvas")).split("x").map(Number);
+      if (!w || !h) throw new Error(`--canvas takes WxH, got "${opt("canvas")}"`);
+      graph.i2v.inputs.width = w;
+      graph.i2v.inputs.height = h;
+    }
     console.log(`prompt: ${mode.prompt(params, ctx)}`);
     await run(graph, dir, {
       mode: "animate",
       label: `animate · ${label}`.slice(0, 60),
-      ...(opt("file-as") ? {} : {}),
+      params,
+      // The preset's declared clip — the panel's tray dropdown reads it, and a
+      // `custom` action declares none, which is the honest "— pick a clip —".
+      clip: mode.presets?.find((p) => p.id === preset)?.clip || undefined,
+      resolvedPrompt: mode.prompt(params, ctx),
+      seed: Number(opt("seed", 7)),
     });
   },
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|create|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {

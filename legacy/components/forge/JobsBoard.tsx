@@ -13,10 +13,33 @@
  * Job state comes from polling the generate route; the live preview image
  * is refetched only while the server says one exists.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { S, GREEN, RED, BLUE, AMBER, GREY } from "./theme";
-import type { Job } from "./types";
+import type { Job, Mode } from "./types";
 import { CLIP_NAMES } from "./types";
+
+/**
+ * Trigger words that a mode prepends only when its LoRA is installed.
+ *
+ * Listed here so an edited prompt can warn about deleting one. A LoRA that is
+ * loaded but never triggered is the quietest possible failure — the graph is
+ * correct, the run succeeds, the adapter simply does nothing to the picture,
+ * and the only evidence is that the art looks like the base model.
+ *
+ * This is a UI hint, not a gate: `modes.mjs` decides what actually gets
+ * prepended, and a word missing from this list costs a warning, not a run.
+ */
+const LORA_TRIGGERS = ["pix3lwalk"];
+
+/**
+ * The facings "all angles" adds, given a clip that already exists facing right.
+ *
+ * E is deliberately absent: the master is authored facing right (the `create`
+ * prompt says "side view facing right") and the first clip IS the E clip, so
+ * re-rotating to E would spend a generation turning a figure to where it
+ * already points — and every hop through Qwen-Image-Edit costs identity.
+ */
+const OTHER_FACINGS = ["S", "N"];
 import { FramePlayer } from "./FramePlayer";
 import { RetryImg } from "./RetryImg";
 import { postJSON, urlToB64 } from "./api";
@@ -133,6 +156,7 @@ function JobCard({
   id,
   job,
   tick,
+  mode,
   onCancel,
   onReroll,
   onUseAsInit,
@@ -141,21 +165,116 @@ function JobCard({
   onRedoPose,
   onAddToTray,
   onKeep,
+  onAllAngles,
 }: {
   id: string;
   job: Job;
   tick: number;
+  /** This job's mode from the registry — carries the move presets. */
+  mode?: Mode;
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string; negative?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
   onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
+  /** Absent when the panel does not offer the chain (keeps the button off). */
+  onAllAngles?: (id: string, job: Job, facings: string[]) => void | Promise<void>;
 }) {
   const [clip, setClip] = useState(clipGuess(job));
+  /** Only true when someone asks to relabel a clip the preset already decided. */
+  const [editClip, setEditClip] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+
+  /**
+   * ── WHY THIS CARD LAUNCHES WORK AND NOT JUST REPEATS IT ────────────────────
+   *
+   * The only action here used to be "↻ re-roll", which is same-params-new-seed.
+   * So there was no way to say "now do the RUN clip" from a finished walk, and
+   * the nearest-looking control was the `as clip` dropdown — which does not
+   * generate anything, it labels where frames get FILED. Setting it to `run` on
+   * a walk card files walk frames as the run clip, silently, and the sheet then
+   * plays a walk whenever the creature runs.
+   *
+   * So: the move lives here, next to the button, and the button says which of
+   * the two things it is about to do.
+   */
+  const moves = mode?.presets ?? null;
+  const startMove = typeof job.params?.preset === "string" ? job.params.preset : "";
+  const [move, setMove] = useState(startMove);
+  /**
+   * `null` means UNEDITED — let the mode write the prompt.
+   *
+   * Not `""` and not a copy of `resolvedPrompt`: a copy cannot be told apart
+   * from a deliberate edit that happens to match, and an empty string reads as
+   * "the user cleared it". Only `null` says "nobody has touched this", which is
+   * what decides whether the button is a run or a re-roll and whether the
+   * server gets an override at all.
+   */
+  const [prompt, setPrompt] = useState<string | null>(null);
+  /**
+   * What the CURRENTLY SELECTED move resolves to, before any edit.
+   *
+   * Not `job.resolvedPrompt` — that is the prompt of the move this card already
+   * ran. Pick `run` on a finished walk card and the box must show the run
+   * prompt, or you edit one move's words believing they belong to another.
+   * Fetched from the registry rather than templated here; see `?resolve=`.
+   */
+  const [basePrompt, setBasePrompt] = useState(job.resolvedPrompt ?? "");
+  /** Same story for the negative — see `resolvedNegative` on the Job type. */
+  const [baseNegative, setBaseNegative] = useState(job.resolvedNegative ?? "");
+  const [negative, setNegative] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const negativeText = negative ?? baseNegative;
+  const promptText = prompt ?? basePrompt;
+
+  /**
+   * "RE-ROLL" IS ONLY HONEST WHEN NOTHING CHANGED.
+   *
+   * A re-roll is the same settings with a new seed — a second opinion on work
+   * already done. The moment the move or the prompt is edited this is a FIRST
+   * render of something that has never existed, and calling that a re-roll
+   * invites the reading that the clip already exists somewhere.
+   */
+  const moveChanged = move !== startMove;
+  const promptChanged = prompt !== null && prompt.trim() !== basePrompt.trim();
+  const negativeChanged = negative !== null && negative.trim() !== baseNegative.trim();
+  const isRerun = moveChanged || promptChanged || negativeChanged;
+  const moveLabel = moves?.find((p) => p.id === move)?.label ?? move;
+
+  // Ask the registry what the selected move says. Skipped for the move this
+  // card already ran — its prompt is on the job record and is the exact string
+  // that produced these frames, which a re-resolve could only approximate if
+  // an option has been installed or removed since.
+  useEffect(() => {
+    if (!moveChanged) {
+      setBasePrompt(job.resolvedPrompt ?? "");
+      setBaseNegative(job.resolvedNegative ?? "");
+      return;
+    }
+    let live = true;
+    setResolving(true);
+    const params = JSON.stringify({ ...(job.params ?? {}), preset: move });
+    fetch(`/api/comfy/generate?resolve=${encodeURIComponent(job.mode)}&params=${encodeURIComponent(params)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!live) return;
+        if (typeof d.prompt === "string") setBasePrompt(d.prompt);
+        if (typeof d.negative === "string") setBaseNegative(d.negative);
+      })
+      .catch(() => {
+        /* the button still works — the server resolves it again at launch */
+      })
+      .finally(() => {
+        if (live) setResolving(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [move, moveChanged, job.mode, job.params, job.resolvedPrompt, job.resolvedNegative]);
   /**
    * THE GUARD LIVES HERE, not on the buttons.
    *
@@ -177,6 +296,13 @@ function JobCard({
   const [cutting, setCutting] = useState<string | null>(null);
   const c = STATE_COLOR[job.state] ?? GREY;
   const frames = (job.frames ?? []).map((f) => ({ name: f, src: `/api/comfy/generate?id=${id}&frame=${f}` }));
+  /**
+   * Frames whose limbs dissolved in the decode. Every add path filters against
+   * this set for the same reason the clip guard lives on `addToTray` and not on
+   * the buttons: there are four doors into the tray and a bad frame only has to
+   * find one of them.
+   */
+  const ghostFlagged = new Set(job.ghost?.flagged ?? []);
   const elapsed = job.startedAt ? Math.round((Date.now() - job.startedAt) / 1000) : null;
   const pct = job.progress && job.progress.max > 1 ? Math.round((job.progress.value / job.progress.max) * 100) : null;
 
@@ -201,9 +327,86 @@ function JobCard({
             cancel
           </button>
         )}
+        {job.state !== "running" && job.state !== "queued" && job.params && moves && moves.length > 1 && (
+          <select
+            style={{ ...S.input, width: 150 }}
+            value={move}
+            title="which move to generate — NOT where the frames get filed"
+            onChange={(e) => {
+              setMove(e.target.value);
+              // Back to unedited: an edit made for the last move would
+              // otherwise ride along into a different one, which is how you get
+              // a "run" clip whose prompt still says walk.
+              setPrompt(null);
+            }}
+          >
+            {moves.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        )}
         {job.state !== "running" && job.state !== "queued" && job.params && (
-          <button style={S.btn} title="same settings, new seed" onClick={() => onReroll(id, job)}>
-            ↻ re-roll
+          <button
+            // Launching uploads the init and queues a job — hundreds of ms at
+            // best. Without a visible in-flight state the only feedback is a
+            // toast that may land below the fold, which is how a working button
+            // gets reported as doing nothing.
+            disabled={busy}
+            style={{ ...S.btn, ...(isRerun ? S.btnGreen : {}), ...(busy ? { opacity: 0.5, cursor: "wait" } : {}) }}
+            title={
+              isRerun
+                ? `generate ${moveLabel || "this"}${promptChanged ? " with the edited prompt" : ""} — this has not been rendered yet`
+                : "same settings, new seed — a second opinion on the clip above"
+            }
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onReroll(
+                  id,
+                  job,
+                  isRerun
+                    ? {
+                        params: { ...(job.params ?? {}), preset: move },
+                        // Only send an override when the words were actually
+                        // edited. A move change alone must let the registry
+                        // write the prompt, not echo back a string this card
+                        // resolved.
+                        prompt: promptChanged ? promptText.trim() : undefined,
+                        negative: negativeChanged ? negativeText.trim() : undefined,
+                      }
+                    : undefined,
+                );
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "queuing…" : isRerun ? `▶ run ${moveLabel}` : "↻ re-roll"}
+          </button>
+        )}
+        {/* ── THE ANGLES, ONLY ONCE THIS ONE IS GOOD ──────────────────────
+            A moveset is 18 Wan jobs. Generating one facing, looking at it, and
+            only then paying for the rest is the order that lets a bad master be
+            caught for the price of a single clip. So this is a button you press
+            after the eye test, not a batch that runs ahead of it.
+
+            Absent while any frame is flagged: every facing branches off this
+            clip's init, so a dissolved limb in the source would be rotated into
+            all of them. */}
+        {job.state === "done" && job.mode === "animate" && (job.frames?.length ?? 0) > 0 && onAllAngles && (
+          <button
+            style={{ ...S.btn, ...(ghostFlagged.size ? { opacity: 0.45 } : {}) }}
+            disabled={ghostFlagged.size > 0}
+            title={
+              ghostFlagged.size
+                ? `${ghostFlagged.size} frame(s) here have a dissolved limb — fix this clip before spending GPU on the other facings`
+                : "rotate this clip's master to S and N, then animate the same move in each — about 27 minutes"
+            }
+            onClick={() => onAllAngles(id, job, OTHER_FACINGS)}
+          >
+            ⟳ all angles
           </button>
         )}
         {job.state === "done" && (job.frames?.length ?? 0) > 0 && (
@@ -216,7 +419,70 @@ function JobCard({
           </button>
         )}
       </div>
-      {showPrompt && <p style={{ ...S.note, whiteSpace: "pre-wrap" }}>{job.resolvedPrompt}</p>}
+      {showPrompt && (
+        <div style={{ marginTop: 8 }}>
+          <textarea
+            style={{ ...S.input, width: "100%", minHeight: 92, fontFamily: "inherit", lineHeight: 1.45, resize: "vertical" }}
+            value={promptText}
+            spellCheck={false}
+            placeholder={resolving ? "resolving…" : "the prompt this run will use"}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+            {promptChanged ? (
+              <>
+                <span style={S.chip(GREEN.fg, GREEN.bg)}>edited</span>
+                <button style={{ ...S.btn, fontSize: 11 }} onClick={() => setPrompt(null)}>
+                  revert to the preset
+                </button>
+              </>
+            ) : (
+              <span style={S.note}>written by the {moveLabel || job.mode} preset — edit it and the button becomes ▶ run</span>
+            )}
+            {/* The trigger word is prepended by the mode only when its LoRA is
+                installed. Editing the prompt is the one way to delete it, and
+                a LoRA that is loaded but never triggered is silent — it just
+                quietly does nothing to the picture. */}
+            {LORA_TRIGGERS.some((t) => basePrompt.includes(t) && !promptText.includes(t)) && (
+              <span style={S.chip(AMBER.fg, AMBER.bg)} title="the LoRA is still loaded but will not fire without its trigger word">
+                ⚠ trigger word removed
+              </span>
+            )}
+          </div>
+
+          {/* ── THE NEGATIVE ────────────────────────────────────────────────
+              Half the prompt, and on the Wan leg the half doing the most work.
+              It was never recorded, so "show me the prompt that made this" could
+              only ever show the positive — while the clause that stops the feet
+              gliding, the clause that stops the camera pushing in and the clause
+              that stops the background going black all sat in here, invisible.
+              Every one of them was added off a measured failure. */}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={S.note}>negative — what it is told to avoid</span>
+              {negativeChanged && <span style={S.chip(GREEN.fg, GREEN.bg)}>edited</span>}
+              {negativeChanged && (
+                <button style={{ ...S.btn, fontSize: 11 }} onClick={() => setNegative(null)}>
+                  revert
+                </button>
+              )}
+            </div>
+            {baseNegative || negative !== null ? (
+              <textarea
+                style={{ ...S.input, width: "100%", minHeight: 72, fontFamily: "inherit", lineHeight: 1.45, resize: "vertical", color: "#a6adba" }}
+                value={negativeText}
+                spellCheck={false}
+                onChange={(e) => setNegative(e.target.value)}
+              />
+            ) : (
+              <p style={S.note}>
+                not recorded — this job ran before the negative was written into job.json. Change the move or re-run and it
+                will be there.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
       {job.state === "running" && (
         <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center" }}>
           {job.hasPreview && (
@@ -250,37 +516,94 @@ function JobCard({
       {job.state === "done" && frames.length > 0 && (
         <>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-            <span style={S.note}>as clip</span>
-            <select
-              // `borderColor` alone is safe because `S.input` is longhand —
-              // see the note above `card` in theme.ts, and the one on `input`
-              // itself, which this override is what finally converted.
-              style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
-              value={clip}
-              onChange={(e) => setClip(e.target.value)}
-            >
-              {/* Only offered while nothing is chosen — an unlabelled clip must
-                  be a decision, not a state you can go back to by accident. */}
-              {!clip && <option value="">— pick a clip —</option>}
-              {CLIP_NAMES.map((c2) => (
-                <option key={c2} value={c2}>
-                  {c2}
-                </option>
-              ))}
-            </select>
+            {/* ── ONE CONTROL, NOT TWO ──────────────────────────────────────
+                There used to be a `file as` dropdown here AND a move select in
+                the header, and on an attack card both read "attack" — two
+                controls, same word, different meanings. Worse, they invited the
+                reading that this one generates: set it to `run` on a walk card
+                and the sheet plays a walk whenever the creature runs, silently.
+
+                But the clip is not a free choice. The preset that MADE these
+                frames declares it (`walk4` → walk, `defend` → crouch), so it is
+                derived, shown as a fact, and only offered as a dropdown in the
+                one case where nothing on the job knows: a `custom` action. The
+                pencil is there because a mislabelled old job should still be
+                fixable without regenerating it. */}
+            {clip && !editClip ? (
+              <>
+                <span style={S.note}>files as</span>
+                <span style={S.chip(GREEN.fg, GREEN.bg)} title="from the preset that generated these frames">
+                  {clip}
+                </span>
+                <button
+                  style={{ ...S.btn, ...S.btnGhost, fontSize: 11 }}
+                  title="relabel these frames — only needed if the job was filed wrong"
+                  onClick={() => setEditClip(true)}
+                >
+                  ✎
+                </button>
+              </>
+            ) : (
+              <>
+                <span style={S.note} title="where these frames get filed — this does not generate anything">
+                  files as
+                </span>
+                <select
+                  // `borderColor` alone is safe because `S.input` is longhand —
+                  // see the note above `card` in theme.ts, and the one on `input`
+                  // itself, which this override is what finally converted.
+                  style={{ ...S.input, width: 130, ...(clip ? {} : { borderColor: AMBER.fg, color: AMBER.fg }) }}
+                  value={clip}
+                  onChange={(e) => {
+                    setClip(e.target.value);
+                    if (e.target.value) setEditClip(false);
+                  }}
+                >
+                  {/* Only offered while nothing is chosen — an unlabelled clip must
+                      be a decision, not a state you can go back to by accident. */}
+                  {!clip && <option value="">— pick a clip —</option>}
+                  {CLIP_NAMES.map((c2) => (
+                    <option key={c2} value={c2}>
+                      {c2}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
             {frames.length > 1 && (
-              <button style={{ ...S.btn, ...dimmed }} {...addProps} onClick={() => addToTray(frames.map((f) => f.src))}>
-                + add all {frames.length}
+              <button
+                style={{ ...S.btn, ...dimmed }}
+                {...addProps}
+                title={
+                  ghostFlagged.size
+                    ? `${ghostFlagged.size} frame(s) with a dissolved limb are left out — see the ✗ marks`
+                    : undefined
+                }
+                onClick={() => addToTray(frames.filter((_, i) => !ghostFlagged.has(i)).map((f) => f.src))}
+              >
+                {/* The count names what actually goes in. "add all 21" that
+                    quietly adds 14 is the kind of silent cap that reads as
+                    full coverage when it is not. */}
+                + add {frames.length - ghostFlagged.size}
+                {ghostFlagged.size ? ` clean of ${frames.length}` : ` all`}
               </button>
             )}
           </div>
           {frames.length > 6 ? (
-            <FramePlayer frames={frames} onAdd={addToTray} />
+            <FramePlayer frames={frames} onAdd={addToTray} ghost={job.ghost} />
           ) : (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-              {frames.map((f) => (
+              {frames.map((f, i) => (
                 <div key={f.name}>
-                  <RetryImg src={`${f.src}&w=256`} alt={f.name} style={{ width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4 }} />
+                  <RetryImg
+                    src={`${f.src}&w=256`}
+                    alt={f.name}
+                    title={ghostFlagged.has(i) ? `${f.name} — dissolved limb (ghost ${job.ghost?.pct?.[i]?.toFixed(2)}%)` : f.name}
+                    style={{
+                      width: 128, height: 128, objectFit: "contain", background: "#fff", borderRadius: 4,
+                      ...(ghostFlagged.has(i) ? { outline: `2px solid ${RED.fg}`, opacity: 0.6 } : {}),
+                    }}
+                  />
                   <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                     <button style={{ ...S.btn, fontSize: 11 }} title="chain: next generation starts from this frame" onClick={() => onUseAsInit(f.src)}>
                       → init
@@ -353,6 +676,7 @@ function JobCard({
 export function JobsBoard({
   jobs,
   tick,
+  modes,
   onCancel,
   onReroll,
   onUseAsInit,
@@ -361,17 +685,22 @@ export function JobsBoard({
   onRedoPose,
   onAddToTray,
   onKeep,
+  onAllAngles,
 }: {
   jobs: Record<string, Job>;
   tick: number;
+  /** The mode registry — a card reads its own move presets out of it. */
+  modes?: Mode[];
   onCancel: (id: string) => void;
-  onReroll: (id: string, job: Job) => void;
+  onReroll: (id: string, job: Job, edits?: { params?: Record<string, string>; prompt?: string; negative?: string }) => void | Promise<void>;
   onUseAsInit: (src: string) => void;
   onUseAsLast: (src: string) => void;
   onFixFrame: (src: string) => void;
   onRedoPose: (src: string, pose: string) => void;
   onAddToTray: (srcs: string[], clip: string) => void;
   onKeep: (id: string, job: Job) => void;
+  /** Absent when the panel does not offer the chain (keeps the button off). */
+  onAllAngles?: (id: string, job: Job, facings: string[]) => void | Promise<void>;
 }) {
   const [showAll, setShowAll] = useState(false);
   const entries = Object.entries(jobs).sort((a, b) => (b[1].startedAt ?? 0) - (a[1].startedAt ?? 0));
@@ -387,7 +716,7 @@ export function JobsBoard({
         </span>
       </h2>
       {visible.map(([id, j]) => (
-        <JobCard key={id} id={id} job={j} tick={tick} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} />
+        <JobCard key={id} id={id} job={j} tick={tick} mode={modes?.find((m) => m.id === j.mode)} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} onAllAngles={onAllAngles} />
       ))}
       {entries.length > 6 && (
         <button style={{ ...S.btn, ...S.btnGhost, marginTop: 8 }} onClick={() => setShowAll(!showAll)}>

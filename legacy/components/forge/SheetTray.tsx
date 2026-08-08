@@ -21,11 +21,54 @@ import { S, GREEN, RED, AMBER, BLUE } from "./theme";
 import type { CrushResult, CutResult, TrayFrame } from "./types";
 import { CLIP_NAMES } from "./types";
 import { postJSON } from "./api";
+import { DEFAULT_TOLERANCE, colourDist, estimateBackground } from "@/src/game/pinball-knight/tools/sprite-forge/matte";
 
 const ROW_COLORS = ["#8fdd9f", "#9fd0ff", "#ffd9a0", "#dd8f8f", "#c89fff", "#8fdada", "#dad98f", "#ff9fd0"];
 
-/** Draw the tray onto a white sheet: row per clip, uniform cells, baseline feet. */
-async function assemble(tray: TrayFrame[], order: string[]): Promise<{ b64: string; w: number; h: number }> {
+/**
+ * THE FIELD COLOUR IS THE FRAMES' OWN, not white.
+ *
+ * The matte keys a REGION reachable from the border, so a sheet has to have
+ * exactly one background. This used to fill white unconditionally, which was
+ * right only while every frame came off a white-field generation. The brute's
+ * clips are generated on a lavender backdrop (it kills the cast shadow), and
+ * pasted onto white they made a sheet with two backgrounds: the padding keys,
+ * the cells do not, and every cell reads as one enormous unkeyed pocket.
+ *
+ * `estimateBackground` is the pipeline's own border-ring estimator — the same
+ * function the cut will run minutes later — so the field is decided by the art
+ * rather than by an assumption. Frames that disagree are reported, never
+ * silently averaged: mixed backgrounds are a curation mistake (two different
+ * generations in one row), and the fix is dropping the odd one out.
+ */
+async function fieldColour(
+  imgs: HTMLImageElement[],
+): Promise<{ css: string; warning: string | null }> {
+  const bgs = imgs.map((im) => {
+    const cv = document.createElement("canvas");
+    cv.width = im.naturalWidth;
+    cv.height = im.naturalHeight;
+    const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+    ctx.drawImage(im, 0, 0);
+    const { data } = ctx.getImageData(0, 0, cv.width, cv.height);
+    return estimateBackground(data, cv.width, cv.height).bg;
+  });
+  if (!bgs.length) return { css: "#ffffff", warning: null };
+  const [r, g, b] = bgs[0];
+  const odd = bgs.filter(([r2, g2, b2]) => colourDist(r, g, b, r2, g2, b2) > DEFAULT_TOLERANCE).length;
+  return {
+    css: `rgb(${r},${g},${b})`,
+    warning: odd
+      ? `${odd} of ${bgs.length} frame(s) sit on a different background from the first — the matte keys ONE region, so mixed backgrounds do not cut. Drop the odd frames or regenerate them on the same field.`
+      : null,
+  };
+}
+
+/** Draw the tray onto one sheet: row per clip, uniform cells, baseline feet. */
+async function assemble(
+  tray: TrayFrame[],
+  order: string[],
+): Promise<{ b64: string; w: number; h: number; warning: string | null }> {
   const imgs = new Map<string, HTMLImageElement>();
   await Promise.all(
     tray.map(
@@ -41,6 +84,7 @@ async function assemble(tray: TrayFrame[], order: string[]): Promise<{ b64: stri
         }),
     ),
   );
+  const field = await fieldColour(tray.map((f) => imgs.get(f.key)!));
   const pad = 12;
   const cellW = Math.max(...tray.map((f) => imgs.get(f.key)!.naturalWidth)) + pad * 2;
   const cellH = Math.max(...tray.map((f) => imgs.get(f.key)!.naturalHeight)) + pad * 2;
@@ -50,7 +94,7 @@ async function assemble(tray: TrayFrame[], order: string[]): Promise<{ b64: stri
   cv.width = cellW * cols;
   cv.height = cellH * rows.length;
   const ctx = cv.getContext("2d")!;
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = field.css;
   ctx.fillRect(0, 0, cv.width, cv.height);
   rows.forEach((row, ri) => {
     row.forEach((f, ci) => {
@@ -62,7 +106,7 @@ async function assemble(tray: TrayFrame[], order: string[]): Promise<{ b64: stri
       ctx.drawImage(im, x, y);
     });
   });
-  return { b64: cv.toDataURL("image/png"), w: cv.width, h: cv.height };
+  return { b64: cv.toDataURL("image/png"), w: cv.width, h: cv.height, warning: field.warning };
 }
 
 export function SheetTray({
@@ -79,21 +123,39 @@ export function SheetTray({
   suggestedName?: string;
   onStaged?: () => void;
 }) {
-  const [sheet, setSheet] = useState<{ b64: string; w: number; h: number } | null>(null);
+  const [sheet, setSheet] = useState<{ b64: string; w: number; h: number; warning: string | null } | null>(null);
   const [cut, setCut] = useState<CutResult | null>(null);
   const [crush, setCrush] = useState<CrushResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [name, setName] = useState(suggestedName);
   const [staged, setStaged] = useState<string | null>(null);
-  const suggestedRef = React.useRef(suggestedName);
-  if (suggestedRef.current !== suggestedName) {
-    // A character change re-suggests only while the field is untouched or
-    // still holding the previous suggestion — typed names are never clobbered.
-    if (name === "" || name === suggestedRef.current) setName(suggestedName);
-    suggestedRef.current = suggestedName;
-  }
 
   const rowsInUse = useMemo(() => (CLIP_NAMES as readonly string[]).filter((c) => tray.some((f) => f.clip === c)), [tray]);
+
+  /**
+   * ONE SHEET IS ONE FACING. The library hands over `clip_S_walk` and
+   * `clip_E_walk` as adjacent folders with the same clip, so mixing them is
+   * two clicks and the result — a brute that spins as it walks — only shows
+   * up after publishing. Frames tagged with a facing are checked here; untagged
+   * frames (a job card, a hand-picked file) are not counted against it, because
+   * silence is not evidence of a mismatch.
+   */
+  const facings = useMemo(() => [...new Set(tray.map((f) => f.facing).filter(Boolean))] as string[], [tray]);
+  const mixedFacing = facings.length > 1;
+
+  // The suffix follows the frames, not the character card: picking S clips and
+  // staging them as `brute-E` publishes a whole facing wrong, and the field is
+  // prefilled long before the tray has anything in it.
+  const wantName =
+    facings.length === 1 && suggestedName ? suggestedName.replace(/-[ENS]$/, "") + `-${facings[0]}` : suggestedName;
+  const [name, setName] = useState(wantName);
+  const suggestedRef = React.useRef(wantName);
+  if (suggestedRef.current !== wantName) {
+    // A character (or facing) change re-suggests only while the field is
+    // untouched or still holding the previous suggestion — typed names are
+    // never clobbered.
+    if (name === "" || name === suggestedRef.current) setName(wantName);
+    suggestedRef.current = wantName;
+  }
 
   /**
    * THE CRUSH KNOBS, reachable at last.
@@ -144,7 +206,9 @@ export function SheetTray({
     setBusy("assemble");
     try {
       if (!tray.some((f) => f.clip === "idle")) say("no idle row yet — a sheet without idle never draws in-game");
-      setSheet(await assemble(tray, CLIP_NAMES as unknown as string[]));
+      const s = await assemble(tray, CLIP_NAMES as unknown as string[]);
+      if (s.warning) say(s.warning);
+      setSheet(s);
       setCut(null);
       setCrush(null);
       setStaged(null);
@@ -200,8 +264,9 @@ export function SheetTray({
       <div style={S.card}>
         <h2 style={S.cardTitle}>sheet</h2>
         <p style={S.note}>
-          empty — generate frames above and press &ldquo;+ sheet&rdquo; on the keepers. Rows group by clip name; the game
-          needs at least an idle row (stagger is <b>stumble</b>, never hurt).
+          empty — press &ldquo;+ sheet&rdquo; on the keepers, either on a job card in <b>generate</b> or on any frame in
+          the library above (that is how art generated in an earlier session, or from the CLI, gets curated). Rows group
+          by clip name; the game needs at least an idle row (stagger is <b>stumble</b>, never hurt).
         </p>
       </div>
     );
@@ -214,6 +279,15 @@ export function SheetTray({
       <h2 style={S.cardTitle}>
         sheet
         <span style={S.chip(BLUE.fg, BLUE.bg)}>{tray.length} frame(s)</span>
+        {facings.length === 1 && <span style={S.chip(GREEN.fg, GREEN.bg)}>facing {facings[0]}</span>}
+        {mixedFacing && (
+          <span
+            style={S.chip(RED.fg, RED.bg)}
+            title="a sheet is ONE facing — publish these together and the creature turns as it moves. Drop one facing's frames, stage, then build the other."
+          >
+            ⚠ mixes facings {facings.join(" + ")}
+          </span>
+        )}
         <button style={{ ...S.btn, ...S.btnGhost, marginLeft: 8, fontSize: 11 }} onClick={() => { setTray([]); setSheet(null); setCut(null); setCrush(null); }}>
           clear
         </button>
@@ -225,9 +299,27 @@ export function SheetTray({
             {tray
               .filter((f) => f.clip === clip)
               .map((f, i, row) => (
-                <div key={f.key} style={{ textAlign: "center" }}>
+                <div key={f.key} style={{ textAlign: "center", position: "relative" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={f.src} alt={f.clip} style={{ width: 72, height: 72, objectFit: "contain", background: "#fff", borderRadius: 3 }} />
+                  {f.facing && mixedFacing && (
+                    // Only worth the ink when the rows disagree — a uniform tray
+                    // says its facing once, in the header.
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: 2,
+                        left: 2,
+                        fontSize: 10,
+                        padding: "0 3px",
+                        borderRadius: 2,
+                        background: RED.bg,
+                        color: RED.fg,
+                      }}
+                    >
+                      {f.facing}
+                    </span>
+                  )}
                   <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
                     <button style={{ ...S.btn, ...S.btnGhost, fontSize: 10, padding: "0 4px" }} disabled={i === 0} onClick={() => move(f.key, -1)}>
                       ←

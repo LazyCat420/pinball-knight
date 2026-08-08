@@ -274,4 +274,70 @@ describe("qaFrame", () => {
     expect(v.report).toContain("VERDICT REJECT");
     expect(v.report).toMatch(/background is transparent/);
   });
+
+  /**
+   * THE NEGATIVE CONTROL FOR `grid`, which for its whole life could not fail.
+   *
+   * It was written `pass: true`, hardcoded, labelled "information, never a
+   * gate" — so a frame drawn on a real lattice and a smooth painting produced
+   * the same PASS and the same verdict level. That is the shape of a check that
+   * checks nothing, and it had a job: `grid` is the ONLY thing in this file that
+   * can tell art drawn as pixel art from art that will merely be crushed into
+   * it. Everything else here measures the crush's output, and the crush makes
+   * any input look gridded — `commit.ts` scored the moveset rejected on sight
+   * on 2026-08-07 and the one that was kept identically at ×8 / 100% / 100%.
+   *
+   * The two frames below differ in exactly one property: one is drawn in 8×8
+   * blocks, the other is the same figure with a smooth gradient over it. Every
+   * other check must agree on them, or this control is not isolating `grid`.
+   */
+  it("tells art drawn on a lattice from a smooth painting", () => {
+    const box: [number, number, number, number] = [300, 200, 720, 880];
+    const blocky = creature(INTAKE_PX, INTAKE_PX, box);
+    // Quantise to an 8px lattice — every 8×8 block takes its top-left texel,
+    // which is what art authored at 1:8 actually looks like.
+    for (let y = 0; y < INTAKE_PX; y++) {
+      for (let x = 0; x < INTAKE_PX; x++) {
+        const src = ((y - (y % 8)) * INTAKE_PX + (x - (x % 8))) * 4;
+        const dst = (y * INTAKE_PX + x) * 4;
+        for (let c = 0; c < 4; c++) blocky.data[dst + c] = blocky.data[src + c];
+      }
+    }
+    // The same figure, continuous: a per-pixel ramp, the anti-aliased shape a
+    // diffusion model returns.
+    const smooth = creature(INTAKE_PX, INTAKE_PX, box);
+    for (let y = 0; y < INTAKE_PX; y++) {
+      for (let x = 0; x < INTAKE_PX; x++) {
+        const i = (y * INTAKE_PX + x) * 4;
+        if (!smooth.data[i + 3]) continue;
+        smooth.data[i] = (smooth.data[i] + x) % 256;
+        smooth.data[i + 1] = (smooth.data[i + 1] + y) % 256;
+      }
+    }
+
+    const a = qaFrame(flattenOnKey(blocky), { afterStyle: true });
+    const b = qaFrame(flattenOnKey(smooth), { afterStyle: true });
+
+    expect(a.checks.find((c) => c.id === "grid")!.pass).toBe(true);
+    expect(b.checks.find((c) => c.id === "grid")!.pass).toBe(false);
+    // Named, so the report tells whoever reads it what to do about it rather
+    // than only that a line went red.
+    expect(b.checks.find((c) => c.id === "grid")!.fix).toMatch(/not pixel art/i);
+  });
+
+  it("does not reject a continuous sheet — the roster is made of them", () => {
+    // SOFT on purpose. jester, rotortail, croaker and fish_feet all came in as
+    // continuous art and all ship; a hard gate would reject the existing roster
+    // to make a point. "usable" is the honest level: it can ship, and it is not
+    // what it claims to be.
+    const smooth = creature(INTAKE_PX, INTAKE_PX, [300, 200, 720, 880]);
+    for (let y = 0; y < INTAKE_PX; y++) {
+      for (let x = 0; x < INTAKE_PX; x++) {
+        const i = (y * INTAKE_PX + x) * 4;
+        if (smooth.data[i + 3]) smooth.data[i] = (smooth.data[i] + x) % 256;
+      }
+    }
+    const v = qaFrame(flattenOnKey(reframeSubject(smooth).image), { afterStyle: true });
+    expect(v.level).not.toBe("reject");
+  });
 });
