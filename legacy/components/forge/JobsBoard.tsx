@@ -15,8 +15,33 @@
  */
 import React, { useEffect, useState } from "react";
 import { S, GREEN, RED, BLUE, AMBER, GREY } from "./theme";
-import type { Job, Mode } from "./types";
+import type { Job, Mode, Progress } from "./types";
 import { CLIP_NAMES } from "./types";
+
+/**
+ * Sampler percentage, or null when there is nothing honest to show.
+ *
+ * ── WHY THIS IS A FUNCTION AND NOT TWO INLINE TERNARIES ─────────────────────
+ *
+ * `watchProgress` multiplexes two different events onto one field. A sampler
+ * step arrives as {value: k, max: steps}; a NODE CHANGE arrives as
+ * {value: 0, max: 1}, meaning "started executing node `uh`" — the high-noise
+ * unet loader — not "0% of the way through sampling".
+ *
+ * So `max > 1` is the test for "this is real progress". `max` alone accepts a
+ * node change and pins the bar at 0% for the ~90 seconds a Wan model load
+ * takes, which reads as a hung job. That is the exact failure the live banner
+ * was added to rule out, and the banner shipped with the bug: JobCard had the
+ * correct guard, the banner was written three hundred lines below it with a
+ * plain truthiness check, and nothing connected them. Verified against a live
+ * run — the first heartbeat of every Wan job is {node: "uh", value: 0, max: 1}.
+ *
+ * One function, two call sites, one behaviour. `progress-pct.test.ts` pins it.
+ */
+export function samplerPct(progress: Progress | undefined): number | null {
+  if (!progress || !(progress.max > 1)) return null;
+  return Math.round((progress.value / progress.max) * 100);
+}
 
 /**
  * Trigger words that a mode prepends only when its LoRA is installed.
@@ -304,7 +329,7 @@ function JobCard({
    */
   const ghostFlagged = new Set(job.ghost?.flagged ?? []);
   const elapsed = job.startedAt ? Math.round((Date.now() - job.startedAt) / 1000) : null;
-  const pct = job.progress && job.progress.max > 1 ? Math.round((job.progress.value / job.progress.max) * 100) : null;
+  const pct = samplerPct(job.progress);
 
   return (
     <div style={{ background: "#0d0f14", borderRadius: 4, padding: "10px 12px", marginTop: 8 }}>
@@ -727,8 +752,7 @@ export function JobsBoard({
     const [, j] = live.find(([, x]) => x.state === "running") ?? live[0];
     const secs = j.startedAt ? Math.max(0, Math.round((tick - j.startedAt) / 1000)) : null;
     const mmss = secs === null ? null : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`;
-    const p = j.progress;
-    const pctNum = p && p.max ? Math.round((p.value / p.max) * 100) : null;
+    const pctNum = samplerPct(j.progress);
     return { label: j.label ?? j.mode ?? "job", mmss, pctNum, waiting: live.length - 1 };
   })();
 
