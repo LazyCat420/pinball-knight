@@ -243,6 +243,37 @@ That affects **five of the seven clips** — `idle`, `attack`, `stumble`,
 different reason (a one-shot is not a cycle); this is a second, stronger reason
 covering the rest.
 
+### `run4` without the pin — the strong confirmation
+
+The same change on the run, and this one is not marginal:
+
+| | churn median | distinct bboxes | seam |
+|---|---|---|---|
+| `run4 --loop` | 0.2% | **1 of 21** | 3.6% |
+| `run4` no loop | **19.8%** | **21 of 21** | 47.3% |
+| approved walk (reference) | 23.7% | 18 of 21 | 42.4% |
+
+It sits alongside the approved walk rather than near the floor, and unlike the
+idle it does not decay — churn holds between 10.9% and 27.9% across the whole
+clip. The frames show a real gallop: the front pair reaching together, a tucked
+suspension phase with all four paws off the ground, the spine flexing. That is
+`run4`'s prompt being answered, and it is a gait the biped `run` preset does not
+describe.
+
+This is also the cleanest evidence that the freeze had nothing to do with the
+init or the prompt: `run4` used **the same frame 12** the approved walk was
+generated from, and the only thing that changed between the corpse and the
+gallop was the pin.
+
+**Open on it: the figure changes size by 21%.** Bounding box height runs
+475–600 px against the approved walk's 587–604, a 3% spread — so seven times the
+variation. Part is honest anatomy, because a galloping animal genuinely
+compresses in the tuck and extends in the reach. Whether the remainder reads as
+galloping or as *zooming* is an eye question, and it matters more than it looks:
+`register.ts` puts the lowest ink on the baseline, so any size swing that is not
+real anatomy becomes the creature pulsing while it charges. Unresolved at the
+end of this session.
+
 ### Two things the live idle is still not
 
 - **It decays.** Churn runs `5.78, 3.85, 4.29, … 1.21, 1.18, 0.98` — the clip
