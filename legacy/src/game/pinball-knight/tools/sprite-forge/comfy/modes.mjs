@@ -158,11 +158,44 @@ function buildWanClip({ image, endImage = null, prompt, extraNegative = null, le
   });
 }
 
-const FACINGS = [
+/**
+ * THE FACINGS — and the `sks` column is a TRAINED VOCABULARY, not prose.
+ *
+ * When `fal-multi-angle` is installed the rotate prompt stops being a sentence
+ * and becomes that LoRA's grammar: `<sks> [azimuth] [elevation] [distance]`,
+ * 96 poses = 4 elevations × 8 azimuths × 3 distances, trained on Gaussian-
+ * Splatting renders of one object. The eight azimuths below are the LoRA's
+ * exact tokens. Anything else is an untrained string that falls back to the
+ * base model's freeform turning — which is the thing the LoRA exists to
+ * replace, so a typo here degrades silently to the weaker path.
+ *
+ *   front view · front-right quarter view · right side view ·
+ *   back-right quarter view · back view · back-left quarter view ·
+ *   left side view · front-left quarter view
+ *
+ * ── WHY THE QUARTER VIEWS ARE HERE WHEN THE ENGINE HAS THREE FACINGS ────────
+ *
+ * `Dir` is `"S" | "N" | "E"`, so the game cannot draw a diagonal today and
+ * chapter 11 recommends deciding that AFTER one creature is complete. These
+ * rows are listed anyway because the question "can we even make diagonals"
+ * is settled by this table: the LoRA was trained on all eight, so a diagonal
+ * facing costs a `rotate` run like any other and the blocker is purely the
+ * `Record<Dir, …>` tables. Marked `diagonal` so the panel can group them and
+ * the three-facing batch below never picks one up by accident.
+ *
+ * `left` is deliberately NOT a game facing — W is drawn by flipping E. It is
+ * kept as a reference render for checking that a mirror actually reads.
+ */
+export const FACINGS = [
   { id: "E", label: "right — E, the authored side", phrase: "right, seen from the side", sks: "right side view" },
   { id: "left", label: "left side (engine mirrors E — for reference only)", phrase: "left, seen from the side", sks: "left side view" },
   { id: "S", label: "toward camera — S", phrase: "the camera (front view)", sks: "front view" },
   { id: "N", label: "away — N", phrase: "away from the camera (back view)", sks: "back view" },
+  // The four the engine cannot consume yet. See the block comment above.
+  { id: "SE", label: "SE — toward camera, right (needs a Dir change)", phrase: "the camera and to the right, a three-quarter front view", sks: "front-right quarter view", diagonal: true },
+  { id: "NE", label: "NE — away, right (needs a Dir change)", phrase: "away from the camera and to the right, a three-quarter back view", sks: "back-right quarter view", diagonal: true },
+  { id: "SW", label: "SW — toward camera, left (needs a Dir change)", phrase: "the camera and to the left, a three-quarter front view", sks: "front-left quarter view", diagonal: true },
+  { id: "NW", label: "NW — away, left (needs a Dir change)", phrase: "away from the camera and to the left, a three-quarter back view", sks: "back-left quarter view", diagonal: true },
 ];
 
 /**
@@ -174,6 +207,40 @@ const FACINGS = [
  */
 const ANIMATE_PRESETS = [
   { id: "idle", label: "idle sway", action: "standing in place, breathing and swaying gently, an idle animation", clip: "idle" },
+  /**
+   * THE QUADRUPED IDLE — and idle is the clip most likely to come back DEAD.
+   *
+   * The 08-07 failure: an idle measured 479×588 for all 21 frames, frame-to-
+   * frame change 14% where a good sheet is 63%. Wan produced no motion at all.
+   * That is the documented behaviour of free-running I2V on small movement, and
+   * an idle is nothing but small movement, so this preset gets the same
+   * treatment `walk4` got — mechanics, named body parts, and a slide ban.
+   *
+   * The generic `idle` above says "breathing and swaying", and its keyframe
+   * twin says "chest and shoulders lifted". That is biped vocabulary pointed at
+   * an animal whose breathing reads through the RIBCAGE and whose idle reads
+   * through the head, tail and ears — a dog standing four-square does not sway,
+   * it shifts weight. Asking a quadruped to sway invites the one thing that
+   * must not happen here: the model turning the body, because a turn is the
+   * cheapest way to make a pixel move.
+   *
+   * `avoid` therefore bans travel AND rotation, which `walk4` does not need to.
+   * An idle that walks out of frame is a failed generation; an idle that turns
+   * is worse, because it silently re-faces a sheet built for one facing.
+   */
+  {
+    id: "idle4",
+    label: "idle — four legs (breathing in place)",
+    alt: true,
+    action:
+      "standing still on all four legs, alert and breathing, the ribcage swelling and settling, " +
+      "the head lifting and lowering slightly, the tail swaying slowly, ears twitching, " +
+      "all four paws staying planted on the ground, a subtle looping idle animation",
+    avoid:
+      "walking, stepping, taking a step, moving forward, travelling across the frame, turning, " +
+      "rotating, changing direction, rearing, sitting, lying down, jumping, extra legs, legs merging",
+    clip: "idle",
+  },
   // Walk/run describe MECHANICS, not mood: "walking in place, smooth" reads
   // as "keep everything anchored" and the model glides the feet along the
   // floor (measured on the frog, 08-05). Lift-and-plant language plus an
@@ -225,6 +292,40 @@ const ANIMATE_PRESETS = [
     action:
       "sprinting with a forward lean, knees driving high, feet clearly leaving the ground with a moment of flight in each stride, a full two-step side-view run cycle",
     avoid: "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging",
+    clip: "run",
+  },
+  /**
+   * THE QUADRUPED RUN — a GALLOP, which is not a fast walk.
+   *
+   * `run` above asks for "a full two-step side-view run cycle" with "knees
+   * driving high", the same bipedal framing `walk4` exists to correct. Handed
+   * to a dog it describes a gait the animal does not have, and the failure mode
+   * is specific: the model renders a faster version of the walk — four legs
+   * paddling in the same four-beat sequence — which at 8fps reads as a
+   * sped-up walk rather than a charge, and the run clip stops being
+   * distinguishable from the walk clip it sits next to.
+   *
+   * A galloping dog does two things a walk never does: the spine FLEXES and
+   * EXTENDS (the back rounds as the hind legs swing under, then stretches as
+   * they drive back), and both pairs leave the ground together in a suspension
+   * phase. Those are the two clauses that make it read. Note the spine clause
+   * is the exact OPPOSITE of `walk4`'s "the spine level and the head steady" —
+   * that is the point, and it is why this could not be a tweak to `walk4`.
+   *
+   * Kept `alt` for the same reason as `walk4`: it targets the `run` clip that
+   * `run` already targets, so the batch must not generate both.
+   */
+  {
+    id: "run4",
+    label: "run cycle — four legs (gallop)",
+    alt: true,
+    action:
+      "galloping at full speed on four legs, front legs reaching far forward together and hind legs driving back together, " +
+      "the spine flexing and extending with each stride, all four paws leaving the ground at once in a moment of suspension, " +
+      "the head lowered and thrust forward, a full side-view quadruped gallop cycle",
+    avoid:
+      "feet sliding along the ground, gliding, ice skating, floating, shuffling, legs merging, " +
+      "walking, trotting, extra legs, five legs, missing leg, bipedal, standing upright, rearing, hopping",
     clip: "run",
   },
   { id: "attack", label: "attack", action: "attacking with its weapon, one full swing", clip: "attack" },

@@ -33,13 +33,17 @@ import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
-import { MODES, fastAvailable, smallAvailable } from "./modes.mjs";
+import { FACINGS, MODES, fastAvailable, smallAvailable } from "./modes.mjs";
 import { optionById, chosenOption } from "./manifest.mjs";
 import { installState, loadSettings } from "./forge-config.mjs";
 // The gate runs HERE, on the raw frames, because this is the only place that
 // sees them before anything mattes or crops them — and `ghost.ts` measured its
 // own separation collapsing from 95x to 2x once a matte is applied.
 import { ghostClip } from "../ghost.ts";
+// The companion gate: `ghost` asks whether the frames are clean, `motion` asks
+// whether there are frames worth cleaning. A frozen clip passes ghost by
+// definition — see motion.ts's header.
+import { motionClip } from "../motion.ts";
 
 /**
  * THE SAME `ctx` THE PANEL ROUTE BUILDS — LoRAs, unet choices and all.
@@ -281,16 +285,53 @@ async function run(graph, dir, meta = {}) {
   // GPU. What this MUST do is refuse to be silent, so the record carries the
   // per-frame numbers and the panel can exclude the bad cells by default.
   let ghost = null;
+  let motion = null;
   if (frames.length > 1) {
+    const cells = [];
     try {
-      const cells = [];
       for (const name of frames) cells.push(await rawPng(join(dir, name)));
-      const v = ghostClip(cells, { label: meta.label ?? "clip" });
-      ghost = { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
-      if (v.flagged.length || v.soft.length) console.log(v.report);
     } catch (err) {
-      // A scoring failure must not lose the frames. Say so and move on.
-      console.warn(`ghost gate skipped: ${err.message}`);
+      console.warn(`gates skipped — could not decode the frames: ${err.message}`);
+    }
+    if (cells.length > 1) {
+      try {
+        const v = ghostClip(cells, { label: meta.label ?? "clip" });
+        ghost = { pct: v.pct.map((p) => Number((p * 100).toFixed(2))), flagged: v.flagged, soft: v.soft, level: v.level };
+        if (v.flagged.length || v.soft.length) console.log(v.report);
+      } catch (err) {
+        // A scoring failure must not lose the frames. Say so and move on.
+        console.warn(`ghost gate skipped: ${err.message}`);
+      }
+      // ── THE MOTION GATE ──────────────────────────────────────────────────
+      //
+      // NOT advisory in the same way. A ghosted frame is a frame to drop; a
+      // FROZEN CLIP is 370 seconds of GPU that produced a still photograph,
+      // and it has shipped past every automated check twice — the 08-08
+      // `idle4` scored 0.09% ghost and reported `level: "ready"` while
+      // measuring 0.2% churn against the approved walk's 23.7%. Ghosting
+      // cannot see this: a clip that does not move has nothing to smear.
+      //
+      // So this one SHOUTS. It still does not throw — the frames are paid for
+      // and the operator may want to look — but a freeze must never scroll
+      // past as a success line.
+      try {
+        const v = motionClip(cells, { label: meta.label ?? "clip" });
+        motion = {
+          churn: v.churn.map((p) => Number((p * 100).toFixed(2))),
+          seam: Number((v.seam * 100).toFixed(2)),
+          boxes: v.boxes,
+          level: v.level,
+        };
+        if (v.level !== "ready") console.log(v.report);
+        if (v.level === "reject") {
+          console.log(
+            "\n  ⚠️  FROZEN CLIP — this is a FAILED GENERATION, not a curation problem.\n" +
+              "      Do not cut frames out of it. Regenerate; for a subtle clip drop --loop first.\n",
+          );
+        }
+      } catch (err) {
+        console.warn(`motion gate skipped: ${err.message}`);
+      }
     }
   }
 
@@ -311,6 +352,7 @@ async function run(graph, dir, meta = {}) {
         ...meta,
         ...(character ? { character } : {}),
         ...(ghost ? { ghost } : {}),
+        ...(motion ? { motion } : {}),
       },
       null,
       1,
@@ -338,21 +380,59 @@ const main = {
     console.log(`vram free ${(d.vram_free / 2 ** 30).toFixed(1)} / ${(d.vram_total / 2 ** 30).toFixed(1)} GiB`);
   },
 
-  /** Identity-preserving rotation via the edit model. */
+  /**
+   * Identity-preserving rotation via the edit model.
+   *
+   * ── THIS DISPATCHES THROUGH `MODES`, AND IT DID NOT USED TO ─────────────────
+   *
+   * It restated the mode's prompt verbatim and called `qwenEdit` with nothing
+   * but an image and a seed — the exact defect this file's header names, and
+   * which `animate` and `retarget` were already fixed for. Three things were
+   * silently off on every command-line rotation:
+   *
+   *   - `fal-multi-angle`, ON DISK AND WIRED INTO THE MODE. With it the prompt
+   *     is the LoRA's trained grammar (`<sks> right side view eye-level shot
+   *     medium shot`, 96 poses); without it, freeform "Turn the character to
+   *     face …", which is the weaker path the LoRA was installed to replace.
+   *   - the rest of `qwenBundle` — the pixel style lock and the Lightning
+   *     speed LoRA.
+   *   - the unet chosen in the panel (`rot-unet`).
+   *
+   * Chapter 11's work order opens with two `cli.mjs rotate` calls to build the
+   * S and N masters, so every facing this creature was about to get would have
+   * come off the un-LoRA'd path — and identity drift across facings is the one
+   * failure the multi-angle LoRA is there to prevent.
+   *
+   * `--to` takes a facing ID (`E`/`S`/`N`, or a diagonal — see FACINGS) and
+   * resolves to that row's trained azimuth token. Anything else is passed
+   * through as a custom angle, which is how an untrained phrase still works
+   * while a known facing can never be spelled wrong.
+   */
   async rotate() {
     const init = opt("init");
     const to = opt("to");
-    if (!init || !to) throw new Error("rotate needs --init <png> and --to <left|right|back|front|three-quarter ...>");
+    if (!init || !to) throw new Error(`rotate needs --init <png> and --to <${FACINGS.map((f) => f.id).join("|")}|any angle>`);
     const dir = outDir(`rotate-${to.replace(/\s+/g, "_")}`);
     const image = await uploadImage(init, basename(init));
-    const prompt =
-      `Turn the character to face ${to}. Same character, same colors, same pixel art style, ` +
-      `same size and position, plain white background, full body visible.`;
-    await run(qwenEdit({ image, prompt, seed: Number(opt("seed", 7)) }), dir, {
+    const mode = MODES.find((m) => m.id === "rotate");
+    // An exact ID is a known facing; anything else is a freeform angle. Matched
+    // case-insensitively so `--to s` cannot quietly become a custom string.
+    const known = FACINGS.find((f) => f.id.toLowerCase() === String(to).toLowerCase());
+    const params = known ? { facing: known.id } : { facing: "custom", custom: to };
+    const ctx = buildCtx({ images: { init: image }, seed: Number(opt("seed", 7)), fast: has("fast"), leg: "qwen" });
+    // Say which grammar actually ran, never which was asked for — the same
+    // reason `animate` prints its leg. An absent LoRA is a silent downgrade.
+    console.log(
+      ctx.has("fal-multi-angle")
+        ? `angles: fal-multi-angle LoRA @0.9 — trained grammar${known ? ` (${known.id} → "${known.sks}")` : ""}`
+        : "angles: NO multi-angle LoRA installed — freeform turning, expect identity drift across facings",
+    );
+    console.log(`prompt: ${mode.prompt(params, ctx)}`);
+    await run(mode.build(params, ctx), dir, {
       mode: "rotate",
       label: `rotate → ${to}`,
-      params: { facing: to },
-      resolvedPrompt: prompt,
+      params,
+      resolvedPrompt: mode.prompt(params, ctx),
       seed: Number(opt("seed", 7)),
     });
   },
