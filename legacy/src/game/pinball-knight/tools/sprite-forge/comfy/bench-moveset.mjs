@@ -243,6 +243,7 @@ for (const facing of facings) {
         motion: m?.level ?? null, churnMedian: churn, boxes: m?.boxes ?? null, seam: m?.seam ?? null,
         ghost: g?.level ?? null, ghostWorst: g?.pct?.length ? Math.max(...g.pct) : null,
         fade: f?.level ?? null, fadeFlagged: f?.flagged ?? null, palette: f?.palette ?? null,
+        fadeWorst: f?.worst ? Number((f.worst.drop * 100).toFixed(1)) : null, fadeWorstAt: f?.worst ?? null,
         frozen: m?.level === "reject",
       };
     } catch (err) {

@@ -114,5 +114,22 @@ describe("the approved dog walk", () => {
     // condemns the only clip we have approved is the failure this repo has
     // already hit twice.
     expect(v.flagged).toEqual([]);
+
+    /**
+     * The magnitude has to survive into the RESULT, not just the report text.
+     *
+     * `flagged` is empty for every soft finding by design, and `level` is
+     * three-valued — so without `worst` the only record of "22.5% on frame 5"
+     * is a prose line, and a sweep of twenty clips could not be ranked without
+     * re-running the gate on all of them. Every gait clip in the first sweep
+     * came back `usable`; that word is identical for a 21% dip and a 39% one.
+     */
+    expect(v.worst).not.toBeNull();
+    expect(v.worst!.frame).toBe(5);
+    expect(v.worst!.drop).toBeGreaterThan(FADE.SOFT_DROP);
+    expect(v.worst!.drop).toBeLessThan(FADE.DROP);
+    // The tan markings, not one of the three body clusters.
+    expect(v.worst!.colour).toMatch(/^#[0-9a-f]{6}$/);
+    expect(v.report).toContain(v.worst!.colour);
   });
 });

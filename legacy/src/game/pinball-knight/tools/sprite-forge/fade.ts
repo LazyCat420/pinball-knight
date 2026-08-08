@@ -150,6 +150,19 @@ export interface FadeVerdict extends QaVerdict {
   shares: number[][];
   /** Frames where a substantial cluster collapsed. */
   flagged: number[];
+  /**
+   * THE HEADLINE NUMBER, and it must be stored, not just printed.
+   *
+   * `level` alone is a three-valued summary, and every gait clip in the first
+   * sweep came back `usable` — which says "something dimmed" for a 21% drop and
+   * for a 39% one identically. Judging twenty clips needs the magnitude and the
+   * frame, or the only way to rank them is to re-run the gate. `flagged` does
+   * not help either: it stays EMPTY for every soft finding by design, because
+   * soft frames are not droppable.
+   *
+   * `drop` is a fraction of the cluster's median share, not of the figure.
+   */
+  worst: { drop: number; colour: string; frame: number } | null;
 }
 
 const median = (xs: readonly number[]): number => {
@@ -163,7 +176,7 @@ const median = (xs: readonly number[]): number => {
  */
 export function fadeClip(frames: readonly RawImage[], opts: { label?: string } = {}): FadeVerdict {
   const empty = (checks: QaCheck[]): FadeVerdict => ({
-    ...finish(checks, opts), palette: [], shares: [], flagged: [],
+    ...finish(checks, opts), palette: [], shares: [], flagged: [], worst: null,
   });
   if (frames.length < 2) {
     return empty([{
@@ -211,7 +224,7 @@ export function fadeClip(frames: readonly RawImage[], opts: { label?: string } =
 
   const checks: QaCheck[] = [];
   const flagged = new Set<number>();
-  let worstDrop = 0, worstWho = "";
+  let worstDrop = 0, worstWho = "", worstColour = "", worstFrame = -1;
   for (let j = 0; j < FADE.K; j++) {
     const col = shares.map((s) => s[j]);
     const med = median(col);
@@ -219,7 +232,7 @@ export function fadeClip(frames: readonly RawImage[], opts: { label?: string } =
     const lo = Math.min(...col);
     const drop = (med - lo) / med;
     const at = col.indexOf(lo);
-    if (drop > worstDrop) { worstDrop = drop; worstWho = `${hex(cent[j])} at frame ${at}`; }
+    if (drop > worstDrop) { worstDrop = drop; worstWho = `${hex(cent[j])} at frame ${at}`; worstColour = hex(cent[j]); worstFrame = at; }
     if (drop >= FADE.DROP) {
       col.forEach((v, i) => { if ((med - v) / med >= FADE.DROP) flagged.add(i); });
     }
@@ -255,6 +268,7 @@ export function fadeClip(frames: readonly RawImage[], opts: { label?: string } =
     ]),
     palette: cent.map((c) => hex(c)),
     shares,
+    worst: worstFrame < 0 ? null : { drop: worstDrop, colour: worstColour, frame: worstFrame },
     flagged: [...flagged].sort((a, b) => a - b),
   };
 }

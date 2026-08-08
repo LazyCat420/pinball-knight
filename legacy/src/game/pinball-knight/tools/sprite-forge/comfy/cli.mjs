@@ -396,7 +396,7 @@ async function run(graph, dir, meta = {}) {
       // out on the APPROVED walk — a clip that had passed everything.
       try {
         const v = fadeClip(cells, { label: meta.label ?? "clip" });
-        fade = { palette: v.palette, flagged: v.flagged, level: v.level };
+        fade = { palette: v.palette, flagged: v.flagged, level: v.level, worst: v.worst };
         if (v.level !== "ready") console.log(v.report);
       } catch (err) {
         console.warn(`fade gate skipped: ${err.message}`);
