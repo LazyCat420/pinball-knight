@@ -456,6 +456,13 @@ Candidates to fetch, ranked by what they unblock:
 
 ## 7. ORDER OF WORK
 
+> ⚠️ **STOP — read `HANDOFF_2026-08-08.md` §1 first.** Steps 3 and 5 below were
+> attempted four times on 2026-08-08 and every attempt was killed by the RAM
+> guard. The box could not complete a Wan run: the WSL memory cap was set larger
+> than the machine (27.3 GB Windows baseline + 40 GB cap = 67.3 on a 63.9 GB
+> box). `.wslconfig` is fixed and waiting for a `wsl --shutdown`. Nothing in
+> this section can be measured until that has happened.
+
     1. ghostScore + gate                     no GPU. Makes everything after it measurable.
     2. decode A/B (§1)                       2 runs, ~15 min GPU. Confirms or kills the mechanism.
     3. first+last pinning + quadruped prompt 1 run. The walk-quality change.
