@@ -50,11 +50,23 @@ describe("the animate prompt tail", () => {
     }
   });
 
-  it("keeps the figure renderable — a one-shot still pins the camera", () => {
-    // Freeing the pose must not free the CAMERA: a moving camera changes the
-    // figure's scale between frames, which `drift.ts` cannot register.
+  it("keeps the figure renderable — a one-shot pins SCALE, not position", () => {
+    /**
+     * The first version of this fix freed the pose and forbade nothing about
+     * size, and the model spent the freedom on the cheapest motion it has:
+     * it shrank the dog. Measured on the S attack, one variable, seed 7 —
+     * churn 11.1% -> 28.3%, silhouettes 20 -> 21, and frame 20 was barely
+     * more than a head. A receding figure churns pixels beautifully and is
+     * useless as a sprite: drift.ts registers cells by bounding box, so a
+     * figure that halves is a different sprite rather than a pose.
+     *
+     * Note the negative CANNOT be relied on here — Wan's shared negative
+     * already bans "changing scale, character growing, character shrinking"
+     * and the dog shrank regardless. The positive clause is the lever.
+     */
     for (const p of ONE_SHOTS) {
       expect(promptFor(p), p).toContain("locked-off camera");
+      expect(promptFor(p), p).toContain("stays the same size");
       expect(promptFor(p), p).toContain("inside the frame");
     }
   });

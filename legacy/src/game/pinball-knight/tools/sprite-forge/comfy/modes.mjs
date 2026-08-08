@@ -495,6 +495,28 @@ const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom" && !p.alt);
 const CYCLE_CLIPS = new Set(["idle", "walk", "run"]);
 
 /**
+ * ⚠️ DO NOT ADD A SHRINK BAN TO THE NEGATIVE. IT IS ALREADY THERE AND IT DOES
+ * NOT WORK.
+ *
+ * Wan's shared negative in `graphs.mjs` has carried this all along:
+ *
+ *     "camera zoom, zoom in, zoom out, dolly, camera pan, camera movement,
+ *      changing scale, character growing, character shrinking"
+ *
+ * The S attack shrank to barely more than a head with every one of those terms
+ * active. A second copy on the preset was written while fixing this and thrown
+ * away on measuring it — re-banning a banned thing is the "prompting harder"
+ * dead end (chapter 10), which has already cost this repo a session.
+ *
+ * What DID hold the scale was a POSITIVE clause. The old tail said "the
+ * character stays centered in frame" and the figure kept its size; removing it
+ * for one-shots freed the pose and the scale went with it, negative
+ * notwithstanding. Positive conditioning outranks the negative here, so the
+ * one-shot tail states the constraint it needs — "stays the same size
+ * throughout" — and does NOT restate the ban.
+ */
+
+/**
  * Pose scripts for the keyframe-sheet mode: 4 EXTREME poses per move —
  * the classic animator's keys, not in-betweens. The in-between mode fills
  * the middles later, so these deliberately disagree with each other as
@@ -808,7 +830,19 @@ export const MODES = [
       const tail = !clip || CYCLE_CLIPS.has(clip)
         ? "smooth looping animation, the character stays centered in frame"
         : "one continuous action from start to finish, ending in a clearly different pose from the one it began in, " +
-          "a locked-off camera with the whole body staying inside the frame";
+          // PIN THE SCALE. Freeing the pose without forbidding the size change
+          // bought motion in the cheapest currency the model has: it shrank the
+          // dog. Measured on the S attack, same init and seed 7, one variable —
+          // churn went 11.1% -> 28.3% and 20 -> 21 distinct boxes, and the clip
+          // got WORSE by eye: frame 0 a full standing wolf, frame 20 barely more
+          // than a head. A receding figure churns pixels beautifully and is
+          // useless as a sprite, because `drift.ts` registers cells by bounding
+          // box and a figure that halves is a different sprite, not a pose.
+          //
+          // Note "the same size" WITHOUT "stays centered": position is what a
+          // lunge needs and the importer re-centres anyway; scale is what
+          // nothing downstream can repair.
+          "a locked-off camera, the character stays the same size throughout, the whole body staying inside the frame";
       return `${trigger}Pixel art game sprite ${action}, ${tail}, consistent colors, plain white background.`;
     },
     build(params, ctx) {
