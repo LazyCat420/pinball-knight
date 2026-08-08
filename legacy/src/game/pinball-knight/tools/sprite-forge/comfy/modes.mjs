@@ -342,15 +342,41 @@ const ANIMATE_PRESETS = [
    * forelegs, the head drives forward, the jaws open and close. It is a
    * one-shot, not a cycle, so it must NOT be generated with `--loop`.
    */
+  /**
+   * ── WRITTEN AS THREE BEATS, BECAUSE ONE SENTENCE READ AS A SNARL ───────────
+   *
+   * The first version said "lunging forward and biting … one full bite from
+   * wind-up to snap" — the wind-up named once, as a trailing clause. Reported
+   * by eye: "the hound looks like it's just showing its teeth." Measured:
+   * churn 11.3% against the walk's 22.1%, half the movement on what should be
+   * the most violent clip in the set.
+   *
+   * Two causes, and the template was the bigger one (see CYCLE_CLIPS). This is
+   * the second: an attack reads through ANTICIPATION -> STRIKE -> FOLLOW
+   * THROUGH, and the strike only lands because it contrasts with the coil
+   * before it. Given one undifferentiated sentence the model averages the
+   * whole thing into a mid-pose and animates the one part that can move
+   * without contradicting "stay centred": the jaw.
+   *
+   * So the beats are numbered in the text and each names DIFFERENT body
+   * mechanics, the way the keyframe presets already do. The `avoid` list bans
+   * the specific failure observed — a stationary snarl — not just generic
+   * badness, because "showing its teeth" is a perfectly good bite frame and
+   * the defect is that it is the ONLY frame.
+   */
   {
     id: "attack4",
     label: "attack — four legs (lunge and bite)",
     alt: true,
     action:
-      "lunging forward and biting, the jaws opening wide and snapping shut, the head thrusting forward over the front paws, " +
-      "the weight shifting onto the forelegs, the neck extending, one full bite from wind-up to snap",
+      "first coiling back on its haunches with the head drawn back and the shoulders gathering, " +
+      "then exploding forward off the hind legs into a full lunge, the front paws leaving the ground, " +
+      "the neck and spine extending straight out, the jaws opening wide and snapping shut on the target, " +
+      "then landing heavily on the forelegs with the head low, a single committed bite",
     avoid:
-      "weapon, sword, club, holding an object, swinging an arm, standing upright, rearing, bipedal, " +
+      "standing still, snarling in place, growling without moving, only the mouth moving, only the jaw moving, " +
+      "barking in place, holding a pose, the body staying upright and static, " +
+      "weapon, sword, club, holding an object, swinging an arm, bipedal, " +
       "extra legs, five legs, missing leg, legs merging, floating",
     clip: "attack",
   },
@@ -431,6 +457,42 @@ const ANIMATE_PRESETS = [
  * entries.
  */
 const MOVESET = ANIMATE_PRESETS.filter((p) => p.id !== "custom" && !p.alt);
+
+/**
+ * THE CLIPS THAT ARE CYCLES. Everything else is a ONE-SHOT.
+ *
+ * ── THE TEMPLATE WAS CANCELLING FOUR OF THE SEVEN CLIPS ─────────────────────
+ *
+ * Every animate prompt used to end with the same hardcoded tail:
+ *
+ *     "…, smooth looping animation, the character stays centered in frame, …"
+ *
+ * which is correct for a walk and actively wrong for an attack. Both clauses
+ * suppress exactly what a lunge is:
+ *
+ *   "smooth LOOPING animation"        -> return to the pose you started in.
+ *                                        An attack must END somewhere else.
+ *   "the character STAYS CENTERED"    -> do not travel. Lunging is travelling.
+ *
+ * Handed both, the model keeps the only part of a bite that moves neither the
+ * body nor the frame: the jaw. Reported by eye as "the hound looks like it's
+ * just showing its teeth", and the measurement agrees — S:attack churned
+ * **11.3%** against S:walk's **22.1%**, half the movement, on a move that
+ * should be the most violent in the set.
+ *
+ * A one-shot instead gets: end somewhere different, and a locked-off camera
+ * with the whole body in frame. Note it is NOT told to travel freely — the
+ * sprite importer re-centres every cell on its own bounding box, so lateral
+ * translation is discarded downstream anyway. The lunge has to read through
+ * POSE (body extending, paws leaving the ground, weight thrown forward), which
+ * survives registration, and "stays centered in frame" was killing the pose
+ * along with the travel.
+ *
+ * Keyed on the CLIP, not the preset id — the same rule the `pix3lwalk` trigger
+ * learned the hard way when `walk4` appeared and an id equality test silently
+ * dropped it.
+ */
+const CYCLE_CLIPS = new Set(["idle", "walk", "run"]);
 
 /**
  * Pose scripts for the keyframe-sheet mode: 4 EXTREME poses per move —
@@ -738,10 +800,16 @@ export const MODES = [
       // model. Same defect as the id-vs-clip test above, one level out: the
       // LoRA and the word that fires it decided by two different rules.
       const trigger = isWalk && ctx.has("pix3lwalk") && !ctx.small ? "pix3lwalk, " : "";
-      return (
-        `${trigger}Pixel art game sprite ${action}, smooth looping animation, the character stays ` +
-        `centered in frame, consistent colors, plain white background.`
-      );
+      // See CYCLE_CLIPS: the looping/centred tail is right for a gait and
+      // cancels a one-shot. An unknown clip (a `custom` action) is treated as a
+      // cycle, which is the old behaviour and the safer default — telling a
+      // gait not to loop costs a seam, telling a lunge to loop costs the lunge.
+      const clip = ANIMATE_PRESETS.find((p) => p.id === params.preset)?.clip;
+      const tail = !clip || CYCLE_CLIPS.has(clip)
+        ? "smooth looping animation, the character stays centered in frame"
+        : "one continuous action from start to finish, ending in a clearly different pose from the one it began in, " +
+          "a locked-off camera with the whole body staying inside the frame";
+      return `${trigger}Pixel art game sprite ${action}, ${tail}, consistent colors, plain white background.`;
     },
     build(params, ctx) {
       const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
