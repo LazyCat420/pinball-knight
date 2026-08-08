@@ -64,6 +64,33 @@
  * raise `FROZEN` toward the positive without more approved clips behind it —
  * and if you find yourself wanting to, you are rebuilding the quality metric
  * this file's header says not to.
+ *
+ * ── ⚠️ THE SEPARATION IS MUCH NARROWER THAN 23.7 vs 0.2 SUGGESTS ────────────
+ *
+ * The same day, `idle4` WITHOUT `--loop` came back genuinely alive — tail
+ * swinging, head shifting, paws planted, judged by eye — and measured:
+ *
+ *     churn median 2.08 %   12 of 21 distinct boxes   loop seam 12.6 %
+ *
+ * It cleared this floor by EIGHT HUNDREDTHS OF A POINT.
+ *
+ * So the honest statement of what this gate can do:
+ *
+ *     dead vs a GAIT      23.7 % vs 0.2 %   — 100x, unmissable
+ *     dead vs a SUBTLE    2.08 % vs 0.2 %   — 1.4x, and the live one sits
+ *       clip                                  0.08 points over the line
+ *
+ * An idle moves a little BY DEFINITION, and this measure cannot cleanly tell
+ * "a little" from "not at all". Against a walk or a run it is decisive; against
+ * an idle it is a coin flip that happened to land right. Treat a near-floor
+ * PASS on a subtle clip as "look at it", never as "it is fine" — and treat a
+ * near-floor FAIL the same way rather than binning the frames, which is why
+ * this gate warns and records instead of throwing.
+ *
+ * Fixing this properly needs a measure that is not pixel churn — the churn
+ * decayed monotonically across that clip (5.78 % → 0.98 %) while the creature
+ * was visibly moving throughout, which is the tell that the quantity and the
+ * phenomenon are only loosely related.
  */
 import type { QaCheck, QaLevel, QaVerdict } from "./intake-qa";
 import type { RawImage } from "./resample";
