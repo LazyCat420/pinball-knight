@@ -99,15 +99,12 @@ creature.
 Total parity means rebuilding the paperdoll model. Not worth it; say so on
 screen.
 
-## 6. Two source PNGs are dirty in the working tree, provenance unknown
+## 6. ~~Two source PNGs are dirty in the working tree~~ — RESOLVED
 
-**Impact:** low, but unresolved.
-`sources/pinball_knight-2026-08-02/14_spin_attack_4frames.png` (751 KB →
-1,044 KB) and `frame_0.png` (283 KB → 278 KB) are modified by another session and
-were deliberately left alone during the `57b0511` merge. They are genuinely
-edited source art, not debris.
-
-**Next step:** find out whose they are and either commit or discard them.
+*(The previous item — `sources/pinball_knight-2026-08-02/14_spin_attack_4frames.png`
+and `frame_0.png` modified by another session and left alone during the
+`57b0511` merge — is closed. Verified 2026-08-08: `git status` is clean on
+`main`, so they were either committed or discarded by a later session.)*
 
 ## 6b. The perf harness measures at 1080p now — old numbers are not comparable
 
@@ -148,6 +145,28 @@ sheet, so edits made in the text format cannot ship. The missing half is a
 inbox, at which point the whole loop (generate → trace → hand-fix texels →
 republish) closes and the traced set becomes the durable source of truth for
 consistency work across facings.
+
+## 8b. The forge's clip list is shorter than the game's clip demand
+
+**Impact:** high, and invisible — it is the same defect class as the hound's
+charge tell (`97eb184`), which was drawn carefully, published under the wrong
+name, and never once appeared on screen.
+
+Three lists describe "what a character needs" and they do not agree:
+`MOVESET` authors **seven** clips (it has `defend` → `crouch`), while
+`KEYFRAME_SET` and `DEFAULT_CLIPS` author **six** and drop it. `DEFAULT_CLIPS`
+is introduced by a comment asserting all three already agree, which is what
+makes the drift invisible; `camera-sync.test.ts` pins the camera table across
+the same two files and **nothing pins the clip lists**.
+
+Meanwhile the movement policies demand `crouch` (leaper), `wake` (ambusher /
+strafer) and `wait` (packhunter — a fully implemented policy with **zero kinds
+assigned**). Only `wake` has a fallback. So even a perfect 18/18 build would
+still ship a hound whose charge tell plays a breathing idle.
+
+**Next step:** the three-step fix in *Can the forge make a character?* §3 —
+one source list, a test that pins the copies together, and a roster-wide
+generalisation of `hound.test.ts`. Pure TypeScript, no GPU.
 
 ## 9. `__dungeonClips("player")` returns null
 
