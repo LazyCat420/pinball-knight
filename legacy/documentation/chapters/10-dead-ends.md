@@ -62,6 +62,50 @@ from memory.
 
 ---
 
+## ⚠️ NOT a dead end — and the near miss is the lesson
+
+**`walk4` + `--loop` + `pix3lwalk` on A14B was about to be recorded here as
+"made no measurable difference". It would have been wrong.**
+
+Measured 2026-08-08, same init (`dog-2026-08-07/12_wan_00699_.png`), same seed 7,
+same 21 frames, one variable at a time. Both arms verified as actually applying —
+`WanFirstLastFrameToVideo` with `end_image` wired, all three LoRA loads attached:
+
+| | 5B, free-run, no LoRA | A14B, `walk4 + --loop + pix3lwalk` |
+|---|---|---|
+| ghost worst | 0.26% | 0.36% |
+| over the 1% floor | 0 of 21 | 0 of 21 |
+| **motion median** | **36%** | **37%** |
+| time | 107 s | 451 s |
+
+One percentage point for four times the cost. On that table the lever was dead.
+
+**Then the two clips were rendered as GIFs at the game's 8 fps, put side by
+side, and looked at — and the `walk4` arm was clearly better.** The operator's
+verdict was immediate and unambiguous.
+
+**What the metric was actually measuring.** Frame-to-frame pixel churn over the
+figure box. A gait does not read as a gait because pixels change; it reads
+because the *right* pixels change in the *right order* — paws leaving and
+planting, the diagonal pairs alternating, the spine staying level. A four-beat
+quadruped gait and a scrambling free-run can churn identical numbers of pixels.
+
+> **The rule: never retire a lever on a metric alone.** Render both arms at the
+> game's frame rate, put them side by side, and ask. This is the same failure as
+> the census that printed "BETTER than the painted roster" for art rejected on
+> sight — a number standing in for looking — except inverted: here the number
+> would have thrown away something that works.
+>
+> Both directions of that error have now happened in this repo. The gate is the
+> eye; metrics are for catching what the eye cannot see (ghosting at 0.3%,
+> a lattice at ×8), not for deciding what looks right.
+
+**Status: `walk4 + --loop` is the working recipe for a quadruped walk.** It is in
+the skill and in the playbook. The 5B leg remains the fallback for when A14B
+cannot finish, and for new masters.
+
+---
+
 ## The standing rules these bought
 
 1. **Read `guard.log` before theorising.** One line, names the cause.

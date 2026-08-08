@@ -142,12 +142,51 @@ a `spawnKind` case and biome weights; `npx tsc --noEmit` catches the tables and
   sidecar's `rows`, not the picture: `published.test.ts` prints the whole
   roster's coverage.
 
+## The verified recipe for a quadruped walk
+
+Measured and eye-approved 2026-08-08. This is the command, not an example:
+
+```bash
+cd src/game/pinball-knight/tools/sprite-forge/comfy
+node cli.mjs animate \
+  --init ../sources/dog-2026-08-07/12_wan_00699_.png \
+  --preset walk4 --loop --frames 21 --seed 7 --file-as dog
+```
+
+451 s on A14B, ghost worst 0.36% against a 1% floor, no guard strike at a
+15.1 GB Windows baseline. `walk4` is the four-beat quadruped gait; `--loop` pins
+first and last so the cycle closes; `--file-as` is what makes the run visible in
+`/forge`.
+
+Use `walk` for bipeds and `--small` only when A14B cannot finish — the small leg
+can do neither `--loop` nor the pixel LoRAs.
+
+**Pick the init deliberately: a clean mid-stride frame, never a standing
+master.** Pinning a stand at both ends animates stand → walk → stand.
+
 ## 8. THE EYE
 
 **Play the clip at the game's frame rate and watch it.** No number replaces this.
-A census verdict of "BETTER than the painted roster" was printed for art that was
-rejected on sight, and a 14%-motion idle survived review because nobody watched
-it move.
+
+```bash
+ffmpeg -y -framerate 8 -pattern_type glob -i "<run-dir>/*.png" \
+  -vf "scale=320:-1:flags=neighbor,split[a][b];[a]palettegen[p];[b][p]paletteuse" out.gif
+```
+
+8 fps is the game's walk rate (`engine/config.ts`). For an A/B, compose the two
+arms into one frame side by side and judge them together — a clip looks fine
+alone and obviously worse beside its alternative.
+
+**This gate has now failed in both directions**, which is why it is a gate and
+not a formality:
+
+- a census printed "BETTER than the painted roster" for art rejected on sight,
+  and a 14%-motion idle survived review because nobody watched it move;
+- and a motion metric scored `walk4 + --loop` at 37% against a free-run's 36%
+  and would have retired a lever that visibly works.
+
+Metrics catch what the eye cannot — 0.3% ghosting, a lattice at ×8. They do not
+decide what looks right.
 
 ---
 
