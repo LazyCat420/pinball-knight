@@ -329,9 +329,96 @@ const ANIMATE_PRESETS = [
     clip: "run",
   },
   { id: "attack", label: "attack", action: "attacking with its weapon, one full swing", clip: "attack" },
+  /**
+   * THE BITE — because `attack` above hands a WEAPON to an animal.
+   *
+   * "attacking with its weapon, one full swing" is not merely unhelpful to a
+   * quadruped, it names a prop the creature does not have, and a generative
+   * model asked for a swing from a dog will find something to swing: a paw
+   * raised like an arm, or a rearing biped. The extra-legs and rearing bans
+   * from `walk4` apply here for the same reason.
+   *
+   * A canine attack is a LUNGE AND SNAP: the weight transfers onto the
+   * forelegs, the head drives forward, the jaws open and close. It is a
+   * one-shot, not a cycle, so it must NOT be generated with `--loop`.
+   */
+  {
+    id: "attack4",
+    label: "attack — four legs (lunge and bite)",
+    alt: true,
+    action:
+      "lunging forward and biting, the jaws opening wide and snapping shut, the head thrusting forward over the front paws, " +
+      "the weight shifting onto the forelegs, the neck extending, one full bite from wind-up to snap",
+    avoid:
+      "weapon, sword, club, holding an object, swinging an arm, standing upright, rearing, bipedal, " +
+      "extra legs, five legs, missing leg, legs merging, floating",
+    clip: "attack",
+  },
   { id: "stumble", label: "getting hit (stagger)", action: "recoiling and stumbling backward as if struck, hurt", clip: "stumble" },
+  /**
+   * THE FLINCH. `stumble` above says "stumbling backward", which on four legs
+   * reads as walking backwards rather than being hit. A struck animal drops its
+   * head, twists away and its legs BUCKLE — the read is the collapse of posture,
+   * not travel. One-shot; no `--loop`.
+   */
+  {
+    id: "stumble4",
+    label: "getting hit — four legs (flinch)",
+    alt: true,
+    action:
+      "recoiling from a blow, the whole body flinching and twisting away, the head snapping down and to the side, " +
+      "the legs buckling and scrabbling for footing, the tail tucking under, hurt and staggering",
+    avoid:
+      "walking backwards, stepping back calmly, standing upright, rearing, bipedal, extra legs, legs merging, floating",
+    clip: "stumble",
+  },
   { id: "defend", label: "defend (block)", action: "bracing defensively, guarding against an incoming blow, hunkering down", clip: "crouch" },
+  /**
+   * THE POUNCE TELEGRAPH, and the highest-stakes clip in the set.
+   *
+   * `render/tell-clips.ts` resolves the leaper tell to `crouch`, and there is NO
+   * painter fallback — an unauthored crouch plays `idle`, which is how the hound
+   * charged for weeks with no warning. `defend` above describes a SHIELD BLOCK
+   * ("guarding against an incoming blow"), which is a knight's move; a hound
+   * telegraphs by gathering to spring, and those two poses look nothing alike.
+   *
+   * It is a HELD pose, not a cycle: `anim.crouch` plays at 7fps ~ 0.43s against
+   * LEAP_WINDUP's 0.45s, so the clip must END at its deepest gather — the pounce
+   * starts from wherever this finishes. Definitely no `--loop`, which would drag
+   * it back to standing.
+   */
+  {
+    id: "defend4",
+    label: "telegraph — four legs (gather to pounce)",
+    alt: true,
+    action:
+      "crouching low to spring, the haunches gathering and loading under the body, the chest dropping toward the ground, " +
+      "the shoulders coiling, the head lowered and locked forward on its target, the body settling deeper and holding, ready to pounce",
+    avoid:
+      "leaping, jumping, springing, pouncing, rising, standing up, walking, travelling, turning, " +
+      "shield, blocking, guarding with an arm, standing upright, bipedal, extra legs, legs merging",
+    clip: "crouch",
+  },
   { id: "death", label: "death", action: "dying and collapsing to the ground", clip: "death" },
+  /**
+   * THE COLLAPSE. Two 08-06 death runs drove the field black and turned the
+   * figure into particle VFX, which a sprite bakes in permanently — so the
+   * dissolve vocabulary is banned here on top of the global negative. A
+   * quadruped dies by folding: legs give way, hindquarters drop, the body rolls
+   * onto its side. One-shot; no `--loop`, and it must END on the ground.
+   */
+  {
+    id: "death4",
+    label: "death — four legs (collapse)",
+    alt: true,
+    action:
+      "collapsing and dying, the legs giving way beneath the body, the hindquarters dropping first, " +
+      "the chest sinking to the ground, the head falling last, the body settling onto its side and going still",
+    avoid:
+      "dissolving, disintegrating, particles, smoke, glow, sparks, fading away, vanishing, " +
+      "getting up, standing, walking, bipedal, rearing, extra legs, legs merging",
+    clip: "death",
+  },
   { id: "custom", label: "custom action…", action: "", clip: "" },
 ];
 

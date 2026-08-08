@@ -44,6 +44,10 @@ import { ghostClip } from "../ghost.ts";
 // whether there are frames worth cleaning. A frozen clip passes ghost by
 // definition — see motion.ts's header.
 import { motionClip } from "../motion.ts";
+// The third axis. `ghost` asks if a limb dissolved toward the FIELD, `fade`
+// asks if a marking dissolved into the BODY — opposite directions, and ghost is
+// blind to this one by construction. Reported on the approved walk by eye.
+import { fadeClip } from "../fade.ts";
 
 /**
  * THE SAME `ctx` THE PANEL ROUTE BUILDS — LoRAs, unet choices and all.
@@ -286,6 +290,7 @@ async function run(graph, dir, meta = {}) {
   // per-frame numbers and the panel can exclude the bad cells by default.
   let ghost = null;
   let motion = null;
+  let fade = null;
   if (frames.length > 1) {
     const cells = [];
     try {
@@ -332,6 +337,18 @@ async function run(graph, dir, meta = {}) {
       } catch (err) {
         console.warn(`motion gate skipped: ${err.message}`);
       }
+      // ── THE FADE GATE ────────────────────────────────────────────────────
+      //
+      // Advisory like ghost: the named frames are droppable and the clip is
+      // paid for. It exists because the operator saw the dog's tan paws blink
+      // out on the APPROVED walk — a clip that had passed everything.
+      try {
+        const v = fadeClip(cells, { label: meta.label ?? "clip" });
+        fade = { palette: v.palette, flagged: v.flagged, level: v.level };
+        if (v.level !== "ready") console.log(v.report);
+      } catch (err) {
+        console.warn(`fade gate skipped: ${err.message}`);
+      }
     }
   }
 
@@ -353,6 +370,7 @@ async function run(graph, dir, meta = {}) {
         ...(character ? { character } : {}),
         ...(ghost ? { ghost } : {}),
         ...(motion ? { motion } : {}),
+        ...(fade ? { fade } : {}),
       },
       null,
       1,
