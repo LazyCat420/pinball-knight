@@ -229,12 +229,20 @@ for (const facing of facings) {
       process.stdout.write(out);
       const dir = runDirFromOutput(out) ?? newestRun(`animate-${preset}-`);
       const job = dir && existsSync(join(dir, "job.json")) ? JSON.parse(readFileSync(join(dir, "job.json"), "utf8")) : null;
-      const m = job?.motion, g = job?.ghost;
+      // All THREE gates, because they fail on three different axes and a matrix
+      // that reports one of them is a matrix that looks clean while a clip is
+      // broken. motion = did it move; ghost = did a limb dissolve toward the
+      // FIELD; fade = did a marking dissolve into the BODY. The last one was
+      // wired into cli.mjs and omitted here, which would have left the operator's
+      // reported defect — the hound's tan paws blinking out — absent from the
+      // only summary anyone reads.
+      const m = job?.motion, g = job?.ghost, f = job?.fade;
       const churn = m?.churn?.length ? [...m.churn].sort((a, b) => a - b)[m.churn.length >> 1] : null;
       results[key] = {
         ok: true, dir, preset, loop, tookS: Math.round((Date.now() - t0) / 1000),
         motion: m?.level ?? null, churnMedian: churn, boxes: m?.boxes ?? null, seam: m?.seam ?? null,
         ghost: g?.level ?? null, ghostWorst: g?.pct?.length ? Math.max(...g.pct) : null,
+        fade: f?.level ?? null, fadeFlagged: f?.flagged ?? null, palette: f?.palette ?? null,
         frozen: m?.level === "reject",
       };
     } catch (err) {
@@ -246,21 +254,36 @@ for (const facing of facings) {
 }
 
 /** ── 3. the matrix report ────────────────────────────────────────────────── */
+/**
+ * One cell carries the churn AND a flag column, because a clip can be healthy
+ * on one axis and broken on another — a frozen clip has perfect ghost scores,
+ * and the fade defect was found on a clip that passed everything.
+ *
+ *   `!`  motion is only "usable"     `g` ghost flagged frames
+ *   `f`  fade flagged frames         `~` fade soft-flagged (a marking dimmed)
+ */
 const cell = (r) => {
-  if (!r) return "    —    ";
-  if (!r.ok) return "  ERROR  ";
-  if (r.frozen) return " FROZEN  ";
-  return `${String(r.churnMedian ?? "?").padStart(5)}%  `;
+  if (!r) return "     —      ";
+  if (!r.ok) return "   ERROR    ";
+  if (r.frozen) return "  FROZEN    ";
+  const flags =
+    (r.motion === "usable" ? "!" : "") +
+    (r.ghost && r.ghost !== "ready" ? "g" : "") +
+    (r.fade === "reject" ? "F" : r.fade === "usable" ? "~" : "");
+  return `${String(r.churnMedian ?? "?").padStart(6)}% ${flags.padEnd(4)}`;
 };
 console.log(`\n\n=== ${character} — churn median by clip x facing ===\n`);
-console.log("clip      " + facings.map((f) => f.padEnd(9)).join(""));
+console.log("clip       " + facings.map((f) => f.padEnd(12)).join(""));
 for (const clip of clips) {
-  console.log(clip.padEnd(10) + facings.map((f) => cell(results[`${f}:${clip}`])).join(""));
+  console.log(clip.padEnd(11) + facings.map((f) => cell(results[`${f}:${clip}`])).join(""));
 }
+console.log("\n  ! motion only usable   g ghost flagged   ~ a marking dimmed   F a colour lost");
 const all = clips.flatMap((c) => facings.map((f) => results[`${f}:${c}`])).filter(Boolean);
 const frozen = all.filter((r) => r.frozen).length;
 const errored = all.filter((r) => !r.ok).length;
+const faded = all.filter((r) => r.fade && r.fade !== "ready").length;
 const mins = Math.round(all.reduce((s, r) => s + (r.tookS ?? 0), 0) / 60);
-console.log(`\n${all.length} runs · ${frozen} FROZEN · ${errored} errored · ${mins} min of GPU`);
+console.log(`\n${all.length} runs · ${frozen} FROZEN · ${errored} errored · ${faded} with a colour flag · ${mins} min of GPU`);
 console.log(`results -> ${resultsPath}`);
+// The one line that has been right every time it was ignored.
 console.log("\nA churn number is NOT approval. Render each survivor at 8fps and look at it.");
