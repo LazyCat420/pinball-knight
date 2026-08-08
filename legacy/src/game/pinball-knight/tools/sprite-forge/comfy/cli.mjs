@@ -29,7 +29,7 @@ import { controlMap, qwenEdit, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
-import { MODES, fastAvailable } from "./modes.mjs";
+import { MODES, fastAvailable, smallAvailable } from "./modes.mjs";
 import { optionById, chosenOption } from "./manifest.mjs";
 import { installState, loadSettings } from "./forge-config.mjs";
 
@@ -55,7 +55,7 @@ import { installState, loadSettings } from "./forge-config.mjs";
  * Reads the same `~/comfy/forge-settings.json` the panel writes, so a unet
  * chosen in the UI is honoured on the command line.
  */
-function buildCtx({ images = {}, seed = 7, fast = false, leg = "qwen" } = {}) {
+function buildCtx({ images = {}, seed = 7, fast = false, small = false, leg = "qwen" } = {}) {
   const settings = loadSettings();
   const has = (optionId) => {
     const o = optionById(optionId);
@@ -66,7 +66,14 @@ function buildCtx({ images = {}, seed = 7, fast = false, leg = "qwen" } = {}) {
     lora: (optionId) => optionById(optionId)?.file.replace(/^loras\//, "") ?? null,
     unet: (slotId) => chosenOption(slotId, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
     chosen: (slotId) => chosenOption(slotId, settings.chosen)?.id ?? null,
+    /** Any option's filename by OPTION id — `unet()` takes a SLOT and only does unets. */
+    fileOf: (optionId) => optionById(optionId)?.file.replace(/^[^/]+\//, "") ?? null,
     fast: fast && fastAvailable(leg, has),
+    // Same gate as `fast`: the caller may ask and the weights decide. The CLI
+    // needs this for the same reason the header above gives — a ctx field the
+    // panel has and the CLI does not is two different pictures from one mode
+    // id, and the small leg is the one that decides whether a run FINISHES.
+    small: small && smallAvailable(leg, has),
     images,
     seed,
   };
@@ -418,7 +425,7 @@ const main = {
     const init = opt("init");
     const preset = opt("preset", "walk");
     const action = opt("action");
-    if (!init) throw new Error("animate needs --init <png> [--preset walk|run|attack|death|idle|stumble|defend] [--action ...]");
+    if (!init) throw new Error("animate needs --init <png> [--preset walk|run|attack|death|idle|stumble|defend] [--action ...] [--small]");
     const label = action || preset;
     const dir = outDir(`animate-${String(label).replace(/\s+/g, "_")}`);
     const image = await uploadImage(init, basename(init));
@@ -428,8 +435,16 @@ const main = {
       images: { init: image },
       seed: Number(opt("seed", 7)),
       fast: has("fast"),
+      // --small: TI2V-5B, ~13.6GB of reads instead of ~31. Silently a no-op if
+      // the weights are not installed, which is what smallAvailable() decides —
+      // and the banner below says which leg actually ran, never which was asked
+      // for, because that difference is the whole failure mode of a flag.
+      small: has("small"),
       leg: "wan",
     });
+    console.log(ctx.small
+      ? "leg: TI2V-5B (small) — one dense model, NO pixel LoRAs (none exist for 5B)"
+      : "leg: I2V-A14B (two experts) — ~31GB of reads; --small halves the RAM if the 5B weights are installed");
     // `--no-lora` is kept: it is how the pixel adapter gets A/B'd, and commit
     // 55f78f9's measurement (pix3lwalk drove the background black and produced
     // 0/21 usable frames) is exactly the run it exists for.

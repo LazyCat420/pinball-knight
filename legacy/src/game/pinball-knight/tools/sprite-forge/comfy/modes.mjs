@@ -22,7 +22,7 @@
  *   ctx.images          uploaded server-side names {init, end, mask, style}
  *   ctx.seed
  */
-import { bgRemove, qwenEdit, qwenInpaint, wanI2V } from "./graphs.mjs";
+import { bgRemove, qwenEdit, qwenInpaint, wanI2V, wanTi2v5B } from "./graphs.mjs";
 
 /**
  * Lightning distills change the OPERATING POINT — steps and cfg move
@@ -78,6 +78,84 @@ function wanBundle(ctx, { walk = false } = {}) {
 export function fastAvailable(leg, has) {
   if (leg === "qwen") return has(QWEN_FAST.optionId);
   return has(WAN_FAST.highId) && has(WAN_FAST.lowId);
+}
+
+/**
+ * THE SMALL WAN LEG — TI2V-5B instead of the A14B expert pair.
+ *
+ * Both quant ids are accepted so a Q6 install is not silently ignored; the
+ * caller takes whichever is present, Q8 first because it is the recommended
+ * one. `wan22-vae` is in the AND rather than being assumed, because the 2.1
+ * VAE decodes 5B to garbage instead of raising — an availability check that
+ * omits it would report "5B is ready" for a setup that produces noise.
+ */
+const WAN_SMALL = { unetIds: ["wan-ti2v-5b-q8", "wan-ti2v-5b-q6"], vaeId: "wan22-vae", steps: 20, cfg: 3.5 };
+
+export function smallAvailable(leg, has) {
+  if (leg !== "wan") return false;
+  return WAN_SMALL.unetIds.some((id) => has(id)) && has(WAN_SMALL.vaeId);
+}
+
+/**
+ * The 5B bundle: which weights, and the LoRA list — which is EMPTY, on purpose.
+ *
+ * `wanBundle` above attaches `styly pixel-animate` and `pix3lwalk`; both are
+ * A14B adapters (one applied to both experts, one a high-noise half) and
+ * neither can load on a single dense model. Returning an empty list here is the
+ * honest version of that, and `graphs.wanTi2v5B` throws if one is passed
+ * anyway — the two together mean a 5B run cannot quietly become an unstyled
+ * run that nobody notices.
+ */
+function wanSmallBundle(ctx) {
+  const unetId = WAN_SMALL.unetIds.find((id) => ctx.has(id));
+  return {
+    loras: [],
+    steps: WAN_SMALL.steps,
+    cfg: WAN_SMALL.cfg,
+    unet: unetId ? ctx.fileOf(unetId) : undefined,
+    vae: ctx.fileOf(WAN_SMALL.vaeId) ?? undefined,
+    /** Surfaced so the panel can say what was given up, rather than it being invisible. */
+    droppedLoras: ["styly-pixel-animate", "pix3lwalk"].filter((id) => ctx.has(id)),
+  };
+}
+
+/**
+ * Build a Wan clip on whichever animation leg the request asked for.
+ *
+ * Both wan modes route through here so the leg choice cannot be made in one
+ * mode and forgotten in the other — the drift that this file's header already
+ * complains about for prompts.
+ *
+ * ⚠️ THE SMALL LEG CANNOT PIN A LAST FRAME, AND THAT IS NOT A WIRING GAP.
+ * `WanFirstLastFrameToVideo` builds 2.1-format conditioning for the A14B pair.
+ * The 2.2 latent path has exactly one node, `Wan22ImageToVideoLatent`, and its
+ * schema has `start_image` and no `end_image` — first/last pinning does not
+ * exist for TI2V-5B in this ComfyUI. So `inbetween` — step 5 of
+ * PLAN_KEYFRAME_PIPELINE, and the step that stops Wan inventing where a motion
+ * is going — is A14B-only. Refusing loudly here is the whole point: silently
+ * dropping `end_image` would return a free-running clip that LOOKS like an
+ * in-between and is exactly the failure the plan exists to end.
+ */
+function buildWanClip({ image, endImage = null, prompt, extraNegative = null, length, ctx, walk = false }) {
+  if (ctx.small) {
+    if (endImage) {
+      throw new Error(
+        "[modes] the small leg (TI2V-5B) cannot pin a last frame — Wan22ImageToVideoLatent has no end_image " +
+          "input, so an in-between would silently become a free-running clip. Run in-betweens on the A14B pair.",
+      );
+    }
+    const small = wanSmallBundle(ctx);
+    return wanTi2v5B({
+      image, prompt, extraNegative, length, seed: ctx.seed,
+      unet: small.unet, vae: small.vae, loras: small.loras, steps: small.steps, cfg: small.cfg,
+    });
+  }
+  return wanI2V({
+    image, endImage, prompt, extraNegative, length, seed: ctx.seed,
+    unetHigh: ctx.unet("anim-high") ?? undefined,
+    unetLow: ctx.unet("anim-low") ?? undefined,
+    ...wanBundle(ctx, { walk }),
+  });
 }
 
 const FACINGS = [
@@ -246,6 +324,33 @@ const KEYFRAME_MOVES = [
     ],
   },
   {
+    /**
+     * THE TELEGRAPH, and the reason this list is seven long as of 2026-08-08.
+     *
+     * `render/tell-clips.ts` resolves the leaper telegraph to the clip
+     * `crouch`, and unlike `wake` there is NO painter fallback for it — an
+     * unauthored crouch plays `idle` through CLIP_FALLBACK, so the one warning
+     * the player has to read fast becomes a monster standing still. It was
+     * missing from this list while the animate leg's `defend` preset already
+     * authored it, which is the drift `clip-contract.test.ts` now catches.
+     *
+     * The keys are a HELD pose rather than a movement: the gather is the whole
+     * read, so the four keys tighten the same crouch instead of travelling.
+     * `anim.crouch` plays at 7fps ≈ 0.43s against LEAP_WINDUP's 0.45s, so a key
+     * that wanders is a telegraph that finishes somewhere the pounce does not
+     * start from.
+     */
+    id: "defend",
+    label: "defend / telegraph keys (the leaper crouch)",
+    clip: "crouch",
+    poses: [
+      "standing alert, weight settling back, knees just beginning to bend",
+      "crouching low, haunches loaded, chest dropped toward the ground",
+      "coiled at its lowest, every limb gathered under the body, about to spring",
+      "still coiled, head and shoulders angled forward at its target, holding",
+    ],
+  },
+  {
     id: "death",
     label: "death keys",
     clip: "death",
@@ -393,15 +498,13 @@ export const MODES = [
     },
     build(params, ctx) {
       const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
-      return wanI2V({
+      return buildWanClip({
         image: ctx.images.init,
         prompt: this.prompt(params, ctx),
         extraNegative: preset?.avoid ?? null,
         length: Number(params.frames) || 21,
-        seed: ctx.seed,
-        unetHigh: ctx.unet("anim-high") ?? undefined,
-        unetLow: ctx.unet("anim-low") ?? undefined,
-        ...wanBundle(ctx, { walk: params.preset === "walk" }),
+        walk: params.preset === "walk",
+        ctx,
       });
     },
   },
@@ -425,15 +528,12 @@ export const MODES = [
       );
     },
     build(params, ctx) {
-      return wanI2V({
+      return buildWanClip({
         image: ctx.images.init,
         endImage: ctx.images.end,
         prompt: this.prompt(params, ctx),
         length: Number(params.frames) || 17,
-        seed: ctx.seed,
-        unetHigh: ctx.unet("anim-high") ?? undefined,
-        unetLow: ctx.unet("anim-low") ?? undefined,
-        ...wanBundle(ctx),
+        ctx,
       });
     },
   },
@@ -672,11 +772,19 @@ export function serializeModes(has) {
     presets: m.presets ?? null,
     etaS: m.etaS,
     fastAvailable: fastAvailable(m.leg, has),
+    // `inbetween` is excluded on purpose rather than by omission: the 5B latent
+    // node has no `end_image`, so offering the small leg there would advertise
+    // a control the executor cannot honour.
+    smallAvailable: m.id !== "inbetween" && smallAvailable(m.leg, has),
     notes: [
       m.leg === "qwen" && has("tarn59-pixel-style") ? "pixel style lock riding along" : null,
       m.leg === "qwen" && m.id === "rotate" && has("fal-multi-angle") ? "deterministic angle grammar active" : null,
       m.leg === "wan" && has("styly-pixel-animate") ? "pixel motion adapter riding along" : null,
       m.id === "animate" && has("pix3lwalk") ? "walk preset uses the pix3lwalk specialist" : null,
+      m.leg === "wan" && smallAvailable(m.leg, has)
+        ? "small leg (TI2V-5B) available — 13.6GB of reads instead of 31, and NO pixel LoRAs"
+        : null,
+      m.id === "inbetween" && smallAvailable(m.leg, has) ? "A14B only — 5B cannot pin a last frame" : null,
     ].filter(Boolean),
   }));
 }

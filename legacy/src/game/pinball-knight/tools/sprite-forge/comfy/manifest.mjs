@@ -222,7 +222,7 @@ export const LEGS = [
       },
       {
         id: "rot-lora-speed",
-        role: "LoRA — speed (optional, not yet wired into generation)",
+        role: "LoRA — speed (optional; WIRED — pass `fast: true`)",
         required: false,
         options: [
           {
@@ -232,7 +232,11 @@ export const LEGS = [
             bytes: 850000000,
             url: HF("lightx2v/Qwen-Image-Edit-2511-Lightning", "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"),
             license: "Apache-2.0",
-            note: "Should cut ~260s to ~100s once wired in (needs steps=8, cfg=1 in the graph — a later pass).",
+            note:
+              "Cuts ~260s to ~100s. WIRED: `modes.mjs` QWEN_FAST sets steps=8/cfg=1 and the route attaches it " +
+              "when the request carries `fast: true` AND `fastAvailable()` says the weight is installed. " +
+              "(This note read 'not yet wired into generation' until 2026-08-08, three days after it was — " +
+              "a stale note is how a working feature goes unused.)",
           },
         ],
       },
@@ -383,6 +387,63 @@ export const LEGS = [
         ],
       },
       {
+        /**
+         * THE SMALL LEG — one dense model instead of the two experts above.
+         *
+         * Registered 2026-08-08 because the A14B pair does not fit the box and
+         * the failure is HOST RAM, not VRAM: two 12GB experts is 24GB of GGUF
+         * reads, Linux page-caches every byte, and at a 32GB WSL cap the VAE
+         * decode takes available to 0.7GiB and the guard interrupts. Measured
+         * host growth +25.3GB against ComfyUI's own RSS +10.1GB — the gap is
+         * page cache. 1024²/21f and 640²/17f die identically, so it is the
+         * resident working set and not the batch.
+         *
+         *   A14B pair   12.00 + 12.00 + 6.74 (umt5) + 0.25 (2.1 vae) = 31.0GB
+         *   TI2V-5B      5.40         + 6.74 (umt5) + 1.41 (2.2 vae) = 13.6GB
+         *
+         * ⚠️ PICKING THIS COSTS THE PIXEL LoRAs. `styly pixel-animate` is an
+         * A14B adapter and `pix3lwalk` ships a high-noise half; 5B has no
+         * high/low split so neither can load, and as of 2026-08-08 no
+         * 5B-compatible pixel adapter is published (searched HF + Civitai —
+         * every pixel/sprite LoRA in the ecosystem targets I2V-A14B).
+         * `graphs.wanTi2v5B` REFUSES them rather than attaching them, because
+         * the failure mode of the silent version is a LoRA that looks applied
+         * and did nothing. That trade is the open question this leg exists to
+         * answer, and it is why 5B is registered as a CHOICE and not made the
+         * default.
+         */
+        id: "anim-small-unet",
+        role: "Small single-model alternative — TI2V-5B (pick one quant)",
+        required: false,
+        choice: true,
+        options: [
+          {
+            id: "wan-ti2v-5b-q8",
+            name: "TI2V-5B Q8_0",
+            file: "unet/Wan2.2-TI2V-5B-Q8_0.gguf",
+            bytes: 5400179040,
+            url: HF("QuantStack/Wan2.2-TI2V-5B-GGUF", "Wan2.2-TI2V-5B-Q8_0.gguf"),
+            license: "Apache-2.0",
+            recommended: true,
+            note:
+              "5.40GB against the A14B pair's 24.0GB — the whole run reads 13.6GB instead of 31, which is " +
+              "the difference between finishing and dying at the VAE decode. Does BOTH t2v and i2v. " +
+              "Q8 rather than a smaller quant because the saving that matters was already taken by " +
+              "dropping the second expert; there is no reason to spend quality on top of it. " +
+              "REQUIRES the Wan 2.2 VAE below — the 2.1 VAE decodes this to garbage rather than erroring.",
+          },
+          {
+            id: "wan-ti2v-5b-q6",
+            name: "TI2V-5B Q6_K",
+            file: "unet/Wan2.2-TI2V-5B-Q6_K.gguf",
+            bytes: 4211683680,
+            url: HF("QuantStack/Wan2.2-TI2V-5B-GGUF", "Wan2.2-TI2V-5B-Q6_K.gguf"),
+            license: "Apache-2.0",
+            note: "1.19GB smaller again. Only worth it if Q8 still cannot finish a run — measure before assuming it is needed.",
+          },
+        ],
+      },
+      {
         id: "anim-te",
         role: "Text encoder",
         required: true,
@@ -411,7 +472,19 @@ export const LEGS = [
             url: HF("Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "split_files/vae/wan_2.1_vae.safetensors"),
             license: "Apache-2.0",
             recommended: true,
-            note: "Yes, 2.1 — the A14B experts use the 2.1 VAE; the '2.2 VAE' belongs to the small 5B model.",
+            note: "Yes, 2.1 — the A14B experts use the 2.1 VAE. The 2.2 VAE below belongs to the small 5B model.",
+          },
+          {
+            id: "wan22-vae",
+            name: "Wan 2.2 VAE (required BY, and only by, TI2V-5B)",
+            file: "vae/wan2.2_vae.safetensors",
+            bytes: 1409400960,
+            url: HF("Comfy-Org/Wan_2.2_ComfyUI_Repackaged", "split_files/vae/wan2.2_vae.safetensors"),
+            license: "Apache-2.0",
+            note:
+              "NOT interchangeable with the 2.1 VAE: this one compresses 16x spatially where 2.1 compresses 8x, " +
+              "which is why 5B has its own latent node (Wan22ImageToVideoLatent divides by 16). Pair them wrong " +
+              "and the decode returns garbage instead of raising — install this whenever you install a 5B quant.",
           },
         ],
       },
@@ -447,7 +520,7 @@ export const LEGS = [
       },
       {
         id: "anim-lora-speed",
-        role: "LoRA — speed (optional, not yet wired into generation)",
+        role: "LoRA — speed (optional; WIRED — pass `fast: true`. A14B ONLY)",
         required: false,
         options: [
           {
@@ -457,7 +530,10 @@ export const LEGS = [
             bytes: 1230000000,
             url: HF("lightx2v/Wan2.2-Lightning", "Wan2.2-I2V-A14B-4steps-lora-rank64-Seko-V1/high_noise_model.safetensors"),
             license: "Apache-2.0",
-            note: "With its low twin, should cut ~450s to ~90s once wired in (steps=4, cfg=1 — a later pass).",
+            note:
+              "With its low twin, cuts ~450s to ~90s. WIRED: `modes.mjs` WAN_FAST sets steps=4/cfg=1 and the " +
+              "route attaches both halves on `fast: true`. Note it is a HIGH/LOW pair, i.e. A14B-only — " +
+              "`graphs.wanTi2v5B` refuses it, because a 5B model has no expert to attach a half to.",
           },
           {
             id: "wan-lightning-low",

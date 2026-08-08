@@ -4,6 +4,14 @@
 `main@c9c8144` and `brute-ragnarok-sources@4a6a774`, where all the current forge
 work lives.
 
+> **Update, same day — two of the three walls have had work done.** §3's clip
+> contract is **fixed and tested**; §4's memory ceiling has a **registered small
+> leg** that is code-complete and has never rendered a frame. §2 is untouched
+> and is now the only thing between here and a character. What shipped, what it
+> proved, and the three things it found on the way are in **§7** at the bottom —
+> read that before acting on §3 or §4, which are kept as written so the
+> diagnosis and the fix can be told apart.
+
 Three separate walls stand between "a prompt" and "a monster animating in the
 game", and each one has been mistaken for the whole problem at least once:
 
@@ -308,8 +316,8 @@ text-to-video and image-to-video:
 |---|---|---|
 | diffusion weights | 12.0 + 12.0 = **24.0 GB** | **5.4 GB** (Q8_0) / **4.2 GB** (Q6_K) |
 | text encoder | UMT5-XXL fp8, 6.74 GB | same |
-| VAE | Wan 2.1, 0.25 GB | **Wan 2.2** VAE — a different file, small |
-| read per run | ~31–33 GB | **~12.6 GB** |
+| VAE | Wan 2.1, 0.25 GB | **Wan 2.2** VAE, 1.41 GB — a different file, and not optional |
+| read per run | ~31–33 GB | **~13.6 GB** |
 
 That is a **4.4× cut on the diffusion weights** and it takes the whole run below
 the working set that is currently killing it — including the VAE decode spike,
@@ -348,22 +356,22 @@ exists; the `anim-vae` note says *"the '2.2 VAE' belongs to the small 5B model"*
 The ordering matters: **1 and 2 are cheap and unblock measurement; 3 is the one
 that decides whether any of this works.**
 
-1. **Register Wan 2.2 TI2V-5B in `comfy/manifest.mjs`** as a choice on the
-   animation leg (Q8_0, 5.4 GB, plus the Wan 2.2 VAE). Check for a
-   5B-compatible pixel LoRA in the same pass. This is a manifest entry and a
-   graph variant, and it is the difference between a leg that finishes and one
-   that does not.
-2. **Wire the Lightning 4-step LoRAs.** Both halves are on disk. ~450 s → ~90 s
-   makes every A/B below affordable.
+1. ~~**Register Wan 2.2 TI2V-5B**~~ — **DONE, see §7.** What is left is the
+   download: 5.40 GB (`Wan2.2-TI2V-5B-Q8_0.gguf`) + 1.41 GB
+   (`wan2.2_vae.safetensors`). `smallAvailable()` returns false and the leg is
+   unreachable until both land. No 5B-compatible pixel LoRA exists.
+2. ~~**Wire the Lightning 4-step LoRAs**~~ — **they were already wired.** The
+   manifest notes were stale and are corrected. Pass `fast: true`.
 3. **Build the two missing gates, then run the keyframe plan.**
    `PLAN_KEYFRAME_PIPELINE.md` is the design and it is complete; what it needs is
    a `txt2img` mode (drop the hard init requirement for modes declaring
    `needs.init === false`), a `detectPixelGrid` gate on the **raw** generation,
-   and a master generated at **560 px, on a magenta field**, with
+   and a master generated on a magenta field at **576 px** — *not* the plan's
+   560, which is off the small leg's 32px canvas grid (§7) — with
    `tarn59_pixel_art_style_qwen` on the Qwen leg.
-4. **Close the clip contract** — §3's three-step fix. It is small, it is pure
-   TypeScript, it needs no GPU, and it is the difference between "the sheet is
-   complete" and "the sheet is complete *and the game asks for what it has*".
+4. ~~**Close the clip contract**~~ — **DONE, see §7.** Two new tests, three
+   lists pinned to each other, `packhunter` recorded as a shelf item that fails
+   the suite if it acquires a kind.
 5. **Play a clip as a clip.** A 4-frame loop at the game's frame rate, in the
    panel. Every gate in §2 exists because a still contact sheet passed and the
    motion was never watched.
@@ -372,3 +380,158 @@ that decides whether any of this works.**
 > keeps being skipped: THE EYE.** No number replaces it. A census verdict of
 > "BETTER than the painted roster" was printed for art that was rejected on
 > sight.
+
+---
+
+## 7. What was built on 2026-08-08, and what it found
+
+Everything below is on `main`, green in the full suite, and **none of it has
+rendered a frame** — that distinction is the point of this section.
+
+### Shipped: the clip contract is closed (§3)
+
+| | |
+|---|---|
+| `DEFAULT_CLIPS` | now **seven**, with `crouch` (`move: "defend"`) |
+| `KEYFRAME_MOVES` | gains a `defend` entry — four keys of a HELD gather, not a travelling pose, because `anim.crouch` at 7fps ≈ 0.43s against `LEAP_WINDUP` 0.45s |
+| `clip-contract.test.ts` | **new.** Pins the three lists to *each other* by resolving each mode's one-click batch through its own preset table. Adding a move to one list now fails the suite |
+| `tell-clips-roster.test.ts` | **new.** Derives every kind's clip demand from `MOVEMENT_BY_KIND` → the real handler → `clipForSteer`, and requires its actual painter to author the answer in all three facings |
+| `KIND_PAINTS` | exported from `monster-portrait.ts`, **derived** from the existing `Record<EnemyKind, …>` rather than re-listed — a second kind→painter map is the drift that made the old test assert "the hound is a leaper on the SPIDER sheet" for months after the hound got its own painter |
+| `packhunter` | recorded as a shelf item **as an assertion**. Assigning it a kind now fails, and the failure message says to author `wait` first |
+
+The roster census the new test prints:
+
+```
+hound   crouch   hand-posed
+sapper  wake     hand-posed
+wisp    wake     SYNTHESIZED by withRecoil
+```
+
+**The wisp's dart telegraph is idle frame 0, shoved.** It passes — something
+draws — and it is not a designed burst. That distinction is reported rather than
+asserted, because "covered" and "drawn on purpose" are different claims and
+conflating them is how the brute shipped dying as another creature.
+
+### What correcting the target immediately revealed
+
+The published census re-run against the now-correct 7-clip contract:
+
+```
+[forge] published coverage vs DEFAULT_CLIPS (7 clips x 3 facings):
+  brute       3/21 · S      · NO CROUCH/DEATH
+  jester      5/21 · S      · NO CROUCH
+  rotortail   8/21 · S+E    · NO CROUCH
+  croaker     8/21 · S+E    · NO CROUCH
+  fish_feet   8/21 · S+E    · NO CROUCH
+  zombie      6/21 · E      · NO CROUCH
+  player:pinball_knight 21/21 · S+N+E · NO CROUCH
+  player:mario         12/21 · S+N    · no E art
+```
+
+**Not one published sheet authors `crouch`** — and that was invisible an hour
+earlier, because the target it was scored against did not ask for it. The
+generation side has been able to produce the clip since the `defend` preset was
+written; nothing ever requested it.
+
+⚠️ **And read the knight's row carefully: `21/21 rows` with `NO CROUCH`.** The
+row count reaching the target is not completeness — the knight has extra rows
+(two `attack`, a `roll`) that pay for the missing one. A count that can be
+satisfied by the wrong rows is a count, not a contract, which is why the census
+now names the gap in words beside the fraction.
+
+### Found while writing it: the demand sweep was blind to ambushers
+
+The first roster run reported **two** demanded clips for the entire roster and
+the sapper's `wake` was missing. Not unauthored — *unseen*.
+
+`clipsOver` only closes the distance on a frame where the actor **moves**, and
+an ambusher by definition holds still until you are close. So it never moved,
+`dist` never fell, the burst was never reached, and the policy reported no clip
+demand at all. **A roster check that passes by not looking is worse than no
+check**, and it would have reported full coverage forever.
+
+Fixed with `clipDemandAll`, which sweeps start distances `[9, 4, 1.5]` and
+unions the result: the far case exercises approach telegraphs, the near cases
+exercise commit/spring telegraphs. The sapper's `wake` appeared immediately.
+
+### Shipped: the small animation leg (§4)
+
+`graphs.wanTi2v5B` + a manifest slot + `smallAvailable()` + a `small: true` flag
+on the generate route, mirroring how `fast` already works.
+
+| | A14B pair | TI2V-5B |
+|---|---|---|
+| diffusion | 12.00 + 12.00 GB | **5.40 GB** (Q8_0) |
+| text encoder | umt5-xxl fp8 6.74 GB | same |
+| VAE | 2.1 — 0.25 GB | **2.2 — 1.41 GB** |
+| **read per run** | **~31.0 GB** | **~13.6 GB** |
+
+*(The audit above estimated ~12.6 GB by assuming the 2.2 VAE was as small as the
+2.1 one. It is 1.41 GB. The conclusion is unchanged; the number is corrected.)*
+
+Four ways it is not "`wanI2V` with one loader", each of which would be a silent
+failure if got wrong:
+
+1. **One sampler, not two half-schedules.** The A14B split exists because its
+   experts are noise-specialised; a dense model handed a half-schedule denoises
+   to noise.
+2. **The conditioning does not pass through an i2v node.**
+   `Wan22ImageToVideoLatent` returns a **latent only** where `WanImageToVideo`
+   returns (positive, negative, latent) — wiring it the A14B way silently drops
+   the prompt.
+3. **The 2.2 VAE is not optional or interchangeable.** It compresses 16×
+   spatially, which is why the latent node divides by 16. The wrong VAE decodes
+   to garbage rather than raising.
+4. **The pixel LoRAs cannot load and are REFUSED, not skipped.** `styly
+   pixel-animate` is an A14B adapter, `pix3lwalk` is a high-noise half, and the
+   Lightning pair is high/low — none has an expert to attach to. Searched HF and
+   Civitai on 2026-08-08: **every** pixel/sprite LoRA in the ecosystem targets
+   I2V-A14B. `wanTi2v5B` throws rather than attaching one, because a LoRA that
+   "applied" and did nothing is indistinguishable from one that is broken.
+
+⚠️ **The small leg cannot do `inbetween`, and that is not a wiring gap.**
+`Wan22ImageToVideoLatent`'s schema has `start_image` and **no `end_image`** —
+first/last-frame pinning does not exist for 5B in this ComfyUI. So step 5 of
+`PLAN_KEYFRAME_PIPELINE` — the step that stops Wan inventing where a motion is
+going — is **A14B-only**, and the leg that fits the box is the leg that cannot
+do it. `buildWanClip` throws instead of quietly dropping the end frame, which
+would return a free-running clip that looks like an in-between.
+
+### Found while writing it: 560px is off the grid on the small leg
+
+`PLAN_KEYFRAME_PIPELINE` says to generate the master at **560 px** "so a 560px
+canvas is ×8 and reduces exactly". The ×8 arithmetic is right — 560/8 = 70
+texels. The canvas is not:
+
+```
+WanImageToVideo         (A14B)  width/height step 16   ->  560 legal
+Wan22ImageToVideoLatent (5B)    width/height step 32   ->  560/32 = 17.5  OFF-GRID
+```
+
+On the small leg 560 would be silently rounded by the sampler and the frames
+would arrive a different shape than the cut was planned for. **576 satisfies
+both — 576/32 = 18 and 576/8 = 72 texels, which is the documented texel budget
+exactly.** 544 is the other legal neighbour, at 68.
+
+Caught by a test asserting the plan's own number, which failed on its first run.
+
+### Corrected: the Lightning LoRAs were wired all along
+
+The audit above listed "wire the Lightning 4-step LoRAs" as unwired work,
+because both manifest entries said *"not yet wired into generation"*. **They
+were wired**: `modes.mjs` has `QWEN_FAST`/`WAN_FAST` with the coupled
+steps/cfg bundles, `fastAvailable()` gates on the weights being installed, and
+the route reads `body.fast` and passes it through `ctx`. The notes were three
+days stale and are now corrected in place.
+
+> **A stale note is how a working feature goes unused.** Nothing was broken and
+> nobody was using it, which is the same outcome as broken and harder to spot.
+
+### What is still true
+
+**Wall 2 is untouched, and it is now the only wall.** Nothing here generates
+pixel art; the small leg makes runs *finish*, which is a prerequisite for
+measuring the thing that is actually wrong, not a fix for it. The next steps are
+unchanged from §6: download the 5B weights (5.40 GB + 1.41 GB), build the
+`txt2img` mode and the raw-output `detectPixelGrid` gate, and generate a master
+at **576** — not 560 — on a magenta field.

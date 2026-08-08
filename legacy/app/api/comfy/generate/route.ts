@@ -43,7 +43,7 @@ import {
   waitFor,
   watchProgress,
 } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/client.mjs";
-import { modeById, fastAvailable } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/modes.mjs";
+import { modeById, fastAvailable, smallAvailable } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/modes.mjs";
 import { optionById, chosenOption } from "../../../../src/game/pinball-knight/tools/sprite-forge/comfy/manifest.mjs";
 import {
   backendPresent,
@@ -68,6 +68,8 @@ type Job = {
   resolvedPrompt?: string;
   seed?: number;
   fast?: boolean;
+  /** Ran on the small animation leg (TI2V-5B) rather than the A14B expert pair. */
+  small?: boolean;
   /** Library filing: which project/character this generation belongs to. */
   project?: string;
   character?: string;
@@ -213,12 +215,32 @@ function scheduleIdleFree() {
   }, 5 * 60_000);
 }
 
-/** The chosen model files a leg loads — what prefetch warms. */
+/**
+ * The model files a leg loads — what prefetch warms, and what the scheduler
+ * treats as one resident stack.
+ *
+ * ⚠️ `wan-small` IS ITS OWN LEG, not a variant of `wan`. It loads a different
+ * unet AND a different VAE, so grouping it with the A14B pair would (a) make
+ * the affinity scheduler think no switch was needed between two stacks that do
+ * not share a single weight, and (b) point `prefetchLeg` at 24GB of experts
+ * that the run will never open — which is precisely the 24GB of page cache the
+ * small leg exists to avoid reading.
+ *
+ * It names EXACT option ids rather than slot choices because the 5B path needs
+ * the 2.2 VAE specifically, and `anim-vae`'s recommended (hence usually chosen)
+ * option is the 2.1 one.
+ */
+const SMALL_LEG_OPTIONS = ["wan-ti2v-5b-q8", "wan-ti2v-5b-q6", "umt5-fp8", "wan22-vae"];
+
 function legFiles(leg: string): string[] {
   const chosen = loadSettings().chosen;
-  const slots = leg === "wan" ? ["anim-high", "anim-low", "anim-te", "anim-vae"] : ["rot-unet", "rot-te", "rot-vae"];
-  return slots
-    .map((s) => chosenOption(s, chosen)?.file)
+  const files =
+    leg === "wan-small"
+      ? SMALL_LEG_OPTIONS.map((id) => optionById(id)?.file)
+      : (leg === "wan" ? ["anim-high", "anim-low", "anim-te", "anim-vae"] : ["rot-unet", "rot-te", "rot-vae"]).map(
+          (s) => chosenOption(s, chosen)?.file,
+        );
+  return files
     .filter((f): f is string => !!f)
     .map((f) => join(modelsDir(), f))
     .filter((p) => existsSync(p));
@@ -363,6 +385,12 @@ export async function POST(req: Request) {
   };
   const baseSeed = Number.isFinite(+body.seed) ? +body.seed : Math.floor(Math.random() * 1e9);
   const fast = !!body.fast && fastAvailable(mode.leg, has);
+  // Same shape as `fast`: the request may ask, and the server decides whether
+  // the weights are actually there. Asking for a leg that is not installed
+  // falls back to A14B rather than failing, because a missing OPTIONAL model is
+  // not a bad request — but `small` is echoed onto the job so the card says
+  // which leg actually ran instead of which one was requested.
+  const small = !!body.small && smallAvailable(mode.leg, has);
 
   // A batch is N independent jobs, not one graph: the scheduler runs them
   // in turn and each gets its own card, cancel and re-roll in the panel.
@@ -379,7 +407,15 @@ export async function POST(req: Request) {
       unet: (slotId: string) => chosenOption(slotId, settings.chosen)?.file.replace(/^unet\//, "") ?? null,
       /** The chosen OPTION ID for a pick-one slot — for slots whose file is not a unet. */
       chosen: (slotId: string) => chosenOption(slotId, settings.chosen)?.id ?? null,
+      /**
+       * Any option's filename, by OPTION id, with its models/ subdirectory
+       * stripped — ComfyUI loaders take a name relative to their own folder.
+       * `unet()` takes a SLOT and only works for unets; this is for the cases
+       * that name one exact weight (the 5B quant, the 2.2 VAE).
+       */
+      fileOf: (optionId: string) => optionById(optionId)?.file.replace(/^[^/]+\//, "") ?? null,
       fast,
+      small,
       images,
       seed: baseSeed,
     };
@@ -405,6 +441,7 @@ export async function POST(req: Request) {
       resolvedPrompt,
       seed: baseSeed,
       fast,
+      small,
       // The clip these frames are destined for — the sheet tray's default.
       clip: preset?.clip || undefined,
       // Filing tags flow into job.json, which is what the library scans —
@@ -413,7 +450,11 @@ export async function POST(req: Request) {
       character: typeof body.character === "string" ? body.character : undefined,
     });
     persistJob(id);
-    sched.parked.push({ id, graph, clientId, leg: mode.leg });
+    // The RESIDENT-STACK key, which is not the same thing as the job's leg: a
+    // 5B run and an A14B run share no weight, so they must not be batched as
+    // one residency. `job.leg` above stays `mode.leg` — that is what the panel
+    // groups cards by, and a user thinks of both as "animate".
+    sched.parked.push({ id, graph, clientId, leg: small ? "wan-small" : mode.leg });
     jobIds.push(id);
   }
   pump();

@@ -27,6 +27,16 @@ export const MODELS = {
   wanLow: "Wan2.2-I2V-A14B-LowNoise-Q6_K.gguf",
   wanClip: "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
   wanVae: "wan_2.1_vae.safetensors",
+  /**
+   * THE SMALL ANIMATION LEG — one dense 5B model instead of two 12GB experts.
+   *
+   * Same family, same text encoder, DIFFERENT VAE: the 2.2 VAE compresses 16×
+   * spatially where the 2.1 VAE compresses 8×, which is why it has its own
+   * latent node (`Wan22ImageToVideoLatent`, `height // 16`) and why pairing 5B
+   * with `wan_2.1_vae` would decode to garbage rather than error.
+   */
+  wanSmall: "Wan2.2-TI2V-5B-Q8_0.gguf",
+  wanVae22: "wan2.2_vae.safetensors",
   pixelWalkLoraHigh: "pixel_walk_lora_v1_high_noise.safetensors",
   qwenControlNet: "qwen_image_controlnet_union.safetensors",
 };
@@ -82,6 +92,52 @@ export function controlMap({ image, type = "openpose", resolution = 1024 } = {})
     out: { class_type: "SaveImage", inputs: { images: ["pre", 0], filename_prefix: "spriteforge/control" } },
   };
 }
+
+/**
+ * THE WAN NEGATIVE — shared by both animation legs, because it is a statement
+ * about what Wan does rather than about which quant is loaded.
+ *
+ * Camera terms are in the negative because Wan is a VIDEO model: trained on
+ * footage where the camera lives, it treats a locked-off shot as boring and
+ * adds a slow push-in. A sprite clip needs the opposite — the character moves,
+ * the frame never does.
+ *
+ * ── THE BACKGROUND TERMS ARE THE SAME ARGUMENT, MEASURED ────────────────────
+ *
+ * Wan free-runs a SCENE from frame 0, and the background is part of the scene.
+ * "plain white background" sits in the POSITIVE prompt, where it is one clause
+ * among many and loses to the action's own semantics — "dying" reads as dark.
+ * Measured 2026-08-06 across five 21-frame clips off one master: idle and
+ * attack settled light and were usable; the walk carrying the pix3lwalk LoRA
+ * and BOTH death runs drove the field to black.
+ *
+ * A black field is not merely ugly, it is UNKEYABLE. `matte()` floods from the
+ * border and stops at the first outline it meets; when the creature's own
+ * outlines are black on black there is no boundary, the fill walks into the
+ * body, and the frame arrives as 13%-tall fragments. That is the whole of why
+ * 0 of 21 walk frames survived while 15 of 21 attack frames did.
+ *
+ * The smoke/glow terms are from the same run: both death clips dissolved the
+ * figure into particle VFX, which a sprite would bake in permanently.
+ */
+export const WAN_NEGATIVE =
+  "static, frozen, watermark, text, extra character, split screen, " +
+  "camera zoom, zoom in, zoom out, dolly, camera pan, camera movement, " +
+  "changing scale, character growing, character shrinking, cropped body, " +
+  "dark background, black background, changing background, night, shadows, " +
+  "vignette, fog, smoke, glow, particles, sparks, motion blur";
+
+/**
+ * LoRA filename fragments that are keyed to the A14B two-expert architecture
+ * and therefore cannot load on TI2V-5B.
+ *
+ * Matched on a FRAGMENT rather than the full filename on purpose: these arrive
+ * from the manifest, and a quant swap or a re-download under a slightly
+ * different name must not quietly turn the guard off. A guard that only fires
+ * on an exact string is a guard that stops firing the first time someone
+ * renames a file.
+ */
+export const A14B_ONLY_LORAS = ["pixel_animate", "pixel_walk", "lightning_i2v"];
 
 /**
  * Attach a stack of LoRAs between a unet loader and whatever samples from it.
@@ -388,34 +444,7 @@ export function wanI2V({
   image,
   endImage = null,
   prompt,
-  // Camera terms are in the negative because Wan is a VIDEO model: trained
-  // on footage where the camera lives, it treats a locked-off shot as
-  // boring and adds a slow push-in. A sprite clip needs the opposite —
-  // the character moves, the frame never does.
-  //
-  // ── THE BACKGROUND TERMS ARE THE SAME ARGUMENT, MEASURED ─────────────────
-  //
-  // Wan free-runs a SCENE from frame 0, and the background is part of the
-  // scene. "plain white background" sits in the POSITIVE prompt, where it is
-  // one clause among many and loses to the action's own semantics — "dying"
-  // reads as dark. Measured 2026-08-06 across five 21-frame clips off one
-  // master: idle and attack settled light and were usable; the walk carrying
-  // the pix3lwalk LoRA and BOTH death runs drove the field to black.
-  //
-  // A black field is not merely ugly, it is UNKEYABLE. `matte()` floods from
-  // the border and stops at the first outline it meets; when the creature's
-  // own outlines are black on black there is no boundary, the fill walks into
-  // the body, and the frame arrives as 13%-tall fragments. That is the whole
-  // of why 0 of 21 walk frames survived while 15 of 21 attack frames did.
-  //
-  // The smoke/glow terms are from the same run: both death clips dissolved
-  // the figure into particle VFX, which a sprite would bake in permanently.
-  negative =
-    "static, frozen, watermark, text, extra character, split screen, " +
-    "camera zoom, zoom in, zoom out, dolly, camera pan, camera movement, " +
-    "changing scale, character growing, character shrinking, cropped body, " +
-    "dark background, black background, changing background, night, shadows, " +
-    "vignette, fog, smoke, glow, particles, sparks, motion blur",
+  negative = WAN_NEGATIVE,
   extraNegative = null,
   width = 640,
   height = 640,
@@ -517,5 +546,118 @@ export function wanI2V({
   // must sit UNDER the shift so ModelSamplingSD3 wraps the patched model.
   g.sh.inputs.model = chainLoras(g, ["uh", 0], high, "lh");
   g.sl.inputs.model = chainLoras(g, ["ul", 0], low, "ll");
+  return g;
+}
+
+/**
+ * WAN 2.2 TI2V-5B — the same clip from one dense model instead of two experts.
+ *
+ * ── WHY THIS EXISTS: THE BINDING CONSTRAINT IS HOST RAM, NOT VRAM ───────────
+ *
+ * The A14B path reads 24GB of GGUF (12.0 + 12.0) and Linux page-caches every
+ * byte. `free` calls that cache AVAILABLE because it is reclaimable, so nothing
+ * inside WSL looks wrong, while Windows counts the balloon as used. Measured on
+ * a real clip: host +25.3GB against ComfyUI's own RSS +10.1GB — the gap is page
+ * cache. At a 32GB WSL cap the run holds flat through every sampling step and
+ * then the VAE decode takes available to 0.7GiB and `guard.mjs` interrupts at
+ * its 1.2GiB floor. 1024²/21f and 640²/17f die identically, which is the tell:
+ * the cost is both experts RESIDENT plus decode staging, not the batch.
+ *
+ * This leg reads 5.40 (unet) + 6.74 (umt5) + 1.41 (2.2 VAE) = 13.55GB. That is
+ * not a speed optimisation, it is the difference between a run that finishes
+ * and one that does not.
+ *
+ * ── FOUR WAYS THIS GRAPH IS NOT `wanI2V` WITH ONE LOADER ────────────────────
+ *
+ * 1. ONE model, so ONE sampler. The A14B pair splits the schedule across two
+ *    `KSamplerAdvanced` halves because the experts are noise-specialised.
+ *    There is no high/low here, so a plain `KSampler` runs the whole schedule.
+ * 2. The conditioning does NOT pass through an i2v node. `WanImageToVideo`
+ *    returns (positive, negative, latent); `Wan22ImageToVideoLatent` returns a
+ *    LATENT ONLY, so the text encodes wire straight into the sampler.
+ * 3. The 2.2 VAE is 16× spatial, not 8×. The latent node computes
+ *    `height // 16`, so `MODELS.wanVae22` is not interchangeable with the 2.1
+ *    VAE — the wrong one decodes to garbage rather than raising.
+ * 4. THE PIXEL LoRAs DO NOT APPLY, and this refuses them rather than
+ *    attaching them. `styly pixel-animate` is an A14B adapter and `pix3lwalk`
+ *    ships a HIGH-NOISE half — both are keyed to a two-expert architecture that
+ *    is not here. Silently loading one is either a hard failure deep in the
+ *    sampler or, worse, a no-op that looks like the LoRA had no effect. As of
+ *    2026-08-08 no 5B-compatible pixel adapter is published; the caller has to
+ *    decide to run without one.
+ */
+export function wanTi2v5B({
+  image,
+  prompt,
+  negative = WAN_NEGATIVE,
+  extraNegative = null,
+  width = 640,
+  height = 640,
+  length = 21,
+  seed = 7,
+  steps = 20,
+  cfg = 3.5,
+  shift = 5.0,
+  loras = null,
+  tileSize = 128,
+  unet = MODELS.wanSmall,
+  vae = MODELS.wanVae22,
+} = {}) {
+  if (!image) throw new Error("[graphs] wanTi2v5B needs an uploaded image name");
+  if (!prompt) throw new Error("[graphs] wanTi2v5B needs a prompt");
+  if ((length - 1) % 4 !== 0) throw new Error(`[graphs] wan length must be 4k+1 frames, got ${length}`);
+  // The latent node steps width/height by 32 and divides by 16. A size off the
+  // grid is silently rounded by the sampler and the frames come back a
+  // different shape than the caller asked for, which the slicer then reads as
+  // a bad cut — so refuse it here where the number is still a number.
+  if (width % 32 !== 0 || height % 32 !== 0) {
+    throw new Error(`[graphs] wanTi2v5B needs width/height on a 32px grid, got ${width}x${height}`);
+  }
+  for (const l of loras ?? []) {
+    if (A14B_ONLY_LORAS.some((n) => l.name?.includes(n))) {
+      throw new Error(
+        `[graphs] "${l.name}" is a Wan 2.2 A14B adapter and cannot load on TI2V-5B — ` +
+          "5B is one dense model with no high/low expert split. Run the 5B leg without it, " +
+          "or use the A14B leg (which needs ~31GB of reads and currently dies at the VAE decode).",
+      );
+    }
+  }
+  const g = {
+    u: { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } },
+    s: { class_type: "ModelSamplingSD3", inputs: { model: ["u", 0], shift } },
+    c: { class_type: "CLIPLoader", inputs: { clip_name: MODELS.wanClip, type: "wan", device: "default" } },
+    v: { class_type: "VAELoader", inputs: { vae_name: vae } },
+    img: { class_type: "LoadImage", inputs: { image } },
+    pos: { class_type: "CLIPTextEncode", inputs: { clip: ["c", 0], text: prompt } },
+    neg: {
+      class_type: "CLIPTextEncode",
+      inputs: { clip: ["c", 0], text: extraNegative ? `${negative}, ${extraNegative}` : negative },
+    },
+    lat: {
+      class_type: "Wan22ImageToVideoLatent",
+      inputs: { vae: ["v", 0], width, height, length, batch_size: 1, start_image: ["img", 0] },
+    },
+    k: {
+      class_type: "KSampler",
+      inputs: {
+        model: ["s", 0], positive: ["pos", 0], negative: ["neg", 0], latent_image: ["lat", 0],
+        seed, steps, cfg, sampler_name: "euler", scheduler: "simple", denoise: 1.0,
+      },
+    },
+    // The same decode fence as the A14B leg, and for the same reason — the
+    // expert→VAE transition is where the RAM cliff lives. It is cheaper here
+    // (one 5.4GB model to unload rather than two 12GB ones) but the ordering
+    // discipline is identical, so it stays.
+    purge: {
+      class_type: "VRAM_Debug",
+      inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["k", 0] },
+    },
+    dec: {
+      class_type: "VAEDecodeTiled",
+      inputs: { samples: ["purge", 0], vae: ["v", 0], tile_size: tileSize, overlap: 32, temporal_size: 8, temporal_overlap: 4 },
+    },
+    out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan5b" } },
+  };
+  g.s.inputs.model = chainLoras(g, ["u", 0], loras ?? [], "l");
   return g;
 }

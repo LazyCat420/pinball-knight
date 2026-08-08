@@ -70,3 +70,32 @@ export function clipDemand(
 ): ClipName[] {
   return [...new Set(clipsOver(kind, startDist, secs, over))];
 }
+
+/**
+ * ⚠️ ONE APPROACH IS NOT THE WHOLE DEMAND — use this for roster-wide sweeps.
+ *
+ * `clipDemand` walks in from 9 units, and `clipsOver` only closes the distance
+ * on a frame the actor actually MOVES. That is correct for a leaper (it walks
+ * in, then crouches) and blind for an **ambusher**, which by definition holds
+ * still until you are close: it never moves, so `dist` never falls, so the
+ * burst it exists to telegraph is never reached and the policy reports NO clip
+ * demand at all. A roster check built on that would pass by not looking.
+ *
+ * Found by writing exactly that check (`tell-clips-roster.test.ts`): the first
+ * run reported two demanded clips for the whole roster, and the sapper's
+ * `wake` was missing rather than unauthored.
+ *
+ * So sweep the start distance instead of picking one. The far case exercises
+ * approach telegraphs, the near cases exercise commit/spring telegraphs, and
+ * the union is what the creature can be asked for over a fight.
+ */
+export const DEMAND_SWEEP_DISTS = [9, 4, 1.5];
+
+export function clipDemandAll(
+  kind: keyof typeof MOVEMENT_HANDLERS,
+  over: Partial<MoveCtx> = {},
+): ClipName[] {
+  const seen = new Set<ClipName>();
+  for (const d of DEMAND_SWEEP_DISTS) for (const c of clipsOver(kind, d, 4, over)) seen.add(c);
+  return [...seen];
+}

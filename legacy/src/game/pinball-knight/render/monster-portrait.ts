@@ -107,6 +107,21 @@ const KIND_PORTRAIT: Record<EnemyKind, { paints: () => ActorPaints; tint: number
   mimic: { paints: makeGolemPaints, tint: 0xd9a441, scale: 0.8 },
 };
 
+/**
+ * WHICH PAINTER EACH KIND WEARS — the paints half of `KIND_PORTRAIT`, exported
+ * so a check can ask "what art does this EnemyKind actually have?".
+ *
+ * Derived rather than re-listed on purpose. This table is `Record<EnemyKind, …>`
+ * and therefore compile-enforced to cover the roster; a second hand-written
+ * kind→painter map would be the two-writers drift that the tint/scale comment
+ * above already warns about, and it is exactly how `telegraph-clips.test.ts`
+ * came to assert "the hound is a leaper on the SPIDER sheet" for months after
+ * the hound got its own painter.
+ */
+export const KIND_PAINTS: Record<EnemyKind, () => ActorPaints> = Object.fromEntries(
+  Object.entries(KIND_PORTRAIT).map(([kind, spec]) => [kind, spec.paints]),
+) as Record<EnemyKind, () => ActorPaints>;
+
 /** Painted-cel cache, keyed by kind (+ sub-type). Portraits never change. */
 const _cache = new Map<string, HTMLCanvasElement | null>();
 

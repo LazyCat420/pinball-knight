@@ -138,13 +138,33 @@ export interface CharacterBuild {
 export const NAME_RE = /^[a-z0-9_]+$/;
 
 /**
- * The default clip set.
+ * The default clip set — SEVEN moves, and the seventh is why this comment was
+ * rewritten on 2026-08-08.
  *
- * Mirrors `MOVESET`/`KEYFRAME_SET` in `comfy/modes.mjs` — the same six moves,
- * the same clip mapping (stagger is `stumble`, a block is `crouch`), because
- * two lists of what a character needs is how they drift apart. This one adds
- * only what the game contract cares about: which are required, and where the
- * strike lands.
+ * It mirrors `MOVESET` / `KEYFRAME_SET` in `comfy/modes.mjs`, and the previous
+ * version of this comment said so in these words:
+ *
+ *   > Mirrors MOVESET/KEYFRAME_SET … the same SIX moves, the same clip mapping
+ *   > (stagger is `stumble`, a block is `crouch`), because two lists of what a
+ *   > character needs is how they drift apart.
+ *
+ * **They had already drifted, and the comment is what made it invisible.**
+ * `MOVESET` carried seven entries (its `defend` preset files under the game
+ * clip `crouch`); this list and `KEYFRAME_SET` carried six and dropped it. So
+ * the comment named `crouch` as part of the mapping while the list beneath it
+ * did not contain it, and every reader who checked the prose instead of the
+ * array — including three sessions of this pipeline — read that as agreement.
+ *
+ * `crouch` is not cosmetic. `render/tell-clips.ts` resolves the leaper
+ * telegraph to it, it is the hound's entire identity, and unlike `wake` it has
+ * NO painter fallback — an unauthored `crouch` plays `idle` through
+ * CLIP_FALLBACK and the player's one warning becomes a breathing monster. That
+ * shipped, undetected, until `97eb184` fixed it by hand for one creature.
+ *
+ * ⚠️ `clip-contract.test.ts` now pins all three lists together, the same way
+ * `camera-sync.test.ts` pins `CAMERA_BY_DIR`. Adding a move here without adding
+ * it there fails the suite instead of silently splitting the contract. **Do not
+ * "fix" a failure by editing the assertion.**
  *
  * `idle` is first and required for the reason the modes table already spells
  * out: a sheet without it is dropped whole, without an error.
@@ -155,6 +175,7 @@ export const DEFAULT_CLIPS: readonly ClipSpec[] = [
   { clip: "run", move: "run", keys: 4, required: false },
   { clip: "attack", move: "attack", keys: 4, required: false, strikeKey: 2 },
   { clip: "stumble", move: "stumble", keys: 4, required: false },
+  { clip: "crouch", move: "defend", keys: 4, required: false },
   { clip: "death", move: "death", keys: 4, required: false },
 ] as const;
 
