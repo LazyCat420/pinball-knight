@@ -44,6 +44,38 @@ export function samplerPct(progress: Progress | undefined): number | null {
 }
 
 /**
+ * Seconds a job has been running, from the WALL CLOCK.
+ *
+ * ── `tick` IS NOT A CLOCK ───────────────────────────────────────────────────
+ *
+ * `ForgePanel` holds `const [tick, setTick] = useState(0)` — a counter that
+ * exists to bust the preview image cache (`&t=${tick}`) and to force this
+ * board to re-render on each poll. It is passed down as a prop, it sits in
+ * scope, and it is named like a time. It is not one.
+ *
+ * The live banner computed `tick - startedAt`, which is a small integer minus
+ * a millisecond epoch: hugely negative, clamped by `Math.max(0, …)`, and
+ * therefore **permanently 0m00s**. Caught only by screenshotting the page —
+ * the banner read `0m00s` directly above a JobCard reading `81s` for the same
+ * job. The API check that "verified" the fix could not see it, because the
+ * bug was in the arithmetic, not the data.
+ *
+ * Third time in this one file that a helper was reimplemented from scratch
+ * beside a correct copy and got it wrong (see `samplerPct`). Hence a function.
+ * `tick` still drives the re-render; it just no longer pretends to be the time.
+ */
+export function elapsedSecs(startedAt: number | undefined, now: number = Date.now()): number | null {
+  if (!startedAt) return null;
+  return Math.max(0, Math.round((now - startedAt) / 1000));
+}
+
+/** `123` -> `2m03s`. */
+export function formatElapsed(secs: number | null): string | null {
+  if (secs === null) return null;
+  return `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`;
+}
+
+/**
  * Trigger words that a mode prepends only when its LoRA is installed.
  *
  * Listed here so an edited prompt can warn about deleting one. A LoRA that is
@@ -328,7 +360,7 @@ function JobCard({
    * find one of them.
    */
   const ghostFlagged = new Set(job.ghost?.flagged ?? []);
-  const elapsed = job.startedAt ? Math.round((Date.now() - job.startedAt) / 1000) : null;
+  const elapsed = elapsedSecs(job.startedAt);
   const pct = samplerPct(job.progress);
 
   return (
@@ -750,8 +782,9 @@ export function JobsBoard({
   const banner = (() => {
     if (!live.length) return null;
     const [, j] = live.find(([, x]) => x.state === "running") ?? live[0];
-    const secs = j.startedAt ? Math.max(0, Math.round((tick - j.startedAt) / 1000)) : null;
-    const mmss = secs === null ? null : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`;
+    // Date.now(), NOT `tick` — see elapsedSecs. `tick` changing is what
+    // re-runs this, which is all it was ever good for here.
+    const mmss = formatElapsed(elapsedSecs(j.startedAt));
     const pctNum = samplerPct(j.progress);
     return { label: j.label ?? j.mode ?? "job", mmss, pctNum, waiting: live.length - 1 };
   })();
