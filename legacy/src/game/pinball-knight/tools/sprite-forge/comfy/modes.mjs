@@ -536,7 +536,20 @@ export const MODES = [
       // word is the quietest failure there is — the run succeeds and the
       // adapter simply does nothing.
       const isWalk = ANIMATE_PRESETS.find((p) => p.id === params.preset)?.clip === "walk";
-      const trigger = isWalk && ctx.has("pix3lwalk") ? "pix3lwalk, " : "";
+      // …AND THE LEG HAS TO BE ABLE TO LOAD IT. `ctx.has()` answers "is this
+      // weight on disk", which is a different question from "will this run
+      // attach it": the small leg REFUSES every A14B adapter, so on 5B the
+      // trigger word went out for a LoRA that was never loaded. Observed on the
+      // first real 5B run (2026-08-08) — the prompt read
+      // `pix3lwalk, Pixel art game sprite walking…` with no adapter behind it.
+      //
+      // Looks harmless, is not: a trigger is a token the model was trained to
+      // associate with weights that are absent, so it is noise in the
+      // conditioning — and it silently contaminates any A/B between the two
+      // legs, because the arms would then differ by a PROMPT as well as by a
+      // model. Same defect as the id-vs-clip test above, one level out: the
+      // LoRA and the word that fires it decided by two different rules.
+      const trigger = isWalk && ctx.has("pix3lwalk") && !ctx.small ? "pix3lwalk, " : "";
       return (
         `${trigger}Pixel art game sprite ${action}, smooth looping animation, the character stays ` +
         `centered in frame, consistent colors, plain white background.`
@@ -849,7 +862,11 @@ export function serializeModes(has) {
       m.leg === "qwen" && m.id === "rotate" && has("fal-multi-angle") ? "deterministic angle grammar active" : null,
       m.leg === "wan" && has("styly-pixel-animate") ? "pixel motion adapter riding along" : null,
       m.id === "animate" && has("pix3lwalk") ? "walk preset uses the pix3lwalk specialist" : null,
-      m.leg === "wan" && smallAvailable(m.leg, has)
+      // Gated on the PER-MODE availability, not the leg's. Keyed on the leg it
+      // advertised the small option on `inbetween` — which cannot use it — and
+      // then contradicted itself on the next line. A panel that offers a
+      // control the executor will refuse is worse than one that offers nothing.
+      m.leg === "wan" && m.id !== "inbetween" && smallAvailable(m.leg, has)
         ? "small leg (TI2V-5B) available — 13.6GB of reads instead of 31, and NO pixel LoRAs"
         : null,
       m.id === "inbetween" && smallAvailable(m.leg, has) ? "A14B only — 5B cannot pin a last frame" : null,

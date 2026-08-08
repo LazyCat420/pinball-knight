@@ -15,6 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { wanI2V, wanTi2v5B, MODELS, A14B_ONLY_LORAS, WAN_NEGATIVE } from "./comfy/graphs.mjs";
+import { modeById } from "./comfy/modes.mjs";
 
 /**
  * `any` because `graphs.mjs` is plain ESM: TS infers a destructured parameter's
@@ -142,5 +143,58 @@ describe("what the small leg refuses", () => {
     // …and the A14B leg genuinely does accept it, so this is a leg difference
     // and not a mistake in the plan's arithmetic.
     expect(() => wanI2V({ ...base, width: 560, height: 560 })).not.toThrow();
+  });
+});
+
+/**
+ * THE TRIGGER WORD AND THE LoRA ARE ONE DECISION.
+ *
+ * Caught on the first real 5B run (2026-08-08): the prompt went out as
+ * `pix3lwalk, Pixel art game sprite walking…` on a leg that had REFUSED to load
+ * `pix3lwalk`. `ctx.has()` answers "is the weight on disk", which is not the
+ * same question as "will this run attach it".
+ *
+ * It reads as cosmetic and is not. A trigger is a token the model associates
+ * with weights that are absent, so it is noise in the conditioning — and worse,
+ * it makes an A/B between the two legs invalid, because the arms would differ by
+ * a prompt as well as by a model. Every measurement in this pipeline is a
+ * one-variable comparison; a stray token in one arm silently costs a run.
+ */
+describe("the pix3lwalk trigger", () => {
+  const animate = modeById("animate") as any;
+  const ctxFor = (over: Record<string, unknown> = {}) => ({
+    has: () => true, // every weight installed — the interesting axis is the LEG
+    lora: (id: string) => `${id}.safetensors`,
+    unet: () => "unet.gguf",
+    chosen: () => null,
+    fileOf: (id: string) => `${id}.safetensors`,
+    fast: false,
+    small: false,
+    images: { init: "init.png" },
+    seed: 7,
+    ...over,
+  });
+
+  it("rides along on the A14B leg, where the LoRA actually loads", () => {
+    expect(animate.prompt({ preset: "walk" }, ctxFor())).toMatch(/^pix3lwalk, /);
+  });
+
+  it("is DROPPED on the small leg, where the LoRA is refused", () => {
+    expect(animate.prompt({ preset: "walk" }, ctxFor({ small: true }))).not.toMatch(/pix3lwalk/);
+  });
+
+  it("is dropped when the weight is simply not installed", () => {
+    expect(animate.prompt({ preset: "walk" }, ctxFor({ has: () => false }))).not.toMatch(/pix3lwalk/);
+  });
+
+  it("covers walk4 too — it is a walk, and the test is keyed on the CLIP", () => {
+    expect(animate.prompt({ preset: "walk4" }, ctxFor())).toMatch(/^pix3lwalk, /);
+    expect(animate.prompt({ preset: "walk4" }, ctxFor({ small: true }))).not.toMatch(/pix3lwalk/);
+  });
+
+  it("never rides a non-walk preset", () => {
+    for (const preset of ["idle", "attack", "death", "defend"]) {
+      expect(animate.prompt({ preset }, ctxFor()), preset).not.toMatch(/pix3lwalk/);
+    }
   });
 });
