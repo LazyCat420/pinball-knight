@@ -35,11 +35,23 @@ import { ModelsCard, SettingsCard, StatusCard } from "./forge/BackendCards";
 
 type Tab = "intake" | "generate" | "sheet" | "backend";
 
+/**
+ * Content equality for the polled job maps.
+ *
+ * JSON.stringify is the right tool here and not laziness: these come straight
+ * off `res.json()`, so they are plain data with stable key order from the
+ * server, and the alternative — a deep-equal helper — is more code for a
+ * comparison that runs twice every five seconds on a few dozen small objects.
+ */
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 export default function ForgePanel() {
   const [m, setM] = useState<Manifest | null>(null);
   const [modes, setModes] = useState<Mode[]>([]);
   const [dlJobs, setDlJobs] = useState<Record<string, { state: string; error?: string }>>({});
   const [genJobs, setGenJobs] = useState<Record<string, Job>>({});
+  /** "Is anything running" for the poll cadence — a ref so it cannot re-arm it. */
+  const busyRef = useRef(false);
   const [tab, setTab] = useState<Tab>("generate");
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; bad: boolean } | null>(null);
@@ -80,8 +92,18 @@ export default function ForgePanel() {
         fetch("/api/comfy/modes"),
       ]);
       setM(await mr.json());
-      setDlJobs((await dr.json()).jobs ?? {});
-      setGenJobs((await gr.json()).jobs ?? {});
+      const dj = (await dr.json()).jobs ?? {};
+      const gj = (await gr.json()).jobs ?? {};
+      // Same identity-stability rule the modes write below has followed all
+      // along. Handing back a fresh object every poll is what fed the loop
+      // described on the effect — see there for why this is not cosmetic.
+      setDlJobs((prev) => (same(prev, dj) ? prev : dj));
+      setGenJobs((prev) => (same(prev, gj) ? prev : gj));
+      // The interval's cadence reads this rather than the state, so "is
+      // anything running" can change without re-arming the timer.
+      busyRef.current =
+        Object.values(dj).some((j: any) => j.state === "downloading") ||
+        Object.values(gj).some((j: any) => j.state === "running");
       const xj = await xr.json();
       // Only replace the modes array when its content really changed —
       // consumers key field-reset effects off it, and a fresh identity every
@@ -95,14 +117,50 @@ export default function ForgePanel() {
     }
   }, []);
 
+  /**
+   * ── THE POLL LOOP THAT FED ITSELF ───────────────────────────────────────
+   *
+   * This effect used to depend on `dlJobs` and `genJobs` — the very two states
+   * `refresh()` writes. Each write handed back a FRESH OBJECT even when the
+   * content was identical, so:
+   *
+   *     refresh() → new identity → deps changed → effect re-runs
+   *              → clearInterval, `void refresh()` IMMEDIATELY, new interval
+   *              → new identity → …
+   *
+   * an unbounded recursion throttled only by network latency, four fetches per
+   * lap. The browser eventually reported `net::ERR_INSUFFICIENT_RESOURCES` on
+   * /api/comfy/generate and /api/comfy/modes, which reads as the dev server
+   * being broken and is not.
+   *
+   * It was WORST WHILE RENDERING, which is what made it look like a generation
+   * problem: a running job updates its progress on every poll, so the content
+   * genuinely changed each time and no amount of identity-stability alone would
+   * have stopped it. Hence both halves of the fix — dedupe the writes AND take
+   * the states out of the deps.
+   *
+   * `/api/comfy/generate` is not a cheap handler either: it readdirs
+   * `work/comfy` and parses every job.json on each call. Hammering it is a
+   * large part of "memory ramps up when we render".
+   *
+   * Self-scheduling timeout rather than setInterval so the cadence can still
+   * follow `busyRef` without the effect re-arming. The guard against a
+   * post-unmount schedule is the `live` flag, not clearInterval.
+   */
   useEffect(() => {
-    void refresh();
-    const anyBusy =
-      Object.values(dlJobs).some((j) => j.state === "downloading") ||
-      Object.values(genJobs).some((j) => j.state === "running");
-    const t = setInterval(refresh, anyBusy ? 2000 : 5000);
-    return () => clearInterval(t);
-  }, [refresh, dlJobs, genJobs]);
+    let live = true;
+    let t: ReturnType<typeof setTimeout>;
+    const loop = async () => {
+      await refresh();
+      if (!live) return;
+      t = setTimeout(loop, busyRef.current ? 2000 : 5000);
+    };
+    void loop();
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [refresh]);
 
   /**
    * ── A FAILURE THAT CLEARS ITSELF IS A FAILURE NOBODY SAW ──────────────────
