@@ -104,17 +104,32 @@ export function qaFrame(img: RawImage, opts: { sourceH?: number; afterStyle?: bo
   const [bx0, by0, bx1, by1] = subject.bbox;
   const bh = (by1 - by0 + 1) / h;
   const bw = (bx1 - bx0 + 1) / w;
+  // ── THE BINDING AXIS, NOT THE HEIGHT ────────────────────────────────────
+  //
+  // `reframeSubject` scales by `min(targetH/height, W_MAX/width)` — it fits the
+  // subject inside BOTH bounds and lets whichever one binds decide. Asking only
+  // about height therefore fails every subject wider than about 1:1 **for doing
+  // exactly what the reframe told it to do**. A hound (a horizontal quadruped)
+  // lands at 75.0% wide — its cap, to the tenth — and 42.8% tall, and this read
+  // "figure fills the frame ✖, 42.8% tall (want 68.0%–76.0%)" and rejected it.
+  // No reframe could have passed: 68% tall at that aspect is 108% wide.
+  //
+  // So the question is whether the subject is AT the cap on the axis that bound
+  // it, with the other axis inside its own bound.
   const hOk = Math.abs(bh - SUBJECT_H) <= SUBJECT_H_TOL;
+  const wOk = Math.abs(bw - SUBJECT_W_MAX) <= SUBJECT_H_TOL;
+  const inBounds = bh <= SUBJECT_H + SUBJECT_H_TOL && bw <= SUBJECT_W_MAX;
   add({
     id: "size",
     label: "figure fills the frame",
-    value: `${pct(bh)} tall, ${pct(bw)} wide`,
-    want: `${pct(SUBJECT_H - SUBJECT_H_TOL)}–${pct(SUBJECT_H + SUBJECT_H_TOL)} tall, ≤ ${pct(SUBJECT_W_MAX)} wide`,
-    pass: hOk && bw <= SUBJECT_W_MAX,
-    // Only a figure so small the style pass has nothing to work with is fatal.
-    soft: bh >= 0.5,
+    value: `${pct(bh)} tall, ${pct(bw)} wide — ${bw / bh > 1 ? "wide" : "tall"} subject`,
+    want: `${pct(SUBJECT_H - SUBJECT_H_TOL)}–${pct(SUBJECT_H + SUBJECT_H_TOL)} tall, or ≤ ${pct(SUBJECT_W_MAX)} wide and at that cap`,
+    pass: (hOk || wOk) && inBounds,
+    // Only a figure so small the style pass has nothing to work with is fatal —
+    // and "small" is about the LONG axis for the same reason as above.
+    soft: Math.max(bh, bw) >= 0.5,
     why:
-      bh < 0.5
+      Math.max(bh, bw) < 0.5
         ? "the style pass will spend its resolution on empty canvas"
         : "keyframes re-pose from this frame — a raised arm needs headroom",
     fix: "re-frame (free, no GPU)",

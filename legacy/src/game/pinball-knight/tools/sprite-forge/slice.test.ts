@@ -155,4 +155,44 @@ describe("a row of BROAD creatures is not a ruled line", () => {
     const rows = sliceSheet(data, W, H);
     expect(rows[0].cells.length, "the ruled line must not weld the row").toBe(5);
   });
+
+  /**
+   * ONE wide creature is not a ruled line either, and contiguity alone cannot
+   * say so — a horizontal quadruped's back IS one unbroken run.
+   *
+   * This is not hypothetical: intake FRAMES it that way. `reframeSubject` scales
+   * a wide subject to `SUBJECT_W_MAX` (0.75), which sits above `RULE_FILL`
+   * (0.70), so a maximally-framed wide creature had its body erased by
+   * construction. The hound's own idle sliced 2 rows / 3 cells and `intake-qa`
+   * called a clean single-blob figure "more than one figure".
+   *
+   * What still separates them is THICKNESS: a rule is a line in both axes.
+   */
+  it("keeps ONE creature that is wider than the rule threshold", () => {
+    // A body 300/400 = 75% wide (over RULE_FILL) and 60px tall, plus four legs
+    // — the hound's proportions, and the shape the reframe produces.
+    const data = build((set) => {
+      for (let x = 50; x < 350; x++) for (let y = 20; y < 80; y++) set(x, y);
+      for (const lx of [70, 120, 280, 330])
+        for (let x = lx; x < lx + 14; x++) for (let y = 80; y < 100; y++) set(x, y);
+    });
+    const rows = sliceSheet(data, W, H);
+    expect(rows.length, "the body was erased as a border and split the creature").toBe(1);
+    expect(rows[0].cells.length, "one creature is one cell").toBe(1);
+    const [, y0, , y1] = rows[0].cells[0];
+    expect(y1 - y0 + 1, "the creature lost its body rows").toBeGreaterThanOrEqual(75);
+  });
+
+  it("ANTI-VACUITY: a full-width rule THROUGH that creature is still stripped", () => {
+    // Same animal, plus a genuine 2px rule above it. Thickness is what tells
+    // them apart, so the thin one must still go.
+    const data = build((set) => {
+      for (let x = 50; x < 350; x++) for (let y = 20; y < 80; y++) set(x, y);
+      for (let x = 0; x < W; x++) { set(x, 8); set(x, 9); }
+    });
+    const rows = sliceSheet(data, W, H);
+    expect(rows.length, "the 2px rule survived as its own band").toBe(1);
+    const [, y0] = rows[0].cells[0];
+    expect(y0, "the band starts at the rule, not at the creature").toBeGreaterThanOrEqual(15);
+  });
 });

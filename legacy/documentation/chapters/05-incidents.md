@@ -144,6 +144,68 @@ seconds did.
 > — a test that merely proves the disagreement is reachable passes with the bug
 > restored.** (Verified by reverting the fix: green→red, same error text.)
 
+## Intake could not accept a creature wider than it is tall
+
+**Symptom.** Every four-legged creature is rejected at intake, with two
+complaints that both sound like bad art: *"figure fills the frame ✖ — 42.8%
+tall (want 68.0%–76.0%)"* and *"slices as a single cell ✖ — 2 row(s), 3
+cell(s) … the slicer sees more than one figure — a caption, a border, or a
+second component"*. There was no caption, no border and no second component:
+one clean single-blob hound.
+
+**Two constants that guaranteed it.** `reframeSubject` scales by
+`min(targetH/h, SUBJECT_W_MAX/w)` — it fits BOTH bounds and lets whichever
+binds decide, which is correct. Everything downstream then assumed the height
+bound had won:
+
+- **`intake-qa`'s size check asked only about height.** A hound at the 75.0%
+  width cap is 42.8% tall, and no reframe could do better: 68% tall at that
+  aspect is 108% wide. The check was unpassable by construction for any
+  subject wider than about 1:1.
+- **`slice.ts` erased the animal's own back as a ruled border.** The
+  sheet-wide pass strips any scanline whose longest contiguous run spans
+  `RULE_FILL` (0.70) of the width. `SUBJECT_W_MAX` is **0.75** — so intake
+  frames a wide creature *above* the threshold that deletes it. The body rows
+  went, the head and the legs survived as separate bands, and that is where
+  "2 rows, 3 cells" came from.
+
+The second one had already been half-learned. The comment above that pass
+records the `frog.png` incident — five wide frogs per row read as a border on
+total ink — and the fix was to measure the longest CONTIGUOUS run instead,
+which separates a rule from a ROW of creatures because the row has gaps. It
+does not separate a rule from ONE wide creature, whose back is a single
+unbroken run. The vertical pass in the same file already knew the missing half
+and says so: *"a vertical rule is SPANNING **and** NARROW, fill alone is not
+enough."*
+
+**Fix.** A rule is a line in BOTH axes — it spans, and it is thin. Both
+horizontal passes (sheet-wide and band-local) now erase a spanning run of
+scanlines only when that run is thin, mirroring the frame-sides pass:
+
+```
+ruled border      spans ~100%,   1-3px tall
+hound's back      spans   75%,  ~440px tall
+```
+
+The band-local pass needed it more than the sheet-wide one: against a band's
+own extent a lone creature's body spans 100%, so no fill threshold could ever
+survive it, and fixing only the sheet-wide pass left the hound's four legs
+standing as four cells with the body erased between them.
+
+`intake-qa` now asks whether the subject is at the cap on the axis that BOUND
+it, with the other inside its own bound, and reports which kind of subject it
+measured.
+
+**Verified on real art, not fixtures.** The styled hound went from REJECT on
+two checks to **READY on all ten** — `figure fills the frame ok 42.4% tall,
+75.0% wide — wide subject` and `slices as a single cell ok 1 row(s), 1
+cell(s)`. `inbox.test.ts`, which slices the shipped sheets, stayed green.
+
+> **The rule: when one stage's output is another stage's input, their
+> constants are a contract. `SUBJECT_W_MAX` (0.75) sitting above `RULE_FILL`
+> (0.70) meant the framer aimed at a value the slicer deletes — and neither
+> file mentions the other.**
+
 ## The hound's charge tell was drawn, tested, and never once played
 
 **Symptom.** None — that is the whole point. The hound charges, the tint comes

@@ -134,7 +134,30 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
   //     frog row            15% contiguous  (73% total ink)
   //
   // Same lesson the VERTICAL pass below already learned — "a vertical rule is
-  // SPANNING *AND* NARROW, fill alone is not enough" — never applied up here.
+  // SPANNING *AND* NARROW, fill alone is not enough".
+  //
+  // ⚠️ AND THINNESS IS THE OTHER HALF OF IT, which this pass was missing.
+  //
+  // Contiguous-run alone separates a rule from a ROW OF creatures, because that
+  // row has gaps between the figures. It does NOT separate a rule from ONE wide
+  // creature: a hound is a horizontal quadruped, so its back is a single
+  // contiguous run the width of the animal, and every scanline through its body
+  // was erased as a border. Intake guarantees the collision rather than risking
+  // it — `reframeSubject` scales a wide subject up to `SUBJECT_W_MAX` (0.75),
+  // which is ABOVE this 0.7 threshold, so a maximally-framed wide creature is
+  // erased BY CONSTRUCTION. Measured on the hound's own idle: 2 rows / 3 cells
+  // out of one clean single-blob figure, and `intake-qa` reported it as "the
+  // slicer sees more than one figure — a caption, a border, or a second
+  // component" on a frame that had none of those.
+  //
+  // A rule is a LINE in both axes: it spans, and it is THIN. A creature's body
+  // spans for hundreds of consecutive scanlines. So require both, exactly as
+  // the frame-sides pass below does, and the two cannot be confused:
+  //
+  //     ruled border      spans ~100%, 1-3px tall
+  //     hound's back      spans   75%, ~440px tall
+  const ruleCapH = Math.max(RULE_MIN_W, h * 0.01);
+  const spanning: boolean[] = [];
   for (let y = 0; y < h; y++) {
     let run = 0;
     let best = 0;
@@ -142,7 +165,16 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
       run = solid[y * w + x] ? run + 1 : 0;
       if (run > best) best = run;
     }
-    if (best >= w * RULE_FILL) for (let x = 0; x < w; x++) solid[y * w + x] = 0;
+    spanning.push(best >= w * RULE_FILL);
+  }
+  for (let y = 0; y < h; ) {
+    if (!spanning[y]) { y++; continue; }
+    let end = y;
+    while (end + 1 < h && spanning[end + 1]) end++;
+    if (end - y + 1 <= ruleCapH) {
+      for (let yy = y; yy <= end; yy++) for (let x = 0; x < w; x++) solid[yy * w + x] = 0;
+    }
+    y = end + 1;
   }
   // ── The OUTER frame's sides, and only those.
   //
@@ -220,8 +252,13 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
     const rowW = bx1 - bx0 + 1;
 
     // Contiguity again, same reason as the sheet-wide pass: this measures against
-    // the ROW's own extent, so a broad-creature row scores even higher here.
-    let ruled = false;
+    // the ROW's own extent, so a broad-creature row scores even higher here —
+    // and THICKNESS again for the same reason, harder. Against the band's own
+    // extent a lone wide creature's body spans 100%, not 75%, so no fill
+    // threshold can survive it: the sheet-wide fix alone left the hound's four
+    // legs standing as four cells with the body erased between them.
+    const bandRuleCap = Math.max(RULE_MIN_W, bandH * 0.05);
+    const spans: boolean[] = [];
     for (let y = 0; y < bandH; y++) {
       let run = 0;
       let best = 0;
@@ -229,9 +266,18 @@ export function sliceSheet(data: Uint8ClampedArray, w: number, h: number): Sheet
         run = band[y * w + x] ? run + 1 : 0;
         if (run > best) best = run;
       }
-      if (best < rowW * RULE_FILL) continue;
-      for (let x = 0; x < w; x++) band[y * w + x] = 0;
-      ruled = true;
+      spans.push(best >= rowW * RULE_FILL);
+    }
+    let ruled = false;
+    for (let y = 0; y < bandH; ) {
+      if (!spans[y]) { y++; continue; }
+      let end = y;
+      while (end + 1 < bandH && spans[end + 1]) end++;
+      if (end - y + 1 <= bandRuleCap) {
+        for (let yy = y; yy <= end; yy++) for (let x = 0; x < w; x++) band[yy * w + x] = 0;
+        ruled = true;
+      }
+      y = end + 1;
     }
 
     // ── A CELL BORDER IS A RECTANGLE: no vertical rules without horizontal ones.
