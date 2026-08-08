@@ -72,6 +72,14 @@ export type Job = {
   character?: string;
   clip?: string;
   progress?: Progress;
+  /**
+   * Last time a CLI run touched its job.json. Absent on panel-started jobs,
+   * which live in the route's Map instead. It is what lets the route tell a
+   * healthy 10-minute command-line generation (frameless, running, beating)
+   * from a corpse left by a dev-server reload (frameless, running, silent) —
+   * before this existed the first was reported as the second.
+   */
+  heartbeatAt?: number;
   hasPreview?: boolean;
   frames?: string[];
   error?: string;

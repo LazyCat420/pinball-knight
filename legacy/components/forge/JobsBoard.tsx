@@ -705,16 +705,67 @@ export function JobsBoard({
   const [showAll, setShowAll] = useState(false);
   const entries = Object.entries(jobs).sort((a, b) => (b[1].startedAt ?? 0) - (a[1].startedAt ?? 0));
   const visible = showAll ? entries : entries.slice(0, 6);
+  const live = entries.filter(([, j]) => j.state === "running" || j.state === "queued");
   if (!entries.length) return null;
+
+  /**
+   * THE ONE LINE THAT ANSWERS "is it generating?".
+   *
+   * The chip used to count only what the panel itself had launched, so an
+   * unattended `bench-moveset.mjs` sweep — 21 runs and three hours of GPU —
+   * read as "0 running · 0 queued" on a page that was otherwise working. The
+   * counter was not wrong about its own jobs; it simply had no idea the others
+   * existed. Now the rows come from disk with heartbeats, so this counts
+   * everything, whoever started it.
+   *
+   * It names the running job and its elapsed time rather than just a number,
+   * because "1 running" and "1 running · S:idle · 6m20s" answer completely
+   * different questions when you are waiting on a long sweep.
+   */
+  const banner = (() => {
+    if (!live.length) return null;
+    const [, j] = live.find(([, x]) => x.state === "running") ?? live[0];
+    const secs = j.startedAt ? Math.max(0, Math.round((tick - j.startedAt) / 1000)) : null;
+    const mmss = secs === null ? null : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, "0")}s`;
+    const p = j.progress;
+    const pctNum = p && p.max ? Math.round((p.value / p.max) * 100) : null;
+    return { label: j.label ?? j.mode ?? "job", mmss, pctNum, waiting: live.length - 1 };
+  })();
+
   return (
     <div style={S.card}>
       <h2 style={S.cardTitle}>
         jobs
-        <span style={S.chip(GREY.fg, GREY.bg)}>
+        <span style={S.chip(live.length ? BLUE.fg : GREY.fg, live.length ? BLUE.bg : GREY.bg)}>
           {entries.filter(([, j]) => j.state === "running").length} running ·{" "}
           {entries.filter(([, j]) => j.state === "queued").length} queued
         </span>
       </h2>
+      {banner && (
+        <div style={{ margin: "0 0 10px", padding: "8px 10px", borderRadius: 6, background: "#0d1b2e", border: "1px solid #1d3a5c" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#8fc2ff", fontFamily: "monospace" }}>
+            {/* A moving element, because a static "running" label is exactly
+                what a hung run also looks like. */}
+            <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 8, background: "#4da3ff", animation: "forgePulse 1.1s ease-in-out infinite" }} />
+            <strong style={{ color: "#cfe6ff" }}>{banner.label}</strong>
+            {banner.mmss && <span>· {banner.mmss}</span>}
+            {banner.pctNum !== null ? <span>· {banner.pctNum}% sampling</span> : <span style={{ opacity: 0.7 }}>· loading models</span>}
+            {banner.waiting > 0 && <span style={{ opacity: 0.7 }}>· {banner.waiting} waiting</span>}
+          </div>
+          <div style={{ marginTop: 6, height: 4, borderRadius: 4, background: "#12233a", overflow: "hidden" }}>
+            <div
+              style={
+                banner.pctNum !== null
+                  ? { height: "100%", width: `${banner.pctNum}%`, background: "#4da3ff", transition: "width .4s linear" }
+                  : // Indeterminate: model load emits no progress traffic, and a
+                    // 0% bar for 90 seconds reads as a stall.
+                    { height: "100%", width: "30%", background: "#2f6ea8", animation: "forgeSlide 1.6s ease-in-out infinite" }
+              }
+            />
+          </div>
+          <style>{"@keyframes forgePulse{0%,100%{opacity:1}50%{opacity:.25}}@keyframes forgeSlide{0%{margin-left:-30%}100%{margin-left:100%}}"}</style>
+        </div>
+      )}
       {visible.map(([id, j]) => (
         <JobCard key={id} id={id} job={j} tick={tick} mode={modes?.find((m) => m.id === j.mode)} onCancel={onCancel} onReroll={onReroll} onUseAsInit={onUseAsInit} onUseAsLast={onUseAsLast} onFixFrame={onFixFrame} onRedoPose={onRedoPose} onAddToTray={onAddToTray} onKeep={onKeep} onAllAngles={onAllAngles} />
       ))}

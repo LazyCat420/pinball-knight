@@ -91,6 +91,16 @@ type Job = {
   ghost?: { pct: number[]; flagged: number[]; soft: number[]; level: string };
 };
 const jobs: Map<string, Job> = (globalThis as any).__forgeGen ?? new Map();
+
+/**
+ * How long a CLI run may go without touching job.json before it is presumed
+ * dead. It heartbeats on sampler progress (throttled to ~1.5s), but the quiet
+ * stretches are the honest constraint: model LOAD is ~31GB of reads with no
+ * progress traffic at all, and the VAE decode at the end is another silent
+ * gap. Both have been measured over a minute on this box, so a 20s window
+ * would report every healthy run as dead twice per generation.
+ */
+const STALE_MS = 180_000;
 (globalThis as any).__forgeGen = jobs;
 
 /** What survives a dev-server reload, minus the volatile fields. */
@@ -715,9 +725,38 @@ export async function GET(req: Request) {
           const meta = JSON.parse(readFileSync(join(WORK, dir, "job.json"), "utf8"));
           // Disk copies of live states are stale by definition — the Map
           // overwrites survivors below; what remains died in a reload.
+          /**
+           * IS A RUNNING ROW ACTUALLY ALIVE, OR A CORPSE FROM A RELOAD?
+           *
+           * This used to answer "no frames yet" with `error: lost in a
+           * dev-server reload`, which was right when only the panel wrote
+           * job.json — the panel's jobs live in a Map that a reload empties.
+           *
+           * `cli.mjs` now writes job.json at QUEUE time and heartbeats into it,
+           * so a frameless running row is the NORMAL state of a healthy
+           * command-line generation for the 6-15 minutes it takes. Condemning
+           * those would replace "invisible" with "reported as dead", which is
+           * worse: an unattended sweep would show a wall of red while the GPU
+           * worked perfectly.
+           *
+           * The heartbeat is the liveness signal. A CLI run touches job.json at
+           * least every few seconds while sampling; nothing touches it after
+           * the process dies. Panel-written rows have no heartbeat and keep the
+           * old reload verdict, which is still correct for them.
+           */
+          const beat = typeof meta.heartbeatAt === "number" ? meta.heartbeatAt : null;
+          const live = beat !== null && Date.now() - beat < STALE_MS;
+          const running = meta.state === "queued" || meta.state === "running";
           all[dir] =
-            (meta.state === "queued" || meta.state === "running") && !frames.length
-              ? { ...meta, state: "error", error: "lost in a dev-server reload — re-roll it", frames }
+            running && !frames.length && !live
+              ? {
+                  ...meta,
+                  state: "error",
+                  error: beat === null
+                    ? "lost in a dev-server reload — re-roll it"
+                    : `no heartbeat for ${Math.round((Date.now() - beat) / 1000)}s — the run died (check ~/comfy/guard.log)`,
+                  frames,
+                }
               : { ...meta, ...(meta.state === "running" && frames.length ? { state: "done" } : {}), frames };
         } catch {
           all[dir] = { state: "done", mode: "cli", label: dir, startedAt: 0, frames };

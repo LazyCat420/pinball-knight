@@ -28,7 +28,7 @@ import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFile
 import { homedir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor } from "./client.mjs";
+import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor, watchProgress } from "./client.mjs";
 import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
@@ -245,14 +245,66 @@ async function run(graph, dir, meta = {}) {
   await requireBackend();
   await assertNodes(graph);
   const t0 = Date.now();
-  const id = await queuePrompt(graph);
+  const clientId = `cli-${Math.random().toString(36).slice(2, 10)}`;
+  const id = await queuePrompt(graph, { clientId });
   console.log(`queued ${id}`);
+
+  /**
+   * ── THE RUN ANNOUNCES ITSELF NOW, NOT WHEN IT FINISHES ────────────────────
+   *
+   * `job.json` used to be written once, at the end. For the 6-15 minutes a Wan
+   * run actually takes, the panel therefore saw a directory with no job.json
+   * and no frames — and `/api/comfy/generate` renders exactly that as
+   * `{ state: "done", mode: "cli", frames: [] }`. A live generation appeared in
+   * /forge as a FINISHED row with nothing in it, while the header counted
+   * "0 running · 0 queued" because that counter only knows jobs the panel
+   * itself submitted.
+   *
+   * So an unattended sweep — which is the whole point of `bench-moveset.mjs` —
+   * was indistinguishable from a broken one. The operator's question was
+   * literally "so is it generating?", and nothing on the page could answer it.
+   *
+   * The fix is that the file is the transport: write it at QUEUE time with
+   * `state: "running"`, then heartbeat progress into it. No websocket for the
+   * panel to hold, no second source of truth, and it survives a dev-server
+   * reload because it was never in memory.
+   */
+  const beat = (extra = {}) => {
+    try {
+      writeFileSync(
+        join(dir, "job.json"),
+        JSON.stringify({ source: "cli", state: "running", startedAt: t0, promptId: id, heartbeatAt: Date.now(), ...meta, ...extra }, null, 1),
+      );
+    } catch {
+      /* a heartbeat must never take the run down */
+    }
+  };
+  beat();
+  // Advisory only — `waitFor`/history stays the authority on done and error,
+  // because ComfyUI's progress traffic is documented to trail completion
+  // (#9330). This drives a progress bar and nothing else.
+  let last = 0;
+  const stopWatch = watchProgress(id, clientId, {
+    onProgress: (p) => {
+      // Throttled: a 20-step sampler at 640² fires often, and this is a file
+      // write that the panel polls at its own pace.
+      if (Date.now() - last < 1500) return;
+      last = Date.now();
+      beat({ progress: { node: p.node ?? null, value: p.value ?? 0, max: p.max ?? 1 } });
+    },
+  });
+
   let history, images;
   try {
     history = await waitFor(id);
     images = outputImages(history);
   } catch (err) {
+    try {
+      writeFileSync(join(dir, "job.json"), JSON.stringify({ source: "cli", state: "error", startedAt: t0, promptId: id, error: String(err?.message ?? err).slice(0, 400), ...meta }, null, 1));
+    } catch { /* the throw below is what matters */ }
     throw await diagnose(err);
+  } finally {
+    stopWatch();
   }
   const took = ((Date.now() - t0) / 1000).toFixed(1);
   const frames = [];
