@@ -220,6 +220,81 @@ numbers would have found none of these bugs.
 Which is the case for the eye as a gate — not because looking is more rigorous,
 but because looking is the only check that is not axis-bound.
 
+---
+
+## 4. The facing decides which clips can read at all
+
+Found on the first complete facing — all seven S clips, generated back to back.
+The gaits came out strong and the one-shots came out as the same wrong thing,
+and the pattern is geometric rather than a prompting accident.
+
+| clip | churn | what it is | reads? |
+|---|---|---|---|
+| run | 26.9% | gallop | ✅ |
+| death | 23.8% | collapse | ❌ shrinks |
+| walk | 22.1% | four-beat gait | ✅ |
+| crouch | 16.3% | gather to spring | ~ |
+| stumble | 11.9% | flinch | ❌ shrinks |
+| attack | 11.3% | lunge and bite | ❌ "just showing its teeth" |
+| idle | 6.0% | breathing | ✅ |
+
+**S is the FRONT facing, so any motion along the view axis is foreshortened.**
+A walk swings the legs *across* the view and reads perfectly. A lunge, a
+backward recoil and a downward collapse all move mostly *toward or away from
+the camera*, where there is very little silhouette change available — and the
+model resolves "move" the only way the geometry allows: the creature **hunches
+down and gets smaller**.
+
+Measured on the S death clip: frame 2 is a full standing wolf, frames 12–20 are
+a small dark heap with the legs tucked entirely underneath. The S stumble does
+the same by frame 14. Both are supposed to be different actions and both
+degenerate into one crouching blob.
+
+This is the same root cause as the operator's attack report, generalised. The
+attack was not uniquely badly prompted; it was the clip where a
+front-facing one-shot fails most visibly.
+
+**Consequences:**
+
+- **Judge a one-shot on E, not on S.** A side view puts a lunge, a recoil and a
+  collapse all perpendicular to the camera, which is where they have silhouette
+  to spend.
+- **A one-shot prompt must pin SCALE, not position.** The original template said
+  "the character stays centered in frame", which forbids the travel a lunge
+  needs. Removing it freed the pose and left nothing forbidding the shrink. The
+  keyframe mode already had the right form — *"a locked-off camera, the
+  character stays the same size and stays centered in frame"* — and only the
+  centring clause needed dropping.
+- **A scale change is worse than a pose problem downstream.** `drift.ts`
+  registers cells by bounding box and baseline; a figure that halves in size
+  across a clip is not a pose it can register, it is a different sprite.
+
+## 5. The fade gate cannot tell occlusion from dissolution
+
+The first two hard rejects the gate has ever produced, both on this sweep:
+
+    S:stumble   fade=reject   frames 8, 9, 10
+    S:death     fade=reject   frames 13-20
+
+Both are **false positives, and instructively so.** The creature hunches down
+and its own body covers its paws — so the tan cluster really has left the
+frame, and `fade` reports exactly that. What it cannot know is the CAUSE: a
+marking hidden behind the animal is legitimate, a marking dissolved into the
+animal is a defect, and they are pixel-identical from a colour histogram.
+
+This is not worth "fixing" by loosening the threshold, which would only make
+the gate blind to the defect it was built for. It is worth **knowing**: on any
+clip where the creature curls, rolls or turns away, a fade reject means "look at
+it", not "throw it away". The gate is a pointer, and here it pointed at a real
+problem — just not the one it named. The death clip IS broken; it is broken by
+shrinking, not by fading.
+
+Recorded as a limit alongside the small-cluster floor: `fade` does not see the
+green eyes (under `MIN_SHARE`), and it cannot distinguish self-occlusion from
+dissolution.
+
+---
+
 ## The standing rules these bought
 
 1. **Never rotate 180° in one step.** Go E → S → N. A direct E → N is a mirror,
@@ -236,3 +311,13 @@ but because looking is the only check that is not axis-bound.
 7. **Do not deploy while a Wan run is resident.** A Docker build alongside a
    31GB generation OOM-killed the box and took the sweep with it. Deploy in the
    gaps.
+8. **A cycle and a one-shot need different prompts.** "Smooth looping animation,
+   the character stays centered in frame" is correct for a gait and cancels a
+   lunge twice over. Keyed on the CLIP, in `CYCLE_CLIPS`.
+9. **Pin SCALE on a one-shot, never position.** Free the pose, forbid the
+   shrink. A figure that halves in size is not something `drift.ts` can
+   register.
+10. **Judge one-shots on E.** A front facing foreshortens every attack, recoil
+    and collapse into "hunch down and get smaller".
+11. **A fade reject on a curling creature means LOOK, not DISCARD.** Occlusion
+    and dissolution are identical to a histogram.
