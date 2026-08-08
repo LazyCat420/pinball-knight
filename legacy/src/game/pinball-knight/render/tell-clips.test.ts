@@ -9,41 +9,14 @@
  * handlers, not off a table restating what the handlers are supposed to do.
  */
 import { describe, it, expect } from "vitest";
-import { MOVEMENT_HANDLERS, MOVE_TELL, MOVEMENT_KINDS, type MoveActor, type MoveCtx, type Steer } from "../entities/movement";
+import { MOVE_TELL, MOVEMENT_KINDS, type Steer } from "../entities/movement";
 import { clipForSteer } from "./tell-clips";
 import { PACK_MIN } from "../constants";
-
-/** A plain approach context at `dist`, with the player due east. */
-function ctx(dist: number, over: Partial<MoveCtx> = {}): MoveCtx {
-  return {
-    dt: 1 / 60,
-    pdx: dist,
-    pdz: 0,
-    pdist: dist,
-    flowX: 1,
-    flowZ: 0,
-    contactRange: 1,
-    los: true,
-    packNear: 1,
-    packCommitted: false,
-    ...over,
-  };
-}
-
-/** Run one policy for `secs` from `startDist`, collecting the clip each frame. */
-function clipsOver(kind: (typeof MOVEMENT_KINDS)[number], startDist: number, secs: number, over: Partial<MoveCtx> = {}): string[] {
-  const a: MoveActor = { x: 0, z: 0, speed: 3, movePhase: 0.2 };
-  const seen: string[] = [];
-  let dist = startDist;
-  for (let i = 0; i < Math.round(secs * 60); i++) {
-    const s: Steer = MOVEMENT_HANDLERS[kind](a, ctx(dist, over));
-    const moving = s.vx !== 0 || s.vz !== 0;
-    const c = clipForSteer(s, moving);
-    if (c) seen.push(c);
-    if (moving && !s.hold) dist = Math.max(0.6, dist - 3 * (s.mult ?? 1) * (1 / 60));
-  }
-  return seen;
-}
+// The driver moved to testkit/ when the ART side needed to ask the same
+// question — which clips a policy demands — of a painter's clip list. One
+// driver, so a change to how a tell resolves cannot be true in one suite and
+// stale in the other.
+import { clipsOver } from "../testkit/tell-clip-demand";
 
 describe("a policy's tell names a pose, not just a colour", () => {
   it("the leaper's wind-up plays the crouch", () => {

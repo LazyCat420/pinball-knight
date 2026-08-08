@@ -14,6 +14,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createCanvas } from "canvas";
 import { makeHoundPaints } from "./hound";
 import { makeSpiderPaints } from "../cel-painter";
+import { MOVEMENT_BY_KIND } from "../../entities/enemy-rules";
+import { clipDemand } from "../../testkit/tell-clip-demand";
 import type { ActorPaints, Dir, FramePaint } from "../../engine/render/paint-types";
 
 const realDoc = (globalThis as { document?: unknown }).document;
@@ -98,11 +100,35 @@ describe("hound art", () => {
     }
   });
 
+  it("AUTHORS EVERY CLIP ITS OWN POLICY ASKS FOR — derived, not restated", () => {
+    // The defect this catches shipped and was invisible for weeks. The gather
+    // was authored as `attack`; `enemy-rules` gives the hound the `leaper`
+    // policy, whose telegraph resolves (render/tell-clips.ts) to `crouch`; the
+    // painter authored no `crouch`, so CLIP_FALLBACK sent the charge tell to
+    // `idle` and the pose the creature was designed around never played. Every
+    // test in this file was green throughout, because they all asked about
+    // `attack` — the clip the mechanic had stopped requesting.
+    //
+    // So take neither name on faith. Read the hound's policy out of the rules
+    // table, RUN that policy, and ask the same mapping the renderer asks.
+    const demanded = clipDemand(MOVEMENT_BY_KIND.hound);
+    expect(demanded, "the leaper policy raised no telegraph pose at all").not.toHaveLength(0);
+    for (const dir of ["S", "N", "E"] as Dir[]) {
+      const authored = hound[dir] as Record<string, FramePaint[] | undefined>;
+      for (const clip of demanded) {
+        expect(
+          authored[clip]?.length ?? 0,
+          `${dir}: the game asks a hound for "${clip}" and the painter authors none — it will fall back and the tell will not read`,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("the CHARGE TELL reads differently from the walk", () => {
     // HOUND_CHARGE_WINDUP is 0.45s of warning. A tell that paints the same
     // pixels as ordinary movement is not a warning, it is decoration.
     const walk = paint(first(hound, "E", "walk"));
-    const tell = paint(first(hound, "E", "attack"));
+    const tell = paint(first(hound, "E", "crouch"));
     let diff = 0;
     for (let i = 3; i < walk.data.length; i += 4) {
       if ((walk.data[i] > 8) !== (tell.data[i] > 8)) diff++;

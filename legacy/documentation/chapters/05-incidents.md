@@ -144,6 +144,56 @@ seconds did.
 > — a test that merely proves the disagreement is reachable passes with the bug
 > restored.** (Verified by reverting the fix: green→red, same error text.)
 
+## The hound's charge tell was drawn, tested, and never once played
+
+**Symptom.** None — that is the whole point. The hound charges, the tint comes
+up, the dash lands. It just plays its **idle** through the telegraph, and an
+idle hound at 52px with a warning tint looks enough like a tell that nobody
+questioned it.
+
+**What it actually was: two names for one pose.** `render/monsters/hound.ts`
+authored the gathered crouch as the clip **`attack`**, and the file says so at
+length — the whole creature is designed around `HOUND_CHARGE_WINDUP`. But the
+hound's behaviour had since moved to the shared `leaper` policy
+(`entities/enemy-rules.ts`: `hound: "leaper"`), whose telegraph
+`render/tell-clips.ts` resolves to the clip **`crouch`**. The painter authored
+no `crouch`, so `CLIP_FALLBACK` sent it to `idle`.
+
+Probed against the running game (`scripts/clip-probe.mjs --kind hound`):
+
+```
+attack   3f        3f        3f          ← authored, reachable only from the
+crouch   →idle 2f  →idle 2f  →idle 2f       0.3s contact bite
+```
+
+`attack` is not dead — the melee windup at `HOUND_CONTACT_RANGE` still plays it
+— but that is a 0.3 s bite the player is already inside. The 0.45 s warning the
+art exists to give was never drawn.
+
+**Why nothing caught it.** `hound.test.ts` asserted the gather thoroughly: that
+it differs from the walk, that the ridge bristles higher. Every one of those
+assertions names `attack`. The suite and the screen were both consistent and
+they disagreed with each other, because **the test asked about the clip the
+mechanic had stopped requesting** and no test asked what the mechanic requests.
+
+**Fix.** The three frames are now published under both names — `attack` for the
+bite (`anim.attack` 12 fps → 0.25 s) and `crouch` for the telegraph
+(`anim.crouch` 7 fps → 0.43 s, which is `HOUND_CHARGE_WINDUP` 0.45 s almost
+exactly). One authored pose, two rates, nothing duplicated.
+
+The regression test derives both halves instead of restating either: it reads
+the hound's policy out of `MOVEMENT_BY_KIND`, **runs that policy**, asks
+`clipForSteer` what it demands, and requires the painter to author every answer
+in every facing. The driver moved to `testkit/tell-clip-demand.ts` so
+`tell-clips.test.ts` and the art tests cannot drift apart. Verified by reverting
+the painter: `S: the game asks a hound for "crouch" and the painter authors
+none`.
+
+> **The rule: a clip name is an interface between behaviour and art, and an art
+> test that names the clip itself can only confirm the art. Ask the BEHAVIOUR
+> what it will request.** Any monster whose tell was authored before its policy
+> was assigned is a candidate for the same defect.
+
 ## Earlier lessons, still load-bearing
 
 | symptom | actual cause |

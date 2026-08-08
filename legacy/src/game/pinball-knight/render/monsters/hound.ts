@@ -381,26 +381,51 @@ function houndDash(dir: Dir, t: number): FramePaint {
 }
 
 export function makeHoundPaints(): ActorPaints {
-  const dc = (dir: Dir) => ({
-    // Idle: breathing, weight settled. Small phase so it does not read as a walk.
-    idle: [houndFrame(dir, -0.1), houndFrame(dir, 0.14)],
-    // Walk: a four-beat trot.
-    walk: [
-      houndFrame(dir, -0.9),
-      houndFrame(dir, 0.05),
-      houndFrame(dir, 0.9),
-      houndFrame(dir, 0.05),
-    ],
-    // Attack IS the charge tell — see houndCrouch.
-    attack: [houndCrouch(dir, 0), houndCrouch(dir, 0.5), houndCrouch(dir, 1)],
-    // Run is the dash itself.
-    run: [houndDash(dir, 0), houndDash(dir, 0.33), houndDash(dir, 0.66)],
-    death: [
-      houndFrame(dir, 0.5, { crouch: 0.8 }),
-      houndFrame(dir, 0, { dead: true }),
-      houndFrame(dir, 0, { dead: true }),
-      houndFrame(dir, 0, { dead: true }),
-    ],
-  });
+  const dc = (dir: Dir) => {
+    // ── THE GATHER IS AUTHORED ONCE AND WORN BY TWO CLIPS ────────────────────
+    //
+    // The tell was drawn for HOUND_CHARGE_WINDUP but the game asks for it under
+    // a DIFFERENT NAME, and for weeks nothing played it. `enemy-rules` gives the
+    // hound the `leaper` policy, whose telegraph is `MOVE_TELL.leap`, and
+    // render/tell-clips.ts turns that into the clip `crouch` — a clip this
+    // painter did not author, so `CLIP_FALLBACK` resolved it to `idle` and the
+    // charge telegraph was a breathing hound with a tint on it. Probed live:
+    // `crouch → idle 2f` in all three facings while `attack → 3f` sat unused
+    // outside the 0.3s contact bite.
+    //
+    // Nothing detected it because hound.test.ts asserts the gather on `attack`,
+    // which is exactly the clip the mechanic stopped asking for — the test and
+    // the screen disagreed and only the test was read.
+    //
+    // So the same three frames are published under both names: `attack` for the
+    // contact bite's windup (anim.attack 12fps → 0.25s) and `crouch` for the
+    // leaper telegraph (anim.crouch 7fps → 0.43s, which is HOUND_CHARGE_WINDUP
+    // 0.45s almost exactly). One authored pose, two rates, no second drawing to
+    // keep in sync.
+    const gather = [houndCrouch(dir, 0), houndCrouch(dir, 0.5), houndCrouch(dir, 1)];
+    return {
+      // Idle: breathing, weight settled. Small phase so it does not read as a walk.
+      idle: [houndFrame(dir, -0.1), houndFrame(dir, 0.14)],
+      // Walk: a four-beat trot.
+      walk: [
+        houndFrame(dir, -0.9),
+        houndFrame(dir, 0.05),
+        houndFrame(dir, 0.9),
+        houndFrame(dir, 0.05),
+      ],
+      // The contact bite's windup — see houndCrouch.
+      attack: gather,
+      // The leaper telegraph, which is what the charge actually asks for.
+      crouch: gather,
+      // Run is the dash itself.
+      run: [houndDash(dir, 0), houndDash(dir, 0.33), houndDash(dir, 0.66)],
+      death: [
+        houndFrame(dir, 0.5, { crouch: 0.8 }),
+        houndFrame(dir, 0, { dead: true }),
+        houndFrame(dir, 0, { dead: true }),
+        houndFrame(dir, 0, { dead: true }),
+      ],
+    };
+  };
   return { S: dc("S"), N: dc("N"), E: dc("E") };
 }
