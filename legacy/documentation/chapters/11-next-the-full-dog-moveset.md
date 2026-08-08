@@ -92,14 +92,40 @@ and `--init`.
 
 ## Order of work
 
-**1. Rotate the master to S and N first.** Everything branches off the ONE
-approved master; never rotate a facing off another facing — Qwen-Image-Edit
-identity drift compounds over serial edits. Re-run the pixel gate per facing.
+**1. Rotate the master to S and N first — S FROM E, THEN N FROM S.**
+
+> ⚠️ **CORRECTED 2026-08-08.** This step used to say "everything branches off
+> the ONE approved master; never rotate a facing off another facing", on the
+> reasoning that Qwen-Image-Edit identity drift compounds over serial edits.
+> That reasoning is still true and it is still outranked, because **E → N in
+> one step does not return a back view. It returns the E master flipped
+> horizontally** — measured at **0.942 silhouette IoU against mirrored E**,
+> which is not "similar", it is the same picture.
+>
+> From a side view, "back view" is satisfiable by a reflection, and a
+> reflection is free while a real 180° turn means synthesising the entire
+> unseen far side. The model takes the cheap reading. A front view is not
+> reachable by any reflection of a side view, so **E → S is safe and S → N is
+> safe**; only the 180° ask is ambiguous. Two generations of mild drift is a
+> cost; a mirror is not a back view at all.
+>
+> Full measurement in chapter 13.
 
 ```bash
-node cli.mjs rotate --init <E master> --to "front view"  --file-as dog
-node cli.mjs rotate --init <E master> --to "back view"   --file-as dog
+# S from the approved E master — 90 degrees, unambiguous.
+node cli.mjs rotate --init <E master> --to S --file-as dog
+# N from the S RESULT — 90 degrees again. NOT from E.
+node cli.mjs rotate --init <S result> --to N --file-as dog
 ```
+
+`--to` now takes a facing ID and resolves it to the multi-angle LoRA's trained
+azimuth token, so a facing cannot be spelled wrong. **Verify every rotation
+against the MIRROR of its input**, not just against the input — a flip scores
+far from the original and is trivially wrong.
+
+Note `cli.mjs rotate` used to bypass `MODES` entirely and never loaded the
+`fal-multi-angle` LoRA at all, so any rotation run before 2026-08-08 was
+freeform turning. Fixed; the run now prints which grammar it used.
 
 **2. Finish E first — all seven clips on the facing that already works.** Do not
 spread thin across facings. A complete E is something to look at and judge; three
