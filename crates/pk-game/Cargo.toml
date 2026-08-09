@@ -10,13 +10,23 @@ description = "Pinball Knight — the Bevy app (render, input, GUI, fx, boot)"
 pk-core = { path = "../pk-core" }
 pk-assets = { path = "../pk-assets" }
 pk-audio = { path = "../pk-audio" }
+serde_json = { workspace = true }
+# PNG decode for the embedded knight sheets — bypasses bevy_asset io entirely
+# (works identically on native and wasm; the slice embeds its art).
+image = { version = "0.25", default-features = false, features = ["png"] }
 
-# Scaffold stage: bevy core only (app/ecs/time — no winit, no wgpu), so the
-# workspace compiles in minutes on a shared box. M1 ("one room rendered right")
-# flips this to the render set, WebGPU-only per house policy (webgl2 stays OFF;
-# legacy src/render/backend.ts deliberately defeats the WebGL fallback):
-#   features = ["bevy_winit", "bevy_render", "bevy_core_pipeline", "bevy_asset",
-#               "bevy_state", "multi_threaded", "x11", "wayland", "webgpu"]
+# WebGPU-only on the web per house policy (webgl2 stays OFF; legacy
+# src/render/backend.ts deliberately defeated the WebGL fallback).
 [dependencies.bevy]
 version = "0.17"
 default-features = false
+features = [
+    "bevy_winit",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_asset",
+    "multi_threaded",
+    "x11",
+    "webgpu",
+]

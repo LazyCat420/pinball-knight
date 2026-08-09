@@ -1,5 +1,18 @@
 # Dev environment (WSL2, shared box)
 
+## Run the game
+
+- **Rust, browser (the real target):** `trunk serve` at the repo root, then
+  open `http://localhost:8787` in **Windows host Chrome** (WebGPU; localhost
+  forwards from WSL2). WASD/arrows to move.
+- **Rust, native window:** `cargo run -p pk-game` (WSLg/X11 — fine for
+  correctness, never for perf numbers).
+- **Legacy TS game (the oracle):** `cd legacy && npm run dev`, open
+  `http://localhost:5174`. Full game: monsters, combat, floors, forge.
+- Headless wasm verification: real host Chrome over CDP via
+  `legacy/scripts/lib/host-chrome.mjs` — SwiftShader cannot run this app
+  (see Incidents).
+
 ## Loops
 
 - **Logic loop** — `cargo test -p pk-core`: GPU-free, WSL-native, seconds.

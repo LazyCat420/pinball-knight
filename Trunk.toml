@@ -1,0 +1,11 @@
+# trunk serve --open      dev loop (open from Windows host Chrome on WSL2)
+# trunk build --release   dist bundle in web/dist
+[build]
+target = "web/index.html"
+dist = "web/dist"
+
+[serve]
+# Bind all interfaces so the Windows host can reach it if localhost
+# forwarding flakes; WebGPU needs a secure context, which localhost is.
+addresses = ["0.0.0.0"]
+port = 8787

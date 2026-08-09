@@ -7,9 +7,14 @@
 //!
 //! Port order (mirrors the migration plan milestones):
 //!   rng      — DONE, pinned against the JS oracle
-//!   collide  — M2: engine/{collision,grid,tile-shape,surfaces}.ts
+//!   grid     — DONE (engine/grid.ts)
+//!   collide  — square-wall path DONE with ported tests; shaped tiles
+//!              (slants/arcs/kick bands/lanes) land with tile-shape in M2
+//!   state    — seed of state.ts/simulate.ts: player movement at fixed 60 Hz
 //!   maze     — M3: maze/ generator with PRNG call-order parity
 //!   entities — M4: combat, AI, spawn, economy, run
-//!   state    — grows alongside; SimState mirrors legacy state.ts
 
+pub mod collide;
+pub mod grid;
 pub mod rng;
+pub mod state;
