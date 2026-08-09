@@ -5,6 +5,39 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P1 momentum ride ported: the knight is a pinball.** The sim
+  half of `updatePinball` + `pinball-collide.ts` + `rail.ts` + the
+  combo-curve math live in Rust (`pinball.rs`, `rail.rs`, `combo.rs`):
+  steering with steer locks, wall/slant/corner reflections consuming the
+  SURFACES tables, lane glide, the pocket-rattle guard, kicker/lane band
+  consumption, banked-rail rides (catch/hold/overspeed/decay), arc-corner
+  banking, tempo zones + overcharge, per-topology friction, and the physics
+  part handlers (bumper w/ lit+jackpot, spring, booster w/ jam guard,
+  corner/curve boosters, deflector grab-throw, oil, spinpad, slingshot,
+  flipper, mirror, magstrip cap). Verified three ways: 26 ported rail/combo
+  unit tests; the booster-corner-sim END-TO-END suite (4 cases, legacy's own
+  thresholds, driving the REAL Rust ride — jam guard stands the pad down,
+  steering back in <20 frames, legit chains still carry); and a THIRD golden
+  fixture — a 600-tick momentum trace at 18 u/s through slant + round + arc
+  lane — replaying BIT-EXACTLY. pk-check ALL GATES PASSED (55 Hz, 62.9 FPS,
+  clean console, screenshot). Legacy oracle suite: 2652 green.
+- **2026-08-09 — V8's Math.hypot is NOT the C library's hypot.** The pinball
+  fixture diverged at tick 391 by 2 ulps of z; the cause was tick 122's steer
+  normalize: V8 computes hypot as a max-scaled Neumaier-compensated sum
+  (v8/src/builtins/math.tq), which differs from libm's correctly-rounded
+  hypot by 1 ulp — on 35% of random inputs (measured: 70,870 of 200,000).
+  The 1-ulp momentum error hid below position resolution for 269 ticks, then
+  a shaped-tile resolve amplified it. Fix: `jsmath::js_hypot` reproduces
+  V8's algorithm exactly (200k/200k match vs real node) and EVERY ported
+  `Math.hypot` call site now uses it — `libm::hypot` is banned in mirrored
+  code. The prior "libm hypot == V8 empirically" claim was luck of the
+  inputs; `Math.sqrt` remains safe (IEEE-correctly-rounded everywhere).
+- **P1 still open:** ramp/jumppad hops (airborne arc), trapdoor rides,
+  pits/gravepits, targets/rollovers/lamps (scoring layer), plunger, marble
+  materials (hooks default to steel/no-material), multiball, ricochet form,
+  sprint/wall-kick/pounce verbs, and the shell feeding real momentum input
+  (the wasm/native game still only walks — the sim is ready, the shell's
+  launch verbs are not wired).
 - **2026-08-09 — Windows-native build live; it is now the play/dev target.**
   `scripts/pk-win.sh run` cross-compiles `pk-game.exe`
   (`x86_64-pc-windows-gnullvm`, user-local llvm-mingw via

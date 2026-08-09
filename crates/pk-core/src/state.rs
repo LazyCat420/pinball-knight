@@ -31,6 +31,25 @@ pub struct Player {
     pub z: f64,
     pub facing: Facing,
     pub moving: bool,
+    // ── Pinball momentum (legacy freshPlayerFields' momentum block) ──
+    pub mom_x: f64,
+    pub mom_z: f64,
+    pub mom_speed: f64,
+    pub bounce_combo: f64,
+    pub bounce_combo_t: f64,
+    pub overcharge: f64,
+    pub oil_t: f64,
+    pub turbo_t: f64,
+    pub spring_t: f64,
+    pub iframes: f64,
+    pub steer_lock_t: f64,
+    pub grab_t: f64,
+    pub grab_x: f64,
+    pub grab_z: f64,
+    pub throw_dir_x: f64,
+    pub throw_dir_z: f64,
+    pub throw_speed: f64,
+    pub rail: crate::rail::RailState,
 }
 
 /// Per-tick input intent, already normalized by the shell.
@@ -46,10 +65,30 @@ pub struct SimState {
     pub player: Player,
     pub rng: Mulberry32,
     pub tick: u64,
+    /// Wall-clock seconds simulated — `state.elapsed` (spinpad phase reads it).
+    pub elapsed: f64,
+    // ── Pinball machine state (legacy `state` fields the ride touches) ──
+    pub parts: Vec<crate::pinball::PinballPart>,
+    pub arc_corners: Vec<crate::collide::ArcCorner>,
+    pub combo_zone: crate::combo::ComboZone,
+    pub part_combo_hits: i32,
+    pub frenzy_paid: bool,
+    pub gold_run: i64,
+    pub bumpers_lit: i32,
+    pub bumper_total: i32,
+    pub jackpots: i32,
+    // Pocket-rattle guard anchor (module-level in legacy player.ts).
+    pub pocket_ax: f64,
+    pub pocket_az: f64,
+    pub pocket_n: i32,
+    pub pocket_t: f64,
+    /// Rail gold cadence accumulator (module-level in legacy player.ts).
+    pub rail_gold_t: f64,
 }
 
 impl SimState {
     pub fn new(grid: Grid, spawn: (f64, f64), seed: u32) -> Self {
+        let arc_corners = crate::collide::compute_arc_corners(&grid);
         Self {
             grid,
             player: Player {
@@ -57,17 +96,61 @@ impl SimState {
                 z: spawn.1,
                 facing: Facing::S,
                 moving: false,
+                mom_x: 0.0,
+                mom_z: 0.0,
+                mom_speed: 0.0,
+                bounce_combo: 0.0,
+                bounce_combo_t: 0.0,
+                overcharge: 0.0,
+                oil_t: 0.0,
+                turbo_t: 0.0,
+                spring_t: 0.0,
+                iframes: 0.0,
+                steer_lock_t: 0.0,
+                grab_t: 0.0,
+                grab_x: 0.0,
+                grab_z: 0.0,
+                throw_dir_x: 0.0,
+                throw_dir_z: 0.0,
+                throw_speed: 0.0,
+                rail: crate::rail::fresh_rail(),
             },
             rng: Mulberry32::new(seed),
             tick: 0,
+            elapsed: 0.0,
+            parts: Vec::new(),
+            arc_corners,
+            combo_zone: crate::combo::ComboZone::Launch,
+            part_combo_hits: 0,
+            frenzy_paid: false,
+            gold_run: 0,
+            bumpers_lit: 0,
+            bumper_total: 0,
+            jackpots: 0,
+            pocket_ax: 0.0,
+            pocket_az: 0.0,
+            pocket_n: 0,
+            pocket_t: 0.0,
+            rail_gold_t: 0.0,
         }
     }
 }
 
 /// One 60 Hz step. Call order grows to mirror legacy `simulate.ts` as
-/// subsystems port; today: player movement only.
+/// subsystems port; today: part timers → momentum ride → else walking.
 pub fn simulate(s: &mut SimState, input: &FrameInput) {
     s.tick += 1;
+    s.elapsed += DT;
+
+    // Part cooldowns/timers tick first (the legacy parts renderer's job,
+    // owned by the sim here — game state must not depend on being drawn).
+    crate::pinball::tick_parts(s, DT);
+
+    // The momentum ride owns the player while it lasts.
+    if crate::pinball::update_pinball(s, DT, (input.move_x, input.move_z)) {
+        s.player.moving = s.player.mom_speed > 0.0;
+        return;
+    }
 
     // sqrt, not hypot: sqrt is IEEE-correctly-rounded on every platform, so
     // the TS fixture exporter (Math.sqrt) matches bit-exactly. hypot
@@ -100,6 +183,13 @@ pub fn simulate(s: &mut SimState, input: &FrameInput) {
             Facing::N
         };
     }
+
+    // Parts fire from a cold walk too — stepping on a spring/booster STARTS a
+    // momentum ride (the machine works without spooling first). `cur_speed` is
+    // the instantaneous walk speed; the legacy smoothed curSpeed lands with
+    // the full player port (it only changes the oil slick's launch strength).
+    let cur_speed = if s.player.moving { PLAYER_SPEED } else { 0.0 };
+    crate::pinball::touch_pinball_parts(s, false, cur_speed, (input.move_x, input.move_z));
 }
 
 /// A deterministic demo floor for the vertical slice: bordered room, carved
@@ -165,7 +255,7 @@ pub fn demo_floor(seed: u32) -> (Grid, (f64, f64)) {
     });
     for j in 18..=21 {
         for i in 18..=21 {
-            let d = libm::hypot(f64::from(i) + 0.5 - 18.0, f64::from(j) + 0.5 - 18.0);
+            let d = crate::jsmath::js_hypot(f64::from(i) + 0.5 - 18.0, f64::from(j) + 0.5 - 18.0);
             if d > 2.0 && d < 4.0 {
                 set_tile(&mut g, i, j, crate::grid::T_WALL);
                 set_shape(&mut g, i, j, SHAPE_ARC);

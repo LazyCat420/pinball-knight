@@ -158,7 +158,7 @@ fn resolve_circle_arc(
 ) -> Option<ShapeHit> {
     let dx = px - cx;
     let dz = pz - cz;
-    let d = libm::hypot(dx, dz);
+    let d = crate::jsmath::js_hypot(dx, dz);
     if d < 1e-6 || d >= 1.0 + r {
         return None; // degenerate, or beyond the arc
     }
@@ -269,7 +269,7 @@ pub fn lane_band_at(f: &ArcFeature, px: f64, pz: f64, mx: f64, mz: f64) -> Optio
     }
     let dx = px - f.cx;
     let dz = pz - f.cz;
-    let d = libm::hypot(dx, dz);
+    let d = crate::jsmath::js_hypot(dx, dz);
     if d < 1e-6 {
         return None;
     }
@@ -298,7 +298,7 @@ pub fn lane_band_at(f: &ArcFeature, px: f64, pz: f64, mx: f64, mz: f64) -> Optio
 pub fn lane_tangent(f: &ArcFeature, l: &LaneBand, px: f64, pz: f64) -> (f64, f64) {
     let dx = px - f.cx;
     let dz = pz - f.cz;
-    let d = libm::hypot(dx, dz);
+    let d = crate::jsmath::js_hypot(dx, dz);
     let d = if d == 0.0 { 1.0 } else { d };
     let sign = if l.cw { 1.0 } else { -1.0 };
     ((-dz / d) * sign, (dx / d) * sign)
@@ -328,7 +328,7 @@ pub fn kick_band_at(f: &ArcFeature, px: f64, pz: f64) -> Option<usize> {
 pub fn resolve_arc_feature(f: &ArcFeature, px: f64, pz: f64, r: f64) -> Option<ShapeHit> {
     let dx = px - f.cx;
     let dz = pz - f.cz;
-    let d = libm::hypot(dx, dz);
+    let d = crate::jsmath::js_hypot(dx, dz);
     if d < 1e-6 {
         return None; // degenerate centre
     }
@@ -416,7 +416,7 @@ pub fn edge_outward_normal(a: Vec2, b: Vec2, third: Vec2) -> Vec2 {
         nx = -nx;
         nz = -nz;
     }
-    let len = libm::hypot(nx, nz);
+    let len = crate::jsmath::js_hypot(nx, nz);
     let len = if len == 0.0 { 1.0 } else { len };
     v2(nx / len, nz / len)
 }
@@ -566,7 +566,7 @@ mod tests {
         // ROUND_NE at tile (0,0): centre SW (0,1), open quadrant (+x,−z).
         // A point on the open side inside radius 1+r gets a radial push.
         let hit = resolve_circle_shape(SHAPE_ROUND_NE, 0, 0, 0.8, 0.4, 0.2).unwrap();
-        let d = libm::hypot(0.8, 0.4 - 1.0);
+        let d = crate::jsmath::js_hypot(0.8, 0.4 - 1.0);
         assert!(close(hit.pen, 1.0 + 0.2 - d, 9));
         assert!(hit.nx > 0.0 && hit.nz < 0.0); // radial, toward the open NE
                                                // Behind a backed leg (negative x from centre): no push.
@@ -646,7 +646,7 @@ mod tests {
         assert_eq!(lane_band_at(&f, px, pz, ang.sin(), -ang.cos()), None);
         // Tangent is unit and along the grain.
         let (tx, tz) = lane_tangent(&f, &f.lanes[0].clone(), px, pz);
-        assert!(close(libm::hypot(tx, tz), 1.0, 6));
+        assert!(close(crate::jsmath::js_hypot(tx, tz), 1.0, 6));
         assert!(tx * -ang.sin() + tz * ang.cos() > 0.9);
         // Kick band answers at the contact angle; cooldown silences it.
         assert_eq!(kick_band_at(&f, px, pz), Some(0));

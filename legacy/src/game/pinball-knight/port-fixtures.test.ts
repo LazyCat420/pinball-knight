@@ -18,9 +18,45 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mulberry32 } from "../../utils/rng";
-import { type Grid, T_WALL, T_FLOOR, setTile, setShape, ensureArcs } from "./engine/grid";
+import { type Grid, T_WALL, T_FLOOR, setTile, setShape, ensureArcs, isWalkable, surfaceAt } from "./engine/grid";
 import { SHAPE_ARC, SHAPE_ROUND_NE, SHAPE_SLANT_NE } from "./engine/tile-shape";
-import { moveCircle } from "./engine/collision";
+import { moveCircle, computeArcCorners } from "./engine/collision";
+import { wallSurface, floorSurface } from "./engine/surfaces";
+import { freshRail, holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./entities/rail";
+import { comboWindow, comboZone, comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul, type ComboZone } from "./entities/combo-curve";
+import {
+  OVERCHARGE_TIME,
+  BALL_SPEED_MULT,
+  FRENZY_BALL_SPEED_MULT,
+  PINBALL_STEER,
+  PINBALL_MAX_SPEED,
+  PINBALL_WALL_RESTITUTION,
+  PINBALL_FRICTION,
+  FRICTION_OPEN,
+  FRICTION_CORRIDOR,
+  FRICTION_TIGHT,
+  LANE_CENTER_PULL,
+  LANE_PROBE_MAX,
+  PINBALL_EXIT_MULT,
+  POCKET_RADIUS,
+  POCKET_BOUNCES,
+  POCKET_DAMP,
+  POCKET_WINDOW,
+  ARC_LANE_MULT,
+  ARC_LANE_ADD,
+  ARC_LANE_MIN_EXIT,
+  ARC_LANE_MIN_SPEED,
+  ARC_LANE_COOLDOWN,
+  ARC_KICK_MULT,
+  ARC_KICK_ADD,
+  ARC_KICK_MIN_EXIT,
+  ARC_KICK_MIN_SPEED,
+  ARC_KICK_COOLDOWN,
+  ARC_BANK_RADIUS,
+  ARC_BOOST,
+  ARC_COOLDOWN,
+  ARC_MIN_SPEED,
+} from "./constants";
 
 const FIXTURE_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -120,6 +156,300 @@ function trace(
   return { seed, ticks: 600, positions };
 }
 
+/**
+ * PINBALL TRACE — the momentum ride at pinball speeds, through the shaped
+ * court: launch west into the slant, ricochet, steer across to the round
+ * corner and down into the arc guide's booster lane.
+ *
+ * Mirrors pk_core::state::simulate + pinball::update_pinball's ORDER OF
+ * OPERATIONS, calling the REAL legacy pieces for every formula: moveCircle,
+ * the rail state machine, the combo curve, the surfaces tables and
+ * computeArcCorners. The orchestration itself is the mirrored artifact (same
+ * compromise as booster-corner-sim's loop, documented there); the Rust twin
+ * is crates/pk-core/tests/pinball_trace.rs. No Math.random is reachable on
+ * this floor (no parts, no kick bands), so the trace is deterministic.
+ */
+function pinballSteer(tick: number): [number, number] {
+  if (tick < 120) return [0, 0]; // ballistic into the slant court
+  if (tick < 240) return [1, 1]; // bend southeast off the ricochet
+  if (tick < 400) return [1, 0]; // run east toward the guide
+  return [0, 1]; // press south into the arc lane
+}
+
+function pinballTrace(seed: number): {
+  seed: number;
+  ticks: number;
+  launch: { momX: number; momZ: number; momSpeed: number };
+  positions: Array<[number, number, number]>;
+} {
+  const { g, spawn } = demoFloor(seed);
+  const arcCorners = computeArcCorners(g);
+  const p = {
+    x: spawn[0],
+    z: spawn[1],
+    momX: -1,
+    momZ: 0,
+    momSpeed: 18,
+    bounceCombo: 0,
+    bounceComboT: 0,
+    overcharge: 0,
+    oilT: 0,
+    turboT: 0,
+    springT: 0,
+    steerLockT: 0,
+    grabT: 0,
+    rail: freshRail(),
+  };
+  let comboZoneState: ComboZone = "launch";
+  let pocketAX = 0;
+  let pocketAZ = 0;
+  let pocketN = 0;
+  let pocketT = 0;
+  const notePocketBounce = (): void => {
+    if (pocketT > 0 && Math.hypot(p.x - pocketAX, p.z - pocketAZ) < POCKET_RADIUS) {
+      pocketN++;
+      if (pocketN > POCKET_BOUNCES) p.momSpeed *= POCKET_DAMP;
+    } else {
+      pocketAX = p.x;
+      pocketAZ = p.z;
+      pocketN = 1;
+    }
+    pocketT = POCKET_WINDOW;
+  };
+  const wallClearance = (dirX: number, dirZ: number): number => {
+    for (let d = PLAYER_R; d <= LANE_PROBE_MAX; d += 0.12) {
+      const i = Math.floor(p.x + dirX * d + g.w / 2);
+      const j = Math.floor(p.z + dirZ * d + g.h / 2);
+      if (!isWalkable(g, i, j)) return d;
+    }
+    return LANE_PROBE_MAX;
+  };
+
+  const positions: Array<[number, number, number]> = [];
+  for (let tick = 0; tick < 600; tick++) {
+    const [inX, inZ] = pinballSteer(tick);
+    // tick_parts: arc band timers (no parts on this floor).
+    for (const arc of g.arcs ?? []) {
+      for (const k of arc.kicks ?? []) {
+        if (k.cooldownT > 0) k.cooldownT = Math.max(0, k.cooldownT - DT);
+        if (k.hitT >= 0) k.hitT += DT;
+      }
+      for (const l of arc.lanes ?? []) {
+        if (l.cooldownT > 0) l.cooldownT = Math.max(0, l.cooldownT - DT);
+        if (l.hitT >= 0) l.hitT += DT;
+      }
+    }
+
+    if (p.momSpeed > 0) {
+      // ── update_pinball mirror ──
+      const zone = comboZone(p.bounceCombo);
+      if (zone !== comboZoneState) {
+        const order = { launch: 0, cruise: 1, frenzy: 2 } as const;
+        if (order[zone] > order[comboZoneState] && zone === "cruise") p.overcharge = 1;
+        comboZoneState = zone;
+      }
+      const isBall = p.overcharge >= 1;
+      const speedMul = isBall ? (zone === "frenzy" ? FRENZY_BALL_SPEED_MULT : BALL_SPEED_MULT) : 1;
+      p.overcharge = Math.min(1, p.overcharge + DT / OVERCHARGE_TIME);
+
+      p.steerLockT = Math.max(0, p.steerLockT - DT);
+      const sti = Math.floor(p.x + g.w / 2);
+      const stj = Math.floor(p.z + g.h / 2);
+      const steerSurfMult = floorSurface(surfaceAt(g, sti, stj) as never).steerMult;
+      let steerX = 0;
+      let steerZ = 0;
+      if (inX !== 0 || inZ !== 0) {
+        const wl = Math.hypot(inX, inZ) || 1;
+        steerX = inX / wl;
+        steerZ = inZ / wl;
+      }
+      if (p.steerLockT <= 0 && (steerX !== 0 || steerZ !== 0)) {
+        p.momX += steerX * PINBALL_STEER * steerSurfMult * DT;
+        p.momZ += steerZ * PINBALL_STEER * steerSurfMult * DT;
+        const ml = Math.hypot(p.momX, p.momZ) || 1;
+        p.momX /= ml;
+        p.momZ /= ml;
+      }
+
+      const step = p.momSpeed * speedMul * DT;
+      const wantX = p.x + p.momX * step;
+      const wantZ = p.z + p.momZ * step;
+      const res = moveCircle(g, p.x, p.z, PLAYER_R, p.momX * step, p.momZ * step);
+      const blockedX = Math.abs(res.x - wantX) > 1e-3;
+      const blockedZ = Math.abs(res.z - wantZ) > 1e-3;
+      p.x = res.x;
+      p.z = res.z;
+
+      if (p.steerLockT <= 0 && p.momSpeed > PLAYER_SPEED) {
+        const alongX = Math.abs(p.momX) >= Math.abs(p.momZ);
+        const perpX = alongX ? 0 : 1;
+        const perpZ = alongX ? 1 : 0;
+        const cp = wallClearance(perpX, perpZ);
+        const cn = wallClearance(-perpX, -perpZ);
+        const nearWall = cp < LANE_PROBE_MAX || cn < LANE_PROBE_MAX;
+        const imbalance = cp - cn;
+        if (nearWall && Math.abs(imbalance) > 0.12) {
+          const steering = steerX !== 0 || steerZ !== 0;
+          const strength = steering ? 0.45 : 1;
+          const dir = Math.sign(imbalance);
+          const nudge = Math.min(Math.abs(imbalance) * 0.5, LANE_CENTER_PULL * DT) * strength;
+          const r2 = moveCircle(g, p.x, p.z, PLAYER_R, perpX * dir * nudge, perpZ * dir * nudge);
+          p.x = r2.x;
+          p.z = r2.z;
+        }
+      }
+
+      pocketT = Math.max(0, pocketT - DT);
+
+      let railContact = false;
+      let railStrength = 0;
+      let railTangent: { tx: number; tz: number } | null = null;
+
+      if (res.hitN) {
+        const nx = res.hitN.nx;
+        const nz = res.hitN.nz;
+        const vn = p.momX * nx + p.momZ * nz;
+        if (res.hitLane?.concave) {
+          const strength = holdStrength(steerX, steerZ, nx, nz);
+          if (p.rail.featureIdx !== res.hitLane.featureIdx) {
+            p.rail.featureIdx = -1;
+            tryCatchRail(p.rail, res.hitLane.featureIdx, strength, p.momSpeed);
+          }
+          railContact = true;
+          railStrength = strength;
+          railTangent = { tx: res.hitLane.tx, tz: res.hitLane.tz };
+        }
+        const lane = res.hitLane && p.momSpeed >= ARC_LANE_MIN_SPEED && p.rail.featureIdx < 0 ? res.hitLane : null;
+        if (lane) {
+          p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * ARC_LANE_MULT + ARC_LANE_ADD, ARC_LANE_MIN_EXIT));
+          p.momX = lane.tx * p.momSpeed;
+          p.momZ = lane.tz * p.momSpeed;
+          lane.band.cooldownT = ARC_LANE_COOLDOWN;
+          lane.band.hitT = 0;
+          p.bounceCombo += 1;
+          p.bounceComboT = comboWindow(p.bounceCombo);
+          notePocketBounce();
+        } else if (vn < 0) {
+          p.momX -= 2 * vn * nx;
+          p.momZ -= 2 * vn * nz;
+          const kick = res.hitKick && p.momSpeed >= ARC_KICK_MIN_SPEED ? res.hitKick : null;
+          if (kick) {
+            // No kick bands on this floor — kept for order parity (dead here).
+            p.momSpeed = Math.min(PINBALL_MAX_SPEED, Math.max(p.momSpeed * ARC_KICK_MULT + ARC_KICK_ADD, ARC_KICK_MIN_EXIT));
+            kick.cooldownT = ARC_KICK_COOLDOWN;
+            kick.hitT = 0;
+            p.bounceCombo += 1;
+            p.bounceComboT = comboWindow(p.bounceCombo);
+            notePocketBounce();
+          } else {
+            const surf = wallSurface(res.hitSurface);
+            const rest = PINBALL_WALL_RESTITUTION * surf.flatRestMult;
+            p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * rest + surf.bounceAdd);
+            if (surf.breaksCombo) {
+              p.bounceCombo = 0;
+              p.bounceComboT = 0;
+            } else {
+              p.bounceCombo += surf.comboTicks;
+              p.bounceComboT = comboWindow(p.bounceCombo);
+            }
+            notePocketBounce();
+          }
+        }
+      } else if (blockedX || blockedZ) {
+        if (blockedX) p.momX = -p.momX;
+        if (blockedZ) p.momZ = -p.momZ;
+        const corner = blockedX && blockedZ;
+        const surf = wallSurface(res.hitSurface);
+        const flatRest = PINBALL_WALL_RESTITUTION * surf.flatRestMult;
+        if (corner) {
+          const gain = Math.min(p.momSpeed * comboCornerRestitution(p.bounceCombo) + comboCornerAdd(p.bounceCombo), comboSpeedCeil(p.bounceCombo));
+          const next = surf.cornerMult >= 1 ? Math.max(p.momSpeed, gain * surf.cornerMult) : gain * surf.cornerMult;
+          p.momSpeed = Math.min(PINBALL_MAX_SPEED, next);
+        } else {
+          p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * flatRest + surf.bounceAdd);
+        }
+        if (surf.breaksCombo) {
+          p.bounceCombo = 0;
+          p.bounceComboT = 0;
+        } else {
+          p.bounceCombo += surf.comboTicks;
+          p.bounceComboT = comboWindow(p.bounceCombo);
+        }
+        notePocketBounce();
+      }
+
+      {
+        const stepR = stepRail(p.rail, railContact, railStrength, p.momSpeed, DT);
+        if (stepR.riding && railTangent) {
+          p.momSpeed = stepR.speed;
+          p.momX = railTangent.tx;
+          p.momZ = railTangent.tz;
+        }
+      }
+      if (p.rail.featureIdx < 0) p.momSpeed = decayOverspeed(p.momSpeed, DT);
+
+      // touchPinballParts: no parts on this floor. bankArcCorners:
+      for (const arc of arcCorners) {
+        if (arc.cooldownT > 0) {
+          arc.cooldownT = Math.max(0, arc.cooldownT - DT);
+          continue;
+        }
+        if (p.momSpeed < ARC_MIN_SPEED) continue;
+        const dx = p.x - arc.cx;
+        const dz = p.z - arc.cz;
+        if (dx * dx + dz * dz > ARC_BANK_RADIUS * ARC_BANK_RADIUS) continue;
+        const inFrom1 = p.momX * -arc.d1x + p.momZ * -arc.d1z;
+        const inFrom2 = p.momX * -arc.d2x + p.momZ * -arc.d2z;
+        if (inFrom1 < 0.3 && inFrom2 < 0.3) continue;
+        if (inFrom1 >= inFrom2) {
+          p.momX = arc.d2x;
+          p.momZ = arc.d2z;
+        } else {
+          p.momX = arc.d1x;
+          p.momZ = arc.d1z;
+        }
+        p.momSpeed = Math.min(PINBALL_MAX_SPEED, p.momSpeed * ARC_BOOST);
+        arc.cooldownT = ARC_COOLDOWN;
+        arc.hitT = 0;
+        p.bounceCombo += 1;
+        p.bounceComboT = comboWindow(p.bounceCombo);
+        break;
+      }
+
+      const ti = Math.floor(p.x + g.w / 2);
+      const tj = Math.floor(p.z + g.h / 2);
+      let openN = 0;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        if (isWalkable(g, ti + di, tj + dj)) openN++;
+      }
+      const floorSurf = floorSurface(surfaceAt(g, ti, tj) as never);
+      const surfMul = (openN >= 3 ? FRICTION_OPEN : openN === 2 ? FRICTION_CORRIDOR : FRICTION_TIGHT) * floorSurf.frictionMult;
+      const friction = p.oilT > 0 || p.turboT > 0 ? 0 : PINBALL_FRICTION * surfMul * comboFrictionMul(p.bounceCombo);
+      p.momSpeed = Math.max(0, p.momSpeed - friction * DT);
+      p.bounceComboT = Math.max(0, p.bounceComboT - DT);
+      if (p.bounceComboT <= 0) p.bounceCombo = 0;
+
+      if (p.momSpeed < PLAYER_SPEED * PINBALL_EXIT_MULT) {
+        p.momSpeed = 0;
+        p.grabT = 0;
+        p.bounceCombo = 0;
+        p.bounceComboT = 0;
+        p.overcharge = Math.min(p.overcharge, 0.999);
+      }
+    } else {
+      // ── walking mirror (same as trace()) ──
+      const len = Math.sqrt(inX * inX + inZ * inZ);
+      if (len > 1e-6) {
+        const r = moveCircle(g, p.x, p.z, PLAYER_R, (inX / len) * PLAYER_SPEED * DT, (inZ / len) * PLAYER_SPEED * DT);
+        p.x = r.x;
+        p.z = r.z;
+      }
+    }
+    positions.push([p.x, p.z, p.momSpeed]);
+  }
+  return { seed, ticks: 600, launch: { momX: -1, momZ: 0, momSpeed: 18 }, positions };
+}
+
 function pinFixture(name: string, computed: unknown): void {
   const file = join(FIXTURE_DIR, name);
   if (process.env.RUN_EXPORT === "1" || !existsSync(file)) {
@@ -136,5 +466,14 @@ describe("port-parity fixtures", () => {
 
   it("shaped trace (slant + round + arc, seed 7) matches the committed fixture", () => {
     pinFixture("shaped-trace-seed7.json", trace(7, shapedDir));
+  });
+
+  it("pinball trace (momentum ride at speed, seed 7) matches the committed fixture", () => {
+    const t = pinballTrace(7);
+    // The trace must actually exercise the machine, not just coast: the ride
+    // must survive a while, bounce (speed changes), and end back at a walk.
+    const speeds = t.positions.map((q) => q[2]);
+    expect(Math.max(...speeds)).toBeGreaterThan(10);
+    pinFixture("pinball-trace-seed7.json", t);
   });
 });

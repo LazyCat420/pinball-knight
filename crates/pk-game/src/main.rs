@@ -8,8 +8,8 @@
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
-use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::image::{Image, ImageSampler};
 use bevy::math::Affine2;
 use bevy::prelude::*;

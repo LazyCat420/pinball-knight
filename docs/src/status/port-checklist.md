@@ -42,8 +42,16 @@ The game's identity. The slice has square walls only.
 - [x] `engine/surfaces.ts`: tables + materials + mixes ported; identity rule
       and one-draw pick pinned. (Physics CONSUMPTION lands with the player
       pinball port below.)
-- [ ] `entities/pinball-collide.ts`, `marble.ts`, `ricochet-*`, `rail.ts`,
-      `multiball.ts`: momentum modes, reflections, rail rides, kicker launches.
+- [~] `updatePinball` (player.ts) sim core + `pinball-collide.ts` physics
+      kinds + `rail.ts` + `combo-curve.ts`: reflections w/ surface
+      restitution, kicks/lanes, rails, pocket guard, 12 part kinds
+      (bumper/spring/booster family/deflector/oil/spinpad/sling/flipper/
+      mirror/magstrip). Verified: 26 ported unit tests + booster-corner-sim
+      end-to-end (4) + bit-exact 600-tick momentum trace (⚠ found V8-vs-libm
+      hypot divergence → `jsmath::js_hypot`, see board). STILL OPEN: ramp/
+      jumppad hops, trapdoor, pits, targets/rollovers/lamps, plunger,
+      `marble.ts` materials, `multiball.ts`, `ricochet-form.ts`, shell input
+      wiring for launch verbs.
 - [ ] Player verbs on top: sprint charge, wall-kick (`wallContact` consumer),
       pounce (`entities/player.ts`, 916+ lines root `abilities.ts`).
 - Verify: port `collision.test.ts` remaining cases, `tile-shape.test.ts`,

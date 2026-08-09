@@ -172,7 +172,7 @@ pub fn wall_contact(g: &Grid, x: f64, z: f64, r: f64, probe: f64) -> Option<(f64
     if nx == 0.0 && nz == 0.0 {
         return None;
     }
-    let len = libm::hypot(nx, nz);
+    let len = crate::jsmath::js_hypot(nx, nz);
     let len = if len == 0.0 { 1.0 } else { len };
     Some((nx / len, nz / len))
 }
@@ -478,7 +478,7 @@ fn move_circle_step(g: &Grid, gx0: f64, gz0: f64, r: f64, dx: f64, dz: f64) -> S
 pub fn move_circle(g: &Grid, x: f64, z: f64, r: f64, dx: f64, dz: f64) -> MoveResult {
     let mut gx = x + f64::from(g.w) / 2.0;
     let mut gz = z + f64::from(g.h) / 2.0;
-    let dist = libm::hypot(dx, dz);
+    let dist = crate::jsmath::js_hypot(dx, dz);
     let steps = if dist > MAX_STEP {
         (dist / MAX_STEP).ceil() as i32
     } else {
@@ -701,7 +701,7 @@ mod tests {
         });
         for j in 8..=11 {
             for i in 8..=11 {
-                let d = libm::hypot(f64::from(i) + 0.5 - 8.0, f64::from(j) + 0.5 - 8.0);
+                let d = crate::jsmath::js_hypot(f64::from(i) + 0.5 - 8.0, f64::from(j) + 0.5 - 8.0);
                 if d > 2.0 && d < 4.0 {
                     set_tile(&mut g, i, j, T_WALL);
                     set_shape(&mut g, i, j, SHAPE_ARC);
@@ -732,7 +732,7 @@ mod tests {
         assert!(res.hit_n.is_some());
         let lane = res.hit_lane.expect("lane grabbed the ball");
         assert!(
-            (libm::hypot(lane.tx, lane.tz) - 1.0).abs() < 1e-6,
+            (crate::jsmath::js_hypot(lane.tx, lane.tz) - 1.0).abs() < 1e-6,
             "unit exit tangent"
         );
         assert!(

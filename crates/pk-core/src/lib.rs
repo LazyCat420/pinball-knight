@@ -15,7 +15,11 @@
 //!   entities — M4: combat, AI, spawn, economy, run
 
 pub mod collide;
+pub mod combo;
 pub mod grid;
+pub mod jsmath;
+pub mod pinball;
+pub mod rail;
 pub mod rng;
 pub mod state;
 pub mod surfaces;
