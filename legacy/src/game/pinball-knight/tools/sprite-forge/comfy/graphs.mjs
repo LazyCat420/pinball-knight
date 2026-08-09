@@ -39,7 +39,42 @@ export const MODELS = {
   wanVae22: "wan2.2_vae.safetensors",
   pixelWalkLoraHigh: "pixel_walk_lora_v1_high_noise.safetensors",
   qwenControlNet: "qwen_image_controlnet_union.safetensors",
+  /**
+   * THE CANDIDATE ANIMATION LEG — MiniMax H3, under test (chapter 14).
+   *
+   * One model where Wan is two experts, which is the whole reason it is being
+   * measured: Wan's ~30GB peak is both experts resident at once, and a single
+   * model that can free its encoder before loading the unet may peak lower on
+   * the same box. Nothing here is adopted until the five acceptance criteria
+   * in chapter 14 all hold.
+   *
+   * The encoder is deliberately NOT a GGUF. `comfy/text_encoders/minimax.py`
+   * calls `self.visual(...)` on the keyframe path, so the vision tower is
+   * mandatory for fl2va — and every community GGUF encoder splits it into a
+   * separate mmproj file that needs a FORK of ComfyUI-GGUF to reassemble.
+   * The official nvfp4 file carries the tower in one piece. nvfp4 compute
+   * needs Blackwell (`supports_nvfp4_compute` wants `props.major >= 10`); on
+   * this sm_86 card ComfyUI puts it in "emulated ops", so the weights stay
+   * packed at 15.7GB and dequant happens per-matmul. Slower, not fatal — and
+   * memory, not speed, is the question this leg exists to answer.
+   */
+  h3Unet: "MiniMax-H3-FL2VA-Pruned-Q3_K_M.gguf",
+  h3Clip: "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+  h3Vae: "minimax_h3_video_vae_fp16.safetensors",
 };
+
+/**
+ * H3's frame grid: 17k+5 at 24fps, per `align_frame_count` in
+ * comfy_extras/nodes_minimax_h3.py. 5 is the floor and the cheapest possible
+ * ask; the next rung is 22, then 39. Wan's 4k+1 grid does not apply here and
+ * a length off this grid is silently rounded UP, which would make a
+ * frame-count comparison against Wan measure the wrong clip.
+ */
+export function h3Length(n) {
+  let f = Math.max(5, Math.round(n));
+  while (f % 17 !== 5) f += 1;
+  return f;
+}
 
 /**
  * CONTROL TYPE → the preprocessor node that turns a reference into a map.
@@ -825,5 +860,131 @@ export function wanTi2v5B({
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/wan5b" } },
   };
   g.s.inputs.model = chainLoras(g, ["u", 0], loras ?? [], "l");
+  return g;
+}
+
+/**
+ * THE H3 CANDIDATE LEG — MiniMax H3 fl2va (chapter 14), under measurement.
+ *
+ * Wired from ComfyUI's own `video_minimax_h3_i2v` template, with three
+ * deliberate departures, each of which is a claim this experiment is testing:
+ *
+ *  1. `UnetLoaderGGUF`, not `UNETLoader`. The official smallest unet is a
+ *     20.96GB safetensors; the community pruned Q3_K_M is 8.9GB. Its GGUF
+ *     header declares arch `wan`, which is what lets it past city96's
+ *     IMG_ARCH_LIST — ComfyUI itself detects H3 from the tensor keys
+ *     (`video_patch_proj` + `audio_patch_proj`), not the header, so the
+ *     mislabel is load-bearing rather than a mistake.
+ *  2. NO audio VAE and no `VAEDecodeAudio`. The latent is a NestedTensor pair
+ *     and the audio half is generated regardless — that cost cannot be
+ *     removed — but a sprite never decodes it, which saves the file and the
+ *     decode. `MiniMaxH3ImageToVideo` takes no `audio_vae`, so nothing else
+ *     in the graph needs it.
+ *  3. `BasicGuider`, so CFG is effectively 1 and there is no negative prompt.
+ *     That is the template's own wiring, not a simplification. It means
+ *     WAN_NEGATIVE — including its ban on "character shrinking" — has no
+ *     equivalent here, which is worth remembering before comparing scale
+ *     swing against a Wan arm that had one.
+ *
+ * `endImage` is the end pin, and it is the reason this leg is interesting at
+ * all beyond memory: H3 takes first AND last frames natively, which is the
+ * constraint chapter 15 identifies as the lead on the receding one-shots.
+ */
+export function minimaxH3I2V({
+  image,
+  endImage = null,
+  prompt,
+  width = 576,
+  height = 576,
+  length = 5,
+  seed = 7,
+  steps = 20,
+  unet = MODELS.h3Unet,
+  clip = MODELS.h3Clip,
+  vae = MODELS.h3Vae,
+} = {}) {
+  if (!image) throw new Error("[graphs] minimaxH3I2V needs an uploaded image name");
+  if (!prompt) throw new Error("[graphs] minimaxH3I2V needs a prompt");
+  if (length !== h3Length(length)) {
+    throw new Error(`[graphs] h3 length must be on the 17k+5 grid, got ${length} (nearest ${h3Length(length)})`);
+  }
+  if (width % 32 || height % 32) {
+    throw new Error(`[graphs] h3 canvas must be a multiple of 32, got ${width}x${height}`);
+  }
+  const g = {
+    u: { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } },
+    c: { class_type: "CLIPLoader", inputs: { clip_name: clip, type: "minimax", device: "default" } },
+    v: { class_type: "VAELoader", inputs: { vae_name: vae } },
+    img: { class_type: "LoadImage", inputs: { image } },
+    i2v: {
+      class_type: "MiniMaxH3ImageToVideo",
+      inputs: {
+        clip: ["c", 0], vae: ["v", 0], prompt,
+        width, height, length, first_frame: ["img", 0],
+      },
+    },
+    /**
+     * FREE THE 15GB TEXT ENCODER THE MOMENT ITS OUTPUT EXISTS.
+     *
+     * Chapter 14's whole case for H3 was that a single-model pipeline can
+     * "encode, free the encoder, then load unet+VAE" where Wan must hold two
+     * experts at once. Measured on 2026-08-09, **ComfyUI does not do that by
+     * itself.** The log for the first run reads, in order:
+     *
+     *     Requested to load MiniMaxH3TEModel_   14960.20 MB
+     *     Requested to load MiniMaxH3VideoVAE    4966.19 MB
+     *     Requested to load MiniMaxH3            8783.23 MB
+     *
+     * with no unload between them. That is 28.7GB of weights against 24GB of
+     * VRAM, so the encoder does not get freed — it gets OFFLOADED, and
+     * ComfyUI's offload device is the CPU. 15GB of a text encoder we will
+     * never call again lands in system RAM, which is the one resource this
+     * box does not have, and the decode then meets a 1.3GiB floor.
+     *
+     * So the "free the encoder first" step has to be asked for explicitly.
+     * `any_input` is typed `*`, which is what lets a CONDITIONING ride through
+     * a node whose real job is the side effect.
+     */
+    purgeTE: {
+      class_type: "VRAM_Debug",
+      inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["i2v", 0] },
+    },
+    guide: { class_type: "BasicGuider", inputs: { model: ["u", 0], conditioning: ["purgeTE", 0] } },
+    noise: { class_type: "RandomNoise", inputs: { noise_seed: seed } },
+    samp: { class_type: "KSamplerSelect", inputs: { sampler_name: "res_multistep" } },
+    sig: { class_type: "BasicScheduler", inputs: { model: ["u", 0], scheduler: "simple", steps, denoise: 1 } },
+    k: {
+      class_type: "SamplerCustomAdvanced",
+      inputs: {
+        noise: ["noise", 0], guider: ["guide", 0], sampler: ["samp", 0],
+        sigmas: ["sig", 0], latent_image: ["i2v", 1],
+      },
+    },
+    /**
+     * DROP THE STACK BEFORE DECODING — the same `purge` node `wanI2V` carries,
+     * here for a reason measured on this leg on 2026-08-09.
+     *
+     * The first H3 run sampled 20 steps at a comfortable 6.8GiB WSL available
+     * and then died at the decode with 0.96GiB. VRAM told the story: 14.4GB
+     * during sampling, 9.2 then 4.7 as the decode began. ComfyUI was not
+     * dropping the encoder and the unet to make room for the VAE — it was
+     * OFFLOADING them, and the offload device is system RAM. So ~15GB of
+     * weights we are completely finished with moved into the exact resource
+     * that binds this box, at the exact moment the decode needed it.
+     *
+     * `unload_all_models` frees them outright instead. Nothing downstream of
+     * this node needs the unet or the text encoder; the VAE reloads on demand.
+     */
+    purge: {
+      class_type: "VRAM_Debug",
+      inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["k", 0] },
+    },
+    dec: { class_type: "VAEDecode", inputs: { samples: ["purge", 0], vae: ["v", 0] } },
+    out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/h3" } },
+  };
+  if (endImage) {
+    g.imgEnd = { class_type: "LoadImage", inputs: { image: endImage } };
+    g.i2v.inputs.last_frame = ["imgEnd", 0];
+  }
   return g;
 }

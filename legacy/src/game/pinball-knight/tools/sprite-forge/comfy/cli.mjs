@@ -29,7 +29,7 @@ import { homedir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertNodes, fetchImage, outputImages, queuePrompt, systemStats, uploadImage, waitFor, watchProgress } from "./client.mjs";
-import { controlMap, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
+import { controlMap, h3Length, minimaxH3I2V, qwenEdit, qwenText2Image, wanI2V } from "./graphs.mjs";
 // The prompt comes from the MODE, not from a second copy here. A CLI that
 // restates a mode's prompt is the drift the registry exists to prevent — the
 // panel and the CLI already dispatch through this table for that reason.
@@ -853,10 +853,103 @@ const main = {
       seed: Number(opt("seed", 7)),
     });
   },
+
+  /**
+   * THE H3 ARM — the same clip through MiniMax H3 instead of Wan (chapter 14).
+   *
+   * It shares `animate`'s prompt deliberately. Chapter 14 Phase 2 compares two
+   * MODELS, and a comparison that also varies the sentence measures neither;
+   * the prompt therefore comes from the same `MODES` entry, through the same
+   * `buildCtx`, and the only difference between the arms is the graph.
+   *
+   * ── WHAT PHASE 1 IS ACTUALLY MEASURING ──────────────────────────────────
+   *
+   * Peak resident, not wall-clock. Wan A14B dies at the VAE decode with WSL
+   * available at 0.7GiB because BOTH experts are still resident; the H3 thesis
+   * is that one model can free its encoder first and never get there. So this
+   * command samples `MemAvailable` throughout and prints the MINIMUM, which is
+   * the number chapter 14's kill criterion is written against (below 3GiB and
+   * the run is dead on a busy desktop even if it completes once).
+   *
+   * It also prints ComfyUI's own load/unload lines from the run's slice of
+   * comfy.log, because "did the encoder free before the unet loaded" is the
+   * assumption the whole plan rests on and it is not inferable from the RAM
+   * trace alone — a low peak could equally mean the encoder never loaded.
+   *
+   *   node cli.mjs h3 --init <master.png> --preset attack --frames 5 --file-as dog
+   */
+  async h3() {
+    const init = opt("init");
+    const preset = opt("preset", "walk");
+    const action = opt("action");
+    if (!init) throw new Error("h3 needs --init <png> [--preset ...] [--frames 5|22] [--canvas WxH] [--end <png>]");
+    const label = action || preset;
+    const dir = outDir(`h3-${String(label).replace(/\s+/g, "_")}`);
+    const image = await uploadImage(init, basename(init));
+    const mode = MODES.find((m) => m.id === "animate");
+    // H3 snaps a bad length UP silently, so a run asked for 21 would quietly
+    // return 22 and a frame-count comparison against Wan would be off by one
+    // without saying so. Resolve it here and print it.
+    const asked = Number(opt("frames", "5"));
+    const frames = h3Length(asked);
+    if (frames !== asked) console.log(`frames: ${asked} is off H3's 17k+5 grid — using ${frames}`);
+    const params = { preset, action: action ?? "", frames: String(frames) };
+    const endPath = opt("end");
+    const end = endPath ? await uploadImage(endPath, basename(endPath)) : has("loop") ? image : undefined;
+    const ctx = buildCtx({ images: { init: image, ...(end ? { end } : {}) }, seed: Number(opt("seed", 7)), leg: "wan" });
+    const [width, height] = String(opt("canvas", "576x576")).split("x").map(Number);
+    if (!width || !height) throw new Error(`--canvas takes WxH, got "${opt("canvas")}"`);
+    const prompt = mode.prompt(params, ctx);
+    const graph = minimaxH3I2V({
+      image, endImage: end, prompt, width, height, length: frames,
+      seed: Number(opt("seed", 7)), steps: Number(opt("steps", "20")),
+    });
+    console.log(`leg: MiniMax H3 fl2va Q3_K_M — ${width}x${height}, ${frames}f${end ? ", END PINNED" : ""}`);
+    console.log("note: NO negative prompt on this leg — BasicGuider runs at cfg 1, so WAN_NEGATIVE does not apply");
+    console.log(`prompt: ${prompt}`);
+
+    // ── the memory trace ────────────────────────────────────────────────────
+    const logPath = join(homedir(), "comfy", "comfy.log");
+    let logFrom = 0;
+    try { logFrom = statSync(logPath).size; } catch { /* no log is not fatal */ }
+    const memAvailableGiB = () => {
+      const m = /MemAvailable:\s+(\d+) kB/.exec(readFileSync("/proc/meminfo", "utf8"));
+      return m ? Number(m[1]) / 1024 / 1024 : NaN;
+    };
+    const trace = [];
+    let floor = memAvailableGiB();
+    const sampler = setInterval(() => {
+      const g = memAvailableGiB();
+      trace.push({ t: Date.now(), availGiB: Number(g.toFixed(2)) });
+      if (g < floor) floor = g;
+    }, 2000);
+
+    try {
+      await run(graph, dir, {
+        mode: "h3", label: `h3 · ${label}`.slice(0, 60), params,
+        clip: mode.presets?.find((p) => p.id === preset)?.clip || undefined,
+        resolvedPrompt: prompt, seed: Number(opt("seed", 7)),
+      });
+    } finally {
+      clearInterval(sampler);
+      let modelLines = [];
+      try {
+        modelLines = readFileSync(logPath, "utf8").slice(logFrom).split("\n")
+          .filter((l) => /Requested to load|loaded completely|loaded partially|Unloading|unload_all_models|lowvram/i.test(l));
+      } catch { /* ditto */ }
+      writeFileSync(join(dir, "h3-memory.json"), JSON.stringify({
+        minAvailGiB: Number(floor.toFixed(2)), samples: trace.length, trace, modelLines,
+      }, null, 1));
+      console.log(`\nPEAK RESIDENT → minimum MemAvailable ${floor.toFixed(2)} GiB over ${trace.length} samples`);
+      console.log(floor < 3 ? "  ✗ below chapter 14's 3 GiB kill criterion" : "  ✓ above chapter 14's 3 GiB kill criterion");
+      if (modelLines.length) console.log("comfy model management:\n  " + modelLines.join("\n  "));
+      else console.log("comfy model management: NO load/unload lines — cannot confirm the encoder freed before the unet loaded");
+    }
+  },
 };
 
 if (!main[cmd]) {
-  console.error("usage: cli.mjs <stats|create|rotate|edit|animate|retarget|posemap|pose|refile> [--flags]  (see file header)");
+  console.error("usage: cli.mjs <stats|create|rotate|edit|animate|h3|retarget|posemap|pose|refile> [--flags]  (see file header)");
   process.exit(2);
 }
 main[cmd]().catch((e) => {

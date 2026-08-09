@@ -4,6 +4,21 @@
 nothing here has been measured yet, and the point of writing it down is that
 the acceptance and kill criteria are fixed *before* anyone sees an output.
 
+> ## ▶ THIS PLAN HAS BEEN RUN — see [chapter 16](16-the-h3-measurement.md)
+>
+> Phase 0 passed on all three disqualifiers. **Phase 1 failed**: min WSL
+> available 0.96 / 1.29 / 1.09 GiB across three runs at the model's smallest
+> possible ask, against the 3 GiB kill criterion below. 0 frames.
+>
+> The plan's central prediction — that a single-model pipeline would "encode,
+> free the encoder, then load unet+VAE" and so peak *below* Wan — is **false as
+> observed.** ComfyUI never unloads between the three loads, and its "unload"
+> is a move to the CPU offload device, which is the resource that binds.
+>
+> Everything below is kept as written, because the value of the file is that
+> the criteria were fixed before the outputs existed and one of them caught
+> this. Read the predictions in that light, not as findings.
+
 ---
 
 ## What we run today, stated correctly
