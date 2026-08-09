@@ -5,6 +5,23 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P1 geometry core ported and verified.** Full tile-shape
+  vocabulary in Rust: slants (triangle resolve), rounds (quarter-disc),
+  multi-tile arc features (convex guides + concave bowls), kick bands,
+  booster lanes (grain check + tangent), arc corners, surfaces tables
+  (identity rule pinned). 35 pk-core unit tests (ported from tile-shape /
+  collision / surfaces suites) + **two bit-exact 600-tick trace fixtures**
+  (spiral + a route through slant → round → arc guide) replaying against the
+  legacy engine — which also proves libm hypot/atan2 match V8 bit-for-bit on
+  these paths. Demo floor now carries a slant court, a round corner and a
+  laned arc guide; pk-check ALL GATES PASSED (60 Hz, input drive, clean
+  console, 86 FPS debug wasm); screenshots verified in host Chrome.
+- **P1 still open:** marble/momentum modes, pinball-collide reflections
+  (surface restitution consumption), ricochet/rail riding, kicker/lane
+  *behavior* (collision reports them; player physics must consume them),
+  sprint/wall-kick/pounce. Shaped-tile RENDERING is approximation debt for
+  P3 (wedge boxes / cylinder / arc segments stand in for real meshes).
+
 - **2026-08-09 — Port harness live (P0).** The parity loop runs end to end:
   legacy vitest exports a 600-tick movement trace computed by the REAL TS
   engine (`port-fixtures.test.ts`) → `assets/fixtures/` → Rust replays it

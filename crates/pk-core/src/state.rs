@@ -130,6 +130,50 @@ pub fn demo_floor(seed: u32) -> (Grid, (f64, f64)) {
             }
         }
     }
+    // ── Shaped court (fixed tiles, AFTER the rng pass so the pillar stream
+    // is untouched; mirrored line-for-line in legacy port-fixtures.test.ts).
+    use crate::grid::{ensure_arcs, set_shape};
+    use crate::tile_shape::{ArcFeature, LaneBand, SHAPE_ARC, SHAPE_ROUND_NE, SHAPE_SLANT_NE};
+    // A SLANT_NE deflector west of spawn: walk west along the spawn row and
+    // the diagonal shunts you north-east.
+    set_tile(&mut g, 6, 12, crate::grid::T_WALL);
+    set_shape(&mut g, 6, 12, SHAPE_SLANT_NE);
+    set_tile(&mut g, 5, 12, crate::grid::T_WALL); // west backing leg
+    set_tile(&mut g, 6, 13, crate::grid::T_WALL); // south backing leg
+                                                  // A ROUND_NE quarter-disc east of spawn: the curved ricochet corner.
+    set_tile(&mut g, 17, 12, crate::grid::T_WALL);
+    set_shape(&mut g, 17, 12, SHAPE_ROUND_NE);
+    set_tile(&mut g, 16, 12, crate::grid::T_WALL);
+    set_tile(&mut g, 17, 13, crate::grid::T_WALL);
+    // A radius-3 convex arc guide in the SE quadrant (span east→south),
+    // wearing a booster lane — the pinball ball-guide, laneRoom geometry.
+    ensure_arcs(&mut g);
+    g.arcs.push(ArcFeature {
+        cx: 18.0,
+        cz: 18.0,
+        r: 3.0,
+        a0: 0.0,
+        span: std::f64::consts::FRAC_PI_2,
+        lanes: vec![LaneBand {
+            a0: 0.0,
+            span: std::f64::consts::FRAC_PI_2,
+            cw: true,
+            cooldown_t: 0.0,
+            hit_t: -1.0,
+        }],
+        ..Default::default()
+    });
+    for j in 18..=21 {
+        for i in 18..=21 {
+            let d = libm::hypot(f64::from(i) + 0.5 - 18.0, f64::from(j) + 0.5 - 18.0);
+            if d > 2.0 && d < 4.0 {
+                set_tile(&mut g, i, j, crate::grid::T_WALL);
+                set_shape(&mut g, i, j, SHAPE_ARC);
+                let k = (j * w + i) as usize;
+                g.arc_idx.as_mut().unwrap()[k] = 0;
+            }
+        }
+    }
     let spawn = crate::grid::tile_center(&g, w / 2, h / 2);
     (g, spawn)
 }

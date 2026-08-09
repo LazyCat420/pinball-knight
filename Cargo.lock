@@ -2834,6 +2834,7 @@ dependencies = [
  "bevy",
  "image",
  "js-sys",
+ "libm",
  "pk-assets",
  "pk-audio",
  "pk-core",

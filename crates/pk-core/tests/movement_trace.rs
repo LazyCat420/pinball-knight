@@ -15,26 +15,43 @@ struct Trace {
     positions: Vec<[f64; 2]>,
 }
 
-/// 8 directions × 75 ticks — must mirror the TS exporter's DIRS exactly.
-const DIRS: [[f64; 2]; 8] = [
-    [1.0, 0.0],
-    [1.0, 1.0],
-    [0.0, 1.0],
-    [-1.0, 1.0],
-    [-1.0, 0.0],
-    [-1.0, -1.0],
-    [0.0, -1.0],
-    [1.0, -1.0],
-];
+/// 8 directions × 75 ticks — must mirror the TS exporter's spiralDir exactly.
+fn spiral_dir(tick: usize) -> [f64; 2] {
+    const DIRS: [[f64; 2]; 8] = [
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [-1.0, 1.0],
+        [-1.0, 0.0],
+        [-1.0, -1.0],
+        [0.0, -1.0],
+        [1.0, -1.0],
+    ];
+    DIRS[tick / 75]
+}
 
-#[test]
-fn movement_trace_seed7_replays_bit_exact() {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../assets/fixtures/movement-trace-seed7.json"
+/// Routed through the shaped court — must mirror the TS shapedDir thresholds.
+fn shaped_dir(tick: usize) -> [f64; 2] {
+    if tick < 120 {
+        [-1.0, 0.0] // west into the slant court
+    } else if tick < 200 {
+        [-1.0, 1.0] // press into the diagonal
+    } else if tick < 350 {
+        [1.0, 0.0] // east across to the round corner
+    } else if tick < 450 {
+        [1.0, 1.0] // southeast into the arc guide
+    } else {
+        [0.0, 1.0] // south along it
+    }
+}
+
+fn replay(fixture: &str, dir_at: fn(usize) -> [f64; 2]) {
+    let path = format!(
+        "{}/../../assets/fixtures/{fixture}",
+        env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(path).expect(
-        "fixture missing — run `RUN_EXPORT=1 npx vitest run src/game/pinball-knight/port-fixtures.test.ts` in legacy/",
+    let text = std::fs::read_to_string(&path).expect(
+        "fixture missing — run `RUN_EXPORT=1 <metered> npx vitest run src/game/pinball-knight/port-fixtures.test.ts` in legacy/",
     );
     let trace: Trace = serde_json::from_str(&text).unwrap();
     assert_eq!(trace.ticks, 600);
@@ -42,7 +59,7 @@ fn movement_trace_seed7_replays_bit_exact() {
     let (grid, spawn) = demo_floor(trace.seed);
     let mut s = SimState::new(grid, spawn, trace.seed);
     for (tick, expected) in trace.positions.iter().enumerate() {
-        let d = DIRS[tick / 75];
+        let d = dir_at(tick);
         simulate(
             &mut s,
             &FrameInput {
@@ -52,11 +69,23 @@ fn movement_trace_seed7_replays_bit_exact() {
         );
         assert!(
             s.player.x == expected[0] && s.player.z == expected[1],
-            "tick {tick}: got ({:?}, {:?}), want ({:?}, {:?}) — bit-exact required",
+            "{fixture} tick {tick}: got ({:?}, {:?}), want ({:?}, {:?}) — bit-exact required",
             s.player.x,
             s.player.z,
             expected[0],
             expected[1],
         );
     }
+}
+
+#[test]
+fn movement_trace_seed7_replays_bit_exact() {
+    replay("movement-trace-seed7.json", spiral_dir);
+}
+
+/// The P1 gate: slant triangle, round quarter-disc and multi-tile arc
+/// collision all replay bit-exactly against the legacy engine.
+#[test]
+fn shaped_trace_seed7_replays_bit_exact() {
+    replay("shaped-trace-seed7.json", shaped_dir);
 }

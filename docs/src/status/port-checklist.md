@@ -30,12 +30,15 @@ The harness that gates every later phase. Nothing ships unverified.
 
 The game's identity. The slice has square walls only.
 
-- [ ] `engine/tile-shape.ts` (~1.5k): slants (SHAPE_SLANT_*), single-tile
-      rounds, multi-tile ARC features, `resolveCircleShape`,
-      `resolveArcFeature`, kick bands, lane bands + `laneTangent`.
-- [ ] `engine/collision.ts` shaped paths: `resolveShaped` corrective pass,
-      `resolveShapeOrArc`, `LaneHit` identity (`featureIdx`), `computeArcCorners`.
-- [ ] `engine/surfaces.ts`: rubber/ice/mud/brass restitution + friction tables.
+- [x] `engine/tile-shape.ts`: slants, rounds, ARC features,
+      `resolve_circle_shape`, `resolve_arc_feature`, kick bands, lane bands +
+      `lane_tangent`. Verified: ported test suite + shaped-trace fixture.
+- [x] `engine/collision.ts` shaped paths: `resolve_shaped` corrective pass,
+      `resolve_shape_or_arc`, `LaneHit` identity, `compute_arc_corners`.
+      Verified: ported lane/slant/corner tests + bit-exact shaped trace.
+- [x] `engine/surfaces.ts`: tables + materials + mixes ported; identity rule
+      and one-draw pick pinned. (Physics CONSUMPTION lands with the player
+      pinball port below.)
 - [ ] `entities/pinball-collide.ts`, `marble.ts`, `ricochet-*`, `rail.ts`,
       `multiball.ts`: momentum modes, reflections, rail rides, kicker launches.
 - [ ] Player verbs on top: sprint charge, wall-kick (`wallContact` consumer),

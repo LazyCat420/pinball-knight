@@ -18,7 +18,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mulberry32 } from "../../utils/rng";
-import { type Grid, T_WALL, T_FLOOR } from "./engine/grid";
+import { type Grid, T_WALL, T_FLOOR, setTile, setShape, ensureArcs } from "./engine/grid";
+import { SHAPE_ARC, SHAPE_ROUND_NE, SHAPE_SLANT_NE } from "./engine/tile-shape";
 import { moveCircle } from "./engine/collision";
 
 const FIXTURE_DIR = join(
@@ -41,6 +42,34 @@ function demoFloor(seed: number): { g: Grid; spawn: [number, number] } {
       if (rng() < 0.1) t[j * w + i] = T_WALL;
     }
   }
+  // ── Shaped court — mirrors pk_core::state::demo_floor line for line.
+  setTile(g, 6, 12, T_WALL);
+  setShape(g, 6, 12, SHAPE_SLANT_NE);
+  setTile(g, 5, 12, T_WALL); // west backing leg
+  setTile(g, 6, 13, T_WALL); // south backing leg
+  setTile(g, 17, 12, T_WALL);
+  setShape(g, 17, 12, SHAPE_ROUND_NE);
+  setTile(g, 16, 12, T_WALL);
+  setTile(g, 17, 13, T_WALL);
+  ensureArcs(g);
+  g.arcs!.push({
+    cx: 18,
+    cz: 18,
+    r: 3,
+    a0: 0,
+    span: Math.PI / 2,
+    lanes: [{ a0: 0, span: Math.PI / 2, cw: true, cooldownT: 0, hitT: -1 }],
+  });
+  for (let j = 18; j <= 21; j++) {
+    for (let i = 18; i <= 21; i++) {
+      const d = Math.hypot(i + 0.5 - 18, j + 0.5 - 18);
+      if (d > 2 && d < 4) {
+        setTile(g, i, j, T_WALL);
+        setShape(g, i, j, SHAPE_ARC);
+        g.arcIdx![j * w + i] = 0;
+      }
+    }
+  }
   const spawn: [number, number] = [
     Math.trunc(w / 2) + 0.5 - w / 2,
     Math.trunc(h / 2) + 0.5 - h / 2,
@@ -54,16 +83,32 @@ const PLAYER_R = 0.3;
 const DT = 1 / 60;
 
 /** 8 directions × 75 ticks = 600 ticks of walking into pillars and borders. */
-const DIRS: Array<[number, number]> = [
-  [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
-];
+function spiralDir(tick: number): [number, number] {
+  const DIRS: Array<[number, number]> = [
+    [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1],
+  ];
+  return DIRS[Math.trunc(tick / 75)];
+}
 
-function trace(seed: number): { seed: number; ticks: number; positions: Array<[number, number]> } {
+/** Routed through the shaped court: slant → round → arc guide. The Rust twin
+ * (movement_trace.rs shaped_dir) must mirror these thresholds exactly. */
+function shapedDir(tick: number): [number, number] {
+  if (tick < 120) return [-1, 0]; // west into the slant court
+  if (tick < 200) return [-1, 1]; // press into the diagonal
+  if (tick < 350) return [1, 0]; // east across to the round corner
+  if (tick < 450) return [1, 1]; // southeast into the arc guide
+  return [0, 1]; // south along it
+}
+
+function trace(
+  seed: number,
+  dirAt: (tick: number) => [number, number],
+): { seed: number; ticks: number; positions: Array<[number, number]> } {
   const { g, spawn } = demoFloor(seed);
   let [x, z] = spawn;
   const positions: Array<[number, number]> = [];
   for (let tick = 0; tick < 600; tick++) {
-    const [ix, iz] = DIRS[Math.trunc(tick / 75)];
+    const [ix, iz] = dirAt(tick);
     const len = Math.sqrt(ix * ix + iz * iz);
     const mx = ix / len;
     const mz = iz / len;
@@ -75,15 +120,21 @@ function trace(seed: number): { seed: number; ticks: number; positions: Array<[n
   return { seed, ticks: 600, positions };
 }
 
+function pinFixture(name: string, computed: unknown): void {
+  const file = join(FIXTURE_DIR, name);
+  if (process.env.RUN_EXPORT === "1" || !existsSync(file)) {
+    mkdirSync(FIXTURE_DIR, { recursive: true });
+    writeFileSync(file, JSON.stringify(computed));
+  }
+  expect(computed).toEqual(JSON.parse(readFileSync(file, "utf8")));
+}
+
 describe("port-parity fixtures", () => {
   it("movement trace (seed 7) matches the committed fixture", () => {
-    const computed = trace(7);
-    const file = join(FIXTURE_DIR, "movement-trace-seed7.json");
-    if (process.env.RUN_EXPORT === "1" || !existsSync(file)) {
-      mkdirSync(FIXTURE_DIR, { recursive: true });
-      writeFileSync(file, JSON.stringify(computed));
-    }
-    const committed = JSON.parse(readFileSync(file, "utf8"));
-    expect(computed).toEqual(committed);
+    pinFixture("movement-trace-seed7.json", trace(7, spiralDir));
+  });
+
+  it("shaped trace (slant + round + arc, seed 7) matches the committed fixture", () => {
+    pinFixture("shaped-trace-seed7.json", trace(7, shapedDir));
   });
 });

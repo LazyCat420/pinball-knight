@@ -18,3 +18,5 @@ pub mod collide;
 pub mod grid;
 pub mod rng;
 pub mod state;
+pub mod surfaces;
+pub mod tile_shape;

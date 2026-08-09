@@ -11,6 +11,7 @@ pk-core = { path = "../pk-core" }
 pk-assets = { path = "../pk-assets" }
 pk-audio = { path = "../pk-audio" }
 serde_json = { workspace = true }
+libm = { workspace = true }
 # PNG decode for the embedded knight sheets — bypasses bevy_asset io entirely
 # (works identically on native and wasm; the slice embeds its art).
 image = { version = "0.25", default-features = false, features = ["png"] }

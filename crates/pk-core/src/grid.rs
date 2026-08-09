@@ -14,10 +14,8 @@ pub const T_STAIRS: u8 = 2;
 /// every break opens a real shortcut.
 pub const T_CRACKED: u8 = 3;
 
-/// Shape id 0 = a plain square wall. The full shape vocabulary (slants, arcs,
-/// kick bands, lanes — tile-shape.ts) ports in M2; until then every wall is
-/// square and the collision paths that read shapes see only `SHAPE_FULL`.
-pub const SHAPE_FULL: u8 = 0;
+use crate::tile_shape::ArcFeature;
+pub use crate::tile_shape::SHAPE_FULL;
 
 #[derive(Clone, Debug)]
 pub struct Grid {
@@ -25,18 +23,24 @@ pub struct Grid {
     pub h: i32,
     /// Row-major tiles, `t[(j * w + i) as usize]`.
     pub t: Vec<u8>,
-    /// Row-major per-tile SHAPE ids, same layout as `t`. Default 0 =
-    /// `SHAPE_FULL`, so a grid that never assigns shapes behaves as before.
-    /// Only meaningful on WALL tiles; walkability ignores it.
+    /// Row-major per-tile SHAPE ids (tile_shape.rs), same layout as `t`.
+    /// Default 0 = `SHAPE_FULL`, so a grid that never assigns shapes behaves
+    /// as before. Only meaningful on WALL tiles; walkability ignores it.
     pub shapes: Vec<u8>,
     /// Row-major per-tile SURFACE ids — what the tile is MADE OF. `None` so
     /// hand-built test grids don't have to carry it; absent reads as 0, the
     /// neutral surface, so physics never branches on absence.
     pub surfaces: Option<Vec<u8>>,
+    /// Multi-tile arc features (sweeping curved walls). A tile with
+    /// `SHAPE_ARC` stores its feature's index in `arc_idx` (-1 = none).
+    /// `arc_idx` is optional so hand-built test grids don't carry it; use
+    /// `ensure_arcs` before writing and `arc_feature_at` to read.
+    pub arcs: Vec<ArcFeature>,
+    pub arc_idx: Option<Vec<i16>>,
 }
 
 impl Grid {
-    /// A w×h grid of solid wall, no shapes, no surfaces.
+    /// A w×h grid of solid wall, no shapes, no surfaces, no arcs.
     pub fn solid(w: i32, h: i32) -> Self {
         let n = (w * h) as usize;
         Self {
@@ -45,7 +49,39 @@ impl Grid {
             t: vec![T_WALL; n],
             shapes: vec![SHAPE_FULL; n],
             surfaces: None,
+            arcs: Vec::new(),
+            arc_idx: None,
         }
+    }
+}
+
+/// Lazily create the arc-feature index storage.
+pub fn ensure_arcs(g: &mut Grid) {
+    if g.arc_idx.is_none() {
+        g.arc_idx = Some(vec![-1; (g.w * g.h) as usize]);
+    }
+}
+
+/// The arc feature owning tile (i,j), or None (tile isn't an arc slice).
+pub fn arc_feature_at<'g>(g: &'g Grid, i: i32, j: i32) -> Option<&'g ArcFeature> {
+    let idx_arr = g.arc_idx.as_ref()?;
+    if i < 0 || j < 0 || i >= g.w || j >= g.h {
+        return None;
+    }
+    let a = idx_arr[idx(g, i, j)];
+    if a >= 0 {
+        g.arcs.get(a as usize)
+    } else {
+        None
+    }
+}
+
+/// The arc-idx VALUE at (i,j) (-1 when absent) — LaneHit identity needs the
+/// raw number, exactly as the TS reads `g.arcIdx[idx]`.
+pub fn arc_index_at(g: &Grid, i: i32, j: i32) -> i32 {
+    match &g.arc_idx {
+        Some(arr) if i >= 0 && j >= 0 && i < g.w && j < g.h => i32::from(arr[idx(g, i, j)]),
+        _ => -1,
     }
 }
 

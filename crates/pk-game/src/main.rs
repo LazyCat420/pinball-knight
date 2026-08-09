@@ -14,8 +14,9 @@ use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use pk_assets::published::SheetManifest;
-use pk_core::grid::{is_low_wall, is_walkable, tile_center};
+use pk_core::grid::{is_low_wall, is_walkable, shape_at, tile_center};
 use pk_core::state::{demo_floor, simulate, Facing, FrameInput, SimState};
+use pk_core::tile_shape::{is_round, is_slant, round_center, shape_normal, SHAPE_FULL};
 
 /// legacy constants/world.ts
 const WALL_H: f32 = 1.1;
@@ -232,12 +233,63 @@ fn setup(
     });
     let wall_mesh = meshes.add(Cuboid::new(1.0, WALL_H, 1.0));
     let low_mesh = meshes.add(Cuboid::new(1.0, WALL_LOW, 1.0));
+    // Shaped tiles get their own meshes below — square boxes would contradict
+    // the collider ("see = hit" is the tile-shape contract; these are P3-debt
+    // approximations of it, not violations).
+    let shaped_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.42, 0.36, 0.32),
+        unlit: true,
+        ..default()
+    });
+    let wedge_mesh = meshes.add(Cuboid::new(std::f64::consts::SQRT_2 as f32, WALL_H, 0.5));
+    let round_mesh = meshes.add(Cylinder::new(1.0, WALL_H));
+    let arc_seg_mesh = meshes.add(Cuboid::new(0.8, WALL_H, 0.8));
     for j in 0..sim.grid.h {
         for i in 0..sim.grid.w {
             if is_walkable(&sim.grid, i, j) {
                 continue;
             }
+            let shape = shape_at(&sim.grid, i, j);
             let (x, z) = tile_center(&sim.grid, i, j);
+            if is_slant(shape) {
+                // A wedge along the hypotenuse, offset onto the solid side.
+                let n = shape_normal(shape).unwrap();
+                let yaw = if (n.x > 0.0) == (n.z > 0.0) {
+                    std::f32::consts::FRAC_PI_4
+                } else {
+                    -std::f32::consts::FRAC_PI_4
+                };
+                commands.spawn((
+                    Mesh3d(wedge_mesh.clone()),
+                    MeshMaterial3d(shaped_mat.clone()),
+                    Transform::from_xyz(
+                        (x - n.x * 0.25) as f32,
+                        WALL_H / 2.0,
+                        (z - n.z * 0.25) as f32,
+                    )
+                    .with_rotation(Quat::from_rotation_y(yaw)),
+                ));
+                continue;
+            }
+            if is_round(shape) {
+                // Quarter-disc corner: a radius-1 cylinder on the arc centre;
+                // the surplus quarters sink into the solid backing tiles.
+                let c = round_center(shape).unwrap();
+                let (gw2, gh2) = (f64::from(sim.grid.w) / 2.0, f64::from(sim.grid.h) / 2.0);
+                commands.spawn((
+                    Mesh3d(round_mesh.clone()),
+                    MeshMaterial3d(shaped_mat.clone()),
+                    Transform::from_xyz(
+                        (f64::from(i) + c.x - gw2) as f32,
+                        WALL_H / 2.0,
+                        (f64::from(j) + c.z - gh2) as f32,
+                    ),
+                ));
+                continue;
+            }
+            if shape != SHAPE_FULL {
+                continue; // ARC slices render from their feature below
+            }
             let low = is_low_wall(&sim.grid, i, j);
             let (mesh, mat, hh) = if low {
                 (low_mesh.clone(), low_mat.clone(), WALL_LOW / 2.0)
@@ -248,6 +300,30 @@ fn setup(
                 Mesh3d(mesh),
                 MeshMaterial3d(mat),
                 Transform::from_xyz(x as f32, hh, z as f32),
+            ));
+        }
+    }
+    // Multi-tile arc guides: segment boxes swept along each feature's circle
+    // (the collider resolves against the true arc; this is its visual echo).
+    let arc_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
+        unlit: true,
+        ..default()
+    });
+    for f in &sim.grid.arcs {
+        let (gw2, gh2) = (f64::from(sim.grid.w) / 2.0, f64::from(sim.grid.h) / 2.0);
+        let segs = ((f.span / 0.2).ceil() as usize).max(4);
+        for s in 0..segs {
+            let a = f.a0 + f.span * (s as f64 + 0.5) / segs as f64;
+            commands.spawn((
+                Mesh3d(arc_seg_mesh.clone()),
+                MeshMaterial3d(arc_mat.clone()),
+                Transform::from_xyz(
+                    (f.cx + libm::cos(a) * f.r - gw2) as f32,
+                    WALL_H / 2.0,
+                    (f.cz + libm::sin(a) * f.r - gh2) as f32,
+                )
+                .with_rotation(Quat::from_rotation_y(-a as f32)),
             ));
         }
     }
