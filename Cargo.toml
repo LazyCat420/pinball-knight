@@ -1,0 +1,34 @@
+[package]
+name = "pinball-knight"
+version = "0.1.0"
+edition = "2021"
+description = "A pinball game featuring a knight, built with Rust and WebGPU"
+license = "MIT"
+
+[[bin]]
+name = "pinball-knight"
+path = "src/main.rs"
+
+[lib]
+name = "pinball_knight"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wgpu = "22"
+winit = { version = "0.30", features = ["rwh_06"] }
+bytemuck = { version = "1", features = ["derive"] }
+cgmath = "0.18"
+log = "0.4"
+env_logger = "0.11"
+pollster = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Element"] }
+console_log = "1"
+console_error_panic_hook = "0.1"
+
+[profile.release]
+opt-level = 3

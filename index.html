@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pinball Knight ⚔️</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a14;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #ccc;
+    }
+    h1 {
+      font-size: 2rem;
+      color: #ffd700;
+      text-shadow: 0 0 12px #ffa500;
+      margin-bottom: 0.5rem;
+    }
+    #subtitle {
+      font-size: 0.9rem;
+      color: #8888aa;
+      margin-bottom: 1rem;
+    }
+    canvas {
+      border: 2px solid #334;
+      border-radius: 4px;
+      box-shadow: 0 0 32px #0008;
+      display: block;
+    }
+    #controls {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: #666;
+      text-align: center;
+      line-height: 1.7;
+    }
+    kbd {
+      background: #222;
+      border: 1px solid #555;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: inherit;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>⚔️ Pinball Knight</h1>
+  <div id="subtitle">A Rust + WebGPU adventure</div>
+  <canvas id="pinball-canvas" width="600" height="800"></canvas>
+  <div id="controls">
+    <kbd>←</kbd> / <kbd>Z</kbd> — Left flipper &nbsp;&nbsp;
+    <kbd>→</kbd> / <kbd>X</kbd> — Right flipper &nbsp;&nbsp;
+    <kbd>Space</kbd> — Start / Launch
+  </div>
+
+  <script type="module">
+    import init from './pkg/pinball_knight.js';
+    async function run() {
+      await init();
+    }
+    run().catch(err => {
+      console.error('Failed to initialise WASM:', err);
+      document.body.innerHTML += `<p style="color:red;margin-top:1rem">
+        WebGPU not supported or WASM not built yet.<br/>
+        Run <code>wasm-pack build --target web</code> to generate the <code>pkg/</code> folder.
+      </p>`;
+    });
+  </script>
+</body>
+</html>
