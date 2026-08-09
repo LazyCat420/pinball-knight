@@ -123,10 +123,24 @@ const publishSweep = (patch = {}) => {
       character, tool: "bench-moveset",
       startedAt: sweepStart, updatedAt: Date.now(),
       total: totalRows, done: sweepDone,
-      // Rows already on disk from a previous --resume run are not re-run, so
-      // "done this process" and "rows complete" are different numbers and both
-      // are worth showing. Conflating them makes a resumed sweep look stalled.
-      completed: Object.keys(results).filter((k) => k.includes(":") && !k.startsWith("master") && results[k]?.ok).length,
+      /**
+       * COMPLETE **WITHIN THIS INVOCATION'S SCOPE**, which is not the same as
+       * "rows in the results file".
+       *
+       * Rows already on disk from an earlier `--resume` are not re-run, so
+       * `done` (this process) and `completed` (on disk) genuinely differ and
+       * both are worth showing — conflating them makes a resumed sweep look
+       * stalled at 0.
+       *
+       * But the first version counted EVERY ok row in the file against a total
+       * of only the facings this invocation was asked for. Resuming with
+       * `--facings N,E` after the S facing had finished published
+       * `completed: 8, total: 14` — 57% before a single requested row had run,
+       * heading for 22/14 at the end. Caught by reading the JSON the banner
+       * would render; the fraction has to be measured against the same set the
+       * denominator is.
+       */
+      completed: facings.flatMap((f) => clips.map((c) => `${f}:${c}`)).filter((k) => results[k]?.ok).length,
       facings, clips,
       // Mean of THIS process's completed rows; null until one lands, because a
       // hardcoded guess is worse than an honest "unknown".
