@@ -377,6 +377,11 @@ async function run(graph, dir, meta = {}) {
           churn: v.churn.map((p) => Number((p * 100).toFixed(2))),
           seam: Number((v.seam * 100).toFixed(2)),
           boxes: v.boxes,
+          // The scale gate's NUMBER, not just its verdict. Added with the gate
+          // and forgotten here, which is the same omission `fade` had: a check
+          // whose magnitude lives only in the printed report cannot rank
+          // twenty clips, and the report is not kept.
+          scaleSwing: Number((v.scaleSwing * 100).toFixed(2)),
           level: v.level,
         };
         if (v.level !== "ready") console.log(v.report);
