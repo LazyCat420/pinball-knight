@@ -33,8 +33,9 @@ import { SheetTray } from "./forge/SheetTray";
 import { IntakeCard } from "./forge/IntakeCard";
 import { InGameCard } from "./forge/InGameCard";
 import { ModelsCard, SettingsCard, StatusCard } from "./forge/BackendCards";
+import { ModelTestCard } from "./forge/ModelTestCard";
 
-type Tab = "intake" | "generate" | "sheet" | "backend";
+type Tab = "intake" | "generate" | "model-test" | "sheet" | "backend";
 
 /**
  * Content equality for the polled job maps.
@@ -483,9 +484,9 @@ export default function ForgePanel() {
           </span>
           {runningN > 0 && <span style={S.chip("#9fd0ff", "#16202b")}>{runningN} generating</span>}
           <span style={{ flex: 1 }} />
-          {(["intake", "generate", "sheet", "backend"] as Tab[]).map((t) => (
+          {(["intake", "generate", "model-test", "sheet", "backend"] as Tab[]).map((t) => (
             <button key={t} style={{ ...S.btn, ...(tab === t ? S.btnGreen : {}) }} onClick={() => setTab(t)}>
-              {t}
+              {t === "model-test" ? "test models" : t}
               {t === "sheet" && tray.length > 0 ? ` (${tray.length})` : ""}
             </button>
           ))}
@@ -534,6 +535,53 @@ export default function ForgePanel() {
               say={say}
             />
             <SweepBanner sweep={sweep} now={Date.now()} />
+            <JobsBoard
+              jobs={genJobs}
+              tick={tick}
+              modes={modes}
+              onCancel={async (id) => {
+                try {
+                  await del(`/api/comfy/generate?id=${id}`);
+                  say("cancelled");
+                  void refresh();
+                } catch (e: any) {
+                  fail(e.message, e);
+                }
+              }}
+              onReroll={reroll}
+              onAllAngles={allAngles}
+              onUseAsInit={useAsInit}
+              onUseAsLast={useAsLast}
+              onFixFrame={fixFrame}
+              onRedoPose={redoPose}
+              onAddToTray={addToTray}
+              onKeep={keep}
+            />
+          </>
+        )}
+
+        {tab === "model-test" && (
+          <>
+            {libraryCard}
+            <ModelTestCard
+              modes={modes}
+              images={images}
+              onSetImage={setImage}
+              onClearImage={(slot) => setImage(slot, null)}
+              onGenerate={async (req) => {
+                await launch({
+                  mode: req.mode,
+                  params: req.params,
+                  prompt: req.prompt,
+                  seed: req.seed,
+                  small: req.small,
+                  imageB64: images.init,
+                  endB64: images.end,
+                });
+              }}
+              busy={busyRef.current}
+              activeCharacter={activeCharacter}
+            />
             <JobsBoard
               jobs={genJobs}
               tick={tick}

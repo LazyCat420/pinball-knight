@@ -22,7 +22,7 @@
  *   ctx.images          uploaded server-side names {init, end, mask, style}
  *   ctx.seed
  */
-import { bgRemove, qwenEdit, qwenInpaint, wanI2V, wanTi2v5B } from "./graphs.mjs";
+import { bgRemove, h3Length, minimaxH3I2V, qwenEdit, qwenInpaint, wanI2V, wanTi2v5B } from "./graphs.mjs";
 
 /**
  * Lightning distills change the OPERATING POINT — steps and cfg move
@@ -688,6 +688,38 @@ const KEYFRAME_MOVES = [
 const KEYFRAME_SET = KEYFRAME_MOVES.filter((m) => m.id !== "custom");
 
 export const MODES = [
+  {
+    id: "h3",
+    title: "minimax h3",
+    blurb: "fast candidate video animation leg — 5 frames in ~12s via MiniMax H3 FL2VA Q3_K_M",
+    leg: "h3",
+    needs: { init: true },
+    fields: [
+      { id: "preset", label: "action", type: "preset", options: ANIMATE_PRESETS },
+      { id: "action", label: "or describe a move", type: "text", placeholder: "jumping, lunging, casting…" },
+      { id: "frames", label: "frames", type: "select", options: [{ id: "5", label: "5 frames (fast)" }, { id: "21", label: "21 frames (grid)" }], default: "5" },
+      { id: "tiled", label: "VAE mode", type: "select", options: [{ id: "false", label: "Standard (VAEDecode)" }, { id: "true", label: "Tiled (VAEDecodeTiled)" }], default: "false" },
+    ],
+    etaS: { quality: 12, fast: 12 },
+    presets: ANIMATE_PRESETS,
+    prompt(params, ctx) {
+      const preset = ANIMATE_PRESETS.find((p) => p.id === params.preset);
+      const action = String(params.action || preset?.action || "moving");
+      return `pix3lwalk, Pixel art game sprite ${action}, smooth looping animation, the character stays centered in frame, consistent colors, plain white background.`;
+    },
+    build(params, ctx) {
+      const asked = Number(params.frames) || 5;
+      const length = h3Length(asked);
+      return minimaxH3I2V({
+        image: ctx.images.init,
+        endImage: ctx.images.end ?? null,
+        prompt: this.prompt(params, ctx),
+        length,
+        seed: ctx.seed,
+        tiled: params.tiled === "true",
+      });
+    },
+  },
   {
     id: "segment",
     title: "cut out",
