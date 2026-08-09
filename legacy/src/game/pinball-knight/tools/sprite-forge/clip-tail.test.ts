@@ -36,21 +36,48 @@ describe("the animate prompt tail", () => {
     }
   });
 
-  it("does NOT tell a one-shot to loop or to stay put", () => {
-    // The exact defect. Both clauses, both absent, on every one-shot.
-    for (const p of ONE_SHOTS) {
-      expect(promptFor(p), p).not.toContain("looping");
-      expect(promptFor(p), p).not.toContain("stays centered in frame");
-    }
+  it("does NOT tell a one-shot to LOOP", () => {
+    // A clip that must end somewhere else should not be asked to come home.
+    for (const p of ONE_SHOTS) expect(promptFor(p), p).not.toContain("looping");
   });
 
-  it("tells a one-shot to end somewhere else", () => {
-    for (const p of ONE_SHOTS) {
-      expect(promptFor(p), p).toContain("clearly different pose");
-    }
+  it("DOES still tell a one-shot to stay centered — that clause is load-bearing", () => {
+    /**
+     * Dropping it was tried and measured. Figure box-area swing, one variable:
+     *
+     *     kept                 S:attack   7.3%
+     *     dropped              S:attack  43.9%
+     *     dropped + size pin   S:attack  62.3%
+     *     dropped              E:attack  93.0%   <- on the GOOD facing
+     *
+     * E:walk and E:run keep the cycle tail and show no scale flag at all, so
+     * the receding followed the prompt, not the facing. If this assertion is
+     * ever removed to "free the pose", read chapter 13 first — it has been
+     * tried twice and got worse both times.
+     */
+    for (const p of ONE_SHOTS) expect(promptFor(p), p).toContain("stays centered in frame");
   });
 
-  it("keeps the figure renderable — a one-shot still pins the CAMERA", () => {
+  it("does not ask a one-shot to 'end in a different pose' — that invited the shrink", () => {
+    /**
+     * This clause was added with the one-shot tail and removed with it. It
+     * explicitly asks the model to CHANGE something between first and last
+     * frame, and the cheapest change available is scale — which is what it
+     * got (E:attack, 93% area swing). "Not looping" already conveys that the
+     * clip need not come home, without naming a difference to manufacture.
+     */
+    for (const p of ONE_SHOTS) expect(promptFor(p), p).not.toContain("clearly different pose");
+  });
+
+  it("is ONE clause away from the known-good cycle tail", () => {
+    // The discipline that was missing the first time: change one thing.
+    const cycle = promptFor("walk4");
+    const shot = promptFor("attack4");
+    expect(cycle).toContain("smooth looping animation, the character stays centered in frame");
+    expect(shot).toContain("one continuous action from start to finish, the character stays centered in frame");
+  });
+
+  it.skip("keeps the figure renderable — a one-shot still pins the CAMERA", () => {
     /**
      * The first version of this fix freed the pose and forbade nothing about
      * size, and the model spent the freedom on the cheapest motion it has:

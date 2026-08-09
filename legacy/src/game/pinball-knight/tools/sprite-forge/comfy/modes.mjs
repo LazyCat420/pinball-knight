@@ -829,29 +829,41 @@ export const MODES = [
       const clip = ANIMATE_PRESETS.find((p) => p.id === params.preset)?.clip;
       const tail = !clip || CYCLE_CLIPS.has(clip)
         ? "smooth looping animation, the character stays centered in frame"
-        : "one continuous action from start to finish, ending in a clearly different pose from the one it began in, " +
-          // ⚠️ DO NOT ADD A SIZE CLAUSE HERE. IT WAS TRIED AND IT MADE IT WORSE.
-          //
-          // Freeing the pose let the model buy motion by SHRINKING the dog, so
-          // "the character stays the same size throughout" was added here and
-          // measured. Same init, seed 7, one variable, figure box-area swing
-          // across the clip:
-          //
-          //     original tail ("stays centered")      7.3%   inert but stable
-          //     freed pose, no size clause           43.9%   shrinks
-          //     freed pose + "stays the same size"   62.3%   shrinks MORE
-          //
-          // Three arms, one monotonic trend, in the wrong direction. Wan's
-          // shared negative in graphs.mjs ALSO already bans "changing scale,
-          // character growing, character shrinking", and the dog shrank through
-          // all of it. Neither polarity of prompting moves this.
-          //
-          // It is geometry, not wording: on a FRONT facing a lunge has no
-          // lateral silhouette to spend, so "move toward the target" and "get
-          // smaller" are the same picture. Generate one-shots on a SIDE facing,
-          // where the motion is perpendicular to the camera. `motion.ts` now
-          // measures the swing (SCALE_SWING_SOFT) so it stops being invisible.
-          "a locked-off camera with the whole body staying inside the frame";
+        /**
+         * ── "STAYS CENTERED IN FRAME" IS LOAD-BEARING. IT STAYS. ────────────
+         *
+         * This branch used to drop it for one-shots, so a lunge would not be
+         * told to stand still. That was reasoned, tested on the attack, and is
+         * WRONG — it bought motion by shrinking the dog, and the effect got
+         * worse the harder it was pushed. Figure box-area swing, same init,
+         * seed 7, one variable at a time:
+         *
+         *     old tail, "stays centered"                S:attack   7.3%
+         *     dropped it                                S:attack  43.9%
+         *     dropped it + "stays the same size"        S:attack  62.3%
+         *     dropped it                                N:attack  63.5%
+         *     dropped it                                E:attack  93.0%   <-- worst
+         *
+         * The last row is the one that settles it. E is the GOOD facing: E:walk
+         * and E:run, which keep the cycle tail, show no scale flag at all. So
+         * the receding is not the front/back geometry I first blamed — it
+         * followed the PROMPT onto the one facing that has lateral silhouette
+         * to spare, and got worse there. Removing that clause was the cause.
+         *
+         * What survives from the change: one-shots are still not told to LOOP,
+         * because a clip that must end elsewhere should not be asked to return
+         * to its start. Only the centring is restored. That is one change from
+         * a known-good tail rather than two.
+         *
+         * The cost is honest and unresolved: "stays centered" is also what made
+         * the attack inert — the operator's original "it looks like it's just
+         * showing its teeth", churn 11% against a walk's 22%. Prompting cannot
+         * have both, in either polarity (a size clause made it worse, and Wan's
+         * negative already bans shrinking). The lever for an inert one-shot is
+         * `--end` keyframes: author the poses and interpolate, rather than
+         * asking free-running I2V to invent a lunge. See chapter 13.
+         */
+        : "one continuous action from start to finish, the character stays centered in frame";
       return `${trigger}Pixel art game sprite ${action}, ${tail}, consistent colors, plain white background.`;
     },
     build(params, ctx) {
