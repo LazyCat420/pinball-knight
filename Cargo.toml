@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pk-core",
+    "crates/pk-assets",
+    "crates/pk-audio",
+    "crates/pk-game",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/LazyCat420/pinball-knight"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libm = "0.2"
+enum-map = { version = "2", features = ["serde"] }
+strum = { version = "0.27", features = ["derive"] }
+slotmap = "1"
+
+# The sim (pk-core) must stay deterministic across native and wasm:
+#   - f64 everywhere (JS numbers are f64; f32 silently breaks every golden fixture)
+#   - transcendentals through `libm`, never std (std sin/cos differ across platforms)
+#   - no HashMap iteration in sim logic; randomness only via the seeded PRNG in SimState
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+# wasm release: switch opt-level to "z" and panic = "abort" via xtask dist
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+panic = "abort"

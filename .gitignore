@@ -1,0 +1,13 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Docs build output (mdbook serve/build)
+/docs/book
+
+# Web build output
+/web/dist
+
+# Editor/OS noise
+.DS_Store
+*.swp

@@ -1,0 +1,11 @@
+[package]
+name = "pk-assets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Sprite/atlas manifest schema shared by the game and tooling"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

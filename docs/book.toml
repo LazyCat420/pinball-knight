@@ -1,0 +1,13 @@
+[book]
+title = "Pinball Knight — Port Book"
+authors = ["LazyCat420"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "ayu"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/LazyCat420/pinball-knight"

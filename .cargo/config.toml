@@ -1,0 +1,7 @@
+[alias]
+xtask = "run -p xtask --"
+
+[build]
+# The box is shared (see docs: WSL2 dev-loop reality). Leave headroom; raise
+# per-invocation with -j when you hold the box.
+jobs = 10

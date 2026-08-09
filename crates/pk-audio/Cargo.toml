@@ -1,0 +1,14 @@
+[package]
+name = "pk-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAudio-shaped synth layer; native and wasm backends (house rule: zero audio files)"
+
+[dependencies]
+
+# M6 adds the backends:
+#   native: web-audio-api (spec-faithful Rust WebAudio over cpal)
+#   wasm:   web-sys bindings to the real browser AudioContext
+# The trait surface below is dependency-free so pk-game can compile against it now.

@@ -1,0 +1,22 @@
+[package]
+name = "pk-game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pinball Knight — the Bevy app (render, input, GUI, fx, boot)"
+
+[dependencies]
+pk-core = { path = "../pk-core" }
+pk-assets = { path = "../pk-assets" }
+pk-audio = { path = "../pk-audio" }
+
+# Scaffold stage: bevy core only (app/ecs/time — no winit, no wgpu), so the
+# workspace compiles in minutes on a shared box. M1 ("one room rendered right")
+# flips this to the render set, WebGPU-only per house policy (webgl2 stays OFF;
+# legacy src/render/backend.ts deliberately defeats the WebGL fallback):
+#   features = ["bevy_winit", "bevy_render", "bevy_core_pipeline", "bevy_asset",
+#               "bevy_state", "multi_threaded", "x11", "wayland", "webgpu"]
+[dependencies.bevy]
+version = "0.17"
+default-features = false
