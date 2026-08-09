@@ -11,3 +11,6 @@ jobs = 10
 # (no sudo on this box); scripts/setup-win-toolchain.sh installs it.
 [target.x86_64-pc-windows-gnullvm]
 linker = "/home/lazycat/.local/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+# `cargo run --target x86_64-pc-windows-gnullvm -p pk-game` just works:
+# the runner drops libunwind.dll beside the exe and interop launches it.
+runner = "scripts/win-runner.sh"

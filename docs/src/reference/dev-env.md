@@ -2,13 +2,17 @@
 
 ## Run the game
 
-- **Rust, Windows native (the play/dev target):** `scripts/pk-win.sh run` —
-  cross-compiles `pk-game.exe` (`x86_64-pc-windows-gnullvm`, user-local
-  llvm-mingw; one-time `scripts/setup-win-toolchain.sh`) and launches it as a
-  real Windows process on the host GPU via WSL2 interop. No browser, no port
-  forwarding. `libunwind.dll` must sit next to the exe (the script copies
-  it): Rust's prebuilt gnullvm std bakes in the dynamic import, and a missing
-  DLL dies silently as exit 53 (`0xC0000135` STATUS_DLL_NOT_FOUND).
+- **Rust, Windows native (the play/dev target):**
+  `cargo run --target x86_64-pc-windows-gnullvm -p pk-game` — plain cargo;
+  the `runner` in `.cargo/config.toml` (`scripts/win-runner.sh`) drops
+  `libunwind.dll` beside the exe and WSL2 interop launches it as a real
+  Windows process on the host GPU. No browser, no port forwarding. One-time
+  toolchain setup: `scripts/setup-win-toolchain.sh` (user-local llvm-mingw).
+  `scripts/pk-win.sh run` remains as a shorthand for the same thing.
+  Why the DLL dance: Rust's prebuilt gnullvm std bakes in the dynamic
+  import, and a missing DLL dies silently as exit 53 (`0xC0000135`
+  STATUS_DLL_NOT_FOUND). The in-game frame-time readout sits top-center
+  (ms + fps, smoothed).
 - **Rust, browser (the parity gate + web ship):** `trunk serve` at the repo
   root, then open `http://localhost:8787` in **Windows host Chrome** (WebGPU;
   localhost forwards from WSL2). WASD/arrows to move.

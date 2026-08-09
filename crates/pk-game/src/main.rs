@@ -8,6 +8,7 @@
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::image::{Image, ImageSampler};
 use bevy::math::Affine2;
@@ -72,6 +73,10 @@ struct KnightSprite;
 #[derive(Component)]
 struct DungeonCamera;
 
+/// Top-center frame-time readout (ms first — that's the number that matters).
+#[derive(Component)]
+struct FrameStats;
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -84,8 +89,9 @@ fn main() {
     .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.07)))
     .insert_resource(Time::<Fixed>::from_hz(60.0))
     .init_resource::<Intent>()
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .add_systems(Startup, setup)
-    .add_systems(Update, gather_input)
+    .add_systems(Update, (gather_input, update_frame_stats))
     .add_systems(FixedUpdate, step_sim)
     .add_systems(Update, (sync_knight, follow_camera).after(gather_input));
     #[cfg(target_arch = "wasm32")]
@@ -194,12 +200,57 @@ fn decode_sheet(
     }
 }
 
+/// ~4×/s: smoothed frame time in ms (the budget number) + fps for reference.
+fn update_frame_stats(
+    diagnostics: Res<DiagnosticsStore>,
+    time: Res<Time>,
+    mut acc: Local<f32>,
+    mut q: Query<&mut Text, With<FrameStats>>,
+) {
+    *acc += time.delta_secs();
+    if *acc < 0.25 {
+        return;
+    }
+    *acc = 0.0;
+    let ms = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|d| d.smoothed());
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed());
+    if let (Some(ms), Some(fps), Ok(mut text)) = (ms, fps, q.single_mut()) {
+        **text = format!("{ms:.1} ms  ({fps:.0} fps)");
+    }
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
+    // ── Frame-time readout, top-center ──
+    commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(6.0),
+            left: Val::Px(0.0),
+            width: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        })
+        .with_children(|p| {
+            p.spawn((
+                Text::new("-- ms"),
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+                FrameStats,
+            ));
+        });
+
     // ── Sim ──
     let (grid, spawn) = demo_floor(7);
     let sim = SimState::new(grid, spawn, 7);
