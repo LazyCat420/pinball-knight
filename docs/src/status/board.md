@@ -5,6 +5,19 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — Port harness live (P0).** The parity loop runs end to end:
+  legacy vitest exports a 600-tick movement trace computed by the REAL TS
+  engine (`port-fixtures.test.ts`) → `assets/fixtures/` → Rust replays it
+  **bit-exactly** (`pk-core/tests/movement_trace.rs`). `scripts/pk-check.mjs`
+  gates the wasm build in real host Chrome: boot, sim ~60 Hz via
+  `window.__pk`, input-drives-movement, FPS report, zero console errors,
+  screenshot. First run caught a real 1-ulp bug (see Incidents). Perf
+  baseline: 32 FPS debug wasm build @1280×720 — a debug-build number, not a
+  budget.
+- **2026-08-09 — Full port checklist published** — [Port checklist](port-checklist.md),
+  phases P0–P9 with per-phase verification methods. Intro, tavern, ESC menu,
+  backtick debug panel are unported scope (P5/P6), not regressions.
+
 - **2026-08-09 — Playable vertical slice, native + wasm-WebGPU.** The knight
   walks the demo floor with the ported collision (wall-slide, border clamp),
   camera-follow at the 38°/45° ortho rig, Diablo-rule low walls, animated

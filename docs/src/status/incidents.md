@@ -2,6 +2,21 @@
 
 Diagnoses that outlive their patches. Write the reasoning, not just the fix.
 
+## 2026-08-09 — serde_json silently mangles the parity fixtures
+
+The very first bit-exact fixture replay failed at tick 12:
+`0.9100000000000037` (fixture, confirmed in the raw JSON and by Python)
+read back as `…36` in Rust. The sim was bit-perfect — **serde_json's default
+float parsing is fast but up to 1 ulp lossy**. The `float_roundtrip` feature
+makes it correctly rounded; it is now enabled in the workspace with a
+LOAD-BEARING comment.
+
+**Rule:** the harness must be held to the same bit-exactness as the sim.
+Any new fixture reader (another format, another crate) gets a
+known-hard-decimal round-trip test before it is trusted. Also proof the
+harness works: it caught a real 1-ulp bug on its first run — just in its own
+parser rather than the port.
+
 ## 2026-08-09 — SwiftShader WebGPU fails 4-byte mapped buffers
 
 Headless WSL Chrome with `--use-webgpu-adapter=swiftshader` panics the wasm

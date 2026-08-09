@@ -2833,10 +2833,12 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "image",
+ "js-sys",
  "pk-assets",
  "pk-audio",
  "pk-core",
  "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]

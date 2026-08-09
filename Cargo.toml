@@ -16,7 +16,10 @@ repository = "https://github.com/LazyCat420/pinball-knight"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# float_roundtrip is LOAD-BEARING: serde_json's default float parse is fast
+# but up to 1 ulp lossy, which broke the first bit-exact fixture replay
+# (0.9100000000000037 parsed as …36). Parity fixtures demand exact parsing.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 libm = "0.2"
 enum-map = { version = "2", features = ["serde"] }
 strum = { version = "0.27", features = ["derive"] }

@@ -11,3 +11,9 @@
 # Editor/OS noise
 .DS_Store
 *.swp
+
+# pk-check output
+/.checks
+
+# stray tool caches at repo root
+/node_modules

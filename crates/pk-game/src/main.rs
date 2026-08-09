@@ -72,22 +72,45 @@ struct KnightSprite;
 struct DungeonCamera;
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Pinball Knight (Rust slice)".into(),
-                ..default()
-            }),
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: "Pinball Knight (Rust slice)".into(),
             ..default()
-        }))
-        .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.07)))
-        .insert_resource(Time::<Fixed>::from_hz(60.0))
-        .init_resource::<Intent>()
-        .add_systems(Startup, setup)
-        .add_systems(Update, gather_input)
-        .add_systems(FixedUpdate, step_sim)
-        .add_systems(Update, (sync_knight, follow_camera).after(gather_input))
-        .run();
+        }),
+        ..default()
+    }))
+    .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.07)))
+    .insert_resource(Time::<Fixed>::from_hz(60.0))
+    .init_resource::<Intent>()
+    .add_systems(Startup, setup)
+    .add_systems(Update, gather_input)
+    .add_systems(FixedUpdate, step_sim)
+    .add_systems(Update, (sync_knight, follow_camera).after(gather_input));
+    #[cfg(target_arch = "wasm32")]
+    app.add_systems(Update, publish_stats);
+    app.run();
+}
+
+/// `window.__pk` — the sim's externally readable pulse, and the seed of the
+/// legacy `__lab()` debug surface. `scripts/pk-check.mjs` polls it to verify
+/// from OUTSIDE the app that the sim ticks at 60 Hz and that input moves the
+/// knight. Grows fields as subsystems port; keep it cheap.
+#[cfg(target_arch = "wasm32")]
+fn publish_stats(sim: Res<Sim>) {
+    if sim.0.tick % 10 != 0 {
+        return;
+    }
+    let p = &sim.0.player;
+    let json = format!(
+        r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{}}}"#,
+        sim.0.tick, p.x, p.z, p.facing, p.moving
+    );
+    let _ = js_sys::Reflect::set(
+        &js_sys::global(),
+        &wasm_bindgen::JsValue::from_str("__pk"),
+        &wasm_bindgen::JsValue::from_str(&json),
+    );
 }
 
 fn decode_sheet(

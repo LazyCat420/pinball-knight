@@ -69,7 +69,10 @@ impl SimState {
 pub fn simulate(s: &mut SimState, input: &FrameInput) {
     s.tick += 1;
 
-    let len = libm::hypot(input.move_x, input.move_z);
+    // sqrt, not hypot: sqrt is IEEE-correctly-rounded on every platform, so
+    // the TS fixture exporter (Math.sqrt) matches bit-exactly. hypot
+    // implementations differ by ulps between runtimes.
+    let len = (input.move_x * input.move_x + input.move_z * input.move_z).sqrt();
     s.player.moving = len > 1e-6;
     if s.player.moving {
         let (mx, mz) = (input.move_x / len, input.move_z / len);

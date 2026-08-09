@@ -17,6 +17,12 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # WebGPU-only on the web per house policy (webgl2 stays OFF; legacy
 # src/render/backend.ts deliberately defeated the WebGL fallback).
+# wasm-only: the window.__pk debug surface (the __lab() seed) that
+# scripts/pk-check.mjs reads to verify the sim from outside.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
 [dependencies.bevy]
 version = "0.17"
 default-features = false

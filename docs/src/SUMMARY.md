@@ -15,6 +15,7 @@
 # Port Status
 
 - [Status board](status/board.md)
+- [Port checklist (phases P0–P9)](status/port-checklist.md)
 - [Incidents](status/incidents.md)
 
 # Reference
