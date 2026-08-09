@@ -84,6 +84,63 @@ if (!PRESET[body]) throw new Error(`--body must be quadruped|biped, got "${body}
 const results = has("resume") && existsSync(resultsPath) ? JSON.parse(readFileSync(resultsPath, "utf8")) : {};
 const save = () => writeFileSync(resultsPath, JSON.stringify(results, null, 1) + "\n");
 
+/**
+ * ── THE SWEEP PUBLISHES ITSELF, BECAUSE A JOB BANNER IS NOT ENOUGH ──────────
+ *
+ * Reported by the operator, after the per-job banner was already shipped and
+ * verified working: "from my end I have no clue it's running, I have to look at
+ * task manager."
+ *
+ * Both halves of that are fair, and the job banner cannot fix either:
+ *
+ *   1. BETWEEN ROWS THERE IS NO JOB. Every row calls /free and reloads ~31GB of
+ *      weights, so for 30-90 seconds nothing is queued and the panel correctly
+ *      reports "0 running". Across 21 rows that is twenty dead-looking gaps in
+ *      a sweep that is working perfectly.
+ *   2. NOTHING KNEW A SWEEP EXISTED. The panel sees individual jobs; the bench
+ *      is a separate process it has never heard of. The operator's question is
+ *      not "is a job running", it is "is the pipeline working", and no page
+ *      could answer it.
+ *
+ * So the sweep writes its own state beside the runs, on every transition. The
+ * file is the transport, exactly as it is for a single run's heartbeat — no
+ * socket, no registry, and it survives a dev-server reload because it was never
+ * in memory. `_` prefix so the panel's run scan skips it.
+ *
+ * `finishedAt` is set on the way out, INCLUDING on a crash, so the panel can
+ * distinguish "finished" from "died" — a sweep that stops updating with no
+ * finishedAt is the shape of a killed process, and that is worth showing
+ * differently from success.
+ */
+const sweepPath = join(HERE, "..", "work", "comfy", "_sweep.json");
+const sweepStart = Date.now();
+let sweepDone = 0;
+const publishSweep = (patch = {}) => {
+  try {
+    const totalRows = facings.length * clips.length;
+    const elapsed = Date.now() - sweepStart;
+    writeFileSync(sweepPath, JSON.stringify({
+      character, tool: "bench-moveset",
+      startedAt: sweepStart, updatedAt: Date.now(),
+      total: totalRows, done: sweepDone,
+      // Rows already on disk from a previous --resume run are not re-run, so
+      // "done this process" and "rows complete" are different numbers and both
+      // are worth showing. Conflating them makes a resumed sweep look stalled.
+      completed: Object.keys(results).filter((k) => k.includes(":") && !k.startsWith("master") && results[k]?.ok).length,
+      facings, clips,
+      // Mean of THIS process's completed rows; null until one lands, because a
+      // hardcoded guess is worse than an honest "unknown".
+      etaS: sweepDone > 0 ? Math.round(((elapsed / sweepDone) * (totalRows - sweepDone)) / 1000) : null,
+      ...patch,
+    }, null, 1) + "\n");
+  } catch { /* status must never take the sweep down */ }
+};
+// A crash or a kill still marks the end, so "stopped updating" and "finished"
+// are distinguishable in the panel.
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => { publishSweep({ current: null, finishedAt: Date.now(), stopped: true }); process.exit(130); });
+}
+
 const sh = (args_) => execFileSync("node", args_, { cwd: HERE, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 24 });
 
 /**
@@ -191,6 +248,7 @@ for (const f of facingOrder) {
   const from = masters[fromId] ?? master;
   const viaFallback = !masters[fromId] && fromId !== "E";
   console.log(`\n=== master ${f} — rotate from ${viaFallback ? `E (WANTED ${fromId}; expect a MIRROR for N)` : fromId} ===`);
+  publishSweep({ current: `master:${f}`, currentPreset: "rotate", phase: "generating" });
   await freeModels();
   try {
     const out = sh(["cli.mjs", "rotate", "--init", from, "--to", f, "--file-as", character, "--seed", seed]);
@@ -219,7 +277,9 @@ for (const facing of facings) {
     const preset = PRESET[body][clip];
     const loop = LOOPING.has(clip);
     console.log(`\n=== ${key} — preset ${preset}${loop ? " --loop" : " (no loop: not a cycle)"} ===`);
+    publishSweep({ current: key, currentPreset: preset, phase: "freeing models" });
     await freeModels();
+    publishSweep({ current: key, currentPreset: preset, phase: "generating" });
     const t0 = Date.now();
     try {
       const argv = ["cli.mjs", "animate", "--init", masters[facing], "--preset", preset,
@@ -250,9 +310,13 @@ for (const facing of facings) {
       console.error(`${key} FAILED: ${err.message}`);
       results[key] = { ok: false, preset, loop, error: String(err.message).slice(0, 400), tookS: Math.round((Date.now() - t0) / 1000) };
     }
+    sweepDone++;
+    publishSweep({ current: null, phase: "between rows" });
     save();
   }
 }
+
+publishSweep({ current: null, phase: "done", finishedAt: Date.now() });
 
 /** ── 3. the matrix report ────────────────────────────────────────────────── */
 /**

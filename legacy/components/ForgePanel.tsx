@@ -23,10 +23,11 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { S } from "./forge/theme";
-import type { Job, LibraryState, Manifest, Mode, TrayFrame } from "./forge/types";
+import type { Job, LibraryState, Manifest, Mode, TrayFrame, SweepState } from "./forge/types";
 import { del, postJSON, urlToB64 } from "./forge/api";
 import { GenerateCard, type SlotId } from "./forge/GenerateCard";
 import { JobsBoard } from "./forge/JobsBoard";
+import { SweepBanner } from "./forge/SweepBanner";
 import { LibraryCard } from "./forge/LibraryCard";
 import { SheetTray } from "./forge/SheetTray";
 import { IntakeCard } from "./forge/IntakeCard";
@@ -63,6 +64,12 @@ export default function ForgePanel() {
   const modeReqN = useRef(1);
   const [tray, setTray] = useState<TrayFrame[]>([]);
   const [tick, setTick] = useState(0);
+  /**
+   * State of a `bench-moveset.mjs` sweep, if one is running. Not a job — see
+   * the route's note: a sweep spends 30-90s BETWEEN jobs freeing and reloading
+   * ~31GB of weights, so the jobs list is legitimately empty for much of it.
+   */
+  const [sweep, setSweep] = useState<SweepState | null>(null);
   const [library, setLibrary] = useState<LibraryState>({ projects: [], activeProject: null, characters: [] });
   const [activeCharacter, setActiveCharacter] = useState<string | null>(null);
   const trayKey = useRef(0);
@@ -79,6 +86,26 @@ export default function ForgePanel() {
       /* backend absent — the manifest gate reports it */
     }
   }, []);
+  /**
+   * THE BROWSER TAB IS THE STATUS LIGHT.
+   *
+   * "From my end I have no clue it's running, I have to look at task manager."
+   * A banner only helps someone already looking AT the page; a tab title is
+   * readable from any other tab, which is where a person waiting three hours
+   * for a sweep actually is. Cheap, and it removes the reason to open Task
+   * Manager at all.
+   */
+  useEffect(() => {
+    const base = "forge";
+    if (!sweep || sweep.finishedAt) {
+      document.title = base;
+      return;
+    }
+    const pct = sweep.total > 0 ? Math.round((sweep.completed / sweep.total) * 100) : 0;
+    document.title = `▶ ${pct}% ${sweep.current ?? "loading"} — ${base}`;
+    return () => { document.title = base; };
+  }, [sweep]);
+
   useEffect(() => {
     void refreshLibrary();
   }, [refreshLibrary]);
@@ -93,7 +120,9 @@ export default function ForgePanel() {
       ]);
       setM(await mr.json());
       const dj = (await dr.json()).jobs ?? {};
-      const gj = (await gr.json()).jobs ?? {};
+      const gpayload = await gr.json();
+      const gj = gpayload.jobs ?? {};
+      setSweep((prev) => (same(prev, gpayload.sweep ?? null) ? prev : gpayload.sweep ?? null));
       // Same identity-stability rule the modes write below has followed all
       // along. Handing back a fresh object every poll is what fed the loop
       // described on the effect — see there for why this is not cosmetic.
@@ -504,6 +533,7 @@ export default function ForgePanel() {
               onLaunch={launch}
               say={say}
             />
+            <SweepBanner sweep={sweep} now={Date.now()} />
             <JobsBoard
               jobs={genJobs}
               tick={tick}

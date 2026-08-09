@@ -254,7 +254,10 @@ export function motionClip(frames: readonly RawImage[], opts: { label?: string }
         why: "a single frame cannot be checked for motion",
         fix: "generate the clip again with --frames 21",
       }], opts),
-      churn: [], seam: 0, boxes: frames.length,
+      // scaleSwing 0, not undefined: a clip too short to compare has not
+      // changed size, and an optional field here would push the null check
+      // onto every reader.
+      churn: [], seam: 0, boxes: frames.length, scaleSwing: 0,
     };
   }
 

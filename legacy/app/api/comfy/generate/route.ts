@@ -769,7 +769,25 @@ export async function GET(req: Request) {
       const { previewB64: _p, ...lean } = v;
       all[k] = lean;
     }
-    return NextResponse.json({ jobs: all });
+    /**
+     * THE SWEEP, which is not a job and has no row of its own.
+     *
+     * `bench-moveset.mjs` runs 21 generations over several hours and frees the
+     * models between each, so for 30-90 seconds per row NOTHING is queued and
+     * the jobs list is honestly empty. The operator's read of that was "I have
+     * no clue it's running, I have to look at task manager" — correct, because
+     * no per-job view can represent a process that is between jobs.
+     *
+     * Read here rather than from its own route so the panel's existing poll
+     * picks it up with no second request.
+     */
+    let sweep: unknown = null;
+    try {
+      sweep = JSON.parse(readFileSync(join(WORK, "_sweep.json"), "utf8"));
+    } catch {
+      /* no sweep has ever run, or the file is mid-write — both are "no sweep" */
+    }
+    return NextResponse.json({ jobs: all, sweep });
   }
   if (frame) {
     // No traversal: the frame must be a bare .png name that really exists in

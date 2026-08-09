@@ -167,3 +167,36 @@ export type CutResult = {
 };
 
 export type CrushResult = { ok: boolean; previewB64: string; report: string; frames: number; error?: string };
+
+/**
+ * A `bench-moveset.mjs` sweep in progress — the whole matrix, not one job.
+ *
+ * A sweep is 21 generations over several hours that frees the models between
+ * each row, so for 30-90 seconds per row the jobs list is honestly EMPTY. The
+ * per-job banner cannot represent that, and the operator's read of the gap was
+ * "I have no clue it's running, I have to look at task manager". The bench
+ * publishes this to `work/comfy/_sweep.json` on every transition.
+ */
+export type SweepState = {
+  character: string;
+  tool: string;
+  startedAt: number;
+  updatedAt: number;
+  /** Rows this invocation intends to run. */
+  total: number;
+  /** Rows THIS process has finished — resumed rows are not counted here. */
+  done: number;
+  /** Rows complete on disk, including ones a previous run did. */
+  completed: number;
+  facings: string[];
+  clips: string[];
+  /** e.g. "N:walk", or "master:S", or null between rows. */
+  current?: string | null;
+  currentPreset?: string;
+  /** "generating" | "freeing models" | "between rows" | "done". */
+  phase?: string;
+  /** Null until one row lands — a guessed ETA is worse than an honest unknown. */
+  etaS?: number | null;
+  finishedAt?: number;
+  stopped?: boolean;
+};
