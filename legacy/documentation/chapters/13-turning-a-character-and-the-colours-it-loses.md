@@ -383,6 +383,102 @@ escalation. It is the thing to try before VACE.
 
 ---
 
+## 8. The rock, and the gate I nearly blinded on a theory
+
+The scale gate from §6 fired on its first real clip: **N:run, 33.13% area
+swing**. I looked at the area series —
+
+```
+1.16 1.14 1.04 0.86 0.82 0.78 0.95 1.00 0.99 0.99 1.01
+1.03 1.04 1.01 0.91 0.90 0.93 1.00 1.12 1.17 1.16
+```
+
+— and reasoned that a galloping body extends and gathers, so an oscillation
+that *returns to its starting size* must be a stride rather than a recession.
+The trend confirmed it: **+0.42%/frame**, dead flat, against the known-bad
+attack arm's **−4.11%/frame**. Clean separation, three labelled clips, a
+plausible story. I rewrote the gate to fire on trend instead of swing, which
+would have made it pass N:run.
+
+**Then the operator watched the clip: "the dog just looks like it's rocking
+back and forth."**
+
+The frames confirm it — a standing dog seen from behind, tail swinging, whole
+body scaling up and down. No stride, no suspension, no gallop. **The sinusoid
+IS the defect.** It is the figure rocking toward and away from the camera,
+which is what a gait becomes when the model has no lateral silhouette to spend.
+
+So the swing check was right and the rewrite would have blinded it to the
+commonest front/back failure there is. The corrected shape:
+
+| swing | trend | meaning |
+|---|---|---|
+| high | ~0 | **ROCKING** toward/away — no gait at all |
+| high | falling | **RECEDING** — the figure shrinks away |
+| low | — | stable (the approved S walk, 7.3%) |
+
+A real side-on gait **barely swings**. That is the fact that should have stopped
+me: the approved walk is 7.3%, because a body extending sideways does not change
+its bounding area much. "A big swing means a gait" was simply wrong — on this
+pipeline a big swing IS the defect, and only its direction varies. Swing
+triggers; trend picks which of the two messages to print, and they carry
+different fixes.
+
+An oscillation COUNT was tried first as the discriminator and is not one: a
+monotonic decline still jitters, so gait and recession both scored 6–7 sign
+changes. Same answer for both cases, so not a check — the third time in this
+chapter that a proposed discriminator failed to discriminate.
+
+**The lesson is not "the operator was right".** It is that I had a measurement
+(+0.42 vs −4.11), a mechanism (extend-and-gather), and three labelled examples,
+and the conclusion was still wrong, because every one of those was reasoning
+about the number rather than watching the clip. A story that explains the data
+is not evidence that the story is what happened.
+
+## 9. Judge at the texel budget, not at 640px
+
+Chapter 10's rule is **generate** at the texel budget. The corollary went
+unnoticed until the operator asked why the feet distort on S/N: **judge at it
+too.**
+
+Every review this session — every GIF, every crop, every side-by-side — was
+done on the 640px raw frames. The atlas cell is **72–120 texels**
+(`README.md`). Downscaled to 96, the S walk reads considerably better than it
+does at full resolution: legs separate, tan paws legible, the foot ambiguity
+much reduced. Some of what looks broken never reaches the screen.
+
+This does not excuse the defects — the N run still rocks at 96 texels, and the
+attack still shrinks. But it changes what is worth regenerating, and reviewing
+at 640 systematically over-rejects.
+
+```bash
+# what the player actually sees, at the rate they see it
+ffmpeg -framerate 8 -pattern_type glob -i "<dir>/*.png" \
+  -vf "scale=-1:96:flags=area,scale=-1:384:flags=neighbor,split[a][b];[a]palettegen[p];[b][p]paletteuse" out.gif
+```
+
+## 10. A gait has a natural frequency and 21 frames is the wrong one
+
+Asked whether the run needed **more** frames. It needs fewer.
+
+A dog's gallop cycle is roughly **0.35 s**. At the game's 8 fps that is about
+**three frames**. A 21-frame clip asks the model to stretch one stride across
+**2.6 seconds** — and a maximally slowed gallop is, precisely, a rock. More
+frames makes it slower and worse.
+
+Two ways out, and the first is free:
+
+- **Subsample.** Keeping every 3rd frame plays the same stride 3× faster. The
+  panel already has `keep every 2th / 3th / 4th` on each job card, so it is a
+  curation choice, not a regeneration.
+- **Ask for fewer frames** and let each one carry a bigger pose change.
+
+The general form: **match the clip length to the gait's period, not to a
+default.** 21 frames suits a walk (~1 s) and a death (a one-shot that wants
+detail); it is roughly 7× too long for a gallop.
+
+---
+
 ## The standing rules these bought
 
 1. **Never rotate 180° in one step.** Go E → S → N. A direct E → N is a mirror,
@@ -414,3 +510,15 @@ escalation. It is the thing to try before VACE.
     ControlNet dead end is about the STILL-IMAGE leg and does not cover video.
 13. **Try `--end` before VACE.** Pinning a drawn last frame is pose control with
     no new weights, on a box where RAM is already the binding constraint.
+14. **A big area swing is a DEFECT, not a gait.** A real side-on gait swings
+    7%. High swing + flat trend is rocking; high swing + falling trend is
+    receding. Both are bad, and they need different fixes.
+15. **Judge at 96 texels, not 640.** Reviewing at generation resolution
+    systematically over-rejects — the atlas cell is 72-120 texels.
+16. **Match the frame count to the gait's period.** A gallop cycle is ~0.35s =
+    ~3 frames at 8fps; 21 frames stretches one stride to 2.6s, which reads as
+    a rock. Subsample with `keep every 3th` rather than regenerating.
+17. **A story that explains the number is not evidence the story happened.** I
+    had a measurement, a mechanism and three labelled examples, and was still
+    wrong, because all three were reasoning about numbers instead of watching
+    the clip.
