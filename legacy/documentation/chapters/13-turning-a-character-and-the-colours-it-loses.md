@@ -259,12 +259,11 @@ front-facing one-shot fails most visibly.
 - **Judge a one-shot on E, not on S.** A side view puts a lunge, a recoil and a
   collapse all perpendicular to the camera, which is where they have silhouette
   to spend.
-- **A one-shot prompt must pin SCALE, not position.** The original template said
-  "the character stays centered in frame", which forbids the travel a lunge
-  needs. Removing it freed the pose and left nothing forbidding the shrink. The
-  keyframe mode already had the right form — *"a locked-off camera, the
-  character stays the same size and stays centered in frame"* — and only the
-  centring clause needed dropping.
+- **⚠️ CORRECTED — you cannot prompt your way out of the shrink.** This chapter
+  first said "a one-shot prompt must pin SCALE, not position", on the theory
+  that the old "stays centered in frame" had been holding the size as a side
+  effect. That theory was written down before it was tested. **It is wrong**,
+  and the measurement is in §6.
 - **A scale change is worse than a pose problem downstream.** `drift.ts`
   registers cells by bounding box and baseline; a figure that halves in size
   across a clip is not a pose it can register, it is a different sprite.
@@ -295,6 +294,95 @@ dissolution.
 
 ---
 
+## 6. Three arms on one clip: the metric improved, the clip got worse, twice
+
+The attack, S facing, same init and seed 7, one prompt variable per arm. "Area
+swing" is the largest-to-smallest change in the figure's bounding-box area.
+
+| arm | churn | boxes | seam | **area swing** | by eye |
+|---|---|---|---|---|---|
+| 1 — original template | 11.1% | 20/21 | 45.1% | **7.3%** | stable size, inert. "just showing its teeth" |
+| 2 — new beats, pose freed | 28.3% | 21/21 | 61.1% | **43.9%** | shrinks to a head |
+| 3 — arm 2 + "stays the same size" | 27.1% | 21/21 | 63.6% | **62.3%** | shrinks MORE |
+
+**Arm 2 was a 2.5× churn improvement and a worse clip.** It bought the motion by
+shrinking the dog — frame 0 a full standing wolf, frame 20 barely more than a
+head. Churn cannot tell a lunge from a zoom-out, because a receding figure
+changes an enormous number of pixels. This is the same failure as the walk4
+near-miss, inverted: there a number nearly discarded something good, here a
+number nearly shipped something bad.
+
+**Arm 3 is the correction to this chapter's own first draft.** Adding an
+explicit "the character stays the same size throughout" made the shrink *worse*,
+not better. And Wan's shared negative in `graphs.mjs` has always carried:
+
+    camera zoom, zoom in, zoom out, dolly, camera pan, camera movement,
+    changing scale, character growing, character shrinking
+
+Every one of those terms was active in all three arms. **Neither polarity of
+prompting moves this.** Re-banning a banned thing is the "prompting harder" dead
+end from chapter 10, and it was nearly re-shipped here.
+
+**It is geometry.** On a front facing, a lunge has no lateral silhouette to
+spend, so "move toward the target" and "get smaller" are the same picture in
+projection. No wording changes a projection. The fix is the facing (§4), or
+structural conditioning the animate leg does not currently have (§7).
+
+### The fourth gate
+
+Nothing could see this. `motion` scored the two broken arms as a large
+improvement; `ghost` was clean; `fade` was advisory. So `motion.ts` now measures
+it — free, because it already computes every frame's bounding box for the
+distinct-silhouette count. `SCALE_SWING_SOFT` is 25%, between the good arm's
+7.3% and the first bad one's 43.9%, and SOFT because a real death collapse
+genuinely shrinks its own box.
+
+It is the one defect on this list that **nothing downstream can repair**:
+`drift.ts` registers cells by bounding box and baseline, so a figure that halves
+across a clip is not a pose it can register, it is a different sprite.
+
+## 7. What the animate leg is NOT using, and why that is the melting
+
+Asked directly, on seeing the front-facing attack: *"it's melting — are we using
+the control nets and the masking?"*
+
+**No, to both, and the animate leg has no structural conditioning of any kind.**
+`wanI2V` receives one image and a sentence. There is no pose map, no depth map,
+no edge map, no mask. Nothing holds the anatomy from frame to frame, so when the
+model is asked for motion it cannot express in-plane, the body dissolves.
+
+The two must not be confused, and the repo's own notes invite the confusion:
+
+| | the **still-image leg** (`leg: "qwen"`) | the **video leg** (`leg: "wan"`) |
+|---|---|---|
+| model | Qwen-Image-Edit 2511 | Wan 2.2 I2V A14B |
+| in → out | one picture → one picture | one picture → 21 frames |
+| used by | `rotate`, `edit`, background removal, keyframes | `animate` |
+| ControlNet | wired, and **benched** — does not bind on 2511 | **never wired at all** |
+
+Chapter 10's ControlNet dead end was measured on the FIRST column. It says
+nothing about the second. Treating "ControlNet is dead" as covering video
+control would be exactly the category error this chapter keeps documenting.
+
+**The video equivalent is VACE** — Wan's control module, which takes per-frame
+pose or depth and is supported for Wan 2.2 in ComfyUI. It is not installed. Two
+honest costs before anyone reaches for it:
+
+1. **It needs a driving motion source.** VACE transfers motion from a reference
+   sequence. For a galloping quadruped that means real dog footage or a rigged
+   3D render — a whole new input pipeline, not a checkbox.
+2. **RAM is already the binding constraint.** A14B is ~31GB of reads and the
+   guard interrupts at 1.2GiB WSL-available; the control module lands on top of
+   that.
+
+**The cheaper structural control already exists and is unused: the keyframe
+path.** `cli.mjs animate --end <png>` pins a different LAST frame, so the poses
+can be drawn on the still-image leg and Wan asked only to in-between them. That
+is pose control with no new weights, and chapter 11 already lists it as the
+escalation. It is the thing to try before VACE.
+
+---
+
 ## The standing rules these bought
 
 1. **Never rotate 180° in one step.** Go E → S → N. A direct E → N is a mirror,
@@ -321,3 +409,8 @@ dissolution.
     and collapse into "hunch down and get smaller".
 11. **A fade reject on a curling creature means LOOK, not DISCARD.** Occlusion
     and dissolution are identical to a histogram.
+12. **The animate leg has NO structural conditioning.** No ControlNet, no pose,
+    no depth, no mask — one image and a sentence. That is why it melts. The
+    ControlNet dead end is about the STILL-IMAGE leg and does not cover video.
+13. **Try `--end` before VACE.** Pinning a drawn last frame is pose control with
+    no new weights, on a box where RAM is already the binding constraint.
