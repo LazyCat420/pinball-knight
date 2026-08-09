@@ -8,7 +8,13 @@
  *   2. the sim ticks (~60 Hz) via the window.__pk debug surface
  *   3. scripted input moves the knight (__pk.x advances under 'd')
  *   4. render FPS over a 3 s rAF sample (reported; budget-gated later)
- * and saves a screenshot to .checks/.
+ *   5. the title intro plays through its phases on a plain load, hands off
+ *      to the dungeon, and a click skips it (__pk.intro mirrors the legacy
+ *      __dungeonIntroPhase probe)
+ * and saves screenshots to .checks/.
+ *
+ * The sim gates load `?autostart=1` — the harness entry that skips the
+ * intro, same contract as the legacy playtest bots.
  *
  * Usage, from the repo root:
  *   node scripts/pk-check.mjs             # trunk build + full check
@@ -77,7 +83,7 @@ async function main() {
   };
 
   try {
-    await page.goto(`http://localhost:${PORT}/index.html`, {
+    await page.goto(`http://localhost:${PORT}/index.html?autostart=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
@@ -124,14 +130,74 @@ async function main() {
     );
     log(true, `render FPS: ${fps.toFixed(1)}`);
 
-    // Gate 1: no console/page errors across everything above.
-    gate(errors.length === 0, `console clean (${errors.length} errors)`);
-    for (const e of errors.slice(0, 5)) console.log("   ", e.slice(0, 200));
-
     await mkdir(join(ROOT, ".checks"), { recursive: true });
     const shot = join(ROOT, ".checks", `pk-check-${Date.now()}.png`);
     await page.screenshot({ path: shot });
     console.log("screenshot:", shot);
+
+    // ── Intro gates: a PLAIN load plays the title sequence once ──
+    const introPage = await ctx.newPage();
+    introPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    introPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
+    await introPage.goto(`http://localhost:${PORT}/index.html`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    const pkIntro = () =>
+      introPage.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
+    const seen = [];
+    let titleShot = false;
+    let handoff = null;
+    for (let i = 0; i < 140; i++) {
+      await introPage.waitForTimeout(250);
+      const s = await pkIntro();
+      if (!s) continue;
+      if (s.intro && seen[seen.length - 1] !== s.intro) seen.push(s.intro);
+      if (s.intro === "title" && !titleShot) {
+        titleShot = true;
+        const tshot = join(ROOT, ".checks", `pk-intro-title-${Date.now()}.png`);
+        await introPage.screenshot({ path: tshot });
+        console.log("screenshot:", tshot);
+      }
+      // Finished: the intro handed off and the dungeon sim is live.
+      if (s.intro === null && seen.length) {
+        handoff = s;
+        break;
+      }
+    }
+    gate(seen.length >= 3, `intro plays through phases (${seen.join(" → ") || "never seen"})`);
+    gate(titleShot, "intro reached the title card");
+    gate(!!handoff && handoff.tick > 0, "intro hands off to a live dungeon sim");
+    await introPage.close();
+
+    // ── Skip gate: a click ends the intro immediately ──
+    const skipPage = await ctx.newPage();
+    skipPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    skipPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
+    await skipPage.goto(`http://localhost:${PORT}/index.html`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    const pkSkip = () =>
+      skipPage.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
+    let sawIntro = false;
+    for (let i = 0; i < 120 && !sawIntro; i++) {
+      await skipPage.waitForTimeout(250);
+      sawIntro = !!(await pkSkip())?.intro;
+    }
+    await skipPage.mouse.click(400, 300);
+    let skipped = null;
+    for (let i = 0; i < 16 && !skipped; i++) {
+      await skipPage.waitForTimeout(250);
+      const s = await pkSkip();
+      if (s && s.intro === null && s.tick > 0) skipped = s;
+    }
+    gate(sawIntro && !!skipped, "a click skips the intro into the dungeon");
+    await skipPage.close();
+
+    // Gate 1: no console/page errors across everything above.
+    gate(errors.length === 0, `console clean (${errors.length} errors)`);
+    for (const e of errors.slice(0, 5)) console.log("   ", e.slice(0, 200));
   } finally {
     closeHostBrowser();
     server.close();

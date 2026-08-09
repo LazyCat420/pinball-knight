@@ -17,6 +17,7 @@
 pub mod collide;
 pub mod combo;
 pub mod grid;
+pub mod intro;
 pub mod jsmath;
 pub mod pinball;
 pub mod rail;

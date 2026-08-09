@@ -23,6 +23,7 @@ import { SHAPE_ARC, SHAPE_ROUND_NE, SHAPE_SLANT_NE } from "./engine/tile-shape";
 import { moveCircle, computeArcCorners } from "./engine/collision";
 import { wallSurface, floorSurface } from "./engine/surfaces";
 import { freshRail, holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./entities/rail";
+import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./intro/title-grid";
 import { comboWindow, comboZone, comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul, type ComboZone } from "./entities/combo-curve";
 import {
   OVERCHARGE_TIME,
@@ -475,5 +476,25 @@ describe("port-parity fixtures", () => {
     const speeds = t.positions.map((q) => q[2]);
     expect(Math.max(...speeds)).toBeGreaterThan(10);
     pinFixture("pinball-trace-seed7.json", t);
+  });
+
+  it("intro ball trace (title-maze ricochet) matches the committed fixture", () => {
+    // 600 ticks at the intro's 120 Hz sub-step through buildTitleGrid — the
+    // launch runPinballIntro gives the ball, verbatim. Rust twin:
+    // crates/pk-core/tests/intro_trace.rs.
+    const layout = buildTitleGrid();
+    const b: IntroBall = { x: layout.spawn.x, z: layout.spawn.z, vx: 0.84, vz: 0.55 };
+    const n = Math.hypot(b.vx, b.vz);
+    b.vx = (b.vx / n) * INTRO_BALL_SPEED;
+    b.vz = (b.vz / n) * INTRO_BALL_SPEED;
+    const positions: number[][] = [];
+    const bounceTicks: number[] = [];
+    for (let t = 0; t < 600; t++) {
+      if (stepIntroBall(layout.grid, b, 1 / 120)) bounceTicks.push(t);
+      positions.push([b.x, b.z, b.vx, b.vz]);
+    }
+    // The trace must actually ricochet, not glide: several wall strikes in 5s.
+    expect(bounceTicks.length).toBeGreaterThan(3);
+    pinFixture("intro-ball-trace.json", { ticks: 600, positions, bounceTicks });
   });
 });

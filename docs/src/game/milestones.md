@@ -19,3 +19,23 @@ throughout.
 **Oracle discipline:** every ported subsystem lands in the same PR as its
 fixtures (exact) or ported tests (behavioral). No intentional behavior changes
 before M7.
+
+## Scene-order decision (2026-08-09): player-visible scenes pull forward
+
+With P0 (the parity harness) done and P1 physics largely landed, the phase
+order from here is a product choice, not a safety one — the fixture gates
+hold whichever scene ports next. Decision: port what a player meets, in the
+order they meet it, ahead of finishing breadth-first subsystems:
+
+1. **Intro title sequence** — DONE (see the status board). Small (1.5k),
+   fixture-pinned ricochet, first thing anyone sees.
+2. **Tavern** (P6 scope, pulled next) — the between-runs hub; needs Painter2d
+   text + a walkable isometric room, so it drags the minimum useful slice of
+   P5's GUI layer with it.
+3. **Maze generation** (P2) — real floors behind the tavern's descent;
+   byte-identical floor JSON across the legacy seed corpus is the gate.
+4. **GUI/HUD proper** (rest of P5) — menus, HUD, saves, run flow.
+
+The P-numbered checklist remains the inventory of record; this list only
+reorders when its items are picked up. The harness rule is unchanged: nothing
+ships unverified, and a port that deletes must fail a gate, not a reviewer.

@@ -116,7 +116,18 @@ The items reported missing today live here.
 - [ ] **ESC game menu** (`gui/screens/menu.ts`), settings + `settings-save`.
 - [ ] **Backtick debug panel** (`gui/screens/debug.ts`, `debug-panel.ts`) +
       `__lab`-equivalent console API (grow `window.__pk`).
-- [ ] **Intro/title** (`intro/title-grid.ts`, `clock.ts`, intro-chrome).
+- [x] **Intro/title** (`intro/title-grid.ts`, `clock.ts`, `index.ts`
+      choreography, intro-chrome) — pulled forward 2026-08-09 (see the
+      scene-order decision in milestones). Core in `pk-core/src/intro.rs`
+      (17 ported tests + BIT-EXACT `intro-ball-trace.json` fixture), shell
+      in `pk-game/src/{intro,overworld}.rs` (Intro→Dungeon states, CPU-
+      painted overworld gag, shatter, camera sweep, skip gates incl.
+      `?autostart=1` for harnesses). Verified: pk-check intro gates (phases,
+      title screenshot, handoff, click-skip) ALL PASSED in host Chrome.
+      Remaining debt (P5/P7): pixel fonts for HUD/title text (Bevy default
+      font + a bitmap "?" today), sfx stings, knight painted into the
+      480-wide buffer instead of a display-res layer, and the block's "?"
+      pulse-scale.
 - [ ] HUD: `hud-face.ts` (1330), meters, minimap (`map-render.ts`),
       floor-map overlay, toasts, pickup-toast.
 - [ ] Screens: shop, character-select, haul, game-over, floor-loading.
@@ -176,3 +187,5 @@ co-op multiplayer.
 | Diablo-rule wall heights | `pk-game` | host-Chrome screenshots |
 | Knight billboard, S/N/E + mirrored W | `pk-game` | host-Chrome screenshots |
 | wasm/WebGPU build (trunk) | `Trunk.toml`, `web/` | pk-check in host Chrome |
+| Intro: title-grid maze + ricochet + two-clock + phase machine + skip gate | `pk-core/src/intro.rs` | 17 ported tests + bit-exact `intro-ball-trace.json` |
+| Intro shell: Intro→Dungeon states, 2D overworld gag, shatter, sweep, chrome | `pk-game/src/{intro,overworld}.rs` | pk-check intro gates + phase screenshots |

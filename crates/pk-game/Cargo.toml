@@ -38,6 +38,7 @@ features = [
     "bevy_text",
     "default_font",
     "multi_threaded",
+    "bevy_state",
     "x11",
     "webgpu",
 ]

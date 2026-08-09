@@ -5,6 +5,30 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — The title intro plays: 1985 overworld → bonk → shatter →
+  the maze that spells the title.** First scene of the player-order plan
+  (see milestones' scene-order decision). Split exactly like the physics
+  ports: everything that ticks is in `pk-core/src/intro.rs` — the
+  letterform title grid, the 120 Hz ricochet against the REAL `move_circle`
+  (js_hypot in the normalizer, per the V8-hypot entry below), the two-clock
+  split (real time drives choreography, clamped time drives the ball — the
+  legacy 22s-intro regression stays fixed by construction), the 5-phase
+  sequence with edge-triggered cues, and the skip gate. The Bevy shell
+  (`pk-game/src/{intro,overworld}.rs`) paints the side-scroller gag into a
+  480-wide CPU buffer (sky/clouds/hills/bricks/particles/question
+  block/coin/knight from the E-sheet run+roll cells), snapshots it minus
+  the knight and shatters it over the side-on 3D maze, then sweeps
+  7°→38° tilt / 0→18° yaw with log-zoom to the fitted title. Verified:
+  17 ported pk-core tests + a BIT-EXACT 600-tick `intro-ball-trace.json`
+  fixture (legacy exporter in `port-fixtures.test.ts`), and four new
+  pk-check gates in host Chrome — phases progress on a plain load, title
+  card screenshotted, auto-handoff to a live dungeon sim, click-skip.
+  `?autostart=1` is now pk-check's harness entry, same contract as the
+  legacy bots. Boot trap pinned: the initial state's OnEnter fires before
+  Startup's commands apply, so a `Res` param there panics the wasm —
+  scene setups are lazy Update systems gated on resource existence.
+  Debt listed in the checklist: pixel fonts, sfx stings (P7), display-res
+  knight layer, "?" pulse-scale.
 - **2026-08-09 — P1 momentum ride ported: the knight is a pinball.** The sim
   half of `updatePinball` + `pinball-collide.ts` + `rail.ts` + the
   combo-curve math live in Rust (`pinball.rs`, `rail.rs`, `combo.rs`):
