@@ -2,7 +2,11 @@
 
 Pinball Knight is being ported from TypeScript/Three.js (WebGPU) to **Rust +
 Bevy** so it can scale as it grows and run on smaller hardware. Targets:
-braindeadbot.com (wasm, WebGPU-only) and Steam (native).
+**Windows native** (`x86_64-pc-windows-gnullvm` — the day-to-day play/dev
+build AND the eventual Steam artifact; `scripts/pk-win.sh run` launches the
+.exe straight onto the Windows desktop via WSL2 interop), and
+braindeadbot.com (wasm, WebGPU-only — also the parity-gate harness, since
+`pk-check.mjs` verifies the sim through host Chrome).
 
 This book is the project's own documentation — separate from braindeadbot's
 `documentation/`. It tracks **what's broken, what's fixed, what's working**

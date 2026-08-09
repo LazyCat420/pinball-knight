@@ -5,6 +5,20 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — Windows-native build live; it is now the play/dev target.**
+  `scripts/pk-win.sh run` cross-compiles `pk-game.exe`
+  (`x86_64-pc-windows-gnullvm`, user-local llvm-mingw via
+  `scripts/setup-win-toolchain.sh` — no sudo) and WSL2 interop launches it
+  straight onto the Windows desktop on the host GPU. Verified by screenshot:
+  the P1 demo floor (knight, slants, round corner, brass arc guide)
+  rendering in a native window titled "Pinball Knight (Rust slice)". Zero
+  code changes needed — the wasm-only surface was already `cfg`-gated.
+  Debug builds link in ~2 min. Two traps pinned in dev-env.md: the exe
+  needs `libunwind.dll` beside it (missing = silent exit 53), and
+  `rustup target add` must run inside the repo or it lands on the wrong
+  toolchain (E0463). The same tarball ships lldb 22, so
+  `scripts/pk-win.sh lldb` gives a working `rust-lldb`. The wasm/trunk
+  build stays as the parity gate (pk-check) and the braindeadbot.com ship.
 - **2026-08-09 — P1 geometry core ported and verified.** Full tile-shape
   vocabulary in Rust: slants (triangle resolve), rounds (quarter-disc),
   multi-tile arc features (convex guides + concave bowls), kick bands,

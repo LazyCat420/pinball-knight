@@ -21,8 +21,11 @@ The harness that gates every later phase. Nothing ships unverified.
 - [x] `scripts/pk-check.mjs`: drives the wasm build in **real host Chrome**
       (CDP): console-error gate, sim-tick advance gate, scripted-input
       movement gate, FPS measurement, screenshots to `.checks/`.
+- [x] Windows-native build (`x86_64-pc-windows-gnullvm` + llvm-mingw,
+      `scripts/pk-win.sh`) — the play/dev target. Verified: exe launched on
+      the Windows desktop via interop, demo floor rendering (screenshot).
 - [ ] CI: fmt/clippy/`cargo test` + legacy vitest + wasm build + pk-check +
-      wasm-size budget.
+      wasm-size budget + windows-gnullvm build.
 - [ ] Perf baseline page in docs: record FPS/frame-time from pk-check per
       commit (the benchmarking log).
 

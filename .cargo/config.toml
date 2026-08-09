@@ -5,3 +5,9 @@ xtask = "run -p xtask --"
 # The box is shared (see docs: WSL2 dev-loop reality). Leave headroom; raise
 # per-invocation with -j when you hold the box.
 jobs = 10
+
+# Windows-native build (the play/dev target — WSL2 interop launches the .exe
+# straight onto the Windows desktop). Toolchain is user-local llvm-mingw
+# (no sudo on this box); scripts/setup-win-toolchain.sh installs it.
+[target.x86_64-pc-windows-gnullvm]
+linker = "/home/lazycat/.local/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
