@@ -112,6 +112,33 @@ export const MOTION = {
    * legitimate breathing idle really can hold one silhouette.
    */
   BOXES_SOFT: 0.25,
+  /**
+   * ── THE FOURTH AXIS: THE FIGURE CHANGED SIZE ──────────────────────────────
+   *
+   * How much the figure's BOX AREA may swing across a clip, as a fraction of
+   * the largest frame. Measured on three attack arms, same init, seed 7, one
+   * prompt variable each:
+   *
+   *     arm            churn   boxes   seam    AREA SWING
+   *     1 original     11.1%   20/21   45.1%      7.3%    stable, but inert
+   *     2 freed pose   28.3%   21/21   61.1%     43.9%    shrinks
+   *     3 + size pin   27.1%   21/21   63.6%     62.3%    shrinks MORE
+   *
+   * Every gate this pipeline had passed all three. `motion` saw arms 2 and 3
+   * as a big improvement — churn 2.5x, a perfect 21/21 silhouettes — because
+   * churn cannot tell a lunge from a ZOOM-OUT: a receding figure changes an
+   * enormous number of pixels. `ghost` was clean, `fade` was advisory.
+   *
+   * It matters more than it looks. Downstream, `drift.ts` registers cells by
+   * bounding box and baseline, so a figure that halves across a clip is not a
+   * pose it can register — it is a different sprite. This is the one defect on
+   * the list that nothing later can repair.
+   *
+   * 25% is set between the arms: five times the good arm's 7.3% and well under
+   * the 43.9% of the first bad one. SOFT, because a legitimate death collapse
+   * genuinely shrinks its own box, and the point is to make the operator look.
+   */
+  SCALE_SWING_SOFT: 0.25,
 } as const;
 
 /** Border-median field colour, the same trick `ghost.ts` uses to stay key-agnostic. */
@@ -184,6 +211,12 @@ export interface MotionVerdict extends QaVerdict {
   seam: number;
   /** Distinct figure bounding boxes across the clip. */
   boxes: number;
+  /**
+   * Largest-to-smallest swing in the figure's box AREA, 0-1. The axis every
+   * other gate is blind to — churn actively rewards it, because a receding
+   * figure changes a great many pixels.
+   */
+  scaleSwing: number;
 }
 
 const median = (xs: readonly number[]): number => {
@@ -261,9 +294,29 @@ export function motionClip(frames: readonly RawImage[], opts: { label?: string }
     });
   }
 
+  /**
+   * THE FIGURE MUST NOT CHANGE SIZE. See MOTION.SCALE_SWING_SOFT.
+   *
+   * Computed from the boxes already gathered above, so it costs nothing. It is
+   * the one axis nothing downstream can repair: drift.ts registers by bounding
+   * box, so a figure that halves is a new sprite rather than a pose.
+   */
+  const areas = boxes.map(([x0, y0, x1, y1]) => Math.max(0, x1 - x0 + 1) * Math.max(0, y1 - y0 + 1));
+  const maxArea = Math.max(...areas);
+  const swing = maxArea > 0 ? 1 - Math.min(...areas) / maxArea : 0;
+  if (swing > MOTION.SCALE_SWING_SOFT) {
+    checks.push({
+      id: "scale", label: "the figure holds its size",
+      value: `box area swings ${pct(swing)} (smallest frame ${areas.indexOf(Math.min(...areas))})`,
+      want: `< ${pct(MOTION.SCALE_SWING_SOFT)}`, pass: false, soft: true,
+      why: "the creature grows or shrinks across the clip — on a front facing this is how the model expresses forward motion, and churn REWARDS it because a receding figure changes a lot of pixels",
+      fix: "prompting does not fix it (measured: three variants, the shrink got worse each time, and Wan's negative already bans 'character shrinking'). Generate one-shots on a SIDE facing where the motion is perpendicular to the camera, or accept it and expect drift.ts to reject the cells",
+    });
+  }
+
   // The per-frame table, for the same reason `ghost.ts` prints one: the numbers
   // are what made this diagnosable, and a boolean would hide the mechanism.
   const table = ["", "  churn% frame→next:", ...pairs.map((v, i) => `    ${String(i).padStart(3)}  ${pct(v).padStart(7)}`)];
   table.push(`    seam ${pct(seam).padStart(7)}  (last→first; a closed cycle sits near the median)`);
-  return { ...finish(checks, opts, table), churn: pairs, seam, boxes: distinct };
+  return { ...finish(checks, opts, table), churn: pairs, seam, boxes: distinct, scaleSwing: swing };
 }

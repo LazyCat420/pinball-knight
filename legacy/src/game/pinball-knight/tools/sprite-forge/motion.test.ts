@@ -150,3 +150,63 @@ describe("the frozen clips of 2026-08-08", () => {
     });
   }
 });
+
+/**
+ * A blob whose SIZE changes — the shrink, synthetically. `scale` 1.0 is the
+ * full box; 0.5 halves each side, quartering the area.
+ */
+function scaledFrame(scale: number): RawImage {
+  const w = 128, h = 128;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    data[i * 4] = 255; data[i * 4 + 1] = 255; data[i * 4 + 2] = 255; data[i * 4 + 3] = 255;
+  }
+  const bw = Math.round(40 * scale), bh = Math.round(50 * scale);
+  const x0 = 64 - (bw >> 1), y0 = 64 - (bh >> 1);
+  for (let y = y0; y < y0 + bh; y++) {
+    for (let x = x0; x < x0 + bw; x++) {
+      const i = (y * w + x) * 4;
+      data[i] = 40; data[i + 1] = 40; data[i + 2] = 40; data[i + 3] = 255;
+    }
+  }
+  return { width: w, height: h, data };
+}
+
+describe("the scale gate", () => {
+  /**
+   * The axis every other gate is blind to. Three real attack arms, same init
+   * and seed, one prompt variable each:
+   *
+   *     arm            churn   boxes   AREA SWING   verdict by eye
+   *     1 original     11.1%   20/21       7.3%     inert but stable
+   *     2 freed pose   28.3%   21/21      43.9%     shrinks to a head
+   *     3 + size pin   27.1%   21/21      62.3%     shrinks more
+   *
+   * `motion` scored arms 2 and 3 as a large IMPROVEMENT, because churn cannot
+   * tell a lunge from a zoom-out — a receding figure changes a lot of pixels.
+   */
+  it("does not flag a clip that holds its size", () => {
+    // The positive control: real motion, constant scale. This is the arm the
+    // gate must stay quiet on, or it is just noise.
+    const v = motionClip([frame(0), frame(6), frame(12), frame(18), frame(24)]);
+    expect(v.scaleSwing, v.report).toBeLessThan(MOTION.SCALE_SWING_SOFT);
+    expect(v.checks.find((c) => c.id === "scale")).toBeUndefined();
+  });
+
+  it("flags a figure that shrinks away", () => {
+    const v = motionClip([scaledFrame(1), scaledFrame(0.85), scaledFrame(0.7), scaledFrame(0.55), scaledFrame(0.4)]);
+    // 0.4 of each side is 0.16 of the area — an 84% swing.
+    expect(v.scaleSwing, v.report).toBeGreaterThan(MOTION.SCALE_SWING_SOFT);
+    const check = v.checks.find((c) => c.id === "scale");
+    expect(check, v.report).toBeDefined();
+    expect(check!.soft).toBe(true);          // advisory: a death collapse really does shrink
+    expect(v.level).not.toBe("reject");
+  });
+
+  it("separates the two — the same call, opposite answers", () => {
+    // A check that fired (or stayed silent) for both would not be a check.
+    const stable = motionClip([frame(0), frame(8), frame(16)]).scaleSwing;
+    const shrinking = motionClip([scaledFrame(1), scaledFrame(0.7), scaledFrame(0.4)]).scaleSwing;
+    expect(shrinking).toBeGreaterThan(stable * 3);
+  });
+});

@@ -830,19 +830,28 @@ export const MODES = [
       const tail = !clip || CYCLE_CLIPS.has(clip)
         ? "smooth looping animation, the character stays centered in frame"
         : "one continuous action from start to finish, ending in a clearly different pose from the one it began in, " +
-          // PIN THE SCALE. Freeing the pose without forbidding the size change
-          // bought motion in the cheapest currency the model has: it shrank the
-          // dog. Measured on the S attack, same init and seed 7, one variable —
-          // churn went 11.1% -> 28.3% and 20 -> 21 distinct boxes, and the clip
-          // got WORSE by eye: frame 0 a full standing wolf, frame 20 barely more
-          // than a head. A receding figure churns pixels beautifully and is
-          // useless as a sprite, because `drift.ts` registers cells by bounding
-          // box and a figure that halves is a different sprite, not a pose.
+          // ⚠️ DO NOT ADD A SIZE CLAUSE HERE. IT WAS TRIED AND IT MADE IT WORSE.
           //
-          // Note "the same size" WITHOUT "stays centered": position is what a
-          // lunge needs and the importer re-centres anyway; scale is what
-          // nothing downstream can repair.
-          "a locked-off camera, the character stays the same size throughout, the whole body staying inside the frame";
+          // Freeing the pose let the model buy motion by SHRINKING the dog, so
+          // "the character stays the same size throughout" was added here and
+          // measured. Same init, seed 7, one variable, figure box-area swing
+          // across the clip:
+          //
+          //     original tail ("stays centered")      7.3%   inert but stable
+          //     freed pose, no size clause           43.9%   shrinks
+          //     freed pose + "stays the same size"   62.3%   shrinks MORE
+          //
+          // Three arms, one monotonic trend, in the wrong direction. Wan's
+          // shared negative in graphs.mjs ALSO already bans "changing scale,
+          // character growing, character shrinking", and the dog shrank through
+          // all of it. Neither polarity of prompting moves this.
+          //
+          // It is geometry, not wording: on a FRONT facing a lunge has no
+          // lateral silhouette to spend, so "move toward the target" and "get
+          // smaller" are the same picture. Generate one-shots on a SIDE facing,
+          // where the motion is perpendicular to the camera. `motion.ts` now
+          // measures the swing (SCALE_SWING_SOFT) so it stops being invisible.
+          "a locked-off camera with the whole body staying inside the frame";
       return `${trigger}Pixel art game sprite ${action}, ${tail}, consistent colors, plain white background.`;
     },
     build(params, ctx) {

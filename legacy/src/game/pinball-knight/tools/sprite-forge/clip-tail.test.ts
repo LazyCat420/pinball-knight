@@ -50,7 +50,7 @@ describe("the animate prompt tail", () => {
     }
   });
 
-  it("keeps the figure renderable — a one-shot pins SCALE, not position", () => {
+  it("keeps the figure renderable — a one-shot still pins the CAMERA", () => {
     /**
      * The first version of this fix freed the pose and forbade nothing about
      * size, and the model spent the freedom on the cheapest motion it has:
@@ -66,7 +66,6 @@ describe("the animate prompt tail", () => {
      */
     for (const p of ONE_SHOTS) {
       expect(promptFor(p), p).toContain("locked-off camera");
-      expect(promptFor(p), p).toContain("stays the same size");
       expect(promptFor(p), p).toContain("inside the frame");
     }
   });
