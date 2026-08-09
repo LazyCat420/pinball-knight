@@ -1,6 +1,21 @@
-/* Global CSS — imports all existing stylesheets */
-@import "../src/styles/variables.css";
-@import "../src/styles/reset.css";
-@import "../src/styles/room.css";
-@import "../src/styles/map.css";
-@import "../src/styles/intro-overlay.css";
+/* Legacy shell styles. The braindeadbot site's room/map/intro CSS stayed in
+   braindeadbot-client; the dungeon draws into its own canvas + DOM and carries
+   its styles in code, so the shell only needs a reset and a full-bleed mount. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background: #0a0a12;
+  overflow: hidden;
+}
+
+#application-container {
+  width: 100%;
+  height: 100%;
+}
