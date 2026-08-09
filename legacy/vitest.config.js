@@ -72,6 +72,7 @@ export default defineConfig({
       "**/dist/**",
       "**/.next/**",
       "**/.claude/worktrees/**",
+      "**/.worktrees/**",
       /**
        * DEPLOY_SKIP_FORGE_TOOLS=1 — deploy-gate escape hatch, OFF by default.
        *
