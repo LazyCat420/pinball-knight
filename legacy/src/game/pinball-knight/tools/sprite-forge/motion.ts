@@ -139,6 +139,36 @@ export const MOTION = {
    * genuinely shrinks its own box, and the point is to make the operator look.
    */
   SCALE_SWING_SOFT: 0.25,
+  /**
+   * ── SWING WAS THE WRONG QUANTITY. THE TREND IS THE RIGHT ONE. ─────────────
+   *
+   * The swing threshold above flagged the first real clip it met — N:run, a
+   * gallop — and it was a FALSE POSITIVE. A galloping body extends and gathers,
+   * so its box area genuinely swings; from behind, that extension runs along
+   * the view axis and swings hard. The difference from a receding figure is not
+   * the magnitude, it is the SHAPE: a gait comes back, a recession does not.
+   *
+   * Three labelled clips, area per frame as a fraction of the clip mean:
+   *
+   *   N:run        1.16 1.14 1.04 0.86 0.82 0.78 0.95 ... 1.12 1.17 1.16
+   *                swing 33.1%   trend +0.42%/frame   <- GAIT, returns to size
+   *   attack arm3  1.29 1.28 1.27 ... 0.71 0.63 0.50 0.48
+   *                swing 62.3%   trend -4.11%/frame   <- RECESSION, monotonic
+   *   S:walk       1.04 1.03 1.00 ... 0.98 1.00 1.01 1.04
+   *                swing  7.3%   trend -0.03%/frame   <- stable
+   *
+   * Least-squares slope over the clip, as a percent of mean area per frame,
+   * separates them with a wide margin where swing does not. -1.5%/frame sits
+   * between the gallop's +0.42 and the recession's -4.11.
+   *
+   * A count of oscillations was tried first and is NOT a discriminator: all
+   * three clips register 6-7 sign changes, because a monotonic decline still
+   * jitters. That check returned the same answer for a gait and a recession,
+   * which is the definition of not being a check.
+   *
+   * Still SOFT. A death collapse shrinks monotonically and is supposed to.
+   */
+  SCALE_TREND_SOFT: 0.015,
 } as const;
 
 /** Border-median field colour, the same trick `ghost.ts` uses to stay key-agnostic. */
@@ -217,6 +247,13 @@ export interface MotionVerdict extends QaVerdict {
    * figure changes a great many pixels.
    */
   scaleSwing: number;
+  /**
+   * Least-squares slope of the figure's box area, as a fraction of mean area
+   * per frame. NEGATIVE means shrinking. This, not `scaleSwing`, is what
+   * separates a gallop (extends and returns, +0.42%/frame) from a recession
+   * (monotonic, -4.11%/frame) — they can have similar swings.
+   */
+  scaleTrend: number;
 }
 
 const median = (xs: readonly number[]): number => {
@@ -257,7 +294,7 @@ export function motionClip(frames: readonly RawImage[], opts: { label?: string }
       // scaleSwing 0, not undefined: a clip too short to compare has not
       // changed size, and an optional field here would push the null check
       // onto every reader.
-      churn: [], seam: 0, boxes: frames.length, scaleSwing: 0,
+      churn: [], seam: 0, boxes: frames.length, scaleSwing: 0, scaleTrend: 0,
     };
   }
 
@@ -307,13 +344,54 @@ export function motionClip(frames: readonly RawImage[], opts: { label?: string }
   const areas = boxes.map(([x0, y0, x1, y1]) => Math.max(0, x1 - x0 + 1) * Math.max(0, y1 - y0 + 1));
   const maxArea = Math.max(...areas);
   const swing = maxArea > 0 ? 1 - Math.min(...areas) / maxArea : 0;
+  /**
+   * Least-squares slope of area over frame index, normalised by the mean area,
+   * so it reads as "fraction of the figure lost per frame". Negative is
+   * shrinking. See MOTION.SCALE_TREND_SOFT for why this and not `swing`.
+   */
+  const meanArea = areas.reduce((a, b) => a + b, 0) / (areas.length || 1);
+  const trend = (() => {
+    const n = areas.length;
+    if (n < 3 || meanArea <= 0) return 0;
+    const mx = (n - 1) / 2;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) { num += (i - mx) * (areas[i] - meanArea); den += (i - mx) ** 2; }
+    return den > 0 ? num / den / meanArea : 0;
+  })();
+  /**
+   * SWING IS THE TRIGGER; TREND ONLY SAYS WHICH KIND. Do not swap them.
+   *
+   * This gate was briefly rewritten to fire on trend alone, on the theory that
+   * N:run's 33% swing was a gallop extending and gathering and therefore a
+   * false positive. It was not a gallop. The operator watched the clip: "the
+   * dog just looks like it's rocking back and forth", and the frames confirm a
+   * standing dog with a swinging tail whose whole body scales up and down.
+   *
+   * So the SWING check was right and the rewrite would have blinded it to the
+   * commonest front/back failure there is. Both defects matter and they are
+   * distinguished by shape, not magnitude:
+   *
+   *   swing high, trend ~0    ROCKING   toward/away from camera, no gait
+   *   swing high, trend down  RECEDING  the figure shrinks away
+   *   swing low               stable
+   *
+   * A real side-on gait barely swings at all — the approved S walk is 7.3%,
+   * because a body extending sideways does not change its bounding area much.
+   * "Big swing means a gait" was the wrong intuition; on this pipeline a big
+   * swing is the defect, and only its direction varies.
+   */
   if (swing > MOTION.SCALE_SWING_SOFT) {
+    const receding = trend < -MOTION.SCALE_TREND_SOFT;
     checks.push({
       id: "scale", label: "the figure holds its size",
-      value: `box area swings ${pct(swing)} (smallest frame ${areas.indexOf(Math.min(...areas))})`,
-      want: `< ${pct(MOTION.SCALE_SWING_SOFT)}`, pass: false, soft: true,
-      why: "the creature grows or shrinks across the clip — on a front facing this is how the model expresses forward motion, and churn REWARDS it because a receding figure changes a lot of pixels",
-      fix: "prompting does not fix it (measured: three variants, the shrink got worse each time, and Wan's negative already bans 'character shrinking'). Generate one-shots on a SIDE facing where the motion is perpendicular to the camera, or accept it and expect drift.ts to reject the cells",
+      value: `area swings ${pct(swing)}, trend ${(trend * 100).toFixed(2)}%/frame — ${receding ? "RECEDING" : "rocking toward/away"} (smallest frame ${areas.indexOf(Math.min(...areas))})`,
+      want: `< ${pct(MOTION.SCALE_SWING_SOFT)} swing`, pass: false, soft: true,
+      why: receding
+        ? "the creature shrinks steadily across the clip — on a front facing this is how the model expresses forward motion, and churn REWARDS it because a receding figure changes a lot of pixels"
+        : "the creature's size oscillates without a stride — it is rocking toward and away from the camera rather than moving its legs, which is what a gait looks like when the model has no lateral silhouette to work with",
+      fix: receding
+        ? "prompting does not fix it (measured: three variants, the shrink got worse each time, and Wan's negative already bans 'character shrinking'). Generate on a SIDE facing where the motion is perpendicular to the camera"
+        : "a front/back facing gives a gait no lateral silhouette, so the model substitutes scale. Generate gaits on E, or drive the poses with --end keyframes instead of asking for free-running motion",
     });
   }
 
@@ -321,5 +399,5 @@ export function motionClip(frames: readonly RawImage[], opts: { label?: string }
   // are what made this diagnosable, and a boolean would hide the mechanism.
   const table = ["", "  churn% frame→next:", ...pairs.map((v, i) => `    ${String(i).padStart(3)}  ${pct(v).padStart(7)}`)];
   table.push(`    seam ${pct(seam).padStart(7)}  (last→first; a closed cycle sits near the median)`);
-  return { ...finish(checks, opts, table), churn: pairs, seam, boxes: distinct, scaleSwing: swing };
+  return { ...finish(checks, opts, table), churn: pairs, seam, boxes: distinct, scaleSwing: swing, scaleTrend: trend };
 }

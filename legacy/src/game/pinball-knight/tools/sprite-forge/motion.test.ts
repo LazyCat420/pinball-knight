@@ -193,20 +193,50 @@ describe("the scale gate", () => {
     expect(v.checks.find((c) => c.id === "scale")).toBeUndefined();
   });
 
+  it("flags a ROCKING clip — big swing, flat trend — and names it as rocking", () => {
+    /**
+     * The false positive that rewrote this gate. N:run — a gallop — swung 33.1%
+     * of its box area and came straight back: 1.16 1.14 1.04 0.86 0.82 0.78
+     * 0.95 ... 1.12 1.17 1.16, trend +0.42%/frame. Flagging that would train
+     * the operator to ignore the gate, which is worse than not having it.
+     */
+    const rocking = [1, 0.98, 0.9, 0.82, 0.78, 0.85, 0.95, 1.0, 1.02, 0.99].map(scaledFrame);
+    const v = motionClip(rocking);
+    expect(v.scaleSwing, v.report).toBeGreaterThan(MOTION.SCALE_SWING_SOFT);
+    expect(v.scaleTrend, v.report).toBeGreaterThan(-MOTION.SCALE_TREND_SOFT); // comes back
+    const c = v.checks.find((x) => x.id === "scale");
+    expect(c, v.report).toBeDefined();
+    expect(c!.value).toContain("rocking");
+  });
+
   it("flags a figure that shrinks away", () => {
     const v = motionClip([scaledFrame(1), scaledFrame(0.85), scaledFrame(0.7), scaledFrame(0.55), scaledFrame(0.4)]);
     // 0.4 of each side is 0.16 of the area — an 84% swing.
-    expect(v.scaleSwing, v.report).toBeGreaterThan(MOTION.SCALE_SWING_SOFT);
+    expect(v.scaleTrend, v.report).toBeLessThan(-MOTION.SCALE_TREND_SOFT);
     const check = v.checks.find((c) => c.id === "scale");
     expect(check, v.report).toBeDefined();
     expect(check!.soft).toBe(true);          // advisory: a death collapse really does shrink
     expect(v.level).not.toBe("reject");
   });
 
-  it("separates the two — the same call, opposite answers", () => {
-    // A check that fired (or stayed silent) for both would not be a check.
-    const stable = motionClip([frame(0), frame(8), frame(16)]).scaleSwing;
-    const shrinking = motionClip([scaledFrame(1), scaledFrame(0.7), scaledFrame(0.4)]).scaleSwing;
-    expect(shrinking).toBeGreaterThan(stable * 3);
+  it("tells ROCKING from RECEDING — same swing, opposite trend", () => {
+    /**
+     * The heart of it. Both clips swing hard; only one comes back. Measured on
+     * real clips: N:run swung 33.1% at +0.42%/frame, attack arm 3 swung 62.3%
+     * at -4.11%/frame. A gate keyed on swing calls both bad.
+     */
+    const gait = motionClip([1, 0.85, 0.72, 0.85, 1.0, 0.86, 0.73, 0.88, 1.0].map(scaledFrame));
+    const recede = motionClip([1, 0.94, 0.87, 0.8, 0.72, 0.65, 0.58, 0.5, 0.43].map(scaledFrame));
+
+    // Swing does NOT tell them apart — that is why the gate was rewritten.
+    expect(Math.abs(gait.scaleSwing - recede.scaleSwing)).toBeLessThan(0.35);
+
+    // Trend does, with a wide margin and opposite signs of the threshold.
+    expect(gait.scaleTrend).toBeGreaterThan(-MOTION.SCALE_TREND_SOFT);
+    expect(recede.scaleTrend).toBeLessThan(-MOTION.SCALE_TREND_SOFT);
+    // BOTH are flagged — both are defects — but the message must differ, or
+    // the operator cannot tell which fix applies.
+    expect(gait.checks.find((c) => c.id === "scale")!.value).toContain("rocking");
+    expect(recede.checks.find((c) => c.id === "scale")!.value).toContain("RECEDING");
   });
 });

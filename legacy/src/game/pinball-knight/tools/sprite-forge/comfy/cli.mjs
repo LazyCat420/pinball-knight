@@ -382,6 +382,7 @@ async function run(graph, dir, meta = {}) {
           // whose magnitude lives only in the printed report cannot rank
           // twenty clips, and the report is not kept.
           scaleSwing: Number((v.scaleSwing * 100).toFixed(2)),
+          scaleTrend: Number((v.scaleTrend * 100).toFixed(3)),
           level: v.level,
         };
         if (v.level !== "ready") console.log(v.report);

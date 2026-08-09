@@ -315,7 +315,7 @@ for (const facing of facings) {
       results[key] = {
         ok: true, dir, preset, loop, tookS: Math.round((Date.now() - t0) / 1000),
         motion: m?.level ?? null, churnMedian: churn, boxes: m?.boxes ?? null, seam: m?.seam ?? null,
-        scaleSwing: m?.scaleSwing ?? null,
+        scaleSwing: m?.scaleSwing ?? null, scaleTrend: m?.scaleTrend ?? null,
         ghost: g?.level ?? null, ghostWorst: g?.pct?.length ? Math.max(...g.pct) : null,
         fade: f?.level ?? null, fadeFlagged: f?.flagged ?? null, palette: f?.palette ?? null,
         fadeWorst: f?.worst ? Number((f.worst.drop * 100).toFixed(1)) : null, fadeWorstAt: f?.worst ?? null,
