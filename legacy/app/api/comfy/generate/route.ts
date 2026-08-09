@@ -464,16 +464,20 @@ function ramAvailGiB(): number | null {
 
 export async function POST(req: Request) {
   if (!backendPresent()) return NextResponse.json({ error: "no backend on this machine" }, { status: 404 });
-  // Accepting a job costs nothing until dispatch (the scheduler holds it),
-  // so POST only refuses when the box is ALREADY squeezed past the guard's
-  // own soft floor — everything milder waits in the queue instead.
-  const avail = ramAvailGiB();
-  if (avail !== null && avail < 4) {
+  const settings = loadSettings();
+  setComfyUrl(settings.comfyUrl);
+
+  let avail = ramAvailGiB();
+  if (avail !== null && avail < 3.0) {
+    try { await freeMemory(); } catch { /* best effort */ }
+    avail = ramAvailGiB();
+  }
+  if (avail !== null && avail < 1.5) {
     return NextResponse.json(
       {
         error:
           `RAM guard: only ${avail.toFixed(1)}GiB of system RAM is available — the box is squeezed. ` +
-          `Close whatever is eating RAM (tests, other sessions), or stop/start the backend to drop cached models.`,
+          `Close whatever is eating RAM (tests, other sessions), or restart ComfyUI backend to drop cached models.`,
       },
       { status: 503 },
     );
@@ -481,16 +485,15 @@ export async function POST(req: Request) {
   const body = await req.json();
   const mode = modeById(body.mode ?? body.kind); // `kind` — pre-modes clients
   if (!mode) return NextResponse.json({ error: `unknown mode ${body.mode ?? body.kind}` }, { status: 400 });
-  if (!body.imageB64) return NextResponse.json({ error: "imageB64 is required — pick an init frame first" }, { status: 400 });
+  if (mode.needs.init === true && !body.imageB64) {
+    return NextResponse.json({ error: "imageB64 is required — pick an init frame first" }, { status: 400 });
+  }
   if (mode.needs.end && !body.endB64) return NextResponse.json({ error: "this mode needs a last frame too" }, { status: 400 });
   if (mode.needs.mask && !body.maskB64) return NextResponse.json({ error: "this mode needs a brushed mask" }, { status: 400 });
 
-  const settings = loadSettings();
-  setComfyUrl(settings.comfyUrl);
-
   const images: Record<string, string | null> = { init: null, end: null, mask: null, style: null };
   try {
-    images.init = await uploadB64(body.imageB64, "init");
+    if (body.imageB64) images.init = await uploadB64(body.imageB64, "init");
     if (body.endB64) images.end = await uploadB64(body.endB64, "end");
     if (body.maskB64) images.mask = await uploadB64(body.maskB64, "mask");
     if (body.styleB64) images.style = await uploadB64(body.styleB64, "style");

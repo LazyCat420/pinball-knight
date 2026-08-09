@@ -693,7 +693,7 @@ export const MODES = [
     title: "minimax h3",
     blurb: "fast candidate video animation leg — 5 frames in ~12s via MiniMax H3 FL2VA Q3_K_M",
     leg: "h3",
-    needs: { init: true },
+    needs: { init: "optional" },
     fields: [
       { id: "preset", label: "action", type: "preset", options: ANIMATE_PRESETS },
       { id: "action", label: "or describe a move", type: "text", placeholder: "jumping, lunging, casting…" },

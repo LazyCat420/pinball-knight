@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { S, GREEN, AMBER } from "./theme";
+import { S, GREEN, AMBER, RED } from "./theme";
 import type { Mode } from "./types";
 import { fileToB64 } from "./api";
 import type { SlotId } from "./GenerateCard";
@@ -41,8 +41,8 @@ function ImageSlot({
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          width: 116,
-          height: 116,
+          width: 104,
+          height: 104,
           borderRadius: 4,
           cursor: "pointer",
           border: `1px dashed ${drag ? "#8fdd9f" : "#2c303b"}`,
@@ -54,15 +54,15 @@ function ImageSlot({
           <img
             src={b64}
             alt={label}
-            style={{ width: 112, height: 112, objectFit: "contain", background: "#fff", borderRadius: 3, imageRendering: "pixelated" }}
+            style={{ width: 100, height: 100, objectFit: "contain", background: "#fff", borderRadius: 3, imageRendering: "pixelated" }}
           />
         ) : (
-          <span style={{ ...S.note, padding: 6, textAlign: "center" }}>
+          <span style={{ ...S.note, padding: 4, textAlign: "center", fontSize: 11 }}>
             {label}
             <br />
-            <span style={{ ...S.btn, display: "inline-block", marginTop: 6, pointerEvents: "none" }}>browse…</span>
+            <span style={{ ...S.btn, display: "inline-block", marginTop: 4, pointerEvents: "none", fontSize: 10 }}>browse…</span>
             <br />
-            <span style={{ fontSize: 11 }}>{hint ?? "or drop image here"}</span>
+            <span style={{ fontSize: 10 }}>{hint ?? "optional"}</span>
           </span>
         )}
         <input
@@ -77,7 +77,7 @@ function ImageSlot({
         />
       </label>
       {b64 && (
-        <button type="button" onClick={onClear} style={{ ...S.btn, ...S.btnGhost, fontSize: 11, marginTop: 4 }}>
+        <button type="button" onClick={onClear} style={{ ...S.btn, ...S.btnGhost, fontSize: 10, marginTop: 2 }}>
           clear
         </button>
       )}
@@ -93,6 +93,7 @@ export function ModelTestCard({
   onGenerate,
   busy,
   activeCharacter,
+  onClearMemory,
 }: {
   modes: Mode[];
   images: Record<SlotId, string | null>;
@@ -101,6 +102,7 @@ export function ModelTestCard({
   onGenerate: (req: { mode: string; params: Record<string, string>; prompt?: string; seed?: number; small?: boolean }) => Promise<void>;
   busy: boolean;
   activeCharacter: string | null;
+  onClearMemory?: () => Promise<void>;
 }) {
   const [modelChoice, setModelChoice] = useState<"h3" | "wan" | "wan5b">("h3");
   const [preset, setPreset] = useState("walk");
@@ -109,10 +111,11 @@ export function ModelTestCard({
   const [tiled, setTiled] = useState(false);
   const [tileSize, setTileSize] = useState(512);
   const [seed, setSeed] = useState<number | "">("");
-  const [promptOverride, setPromptOverride] = useState("");
+  const [promptText, setPromptText] = useState("pix3lwalk, Pixel art game sprite walking with a springy exaggerated stride, knees lifting high, consistent colors, plain white background.");
+  const [showImageOptions, setShowImageOptions] = useState(false);
+  const [clearingMem, setClearingMem] = useState(false);
 
   const handleRunSingle = async () => {
-    if (!images.init) return;
     const modeId = modelChoice === "h3" ? "h3" : "animate";
     const params: Record<string, string> = {
       preset,
@@ -125,20 +128,20 @@ export function ModelTestCard({
     await onGenerate({
       mode: modeId,
       params,
-      prompt: promptOverride.trim() || undefined,
+      prompt: promptText.trim() || undefined,
       seed: typeof seed === "number" ? seed : undefined,
       small: modelChoice === "wan5b",
     });
   };
 
   const handleRunCompare = async () => {
-    if (!images.init) return;
     const testSeed = typeof seed === "number" ? seed : Math.floor(Math.random() * 1e6);
     
-    // 1. Run H3
+    // 1. Run H3 Text-to-Video
     await onGenerate({
       mode: "h3",
       params: { preset, action: actionText, frames: "5", tiled: "false" },
+      prompt: promptText.trim() || undefined,
       seed: testSeed,
     });
 
@@ -146,22 +149,50 @@ export function ModelTestCard({
     await onGenerate({
       mode: "animate",
       params: { preset, action: actionText, frames: "21" },
+      prompt: promptText.trim() || undefined,
       seed: testSeed,
     });
+  };
+
+  const handleMemoryPurge = async () => {
+    setClearingMem(true);
+    try {
+      if (onClearMemory) {
+        await onClearMemory();
+      } else {
+        await fetch("/api/comfy/server", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "free" }),
+        }).catch(() => {});
+      }
+    } finally {
+      setClearingMem(false);
+    }
   };
 
   return (
     <div style={S.card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontSize: 16, color: "#fff" }}>
-          🧪 model test & benchmarking lab
+          🧪 text-to-video & model test lab
           {activeCharacter && <span style={S.chip(GREEN.fg, GREEN.bg)}>character: {activeCharacter}</span>}
         </h3>
-        <span style={S.note}>compare execution speed, memory peak, and output quality across model engines</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={handleMemoryPurge}
+            disabled={clearingMem}
+            style={{ ...S.btn, ...S.btnGhost, color: RED.fg, borderColor: "#483028", fontSize: 11 }}
+          >
+            {clearingMem ? "purging RAM…" : "clear memory 🧹"}
+          </button>
+          <span style={S.note}>pure text-to-video test & benchmarking</span>
+        </div>
       </div>
 
       {/* Model Selection Row */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, background: "#11141c", padding: 12, borderRadius: 4 }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: 16, background: "#11141c", padding: 12, borderRadius: 4 }}>
         <span style={{ fontSize: 13, fontWeight: "bold", color: "#ccc", alignSelf: "center" }}>model engine:</span>
         
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
@@ -177,7 +208,7 @@ export function ModelTestCard({
           <span style={{ color: modelChoice === "h3" ? GREEN.fg : "#aaa", fontWeight: "bold" }}>
             MiniMax H3 (FL2VA Q3_K_M)
           </span>
-          <span style={{ fontSize: 11, color: "#666" }}>~11.6s fast 5f</span>
+          <span style={{ fontSize: 11, color: "#666" }}>~11.6s 5f</span>
         </label>
 
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
@@ -191,9 +222,9 @@ export function ModelTestCard({
             }}
           />
           <span style={{ color: modelChoice === "wan" ? GREEN.fg : "#aaa", fontWeight: "bold" }}>
-            Wan 2.2 I2V-A14B (2x Experts)
+            Wan 2.2 I2V-A14B
           </span>
-          <span style={{ fontSize: 11, color: "#666" }}>~390s full grid</span>
+          <span style={{ fontSize: 11, color: "#666" }}>2x Experts</span>
         </label>
 
         <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
@@ -212,30 +243,26 @@ export function ModelTestCard({
         </label>
       </div>
 
-      {/* Inputs & Parameters Layout */}
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 20 }}>
-        {/* Init & End Frames */}
-        <div style={{ display: "flex", gap: 12 }}>
-          <ImageSlot
-            label="init frame"
-            b64={images.init}
-            hint="start artwork"
-            onSet={(b64) => onSetImage("init", b64)}
-            onClear={() => onClearImage("init")}
-          />
-          <ImageSlot
-            label="end frame"
-            b64={images.end}
-            hint="optional end pin"
-            onSet={(b64) => onSetImage("end", b64)}
-            onClear={() => onClearImage("end")}
+      {/* Primary Text-to-Video Form */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Text Prompt Input */}
+        <div>
+          <label style={{ display: "block", fontSize: 12, fontWeight: "bold", color: "#aaa", marginBottom: 4 }}>
+            text prompt (what to generate):
+          </label>
+          <textarea
+            rows={2}
+            value={promptText}
+            onChange={(e) => setPromptText(e.target.value)}
+            placeholder="e.g. pix3lwalk, Pixel art game sprite walking with a springy stride, plain white background."
+            style={{ ...S.input, width: "100%", fontFamily: "inherit", resize: "vertical" }}
           />
         </div>
 
-        {/* Form Fields */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Parameters Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13, color: "#aaa" }}>action:</span>
+            <span style={{ width: 70, fontSize: 12, color: "#aaa" }}>action:</span>
             <select
               value={preset}
               onChange={(e) => setPreset(e.target.value)}
@@ -249,17 +276,10 @@ export function ModelTestCard({
               <option value="idle">idle (breathing)</option>
               <option value="custom">custom action</option>
             </select>
-            <input
-              type="text"
-              placeholder="describe move (e.g. jumping, biting)"
-              value={actionText}
-              onChange={(e) => setActionText(e.target.value)}
-              style={{ ...S.input, flex: 1 }}
-            />
           </div>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13, color: "#aaa" }}>frames:</span>
+            <span style={{ width: 70, fontSize: 12, color: "#aaa" }}>frames:</span>
             <select
               value={frames}
               onChange={(e) => setFrames(e.target.value)}
@@ -269,10 +289,12 @@ export function ModelTestCard({
               <option value="21">21 frames (standard Wan grid)</option>
             </select>
           </div>
+        </div>
 
-          {/* VAE Decode Controls */}
-          <div style={{ display: "flex", gap: 12, alignItems: "center", background: "#11141c", padding: 8, borderRadius: 4 }}>
-            <span style={{ width: 80, fontSize: 13, color: "#aaa" }}>vae decode:</span>
+        {/* VAE & Seed Row */}
+        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", background: "#11141c", padding: 8, borderRadius: 4 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "#aaa" }}>vae decode:</span>
             <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 12, color: "#ccc" }}>
               <input type="radio" name="tiled" checked={!tiled} onChange={() => setTiled(false)} />
               Standard (VAEDecode)
@@ -281,51 +303,69 @@ export function ModelTestCard({
               <input type="radio" name="tiled" checked={tiled} onChange={() => setTiled(true)} />
               Tiled (VAEDecodeTiled)
             </label>
-            {tiled && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12 }}>
-                <span style={{ fontSize: 11, color: "#888" }}>tile size: {tileSize}px</span>
-                <input
-                  type="range"
-                  min="256"
-                  max="1024"
-                  step="128"
-                  value={tileSize}
-                  onChange={(e) => setTileSize(Number(e.target.value))}
-                />
-              </div>
-            )}
           </div>
 
-          {/* Seed Input */}
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <span style={{ width: 80, fontSize: 13, color: "#aaa" }}>seed:</span>
+          {tiled && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 11, color: "#888" }}>tile size: {tileSize}px</span>
+              <input
+                type="range"
+                min="256"
+                max="1024"
+                step="128"
+                value={tileSize}
+                onChange={(e) => setTileSize(Number(e.target.value))}
+              />
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+            <span style={{ fontSize: 12, color: "#aaa" }}>seed:</span>
             <input
               type="number"
-              placeholder="random seed"
+              placeholder="random"
               value={seed}
               onChange={(e) => setSeed(e.target.value === "" ? "" : Number(e.target.value))}
-              style={{ ...S.input, width: 120 }}
+              style={{ ...S.input, width: 90 }}
             />
             <button
               type="button"
               onClick={() => setSeed(Math.floor(Math.random() * 1e6))}
               style={S.btn}
             >
-              randomize 🎲
+              🎲
             </button>
           </div>
+        </div>
 
-          {/* Prompt Override */}
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <span style={{ width: 80, fontSize: 13, color: "#aaa", paddingTop: 4 }}>prompt:</span>
-            <input
-              type="text"
-              placeholder="custom prompt override (optional)"
-              value={promptOverride}
-              onChange={(e) => setPromptOverride(e.target.value)}
-              style={{ ...S.input, flex: 1 }}
-            />
-          </div>
+        {/* Optional Init Image Accordion */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowImageOptions(!showImageOptions)}
+            style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "2px 6px" }}
+          >
+            {showImageOptions ? "▼ hide image conditioning" : "▶ attach optional init / end image conditioning"}
+          </button>
+
+          {showImageOptions && (
+            <div style={{ display: "flex", gap: 12, marginTop: 8, padding: 8, background: "#0e1017", borderRadius: 4 }}>
+              <ImageSlot
+                label="init frame"
+                b64={images.init}
+                hint="start image"
+                onSet={(b64) => onSetImage("init", b64)}
+                onClear={() => onClearImage("init")}
+              />
+              <ImageSlot
+                label="end frame"
+                b64={images.end}
+                hint="end pin"
+                onSet={(b64) => onSetImage("end", b64)}
+                onClear={() => onClearImage("end")}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -334,29 +374,29 @@ export function ModelTestCard({
         <button
           type="button"
           onClick={handleRunSingle}
-          disabled={!images.init || busy}
+          disabled={busy}
           style={{
             ...S.btn,
             ...S.btnGreen,
             padding: "8px 20px",
             fontSize: 14,
-            opacity: !images.init || busy ? 0.5 : 1,
+            opacity: busy ? 0.5 : 1,
           }}
         >
-          {busy ? "running test…" : `run ${modelChoice.toUpperCase()} test`}
+          {busy ? "generating video…" : `🚀 generate ${modelChoice.toUpperCase()} video`}
         </button>
 
         <button
           type="button"
           onClick={handleRunCompare}
-          disabled={!images.init || busy}
+          disabled={busy}
           style={{
             ...S.btn,
             borderColor: AMBER.fg,
             color: AMBER.fg,
             padding: "8px 16px",
             fontSize: 13,
-            opacity: !images.init || busy ? 0.5 : 1,
+            opacity: busy ? 0.5 : 1,
           }}
         >
           ⚡ compare H3 vs Wan 2.2 (side-by-side)

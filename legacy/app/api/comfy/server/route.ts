@@ -71,8 +71,21 @@ function runScript(script: string): Promise<{ code: number | null; out: string }
 export async function POST(req: Request) {
   if (!backendPresent()) return NextResponse.json({ error: "no backend on this machine" }, { status: 404 });
   const { action } = await req.json();
+  if (action === "free") {
+    const url = loadSettings().comfyUrl;
+    try {
+      await fetch(`${url}/free`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ unload_models: true, free_memory: true }),
+      });
+      return NextResponse.json({ ok: true, freed: true });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 500 });
+    }
+  }
   if (action !== "start" && action !== "stop")
-    return NextResponse.json({ error: "action must be start or stop" }, { status: 400 });
+    return NextResponse.json({ error: "action must be start, stop or free" }, { status: 400 });
 
   const { code, out } = await runScript(action === "start" ? "run.sh" : "stop.sh");
   if (code !== 0) return NextResponse.json({ error: `script exited ${code}: ${out}` }, { status: 500 });

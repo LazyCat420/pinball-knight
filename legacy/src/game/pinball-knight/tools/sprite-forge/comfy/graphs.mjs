@@ -908,7 +908,6 @@ export function minimaxH3I2V({
   temporalOverlap = 8,
   tiled = true,
 } = {}) {
-  if (!image) throw new Error("[graphs] minimaxH3I2V needs an uploaded image name");
   if (!prompt) throw new Error("[graphs] minimaxH3I2V needs a prompt");
   if (length !== h3Length(length)) {
     throw new Error(`[graphs] h3 length must be on the 17k+5 grid, got ${length} (nearest ${h3Length(length)})`);
@@ -920,12 +919,11 @@ export function minimaxH3I2V({
     u: { class_type: "UnetLoaderGGUF", inputs: { unet_name: unet } },
     c: { class_type: "CLIPLoader", inputs: { clip_name: clip, type: "minimax", device: "default" } },
     v: { class_type: "VAELoader", inputs: { vae_name: vae } },
-    img: { class_type: "LoadImage", inputs: { image } },
     i2v: {
       class_type: "MiniMaxH3ImageToVideo",
       inputs: {
         clip: ["c", 0], vae: ["v", 0], prompt,
-        width, height, length, first_frame: ["img", 0],
+        width, height, length,
       },
     },
     /**
@@ -991,6 +989,10 @@ export function minimaxH3I2V({
       : { class_type: "VAEDecode", inputs: { samples: ["purge", 0], vae: ["v", 0] } },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/h3" } },
   };
+  if (image) {
+    g.img = { class_type: "LoadImage", inputs: { image } };
+    g.i2v.inputs.first_frame = ["img", 0];
+  }
   if (endImage) {
     g.imgEnd = { class_type: "LoadImage", inputs: { image: endImage } };
     g.i2v.inputs.last_frame = ["imgEnd", 0];

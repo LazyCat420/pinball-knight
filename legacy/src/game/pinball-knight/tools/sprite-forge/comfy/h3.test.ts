@@ -43,6 +43,18 @@ describe("minimaxH3I2V ComfyUI graph builder", () => {
     expect(graph.dec.class_type).toBe("VAEDecode");
   });
 
+  it("supports pure text-to-video when image is omitted", () => {
+    const graph = minimaxH3I2V({
+      prompt: "a walking hound",
+      width: 576,
+      height: 576,
+      length: 5,
+    });
+
+    expect(graph.img).toBeUndefined();
+    expect(graph.i2v.inputs.first_frame).toBeUndefined();
+  });
+
   it("adds endImage last_frame input when endImage is supplied", () => {
     const graph = minimaxH3I2V({
       image: "init.png",
@@ -59,9 +71,8 @@ describe("minimaxH3I2V ComfyUI graph builder", () => {
   });
 
   it("throws validation errors for bad parameters", () => {
-    expect(() => minimaxH3I2V({ image: "", prompt: "test" })).toThrow(/needs an uploaded image name/);
-    expect(() => minimaxH3I2V({ image: "a.png", prompt: "" })).toThrow(/needs a prompt/);
-    expect(() => minimaxH3I2V({ image: "a.png", prompt: "test", length: 10 })).toThrow(/17k\+5 grid/);
-    expect(() => minimaxH3I2V({ image: "a.png", prompt: "test", length: 5, width: 500 })).toThrow(/multiple of 32/);
+    expect(() => minimaxH3I2V({ prompt: "" })).toThrow(/needs a prompt/);
+    expect(() => minimaxH3I2V({ prompt: "test", length: 10 })).toThrow(/17k\+5 grid/);
+    expect(() => minimaxH3I2V({ prompt: "test", length: 5, width: 500 })).toThrow(/multiple of 32/);
   });
 });

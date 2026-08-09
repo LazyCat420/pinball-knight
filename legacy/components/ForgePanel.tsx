@@ -482,6 +482,22 @@ export default function ForgePanel() {
           <span style={S.chip(m.comfy.reachable ? "#8fdd9f" : "#dd8f8f", m.comfy.reachable ? "#16281c" : "#281616")}>
             {m.comfy.reachable ? `backend up · ${m.comfy.vramFreeGiB}GiB free` : "backend down"}
           </span>
+          {m.comfy.reachable && (
+            <button
+              style={{ ...S.btn, ...S.btnGhost, fontSize: 11, padding: "2px 8px" }}
+              onClick={async () => {
+                try {
+                  await postJSON("/api/comfy/server", { action: "free" });
+                  say("models unloaded & RAM freed");
+                  void refresh();
+                } catch (e: any) {
+                  fail(e.message, e);
+                }
+              }}
+            >
+              clear memory 🧹
+            </button>
+          )}
           {runningN > 0 && <span style={S.chip("#9fd0ff", "#16202b")}>{runningN} generating</span>}
           <span style={{ flex: 1 }} />
           {(["intake", "generate", "model-test", "sheet", "backend"] as Tab[]).map((t) => (
