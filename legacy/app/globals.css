@@ -1,0 +1,6 @@
+/* Global CSS — imports all existing stylesheets */
+@import "../src/styles/variables.css";
+@import "../src/styles/reset.css";
+@import "../src/styles/room.css";
+@import "../src/styles/map.css";
+@import "../src/styles/intro-overlay.css";
