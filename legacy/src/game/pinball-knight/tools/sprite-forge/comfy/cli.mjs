@@ -903,8 +903,13 @@ const main = {
     const graph = minimaxH3I2V({
       image, endImage: end, prompt, width, height, length: frames,
       seed: Number(opt("seed", 7)), steps: Number(opt("steps", "20")),
+      tiled: !has("no-tiled"),
+      tileSize: Number(opt("tile-size", "512")),
+      overlap: Number(opt("overlap", "32")),
+      temporalOverlap: Number(opt("temporal-overlap", "8")),
+      temporalSize: opt("temporal-size") ? Number(opt("temporal-size")) : null,
     });
-    console.log(`leg: MiniMax H3 fl2va Q3_K_M — ${width}x${height}, ${frames}f${end ? ", END PINNED" : ""}`);
+    console.log(`leg: MiniMax H3 fl2va Q3_K_M — ${width}x${height}, ${frames}f${end ? ", END PINNED" : ""}${has("no-tiled") ? " [untiled]" : " [tiled VAE]"}`);
     console.log("note: NO negative prompt on this leg — BasicGuider runs at cfg 1, so WAN_NEGATIVE does not apply");
     console.log(`prompt: ${prompt}`);
 

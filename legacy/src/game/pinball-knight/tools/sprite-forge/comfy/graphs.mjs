@@ -902,6 +902,11 @@ export function minimaxH3I2V({
   unet = MODELS.h3Unet,
   clip = MODELS.h3Clip,
   vae = MODELS.h3Vae,
+  tileSize = 512,
+  overlap = 32,
+  temporalSize = null,
+  temporalOverlap = 8,
+  tiled = true,
 } = {}) {
   if (!image) throw new Error("[graphs] minimaxH3I2V needs an uploaded image name");
   if (!prompt) throw new Error("[graphs] minimaxH3I2V needs a prompt");
@@ -964,14 +969,6 @@ export function minimaxH3I2V({
      * DROP THE STACK BEFORE DECODING — the same `purge` node `wanI2V` carries,
      * here for a reason measured on this leg on 2026-08-09.
      *
-     * The first H3 run sampled 20 steps at a comfortable 6.8GiB WSL available
-     * and then died at the decode with 0.96GiB. VRAM told the story: 14.4GB
-     * during sampling, 9.2 then 4.7 as the decode began. ComfyUI was not
-     * dropping the encoder and the unet to make room for the VAE — it was
-     * OFFLOADING them, and the offload device is system RAM. So ~15GB of
-     * weights we are completely finished with moved into the exact resource
-     * that binds this box, at the exact moment the decode needed it.
-     *
      * `unload_all_models` frees them outright instead. Nothing downstream of
      * this node needs the unet or the text encoder; the VAE reloads on demand.
      */
@@ -979,7 +976,19 @@ export function minimaxH3I2V({
       class_type: "VRAM_Debug",
       inputs: { empty_cache: true, gc_collect: true, unload_all_models: true, any_input: ["k", 0] },
     },
-    dec: { class_type: "VAEDecode", inputs: { samples: ["purge", 0], vae: ["v", 0] } },
+    dec: tiled
+      ? {
+          class_type: "VAEDecodeTiled",
+          inputs: {
+            samples: ["purge", 0],
+            vae: ["v", 0],
+            tile_size: tileSize,
+            overlap,
+            temporal_size: temporalSize ?? length + 4,
+            temporal_overlap: temporalOverlap,
+          },
+        }
+      : { class_type: "VAEDecode", inputs: { samples: ["purge", 0], vae: ["v", 0] } },
     out: { class_type: "SaveImage", inputs: { images: ["dec", 0], filename_prefix: "spriteforge/h3" } },
   };
   if (endImage) {
