@@ -31,6 +31,7 @@ pub mod archetypes;
 pub mod digest;
 pub mod modifiers;
 pub mod track_carve;
+pub mod track_floor;
 pub mod track_grow;
 pub mod track_path;
 
@@ -123,6 +124,14 @@ pub struct PassSnapshot<'a> {
     pub grid: &'a Grid,
     pub mask: Option<&'a TrackMask>,
     pub extra: PassExtra,
+    /// Cumulative draws at this boundary.
+    ///
+    /// Reported BY the pipeline rather than read from the rng by the observer,
+    /// because the pipeline holds the only mutable borrow of it while a pass is
+    /// running. The TS exporter wraps the stream in its own `countingRng` and
+    /// reads the wrapper; here [`CountingRng`] already is that wrapper, so
+    /// handing its count across the seam is the same fact by a shorter route.
+    pub draws: u64,
 }
 
 /// The per-pass observation seam — twin of the `onPass` hook in
@@ -174,12 +183,12 @@ fn walkable_count(g: &Grid) -> u32 {
 }
 
 /// Fingerprint one pass boundary. The twin of the TS exporter's `record`.
-pub fn record(snap: &PassSnapshot<'_>, draws: u64) -> PassRecord {
+pub fn record(snap: &PassSnapshot<'_>) -> PassRecord {
     let g = snap.grid;
     let mask = snap.mask;
     PassRecord {
         pass: snap.pass.to_string(),
-        draws,
+        draws: snap.draws,
         t: digest::digest_bytes(&g.t),
         shapes: digest::digest_bytes(&g.shapes),
         arcs: digest::digest_arcs(&g.arcs),
