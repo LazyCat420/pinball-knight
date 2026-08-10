@@ -185,16 +185,34 @@ track pipeline first and the fallback last — and read
       constants, no platform call) and `tan`/`atan`/`atan2` go through the
       `libm` crate, which is the same pure Rust everywhere.
 - [~] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
-      against `PASS_ORDER`. **6 of 23 land, all ten corpus floors bit-exact:**
+      against `PASS_ORDER`. **8 of 23 land, all ten corpus floors bit-exact:**
       ~~grow-track~~ → ~~track-path~~ → ~~carve-track~~ → ~~plaza~~ →
-      ~~launch-chute~~ → ~~grow-maze~~ → endpoints-early → repair-1 → plan-doorways →
+      ~~launch-chute~~ → ~~grow-maze~~ → ~~endpoints-early~~ → ~~repair-1~~ →
+      plan-doorways →
       publish-arcs → orbit-island → arc-sweeps → repair-2 → endpoints-final →
       boss-chamber → artery-banks → reseal-chute → carve-doorways →
       funnels-relays → compact-fixed-point → stairs → arc-rails → done.
       ⚠️ Green at a boundary is not green at a pass — sabotage each one and
       record what survives. `carve-track` let SIX of ten injected defects
-      through, the wrong trig library among them; its guarantees for the
-      primitives live in `jsmath_oracle.rs`, not in the corpus.
+      through, the wrong trig library among them; passes 7-8 let SIXTEEN of
+      twenty-six through against four positive controls that all caught. Running
+      totals so far: the wrong math library survives every maze boundary tried
+      (its guarantees live in `jsmath_oracle.rs`, not in the corpus), and no two
+      candidates in the ten-floor corpus score exactly equal, so **every
+      tie-break and scan order in the generator is unverified** — three
+      consecutive passes have reported it.
+- [x] `maze/track-socket.ts` — the plumbing repair, gated at `repair-1`. Ported:
+      `uncarveDeadEnds`, `removeWallStubs`, `healRoadTerminations`, `nearSealed`,
+      `findRoadTerminations`. NOT ported and deliberately so: `socketAt` /
+      `compatible` / `findSocketViolations` (the acceptance scan — belongs with
+      `floor-rules`) and `clearRun` / `aimLauncher` (parts placement, half B).
+      ⚠️ `connect_all` carves 0 tiles behind this pass on 10/10 floors and
+      provably cannot carve any (uncarve only fills leaves), so the boundary
+      gates uncarve + de-stub and nothing else of the four.
+- [x] `engine/flow-field.ts bfsDistances` → `pk_core::flow_field`. The ruler the
+      generator measures with; pk-core had no BFS at all before pass 7. The
+      shared-scratch-buffer half is deliberately not ported (see the module
+      header) — the per-frame field wants a caller-supplied buffer, which is P4.
 - [ ] `maze/generator.ts` (the growing-tree fallback — runs on no floor a
       player sees; `buildTrackFloor` declined 0 times in 400. Port last.)
       **`build.ts` is NOT here** — 1,834 lines of three.js renderer, P3.

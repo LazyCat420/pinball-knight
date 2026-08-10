@@ -5,6 +5,55 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — P2 passes 7 and 8, both bit-exact on the first run, and the
+  sabotage sweep that says what those two green boundaries are worth.** 8 of 23
+  land, all ten corpus floors bit-exact. `pk_core::maze::track_socket` (the
+  plumbing repair) + `pick_track_endpoints` + `crate::flow_field` (the BFS the
+  generator measures with — pk-core had none).
+  - **26 injected defects, 10 caught, 16 shipped green.** Four positive controls
+    were all caught, so the gate is alive and the leak is what ten floors cannot
+    discriminate. Full table in `maze::track_floor`'s header. Five survivors are
+    branches the corpus never enters (measured: the sight-line relaxation ladder
+    fires on **0/10** floors, `start_band` on **1/10**, the heal's join half is
+    unreachable at `reach = 0`, no `T_CRACKED` tile exists before `decorate`);
+    four are TIE-BREAKS with no tie to break, which is the third pass in a row to
+    report that hole.
+  - **`connect_all` carves NOTHING at `repair-1`** — 0 tiles on 10/10 floors, and
+    provably so rather than by luck: `uncarve_dead_ends` only fills tiles with
+    ≤1 open neighbour, and removing a leaf from a 4-connected component cannot
+    disconnect it. So the legacy comment's ordering rationale ("uncarve first,
+    which is fine only because connectAll runs after it") is a true statement
+    about the wrong pass — the order earns its keep at `repair-2`, behind the
+    curve passes that fill corner pockets with no degree constraint. Two
+    sabotages ride on this (moving `connect_all` after the de-stub; withholding
+    its 36-92-tile keep-out mask) and both become real defects at pass 13.
+    `repair_1_stands_on_a_floor_that_is_already_connected` pins the premise so
+    the explanation fails loudly when it stops holding.
+  - **The uncarve budget never binds.** 81-244 tiles filled against budgets of
+    296-1,044, so the `0.12` fraction — and the 1.5%-of-grid unravelling the
+    legacy comment justifies it with — is untested here. Disabling the pass
+    outright IS caught, so the gate sees the pass; it just cannot see the cap.
+  - **The endpoints' protection list is redundant at this pass**: both ends are
+    lane tiles and the uncarve already refuses every lane tile. Asserted, not
+    assumed.
+  - **A harness defect, found by being the first boundary with two `extra`
+    keys.** `assert_record` compares each pass's scalars positionally and its
+    comment claims "an order change is a change" — but `serde_json`'s default
+    `Map` is a `BTreeMap`, so the fixture's key order was destroyed at parse time
+    and the comparison was silently alphabetical. It failed on `start`/`stairs`
+    (alphabetically `stairs` first) the moment a boundary had two keys to
+    reorder. Fixed with the `preserve_order` feature, which makes the documented
+    contract true; the six single-key boundaries before this one could not have
+    noticed.
+  - **A defect in the original, pinned rather than fixed.**
+    `healRoadTerminations`' rejoin scan takes the nearest lane tile in any
+    cardinal — and for a stub at the end of a run that is the tile two steps BACK
+    ALONG ITS OWN RUN. So it reports a join, carves over floor that is already
+    floor, and leaves the stub. That is the mechanism behind the legacy comment's
+    own *"joined fired 8-24× per floor while the count never moved"*. The
+    shipping pipeline is immune (`reach = 0`), which is why it is pinned as
+    behaviour: a fix would change no floor and would desynchronise the port.
+
 - **2026-08-10 — P2 passes 5 and 6, and the two things that make `grow-maze`
   the hardest pass in the pipeline.** 6 of 23 land, all ten corpus floors
   bit-exact.

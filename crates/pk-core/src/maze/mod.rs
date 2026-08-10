@@ -35,6 +35,7 @@ pub mod track_floor;
 pub mod track_grow;
 pub mod track_launch;
 pub mod track_path;
+pub mod track_socket;
 
 use crate::grid::{is_walkable, Grid};
 

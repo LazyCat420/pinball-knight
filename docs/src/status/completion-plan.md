@@ -11,15 +11,16 @@ below is measured from the tree on that day, not estimated.
 ## Where the port actually stands
 
 `legacy/src/game/pinball-knight` is **104,205 lines of source** plus 41,646
-lines of test. Rust so far is **26,712 lines** (pk-core 15,236 + pk-game 9,054 +
-pk-audio 2,319 + pk-assets 103) plus 1,779 lines of integration test, built in
-two days against five bit-exact fixtures.
+lines of test. Rust is **31,055 lines** (pk-core 19,568 + pk-game 9,065 +
+pk-audio 2,319 + pk-assets 103) plus integration tests, built in three days
+against five bit-exact fixtures — re-measured 2026-08-10 PM with `main` at pass 8
+(the 26,712 first written here was pass 2).
 
 | Area | Legacy src | Ported | Remaining | Gate class |
 |---|---:|---:|---:|---|
 | Sim primitives (rng, jsmath, grid, collide, tile-shape, surfaces) | ~1.6k | all | — | bit-exact |
 | P1 pinball physics | ~6.0k | ~1.0k | **~5.0k** | bit-exact trace |
-| P2 maze `buildTrackFloor` (23 passes) | ~10.7k | 1.1k (2 passes) | **~9.6k** | pass digests |
+| P2 maze `buildTrackFloor` (23 passes) | ~10.7k | 5.7k (8 passes) | **~5.0k** | pass digests |
 | P2 content half-B (`decorate`, prefabs, assembly, surface-paint) | ~5.4k | — | **~5.4k** | **no gate yet** |
 | P2 fallback (`generator`) | 0.4k | — | 0.4k | pass digests |
 | P3 render (minus baked `cel-painter`) | ~12.0k | ~2.0k | **~10.0k** | visual A/B |
@@ -102,15 +103,25 @@ follow-ups:
 
 ### Stage B — finish P2 (the largest gated block, and P4 is waiting on it)
 
-Passes 3–23 in `PASS_ORDER`, each bit-identical at its boundary before the next
-starts: `carve-track` → `plaza` → `launch-chute` → `grow-maze` →
-`endpoints-early` → `repair-1` → `plan-doorways` → `publish-arcs` →
-`orbit-island` → `arc-sweeps` → `repair-2` → `endpoints-final` → `boss-chamber`
-→ `artery-banks` → `reseal-chute` → `carve-doorways` → `funnels-relays` →
-`compact-fixed-point` → `stairs` → `arc-rails` → `done`. Next up is **pass 3,
-`carveTrack`** (`maze/track-carve.ts`, 664 lines) — it is also where the P1 arc
-features start being authored, so it closes a loop with the physics already
-ported.
+Passes 9–23 in `PASS_ORDER`, each bit-identical at its boundary before the next
+starts: `plan-doorways` → `publish-arcs` → `orbit-island` → `arc-sweeps` →
+`repair-2` → `endpoints-final` → `boss-chamber` → `artery-banks` →
+`reseal-chute` → `carve-doorways` → `funnels-relays` → `compact-fixed-point` →
+`stairs` → `arc-rails` → `done`. Passes 1–8 landed 2026-08-10, all ten corpus
+floors bit-exact.
+
+Next up is **pass 9, `planDoorways`** (`maze/doorways.ts`, 855 lines) — and it is
+a step change in size from the eight before it. It is also the pass that decides
+what the four CURVE passes behind it (10–12) are told to avoid, so its output is
+consumed by more of the pipeline than any pass so far.
+
+⚠️ **Pass 13 `repair-2` is where the repair block earns its order.** Passes 7–8's
+sabotage sweep found that `connect_all` carves nothing at `repair-1` and provably
+cannot (uncarve only fills leaves), which means two of the sixteen survivors —
+running the de-stub before the connect, and withholding the keep-out mask — are
+un-gated *today* and become real defects at `repair-2`, where the fillets fill
+corner pockets with no degree constraint. Re-run those two sabotages when pass 13
+lands rather than treating pass 8's green as covering them.
 
 Then two items the checklist lists but the harness does not cover:
 
