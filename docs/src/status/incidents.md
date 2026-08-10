@@ -55,9 +55,45 @@ S1..S6 are identical in all three.
    `powf` lowers back to the `libm` crate — the wasm build is expected to
    diverge here and has not been measured. Tracked in the checklist.
 
-**Open:** `js_cos`/`js_sin` (fdlibm kernels) are not written. Two corpus
-floors out of ten are blocked on them, pinned by name in
-`pass1_grow_track_replays_the_oracle` so the list must shrink when they land.
+**Closed 2026-08-10 — `js_cos`/`js_sin` landed, and the corpus is whole.**
+Sun's 1993 `s_sin.c`/`s_cos.c`/`k_sin.c`/`k_cos.c`/`e_rem_pio2.c`/
+`k_rem_pio2.c`, transcribed verbatim into `jsmath/fdlibm.rs`. All ten corpus
+floors are bit-exact at the pass-1 boundary and the by-name exclusion list is
+deleted rather than shrunk. Over the oracle's ten trig sweeps the twins match
+every one; `libm` differs on 918–2,024 inputs per sweep and std on
+1,604–6,815.
+
+Three things came out of doing it that are worth more than the twins:
+
+- **The `js_pow` gate had never executed.** It read
+  `assets/fixtures/jsmath-pow-oracle.json`; the exporter has always written
+  `jsmath-oracle.json`. So the test failed at the file read with *"fixture
+  missing — run the exporter"*, which reads as an unconfigured checkout, not
+  as a broken gate. The parity gate written to catch 1-ulp drift had been
+  reporting a setup problem since the day it landed. A missing-fixture panic
+  is a claim about a PATH; check the name before you believe it.
+- **The sweep list did not cover what its comment claimed.** The comment said
+  the ranges reached "the multi-word reduction where implementations differ
+  most". They did not: the reduction switches to the 2/π table at
+  2^20·(π/2) ≈ 1.647e6, and the largest sweep stopped at 1e6. Three ranges
+  added (1e8, 1e15, 1e300). The twins match all three, so `k_rem_pio2` is
+  measured rather than assumed — but for a while a whole branch was covered
+  only by a sentence.
+- **`exp` and `log` have no agreeing implementation, and are already called.**
+  Same story as `cos` — V8 keeps fdlibm's `e_exp.c`/`e_log.c`, everyone else
+  moved to the table-driven ARM optimized-routines versions.
+  `pk_core::combo` calls `libm::exp`/`libm::log` for the corner-restitution,
+  corner-add and combo-window curves that feed pinball physics;
+  `gambler::darts` calls `libm::log10`; `intro.rs` uses std `ln`/`exp`. The
+  600-tick momentum fixture is bit-exact today, which is a fact about the
+  inputs those traces happen to take and NOT about the primitives being safe.
+  Pinned as a named gap test that fails when a twin lands.
+
+**Rule 4, learned here.** A gate that cannot fail is not a gate, and the
+failure modes are quieter than "it went green": a path typo that reads as a
+missing fixture, a comment that asserts coverage the numbers do not provide,
+and a primitive nobody swept because nobody noticed it was being called. All
+three passed review as recently as the commit that introduced them.
 
 ## 2026-08-09 — serde_json silently mangles the parity fixtures
 

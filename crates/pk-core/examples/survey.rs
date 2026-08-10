@@ -12,6 +12,9 @@
 
 use serde::Deserialize;
 
+/// A candidate implementation of a JS primitive — the thing this example ranks.
+type Candidate = fn(f64) -> f64;
+
 #[derive(Deserialize)]
 struct Oracle {
     unary: Vec<Unary>,
@@ -57,7 +60,7 @@ fn main() {
     let o: Oracle = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
 
     for u in &o.unary {
-        let candidates: Vec<(&str, fn(f64) -> f64)> = match u.name.as_str() {
+        let candidates: Vec<(&str, Candidate)> = match u.name.as_str() {
             "cos" => vec![
                 ("jsmath", pk_core::jsmath::js_cos),
                 ("libm", libm::cos),

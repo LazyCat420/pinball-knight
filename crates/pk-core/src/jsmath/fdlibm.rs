@@ -28,13 +28,34 @@
 //! whole-curve digest over ranges chosen to cross every branch boundary — see
 //! `crates/pk-core/tests/jsmath_oracle.rs`.
 
-// The polynomial coefficients are transcribed DIGIT FOR DIGIT from the C, which
-// writes them with more decimals than an f64 can hold. Clippy is right that the
-// extra digits are dropped and wrong that they should go: keeping the literals
-// identical to fdlibm's is what lets the next reader diff this file against the
-// original and see that nothing was "tidied" on the way in. The parsed values
-// are unchanged either way — that is the whole point.
-#![allow(clippy::excessive_precision)]
+// ─── why this file suppresses three lints ────────────────────────────────────
+//
+// The value of a verbatim transcription is that it can be DIFFED against the
+// original C. Every "improvement" clippy suggests here would be correct in
+// ordinary code and would destroy that property, so each is suppressed with its
+// reason rather than applied:
+//
+// · `excessive_precision` — the coefficients are transcribed digit for digit
+//   from the C, which writes more decimals than an f64 can hold. The parsed
+//   values are identical either way; the literals matching fdlibm's is what
+//   lets the next reader see nothing was tidied on the way in.
+// · `approx_constant` — `INVPIO2` is fdlibm's 2/π, and it must stay fdlibm's
+//   rounding of it. Swapping in `f64::consts::FRAC_2_PI` would be substituting
+//   a different library's constant into a bit-exact reproduction, which is the
+//   exact class of mistake this whole module exists to undo.
+// · `eq_op` — `x - x` is fdlibm's NaN/Infinity idiom: it propagates a NaN
+//   payload and turns ±∞ into NaN in one expression. `f64::NAN` is not the
+//   same thing (it discards the input's payload).
+// · `needless_range_loop` — the index loops mirror the C's `for (i=1;i<=jz;i++)`
+//   line for line. These are compensated summations where ORDER is the
+//   algorithm, so the indices stay visible rather than hiding inside an
+//   iterator chain a reader has to decode back into a range.
+#![allow(
+    clippy::excessive_precision,
+    clippy::approx_constant,
+    clippy::eq_op,
+    clippy::needless_range_loop
+)]
 
 // ─── word access, the fdlibm macros ──────────────────────────────────────────
 

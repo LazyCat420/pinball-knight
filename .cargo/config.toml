@@ -33,6 +33,19 @@ xtask = "run -p xtask --"
 # worktree has its own `target/` and recompiles all of Bevy. The same build with
 # CARGO_TARGET_DIR pointed at the primary's target takes 13.5s instead of 141.5s
 # (only the four workspace crates rebuild; ~400 registry crates are reused).
+#
+# ⚠️⚠️ …but that trick is safe for ONE worktree at a time, and the failure mode
+# is nasty. Two worktrees are two checkouts of the SAME package, so their
+# workspace crates land on the same artifact paths and overwrite each other.
+# Measured 2026-08-10 with four concurrent builds (three agents + a hand run):
+# a digest test in worktree A failed with the exact signature of the DELIBERATE
+# sabotage being compiled in worktree B, then passed on re-run once B moved on.
+# Nothing warns you — it reads as a real, localised defect in your own code.
+#
+# So: share the primary's target when you are the only one building. The moment
+# a second worktree is live, give each its own
+# `CARGO_TARGET_DIR=<worktree>/target` and pay the cold build. A test result
+# taken while another worktree is compiling is not a result.
 jobs = 16
 
 # Windows-native build (the play/dev target — WSL2 interop launches the .exe

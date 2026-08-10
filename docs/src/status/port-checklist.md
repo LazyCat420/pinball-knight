@@ -98,21 +98,35 @@ track pipeline first and the fallback last — and read
       ⚠️ Trap found here: a JS object with integer-like keys iterates in
       ASCENDING NUMERIC order, not literal order, so two `BandPaint` mixes
       transcribe backwards if you read them off the page.
-- [~] **PASS 1 `grow-track`** (`pk_core::maze::track_grow`): the physarum
+- [x] **PASS 1 `grow-track`** (`pk_core::maze::track_grow`): the physarum
       circuit — layouts (scatter/spine/ring/hub), `mesh_neighbours`,
       Gauss–Seidel `solve_pressures`, `grow_network`, `prune_to_circuit`,
-      `prune_leaves`. **8 of 10 corpus floors bit-exact** (node positions, tube
-      conductivities and lengths, draw count). The two that are not are blocked
-      on `js_cos`/`js_sin` and are pinned BY NAME so the list must shrink when
-      the twins land. Traps pinned in the port: two rng draws per placement
-      attempt INCLUDING rejected ones; `js_hypot` in the K-nearest sort; and a
-      JS `Set` re-insertion moving an edge to the END of the survivor order.
-- [ ] `jsmath::js_cos` / `js_sin` — fdlibm kernels. V8 keeps the original Sun
+      `prune_leaves`. **10 of 10 corpus floors bit-exact** (node positions, tube
+      conductivities and lengths, draw count) as of 2026-08-10, when
+      `js_cos`/`js_sin` landed and the two pinned floors joined the rest. Traps
+      pinned in the port: two rng draws per placement attempt INCLUDING rejected
+      ones; `js_hypot` in the K-nearest sort; and a JS `Set` re-insertion moving
+      an edge to the END of the survivor order.
+- [x] `jsmath::js_cos` / `js_sin` — Sun's 1993 fdlibm, verbatim (`s_sin`,
+      `s_cos`, `k_sin`, `k_cos`, `e_rem_pio2`, `k_rem_pio2`). V8 keeps that
       evaluation order; musl and glibc both took FreeBSD's rewrite, so both
-      Rust candidates disagree with the runtime. See Incidents.
+      Rust candidates disagree with the runtime. Verified: ten whole-curve
+      digests from real node, crossing all four reduction branches, with `libm`
+      and std pinned as still-wrong per range. See Incidents.
+- [ ] `jsmath::js_exp` / `js_log` — **the same defect, in code that already
+      ships.** Neither `libm` nor std reproduces the runtime. Live call sites:
+      `pk_core::combo` (`libm::exp`/`libm::log` — corner restitution, corner
+      add, combo window, all feeding pinball physics), `gambler::darts`
+      (`libm::log10`), `intro.rs` (std `ln`/`exp`, camera zoom). No divergent
+      input has been hit by an existing fixture, which is a statement about
+      those traces' inputs and not about the primitives. Pinned by
+      `exp_and_log_have_no_agreeing_implementation_yet`, which fails when a twin
+      lands. Switching the call sites needs the affected traces re-verified.
 - [ ] Run `jsmath_oracle.rs` under `wasm32-unknown-unknown`: std's `powf`
       lowers to the `libm` crate there, so `js_pow` is EXPECTED to diverge in
-      the browser and has not been measured.
+      the browser and has not been measured. `js_cos`/`js_sin` should be immune
+      — they compute from transcribed constants and never call the platform —
+      but "should be" is what this whole section is about, so measure it.
 - [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
       against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
       launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →
@@ -297,6 +311,8 @@ co-op multiplayer.
 | Item | Where | Verified by |
 |---|---|---|
 | Mulberry32 RNG | `pk-core/src/rng.rs` | bit-exact vs JS oracle, 5 seeds |
+| JS math twins: `hypot`, `pow`, `cos`, `sin` | `pk-core/src/jsmath/` | whole-curve digests from real node — 4 pow sweeps + 10 trig ranges crossing all four reduction branches, with `libm`/std pinned as still-wrong per range |
+| Maze pass 1 `grow-track` (physarum circuit) | `pk-core/src/maze/track_grow.rs` | 10/10 corpus floors bit-exact — node + edge digests, counts, cumulative rng draws |
 | Tile grid | `pk-core/src/grid.rs` | ported cases |
 | Square-wall collision (sweep, sub-step, surfaces, wall contact) | `pk-core/src/collide.rs` | 8 ported legacy cases + movement-trace fixture |
 | Player movement @60 Hz, facing | `pk-core/src/state.rs` | tests + trace fixture + pk-check drive |

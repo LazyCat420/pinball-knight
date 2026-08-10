@@ -5,6 +5,32 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — `js_cos`/`js_sin`: V8's trig is Sun's 1993 fdlibm, and P2 pass
+  1 is now 10 of 10 floors bit-exact.** `jsmath/fdlibm.rs` — `s_sin`/`s_cos`,
+  `k_sin`/`k_cos`, `e_rem_pio2` and `k_rem_pio2`, transcribed verbatim. The
+  cause was evaluation ORDER, not constants: musl and glibc both took FreeBSD's
+  2002 split-polynomial rewrite and dropped `__kernel_cos`'s `qx` branch; V8
+  kept the Horner form. The by-name exclusion list (L3 s1, L13 s1) is DELETED,
+  which is what the equality assertion on that list was there to force.
+  - **Measured over the oracle's ten trig sweeps:** the twins match every one;
+    `libm` differs on 918–2,024 inputs per sweep, std on 1,604–6,815.
+  - **The `js_pow` gate had never run.** It read `jsmath-pow-oracle.json`; the
+    exporter writes `jsmath-oracle.json`. It failed at the file read with
+    "fixture missing — run the exporter", which reads as an unconfigured
+    checkout rather than a broken test. A missing-fixture panic is a claim
+    about a PATH — check the name before believing it.
+  - **The sweeps did not cover what their comment claimed.** The multi-word
+    2/π reduction starts at 2^20·(π/2) ≈ 1.647e6 and the largest sweep stopped
+    at 1e6, so `k_rem_pio2` was described as covered and was not. Ranges at
+    1e8, 1e15 and 1e300 added; the twins match all three.
+  - **`exp`/`log` have no agreeing implementation and are ALREADY CALLED** —
+    `combo.rs` (corner restitution / add / window, feeding pinball physics),
+    `darts.rs` (`log10`), `intro.rs` (std `ln`/`exp`). No divergent input has
+    been hit, which is a fact about those traces' inputs, not about the
+    primitives. Pinned as a gap test that fails when a twin lands.
+  - **Measured:** `cargo test -p pk-core` green incl. 4 oracle tests and the
+    6 maze-digest tests; fmt and clippy clean; oracle fixture re-exported from
+    real node and its four original digests unchanged.
 - **2026-08-09 — P2 pass 1 `grow-track`: the physarum circuit, 8 of 10 floors
   bit-exact — and the port's math library turned out to be wrong.**
   `pk_core::maze::track_grow`: node layouts, K-nearest mesh, the Gauss–Seidel
@@ -27,11 +53,14 @@ as the change it records.** Newest entries first within each section.
     because 1 ulp on one input in ten is invisible in spot values. Verdict:
     sqrt either, atan `libm`, pow std (plus V8's ±0.5→sqrt fast path), and
     cos/sin/exp/log neither. `js_pow` is in; `js_cos`/`js_sin` are not.
+    *(Superseded 2026-08-10: the trig twins landed; exp/log are still open.)*
   - **The gap is pinned by name, not by category.** Two floors of ten diverge
     (L3 s1, L13 s1) — and three OTHER hub floors are bit-exact, so excluding
     "the hub layout" would have quietly stopped testing three floors that
     already pass. The test asserts the divergent set EQUALS that list, so it
     fails when the twins land as well as when a new divergence appears.
+    *(It did exactly that on 2026-08-10 — the list emptied and the assertion
+    is what reported it.)*
   - **Measured:** `cargo test -p pk-core` 336 unit + 15 integration green; fmt
     and clippy clean; legacy suite unchanged.
 - **2026-08-09 — P2 data tables: the five archetypes, and the stream that runs

@@ -41,6 +41,10 @@ struct Sweep {
     digest: u32,
 }
 
+/// A candidate implementation of a JS primitive. Named because the whole file
+/// is about choosing between several of them for the same function.
+type Candidate = fn(f64) -> f64;
+
 fn load() -> Oracle {
     // ⚠️ This path was `jsmath-pow-oracle.json` for a while and the exporter has
     // always written `jsmath-oracle.json`, so the whole gate failed at the read
@@ -72,7 +76,7 @@ fn sweep_digest(u: &Unary, f: impl Fn(f64) -> f64) -> u32 {
 /// row was a separate measurement and three of them were surprises — see
 /// `cargo run -p pk-core --example survey`, which prints this table with the
 /// divergence counts.
-fn required_impl(name: &str) -> Option<fn(f64) -> f64> {
+fn required_impl(name: &str) -> Option<Candidate> {
     match name {
         "cos" => Some(js_cos),
         "sin" => Some(js_sin),
@@ -127,7 +131,7 @@ fn the_rejected_trig_candidates_still_disagree() {
     let o = load();
     let mut ranges = 0;
     for u in &o.unary {
-        let (libm_f, std_f): (fn(f64) -> f64, fn(f64) -> f64) = match u.name.as_str() {
+        let (libm_f, std_f): (Candidate, Candidate) = match u.name.as_str() {
             "cos" => (libm::cos, f64::cos),
             "sin" => (libm::sin, f64::sin),
             _ => continue,
@@ -171,14 +175,14 @@ fn exp_and_log_have_no_agreeing_implementation_yet() {
     let o = load();
     let mut gaps = 0;
     for u in &o.unary {
-        let candidates: [(&str, fn(f64) -> f64); 2] = match u.name.as_str() {
+        let candidates: [(&str, Candidate); 2] = match u.name.as_str() {
             "exp" => [("libm", libm::exp), ("std", f64::exp)],
             "log" => [("libm", libm::log), ("std", f64::ln)],
             _ => continue,
         };
         for (who, f) in candidates {
             assert_ne!(
-                sweep_digest(u, &f),
+                sweep_digest(u, f),
                 u.digest,
                 "{}::{} now matches the runtime — promote it into required_impl() \
                  and delete this gap test",
