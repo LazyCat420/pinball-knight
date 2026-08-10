@@ -38,6 +38,7 @@
 //! The per-pass headers carry those tables; read the one for the pass you are
 //! about to trust.
 
+use pk_core::grid::{idx, is_walkable, Grid, T_CRACKED};
 use pk_core::maze::archetypes::{
     archetype_for, level_cells, track_node_counts, windiness_for, NodeLayout, SurfaceMix,
 };
@@ -1085,6 +1086,163 @@ fn pass5_launch_chute_replays_the_oracle() {
 #[test]
 fn pass6_grow_maze_replays_the_oracle() {
     replay_through(5);
+}
+
+/// Pass 7 of 23 — `endpoints-early`. Where the floor opens and where it lets you
+/// out, picked provisionally so the repair passes know what not to fill in.
+///
+/// ⚠️ **THIS PASS MUTATES NOTHING.** All seven digests and all six counts are
+/// byte-identical to `grow-maze`'s, and it draws no rng, so `extra` — the two
+/// tile coordinates — is the ENTIRE gate. That is the shape the harness memo
+/// warns about, with one difference that makes it acceptable: those two
+/// coordinates are the pass's whole output, not a summary of it (compare pass
+/// 2's original `legs` count, which was a summary and gated nothing).
+///
+/// What the corpus does NOT cover, measured rather than assumed:
+///  · `relaxed` is `[]` on 10/10 floors — the sight-line relaxation ladder
+///    (`0.8`/`0.65`/`0.5` re-bands, and the `score = -euclid` branch behind it)
+///    is never taken here. It is not dead code in the game: it is reached at
+///    `endpoints-final` on a post-curve grid.
+///  · `start_band` runs on 1/10 floors (L3 s1, the only corpus floor with no
+///    chute). The other nine take `chute.base` and never score a perimeter.
+///  · `stairs_in` is `None` on all ten — the King's Hall preference arrives at
+///    pass 14.
+#[test]
+fn pass7_endpoints_early_replays_the_oracle() {
+    replay_through(6);
+}
+
+/// Pass 8 of 23 — `repair-1`. Uncarve, reconnect, de-stub, demote.
+///
+/// The first pass since `carve-track` whose boundary is a strong one on the
+/// digests alone: `t` moves (uncarve fills floor→wall, de-stub opens wall→floor)
+/// and `lane` moves (terminations demoted), on all ten floors. It also draws
+/// nothing — `connect_all` takes an rng in the TS and never calls it — so the
+/// draw count is once again inert here, and the gate is `t` + `lane` + the
+/// walkable/lane counts.
+///
+/// The four passes run in the ONE order that is safe: uncarve can disconnect, so
+/// it must precede the connectivity guarantee; de-stub must follow both because
+/// each manufactures nubs the other cannot see; heal runs last with `reach = 0`,
+/// which makes every termination a DEMOTION and leaves the `joined` branch
+/// unreachable from `PASS_ORDER` (unit-tested in `maze::track_socket` instead).
+#[test]
+fn pass8_repair_1_replays_the_oracle() {
+    replay_through(7);
+}
+
+/// THE THREE FACTS THAT EXPLAIN WHY `repair-1`'s SABOTAGE SWEEP LEAKED.
+///
+/// Sixteen of twenty-six injected defects survived both boundaries (table in
+/// `maze::track_floor`'s header). Three of the survivors are not corpus luck —
+/// they are structural, and this test pins the structure so that the day it
+/// stops holding, the explanation fails LOUDLY instead of the sabotage quietly
+/// becoming catchable:
+///
+/// 1. **The floor is already ONE walkable component when `repair-1` starts**, so
+///    `connect_all` carves nothing (measured: 0 tiles on 10/10 floors). Two
+///    sabotages ride on that — moving `connect_all` after the de-stub, and not
+///    passing it the `repair_keep_out` mask (36-92 marked tiles per floor, every
+///    one unconsulted). Both are still real defects at `repair-2`, where the
+///    curve passes have filled corner pockets floor→wall and CAN disconnect.
+///
+/// 2. **`uncarve_dead_ends` can never disconnect anything anyway** — it only
+///    fills tiles with ≤1 open 4-neighbour, and removing a leaf from a
+///    4-connected component leaves it connected. So the legacy comment's
+///    ordering rationale ("uncarve first, which is fine only because connectAll
+///    runs after it") is a true statement about the wrong pass.
+///
+/// 3. **Both endpoints are LANE tiles, and `uncarve_dead_ends` already refuses
+///    every lane tile**, which makes the `protected_tiles` argument redundant on
+///    this call path — hence "endpoints not protected" surviving. It stops being
+///    redundant at `endpoints-final`, where the stairs tile is later stamped
+///    `T_STAIRS` and the boss chamber is carved around it.
+///
+/// Also asserted: zero `T_CRACKED` tiles exist yet (secret walls are authored in
+/// `decorate.ts`), which is why dropping the de-stub's cracked-wall exemption
+/// changed nothing.
+#[test]
+fn repair_1_stands_on_a_floor_that_is_already_connected() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let (mut rng, density) = pre_track_draws(f);
+
+        // Captured at the `grow-maze` boundary — the grid `repair-1` inherits.
+        let mut components = usize::MAX;
+        let mut cracked = usize::MAX;
+        let mut probe = |snap: PassSnapshot<'_>| {
+            if snap.pass == "grow-maze" {
+                components = walkable_components(snap.grid);
+                cracked = snap.grid.t.iter().filter(|&&t| t == T_CRACKED).count();
+            }
+        };
+        let floor = build_track_floor(
+            f.cells_w,
+            f.cells_h,
+            &mut rng,
+            &BuildTrackFloorOpts {
+                profile: Some(&arch.track),
+                density: Some(density),
+                ..Default::default()
+            },
+            Some(&mut probe),
+        )
+        .unwrap_or_else(|| panic!("{head}: the pipeline declined a corpus floor"));
+
+        assert_eq!(
+            components, 1,
+            "{head}: `grow-maze` handed `repair-1` {components} components — \
+             `connect_all` is load-bearing here after all, and the two sabotages \
+             that survived because it is inert have to be re-run"
+        );
+        assert_eq!(cracked, 0, "{head}: a cracked wall exists before decorate");
+
+        let ends = floor.ends.expect("a corpus floor has endpoints");
+        let g = &floor.grid;
+        for (what, p) in [("start", ends.start), ("stairs", ends.stairs)] {
+            assert_eq!(
+                floor.mask.lane[idx(g, p.i, p.j)],
+                1,
+                "{head}: {what} is not a lane tile, so the uncarve's protection \
+                 list stops being redundant and needs its own gate"
+            );
+        }
+    }
+}
+
+/// How many connected components the walkable tiles form. 4-neighbourhood, the
+/// same one `connect_all` floods with.
+fn walkable_components(g: &Grid) -> usize {
+    let n = (g.w * g.h) as usize;
+    let w = g.w as usize;
+    let mut seen = vec![false; n];
+    let mut components = 0;
+    for k in 0..n {
+        let (i, j) = ((k % w) as i32, (k / w) as i32);
+        if seen[k] || !is_walkable(g, i, j) {
+            continue;
+        }
+        components += 1;
+        let mut st = vec![k];
+        seen[k] = true;
+        while let Some(cur) = st.pop() {
+            let (ci, cj) = ((cur % w) as i32, (cur / w) as i32);
+            for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let (x, y) = (ci + di, cj + dj);
+                if x < 0 || y < 0 || x >= g.w || y >= g.h || !is_walkable(g, x, y) {
+                    continue;
+                }
+                let kk = idx(g, x, y);
+                if !seen[kk] {
+                    seen[kk] = true;
+                    st.push(kk);
+                }
+            }
+        }
+    }
+    components
 }
 
 /// Drive the REAL pipeline to boundary `k` and compare every digest and count

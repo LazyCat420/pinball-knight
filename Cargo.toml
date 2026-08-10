@@ -17,10 +17,20 @@ repository = "https://github.com/LazyCat420/pinball-knight"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-# float_roundtrip is LOAD-BEARING: serde_json's default float parse is fast
-# but up to 1 ulp lossy, which broke the first bit-exact fixture replay
-# (0.9100000000000037 parsed as …36). Parity fixtures demand exact parsing.
-serde_json = { version = "1", features = ["float_roundtrip"] }
+# BOTH features are LOAD-BEARING, and each was learned from a defect.
+#
+# float_roundtrip: serde_json's default float parse is fast but up to 1 ulp
+# lossy, which broke the first bit-exact fixture replay (0.9100000000000037
+# parsed as …36). Parity fixtures demand exact parsing.
+#
+# preserve_order: without it `Map` is a `BTreeMap`, so a parsed object iterates
+# ALPHABETICALLY and the fixture's own key order is destroyed at parse time.
+# `maze_pass_digests`'s `assert_record` compares each pass's `extra` POSITIONALLY
+# and documents that "an order change is a change" — which was simply not true
+# for two years' worth of boundaries, because no boundary before `endpoints-early`
+# had more than one key for the sort to reorder. It failed on `start`/`stairs`
+# (alphabetically `stairs` first) the moment one did.
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 libm = "0.2"
 enum-map = { version = "2", features = ["serde"] }
 strum = { version = "0.27", features = ["derive"] }
