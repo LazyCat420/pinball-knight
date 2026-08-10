@@ -56,6 +56,17 @@ pub fn le_i16(v: i16) -> [u8; 2] {
     v.to_le_bytes()
 }
 
+/// A signed 32-bit field, little-endian — the same four bytes [`Fnv1a::count`]
+/// folds a length as.
+///
+/// Separate because the values it carries can be NEGATIVE: a doorway site's axis
+/// components are `-1`, `0` or `1`. The oracle's `foldLen` shifts with `>>>`, so
+/// it folds exactly the two's-complement bytes `i32` already has, and `as u32`
+/// is that reinterpretation rather than a conversion.
+pub fn le_i32(v: i32) -> [u8; 4] {
+    (v as u32).to_le_bytes()
+}
+
 /// Streaming FNV-1a 32. Cheap to copy; the state is one `u32`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fnv1a(u32);
@@ -98,6 +109,10 @@ impl Fnv1a {
 
     pub fn i16(&mut self, v: i16) -> &mut Self {
         self.bytes(&le_i16(v))
+    }
+
+    pub fn i32(&mut self, v: i32) -> &mut Self {
+        self.bytes(&le_i32(v))
     }
 
     pub fn finish(&self) -> u32 {
@@ -182,4 +197,32 @@ pub fn digest_arcs(arcs: &[ArcFeature]) -> u32 {
         }
     }
     h.count(arcs.len()).finish()
+}
+
+/// Digest the PLANNED DOORWAYS in plan order — position, axis and wanted width.
+///
+/// ⚠️ ADDED WHEN PASS 9 WAS PORTED, for the same reason [`digest_arcs`]'s TS
+/// sibling `digestLegs` was added at pass 2, and the case here is worse.
+/// `plan-doorways` MUTATES NOTHING: it labels sections, partitions territory and
+/// picks one opening per boundary component, all read-only. Measured on all ten
+/// corpus floors, every one of the seven digests, all six counts AND the draw
+/// count at `plan-doorways` are byte-identical to `repair-1`'s — so before this
+/// fold the entire boundary was `{ sites: N, guard: M }`: two integers standing
+/// in for nine to twenty-six structured records. A port that got the per-site
+/// axis wrong, or emitted the sites in a different order, matched the fixture
+/// exactly, and would first diverge at pass 11 where `on_doorway` steers a pass
+/// that draws rng — two passes late, with the localiser pointing at the wrong
+/// one.
+///
+/// Order is part of the signal: pass 18 walks this list in order and slides each
+/// centre against a grid four curve passes have changed, so two sites swapped is
+/// a different floor even when every number in the list is right.
+pub fn digest_sites(sites: &[crate::maze::doorways::DoorwaySite]) -> u32 {
+    let mut h = Fnv1a::new();
+    for s in sites {
+        for v in [s.i, s.j, s.ai, s.aj, s.wi, s.wj, s.want, s.a, s.b] {
+            h.i32(v);
+        }
+    }
+    h.count(sites.len()).finish()
 }

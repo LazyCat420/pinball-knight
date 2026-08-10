@@ -20,7 +20,7 @@ against five bit-exact fixtures — re-measured 2026-08-10 PM with `main` at pas
 |---|---:|---:|---:|---|
 | Sim primitives (rng, jsmath, grid, collide, tile-shape, surfaces) | ~1.6k | all | — | bit-exact |
 | P1 pinball physics | ~6.0k | ~1.0k | **~5.0k** | bit-exact trace |
-| P2 maze `buildTrackFloor` (23 passes) | ~10.7k | 5.7k (8 passes) | **~5.0k** | pass digests |
+| P2 maze `buildTrackFloor` (23 passes) | ~10.7k | 6.4k (9 passes) | **~4.3k** | pass digests |
 | P2 content half-B (`decorate`, prefabs, assembly, surface-paint) | ~5.4k | — | **~5.4k** | **no gate yet** |
 | P2 fallback (`generator`) | 0.4k | — | 0.4k | pass digests |
 | P3 render (minus baked `cel-painter`) | ~12.0k | ~2.0k | **~10.0k** | visual A/B |
@@ -103,17 +103,43 @@ follow-ups:
 
 ### Stage B — finish P2 (the largest gated block, and P4 is waiting on it)
 
-Passes 9–23 in `PASS_ORDER`, each bit-identical at its boundary before the next
-starts: `plan-doorways` → `publish-arcs` → `orbit-island` → `arc-sweeps` →
-`repair-2` → `endpoints-final` → `boss-chamber` → `artery-banks` →
-`reseal-chute` → `carve-doorways` → `funnels-relays` → `compact-fixed-point` →
-`stairs` → `arc-rails` → `done`. Passes 1–8 landed 2026-08-10, all ten corpus
-floors bit-exact.
+Passes 10–23 in `PASS_ORDER`, each bit-identical at its boundary before the next
+starts: `publish-arcs` → `orbit-island` → `arc-sweeps` → `repair-2` →
+`endpoints-final` → `boss-chamber` → `artery-banks` → `reseal-chute` →
+`carve-doorways` → `funnels-relays` → `compact-fixed-point` → `stairs` →
+`arc-rails` → `done`. Passes 1–9 landed 2026-08-10, all ten corpus floors
+bit-exact.
 
-Next up is **pass 9, `planDoorways`** (`maze/doorways.ts`, 855 lines) — and it is
-a step change in size from the eight before it. It is also the pass that decides
-what the four CURVE passes behind it (10–12) are told to avoid, so its output is
-consumed by more of the pipeline than any pass so far.
+**Pass 9 `plan-doorways` landed with the gate widened first**, and that order was
+the point. Measured before any Rust was written: the pass mutates nothing, so all
+seven digests, all six counts and the cumulative draw count at its boundary are
+byte-identical to `repair-1`'s on 10/10 floors — the whole boundary was
+`{ sites, guard }`, two integers standing in for 9–26 structured records. A port
+with the wrong per-site axis or the wrong plan order would have shipped green and
+diverged at pass 11, where `onDoorway` steers a pass that draws.
+
+So `planSites` was added to the exporter first (`digestSites`: `i, j, ai, aj, wi,
+wj, want, a, b` per site, in plan order, length-folded) — the same move
+`digestLegs` was at pass 2, and for the same reason. Re-exporting left every
+other record on every other pass byte-identical, which is itself the check that
+the fold was added and nothing else moved.
+
+Only the pass-9 half of `doorways.ts` is ported (12 of 19 functions + the shared
+`DoorwaySite`/`Doorway`/`CarveGuards`/`TileVerdict` types, so pass 18 extends the
+module rather than converting between two representations). `carveDoorways`,
+`arcSpanMask`, `measureDoorway`, `doorwayCensus` and `sectionPinches` wait for
+pass 18, where they have a gate; `arcSpanMask` additionally needs `js_cos`/`js_sin`.
+
+Its sweep: **27 injected defects, 18 caught, 9 survived**, positive control
+(carving the plan at pass 9, i.e. pass 18 ten passes early) caught. Three
+survivors are *provably inert* rather than coverage holes — a flood visits the
+same component in any order, and the boundary strip's winner is an argmin under a
+total order — and the other six are measured, not assumed, by
+`the_pass_9_survivors_have_a_number_on_them`. Three of those six ARE reached: the
+slide fires 57 times (but nothing resolves at both ±shift), the `SIDES` scan forks
+on 2 tiles (neither its strip's argmin), and the sealed guard changes 0 of the
+resolutions when withheld. Absence of ties, not absence of coverage — the same
+hole passes 5, 7 and 8 each reported.
 
 ⚠️ **Pass 13 `repair-2` is where the repair block earns its order.** Passes 7–8's
 sabotage sweep found that `connect_all` carves nothing at `repair-1` and provably

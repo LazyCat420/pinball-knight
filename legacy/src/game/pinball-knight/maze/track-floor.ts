@@ -42,7 +42,7 @@ import { buildFlowField } from "./flow-orient";
 import { compactArcs, clearOrphanArcTiles } from "./arc-contract";
 import { SHAPE_ARC } from "../engine/tile-shape";
 import { authorArteryBanks, traceArtery } from "./artery-banks";
-import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, clearanceField, widthFromClearance, type Doorway } from "./doorways";
+import { planDoorways, resolveDoorway, carveDoorways, doorwayFootprint, arcSpanMask, clearanceField, widthFromClearance, type Doorway, type DoorwaySite } from "./doorways";
 import { authorDoorwayFunnels } from "./doorway-funnels";
 import { authorRelayChambers } from "./relay-chambers";
 import { bfsDistances } from "../engine/flow-field";
@@ -108,6 +108,15 @@ export interface PassSnapshot {
    */
   graph?: TrackGraph;
   path?: TrackPath;
+  /**
+   * The doorway plan, on the one pass that owns it — LIVE, like the grid.
+   *
+   * Here for the reason `graph`/`path` are: `plan-doorways` writes nothing to
+   * the grid, so a boundary that only digests tiles certifies `repair-1`'s
+   * output a second time and calls the plan verified. See `digestSites` in
+   * `port-maze-fixtures.test.ts` for the measurement.
+   */
+  sites?: readonly DoorwaySite[];
 }
 
 /** Small JSON-able values a pass reports about itself. */
@@ -569,7 +578,7 @@ export function buildTrackFloor(
   // `extra` is a THUNK, not a value: `probe(pass, {…})` would build the object
   // at the CALL SITE, outside the guard below, so a floor with no observer
   // would still pay for twenty-three of them plus four walks of the arc list.
-  const probe = (pass: string, extra: () => PassExtra = NO_EXTRA, live: { graph?: TrackGraph; path?: TrackPath } = {}): void => {
+  const probe = (pass: string, extra: () => PassExtra = NO_EXTRA, live: { graph?: TrackGraph; path?: TrackPath; sites?: readonly DoorwaySite[] } = {}): void => {
     if (opts.onPass) opts.onPass({ pass, grid, mask: probeMask, extra: extra(), ...live });
   };
   /** Arc features and the rail lanes strung along them — one thunk, used four times. */
@@ -730,7 +739,7 @@ export function buildTrackFloor(
   }
   const onDoorway = (i: number, j: number): boolean =>
     i >= 0 && j >= 0 && i < grid.w && j < grid.h && doorGuard.has(idx(grid, i, j));
-  probe("plan-doorways", () => ({ sites: doorSites.length, guard: doorGuard.size }));
+  probe("plan-doorways", () => ({ sites: doorSites.length, guard: doorGuard.size }), { sites: doorSites });
 
   // ── CURVED WALLS, ALL OF THEM, HERE ─────────────────────────────────────
   //

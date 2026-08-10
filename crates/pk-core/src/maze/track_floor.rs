@@ -110,6 +110,7 @@ use crate::flow_field::bfs_distances;
 use crate::grid::{idx, is_walkable, Grid};
 use crate::jsmath::js_hypot;
 use crate::maze::archetypes::track_node_counts;
+use crate::maze::doorways;
 use crate::maze::track_carve::{carve_track, connect_all, grow_maze_around, sealed_walls};
 
 /// Walls the connectivity repair should route AROUND if it can: a sealed lane's
@@ -358,7 +359,7 @@ pub fn pick_track_endpoints(
 /// A number rather than a comment because the replay test asserts against it:
 /// a pass that lands without being counted here, or a count raised without a
 /// pass, fails rather than silently changing what is under test.
-pub const PASSES_LANDED: usize = 8;
+pub const PASSES_LANDED: usize = 9;
 
 /// What the pipeline hands back. Grows a field at a time with the passes that
 /// author them — `start`/`stairs` at pass 7, `chute` at pass 5, and so on.
@@ -380,6 +381,17 @@ pub struct TrackFloor {
     /// tiles, which the shipping pipeline answers by declining the floor at pass
     /// 14 rather than here.
     pub ends: Option<TrackEnds>,
+    /// The doorway plan (pass 9), in plan order.
+    ///
+    /// Kept on the floor rather than consumed on the spot because it outlives
+    /// its pass by nine of them: passes 11, 12 and 16 steer around
+    /// [`Self::door_guard`], and pass 18 re-resolves THESE SITES against a grid
+    /// the curve passes have changed. Re-planning at 18 instead is the
+    /// self-amplifying failure the split exists to avoid.
+    pub door_sites: Vec<doorways::DoorwaySite>,
+    /// 1 where a resolved doorway's footprint lands — the tiles the curve passes
+    /// must not stamp. Always `w * h` long.
+    pub door_guard: Vec<u8>,
     /// Rules the generator could not satisfy and DELIBERATELY stood down on.
     ///
     /// Recorded rather than silently relaxed: constraints like "open at the
@@ -443,6 +455,7 @@ pub fn build_track_floor(
             pass: "grow-track",
             grid: &grid,
             mask: None,
+            sites: None,
             draws: rng.draws(),
             extra: vec![
                 ("nodes", Extra::Int(graph.nodes.len() as i64)),
@@ -469,6 +482,7 @@ pub fn build_track_floor(
             pass: "track-path",
             grid: &grid,
             mask: None,
+            sites: None,
             draws: rng.draws(),
             extra: vec![("legs", Extra::Int(path.legs.len() as i64))],
         });
@@ -481,6 +495,7 @@ pub fn build_track_floor(
             pass: "carve-track",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: Vec::new(),
         });
@@ -533,6 +548,7 @@ pub fn build_track_floor(
             pass: "plaza",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: vec![("relaxed", Extra::Strs(relaxed.clone()))],
         });
@@ -557,6 +573,7 @@ pub fn build_track_floor(
             pass: "launch-chute",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: vec![(
                 "chute",
@@ -597,6 +614,7 @@ pub fn build_track_floor(
             pass: "grow-maze",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: Vec::new(),
         });
@@ -620,6 +638,7 @@ pub fn build_track_floor(
             pass: "endpoints-early",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: vec![
                 (
@@ -668,8 +687,70 @@ pub fn build_track_floor(
             pass: "repair-1",
             grid: &grid,
             mask: Some(&mask),
+            sites: None,
             draws: rng.draws(),
             extra: Vec::new(),
+        });
+    }
+
+    // ── DOORWAYS: PLANNED HERE, CARVED AT PASS 18 (maze/doorways.rs) ─────────
+    //
+    // Planned on clean pre-curve geometry and carved after every floor→wall pass
+    // has run. The split is not tidiness, it is the fix for the failure that
+    // sank the original's first attempt: deciding what counts as a "room" from
+    // clearance re-derived on every pass is SELF-AMPLIFYING, because widening an
+    // opening promotes the corridor beyond it into a room, which manufactures a
+    // fresh doorway. Measured, 34 → 107 doorways per floor while the pinches
+    // barely moved. Labelling the sections once, here, makes a doorway "the
+    // opening between section 3 and section 7" — a statement carving cannot
+    // invalidate.
+    //
+    // The plan is also what the curve passes are told to avoid. A fillet built
+    // on a planned threshold is a curve the doorway would later have to cut
+    // through, and cutting it un-backs the drawn arc; steering the curves around
+    // the plan is far cheaper than arbitrating between them afterwards. Passes
+    // 11 (`orbit-island`), 12 (`arc-sweeps`) and 16 (`artery-banks`) read
+    // `door_guard`; pass 18 re-resolves `door_sites` against the changed grid.
+    //
+    // ⚠️ THIS PASS MUTATES NOTHING. Every function it calls is read-only, so all
+    // seven digests, all six counts and the draw count at this boundary are
+    // byte-identical to `repair-1`'s. If any of them move, the port has started
+    // implementing pass 18 early.
+    let door_sites = doorways::plan_doorways(&grid, &doorways::PlanOpts::default());
+    // A `Vec<u8>` mask rather than a set, and that is not a liberty: the TS
+    // `doorGuard` is only ever `.add`/`.has`/`.size`/copy-constructed — grepped
+    // through pass 18 — so its iteration order is unobservable, and this matches
+    // the `sealed_walls`/`in_maze` convention the carve passes already use.
+    let mut door_guard = vec![0_u8; (grid.w * grid.h) as usize];
+    let mut guard_count = 0_i64;
+    for s in &door_sites {
+        let guards = doorways::CarveGuards {
+            mask: Some(&mask),
+            // No span mask at pass 9 — it is pass 18 that has one, which is why
+            // `TileVerdict::Span` cannot occur here.
+            span_mask: None,
+        };
+        if let Some(d) = doorways::resolve_doorway(&grid, s, &guards) {
+            for t in doorways::doorway_footprint(&d) {
+                let k = idx(&grid, t.i, t.j);
+                if door_guard[k] == 0 {
+                    door_guard[k] = 1;
+                    guard_count += 1;
+                }
+            }
+        }
+    }
+    if let Some(p) = on_pass.as_mut() {
+        p(PassSnapshot {
+            pass: "plan-doorways",
+            grid: &grid,
+            mask: Some(&mask),
+            sites: Some(&door_sites),
+            draws: rng.draws(),
+            extra: vec![
+                ("sites", Extra::Int(door_sites.len() as i64)),
+                ("guard", Extra::Int(guard_count)),
+            ],
         });
     }
 
@@ -680,6 +761,8 @@ pub fn build_track_floor(
         mask,
         chute,
         ends: ends_early,
+        door_sites,
+        door_guard,
         relaxed,
     })
 }
