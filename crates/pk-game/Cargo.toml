@@ -28,6 +28,12 @@ js-sys = "0.3"
 version = "0.17"
 default-features = false
 features = [
+    # WITHOUT THIS THE ENGINE IS SILENT. `tracing` has no subscriber unless
+    # bevy_log installs one, so every Bevy warning, every wgpu validation
+    # error and every naga shader-compile failure is discarded — a broken
+    # shader presents as a clean-exiting process that merely looks wrong.
+    # Measured: a 30 s run of the release exe printed nothing at all.
+    "bevy_log",
     "bevy_winit",
     "bevy_render",
     "bevy_core_pipeline",

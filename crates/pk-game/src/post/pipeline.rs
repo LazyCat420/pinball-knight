@@ -91,6 +91,13 @@ pub const EDGE_THRESHOLD: f32 = 0.26;
 const LEGACY_NEAR: f32 = 0.1;
 const LEGACY_FAR: f32 = 200.0;
 
+/// Set by [`init_pk_pipelines`]. A `RenderStartup` system whose `Res` params
+/// are not all present is SKIPPED, not failed, and the only complaint goes
+/// through `tracing` — which this binary has no subscriber for. Without this
+/// flag the tripwire below cannot tell "the pipelines never built" from "the
+/// system that creates them never ran at all".
+static INIT_RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Bloom runs at HALF the render resolution — cheaper, and a wider blur for
 /// free. `Rgba16Float` because the bright pass keeps HDR highlights: an 8-bit
 /// target would clip the torch cores that the halo exists to spread.
@@ -252,7 +259,7 @@ impl Plugin for PixelPipelinePlugin {
                 (
                     prepare_pk_bloom_textures.in_set(RenderSystems::PrepareResources),
                     prepare_pk_pipelines.in_set(RenderSystems::Prepare),
-                    report_pk_shader_errors.in_set(RenderSystems::Cleanup),
+                    report_pk_post_status.in_set(RenderSystems::Cleanup),
                 ),
             )
             .add_render_graph_node::<ViewNodeRunner<PkBloomNode>>(Core3d, PkBloomLabel)
@@ -524,6 +531,7 @@ fn init_pk_pipelines(
         shader: load_embedded_asset!(asset_server.as_ref(), "bloom.wgsl"),
     };
 
+    INIT_RAN.store(true, std::sync::atomic::Ordering::Relaxed);
     commands.insert_resource(PkSamplers { nearest, linear });
     commands.insert_resource(composite);
     commands.insert_resource(bloom);
@@ -535,6 +543,13 @@ struct PkViewPipelines {
     bright: CachedRenderPipelineId,
     blur_h: CachedRenderPipelineId,
     blur_v: CachedRenderPipelineId,
+    /// The key the composite was specialised with, carried so the node picks
+    /// the matching bind group layout from the SAME decision that chose the
+    /// pipeline. Reading the sample count off the depth texture in the node
+    /// instead would be a second source of truth for one fact, and the two
+    /// could only ever disagree silently — as a bind-group/pipeline layout
+    /// mismatch, which wgpu reports at draw time into a log nobody reads.
+    key: PkCompositeKey,
 }
 
 fn prepare_pk_pipelines(
@@ -563,51 +578,154 @@ fn prepare_pk_pipelines(
             bright: bloom_cache.specialize(&pipeline_cache, &bloom, PkBloomPass::Bright),
             blur_h: bloom_cache.specialize(&pipeline_cache, &bloom, PkBloomPass::BlurH),
             blur_v: bloom_cache.specialize(&pipeline_cache, &bloom, PkBloomPass::BlurV),
+            key,
         });
     }
 }
 
-/// Shouts on stderr when one of this file's pipelines fails to build.
+/// Says on stderr, exactly once, whether this file's four pipelines actually
+/// built — and shouts if one did not.
 ///
 /// ⚠️ THIS IS NOT BELT-AND-BRACES, IT IS THE ONLY REPORT THERE IS. A WGSL
 /// error surfaces at RUNTIME, and this binary has no `LogPlugin` (`bevy_log`
 /// is not in pk-game's feature list), so `tracing` has no subscriber and
 /// `PipelineCache`'s own `error!` on a failed shader module goes nowhere at
 /// all. Without this, a broken composite presents as "the game looks like flat
-/// 3D again" with a silent, clean-exiting process — the node simply finds no
+/// 3D again" from a silent, clean-exiting process — the node simply finds no
 /// pipeline and returns `Ok`. `eprintln!` deliberately, because it does not go
 /// through `tracing`.
 ///
-/// De-duplicated by message: the pipeline is re-queried every frame, and a
-/// compile error would otherwise scroll the terminal at 60Hz.
-fn report_pk_shader_errors(
+/// ⚠️ AND IT REPORTS SUCCESS, NOT ONLY FAILURE. A reporter that is silent when
+/// the shaders work is silent when it never ran, when no view matched, and
+/// when the whole plugin was left out — one observation covering four states
+/// is not a check. The success line carries the facts a reader would otherwise
+/// have to take on trust: the ADAPTER (software rasteriser or real GPU), the
+/// destination FORMAT, whether the MSAA depth path was taken, and the
+/// `depth_remap` the AO was actually calibrated with.
+fn report_pk_post_status(
     pipeline_cache: Res<PipelineCache>,
-    views: Query<&PkViewPipelines>,
+    adapter: Res<bevy::render::renderer::RenderAdapterInfo>,
+    // ⚠️ NO `ViewTarget` HERE. `render_system` REMOVES it from every view the
+    // moment the graph has run (bevy_render `renderer/mod.rs:84`), so a query
+    // for it in `Cleanup` matches nothing, always — which is exactly how the
+    // first version of this reporter managed to stay silent while all four
+    // pipelines were building perfectly. The destination format it was wanted
+    // for is carried on `PkViewPipelines::key` instead.
+    views: Query<(&PkViewPipelines, &PkPost, &ViewDepthTexture)>,
+    with_post: Query<(), With<PkPost>>,
+    with_pipelines: Query<&PkViewPipelines>,
+    with_depth: Query<(), With<ViewDepthTexture>>,
     mut seen: Local<std::collections::HashSet<String>>,
+    mut frames: Local<u32>,
 ) {
-    for view in &views {
-        for (name, id) in [
-            ("composite", view.composite),
-            ("bloom.bright", view.bright),
-            ("bloom.blurH", view.blur_h),
-            ("bloom.blurV", view.blur_v),
-        ] {
-            let CachedPipelineState::Err(err) = pipeline_cache.get_render_pipeline_state(id) else {
-                continue;
-            };
-            // Both of these are "not ready yet", not "wrong" — the shaders are
-            // embedded assets and load asynchronously.
-            if matches!(
-                err,
-                PipelineCacheError::ShaderNotLoaded(_)
-                    | PipelineCacheError::ShaderImportNotYetAvailable
-            ) {
-                continue;
+    *frames += 1;
+
+    // ── THE TRIPWIRE. ────────────────────────────────────────────────────
+    //
+    // Silence from the success line below is ambiguous — it covers "the
+    // shaders are still loading", "no view carries `PkPost`", "the RenderStartup
+    // init was skipped because a `Res` it wanted did not exist yet" and "the
+    // plugin was never added". Bevy reports every one of those through
+    // `tracing`, which this binary does not subscribe to, so all four present
+    // as a game that simply looks unposted.
+    //
+    // Three seconds is far past any shader load, so anything still quiet here
+    // is broken, and the counts say WHICH link parted.
+    if *frames == 180 && seen.is_empty() {
+        let states: Vec<String> = with_pipelines
+            .iter()
+            .flat_map(|p| {
+                [
+                    ("composite", p.composite),
+                    ("bright", p.bright),
+                    ("blurH", p.blur_h),
+                    ("blurV", p.blur_v),
+                ]
+            })
+            .map(|(name, id)| {
+                let state = match pipeline_cache.get_render_pipeline_state(id) {
+                    CachedPipelineState::Queued => "queued".to_string(),
+                    CachedPipelineState::Creating(_) => "creating".to_string(),
+                    CachedPipelineState::Ok(_) => "ok".to_string(),
+                    CachedPipelineState::Err(e) => format!("ERR({e})"),
+                };
+                format!("{name}={state}")
+            })
+            .collect();
+        eprintln!(
+            "pk-post: NOT LIVE after {} frames | init_ran={} | views: PkPost={} PkViewPipelines={} \
+             ViewDepthTexture={} full-match={} | pipelines: [{}]",
+            *frames,
+            INIT_RAN.load(std::sync::atomic::Ordering::Relaxed),
+            with_post.iter().count(),
+            with_pipelines.iter().count(),
+            with_depth.iter().count(),
+            views.iter().count(),
+            states.join(", "),
+        );
+    }
+
+    for (pipelines, post, depth) in &views {
+        let named = [
+            ("composite", pipelines.composite),
+            ("bloom.bright", pipelines.bright),
+            ("bloom.blurH", pipelines.blur_h),
+            ("bloom.blurV", pipelines.blur_v),
+        ];
+        let mut all_ok = true;
+        for (name, id) in named {
+            match pipeline_cache.get_render_pipeline_state(id) {
+                CachedPipelineState::Ok(_) => {}
+                // "Not ready yet", not "wrong" — the shaders are embedded
+                // assets and load asynchronously, so the first frames are
+                // legitimately pending.
+                CachedPipelineState::Queued
+                | CachedPipelineState::Creating(_)
+                | CachedPipelineState::Err(
+                    PipelineCacheError::ShaderNotLoaded(_)
+                    | PipelineCacheError::ShaderImportNotYetAvailable,
+                ) => all_ok = false,
+                CachedPipelineState::Err(err) => {
+                    all_ok = false;
+                    let msg = format!("pk-post: pipeline `{name}` FAILED to build:\n{err}");
+                    // De-duplicated: the state is re-read every frame and a
+                    // compile error would otherwise scroll at 60Hz.
+                    if seen.insert(msg.clone()) {
+                        eprintln!("{msg}");
+                    }
+                }
             }
-            let msg = format!("pk-post: pipeline `{name}` failed to build:\n{err}");
-            if seen.insert(msg.clone()) {
-                eprintln!("{msg}");
-            }
+        }
+        if !all_ok {
+            continue;
+        }
+        let msg = format!(
+            "pk-post: composite + bloom live | adapter={} ({:?}, {:?}) | target={:?} {}x{} \
+             | depth={:?} samples={} ms_path={} | depth_remap=({}, {}) | cel={} steps={} curve={} sat={} \
+             bloom={} ao={} r={} vignette={} | debug={}",
+            adapter.name,
+            adapter.device_type,
+            adapter.backend,
+            pipelines.key.format,
+            post.resolution.x,
+            post.resolution.y,
+            depth.texture.format(),
+            depth.texture.sample_count(),
+            pipelines.key.multisampled_depth,
+            post.depth_remap.x,
+            post.depth_remap.y,
+            post.cel,
+            post.cel_steps,
+            post.cel_curve,
+            post.cel_saturation,
+            post.bloom,
+            post.ao,
+            post.ao_radius,
+            post.vignette,
+            post.debug,
+        );
+        if seen.insert(msg.clone()) {
+            eprintln!("{msg}");
         }
     }
 }
@@ -827,10 +945,8 @@ impl ViewNode for PkCompositeNode {
         // has written this frame.
         let post_process = target.post_process_write();
 
-        // The MSAA layout is only ever paired with the MSAA pipeline because
-        // both come off the same key; reading the sample count off the texture
-        // here would be a second source of truth for the same fact.
-        let layout = if depth.texture.sample_count() > 1 {
+        // From the specialisation key, NOT from the texture — see `PkViewPipelines::key`.
+        let layout = if pipelines.key.multisampled_depth {
             &composite.layout_ms
         } else {
             &composite.layout

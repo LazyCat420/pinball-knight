@@ -15,6 +15,7 @@
 //! hub; `--dungeon` / `?dungeon=1` / `PK_SCENE=dungeon` is the dev hatch that
 //! boots a floor directly (the harness's sim gates need one without walking).
 
+mod dungeon_render;
 mod fx;
 mod intro;
 mod overworld;
@@ -33,9 +34,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use overworld::CpuSheet;
 use pk_assets::published::SheetManifest;
-use pk_core::grid::{is_low_wall, is_walkable, shape_at, tile_center, Grid};
 use pk_core::state::{demo_floor, simulate, Facing, FrameInput, SimState};
-use pk_core::tile_shape::{is_round, is_slant, round_center, shape_normal, SHAPE_FULL};
 
 /// legacy constants/world.ts
 pub(crate) const WALL_H: f32 = 1.1;
@@ -484,158 +483,11 @@ fn update_frame_stats(
     }
 }
 
-/// Spawn the floor plane, wall boxes (Diablo-rule low rims), shaped-tile
-/// meshes and arc-guide segments for a grid — shared by the dungeon floor and
-/// the intro's title maze. Returns every entity so callers can tag them.
-pub(crate) fn spawn_grid_meshes(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
-    grid: &Grid,
-) -> Vec<Entity> {
-    let mut out = Vec::new();
-
-    // ── Floor plane ──
-    let (gw, gh) = (grid.w as f32, grid.h as f32);
-    out.push(
-        commands
-            .spawn((
-                Mesh3d(meshes.add(Plane3d::default().mesh().size(gw, gh))),
-                MeshMaterial3d(materials.add(StandardMaterial {
-                    base_color: Color::srgb(0.13, 0.11, 0.10),
-                    unlit: true,
-                    ..default()
-                })),
-                Transform::from_xyz(0.0, 0.0, 0.0),
-            ))
-            .id(),
-    );
-
-    // ── Walls: full-height stone, knee-high camera-side rims (the Diablo rule)
-    let wall_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.34, 0.32, 0.30),
-        unlit: true,
-        ..default()
-    });
-    let low_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.24, 0.22, 0.21),
-        unlit: true,
-        ..default()
-    });
-    let wall_mesh = meshes.add(Cuboid::new(1.0, WALL_H, 1.0));
-    let low_mesh = meshes.add(Cuboid::new(1.0, WALL_LOW, 1.0));
-    // Shaped tiles get their own meshes below — square boxes would contradict
-    // the collider ("see = hit" is the tile-shape contract; these are P3-debt
-    // approximations of it, not violations).
-    let shaped_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.42, 0.36, 0.32),
-        unlit: true,
-        ..default()
-    });
-    let wedge_mesh = meshes.add(Cuboid::new(std::f64::consts::SQRT_2 as f32, WALL_H, 0.5));
-    let round_mesh = meshes.add(Cylinder::new(1.0, WALL_H));
-    let arc_seg_mesh = meshes.add(Cuboid::new(0.8, WALL_H, 0.8));
-    for j in 0..grid.h {
-        for i in 0..grid.w {
-            if is_walkable(grid, i, j) {
-                continue;
-            }
-            let shape = shape_at(grid, i, j);
-            let (x, z) = tile_center(grid, i, j);
-            if is_slant(shape) {
-                // A wedge along the hypotenuse, offset onto the solid side.
-                let n = shape_normal(shape).unwrap();
-                let yaw = if (n.x > 0.0) == (n.z > 0.0) {
-                    std::f32::consts::FRAC_PI_4
-                } else {
-                    -std::f32::consts::FRAC_PI_4
-                };
-                out.push(
-                    commands
-                        .spawn((
-                            Mesh3d(wedge_mesh.clone()),
-                            MeshMaterial3d(shaped_mat.clone()),
-                            Transform::from_xyz(
-                                (x - n.x * 0.25) as f32,
-                                WALL_H / 2.0,
-                                (z - n.z * 0.25) as f32,
-                            )
-                            .with_rotation(Quat::from_rotation_y(yaw)),
-                        ))
-                        .id(),
-                );
-                continue;
-            }
-            if is_round(shape) {
-                // Quarter-disc corner: a radius-1 cylinder on the arc centre;
-                // the surplus quarters sink into the solid backing tiles.
-                let c = round_center(shape).unwrap();
-                let (gw2, gh2) = (f64::from(grid.w) / 2.0, f64::from(grid.h) / 2.0);
-                out.push(
-                    commands
-                        .spawn((
-                            Mesh3d(round_mesh.clone()),
-                            MeshMaterial3d(shaped_mat.clone()),
-                            Transform::from_xyz(
-                                (f64::from(i) + c.x - gw2) as f32,
-                                WALL_H / 2.0,
-                                (f64::from(j) + c.z - gh2) as f32,
-                            ),
-                        ))
-                        .id(),
-                );
-                continue;
-            }
-            if shape != SHAPE_FULL {
-                continue; // ARC slices render from their feature below
-            }
-            let low = is_low_wall(grid, i, j);
-            let (mesh, mat, hh) = if low {
-                (low_mesh.clone(), low_mat.clone(), WALL_LOW / 2.0)
-            } else {
-                (wall_mesh.clone(), wall_mat.clone(), WALL_H / 2.0)
-            };
-            out.push(
-                commands
-                    .spawn((
-                        Mesh3d(mesh),
-                        MeshMaterial3d(mat),
-                        Transform::from_xyz(x as f32, hh, z as f32),
-                    ))
-                    .id(),
-            );
-        }
-    }
-    // Multi-tile arc guides: segment boxes swept along each feature's circle
-    // (the collider resolves against the true arc; this is its visual echo).
-    let arc_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.45, 0.28), // brass-ish: the ball guide
-        unlit: true,
-        ..default()
-    });
-    for f in &grid.arcs {
-        let (gw2, gh2) = (f64::from(grid.w) / 2.0, f64::from(grid.h) / 2.0);
-        let segs = ((f.span / 0.2).ceil() as usize).max(4);
-        for s in 0..segs {
-            let a = f.a0 + f.span * (s as f64 + 0.5) / segs as f64;
-            out.push(
-                commands
-                    .spawn((
-                        Mesh3d(arc_seg_mesh.clone()),
-                        MeshMaterial3d(arc_mat.clone()),
-                        Transform::from_xyz(
-                            (f.cx + libm::cos(a) * f.r - gw2) as f32,
-                            WALL_H / 2.0,
-                            (f.cz + libm::sin(a) * f.r - gh2) as f32,
-                        )
-                        .with_rotation(Quat::from_rotation_y(-a as f32)),
-                    ))
-                    .id(),
-            );
-        }
-    }
-    out
-}
+/// The dungeon/intro floor geometry — see `dungeon_render`. Re-exported at
+/// the crate root because `intro.rs` and the dungeon setup both reach for it
+/// by that name; the implementation moved out of `main.rs` when it stopped
+/// being a loop and became a cull, a bucketing pass and a mesh merger.
+pub(crate) use dungeon_render::spawn_grid_meshes;
 
 /// What both states need: the camera, the frame-time readout, the knight art
 /// and the fade overlay. Runs before the initial state's OnEnter.

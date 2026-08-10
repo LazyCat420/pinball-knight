@@ -58,10 +58,122 @@ const GOLD: u32 = 0xf0c040;
 
 /// legacy constants/render.ts — the dungeon rig the tavern's overrides scale.
 const AMBIENT_INTENSITY: f32 = 3.5;
+const HEMI_INTENSITY: f32 = 1.1;
+const DIR_INTENSITY: f32 = 1.5;
 const DIR_HEIGHT: f32 = 14.0;
 
-/// THREE→Bevy point-light scale (lumens-ish). One knob, tuned by screenshot.
-const PL: f32 = 60_000.0;
+// ── THREE → BEVY LIGHT UNITS ────────────────────────────────────────────────
+//
+// Every constant below is DERIVED from the oracle's value, not tuned. They used
+// to be hand-fudged by screenshot, which was fine while nothing downstream read
+// absolute magnitude — and stopped being fine the moment the pixel pass landed,
+// because the bloom bright-pass thresholds LINEAR LUMA AT 0.7 and the cel grade
+// posterises absolute luma. A rig that is merely "about right on average" then
+// blows every pool it over-drives past the threshold. Measured on the blown
+// rig: mean luma matched the oracle to 0.8% while the port clipped 6.3x as many
+// pixels and its fire pool carried 0.71 saturation against the oracle's 0.52.
+//
+// The three conversions, from bevy_pbr 0.17.3 and three.js r160+:
+//
+//   POINT      three: irradiance = color * intensity(cd) * atten
+//              bevy:  irradiance = color * (intensity(lm) / 4π) * atten * EXPOSURE
+//                     (`render/light.rs:409` does the /4π; `pbr_functions.wgsl:744`
+//                      does the exposure)
+//              → lumens = candela * 4π / exposure
+//   DIRECTIONAL three: irradiance = color * intensity
+//              bevy:  irradiance = color * illuminance * EXPOSURE
+//              → illuminance = intensity / exposure
+//   AMBIENT    three: `RE_IndirectDiffuse_Physical` → irradiance * albedo/π
+//              bevy:  `ambient.wgsl` → EnvBRDFApprox(albedo, F_AB(1, NdotV))
+//                     * color * brightness * EXPOSURE, and that fit reduces to
+//                     `albedo * 0.4524 - 0.0024` at roughness 1 — NdotV drops
+//                     out because F_AB's `r.x` is exactly 0 there. Bevy is
+//                     1.42x more efficient per unit of ambient than a Lambert
+//                     1/π, so it needs proportionally fewer units.
+//              → brightness = intensity / (π * 0.4524) / exposure
+//
+// The falloff SHAPE needs no correction and never did: three's
+// `getDistanceAttenuation(d, cutoff, decay=2)` is `(1 - (d/cutoff)^4)² / d²`,
+// and bevy's `getDistanceAttenuation(d², 1/range²)` is the same expression with
+// `range` for `cutoff`. So every `distance` in core.ts/props.ts is a `range`
+// here, one for one, and the over-brightness was never the falloff.
+/// 1 / `Exposure::BLENDER.exposure()`. Bevy scales every LIT surface by the
+/// camera's exposure before anything else sees it — `ev100 = 9.7`, so
+/// `2^-9.7 / 1.2` ≈ 1/998 (bevy_camera camera.rs:232,244, and this app spawns
+/// its camera with no `Exposure`, so it gets that default). three.js has no
+/// such stage at all, which is the whole reason these numbers are in the
+/// thousands and the oracle's are single digits.
+const EXPOSURE_RECIP: f32 = 998.1;
+/// Bevy's ambient DIFFUSE env-BRDF response at roughness 1 (`ambient.wgsl`,
+/// `EnvBRDFApprox` with `F_AB(1.0, _) = (0.4524, -0.0024)`), where three uses
+/// Lambert's `1/π`.
+const AMBIENT_ENV_BRDF: f32 = 0.4524;
+/// …and Bevy's ambient SPECULAR term, which three.js has no counterpart for.
+///
+/// ⚠ THIS IS THE TERM THAT MAKES THE TWO ENGINES' AMBIENTS DIFFERENT IN KIND,
+/// NOT JUST IN UNITS. `ambient.wgsl` adds
+/// `EnvBRDFApprox(F0, F_AB(roughness,·)) · specular_occlusion` on top of the
+/// diffuse response. For this room's dielectrics — `reflectance` at Bevy's
+/// default 0.5, so `F0 = 0.16 · 0.5² = 0.04`, and
+/// `specular_occlusion = saturate(0.04·3·16.5) = 1` — that is
+/// `0.04 · 0.4794 − 0.0019` ≈ 0.0172, of which 0.0148 is left after the
+/// diffuse fit's own −0.0024 offset. three.js's
+/// `RE_IndirectSpecular_Physical` takes its radiance from an environment map,
+/// and this scene has none, so three contributes EXACTLY ZERO here.
+///
+/// It matters because it is ACHROMATIC AND ALBEDO-INDEPENDENT: it lays the
+/// ambient's own colour on every surface at a fixed 0.0148, while this room's
+/// albedos are 0.016-0.07 in linear. On the floor (`TIMBER_DK`, linear
+/// (0.068, 0.032, 0.016)) it is 48% of the blue response and 32% of the red,
+/// which halves the floor's warm/cold ratio from the albedo's 4.28 to 2.08.
+/// Measured, before this term was accounted for: the port's floor read
+/// rgb(81,60,52) against the oracle's rgb(90,58,42) — the same LUMA to within
+/// half a percent, and half the warm cast.
+const AMBIENT_SPECULAR_PEDESTAL: f32 = 0.0148;
+/// The albedo the ambient is calibrated ON, in luma.
+///
+/// A pedestal that does not scale with albedo cannot be cancelled at every
+/// albedo by one brightness — so it has to be cancelled at the one that fills
+/// the frame. This room is floor and wall: `TIMBER_DK` at 0.0385 luma and
+/// `STONE` at 0.0294. Everything brighter than this in the room is emissive or
+/// unlit (screens, the sign, the marquee) and takes no ambient at all.
+const ROOM_ALBEDO_LUMA: f32 = 0.034;
+/// The hemisphere light's average irradiance as a fraction of the ambient's,
+/// per channel — see the fold-in at `setup_tavern`. Bevy has no hemisphere
+/// light, and `mix(ground, sky, 0.5·N·up + 0.5)` averages to the plain midpoint
+/// of sky and ground over a uniform distribution of normals, so the whole
+/// fixture collapses into the ambient term. Sky `0xb2c0d6` and ground
+/// `0x4a3324` average in LINEAR to (0.257, 0.280, 0.345) against the ambient
+/// `0x99a0b2`'s (0.319, 0.352, 0.445) — a ratio of 0.806/0.796/0.775, i.e. the
+/// same tint to under 2%. That is why one ambient can carry both: the
+/// hemisphere's blue sky and warm timber bounce cancel back to the ambient's
+/// own colour, so only the MAGNITUDE has to move.
+const HEMI_OVER_AMBIENT: f32 = 0.79;
+
+/// THREE candela → Bevy lumens. One knob for every point light in the room,
+/// and no longer a guess: `4π / exposure` ≈ 12_542.
+const PL: f32 = 4.0 * std::f32::consts::PI * EXPOSURE_RECIP;
+
+/// The linear-RGB emissive of a THREE `MeshStandardMaterial { emissive: color,
+/// emissiveIntensity: intensity }` — which is `linear(color) * intensity` and
+/// NOTHING ELSE (`WebGLLights` premultiplies the intensity into the uniform;
+/// the shader adds it straight to the outgoing radiance).
+///
+/// ⚠ NO GAIN TERM, AND THAT IS THE FIX. This used to carry a `* 4.0` that was
+/// pure guess, and Bevy does NOT scale emissive by the camera exposure the way
+/// it scales lit surfaces (`emissive_exposure_weight` defaults to 0.0, so
+/// `pbr_functions.wgsl:721`'s `mix(1.0, exposure, emissive.a)` returns 1.0) —
+/// so that 4x landed on the HDR buffer undiluted. The hearth's flame quads at
+/// `FLAME, 0.85` went in at linear (2.96, 1.30, 0.15): red nearly 3x past white,
+/// luma 1.57 against a bloom bright-pass that thresholds at 0.7. At 1:1 they go
+/// in at (0.74, 0.32, 0.04), luma 0.39, and the only thing in the room that
+/// still crosses the threshold is the forge's coals — which is exactly the
+/// oracle's design (props.ts:388-391 records dropping the marquee from 0.95 to
+/// 0.22 for this same reason: "the pixel pass's bloom takes an emissive this
+/// large well past the palette's gold and into paper").
+fn emissive_rgb(color: u32, intensity: f32) -> LinearRgba {
+    c(color).to_linear() * intensity
+}
 
 pub struct TavernPlugin;
 
@@ -266,7 +378,7 @@ impl Build<'_, '_, '_> {
     fn emissive(&mut self, color: u32, intensity: f32) -> Handle<StandardMaterial> {
         self.materials.add(StandardMaterial {
             base_color: c(color),
-            emissive: c(color).to_linear() * intensity * 4.0,
+            emissive: emissive_rgb(color, intensity),
             perceptual_roughness: 0.4,
             ..default()
         })
@@ -377,13 +489,22 @@ fn setup_tavern(
 
     // ── Light rig (core.ts): warm/cold contrast is the navigation aid ──
     // Brighter than the dungeon's rig, not dimmer — this is a safehouse.
+    //
+    // ONE ambient carries TWO of the oracle's fixtures: its own
+    // `AmbientLight(0x99a0b2, 3.5 * 3.2)` and the `HemisphereLight(sky
+    // 0xb2c0d6, ground 0x4a3324, 1.1 * 2.6)` that Bevy has no equivalent for.
+    // See `HEMI_OVER_AMBIENT` for why that fold-in costs no hue: the two
+    // fixtures' tints agree to under 2% once the hemisphere is averaged.
     ambient.color = c(0x99a0b2);
-    ambient.brightness = AMBIENT_INTENSITY * 3.2 * 80.0;
+    ambient.brightness = (AMBIENT_INTENSITY * 3.2 + HEMI_INTENSITY * 2.6 * HEMI_OVER_AMBIENT)
+        / (std::f32::consts::PI
+            * (AMBIENT_ENV_BRDF + AMBIENT_SPECULAR_PEDESTAL / ROOM_ALBEDO_LUMA))
+        * EXPOSURE_RECIP;
     commands.spawn((
         TavernScene,
         DirectionalLight {
             color: c(0xdccbb2),
-            illuminance: 4_000.0,
+            illuminance: DIR_INTENSITY * 1.35 * EXPOSURE_RECIP,
             shadows_enabled: true,
             ..default()
         },
@@ -798,7 +919,9 @@ fn build_props(b: &mut Build) {
     let f_d = t.d / libm::cos(rake) / 2.0;
     let deck_m = b.materials.add(StandardMaterial {
         base_color: c(0x14283a),
-        emissive: c(0x0d2233).to_linear() * 2.4,
+        // props.ts:295 `emissiveIntensity: 0.6` — the 2.4 here was the same
+        // guessed 4x gain as `Build::emissive`'s, inlined.
+        emissive: emissive_rgb(0x0d2233, 0.6),
         perceptual_roughness: 0.4,
         ..default()
     });
@@ -1587,7 +1710,7 @@ fn tavern_frame(
     if let Ok(mat) = coals.single() {
         if let Some(m) = materials.get_mut(&mat.0) {
             let e = 1.3 + libm::sin(t * 5.2) * 0.35;
-            m.emissive = c(WARM).to_linear() * e as f32 * 4.0;
+            m.emissive = emissive_rgb(WARM, e as f32);
         }
     }
 
@@ -1600,7 +1723,7 @@ fn tavern_frame(
             } else {
                 0.04
             };
-            m.emissive = c(COLD).to_linear() * e as f32 * 4.0;
+            m.emissive = emissive_rgb(COLD, e as f32);
         }
     }
     if res.diorama.ball_speed > 0.0 {

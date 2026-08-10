@@ -7,7 +7,7 @@
 //! error rather than an invisible sprite at runtime.
 
 use bevy::asset::RenderAssetUsages;
-use bevy::image::ImageSampler;
+use bevy::image::{ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
@@ -47,8 +47,15 @@ pub fn keeper_cel(paint_key: &str) -> Option<Image> {
 }
 
 /// The "ENTER MAZE" lettering, 1024×220 with an alpha background.
+///
+/// MIPMAPPED, unlike the cels. The sign is authored at 1024 px across and
+/// lands on a panel roughly 120 render pixels wide, so it is MINIFIED ~8×, and
+/// nearest minification of thin dark-stroked glyphs is not letters — it is
+/// speckle that crawls as the camera eases. The oracle says so explicitly
+/// (props.ts:114-116): `magFilter: Nearest, minFilter: LinearMipmapLinear`.
+/// `celFilters` (nearest both ways) is only ever applied to cel SHEETS.
 pub fn sign_enter_maze() -> Image {
-    decode_cel(SIGN_ENTER_MAZE_PNG)
+    decode_mipmapped(SIGN_ENTER_MAZE_PNG)
 }
 
 /// Decode a baked PNG into a NEAREST-sampled texture. Authored pixels have to
@@ -77,6 +84,57 @@ pub fn blob_image() -> Image {
     }
     // The blob is a smooth gradient, not authored pixels — linear here.
     rgba_image(N, N, data, ImageSampler::linear())
+}
+
+/// Decode a baked PNG and build its full mip chain, so the GPU has something
+/// to trilinear-filter between when the quad is smaller than the texture.
+///
+/// `Image::new` debug-asserts `data.len() == one mip level`, so the chain goes
+/// on afterwards; `create_texture_with_data` walks the levels in this order
+/// (mip-major, one layer) when it uploads.
+fn decode_mipmapped(png: &[u8]) -> Image {
+    let mut level = image::load_from_memory(png)
+        .expect("baked tavern PNG decodes")
+        .to_rgba8();
+    let (w, h) = level.dimensions();
+    let levels = mip_level_count(w, h);
+
+    let mut data = level.as_raw().clone();
+    for _ in 1..levels {
+        let (nw, nh) = ((level.width() / 2).max(1), (level.height() / 2).max(1));
+        // Triangle = a box-ish downsample; the GPU's own mip generator does the
+        // same job. Done on sRGB bytes rather than in linear light, which is a
+        // fraction of a step on a glyph that is mostly alpha.
+        level = image::imageops::resize(&level, nw, nh, image::imageops::FilterType::Triangle);
+        data.extend_from_slice(level.as_raw());
+    }
+
+    let mut img = Image::new_uninit(
+        Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    img.texture_descriptor.mip_level_count = levels;
+    img.data = Some(data);
+    img.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
+        // Crisp if it is ever magnified (the oracle's NearestFilter)…
+        mag_filter: ImageFilterMode::Nearest,
+        // …trilinear when it is shrunk, which is the live case.
+        min_filter: ImageFilterMode::Linear,
+        mipmap_filter: ImageFilterMode::Linear,
+        ..default()
+    });
+    img
+}
+
+/// Levels in a full mip chain down to 1×1 — `floor(log2(max(w, h))) + 1`.
+fn mip_level_count(w: u32, h: u32) -> u32 {
+    32 - w.max(h).max(1).leading_zeros()
 }
 
 /// Wrap raw RGBA8 bytes as a render-world-only sRGB texture.
@@ -138,6 +196,34 @@ mod tests {
             (1024, 220),
             "sign-enter-maze.png"
         );
+    }
+
+    /// A short or over-long mip chain is a GPU upload error, not a soft
+    /// failure — `create_texture_with_data` reads exactly
+    /// `sum(level bytes)` and panics on a mismatch. Pin both ends.
+    #[test]
+    fn the_sign_carries_a_full_mip_chain() {
+        let sign = sign_enter_maze();
+        // 1024 wide → levels 1024, 512, … 1 = 11.
+        assert_eq!(mip_level_count(1024, 220), 11);
+        assert_eq!(sign.texture_descriptor.mip_level_count, 11);
+
+        let (mut w, mut h) = (1024u32, 220u32);
+        let mut expect = 0usize;
+        for _ in 0..11 {
+            expect += (w * h * 4) as usize;
+            w = (w / 2).max(1);
+            h = (h / 2).max(1);
+        }
+        assert_eq!(sign.data.as_ref().map(Vec::len), Some(expect));
+    }
+
+    /// Degenerate sizes must still name at least one level.
+    #[test]
+    fn a_one_pixel_texture_has_one_mip_level() {
+        assert_eq!(mip_level_count(1, 1), 1);
+        assert_eq!(mip_level_count(0, 0), 1);
+        assert_eq!(mip_level_count(84, 84), 7);
     }
 
     /// A paint key with no art drops the body rather than the room.
