@@ -166,6 +166,49 @@ function digestArcs(arcs: ArcFeature[] | undefined): number {
 }
 
 /**
+ * Digest the circuit's NODES in placement order.
+ *
+ * The order is the order the layout placed them, which is the order the rng
+ * drew them in — so a port that sites the same points in a different sequence
+ * has a different graph even though the picture looks identical. `id` is folded
+ * although it equals the index today: `pruneToCircuit` filters nodes and does
+ * NOT reindex, so downstream the two come apart, and a digest that assumed
+ * otherwise would stop noticing.
+ */
+function digestNodes(nodes: Array<{ id: number; x: number; z: number; food: boolean }>): number {
+  const view = new DataView(new ArrayBuffer(8));
+  let h = FNV_OFFSET;
+  for (const n of nodes) {
+    h = foldLen(h, n.id);
+    h = foldF64(h, n.x, view);
+    h = foldF64(h, n.z, view);
+    h = fold(h, n.food ? 1 : 0);
+  }
+  return foldLen(h, nodes.length);
+}
+
+/**
+ * Digest the TUBES in edge order — endpoints, conductivity and length.
+ *
+ * `d` is the physarum solver's output after 140 steps of a Gauss-Seidel
+ * pressure solve, so this is the one number in the whole floor most likely to
+ * diverge in the last ulp. It is digested rather than compared loosely on
+ * purpose: the pruner sorts by `d`, so a 1-ulp difference can swap two tubes in
+ * the survival order and delete a different road.
+ */
+function digestEdges(edges: Array<{ a: number; b: number; d: number; len: number }>): number {
+  const view = new DataView(new ArrayBuffer(8));
+  let h = FNV_OFFSET;
+  for (const e of edges) {
+    h = foldLen(h, e.a);
+    h = foldLen(h, e.b);
+    h = foldF64(h, e.d, view);
+    h = foldF64(h, e.len, view);
+  }
+  return foldLen(h, edges.length);
+}
+
+/**
  * SELF-TEST VECTORS — how the Rust twin certifies its own digest before any
  * maze code exists.
  *
@@ -260,6 +303,9 @@ interface PassRecord {
   lane: number | null;
   sealed: number | null;
   dist: number | null;
+  /** The circuit, on the two passes that own it (null everywhere else). */
+  graphNodes: number | null;
+  graphEdges: number | null;
   /** Exact counts, so a mismatch is legible without a grid dump. */
   walkable: number;
   shaped: number;
@@ -293,6 +339,8 @@ function record(snap: PassSnapshot, draws: number): PassRecord {
     lane: mask ? digestBytes(mask.lane) : null,
     sealed: mask ? digestBytes(mask.sealed) : null,
     dist: mask ? digestF32(mask.dist) : null,
+    graphNodes: snap.graph ? digestNodes(snap.graph.nodes) : null,
+    graphEdges: snap.graph ? digestEdges(snap.graph.edges) : null,
     walkable: walkableCountOf(g),
     shaped: countIf(g.shapes, (v) => v !== 0),
     arcTiles: g.arcIdx ? countIf(g.arcIdx, (v) => v >= 0) : 0,

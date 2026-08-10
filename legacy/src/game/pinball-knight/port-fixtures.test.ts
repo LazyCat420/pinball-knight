@@ -512,7 +512,91 @@ function pinFixture(name: string, computed: unknown): void {
   expect(computed).toEqual(JSON.parse(readFileSync(file, "utf8")));
 }
 
+/**
+ * `Math.pow` — pinned, because the Rust side has THREE candidates and only one
+ * of them is this one.
+ *
+ * Found by the maze harness: `pk_core::maze::track_grow`'s physarum step raises
+ * a normalised flow to a fixed 1.35 power 140 times per floor, and the first
+ * port of it diverged with the LAYOUT bit-identical and the conductivities
+ * wrong in the last two digits. Measured over 200,001 values of x^1.35:
+ *
+ *   · Rust's `libm` crate           19,904 differ by 1 ulp  ← the FreeBSD/Sun
+ *                                                             `e_pow.c` fdlibm
+ *   · Rust's std `f64::powf`        0 differ                ← the platform pow
+ *
+ * So a port that reaches for `libm::pow` — which is what the workspace's own
+ * determinism rule says to do for transcendentals — is wrong here, and wrong in
+ * a way that survives every structural check: the graph came out with the same
+ * node count, the same edge count and the same topology, and only the numbers
+ * that decide LANE WIDTH were different.
+ *
+ * This sweep is the arbiter. It is a digest of the whole curve rather than a
+ * few spot values on purpose — 1 ulp on one in ten inputs is invisible in a
+ * handful of samples, which is precisely how it would have been missed.
+ */
+function powOracle() {
+  const view = new DataView(new ArrayBuffer(8));
+  const FNV_OFFSET = 0x811c9dc5;
+  const FNV_PRIME = 0x01000193;
+  const fold = (h: number, b: number): number => Math.imul(h ^ (b & 0xff), FNV_PRIME) >>> 0;
+  const foldF64 = (h: number, v: number): number => {
+    view.setFloat64(0, v, true);
+    let o = h;
+    for (let b = 0; b < 8; b++) o = fold(o, view.getUint8(b));
+    return o;
+  };
+  void 0;
+  const sweep = (exp: number, n: number): { exp: number; n: number; digest: number } => {
+    let h = FNV_OFFSET;
+    for (let k = 0; k <= n; k++) h = foldF64(h, Math.pow(k / n, exp));
+    return { exp, n, digest: h >>> 0 };
+  };
+  // ── AND THE SAME QUESTION FOR THE REST OF THE FAMILY ────────────────────
+  //
+  // `Math.pow` was found by a divergence. `Math.cos` was found by the NEXT
+  // divergence, one node in one ulp of x, three levels later — so the family is
+  // swept here rather than waiting for each one to surface as a wrong floor.
+  // Ranges are chosen to cross the argument-reduction boundaries: small angles
+  // take the kernel directly, angles past π/4 go through rem_pio2, and large
+  // ones exercise the multi-word reduction where implementations differ most.
+  const unary = (name: string, f: (x: number) => number, from: number, to: number, n: number) => {
+    let h = FNV_OFFSET;
+    for (let k = 0; k <= n; k++) h = foldF64(h, f(from + ((to - from) * k) / n));
+    return { name, from, to, n, digest: h >>> 0 };
+  };
+  return {
+    unary: [
+      unary("cos", Math.cos, 0, 20, 200000),
+      unary("cos", Math.cos, -1e6, 1e6, 100000),
+      unary("sin", Math.sin, 0, 20, 200000),
+      unary("sin", Math.sin, -1e6, 1e6, 100000),
+      unary("sqrt", Math.sqrt, 0, 1000, 100000),
+      unary("exp", Math.exp, -20, 20, 100000),
+      unary("log", Math.log, 1e-9, 1000, 100000),
+      unary("atan", Math.atan, -50, 50, 100000),
+    ],
+    // 1.35 is the physarum gain and the one that actually ships; the others
+    // are there so a Rust pow that happens to agree on one exponent cannot
+    // pass. Bases run [0,1] because that is the normalised-flow domain.
+    sweeps: [sweep(1.35, 200000), sweep(0.5, 100000), sweep(2.5, 100000), sweep(7, 50000)],
+    // A few raw values, so a failure prints something a human can read next to
+    // a node REPL rather than only a hash.
+    spot: [
+      [0.5, 1.35, Math.pow(0.5, 1.35)],
+      [0.1, 1.35, Math.pow(0.1, 1.35)],
+      [0.9876, 1.35, Math.pow(0.9876, 1.35)],
+      [0.30000000000000004, 1.35, Math.pow(0.30000000000000004, 1.35)],
+      [1e-300, 1.35, Math.pow(1e-300, 1.35)],
+    ],
+  };
+}
+
 describe("port-parity fixtures", () => {
+  it("the JS math primitives match their pinned sweeps", () => {
+    pinFixture("jsmath-oracle.json", powOracle());
+  });
+
   it("movement trace (seed 7) matches the committed fixture", () => {
     pinFixture("movement-trace-seed7.json", trace(7, spiralDir));
   });

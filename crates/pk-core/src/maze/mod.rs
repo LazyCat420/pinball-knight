@@ -30,6 +30,7 @@
 pub mod archetypes;
 pub mod digest;
 pub mod modifiers;
+pub mod track_grow;
 
 use crate::grid::{is_walkable, Grid};
 

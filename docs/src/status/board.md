@@ -5,6 +5,35 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P2 pass 1 `grow-track`: the physarum circuit, 8 of 10 floors
+  bit-exact — and the port's math library turned out to be wrong.**
+  `pk_core::maze::track_grow`: node layouts, K-nearest mesh, the Gauss–Seidel
+  pressure solve, 140 growth steps, prune-to-circuit and prune-leaves.
+  - **The harness paid for itself on its first real use.** The first run came
+    back "nodes matched, edges diverged" — the layout right, the solver wrong —
+    which is one read instead of a bisect through 1,100 lines. Stage probes then
+    put it inside `grow_network`, and a pow sweep put it inside `Math.pow`.
+  - **`libm::pow` is not V8's pow.** Over 200,001 values of x^1.35 the Rust
+    `libm` crate (Sun's `e_pow.c`) differs from the runtime on 19,904 of them by
+    1 ulp; `f64::powf` differs on none. The workspace determinism rule says to
+    use `libm` — for `pow` that rule points at the wrong implementation. Applied
+    140× per floor, feeding lane WIDTH: same topology, different roads.
+  - **Then `Math.cos`, which is neither.** `cos(0.1)` is `0x…c0` in the runtime
+    and `…c1` in BOTH Rust candidates. V8 keeps the original Sun kernel
+    evaluation order; musl and glibc both took FreeBSD's rewrite. Constants are
+    identical in all three — it is the polynomial form that differs.
+  - **So the family is swept, not assumed.** `assets/fixtures/jsmath-oracle.json`
+    pins whole curves for cos/sin/sqrt/exp/log/atan/pow from the real runtime,
+    because 1 ulp on one input in ten is invisible in spot values. Verdict:
+    sqrt either, atan `libm`, pow std (plus V8's ±0.5→sqrt fast path), and
+    cos/sin/exp/log neither. `js_pow` is in; `js_cos`/`js_sin` are not.
+  - **The gap is pinned by name, not by category.** Two floors of ten diverge
+    (L3 s1, L13 s1) — and three OTHER hub floors are bit-exact, so excluding
+    "the hub layout" would have quietly stopped testing three floors that
+    already pass. The test asserts the divergent set EQUALS that list, so it
+    fails when the twins land as well as when a new divergence appears.
+  - **Measured:** `cargo test -p pk-core` 336 unit + 15 integration green; fmt
+    and clippy clean; legacy suite unchanged.
 - **2026-08-09 — P2 data tables: the five archetypes, and the stream that runs
   before the generator.** `pk_core::maze::archetypes` + `::modifiers` — the
   track half of the archetype table, `windiness_for`, `track_node_counts`, the
