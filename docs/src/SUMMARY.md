@@ -16,6 +16,7 @@
 
 - [Status board](status/board.md)
 - [Port checklist (phases P0–P9)](status/port-checklist.md)
+- [Completion plan (the route to cutover)](status/completion-plan.md)
 - [Incidents](status/incidents.md)
 
 # Reference
