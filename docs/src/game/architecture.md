@@ -48,6 +48,13 @@ because every legacy sfx patch is written in it. Native backend: the
 `web-sys` — parity by definition. Not rodio/bevy_audio (file-playback-shaped,
 weak wasm story), not fundsp (would force re-authoring tuned patches).
 
+*Status 2026-08-09: the traits are in place
+(`AudioBackend`/`OscillatorNode`/`GainNode`/`AudioParam`) with a native
+`web-audio-api` backend and a `web-sys` wasm backend; the Bevy side is
+`pk-game/src/sfx.rs`. Not signed off by ear or by spectral diff. The remaining
+patch families, the bus/gate, the wasm gesture unlock and the master mute are
+P7 work — see the checklist.*
+
 ## FX: hand-translated TSL → WGSL, no bevy_hanabi
 
 Custom Bevy `Material`s with storage-buffer instanced particles (a WebGPU-only
@@ -56,6 +63,13 @@ lateral move — and every third-party Bevy crate is a lien against the next Bev
 upgrade. The GreaterDepth silhouette pass ("Diablo trick") is a second knight
 material with `depth_compare: Greater`, depth-write off, transparent phase —
 scheduled early (M1) to de-risk custom-render.
+
+*Status 2026-08-09: the decision is being exercised — the ember/mote/spark pools
+are one instanced additive material (`pk-game/src/fx/`), and the pixel/cel post
+chain is hand-written WGSL (`pk-game/src/post/`: low-res target + integer
+upscale, half-res bloom, SSAO/sRGB/vignette/cel composite). No hanabi, no
+EffectComposer equivalent. The silhouette pass is still unwritten. Neither the
+FX nor the post chain has passed a screenshot A/B against the TS game yet.*
 
 ## Determinism rules (CI-enforced as they land)
 

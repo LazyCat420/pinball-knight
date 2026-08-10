@@ -7,14 +7,21 @@
 //! orthographic camera, and WASD/arrow movement through the ported collision.
 //!
 //! Boot flow: `Intro` (the shattered-overworld title sequence, `intro.rs`)
-//! → `Dungeon`. The intro is skipped for harness entries (`?autostart=1`),
-//! the documented opt-out (`?no-intro=1` / `--no-intro` / `PK_NO_INTRO=1`),
+//! → `Tavern`, the hub you outfit in before a run; the DESCEND board builds
+//! the floor. The intro is skipped for harness entries (`?autostart=1`), the
+//! documented opt-out (`?no-intro=1` / `--no-intro` / `PK_NO_INTRO=1`),
 //! `__skipDungeonIntro`, and prefers-reduced-motion — see
-//! `pk_core::intro::should_skip_intro`.
+//! `pk_core::intro::should_skip_intro`. A skipped intro still lands in the
+//! hub; `--dungeon` / `?dungeon=1` / `PK_SCENE=dungeon` is the dev hatch that
+//! boots a floor directly (the harness's sim gates need one without walking).
 
+mod fx;
 mod intro;
 mod overworld;
+mod post;
+mod sfx;
 mod tavern;
+mod tavern_art;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
@@ -108,6 +115,40 @@ pub struct FadeOverlay;
 #[derive(Component)]
 struct FrameStats;
 
+/// Bottom-right build-age readout. Answers the question a fast edit loop
+/// keeps asking: is this window the build I just made, or one I forgot to
+/// close? `build.rs` stamps `PK_BUILD_EPOCH` at compile time.
+#[derive(Component)]
+struct BuildStamp;
+
+/// Unix seconds now — the one clock both targets can read.
+fn wall_clock_secs() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() / 1000.0
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0)
+    }
+}
+
+/// "built 42s ago" / "built 12m ago" / "built 3h 07m ago". Coarse on purpose:
+/// the useful signal is fresh-vs-stale, not the exact second.
+fn format_build_age(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    if s < 60 {
+        format!("built {s}s ago")
+    } else if s < 3600 {
+        format!("built {}m ago", s / 60)
+    } else {
+        format!("built {}h {:02}m ago", s / 3600, (s % 3600) / 60)
+    }
+}
+
 /// The skip gate, evaluated once at boot. Native reads flags/env; wasm reads
 /// the legacy query params, escape hatch and media query off the real window.
 fn intro_skip_gate() -> bool {
@@ -139,11 +180,34 @@ fn intro_skip_gate() -> bool {
     }
 }
 
+/// The dev hatch: boot a dungeon floor without walking the hub. Mirrors
+/// `tavern_boot_gate`'s flag styles. `pk-check` uses `?dungeon=1` so the sim
+/// and input gates still have a floor to measure.
+fn dungeon_boot_gate() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::eval("location.search")
+            .ok()
+            .and_then(|v| v.as_string())
+            .map(|s| s.contains("dungeon=1"))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::args().any(|a| a == "--dungeon")
+            || std::env::var("PK_SCENE")
+                .map(|v| v == "dungeon")
+                .unwrap_or(false)
+    }
+}
+
 fn main() {
-    let start = if tavern::tavern_boot_gate() {
-        AppState::Tavern
-    } else if intro_skip_gate() {
+    // Hub-first: a skipped intro lands in the tavern, not on a floor. Only
+    // the explicit dev hatch opens straight into the dungeon.
+    let start = if dungeon_boot_gate() {
         AppState::Dungeon
+    } else if tavern::tavern_boot_gate() || intro_skip_gate() {
+        AppState::Tavern
     } else {
         AppState::Intro
     };
@@ -162,6 +226,9 @@ fn main() {
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
     .add_plugins(tavern::TavernPlugin)
+    .add_plugins(post::PostPlugin)
+    .add_plugins(fx::FxPlugin)
+    .add_plugins(sfx::SfxPlugin)
     .add_systems(Startup, setup_common)
     // Scene setups are lazy Update systems, not OnEnter: the initial state's
     // OnEnter fires before Startup has applied its commands, so a Res param
@@ -393,12 +460,19 @@ fn update_frame_stats(
     time: Res<Time>,
     mut acc: Local<f32>,
     mut q: Query<&mut Text, With<FrameStats>>,
+    mut stamp_q: Query<&mut Text, (With<BuildStamp>, Without<FrameStats>)>,
 ) {
     *acc += time.delta_secs();
     if *acc < 0.25 {
         return;
     }
     *acc = 0.0;
+    // Same cadence carries the build age — a string that changes once a
+    // minute does not need its own timer.
+    if let Ok(mut text) = stamp_q.single_mut() {
+        let built: f64 = env!("PK_BUILD_EPOCH").parse().unwrap_or(0.0);
+        **text = format_build_age(wall_clock_secs() - built);
+    }
     let ms = diagnostics
         .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
         .and_then(|d| d.smoothed());
@@ -589,6 +663,26 @@ fn setup_common(
                 },
                 TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
                 FrameStats,
+            ));
+        });
+
+    // ── Build age, bottom-right ──
+    commands
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(6.0),
+            right: Val::Px(8.0),
+            ..default()
+        })
+        .with_children(|p| {
+            p.spawn((
+                Text::new("built --"),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 1.0, 1.0, 0.55)),
+                BuildStamp,
             ));
         });
 

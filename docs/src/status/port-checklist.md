@@ -3,10 +3,15 @@
 The complete inventory of what must move from `legacy/` (TypeScript/Three.js)
 to Rust/WebGPU, sized from measured line counts. **A box is checked only when
 the item is ported AND verified** — verification method listed per phase.
-What the user sees missing today (intro, tavern, ESC menu, backtick debug
-panel) is listed here as unported scope, not bugs.
+What the user still sees missing (ESC menu, backtick debug panel, HUD, run
+flow) is listed here as unported scope, not bugs. The intro and the tavern have
+since landed; the boot flow is intro → tavern → DESCEND → dungeon floor.
 
 Status legend: `[x]` ported+verified · `[~]` partial · `[ ]` not started.
+`[~]` covers two different things — "ported, some of the item is still open"
+and "written but not yet signed off". Where it means the latter, the item says
+so in words. Nothing enters the *Ported so far (verified)* table at the bottom
+until a gate or a fixture has actually run against it.
 
 ## P0 — Port infrastructure (the checker) — ACTIVE
 
@@ -20,7 +25,10 @@ The harness that gates every later phase. Nothing ships unverified.
       the seed of the `__lab()` equivalent).
 - [x] `scripts/pk-check.mjs`: drives the wasm build in **real host Chrome**
       (CDP): console-error gate, sim-tick advance gate, scripted-input
-      movement gate, FPS measurement, screenshots to `.checks/`.
+      movement gate, FPS measurement, the intro gates (phases, title card,
+      hand-off, click-skip) and the tavern gates (boot, movement, station
+      focus, panel open/close, walk to the DESCEND board, descend hand-off),
+      screenshots to `.checks/`.
 - [x] Windows-native build (`x86_64-pc-windows-gnullvm` + llvm-mingw,
       `scripts/pk-win.sh`) — the play/dev target. Verified: exe launched on
       the Windows desktop via interop, demo floor rendering (screenshot).
@@ -74,12 +82,27 @@ The game's identity. The slice has square walls only.
 
 ## P3 — Rendering proper (15.2k render/ + engine/render)
 
-- [ ] Per-rung atlas bake (`cargo xtask bake` real implementation) —
-      replaces the embedded ÷4 sheets.
+- [~] Per-rung atlas bake (`cargo xtask bake` real implementation) —
+      replaces the embedded ÷4 sheets. The `--tavern` leg is real
+      (`xtask` → `legacy/scripts/bake-tavern.mjs` → `assets/tavern/`: five
+      84×84 keepers, the 1024×220 ENTER MAZE sign, `bake.json` provenance);
+      bare `cargo xtask bake` is still the stub and the per-rung
+      knight/monster atlases are still embedded-and-÷4.
 - [ ] `engine/render/animator.ts`: real clip timing/looping (slice guesses
       8/4 fps), tell-clips.
 - [ ] Silhouette pass (GreaterDepth "Diablo trick").
-- [ ] `engine/render/pixel-pass.ts`: the pixelation post pass (TSL → WGSL).
+- [~] `engine/render/pixel-pass.ts`: the pixel/cel post chain (TSL → WGSL),
+      in `pk-game/src/post/`. PORTED: low-res linear render target + integer
+      nearest upscale; half-res bloom (threshold 0.7 / strength 0.9 /
+      radius 2.2); one composite doing 16-tap depth-ring SSAO (radius 14,
+      `light = 1 − ao·0.85`), +bloom, explicit linear→sRGB, vignette 0.32 and
+      the cel grade (10 steps, curve 0.5, saturation 1.15). Order is the look;
+      every constant is the legacy `engineConfig.post` value. NOT PORTED:
+      palette snap/quantize and the albedo MRT it needs, dither, scanlines,
+      ink outline, heat haze, chromatic aberration, and compositing the UI
+      before the cel grade — all of which are **off in the oracle's config
+      too**, so they are parity-neutral today; their uniforms sit pinned at 0.
+      **Unverified** — pending pk-check + the screenshot A/B below.
 - [ ] Room dressing: wall/floor materials & textures, `boot/lighting.ts`,
       `boot/biomes.ts` looks, torch/window glass looks (or slice-level
       approximations first).
@@ -120,14 +143,15 @@ The items reported missing today live here.
       choreography, intro-chrome) — pulled forward 2026-08-09 (see the
       scene-order decision in milestones). Core in `pk-core/src/intro.rs`
       (17 ported tests + BIT-EXACT `intro-ball-trace.json` fixture), shell
-      in `pk-game/src/{intro,overworld}.rs` (Intro→Dungeon states, CPU-
-      painted overworld gag, shatter, camera sweep, skip gates incl.
-      `?autostart=1` for harnesses). Verified: pk-check intro gates (phases,
-      title screenshot, handoff, click-skip) ALL PASSED in host Chrome.
-      Remaining debt (P5/P7): pixel fonts for HUD/title text (Bevy default
-      font + a bitmap "?" today), sfx stings, knight painted into the
-      480-wide buffer instead of a display-res layer, and the block's "?"
-      pulse-scale.
+      in `pk-game/src/{intro,overworld}.rs` (CPU-painted overworld gag,
+      shatter, camera sweep, skip gates incl. `?autostart=1` for harnesses).
+      Verified: pk-check intro gates (phases, title screenshot, handoff,
+      click-skip) ALL PASSED in host Chrome — **against the old
+      Intro→Dungeon hand-off**; the hand-off now targets Intro→Tavern, so
+      those gates need a re-run. Remaining debt (P5/P7): pixel fonts for
+      HUD/title text (Bevy default font + a bitmap "?" today), knight painted
+      into the 480-wide buffer instead of a display-res layer, and the block's
+      "?" pulse-scale. Intro sfx stings landed with P7 (unverified).
 - [ ] HUD: `hud-face.ts` (1330), meters, minimap (`map-render.ts`),
       floor-map overlay, toasts, pickup-toast.
 - [ ] Screens: shop, character-select, haul, game-over, floor-loading.
@@ -160,25 +184,43 @@ The between-runs hub. Core ported and verified; shell live with listed debt.
       `--tavern` boot + T from the dungeon (P5 run-flow stand-in). Verified:
       pk-check tavern gates (boot, movement, focus, panel, walk-to-board,
       descend hand-off) in host Chrome, twice, clean console + screenshots.
-- [ ] Shell debt: cel-painter keeper art + pixel pass + sign lettering (P3),
+- [~] Shell debt: cel-painter keeper art, sign lettering and the ember/mote/
+      spark VFX + tavern sfx **landed** (baked 84×84 keepers and the 1024×220
+      ENTER MAZE sign replace the tinted boxes, contact-shadow blob synthesized
+      in Rust, particles and the audio bed live) — pending sign-off. STILL
+      OPEN: the rest of the P3 post chain (palette snap, dither, outline),
       vendor counters / cabinet screens over the real GUI stack + economy
       (P4/P5 — placeholder panels today), run-flow entry wiring
-      (death/floor-clear/lobby, P5), sfx + ember/mote/spark VFX (P7 — the
-      beats that drive them are ported and surfaced), multiplayer pool +
-      join-board UI (P8).
+      (death/floor-clear/lobby, P5), multiplayer pool + join-board UI (P8).
+- Boot flow note: the tavern is now the **default** destination — the intro
+      hands off to it and a skipped intro lands there. `--dungeon` /
+      `?dungeon=1` / `PK_SCENE=dungeon` is the dev hatch that opens a floor
+      directly, and is what pk-check's sim/input gates use.
 - Verify (kept): screenshot A/B against the TS tavern at matched camera once
   P3 materials land.
 
 ## P7 — FX & audio (3.8k fx + 1.1k sfx)
 
-- [ ] `fx/` pools/elements TSL → WGSL storage-buffer particles (fire, frost,
-      water, molten, goo, rod, noise; puffs, heat haze, decals).
+- [~] `fx/` pools/elements TSL → WGSL storage-buffer particles (fire, frost,
+      water, molten, goo, rod, noise; puffs, heat haze, decals). LANDED: the
+      ember / mote / spark pools as one storage-buffer instanced material
+      (`pk-game/src/fx.rs`) — the tavern's hearth and dust. The rest of the
+      element families, puffs, heat haze and decals are untouched.
+      (`pk-game/src/fx/` — a CPU ring-buffer pool uploaded to one instanced
+      additive material per frame, the port of `fx/pools/particle-pool.ts`.)
 - [ ] Juice (`engine/juice.ts` screenshake etc.).
-- [ ] `pk-audio` backends (web-audio-api native / web-sys wasm) + all `sfx/`
+- [~] `pk-audio` backends (web-audio-api native / web-sys wasm) + all `sfx/`
       patches (ambience/combat/monsters/weapons/pinball/world/run), bus,
-      gate, mute; gesture unlock on wasm.
+      gate, mute; gesture unlock on wasm. LANDED: both backends behind the
+      `AudioBackend`/`OscillatorNode`/`GainNode`/`AudioParam` traits, the synth
+      primitives, and the tavern + intro patches; the Bevy side is
+      `pk-game/src/sfx.rs`. OPEN: every other patch family
+      (combat/monsters/weapons/pinball/world/run), the bus/gate, the wasm
+      gesture unlock, and the master mute (`PK_MUTE=1` / `?mute=1` are
+      documented as planned — **no mute gate exists in `crates/` yet**).
 - Verify: by ear vs TS + offline render spectral diff on a few stings;
-  visual A/B for FX.
+  visual A/B for FX. **Nothing in this phase has been signed off yet** — no
+  spectral diff has been run, and the FX A/B is pending.
 
 ## P8 — Parity sweep, perf, deploy
 

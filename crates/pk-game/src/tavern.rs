@@ -295,7 +295,15 @@ fn setup_tavern(
     mut ambient: ResMut<AmbientLight>,
     art: Res<KnightArt>,
     mut cam_q: Query<&mut Projection, With<DungeonCamera>>,
+    mut fade_q: Query<&mut BackgroundColor, With<crate::FadeOverlay>>,
 ) {
+    // The intro's black hold ends the moment the room exists — the tavern is
+    // now the hand-off target, so without this the hub boots behind a black
+    // screen and reads as a hang (legacy setIntroFade(0) after onDone()).
+    for mut bg in &mut fade_q {
+        bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+    }
+
     // ── Camera: hold the whole staged room (legacy fitZoom's intent) ──
     for mut proj in &mut cam_q {
         if let Projection::Orthographic(o) = &mut *proj {

@@ -9,12 +9,14 @@
  *   3. scripted input moves the knight (__pk.x advances under 'd')
  *   4. render FPS over a 3 s rAF sample (reported; budget-gated later)
  *   5. the title intro plays through its phases on a plain load, hands off
- *      to the dungeon, and a click skips it (__pk.intro mirrors the legacy
+ *      to the TAVERN hub, and a click skips it (__pk.intro mirrors the legacy
  *      __dungeonIntroPhase probe)
  * and saves screenshots to .checks/.
  *
- * The sim gates load `?autostart=1` — the harness entry that skips the
- * intro, same contract as the legacy playtest bots.
+ * Boot is hub-first, so `?autostart=1` now lands in the tavern. The sim and
+ * input gates need a floor to measure, so they ask for one explicitly with
+ * `?dungeon=1` — the dev hatch. Every page carries `mute=1`: the harness
+ * drives the real host machine and must not make noise.
  *
  * Usage, from the repo root:
  *   node scripts/pk-check.mjs             # trunk build + full check
@@ -83,7 +85,10 @@ async function main() {
   };
 
   try {
-    await page.goto(`http://localhost:${PORT}/index.html?autostart=1`, {
+    // `autostart=1` alone now lands in the tavern hub (the boot flow is
+    // hub-first), so the sim/input gates below ask for a floor explicitly.
+    // `mute=1` keeps the harness silent on the host box.
+    await page.goto(`http://localhost:${PORT}/index.html?autostart=1&dungeon=1&mute=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
@@ -139,7 +144,7 @@ async function main() {
     const introPage = await ctx.newPage();
     introPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     introPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
-    await introPage.goto(`http://localhost:${PORT}/index.html`, {
+    await introPage.goto(`http://localhost:${PORT}/index.html?mute=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
@@ -159,7 +164,7 @@ async function main() {
         await introPage.screenshot({ path: tshot });
         console.log("screenshot:", tshot);
       }
-      // Finished: the intro handed off and the dungeon sim is live.
+      // Finished: the intro handed off and the hub is live.
       if (s.intro === null && seen.length) {
         handoff = s;
         break;
@@ -167,14 +172,25 @@ async function main() {
     }
     gate(seen.length >= 3, `intro plays through phases (${seen.join(" → ") || "never seen"})`);
     gate(titleShot, "intro reached the title card");
-    gate(!!handoff && handoff.tick > 0, "intro hands off to a live dungeon sim");
+    // Hub-first: the title sequence hands you the TAVERN, not a floor. `tick`
+    // keeps advancing without a sim (publish_stats synthesises it), so
+    // liveness alone would pass over a black screen — the probe shape is what
+    // proves a room actually built.
+    gate(
+      !!handoff && handoff.tavern !== null && handoff.tick > 0,
+      "intro hands off to the tavern hub",
+    );
+    gate(
+      typeof handoff?.tavern?.x === "number",
+      `tavern probe carries a pose (${handoff?.tavern ? `x ${handoff.tavern.x.toFixed(2)}` : "no probe"})`,
+    );
     await introPage.close();
 
     // ── Skip gate: a click ends the intro immediately ──
     const skipPage = await ctx.newPage();
     skipPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     skipPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
-    await skipPage.goto(`http://localhost:${PORT}/index.html`, {
+    await skipPage.goto(`http://localhost:${PORT}/index.html?mute=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
@@ -190,9 +206,9 @@ async function main() {
     for (let i = 0; i < 16 && !skipped; i++) {
       await skipPage.waitForTimeout(250);
       const s = await pkSkip();
-      if (s && s.intro === null && s.tick > 0) skipped = s;
+      if (s && s.intro === null && s.tavern !== null) skipped = s;
     }
-    gate(sawIntro && !!skipped, "a click skips the intro into the dungeon");
+    gate(sawIntro && !!skipped, "a click skips the intro into the tavern");
     await skipPage.close();
 
     // ── Tavern gates: ?tavern=1 boots the walkable hub (P6) ──
@@ -202,7 +218,7 @@ async function main() {
     const tavPage = await ctx.newPage();
     tavPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
     tavPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
-    await tavPage.goto(`http://localhost:${PORT}/index.html?tavern=1`, {
+    await tavPage.goto(`http://localhost:${PORT}/index.html?tavern=1&mute=1`, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });

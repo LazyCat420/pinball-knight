@@ -385,7 +385,9 @@ fn intro_tick(
     if res.finishing {
         res.finish_t += pdt;
         if res.finish_t >= 0.4 {
-            next.set(AppState::Dungeon);
+            // Hub-first: the title sequence hands you the tavern, and the
+            // DESCEND board is what builds a floor.
+            next.set(AppState::Tavern);
         }
         return;
     }

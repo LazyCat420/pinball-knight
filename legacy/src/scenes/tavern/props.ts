@@ -37,7 +37,7 @@ const RARITY_ORDER: CardRarity[] = ["common", "rare", "epic", "legendary", "myth
  * Falls back to a plain (untextured) panel if 2D canvas is unavailable, which is
  * the headless/probe path: the sign loses its letters, never the whole scene.
  */
-function makeSignTexture(text: string): THREE.CanvasTexture | null {
+export function makeSignTexture(text: string): THREE.CanvasTexture | null {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 220; // ~= the 4.2 x 0.9 panel's aspect, so glyphs stay square

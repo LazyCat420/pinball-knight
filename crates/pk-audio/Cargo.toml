@@ -8,7 +8,34 @@ description = "WebAudio-shaped synth layer; native and wasm backends (house rule
 
 [dependencies]
 
-# M6 adds the backends:
+# Backends (M6, pulled forward):
 #   native: web-audio-api (spec-faithful Rust WebAudio over cpal)
 #   wasm:   web-sys bindings to the real browser AudioContext
-# The trait surface below is dependency-free so pk-game can compile against it now.
+# Device output is Windows-only ON PURPOSE. `web-audio-api` pulls cpal, and
+# cpal's Linux backend needs the ALSA dev headers, which this box does not
+# have and cannot install (no passwordless sudo) — a hard dependency there
+# would break `cargo check`/`cargo test` for the whole workspace on the dev
+# machine. Windows is the play target (scripts/pk-win.sh) and reaches WASAPI
+# without ALSA; Linux keeps the software renderer, which is what the offline
+# tests exercise anyway.
+[target.'cfg(all(not(target_arch = "wasm32"), target_os = "windows"))'.dependencies]
+web-audio-api = "1.7"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "AudioContext",
+  "AudioContextState",
+  "AudioDestinationNode",
+  "AudioNode",
+  "AudioParam",
+  "OscillatorNode",
+  "OscillatorType",
+  "GainNode",
+  "BiquadFilterNode",
+  "BiquadFilterType",
+  "AudioBuffer",
+  "AudioBufferSourceNode",
+  "AudioScheduledSourceNode",
+] }

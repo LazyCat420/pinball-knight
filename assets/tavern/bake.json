@@ -1,0 +1,42 @@
+{
+  "bakedAt": "2026-08-10T01:57:50.154Z",
+  "legacyRev": "94a8c3b06eb8f466a071206d1fbabbc872e72df8-dirty",
+  "spriteConfig": {
+    "px": 168,
+    "pixelGrid": 84,
+    "artPx": 128
+  },
+  "font": "Press Start 2P (vendored, src/pixel/pixel-font.ts)",
+  "outputs": {
+    "keeper-merchant.png": {
+      "w": 84,
+      "h": 84,
+      "bytes": 2865
+    },
+    "keeper-witch.png": {
+      "w": 84,
+      "h": 84,
+      "bytes": 2392
+    },
+    "keeper-magician.png": {
+      "w": 84,
+      "h": 84,
+      "bytes": 2831
+    },
+    "keeper-frog.png": {
+      "w": 84,
+      "h": 84,
+      "bytes": 2228
+    },
+    "keeper-tout.png": {
+      "w": 84,
+      "h": 84,
+      "bytes": 2814
+    },
+    "sign-enter-maze.png": {
+      "w": 1024,
+      "h": 220,
+      "bytes": 110822
+    }
+  }
+}

@@ -5,6 +5,57 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — The look and the sound land: post chain (P3 partial), baked
+  tavern art (P6), audio + particles (P7 partial), hub-first boot.**
+  *Status: NOT SIGNED OFF. No pk-check run and no screenshot A/B against the TS
+  game has been made on this change. Below, "in the tree" means the file was
+  read and says so; everything else is the intent of the change and must be
+  re-checked before it is called done. (Why the pedantry: see Incidents — a
+  green suite once certified deleted code.)*
+  - **P6 art — in the tree.** `cargo xtask bake --tavern` is a REAL bake (it
+    was a hard `not implemented yet` stub): `xtask` shells
+    `legacy/scripts/bake-tavern.mjs`, which runs the TS painters headless and
+    writes `assets/tavern/`. Confirmed on disk: five keepers at **84×84**
+    (merchant / witch / magician / frog / tout) and **sign-enter-maze.png at
+    1024×220**, plus a `bake.json` provenance stamp (legacy rev, sprite config
+    168px / 84 grid / 128 art, vendored Press Start 2P). These replace the
+    tinted placeholder boxes; the contact-shadow blob is synthesized in Rust
+    (`pk-game/src/tavern_art.rs`).
+  - **Boot flow is hub-first — in the tree.** `main.rs` picks the start state:
+    the dev hatch (`--dungeon` / `?dungeon=1` / `PK_SCENE=dungeon`) wins,
+    otherwise `--tavern`/`?tavern=1` **or a skipped intro** lands in the
+    TAVERN, otherwise the intro plays and hands off to the tavern. The intro no
+    longer ends on a dungeon floor. pk-check's sim/input gates use the hatch —
+    which means its intro gates ("hands off to a live dungeon sim") describe
+    the OLD flow and must be re-pointed.
+  - **Build-age stamp — in the tree.** `crates/pk-game/build.rs` emits
+    `PK_BUILD_EPOCH` at compile time; `main.rs` renders it bottom-right next to
+    the frame-time readout ("built 12m ago") so a stale window is obvious. The
+    build.rs comment keeps the caveat honest: it refreshes when *pk-game*
+    recompiles, not when a pk-core-only edit relinks the exe.
+  - **P3, the pixel/cel post chain, TSL → WGSL** (`pk-game/src/post/`): scene →
+    low-res linear target → half-res bloom (threshold 0.7 / strength 0.9 /
+    radius 2.2) → one composite (16-tap depth-ring SSAO, radius 14,
+    `light = 1 − ao·0.85` → +bloom → linear→sRGB → vignette 0.32 → CEL GRADE at
+    10 steps / curve 0.5 / saturation 1.15) → integer nearest upscale. **Order
+    is the look** and every constant is the legacy `engineConfig.post` value,
+    unchanged (checked against `legacy/.../engine/config.ts`). Not ported:
+    palette quantize, dither, scanlines, ink outline, heat, chromatic
+    aberration — note these are **off in the oracle's own config too**, so this
+    is not visual debt against the shipped TS look; their uniforms are pinned
+    at 0 so enabling one later is a flip, never a reorder. The albedo MRT that
+    palette-snap needs is likewise unbuilt.
+  - **P7 (partial):** `pk-audio` carries both backends — native via
+    `web-audio-api`, wasm via `web-sys` on the browser's own AudioContext —
+    behind the `AudioBackend`/`OscillatorNode`/`GainNode`/`AudioParam` traits,
+    with the synth primitives and the tavern + intro patches; the Bevy side is
+    `pk-game/src/sfx.rs`. FX: ember / mote / spark pools — a CPU ring buffer
+    uploaded to one instanced additive material each frame
+    (`pk-game/src/fx/`), the port of legacy `fx/pools/particle-pool.ts`.
+    ⚠ **At the time this entry was written the shell wiring was still
+    skeletal** — `SfxPlugin::build` and `FxPlugin::build` were empty and
+    `PostPlugin` only inserted its sizing resource. Confirm against the
+    committed tree before treating any of this bullet as delivered.
 - **2026-08-09 — P6 tavern ported: the walkable between-floor hub.** Same
   split as every phase: everything that ticks is `pk_core::tavern` —
   the hand-authored floor plan verbatim (7 stations, 8 obstacle rects,
@@ -166,12 +217,18 @@ as the change it records.** Newest entries first within each section.
 
 ## Broken / not started
 
-- `cargo xtask bake` — stub. M0's real exit criterion (baked knight frame on
-  screen) is open.
-- `cargo xtask dist` — stub (wasm-bindgen/wasm-opt/brotli pipeline not built;
-  trunk not yet installed on the box).
+- `cargo xtask bake` — only the `--tavern` leg exists (this change). The
+  per-rung sprite bake, which is M0's real exit criterion (baked knight frame on
+  screen), is still open.
+- `cargo xtask dist` — stub: the wasm-bindgen/wasm-opt/brotli release pipeline
+  is not built. (`trunk` itself IS installed — 0.21.14 at `~/.local/bin/trunk` —
+  so `trunk serve` / `trunk build` work; an earlier note here saying otherwise
+  was stale.)
 - The slice embeds the knight sheets in the binary and downsamples ÷4 at load
   — a stand-in for the per-rung bake, not the destination.
+- P3 post chain is partial: no palette snap/quantize (nor the albedo MRT it
+  needs), dither, scanlines, ink outline, heat haze or chromatic aberration, and
+  the UI is not composited before the cel grade.
 - `wayland` Bevy feature is off (WSL box lacks libwayland-dev); X11 via WSLg.
 - Slice clip timing is guessed (8 fps walk / 4 fps idle); real timing ports
   with the animator in M2.
@@ -182,7 +239,14 @@ as the change it records.** Newest entries first within each section.
 
 ## Fixed
 
-*(nothing yet — entries move here from Broken with the commit that fixed them)*
+- **`cargo xtask bake` was a hard stub** (`eprintln!("not implemented yet")` +
+  `ExitCode::FAILURE`). The `--tavern` leg now runs the legacy painters for
+  real: `xtask bake --tavern` → `node legacy/scripts/bake-tavern.mjs` →
+  `assets/tavern/` (five 84×84 keepers, the 1024×220 ENTER MAZE sign, and a
+  `bake.json` recording the legacy rev and sprite config). The tavern shell
+  consumes that instead of tinted boxes. Kept deliberately behind a flag so a
+  working tavern export is never mistaken for "the sprite pipeline works now" —
+  the per-rung atlas bake stays on the Broken list.
 
 ## Known environment facts (not bugs)
 

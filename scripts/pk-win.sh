@@ -34,7 +34,9 @@ build|run)
     echo "built $OUT/pk-game.exe"
     if [ "$CMD" = run ]; then
         # WSL2 interop launches it as a real Windows process on the host GPU.
-        exec "$OUT/pk-game.exe"
+        # Remaining args go through to the game, so `pk-win.sh run --dungeon`
+        # and `--tavern` reach the boot gates instead of being swallowed here.
+        exec "$OUT/pk-game.exe" "$@"
     fi
     ;;
 lldb)
