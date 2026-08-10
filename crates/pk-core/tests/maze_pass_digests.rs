@@ -30,8 +30,16 @@
 //! this fixture, first-divergence-first. Until then this file is the harness's
 //! own gate, and it is honest about being exactly that.
 
-use pk_core::maze::{digest, floor_seed, PASS_ORDER};
+use pk_core::maze::archetypes::{
+    archetype_for, level_cells, track_node_counts, windiness_for, NodeLayout, SurfaceMix,
+};
+use pk_core::maze::archetypes::{ARCHETYPES, DEFAULT_RULE_WEIGHTS, DEFAULT_TRACK_PROFILE};
+use pk_core::maze::modifiers::{
+    roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
+};
+use pk_core::maze::{digest, floor_rng, floor_seed, PASS_ORDER};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Deserialize)]
 struct SelfTest {
@@ -69,7 +77,58 @@ struct Floor {
     h: i32,
     draws_before_track: u64,
     total_draws: u64,
+    density: f64,
+    /// The archetype's TrackProfile as the oracle resolved it, verbatim.
+    profile: ProfileJson,
     passes: Vec<Pass>,
+}
+
+/// The legacy `TrackProfile`, as `JSON.stringify` writes it.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProfileJson {
+    layout: String,
+    food_per_1k: f64,
+    relay_per_1k: f64,
+    min_loops: i32,
+    lane_scale: f64,
+    fill: f64,
+    link_chance: f64,
+    plaza_frac: f64,
+    max_len_frac: f64,
+    survive: f64,
+    /// Only the keys the archetype OVERRIDES are present — the rest inherit
+    /// DEFAULT_RULE_WEIGHTS, so an absent key and a key set to the default
+    /// value are different facts and are compared as such.
+    #[serde(default)]
+    rules: RulesJson,
+    #[serde(default)]
+    bands: Option<BandsJson>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RulesJson {
+    perimeter_bias: Option<f64>,
+    min_boss_tiles: Option<f64>,
+    min_boss_euclid: Option<f64>,
+}
+
+/// ⚠️ `BTreeMap<u8, f64>` and not a `Vec` of pairs, on purpose: a JS object with
+/// integer-like keys iterates in ASCENDING NUMERIC order whatever order the
+/// literal was written in, and BTreeMap is the container with that same order.
+/// Deserializing into an insertion-ordered structure would compare the fixture
+/// against a claim the fixture does not make.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BandsJson {
+    #[serde(default)]
+    launch: Option<BTreeMap<u8, f64>>,
+    #[serde(default)]
+    machine: Option<BTreeMap<u8, f64>>,
+    #[serde(default)]
+    drain: Option<BTreeMap<u8, f64>>,
+    coverage: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -82,6 +141,7 @@ struct Pass {
     lane: Option<u32>,
     walkable: u32,
     arc_tiles: u32,
+    extra: serde_json::Value,
 }
 
 fn fixture(name: &str) -> String {
@@ -280,5 +340,273 @@ fn fixture_has_the_shape_the_port_will_replay() {
             f.passes[0].arcs, f.passes[1].arcs,
             "{head}: arcs before the grid is carved"
         );
+    }
+}
+
+/// Compare one band's mix against the fixture's ascending-key map.
+fn mix_matches(mine: Option<SurfaceMix>, theirs: &Option<BTreeMap<u8, f64>>, what: &str) {
+    match (mine, theirs) {
+        (None, None) => {}
+        (Some(m), Some(t)) => {
+            let as_pairs: Vec<(u8, f64)> = t.iter().map(|(&k, &v)| (k, v)).collect();
+            assert_eq!(
+                m,
+                as_pairs.as_slice(),
+                "{what}: mix diverged (order is part of it)"
+            );
+        }
+        _ => panic!("{what}: one side has the band and the other does not"),
+    }
+}
+
+/// THE TABLES, against the profile the oracle actually used.
+///
+/// The fixture records the resolved `TrackProfile` verbatim for every corpus
+/// floor, which makes this a direct comparison rather than a re-derivation: a
+/// mistyped digit in `crates/pk-core/src/maze/archetypes.rs` is a different
+/// floor, and it would otherwise surface as a `grow-track` digest mismatch
+/// forty minutes into debugging the physarum solver.
+///
+/// `deny_unknown_fields` on the JSON structs is half the test: a field ADDED to
+/// the legacy profile fails here loudly instead of being quietly ignored by a
+/// Rust table that does not model it.
+#[test]
+fn archetype_tables_match_the_oracles_profiles() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let mut seen_layouts = std::collections::HashSet::new();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let p = &arch.track;
+        let o = &f.profile;
+        seen_layouts.insert(p.layout);
+
+        assert_eq!(p.layout.as_str(), o.layout, "{head}: layout");
+        assert_eq!(p.food_per_1k, o.food_per_1k, "{head}: foodPer1k");
+        assert_eq!(p.relay_per_1k, o.relay_per_1k, "{head}: relayPer1k");
+        assert_eq!(p.min_loops, o.min_loops, "{head}: minLoops");
+        assert_eq!(p.lane_scale, o.lane_scale, "{head}: laneScale");
+        assert_eq!(p.fill, o.fill, "{head}: fill");
+        assert_eq!(p.link_chance, o.link_chance, "{head}: linkChance");
+        assert_eq!(p.plaza_frac, o.plaza_frac, "{head}: plazaFrac");
+        assert_eq!(p.max_len_frac, o.max_len_frac, "{head}: maxLenFrac");
+        assert_eq!(p.survive, o.survive, "{head}: survive");
+        assert_eq!(
+            p.rules.perimeter_bias, o.rules.perimeter_bias,
+            "{head}: rules.perimeterBias"
+        );
+        assert_eq!(
+            p.rules.min_boss_tiles, o.rules.min_boss_tiles,
+            "{head}: rules.minBossTiles"
+        );
+        assert_eq!(
+            p.rules.min_boss_euclid, o.rules.min_boss_euclid,
+            "{head}: rules.minBossEuclid"
+        );
+
+        match (&p.bands, &o.bands) {
+            (None, None) => {}
+            (Some(b), Some(ob)) => {
+                mix_matches(b.launch, &ob.launch, &format!("{head}: bands.launch"));
+                mix_matches(b.machine, &ob.machine, &format!("{head}: bands.machine"));
+                mix_matches(b.drain, &ob.drain, &format!("{head}: bands.drain"));
+                assert_eq!(b.coverage, ob.coverage, "{head}: bands.coverage");
+            }
+            _ => panic!("{head}: one side has bands and the other does not"),
+        }
+
+        // The grid the level asks for, and the node counts the profile turns
+        // that into — the two derived numbers `grow_track` will be handed.
+        assert_eq!(
+            level_cells(f.level),
+            (f.cells_w, f.cells_h),
+            "{head}: level_cells"
+        );
+        let (foods, relays) = track_node_counts(p, f.w, f.h);
+        let grow = &f.passes[0].extra;
+        assert_eq!(
+            i64::from(foods),
+            grow["foods"].as_i64().unwrap(),
+            "{head}: foods"
+        );
+        assert_eq!(
+            i64::from(relays),
+            grow["relays"].as_i64().unwrap(),
+            "{head}: relays"
+        );
+
+        // ── THE PRE-TRACK STREAM, END TO END ────────────────────────────
+        //
+        // `authorFloor` draws twice before the generator runs — the modifier
+        // roll and the windiness roll — and both are conditional on depth, so
+        // `drawsBeforeTrack` is 0, 1, 2 or 3 across the corpus. Reproducing it
+        // exercises Mulberry32, floor_seed, roll_modifier and windiness_for in
+        // one line each, and `density` is compared as an exact f64: it is a
+        // draw run through an arithmetic expression, so equality here is
+        // bit-equality of the stream itself.
+        //
+        // This is the last thing that can be verified before `grow_track`
+        // lands — and it is the thing that would otherwise be discovered as a
+        // pass-1 digest mismatch, blamed on the physarum solver.
+        let mut rng = floor_rng(f.run_seed, f.level);
+        roll_modifier(f.level, &mut rng);
+        let windiness = windiness_for(f.level, arch, &mut rng);
+        assert_eq!(
+            rng.draws(),
+            f.draws_before_track,
+            "{head}: pre-track draw count"
+        );
+        assert_eq!(
+            windiness.clamp(0.35, 0.85),
+            f.density,
+            "{head}: density (the windiness roll, bit-exact)"
+        );
+    }
+    // Four layouts across five archetypes (two are `scatter`); a corpus that
+    // stopped reaching `hub` or `ring` would still pass every assertion above.
+    assert!(
+        seen_layouts.contains(&NodeLayout::Hub) && seen_layouts.contains(&NodeLayout::Ring),
+        "the corpus no longer exercises every node layout"
+    );
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Constants {
+    modifiers: ModifiersJson,
+    rule_weights: RuleWeightsJson,
+    default_track_profile: ProfileJson,
+    archetypes: Vec<ArchetypeJson>,
+    /// `[level, cellsW, cellsH]`, out past the L23/L24 caps.
+    level_cells: Vec<[i32; 3]>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ModifiersJson {
+    from_level: i32,
+    chance: f64,
+    ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RuleWeightsJson {
+    perimeter_bias: f64,
+    min_boss_tiles: f64,
+    min_boss_euclid: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchetypeJson {
+    id: String,
+    label: String,
+    flavour: String,
+    windiness: [f64; 2],
+}
+
+/// THE CONSTANTS THE CORPUS PROVABLY DOES NOT PIN.
+///
+/// Ten floors pin an enormous amount, but not everything — and the gap was
+/// measured, not guessed: changing `MODIFIER_CHANCE` from 0.45 to 0.5 here
+/// changed no floor in the corpus, because separating those two needs a floor
+/// whose modifier draw lands in [0.45, 0.5) and none does. A constant a corpus
+/// cannot tell apart from a wrong constant is a constant the corpus does not
+/// test, and "the digests are green" would have read as "the tables are right".
+///
+/// So the oracle exports the constants themselves and this compares them. Kept
+/// as its own test rather than folded into the profile comparison, because the
+/// two answer different questions: that one asks whether the archetype tables
+/// match, this one asks whether the numbers no floor exercises are right.
+#[test]
+fn constants_the_corpus_cannot_discriminate_match_the_oracle() {
+    let c: Constants = serde_json::from_str(&fixture("maze-constants.json")).unwrap();
+
+    assert_eq!(
+        MODIFIER_FROM_LEVEL, c.modifiers.from_level,
+        "MODIFIER_FROM_LEVEL"
+    );
+    assert_eq!(MODIFIER_CHANCE, c.modifiers.chance, "MODIFIER_CHANCE");
+    // The oracle's list includes "none" at index 0; the pool the second draw
+    // indexes is the rest of it, in order.
+    assert_eq!(
+        c.modifiers.ids[0], "none",
+        "the oracle's table no longer opens with none"
+    );
+    let want_pool: Vec<&str> = c.modifiers.ids[1..].iter().map(String::as_str).collect();
+    let mine: Vec<&str> = MODIFIER_POOL.iter().map(|m| modifier_str(*m)).collect();
+    assert_eq!(
+        mine, want_pool,
+        "the modifier pool diverged (order indexes the roll)"
+    );
+
+    assert_eq!(
+        DEFAULT_RULE_WEIGHTS.perimeter_bias,
+        c.rule_weights.perimeter_bias
+    );
+    assert_eq!(
+        DEFAULT_RULE_WEIGHTS.min_boss_tiles,
+        c.rule_weights.min_boss_tiles
+    );
+    assert_eq!(
+        DEFAULT_RULE_WEIGHTS.min_boss_euclid,
+        c.rule_weights.min_boss_euclid
+    );
+
+    // The baseline profile — inherited by any archetype that omits a field, and
+    // reached by no corpus floor, since all five archetypes override.
+    let d = &DEFAULT_TRACK_PROFILE;
+    let o = &c.default_track_profile;
+    assert_eq!(d.layout.as_str(), o.layout);
+    assert_eq!(d.food_per_1k, o.food_per_1k);
+    assert_eq!(d.relay_per_1k, o.relay_per_1k);
+    assert_eq!(d.min_loops, o.min_loops);
+    assert_eq!(d.lane_scale, o.lane_scale);
+    assert_eq!(d.fill, o.fill);
+    assert_eq!(d.link_chance, o.link_chance);
+    assert_eq!(d.plaza_frac, o.plaza_frac);
+    assert_eq!(d.max_len_frac, o.max_len_frac);
+    assert_eq!(d.survive, o.survive);
+
+    assert_eq!(ARCHETYPES.len(), c.archetypes.len(), "archetype count");
+    for (mine, theirs) in ARCHETYPES.iter().zip(&c.archetypes) {
+        assert_eq!(mine.id.as_str(), theirs.id, "archetype id/order");
+        assert_eq!(mine.label, theirs.label, "{}: label", theirs.id);
+        assert_eq!(mine.flavour, theirs.flavour, "{}: flavour", theirs.id);
+        assert_eq!(
+            [mine.windiness.0, mine.windiness.1],
+            theirs.windiness,
+            "{}: windiness range",
+            theirs.id
+        );
+    }
+
+    // The size ramp AND its clamp. The corpus stops at L13; the caps bind at
+    // L23/L24, so without this the clamp is untested by every floor.
+    for row in &c.level_cells {
+        let [level, w, h] = *row;
+        assert_eq!(level_cells(level), (w, h), "level_cells({level})");
+    }
+    let last = c.level_cells.last().unwrap();
+    assert!(
+        last[0] >= 25,
+        "the exported range no longer reaches the caps"
+    );
+}
+
+/// The pool ids as the legacy strings. Deliberately not a `Display` impl on
+/// `ModifierId` — the strings exist to be compared against the oracle, and a
+/// general-purpose formatter is one refactor away from being prettified.
+fn modifier_str(m: ModifierId) -> &'static str {
+    match m {
+        ModifierId::None => "none",
+        ModifierId::Flooded => "flooded",
+        ModifierId::Blackout => "blackout",
+        ModifierId::Overcharged => "overcharged",
+        ModifierId::Gilded => "gilded",
+        ModifierId::Collapsing => "collapsing",
+        ModifierId::Frozen => "frozen",
+        ModifierId::Silted => "silted",
     }
 }

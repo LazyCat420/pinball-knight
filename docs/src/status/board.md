@@ -5,6 +5,38 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P2 data tables: the five archetypes, and the stream that runs
+  before the generator.** `pk_core::maze::archetypes` + `::modifiers` — the
+  track half of the archetype table, `windiness_for`, `track_node_counts`, the
+  modifier ROLL, and `levelConfig`'s cell ramp. No pass of the pipeline yet.
+  - **Verified against the oracle, not transcribed and hoped.** The parity
+    fixture already records each corpus floor's resolved `TrackProfile`
+    verbatim, so the table is compared field by field; `deny_unknown_fields` on
+    the JSON side means a field ADDED to the legacy profile fails loudly rather
+    than being silently unmodelled.
+  - **The pre-track stream reproduces bit-exactly.** `authorFloor` draws twice
+    before the generator — the modifier roll and the windiness roll, both
+    depth-conditional — so `drawsBeforeTrack` is 0/1/2/3 across the corpus.
+    Rust now reproduces both counts and `density` (a draw run through a clamp,
+    compared as an exact f64). That exercises Mulberry32, `floor_seed`,
+    `roll_modifier` and `windiness_for` in one line each, and it is the last
+    thing verifiable before `grow_track` lands — otherwise it surfaces as a
+    pass-1 digest mismatch and gets blamed on the physarum solver.
+  - **A gap the corpus could not cover, found by sabotaging it.** Changing
+    `MODIFIER_CHANCE` from 0.45 to 0.5 changed NO floor: separating those two
+    needs a modifier draw in [0.45, 0.5) and none of the ten lands there. Same
+    for the `cellsW/H` caps, which bind at L23/L24 while the corpus stops at
+    13. So `maze-constants.json` exports those constants directly and a
+    separate test compares them — kept separate on purpose, so "the digests are
+    green" cannot be read as "every number is right".
+  - **⚠️ Trap, and it bit:** a JS object with integer-like keys iterates in
+    ASCENDING NUMERIC order regardless of how the literal is written.
+    `{[MAT_ICE]: 3, [MAT_RUBBER]: 1}` is `{1:1, 2:3}` at runtime — rubber
+    first, ice second. Transcribed in reading order, two of the five archetypes
+    got a surface mix whose weighted pick walks backwards. The fixture caught
+    it on the first run.
+  - **Measured:** `cargo test -p pk-core` 332 unit + 14 integration green; the
+    legacy exporter's four tests green; fmt and clippy clean.
 - **2026-08-09 — P2 opens with its harness: 23 pass boundaries, digested.**
   Nothing of the maze generator is ported yet. What is built is the instrument
   that will debug the port, and it is built first on purpose.
