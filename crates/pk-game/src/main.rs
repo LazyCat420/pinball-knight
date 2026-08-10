@@ -14,6 +14,17 @@
 //! `pk_core::intro::should_skip_intro`. A skipped intro still lands in the
 //! hub; `--dungeon` / `?dungeon=1` / `PK_SCENE=dungeon` is the dev hatch that
 //! boots a floor directly (the harness's sim gates need one without walking).
+//!
+//! ## Two lints Bevy makes meaningless
+//!
+//! A system's parameter list IS its dependency declaration — that is how the
+//! scheduler knows what can run in parallel — so "too many arguments" is
+//! measuring the wrong thing here, and bundling params into a struct to quiet
+//! it would hide the very information the engine reads. `Query<(A, B), (With<C>,
+//! Without<D>)>` is likewise a type by construction; aliasing it moves the
+//! filter out of the line where the borrow conflict has to be checked, and this
+//! shell already hit Bevy's B0001 once for exactly that reason.
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod dungeon_render;
 mod fx;

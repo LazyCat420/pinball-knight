@@ -206,7 +206,7 @@ impl BlackjackTable {
     /// Player is done acting — turn the hole card over, then the dealer plays.
     /// `extra` buys time for a card still in the air (the one that busted the
     /// hand, or the double's card) to land BEFORE the reveal starts.
-    fn to_reveal(&mut self, extra: f64) {
+    fn enter_reveal(&mut self, extra: f64) {
         self.phase = BjPhase::Flip;
         self.flip_t = FLIP_TIME + extra;
         self.flip_sounded = false;
@@ -289,10 +289,10 @@ impl BlackjackTable {
                 // card that busted still has to land, and the hole card still
                 // turns over, or the player never sees what they were up against.
                 if hand_value(&plain(&self.player)).bust {
-                    self.to_reveal(SLIDE);
+                    self.enter_reveal(SLIDE);
                 }
             }
-            "stand" => self.to_reveal(0.0),
+            "stand" => self.enter_reveal(0.0),
             "double" => {
                 if self.player.len() != 2 || self.doubled {
                     return;
@@ -308,7 +308,7 @@ impl BlackjackTable {
                 let at = self.clock;
                 self.deal_into(true, at);
                 // A double takes exactly one card, then stands.
-                self.to_reveal(SLIDE);
+                self.enter_reveal(SLIDE);
             }
             _ => {}
         }
@@ -368,7 +368,7 @@ impl BlackjackTable {
                     // A natural on either side ends the hand immediately —
                     // but the hole card must still be turned over to show why.
                     if is_blackjack(&plain(&self.player)) || is_blackjack(&plain(&self.dealer)) {
-                        self.to_reveal(0.0);
+                        self.enter_reveal(0.0);
                     } else {
                         self.phase = BjPhase::Player;
                     }

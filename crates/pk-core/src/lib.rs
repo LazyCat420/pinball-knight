@@ -13,6 +13,29 @@
 //!   state    — seed of state.ts/simulate.ts: player movement at fixed 60 Hz
 //!   maze     — M3: maze/ generator with PRNG call-order parity
 //!   entities — M4: combat, AI, spawn, economy, run
+//!
+//! ## Lints this crate turns off, and why it is not laziness
+//!
+//! Most of what is here is a TRANSCRIPTION. The unit of review is a diff
+//! against a specific `.ts` file, read side by side, hunting for the one line
+//! that draws in a different order — and idiomatic Rust actively works against
+//! that reading. These are switched off crate-wide rather than sprinkled at
+//! call sites so the rule is stated once, where the reason lives.
+//!
+//! Nothing here is a correctness lint. Anything that could change a digest
+//! stays on, and CI runs clippy at deny level per crate.
+#![allow(
+    // `for i in 0..STATIONS.len()` mirrors `for (let i = 0; i < …; i++)`. The
+    // iterator rewrite is better Rust and worse evidence: several of these
+    // loops index two arrays at once or run a triangular `i+1..` pair scan, and
+    // the enumerate/skip forms obscure exactly the ordering the port is being
+    // checked for.
+    clippy::needless_range_loop,
+    // Ported functions keep the argument lists their TS originals have. Bundling
+    // them into structs is a refactor to do AFTER parity is declared, not while
+    // the two sides are being diffed.
+    clippy::too_many_arguments
+)]
 
 pub mod collide;
 pub mod combo;
@@ -20,6 +43,7 @@ pub mod gambler;
 pub mod grid;
 pub mod intro;
 pub mod jsmath;
+pub mod jssort;
 pub mod maze;
 pub mod pinball;
 pub mod rail;

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/pk-core",
+    "crates/pk-jsmath-probe",
     "crates/pk-assets",
     "crates/pk-audio",
     "crates/pk-game",

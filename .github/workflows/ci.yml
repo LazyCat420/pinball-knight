@@ -1,0 +1,128 @@
+name: CI
+
+# What this can and cannot cover, stated once so nobody re-litigates it:
+#
+# CANNOT — `scripts/pk-check.mjs` and both visual A/B rigs need a real GPU.
+# SwiftShader cannot run the Bevy wasm app at all (mapped-buffer defect, see
+# docs Incidents), so the end-to-end and visual gates stay manual, on the host
+# Chrome of the dev box. That is a property of the app, not a gap here.
+#
+# CAN — everything else, which at 28k lines of Rust across four build targets
+# had been running nowhere. In particular the two target-parity gates added
+# after `js_pow` turned out to be a different function on each of wasm, Windows
+# and native: both are pure computation, so they belong here rather than in the
+# manual pile.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer stale, not
+# interesting.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fixture replay is bit-exact; a backtrace is the difference between "a digest
+  # moved" and knowing which pass moved it.
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: rust (fmt, clippy, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins 1.94.1 and the two cross targets, so the
+      # toolchain is not configured here — it is configured in the repo, and
+      # this action honours it.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+
+      # ⚠️ Per-crate, NOT `--workspace`. A deny-level lint aborts the whole
+      # workspace invocation at the first crate that trips, which is how four
+      # errors once hid and left pk-game/pk-audio/xtask unlinted for weeks. One
+      # crate failing must not stop the others being checked.
+      - run: cargo clippy -p pk-core --all-targets -- -D warnings
+        if: '!cancelled()'
+      - run: cargo clippy -p pk-assets --all-targets -- -D warnings
+        if: '!cancelled()'
+      - run: cargo clippy -p pk-audio --all-targets -- -D warnings
+        if: '!cancelled()'
+      - run: cargo clippy -p pk-game --all-targets -- -D warnings
+        if: '!cancelled()'
+      - run: cargo clippy -p xtask --all-targets -- -D warnings
+        if: '!cancelled()'
+
+      - run: cargo test --workspace
+        if: '!cancelled()'
+
+  target-parity:
+    name: jsmath on the shipped targets
+    runs-on: ubuntu-latest
+    # The gate that did not exist when `js_pow` was three different functions
+    # (see docs Incidents). Both halves are pure arithmetic — no GPU, no browser.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: jsmath under wasm32-unknown-unknown
+        run: node scripts/jsmath-wasm-check.mjs --build
+
+      # ⚠️ This one is INFORMATIONAL here and load-bearing on the dev box.
+      # Running the Windows test binary needs a wine/interop runner that the
+      # repo configures for WSL2 only (`scripts/win-runner.sh`), so CI can build
+      # it but not run it. The run stays a dev-box step:
+      #   cargo test --target x86_64-pc-windows-gnullvm -p pk-core --test jsmath_oracle
+      - name: windows-gnullvm builds
+        run: cargo build --target x86_64-pc-windows-gnullvm -p pk-core
+
+  wasm-build:
+    name: wasm build + size budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --target wasm32-unknown-unknown -p pk-game --release
+      - name: report the wasm size
+        # Reported, not yet enforced: a budget invented in CI rather than
+        # measured against a shipped build is a number that fails on the day
+        # someone adds a legitimate feature. `xtask dist` (wasm-opt + brotli) is
+        # what sets the real one — P8.
+        run: |
+          f=$(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' | head -1)
+          echo "$f: $(du -h "$f" | cut -f1)"
+
+  legacy:
+    name: legacy vitest (the oracle)
+    runs-on: ubuntu-latest
+    # `legacy/` is not archived reference material — it exports every parity
+    # fixture the Rust side replays. A red legacy suite means the oracle moved,
+    # which is a bigger deal than a red port.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: legacy/package-lock.json
+      - run: npm ci
+        working-directory: legacy
+      # `npm test` (not used here) routes through `scripts/ops/pk-run.sh`, the
+      # flock'd thread broker that keeps a shared 24-thread dev box usable. A
+      # GitHub runner is not shared and has no locks to take, so the meter would
+      # be pure overhead — and a `--class test` grant it cannot satisfy reads as
+      # a failure rather than a queue. `test:raw` is the same vitest run without
+      # the broker. On the dev box, keep using `npm test`.
+      - run: npm run test:raw
+        working-directory: legacy

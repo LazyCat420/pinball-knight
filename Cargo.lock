@@ -3382,6 +3382,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pk-jsmath-probe"
+version = "0.1.0"
+dependencies = [
+ "libm",
+ "pk-core",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"

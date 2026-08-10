@@ -9,13 +9,14 @@
 //!
 //! ## What this file can prove TODAY, and what it cannot
 //!
-//! The generator is not ported yet, so nothing here replays a floor. What it
-//! does prove is that the INSTRUMENT is sound before it is ever pointed at a
-//! port — and that is not a formality. A digest that is subtly wrong (a missed
-//! length fold, a big-endian f64) disagrees with the oracle on every pass of
-//! every floor, which is indistinguishable from a completely broken generator.
-//! Debugging the port with an uncertified instrument means every failure has
-//! two candidate causes. So:
+//! Passes 1–4 of 23 replay, all ten floors bit-exact. The other nineteen are
+//! not ported, so most of this fixture is still unread.
+//!
+//! Underneath the replays sit the instrument's own gates, and they are not a
+//! formality. A digest that is subtly wrong (a missed length fold, a big-endian
+//! f64) disagrees with the oracle on every pass of every floor, which is
+//! indistinguishable from a completely broken generator; debugging a port with
+//! an uncertified instrument means every failure has two candidate causes. So:
 //!
 //!   1. `digest_matches_its_pinned_vectors` — the hash, byte encodings
 //!      included, against values JSON cannot even carry (`-0`, `Infinity`).
@@ -25,10 +26,17 @@
 //!      `PASS_ORDER`, so a rename on the TS side fails here rather than as
 //!      twenty-two shifted digests once the port lands.
 //!
-//! As each pass of `build_track_floor` is ported it gains a replay test that
-//! drives the real pipeline through `PassProbe` and compares `record()` against
-//! this fixture, first-divergence-first. Until then this file is the harness's
-//! own gate, and it is honest about being exactly that.
+//! Each newly ported pass gains a replay test. They all drive the SAME
+//! `build_track_floor` (see `replay_through`) rather than reassembling the
+//! pipeline: the passes share one rng stream and one grid, so there is no
+//! starting in the middle, and a hand-copied prefix is a second pipeline free
+//! to drift from the one the port ships.
+//!
+//! ⚠️ **A green replay proves what its boundary can see, which is less than it
+//! looks.** Sabotage-measured per pass, and for `carve-track` six of ten
+//! injected defects survived — including compiling in the wrong trig library.
+//! The per-pass headers carry those tables; read the one for the pass you are
+//! about to trust.
 
 use pk_core::maze::archetypes::{
     archetype_for, level_cells, track_node_counts, windiness_for, NodeLayout, SurfaceMix,
@@ -37,11 +45,12 @@ use pk_core::maze::archetypes::{ARCHETYPES, DEFAULT_RULE_WEIGHTS, DEFAULT_TRACK_
 use pk_core::maze::modifiers::{
     roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
 };
-use pk_core::maze::track_grow::{
-    circuit_rank, digest_edges, digest_nodes, grow_track, GrowTrackOpts,
+use pk_core::maze::track_floor::{build_track_floor, BuildTrackFloorOpts, PASSES_LANDED};
+use pk_core::maze::track_grow::{circuit_rank, digest_edges, digest_nodes, TrackGraph};
+use pk_core::maze::track_path::{digest_legs, TrackPath, TRACK_RADII};
+use pk_core::maze::{
+    digest, floor_rng, floor_seed, record, CountingRng, Extra, PassRecord, PassSnapshot, PASS_ORDER,
 };
-use pk_core::maze::track_path::{build_track_path, digest_legs, TrackPathOpts, TRACK_RADII};
-use pk_core::maze::{digest, floor_rng, floor_seed, PASS_ORDER};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -141,10 +150,20 @@ struct Pass {
     pass: String,
     draws: u64,
     t: u32,
+    shapes: u32,
     arcs: u32,
+    /// Born at `carve-track`, when `ensureArcs` allocates it. Null before.
+    arc_idx: Option<u32>,
+    /// The mask's three arrays — null on the two passes that run before the
+    /// track is carved and the mask does not exist.
     lane: Option<u32>,
+    sealed: Option<u32>,
+    dist: Option<u32>,
     walkable: u32,
+    shaped: u32,
     arc_tiles: u32,
+    lane_tiles: u32,
+    sealed_tiles: u32,
     /// The circuit, on the two passes that own it. Null everywhere else.
     graph_nodes: Option<u32>,
     graph_edges: Option<u32>,
@@ -153,6 +172,139 @@ struct Pass {
     path_arcs: Option<u32>,
     path_arc_half: Option<f64>,
     extra: serde_json::Value,
+}
+
+/// The two pre-track draws `authorFloor` makes, and the `density` the second
+/// one produces.
+///
+/// ⚠️ `windiness` is NOT discarded. `spawn/floor-authoring.ts:159` passes
+/// `density: Math.max(0.35, Math.min(0.85, windiness))` into `buildTrackFloor`,
+/// where it sets how often the growing-tree picks newest-first rather than at
+/// random — which changes how many draws each iteration spends. Treating the
+/// draw as bookkeeping and letting `growMazeAround`'s own `?? 0.62` default
+/// apply cost 548 extra draws on L1 s1 with the walkable count only 2 tiles out:
+/// a floor that looks almost right and shares no random stream with the oracle.
+///
+/// The fixture pins `density` per floor, so the derivation is asserted rather
+/// than trusted.
+fn pre_track_draws(f: &Floor) -> (CountingRng, f64) {
+    let arch = archetype_for(f.level);
+    let mut rng = floor_rng(f.run_seed, f.level);
+    roll_modifier(f.level, &mut rng);
+    let windiness = windiness_for(f.level, arch, &mut rng);
+    let density = windiness.clamp(0.35, 0.85);
+    assert_eq!(
+        density, f.density,
+        "L{} seed {}: density derived from windiness disagrees with the oracle's",
+        f.level, f.run_seed
+    );
+    (rng, density)
+}
+
+/// Run a corpus floor through the SHIPPING pipeline and hand back the two
+/// products a [`PassRecord`] cannot carry.
+///
+/// The graph and path digests (`graphNodes`, `graphEdges`, `pathLegs`,
+/// `pathArcs`, `pathArcHalf`) live in the fixture but not in `record()`, because
+/// they are pass-local products rather than grid state. So passes 1 and 2 need
+/// the objects themselves — and they must come from the same `build_track_floor`
+/// call everything else is checked against, not from a hand-assembled copy of
+/// the pipeline sitting in a test file.
+fn run_floor(f: &Floor) -> (TrackGraph, TrackPath) {
+    let arch = archetype_for(f.level);
+    let (mut rng, density) = pre_track_draws(f);
+    let floor = build_track_floor(
+        f.cells_w,
+        f.cells_h,
+        &mut rng,
+        &BuildTrackFloorOpts {
+            profile: Some(&arch.track),
+            density: Some(density),
+            ..Default::default()
+        },
+        None,
+    )
+    .unwrap_or_else(|| {
+        panic!(
+            "L{} seed {}: the pipeline declined a corpus floor",
+            f.level, f.run_seed
+        )
+    });
+    (floor.graph, floor.path)
+}
+
+/// Every digest and count a boundary pins, compared in ONE place.
+///
+/// Both sides are a [`PassRecord`]: the Rust one from `maze::record` on the live
+/// pipeline's own probe, the oracle's from the fixture. Comparing records rather
+/// than re-deriving digests in the test matters — a test that computed its own
+/// would be certifying an encoder the pipeline never calls, which is the same
+/// mistake `digest_matches_its_pinned_vectors` exists to prevent one level down.
+///
+/// Field by field rather than one `assert_eq!` on the whole struct: a
+/// twenty-field diff tells you nothing, and each field here has its own
+/// diagnosis.
+///
+/// The ORDER is deliberate. Counts first, because "we carved half the circuit"
+/// is a different bug from "the circuit is one tile off" and a digest cannot
+/// tell them apart. Draws second, because that is what splits "wrong draw
+/// sequence" from "right stream, wrong arithmetic". Digests last.
+fn assert_record(head: &str, want: &Pass, got: &PassRecord) {
+    assert_eq!(got.walkable, want.walkable, "{head}: walkable tile count");
+    assert_eq!(got.shaped, want.shaped, "{head}: shaped tile count");
+    assert_eq!(got.arc_tiles, want.arc_tiles, "{head}: arc tile count");
+    assert_eq!(got.lane_tiles, want.lane_tiles, "{head}: lane tile count");
+    assert_eq!(
+        got.sealed_tiles, want.sealed_tiles,
+        "{head}: sealed tile count"
+    );
+
+    assert_eq!(got.draws, want.draws, "{head}: cumulative rng draws");
+
+    assert_eq!(got.t, want.t, "{head}: tile digest");
+    assert_eq!(got.shapes, want.shapes, "{head}: shape digest");
+    assert_eq!(got.arcs, want.arcs, "{head}: arc feature digest");
+    assert_eq!(got.arc_idx, want.arc_idx, "{head}: arcIdx digest");
+    assert_eq!(got.lane, want.lane, "{head}: mask.lane digest");
+    assert_eq!(got.sealed, want.sealed, "{head}: mask.sealed digest");
+    // `dist` is the one array the tile grid cannot fake: on these floors `lane`
+    // and `t` hold the same bytes and digest identically, so a port that
+    // returned the tile array as the mask would satisfy both of those.
+    assert_eq!(got.dist, want.dist, "{head}: mask.dist digest");
+
+    // The pass's own scalars, compared POSITIONALLY against the JSON object the
+    // TS wrote — not sorted, not looked up by key. The exporter writes them in
+    // the order the pass reports them, and an order change is a change.
+    let obj = want
+        .extra
+        .as_object()
+        .unwrap_or_else(|| panic!("{head}: fixture extra is not an object"));
+    assert_eq!(
+        got.extra.len(),
+        obj.len(),
+        "{head}: extra has {} keys, oracle has {}",
+        got.extra.len(),
+        obj.len()
+    );
+    for (n, (key, val)) in got.extra.iter().enumerate() {
+        let (want_key, want_val) = obj.iter().nth(n).unwrap();
+        assert_eq!(key, want_key, "{head}: extra key {n}");
+        let ok = match val {
+            Extra::Int(v) => want_val.as_i64() == Some(*v),
+            Extra::Ints(v) => want_val.as_array().is_some_and(|a| {
+                a.iter()
+                    .map(serde_json::Value::as_i64)
+                    .eq(v.iter().map(|x| Some(*x)))
+            }),
+            Extra::Strs(v) => want_val.as_array().is_some_and(|a| {
+                a.iter()
+                    .map(serde_json::Value::as_str)
+                    .eq(v.iter().map(|x| Some(x.as_str())))
+            }),
+            Extra::Null => want_val.is_null(),
+        };
+        assert!(ok, "{head}: extra {key} — rust {val:?}, oracle {want_val}");
+    }
 }
 
 fn fixture(name: &str) -> String {
@@ -676,51 +828,14 @@ fn pass1_grow_track_replays_the_oracle() {
         let arch = archetype_for(f.level);
         let p = &arch.track;
 
-        // The shipping call, exactly as `authorFloor` → `buildTrackFloor` makes
-        // it: two pre-track draws, then the generator on a grid of (2c+1).
-        let mut rng = floor_rng(f.run_seed, f.level);
-        roll_modifier(f.level, &mut rng);
-        let _windiness = windiness_for(f.level, arch, &mut rng);
-        let (foods, relays) = track_node_counts(p, f.w, f.h);
-        let graph = grow_track(
-            f.w,
-            f.h,
-            &mut rng,
-            &GrowTrackOpts {
-                foods: Some(foods as usize),
-                relays: Some(relays as usize),
-                min_loops: Some(i64::from(p.min_loops)),
-                layout: Some(p.layout),
-                max_len_frac: Some(p.max_len_frac),
-                survive: Some(p.survive),
-                grow: None,
-            },
-        );
-
+        // ONE pipeline. `replay_through` already compares every digest and count
+        // this boundary pins, so what remains here is the two things a
+        // `PassRecord` does not carry — the graph digests — plus the pass's own
+        // structural contract. Re-running the generator by hand instead would be
+        // a second pipeline free to drift from the one the port ships.
+        let (graph, _path) = run_floor(f);
         let want = &f.passes[0];
         assert_eq!(want.pass, "grow-track", "{head}: fixture pass 1 moved");
-
-        // Counts first — they are the legible failure. A digest mismatch with
-        // matching counts is a different bug from "we grew half a network".
-        let extra = &want.extra;
-        assert_eq!(
-            graph.nodes.len() as i64,
-            extra["nodes"].as_i64().unwrap(),
-            "{head}: surviving node count"
-        );
-        assert_eq!(
-            graph.edges.len() as i64,
-            extra["edges"].as_i64().unwrap(),
-            "{head}: surviving edge count"
-        );
-        // The draw count next: it is the same on every floor already, including
-        // the ones blocked below, because the blockage moves VALUES and not the
-        // number of draws.
-        assert_eq!(
-            rng.draws(),
-            want.draws,
-            "{head}: draws at the pass-1 boundary"
-        );
 
         // Nodes and edges are digested SEPARATELY so a failure says which half:
         // nodes differ means the layout diverged, nodes match and edges differ
@@ -812,53 +927,20 @@ fn pass2_track_path_replays_the_oracle() {
     let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
     for f in &c.floors {
         let head = format!("L{} seed {}", f.level, f.run_seed);
-        let arch = archetype_for(f.level);
-        let p = &arch.track;
 
-        // The shipping call, exactly as `buildTrackFloor` makes it.
-        let mut rng = floor_rng(f.run_seed, f.level);
-        roll_modifier(f.level, &mut rng);
-        let _windiness = windiness_for(f.level, arch, &mut rng);
-        let (foods, relays) = track_node_counts(p, f.w, f.h);
-        let graph = grow_track(
-            f.w,
-            f.h,
-            &mut rng,
-            &GrowTrackOpts {
-                foods: Some(foods as usize),
-                relays: Some(relays as usize),
-                min_loops: Some(i64::from(p.min_loops)),
-                layout: Some(p.layout),
-                max_len_frac: Some(p.max_len_frac),
-                survive: Some(p.survive),
-                grow: None,
-            },
-        );
-        let path = build_track_path(
-            &graph,
-            &TrackPathOpts {
-                radii: None,
-                lane_scale: Some(p.lane_scale),
-            },
-        );
-
+        // ONE pipeline — see the note in pass 1. What is left here is the three
+        // path digests, which a `PassRecord` does not carry and which are the
+        // entire reason this boundary gates at all.
+        let (_graph, path) = run_floor(f);
         let want = &f.passes[1];
         assert_eq!(want.pass, "track-path", "{head}: fixture pass 2 moved");
 
-        // Counts first — the legible failure. "we built half a circuit" is a
-        // different bug from "the legs are a millimetre out".
-        assert_eq!(
-            path.legs.len() as i64,
-            want.extra["legs"].as_i64().unwrap(),
-            "{head}: surviving leg count"
-        );
-        // The pass must still have drawn nothing. If this ever fails, the port
-        // grew a draw the oracle does not have and EVERY later pass is shifted.
-        assert_eq!(
-            rng.draws(),
-            want.draws,
-            "{head}: draws at the pass-2 boundary — this pass must draw NOTHING"
-        );
+        // "this pass draws nothing" is NOT asserted here. It used to be, against
+        // the live rng — but with one pipeline the live count reaches this file
+        // only through `replay_through(1)`, which compares it to the fixture like
+        // every other field. Restating it here would mean comparing the fixture's
+        // pass-1 draws to its pass-2 draws, which is true of the ORACLE whatever
+        // the port does: a check that passes in both states is not a check.
 
         assert_eq!(
             digest_legs(&path.legs),
@@ -912,4 +994,180 @@ fn pass2_track_path_replays_the_oracle() {
     // If a future change breaks a subset, pin them BY NAME with an equality
     // assertion (see the note at the end of pass 1) — a list that only fails
     // when it GROWS stops telling you when the gap closes.
+}
+
+/// Pass 3 of 23 — `carve-track`. The first pass that writes a tile.
+///
+/// Passes 1 and 2 produced a graph and rideable geometry without touching the
+/// grid; this one burns the circuit into it and creates the [`TrackMask`] every
+/// later pass reads. Four of the seven digested arrays are born or move here.
+///
+/// ⚠️ **GREEN HERE MEANS STRUCTURE, NOT ARITHMETIC.** Measured with ten
+/// sabotages rather than assumed — the full table is in `maze::track_carve`'s
+/// header. Wrong step size, missing legs, wrong sweep width: caught, 10/10
+/// floors. Swapping `js_hypot` for `libm::hypot`, or `js_cos`/`js_sin` for
+/// `libm`'s: **not caught at all**. Everything this pass does is a threshold
+/// (`d > r`) or a rounded step count, and a last-bit difference almost never
+/// flips one, so the primitive guarantees for pass 3 live in
+/// `tests/jsmath_oracle.rs` and nowhere else. Ten green floors here would still
+/// be ten green floors with the wrong trig library compiled in.
+///
+/// Two more things this boundary cannot tell you:
+///
+/// · `carveTrack` draws no rng, so the draw count matches by construction and
+///   the usual "different count = wrong draw sequence" localiser is silent.
+/// · `lane` and `t` digest IDENTICALLY on every corpus floor (`T_FLOOR` is 1, a
+///   lane mark is 1, and at this boundary the two arrays hold the same bytes).
+///   A port that returned the tile array as the mask would pass both. `dist`
+///   and `sealed` are what separate them, and `assert_boundary` compares all
+///   four.
+#[test]
+fn pass3_carve_track_replays_the_oracle() {
+    replay_through(2);
+}
+
+/// Pass 4 of 23 — `plaza`. The Great Hall's one vast chamber.
+///
+/// ⚠️ **HALF THE CORPUS CANNOT SEE THIS PASS.** Five of the ten floors have
+/// `plazaFrac == 0` and the boundary is byte-identical to pass 3's on them — a
+/// port that skipped the pass entirely would be green on those five. The five
+/// that do carve one are L3 s1, L8 s1, L13 s1, L3 s424242 and L8 s424242, all
+/// Great Halls, and they are the whole gate.
+///
+/// And `relaxed` is `[]` on all ten: the first radius always fitted, so the
+/// step-down loop — the part the legacy comment spends twenty lines justifying
+/// — is **never exercised by the corpus**. Its `r -= 1` countdown over
+/// non-integral radii is unverified by anything here.
+#[test]
+fn pass4_plaza_replays_the_oracle() {
+    replay_through(3);
+}
+
+/// Pass 5 of 23 — `launch-chute`. The plunger lane, and the first pass since
+/// `grow-track` that DRAWS.
+///
+/// That makes the draw count a live localiser again after three passes of
+/// silence: it is exactly one draw, the pick out of the candidate pool, so a
+/// mismatch means the pool came out a different size or the floor took a
+/// different branch — not that the carve is wrong.
+///
+/// The `extra` is the base and mouth coordinates, so a divergence names the
+/// chosen SITE before any digest is consulted. L3 s1 fits no chute and pins
+/// `null`, so the "a floor can legitimately have no plunger lane" branch is
+/// covered rather than assumed.
+///
+/// ⚠️ Sabotage-measured, and five of eleven defects survived — four of them
+/// TIE-BREAKS (both sort stabilities, the `CARDINALS` order, the scan order),
+/// because no two sites in this corpus score exactly equal. The fifth is a
+/// coverage hole with a number on it: the corpus's `perimeter_bias` values are
+/// 0.9/0.85/0.8/0.7/0.15, so the `>= 0.5` compliance threshold sits in an empty
+/// gap and which side `0.5` falls on is untested. Full table in
+/// `maze::track_launch`'s header.
+#[test]
+fn pass5_launch_chute_replays_the_oracle() {
+    replay_through(4);
+}
+
+/// Pass 6 of 23 — `grow-maze`. Where the floor's rng budget actually goes.
+///
+/// Three draw sources interleave into one stream here: the growing-tree pick,
+/// the direction shuffle, and the per-wall on-ramp roll — and then
+/// `widen_maze_corridors` adds a fourth. So the draw count is a strong
+/// localiser at this boundary in a way it has not been since pass 1: it is in
+/// the thousands, and it is the FIRST field `assert_record` compares after the
+/// counts.
+///
+/// ⚠️ The shuffle is `[...dirs].sort(() => rng() - 0.5)`, the classic broken
+/// shuffle, and here it is the oracle rather than a bug: every comparator call
+/// spends a draw, and V8 makes FOUR or FIVE of them for a 4-element array
+/// depending on the results. `crate::jssort` reproduces V8's binary insertion
+/// sort trace-for-trace; anything else desynchronises the stream on most calls.
+#[test]
+fn pass6_grow_maze_replays_the_oracle() {
+    replay_through(5);
+}
+
+/// Drive the REAL pipeline to boundary `k` and compare every digest and count
+/// the fixture pins there, on all ten floors.
+///
+/// One function rather than one per pass, because the passes share an rng
+/// stream and a grid: a per-pass test would have to rebuild the prefix anyway,
+/// and rebuilding it by hand is how a replay drifts into testing a pipeline the
+/// oracle never ran. The probe collects every boundary the run emits, so a pass
+/// that fires out of order or not at all fails on the NAME before any digest is
+/// looked at.
+fn replay_through(k: usize) {
+    assert!(
+        k < PASSES_LANDED,
+        "boundary {k} ({}) is not ported yet — PASSES_LANDED is {PASSES_LANDED}",
+        PASS_ORDER[k]
+    );
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let mut moved: Vec<String> = Vec::new();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+
+        let mut seen: Vec<PassRecord> = Vec::new();
+        let (mut rng, density) = pre_track_draws(f);
+
+        let mut probe = |snap: PassSnapshot<'_>| seen.push(record(&snap));
+        build_track_floor(
+            f.cells_w,
+            f.cells_h,
+            &mut rng,
+            &BuildTrackFloorOpts {
+                profile: Some(&arch.track),
+                density: Some(density),
+                ..Default::default()
+            },
+            Some(&mut probe),
+        )
+        .unwrap_or_else(|| panic!("{head}: the pipeline declined a corpus floor"));
+
+        let want = &f.passes[k];
+        assert!(
+            seen.len() > k,
+            "{head}: the run emitted {} boundaries, wanted at least {}",
+            seen.len(),
+            k + 1
+        );
+        for (n, got) in seen.iter().enumerate() {
+            assert_eq!(got.pass, PASS_ORDER[n], "{head}: boundary {n} out of order");
+        }
+        let got = &seen[k];
+        assert_eq!(got.pass, want.pass, "{head}: fixture pass {k} moved");
+
+        // Collected rather than asserted in place, for the reason pass 1 spells
+        // out: HOW MANY floors moved is itself the diagnosis. One of ten is a
+        // value landing on a rounding boundary; ten of ten is the algorithm.
+        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert_record(&head, want, got);
+        })) {
+            moved.push(format!("  {}", panic_message(&e)));
+        }
+    }
+
+    // ── NOTHING IS EXCLUDED HERE ────────────────────────────────────────────
+    //
+    // If a future change breaks a subset, pin them BY NAME with an equality
+    // assertion (see the note at the end of pass 1): a list that only fails
+    // when it GROWS stops telling you when the gap closes.
+    assert!(
+        moved.is_empty(),
+        "{} of {} floors diverged at the {} boundary:\n{}",
+        moved.len(),
+        c.floors.len(),
+        PASS_ORDER[k],
+        moved.join("\n")
+    );
+}
+
+/// Pull the message out of a caught panic so a collected failure reads like the
+/// assertion that produced it rather than like "a floor failed".
+fn panic_message(e: &Box<dyn std::any::Any + Send>) -> String {
+    e.downcast_ref::<String>()
+        .cloned()
+        .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_else(|| "<non-string panic>".into())
 }

@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn two_jackpots_beats_the_plain_any_pair_rate() {
-        assert!(TWO_JACKPOT_PAY > ANY_PAIR_PAY);
+        const { assert!(TWO_JACKPOT_PAY > ANY_PAIR_PAY) };
     }
 
     #[test]
