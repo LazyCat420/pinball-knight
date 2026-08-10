@@ -1364,7 +1364,11 @@ fn build_props(b: &mut Build) {
     // still washes the housing around it.
     let sign_tex = b.images.add(tavern_art::sign_enter_maze());
     let face = b.materials.add(StandardMaterial {
-        base_color: Color::LinearRgba(LinearRgba::rgb(1.35, 1.35, 1.35)),
+        // 1.0, not a >1 boost: the oracle hangs this on a `MeshBasicMaterial`
+        // at plain 0xffffff and lets the canvas's own glow carry the
+        // brightness. Any multiplier clips wherever the bake is already
+        // near-white — which is the letterforms, the only part that matters.
+        base_color: Color::WHITE,
         base_color_texture: Some(sign_tex),
         unlit: true,
         alpha_mode: AlphaMode::Blend,
@@ -1380,9 +1384,13 @@ fn build_props(b: &mut Build) {
         },
         ..default()
     });
+    // The legend plane carries the AUTHORED aspect (4.2 x 0.8 = 5.25), not
+    // the inset housing panel's. Shrinking it to `sign_w - 0.4` by
+    // `sign_h - 0.28` gives 7.31, and since the bake is stretched to whatever
+    // quad it lands on, the letters came out ~39% wide.
     b.boxed(
-        sign_w - 0.4,
-        sign_h - 0.28,
+        sign_w,
+        sign_h,
         0.03,
         face,
         n.x,
