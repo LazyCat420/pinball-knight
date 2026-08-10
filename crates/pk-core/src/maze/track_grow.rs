@@ -44,7 +44,7 @@
 //!     ES2019) and in Rust; the comparators subtract, which is exact for f64s
 //!     close enough to matter (Sterbenz), so ties really are ties.
 
-use crate::jsmath::{js_hypot, js_pow};
+use crate::jsmath::{js_cos, js_hypot, js_pow, js_sin};
 use crate::maze::archetypes::NodeLayout;
 use crate::maze::CountingRng;
 
@@ -323,8 +323,8 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
             let cz = (z0 + z1) / 2.0;
             // Four poses: along each axis and the two diagonals.
             let theta = (pick(rng, 4) as f64 * std::f64::consts::PI) / 4.0;
-            let cos = libm::cos(theta).abs();
-            let sin = libm::sin(theta).abs();
+            let cos = js_cos(theta).abs();
+            let sin = js_sin(theta).abs();
             // Half-width — the gap between the outbound and return runs. Widened
             // from 0.16-0.24: the Spine runs the widest lanes in the game
             // (laneScale 1.25) and at the old half-width the two U-turns were not
@@ -349,8 +349,8 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
                 f64::INFINITY
             };
             let len = (half + 4.0).max(len_x.min(len_z));
-            let ux = libm::cos(theta);
-            let uz = libm::sin(theta);
+            let ux = js_cos(theta);
+            let uz = js_sin(theta);
             // Perpendicular, for the two runs.
             let px = -uz;
             let pz = ux;
@@ -507,8 +507,8 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
                     &mut nodes,
                     bounds,
                     min_sep,
-                    cx + libm::cos(a) * ring_r,
-                    cz + libm::sin(a) * ring_r * ((z1 - z0) / (x1 - x0)),
+                    cx + js_cos(a) * ring_r,
+                    cz + js_sin(a) * ring_r * ((z1 - z0) / (x1 - x0)),
                     true,
                 );
             }
@@ -523,8 +523,8 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
                     &mut nodes,
                     bounds,
                     min_sep,
-                    cx + libm::cos(a) * (x1 - x0) * 0.45,
-                    cz + libm::sin(a) * (z1 - z0) * 0.45,
+                    cx + js_cos(a) * (x1 - x0) * 0.45,
+                    cz + js_sin(a) * (z1 - z0) * 0.45,
                     true,
                 );
             }

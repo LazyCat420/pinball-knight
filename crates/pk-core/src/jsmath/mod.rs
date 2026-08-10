@@ -12,9 +12,31 @@
 //! which is exactly how it was found.
 //!
 //! Every ported call site that mirrors `Math.hypot` MUST use this, never
-//! `libm::hypot`. (`Math.sqrt`/`f64::sqrt` are both IEEE-correctly-rounded
-//! and need no twin; `Math.sin/cos/atan2` go through `libm`, which matched V8
-//! bit-for-bit on every fixture so far.)
+//! `libm::hypot`.
+//!
+//! ## Which primitive needs a twin — the answer is per-primitive
+//!
+//! There is no blanket "use libm" or "use std" rule, and this module exists
+//! because both of the obvious blanket rules are wrong somewhere. Measured
+//! against the runtime by whole-curve digest (`tests/jsmath_oracle.rs`):
+//!
+//! | fn | `libm` | std (platform) | what to call |
+//! |---|---|---|---|
+//! | `sqrt` | ✅ | ✅ | either — IEEE-exact, no twin |
+//! | `atan` `exp` `log` | ✅ | — | `libm` |
+//! | `pow` | ❌ 19,904/200,001 | ✅ | [`js_pow`] |
+//! | `hypot` | ❌ ~35% | ❌ | [`js_hypot`] |
+//! | `cos` `sin` | ❌ | ❌ | [`js_cos`] / [`js_sin`] |
+//!
+//! Each row was a separate measurement, and three of them were surprises. A
+//! spot check cannot produce this table: `pow` agrees with `libm` on exponent
+//! 0.5 and disagrees on 1.35, and `cos` disagrees on one input in roughly two.
+//! Sweep the whole curve, and sweep it before the port uses the primitive —
+//! every row here was found by a floor that came out structurally perfect with
+//! the wrong numbers in it.
+
+mod fdlibm;
+pub use fdlibm::{js_cos, js_sin};
 
 /// V8's `Math.hypot(a, b)`. Argument ORDER matters (the compensated loop is
 /// order-sensitive) — pass arguments exactly as the legacy call site does.

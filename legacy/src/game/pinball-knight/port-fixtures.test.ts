@@ -557,9 +557,18 @@ function powOracle() {
   // `Math.pow` was found by a divergence. `Math.cos` was found by the NEXT
   // divergence, one node in one ulp of x, three levels later — so the family is
   // swept here rather than waiting for each one to surface as a wrong floor.
-  // Ranges are chosen to cross the argument-reduction boundaries: small angles
-  // take the kernel directly, angles past π/4 go through rem_pio2, and large
-  // ones exercise the multi-word reduction where implementations differ most.
+  // Ranges are chosen to cross the argument-reduction boundaries, because sin
+  // and cos are three different functions wearing one name:
+  //
+  //   |x| ≤ π/4          the polynomial kernel, directly
+  //   |x| < 3π/4         the n = ±1 special case
+  //   |x| ≤ 2^20·(π/2)   ≈ 1.647e6 — iterative Cody–Waite reduction
+  //   above that         the multi-word 2/π table (`__kernel_rem_pio2`)
+  //
+  // ⚠️ The ±1e6 sweep stops just SHORT of that last boundary, so for a while
+  // this list said it covered the multi-word reduction and did not: 1e6 is
+  // inside the Cody–Waite range. The three big sweeps below are what actually
+  // reach the table, and they are cheap — leave them in.
   const unary = (name: string, f: (x: number) => number, from: number, to: number, n: number) => {
     let h = FNV_OFFSET;
     for (let k = 0; k <= n; k++) h = foldF64(h, f(from + ((to - from) * k) / n));
@@ -571,6 +580,14 @@ function powOracle() {
       unary("cos", Math.cos, -1e6, 1e6, 100000),
       unary("sin", Math.sin, 0, 20, 200000),
       unary("sin", Math.sin, -1e6, 1e6, 100000),
+      // Past 2^20·(π/2): the multi-word reduction, at three magnitudes so a
+      // table indexed off the exponent cannot pass by landing on one slice.
+      unary("cos", Math.cos, 1e8, 1.00000001e8, 100000),
+      unary("sin", Math.sin, 1e8, 1.00000001e8, 100000),
+      unary("cos", Math.cos, 1e15, 1.000000000001e15, 100000),
+      unary("sin", Math.sin, 1e15, 1.000000000001e15, 100000),
+      unary("cos", Math.cos, 1e300, 1.0000000001e300, 50000),
+      unary("sin", Math.sin, 1e300, 1.0000000001e300, 50000),
       unary("sqrt", Math.sqrt, 0, 1000, 100000),
       unary("exp", Math.exp, -20, 20, 100000),
       unary("log", Math.log, 1e-9, 1000, 100000),

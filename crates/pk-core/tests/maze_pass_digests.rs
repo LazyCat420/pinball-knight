@@ -637,7 +637,6 @@ fn modifier_str(m: ModifierId) -> &'static str {
 #[test]
 fn pass1_grow_track_replays_the_oracle() {
     let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
-    let mut diverged: Vec<(i32, u32, bool)> = Vec::new();
     for f in &c.floors {
         let head = format!("L{} seed {}", f.level, f.run_seed);
         let arch = archetype_for(f.level);
@@ -689,27 +688,27 @@ fn pass1_grow_track_replays_the_oracle() {
             "{head}: draws at the pass-1 boundary"
         );
 
-        // ── THE ONE GAP, NAMED ──────────────────────────────────────────────
+        // Nodes and edges are digested SEPARATELY so a failure says which half:
+        // nodes differ means the layout diverged, nodes match and edges differ
+        // means the layout is right and the solver is wrong.
         //
-        // The `hub` layout is the only one that calls `Math.cos`/`Math.sin` on
-        // an arbitrary angle, and V8's trig is a THIRD implementation: neither
-        // Rust's `libm` nor the platform's. Measured, `cos(0.1)` is
-        // 0x3fefd712f9a817c0 in the runtime and ...c1 in both Rust candidates.
-        // One node of L3's 44 lands one ulp away because of it.
-        //
-        // Blocked on `jsmath::js_cos`/`js_sin` (fdlibm kernels + reduction) —
-        // see the Incidents page. Until then these floors are checked for
-        // everything that IS settled, and the divergence is pinned NEGATIVELY:
-        // when the twin lands, this assertion fails and the branch gets deleted.
-        // A skipped floor would have gone on passing silently forever.
-        let nodes_ok =
-            digest_nodes(&graph.nodes) == want.graph_nodes.expect("pass 1 pins a node digest");
-        let edges_ok =
-            digest_edges(&graph.edges) == want.graph_edges.expect("pass 1 pins an edge digest");
-        if !(nodes_ok && edges_ok) {
-            diverged.push((f.level, f.run_seed, nodes_ok));
-            continue;
-        }
+        // This is where the trig gap used to live. Two floors of ten (L3 s1,
+        // L13 s1) put one node one ulp out of place, because the `hub` layout
+        // is the only one that takes `Math.cos`/`Math.sin` of an arbitrary
+        // angle and V8's trig is a third implementation — neither `libm`'s nor
+        // the platform's. `jsmath::js_cos`/`js_sin` closed it, and the whole
+        // corpus is bit-exact at this boundary now.
+        assert_eq!(
+            digest_nodes(&graph.nodes),
+            want.graph_nodes.expect("pass 1 pins a node digest"),
+            "{head}: node layout digest — the placement diverged"
+        );
+        assert_eq!(
+            digest_edges(&graph.edges),
+            want.graph_edges.expect("pass 1 pins an edge digest"),
+            "{head}: edge digest with the nodes matching — the SOLVER diverged \
+             (conductivities, the prune order, or the K-nearest sort)"
+        );
 
         // The pass's own contract, restated as an assertion rather than trusted:
         // a connected loopy core with no dangling spurs.
@@ -719,32 +718,17 @@ fn pass1_grow_track_replays_the_oracle() {
         );
     }
 
-    // ── THE ONE GAP, NAMED FLOOR BY FLOOR ───────────────────────────────────
+    // ── THE EXCLUSION LIST THAT USED TO LIVE HERE ───────────────────────────
     //
-    // V8's trig is a THIRD implementation: neither Rust's `libm` nor the
-    // platform's. Measured, `cos(0.1)` is 0x3fefd712f9a817c0 in the runtime and
-    // ...c1 in BOTH Rust candidates — they agree with each other and not with
-    // the oracle. `layout_nodes`' hub branch is the only place a maze angle is
-    // arbitrary, and one node of L3's 44 lands an ulp away because of it.
+    // Two floors were pinned by name — L3 s1 and L13 s1, blocked on the trig
+    // twins. It is worth recording why the list was BY NAME and not by layout,
+    // because the shape is what made it safe to carry: L3, L8 and L13 are all
+    // hub floors and only two of them diverged, so "exclude the hub layout"
+    // would have excused three floors that were already passing and stopped
+    // testing them. The list asserted EQUALITY, so it would have failed on a
+    // new divergence as loudly as on a fixed one — and what actually happened
+    // is that `js_cos`/`js_sin` emptied it and the equality assertion is what
+    // said so.
     //
-    // Listed floor by floor rather than by layout, because the difference only
-    // bites where it crosses a rounding boundary: L8 and L13 are hub floors too
-    // and they come out bit-exact. Listing the LAYOUT would have excused them
-    // as well and quietly stopped testing three floors that already pass.
-    //
-    // Blocked on `jsmath::js_cos`/`js_sin` (fdlibm kernels — V8 keeps the
-    // original Sun evaluation order where musl and glibc both took FreeBSD's
-    // rewrite). When they land, this set empties and the assertion below is
-    // what says so.
-    // TWO floors of ten. The other three hub floors (L8 s1, L13… no — L8 s1,
-    // L3 s424242, L8 s424242) come out bit-exact, which is the measurement that
-    // made "list the layout" the wrong shape for this exclusion.
-    let expected: &[(i32, u32)] = &[(3, 1), (13, 1)];
-    let actual: Vec<(i32, u32)> = diverged.iter().map(|&(l, s, _)| (l, s)).collect();
-    assert_eq!(
-        actual, expected,
-        "the set of trig-blocked floors changed. Shrunk? js_cos/js_sin landed — \
-         delete the entries. Grown? a NEW divergence, and it is not this one. \
-         (nodes_ok per floor: {diverged:?})"
-    );
+    // All ten floors now assert inline, above. Nothing is excluded here.
 }
