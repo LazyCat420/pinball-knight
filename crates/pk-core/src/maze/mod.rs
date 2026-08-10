@@ -33,6 +33,7 @@ pub mod modifiers;
 pub mod track_carve;
 pub mod track_floor;
 pub mod track_grow;
+pub mod track_launch;
 pub mod track_path;
 
 use crate::grid::{is_walkable, Grid};

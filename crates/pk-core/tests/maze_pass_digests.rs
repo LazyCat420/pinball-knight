@@ -1020,6 +1020,31 @@ fn pass4_plaza_replays_the_oracle() {
     replay_through(3);
 }
 
+/// Pass 5 of 23 — `launch-chute`. The plunger lane, and the first pass since
+/// `grow-track` that DRAWS.
+///
+/// That makes the draw count a live localiser again after three passes of
+/// silence: it is exactly one draw, the pick out of the candidate pool, so a
+/// mismatch means the pool came out a different size or the floor took a
+/// different branch — not that the carve is wrong.
+///
+/// The `extra` is the base and mouth coordinates, so a divergence names the
+/// chosen SITE before any digest is consulted. L3 s1 fits no chute and pins
+/// `null`, so the "a floor can legitimately have no plunger lane" branch is
+/// covered rather than assumed.
+///
+/// ⚠️ Sabotage-measured, and five of eleven defects survived — four of them
+/// TIE-BREAKS (both sort stabilities, the `CARDINALS` order, the scan order),
+/// because no two sites in this corpus score exactly equal. The fifth is a
+/// coverage hole with a number on it: the corpus's `perimeter_bias` values are
+/// 0.9/0.85/0.8/0.7/0.15, so the `>= 0.5` compliance threshold sits in an empty
+/// gap and which side `0.5` falls on is untested. Full table in
+/// `maze::track_launch`'s header.
+#[test]
+fn pass5_launch_chute_replays_the_oracle() {
+    replay_through(4);
+}
+
 /// Drive the REAL pipeline to boundary `k` and compare every digest and count
 /// the fixture pins there, on all ten floors.
 ///

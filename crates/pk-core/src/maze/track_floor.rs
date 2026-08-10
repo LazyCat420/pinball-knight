@@ -35,6 +35,7 @@
 use super::archetypes::TrackProfile;
 use super::track_carve::carve_chamber;
 use super::track_grow::{grow_track, GrowTrackOpts, TrackGraph};
+use super::track_launch::{carve_launch_chute, LaunchChute};
 use super::track_path::{build_track_path, TrackPath, TrackPathOpts};
 use super::{CountingRng, Extra, PassSnapshot, TrackMask};
 use crate::grid::Grid;
@@ -47,7 +48,7 @@ use crate::maze::track_carve::carve_track;
 /// A number rather than a comment because the replay test asserts against it:
 /// a pass that lands without being counted here, or a count raised without a
 /// pass, fails rather than silently changing what is under test.
-pub const PASSES_LANDED: usize = 4;
+pub const PASSES_LANDED: usize = 5;
 
 /// What the pipeline hands back. Grows a field at a time with the passes that
 /// author them — `start`/`stairs` at pass 7, `chute` at pass 5, and so on.
@@ -57,6 +58,10 @@ pub struct TrackFloor {
     pub graph: TrackGraph,
     pub path: TrackPath,
     pub mask: TrackMask,
+    /// The plunger lane, or `None` when no straight sealed run fitted. When
+    /// present, `start` IS `chute.base` — the floor opens parked at the closed
+    /// end, and firing runs the hallway before the maze begins.
+    pub chute: Option<LaunchChute>,
     /// Rules the generator could not satisfy and DELIBERATELY stood down on.
     ///
     /// Recorded rather than silently relaxed: constraints like "open at the
@@ -215,11 +220,45 @@ pub fn build_track_floor(
         });
     }
 
+    // ── 5. launch-chute ─────────────────────────────────────────────────────
+    //
+    // Carved HERE, between the circuit and the maze, for the same reason the
+    // plaza is: it must be part of the track by the time anything else looks at
+    // the grid. Carved after `grow_maze_around` it would bulldoze finished
+    // corridors; carved as decoration it would be a launch ritual with no lane
+    // behind it. The archetype's spawn-placement weight reaches the chute here —
+    // this call is what decides where the floor opens on 94% of floors.
+    // `prof.rules?.perimeterBias ?? DEFAULT_RULE_WEIGHTS.perimeterBias` — the
+    // profile carries only the keys it OVERRIDES, so the merge happens here.
+    let bias = prof.rules.resolve().perimeter_bias;
+    let chute = carve_launch_chute(&mut grid, &mut mask, rng, bias);
+    if let Some(p) = on_pass.as_mut() {
+        p(PassSnapshot {
+            pass: "launch-chute",
+            grid: &grid,
+            mask: Some(&mask),
+            draws: rng.draws(),
+            extra: vec![(
+                "chute",
+                match &chute {
+                    Some(c) => Extra::Ints(vec![
+                        i64::from(c.base.i),
+                        i64::from(c.base.j),
+                        i64::from(c.mouth.i),
+                        i64::from(c.mouth.j),
+                    ]),
+                    None => Extra::Null,
+                },
+            )],
+        });
+    }
+
     Some(TrackFloor {
         grid,
         graph,
         path,
         mask,
+        chute,
         relaxed,
     })
 }
