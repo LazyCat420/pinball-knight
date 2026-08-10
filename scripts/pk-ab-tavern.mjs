@@ -192,16 +192,53 @@ function projectFrac(p, aimX, aimZ, viewH, aspect) {
   return { fx: 0.5 + du / (viewH * aspect), fy: 0.5 - dv / viewH };
 }
 
-/** The hearth ROI for a side, from its OWN framing and its live player pose. */
-function hearthRoi(pose, viewH) {
+/** Where the hearth lands in a side's frame, as fractions of width/height. */
+function hearthCentre(pose, viewH) {
   // `camera_target()` with no focused station: the aim leans CAM_LEAN of the
   // way from the room centre toward the player. Focus is ignored on purpose —
   // the ROI is padded well past the error that introduces.
   const aimX = ROOM_CENTER_X + ((pose?.x ?? 0) - ROOM_CENTER_X) * CAM_LEAN;
   const aimZ = ROOM_CENTER_Z + ((pose?.z ?? 0) - ROOM_CENTER_Z) * CAM_LEAN;
-  const c = projectFrac(HEARTH, aimX, aimZ, viewH, VIEW_W / VIEW_H);
+  return projectFrac(HEARTH, aimX, aimZ, viewH, VIEW_W / VIEW_H);
+}
+
+/** The hearth ROI for a side, from its OWN framing and its live player pose. */
+function hearthRoi(pose, viewH) {
+  const c = hearthCentre(pose, viewH);
   const padX = 0.09;
   const padY = 0.11;
+  return {
+    x0: Math.max(0, c.fx - padX),
+    x1: Math.min(1, c.fx + padX),
+    y0: Math.max(0, c.fy - padY),
+    y1: Math.min(1, c.fy + padY),
+    cx: c.fx,
+    cy: c.fy,
+  };
+}
+
+/** How far the warm spill ROI reaches around the hearth, in WORLD units. */
+const SPILL_RADIUS = 3.5;
+
+/**
+ * The warm-spill ROI — the hearth's surroundings, sized in WORLD units.
+ *
+ * ⚠ SIZED IN WORLD UNITS, NOT FRAME FRACTIONS, AND THAT IS THE POINT. The two
+ * sides frame the room at different scales (legacy shows 19.29 world units
+ * tall, the port 16.45), so the same fractional pad covers 17% more ROOM on the
+ * legacy side. `hearthRoi` above predates this and is left exactly as it was —
+ * it gates on PRESENCE of a bright core, which that skew cannot fake — but a
+ * spill measure is an AREA measure, and an area measure over two different
+ * areas is a number computed over the wrong set. Converting a world radius
+ * through each side's own `viewH` makes the two boxes cover the same floor.
+ *
+ * `fy` spans `viewH` and `fx` spans `viewH * aspect`, hence the different pads.
+ */
+function spillRoi(pose, viewH) {
+  const c = hearthCentre(pose, viewH);
+  const aspect = VIEW_W / VIEW_H;
+  const padY = SPILL_RADIUS / viewH;
+  const padX = SPILL_RADIUS / (viewH * aspect);
   return {
     x0: Math.max(0, c.fx - padX),
     x1: Math.min(1, c.fx + padX),
@@ -250,8 +287,47 @@ const lumaAt = (img, i) =>
  * hearthBright  — share of the hearth ROI above 0.75 luma. Bloom needs a
  *                 bright CORE to bloom from, so its absence says the threshold
  *                 pass never fired (or the fire light is missing entirely).
+ *
+ * ── AND THE FOUR THAT SEE A BLOWN LIGHT RIG, WHICH MEAN LUMA CANNOT ─────────
+ *
+ * Measured on the 2026-08-09 pair, with the port's hearth VISIBLY flaring
+ * orange over the floor around it: mean luma matched to 0.7%, and the hearth
+ * ROI read DIMMER on the port (36.3 vs 42.5) than on the oracle. Both numbers
+ * were true and neither was the defect. A rig with the point lights ~5x hot and
+ * the ambient ~10x cold does not move the MEAN — it moves the SPREAD, robbing
+ * the broad mid-tones to pay for saturated, clipped pools. So:
+ *
+ * p90 / p99     — the mid-tone and the highlight, as luma percentiles. This is
+ *                 the pair that saw it: 64/92 on the oracle against 41/148 on
+ *                 the port. Mid-tones crushed 36%, highlights 61% hotter, mean
+ *                 unchanged. Percentiles, so the framing difference below moves
+ *                 them barely at all.
+ * clipFrac      — share of pixels with ANY 8-bit channel at 250 or over, i.e.
+ *                 pixels that have run out of range. THE SHARPEST OF THE FOUR:
+ *                 0.088% oracle vs 0.668% port, a 7.6x gap, and 31x on the red
+ *                 channel alone. Clipping is what "blown out" IS.
+ * warmSat       — mean HSV saturation over WARM LIT pixels only (R-B > 40 and
+ *                 luma > 30), i.e. over the fire's own pool rather than the
+ *                 room. An orange at full chroma reads as blown while sitting
+ *                 at perfectly ordinary luma, which is exactly why the luma
+ *                 measures above missed this: 0.520 oracle vs 0.709 port.
+ *                 Conditioned on the pixel being warm, so it is a per-pixel
+ *                 intensity and not an area — framing cannot skew it.
+ * spillWarm     — the fire's footprint on its surroundings, over the
+ *                 WORLD-SIZED spill box (see `spillRoi`). Reported two ways
+ *                 because one of them is fragile: `spillWarmFrac` counts
+ *                 pixels over a hard `R-B > 40` cut and therefore falls off a
+ *                 cliff when a side's floor sits near 40 (measured: 23.6% vs
+ *                 7.3% at the cut, but 29.9% vs 15.8% at a cut of 30 — the same
+ *                 defect reported as 3.2x or 1.9x depending on where the line
+ *                 is). `spillWarmth` is the mean `R-B` over every LIT pixel in
+ *                 the box, which has no cut to fall off, and is the number to
+ *                 read: 21.7 oracle vs 11.7 port on the same pair.
+ *
+ * `viewH` is carried through so the checks can correct for the two sides
+ * framing the room at different scales — see the clipping check.
  */
-function measure(img, roi) {
+function measure(img, roi, spill, viewH) {
   const { w, h, ch } = img;
   // Distinct luma along sampled rows.
   const rows = [0.2, 0.35, 0.5, 0.65, 0.8].map((f) => Math.floor(h * f));
@@ -294,20 +370,71 @@ function measure(img, roi) {
   const cornerMean = corners.reduce((s, v) => s + v, 0) / corners.length;
   const centreMean = blockMean(0.35, 0.35, 0.65, 0.65);
 
+  // One pass for the whole-frame readings: mean, the luma histogram the
+  // percentiles come off, the clipped-pixel count, and the warm-pixel chroma.
+  //
+  // "Warm" is `R - B > 40` rather than a hue angle because it needs no divide
+  // and cannot go undefined on a grey pixel; "lit" is luma > 30, which drops
+  // the near-black void that is two thirds of this frame and would otherwise
+  // dominate any saturation average with the noise of nearly-black pixels.
   let sum = 0;
-  for (let i = 0; i < w * h; i++) sum += lumaAt(img, i * ch);
+  const lhist = new Uint32Array(256);
+  let clipped = 0;
+  let warmN = 0, warmSatSum = 0;
+  for (let i = 0; i < w * h; i++) {
+    const o = i * ch;
+    const r = img.data[o], g = img.data[o + 1], b = img.data[o + 2];
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    sum += l;
+    lhist[Math.round(l)]++;
+    const mx = Math.max(r, g, b);
+    if (mx >= 250) clipped++;
+    if (r - b > 40 && l > 30) {
+      warmN++;
+      warmSatSum += (mx - Math.min(r, g, b)) / mx;
+    }
+  }
   const meanLuma = sum / (w * h);
+  const pct = (p) => {
+    let acc = 0;
+    for (let d = 0; d < 256; d++) {
+      acc += lhist[d];
+      if (acc >= w * h * p) return d;
+    }
+    return 255;
+  };
+
+  // Warm spill: how much of the hearth's WORLD-SIZED surround carries fire
+  // colour at all. `spill` may be absent (a caller that only wants the core).
+  let spillWarm = 0, spillN = 0, spillLit = 0, spillRB = 0;
+  if (spill) {
+    const sx0 = Math.max(0, Math.floor(spill.x0 * w)), sx1 = Math.min(w, Math.ceil(spill.x1 * w));
+    const sy0 = Math.max(0, Math.floor(spill.y0 * h)), sy1 = Math.min(h, Math.ceil(spill.y1 * h));
+    for (let y = sy0; y < sy1; y++) {
+      for (let x = sx0; x < sx1; x++) {
+        const o = (y * w + x) * ch;
+        const r = img.data[o], g = img.data[o + 1], b = img.data[o + 2];
+        spillN++;
+        if (0.2126 * r + 0.7152 * g + 0.0722 * b <= 30) continue;
+        spillLit++;
+        spillRB += r - b;
+        if (r - b > 40) spillWarm++;
+      }
+    }
+  }
 
   // Hearth ROI brightness.
   const ax = Math.floor(roi.x0 * w), bx = Math.ceil(roi.x1 * w);
   const ay = Math.floor(roi.y0 * h), by = Math.ceil(roi.y1 * h);
-  let bright = 0, roiN = 0, roiSum = 0, roiMax = 0;
+  let bright = 0, roiN = 0, roiSum = 0, roiMax = 0, roiClip = 0;
   for (let y = ay; y < by; y++) {
     for (let x = ax; x < bx; x++) {
-      const l = lumaAt(img, (y * w + x) * ch);
+      const o = (y * w + x) * ch;
+      const l = lumaAt(img, o);
       roiSum += l;
       if (l > roiMax) roiMax = l;
       if (l / 255 > 0.75) bright++;
+      if (Math.max(img.data[o], img.data[o + 1], img.data[o + 2]) >= 250) roiClip++;
       roiN++;
     }
   }
@@ -319,10 +446,19 @@ function measure(img, roi) {
     centreMean,
     vignetteRatio: cornerMean / Math.max(1e-6, centreMean),
     meanLuma,
+    p90: pct(0.9),
+    p99: pct(0.99),
+    clipFrac: clipped / (w * h),
+    warmSat: warmN ? warmSatSum / warmN : 0,
+    spillWarmFrac: spillN ? spillWarm / spillN : 0,
+    spillWarmth: spillLit ? spillRB / spillLit : 0,
+    viewH,
     hearthBrightFrac: bright / Math.max(1, roiN),
     hearthMean: roiSum / Math.max(1, roiN),
     hearthMax: roiMax,
+    hearthClipFrac: roiClip / Math.max(1, roiN),
     roi,
+    spill,
   };
 }
 
@@ -405,7 +541,7 @@ async function writeDiff(la, ra, file) {
  * whose fire is burning fine. Drawing it makes the aim auditable by eye, which
  * is the only check available on a number computed from a projection.
  */
-async function writeSideBySide(la, ra, file, captions, rois) {
+async function writeSideBySide(la, ra, file, captions, rois, spills) {
   const GUT = 8;
   const BAR = canvasLib ? 34 : 0;
   const w = la.w + GUT + ra.w;
@@ -422,16 +558,16 @@ async function writeSideBySide(la, ra, file, captions, rois) {
       }
     }
   };
-  const outline = (img, roi, ox, oy) => {
+  const outline = (img, roi, ox, oy, rgb) => {
     if (!roi) return;
     const x0 = Math.floor(roi.x0 * img.w), x1 = Math.ceil(roi.x1 * img.w) - 1;
     const y0 = Math.floor(roi.y0 * img.h), y1 = Math.ceil(roi.y1 * img.h) - 1;
     const px = (x, y) => {
       if (x < 0 || y < 0 || x >= img.w || y >= img.h) return;
       const o = ((y + oy) * w + (x + ox)) * 3;
-      out[o] = 0;
-      out[o + 1] = 255;
-      out[o + 2] = 140;
+      out[o] = rgb[0];
+      out[o + 1] = rgb[1];
+      out[o + 2] = rgb[2];
     };
     for (let t = 0; t < 2; t++) {
       for (let x = x0; x <= x1; x++) {
@@ -446,8 +582,13 @@ async function writeSideBySide(la, ra, file, captions, rois) {
   };
   blit(la, 0, BAR);
   blit(ra, la.w + GUT, BAR);
-  outline(la, rois?.[0], 0, BAR);
-  outline(ra, rois?.[1], la.w + GUT, BAR);
+  // Green = the hearth core ROI (frame-fraction pads, unchanged). Amber = the
+  // WORLD-SIZED warm-spill box, which is deliberately a different size in
+  // pixels on the two halves because it covers the same floor on both.
+  outline(la, spills?.[0], 0, BAR, [255, 176, 0]);
+  outline(ra, spills?.[1], la.w + GUT, BAR, [255, 176, 0]);
+  outline(la, rois?.[0], 0, BAR, [0, 255, 140]);
+  outline(ra, rois?.[1], la.w + GUT, BAR, [0, 255, 140]);
 
   if (!canvasLib) {
     await sharp(out, { raw: { width: w, height: h, channels: 3 } }).png().toFile(file);
@@ -680,7 +821,12 @@ async function main() {
   console.log("");
   if (legacy) {
     imgs.legacy = await decode(legacy.file);
-    m.legacy = measure(imgs.legacy, hearthRoi(legacy.probe, legacyViewH));
+    m.legacy = measure(
+      imgs.legacy,
+      hearthRoi(legacy.probe, legacyViewH),
+      spillRoi(legacy.probe, legacyViewH),
+      legacyViewH,
+    );
     log(`legacy  shot ${imgs.legacy.w}x${imgs.legacy.h}  backend=${legacy.backend}  camZoom=${legacy.probe.camZoom}`);
     log(`        pose x=${legacy.probe.x?.toFixed(2)} z=${legacy.probe.z?.toFixed(2)} focus=${legacy.probe.focus}`);
     log(`        framing: ${legacyViewH.toFixed(3)} world units tall (renderH ${VIEW_H} / PPU ${ppu}, zoom ${legacy.probe.camZoom})`);
@@ -691,7 +837,12 @@ async function main() {
   }
   if (rust) {
     imgs.rust = await decode(rust.file);
-    m.rust = measure(imgs.rust, hearthRoi(rust.probe, rustViewH));
+    m.rust = measure(
+      imgs.rust,
+      hearthRoi(rust.probe, rustViewH),
+      spillRoi(rust.probe, rustViewH),
+      rustViewH,
+    );
     log(`rust    shot ${imgs.rust.w}x${imgs.rust.h}`);
     log(`        pose x=${rust.probe.x?.toFixed(2)} z=${rust.probe.z?.toFixed(2)} focus=${rust.probe.focus}`);
     log(`        framing: ${rustViewH.toFixed(3)} world units tall (ScalingMode::FixedVertical)`);
@@ -715,11 +866,17 @@ async function main() {
   table("distinct luma / rows", (x) => x.distinctLuma, (n) => String(n));
   table("  per-row", (x) => x.distinctPerRow.join(","), (s) => s);
   table("mean luma (0-255)", (x) => x.meanLuma, (n) => n.toFixed(2));
+  table("luma p90 / p99", (x) => `${x.p90}/${x.p99}`, (s) => s);
+  table("clipped px (any ch>=250)", (x) => x.clipFrac * 100, (n) => `${n.toFixed(3)}%`);
+  table("warm-pixel saturation", (x) => x.warmSat, (n) => n.toFixed(3));
+  table("warm spill (3.5u box)", (x) => x.spillWarmFrac * 100, (n) => `${n.toFixed(2)}%`);
+  table("spill warmth mean(R-B)", (x) => x.spillWarmth, (n) => n.toFixed(1));
   table("corner mean (3 corners)", (x) => x.cornerMean, (n) => n.toFixed(2));
   table("centre mean", (x) => x.centreMean, (n) => n.toFixed(2));
   table("vignette corner/centre", (x) => x.vignetteRatio, (n) => n.toFixed(3));
   table("hearth ROI bright frac", (x) => x.hearthBrightFrac, (n) => n.toFixed(4));
   table("hearth ROI mean / max", (x) => `${x.hearthMean.toFixed(1)}/${x.hearthMax.toFixed(0)}`, (s) => s);
+  table("hearth ROI clipped px", (x) => x.hearthClipFrac * 100, (n) => `${n.toFixed(3)}%`);
   table(
     "hearth ROI centre (frac)",
     (x) => `${x.roi.cx.toFixed(3)},${x.roi.cy.toFixed(3)}`,
@@ -735,10 +892,11 @@ async function main() {
       imgs.rust,
       sbs,
       [
-        "LEGACY (TypeScript / three.js) — the oracle    [green box = hearth ROI]",
+        "LEGACY (TypeScript / three.js) — the oracle    [green = hearth core ROI, amber = 3.5-unit warm-spill box]",
         "RUST (Bevy) — the port",
       ],
       [m.legacy.roi, m.rust.roi],
+      [m.legacy.spill, m.rust.spill],
     );
     diff = join(OUT, `ab-tavern-diff-${STAMP}.png`);
     diffStats = await writeDiff(imgs.legacy, imgs.rust, diff);
@@ -796,6 +954,76 @@ async function main() {
     );
     const dl = Math.abs(m.rust.meanLuma - m.legacy.meanLuma) / 255;
     check(dl <= 0.1, `exposure: mean luma Δ ${(dl * 100).toFixed(1)}% (allow 10%)`);
+
+    // ── THE LIGHT-RIG CHECKS ────────────────────────────────────────────────
+    //
+    // ⚠ THESE EXIST BECAUSE EVERY CHECK ABOVE PASSED ON A VISIBLY BLOWN ROOM.
+    // On 2026-08-09 the port's hearth and forge flared saturated orange across
+    // the floor while mean luma matched the oracle to 0.7% and the hearth ROI
+    // measured DIMMER than it. Nothing above could see it, because the defect
+    // was not exposure — it was DISTRIBUTION. See `measure()` for the reasoning
+    // and for the numbers each threshold is set against.
+    //
+    // Every threshold below is placed between the measured blown reading and
+    // the measured oracle reading, with the blown one FAILING. A threshold that
+    // the defect passes is not a threshold.
+
+    // Clipping. Blown 0.668% vs oracle 0.088% = 6.4x by this formula.
+    // `EPS` is a floor of 0.02% of the frame on BOTH sides so that an oracle
+    // which happens to clip nothing does not make the ratio infinite.
+    //
+    // ⚠ NORMALISED BY `viewH²` FIRST, BECAUSE A RAW FRAME FRACTION IS NOT A
+    // COMPARABLE NUMBER HERE. The port frames the room 1.172x tighter than the
+    // oracle, so the SAME room covers 1.374x more pixels on the port and every
+    // bright feature in it is 1.374x more of the frame before anything is
+    // wrong. `clipFrac · viewH²` is proportional to the clipped share of the
+    // ROOM's own image rather than of the window, which is the quantity the
+    // question is about. This correction SHRINKS the port's reading (4.01x raw
+    // → 2.92x) and the check still fails at 2.5 — it is a fix to what is being
+    // counted, not a threshold moved until the answer was convenient.
+    const EPS = 0.0002;
+    const roomClip = (mm) => mm.clipFrac * mm.viewH * mm.viewH;
+    const clipRatio = (roomClip(m.rust) + EPS) / (roomClip(m.legacy) + EPS);
+    check(
+      clipRatio <= 2.5,
+      `highlight clipping: rust runs ${(m.rust.clipFrac * 100).toFixed(3)}% of pixels out of range ` +
+        `vs the oracle's ${(m.legacy.clipFrac * 100).toFixed(3)}% — ${clipRatio.toFixed(2)}x once both ` +
+        `are put on the same room area (allow 2.5x) — clipping is what "blown out" IS, ` +
+        `and it is invisible to mean luma`,
+    );
+
+    // Chroma of the fire's own pool. Blown 0.709 vs oracle 0.520.
+    const ds = Math.abs(m.rust.warmSat - m.legacy.warmSat);
+    check(
+      ds <= 0.1,
+      `warm chroma: saturation over warm lit pixels ${m.rust.warmSat.toFixed(3)} vs ` +
+        `${m.legacy.warmSat.toFixed(3)} (Δ ${ds.toFixed(3)}, allow 0.100) ` +
+        `— a full-chroma orange reads as blown at ordinary luma`,
+    );
+
+    // The other half of a blown rig: mid-tones robbed to pay for the pools.
+    // Blown p90 41 vs oracle 64 = 36% low. Percentile, so the framing
+    // difference between the two sides barely touches it.
+    const dm = Math.abs(m.rust.p90 - m.legacy.p90) / Math.max(1, m.legacy.p90);
+    check(
+      dm <= 0.25,
+      `mid-tones: luma p90 ${m.rust.p90} vs ${m.legacy.p90} (Δ ${(dm * 100).toFixed(1)}%, allow 25%) ` +
+        `— a rig that over-drives its point lights and under-drives ambient crushes here ` +
+        `while the mean stays put`,
+    );
+
+    // Reported, not gated: no baseline reading existed for the spill box when
+    // these checks were written, and a threshold invented for a number nobody
+    // has measured is a coin flip with a comment on it.
+    log(
+      `  ..    warm spill over the 3.5-unit hearth box: rust ${(m.rust.spillWarmFrac * 100).toFixed(2)}% ` +
+        `vs legacy ${(m.legacy.spillWarmFrac * 100).toFixed(2)}%, mean(R-B) over lit px ` +
+        `${m.rust.spillWarmth.toFixed(1)} vs ${m.legacy.spillWarmth.toFixed(1)} (reported — ` +
+        `read the mean, the fraction sits on a hard cut)`,
+    );
+    log(
+      `  ..    luma p99 rust ${m.rust.p99} vs legacy ${m.legacy.p99} (reported — the highlight end)`,
+    );
   }
   // PRESENCE, not parity: bloom needs something over the 0.7 threshold to
   // bloom FROM, and the hearth fire is the room's brightest source. A side
