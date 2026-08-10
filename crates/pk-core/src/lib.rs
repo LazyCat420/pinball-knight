@@ -43,6 +43,7 @@ pub mod gambler;
 pub mod grid;
 pub mod intro;
 pub mod jsmath;
+pub mod jssort;
 pub mod maze;
 pub mod pinball;
 pub mod rail;

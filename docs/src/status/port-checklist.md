@@ -185,9 +185,9 @@ track pipeline first and the fallback last — and read
       constants, no platform call) and `tan`/`atan`/`atan2` go through the
       `libm` crate, which is the same pure Rust everywhere.
 - [~] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
-      against `PASS_ORDER`. **3 of 23 land, all ten corpus floors bit-exact:**
-      ~~grow-track~~ → ~~track-path~~ → ~~carve-track~~ → plaza →
-      launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →
+      against `PASS_ORDER`. **6 of 23 land, all ten corpus floors bit-exact:**
+      ~~grow-track~~ → ~~track-path~~ → ~~carve-track~~ → ~~plaza~~ →
+      ~~launch-chute~~ → ~~grow-maze~~ → endpoints-early → repair-1 → plan-doorways →
       publish-arcs → orbit-island → arc-sweeps → repair-2 → endpoints-final →
       boss-chamber → artery-banks → reseal-chute → carve-doorways →
       funnels-relays → compact-fixed-point → stairs → arc-rails → done.
@@ -199,10 +199,14 @@ track pipeline first and the fallback last — and read
       player sees; `buildTrackFloor` declined 0 times in 400. Port last.)
       **`build.ts` is NOT here** — 1,834 lines of three.js renderer, P3.
 - [ ] `maze/archetypes.ts`, `assembly*.ts`, `prefabs.ts` (+ biome tables).
-- [~] Track systems: `track-grow` ✅, `track-carve` (carve + chamber ✅;
-      `growMazeAround`/`connectAll`/`publishArcs`/`widenMazeCorridors` land with
-      passes 6, 8 and 10), `track-launch`, `arc-sweeps`, `arc-lanes`,
-      `conic-fit` (authors the P1 arc features).
+- [~] Track systems: `track-grow` ✅, `track-carve` ✅ except `publishArcs`
+      (pass 10), `track-launch` ✅ except `resealChute`'s wiring (pass 17),
+      `arc-sweeps`, `arc-lanes`, `conic-fit` (authors the P1 arc features).
+- [x] `jssort::js_sort_by` — V8's `Array.prototype.sort` as a DRAW SOURCE.
+      The maze's direction shuffle spends one draw per comparison and V8 makes
+      4 or 5 for four elements, so the sort is part of the random stream. All 24
+      four-element traces pinned; verified n=2..7 against node and REFUSES n>=8,
+      where TimSort's run detection changes the count.
 - [ ] `doorways`, `flow-loops`, `circuit`, `relay-chambers`, `lamp-puzzle`.
 - [ ] `decorate.ts`, `surface-paint.ts` (paints P1 surfaces).
 - [ ] `floor-rules/metrics/density/seed`.

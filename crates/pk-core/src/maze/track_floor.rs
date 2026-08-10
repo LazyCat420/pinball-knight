@@ -40,7 +40,7 @@ use super::track_path::{build_track_path, TrackPath, TrackPathOpts};
 use super::{CountingRng, Extra, PassSnapshot, TrackMask};
 use crate::grid::Grid;
 use crate::maze::archetypes::track_node_counts;
-use crate::maze::track_carve::carve_track;
+use crate::maze::track_carve::{carve_track, grow_maze_around};
 
 /// How many of `PASS_ORDER`'s 23 boundaries [`build_track_floor`] currently
 /// reaches. Bumped in the same commit as the pass it counts.
@@ -48,7 +48,7 @@ use crate::maze::track_carve::carve_track;
 /// A number rather than a comment because the replay test asserts against it:
 /// a pass that lands without being counted here, or a count raised without a
 /// pass, fails rather than silently changing what is under test.
-pub const PASSES_LANDED: usize = 5;
+pub const PASSES_LANDED: usize = 6;
 
 /// What the pipeline hands back. Grows a field at a time with the passes that
 /// author them — `start`/`stairs` at pass 7, `chute` at pass 5, and so on.
@@ -250,6 +250,35 @@ pub fn build_track_floor(
                     None => Extra::Null,
                 },
             )],
+        });
+    }
+
+    // ── 6. grow-maze ────────────────────────────────────────────────────────
+    //
+    // Everything the track did not claim, plus the on-ramps, plus the widening
+    // pass and the connectivity repair behind it. This is where most of the
+    // floor's rng goes.
+    grow_maze_around(
+        &mut grid,
+        &mask,
+        rng,
+        // `margin` has no override in `authorFloor`; the legacy default is 1.
+        1,
+        opts.link_chance.unwrap_or(prof.link_chance),
+        // ⚠️ `density` is `opts.density` with NO profile fallback — the TS passes
+        // `density: opts.density`, which is `undefined` on every shipping call,
+        // so `growMazeAround`'s own `?? 0.62` supplies it. Reading the profile
+        // here would be a different floor.
+        opts.density.unwrap_or(0.62),
+        opts.fill.unwrap_or(prof.fill),
+    );
+    if let Some(p) = on_pass.as_mut() {
+        p(PassSnapshot {
+            pass: "grow-maze",
+            grid: &grid,
+            mask: Some(&mask),
+            draws: rng.draws(),
+            extra: Vec::new(),
         });
     }
 

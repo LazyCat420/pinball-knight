@@ -49,7 +49,7 @@ use pk_core::maze::track_floor::{build_track_floor, BuildTrackFloorOpts, PASSES_
 use pk_core::maze::track_grow::{circuit_rank, digest_edges, digest_nodes, TrackGraph};
 use pk_core::maze::track_path::{digest_legs, TrackPath, TRACK_RADII};
 use pk_core::maze::{
-    digest, floor_rng, floor_seed, record, Extra, PassRecord, PassSnapshot, PASS_ORDER,
+    digest, floor_rng, floor_seed, record, CountingRng, Extra, PassRecord, PassSnapshot, PASS_ORDER,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -174,6 +174,33 @@ struct Pass {
     extra: serde_json::Value,
 }
 
+/// The two pre-track draws `authorFloor` makes, and the `density` the second
+/// one produces.
+///
+/// ⚠️ `windiness` is NOT discarded. `spawn/floor-authoring.ts:159` passes
+/// `density: Math.max(0.35, Math.min(0.85, windiness))` into `buildTrackFloor`,
+/// where it sets how often the growing-tree picks newest-first rather than at
+/// random — which changes how many draws each iteration spends. Treating the
+/// draw as bookkeeping and letting `growMazeAround`'s own `?? 0.62` default
+/// apply cost 548 extra draws on L1 s1 with the walkable count only 2 tiles out:
+/// a floor that looks almost right and shares no random stream with the oracle.
+///
+/// The fixture pins `density` per floor, so the derivation is asserted rather
+/// than trusted.
+fn pre_track_draws(f: &Floor) -> (CountingRng, f64) {
+    let arch = archetype_for(f.level);
+    let mut rng = floor_rng(f.run_seed, f.level);
+    roll_modifier(f.level, &mut rng);
+    let windiness = windiness_for(f.level, arch, &mut rng);
+    let density = windiness.clamp(0.35, 0.85);
+    assert_eq!(
+        density, f.density,
+        "L{} seed {}: density derived from windiness disagrees with the oracle's",
+        f.level, f.run_seed
+    );
+    (rng, density)
+}
+
 /// Run a corpus floor through the SHIPPING pipeline and hand back the two
 /// products a [`PassRecord`] cannot carry.
 ///
@@ -185,18 +212,14 @@ struct Pass {
 /// the pipeline sitting in a test file.
 fn run_floor(f: &Floor) -> (TrackGraph, TrackPath) {
     let arch = archetype_for(f.level);
-    let mut rng = floor_rng(f.run_seed, f.level);
-    // The two pre-track draws `authorFloor` makes before the pipeline is
-    // entered. Not passes, never probed, but every draw count downstream is
-    // offset by them.
-    roll_modifier(f.level, &mut rng);
-    let _windiness = windiness_for(f.level, arch, &mut rng);
+    let (mut rng, density) = pre_track_draws(f);
     let floor = build_track_floor(
         f.cells_w,
         f.cells_h,
         &mut rng,
         &BuildTrackFloorOpts {
             profile: Some(&arch.track),
+            density: Some(density),
             ..Default::default()
         },
         None,
@@ -1045,6 +1068,25 @@ fn pass5_launch_chute_replays_the_oracle() {
     replay_through(4);
 }
 
+/// Pass 6 of 23 — `grow-maze`. Where the floor's rng budget actually goes.
+///
+/// Three draw sources interleave into one stream here: the growing-tree pick,
+/// the direction shuffle, and the per-wall on-ramp roll — and then
+/// `widen_maze_corridors` adds a fourth. So the draw count is a strong
+/// localiser at this boundary in a way it has not been since pass 1: it is in
+/// the thousands, and it is the FIRST field `assert_record` compares after the
+/// counts.
+///
+/// ⚠️ The shuffle is `[...dirs].sort(() => rng() - 0.5)`, the classic broken
+/// shuffle, and here it is the oracle rather than a bug: every comparator call
+/// spends a draw, and V8 makes FOUR or FIVE of them for a 4-element array
+/// depending on the results. `crate::jssort` reproduces V8's binary insertion
+/// sort trace-for-trace; anything else desynchronises the stream on most calls.
+#[test]
+fn pass6_grow_maze_replays_the_oracle() {
+    replay_through(5);
+}
+
 /// Drive the REAL pipeline to boundary `k` and compare every digest and count
 /// the fixture pins there, on all ten floors.
 ///
@@ -1067,12 +1109,7 @@ fn replay_through(k: usize) {
         let arch = archetype_for(f.level);
 
         let mut seen: Vec<PassRecord> = Vec::new();
-        let mut rng = floor_rng(f.run_seed, f.level);
-        // The two pre-track draws `authorFloor` makes before the pipeline is
-        // entered. They are not passes and the probe never sees them, but every
-        // draw count downstream is offset by them.
-        roll_modifier(f.level, &mut rng);
-        let _windiness = windiness_for(f.level, arch, &mut rng);
+        let (mut rng, density) = pre_track_draws(f);
 
         let mut probe = |snap: PassSnapshot<'_>| seen.push(record(&snap));
         build_track_floor(
@@ -1081,6 +1118,7 @@ fn replay_through(k: usize) {
             &mut rng,
             &BuildTrackFloorOpts {
                 profile: Some(&arch.track),
+                density: Some(density),
                 ..Default::default()
             },
             Some(&mut probe),

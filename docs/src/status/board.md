@@ -5,6 +5,38 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — P2 passes 5 and 6, and the two things that make `grow-maze`
+  the hardest pass in the pipeline.** 6 of 23 land, all ten corpus floors
+  bit-exact.
+  - **`Array.prototype.sort` is an RNG SOURCE here.** `growMazeAround` shuffles
+    its four directions with `[...dirs].sort(() => rng() - 0.5)` — the classic
+    broken shuffle — and every comparator call spends a draw. Measured against
+    node: V8 makes **4 comparisons for eight of the 24 outcomes and 5 for the
+    other sixteen**, so the count is data, not overhead. `pk_core::jssort`
+    reproduces V8's binary insertion sort trace-for-trace (all 24 traces pinned,
+    argument order included). ⚠️ The model was swept across lengths and **breaks
+    at eight** — TimSort's run detection takes over, costing 7 comparisons where
+    binary insertion costs 17 — so `js_sort_by` PANICS above 7 rather than
+    returning a plausible order with the wrong draw count behind it.
+  - **`density` is not a default, it is the windiness draw.** Pass 6 came out
+    548 draws long on L1 s1 with the walkable count only 2 tiles out — a floor
+    that looks almost right and shares no random stream with the oracle. Cause:
+    `spawn/floor-authoring.ts:159` passes
+    `density: Math.max(0.35, Math.min(0.85, windiness))` into `buildTrackFloor`,
+    and the port was treating the windiness draw as bookkeeping and letting
+    `growMazeAround`'s own `?? 0.62` apply. The harness now derives it and
+    asserts it against the `density` the fixture pins per floor.
+  - **The draw count is what found it**, in one read. Counts were within 2 and
+    every digest was wrong; draws were 5657 against 5109. That is the localiser
+    working exactly as the harness's header says it should, after three passes
+    (2–4) where it was silent by construction.
+  - Pass 5 `launch-chute` sabotage table and its two coverage holes are in the
+    commit and in `maze::track_launch`'s header: four of eleven defects survive
+    as TIE-BREAKS (no two sites in this corpus score exactly equal, so both sort
+    stabilities and both scan orders are unverified), and the corpus's
+    `perimeterBias` values leave the `>= 0.5` compliance threshold in an empty
+    gap between 0.15 and 0.7.
+
 - **2026-08-10 — P2 pass 3 `carve-track`: 10 of 10 bit-exact, and a boundary
   that gates structure and not arithmetic.** `pk_core::maze::track_carve` — the
   first pass that writes a tile. Legs and fillets swept as discs; the
