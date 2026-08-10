@@ -185,10 +185,10 @@ track pipeline first and the fallback last — and read
       constants, no platform call) and `tan`/`atan`/`atan2` go through the
       `libm` crate, which is the same pure Rust everywhere.
 - [~] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
-      against `PASS_ORDER`. **8 of 23 land, all ten corpus floors bit-exact:**
+      against `PASS_ORDER`. **9 of 23 land, all ten corpus floors bit-exact:**
       ~~grow-track~~ → ~~track-path~~ → ~~carve-track~~ → ~~plaza~~ →
       ~~launch-chute~~ → ~~grow-maze~~ → ~~endpoints-early~~ → ~~repair-1~~ →
-      plan-doorways →
+      ~~plan-doorways~~ →
       publish-arcs → orbit-island → arc-sweeps → repair-2 → endpoints-final →
       boss-chamber → artery-banks → reseal-chute → carve-doorways →
       funnels-relays → compact-fixed-point → stairs → arc-rails → done.
@@ -201,6 +201,30 @@ track pipeline first and the fallback last — and read
       candidates in the ten-floor corpus score exactly equal, so **every
       tie-break and scan order in the generator is unverified** — three
       consecutive passes have reported it.
+- [x] **THE GAME STANDS ON IT — `--real-floor`** (`pk_core::maze::floor_spec` +
+      `pk-game/src/real_floor.rs`). `setup_dungeon` booted `demo_floor(7)`, a
+      25x25 pillar arena, on every descent; behind
+      `--real-floor` / `?real-floor=1` / `PK_REAL_FLOOR=1` it now boots the nine
+      landed passes. `derive_floor_spec(level, run_seed)` is the ONE derivation
+      of the pre-track stream — `maze_pass_digests.rs` stopped keeping its own
+      copy and calls it, with the hand-written stream retained in one test as a
+      differential second opinion.
+      Verified: 12 Rust integration tests (`real_floor_integration.rs`), 9 shell
+      unit tests, and `node scripts/pk-check.mjs --real-floor` in real host
+      Chrome — 20 gates, tile digest matching the LEGACY corpus through the
+      browser, the knight spawning on the derived start tile, and a scripted
+      collision replaying an analytically derived clamp (stopped at z=2.1999
+      against a 2.2 wall face). `assets/fixtures/real-floor-l3s1-p9.json` pins
+      it; nine of its fields are cross-checked against `maze-pass-digests.json`
+      so a re-export cannot launder a regression.
+      ⚠️ What it deliberately is NOT: there is no `T_STAIRS` (pass 21) and the
+      exit is the PROVISIONAL pass-7 pick that `endpoints-final` re-picks — it
+      is a marker entity and the on-screen banner says "provisional". No silent
+      fallback: a refused request paints a red card and builds nothing, which
+      the browser gate drives with `?level=banana`.
+      ⚠️ Two defects only the SCREENSHOT found, both green on every automated
+      gate: the banner drew on top of the frame-time readout, and `x` in
+      `87x61` was `U+00D7`, which `default_font` renders as a tofu box.
 - [x] `maze/track-socket.ts` — the plumbing repair, gated at `repair-1`. Ported:
       `uncarveDeadEnds`, `removeWallStubs`, `healRoadTerminations`, `nearSealed`,
       `findRoadTerminations`. NOT ported and deliberately so: `socketAt` /
@@ -402,6 +426,8 @@ co-op multiplayer.
 | JS math twins: `hypot`, `pow`, `cos`, `sin`, `exp`, `log` | `pk-core/src/jsmath/` | whole-curve digests from real node — 4 pow sweeps + 10 trig ranges crossing all four reduction branches + 13 exp/log ranges, with the rejected candidates pinned as still-wrong PER RANGE (blanket assertions no longer hold: `libm` matches exactly on five of them) |
 | JS math CHOICES that needed no twin: `tan`, `atan2` (both `libm`) | `tests/jsmath_oracle.rs` | 4 `tan` sweeps + 2 `atan2` lattices from real node, with std pinned as still-wrong per range — a measured choice, not an assumed one |
 | Maze pass 1 `grow-track` (physarum circuit) | `pk-core/src/maze/track_grow.rs` | 10/10 corpus floors bit-exact — node + edge digests, counts, cumulative rng draws |
+| Maze passes 3-9 `carve-track`…`plan-doorways` | `pk-core/src/maze/{track_carve,track_launch,track_grow,track_socket,doorways}.rs` | 10/10 corpus floors bit-exact at every boundary — 7 digests + 6 counts + cumulative draws, plus `digest_sites` added to the exporter because pass 9 mutates nothing |
+| Generated floor booted in the game (`--real-floor`) | `pk-core/src/maze/floor_spec.rs`, `pk-game/src/real_floor.rs` | 12 integration + 9 unit tests + 20 host-Chrome gates; browser-side tile digest equals the legacy oracle's; input-replayed wall probe stops at the analytic clamp; refusal path driven |
 | Maze pass 2 `track-path` (rideable geometry) | `pk-core/src/maze/track_path.rs` | 10/10 corpus floors bit-exact — leg digest, fillet digest, `arcHalf`, leg count, draws (all three digests added to the exporter for it) |
 | Tile grid | `pk-core/src/grid.rs` | ported cases |
 | Square-wall collision (sweep, sub-step, surfaces, wall contact) | `pk-core/src/collide.rs` | 8 ported legacy cases + movement-trace fixture |

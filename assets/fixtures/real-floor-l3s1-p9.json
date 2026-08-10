@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "producer": "crates/pk-core/examples/real_floor_fixture.rs",
+  "producerCommit": "2905bfb11d97ad76318b37cb5c8ece88150b6252",
+  "pass": "plan-doorways",
+  "generatorVersion": 9,
+  "level": 3,
+  "runSeed": 1,
+
+  "floorSeed": 3668340010,
+  "cellsW": 43,
+  "cellsH": 30,
+  "w": 87,
+  "h": 61,
+  "density": 0.48627368290908635,
+  "draws": 3978,
+  "tileDigest": 2154690272,
+  "walkableTiles": 3482,
+  "start": [75, 32],
+  "provisionalExit": [17, 34],
+
+  "archetype": "greathall",
+  "modifier": "Collapsing",
+  "maskLane": 3685098555,
+  "maskSealed": 1561457328,
+  "maskDist": 229363910,
+  "planSites": 10,
+  "planGuard": 30,
+
+  "startWorld": [32, 2],
+  "provisionalExitWorld": [-26, 4],
+  "pathDistance": 80,
+  "firstPathStep": [0, -1],
+  "gridState": {
+    "w": 87,
+    "h": 61,
+    "tiles": 2154690272,
+    "shapes": 1561457328,
+    "arcs": 1268118805,
+    "arcIdx": 3693834312,
+    "surfaces": 1268118805
+  },
+  "wallProbe": {
+    "from": [32, 2],
+    "input": [0, 1],
+    "ticks": 11,
+    "wallTile": [75, 33],
+    "expectedBlockedAxis": "z",
+    "maxAllowedTravel": 2.2
+  }
+}

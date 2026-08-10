@@ -226,3 +226,161 @@ pub fn digest_sites(sites: &[crate::maze::doorways::DoorwaySite]) -> u32 {
     }
     h.count(sites.len()).finish()
 }
+
+// ── THE WHOLE GRID, FOR THE RUNTIME RATHER THAN FOR THE ORACLE ───────────────
+
+/// Every field of a [`Grid`](crate::grid::Grid), digested.
+///
+/// The pass digests above answer "did the generator diverge from the oracle".
+/// This one answers a different question the shell needs: "is the grid the sim
+/// is stepping still the grid the floor authored". A generated floor is
+/// installed by CLONING it into `SimState`, and from that moment there are two
+/// arrays that are supposed to stay equal forever — the sim only ever reads
+/// terrain, it never writes it. "Supposed to" is not a guarantee, and a single
+/// `set_tile` added to a future pinball part would desynchronise the collider
+/// from the renderer with no symptom until a wall stopped being where it looks.
+///
+/// ## Why all SEVEN fields and not the three that matter
+///
+/// `w`, `h`, `t`, `shapes`, `surfaces`, `arcs`, `arc_idx` is the complete field
+/// list of `Grid` — checked against the struct by
+/// `grid_state_digest_covers_every_field_of_grid`. A digest over "the fields
+/// collision reads" would be a judgement call that goes stale the first time
+/// something new is read, and this costs one pass over ~5,300 tiles at floor
+/// setup.
+///
+/// ## Absent is not empty and not zero
+///
+/// `surfaces` and `arc_idx` are `Option`. An absent array digests as the EMPTY
+/// one, which cannot collide with a present array on any real floor: the length
+/// fold makes `digest_bytes(&[])` unequal to the digest of any `w * h > 0`
+/// array, and a grid with no tiles is not a floor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridStateDigest {
+    pub w: i32,
+    pub h: i32,
+    pub tiles: u32,
+    pub shapes: u32,
+    pub arcs: u32,
+    pub arc_idx: u32,
+    pub surfaces: u32,
+}
+
+pub fn digest_grid_state(g: &crate::grid::Grid) -> GridStateDigest {
+    GridStateDigest {
+        w: g.w,
+        h: g.h,
+        tiles: digest_bytes(&g.t),
+        shapes: digest_bytes(&g.shapes),
+        arcs: digest_arcs(&g.arcs),
+        arc_idx: g
+            .arc_idx
+            .as_deref()
+            .map_or_else(|| digest_i16(&[]), digest_i16),
+        surfaces: g
+            .surfaces
+            .as_deref()
+            .map_or_else(|| digest_bytes(&[]), digest_bytes),
+    }
+}
+
+#[cfg(test)]
+mod grid_state_tests {
+    use super::*;
+    use crate::grid::{ensure_arcs, set_shape, set_surface, set_tile, Grid, T_FLOOR};
+    use crate::tile_shape::{ArcFeature, SHAPE_SLANT_NE};
+
+    fn floor_ish() -> Grid {
+        let mut g = Grid::solid(9, 7);
+        for j in 1..6 {
+            for i in 1..8 {
+                set_tile(&mut g, i, j, T_FLOOR);
+            }
+        }
+        g
+    }
+
+    /// ONE MUTATION PER FIELD, and each must move its OWN digest field.
+    ///
+    /// A digest that only folded `t` would pass a test that only changed tiles,
+    /// which is the shape of the mistake this whole module exists to avoid. So
+    /// every field is perturbed separately and the assertion names it.
+    #[test]
+    fn every_field_of_the_grid_moves_its_own_digest() {
+        let base = floor_ish();
+        let d0 = digest_grid_state(&base);
+        assert_eq!(d0, digest_grid_state(&base.clone()), "a clone must agree");
+
+        let mut g = base.clone();
+        set_tile(&mut g, 4, 3, crate::grid::T_WALL);
+        assert_ne!(digest_grid_state(&g).tiles, d0.tiles, "t");
+
+        let mut g = base.clone();
+        set_shape(&mut g, 0, 0, SHAPE_SLANT_NE);
+        assert_ne!(digest_grid_state(&g).shapes, d0.shapes, "shapes");
+
+        let mut g = base.clone();
+        set_surface(&mut g, 4, 3, 2);
+        assert_ne!(digest_grid_state(&g).surfaces, d0.surfaces, "surfaces");
+
+        let mut g = base.clone();
+        g.arcs.push(ArcFeature {
+            cx: 1.0,
+            cz: 2.0,
+            r: 3.0,
+            ..Default::default()
+        });
+        assert_ne!(digest_grid_state(&g).arcs, d0.arcs, "arcs");
+
+        let mut g = base.clone();
+        ensure_arcs(&mut g);
+        assert_ne!(
+            digest_grid_state(&g).arc_idx,
+            d0.arc_idx,
+            "arc_idx allocated"
+        );
+        g.arc_idx.as_mut().unwrap()[10] = 0;
+        assert_ne!(digest_grid_state(&g).arc_idx, d0.arc_idx, "arc_idx written");
+
+        // Dimensions. A 9×7 and a 7×9 grid of the same solid bytes digest
+        // identically on every array — only `w`/`h` separate them.
+        let a = Grid::solid(9, 7);
+        let b = Grid::solid(7, 9);
+        assert_eq!(digest_grid_state(&a).tiles, digest_grid_state(&b).tiles);
+        assert_ne!(digest_grid_state(&a), digest_grid_state(&b), "w/h");
+    }
+
+    /// THE FIELD LIST ITSELF. A field ADDED to `Grid` and not folded in would
+    /// otherwise leave `digest_grid_state` quietly partial, and the immutability
+    /// guard it backs would stop covering the new state with nothing saying so.
+    ///
+    /// Destructuring is the check: this stops compiling the moment `Grid` grows
+    /// a field, and the fix is to fold it in above and name it here.
+    #[test]
+    fn grid_state_digest_covers_every_field_of_grid() {
+        let g = floor_ish();
+        let Grid {
+            w: _,
+            h: _,
+            t: _,
+            shapes: _,
+            surfaces: _,
+            arcs: _,
+            arc_idx: _,
+        } = g;
+    }
+
+    /// An absent `surfaces` and a present all-zero one are different grids, and
+    /// the empty-array encoding is what keeps them apart.
+    #[test]
+    fn an_absent_array_does_not_digest_as_a_present_zero_one() {
+        let bare = floor_ish();
+        let mut with = floor_ish();
+        set_surface(&mut with, 0, 0, 0); // allocates the array, writes nothing
+        assert!(bare.surfaces.is_none() && with.surfaces.is_some());
+        assert_ne!(
+            digest_grid_state(&bare).surfaces,
+            digest_grid_state(&with).surfaces
+        );
+    }
+}

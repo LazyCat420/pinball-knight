@@ -31,6 +31,7 @@ mod fx;
 mod intro;
 mod overworld;
 mod post;
+mod real_floor;
 mod sfx;
 mod tavern;
 mod tavern_art;
@@ -46,6 +47,10 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use overworld::CpuSheet;
 use pk_assets::published::SheetManifest;
 use pk_core::state::{demo_floor, simulate, Facing, FrameInput, SimState};
+use real_floor::{
+    build_active_floor, real_floor_request, spawn_real_floor_decor, spawn_real_floor_failure,
+    ActiveFloor, RealFloorBoot, RealFloorFailure,
+};
 
 /// legacy constants/world.ts
 pub(crate) const WALL_H: f32 = 1.1;
@@ -212,9 +217,15 @@ fn dungeon_boot_gate() -> bool {
 }
 
 fn main() {
+    // Read ONCE, here, and carried as a resource: `setup_dungeon` runs again
+    // after every tavern hand-off, and re-reading the process arguments each
+    // time would let one flag mean different things on floor 1 and floor 2.
+    let boot = RealFloorBoot(real_floor_request());
     // Hub-first: a skipped intro lands in the tavern, not on a floor. Only
-    // the explicit dev hatch opens straight into the dungeon.
-    let start = if dungeon_boot_gate() {
+    // the explicit dev hatch opens straight into the dungeon — and asking for
+    // a real floor IS asking for a floor, so it opens one rather than dropping
+    // you in a hub with a flag that appears to have done nothing.
+    let start = if dungeon_boot_gate() || boot.requested() {
         AppState::Dungeon
     } else if tavern::tavern_boot_gate() || intro_skip_gate() {
         AppState::Tavern
@@ -222,6 +233,7 @@ fn main() {
         AppState::Intro
     };
     let mut app = App::new();
+    app.insert_resource(boot);
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Pinball Knight (Rust slice)".into(),
@@ -285,6 +297,8 @@ fn publish_stats(
     sim: Option<Res<Sim>>,
     intro_res: Option<Res<intro::IntroRes>>,
     tavern_res: Option<Res<tavern::TavernRes>>,
+    floor_res: Option<Res<ActiveFloor>>,
+    floor_err: Option<Res<RealFloorFailure>>,
     state: Res<State<AppState>>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
@@ -316,20 +330,40 @@ fn publish_stats(
         ),
         _ => "null".into(),
     };
+    // The generated floor, when one is installed. `null` on the demo floor —
+    // NOT omitted, because `--real-floor` silently doing nothing and the flag
+    // not being passed are the two states a gate most needs to tell apart.
+    let floor_field = match &floor_res {
+        Some(f) => f.telemetry_json(),
+        None => "null".into(),
+    };
+    let floor_error_field = match &floor_err {
+        Some(e) => format!("\"{}\"", json_escape(&e.message)),
+        None => "null".into(),
+    };
     let json = match &sim {
         Some(sim) => {
             let p = &sim.0.player;
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{}}}"#,
-                sim.0.tick, p.x, p.z, p.facing, p.moving, intro_field, tavern_field
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{}}}"#,
+                sim.0.tick,
+                p.x,
+                p.z,
+                p.facing,
+                p.moving,
+                intro_field,
+                tavern_field,
+                floor_field,
+                floor_error_field
             )
         }
-        // No dungeon sim (e.g. the tavern owns the screen): keep the tick
+        // No dungeon sim (e.g. the tavern owns the screen, or a real-floor
+        // request failed and there is deliberately no floor): keep the tick
         // ADVANCING so pk-check's liveness gate still reads a pulse.
         None => {
             *ticks += 1;
             format!(
-                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field}}}"#,
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field}}}"#,
                 *ticks
             )
         }
@@ -339,6 +373,25 @@ fn publish_stats(
         &wasm_bindgen::JsValue::from_str("__pk"),
         &wasm_bindgen::JsValue::from_str(&json),
     );
+}
+
+/// The two characters that would break a hand-formatted JSON string, plus the
+/// control characters a `FloorBuildError` could plausibly carry (it formats a
+/// `reason` that came off a URL). Everything else in the payload is a number or
+/// a Rust literal, which is why this is the only escaper in the file.
+#[cfg(target_arch = "wasm32")]
+fn json_escape(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect(),
+            '\n' => "\\n".chars().collect(),
+            '\r' => "\\r".chars().collect(),
+            '\t' => "\\t".chars().collect(),
+            c if (c as u32) < 0x20 => format!("\\u{:04x}", c as u32).chars().collect(),
+            c => vec![c],
+        })
+        .collect()
 }
 
 fn decode_sheet(
@@ -607,12 +660,26 @@ fn setup_common(
 #[derive(Component)]
 struct DungeonScene;
 
-/// The demo floor, the sim, and the playable knight.
+/// The floor, the sim, and the playable knight.
+///
+/// TWO FLOORS, ONE SETUP. Without `--real-floor` this builds `demo_floor(7)` —
+/// the 25×25 pillar arena the slice has always rendered. With it, the ported
+/// generator's output at the `plan-doorways` boundary. Everything downstream is
+/// shared on purpose: the same `spawn_grid_meshes`, the same `SimState`, the
+/// same camera. A generated floor that needed its own renderer would be proving
+/// something about that renderer instead of about the floor.
+///
+/// ⚠️ NO SILENT FALLBACK. A real-floor request that cannot be honoured paints a
+/// red card and leaves the screen empty, because a dungeon that quietly shows
+/// the demo floor makes "the real floor looks like the pad arena" unfalsifiable
+/// — which is the report this whole flag exists to answer.
 fn setup_dungeon(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     art: Res<KnightArt>,
+    boot: Res<RealFloorBoot>,
+    failed: Option<Res<RealFloorFailure>>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
 ) {
     // The intro's black hold ends the moment the dungeon exists (legacy
@@ -621,9 +688,69 @@ fn setup_dungeon(
         bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
     }
 
+    // The latch. This system's run condition is "no Sim yet", which a failure
+    // never satisfies — without this it would rebuild and re-fail every frame.
+    if failed.is_some() {
+        return;
+    }
+
+    // ── The floor ──
+    let fail = |commands: &mut Commands, message: String| {
+        let e = spawn_real_floor_failure(commands, &message);
+        commands.entity(e).insert(DungeonScene);
+        commands.insert_resource(RealFloorFailure { message });
+    };
+    let real = match &boot.0 {
+        None => None,
+        Some(Err(e)) => {
+            fail(&mut commands, e.to_string());
+            return;
+        }
+        Some(Ok(req)) => match build_active_floor(*req) {
+            Ok(f) => {
+                // The one number pk-core cannot check: the exit marker's world
+                // position after the `f64 → f32` cast this crate makes.
+                if !f.exit_marker_is_on_its_tile() {
+                    fail(
+                        &mut commands,
+                        format!(
+                            "the exit marker at {:?} does not land on tile {:?}",
+                            f.info.provisional_exit_world, f.info.provisional_exit_tile
+                        ),
+                    );
+                    return;
+                }
+                Some(f)
+            }
+            Err(e) => {
+                fail(&mut commands, e.to_string());
+                return;
+            }
+        },
+    };
+
     // ── Sim ──
-    let (grid, spawn) = demo_floor(7);
-    let sim = SimState::new(grid, spawn, 7);
+    //
+    // The grid handed over is a CLONE; `ActiveFloor.track.grid` stays
+    // authoritative. See `real_floor`'s header for why that split is worth the
+    // copy, and `assert_grid_still_authored` for what enforces it.
+    let (grid, spawn, seed) = match &real {
+        Some(f) => (f.track.grid.clone(), f.info.start_world, f.spec.floor_seed),
+        None => {
+            let (g, s) = demo_floor(7);
+            (g, s, 7)
+        }
+    };
+    let sim = SimState::new(grid, spawn, seed);
+    if let Some(f) = &real {
+        // Checked HERE, where the clone is one line old — a mismatch at install
+        // time is a bug in the install, and one later is a bug in the sim. The
+        // two want different people looking at them.
+        if let Err(msg) = f.assert_grid_still_authored(&sim.grid) {
+            fail(&mut commands, msg);
+            return;
+        }
+    }
     commands.insert_resource(RenderPos {
         prev: spawn,
         curr: spawn,
@@ -631,6 +758,11 @@ fn setup_dungeon(
 
     for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid) {
         commands.entity(e).insert(DungeonScene);
+    }
+    if let Some(f) = &real {
+        for e in spawn_real_floor_decor(&mut commands, &mut meshes, &mut materials, f) {
+            commands.entity(e).insert(DungeonScene);
+        }
     }
 
     // ── Knight billboard from the real published sheets ──
@@ -644,6 +776,9 @@ fn setup_dungeon(
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
     ));
     commands.insert_resource(Sim(sim));
+    if let Some(f) = real {
+        commands.insert_resource(f);
+    }
 }
 
 /// Leaving the dungeon tears the floor down completely — Sim included — so
@@ -655,6 +790,14 @@ fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>
     }
     commands.remove_resource::<Sim>();
     commands.remove_resource::<RenderPos>();
+    // The generated floor goes with the scene that was standing on it. Left
+    // behind, the next descent's telemetry would describe the PREVIOUS floor —
+    // and the banner and the probe with it, which is the shape of bug that makes
+    // a browser gate report on a screen nobody is looking at.
+    commands.remove_resource::<ActiveFloor>();
+    // The failure latch is cleared too: a fresh descent gets a fresh attempt,
+    // and a request that fails deterministically simply fails again.
+    commands.remove_resource::<RealFloorFailure>();
 }
 
 /// T enters the tavern from the dungeon — the stand-in for the P5 run flow

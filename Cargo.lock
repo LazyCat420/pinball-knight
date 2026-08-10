@@ -3379,6 +3379,7 @@ dependencies = [
  "pk-core",
  "serde_json",
  "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

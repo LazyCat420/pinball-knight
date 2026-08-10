@@ -5,6 +5,63 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — The game stands on the generated floor: `--real-floor`.**
+  `setup_dungeon` built `demo_floor(7)` — a 25x25 pillar arena — on every
+  descent, which is why the dungeon looked like a pad arena no matter how many
+  maze passes landed. Behind `--real-floor` / `?real-floor=1` /
+  `PK_REAL_FLOOR=1` it now boots the nine landed passes: L3 seed 1 is an 87x61
+  Great Hall, spawn on the pass-7 start tile, provisional exit marked, banner
+  naming the floor on screen.
+  - **The derivation stopped being two copies.** `maze_pass_digests.rs` had
+    reproduced `authorFloor`'s pre-track stream by hand since pass 1; the shell
+    needs the same three lines with no fixture to read `cellsW`/`density` out
+    of. `pk_core::maze::floor_spec::derive_floor_spec` is now the one
+    derivation and the harness calls it — with the hand-written stream KEPT in
+    `archetype_tables_match_the_oracles_profiles` as a differential second
+    opinion, so the two are asserted equal rather than merged and hoped for.
+  - **The fixture cannot launder a regression.** `real-floor-l3s1-p9.json` is
+    written by the port about itself, so nine of its fields (`floorSeed`,
+    `cellsW/H`, `w/h`, `density`, `draws`, `tileDigest`, `walkableTiles`,
+    `start`, `provisionalExit`) are cross-checked against
+    `maze-pass-digests.json`, which came out of the legacy TypeScript
+    generator. A re-export taken after a regression fails that comparison.
+  - **The wall probe: a collision claim a browser can replay.** pk-core derives
+    a scripted move from the spawn toward the nearest square wall and an
+    ANALYTIC clamp (tile face + body radius) — arithmetic the sim never
+    performs, so it is an oracle rather than the collider agreeing with itself.
+    Both halves are checked: the body must REACH the wall (a frozen sim fails)
+    and must not pass it. In host Chrome it stopped at z=2.1999 against a 2.2
+    face.
+  - ⚠️ **The first probe derivation was measured wrong and would have shipped
+    dead.** It only looked at the four tiles touching the spawn — and 39 of 40
+    floors open at a launch chute's park tile, whose four neighbours are all
+    floor. **1 of 40 floors produced a probe.** The browser collision gate would
+    have silently done nothing on 97% of floors. Walking up to six tiles fixed
+    it; the test now asserts 40 of 40 rather than "it works on the pinned one".
+  - ⚠️ **Two defects only the SCREENSHOT found**, both green on every automated
+    gate including the one asserting the banner string: the banner drew on top
+    of the centred frame-time readout ("start=20.21ms (49 fps)"), and the `x` in
+    `87x61` was `U+00D7`, which Bevy's `default_font` renders as a tofu box. The
+    banner test now asserts `is_ascii()` — the property that was violated, not
+    the character that violated it.
+  - ⚠️ **The obvious canvas-liveness probe fails green-adjacent.** Reading the
+    WebGPU canvas back with `drawImage` + `getImageData` returns a blank buffer,
+    so the gate reported "1 distinct colour" over a screenshot plainly showing a
+    maze. Replaced by a property of the PNG Playwright actually composited:
+    ~32 kB for this frame against ~1.8 kB for a solid-colour frame of the same
+    dimensions (measured by building one).
+  - **No silent fallback, and it is driven, not asserted.** A refused request
+    paints a red card and builds NOTHING — `?level=banana` is a gate that checks
+    `floor === null` and that no sim was installed, with its own screenshot.
+  - Gates: `cargo test --workspace` (19 suites), fmt, per-crate clippy at deny,
+    wasm32 + windows-gnullvm builds, jsmath wasm parity (40 comparisons), and
+    `node scripts/pk-check.mjs --real-floor --level 3 --seed 1` — 20 gates, all
+    green, in real Windows host Chrome.
+  - ⚠️ Still nine passes of twenty-three. No `T_STAIRS` (pass 21), no published
+    arcs (pass 10), no boss chamber (pass 15), and the exit is the PROVISIONAL
+    pass-7 pick that `endpoints-final` re-picks at pass 14. `--real-floor` stays
+    a flag until pass 21.
+
 - **2026-08-10 — P2 passes 7 and 8, both bit-exact on the first run, and the
   sabotage sweep that says what those two green boundaries are worth.** 8 of 23
   land, all ten corpus floors bit-exact. `pk_core::maze::track_socket` (the

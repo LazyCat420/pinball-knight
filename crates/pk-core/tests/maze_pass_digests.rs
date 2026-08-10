@@ -47,6 +47,7 @@ use pk_core::maze::doorways::{
     clearance_field, doorway_footprint, label_sections, plan_doorways, resolve_doorway,
     section_territory, try_candidate, CarveGuards, PlanOpts,
 };
+use pk_core::maze::floor_spec::derive_floor_spec;
 use pk_core::maze::modifiers::{
     roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
 };
@@ -199,18 +200,30 @@ struct Pass {
 ///
 /// The fixture pins `density` per floor, so the derivation is asserted rather
 /// than trusted.
+///
+/// ⚠️ THE DERIVATION MOVED, and this now calls it rather than repeating it.
+/// `maze::floor_spec::derive_floor_spec` is the same three lines, and it had to
+/// stop being two copies the moment the SHELL needed them: `--real-floor` boots
+/// from a level and a run seed with no fixture to read `cellsW`/`density` out
+/// of, so a second copy here would let the parity harness keep replaying the
+/// oracle while the game quietly built a different floor. The assertion below is
+/// unchanged and is what makes the shared derivation safe — it is checked
+/// against the ORACLE's `density`, not against a second implementation.
 fn pre_track_draws(f: &Floor) -> (CountingRng, f64) {
-    let arch = archetype_for(f.level);
-    let mut rng = floor_rng(f.run_seed, f.level);
-    roll_modifier(f.level, &mut rng);
-    let windiness = windiness_for(f.level, arch, &mut rng);
-    let density = windiness.clamp(0.35, 0.85);
+    let spec = derive_floor_spec(f.level, f.run_seed);
     assert_eq!(
-        density, f.density,
+        spec.density, f.density,
         "L{} seed {}: density derived from windiness disagrees with the oracle's",
         f.level, f.run_seed
     );
-    (rng, density)
+    assert_eq!(
+        (spec.cells_w, spec.cells_h),
+        (f.cells_w, f.cells_h),
+        "L{} seed {}: the spec asks for a different grid than the oracle built",
+        f.level,
+        f.run_seed
+    );
+    (spec.rng, spec.density)
 }
 
 /// Run a corpus floor through the SHIPPING pipeline and hand back the two
@@ -660,6 +673,14 @@ fn archetype_tables_match_the_oracles_profiles() {
         // This is the last thing that can be verified before `grow_track`
         // lands — and it is the thing that would otherwise be discovered as a
         // pass-1 digest mismatch, blamed on the physarum solver.
+        //
+        // ⚠️ HAND-WRITTEN ON PURPOSE, and it is the only place left that is.
+        // `pre_track_draws` now calls `derive_floor_spec`, which the SHELL also
+        // calls — so without these five lines the harness and the game would
+        // share one derivation with nothing standing beside it. This is the
+        // second opinion: the primitives, in order, spelled out. The final
+        // assertion compares the two paths directly, which turns "both agree
+        // with the oracle" into "and they agree with each other".
         let mut rng = floor_rng(f.run_seed, f.level);
         roll_modifier(f.level, &mut rng);
         let windiness = windiness_for(f.level, arch, &mut rng);
@@ -672,6 +693,13 @@ fn archetype_tables_match_the_oracles_profiles() {
             windiness.clamp(0.35, 0.85),
             f.density,
             "{head}: density (the windiness roll, bit-exact)"
+        );
+        let spec = derive_floor_spec(f.level, f.run_seed);
+        assert_eq!(
+            (spec.rng.draws(), spec.density, spec.floor_seed),
+            (rng.draws(), windiness.clamp(0.35, 0.85), f.floor_seed),
+            "{head}: derive_floor_spec and the hand-written stream disagree — the shell and \
+             this harness would build different floors from the same seed"
         );
     }
     // Four layouts across five archetypes (two are `scatter`); a corpus that
