@@ -86,6 +86,18 @@ track pipeline first and the fallback last — and read
       each localise to the right pass; a dropped length fold and a big-endian
       f64 each fail the self-test with the cause named. See
       `pk_core::maze` for why a whole-floor comparison cannot debug this port.
+- [x] **DATA TABLES.** `maze/archetypes.ts` (track half — the five
+      `TrackProfile`s, `windinessFor`, `trackNodeCounts`), `maze/modifiers.ts`
+      (the ROLL and the pool; the multipliers land with `decorate`),
+      `levelConfig`'s cell ramp. Verified two ways: the fixture pins each
+      corpus floor's resolved profile VERBATIM, and the pre-track stream is
+      reproduced bit-exactly (`drawsBeforeTrack` and `density`, an f64 compared
+      for equality). `maze-constants.json` pins what ten floors provably cannot
+      — measured, `MODIFIER_CHANCE` 0.45 vs 0.5 changes no corpus floor, and
+      `cellsW/H` cap at L23/L24 where the corpus stops at 13.
+      ⚠️ Trap found here: a JS object with integer-like keys iterates in
+      ASCENDING NUMERIC order, not literal order, so two `BandPaint` mixes
+      transcribe backwards if you read them off the page.
 - [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
       against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
       launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →

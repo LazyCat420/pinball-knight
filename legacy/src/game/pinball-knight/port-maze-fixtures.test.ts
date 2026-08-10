@@ -53,10 +53,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { levelConfig } from "./constants";
-import { archetypeFor, windinessFor, type TrackProfile } from "./maze/archetypes";
+import { ARCHETYPES, archetypeFor, windinessFor, DEFAULT_TRACK_PROFILE, type TrackProfile } from "./maze/archetypes";
+import { DEFAULT_RULE_WEIGHTS } from "./maze/floor-rules";
 import { floorRng, floorSeed } from "./maze/floor-seed";
 import { isWalkable, type Grid } from "./maze/generator";
-import { rollModifier } from "./maze/modifiers";
+import { MODIFIERS, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, rollModifier } from "./maze/modifiers";
 import { buildTrackFloor, type PassSnapshot } from "./maze/track-floor";
 import type { ArcFeature } from "./engine/tile-shape";
 
@@ -516,7 +517,66 @@ function dumpRequest(): { level: number; runSeed: number; pass: string } | null 
   return { level: Number(l), runSeed: Number(s), pass: rest.join(":") };
 }
 
+/**
+ * THE CONSTANTS THE CORPUS CANNOT DISCRIMINATE.
+ *
+ * Ten floors pin an enormous amount — but not everything, and the gap is not
+ * theoretical. Measured: changing `MODIFIER_CHANCE` from 0.45 to 0.5 in the
+ * Rust port changed NO floor in the corpus, because discriminating those two
+ * needs a floor whose modifier draw lands in [0.45, 0.5) and none does. A
+ * constant a corpus cannot separate from a wrong constant is a constant the
+ * corpus does not pin, and transcribing it by eye is exactly how a table
+ * acquires a typo that only shows up nine floors deep.
+ *
+ * So the constants are exported directly. This is not a substitute for the
+ * digests — it is the part of the transcription the digests provably do not
+ * cover, and keeping the two separate is what stops "the corpus is green" from
+ * being read as "every number is right".
+ *
+ * `levelCells` is here for the same reason: `cellsW/cellsH` cap at L23/L24 and
+ * the corpus stops at 13, so the clamp itself is untested by the floors.
+ */
+function constantsFixture() {
+  return {
+    modifiers: {
+      fromLevel: MODIFIER_FROM_LEVEL,
+      chance: MODIFIER_CHANCE,
+      // In table order, "none" first — the roll indexes the REST of it, so a
+      // shortened or reordered pool picks a different twist.
+      ids: MODIFIERS.map((m) => m.id),
+    },
+    ruleWeights: DEFAULT_RULE_WEIGHTS,
+    defaultTrackProfile: DEFAULT_TRACK_PROFILE,
+    archetypes: ARCHETYPES.map((a) => ({
+      id: a.id,
+      label: a.label,
+      flavour: a.flavour,
+      windiness: a.windiness,
+    })),
+    // Past the caps on purpose: L23/L24 are where cellsW/cellsH stop growing.
+    levelCells: Array.from({ length: 30 }, (_, k) => {
+      const cfg = levelConfig(k + 1);
+      return [k + 1, cfg.cellsW, cfg.cellsH];
+    }),
+  };
+}
+
 describe("port-parity fixtures — maze pass digests", () => {
+  it("the constants the corpus cannot discriminate are pinned directly", () => {
+    const c = constantsFixture();
+    // The pool the roll indexes is MODIFIERS minus "none": a table that grew a
+    // second falsy entry would change every modifier a floor rolls.
+    expect(c.modifiers.ids[0]).toBe("none");
+    expect(c.modifiers.ids.filter((id) => id === "none")).toHaveLength(1);
+    expect(c.archetypes).toHaveLength(5);
+    // The caps must actually be reached inside the exported range, or the
+    // table pins a ramp and calls it a clamp.
+    const last = c.levelCells[c.levelCells.length - 1];
+    expect(last[1]).toBe(96);
+    expect(last[2]).toBe(72);
+    pinFixture("maze-constants.json", c);
+  });
+
   it("attaching an observer does not change the floor", () => {
     // ── The claim the whole harness rests on, MEASURED ────────────────────
     //
