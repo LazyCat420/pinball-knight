@@ -2,9 +2,38 @@
 xtask = "run -p xtask --"
 
 [build]
-# The box is shared (see docs: WSL2 dev-loop reality). Leave headroom; raise
-# per-invocation with -j when you hold the box.
-jobs = 10
+# The box is shared (see docs: WSL2 dev-loop reality) — 12 physical cores, 24
+# threads, and 2 physical cores are held back for the desktop.
+#
+# ── MEASURED, because the obvious guess is wrong ──────────────────────────────
+#
+# Raising this does NOTHING for the loop you are actually in. Interleaved A/B,
+# j=10 vs j=20, three rounds each:
+#
+#   pk-game incremental (linux)     6.0s vs 5.9s     ~270% cpu
+#   pk-game incremental (windows)   7.8s vs 7.1s     ~350% cpu
+#   workspace + all tests           5.9s vs 7.2s     ~500% cpu
+#
+# All three sit at 3-5 cores whatever the cap is, because an incremental build
+# is a serial chain: one crate type-checks (single-threaded — measured 3.6s of
+# pk-game's 6.0s is `cargo check`), then codegen, then link. There is no tenth
+# job to hand out.
+#
+# The one workload where the cap binds is a COLD dependency build, which is what
+# every fresh worktree does:
+#
+#   cold pk-game, j=10   181.7s   432% cpu
+#   cold pk-game, j=20   141.5s   535% cpu    ← 22% faster
+#
+# So: 16, which takes most of that and still leaves 8 threads for the desktop
+# and for whatever `pk-run.sh` is holding on the JS side. Raise per-invocation
+# with -j when you hold the box.
+#
+# ⚠️ If cold builds are the pain, the lever is NOT this number — it is that each
+# worktree has its own `target/` and recompiles all of Bevy. The same build with
+# CARGO_TARGET_DIR pointed at the primary's target takes 13.5s instead of 141.5s
+# (only the four workspace crates rebuild; ~400 registry crates are reused).
+jobs = 16
 
 # Windows-native build (the play/dev target — WSL2 interop launches the .exe
 # straight onto the Windows desktop). Toolchain is user-local llvm-mingw
