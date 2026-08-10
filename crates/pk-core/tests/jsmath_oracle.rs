@@ -19,6 +19,10 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 struct Oracle {
     unary: Vec<Unary>,
+    /// Two-argument primitives, swept over an (n+1)² LATTICE rather than a
+    /// line: `atan2` branches on the signs of both arguments and on which of
+    /// |y|,|x| dominates, and a line through one quadrant reaches one branch.
+    binaries: Vec<Unary>,
     sweeps: Vec<Sweep>,
     /// `[base, exponent, expected]` — printable, so a failure reads next to a
     /// node REPL instead of only as a hash.
@@ -72,6 +76,21 @@ fn sweep_digest(u: &Unary, f: impl Fn(f64) -> f64) -> u32 {
     h.finish()
 }
 
+/// The lattice twin of [`sweep_digest`] — outer loop is `y`, inner is `x`,
+/// matching the exporter's `binary()` exactly. The two loops are NOT
+/// interchangeable: `atan2(y, x)` is not symmetric.
+fn lattice_digest(u: &Unary, f: impl Fn(f64, f64) -> f64) -> u32 {
+    let mut h = Fnv1a::new();
+    let span = u.to - u.from;
+    for j in 0..=u.n {
+        let y = u.from + span * f64::from(j) / f64::from(u.n);
+        for i in 0..=u.n {
+            h.f64(f(y, u.from + span * f64::from(i) / f64::from(u.n)));
+        }
+    }
+    h.finish()
+}
+
 /// The mapping from a JS primitive to the Rust call the port must make. Every
 /// row was a separate measurement and three of them were surprises — see
 /// `cargo run -p pk-core --example survey`, which prints this table with the
@@ -83,7 +102,23 @@ fn required_impl(name: &str) -> Option<Candidate> {
         // IEEE-correctly-rounded — every implementation agrees, no twin needed.
         "sqrt" => Some(f64::sqrt),
         "atan" => Some(libm::atan),
+        // `tan` was swept when the maze's pass 2 (`track-path`) reached it, and
+        // the expectation going in was that it would need a twin: it is the one
+        // member of the trig family whose KERNEL was rewritten after 1993
+        // (FreeBSD's k_tan.c, which musl and therefore Rust's `libm` carry)
+        // while V8 kept Sun's. It agrees anyway. The surprise is why it is
+        // swept rather than assumed either way.
+        "tan" => Some(libm::tan),
         // exp/log have NO agreeing implementation — see the gap test below.
+        _ => None,
+    }
+}
+
+/// Two-argument primitives. Separate from [`required_impl`] because the
+/// signature is, not because the question is different.
+fn required_binary(name: &str) -> Option<fn(f64, f64) -> f64> {
+    match name {
+        "atan2" => Some(libm::atan2),
         _ => None,
     }
 }
@@ -113,8 +148,38 @@ fn every_swept_primitive_matches_the_runtime() {
         );
         checked += 1;
     }
-    // sin/cos: 5 ranges each. sqrt, atan: 1 each.
-    assert_eq!(checked, 12, "a sweep stopped being checked");
+    // sin/cos: 5 ranges each. sqrt, atan: 1 each. tan: 4.
+    assert_eq!(checked, 16, "a sweep stopped being checked");
+}
+
+/// The two-argument half — `Math.atan2`, which the maze's pass 2 takes for
+/// every bearing in the circuit and every fillet's start angle.
+///
+/// Both rejected candidates are asserted to be checked rather than merely
+/// unequal: `libm::atan2` and `f64::atan2` are DIFFERENT here (the maze corpus
+/// separates them — swapping in std's put L1 seed 1's legs on different
+/// coordinates), so this is a real choice and not a formality.
+#[test]
+fn every_swept_binary_matches_the_runtime() {
+    let o = load();
+    assert!(!o.binaries.is_empty(), "the binary sweeps were dropped");
+    let mut checked = 0;
+    for u in &o.binaries {
+        let Some(f) = required_binary(&u.name) else {
+            continue;
+        };
+        assert_eq!(
+            lattice_digest(u, f),
+            u.digest,
+            "Math.{}(y, x) over [{}, {}]² ({}² points) diverged from the JS runtime",
+            u.name,
+            u.from,
+            u.to,
+            u.n
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 2, "an atan2 lattice stopped being checked");
 }
 
 /// The negative control. `js_cos`/`js_sin` are 300 lines of transcribed 1993 C,
@@ -151,6 +216,43 @@ fn the_rejected_trig_candidates_still_disagree() {
         ranges += 1;
     }
     assert_eq!(ranges, 10, "a trig range stopped being controlled");
+
+    // ── tan and atan2: the SAME question, opposite answer ───────────────────
+    //
+    // `libm` is what the port must call for these two (see `required_impl` /
+    // `required_binary`), so the control here is the other way round: STD must
+    // be the one that disagrees, or "call libm" is a coin flip nobody measured.
+    // It is not — the maze corpus separates them too, and swapping either for
+    // std's moves a corpus floor's legs.
+    let mut controlled = 0;
+    for u in &o.unary {
+        if u.name != "tan" {
+            continue;
+        }
+        assert_ne!(
+            sweep_digest(u, f64::tan),
+            u.digest,
+            "std::tan now agrees with the runtime over [{}, {}] too — harmless, \
+             but required_impl()'s choice stopped being a measured one",
+            u.from,
+            u.to
+        );
+        controlled += 1;
+    }
+    for u in &o.binaries {
+        if u.name != "atan2" {
+            continue;
+        }
+        assert_ne!(
+            lattice_digest(u, |y, x| y.atan2(x)),
+            u.digest,
+            "std::atan2 now agrees with the runtime over [{}, {}]² too",
+            u.from,
+            u.to
+        );
+        controlled += 1;
+    }
+    assert_eq!(controlled, 6, "a tan/atan2 range stopped being controlled");
 }
 
 /// **A MEASURED GAP, pinned so it cannot be mistaken for a passing row.**

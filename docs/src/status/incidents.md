@@ -2,6 +2,52 @@
 
 Diagnoses that outlive their patches. Write the reasoning, not just the fix.
 
+## 2026-08-10 — A pass boundary that pinned a COUNT, on the one pass whose
+## draw counter cannot say anything
+
+Pass 2 of the maze pipeline, `track-path`, was gated by a fixture that could
+not have failed for the mistakes a port of it makes.
+
+Every boundary in `maze-pass-digests.json` pins seven grid digests, six counts,
+the cumulative rng draw count and the pass's own scalars — and at `track-path`
+all seven grid digests are the all-wall grid (the first two passes write
+nothing to tiles), the graph digests are pass 1's output unchanged, and the
+scalars are `{ legs: 28 }`. So the entire claim the fixture made about pass 2's
+output was a leg count.
+
+Normally the draw counter covers that gap: it is what splits "this pass drew a
+different number of values" from "it drew the same ones and did different
+arithmetic". `build_track_path` draws NOTHING. It is pure geometry over pass
+1's graph, so its boundary count equals `grow-track`'s on both sides *by
+construction*, on a correct port and a broken one alike.
+
+Concretely, all of these passed the old gate: every leg pulled back by the
+wrong setback, every leg emitted in a different order, every fillet centred on
+the wrong side, `arcHalf` off by the lane scale. Only the number of surviving
+legs was checked, and the leg count is a coarse function of the geometry — it
+changes only when a leg crosses the `sa + sb >= len − 0.5` threshold.
+
+Fixed by widening the exporter: `pathLegs` (endpoints, node ids and lane width,
+in emission order), `pathArcs` (the same fold `grid.arcs` uses) and
+`pathArcHalf`. Both sides now assert the digests exist at exactly one boundary,
+so deleting them fails loudly rather than silently restoring the old gate.
+
+**The general shape, which is the part worth keeping:** a probe that reports
+`{ thing: things.length }` reads like instrumentation and is a *count*. Ask
+what a wrong implementation would have to do to change it — if the answer is
+"cross a threshold", the boundary is not gated. And when a pass consumes no
+rng, the harness's cheapest localiser is silent there, so that pass needs MORE
+pinned state than its neighbours, not the same amount.
+
+**Also measured, on the same pass:** two primitives it calls are provably
+invisible to the ten-floor corpus. `js_hypot` differs from `libm::hypot` on
+34% of the calls this pass makes and changes no digest, because hypot only
+feeds inequalities here. `js_cos`/`js_sin` differ from `libm`'s on 8 of 790
+leg bearings and the swap survives five corpus floors before one catches it —
+a 1-ulp error scaled by a ≤7-tile setback rounds away against the ulp of the
+30-tile coordinate it is added to. Green floors are evidence about the inputs
+the floors reach, never about the call being right.
+
 ## 2026-08-09 — V8's math library is a third implementation, and the port's
 ## determinism rule pointed at the wrong one
 

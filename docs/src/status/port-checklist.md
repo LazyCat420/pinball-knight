@@ -107,6 +107,29 @@ track pipeline first and the fallback last — and read
       pinned in the port: two rng draws per placement attempt INCLUDING rejected
       ones; `js_hypot` in the K-nearest sort; and a JS `Set` re-insertion moving
       an edge to the END of the survivor order.
+- [x] **PASS 2 `track-path`** (`pk_core::maze::track_path`): the graph turned
+      into rideable geometry — bearing-sorted adjacency, the per-junction
+      radius search over `TRACK_RADII`, the two-pass setback settlement, the
+      leg list and the fillet `ArcFeature`s. **10 of 10 corpus floors bit-exact**
+      on the first run, 2026-08-10.
+      ⚠️ **The fixture could not gate this pass and had to be widened first.**
+      `track-path` pinned `extra: { legs: N }` — a COUNT — plus the graph
+      digests, which at that boundary are pass 1's output unchanged. And it is
+      the one pass that draws NOTHING from the rng, so the draw counter, the
+      localiser every other pass leans on, is identical on both sides by
+      construction. The exporter gained `pathLegs`, `pathArcs` and
+      `pathArcHalf`; nothing existing was weakened.
+      Traps pinned in the port: `Math.tan` and `Math.atan2` are `libm`'s and NOT
+      std's; the JS `Map` adjacency iterates in first-touch order and that order
+      is the arc AUTHORING order; and two things the corpus provably cannot see
+      (below).
+- [x] `jsmath::tan` / `atan2` — swept for the first time when pass 2 reached
+      them. `libm` matches the runtime and std does NOT, on all four `tan`
+      ranges and both `atan2` lattices, with the maze corpus separating them
+      independently. The expectation going in was the opposite: `tan` shares
+      `cos`/`sin`'s argument reduction and its kernel is the one FreeBSD
+      rewrote after 1993, so it looked like the next twin. There is no
+      family-level rule here, only the sweep.
 - [x] `jsmath::js_cos` / `js_sin` — Sun's 1993 fdlibm, verbatim (`s_sin`,
       `s_cos`, `k_sin`, `k_cos`, `e_rem_pio2`, `k_rem_pio2`). V8 keeps that
       evaluation order; musl and glibc both took FreeBSD's rewrite, so both
@@ -312,7 +335,9 @@ co-op multiplayer.
 |---|---|---|
 | Mulberry32 RNG | `pk-core/src/rng.rs` | bit-exact vs JS oracle, 5 seeds |
 | JS math twins: `hypot`, `pow`, `cos`, `sin` | `pk-core/src/jsmath/` | whole-curve digests from real node — 4 pow sweeps + 10 trig ranges crossing all four reduction branches, with `libm`/std pinned as still-wrong per range |
+| JS math choices: `tan`, `atan2` (both `libm`) | `tests/jsmath_oracle.rs` | 4 `tan` sweeps + 2 `atan2` lattices from real node, with std pinned as still-wrong per range |
 | Maze pass 1 `grow-track` (physarum circuit) | `pk-core/src/maze/track_grow.rs` | 10/10 corpus floors bit-exact — node + edge digests, counts, cumulative rng draws |
+| Maze pass 2 `track-path` (rideable geometry) | `pk-core/src/maze/track_path.rs` | 10/10 corpus floors bit-exact — leg digest, fillet digest, `arcHalf`, leg count, draws (all three digests added to the exporter for it) |
 | Tile grid | `pk-core/src/grid.rs` | ported cases |
 | Square-wall collision (sweep, sub-step, surfaces, wall contact) | `pk-core/src/collide.rs` | 8 ported legacy cases + movement-trace fixture |
 | Player movement @60 Hz, facing | `pk-core/src/state.rs` | tests + trace fixture + pk-check drive |

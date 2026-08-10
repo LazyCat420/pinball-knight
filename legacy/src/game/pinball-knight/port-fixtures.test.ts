@@ -574,6 +574,18 @@ function powOracle() {
     for (let k = 0; k <= n; k++) h = foldF64(h, f(from + ((to - from) * k) / n));
     return { name, from, to, n, digest: h >>> 0 };
   };
+  // A BINARY primitive needs a GRID, not a line. `Math.atan2` branches on the
+  // signs of both arguments and on which of |y|,|x| dominates, so a sweep along
+  // one axis with the other fixed exercises one quadrant and one branch. The
+  // (n+1)² lattice below crosses both axes, the origin, and all four diagonals.
+  const binary = (name: string, f: (y: number, x: number) => number, from: number, to: number, n: number) => {
+    let h = FNV_OFFSET;
+    for (let j = 0; j <= n; j++) {
+      const y = from + ((to - from) * j) / n;
+      for (let i = 0; i <= n; i++) h = foldF64(h, f(y, from + ((to - from) * i) / n));
+    }
+    return { name, from, to, n, digest: h >>> 0 };
+  };
   return {
     unary: [
       unary("cos", Math.cos, 0, 20, 200000),
@@ -592,7 +604,26 @@ function powOracle() {
       unary("exp", Math.exp, -20, 20, 100000),
       unary("log", Math.log, 1e-9, 1000, 100000),
       unary("atan", Math.atan, -50, 50, 100000),
+      // ── tan: pass 2 of the maze reaches it and nothing before it did ──────
+      //
+      // `track-path` takes `Math.tan(θ/2)` for every fillet setback, so it is
+      // swept over the domain that pass actually uses — θ/2 runs from
+      // MIN_TURN/2 (≈0.305) up to just under π/2 — plus the reduction-crossing
+      // ranges, because `tan` is the one member of the family whose kernel was
+      // REWRITTEN after 1993 (FreeBSD's k_tan.c) and V8 kept the old one. It
+      // did not turn out to matter — libm agrees here where it does not for
+      // cos/sin — but that is a measurement, not a rule, which is the whole
+      // point of this file.
+      unary("tan", Math.tan, 0.3, 1.5707963, 200000),
+      unary("tan", Math.tan, -20, 20, 200000),
+      unary("tan", Math.tan, -1e6, 1e6, 100000),
+      unary("tan", Math.tan, 1e8, 1.00000001e8, 100000),
     ],
+    // `Math.atan2` — the OTHER primitive pass 2 introduced. Every bearing in
+    // the circuit and every fillet's start angle comes through it, so a wrong
+    // implementation puts every road at a slightly wrong angle. A grid rather
+    // than a line: see `binary` above.
+    binaries: [binary("atan2", Math.atan2, -50, 50, 500), binary("atan2", Math.atan2, -1e-3, 1e-3, 200)],
     // 1.35 is the physarum gain and the one that actually ships; the others
     // are there so a Rust pow that happens to agree on one exponent cannot
     // pass. Bases run [0,1] because that is the normalised-flow domain.

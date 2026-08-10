@@ -23,17 +23,26 @@
 //! | fn | `libm` | std (platform) | what to call |
 //! |---|---|---|---|
 //! | `sqrt` | ✅ | ✅ | either — IEEE-exact, no twin |
-//! | `atan` `exp` `log` | ✅ | — | `libm` |
+//! | `atan` `atan2` `tan` | ✅ | ❌ | `libm` |
+//! | `exp` `log` | ✅ | — | `libm` |
 //! | `pow` | ❌ 19,904/200,001 | ✅ | [`js_pow`] |
 //! | `hypot` | ❌ ~35% | ❌ | [`js_hypot`] |
 //! | `cos` `sin` | ❌ | ❌ | [`js_cos`] / [`js_sin`] |
 //!
-//! Each row was a separate measurement, and three of them were surprises. A
+//! Each row was a separate measurement, and four of them were surprises. A
 //! spot check cannot produce this table: `pow` agrees with `libm` on exponent
 //! 0.5 and disagrees on 1.35, and `cos` disagrees on one input in roughly two.
 //! Sweep the whole curve, and sweep it before the port uses the primitive —
 //! every row here was found by a floor that came out structurally perfect with
 //! the wrong numbers in it.
+//!
+//! ⚠️ THE `tan` ROW IS THE ONE THAT LOOKS WRONG AND IS NOT. `tan` shares its
+//! argument reduction with `cos`/`sin`, and its KERNEL is the one that was
+//! rewritten after 1993 (FreeBSD's `k_tan.c`, which musl and therefore Rust's
+//! `libm` carry) while V8 kept Sun's — so the expectation going in was that it
+//! would need the same twin `cos` and `sin` do. It agrees anyway, and std does
+//! not. There is no "the trig family behaves like X" rule to be had here;
+//! there is only the sweep.
 
 mod fdlibm;
 pub use fdlibm::{js_cos, js_sin};

@@ -5,6 +5,48 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — P2 pass 2 `track-path`: 10 of 10 floors bit-exact, and the
+  fixture that could not have told.** `pk_core::maze::track_path` — the grown
+  graph turned into legs and fillets. Bit-exact on the whole corpus on the
+  first run, which is a fact about pass 1 as much as pass 2.
+  - **The gate had to be built before the port could be believed.** The
+    `track-path` boundary pinned `extra: { legs: N }` and the two graph digests
+    — and the graph there is pass 1's output, unchanged. So the ONLY thing the
+    fixture said about pass 2's own output was a leg COUNT. Worse, this is the
+    one pass in the pipeline that draws NOTHING from the rng, so the cumulative
+    draw count — the localiser every other pass leans on to split "wrong
+    sequence" from "wrong arithmetic" — is identical on both sides by
+    construction. A port that pulled every leg back by the wrong setback would
+    have matched. `pathLegs` / `pathArcs` / `pathArcHalf` added to the exporter;
+    nothing existing weakened.
+  - **`Math.tan` and `Math.atan2` are `libm`'s, and std's are wrong** — swept
+    for the first time here (4 `tan` ranges, 2 `atan2` lattices), with std
+    pinned as still-wrong per range and the maze corpus separating them
+    independently: `f64::tan` moves L3 s1's legs, `f64::atan2` moves L1 s1's.
+    The expectation going in was that `tan` would need a twin like `cos`/`sin`
+    — it shares their argument reduction and its kernel is the one FreeBSD
+    rewrote after 1993. It does not. There is no family rule, only the sweep.
+  - **Two things ten green floors provably do NOT prove**, measured by
+    swapping the call and re-running:
+    · `js_hypot` vs `libm::hypot` differ on 266 of the 790 hypot calls this
+      pass makes (34%) and change NO pinned digest — hypot only feeds two
+      inequalities here (`budget`, `sa + sb >= len − 0.5`) and a 1-ulp shift
+      flipped neither. The twin is still what is called.
+    · `js_cos`/`js_sin` differ from `libm`'s on 8 of 790 leg bearings and the
+      swap survives FIVE corpus floors before L8 s1 catches it: a 1-ulp error
+      scaled by a ≤7-tile setback is ~8e-16 against a ~3.6e-15 ulp on the
+      coordinate it lands in, so it usually rounds away. A corpus that stopped
+      at L5 would have certified `libm::cos`.
+  - **Found in the original:** the `radii[0]` clamp and the one-setback-per-
+    junction rule cannot both hold at a junction whose pairs turn through
+    different angles, so a non-maximal pair's fillet is NOT tangent to its
+    legs. Measured 1.81 tiles on a three-leg fixture — past the 1.2 the legacy
+    tangency test calls a floating fragment; that test survives because it is
+    statistical (allows 6%). Authored behaviour, pinned as its own test so the
+    port is not blamed for it later.
+  - **Measured:** `cargo test -p pk-core --release` green (353 lib + 20
+    integration); fmt and clippy clean; both fixtures re-exported from real
+    node with every previously pinned value unchanged.
 - **2026-08-10 — `js_cos`/`js_sin`: V8's trig is Sun's 1993 fdlibm, and P2 pass
   1 is now 10 of 10 floors bit-exact.** `jsmath/fdlibm.rs` — `s_sin`/`s_cos`,
   `k_sin`/`k_cos`, `e_rem_pio2` and `k_rem_pio2`, transcribed verbatim. The

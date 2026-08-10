@@ -209,6 +209,34 @@ function digestEdges(edges: Array<{ a: number; b: number; d: number; len: number
 }
 
 /**
+ * Digest the LEGS in emission order — endpoints, node ids and lane width.
+ *
+ * ⚠️ ADDED WHEN PASS 2 WAS PORTED, and it is worth saying why it was missing.
+ * `track-path` pinned `extra: { legs: N }` and the graph digests — but the
+ * graph at that boundary is pass 1's output, unchanged, so the ONLY thing the
+ * boundary said about pass 2's own output was a count. And `buildTrackPath`
+ * draws no rng at all, so the draw counter — the localiser every other pass
+ * leans on — is identical on both sides of it by construction. A port that put
+ * every leg a tile short, or that emitted them in a different order, matched
+ * the fixture exactly.
+ *
+ * Order is part of the signal: `carveTrack` walks the list in order and the
+ * on-ramp siting reads `a`/`b`, so two legs swapped is a different floor even
+ * when every number in the list is right.
+ */
+function digestLegs(legs: Array<{ x0: number; z0: number; x1: number; z1: number; a: number; b: number; half: number }>): number {
+  const view = new DataView(new ArrayBuffer(8));
+  let h = FNV_OFFSET;
+  for (const l of legs) {
+    for (const v of [l.x0, l.z0, l.x1, l.z1]) h = foldF64(h, v, view);
+    h = foldLen(h, l.a);
+    h = foldLen(h, l.b);
+    h = foldF64(h, l.half, view);
+  }
+  return foldLen(h, legs.length);
+}
+
+/**
  * SELF-TEST VECTORS — how the Rust twin certifies its own digest before any
  * maze code exists.
  *
@@ -306,6 +334,17 @@ interface PassRecord {
   /** The circuit, on the two passes that own it (null everywhere else). */
   graphNodes: number | null;
   graphEdges: number | null;
+  /**
+   * The rideable geometry, on the one pass that owns it — legs, fillets and the
+   * carver's sweep half-width. Null everywhere else.
+   *
+   * Separate digests so a failure says WHICH half diverged: legs differ means
+   * the setback settlement is wrong, legs match and arcs differ means the
+   * setbacks are right and the fillet construction is not.
+   */
+  pathLegs: number | null;
+  pathArcs: number | null;
+  pathArcHalf: number | null;
   /** Exact counts, so a mismatch is legible without a grid dump. */
   walkable: number;
   shaped: number;
@@ -341,6 +380,11 @@ function record(snap: PassSnapshot, draws: number): PassRecord {
     dist: mask ? digestF32(mask.dist) : null,
     graphNodes: snap.graph ? digestNodes(snap.graph.nodes) : null,
     graphEdges: snap.graph ? digestEdges(snap.graph.edges) : null,
+    pathLegs: snap.path ? digestLegs(snap.path.legs) : null,
+    // The SAME fold the grid's published arcs use, so a fillet that reaches
+    // `grid.arcs` unchanged digests identically in both places.
+    pathArcs: snap.path ? digestArcs(snap.path.arcs) : null,
+    pathArcHalf: snap.path ? snap.path.arcHalf : null,
     walkable: walkableCountOf(g),
     shaped: countIf(g.shapes, (v) => v !== 0),
     arcTiles: g.arcIdx ? countIf(g.arcIdx, (v) => v >= 0) : 0,
@@ -690,6 +734,18 @@ describe("port-parity fixtures — maze pass digests", () => {
       // The floor must be a floor: a start, an exit, and curved walls on it.
       expect(f.result.start).not.toEqual(f.result.stairs);
       expect(f.passes[f.passes.length - 1].arcTiles).toBeGreaterThan(0);
+      // ── The path digests exist EXACTLY where the path does ───────────────
+      //
+      // `track-path` is the only boundary that carries live path geometry, and
+      // it is the only pass whose draw count is identical to its predecessor's
+      // (it draws nothing). Without these digests the boundary pins a leg COUNT
+      // and the graph pass 1 already pinned — i.e. nothing about pass 2. So a
+      // null here is not a missing nicety, it is the gate being off.
+      const pathPasses = f.passes.filter((p) => p.pathLegs !== null);
+      expect(pathPasses.map((p) => p.pass)).toEqual(["track-path"]);
+      expect(pathPasses[0].pathArcs).not.toBeNull();
+      expect(pathPasses[0].pathArcHalf).toBeGreaterThan(0);
+      expect(pathPasses[0].extra.legs).toBeGreaterThan(0);
     }
 
     const computed = { passOrder: PASS_ORDER, floors };

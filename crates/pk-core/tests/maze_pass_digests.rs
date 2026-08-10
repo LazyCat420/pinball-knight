@@ -40,6 +40,7 @@ use pk_core::maze::modifiers::{
 use pk_core::maze::track_grow::{
     circuit_rank, digest_edges, digest_nodes, grow_track, GrowTrackOpts,
 };
+use pk_core::maze::track_path::{build_track_path, digest_legs, TrackPathOpts, TRACK_RADII};
 use pk_core::maze::{digest, floor_rng, floor_seed, PASS_ORDER};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -147,6 +148,10 @@ struct Pass {
     /// The circuit, on the two passes that own it. Null everywhere else.
     graph_nodes: Option<u32>,
     graph_edges: Option<u32>,
+    /// The rideable geometry, on the ONE pass that owns it. Null elsewhere.
+    path_legs: Option<u32>,
+    path_arcs: Option<u32>,
+    path_arc_half: Option<f64>,
     extra: serde_json::Value,
 }
 
@@ -345,6 +350,34 @@ fn fixture_has_the_shape_the_port_will_replay() {
         assert_eq!(
             f.passes[0].arcs, f.passes[1].arcs,
             "{head}: arcs before the grid is carved"
+        );
+
+        // ── The path digests exist EXACTLY where the path does ──────────────
+        //
+        // `track-path` is the only boundary carrying live path geometry, and —
+        // uniquely — the only pass whose draw count equals its predecessor's,
+        // because `build_track_path` draws nothing. Before these digests were
+        // added the boundary pinned a leg COUNT plus the graph pass 1 had
+        // already pinned, so a port that shifted every leg by a tile matched.
+        // A null here is the gate being off, not a missing nicety.
+        let with_path: Vec<&str> = f
+            .passes
+            .iter()
+            .filter(|p| p.path_legs.is_some())
+            .map(|p| p.pass.as_str())
+            .collect();
+        assert_eq!(
+            with_path,
+            ["track-path"],
+            "{head}: the path digests are not pinned at exactly one boundary"
+        );
+        assert!(
+            f.passes[1].path_arcs.is_some() && f.passes[1].path_arc_half.unwrap_or(0.0) > 0.0,
+            "{head}: track-path pins legs but not the fillets or the sweep width"
+        );
+        assert_eq!(
+            f.passes[1].draws, f.passes[0].draws,
+            "{head}: track-path drew from the rng — it is pure geometry"
         );
     }
 }
@@ -731,4 +764,136 @@ fn pass1_grow_track_replays_the_oracle() {
     // said so.
     //
     // All ten floors now assert inline, above. Nothing is excluded here.
+}
+
+/// PASS 2 — `track-path`, replayed against the oracle on every corpus floor.
+///
+/// ## Why this boundary needed the fixture widened before it could be a gate
+///
+/// Pass 2 is the only pass in the pipeline that draws NOTHING from the rng: it
+/// is pure geometry over pass 1's graph. So the draw counter — the localiser
+/// every other pass leans on, the thing that splits "wrong sequence" from
+/// "wrong arithmetic" — is identical on both sides here by construction, and
+/// the graph digests at this boundary are pass 1's output unchanged. What the
+/// fixture pinned was `extra: { legs: N }`, a COUNT, and a count is not a
+/// digest: a port that pulled every leg back by the wrong setback, or emitted
+/// the same legs in a different order, matched it exactly.
+///
+/// `pathLegs` / `pathArcs` / `pathArcHalf` were added to the exporter for this
+/// test. Digested apart so a failure says which half diverged:
+///
+///   · legs differ            → the SETBACK settlement is wrong (the radius
+///     search, the per-junction max, or the "eaten by its own fillets" drop).
+///   · legs match, arcs differ → the setbacks are right and the fillet
+///     construction is not (the bisector, `R/sin(θ/2)`, or the span's sign).
+///
+/// The two V8 primitives this pass reaches that no earlier pass did are
+/// `Math.tan` and `Math.atan2`; both are swept in `tests/jsmath_oracle.rs`
+/// against the runtime, because "libm is right for atan so it is right for
+/// atan2" is exactly the reasoning that put `libm::pow` in pass 1.
+#[test]
+fn pass2_track_path_replays_the_oracle() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let p = &arch.track;
+
+        // The shipping call, exactly as `buildTrackFloor` makes it.
+        let mut rng = floor_rng(f.run_seed, f.level);
+        roll_modifier(f.level, &mut rng);
+        let _windiness = windiness_for(f.level, arch, &mut rng);
+        let (foods, relays) = track_node_counts(p, f.w, f.h);
+        let graph = grow_track(
+            f.w,
+            f.h,
+            &mut rng,
+            &GrowTrackOpts {
+                foods: Some(foods as usize),
+                relays: Some(relays as usize),
+                min_loops: Some(i64::from(p.min_loops)),
+                layout: Some(p.layout),
+                max_len_frac: Some(p.max_len_frac),
+                survive: Some(p.survive),
+                grow: None,
+            },
+        );
+        let path = build_track_path(
+            &graph,
+            &TrackPathOpts {
+                radii: None,
+                lane_scale: Some(p.lane_scale),
+            },
+        );
+
+        let want = &f.passes[1];
+        assert_eq!(want.pass, "track-path", "{head}: fixture pass 2 moved");
+
+        // Counts first — the legible failure. "we built half a circuit" is a
+        // different bug from "the legs are a millimetre out".
+        assert_eq!(
+            path.legs.len() as i64,
+            want.extra["legs"].as_i64().unwrap(),
+            "{head}: surviving leg count"
+        );
+        // The pass must still have drawn nothing. If this ever fails, the port
+        // grew a draw the oracle does not have and EVERY later pass is shifted.
+        assert_eq!(
+            rng.draws(),
+            want.draws,
+            "{head}: draws at the pass-2 boundary — this pass must draw NOTHING"
+        );
+
+        assert_eq!(
+            digest_legs(&path.legs),
+            want.path_legs.expect("pass 2 pins a leg digest"),
+            "{head}: leg digest with the same leg COUNT and the same graph — the \
+             setbacks diverged (the radius search, the per-junction max, or the \
+             short-leg drop), not the draw sequence: this pass draws nothing"
+        );
+        assert_eq!(
+            digest::digest_arcs(&path.arcs),
+            want.path_arcs.expect("pass 2 pins an arc digest"),
+            "{head}: fillet digest with the LEGS matching — the setbacks are \
+             right and the arc construction is not (bisector, R/sin(θ/2), the \
+             span's sign, or the authoring ORDER, which is adjacency insertion \
+             order and not a hash order)"
+        );
+        assert_eq!(
+            path.arc_half,
+            want.path_arc_half
+                .expect("pass 2 pins the sweep half-width"),
+            "{head}: arcHalf — the carver would sweep the fillets at the wrong \
+             width and funnel every junction"
+        );
+
+        // The pass's own contract, restated rather than trusted: a circuit that
+        // produced no rideable straight is a floor `buildTrackFloor` declines.
+        assert!(
+            !path.legs.is_empty(),
+            "{head}: no legs — the floor is refused"
+        );
+        for a in &path.arcs {
+            assert!(
+                a.r >= 1.0 && a.r <= TRACK_RADII[0] + 1e-6,
+                "{head}: radius {} outside the authored range",
+                a.r
+            );
+            assert!(
+                a.span > 0.0 && a.span.is_finite(),
+                "{head}: span {}",
+                a.span
+            );
+        }
+    }
+
+    // ── NOTHING IS EXCLUDED HERE ────────────────────────────────────────────
+    //
+    // All ten corpus floors are bit-exact at this boundary on the first run of
+    // the port, which is a fact about pass 1 as much as pass 2: the graph
+    // arriving here was already bit-identical on all ten, so `tan` and `atan2`
+    // were the only new primitives that could have diverged and neither did.
+    // If a future change breaks a subset, pin them BY NAME with an equality
+    // assertion (see the note at the end of pass 1) — a list that only fails
+    // when it GROWS stops telling you when the gap closes.
 }
