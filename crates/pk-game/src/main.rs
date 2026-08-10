@@ -14,6 +14,7 @@
 
 mod intro;
 mod overworld;
+mod tavern;
 
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ScalingMode;
@@ -53,6 +54,9 @@ const SHEET_N_JSON: &str = include_str!("../../../legacy/public/sprites/pinball_
 pub enum AppState {
     Intro,
     Dungeon,
+    /// The walkable between-floor hub (P6). Entered via the boot gate, or T
+    /// in the dungeon (the stand-in for the P5 run flow); DESCEND leaves it.
+    Tavern,
 }
 
 #[derive(Resource)]
@@ -73,8 +77,8 @@ struct RenderPos {
 /// space) on it, plus the world-space quad aspect of a cell.
 pub struct SheetClips {
     pub material: Handle<StandardMaterial>,
-    idle: Vec<[f32; 4]>, // [u, v, uw, vh]
-    walk: Vec<[f32; 4]>,
+    pub idle: Vec<[f32; 4]>, // [u, v, uw, vh]
+    pub walk: Vec<[f32; 4]>,
     /// The sprint clip — the intro's ball frames (`E:ball ?? E:run`).
     pub run: Vec<[f32; 4]>,
     pub aspect: f32, // cell w / h
@@ -82,9 +86,9 @@ pub struct SheetClips {
 
 #[derive(Resource)]
 pub struct KnightArt {
-    s: SheetClips,
+    pub s: SheetClips,
     pub e: SheetClips,
-    n: SheetClips,
+    pub n: SheetClips,
     /// CPU copy of the E sheet for the intro's 2D overworld painter.
     pub e_cpu: CpuSheet,
 }
@@ -136,7 +140,9 @@ fn intro_skip_gate() -> bool {
 }
 
 fn main() {
-    let start = if intro_skip_gate() {
+    let start = if tavern::tavern_boot_gate() {
+        AppState::Tavern
+    } else if intro_skip_gate() {
         AppState::Dungeon
     } else {
         AppState::Intro
@@ -155,6 +161,7 @@ fn main() {
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
+    .add_plugins(tavern::TavernPlugin)
     .add_systems(Startup, setup_common)
     // Scene setups are lazy Update systems, not OnEnter: the initial state's
     // OnEnter fires before Startup has applied its commands, so a Res param
@@ -176,6 +183,11 @@ fn main() {
             .run_if(resource_exists::<Sim>),
     )
     .add_systems(
+        Update,
+        dungeon_to_tavern.run_if(in_state(AppState::Dungeon)),
+    )
+    .add_systems(OnExit(AppState::Dungeon), teardown_dungeon)
+    .add_systems(
         FixedUpdate,
         step_sim
             .run_if(in_state(AppState::Dungeon))
@@ -195,26 +207,55 @@ fn main() {
 fn publish_stats(
     sim: Option<Res<Sim>>,
     intro_res: Option<Res<intro::IntroRes>>,
+    tavern_res: Option<Res<tavern::TavernRes>>,
     state: Res<State<AppState>>,
     mut frame: Local<u32>,
+    mut ticks: Local<u64>,
 ) {
+    // Every 5 frames, not 10: the probe is the only view a harness has, and
+    // at a heavy scene's dev-build frame rate a 10-frame cadence goes stale
+    // enough (~400 ms) to flake pk-check's closed-loop walk gates.
     *frame += 1;
-    if *frame % 10 != 0 {
+    if *frame % 5 != 0 {
         return;
     }
     let intro_field = match (*state.get(), &intro_res) {
         (AppState::Intro, Some(i)) => format!("\"{}\"", i.phase_name()),
         _ => "null".into(),
     };
+    // The tavern probe — mirrors the legacy `__tavernProbe` surface (pose,
+    // focus, open panel) so pk-check can drive the room from outside.
+    let tavern_field = match (*state.get(), &tavern_res) {
+        (AppState::Tavern, Some(t)) => format!(
+            r#"{{"x":{},"z":{},"facing":"{:?}","speed":{},"focus":{},"panel":{}}}"#,
+            t.pose.x,
+            t.pose.z,
+            t.pose.facing,
+            t.pose.speed,
+            t.focus
+                .map(|s| format!("\"{}\"", s.id))
+                .unwrap_or("null".into()),
+            t.open_panel.is_some(),
+        ),
+        _ => "null".into(),
+    };
     let json = match &sim {
         Some(sim) => {
             let p = &sim.0.player;
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{}}}"#,
-                sim.0.tick, p.x, p.z, p.facing, p.moving, intro_field
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{}}}"#,
+                sim.0.tick, p.x, p.z, p.facing, p.moving, intro_field, tavern_field
             )
         }
-        None => format!(r#"{{"tick":0,"intro":{intro_field}}}"#),
+        // No dungeon sim (e.g. the tavern owns the screen): keep the tick
+        // ADVANCING so pk-check's liveness gate still reads a pulse.
+        None => {
+            *ticks += 1;
+            format!(
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field}}}"#,
+                *ticks
+            )
+        }
     };
     let _ = js_sys::Reflect::set(
         &js_sys::global(),
@@ -604,6 +645,11 @@ fn setup_common(
     ));
 }
 
+/// Everything a dungeon visit owns — despawned when the scene is left (the
+/// tavern hand-off), so a descend builds a FRESH floor.
+#[derive(Component)]
+struct DungeonScene;
+
 /// The demo floor, the sim, and the playable knight.
 fn setup_dungeon(
     mut commands: Commands,
@@ -626,18 +672,41 @@ fn setup_dungeon(
         curr: spawn,
     });
 
-    spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid);
+    for e in spawn_grid_meshes(&mut commands, &mut meshes, &mut materials, &sim.grid) {
+        commands.entity(e).insert(DungeonScene);
+    }
 
     // ── Knight billboard from the real published sheets ──
     let quad_h = 1.15f32;
     let quad_w = quad_h * art.s.aspect;
     commands.spawn((
+        DungeonScene,
         KnightSprite,
         Mesh3d(meshes.add(Rectangle::new(quad_w, quad_h))),
         MeshMaterial3d(art.s.material.clone()),
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
     ));
     commands.insert_resource(Sim(sim));
+}
+
+/// Leaving the dungeon tears the floor down completely — Sim included — so
+/// the next entry regenerates through `setup_dungeon` (the legacy dungeon
+/// tears down between floors; two scenes must not share live state).
+fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>) {
+    for e in &q {
+        commands.entity(e).despawn();
+    }
+    commands.remove_resource::<Sim>();
+    commands.remove_resource::<RenderPos>();
+}
+
+/// T enters the tavern from the dungeon — the stand-in for the P5 run flow
+/// (death / floor-clear / lobby), which is where `enterTavern` is called
+/// from in the legacy game.
+fn dungeon_to_tavern(keys: Res<ButtonInput<KeyCode>>, mut next: ResMut<NextState<AppState>>) {
+    if keys.just_pressed(KeyCode::KeyT) {
+        next.set(AppState::Tavern);
+    }
 }
 
 /// The camera's offset from whatever it's looking at, at an arbitrary
@@ -648,7 +717,7 @@ pub(crate) fn camera_offset_angles(tilt: f32, yaw: f32) -> Vec3 {
 }
 
 /// The dungeon camera's offset — legacy cameraOffset().
-fn camera_offset() -> Vec3 {
+pub(crate) fn camera_offset() -> Vec3 {
     camera_offset_angles(CAM_TILT, CAM_YAW)
 }
 

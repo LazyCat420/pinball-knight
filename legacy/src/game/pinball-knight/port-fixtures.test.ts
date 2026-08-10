@@ -24,6 +24,8 @@ import { moveCircle, computeArcCorners } from "./engine/collision";
 import { wallSurface, floorSurface } from "./engine/surfaces";
 import { freshRail, holdStrength, tryCatchRail, stepRail, decayOverspeed } from "./entities/rail";
 import { buildTitleGrid, stepIntroBall, INTRO_BALL_SPEED, type IntroBall } from "./intro/title-grid";
+import { stepTavernMovement, type TavernPose } from "../../scenes/tavern/player";
+import { SPAWN as TAVERN_SPAWN, stationAt } from "../../scenes/tavern/layout";
 import { comboWindow, comboZone, comboCornerRestitution, comboCornerAdd, comboSpeedCeil, comboFrictionMul, type ComboZone } from "./entities/combo-curve";
 import {
   OVERCHARGE_TIME,
@@ -451,6 +453,56 @@ function pinballTrace(seed: number): {
   return { seed, ticks: 600, launch: { momX: -1, momZ: 0, momSpeed: 18 }, positions };
 }
 
+/**
+ * TAVERN WALK TRACE — the P6 movement gate.
+ *
+ * Drives the REAL `stepTavernMovement` (the same function `updateTavernPlayer`
+ * runs every frame) over a scripted screen-axis tape that crosses the room,
+ * brushes the central table and the counters, sprints along the north wall,
+ * and ends frozen (a panel opening mid-stride). Records pose + velocity +
+ * facing + the station focus `stationAt` resolves — so the Rust twin
+ * (crates/pk-core/tests/tavern_trace.rs) replays movement AND proximity in
+ * one fixture, bit-exactly.
+ */
+function tavernAxis(tick: number): { x: number; z: number } {
+  if (tick < 120) return { x: 0, z: -1 }; // screen-up: NW into the forge quarter
+  if (tick < 200) return { x: 1, z: -1 }; // up-right: due north, past the forge counter
+  if (tick < 300) return { x: 1, z: 0 }; // right (SPRINTING): NE along the notice board
+  if (tick < 390) return { x: 0, z: 1 }; // down: SE, off the board toward the bar
+  if (tick < 470) return { x: -1, z: 0 }; // left: SW into the central table's flank
+  if (tick < 540) return { x: -1, z: -1 }; // up-left: due west, brushing the table
+  return { x: 0, z: 1 }; // down: SE — then a panel freezes the knight
+}
+
+function tavernTrace(): {
+  ticks: number;
+  positions: Array<[number, number, number, number]>;
+  facings: string[];
+  focus: Array<string | null>;
+} {
+  const p: TavernPose = {
+    x: TAVERN_SPAWN.x,
+    z: TAVERN_SPAWN.z,
+    vx: 0,
+    vz: 0,
+    facing: "N",
+    speed: 0,
+    animT: 0,
+  };
+  const positions: Array<[number, number, number, number]> = [];
+  const facings: string[] = [];
+  const focus: Array<string | null> = [];
+  for (let tick = 0; tick < 600; tick++) {
+    const sprint = tick >= 200 && tick < 300;
+    const frozen = tick >= 560;
+    stepTavernMovement(p, tavernAxis(tick), sprint, frozen, 1 / 60);
+    positions.push([p.x, p.z, p.vx, p.vz]);
+    facings.push(p.facing);
+    focus.push(stationAt(p.x, p.z)?.id ?? null);
+  }
+  return { ticks: 600, positions, facings, focus };
+}
+
 function pinFixture(name: string, computed: unknown): void {
   const file = join(FIXTURE_DIR, name);
   if (process.env.RUN_EXPORT === "1" || !existsSync(file)) {
@@ -476,6 +528,18 @@ describe("port-parity fixtures", () => {
     const speeds = t.positions.map((q) => q[2]);
     expect(Math.max(...speeds)).toBeGreaterThan(10);
     pinFixture("pinball-trace-seed7.json", t);
+  });
+
+  it("tavern walk trace matches the committed fixture", () => {
+    const t = tavernTrace();
+    // The tape must actually exercise the room, not glide in a void: several
+    // distinct facings, at least one station focus, and the frozen tail must
+    // bring the knight to a rest.
+    expect(new Set(t.facings).size).toBeGreaterThan(2);
+    expect(t.focus.some((f) => f !== null)).toBe(true);
+    const [, , vx, vz] = t.positions[t.positions.length - 1];
+    expect(Math.hypot(vx, vz)).toBe(0);
+    pinFixture("tavern-walk-trace.json", t);
   });
 
   it("intro ball trace (title-maze ricochet) matches the committed fixture", () => {
