@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn keeps_enough_seed_retries_that_the_search_effectively_never_fails() {
-        assert!(SEED_TRIES >= 6);
+        const { assert!(SEED_TRIES >= 6) };
     }
 
     #[test]

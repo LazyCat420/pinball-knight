@@ -161,11 +161,29 @@ track pipeline first and the fallback last — and read
         runtime answer to reproduce. (V8 does compute `Math.log10`
         independently rather than as `log(x)/LN10` — they differ 1–2 ulp — so a
         future mirrored call site WILL need one.)
-- [ ] Run `jsmath_oracle.rs` under `wasm32-unknown-unknown`: std's `powf`
-      lowers to the `libm` crate there, so `js_pow` is EXPECTED to diverge in
-      the browser and has not been measured. `js_cos`/`js_sin` should be immune
-      — they compute from transcribed constants and never call the platform —
-      but "should be" is what this whole section is about, so measure it.
+- [x] **Run the oracle on the SHIPPED targets — done, and it found a live
+      defect.** `js_pow` was `f64::powf`, certified natively and nowhere else.
+      Measured 2026-08-10:
+      - **wasm** (`node scripts/jsmath-wasm-check.mjs`, which runs the sweeps
+        inside a real `wasm32-unknown-unknown` module): `powf` diverged on
+        19,904 / 200,001 (x^1.35), 9,730 / 100,001 (x^2.5), 5,043 / 50,001
+        (x^7), digests equal to `libm::pow`'s — the compiler-builtins lowering,
+        named rather than inferred.
+      - **windows-gnullvm**, the PLAY target (`cargo test --target
+        x86_64-pc-windows-gnullvm -p pk-core --test jsmath_oracle`): mingw's
+        `pow` is a THIRD implementation — 201 / 200,001 off the runtime and not
+        fdlibm either. "wasm is the odd one out" was the wrong model.
+      Fixed by carrying the routine instead of asking the target:
+      `jsmath::pow_arm` transcribes ARM's optimized-routines `pow` (the one
+      glibc ships and the runtime matches), tables generated mechanically by
+      `scripts/transcribe-pow-tables.py`. ⚠️ The transcription alone was NOT
+      enough — glibc builds it with `-mfma` and GCC's `-ffp-contract=fast`
+      fuses `a*b + c` invisibly, worth 153 / 200,001 on its own. The `mul_add`
+      calls mirror `-fdump-tree-optimized`, and
+      `the_gcc_fusions_are_load_bearing` pins them. All three targets green.
+      `js_cos`/`js_sin`/`js_exp`/`js_log` were immune as expected (transcribed
+      constants, no platform call) and `tan`/`atan`/`atan2` go through the
+      `libm` crate, which is the same pure Rust everywhere.
 - [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
       against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
       launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →

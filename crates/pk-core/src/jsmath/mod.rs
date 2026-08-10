@@ -24,11 +24,20 @@
 //! |---|---|---|---|
 //! | `sqrt` | ✅ | ✅ | either — IEEE-exact, no twin |
 //! | `atan` `atan2` `tan` | ✅ | ❌ | `libm` (std: atan 2,356/100,001) |
-//! | `pow` | ❌ 19,904/200,001 | ✅ | [`js_pow`] |
+//! | `pow` | ❌ 19,904/200,001 | ✅ *here only* | [`js_pow`] |
 //! | `hypot` | ❌ ~35% | ❌ | [`js_hypot`] |
 //! | `cos` `sin` | ❌ | ❌ | [`js_cos`] / [`js_sin`] |
 //! | `exp` | ❌ **1 input** | ❌ 9,621/100,001 | [`js_exp`] |
 //! | `log` | ❌ 196/100,001 | ❌ 1,903/100,001 | [`js_log`] |
+//!
+//! ⚠️ THE "std ✅" IN THE `pow` ROW IS TARGET-LOCAL, and that turned out to be
+//! the trap the whole table was built to avoid. std's `powf` is only the
+//! platform's `pow` where there is a platform: on wasm it lowers to
+//! compiler-builtins, i.e. straight back to the fdlibm column. Measured, not
+//! reasoned — see [`pow_arm`]. Every OTHER row here is safe by construction
+//! (transcribed twins, or the `libm` crate, which is the same pure Rust
+//! everywhere); `pow` was the one row that deferred to the target, and it is
+//! now transcribed too. A "✅" in the std column is a claim about one machine.
 //!
 //! Each row was a separate measurement, and four of them were surprises. A
 //! spot check cannot produce this table: `pow` agrees with `libm` on exponent
@@ -55,8 +64,13 @@
 
 mod fdlibm;
 mod fdlibm_explog;
+mod pow_arm;
+mod pow_data;
 pub use fdlibm::{js_cos, js_sin};
 pub use fdlibm_explog::{js_exp, js_log};
+/// Exposed for the oracle's negative control only — production code calls
+/// [`js_pow`], which adds the ±0.5 routing the runtime does.
+pub use pow_arm::arm_pow;
 
 /// V8's `Math.hypot(a, b)`. Argument ORDER matters (the compensated loop is
 /// order-sensitive) — pass arguments exactly as the legacy call site does.
@@ -123,20 +137,28 @@ mod tests {
 /// same counts — and different roads. Nothing structural could see it; the
 /// conductivity digest could.
 ///
-/// ## Why `powf` and not a hand-rolled twin
+/// ## Why the routine is carried rather than borrowed
 ///
-/// A correctly-rounded `pow` is a research-grade routine (ARM's
-/// optimized-routines version, which glibc and modern musl both use, needs two
-/// 128-entry tables that cannot be re-derived by hand). `f64::powf` IS that
-/// routine on this target, verified against the oracle rather than assumed:
-/// `tests/jsmath_oracle.rs` replays four full sweeps exported from node.
+/// ARM's optimized-routines `pow` — what glibc ships as its `e_pow.c` and what
+/// the runtime's answers match — needs two 128-entry tables that cannot be
+/// re-derived by hand. That was the argument for calling `f64::powf` and
+/// verifying it against the oracle, and it held right up until the target
+/// changed underneath it. The tables are now transcribed MECHANICALLY (parse
+/// the C hex floats, emit bit patterns) into [`pow_data`], which removes the
+/// hand-copying risk that made borrowing attractive in the first place.
 ///
-/// ⚠️ OPEN: the guarantee is per-target. On `wasm32-unknown-unknown` there is
-/// no system libm and std's `powf` lowers to compiler-builtins — i.e. back to
-/// the fdlibm `libm` crate — so the wasm build is EXPECTED to diverge here and
-/// has not been measured. The sweep test is what turns that into a loud failure
-/// instead of a differently-shaped floor in the browser; running it under wasm
-/// is tracked in the port checklist.
+/// Note it is *not* correctly rounded (0.54 ulp worst case). A more accurate
+/// pow would fail this gate. The requirement is the runtime's bits.
+///
+/// ⚠️ ...and that guarantee was per-TARGET, which is the whole problem. Closed
+/// 2026-08-10 by measuring it instead of reasoning about it:
+/// `scripts/jsmath-wasm-check.mjs` runs the oracle sweeps inside a
+/// `wasm32-unknown-unknown` module and `f64::powf` there diverged on 19,904 /
+/// 200,001 (x^1.35), 9,730 / 100,001 (x^2.5) and 5,043 / 50,001 (x^7) inputs,
+/// with digests equal to `libm::pow`'s — naming the cause as the
+/// compiler-builtins lowering rather than leaving it inferred. So `powf` is
+/// gone: [`pow_arm::arm_pow`] is a transcription of the routine the runtime
+/// actually agrees with, and it computes the same bits on every target.
 /// ## The ±0.5 fast path
 ///
 /// V8 routes exponent ±0.5 to `sqrt`, not to `pow`, and the two are not the
@@ -171,7 +193,7 @@ pub fn js_pow(x: f64, y: f64) -> f64 {
             1.0 / x.sqrt()
         };
     }
-    x.powf(y)
+    arm_pow(x, y)
 }
 
 #[cfg(test)]

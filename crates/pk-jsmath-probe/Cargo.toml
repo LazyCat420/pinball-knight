@@ -1,0 +1,17 @@
+[package]
+name = "pk-jsmath-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Runs the jsmath oracle sweeps INSIDE a wasm module, so the shipped target is measured rather than assumed"
+publish = false
+
+[lib]
+# cdylib so `cargo build --target wasm32-unknown-unknown` emits a loadable
+# module with no wasm-bindgen glue: every export is a plain numeric extern "C".
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pk-core = { path = "../pk-core" }
+libm = { workspace = true }

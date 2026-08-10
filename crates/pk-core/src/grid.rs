@@ -63,7 +63,7 @@ pub fn ensure_arcs(g: &mut Grid) {
 }
 
 /// The arc feature owning tile (i,j), or None (tile isn't an arc slice).
-pub fn arc_feature_at<'g>(g: &'g Grid, i: i32, j: i32) -> Option<&'g ArcFeature> {
+pub fn arc_feature_at(g: &Grid, i: i32, j: i32) -> Option<&ArcFeature> {
     let idx_arr = g.arc_idx.as_ref()?;
     if i < 0 || j < 0 || i >= g.w || j >= g.h {
         return None;

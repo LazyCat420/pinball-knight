@@ -21,7 +21,7 @@ two days against five bit-exact fixtures.
 | P1 pinball physics | ~6.0k | ~1.0k | **~5.0k** | bit-exact trace |
 | P2 maze `buildTrackFloor` (23 passes) | ~10.7k | 1.1k (2 passes) | **~9.6k** | pass digests |
 | P2 content half-B (`decorate`, prefabs, assembly, surface-paint) | ~5.4k | — | **~5.4k** | **no gate yet** |
-| P2 fallback (`generator`, `build`) | 2.3k | — | 2.3k | pass digests |
+| P2 fallback (`generator`) | 0.4k | — | 0.4k | pass digests |
 | P3 render (minus baked `cel-painter`) | ~12.0k | ~2.0k | **~10.0k** | visual A/B |
 | P4 entities + combat + root gameplay + spawn + economy | ~20.0k | — | **~20.0k** | ported tests + trace |
 | P5 GUI, HUD, run flow, saves | ~6.8k | ~3.4k *(unmerged)* | ~3.4k | fixture + flow script |
@@ -83,15 +83,19 @@ follow-ups:
    the wasm-size budget, and the windows-gnullvm build. What it **cannot** run:
    `pk-check`, because SwiftShader cannot run the Bevy wasm app at all. Host
    Chrome on this box stays the manual gate; CI covers everything else.
-3. **Measure `jsmath` under `wasm32-unknown-unknown`.** Today's fixtures all
-   replay *natively*, and `std::f64::powf` lowers to the `libm` crate on wasm —
-   which is the implementation the pow sweep already proved is **not** V8's
-   (19,904 of 200,001 inputs differ by 1 ulp). `js_pow` is called ~140× per
-   floor feeding lane widths. So the web build may generate different floors
-   than the fixtures certify, and nobody has looked. Run `jsmath_oracle.rs`
-   under wasm before more maze passes are certified on top of it. The trig twins
-   *should* be immune (they compute from transcribed constants and never call
-   the platform) — "should be" is what this whole section is about.
+3. ~~**Measure `jsmath` under `wasm32-unknown-unknown`.**~~ **DONE
+   2026-08-10, and it was a live defect on BOTH non-native targets.** The
+   suspicion was right and understated: wasm's `powf` is fdlibm (19,904 /
+   200,001 on x^1.35), and windows-gnullvm — the *play* target — is a third
+   implementation again (201 / 200,001, and not fdlibm). Two unrelated causes,
+   which is why enumerating targets was never the fix. `js_pow` now carries
+   ARM's optimized-routines `pow`, fusion-for-fusion; all three targets
+   reproduce the runtime. Gate: `node scripts/jsmath-wasm-check.mjs` (no GPU, so
+   CI can run it) plus `cargo test --target x86_64-pc-windows-gnullvm -p pk-core
+   --test jsmath_oracle`. Details in the [checklist](port-checklist.md); the
+   general lesson is that a "✅ std" in the `jsmath` table was a claim about one
+   machine, and every remaining ✅ there is now target-independent by
+   construction.
 4. **Write the `intro.rs` camera fixture** so the last two `jsmath` call sites
    can be switched with a gate behind them, instead of sitting as documented
    debt.
@@ -118,9 +122,14 @@ Then two items the checklist lists but the harness does not cover:
   half B is what P4's entities and P3's dressing both read. Extend the seam into
   `decorateMaze` before porting it, on the same terms as the first harness: the
   digest certified on its own vectors before it is pointed at a floor.
-- **The growing-tree fallback last.** `generator.ts` + `build.ts` (2.3k) run on
-  no floor a player sees — measured, `buildTrackFloor` declined 0 times in 400
+- **The growing-tree fallback last.** `generator.ts` (434 lines) runs on no
+  floor a player sees — measured, `buildTrackFloor` declined 0 times in 400
   floors. Port it for completeness at the end of P2, not before.
+  *(Correction, 2026-08-10: this bullet and the table above used to say
+  "`generator.ts` + `build.ts`, 2.3k". `build.ts` is 1,834 lines of **three.js
+  renderer** — grid → two `InstancedMesh` wall passes, torch sconces, a
+  `PointLight` pool — not a generator at all. It is Stage D work and P2 is 1.9k
+  smaller than the table claimed.)*
 
 Exit: 10/10 corpus floors bit-exact at all 23 boundaries *and* through decorate,
 `buildTrackFloor` wired into `setup_dungeon` replacing `demo_floor`, pk-check
@@ -188,10 +197,16 @@ from oracle to reference** — until that day `legacy/` is load-bearing and
 
 ## Standing risks
 
-- **The shipped target is not the gated target.** Fixtures replay natively;
-  players get wasm (web) or the Windows exe. Stage A item 3 closes half of that;
-  the exe half is closed by the sim being target-deterministic, which is a claim
-  worth re-measuring once floors are generated rather than replayed.
+- ~~**The shipped target is not the gated target.**~~ **Was true, and the
+  "exe half is closed by the sim being target-deterministic" line was the wrong
+  half to relax.** Measured 2026-08-10: the exe was the *worse* of the two, with
+  its own third-party `pow`. Target-determinism is not a property the sim had —
+  it is one every primitive has to be built to have, and `js_pow` was the one
+  that deferred. Closed for `jsmath`; the standing form of the risk is now
+  narrower and sharper: **any call that resolves through the target's libc is
+  ungated until it is run on all three targets**, and the two cheap gates for
+  that (`jsmath-wasm-check.mjs`, the windows `cargo test`) exist and take
+  seconds. Run them when a new primitive lands, not when a floor looks wrong.
 - **Every visual and end-to-end gate needs the host GPU.** SwiftShader cannot
   run the app, so pk-check and both A/B rigs are manual, on a quiet box, on this
   machine. That caps how much of the gate story CI can ever own.

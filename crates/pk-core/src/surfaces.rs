@@ -334,7 +334,7 @@ mod tests {
         mix.insert(3, 3.0);
         let mut rng = Mulberry32::new(7);
         let mut draws = 0;
-        let mut pick = |rng: &mut Mulberry32, draws: &mut u32| {
+        let pick = |rng: &mut Mulberry32, draws: &mut u32| {
             let mut f = || {
                 *draws += 1;
                 rng.next_f64()
