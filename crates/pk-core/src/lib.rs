@@ -16,6 +16,7 @@
 
 pub mod collide;
 pub mod combo;
+pub mod gambler;
 pub mod grid;
 pub mod intro;
 pub mod jsmath;
@@ -24,4 +25,5 @@ pub mod rail;
 pub mod rng;
 pub mod state;
 pub mod surfaces;
+pub mod tavern;
 pub mod tile_shape;

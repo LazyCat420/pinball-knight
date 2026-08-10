@@ -5,6 +5,39 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P6 tavern ported: the walkable between-floor hub.** Same
+  split as every phase: everything that ticks is `pk_core::tavern` —
+  the hand-authored floor plan verbatim (7 stations, 8 obstacle rects,
+  5 keeper spots, spawn slots, `station_at` nearest-wins, `move_in_room`
+  axis-eject slide), the movement step (extracted in legacy as
+  `stepTavernMovement` so `updateTavernPlayer` and the fixture exporter
+  drive ONE description; js_hypot in every mirrored hypot), the diorama
+  read (`read_diorama` — caps are completed targets, the ball only laps
+  after a B-or-better), the keeper cast join + idle loops (hammer 2.1s /
+  dart 2.9s work beats with rising-edge latches, greet-once-per-approach,
+  the mirror eased through zero and floored at 0.06), the camera lean
+  (CAM_LEAN 0.72 / CAM_LERP 3.4) and the join board. The GAMBLER's whole
+  deterministic core is ported too (`pk_core::gambler`): table rules
+  (6-round visit cap, half-purse/100g stake caps, two-phase bet/settle,
+  raise seam), slots (16-stop strip, exact-RTP enumeration ~90%),
+  roulette pricing (19 pockets, every bet 18/19) + the full two-body
+  ball physics (track/drop/scatter/rattle, launch-speed SEARCH that
+  never needs its correction), blackjack rules + basic strategy
+  (measured RTP 0.95–1.0 over 200k hands) + the playable table's phase
+  machine (cue order, exactly-once resolve, raise-gated double), darts
+  (board geometry, fitted payout bands, log-space wobble, throw state
+  machine, per-visit economy Monte-Carlos). Verified: 250 ported
+  pk-core tests + a FOURTH bit-exact fixture (`tavern-walk-trace.json`,
+  600 ticks of pose+velocity+facing+station focus) + six new pk-check
+  gates in host Chrome (boot via `?tavern=1`, movement, focus at the
+  table, summary panel open/close, walk to the DESCEND board, hand-off
+  to a live dungeon sim) — ALL GATES PASSED twice, clean console,
+  screenshots. Legacy suite 2654 green; windows-gnullvm checks clean.
+  Shell debt (checklist): P3 materials/pixel-pass/sign lettering, P4/P5
+  vendor+cabinet panels (placeholders; logic is ported), P7 sfx/VFX,
+  P8 multiplayer pool. Probe cadence lesson: `__pk` now publishes every
+  5 frames — a 10-frame cadence at a heavy dev-build's frame rate went
+  stale enough to flake pk-check's closed-loop walk.
 - **2026-08-09 — The title intro plays: 1985 overworld → bonk → shatter →
   the maze that spells the title.** First scene of the player-order plan
   (see milestones' scene-order decision). Split exactly like the physics

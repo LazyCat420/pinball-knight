@@ -137,13 +137,37 @@ The items reported missing today live here.
 - Verify: pk-check flow scripts (open menu, navigate, die, descend) +
   screenshot A/B; ported run/ledger tests.
 
-## P6 — Tavern (15.8k)
+## P6 — Tavern (15.8k) — pulled forward 2026-08-09
 
-The between-runs hub — reported not rendering today because it is unported.
+The between-runs hub. Core ported and verified; shell live with listed debt.
 
-- [ ] `legacy/src/scenes/tavern/**` scene: walkable isometric room, NPCs,
-      tavern-shop, hand-off (`enterTavern`/descend/death/lobby wiring).
-- Verify: pk-check flow (die → tavern → descend); screenshot A/B.
+- [x] Deterministic core → `pk_core::tavern`: layout (stations/obstacles/
+      keepers/spawns, `station_at`, `move_in_room`, `is_open`), movement step
+      (legacy `stepTavernMovement` extraction — one description for the game,
+      the fixture and the port), diorama read, keeper cast + idle-loop beats,
+      camera lean/ease, join board. Verified: 66+ ported tests + BIT-EXACT
+      `tavern-walk-trace.json` (600 ticks: pose, velocity, facing, focus).
+- [x] Gambler core → `pk_core::gambler`: table rules, slots, roulette
+      pricing + ball physics (search reconciliation), blackjack rules +
+      basic-strategy RTP + the playable table's phase machine, darts board/
+      bands/wobble + throw machine, all with their legacy suites ported
+      (183 tests incl. the RTP/economy Monte-Carlos).
+- [x] Shell → `pk-game/src/tavern.rs`: room + props geometry verbatim
+      (build.ts/props.ts numbers), warm/cold light rig with accent breathe +
+      focus spotlight, hearth flicker, diorama caps/ball, keeper billboards
+      driven by the ported loops, knight billboard, prompt, camera lean,
+      DESCEND hand-off (tears down → fresh dungeon floor), `?tavern=1` /
+      `--tavern` boot + T from the dungeon (P5 run-flow stand-in). Verified:
+      pk-check tavern gates (boot, movement, focus, panel, walk-to-board,
+      descend hand-off) in host Chrome, twice, clean console + screenshots.
+- [ ] Shell debt: cel-painter keeper art + pixel pass + sign lettering (P3),
+      vendor counters / cabinet screens over the real GUI stack + economy
+      (P4/P5 — placeholder panels today), run-flow entry wiring
+      (death/floor-clear/lobby, P5), sfx + ember/mote/spark VFX (P7 — the
+      beats that drive them are ported and surfaced), multiplayer pool +
+      join-board UI (P8).
+- Verify (kept): screenshot A/B against the TS tavern at matched camera once
+  P3 materials land.
 
 ## P7 — FX & audio (3.8k fx + 1.1k sfx)
 
@@ -189,3 +213,6 @@ co-op multiplayer.
 | wasm/WebGPU build (trunk) | `Trunk.toml`, `web/` | pk-check in host Chrome |
 | Intro: title-grid maze + ricochet + two-clock + phase machine + skip gate | `pk-core/src/intro.rs` | 17 ported tests + bit-exact `intro-ball-trace.json` |
 | Intro shell: Intro→Dungeon states, 2D overworld gag, shatter, sweep, chrome | `pk-game/src/{intro,overworld}.rs` | pk-check intro gates + phase screenshots |
+| Tavern core: layout, movement step, diorama, keepers, camera, join board | `pk-core/src/tavern/` | 66+ ported tests + bit-exact `tavern-walk-trace.json` |
+| Gambler core: table rules + slots + roulette (pricing & physics) + blackjack (rules & table) + darts (board & throw) | `pk-core/src/gambler/` | 183 ported tests incl. RTP/economy Monte-Carlos |
+| Tavern shell: room/props/lights, keepers, prompt, panels, descend hand-off | `pk-game/src/tavern.rs` | pk-check tavern gates + host-Chrome screenshots |

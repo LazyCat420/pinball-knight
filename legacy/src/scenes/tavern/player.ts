@@ -155,54 +155,70 @@ export function refreshTavernPlayerArt(): void {
 }
 
 /**
- * One movement step.
+ * The pure movement step — everything `updateTavernPlayer` does to the POSE,
+ * with the sprite/animator work stripped out.
  *
- * `frozen` is true while a station panel is open — the knight holds position and
- * drops to idle rather than sliding around behind the UI.
+ * Extracted so the port-parity fixture exporter and the Rust port
+ * (`pk-core/src/tavern/player.rs::step_tavern_movement`) replay the SAME
+ * description of the walk this scene runs — a fixture that re-derived the
+ * maths could drift from it silently, which is the one failure mode a fixture
+ * exists to prevent. `frozen` covers both "a panel is open" and "a one-shot
+ * clip owns the knight": the target velocity is zero but the ramp, the
+ * collide and the speed read still run.
  */
-export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boolean): void {
-  const p = tavern.player;
-  if (!p || !animator) return;
+export interface TavernPose {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  facing: Facing;
+  speed: number;
+  animT: number;
+}
 
+export function stepTavernMovement(
+  p: TavernPose,
+  axis: { x: number; z: number },
+  sprint: boolean,
+  frozen: boolean,
+  dt: number,
+): void {
   let tx = 0;
   let tz = 0;
-  if (!frozen && !oneShot) {
-    const a = input.axis();
-    if (a.x !== 0 || a.z !== 0) {
-      // The input axis is SCREEN-relative; under the isometric yaw, screen-up is
-      // a world diagonal. Rotating here is what makes "W" walk away from the
-      // camera instead of off to one side.
-      //
-      // This MUST go through the same `screenDirToWorld` the dungeon uses. It
-      // used to hand-roll the rotation as `(a.x - a.z, a.x + a.z) * ISO`, which
-      // is the correct basis turned exactly 90°: W walked screen-RIGHT, A
-      // walked screen-UP, S screen-LEFT, D screen-DOWN. The dungeon was fine
-      // because it always called the shared helper — the tavern was the only
-      // place with a second copy of the maths, and a second copy is the whole
-      // reason the two could disagree. `movement.test.ts` now pins them equal.
-      const w = screenDirToWorld(a.x, a.z);
-      const wx = w.x;
-      const wz = w.z;
-      const len = Math.hypot(wx, wz) || 1;
-      const speed = WALK_SPEED * (input.sprintHeld() ? HURRY_MULT : 1);
-      tx = (wx / len) * speed;
-      tz = (wz / len) * speed;
-    }
+  if (!frozen && (axis.x !== 0 || axis.z !== 0)) {
+    // The input axis is SCREEN-relative; under the isometric yaw, screen-up is
+    // a world diagonal. Rotating here is what makes "W" walk away from the
+    // camera instead of off to one side.
+    //
+    // This MUST go through the same `screenDirToWorld` the dungeon uses. It
+    // used to hand-roll the rotation as `(a.x - a.z, a.x + a.z) * ISO`, which
+    // is the correct basis turned exactly 90°: W walked screen-RIGHT, A
+    // walked screen-UP, S screen-LEFT, D screen-DOWN. The dungeon was fine
+    // because it always called the shared helper — the tavern was the only
+    // place with a second copy of the maths, and a second copy is the whole
+    // reason the two could disagree. `movement.test.ts` now pins them equal.
+    const w = screenDirToWorld(axis.x, axis.z);
+    const wx = w.x;
+    const wz = w.z;
+    const len = Math.hypot(wx, wz) || 1;
+    const speed = WALK_SPEED * (sprint ? HURRY_MULT : 1);
+    tx = (wx / len) * speed;
+    tz = (wz / len) * speed;
   }
 
   // Ramp toward the target rather than snapping, so starts and stops have weight.
-  const dvx = tx - vx;
-  const dvz = tz - vz;
+  const dvx = tx - p.vx;
+  const dvz = tz - p.vz;
   const dvLen = Math.hypot(dvx, dvz);
   if (dvLen > 0) {
     const step = Math.min(dvLen, ACCEL * dt);
-    vx += (dvx / dvLen) * step;
-    vz += (dvz / dvLen) * step;
+    p.vx += (dvx / dvLen) * step;
+    p.vz += (dvz / dvLen) * step;
   }
 
-  if (vx !== 0 || vz !== 0) {
-    const wantDx = vx * dt;
-    const wantDz = vz * dt;
+  if (p.vx !== 0 || p.vz !== 0) {
+    const wantDx = p.vx * dt;
+    const wantDz = p.vz * dt;
     const moved = moveInRoom(p.x, p.z, p.x + wantDx, p.z + wantDz);
     // Kill the velocity component we just got blocked on, or we keep pressing
     // into the counter and the walk cycle plays on the spot.
@@ -220,14 +236,40 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
     // one keeps its velocity, which is what makes brushing along a counter a
     // slide at full speed rather than a stutter where you re-accelerate from
     // zero every frame.
-    if (Math.abs(moved.x - p.x) < Math.abs(wantDx) * 0.1) vx = 0;
-    if (Math.abs(moved.z - p.z) < Math.abs(wantDz) * 0.1) vz = 0;
+    if (Math.abs(moved.x - p.x) < Math.abs(wantDx) * 0.1) p.vx = 0;
+    if (Math.abs(moved.z - p.z) < Math.abs(wantDz) * 0.1) p.vz = 0;
     p.x = moved.x;
     p.z = moved.z;
   }
 
-  p.speed = Math.hypot(vx, vz);
+  p.speed = Math.hypot(p.vx, p.vz);
   p.animT += dt;
+
+  if (p.speed > WALK_CLIP_THRESHOLD) {
+    p.facing = facingFromVelocity(p.vx, p.vz, p.facing);
+  }
+}
+
+/**
+ * One movement step.
+ *
+ * `frozen` is true while a station panel is open — the knight holds position and
+ * drops to idle rather than sliding around behind the UI.
+ */
+export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boolean): void {
+  const p = tavern.player;
+  if (!p || !animator) return;
+
+  const a = input.axis();
+  const pose: TavernPose = { x: p.x, z: p.z, vx, vz, facing: p.facing, speed: p.speed, animT: p.animT };
+  stepTavernMovement(pose, a, input.sprintHeld(), frozen || oneShot, dt);
+  p.x = pose.x;
+  p.z = pose.z;
+  vx = pose.vx;
+  vz = pose.vz;
+  p.speed = pose.speed;
+  p.animT = pose.animT;
+  p.facing = pose.facing;
 
   if (oneShot) {
     // The one-shot owns the clip; just advance it.
@@ -236,7 +278,6 @@ export function updateTavernPlayer(dt: number, input: InputHandle, frozen: boole
     return;
   }
   if (p.speed > WALK_CLIP_THRESHOLD) {
-    p.facing = facingFromVelocity(vx, vz, p.facing);
     animator.setFacing(p.facing);
     animator.play("walk");
     // Gait quickens with speed so hurrying reads without a separate run clip.

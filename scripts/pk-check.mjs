@@ -195,6 +195,103 @@ async function main() {
     gate(sawIntro && !!skipped, "a click skips the intro into the dungeon");
     await skipPage.close();
 
+    // ── Tavern gates: ?tavern=1 boots the walkable hub (P6) ──
+    // Drives the room from outside via __pk.tavern (the legacy __tavernProbe
+    // surface): movement, station focus, the summary panel, and the DESCEND
+    // hand-off into a fresh dungeon floor.
+    const tavPage = await ctx.newPage();
+    tavPage.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+    tavPage.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
+    await tavPage.goto(`http://localhost:${PORT}/index.html?tavern=1`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60_000,
+    });
+    const pkTav = () => tavPage.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
+    let tav = null;
+    for (let i = 0; i < 60 && !tav; i++) {
+      await tavPage.waitForTimeout(500);
+      tav = (await pkTav())?.tavern ?? null;
+    }
+    gate(!!tav, `tavern boots via ?tavern=1 ${tav ? `(spawn ${tav.x.toFixed(1)}, ${tav.z.toFixed(1)})` : "(probe never appeared)"}`);
+
+    if (tav) {
+      const hold = async (keys, ms) => {
+        for (const k of keys) await tavPage.keyboard.down(k);
+        await tavPage.waitForTimeout(ms);
+        // Release EVERY movement key, not just the ones this hold pressed: a
+        // dropped keyup under CDP leaves a phantom key held and every later
+        // leg walks diagonally — observed as the closed-loop walk sailing
+        // back into the table's radius.
+        for (const k of ["w", "a", "s", "d"]) await tavPage.keyboard.up(k);
+        await tavPage.waitForTimeout(60);
+      };
+      // Walk due north (screen up-right) from the spawn: crosses the room's
+      // spine and stops against the central table — movement + collision.
+      const z0 = tav.z;
+      await hold(["w", "d"], 1100);
+      const afterWalk = (await pkTav()).tavern;
+      gate(afterWalk.z < z0 - 2, `tavern input drives movement (Δz=${(afterWalk.z - z0).toFixed(2)})`);
+      gate(afterWalk.focus === "table", `station focus fires at the central table (focus=${afterWalk.focus})`);
+
+      // The run summary: E opens it (movement freezes), Escape closes it.
+      // Poll rather than single-read: the probe publishes on a frame cadence.
+      const pollTav = async (done, ms = 2500) => {
+        const t0 = Date.now();
+        let p = null;
+        while (Date.now() - t0 < ms) {
+          p = (await pkTav())?.tavern ?? null;
+          if (p && done(p)) return p;
+          await tavPage.waitForTimeout(150);
+        }
+        return p;
+      };
+      await tavPage.keyboard.press("e");
+      const withPanel = await pollTav((p) => p.panel === true);
+      gate(withPanel?.panel === true, "E opens the run summary panel");
+      await tavPage.keyboard.press("Escape");
+      const noPanel = await pollTav((p) => p.panel === false);
+      gate(noPanel?.panel === false, "Escape closes the panel");
+
+      // Route to the DESCEND board: west along the table's flank, north up
+      // the west lane, then east into the corridor between the board and the
+      // table. CLOSED-LOOP on the probe's pose — key-hold timing under CDP is
+      // not tick-exact and the post-release slide drifts, so each leg walks
+      // until the coordinate says it arrived. (Key mapping: due north = W+D,
+      // east = S+D, west = W+A on the 45° screen basis.)
+      const walkUntil = async (keys, done, maxSteps = 24) => {
+        for (let i = 0; i < maxSteps; i++) {
+          const p = (await pkTav()).tavern;
+          if (!p || done(p)) return p;
+          await hold(keys, 260);
+        }
+        return (await pkTav()).tavern;
+      };
+      await walkUntil(["w", "a"], (p) => p.x <= -4.4); // west, clear of the table
+      await walkUntil(["w", "d"], (p) => p.z <= -4.4); // north up the west lane
+      let atBoard = await walkUntil(["s", "d"], (p) => p.focus === "board" || p.x > 1.4); // east into the corridor
+      if (atBoard?.focus !== "board") {
+        // Overshot east past the radius — walk back west until it catches.
+        atBoard = await walkUntil(["w", "a"], (p) => p.focus === "board", 10);
+      }
+      gate(atBoard?.focus === "board", `reached the DESCEND board on foot (focus=${atBoard?.focus})`);
+
+      const tavShot = join(ROOT, ".checks", `pk-tavern-${Date.now()}.png`);
+      await tavPage.screenshot({ path: tavShot });
+      console.log("screenshot:", tavShot);
+
+      // The plunger: E on the board tears the tavern down and builds a
+      // fresh dungeon floor — the real hand-off.
+      await tavPage.keyboard.press("e");
+      let descended = null;
+      for (let i = 0; i < 20 && !descended; i++) {
+        await tavPage.waitForTimeout(250);
+        const s = await pkTav();
+        if (s && s.tavern === null && s.x !== undefined) descended = s;
+      }
+      gate(!!descended, "DESCEND hands off to a live dungeon sim");
+    }
+    await tavPage.close();
+
     // Gate 1: no console/page errors across everything above.
     gate(errors.length === 0, `console clean (${errors.length} errors)`);
     for (const e of errors.slice(0, 5)) console.log("   ", e.slice(0, 200));
