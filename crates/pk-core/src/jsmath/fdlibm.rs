@@ -28,28 +28,34 @@
 //! whole-curve digest over ranges chosen to cross every branch boundary — see
 //! `crates/pk-core/tests/jsmath_oracle.rs`.
 
-// ─── why this file suppresses three lints ────────────────────────────────────
+// ─── why this file suppresses four lints ─────────────────────────────────────
 //
 // The value of a verbatim transcription is that it can be DIFFED against the
 // original C. Every "improvement" clippy suggests here would be correct in
 // ordinary code and would destroy that property, so each is suppressed with its
-// reason rather than applied:
+// reason rather than applied. Three of the four are DENY-level, which aborts
+// the whole workspace lint run at pk-core rather than adding a warning — so
+// leaving them unhandled also silently stops linting pk-game and pk-audio.
 //
 // · `excessive_precision` — the coefficients are transcribed digit for digit
 //   from the C, which writes more decimals than an f64 can hold. The parsed
 //   values are identical either way; the literals matching fdlibm's is what
 //   lets the next reader see nothing was tidied on the way in.
-// · `approx_constant` — `INVPIO2` is fdlibm's 2/π, and it must stay fdlibm's
-//   rounding of it. Swapping in `f64::consts::FRAC_2_PI` would be substituting
-//   a different library's constant into a bit-exact reproduction, which is the
-//   exact class of mistake this whole module exists to undo.
-// · `eq_op` — `x - x` is fdlibm's NaN/Infinity idiom: it propagates a NaN
-//   payload and turns ±∞ into NaN in one expression. `f64::NAN` is not the
-//   same thing (it discards the input's payload).
-// · `needless_range_loop` — the index loops mirror the C's `for (i=1;i<=jz;i++)`
-//   line for line. These are compensated summations where ORDER is the
-//   algorithm, so the indices stay visible rather than hiding inside an
-//   iterator chain a reader has to decode back into a range.
+//   (Measured under sabotage: only about the first EIGHT significant digits of
+//   the trailing coefficients are load-bearing. Perturbing C6 by 1 ulp, or
+//   truncating it to 12 digits, is invisible to every gate — its contribution
+//   is ~x^12 * 1e-11. The transcription is for the reader diffing against the
+//   C; the test suite defends rather less of it than it looks.)
+// · `approx_constant` — `INVPIO2` is 2/pi, deliberately fdlibm's 21-digit
+//   literal and not `FRAC_2_PI`. Swapping in another library's constant is the
+//   exact class of mistake this module exists to undo.
+// · `eq_op` — `x - x` is fdlibm's idiom for "return a NaN carrying THIS
+//   argument's payload" at the infinity/NaN guards. `f64::NAN` is not the same
+//   value.
+// · `needless_range_loop` — in `kernel_rem_pio2` the index walks two arrays at
+//   different offsets (`fq[jz - i]` from `q[i + k]`), and these are compensated
+//   summations where order is the algorithm. An iterator rewrite would not be
+//   the C any more.
 #![allow(
     clippy::excessive_precision,
     clippy::approx_constant,
@@ -58,19 +64,23 @@
 )]
 
 // ─── word access, the fdlibm macros ──────────────────────────────────────────
+//
+// `__HI`, `__LO` and the union write-back, which every fdlibm routine leans on.
+// Shared with `fdlibm_explog.rs` rather than re-declared there: two copies of a
+// bit-twiddling helper is two places for a port to drift.
 
 #[inline]
-fn high_word(x: f64) -> i32 {
+pub(super) fn high_word(x: f64) -> i32 {
     (x.to_bits() >> 32) as u32 as i32
 }
 
 #[inline]
-fn low_word(x: f64) -> u32 {
+pub(super) fn low_word(x: f64) -> u32 {
     x.to_bits() as u32
 }
 
 #[inline]
-fn from_words(hi: u32, lo: u32) -> f64 {
+pub(super) fn from_words(hi: u32, lo: u32) -> f64 {
     f64::from_bits((u64::from(hi) << 32) | u64::from(lo))
 }
 
@@ -233,7 +243,13 @@ fn rem_pio2(x: f64, y: &mut [f64; 2]) -> i32 {
                 high = high_word(y[0]);
                 i = j - ((high >> 20) & 0x7ff);
                 if i > 49 {
-                    // 3rd iteration, 151 bits — covers every remaining case
+                    // 3rd iteration, 151 bits — covers every remaining case.
+                    // ⚠️ UNTESTED BRANCH: instrumented 2026-08-10 across all
+                    // swept ranges and all 10 corpus floors, this is reached
+                    // ZERO times (the 2nd iteration fires 192,436 times).
+                    // Deleting it is undetectable by any gate here. It stays
+                    // because it is in the C and the C is the specification —
+                    // but nothing in this repo proves it correct.
                     t = r;
                     w = fnn * PIO2_3;
                     r = t - w;
@@ -537,18 +553,51 @@ pub fn js_sin(x: f64) -> f64 {
 mod tests {
     use super::{js_cos, js_sin};
 
-    /// The input the maze harness pointed at. Bits pinned from node, and the
-    /// two candidates the workspace rule would have reached for pinned as
-    /// WRONG — the same shape as `js_hypot`'s and `js_pow`'s controls.
+    /// Readable witnesses, one per `kernel_cos` branch plus `kernel_sin`, with
+    /// the runtime's bits pinned and both rejected candidates pinned as wrong.
     ///
-    /// One value proves nothing on its own (that is the whole lesson of this
-    /// module) — `tests/jsmath_oracle.rs` is the real gate, over ten swept
-    /// ranges. This is here so a failure has something a human can read.
+    /// ⚠️ **This test is NOT the gate and cannot be — measured, not assumed.**
+    /// Sabotage-verified 2026-08-10: replacing `kernel_cos`'s Horner sum with
+    /// FreeBSD's split polynomial, doing the same to `kernel_sin`, and deleting
+    /// the `qx` branch outright each leave this test GREEN while turning all
+    /// ten swept ranges red. The reason is that at any single input the two
+    /// polynomial FORMS often round to the same double — what actually differs
+    /// between fdlibm and musl at `cos(0.1)` is the shape of the FINAL sum, not
+    /// the polynomial. So a hand-picked input can witness "libm disagrees here"
+    /// without witnessing "this kernel is the right kernel".
+    ///
+    /// `tests/jsmath_oracle.rs` is the gate. This exists so that when the gate
+    /// fires, a human has something to paste into a node REPL — and it is kept
+    /// deliberately spread across the branches so it has the best chance of
+    /// being more than decoration.
     #[test]
-    fn cos_of_a_tenth_is_the_runtimes_bits_and_not_the_libraries() {
+    fn the_witness_inputs_are_the_runtimes_bits_and_not_the_libraries() {
+        // |reduced x| < 0.3 — the `qx` branch does not apply.
         assert_eq!(js_cos(0.1).to_bits(), 0x3fef_d712_f9a8_17c0);
         assert_eq!(libm::cos(0.1).to_bits(), 0x3fef_d712_f9a8_17c1);
         assert_eq!(f64::cos(0.1).to_bits(), 0x3fef_d712_f9a8_17c1);
+        assert_eq!(js_cos(0.0374).to_bits(), 0x3fef_fa45_76fc_816a);
+        assert_eq!(libm::cos(0.0374).to_bits(), 0x3fef_fa45_76fc_816b);
+
+        // 0.3 <= |x| <= 0.78125 — `qx` is x/4, built by decrementing the exponent.
+        assert_eq!(js_cos(0.3088).to_bits(), 0x3fee_7c82_848d_ce56);
+        assert_eq!(libm::cos(0.3088).to_bits(), 0x3fee_7c82_848d_ce57);
+        assert_eq!(f64::cos(0.3088).to_bits(), 0x3fee_7c82_848d_ce57);
+
+        // |x| > 0.78125 — `qx` is the constant 0.28125. Note std AGREES with the
+        // runtime at both of these and `libm` does not; "the platform is always
+        // wrong" is not a rule, which is why the oracle controls per range.
+        assert_eq!(js_cos(0.818).to_bits(), 0x3fe5_e0b9_5a8b_e6ba);
+        assert_eq!(libm::cos(0.818).to_bits(), 0x3fe5_e0b9_5a8b_e6b9);
+        // Past pi/2, so this one also went through `rem_pio2`'s n = +-1 case.
+        assert_eq!(js_cos(2.3437).to_bits(), 0xbfe6_57ca_ec9b_1d85);
+        assert_eq!(libm::cos(2.3437).to_bits(), 0xbfe6_57ca_ec9b_1d84);
+
+        // kernel_sin, both tail modes.
+        assert_eq!(js_sin(0.5748).to_bits(), 0x3fe1_65b8_36a0_2284);
+        assert_eq!(libm::sin(0.5748).to_bits(), 0x3fe1_65b8_36a0_2283);
+        assert_eq!(js_sin(0.7918).to_bits(), 0x3fe6_c595_4c5c_05b2);
+        assert_eq!(libm::sin(0.7918).to_bits(), 0x3fe6_c595_4c5c_05b3);
     }
 
     /// Exact answers must stay exact: the twins are 1-ulp-sensitive code, and

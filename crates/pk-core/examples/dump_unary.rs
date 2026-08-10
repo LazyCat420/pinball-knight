@@ -18,16 +18,26 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 6 {
         eprintln!("usage: dump_unary <fn> <from> <to> <n> <out.bin>");
-        eprintln!("  fn: js_cos js_sin libm_cos libm_sin std_cos std_sin");
+        eprintln!("  fn: js_cos js_sin js_exp js_log");
+        eprintln!("      libm_cos libm_sin libm_exp libm_log libm_log10");
+        eprintln!("      std_cos std_sin std_exp std_log std_log10");
         std::process::exit(2);
     }
     let f: fn(f64) -> f64 = match args[1].as_str() {
         "js_cos" => pk_core::jsmath::js_cos,
         "js_sin" => pk_core::jsmath::js_sin,
+        "js_exp" => pk_core::jsmath::js_exp,
+        "js_log" => pk_core::jsmath::js_log,
         "libm_cos" => libm::cos,
         "libm_sin" => libm::sin,
+        "libm_exp" => libm::exp,
+        "libm_log" => libm::log,
+        "libm_log10" => libm::log10,
         "std_cos" => f64::cos,
         "std_sin" => f64::sin,
+        "std_exp" => f64::exp,
+        "std_log" => f64::ln,
+        "std_log10" => f64::log10,
         other => panic!("unknown fn {other}"),
     };
     let from: f64 = args[2].parse().unwrap();

@@ -322,6 +322,14 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
             let cx = (x0 + x1) / 2.0;
             let cz = (z0 + z1) / 2.0;
             // Four poses: along each axis and the two diagonals.
+            // ⚠️ These four `js_*` calls (here and the `ux`/`uz` pair below) are
+            // DEFENSIVE, not load-bearing, and no fixture can ever prove them:
+            // `pick(rng, 4)` makes theta one of {0, pi/4, pi/2, 3pi/4}, and at
+            // all four `js_cos`/`js_sin` agree with `libm` bit-for-bit
+            // (measured under sabotage 2026-08-10 — reverting them to `libm`
+            // leaves the whole corpus green). They stay `js_*` so the rule
+            // "mirrored trig goes through jsmath" has no exceptions to
+            // remember; the hub-layout calls below are the live ones.
             let theta = (pick(rng, 4) as f64 * std::f64::consts::PI) / 4.0;
             let cos = js_cos(theta).abs();
             let sin = js_sin(theta).abs();
@@ -507,6 +515,11 @@ pub fn layout_nodes(w: f64, h: f64, rng: &mut CountingRng, opts: &LayoutOpts) ->
                     &mut nodes,
                     bounds,
                     min_sep,
+                    // Live: `a` is a continuous angle off `phase`. Across the
+                    // 5 hub floors, 153 trig calls, only 3 differ between
+                    // `js_*` and `libm` and only ONE moves a node into another
+                    // cell — the maze-side gate on trig rests on that single
+                    // sample, which is why the jsmath sweeps carry the weight.
                     cx + js_cos(a) * ring_r,
                     cz + js_sin(a) * ring_r * ((z1 - z0) / (x1 - x0)),
                     true,

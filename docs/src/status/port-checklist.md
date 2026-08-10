@@ -136,15 +136,31 @@ track pipeline first and the fallback last — and read
       Rust candidates disagree with the runtime. Verified: ten whole-curve
       digests from real node, crossing all four reduction branches, with `libm`
       and std pinned as still-wrong per range. See Incidents.
-- [ ] `jsmath::js_exp` / `js_log` — **the same defect, in code that already
-      ships.** Neither `libm` nor std reproduces the runtime. Live call sites:
-      `pk_core::combo` (`libm::exp`/`libm::log` — corner restitution, corner
-      add, combo window, all feeding pinball physics), `gambler::darts`
-      (`libm::log10`), `intro.rs` (std `ln`/`exp`, camera zoom). No divergent
-      input has been hit by an existing fixture, which is a statement about
-      those traces' inputs and not about the primitives. Pinned by
-      `exp_and_log_have_no_agreeing_implementation_yet`, which fails when a twin
-      lands. Switching the call sites needs the affected traces re-verified.
+- [x] `jsmath::js_exp` / `js_log` — written and bit-exact (exp over 8 ranges,
+      log over 5, crossing the overflow/underflow thresholds, the subnormal
+      tail, both `ln2` split points and the `k == 0` band). `js_log` is verbatim
+      `e_log.c`; `js_exp` is verbatim `e_exp.c` plus one guard, because
+      `libm::exp` already IS fdlibm and misses the runtime on exactly ONE input
+      in ~400,000 — `x == 1`, where V8 answers `Math.E`.
+- [~] **Switch the call sites** — `combo.rs` done, `intro.rs` blocked on a
+      fixture that does not exist yet:
+      - [x] `combo.rs` — all five switched. Every trace stayed bit-exact, so
+        it was A/B'd directly: the raw `log(1 + 0.15·n)` differs on 2 of the
+        first 201 combo depths, `combo_speed_ceil` on NONE (the division eats
+        the ulp), and the `exp` arguments `-λ·n ≤ 0` cannot reach `x == 1`,
+        which is `libm::exp`'s only divergence. Correct-by-construction, no
+        behaviour change, and no test can distinguish the two versions —
+        written down in the module header rather than left as a silent green.
+      - `intro.rs:458` (camera zoom, std `ln`/`exp`) → the twins. **No fixture
+        covers this**: `intro_trace.rs` replays the ball, not the camera pose.
+        A fixture has to be written before the switch can be verified.
+      - `combo-curve.ts:154-155` (damage multiplier, `Math.log`) is not ported
+        yet — it must use `js_log` when it is.
+      - `gambler::darts`'s `libm::log10` needs NO twin: there is no
+        `Math.log10` anywhere in the legacy TS, so it is Rust-original with no
+        runtime answer to reproduce. (V8 does compute `Math.log10`
+        independently rather than as `log(x)/LN10` — they differ 1–2 ulp — so a
+        future mirrored call site WILL need one.)
 - [ ] Run `jsmath_oracle.rs` under `wasm32-unknown-unknown`: std's `powf`
       lowers to the `libm` crate there, so `js_pow` is EXPECTED to diverge in
       the browser and has not been measured. `js_cos`/`js_sin` should be immune
@@ -334,8 +350,8 @@ co-op multiplayer.
 | Item | Where | Verified by |
 |---|---|---|
 | Mulberry32 RNG | `pk-core/src/rng.rs` | bit-exact vs JS oracle, 5 seeds |
-| JS math twins: `hypot`, `pow`, `cos`, `sin` | `pk-core/src/jsmath/` | whole-curve digests from real node — 4 pow sweeps + 10 trig ranges crossing all four reduction branches, with `libm`/std pinned as still-wrong per range |
-| JS math choices: `tan`, `atan2` (both `libm`) | `tests/jsmath_oracle.rs` | 4 `tan` sweeps + 2 `atan2` lattices from real node, with std pinned as still-wrong per range |
+| JS math twins: `hypot`, `pow`, `cos`, `sin`, `exp`, `log` | `pk-core/src/jsmath/` | whole-curve digests from real node — 4 pow sweeps + 10 trig ranges crossing all four reduction branches + 13 exp/log ranges, with the rejected candidates pinned as still-wrong PER RANGE (blanket assertions no longer hold: `libm` matches exactly on five of them) |
+| JS math CHOICES that needed no twin: `tan`, `atan2` (both `libm`) | `tests/jsmath_oracle.rs` | 4 `tan` sweeps + 2 `atan2` lattices from real node, with std pinned as still-wrong per range — a measured choice, not an assumed one |
 | Maze pass 1 `grow-track` (physarum circuit) | `pk-core/src/maze/track_grow.rs` | 10/10 corpus floors bit-exact — node + edge digests, counts, cumulative rng draws |
 | Maze pass 2 `track-path` (rideable geometry) | `pk-core/src/maze/track_path.rs` | 10/10 corpus floors bit-exact — leg digest, fillet digest, `arcHalf`, leg count, draws (all three digests added to the exporter for it) |
 | Tile grid | `pk-core/src/grid.rs` | ported cases |

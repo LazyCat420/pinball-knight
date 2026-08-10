@@ -47,6 +47,25 @@ as the change it records.** Newest entries first within each section.
   - **Measured:** `cargo test -p pk-core --release` green (353 lib + 20
     integration); fmt and clippy clean; both fixtures re-exported from real
     node with every previously pinned value unchanged.
+- **2026-08-10 — `js_exp`/`js_log`, and the reminder that a digest is a verdict
+  and not a diagnosis.** Both twins bit-exact: `js_exp` over 8 ranges (including
+  the overflow/underflow thresholds, the subnormal tail and both `ln2` split
+  points), `js_log` over 5 (the `k == 0` band, the |f| < 2^-20 neighbourhood of
+  1.0, subnormals, and up to `f64::MAX`).
+  - The survey said `NOTHING MATCHES` for both, and the two rows had **nothing
+    in common**. `log` is the `cos` story — musl's table-driven version vs
+    fdlibm 5.3. `libm::exp` already IS fdlibm and misses the runtime on exactly
+    ONE input in ~400,000: `x == 1`, where V8 answers `Math.E`.
+  - So the fix for one was a 200-line transcription and for the other a
+    one-line guard, and the digest could not tell them apart. Dumping raw f64s
+    and diffing per input named it on the first run.
+  - The negative controls had to become per-range: `libm` now agrees with the
+    runtime on five of the new sweeps, so a blanket "libm disagrees" would pin
+    a falsehood. `libm::exp`'s divergence is pinned at exactly one range.
+  - **Not yet switched:** `combo.rs` and `intro.rs` still call the wrong
+    implementations. `combo`'s `log(1 + k·n)` lands inside the divergent band,
+    so it needs `pinball-trace-seed7` + `booster_corner_sim` re-verified;
+    `intro.rs`'s camera zoom has no fixture covering it at all.
 - **2026-08-10 — `js_cos`/`js_sin`: V8's trig is Sun's 1993 fdlibm, and P2 pass
   1 is now 10 of 10 floors bit-exact.** `jsmath/fdlibm.rs` — `s_sin`/`s_cos`,
   `k_sin`/`k_cos`, `e_rem_pio2` and `k_rem_pio2`, transcribed verbatim. The

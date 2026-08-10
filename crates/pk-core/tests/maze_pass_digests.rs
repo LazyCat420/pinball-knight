@@ -670,6 +670,7 @@ fn modifier_str(m: ModifierId) -> &'static str {
 #[test]
 fn pass1_grow_track_replays_the_oracle() {
     let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let mut moved: Vec<String> = Vec::new();
     for f in &c.floors {
         let head = format!("L{} seed {}", f.level, f.run_seed);
         let arch = archetype_for(f.level);
@@ -731,17 +732,24 @@ fn pass1_grow_track_replays_the_oracle() {
         // angle and V8's trig is a third implementation — neither `libm`'s nor
         // the platform's. `jsmath::js_cos`/`js_sin` closed it, and the whole
         // corpus is bit-exact at this boundary now.
-        assert_eq!(
-            digest_nodes(&graph.nodes),
-            want.graph_nodes.expect("pass 1 pins a node digest"),
-            "{head}: node layout digest — the placement diverged"
-        );
-        assert_eq!(
-            digest_edges(&graph.edges),
-            want.graph_edges.expect("pass 1 pins an edge digest"),
-            "{head}: edge digest with the nodes matching — the SOLVER diverged \
-             (conductivities, the prune order, or the K-nearest sort)"
-        );
+        //
+        // Collected rather than asserted in place: HOW MANY floors moved is
+        // itself the diagnosis. One floor of ten is a value landing on a
+        // rounding boundary; ten of ten is the algorithm. Aborting on the first
+        // one reports "L3 seed 1" either way — measured under sabotage, where
+        // deleting `kernel_cos`'s qx branch moved three floors and the old
+        // first-failure abort showed exactly one of them.
+        if digest_nodes(&graph.nodes) != want.graph_nodes.expect("pass 1 pins a node digest") {
+            moved.push(format!("  {head}: node layout — the PLACEMENT diverged"));
+            continue;
+        }
+        if digest_edges(&graph.edges) != want.graph_edges.expect("pass 1 pins an edge digest") {
+            moved.push(format!(
+                "  {head}: edges, with the nodes matching — the SOLVER diverged \
+                 (conductivities, prune order, or the K-nearest sort)"
+            ));
+            continue;
+        }
 
         // The pass's own contract, restated as an assertion rather than trusted:
         // a connected loopy core with no dangling spurs.
@@ -763,7 +771,15 @@ fn pass1_grow_track_replays_the_oracle() {
     // is that `js_cos`/`js_sin` emptied it and the equality assertion is what
     // said so.
     //
-    // All ten floors now assert inline, above. Nothing is excluded here.
+    // All ten floors assert inline, above. Nothing is excluded here — and the
+    // report names every floor that moved, not just the first.
+    assert!(
+        moved.is_empty(),
+        "{} of {} corpus floors diverged at the grow-track boundary:\n{}",
+        moved.len(),
+        c.floors.len(),
+        moved.join("\n")
+    );
 }
 
 /// PASS 2 — `track-path`, replayed against the oracle on every corpus floor.

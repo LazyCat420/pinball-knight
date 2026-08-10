@@ -23,11 +23,12 @@
 //! | fn | `libm` | std (platform) | what to call |
 //! |---|---|---|---|
 //! | `sqrt` | ✅ | ✅ | either — IEEE-exact, no twin |
-//! | `atan` `atan2` `tan` | ✅ | ❌ | `libm` |
-//! | `exp` `log` | ✅ | — | `libm` |
+//! | `atan` `atan2` `tan` | ✅ | ❌ | `libm` (std: atan 2,356/100,001) |
 //! | `pow` | ❌ 19,904/200,001 | ✅ | [`js_pow`] |
 //! | `hypot` | ❌ ~35% | ❌ | [`js_hypot`] |
 //! | `cos` `sin` | ❌ | ❌ | [`js_cos`] / [`js_sin`] |
+//! | `exp` | ❌ **1 input** | ❌ 9,621/100,001 | [`js_exp`] |
+//! | `log` | ❌ 196/100,001 | ❌ 1,903/100,001 | [`js_log`] |
 //!
 //! Each row was a separate measurement, and four of them were surprises. A
 //! spot check cannot produce this table: `pow` agrees with `libm` on exponent
@@ -35,6 +36,14 @@
 //! Sweep the whole curve, and sweep it before the port uses the primitive —
 //! every row here was found by a floor that came out structurally perfect with
 //! the wrong numbers in it.
+//!
+//! ⚠️ The `exp` row is the one to read twice. `libm::exp` IS fdlibm's `e_exp`
+//! and reproduces the runtime on every input of eight swept ranges but one:
+//! V8 special-cases `Math.exp(1)` to `Math.E`. The digest reported that row the
+//! same way it reported `cos` — "NOTHING MATCHES" — and the two findings could
+//! hardly be less alike. A failing digest tells you a curve is wrong, never
+//! how wrong; `example/dump_unary` and `dump-trig-sweep.mjs --diff` are what
+//! turn it into a named input, and here that took one run.
 //!
 //! ⚠️ THE `tan` ROW IS THE ONE THAT LOOKS WRONG AND IS NOT. `tan` shares its
 //! argument reduction with `cos`/`sin`, and its KERNEL is the one that was
@@ -45,7 +54,9 @@
 //! there is only the sweep.
 
 mod fdlibm;
+mod fdlibm_explog;
 pub use fdlibm::{js_cos, js_sin};
+pub use fdlibm_explog::{js_exp, js_log};
 
 /// V8's `Math.hypot(a, b)`. Argument ORDER matters (the compensated loop is
 /// order-sensitive) — pass arguments exactly as the legacy call site does.
