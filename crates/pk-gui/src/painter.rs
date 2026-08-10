@@ -80,6 +80,7 @@ impl Painter {
 
     /// Filled rect in DEVICE pixels, src-over, with the canvas negative-size
     /// normalisation (a negative w/h flips the rect rather than drawing nothing).
+    #[allow(clippy::too_many_arguments)]
     pub fn fill_device(
         &mut self,
         x: i64,

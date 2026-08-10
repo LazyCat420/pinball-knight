@@ -1,0 +1,88 @@
+{
+ "legacyRev": "511cc264657f4ce6c9608693f375df2ae598b7f0-dirty",
+ "scenes": [
+  {
+   "name": "widgets",
+   "kind": "widgets",
+   "gridW": 1280,
+   "gridH": 720,
+   "w": 1280,
+   "h": 720,
+   "zoom": 1,
+   "focus": 1
+  },
+  {
+   "name": "widgets2x",
+   "kind": "widgets",
+   "gridW": 1280,
+   "gridH": 720,
+   "w": 640,
+   "h": 360,
+   "zoom": 2,
+   "focus": 1
+  },
+  {
+   "name": "prompt-forge",
+   "kind": "prompt",
+   "gridW": 1920,
+   "gridH": 1080,
+   "w": 1920,
+   "h": 1080,
+   "zoom": 1,
+   "focus": 0,
+   "station": {
+    "label": "Forge / Repair",
+    "blurb": "repair, add a socket, forge and reroll cards",
+    "accent": 15771196
+   }
+  },
+  {
+   "name": "prompt-board",
+   "kind": "prompt",
+   "gridW": 1920,
+   "gridH": 1080,
+   "w": 1920,
+   "h": 1080,
+   "zoom": 1,
+   "focus": 0,
+   "station": {
+    "label": "Descend",
+    "blurb": "commit your loadout and drop into the next floor",
+    "accent": 7327976
+   }
+  },
+  {
+   "name": "prompt-gambler",
+   "kind": "prompt",
+   "gridW": 1920,
+   "gridH": 1080,
+   "w": 1920,
+   "h": 1080,
+   "zoom": 1,
+   "focus": 0,
+   "station": {
+    "label": "Risk Gold",
+    "blurb": "slots · roulette · blackjack · darts",
+    "accent": 15777856
+   }
+  },
+  {
+   "name": "run-summary",
+   "kind": "summary",
+   "gridW": 1920,
+   "gridH": 1080,
+   "w": 1920,
+   "h": 1080,
+   "zoom": 1,
+   "focus": 0,
+   "summary": {
+    "floor": "7",
+    "grade": "A",
+    "kills": "23",
+    "bestCombo": "x9",
+    "gear": "Helmet 2  Armor 1  Boots 3",
+    "purse": "485g"
+   }
+  }
+ ]
+}

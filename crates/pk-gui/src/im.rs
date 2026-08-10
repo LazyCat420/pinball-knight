@@ -406,15 +406,8 @@ impl Default for TextOpts {
 pub fn text(f: &mut UiFrame, s: &str, x: f64, y: f64, opts: TextOpts) -> f64 {
     let size = opts.size;
     let colour = opts.colour.unwrap_or(Ui::TEXT);
-    let mut owned;
-    let mut str_ = s;
-    if let Some(max) = opts.max {
-        owned = ellipsize(f, s, max, size);
-        str_ = &owned;
-    } else {
-        owned = String::new();
-        let _ = &owned;
-    }
+    let ellipsized = opts.max.map(|max| ellipsize(f, s, max, size));
+    let str_ = ellipsized.as_deref().unwrap_or(s);
     let w = f.fonts.measure(str_, size);
     let dx = match opts.align {
         Align::Left => x,

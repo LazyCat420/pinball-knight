@@ -118,7 +118,7 @@ pub fn paint_run_summary(f: &mut UiFrame, v: &SummaryView) -> bool {
     );
     cut_top(&mut body, 34.0);
 
-    let mut row = |f: &mut UiFrame, body: &mut Rect, label: &str, value: &str, colour: Rgba| {
+    let row = |f: &mut UiFrame, body: &mut Rect, label: &str, value: &str, colour: Rgba| {
         let r = cut_top(body, 22.0);
         text(
             f,
@@ -216,6 +216,5 @@ pub fn paint_station_panel(f: &mut UiFrame, v: &PanelView) -> bool {
     }
 
     let foot = rect(full.x, full.y + full.h - ROW_H, full.w, ROW_H);
-    let closed = button(f, &foot, "CLOSE  [E / ESC]", ButtonOpts::default());
-    closed
+    button(f, &foot, "CLOSE  [E / ESC]", ButtonOpts::default())
 }
