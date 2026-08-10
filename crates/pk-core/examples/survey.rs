@@ -69,8 +69,16 @@ fn main() {
                 ("std", f64::sin),
             ],
             "sqrt" => vec![("libm", libm::sqrt), ("std", f64::sqrt)],
-            "exp" => vec![("libm", libm::exp), ("std", f64::exp)],
-            "log" => vec![("libm", libm::log), ("std", f64::ln)],
+            "exp" => vec![
+                ("jsmath", pk_core::jsmath::js_exp),
+                ("libm", libm::exp),
+                ("std", f64::exp),
+            ],
+            "log" => vec![
+                ("jsmath", pk_core::jsmath::js_log),
+                ("libm", libm::log),
+                ("std", f64::ln),
+            ],
             "atan" => vec![("libm", libm::atan), ("std", f64::atan)],
             other => panic!("unknown sweep {other}"),
         };

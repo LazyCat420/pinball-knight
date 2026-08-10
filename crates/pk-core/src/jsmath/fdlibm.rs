@@ -35,21 +35,39 @@
 // original and see that nothing was "tidied" on the way in. The parsed values
 // are unchanged either way — that is the whole point.
 #![allow(clippy::excessive_precision)]
+// Three more lints fire on verbatim fdlibm, all of them DENY-level, which means
+// they abort the whole workspace lint run rather than adding a warning:
+//
+// · `approx_constant` on `INVPIO2` — it is 2/pi, deliberately written as
+//   fdlibm's 21-digit literal and not `FRAC_2_PI`, because the point of the
+//   file is that it still diffs against `e_rem_pio2.c`.
+// · `eq_op` on `x - x`, fdlibm's idiom for "return a NaN with this argument's
+//   payload" at the infinity/NaN guards. `f64::NAN` is not the same value.
+// · `needless_range_loop` in `kernel_rem_pio2`, where the index walks two
+//   arrays at different offsets (`fq[jz - i]` from `q[i + k]`). An iterator
+//   rewrite would not be the C any more.
+#![allow(clippy::approx_constant)]
+#![allow(clippy::eq_op)]
+#![allow(clippy::needless_range_loop)]
 
 // ─── word access, the fdlibm macros ──────────────────────────────────────────
+//
+// `__HI`, `__LO` and the union write-back, which every fdlibm routine leans on.
+// Shared with `fdlibm_explog.rs` rather than re-declared there: two copies of a
+// bit-twiddling helper is two places for a port to drift.
 
 #[inline]
-fn high_word(x: f64) -> i32 {
+pub(super) fn high_word(x: f64) -> i32 {
     (x.to_bits() >> 32) as u32 as i32
 }
 
 #[inline]
-fn low_word(x: f64) -> u32 {
+pub(super) fn low_word(x: f64) -> u32 {
     x.to_bits() as u32
 }
 
 #[inline]
-fn from_words(hi: u32, lo: u32) -> f64 {
+pub(super) fn from_words(hi: u32, lo: u32) -> f64 {
     f64::from_bits((u64::from(hi) << 32) | u64::from(lo))
 }
 
