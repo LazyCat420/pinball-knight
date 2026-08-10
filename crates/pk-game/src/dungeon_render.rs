@@ -211,32 +211,34 @@ pub(crate) fn plan_walls(grid: &Grid) -> WallPlan {
                 } else {
                     -std::f32::consts::FRAC_PI_4
                 };
-                buckets.entry(Bucket::Slant { shape, low }).or_default().push(
-                    Placement {
+                buckets
+                    .entry(Bucket::Slant { shape, low })
+                    .or_default()
+                    .push(Placement {
                         pos: Vec3::new(
                             (x - n.x * 0.25) as f32,
                             WALL_H / 2.0,
                             (z - n.z * 0.25) as f32,
                         ),
                         yaw,
-                    },
-                );
+                    });
                 continue;
             }
             if is_round(shape) {
                 // Quarter-disc corner: a radius-1 cylinder on the arc centre;
                 // the surplus quarters sink into the solid backing tiles.
                 let c = round_center(shape).expect("round shape has a centre");
-                buckets.entry(Bucket::Round { shape, low }).or_default().push(
-                    Placement {
+                buckets
+                    .entry(Bucket::Round { shape, low })
+                    .or_default()
+                    .push(Placement {
                         pos: Vec3::new(
                             (f64::from(i) + c.x - gw2) as f32,
                             WALL_H / 2.0,
                             (f64::from(j) + c.z - gh2) as f32,
                         ),
                         yaw: 0.0,
-                    },
-                );
+                    });
                 continue;
             }
 
@@ -291,11 +293,9 @@ fn bucket_shape(bucket: Bucket) -> Mesh {
         Bucket::Low => Mesh::from(Cuboid::new(1.0, WALL_LOW, 1.0)),
         // A wedge along the hypotenuse — a P3-debt approximation of the
         // triangular prism, unchanged by this pass.
-        Bucket::Slant { .. } => Mesh::from(Cuboid::new(
-            std::f64::consts::SQRT_2 as f32,
-            WALL_H,
-            0.5,
-        )),
+        Bucket::Slant { .. } => {
+            Mesh::from(Cuboid::new(std::f64::consts::SQRT_2 as f32, WALL_H, 0.5))
+        }
         Bucket::Round { .. } => Mesh::from(Cylinder::new(1.0, WALL_H)),
     }
 }
@@ -361,7 +361,8 @@ impl Merged {
         let base = self.pos.len() as u32;
         let rot = Quat::from_rotation_y(at.yaw);
         for v in &stamp.pos {
-            self.pos.push((at.pos + rot * Vec3::from_array(*v)).to_array());
+            self.pos
+                .push((at.pos + rot * Vec3::from_array(*v)).to_array());
         }
         // Rotation-only, so the normal transform IS the rotation — no inverse
         // transpose, and the vectors stay unit length.
@@ -376,9 +377,12 @@ impl Merged {
         // `RenderAssetUsages::default()` keeps the main-world copy, which
         // `calculate_bounds` needs to give the entity an `Aabb`; a
         // RENDER_WORLD-only mesh would drop out of view-visibility entirely.
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, self.pos)
-            .with_inserted_indices(Indices::U32(self.idx));
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, self.pos)
+        .with_inserted_indices(Indices::U32(self.idx));
         if !self.nrm.is_empty() {
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.nrm);
         }
@@ -927,7 +931,8 @@ mod tests {
             ) = (
                 got.attribute(Mesh::ATTRIBUTE_UV_0),
                 want.attribute(Mesh::ATTRIBUTE_UV_0),
-            ) else {
+            )
+            else {
                 panic!("{name}: missing UVs");
             };
             assert_eq!(g, w, "{name}: uvs");
