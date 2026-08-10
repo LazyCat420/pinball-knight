@@ -153,14 +153,20 @@ pub enum Patch {
     KeeperGreet,
     Plunger,
     Anvil,
-    Roll { p: f64 },
+    Roll {
+        p: f64,
+    },
     Break,
     Coin,
-    Bumper { p: f64 },
+    Bumper {
+        p: f64,
+    },
     /// Offset on the AUDIO clock, not a Bevy timer: the intro schedules the
     /// arrival sting 0.4 s ahead so it lands under the plunger, and a frame
     /// timer would drift against the samples it is trying to sit beside.
-    LevelStart { at_offset: f64 },
+    LevelStart {
+        at_offset: f64,
+    },
 }
 
 impl Patch {

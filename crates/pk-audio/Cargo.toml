@@ -26,6 +26,10 @@ wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
   "AudioContext",
+  # `AudioContext` reaches create_buffer/create_gain/destination/current_time
+  # through its Deref to BaseAudioContext — without this feature those methods
+  # do not exist at all.
+  "BaseAudioContext",
   "AudioContextState",
   "AudioDestinationNode",
   "AudioNode",

@@ -19,6 +19,11 @@ use crate::{AudioBackend, AudioParam, FilterType, Rng, Waveform};
 /// One oscillator with a gain envelope and an optional exponential glide.
 ///
 /// `at` is an offset from the context's current time, in seconds.
+///
+/// The argument list is the legacy `Beep` interface verbatim (type, f0, f1,
+/// dur, vol, at) plus the graph it is being built into. Bundling it into a
+/// struct would hide exactly the numbers the port has to stay faithful to.
+#[allow(clippy::too_many_arguments)]
 pub fn beep<B: AudioBackend>(
     be: &B,
     out: &B::Node,

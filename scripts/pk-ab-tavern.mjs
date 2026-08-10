@@ -50,13 +50,23 @@
  *         the room with nobody to click CONFIRM. Ready on the scene's own
  *         `tavern:first-present` performance mark plus a live `__tavernProbe()`.
  *
- * ── THE ONE KNOWN, DELIBERATE DIFFERENCE IN THE FRAME ───────────────────────
- * The legacy entry is the multiplayer LOBBY, so it paints a "POOL · n" /
- * "OFFLINE" pill in the TOP-RIGHT corner (scenes/tavern/scene-screens.ts). The
- * port has not ported the lobby HUD. It will show in the side-by-side and in
- * the heatmap — that is scope, not a regression. The vignette check therefore
- * reads only the OTHER THREE corners, because the pill sits inside the
- * top-right sample block and would be measured as "the corner is bright".
+ * ── FOUR THINGS IN THE FRAME THAT ARE NOT THE ROOM ──────────────────────────
+ * Expect these in the side-by-side and the heatmap. None is a parity defect,
+ * and knowing them is the difference between reading the artifact and being
+ * misled by it:
+ *
+ *   legacy top-right     "POOL · n" / "OFFLINE" pill. The legacy entry is the
+ *                        multiplayer LOBBY (`enterTavern(..., { lobby: true })`)
+ *                        and paints its HUD inside the pixel pass, so it cannot
+ *                        be hidden with CSS. The port has not ported the lobby
+ *                        HUD at all — scope, not a regression.
+ *   legacy bottom-left   Next.js's dev-server indicator.
+ *   rust top-centre      the Bevy frame-time/FPS readout.
+ *   rust bottom-right    trunk's "built Nm ago" widget.
+ *
+ * The vignette check drops the top-right corner entirely (the pill is 164x26
+ * and sits inside any reasonable sample block) and INSETS the other three by
+ * 3% so the two dev-server widgets fall outside them.
  *
  * Usage, from the repo root:
  *   node scripts/pk-ab-tavern.mjs                 # trunk build + both sides
@@ -385,8 +395,17 @@ async function writeDiff(la, ra, file) {
   return { mean: sum / total, p95, over32Frac: over32 / total };
 }
 
-/** Side-by-side, with a label strip when node-canvas is available. */
-async function writeSideBySide(la, ra, file, captions) {
+/**
+ * Side-by-side, with a label strip when node-canvas is available and the
+ * hearth ROI outlined on each half.
+ *
+ * The outline is not decoration. The ROI is DERIVED (camera rig + the live
+ * player pose + that side's own visible world height), and a derived ROI that
+ * lands on a wall instead of the fire would report "no bright core" on a room
+ * whose fire is burning fine. Drawing it makes the aim auditable by eye, which
+ * is the only check available on a number computed from a projection.
+ */
+async function writeSideBySide(la, ra, file, captions, rois) {
   const GUT = 8;
   const BAR = canvasLib ? 34 : 0;
   const w = la.w + GUT + ra.w;
@@ -403,8 +422,32 @@ async function writeSideBySide(la, ra, file, captions) {
       }
     }
   };
+  const outline = (img, roi, ox, oy) => {
+    if (!roi) return;
+    const x0 = Math.floor(roi.x0 * img.w), x1 = Math.ceil(roi.x1 * img.w) - 1;
+    const y0 = Math.floor(roi.y0 * img.h), y1 = Math.ceil(roi.y1 * img.h) - 1;
+    const px = (x, y) => {
+      if (x < 0 || y < 0 || x >= img.w || y >= img.h) return;
+      const o = ((y + oy) * w + (x + ox)) * 3;
+      out[o] = 0;
+      out[o + 1] = 255;
+      out[o + 2] = 140;
+    };
+    for (let t = 0; t < 2; t++) {
+      for (let x = x0; x <= x1; x++) {
+        px(x, y0 + t);
+        px(x, y1 - t);
+      }
+      for (let y = y0; y <= y1; y++) {
+        px(x0 + t, y);
+        px(x1 - t, y);
+      }
+    }
+  };
   blit(la, 0, BAR);
   blit(ra, la.w + GUT, BAR);
+  outline(la, rois?.[0], 0, BAR);
+  outline(ra, rois?.[1], la.w + GUT, BAR);
 
   if (!canvasLib) {
     await sharp(out, { raw: { width: w, height: h, channels: 3 } }).png().toFile(file);
@@ -435,10 +478,16 @@ async function writeSideBySide(la, ra, file, captions) {
 /* ────────────────────────────── page driving ───────────────────────────── */
 
 /** A page pinned to the matched regime, with its console wired to `errors`. */
-async function openPage(ctx, errors, tag) {
+async function openPage(ctx, errors, tag, badUrls) {
   const page = await ctx.newPage();
   page.on("console", (m) => m.type() === "error" && errors.push(`${tag}: ${m.text()}`));
   page.on("pageerror", (e) => errors.push(`${tag}: PAGEERROR ${e.message}`));
+  // A bare "Failed to load resource: 404" in the console names nothing, and a
+  // tavern missing half its textures would still photograph as a tavern. Keep
+  // the URLs so the report can say WHAT is missing.
+  page.on("response", (r) => {
+    if (r.status() >= 400) badUrls.add(`${r.status()} ${r.url()}`);
+  });
   // Belt and braces: the context is already created at the target size, but a
   // CDP-attached default context can carry `viewport: null`, in which case this
   // is the only thing that sets it. Either way `assertViewport` is the gate —
@@ -465,8 +514,8 @@ async function assertViewport(page, side) {
   return got;
 }
 
-async function shootLegacy(ctx, errors, url) {
-  const page = await openPage(ctx, errors, "legacy");
+async function shootLegacy(ctx, errors, badUrls, url) {
+  const page = await openPage(ctx, errors, "legacy", badUrls);
   // `__skipDungeonIntro` — NOT `?autostart=1`. Both skip the title sequence and
   // both suppress the character-select modal (`run/lobby.ts isHarnessEntry`),
   // but autostart also schedules `beginRun()` on the next frame, which walks
@@ -505,8 +554,8 @@ async function shootLegacy(ctx, errors, url) {
   return { file, probe, backend, vp };
 }
 
-async function shootRust(ctx, errors) {
-  const page = await openPage(ctx, errors, "rust");
+async function shootRust(ctx, errors, badUrls) {
+  const page = await openPage(ctx, errors, "rust", badUrls);
   const url = `http://localhost:${PORT}/index.html?tavern=1`;
   log(`▶ rust:   ${url}`);
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
@@ -605,6 +654,7 @@ async function main() {
     ctx = browser.contexts()[0] ?? (await browser.newContext());
   }
   const errors = [];
+  const badUrls = new Set();
 
   let legacy = null;
   let rust = null;
@@ -612,8 +662,8 @@ async function main() {
     // One page at a time, each closed before the next opens: a backgrounded
     // tab in headless Chrome gets its rAF throttled, and a throttled tab is a
     // stale frame.
-    if (doLegacy) legacy = await shootLegacy(ctx, errors, rewriteForHostBrowser(legacyUrl));
-    if (doRust) rust = await shootRust(ctx, errors);
+    if (doLegacy) legacy = await shootLegacy(ctx, errors, badUrls, rewriteForHostBrowser(legacyUrl));
+    if (doRust) rust = await shootRust(ctx, errors, badUrls);
   } finally {
     if (ownCtx) await ctx.close().catch(() => {});
     closeHostBrowser();
@@ -680,10 +730,16 @@ async function main() {
   let sbs = null, diff = null, diffStats = null;
   if (legacy && rust) {
     sbs = join(OUT, `ab-tavern-sbs-${STAMP}.png`);
-    await writeSideBySide(imgs.legacy, imgs.rust, sbs, [
-      "LEGACY (TypeScript / three.js) — the oracle",
-      "RUST (Bevy) — the port",
-    ]);
+    await writeSideBySide(
+      imgs.legacy,
+      imgs.rust,
+      sbs,
+      [
+        "LEGACY (TypeScript / three.js) — the oracle    [green box = hearth ROI]",
+        "RUST (Bevy) — the port",
+      ],
+      [m.legacy.roi, m.rust.roi],
+    );
     diff = join(OUT, `ab-tavern-diff-${STAMP}.png`);
     diffStats = await writeDiff(imgs.legacy, imgs.rust, diff);
     console.log("");
@@ -703,35 +759,65 @@ async function main() {
     if (!ok) failed++;
   };
 
-  if (m.legacy && m.rust) {
-    // The cel grade is the LAST thing in the chain, so its posterisation is
-    // directly readable. An order of magnitude is the threshold: this is meant
-    // to separate "graded" from "not graded", not to police a step count.
-    const ratio = m.rust.distinctLuma / Math.max(1, m.legacy.distinctLuma);
+  // ── POSTERISATION: AN ABSOLUTE GATE, NOT A RATIO ──────────────────────────
+  //
+  // This started life as "flag if rust has an ORDER OF MAGNITUDE more distinct
+  // luma than legacy". The first real run measured 177 vs 18 — 9.83x — and
+  // PASSED, on a port whose `PostPlugin` is a stub that registers one resource
+  // and runs no passes at all. A threshold that green-lights a frame with no
+  // pixel pass in it is not a check.
+  //
+  // So the gate is absolute and per side: the cel grade quantises luma to ~10
+  // rungs and runs LAST, so a graded 1920-wide row cannot carry hundreds of
+  // distinct values. POSTERISED_MAX is set well above the oracle's measured 18
+  // (five full rows, unioned) and far below an ungraded frame's 177 — there is
+  // an order of magnitude of daylight on each side of it, which is what makes
+  // it a threshold rather than a coin flip. The ratio is still REPORTED,
+  // because a port that posterises to the wrong number of rungs is a different
+  // bug from one that does not posterise at all.
+  const POSTERISED_MAX = 64;
+  for (const [side, mm] of Object.entries(m)) {
+    if (!mm) continue;
     check(
-      ratio < 10,
-      `posterisation: rust has ${ratio.toFixed(2)}x legacy's distinct luma ` +
-        `(${m.rust.distinctLuma} vs ${m.legacy.distinctLuma}; an order of magnitude means the cel grade is not running)`,
+      mm.distinctLuma <= POSTERISED_MAX,
+      `posterisation: ${side} carries ${mm.distinctLuma} distinct luma values over 5 sampled rows ` +
+        `(cel-graded frames land near 10-20; over ${POSTERISED_MAX} means the pixel pass is not running)`,
     );
+  }
+
+  if (m.legacy && m.rust) {
+    const ratio = m.rust.distinctLuma / Math.max(1, m.legacy.distinctLuma);
+    log(`  ..    posterisation ratio rust/legacy = ${ratio.toFixed(2)}x (reported)`);
     const dv = Math.abs(m.rust.vignetteRatio - m.legacy.vignetteRatio);
     check(
       dv <= 0.25,
-      `vignette: corner/centre ${m.rust.vignetteRatio.toFixed(3)} vs ${m.legacy.vignetteRatio.toFixed(3)} (Δ ${dv.toFixed(3)}, allow 0.25)`,
+      `vignette: corner/centre ${m.rust.vignetteRatio.toFixed(3)} vs ${m.legacy.vignetteRatio.toFixed(3)} ` +
+        `(Δ ${dv.toFixed(3)}, allow 0.25) — WEAK: the corners are void on both sides, see measure()`,
     );
     const dl = Math.abs(m.rust.meanLuma - m.legacy.meanLuma) / 255;
     check(dl <= 0.1, `exposure: mean luma Δ ${(dl * 100).toFixed(1)}% (allow 10%)`);
   }
+  // PRESENCE, not parity: bloom needs something over the 0.7 threshold to
+  // bloom FROM, and the hearth fire is the room's brightest source. A side
+  // with no bright core there has lost the fire light, whatever else it has.
+  // The magnitudes are reported rather than compared because the grade itself
+  // moves them (the first run: ungraded rust 2.17% vs graded legacy 0.11%).
   for (const [side, mm] of Object.entries(m)) {
     if (!mm) continue;
     check(
-      mm.hearthBrightFrac >= 0.001,
-      `bloom: ${side} hearth ROI has ${(mm.hearthBrightFrac * 100).toFixed(2)}% pixels over 0.75 luma (need a bright core to bloom from)`,
+      mm.hearthBrightFrac >= 0.0001,
+      `hearth core: ${side} ROI has ${(mm.hearthBrightFrac * 100).toFixed(3)}% pixels over 0.75 luma, ` +
+        `max ${mm.hearthMax.toFixed(0)}/255 (the fire is what bloom blooms from)`,
     );
   }
 
   if (errors.length) {
     console.log(`\n${errors.length} console/page error(s):`);
     for (const e of errors.slice(0, 8)) console.log("   ", e.slice(0, 220));
+  }
+  if (badUrls.size) {
+    console.log(`\n${badUrls.size} failed request(s) — a side missing its art is not a side to judge:`);
+    for (const u of [...badUrls].slice(0, 12)) console.log("   ", u.slice(0, 220));
   }
 
   const strictFail = a.strict && failed > 0;

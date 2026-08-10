@@ -31,6 +31,8 @@ use pk_core::intro::{
 };
 
 use crate::overworld::{Overworld, BW};
+use crate::sfx::{Audio, SfxEvent};
+use pk_audio::Patch;
 use crate::{
     camera_offset_angles, spawn_grid_meshes, AppState, DungeonCamera, FadeOverlay, KnightArt,
     VIEW_H, WALL_H,
@@ -372,6 +374,8 @@ fn intro_tick(
     mut vis_q: Query<&mut Visibility>,
     mut text_q: Query<&mut Text>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
+    mut sfx: MessageWriter<SfxEvent>,
+    audio: Res<Audio>,
 ) {
     // TWO deltas: `pdt` is real time and drives the choreography, `dt` stays
     // clamped and drives the ball — see pk_core::intro's clock notes. Bevy's
@@ -407,8 +411,16 @@ fn intro_tick(
     res.seq.advance(pdt, &mut cues);
     for cue in &cues {
         match cue {
-            IntroCue::Roll => {}                       // sfxRoll — audio lands in P7
-            IntroCue::BonkStart => res.ow.shake = 1.0, // + sfxBreak/sfxCoin
+            IntroCue::Roll => {
+                sfx.write(SfxEvent::Roll);
+            }
+            IntroCue::BonkStart => {
+                res.ow.shake = 1.0;
+                // Both, same frame, in this order — the shatter reads as one
+                // event: the brick breaking and the coin it pays out.
+                sfx.write(SfxEvent::Break);
+                sfx.write(SfxEvent::Coin);
+            }
             IntroCue::ShatterStart => {
                 // Snapshot the bonk frame WITHOUT the knight (legacy removed
                 // the knight canvas before snapshotting): he doesn't shatter,
@@ -446,6 +458,11 @@ fn intro_tick(
             }
             IntroCue::Finish => {
                 res.finishing = true;
+                // Scheduled 0.4s out ON THE AUDIO CLOCK, not a Bevy timer:
+                // the sting has to land under the black hold that ends the
+                // sequence, and a frame timer drifts against the samples it
+                // is trying to sit beside.
+                audio.play(Patch::LevelStart { at_offset: 0.4 });
                 for mut bg in &mut fade_q {
                     bg.0 = Color::srgba(0.0, 0.0, 0.0, 1.0);
                 }
@@ -473,17 +490,23 @@ fn intro_tick(
             }
         }
         IntroPhase::Shatter => {
-            sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials);
+            if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
+                sfx.write(SfxEvent::Bumper);
+            }
             aim_camera(&mut res, 0.0, &window, &mut tf_q, &mut proj_q);
             res.ow.paint_shatter(dt, pt);
             canvas_dirty = true;
         }
         IntroPhase::Sweep => {
-            sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials);
+            if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
+                sfx.write(SfxEvent::Bumper);
+            }
             aim_camera(&mut res, pt / SWEEP_DUR, &window, &mut tf_q, &mut proj_q);
         }
         IntroPhase::Title => {
-            sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials);
+            if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
+                sfx.write(SfxEvent::Bumper);
+            }
             aim_camera(&mut res, 1.0, &window, &mut tf_q, &mut proj_q);
             // A 1.1s step blink, from wall clock (intro-chrome.ts).
             if let Ok(mut v) = vis_q.get_mut(res.pak_e) {
@@ -513,13 +536,16 @@ fn sim_ball(
     tf_q: &mut Query<&mut Transform>,
     vis_q: &mut Query<&mut Visibility>,
     materials: &mut Assets<StandardMaterial>,
-) {
+) -> bool {
     res.sim_acc += dt;
+    let mut bounced = false;
     while res.sim_acc >= 1.0 / 120.0 {
         res.sim_acc -= 1.0 / 120.0;
-        // Bounces cue sfxBumper (rate-limited 90ms) — audio lands in P7.
         let layout = &res.layout;
-        step_intro_ball(&layout.grid, &mut res.ball, 1.0 / 120.0);
+        // Sub-steps can report several bounces in one frame; the patch layer
+        // holds the 90 ms gap, so collapsing them to one cue here is only an
+        // early-out, not the rate limit itself.
+        bounced |= step_intro_ball(&layout.grid, &mut res.ball, 1.0 / 120.0);
     }
     res.trail_clock += dt;
     if res.trail_clock >= 0.05 {
@@ -540,7 +566,7 @@ fn sim_ball(
     // Legacy cadence: performance.now()/60 — a 60ms frame step.
     let cells = &res.ball_cells;
     if cells.is_empty() {
-        return;
+        return bounced;
     }
     let frame = ((res.elapsed * 1000.0 / 60.0) as usize) % cells.len();
     let [u, v, uw, vh] = cells[frame];
@@ -568,6 +594,7 @@ fn sim_ball(
             tf.scale.x = if flip { -1.0 } else { 1.0 };
         }
     }
+    bounced
 }
 
 /// aimIntroCamera: side-on → isometric, zoom fitted to frame the whole title.

@@ -11,10 +11,23 @@ interop launches it on the Windows desktop, on the host GPU.
 
 ```sh
 scripts/setup-win-toolchain.sh   # once — user-local llvm-mingw + the gnullvm target
-scripts/pk-win.sh run            # cross-build pk-game.exe, then play it
-scripts/pk-win.sh run --release  # same, optimized (use this for any perf number)
-scripts/pk-win.sh lldb           # rust-lldb — on the native LINUX build (same sim)
+
+# Play it. Plain cargo: the `runner` in .cargo/config.toml copies libunwind.dll
+# beside the exe and WSL2 interop launches it on the Windows desktop, host GPU.
+cargo run --release --target x86_64-pc-windows-gnullvm -p pk-game
+cargo run --release --target x86_64-pc-windows-gnullvm -p pk-game -- --dungeon
+
+scripts/pk-win.sh run [--release]  # the same thing, less typing
+scripts/pk-win.sh lldb             # rust-lldb — on the native LINUX build (same sim)
 ```
+
+**Use `--release` for anything you are judging by feel.** A debug Bevy build is
+several times slower than the shipped one, and the wasm build slower again — a
+frame-rate number off either is a number about the build, not about the game.
+
+The target is `x86_64-pc-windows-**gnullvm**`, not `-gnu`: the linker wired in
+`.cargo/config.toml` is llvm-mingw's `clang`, installed user-local because this
+box has no sudo. `-gnu` would want `gcc-mingw-w64` from apt.
 
 - `setup-win-toolchain.sh` unpacks llvm-mingw into `~/.local/opt/llvm-mingw` (no
   sudo) and adds `x86_64-pc-windows-gnullvm`. It `cd`s into the repo first on
@@ -22,9 +35,8 @@ scripts/pk-win.sh lldb           # rust-lldb — on the native LINUX build (same
   `stable` instead of the pinned 1.94.1, and the build then dies with E0463.
 - Every build copies `libunwind.dll` beside the exe. Rust's prebuilt gnullvm std
   bakes in that import, so a missing DLL is a silent exit 53 (`0xC0000135`).
-- `pk-win.sh` forwards no game flags. To pass them, use plain cargo — the
-  `runner` in `.cargo/config.toml` does the same DLL + interop dance:
-  `cargo run --target x86_64-pc-windows-gnullvm -p pk-game -- --dungeon`.
+- `pk-win.sh run` forwards its remaining args to the game, so
+  `scripts/pk-win.sh run --release --tavern` works too.
 
 Web, gates and chores:
 

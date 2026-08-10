@@ -6,13 +6,13 @@
 //! re-derives layout, movement, focus, camera or keeper math.
 //!
 //! Documented debt (matches the port checklist):
-//!  · Materials are lit flat colours + emissives — the pixel post-pass, wall
-//!    textures and canvas-drawn sign lettering are P3 scope. The "ENTER MAZE"
-//!    sign renders as its lit housing + cold panel, letters pending P5 pixel
-//!    fonts.
-//!  · Keepers render as palette-tinted billboards driven by the REAL ported
-//!    idle loops (hammer/dart beats, greet, turn-to-face); their cel-painter
-//!    art is P3/P4 scope.
+//!  · Props are lit flat colours + emissives — the wall textures are P3 scope.
+//!    The ACTORS and the "ENTER MAZE" sign are real baked art now
+//!    (`tavern_art`, from `cargo xtask bake --tavern`): keeper cels and the
+//!    canvas legend, both unlit like their legacy MeshBasic originals.
+//!  · Keepers render as baked cel billboards driven by the REAL ported idle
+//!    loops (hammer/dart beats, greet, turn-to-face). Their contact shadow is
+//!    painted into the bake; the knight's is a live blob quad.
 //!  · Vendor counters / the casino cabinet / the run summary open placeholder
 //!    panels: the GUI stack + economy they host are P4/P5 scope. The gambler
 //!    GAME LOGIC is fully ported and tested in `pk_core::gambler`.
@@ -33,11 +33,14 @@ use pk_core::tavern::layout::{
     station_at, Rect as LRect, Station, StationKind, KEEPER_SPOTS, OBSTACLES, ROOM_D, ROOM_MAX_X,
     ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z, ROOM_W, STAIR, STATIONS, WALL_HEIGHT,
 };
-use pk_core::tavern::npcs::{build_keeper_states, update_keeper, KeeperState};
+use pk_core::tavern::npcs::{build_keeper_states, update_keeper, KeeperBeat, KeeperState};
 use pk_core::tavern::player::{step_tavern_movement, TavernInput, TavernPose, WALK_CLIP_THRESHOLD};
 use pk_core::tavern::state::{read_diorama, DioramaState, TavernStats};
 
-use crate::{camera_offset, AppState, DungeonCamera, KnightArt, VIEW_H};
+use crate::post::snap::PixelSnapped;
+use crate::sfx::SfxEvent;
+use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
+use crate::{camera_offset, AppState, DungeonCamera, KnightArt, CAM_TILT, CAM_YAW, VIEW_H};
 
 // ── Palette picks (legacy build.ts / props.ts, by Cold Crypt index) ──
 const STONE_DK: u32 = 0x171a22; // [1]
@@ -130,6 +133,18 @@ pub struct TavernRes {
 struct TavernScene;
 #[derive(Component)]
 struct TavernKnight;
+/// The tavern's OWN masked copies of the three knight sheet materials, carried
+/// on the knight so `sync_tavern_knight` animates the material it actually
+/// assigned (see the spawn block for why the shared ones can't be used).
+#[derive(Component)]
+struct TavernKnightMats {
+    s: Handle<StandardMaterial>,
+    e: Handle<StandardMaterial>,
+    n: Handle<StandardMaterial>,
+}
+/// The flat contact shadow under the knight; follows him every frame.
+#[derive(Component)]
+struct KnightBlob;
 #[derive(Component)]
 struct KeeperSprite(usize);
 #[derive(Component)]
@@ -158,12 +173,48 @@ struct PanelRoot;
 #[derive(Component)]
 struct PanelText;
 
+/// How far the contact blob floats above the feet (legacy sprite.ts:170).
+const BLOB_LIFT: f32 = 0.02;
+
+/// The knight quad's height. Centre-origin (unlike the keepers'), so his feet
+/// sit half of this below his transform — which is where the blob goes.
+const KNIGHT_QUAD_H: f32 = 1.15;
+
 fn c(hex: u32) -> Color {
     Color::srgb_u8(
         ((hex >> 16) & 0xff) as u8,
         ((hex >> 8) & 0xff) as u8,
         (hex & 0xff) as u8,
     )
+}
+
+/// The BAKED billboard orientation (legacy sprite.ts:44-48 `faceCamera`): yaw
+/// to the camera's heading, then tilt back by its elevation, in YXZ order so
+/// the X tilt stays local — which is what keeps sprite texels square under the
+/// orthographic camera. The iso camera never moves, so this is computed once
+/// per sprite rather than billboarded per frame; `lean` is the only per-frame
+/// term (a keeper's `rot_z`), composed here instead of overwriting the bake.
+fn billboard(lean: f32) -> Quat {
+    Quat::from_euler(EulerRot::YXZ, CAM_YAW, -CAM_TILT, lean)
+}
+
+/// A knight sheet material re-cut with `alphaTest` instead of blending. The
+/// source lives in `KnightArt` and is shared with the dungeon and the intro,
+/// so the tavern clones rather than mutates.
+fn masked_clone(
+    materials: &mut Assets<StandardMaterial>,
+    src: &Handle<StandardMaterial>,
+) -> Handle<StandardMaterial> {
+    match materials.get(src).cloned() {
+        Some(mut m) => {
+            m.alpha_mode = AlphaMode::Mask(0.5);
+            materials.add(m)
+        }
+        // Unreachable: the sheets are built in Startup and this scene is gated
+        // on `KnightArt`. Degrade to the shared (blended) material rather than
+        // panicking a live room.
+        None => src.clone(),
+    }
 }
 
 /// The boot gate: does this launch want the tavern directly? Mirrors the
@@ -190,6 +241,9 @@ struct Build<'w, 's, 'a> {
     commands: &'a mut Commands<'w, 's>,
     meshes: &'a mut Assets<Mesh>,
     materials: &'a mut Assets<StandardMaterial>,
+    /// The baked art (`tavern_art`) is decoded straight into `Assets<Image>` —
+    /// no `bevy_asset` io on either target, same as the knight sheets.
+    images: &'a mut Assets<Image>,
 }
 
 impl Build<'_, '_, '_> {
@@ -287,15 +341,19 @@ impl Build<'_, '_, '_> {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+// A Bevy system's "arguments" are its resource/query bindings, not a call
+// signature anyone has to type out.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn setup_tavern(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     mut ambient: ResMut<AmbientLight>,
     art: Res<KnightArt>,
     mut cam_q: Query<&mut Projection, With<DungeonCamera>>,
     mut fade_q: Query<&mut BackgroundColor, With<crate::FadeOverlay>>,
+    mut sfx: MessageWriter<SfxEvent>,
 ) {
     // The intro's black hold ends the moment the room exists — the tavern is
     // now the hand-off target, so without this the hub boots behind a black
@@ -303,6 +361,10 @@ fn setup_tavern(
     for mut bg in &mut fade_q {
         bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
     }
+
+    // Room tone up over 1.2s: the hearth's filtered noise and a 54 Hz hum.
+    // Idempotent, so re-entering the hub does not stack a second bed.
+    sfx.write(SfxEvent::TavernEnter);
 
     // ── Camera: hold the whole staged room (legacy fitZoom's intent) ──
     for mut proj in &mut cam_q {
@@ -332,6 +394,7 @@ fn setup_tavern(
         commands: &mut commands,
         meshes: &mut meshes,
         materials: &mut materials,
+        images: &mut images,
     };
     b.point(0xffb271, 3.4, 16.0, -4.5, 3.6, 2.6);
     b.point(0xd9b48c, 2.8, 15.0, 1.5, 3.6, 4.4);
@@ -469,48 +532,100 @@ fn setup_tavern(
         Visibility::Hidden,
     ));
 
-    // ── Keepers — palette-tinted billboards, real ported idle loops ──
-    // Colour per paint key (their cel-painter art is P3/P4 scope).
+    // ── Keepers — the BAKED cels, driven by the real ported idle loops ──
+    // One 1.5-unit quad each with a BOTTOM-CENTRE origin (legacy sprite.ts
+    // `staticGeometry` translates the shared plane up by SPRITE_UNITS/2), so
+    // the idle loops keep positioning them by the feet and the baked
+    // billboard rotation pivots where legacy's does. The mesh is shared; only
+    // the material is per-keeper, exactly as sprite.ts:1677-1697 explains.
     let keeper_states = build_keeper_states();
+    let keeper_mesh = b.meshes.add(
+        Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS))
+            .translated_by(Vec3::new(0.0, SPRITE_UNITS / 2.0, 0.0)),
+    );
     for (i, k) in keeper_states.iter().enumerate() {
-        let tint = match k.spec.paint_key {
-            "merchant" => 0xa9705a, // skin-warm smith
-            "witch" => 0x6b4a9e,    // violet
-            "magician" => 0x2e6d8f, // arcane blue
-            "frog" => 0x5f8a4f,     // rot green
-            "tout" => 0xf0c040,     // gold
-            _ => 0x9aa4b4,
+        // Missing art is never fatal — the room just loses a body (npcs.ts).
+        let Some(cel) = tavern_art::keeper_cel(k.spec.paint_key) else {
+            continue;
         };
+        let tex = b.images.add(cel);
         let m = b.materials.add(StandardMaterial {
-            base_color: c(tint),
-            perceptual_roughness: 0.9,
-            double_sided: true,
+            base_color_texture: Some(tex),
+            unlit: true,
+            // legacy `alphaTest: 0.5`. Mask, never Blend: the frame is
+            // nearest-sampled at low resolution by the pixel pass, where
+            // Blend's soft fringes band into halos around every keeper.
+            alpha_mode: AlphaMode::Mask(0.5),
+            // THREE.DoubleSide — the mirror flips the quad's winding.
             cull_mode: None,
+            double_sided: true,
             ..default()
         });
-        let e = b
-            .commands
-            .spawn((
-                TavernScene,
-                KeeperSprite(i),
-                Mesh3d(b.meshes.add(Cuboid::new(0.62, 1.05, 0.16))),
-                MeshMaterial3d(m),
-                Transform::from_xyz(k.spec.x as f32, 0.55, k.spec.z as f32),
-            ))
-            .id();
-        let _ = e;
+        b.commands.spawn((
+            TavernScene,
+            KeeperSprite(i),
+            Mesh3d(keeper_mesh.clone()),
+            MeshMaterial3d(m),
+            Transform {
+                translation: Vec3::new(k.spec.x as f32, 0.0, k.spec.z as f32),
+                rotation: billboard(0.0),
+                scale: Vec3::new(k.spec.home as f32, 1.0, 1.0),
+            },
+            // Authored texels land on whole render pixels (post::snap).
+            PixelSnapped,
+        ));
+        // NO contact-shadow quad: the keepers' ground shadow is painted into
+        // the bake.
     }
 
-    // ── The knight billboard — same sheets as the dungeon slice ──
-    let quad_h = 1.15f32;
-    let quad_w = quad_h * art.s.aspect;
+    // ── The knight billboard — same sheets as the dungeon slice, MASKED ──
+    // The shared `KnightArt` materials are AlphaMode::Blend and are used by
+    // three scenes, so the tavern takes a CLONE with `Mask(0.5)` (legacy
+    // alphaTest 0.5) rather than editing the shared art in main.rs. The
+    // dungeon and the intro keep Blend until their own parity pass.
+    // `sync_tavern_knight` must animate THE CLONE — hence the component below;
+    // driving `art.*.material` would leave these frozen on frame 0.
+    let quad_w = KNIGHT_QUAD_H * art.s.aspect;
     let spawn = TavernPose::spawn();
+    let knight_mats = TavernKnightMats {
+        s: masked_clone(b.materials, &art.s.material),
+        e: masked_clone(b.materials, &art.e.material),
+        n: masked_clone(b.materials, &art.n.material),
+    };
     b.commands.spawn((
         TavernScene,
         TavernKnight,
-        Mesh3d(b.meshes.add(Rectangle::new(quad_w, quad_h))),
-        MeshMaterial3d(art.s.material.clone()),
-        Transform::from_xyz(spawn.x as f32, quad_h / 2.0, spawn.z as f32),
+        Mesh3d(b.meshes.add(Rectangle::new(quad_w, KNIGHT_QUAD_H))),
+        MeshMaterial3d(knight_mats.s.clone()),
+        Transform::from_xyz(spawn.x as f32, KNIGHT_QUAD_H / 2.0, spawn.z as f32),
+        knight_mats,
+        PixelSnapped,
+    ));
+
+    // The knight's contact shadow — the blob legacy parents to every actor
+    // (sprite.ts:160-173). Flat on the floor, 2 cm above the feet, so the
+    // billboard reads as standing ON the ground rather than in front of it.
+    // A sibling that follows rather than a child, because the parent's baked
+    // billboard rotation would otherwise have to be counter-rotated out.
+    let blob_tex = b.images.add(tavern_art::blob_image());
+    let blob_mat = b.materials.add(StandardMaterial {
+        base_color_texture: Some(blob_tex),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend, // a soft gradient — masking it would ring
+        cull_mode: None,
+        ..default()
+    });
+    b.commands.spawn((
+        TavernScene,
+        KnightBlob,
+        Mesh3d(b.meshes.add(Rectangle::new(BLOB_UNITS, BLOB_UNITS))),
+        MeshMaterial3d(blob_mat),
+        Transform {
+            translation: Vec3::new(spawn.x as f32, BLOB_LIFT, spawn.z as f32),
+            rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            ..default()
+        },
+        PixelSnapped,
     ));
 
     // ── Prompt + panel UI (scene-screens.ts, placeholder chrome) ──
@@ -1088,7 +1203,7 @@ fn build_props(b: &mut Build) {
     );
     let lit = b.emissive(WARM, 1.3);
     b.boxed(0.18, 0.2, 0.18, lit, n.x - 2.0, lantern_y - 0.23, n.z + 0.1);
-    // ── "ENTER MAZE" SIGN — housing + cold panel; canvas lettering is P3/P5.
+    // ── "ENTER MAZE" SIGN — housing + inlay + the BAKED lettering panel.
     let sign_w = 4.2;
     let sign_h = 0.8;
     let sign_y = 3.0;
@@ -1112,7 +1227,36 @@ fn build_props(b: &mut Build) {
         sign_y,
         sign_z + 0.035,
     );
-    let face = b.emissive(COLD, 0.6);
+    // The face carries the baked legend (props.ts:40-110, exported by
+    // `cargo xtask bake --tavern`). UNLIT, exactly as legacy's
+    // MeshBasicMaterial is: a lit material would take the hearth's warm light
+    // across the glyphs and the bloom would then eat the thin strokes, which
+    // is the whole reason the sign is drawn once at the contrast it wants.
+    //
+    // The lettering is a GLOW on alpha, so Blend rather than Mask — the
+    // canvas's cyan shadowBlur has no hard edge to cut at. Unlit also means
+    // `emissive` is ignored by the shader (bevy_pbr pbr.wgsl:82-86 returns
+    // base_color and stops), so "lit sign" brightness is a >1 base_color
+    // multiplier over the baked pixels instead; the COLD point light below
+    // still washes the housing around it.
+    let sign_tex = b.images.add(tavern_art::sign_enter_maze());
+    let face = b.materials.add(StandardMaterial {
+        base_color: Color::LinearRgba(LinearRgba::rgb(1.35, 1.35, 1.35)),
+        base_color_texture: Some(sign_tex),
+        unlit: true,
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        // Bevy's Cuboid puts uv v=0 at the face's BOTTOM edge
+        // (bevy_mesh primitives/dim3/cuboid.rs:30-33), the opposite of its
+        // Rectangle and of THREE's PlaneGeometry that legacy hangs the sign
+        // on — so the legend arrives upside down. Mirror v; a 180° rotation
+        // would fix the flip and introduce a mirror.
+        uv_transform: bevy::math::Affine2 {
+            matrix2: Mat2::from_diagonal(Vec2::new(1.0, -1.0)),
+            translation: Vec2::new(0.0, 1.0),
+        },
+        ..default()
+    });
     b.boxed(
         sign_w - 0.4,
         sign_h - 0.28,
@@ -1239,7 +1383,12 @@ fn teardown_tavern(
     q: Query<Entity, With<TavernScene>>,
     mut ambient: ResMut<AmbientLight>,
     mut cam_q: Query<&mut Projection, With<DungeonCamera>>,
+    mut sfx: MessageWriter<SfxEvent>,
 ) {
+    // The bed fades over 0.6s rather than cutting: the room tone is the last
+    // thing you hear on the way down the stairs, and a hard stop on a looping
+    // noise source clicks.
+    sfx.write(SfxEvent::TavernExit);
     for e in &q {
         commands.entity(e).despawn();
     }
@@ -1290,6 +1439,40 @@ fn step_tavern(mut res: ResMut<TavernRes>) {
 
 /// The per-frame scene work of legacy core.ts `frame()`: focus, prompt,
 /// spotlight, accent breathe, flicker, diorama, keepers, panels, interact.
+/// The room's three UI queries, bundled.
+///
+/// Not a tidiness choice: `tavern_frame` reached Bevy's 16-system-param tuple
+/// limit, and the failure is an E0599 on `.chain()` that names the whole system
+/// tuple and never mentions arity — worth a signpost so the next person to add
+/// a param knows what they hit. The UI three are the natural group; everything
+/// else in the signature is a distinct scene concern.
+#[derive(bevy::ecs::system::SystemParam)]
+struct TavernUi<'w, 's> {
+    prompt_q: Query<
+        'w,
+        's,
+        (&'static mut Text, &'static mut Visibility, &'static mut TextColor),
+        (
+            With<PromptText>,
+            Without<PanelText>,
+            Without<SpotlightDisc>,
+            Without<PanelRoot>,
+        ),
+    >,
+    panel_root: Query<
+        'w,
+        's,
+        &'static mut Visibility,
+        (With<PanelRoot>, Without<PromptText>, Without<SpotlightDisc>),
+    >,
+    panel_text: Query<
+        'w,
+        's,
+        &'static mut Text,
+        (With<PanelText>, Without<PromptText>),
+    >,
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn tavern_frame(
     time: Res<Time>,
@@ -1330,21 +1513,16 @@ fn tavern_frame(
             Without<DioramaBall>,
         ),
     >,
-    mut prompt_q: Query<
-        (&mut Text, &mut Visibility, &mut TextColor),
-        (
-            With<PromptText>,
-            Without<PanelText>,
-            Without<SpotlightDisc>,
-            Without<PanelRoot>,
-        ),
-    >,
-    mut panel_root: Query<
-        &mut Visibility,
-        (With<PanelRoot>, Without<PromptText>, Without<SpotlightDisc>),
-    >,
-    mut panel_text: Query<&mut Text, (With<PanelText>, Without<PromptText>)>,
+    mut ui: TavernUi,
+    mut sfx: MessageWriter<SfxEvent>,
 ) {
+    // Destructured back out so the body below reads exactly as it did before
+    // the three UI queries were bundled — see `TavernUi` for why they are.
+    let TavernUi {
+        prompt_q,
+        panel_root,
+        panel_text,
+    } = &mut ui;
     // Same dt clamp as the legacy frame loop.
     let dt = (time.delta_secs_f64()).min(0.05);
     res.time += dt;
@@ -1360,7 +1538,12 @@ fn tavern_frame(
     let focus_changed = res.focus.map(|s| s.id) != next_focus.map(|s| s.id);
     if focus_changed {
         res.focus = next_focus;
-        // (sfxStationFocus is P7 scope.)
+        // Only the RISING edge sounds. Legacy plays nothing on leaving a
+        // station, and adding a tick there turns walking past the bar into a
+        // two-note noise every time.
+        if next_focus.is_some() {
+            sfx.write(SfxEvent::StationFocus);
+        }
     }
 
     // ── Spotlight disc: move + fade toward the focused station ──
@@ -1438,13 +1621,28 @@ fn tavern_frame(
     for (ks, mut tf) in &mut keeper_q {
         let k = &mut res.keepers[ks.0];
         let out = update_keeper(k, t, dt, focus_id, player_x);
-        tf.translation = Vec3::new(
-            out.pose.x as f32,
-            0.55 + out.pose.y as f32,
-            out.pose.z as f32,
-        );
+        // Only Greet sounds. The hammer and dart beats still throw sparks,
+        // but legacy deliberately moved the anvil OFF the idle loop and onto
+        // the earned forge purchase — a smithy that clanks every 2.1 seconds
+        // forever is the thing that made the room unbearable to stand in.
+        for (beat, ..) in &out.beats {
+            if *beat == KeeperBeat::Greet {
+                sfx.write(SfxEvent::KeeperGreet);
+            }
+        }
+        // The quad's origin is its FEET (bottom-centre mesh), so the pose's y
+        // — baseY 0 plus bob/greet-hop — is the translation, not an offset
+        // from a box's half-height.
+        tf.translation = Vec3::new(out.pose.x as f32, out.pose.y as f32, out.pose.z as f32);
+        // `scale_x` is the signed mirror. pk_core clamps |x| >= 0.06 for us
+        // (npcs.rs:245-249, mirroring npcs.ts:204-205) — a zero-determinant
+        // matrix NaNs the normals and the sprite disappears for good.
+        debug_assert!(out.pose.scale_x.abs() >= 0.06 - 1e-9);
         tf.scale = Vec3::new(out.pose.scale_x as f32, 1.0, 1.0);
-        tf.rotation = Quat::from_rotation_z(out.pose.rot_z as f32);
+        // COMPOSE with the baked billboard, never replace it: `rot_z` is the
+        // lean, and legacy only ever assigns `mesh.rotation.z` on top of the
+        // faceCamera bake (npcs.ts:277).
+        tf.rotation = billboard(out.pose.rot_z as f32);
     }
 
     // ── Prompt ──
@@ -1471,6 +1669,7 @@ fn tavern_frame(
                 StationKind::Descend => {
                     // The plunger: commit and drop into the next floor. The
                     // real hand-off — tear down, build a fresh dungeon floor.
+                    sfx.write(SfxEvent::Plunger);
                     next.set(AppState::Dungeon);
                     return;
                 }
@@ -1505,16 +1704,28 @@ fn tavern_frame(
     }
 }
 
-/// Knight billboard: interpolated pose, facing → sheet, walk/idle clips.
+/// Knight billboard: interpolated pose, facing → sheet, walk/idle clips, and
+/// the contact blob that follows his feet.
+// The `Without`s are load-bearing, not decoration: three queries touch
+// `Transform` and Bevy needs the archetypes proven disjoint.
+#[allow(clippy::type_complexity)]
 fn sync_tavern_knight(
     time: Res<Time<Fixed>>,
     res: Res<TavernRes>,
     art: Res<KnightArt>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut q: Query<(&mut Transform, &mut MeshMaterial3d<StandardMaterial>), With<TavernKnight>>,
-    cam: Query<&Transform, (With<DungeonCamera>, Without<TavernKnight>)>,
+    mut q: Query<
+        (
+            &mut Transform,
+            &mut MeshMaterial3d<StandardMaterial>,
+            &TavernKnightMats,
+        ),
+        With<TavernKnight>,
+    >,
+    mut blob_q: Query<&mut Transform, (With<KnightBlob>, Without<TavernKnight>)>,
+    cam: Query<&Transform, (With<DungeonCamera>, Without<TavernKnight>, Without<KnightBlob>)>,
 ) {
-    let Ok((mut tf, mut mat)) = q.single_mut() else {
+    let Ok((mut tf, mut mat, mats)) = q.single_mut() else {
         return;
     };
     let a = time.overstep_fraction() as f64;
@@ -1529,12 +1740,23 @@ fn sync_tavern_knight(
     let mirror = res.pose.facing == Facing::W;
     tf.scale.x = if mirror { -1.0 } else { 1.0 };
 
-    let clips = match res.pose.facing {
-        Facing::S => &art.s,
-        Facing::N => &art.n,
-        Facing::E | Facing::W => &art.e,
+    // The blob is a sibling, so it tracks the feet by hand — the quad's origin
+    // is its centre, so the feet are half a quad below the billboard's y.
+    if let Ok(mut blob) = blob_q.single_mut() {
+        blob.translation.x = tf.translation.x;
+        blob.translation.z = tf.translation.z;
+        blob.translation.y = tf.translation.y - tf.scale.y * KNIGHT_QUAD_H / 2.0 + BLOB_LIFT;
+    }
+
+    // The MASKED clones, not `art.*.material` — see the spawn block. Driving
+    // the shared handles here would leave the tavern's knight on frame 0 AND
+    // scribble over the dungeon's and the intro's uv_transform.
+    let (clips, sheet_mat) = match res.pose.facing {
+        Facing::S => (&art.s, &mats.s),
+        Facing::N => (&art.n, &mats.n),
+        Facing::E | Facing::W => (&art.e, &mats.e),
     };
-    mat.0 = clips.material.clone();
+    mat.0 = sheet_mat.clone();
 
     let moving = res.pose.speed > WALK_CLIP_THRESHOLD;
     let cells = if moving { &clips.walk } else { &clips.idle };
@@ -1551,7 +1773,7 @@ fn sync_tavern_knight(
     let fps = if moving { 8.0 } else { 4.0 } * rate;
     let frame = (res.pose.anim_t * fps) as usize % cells.len();
     let [u, v, uw, vh] = cells[frame];
-    if let Some(m) = materials.get_mut(&clips.material) {
+    if let Some(m) = materials.get_mut(sheet_mat) {
         m.uv_transform = bevy::math::Affine2 {
             matrix2: Mat2::from_diagonal(Vec2::new(uw, vh)),
             translation: Vec2::new(u, v),
@@ -1584,3 +1806,55 @@ fn tavern_camera(
 const KEEPER_COUNT: usize = KEEPER_SPOTS.len();
 #[allow(dead_code)]
 fn _rect_used(_r: &LRect) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The baked billboard has to point the quad's face AT the camera. Nothing
+    /// on screen says so quietly: a wrong Euler order or a sign flip shows up
+    /// as sprites skewed or edge-on, which is exactly what the port would look
+    /// like if `rot_z` overwrote the bake instead of composing with it.
+    #[test]
+    fn the_baked_billboard_faces_the_iso_camera() {
+        // +Z is the quad's normal (Bevy's Rectangle lies in XY facing +Z).
+        let normal = billboard(0.0) * Vec3::Z;
+        let to_camera = camera_offset().normalize();
+        assert!(
+            normal.distance(to_camera) < 1e-5,
+            "quad normal {normal:?} does not point at the camera {to_camera:?}"
+        );
+    }
+
+    /// The lean is a rotation about the sprite's OWN z (legacy sets
+    /// `mesh.rotation.z` on a YXZ euler, i.e. innermost/local), so it must
+    /// leave the normal — the axis pointing at the camera — untouched.
+    #[test]
+    fn the_lean_composes_with_the_bake_instead_of_replacing_it() {
+        let flat = billboard(0.0);
+        let leaned = billboard(0.12);
+        assert!(flat.angle_between(leaned) > 1e-3, "the lean did nothing");
+        // Same face direction, different roll about it.
+        assert!((flat * Vec3::Z).distance(leaned * Vec3::Z) < 1e-5);
+        assert!((flat * Vec3::Y).distance(leaned * Vec3::Y) > 1e-3);
+    }
+
+    /// The keeper quad's origin is its FEET: the mesh is pushed up so the
+    /// sprite occupies y 0..SPRITE_UNITS, which is what lets the ported idle
+    /// loops write `pose.y` straight into the transform.
+    #[test]
+    fn the_keeper_quad_stands_on_its_origin() {
+        let mesh = Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS))
+            .translated_by(Vec3::new(0.0, SPRITE_UNITS / 2.0, 0.0));
+        let ys: Vec<f32> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => {
+                p.iter().map(|v| v[1]).collect()
+            }
+            _ => panic!("the quad has float positions"),
+        };
+        let min = ys.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = ys.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(min.abs() < 1e-6, "feet at {min}, not 0");
+        assert!((max - SPRITE_UNITS).abs() < 1e-6, "head at {max}");
+    }
+}
