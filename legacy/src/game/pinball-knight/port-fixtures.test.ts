@@ -592,6 +592,30 @@ function powOracle() {
       unary("exp", Math.exp, -20, 20, 100000),
       unary("log", Math.log, 1e-9, 1000, 100000),
       unary("atan", Math.atan, -50, 50, 100000),
+      // ── exp/log, past the one range each that the list started with ────────
+      //
+      // Both rows above once read NOTHING MATCHES, and the two causes turned
+      // out to be nothing alike: `log` is the fdlibm-vs-optimized-routines
+      // story that `cos` told, while `libm::exp` IS fdlibm and the whole gap
+      // was V8 special-casing `Math.exp(1)` to `Math.E`. ONE input in 100,001.
+      // A digest cannot tell those apart, so the branches are swept by name.
+      //
+      // exp: [-20,20] happens to contain 1.0. These do not, so they measure the
+      // transcription rather than the special case.
+      unary("exp", Math.exp, -709, 709, 100000), // both reduction branches, full range
+      unary("exp", Math.exp, 700, 709.782712893384, 50000), // up to o_threshold: k = 1024
+      unary("exp", Math.exp, -745.2, -708, 50000), // down past u_threshold: flush to 0
+      unary("exp", Math.exp, -746, -744, 50000), // the k < -1021 scale-by-2^-1000 tail
+      unary("exp", Math.exp, -1e-8, 1e-8, 50000), // |x| < 2^-28: returns 1+x, no polynomial
+      unary("exp", Math.exp, 0.34, 0.35, 50000), // 0.5·ln2 = 0.3466: reduce or don't
+      unary("exp", Math.exp, 1.03, 1.05, 50000), // 1.5·ln2 = 1.0397: k = ±1 or k = round()
+      // log: the divergence is concentrated in the reduced band, because
+      // outside it k·ln2 dominates and every implementation agrees. A sweep
+      // that only visited large or tiny arguments would pass on libm.
+      unary("log", Math.log, 0.7071, 1.4143, 50000), // sqrt(2)/2 .. sqrt(2): k = 0, 4% differ
+      unary("log", Math.log, 0.999999, 1.000001, 50000), // |f| < 2^-20: the short circuit
+      unary("log", Math.log, 5e-324, 1e-300, 50000), // subnormal: scaled by 2^54, k -= 54
+      unary("log", Math.log, 1e300, 1.7976931348623157e308, 50000), // k at its ceiling
     ],
     // 1.35 is the physarum gain and the one that actually ships; the others
     // are there so a Rust pow that happens to agree on one exponent cannot

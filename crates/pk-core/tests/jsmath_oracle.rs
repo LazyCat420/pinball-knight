@@ -12,9 +12,14 @@
 //! call, with the rejected candidates asserted to still disagree: an oracle that
 //! only says "someone matches" stops being a gate the moment a library changes.
 
-use pk_core::jsmath::{js_cos, js_pow, js_sin};
+use pk_core::jsmath::{js_cos, js_exp, js_log, js_pow, js_sin};
 use pk_core::maze::digest::Fnv1a;
 use serde::Deserialize;
+use std::collections::BTreeMap;
+
+/// A unary f64 implementation — the runtime's, or one of the candidates being
+/// held up against it.
+type Candidate = fn(f64) -> f64;
 
 #[derive(Deserialize)]
 struct Oracle {
@@ -40,10 +45,6 @@ struct Sweep {
     n: u32,
     digest: u32,
 }
-
-/// A candidate implementation of a JS primitive. Named because the whole file
-/// is about choosing between several of them for the same function.
-type Candidate = fn(f64) -> f64;
 
 fn load() -> Oracle {
     // ⚠️ This path was `jsmath-pow-oracle.json` for a while and the exporter has
@@ -80,10 +81,25 @@ fn required_impl(name: &str) -> Option<Candidate> {
     match name {
         "cos" => Some(js_cos),
         "sin" => Some(js_sin),
+        "exp" => Some(js_exp),
+        "log" => Some(js_log),
         // IEEE-correctly-rounded — every implementation agrees, no twin needed.
         "sqrt" => Some(f64::sqrt),
         "atan" => Some(libm::atan),
-        // exp/log have NO agreeing implementation — see the gap test below.
+        _ => None,
+    }
+}
+
+/// The implementations the workspace's "transcendentals go through `libm`" rule
+/// would have reached for, per primitive. Held up against the runtime by
+/// [`the_rejected_candidates_still_disagree`] so the twins cannot quietly
+/// become ceremony.
+fn rejected(name: &str) -> Option<[(&'static str, Candidate); 2]> {
+    match name {
+        "cos" => Some([("libm", libm::cos), ("std", f64::cos)]),
+        "sin" => Some([("libm", libm::sin), ("std", f64::sin)]),
+        "exp" => Some([("libm", libm::exp), ("std", f64::exp)]),
+        "log" => Some([("libm", libm::log), ("std", f64::ln)]),
         _ => None,
     }
 }
@@ -92,7 +108,7 @@ fn required_impl(name: &str) -> Option<Candidate> {
 fn every_swept_primitive_matches_the_runtime() {
     let o = load();
     assert!(
-        o.unary.len() >= 14,
+        o.unary.len() >= 25,
         "the sweep set was thinned out — {} entries",
         o.unary.len()
     );
@@ -113,89 +129,106 @@ fn every_swept_primitive_matches_the_runtime() {
         );
         checked += 1;
     }
-    // sin/cos: 5 ranges each. sqrt, atan: 1 each.
-    assert_eq!(checked, 12, "a sweep stopped being checked");
+    // sin/cos: 5 ranges each. exp: 8. log: 5. sqrt, atan: 1 each.
+    assert_eq!(checked, 25, "a sweep stopped being checked");
 }
 
-/// The negative control. `js_cos`/`js_sin` are 300 lines of transcribed 1993 C,
+/// The negative control. The twins are hundreds of lines of transcribed 1993 C,
 /// and the only thing that justifies carrying them is that the alternatives are
 /// wrong. If a future `libm` picks up Sun's evaluation order — or a target's std
 /// starts routing through it — this fails and says so, instead of leaving the
 /// twins in place as unexplained ceremony.
 ///
-/// Asserted per range, because the multi-word reduction above 2^20·(π/2) is a
-/// different code path from the Cody–Waite one below it, and a library could
-/// agree on one and not the other.
+/// ## Why this is not one blanket `assert_ne!` over every range
+///
+/// Because that would assert a falsehood. The four primitives fail in three
+/// different shapes, and the control has to know which:
+///
+/// · `cos`/`sin` — the kernels differ EVERYWHERE, so every range is asserted
+///   individually. The multi-word reduction above 2^20·(π/2) is a different
+///   code path from the Cody–Waite one below it and a library could agree on
+///   one and not the other, so an aggregate here would hide a real regression.
+/// · `log` — the divergence lives inside the reduced band `sqrt(2)/2 … sqrt(2)`
+///   (4% of inputs there). Outside it the `k·ln2` term dominates and `libm`
+///   reproduces the runtime EXACTLY: the subnormal and 1e300 sweeps agree, and
+///   must be allowed to. The band sweep is what is asserted.
+/// · `exp` — `libm::exp` IS fdlibm's `e_exp`. Across eight swept ranges it is
+///   wrong on ONE input in the entire double range, `Math.exp(1)`, which V8
+///   special-cases to `Math.E`. Exactly one sweep may disagree, and it is the
+///   one whose interval contains 1.0. Pinned as `== 1`, not `>= 1`: if that
+///   number ever moves, the finding in `jsmath::fdlibm_explog`'s header is
+///   stale and the header is the thing to fix.
 #[test]
-fn the_rejected_trig_candidates_still_disagree() {
+fn the_rejected_candidates_still_disagree() {
     let o = load();
+    // (primitive, candidate) → how many swept ranges the candidate got WRONG.
+    let mut wrong: BTreeMap<(&str, &str), u32> = BTreeMap::new();
     let mut ranges = 0;
+    let mut band_checked = 0;
+
     for u in &o.unary {
-        let (libm_f, std_f): (Candidate, Candidate) = match u.name.as_str() {
-            "cos" => (libm::cos, f64::cos),
-            "sin" => (libm::sin, f64::sin),
-            _ => continue,
+        let Some(candidates) = rejected(&u.name) else {
+            continue;
         };
-        for (who, f) in [("libm", libm_f), ("std", std_f)] {
-            assert_ne!(
-                sweep_digest(u, f),
-                u.digest,
-                "{}::{} now AGREES with the runtime over [{}, {}] — if that is real, \
-                 jsmath::fdlibm's whole rationale changed and its header is stale",
-                who,
-                u.name,
-                u.from,
-                u.to
-            );
+        for (who, f) in candidates {
+            let differs = sweep_digest(u, f) != u.digest;
+            *wrong.entry((u.name.as_str(), who)).or_default() += u32::from(differs);
+
+            if matches!(u.name.as_str(), "cos" | "sin") {
+                assert!(
+                    differs,
+                    "{}::{} now AGREES with the runtime over [{}, {}] — if that is real, \
+                     jsmath::fdlibm's whole rationale changed and its header is stale",
+                    who, u.name, u.from, u.to
+                );
+            }
+            // log's reduced band — the one range where the twin has to earn its
+            // keep. Identified by SHAPE, not by its endpoints: the log sweep
+            // that straddles 1.0 with room on both sides AND spans under two
+            // octaves, i.e. the one that spends every input in the `k == 0`
+            // polynomial. (`to/from` is load-bearing: [1e-9, 1e3] straddles 1.0
+            // too, and matching it here silently doubled the count.)
+            if u.name == "log" && u.from < 0.99 && u.to > 1.01 && u.to / u.from < 4.0 {
+                assert!(
+                    differs,
+                    "{}::log now AGREES with the runtime across sqrt(2)/2 … sqrt(2), \
+                     which is where fdlibm and the table-driven routine differ at all — \
+                     js_log's rationale changed",
+                    who
+                );
+                band_checked += 1;
+            }
         }
         ranges += 1;
     }
-    assert_eq!(ranges, 10, "a trig range stopped being controlled");
-}
 
-/// **A MEASURED GAP, pinned so it cannot be mistaken for a passing row.**
-///
-/// `Math.exp` and `Math.log` are reproduced by NEITHER `libm` nor this
-/// platform's std — same story as `cos`: V8 kept fdlibm's `e_exp.c`/`e_log.c`
-/// and everyone else moved to the table-driven ARM optimized-routines versions.
-/// No twin is written yet.
-///
-/// This is not theoretical. `pk_core::combo` already calls `libm::exp` and
-/// `libm::log` (the corner-restitution, corner-add and combo-window curves,
-/// which feed pinball physics), `gambler::darts` calls `libm::log10`, and
-/// `intro.rs` uses std `ln`/`exp` for the camera zoom. The 600-tick momentum
-/// fixture is bit-exact today, so no divergent input has been HIT — that is a
-/// statement about the inputs those traces happen to take, not about the
-/// primitives being safe.
-///
-/// The test asserts the gap rather than skipping it, so writing the twins makes
-/// this fail and forces the row into `required_impl` above.
-#[test]
-fn exp_and_log_have_no_agreeing_implementation_yet() {
-    let o = load();
-    let mut gaps = 0;
-    for u in &o.unary {
-        let candidates: [(&str, Candidate); 2] = match u.name.as_str() {
-            "exp" => [("libm", libm::exp), ("std", f64::exp)],
-            "log" => [("libm", libm::log), ("std", f64::ln)],
-            _ => continue,
-        };
-        for (who, f) in candidates {
-            assert_ne!(
-                sweep_digest(u, f),
-                u.digest,
-                "{}::{} now matches the runtime — promote it into required_impl() \
-                 and delete this gap test",
-                who,
-                u.name
+    // cos 5 + sin 5 + exp 8 + log 5.
+    assert_eq!(ranges, 23, "a controlled range stopped being controlled");
+    assert_eq!(
+        band_checked, 2,
+        "the log band sweep is no longer in the fixture"
+    );
+
+    assert_eq!(
+        wrong[&("exp", "libm")],
+        1,
+        "libm::exp is fdlibm and its ONLY divergence from the runtime is Math.exp(1); \
+         exactly one swept range should contain 1.0. If this is not 1, either a sweep \
+         was added/removed or libm::exp is no longer fdlibm — check which before \
+         touching js_exp."
+    );
+    for who in ["libm", "std"] {
+        for name in ["exp", "log"] {
+            if (name, who) == ("exp", "libm") {
+                continue; // pinned exactly, above
+            }
+            assert!(
+                wrong[&(name, who)] >= 1,
+                "{who}::{name} now reproduces the runtime over EVERY swept range — \
+                 jsmath::fdlibm_explog would be dead weight"
             );
         }
-        gaps += 1;
     }
-    assert_eq!(
-        gaps, 2,
-        "exp/log stopped being swept — the gap is now invisible"
-    );
 }
 
 #[test]

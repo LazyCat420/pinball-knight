@@ -28,28 +28,29 @@
 //! whole-curve digest over ranges chosen to cross every branch boundary — see
 //! `crates/pk-core/tests/jsmath_oracle.rs`.
 
-// ─── why this file suppresses three lints ────────────────────────────────────
+// ─── why this file suppresses four lints ─────────────────────────────────────
 //
 // The value of a verbatim transcription is that it can be DIFFED against the
 // original C. Every "improvement" clippy suggests here would be correct in
 // ordinary code and would destroy that property, so each is suppressed with its
-// reason rather than applied:
+// reason rather than applied. Three of the four are DENY-level, which aborts
+// the whole workspace lint run at pk-core rather than adding a warning — so
+// leaving them unhandled also silently stops linting pk-game and pk-audio.
 //
 // · `excessive_precision` — the coefficients are transcribed digit for digit
 //   from the C, which writes more decimals than an f64 can hold. The parsed
 //   values are identical either way; the literals matching fdlibm's is what
 //   lets the next reader see nothing was tidied on the way in.
-// · `approx_constant` — `INVPIO2` is fdlibm's 2/π, and it must stay fdlibm's
-//   rounding of it. Swapping in `f64::consts::FRAC_2_PI` would be substituting
-//   a different library's constant into a bit-exact reproduction, which is the
-//   exact class of mistake this whole module exists to undo.
-// · `eq_op` — `x - x` is fdlibm's NaN/Infinity idiom: it propagates a NaN
-//   payload and turns ±∞ into NaN in one expression. `f64::NAN` is not the
-//   same thing (it discards the input's payload).
-// · `needless_range_loop` — the index loops mirror the C's `for (i=1;i<=jz;i++)`
-//   line for line. These are compensated summations where ORDER is the
-//   algorithm, so the indices stay visible rather than hiding inside an
-//   iterator chain a reader has to decode back into a range.
+// · `approx_constant` — `INVPIO2` is 2/pi, deliberately fdlibm's 21-digit
+//   literal and not `FRAC_2_PI`. Swapping in another library's constant is the
+//   exact class of mistake this module exists to undo.
+// · `eq_op` — `x - x` is fdlibm's idiom for "return a NaN carrying THIS
+//   argument's payload" at the infinity/NaN guards. `f64::NAN` is not the same
+//   value.
+// · `needless_range_loop` — in `kernel_rem_pio2` the index walks two arrays at
+//   different offsets (`fq[jz - i]` from `q[i + k]`), and these are compensated
+//   summations where order is the algorithm. An iterator rewrite would not be
+//   the C any more.
 #![allow(
     clippy::excessive_precision,
     clippy::approx_constant,
@@ -58,19 +59,23 @@
 )]
 
 // ─── word access, the fdlibm macros ──────────────────────────────────────────
+//
+// `__HI`, `__LO` and the union write-back, which every fdlibm routine leans on.
+// Shared with `fdlibm_explog.rs` rather than re-declared there: two copies of a
+// bit-twiddling helper is two places for a port to drift.
 
 #[inline]
-fn high_word(x: f64) -> i32 {
+pub(super) fn high_word(x: f64) -> i32 {
     (x.to_bits() >> 32) as u32 as i32
 }
 
 #[inline]
-fn low_word(x: f64) -> u32 {
+pub(super) fn low_word(x: f64) -> u32 {
     x.to_bits() as u32
 }
 
 #[inline]
-fn from_words(hi: u32, lo: u32) -> f64 {
+pub(super) fn from_words(hi: u32, lo: u32) -> f64 {
     f64::from_bits((u64::from(hi) << 32) | u64::from(lo))
 }
 
