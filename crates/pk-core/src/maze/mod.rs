@@ -29,6 +29,7 @@
 
 pub mod archetypes;
 pub mod digest;
+pub mod doorways;
 pub mod modifiers;
 pub mod track_carve;
 pub mod track_floor;
@@ -126,6 +127,13 @@ pub struct PassSnapshot<'a> {
     pub grid: &'a Grid,
     pub mask: Option<&'a TrackMask>,
     pub extra: PassExtra,
+    /// The doorway plan, on the one pass that owns it — LIVE, like the grid.
+    ///
+    /// Here for the reason the TS snapshot carries `graph`/`path`:
+    /// `plan-doorways` writes nothing to the grid, so a boundary that only
+    /// digests tiles certifies `repair-1`'s output a second time and calls the
+    /// plan verified. See [`digest::digest_sites`] for the measurement.
+    pub sites: Option<&'a [doorways::DoorwaySite]>,
     /// Cumulative draws at this boundary.
     ///
     /// Reported BY the pipeline rather than read from the rng by the observer,
@@ -159,6 +167,8 @@ pub struct PassRecord {
     pub lane: Option<u32>,
     pub sealed: Option<u32>,
     pub dist: Option<u32>,
+    /// The doorway plan, on the one pass that owns it. `None` everywhere else.
+    pub plan_sites: Option<u32>,
     /// Exact counts, so a mismatch is legible without dumping a grid.
     pub walkable: u32,
     pub shaped: u32,
@@ -198,6 +208,7 @@ pub fn record(snap: &PassSnapshot<'_>) -> PassRecord {
         lane: mask.map(|m| digest::digest_bytes(&m.lane)),
         sealed: mask.map(|m| digest::digest_bytes(&m.sealed)),
         dist: mask.map(|m| digest::digest_f32(&m.dist)),
+        plan_sites: snap.sites.map(digest::digest_sites),
         walkable: walkable_count(g),
         shaped: count_if(&g.shapes, |v| v != 0),
         arc_tiles: g.arc_idx.as_deref().map_or(0, |a| count_if(a, |v| v >= 0)),

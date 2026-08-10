@@ -59,6 +59,7 @@ import { floorRng, floorSeed } from "./maze/floor-seed";
 import { isWalkable, type Grid } from "./maze/generator";
 import { MODIFIERS, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, rollModifier } from "./maze/modifiers";
 import { buildTrackFloor, type PassSnapshot } from "./maze/track-floor";
+import type { DoorwaySite } from "./maze/doorways";
 import type { ArcFeature } from "./engine/tile-shape";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -237,6 +238,36 @@ function digestLegs(legs: Array<{ x0: number; z0: number; x1: number; z1: number
 }
 
 /**
+ * Digest the PLANNED DOORWAYS in plan order — position, axis and wanted width.
+ *
+ * ⚠️ ADDED WHEN PASS 9 WAS PORTED, for the same reason `digestLegs` was added
+ * at pass 2, and the case here is worse. `plan-doorways` MUTATES NOTHING: it
+ * labels sections, partitions territory and picks one opening per boundary
+ * component, all read-only. Measured on all ten corpus floors, every one of the
+ * seven digests, all six counts AND the draw count at `plan-doorways` are
+ * byte-identical to `repair-1`'s — so before this fold, the entire boundary was
+ * `{ sites: N, guard: M }`: two integers standing in for nine to twenty-six
+ * structured records. A port that got the per-site axis wrong, or emitted the
+ * sites in a different order, matched the fixture exactly.
+ *
+ * It would then diverge at pass 11, where `onDoorway` steers `stampOrbitIsland`
+ * — which draws rng. So the cheap localiser every other pass leans on would
+ * have reported the wrong pass, two passes late.
+ *
+ * Order is part of the signal: `carveDoorways` walks this list in order at pass
+ * 18, and `resolveDoorway` slides a doorway's centre against a grid four curve
+ * passes have changed, so two sites swapped is a different floor even when
+ * every number in the list is right.
+ */
+function digestSites(sites: readonly DoorwaySite[]): number {
+  let h = FNV_OFFSET;
+  for (const s of sites) {
+    for (const v of [s.i, s.j, s.ai, s.aj, s.wi, s.wj, s.want, s.a, s.b]) h = foldLen(h, v);
+  }
+  return foldLen(h, sites.length);
+}
+
+/**
  * SELF-TEST VECTORS — how the Rust twin certifies its own digest before any
  * maze code exists.
  *
@@ -345,6 +376,8 @@ interface PassRecord {
   pathLegs: number | null;
   pathArcs: number | null;
   pathArcHalf: number | null;
+  /** The doorway plan, on the one pass that owns it. Null everywhere else. */
+  planSites: number | null;
   /** Exact counts, so a mismatch is legible without a grid dump. */
   walkable: number;
   shaped: number;
@@ -385,6 +418,7 @@ function record(snap: PassSnapshot, draws: number): PassRecord {
     // `grid.arcs` unchanged digests identically in both places.
     pathArcs: snap.path ? digestArcs(snap.path.arcs) : null,
     pathArcHalf: snap.path ? snap.path.arcHalf : null,
+    planSites: snap.sites ? digestSites(snap.sites) : null,
     walkable: walkableCountOf(g),
     shaped: countIf(g.shapes, (v) => v !== 0),
     arcTiles: g.arcIdx ? countIf(g.arcIdx, (v) => v >= 0) : 0,

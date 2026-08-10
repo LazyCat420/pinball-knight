@@ -43,6 +43,10 @@ use pk_core::maze::archetypes::{
     archetype_for, level_cells, track_node_counts, windiness_for, NodeLayout, SurfaceMix,
 };
 use pk_core::maze::archetypes::{ARCHETYPES, DEFAULT_RULE_WEIGHTS, DEFAULT_TRACK_PROFILE};
+use pk_core::maze::doorways::{
+    clearance_field, doorway_footprint, label_sections, plan_doorways, resolve_doorway,
+    section_territory, try_candidate, CarveGuards, PlanOpts,
+};
 use pk_core::maze::modifiers::{
     roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
 };
@@ -50,7 +54,8 @@ use pk_core::maze::track_floor::{build_track_floor, BuildTrackFloorOpts, PASSES_
 use pk_core::maze::track_grow::{circuit_rank, digest_edges, digest_nodes, TrackGraph};
 use pk_core::maze::track_path::{digest_legs, TrackPath, TRACK_RADII};
 use pk_core::maze::{
-    digest, floor_rng, floor_seed, record, CountingRng, Extra, PassRecord, PassSnapshot, PASS_ORDER,
+    digest, floor_rng, floor_seed, record, CountingRng, Extra, PassRecord, PassSnapshot, TrackMask,
+    PASS_ORDER,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -172,6 +177,12 @@ struct Pass {
     path_legs: Option<u32>,
     path_arcs: Option<u32>,
     path_arc_half: Option<f64>,
+    /// The doorway plan, on the ONE pass that owns it. Null elsewhere.
+    ///
+    /// Unlike the graph and path digests above, this one IS carried by
+    /// `PassRecord` — the pipeline hands the plan across the probe seam, so the
+    /// comparison needs no second `build_track_floor` call.
+    plan_sites: Option<u32>,
     extra: serde_json::Value,
 }
 
@@ -272,6 +283,15 @@ fn assert_record(head: &str, want: &Pass, got: &PassRecord) {
     // and `t` hold the same bytes and digest identically, so a port that
     // returned the tile array as the mask would satisfy both of those.
     assert_eq!(got.dist, want.dist, "{head}: mask.dist digest");
+    // ⚠️ The ONLY thing at `plan-doorways` that is not `repair-1`'s output
+    // repeated. Every digest above and every count below is byte-identical
+    // across that boundary on all ten corpus floors, so without this line the
+    // pass is pinned by the two integers in `extra` alone. See
+    // `pk_core::maze::digest::digest_sites`.
+    assert_eq!(
+        got.plan_sites, want.plan_sites,
+        "{head}: doorway plan digest (position, axis and wanted width, in plan order)"
+    );
 
     // The pass's own scalars, compared POSITIONALLY against the JSON object the
     // TS wrote — not sorted, not looked up by key. The exporter writes them in
@@ -1212,6 +1232,358 @@ fn repair_1_stands_on_a_floor_that_is_already_connected() {
     }
 }
 
+/// Pass 9 of 23 — `plan-doorways`. Label the sections, partition the corridor
+/// space between them, and site one opening per boundary component.
+///
+/// ⚠️ THE WEAKEST BOUNDARY IN THE PIPELINE, and the port had to strengthen it
+/// before it could be believed. This pass MUTATES NOTHING — every function it
+/// calls is read-only — so all seven grid/mask digests, all six counts and the
+/// cumulative draw count are byte-identical to `repair-1`'s on 10/10 floors.
+/// What the fixture originally pinned about pass 9's own output was
+/// `{ sites: N, guard: M }`: two integers standing in for 9-26 structured
+/// records. A port with the wrong per-site axis, or the right sites in the wrong
+/// order, matched it exactly.
+///
+/// It would then diverge at pass 11, where `on_doorway` steers
+/// `stamp_orbit_island` and that pass DRAWS — so the draw counter, the localiser
+/// every other pass leans on, would have reported the wrong pass two boundaries
+/// late.
+///
+/// So `planSites` was added to the exporter (`digest_sites`: `i, j, ai, aj, wi,
+/// wj, want, a, b` per site, in plan order, length-folded). Same move, same
+/// reason, as `digestLegs` at pass 2 — and re-exporting left every other record
+/// on every other pass byte-identical, which is itself the check that the fold
+/// was added and nothing else moved.
+#[test]
+fn pass9_plan_doorways_replays_the_oracle() {
+    replay_through(8);
+}
+
+/// The companion to pass 9's replay: the pass is inert on the grid, ASSERTED.
+///
+/// `plan-doorways` earns its place by what it decides, not by what it writes,
+/// and the whole port rests on that: `plan_doorways`, `resolve_doorway` and
+/// `doorway_footprint` take `&Grid`, so the type system already forbids a write.
+/// What it does NOT forbid is the pass being wired to something that writes —
+/// carving the plan here instead of at pass 18 is the exact mistake the split
+/// exists to prevent, and it would show up as a *better*-looking floor.
+///
+/// So: every digest and every count at boundary 9 must equal boundary 8's. If
+/// this fails and the replay still passes, someone has re-exported the fixture
+/// with the carve moved forward.
+#[test]
+fn plan_doorways_changes_nothing_on_the_grid() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let (mut rng, density) = pre_track_draws(f);
+
+        let mut seen: Vec<PassRecord> = Vec::new();
+        let mut probe = |snap: PassSnapshot<'_>| seen.push(record(&snap));
+        build_track_floor(
+            f.cells_w,
+            f.cells_h,
+            &mut rng,
+            &BuildTrackFloorOpts {
+                profile: Some(&arch.track),
+                density: Some(density),
+                ..Default::default()
+            },
+            Some(&mut probe),
+        )
+        .unwrap_or_else(|| panic!("{head}: the pipeline declined a corpus floor"));
+
+        let before = &seen[7];
+        let after = &seen[8];
+        assert_eq!(before.pass, "repair-1", "{head}: boundary 8 moved");
+        assert_eq!(after.pass, "plan-doorways", "{head}: boundary 9 moved");
+
+        for (what, a, b) in [
+            ("tiles", before.t, after.t),
+            ("shapes", before.shapes, after.shapes),
+            ("arcs", before.arcs, after.arcs),
+        ] {
+            assert_eq!(a, b, "{head}: `plan-doorways` moved the {what} digest");
+        }
+        for (what, a, b) in [
+            ("arcIdx", before.arc_idx, after.arc_idx),
+            ("mask.lane", before.lane, after.lane),
+            ("mask.sealed", before.sealed, after.sealed),
+            ("mask.dist", before.dist, after.dist),
+        ] {
+            assert_eq!(a, b, "{head}: `plan-doorways` moved the {what} digest");
+        }
+        for (what, a, b) in [
+            ("walkable", before.walkable, after.walkable),
+            ("shaped", before.shaped, after.shaped),
+            ("arc tile", before.arc_tiles, after.arc_tiles),
+            ("lane tile", before.lane_tiles, after.lane_tiles),
+            ("sealed tile", before.sealed_tiles, after.sealed_tiles),
+        ] {
+            assert_eq!(a, b, "{head}: `plan-doorways` moved the {what} count");
+        }
+        assert_eq!(
+            before.draws, after.draws,
+            "{head}: `plan-doorways` drew from the rng — the module takes no rng \
+             and must not acquire one"
+        );
+        assert!(
+            before.plan_sites.is_none() && after.plan_sites.is_some(),
+            "{head}: the plan digest is not on the pass that owns it"
+        );
+    }
+}
+
+/// PASS 9's SABOTAGE SURVIVORS, WITH A NUMBER ON EACH — the trigger counts.
+///
+/// 27 defects were injected at this boundary and **18 were caught**, including
+/// the positive control (the pass carving its own plan, i.e. pass 18 ten passes
+/// early). Nine survived, and they are not one kind of thing. Three are
+/// PROVABLY INERT — a sabotage that cannot reproduce a defect proves nothing
+/// about the gate — and six are branches the corpus does not reach. This test
+/// puts a measured number on the second group so the next person knows whether
+/// they are looking at a hole or at a tautology.
+///
+/// ## Provably inert (no test needed, and none written)
+///
+/// - **`label_sections` flood FIFO instead of LIFO** — a flood visits the whole
+///   connected component whatever order it walks it in, so `label` and `sizes`
+///   are identical either way.
+/// - **boundary-strip flood FIFO instead of LIFO**, and
+/// - **8-connected neighbour order `di`-outer instead of `dj`-outer** — same
+///   argument, plus the strip's winner is an ARGMIN under a total order
+///   (`c < best_cross || (c == best_cross && k < best_k)`), which is by
+///   construction independent of visit order. That is exactly why inverting the
+///   tie-break to `k > best_k` WAS caught: it changes the argmin, not the walk.
+///
+/// ## Six branches the corpus does not reach — counted below
+///
+/// Each assertion here fails the day a corpus floor starts exercising the
+/// branch, which is the point: the number is pinned so it cannot quietly become
+/// non-zero and leave the sabotage table stale.
+#[test]
+fn the_pass_9_survivors_have_a_number_on_them() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let (mut slides, mut mirrored, mut oob, mut overlaps) = (0, 0, 0, 0);
+    let (mut sealed_changes, mut forks, mut border_open) = (0, 0, 0);
+
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let (mut rng, density) = pre_track_draws(f);
+
+        // The grid and mask `plan-doorways` reads. Cloned out of the probe
+        // because everything below re-derives the plan on them.
+        let mut snapshot: Option<(Grid, TrackMask)> = None;
+        let mut probe = |snap: PassSnapshot<'_>| {
+            if snap.pass == "plan-doorways" {
+                snapshot = Some((snap.grid.clone(), snap.mask.expect("mask exists").clone()));
+            }
+        };
+        build_track_floor(
+            f.cells_w,
+            f.cells_h,
+            &mut rng,
+            &BuildTrackFloorOpts {
+                profile: Some(&arch.track),
+                density: Some(density),
+                ..Default::default()
+            },
+            Some(&mut probe),
+        )
+        .unwrap_or_else(|| panic!("{head}: the pipeline declined a corpus floor"));
+        let (g, mask) = snapshot.expect("pass 9 emitted");
+
+        let sites = plan_doorways(&g, &PlanOpts::default());
+        let guards = CarveGuards {
+            mask: Some(&mask),
+            span_mask: None,
+        };
+
+        // 1. THE SLIDE, and whether its SIGN ORDER can matter. `s = 0` is
+        //    tried first, so −1-before-+1 is only observable where a site
+        //    resolves at BOTH ±shift for the winning width. Enumerating the
+        //    candidate space is what `try_candidate` was split out for.
+        // 2. THE JAMB `cut` ALIASING — only live when a footprint leaves the grid.
+        // 3. FOOTPRINT OVERLAP — without one, `door_guard`'s dedup is invisible
+        //    in `extra.guard`.
+        let mut guard = vec![0_u8; (g.w * g.h) as usize];
+        for s in &sites {
+            let Some(d) = resolve_doorway(&g, s, &guards) else {
+                continue;
+            };
+            let shift = (d.site.i - s.i) * s.wi + (d.site.j - s.j) * s.wj;
+            // Independent cross-check of the driver against an explicit
+            // enumeration of the candidate space in the oracle's order.
+            let mut widths = [7, 5, 3];
+            widths.reverse();
+            let mut want: Option<pk_core::maze::doorways::Doorway> = None;
+            'outer: for w in widths {
+                if w < s.want.max(open_run_across(&g, s)) {
+                    continue;
+                }
+                for step in 0..=6_i32 {
+                    let sh = if step == 0 {
+                        0
+                    } else {
+                        (if step % 2 == 1 { -1 } else { 1 }) * ((step + 1) / 2)
+                    };
+                    if let Some(c) = try_candidate(&g, s, &guards, w, sh) {
+                        want = Some(c);
+                        break 'outer;
+                    }
+                }
+            }
+            assert_eq!(
+                Some(d),
+                want,
+                "the `resolve_doorway` driver disagrees with an explicit walk of \
+                 the same candidate space"
+            );
+            if shift != 0 {
+                slides += 1;
+                if try_candidate(&g, s, &guards, d.w, -shift).is_some() {
+                    mirrored += 1;
+                }
+            }
+            for t in doorway_footprint(&d) {
+                if t.i < 0 || t.j < 0 || t.i >= g.w || t.j >= g.h {
+                    oob += 1;
+                }
+                let k = idx(&g, t.i, t.j);
+                if guard[k] == 1 {
+                    overlaps += 1;
+                }
+                guard[k] = 1;
+            }
+        }
+
+        // 4. THE SEALED GUARD, measured as a DIFFERENTIAL rather than by
+        //    counting tiles near a sealed lane. `near_sealed` being true
+        //    somewhere a candidate reads is not the trigger — the trigger is the
+        //    guard changing a resolution, and only withholding it can say so.
+        let unguarded = CarveGuards {
+            mask: None,
+            span_mask: None,
+        };
+        for s in &sites {
+            if resolve_doorway(&g, s, &guards) != resolve_doorway(&g, s, &unguarded) {
+                sealed_changes += 1;
+            }
+        }
+
+        // 5. `SIDES` ORDER IN THE BOUNDARY SCAN. The scan `break`s on the FIRST
+        //    direction that finds a differently-owned neighbour, so the order
+        //    only decides anything where a tile borders two neighbours whose
+        //    PAIR KEYS disagree — a fork. Two same-key neighbours are not a fork.
+        let cl = clearance_field(&g);
+        let sec = label_sections(&g, &cl, None);
+        let owner = section_territory(&g, &sec);
+        let p = sec.sizes.len() as i32;
+        for j in 0..g.h {
+            for i in 0..g.w {
+                let oa = owner[idx(&g, i, j)];
+                if oa < 0 {
+                    continue;
+                }
+                let mut keys = Vec::new();
+                for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    let (x, y) = (i + di, j + dj);
+                    if x < 0 || y < 0 || x >= g.w || y >= g.h {
+                        continue;
+                    }
+                    let ob = owner[idx(&g, x, y)];
+                    if ob < 0 || ob == oa {
+                        continue;
+                    }
+                    keys.push(if oa < ob { oa * p + ob } else { ob * p + oa });
+                }
+                if keys.windows(2).any(|w| w[0] != w[1]) {
+                    forks += 1;
+                }
+            }
+        }
+
+        // 6. `tile_state`'s BORDER-BEFORE-WALKABLE order — only observable if a
+        //    walkable tile ever sits on the outermost ring.
+        for i in 0..g.w {
+            for j in [0, g.h - 1] {
+                if is_walkable(&g, i, j) {
+                    border_open += 1;
+                }
+            }
+        }
+        for j in 0..g.h {
+            for i in [0, g.w - 1] {
+                if is_walkable(&g, i, j) {
+                    border_open += 1;
+                }
+            }
+        }
+    }
+
+    // ── THE NUMBERS, PINNED ──────────────────────────────────────────────────
+    //
+    // Not "the corpus never reaches this" — three of these branches ARE reached
+    // and the sabotage survived anyway, which is a different and more useful
+    // fact. Each assertion fails the day the corresponding sabotage starts being
+    // meaningful, so the table in `doorways.rs` cannot quietly go stale.
+
+    // THE SLIDE IS REACHED — 57 of the corpus's resolutions sit off their
+    // planned centre. So "slide sequence +1 before −1" did NOT survive for want
+    // of a slide. It survived because not
+    // one of those six resolves at the mirrored shift as well: a slide happens
+    // where the unslid placement is blocked, and on this corpus the blockage is
+    // always one-sided. An absence of TIES, not an absence of slides — which is
+    // the same shape of hole passes 5, 7 and 8 each reported.
+    assert_eq!(slides, 57, "the slide census moved");
+    assert_eq!(
+        mirrored, 0,
+        "a doorway now resolves at both +shift and −shift — the slide sequence's \
+         sign order decides which centre is recorded and needs its own gate"
+    );
+
+    // THE SEALED GUARD IS INERT HERE, measured the only way that means anything:
+    // withholding it changes 0 of the resolutions. Tiles near a sealed lane are
+    // plentiful (the launch chute seals a lane on nine of ten floors) — they are
+    // simply never the tile that decides a candidate. That is the honest reading
+    // of "the mask guard is withheld" surviving.
+    assert_eq!(
+        sealed_changes, 0,
+        "the sealed-lane guard now changes a doorway resolution — withholding \
+         the mask from `resolve_doorway` must stop surviving the sweep"
+    );
+
+    // NEVER REACHED, and each is one line of geometry away from being reached.
+    assert_eq!(
+        oob, 0,
+        "a doorway footprint left the grid — `jambs_survive`'s unchecked `idx` \
+         aliasing is now live and the bounds-checked sabotage should bite"
+    );
+    assert_eq!(
+        overlaps, 0,
+        "two doorway footprints overlap — `door_guard`'s dedup is now observable \
+         in `extra.guard`"
+    );
+    assert_eq!(
+        border_open, 0,
+        "the floor's outer ring has a walkable tile — `tile_state`'s \
+         border-before-walkable order is now observable"
+    );
+
+    // REACHED TWICE, and still not load-bearing: two boundary tiles across ten
+    // floors border differently-keyed owners, so `SIDES` order decides which
+    // pair they are filed under — but neither is its strip's argmin, so the
+    // sited doorway is the same either way. A third fork could easily land on a
+    // winner, which is why this is pinned rather than dismissed.
+    assert_eq!(
+        forks, 2,
+        "the count of boundary tiles whose pair key depends on `SIDES` order \
+         moved — re-run the `SIDES order reversed` sabotage"
+    );
+}
+
 /// How many connected components the walkable tiles form. 4-neighbourhood, the
 /// same one `connect_all` floods with.
 fn walkable_components(g: &Grid) -> usize {
@@ -1328,4 +1700,25 @@ fn panic_message(e: &Box<dyn std::any::Any + Send>) -> String {
         .cloned()
         .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
         .unwrap_or_else(|| "<non-string panic>".into())
+}
+
+/// `site_width` by another name — the open run across the passage at the planned
+/// centre, which is what raises a doorway to the next vocabulary member up.
+fn open_run_across(g: &Grid, s: &pk_core::maze::doorways::DoorwaySite) -> i32 {
+    let mut n = if is_walkable(g, s.i, s.j) {
+        1
+    } else {
+        return 0;
+    };
+    let mut k = 1;
+    while is_walkable(g, s.i + s.wi * k, s.j + s.wj * k) {
+        n += 1;
+        k += 1;
+    }
+    let mut k = 1;
+    while is_walkable(g, s.i - s.wi * k, s.j - s.wj * k) {
+        n += 1;
+        k += 1;
+    }
+    n
 }
