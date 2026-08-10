@@ -119,16 +119,15 @@ track pipeline first and the fallback last — and read
       `e_log.c`; `js_exp` is verbatim `e_exp.c` plus one guard, because
       `libm::exp` already IS fdlibm and misses the runtime on exactly ONE input
       in ~400,000 — `x == 1`, where V8 answers `Math.E`.
-- [ ] **Switch the call sites** — the twins exist, the shipped code still calls
-      the wrong implementations, and this is the item that actually changes
-      behaviour:
-      - `combo.rs:21,22` (`combo_speed_ceil`, `libm::log`) → `js_log`.
-        `log(1 + k·n)` for small `n` lands INSIDE the divergent band, so this
-        one is likely to move. Re-verify `pinball-trace-seed7` and
-        `booster_corner_sim`.
-      - `combo.rs:28,33,39` (restitution / add / window, `libm::exp`) →
-        `js_exp`. Arguments are `-λ·n ≤ 0`, so `x == 1` is unreachable and this
-        is probably a no-op — confirm rather than assume.
+- [~] **Switch the call sites** — `combo.rs` done, `intro.rs` blocked on a
+      fixture that does not exist yet:
+      - [x] `combo.rs` — all five switched. Every trace stayed bit-exact, so
+        it was A/B'd directly: the raw `log(1 + 0.15·n)` differs on 2 of the
+        first 201 combo depths, `combo_speed_ceil` on NONE (the division eats
+        the ulp), and the `exp` arguments `-λ·n ≤ 0` cannot reach `x == 1`,
+        which is `libm::exp`'s only divergence. Correct-by-construction, no
+        behaviour change, and no test can distinguish the two versions —
+        written down in the module header rather than left as a silent green.
       - `intro.rs:458` (camera zoom, std `ln`/`exp`) → the twins. **No fixture
         covers this**: `intro_trace.rs` replays the ball, not the camera pose.
         A fixture has to be written before the switch can be verified.

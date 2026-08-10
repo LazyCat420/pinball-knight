@@ -113,24 +113,41 @@ fn every_swept_primitive_matches_the_runtime() {
         o.unary.len()
     );
 
+    // ── Collect, then report. Do NOT `assert_eq!` inside the loop. ──────────
+    //
+    // The SHAPE of the failure is the diagnosis, and halting at the first bad
+    // sweep throws it away. Sabotage-verified 2026-08-10 — these are different
+    // defects and a first-failure abort makes them look identical:
+    //
+    //   1 range red, the largest       a branch bug (the argument reduction)
+    //   the two +-1e6 ranges red       the Cody-Waite iteration count
+    //   the three huge ranges red      the multi-word 2/pi path
+    //   ALL ten trig ranges red        the polynomial kernel itself
+    //   1 range red, the one holding 1.0   a special-case guard
+    //
+    // Telling those apart from the report is worth the dozen lines.
     let mut checked = 0;
+    let mut failed: Vec<String> = Vec::new();
     for u in &o.unary {
         let Some(f) = required_impl(&u.name) else {
             continue;
         };
-        assert_eq!(
-            sweep_digest(u, f),
-            u.digest,
-            "Math.{} over [{}, {}] ({} points) diverged from the JS runtime",
-            u.name,
-            u.from,
-            u.to,
-            u.n
-        );
+        if sweep_digest(u, f) != u.digest {
+            failed.push(format!(
+                "  Math.{} over [{}, {}] ({} points)",
+                u.name, u.from, u.to, u.n
+            ));
+        }
         checked += 1;
     }
     // sin/cos: 5 ranges each. exp: 8. log: 5. sqrt, atan: 1 each.
     assert_eq!(checked, 25, "a sweep stopped being checked");
+    assert!(
+        failed.is_empty(),
+        "{} of {checked} swept ranges diverged from the JS runtime:\n{}",
+        failed.len(),
+        failed.join("\n")
+    );
 }
 
 /// The negative control. The twins are hundreds of lines of transcribed 1993 C,

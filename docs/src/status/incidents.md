@@ -124,11 +124,67 @@ and asserting otherwise would pin a falsehood. They are now per-range, with
 `libm::exp`'s divergence pinned at *exactly one* swept range — so adding a
 sweep that contains 1.0, or a `libm` that stops being fdlibm, both fail loudly.
 
-**Still open:** the call sites. `combo.rs` (`comboSpeedCeil`'s `log`, and the
-restitution/add/window `exp`s), `intro.rs`'s camera zoom. `combo`'s `log(1+k·n)`
-for small `n` lands INSIDE the divergent band, so switching it needs
-`pinball-trace-seed7` and `booster_corner_sim` re-verified; `intro.rs`'s camera
-pose is not covered by any fixture at all and needs one written first. `Math.log10`
+**What the sabotage pass found — the gates hold, with three named holes.**
+Seventeen sabotages, each reverted, all re-run under a private target dir.
+
+- **The three huge sweeps are not decoration.** Disabling the multi-word
+  reduction (medium-size bound raised so `k_rem_pio2` is never called) turns
+  exactly the six 1e8/1e15/1e300 ranges red and leaves the four small ones
+  green. Those ranges were added on suspicion; they are the only thing that
+  catches it.
+- **Three of the prescribed sabotages were NO-OPS, and that is a result.**
+  Perturbing C6's last digit produces the *same f64* (below the parse floor,
+  not the rounding floor). `trunc(a + 0.5)` vs `round(a)` are arithmetically
+  identical over this branch's reachable domain. Reverting `track_grow:326` to
+  `libm` changes nothing because Spine's theta is one of {0, π/4, π/2, 3π/4},
+  where every implementation agrees bit-for-bit. A sabotage that does not
+  reproduce a defect proves nothing about the gate — it has to be replaced,
+  not scored.
+- **Hole 1: the readable unit test did not catch the mistake it documents.**
+  `cos(0.1)` stayed green under a FreeBSD-ised `kernel_cos`, a FreeBSD-ised
+  `kernel_sin`, AND deleting the `qx` branch — all three of which turn all ten
+  sweeps red. At one input the two polynomial forms usually round the same; what
+  differs at `cos(0.1)` is the shape of the final sum. Now spread across all
+  three `kernel_cos` branches and both `kernel_sin` tail modes, with a header
+  that says plainly it is not the gate.
+- **Hole 2: both gates halted on the first divergence and threw away the
+  shape.** One red range means a branch bug; ten red ranges mean the kernel.
+  One moved floor means a value on a rounding boundary; three mean the
+  algorithm — and deleting `qx` moves three while the old abort reported one.
+  Both now collect and report the whole set.
+- **Hole 3: two things are untestable here and now say so in the code.** The
+  third Cody–Waite iteration (`if i > 49`) is reached **zero** times across
+  every sweep and every corpus floor while the second fires 192,436 times —
+  deleting it is undetectable. And only about the first EIGHT significant
+  digits of the trailing coefficients are load-bearing: a genuine 1-ulp change
+  to C6 is invisible to everything.
+- **The maze corpus is a much weaker trig gate than it looks.** Across the five
+  hub floors, 153 trig calls, 3 differ between `js_*` and `libm`, and exactly
+  ONE moves a node into a different cell. The maze side of this rests on a
+  single sample; the sweeps carry the weight. The corpus also cannot see the
+  `sin` half at all — FreeBSD-ising `kernel_sin` leaves 10 of 10 floors green.
+
+**The call sites: `combo.rs` switched, and the switch changes nothing.** All
+five (`comboSpeedCeil`'s `log`, the restitution/add/window `exp`s) now call the
+twins, and every trace stayed bit-exact — which is exactly the situation the
+repo's own rule warns about, so it was measured rather than assumed. The raw
+`log(1 + 0.15·n)` really does differ from `libm`'s on 2 of the first 201 combo
+depths; `combo_speed_ceil` does not differ on any of them, because `num / den`
+divides the ulp away. The `exp` sites are safe for a different reason:
+`libm::exp` already IS fdlibm and its only divergence is at `x == 1`, which
+`-λ·n ≤ 0` cannot reach.
+
+So the switch is correct-by-construction, not a bug fixed, and **no test can
+tell the two versions apart today** — recorded in `combo.rs`'s header rather
+than left as an unexplained green. It is still right: `bounce_combo` is integral
+only because `comboTicks` is 0/1/2 with a one-draw pick and no blending, and
+`COMBO_CEIL_K` is a tuning constant. Move either and the divergence becomes
+reachable as a physics desync nobody would trace back to a logarithm.
+
+**Still open:** `intro.rs`'s camera zoom still uses std `ln`/`exp`, and it is
+not covered by any fixture — `intro_trace.rs` replays the ball, not the camera
+pose. A fixture has to exist before that switch can be verified, so it is
+deliberately not made. `Math.log10`
 is computed independently by V8 (not `log(x)/LN10` — they differ 1–2 ulp) and
 `libm::log10` misses on 3,827 of 100,001, but no `Math.log10` exists anywhere in
 the legacy TS, so `darts.rs`'s use of it is Rust-original with no runtime answer
