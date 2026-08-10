@@ -5,6 +5,54 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — P2 pass 3 `carve-track`: 10 of 10 bit-exact, and a boundary
+  that gates structure and not arithmetic.** `pk_core::maze::track_carve` — the
+  first pass that writes a tile. Legs and fillets swept as discs; the
+  [`TrackMask`] every later pass reads is born here. Bit-exact on the whole
+  corpus on the first run.
+  - **Sabotage-measured, and six of ten injected defects SURVIVED.** Caught, all
+    ten floors: the leg step 0.35→0.36, the fillet sweep width hardcoded to 2,
+    the legs not carved at all. Caught on one floor: the arc step floor
+    `max(2)`→`max(1)`. **Not caught at all:** `libm::hypot` for `js_hypot`,
+    `libm`'s `cos`/`sin` for the twins, `d > r` relaxed to `d >= r`, the `i1`
+    clamp widened from `w-2` to `w-1`, and `(span*s)/steps` rewritten as
+    `span*(s/steps)`. Everything this pass does is a threshold test or a rounded
+    step count, and a last-bit difference almost never flips one — so the trig
+    and hypot guarantees for pass 3 rest ENTIRELY on `tests/jsmath_oracle.rs`.
+    Ten green floors here would be ten green floors with the wrong trig library
+    compiled in. Same shape as pass 2's finding, now with a number on it.
+  - **One claim retracted before it shipped.** The port's `disc` carried a
+    comment calling the `Float32Array` compare-in-f64/store-in-f32 split a trap.
+    The sabotage says otherwise, and then the algebra explains why: when
+    `d as f32 == dist[k]` but `d < dist[k]` in double, the store writes the
+    value already there. The two forms cannot disagree. Transcribed the TS way
+    because it is the TS way, not because it defends anything.
+  - **A real gap the corpus has:** no disc on any of the ten floors reaches the
+    last column, so widening the `w-2` clamp changes nothing and a lane pressed
+    against the border is untested.
+  - **`prefix_through_path`** now factors the shared pipeline prefix. Twenty
+    more passes are coming and each needs every pass before it re-run against
+    the same rng stream; twenty hand-copied prefixes is twenty chances for one
+    to drift into testing a pipeline the oracle never ran.
+
+- **2026-08-10 — `js_pow` was three different functions, one per target.**
+  The wasm measurement Stage A asked for, and it found a live defect on BOTH
+  non-native targets. `f64::powf` matched the oracle on linux-gnu, was fdlibm on
+  wasm (19,904 / 200,001 on x^1.35), and on **windows-gnullvm — the play
+  target — was a third implementation again** (201 / 200,001, and not fdlibm).
+  Two unrelated causes, which is why "wasm falls back to fdlibm" was a correct
+  theory that still missed the target people actually play on.
+  `jsmath::pow_arm` now carries ARM's optimized-routines `pow`.
+  - **The transcription alone was not enough.** Faithful to the C, both
+    `HAVE_FAST_FMA` arms tried, still 153 / 200,001 out. The missing arithmetic
+    is in the BUILD: glibc compiles that file with `-mfma` and GCC's
+    `-ffp-contract=fast` fuses `a*b + c` into single `fma`s the source never
+    writes. Five builds settle it — with contraction 0, without it exactly 153 —
+    and `-fdump-tree-optimized` names each fusion, including the two GCC
+    declines. See Incidents for the rules this adds.
+  - CI now exists at all (`.github/workflows/`), including both target-parity
+    gates. It cannot run pk-check; that stays manual on the host GPU.
+
 - **2026-08-10 — P2 pass 2 `track-path`: 10 of 10 floors bit-exact, and the
   fixture that could not have told.** `pk_core::maze::track_path` — the grown
   graph turned into legs and fillets. Bit-exact on the whole corpus on the

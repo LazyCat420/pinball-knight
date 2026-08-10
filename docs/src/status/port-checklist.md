@@ -184,16 +184,25 @@ track pipeline first and the fallback last — and read
       `js_cos`/`js_sin`/`js_exp`/`js_log` were immune as expected (transcribed
       constants, no platform call) and `tan`/`atan`/`atan2` go through the
       `libm` crate, which is the same pure Rust everywhere.
-- [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
-      against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
+- [~] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
+      against `PASS_ORDER`. **3 of 23 land, all ten corpus floors bit-exact:**
+      ~~grow-track~~ → ~~track-path~~ → ~~carve-track~~ → plaza →
       launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →
       publish-arcs → orbit-island → arc-sweeps → repair-2 → endpoints-final →
       boss-chamber → artery-banks → reseal-chute → carve-doorways →
       funnels-relays → compact-fixed-point → stairs → arc-rails → done.
-- [ ] `maze/generator.ts` + `build.ts` (growing-tree, braiding, thicken).
+      ⚠️ Green at a boundary is not green at a pass — sabotage each one and
+      record what survives. `carve-track` let SIX of ten injected defects
+      through, the wrong trig library among them; its guarantees for the
+      primitives live in `jsmath_oracle.rs`, not in the corpus.
+- [ ] `maze/generator.ts` (the growing-tree fallback — runs on no floor a
+      player sees; `buildTrackFloor` declined 0 times in 400. Port last.)
+      **`build.ts` is NOT here** — 1,834 lines of three.js renderer, P3.
 - [ ] `maze/archetypes.ts`, `assembly*.ts`, `prefabs.ts` (+ biome tables).
-- [ ] Track systems: `track-carve`, `track-grow`, `track-launch`,
-      `arc-sweeps`, `arc-lanes`, `conic-fit` (authors the P1 arc features).
+- [~] Track systems: `track-grow` ✅, `track-carve` (carve + chamber ✅;
+      `growMazeAround`/`connectAll`/`publishArcs`/`widenMazeCorridors` land with
+      passes 6, 8 and 10), `track-launch`, `arc-sweeps`, `arc-lanes`,
+      `conic-fit` (authors the P1 arc features).
 - [ ] `doorways`, `flow-loops`, `circuit`, `relay-chambers`, `lamp-puzzle`.
 - [ ] `decorate.ts`, `surface-paint.ts` (paints P1 surfaces).
 - [ ] `floor-rules/metrics/density/seed`.

@@ -9,13 +9,14 @@
 //!
 //! ## What this file can prove TODAY, and what it cannot
 //!
-//! The generator is not ported yet, so nothing here replays a floor. What it
-//! does prove is that the INSTRUMENT is sound before it is ever pointed at a
-//! port — and that is not a formality. A digest that is subtly wrong (a missed
-//! length fold, a big-endian f64) disagrees with the oracle on every pass of
-//! every floor, which is indistinguishable from a completely broken generator.
-//! Debugging the port with an uncertified instrument means every failure has
-//! two candidate causes. So:
+//! Passes 1–3 of 23 replay, all ten floors bit-exact. The other twenty are not
+//! ported, so most of this fixture is still unread.
+//!
+//! Underneath the replays sit the instrument's own gates, and they are not a
+//! formality. A digest that is subtly wrong (a missed length fold, a big-endian
+//! f64) disagrees with the oracle on every pass of every floor, which is
+//! indistinguishable from a completely broken generator; debugging a port with
+//! an uncertified instrument means every failure has two candidate causes. So:
 //!
 //!   1. `digest_matches_its_pinned_vectors` — the hash, byte encodings
 //!      included, against values JSON cannot even carry (`-0`, `Infinity`).
@@ -25,11 +26,18 @@
 //!      `PASS_ORDER`, so a rename on the TS side fails here rather than as
 //!      twenty-two shifted digests once the port lands.
 //!
-//! As each pass of `build_track_floor` is ported it gains a replay test that
-//! drives the real pipeline through `PassProbe` and compares `record()` against
-//! this fixture, first-divergence-first. Until then this file is the harness's
-//! own gate, and it is honest about being exactly that.
+//! Each newly ported pass gains a replay test that re-runs the whole prefix
+//! (see `prefix_through_path` — the passes share one rng stream, so there is no
+//! starting in the middle) and compares every digest and count the boundary
+//! pins.
+//!
+//! ⚠️ **A green replay proves what its boundary can see, which is less than it
+//! looks.** Sabotage-measured per pass, and for `carve-track` six of ten
+//! injected defects survived — including compiling in the wrong trig library.
+//! The per-pass headers carry those tables; read the one for the pass you are
+//! about to trust.
 
+use pk_core::grid::{is_walkable, Grid};
 use pk_core::maze::archetypes::{
     archetype_for, level_cells, track_node_counts, windiness_for, NodeLayout, SurfaceMix,
 };
@@ -37,11 +45,15 @@ use pk_core::maze::archetypes::{ARCHETYPES, DEFAULT_RULE_WEIGHTS, DEFAULT_TRACK_
 use pk_core::maze::modifiers::{
     roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
 };
+use pk_core::maze::track_carve::carve_track;
+use pk_core::maze::track_grow::TrackGraph;
 use pk_core::maze::track_grow::{
     circuit_rank, digest_edges, digest_nodes, grow_track, GrowTrackOpts,
 };
-use pk_core::maze::track_path::{build_track_path, digest_legs, TrackPathOpts, TRACK_RADII};
-use pk_core::maze::{digest, floor_rng, floor_seed, PASS_ORDER};
+use pk_core::maze::track_path::{
+    build_track_path, digest_legs, TrackPath, TrackPathOpts, TRACK_RADII,
+};
+use pk_core::maze::{digest, floor_rng, floor_seed, CountingRng, TrackMask, PASS_ORDER};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -141,10 +153,20 @@ struct Pass {
     pass: String,
     draws: u64,
     t: u32,
+    shapes: u32,
     arcs: u32,
+    /// Born at `carve-track`, when `ensureArcs` allocates it. Null before.
+    arc_idx: Option<u32>,
+    /// The mask's three arrays — null on the two passes that run before the
+    /// track is carved and the mask does not exist.
     lane: Option<u32>,
+    sealed: Option<u32>,
+    dist: Option<u32>,
     walkable: u32,
+    shaped: u32,
     arc_tiles: u32,
+    lane_tiles: u32,
+    sealed_tiles: u32,
     /// The circuit, on the two passes that own it. Null everywhere else.
     graph_nodes: Option<u32>,
     graph_edges: Option<u32>,
@@ -153,6 +175,138 @@ struct Pass {
     path_arcs: Option<u32>,
     path_arc_half: Option<f64>,
     extra: serde_json::Value,
+}
+
+/// The pipeline PREFIX — every pass before the one under test, run for real.
+///
+/// Each pass shares one rng stream with all the passes before it, so a replay
+/// test cannot start in the middle: it has to re-run the whole prefix, with the
+/// same draws in the same order. Passes 1 and 2 open-code that because there was
+/// nothing to share; from pass 3 there are twenty-one more, and twenty-one
+/// hand-copied prefixes is twenty-one chances for one of them to drift into
+/// testing a pipeline the oracle never ran.
+///
+/// Returns the grid the passes mutate, the rng they draw from (already advanced
+/// past the two pre-track draws), and the two upstream products.
+fn prefix_through_path(f: &Floor) -> (Grid, CountingRng, TrackGraph, TrackPath) {
+    let arch = archetype_for(f.level);
+    let p = &arch.track;
+
+    // `buildTrackFloor` builds the grid from CELL counts, not tile counts:
+    // `w = cellsW * 2 + 1`. The fixture pins both, and `fixture_has_the_shape…`
+    // asserts they agree, so this uses the tile dims directly.
+    let g = Grid::solid(f.w, f.h);
+
+    let mut rng = floor_rng(f.run_seed, f.level);
+    roll_modifier(f.level, &mut rng);
+    let _windiness = windiness_for(f.level, arch, &mut rng);
+    let (foods, relays) = track_node_counts(p, f.w, f.h);
+    let graph = grow_track(
+        f.w,
+        f.h,
+        &mut rng,
+        &GrowTrackOpts {
+            foods: Some(foods as usize),
+            relays: Some(relays as usize),
+            min_loops: Some(i64::from(p.min_loops)),
+            layout: Some(p.layout),
+            max_len_frac: Some(p.max_len_frac),
+            survive: Some(p.survive),
+            grow: None,
+        },
+    );
+    let path = build_track_path(
+        &graph,
+        &TrackPathOpts {
+            radii: None,
+            lane_scale: Some(p.lane_scale),
+        },
+    );
+    (g, rng, graph, path)
+}
+
+/// Every digest and count a boundary pins, compared in ONE place.
+///
+/// Asserting these inline per pass would be twenty lines per test and, worse,
+/// each test would choose which of the seven digests it bothered with — which
+/// is exactly how `track-path` ended up pinning a leg count and gating nothing.
+/// Here a pass either compares all of them or names the ones it cannot yet.
+///
+/// Order is deliberate: COUNTS first, because "we carved half the circuit" is a
+/// different diagnosis from "the circuit is one tile off", and a digest cannot
+/// tell you which.
+fn assert_boundary(head: &str, want: &Pass, g: &Grid, mask: Option<&TrackMask>, draws: u64) {
+    let walkable = (0..g.h)
+        .flat_map(|j| (0..g.w).map(move |i| (i, j)))
+        .filter(|&(i, j)| is_walkable(g, i, j))
+        .count() as u32;
+    let shaped = g.shapes.iter().filter(|&&s| s != 0).count() as u32;
+    let arc_tiles = g
+        .arc_idx
+        .as_ref()
+        .map_or(0, |a| a.iter().filter(|&&v| v >= 0).count()) as u32;
+    assert_eq!(walkable, want.walkable, "{head}: walkable tile count");
+    assert_eq!(shaped, want.shaped, "{head}: shaped tile count");
+    assert_eq!(arc_tiles, want.arc_tiles, "{head}: arc tile count");
+    if let Some(m) = mask {
+        assert_eq!(
+            m.lane.iter().filter(|&&v| v == 1).count() as u32,
+            want.lane_tiles,
+            "{head}: lane tile count"
+        );
+        assert_eq!(
+            m.sealed.iter().filter(|&&v| v == 1).count() as u32,
+            want.sealed_tiles,
+            "{head}: sealed tile count"
+        );
+    }
+
+    // Draws next — the localiser. A mismatch here means the divergence is in
+    // the DRAW SEQUENCE and every value after it is downstream of that; a match
+    // with a bad digest means this pass consumed the right stream and did the
+    // wrong arithmetic with it.
+    assert_eq!(draws, want.draws, "{head}: cumulative rng draws");
+
+    assert_eq!(digest::digest_bytes(&g.t), want.t, "{head}: tile digest");
+    assert_eq!(
+        digest::digest_bytes(&g.shapes),
+        want.shapes,
+        "{head}: shape digest"
+    );
+    assert_eq!(
+        digest::digest_arcs(&g.arcs),
+        want.arcs,
+        "{head}: arc feature digest"
+    );
+    match (&g.arc_idx, want.arc_idx) {
+        (Some(a), Some(d)) => assert_eq!(digest::digest_i16(a), d, "{head}: arcIdx digest"),
+        (None, None) => {}
+        (a, d) => panic!(
+            "{head}: arcIdx exists on one side only (rust={}, oracle={})",
+            a.is_some(),
+            d.is_some()
+        ),
+    }
+    if let Some(m) = mask {
+        assert_eq!(
+            digest::digest_bytes(&m.lane),
+            want.lane.expect("a carved pass pins a lane digest"),
+            "{head}: mask.lane digest"
+        );
+        assert_eq!(
+            digest::digest_bytes(&m.sealed),
+            want.sealed.expect("a carved pass pins a sealed digest"),
+            "{head}: mask.sealed digest"
+        );
+        // `dist` is the one that separates the mask from the grid: on these
+        // floors `lane` and `t` hold the same bytes and digest identically, so
+        // a port that swapped them passes both.
+        assert_eq!(
+            digest::digest_f32(&m.dist),
+            want.dist.expect("a carved pass pins a dist digest"),
+            "{head}: mask.dist digest — the f32 store/f64 compare in `disc`"
+        );
+    }
 }
 
 fn fixture(name: &str) -> String {
@@ -912,4 +1066,75 @@ fn pass2_track_path_replays_the_oracle() {
     // If a future change breaks a subset, pin them BY NAME with an equality
     // assertion (see the note at the end of pass 1) — a list that only fails
     // when it GROWS stops telling you when the gap closes.
+}
+
+/// Pass 3 of 23 — `carve-track`. The first pass that writes a tile.
+///
+/// Passes 1 and 2 produced a graph and rideable geometry without touching the
+/// grid; this one burns the circuit into it and creates the [`TrackMask`] every
+/// later pass reads. Four of the seven digested arrays are born or move here.
+///
+/// ⚠️ **GREEN HERE MEANS STRUCTURE, NOT ARITHMETIC.** Measured with ten
+/// sabotages rather than assumed — the full table is in `maze::track_carve`'s
+/// header. Wrong step size, missing legs, wrong sweep width: caught, 10/10
+/// floors. Swapping `js_hypot` for `libm::hypot`, or `js_cos`/`js_sin` for
+/// `libm`'s: **not caught at all**. Everything this pass does is a threshold
+/// (`d > r`) or a rounded step count, and a last-bit difference almost never
+/// flips one, so the primitive guarantees for pass 3 live in
+/// `tests/jsmath_oracle.rs` and nowhere else. Ten green floors here would still
+/// be ten green floors with the wrong trig library compiled in.
+///
+/// Two more things this boundary cannot tell you:
+///
+/// · `carveTrack` draws no rng, so the draw count matches by construction and
+///   the usual "different count = wrong draw sequence" localiser is silent.
+/// · `lane` and `t` digest IDENTICALLY on every corpus floor (`T_FLOOR` is 1, a
+///   lane mark is 1, and at this boundary the two arrays hold the same bytes).
+///   A port that returned the tile array as the mask would pass both. `dist`
+///   and `sealed` are what separate them, and `assert_boundary` compares all
+///   four.
+#[test]
+fn pass3_carve_track_replays_the_oracle() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let mut moved: Vec<String> = Vec::new();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let (mut g, rng, _graph, path) = prefix_through_path(f);
+
+        let want = &f.passes[2];
+        assert_eq!(want.pass, "carve-track", "{head}: fixture pass 3 moved");
+
+        let mask = carve_track(&mut g, &path);
+
+        // Collected rather than asserted in place, for the reason pass 1 spells
+        // out: HOW MANY floors moved is itself the diagnosis. One of ten is a
+        // value landing on a rounding boundary; ten of ten is the algorithm.
+        if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert_boundary(&head, want, &g, Some(&mask), rng.draws());
+        })) {
+            moved.push(format!("  {}", panic_message(&e)));
+        }
+    }
+
+    // ── NOTHING IS EXCLUDED HERE ────────────────────────────────────────────
+    //
+    // If a future change breaks a subset, pin them BY NAME with an equality
+    // assertion (see the note at the end of pass 1): a list that only fails
+    // when it GROWS stops telling you when the gap closes.
+    assert!(
+        moved.is_empty(),
+        "{} of {} floors diverged at the carve-track boundary:\n{}",
+        moved.len(),
+        c.floors.len(),
+        moved.join("\n")
+    );
+}
+
+/// Pull the message out of a caught panic so a collected failure reads like the
+/// assertion that produced it rather than like "a floor failed".
+fn panic_message(e: &Box<dyn std::any::Any + Send>) -> String {
+    e.downcast_ref::<String>()
+        .cloned()
+        .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
+        .unwrap_or_else(|| "<non-string panic>".into())
 }
