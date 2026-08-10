@@ -1,0 +1,14 @@
+[package]
+name = "pk-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The legacy immediate-mode GUI (gui/im.ts), ported 1:1 onto a CPU RGBA painter. No Bevy, no GPU — every test runs headless."
+
+[dependencies]
+# Decodes the browser-baked glyph atlases (assets/gui/font/*.png). The font is
+# NOT rasterised in Rust — see legacy/scripts/bake-gui-font.mjs for why the
+# browser's own raster is the only one that can match the legacy canvas.
+png = "0.17"
+serde = { workspace = true }
+serde_json = { workspace = true }
