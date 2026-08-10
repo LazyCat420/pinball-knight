@@ -201,6 +201,19 @@ track pipeline first and the fallback last — and read
       candidates in the ten-floor corpus score exactly equal, so **every
       tie-break and scan order in the generator is unverified** — three
       consecutive passes have reported it.
+- [x] **THE DOOR INTO A FLOOR — `Tavern -> FloorLoading -> Dungeon`**
+      (`pk-game/src/floor_loading.rs`). One build site, a loading screen with
+      the floor's name on it, and `Dungeon` demoted to an installer. Measured
+      cost of a descend: 3-18 ms of generation native-release across L1-L23,
+      106 ms prepare + 13 ms install in the debug wasm build. Verified: 8 unit
+      tests on the pure `loading_step` ordering contract, plus a browser gate
+      that HOLDS the card open (`?loading-hold-ms=N`), waits for the renderer to
+      be producing frames, and photographs it.
+      ⚠️ Two defects found here that automated gates were green through, both
+      about a probe outrunning a renderer: `painted` counted `Update` runs
+      rather than presented frames (a cold wasm boot spends ~2.5 s in its first
+      two updates), and `publish_stats`'s 5-frame cadence could not see a state
+      that lives 300 ms. Board entry has both.
 - [x] **THE GAME STANDS ON IT — `--real-floor`** (`pk_core::maze::floor_spec` +
       `pk-game/src/real_floor.rs`). `setup_dungeon` booted `demo_floor(7)`, a
       25x25 pillar arena, on every descent; behind

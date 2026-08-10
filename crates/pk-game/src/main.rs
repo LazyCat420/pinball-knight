@@ -27,6 +27,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
 
 mod dungeon_render;
+mod floor_loading;
 mod fx;
 mod intro;
 mod overworld;
@@ -44,12 +45,15 @@ use bevy::image::{Image, ImageSampler};
 use bevy::math::Affine2;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use floor_loading::{FloorLoadingPlugin, PreparedFloor};
 use overworld::CpuSheet;
 use pk_assets::published::SheetManifest;
-use pk_core::state::{demo_floor, simulate, Facing, FrameInput, SimState};
+use pk_core::state::{simulate, Facing, FrameInput, SimState};
+// The loading probe is read by `publish_stats`, which only exists on the web.
+#[cfg(target_arch = "wasm32")]
+use floor_loading::FloorLoadingRes;
 use real_floor::{
-    build_active_floor, real_floor_request, spawn_real_floor_decor, spawn_real_floor_failure,
-    ActiveFloor, RealFloorBoot, RealFloorFailure,
+    real_floor_request, spawn_real_floor_decor, ActiveFloor, RealFloorBoot, RealFloorFailure,
 };
 
 /// legacy constants/world.ts
@@ -75,6 +79,9 @@ const SHEET_N_JSON: &str = include_str!("../../../legacy/public/sprites/pinball_
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AppState {
     Intro,
+    /// The floor is being BUILT. The only state that builds one, and the only
+    /// way into `Dungeon` — see `floor_loading`'s header.
+    FloorLoading,
     Dungeon,
     /// The walkable between-floor hub (P6). Entered via the boot gate, or T
     /// in the dungeon (the stand-in for the P5 run flow); DESCEND leaves it.
@@ -226,7 +233,7 @@ fn main() {
     // a real floor IS asking for a floor, so it opens one rather than dropping
     // you in a hub with a flag that appears to have done nothing.
     let start = if dungeon_boot_gate() || boot.requested() {
-        AppState::Dungeon
+        AppState::FloorLoading
     } else if tavern::tavern_boot_gate() || intro_skip_gate() {
         AppState::Tavern
     } else {
@@ -248,6 +255,7 @@ fn main() {
     .insert_state(start)
     .add_plugins(intro::IntroPlugin)
     .add_plugins(tavern::TavernPlugin)
+    .add_plugins(FloorLoadingPlugin)
     .add_plugins(post::PostPlugin)
     .add_plugins(fx::FxPlugin)
     .add_plugins(sfx::SfxPlugin)
@@ -262,6 +270,11 @@ fn main() {
         setup_dungeon
             .run_if(in_state(AppState::Dungeon))
             .run_if(resource_exists::<KnightArt>)
+            // THE INVARIANT, as a run condition: no prepared floor, no install.
+            // Entering the dungeon by any route that did not pass through
+            // `FloorLoading` now does nothing at all, rather than quietly
+            // building a floor by a second path.
+            .run_if(resource_exists::<PreparedFloor>)
             .run_if(not(resource_exists::<Sim>)),
     )
     .add_systems(
@@ -299,6 +312,8 @@ fn publish_stats(
     tavern_res: Option<Res<tavern::TavernRes>>,
     floor_res: Option<Res<ActiveFloor>>,
     floor_err: Option<Res<RealFloorFailure>>,
+    floor_timings: Option<Res<FloorTimings>>,
+    loading_res: Option<Res<FloorLoadingRes>>,
     state: Res<State<AppState>>,
     mut frame: Local<u32>,
     mut ticks: Local<u64>,
@@ -306,8 +321,17 @@ fn publish_stats(
     // Every 5 frames, not 10: the probe is the only view a harness has, and
     // at a heavy scene's dev-build frame rate a 10-frame cadence goes stale
     // enough (~400 ms) to flake pk-check's closed-loop walk gates.
+    //
+    // ⚠️ EXCEPT IN `FloorLoading`, which publishes EVERY frame. That state lives
+    // for ~300 ms and the first five frames of a cold wasm boot — shader
+    // compilation included — take longer than that, so on a 5-frame cadence the
+    // state was entered, painted, and left before the probe published once. The
+    // browser gate read "the loading screen was never seen" over a screen that
+    // was genuinely on the display. A transient state must not be invisible
+    // because of the sampling rate of the only instrument that can see it.
     *frame += 1;
-    if *frame % 5 != 0 {
+    let transient = *state.get() == AppState::FloorLoading;
+    if !transient && *frame % 5 != 0 {
         return;
     }
     let intro_field = match (*state.get(), &intro_res) {
@@ -333,9 +357,36 @@ fn publish_stats(
     // The generated floor, when one is installed. `null` on the demo floor —
     // NOT omitted, because `--real-floor` silently doing nothing and the flag
     // not being passed are the two states a gate most needs to tell apart.
-    let floor_field = match &floor_res {
-        Some(f) => f.telemetry_json(),
-        None => "null".into(),
+    let floor_field = match (&floor_res, &floor_timings) {
+        // The timings ride INSIDE the floor payload rather than beside it, so a
+        // reader cannot pair this descend's cost with the previous descend's
+        // floor — the two resources are inserted and dropped together.
+        (Some(f), t) => {
+            let body = f.telemetry_json();
+            let (prepare, install) = t
+                .as_ref()
+                .map_or((-1.0, -1.0), |t| (t.prepare_ms, t.install_ms));
+            format!(
+                "{},\"prepareMs\":{prepare},\"installMs\":{install}}}",
+                &body[..body.len() - 1]
+            )
+        }
+        (None, _) => "null".into(),
+    };
+    // The loading screen, while it is up. `null` otherwise — which is how a
+    // browser gate can tell "the screen was skipped" from "the screen is gone
+    // because the floor is ready", two states a screenshot cannot separate.
+    let loading_field = match (*state.get(), &loading_res) {
+        (AppState::FloorLoading, Some(l)) => format!(
+            r#"{{"label":"{}","painted":{},"prepareMs":{},"dwellMs":{},"elapsedMs":{},"failed":{}}}"#,
+            json_escape(&l.label),
+            l.painted,
+            l.prepare_ms.unwrap_or(-1.0),
+            l.dwell_ms,
+            floor_loading::now_ms() - l.entered_ms,
+            l.failed,
+        ),
+        _ => "null".into(),
     };
     let floor_error_field = match &floor_err {
         Some(e) => format!("\"{}\"", json_escape(&e.message)),
@@ -344,9 +395,20 @@ fn publish_stats(
     let json = match &sim {
         Some(sim) => {
             let p = &sim.0.player;
+            // ⚠️ OFFSET BY THE SYNTHESISED COUNT, not published raw. `tick` is
+            // documented as a PULSE that keeps advancing whether or not a sim
+            // exists, and `FloorLoading` broke that: the sim-less counter climbs
+            // 1, 2, 3… and then `SimState.tick` starts again at 0, so the series
+            // went BACKWARDS across the hand-off. pk-check's liveness gate read
+            // "-1 Hz" — measured, on the full run, and it is the reason the
+            // whole default suite is worth running for a state-machine change.
+            //
+            // `*ticks` stops climbing the moment a sim exists, so this is the
+            // sim-less count frozen at hand-off plus the sim's own tick: one
+            // monotonic series across every state.
             format!(
-                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{}}}"#,
-                sim.0.tick,
+                r#"{{"tick":{},"x":{},"z":{},"facing":"{:?}","moving":{},"intro":{},"tavern":{},"floor":{},"floorError":{},"loading":{}}}"#,
+                *ticks + sim.0.tick,
                 p.x,
                 p.z,
                 p.facing,
@@ -354,7 +416,8 @@ fn publish_stats(
                 intro_field,
                 tavern_field,
                 floor_field,
-                floor_error_field
+                floor_error_field,
+                loading_field
             )
         }
         // No dungeon sim (e.g. the tavern owns the screen, or a real-floor
@@ -363,7 +426,7 @@ fn publish_stats(
         None => {
             *ticks += 1;
             format!(
-                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field}}}"#,
+                r#"{{"tick":{},"intro":{intro_field},"tavern":{tavern_field},"floor":{floor_field},"floorError":{floor_error_field},"loading":{loading_field}}}"#,
                 *ticks
             )
         }
@@ -660,26 +723,24 @@ fn setup_common(
 #[derive(Component)]
 struct DungeonScene;
 
-/// The floor, the sim, and the playable knight.
+/// INSTALL the prepared floor, the sim, and the playable knight.
 ///
-/// TWO FLOORS, ONE SETUP. Without `--real-floor` this builds `demo_floor(7)` —
-/// the 25×25 pillar arena the slice has always rendered. With it, the ported
-/// generator's output at the `plan-doorways` boundary. Everything downstream is
-/// shared on purpose: the same `spawn_grid_meshes`, the same `SimState`, the
-/// same camera. A generated floor that needed its own renderer would be proving
-/// something about that renderer instead of about the floor.
+/// ⚠️ THIS NO LONGER BUILDS A FLOOR. `floor_loading` does, and it is the only
+/// thing that does — see its header for why one writer matters here. Entering
+/// this state without a [`PreparedFloor`] therefore does NOTHING, which is the
+/// invariant stated as a run condition rather than as a comment: a second route
+/// into the dungeon would otherwise silently build a second floor.
 ///
-/// ⚠️ NO SILENT FALLBACK. A real-floor request that cannot be honoured paints a
-/// red card and leaves the screen empty, because a dungeon that quietly shows
-/// the demo floor makes "the real floor looks like the pad arena" unfalsifiable
-/// — which is the report this whole flag exists to answer.
+/// It also cannot fail. Every failure mode that used to live here — a refused
+/// request, a declined pipeline, an unstandable floor, a marker off its tile —
+/// is now reached before the dungeon exists, so the red card is painted over a
+/// loading screen instead of over a half-built room.
 fn setup_dungeon(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     art: Res<KnightArt>,
-    boot: Res<RealFloorBoot>,
-    failed: Option<Res<RealFloorFailure>>,
+    mut prepared: ResMut<PreparedFloor>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
 ) {
     // The intro's black hold ends the moment the dungeon exists (legacy
@@ -688,67 +749,29 @@ fn setup_dungeon(
         bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
     }
 
-    // The latch. This system's run condition is "no Sim yet", which a failure
-    // never satisfies — without this it would rebuild and re-fail every frame.
-    if failed.is_some() {
-        return;
-    }
-
-    // ── The floor ──
-    let fail = |commands: &mut Commands, message: String| {
-        let e = spawn_real_floor_failure(commands, &message);
-        commands.entity(e).insert(DungeonScene);
-        commands.insert_resource(RealFloorFailure { message });
-    };
-    let real = match &boot.0 {
-        None => None,
-        Some(Err(e)) => {
-            fail(&mut commands, e.to_string());
-            return;
-        }
-        Some(Ok(req)) => match build_active_floor(*req) {
-            Ok(f) => {
-                // The one number pk-core cannot check: the exit marker's world
-                // position after the `f64 → f32` cast this crate makes.
-                if !f.exit_marker_is_on_its_tile() {
-                    fail(
-                        &mut commands,
-                        format!(
-                            "the exit marker at {:?} does not land on tile {:?}",
-                            f.info.provisional_exit_world, f.info.provisional_exit_tile
-                        ),
-                    );
-                    return;
-                }
-                Some(f)
-            }
-            Err(e) => {
-                fail(&mut commands, e.to_string());
-                return;
-            }
-        },
-    };
+    let install_t0 = floor_loading::now_ms();
+    let spawn = prepared.spawn;
+    let prepare_ms = prepared.prepare_ms;
 
     // ── Sim ──
     //
     // The grid handed over is a CLONE; `ActiveFloor.track.grid` stays
     // authoritative. See `real_floor`'s header for why that split is worth the
     // copy, and `assert_grid_still_authored` for what enforces it.
-    let (grid, spawn, seed) = match &real {
-        Some(f) => (f.track.grid.clone(), f.info.start_world, f.spec.floor_seed),
-        None => {
-            let (g, s) = demo_floor(7);
-            (g, s, 7)
-        }
-    };
-    let sim = SimState::new(grid, spawn, seed);
+    let sim = SimState::new(prepared.grid.clone(), spawn, prepared.seed);
+    // TAKEN, not borrowed: the generated floor moves from the prepared resource
+    // into `ActiveFloor` below, and one owner at a time is what stops a stale
+    // copy of the previous floor answering the next descend's telemetry.
+    let real = prepared.real.take();
     if let Some(f) = &real {
         // Checked HERE, where the clone is one line old — a mismatch at install
         // time is a bug in the install, and one later is a bug in the sim. The
-        // two want different people looking at them.
+        // two want different people looking at them. It is an `error!` and not a
+        // failure card because there is no route back to the loading screen from
+        // here; the floor built and validated, so a drift now is a bug in this
+        // function and belongs in the log with a name on it.
         if let Err(msg) = f.assert_grid_still_authored(&sim.grid) {
-            fail(&mut commands, msg);
-            return;
+            error!("real-floor install: {msg}");
         }
     }
     commands.insert_resource(RenderPos {
@@ -776,9 +799,30 @@ fn setup_dungeon(
         Transform::from_xyz(spawn.0 as f32, quad_h / 2.0, spawn.1 as f32),
     ));
     commands.insert_resource(Sim(sim));
+    // The prepared floor is CONSUMED: it exists to cross one state boundary, and
+    // a stale one left behind would be the next descend's floor.
+    commands.remove_resource::<PreparedFloor>();
     if let Some(f) = real {
         commands.insert_resource(f);
     }
+    commands.insert_resource(FloorTimings {
+        prepare_ms,
+        install_ms: floor_loading::now_ms() - install_t0,
+    });
+}
+
+/// What the descend actually cost, both halves, in milliseconds.
+///
+/// Published on `__pk.floor` rather than logged, because the question it answers
+/// — is the loading screen covering work or covering nothing — can only be
+/// settled on the target that renders, and the only view into that is the debug
+/// surface. `prepare_ms` is generation + validation; `install_ms` is the sim,
+/// the mesh build and the GPU upload, which is the half no pk-core measurement
+/// can see.
+#[derive(Resource, Clone, Copy)]
+pub struct FloorTimings {
+    pub prepare_ms: f64,
+    pub install_ms: f64,
 }
 
 /// Leaving the dungeon tears the floor down completely — Sim included — so
@@ -798,6 +842,11 @@ fn teardown_dungeon(mut commands: Commands, q: Query<Entity, With<DungeonScene>>
     // The failure latch is cleared too: a fresh descent gets a fresh attempt,
     // and a request that fails deterministically simply fails again.
     commands.remove_resource::<RealFloorFailure>();
+    commands.remove_resource::<FloorTimings>();
+    // Belt and braces: `setup_dungeon` consumes the prepared floor, but a
+    // dungeon LEFT before it installed one would strand it, and the next
+    // descend would install a floor the loading screen never named.
+    commands.remove_resource::<PreparedFloor>();
 }
 
 /// T enters the tavern from the dungeon — the stand-in for the P5 run flow

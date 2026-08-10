@@ -1793,9 +1793,15 @@ fn tavern_frame(
             match s.action {
                 StationKind::Descend => {
                     // The plunger: commit and drop into the next floor. The
-                    // real hand-off — tear down, build a fresh dungeon floor.
+                    // real hand-off — tear the tavern down and go build one.
+                    //
+                    // `FloorLoading`, not `Dungeon`: the build used to happen
+                    // inside the frame that had just been asked to draw the
+                    // dungeon, so the descend was a stall with nothing on
+                    // screen. The loading state is where that work has somewhere
+                    // to be seen happening.
                     sfx.write(SfxEvent::Plunger);
-                    next.set(AppState::Dungeon);
+                    next.set(AppState::FloorLoading);
                     return;
                 }
                 StationKind::Summary => res.open_panel = Some(Panel::Summary),

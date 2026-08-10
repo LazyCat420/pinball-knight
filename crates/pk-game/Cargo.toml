@@ -29,7 +29,15 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "Location", "UrlSearchParams"] }
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Location",
+    "UrlSearchParams",
+    # `performance.now()`. NOT `Date.now()`: the loading state measures
+    # intervals of tens of milliseconds and Date.now() is millisecond-resolution
+    # and free to jump.
+    "Performance",
+] }
 
 [dependencies.bevy]
 version = "0.17"

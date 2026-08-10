@@ -67,6 +67,10 @@ const flagNum = (name, dflt) => {
  * Verified by construction against `gather_input` in `crates/pk-game/src/main.rs`:
  *   W = (-1,-1)   S = (+1,+1)   A = (-1,+1)   D = (+1,-1)
  */
+/// How long to pin the loading screen open so it can be photographed. Long
+/// enough to survive a poll, a round trip and a capture on a 14 fps debug build.
+const LOADING_HOLD_MS = 2500;
+
 const WORLD_TO_KEYS = {
   "0,-1": ["w", "d"], // north — up-right on screen
   "0,1": ["s", "a"], // south
@@ -119,7 +123,13 @@ async function realFloorGates(page, gate, errors) {
   const seed = flagNum("--seed", 1);
   const url =
     `http://localhost:${PORT}/index.html` +
-    `?real-floor=1&level=${level}&seed=${seed}&autostart=1&mute=1`;
+    `?real-floor=1&level=${level}&seed=${seed}&autostart=1&mute=1` +
+    // HOLD THE LOADING SCREEN. Without it the state lives about three frames at
+    // the debug build's frame rate and no externally-timed screenshot can land
+    // inside it — the first version of this gate went green on `__pk.loading`
+    // while its own screenshot showed the dungeon. The hold is a floor on the
+    // dwell, so everything downstream is the same run, just later.
+    `&loading-hold-ms=${LOADING_HOLD_MS}`;
   console.log(`real-floor gate: L${level} seed ${seed}`);
 
   // The fixture, when the run is on the floor it pins. Other levels still run
@@ -137,6 +147,97 @@ async function realFloorGates(page, gate, errors) {
 
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const pk = () => page.evaluate(() => (window.__pk ? JSON.parse(window.__pk) : null));
+
+  // ── THE LOADING SCREEN, CAUGHT IN THE ACT ──
+  //
+  // Polled FAST and before anything else, because the thing being proved is
+  // that the screen EXISTED, and it exists for a few hundred milliseconds. A
+  // 500 ms poll would step straight over it and every gate below would still be
+  // green — which is precisely the bug: a loading state that is entered and left
+  // within one frame is indistinguishable, downstream, from one that worked.
+  //
+  // `__pk.loading` is null in every other state, so seeing it non-null at all is
+  // the claim. Its `label` says WHICH floor the screen named, so a card reading
+  // "DESCENDING" over a generated Great Hall would fail here rather than look
+  // fine in a screenshot.
+  let loading = null;
+  for (let i = 0; i < 400 && !loading; i++) {
+    await page.waitForTimeout(50);
+    const s = await pk();
+    if (s?.loading) {
+      loading = s.loading;
+      await mkdir(join(ROOT, ".checks"), { recursive: true });
+    }
+    if (s?.floor || s?.floorError) break;
+  }
+  gate(!!loading, `the loading screen was on screen ${loading ? `("${loading.label}")` : "(never seen)"}`);
+  if (loading) {
+    console.log(
+      `  note  loading beat: prepare ${loading.prepareMs?.toFixed?.(1)} ms, dwell ${loading.dwellMs} ms ` +
+        `(this run holds it artificially so the card can be photographed)`,
+    );
+  }
+  if (loading && want) {
+    gate(
+      loading.label.includes(`FLOOR ${level}`),
+      `the loading card named the floor it was building (${loading.label})`,
+    );
+  }
+  if (loading) {
+    // WHILE THE CARD IS UP, THERE IS NO DUNGEON BEHIND IT. This is the claim the
+    // screenshot alone cannot make and the one that matters: a loading screen
+    // drawn over an already-built floor is not a loading screen, it is a
+    // curtain. `floor` stays null until `setup_dungeon` installs one.
+    // WAIT FOR THE RENDERER TO BE AWAKE BEFORE BELIEVING A PICTURE.
+    //
+    // On a cold wasm boot the first `Update`s run ~2.5 s apart while shaders
+    // compile, and Bevy has presented NOTHING in that window — so a screenshot
+    // taken at `painted: 2` captured a frame the page had not yet drawn. The
+    // probe's own frame counter is the readiness signal: once it is climbing,
+    // the renderer is producing frames and a capture means something.
+    let live = null;
+    for (let i = 0; i < 40; i++) {
+      const p2 = await pk();
+      if (!p2?.loading) break;
+      if (p2.loading.painted >= 10) {
+        live = p2;
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
+    gate(
+      !!live,
+      `the card survived to a live renderer (painted=${live?.loading?.painted ?? "state ended first"})`,
+    );
+
+    // WHILE THE CARD IS UP, THERE IS NO DUNGEON BEHIND IT. The claim a
+    // screenshot cannot make and the one that matters: a loading screen drawn
+    // over an already-built floor is not a loading screen, it is a curtain.
+    gate(
+      live !== null && live.floor === null,
+      `no floor is installed behind the card (floor=${JSON.stringify(live?.floor)?.slice(0, 20)})`,
+    );
+
+    if (live) {
+      // The host Chrome is persistent and has other tabs; a background tab can
+      // hand back the compositor's stale frame.
+      await page.bringToFront();
+      const lshot = join(ROOT, ".checks", "floor-loading.png");
+      const lpng = await page.screenshot({ path: lshot });
+      console.log("screenshot:", lshot, `(${lpng.length} bytes)`);
+      // A flat dark field with two lines of text encodes MUCH smaller than the
+      // maze frame (~32 kB, measured). Both bounds: too big means the maze is
+      // showing through, too small means nothing was drawn at all.
+      gate(
+        lpng.length > 1500 && lpng.length < 20000,
+        `the card is a card and not the maze (${lpng.length} bytes; the maze frame is ~32000)`,
+      );
+    }
+    console.log(
+      `  note  MANUAL: floor-loading.png must show "DESCENDING - FLOOR ${level} - <archetype>" ` +
+        `on a dark field, with NO maze visible behind it.`,
+    );
+  }
 
   let stats = null;
   for (let i = 0; i < 60 && !stats?.floor; i++) {
@@ -183,6 +284,24 @@ async function realFloorGates(page, gate, errors) {
     );
     gate(f.pass === want.generatorVersion, `pass count matches (P${f.pass})`);
   }
+
+  // ── WHAT THE DESCEND ACTUALLY COST, on the target that renders ──
+  //
+  // Reported, not gated. The native release numbers are 3-18 ms of generation
+  // (table in `crates/pk-game/src/floor_loading.rs`), and the open question that
+  // table cannot answer is what the MESH BUILD and the GPU upload cost in a
+  // browser. A budget is not asserted here because there is no measured budget
+  // to assert yet — printing the number is how one gets established, and
+  // inventing a threshold now would be a gate that means nothing.
+  console.log(
+    `  note  descend cost: prepare ${f.prepareMs?.toFixed?.(1) ?? "?"} ms, ` +
+      `install ${f.installMs?.toFixed?.(1) ?? "?"} ms ` +
+      `(the loading screen's minimum dwell is 300 ms)`,
+  );
+  gate(
+    typeof f.prepareMs === "number" && f.prepareMs >= 0,
+    `the descend reported its own cost (prepareMs=${f.prepareMs})`,
+  );
 
   // ── The knight is standing where pk-core said it would ──
   //
@@ -394,6 +513,14 @@ async function main() {
     gate(!!stats, `wasm booted, __pk live ${stats ? `(tick ${stats.tick})` : "(never appeared)"}`);
 
     if (stats) {
+      // WAIT FOR A SIM BEFORE MEASURING ONE. `?dungeon=1` now lands in
+      // `FloorLoading`, where the probe's `tick` is a per-publish pulse and not
+      // a 60 Hz sim — so a rate sampled across that boundary is measuring two
+      // different clocks and reporting the difference as a frequency.
+      for (let i = 0; i < 60; i++) {
+        if ((await pk())?.x !== undefined) break;
+        await page.waitForTimeout(250);
+      }
       // Gate: sim ticks at ~60 Hz.
       const t0 = (await pk()).tick;
       await page.waitForTimeout(2000);

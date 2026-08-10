@@ -5,6 +5,49 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-10 — `Tavern -> FloorLoading -> Dungeon`: one door into a floor, and
+  a loading screen that is provably on screen.** Two places used to build a
+  floor — the boot gate and the DESCEND board — and both did it inside the frame
+  that had just been asked to draw something else, so a descend was a stall with
+  nothing on it. `Dungeon` no longer builds anything; it INSTALLS a
+  `PreparedFloor`, and `FloorLoading` is the only thing that makes one (stated
+  as a run condition, not a comment).
+  - **The number the screen exists for, measured before anything was designed
+    around it.** Native release, min of 5: generation 3.3 ms at L1 to 18.0 ms at
+    the L23 cap; validation and `SimState::new` are 0.0-0.2 ms. In the debug wasm
+    build the browser reports **prepare 106 ms, install 13 ms** — so generation
+    dominates, the mesh build and GPU upload are the small half, and at pass 9 a
+    descend costs ~120 ms. `MIN_DWELL_MS` is therefore labelled in the source as
+    what it is: theatre, 300 ms, a floor and never an addition.
+  - ⚠️ **`painted` counted `Update` runs, not presented frames — and the whole
+    paint-before-build design rested on it.** On a cold wasm boot Bevy's first
+    two `Update`s are ~2.5 s apart while shaders compile, and nothing has been
+    presented in that window. A dwell clocked from state ENTRY was therefore
+    fully spent before the renderer drew anything: the probe reported
+    `painted: 2`, the browser gate believed it and went green, and the
+    screenshot taken at that exact moment showed the DUNGEON. The dwell now
+    starts at `ready_ms` — when the floor is built — so the beat is served on a
+    renderer that is awake.
+  - ⚠️ **A transient state was invisible to its own instrument.** `publish_stats`
+    samples every 5 frames; `FloorLoading` lives ~300 ms and the first five
+    frames of a cold boot take longer than that, so the state was entered,
+    painted and left without the probe publishing once. It now publishes EVERY
+    frame in that state. A state must not be unobservable because of the
+    sampling rate of the only thing that can see it.
+  - **`?loading-hold-ms=N` exists because the screen was otherwise
+    unphotographable.** At the debug build's frame rate the card lives about
+    three frames; by the time a poll observes the state and asks for a picture
+    the state is over. The gate holds it, waits for `painted >= 10` so the
+    renderer is demonstrably producing frames, then captures — and asserts the
+    PNG is card-sized (~11 kB) and not maze-sized (~32 kB), with `floor === null`
+    proving there is no dungeon behind the curtain.
+  - The ASCII guard written after the `87x61` tofu box earned its keep the same
+    afternoon: the loading card's first draft used `U+00B7` separators and the
+    unit test caught it before a screenshot had to.
+  - Gates: `cargo test --workspace`, fmt, per-crate clippy at deny, wasm32 +
+    windows-gnullvm, `pk-check --real-floor` (24 gates) and the full default
+    `pk-check` run for the DESCEND path this change rewires.
+
 - **2026-08-10 — The game stands on the generated floor: `--real-floor`.**
   `setup_dungeon` built `demo_floor(7)` — a 25x25 pillar arena — on every
   descent, which is why the dungeon looked like a pad arena no matter how many
