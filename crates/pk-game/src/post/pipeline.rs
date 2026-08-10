@@ -40,7 +40,6 @@ use bevy::{
     },
     ecs::query::QueryItem,
     prelude::*,
-    shader::PipelineCacheError,
     render::{
         extract_component::{
             ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
@@ -50,21 +49,24 @@ use bevy::{
             NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
         },
         render_resource::{
-            binding_types::{sampler, texture_2d, texture_depth_2d, texture_depth_2d_multisampled, uniform_buffer},
+            binding_types::{
+                sampler, texture_2d, texture_depth_2d, texture_depth_2d_multisampled,
+                uniform_buffer,
+            },
             BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedPipelineState,
             CachedRenderPipelineId, ColorTargetState, ColorWrites, Extent3d, FilterMode,
-            FragmentState, LoadOp,
-            Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages,
-            ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StoreOp,
-            TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-            TextureView,
+            FragmentState, LoadOp, Operations, PipelineCache, RenderPassColorAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
+            SamplerDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, StoreOp, TextureDescriptor, TextureDimension,
+            TextureFormat, TextureSampleType, TextureUsages, TextureView,
         },
         renderer::{RenderContext, RenderDevice},
         texture::{CachedTexture, TextureCache},
         view::{ExtractedView, Msaa, ViewDepthTexture, ViewTarget},
         Render, RenderApp, RenderStartup, RenderSystems,
     },
+    shader::PipelineCacheError,
 };
 
 // ── The oracle's shipped config (config.ts :183-200). ─────────────────────
@@ -935,7 +937,10 @@ impl ViewNode for PkCompositeNode {
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipelines.composite) else {
             return Ok(());
         };
-        let Some(uniforms) = world.resource::<ComponentUniforms<PkPost>>().uniforms().binding()
+        let Some(uniforms) = world
+            .resource::<ComponentUniforms<PkPost>>()
+            .uniforms()
+            .binding()
         else {
             return Ok(());
         };

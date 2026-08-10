@@ -68,6 +68,30 @@ The game's identity. The slice has square walls only.
 
 ## P2 — Maze generation (19.7k src, 7.3k tests)
 
+**The shipping path is `maze/track-floor.ts buildTrackFloor`, not
+`generateMaze`.** `TRACK_FIRST` has been on since the track rework; measured
+over 400 floors, `buildTrackFloor` declined 0 times, so the growing-tree maze
+below it is a genuine fallback that runs on no floor a player sees. Port the
+track pipeline first and the fallback last — and read
+`spawn/floor-authoring.ts`'s header before either, because the pre-track draws
+(`rollModifier`, `windinessFor`) shift the stream the whole floor is built from.
+
+- [x] **PARITY HARNESS (P2's P0).** 23 named pass boundaries, each with 7
+      digests + 6 exact counts + the cumulative rng draw count, exported from
+      the live legacy pipeline through an `onPass` seam
+      (`port-maze-fixtures.test.ts` → `assets/fixtures/maze-pass-digests.json`
+      → `crates/pk-core/tests/maze_pass_digests.rs`). The digest is certified
+      on its own vectors before it is pointed at a floor. Verified by
+      sabotage on both sides — an extra rng draw and a no-rng geometry change
+      each localise to the right pass; a dropped length fold and a big-endian
+      f64 each fail the self-test with the cause named. See
+      `pk_core::maze` for why a whole-floor comparison cannot debug this port.
+- [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
+      against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
+      launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →
+      publish-arcs → orbit-island → arc-sweeps → repair-2 → endpoints-final →
+      boss-chamber → artery-banks → reseal-chute → carve-doorways →
+      funnels-relays → compact-fixed-point → stairs → arc-rails → done.
 - [ ] `maze/generator.ts` + `build.ts` (growing-tree, braiding, thicken).
 - [ ] `maze/archetypes.ts`, `assembly*.ts`, `prefabs.ts` (+ biome tables).
 - [ ] Track systems: `track-carve`, `track-grow`, `track-launch`,
@@ -75,10 +99,11 @@ The game's identity. The slice has square walls only.
 - [ ] `doorways`, `flow-loops`, `circuit`, `relay-chambers`, `lamp-puzzle`.
 - [ ] `decorate.ts`, `surface-paint.ts` (paints P1 surfaces).
 - [ ] `floor-rules/metrics/density/seed`.
-- Verify: fixture route — legacy exports full-floor JSON (tiles/shapes/
-  surfaces/arcs/spawns) across the vitest seed corpus; Rust generates
-  byte-identical. PRNG call-order parity is the tripwire. Plus ported
-  property tests (connectivity, reachability).
+- Verify: the pass-digest harness above — a floor is ported when every one of
+  its 23 boundaries is bit-identical to the oracle's, not when the finished
+  grid looks right. Property tests (connectivity, reachability) are ported too
+  but they are NOT the gate: "connected", "solvable" and "has an exit" are all
+  true of the wrong floor, which is exactly what a mis-ordered draw produces.
 
 ## P3 — Rendering proper (15.2k render/ + engine/render)
 

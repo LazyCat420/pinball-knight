@@ -32,11 +32,11 @@ use pk_core::intro::{
 
 use crate::overworld::{Overworld, BW};
 use crate::sfx::{Audio, SfxEvent};
-use pk_audio::Patch;
 use crate::{
     camera_offset_angles, spawn_grid_meshes, AppState, DungeonCamera, FadeOverlay, KnightArt,
     VIEW_H, WALL_H,
 };
+use pk_audio::Patch;
 
 /// The legacy echo trail's opacities, nose to tail.
 const ECHO_OPACITY: [f32; 4] = [0.3, 0.2, 0.12, 0.06];

@@ -661,8 +661,11 @@ fn setup_tavern(
     // the material is per-keeper, exactly as sprite.ts:1677-1697 explains.
     let keeper_states = build_keeper_states();
     let keeper_mesh = b.meshes.add(
-        Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS))
-            .translated_by(Vec3::new(0.0, SPRITE_UNITS / 2.0, 0.0)),
+        Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS)).translated_by(Vec3::new(
+            0.0,
+            SPRITE_UNITS / 2.0,
+            0.0,
+        )),
     );
     for (i, k) in keeper_states.iter().enumerate() {
         // Missing art is never fatal — the room just loses a body (npcs.ts).
@@ -1388,15 +1391,7 @@ fn build_props(b: &mut Build) {
     // the inset housing panel's. Shrinking it to `sign_w - 0.4` by
     // `sign_h - 0.28` gives 7.31, and since the bake is stretched to whatever
     // quad it lands on, the letters came out ~39% wide.
-    b.boxed(
-        sign_w,
-        sign_h,
-        0.03,
-        face,
-        n.x,
-        sign_y,
-        sign_z + 0.075,
-    );
+    b.boxed(sign_w, sign_h, 0.03, face, n.x, sign_y, sign_z + 0.075);
     let rail = b.metal(STEEL_DK, 0.6, 0.5);
     b.boxed(
         sign_w + 0.26,
@@ -1582,7 +1577,11 @@ struct TavernUi<'w, 's> {
     prompt_q: Query<
         'w,
         's,
-        (&'static mut Text, &'static mut Visibility, &'static mut TextColor),
+        (
+            &'static mut Text,
+            &'static mut Visibility,
+            &'static mut TextColor,
+        ),
         (
             With<PromptText>,
             Without<PanelText>,
@@ -1596,12 +1595,7 @@ struct TavernUi<'w, 's> {
         &'static mut Visibility,
         (With<PanelRoot>, Without<PromptText>, Without<SpotlightDisc>),
     >,
-    panel_text: Query<
-        'w,
-        's,
-        &'static mut Text,
-        (With<PanelText>, Without<PromptText>),
-    >,
+    panel_text: Query<'w, 's, &'static mut Text, (With<PanelText>, Without<PromptText>)>,
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -1854,7 +1848,14 @@ fn sync_tavern_knight(
         With<TavernKnight>,
     >,
     mut blob_q: Query<&mut Transform, (With<KnightBlob>, Without<TavernKnight>)>,
-    cam: Query<&Transform, (With<DungeonCamera>, Without<TavernKnight>, Without<KnightBlob>)>,
+    cam: Query<
+        &Transform,
+        (
+            With<DungeonCamera>,
+            Without<TavernKnight>,
+            Without<KnightBlob>,
+        ),
+    >,
 ) {
     let Ok((mut tf, mut mat, mats)) = q.single_mut() else {
         return;
@@ -1975,8 +1976,11 @@ mod tests {
     /// loops write `pose.y` straight into the transform.
     #[test]
     fn the_keeper_quad_stands_on_its_origin() {
-        let mesh = Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS))
-            .translated_by(Vec3::new(0.0, SPRITE_UNITS / 2.0, 0.0));
+        let mesh = Mesh::from(Rectangle::new(SPRITE_UNITS, SPRITE_UNITS)).translated_by(Vec3::new(
+            0.0,
+            SPRITE_UNITS / 2.0,
+            0.0,
+        ));
         let ys: Vec<f32> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
             Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => {
                 p.iter().map(|v| v[1]).collect()

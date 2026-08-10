@@ -15,9 +15,15 @@ fn main() -> ExitCode {
         _ => {
             eprintln!("usage: cargo xtask <docs|bake|dist>");
             eprintln!("  docs           build + serve the mdbook at docs/");
-            eprintln!("  bake           run the legacy painter/crush export into assets/sprites/ (M0+)");
-            eprintln!("  bake --tavern  export the tavern keepers + ENTER MAZE sign to assets/tavern/");
-            eprintln!("  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)");
+            eprintln!(
+                "  bake           run the legacy painter/crush export into assets/sprites/ (M0+)"
+            );
+            eprintln!(
+                "  bake --tavern  export the tavern keepers + ENTER MAZE sign to assets/tavern/"
+            );
+            eprintln!(
+                "  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)"
+            );
             ExitCode::FAILURE
         }
     }
