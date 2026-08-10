@@ -1,5 +1,4 @@
 {
   "rows": ["idle", "walk", "attack", "death"],
-  "cells": [4, 4, 4, 4],
   "matte": { "bg": [255, 0, 255], "tolerance": 90 }
 }
