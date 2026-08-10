@@ -5,6 +5,7 @@ members = [
     "crates/pk-assets",
     "crates/pk-audio",
     "crates/pk-game",
+    "crates/pk-gui",
     "xtask",
 ]
 

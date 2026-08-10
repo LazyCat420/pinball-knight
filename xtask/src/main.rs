@@ -22,6 +22,9 @@ fn main() -> ExitCode {
                 "  bake --tavern  export the tavern keepers + ENTER MAZE sign to assets/tavern/"
             );
             eprintln!(
+                "  bake --gui-font  rasterise the vendored UI faces to assets/gui/font/"
+            );
+            eprintln!(
                 "  dist           release wasm build: wasm-bindgen + wasm-opt + brotli (M0+)"
             );
             ExitCode::FAILURE
@@ -63,6 +66,7 @@ fn bake() -> ExitCode {
         // rather than a partial implementation of it, so nobody reads a
         // successful tavern export as "the sprite pipeline works now".
         Some("--tavern") => bake_tavern(&args[1..]),
+        Some("--gui-font") => bake_gui_font(&args[1..]),
         _ => {
             // M0 exit criterion: this drives a legacy/ script (headless Chromium
             // runs the TS painters + crush per rung) and writes
@@ -97,6 +101,32 @@ fn bake_tavern(extra: &[String]) -> ExitCode {
         Err(e) => {
             eprintln!("node not found ({e}). The bake runs the legacy painters in headless");
             eprintln!("Chromium via Playwright; install Node and run `npm i` in legacy/.");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Rasterise the vendored GUI faces (Press Start 2P, VT323) into glyph atlases.
+///
+/// Legacy text is `fillText` at integer positions, so the browser's own raster,
+/// captured once per (face, size), makes pk-gui text bit-exact against the
+/// legacy canvas. See legacy/scripts/bake-gui-font.mjs for the doctrine.
+fn bake_gui_font(extra: &[String]) -> ExitCode {
+    let root = workspace_root();
+    let out = root.join("assets").join("gui").join("font");
+    let status = Command::new("node")
+        .arg("scripts/bake-gui-font.mjs")
+        .arg("--out")
+        .arg(&out)
+        .args(extra)
+        .current_dir(root.join("legacy"))
+        .status();
+    match status {
+        Ok(s) if s.success() => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(e) => {
+            eprintln!("node not found ({e}). The bake runs in headless Chromium via");
+            eprintln!("Playwright; install Node and run `npm i` in legacy/.");
             ExitCode::FAILURE
         }
     }
