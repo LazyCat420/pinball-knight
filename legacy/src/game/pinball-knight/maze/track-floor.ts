@@ -97,6 +97,17 @@ export interface PassSnapshot {
   mask: TrackMask | null;
   /** Pass-specific scalars, small enough to pin verbatim in a fixture. */
   extra: PassExtra;
+  /**
+   * The circuit, on the two passes that own it — LIVE, like the grid.
+   *
+   * Here because the first two passes write nothing to the grid: their entire
+   * output is this graph and the path built from it, so a boundary that only
+   * digests tiles certifies an all-wall grid twice and calls the topology
+   * verified. Counts alone are no better — two different networks with the same
+   * node and edge totals are the normal case, not the corner one.
+   */
+  graph?: TrackGraph;
+  path?: TrackPath;
 }
 
 /** Small JSON-able values a pass reports about itself. */
@@ -558,8 +569,8 @@ export function buildTrackFloor(
   // `extra` is a THUNK, not a value: `probe(pass, {…})` would build the object
   // at the CALL SITE, outside the guard below, so a floor with no observer
   // would still pay for twenty-three of them plus four walks of the arc list.
-  const probe = (pass: string, extra: () => PassExtra = NO_EXTRA): void => {
-    if (opts.onPass) opts.onPass({ pass, grid, mask: probeMask, extra: extra() });
+  const probe = (pass: string, extra: () => PassExtra = NO_EXTRA, live: { graph?: TrackGraph; path?: TrackPath } = {}): void => {
+    if (opts.onPass) opts.onPass({ pass, grid, mask: probeMask, extra: extra(), ...live });
   };
   /** Arc features and the rail lanes strung along them — one thunk, used four times. */
   const arcCounts = (): PassExtra => ({
@@ -576,10 +587,10 @@ export function buildTrackFloor(
     survive: prof.survive,
   });
   if (graph.edges.length === 0) return null;
-  probe("grow-track", () => ({ nodes: graph.nodes.length, edges: graph.edges.length, foods, relays }));
+  probe("grow-track", () => ({ nodes: graph.nodes.length, edges: graph.edges.length, foods, relays }), { graph });
   const path = buildTrackPath(graph, { laneScale: prof.laneScale });
   if (path.legs.length === 0) return null;
-  probe("track-path", () => ({ legs: path.legs.length }));
+  probe("track-path", () => ({ legs: path.legs.length }), { graph, path });
 
   const mask = carveTrack(grid, path);
   probeMask = mask;

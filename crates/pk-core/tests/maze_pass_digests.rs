@@ -37,6 +37,9 @@ use pk_core::maze::archetypes::{ARCHETYPES, DEFAULT_RULE_WEIGHTS, DEFAULT_TRACK_
 use pk_core::maze::modifiers::{
     roll_modifier, ModifierId, MODIFIER_CHANCE, MODIFIER_FROM_LEVEL, MODIFIER_POOL,
 };
+use pk_core::maze::track_grow::{
+    circuit_rank, digest_edges, digest_nodes, grow_track, GrowTrackOpts,
+};
 use pk_core::maze::{digest, floor_rng, floor_seed, PASS_ORDER};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -141,6 +144,9 @@ struct Pass {
     lane: Option<u32>,
     walkable: u32,
     arc_tiles: u32,
+    /// The circuit, on the two passes that own it. Null everywhere else.
+    graph_nodes: Option<u32>,
+    graph_edges: Option<u32>,
     extra: serde_json::Value,
 }
 
@@ -609,4 +615,136 @@ fn modifier_str(m: ModifierId) -> &'static str {
         ModifierId::Frozen => "frozen",
         ModifierId::Silted => "silted",
     }
+}
+
+/// PASS 1 — `grow-track`, replayed against the oracle on every corpus floor.
+///
+/// The first pass that actually generates something, and the first place the
+/// harness earns its keep. It writes NOTHING to the grid — the whole output is
+/// a graph — so the tile digests at this boundary are the all-wall grid on both
+/// sides and prove nothing. What is compared is the graph itself: node
+/// positions in placement order, tube endpoints, conductivities and lengths.
+///
+/// The two failure modes this separates, which is the point of digesting nodes
+/// and edges apart:
+///
+///   · nodes differ  → the LAYOUT diverged. The rejection sampler draws twice
+///     per attempt including rejected ones, so this is almost always a draw
+///     accounting mistake, and `draws` will say so too.
+///   · nodes match, edges differ → the layout is right and the SOLVER is not.
+///     140 Gauss–Seidel sweeps and a `pow(q/qMax, 1.35)` per tube per step: the
+///     suspects are `libm::pow` vs V8's, the sweep order, and the normalisation.
+#[test]
+fn pass1_grow_track_replays_the_oracle() {
+    let c: Corpus = serde_json::from_str(&fixture("maze-pass-digests.json")).unwrap();
+    let mut diverged: Vec<(i32, u32, bool)> = Vec::new();
+    for f in &c.floors {
+        let head = format!("L{} seed {}", f.level, f.run_seed);
+        let arch = archetype_for(f.level);
+        let p = &arch.track;
+
+        // The shipping call, exactly as `authorFloor` → `buildTrackFloor` makes
+        // it: two pre-track draws, then the generator on a grid of (2c+1).
+        let mut rng = floor_rng(f.run_seed, f.level);
+        roll_modifier(f.level, &mut rng);
+        let _windiness = windiness_for(f.level, arch, &mut rng);
+        let (foods, relays) = track_node_counts(p, f.w, f.h);
+        let graph = grow_track(
+            f.w,
+            f.h,
+            &mut rng,
+            &GrowTrackOpts {
+                foods: Some(foods as usize),
+                relays: Some(relays as usize),
+                min_loops: Some(i64::from(p.min_loops)),
+                layout: Some(p.layout),
+                max_len_frac: Some(p.max_len_frac),
+                survive: Some(p.survive),
+                grow: None,
+            },
+        );
+
+        let want = &f.passes[0];
+        assert_eq!(want.pass, "grow-track", "{head}: fixture pass 1 moved");
+
+        // Counts first — they are the legible failure. A digest mismatch with
+        // matching counts is a different bug from "we grew half a network".
+        let extra = &want.extra;
+        assert_eq!(
+            graph.nodes.len() as i64,
+            extra["nodes"].as_i64().unwrap(),
+            "{head}: surviving node count"
+        );
+        assert_eq!(
+            graph.edges.len() as i64,
+            extra["edges"].as_i64().unwrap(),
+            "{head}: surviving edge count"
+        );
+        // The draw count next: it is the same on every floor already, including
+        // the ones blocked below, because the blockage moves VALUES and not the
+        // number of draws.
+        assert_eq!(
+            rng.draws(),
+            want.draws,
+            "{head}: draws at the pass-1 boundary"
+        );
+
+        // ── THE ONE GAP, NAMED ──────────────────────────────────────────────
+        //
+        // The `hub` layout is the only one that calls `Math.cos`/`Math.sin` on
+        // an arbitrary angle, and V8's trig is a THIRD implementation: neither
+        // Rust's `libm` nor the platform's. Measured, `cos(0.1)` is
+        // 0x3fefd712f9a817c0 in the runtime and ...c1 in both Rust candidates.
+        // One node of L3's 44 lands one ulp away because of it.
+        //
+        // Blocked on `jsmath::js_cos`/`js_sin` (fdlibm kernels + reduction) —
+        // see the Incidents page. Until then these floors are checked for
+        // everything that IS settled, and the divergence is pinned NEGATIVELY:
+        // when the twin lands, this assertion fails and the branch gets deleted.
+        // A skipped floor would have gone on passing silently forever.
+        let nodes_ok =
+            digest_nodes(&graph.nodes) == want.graph_nodes.expect("pass 1 pins a node digest");
+        let edges_ok =
+            digest_edges(&graph.edges) == want.graph_edges.expect("pass 1 pins an edge digest");
+        if !(nodes_ok && edges_ok) {
+            diverged.push((f.level, f.run_seed, nodes_ok));
+            continue;
+        }
+
+        // The pass's own contract, restated as an assertion rather than trusted:
+        // a connected loopy core with no dangling spurs.
+        assert!(
+            circuit_rank(&graph) >= i64::from(p.min_loops),
+            "{head}: circuit rank below the profile's floor"
+        );
+    }
+
+    // ── THE ONE GAP, NAMED FLOOR BY FLOOR ───────────────────────────────────
+    //
+    // V8's trig is a THIRD implementation: neither Rust's `libm` nor the
+    // platform's. Measured, `cos(0.1)` is 0x3fefd712f9a817c0 in the runtime and
+    // ...c1 in BOTH Rust candidates — they agree with each other and not with
+    // the oracle. `layout_nodes`' hub branch is the only place a maze angle is
+    // arbitrary, and one node of L3's 44 lands an ulp away because of it.
+    //
+    // Listed floor by floor rather than by layout, because the difference only
+    // bites where it crosses a rounding boundary: L8 and L13 are hub floors too
+    // and they come out bit-exact. Listing the LAYOUT would have excused them
+    // as well and quietly stopped testing three floors that already pass.
+    //
+    // Blocked on `jsmath::js_cos`/`js_sin` (fdlibm kernels — V8 keeps the
+    // original Sun evaluation order where musl and glibc both took FreeBSD's
+    // rewrite). When they land, this set empties and the assertion below is
+    // what says so.
+    // TWO floors of ten. The other three hub floors (L8 s1, L13… no — L8 s1,
+    // L3 s424242, L8 s424242) come out bit-exact, which is the measurement that
+    // made "list the layout" the wrong shape for this exclusion.
+    let expected: &[(i32, u32)] = &[(3, 1), (13, 1)];
+    let actual: Vec<(i32, u32)> = diverged.iter().map(|&(l, s, _)| (l, s)).collect();
+    assert_eq!(
+        actual, expected,
+        "the set of trig-blocked floors changed. Shrunk? js_cos/js_sin landed — \
+         delete the entries. Grown? a NEW divergence, and it is not this one. \
+         (nodes_ok per floor: {diverged:?})"
+    );
 }

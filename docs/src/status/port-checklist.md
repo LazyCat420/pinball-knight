@@ -98,6 +98,21 @@ track pipeline first and the fallback last — and read
       ⚠️ Trap found here: a JS object with integer-like keys iterates in
       ASCENDING NUMERIC order, not literal order, so two `BandPaint` mixes
       transcribe backwards if you read them off the page.
+- [~] **PASS 1 `grow-track`** (`pk_core::maze::track_grow`): the physarum
+      circuit — layouts (scatter/spine/ring/hub), `mesh_neighbours`,
+      Gauss–Seidel `solve_pressures`, `grow_network`, `prune_to_circuit`,
+      `prune_leaves`. **8 of 10 corpus floors bit-exact** (node positions, tube
+      conductivities and lengths, draw count). The two that are not are blocked
+      on `js_cos`/`js_sin` and are pinned BY NAME so the list must shrink when
+      the twins land. Traps pinned in the port: two rng draws per placement
+      attempt INCLUDING rejected ones; `js_hypot` in the K-nearest sort; and a
+      JS `Set` re-insertion moving an edge to the END of the survivor order.
+- [ ] `jsmath::js_cos` / `js_sin` — fdlibm kernels. V8 keeps the original Sun
+      evaluation order; musl and glibc both took FreeBSD's rewrite, so both
+      Rust candidates disagree with the runtime. See Incidents.
+- [ ] Run `jsmath_oracle.rs` under `wasm32-unknown-unknown`: std's `powf`
+      lowers to the `libm` crate there, so `js_pow` is EXPECTED to diverge in
+      the browser and has not been measured.
 - [ ] `maze/track-floor.ts` — the 23-pass pipeline itself, pass by pass
       against `PASS_ORDER`: grow-track → track-path → carve-track → plaza →
       launch-chute → grow-maze → endpoints-early → repair-1 → plan-doorways →
