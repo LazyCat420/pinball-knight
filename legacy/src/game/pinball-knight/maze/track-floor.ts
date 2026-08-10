@@ -84,6 +84,50 @@ function repairKeepOut(g: Grid, mask: TrackMask): Uint8Array {
   return out;
 }
 
+/**
+ * What a pass boundary hands the observer. Grid and mask are the LIVE objects,
+ * not copies — an observer that keeps one keeps a reference into a floor that
+ * is still being built, so digest it now or copy it yourself.
+ *
+ * `mask` is null for the two passes that run before the track is carved.
+ */
+export interface PassSnapshot {
+  pass: string;
+  grid: Grid;
+  mask: TrackMask | null;
+  /** Pass-specific scalars, small enough to pin verbatim in a fixture. */
+  extra: PassExtra;
+}
+
+/** Small JSON-able values a pass reports about itself. */
+export type PassExtra = Record<string, number | string | null | number[] | string[]>;
+
+/** The empty thunk, shared — a pass with nothing to say allocates nothing. */
+const NO_EXTRA = (): PassExtra => ({});
+
+/**
+ * The per-pass observation seam — the Rust port's parity harness.
+ *
+ * ⚠️ THE ORDER OF THE PASSES IS THE CONTRACT, exactly as the order of the draws
+ * is (see spawn/floor-authoring.ts). Twenty-three passes share one rng stream
+ * and each mutates the grid the next one reads, so a port that gets pass 6
+ * subtly wrong produces a floor that is merely DIFFERENT — it renders, it is
+ * connected, and every property test passes. A whole-floor digest says "wrong"
+ * and nothing more; this says WHICH pass, and the rng draw count the observer
+ * keeps alongside says whether the divergence was in the draws or in the
+ * geometry they fed.
+ *
+ * A probe never draws from the rng and never writes to the grid, and with no
+ * observer attached the seam costs twenty-three falsy checks and nothing else
+ * — the `extra` thunk is what keeps that true at the call site. So the floor
+ * the game builds is the floor the fixture pins, and
+ * `port-maze-fixtures.test.ts` measures exactly that rather than asserting it.
+ * Left unconditional rather than behind a flag, on the same reasoning as
+ * dev/floor-census.ts — a diagnostic that is off in the environment you care
+ * about is its own trap.
+ */
+export type PassProbe = (snap: PassSnapshot) => void;
+
 export interface TrackFloor {
   grid: Grid;
   graph: TrackGraph;
@@ -494,6 +538,8 @@ export function buildTrackFloor(
     relays?: boolean;
     /** Funnel tuning, for the parameter sweep. Not a gameplay setting. */
     funnelTune?: { throatDeg?: number; depth?: number; segments?: number };
+    /** Per-pass observation seam for the port-parity harness (see PassProbe). */
+    onPass?: PassProbe;
   } = {},
 ): TrackFloor | null {
   const w = cellsW * 2 + 1;
@@ -505,6 +551,22 @@ export function buildTrackFloor(
   const prof = opts.profile ?? DEFAULT_TRACK_PROFILE;
   const { foods, relays } = trackNodeCounts(prof, w, h);
 
+  // The observation seam (PassProbe). `probeMask` exists because the mask is
+  // born mid-pipeline and every line below wants it non-null; the alternative
+  // is a nullable `mask` and a `!` on forty call sites.
+  let probeMask: TrackMask | null = null;
+  // `extra` is a THUNK, not a value: `probe(pass, {…})` would build the object
+  // at the CALL SITE, outside the guard below, so a floor with no observer
+  // would still pay for twenty-three of them plus four walks of the arc list.
+  const probe = (pass: string, extra: () => PassExtra = NO_EXTRA): void => {
+    if (opts.onPass) opts.onPass({ pass, grid, mask: probeMask, extra: extra() });
+  };
+  /** Arc features and the rail lanes strung along them — one thunk, used four times. */
+  const arcCounts = (): PassExtra => ({
+    arcs: grid.arcs?.length ?? 0,
+    lanes: (grid.arcs ?? []).reduce((n, f) => n + (f.lanes?.length ?? 0), 0),
+  });
+
   const graph = growTrack(w, h, rng, {
     minLoops: opts.minLoops ?? prof.minLoops,
     layout: prof.layout,
@@ -514,10 +576,14 @@ export function buildTrackFloor(
     survive: prof.survive,
   });
   if (graph.edges.length === 0) return null;
+  probe("grow-track", () => ({ nodes: graph.nodes.length, edges: graph.edges.length, foods, relays }));
   const path = buildTrackPath(graph, { laneScale: prof.laneScale });
   if (path.legs.length === 0) return null;
+  probe("track-path", () => ({ legs: path.legs.length }));
 
   const mask = carveTrack(grid, path);
+  probeMask = mask;
+  probe("carve-track");
   // THE PLAZA GOES DOWN BEFORE THE MAZE, never after. Carved afterwards it
   // would bulldoze finished corridors and leave severed stubs pointing into it;
   // carved here it is simply part of the circuit, and the maze's keep-out
@@ -553,6 +619,7 @@ export function buildTrackFloor(
     for (let r = want; r >= want * 0.6 && !carved; r -= 1) carved = carveChamber(grid, mask, hub.x, hub.z, r);
     if (!carved) plazaRelaxed.push("archetype-has-its-chamber");
   }
+  probe("plaza", () => ({ relaxed: [...plazaRelaxed] }));
   // ── THE LAUNCH CHUTE (track-launch.ts) ──────────────────────────────────
   //
   // Carved HERE, between the circuit and the maze, for the same reason the
@@ -566,11 +633,15 @@ export function buildTrackFloor(
   const profBias = prof.rules?.perimeterBias ?? DEFAULT_RULE_WEIGHTS.perimeterBias;
   const profEuclid = prof.rules?.minBossEuclid ?? DEFAULT_RULE_WEIGHTS.minBossEuclid;
   const chute = carveLaunchChute(grid, mask, rng, { perimeterBias: profBias });
+  probe("launch-chute", () => ({
+    chute: chute ? [chute.base.i, chute.base.j, chute.mouth.i, chute.mouth.j] : null,
+  }));
   growMazeAround(grid, mask, rng, {
     linkChance: opts.linkChance ?? prof.linkChance,
     fill: opts.fill ?? prof.fill,
     density: opts.density,
   });
+  probe("grow-maze");
 
   // ── PLUMBING REPAIR (track-socket.ts) ───────────────────────────────────
   //
@@ -608,6 +679,10 @@ export function buildTrackFloor(
   // (up to 5.31 per 1k tiles against a limit of 2.5).
   const endsEarly = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
   const protect = endsEarly ? [endsEarly.start, endsEarly.stairs] : [];
+  probe("endpoints-early", () => ({
+    start: endsEarly ? [endsEarly.start.i, endsEarly.start.j] : null,
+    stairs: endsEarly ? [endsEarly.stairs.i, endsEarly.stairs.j] : null,
+  }));
   const repair = (keep: readonly TilePos[]): void => {
     uncarveDeadEnds(grid, mask, keep);
     // The keep-out steers the repair around any SEALED lane's walls — today the
@@ -619,6 +694,7 @@ export function buildTrackFloor(
     if (endsEarly) healRoadTerminations(grid, mask, keep, { reach: 0 });
   };
   repair(protect);
+  probe("repair-1");
 
   // ── DOORWAYS: PLANNED HERE, CARVED AT THE END (maze/doorways.ts) ─────────
   //
@@ -643,6 +719,7 @@ export function buildTrackFloor(
   }
   const onDoorway = (i: number, j: number): boolean =>
     i >= 0 && j >= 0 && i < grid.w && j < grid.h && doorGuard.has(idx(grid, i, j));
+  probe("plan-doorways", () => ({ sites: doorSites.length, guard: doorGuard.size }));
 
   // ── CURVED WALLS, ALL OF THEM, HERE ─────────────────────────────────────
   //
@@ -675,11 +752,15 @@ export function buildTrackFloor(
   //    only considers tiles whose shape is still SHAPE_FULL, so this ordering
   //    is what makes "the track's curves win" true by construction.
   publishArcs(grid, path);
+  probe("publish-arcs", arcCounts);
   const arcStart = endsEarly?.start ?? { i: 1, j: 1 };
   const orbit = stampOrbitIsland(grid, arcStart, onDoorway, rng);
+  probe("orbit-island", () => ({ ...arcCounts(), orbit: orbit ? [orbit.ci, orbit.cj] : null }));
   authorArcSweeps(grid, arcStart, onDoorway, rng);
+  probe("arc-sweeps", arcCounts);
   // The curves change geometry, so the geometry gets repaired — see `repair`.
   repair(protect);
+  probe("repair-2");
 
   // ⚠️ NO `stairsIn` HERE, and that is deliberate. Biasing the FINAL exit toward
   // tiles a hall could be centred on excludes a nine-tile band around the whole
@@ -691,6 +772,11 @@ export function buildTrackFloor(
   // relaxation, which is the honest outcome.
   const ends = pickTrackEndpoints(grid, mask, chute, { perimeterBias: profBias, minBossEuclid: profEuclid });
   if (!ends) return null;
+  probe("endpoints-final", () => ({
+    start: [ends.start.i, ends.start.j],
+    stairs: [ends.stairs.i, ends.stairs.j],
+    relaxed: [...(ends.relaxed ?? [])],
+  }));
 
   // ── THE KING'S HALL ─────────────────────────────────────────────────────
   //
@@ -764,6 +850,7 @@ export function buildTrackFloor(
     mask.lane.set(laneBefore);
     bossRoom = null;
   }
+  probe("boss-chamber", () => ({ boss: bossRoom ? [bossRoom.ci, bossRoom.cj, bossRoom.r] : null }));
   /** The hall's interior, kept clear of the one wall-adding pass still to come.
    *  `r - 1` rather than `r` so the rim itself stays available to be filleted
    *  round — a jagged arena rim is the artefact the curve work exists to remove. */
@@ -808,6 +895,7 @@ export function buildTrackFloor(
     authorArteryBanks(grid, artery, ends.start, NOTHING_OCCUPIED, isGuarded);
     repair([ends.start, ends.stairs]);
   }
+  probe("artery-banks", () => ({ ...arcCounts(), artery: artery.length }));
 
   // ── LAST: prune curves nothing meaningfully owns ────────────────────────
   //
@@ -834,6 +922,7 @@ export function buildTrackFloor(
       return true;
     });
   }
+  probe("reseal-chute");
 
   // ── AND NOW THE DOORWAYS ARE CUT ────────────────────────────────────────
   //
@@ -859,6 +948,7 @@ export function buildTrackFloor(
   // until the full-width cross-section is already open on both sides, so every
   // column of an opening ends on floor and the cut creates no dead ends.
   const doors = carveDoorways(grid, doorSites, { mask, spanMask: arcSpanMask(grid) });
+  probe("carve-doorways", () => ({ doorways: doors.doorways.length }));
 
   // ── AND THEN FLARE THEM, SO THE BALL CAN ACTUALLY GET THROUGH ───────────
   //
@@ -923,6 +1013,10 @@ export function buildTrackFloor(
     // guarded against, because the repair is right to open them.
     clearOrphanArcTiles(grid);
   }
+  // Emitted even when both are off, so the pass INDEX of everything after it is
+  // the same number on every floor — a harness that has to know whether a floor
+  // ran the optional passes cannot report "pass 19 diverged".
+  probe("funnels-relays", () => ({ funnels: opts.funnels === true ? 1 : 0, relays: opts.relays === true ? 1 : 0 }));
 
   // ── TRIM CURVES AND CLEAN NUBS, TO A JOINT FIXED POINT ──────────────────
   //
@@ -969,8 +1063,10 @@ export function buildTrackFloor(
   // One more compaction, unconditionally. It only ever trims or drops features,
   // so it cannot create work for the stub pass and the fixed point still holds.
   compactArcs(grid);
+  probe("compact-fixed-point", arcCounts);
 
   setTile(grid, ends.stairs.i, ends.stairs.j, T_STAIRS);
+  probe("stairs", () => ({ stairs: [ends.stairs.i, ends.stairs.j] }));
 
   // ── AND THE RAILS COME UNDER THE Φ CONTRACT, LAST ───────────────────────
   //
@@ -991,6 +1087,7 @@ export function buildTrackFloor(
   // Writes only `feature.lanes`: no tile, no shape, no arcIdx, no rng. So it
   // cannot perturb a layout, and `orientArcRails`' own test pins that.
   orientArcRails(grid, buildFlowField(grid, ends.stairs));
+  probe("arc-rails", arcCounts);
 
   // A high-bias floor that opened centrally: was a peripheral option ever on
   // the table? `edgeBest` is the band's best, so "no" means impossible, not
@@ -1074,6 +1171,7 @@ export function buildTrackFloor(
   // which is what stops a relaxation from hollowing the rule out.
   if (!bossRoom || !inBossRoom(ends.stairs.i, ends.stairs.j)) relaxed.push("boss-has-room-to-fight");
 
+  probe("done", () => ({ relaxed: [...relaxed] }));
   return {
     grid,
     graph,

@@ -5,6 +5,43 @@ as the change it records.** Newest entries first within each section.
 
 ## Working
 
+- **2026-08-09 — P2 opens with its harness: 23 pass boundaries, digested.**
+  Nothing of the maze generator is ported yet. What is built is the instrument
+  that will debug the port, and it is built first on purpose.
+  `buildTrackFloor` is twenty-three ordered passes sharing ONE rng stream, each
+  mutating the grid the next one reads — so a whole-floor comparison can only
+  ever say "wrong", on 3,975 tiles, with every pass after the real mistake
+  wrong too.
+  - **The seam.** `maze/track-floor.ts` gained an `onPass` probe (23 calls, no
+    rng, no allocation into the floor) and the legacy exporter drives the LIVE
+    pipeline through it — not a copy of it. A copy is what
+    `floor-pipeline.test.ts`'s own header warns about: it claimed for months to
+    run "the exact sequence core.ts uses" and had not since `TRACK_FIRST` went
+    on.
+  - **What each boundary pins:** 7 digests (tiles, shapes, arcs, arcIdx, lane,
+    sealed, dist), 6 exact counts, the cumulative rng draw count, and the
+    pass's own scalars verbatim (`{"arcs":68,"lanes":10}` tells you what broke;
+    a hash of it tells you only that something did). 10 corpus floors ×
+    23 passes, all five archetypes, levels 1-13, two run seeds.
+  - **The draw count is the localiser.** At the FIRST divergence every earlier
+    pass matched, so the pass entered with a bit-identical grid and the rng at
+    the same position — the mistake is in that pass, and the draw DELTA says
+    which half: a different number of draws is a wrong draw sequence, the same
+    number is wrong arithmetic on the right values.
+  - **Certified, not assumed.** The digest is pinned on its own vectors
+    (`maze-digest-selftest.json`) including the two JSON cannot carry — `-0`
+    and `Infinity` — with the little-endian byte stream pinned separately, so a
+    big-endian port is named as endianness rather than reported as "digest
+    differs". Sabotage-tested four ways: an extra rng draw before `arc-sweeps`
+    and a no-rng change in `boss-chamber` each localise to the right pass on
+    every floor; dropping the length fold and flipping f64 to big-endian each
+    fail the self-test.
+  - **Measured:** legacy suite 2,657 passed / 13 skipped, 0 regressions — and
+    "the probe does not perturb the floor" is one of those tests, not an
+    assertion in a comment: the same seed is built once through the seam and
+    once by the shipping call, and the finished grids are compared. `cargo test
+    -p pk-core` 327 unit + 12 integration green; fmt and clippy clean on the
+    new files. The exporter runs the whole corpus in 1.2 s.
 - **2026-08-09 — The look and the sound land: post chain (P3 partial), baked
   tavern art (P6), audio + particles (P7 partial), hub-first boot.**
   *Status: NOT SIGNED OFF. No pk-check run and no screenshot A/B against the TS
