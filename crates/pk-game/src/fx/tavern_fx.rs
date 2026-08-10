@@ -175,7 +175,10 @@ mod tests {
         // batch of output, because dt clamps to 0.05.
         emit_ambient(&mut fx, &mut t, 2.0);
         assert_eq!(live(&fx), 3, "one batch, not fourteen");
-        assert!((t.0 - AMBIENT_PERIOD).abs() < 1e-6, "timer reset, not summed");
+        assert!(
+            (t.0 - AMBIENT_PERIOD).abs() < 1e-6,
+            "timer reset, not summed"
+        );
 
         // 0.05 per stalled frame, so it takes three more to come round again.
         emit_ambient(&mut fx, &mut t, 2.0);
@@ -226,7 +229,10 @@ mod tests {
                 assert!((-3.13..=-2.07).contains(&p.z), "coal z: {}", p.z);
             }
         }
-        assert!(hearth > 0 && coals > 0 && motes > 0, "all three emitters ran");
+        assert!(
+            hearth > 0 && coals > 0 && motes > 0,
+            "all three emitters ran"
+        );
         assert_eq!(hearth, coals, "the two embers come in pairs");
         assert_eq!(motes, hearth, "one mote per batch");
     }

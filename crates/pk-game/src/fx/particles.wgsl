@@ -24,10 +24,12 @@ struct Particle {
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<storage, read> particles: array<Particle>;
 
 struct VertexIn {
-    @builtin(vertex_index) index: u32,
-    // Present only because Bevy's mesh pipeline builds the vertex buffer layout
-    // from the mesh's attributes. Never read.
-    @location(0) position: vec3<f32>,
+    // NOT a position. `[particle_index, corner_x, corner_y]`, baked per vertex
+    // by `particle_mesh`. It cannot be `@builtin(vertex_index)`: Bevy packs
+    // meshes into a shared vertex slab and draws a sub-range of it, so
+    // vertex_index starts at this mesh's slab offset rather than at 0. See the
+    // long note on `particle_mesh` in material.rs.
+    @location(0) packed: vec3<f32>,
 }
 
 struct VertexOut {
@@ -38,20 +40,8 @@ struct VertexOut {
 
 @vertex
 fn vertex(in: VertexIn) -> VertexOut {
-    let p = particles[in.index / 6u];
-
-    // Two triangles over a centred unit quad: (bl, br, tr) (bl, tr, tl).
-    // A local `var` rather than a module `const` so the runtime index is legal
-    // WGSL — dynamic indexing needs a reference, not a value.
-    var corners = array<vec2<f32>, 6>(
-        vec2<f32>(-0.5, -0.5),
-        vec2<f32>( 0.5, -0.5),
-        vec2<f32>( 0.5,  0.5),
-        vec2<f32>(-0.5, -0.5),
-        vec2<f32>( 0.5,  0.5),
-        vec2<f32>(-0.5,  0.5),
-    );
-    let c = corners[in.index % 6u];
+    let p = particles[u32(in.packed.x)];
+    let c = in.packed.yz;
 
     // Billboard on the view basis. `world_from_view`'s first two columns are
     // the camera's right and up in world space.
