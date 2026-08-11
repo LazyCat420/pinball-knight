@@ -94,23 +94,41 @@ const ROW_GAP: f64 = 3.0;
 const REPAIR_H: f64 = 30.0;
 const FOOT_H: f64 = 26.0;
 
-/// How tall the sheet must be to hold this view.
+/// How tall the sheet WANTS to be. It gets this or the screen, whichever is
+/// smaller — `sheet()` clamps — and the difference is what the region scrolls.
 ///
 /// ⚠️ **The first build passed a CONSTANT 320 here** and the screenshot showed
 /// the last two elemental sets and the BACK button hanging off the bottom of
-/// the plate, over the room. A sheet that does not fit its content is a sheet
-/// whose size was guessed; the counts are right here, so use them.
+/// the plate, over the room. Computing it from the counts fixed the SIZE and
+/// not the overflow: at the counter's design box (600×338, `gui.rs`) three
+/// plate rows and four sets want ~411, `sheet()` clamped the plate to 322, and
+/// the rows kept painting past the bottom edge of the window because nothing
+/// clipped them. See [`scroll_body_height`].
 fn content_height(v: &ArmoryView) -> f64 {
-    ROW_H * 3.0                                              // title, message, PLATE heading
+    ROW_H * 2.0                                              // title, message
+        + scroll_body_height(v)
+        + FOOT_H + GRID * 2.0 // BACK, and the plate's own margin
+}
+
+/// The part that SCROLLS: everything between the message line and BACK.
+///
+/// The title, the purse and BACK stay outside the region deliberately — the
+/// oracle keeps its vendor bar and its footer out of `beginScroll` too. A purse
+/// that scrolls off is a purse you cannot read the prices against, and a BACK
+/// button below the fold is how a sheet becomes a trap.
+fn scroll_body_height(v: &ArmoryView) -> f64 {
+    ROW_H                                                    // PLATE heading
         + v.plate.len() as f64 * (PLATE_ROW_H + ROW_GAP)
         + REPAIR_H
         + ROW_H + GRID                                       // ELEMENTAL SETS heading
         + v.styles.len() as f64 * (STYLE_ROW_H + ROW_GAP)
-        + FOOT_H + GRID * 2.0 // BACK, and the plate's own margin
 }
 
 /// Paint it, and report the one action taken this frame.
-pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView) -> Option<ArmoryAction> {
+///
+/// `scroll` is the region's offset, owned by the caller's `ScreenEntry` and
+/// updated here — the same contract as the oracle's `UiScreen.scroll`.
+pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView, scroll: &mut f64) -> Option<ArmoryAction> {
     let mut act = None;
 
     // ── Sheet chrome: scrim, plate, title, purse, the message line ──
@@ -163,6 +181,26 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView) -> Option<ArmoryAction> {
             },
         );
     }
+
+    // ── THE SCROLLING MIDDLE ──
+    //
+    // BACK is reserved off the BOTTOM first, so the region gets what is left
+    // rather than what it wants. Everything below is painted into `body`,
+    // which is now the region's CONTENT rect — taller than the view whenever
+    // the counter has more rows than the box, which the oracle says is every
+    // counter it has ("the Alchemist paints to y=380 in a 338-tall box").
+    //
+    // The GRID of clear air under the region is not padding for its own sake:
+    // the fold cuts a row mid-height, and with BACK flush against it the button
+    // reads as sitting ON the half-row rather than under the list. Measured on
+    // the counter screenshot — "Storm Plate" was clipped at the fold and BACK
+    // overlapped its price.
+    let foot_h = FOOT_H + GRID;
+    let view = rect(body.x, body.y, body.w, (body.h - foot_h).max(ROW_H));
+    let foot_row = rect(body.x, body.y + view.h + GRID, body.w, FOOT_H);
+    let content_h = scroll_body_height(v);
+    let sc = crate::im::begin_scroll(f, &view, content_h, *scroll);
+    let mut body = sc.inner;
 
     // ── PLATE ──
     let h = cut_top(&mut body, ROW_H);
@@ -310,12 +348,29 @@ pub fn paint_armory(f: &mut UiFrame, v: &ArmoryView) -> Option<ArmoryAction> {
         cut_top(&mut body, ROW_GAP);
     }
 
+    // The region closes BEFORE the footer paints, or BACK would be clipped and
+    // would scroll away with the rows.
+    crate::im::end_scroll(f, &view, content_h, sc.offset);
+
+    // ── THE REGION FOLLOWS THE CURSOR ──
+    // The wheel only moves it while the pointer is inside, and this counter is
+    // played on a pad. Without this the D-pad walks the focus ring off the
+    // bottom, the highlight vanishes, and Enter fires a button nobody can see —
+    // which reads as the UI having frozen rather than as a scroll bug. Called
+    // AFTER the body painted and with the SAME `view`, because `focus_rect` is
+    // in content space and `view` is in screen space.
+    *scroll = crate::im::follow_focus(f, &view, sc.offset);
+
     // BACK returns to the walkable room — counter mode's own close, so the
     // scene never has to guess whether the sheet is up. It is cut from the
     // BODY, not placed against the frame: against the frame it lands in the
     // bottom-right corner of the SCREEN, outside the plate it belongs to.
-    let foot = cut_top(&mut body, FOOT_H);
-    let foot = rect(foot.x + foot.w - 100.0, foot.y, 100.0, FOOT_H);
+    let foot = rect(
+        foot_row.x + foot_row.w - 100.0,
+        foot_row.y,
+        100.0,
+        foot_row.h,
+    );
     if button(f, &foot, "BACK", ButtonOpts::default()) {
         act = Some(ArmoryAction::Close);
     }
@@ -403,7 +458,7 @@ mod tests {
         let act;
         {
             let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, input.clone(), focus, 1);
-            act = paint_armory(&mut f, &view());
+            act = paint_armory(&mut f, &view(), &mut 0.0);
         }
         (p, act)
     }
@@ -473,7 +528,7 @@ mod tests {
         let act;
         {
             let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, input, 4, 1);
-            act = paint_armory(&mut f, &v);
+            act = paint_armory(&mut f, &v, &mut 0.0);
         }
         assert_eq!(act, Some(ArmoryAction::BuyStyle(0)));
     }
@@ -488,6 +543,120 @@ mod tests {
         let (_, act) = paint_with_focus(&input, 5);
         assert_ne!(act, Some(ArmoryAction::WearStyle(1)));
         assert_ne!(act, Some(ArmoryAction::BuyStyle(1)));
+    }
+
+    /// A counter with more rows than its box — which the shipped one has, and
+    /// the two-set fixture above does not.
+    fn tall_view() -> ArmoryView {
+        let mut v = view();
+        for (n, b) in [
+            ("Gale Plate", "jade-green tempest steel"),
+            ("Ember Plate", "forge-red plate, coal-warm"),
+            ("Umbral Plate", "night-black, drinks the torchlight"),
+        ] {
+            v.styles.push(StyleRow {
+                label: n.into(),
+                blurb: b.into(),
+                price: 750,
+                owned: false,
+                worn: false,
+                // AFFORDABLE, and that is load-bearing for the follow test:
+                // `focusable` returns early for a disabled widget, BEFORE it
+                // records `focus_rect`, so a cursor parked on a greyed row has
+                // no rect for the region to follow. Harmless in play —
+                // `move_focus` steps over disabled rows so the cursor never
+                // rests on one — but a fixture of unaffordable sets measures
+                // nothing and reads as "scrolling is broken".
+                affordable: true,
+                swatch: 0x8a7d6b,
+            });
+        }
+        v
+    }
+
+    fn paint_view(v: &ArmoryView, focus: i64, scroll: &mut f64) -> Painter {
+        let fonts = Fonts::load_embedded();
+        let mut p = Painter::new(600, 338);
+        {
+            let mut f = begin_ui(&mut p, &fonts, 600.0, 338.0, empty_ui_input(), focus, 1);
+            paint_armory(&mut f, v, scroll);
+        }
+        p
+    }
+
+    /// THE DEFECT THE PLAYER SCREENSHOTTED. `content_height` sized the sheet
+    /// from the counts, `sheet()` clamped that to the screen, and the rows kept
+    /// painting past the clamped plate — off the bottom of the window, over the
+    /// room. Every layout test passed, because they all assert where rows are
+    /// and none asked whether the last one is on the plate.
+    ///
+    /// The fixture has to OVERFLOW or this test proves nothing, so that is
+    /// asserted first — the two-set `view()` fits in 338 and would have made
+    /// this vacuously green.
+    #[test]
+    fn nothing_paints_below_the_plate_when_the_counter_is_taller_than_its_box() {
+        let v = tall_view();
+        assert!(
+            scroll_body_height(&v) > 338.0 - ROW_H * 2.0 - FOOT_H - GRID * 4.0,
+            "the fixture fits, so this test cannot see the defect"
+        );
+        let p = paint_view(&v, 0, &mut 0.0);
+
+        // The sheet is centred and clamped to `h - GRID*2`, so with overflow it
+        // is 322 tall at y=8 and everything below y=330 is scrim.
+        let sheet_bottom = 338 - 8;
+        let mut below = std::collections::BTreeSet::new();
+        for y in (sheet_bottom + 1)..338 {
+            for x in 0..600 {
+                let px = p.pixel(x, y);
+                below.insert((px.r, px.g, px.b, px.a));
+            }
+        }
+        assert_eq!(
+            below.len(),
+            1,
+            "{} distinct colours below the plate — content is painting off the sheet",
+            below.len()
+        );
+    }
+
+    /// The region has to MOVE, or clipping it just hides the rows instead of
+    /// letting the pad reach them: the D-pad walks the ring off the bottom, the
+    /// highlight vanishes, and Enter fires a button nobody can see.
+    ///
+    /// Focus 0 is the first plate row (top of the region) and the last focusable
+    /// is the final set's button, far below the fold.
+    #[test]
+    fn the_region_follows_the_focus_cursor_past_the_fold() {
+        let v = tall_view();
+        let mut top = 0.0;
+        paint_view(&v, 0, &mut top);
+        assert_eq!(top, 0.0, "the first row needs no scroll");
+
+        // 3 plate + repair = 4 focusables before the sets; the last set's
+        // button is the final one.
+        let last = (v.plate.len() + 1 + v.styles.len() - 1) as i64;
+        let mut bottom = 0.0;
+        paint_view(&v, last, &mut bottom);
+        assert!(
+            bottom > 0.0,
+            "focus walked below the fold and the region did not follow it"
+        );
+    }
+
+    /// …and it must not run past the end. `begin_scroll` clamps to
+    /// `content - view`; a region that scrolls into void shows a blank sheet
+    /// with a scrollbar thumb sized for content that is not there.
+    #[test]
+    fn the_region_cannot_scroll_past_its_content() {
+        let v = tall_view();
+        let mut wild = 10_000.0;
+        paint_view(&v, 0, &mut wild);
+        let view_h = 338.0 - 16.0 - ROW_H * 2.0 - FOOT_H - GRID;
+        assert!(
+            wild <= scroll_body_height(&v) - view_h + 1.0,
+            "clamped to {wild}, which is past the end of the content"
+        );
     }
 
     #[test]

@@ -500,7 +500,7 @@ fn paint_gui(
     let mut closed = None;
     let mut skipped = false;
     let mut armory_action = None;
-    let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, _entry| {
+    let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, entry| {
         match id {
             ScreenId::StationPrompt => {
                 if let Some(v) = &views.prompt {
@@ -523,7 +523,11 @@ fn paint_gui(
             }
             ScreenId::Armory => {
                 if let Some(v) = &views.armory {
-                    armory_action = paint_armory(f, v);
+                    // `entry.scroll` is the counter's own offset, persisted
+                    // across frames by the stack — the port of the oracle's
+                    // `UiScreen.scroll`. The screen reads it, follows the focus
+                    // cursor with it, and writes it back.
+                    armory_action = paint_armory(f, v, &mut entry.scroll);
                 }
             }
             ScreenId::IntroChrome => {
