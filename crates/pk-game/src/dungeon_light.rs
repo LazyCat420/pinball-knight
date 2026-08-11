@@ -261,6 +261,75 @@ pub fn install(commands: &mut Commands, ambient: &mut AmbientLight, tint: Tint) 
     vec![key, lamp]
 }
 
+/// THE TITLE SEQUENCE'S OWN RIG — port of `intro/index.ts:163-168`.
+///
+/// The intro does not use `buildLights` at all. It installs two fixtures of its
+/// own over the title maze and nothing else:
+///
+/// | fixture | oracle |
+/// |---|---|
+/// | `AmbientLight(0xa8b8d8, 1.7)` | a cold, bright fill — the letterforms must READ |
+/// | `DirectionalLight(0xdfe8ff, 1.8)` at `(8, 18, 24)` | the raking edge that gives the letters depth |
+///
+/// **No hemisphere fixture**, so unlike [`install`] there is nothing to fold in
+/// and [`hemi_over_ambient`] is not consulted — the ambient conversion is the
+/// same denominator with a single numerator.
+///
+/// ## Why this is the largest single visible defect in the intro
+///
+/// It was missing entirely: `intro_setup` spawned the title maze through
+/// `spawn_grid_meshes` and then spawned no light of any kind. The dungeon's rig
+/// is installed by the dungeon's own scene, which the intro never enters, so the
+/// title maze was lit by whatever `AmbientLight` Bevy happened to have — its
+/// default. Measured on the first `pk-ab-intro` sheet: our `title` frame sat at
+/// median luma 11 against the oracle's 10 *because both are mostly black
+/// background*, while the maze itself — the thing the shot is OF — was a flat
+/// near-black slab where the oracle shows lit blue-grey stone, torches and moss.
+///
+/// **That is the same trap as the dungeon's, arriving from the other side.**
+/// There the materials were `unlit` so the lights did nothing; here the
+/// materials are lit and there were no lights. In both cases a median-luma
+/// number over the whole frame said "close enough" and the picture said
+/// otherwise, which is why the rig prints per-phase statistics AND writes a
+/// sheet a human looks at.
+pub fn install_intro(commands: &mut Commands, ambient: &mut AmbientLight) -> Vec<Entity> {
+    /// `intro/index.ts:164`.
+    const INTRO_AMBIENT: u32 = 0xa8b8d8;
+    const INTRO_AMBIENT_INTENSITY: f32 = 1.7;
+    /// `intro/index.ts:165-166`.
+    const INTRO_FILL: u32 = 0xdfe8ff;
+    const INTRO_FILL_INTENSITY: f32 = 1.8;
+
+    ambient.color = c(INTRO_AMBIENT);
+    ambient.brightness = INTRO_AMBIENT_INTENSITY
+        / (std::f32::consts::PI
+            * (AMBIENT_ENV_BRDF + AMBIENT_SPECULAR_PEDESTAL / SURFACE_ALBEDO_LUMA))
+        * EXPOSURE_RECIP;
+
+    let fill = commands
+        .spawn((
+            DirectionalLight {
+                color: c(INTRO_FILL),
+                // The same candela→illuminance factor every other directional
+                // in the game uses (`tavern.rs:485`, [`install`]) — a second
+                // conversion here is exactly the drift `units.rs` exists to
+                // prevent.
+                illuminance: INTRO_FILL_INTENSITY * 1.35 * EXPOSURE_RECIP,
+                // The oracle's intro fill casts no shadow: `buildLights`'
+                // shadow-casting sun is a DIFFERENT light, which the intro
+                // re-aims (`index.ts:178-192`) rather than adding to.
+                shadows_enabled: false,
+                ..default()
+            },
+            // `fill.position.set(8, 18, 24)`, aimed at the origin the title
+            // maze is centred on.
+            Transform::from_xyz(8.0, 18.0, 24.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ))
+        .id();
+
+    vec![fill]
+}
+
 /// Bevy's own default, restored when the dungeon is torn down.
 ///
 /// The ambient is a global resource, not a scene entity, so a dungeon that

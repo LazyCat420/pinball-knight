@@ -25,6 +25,8 @@ use bevy::math::Affine2;
 use bevy::prelude::*;
 
 use crate::dungeon_light;
+use crate::gui::{GuiLayer, GuiViews, ScreenId};
+use pk_gui::screens::intro::{blink_phase, IntroChromeView};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::PrimaryWindow;
 use pk_core::intro::{
@@ -39,6 +41,60 @@ use crate::{
     VIEW_H, WALL_H,
 };
 use pk_audio::Patch;
+
+/// HARNESS SEAM: hold the sequence at an authored moment.
+///
+/// `?intro-freeze=<phase>:<seconds>` (or `PK_INTRO_FREEZE=<phase>:<seconds>`)
+/// stops both clocks the frame `pt` reaches that offset in that phase, and the
+/// scene then paints the same instant forever. The twin of the oracle's
+/// `window.__introFreeze`, and it exists for the same reason: a CDP screenshot
+/// takes longer than the `bonk` phase lasts, so a moving title sequence cannot
+/// be A/B'd by shutter timing at all. See `pk-ab-intro.mjs`'s header and the
+/// oracle's seam comment (`intro/index.ts`).
+fn intro_freeze_at() -> Option<(IntroPhase, f64)> {
+    let raw = {
+        #[cfg(target_arch = "wasm32")]
+        {
+            js_sys::eval("location.search")
+                .ok()
+                .and_then(|v| v.as_string())
+                .and_then(|s| {
+                    s.split(['?', '&'])
+                        .find_map(|kv| kv.strip_prefix("intro-freeze=").map(str::to_owned))
+                })
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::env::var("PK_INTRO_FREEZE").ok()
+        }
+    }?;
+    let (phase, t) = raw.split_once(':')?;
+    let phase = match phase {
+        "run" => IntroPhase::Run,
+        "bonk" => IntroPhase::Bonk,
+        "shatter" => IntroPhase::Shatter,
+        "sweep" => IntroPhase::Sweep,
+        "title" => IntroPhase::Title,
+        _ => return None,
+    };
+    Some((phase, t.parse().ok()?))
+}
+
+/// The shell services `intro_tick` talks OUT to, bundled.
+///
+/// ⚠️ NOT a tidiness refactor: Bevy's `IntoSystem` impls stop at 16 parameters,
+/// and adding the chrome screen's two resources took the tick to 18. The
+/// failure is `no method named `run_if` found for fn item` on the *plugin
+/// registration line*, which names neither the parameter count nor the
+/// system's own signature — so it reads as a trait-import problem three files
+/// from the actual cause.
+#[derive(bevy::ecs::system::SystemParam)]
+struct Shell<'w> {
+    gui: ResMut<'w, GuiLayer>,
+    views: ResMut<'w, GuiViews>,
+    sfx: MessageWriter<'w, SfxEvent>,
+    audio: Res<'w, Audio>,
+}
 
 /// The legacy echo trail's opacities, nose to tail.
 const ECHO_OPACITY: [f32; 4] = [0.3, 0.2, 0.12, 0.06];
@@ -81,13 +137,13 @@ pub struct IntroRes {
     ow: Overworld,
     finishing: bool,
     finish_t: f64,
+    /// `?intro-freeze=<phase>:<t>` — see [`intro_freeze_at`]. `None` in play.
+    freeze: Option<(IntroPhase, f64)>,
     // Entities the tick addresses directly (avoids query-filter tangles).
     canvas_img: Handle<Image>,
     cam_e: Entity,
     ball_e: Entity,
     echo_es: Vec<Entity>,
-    title_e: Entity,
-    pak_e: Entity, // PRESS ANY KEY
     coin_text_e: Entity,
     hud_es: Vec<Entity>,
     ball_mat: Handle<StandardMaterial>,
@@ -110,6 +166,9 @@ fn intro_setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut ambient: ResMut<AmbientLight>,
+    mut gui: ResMut<GuiLayer>,
+    mut views: ResMut<GuiViews>,
     art: Res<KnightArt>,
     window: Query<&Window, With<PrimaryWindow>>,
     cam_q: Query<Entity, With<DungeonCamera>>,
@@ -131,6 +190,14 @@ fn intro_setup(
         // `startLevel` sets one.
         dungeon_light::Stone::default(),
     ) {
+        commands.entity(e).insert(IntroOnly);
+    }
+
+    // ── The intro's own light rig (`intro/index.ts:163-168`) ──
+    // Without this the title maze is a black slab: the dungeon's rig belongs to
+    // a scene the intro never enters, so the letterforms were lit by Bevy's
+    // default ambient and nothing else. See `dungeon_light::install_intro`.
+    for e in dungeon_light::install_intro(&mut commands, &mut ambient) {
         commands.entity(e).insert(IntroOnly);
     }
 
@@ -211,8 +278,6 @@ fn intro_setup(
     // Design space 480×270, up to 3× — a title card is the one place where
     // small type has nothing to trade itself against.
     let ui = (ww / 480.0).min(wh / 270.0).min(3.0) as f32;
-    let heading = Color::srgb_u8(0xff, 0xd9, 0x8a); // theme UI.heading (flame light)
-    let body = Color::srgb_u8(0xc8, 0xcc, 0xd4); // theme UI.text (steel light)
     let mut hud_es = Vec::new();
     let hud = |commands: &mut Commands, txt: &str, node: Node, size: f32, col: Color| {
         commands
@@ -266,63 +331,24 @@ fn intro_setup(
         8.0 * ui,
         Color::srgba(1.0, 1.0, 1.0, 0.75),
     ));
-    // The chrome's SKIP button, bottom-right (any click fires it anyway).
-    hud_es.push(hud(
-        &mut commands,
-        "[ SKIP ]",
-        Node {
-            position_type: PositionType::Absolute,
-            right: Val::Px(16.0 * ui),
-            bottom: Val::Px(14.0 * ui),
-            ..default()
-        },
-        8.0 * ui,
-        body,
-    ));
-
-    // Title + PRESS ANY KEY, hidden until the sweep lands.
-    let title_e = commands
-        .spawn((
-            IntroOnly,
-            Text::new("PINBALL KNIGHT"),
-            TextFont {
-                font_size: 32.0 * ui,
-                ..default()
-            },
-            TextColor(heading),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(72.0),
-                width: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            TextLayout::new_with_justify(Justify::Center),
-            GlobalZIndex(70),
-            Visibility::Hidden,
-        ))
-        .id();
-    let pak_e = commands
-        .spawn((
-            IntroOnly,
-            Text::new("PRESS ANY KEY"),
-            TextFont {
-                font_size: 8.0 * ui,
-                ..default()
-            },
-            TextColor(body),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Percent(86.0),
-                width: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            TextLayout::new_with_justify(Justify::Center),
-            GlobalZIndex(70),
-            Visibility::Hidden,
-        ))
-        .id();
+    // ── The title, PRESS ANY KEY and SKIP are the CHROME SCREEN, not UI nodes ──
+    // `gui/screens/intro-chrome.ts`, ported to `pk_gui::screens::intro`. They
+    // were three Bevy `Text` nodes here: a different typeface, off the pixel
+    // lattice, with no SKIP button at all. See that module's header.
+    //
+    // ⚠️ THE VIEW EXISTS FROM SETUP; THE SCREEN OPENS AT `ShatterStart`.
+    // The oracle's chrome is painted INSIDE `pixelPass.render()`, and the tick
+    // calls that in `shatter`/`sweep`/`title` and NOT in `run`/`bonk`
+    // (`index.ts:849-874`) — during those first 2.65 s the two opaque 2D
+    // canvases cover the renderer's canvas anyway, so a UI frame would paint
+    // SKIP *underneath* the gag. Its own docblock calls this asymmetry out.
+    //
+    // Opening at setup is therefore a real divergence and it was MEASURED as
+    // one: the port grew a SKIP button over the side-scroller and the `run`
+    // phase's diff went 14.5 → 21.7. Parity here means the button is absent
+    // until the world breaks.
+    views.intro = Some(IntroChromeView::default());
+    let _ = &mut gui;
 
     let cam_e = cam_q.single().expect("camera spawns in setup_common");
 
@@ -337,12 +363,11 @@ fn intro_setup(
         ow,
         finishing: false,
         finish_t: 0.0,
+        freeze: intro_freeze_at(),
         canvas_img,
         cam_e,
         ball_e,
         echo_es,
-        title_e,
-        pak_e,
         coin_text_e,
         hud_es,
         ball_mat,
@@ -385,14 +410,18 @@ fn intro_tick(
     mut vis_q: Query<&mut Visibility>,
     mut text_q: Query<&mut Text>,
     mut fade_q: Query<&mut BackgroundColor, With<FadeOverlay>>,
-    mut sfx: MessageWriter<SfxEvent>,
-    audio: Res<Audio>,
+    mut shell: Shell,
 ) {
     // TWO deltas: `pdt` is real time and drives the choreography, `dt` stays
     // clamped and drives the ball — see pk_core::intro's clock notes. Bevy's
     // Time hands us the real frame delta directly (zero on frame one, which
     // is the legacy first-tick stamp behaviour).
     let pdt = time.delta_secs_f64();
+    // The freeze seam, read before either clock is spent.
+    let held = res
+        .freeze
+        .is_some_and(|(ph, t)| res.seq.phase == ph && res.seq.pt >= t);
+    let pdt = if held { 0.0 } else { pdt };
     let dt = pdt.min(SIM_DT_CLAMP);
     res.elapsed += pdt;
 
@@ -407,9 +436,11 @@ fn intro_tick(
         return;
     }
 
-    // Skip: any key (minus modifiers), any click.
+    // Skip: any key (minus modifiers), any click, or the chrome's SKIP button.
+    // The button is a THIRD route to the same place, not a special case — the
+    // oracle's `onSkip` callback is the same function its key listener calls.
     let skip_key = keys.get_just_pressed().any(|k| !is_modifier(*k));
-    if skip_key || mouse.get_just_pressed().next().is_some() {
+    if skip_key || mouse.get_just_pressed().next().is_some() || shell.gui.skip_pressed {
         res.finishing = true;
         for mut bg in &mut fade_q {
             bg.0 = Color::srgba(0.0, 0.0, 0.0, 1.0);
@@ -423,14 +454,14 @@ fn intro_tick(
     for cue in &cues {
         match cue {
             IntroCue::Roll => {
-                sfx.write(SfxEvent::Roll);
+                shell.sfx.write(SfxEvent::Roll);
             }
             IntroCue::BonkStart => {
                 res.ow.shake = 1.0;
                 // Both, same frame, in this order — the shatter reads as one
                 // event: the brick breaking and the coin it pays out.
-                sfx.write(SfxEvent::Break);
-                sfx.write(SfxEvent::Coin);
+                shell.sfx.write(SfxEvent::Break);
+                shell.sfx.write(SfxEvent::Coin);
             }
             IntroCue::ShatterStart => {
                 // Snapshot the bonk frame WITHOUT the knight (legacy removed
@@ -458,13 +489,15 @@ fn intro_tick(
                         *v = Visibility::Hidden;
                     }
                 }
+                // …and the chrome arrives as the 2D world leaves. See the note
+                // at the view's construction: the oracle paints no UI frame
+                // during `run`/`bonk`.
+                shell.gui.open(ScreenId::IntroChrome);
             }
             IntroCue::SweepStart => res.ow.clear_for_sweep(),
             IntroCue::TitleStart => {
-                for e in [res.title_e, res.pak_e] {
-                    if let Ok(mut v) = vis_q.get_mut(e) {
-                        *v = Visibility::Inherited;
-                    }
+                if let Some(v) = shell.views.intro.as_mut() {
+                    v.show_title = true;
                 }
             }
             IntroCue::Finish => {
@@ -473,7 +506,7 @@ fn intro_tick(
                 // the sting has to land under the black hold that ends the
                 // sequence, and a frame timer drifts against the samples it
                 // is trying to sit beside.
-                audio.play(Patch::LevelStart { at_offset: 0.4 });
+                shell.audio.play(Patch::LevelStart { at_offset: 0.4 });
                 for mut bg in &mut fade_q {
                     bg.0 = Color::srgba(0.0, 0.0, 0.0, 1.0);
                 }
@@ -502,7 +535,7 @@ fn intro_tick(
         }
         IntroPhase::Shatter => {
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
-                sfx.write(SfxEvent::Bumper);
+                shell.sfx.write(SfxEvent::Bumper);
             }
             aim_camera(&mut res, 0.0, &window, &mut tf_q, &mut proj_q);
             res.ow.paint_shatter(dt, pt);
@@ -510,22 +543,20 @@ fn intro_tick(
         }
         IntroPhase::Sweep => {
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
-                sfx.write(SfxEvent::Bumper);
+                shell.sfx.write(SfxEvent::Bumper);
             }
             aim_camera(&mut res, pt / SWEEP_DUR, &window, &mut tf_q, &mut proj_q);
         }
         IntroPhase::Title => {
             if sim_ball(&mut res, dt, &mut tf_q, &mut vis_q, &mut materials) {
-                sfx.write(SfxEvent::Bumper);
+                shell.sfx.write(SfxEvent::Bumper);
             }
             aim_camera(&mut res, 1.0, &window, &mut tf_q, &mut proj_q);
-            // A 1.1s step blink, from wall clock (intro-chrome.ts).
-            if let Ok(mut v) = vis_q.get_mut(res.pak_e) {
-                *v = if (res.elapsed * 1000.0) % 1100.0 < 620.0 {
-                    Visibility::Inherited
-                } else {
-                    Visibility::Hidden
-                };
+            // A 1.1s step blink, from wall clock (intro-chrome.ts). The
+            // modulus itself lives in `pk_gui::screens::intro::blink_phase` so
+            // the port has ONE of it.
+            if let Some(v) = shell.views.intro.as_mut() {
+                v.blink_on = blink_phase(res.elapsed * 1000.0);
             }
         }
     }
@@ -650,10 +681,25 @@ fn intro_teardown(
     mut commands: Commands,
     doomed: Query<Entity, With<IntroOnly>>,
     mut proj_q: Query<&mut Projection, With<DungeonCamera>>,
+    mut ambient: ResMut<AmbientLight>,
+    mut gui: ResMut<GuiLayer>,
+    mut views: ResMut<GuiViews>,
 ) {
     for e in &doomed {
         commands.entity(e).despawn();
     }
+    // The ambient is a RESOURCE, not one of the entities above, so despawning
+    // `IntroOnly` does not take it with them. `cleanupVisuals` removes the whole
+    // `introLights` group (`index.ts:311`) and the scene it hands to installs its
+    // own — but "the next scene overwrites it" is not a teardown, it is a
+    // coincidence that holds until one scene does not. Closed by the scene that
+    // opened it, per the tavern's GUI-stack lesson.
+    dungeon_light::reset_ambient(&mut ambient);
+    // The chrome is a GLOBAL layer, like the ambient: the stack outlives the
+    // scene, so the scene that opened the screen closes it. Otherwise the title
+    // and its SKIP button paint over the tavern.
+    gui.close(ScreenId::IntroChrome);
+    views.intro = None;
     // camera.zoom = 1 (cleanupVisuals).
     for mut proj in &mut proj_q {
         if let Projection::Orthographic(o) = &mut *proj {

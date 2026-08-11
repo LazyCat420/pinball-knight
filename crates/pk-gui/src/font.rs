@@ -106,6 +106,74 @@ impl Atlas {
         self.glyphs.get(&ch)
     }
 
+    /// This atlas at `k`× its size, by nearest-neighbour on the coverage.
+    ///
+    /// **This is a bake, not an approximation of one.** Press Start 2P is
+    /// authored on the pixel grid, so Skia's raster at `k·px` IS this raster
+    /// with every texel repeated `k` times — measured over the whole charset's
+    /// alpha, with zero differing samples on all four pairs the baked set
+    /// contains (8×2 vs 16, 8×3 vs 24, 16×2 vs 32, 32×2 vs 64). It is
+    /// re-proved on every test run by
+    /// `derived_sizes_are_byte_identical_to_the_baked_ones`, which is what
+    /// keeps this honest if the face is ever re-vendored.
+    ///
+    /// ⚠️ **THE SCALING IS PER-CELL, NOT WHOLE-ATLAS**, because `pad` does not
+    /// scale. The bake uses a constant 2-device-pixel pad at every size
+    /// (`cellW = ceil(maxAdvance) + 2·PAD`), so `cellW(8) = 12` and
+    /// `cellW(16) = 20` — not 24. Upscaling the whole sheet and calling the
+    /// result a 16px atlas puts every glyph 2px off its cell, and the first
+    /// draft of this function did exactly that: the test below caught it on
+    /// `cell_w` before a single glyph was ever blitted. The GLYPH INTERIORS
+    /// scale exactly; the gutter between them does not.
+    fn upscaled(&self, k: u32) -> Atlas {
+        assert!(k >= 2, "upscale by {k} is not an upscale");
+        let pad = self.pad;
+        let inner_w = self.cell_w - pad * 2;
+        let inner_h = self.cell_h - pad * 2;
+        let cell_w = inner_w * k + pad * 2;
+        let cell_h = inner_h * k + pad * 2;
+        let rows = (self.alpha.len() as u32 / self.width) / self.cell_h;
+        let width = self.cols * cell_w;
+        let height = rows * cell_h;
+        let mut alpha = vec![0u8; (width * height) as usize];
+        for row in 0..rows {
+            for col in 0..self.cols {
+                let (sx0, sy0) = (col * self.cell_w + pad, row * self.cell_h + pad);
+                let (dx0, dy0) = (col * cell_w + pad, row * cell_h + pad);
+                for y in 0..inner_h * k {
+                    let sy = sy0 + y / k;
+                    for x in 0..inner_w * k {
+                        let sx = sx0 + x / k;
+                        alpha[((dy0 + y) * width + dx0 + x) as usize] =
+                            self.alpha[(sy * self.width + sx) as usize];
+                    }
+                }
+            }
+        }
+        Atlas {
+            px: self.px * k,
+            cell_w,
+            cell_h,
+            pad,
+            cols: self.cols,
+            alpha,
+            width,
+            glyphs: self
+                .glyphs
+                .iter()
+                .map(|(ch, g)| {
+                    (
+                        *ch,
+                        Glyph {
+                            index: g.index,
+                            advance: g.advance * f64::from(k),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
     fn cell_origin(&self, index: u32) -> (u32, u32) {
         (
             (index % self.cols) * self.cell_w,
@@ -153,7 +221,63 @@ impl Fonts {
                 (meta.px, Atlas::decode(meta, bytes))
             })
             .collect();
-        Fonts { ps2p }
+        let mut fonts = Fonts { ps2p };
+        fonts.derive_missing_zoom_sizes();
+        fonts
+    }
+
+    /// The device sizes a screen can ask for: the four sizes `text()` accepts,
+    /// at every screen zoom the stack can choose.
+    ///
+    /// `screen_zoom` returns up to `design.max`, and the largest `max` in the
+    /// game is the intro chrome's **3** — so `{8,16,24,32} × {1,2,3}`.
+    const REQUIRED_DEVICE_SIZES: [u32; 8] = [8, 16, 24, 32, 48, 64, 72, 96];
+
+    /// Fill in any required device size the bake does not ship, by upscaling
+    /// the largest baked atlas that divides it exactly.
+    ///
+    /// Why this exists at all: 72 and 96 were simply absent, and [`Fonts::draw`]
+    /// returns on a missing atlas — so the intro's 32pt title, at zoom 3, drew
+    /// **nothing**, silently, next to an 8pt hint that rendered fine because
+    /// 8×3 = 24 happened to be baked. See [`Atlas::upscaled`] for why deriving
+    /// them is exact rather than approximate.
+    fn derive_missing_zoom_sizes(&mut self) {
+        for want in Self::REQUIRED_DEVICE_SIZES {
+            if self.ps2p.contains_key(&want) {
+                continue;
+            }
+            // Largest divisor first: fewer repeated texels is no more accurate
+            // here (every factor is exact) but it keeps the derived buffer
+            // honest about where it came from.
+            let from = self
+                .ps2p
+                .keys()
+                .copied()
+                .filter(|px| *px < want && want % *px == 0)
+                .max();
+            let Some(from) = from else {
+                // Not derivable: leave it missing rather than invent a raster.
+                // `assert_every_required_size_is_present` is where that becomes
+                // a failed test instead of an empty title.
+                continue;
+            };
+            let derived = self.ps2p[&from].upscaled(want / from);
+            self.ps2p.insert(want, derived);
+        }
+    }
+
+    /// Every size a screen can request resolves to an atlas.
+    ///
+    /// Panics rather than returning a bool: a missing size is not a condition
+    /// to branch on, it is text that will not be drawn, and the whole reason
+    /// this module grew a derivation step is that the miss was invisible.
+    pub fn assert_every_required_size_is_present(&self) {
+        for want in Self::REQUIRED_DEVICE_SIZES {
+            assert!(
+                self.ps2p.contains_key(&want),
+                "no PS2P atlas at device size {want} — text at that size draws nothing, silently"
+            );
+        }
     }
 
     pub fn atlas(&self, device_px: u32) -> Option<&Atlas> {
@@ -253,5 +377,68 @@ mod tests {
             a.alpha.iter().all(|&v| v == 0 || v == 255),
             "ps2p-8 has AA pixels"
         );
+    }
+
+    #[test]
+    fn derived_sizes_are_byte_identical_to_the_baked_ones() {
+        // THE PROOF THAT DERIVING IS A BAKE. Every baked pair that is an exact
+        // multiple is re-derived from the smaller atlas and compared, byte for
+        // byte, against the raster the browser actually produced. If Press
+        // Start 2P is ever re-vendored at a size that is not on the pixel grid,
+        // or the bake changes its padding, this fails HERE — at the assumption
+        // — rather than as a title that is subtly wrong at zoom 3 only.
+        let fonts = Fonts::load_embedded();
+        for (from, to, k) in [(8u32, 16u32, 2u32), (8, 24, 3), (16, 32, 2), (32, 64, 2)] {
+            let src = fonts.atlas(from).expect("baked source atlas");
+            let baked = fonts.atlas(to).expect("baked target atlas");
+            let derived = src.upscaled(k);
+            assert_eq!(derived.px, baked.px, "{from}x{k} px");
+            assert_eq!(derived.cell_w, baked.cell_w, "{from}x{k} cell_w");
+            assert_eq!(derived.cell_h, baked.cell_h, "{from}x{k} cell_h");
+            assert_eq!(derived.pad, baked.pad, "{from}x{k} pad");
+            assert_eq!(derived.width, baked.width, "{from}x{k} atlas width");
+            assert_eq!(
+                derived.alpha.len(),
+                baked.alpha.len(),
+                "{from}x{k} coverage length"
+            );
+            let differing = derived
+                .alpha
+                .iter()
+                .zip(&baked.alpha)
+                .filter(|(a, b)| a != b)
+                .count();
+            assert_eq!(
+                differing, 0,
+                "{from}px upscaled {k}x differs from the baked {to}px atlas in {differing} samples"
+            );
+        }
+    }
+
+    #[test]
+    fn every_size_a_screen_can_ask_for_resolves() {
+        // The regression this whole derivation exists for: the intro chrome
+        // declares `max: 3`, so it asks for 96, and 96 was not baked. Text at a
+        // missing size draws NOTHING and says nothing about it.
+        let fonts = Fonts::load_embedded();
+        fonts.assert_every_required_size_is_present();
+        for size in [8u32, 16, 24, 32] {
+            for zoom in 1u32..=3 {
+                assert!(
+                    fonts.atlas(size * zoom).is_some(),
+                    "size {size} at zoom {zoom} has no atlas"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_derived_atlas_advances_like_the_baked_one() {
+        // A glyph that lands in the right cell but advances by the base size
+        // would draw the title on top of itself. Measured at the API, not the
+        // struct: `measure` is what the layout uses.
+        let fonts = Fonts::load_embedded();
+        assert_eq!(fonts.measure("PINBALL KNIGHT", 96), 14.0 * 96.0);
+        assert_eq!(fonts.measure("PINBALL KNIGHT", 72), 14.0 * 72.0);
     }
 }

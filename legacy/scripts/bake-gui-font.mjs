@@ -56,9 +56,27 @@ CHARSET.push(...EXTRAS);
 
 /** face key → { css family (quoted as the game quotes it), sizes to bake }. */
 const FACES = {
-  // 8|16|24|32 are the sizes text() accepts; ×2 covers screen-zoom-2 sheets
-  // (a zoomed screen blits from the size*zoom atlas). 48/64 cover zoom 3–4
-  // screens (floor-loading is max:3) and cost nothing to carry.
+  // 8|16|24|32 are the sizes text() accepts; a screen paints at its SCREEN
+  // ZOOM, so the device size is size×zoom and ×2 covers every `max: 2` sheet.
+  //
+  // ── 72 AND 96 ARE DELIBERATELY NOT BAKED ────────────────────────────────
+  // The intro chrome declares `max: 3` ("a title card takes the largest zoom
+  // the grid allows"), so it asks for 24|48|72|96 and the last two were
+  // missing. The failure was SILENT: `Fonts::draw` returns early on a missing
+  // atlas, so the 32pt "PINBALL KNIGHT" drew NOTHING while the 8pt "PRESS ANY
+  // KEY" beside it (8×3 = 24, which existed) rendered perfectly — an empty
+  // title next to the oracle's on the pk-ab-intro sheet.
+  //
+  // They are not added here because they do not have to be, and that is a
+  // MEASURED claim rather than an assumption: Press Start 2P at multiples of 8
+  // is authored on the pixel grid, so a larger raster is the smaller one
+  // upscaled by an integer, exactly. Checked over the whole charset's alpha:
+  //   8×2 vs 16 → 0/38,400 samples differ     8×3 vs 24 → 0/86,400
+  //   16×2 vs 32 → 0/153,600                  32×2 vs 64 → 0/614,400
+  // So `Fonts::load_embedded` derives any missing multiple by nearest upscale
+  // and `derived_sizes_are_byte_identical_to_the_baked_ones` re-proves it on
+  // every test run. Deriving beats baking here: the pixels are identical, and
+  // two more PNGs in the binary would be two more things to keep in step.
   ps2p: { family: "'Press Start 2P'", sizes: [8, 16, 24, 32, 48, 64] },
   // Numerals face; barely used by the GUI today (damage text is P3 scope).
   vt323: { family: "VT323", sizes: [16, 32] },

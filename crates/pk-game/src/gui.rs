@@ -40,6 +40,10 @@ use bevy::window::PrimaryWindow;
 
 use pk_gui::im::{empty_ui_input, Pointer};
 use pk_gui::root::{paint_stack, UiStats};
+use pk_gui::screens::intro::{
+    paint_intro_chrome, IntroChromeView, DESIGN_H as INTRO_DESIGN_H, DESIGN_MAX_ZOOM as INTRO_ZOOM,
+    DESIGN_W as INTRO_DESIGN_W,
+};
 use pk_gui::screens::tavern::{
     paint_run_summary, paint_station_panel, paint_station_prompt, PanelView, StationView,
     SummaryView,
@@ -62,6 +66,9 @@ pub enum ScreenId {
     StationPrompt,
     RunSummary,
     StationPanel,
+    /// The title sequence's skip button, title banner and black wipe.
+    /// Non-pausing: the intro runs its own clock and there is no sim to freeze.
+    IntroChrome,
 }
 
 /// WHAT the open screens say. Filled by whoever owns the scene, read here.
@@ -76,6 +83,7 @@ pub struct GuiViews {
     pub prompt: Option<StationView>,
     pub summary: Option<SummaryView>,
     pub panel: Option<PanelView>,
+    pub intro: Option<IntroChromeView>,
 }
 
 /// Assign only if the value actually differs.
@@ -107,6 +115,8 @@ pub struct GuiLayer {
     ///
     /// One frame's worth: written every frame, `None` when nothing closed.
     pub closed: Option<ScreenId>,
+    /// Did SKIP get pressed this frame? See [`ScreenId::IntroChrome`].
+    pub skip_pressed: bool,
     /// Has the texture got pixels on it that the stack no longer accounts for?
     ///
     /// Set by every paint, taken by the first idle frame. Without it, closing
@@ -174,6 +184,12 @@ impl GuiLayer {
             ScreenId::RunSummary | ScreenId::StationPanel => {
                 ScreenEntry::new(id, true).with_design(600.0, 338.0, 2)
             }
+            // `design: { w: 480, h: 270, max: 3 }` — the oracle's own box
+            // (intro-chrome.ts). It does NOT pause, and it must not capture the
+            // keyboard: "PRESS ANY KEY" is handled by the intro's own listener
+            // and swallowing keys here would make it a lie.
+            ScreenId::IntroChrome => ScreenEntry::new(id, false)
+                .with_design(INTRO_DESIGN_W, INTRO_DESIGN_H, INTRO_ZOOM),
         };
         self.stack.push(entry);
     }
@@ -253,6 +269,7 @@ fn setup_gui(mut commands: Commands, mut images: ResMut<Assets<Image>>, sizing: 
         stats: UiStats::default(),
         image: image.clone(),
         closed: None,
+        skip_pressed: false,
         dirty: false,
         views_gen: 0,
         last_pointer: None,
@@ -468,6 +485,7 @@ fn paint_gui(
     } = &mut *layer;
     let views = &*views;
     let mut closed = None;
+    let mut skipped = false;
     let result = paint_stack(painter, fonts, stack, &input, stats, |f, id, _entry| {
         match id {
             ScreenId::StationPrompt => {
@@ -489,6 +507,16 @@ fn paint_gui(
                     }
                 }
             }
+            ScreenId::IntroChrome => {
+                if let Some(v) = &views.intro {
+                    // SKIP is not a CLOSE: the scene ends the sequence, and the
+                    // screen goes with the scene. Reported through `skipped` so
+                    // the intro's own skip path stays the single one.
+                    if paint_intro_chrome(f, v) {
+                        skipped = true;
+                    }
+                }
+            }
         };
     });
     // A CLOSE button and a cancel-pop are the same event to the scene. The
@@ -500,6 +528,10 @@ fn paint_gui(
     } else if let Some(id) = result.popped {
         layer.closed = Some(id);
     }
+    // One frame's worth, like `closed`: the intro reads it and it is cleared by
+    // the next paint. A latch would fire the skip again on the frame after the
+    // scene had already left.
+    layer.skip_pressed = skipped;
     if result.painted {
         layer.dirty = true;
         upload(&mut images, &layer);
