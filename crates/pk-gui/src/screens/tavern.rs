@@ -16,7 +16,7 @@ use crate::theme::{Ui, GRID, ROW_H};
 
 /// What a screen needs to know about a station. The shell maps
 /// `pk_core::tavern::layout::Station` into this 1:1.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StationView {
     pub label: String,
     pub blurb: String,
@@ -26,7 +26,7 @@ pub struct StationView {
 
 /// The run-summary rows, preformatted by the shell (the fixture pins them, so
 /// gear/purse strings never drag game state into this crate).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SummaryView {
     pub floor: String,
     pub grade: String,
@@ -37,7 +37,7 @@ pub struct SummaryView {
 }
 
 /// A placeholder vendor/cabinet panel: real chrome, stub body.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PanelView {
     pub title: String,
     pub blurb: String,

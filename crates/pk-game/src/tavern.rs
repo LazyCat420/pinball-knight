@@ -38,7 +38,7 @@ use pk_core::tavern::player::{step_tavern_movement, TavernInput, TavernPose, WAL
 use pk_core::tavern::state::{read_diorama, DioramaState, TavernStats};
 use pk_gui::screens::tavern::{PanelView, StationView, SummaryView};
 
-use crate::gui::{Gui, ScreenId};
+use crate::gui::{set_view, Gui, GuiViews, ScreenId};
 use crate::post::snap::PixelSnapped;
 use crate::sfx::SfxEvent;
 use crate::tavern_art::{self, BLOB_UNITS, SPRITE_UNITS};
@@ -1452,8 +1452,17 @@ fn teardown_tavern(
     q: Query<Entity, With<TavernScene>>,
     mut ambient: ResMut<AmbientLight>,
     mut cam_q: Query<&mut Projection, With<DungeonCamera>>,
+    mut gui: Gui,
     mut sfx: MessageWriter<SfxEvent>,
 ) {
+    // ⚠️ THE GUI STACK IS NOT A SCENE ENTITY, so despawning `TavernScene` does
+    // not take it. The prompt and the panels used to be `Text` nodes tagged with
+    // the scene marker and they died with the room; as screens they outlive it,
+    // and the first build after the port shipped the tavern's "[E] DESCEND"
+    // prompt floating over the dungeon floor. A layer shared by every scene has
+    // to be closed by the scene that opened it.
+    gui.layer.clear();
+    *gui.views = GuiViews::default();
     // The bed fades over 0.6s rather than cutting: the room tone is the last
     // thing you hear on the way down the stairs, and a hard stop on a looping
     // noise source clicks.
@@ -1720,22 +1729,25 @@ fn tavern_frame(
         None => {
             layer.close(ScreenId::RunSummary);
             layer.close(ScreenId::StationPanel);
-            views.summary = None;
-            views.panel = None;
+            set_view(&mut views.summary, None);
+            set_view(&mut views.panel, None);
         }
         Some(Panel::Summary) => {
-            views.summary = Some(SummaryView {
-                floor: res.stats.floor.to_string(),
-                grade: res.stats.grade.to_string(),
-                kills: res.stats.kills.to_string(),
-                best_combo: format!("x{}", res.stats.best_combo),
-                // ⚠️ NOT ZERO — `TavernStats` has no gear and no purse, because
-                // the economy is P4. A "0 gold" here would be a number the game
-                // never computed, and a number on a summary screen is read as
-                // a measurement. An em dash is read as what it is.
-                gear: "—".into(),
-                purse: "—".into(),
-            });
+            set_view(
+                &mut views.summary,
+                Some(SummaryView {
+                    floor: res.stats.floor.to_string(),
+                    grade: res.stats.grade.to_string(),
+                    kills: res.stats.kills.to_string(),
+                    best_combo: format!("x{}", res.stats.best_combo),
+                    // ⚠️ NOT ZERO — `TavernStats` has no gear and no purse, because
+                    // the economy is P4. A "0 gold" here would be a number the game
+                    // never computed, and a number on a summary screen is read as
+                    // a measurement. An em dash is read as what it is.
+                    gear: "—".into(),
+                    purse: "—".into(),
+                }),
+            );
             layer.open(ScreenId::RunSummary);
         }
         Some(panel) => {
@@ -1767,12 +1779,15 @@ fn tavern_frame(
                     GOLD,
                 ),
             };
-            views.panel = Some(PanelView {
-                title,
-                blurb,
-                body,
-                accent,
-            });
+            set_view(
+                &mut views.panel,
+                Some(PanelView {
+                    title,
+                    blurb,
+                    body,
+                    accent,
+                }),
+            );
             layer.open(ScreenId::StationPanel);
         }
     }
@@ -1790,16 +1805,19 @@ fn tavern_frame(
     // runs. Reading `res.open_panel` down here makes it this frame's answer.
     match (res.open_panel.is_some(), res.focus) {
         (false, Some(s)) => {
-            views.prompt = Some(StationView {
-                label: s.label.to_string(),
-                blurb: s.blurb.to_string(),
-                accent: s.accent,
-            });
+            set_view(
+                &mut views.prompt,
+                Some(StationView {
+                    label: s.label.to_string(),
+                    blurb: s.blurb.to_string(),
+                    accent: s.accent,
+                }),
+            );
             layer.open(ScreenId::StationPrompt);
         }
         _ => {
             layer.close(ScreenId::StationPrompt);
-            views.prompt = None;
+            set_view(&mut views.prompt, None);
         }
     }
 }
